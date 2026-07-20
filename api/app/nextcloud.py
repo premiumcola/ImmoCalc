@@ -57,14 +57,41 @@ def normalisiere_url(url: str) -> str:
     return f"{teile.scheme}://{teile.netloc}{pfad.rstrip('/')}"
 
 
+class AussenhalbHome(NextcloudFehler):
+    """Ein Schreibzugriff sollte ausserhalb des freigegebenen Ordners landen."""
+
+
+def _normpfad(pfad: str) -> str:
+    return "/" + "/".join(t for t in (pfad or "").split("/") if t and t != ".")
+
+
 class Nextcloud:
     def __init__(self, url: str, benutzer: str, passwort: str,
-                 zertifikat_pruefen: bool = False, timeout: float = 15.0):
+                 zertifikat_pruefen: bool = False, timeout: float = 15.0,
+                 heimat: str = ""):
         self.basis = normalisiere_url(url)
         self.benutzer = benutzer
         self._auth = (benutzer, passwort)
         self._pruefen = zertifikat_pruefen
         self._timeout = timeout
+        # Schreibzugriffe sind auf diesen Ordner begrenzt. Leer = nur Lesen.
+        self.heimat = _normpfad(heimat) if heimat else ""
+
+    def _pruefe_schreibrecht(self, pfad: str) -> None:
+        """Riegel vor jedem verändernden Zugriff.
+
+        Ein '..' im Pfad oder ein Ziel ausserhalb des Home-Ordners bricht ab,
+        bevor irgendetwas gesendet wird."""
+        if ".." in (pfad or "").split("/"):
+            raise AussenhalbHome(f"Unzulässiger Pfad: {pfad}")
+        if not self.heimat:
+            raise AussenhalbHome(
+                "Kein Home-Ordner festgelegt — es wird nichts geschrieben.")
+        ziel = _normpfad(pfad)
+        if ziel != self.heimat and not ziel.startswith(self.heimat + "/"):
+            raise AussenhalbHome(
+                f"'{ziel}' liegt ausserhalb von '{self.heimat}' — "
+                "ImmoCalc verändert dort nichts.")
 
     @property
     def _wurzel(self) -> str:
@@ -135,6 +162,7 @@ class Nextcloud:
 
     def ordner_anlegen(self, pfad: str) -> bool:
         """Legt einen Ordner an. Bestehende bleiben unangetastet."""
+        self._pruefe_schreibrecht(pfad)
         antwort = self._anfrage("MKCOL", pfad)
         if antwort.status_code in (201, 405):   # 405 = existiert bereits
             return antwort.status_code == 201
@@ -147,6 +175,10 @@ class Nextcloud:
         pfad = ""
         for teil in wurzel.strip("/").split("/"):
             pfad = f"{pfad}/{teil}" if pfad else teil
+            # Ebenen oberhalb des Home-Ordners existieren bereits und werden
+            # bewusst nicht angefasst.
+            if self.heimat and not _normpfad(pfad).startswith(self.heimat):
+                continue
             if self.ordner_anlegen(pfad):
                 neu.append("/" + pfad)
         for unter in unterordner:
@@ -158,6 +190,7 @@ class Nextcloud:
                 typ: str = "application/pdf") -> None:
         """Datei hochladen. Ueberschreibt eine gleichnamige Datei nicht —
         der Aufrufer sorgt fuer einen freien Namen."""
+        self._pruefe_schreibrecht(pfad)
         antwort = self._anfrage("PUT", pfad, content=inhalt,
                                 headers={"Content-Type": typ})
         if antwort.status_code >= 400:
@@ -170,6 +203,9 @@ class Nextcloud:
         return antwort.status_code < 400
 
     def verschiebe(self, von: str, nach: str) -> None:
+        # beide Seiten pruefen: weder Quelle noch Ziel duerfen ausserhalb liegen
+        self._pruefe_schreibrecht(von)
+        self._pruefe_schreibrecht(nach)
         antwort = self._anfrage("MOVE", von, headers={
             "Destination": self._url(nach), "Overwrite": "F"})
         if antwort.status_code >= 400:

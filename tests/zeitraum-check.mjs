@@ -18,6 +18,19 @@ page.on('console', m => {
 let fails = 0;
 const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text); } };
 
+// Ausgangslage herstellen: eine Position wieder öffnen, damit der Lauf
+// wiederholbar ist (ein früherer Durchlauf hat sie sonst schon gefüllt).
+{
+  const zeitraum = await (await fetch(base + '/api/zeitraeume/1')).json();
+  const kandidat = zeitraum.checkliste.find(k => k.position_id);
+  if (kandidat) {
+    await fetch(`${base}/api/positionen/${kandidat.position_id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ betrag: 0, status: 'offen' }),
+    });
+  }
+}
+
 // Von der Objektseite über den Zeitraum in die Abrechnung
 await page.goto(base + '/objekt.html?o=obj-a', { waitUntil: 'networkidle' });
 await page.waitForSelector('[data-zeitraum]', { timeout: 8000 })

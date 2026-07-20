@@ -171,7 +171,8 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
             if z.status != "in Arbeit":
                 continue
             label = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
-            hinweis = frist_erinnerung(label, frist_tage(z))
+            hinweis = frist_erinnerung(label, frist_tage(z),
+                                       zeitraum_beendet=z.ende <= heute)
             if hinweis:
                 offen.append({"objekt": o.slug, "name": o.name, **hinweis})
 

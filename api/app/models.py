@@ -111,7 +111,10 @@ class Versicherung(SQLModel, table=True):
     art: str                       # 'Gebäude' | 'Haftpflicht' | 'Elementar' | ...
     anbieter: str = ""
     police_nr: str = ""
+    # Betrag je Turnus. Vorgabe 'jaehrlich' — so bleiben Altbestände korrekt,
+    # bei denen das Feld noch als reiner Jahresbeitrag gepflegt wurde.
     jahresbeitrag: float = 0.0
+    turnus: str = "jaehrlich"
     versicherungswert: Optional[float] = None
     beginn: Optional[date] = None
     ende: Optional[date] = None
@@ -132,7 +135,8 @@ class Miete(SQLModel, table=True):
     einheit: str = ""              # Bezeichnung der Einheit, leer = ganzes Objekt
     partei: str = ""
     kaltmiete: float = 0.0
-    nebenkosten_vz: float = 0.0    # monatliche Vorauszahlung
+    nebenkosten_vz: float = 0.0    # Vorauszahlung je Turnus
+    turnus: str = "monatlich"
     stellplatz: float = 0.0
     sonstige: float = 0.0          # Möblierung, Werbefläche, Sonstiges
     ab_datum: date
@@ -155,7 +159,8 @@ class Kredit(SQLModel, table=True):
     urspruenglich: Optional[float] = None
     restschuld: Optional[float] = None
     zinssatz: Optional[float] = None       # Prozent p. a.
-    rate_monatlich: float = 0.0            # Annuität
+    rate_monatlich: float = 0.0            # Rate je Turnus (Annuität)
+    turnus: str = "monatlich"
     zinsbindung_bis: Optional[date] = None
     beginn: Optional[date] = None
     notiz: str = ""
@@ -170,6 +175,7 @@ class Zahlung(SQLModel, table=True):
     art: str                       # 'Grundsteuer' | 'Einkommensteuer' | 'Instandhaltung' | ...
     kategorie: str = "Steuer"      # 'Steuer' | 'Kredit' | 'Instandhaltung' | 'Sonstiges'
     betrag: float = 0.0
+    turnus: str = "jaehrlich"      # Steuervorauszahlungen laufen oft quartalsweise
     absetzbar: bool = True
     notiz: str = ""
 

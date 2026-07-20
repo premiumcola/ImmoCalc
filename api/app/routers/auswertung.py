@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlmodel import Session as DBSession
 
 from ..cashflow import EinheitZahlen, cashflow, monate_im_jahr, sankey
+from ..turnus import auswahl_fuer, jahresbetrag
 from ..db import get_session
 from ..models import (Einheit, Kostenposition, Kredit, Miete, Objekt,
                       Versicherung, Zahlung, Zeitraum)
@@ -21,6 +22,12 @@ BLOCK_NAMEN = ["Kredit", "Versicherung", "Steuer", "Nebenkosten", "Sonstiges"]
 def _monate_im_jahr(m: Miete, jahr: int) -> int:
     """Wie viele Monate des Jahres war dieser Mietstand gültig?"""
     return monate_im_jahr(m.ab_datum, m.bis_datum, jahr)
+
+
+def _miete_im_jahr(m: Miete, jahr: int) -> float:
+    """Mieteinnahmen eines Eintrags im Jahr — Turnus und Laufzeit berücksichtigt."""
+    voll = jahresbetrag(m.kaltmiete + m.stellplatz + m.sonstige, m.turnus)
+    return voll * _monate_im_jahr(m, jahr) / 12
 
 
 def _bloecke(session: DBSession, o: Objekt, jahr: int) -> dict[str, float]:
@@ -39,11 +46,15 @@ def _bloecke(session: DBSession, o: Objekt, jahr: int) -> dict[str, float]:
         nebenkosten += sum(p.betrag for p in pos if p.status == "erledigt")
 
     return {
-        "Kredit": round(sum(k.rate_monatlich * 12 for k in kredite), 2),
-        "Versicherung": round(sum(v.jahresbeitrag for v in vers), 2),
-        "Steuer": round(sum(z.betrag for z in zahlungen if z.kategorie == "Steuer"), 2),
+        "Kredit": round(sum(jahresbetrag(k.rate_monatlich, k.turnus)
+                            for k in kredite), 2),
+        "Versicherung": round(sum(jahresbetrag(v.jahresbeitrag, v.turnus)
+                                  for v in vers), 2),
+        "Steuer": round(sum(jahresbetrag(z.betrag, z.turnus) for z in zahlungen
+                            if z.kategorie == "Steuer"), 2),
         "Nebenkosten": round(nebenkosten, 2),
-        "Sonstiges": round(sum(z.betrag for z in zahlungen if z.kategorie != "Steuer"), 2),
+        "Sonstiges": round(sum(jahresbetrag(z.betrag, z.turnus) for z in zahlungen
+                               if z.kategorie != "Steuer"), 2),
     }
 
 
@@ -59,9 +70,8 @@ def _einheiten_zahlen(session: DBSession, o: Objekt, jahr: int) -> list[EinheitZ
                    and _monate_im_jahr(m, jahr) > 0]
         # jüngster gültiger Mietstand zählt für die Kennzahlen
         aktuell = max(passend, key=lambda m: m.ab_datum, default=None)
-        monatlich = sum(
-            (m.kaltmiete + m.stellplatz + m.sonstige) * _monate_im_jahr(m, jahr)
-            for m in passend) / 12 if passend else 0.0
+        monatlich = sum(_miete_im_jahr(m, jahr) for m in passend) / 12 \
+            if passend else 0.0
         zahlen.append(EinheitZahlen(
             bezeichnung=e.bezeichnung, nutzungsart=e.nutzungsart,
             flaeche=e.flaeche, terrasse=e.terrasse, nebenflaeche=e.nebenflaeche,
@@ -82,8 +92,7 @@ def _einheiten_zahlen(session: DBSession, o: Objekt, jahr: int) -> list[EinheitZ
         zahlen.append(EinheitZahlen(
             bezeichnung=m.einheit or m.partei or "Gesamtobjekt",
             nutzungsart=o.nutzung, flaeche=None, terrasse=None, nebenflaeche=None,
-            einnahmen_monat=(m.kaltmiete + m.stellplatz + m.sonstige)
-            * _monate_im_jahr(m, jahr) / 12,
+            einnahmen_monat=_miete_im_jahr(m, jahr) / 12,
             kaltmiete=m.kaltmiete, stellplatz=m.stellplatz, sonstige=m.sonstige,
             nebenkosten_vz=m.nebenkosten_vz, partei=m.partei,
         ))
@@ -111,8 +120,7 @@ def auswertung(jahr: int = Query(default=None),
     zeilen, kostenbloecke = [], {}
     for o in objekte:
         mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
-        einnahmen = sum((m.kaltmiete + m.stellplatz + m.sonstige)
-                        * _monate_im_jahr(m, jahr) for m in mieten)
+        einnahmen = sum(_miete_im_jahr(m, jahr) for m in mieten)
         bloecke = _gefiltert(_bloecke(session, o, jahr), kategorien)
         ausgaben = sum(bloecke.values())
 
@@ -183,8 +191,8 @@ def sankey_endpoint(jahr: int = Query(default=None), objekt: str = Query(default
             mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
             quellen.append({
                 "bezeichnung": o.name,
-                "einnahmen_jahr": round(sum((m.kaltmiete + m.stellplatz + m.sonstige)
-                                            * _monate_im_jahr(m, jahr) for m in mieten), 2),
+                "einnahmen_jahr": round(sum(_miete_im_jahr(m, jahr)
+                                            for m in mieten), 2),
             })
 
     return {"jahr": jahr, "kategorien": BLOCK_NAMEN,
@@ -204,7 +212,8 @@ def mietverlauf(objekt: str = Query(default=None),
     reihen = []
     for o in objekte:
         mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
-        werte = [round(sum(m.kaltmiete * _monate_im_jahr(m, j) for m in mieten), 2)
+        werte = [round(sum(jahresbetrag(m.kaltmiete, m.turnus)
+                           * _monate_im_jahr(m, j) / 12 for m in mieten), 2)
                  for j in jahre]
         if any(werte):
             reihen.append({"slug": o.slug, "name": o.name, "werte": werte})

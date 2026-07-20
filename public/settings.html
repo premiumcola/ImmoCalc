@@ -47,8 +47,13 @@
   .ordnerliste .sym{color:var(--teal);font:400 15px var(--mono);flex:none}
   .ordnerliste .leer{padding:16px;text-align:center;font:400 13px var(--body);
                      color:var(--soft)}
-  .strukturliste{font:500 11.5px var(--mono);color:var(--soft);background:var(--sheet);
-                 border-radius:11px;padding:12px 14px;margin-bottom:12px;line-height:1.7}
+  /* Raster statt Fließtext — sonst laufen die Ordnernamen ineinander */
+  .strukturliste{background:var(--sheet);border-radius:11px;padding:12px;
+                 margin-bottom:12px;display:grid;gap:5px;
+                 grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .strukturliste span{font:500 11px var(--mono);color:var(--soft);
+                      background:#F4F6F6;border-radius:7px;padding:7px 9px;
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .zeile2{display:flex;gap:10px} .zeile2 > *{flex:1}
 </style>
 </head>
@@ -341,8 +346,8 @@ async function zustandLaden() {
   }
   ncHome.textContent = ncZustand.home || (ncZustand.eingerichtet
     ? 'noch nicht gewählt' : 'erst Verbindung einrichten');
-  document.getElementById('strukturliste').textContent =
-    (ncZustand.struktur || []).join('   ');
+  document.getElementById('strukturliste').innerHTML =
+    (ncZustand.struktur || []).map(o => `<span>${esc(o)}</span>`).join('');
 }
 
 document.getElementById('ncRow').addEventListener('click', () => {

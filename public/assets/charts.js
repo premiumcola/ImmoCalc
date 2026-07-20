@@ -115,10 +115,13 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     knoten.reduce((sum, k, i) => sum + (k.spalte === s && benutzt.has(i) ? gewicht(i) : 0), 0)));
   if (!gesamt) return leer('Keine Beträge');
 
-  // Höhe so wählen, dass auch der kleinste Block noch sichtbar ist
+  // Höhe so wählen, dass auch der kleinste Block sichtbar ist UND jede
+  // Beschriftung Platz hat — sonst rutschen die untersten aus dem Bild.
   const proSpalte = Math.max(...spalten.map(s =>
     knoten.filter((k, i) => k.spalte === s && benutzt.has(i)).length));
-  const hoehe = Math.max(190, proSpalte * (zeilenhoehe + luecke));
+  const MINDEST_ABSTAND = 27;
+  const hoehe = Math.max(190, proSpalte * Math.max(zeilenhoehe + luecke,
+                                                   MINDEST_ABSTAND));
   const skala = (hoehe - luecke * (proSpalte - 1)) / gesamt;
 
   const knotenBreite = 13;
@@ -142,7 +145,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
 
   // Anschlusspunkte je Knoten fortlaufend vergeben
   const ausOffset = new Map(), einOffset = new Map();
-  const baender = aktiv.map((f, n) => {
+  const baender = aktiv.map(f => {
     const a = lage.get(f.von), b = lage.get(f.nach);
     if (!a || !b) return '';
     const ha = f.wert * skala, hb = f.wert * skala;
@@ -155,14 +158,16 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     const mitte = (x0 + x1) / 2;
     const d = `M${x0},${y0} C${mitte},${y0} ${mitte},${y1} ${x1},${y1}
                L${x1},${y1 + hb} C${mitte},${y1 + hb} ${mitte},${y0 + ha} ${x0},${y0 + ha} Z`;
-    return `<path d="${d}" fill="${farbe(n)}" fill-opacity=".34"><title>${
+    // Das Band trägt die Farbe seiner Quelle, nur blasser — so gehört sichtbar
+    // zusammen, was zusammengehört, statt bunt durcheinanderzulaufen.
+    const quelle = lage.get(f.von).spalte === spalten[0] ? f.von : f.nach;
+    return `<path d="${d}" fill="${farbe(quelle)}" fill-opacity=".3"><title>${
       knoten[f.von].name} → ${knoten[f.nach].name}: ${format(f.wert)}</title></path>`;
   }).join('');
 
   // Beschriftungen je Spalte kollisionsfrei stapeln: dünne Baender liegen sonst
   // so dicht, dass Name und Betrag uebereinanderfallen. Die Baender selbst
   // bleiben massstabsgetreu — nur die Schrift rueckt aus.
-  const MINDEST_ABSTAND = 27;
   const labelY = new Map();
   for (const s of spalten) {
     const drin = [...lage.entries()]

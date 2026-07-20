@@ -63,8 +63,10 @@ def verbindung(session: Session) -> Nextcloud:
     passwort = _lies(session, S_PASSWORT)
     if not (url and benutzer and passwort):
         raise HTTPException(400, "Nextcloud ist noch nicht eingerichtet")
+    # heimat begrenzt jeden schreibenden Zugriff auf den gewählten Ordner
     return Nextcloud(url, benutzer, passwort,
-                     zertifikat_pruefen=_lies(session, S_TLS) == "1")
+                     zertifikat_pruefen=_lies(session, S_TLS) == "1",
+                     heimat=_lies(session, S_HOME))
 
 
 class VerbindungIn(BaseModel):

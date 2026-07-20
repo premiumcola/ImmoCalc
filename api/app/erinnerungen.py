@@ -42,8 +42,15 @@ def beleg_erinnerung(kostenart_name: str, beleg_monat: int | None,
     }
 
 
-def frist_erinnerung(label: str, frist_tage: int, vorlauf: int = 60) -> dict | None:
-    """Erinnerung an die gesetzliche Abrechnungsfrist."""
+def frist_erinnerung(label: str, frist_tage: int, vorlauf: int = 60,
+                     zeitraum_beendet: bool = True) -> dict | None:
+    """Erinnerung an die gesetzliche Abrechnungsfrist.
+
+    Ein Zeitraum, der noch läuft, kann gar nicht abgerechnet werden — dafür
+    zu erinnern wäre sinnlos. Erst wenn er abgelaufen ist, beginnt die Uhr.
+    """
+    if not zeitraum_beendet:
+        return None
     if frist_tage > vorlauf:
         return None
     return {

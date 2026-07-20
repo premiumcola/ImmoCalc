@@ -21,18 +21,44 @@ Nie behaupten, etwas funktioniere, ohne es geprüft zu haben.
 stoppen und den exakten Fehlertext zeigen. Nie auf kaputter Basis weiterbauen —
 erst `git log` prüfen und ggf. revertieren.
 
+## Aufgabenstand
+
+`AUFGABEN.md` führt alle Anforderungen mit römischer Nummer, Status und Commit.
+**Bei jeder neuen Anforderung dort eintragen, bei Fertigstellung abhaken.** Der
+Nutzer soll nichts zweimal sagen müssen.
+
 ## Architektur
 
 ```
 public/        statisches Frontend (Vanilla HTML/CSS/JS, kein Build-Step)
+  assets/      immo.css, immo.js, charts.js, scan.js, kostenicons.js
 dashboard/     nginx: serviert public/, proxyt /api/ an den API-Container
-api/           FastAPI + SQLModel/SQLite
-  app/engine.py   Rechen-Engine (Verteilung, Interpolation, § 35a)
-  app/models.py   Datenmodell
-  app/main.py     Endpunkte
-  app/seed.py     Seed der zwei echten Objekte
-  tests/          pytest — Referenzzahlen aus den Excel-Dateien
+api/app/
+  engine.py      Rechen-Engine (Verteilung, Interpolation, § 35a)
+  models.py      Datenmodell
+  migrate.py     ergänzt fehlende Spalten — nie löschen, nie umbenennen
+  nextcloud.py   WebDAV; Schreibzugriff nur unterhalb des Home-Ordners
+  mailversand.py SMTP über das Postfach des Nutzers
+  cashflow.py    Cashflow je Einheit, Sankey-Fluss
+  bezeichnung.py Ordnernamen von grob nach fein, Vorlagen
+  turnus.py      Zahlungsturnus monatlich … jährlich
+  erinnerungen.py Fristen und erwartete Belege
+  wachdienst.py  prüft den Eingang alle 15 Minuten
+  routers/       objekte, stammdaten, auswertung, cloud, dokumente, mail, versand
+  ../tests/      pytest — Referenzzahlen aus den Excel-Dateien
 ```
+
+## Nutzerdaten in der Cloud
+
+Nextcloud enthält die echten Unterlagen. Deshalb:
+
+- **Schreibzugriffe nur unterhalb des Home-Ordners.** `nextcloud.py` prüft das
+  vor jedem MKCOL, PUT und MOVE (`_pruefe_schreibrecht`). Diesen Riegel nie
+  umgehen, auch nicht „nur kurz“.
+- Nie löschen. Ordner werden per MKCOL angelegt (405 = existiert bereits),
+  Dateien per MOVE verschoben, nichts überschrieben — der Aufrufer sorgt für
+  einen freien Namen.
+- Vom Nutzer selbst angelegte Ordner bleiben unangetastet.
 
 **Kein DEV-Stack.** `public/` ist in den Container gemountet: jede
 Frontend-Änderung ist ohne Deploy sofort auf der Seite. Nur Änderungen an
@@ -47,8 +73,13 @@ API-Code, Dockerfiles, nginx-Config oder Compose brauchen `./deploy.sh` (~30 s).
 ```bash
 make test              # Engine- + API-Tests (pytest) — MUSS grün sein
 ./deploy.sh            # nur nötig bei API/Docker/nginx-Änderungen
-make check             # echter Browser gegen die laufende Instanz
+make check             # Browser gegen die laufende Instanz
+make check-app         # Prüfstand: alle Flows in drei Geräteklassen
 ```
+
+`tests/harness.py` serviert API und `public/` unter einer Herkunft — damit
+lassen sich neue Endpunkte prüfen, ohne auf einen Deploy zu warten. Aus dem
+Repo-Wurzelverzeichnis starten, nicht aus `api/`.
 
 `make check` (tests/smoke.mjs) prüft Status, Content-Type, Pflicht-Elemente,
 JS-Konsolenfehler und erkennt ungewollte Downloads.
