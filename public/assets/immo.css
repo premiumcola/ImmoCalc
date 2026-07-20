@@ -160,6 +160,63 @@ select.inp{
 }
 .btn:hover{background:var(--teal-d)}
 .btn:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+/* Zurueckhaltende Zweitstufe — steht neben, nicht gegen den Hauptknopf */
+.btn.leise{background:transparent; color:var(--teal-d); box-shadow:inset 0 0 0 1.5px var(--line)}
+.btn.leise:hover{background:var(--teal-l)}
+/* Loeschen: erst auf Nachfrage rot, nie als erster Blickfang */
+.btn.gefahr{background:transparent; color:var(--neg); box-shadow:inset 0 0 0 1.5px #E3C6BC}
+.btn.gefahr:hover{background:var(--neg-bg)}
+
+/* ---- Merkstreifen: ruhig, nie alarmierend. Bewusst nicht
+   '.hinweis' — den Namen belegen einzelne Seiten schon lokal. ---- */
+.merker{
+  display:flex; gap:11px; align-items:flex-start; border-radius:13px;
+  padding:13px 15px; margin-bottom:12px; background:var(--amber-bg);
+  color:var(--amber);
+}
+.merker .hi{font:600 14px var(--mono); line-height:1.3; flex:none}
+.merker .ht{flex:1; min-width:0}
+.merker .t{display:block; font:600 13.5px var(--disp); letter-spacing:-.01em}
+.merker .d{display:block; font:400 12.5px var(--body); margin-top:4px;
+            line-height:1.45; opacity:.9}
+.merker.pos{background:var(--pos-bg); color:var(--pos)}
+.merker.neg{background:var(--neg-bg); color:var(--neg)}
+
+/* ---- Kennzahlen: Zahl gross, Beschriftung klein darunter ---- */
+.kennzahlen{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;
+            margin-bottom:12px}
+.kennzahl{background:var(--sheet); border-radius:14px; padding:14px 15px;
+          box-shadow:0 1px 2px rgba(22,38,44,.05); min-width:0}
+.kennzahl .kv{display:block; font:600 19px var(--disp); letter-spacing:-.02em;
+              line-height:1.15; overflow-wrap:anywhere}
+.kennzahl .kl{display:block; font:600 10.5px var(--mono); letter-spacing:.07em;
+              text-transform:uppercase; color:var(--soft); margin-top:6px}
+.kennzahl .kv.pos{color:var(--pos)} .kennzahl .kv.neg{color:var(--neg)}
+
+/* ---- Gruppenueberschrift ueber zusammengehoerenden Kacheln ---- */
+.gruppe{font:600 11px var(--mono); letter-spacing:.1em; text-transform:uppercase;
+        color:var(--soft); margin:20px 0 10px; display:flex; gap:8px;
+        align-items:baseline}
+.gruppe:first-child{margin-top:0}
+.gruppe .anzahl{font-size:10px; opacity:.75}
+
+/* ---- Zustandspunkt fuer verbundene Dienste ---- */
+.punkt{width:9px; height:9px; border-radius:50%; background:var(--line);
+       flex:none; display:inline-block}
+.punkt.an{background:var(--pos); box-shadow:0 0 0 0 rgba(46,125,79,.45);
+          animation:pulsen 2.6s ease-out infinite}
+.punkt.warte{background:var(--amber)}
+@keyframes pulsen{
+  0%{box-shadow:0 0 0 0 rgba(46,125,79,.45)}
+  70%{box-shadow:0 0 0 7px rgba(46,125,79,0)}
+  100%{box-shadow:0 0 0 0 rgba(46,125,79,0)}
+}
+
+/* ---- Marke in der Navigation: fuehrt zurueck zur Startseite ----
+   `.nav .brand` statt `.brand`: die Regel muss `.nav a` ueberbieten, sonst
+   erbt der Link dessen display:flex und steht auch auf dem Handy in der
+   unteren Leiste. */
+.nav .brand{display:none}
 
 /* ==========================================================================
    Breitere Schirme. Diese Bloecke stehen bewusst am DATEIENDE: Media-Queries
@@ -191,10 +248,14 @@ select.inp{
     gap:4px; padding:22px 14px; background:#DFE5E5; box-shadow:none;
     border-radius:0;
   }
-  .nav::before{
-    content:"ImmoCalc"; font:700 17px var(--disp); letter-spacing:-.02em;
-    color:var(--teal-d); padding:6px 14px 20px;
+  /* Die Marke ist ein echter Link zur Startseite, kein ::before-Text */
+  .nav .brand{
+    display:block; font:700 17px var(--disp); letter-spacing:-.02em;
+    color:var(--teal-d); padding:6px 14px 20px; text-decoration:none;
   }
+  .nav .brand:hover{color:var(--teal); background:none}
+  .nav .brand:focus-visible{outline:2px solid var(--teal); outline-offset:2px;
+                            border-radius:8px}
   .nav a{
     /* flex:none — sonst streckt das geerbte flex:1 die Eintraege
        ueber die ganze Spaltenhoehe */

@@ -35,6 +35,12 @@ const SYMBOLE = {
   brief: `<rect ${P} x="3.5" y="5.5" width="17" height="13" rx="2"/>
           <path ${P} d="m4.5 7 7.5 5.5L19.5 7"/>`,
   punkt: `<circle ${P} cx="12" cy="12" r="7.5"/><path ${P} d="M12 8.5v4M12 15.5h.01"/>`,
+  schluessel: `<circle ${P} cx="8" cy="8" r="4"/>
+               <path ${P} d="m11 11 8 8M16 16l-2 2M19 19l-2 2"/>`,
+  person: `<circle ${P} cx="12" cy="8" r="3.5"/>
+           <path ${P} d="M5.5 20a6.5 6.5 0 0 1 13 0"/>`,
+  vertrag: `<path ${P} d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5Z"/>
+            <path ${P} d="M14 3.5V8h4M9 12.5h6M9 16h4"/>`,
 };
 
 /* Schlüsselwort -> Symbol. Erster Treffer gewinnt, deshalb stehen
@@ -55,6 +61,8 @@ const ZUORDNUNG = [
   ['winterdienst', 'schnee'], ['straßenreinigung', 'schnee'],
   ['bankspesen', 'bank'], ['kredit', 'bank'], ['darlehen', 'bank'],
   ['korrespondenz', 'brief'], ['nebenkosten', 'haus'],
+  ['mietvertrag', 'vertrag'], ['miete', 'schluessel'], ['mieter', 'person'],
+  ['eigentümer', 'person'], ['zahlung', 'paragraf'],
 ];
 
 /** Symbolname zu einer Kostenart — mit Rückfall auf einen neutralen Punkt. */

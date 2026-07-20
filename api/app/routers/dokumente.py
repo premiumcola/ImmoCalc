@@ -13,6 +13,7 @@ from fastapi import (APIRouter, Depends, File, Form, HTTPException, Response,
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .. import ocr
 from ..db import get_session
 from ..models import Dokument, Kostenart, Objekt
 from ..nextcloud import NextcloudFehler
@@ -234,6 +235,24 @@ async def scannen(objekt: str = Form(...), kategorie: str = Form("Sonstiges"),
     session.refresh(d)
     log.info("Scan abgelegt: %s", d.pfad)
     return {"id": d.id, "dateiname": name, "pfad": d.pfad, "abgelegt": True}
+
+
+@router.get("/erkennung")
+def erkennung_status() -> dict:
+    """Ist die Texterkennung eingerichtet? Steuert den Hinweis in der App."""
+    return {"verfuegbar": ocr.verfuegbar()}
+
+
+@router.post("/erkennen")
+async def erkennen(datei: UploadFile = File(...)) -> dict:
+    """Liest Betrag und Datum aus einer Aufnahme — als Vorschlag.
+
+    Nichts wird gespeichert: das Bild geht durch die Erkennung und wieder weg.
+    Fehlt Tesseract, kommt eine leere Antwort statt eines Fehlers zurück."""
+    rohdaten = await datei.read()
+    if not rohdaten:
+        raise HTTPException(400, "Leere Datei")
+    return ocr.erkenne(rohdaten)
 
 
 @router.get("/{dokument_id}/inhalt")

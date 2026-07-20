@@ -58,6 +58,15 @@ const offeneZeile = await page.$('.pruef:has(.haken.rot) .zeile');
 await (offeneZeile || await page.$('.pruef .zeile')).click();
 await page.waitForTimeout(400);
 pruefe(await page.$('.pruef .auf') !== null, 'Zeile klappt nicht auf');
+
+// An einer offenen Position muss der Scan-Knopf stehen — dort entsteht der
+// Beleg, nicht im Eingang.
+const scan = await page.$('.pruef .auf .scanknopf');
+pruefe(scan !== null, 'kein Scan-Knopf an der offenen Position');
+if (scan) {
+  const kasten = await scan.boundingBox();
+  pruefe(kasten.height >= 44, `Scan-Knopf zu flach (${Math.round(kasten.height)} px)`);
+}
 await page.screenshot({ path: 'tests/screenshots/zeitraum-aufgeklappt.png', fullPage: true });
 
 // Betrag nachtragen — der Kern des Nachbearbeitens

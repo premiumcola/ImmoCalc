@@ -80,6 +80,7 @@
   </div>
 
   <nav class="nav">
+    <a class="brand" href="index.html">ImmoCalc</a>
     <a href="index.html"><span class="ni">▤</span>Objekte</a>
     <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
     <a href="statistik.html" aria-current="page"><span class="ni">◔</span>Auswertung</a>
@@ -133,6 +134,45 @@ kategorienFeld.addEventListener('click', e => {
   zeichnen();
 });
 
+/* Vermögenslage: Wert, Restschuld, Eigenkapital. Bei gewähltem Objekt nur
+   dessen Zeile, sonst die Summe über alle. */
+function vermoegenHtml(besitz, objekt) {
+  if (!besitz) return '';
+  const z = objekt
+    ? besitz.objekte.find(o => o.slug === objekt)
+    : besitz.gesamt;
+  if (!z || (z.wert == null && !z.restschuld)) return '';
+
+  const zeilen = besitz.objekte.map(o => `<tr>
+      <td>${esc(o.name)}</td>
+      <td>${o.wert == null ? '—' : eurKurz(o.wert)}</td>
+      <td>${o.restschuld ? eurKurz(o.restschuld) : '—'}</td>
+      <td class="${(o.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg'}">${
+        o.eigenkapital == null ? '—' : eurKurz(o.eigenkapital)}</td>
+    </tr>`).join('');
+
+  const fehlen = besitz.gesamt.ohne_wert;
+  return `<div class="karte">
+      <h3>Vermögen${objekt ? '' : ' · alle Objekte'}</h3>
+      <div class="kpi" style="margin-bottom:${objekt ? '0' : '14px'}">
+        ${kpiFeld('Wert', z.wert == null ? '—' : eurKurz(z.wert))}
+        ${kpiFeld('Restschuld', eurKurz(z.restschuld), z.restschuld ? 'neg' : '')}
+        ${kpiFeld('Eigenkapital', z.eigenkapital == null ? '—' : eurKurz(z.eigenkapital),
+                  (z.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg')}
+      </div>
+      ${objekt ? '' : `<table class="tabelle">
+        <thead><tr><th>Objekt</th><th>Wert</th><th>Schuld</th><th>Eigen</th></tr></thead>
+        <tbody>${zeilen}</tbody>
+      </table>`}
+      ${z.beleihung != null ? `<div class="chartleer" style="padding:12px 0 0">
+        Beleihung ${z.beleihung} % · Tilgung ${eurKurz(z.tilgung_jahr)} und
+        Zinsen ${eurKurz(z.zinslast_jahr)} pro Jahr</div>` : ''}
+      ${!objekt && fehlen ? `<div class="chartleer" style="padding:6px 0 0">
+        Bei ${fehlen} Objekt${fehlen === 1 ? '' : 'en'} fehlt noch ein Wert —
+        Kaufpreis oder Verkehrswert auf der Objektseite nachtragen.</div>` : ''}
+    </div>`;
+}
+
 async function zeichnen() {
   const jahr = jahrWahl.value;
   const objekt = objektWahl.value;
@@ -141,12 +181,15 @@ async function zeichnen() {
   // leere Auswahl = alles, sonst wäre die Ansicht nach dem ersten Klick leer
   if (gewaehlt.size) frage.set('kategorien', [...gewaehlt].join(','));
 
-  let daten, verlauf, fluss;
+  let daten, verlauf, fluss, besitz;
   try {
-    [daten, verlauf, fluss] = await Promise.all([
+    [daten, verlauf, fluss, besitz] = await Promise.all([
       api('/auswertung?' + frage),
       api('/auswertung/mietverlauf' + (objekt ? '?objekt=' + encodeURIComponent(objekt) : '')),
       api('/auswertung/sankey?' + frage),
+      // Die Vermögenslage ist ein Bestand, kein Jahreswert — sie folgt dem
+      // Objektfilter, nicht dem Jahr.
+      api('/vermoegen').catch(() => null),
     ]);
   } catch {
     inhalt.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
@@ -179,6 +222,8 @@ async function zeichnen() {
       ${kpiFeld('Ausgaben', eurKurz(g.ausgaben), 'neg')}
       ${kpiFeld('Saldo', eurKurz(g.saldo), g.saldo >= 0 ? 'pos' : 'neg')}
     </div>
+
+    ${vermoegenHtml(besitz, objekt)}
 
     <div class="karte">
       <h3>Kostenfluss ${jahr}${objekt ? ' · je Einheit' : ' · je Objekt'}</h3>

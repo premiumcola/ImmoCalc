@@ -53,8 +53,11 @@
   .haken.grau{background:#EDF1F0;color:var(--soft)}
   /* overflow-wrap: lange Begriffe wie "Gebäudeversicherung" schieben sonst
      den Betrag an sich heran, bis beides zusammenklebt. */
+  /* hyphens vor overflow-wrap: so wird aus "Gebäudeversicherung" ein
+     getrenntes "Gebäude-versicherung" statt eines Bruchs mitten im Wort.
+     overflow-wrap bleibt als Notnagel fuer Woerter ohne Trennstelle. */
   .pruef .name{flex:1;min-width:0;font:600 14px var(--disp);letter-spacing:-.01em;
-               overflow-wrap:anywhere;padding-right:4px}
+               hyphens:auto;overflow-wrap:anywhere;padding-right:4px}
   .pruef .unter{display:block;font:400 11.5px var(--body);color:var(--soft);
                 margin-top:3px;line-height:1.4;letter-spacing:0}
   .pruef .rechts{display:flex;align-items:center;gap:10px;flex:none}
@@ -72,6 +75,18 @@
   .pruef .auf .rz{display:flex;justify-content:space-between;gap:10px;
                   font:500 12.5px var(--body);padding:4px 0}
   .pruef .auf .rz span:last-child{font-family:var(--mono);font-weight:600}
+  /* Scan an der offenen Position: einladend, aber nicht grell — gedecktes
+     Grün auf hellem Grund statt eines vollflächigen Knopfes. */
+  .scanknopf{display:flex;align-items:center;gap:11px;width:100%;margin-top:12px;
+    border:1.5px solid #BFD9D1;background:var(--teal-l);color:var(--teal-d);
+    border-radius:12px;padding:11px 13px;cursor:pointer;text-align:left;
+    font-family:var(--body);min-height:48px}
+  .scanknopf:hover{background:#DCEDE7}
+  .scanknopf[disabled]{opacity:.65;cursor:default}
+  .scanknopf .si{font:400 17px var(--mono);line-height:1;flex:none}
+  .scanknopf > span:nth-child(2){font:600 13.5px var(--disp);letter-spacing:-.01em}
+  .scanknopf .sh{margin-left:auto;font:400 11px var(--body);color:var(--soft);
+                 text-align:right;flex:none}
   .nachtrag{display:flex;gap:8px;margin-top:10px}
   .nachtrag input{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;
     font:500 14px var(--body);min-height:44px;background:var(--sheet)}
@@ -133,8 +148,14 @@
   </div>
 
   <div class="scroll" id="inhalt"></div>
+  <!-- Kamera fuer den Scan an einer offenen Position. capture=environment
+       oeffnet auf iOS direkt die Ruecckamera. -->
+  <input type="file" id="scanFeld" accept="image/*" capture="environment" multiple
+         style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
+         tabindex="-1" aria-hidden="true">
 
   <nav class="nav">
+    <a class="brand" href="index.html">ImmoCalc</a>
     <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
     <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
     <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
@@ -146,6 +167,7 @@
 import { api, eur, eurKurz, esc, fristKlasse } from './assets/immo.js';
 import { sankey } from './assets/charts.js';
 import { kostenIcon } from './assets/kostenicons.js';
+import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
 
 const zid = new URLSearchParams(location.search).get('z');
 const inhalt = document.getElementById('inhalt');
@@ -155,6 +177,10 @@ let daten = null;
 let ansicht = 'pruef';
 let sortierung = 'status';
 const offen = new Set();
+
+/* Welche Position gerade einen Beleg erwartet — gesetzt beim Klick auf den
+   Scan-Knopf, gelesen, wenn die Kamera zurückkommt. */
+let scanZiel = null;
 
 const SORTIERUNG = {
   status: (a, b) => Number(a.erledigt) - Number(b.erledigt) ||
@@ -234,6 +260,11 @@ function zeileHtml(k, i) {
         ${verteilung}
         <div class="zk">Belege</div>
         ${belegeHtml(k.kostenart)}
+        ${k.erledigt ? '' : `<button class="scanknopf" data-scan="${esc(k.kostenart)}">
+          <span class="si">▣</span>
+          <span>Beleg abfotografieren</span>
+          <span class="sh">PDF · direkt in die Ablage</span>
+        </button>`}
         ${k.position_id ? `<div class="nachtrag">
           <input type="number" step="0.01" placeholder="Betrag eintragen"
                  value="${k.betrag || ''}" data-betrag="${k.position_id}"
@@ -460,7 +491,17 @@ inhalt.addEventListener('click', async e => {
   const beleg = e.target.closest('[data-beleg]');
   if (beleg) {
     e.preventDefault();
-    alert('Der Beleg liegt in der Nextcloud unter:\n\n' + beleg.title);
+    // Der Beleg wird durch die API gereicht und im neuen Tab angezeigt —
+    // Nextcloud verlangt sonst eine eigene Anmeldung.
+    window.open(`/api/dokumente/${beleg.dataset.beleg}/inhalt`, '_blank',
+                'noopener');
+    return;
+  }
+
+  const scan = e.target.closest('[data-scan]');
+  if (scan) {
+    scanZiel = { kostenart: scan.dataset.scan, knopf: scan };
+    document.getElementById('scanFeld').click();
     return;
   }
 
@@ -482,6 +523,86 @@ inhalt.addEventListener('click', async e => {
     }
   }
 });
+
+/* ---- Beleg direkt an einer offenen Position ------------------------------
+   Die Aufnahmen werden im Browser zu einem PDF gebaut und mit Kostenart, Jahr
+   und Objekt hochgeladen — der Umweg über den Eingang entfällt. Parallel geht
+   die erste Aufnahme durch die Texterkennung; findet sie einen Betrag, wird er
+   nur vorgeschlagen, nie ohne Rückfrage gespeichert. */
+document.getElementById('scanFeld').addEventListener('change', async e => {
+  const feld = e.target;
+  const dateien = [...feld.files];
+  feld.value = '';
+  const ziel = scanZiel;
+  scanZiel = null;
+  if (!dateien.length || !ziel) return;
+
+  const knopf = ziel.knopf;
+  const beschriftung = knopf.querySelector('span:nth-child(2)');
+  const unterzeile = knopf.querySelector('.sh');
+  knopf.disabled = true;
+  beschriftung.textContent = 'Verarbeite …';
+  unterzeile.textContent = `${dateien.length} Aufnahme${dateien.length > 1 ? 'n' : ''}`;
+
+  try {
+    const { pdf, seiten } = await scanZuPdf(dateien);
+    const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
+
+    const paket = new FormData();
+    paket.append('objekt', daten.objekt);
+    paket.append('kategorie', 'Nebenkosten');
+    paket.append('jahr', String(jahr));
+    paket.append('beschreibung', ziel.kostenart);
+    paket.append('datei', pdf, 'scan.pdf');
+
+    const [antwort, vorschlag] = await Promise.all([
+      fetch('/api/dokumente/scannen', { method: 'POST', body: paket }),
+      erkennen(dateien[0]),
+    ]);
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      throw new Error(grund || `Fehler ${antwort.status}`);
+    }
+    const ergebnis = await antwort.json();
+    beschriftung.textContent = ergebnis.abgelegt ? '✓ Abgelegt' : '✓ Im Eingang';
+    unterzeile.textContent = `${seiten} Seite${seiten > 1 ? 'n' : ''} · ${
+      lesbareGroesse(pdf.size)}`;
+
+    await betragVorschlagen(ziel.kostenart, vorschlag);
+    await laden();
+  } catch (fehler) {
+    beschriftung.textContent = 'Fehlgeschlagen';
+    unterzeile.textContent = String(fehler.message || fehler);
+    knopf.disabled = false;
+  }
+});
+
+/** Texterkennung — schlägt fehl sie, gibt es eben keinen Vorschlag. */
+async function erkennen(bild) {
+  try {
+    const paket = new FormData();
+    paket.append('datei', bild, 'seite.jpg');
+    const antwort = await fetch('/api/dokumente/erkennen',
+                                { method: 'POST', body: paket });
+    return antwort.ok ? await antwort.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function betragVorschlagen(kostenart, vorschlag) {
+  if (!vorschlag?.betrag) return;
+  const zeile = daten.checkliste.find(k => k.kostenart === kostenart);
+  if (!zeile?.position_id) return;
+  const betrag = vorschlag.betrag.toLocaleString('de-DE',
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!confirm(`Im Beleg erkannt: ${betrag} €`
+    + (vorschlag.datum ? ` vom ${new Date(vorschlag.datum).toLocaleDateString('de-DE')}` : '')
+    + `\n\nAls Betrag für „${kostenart}“ übernehmen?`)) return;
+  await api(`/positionen/${zeile.position_id}`,
+            { method: 'PATCH', body: { betrag: vorschlag.betrag,
+                                       wertquelle: 'Scan' } });
+}
 
 await laden();
 </script>

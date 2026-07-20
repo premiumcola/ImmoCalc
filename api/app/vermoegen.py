@@ -61,15 +61,19 @@ def gesamt(zeilen: list[dict]) -> dict:
     def summe(feld: str) -> float:
         return round(sum(z[feld] or 0 for z in zeilen), 2)
 
-    wert = summe("wert")
+    # Kennt kein einziges Objekt seinen Wert, ist die Summe nicht null, sondern
+    # unbekannt — sonst stuende oben "0 €" und darunter ein rotes Eigenkapital
+    # in Hoehe der gesamten Restschuld.
+    bekannt = any(z["wert"] is not None for z in zeilen)
+    wert = summe("wert") if bekannt else None
     restschuld = summe("restschuld")
     return {
         "objekte": len(zeilen),
         "wert": wert,
         "kaufpreis": summe("kaufpreis"),
         "restschuld": restschuld,
-        "eigenkapital": round(wert - restschuld, 2),
-        "eigenkapital_anteilig": summe("eigenkapital_anteilig"),
+        "eigenkapital": round(wert - restschuld, 2) if bekannt else None,
+        "eigenkapital_anteilig": summe("eigenkapital_anteilig") if bekannt else None,
         "beleihung": round(restschuld / wert * 100, 1) if wert else None,
         "annuitaet_jahr": summe("annuitaet_jahr"),
         "zinslast_jahr": summe("zinslast_jahr"),

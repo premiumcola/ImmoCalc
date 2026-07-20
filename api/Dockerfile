@@ -2,6 +2,11 @@
 FROM python:3.12-slim
 ARG GIT_SHA=local
 WORKDIR /srv
+# Texterkennung fuer abfotografierte Belege. Rein optional: fehlt tesseract,
+# laeuft der Scan weiter, nur ohne Vorschlag fuer Betrag und Datum.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-deu \
+ && rm -rf /var/lib/apt/lists/*
 COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY api/app ./app

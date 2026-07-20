@@ -41,6 +41,7 @@
   </div>
 
   <nav class="nav">
+    <a class="brand" href="index.html">ImmoCalc</a>
     <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
     <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
     <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
@@ -75,6 +76,29 @@ function kachel(o) {
     </button>`;
 }
 
+/* Einheiten derselben Adresse gehoeren zusammen. Gruppiert wird nur, wo es
+   wirklich mehrere sind — bei lauter Einzelobjekten waere jede Ueberschrift
+   nur eine Zeile Rauschen ueber einer einzigen Kachel. */
+function gruppieren(objekte) {
+  const schluessel = o => [o.plz, o.ort, o.strasse]
+    .map(t => String(t || '').trim().toLowerCase()).filter(Boolean).join(' ');
+
+  const eimer = new Map();
+  for (const o of objekte) {
+    const k = schluessel(o);
+    if (!k) { eimer.set(`einzeln:${o.slug}`, { titel: '', objekte: [o] }); continue; }
+    if (!eimer.has(k)) eimer.set(k, {
+      titel: [o.strasse, o.ort].filter(Boolean).join(' · '), objekte: [],
+    });
+    eimer.get(k).objekte.push(o);
+  }
+
+  const gruppen = [...eimer.values()].filter(g => g.objekte.length > 1);
+  const einzeln = [...eimer.values()].filter(g => g.objekte.length === 1)
+    .flatMap(g => g.objekte);
+  return { gruppen, einzeln };
+}
+
 try {
   const objekte = (await api('/objekte')).filter(o => o.aktiv !== false);
 
@@ -88,7 +112,15 @@ try {
   } else {
     const n = objekte.length;
     sub.textContent = `${n} ${n === 1 ? 'Objekt' : 'Objekte'} · ImmoCalc`;
-    ziel.innerHTML = `<div class="grid">${objekte.map(kachel).join('')}</div>`;
+    const { gruppen, einzeln } = gruppieren(objekte);
+    ziel.innerHTML = gruppen.map(g => `
+        <div class="gruppe">${esc(g.titel)}
+          <span class="anzahl">${g.objekte.length} Einheiten</span></div>
+        <div class="grid">${g.objekte.map(kachel).join('')}</div>`).join('')
+      + (einzeln.length
+        ? (gruppen.length ? '<div class="gruppe">Weitere</div>' : '')
+          + `<div class="grid">${einzeln.map(kachel).join('')}</div>`
+        : '');
   }
 } catch (e) {
   sub.textContent = 'API nicht erreichbar';

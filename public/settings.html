@@ -74,6 +74,7 @@
         <span class="t">Nextcloud-Verbindung</span>
         <span class="d" id="ncStatus">wird geprüft …</span>
       </span>
+      <span class="punkt" id="ncPunkt" title="Verbindungszustand"></span>
       <span class="arr">›</span>
     </button>
     <button class="row" id="ncHomeRow">
@@ -100,6 +101,22 @@
       <span class="txt">
         <span class="t">Postfach für Abrechnungen</span>
         <span class="d" id="mailStatus">wird geprüft …</span>
+      </span>
+      <span class="punkt" id="mailPunkt" title="Verbindungszustand"></span>
+      <span class="arr">›</span>
+    </button>
+
+    <h2 class="sec" id="eigentuemer">Eigentum</h2>
+    <p style="font:400 12.5px var(--body);color:var(--soft);margin:-4px 0 12px;line-height:1.5">
+      Personen und Gesellschaften, denen die Immobilien gehören. Die Anteile in
+      Tausendsteln werden auf der jeweiligen Objektseite zugeordnet.
+    </p>
+    <div id="eignerListe"></div>
+    <button class="row ghost" id="eignerNeu">
+      <span class="ic">＋</span>
+      <span class="txt">
+        <span class="t">Eigentümer anlegen</span>
+        <span class="d">Name, Rolle und Kontaktdaten</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -161,6 +178,7 @@
   </div>
 
   <nav class="nav">
+    <a class="brand" href="index.html">ImmoCalc</a>
     <a href="index.html"><span class="ni">▤</span>Objekte</a>
     <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
     <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
@@ -295,6 +313,49 @@
   </div>
 </dialog>
 
+<dialog id="eignerDlg">
+  <div class="dh">
+    <h2>Eigentümer</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      Person oder Gesellschaft. Die Anteile in Tausendsteln werden danach auf
+      der jeweiligen Objektseite zugeordnet.
+    </p>
+    <div class="meldung" id="eignerMeldung"></div>
+    <div class="field">
+      <label for="eignerName">Name</label>
+      <input class="inp" id="eignerName" required>
+    </div>
+    <div class="field">
+      <label for="eignerRolle">Rolle</label>
+      <select class="inp" id="eignerRolle">
+        <option>Eigentümer</option>
+        <option>Miteigentümer</option>
+        <option>Gesellschaft</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="eignerMail">E-Mail</label>
+      <input class="inp" id="eignerMail" type="email">
+    </div>
+    <div class="field">
+      <label for="eignerTelefon">Telefon</label>
+      <input class="inp" id="eignerTelefon" type="tel">
+    </div>
+    <div class="field">
+      <label for="eignerAnschrift">Anschrift</label>
+      <input class="inp" id="eignerAnschrift">
+    </div>
+    <div class="field">
+      <label for="eignerSteuer">Steuernummer</label>
+      <input class="inp" id="eignerSteuer">
+    </div>
+    <button class="btn" id="eignerSpeichern">Speichern</button>
+  </div>
+</dialog>
+
 <script type="module">
 import { api, esc } from './assets/immo.js';
 
@@ -341,8 +402,13 @@ async function zustandLaden() {
     ncStatus.textContent = `${ncZustand.benutzer} · ${ncZustand.url}`;
     document.getElementById('ncUrl').value = ncZustand.url;
     document.getElementById('ncUser').value = ncZustand.benutzer;
+    // Grün und leise pulsend, sobald auch der Home-Ordner steht; bis dahin
+    // gelb — verbunden, aber noch nicht einsatzbereit.
+    document.getElementById('ncPunkt').className =
+      'punkt ' + (ncZustand.home ? 'an' : 'warte');
   } else {
     ncStatus.textContent = 'noch nicht eingerichtet';
+    document.getElementById('ncPunkt').className = 'punkt';
   }
   ncHome.textContent = ncZustand.home || (ncZustand.eingerichtet
     ? 'noch nicht gewählt' : 'erst Verbindung einrichten');
@@ -536,6 +602,8 @@ async function mailZustand() {
     } else {
       mailStatus.textContent = 'noch nicht verbunden';
     }
+    document.getElementById('mailPunkt').className =
+      'punkt' + (status.verbunden ? ' an' : '');
   } catch {
     mailStatus.textContent = 'Status nicht abrufbar';
   }
@@ -594,12 +662,86 @@ document.getElementById('mailTest').addEventListener('click', async () => {
   }
 });
 
+/* ---- Eigentümer ---- */
+const eignerDlg = document.getElementById('eignerDlg');
+const eignerListe = document.getElementById('eignerListe');
+const eignerMeldung = document.getElementById('eignerMeldung');
+
+async function eignerLaden() {
+  let eigner;
+  try {
+    eigner = await api('/eigentuemer');
+  } catch {
+    eignerListe.innerHTML = '';
+    return;
+  }
+  if (!eigner.length) {
+    eignerListe.innerHTML = `<div class="empty" style="margin-bottom:10px">
+        <div class="big">Noch kein Eigentümer</div>
+        <p>Lege die Personen an, denen die Immobilien gehören — danach lassen
+           sich die Tausendstel je Objekt verteilen.</p>
+      </div>`;
+    return;
+  }
+  eignerListe.innerHTML = eigner.map(e => {
+    // Die Objektzeile zeigt, wo die Person beteiligt ist — sonst bliebe die
+    // Liste eine Sammlung von Namen ohne Bezug.
+    const objekte = e.objekte.length
+      ? e.objekte.map(o => `${o.name} (${o.tausendstel} ‰)`).join(' · ')
+      : 'noch keinem Objekt zugeordnet';
+    return `<div class="row" style="cursor:default">
+        <span class="ic">☗</span>
+        <span class="txt">
+          <span class="t">${esc(e.name)}</span>
+          <span class="d">${esc(e.rolle)} · ${esc(objekte)}</span>
+        </span>
+        <button class="close" data-eigner-weg="${e.id}"
+                aria-label="Eigentümer entfernen">×</button>
+      </div>`;
+  }).join('');
+}
+
+document.getElementById('eignerNeu').addEventListener('click', () => {
+  eignerMeldung.className = 'meldung';
+  document.getElementById('eignerName').value = '';
+  eignerDlg.showModal();
+});
+
+document.getElementById('eignerSpeichern').addEventListener('click', async () => {
+  const name = document.getElementById('eignerName').value.trim();
+  if (!name) return melde(eignerMeldung, 'Bitte einen Namen angeben');
+  try {
+    await api('/eigentuemer', { method: 'POST', body: {
+      name,
+      rolle: document.getElementById('eignerRolle').value,
+      email: document.getElementById('eignerMail').value.trim(),
+      telefon: document.getElementById('eignerTelefon').value.trim(),
+      anschrift: document.getElementById('eignerAnschrift').value.trim(),
+      steuernummer: document.getElementById('eignerSteuer').value.trim(),
+    } });
+    eignerDlg.close();
+    await eignerLaden();
+  } catch (fehler) {
+    melde(eignerMeldung, String(fehler.message || fehler));
+  }
+});
+
+eignerListe.addEventListener('click', async e => {
+  const weg = e.target.closest('[data-eigner-weg]');
+  if (!weg) return;
+  if (!confirm('Diesen Eigentümer und seine Anteile entfernen?\n\n'
+    + 'Die Immobilien selbst bleiben unverändert.')) return;
+  await api(`/eigentuemer/${weg.dataset.eignerWeg}`, { method: 'DELETE' });
+  await eignerLaden();
+});
+
 document.querySelectorAll('[data-schliessen]').forEach(knopf =>
   knopf.addEventListener('click', () => knopf.closest('dialog').close()));
 
 await zustandLaden();
 await mailZustand();
 await vorlageLaden();
+await eignerLaden();
 </script>
 </body>
 </html>

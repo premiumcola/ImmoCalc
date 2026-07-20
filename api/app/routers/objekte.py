@@ -151,11 +151,16 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
     erlaubt = {"name", "ort", "strasse", "plz", "typ", "nutzung", "turnus",
-               "start_monat", "flaeche", "kaufpreis", "verkehrswert", "aktiv",
-               "nc_ordner", "bank", "iban", "kontoinhaber"}
-    for k, v in data.items():
-        if k in erlaubt:
-            setattr(o, k, v)
+               "start_monat", "flaeche", "kaufpreis", "kaufdatum", "verkehrswert",
+               "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber"}
+    felder = {k: v for k, v in data.items() if k in erlaubt}
+    if not felder.get("name", "x"):
+        raise HTTPException(400, "Der Name darf nicht leer sein")
+    # ueber model_validate, damit Datumsstrings aus JSON zu echten date-Objekten
+    # werden — als Zeichenkette gespeichert liesse sich das Feld nicht mehr lesen.
+    geprueft = Objekt.model_validate({**o.model_dump(), **felder})
+    for k in felder:
+        setattr(o, k, getattr(geprueft, k))
     session.add(o)
     session.commit()
     return {"ok": True, "slug": o.slug}
