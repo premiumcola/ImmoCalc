@@ -1,0 +1,16 @@
+.git
+.env
+.env.example
+README.md
+DEPLOY.md
+Makefile
+deploy.sh
+check.sh
+package.json
+package-lock.json
+node_modules/
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+api/tests/

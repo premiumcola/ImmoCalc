@@ -1,0 +1,22 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location = /healthz { return 200 "ok\n"; add_header Content-Type text/plain; }
+
+    # API-Proxy -> FastAPI (immocalc-api / -dev). Frontend ruft same-origin /api/... auf.
+    location /api/ {
+        proxy_pass http://${API_UPSTREAM}/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+
+    default_type text/plain;
+    gzip on;
+    gzip_types text/plain text/css application/javascript text/markdown image/svg+xml application/json;
+
+    location / { try_files $uri $uri/ =404; }
+    location ~* \.html$ { add_header Cache-Control "no-cache"; }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "immocalc-checks",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "playwright": "^1.47.0" },
+  "scripts": { "check": "node tests/smoke.mjs" }
+}

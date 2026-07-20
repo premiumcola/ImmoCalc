@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "hinweis": "Welche Kostenarten gehören je Immobilie zur Jahresabrechnung (aktiv=true). Overrides in workflow.local.json.",
+  "objekte": {
+    "obj-a": {
+      "name": "Musterstraße 5",
+      "turnus": "individuell",
+      "startMonat": 10,
+      "kostenarten": {
+        "Wasser": true,
+        "Heizöl": true,
+        "Grundsteuer": true,
+        "Müll": true,
+        "Kaminkehrer": true,
+        "Hausmeisterdienste": true,
+        "Gartenwasser": true,
+        "Allgemeinstrom": true,
+        "Gebäudeversicherung": true,
+        "Aufzug": false,
+        "Straßenreinigung / Winterdienst": false
+      }
+    },
+    "obj-b": {
+      "name": "Beispielweg 6a",
+      "turnus": "kalender",
+      "startMonat": 1,
+      "kostenarten": {
+        "Heizkosten": true,
+        "Warmwasser": true,
+        "Wasser": true,
+        "Abwasser": true,
+        "Niederschlagswasser": true,
+        "Müll": true,
+        "Versicherungen": true,
+        "Hausmeister": true,
+        "Rauchwarnmelder": true,
+        "Kaltwasserzähler": true,
+        "Allgemeinstrom": true,
+        "Grundsteuer": true,
+        "Bankspesen": false,
+        "Gartenpflege": false
+      }
+    }
+  }
+}

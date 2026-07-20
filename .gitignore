@@ -1,0 +1,28 @@
+# --- Secrets / lokale Konfiguration (NIE committen) ---
+.env
+*.env.local
+
+# --- Laufzeit-/Nutzerdaten: echte Mieter-/Objektdaten, DB, Belege ---
+# (liegen standardmäßig AUSSERHALB des Repos unter appdata/immocalc-live|-dev,
+#  hier zusätzlich als Sicherheitsnetz falls jemand im Repo-Baum arbeitet)
+data/
+/data/
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+uploads
+belege/
+belege
+*.pdf.scan
+
+# --- Build / Tooling ---
+build.txt
+node_modules/
+tests/screenshots/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# --- OS ---
+.DS_Store

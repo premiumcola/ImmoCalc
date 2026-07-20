@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Immobilien-Logos wählen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#E8ECEC;--sheet:#FFF;--ink:#16262C;--soft:#5C6B70;--line:#D6DCDD;--teal:#0F6E5C;--teal-d:#0B5548;
+    --disp:"Space Grotesk",system-ui,sans-serif;--body:"Inter",system-ui,sans-serif;--mono:"IBM Plex Mono",monospace;}
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;
+    display:flex;justify-content:center;padding:0}
+  .wrap{width:100%;max-width:520px;min-height:100vh;padding:26px 18px 100px}
+  .eyebrow{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+  h1{font:700 24px var(--disp);letter-spacing:-.02em;margin:8px 0 4px}
+  .lead{font:400 14px var(--body);color:var(--soft);margin:0 0 22px;line-height:1.5}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  @media(min-width:440px){.grid{grid-template-columns:repeat(3,1fr)}}
+  .opt{background:var(--sheet);border:1.5px solid var(--line);border-radius:16px;padding:14px 12px 12px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:9px;transition:border-color .15s,transform .1s;position:relative}
+  .opt:hover{border-color:#AEC4C0}
+  .opt:active{transform:scale(.98)}
+  .opt:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .opt.sel{border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+  .opt.sel::after{content:"✓";position:absolute;top:9px;right:9px;width:20px;height:20px;border-radius:50%;
+    background:var(--teal);color:#fff;font:700 12px var(--mono);display:flex;align-items:center;justify-content:center}
+  .opt svg{width:78px;height:78px}
+  .opt .lbl{font:600 13px var(--disp);letter-spacing:-.01em;text-align:center}
+  .bar{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;
+    background:linear-gradient(transparent,var(--paper) 32%);pointer-events:none}
+  .bar .in{width:100%;max-width:520px;padding:14px 18px calc(16px + env(safe-area-inset-bottom));pointer-events:auto}
+  .btn{width:100%;border:none;border-radius:12px;padding:15px;font:600 15px var(--disp);letter-spacing:-.01em;
+    background:var(--teal);color:#fff;cursor:pointer;transition:background .15s}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.4;cursor:default}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Schritt · Immobilie einrichten</div>
+  <h1>Logo für die Immobilie wählen</h1>
+  <p class="lead">Sechs Vektor-Vorlagen im gleichen Farbstil. Baum = Lage-Andeutung (Land/Stadt). Tippe eine an.</p>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+
+    <symbol id="lg-villa" viewBox="0 0 96 96">
+      <rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/>
+      <circle cx="80" cy="54" r="8" fill="#2E7D4F"/><rect x="78.5" y="60" width="3" height="12" fill="#143038"/>
+      <polygon points="22,46 48,27 74,46" fill="#143038"/>
+      <rect x="57" y="31" width="5" height="11" fill="#143038"/>
+      <rect x="29" y="46" width="38" height="26" fill="#0F6E5C"/>
+      <rect x="44" y="57" width="8" height="15" fill="#143038"/>
+      <rect x="33" y="51" width="8" height="8" fill="#F4B740"/>
+      <rect x="55" y="51" width="8" height="8" fill="#F4B740"/>
+      <rect x="14" y="72" width="68" height="3" rx="1.5" fill="#143038" opacity=".18"/>
+    </symbol>
+
+    <symbol id="lg-bauernhof" viewBox="0 0 96 96">
+      <rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/>
+      <circle cx="16" cy="56" r="7" fill="#2E7D4F"/><rect x="14.5" y="61" width="3" height="11" fill="#143038"/>
+      <rect x="62" y="42" width="11" height="30" fill="#F4B740"/>
+      <path d="M62 42 a5.5 5.5 0 0 1 11 0 z" fill="#143038"/>
+      <polygon points="24,47 30,33 54,33 60,47" fill="#143038"/>
+      <rect x="26" y="47" width="32" height="25" fill="#0F6E5C"/>
+      <rect x="36" y="54" width="12" height="18" fill="#143038"/>
+      <rect x="14" y="72" width="68" height="3" rx="1.5" fill="#143038" opacity=".18"/>
+    </symbol>
+
+    <symbol id="lg-wohnung" viewBox="0 0 96 96">
+      <rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/>
+      <circle cx="72" cy="55" r="8" fill="#2E7D4F"/><rect x="70.5" y="61" width="3" height="11" fill="#143038"/>
+      <polygon points="30,47 48,32 66,47" fill="#143038"/>
+      <rect x="34" y="47" width="28" height="25" fill="#0F6E5C"/>
+      <rect x="44" y="58" width="9" height="14" fill="#143038"/>
+      <rect x="38" y="52" width="9" height="8" fill="#F4B740"/>
+      <rect x="14" y="72" width="68" height="3" rx="1.5" fill="#143038" opacity=".18"/>
+    </symbol>
+
+    <symbol id="lg-mfhA" viewBox="0 0 96 96">
+      <rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/>
+      <rect x="17" y="44" width="15" height="28" fill="#143038" opacity=".22"/>
+      <circle cx="19" cy="60" r="5" fill="#2E7D4F" opacity=".55"/>
+      <rect x="34" y="28" width="30" height="44" fill="#0F6E5C"/>
+      <rect x="32" y="26" width="34" height="4" fill="#143038"/>
+      <rect x="39" y="34" width="8" height="8" fill="#F4B740"/><rect x="53" y="34" width="8" height="8" fill="#F4B740"/>
+      <rect x="39" y="46" width="8" height="8" fill="#F4B740"/><rect x="53" y="46" width="8" height="8" fill="#F4B740"/>
+      <rect x="45" y="60" width="8" height="12" fill="#143038"/>
+      <rect x="14" y="72" width="68" height="3" rx="1.5" fill="#143038" opacity=".18"/>
+    </symbol>
+
+    <symbol id="lg-mfhB" viewBox="0 0 96 96">
+      <rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/>
+      <circle cx="80" cy="56" r="7" fill="#2E7D4F"/><rect x="78.5" y="61" width="3" height="11" fill="#143038"/>
+      <polygon points="16,48 30,34 44,48" fill="#143038"/>
+      <rect x="19" y="48" width="22" height="24" fill="#0F6E5C"/>
+      <rect x="26" y="60" width="8" height="12" fill="#143038"/>
+      <rect x="22" y="52" width="7" height="7" fill="#F4B740"/>
+      <polygon points="42,48 56,34 70,48" fill="#143038"/>
+      <rect x="45" y="48" width="22" height="24" fill="#0F6E5C"/>
+      <rect x="52" y="60" width="8" height="12" fill="#143038"/>
+      <rect x="57" y="52" width="7" height="7" fill="#F4B740"/>
+      <rect x="14" y="72" width="68" height="3" rx="1.5" fill="#143038" opacity=".18"/>
+    </symbol>
+
+    <symbol id="lg-gewerbe" viewBox="0 0 96 96">
+      <rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/>
+      <circle cx="79" cy="58" r="6" fill="#2E7D4F"/><rect x="77.5" y="63" width="3" height="9" fill="#143038"/>
+      <rect x="18" y="40" width="52" height="5" fill="#143038"/>
+      <rect x="20" y="45" width="48" height="27" fill="#0F6E5C"/>
+      <rect x="27" y="47" width="34" height="6" fill="#143038"/>
+      <circle cx="31" cy="50" r="1.6" fill="#F4B740"/>
+      <polygon points="24,57 64,57 60,63 28,63" fill="#F4B740"/>
+      <rect x="28" y="63" width="13" height="9" fill="#F4B740"/>
+      <rect x="47" y="63" width="13" height="9" fill="#F4B740"/>
+      <rect x="41" y="61" width="6" height="11" fill="#143038"/>
+      <rect x="14" y="72" width="68" height="3" rx="1.5" fill="#143038" opacity=".18"/>
+    </symbol>
+  </defs></svg>
+
+  <div class="grid" id="grid">
+    <button class="opt" data-t="Villa"><svg><use href="#lg-villa"/></svg><span class="lbl">Villa</span></button>
+    <button class="opt" data-t="Bauernhof"><svg><use href="#lg-bauernhof"/></svg><span class="lbl">Bauernhof</span></button>
+    <button class="opt" data-t="Einzelne Wohnung"><svg><use href="#lg-wohnung"/></svg><span class="lbl">Einzelne Wohnung</span></button>
+    <button class="opt" data-t="Mehrfamilienhaus"><svg><use href="#lg-mfhA"/></svg><span class="lbl">Mehrfamilienhaus</span></button>
+    <button class="opt" data-t="Zweifamilienhaus"><svg><use href="#lg-mfhB"/></svg><span class="lbl">Zwei-/Doppelhaus</span></button>
+    <button class="opt" data-t="Gewerbeimmobilie"><svg><use href="#lg-gewerbe"/></svg><span class="lbl">Gewerbe</span></button>
+  </div>
+</div>
+<div class="bar"><div class="in">
+  <button class="btn" id="use" disabled>Logo übernehmen</button>
+</div></div>
+<script>
+  let sel=null;
+  document.getElementById('grid').addEventListener('click',e=>{
+    const o=e.target.closest('.opt'); if(!o)return;
+    document.querySelectorAll('.opt').forEach(x=>x.classList.remove('sel'));
+    o.classList.add('sel'); sel=o.dataset.t;
+    const b=document.getElementById('use'); b.disabled=false; b.textContent=`„${sel}" übernehmen`;
+  });
+  document.getElementById('use').addEventListener('click',()=>{ if(sel) alert(`Logo „${sel}" für die Immobilie gesetzt.`); });
+</script>
+</body>
+</html>

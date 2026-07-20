@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#E8ECEC;--sheet:#FFF;--ink:#16262C;--soft:#5C6B70;--line:#D6DCDD;--teal:#0F6E5C;--teal-d:#0B5548;
+    --disp:"Space Grotesk",system-ui,sans-serif;--body:"Inter",system-ui,sans-serif;--mono:"IBM Plex Mono",monospace;}
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;
+    display:flex;justify-content:center;padding:0}
+  .wrap{width:100%;max-width:520px;min-height:100vh;padding:30px 18px 60px}
+  .eyebrow{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+  h1{font:700 26px var(--disp);letter-spacing:-.02em;margin:8px 0 4px}
+  .lead{font:400 14px var(--body);color:var(--soft);margin:0 0 24px;line-height:1.5}
+  a.tile{display:flex;gap:14px;align-items:center;background:var(--sheet);border:1px solid var(--line);
+    border-radius:14px;padding:15px 16px;margin-bottom:11px;text-decoration:none;color:inherit;transition:border-color .15s,transform .1s}
+  a.tile:hover{border-color:#AEC4C0} a.tile:active{transform:scale(.995)}
+  .ic{width:44px;height:44px;border-radius:11px;background:#E7F3EF;color:var(--teal-d);flex:none;
+    display:flex;align-items:center;justify-content:center;font:700 18px var(--mono)}
+  .t{font:600 16px var(--disp);letter-spacing:-.01em} .d{font:400 12.5px var(--body);color:var(--soft);margin-top:2px}
+  .foot{margin-top:22px;font:500 11px var(--mono);color:var(--soft);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Prototyp · intern</div>
+  <h1>ImmoCalc</h1>
+  <p class="lead">Nebenkosten- &amp; Betriebskostenabrechnung. Klickbare Mockups &amp; Fachkonzept. Alle Screens sind statisch – kein Login, keine echten Daten.</p>
+
+  <a class="tile" href="app.html"><span class="ic">▤</span><span><span class="t">App-Mockup</span><span class="d">Objekte · Zeiträume · Positionen · Ergebnis · Fristen</span></span></a>
+  <a class="tile" href="status.html"><span class="ic">◎</span><span><span class="t">Live-Daten (API)</span><span class="d">Echte Objekte &amp; Abrechnung aus dem Backend</span></span></a>
+
+  <a class="tile" href="onboarding.html"><span class="ic">＋</span><span><span class="t">Immobilie einrichten</span><span class="d">Onboarding-Flow &amp; Bearbeiten-Seite</span></span></a>
+  <a class="tile" href="logos.html"><span class="ic">◧</span><span><span class="t">Logo-Auswahl</span><span class="d">Sechs Vektor-Logos für Immobilientypen</span></span></a>
+  <a class="tile" href="docs/rechenlogik.md"><span class="ic">ƒ</span><span><span class="t">Rechenlogik &amp; Schlüssel</span><span class="d">Fachkonzept (Markdown)</span></span></a>
+  <a class="tile" href="docs/er-diagramm.mermaid"><span class="ic">⌗</span><span><span class="t">ER-Diagramm</span><span class="d">Datenstruktur (Mermaid)</span></span></a>
+
+  <div class="foot">ImmoCalc · statisch via nginx</div>
+</div>
+</body>
+</html>

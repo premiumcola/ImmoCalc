@@ -1,0 +1,124 @@
+erDiagram
+    OBJEKT ||--o{ EINHEIT : "hat"
+    OBJEKT ||--o{ ABRECHNUNGSZEITRAUM : "hat"
+    OBJEKT ||--o{ KOSTENPOSITION : "hat"
+    OBJEKT ||--o{ VERTEILERSCHLUESSEL : "definiert"
+    OBJEKT ||--o{ ZAEHLER : "hat"
+    OBJEKT ||--o{ KOSTENART : "Katalog"
+
+    EINHEIT ||--o{ PARTEI : "beherbergt"
+
+    ABRECHNUNGSZEITRAUM ||--o{ KOSTENPOSITION : "enthaelt"
+    ABRECHNUNGSZEITRAUM ||--o{ ABLESUNG : "Stichtag"
+    ABRECHNUNGSZEITRAUM ||--o{ VORAUSZAHLUNG : "gilt_fuer"
+    ABRECHNUNGSZEITRAUM ||--o{ ABRECHNUNGSERGEBNIS : "ergibt"
+
+    KOSTENART ||--o{ KOSTENPOSITION : "typisiert"
+    VERTEILERSCHLUESSEL ||--o{ KOSTENPOSITION : "verteilt"
+
+    ZAEHLER ||--o{ ABLESUNG : "abgelesen"
+    ZAEHLER |o--o{ KOSTENPOSITION : "speist_Verbrauch"
+
+    KOSTENPOSITION ||--o{ POSITION_BELEG : "verknuepft"
+    BELEG ||--o{ POSITION_BELEG : "haengt_an"
+
+    PARTEI ||--o{ VORAUSZAHLUNG : "leistet"
+    PARTEI ||--o{ ABRECHNUNGSERGEBNIS : "erhaelt"
+
+    OBJEKT {
+        int id PK
+        string name
+        string adresse
+        float gesamtflaeche
+    }
+    EINHEIT {
+        int id PK
+        int objekt_id FK
+        string bezeichnung
+        string nutzungsart "Wohnen|Gewerbe|Stellplatz|Ladepunkt|WG"
+        float flaeche
+    }
+    PARTEI {
+        int id PK
+        int einheit_id FK
+        string name
+        date einzug
+        date auszug
+        int personen
+    }
+    ABRECHNUNGSZEITRAUM {
+        int id PK
+        int objekt_id FK
+        date start
+        date ende
+        string typ "regulaer|Rumpf|Zwischen"
+        string status "offen|abgeschlossen"
+    }
+    KOSTENART {
+        int id PK
+        string bezeichnung
+        bool umlagefaehig
+        bool paragraph_35a
+    }
+    KOSTENPOSITION {
+        int id PK
+        int objekt_id FK
+        int zeitraum_id FK
+        int kostenart_id FK
+        int schluessel_id FK
+        float betrag
+        string wertquelle "Scan|Zaehler|extern|manuell"
+        string status "final|vorlaeufig"
+        date rechnung_von
+        date rechnung_bis
+    }
+    BELEG {
+        int id PK
+        string datei_pdf
+        string typ "Rechnung|ext_Abrechnung|Bescheid|Ablesebeleg"
+        json ocr_werte
+    }
+    POSITION_BELEG {
+        int position_id FK
+        int beleg_id FK
+    }
+    VERTEILERSCHLUESSEL {
+        int id PK
+        int objekt_id FK
+        string typ "Flaeche|Personen|Bewohnermonate|Einheiten|Verbrauch|Prozent|individuell"
+        json parameter
+    }
+    ZAEHLER {
+        int id PK
+        int objekt_id FK
+        string medium "KW|WW|Oel|Strom|Gas"
+        string typ "gemessen|berechnet"
+        string einheit "m3|kWh|Liter"
+    }
+    ABLESUNG {
+        int id PK
+        int zaehler_id FK
+        int zeitraum_id FK
+        date ablesedatum_ist
+        date stichtag_soll
+        float stand_ist
+        float stand_interpoliert
+        float verbrauch
+    }
+    VORAUSZAHLUNG {
+        int id PK
+        int partei_id FK
+        int zeitraum_id FK
+        float miete
+        float parken
+        float nk_abschlag
+    }
+    ABRECHNUNGSERGEBNIS {
+        int id PK
+        int partei_id FK
+        int zeitraum_id FK
+        float kosten_umgelegt
+        float vorauszahlungen
+        float saldo
+        float summe_35a
+    }

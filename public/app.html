@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ImmoCalc — Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#E8ECEC;--sheet:#FFFFFF;--ink:#16262C;--soft:#5C6B70;--line:#D6DCDD;--teal:#0F6E5C;--teal-d:#0B5548;
+    --amber:#916212;--pos:#2E7D4F;--neg:#B24229;
+    --disp:"Space Grotesk",system-ui,sans-serif;--body:"Inter",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;}
+  *{box-sizing:border-box} html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.45;display:flex;justify-content:center}
+  .app{width:100%;max-width:440px;min-height:100vh;background:var(--paper);position:relative;padding-bottom:76px}
+  @media(min-width:480px){body{padding:24px 0}.app{min-height:calc(100vh - 48px);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 24px 60px -30px rgba(22,38,44,.35)}}
+  .bar{position:sticky;top:0;z-index:20;background:var(--sheet);border-bottom:1px solid var(--line);padding:14px 16px;display:flex;align-items:center;gap:12px;min-height:56px}
+  .back{border:none;background:none;font:600 15px var(--body);color:var(--teal);cursor:pointer;padding:6px 4px;margin:-6px -4px;display:none}
+  .back::before{content:"‹  "}
+  .bar h1{font:600 17px var(--disp);margin:0;letter-spacing:-.01em;flex:1}
+  .bar .sub{font:500 12px var(--mono);color:var(--soft);margin-top:1px}
+  .barwrap{flex:1;min-width:0}
+  .scroll{padding:16px}
+  .eyebrow{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--soft);margin:2px 0 10px}
+
+  .logo{width:44px;height:44px;flex:none;border-radius:11px;overflow:hidden}
+  .logo.lg{width:56px;height:56px;border-radius:13px}
+
+  .card{background:var(--sheet);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-bottom:11px;cursor:pointer;text-align:left;width:100%;font-family:var(--body);display:block;transition:border-color .15s,transform .1s}
+  .card:hover{border-color:#B9C4C5} .card:active{transform:scale(.995)} .card:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .ohead{display:flex;gap:13px;align-items:center}
+  .ohead .ot{font:600 16px var(--disp);letter-spacing:-.01em}
+  .ohead .oa{font:500 12px var(--mono);color:var(--soft);margin-top:2px}
+  .next{margin-top:12px;padding:10px 12px;border-radius:11px;background:#F4F6F6;border:1px solid var(--line);display:flex;align-items:center;gap:9px}
+  .next .nd{width:8px;height:8px;border-radius:50%;flex:none}
+  .next .nt{font:500 12.5px var(--body);color:var(--ink);flex:1}
+  .next .nt b{font-weight:600}
+  .next.warn{background:#F7EFD9;border-color:#E4CF9E} .next.warn .nd{background:var(--amber)}
+  .next.late{background:#F7E9E3;border-color:#E4C1B4} .next.late .nd{background:var(--neg)}
+  .next.ok{background:#E7F4EC;border-color:#B4D8C0} .next.ok .nd{background:var(--pos)}
+
+  .chip{font:600 11px var(--mono);padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--soft);background:#F4F6F6;white-space:nowrap}
+  .chip.teal{color:var(--teal-d);border-color:#B6D8CF;background:#E7F3EF}
+  .chip.amber{color:var(--amber);border-color:#E4CF9E;background:#F7EFD9}
+  .chip.gray{color:var(--soft)} .chip.pos{color:var(--pos);border-color:#B4D8C0;background:#E7F4EC}
+  .chip.neg{color:var(--neg);border-color:#E4C1B4;background:#F7E9E3}
+  .row2{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center}
+
+  .frist{display:flex;align-items:center;gap:9px;margin:0 0 14px;padding:11px 13px;border-radius:11px;font:600 13px var(--mono);border:1px solid var(--line);background:#F4F6F6}
+  .frist .d{width:8px;height:8px;border-radius:50%;flex:none} .frist .days{margin-left:auto;font-weight:700}
+  .frist.ok{background:#E7F4EC;border-color:#B4D8C0;color:var(--pos)} .frist.ok .d{background:var(--pos)}
+  .frist.warn{background:#F7EFD9;border-color:#E4CF9E;color:var(--amber)} .frist.warn .d{background:var(--amber)}
+  .frist.late{background:#F7E9E3;border-color:#E4C1B4;color:var(--neg)} .frist.late .d{background:var(--neg)}
+  .frist.done{background:#EEF2F1;border-color:var(--line);color:var(--soft)} .frist.done .d{background:var(--soft)}
+
+  .actions{display:flex;gap:8px;margin:0 0 14px}
+  .abtn{flex:1;border:1px solid var(--line);background:var(--sheet);border-radius:11px;padding:11px 8px;cursor:pointer;font:600 12.5px var(--disp);color:var(--teal-d);display:flex;align-items:center;justify-content:center;gap:6px}
+  .abtn:hover{border-color:#AEC4C0} .abtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+  .prog{display:flex;gap:12px;font:600 12px var(--mono);margin:0 2px 11px} .prog .g{color:var(--pos)} .prog .r{color:var(--neg)}
+  .pos{display:flex;align-items:flex-start;gap:12px;padding:13px 15px;background:var(--sheet);border:1px solid var(--line);border-left-width:3px;border-radius:13px;margin-bottom:9px}
+  .pos.done{border-left-color:var(--pos)} .pos.open{border-left-color:var(--neg)}
+  .pos .clip{width:30px;height:38px;border-radius:5px;flex:none;border:1px solid var(--line);background:#F4F6F6;color:var(--soft);display:flex;align-items:center;justify-content:center;font:600 9px var(--mono)}
+  .pos .clip.empty{border-style:dashed;opacity:.55}
+  .pos .mid{flex:1;min-width:0} .pos .name{font:600 15px var(--disp);letter-spacing:-.01em}
+  .pos .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .pos .amt{font:600 15px var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;padding-top:1px}
+  .sum{display:flex;justify-content:space-between;align-items:baseline;padding:15px 4px 4px;border-top:2px solid var(--ink);margin-top:6px}
+  .sum .l{font:600 13px var(--mono);text-transform:uppercase;letter-spacing:.08em} .sum .v{font:700 20px var(--mono);font-variant-numeric:tabular-nums}
+
+  .fabrow{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:30}
+  .fabrow .inner{width:100%;max-width:440px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--paper) 34%);pointer-events:auto}
+  .btn{width:100%;border:none;border-radius:12px;padding:15px;cursor:pointer;font:600 15px var(--disp);letter-spacing:-.01em;background:var(--teal);color:#fff;transition:background .15s}
+  .btn:hover{background:var(--teal-d)} .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .btn.ghost{background:var(--sheet);color:var(--teal-d);border:1px solid var(--line)} .btn .ic{font-family:var(--mono);margin-right:8px}
+
+  .tabs{display:flex;gap:4px;padding:0 16px 4px;background:var(--paper);position:sticky;top:71px;z-index:15}
+  .tab{flex:1;border:none;background:none;padding:11px 6px;cursor:pointer;font:600 13px var(--disp);color:var(--soft);border-bottom:2px solid transparent}
+  .tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--teal)}
+
+  .total{background:var(--ink);color:#EAF0EF;border-radius:16px;padding:16px 17px;margin-bottom:13px}
+  .total .h{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#8FA6A5;margin-bottom:12px}
+  .total .line{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;font:500 14px var(--mono);font-variant-numeric:tabular-nums}
+  .total .line .lbl{color:#B7C6C4} .total .line .val{font-weight:600}
+  .total .split{height:1px;background:#33474D;margin:11px 0}
+  .total .net{display:flex;justify-content:space-between;align-items:baseline}
+  .total .net .lbl{font:600 12px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:#B7C6C4}
+  .total .net .val{font:700 22px var(--mono);font-variant-numeric:tabular-nums}
+  .total .net .val.pos{color:#7FD3A0} .total .net .val.neg{color:#E9A88F}
+  .total .hint{font:500 11px var(--body);color:#8FA6A5;margin-top:5px;text-align:right}
+
+  .res{background:var(--sheet);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:11px}
+  .res .who{font:600 16px var(--disp);letter-spacing:-.01em;margin-bottom:2px}
+  .res .grid{display:grid;grid-template-columns:1fr auto;gap:5px 10px;margin-top:11px;font:500 13px var(--mono);font-variant-numeric:tabular-nums;color:var(--soft)}
+  .res .grid .num{color:var(--ink);text-align:right}
+  .res .bal{display:flex;justify-content:space-between;align-items:baseline;margin-top:13px;padding-top:12px;border-top:1px solid var(--line)}
+  .res .bal .lab{font:600 12px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--soft)}
+  .res .bal .val{font:700 22px var(--mono);font-variant-numeric:tabular-nums}
+  .saldo.pos{color:var(--pos)} .saldo.neg{color:var(--neg)}
+  .note35{font:500 12px var(--body);color:var(--amber);margin-top:9px;display:flex;gap:6px;align-items:center}
+
+  /* Konfig */
+  .cfghint{font:500 13px var(--body);color:var(--soft);margin:0 2px 14px;line-height:1.5}
+  .togg{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--sheet);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;cursor:pointer}
+  .togg .tn{flex:1;font:600 14px var(--disp);letter-spacing:-.01em}
+  .togg .sw{width:42px;height:25px;border-radius:99px;background:#CDD5D6;position:relative;flex:none;transition:background .16s}
+  .togg .sw::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .16s}
+  .togg.on .sw{background:var(--teal)} .togg.on .sw::after{transform:translateX(17px)}
+  .togg.off .tn{color:var(--soft)}
+  .cfgcount{font:600 12px var(--mono);color:var(--soft);margin:0 2px 12px}
+
+  .modal{position:fixed;inset:0;z-index:50;display:none;align-items:flex-end;justify-content:center}
+  .modal.open{display:flex}
+  .modal .veil{position:absolute;inset:0;background:rgba(22,38,44,.42)}
+  .sheetm{position:relative;width:100%;max-width:440px;background:var(--paper);border-radius:20px 20px 0 0;padding:8px 16px calc(20px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto;animation:rise .22s ease}
+  @keyframes rise{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+  .grab{width:38px;height:4px;border-radius:2px;background:var(--line);margin:6px auto 14px}
+  .scanhero{border:1px solid var(--line);border-radius:12px;background:var(--sheet);overflow:hidden;margin-bottom:14px}
+  .scanhero .doc{padding:16px 18px;font:500 12px var(--mono);color:#3a4a50;background:repeating-linear-gradient(var(--sheet),var(--sheet) 21px,#eef1f1 21px,#eef1f1 22px)}
+  .scanhero .doc .big{font:600 15px var(--disp);color:var(--ink);margin-bottom:8px}
+  .scanhero .cap{padding:8px 12px;border-top:1px solid var(--line);font:600 11px var(--mono);color:var(--teal-d);background:#E7F3EF;display:flex;align-items:center;gap:7px}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--teal)}
+  .field{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 13px;background:var(--sheet);border:1px solid var(--line);border-radius:11px;margin-bottom:8px}
+  .field .k{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--soft)}
+  .field .v{font:600 15px var(--disp)} .field .v.mono{font-family:var(--mono)} .field .edit{font:600 11px var(--mono);color:var(--teal);cursor:pointer}
+  h2.mt{font:600 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--soft);margin:4px 2px 10px}
+  .lgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:6px}
+  .lopt{background:var(--sheet);border:1.5px solid var(--line);border-radius:14px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .lopt svg{width:56px;height:56px} .lopt .ll{font:600 11px var(--disp)} .lopt.sel{border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+  .hidden{display:none !important}
+  @media(prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="lg-villa" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="80" cy="54" r="8" fill="#2E7D4F"/><rect x="78.5" y="60" width="3" height="12" fill="#143038"/><polygon points="22,46 48,27 74,46" fill="#143038"/><rect x="57" y="31" width="5" height="11" fill="#143038"/><rect x="29" y="46" width="38" height="26" fill="#0F6E5C"/><rect x="44" y="57" width="8" height="15" fill="#143038"/><rect x="33" y="51" width="8" height="8" fill="#F4B740"/><rect x="55" y="51" width="8" height="8" fill="#F4B740"/></symbol>
+  <symbol id="lg-bauernhof" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="16" cy="56" r="7" fill="#2E7D4F"/><rect x="14.5" y="61" width="3" height="11" fill="#143038"/><rect x="62" y="42" width="11" height="30" fill="#F4B740"/><path d="M62 42 a5.5 5.5 0 0 1 11 0 z" fill="#143038"/><polygon points="24,47 30,33 54,33 60,47" fill="#143038"/><rect x="26" y="47" width="32" height="25" fill="#0F6E5C"/><rect x="36" y="54" width="12" height="18" fill="#143038"/></symbol>
+  <symbol id="lg-wohnung" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="72" cy="55" r="8" fill="#2E7D4F"/><rect x="70.5" y="61" width="3" height="11" fill="#143038"/><polygon points="30,47 48,32 66,47" fill="#143038"/><rect x="34" y="47" width="28" height="25" fill="#0F6E5C"/><rect x="44" y="58" width="9" height="14" fill="#143038"/><rect x="38" y="52" width="9" height="8" fill="#F4B740"/></symbol>
+  <symbol id="lg-mfhA" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><rect x="17" y="44" width="15" height="28" fill="#143038" opacity=".22"/><circle cx="19" cy="60" r="5" fill="#2E7D4F" opacity=".55"/><rect x="34" y="28" width="30" height="44" fill="#0F6E5C"/><rect x="32" y="26" width="34" height="4" fill="#143038"/><rect x="39" y="34" width="8" height="8" fill="#F4B740"/><rect x="53" y="34" width="8" height="8" fill="#F4B740"/><rect x="39" y="46" width="8" height="8" fill="#F4B740"/><rect x="53" y="46" width="8" height="8" fill="#F4B740"/><rect x="45" y="60" width="8" height="12" fill="#143038"/></symbol>
+  <symbol id="lg-mfhB" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="80" cy="56" r="7" fill="#2E7D4F"/><rect x="78.5" y="61" width="3" height="11" fill="#143038"/><polygon points="16,48 30,34 44,48" fill="#143038"/><rect x="19" y="48" width="22" height="24" fill="#0F6E5C"/><rect x="26" y="60" width="8" height="12" fill="#143038"/><rect x="22" y="52" width="7" height="7" fill="#F4B740"/><polygon points="42,48 56,34 70,48" fill="#143038"/><rect x="45" y="48" width="22" height="24" fill="#0F6E5C"/><rect x="52" y="60" width="8" height="12" fill="#143038"/><rect x="57" y="52" width="7" height="7" fill="#F4B740"/></symbol>
+  <symbol id="lg-gewerbe" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="79" cy="58" r="6" fill="#2E7D4F"/><rect x="77.5" y="63" width="3" height="9" fill="#143038"/><rect x="18" y="40" width="52" height="5" fill="#143038"/><rect x="20" y="45" width="48" height="27" fill="#0F6E5C"/><rect x="27" y="47" width="34" height="6" fill="#143038"/><circle cx="31" cy="50" r="1.6" fill="#F4B740"/><polygon points="24,57 64,57 60,63 28,63" fill="#F4B740"/><rect x="28" y="63" width="13" height="9" fill="#F4B740"/><rect x="47" y="63" width="13" height="9" fill="#F4B740"/><rect x="41" y="61" width="6" height="11" fill="#143038"/></symbol>
+</defs></svg>
+
+<div class="app">
+  <div class="bar">
+    <button class="back" id="back">Zurück</button>
+    <div class="barwrap"><h1 id="title">Immobilien</h1><div class="sub" id="subtitle">2 Objekte · ImmoCalc</div></div>
+  </div>
+  <div class="tabs hidden" id="tabs">
+    <button class="tab" data-tab="pos" aria-selected="true">Positionen</button>
+    <button class="tab" data-tab="res" aria-selected="false">Ergebnis</button>
+  </div>
+  <div class="scroll" id="scroll"></div>
+  <div class="fabrow hidden" id="fabrow"><div class="inner"><button class="btn" id="fab"><span class="ic">＋</span>Beleg scannen</button></div></div>
+</div>
+
+<!-- Scan-Modal -->
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="Beleg scannen">
+  <div class="veil" data-close></div>
+  <div class="sheetm"><div class="grab"></div>
+    <div class="scanhero"><div class="doc"><div class="big">Stadtwerke — Rechnung 4471-2025</div>
+      Grundgebühr Kaltwasser .......... 40,46 €<br>Verbrauch / Ablesung .......... 10,95 €<br>Leistungszeitraum: 01.01.2025 – 31.12.2025</div>
+      <div class="cap"><span class="pulse"></span>Beleg gescannt · Werte erkannt</div></div>
+    <h2 class="mt">Erkannte Werte — bitte prüfen</h2>
+    <div class="field"><div><div class="k">Betrag</div><div class="v mono">51,41 €</div></div><span class="edit">ändern</span></div>
+    <div class="field"><div><div class="k">Kostenart</div><div class="v">Kaltwasserzähler</div></div><span class="edit">ändern</span></div>
+    <div class="field"><div><div class="k">§ 35a</div><div class="v">Ja</div></div><span class="edit">ändern</span></div>
+    <div style="height:6px"></div>
+    <button class="btn" id="apply"><span class="ic">✓</span>Werte übernehmen · PDF anhängen</button>
+    <div style="height:8px"></div><button class="btn ghost" data-close>Abbrechen</button>
+  </div>
+</div>
+
+<!-- Logo-Modal -->
+<div class="modal" id="logomodal" role="dialog" aria-modal="true" aria-label="Logo wählen">
+  <div class="veil" data-close></div>
+  <div class="sheetm"><div class="grab"></div>
+    <h2 class="mt">Logo wählen</h2>
+    <div class="lgrid" id="lgrid"></div>
+    <div style="height:6px"></div><button class="btn ghost" data-close>Schließen</button>
+  </div>
+</div>
+
+<script>
+const eur=n=>n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const LOGOS=[['lg-villa','Villa'],['lg-bauernhof','Bauernhof'],['lg-wohnung','Wohnung'],['lg-mfhA','Mehrfam.'],['lg-mfhB','Doppelhaus'],['lg-gewerbe','Gewerbe']];
+const svgUse=id=>`<svg class="logo" viewBox="0 0 96 96"><use href="#${id}"/></svg>`;
+
+const DATA={objekte:[
+  { id:'obj-a', name:'Musterstraße 5', ort:'Mixed-Use · 7 Einheiten', turnus:'Okt – Sep', logo:'lg-mfhB',
+    katalog:[['Wasser',1],['Heizöl',1],['Grundsteuer',1],['Müll',1],['Kaminkehrer',1],['Hausmeisterdienste',1],['Gartenwasser',1],['Allgemeinstrom',1],['Gebäudeversicherung',1],['Aufzug',0],['Straßenreinigung / Winterdienst',0]],
+    zeitraeume:[
+      {id:'l2425',label:'01.10.2024 – 30.09.2025',typ:'regulär',status:'in Arbeit',ende:'2025-09-30',
+        positionen:[
+          {art:'Wasser (Frisch+Schmutz+Regen)',betrag:847.52,quelle:'Zähler',schluessel:'Verbrauch',s35:false,status:'erledigt'},
+          {art:'Heizöl',betrag:3257.84,quelle:'Zähler',schluessel:'Verbrauch/HeizkV',s35:false,status:'erledigt'},
+          {art:'Grundsteuer',betrag:0,quelle:'Scan',schluessel:'Fläche',s35:false,status:'offen'},
+          {art:'Müll',betrag:412.00,quelle:'Scan',schluessel:'Bewohnermonate',s35:false,status:'erledigt'},
+          {art:'Kaminkehrer',betrag:96.50,quelle:'Scan',schluessel:'Fläche',s35:true,status:'erledigt'},
+          {art:'Hausmeisterdienste',betrag:640.00,quelle:'Scan',schluessel:'Bewohnermonate',s35:true,status:'erledigt'},
+          {art:'Gartenwasser',betrag:89.16,quelle:'Zähler',schluessel:'individuell',s35:false,status:'offen'},
+        ],
+        ergebnis:[{who:'Partei OG (1. OG)',kosten:1240.66,vz:1320.00},{who:'WG (2. OG)',kosten:1470.00,vz:1380.00},{who:'Büro (anteilig)',kosten:1769.36,vz:1560.00}]},
+      {id:'l2324',label:'01.10.2023 – 30.09.2024',typ:'regulär',status:'abgeschlossen',ende:'2024-09-30',positionen:[],ergebnis:[]},
+    ]},
+  { id:'obj-b', name:'Beispielweg 6a', ort:'Musterstadt · 1 Wohnung', turnus:'Kalenderjahr', logo:'lg-wohnung',
+    katalog:[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Versicherungen',1],['Hausmeister',1],['Rauchwarnmelder',1],['Kaltwasserzähler',1],['Allgemeinstrom',1],['Grundsteuer',1],['Bankspesen',0],['Gartenpflege',0]],
+    zeitraeume:[
+      {id:'e2025',label:'01.01.2025 – 31.12.2025',typ:'regulär',status:'in Arbeit',ende:'2025-12-31',
+        positionen:[
+          {art:'Heizkosten',betrag:925.13,quelle:'extern',schluessel:'delta-t',s35:false,status:'erledigt'},
+          {art:'Warmwasser',betrag:282.70,quelle:'extern',schluessel:'delta-t',s35:false,status:'erledigt'},
+          {art:'Wasserkosten',betrag:94.22,quelle:'Scan',schluessel:'direkt',s35:false,status:'erledigt'},
+          {art:'Abwasserkosten',betrag:130.11,quelle:'Scan',schluessel:'direkt',s35:false,status:'erledigt'},
+          {art:'Müllgebühren',betrag:152.14,quelle:'Scan',schluessel:'direkt',s35:false,status:'erledigt'},
+          {art:'Versicherungen',betrag:406.93,quelle:'Scan',schluessel:'direkt',s35:false,status:'erledigt'},
+          {art:'Hausmeister',betrag:722.43,quelle:'Scan',schluessel:'direkt',s35:true,status:'erledigt'},
+          {art:'Rauchwarnmelder + Prüfung',betrag:22.49,quelle:'Scan',schluessel:'direkt',s35:true,status:'erledigt'},
+          {art:'Grundsteuer',betrag:0,quelle:'Scan',schluessel:'direkt',s35:false,status:'offen'},
+        ],
+        ergebnis:[{who:'Partei Wohnung',kosten:3121.33,vz:2640.00,s35:767.37}]},
+      {id:'e2024',label:'01.01.2024 – 31.12.2024',typ:'regulär',status:'abgeschlossen',ende:'2024-12-31',positionen:[],ergebnis:[]},
+      {id:'e2018',label:'01.09.2018 – 31.12.2018',typ:'Rumpf',status:'abgeschlossen',ende:'2018-12-31',positionen:[],ergebnis:[]},
+    ]},
+]};
+
+const quelleChip=q=>({'Zähler':'teal','extern':'teal','Scan':'gray','manuell':'gray'}[q]||'gray');
+function frist(z){const [y,m,d]=z.ende.split('-').map(Number);const dl=new Date(y+1,m-1,d);const t=new Date();t.setHours(0,0,0,0);
+  const days=Math.round((dl-t)/86400000);const s=`${String(dl.getDate()).padStart(2,'0')}.${String(dl.getMonth()+1).padStart(2,'0')}.${dl.getFullYear()}`;return {days,dl:s};}
+const fristClass=d=>d<=30?'late':d<=90?'warn':'ok';
+
+function nextAction(o){
+  const z=o.zeitraeume.find(x=>x.status==='in Arbeit');
+  if(!z) return {cls:'ok',text:'<b>Alles abgerechnet.</b> Nächster Zeitraum kann angelegt werden.'};
+  const open=z.positionen.filter(p=>p.status==='offen');
+  const f=frist(z); const cls=fristClass(f.days);
+  const fr = f.days<0?`Frist überschritten`:`Frist in ${f.days} T`;
+  if(open.length) return {cls,z,text:`<b>${open.length} Beleg${open.length>1?'e':''} offen</b> · als Nächstes: ${open[0].art} · ${fr}`};
+  return {cls,z,text:`<b>Alle Belege da</b> · Abrechnung abschließen · ${fr}`};
+}
+
+let state={view:'objekte',obj:null,zr:null,tab:'pos'};
+const $=s=>document.querySelector(s);
+const scroll=$('#scroll'),back=$('#back'),title=$('#title'),subtitle=$('#subtitle'),tabs=$('#tabs'),fabrow=$('#fabrow');
+function go(v,o={}){Object.assign(state,{view:v},o);render();scroll.scrollTop=0;window.scrollTo(0,0);}
+
+function render(){
+  back.style.display=state.view==='objekte'?'none':'block';
+  tabs.classList.toggle('hidden',state.view!=='zeitraum');
+  fabrow.classList.toggle('hidden',!(state.view==='zeitraum'&&state.tab==='pos'));
+  ({objekte:renderObjekte,zeitraeume:()=>renderZeitraeume(state.obj),zeitraum:()=>renderZeitraum(state.obj,state.zr),konfig:()=>renderKonfig(state.obj)}[state.view])();
+}
+
+function renderObjekte(){
+  title.textContent='Immobilien';subtitle.textContent='2 Objekte · ImmoCalc';
+  scroll.innerHTML='<div class="eyebrow">Als Nächstes je Immobilie</div>'+
+    DATA.objekte.map(o=>{const na=nextAction(o);
+      return `<button class="card" data-obj="${o.id}">
+        <div class="ohead">${svgUse(o.logo)}<div><div class="ot">${o.name}</div><div class="oa">${o.ort}</div></div></div>
+        <div class="next ${na.cls}"><span class="nd"></span><span class="nt">${na.text}</span></div>
+      </button>`;}).join('');
+}
+
+function renderZeitraeume(o){
+  title.textContent=o.id==='obj-b'?'Beispielweg 6a':o.name;subtitle.textContent=o.ort;
+  const na=nextAction(o);
+  scroll.innerHTML=
+    `<div class="ohead" style="margin-bottom:14px">${svgUse(o.logo)}<div><div class="ot">${o.name}</div><div class="oa">Turnus ${o.turnus}</div></div></div>`+
+    `<div class="next ${na.cls}" style="margin-bottom:14px"><span class="nd"></span><span class="nt">${na.text}</span></div>`+
+    `<div class="actions">
+       <button class="abtn" data-konfig="1"><span>⚙</span>Jahresabrechnung</button>
+       <button class="abtn" data-logo="1"><span>◧</span>Logo ändern</button>
+     </div>`+
+    '<div class="eyebrow">Abrechnungszeiträume</div>'+
+    o.zeitraeume.map(z=>{
+      const typChip=z.typ==='Rumpf'?'<span class="chip amber">Rumpfzeitraum</span>':z.typ==='Zwischen'?'<span class="chip amber">Zwischenabrechnung</span>':'<span class="chip">regulär</span>';
+      let fchip; if(z.status==='abgeschlossen'){fchip='<span class="chip pos">abgeschlossen</span>';}
+      else{const f=frist(z);const c=fristClass(f.days);const t=f.days<0?'Frist überschritten':`noch ${f.days} Tage`;fchip=`<span class="chip ${c==='late'?'neg':c==='warn'?'amber':'pos'}">${t}</span>`;}
+      return `<button class="card" data-zr="${z.id}"><div class="ohead"><div class="ot">${z.label}</div></div>
+        <div class="row2">${typChip}${fchip}<span class="chip gray">${z.positionen.length} Positionen</span></div></button>`;
+    }).join('')+
+    `<button class="btn ghost" style="margin-top:6px" data-new="1"><span class="ic">＋</span>Neuer Zeitraum</button>`;
+}
+
+function renderKonfig(o){
+  title.textContent='Jahresabrechnung';subtitle.textContent=o.name;
+  const aktiv=o.katalog.filter(k=>k[1]).length;
+  scroll.innerHTML=
+    '<div class="eyebrow">Grundkonfiguration</div>'+
+    `<p class="cfghint">Lege fest, welche Kostenarten <b>grundsätzlich zu jeder Jahresabrechnung</b> dieser Immobilie gehören. Aktive Arten erscheinen automatisch als Soll-Positionen — offene davon tauchen in „Als Nächstes" auf.</p>`+
+    `<div class="cfgcount">${aktiv} von ${o.katalog.length} aktiv</div>`+
+    o.katalog.map((k,i)=>`<button class="togg ${k[1]?'on':'off'}" data-tog="${i}"><span class="tn">${k[0]}</span><span class="sw"></span></button>`).join('');
+}
+
+function fristBanner(z){
+  if(z.status==='abgeschlossen') return `<div class="frist done"><span class="d"></span>Zeitraum abgeschlossen · fristgerecht<span class="days">✓</span></div>`;
+  const f=frist(z);const c=fristClass(f.days);
+  const label=f.days<0?`Frist § 556 BGB überschritten · war ${f.dl}`:`Frist § 556 BGB · bis ${f.dl}`;
+  const days=f.days<0?`${Math.abs(f.days)} Tage über`:`noch ${f.days} Tage`;
+  return `<div class="frist ${c}"><span class="d"></span>${label}<span class="days">${days}</span></div>`;
+}
+
+function renderZeitraum(o,z){title.textContent=z.label;subtitle.textContent=o.name;state.tab==='pos'?renderPositionen(z):renderErgebnis(z);}
+
+function renderPositionen(z){
+  const done=z.positionen.filter(p=>p.status==='erledigt').length,open=z.positionen.length-done;
+  const rows=z.positionen.map(p=>{
+    const clip=p.status==='erledigt'?`<div class="clip">PDF</div>`:`<div class="clip empty">–</div>`;
+    const amt=p.status==='offen'?`<span style="color:var(--neg)">offen</span>`:eur(p.betrag);
+    const s35=p.s35?`<span class="chip amber">§35a</span>`:'';
+    const st=p.status==='erledigt'?`<span class="chip pos">erledigt</span>`:`<span class="chip neg">offen</span>`;
+    return `<div class="pos ${p.status==='erledigt'?'done':'open'}">${clip}<div class="mid"><div class="name">${p.art}</div>
+      <div class="meta"><span class="chip ${quelleChip(p.quelle)}">${p.quelle}</span><span class="chip gray">${p.schluessel}</span>${s35}${st}</div></div><div class="amt">${amt}</div></div>`;
+  }).join('');
+  const total=z.positionen.reduce((s,p)=>s+(p.status==='offen'?0:p.betrag),0);
+  scroll.innerHTML=fristBanner(z)+'<div class="eyebrow">Kostenpositionen</div>'+
+    (z.positionen.length?`<div class="prog"><span class="g">● ${done} erledigt</span><span class="r">● ${open} offen</span></div>`:'')+
+    (rows||'<div class="card" style="cursor:default;color:var(--soft)">Noch keine Positionen. Ersten Beleg scannen.</div>')+
+    (z.positionen.length?`<div class="sum"><span class="l">Summe erledigt</span><span class="v">${eur(total)}</span></div>`:'');
+}
+
+function renderErgebnis(z){
+  if(!z.ergebnis.length){scroll.innerHTML=fristBanner(z)+'<div class="card" style="cursor:default;color:var(--soft)">Ergebnis erscheint, sobald der Zeitraum berechnet ist.</div>';return;}
+  const auslagen=z.ergebnis.reduce((s,r)=>s+r.kosten,0),abschlaege=z.ergebnis.reduce((s,r)=>s+r.vz,0),netto=abschlaege-auslagen,np=netto>=0;
+  const total=`<div class="total"><div class="h">Gesamtübersicht Zeitraum</div>
+    <div class="line"><span class="lbl">Auslagen (Kosten gesamt)</span><span class="val">${eur(auslagen)}</span></div>
+    <div class="line"><span class="lbl">Erhaltene Abschläge</span><span class="val">${eur(abschlaege)}</span></div>
+    <div class="split"></div><div class="net"><span class="lbl">Saldo gesamt</span><span class="val ${np?'pos':'neg'}">${np?'+ ':'− '}${eur(Math.abs(netto))}</span></div>
+    <div class="hint">${np?'Erstattung an Parteien':'Nachforderung an Parteien'}</div></div>`;
+  const cards=z.ergebnis.map(r=>{const s=r.vz-r.kosten,p=s>=0;
+    return `<div class="res"><div class="who">${r.who}</div>
+      <div class="grid"><div>Umgelegte Kosten</div><div class="num">${eur(r.kosten)}</div><div>Vorauszahlungen</div><div class="num">${eur(r.vz)}</div></div>
+      <div class="bal"><span class="lab">${p?'Guthaben':'Nachzahlung'}</span><span class="val ${p?'saldo pos':'saldo neg'}">${p?'+ ':'− '}${eur(Math.abs(s))}</span></div>
+      ${r.s35?`<div class="note35">◆ § 35a haushaltsnahe Leistungen: ${eur(r.s35)} — separat für Steuererklärung</div>`:''}</div>`;}).join('');
+  scroll.innerHTML=fristBanner(z)+'<div class="eyebrow">Gesamt & je Partei</div>'+total+cards+`<button class="btn" style="margin-top:4px"><span class="ic">⤓</span>Abrechnungs-PDF erstellen</button>`;
+}
+
+/* Events */
+scroll.addEventListener('click',e=>{
+  const oc=e.target.closest('[data-obj]'),zc=e.target.closest('[data-zr]'),nw=e.target.closest('[data-new]'),
+        kf=e.target.closest('[data-konfig]'),lg=e.target.closest('[data-logo]'),tg=e.target.closest('[data-tog]');
+  if(oc)go('zeitraeume',{obj:DATA.objekte.find(x=>x.id===oc.dataset.obj)});
+  else if(zc){go('zeitraum',{zr:state.obj.zeitraeume.find(x=>x.id===zc.dataset.zr),tab:'pos'});syncTabs();}
+  else if(kf)go('konfig');
+  else if(lg)openLogo();
+  else if(tg){const i=+tg.dataset.tog;state.obj.katalog[i][1]=state.obj.katalog[i][1]?0:1;render();}
+  else if(nw)alert('Neuer Zeitraum:\n\nStart · Ende frei wählbar\nTyp: regulär / Rumpf / Zwischenabrechnung\nFrist automatisch: Ende + 12 Monate (§ 556 BGB)');
+});
+back.addEventListener('click',()=>{
+  if(state.view==='zeitraum')go('zeitraeume');
+  else if(state.view==='konfig')go('zeitraeume');
+  else if(state.view==='zeitraeume')go('objekte',{obj:null});
+});
+tabs.addEventListener('click',e=>{const t=e.target.closest('.tab');if(!t)return;state.tab=t.dataset.tab;syncTabs();render();});
+function syncTabs(){document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===state.tab));}
+
+/* Scan modal */
+const modal=$('#modal');
+$('#fab').addEventListener('click',()=>modal.classList.add('open'));
+$('#apply').addEventListener('click',()=>{if(state.zr)state.zr.positionen.push({art:'Kaltwasserzähler',betrag:51.41,quelle:'Scan',schluessel:state.obj.id==='obj-b'?'direkt':'Fläche',s35:true,status:'erledigt'});modal.classList.remove('open');render();});
+
+/* Logo modal */
+const logomodal=$('#logomodal');
+function openLogo(){
+  $('#lgrid').innerHTML=LOGOS.map(([id,lbl])=>`<button class="lopt ${state.obj.logo===id?'sel':''}" data-pick="${id}"><svg viewBox="0 0 96 96"><use href="#${id}"/></svg><span class="ll">${lbl}</span></button>`).join('');
+  logomodal.classList.add('open');
+}
+$('#lgrid').addEventListener('click',e=>{const b=e.target.closest('[data-pick]');if(!b)return;state.obj.logo=b.dataset.pick;logomodal.classList.remove('open');render();});
+
+document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{modal.classList.remove('open');logomodal.classList.remove('open');}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){modal.classList.remove('open');logomodal.classList.remove('open');}});
+
+render();
+</script>
+</body>
+</html>

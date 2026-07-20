@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Immobilie einrichten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#E8ECEC;--sheet:#FFFFFF;--ink:#16262C;--soft:#5C6B70;--line:#D6DCDD;--teal:#0F6E5C;--teal-d:#0B5548;
+    --amber:#916212;--pos:#2E7D4F;--neg:#B24229;
+    --disp:"Space Grotesk",system-ui,sans-serif;--body:"Inter",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;}
+  *{box-sizing:border-box} html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.45;display:flex;justify-content:center}
+  .app{width:100%;max-width:440px;min-height:100vh;background:var(--paper);position:relative;display:flex;flex-direction:column}
+  @media(min-width:480px){body{padding:24px 0}.app{min-height:calc(100vh - 48px);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 24px 60px -30px rgba(22,38,44,.35)}}
+
+  .bar{background:var(--sheet);border-bottom:1px solid var(--line);padding:13px 16px}
+  .bar .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .bar h1{font:600 16px var(--disp);margin:0;letter-spacing:-.01em}
+  .seg{display:flex;background:#EDF1F0;border:1px solid var(--line);border-radius:99px;padding:3px}
+  .seg button{border:none;background:none;font:600 12px var(--disp);color:var(--soft);padding:6px 12px;border-radius:99px;cursor:pointer}
+  .seg button[aria-pressed=true]{background:var(--sheet);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+  .stepper{display:flex;padding:16px 10px 8px;background:var(--sheet);border-bottom:1px solid var(--line)}
+  .st{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;cursor:default;background:none;border:none;padding:0}
+  .stepper.clickable .st{cursor:pointer}
+  .st .dot{width:30px;height:30px;border-radius:50%;background:#CBD3D4;color:#fff;display:flex;align-items:center;justify-content:center;font:600 13px var(--mono);z-index:2;transition:background .16s}
+  .st.done .dot{background:var(--teal)} .st.active .dot{background:var(--ink)}
+  .st .lb{font:600 10px var(--disp);color:var(--soft);text-align:center;letter-spacing:-.01em;line-height:1.2}
+  .st.active .lb{color:var(--ink)}
+  .st::before{content:"";position:absolute;top:14px;left:-50%;width:100%;height:2px;background:#CBD3D4;z-index:1}
+  .st:first-child::before{display:none}
+  .st.done::before,.st.active::before{background:var(--teal)}
+
+  .content{flex:1;overflow:auto;padding:18px 16px 8px}
+  .shead{margin-bottom:18px}
+  .shead .se{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--teal-d)}
+  .shead h2{font:700 22px var(--disp);letter-spacing:-.02em;margin:6px 0 4px}
+  .shead p{font:400 13.5px var(--body);color:var(--soft);margin:0;line-height:1.5}
+
+  .field2{margin-bottom:14px}
+  .field2 label{display:block;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--soft);margin-bottom:7px}
+  .inp{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:12px 13px;font:500 15px var(--body);color:var(--ink);background:var(--sheet)}
+  .inp:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+  select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235C6B70' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+  .two{display:flex;gap:10px} .two>*{flex:1}
+
+  .lgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .lopt{background:var(--sheet);border:1.5px solid var(--line);border-radius:14px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .lopt svg{width:56px;height:56px} .lopt .ll{font:600 11px var(--disp);text-align:center}
+  .lopt.sel{border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap}
+  .chc{border:1.5px solid var(--line);background:var(--sheet);border-radius:99px;padding:9px 15px;font:600 13px var(--disp);cursor:pointer;color:var(--soft)}
+  .chc.sel{border-color:var(--teal);color:var(--teal-d);background:#E7F3EF}
+
+  .choice{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+  .ch{border:1.5px solid var(--line);border-radius:14px;padding:14px 15px;cursor:pointer;background:var(--sheet);display:flex;gap:12px;align-items:flex-start}
+  .ch.sel{border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+  .ch .rad{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:none;margin-top:2px;position:relative}
+  .ch.sel .rad{border-color:var(--teal)} .ch.sel .rad::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--teal)}
+  .ch .ct{font:600 15px var(--disp);letter-spacing:-.01em} .ch .cd{font:400 13px var(--body);color:var(--soft);margin-top:2px}
+
+  .infobox{background:#E7F3EF;border:1px solid #B6D8CF;border-radius:12px;padding:12px 14px;font:500 12.5px var(--body);color:var(--teal-d);line-height:1.5}
+  .infobox b{font-weight:700}
+
+  .cfgcount{font:600 12px var(--mono);color:var(--soft);margin:0 2px 12px}
+  .togg{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--sheet);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;cursor:pointer}
+  .togg .tn{flex:1;font:600 14px var(--disp);letter-spacing:-.01em}
+  .togg .sw{width:42px;height:25px;border-radius:99px;background:#CDD5D6;position:relative;flex:none;transition:background .16s}
+  .togg .sw::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .16s}
+  .togg.on .sw{background:var(--teal)} .togg.on .sw::after{transform:translateX(17px)} .togg.off .tn{color:var(--soft)}
+
+  .unit{background:var(--sheet);border:1px solid var(--line);border-radius:13px;padding:12px 13px;margin-bottom:10px}
+  .unit .uhd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .unit .uhd .un{font:600 12px var(--mono);color:var(--soft);text-transform:uppercase;letter-spacing:.06em}
+  .unit .rm{border:none;background:#F7E9E3;color:var(--neg);border-radius:8px;width:26px;height:26px;font:600 15px var(--mono);cursor:pointer}
+  .unit .sm{width:100%;border:1.5px solid var(--line);border-radius:9px;padding:9px 11px;font:500 14px var(--body);background:#FBFCFC;margin-bottom:8px}
+  .unit .sm:focus{outline:none;border-color:var(--teal)}
+  .addbtn{width:100%;border:1.5px dashed #AEC4C0;background:#EDF3F1;color:var(--teal-d);border-radius:12px;padding:13px;font:600 14px var(--disp);cursor:pointer}
+  .empty{font:400 13px var(--body);color:var(--soft);text-align:center;padding:6px 0 14px}
+
+  .foot{background:linear-gradient(transparent,var(--paper) 28%);padding:12px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:10px}
+  .btn{flex:1;border:none;border-radius:12px;padding:15px;cursor:pointer;font:600 15px var(--disp);letter-spacing:-.01em;background:var(--teal);color:#fff;transition:background .15s}
+  .btn:hover{background:var(--teal-d)} .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .btn.ghost{flex:0 0 auto;padding:15px 20px;background:var(--sheet);color:var(--teal-d);border:1px solid var(--line)}
+
+  /* done overlay */
+  .done{position:absolute;inset:0;background:var(--paper);z-index:40;display:none;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}
+  .done.open{display:flex}
+  .done .badge{width:70px;height:70px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font:700 30px var(--mono);margin-bottom:18px}
+  .done h2{font:700 22px var(--disp);letter-spacing:-.02em;margin:0 0 6px}
+  .done p{font:400 14px var(--body);color:var(--soft);margin:0 0 20px}
+  .recap{width:100%;background:var(--sheet);border:1px solid var(--line);border-radius:14px;padding:14px 16px;text-align:left;margin-bottom:18px}
+  .recap .rl{display:flex;justify-content:space-between;gap:12px;font:500 13px var(--body);padding:5px 0}
+  .recap .rl .rk{color:var(--soft)} .recap .rl .rv{font-weight:600;text-align:right}
+  @media(prefers-reduced-motion:reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="lg-villa" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="80" cy="54" r="8" fill="#2E7D4F"/><rect x="78.5" y="60" width="3" height="12" fill="#143038"/><polygon points="22,46 48,27 74,46" fill="#143038"/><rect x="57" y="31" width="5" height="11" fill="#143038"/><rect x="29" y="46" width="38" height="26" fill="#0F6E5C"/><rect x="44" y="57" width="8" height="15" fill="#143038"/><rect x="33" y="51" width="8" height="8" fill="#F4B740"/><rect x="55" y="51" width="8" height="8" fill="#F4B740"/></symbol>
+  <symbol id="lg-bauernhof" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="16" cy="56" r="7" fill="#2E7D4F"/><rect x="14.5" y="61" width="3" height="11" fill="#143038"/><rect x="62" y="42" width="11" height="30" fill="#F4B740"/><path d="M62 42 a5.5 5.5 0 0 1 11 0 z" fill="#143038"/><polygon points="24,47 30,33 54,33 60,47" fill="#143038"/><rect x="26" y="47" width="32" height="25" fill="#0F6E5C"/><rect x="36" y="54" width="12" height="18" fill="#143038"/></symbol>
+  <symbol id="lg-wohnung" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="72" cy="55" r="8" fill="#2E7D4F"/><rect x="70.5" y="61" width="3" height="11" fill="#143038"/><polygon points="30,47 48,32 66,47" fill="#143038"/><rect x="34" y="47" width="28" height="25" fill="#0F6E5C"/><rect x="44" y="58" width="9" height="14" fill="#143038"/><rect x="38" y="52" width="9" height="8" fill="#F4B740"/></symbol>
+  <symbol id="lg-mfhA" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><rect x="17" y="44" width="15" height="28" fill="#143038" opacity=".22"/><circle cx="19" cy="60" r="5" fill="#2E7D4F" opacity=".55"/><rect x="34" y="28" width="30" height="44" fill="#0F6E5C"/><rect x="32" y="26" width="34" height="4" fill="#143038"/><rect x="39" y="34" width="8" height="8" fill="#F4B740"/><rect x="53" y="34" width="8" height="8" fill="#F4B740"/><rect x="39" y="46" width="8" height="8" fill="#F4B740"/><rect x="53" y="46" width="8" height="8" fill="#F4B740"/><rect x="45" y="60" width="8" height="12" fill="#143038"/></symbol>
+  <symbol id="lg-mfhB" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="80" cy="56" r="7" fill="#2E7D4F"/><rect x="78.5" y="61" width="3" height="11" fill="#143038"/><polygon points="16,48 30,34 44,48" fill="#143038"/><rect x="19" y="48" width="22" height="24" fill="#0F6E5C"/><rect x="26" y="60" width="8" height="12" fill="#143038"/><rect x="22" y="52" width="7" height="7" fill="#F4B740"/><polygon points="42,48 56,34 70,48" fill="#143038"/><rect x="45" y="48" width="22" height="24" fill="#0F6E5C"/><rect x="52" y="60" width="8" height="12" fill="#143038"/><rect x="57" y="52" width="7" height="7" fill="#F4B740"/></symbol>
+  <symbol id="lg-gewerbe" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="79" cy="58" r="6" fill="#2E7D4F"/><rect x="77.5" y="63" width="3" height="9" fill="#143038"/><rect x="18" y="40" width="52" height="5" fill="#143038"/><rect x="20" y="45" width="48" height="27" fill="#0F6E5C"/><rect x="27" y="47" width="34" height="6" fill="#143038"/><circle cx="31" cy="50" r="1.6" fill="#F4B740"/><polygon points="24,57 64,57 60,63 28,63" fill="#F4B740"/><rect x="28" y="63" width="13" height="9" fill="#F4B740"/><rect x="47" y="63" width="13" height="9" fill="#F4B740"/><rect x="41" y="61" width="6" height="11" fill="#143038"/></symbol>
+</defs></svg>
+
+<div class="app">
+  <div class="bar">
+    <div class="top">
+      <h1 id="barTitle">Immobilie anlegen</h1>
+      <div class="seg" role="group" aria-label="Modus">
+        <button data-mode="onboarding" aria-pressed="true">Onboarding</button>
+        <button data-mode="edit" aria-pressed="false">Bearbeiten</button>
+      </div>
+    </div>
+  </div>
+  <div class="stepper" id="stepper"></div>
+  <div class="content" id="content"></div>
+  <div class="foot" id="foot"></div>
+
+  <div class="done" id="done">
+    <div class="badge">✓</div>
+    <h2 id="doneTitle">Immobilie angelegt</h2>
+    <p>Grunddaten, Turnus und Kostenarten sind gespeichert.</p>
+    <div class="recap" id="recap"></div>
+    <button class="btn" id="doneBtn" style="max-width:280px">Zur Immobilie</button>
+  </div>
+</div>
+
+<script>
+const TYPES=[['lg-villa','Villa'],['lg-bauernhof','Bauernhof'],['lg-wohnung','Einzelne Wohnung'],['lg-mfhA','Mehrfamilienhaus'],['lg-mfhB','Zwei-/Doppelhaus'],['lg-gewerbe','Gewerbe']];
+const MONATE=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const STEPS=[{se:'Schritt 1 / 5',lb:'Basis',h:'Grunddaten',p:'Name und Adresse der Immobilie.'},
+  {se:'Schritt 2 / 5',lb:'Typ',h:'Typ & Logo',p:'Wähle Gebäudetyp und Nutzung — das Logo ergibt sich daraus.'},
+  {se:'Schritt 3 / 5',lb:'Turnus',h:'Abrechnungsturnus',p:'Wann läuft das Abrechnungsjahr? Die Frist wird daraus automatisch abgeleitet.'},
+  {se:'Schritt 4 / 5',lb:'Kosten',h:'Kostenarten',p:'Was gehört grundsätzlich zu jeder Jahresabrechnung dieser Immobilie?'},
+  {se:'Schritt 5 / 5',lb:'Einheiten',h:'Einheiten & Parteien',p:'Wer wohnt / arbeitet hier und zahlt Abschläge?'}];
+
+const defaultKosten=()=>[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Grundsteuer',1],['Gebäudeversicherung',1],['Hausmeister',1],['Allgemeinstrom',1],['Rauchwarnmelder',1],['Kaminkehrer',0],['Kaltwasserzähler',0],['Aufzug',0],['Gartenpflege',0],['Straßenreinigung / Winterdienst',0]];
+
+const blank=()=>({name:'',strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[]});
+const laufer=()=>({name:'Musterstraße 5',strasse:'Musterstraße 5',plz:'90000',ort:'Musterstadt',flaeche:'320',typ:'lg-mfhB',nutzung:'Gemischt',turnus:'individuell',startMonat:10,
+  kosten:[['Wasser',1],['Heizöl',1],['Grundsteuer',1],['Müll',1],['Kaminkehrer',1],['Hausmeisterdienste',1],['Gartenwasser',1],['Allgemeinstrom',1],['Gebäudeversicherung',1],['Aufzug',0],['Straßenreinigung / Winterdienst',0]],
+  einheiten:[{bez:'1. OG',partei:'Partei OG',flaeche:'78',personen:'2'},{bez:'2. OG',partei:'WG',flaeche:'85',personen:'3'},{bez:'EG / Büro',partei:'Büro (anteilig)',flaeche:'40',personen:'1'},{bez:'Garage',partei:'Stellplatz',flaeche:'',personen:''}]});
+
+let state={mode:'onboarding',step:0,data:blank()};
+const $=s=>document.querySelector(s);
+const content=$('#content'),stepper=$('#stepper'),foot=$('#foot');
+
+function setMode(m){
+  state.mode=m; state.step=0; state.data = m==='edit'?laufer():blank();
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===m));
+  $('#barTitle').textContent = m==='edit'?'Immobilie bearbeiten':'Immobilie anlegen';
+  render();
+}
+
+function render(){renderStepper();renderStep();renderFoot();}
+
+function renderStepper(){
+  const edit=state.mode==='edit';
+  stepper.className='stepper'+(edit?' clickable':'');
+  stepper.innerHTML=STEPS.map((s,i)=>{
+    const cls=i<state.step?'done':i===state.step?'active':'';
+    const inner=i<state.step?'✓':(i+1);
+    const tag = (edit||i<=state.step)?'button':'div';
+    return `<${tag} class="st ${cls}" data-step="${i}"><span class="dot">${inner}</span><span class="lb">${s.lb}</span></${tag}>`;
+  }).join('');
+}
+
+function renderStep(){
+  const s=STEPS[state.step],d=state.data;
+  let body='';
+  if(state.step===0){
+    body=`
+      <div class="field2"><label>Bezeichnung</label><input class="inp" data-field="name" value="${esc(d.name)}" placeholder="z. B. Musterstraße 5"></div>
+      <div class="field2"><label>Straße & Nr.</label><input class="inp" data-field="strasse" value="${esc(d.strasse)}" placeholder="Straße Hausnummer"></div>
+      <div class="two">
+        <div class="field2"><label>PLZ</label><input class="inp" data-field="plz" value="${esc(d.plz)}" placeholder="90000" inputmode="numeric"></div>
+        <div class="field2" style="flex:2"><label>Ort</label><input class="inp" data-field="ort" value="${esc(d.ort)}" placeholder="Ort"></div>
+      </div>
+      <div class="field2"><label>Gesamtfläche (m²)</label><input class="inp" data-field="flaeche" value="${esc(d.flaeche)}" placeholder="z. B. 320" inputmode="decimal"></div>`;
+  } else if(state.step===1){
+    body=`<div class="lgrid">`+TYPES.map(([id,lbl])=>`<button class="lopt ${d.typ===id?'sel':''}" data-typ="${id}"><svg viewBox="0 0 96 96"><use href="#${id}"/></svg><span class="ll">${lbl}</span></button>`).join('')+`</div>
+      <div class="field2" style="margin-top:18px"><label>Nutzung</label><div class="chips">`+
+      ['Wohnen','Gewerbe','Gemischt'].map(n=>`<button class="chc ${d.nutzung===n?'sel':''}" data-nutzung="${n}">${n}</button>`).join('')+`</div></div>`;
+  } else if(state.step===2){
+    const endName=MONATE[(d.startMonat+10)%12], startName=MONATE[d.startMonat-1];
+    body=`<div class="choice">
+        <button class="ch ${d.turnus==='kalender'?'sel':''}" data-turnus="kalender"><span class="rad"></span><span><span class="ct">Kalenderjahr</span><span class="cd">01. Januar – 31. Dezember</span></span></button>
+        <button class="ch ${d.turnus==='individuell'?'sel':''}" data-turnus="individuell"><span class="rad"></span><span><span class="ct">Individueller Turnus</span><span class="cd">frei wählbarer Startmonat, z. B. Okt – Sep</span></span></button>
+      </div>`;
+    if(d.turnus==='individuell'){
+      body+=`<div class="field2"><label>Startmonat</label><select class="inp" data-field="startMonat">`+
+        MONATE.map((m,i)=>`<option value="${i+1}" ${d.startMonat===i+1?'selected':''}>${m}</option>`).join('')+`</select></div>
+        <div class="infobox">Turnus: <b>${startName} – ${endName}</b> (12 Monate). Turnus-Umstellung und Rumpf-/Zwischenabrechnungen sind später jederzeit möglich.</div>`;
+    } else {
+      body+=`<div class="infobox">Turnus: <b>Januar – Dezember</b>. Turnus-Umstellung und Rumpf-/Zwischenabrechnungen sind später jederzeit möglich.</div>`;
+    }
+    body+=`<div class="infobox" style="margin-top:10px;background:#F7EFD9;border-color:#E4CF9E;color:#916212">Frist § 556 BGB: Abrechnung je Zeitraum bis <b>Ende + 12 Monate</b> — wird automatisch gesetzt und überwacht.</div>`;
+  } else if(state.step===3){
+    const aktiv=d.kosten.filter(k=>k[1]).length;
+    body=`<div class="cfgcount">${aktiv} von ${d.kosten.length} aktiv</div>`+
+      d.kosten.map((k,i)=>`<button class="togg ${k[1]?'on':'off'}" data-tog="${i}"><span class="tn">${k[0]}</span><span class="sw"></span></button>`).join('');
+  } else if(state.step===4){
+    body = d.einheiten.length? d.einheiten.map((u,i)=>`
+      <div class="unit"><div class="uhd"><span class="un">Einheit ${i+1}</span><button class="rm" data-rm="${i}" aria-label="entfernen">×</button></div>
+        <input class="sm" data-ei="${i}" data-ek="bez" value="${esc(u.bez)}" placeholder="Bezeichnung (z. B. 1. OG, Büro, Garage)">
+        <div class="two"><input class="sm" data-ei="${i}" data-ek="flaeche" value="${esc(u.flaeche)}" placeholder="Fläche m²" inputmode="decimal">
+          <input class="sm" data-ei="${i}" data-ek="personen" value="${esc(u.personen)}" placeholder="Personen" inputmode="numeric"></div>
+        <input class="sm" data-ei="${i}" data-ek="partei" value="${esc(u.partei)}" placeholder="Mieter / Partei" style="margin-bottom:0">
+      </div>`).join('') : `<div class="empty">Noch keine Einheiten. Für kleine Objekte reicht auch eine.</div>`;
+    body+=`<button class="addbtn" data-add="1">＋ Einheit hinzufügen</button>`;
+  }
+  content.innerHTML=`<div class="shead"><div class="se">${state.mode==='edit'?'Bearbeiten · '+s.lb:s.se}</div><h2>${s.h}</h2><p>${s.p}</p></div>`+body;
+}
+
+function renderFoot(){
+  if(state.mode==='edit'){
+    foot.innerHTML=`<button class="btn" data-save="1">Änderungen speichern</button>`;
+    return;
+  }
+  const last=state.step===STEPS.length-1;
+  foot.innerHTML=(state.step>0?`<button class="btn ghost" data-prev="1">Zurück</button>`:'')+
+    `<button class="btn" data-next="1">${last?'Immobilie anlegen':'Weiter'}</button>`;
+}
+
+const esc=s=>String(s).replace(/"/g,'&quot;');
+
+/* input binding (kein Re-Render beim Tippen) */
+content.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset.field==='startMonat'){state.data.startMonat=+t.value;renderStep();return;}
+  if(t.dataset.field){state.data[t.dataset.field]=t.value;return;}
+  if(t.dataset.ei!==undefined){state.data.einheiten[+t.dataset.ei][t.dataset.ek]=t.value;return;}
+});
+
+/* clicks */
+content.addEventListener('click',e=>{
+  const typ=e.target.closest('[data-typ]'),nu=e.target.closest('[data-nutzung]'),tu=e.target.closest('[data-turnus]'),
+        tg=e.target.closest('[data-tog]'),add=e.target.closest('[data-add]'),rm=e.target.closest('[data-rm]');
+  if(typ){state.data.typ=typ.dataset.typ;renderStep();}
+  else if(nu){state.data.nutzung=nu.dataset.nutzung;renderStep();}
+  else if(tu){state.data.turnus=tu.dataset.turnus;if(tu.dataset.turnus==='kalender')state.data.startMonat=1;renderStep();}
+  else if(tg){const i=+tg.dataset.tog;state.data.kosten[i][1]=state.data.kosten[i][1]?0:1;renderStep();}
+  else if(add){state.data.einheiten.push({bez:'',partei:'',flaeche:'',personen:''});renderStep();}
+  else if(rm){state.data.einheiten.splice(+rm.dataset.rm,1);renderStep();}
+});
+
+stepper.addEventListener('click',e=>{
+  const st=e.target.closest('.st'); if(!st||st.tagName!=='BUTTON')return;
+  state.step=+st.dataset.step; render();
+});
+
+foot.addEventListener('click',e=>{
+  if(e.target.closest('[data-prev]')){state.step=Math.max(0,state.step-1);render();}
+  else if(e.target.closest('[data-next]')){
+    if(state.step<STEPS.length-1){state.step++;render();}
+    else finish();
+  } else if(e.target.closest('[data-save]')){ flashSaved(); }
+});
+
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+
+function typLabel(id){return (TYPES.find(t=>t[0]===id)||[,'—'])[1];}
+function turnusLabel(){return state.data.turnus==='kalender'?'Januar – Dezember':`${MONATE[state.data.startMonat-1]} – ${MONATE[(state.data.startMonat+10)%12]}`;}
+
+function finish(){
+  const d=state.data;
+  $('#recap').innerHTML=[
+    ['Name', d.name||'—'],['Typ', typLabel(d.typ)],['Nutzung', d.nutzung],
+    ['Turnus', turnusLabel()],['Kostenarten aktiv', d.kosten.filter(k=>k[1]).length+' von '+d.kosten.length],
+    ['Einheiten', d.einheiten.length]
+  ].map(([k,v])=>`<div class="rl"><span class="rk">${k}</span><span class="rv">${v}</span></div>`).join('');
+  $('#done').classList.add('open');
+}
+$('#doneBtn').addEventListener('click',()=>{$('#done').classList.remove('open');setMode('onboarding');});
+
+function flashSaved(){
+  const b=foot.querySelector('.btn'); const o=b.textContent;
+  b.textContent='✓ Gespeichert'; b.style.background='var(--pos)';
+  setTimeout(()=>{b.textContent=o;b.style.background='';},1300);
+}
+
+setMode('onboarding');
+</script>
+</body>
+</html>
