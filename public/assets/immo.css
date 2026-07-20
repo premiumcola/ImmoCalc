@@ -112,6 +112,20 @@ h2.sec:first-child{margin-top:0}
 .row.ghost{background:transparent; box-shadow:none; border:1.5px dashed #B4C4C1}
 .row.ghost .ic{background:transparent; color:var(--teal-d)}
 
+/* Ein verbundener Dienst faerbt sein eigenes Symbol gruen und atmet leise.
+   Das Signal sitzt damit dort, wo der Blick ohnehin anfaengt — links.
+   Bewusst VOLL gruen mit weissem Zeichen: die blasse Variante (--pos-bg) lag
+   zu nah am normalen Mintton und war nicht als Zustand zu erkennen. */
+.row .ic.aktiv{
+  background:var(--pos); color:#fff;
+  animation:atmen 3.2s ease-in-out infinite;
+}
+.row .ic.warte{background:var(--amber-bg); color:var(--amber)}
+@keyframes atmen{
+  0%, 100%{box-shadow:0 0 0 0 rgba(46,125,79,.45)}
+  50%     {box-shadow:0 0 0 7px rgba(46,125,79,0)}
+}
+
 /* ---- leerer Zustand ---- */
 .empty{
   background:var(--sheet); border-radius:16px; padding:28px 22px; text-align:center;
@@ -291,18 +305,6 @@ dialog.immo-dlg .btn + .btn{margin-top:8px}
 .gruppe:first-child{margin-top:0}
 .gruppe .anzahl{font-size:10px; opacity:.75}
 
-/* ---- Zustandspunkt fuer verbundene Dienste ---- */
-.punkt{width:9px; height:9px; border-radius:50%; background:var(--line);
-       flex:none; display:inline-block}
-.punkt.an{background:var(--pos); box-shadow:0 0 0 0 rgba(46,125,79,.45);
-          animation:pulsen 2.6s ease-out infinite}
-.punkt.warte{background:var(--amber)}
-@keyframes pulsen{
-  0%{box-shadow:0 0 0 0 rgba(46,125,79,.45)}
-  70%{box-shadow:0 0 0 7px rgba(46,125,79,0)}
-  100%{box-shadow:0 0 0 0 rgba(46,125,79,0)}
-}
-
 /* ---- Marke in der Navigation: fuehrt zurueck zur Startseite ----
    `.nav .brand` statt `.brand`: die Regel muss `.nav a` ueberbieten, sonst
    erbt der Link dessen display:flex und steht auch auf dem Handy in der
@@ -361,4 +363,7 @@ dialog.immo-dlg .btn + .btn{margin-top:8px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
 }
 
-@media(prefers-reduced-motion:reduce){*{transition:none !important}}
+/* Wer Bewegung abbestellt hat, bekommt keine — die Farbe allein sagt es auch. */
+@media(prefers-reduced-motion:reduce){
+  *{transition:none !important; animation:none !important}
+}

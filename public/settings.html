@@ -71,12 +71,11 @@
   <div class="scroll">
     <h2 class="sec">Dokumente</h2>
     <button class="row" id="ncRow">
-      <span class="ic">⬡</span>
+      <span class="ic" id="ncIkon">⬡</span>
       <span class="txt">
         <span class="t">Nextcloud-Verbindung</span>
         <span class="d" id="ncStatus">wird geprüft …</span>
       </span>
-      <span class="punkt" id="ncPunkt" title="Verbindungszustand"></span>
       <span class="arr">›</span>
     </button>
     <button class="row" id="ncHomeRow">
@@ -99,12 +98,11 @@
 
     <h2 class="sec">Versand</h2>
     <button class="row" id="mailRow">
-      <span class="ic">✉</span>
+      <span class="ic" id="mailIkon">✉</span>
       <span class="txt">
         <span class="t">Postfach für Abrechnungen</span>
         <span class="d" id="mailStatus">wird geprüft …</span>
       </span>
-      <span class="punkt" id="mailPunkt" title="Verbindungszustand"></span>
       <span class="arr">›</span>
     </button>
 
@@ -404,13 +402,13 @@ async function zustandLaden() {
     ncStatus.textContent = `${ncZustand.benutzer} · ${ncZustand.url}`;
     document.getElementById('ncUrl').value = ncZustand.url;
     document.getElementById('ncUser').value = ncZustand.benutzer;
-    // Grün und leise pulsend, sobald auch der Home-Ordner steht; bis dahin
+    // Grün und leise atmend, sobald auch der Home-Ordner steht; bis dahin
     // gelb — verbunden, aber noch nicht einsatzbereit.
-    document.getElementById('ncPunkt').className =
-      'punkt ' + (ncZustand.home ? 'an' : 'warte');
+    document.getElementById('ncIkon').className =
+      'ic ' + (ncZustand.home ? 'aktiv' : 'warte');
   } else {
     ncStatus.textContent = 'noch nicht eingerichtet';
-    document.getElementById('ncPunkt').className = 'punkt';
+    document.getElementById('ncIkon').className = 'ic';
   }
   ncHome.textContent = ncZustand.home || (ncZustand.eingerichtet
     ? 'noch nicht gewählt' : 'erst Verbindung einrichten');
@@ -604,8 +602,8 @@ async function mailZustand() {
     } else {
       mailStatus.textContent = 'noch nicht verbunden';
     }
-    document.getElementById('mailPunkt').className =
-      'punkt' + (status.verbunden ? ' an' : '');
+    document.getElementById('mailIkon').className =
+      'ic' + (status.verbunden ? ' aktiv' : '');
   } catch {
     mailStatus.textContent = 'Status nicht abrufbar';
   }
