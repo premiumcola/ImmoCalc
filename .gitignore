@@ -26,3 +26,8 @@ __pycache__/
 
 # --- OS ---
 .DS_Store
+
+# Wegwerf-Skripte des Agents
+scratch/
+node_modules/
+tests/screenshots/
