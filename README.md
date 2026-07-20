@@ -7,48 +7,38 @@ Nebenkosten-/Betriebskostenabrechnung. Monorepo im jFlow-Stil: ein Build-Context
 `container_name`-Präfix `immocalc-`, Konfiguration über persistierte
 `workflow.json` (+ `workflow.local.json`).
 
-**Gesplittet in zwei Environments:**
-- **LIVE** — stabil, unveränderliches Image · Port `8091` · Container `immocalc-dashboard`
-- **DEV**  — iterieren, `public/` read-only gemountet (Änderungen ohne Rebuild) ·
-  Port `8092` · Container `immocalc-dashboard-dev` · `LOG_LEVEL=DEBUG`
-
-Beide laufen parallel im selben Stack.
+**Eine Umgebung** auf Port `8091` — Container `immocalc-dashboard` und
+`immocalc-api`. `public/` ist read-only in den Container gemountet: jede
+Frontend-Änderung ist ohne Rebuild sofort auf der Seite. Nur Änderungen an
+API-Code, Dockerfiles, nginx-Config oder Compose brauchen `./deploy.sh`.
 
 ## Struktur
 ```
 immocalc/
-├── docker-compose.yml       # LIVE + DEV (YAML-Anchors), .env-getrieben
-├── .env / .env.example      # Ports, CONFIG_DIR(_DEV), DATA_DIR(_DEV), PUID/PGID, TZ, LOG_LEVEL(_DEV)
+├── docker-compose.yml       # api + dashboard, .env-getrieben
+├── .env / .env.example      # Port, CONFIG_DIR, DATA_DIR, PUID/PGID, TZ, LOG_LEVEL
 ├── .dockerignore
 ├── dashboard/               # Web-UI-Service
 │   ├── Dockerfile           # context = Repo-Wurzel; kopiert public/
-│   └── nginx/default.conf
+│   └── nginx/default.conf.template
+├── api/                     # FastAPI + SQLite, Rechen-Engine, Tests
 └── public/
-    ├── index.html app.html onboarding.html logos.html
+    ├── index.html app.html onboarding.html logos.html status.html
     ├── workflow.json / workflow.local.json   # KONFIG: aktive Kostenarten je Immo
     ├── icons/  docs/
 ```
 
 ## Auf Unraid ausrollen (Compose Manager)
-1. Ordner `immocalc/` nach `/mnt/user/appdata/immocalc/` kopieren.
+1. Repo nach `/mnt/user/appdata/immocalc/` klonen.
 2. `.env.example` → `.env`, Ports/Pfade prüfen.
-3. Compose Manager → *Add New Stack* → Ordner wählen → **Compose Up**.
-4. LIVE: `http://<unraid-ip>:8091`  ·  DEV: `http://<unraid-ip>:8092`
-
-Nur ein Environment starten:
-```bash
-docker compose up -d --build dashboard-live    # nur live
-docker compose up -d --build dashboard-dev     # nur dev
-```
+3. Compose Manager → *Add New Stack* → Ordner wählen → **Compose Up**
+   (oder einfach `./deploy.sh`).
+4. UI: `http://<unraid-ip>:8091`
 
 ## Konfiguration persistieren (jFlow-Muster)
-Default `workflow.json` ist ins Image gebaut. Zum Persistieren/Bearbeiten:
-```bash
-mkdir -p ${CONFIG_DIR}/dashboard
-cp public/workflow.json       ${CONFIG_DIR}/dashboard/workflow.json
-cp public/workflow.local.json ${CONFIG_DIR}/dashboard/workflow.local.json
-```
-Dann den `volumes:`-Block bei `dashboard-live` einkommentieren (dev analog mit `CONFIG_DIR_DEV`).
+Default `workflow.json` ist ins Image gebaut. `./deploy.sh` legt beim ersten
+Lauf eine bearbeitbare Kopie unter `${CONFIG_DIR}/dashboard/` an; zum Aktivieren
+den entsprechenden `volumes:`-Eintrag bei `dashboard` ergänzen.
 
 ## Was von jFlow später andockt (Hooks im compose vorbereitet)
 `./.git:/repo/.git:ro` (Git-Stand) · `${DATA_DIR}:/data` (Beleg-PDFs) ·
@@ -57,6 +47,7 @@ Dann den `volumes:`-Block bei `dashboard-live` einkommentieren (dev analog mit `
 ## Backend & Tests
 - API: FastAPI + SQLite unter `api/` (Rechen-Engine + Seed der echten Objekte).
 - `make test` — Engine- und API-Tests (pytest), müssen grün sein.
+- `make check` — echter Browser gegen die laufende Instanz, Screenshots in
+  `tests/screenshots/`. Einmalig: `npm install && npx playwright install chromium`.
 - Frontend ruft same-origin `/api/...` (nginx proxyt an `immocalc-api`).
-- Live-Daten im Browser: Seite **Live-Daten (API)** auf der Startseite.
 - Agenten-Leitfaden: **CLAUDE.md** · Feature-Plan: **ROADMAP.md**

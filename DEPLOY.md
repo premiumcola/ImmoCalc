@@ -1,7 +1,7 @@
-# ImmoCalc – Deploy auf Unraid (Git-Clone, LIVE + DEV)
+# ImmoCalc – Deploy auf Unraid (Git-Clone)
 
-Ergebnis: zwei gespiegelte Umgebungen aus demselben Code —
-**LIVE** `:8091` (stabil) und **DEV** `:8092` (iterieren, `public/` live gemountet).
+Ergebnis: eine Umgebung auf `:8091`. `public/` ist live in den Container
+gemountet — Frontend-Änderungen wirken ohne Rebuild.
 **Echte Mieter-/Objektdaten kommen NIE ins Git** (siehe unten).
 
 ## 0) Einmalig: Repo auf GitHub anlegen (ohne Nutzerdaten)
@@ -32,17 +32,15 @@ cp .env.example .env
 nano .env        # Ports/IP/PUID/PGID prüfen (Defaults passen meist)
 ```
 `DATA_DIR`/`CONFIG_DIR` zeigen bewusst NACH AUSSERHALB des Clones
-(`/mnt/user/appdata/immocalc-live` bzw. `-dev`) → `git pull` fasst deine Daten nie an.
+(`/mnt/user/appdata/immocalc-live`) → `git pull` fasst deine Daten nie an.
 
-## 3) Starten (LIVE + DEV)
+## 3) Starten
 ```bash
-./deploy.sh            # baut & startet alle 4 Container, seedet DB-Verzeichnisse
+./deploy.sh            # baut & startet beide Container, seedet DB-Verzeichnis
 ```
-Danach:
-- **LIVE**  UI  → `http://<unraid-ip>:8091`   (Container `immocalc-dashboard` + `immocalc-api`)
-- **DEV**   UI  → `http://<unraid-ip>:8092`   (Container `immocalc-dashboard-dev` + `immocalc-api-dev`)
+Danach: UI → `http://<unraid-ip>:8091`
+(Container `immocalc-dashboard` + `immocalc-api`)
 
-Nur eine Umgebung: `./deploy.sh live` bzw. `./deploy.sh dev`.
 Alternativ via GUI: Plugin **Compose Manager** → Stack auf den Ordner zeigen → *Compose Up*.
 
 ## 4) Updaten
@@ -56,7 +54,9 @@ Deine Daten (SQLite in `DATA_DIR`, Belege) bleiben unberührt.
 ## 5) Tests & Selfcheck (für den Code-Agent)
 ```bash
 make test              # Engine- + API-Tests (pytest)
-npm install && npx playwright install chromium && ./check.sh   # Browser-Selfcheck
+npm install                          # einmalig
+npx playwright install chromium      # einmalig
+make check             # Browser-Selfcheck gegen die laufende Instanz
 ```
 
 ## Was garantiert NICHT im Git landet
