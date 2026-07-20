@@ -201,9 +201,12 @@ async function laden() {
   objekt = det.objekt;
   titel.textContent = objekt.name;
   document.getElementById('barlogo').innerHTML = logoSvg(objekt.typ);
-  const ortText = objekt.ort || objekt.strasse || objekt.nutzung;
-  sub.textContent =
-    `${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'} · ${ortText}`;
+  // Der Ort enthaelt oft schon die Einheitenzahl ("Mixed-Use · 7 Einheiten") —
+  // dann nicht zusaetzlich zaehlen, sonst steht es doppelt und die Zeile bricht um.
+  const ortText = (objekt.ort || objekt.strasse || '').trim();
+  sub.textContent = /einheit|wohnung/i.test(ortText) || !ortText
+    ? (ortText || `${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'}`)
+    : `${ortText} · ${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'}`;
 
   const laufend = det.zeitraeume.find(z => z.status === 'in Arbeit');
   const zr = det.zeitraeume.length

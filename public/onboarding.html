@@ -27,18 +27,15 @@
   .bar{background:var(--sheet);border-bottom:1px solid var(--line);padding:13px 16px}
   .bar .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
   .bar h1{font:600 16px var(--disp);margin:0;letter-spacing:-.01em;flex:1}
-  .close{border:none;background:#F1F4F4;color:#5C6B70;border-radius:10px;
-         width:34px;height:34px;min-width:34px;font:400 19px var(--body);cursor:pointer;
+  /* 44px: Mindestgroesse fuer Touch-Ziele */
+  .close{border:none;background:#F1F4F4;color:#5C6B70;border-radius:12px;
+         width:44px;height:44px;min-width:44px;font:400 20px var(--body);cursor:pointer;
          display:flex;align-items:center;justify-content:center;flex:none;line-height:1}
   .close:hover{background:#E4EAEA;color:#16262C}
   .close:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .seg{display:flex;background:#EDF1F0;border:1px solid var(--line);border-radius:99px;padding:3px}
-  .seg button{border:none;background:none;font:600 12px var(--disp);color:var(--soft);padding:6px 12px;border-radius:99px;cursor:pointer}
-  .seg button[aria-pressed=true]{background:var(--sheet);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
 
   .stepper{display:flex;padding:16px 10px 8px;background:var(--sheet);border-bottom:1px solid var(--line)}
   .st{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;cursor:default;background:none;border:none;padding:0}
-  .stepper.clickable .st{cursor:pointer}
   .st .dot{width:30px;height:30px;border-radius:50%;background:#CBD3D4;color:#fff;display:flex;align-items:center;justify-content:center;font:600 13px var(--mono);z-index:2;transition:background .16s}
   .st.done .dot{background:var(--teal)} .st.active .dot{background:var(--ink)}
   .st .lb{font:600 10px var(--disp);color:var(--soft);text-align:center;letter-spacing:-.01em;line-height:1.2}
@@ -126,11 +123,7 @@
 <div class="app">
   <div class="bar">
     <div class="top">
-      <h1 id="barTitle">Immobilie anlegen</h1>
-      <div class="seg" role="group" aria-label="Modus">
-        <button data-mode="onboarding" aria-pressed="true">Onboarding</button>
-        <button data-mode="edit" aria-pressed="false">Bearbeiten</button>
-      </div>
+      <h1>Immobilie anlegen</h1>
       <button class="close" id="abbrechen" aria-label="Schließen" title="Schließen">×</button>
     </div>
   </div>
@@ -159,30 +152,18 @@ const STEPS=[{se:'Schritt 1 / 5',lb:'Basis',h:'Grunddaten',p:'Name und Adresse d
 const defaultKosten=()=>[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Grundsteuer',1],['Gebäudeversicherung',1],['Hausmeister',1],['Allgemeinstrom',1],['Rauchwarnmelder',1],['Kaminkehrer',0],['Kaltwasserzähler',0],['Aufzug',0],['Gartenpflege',0],['Straßenreinigung / Winterdienst',0]];
 
 const blank=()=>({name:'',strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[]});
-const laufer=()=>({name:'Musterstraße 5',strasse:'Musterstraße 5',plz:'90000',ort:'Musterstadt',flaeche:'320',typ:'lg-mfhB',nutzung:'Gemischt',turnus:'individuell',startMonat:10,
-  kosten:[['Wasser',1],['Heizöl',1],['Grundsteuer',1],['Müll',1],['Kaminkehrer',1],['Hausmeisterdienste',1],['Gartenwasser',1],['Allgemeinstrom',1],['Gebäudeversicherung',1],['Aufzug',0],['Straßenreinigung / Winterdienst',0]],
-  einheiten:[{bez:'1. OG',partei:'Partei OG',flaeche:'78',personen:'2'},{bez:'2. OG',partei:'WG',flaeche:'85',personen:'3'},{bez:'EG / Büro',partei:'Büro (anteilig)',flaeche:'40',personen:'1'},{bez:'Garage',partei:'Stellplatz',flaeche:'',personen:''}]});
-
-let state={mode:'onboarding',step:0,data:blank()};
+let state={step:0,data:blank()};
 const $=s=>document.querySelector(s);
 const content=$('#content'),stepper=$('#stepper'),foot=$('#foot');
-
-function setMode(m){
-  state.mode=m; state.step=0; state.data = m==='edit'?laufer():blank();
-  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===m));
-  $('#barTitle').textContent = m==='edit'?'Immobilie bearbeiten':'Immobilie anlegen';
-  render();
-}
 
 function render(){renderStepper();renderStep();renderFoot();}
 
 function renderStepper(){
-  const edit=state.mode==='edit';
-  stepper.className='stepper'+(edit?' clickable':'');
+  stepper.className='stepper';
   stepper.innerHTML=STEPS.map((s,i)=>{
     const cls=i<state.step?'done':i===state.step?'active':'';
     const inner=i<state.step?'✓':(i+1);
-    const tag = (edit||i<=state.step)?'button':'div';
+    const tag = i<=state.step?'button':'div';
     return `<${tag} class="st ${cls}" data-step="${i}"><span class="dot">${inner}</span><span class="lb">${s.lb}</span></${tag}>`;
   }).join('');
 }
@@ -231,14 +212,10 @@ function renderStep(){
       </div>`).join('') : `<div class="empty">Noch keine Einheiten. Für kleine Objekte reicht auch eine.</div>`;
     body+=`<button class="addbtn" data-add="1">＋ Einheit hinzufügen</button>`;
   }
-  content.innerHTML=`<div class="shead"><div class="se">${state.mode==='edit'?'Bearbeiten · '+s.lb:s.se}</div><h2>${s.h}</h2><p>${s.p}</p></div>`+body;
+  content.innerHTML=`<div class="shead"><div class="se">${s.se}</div><h2>${s.h}</h2><p>${s.p}</p></div>`+body;
 }
 
 function renderFoot(){
-  if(state.mode==='edit'){
-    foot.innerHTML=`<button class="btn" data-save="1">Änderungen speichern</button>`;
-    return;
-  }
   const last=state.step===STEPS.length-1;
   foot.innerHTML=(state.step>0?`<button class="btn ghost" data-prev="1">Zurück</button>`:'')+
     `<button class="btn" data-next="1">${last?'Immobilie anlegen':'Weiter'}</button>`;
@@ -276,10 +253,8 @@ foot.addEventListener('click',e=>{
   else if(e.target.closest('[data-next]')){
     if(state.step<STEPS.length-1){state.step++;render();}
     else finish();
-  } else if(e.target.closest('[data-save]')){ flashSaved(); }
+  }
 });
-
-document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
 
 /* Schliessen: bei angefangener Eingabe erst rueckfragen, damit nichts still verfaellt */
 function beginnbar(){
@@ -287,7 +262,7 @@ function beginnbar(){
   return !!(d.name||d.strasse||d.plz||d.ort||d.flaeche||d.einheiten.length);
 }
 $('#abbrechen').addEventListener('click',()=>{
-  if(state.mode==='onboarding' && beginnbar() && !$('#done').classList.contains('open')){
+  if(beginnbar() && !$('#done').classList.contains('open')){
     if(!confirm('Eingaben verwerfen und zurück zur Übersicht?')) return;
   }
   location.href='index.html';
@@ -342,13 +317,7 @@ $('#doneBtn').addEventListener('click',()=>{
     : 'index.html';
 });
 
-function flashSaved(){
-  const b=foot.querySelector('.btn'); const o=b.textContent;
-  b.textContent='✓ Gespeichert'; b.style.background='var(--pos)';
-  setTimeout(()=>{b.textContent=o;b.style.background='';},1300);
-}
-
-setMode('onboarding');
+render();
 </script>
 </body>
 </html>

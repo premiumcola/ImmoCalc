@@ -61,7 +61,13 @@ Fertig gemeldet wird erst, wenn Tests grün sind und `docker logs immocalc-api
 Ein grüner Exit-Code sagt nichts über das Aussehen. Zu jeder Änderung, die
 sichtbare Oberfläche betrifft, gehört: Screenshot machen **und die Bilder mit
 dem Read-Tool tatsächlich ansehen** — nicht nur erzeugen. Playwright und
-Chromium sind eingerichtet; die Bilder liegen in `tests/screenshots/`.
+Chromium sind eingerichtet.
+
+**In allen drei Geräteklassen.** `node tests/matrix.mjs` fährt jede Seite in
+iPhone (390), iPad (820) und Desktop (1440) ab und legt die Bilder in
+`tests/screenshots/matrix/`. Jede Klasse wird einzeln angesehen — Fehler
+treten fast immer nur in einer davon auf: das Kachelraster kippt nur auf dem
+iPhone, die Seitenleiste nur auf dem Desktop, Umbrüche nur auf dem iPad.
 
 Dabei die betroffenen Flows wirklich durchklicken (Objekt → Zeitraum →
 Ergebnis, Wizard bis zum Abschluss), nicht nur die Startseite laden.
@@ -79,7 +85,11 @@ Worauf geachtet wird:
   Buttons klar erkennbar.
 - **Zustände.** Wie sieht es mit null Objekten aus, wie mit vielen? Leere
   Zustände brauchen eine sinnvolle Ansicht statt einer leeren Fläche.
-- **Mobil.** Der Check läuft in 430 px Breite — das ist der Maßstab.
+- **Kopfzeilen einzeilig.** Titel und Untertitel dürfen nicht umbrechen —
+  meist ein Zeichen dafür, dass dieselbe Information doppelt drinsteht.
+- **Menüleisten.** Navigation auf jeder Breite erreichbar, aktiver Eintrag
+  erkennbar, Einträge nicht auseinandergezogen (geerbtes `flex:1` in einer
+  Spalte) und nichts vom Inhalt verdeckt.
 
 Sieht etwas gedrängt oder schief aus: nachbessern und erneut ansehen. Beim
 Melden sagen, was visuell geprüft wurde. Auffällige Screenshots dem Nutzer
