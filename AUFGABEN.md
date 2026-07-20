@@ -4,7 +4,7 @@ Alle Anforderungen aus den Gesprächen, fortlaufend nummeriert. Erledigtes mit
 Commit, Offenes mit dem, was noch fehlt. Diese Liste wird bei jeder neuen
 Anforderung fortgeschrieben — nichts muss doppelt gesagt werden.
 
-Stand: 20.07.2026 · 52 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
+Stand: 20.07.2026 · 82 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
 
 ---
 
@@ -50,39 +50,29 @@ Stand: 20.07.2026 · 52 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
 | XXXVI | Fristen erst ab Ende des Zeitraums erinnern | `d28d3b4` |
 | XXXVII | Sankey: Bandfarbe = Quellfarbe, nichts wird abgeschnitten | `d28d3b4` |
 | XXXVIII | Ordnerliste im Dialog als Raster statt Fließtext | `d28d3b4` |
+| XXXIX | Immobilie löschen — mit Nachfrage, Cloud-Dateien bleiben | `d5a5550`, `f068042` |
+| XL | Export/Sicherung als JSON, wieder importierbar | `d5a5550` |
+| XLI | Objekt-Stammdaten sichtbar und bearbeitbar | `f068042` |
+| XLII | Mieter-Kontaktdaten in der Oberfläche | `f068042` |
+| XLIII | Scan-Knopf an jeder offenen Position | `f068042` |
+| XLIV | Texterkennung schlägt Betrag und Datum vor | `d5a5550`, `f068042` |
+| XLV | Symbole für Mieten, Versicherungen, Kredite, Zahlungen | `f068042` |
+| XLVI | Weitere Zeiträume anlegen, Vorauszahlungen übernehmen | `d5a5550` |
+| XLVII | Nachpflege-Hinweise, wenn Angaben fehlen | `d5a5550`, `f068042` |
+| XLVIII | Turnus-Auswahlfeld in allen Formularen | `f068042` |
+| XLIX | Eigentümerliste und Tausendstel je Objekt | `d5a5550`, `f068042` |
+| L | Vermögensübersicht: Wert, Restschuld, Eigenkapital | `d5a5550`, `f068042` |
+| LI | Einheiten gleicher Adresse gruppiert | `f068042` |
+| LII | Marke in der Navigation führt zur Startseite | `f068042` |
+| LIII | Verbundene Dienste mit grünem Punkt | `f068042` |
+| LIV | „Fehlende Unterordner“ tritt zurück, wenn angelegt | `f068042` |
+| LV | Selbst angelegte Ordner werden angezeigt, nie verändert | `d5a5550`, `f068042` |
+| LVI | PDF-Anhang beim Versand | `d5a5550` |
+| LVII | Belege im Browser öffnen | `d5a5550`, `f068042` |
 
 ---
 
 ## Offen
-
-### Hohe Priorität — von dir mehrfach genannt
-
-| Nr. | Aufgabe | Was fehlt |
-|---|---|---|
-| XXXIX | **Immobilie löschen** | Roter Knopf mit Bestätigung; Nextcloud-Dateien bleiben |
-| XL | **Export / Backup** | Beim Löschen eine JSON-Sicherung in die Nextcloud, wieder importierbar |
-| XLI | **Objekt-Stammdaten sichtbar** | Quadratmeter, Kaufpreis, Verkehrswert, IBAN auf der Objektseite anzeigen und bearbeiten |
-| XLII | **Mieter-Kontaktdaten in der Oberfläche** | Modell hat E-Mail, Telefon, Anschrift, Kaution — die Formularfelder fehlen |
-| XLIII | **Scan-Knopf an jeder offenen Position** | In der Checkliste, dezent grün, Beleg direkt zur Kostenart |
-| XLIV | **OCR** | Betrag und Datum aus dem Scan vorschlagen; braucht Tesseract im Image |
-
-### Mittel
-
-| Nr. | Aufgabe | Was fehlt |
-|---|---|---|
-| XLV | Icons für Mieten, Versicherungen, Kredite | bisher nur in der Abrechnungs-Checkliste |
-| XLVI | Vorjahres-Zeiträume anlegen | mit Übernahme der Kostenarten aus dem Vorgänger |
-| XLVII | Nachpflege-Hinweise | orange Meldung, wenn ein Update neue Felder braucht |
-| XLVIII | Turnus-Auswahl in den Formularen | Rechenlogik steht, Auswahlfeld fehlt |
-| XLIX | Eigentümerliste + Tausendstel-Anteile | neue Einstellung, Zuordnung je Objekt, änderbar |
-| L | Vermögensübersicht | Restschulden, Verkehrswert, Volumen aus Kaufpreis und Kredit |
-| LI | Einheiten gleicher Adresse zusammenfassen | Gruppierung in der Objektliste |
-| LII | Logo oben führt zur Startseite | Markenzeile in der Kopfleiste verlinken |
-| LIII | Verbundene Dienste grün und animiert | Nextcloud- und Postfach-Symbol, wenn aktiv |
-| LIV | „Struktur anlegen“ dezenter | kleiner, rechts, weniger hoch, wenn schon angelegt |
-| LV | Manuell angelegte Unterordner erkennen | werden nicht verändert, sollen aber angezeigt werden |
-| LVI | PDF-Anhang beim Versand | Abrechnung geht bisher als reiner Text |
-| LVII | Belege im Browser öffnen | zeigt bisher nur den Nextcloud-Pfad |
 
 ### Bewusst zurückgestellt
 
@@ -96,6 +86,11 @@ Stand: 20.07.2026 · 52 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
 ## Woran du dich erinnern solltest
 
 - **Deploy nötig:** Die API läuft erst nach `./deploy.sh` mit dem neuen Stand.
+  Diesmal besonders: das API-Image bekommt Tesseract, der Build dauert länger.
+- **Texterkennung** schlägt nur vor. Ohne Tesseract läuft der Scan weiter,
+  dann eben ohne Vorschlag für Betrag und Datum.
+- **Sicherungen** landen in der Nextcloud unter `00_ImmoCalc_Sicherungen`
+  im Home-Ordner — nicht beim Objekt, das beim Löschen ja gerade wegfällt.
 - **Push scheitert:** In der Entwicklungsumgebung fehlen GitHub-Zugangsdaten —
   `git push origin main` musst du selbst ausführen.
 - **Nextcloud und Postfach** brauchen deine Zugangsdaten in der Oberfläche.

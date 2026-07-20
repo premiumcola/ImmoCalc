@@ -14,14 +14,20 @@ API-Code, Dockerfiles, nginx-Config oder Compose brauchen `./deploy.sh`.
 
 ## Was die App kann
 
-- **Objekte** — Kacheln mit Frist und offenen Belegen, Stammdaten, Einheiten
+- **Objekte** — Kacheln mit Frist und offenen Belegen; auf der Objektseite
+  Stammdaten, Einheiten, Mieten samt Kontaktdaten, Versicherungen, Kredite,
+  Zahlungen — jeweils mit eigenem Zahlungsturnus. Sicherung und Löschen ganz
+  unten; die Unterlagen in der Nextcloud bleiben dabei unberührt.
 - **Abrechnung** — Checkliste mit Ampel, Kostenfluss als Sankey, Belege,
-  Beträge nachtragen, abschließen und per Mail an die Mieter versenden
+  Beträge nachtragen, an jeder offenen Position direkt einen Beleg
+  abfotografieren, abschließen und als PDF an die Mieter versenden
 - **Eingang** — Belege abfotografieren (mehrseitig → PDF) oder aus dem
   Nextcloud-Ordner einlesen, zuordnen, automatisch benennen und einsortieren
-- **Auswertung** — Einnahmen gegen Ausgaben, Kostenblöcke, Mietverlauf,
-  Cashflow je Einheit inklusive €/m², Filter nach Jahr, Objekt und Kostenart
-- **Einstellungen** — Nextcloud, Postfach für den Versand, Ordner-Benennung
+- **Auswertung** — Einnahmen gegen Ausgaben, Vermögen (Wert, Restschuld,
+  Eigenkapital), Kostenblöcke, Mietverlauf, Cashflow je Einheit inklusive
+  €/m², Filter nach Jahr, Objekt und Kostenart
+- **Einstellungen** — Nextcloud, Postfach für den Versand, Ordner-Benennung,
+  Eigentümer (Anteile in Tausendsteln je Objekt)
 
 ## Struktur
 ```
@@ -37,12 +43,17 @@ immocalc/
 │   │   ├── migrate.py       # ergänzt fehlende Spalten — Daten bleiben erhalten
 │   │   ├── nextcloud.py     # WebDAV, Schreibzugriff nur im Home-Ordner
 │   │   ├── mailversand.py   # SMTP über das eigene Postfach
+│   │   ├── abrechnung_pdf.py# Abrechnung als PDF, ohne Fremdbibliothek
 │   │   ├── cashflow.py      # Cashflow je Einheit, Sankey-Fluss
+│   │   ├── vermoegen.py     # Wert, Restschuld, Eigenkapital je Objekt
+│   │   ├── export.py        # Sicherung, Wiederherstellung, Löschen
+│   │   ├── nachpflege.py    # welche Angaben nach einem Update noch fehlen
+│   │   ├── ocr.py           # Texterkennung (optional, braucht tesseract)
 │   │   ├── bezeichnung.py   # Ordnernamen von grob nach fein
 │   │   ├── turnus.py        # monatlich … jährlich
 │   │   ├── wachdienst.py    # prüft den Eingang alle 15 Minuten
-│   │   └── routers/         # objekte, stammdaten, auswertung, cloud,
-│   │                        # dokumente, mail, versand
+│   │   └── routers/         # objekte, stammdaten, besitz, auswertung,
+│   │                        # cloud, dokumente, mail, versand
 │   └── tests/               # pytest
 ├── public/                  # Vanilla HTML/CSS/JS, kein Build-Step
 │   ├── index.html           # Objekte

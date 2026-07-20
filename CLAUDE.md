@@ -39,12 +39,18 @@ api/app/
   migrate.py     ergänzt fehlende Spalten — nie löschen, nie umbenennen
   nextcloud.py   WebDAV; Schreibzugriff nur unterhalb des Home-Ordners
   mailversand.py SMTP über das Postfach des Nutzers
+  abrechnung_pdf.py  Abrechnung als PDF, handgeschrieben, ohne Bibliothek
   cashflow.py    Cashflow je Einheit, Sankey-Fluss
+  vermoegen.py   Wert, Restschuld, Eigenkapital, Beleihung
+  export.py      Sicherung als JSON, Wiederherstellung, Löschen
+  nachpflege.py  welche Angaben nach einer Erweiterung noch fehlen
+  ocr.py         Texterkennung — optional, ohne tesseract einfach stumm
   bezeichnung.py Ordnernamen von grob nach fein, Vorlagen
   turnus.py      Zahlungsturnus monatlich … jährlich
   erinnerungen.py Fristen und erwartete Belege
   wachdienst.py  prüft den Eingang alle 15 Minuten
-  routers/       objekte, stammdaten, auswertung, cloud, dokumente, mail, versand
+  routers/       objekte, stammdaten, besitz, auswertung, cloud, dokumente,
+                 mail, versand
   ../tests/      pytest — Referenzzahlen aus den Excel-Dateien
 ```
 
@@ -205,6 +211,16 @@ Immobilien laufend ein, während das Datenmodell noch wächst. Deshalb gilt:
 
 Muss ein Feld inhaltlich anders belegt werden, wird es neu angelegt und die
 Übernahme dem Nutzer angeboten — bestehende Eingaben nie automatisch ersetzen.
+
+**Löschen gibt es nur an einer Stelle:** `DELETE /api/objekte/{slug}` — vom
+Nutzer ausgelöst, mit Rückfrage, und erst nachdem `export.exportiere` eine
+JSON-Sicherung in die Nextcloud geschrieben hat. Entfernt wird ausschließlich
+aus der Datenbank; die Dateien in der Cloud gehören dem Nutzer und bleiben.
+
+**Routen-Reihenfolge beachten.** `stammdaten.py` hat den Fänger
+`/objekte/{slug}/{bereich}`. Jeder spezifischere Pfad darunter muss *vorher*
+registriert werden (siehe `main.py`: `besitz` vor `stammdaten`), sonst
+antwortet der Fänger mit „Unbekannter Bereich".
 
 - Bestehende Daten nur additiv ergänzen (merge/setdefault), nie überschreiben
 - `.env`, `data/`, `*.db` gehören nicht ins Repo (stehen in `.gitignore`)
