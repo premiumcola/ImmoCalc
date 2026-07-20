@@ -45,11 +45,11 @@ Stand: 20.07.2026 · 52 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
 | XXXI | Wizard-Bugs: klebender Turnus-Text, Kachelraster, Knopfhöhe | `d0905c7` |
 | XXXII | Kategorien ergänzt: Bankspesen, Hauskonto, Internet u. a. | `d0905c7` |
 | XXXIII | Ordner-Benennung von grob nach fein, mit Vorlage | `d0905c7` |
-| XXXIV | Schreibschutz: nichts außerhalb des Home-Ordners | offen zum Commit |
-| XXXV | Zahlungsturnus (monatlich … jährlich) — Rechenlogik | offen zum Commit |
-| XXXVI | Fristen erst ab Ende des Zeitraums erinnern | offen zum Commit |
-| XXXVII | Sankey: Bandfarbe = Quellfarbe, nichts wird abgeschnitten | offen zum Commit |
-| XXXVIII | Ordnerliste im Dialog als Raster statt Fließtext | offen zum Commit |
+| XXXIV | Schreibschutz: nichts außerhalb des Home-Ordners | `d28d3b4` |
+| XXXV | Zahlungsturnus (monatlich … jährlich) — Rechenlogik | `d28d3b4` |
+| XXXVI | Fristen erst ab Ende des Zeitraums erinnern | `d28d3b4` |
+| XXXVII | Sankey: Bandfarbe = Quellfarbe, nichts wird abgeschnitten | `d28d3b4` |
+| XXXVIII | Ordnerliste im Dialog als Raster statt Fließtext | `d28d3b4` |
 
 ---
 
