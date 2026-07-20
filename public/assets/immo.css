@@ -53,9 +53,10 @@ h2.sec:first-child{margin-top:0}
   background:var(--sheet); border:none; border-radius:16px; padding:14px;
   cursor:pointer; text-align:left; font-family:var(--body); color:inherit;
   display:flex; flex-direction:column; gap:10px;
-  /* aspect-ratio wird vom Grid ueberstimmt, sobald die Zeile gestreckt wird —
-     min-height haelt die Kacheln trotzdem quadratisch und alle gleich hoch. */
-  aspect-ratio:1; min-height:186px;
+  /* Bewusst min-height statt aspect-ratio: mit aspect-ratio wirkt eine
+     Mindesthoehe auch auf die BREITE und sprengt das Raster. So bleiben die
+     Kacheln nahezu quadratisch und dank Grid-Streckung alle gleich hoch. */
+  min-height:180px;
   transition:transform .12s, box-shadow .15s;
   box-shadow:0 1px 2px rgba(22,38,44,.06);
 }
@@ -156,5 +157,53 @@ select.inp{
 }
 .btn:hover{background:var(--teal-d)}
 .btn:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+/* ==========================================================================
+   Breitere Schirme. Diese Bloecke stehen bewusst am DATEIENDE: Media-Queries
+   haben keine hoehere Spezifitaet, sie muessen die Basisregeln also im
+   Quelltext ueberholen — sonst gewinnt die Mobilfassung.
+   ========================================================================== */
+
+/* ---- Tablet: mehr Breite, Navigation bleibt unten ---- */
+@media(min-width:680px){
+  .app{max-width:660px}
+  .scroll{padding:22px 24px 8px}
+  .grid{grid-template-columns:repeat(3,1fr)}
+}
+
+/* ---- Desktop: Navigation wandert nach links ---- */
+@media(min-width:1000px){
+  body{padding:32px; align-items:flex-start}
+  .app{
+    max-width:1180px; min-height:calc(100dvh - 64px); padding-bottom:0;
+    display:grid; grid-template-columns:236px 1fr; grid-template-rows:auto 1fr;
+    grid-template-areas:"nav bar" "nav scroll";
+  }
+  .bar{grid-area:bar; padding:22px 28px 20px}
+  .bar h1{font-size:21px}
+  .scroll{grid-area:scroll; padding:24px 28px 40px; overflow-y:auto}
+
+  .nav{
+    grid-area:nav; position:static; flex-direction:column; align-items:stretch;
+    gap:4px; padding:22px 14px; background:#DFE5E5; box-shadow:none;
+    border-radius:0;
+  }
+  .nav::before{
+    content:"ImmoCalc"; font:700 17px var(--disp); letter-spacing:-.02em;
+    color:var(--teal-d); padding:6px 14px 20px;
+  }
+  .nav a{
+    /* flex:none — sonst streckt das geerbte flex:1 die Eintraege
+       ueber die ganze Spaltenhoehe */
+    flex:none; flex-direction:row; justify-content:flex-start; gap:12px;
+    padding:12px 14px; font-size:13.5px; letter-spacing:-.005em;
+  }
+  .nav a .ni{font-size:17px}
+  .nav a:hover{background:rgba(255,255,255,.55); color:var(--ink)}
+  .nav a[aria-current=page]{background:var(--sheet); color:var(--teal-d)}
+
+  /* Kacheln duerfen auf breiten Schirmen nicht ins Riesenhafte wachsen */
+  .grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+}
 
 @media(prefers-reduced-motion:reduce){*{transition:none !important}}

@@ -14,5 +14,9 @@ check-app:
 	sleep 3; \
 	node tests/app-check.mjs; A=$$?; \
 	node tests/onboarding-check.mjs; B=$$?; \
+	node tests/cloud-check.mjs; C=$$?; \
+	node tests/responsive-check.mjs; D=$$?; \
 	kill $$(cat /tmp/immocalc-harness.pid) 2>/dev/null; \
-	exit $$((A + B))
+	exit $$((A + B + C + D))
+
+icons:   ; node tools/make-icons.mjs   ## App-Icons aus icons/icon.svg erzeugen
