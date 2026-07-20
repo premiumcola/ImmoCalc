@@ -71,6 +71,67 @@ export const esc = s => String(s ?? '')
 export const fristKlasse = tage =>
   tage == null ? '' : tage < 0 ? 'neg' : tage <= 30 ? 'neg' : tage <= 90 ? 'amber' : 'pos';
 
+/* ---- Navigation auf dem Handy ------------------------------------------
+   Sechs Einträge nebeneinander sind auf einem iPhone zu eng: die
+   Beschriftungen schrumpfen auf 8,5 px und die Ziele werden schmaler als der
+   Daumen. Auf schmalen Schirmen bleiben deshalb die vier täglichen Wege
+   stehen, der Rest wandert hinter „Mehr" — ein Fingertipp mehr für zwei
+   Seiten, die man selten braucht.
+
+   Das passiert hier und nicht in den Seiten, damit die Leiste an einer
+   einzigen Stelle gepflegt wird. */
+
+const SICHTBAR = 4;                    // so viele Einträge bleiben stehen
+const ENG = window.matchMedia('(max-width: 700px)');
+
+function navAufraeumen() {
+  const nav = document.querySelector('nav.nav');
+  if (!nav) return;
+  const eintraege = [...nav.querySelectorAll('a:not(.brand)')];
+  if (eintraege.length <= SICHTBAR + 1) return;   // nichts zu verstecken
+
+  let mehr = nav.querySelector('.mehr');
+  if (!mehr) {
+    mehr = document.createElement('button');
+    mehr.type = 'button';
+    mehr.className = 'mehr';
+    mehr.setAttribute('aria-haspopup', 'dialog');
+    mehr.innerHTML = '<span class="ni">⋯</span>Mehr';
+    mehr.addEventListener('click', () => mehrOeffnen(eintraege.slice(SICHTBAR)));
+    nav.appendChild(mehr);
+  }
+
+  const versteckt = eintraege.slice(SICHTBAR);
+  for (const [i, a] of eintraege.entries()) {
+    a.classList.toggle('weg', ENG.matches && i >= SICHTBAR);
+  }
+  mehr.classList.toggle('an', ENG.matches);
+  // Steckt die aktuelle Seite hinter „Mehr", muss man das sehen
+  mehr.classList.toggle('hier',
+    versteckt.some(a => a.getAttribute('aria-current') === 'page'));
+}
+
+function mehrOeffnen(eintraege) {
+  const dlg = baueDialog(`
+    <div class="dt">Mehr</div>
+    <div class="mehrliste">${eintraege.map(a => `
+      <a href="${a.getAttribute('href')}"
+         ${a.getAttribute('aria-current') ? 'aria-current="page"' : ''}>
+        <span class="ni">${a.querySelector('.ni')?.textContent ?? ''}</span>
+        ${a.lastChild?.textContent?.trim() ?? ''}
+      </a>`).join('')}</div>
+    <button class="btn leise" data-nein>Schließen</button>`);
+  dlg.querySelector('[data-nein]').addEventListener('click', () => dlg.close());
+}
+
+// Auch bei Drehung und beim Wechsel auf ein breiteres Fenster nachziehen
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', navAufraeumen);
+} else {
+  navAufraeumen();
+}
+ENG.addEventListener('change', navAufraeumen);
+
 /* ---- Meldungen und Rückfragen im Design der App -------------------------
    `alert` und `confirm` zeichnet der Browser: graue Systemkästen, die mit der
    Seite nichts zu tun haben. Beides hier selbst gebaut — und die Rückfrage vor

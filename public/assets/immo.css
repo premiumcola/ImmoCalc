@@ -153,12 +153,32 @@ h2.sec:first-child{margin-top:0}
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .nav a .ni{font:400 19px var(--mono); line-height:1}
-/* Auf dem iPhone bleiben pro Eintrag rund 63 px. */
-@media(max-width:439px){
-  .nav{padding-left:4px; padding-right:4px}
-  .nav a{font-size:8.5px; gap:3px; letter-spacing:-.01em}
-  .nav a .ni{font-size:17px}
+
+/* „Mehr" sieht aus wie die übrigen Einträge — es ist einer. Eingehängt wird
+   es von immo.js (navAufraeumen), damit die Leiste nur an einer Stelle
+   gepflegt werden muss. */
+.nav .mehr{
+  display:none; flex:1; min-width:0; flex-direction:column; align-items:center;
+  gap:4px; padding:8px 2px; min-height:44px; border:none; background:none;
+  color:var(--soft); border-radius:12px; font:600 10.5px var(--disp);
+  cursor:pointer; letter-spacing:.01em;
 }
+.nav .mehr.an{display:flex}
+.nav .mehr .ni{font:400 19px var(--mono); line-height:1}
+.nav .mehr.hier{color:var(--teal-d); background:var(--teal-l)}
+.nav a.weg{display:none}
+
+/* Die Liste im „Mehr"-Blatt */
+.mehrliste{display:flex; flex-direction:column; gap:6px; margin-bottom:16px}
+.mehrliste a{
+  display:flex; align-items:center; gap:13px; min-height:52px; padding:12px 15px;
+  border-radius:13px; background:var(--sheet); color:var(--ink);
+  text-decoration:none; font:600 15px var(--disp); letter-spacing:-.01em;
+}
+.mehrliste a .ni{font:400 19px var(--mono); color:var(--soft); line-height:1}
+.mehrliste a[aria-current=page]{background:var(--teal-l); color:var(--teal-d)}
+.mehrliste a[aria-current=page] .ni{color:var(--teal-d)}
+.mehrliste a:hover{background:#F1F4F4}
 .nav a[aria-current=page]{color:var(--teal-d); background:var(--teal-l)}
 
 /* ---- Formularfelder ---- */

@@ -90,6 +90,7 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | LXXXIII | Auswertung geteilt: Wertentwicklung und Nebenkostenabrechnung | `19fdf4f` |
 | LXXXIV | Menüleiste mit sechs Einträgen | `19fdf4f` |
 | LXXXV | „Eingang" heißt jetzt „Dokumente" | `19fdf4f` |
+| LXXXVI | Menüleiste auf dem Handy: vier Wege plus „Mehr" | folgt |
 
 ---
 
