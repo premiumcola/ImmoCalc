@@ -1,82 +1,50 @@
 # =============================================================================
-# ImmoCalc — orchestration (aufgehängt wie jFlow) · LIVE + DEV
+# ImmoCalc — orchestration (aufgehängt wie jFlow)
 #
 #   Immobilie ──> Zeitraum ──> Positionen (Scan→OCR→PDF) ──> Verteilung
 #             ──> Ergebnis je Partei ──> Abrechnungs-PDF
 #
-# Services je Environment:
-#   dashboard-*  nginx-Frontend (Mockups + UI), proxyt /api/ an api-*
-#   api-*        FastAPI + SQLite (Rechen-Engine, Seed der echten Objekte)
+# EINE Umgebung. Kein DEV-Stack — public/ ist gemountet, Frontend-Änderungen
+# sind ohne Rebuild sofort wirksam. Nur API-Änderungen brauchen ./deploy.sh.
 #
-# LIVE Ports 8091 (UI) · DEV Ports 8092 (UI). API läuft intern (nicht published).
-# Konfiguration wie jFlow über persistierte workflow.json (Frontend) + SQLite (API).
+#   dashboard  nginx-Frontend, proxyt /api/ an api
+#   api        FastAPI + SQLite (Rechen-Engine, Seed der echten Objekte)
+#
+# UI auf Port 8091. API läuft intern (nicht published).
 # =============================================================================
-
-x-api-base: &api-base
-  build: { context: ., dockerfile: api/Dockerfile, args: { GIT_SHA: "${GIT_SHA:-local}" } }
-  restart: unless-stopped
-
-x-web-base: &web-base
-  build: { context: ., dockerfile: dashboard/Dockerfile, args: { GIT_SHA: "${GIT_SHA:-local}" } }
-  restart: unless-stopped
-
-x-env-base: &env-base
-  TZ: ${TZ:-Europe/Berlin}
-  PUID: ${PUID:-99}
-  PGID: ${PGID:-100}
 
 services:
 
-  # ------------------------------- LIVE --------------------------------------
-  api-live:
-    <<: *api-base
+  api:
+    build: { context: ., dockerfile: api/Dockerfile, args: { GIT_SHA: "${GIT_SHA:-local}" } }
     container_name: immocalc-api
+    restart: unless-stopped
     environment:
-      <<: *env-base
+      TZ: ${TZ:-Europe/Berlin}
+      PUID: ${PUID:-99}
+      PGID: ${PGID:-100}
       DB_PATH: /data/immocalc.db
     volumes:
       - ${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}:/data
 
-  dashboard-live:
-    <<: *web-base
+  dashboard:
+    build: { context: ., dockerfile: dashboard/Dockerfile, args: { GIT_SHA: "${GIT_SHA:-local}" } }
     container_name: immocalc-dashboard
-    depends_on: [api-live]
+    restart: unless-stopped
+    depends_on: [api]
     environment:
-      <<: *env-base
-      APP_ENV: live
+      TZ: ${TZ:-Europe/Berlin}
+      PUID: ${PUID:-99}
+      PGID: ${PGID:-100}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      API_UPSTREAM: api-live:8000
+      API_UPSTREAM: api:8000
     labels:
       net.unraid.docker.icon: "http://192.168.178.10:${DASHBOARD_PORT:-8091}/icons/icon-512.png"
       net.unraid.docker.webui: "http://192.168.178.10:${DASHBOARD_PORT:-8091}"
     ports:
       - "${DASHBOARD_PORT:-8091}:80"
-
-  # -------------------------------- DEV --------------------------------------
-  api-dev:
-    <<: *api-base
-    container_name: immocalc-api-dev
-    environment:
-      <<: *env-base
-      DB_PATH: /data/immocalc.db
     volumes:
-      - ${DATA_DIR_DEV:-/mnt/user/appdata/immocalc-dev/data}:/data
-
-  dashboard-dev:
-    <<: *web-base
-    container_name: immocalc-dashboard-dev
-    depends_on: [api-dev]
-    environment:
-      <<: *env-base
-      APP_ENV: dev
-      LOG_LEVEL: ${LOG_LEVEL_DEV:-DEBUG}
-      API_UPSTREAM: api-dev:8000
-    labels:
-      net.unraid.docker.icon: "http://192.168.178.10:${DASHBOARD_PORT_DEV:-8092}/icons/icon-512.png"
-      net.unraid.docker.webui: "http://192.168.178.10:${DASHBOARD_PORT_DEV:-8092}"
-    ports:
-      - "${DASHBOARD_PORT_DEV:-8092}:80"
-    volumes:
-      - ./public:/usr/share/nginx/html:ro     # live editieren, kein Rebuild
+      # Frontend live aus dem Repo — Änderung an public/ = sofort auf der Seite.
+      - ./public:/usr/share/nginx/html:ro
 
 volumes: {}

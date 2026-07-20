@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # ImmoCalc – Standard-Deploy. Idempotent: seedet .env + Config und startet den Stack.
-# Nutzung:  ./deploy.sh [all|live|dev]     (Default: all)
+# Nutzung:  ./deploy.sh
+#
+# Frontend-Aenderungen (public/) brauchen KEIN Deploy — das Verzeichnis ist in
+# den Container gemountet und sofort wirksam. Dieses Skript ist fuer alles
+# andere: API-Code, Dockerfiles, nginx-Config, Compose.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -11,36 +15,24 @@ DC="docker compose"; docker compose version >/dev/null 2>&1 || DC="docker-compos
 if [ ! -f .env ]; then cp .env.example .env; echo "→ .env aus .env.example erstellt – bei Bedarf anpassen."; fi
 set -a; . ./.env; set +a
 : "${CONFIG_DIR:=/mnt/user/appdata/immocalc-live}"
-: "${CONFIG_DIR_DEV:=/mnt/user/appdata/immocalc-dev}"
-: "${DASHBOARD_PORT:=8091}"; : "${DASHBOARD_PORT_DEV:=8092}"
+: "${DASHBOARD_PORT:=8091}"
 
-# 2) Config-Verzeichnisse seeden (workflow.json), falls noch nicht vorhanden
-seed(){ mkdir -p "$1/dashboard"
-  [ -f "$1/dashboard/workflow.json" ]       || cp public/workflow.json       "$1/dashboard/workflow.json"
-  [ -f "$1/dashboard/workflow.local.json" ] || cp public/workflow.local.json "$1/dashboard/workflow.local.json"; }
-seed "$CONFIG_DIR"; seed "$CONFIG_DIR_DEV"
-mkdir -p "${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}" "${DATA_DIR_DEV:-/mnt/user/appdata/immocalc-dev/data}"
+# 2) Config-Verzeichnis seeden (workflow.json), falls noch nicht vorhanden
+mkdir -p "$CONFIG_DIR/dashboard"
+[ -f "$CONFIG_DIR/dashboard/workflow.json" ]       || cp public/workflow.json       "$CONFIG_DIR/dashboard/workflow.json"
+[ -f "$CONFIG_DIR/dashboard/workflow.local.json" ] || cp public/workflow.local.json "$CONFIG_DIR/dashboard/workflow.local.json"
+mkdir -p "${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}"
 
 # 3) GIT_SHA fürs build.txt (falls Git vorhanden)
 export GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 
-# 4) Ziel wählen und bauen/starten
-case "${1:-all}" in
-  live) SVC="dashboard-live";;
-  dev)  SVC="dashboard-dev";;
-  all|"") SVC="";;
-  *) echo "Nutzung: ./deploy.sh [all|live|dev]"; exit 1;;
-esac
-echo "→ Standard-Deploy ($DC up -d --build ${SVC:-all}) …"
-$DC up -d --build $SVC
+# 4) Bauen und starten. --remove-orphans raeumt Container weg, die nicht mehr
+#    im Compose stehen (z.B. der frueher separate DEV-Stack).
+echo "→ Deploy ($DC up -d --build --remove-orphans) …"
+$DC up -d --build --remove-orphans
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; IP="${IP:-<unraid-ip>}"
 echo
-echo "✔ ImmoCalc läuft:"
-echo "   LIVE → http://$IP:${DASHBOARD_PORT}"
-echo "   DEV  → http://$IP:${DASHBOARD_PORT_DEV}"
+echo "✔ ImmoCalc läuft → http://$IP:${DASHBOARD_PORT}"
 echo
-echo "Persistente Konfiguration liegt bereit unter:"
-echo "   $CONFIG_DIR/dashboard/workflow.json   (live)"
-echo "   $CONFIG_DIR_DEV/dashboard/workflow.json (dev)"
-echo "Zum Aktivieren den volumes:-Block in docker-compose.yml einkommentieren."
+echo "Persistente Konfiguration: $CONFIG_DIR/dashboard/workflow.json"

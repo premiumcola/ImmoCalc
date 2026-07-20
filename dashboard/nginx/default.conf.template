@@ -6,6 +6,10 @@ server {
 
     location = /healthz { return 200 "ok\n"; add_header Content-Type text/plain; }
 
+    # Build-Kennung des Images. Liegt ausserhalb von html/, weil public/ dort
+    # eingehaengt ist -- so bleibt sie trotz Bind-Mount abrufbar.
+    location = /build.txt { alias /etc/nginx/build.txt; default_type text/plain; }
+
     # API-Proxy -> FastAPI (immocalc-api / -dev). Frontend ruft same-origin /api/... auf.
     location /api/ {
         proxy_pass http://${API_UPSTREAM}/api/;
@@ -14,9 +18,25 @@ server {
     }
 
     default_type text/plain;
+    charset utf-8;
+    charset_types text/plain text/css application/javascript text/markdown application/json;
+
+    # /docs/ liefert .md und .mermaid aus. Ohne bekannten MIME-Typ bieten Browser
+    # (Chrome/Safari) die Datei zum Download an statt sie anzuzeigen ->
+    # Typ + "inline" explizit setzen.
+    location /docs/ {
+        types { }                       # .md/.mermaid bewusst auf default_type mappen
+        default_type "text/plain; charset=utf-8";
+        add_header Content-Disposition "inline" always;
+        try_files $uri $uri/ =404;
+    }
+
     gzip on;
     gzip_types text/plain text/css application/javascript text/markdown image/svg+xml application/json;
 
     location / { try_files $uri $uri/ =404; }
-    location ~* \.html$ { add_header Cache-Control "no-cache"; }
+    # no-store statt no-cache: bei no-cache revalidiert der Browser per ETag und
+    # bekommt ein 304 *ohne* Content-Type zurueck -- er behaelt dann den alten,
+    # ggf. falschen Typ aus dem Cache und laedt die Seite als Datei herunter.
+    location ~* \.html$ { add_header Cache-Control "no-store" always; }
 }
