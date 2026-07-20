@@ -37,6 +37,9 @@ export function balken(daten, { hoehe = 30, luecke = 10, breite = 380 } = {}) {
 /** Gruppierte Saeulen je Objekt: Einnahmen gegen Ausgaben. */
 export function saeulen(gruppen, { breite = 380, hoehe = 170 } = {}) {
   if (!gruppen.length) return leer('Keine Objekte');
+  // Alles null: leere Achsen sind nutzlos, ein Hinweis ist ehrlicher.
+  if (!gruppen.some(g => g.a > 0 || g.b > 0))
+    return leer('Noch keine Einnahmen oder Ausgaben erfasst');
 
   const max = Math.max(1, ...gruppen.flatMap(g => [g.a, g.b]));
   const padUnten = 34, padOben = 6;

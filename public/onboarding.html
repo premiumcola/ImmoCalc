@@ -24,6 +24,30 @@
   .app{width:100%;max-width:440px;min-height:100vh;background:var(--paper);position:relative;display:flex;flex-direction:column}
   @media(min-width:480px){body{padding:24px 0}.app{min-height:calc(100vh - 48px);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 24px 60px -30px rgba(22,38,44,.35)}}
 
+  /* Auf grossen Schirmen darf der Wizard atmen: breitere Spalte, Felder
+     nebeneinander, groessere Typen — statt einer Handy-Spalte in der Mitte. */
+  @media(min-width:820px){
+    body{padding:40px 0}
+    .app{max-width:760px}
+    .bar{padding:20px 30px}
+    .bar h1{font-size:19px}
+    .stepper{padding:20px 40px 12px}
+    .st .lb{font-size:11.5px}
+    .content{padding:26px 30px 12px}
+    .shead h2{font-size:26px}
+    .shead p{font-size:14.5px}
+    .foot{padding:16px 30px 26px}
+    /* Textfelder bleiben durchgehend — halbe Breite kollidiert mit der
+       PLZ/Ort-Zeile und macht das Formular unruhig. Nur Rasterinhalte
+       nutzen die zusaetzliche Breite. */
+    .lgrid{grid-template-columns:repeat(6,1fr)}
+    .lopt svg{width:64px;height:64px}
+    .togg{display:inline-flex;width:calc(50% - 6px);margin-right:10px}
+    .togg:nth-of-type(even){margin-right:0}
+    .unit{display:inline-block;width:calc(50% - 6px);vertical-align:top;margin-right:10px}
+    .unit:nth-of-type(even){margin-right:0}
+  }
+
   .bar{background:var(--sheet);border-bottom:1px solid var(--line);padding:13px 16px}
   .bar .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
   .bar h1{font:600 16px var(--disp);margin:0;letter-spacing:-.01em;flex:1}

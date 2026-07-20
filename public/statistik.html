@@ -18,7 +18,12 @@
 <link rel="stylesheet" href="assets/immo.css">
 <style>
   .filter{display:flex;gap:8px;margin-bottom:12px}
-  .filter select{flex:1;min-width:0}
+  /* Pillenform wie die Kategorie-Schalter darunter — sonst wirken die
+     Auswahlfelder als einzige Elemente der Seite kantig. */
+  .filter select{flex:1;min-width:0;border-radius:999px;padding-left:16px;
+                 background-position:right 16px center}
+  .filter select:focus{border-color:var(--teal);
+                       box-shadow:0 0 0 3px rgba(15,110,92,.15)}
   .kategorien{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
   .kategorien button{border:none;background:var(--sheet);color:var(--soft);
     border-radius:999px;padding:9px 14px;font:600 12px var(--disp);cursor:pointer;

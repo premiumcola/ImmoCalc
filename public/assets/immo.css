@@ -1,5 +1,8 @@
 /* ImmoCalc — gemeinsame Design-Sprache. Von allen Seiten geteilt. */
 :root{
+  /* accent-color faerbt Auswahl, Haken und Fokus der nativen Bedienelemente
+     im Grün der App statt im Systemblau. */
+  accent-color:#0F6E5C;
   --paper:#E8ECEC; --sheet:#FFFFFF; --ink:#16262C; --soft:#5C6B70; --line:#D6DCDD;
   --teal:#0F6E5C; --teal-d:#0B5548; --teal-l:#E7F3EF;
   --amber:#916212; --amber-bg:#F7EFD9; --amber-li:#E4CF9E;

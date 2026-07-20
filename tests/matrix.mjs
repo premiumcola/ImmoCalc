@@ -20,6 +20,7 @@ const SEITEN = [
   { datei: 'index.html', name: 'start' },
   { datei: 'eingang.html', name: 'eingang' },
   { datei: 'objekt.html?o=obj-a', name: 'objekt' },
+  { datei: 'zeitraum.html?z=1', name: 'zeitraum' },
   { datei: 'statistik.html', name: 'auswertung' },
   { datei: 'settings.html', name: 'einstellungen' },
   { datei: 'onboarding.html', name: 'wizard' },

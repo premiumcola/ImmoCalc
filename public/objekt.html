@@ -232,9 +232,14 @@ async function laden() {
         const chip = z.status === 'in Arbeit'
           ? `<span class="chip ${fristKlasse(z.frist_tage)}">${esc(fristText(z.frist_tage) || 'in Arbeit')}</span>`
           : '<span class="chip">abgeschlossen</span>';
-        return `<div class="eintrag"><span class="et">
-            <span class="en">${esc(z.label)}</span>
-            <span class="ed">${esc(z.typ)}</span></span>${chip}</div>`;
+        return `<button class="eintrag" data-zeitraum="${z.id}"
+                        style="width:100%;border:none;background:none;cursor:pointer;
+                               font-family:var(--body);text-align:left">
+            <span class="et">
+              <span class="en">${esc(z.label)}</span>
+              <span class="ed">${esc(z.typ)}</span></span>${chip}
+            <span class="arr" style="color:var(--soft);font:400 18px var(--body)">›</span>
+          </button>`;
       }).join('')
     : `<div class="leerzeile">Noch kein Abrechnungszeitraum</div>`;
 
@@ -357,6 +362,12 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
 });
 
 inhalt.addEventListener('click', async e => {
+  const zeitraum = e.target.closest('[data-zeitraum]');
+  if (zeitraum) {
+    location.href = `zeitraum.html?z=${zeitraum.dataset.zeitraum}`;
+    return;
+  }
+
   const cloud = e.target.closest('[data-cloud]');
   if (cloud) {
     cloud.disabled = true;

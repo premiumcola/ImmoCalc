@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Abrechnung · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  .banner{display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:12px;
+          font:600 12px var(--mono);margin-bottom:16px;line-height:1.4}
+  .banner .d{width:8px;height:8px;border-radius:50%;flex:none}
+  .banner .days{margin-left:auto;font-weight:700;white-space:nowrap}
+  .banner.pos{background:var(--pos-bg);color:var(--pos)} .banner.pos .d{background:var(--pos)}
+  .banner.amber{background:var(--amber-bg);color:var(--amber)} .banner.amber .d{background:var(--amber)}
+  .banner.neg{background:var(--neg-bg);color:var(--neg)} .banner.neg .d{background:var(--neg)}
+  .banner.fertig{background:#EEF2F1;color:var(--soft)} .banner.fertig .d{background:var(--soft)}
+
+  .fortschritt{background:var(--sheet);border-radius:14px;padding:15px 16px;margin-bottom:16px;
+               box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .fortschritt .kopf{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+  .fortschritt .gross{font:700 19px var(--disp);letter-spacing:-.02em}
+  .fortschritt .klein{font:500 12px var(--body);color:var(--soft)}
+  .fortschritt .bahn{height:8px;border-radius:99px;background:#E4EAEA;overflow:hidden}
+  .fortschritt .bahn i{display:block;height:100%;border-radius:99px;background:var(--teal)}
+
+  .tabs{display:flex;gap:6px;margin-bottom:14px}
+  .tabs button{flex:1;border:none;background:var(--sheet);color:var(--soft);border-radius:11px;
+    padding:11px 8px;font:600 12.5px var(--disp);cursor:pointer;min-height:44px;
+    box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .tabs button[aria-selected=true]{background:var(--teal-l);color:var(--teal-d)}
+
+  .pruef{background:var(--sheet);border-radius:14px;margin-bottom:10px;overflow:hidden;
+         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .pruef .zeile{display:flex;gap:12px;align-items:center;padding:13px 15px;
+                width:100%;border:none;background:none;text-align:left;cursor:pointer;
+                font-family:var(--body);color:inherit;min-height:44px}
+  .pruef .zeile + .auf{border-top:1px solid var(--line)}
+  .haken{width:24px;height:24px;border-radius:50%;flex:none;display:flex;
+         align-items:center;justify-content:center;font:600 12px var(--mono)}
+  .haken.gruen{background:var(--pos-bg);color:var(--pos)}
+  .haken.rot{background:var(--neg-bg);color:var(--neg)}
+  .haken.grau{background:#EDF1F0;color:var(--soft)}
+  .pruef .name{flex:1;min-width:0;font:600 14px var(--disp);letter-spacing:-.01em}
+  .pruef .wert{font:600 13px var(--mono);white-space:nowrap}
+  .pruef .wert.fehlt{color:var(--neg)}
+  .pruef .auf{padding:0 15px 14px;border-top:1px solid var(--line)}
+  .pruef .auf .zk{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+                  color:var(--soft);margin:12px 0 6px}
+  .pruef .auf .rz{display:flex;justify-content:space-between;gap:10px;
+                  font:500 12.5px var(--body);padding:4px 0}
+  .pruef .auf .rz span:last-child{font-family:var(--mono);font-weight:600}
+  .nachtrag{display:flex;gap:8px;margin-top:10px}
+  .nachtrag input{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;
+    font:500 14px var(--body);min-height:44px;background:var(--sheet)}
+  .nachtrag input:focus{outline:none;border-color:var(--teal)}
+  .nachtrag button{border:none;border-radius:10px;padding:10px 16px;background:var(--teal);
+    color:#fff;font:600 13px var(--disp);cursor:pointer;min-height:44px}
+  .belege{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .belege a{display:inline-flex;align-items:center;gap:6px;text-decoration:none;
+    background:#F1F4F4;color:var(--ink);border-radius:9px;padding:8px 11px;
+    font:500 11.5px var(--body);min-height:36px}
+  .belege a:hover{background:var(--teal-l);color:var(--teal-d)}
+  .belege .kein{font:400 12px var(--body);color:var(--soft)}
+
+  .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:12px;
+         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .karte h3{font:600 13px var(--disp);margin:0 0 12px}
+  .summe{display:flex;justify-content:space-between;gap:12px;padding:9px 0;
+         font:500 13.5px var(--body);border-top:1px solid var(--line)}
+  .summe:first-of-type{border-top:none}
+  .summe b{font-family:var(--mono)}
+  .summe.gesamt{font-weight:700;border-top:2px solid var(--line)}
+  .summe .pos{color:var(--pos)} .summe .neg{color:var(--neg)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <button class="back" id="back">Zurück</button>
+    <div class="barwrap">
+      <h1 id="titel">Abrechnung</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll" id="inhalt"></div>
+
+  <nav class="nav">
+    <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
+    <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
+    <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
+    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
+  </nav>
+</div>
+
+<script type="module">
+import { api, eur, esc, fristKlasse, fristText } from './assets/immo.js';
+
+const zid = new URLSearchParams(location.search).get('z');
+const inhalt = document.getElementById('inhalt');
+const titel = document.getElementById('titel');
+const sub = document.getElementById('sub');
+let daten = null;
+let ansicht = 'pruef';
+const offen = new Set();
+
+document.getElementById('back').addEventListener('click', () => history.length > 1
+  ? history.back() : location.href = 'index.html');
+
+const HAKEN = {
+  erledigt: ['gruen', '✓'],
+  offen: ['rot', '!'],
+  fehlt: ['grau', '–'],
+};
+
+function bannerHtml() {
+  if (daten.status !== 'in Arbeit') {
+    return `<div class="banner fertig"><span class="d"></span>
+      <span>Abgeschlossen · ${esc(daten.label)}</span></div>`;
+  }
+  const k = fristKlasse(daten.frist_tage);
+  const tage = daten.frist_tage < 0
+    ? `${Math.abs(daten.frist_tage)} Tage über` : `noch ${daten.frist_tage} Tage`;
+  return `<div class="banner ${k}"><span class="d"></span>
+    <span>Frist § 556 BGB</span><span class="days">${tage}</span></div>`;
+}
+
+function belegeHtml(kostenart) {
+  const alle = daten.dokumente.filter(d =>
+    (d.dateiname || '').toLowerCase().includes(
+      kostenart.toLowerCase().split(/[ /]/)[0]));
+  if (!alle.length) return '<div class="belege"><span class="kein">Kein Beleg hinterlegt</span></div>';
+  return `<div class="belege">${alle.map(d =>
+    `<a href="#" data-beleg="${d.id}" title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}</a>`
+  ).join('')}</div>`;
+}
+
+function zeileHtml(k, i) {
+  const [farbe, zeichen] = HAKEN[k.zustand] || HAKEN.fehlt;
+  const wert = k.erledigt ? eur(k.betrag)
+    : k.zustand === 'offen' ? '<span class="fehlt">Betrag fehlt</span>'
+    : '<span class="fehlt">nicht erfasst</span>';
+  const aufgeklappt = offen.has(i);
+
+  const anteile = Object.entries(k.anteile || {});
+  const verteilung = anteile.length
+    ? `<div class="zk">Verteilung · ${esc(k.schluessel || '—')}</div>` +
+      anteile.map(([p, w]) => `<div class="rz"><span>${esc(p)}</span><span>${w}</span></div>`).join('')
+    : '';
+
+  return `<div class="pruef">
+      <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
+        <span class="haken ${farbe}">${zeichen}</span>
+        <span class="name">${esc(k.kostenart)}${k.s35 ? ' · §35a' : ''}</span>
+        <span class="wert">${wert}</span>
+      </button>
+      ${aufgeklappt ? `<div class="auf">
+        ${verteilung}
+        <div class="zk">Belege</div>
+        ${belegeHtml(k.kostenart)}
+        ${k.position_id ? `<div class="nachtrag">
+          <input type="number" step="0.01" placeholder="Betrag eintragen"
+                 value="${k.betrag || ''}" data-betrag="${k.position_id}"
+                 aria-label="Betrag für ${esc(k.kostenart)}">
+          <button data-speichern="${k.position_id}">Übernehmen</button>
+        </div>` : `<div class="zk">Noch keine Position — Beleg im Eingang zuordnen</div>`}
+      </div>` : ''}
+    </div>`;
+}
+
+async function ergebnisHtml() {
+  let a;
+  try {
+    a = await api(`/zeitraeume/${zid}/abrechnung`);
+  } catch {
+    return '<div class="empty"><div class="big">Ergebnis nicht verfügbar</div></div>';
+  }
+  const zeilen = Object.entries(a.parteien || {}).map(([partei, w]) => `
+    <div class="karte">
+      <h3>${esc(partei)}</h3>
+      <div class="summe"><span>Umlagefähige Kosten</span><b>${eur(w.kosten)}</b></div>
+      <div class="summe"><span>Vorauszahlungen</span><b>${eur(w.vz)}</b></div>
+      <div class="summe gesamt"><span>Saldo</span>
+        <b class="${(w.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(w.saldo)}</b></div>
+    </div>`).join('');
+
+  const g = a.gesamt || {};
+  return `<div class="karte">
+      <h3>Gesamt</h3>
+      <div class="summe"><span>Auslagen</span><b>${eur(g.auslagen)}</b></div>
+      <div class="summe"><span>Abschläge</span><b>${eur(g.abschlaege)}</b></div>
+      <div class="summe gesamt"><span>Saldo</span>
+        <b class="${(g.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(g.saldo)}</b></div>
+    </div>${zeilen}
+    ${a.offen?.length ? `<div class="karte"><h3>Noch offen</h3>
+      <div class="summe"><span>${a.offen.map(esc).join(', ')}</span></div></div>` : ''}`;
+}
+
+async function zeichnen() {
+  const f = daten.fortschritt;
+  const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
+
+  const kopf = `${bannerHtml()}
+    <div class="fortschritt">
+      <div class="kopf">
+        <span class="gross">${f.fertig} von ${f.gesamt}</span>
+        <span class="klein">Positionen vollständig</span>
+      </div>
+      <div class="bahn"><i style="width:${anteil}%"></i></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button data-tab="pruef" aria-selected="${ansicht === 'pruef'}">Checkliste</button>
+      <button data-tab="ergebnis" aria-selected="${ansicht === 'ergebnis'}">Ergebnis</button>
+      <button data-tab="belege" aria-selected="${ansicht === 'belege'}">Belege</button>
+    </div>`;
+
+  let rumpf = '';
+  if (ansicht === 'pruef') {
+    // fehlende zuerst — die Reihenfolge der Arbeit
+    const sortiert = daten.checkliste
+      .map((k, i) => ({ k, i }))
+      .sort((a, b) => Number(a.k.erledigt) - Number(b.k.erledigt));
+    rumpf = sortiert.map(({ k, i }) => zeileHtml(k, i)).join('');
+  } else if (ansicht === 'ergebnis') {
+    rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
+  } else {
+    rumpf = daten.dokumente.length
+      ? `<div class="karte"><h3>${daten.dokumente.length} Belege</h3>
+          <div class="belege">${daten.dokumente.map(d =>
+            `<a href="#" data-beleg="${d.id}" title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}</a>`
+          ).join('')}</div></div>`
+      : `<div class="empty"><div class="big">Noch keine Belege</div>
+          <p>Dokumente aus dem Eingang landen hier, sobald sie diesem
+             Zeitraum zugeordnet sind.</p></div>`;
+  }
+
+  inhalt.innerHTML = kopf + rumpf;
+
+  if (ansicht === 'ergebnis') {
+    inhalt.innerHTML = kopf + await ergebnisHtml();
+  }
+}
+
+async function laden() {
+  if (!zid) {
+    inhalt.innerHTML = '<div class="empty"><div class="big">Kein Zeitraum gewählt</div></div>';
+    return;
+  }
+  try {
+    daten = await api(`/zeitraeume/${zid}`);
+  } catch {
+    inhalt.innerHTML = `<div class="empty"><div class="big">Zeitraum nicht gefunden</div></div>`;
+    return;
+  }
+  titel.textContent = daten.label;
+  sub.textContent = `${daten.objekt_name} · ${daten.typ}`;
+  await zeichnen();
+}
+
+inhalt.addEventListener('click', async e => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { ansicht = tab.dataset.tab; return zeichnen(); }
+
+  const auf = e.target.closest('[data-auf]');
+  if (auf) {
+    const i = Number(auf.dataset.auf);
+    offen.has(i) ? offen.delete(i) : offen.add(i);
+    return zeichnen();
+  }
+
+  const beleg = e.target.closest('[data-beleg]');
+  if (beleg) {
+    e.preventDefault();
+    alert('Der Beleg liegt in der Nextcloud unter:\n\n' + beleg.title);
+    return;
+  }
+
+  const speichern = e.target.closest('[data-speichern]');
+  if (speichern) {
+    const pid = speichern.dataset.speichern;
+    const feld = inhalt.querySelector(`[data-betrag="${pid}"]`);
+    const betrag = Number(feld.value);
+    if (!betrag) return;
+    speichern.disabled = true;
+    speichern.textContent = '…';
+    try {
+      await api(`/positionen/${pid}`, { method: 'PATCH', body: { betrag } });
+      await laden();
+    } catch (fehler) {
+      speichern.disabled = false;
+      speichern.textContent = 'Übernehmen';
+      alert(String(fehler.message || fehler));
+    }
+  }
+});
+
+await laden();
+</script>
+</body>
+</html>

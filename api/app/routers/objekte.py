@@ -10,8 +10,8 @@ from ..db import get_session
 from ..engine import Position, abrechnung
 from ..erinnerungen import beleg_erinnerung, frist_erinnerung
 from ..frist import frist_tage
-from ..models import (Einheit, Kostenart, Kostenposition, Miete, Objekt,
-                      Partei, Vorauszahlung, Zeitraum)
+from ..models import (Dokument, Einheit, Kostenart, Kostenposition, Miete,
+                      Objekt, Partei, Vorauszahlung, Zeitraum)
 
 router = APIRouter(prefix="/api", tags=["objekte"])
 
@@ -195,6 +195,103 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
 def positionen(zid: int, session: Session = Depends(get_session)) -> list[Kostenposition]:
     return session.exec(
         select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
+
+
+@router.get("/zeitraeume/{zid}")
+def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
+    """Checkliste eines Abrechnungszeitraums: was liegt vor, was fehlt.
+
+    Jede aktive Kostenart des Objekts ist eine Zeile. Ohne Position gilt sie
+    als offen — so sieht man auch, was noch gar nicht erfasst wurde."""
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    o = session.get(Objekt, z.objekt_id)
+
+    positionen = session.exec(
+        select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
+    arten = session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
+    dokumente = session.exec(
+        select(Dokument).where(Dokument.zeitraum_id == zid)).all()
+    vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
+
+    nach_art = {p.kostenart: p for p in positionen}
+    belege = {}
+    for d in dokumente:
+        belege.setdefault(d.kategorie or "", []).append(
+            {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad})
+
+    checkliste = []
+    for k in arten:
+        if not k.aktiv:
+            continue
+        p = nach_art.get(k.name)
+        erledigt = bool(p and p.status == "erledigt")
+        checkliste.append({
+            "kostenart": k.name, "s35": k.s35 or (p.s35 if p else False),
+            "erledigt": erledigt,
+            "betrag": p.betrag if p else None,
+            "schluessel": p.schluessel if p else None,
+            "wertquelle": p.wertquelle if p else None,
+            "anteile": p.anteile if p else {},
+            "position_id": p.id if p else None,
+            "beleg_monat": k.beleg_monat,
+            "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
+        })
+    # Positionen zu Kostenarten, die nicht im Katalog stehen, gehen sonst verloren
+    for p in positionen:
+        if p.kostenart in {k["kostenart"] for k in checkliste}:
+            continue
+        checkliste.append({
+            "kostenart": p.kostenart, "s35": p.s35,
+            "erledigt": p.status == "erledigt", "betrag": p.betrag,
+            "schluessel": p.schluessel, "wertquelle": p.wertquelle,
+            "anteile": p.anteile, "position_id": p.id, "beleg_monat": None,
+            "zustand": "erledigt" if p.status == "erledigt" else "offen",
+        })
+
+    fertig = sum(1 for k in checkliste if k["erledigt"])
+    return {
+        "id": z.id, "objekt": o.slug, "objekt_name": o.name,
+        "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
+        "start": z.start.isoformat(), "ende": z.ende.isoformat(),
+        "typ": z.typ, "status": z.status,
+        "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None,
+        "fortschritt": {"fertig": fertig, "gesamt": len(checkliste)},
+        "checkliste": checkliste,
+        "dokumente": [{"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+                       "kategorie": d.kategorie} for d in dokumente],
+        "belege_je_art": belege,
+        "vorauszahlungen": [{"partei": v.partei, "betrag": v.betrag} for v in vzs],
+    }
+
+
+class PositionIn(BaseModel):
+    betrag: float | None = None
+    status: str | None = None
+    schluessel: str | None = None
+    wertquelle: str | None = None
+
+
+@router.patch("/positionen/{pid}")
+def position_aendern(pid: int, data: PositionIn,
+                     session: Session = Depends(get_session)) -> dict:
+    """Betrag nachtragen oder Zustand ändern — das Nachbearbeiten aus der App."""
+    p = session.get(Kostenposition, pid)
+    if not p:
+        raise HTTPException(404, "Position nicht gefunden")
+    if data.betrag is not None:
+        p.betrag = data.betrag
+        # Ein eingetragener Betrag heisst: der Beleg liegt vor.
+        if data.status is None and data.betrag > 0:
+            p.status = "erledigt"
+    for feld in ("status", "schluessel", "wertquelle"):
+        wert = getattr(data, feld)
+        if wert is not None:
+            setattr(p, feld, wert)
+    session.add(p)
+    session.commit()
+    return {"ok": True, "betrag": p.betrag, "status": p.status}
 
 
 @router.get("/zeitraeume/{zid}/abrechnung")
