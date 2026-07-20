@@ -68,7 +68,8 @@ function kachel(o) {
       <span class="ico">${logoSvg(o.typ)}</span>
       <span>
         <span class="name">${esc(o.name)}</span>
-        <span class="ort">${esc(o.ort)}</span>
+        <span class="ort">${esc(
+          [o.ort, o.strasse].filter(Boolean).join(' · ') || o.anzeigename || '')}</span>
       </span>
       <span class="foot">${chips.join('')}</span>
     </button>`;

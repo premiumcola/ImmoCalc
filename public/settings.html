@@ -80,6 +80,15 @@
       <span class="arr">›</span>
     </button>
 
+    <button class="row" id="vorlageRow">
+      <span class="ic">✎</span>
+      <span class="txt">
+        <span class="t">Ordner-Benennung</span>
+        <span class="d" id="vorlageStatus">wird geladen …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+
     <h2 class="sec">Versand</h2>
     <button class="row" id="mailRow">
       <span class="ic">✉</span>
@@ -183,6 +192,27 @@
       </div>
       <button class="btn" type="submit" id="ncSpeichern">Verbinden und prüfen</button>
     </form>
+  </div>
+</dialog>
+
+<dialog id="vorlageDlg">
+  <div class="dh">
+    <h2>Ordner-Benennung</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      Von grob nach fein — sonst heißen mehrere Ordner „Wohnung 1. OG“.
+      Platzhalter: <b>{ort}</b> <b>{strasse}</b> <b>{name}</b> <b>{plz}</b>.
+      <span id="vorlageVerboten"></span>
+    </p>
+    <div class="meldung" id="vorlageMeldung"></div>
+    <div class="field">
+      <label for="vorlageFeld">Vorlage</label>
+      <input class="inp" id="vorlageFeld" placeholder="({ort}) {strasse} · {name}">
+    </div>
+    <div class="strukturliste" id="vorlageBeispiele"></div>
+    <button class="btn" id="vorlageSpeichern">Übernehmen</button>
   </div>
 </dialog>
 
@@ -398,6 +428,72 @@ document.getElementById('homeWaehlen').addEventListener('click', async () => {
   }
 });
 
+/* ---- Ordner-Benennung ---- */
+const vorlageDlg = document.getElementById('vorlageDlg');
+const vorlageFeld = document.getElementById('vorlageFeld');
+const vorlageMeldung = document.getElementById('vorlageMeldung');
+
+async function vorlageLaden() {
+  try {
+    const v = await api('/nextcloud/vorlage');
+    vorlageFeld.value = v.vorlage;
+    document.getElementById('vorlageStatus').textContent = v.vorlage;
+    document.getElementById('vorlageVerboten').textContent =
+      `Nicht erlaubt: ${v.verboten}`;
+    beispieleZeigen(v.beispiele);
+  } catch {
+    document.getElementById('vorlageStatus').textContent = 'Standard';
+  }
+}
+
+function beispieleZeigen(beispiele) {
+  const feld = document.getElementById('vorlageBeispiele');
+  feld.innerHTML = beispiele?.length
+    ? beispiele.map(b => `▸ ${esc(b.ordner)}`).join('<br>')
+    : 'Noch keine Immobilie zum Vorzeigen';
+}
+
+document.getElementById('vorlageRow').addEventListener('click', () => {
+  meldungWeg(vorlageMeldung);
+  vorlageDlg.showModal();
+});
+
+document.getElementById('vorlageSpeichern').addEventListener('click', async () => {
+  meldungWeg(vorlageMeldung);
+  try {
+    const antwort = await api('/nextcloud/vorlage', {
+      method: 'POST', body: { vorlage: vorlageFeld.value },
+    });
+    if (antwort.hinweise?.length) {
+      melde(vorlageMeldung, antwort.hinweise.join(' '), false);
+    } else {
+      melde(vorlageMeldung, 'Übernommen. Bereits angelegte Ordner bleiben unverändert.', true);
+    }
+    await vorlageLaden();
+  } catch (fehler) {
+    melde(vorlageMeldung, String(fehler.message || fehler));
+  }
+});
+
+/* Vorschau beim Tippen — zeigt sofort, was herauskommt */
+let vorschauZeit;
+vorlageFeld.addEventListener('input', () => {
+  clearTimeout(vorschauZeit);
+  vorschauZeit = setTimeout(async () => {
+    try {
+      const v = await api('/nextcloud/vorlage');
+      beispieleZeigen(v.beispiele.map(b => ({
+        ordner: vorlageFeld.value
+          .replace(/\{ort\}|%ort/gi, b.objekt.split(' · ')[0] || '')
+          .replace(/\{strasse\}|%strasse/gi, '')
+          .replace(/\{name\}|%name/gi, b.objekt)
+          .replace(/[<>:"/\\|?*]/g, '')
+          .replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim(),
+      })));
+    } catch { /* Vorschau ist Beiwerk */ }
+  }, 350);
+});
+
 /* ---- Postfach für den Versand der Abrechnungen ---- */
 const mailDlg = document.getElementById('mailDlg');
 const mailStatus = document.getElementById('mailStatus');
@@ -498,6 +594,7 @@ document.querySelectorAll('[data-schliessen]').forEach(knopf =>
 
 await zustandLaden();
 await mailZustand();
+await vorlageLaden();
 </script>
 </body>
 </html>

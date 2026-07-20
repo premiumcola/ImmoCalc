@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
+from ..bezeichnung import anzeigename
 from ..engine import Position, abrechnung
 from ..erinnerungen import beleg_erinnerung, frist_erinnerung
 from ..frist import frist_tage
@@ -74,6 +75,8 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
         aktuell = [m for m in mieten if m.bis_datum is None]
         out.append({
             "id": o.id, "slug": o.slug, "name": o.name, "ort": o.ort,
+            "anzeigename": anzeigename(o.name, o.ort, o.strasse, o.plz),
+            "strasse": o.strasse, "plz": o.plz,
             "typ": o.typ, "turnus": o.turnus, "aktiv": o.aktiv,
             "einheiten": len(einheiten),
             "offene_positionen": offen,
