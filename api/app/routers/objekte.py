@@ -251,14 +251,37 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         })
 
     fertig = sum(1 for k in checkliste if k["erledigt"])
+    # Fluss fuer das Diagramm: erledigte Kostenarten -> Abrechnung -> Parteien
+    summe_erledigt = sum(k["betrag"] or 0 for k in checkliste if k["erledigt"])
+    knoten = [{"name": "Abrechnung", "spalte": 1}]
+    fluss = []
+    for k in sorted((k for k in checkliste if k["erledigt"] and (k["betrag"] or 0) > 0),
+                    key=lambda k: -(k["betrag"] or 0)):
+        knoten.append({"name": k["kostenart"], "spalte": 0})
+        fluss.append({"von": len(knoten) - 1, "nach": 0, "wert": round(k["betrag"], 2)})
+    if summe_erledigt > 0:
+        gewichte = {}
+        for k in checkliste:
+            if not k["erledigt"]:
+                continue
+            gesamt_anteil = sum(k["anteile"].values()) or 1
+            for partei, anteil in (k["anteile"] or {}).items():
+                gewichte[partei] = gewichte.get(partei, 0.0) + \
+                    (k["betrag"] or 0) * anteil / gesamt_anteil
+        for partei, betrag in sorted(gewichte.items(), key=lambda p: -p[1]):
+            knoten.append({"name": partei, "spalte": 2})
+            fluss.append({"von": 0, "nach": len(knoten) - 1, "wert": round(betrag, 2)})
+
     return {
         "id": z.id, "objekt": o.slug, "objekt_name": o.name,
         "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
         "start": z.start.isoformat(), "ende": z.ende.isoformat(),
         "typ": z.typ, "status": z.status,
         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None,
-        "fortschritt": {"fertig": fertig, "gesamt": len(checkliste)},
+        "fortschritt": {"fertig": fertig, "gesamt": len(checkliste),
+                        "summe": round(summe_erledigt, 2)},
         "checkliste": checkliste,
+        "sankey": {"knoten": knoten, "fluss": fluss},
         "dokumente": [{"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
                        "kategorie": d.kategorie} for d in dokumente],
         "belege_je_art": belege,

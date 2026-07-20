@@ -10,7 +10,8 @@ from sqlmodel import SQLModel
 from . import wachdienst
 from .db import engine
 from .migrate import migriere
-from .routers import auswertung, cloud, dokumente, mail, objekte, stammdaten
+from .routers import (auswertung, cloud, dokumente, mail, objekte, stammdaten,
+                      versand)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -42,6 +43,7 @@ app.include_router(auswertung.router)
 app.include_router(cloud.router)
 app.include_router(dokumente.router)
 app.include_router(mail.router)
+app.include_router(versand.router)
 
 
 def _build() -> str:

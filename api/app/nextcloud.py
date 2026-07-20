@@ -34,10 +34,33 @@ class NextcloudFehler(RuntimeError):
     pass
 
 
+# Pfade, die beim Kopieren aus der Adresszeile mitkommen. Nextcloud darf in
+# einem Unterverzeichnis liegen (https://host/nextcloud), deshalb wird nur ab
+# diesen Markern abgeschnitten statt der Pfad pauschal verworfen.
+_ANHAENGSEL = ("/login", "/index.php", "/apps/", "/settings/", "/remote.php")
+
+
+def normalisiere_url(url: str) -> str:
+    """Macht aus einer kopierten Browser-Adresse die Server-Basisadresse."""
+    roh = (url or "").strip()
+    if not roh:
+        return ""
+    if "://" not in roh:
+        roh = "https://" + roh
+    teile = urlparse(roh)
+    pfad = teile.path or ""
+    for marker in _ANHAENGSEL:
+        stelle = pfad.find(marker)
+        if stelle >= 0:
+            pfad = pfad[:stelle]
+            break
+    return f"{teile.scheme}://{teile.netloc}{pfad.rstrip('/')}"
+
+
 class Nextcloud:
     def __init__(self, url: str, benutzer: str, passwort: str,
                  zertifikat_pruefen: bool = False, timeout: float = 15.0):
-        self.basis = url.rstrip("/")
+        self.basis = normalisiere_url(url)
         self.benutzer = benutzer
         self._auth = (benutzer, passwort)
         self._pruefen = zertifikat_pruefen
@@ -65,6 +88,11 @@ class Nextcloud:
                                 content=PROPFIND_RUMPF)
         if antwort.status_code == 401:
             raise NextcloudFehler("Anmeldung fehlgeschlagen — Benutzer oder App-Passwort falsch")
+        if antwort.status_code in (404, 405):
+            raise NextcloudFehler(
+                f"Unter {self.basis} liegt kein WebDAV-Zugang. Bitte nur die "
+                "Server-Adresse angeben, z. B. https://192.168.178.10:444 "
+                "— ohne /login oder weitere Pfade.")
         if antwort.status_code >= 400:
             raise NextcloudFehler(f"Unerwartete Antwort {antwort.status_code}")
         return {"ok": True, "benutzer": self.benutzer, "url": self.basis}

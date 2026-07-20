@@ -51,7 +51,19 @@
   .haken.gruen{background:var(--pos-bg);color:var(--pos)}
   .haken.rot{background:var(--neg-bg);color:var(--neg)}
   .haken.grau{background:#EDF1F0;color:var(--soft)}
-  .pruef .name{flex:1;min-width:0;font:600 14px var(--disp);letter-spacing:-.01em}
+  /* overflow-wrap: lange Begriffe wie "Gebäudeversicherung" schieben sonst
+     den Betrag an sich heran, bis beides zusammenklebt. */
+  .pruef .name{flex:1;min-width:0;font:600 14px var(--disp);letter-spacing:-.01em;
+               overflow-wrap:anywhere;padding-right:4px}
+  .pruef .unter{display:block;font:400 11.5px var(--body);color:var(--soft);
+                margin-top:3px;line-height:1.4;letter-spacing:0}
+  .pruef .rechts{display:flex;align-items:center;gap:10px;flex:none}
+  /* Einheitliches Kategorie-Symbol; die Farbe traegt den Zustand. */
+  .ikon{width:34px;height:34px;border-radius:10px;flex:none;display:flex;
+        align-items:center;justify-content:center}
+  .ikon svg{width:21px;height:21px;display:block}
+  .ikon.fertig{background:var(--pos-bg);color:var(--pos)}
+  .ikon.warte{background:#EDF1F0;color:var(--soft)}
   .pruef .wert{font:600 13px var(--mono);white-space:nowrap}
   .pruef .wert.fehlt{color:var(--neg)}
   .pruef .auf{padding:0 15px 14px;border-top:1px solid var(--line)}
@@ -82,6 +94,32 @@
   .summe b{font-family:var(--mono)}
   .summe.gesamt{font-weight:700;border-top:2px solid var(--line)}
   .summe .pos{color:var(--pos)} .summe .neg{color:var(--neg)}
+
+  .sortleiste{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .sortleiste span{font:600 10px var(--mono);letter-spacing:.08em;
+                   text-transform:uppercase;color:var(--soft);margin-right:2px}
+  .sortleiste button{border:none;background:var(--sheet);color:var(--soft);
+    border-radius:999px;padding:8px 13px;font:600 11.5px var(--disp);cursor:pointer;
+    min-height:38px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .sortleiste button[aria-pressed=true]{background:var(--teal-l);color:var(--teal-d)}
+
+  .abschluss{border-radius:16px;padding:18px;margin:16px 0 4px}
+  .abschluss .at{font:700 16px var(--disp);letter-spacing:-.015em;margin-bottom:6px}
+  .abschluss p{font:400 13px var(--body);margin:0 0 14px;line-height:1.5}
+  .abschluss.bereit{background:var(--pos-bg);color:var(--pos)}
+  .abschluss.offen{background:var(--sheet);color:var(--ink);
+                   box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .abschluss.offen p{color:var(--soft)}
+  .abschluss.fertig{background:#EEF2F1;color:var(--soft)}
+  .abschluss.fertig p{color:var(--soft);margin-bottom:0}
+  .uebergehen{display:flex;align-items:center;gap:10px;margin-bottom:14px;
+              font:500 13px var(--body);color:var(--ink);cursor:pointer;min-height:44px}
+  .uebergehen input{width:20px;height:20px;flex:none}
+  .losbutton{width:100%;border:none;border-radius:12px;padding:15px;cursor:pointer;
+    font:600 15px var(--disp);background:var(--pos);color:#fff;min-height:48px;
+    box-shadow:0 6px 16px -8px rgba(46,125,79,.7)}
+  .losbutton:hover{background:#276b44}
+  .losbutton[disabled]{background:#C2CCCB;color:#fff;box-shadow:none;cursor:default}
 </style>
 </head>
 <body>
@@ -105,7 +143,9 @@
 </div>
 
 <script type="module">
-import { api, eur, esc, fristKlasse, fristText } from './assets/immo.js';
+import { api, eur, eurKurz, esc, fristKlasse } from './assets/immo.js';
+import { sankey } from './assets/charts.js';
+import { kostenIcon } from './assets/kostenicons.js';
 
 const zid = new URLSearchParams(location.search).get('z');
 const inhalt = document.getElementById('inhalt');
@@ -113,7 +153,15 @@ const titel = document.getElementById('titel');
 const sub = document.getElementById('sub');
 let daten = null;
 let ansicht = 'pruef';
+let sortierung = 'status';
 const offen = new Set();
+
+const SORTIERUNG = {
+  status: (a, b) => Number(a.erledigt) - Number(b.erledigt) ||
+                    (b.betrag || 0) - (a.betrag || 0),
+  betrag: (a, b) => (b.betrag || 0) - (a.betrag || 0),
+  name: (a, b) => a.kostenart.localeCompare(b.kostenart, 'de'),
+};
 
 document.getElementById('back').addEventListener('click', () => history.length > 1
   ? history.back() : location.href = 'index.html');
@@ -153,6 +201,18 @@ function zeileHtml(k, i) {
     : '<span class="fehlt">nicht erfasst</span>';
   const aufgeklappt = offen.has(i);
 
+  // Zweite Zeile: Schlüssel, Anteil an der Gesamtsumme, Quelle, §35a
+  const summe = daten.fortschritt.summe || 0;
+  const anteilProzent = k.erledigt && summe > 0
+    ? Math.round((k.betrag / summe) * 100) : null;
+  const infos = [
+    k.schluessel ? `Schlüssel ${k.schluessel}` : null,
+    anteilProzent != null ? `${anteilProzent} % der Kosten` : null,
+    k.wertquelle && k.wertquelle !== 'manuell' ? k.wertquelle : null,
+    k.s35 ? '§35a absetzbar' : null,
+    !k.erledigt && k.beleg_monat ? `Beleg im ${MONATE[k.beleg_monat - 1]}` : null,
+  ].filter(Boolean).join(' · ');
+
   const anteile = Object.entries(k.anteile || {});
   const verteilung = anteile.length
     ? `<div class="zk">Verteilung · ${esc(k.schluessel || '—')}</div>` +
@@ -161,9 +221,14 @@ function zeileHtml(k, i) {
 
   return `<div class="pruef">
       <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
-        <span class="haken ${farbe}">${zeichen}</span>
-        <span class="name">${esc(k.kostenart)}${k.s35 ? ' · §35a' : ''}</span>
-        <span class="wert">${wert}</span>
+        <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
+          kostenIcon(k.kostenart)}</span>
+        <span class="name">${esc(k.kostenart)}
+          ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
+        <span class="rechts">
+          <span class="wert">${wert}</span>
+          <span class="haken ${farbe}">${zeichen}</span>
+        </span>
       </button>
       ${aufgeklappt ? `<div class="auf">
         ${verteilung}
@@ -207,6 +272,42 @@ async function ergebnisHtml() {
       <div class="summe"><span>${a.offen.map(esc).join(', ')}</span></div></div>` : ''}`;
 }
 
+const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
+  'August', 'September', 'Oktober', 'November', 'Dezember'];
+
+/* Abschluss: erst wenn nichts mehr offen ist — oder du die Reste bewusst
+   übergehst — wird der Versand freigegeben. */
+function abschlussHtml() {
+  if (daten.status !== 'in Arbeit') {
+    return `<div class="abschluss fertig">
+        <div class="at">Abgeschlossen</div>
+        <p>Dieser Zeitraum ist abgerechnet und versendet.</p>
+      </div>`;
+  }
+  const f = daten.fortschritt;
+  const rest = f.gesamt - f.fertig;
+
+  if (rest === 0) {
+    return `<div class="abschluss bereit">
+        <div class="at">✓ Alles erfasst</div>
+        <p>${f.gesamt} Positionen vollständig · ${eur(f.summe)} umlagefähig.
+           Die Abrechnungen können erstellt und verschickt werden.</p>
+        <button class="losbutton" data-abschluss="1">Abrechnungen erstellen und versenden</button>
+      </div>`;
+  }
+  return `<div class="abschluss offen">
+      <div class="at">Noch ${rest} ${rest === 1 ? 'Position' : 'Positionen'} offen</div>
+      <p>Trage die fehlenden Beträge ein — oder bestätige, dass die restlichen
+         Posten für diesen Zeitraum nicht anfallen.</p>
+      <label class="uebergehen">
+        <input type="checkbox" id="uebergehen">
+        <span>Restliche Positionen fallen nicht an</span>
+      </label>
+      <button class="losbutton" data-abschluss="1" disabled
+              id="abschlussKnopf">Abrechnungen erstellen und versenden</button>
+    </div>`;
+}
+
 async function zeichnen() {
   const f = daten.fortschritt;
   const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
@@ -227,11 +328,27 @@ async function zeichnen() {
 
   let rumpf = '';
   if (ansicht === 'pruef') {
-    // fehlende zuerst — die Reihenfolge der Arbeit
+    const fluss = daten.sankey || { knoten: [], fluss: [] };
+    const flussKarte = fluss.fluss.length
+      ? `<div class="karte"><h3>Kostenfluss · erfasste Positionen</h3>
+          ${sankey(fluss.knoten, fluss.fluss,
+                   { format: eurKurz, breite: window.innerWidth < 520 ? 260 : 540 })}
+         </div>`
+      : '';
+
+    const sortWahl = `<div class="sortleiste">
+        <span>Sortieren</span>
+        ${Object.entries({ status: 'Offene zuerst', betrag: 'Größe', name: 'Name' })
+          .map(([k, l]) => `<button data-sort="${k}"
+            aria-pressed="${sortierung === k}">${l}</button>`).join('')}
+      </div>`;
+
     const sortiert = daten.checkliste
       .map((k, i) => ({ k, i }))
-      .sort((a, b) => Number(a.k.erledigt) - Number(b.k.erledigt));
-    rumpf = sortiert.map(({ k, i }) => zeileHtml(k, i)).join('');
+      .sort((a, b) => SORTIERUNG[sortierung](a.k, b.k));
+
+    rumpf = flussKarte + sortWahl +
+      sortiert.map(({ k, i }) => zeileHtml(k, i)).join('') + abschlussHtml();
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
@@ -252,6 +369,53 @@ async function zeichnen() {
   }
 }
 
+/* Vor dem Versand zeigen, wer was bekommt — und wem die Mailadresse fehlt. */
+async function abschliessen(knopf) {
+  const uebergehen = document.getElementById('uebergehen')?.checked || false;
+  knopf.disabled = true;
+  knopf.textContent = 'Prüfe Empfänger …';
+
+  let plan;
+  try {
+    plan = await api(`/zeitraeume/${zid}/versand`);
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Abrechnungen erstellen und versenden';
+    return alert(String(fehler.message || fehler));
+  }
+
+  const zeilen = plan.parteien.map(p =>
+    `${p.versandbereit ? '✓' : '✗'} ${p.partei}: ` +
+    `${(p.saldo ?? 0) >= 0 ? 'Guthaben' : 'Nachzahlung'} ` +
+    `${Math.abs(p.saldo ?? 0).toFixed(2)} € ` +
+    `${p.email || '— keine Mailadresse'}`).join('\n');
+
+  const warnung = plan.ohne_mail.length
+    ? `\n\nOhne Mailadresse und daher nicht versendbar:\n${plan.ohne_mail.join(', ')}`
+    : '';
+
+  if (!confirm(`Abrechnungen für ${plan.zeitraum} verschicken?\n\n${zeilen}${warnung}`)) {
+    knopf.disabled = false;
+    knopf.textContent = 'Abrechnungen erstellen und versenden';
+    return;
+  }
+
+  knopf.textContent = 'Verschicke …';
+  try {
+    const antwort = await api(`/zeitraeume/${zid}/abschliessen`, {
+      method: 'POST', body: { versenden: true, offene_uebergehen: uebergehen },
+    });
+    alert(antwort.versendet.length
+      ? `${antwort.versendet.length} Abrechnung(en) verschickt an:\n${antwort.versendet.join(', ')}`
+      : 'Zeitraum abgeschlossen — es wurde nichts verschickt (keine Mailadressen).');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Abrechnungen erstellen und versenden';
+    alert(String(fehler.message || fehler));
+  }
+}
+
 async function laden() {
   if (!zid) {
     inhalt.innerHTML = '<div class="empty"><div class="big">Kein Zeitraum gewählt</div></div>';
@@ -268,9 +432,23 @@ async function laden() {
   await zeichnen();
 }
 
+inhalt.addEventListener('change', e => {
+  // Der Versand bleibt gesperrt, bis die Restposten bewusst abgehakt sind.
+  if (e.target.id === 'uebergehen') {
+    const knopf = document.getElementById('abschlussKnopf');
+    if (knopf) knopf.disabled = !e.target.checked;
+  }
+});
+
 inhalt.addEventListener('click', async e => {
   const tab = e.target.closest('[data-tab]');
   if (tab) { ansicht = tab.dataset.tab; return zeichnen(); }
+
+  const sort = e.target.closest('[data-sort]');
+  if (sort) { sortierung = sort.dataset.sort; return zeichnen(); }
+
+  const abschluss = e.target.closest('[data-abschluss]');
+  if (abschluss) return abschliessen(abschluss);
 
   const auf = e.target.closest('[data-auf]');
   if (auf) {
