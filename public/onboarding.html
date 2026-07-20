@@ -18,7 +18,12 @@
 
   .bar{background:var(--sheet);border-bottom:1px solid var(--line);padding:13px 16px}
   .bar .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .bar h1{font:600 16px var(--disp);margin:0;letter-spacing:-.01em}
+  .bar h1{font:600 16px var(--disp);margin:0;letter-spacing:-.01em;flex:1}
+  .close{border:none;background:#F1F4F4;color:#5C6B70;border-radius:10px;
+         width:34px;height:34px;min-width:34px;font:400 19px var(--body);cursor:pointer;
+         display:flex;align-items:center;justify-content:center;flex:none;line-height:1}
+  .close:hover{background:#E4EAEA;color:#16262C}
+  .close:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .seg{display:flex;background:#EDF1F0;border:1px solid var(--line);border-radius:99px;padding:3px}
   .seg button{border:none;background:none;font:600 12px var(--disp);color:var(--soft);padding:6px 12px;border-radius:99px;cursor:pointer}
   .seg button[aria-pressed=true]{background:var(--sheet);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
@@ -118,6 +123,7 @@
         <button data-mode="onboarding" aria-pressed="true">Onboarding</button>
         <button data-mode="edit" aria-pressed="false">Bearbeiten</button>
       </div>
+      <button class="close" id="abbrechen" aria-label="Schließen" title="Schließen">×</button>
     </div>
   </div>
   <div class="stepper" id="stepper"></div>
@@ -266,6 +272,19 @@ foot.addEventListener('click',e=>{
 });
 
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+
+/* Schliessen: bei angefangener Eingabe erst rueckfragen, damit nichts still verfaellt */
+function beginnbar(){
+  const d=state.data;
+  return !!(d.name||d.strasse||d.plz||d.ort||d.flaeche||d.einheiten.length);
+}
+$('#abbrechen').addEventListener('click',()=>{
+  if(state.mode==='onboarding' && beginnbar() && !$('#done').classList.contains('open')){
+    if(!confirm('Eingaben verwerfen und zurück zur Übersicht?')) return;
+  }
+  location.href='index.html';
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('#abbrechen').click(); });
 
 function typLabel(id){return (TYPES.find(t=>t[0]===id)||[,'—'])[1];}
 function turnusLabel(){return state.data.turnus==='kalender'?'Januar – Dezember':`${MONATE[state.data.startMonat-1]} – ${MONATE[(state.data.startMonat+10)%12]}`;}

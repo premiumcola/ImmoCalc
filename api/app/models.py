@@ -145,6 +145,13 @@ class Zahlung(SQLModel, table=True):
     notiz: str = ""
 
 
+class Einstellung(SQLModel, table=True):
+    """Schlüssel/Wert-Ablage für Verbindungsdaten. Geheimnisse werden nie
+    über die API zurückgegeben."""
+    schluessel: str = Field(primary_key=True)
+    wert: str = ""
+
+
 class Dokument(SQLModel, table=True):
     """Datei in der Nextcloud. `status` steuert die Inbox: was noch nicht
     zugeordnet ist, wartet in der App auf eine Entscheidung."""

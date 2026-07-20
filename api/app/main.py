@@ -8,7 +8,7 @@ from sqlmodel import SQLModel
 
 from .db import engine
 from .migrate import migriere
-from .routers import auswertung, objekte, stammdaten
+from .routers import auswertung, cloud, objekte, stammdaten
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -30,6 +30,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
 app.include_router(objekte.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
+app.include_router(cloud.router)
 
 
 def _build() -> str:

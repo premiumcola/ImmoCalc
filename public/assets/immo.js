@@ -45,7 +45,12 @@ export async function api(pfad, optionen = {}) {
     ...optionen,
     body: optionen.body ? JSON.stringify(optionen.body) : undefined,
   });
-  if (!antwort.ok) throw new Error(`${antwort.status} ${pfad}`);
+  if (!antwort.ok) {
+    // FastAPI liefert die Ursache in `detail` — die ist fuer den Nutzer
+    // deutlich hilfreicher als der blosse Statuscode.
+    const grund = await antwort.json().then(k => k.detail).catch(() => null);
+    throw new Error(grund || `${antwort.status} ${pfad}`);
+  }
   return antwort.status === 204 ? null : antwort.json();
 }
 
