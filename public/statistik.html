@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auswertung · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  .filter{display:flex;gap:8px;margin-bottom:18px}
+  .filter select{flex:1;min-width:0}
+  .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:14px;
+         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .karte h3{font:600 13px var(--disp);letter-spacing:-.01em;margin:0 0 14px;color:var(--ink)}
+  .chart{width:100%;height:auto;display:block;overflow:visible}
+  .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;padding:22px 8px}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .kpi .k{background:var(--sheet);border-radius:14px;padding:13px 12px;
+          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .kpi .kl{display:block;font:600 9.5px var(--mono);letter-spacing:.08em;
+           text-transform:uppercase;color:var(--soft)}
+  .kpi .kv{display:block;font:700 16px var(--disp);letter-spacing:-.02em;margin-top:6px}
+  .kpi .kv.pos{color:var(--pos)} .kpi .kv.neg{color:var(--neg)}
+  .legende{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+  .legende .le{display:flex;align-items:center;gap:6px;font:500 11.5px var(--body);
+               color:var(--soft)}
+  .legende .le i{width:10px;height:10px;border-radius:3px;flex:none}
+  .tabelle{width:100%;border-collapse:collapse;margin-top:2px}
+  .tabelle th{font:600 9.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+              color:var(--soft);text-align:right;padding:0 0 8px}
+  .tabelle th:first-child{text-align:left}
+  .tabelle td{font:500 13px var(--body);padding:9px 0;border-top:1px solid var(--line);
+              text-align:right}
+  .tabelle td:first-child{text-align:left;font-weight:600}
+  .tabelle td.pos{color:var(--pos)} .tabelle td.neg{color:var(--neg)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <div class="barwrap">
+      <h1>Auswertung</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <div class="filter">
+      <select class="inp" id="jahr" aria-label="Jahr"></select>
+      <select class="inp" id="objekt" aria-label="Objekt"></select>
+    </div>
+    <div id="inhalt"></div>
+  </div>
+
+  <nav class="nav">
+    <a href="index.html"><span class="ni">▤</span>Objekte</a>
+    <a href="statistik.html" aria-current="page"><span class="ni">◔</span>Auswertung</a>
+    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
+  </nav>
+</div>
+
+<script type="module">
+import { api, eur, eurKurz, esc } from './assets/immo.js';
+import { balken, saeulen, linie, legende, farbe } from './assets/charts.js';
+
+const inhalt = document.getElementById('inhalt');
+const sub = document.getElementById('sub');
+const jahrWahl = document.getElementById('jahr');
+const objektWahl = document.getElementById('objekt');
+
+const jetzt = new Date().getFullYear();
+jahrWahl.innerHTML = Array.from({ length: 6 }, (_, i) => jetzt - i)
+  .map(j => `<option value="${j}">${j}</option>`).join('');
+
+let objekte = [];
+try {
+  objekte = await api('/objekte');
+  objektWahl.innerHTML = '<option value="">Alle Objekte</option>' +
+    objekte.map(o => `<option value="${esc(o.slug)}">${esc(o.name)}</option>`).join('');
+} catch {
+  sub.textContent = 'API nicht erreichbar';
+}
+
+function kpiFeld(label, wert, klasse = '') {
+  return `<div class="k"><span class="kl">${label}</span>
+          <span class="kv ${klasse}">${wert}</span></div>`;
+}
+
+async function zeichnen() {
+  const jahr = jahrWahl.value;
+  const objekt = objektWahl.value;
+  const frage = new URLSearchParams({ jahr });
+  if (objekt) frage.set('objekt', objekt);
+
+  let daten, verlauf;
+  try {
+    [daten, verlauf] = await Promise.all([
+      api('/auswertung?' + frage),
+      api('/auswertung/mietverlauf' + (objekt ? '?objekt=' + encodeURIComponent(objekt) : '')),
+    ]);
+  } catch {
+    inhalt.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
+      <p>Die Auswertung konnte nicht geladen werden.</p></div>`;
+    return;
+  }
+
+  const g = daten.gesamt;
+  sub.textContent = `${daten.objekte.length} ${daten.objekte.length === 1 ? 'Objekt' : 'Objekte'} · ${jahr}`;
+
+  const bloecke = Object.entries(daten.kostenbloecke)
+    .map(([name, wert]) => ({ name, wert, text: eurKurz(wert) }))
+    .sort((a, b) => b.wert - a.wert);
+
+  const zeilen = daten.objekte.map(o => `<tr>
+      <td>${esc(o.name)}</td>
+      <td>${eurKurz(o.einnahmen)}</td>
+      <td>${eurKurz(o.ausgaben)}</td>
+      <td class="${o.saldo >= 0 ? 'pos' : 'neg'}">${eurKurz(o.saldo)}</td>
+    </tr>`).join('');
+
+  inhalt.innerHTML = `
+    <div class="kpi">
+      ${kpiFeld('Einnahmen', eurKurz(g.einnahmen), 'pos')}
+      ${kpiFeld('Ausgaben', eurKurz(g.ausgaben), 'neg')}
+      ${kpiFeld('Saldo', eurKurz(g.saldo), g.saldo >= 0 ? 'pos' : 'neg')}
+    </div>
+
+    <div class="karte">
+      <h3>Kostenblöcke ${jahr}</h3>
+      ${balken(bloecke)}
+    </div>
+
+    <div class="karte">
+      <h3>Einnahmen und Ausgaben je Objekt</h3>
+      ${saeulen(daten.objekte.map(o => ({ name: o.name, a: o.einnahmen, b: o.ausgaben })))}
+      ${legende([{ name: 'Einnahmen', farbe: '#2E7D4F' }, { name: 'Ausgaben', farbe: '#B24229' }])}
+    </div>
+
+    <div class="karte">
+      <h3>Mietverlauf</h3>
+      ${linie(verlauf.jahre, verlauf.reihen)}
+      ${verlauf.reihen.length ? legende(verlauf.reihen.map((r, i) => ({ name: r.name, farbe: farbe(i) }))) : ''}
+    </div>
+
+    ${daten.objekte.length ? `<div class="karte">
+      <h3>Je Objekt</h3>
+      <table class="tabelle">
+        <thead><tr><th>Objekt</th><th>Ein</th><th>Aus</th><th>Saldo</th></tr></thead>
+        <tbody>${zeilen}</tbody>
+      </table>
+    </div>` : ''}`;
+}
+
+jahrWahl.addEventListener('change', zeichnen);
+objektWahl.addEventListener('change', zeichnen);
+await zeichnen();
+</script>
+</body>
+</html>

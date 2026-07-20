@@ -1,0 +1,160 @@
+/* ImmoCalc — gemeinsame Design-Sprache. Von allen Seiten geteilt. */
+:root{
+  --paper:#E8ECEC; --sheet:#FFFFFF; --ink:#16262C; --soft:#5C6B70; --line:#D6DCDD;
+  --teal:#0F6E5C; --teal-d:#0B5548; --teal-l:#E7F3EF;
+  --amber:#916212; --amber-bg:#F7EFD9; --amber-li:#E4CF9E;
+  --pos:#2E7D4F; --pos-bg:#E7F4EC; --neg:#B24229; --neg-bg:#F7E9E3;
+  --disp:"Space Grotesk",system-ui,sans-serif;
+  --body:"Inter",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--body);
+  -webkit-font-smoothing:antialiased; line-height:1.45;
+  display:flex; justify-content:center;
+}
+.app{
+  width:100%; max-width:440px; min-height:100dvh; background:var(--paper);
+  position:relative; display:flex; flex-direction:column; padding-bottom:96px;
+}
+@media(min-width:480px){
+  body{padding:24px 0}
+  .app{min-height:calc(100dvh - 48px); border-radius:22px; overflow:hidden;
+       box-shadow:0 24px 60px -30px rgba(22,38,44,.35)}
+}
+
+/* ---- Kopfzeile ---- */
+.bar{
+  position:sticky; top:0; z-index:20; background:var(--sheet);
+  padding:15px 18px 14px; display:flex; align-items:center; gap:12px; min-height:58px;
+}
+.bar h1{font:600 18px var(--disp); margin:0; letter-spacing:-.015em; flex:1}
+.bar .sub{font:500 11.5px var(--mono); color:var(--soft); margin-top:3px}
+.bar .barwrap{flex:1; min-width:0}
+.back{
+  border:none; background:none; font:600 15px var(--body); color:var(--teal);
+  cursor:pointer; padding:8px 6px; margin:-8px -6px; min-height:44px;
+}
+.back::before{content:"‹  "}
+
+.scroll{flex:1; padding:18px 18px 8px}
+.eyebrow{
+  font:600 11px var(--mono); letter-spacing:.13em; text-transform:uppercase;
+  color:var(--soft); margin:0 0 12px;
+}
+h2.sec{font:700 17px var(--disp); letter-spacing:-.015em; margin:26px 0 12px}
+h2.sec:first-child{margin-top:0}
+
+/* ---- Objekt-Kacheln: quadratisch, Icon gross ---- */
+.grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px}
+.tile{
+  background:var(--sheet); border:none; border-radius:16px; padding:14px;
+  cursor:pointer; text-align:left; font-family:var(--body); color:inherit;
+  display:flex; flex-direction:column; gap:10px;
+  /* aspect-ratio wird vom Grid ueberstimmt, sobald die Zeile gestreckt wird —
+     min-height haelt die Kacheln trotzdem quadratisch und alle gleich hoch. */
+  aspect-ratio:1; min-height:186px;
+  transition:transform .12s, box-shadow .15s;
+  box-shadow:0 1px 2px rgba(22,38,44,.06);
+}
+.tile:hover{box-shadow:0 6px 18px -8px rgba(22,38,44,.28)}
+.tile:active{transform:scale(.985)}
+.tile:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.tile .ico{width:54px; height:54px; border-radius:13px; overflow:hidden; flex:none}
+/* SVG ohne eigene Masse fuellt sonst nicht seinen Rahmen */
+.tile .ico svg, .row .ic svg, .barlogo svg{width:100%; height:100%; display:block}
+.tile .name{
+  display:block; font:600 15px var(--disp); letter-spacing:-.01em; line-height:1.25;
+}
+.tile .ort{
+  display:block; font:400 11.5px var(--body); color:var(--soft);
+  margin-top:3px; line-height:1.35;
+}
+.tile .foot{margin-top:auto; display:flex; flex-wrap:wrap; gap:5px}
+
+/* ---- Chips ---- */
+.chip{
+  font:600 10.5px var(--mono); padding:4px 9px; border-radius:999px;
+  background:#F1F4F4; color:var(--soft); white-space:nowrap; letter-spacing:.02em;
+}
+.chip.teal{color:var(--teal-d); background:var(--teal-l)}
+.chip.amber{color:var(--amber); background:var(--amber-bg)}
+.chip.pos{color:var(--pos); background:var(--pos-bg)}
+.chip.neg{color:var(--neg); background:var(--neg-bg)}
+
+/* ---- Listenzeilen (Aktionen, Einstellungen) ---- */
+.row{
+  display:flex; gap:14px; align-items:center; width:100%; text-align:left;
+  background:var(--sheet); border:none; border-radius:14px; padding:15px 16px;
+  margin-bottom:10px; cursor:pointer; font-family:var(--body); color:inherit;
+  text-decoration:none; min-height:44px; transition:transform .1s, box-shadow .15s;
+  box-shadow:0 1px 2px rgba(22,38,44,.05);
+}
+.row:hover{box-shadow:0 5px 14px -8px rgba(22,38,44,.3)}
+.row:active{transform:scale(.995)}
+.row:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.row .ic{
+  width:42px; height:42px; border-radius:11px; background:var(--teal-l);
+  color:var(--teal-d); flex:none; display:flex; align-items:center;
+  justify-content:center; font:600 17px var(--mono);
+}
+.row .txt{flex:1; min-width:0}
+.row .t{display:block; font:600 15px var(--disp); letter-spacing:-.01em}
+.row .d{display:block; font:400 12.5px var(--body); color:var(--soft);
+        margin-top:3px; line-height:1.4}
+.row .arr{color:var(--soft); font:400 18px var(--body); flex:none}
+.row.ghost{background:transparent; box-shadow:none; border:1.5px dashed #B4C4C1}
+.row.ghost .ic{background:transparent; color:var(--teal-d)}
+
+/* ---- leerer Zustand ---- */
+.empty{
+  background:var(--sheet); border-radius:16px; padding:28px 22px; text-align:center;
+  box-shadow:0 1px 2px rgba(22,38,44,.05);
+}
+.empty .big{font:700 17px var(--disp); letter-spacing:-.015em; margin-bottom:6px}
+.empty p{font:400 13.5px var(--body); color:var(--soft); margin:0; line-height:1.5}
+
+/* ---- untere Navigation ---- */
+.nav{
+  position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--sheet);
+  display:flex; padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+  box-shadow:0 -1px 0 rgba(22,38,44,.07);
+}
+@media(min-width:480px){
+  .nav{position:absolute; border-radius:0 0 22px 22px}
+}
+.nav a{
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+  padding:8px 4px; min-height:44px; text-decoration:none; color:var(--soft);
+  border-radius:12px; font:600 10.5px var(--disp); letter-spacing:.01em;
+}
+.nav a .ni{font:400 19px var(--mono); line-height:1}
+.nav a[aria-current=page]{color:var(--teal-d); background:var(--teal-l)}
+
+/* ---- Formularfelder ---- */
+.field{margin-bottom:14px}
+.field label{
+  display:block; font:600 10.5px var(--mono); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--soft); margin-bottom:7px;
+}
+.inp{
+  width:100%; border:1.5px solid var(--line); border-radius:11px; padding:12px 13px;
+  font:500 15px var(--body); color:var(--ink); background:var(--sheet); min-height:44px;
+}
+.inp:focus{outline:none; border-color:var(--teal); box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+select.inp{
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235C6B70' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 14px center;
+}
+.btn{
+  width:100%; border:none; border-radius:12px; padding:15px; cursor:pointer;
+  font:600 15px var(--disp); letter-spacing:-.01em; background:var(--teal);
+  color:#fff; min-height:44px; transition:background .15s;
+}
+.btn:hover{background:var(--teal-d)}
+.btn:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+@media(prefers-reduced-motion:reduce){*{transition:none !important}}

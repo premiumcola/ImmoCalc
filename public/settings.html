@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Einstellungen · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <div class="barwrap">
+      <h1>Einstellungen</h1>
+      <div class="sub" id="sub">ImmoCalc</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <h2 class="sec">Dokumente</h2>
+    <a class="row" href="#" id="ncRow">
+      <span class="ic">☁</span>
+      <span class="txt">
+        <span class="t">Nextcloud-Verbindung</span>
+        <span class="d" id="ncStatus">noch nicht eingerichtet</span>
+      </span>
+      <span class="arr">›</span>
+    </a>
+
+    <h2 class="sec">Entwicklung &amp; Diagnose</h2>
+    <p style="font:400 12.5px var(--body);color:var(--soft);margin:-4px 0 12px;line-height:1.5">
+      Werkzeuge für die Entwicklung. Für den normalen Betrieb nicht nötig.
+    </p>
+
+    <a class="row" href="app.html">
+      <span class="ic">▤</span>
+      <span class="txt">
+        <span class="t">App-Mockup</span>
+        <span class="d">Klickbarer Entwurf mit Beispieldaten</span>
+      </span>
+      <span class="arr">›</span>
+    </a>
+    <a class="row" href="status.html">
+      <span class="ic">◎</span>
+      <span class="txt">
+        <span class="t">Live-Daten (API)</span>
+        <span class="d">Rohdaten aus dem Backend</span>
+      </span>
+      <span class="arr">›</span>
+    </a>
+    <a class="row" href="logos.html">
+      <span class="ic">◧</span>
+      <span class="txt">
+        <span class="t">Logo-Auswahl</span>
+        <span class="d">Alle Gebäudetypen im Überblick</span>
+      </span>
+      <span class="arr">›</span>
+    </a>
+    <a class="row" href="docs/rechenlogik.md">
+      <span class="ic">ƒ</span>
+      <span class="txt">
+        <span class="t">Rechenlogik &amp; Schlüssel</span>
+        <span class="d">Fachkonzept der Verteilung</span>
+      </span>
+      <span class="arr">›</span>
+    </a>
+    <a class="row" href="docs/er-diagramm.mermaid">
+      <span class="ic">⌗</span>
+      <span class="txt">
+        <span class="t">ER-Diagramm</span>
+        <span class="d">Datenstruktur</span>
+      </span>
+      <span class="arr">›</span>
+    </a>
+
+    <h2 class="sec">System</h2>
+    <div class="row" style="cursor:default">
+      <span class="ic">ⓘ</span>
+      <span class="txt">
+        <span class="t">Version</span>
+        <span class="d" id="build">wird geladen …</span>
+      </span>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <a href="index.html"><span class="ni">▤</span>Objekte</a>
+    <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
+    <a href="settings.html" aria-current="page"><span class="ni">⚙</span>Einstellungen</a>
+  </nav>
+</div>
+
+<script type="module">
+import { api } from './assets/immo.js';
+
+const build = document.getElementById('build');
+const sub = document.getElementById('sub');
+
+try {
+  const gesundheit = await api('/health');
+  build.textContent =
+    `ImmoCalc ${gesundheit.version ?? '–'} · Build ${gesundheit.build ?? 'unbekannt'}`;
+  sub.textContent = 'API verbunden';
+} catch {
+  build.textContent = 'API nicht erreichbar';
+  sub.textContent = 'API nicht erreichbar';
+}
+
+document.getElementById('ncRow').addEventListener('click', e => {
+  e.preventDefault();
+  document.getElementById('ncStatus').textContent =
+    'Zugangsdaten werden serverseitig in .env hinterlegt';
+});
+</script>
+</body>
+</html>

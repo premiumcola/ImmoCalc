@@ -270,8 +270,37 @@ document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',(
 function typLabel(id){return (TYPES.find(t=>t[0]===id)||[,'—'])[1];}
 function turnusLabel(){return state.data.turnus==='kalender'?'Januar – Dezember':`${MONATE[state.data.startMonat-1]} – ${MONATE[(state.data.startMonat+10)%12]}`;}
 
-function finish(){
+let angelegterSlug=null;
+
+async function finish(){
   const d=state.data;
+  if(!d.name.trim()){ alert('Bitte zuerst eine Bezeichnung eingeben.'); state.step=0; render(); return; }
+
+  const knopf=foot.querySelector('[data-next]');
+  if(knopf){ knopf.disabled=true; knopf.textContent='Wird angelegt …'; }
+
+  try{
+    const antwort=await fetch('/api/objekte',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        name:d.name, ort:d.ort, strasse:d.strasse, plz:d.plz,
+        typ:d.typ, nutzung:d.nutzung, turnus:d.turnus,
+        start_monat:d.turnus==='kalender'?1:d.startMonat,
+        flaeche:d.flaeche?Number(d.flaeche):null,
+        kostenarten:d.kosten.filter(k=>k[1]).map(k=>k[0]),
+        einheiten:d.einheiten.filter(u=>u.bez||u.partei).map(u=>({
+          bezeichnung:u.bez||u.partei, flaeche:u.flaeche?Number(u.flaeche):null,
+          partei:u.partei, personen:u.personen?Number(u.personen):1})),
+      }),
+    });
+    if(!antwort.ok) throw new Error(antwort.status);
+    angelegterSlug=(await antwort.json()).slug;
+  }catch(e){
+    if(knopf){ knopf.disabled=false; knopf.textContent='Immobilie anlegen'; }
+    alert('Die Immobilie konnte nicht gespeichert werden. Läuft die API?');
+    return;
+  }
+
   $('#recap').innerHTML=[
     ['Name', d.name||'—'],['Typ', typLabel(d.typ)],['Nutzung', d.nutzung],
     ['Turnus', turnusLabel()],['Kostenarten aktiv', d.kosten.filter(k=>k[1]).length+' von '+d.kosten.length],
@@ -279,7 +308,12 @@ function finish(){
   ].map(([k,v])=>`<div class="rl"><span class="rk">${k}</span><span class="rv">${v}</span></div>`).join('');
   $('#done').classList.add('open');
 }
-$('#doneBtn').addEventListener('click',()=>{$('#done').classList.remove('open');setMode('onboarding');});
+
+$('#doneBtn').addEventListener('click',()=>{
+  location.href = angelegterSlug
+    ? `objekt.html?o=${encodeURIComponent(angelegterSlug)}`
+    : 'index.html';
+});
 
 function flashSaved(){
   const b=foot.querySelector('.btn'); const o=b.textContent;

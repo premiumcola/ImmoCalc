@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Objekt · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  .barlogo{width:34px;height:34px;border-radius:9px;overflow:hidden;flex:none}
+  .banner{display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:12px;
+          font:600 12px var(--mono);margin-bottom:18px;line-height:1.4}
+  .banner .d{width:8px;height:8px;border-radius:50%;flex:none}
+  .banner .days{margin-left:auto;font-weight:700;white-space:nowrap}
+  .banner.pos{background:var(--pos-bg);color:var(--pos)} .banner.pos .d{background:var(--pos)}
+  .banner.amber{background:var(--amber-bg);color:var(--amber)} .banner.amber .d{background:var(--amber)}
+  .banner.neg{background:var(--neg-bg);color:var(--neg)} .banner.neg .d{background:var(--neg)}
+  .liste{background:var(--sheet);border-radius:14px;overflow:hidden;margin-bottom:10px;
+         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .eintrag{display:flex;gap:12px;align-items:center;padding:13px 15px}
+  .eintrag + .eintrag{border-top:1px solid var(--line)}
+  .eintrag .et{flex:1;min-width:0}
+  .eintrag .en{display:block;font:600 14px var(--disp);letter-spacing:-.01em}
+  .eintrag .ed{display:block;font:400 12px var(--body);color:var(--soft);margin-top:3px;
+               line-height:1.4}
+  .eintrag .ew{font:600 13px var(--mono);white-space:nowrap}
+  .eintrag .del{border:none;background:none;color:var(--soft);font:400 18px var(--body);
+                cursor:pointer;padding:6px 2px;min-width:32px;min-height:32px}
+  .eintrag .del:hover{color:var(--neg)}
+  .leerzeile{font:400 13px var(--body);color:var(--soft);padding:16px 15px;text-align:center}
+  .add{width:100%;border:1.5px dashed #B4C4C1;background:transparent;color:var(--teal-d);
+       border-radius:12px;padding:12px;font:600 13.5px var(--disp);cursor:pointer;
+       min-height:44px;margin-bottom:4px}
+  .add:hover{background:var(--teal-l)}
+  dialog{border:none;border-radius:18px;padding:0;max-width:400px;width:calc(100% - 32px);
+         background:var(--paper);box-shadow:0 30px 70px -20px rgba(22,38,44,.5)}
+  dialog::backdrop{background:rgba(22,38,44,.45)}
+  dialog .dh{font:700 17px var(--disp);letter-spacing:-.02em;padding:20px 20px 4px}
+  dialog form{padding:12px 20px 20px}
+  .zeile2{display:flex;gap:10px} .zeile2 > *{flex:1}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <button class="back" id="back">Zurück</button>
+    <span class="barlogo" id="barlogo"></span>
+    <div class="barwrap">
+      <h1 id="titel">Objekt</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll" id="inhalt"></div>
+
+  <nav class="nav">
+    <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
+    <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
+    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
+  </nav>
+</div>
+
+<dialog id="dlg">
+  <div class="dh" id="dlgTitel">Eintrag</div>
+  <form method="dialog" id="dlgForm"></form>
+</dialog>
+
+<script type="module">
+import { installLogos, logoSvg, api, eur, esc, fristKlasse, fristText }
+  from './assets/immo.js';
+
+installLogos();
+
+const slug = new URLSearchParams(location.search).get('o');
+const inhalt = document.getElementById('inhalt');
+const titel = document.getElementById('titel');
+const sub = document.getElementById('sub');
+const dlg = document.getElementById('dlg');
+
+document.getElementById('back').addEventListener('click', () => history.length > 1
+  ? history.back() : location.href = 'index.html');
+
+/* Welche Felder hat welcher Bereich — steuert Liste und Formular gleichermassen. */
+const BEREICHE = {
+  mieten: {
+    titel: 'Mieten', einzahl: 'Mietverhältnis',
+    felder: [
+      { k: 'einheit', l: 'Einheit', typ: 'text' },
+      { k: 'partei', l: 'Mieter / Partei', typ: 'text' },
+      { k: 'kaltmiete', l: 'Kaltmiete mtl.', typ: 'number', schritt: '0.01' },
+      { k: 'nebenkosten_vz', l: 'NK-Vorauszahlung mtl.', typ: 'number', schritt: '0.01' },
+      { k: 'ab_datum', l: 'Gültig ab', typ: 'date', pflicht: true },
+    ],
+    name: e => e.einheit || e.partei || 'Mietverhältnis',
+    detail: e => [e.partei, e.ab_datum ? `ab ${e.ab_datum}` : ''].filter(Boolean).join(' · '),
+    wert: e => eur(e.kaltmiete),
+  },
+  versicherungen: {
+    titel: 'Versicherungen', einzahl: 'Versicherung',
+    felder: [
+      { k: 'art', l: 'Art', typ: 'text', pflicht: true },
+      { k: 'anbieter', l: 'Anbieter', typ: 'text' },
+      { k: 'police_nr', l: 'Policen-Nr.', typ: 'text' },
+      { k: 'jahresbeitrag', l: 'Beitrag pro Jahr', typ: 'number', schritt: '0.01' },
+      { k: 'versicherungswert', l: 'Versicherungswert', typ: 'number', schritt: '0.01' },
+    ],
+    name: e => e.art,
+    detail: e => [e.anbieter, e.police_nr].filter(Boolean).join(' · '),
+    wert: e => eur(e.jahresbeitrag) + ' / J',
+  },
+  kredite: {
+    titel: 'Kredite', einzahl: 'Kredit',
+    felder: [
+      { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
+      { k: 'bank', l: 'Bank', typ: 'text' },
+      { k: 'restschuld', l: 'Restschuld', typ: 'number', schritt: '0.01' },
+      { k: 'zinssatz', l: 'Zinssatz %', typ: 'number', schritt: '0.01' },
+      { k: 'rate_monatlich', l: 'Rate mtl.', typ: 'number', schritt: '0.01' },
+      { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date' },
+    ],
+    name: e => e.bezeichnung,
+    detail: e => [e.bank, e.restschuld ? `Rest ${eur(e.restschuld)}` : '',
+                  e.zinssatz ? `${e.zinssatz} %` : ''].filter(Boolean).join(' · '),
+    wert: e => eur(e.rate_monatlich) + ' / M',
+  },
+  zahlungen: {
+    titel: 'Steuer &amp; Zahlungen', einzahl: 'Zahlung',
+    felder: [
+      { k: 'art', l: 'Art', typ: 'text', pflicht: true },
+      { k: 'kategorie', l: 'Kategorie', typ: 'select',
+        werte: ['Steuer', 'Kredit', 'Instandhaltung', 'Sonstiges'] },
+      { k: 'jahr', l: 'Jahr', typ: 'number', pflicht: true,
+        vorgabe: new Date().getFullYear() },
+      { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01' },
+    ],
+    name: e => e.art,
+    detail: e => [e.kategorie, e.jahr].filter(Boolean).join(' · '),
+    wert: e => eur(e.betrag),
+  },
+};
+
+let objekt = null;
+
+function bannerHtml(z) {
+  if (!z || z.frist_tage == null) return '';
+  const k = fristKlasse(z.frist_tage);
+  const tage = z.frist_tage < 0
+    ? `${Math.abs(z.frist_tage)} Tage über`
+    : `noch ${z.frist_tage} Tage`;
+  return `<div class="banner ${k}"><span class="d"></span>
+      <span>Frist § 556 BGB · ${esc(z.label)}</span>
+      <span class="days">${tage}</span></div>`;
+}
+
+function abschnitt(bereich, eintraege) {
+  const cfg = BEREICHE[bereich];
+  const zeilen = eintraege.length
+    ? eintraege.map(e => `<div class="eintrag">
+        <span class="et">
+          <span class="en">${esc(cfg.name(e))}</span>
+          ${cfg.detail(e) ? `<span class="ed">${esc(cfg.detail(e))}</span>` : ''}
+        </span>
+        <span class="ew">${cfg.wert(e)}</span>
+        <button class="del" data-del="${bereich}:${e.id}" aria-label="löschen">×</button>
+      </div>`).join('')
+    : `<div class="leerzeile">Noch nichts erfasst</div>`;
+
+  return `<h2 class="sec">${cfg.titel}</h2>
+    <div class="liste">${zeilen}</div>
+    <button class="add" data-add="${bereich}">＋ ${cfg.einzahl} hinzufügen</button>`;
+}
+
+async function laden() {
+  if (!slug) {
+    inhalt.innerHTML = `<div class="empty"><div class="big">Kein Objekt gewählt</div>
+      <p>Zurück zur Übersicht und eine Immobilie antippen.</p></div>`;
+    return;
+  }
+  let det, bereiche;
+  try {
+    det = await api(`/objekte/${encodeURIComponent(slug)}`);
+    bereiche = Object.fromEntries(await Promise.all(
+      Object.keys(BEREICHE).map(async b =>
+        [b, await api(`/objekte/${encodeURIComponent(slug)}/${b}`)])));
+  } catch {
+    inhalt.innerHTML = `<div class="empty"><div class="big">Objekt nicht gefunden</div>
+      <p>Die Daten konnten nicht geladen werden.</p></div>`;
+    return;
+  }
+
+  objekt = det.objekt;
+  titel.textContent = objekt.name;
+  document.getElementById('barlogo').innerHTML = logoSvg(objekt.typ);
+  const ortText = objekt.ort || objekt.strasse || objekt.nutzung;
+  sub.textContent =
+    `${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'} · ${ortText}`;
+
+  const laufend = det.zeitraeume.find(z => z.status === 'in Arbeit');
+  const zr = det.zeitraeume.length
+    ? det.zeitraeume.map(z => {
+        const chip = z.status === 'in Arbeit'
+          ? `<span class="chip ${fristKlasse(z.frist_tage)}">${esc(fristText(z.frist_tage) || 'in Arbeit')}</span>`
+          : '<span class="chip">abgeschlossen</span>';
+        return `<div class="eintrag"><span class="et">
+            <span class="en">${esc(z.label)}</span>
+            <span class="ed">${esc(z.typ)}</span></span>${chip}</div>`;
+      }).join('')
+    : `<div class="leerzeile">Noch kein Abrechnungszeitraum</div>`;
+
+  inhalt.innerHTML = `
+    ${bannerHtml(laufend)}
+    <h2 class="sec">Abrechnungszeiträume</h2>
+    <div class="liste">${zr}</div>
+    ${Object.keys(BEREICHE).map(b => abschnitt(b, bereiche[b])).join('')}`;
+}
+
+function formular(bereich) {
+  const cfg = BEREICHE[bereich];
+  const felder = cfg.felder.map(f => {
+    if (f.typ === 'select') {
+      return `<div class="field"><label for="f_${f.k}">${f.l}</label>
+        <select class="inp" id="f_${f.k}" name="${f.k}">
+          ${f.werte.map(w => `<option>${w}</option>`).join('')}
+        </select></div>`;
+    }
+    return `<div class="field"><label for="f_${f.k}">${f.l}</label>
+      <input class="inp" id="f_${f.k}" name="${f.k}" type="${f.typ}"
+             ${f.schritt ? `step="${f.schritt}"` : ''}
+             ${f.vorgabe != null ? `value="${f.vorgabe}"` : ''}
+             ${f.pflicht ? 'required' : ''}></div>`;
+  }).join('');
+
+  document.getElementById('dlgTitel').textContent = cfg.einzahl + ' hinzufügen';
+  document.getElementById('dlgForm').innerHTML = felder +
+    `<button class="btn" value="ok">Speichern</button>
+     <button class="btn" value="abbruch" formnovalidate
+             style="background:transparent;color:var(--soft);margin-top:6px">Abbrechen</button>`;
+  document.getElementById('dlgForm').dataset.bereich = bereich;
+  dlg.showModal();
+}
+
+document.getElementById('dlgForm').addEventListener('submit', async e => {
+  const form = e.target;
+  if (form.returnValue === 'abbruch') return;
+  const bereich = form.dataset.bereich;
+  const daten = {};
+  for (const f of BEREICHE[bereich].felder) {
+    const el = form.elements[f.k];
+    if (!el || el.value === '') continue;
+    daten[f.k] = f.typ === 'number' ? Number(el.value) : el.value;
+  }
+  try {
+    await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`, { method: 'POST', body: daten });
+    await laden();
+  } catch {
+    alert('Konnte nicht gespeichert werden.');
+  }
+});
+
+inhalt.addEventListener('click', async e => {
+  const add = e.target.closest('[data-add]');
+  if (add) return formular(add.dataset.add);
+
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    const [bereich, id] = del.dataset.del.split(':');
+    if (!confirm('Diesen Eintrag löschen?')) return;
+    await api(`/${bereich}/${id}`, { method: 'DELETE' });
+    await laden();
+  }
+});
+
+await laden();
+</script>
+</body>
+</html>

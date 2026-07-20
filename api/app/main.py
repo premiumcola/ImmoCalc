@@ -30,9 +30,19 @@ app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 
 
+def _build() -> str:
+    """Git-Kurz-SHA aus dem Image; im Prüfstand nicht vorhanden."""
+    try:
+        with open("/srv/build.txt", encoding="utf-8") as f:
+            return f.read().strip() or "local"
+    except OSError:
+        return "local"
+
+
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "service": "immocalc-api"}
+    return {"status": "ok", "service": "immocalc-api",
+            "version": app.version, "build": _build()}
 
 
 @app.get("/")

@@ -51,7 +51,7 @@ function report(name, { status, ctype, errors, downloads }, miss, expectType = '
 
 // 1) index — Einstieg in die App
 { const r = await open('/index.html');
-  const miss = await must(r.page, ['a[href="app.html"]', 'a[href="onboarding.html"]']);
+  const miss = await must(r.page, ['a[href="onboarding.html"]', '.nav a[href="settings.html"]']);
   await r.page.screenshot({ path: 'tests/screenshots/index.png', fullPage: true });
   report('index.html', r, miss); await r.page.close(); }
 
