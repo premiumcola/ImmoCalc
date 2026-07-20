@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 
 from .db import engine
+from .migrate import migriere
 from .routers import auswertung, objekte, stammdaten
 from .seed import seed
 
@@ -16,6 +17,7 @@ log = logging.getLogger("immocalc")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
+    migriere(engine)          # muss vor dem Seed laufen — der liest die Tabellen
     seed(engine)
     log.info("ImmoCalc API bereit")
     yield
