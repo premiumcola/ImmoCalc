@@ -73,11 +73,11 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | LV | Selbst angelegte Ordner werden angezeigt, nie verändert | `d5a5550`, `f068042` |
 | LVI | PDF-Anhang beim Versand | `d5a5550` |
 | LVII | Belege im Browser öffnen | `d5a5550`, `f068042` |
-| LX | „Beleg erfassen“ direkt in der Zeile, ohne Aufklappen | `HEAD` |
-| LXI | App-Symbol in der Kopfzeile jeder Seite | `HEAD` |
-| LXII | Auswahlmenüs im eigenen Design statt Systemliste | `HEAD` |
-| LXIII | Name aus Straße, Ort und Einheit — Feld entfällt | `HEAD` |
-| LXIV | Löschen per Schiebe-Regler statt Browser-Kasten | `HEAD` |
+| LX | „Beleg erfassen“ direkt in der Zeile, ohne Aufklappen | `f496e6a` |
+| LXI | App-Symbol in der Kopfzeile jeder Seite | `f496e6a` |
+| LXII | Auswahlmenüs im eigenen Design statt Systemliste | `f496e6a` |
+| LXIII | Name aus Straße, Ort und Einheit — Feld entfällt | `f496e6a` |
+| LXIV | Löschen per Schiebe-Regler statt Browser-Kasten | `f496e6a` |
 
 ---
 
