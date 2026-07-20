@@ -19,9 +19,18 @@ router = APIRouter(prefix="/api/auswertung", tags=["auswertung"])
 BLOCK_NAMEN = ["Kredit", "Versicherung", "Steuer", "Nebenkosten", "Sonstiges"]
 
 
-def _monate_im_jahr(m: Miete, jahr: int) -> int:
-    """Wie viele Monate des Jahres war dieser Mietstand gültig?"""
+def _monate_im_jahr(m: Miete, jahr: int) -> float:
+    """Wie viele Monate des Jahres war dieser Mietstand gültig? (taggenau)"""
     return monate_im_jahr(m.ab_datum, m.bis_datum, jahr)
+
+
+def _monatlich(betrag: float | None, turnus: str | None) -> float:
+    """Ein Betrag je Turnus als Monatswert.
+
+    Die Kennzahlen der Einheiten (Kaltmiete, €/m²) sind Monatsgrößen; im
+    Datensatz steht der Betrag aber je Turnus. Ohne diese Umrechnung wies eine
+    vierteljährlich gezahlte Miete den dreifachen €/m² aus."""
+    return round(jahresbetrag(betrag, turnus) / 12, 2)
 
 
 def _miete_im_jahr(m: Miete, jahr: int) -> float:
@@ -76,10 +85,11 @@ def _einheiten_zahlen(session: DBSession, o: Objekt, jahr: int) -> list[EinheitZ
             bezeichnung=e.bezeichnung, nutzungsart=e.nutzungsart,
             flaeche=e.flaeche, terrasse=e.terrasse, nebenflaeche=e.nebenflaeche,
             einnahmen_monat=monatlich,
-            kaltmiete=aktuell.kaltmiete if aktuell else 0.0,
-            stellplatz=aktuell.stellplatz if aktuell else 0.0,
-            sonstige=aktuell.sonstige if aktuell else 0.0,
-            nebenkosten_vz=aktuell.nebenkosten_vz if aktuell else 0.0,
+            kaltmiete=_monatlich(aktuell.kaltmiete, aktuell.turnus) if aktuell else 0.0,
+            stellplatz=_monatlich(aktuell.stellplatz, aktuell.turnus) if aktuell else 0.0,
+            sonstige=_monatlich(aktuell.sonstige, aktuell.turnus) if aktuell else 0.0,
+            nebenkosten_vz=_monatlich(aktuell.nebenkosten_vz, aktuell.turnus)
+            if aktuell else 0.0,
             partei=aktuell.partei if aktuell else "",
         ))
 
@@ -93,8 +103,10 @@ def _einheiten_zahlen(session: DBSession, o: Objekt, jahr: int) -> list[EinheitZ
             bezeichnung=m.einheit or m.partei or "Gesamtobjekt",
             nutzungsart=o.nutzung, flaeche=None, terrasse=None, nebenflaeche=None,
             einnahmen_monat=_miete_im_jahr(m, jahr) / 12,
-            kaltmiete=m.kaltmiete, stellplatz=m.stellplatz, sonstige=m.sonstige,
-            nebenkosten_vz=m.nebenkosten_vz, partei=m.partei,
+            kaltmiete=_monatlich(m.kaltmiete, m.turnus),
+            stellplatz=_monatlich(m.stellplatz, m.turnus),
+            sonstige=_monatlich(m.sonstige, m.turnus),
+            nebenkosten_vz=_monatlich(m.nebenkosten_vz, m.turnus), partei=m.partei,
         ))
     return zahlen
 

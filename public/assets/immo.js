@@ -107,22 +107,36 @@ function baueDialog(inhalt) {
 const sicher = s => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Rückfrage mit zwei Knöpfen. Liefert true, wenn bestätigt wurde. */
-export function frage(titel, text, { knopf = 'Weiter', gefahr = false } = {}) {
+/**
+ * Rückfrage mit mehreren Wegen. `optionen` ist [{wert, text, gefahr, leise}];
+ * der erste Eintrag ist der Hauptweg. Liefert den `wert` des Gewählten oder
+ * `null` beim Abbrechen.
+ */
+export function wahl(titel, text, optionen) {
   return new Promise(fertig => {
+    const knoepfe = optionen.map((o, i) => `
+      <button class="btn ${o.gefahr ? 'gefahr' : (i > 0 || o.leise ? 'leise' : '')}"
+              data-wahl="${sicher(o.wert)}"
+              ${i > 0 ? 'style="margin-top:8px"' : ''}>${sicher(o.text)}</button>`);
     const dlg = baueDialog(`
       <div class="dt">${sicher(titel)}</div>
       <p>${sicher(text)}</p>
-      <button class="btn ${gefahr ? 'gefahr' : ''}" data-ja>${sicher(knopf)}</button>
-      <button class="btn leise" data-nein>Abbrechen</button>`);
-    dlg.querySelector('[data-ja]').addEventListener('click', () => {
-      fertig(true); dlg.close();
+      ${knoepfe.join('')}
+      <button class="btn leise" style="margin-top:8px" data-nein>Abbrechen</button>`);
+
+    dlg.addEventListener('click', e => {
+      const knopf = e.target.closest('[data-wahl]');
+      if (knopf) { fertig(knopf.dataset.wahl); dlg.close(); }
+      else if (e.target.closest('[data-nein]')) { fertig(null); dlg.close(); }
     });
-    dlg.querySelector('[data-nein]').addEventListener('click', () => {
-      fertig(false); dlg.close();
-    });
-    dlg.addEventListener('cancel', () => fertig(false));
+    dlg.addEventListener('cancel', () => fertig(null));
   });
+}
+
+/** Rückfrage mit zwei Knöpfen. Liefert true, wenn bestätigt wurde. */
+export async function frage(titel, text,
+                            { knopf = 'Weiter', gefahr = false } = {}) {
+  return await wahl(titel, text, [{ wert: 'ja', text: knopf, gefahr }]) === 'ja';
 }
 
 /**

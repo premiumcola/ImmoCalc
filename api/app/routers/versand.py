@@ -1,5 +1,6 @@
 """Abrechnung abschließen: je Partei ein Ergebnis erzeugen und versenden."""
 import logging
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -9,7 +10,8 @@ from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..db import get_session
 from ..engine import Position, abrechnung
 from ..mailversand import MailFehler
-from ..models import (Kostenposition, Miete, Objekt, Vorauszahlung, Zeitraum)
+from ..models import (Kostenposition, Miete, Objekt, Versandprotokoll,
+                      Vorauszahlung, Zeitraum)
 from .mail import zugang
 
 log = logging.getLogger("immocalc")
@@ -21,7 +23,7 @@ def _ergebnis(session: Session, z: Zeitraum) -> dict:
         select(Kostenposition).where(Kostenposition.zeitraum_id == z.id)).all()
     vzs = session.exec(
         select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == z.id)).all()
-    positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile, p.s35)
+    positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)
                   for p in pos if p.status == "erledigt"]
     return abrechnung(positionen, {v.partei: v.betrag for v in vzs})
 
@@ -105,6 +107,15 @@ class AbschlussIn(BaseModel):
     versenden: bool = False
     offene_uebergehen: bool = False
     pdf_anhaengen: bool = True
+    # Ausdrücklich nötig, um einen bereits abgeschlossenen Zeitraum erneut
+    # anzufassen — sonst genügt ein zweiter Tab für einen zweiten Versand.
+    erneut: bool = False
+
+
+def _bereits_versendet(session: Session, zid: int) -> set[str]:
+    return {p.partei for p in session.exec(
+        select(Versandprotokoll).where(Versandprotokoll.zeitraum_id == zid)).all()
+        if p.versendet_am}
 
 
 @router.post("/{zid}/abschliessen")
@@ -117,6 +128,10 @@ def abschliessen(zid: int, data: AbschlussIn,
     z = session.get(Zeitraum, zid)
     if not z:
         raise HTTPException(404, "Zeitraum nicht gefunden")
+    if z.status != "in Arbeit" and not data.erneut:
+        raise HTTPException(409, "Dieser Zeitraum ist bereits abgeschlossen. "
+                                 "Ein erneuter Versand muss ausdrücklich "
+                                 "angefordert werden.")
     o = session.get(Objekt, z.objekt_id)
 
     res = _ergebnis(session, z)
@@ -126,11 +141,17 @@ def abschliessen(zid: int, data: AbschlussIn,
 
     kontakte = _empfaenger(session, z.objekt_id)
     zeitraum_text = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
-    versendet, uebersprungen = [], []
+    versendet, uebersprungen, schon_da = [], [], []
 
     if data.versenden:
         z_mail = zugang(session)          # wirft, wenn kein Postfach verbunden
+        fertig = _bereits_versendet(session, zid)
         for partei, werte in (res.get("parteien") or {}).items():
+            # Ein zweiter Anlauf nach einem Fehler in der Mitte darf nicht bei
+            # Partei eins wieder anfangen.
+            if partei in fertig:
+                schon_da.append(partei)
+                continue
             adresse = kontakte.get(partei, {}).get("email")
             if not adresse:
                 uebersprungen.append(partei)
@@ -143,7 +164,7 @@ def abschliessen(zid: int, data: AbschlussIn,
                 f"anbei die Betriebskostenabrechnung für {o.name}, "
                 f"Zeitraum {zeitraum_text}.\n\n"
                 f"Umlagefähige Kosten: {werte.get('kosten'):.2f} EUR\n"
-                f"Geleistete Vorauszahlungen: {werte.get('vz'):.2f} EUR\n"
+                f"Geleistete Vorauszahlungen: {werte.get('vorauszahlungen'):.2f} EUR\n"
                 f"{richtung}: {abs(saldo):.2f} EUR\n\n"
                 f"Bei Rückfragen melden Sie sich gerne.\n\n"
                 f"Freundliche Grüße\n"
@@ -159,13 +180,24 @@ def abschliessen(zid: int, data: AbschlussIn,
                 z_mail.sende(adresse,
                              f"Betriebskostenabrechnung {o.name} · {zeitraum_text}",
                              text, anhang=anhang)
-                versendet.append(partei)
             except MailFehler as e:
-                raise HTTPException(400, f"Versand an {partei} fehlgeschlagen: {e}") from e
+                # Sofort festhalten, was bis hierher rausging — sonst steht
+                # beim naechsten Versuch niemand in der Liste.
+                session.commit()
+                raise HTTPException(
+                    400, f"Versand an {partei} fehlgeschlagen: {e}. "
+                         f"Bereits verschickt: "
+                         f"{', '.join(versendet) or 'niemand'}.") from e
+            versendet.append(partei)
+            session.add(Versandprotokoll(
+                zeitraum_id=zid, partei=partei, empfaenger=adresse,
+                versendet_am=date.today()))
+            session.commit()
 
     z.status = "abgeschlossen"
     session.add(z)
     session.commit()
     log.info("Zeitraum %s abgeschlossen, %d Mail(s) versendet", zid, len(versendet))
     return {"ok": True, "status": z.status, "versendet": versendet,
-            "ohne_mail": uebersprungen, "uebergangen": offen if data.offene_uebergehen else []}
+            "ohne_mail": uebersprungen, "schon_versendet": schon_da,
+            "uebergangen": offen if data.offene_uebergehen else []}

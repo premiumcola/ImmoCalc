@@ -320,7 +320,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "betrag": p.betrag if p else None,
             "schluessel": p.schluessel if p else None,
             "wertquelle": p.wertquelle if p else None,
-            "anteile": p.anteile if p else {},
+            "anteile": (p.anteile or {}) if p else {},
             "position_id": p.id if p else None,
             "beleg_monat": k.beleg_monat,
             "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
@@ -333,7 +333,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "kostenart": p.kostenart, "s35": p.s35,
             "erledigt": p.status == "erledigt", "betrag": p.betrag,
             "schluessel": p.schluessel, "wertquelle": p.wertquelle,
-            "anteile": p.anteile, "position_id": p.id, "beleg_monat": None,
+            "anteile": p.anteile or {}, "position_id": p.id, "beleg_monat": None,
             "zustand": "erledigt" if p.status == "erledigt" else "offen",
         })
 
@@ -471,7 +471,7 @@ def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> di
     pos = session.exec(select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
     # offene Positionen (Betrag noch nicht da) fließen nicht in die Rechnung ein
-    positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile, p.s35)
+    positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)
                   for p in pos if p.status == "erledigt"]
     res = abrechnung(positionen, {v.partei: v.betrag for v in vzs})
     res["offen"] = [p.kostenart for p in pos if p.status == "offen"]

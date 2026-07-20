@@ -140,9 +140,22 @@ def sankey(einheiten: list[dict], bloecke: dict[str, float]) -> dict:
             "kosten": round(kosten_gesamt, 2)}
 
 
-def monate_im_jahr(ab: date, bis: date | None, jahr: int) -> int:
+def monate_im_jahr(ab: date, bis: date | None, jahr: int) -> float:
+    """Wie viele Monate des Jahres deckt dieser Zeitraum ab — taggenau.
+
+    Bewusst keine ganzen Monate: gezählt wurden früher angebrochene Monate an
+    beiden Enden voll. Bei einem Mieterwechsel am 15. Juli ergab das für den
+    Vorgänger 7 und für den Nachfolger 6 Monate — zusammen 13 Monate Miete in
+    einem Jahr, also gut 8 % zu viel Einnahmen. Taggenau summieren sich zwei
+    lückenlos aufeinanderfolgende Mietverhältnisse wieder exakt auf 12.
+
+    Das Ende ist einschliesslich zu verstehen: wer am 31.12. auszieht, hat
+    diesen Tag noch gewohnt.
+    """
     von = max(ab, date(jahr, 1, 1))
     ende = min(bis or date(jahr, 12, 31), date(jahr, 12, 31))
     if ende < von:
-        return 0
-    return (ende.year - von.year) * 12 + (ende.month - von.month) + 1
+        return 0.0
+    tage = (ende - von).days + 1
+    im_jahr = (date(jahr, 12, 31) - date(jahr, 1, 1)).days + 1   # 365 oder 366
+    return round(tage / im_jahr * 12, 6)

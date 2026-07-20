@@ -1,15 +1,38 @@
-"""Seed mit den zwei echten Objekten (Musterstraße 5, Beispielweg 6a)."""
+"""Seed mit den zwei Beispielobjekten (Musterstraße 5, Beispielweg 6a).
+
+Läuft genau einmal im Leben einer Datenbank. Die Bedingung „es gibt noch kein
+Objekt" reicht dafür nicht: seit sich Immobilien löschen lassen, ist eine
+leere Objekttabelle ein völlig normaler Zustand — wer seine letzte Immobilie
+löscht, bekäme beim nächsten Neustart Demodaten zwischen seine Eigentümer,
+Einstellungen und Cloud-Verbindung geschrieben. Deshalb eine dauerhafte
+Markierung in den Einstellungen.
+"""
 from datetime import date
 from sqlmodel import Session, select
 from .models import (Objekt, Einheit, Partei, Kostenart, Zeitraum,
                      Kostenposition, Vorauszahlung, Dokument, Miete, Kredit,
-                     Versicherung, Zahlung)
+                     Versicherung, Zahlung, Einstellung)
+
+MARKE = "seed_gelaufen"
+
+
+def _schon_gelaufen(s: Session) -> bool:
+    if s.get(Einstellung, MARKE):
+        return True
+    # Bestandsdatenbanken kennen die Markierung noch nicht. Steht dort schon
+    # irgendetwas vom Nutzer, gilt der Seed als erledigt und wird vermerkt.
+    benutzt = bool(s.exec(select(Objekt)).first()
+                   or s.exec(select(Einstellung)).first())
+    if benutzt:
+        s.add(Einstellung(schluessel=MARKE, wert="bestand"))
+        s.commit()
+    return benutzt
 
 
 def seed(engine):
     with Session(engine) as s:
-        if s.exec(select(Objekt)).first():
-            return  # bereits geseedet
+        if _schon_gelaufen(s):
+            return
 
         # ---------------- Objekt 1: Musterstraße 5 ----------------
         laufer = Objekt(slug="obj-a", name="Musterstraße 5", ort="Mixed-Use · 7 Einheiten",
@@ -127,4 +150,7 @@ def seed(engine):
                   schluessel="individuell", wertquelle=q, status="erledigt", s35=s35,
                   anteile={"Partei Wohnung": 1.0}))
         s.add(Vorauszahlung(zeitraum_id=z2.id, partei="Partei Wohnung", betrag=2640.0))
+        # Die Markierung zuletzt: bricht der Seed vorher ab, laeuft er beim
+        # naechsten Start noch einmal, statt eine halbe Fassung festzuschreiben.
+        s.add(Einstellung(schluessel=MARKE, wert=date.today().isoformat()))
         s.commit()

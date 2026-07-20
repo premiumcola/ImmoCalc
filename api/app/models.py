@@ -180,6 +180,20 @@ class Zahlung(SQLModel, table=True):
     notiz: str = ""
 
 
+class Versandprotokoll(SQLModel, table=True):
+    """Wer hat seine Abrechnung schon bekommen.
+
+    Ohne dieses Gedächtnis fängt ein zweiter Versandversuch — nach einem
+    Fehler bei Partei drei — wieder bei Partei eins an, und die ersten beiden
+    Mieter bekommen ihre Abrechnung ein zweites Mal."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    zeitraum_id: int = Field(foreign_key="zeitraum.id", index=True)
+    partei: str
+    empfaenger: str = ""
+    versendet_am: Optional[date] = None
+    fehler: str = ""
+
+
 class Eigentuemer(SQLModel, table=True):
     """Person oder Gesellschaft, der Immobilien ganz oder teilweise gehören.
     Steht für sich — dieselbe Person kann an mehreren Objekten beteiligt sein."""

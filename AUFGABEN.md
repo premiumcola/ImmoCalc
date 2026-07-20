@@ -83,6 +83,34 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 
 ## Offen
 
+### Aus der Prüfung vom 20.07.2026 — noch nicht behoben
+
+| Nr. | Fund | Warum es zählt |
+|---|---|---|
+| LXV | **Kein Endpunkt setzt `anteile`** | Für selbst angelegte Objekte bleibt jede Abrechnung 0,00 €. Nur der Seed schreibt Verteilungsgewichte |
+| LXVI | Abschluss ist unumkehrbar | Ein versehentlich abgeschlossener Zeitraum lässt sich nicht wieder öffnen |
+| LXVII | Doppelklick legt zwei Eigentümer an | `#eignerSpeichern` wird nicht deaktiviert |
+| LXVIII | Wachdienst kann Dokumente doppelt anlegen | `Dokument.pfad` ist nicht eindeutig; zwei Sessions sehen denselben Pfad als neu |
+| LXIX | Zuordnen ohne Cloud-Ordner meldet Erfolg ohne Wirkung | Datei bleibt liegen, verschwindet aber aus dem Eingang |
+| LXX | Sieben Endpunkte ohne Aufrufer | u. a. Erinnerungen, PDF-Vorschau, Import, OCR-Status — gebaut, aber nirgends erreichbar |
+| LXXI | Fänger `/api/{bereich}/{id}` verschluckt zweisegmentige Pfade | Der nächste Endpunkt fällt lautlos hinein |
+| LXXII | Tests teilen sich eine Datenbank | Die Reihenfolge entscheidet, welche `DB_PATH` gilt — Funde können sich gegenseitig verdecken |
+
+### Neu aus dem Gespräch vom 20.07.2026
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| LXXIII | **Texterkennung wirklich nachweisen** | Betrag, Datum und Kategorieart aus einem echten gescannten PDF herauslesen und eintragen — belegt, nicht behauptet |
+| LXXIV | **Mehrseitig fotografieren → ein PDF** | im Ablauf durchprüfen, nicht nur im Code |
+| LXXV | **Dokumentenablage ohne Verschachtelung** | direkter, effizienter Weg; so viel wie möglich automatisch zuordnen, aber Verschieben, Korrigieren, Löschen und Neu-Scannen bleiben möglich |
+| LXXVI | **Dynamisch, filterbar, smart** | keine Dopplungen in der Darstellung |
+| LXXVII | **Benennung: Ort → Straße → Einheit** | oberste Ebene Ortschaft, darunter Straße, darunter Wohnungseinheit — die Kacheln heißen noch anders |
+| LXXVIII | **Hauslogos in den Kacheln größer** | |
+| LXXIX | **Zusammengehörige Einheiten als Gruppe** | Oberkachel mit den Stammdaten, darunter angedockte Einzelkacheln je Einheit — nicht fünf gleichrangige Kacheln |
+| LXXX | **Eigentümer als eigener Menüpunkt** | raus aus den Einstellungen |
+| LXXXI | **Rolle gehört ans Objekt, nicht an die Person** | Ob jemand Eigentümer oder Miteigentümer ist, entscheidet sich je Immobilie — dieselbe Person soll nicht zweimal angelegt werden müssen |
+| LXXXII | **Tausendstel prüfen und Fehlendes anzeigen** | eine Nachkommastelle genügt: 333,3 + 333,3 + 333,3 gilt als vollständig |
+
 ### Bewusst zurückgestellt
 
 | Nr. | Aufgabe | Grund |

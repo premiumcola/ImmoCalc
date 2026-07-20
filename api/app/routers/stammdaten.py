@@ -62,7 +62,10 @@ def anlegen(slug: str, bereich: str, data: dict,
     o = _objekt(session, slug)
     # model_validate statt modell(**data): nur so werden Datumsstrings aus JSON
     # zu echten date-Objekten konvertiert, die SQLite akzeptiert.
-    eintrag = modell.model_validate({**data, "objekt_id": o.id})
+    # bereinige davor: ein im Formular leer gelassenes Betragsfeld kommt als
+    # null an und liesse sonst das ganze Anlegen scheitern — samt Mieter,
+    # Kaltmiete und Anschrift, die daneben schon eingetragen waren.
+    eintrag = modell.model_validate({**bereinige(modell, data), "objekt_id": o.id})
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)

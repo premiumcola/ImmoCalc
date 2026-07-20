@@ -62,6 +62,14 @@ def exportiere(session: Session, objekt: Objekt) -> dict:
     for name, modell in ANHAENGSEL.items():
         daten[name] = _zeilen(session, modell, objekt.id)
 
+    # Der Anteil zeigt auf eine Eigentümer-id. SQLite vergibt frei gewordene
+    # Nummern neu — nach Löschen und Neuanlegen zeigt dieselbe id auf eine
+    # andere Person. Deshalb den Namen mitschreiben und beim Import danach
+    # auflösen, sonst hält am Ende eine fremde Gesellschaft 100 %.
+    for zeile in daten["anteile"]:
+        eigner = session.get(Eigentuemer, zeile.get("eigentuemer_id"))
+        zeile["eigentuemer_name"] = eigner.name if eigner else ""
+
     zeitraeume = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == objekt.id)).all()
     daten["zeitraeume"] = []
@@ -131,6 +139,22 @@ def loesche(session: Session, objekt: Objekt) -> dict:
     return entfernt
 
 
+def _passender_eigner(session: Session, anteil: dict) -> Eigentuemer | None:
+    """Der Eigentümer zu einem gesicherten Anteil — über den Namen, nicht die id.
+
+    Die id allein genügt nicht: sie kann inzwischen einer anderen Person
+    gehören. Nur wenn Name *und* id zusammenpassen, ist es sicher dieselbe."""
+    name = (anteil.get("eigentuemer_name") or "").strip()
+    if name:
+        treffer = session.exec(
+            select(Eigentuemer).where(Eigentuemer.name == name)).first()
+        if treffer:
+            return treffer
+        return None
+    # Alte Sicherungen ohne Namen: nur die id, und die muss belegt sein.
+    return session.get(Eigentuemer, anteil.get("eigentuemer_id"))
+
+
 def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
     """Legt aus einer Sicherung wieder ein Objekt an — immer als neuer Datensatz.
 
@@ -150,14 +174,21 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
             eintrag = dict(zeile)
             eintrag.pop("id", None)
             eintrag["objekt_id"] = objekt.id
-            # Eigentümer werden getrennt gepflegt und beim Löschen eines
-            # Objekts nicht mitgelöscht. Fehlt der Eintrag inzwischen, waere
-            # der Anteil ein Verweis ins Leere.
-            if name == "anteile" and not session.get(
-                    Eigentuemer, eintrag.get("eigentuemer_id")):
-                continue
+            if name == "anteile":
+                eigner = _passender_eigner(session, eintrag)
+                # Eigentümer werden getrennt gepflegt und beim Löschen eines
+                # Objekts nicht mitgelöscht. Passt keiner, bleibt der Anteil
+                # weg — lieber keine Beteiligung als die falsche.
+                if eigner is None:
+                    log.info("Anteil ohne passenden Eigentümer übersprungen: %s",
+                             eintrag.get("eigentuemer_name") or "ohne Namen")
+                    continue
+                eintrag["eigentuemer_id"] = eigner.id
+                eintrag.pop("eigentuemer_name", None)
             session.add(modell.model_validate(eintrag))
 
+    # alte Zeitraum-id -> neue, damit die Dokumente ihren Zeitraum wiederfinden
+    zeitraeume: dict[int, int] = {}
     for z in daten.get("zeitraeume") or []:
         roh_z = {k: v for k, v in z.items()
                  if k not in ("id", "positionen", "vorauszahlungen")}
@@ -166,6 +197,8 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
         session.add(zeitraum)
         session.commit()
         session.refresh(zeitraum)
+        if z.get("id") is not None:
+            zeitraeume[z["id"]] = zeitraum.id
         for p in z.get("positionen") or []:
             roh_p = dict(p)
             roh_p.pop("id", None)
@@ -176,6 +209,20 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
             roh_v.pop("id", None)
             roh_v["zeitraum_id"] = zeitraum.id
             session.add(Vorauszahlung.model_validate(roh_v))
+
+    # Die Dateien liegen weiterhin in der Nextcloud — nur die Zuordnung
+    # Beleg↔Kostenart↔Zeitraum steckt in der Datenbank. Ohne sie fände ein
+    # späterer Scan die Belege nicht wieder: der sieht nur lose Dateien im
+    # Hauptordner, einsortierte liegen längst in den Unterordnern.
+    for d in daten.get("dokumente") or []:
+        roh_d = dict(d)
+        roh_d.pop("id", None)
+        roh_d["objekt_id"] = objekt.id
+        roh_d["zeitraum_id"] = zeitraeume.get(roh_d.get("zeitraum_id"))
+        if session.exec(select(Dokument).where(
+                Dokument.pfad == roh_d.get("pfad"))).first():
+            continue                       # steht schon in der Datenbank
+        session.add(Dokument.model_validate(roh_d))
 
     session.commit()
     log.info("Objekt aus Sicherung angelegt: %s", objekt.slug)

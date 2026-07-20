@@ -3,12 +3,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlmodel import SQLModel
 
 from . import wachdienst
 from .db import engine
+from .engine import NegativesGewicht
 from .migrate import migriere
 from .routers import (auswertung, besitz, cloud, dokumente, mail, objekte,
                       stammdaten, versand)
@@ -34,6 +36,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ImmoCalc API", version="0.2.0", lifespan=lifespan)
+
+
+@app.exception_handler(NegativesGewicht)
+async def negatives_gewicht(request: Request, fehler: NegativesGewicht):
+    """Ein negatives Verteilungsgewicht ist ein Datenfehler, kein Serverfehler.
+
+    Er entsteht, wenn Unterzähler mehr ausweisen als der Hauptzähler. Der
+    Nutzer soll den Zählerstand korrigieren — dafür braucht er eine Ansage,
+    keinen 500er."""
+    log.warning("Verteilung abgelehnt: %s", fehler)
+    return JSONResponse(status_code=400, content={
+        "detail": f"{fehler} — bitte die Zählerstände prüfen. "
+                  "Ein Unterzähler weist mehr aus als der Hauptzähler."})
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
                    allow_headers=["*"])
 

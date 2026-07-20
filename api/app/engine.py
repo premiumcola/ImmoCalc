@@ -44,15 +44,48 @@ def zeitanteil(nutzung_von: date, nutzung_bis: date,
     return min(1.0, genutzt / span)
 
 
+class NegativesGewicht(ValueError):
+    """Ein Verteilungsgewicht ist kleiner als null — so lässt sich nicht teilen."""
+
+
 def verteile_nach_wert(kosten: float, anteile: dict[str, float]) -> dict[str, float]:
     """Kosten proportional zu Gewichten aufteilen. Trägt jede Schlüsselart:
     Verbrauch (Zählerwerte), Fläche (m²), Personen, Bewohnermonate,
     Einheiten (gleiche Gewichte), Prozent (Prozentwerte), individuell (1 Partei).
-    Die Summe der Anteile ist exakt = kosten."""
+
+    Gerundet wird auf Cent, und zwar nach dem Größte-Reste-Verfahren: der
+    Rundungsrest geht an die Partei mit dem größten abgeschnittenen Anteil.
+    Ohne das ergäben 100 € auf drei Parteien dreimal 33,33 € = 99,99 € — der
+    fehlende Cent taucht dann in der Abrechnung als Differenz zwischen der
+    Positionsliste und der Endsumme auf, und genau da schaut ein Mieter hin.
+
+    Damit gilt die Invariante auch nach dem Runden:
+    `sum(verteile_nach_wert(k, a).values()) == round(k, 2)`.
+    """
+    negativ = [k for k, v in anteile.items() if v < 0]
+    if negativ:
+        # Kann bei Zählerständen entstehen (Unterzähler über Hauptzähler).
+        # Stillschweigend weiterrechnen hiesse: eine Partei bekommt Geld
+        # zurück, die anderen zahlen zusammen mehr als die Gesamtkosten.
+        raise NegativesGewicht(
+            "Negatives Verteilungsgewicht bei: " + ", ".join(sorted(negativ)))
+
     summe = sum(anteile.values())
     if summe == 0:
         return {k: 0.0 for k in anteile}
-    return {k: kosten * (v / summe) for k, v in anteile.items()}
+
+    ziel = round(kosten * 100)                 # in Cent, damit exakt gerechnet wird
+    roh = {k: kosten * 100 * v / summe for k, v in anteile.items()}
+    cent = {k: int(w) for k, w in roh.items()}          # abschneiden, nicht runden
+    rest = ziel - sum(cent.values())
+    # Die Cents, die durch das Abschneiden übrig sind, gehen der Reihe nach an
+    # die grössten Nachkommareste. Bei Gleichstand entscheidet der Name, damit
+    # dieselbe Eingabe immer dasselbe Ergebnis liefert.
+    reihenfolge = sorted(roh, key=lambda k: (-(roh[k] - cent[k]), k))
+    for i in range(abs(rest)):
+        k = reihenfolge[i % len(reihenfolge)]
+        cent[k] += 1 if rest > 0 else -1
+    return {k: c / 100 for k, c in cent.items()}
 
 
 @dataclass

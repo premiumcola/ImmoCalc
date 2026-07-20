@@ -168,7 +168,7 @@
 </div>
 
 <script type="module">
-import { api, eur, eurKurz, esc, fristKlasse, melde, frage }
+import { api, eur, eurKurz, esc, fristKlasse, melde, frage, wahl }
   from './assets/immo.js';
 import { sankey } from './assets/charts.js';
 import { kostenIcon } from './assets/kostenicons.js';
@@ -429,24 +429,32 @@ async function abschliessen(knopf) {
     ? ` Ohne Mailadresse und daher nicht versendbar: ${plan.ohne_mail.join(', ')}.`
     : '';
 
-  const ja = await frage(`Abrechnungen für ${plan.zeitraum} verschicken?`,
-    `${bereit.length} von ${plan.parteien.length} Parteien bekommen die `
-    + `Abrechnung als PDF an ihre Mailadresse.${warnung}`,
-    { knopf: 'Jetzt verschicken' });
-  if (!ja) {
+  // Nicht jeder verschickt per Mail — wer die Abrechnung ausdruckt und mit
+  // der Post schickt, muss den Zeitraum trotzdem abschliessen koennen.
+  const weg = await wahl(`Abrechnung für ${plan.zeitraum} abschließen`,
+    bereit.length
+      ? `${bereit.length} von ${plan.parteien.length} Parteien haben eine `
+        + `Mailadresse und bekommen die Abrechnung als PDF.${warnung}`
+      : `Keine der ${plan.parteien.length} Parteien hat eine Mailadresse `
+        + `hinterlegt. Der Zeitraum lässt sich trotzdem abschließen.`,
+    [...(bereit.length ? [{ wert: 'senden', text: 'Abschließen und verschicken' }] : []),
+     { wert: 'nur', text: 'Nur abschließen, nicht verschicken' }]);
+
+  if (!weg) {
     knopf.disabled = false;
     knopf.textContent = 'Abrechnungen erstellen und versenden';
     return;
   }
 
-  knopf.textContent = 'Verschicke …';
+  knopf.textContent = weg === 'senden' ? 'Verschicke …' : 'Schließe ab …';
   try {
     const antwort = await api(`/zeitraeume/${zid}/abschliessen`, {
-      method: 'POST', body: { versenden: true, offene_uebergehen: uebergehen },
+      method: 'POST', body: { versenden: weg === 'senden',
+                              offene_uebergehen: uebergehen },
     });
     melde(antwort.versendet.length
       ? `${antwort.versendet.length} Abrechnung(en) verschickt an ${antwort.versendet.join(', ')}`
-      : 'Zeitraum abgeschlossen — versendet wurde nichts (keine Mailadressen).',
+      : 'Zeitraum abgeschlossen — versendet wurde nichts.',
       antwort.versendet.length ? 'pos' : '');
     await laden();
   } catch (fehler) {

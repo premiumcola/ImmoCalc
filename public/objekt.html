@@ -607,9 +607,12 @@ async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht })
   const html = await Promise.all(
     felder.map(f => feldHtml(f, bereich, werte[f.k])));
   document.getElementById('dlgTitel').textContent = dtitel;
+  // Abbrechen ist bewusst type="button": als Submit-Knopf loeste es den
+  // submit-Handler aus und speicherte. Die Abfrage darauf lief ins Leere,
+  // weil returnValue am <dialog> haengt, nicht am <form>.
   form.innerHTML = html.join('') +
     `<button class="btn" value="ok">Speichern</button>
-     <button class="btn leise" value="abbruch" formnovalidate
+     <button class="btn leise" type="button" data-abbruch
              style="margin-top:8px">Abbrechen</button>`;
   form.dataset.absicht = absicht;
   form.dataset.bereich = bereich || '';
@@ -634,9 +637,12 @@ function ausFormular(form, felder) {
   return werte;
 }
 
+document.getElementById('dlgForm').addEventListener('click', e => {
+  if (e.target.closest('[data-abbruch]')) dlg.close('abbruch');
+});
+
 document.getElementById('dlgForm').addEventListener('submit', async e => {
   const form = e.target;
-  if (form.returnValue === 'abbruch') return;
   const { absicht, bereich, id } = form.dataset;
 
   try {
