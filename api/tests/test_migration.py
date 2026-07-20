@@ -7,6 +7,7 @@ zurück und der Start scheiterte.
 import os
 import sys
 import tempfile
+from datetime import date
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
@@ -69,6 +70,56 @@ def test_migration_ist_wiederholbar(alte_db):
 
     assert migriere(engine)        # erster Lauf ergänzt
     assert migriere(engine) == []  # zweiter Lauf findet nichts mehr
+
+
+def test_eingegebene_daten_ueberleben_ein_update(tmp_path):
+    """Der Fall aus der Praxis: Immobilie ist erfasst, dann wird das Schema
+    erweitert. Nichts darf verlorengehen oder überschrieben werden."""
+    import app.models  # noqa: F401
+    from sqlmodel import Session, SQLModel, select
+
+    from app.models import Einheit, Miete, Objekt
+    from app.seed import seed
+
+    pfad = tmp_path / "bestand.db"
+    engine = create_engine(f"sqlite:///{pfad}")
+    SQLModel.metadata.create_all(engine)
+
+    # --- Nutzer trägt seine Immobilie ein ---
+    with Session(engine) as s:
+        o = Objekt(slug="meine-immo", name="Laufer Str. 5", ort="Eschenau",
+                   kaufpreis=310000.0)
+        s.add(o)
+        s.commit()
+        s.refresh(o)
+        s.add(Einheit(objekt_id=o.id, bezeichnung="1. OG", flaeche=78.0))
+        s.add(Miete(objekt_id=o.id, einheit="1. OG", partei="Familie Muster",
+                    kaltmiete=845.0, email="mieter@example.org",
+                    ab_datum=date(2025, 4, 1)))
+        s.commit()
+
+    # --- Update: Schema angleichen und Seed erneut ausführen ---
+    migriere(engine)
+    seed(engine)
+
+    with Session(engine) as s:
+        objekte = s.exec(select(Objekt)).all()
+        # Der Seed darf keine Demo-Objekte danebenlegen
+        assert [o.slug for o in objekte] == ["meine-immo"]
+        o = objekte[0]
+        assert o.name == "Laufer Str. 5"
+        assert o.kaufpreis == 310000.0
+
+        miete = s.exec(select(Miete)).one()
+        assert miete.kaltmiete == 845.0
+        assert miete.partei == "Familie Muster"
+        assert miete.email == "mieter@example.org"
+
+        einheit = s.exec(select(Einheit)).one()
+        assert einheit.flaeche == 78.0
+        # neue Felder sind da und leer — nicht befüllt, nicht störend
+        assert einheit.terrasse is None
+        assert einheit.stellplaetze == 0
 
 
 def test_orm_zugriff_auf_alter_datenbank(alte_db):

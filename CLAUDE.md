@@ -158,6 +158,23 @@ gedeckte Farben, ein Akzent.
 Echte Mieter- und Objektdaten. Die SQLite liegt außerhalb des Repos unter
 `/mnt/user/appdata/immocalc-live/data/immocalc.db`.
 
+**Schemaänderungen sind ausnahmslos additiv.** Der Nutzer pflegt seine
+Immobilien laufend ein, während das Datenmodell noch wächst. Deshalb gilt:
+
+- Neue Felder immer mit Vorgabewert oder `Optional` — nie als Pflichtfeld
+  ohne Default, sonst bricht der Bestand.
+- Spalten werden ergänzt (`api/app/migrate.py`), nie umbenannt, nie entfernt.
+  Ein Feld, das nicht mehr gebraucht wird, bleibt stehen und wird ignoriert.
+- Kein `drop_all`, kein `DROP TABLE`, kein `DELETE FROM` — Löschen passiert
+  ausschließlich durch eine bewusste Nutzeraktion über die Oberfläche.
+- Der Seed legt nur an, wenn die Datenbank leer ist. Diese Bedingung nie
+  aufweichen, sonst landen Demo-Objekte zwischen echten Daten.
+- `test_eingegebene_daten_ueberleben_ein_update` prüft genau das. Der Test ist
+  ein Wächter — schlägt er fehl, ist die Änderung falsch, nicht der Test.
+
+Muss ein Feld inhaltlich anders belegt werden, wird es neu angelegt und die
+Übernahme dem Nutzer angeboten — bestehende Eingaben nie automatisch ersetzen.
+
 - Bestehende Daten nur additiv ergänzen (merge/setdefault), nie überschreiben
 - `.env`, `data/`, `*.db` gehören nicht ins Repo (stehen in `.gitignore`)
 - Bei "Daten weg": zuerst Bind-Mount und `docker volume ls` prüfen

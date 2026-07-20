@@ -1,11 +1,13 @@
 """ImmoCalc API — FastAPI + SQLite. Seedet beim Start, rechnet über die Engine."""
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 
+from . import wachdienst
 from .db import engine
 from .migrate import migriere
 from .routers import auswertung, cloud, dokumente, mail, objekte, stammdaten
@@ -20,7 +22,14 @@ async def lifespan(app: FastAPI):
     migriere(engine)          # muss vor dem Seed laufen — der liest die Tabellen
     seed(engine)
     log.info("ImmoCalc API bereit")
-    yield
+
+    wache = asyncio.create_task(wachdienst.schleife())
+    try:
+        yield
+    finally:
+        wache.cancel()
+        with suppress(asyncio.CancelledError):
+            await wache
 
 
 app = FastAPI(title="ImmoCalc API", version="0.2.0", lifespan=lifespan)

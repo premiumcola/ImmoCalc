@@ -48,6 +48,23 @@
   dialog .dh{font:700 17px var(--disp);letter-spacing:-.02em;padding:20px 20px 4px}
   dialog form{padding:12px 20px 20px}
   .zeile2{display:flex;gap:10px} .zeile2 > *{flex:1}
+  .cloudbox{background:var(--sheet);border-radius:14px;padding:15px;margin-bottom:10px;
+            box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .cloudbox .zeile{display:flex;gap:12px;align-items:center}
+  .cloudbox .sym{width:42px;height:42px;border-radius:11px;flex:none;display:flex;
+                 align-items:center;justify-content:center;font:600 16px var(--mono)}
+  .cloudbox .sym.offen{background:var(--amber-bg);color:var(--amber)}
+  .cloudbox .sym.fertig{background:var(--pos-bg);color:var(--pos)}
+  .cloudbox .txt{flex:1;min-width:0}
+  .cloudbox .t{display:block;font:600 14px var(--disp);letter-spacing:-.01em}
+  .cloudbox .d{display:block;font:400 12px var(--body);color:var(--soft);margin-top:3px;
+               line-height:1.45;word-break:break-word}
+  .cloudbox .tat{margin-top:12px}
+  .cloudbox .tat button,.cloudbox .tat a{display:block;width:100%;text-align:center;
+    border:none;border-radius:11px;padding:12px;cursor:pointer;font:600 13.5px var(--disp);
+    min-height:44px;background:var(--teal);color:#fff;text-decoration:none}
+  .cloudbox .tat button:hover,.cloudbox .tat a:hover{background:var(--teal-d)}
+  .cloudbox .tat button[disabled]{opacity:.6;cursor:default}
 </style>
 </head>
 <body>
@@ -225,7 +242,75 @@ async function laden() {
     ${bannerHtml(laufend)}
     <h2 class="sec">Abrechnungszeiträume</h2>
     <div class="liste">${zr}</div>
+    <h2 class="sec">Dokumentenablage</h2>
+    <div id="cloudbereich"><div class="cloudbox"><div class="zeile">
+      <span class="sym offen">…</span>
+      <span class="txt"><span class="t">wird geprüft …</span></span>
+    </div></div></div>
     ${Object.keys(BEREICHE).map(b => abschnitt(b, bereiche[b])).join('')}`;
+
+  cloudZeigen();
+}
+
+/* Die Ordnerstruktur lässt sich jederzeit nachträglich anlegen — auch wenn
+   das Objekt längst existiert und Nextcloud erst später verbunden wurde. */
+async function cloudZeigen() {
+  const ziel = document.getElementById('cloudbereich');
+  if (!ziel) return;
+  let s;
+  try {
+    s = await api(`/nextcloud/objekte/${encodeURIComponent(slug)}/status`);
+  } catch {
+    ziel.innerHTML = '';
+    return;
+  }
+
+  if (s.angelegt) {
+    ziel.innerHTML = `<div class="cloudbox"><div class="zeile">
+        <span class="sym fertig">✓</span>
+        <span class="txt">
+          <span class="t">Ordner verknüpft</span>
+          <span class="d">${esc(s.ordner)} · ${s.struktur.length} Unterordner</span>
+        </span></div>
+        <div class="tat"><button data-cloud="struktur">Fehlende Unterordner anlegen</button></div>
+      </div>`;
+    return;
+  }
+
+  if (!s.cloud_verbunden) {
+    ziel.innerHTML = `<div class="cloudbox"><div class="zeile">
+        <span class="sym offen">⬡</span>
+        <span class="txt">
+          <span class="t">Nextcloud ist noch nicht verbunden</span>
+          <span class="d">Das Objekt ist gespeichert. Sobald du die Verbindung
+            einrichtest, kannst du die Ordnerstruktur hier nachträglich anlegen.</span>
+        </span></div>
+        <div class="tat"><a href="settings.html">Verbindung einrichten</a></div>
+      </div>`;
+    return;
+  }
+
+  if (!s.home) {
+    ziel.innerHTML = `<div class="cloudbox"><div class="zeile">
+        <span class="sym offen">▣</span>
+        <span class="txt">
+          <span class="t">Kein Home-Ordner gewählt</span>
+          <span class="d">Wähle den Ordner, unter dem die Immobilien liegen.</span>
+        </span></div>
+        <div class="tat"><a href="settings.html">Home-Ordner wählen</a></div>
+      </div>`;
+    return;
+  }
+
+  ziel.innerHTML = `<div class="cloudbox"><div class="zeile">
+      <span class="sym offen">＋</span>
+      <span class="txt">
+        <span class="t">Ordnerstruktur noch nicht angelegt</span>
+        <span class="d">Wird angelegt unter <b>${esc(s.vorschlag)}</b> —
+          vorhandene Ordner und Dateien bleiben unberührt.</span>
+      </span></div>
+      <div class="tat"><button data-cloud="struktur">Ordnerstruktur anlegen</button></div>
+    </div>`;
 }
 
 function formular(bereich) {
@@ -272,6 +357,25 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
 });
 
 inhalt.addEventListener('click', async e => {
+  const cloud = e.target.closest('[data-cloud]');
+  if (cloud) {
+    cloud.disabled = true;
+    cloud.textContent = 'Lege an …';
+    try {
+      const antwort = await api(
+        `/nextcloud/objekte/${encodeURIComponent(slug)}/struktur`, { method: 'POST' });
+      cloud.textContent = antwort.neu_angelegt.length
+        ? `${antwort.neu_angelegt.length} Ordner angelegt`
+        : 'Alles schon vorhanden';
+      setTimeout(cloudZeigen, 1600);
+    } catch (fehler) {
+      cloud.disabled = false;
+      cloud.textContent = 'Fehlgeschlagen — nochmal';
+      alert(String(fehler.message || fehler));
+    }
+    return;
+  }
+
   const add = e.target.closest('[data-add]');
   if (add) return formular(add.dataset.add);
 

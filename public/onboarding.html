@@ -106,6 +106,10 @@
   .recap{width:100%;background:var(--sheet);border:1px solid var(--line);border-radius:14px;padding:14px 16px;text-align:left;margin-bottom:18px}
   .recap .rl{display:flex;justify-content:space-between;gap:12px;font:500 13px var(--body);padding:5px 0}
   .recap .rl .rk{color:var(--soft)} .recap .rl .rv{font-weight:600;text-align:right}
+  .cloudhinweis{display:none;width:100%;background:#F7EFD9;border-radius:12px;
+    padding:12px 14px;margin-bottom:18px;font:500 12.5px var(--body);color:#916212;
+    line-height:1.5;text-align:left}
+  .cloudhinweis.an{display:block}
   @media(prefers-reduced-motion:reduce){*{transition:none !important}}
 </style>
 </head>
@@ -136,6 +140,7 @@
     <h2 id="doneTitle">Immobilie angelegt</h2>
     <p>Grunddaten, Turnus und Kostenarten sind gespeichert.</p>
     <div class="recap" id="recap"></div>
+    <div class="cloudhinweis" id="cloudhinweis"></div>
     <button class="btn" id="doneBtn" style="max-width:280px">Zur Immobilie</button>
   </div>
 </div>
@@ -308,7 +313,31 @@ async function finish(){
     ['Turnus', turnusLabel()],['Kostenarten aktiv', d.kosten.filter(k=>k[1]).length+' von '+d.kosten.length],
     ['Einheiten', d.einheiten.length]
   ].map(([k,v])=>`<div class="rl"><span class="rk">${k}</span><span class="rv">${v}</span></div>`).join('');
+  await cloudHinweis();
   $('#done').classList.add('open');
+}
+
+/* Nach dem Anlegen zeigen, ob die Dokumentenablage noch fehlt — das Objekt
+   ist gespeichert, die Ordner lassen sich jederzeit nachtraeglich anlegen. */
+async function cloudHinweis(){
+  const feld=$('#cloudhinweis');
+  if(!feld||!angelegterSlug) return;
+  try{
+    const antwort=await fetch(
+      `/api/nextcloud/objekte/${encodeURIComponent(angelegterSlug)}/status`);
+    if(!antwort.ok) return;
+    const s=await antwort.json();
+    if(s.angelegt) return;
+    feld.textContent = !s.cloud_verbunden
+      ? 'Nextcloud ist noch nicht verbunden — die Ordnerstruktur kannst du '
+        + 'später auf der Objektseite nachtragen.'
+      : !s.home
+      ? 'Es fehlt noch der Home-Ordner — die Ordnerstruktur legst du danach '
+        + 'auf der Objektseite an.'
+      : 'Die Ordnerstruktur ist noch nicht angelegt — das machst du gleich '
+        + 'auf der Objektseite.';
+    feld.classList.add('an');
+  }catch{ /* Hinweis ist Beiwerk; das Objekt ist bereits gespeichert */ }
 }
 
 $('#doneBtn').addEventListener('click',()=>{

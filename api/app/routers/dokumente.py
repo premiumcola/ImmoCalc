@@ -50,6 +50,13 @@ def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
     return "_".join(t for t in teile if t) + endung
 
 
+@router.get("/wachdienst")
+def wachdienst_status() -> dict:
+    """Wann zuletzt automatisch nachgesehen wurde."""
+    from ..wachdienst import zustand
+    return zustand()
+
+
 @router.get("/inbox")
 def inbox(session: Session = Depends(get_session)) -> dict:
     """Alle noch nicht zugeordneten Dokumente."""

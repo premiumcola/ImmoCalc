@@ -25,6 +25,8 @@
   .kopfzeile .scan:hover{background:var(--teal-l)}
   .kopfzeile .scan[disabled]{opacity:.55;cursor:default}
 
+  .wachdienst{font:500 11.5px var(--mono);color:var(--soft);margin:-6px 0 14px}
+  .wachdienst.warn{color:var(--amber)}
   .beleg{background:var(--sheet);border-radius:16px;padding:15px;margin-bottom:12px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .beleg .kopf{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px}
@@ -71,6 +73,7 @@
       <span class="zahl" id="zahl"></span>
       <button class="scan" id="scan">Ordner prüfen</button>
     </div>
+    <div class="wachdienst" id="wachdienst"></div>
     <div id="liste"></div>
   </div>
 
@@ -136,6 +139,25 @@ function karte(d) {
 
 let arten = [];
 
+async function wachdienstZeigen() {
+  const feld = document.getElementById('wachdienst');
+  try {
+    const w = await api('/dokumente/wachdienst');
+    const wann = w.letzter_lauf
+      ? new Date(w.letzter_lauf).toLocaleTimeString('de-DE',
+          { hour: '2-digit', minute: '2-digit' })
+      : null;
+    feld.textContent = w.letzter_fehler
+      ? `Automatische Prüfung alle ${w.takt_minuten} min · zuletzt fehlgeschlagen`
+      : wann
+      ? `Automatisch geprüft alle ${w.takt_minuten} min · zuletzt ${wann} Uhr`
+      : `Automatische Prüfung alle ${w.takt_minuten} min · erster Lauf steht aus`;
+    feld.classList.toggle('warn', Boolean(w.letzter_fehler));
+  } catch {
+    feld.textContent = '';
+  }
+}
+
 async function laden() {
   try {
     const [objekteListe, eingang] = await Promise.all([
@@ -144,6 +166,7 @@ async function laden() {
     objekte = objekteListe;
     arten = eingang.arten;
     const { anzahl, dokumente } = eingang;
+    wachdienstZeigen();
     zahl.textContent = anzahl
       ? `${anzahl} ${anzahl === 1 ? 'Dokument wartet' : 'Dokumente warten'}`
       : 'Nichts offen';

@@ -135,6 +135,25 @@ def home_speichern(data: HomeIn, session: Session = Depends(get_session)) -> dic
     return {"home": "/" + data.pfad.strip("/")}
 
 
+@router.get("/objekte/{slug}/status")
+def objekt_status(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Ist dieses Objekt schon mit einem Ordner verknüpft? Was fehlt noch?"""
+    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not objekt:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    home = _lies(session, S_HOME)
+    verbunden = bool(_lies(session, S_URL) and _lies(session, S_PASSWORT))
+    return {
+        "cloud_verbunden": verbunden,
+        "home": home,
+        "ordner": objekt.nc_ordner,
+        "bereit": bool(verbunden and home),
+        "angelegt": bool(objekt.nc_ordner),
+        "vorschlag": f"{home.strip('/')}/{objekt.name}" if home else "",
+        "struktur": STRUKTUR,
+    }
+
+
 @router.post("/objekte/{slug}/struktur")
 def struktur_anlegen(slug: str, session: Session = Depends(get_session)) -> dict:
     """Legt Objektordner samt Unterstruktur unter dem Home-Ordner an.
