@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 
 from ..db import get_session
+from ..felder import bereinige
 from ..models import Kredit, Miete, Objekt, Versicherung, Zahlung
 from ..turnus import VORGABE, auswahl_fuer
 
@@ -75,8 +76,9 @@ def aendern(bereich: str, eintrag_id: int, data: dict,
     eintrag = session.get(modell, eintrag_id)
     if not eintrag:
         raise HTTPException(404, "Eintrag nicht gefunden")
-    felder = {k: v for k, v in data.items()
-              if k not in ("id", "objekt_id") and hasattr(eintrag, k)}
+    felder = bereinige(modell, {k: v for k, v in data.items()
+                                if k not in ("id", "objekt_id")
+                                and hasattr(eintrag, k)})
     geprueft = modell.model_validate({**eintrag.model_dump(), **felder})
     for k in felder:
         setattr(eintrag, k, getattr(geprueft, k))

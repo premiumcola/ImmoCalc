@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from ..db import get_session
 from ..bezeichnung import anzeigename
 from ..export import als_datei, dateiname, exportiere, importiere, loesche
+from ..felder import bereinige
 from ..engine import Position, abrechnung
 from ..erinnerungen import beleg_erinnerung, frist_erinnerung
 from ..frist import frist_tage
@@ -153,7 +154,7 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
     erlaubt = {"name", "ort", "strasse", "plz", "typ", "nutzung", "turnus",
                "start_monat", "flaeche", "kaufpreis", "kaufdatum", "verkehrswert",
                "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber"}
-    felder = {k: v for k, v in data.items() if k in erlaubt}
+    felder = bereinige(Objekt, {k: v for k, v in data.items() if k in erlaubt})
     if not felder.get("name", "x"):
         raise HTTPException(400, "Der Name darf nicht leer sein")
     # ueber model_validate, damit Datumsstrings aus JSON zu echten date-Objekten
