@@ -27,11 +27,41 @@ erst `git log` prüfen und ggf. revertieren.
 **Bei jeder neuen Anforderung dort eintragen, bei Fertigstellung abhaken.** Der
 Nutzer soll nichts zweimal sagen müssen.
 
+Das gilt auch für Anforderungen, die mitten in einer laufenden Arbeit kommen:
+sofort eintragen, bevor sie im Gesprächsverlauf untergehen. Ebenso für alles,
+was bei einer Prüfung gefunden und nicht sofort behoben wird — ein Fund ohne
+Eintrag ist ein vergessener Fund.
+
+## Parallel arbeiten
+
+Unabhängige Arbeit wird auf Subagents verteilt, statt sie nacheinander
+abzuarbeiten. Drei Regeln machen das verlässlich:
+
+- **Dateibesitz ist exklusiv.** Jeder Agent bekommt genannt, welche Dateien
+  ihm gehören, und fasst keine anderen an. Was mehrere brauchen (die
+  Navigationsleiste, `immo.css`, gemeinsame Bausteine), wird vorher zentral
+  festgelegt und im Auftrag mitgegeben.
+- **Prüfen gehört zum Auftrag.** Jeder Agent lässt seine Tests laufen und
+  sieht sich seine Screenshots mit dem Read-Tool an. „Fertig" ohne Nachweis
+  gilt nicht.
+- **Committet wird zentral**, nicht von den Agents — sonst überholen sich die
+  Stände.
+
+Bei einer Fehlersuche lohnt derselbe Schnitt: je ein Agent für Rechenlogik,
+Datenintegrität, Ablauflogik und Modularisierung. Sie melden nur, geändert
+wird zentral — und jeder Fund wird nachgeprüft, bevor er als Fehler gilt.
+
 ## Architektur
 
 ```
 public/        statisches Frontend (Vanilla HTML/CSS/JS, kein Build-Step)
-  assets/      immo.css, immo.js, charts.js, scan.js, kostenicons.js
+  assets/      immo.css, immo.js, charts.js, scan.js, kostenicons.js,
+               auswahl.js
+  index.html         Objekte · eingang.html      Dokumente
+  wertentwicklung.html  Wert & Cashflow
+  nebenkosten.html   Nebenkostenabrechnung
+  eigentuemer.html   Eigentümer und Anteile
+  settings.html      Einstellungen · objekt.html · zeitraum.html · onboarding.html
 dashboard/     nginx: serviert public/, proxyt /api/ an den API-Container
 api/app/
   engine.py      Rechen-Engine (Verteilung, Interpolation, § 35a)

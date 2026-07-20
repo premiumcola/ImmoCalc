@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Eigentümer · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  dialog{border:none;border-radius:18px;padding:0;max-width:400px;
+         width:calc(100% - 32px);background:var(--paper);
+         box-shadow:0 30px 70px -20px rgba(22,38,44,.5)}
+  dialog::backdrop{background:rgba(22,38,44,.45)}
+  /* Sechs Felder werden auf kleinen Geraeten laenger als der Bildschirm.
+     `display:flex` nur im offenen Zustand — sonst haengt der Browser den
+     geschlossenen Dialog nicht mehr aus. */
+  dialog[open]{display:flex;flex-direction:column;max-height:calc(100dvh - 32px)}
+  dialog .dbody{overflow-y:auto;padding-bottom:4px}
+  /* Der Hauptknopf steht ausserhalb des scrollenden Bereichs — sonst
+     verschwindet er auf kleinen Geraeten hinter den unteren Feldern. */
+  .dfuss{padding:12px 18px 18px;flex:none}
+  .dh{display:flex;align-items:center;gap:12px;padding:18px 18px 6px}
+  .dh h2{flex:1;font:700 17px var(--disp);letter-spacing:-.02em;margin:0}
+  /* 44px: Mindestgroesse fuer Touch-Ziele */
+  .close{border:none;background:#F1F4F4;color:var(--soft);border-radius:12px;
+         width:44px;height:44px;font:400 20px var(--body);cursor:pointer;flex:none;
+         display:flex;align-items:center;justify-content:center;line-height:1}
+  .close:hover{background:#E4EAEA;color:var(--ink)}
+  .dbody{padding:8px 18px 18px}
+  .hinweis{font:400 12.5px var(--body);color:var(--soft);line-height:1.5;margin:0 0 14px}
+  .meldung{border-radius:11px;padding:11px 13px;font:500 12.5px var(--body);
+           margin-bottom:12px;line-height:1.45;display:none}
+  .meldung.an{display:block}
+  .meldung.gut{background:var(--pos-bg);color:var(--pos)}
+  .meldung.schlecht{background:var(--neg-bg);color:var(--neg)}
+  .lead{font:400 12.5px var(--body);color:var(--soft);margin:-4px 0 12px;
+        line-height:1.5}
+
+  /* ---- Person: Kopfzeile mit Aktionen, darunter ihre Beteiligungen ----
+     Bewusst eine Karte statt einer Zeile: eine Person kann an mehreren
+     Objekten mit unterschiedlichen Anteilen beteiligt sein, und das gehoert
+     untereinander — nebeneinander liefe es auf dem iPhone aus der Karte. */
+  .person{background:var(--sheet);border-radius:14px;margin-bottom:10px;
+          box-shadow:0 1px 2px rgba(22,38,44,.05);overflow:hidden}
+  .pkopf{display:flex;gap:12px;align-items:center;padding:14px 14px}
+  .pkopf .ic{width:42px;height:42px;border-radius:11px;background:var(--teal-l);
+             color:var(--teal-d);flex:none;display:flex;align-items:center;
+             justify-content:center;font:600 17px var(--mono)}
+  .pkopf .txt{flex:1;min-width:0}
+  /* Firmennamen sind lang. Umbrechen statt abschneiden — abgeschnitten waere
+     „Grundbesitz Musterstadt GmbH & Co. …" nicht mehr zu unterscheiden. */
+  .pkopf .t{display:block;font:600 15px var(--disp);letter-spacing:-.01em;
+            overflow-wrap:anywhere}
+  .pkopf .d{display:block;font:400 12.5px var(--body);color:var(--soft);
+            margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
+  .beteiligungen{border-top:1px solid var(--line);padding:4px 14px 10px}
+  .bet{display:flex;align-items:center;gap:10px;padding:9px 0;min-width:0}
+  .bet + .bet{border-top:1px solid #EEF1F1}
+  .bet .bn{flex:1;min-width:0;font:500 13px var(--body);
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bet .bw{font:600 12.5px var(--mono);color:var(--teal-d);flex:none}
+  .bet .leer{font:400 12.5px var(--body);color:var(--soft);padding:9px 0}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <img src="icons/icon.svg" alt="" width="34" height="34"
+         style="border-radius:9px;flex:none">
+    <div class="barwrap">
+      <h1>Eigentümer</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <h2 class="sec">Verteilung</h2>
+    <p class="lead">
+      Je Objekt müssen 1000 ‰ verteilt sein. Eine Nachkommastelle genügt —
+      dreimal 333,3 ‰ gilt als vollständig.
+    </p>
+    <div id="stand"></div>
+
+    <h2 class="sec">Personen</h2>
+    <p class="lead">
+      Personen und Gesellschaften, denen die Immobilien gehören. Ob jemand
+      allein oder mit anderen besitzt, ergibt sich aus dem Anteil am jeweiligen
+      Objekt — zugeordnet wird er auf der Objektseite.
+    </p>
+    <div id="liste"></div>
+    <button class="row ghost" id="neu">
+      <span class="ic">＋</span>
+      <span class="txt">
+        <span class="t">Eigentümer anlegen</span>
+        <span class="d">Name und Kontaktdaten</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+  </div>
+
+  <nav class="nav">
+    <a class="brand" href="index.html">ImmoCalc</a>
+    <a href="index.html"><span class="ni">▤</span>Objekte</a>
+    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
+    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
+    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
+    <a href="eigentuemer.html" aria-current="page"><span class="ni">☗</span>Eigentümer</a>
+    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
+  </nav>
+</div>
+
+<dialog id="dlg">
+  <div class="dh">
+    <h2 id="dlgTitel">Eigentümer</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      Person oder Gesellschaft. Die Anteile in Tausendsteln werden danach auf
+      der jeweiligen Objektseite zugeordnet — dort entscheidet sich auch, ob
+      jemand Allein- oder Miteigentümer ist.
+    </p>
+    <div class="meldung" id="dlgMeldung"></div>
+    <form id="form">
+      <div class="field">
+        <label for="fName">Name</label>
+        <input class="inp" id="fName" required autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="fMail">E-Mail</label>
+        <input class="inp" id="fMail" type="email" autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="fTelefon">Telefon</label>
+        <input class="inp" id="fTelefon" type="tel" autocomplete="tel">
+      </div>
+      <div class="field">
+        <label for="fAnschrift">Anschrift</label>
+        <input class="inp" id="fAnschrift">
+      </div>
+      <div class="field">
+        <label for="fSteuer">Steuernummer</label>
+        <input class="inp" id="fSteuer">
+      </div>
+      <div class="field">
+        <label for="fNotiz">Notiz</label>
+        <input class="inp" id="fNotiz">
+      </div>
+    </form>
+  </div>
+  <!-- `form=` bindet den Knopf an das Formular, obwohl er ausserhalb steht -->
+  <div class="dfuss">
+    <button class="btn" type="submit" form="form" id="speichern">Speichern</button>
+  </div>
+</dialog>
+
+<script type="module">
+import { api, esc, frage, melde } from './assets/immo.js';
+
+const liste = document.getElementById('liste');
+const standFeld = document.getElementById('stand');
+const sub = document.getElementById('sub');
+const dlg = document.getElementById('dlg');
+const dlgTitel = document.getElementById('dlgTitel');
+const dlgMeldung = document.getElementById('dlgMeldung');
+const form = document.getElementById('form');
+const speichern = document.getElementById('speichern');
+
+const felder = {
+  name: document.getElementById('fName'),
+  email: document.getElementById('fMail'),
+  telefon: document.getElementById('fTelefon'),
+  anschrift: document.getElementById('fAnschrift'),
+  steuernummer: document.getElementById('fSteuer'),
+  notiz: document.getElementById('fNotiz'),
+};
+
+/** Welcher Eigentümer gerade bearbeitet wird — null heißt: neu anlegen. */
+let bearbeitet = null;
+
+const zeigeFehler = text => {
+  dlgMeldung.textContent = text;
+  dlgMeldung.className = 'meldung an schlecht';
+};
+const fehlerWeg = () => { dlgMeldung.className = 'meldung'; };
+
+/** Promille lesbar: 500 ‰, 333,3 ‰ — nie 333.29999. Bewusst ohne
+    Tausenderpunkt: „1.000 ‰" liest sich sonst wie eintausend Komma null. */
+const pm = n => (n ?? 0).toLocaleString('de-DE',
+  { maximumFractionDigits: 1, useGrouping: false }) + ' ‰';
+
+/* ---- Verteilungsstand: was fehlt, was ist zu viel ---- */
+async function standLaden() {
+  let objekte;
+  try {
+    objekte = await api('/anteile/stand');
+  } catch {
+    standFeld.innerHTML = '';
+    return;
+  }
+  if (!objekte.length) {
+    standFeld.innerHTML = `<div class="empty">
+        <div class="big">Noch keine Immobilie</div>
+        <p>Sobald ein Objekt angelegt ist, wird hier geprüft, ob seine
+           Tausendstel vollständig verteilt sind.</p>
+      </div>`;
+    return;
+  }
+  const offen = objekte.filter(o => !o.stimmig);
+  if (!offen.length) {
+    standFeld.innerHTML = `<div class="merker pos">
+        <span class="hi">✓</span>
+        <span class="ht">
+          <span class="t">Alles verteilt</span>
+          <span class="d">Bei allen ${objekte.length} Objekten ergeben die
+            Anteile 1000 ‰.</span>
+        </span>
+      </div>`;
+    return;
+  }
+  // Ruhig in Orange statt rot: eine unfertige Verteilung ist kein Fehler,
+  // sondern eine offene Aufgabe.
+  standFeld.innerHTML = offen.map(o => {
+    const text = o.beteiligte === 0
+      ? 'Noch niemandem zugeordnet — es fehlen 1000 ‰.'
+      : o.frei > 0
+        ? `Es fehlen noch ${pm(o.frei)} von 1000 ‰.`
+        : `${pm(-o.frei)} zu viel verteilt (${pm(o.vergeben)} vergeben).`;
+    return `<div class="merker">
+        <span class="hi">‰</span>
+        <span class="ht">
+          <span class="t">${esc(o.name)}</span>
+          <span class="d">${esc(text)}</span>
+        </span>
+      </div>`;
+  }).join('');
+}
+
+/* ---- Personen ---- */
+let eigner = [];
+
+async function eignerLaden() {
+  try {
+    eigner = await api('/eigentuemer');
+  } catch {
+    liste.innerHTML = '';
+    sub.textContent = 'API nicht erreichbar';
+    return;
+  }
+  sub.textContent = eigner.length === 1
+    ? '1 Person' : `${eigner.length} Personen`;
+
+  if (!eigner.length) {
+    liste.innerHTML = `<div class="empty" style="margin-bottom:10px">
+        <div class="big">Noch kein Eigentümer</div>
+        <p>Lege die Personen an, denen die Immobilien gehören — danach lassen
+           sich die Tausendstel je Objekt verteilen.</p>
+      </div>`;
+    return;
+  }
+
+  liste.innerHTML = eigner.map(e => {
+    const kontakt = [e.email, e.telefon].filter(Boolean).join(' · ')
+      || 'keine Kontaktdaten hinterlegt';
+    // Die Beteiligungen stehen unter der Person: erst dadurch ist zu sehen,
+    // wem was gehört — eine reine Namensliste sagt nichts.
+    const bet = e.objekte.length
+      ? e.objekte.map(o => `<div class="bet">
+            <span class="bn">${esc(o.name)}</span>
+            <span class="bw">${pm(o.promille)}</span>
+            <span class="chip ${o.rolle === 'Alleineigentümer' ? 'teal' : ''}"
+              >${esc(o.rolle)}</span>
+          </div>`).join('')
+      : '<div class="leer">Noch keinem Objekt zugeordnet</div>';
+    return `<div class="person">
+        <div class="pkopf">
+          <span class="ic">☗</span>
+          <span class="txt">
+            <span class="t">${esc(e.name)}</span>
+            <span class="d">${esc(kontakt)}</span>
+          </span>
+          <button class="close" data-bearbeiten="${e.id}"
+                  aria-label="${esc(e.name)} bearbeiten">✎</button>
+          <button class="close" data-weg="${e.id}"
+                  aria-label="${esc(e.name)} entfernen">×</button>
+        </div>
+        <div class="beteiligungen">${bet}</div>
+      </div>`;
+  }).join('');
+}
+
+/* ---- Anlegen und Bearbeiten ---- */
+function oeffne(person) {
+  bearbeitet = person;
+  fehlerWeg();
+  dlgTitel.textContent = person ? 'Eigentümer bearbeiten' : 'Eigentümer anlegen';
+  for (const [schluessel, feld] of Object.entries(felder)) {
+    feld.value = person ? (person[schluessel] ?? '') : '';
+  }
+  speichern.disabled = false;
+  speichern.textContent = 'Speichern';
+  dlg.showModal();
+  felder.name.focus();
+}
+
+document.getElementById('neu').addEventListener('click', () => oeffne(null));
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = felder.name.value.trim();
+  if (!name) return zeigeFehler('Bitte einen Namen angeben');
+
+  // Der Knopf wird SOFORT gesperrt — vor jedem `await`. Sonst legen zwei
+  // schnelle Klicks dieselbe Person zweimal an.
+  if (speichern.disabled) return;
+  speichern.disabled = true;
+  speichern.textContent = 'Speichere …';
+  fehlerWeg();
+
+  const daten = Object.fromEntries(
+    Object.entries(felder).map(([k, f]) => [k, f.value.trim()]));
+  try {
+    if (bearbeitet) {
+      await api(`/eigentuemer/${bearbeitet.id}`, { method: 'PATCH', body: daten });
+    } else {
+      await api('/eigentuemer', { method: 'POST', body: daten });
+    }
+    dlg.close();
+    melde(bearbeitet ? "Änderungen übernommen" : `${name} angelegt`, "pos");
+    await eignerLaden();
+  } catch (fehler) {
+    zeigeFehler(String(fehler.message || fehler));
+    speichern.disabled = false;
+    speichern.textContent = 'Speichern';
+  }
+});
+
+liste.addEventListener('click', async e => {
+  const bearbeiten = e.target.closest('[data-bearbeiten]');
+  if (bearbeiten) {
+    const id = Number(bearbeiten.dataset.bearbeiten);
+    return oeffne(eigner.find(p => p.id === id) || null);
+  }
+  const weg = e.target.closest('[data-weg]');
+  if (!weg) return;
+  const person = eigner.find(p => p.id === Number(weg.dataset.weg));
+  const ok = await frage('Eigentümer entfernen',
+    `${person?.name ?? 'Diesen Eigentümer'} und seine Anteile entfernen? `
+    + 'Die Immobilien selbst bleiben unverändert.',
+    { knopf: 'Entfernen', gefahr: true });
+  if (!ok) return;
+  try {
+    await api(`/eigentuemer/${weg.dataset.weg}`, { method: 'DELETE' });
+    melde('Eigentümer entfernt');
+    await Promise.all([eignerLaden(), standLaden()]);
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), "neg");
+  }
+});
+
+document.querySelectorAll('[data-schliessen]').forEach(knopf =>
+  knopf.addEventListener('click', () => knopf.closest('dialog').close()));
+
+await Promise.all([eignerLaden(), standLaden()]);
+</script>
+</body>
+</html>

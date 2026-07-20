@@ -11,7 +11,8 @@ const GERAETE = [
   { name: 'ipad', viewport: { width: 820, height: 1180 }, touch: true },
   { name: 'desktop', viewport: { width: 1440, height: 900 }, touch: false },
 ];
-const SEITEN = ['index.html', 'objekt.html?o=obj-a', 'statistik.html', 'settings.html'];
+const SEITEN = ['index.html', 'objekt.html?o=obj-a', 'wertentwicklung.html',
+                'nebenkosten.html', 'eigentuemer.html', 'settings.html'];
 
 const browser = await chromium.launch();
 let fails = 0;
@@ -53,7 +54,7 @@ for (const geraet of GERAETE) {
 
     pruefe(errors.length === 0, `${geraet.name}/${seite}: ${errors[0] || ''}`);
 
-    if (seite === 'index.html' || seite === 'statistik.html') {
+    if (seite === 'index.html' || seite === 'wertentwicklung.html') {
       const kurz = seite.replace('.html', '');
       await page.screenshot({
         path: `tests/screenshots/${geraet.name}-${kurz}.png`, fullPage: true });

@@ -78,6 +78,18 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | LXII | Auswahlmenüs im eigenen Design statt Systemliste | `f496e6a` |
 | LXIII | Name aus Straße, Ort und Einheit — Feld entfällt | `f496e6a` |
 | LXIV | Löschen per Schiebe-Regler statt Browser-Kasten | `f496e6a` |
+| LXVII | Doppelklick legt keine zwei Eigentümer mehr an | offen bis Commit |
+| LXXIII | Texterkennung: Betrag, Datum **und** Kategorieart aus dem Text | offen bis Commit |
+| LXXIV | Mehrseitig fotografieren → ein PDF (mit pypdf gegengeprüft) | offen bis Commit |
+| LXXVII | Benennung Ort → Straße → Einheit in den Kacheln | offen bis Commit |
+| LXXVIII | Hauslogos in den Kacheln größer | offen bis Commit |
+| LXXIX | Zusammengehörige Einheiten: Oberkachel mit angedockten Kacheln | offen bis Commit |
+| LXXX | Eigentümer als eigener Menüpunkt | offen bis Commit |
+| LXXXI | Rolle wird aus dem Anteil abgeleitet, je Objekt | offen bis Commit |
+| LXXXII | Tausendstel auf eine Nachkommastelle, Fehlendes wird angezeigt | offen bis Commit |
+| LXXXIII | Auswertung geteilt: Wertentwicklung und Nebenkostenabrechnung | offen bis Commit |
+| LXXXIV | Menüleiste mit sechs Einträgen | offen bis Commit |
+| LXXXV | „Eingang" heißt jetzt „Dokumente" | offen bis Commit |
 
 ---
 
@@ -89,7 +101,6 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 |---|---|---|
 | LXV | **Kein Endpunkt setzt `anteile`** | Für selbst angelegte Objekte bleibt jede Abrechnung 0,00 €. Nur der Seed schreibt Verteilungsgewichte |
 | LXVI | Abschluss ist unumkehrbar | Ein versehentlich abgeschlossener Zeitraum lässt sich nicht wieder öffnen |
-| LXVII | Doppelklick legt zwei Eigentümer an | `#eignerSpeichern` wird nicht deaktiviert |
 | LXVIII | Wachdienst kann Dokumente doppelt anlegen | `Dokument.pfad` ist nicht eindeutig; zwei Sessions sehen denselben Pfad als neu |
 | LXIX | Zuordnen ohne Cloud-Ordner meldet Erfolg ohne Wirkung | Datei bleibt liegen, verschwindet aber aus dem Eingang |
 | LXX | Sieben Endpunkte ohne Aufrufer | u. a. Erinnerungen, PDF-Vorschau, Import, OCR-Status — gebaut, aber nirgends erreichbar |
@@ -100,16 +111,12 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 
 | Nr. | Aufgabe | Was gemeint ist |
 |---|---|---|
-| LXXIII | **Texterkennung wirklich nachweisen** | Betrag, Datum und Kategorieart aus einem echten gescannten PDF herauslesen und eintragen — belegt, nicht behauptet |
-| LXXIV | **Mehrseitig fotografieren → ein PDF** | im Ablauf durchprüfen, nicht nur im Code |
 | LXXV | **Dokumentenablage ohne Verschachtelung** | direkter, effizienter Weg; so viel wie möglich automatisch zuordnen, aber Verschieben, Korrigieren, Löschen und Neu-Scannen bleiben möglich |
 | LXXVI | **Dynamisch, filterbar, smart** | keine Dopplungen in der Darstellung |
-| LXXVII | **Benennung: Ort → Straße → Einheit** | oberste Ebene Ortschaft, darunter Straße, darunter Wohnungseinheit — die Kacheln heißen noch anders |
-| LXXVIII | **Hauslogos in den Kacheln größer** | |
-| LXXIX | **Zusammengehörige Einheiten als Gruppe** | Oberkachel mit den Stammdaten, darunter angedockte Einzelkacheln je Einheit — nicht fünf gleichrangige Kacheln |
-| LXXX | **Eigentümer als eigener Menüpunkt** | raus aus den Einstellungen |
-| LXXXI | **Rolle gehört ans Objekt, nicht an die Person** | Ob jemand Eigentümer oder Miteigentümer ist, entscheidet sich je Immobilie — dieselbe Person soll nicht zweimal angelegt werden müssen |
-| LXXXII | **Tausendstel prüfen und Fehlendes anzeigen** | eine Nachkommastelle genügt: 333,3 + 333,3 + 333,3 gilt als vollständig |
+
+| LXXXIII | **Auswertung in zwei Punkte teilen** | „Wertentwicklung" (Wert, Cashflow, Mietverlauf) und „Nebenkostenabrechnung" — zwei getrennte Seiten |
+| LXXXIV | **Menüleiste mit sechs Einträgen** | Objekte · Dokumente · Wert · Nebenkosten · Eigentümer · Einstellungen — weniger Durchklicken |
+| LXXXV | **„Eingang" heißt jetzt „Dokumente"** | |
 
 ### Bewusst zurückgestellt
 

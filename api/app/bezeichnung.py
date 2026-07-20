@@ -25,6 +25,11 @@ def _ohne_doppelung(stuecke: list[str]) -> list[str]:
         for i, vorhanden in enumerate(teile):
             if vorhanden.lower() in stueck.lower():
                 teile[i] = stueck          # neuer Teil ist der genauere
+                # Der genauere Teil kann weitere frühere Stücke mitverschlucken.
+                # Ohne diese Zeile stand "Prüfweg 5" hinterher noch ein zweites
+                # Mal hinter dem Namen, der ihn bereits enthält.
+                teile = [t for j, t in enumerate(teile)
+                         if j == i or t.lower() not in stueck.lower()]
                 erledigt = True
                 break
             if stueck.lower() in vorhanden.lower():
@@ -41,6 +46,67 @@ def anzeigename(name: str, ort: str = "", strasse: str = "", plz: str = "") -> s
     if not teile:
         return _sauber(name) or "Immobilie"
     return " · ".join(teile)
+
+
+# Im Feld "ort" steht im Bestand vereinzelt die Nutzung statt einer Ortschaft
+# ("Mixed-Use · 7 Einheiten"). Solche Stücke dürfen nie als Ort erscheinen.
+_KEIN_ORT = re.compile(
+    r"mixed[\s-]?use|mfh|efh|zfh|mehrfamilien|einfamilien|zweifamilien|"
+    r"doppelhaus|reihenhaus|wohnanlage|gewerbe|stellplatz|garage|"
+    r"\d\s*(einheit|wohnung|gewerbe|zimmer|partei|stellplatz)", re.I)
+
+# Feinste Ebene: benennt eine Einheit im Haus, nie eine Straße.
+_IST_EINHEIT = re.compile(
+    r"^(whg|wohnung|einheit|eg|og|ug|dg|kg|souterrain|dachgeschoss|"
+    r"stellplatz|garage|laden|b[üu]ro|praxis|gewerbe|halle|keller)\b", re.I)
+
+# Mittlere Ebene: sieht aus wie eine Straße — Grundwort oder Hausnummer am Ende.
+_IST_STRASSE = re.compile(
+    r"(stra(ß|ss)e|str\.|weg|allee|platz|gasse|ring|winkel|damm|ufer|steig|"
+    r"zeile|chaussee|pfad|hof|berg|feld|anger|markt)\b|\d+\s*[a-z]?$", re.I)
+
+_TRENNER = re.compile(r"\s*[·•]\s*|\s+[-–—]\s+")
+
+
+def hierarchie(name: str, ort: str = "", strasse: str = "",
+               plz: str = "") -> dict[str, str]:
+    """Zerlegt ein Objekt in die drei Ebenen Ort → Straße → Einheit.
+
+    Die Felder sind historisch gewachsen: die Straße steht mal in `strasse`,
+    mal im Namen, der Ort mal in `ort`, mal als "(Ort)" vor dem Namen — und
+    manchmal steht in `ort` gar kein Ort. Diese Funktion sortiert das, damit
+    die Kachel eine echte Hierarchie zeigen kann statt roher Feldinhalte.
+    """
+    ort_teile = [t for t in _TRENNER.split(_sauber(ort))
+                 if t and not _KEIN_ORT.search(t)]
+    ergebnis_ort = ort_teile[0] if ort_teile else ""
+
+    rest = _sauber(name)
+    klammer = re.match(r"^\((.+?)\)\s*(.*)$", rest)
+    if klammer:                       # "(Teststadt) Prüfweg 5 · EG"
+        if not ergebnis_ort and not _KEIN_ORT.search(klammer.group(1)):
+            ergebnis_ort = _sauber(klammer.group(1))
+        rest = _sauber(klammer.group(2))
+
+    ergebnis_strasse = _sauber(strasse)
+    einheiten: list[str] = []
+    for stueck in (s for s in _TRENNER.split(rest) if s):
+        klein = stueck.lower()
+        if klein == ergebnis_ort.lower() or klein == ergebnis_strasse.lower():
+            continue                  # schon auf einer gröberen Ebene genannt
+        if not ergebnis_strasse and not _IST_EINHEIT.match(stueck) \
+                and _IST_STRASSE.search(stueck):
+            ergebnis_strasse = stueck
+            continue
+        einheiten.append(stueck)
+
+    if not ergebnis_strasse and einheiten:
+        # Ohne erkennbare Straße ist der Name selbst die mittlere Ebene —
+        # eine leere Straßenzeile mit gefüllter Einheit wäre kopflastig.
+        ergebnis_strasse = einheiten.pop(0)
+
+    return {"ort": ergebnis_ort, "strasse": ergebnis_strasse,
+            "einheit": " · ".join(einheiten), "plz": _sauber(plz)}
 
 
 # Zeichen, die in Datei- und Ordnernamen Ärger machen. Windows verbietet sie,

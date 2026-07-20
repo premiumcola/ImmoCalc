@@ -29,6 +29,38 @@ _SCHLUESSELWORTE = ("gesamtbetrag", "rechnungsbetrag", "endbetrag", "zu zahlen",
                     "gesamtsumme", "zahlbetrag", "summe brutto", "gesamt brutto",
                     "nachzahlung", "guthaben", "total", "brutto", "summe")
 
+# Zeilen, die das Belegdatum benennen …
+_BELEGDATUM = ("rechnungsdatum", "bescheiddatum", "belegdatum", "ausstellung",
+               "rechnung vom", "beleg vom", "bescheid vom", "datum")
+# … und Zeilen, die ausdrücklich etwas anderes datieren.
+_KEIN_BELEGDATUM = ("zeitraum", "abrechnungszeitraum", "gültig", "gueltig",
+                    "fällig", "faellig", "zahlbar", "überweisen", "ueberweisen",
+                    "bis zum", "zahlungsziel", "ablesung", "zählerstand",
+                    "zaehlerstand", "geboren", "vertrag vom")
+
+# Wort -> Dokumentart. Die Arten entsprechen ZIELORDNER in routers/dokumente.py;
+# spezifische Begriffe stehen vor allgemeinen.
+_KATEGORIEWORTE = [
+    ("grundsteuer", "Steuer"), ("finanzamt", "Steuer"), ("steuerbescheid", "Steuer"),
+    ("einkommensteuer", "Steuer"), ("steuernummer", "Steuer"),
+    ("darlehen", "Kredit"), ("tilgung", "Kredit"), ("zinsbindung", "Kredit"),
+    ("annuität", "Kredit"), ("annuitaet", "Kredit"),
+    ("versicherungsschein", "Versicherung"), ("police", "Versicherung"),
+    ("versicherung", "Versicherung"),
+    ("mietvertrag", "Mietvertrag"), ("mieterhöhung", "Mietvertrag"),
+    ("kaution", "Mietvertrag"),
+    ("hausverwaltung", "Hausverwaltung"), ("wohngeld", "Hausverwaltung"),
+    ("eigentümerversammlung", "Hausverwaltung"),
+    ("heizkosten", "Nebenkosten"), ("betriebskosten", "Nebenkosten"),
+    ("nebenkosten", "Nebenkosten"), ("stadtwerke", "Nebenkosten"),
+    ("abwasser", "Nebenkosten"), ("trinkwasser", "Nebenkosten"),
+    ("wasser", "Nebenkosten"), ("strom", "Nebenkosten"), ("gas", "Nebenkosten"),
+    ("müll", "Nebenkosten"), ("abfall", "Nebenkosten"),
+    ("schornstein", "Nebenkosten"), ("kaminkehrer", "Nebenkosten"),
+    ("hausmeister", "Nebenkosten"), ("winterdienst", "Nebenkosten"),
+    ("grundbesitzabgaben", "Nebenkosten"),
+]
+
 
 def verfuegbar() -> bool:
     """Ist Tesseract installiert? Ohne das bleibt die Erkennung stumm."""
@@ -78,11 +110,11 @@ def betrag_aus_text(text: str) -> float | None:
     return round(max(kandidaten), 2) if kandidaten else None
 
 
-def datum_aus_text(text: str) -> date | None:
-    """Das früheste plausible Datum — das Rechnungsdatum steht meist oben."""
+def _daten_der_zeile(zeile: str) -> list[date]:
+    """Alle plausiblen Datumsangaben einer Zeile."""
     heute = date.today()
-    gefunden: list[date] = []
-    for tag, monat, jahr in _DATUM.findall(text or ""):
+    treffer = []
+    for tag, monat, jahr in _DATUM.findall(zeile or ""):
         j = int(jahr)
         if j < 100:
             j += 2000
@@ -92,8 +124,60 @@ def datum_aus_text(text: str) -> date | None:
             continue
         # Belege liegen in der Vergangenheit, aber nicht in grauer Vorzeit
         if heute.year - 12 <= kandidat.year <= heute.year + 1:
-            gefunden.append(kandidat)
-    return min(gefunden) if gefunden else None
+            treffer.append(kandidat)
+    return treffer
+
+
+def datum_aus_text(text: str) -> date | None:
+    """Das Rechnungsdatum.
+
+    Nicht einfach das früheste Datum im Dokument: auf einer Rechnung steht der
+    Beginn des Abrechnungszeitraums weiter vorn ("01.01.2024 – 31.12.2024"),
+    und der ist nicht gemeint. Deshalb zuerst die Zeilen ansehen, die das
+    Datum benennen — "Rechnungsdatum", "Bescheiddatum", schlicht "Datum".
+
+    Zeilen, die ausdrücklich etwas anderes datieren (Zahlungsziel, Zeitraum,
+    Zählerstand), bleiben aussen vor.
+    """
+    benannt: list[date] = []
+    uebrig: list[date] = []
+
+    for zeile in (text or "").splitlines():
+        klein = zeile.lower()
+        treffer = _daten_der_zeile(zeile)
+        if not treffer:
+            continue
+        if any(wort in klein for wort in _KEIN_BELEGDATUM):
+            continue
+        if any(wort in klein for wort in _BELEGDATUM):
+            benannt += treffer
+        else:
+            uebrig += treffer
+
+    if benannt:
+        return min(benannt)
+    # Ohne Beschriftung: das späteste Datum ist eher das Rechnungsdatum als
+    # der Anfang eines Zeitraums.
+    return max(uebrig) if uebrig else None
+
+
+def kategorie_aus_text(text: str) -> str:
+    """Welche Art von Beleg das ist — aus dem gelesenen Text, nicht aus dem
+    Dateinamen. Ein Kamerascan heisst schlicht "scan.pdf"; ohne den Inhalt
+    gäbe es gar keinen Anhaltspunkt.
+
+    Gewertet wird nach Häufigkeit: ein Wort im Briefkopf entscheidet nicht
+    allein, wenn der Rest des Blattes von etwas anderem handelt.
+    """
+    klein = (text or "").lower()
+    punkte: dict[str, int] = {}
+    for wort, art in _KATEGORIEWORTE:
+        anzahl = klein.count(wort)
+        if anzahl:
+            punkte[art] = punkte.get(art, 0) + anzahl
+    if not punkte:
+        return ""
+    return max(punkte.items(), key=lambda p: p[1])[0]
 
 
 def erkenne(rohdaten: bytes) -> dict:
@@ -109,5 +193,6 @@ def erkenne(rohdaten: bytes) -> dict:
         "betrag": betrag_aus_text(text),
         "datum": gefunden.isoformat() if gefunden else None,
         "jahr": gefunden.year if gefunden else None,
+        "kategorie": kategorie_aus_text(text),
         "zeichen": len(text.strip()),
     }

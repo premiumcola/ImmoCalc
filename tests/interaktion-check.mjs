@@ -23,7 +23,7 @@ let fails = 0;
 const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text); } };
 
 /* ---- 1) Auswahlfeld in der Auswertung ---- */
-await page.goto(base + '/statistik.html', { waitUntil: 'networkidle' });
+await page.goto(base + '/wertentwicklung.html', { waitUntil: 'networkidle' });
 await page.waitForSelector('.auswahl-knopf', { timeout: 8000 })
   .catch(() => pruefe(false, 'kein eigenes Auswahlfeld'));
 

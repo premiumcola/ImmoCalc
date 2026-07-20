@@ -9,7 +9,8 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.ocr import betrag_aus_text, datum_aus_text, erkenne  # noqa: E402
+from app.ocr import (betrag_aus_text, datum_aus_text,  # noqa: E402
+                     erkenne, kategorie_aus_text)
 
 RECHNUNG = """
 Stadtwerke Musterstadt
@@ -45,6 +46,43 @@ def test_ohne_betrag_kommt_nichts():
 
 def test_rechnungsdatum_wird_erkannt():
     assert datum_aus_text(RECHNUNG) == date(2025, 3, 14)
+
+
+def test_abrechnungszeitraum_wird_nicht_fuer_das_belegdatum_gehalten():
+    """Der belegte Fehlgriff: die Erkennung nahm den 01.01.2024 aus der Zeile
+    'Abrechnungszeitraum' statt des Rechnungsdatums."""
+    text = ("Rechnungsdatum 14.03.2025\n"
+            "Abrechnungszeitraum 01.01.2024 - 31.12.2024\n"
+            "Bitte ueberweisen Sie bis zum 28.03.2025.\n")
+    assert datum_aus_text(text) == date(2025, 3, 14)
+
+
+def test_ohne_beschriftung_gewinnt_das_spaeteste_datum():
+    """Ein Zeitraumbeginn steht weiter vorn — gemeint ist er trotzdem nie."""
+    assert datum_aus_text("01.01.2024 bis 31.12.2024\n05.02.2025\n") \
+        == date(2025, 2, 5)
+
+
+def test_zahlungsziel_gilt_nicht_als_belegdatum():
+    assert datum_aus_text("Zahlbar bis 30.04.2025") is None
+
+
+def test_kategorie_kommt_aus_dem_text():
+    """Ein Kamerascan heisst 'scan.pdf' — nur der Inhalt verrät die Art."""
+    assert kategorie_aus_text(RECHNUNG) == "Nebenkosten"
+    assert kategorie_aus_text("Grundsteuerbescheid der Stadt") == "Steuer"
+    assert kategorie_aus_text("Versicherungsschein Police 4412-9") == "Versicherung"
+    assert kategorie_aus_text("Darlehen Nr. 77, Tilgung und Zinsbindung") == "Kredit"
+    assert kategorie_aus_text("Mietvertrag über Wohnraum, Kaution") == "Mietvertrag"
+    assert kategorie_aus_text("Irgendein Zettel ohne Anhaltspunkt") == ""
+
+
+def test_haeufigkeit_entscheidet_nicht_der_briefkopf():
+    """'Versicherung' im Absender darf eine Heizkostenabrechnung nicht kippen."""
+    text = ("Allianz Versicherung AG\n"
+            "Heizkostenabrechnung\nHeizkosten 2.880,00\n"
+            "Heizkosten Verteilung nach Verbrauch\n")
+    assert kategorie_aus_text(text) == "Nebenkosten"
 
 
 def test_unsinnige_datumsangaben_werden_verworfen():

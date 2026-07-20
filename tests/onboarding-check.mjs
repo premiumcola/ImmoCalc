@@ -55,11 +55,18 @@ pruefe(page.url().includes('objekt.html?o='), 'führt nicht zur Objektseite: ' +
 const detail = await page.textContent('body');
 pruefe(detail.includes(name), 'Objektseite zeigt den Namen nicht');
 
-// und auf der Startseite als Kachel auftauchen
+// und auf der Startseite als Kachel auftauchen. Die Kachel zeigt den Namen
+// nicht mehr am Stück, sondern zerlegt: Ort klein darüber, Straße gross,
+// Einheit darunter. Geprüft wird deshalb der gesamte Kacheltext.
 await page.goto(base + '/index.html', { waitUntil: 'networkidle' });
 await page.waitForSelector('.tile', { timeout: 8000 }).catch(() => {});
-const kacheln = await page.$$eval('.tile .name', ns => ns.map(n => n.textContent.trim()));
-pruefe(kacheln.includes(name), 'neue Kachel fehlt auf der Startseite');
+const kacheln = await page.$$eval('.tile', ns =>
+  ns.map(n => n.textContent.replace(/\s+/g, ' ').trim()));
+// „(Teststadt) Prüfweg 12345 · EG" steht jetzt als Ort + Straße + Einheit da
+const teile = name.replace(/[()]/g, '').split('·').map(t => t.trim())
+  .flatMap(t => t.split(' ').filter(Boolean));
+pruefe(kacheln.some(k => teile.every(t => k.includes(t))),
+  `neue Kachel fehlt auf der Startseite (gesucht: ${teile.join(' + ')})`);
 await page.screenshot({ path: 'tests/screenshots/onboarding-start-danach.png', fullPage: true });
 
 pruefe(errors.length === 0, 'JS-Fehler: ' + errors.slice(0, 3).join(' | '));

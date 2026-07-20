@@ -9,6 +9,12 @@ from ..vermoegen import gesamt, objekt_vermoegen
 
 router = APIRouter(prefix="/api", tags=["besitz"])
 
+VOLL = 1000.0        # ein ganzes Objekt in Promille
+# Eine Nachkommastelle genuegt: 333,3 dreimal ergibt 999,9 und soll als
+# vollstaendig gelten. Auf mehr Genauigkeit zu bestehen liesse sich bei
+# Dritteln nie erfuellen.
+TOLERANZ = 0.1
+
 
 def _objekt(session: Session, slug: str) -> Objekt:
     o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
@@ -17,9 +23,31 @@ def _objekt(session: Session, slug: str) -> Objekt:
     return o
 
 
+def promille_von(a: Anteil) -> float:
+    """Massgeblicher Anteil einer Beteiligung.
+
+    Bestandszeilen haben noch kein `promille` — dort gilt weiter das
+    ganzzahlige `tausendstel`. So ueberlebt jede eingegebene Beteiligung die
+    Erweiterung auf Dezimalwerte."""
+    return float(a.promille if a.promille is not None else (a.tausendstel or 0))
+
+
+def rolle_von(promille: float) -> str:
+    """Rolle aus dem Anteil ableiten statt sie waehlen zu lassen.
+
+    Wer alles haelt, ist Alleineigentuemer; wer weniger haelt, teilt sich das
+    Objekt mit jemandem. Von Hand gewaehlt koennte die Rolle den Tausendsteln
+    widersprechen — abgeleitet kann sie das nie."""
+    return "Alleineigentümer" if runde(promille) >= VOLL else "Miteigentümer"
+
+
+def runde(wert: float) -> float:
+    """Eine Nachkommastelle — 333,3 dreimal soll als vollstaendig gelten."""
+    return round(wert + 0.0, 1)
+
+
 class EigentuemerIn(BaseModel):
     name: str
-    rolle: str = "Eigentümer"
     email: str = ""
     telefon: str = ""
     anschrift: str = ""
@@ -39,7 +67,10 @@ def liste(session: Session = Depends(get_session)) -> list:
             **e.model_dump(),
             "objekte": [{"anteil_id": a.id, "slug": objekte[a.objekt_id].slug,
                          "name": objekte[a.objekt_id].name,
-                         "tausendstel": a.tausendstel}
+                         "tausendstel": a.tausendstel,
+                         "promille": runde(promille_von(a)),
+                         "rolle": rolle_von(promille_von(a)),
+                         "notiz": a.notiz}
                         for a in meine if a.objekt_id in objekte],
         })
     return out
@@ -82,8 +113,19 @@ def loeschen(eid: int, session: Session = Depends(get_session)) -> dict:
 
 class AnteilIn(BaseModel):
     eigentuemer_id: int
-    tausendstel: int = 1000
+    # `tausendstel` bleibt als Eingang bestehen, damit die Objektseite
+    # unveraendert weiterschreiben kann; `promille` hat Vorrang.
+    tausendstel: float = 1000
+    promille: float | None = None
     notiz: str = ""
+
+
+def _stand(zeilen: list[Anteil]) -> dict:
+    """Verteilungsstand eines Objekts — auf eine Nachkommastelle genau."""
+    vergeben = runde(sum(promille_von(a) for a in zeilen))
+    return {"vergeben": vergeben,
+            "frei": runde(VOLL - vergeben),
+            "stimmig": bool(zeilen) and abs(VOLL - vergeben) <= TOLERANZ + 1e-9}
 
 
 @router.get("/objekte/{slug}/anteile", response_model=None)
@@ -92,19 +134,36 @@ def anteile(slug: str, session: Session = Depends(get_session)) -> dict:
     o = _objekt(session, slug)
     eigner = {e.id: e for e in session.exec(select(Eigentuemer)).all()}
     zeilen = session.exec(select(Anteil).where(Anteil.objekt_id == o.id)).all()
-    vergeben = sum(a.tausendstel or 0 for a in zeilen)
     return {
         "anteile": [{"id": a.id, "eigentuemer_id": a.eigentuemer_id,
                      "name": eigner[a.eigentuemer_id].name
                      if a.eigentuemer_id in eigner else "unbekannt",
                      "tausendstel": a.tausendstel,
-                     "prozent": round((a.tausendstel or 0) / 10, 1),
+                     "promille": runde(promille_von(a)),
+                     "rolle": rolle_von(promille_von(a)),
+                     "prozent": round(promille_von(a) / 10, 2),
                      "notiz": a.notiz}
                     for a in zeilen],
-        "vergeben": vergeben,
-        "frei": 1000 - vergeben,
-        "stimmig": vergeben == 1000,
+        **_stand(list(zeilen)),
     }
+
+
+@router.get("/anteile/stand", response_model=None)
+def anteilsstand(session: Session = Depends(get_session)) -> list:
+    """Verteilungsstand aller aktiven Objekte — fuer die Eigentuemerseite.
+
+    Bewusst auch Objekte ohne jede Beteiligung: gerade die fehlen sonst
+    unbemerkt in der Uebersicht."""
+    alle = session.exec(select(Anteil)).all()
+    out = []
+    for o in session.exec(select(Objekt)).all():
+        if not o.aktiv:
+            continue
+        zeilen = [a for a in alle if a.objekt_id == o.id]
+        out.append({"slug": o.slug, "name": o.name, "beteiligte": len(zeilen),
+                    **_stand(zeilen)})
+    out.sort(key=lambda z: (z["stimmig"], z["name"]))
+    return out
 
 
 @router.post("/objekte/{slug}/anteile", status_code=201)
@@ -117,20 +176,26 @@ def anteil_setzen(slug: str, data: AnteilIn,
     o = _objekt(session, slug)
     if not session.get(Eigentuemer, data.eigentuemer_id):
         raise HTTPException(404, "Eigentümer nicht gefunden")
-    if not 0 < data.tausendstel <= 1000:
-        raise HTTPException(400, "Tausendstel müssen zwischen 1 und 1000 liegen")
+    wert = runde(data.promille if data.promille is not None else data.tausendstel)
+    if not 0 < wert <= VOLL:
+        raise HTTPException(400, "Anteile müssen zwischen 0,1 und 1000 ‰ liegen")
 
     vorhanden = session.exec(
         select(Anteil).where(Anteil.objekt_id == o.id,
                              Anteil.eigentuemer_id == data.eigentuemer_id)).first()
     eintrag = vorhanden or Anteil(objekt_id=o.id,
                                   eigentuemer_id=data.eigentuemer_id)
-    eintrag.tausendstel = data.tausendstel
+    eintrag.promille = wert
+    # Gerundet mitgefuehrt, damit Leser, die noch `tausendstel` erwarten,
+    # weiterhin eine sinnvolle Zahl sehen.
+    eintrag.tausendstel = int(round(wert))
+    eintrag.rolle = rolle_von(wert)
     eintrag.notiz = data.notiz
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)
-    return {"id": eintrag.id}
+    return {"id": eintrag.id, "promille": eintrag.promille,
+            "rolle": eintrag.rolle}
 
 
 @router.delete("/anteile/{aid}")

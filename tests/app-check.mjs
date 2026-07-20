@@ -75,16 +75,49 @@ function melde(name, status, errors, extra = []) {
   await page.close();
 }
 
-// 3) Auswertung: Diagramme müssen gezeichnet sein
+// 3a) Wertentwicklung & Cashflow: Eigentümerzahlen mit Cashflow je Einheit
 {
-  const { page, errors, status } = await seite('/statistik.html');
+  const { page, errors, status } = await seite('/wertentwicklung.html');
   const extra = [];
   await page.waitForSelector('.karte', { timeout: 8000 }).catch(() => {});
   const charts = await page.$$('svg.chart, .chartleer');
-  if (charts.length < 3) extra.push(`nur ${charts.length} Diagramme gerendert`);
+  if (charts.length < 2) extra.push(`nur ${charts.length} Diagramme gerendert`);
   if (await page.$('.kpi .kv') === null) extra.push('Kennzahlen fehlen');
-  await page.screenshot({ path: 'tests/screenshots/app-auswertung.png', fullPage: true });
-  melde('statistik.html (Diagramme)', status, errors, extra);
+  if (await page.$('.einheit .ezahlen') === null) extra.push('Cashflow je Einheit fehlt');
+  // Keine Dopplung: die Umlagezahlen gehoeren auf die andere Seite.
+  const titel = await page.$$eval('.karte h3', hs => hs.map(h => h.textContent));
+  if (titel.some(t => /Kostenblöcke|Kostenfluss|Stand der Abrechnung/.test(t)))
+    extra.push('Nebenkosten-Inhalt doppelt auf dieser Seite');
+  await page.screenshot({ path: 'tests/screenshots/app-wertentwicklung.png', fullPage: true });
+  melde('wertentwicklung.html (Cashflow)', status, errors, extra);
+  await page.close();
+}
+
+// 3b) Nebenkostenabrechnung: Kostenblöcke, Kostenfluss, Abrechnungsstand
+{
+  const { page, errors, status } = await seite('/nebenkosten.html');
+  const extra = [];
+  await page.waitForSelector('.karte', { timeout: 8000 }).catch(() => {});
+  const charts = await page.$$('svg.chart, .chartleer');
+  if (charts.length < 2) extra.push(`nur ${charts.length} Diagramme gerendert`);
+  if (await page.$('.kategorien button') === null) extra.push('Kostenart-Filter fehlt');
+  if (await page.$('a.zr[href^="zeitraum.html"]') === null)
+    extra.push('kein Sprung in einen Abrechnungszeitraum');
+  const titel = await page.$$eval('.karte h3', hs => hs.map(h => h.textContent));
+  if (titel.some(t => /Mietverlauf|Vermögen|Cashflow/.test(t)))
+    extra.push('Eigentümer-Inhalt doppelt auf dieser Seite');
+  await page.screenshot({ path: 'tests/screenshots/app-nebenkosten.png', fullPage: true });
+  melde('nebenkosten.html (Umlage)', status, errors, extra);
+  await page.close();
+}
+
+// 3c) Die alte Sammelseite leitet nur noch weiter
+{
+  const { page, errors, status } = await seite('/statistik.html');
+  const extra = [];
+  if (!page.url().endsWith('/wertentwicklung.html'))
+    extra.push('statistik.html leitet nicht auf wertentwicklung.html weiter');
+  melde('statistik.html (Weiterleitung)', status, errors, extra);
   await page.close();
 }
 

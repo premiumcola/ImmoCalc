@@ -144,11 +144,21 @@ h2.sec:first-child{margin-top:0}
   .nav{position:absolute; border-radius:0 0 22px 22px}
 }
 .nav a{
-  flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
-  padding:8px 4px; min-height:44px; text-decoration:none; color:var(--soft);
-  border-radius:12px; font:600 10.5px var(--disp); letter-spacing:.01em;
+  flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;
+  gap:4px; padding:8px 2px; min-height:44px; text-decoration:none;
+  color:var(--soft); border-radius:12px; font:600 10.5px var(--disp);
+  letter-spacing:.01em;
+  /* Sechs Eintraege teilen sich 390 px — lange Beschriftungen duerfen die
+     Leiste nicht auseinanderdruecken. Lieber kuerzen als umbrechen. */
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .nav a .ni{font:400 19px var(--mono); line-height:1}
+/* Auf dem iPhone bleiben pro Eintrag rund 63 px. */
+@media(max-width:439px){
+  .nav{padding-left:4px; padding-right:4px}
+  .nav a{font-size:8.5px; gap:3px; letter-spacing:-.01em}
+  .nav a .ni{font-size:17px}
+}
 .nav a[aria-current=page]{color:var(--teal-d); background:var(--teal-l)}
 
 /* ---- Formularfelder ---- */

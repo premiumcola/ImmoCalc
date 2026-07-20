@@ -5,7 +5,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.bezeichnung import (STANDARD_VORLAGE, anzeigename,  # noqa: E402
-                             nach_vorlage, ordnername, vorlage_pruefen)
+                             hierarchie, nach_vorlage, ordnername,
+                             vorlage_pruefen)
 
 
 def test_anzeigename_von_grob_nach_fein():
@@ -54,6 +55,43 @@ def test_leere_felder_lassen_keine_reste():
                         name="Wohnung 1. OG") == "Hauptstr. 6a · Wohnung 1. OG"
     assert nach_vorlage(STANDARD_VORLAGE, ort="", strasse="", name="Garage") \
         == "Garage"
+
+
+def test_anzeigename_nennt_die_strasse_nur_einmal():
+    """Enthält der Name die Straße bereits, darf sie nicht angehängt werden."""
+    assert anzeigename("(Teststadt) Prüfweg 5 · EG", ort="Teststadt",
+                       strasse="Prüfweg 5") == "(Teststadt) Prüfweg 5 · EG"
+
+
+def test_hierarchie_drei_ebenen():
+    h = hierarchie("Wohnung 1. OG", ort="Eschenau", strasse="Laufer Str. 5")
+    assert (h["ort"], h["strasse"], h["einheit"]) \
+        == ("Eschenau", "Laufer Str. 5", "Wohnung 1. OG")
+
+
+def test_hierarchie_liest_ort_aus_der_klammer():
+    h = hierarchie("(Teststadt) Prüfweg 5 · EG", strasse="Prüfweg 5")
+    assert (h["ort"], h["strasse"], h["einheit"]) \
+        == ("Teststadt", "Prüfweg 5", "EG")
+
+
+def test_hierarchie_ignoriert_nutzung_im_ortsfeld():
+    """Im Bestand steht in `ort` teils die Nutzung — das ist kein Ort."""
+    h = hierarchie("Musterstraße 5", ort="Mixed-Use · 7 Einheiten")
+    assert h["ort"] == ""
+    assert h["strasse"] == "Musterstraße 5"
+    assert h["einheit"] == ""
+
+
+def test_hierarchie_trennt_ort_von_der_zusatzangabe():
+    h = hierarchie("Beispielweg 6a", ort="Musterstadt · 1 Wohnung")
+    assert (h["ort"], h["strasse"]) == ("Musterstadt", "Beispielweg 6a")
+
+
+def test_hierarchie_ohne_strasse_ruecken_einheiten_auf():
+    """Keine Straße erkennbar: der Name selbst ist die mittlere Ebene."""
+    h = hierarchie("Garage", ort="Nürnberg")
+    assert (h["ort"], h["strasse"], h["einheit"]) == ("Nürnberg", "Garage", "")
 
 
 def test_vorlage_pruefen_meldet_probleme():

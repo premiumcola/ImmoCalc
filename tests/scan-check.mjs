@@ -45,8 +45,12 @@ const ergebnis = await page.evaluate(async () => {
     c.toBlob(b => fertig(new File([b], 'seite.jpg', { type: 'image/jpeg' })), 'image/jpeg', 0.9);
   });
 
+  // Vier Aufnahmen: eine mehrseitige Abrechnung ist der Normalfall, nicht
+  // die Ausnahme. Alle vier müssen in EINE Datei wandern.
   const dateien = [await malen('Rechnung 2026', '#0F6E5C'),
-                   await malen('Seite zwei', '#916212')];
+                   await malen('Seite zwei', '#916212'),
+                   await malen('Seite drei', '#2E7D4F'),
+                   await malen('Seite vier', '#B24229')];
   const roh = dateien.reduce((s, d) => s + d.size, 0);
   const { pdf, seiten } = await scanZuPdf(dateien);
   const kopf = new TextDecoder().decode(
@@ -58,7 +62,7 @@ const ergebnis = await page.evaluate(async () => {
            daten: Array.from(bytes.slice(0, 0)) };
 });
 
-pruefe(ergebnis.seiten === 2, `${ergebnis.seiten} Seiten statt 2`);
+pruefe(ergebnis.seiten === 4, `${ergebnis.seiten} Seiten statt 4`);
 pruefe(ergebnis.typ === 'application/pdf', 'falscher MIME-Typ: ' + ergebnis.typ);
 pruefe(ergebnis.kopf.startsWith('%PDF-1.'), 'kein PDF-Kopf: ' + ergebnis.kopf);
 pruefe(ergebnis.ende.includes('%%EOF'), 'kein EOF am Ende');
@@ -82,7 +86,10 @@ const pdfBytes = await page.evaluate(async () => {
   g.fillText('Stadtwerke Jahresabrechnung', 90, 500);
   g.fillText('Betrag: 412,90 EUR', 90, 620);
   const blob = await new Promise(f => c.toBlob(f, 'image/jpeg', 0.9));
-  const { pdf } = await scanZuPdf([new File([blob], 's.jpg', { type: 'image/jpeg' })]);
+  const seite = new File([blob], 's.jpg', { type: 'image/jpeg' });
+  // Dreimal dieselbe Aufnahme: die Datei dient der Sichtprüfung und soll
+  // zeigen, dass mehrere Seiten wirklich in einem PDF landen.
+  const { pdf } = await scanZuPdf([seite, seite, seite]);
   return Array.from(new Uint8Array(await pdf.arrayBuffer()));
 });
 writeFileSync('tests/screenshots/scan-beispiel.pdf', Buffer.from(pdfBytes));

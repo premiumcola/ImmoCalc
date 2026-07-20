@@ -20,6 +20,55 @@
   /* App-Symbol in der Kopfzeile — kommt auf index.html, eingang.html und
      statistik.html gleich vor; gehoert eigentlich nach immo.css. */
   .applogo{width:34px;height:34px;border-radius:9px;flex:none;display:block}
+
+  /* LXXVIII — Hauslogos groesser. Gehoert spaeter nach immo.css (.tile .ico),
+     steht hier nur, weil an immo.css gerade parallel gearbeitet wird.
+     64px passt auf dem iPhone in die 2-spaltige Kachel (~163px innen) und
+     laesst rechts genug Luft, damit nichts ueberlaeuft. */
+  .tile .ico{width:64px; height:64px; border-radius:15px}
+  @media(min-width:680px){ .tile .ico{width:72px; height:72px; border-radius:17px} }
+
+  /* Ort · Strasse · Einheit — drei Ebenen in der Kachel. Alle drei Zeilen
+     display:block, weil margin an einem <span> sonst wirkungslos bleibt. */
+  .tile .ortszeile{
+    display:block; font:600 10px var(--mono); letter-spacing:.11em;
+    text-transform:uppercase; color:var(--soft); margin:0 0 4px; line-height:1.3;
+    overflow-wrap:anywhere;
+  }
+  .tile .name{overflow-wrap:anywhere}
+  .tile .einheit{
+    display:block; font:400 12px var(--body); color:var(--soft);
+    margin-top:4px; line-height:1.35; overflow-wrap:anywhere;
+  }
+
+  /* LXXIX — Haus: Oberkachel mit angedockten Einheiten. Die gemeinsame,
+     etwas dunklere Flaeche haelt die Gruppe zusammen; die Einzelkacheln
+     liegen als helle Blaetter darin. Kein Rahmen, Tiefe nur ueber Farbe. */
+  .haus{background:#DFE5E5; border-radius:20px; padding:8px; margin-bottom:14px}
+  .haus + .haus{margin-top:0}
+  .haus-kopf{
+    width:100%; min-height:0; flex-direction:row; align-items:flex-start;
+    gap:12px; flex-wrap:wrap; border-radius:14px 14px 10px 10px;
+    margin-bottom:8px; padding:14px 14px 12px;
+  }
+  .haus-kopf .txt{flex:1; min-width:0}
+  .haus-kopf .name{font-size:16px}
+  .haus-kopf .foot{flex-basis:100%; margin-top:2px}
+  .haus-kopf .klapp{
+    flex:none; align-self:center; color:var(--soft); font:400 15px var(--body);
+    transition:transform .15s;
+  }
+  .haus-kopf[aria-expanded=false] .klapp{transform:rotate(-90deg)}
+  /* Untereinheiten: gleiche Sprache, eine Stufe leiser */
+  .haus .grid{gap:8px}
+  /* Ohne diese Zeile bliebe das Raster sichtbar: `display:grid` aus immo.css
+     schlaegt die [hidden]-Regel des Browsers. */
+  .haus .grid[hidden]{display:none}
+  /* Zugeklappt sitzt die Oberkachel allein in der Flaeche — kein Rest-Rand. */
+  .haus-kopf[aria-expanded=false]{margin-bottom:0; border-radius:14px}
+  .haus .grid .tile{min-height:148px; padding:12px}
+  .haus .grid .tile .ico{width:48px; height:48px; border-radius:12px}
+  @media(min-width:680px){ .haus .grid .tile .ico{width:54px; height:54px} }
 </style>
 </head>
 <body>
@@ -49,8 +98,10 @@
   <nav class="nav">
     <a class="brand" href="index.html">ImmoCalc</a>
     <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
-    <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
+    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
+    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
+    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
+    <a href="eigentuemer.html"><span class="ni">☗</span>Eigentümer</a>
     <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
   </nav>
 </div>
@@ -63,42 +114,115 @@ installLogos();
 const ziel = document.getElementById('objekte');
 const sub = document.getElementById('sub');
 
-function kachel(o) {
-  const chips = [];
-  const frist = fristText(o.frist_tage);
-  if (frist) chips.push(`<span class="chip ${fristKlasse(o.frist_tage)}">${frist}</span>`);
-  if (o.offene_positionen > 0)
-    chips.push(`<span class="chip amber">${o.offene_positionen} Beleg${o.offene_positionen > 1 ? 'e' : ''} offen</span>`);
-  if (!chips.length) chips.push('<span class="chip pos">alles erledigt</span>');
+/* ---- Ort → Strasse → Einheit -------------------------------------------
+   Spiegelt api/app/bezeichnung.py:hierarchie(). Die Felder sind gewachsen:
+   die Strasse steht mal in `strasse`, mal im Namen, der Ort mal in `ort`,
+   mal als "(Ort)" vor dem Namen — und in `ort` steht vereinzelt gar kein Ort,
+   sondern die Nutzung ("Mixed-Use · 7 Einheiten"). Erst sortieren, dann
+   anzeigen; sonst steht Unsinn gross in der Kachel. */
+const KEIN_ORT = /mixed[\s-]?use|mfh|efh|zfh|mehrfamilien|einfamilien|zweifamilien|doppelhaus|reihenhaus|wohnanlage|gewerbe|stellplatz|garage|\d\s*(einheit|wohnung|gewerbe|zimmer|partei|stellplatz)/i;
+const IST_EINHEIT = /^(whg|wohnung|einheit|eg|og|ug|dg|kg|souterrain|dachgeschoss|stellplatz|garage|laden|b[üu]ro|praxis|gewerbe|halle|keller)\b/i;
+const IST_STRASSE = /(stra(ß|ss)e|str\.|weg|allee|platz|gasse|ring|winkel|damm|ufer|steig|zeile|chaussee|pfad|hof|berg|feld|anger|markt)\b|\d+\s*[a-zA-Z]?$/;
+const TRENNER = /\s*[·•]\s*|\s+[-–—]\s+/;
+const sauber = t => String(t || '').replace(/\s+/g, ' ').trim();
+
+function hierarchie(o) {
+  let ort = sauber(o.ort).split(TRENNER).filter(t => t && !KEIN_ORT.test(t))[0] || '';
+
+  let rest = sauber(o.name);
+  const klammer = rest.match(/^\((.+?)\)\s*(.*)$/);
+  if (klammer) {                       // "(Teststadt) Prüfweg 5 · EG"
+    if (!ort && !KEIN_ORT.test(klammer[1])) ort = sauber(klammer[1]);
+    rest = sauber(klammer[2]);
+  }
+
+  let strasse = sauber(o.strasse);
+  const einheiten = [];
+  for (const stueck of rest.split(TRENNER).filter(Boolean)) {
+    const klein = stueck.toLowerCase();
+    if (klein === ort.toLowerCase() || klein === strasse.toLowerCase()) continue;
+    if (!strasse && !IST_EINHEIT.test(stueck) && IST_STRASSE.test(stueck)) {
+      strasse = stueck; continue;
+    }
+    einheiten.push(stueck);
+  }
+  // Ohne erkennbare Strasse ist der Name selbst die mittlere Ebene — eine
+  // leere Strassenzeile ueber einer gefuellten Einheit waere kopflastig.
+  if (!strasse && einheiten.length) strasse = einheiten.shift();
+  return { ort, strasse: strasse || sauber(o.name), einheit: einheiten.join(' · ') };
+}
+
+function chips(frist_tage, offen) {
+  const teile = [];
+  const frist = fristText(frist_tage);
+  if (frist) teile.push(`<span class="chip ${fristKlasse(frist_tage)}">${frist}</span>`);
+  if (offen > 0)
+    teile.push(`<span class="chip amber">${offen} Beleg${offen > 1 ? 'e' : ''} offen</span>`);
+  if (!teile.length) teile.push('<span class="chip pos">alles erledigt</span>');
+  return `<span class="foot">${teile.join('')}</span>`;
+}
+
+/* Einzelkachel. `feinste` zeigt nur die Einheit gross — innerhalb einer
+   Hausgruppe stehen Ort und Strasse bereits in der Oberkachel. */
+function kachel(o, feinste = false) {
+  const h = o._h;
+  const gross = feinste ? (h.einheit || h.strasse) : h.strasse;
+  const oben = feinste ? '' : (h.ort ? `<span class="ortszeile">${esc(h.ort)}</span>` : '');
+  const unten = feinste
+    ? (h.einheit ? '' : `<span class="einheit">${o.einheiten || 1} Einheit${(o.einheiten || 1) > 1 ? 'en' : ''}</span>`)
+    : (h.einheit ? `<span class="einheit">${esc(h.einheit)}</span>` : '');
 
   return `<button class="tile" data-slug="${esc(o.slug)}">
       <span class="ico">${logoSvg(o.typ)}</span>
       <span>
-        <span class="name">${esc(o.name)}</span>
-        <span class="ort">${esc(
-          [o.ort, o.strasse].filter(Boolean).join(' · ') || o.anzeigename || '')}</span>
+        ${oben}
+        <span class="name">${esc(gross)}</span>
+        ${unten}
       </span>
-      <span class="foot">${chips.join('')}</span>
+      ${chips(o.frist_tage, o.offene_positionen)}
     </button>`;
 }
 
-/* Einheiten derselben Adresse gehoeren zusammen. Gruppiert wird nur, wo es
-   wirklich mehrere sind — bei lauter Einzelobjekten waere jede Ueberschrift
-   nur eine Zeile Rauschen ueber einer einzigen Kachel. */
-function gruppieren(objekte) {
-  const schluessel = o => [o.plz, o.ort, o.strasse]
-    .map(t => String(t || '').trim().toLowerCase()).filter(Boolean).join(' ');
+/* Oberkachel einer Adresse: Stammdaten und die zusammengefassten Zahlen.
+   Sie fuehrt bewusst NICHT auf ein Objekt — die Adresse ist kein Objekt, die
+   Wahl "erstes der Gruppe" waere willkuerlich. Stattdessen klappt sie die
+   Einheiten auf und zu; angeklickt wird die Einheit, die man wirklich meint. */
+function hauskachel(g, id) {
+  const einheiten = g.objekte.reduce((s, o) => s + (o.einheiten || 1), 0);
+  const offen = g.objekte.reduce((s, o) => s + (o.offene_positionen || 0), 0);
+  const fristen = g.objekte.map(o => o.frist_tage).filter(t => t !== null && t !== undefined);
+  const frist = fristen.length ? Math.min(...fristen) : null;
 
+  return `<section class="haus">
+      <button class="tile haus-kopf" aria-expanded="true" aria-controls="${id}"
+              data-gruppe="${id}">
+        <span class="ico">${logoSvg(g.objekte[0].typ)}</span>
+        <span class="txt">
+          ${g.ort ? `<span class="ortszeile">${esc(g.ort)}</span>` : ''}
+          <span class="name">${esc(g.strasse)}</span>
+          <span class="einheit">${einheiten} Einheiten</span>
+        </span>
+        <span class="klapp" aria-hidden="true">▾</span>
+        ${chips(frist, offen)}
+      </button>
+      <div class="grid" id="${id}">${g.objekte.map(o => kachel(o, true)).join('')}</div>
+    </section>`;
+}
+
+/* Einheiten derselben Adresse gehoeren zusammen. Gruppiert wird nur, wo es
+   wirklich mehrere sind — eine Oberkachel ueber einer einzigen Einheit waere
+   nur eine leere Huelle. Geschluesselt wird nach der ZERLEGTEN Adresse, nicht
+   nach den Rohfeldern: sonst faende sich nichts zusammen, wo die Strasse im
+   Namen statt im Feld `strasse` steht. */
+function gruppieren(objekte) {
   const eimer = new Map();
   for (const o of objekte) {
-    const k = schluessel(o);
-    if (!k) { eimer.set(`einzeln:${o.slug}`, { titel: '', objekte: [o] }); continue; }
-    if (!eimer.has(k)) eimer.set(k, {
-      titel: [o.strasse, o.ort].filter(Boolean).join(' · '), objekte: [],
-    });
+    const h = o._h;
+    const k = [sauber(o.plz), h.ort, h.strasse].filter(Boolean).join(' ').toLowerCase();
+    if (!k) { eimer.set(`einzeln:${o.slug}`, { objekte: [o] }); continue; }
+    if (!eimer.has(k)) eimer.set(k, { ort: h.ort, strasse: h.strasse, objekte: [] });
     eimer.get(k).objekte.push(o);
   }
-
   const gruppen = [...eimer.values()].filter(g => g.objekte.length > 1);
   const einzeln = [...eimer.values()].filter(g => g.objekte.length === 1)
     .flatMap(g => g.objekte);
@@ -118,14 +242,12 @@ try {
   } else {
     const n = objekte.length;
     sub.textContent = `${n} ${n === 1 ? 'Objekt' : 'Objekte'} · ImmoCalc`;
+    for (const o of objekte) o._h = hierarchie(o);
     const { gruppen, einzeln } = gruppieren(objekte);
-    ziel.innerHTML = gruppen.map(g => `
-        <div class="gruppe">${esc(g.titel)}
-          <span class="anzahl">${g.objekte.length} Einheiten</span></div>
-        <div class="grid">${g.objekte.map(kachel).join('')}</div>`).join('')
+    ziel.innerHTML = gruppen.map((g, i) => hauskachel(g, `haus${i}`)).join('')
       + (einzeln.length
-        ? (gruppen.length ? '<div class="gruppe">Weitere</div>' : '')
-          + `<div class="grid">${einzeln.map(kachel).join('')}</div>`
+        ? (gruppen.length ? '<div class="gruppe">Einzelne Einheiten</div>' : '')
+          + `<div class="grid">${einzeln.map(o => kachel(o)).join('')}</div>`
         : '');
   }
 } catch (e) {
@@ -138,6 +260,13 @@ try {
 }
 
 ziel.addEventListener('click', e => {
+  const kopf = e.target.closest('[data-gruppe]');
+  if (kopf) {                       // Oberkachel: Einheiten auf-/zuklappen
+    const auf = kopf.getAttribute('aria-expanded') === 'true';
+    kopf.setAttribute('aria-expanded', auf ? 'false' : 'true');
+    document.getElementById(kopf.dataset.gruppe).hidden = auf;
+    return;
+  }
   const t = e.target.closest('[data-slug]');
   if (t) location.href = `objekt.html?o=${encodeURIComponent(t.dataset.slug)}`;
 });

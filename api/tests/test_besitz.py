@@ -70,6 +70,79 @@ def test_unsinnige_tausendstel_werden_abgelehnt():
             assert antwort.status_code == 400
 
 
+def test_drei_gleiche_anteile_gelten_als_vollstaendig():
+    """333,3 dreimal ergibt 999,9 — auf eine Nachkommastelle ist das voll."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Drittelweg 7")
+        for name in ("Erster", "Zweiter", "Dritter"):
+            e = c.post("/api/eigentuemer", json={"name": name}).json()["id"]
+            c.post(f"/api/objekte/{slug}/anteile",
+                   json={"eigentuemer_id": e, "promille": 333.3})
+
+        stand = c.get(f"/api/objekte/{slug}/anteile").json()
+        assert stand["vergeben"] == 999.9
+        assert stand["frei"] == 0.1
+        assert stand["stimmig"] is True
+
+
+def test_rolle_haengt_am_objekt_nicht_an_der_person():
+    with TestClient(app) as c:
+        allein = _objekt(c, "Alleinweg 8")
+        geteilt = _objekt(c, "Geteiltweg 9")
+        e = c.post("/api/eigentuemer", json={"name": "Doppelrolle"}).json()["id"]
+        c.post(f"/api/objekte/{allein}/anteile",
+               json={"eigentuemer_id": e, "promille": 1000})
+        c.post(f"/api/objekte/{geteilt}/anteile",
+               json={"eigentuemer_id": e, "promille": 250})
+
+        rollen = {a["slug"]: a["rolle"] for a in
+                  next(x for x in c.get("/api/eigentuemer").json()
+                       if x["id"] == e)["objekte"]}
+        assert rollen[allein] == "Alleineigentümer"
+        assert rollen[geteilt] == "Miteigentümer"
+
+        zeile = c.get(f"/api/objekte/{geteilt}/anteile").json()["anteile"][0]
+        assert zeile["rolle"] == "Miteigentümer"
+        assert zeile["promille"] == 250.0
+
+
+def test_bestehende_ganzzahlige_anteile_ueberleben_die_erweiterung():
+    """Zeilen ohne `promille` — wie sie in der gewachsenen Datenbank stehen —
+    werden weiter ueber `tausendstel` gelesen."""
+    from sqlmodel import Session, select
+
+    from app.db import engine
+    from app.models import Anteil
+
+    with TestClient(app) as c:
+        slug = _objekt(c, "Bestandsweg 10")
+        e = c.post("/api/eigentuemer", json={"name": "Bestand"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "tausendstel": 700})
+
+        with Session(engine) as s:                      # Altzustand nachstellen
+            a = s.exec(select(Anteil).where(Anteil.eigentuemer_id == e)).one()
+            a.promille = None
+            s.add(a)
+            s.commit()
+
+        stand = c.get(f"/api/objekte/{slug}/anteile").json()
+        assert stand["vergeben"] == 700.0
+        assert stand["anteile"][0]["promille"] == 700.0
+        assert stand["frei"] == 300.0
+        assert stand["stimmig"] is False
+
+
+def test_anteilsstand_zeigt_auch_objekte_ohne_beteiligung():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Ohneweg 11")
+        zeile = next(z for z in c.get("/api/anteile/stand").json()
+                     if z["slug"] == slug)
+        assert zeile["beteiligte"] == 0
+        assert zeile["frei"] == 1000.0
+        assert zeile["stimmig"] is False
+
+
 def test_vermoegen_rechnet_wert_minus_restschuld():
     with TestClient(app) as c:
         slug = _objekt(c, "Vermögensweg 5", kaufpreis=400000.0,

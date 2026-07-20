@@ -21,7 +21,9 @@ const SEITEN = [
   { datei: 'eingang.html', name: 'eingang' },
   { datei: 'objekt.html?o=obj-a', name: 'objekt' },
   { datei: 'zeitraum.html?z=1', name: 'zeitraum' },
-  { datei: 'statistik.html', name: 'auswertung' },
+  { datei: 'wertentwicklung.html', name: 'wertentwicklung' },
+  { datei: 'nebenkosten.html', name: 'nebenkosten' },
+  { datei: 'eigentuemer.html', name: 'eigentuemer' },
   { datei: 'settings.html', name: 'einstellungen' },
   { datei: 'onboarding.html', name: 'wizard' },
 ];

@@ -199,7 +199,11 @@ class Eigentuemer(SQLModel, table=True):
     Steht für sich — dieselbe Person kann an mehreren Objekten beteiligt sein."""
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    rolle: str = "Eigentümer"      # 'Eigentümer' | 'Miteigentümer' | 'Gesellschaft'
+    # Historisch: die Rolle hing an der Person. Ob jemand Allein- oder
+    # Miteigentuemer ist, entscheidet sich aber je Immobilie — die Rolle sitzt
+    # deshalb an `Anteil`. Das Feld bleibt stehen (Spalten werden nie entfernt)
+    # und wird nicht mehr ausgewertet.
+    rolle: str = "Eigentümer"
     email: str = ""
     telefon: str = ""
     anschrift: str = ""
@@ -208,11 +212,25 @@ class Eigentuemer(SQLModel, table=True):
 
 
 class Anteil(SQLModel, table=True):
-    """Beteiligung in Tausendsteln. 1000 = Alleineigentum."""
+    """Beteiligung an genau einem Objekt. 1000 ‰ = Alleineigentum."""
     id: Optional[int] = Field(default=None, primary_key=True)
     objekt_id: int = Field(foreign_key="objekt.id", index=True)
     eigentuemer_id: int = Field(foreign_key="eigentuemer.id", index=True)
+    # Ganzzahlig und deshalb zu grob: 1000/3 geht nie auf. Bleibt als gerundeter
+    # Wert gepflegt, weil aeltere Leser (Vermoegensuebersicht, Objektseite)
+    # darauf zugreifen — massgeblich ist `promille`.
     tausendstel: int = 1000
+    # Bewusst ohne Vorgabe: eine gewachsene Datenbank bekommt die Spalte per
+    # migrate.py als NULL und faellt beim Lesen auf `tausendstel` zurueck.
+    # Mit einer Vorgabe von 1000.0 wuerde ein bestehender 600er-Anteil
+    # stillschweigend zu Alleineigentum.
+    promille: Optional[float] = None
+    # Die Rolle gehoert ans Objekt, nicht an die Person: dieselbe Person kann
+    # ein Haus allein und am naechsten mit 300 ‰ besitzen. Sie wird aus den
+    # Promille abgeleitet statt von Hand gewaehlt — eine handverlesene Rolle
+    # koennte den Anteilen widersprechen (600 ‰ und trotzdem
+    # „Alleineigentuemer"), eine abgeleitete nie.
+    rolle: str = "Eigentümer"
     notiz: str = ""
 
 

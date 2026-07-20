@@ -136,8 +136,10 @@
   <nav class="nav">
     <a class="brand" href="index.html">ImmoCalc</a>
     <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
-    <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
+    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
+    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
+    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
+    <a href="eigentuemer.html"><span class="ni">☗</span>Eigentümer</a>
     <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
   </nav>
 </div>
@@ -293,6 +295,13 @@ const STAMMFELDER = [
 
 const datum = s => s ? new Date(s).toLocaleDateString('de-DE') : '';
 
+/* Tausendstel mit hoechstens einer Nachkommastelle — 333,3 statt 333,29999.
+   Ohne Tausenderpunkt, sonst liest sich "1.000 ‰" wie eintausend Komma null. */
+const zahl = n => Number(n ?? 0).toLocaleString('de-DE',
+  { maximumFractionDigits: 1, useGrouping: false });
+/* Bestandszeilen kennen nur `tausendstel`; neue tragen `promille`. */
+const promille = a => zahl(a.promille ?? a.tausendstel ?? 0);
+
 function stammwert(f, o) {
   const v = o[f.k];
   if (v == null || v === '') return null;
@@ -380,17 +389,21 @@ function eigentuemerHtml(stand) {
     ? stand.anteile.map(a => `<div class="eintrag">
         <span class="sym">${kostenIcon('Eigentümer')}</span>
         <span class="et"><span class="en">${esc(a.name)}</span>
-          ${a.notiz ? `<span class="ed">${esc(a.notiz)}</span>` : ''}</span>
-        <span class="ew">${a.tausendstel} ‰</span>
+          <span class="ed">${esc([a.rolle, a.notiz].filter(Boolean).join(' · '))}</span>
+        </span>
+        <span class="ew">${promille(a)} ‰</span>
         <button class="del" data-anteil="${a.id}" aria-label="entfernen">×</button>
       </div>`).join('')
     : `<div class="leerzeile">Noch kein Eigentümer zugeordnet</div>`;
 
-  const rest = stand.anteile.length && !stand.stimmig
+  // Auch ohne jede Zuordnung hinweisen — ein Objekt ganz ohne Eigentümer
+  // fällt sonst nirgends auf.
+  const rest = !stand.stimmig
     ? `<div class="merker"><span class="hi">!</span><span class="ht">
-         <span class="t">${stand.frei > 0 ? `${stand.frei} ‰ nicht verteilt`
-                                          : `${-stand.frei} ‰ zu viel verteilt`}</span>
-         <span class="d">Die Anteile sollten zusammen 1000 ‰ ergeben.</span>
+         <span class="t">${stand.frei > 0 ? `${zahl(stand.frei)} ‰ nicht verteilt`
+                                          : `${zahl(-stand.frei)} ‰ zu viel verteilt`}</span>
+         <span class="d">Die Anteile sollten zusammen 1000 ‰ ergeben.
+           Eine Nachkommastelle genügt — 333,3 dreimal gilt als vollständig.</span>
        </span></div>` : '';
 
   return `<div class="sekopf"><h2 class="sec">Eigentümer</h2>
@@ -654,7 +667,7 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
       await api(`/objekte/${encodeURIComponent(slug)}/anteile`, {
         method: 'POST',
         body: { eigentuemer_id: Number(werte.eigentuemer_id),
-                tausendstel: Number(werte.tausendstel) || 1000,
+                promille: Number(werte.promille) || 1000,
                 notiz: werte.notiz || '' },
       });
     } else if (absicht === 'zeitraum') {
@@ -694,7 +707,7 @@ async function anteilFormular() {
   ANTEILFELDER = [
     { k: 'eigentuemer_id', l: 'Eigentümer', typ: 'select',
       werte: eigner.map(e => e.name) },
-    { k: 'tausendstel', l: 'Anteil in Tausendstel', typ: 'number', schritt: '1',
+    { k: 'promille', l: 'Anteil in Tausendstel (‰)', typ: 'number', schritt: '0.1',
       vorgabe: 1000, pflicht: true },
     { k: 'notiz', l: 'Notiz', typ: 'text' },
   ];
