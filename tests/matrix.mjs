@@ -18,6 +18,7 @@ const GERAETE = [
 
 const SEITEN = [
   { datei: 'index.html', name: 'start' },
+  { datei: 'eingang.html', name: 'eingang' },
   { datei: 'objekt.html?o=obj-a', name: 'objekt' },
   { datei: 'statistik.html', name: 'auswertung' },
   { datei: 'settings.html', name: 'einstellungen' },
@@ -80,6 +81,16 @@ for (const geraet of GERAETE) {
     }
 
     melde(jsFehler.length === 0, `${kennung}: ${jsFehler[0] || ''}`);
+
+    // Abgefangene Fehler enden als Meldung in der Oberfläche und lösen kein
+    // pageerror aus — hier würden sie sonst unbemerkt durchrutschen.
+    const stoerung = await page.$$eval(
+      '.hinweisbox .big, .empty .big, .chartleer, .row .d, .bar .sub',
+      els => els.filter(e => e.offsetParent !== null)
+        .map(e => (e.textContent || '').trim())
+        .filter(t => /nicht verfügbar|nicht erreichbar|nicht abrufbar|keine verbindung|fehler/i
+          .test(t)));
+    melde(stoerung.length === 0, `${kennung}: Fehlerzustand -> ${stoerung.join(' | ')}`);
 
     await page.screenshot({
       path: `${ZIEL}/${geraet.name}-${seite.name}.png`, fullPage: true });

@@ -49,6 +49,7 @@
                      color:var(--soft)}
   .strukturliste{font:500 11.5px var(--mono);color:var(--soft);background:var(--sheet);
                  border-radius:11px;padding:12px 14px;margin-bottom:12px;line-height:1.7}
+  .zeile2{display:flex;gap:10px} .zeile2 > *{flex:1}
 </style>
 </head>
 <body>
@@ -75,6 +76,16 @@
       <span class="txt">
         <span class="t">Home-Ordner</span>
         <span class="d" id="ncHome">erst Verbindung einrichten</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+
+    <h2 class="sec">Versand</h2>
+    <button class="row" id="mailRow">
+      <span class="ic">✉</span>
+      <span class="txt">
+        <span class="t">Postfach für Abrechnungen</span>
+        <span class="d" id="mailStatus">wird geprüft …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -137,6 +148,7 @@
 
   <nav class="nav">
     <a href="index.html"><span class="ni">▤</span>Objekte</a>
+    <a href="eingang.html"><span class="ni">▼</span>Eingang</a>
     <a href="statistik.html"><span class="ni">◔</span>Auswertung</a>
     <a href="settings.html" aria-current="page"><span class="ni">⚙</span>Einstellungen</a>
   </nav>
@@ -174,6 +186,62 @@
   </div>
 </dialog>
 
+<dialog id="mailDlg">
+  <div class="dh">
+    <h2>Postfach verbinden</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      Abrechnungen gehen dann von deiner eigenen Adresse an die Mieter — nicht
+      von einem App-Absender. Bei <b>GMX</b> muss der Versand über externe
+      Programme einmal freigeschaltet sein:
+      <b>Einstellungen → POP3/IMAP</b>.
+    </p>
+    <div class="meldung" id="mailMeldung"></div>
+    <form id="mailForm">
+      <div class="field">
+        <label for="mailAnbieter">Anbieter</label>
+        <select class="inp" id="mailAnbieter"></select>
+      </div>
+      <div class="zeile2" id="mailServerZeile" style="display:none">
+        <div class="field">
+          <label for="mailServer">Server</label>
+          <input class="inp" id="mailServer" placeholder="smtp.anbieter.de">
+        </div>
+        <div class="field" style="flex:0 0 96px">
+          <label for="mailPort">Port</label>
+          <input class="inp" id="mailPort" type="number" value="587">
+        </div>
+      </div>
+      <div class="field">
+        <label for="mailBenutzer">E-Mail-Adresse</label>
+        <input class="inp" id="mailBenutzer" type="email" required
+               autocomplete="username" placeholder="name@gmx.de">
+      </div>
+      <div class="field">
+        <label for="mailPass">Passwort</label>
+        <input class="inp" id="mailPass" type="password" required
+               autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="mailName">Absendername (optional)</label>
+        <input class="inp" id="mailName" placeholder="Roman Heidenreich">
+      </div>
+      <button class="btn" type="submit" id="mailSpeichern">Verbinden und prüfen</button>
+    </form>
+    <div id="mailTestbereich" style="display:none;margin-top:14px">
+      <div class="field">
+        <label for="mailTestAn">Testnachricht an</label>
+        <input class="inp" id="mailTestAn" type="email" placeholder="eigene@adresse.de">
+      </div>
+      <button class="btn" id="mailTest"
+              style="background:transparent;color:var(--teal-d);
+                     box-shadow:inset 0 0 0 1.5px var(--line)">Testmail senden</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="ordnerDlg">
   <div class="dh">
     <h2>Home-Ordner wählen</h2>
@@ -193,7 +261,7 @@
 </dialog>
 
 <script type="module">
-import { api } from './assets/immo.js';
+import { api, esc } from './assets/immo.js';
 
 const build = document.getElementById('build');
 const sub = document.getElementById('sub');
@@ -330,10 +398,106 @@ document.getElementById('homeWaehlen').addEventListener('click', async () => {
   }
 });
 
+/* ---- Postfach für den Versand der Abrechnungen ---- */
+const mailDlg = document.getElementById('mailDlg');
+const mailStatus = document.getElementById('mailStatus');
+const mailMeldung = document.getElementById('mailMeldung');
+const anbieterWahl = document.getElementById('mailAnbieter');
+const serverZeile = document.getElementById('mailServerZeile');
+let anbieterListe = [];
+
+function anbieterUebernehmen() {
+  const a = anbieterListe.find(x => x.id === anbieterWahl.value);
+  if (!a) return;
+  // Nur beim freien Anbieter muss der Server von Hand eingetragen werden
+  serverZeile.style.display = a.id === 'custom' ? 'flex' : 'none';
+  document.getElementById('mailServer').value = a.server;
+  document.getElementById('mailPort').value = a.port;
+}
+
+async function mailZustand() {
+  try {
+    const [{ anbieter }, status] = await Promise.all([
+      api('/mail/anbieter'), api('/mail/status'),
+    ]);
+    anbieterListe = anbieter;
+    anbieterWahl.innerHTML = anbieter.map(a =>
+      `<option value="${a.id}" ${status.anbieter === a.id ? 'selected' : ''}>${
+        esc(a.name)}</option>`).join('');
+    anbieterUebernehmen();
+
+    if (status.verbunden) {
+      mailStatus.textContent = `${status.absender} · ${status.server}`;
+      document.getElementById('mailBenutzer').value = status.benutzer;
+      document.getElementById('mailName').value = status.absender_name || '';
+      document.getElementById('mailTestbereich').style.display = 'block';
+      document.getElementById('mailTestAn').value = status.absender;
+    } else {
+      mailStatus.textContent = 'noch nicht verbunden';
+    }
+  } catch {
+    mailStatus.textContent = 'Status nicht abrufbar';
+  }
+}
+
+anbieterWahl.addEventListener('change', anbieterUebernehmen);
+
+document.getElementById('mailRow').addEventListener('click', () => {
+  meldungWeg(mailMeldung);
+  mailDlg.showModal();
+});
+
+document.getElementById('mailForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const knopf = document.getElementById('mailSpeichern');
+  knopf.disabled = true;
+  knopf.textContent = 'Melde an …';
+  meldungWeg(mailMeldung);
+  try {
+    await api('/mail/verbindung', {
+      method: 'POST',
+      body: {
+        anbieter: anbieterWahl.value,
+        server: document.getElementById('mailServer').value.trim(),
+        port: Number(document.getElementById('mailPort').value) || 587,
+        benutzer: document.getElementById('mailBenutzer').value.trim(),
+        passwort: document.getElementById('mailPass').value,
+        absender: document.getElementById('mailBenutzer').value.trim(),
+        absender_name: document.getElementById('mailName').value.trim(),
+      },
+    });
+    melde(mailMeldung, 'Postfach verbunden. Jetzt eine Testmail schicken.', true);
+    await mailZustand();
+  } catch (fehler) {
+    melde(mailMeldung, String(fehler.message || fehler));
+  } finally {
+    knopf.disabled = false;
+    knopf.textContent = 'Verbinden und prüfen';
+  }
+});
+
+document.getElementById('mailTest').addEventListener('click', async () => {
+  const an = document.getElementById('mailTestAn').value.trim();
+  if (!an) return melde(mailMeldung, 'Bitte eine Empfängeradresse angeben');
+  const knopf = document.getElementById('mailTest');
+  knopf.disabled = true;
+  knopf.textContent = 'Sende …';
+  try {
+    await api('/mail/test', { method: 'POST', body: { an } });
+    melde(mailMeldung, `Testmail an ${an} verschickt.`, true);
+  } catch (fehler) {
+    melde(mailMeldung, String(fehler.message || fehler));
+  } finally {
+    knopf.disabled = false;
+    knopf.textContent = 'Testmail senden';
+  }
+});
+
 document.querySelectorAll('[data-schliessen]').forEach(knopf =>
   knopf.addEventListener('click', () => knopf.closest('dialog').close()));
 
 await zustandLaden();
+await mailZustand();
 </script>
 </body>
 </html>
