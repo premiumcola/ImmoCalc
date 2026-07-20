@@ -4,7 +4,7 @@ Alle Anforderungen aus den Gesprächen, fortlaufend nummeriert. Erledigtes mit
 Commit, Offenes mit dem, was noch fehlt. Diese Liste wird bei jeder neuen
 Anforderung fortgeschrieben — nichts muss doppelt gesagt werden.
 
-Stand: 20.07.2026 · 82 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
+Stand: 20.07.2026 · 133 pytest grün · 9 Seiten × 3 Geräteklassen geprüft
 
 **Grundsatz aus dem Gespräch:** möglichst direkt bedienbar. Was man häufig
 tut, gehört an die Oberfläche — nicht hinter einen zweiten Klick. Und nichts,
@@ -78,18 +78,18 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | LXII | Auswahlmenüs im eigenen Design statt Systemliste | `f496e6a` |
 | LXIII | Name aus Straße, Ort und Einheit — Feld entfällt | `f496e6a` |
 | LXIV | Löschen per Schiebe-Regler statt Browser-Kasten | `f496e6a` |
-| LXVII | Doppelklick legt keine zwei Eigentümer mehr an | offen bis Commit |
-| LXXIII | Texterkennung: Betrag, Datum **und** Kategorieart aus dem Text | offen bis Commit |
-| LXXIV | Mehrseitig fotografieren → ein PDF (mit pypdf gegengeprüft) | offen bis Commit |
-| LXXVII | Benennung Ort → Straße → Einheit in den Kacheln | offen bis Commit |
-| LXXVIII | Hauslogos in den Kacheln größer | offen bis Commit |
-| LXXIX | Zusammengehörige Einheiten: Oberkachel mit angedockten Kacheln | offen bis Commit |
-| LXXX | Eigentümer als eigener Menüpunkt | offen bis Commit |
-| LXXXI | Rolle wird aus dem Anteil abgeleitet, je Objekt | offen bis Commit |
-| LXXXII | Tausendstel auf eine Nachkommastelle, Fehlendes wird angezeigt | offen bis Commit |
-| LXXXIII | Auswertung geteilt: Wertentwicklung und Nebenkostenabrechnung | offen bis Commit |
-| LXXXIV | Menüleiste mit sechs Einträgen | offen bis Commit |
-| LXXXV | „Eingang" heißt jetzt „Dokumente" | offen bis Commit |
+| LXVII | Doppelklick legt keine zwei Eigentümer mehr an | `19fdf4f` |
+| LXXIII | Texterkennung: Betrag, Datum **und** Kategorieart aus dem Text | `19fdf4f` |
+| LXXIV | Mehrseitig fotografieren → ein PDF (mit pypdf gegengeprüft) | `19fdf4f` |
+| LXXVII | Benennung Ort → Straße → Einheit in den Kacheln | `19fdf4f` |
+| LXXVIII | Hauslogos in den Kacheln größer | `19fdf4f` |
+| LXXIX | Zusammengehörige Einheiten: Oberkachel mit angedockten Kacheln | `19fdf4f` |
+| LXXX | Eigentümer als eigener Menüpunkt | `19fdf4f` |
+| LXXXI | Rolle wird aus dem Anteil abgeleitet, je Objekt | `19fdf4f` |
+| LXXXII | Tausendstel auf eine Nachkommastelle, Fehlendes wird angezeigt | `19fdf4f` |
+| LXXXIII | Auswertung geteilt: Wertentwicklung und Nebenkostenabrechnung | `19fdf4f` |
+| LXXXIV | Menüleiste mit sechs Einträgen | `19fdf4f` |
+| LXXXV | „Eingang" heißt jetzt „Dokumente" | `19fdf4f` |
 
 ---
 
@@ -113,10 +113,6 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 |---|---|---|
 | LXXV | **Dokumentenablage ohne Verschachtelung** | direkter, effizienter Weg; so viel wie möglich automatisch zuordnen, aber Verschieben, Korrigieren, Löschen und Neu-Scannen bleiben möglich |
 | LXXVI | **Dynamisch, filterbar, smart** | keine Dopplungen in der Darstellung |
-
-| LXXXIII | **Auswertung in zwei Punkte teilen** | „Wertentwicklung" (Wert, Cashflow, Mietverlauf) und „Nebenkostenabrechnung" — zwei getrennte Seiten |
-| LXXXIV | **Menüleiste mit sechs Einträgen** | Objekte · Dokumente · Wert · Nebenkosten · Eigentümer · Einstellungen — weniger Durchklicken |
-| LXXXV | **„Eingang" heißt jetzt „Dokumente"** | |
 
 ### Bewusst zurückgestellt
 
