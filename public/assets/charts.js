@@ -94,6 +94,129 @@ export function linie(jahre, reihen, { breite = 380, hoehe = 165 } = {}) {
     </svg>`;
 }
 
+/** Sankey: Bandbreite entspricht dem Betrag. Knoten tragen eine Spaltennummer,
+ *  Flüsse verbinden sie. Bewusst ohne Bibliothek — die Ebenen sind vorgegeben,
+ *  also genügt eine Höhenaufteilung je Spalte statt eines Layout-Algorithmus. */
+export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
+                                        luecke = 12, format = v => String(v) } = {}) {
+  const aktiv = fluss.filter(f => f.wert > 0);
+  if (!aktiv.length) return leer('Noch keine Zahlen für diesen Zeitraum');
+
+  const spalten = [...new Set(knoten.map(k => k.spalte))].sort((a, b) => a - b);
+  const summeAus = i => aktiv.filter(f => f.von === i).reduce((s, f) => s + f.wert, 0);
+  const summeEin = i => aktiv.filter(f => f.nach === i).reduce((s, f) => s + f.wert, 0);
+  const gewicht = i => Math.max(summeAus(i), summeEin(i));
+
+  const benutzt = new Set(aktiv.flatMap(f => [f.von, f.nach]));
+  const gesamt = Math.max(...spalten.map(s =>
+    knoten.reduce((sum, k, i) => sum + (k.spalte === s && benutzt.has(i) ? gewicht(i) : 0), 0)));
+  if (!gesamt) return leer('Keine Beträge');
+
+  // Höhe so wählen, dass auch der kleinste Block noch sichtbar ist
+  const proSpalte = Math.max(...spalten.map(s =>
+    knoten.filter((k, i) => k.spalte === s && benutzt.has(i)).length));
+  const hoehe = Math.max(190, proSpalte * (zeilenhoehe + luecke));
+  const skala = (hoehe - luecke * (proSpalte - 1)) / gesamt;
+
+  const knotenBreite = 13;
+  const spaltenX = s => spalten.length === 1 ? 0
+    : (s / (spalten.length - 1)) * (breite - knotenBreite);
+
+  // Knoten je Spalte stapeln
+  const lage = new Map();
+  for (const s of spalten) {
+    const drin = knoten.map((k, i) => ({ k, i }))
+      .filter(({ k, i }) => k.spalte === s && benutzt.has(i));
+    const gesamtHoehe = drin.reduce((sum, { i }) => sum + gewicht(i) * skala, 0)
+      + luecke * (drin.length - 1);
+    let y = (hoehe - gesamtHoehe) / 2;
+    for (const { i } of drin) {
+      const h = Math.max(2, gewicht(i) * skala);
+      lage.set(i, { x: spaltenX(s), y, h, spalte: s });
+      y += h + luecke;
+    }
+  }
+
+  // Anschlusspunkte je Knoten fortlaufend vergeben
+  const ausOffset = new Map(), einOffset = new Map();
+  const baender = aktiv.map((f, n) => {
+    const a = lage.get(f.von), b = lage.get(f.nach);
+    if (!a || !b) return '';
+    const ha = f.wert * skala, hb = f.wert * skala;
+    const y0 = a.y + (ausOffset.get(f.von) || 0);
+    const y1 = b.y + (einOffset.get(f.nach) || 0);
+    ausOffset.set(f.von, (ausOffset.get(f.von) || 0) + ha);
+    einOffset.set(f.nach, (einOffset.get(f.nach) || 0) + hb);
+
+    const x0 = a.x + knotenBreite, x1 = b.x;
+    const mitte = (x0 + x1) / 2;
+    const d = `M${x0},${y0} C${mitte},${y0} ${mitte},${y1} ${x1},${y1}
+               L${x1},${y1 + hb} C${mitte},${y1 + hb} ${mitte},${y0 + ha} ${x0},${y0 + ha} Z`;
+    return `<path d="${d}" fill="${farbe(n)}" fill-opacity=".34"><title>${
+      knoten[f.von].name} → ${knoten[f.nach].name}: ${format(f.wert)}</title></path>`;
+  }).join('');
+
+  // Beschriftungen je Spalte kollisionsfrei stapeln: dünne Baender liegen sonst
+  // so dicht, dass Name und Betrag uebereinanderfallen. Die Baender selbst
+  // bleiben massstabsgetreu — nur die Schrift rueckt aus.
+  const MINDEST_ABSTAND = 27;
+  const labelY = new Map();
+  for (const s of spalten) {
+    const drin = [...lage.entries()]
+      .filter(([, l]) => l.spalte === s)
+      .sort((a, b) => a[1].y - b[1].y);
+    let letzte = -Infinity;
+    for (const [i, l] of drin) {
+      const y = Math.max(l.y + l.h / 2, letzte + MINDEST_ABSTAND);
+      labelY.set(i, y);
+      letzte = y;
+    }
+  }
+
+  const kaesten = [...lage.entries()].map(([i, l]) => {
+    const rechts = l.spalte === spalten[spalten.length - 1];
+    const mittig = !rechts && l.spalte !== spalten[0];
+
+    // Mittelspalten beschriften wir ueber dem Kasten — seitlich wuerde die
+    // Schrift in die Beschriftung der Nachbarspalte laufen.
+    if (mittig) {
+      return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
+                    rx="3" fill="${farbe(i)}"/>
+        <text x="${l.x + knotenBreite / 2}" y="${l.y - 14}" class="kn"
+              text-anchor="middle">${knoten[i].name}</text>
+        <text x="${l.x + knotenBreite / 2}" y="${l.y - 3}" class="kw"
+              text-anchor="middle">${format(gewicht(i))}</text>`;
+    }
+
+    const tx = rechts ? l.x - 8 : l.x + knotenBreite + 8;
+    const anker = rechts ? 'end' : 'start';
+    const ly = labelY.get(i);
+    // Fuehrungslinie, wenn die Schrift vom Kasten wegrutschen musste
+    const versatz = Math.abs(ly - (l.y + l.h / 2)) > 3
+      ? `<line x1="${rechts ? l.x : l.x + knotenBreite}" y1="${l.y + l.h / 2}"
+               x2="${rechts ? l.x - 5 : l.x + knotenBreite + 5}" y2="${ly - 3}"
+               stroke="#B9C4C5" stroke-width="1"/>` : '';
+    return `${versatz}<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
+                  rx="3" fill="${farbe(i)}"/>
+      <text x="${tx}" y="${ly - 3}" class="kn" text-anchor="${anker}">${knoten[i].name}</text>
+      <text x="${tx}" y="${ly + 10}" class="kw" text-anchor="${anker}">${
+        format(gewicht(i))}</text>`;
+  }).join('');
+
+  // Auf schmalen Schirmen wird das SVG stark verkleinert — dort brauchen
+  // Rand und Schrift im viewBox mehr Mass, damit die Beschriftung lesbar bleibt.
+  const schmal = breite < 400;
+  const rand = schmal ? 66 : 96;
+  // oben Platz fuer die Beschriftung der Mittelspalte
+  return `<svg viewBox="${-rand} -28 ${breite + rand * 2} ${hoehe + 40}"
+               class="chart sankey" role="img">
+      <style>
+        .kn{font:600 ${schmal ? 13 : 11}px var(--disp);fill:var(--ink)}
+        .kw{font:500 ${schmal ? 12 : 10}px var(--mono);fill:var(--soft)}
+      </style>${baender}${kaesten}
+    </svg>`;
+}
+
 export function legende(eintraege) {
   return `<div class="legende">` + eintraege.map((e, i) =>
     `<span class="le"><i style="background:${e.farbe || farbe(i)}"></i>${e.name}</span>`

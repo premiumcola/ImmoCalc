@@ -24,6 +24,10 @@ class Objekt(SQLModel, table=True):
     kaufdatum: Optional[date] = None
     verkehrswert: Optional[float] = None
     nc_ordner: str = ""           # verknüpfter Nextcloud-Ordner
+    # Konto, von dem die Kosten dieses Objekts abgebucht werden
+    bank: str = ""
+    iban: str = ""
+    kontoinhaber: str = ""
 
 
 class Einheit(SQLModel, table=True):
@@ -31,7 +35,10 @@ class Einheit(SQLModel, table=True):
     objekt_id: int = Field(foreign_key="objekt.id", index=True)
     bezeichnung: str
     nutzungsart: str = "Wohnen"
-    flaeche: Optional[float] = None
+    flaeche: Optional[float] = None          # Wohn-/Nutzfläche in m²
+    terrasse: Optional[float] = None         # Terrasse/Balkon in m²
+    nebenflaeche: Optional[float] = None     # Keller, Abstellraum in m²
+    stellplaetze: int = 0
 
 
 class Partei(SQLModel, table=True):
@@ -44,13 +51,23 @@ class Partei(SQLModel, table=True):
 
 
 class Kostenart(SQLModel, table=True):
-    """Katalog + Konfiguration: was gehört je Objekt zur Jahresabrechnung."""
+    """Katalog + Konfiguration: was gehört je Objekt zur Jahresabrechnung.
+
+    Jede Kostenart hat ihren eigenen Turnus — der Stromabrechnungszeitraum
+    kann Juni–Juni laufen, während das Objekt nach Kalenderjahr abrechnet.
+    `beleg_monat` sagt, wann die Jahresabrechnung des Versorgers erfahrungs-
+    gemäß eintrifft; daraus wird die Erinnerung abgeleitet."""
     id: Optional[int] = Field(default=None, primary_key=True)
     objekt_id: int = Field(foreign_key="objekt.id", index=True)
     name: str
     umlagefaehig: bool = True
     s35: bool = False
     aktiv: bool = True
+    turnus_start_monat: int = 1        # 1 = Januar; eigener Zeitraum der Kostenart
+    beleg_monat: Optional[int] = None  # Monat, in dem die Abrechnung vorliegt
+    erinnerung_tage: int = 7           # so viele Tage danach erinnern
+    lieferant: str = ""
+    kundennummer: str = ""
 
 
 class Zeitraum(SQLModel, table=True):
@@ -103,8 +120,13 @@ class Versicherung(SQLModel, table=True):
 
 
 class Miete(SQLModel, table=True):
-    """Ein Eintrag je Mietstand. Historie entsteht durch mehrere Einträge
-    mit unterschiedlichem `ab_datum` — daraus wird der Mietverlauf."""
+    """Ein Eintrag je Mietverhältnis/Mietstand. Historie entsteht durch mehrere
+    Einträge mit unterschiedlichem `ab_datum` — daraus wird der Mietverlauf.
+    Ein Eintrag mit `bis_datum` ist ein beendetes Mietverhältnis und bleibt als
+    Teil der Mieterhistorie erhalten.
+
+    Die Kontaktdaten hängen am Mietverhältnis, nicht an der Einheit: Beim
+    Mieterwechsel bleibt so nachvollziehbar, an wen welche Abrechnung ging."""
     id: Optional[int] = Field(default=None, primary_key=True)
     objekt_id: int = Field(foreign_key="objekt.id", index=True)
     einheit: str = ""              # Bezeichnung der Einheit, leer = ganzes Objekt
@@ -112,8 +134,15 @@ class Miete(SQLModel, table=True):
     kaltmiete: float = 0.0
     nebenkosten_vz: float = 0.0    # monatliche Vorauszahlung
     stellplatz: float = 0.0
+    sonstige: float = 0.0          # Möblierung, Werbefläche, Sonstiges
     ab_datum: date
     bis_datum: Optional[date] = None
+    # Kontakt für den Versand der Abrechnung
+    email: str = ""
+    telefon: str = ""
+    anschrift: str = ""
+    personen: int = 1
+    kaution: Optional[float] = None
     notiz: str = ""
 
 

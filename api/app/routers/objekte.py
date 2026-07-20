@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from ..db import get_session
 from ..engine import Position, abrechnung
+from ..erinnerungen import beleg_erinnerung, frist_erinnerung
 from ..frist import frist_tage
 from ..models import (Einheit, Kostenart, Kostenposition, Miete, Objekt,
                       Partei, Vorauszahlung, Zeitraum)
@@ -136,7 +137,8 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
     erlaubt = {"name", "ort", "strasse", "plz", "typ", "nutzung", "turnus",
-               "start_monat", "flaeche", "kaufpreis", "verkehrswert", "aktiv", "nc_ordner"}
+               "start_monat", "flaeche", "kaufpreis", "verkehrswert", "aktiv",
+               "nc_ordner", "bank", "iban", "kontoinhaber"}
     for k, v in data.items():
         if k in erlaubt:
             setattr(o, k, v)
@@ -151,6 +153,42 @@ def kostenarten(slug: str, session: Session = Depends(get_session)) -> list[Kost
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
     return session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
+
+
+@router.get("/erinnerungen")
+def erinnerungen(session: Session = Depends(get_session)) -> dict:
+    """Was ansteht: Abrechnungsfristen und erwartete Jahresabrechnungen.
+    Grundlage für Benachrichtigungen."""
+    heute = date.today()
+    offen = []
+    for o in session.exec(select(Objekt)).all():
+        if not o.aktiv:
+            continue
+        for z in session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all():
+            if z.status != "in Arbeit":
+                continue
+            label = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
+            hinweis = frist_erinnerung(label, frist_tage(z))
+            if hinweis:
+                offen.append({"objekt": o.slug, "name": o.name, **hinweis})
+
+            vorhanden = {p.kostenart for p in session.exec(
+                select(Kostenposition).where(
+                    Kostenposition.zeitraum_id == z.id)).all()
+                if p.status == "erledigt"}
+            for k in session.exec(
+                    select(Kostenart).where(Kostenart.objekt_id == o.id)).all():
+                if not k.aktiv:
+                    continue
+                hinweis = beleg_erinnerung(k.name, k.beleg_monat, k.erinnerung_tage,
+                                           k.name in vorhanden, heute)
+                if hinweis:
+                    offen.append({"objekt": o.slug, "name": o.name, **hinweis})
+
+    offen.sort(key=lambda e: (not e["faellig"], e["tage"]))
+    return {"heute": heute.isoformat(),
+            "faellig": sum(1 for e in offen if e["faellig"]),
+            "erinnerungen": offen}
 
 
 @router.get("/zeitraeume/{zid}/positionen")
