@@ -75,18 +75,22 @@
   .pruef .auf .rz{display:flex;justify-content:space-between;gap:10px;
                   font:500 12.5px var(--body);padding:4px 0}
   .pruef .auf .rz span:last-child{font-family:var(--mono);font-weight:600}
-  /* Scan an der offenen Position: einladend, aber nicht grell — gedecktes
-     Grün auf hellem Grund statt eines vollflächigen Knopfes. */
-  .scanknopf{display:flex;align-items:center;gap:11px;width:100%;margin-top:12px;
+  /* Scan direkt in der Zeile: einladend, aber nicht grell — gedecktes Grün
+     auf hellem Grund statt eines vollflächigen Knopfes. Steht neben dem
+     Zeilenknopf, nicht darin: Knöpfe lassen sich nicht schachteln. */
+  .pruef .kopf{display:flex;align-items:center;gap:8px;padding-right:15px}
+  .pruef .kopf > .zeile{flex:1;min-width:0;padding-right:2px}
+  .scanmini{display:flex;align-items:center;gap:7px;flex:none;
     border:1.5px solid #BFD9D1;background:var(--teal-l);color:var(--teal-d);
-    border-radius:12px;padding:11px 13px;cursor:pointer;text-align:left;
-    font-family:var(--body);min-height:48px}
-  .scanknopf:hover{background:#DCEDE7}
-  .scanknopf[disabled]{opacity:.65;cursor:default}
-  .scanknopf .si{font:400 17px var(--mono);line-height:1;flex:none}
-  .scanknopf > span:nth-child(2){font:600 13.5px var(--disp);letter-spacing:-.01em}
-  .scanknopf .sh{margin-left:auto;font:400 11px var(--body);color:var(--soft);
-                 text-align:right;flex:none}
+    border-radius:11px;padding:9px 11px;cursor:pointer;font-family:var(--body);
+    min-height:44px}
+  .scanmini:hover{background:#DCEDE7}
+  .scanmini[disabled]{opacity:.65;cursor:default}
+  .scanmini .si{font:400 15px var(--mono);line-height:1;flex:none}
+  .scanmini .st{font:600 11.5px var(--disp);letter-spacing:-.005em;
+                white-space:nowrap}
+  /* Auf dem Handy wird es sonst zu eng — dort trägt das Symbol allein. */
+  @media(max-width:409px){ .scanmini .st{display:none} }
   .nachtrag{display:flex;gap:8px;margin-top:10px}
   .nachtrag input{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;
     font:500 14px var(--body);min-height:44px;background:var(--sheet)}
@@ -164,7 +168,8 @@
 </div>
 
 <script type="module">
-import { api, eur, eurKurz, esc, fristKlasse } from './assets/immo.js';
+import { api, eur, eurKurz, esc, fristKlasse, melde, frage }
+  from './assets/immo.js';
 import { sankey } from './assets/charts.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
@@ -222,9 +227,7 @@ function belegeHtml(kostenart) {
 
 function zeileHtml(k, i) {
   const [farbe, zeichen] = HAKEN[k.zustand] || HAKEN.fehlt;
-  const wert = k.erledigt ? eur(k.betrag)
-    : k.zustand === 'offen' ? '<span class="fehlt">Betrag fehlt</span>'
-    : '<span class="fehlt">nicht erfasst</span>';
+  const wert = eur(k.betrag);
   const aufgeklappt = offen.has(i);
 
   // Zweite Zeile: Schlüssel, Anteil an der Gesamtsumme, Quelle, §35a
@@ -232,6 +235,9 @@ function zeileHtml(k, i) {
   const anteilProzent = k.erledigt && summe > 0
     ? Math.round((k.betrag / summe) * 100) : null;
   const infos = [
+    // Ein erfasster Beleg ohne Betrag ist etwas anderes als gar nichts —
+    // ohne den Hinweis waere das nur am Farbton des Hakens zu erkennen.
+    k.zustand === 'offen' ? 'Betrag fehlt' : null,
     k.schluessel ? `Schlüssel ${k.schluessel}` : null,
     anteilProzent != null ? `${anteilProzent} % der Kosten` : null,
     k.wertquelle && k.wertquelle !== 'manuell' ? k.wertquelle : null,
@@ -245,32 +251,34 @@ function zeileHtml(k, i) {
       anteile.map(([p, w]) => `<div class="rz"><span>${esc(p)}</span><span>${w}</span></div>`).join('')
     : '';
 
+  // Der Scan-Knopf steht in der Zeile selbst, nicht erst im aufgeklappten
+  // Bereich: einen Beleg nachzureichen ist die haeufigste Handlung hier und
+  // soll keinen Umweg ueber einen zweiten Klick brauchen.
   return `<div class="pruef">
-      <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
-        <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
-          kostenIcon(k.kostenart)}</span>
-        <span class="name">${esc(k.kostenart)}
-          ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
-        <span class="rechts">
-          <span class="wert">${wert}</span>
-          <span class="haken ${farbe}">${zeichen}</span>
-        </span>
-      </button>
+      <div class="kopf">
+        <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
+          <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
+            kostenIcon(k.kostenart)}</span>
+          <span class="name">${esc(k.kostenart)}
+            ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
+          ${k.erledigt ? `<span class="rechts"><span class="wert">${wert}</span></span>` : ''}
+        </button>
+        ${k.erledigt ? '' : `<button class="scanmini" data-scan="${esc(k.kostenart)}"
+            title="Beleg für ${esc(k.kostenart)} abfotografieren">
+            <span class="si">▣</span><span class="st">Beleg erfassen</span>
+          </button>`}
+        <span class="haken ${farbe}">${zeichen}</span>
+      </div>
       ${aufgeklappt ? `<div class="auf">
         ${verteilung}
         <div class="zk">Belege</div>
         ${belegeHtml(k.kostenart)}
-        ${k.erledigt ? '' : `<button class="scanknopf" data-scan="${esc(k.kostenart)}">
-          <span class="si">▣</span>
-          <span>Beleg abfotografieren</span>
-          <span class="sh">PDF · direkt in die Ablage</span>
-        </button>`}
         ${k.position_id ? `<div class="nachtrag">
           <input type="number" step="0.01" placeholder="Betrag eintragen"
                  value="${k.betrag || ''}" data-betrag="${k.position_id}"
                  aria-label="Betrag für ${esc(k.kostenart)}">
           <button data-speichern="${k.position_id}">Übernehmen</button>
-        </div>` : `<div class="zk">Noch keine Position — Beleg im Eingang zuordnen</div>`}
+        </div>` : `<div class="zk">Noch keine Position — der Beleg legt sie an</div>`}
       </div>` : ''}
     </div>`;
 }
@@ -412,20 +420,20 @@ async function abschliessen(knopf) {
   } catch (fehler) {
     knopf.disabled = false;
     knopf.textContent = 'Abrechnungen erstellen und versenden';
-    return alert(String(fehler.message || fehler));
+    melde(String(fehler.message || fehler), 'neg');
+    return;
   }
 
-  const zeilen = plan.parteien.map(p =>
-    `${p.versandbereit ? '✓' : '✗'} ${p.partei}: ` +
-    `${(p.saldo ?? 0) >= 0 ? 'Guthaben' : 'Nachzahlung'} ` +
-    `${Math.abs(p.saldo ?? 0).toFixed(2)} € ` +
-    `${p.email || '— keine Mailadresse'}`).join('\n');
-
+  const bereit = plan.parteien.filter(p => p.versandbereit);
   const warnung = plan.ohne_mail.length
-    ? `\n\nOhne Mailadresse und daher nicht versendbar:\n${plan.ohne_mail.join(', ')}`
+    ? ` Ohne Mailadresse und daher nicht versendbar: ${plan.ohne_mail.join(', ')}.`
     : '';
 
-  if (!confirm(`Abrechnungen für ${plan.zeitraum} verschicken?\n\n${zeilen}${warnung}`)) {
+  const ja = await frage(`Abrechnungen für ${plan.zeitraum} verschicken?`,
+    `${bereit.length} von ${plan.parteien.length} Parteien bekommen die `
+    + `Abrechnung als PDF an ihre Mailadresse.${warnung}`,
+    { knopf: 'Jetzt verschicken' });
+  if (!ja) {
     knopf.disabled = false;
     knopf.textContent = 'Abrechnungen erstellen und versenden';
     return;
@@ -436,14 +444,15 @@ async function abschliessen(knopf) {
     const antwort = await api(`/zeitraeume/${zid}/abschliessen`, {
       method: 'POST', body: { versenden: true, offene_uebergehen: uebergehen },
     });
-    alert(antwort.versendet.length
-      ? `${antwort.versendet.length} Abrechnung(en) verschickt an:\n${antwort.versendet.join(', ')}`
-      : 'Zeitraum abgeschlossen — es wurde nichts verschickt (keine Mailadressen).');
+    melde(antwort.versendet.length
+      ? `${antwort.versendet.length} Abrechnung(en) verschickt an ${antwort.versendet.join(', ')}`
+      : 'Zeitraum abgeschlossen — versendet wurde nichts (keine Mailadressen).',
+      antwort.versendet.length ? 'pos' : '');
     await laden();
   } catch (fehler) {
     knopf.disabled = false;
     knopf.textContent = 'Abrechnungen erstellen und versenden';
-    alert(String(fehler.message || fehler));
+    melde(String(fehler.message || fehler), 'neg');
   }
 }
 
@@ -519,7 +528,7 @@ inhalt.addEventListener('click', async e => {
     } catch (fehler) {
       speichern.disabled = false;
       speichern.textContent = 'Übernehmen';
-      alert(String(fehler.message || fehler));
+      melde(String(fehler.message || fehler), 'neg');
     }
   }
 });
@@ -538,11 +547,9 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
   if (!dateien.length || !ziel) return;
 
   const knopf = ziel.knopf;
-  const beschriftung = knopf.querySelector('span:nth-child(2)');
-  const unterzeile = knopf.querySelector('.sh');
+  const beschriftung = knopf.querySelector('.st');
   knopf.disabled = true;
-  beschriftung.textContent = 'Verarbeite …';
-  unterzeile.textContent = `${dateien.length} Aufnahme${dateien.length > 1 ? 'n' : ''}`;
+  if (beschriftung) beschriftung.textContent = 'Verarbeite …';
 
   try {
     const { pdf, seiten } = await scanZuPdf(dateien);
@@ -564,16 +571,18 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
       throw new Error(grund || `Fehler ${antwort.status}`);
     }
     const ergebnis = await antwort.json();
-    beschriftung.textContent = ergebnis.abgelegt ? '✓ Abgelegt' : '✓ Im Eingang';
-    unterzeile.textContent = `${seiten} Seite${seiten > 1 ? 'n' : ''} · ${
-      lesbareGroesse(pdf.size)}`;
+    if (beschriftung) {
+      beschriftung.textContent = ergebnis.abgelegt
+        ? `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(pdf.size)}`
+        : '✓ Im Eingang';
+    }
 
     await betragVorschlagen(ziel.kostenart, vorschlag);
     await laden();
   } catch (fehler) {
-    beschriftung.textContent = 'Fehlgeschlagen';
-    unterzeile.textContent = String(fehler.message || fehler);
+    if (beschriftung) beschriftung.textContent = 'Fehlgeschlagen';
     knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
   }
 });
 
@@ -596,9 +605,14 @@ async function betragVorschlagen(kostenart, vorschlag) {
   if (!zeile?.position_id) return;
   const betrag = vorschlag.betrag.toLocaleString('de-DE',
     { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (!confirm(`Im Beleg erkannt: ${betrag} €`
-    + (vorschlag.datum ? ` vom ${new Date(vorschlag.datum).toLocaleDateString('de-DE')}` : '')
-    + `\n\nAls Betrag für „${kostenart}“ übernehmen?`)) return;
+  const ja = await frage('Betrag aus dem Beleg übernehmen?',
+    `Erkannt wurden ${betrag} €`
+    + (vorschlag.datum
+      ? ` vom ${new Date(vorschlag.datum).toLocaleDateString('de-DE')}`
+      : '')
+    + `. Als Betrag für „${kostenart}“ eintragen?`,
+    { knopf: 'Übernehmen' });
+  if (!ja) return;
   await api(`/positionen/${zeile.position_id}`,
             { method: 'PATCH', body: { betrag: vorschlag.betrag,
                                        wertquelle: 'Scan' } });

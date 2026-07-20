@@ -17,13 +17,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/immo.css">
 <style>
-  .filter{display:flex;gap:8px;margin-bottom:12px}
   /* Pillenform wie die Kategorie-Schalter darunter — sonst wirken die
      Auswahlfelder als einzige Elemente der Seite kantig. */
-  .filter select{flex:1;min-width:0;border-radius:999px;padding-left:16px;
-                 background-position:right 16px center}
-  .filter select:focus{border-color:var(--teal);
-                       box-shadow:0 0 0 3px rgba(15,110,92,.15)}
+  .filter{display:flex;gap:8px;margin-bottom:12px}
+  .filter > div{flex:1;min-width:0}
   .kategorien{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
   .kategorien button{border:none;background:var(--sheet);color:var(--soft);
     border-radius:999px;padding:9px 14px;font:600 12px var(--disp);cursor:pointer;
@@ -59,11 +56,18 @@
               text-align:right}
   .tabelle td:first-child{text-align:left;font-weight:600}
   .tabelle td.pos{color:var(--pos)} .tabelle td.neg{color:var(--neg)}
+
+  /* App-Symbol in der Kopfzeile — kommt auf index.html, eingang.html und
+     statistik.html gleich vor; gehoert eigentlich nach immo.css. */
+  .applogo{width:34px;height:34px;border-radius:9px;flex:none;display:block}
+  .applogo-link{display:block;border-radius:9px}
+  .applogo-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="bar">
+    <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
     <div class="barwrap">
       <h1>Auswertung</h1>
       <div class="sub" id="sub">wird geladen …</div>
@@ -72,8 +76,8 @@
 
   <div class="scroll">
     <div class="filter">
-      <select class="inp" id="jahr" aria-label="Jahr"></select>
-      <select class="inp" id="objekt" aria-label="Objekt"></select>
+      <div id="jahr"></div>
+      <div id="objekt"></div>
     </div>
     <div class="kategorien" id="kategorien" role="group" aria-label="Kostenarten"></div>
     <div id="inhalt"></div>
@@ -91,21 +95,32 @@
 <script type="module">
 import { api, eur, eurKurz, esc } from './assets/immo.js';
 import { balken, saeulen, linie, sankey, legende, farbe } from './assets/charts.js';
+import { auswahlfeld } from './assets/auswahl.js';
 
 const inhalt = document.getElementById('inhalt');
 const sub = document.getElementById('sub');
-const jahrWahl = document.getElementById('jahr');
-const objektWahl = document.getElementById('objekt');
 
 const jetzt = new Date().getFullYear();
-jahrWahl.innerHTML = Array.from({ length: 6 }, (_, i) => jetzt - i)
-  .map(j => `<option value="${j}">${j}</option>`).join('');
+const jahrWahl = auswahlfeld(document.getElementById('jahr'), {
+  label: 'Jahr',
+  optionen: Array.from({ length: 6 }, (_, i) => jetzt - i)
+    .map(j => ({ wert: String(j), text: String(j) })),
+  wert: String(jetzt),
+  aenderung: () => zeichnen(),
+});
+
+const objektWahl = auswahlfeld(document.getElementById('objekt'), {
+  label: 'Objekt',
+  optionen: [{ wert: '', text: 'Alle Objekte' }],
+  wert: '',
+  aenderung: () => zeichnen(),
+});
 
 let objekte = [];
 try {
   objekte = await api('/objekte');
-  objektWahl.innerHTML = '<option value="">Alle Objekte</option>' +
-    objekte.map(o => `<option value="${esc(o.slug)}">${esc(o.name)}</option>`).join('');
+  objektWahl.fuelle([{ wert: '', text: 'Alle Objekte' },
+                     ...objekte.map(o => ({ wert: o.slug, text: o.name }))], '');
 } catch {
   sub.textContent = 'API nicht erreichbar';
 }
@@ -174,8 +189,8 @@ function vermoegenHtml(besitz, objekt) {
 }
 
 async function zeichnen() {
-  const jahr = jahrWahl.value;
-  const objekt = objektWahl.value;
+  const jahr = jahrWahl.wert();
+  const objekt = objektWahl.wert();
   const frage = new URLSearchParams({ jahr });
   if (objekt) frage.set('objekt', objekt);
   // leere Auswahl = alles, sonst wäre die Ansicht nach dem ersten Klick leer
@@ -257,8 +272,6 @@ async function zeichnen() {
     </div>` : ''}`;
 }
 
-jahrWahl.addEventListener('change', zeichnen);
-objektWahl.addEventListener('change', zeichnen);
 await zeichnen();
 </script>
 </body>

@@ -13,15 +13,21 @@ const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
-const name = 'Prüfweg ' + String(Date.now()).slice(-5);
+// Der Wizard hat kein eigenes Namensfeld mehr — der Name entsteht aus
+// Straße, Ort und (bei genau einer Einheit) deren Bezeichnung.
+const strasse = 'Prüfweg ' + String(Date.now()).slice(-5);
+const ort = 'Teststadt';
+const name = `(${ort}) ${strasse} · EG`;
 let fails = 0;
 const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text); } };
 
 const vorher = await (await fetch(base + '/api/objekte')).json();
 
 await page.goto(base + '/onboarding.html', { waitUntil: 'networkidle' });
-await page.fill('[data-field="name"]', name);
-await page.fill('[data-field="ort"]', 'Teststadt');
+await page.fill('[data-field="strasse"]', strasse);
+await page.fill('[data-field="ort"]', ort);
+const vorschau = await page.textContent('.namevz .nvn');
+pruefe(vorschau.trim() === `(${ort}) ${strasse}`, `Namensvorschau falsch: "${vorschau}"`);
 
 for (let i = 0; i < 4; i++) {
   await page.click('[data-next]');

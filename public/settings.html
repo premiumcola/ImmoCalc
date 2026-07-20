@@ -60,6 +60,8 @@
 <body>
 <div class="app">
   <div class="bar">
+    <img src="icons/icon.svg" alt="" width="34" height="34"
+         style="border-radius:9px;flex:none">
     <div class="barwrap">
       <h1>Einstellungen</h1>
       <div class="sub" id="sub">ImmoCalc</div>
@@ -357,7 +359,7 @@
 </dialog>
 
 <script type="module">
-import { api, esc } from './assets/immo.js';
+import { api, esc, frage } from './assets/immo.js';
 
 const build = document.getElementById('build');
 const sub = document.getElementById('sub');
@@ -729,8 +731,10 @@ document.getElementById('eignerSpeichern').addEventListener('click', async () =>
 eignerListe.addEventListener('click', async e => {
   const weg = e.target.closest('[data-eigner-weg]');
   if (!weg) return;
-  if (!confirm('Diesen Eigentümer und seine Anteile entfernen?\n\n'
-    + 'Die Immobilien selbst bleiben unverändert.')) return;
+  const ok = await frage('Eigentümer entfernen',
+    'Diesen Eigentümer und seine Anteile entfernen? Die Immobilien selbst '
+    + 'bleiben unverändert.', { knopf: 'Entfernen', gefahr: true });
+  if (!ok) return;
   await api(`/eigentuemer/${weg.dataset.eignerWeg}`, { method: 'DELETE' });
   await eignerLaden();
 });

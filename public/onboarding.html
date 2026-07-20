@@ -16,8 +16,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{--paper:#E8ECEC;--sheet:#FFFFFF;--ink:#16262C;--soft:#5C6B70;--line:#D6DCDD;--teal:#0F6E5C;--teal-d:#0B5548;
-    --amber:#916212;--pos:#2E7D4F;--neg:#B24229;
+  :root{--paper:#E8ECEC;--sheet:#FFFFFF;--ink:#16262C;--soft:#5C6B70;--line:#D6DCDD;--teal:#0F6E5C;--teal-d:#0B5548;--teal-l:#E7F3EF;
+    --amber:#916212;--pos:#2E7D4F;--neg:#B24229;--neg-bg:#F7E9E3;
     --disp:"Space Grotesk",system-ui,sans-serif;--body:"Inter",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;}
   *{box-sizing:border-box} html,body{margin:0;padding:0}
   body{background:var(--paper);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.45;display:flex;justify-content:center}
@@ -123,6 +123,41 @@
   .btn{flex:1;border:none;border-radius:12px;padding:15px;cursor:pointer;font:600 15px var(--disp);letter-spacing:-.01em;background:var(--teal);color:#fff;transition:background .15s}
   .btn:hover{background:var(--teal-d)} .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .btn.ghost{flex:0 0 auto;padding:15px 20px;background:var(--sheet);color:var(--teal-d);border:1px solid var(--line)}
+  /* Zweitstufe innerhalb der Rueckfrage-Dialoge (immo.js: frage) */
+  .btn.leise{width:100%;flex:none;background:transparent;color:var(--teal-d);box-shadow:inset 0 0 0 1.5px var(--line)}
+  .btn.leise:hover{background:var(--teal-l)}
+  .btn.gefahr{width:100%;flex:none;background:transparent;color:var(--neg);box-shadow:inset 0 0 0 1.5px #E3C6BC}
+  .btn.gefahr:hover{background:var(--neg-bg)}
+
+  /* Namensvorschau in Schritt 1 — ruhige Zeile statt Pflichtfeld */
+  .namevz{margin:-4px 0 14px;display:flex;align-items:baseline;flex-wrap:wrap;gap:5px 10px;
+          font:400 13px var(--body);color:var(--soft)}
+  .namevz .nvn{font:600 13.5px var(--disp);color:var(--ink);letter-spacing:-.01em}
+  .namevz .nvn.blass{font-weight:400;font-family:var(--body);font-size:12.5px;
+                     color:var(--soft)}
+  .nvbtn{border:none;background:none;color:var(--teal-d);font:600 12px var(--body);
+         cursor:pointer;text-decoration:underline;text-underline-offset:2px;
+         padding:13px 2px;margin:-13px -2px;min-height:44px;display:inline-flex;align-items:center}
+  .hint{display:block;font:400 11.5px var(--body);color:var(--soft);margin-top:6px;line-height:1.4}
+
+  /* ---- Meldung am unteren Rand (immo.js: melde) ---- */
+  .melder{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));z-index:60;
+    transform:translate(-50%,14px);opacity:0;pointer-events:none;
+    max-width:min(420px,calc(100vw - 32px));text-align:center;
+    background:var(--ink);color:#fff;border-radius:13px;padding:13px 18px;
+    font:500 13.5px var(--body);line-height:1.45;box-shadow:0 16px 34px -14px rgba(22,38,44,.6);
+    transition:opacity .18s,transform .18s}
+  .melder.an{opacity:1;transform:translate(-50%,0)}
+  .melder.pos{background:var(--pos)} .melder.neg{background:var(--neg)}
+
+  /* ---- Rückfrage im Design der App (immo.js: frage) ---- */
+  dialog.immo-dlg{border:none;border-radius:20px;padding:22px;max-width:400px;
+    width:calc(100% - 32px);background:var(--paper);color:var(--ink);
+    box-shadow:0 30px 70px -20px rgba(22,38,44,.5)}
+  dialog.immo-dlg::backdrop{background:rgba(22,38,44,.45)}
+  dialog.immo-dlg .dt{font:700 17px var(--disp);letter-spacing:-.02em;margin-bottom:8px}
+  dialog.immo-dlg p{font:400 13.5px var(--body);color:var(--soft);margin:0 0 18px;line-height:1.55}
+  dialog.immo-dlg .btn+.btn{margin-top:8px}
 
   /* done overlay */
   .done{position:absolute;inset:0;background:var(--paper);z-index:40;display:none;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}
@@ -175,10 +210,11 @@
   </div>
 </div>
 
-<script>
+<script type="module">
+import { melde, frage } from './assets/immo.js';
 const TYPES=[['lg-villa','Villa'],['lg-bauernhof','Bauernhof'],['lg-wohnung','Einzelne Wohnung'],['lg-mfhA','Mehrfamilienhaus'],['lg-mfhB','Zwei-/Doppelhaus'],['lg-gewerbe','Gewerbe']];
 const MONATE=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const STEPS=[{se:'Schritt 1 / 5',lb:'Basis',h:'Grunddaten',p:'Name und Adresse der Immobilie.'},
+const STEPS=[{se:'Schritt 1 / 5',lb:'Basis',h:'Grunddaten',p:'Adresse der Immobilie — der Name wird daraus gebildet.'},
   {se:'Schritt 2 / 5',lb:'Typ',h:'Typ & Logo',p:'Wähle Gebäudetyp und Nutzung — das Logo ergibt sich daraus.'},
   {se:'Schritt 3 / 5',lb:'Turnus',h:'Abrechnungsturnus',p:'Wann läuft das Abrechnungsjahr? Die Frist wird daraus automatisch abgeleitet.'},
   {se:'Schritt 4 / 5',lb:'Kosten',h:'Kostenarten',p:'Was gehört grundsätzlich zu jeder Jahresabrechnung dieser Immobilie?'},
@@ -186,10 +222,34 @@ const STEPS=[{se:'Schritt 1 / 5',lb:'Basis',h:'Grunddaten',p:'Name und Adresse d
 
 const defaultKosten=()=>[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Grundsteuer',1],['Gebäudeversicherung',1],['Hausmeister',1],['Allgemeinstrom',1],['Rauchwarnmelder',1],['Kaminkehrer',0],['Kaltwasserzähler',0],['Aufzug',0],['Gartenpflege',0],['Straßenreinigung / Winterdienst',0],['Bankspesen',0],['Hauskonto',0],['Internet / Kabel',0],['Schornsteinfeger',0],['Wartung Heizung',0]];
 
-const blank=()=>({name:'',strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[]});
+const blank=()=>({strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[],eigenerName:'',nameSelbst:false});
 let state={step:0,data:blank()};
 const $=s=>document.querySelector(s);
 const content=$('#content'),stepper=$('#stepper'),foot=$('#foot');
+
+/* Der Name entsteht aus Straße, Ort und — bei genau einer Einheit — deren
+   Bezeichnung. Mehrere Wohnungen in einem Haus bleiben EIN Objekt, da
+   verschwindet der Einheitenanteil aus dem Namen wieder. */
+function abgeleiteterName(d){
+  const ort=d.ort.trim(), strasse=d.strasse.trim();
+  let basis = ort && strasse ? `(${ort}) ${strasse}` : (strasse || ort);
+  if(!basis) return '';
+  if(d.einheiten.length===1){
+    const bez=(d.einheiten[0].bez||'').trim();
+    if(bez) basis+=` · ${bez}`;
+  }
+  return basis;
+}
+function finalName(d){
+  return (d.eigenerName||'').trim() || abgeleiteterName(d) || 'Neue Immobilie';
+}
+/* Solange nichts eingegeben ist, waere „Neue Immobilie" gelogen — das klingt
+   nach einem gesetzten Namen. Dann lieber blass sagen, worauf es wartet. */
+function namenVorschau(d){
+  const name=(d.eigenerName||'').trim() || abgeleiteterName(d);
+  return name ? {text:name, leer:false}
+              : {text:'sobald Straße oder Ort eingetragen sind', leer:true};
+}
 
 function render(){renderStepper();renderStep();renderFoot();}
 
@@ -207,14 +267,22 @@ function renderStep(){
   const s=STEPS[state.step],d=state.data;
   let body='';
   if(state.step===0){
+    const abgeleitet=abgeleiteterName(d);
     body=`
-      <div class="field2"><label>Bezeichnung</label><input class="inp" data-field="name" value="${esc(d.name)}" placeholder="z. B. Musterstraße 5"></div>
       <div class="field2"><label>Straße & Nr.</label><input class="inp" data-field="strasse" value="${esc(d.strasse)}" placeholder="Straße Hausnummer"></div>
       <div class="two">
         <div class="field2"><label>PLZ</label><input class="inp" data-field="plz" value="${esc(d.plz)}" placeholder="90000" inputmode="numeric"></div>
         <div class="field2" style="flex:2"><label>Ort</label><input class="inp" data-field="ort" value="${esc(d.ort)}" placeholder="Ort"></div>
       </div>
-      <div class="field2"><label>Gesamtfläche (m²)</label><input class="inp" data-field="flaeche" value="${esc(d.flaeche)}" placeholder="z. B. 320" inputmode="decimal"></div>`;
+      <div class="namevz"><span>Heißt dann:</span><span class="nvn ${namenVorschau(d).leer?'blass':''}"
+          >${esc(namenVorschau(d).text)}</span>
+        ${d.nameSelbst?'':'<button type="button" class="nvbtn" data-namesel="1">Namen selbst festlegen</button>'}
+      </div>
+      ${d.nameSelbst?`<div class="field2"><label>Eigener Name</label>
+        <input class="inp" data-field="eigenerName" value="${esc(d.eigenerName)}" placeholder="${esc(abgeleitet||'Name der Immobilie')}">
+        <button type="button" class="nvbtn" data-namesel="0" style="margin-top:6px">Automatisch ableiten verwenden</button></div>`:''}
+      <div class="field2"><label>Gesamtfläche (m²)</label><input class="inp" data-field="flaeche" value="${esc(d.flaeche)}" placeholder="z. B. 320" inputmode="decimal">
+        <div class="hint">Bezieht sich auf die ganze Immobilie — optional, kann später ergänzt werden.</div></div>`;
   } else if(state.step===1){
     body=`<div class="lgrid">`+TYPES.map(([id,lbl])=>`<button class="lopt ${d.typ===id?'sel':''}" data-typ="${id}"><svg viewBox="0 0 96 96"><use href="#${id}"/></svg><span class="ll">${lbl}</span></button>`).join('')+`</div>
       <div class="field2" style="margin-top:18px"><label>Nutzung</label><div class="chips">`+
@@ -260,24 +328,51 @@ function renderFoot(){
 
 const esc=s=>String(s).replace(/"/g,'&quot;');
 
+/* Vorschauzeile gezielt aktualisieren statt neu zu rendern — sonst springt
+   der Cursor beim Tippen ans Feldende. */
+function aktualisiereNamePreview(){
+  const zeile=content.querySelector('.namevz .nvn');
+  if(zeile){
+    const v=namenVorschau(state.data);
+    zeile.textContent=v.text;
+    zeile.classList.toggle('blass', v.leer);
+  }
+  const eig=content.querySelector('[data-field="eigenerName"]');
+  if(eig) eig.placeholder=abgeleiteterName(state.data)||'Name der Immobilie';
+}
+
 /* input binding (kein Re-Render beim Tippen) */
 content.addEventListener('input',e=>{
   const t=e.target;
   if(t.dataset.field==='startMonat'){state.data.startMonat=+t.value;renderStep();return;}
-  if(t.dataset.field){state.data[t.dataset.field]=t.value;return;}
-  if(t.dataset.ei!==undefined){state.data.einheiten[+t.dataset.ei][t.dataset.ek]=t.value;return;}
+  if(t.dataset.field){
+    state.data[t.dataset.field]=t.value;
+    if(['strasse','ort','eigenerName'].includes(t.dataset.field)) aktualisiereNamePreview();
+    return;
+  }
+  if(t.dataset.ei!==undefined){
+    state.data.einheiten[+t.dataset.ei][t.dataset.ek]=t.value;
+    if(t.dataset.ek==='bez') aktualisiereNamePreview();
+    return;
+  }
 });
 
 /* clicks */
 content.addEventListener('click',e=>{
   const typ=e.target.closest('[data-typ]'),nu=e.target.closest('[data-nutzung]'),tu=e.target.closest('[data-turnus]'),
-        tg=e.target.closest('[data-tog]'),add=e.target.closest('[data-add]'),rm=e.target.closest('[data-rm]');
+        tg=e.target.closest('[data-tog]'),add=e.target.closest('[data-add]'),rm=e.target.closest('[data-rm]'),
+        namesel=e.target.closest('[data-namesel]');
   if(typ){state.data.typ=typ.dataset.typ;renderStep();}
   else if(nu){state.data.nutzung=nu.dataset.nutzung;renderStep();}
   else if(tu){state.data.turnus=tu.dataset.turnus;if(tu.dataset.turnus==='kalender')state.data.startMonat=1;renderStep();}
   else if(tg){const i=+tg.dataset.tog;state.data.kosten[i][1]=state.data.kosten[i][1]?0:1;renderStep();}
   else if(add){state.data.einheiten.push({bez:'',partei:'',flaeche:'',personen:''});renderStep();}
   else if(rm){state.data.einheiten.splice(+rm.dataset.rm,1);renderStep();}
+  else if(namesel){
+    state.data.nameSelbst=namesel.dataset.namesel==='1';
+    if(!state.data.nameSelbst) state.data.eigenerName='';
+    renderStep();
+  }
 });
 
 stepper.addEventListener('click',e=>{
@@ -296,11 +391,14 @@ foot.addEventListener('click',e=>{
 /* Schliessen: bei angefangener Eingabe erst rueckfragen, damit nichts still verfaellt */
 function beginnbar(){
   const d=state.data;
-  return !!(d.name||d.strasse||d.plz||d.ort||d.flaeche||d.einheiten.length);
+  return !!(d.strasse||d.plz||d.ort||d.flaeche||d.eigenerName||d.einheiten.length);
 }
-$('#abbrechen').addEventListener('click',()=>{
+$('#abbrechen').addEventListener('click',async()=>{
   if(beginnbar() && !$('#done').classList.contains('open')){
-    if(!confirm('Eingaben verwerfen und zurück zur Übersicht?')) return;
+    const weiter=await frage('Eingaben verwerfen?',
+      'Die bisherigen Angaben zu dieser Immobilie gehen verloren.',
+      {knopf:'Verwerfen',gefahr:true});
+    if(!weiter) return;
   }
   location.href='index.html';
 });
@@ -313,7 +411,14 @@ let angelegterSlug=null;
 
 async function finish(){
   const d=state.data;
-  if(!d.name.trim()){ alert('Bitte zuerst eine Bezeichnung eingeben.'); state.step=0; render(); return; }
+  // Einziges Muss: genug fuer einen Namen — Strasse, Ort oder ein selbst
+  // gesetzter Name. Alles Weitere ist optional und laesst sich nachtragen.
+  if(!d.strasse.trim() && !d.ort.trim() && !d.eigenerName.trim()){
+    melde('Bitte Straße, Ort oder einen eigenen Namen angeben.', 'neg');
+    state.step=0; render();
+    return;
+  }
+  const name=finalName(d);
 
   const knopf=foot.querySelector('[data-next]');
   if(knopf){ knopf.disabled=true; knopf.textContent='Wird angelegt …'; }
@@ -322,7 +427,7 @@ async function finish(){
     const antwort=await fetch('/api/objekte',{
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        name:d.name, ort:d.ort, strasse:d.strasse, plz:d.plz,
+        name, ort:d.ort, strasse:d.strasse, plz:d.plz,
         typ:d.typ, nutzung:d.nutzung, turnus:d.turnus,
         start_monat:d.turnus==='kalender'?1:d.startMonat,
         flaeche:d.flaeche?Number(d.flaeche):null,
@@ -336,12 +441,12 @@ async function finish(){
     angelegterSlug=(await antwort.json()).slug;
   }catch(e){
     if(knopf){ knopf.disabled=false; knopf.textContent='Immobilie anlegen'; }
-    alert('Die Immobilie konnte nicht gespeichert werden. Läuft die API?');
+    melde('Die Immobilie konnte nicht gespeichert werden. Läuft die API?', 'neg');
     return;
   }
 
   $('#recap').innerHTML=[
-    ['Name', d.name||'—'],['Typ', typLabel(d.typ)],['Nutzung', d.nutzung],
+    ['Name', name],['Typ', typLabel(d.typ)],['Nutzung', d.nutzung],
     ['Turnus', turnusLabel()],['Kostenarten aktiv', d.kosten.filter(k=>k[1]).length+' von '+d.kosten.length],
     ['Einheiten', d.einheiten.length]
   ].map(([k,v])=>`<div class="rl"><span class="rk">${k}</span><span class="rv">${v}</span></div>`).join('');

@@ -81,11 +81,18 @@
   .hinweisbox p{font:400 13px var(--body);color:var(--soft);margin:0 0 14px;line-height:1.5}
   .hinweisbox a{display:inline-block;text-decoration:none;background:var(--teal);color:#fff;
     border-radius:11px;padding:12px 18px;font:600 13.5px var(--disp);min-height:44px}
+
+  /* App-Symbol in der Kopfzeile — kommt auf index.html, eingang.html und
+     statistik.html gleich vor; gehoert eigentlich nach immo.css. */
+  .applogo{width:34px;height:34px;border-radius:9px;flex:none;display:block}
+  .applogo-link{display:block;border-radius:9px}
+  .applogo-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="bar">
+    <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
     <div class="barwrap">
       <h1>Eingang</h1>
       <div class="sub" id="sub">wird geladen …</div>

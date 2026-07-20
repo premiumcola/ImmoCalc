@@ -148,8 +148,8 @@
 </dialog>
 
 <script type="module">
-import { installLogos, logoSvg, api, eur, esc, fristKlasse, fristText }
-  from './assets/immo.js';
+import { installLogos, logoSvg, api, eur, esc, fristKlasse, fristText,
+         melde, frage, schiebeFrage } from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
 
 installLogos();
@@ -663,7 +663,7 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
     }
     await laden();
   } catch (fehler) {
-    alert(String(fehler.message || 'Konnte nicht gespeichert werden.'));
+    melde(String(fehler.message || 'Konnte nicht gespeichert werden.'), 'neg');
   }
 });
 
@@ -678,8 +678,11 @@ async function anteilFormular() {
   let eigner = [];
   try { eigner = await api('/eigentuemer'); } catch { /* leer behandeln */ }
   if (!eigner.length) {
-    alert('Lege zuerst unter Einstellungen › Eigentümer eine Person an.');
-    location.href = 'settings.html#eigentuemer';
+    const hin = await frage('Noch kein Eigentümer angelegt',
+      'Eigentümer werden einmal zentral gepflegt und dann den Immobilien '
+      + 'zugeordnet. Jetzt in den Einstellungen anlegen?',
+      { knopf: 'Zu den Einstellungen' });
+    if (hin) location.href = 'settings.html#eigentuemer';
     return;
   }
   ANTEILFELDER = [
@@ -717,7 +720,10 @@ inhalt.addEventListener('click', async e => {
 
   const anteilWeg = e.target.closest('[data-anteil]');
   if (anteilWeg) {
-    if (!confirm('Diese Zuordnung entfernen?')) return;
+    const ja = await frage('Zuordnung entfernen?',
+      'Der Eigentümer bleibt erhalten — nur die Beteiligung an dieser '
+      + 'Immobilie wird gelöst.', { knopf: 'Entfernen', gefahr: true });
+    if (!ja) return;
     await api(`/anteile/${anteilWeg.dataset.anteil}`, { method: 'DELETE' });
     return laden();
   }
@@ -736,7 +742,7 @@ inhalt.addEventListener('click', async e => {
     } catch (fehler) {
       cloud.disabled = false;
       cloud.textContent = 'Fehlgeschlagen — nochmal';
-      alert(String(fehler.message || fehler));
+      melde(String(fehler.message || fehler), 'neg');
     }
     return;
   }
@@ -748,24 +754,30 @@ inhalt.addEventListener('click', async e => {
 
   const weg = e.target.closest('[data-loeschen]');
   if (weg) {
-    if (!confirm(`„${objekt.name}“ wirklich löschen?\n\n`
-      + 'Alle Eingaben zu dieser Immobilie werden entfernt. Die Unterlagen in '
+    // Schieben statt klicken: Löschen ist nicht rückgängig zu machen, und ein
+    // zweiter Klick an derselben Stelle passiert zu leicht aus Versehen.
+    const ja = await schiebeFrage(`„${objekt.name}“ löschen`,
+      'Alle Eingaben zu dieser Immobilie werden entfernt. Die Unterlagen in '
       + 'der Nextcloud bleiben bestehen; eine Sicherung wird vorher dort '
-      + 'abgelegt.')) return;
+      + 'abgelegt.', 'Zum Löschen schieben');
+    if (!ja) return;
     weg.disabled = true;
     weg.textContent = 'Sichere und lösche …';
     try {
       const antwort = await api(`/objekte/${encodeURIComponent(slug)}`,
                                 { method: 'DELETE' });
-      alert(antwort.sicherung?.gesichert
-        ? `Gelöscht. Sicherung liegt unter ${antwort.sicherung.pfad}.`
-        : 'Gelöscht. Eine Sicherung in der Nextcloud war nicht möglich '
-          + `(${antwort.sicherung?.grund || 'kein Grund genannt'}).`);
-      location.href = 'index.html';
+      // Erst melden, dann zurück: sonst wäre die Bestätigung schon weg,
+      // bevor sie jemand gelesen hat.
+      melde(antwort.sicherung?.gesichert
+        ? `„${antwort.name}“ gelöscht · Sicherung: ${antwort.sicherung.pfad}`
+        : `„${antwort.name}“ gelöscht — ohne Sicherung in der Nextcloud `
+          + `(${antwort.sicherung?.grund || 'kein Grund genannt'})`,
+        antwort.sicherung?.gesichert ? 'pos' : '');
+      setTimeout(() => { location.href = 'index.html'; }, 2600);
     } catch (fehler) {
       weg.disabled = false;
       weg.textContent = 'Immobilie löschen';
-      alert(String(fehler.message || fehler));
+      melde(String(fehler.message || fehler), 'neg');
     }
     return;
   }
@@ -774,7 +786,10 @@ inhalt.addEventListener('click', async e => {
   if (del) {
     e.stopPropagation();
     const [bereich, id] = del.dataset.del.split(':');
-    if (!confirm('Diesen Eintrag löschen?')) return;
+    const ja = await frage(`${BEREICHE[bereich].einzahl} löschen?`,
+      'Der Eintrag wird entfernt. Rückgängig machen lässt sich das nicht.',
+      { knopf: 'Löschen', gefahr: true });
+    if (!ja) return;
     await api(`/${bereich}/${id}`, { method: 'DELETE' });
     return laden();
   }

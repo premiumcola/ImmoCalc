@@ -6,6 +6,10 @@ Anforderung fortgeschrieben — nichts muss doppelt gesagt werden.
 
 Stand: 20.07.2026 · 82 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
 
+**Grundsatz aus dem Gespräch:** möglichst direkt bedienbar. Was man häufig
+tut, gehört an die Oberfläche — nicht hinter einen zweiten Klick. Und nichts,
+was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
+
 ---
 
 ## Erledigt
@@ -69,6 +73,11 @@ Stand: 20.07.2026 · 82 pytest grün · 7 Seiten × 3 Geräteklassen geprüft
 | LV | Selbst angelegte Ordner werden angezeigt, nie verändert | `d5a5550`, `f068042` |
 | LVI | PDF-Anhang beim Versand | `d5a5550` |
 | LVII | Belege im Browser öffnen | `d5a5550`, `f068042` |
+| LX | „Beleg erfassen“ direkt in der Zeile, ohne Aufklappen | `HEAD` |
+| LXI | App-Symbol in der Kopfzeile jeder Seite | `HEAD` |
+| LXII | Auswahlmenüs im eigenen Design statt Systemliste | `HEAD` |
+| LXIII | Name aus Straße, Ort und Einheit — Feld entfällt | `HEAD` |
+| LXIV | Löschen per Schiebe-Regler statt Browser-Kasten | `HEAD` |
 
 ---
 

@@ -71,5 +71,136 @@ export const esc = s => String(s ?? '')
 export const fristKlasse = tage =>
   tage == null ? '' : tage < 0 ? 'neg' : tage <= 30 ? 'neg' : tage <= 90 ? 'amber' : 'pos';
 
+/* ---- Meldungen und Rückfragen im Design der App -------------------------
+   `alert` und `confirm` zeichnet der Browser: graue Systemkästen, die mit der
+   Seite nichts zu tun haben. Beides hier selbst gebaut — und die Rückfrage vor
+   dem Löschen als Schiebe-Regler, damit ein zweiter Klick nicht aus Versehen
+   passieren kann. */
+
+/** Kurze Rückmeldung am unteren Rand. Verschwindet von selbst. */
+export function melde(text, art = '') {
+  let feld = document.getElementById('immo-melder');
+  if (!feld) {
+    feld = document.createElement('div');
+    feld.id = 'immo-melder';
+    feld.className = 'melder';
+    feld.setAttribute('role', 'status');
+    feld.setAttribute('aria-live', 'polite');
+    document.body.appendChild(feld);
+  }
+  feld.className = `melder an ${art}`;
+  feld.textContent = text;
+  clearTimeout(feld._zeit);
+  feld._zeit = setTimeout(() => { feld.className = 'melder'; }, 5200);
+}
+
+function baueDialog(inhalt) {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'immo-dlg';
+  dlg.innerHTML = inhalt;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.showModal();
+  return dlg;
+}
+
+const sicher = s => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Rückfrage mit zwei Knöpfen. Liefert true, wenn bestätigt wurde. */
+export function frage(titel, text, { knopf = 'Weiter', gefahr = false } = {}) {
+  return new Promise(fertig => {
+    const dlg = baueDialog(`
+      <div class="dt">${sicher(titel)}</div>
+      <p>${sicher(text)}</p>
+      <button class="btn ${gefahr ? 'gefahr' : ''}" data-ja>${sicher(knopf)}</button>
+      <button class="btn leise" data-nein>Abbrechen</button>`);
+    dlg.querySelector('[data-ja]').addEventListener('click', () => {
+      fertig(true); dlg.close();
+    });
+    dlg.querySelector('[data-nein]').addEventListener('click', () => {
+      fertig(false); dlg.close();
+    });
+    dlg.addEventListener('cancel', () => fertig(false));
+  });
+}
+
+/**
+ * Rückfrage, die man nicht wegklicken kann: der Griff muss ganz nach rechts
+ * geschoben werden. Ein versehentlicher Doppelklick löst nichts aus.
+ */
+export function schiebeFrage(titel, text, label = 'Zum Löschen schieben') {
+  return new Promise(fertig => {
+    const dlg = baueDialog(`
+      <div class="dt">${sicher(titel)}</div>
+      <p>${sicher(text)}</p>
+      <div class="schieber" role="button" tabindex="0"
+           aria-label="${sicher(label)} — mit den Pfeiltasten nach rechts oder
+                        mit der Eingabetaste bestätigen">
+        <span class="sl">${sicher(label)}</span>
+        <span class="griff" aria-hidden="true">›</span>
+      </div>
+      <button class="btn leise" data-nein>Abbrechen</button>`);
+
+    const bahn = dlg.querySelector('.schieber');
+    const griff = dlg.querySelector('.griff');
+    let zieht = false;
+    let weg = 0;
+
+    const strecke = () => bahn.clientWidth - griff.offsetWidth - 8;
+    const setze = px => {
+      weg = Math.max(0, Math.min(strecke(), px));
+      griff.style.transform = `translateX(${weg}px)`;
+      bahn.style.setProperty('--anteil', (weg / strecke()).toFixed(3));
+    };
+    const zurueck = () => { griff.style.transition = 'transform .2s'; setze(0);
+                            setTimeout(() => { griff.style.transition = ''; }, 220); };
+
+    const ausloesen = () => {
+      bahn.classList.add('fertig');
+      fertig(true);
+      setTimeout(() => dlg.close(), 220);
+    };
+
+    // Bewusst ohne setPointerCapture: beim zweiten Zug hintereinander
+    // verliert der Griff die Erfassung, und der Regler bleibt auf halbem Weg
+    // stehen. Am Fenster zu lauschen ist verlaesslich — auch auf dem iPhone.
+    let anfang = 0;
+
+    const bewegt = e => setze(e.clientX - anfang);
+    const losgelassen = () => {
+      if (!zieht) return;
+      zieht = false;
+      window.removeEventListener('pointermove', bewegt);
+      window.removeEventListener('pointerup', losgelassen);
+      window.removeEventListener('pointercancel', losgelassen);
+      // Knapp vor dem Ende zählt auch — sonst wird es zur Geduldsprobe.
+      if (weg >= strecke() - 4) ausloesen(); else zurueck();
+    };
+
+    griff.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      zieht = true;
+      anfang = e.clientX - weg;
+      window.addEventListener('pointermove', bewegt);
+      window.addEventListener('pointerup', losgelassen);
+      window.addEventListener('pointercancel', losgelassen);
+    });
+
+    // Ohne Zeigegerät: Pfeiltaste nach rechts oder Eingabetaste
+    bahn.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight') { e.preventDefault(); setze(weg + strecke() / 4); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); setze(weg - strecke() / 4); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ausloesen(); }
+      if (weg >= strecke() - 4) ausloesen();
+    });
+
+    dlg.querySelector('[data-nein]').addEventListener('click', () => {
+      fertig(false); dlg.close();
+    });
+    dlg.addEventListener('cancel', () => fertig(false));
+  });
+}
+
 export const fristText = tage =>
   tage == null ? null : tage < 0 ? `${Math.abs(tage)} T über Frist` : `Frist in ${tage} T`;

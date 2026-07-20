@@ -59,9 +59,9 @@ await (offeneZeile || await page.$('.pruef .zeile')).click();
 await page.waitForTimeout(400);
 pruefe(await page.$('.pruef .auf') !== null, 'Zeile klappt nicht auf');
 
-// An einer offenen Position muss der Scan-Knopf stehen — dort entsteht der
-// Beleg, nicht im Eingang.
-const scan = await page.$('.pruef .auf .scanknopf');
+// Der Scan-Knopf steht direkt in der Zeile, nicht erst im aufgeklappten
+// Bereich: einen Beleg nachzureichen soll keinen zweiten Klick kosten.
+const scan = await page.$('.pruef .kopf .scanmini');
 pruefe(scan !== null, 'kein Scan-Knopf an der offenen Position');
 if (scan) {
   const kasten = await scan.boundingBox();
