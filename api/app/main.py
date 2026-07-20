@@ -10,8 +10,8 @@ from sqlmodel import SQLModel
 from . import wachdienst
 from .db import engine
 from .migrate import migriere
-from .routers import (auswertung, cloud, dokumente, mail, objekte, stammdaten,
-                      versand)
+from .routers import (auswertung, besitz, cloud, dokumente, mail, objekte,
+                      stammdaten, versand)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -38,6 +38,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
                    allow_headers=["*"])
 
 app.include_router(objekte.router)
+# besitz vor stammdaten: dort faengt /objekte/{slug}/{bereich} sonst
+# /objekte/{slug}/anteile ab und meldet einen unbekannten Bereich.
+app.include_router(besitz.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 app.include_router(cloud.router)

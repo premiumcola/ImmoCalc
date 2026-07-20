@@ -8,7 +8,8 @@ import logging
 import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Response,
+                     UploadFile)
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -233,6 +234,33 @@ async def scannen(objekt: str = Form(...), kategorie: str = Form("Sonstiges"),
     session.refresh(d)
     log.info("Scan abgelegt: %s", d.pfad)
     return {"id": d.id, "dateiname": name, "pfad": d.pfad, "abgelegt": True}
+
+
+@router.get("/{dokument_id}/inhalt")
+def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Response:
+    """Liefert die Datei aus der Nextcloud zur Ansicht im Browser.
+
+    `inline` statt `attachment`: PDFs und Bilder sollen sich öffnen, nicht
+    herunterladen. Rein lesend — an der Datei ändert sich nichts."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if d.pfad.startswith("(nicht abgelegt)"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
+    client = verbindung(session)
+    try:
+        rohdaten, typ = client.hole(d.pfad)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    # Nextcloud liefert für unbekannte Endungen octet-stream; das laedt der
+    # Browser herunter, statt es anzuzeigen.
+    if typ == "application/octet-stream" and d.dateiname.lower().endswith(".pdf"):
+        typ = "application/pdf"
+    name = d.dateiname.replace('"', "")
+    return Response(content=rohdaten, media_type=typ, headers={
+        "Content-Disposition": f'inline; filename="{name}"',
+        "Cache-Control": "private, max-age=60",
+    })
 
 
 @router.get("/objekt/{slug}")

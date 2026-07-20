@@ -197,6 +197,18 @@ class Nextcloud:
             raise NextcloudFehler(
                 f"Hochladen fehlgeschlagen ({antwort.status_code}): {pfad}")
 
+    def hole(self, pfad: str) -> tuple[bytes, str]:
+        """Datei lesen — für die Anzeige im Browser. Rein lesend, deshalb
+        ohne Schreibprüfung: gelesen werden darf überall, verändert nichts."""
+        antwort = self._anfrage("GET", pfad)
+        if antwort.status_code == 404:
+            raise NextcloudFehler(f"Datei nicht gefunden: /{pfad.strip('/')}")
+        if antwort.status_code >= 400:
+            raise NextcloudFehler(
+                f"Abrufen fehlgeschlagen ({antwort.status_code}): {pfad}")
+        typ = antwort.headers.get("Content-Type", "application/octet-stream")
+        return antwort.content, typ.split(";")[0].strip()
+
     def existiert(self, pfad: str) -> bool:
         antwort = self._anfrage("PROPFIND", pfad, headers={"Depth": "0"},
                                 content=PROPFIND_RUMPF)

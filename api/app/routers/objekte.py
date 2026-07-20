@@ -1,20 +1,28 @@
 """Objekte, Zeiträume, Positionen, Abrechnung."""
+import logging
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
 from ..bezeichnung import anzeigename
+from ..export import als_datei, dateiname, exportiere, importiere, loesche
 from ..engine import Position, abrechnung
 from ..erinnerungen import beleg_erinnerung, frist_erinnerung
 from ..frist import frist_tage
+from ..nachpflege import hinweise, zusammenfassung
 from ..models import (Dokument, Einheit, Kostenart, Kostenposition, Miete,
                       Objekt, Partei, Vorauszahlung, Zeitraum)
 
+log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["objekte"])
+
+# Sicherungen liegen im Home-Ordner, nicht bei den Unterlagen einer Immobilie —
+# die bleibt beim Löschen ja gerade bestehen.
+SICHERUNGSORDNER = "00_ImmoCalc_Sicherungen"
 
 
 def _slugify(name: str) -> str:
@@ -125,8 +133,11 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
     einheiten = session.exec(select(Einheit).where(Einheit.objekt_id == o.id)).all()
     parteien = session.exec(select(Partei).where(Partei.objekt_id == o.id)).all()
     zeitraeume = session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
+    mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
+    offen = hinweise(o, einheiten, mieten)
     return {
         "objekt": o, "einheiten": einheiten, "parteien": parteien,
+        "nachpflege": {**zusammenfassung(offen), "offen": offen},
         "zeitraeume": [{"id": z.id, "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
                         "typ": z.typ, "status": z.status,
                         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None}
@@ -148,6 +159,72 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
     session.add(o)
     session.commit()
     return {"ok": True, "slug": o.slug}
+
+
+@router.get("/objekte/{slug}/export")
+def objekt_export(slug: str, session: Session = Depends(get_session)) -> Response:
+    """Vollständige Sicherung als JSON-Datei zum Herunterladen."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    daten = exportiere(session, o)
+    return Response(
+        content=als_datei(daten), media_type="application/json",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{dateiname(o)}"'})
+
+
+def _sicherung_in_die_cloud(session: Session, objekt: Objekt,
+                            daten: dict) -> dict:
+    """Legt die Sicherung neben den Unterlagen ab — best effort.
+
+    Scheitert das (keine Verbindung, kein Home-Ordner), wird trotzdem
+    gelöscht: die Sicherung geht ohnehin auch an den Browser."""
+    from .cloud import S_HOME, _lies, verbindung          # zirkelfrei zur Laufzeit
+    home = _lies(session, S_HOME)
+    if not home:
+        return {"gesichert": False, "grund": "Kein Home-Ordner gewählt"}
+    ordner = f"{home.strip('/')}/{SICHERUNGSORDNER}"
+    ziel = f"{ordner}/{dateiname(objekt)}"
+    try:
+        client = verbindung(session)
+        client.ordner_anlegen(ordner)
+        name, n = ziel, 2
+        while client.existiert(name):        # nie überschreiben
+            name = ziel[:-5] + f"_{n}.json"
+            n += 1
+        client.lege_ab(name, als_datei(daten), typ="application/json")
+        return {"gesichert": True, "pfad": "/" + name}
+    except Exception as fehler:              # noqa: BLE001 — Löschen soll laufen
+        log.warning("Sicherung in die Cloud fehlgeschlagen: %s", fehler)
+        return {"gesichert": False, "grund": str(fehler)}
+
+
+@router.delete("/objekte/{slug}")
+def objekt_loeschen(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Löscht eine Immobilie samt allem, was in der Datenbank daran hängt.
+
+    Vorher wird eine JSON-Sicherung in die Nextcloud geschrieben. Die dort
+    liegenden Unterlagen bleiben unberührt — sie gehören dem Nutzer."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    daten = exportiere(session, o)
+    sicherung = _sicherung_in_die_cloud(session, o, daten)
+    name, ordner = o.name, o.nc_ordner
+    entfernt = loesche(session, o)
+    return {"ok": True, "name": name, "entfernt": entfernt,
+            "sicherung": sicherung,
+            "cloud_ordner_bleibt": ordner or None}
+
+
+@router.post("/objekte/import", status_code=201)
+def objekt_import(daten: dict, session: Session = Depends(get_session)) -> dict:
+    """Legt aus einer Sicherung wieder ein Objekt an — immer als neuer Eintrag."""
+    if not isinstance(daten.get("objekt"), dict):
+        raise HTTPException(400, "Keine ImmoCalc-Sicherung: 'objekt' fehlt")
+    o = importiere(session, daten, _freier_slug)
+    return {"slug": o.slug, "id": o.id, "name": o.name}
 
 
 @router.get("/objekte/{slug}/kostenarten")
@@ -291,6 +368,65 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         "belege_je_art": belege,
         "vorauszahlungen": [{"partei": v.partei, "betrag": v.betrag} for v in vzs],
     }
+
+
+class ZeitraumIn(BaseModel):
+    """Ein Jahr genügt — Start und Ende ergeben sich aus dem Turnus des Objekts.
+    Wer abweichende Grenzen braucht, gibt sie direkt an."""
+    jahr: Optional[int] = None
+    start: Optional[date] = None
+    ende: Optional[date] = None
+    typ: str = "regulär"
+
+
+@router.post("/objekte/{slug}/zeitraeume", status_code=201)
+def zeitraum_anlegen(slug: str, data: ZeitraumIn,
+                     session: Session = Depends(get_session)) -> dict:
+    """Legt einen weiteren Abrechnungszeitraum an — typisch ein Vorjahr.
+
+    Die Kostenarten stehen am Objekt, nicht am Zeitraum; die Checkliste des
+    neuen Zeitraums ist damit sofort vollständig. Übernommen werden zusätzlich
+    die Vorauszahlungen des Vorgängers, denn die ändern sich selten."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+
+    if data.start and data.ende:
+        start, ende = data.start, data.ende
+    else:
+        jahr = data.jahr or (date.today().year - 1)
+        start = date(jahr, o.start_monat or 1, 1)
+        ende = date(start.year + 1, start.month, 1) - timedelta(days=1)
+    if ende <= start:
+        raise HTTPException(400, "Das Ende muss nach dem Start liegen")
+
+    bestehende = session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
+    if any(z.start == start and z.ende == ende for z in bestehende):
+        raise HTTPException(409, "Diesen Zeitraum gibt es bereits")
+
+    z = Zeitraum(objekt_id=o.id, start=start, ende=ende, typ=data.typ,
+                 status="in Arbeit")
+    session.add(z)
+    session.commit()
+    session.refresh(z)
+
+    # Vorauszahlungen vom zeitlich nächsten Vorgänger übernehmen
+    vorgaenger = sorted((b for b in bestehende if b.ende <= start),
+                        key=lambda b: b.ende)
+    uebernommen = 0
+    if vorgaenger:
+        for v in session.exec(select(Vorauszahlung).where(
+                Vorauszahlung.zeitraum_id == vorgaenger[-1].id)).all():
+            session.add(Vorauszahlung(zeitraum_id=z.id, partei=v.partei,
+                                      betrag=v.betrag))
+            uebernommen += 1
+        session.commit()
+
+    arten = [k for k in session.exec(
+        select(Kostenart).where(Kostenart.objekt_id == o.id)).all() if k.aktiv]
+    return {"id": z.id, "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
+            "kostenarten": len(arten), "vorauszahlungen": uebernommen}
 
 
 class PositionIn(BaseModel):

@@ -203,6 +203,35 @@ def objekt_status(slug: str, session: Session = Depends(get_session)) -> dict:
     }
 
 
+@router.get("/objekte/{slug}/ordner")
+def objekt_ordner(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Was wirklich im Objektordner liegt.
+
+    Selbst angelegte Ordner werden ausgewiesen und bleiben unangetastet —
+    ImmoCalc legt nur an, was in STRUKTUR steht, und ändert nichts daran."""
+    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not objekt:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    if not objekt.nc_ordner:
+        return {"verknuepft": False, "ordner": [], "eigene": [], "fehlend": []}
+
+    try:
+        eintraege = verbindung(session).liste(objekt.nc_ordner)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+
+    vorhanden = [e.name for e in eintraege if e.ordner]
+    bekannt = set(STRUKTUR)
+    return {
+        "verknuepft": True,
+        "wurzel": objekt.nc_ordner,
+        "ordner": [{"name": n, "eigen": n not in bekannt} for n in vorhanden],
+        "eigene": [n for n in vorhanden if n not in bekannt],
+        "fehlend": [n for n in STRUKTUR if n not in vorhanden],
+        "dateien": sum(1 for e in eintraege if not e.ordner),
+    }
+
+
 @router.post("/objekte/{slug}/struktur")
 def struktur_anlegen(slug: str, session: Session = Depends(get_session)) -> dict:
     """Legt Objektordner samt Unterstruktur unter dem Home-Ordner an.

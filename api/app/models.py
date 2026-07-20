@@ -180,6 +180,28 @@ class Zahlung(SQLModel, table=True):
     notiz: str = ""
 
 
+class Eigentuemer(SQLModel, table=True):
+    """Person oder Gesellschaft, der Immobilien ganz oder teilweise gehören.
+    Steht für sich — dieselbe Person kann an mehreren Objekten beteiligt sein."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    rolle: str = "Eigentümer"      # 'Eigentümer' | 'Miteigentümer' | 'Gesellschaft'
+    email: str = ""
+    telefon: str = ""
+    anschrift: str = ""
+    steuernummer: str = ""
+    notiz: str = ""
+
+
+class Anteil(SQLModel, table=True):
+    """Beteiligung in Tausendsteln. 1000 = Alleineigentum."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    eigentuemer_id: int = Field(foreign_key="eigentuemer.id", index=True)
+    tausendstel: int = 1000
+    notiz: str = ""
+
+
 class Einstellung(SQLModel, table=True):
     """Schlüssel/Wert-Ablage für Verbindungsdaten. Geheimnisse werden nie
     über die API zurückgegeben."""

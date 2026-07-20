@@ -255,7 +255,7 @@ async function ergebnisHtml() {
     <div class="karte">
       <h3>${esc(partei)}</h3>
       <div class="summe"><span>Umlagefähige Kosten</span><b>${eur(w.kosten)}</b></div>
-      <div class="summe"><span>Vorauszahlungen</span><b>${eur(w.vz)}</b></div>
+      <div class="summe"><span>Vorauszahlungen</span><b>${eur(w.vorauszahlungen)}</b></div>
       <div class="summe gesamt"><span>Saldo</span>
         <b class="${(w.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(w.saldo)}</b></div>
     </div>`).join('');

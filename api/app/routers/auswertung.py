@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlmodel import Session as DBSession
 
 from ..cashflow import EinheitZahlen, cashflow, monate_im_jahr, sankey
-from ..turnus import auswahl_fuer, jahresbetrag
+from ..turnus import jahresbetrag
 from ..db import get_session
 from ..models import (Einheit, Kostenposition, Kredit, Miete, Objekt,
                       Versicherung, Zahlung, Zeitraum)

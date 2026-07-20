@@ -70,8 +70,15 @@ def abrechnung(positionen: list[Position],
     Liefert je Partei kosten/vorauszahlungen/saldo/s35 und eine Gesamtübersicht."""
     kosten_je: dict[str, float] = {}
     s35_je: dict[str, float] = {}
+    einzeln: list[dict] = []
     for p in positionen:
-        for partei, betrag in verteile_nach_wert(p.kosten, p.anteile).items():
+        verteilung = verteile_nach_wert(p.kosten, p.anteile)
+        einzeln.append({
+            "kostenart": p.kostenart, "kosten": round(p.kosten, 2),
+            "schluessel": p.schluessel, "s35": p.s35,
+            "verteilung": {k: round(v, 2) for k, v in verteilung.items()},
+        })
+        for partei, betrag in verteilung.items():
             kosten_je[partei] = kosten_je.get(partei, 0.0) + betrag
             if p.s35:
                 s35_je[partei] = s35_je.get(partei, 0.0) + betrag
@@ -92,4 +99,5 @@ def abrechnung(positionen: list[Position],
         "abschlaege": round(abschlaege, 2),
         "saldo": round(abschlaege - auslagen, 2),
     }
-    return {"parteien": parteien, "gesamt": gesamt}
+    # `positionen` ist der Nachweis je Kostenart — die Anlage zur Abrechnung.
+    return {"parteien": parteien, "gesamt": gesamt, "positionen": einzeln}

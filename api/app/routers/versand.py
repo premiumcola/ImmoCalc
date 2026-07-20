@@ -1,10 +1,11 @@
 """Abrechnung abschließen: je Partei ein Ergebnis erzeugen und versenden."""
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..db import get_session
 from ..engine import Position, abrechnung
 from ..mailversand import MailFehler
@@ -54,7 +55,7 @@ def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
             "einheit": kontakt.get("einheit", ""),
             "email": kontakt.get("email", ""),
             "kosten": werte.get("kosten"),
-            "vz": werte.get("vz"),
+            "vz": werte.get("vorauszahlungen"),
             "saldo": werte.get("saldo"),
             "versandbereit": bool(kontakt.get("email")),
         })
@@ -68,9 +69,42 @@ def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
     }
 
 
+def _einzelposten(res: dict, partei: str) -> list[dict]:
+    """Anteil dieser Partei je Kostenart — der Nachweis in der Anlage."""
+    zeilen = []
+    for eintrag in res.get("positionen") or []:
+        betrag = (eintrag.get("verteilung") or {}).get(partei)
+        if betrag:
+            zeilen.append({"kostenart": eintrag.get("kostenart"),
+                           "betrag": round(betrag, 2)})
+    zeilen.sort(key=lambda p: -p["betrag"])
+    return zeilen
+
+
+@router.get("/{zid}/abrechnung.pdf")
+def abrechnung_als_pdf(zid: int, partei: str,
+                       session: Session = Depends(get_session)) -> Response:
+    """Die Abrechnung einer Partei als PDF — zum Ansehen vor dem Versand."""
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    o = session.get(Objekt, z.objekt_id)
+    res = _ergebnis(session, z)
+    werte = (res.get("parteien") or {}).get(partei)
+    if werte is None:
+        raise HTTPException(404, f"Keine Abrechnung für '{partei}'")
+    zeitraum_text = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
+    inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
+                            _einzelposten(res, partei))
+    return Response(content=inhalt, media_type="application/pdf", headers={
+        "Content-Disposition":
+            f'inline; filename="{pdf_dateiname(o.name, zeitraum_text, partei)}"'})
+
+
 class AbschlussIn(BaseModel):
     versenden: bool = False
     offene_uebergehen: bool = False
+    pdf_anhaengen: bool = True
 
 
 @router.post("/{zid}/abschliessen")
@@ -114,10 +148,17 @@ def abschliessen(zid: int, data: AbschlussIn,
                 f"Bei Rückfragen melden Sie sich gerne.\n\n"
                 f"Freundliche Grüße\n"
             )
+            anhang = None
+            if data.pdf_anhaengen:
+                inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
+                                        _einzelposten(res, partei),
+                                        absender=z_mail.absender_name)
+                anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
+                          inhalt, "pdf")
             try:
                 z_mail.sende(adresse,
                              f"Betriebskostenabrechnung {o.name} · {zeitraum_text}",
-                             text)
+                             text, anhang=anhang)
                 versendet.append(partei)
             except MailFehler as e:
                 raise HTTPException(400, f"Versand an {partei} fehlgeschlagen: {e}") from e

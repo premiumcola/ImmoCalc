@@ -10,6 +10,7 @@ from sqlmodel import Session, SQLModel, select
 
 from ..db import get_session
 from ..models import Kredit, Miete, Objekt, Versicherung, Zahlung
+from ..turnus import VORGABE, auswahl_fuer
 
 router = APIRouter(prefix="/api", tags=["stammdaten"])
 
@@ -33,6 +34,14 @@ def _modell(bereich: str) -> Type[SQLModel]:
     if modell is None:
         raise HTTPException(404, f"Unbekannter Bereich '{bereich}'")
     return modell
+
+
+@router.get("/turnus/{bereich}")
+def turnus_auswahl(bereich: str) -> dict:
+    """Zahlungsturnus-Optionen eines Bereichs — speist die Auswahlfelder."""
+    _modell(bereich)                     # unbekannter Bereich -> 404
+    return {"bereich": bereich, "vorgabe": VORGABE.get(bereich, "jaehrlich"),
+            "optionen": auswahl_fuer(bereich)}
 
 
 # response_model=None: der Typ steht erst zur Laufzeit fest. Ohne das wuerde
