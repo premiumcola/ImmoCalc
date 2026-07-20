@@ -25,6 +25,30 @@
   .kopfzeile .scan:hover{background:var(--teal-l)}
   .kopfzeile .scan[disabled]{opacity:.55;cursor:default}
 
+  .kamera{display:flex;gap:14px;align-items:center;width:100%;border:none;cursor:pointer;
+    background:var(--teal);color:#fff;border-radius:16px;padding:16px;margin-bottom:16px;
+    text-align:left;font-family:var(--body);min-height:44px;
+    box-shadow:0 8px 20px -10px rgba(15,110,92,.8)}
+  .kamera:hover{background:var(--teal-d)}
+  .kamera[disabled]{opacity:.7;cursor:default}
+  .kamera .ks{width:44px;height:44px;border-radius:12px;flex:none;display:flex;
+    align-items:center;justify-content:center;background:rgba(255,255,255,.18);
+    font:600 19px var(--mono)}
+  .kamera .k1{display:block;font:600 15px var(--disp);letter-spacing:-.01em}
+  .kamera .k2{display:block;font:400 12px var(--body);opacity:.85;margin-top:3px;
+              line-height:1.4}
+  dialog{border:none;border-radius:18px;padding:0;max-width:400px;
+         width:calc(100% - 32px);background:var(--paper);
+         box-shadow:0 30px 70px -20px rgba(22,38,44,.5)}
+  dialog::backdrop{background:rgba(22,38,44,.45)}
+  .dh{display:flex;align-items:center;gap:12px;padding:18px 18px 6px}
+  .dh h2{flex:1;font:700 17px var(--disp);letter-spacing:-.02em;margin:0}
+  .close{border:none;background:#F1F4F4;color:var(--soft);border-radius:12px;
+         width:44px;height:44px;font:400 20px var(--body);cursor:pointer;flex:none;
+         display:flex;align-items:center;justify-content:center;line-height:1}
+  .dbody{padding:8px 18px 18px}
+  .zinfo{font:600 12px var(--mono);color:var(--teal-d);background:var(--teal-l);
+         border-radius:10px;padding:10px 12px;margin:0 0 14px}
   .wachdienst{font:500 11.5px var(--mono);color:var(--soft);margin:-6px 0 14px}
   .wachdienst.warn{color:var(--amber)}
   .beleg{background:var(--sheet);border-radius:16px;padding:15px;margin-bottom:12px;
@@ -69,6 +93,16 @@
   </div>
 
   <div class="scroll">
+    <button class="kamera" id="kamera">
+      <span class="ks">▣</span>
+      <span class="kt">
+        <span class="k1">Beleg abfotografieren</span>
+        <span class="k2">Mehrere Seiten möglich · wird als PDF abgelegt</span>
+      </span>
+    </button>
+    <input type="file" id="kameraFeld" accept="image/*" capture="environment"
+           multiple hidden>
+
     <div class="kopfzeile">
       <span class="zahl" id="zahl"></span>
       <button class="scan" id="scan">Ordner prüfen</button>
@@ -85,8 +119,29 @@
   </nav>
 </div>
 
+<dialog id="zielDlg">
+  <div class="dh">
+    <h2>Wohin gehört der Beleg?</h2>
+    <button class="close" onclick="this.closest('dialog').close()"
+            aria-label="Abbrechen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="zinfo" id="zielInfo"></p>
+    <div class="field"><label for="zielObjekt">Immobilie</label>
+      <select class="inp" id="zielObjekt"></select></div>
+    <div class="field"><label for="zielArt">Art</label>
+      <select class="inp" id="zielArt"></select></div>
+    <div class="field"><label for="zielJahr">Jahr</label>
+      <select class="inp" id="zielJahr"></select></div>
+    <div class="field"><label for="zielText">Kurzbeschreibung</label>
+      <input class="inp" id="zielText" placeholder="optional"></div>
+    <button class="btn" id="zielOk">Ablegen</button>
+  </div>
+</dialog>
+
 <script type="module">
 import { api, esc } from './assets/immo.js';
+import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
 
 const liste = document.getElementById('liste');
 const sub = document.getElementById('sub');
@@ -243,6 +298,97 @@ liste.addEventListener('click', async e => {
       '⚠ ' + String(fehler.message || fehler);
   }
 });
+
+/* ---- Beleg abfotografieren ----------------------------------------------
+   <input capture> öffnet auf iOS direkt die Kamera. Die Aufnahmen werden im
+   Browser verkleinert und zu einem PDF zusammengesetzt; hochgeladen wird nur
+   das fertige PDF. */
+const kameraKnopf = document.getElementById('kamera');
+const kameraFeld = document.getElementById('kameraFeld');
+
+kameraKnopf.addEventListener('click', () => kameraFeld.click());
+
+kameraFeld.addEventListener('change', async () => {
+  const dateien = [...kameraFeld.files];
+  kameraFeld.value = '';
+  if (!dateien.length) return;
+
+  const beschriftung = kameraKnopf.querySelector('.k1');
+  const unterzeile = kameraKnopf.querySelector('.k2');
+  kameraKnopf.disabled = true;
+  beschriftung.textContent = 'Verarbeite …';
+  unterzeile.textContent = `${dateien.length} Aufnahme${dateien.length > 1 ? 'n' : ''}`;
+
+  try {
+    const { pdf, seiten } = await scanZuPdf(dateien);
+    const auswahl = await zielAbfragen(seiten, pdf.size);
+    if (!auswahl) throw new Error('abgebrochen');
+
+    const paket = new FormData();
+    paket.append('objekt', auswahl.objekt);
+    paket.append('kategorie', auswahl.kategorie);
+    paket.append('jahr', String(auswahl.jahr));
+    paket.append('beschreibung', auswahl.beschreibung);
+    paket.append('datei', pdf, 'scan.pdf');
+
+    const antwort = await fetch('/api/dokumente/scannen',
+      { method: 'POST', body: paket });
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      throw new Error(grund || `Fehler ${antwort.status}`);
+    }
+    const ergebnis = await antwort.json();
+    beschriftung.textContent = ergebnis.abgelegt ? '✓ Abgelegt' : '✓ Im Eingang';
+    unterzeile.textContent = ergebnis.abgelegt
+      ? `${ergebnis.dateiname} · ${lesbareGroesse(pdf.size)}`
+      : ergebnis.hinweis;
+    await laden();
+  } catch (fehler) {
+    const text = String(fehler.message || fehler);
+    beschriftung.textContent = text === 'abgebrochen' ? 'Abgebrochen' : 'Fehlgeschlagen';
+    unterzeile.textContent = text === 'abgebrochen' ? 'Nichts hochgeladen' : text;
+  } finally {
+    setTimeout(() => {
+      kameraKnopf.disabled = false;
+      beschriftung.textContent = 'Beleg abfotografieren';
+      unterzeile.textContent = 'Mehrere Seiten möglich · wird als PDF abgelegt';
+    }, 3200);
+  }
+});
+
+/** Kleiner Dialog: wohin gehört der Scan? */
+function zielAbfragen(seiten, groesse) {
+  return new Promise(fertig => {
+    const dlg = document.getElementById('zielDlg');
+    document.getElementById('zielInfo').textContent =
+      `${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(groesse)}`;
+
+    const objektWahl = document.getElementById('zielObjekt');
+    objektWahl.innerHTML = objekte.map(o =>
+      `<option value="${esc(o.slug)}">${esc(o.name)}</option>`).join('');
+    const artWahl = document.getElementById('zielArt');
+    artWahl.innerHTML = arten.map(a => `<option>${esc(a)}</option>`).join('');
+    const jahrWahl = document.getElementById('zielJahr');
+    const jetzt = new Date().getFullYear();
+    jahrWahl.innerHTML = Array.from({ length: 8 }, (_, i) => jetzt - i)
+      .map(j => `<option>${j}</option>`).join('');
+
+    let entschieden = false;
+    const abbruch = () => { if (!entschieden) fertig(null); };
+    dlg.addEventListener('close', abbruch, { once: true });
+    document.getElementById('zielOk').onclick = () => {
+      entschieden = true;
+      dlg.close();
+      fertig({
+        objekt: objektWahl.value,
+        kategorie: artWahl.value,
+        jahr: Number(jahrWahl.value),
+        beschreibung: document.getElementById('zielText').value.trim(),
+      });
+    };
+    dlg.showModal();
+  });
+}
 
 await laden();
 </script>

@@ -18,7 +18,8 @@ check-app:
 	node tests/responsive-check.mjs; D=$$?; \
 	node tests/matrix.mjs; E=$$?; \
 	node tests/zeitraum-check.mjs; F=$$?; \
+	node tests/scan-check.mjs; G=$$?; \
 	kill $$(cat /tmp/immocalc-harness.pid) 2>/dev/null; \
-	exit $$((A + B + C + D + E + F))
+	exit $$((A + B + C + D + E + F + G))
 
 icons:   ; node tools/make-icons.mjs   ## App-Icons aus icons/icon.svg erzeugen

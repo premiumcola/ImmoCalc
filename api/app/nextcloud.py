@@ -154,6 +154,21 @@ class Nextcloud:
                 neu.append(f"/{wurzel.strip('/')}/{unter}")
         return neu
 
+    def lege_ab(self, pfad: str, inhalt: bytes,
+                typ: str = "application/pdf") -> None:
+        """Datei hochladen. Ueberschreibt eine gleichnamige Datei nicht —
+        der Aufrufer sorgt fuer einen freien Namen."""
+        antwort = self._anfrage("PUT", pfad, content=inhalt,
+                                headers={"Content-Type": typ})
+        if antwort.status_code >= 400:
+            raise NextcloudFehler(
+                f"Hochladen fehlgeschlagen ({antwort.status_code}): {pfad}")
+
+    def existiert(self, pfad: str) -> bool:
+        antwort = self._anfrage("PROPFIND", pfad, headers={"Depth": "0"},
+                                content=PROPFIND_RUMPF)
+        return antwort.status_code < 400
+
     def verschiebe(self, von: str, nach: str) -> None:
         antwort = self._anfrage("MOVE", von, headers={
             "Destination": self._url(nach), "Overwrite": "F"})

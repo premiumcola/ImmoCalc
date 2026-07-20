@@ -8,7 +8,7 @@ import logging
 import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -171,6 +171,68 @@ def zuordnen(dokument_id: int, data: ZuordnungIn,
     session.add(d)
     session.commit()
     return {"ok": True, "pfad": d.pfad, "dateiname": d.dateiname}
+
+
+def _freier_name(client, ordner: str, name: str) -> str:
+    """Haengt -2, -3 an, falls der Name schon vergeben ist — nie ueberschreiben."""
+    stamm, punkt, endung = name.rpartition(".")
+    stamm = stamm or name
+    endung = f".{endung}" if punkt else ""
+    kandidat, n = name, 2
+    while client.existiert(f"{ordner}/{kandidat}"):
+        kandidat = f"{stamm}-{n}{endung}"
+        n += 1
+        if n > 50:
+            break
+    return kandidat
+
+
+@router.post("/scannen", status_code=201)
+async def scannen(objekt: str = Form(...), kategorie: str = Form("Sonstiges"),
+                  jahr: int | None = Form(None), beschreibung: str = Form(""),
+                  datei: UploadFile = File(...),
+                  session: Session = Depends(get_session)) -> dict:
+    """Nimmt ein abfotografiertes Dokument entgegen, benennt es nach Schema
+    und legt es direkt im richtigen Unterordner der Immobilie ab."""
+    o = session.exec(select(Objekt).where(Objekt.slug == objekt)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+
+    inhalt = await datei.read()
+    if not inhalt:
+        raise HTTPException(400, "Leere Datei")
+
+    unterordner = ZIELORDNER.get(kategorie, "99_Sonstiges")
+    name = dateiname(jahr, kategorie, beschreibung or "Scan", ".pdf")
+
+    # Ohne verknüpften Ordner bleibt der Scan in der Inbox und wartet dort.
+    if not o.nc_ordner:
+        d = Dokument(pfad=f"(nicht abgelegt)/{name}", dateiname=name,
+                     groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
+                     jahr=jahr, status="neu", erkannt_am=date.today())
+        session.add(d)
+        session.commit()
+        session.refresh(d)
+        return {"id": d.id, "dateiname": name, "abgelegt": False,
+                "hinweis": "Nextcloud-Ordner fehlt — das Dokument wartet im Eingang."}
+
+    client = verbindung(session)
+    ziel_ordner = f"{o.nc_ordner.strip('/')}/{unterordner}"
+    try:
+        client.ordner_anlegen(ziel_ordner)
+        name = _freier_name(client, ziel_ordner, name)
+        client.lege_ab(f"{ziel_ordner}/{name}", inhalt)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+
+    d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
+                 groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
+                 jahr=jahr, status="zugeordnet", erkannt_am=date.today())
+    session.add(d)
+    session.commit()
+    session.refresh(d)
+    log.info("Scan abgelegt: %s", d.pfad)
+    return {"id": d.id, "dateiname": name, "pfad": d.pfad, "abgelegt": True}
 
 
 @router.get("/objekt/{slug}")
