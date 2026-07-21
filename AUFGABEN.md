@@ -4,7 +4,8 @@ Alle Anforderungen aus den Gesprächen, fortlaufend nummeriert. Erledigtes mit
 Commit, Offenes mit dem, was noch fehlt. Diese Liste wird bei jeder neuen
 Anforderung fortgeschrieben — nichts muss doppelt gesagt werden.
 
-Stand: 20.07.2026 · 133 pytest grün · 9 Seiten × 3 Geräteklassen geprüft
+Stand: 21.07.2026 · 166 pytest grün · Prüfung des Standes `0acdaa1` durch
+fünf Agents, jeder Fund gegengeprüft
 
 **Grundsatz aus dem Gespräch:** möglichst direkt bedienbar. Was man häufig
 tut, gehört an die Oberfläche — nicht hinter einen zweiten Klick. Und nichts,
@@ -90,30 +91,59 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | LXXXIII | Auswertung geteilt: Wertentwicklung und Nebenkostenabrechnung | `19fdf4f` |
 | LXXXIV | Menüleiste mit sechs Einträgen | `19fdf4f` |
 | LXXXV | „Eingang" heißt jetzt „Dokumente" | `19fdf4f` |
-| LXXXVI | Menüleiste auf dem Handy: vier Wege plus „Mehr" | folgt |
+| LXXXVI | Menüleiste auf dem Handy: vier Wege plus „Mehr" | `821a925` |
+| LXVI | Abschluss rückgängig: Zeitraum wieder öffnen | `a8952a8` |
+| LXVIII | Wachdienst legt nichts doppelt an (Sperre, 409) | `b692b10` |
+| LXIX | Zuordnen ohne Cloud-Ordner meldet jetzt 409 statt Erfolg | `b692b10` |
+| LXXI | Fänger entschärft: `/api/stammdaten/{bereich}/{id}` | `822e928` |
+| LXXII | Je Testmodul eine eigene Datenbank (`conftest.py`) | `822e928` |
+| LXXXVII | Verteilungsschlüssel aus Stammdaten ableiten (API) | `a8952a8` |
+| LXXXVIII | Dokumentenablage flach: Filter, Suche, Korrigieren, Neu-Scan | `b692b10` |
+| LXXXIX | „Was ansteht" auf der Startseite, Sicherung einlesen | `0acdaa1` |
 
 ---
 
 ## Offen
 
-### Aus der Prüfung vom 20.07.2026 — noch nicht behoben
+### Blocker — aus der Prüfung vom 21.07.2026
 
 | Nr. | Fund | Warum es zählt |
 |---|---|---|
-| LXV | **Kein Endpunkt setzt `anteile`** | Für selbst angelegte Objekte bleibt jede Abrechnung 0,00 €. Nur der Seed schreibt Verteilungsgewichte |
-| LXVI | Abschluss ist unumkehrbar | Ein versehentlich abgeschlossener Zeitraum lässt sich nicht wieder öffnen |
-| LXVIII | Wachdienst kann Dokumente doppelt anlegen | `Dokument.pfad` ist nicht eindeutig; zwei Sessions sehen denselben Pfad als neu |
-| LXIX | Zuordnen ohne Cloud-Ordner meldet Erfolg ohne Wirkung | Datei bleibt liegen, verschwindet aber aus dem Eingang |
-| LXX | Sieben Endpunkte ohne Aufrufer | u. a. Erinnerungen, PDF-Vorschau, Import, OCR-Status — gebaut, aber nirgends erreichbar |
-| LXXI | Fänger `/api/{bereich}/{id}` verschluckt zweisegmentige Pfade | Der nächste Endpunkt fällt lautlos hinein |
-| LXXII | Tests teilen sich eine Datenbank | Die Reihenfolge entscheidet, welche `DB_PATH` gilt — Funde können sich gegenseitig verdecken |
+| LXV | **Kostenposition lässt sich in der Oberfläche nicht anlegen** | Das Backend leitet Gewichte jetzt ab (`a8952a8`), aber `POST /api/zeitraeume/{zid}/positionen` hat keinen Aufrufer. Für ein selbst angelegtes Objekt bleibt `position_id: null`, das Betragsfeld erscheint nie — die Abrechnung bleibt 0,00 € |
+| XC | **Beleg landet nie am Zeitraum** | `Dokument.zeitraum_id` wird außer im Seed von keinem Weg gesetzt; der Reiter „Belege" ist für echte Daten dauerhaft leer |
 
-### Neu aus dem Gespräch vom 20.07.2026
+### Rechenlogik — Geld wird falsch verteilt
 
-| Nr. | Aufgabe | Was gemeint ist |
+| Nr. | Fund | Warum es zählt |
 |---|---|---|
-| LXXV | **Dokumentenablage ohne Verschachtelung** | direkter, effizienter Weg; so viel wie möglich automatisch zuordnen, aber Verschieben, Korrigieren, Löschen und Neu-Scannen bleiben möglich |
-| LXXVI | **Dynamisch, filterbar, smart** | keine Dopplungen in der Darstellung |
+| XCI | Mieterwechsel zählt Fläche, Personen und Einheiten doppelt | `verteilung.py:157-168` verteilt ohne Zeitanteil. Bei einem Wechsel im Jahr trägt die andere Einheit 42,86 % statt 60 % — unabhängig davon, wann gewechselt wurde |
+| XCII | Mietverhältnis ohne Einheit fällt stumm aus der Verteilung | `Miete.einheit` ist Freitext; passt der Name nicht, verschwindet die Partei aus den Gewichten, bekommt keine Kosten und ihre Vorauszahlung voll erstattet. Kein Wächter meldet das |
+
+### Datenintegrität — Wachdienst und echte Dateien
+
+| Nr. | Fund | Warum es zählt |
+|---|---|---|
+| XCIII | Kategorie-Erkennung per Teilstring legt automatisch falsch ab | `klein.count(wort)` ohne Wortgrenzen: „Kaufvertrag Berg**gas**se 5.pdf" gilt als Nebenkosten. Der Wachdienst verschiebt und benennt solche Dateien alle 15 Minuten ungefragt um |
+| XCIV | Unique-Index auf `dokument.pfad` fehlt in `migrate.py` | Für die Bestands-DB wirkungslos; er entsteht nur beim ersten Scan, ein Fehlschlag wird bis zum Neustart nie wiederholt. LXVIII besteht live weiter |
+| XCV | `IntegrityError` nur in `_aufnehmen` abgefangen | Wurde eine Datei in der Cloud gelöscht, scheitert der Scan mit HTTP 500 — die Datei liegt schon im Zielordner, der Eintrag zeigt noch auf den Eingang |
+| XCVI | `verschieben:false` benennt nur in der Datenbank um | Umgeht die 409-Sperre: DB-Name und Cloud-Datei laufen auseinander, der Eintrag gilt als „zugeordnet". Derselbe Schaden wie LXIX, nur hinter einem Schalter |
+| XCVII | Automatische Ablage wirft den Originalnamen weg | Aus „Grundsteuerbescheid 2024.pdf" wird „2024_Steuer.pdf" — unumkehrbar, ohne Nutzeraktion. Zwei Belege eines Jahres sind danach nur noch durch Öffnen unterscheidbar |
+
+### Oberfläche und Prüfstand
+
+| Nr. | Fund | Warum es zählt |
+|---|---|---|
+| XCVIII | `auswahl.js` entfernt seine `document`-Listener nie | Jedes Neuzeichnen hängt weitere an; bei zehn Dokumenten und getippter Suche sammeln sich hunderte, deren Closures abgelöste DOM-Bäume halten |
+| XCIX | `scan-check.mjs` kann nicht mehr fehlschlagen | Das Muster trifft auch den Ruhetext des Knopfes — ein Scan, der gar nicht anläuft, gilt als Erfolg |
+| C | Kanonischer Stammdatenpfad und Verteilungsfälle ungetestet | Getestet wird nur die Altroute; ein Fehler im neuen Pfad bliebe in `make test` unsichtbar, obwohl die Oberfläche dann nicht speichern kann |
+| LXX | Fünf Endpunkte ohne Aufrufer | u. a. `POST`/`DELETE` auf Positionen, `GET /zeitraeume/{zid}/positionen` — zwei davon in `a8952a8` neu gebaut. Erinnerungen und Import sind mit `0acdaa1` angebunden |
+
+### Reststand aus dem Gespräch vom 20.07.2026
+
+| Nr. | Aufgabe | Was noch fehlt |
+|---|---|---|
+| LXXV | **Dokumentenablage ohne Verschachtelung** | Grundgerüst steht (`b692b10`). Offen: Originalname bleibt erhalten (XCVII), verwaiste Einträge aufräumbar |
+| LXXVI | **Dynamisch, filterbar, smart** | Offen: Metazeile wiederholt Jahr und Art aus dem Dateinamen, Zustand „neu" dreifach signalisiert, Art-Filter bietet leere Werte an |
 
 ### Bewusst zurückgestellt
 
