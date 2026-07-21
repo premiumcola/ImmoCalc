@@ -123,6 +123,10 @@
     padding:9px 10px;font:600 12.5px var(--mono);min-height:44px;
     background:var(--sheet);text-align:right;color:inherit}
   .gw input:focus{outline:none;border-color:var(--teal)}
+  /* Ein Leerstand heißt wie seine Einheit („EG") und sähe sonst aus wie ein
+     Mieter. Die Beischrift sagt, wer ihn trägt. */
+  .gw .gsub{display:block;font:400 11px var(--body);color:var(--soft);
+            margin-top:2px;line-height:1.35}
   .gw .gv{width:92px;flex:none;text-align:right;font:600 12.5px var(--mono)}
   .gw .gp{width:48px;flex:none;text-align:right;
           font:600 11.5px var(--mono);color:var(--soft)}
@@ -153,7 +157,17 @@
 
   .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:12px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
-  .karte h3{font:600 13px var(--disp);margin:0 0 12px}
+  .karte h3{font:600 13px var(--disp);margin:0 0 12px;
+            display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .marke{font:600 9.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+         border-radius:7px;padding:4px 7px;background:#EDF1F0;color:var(--soft)}
+  .marke.gut{background:var(--teal-l);color:var(--teal-d)}
+  .marke.post{background:var(--amber-bg);color:var(--amber)}
+  /* An wen die Abrechnung geht — mehrere Adressen stehen alle da, sonst
+     bliebe offen, wer sie außer dem Vertragspartner noch bekommt. */
+  .wemgeht{font:400 11.5px var(--body);color:var(--soft);line-height:1.45;
+           margin:-6px 0 12px;overflow-wrap:anywhere}
+  .wemgeht.fehlt{color:var(--amber)}
   .summe{display:flex;justify-content:space-between;gap:12px;padding:9px 0;
          font:500 13.5px var(--body);border-top:1px solid var(--line)}
   .summe:first-of-type{border-top:none}
@@ -186,6 +200,18 @@
     box-shadow:0 6px 16px -8px rgba(46,125,79,.7)}
   .losbutton:hover{background:#276b44}
   .losbutton[disabled]{background:#C2CCCB;color:#fff;box-shadow:none;cursor:default}
+
+  /* Versandplan vor dem Abschluss: eine Zeile je Partei, der Leerstand ruhig
+     am Ende. Er ist kein Empfänger, sondern der Anteil des Eigentümers. */
+  .vdlg .vliste{max-height:min(44dvh,330px);overflow:auto;margin:0 0 16px;
+                background:var(--sheet);border-radius:12px}
+  .vdlg .vz{display:flex;align-items:flex-start;gap:10px;padding:12px 13px}
+  .vdlg .vz + .vz{border-top:1px solid var(--line)}
+  .vdlg .vn{flex:1;min-width:0;font:600 13px var(--body);color:var(--ink);
+            overflow-wrap:anywhere}
+  .vdlg .vs{display:block;font:400 11px var(--body);color:var(--soft);
+            margin-top:3px;line-height:1.45}
+  .vdlg .vm{flex:none;margin-top:1px}
 </style>
 </head>
 <body>
@@ -217,7 +243,7 @@
 </div>
 
 <script type="module">
-import { api, eur, eurKurz, esc, fristKlasse, melde, frage, wahl, belegAnsehen }
+import { api, eur, eurKurz, esc, fristKlasse, melde, frage, belegAnsehen }
   from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 import { sankey } from './assets/charts.js';
@@ -232,6 +258,11 @@ let daten = null;
 /* Welche Verteilungsschlüssel für dieses Objekt taugen und welche Gewichte
    sie ergäben — die Vorschau, bevor man sich festlegt. */
 let schluessel = null;
+/* Welche Zeilen der Verteilung kein Mieter sind, sondern unbelegte Zeit. Die
+   Schlüssel-Vorschau nennt sie je Schlüssel; zusammen sind das die Leerstände
+   des Zeitraums. Ohne diese Kennzeichnung liest sich der Anteil, den der
+   Eigentümer selbst trägt, wie eine Partei namens „EG". */
+let leerstaende = new Set();
 let ansicht = 'pruef';
 let sortierung = 'status';
 const offen = new Set();
@@ -297,6 +328,20 @@ const schluesselMeta = wert =>
 const prozentText = (wert, summe) =>
   summe > 0 ? `${(Number(wert || 0) / summe * 100).toFixed(1)} %` : '—';
 
+/* Warum eine Einheit zweimal in der Verteilung steht: war sie nur einen Teil
+   des Zeitraums vermietet, trägt der Mieter seine Wohndauer und der Eigentümer
+   die leere Zeit. Ohne diesen Satz sieht das nach einer doppelten Zeile aus. */
+function doppelteEinheit(namen) {
+  const einheit = new Map(
+    (schluessel?.parteien || []).map(p => [p.partei, p.einheit]));
+  const doppelt = namen.filter(n => leerstaende.has(n) && einheit.get(n)
+    && namen.some(m => m !== n && einheit.get(m) === einheit.get(n)));
+  if (!doppelt.length) return '';
+  return `<div class="hinweis">${doppelt.map(esc).join(', ')} ${
+    doppelt.length === 1 ? 'steht' : 'stehen'} zweimal in der Liste: einmal für
+    die vermietete Zeit, einmal für den Leerstand.</div>`;
+}
+
 /* Verteilung einer Position: Schlüssel wählbar, Gewichte lesbar.
    Eine nackte Zahl („Büro 4.1398") sagt niemandem etwas — erst Maßeinheit und
    Prozentanteil machen sie lesbar, und erst das Eingabefeld korrigierbar. */
@@ -318,7 +363,8 @@ function verteilungHtml(k) {
 
   const zeilen = felder.map(([p, w]) => `
     <div class="gw">
-      <span class="gn">${esc(p)}</span>
+      <span class="gn">${esc(p)}${leerstaende.has(p)
+        ? '<span class="gsub">Leerstand · beim Eigentümer</span>' : ''}</span>
       ${bearbeitbar
         ? `<input type="number" step="0.0001" min="0" value="${Number(w)}"
                  data-gewicht="${esc(p)}"
@@ -346,6 +392,7 @@ function verteilungHtml(k) {
         <span><b>Ohne Gewichte wird nichts verteilt.</b> Die ${eur(k.betrag)}
         fließen mit 0,00 € in die Abrechnung ein.</span></div>` : ''}
       ${zeilen}
+      ${doppelteEinheit(felder.map(([p]) => p))}
       ${!eintraege.length && meta ? `<div class="hinweis">${esc(meta.hinweis)}</div>`
         : ''}
       ${knoepfe}
@@ -424,19 +471,41 @@ function zeileHtml(k, i) {
     </div>`;
 }
 
+/* An wen die Abrechnung dieser Partei geht. Beim Leerstand an niemanden — er
+   ist kein Empfänger, sondern der Anteil des Eigentümers. */
+function empfaengerHtml(p) {
+  if (!p) return '';
+  if (p.leerstand) {
+    return '<div class="wemgeht">Bleibt beim Eigentümer — kein Versand.</div>';
+  }
+  if (p.adressen?.length) {
+    return `<div class="wemgeht">Geht an ${p.adressen.map(esc).join(' · ')}</div>`;
+  }
+  return `<div class="wemgeht fehlt">Keine Mailadresse hinterlegt —
+    ausdrucken und mit der Post schicken.</div>`;
+}
+
 async function ergebnisHtml() {
-  let a;
-  try {
-    a = await api(`/zeitraeume/${zid}/abrechnung`);
-  } catch {
+  // Der Versandplan sagt, welche Zeile ein Leerstand ist und wer die
+  // Abrechnung bekommt; ohne ihn bleibt das Ergebnis trotzdem lesbar.
+  const [rechnung, versand] = await Promise.allSettled([
+    api(`/zeitraeume/${zid}/abrechnung`),
+    api(`/zeitraeume/${zid}/versand`),
+  ]);
+  if (rechnung.status !== 'fulfilled') {
     return '<div class="empty"><div class="big">Ergebnis nicht verfügbar</div></div>';
   }
+  const a = rechnung.value;
+  const wer = new Map((versand.value?.parteien || []).map(p => [p.partei, p]));
+
   // Die Abrechnung je Partei als PDF — dieselbe Datei, die beim Versand
   // angehängt wird. Vor dem Verschicken einmal ansehen zu können, ist der
   // Sinn der Vorschau.
   const zeilen = Object.entries(a.parteien || {}).map(([partei, w]) => `
     <div class="karte">
-      <h3>${esc(partei)}</h3>
+      <h3>${esc(partei)}${wer.get(partei)?.leerstand || leerstaende.has(partei)
+        ? '<span class="marke">Leerstand</span>' : ''}</h3>
+      ${empfaengerHtml(wer.get(partei))}
       <div class="summe"><span>Umlagefähige Kosten</span><b>${eur(w.kosten)}</b></div>
       <div class="summe"><span>Vorauszahlungen</span><b>${eur(w.vorauszahlungen)}</b></div>
       ${w.s35 ? `<div class="summe"><span>davon § 35a</span><b>${eur(w.s35)}</b></div>`
@@ -747,6 +816,63 @@ async function wiederOeffnen(knopf) {
   }
 }
 
+/* Der Versandplan als Dialog: eine Zeile je Partei, damit vor dem Abschluss
+   klar ist, wer die Abrechnung bekommt — und über welche Adressen. Der
+   Leerstand steht ruhig am Ende: er ist kein vergessener Mieter, sondern der
+   Anteil, den der Eigentümer selbst trägt. Liefert 'senden', 'nur' oder null.
+
+   Eigener Dialog statt `wahl`: dort ginge alles in einem Fließtext auf, und
+   genau die Unterscheidung, um die es hier geht, wäre wieder verwischt. */
+function versandWahl(plan) {
+  const zeile = (p, marke, klasse, unter) => `
+    <div class="vz">
+      <span class="vn">${esc(p.partei)}
+        <span class="vs">${esc(unter)}</span></span>
+      <span class="marke vm ${klasse}">${marke}</span>
+    </div>`;
+
+  const bereit = plan.parteien.filter(p => p.versandbereit);
+  const ohne = plan.parteien.filter(p => !p.versandbereit && !p.leerstand);
+  const leer = plan.parteien.filter(p => p.leerstand);
+  const mieter = bereit.length + ohne.length;
+
+  const liste = [
+    ...bereit.map(p => zeile(p, 'Mail', 'gut', p.adressen.join(' · '))),
+    ...ohne.map(p => zeile(p, 'Post', 'post',
+      'Keine Mailadresse — ausdrucken und schicken')),
+    ...leer.map(p => zeile(p, 'Leerstand', '', 'Bleibt beim Eigentümer')),
+  ].join('');
+
+  const satz = mieter
+    ? `${bereit.length} von ${mieter} ${mieter === 1 ? 'Mietpartei bekommt'
+        : 'Mietparteien bekommen'} die Abrechnung als PDF per Mail.`
+    : 'Es gibt keine Mietpartei zu beliefern — der Zeitraum lässt sich '
+      + 'trotzdem abschließen.';
+
+  return new Promise(fertig => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'immo-dlg vdlg';
+    dlg.innerHTML = `
+      <div class="dt">Abrechnung abschließen</div>
+      <p>${esc(plan.zeitraum)} · ${esc(satz)}</p>
+      <div class="vliste">${liste}</div>
+      ${bereit.length ? `<button class="btn"
+        data-wahl="senden">Abschließen und verschicken</button>` : ''}
+      <button class="btn leise" data-wahl="nur">Nur abschließen, nicht
+        verschicken</button>
+      <button class="btn leise" data-nein>Abbrechen</button>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.addEventListener('cancel', () => fertig(null));
+    dlg.addEventListener('click', e => {
+      const knopf = e.target.closest('[data-wahl]');
+      if (knopf) { fertig(knopf.dataset.wahl); dlg.close(); }
+      else if (e.target.closest('[data-nein]')) { fertig(null); dlg.close(); }
+    });
+    dlg.showModal();
+  });
+}
+
 /* Vor dem Versand zeigen, wer was bekommt — und wem die Mailadresse fehlt. */
 async function abschliessen(knopf) {
   const uebergehen = document.getElementById('uebergehen')?.checked || false;
@@ -763,21 +889,9 @@ async function abschliessen(knopf) {
     return;
   }
 
-  const bereit = plan.parteien.filter(p => p.versandbereit);
-  const warnung = plan.ohne_mail.length
-    ? ` Ohne Mailadresse und daher nicht versendbar: ${plan.ohne_mail.join(', ')}.`
-    : '';
-
   // Nicht jeder verschickt per Mail — wer die Abrechnung ausdruckt und mit
   // der Post schickt, muss den Zeitraum trotzdem abschliessen koennen.
-  const weg = await wahl(`Abrechnung für ${plan.zeitraum} abschließen`,
-    bereit.length
-      ? `${bereit.length} von ${plan.parteien.length} Parteien haben eine `
-        + `Mailadresse und bekommen die Abrechnung als PDF.${warnung}`
-      : `Keine der ${plan.parteien.length} Parteien hat eine Mailadresse `
-        + `hinterlegt. Der Zeitraum lässt sich trotzdem abschließen.`,
-    [...(bereit.length ? [{ wert: 'senden', text: 'Abschließen und verschicken' }] : []),
-     { wert: 'nur', text: 'Nur abschließen, nicht verschicken' }]);
+  const weg = await versandWahl(plan);
 
   if (!weg) {
     knopf.disabled = false;
@@ -821,6 +935,8 @@ async function laden() {
   } catch {
     schluessel = null;
   }
+  leerstaende = new Set(
+    (schluessel?.schluessel || []).flatMap(s => s.leerstand || []));
   titel.textContent = daten.label;
   sub.textContent = `${daten.objekt_name} · ${daten.typ}`;
   await zeichnen();

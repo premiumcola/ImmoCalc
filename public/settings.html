@@ -55,6 +55,34 @@
                       background:#F4F6F6;border-radius:7px;padding:7px 9px;
                       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .zeile2{display:flex;gap:10px} .zeile2 > *{flex:1}
+
+  /* Benennung nachziehen: je Schritt ein Kärtchen alt → neu. Die Pfade
+     stehen untereinander statt nebeneinander — auf 390 px bliebe sonst je
+     Spalte ein Wortfetzen übrig. Gerollt wird der ganze Dialog, der Knopf
+     bleibt unten stehen: sonst läge die Handlung unter dem Bildschirmrand. */
+  #umzugDlg .dbody{max-height:min(76dvh,760px);overflow:auto;padding-bottom:0}
+  .uaktion{position:sticky;bottom:0;background:var(--paper);padding:10px 0 18px}
+  .uliste .ulabel:first-child{margin-top:2px}
+  .uschritt{background:var(--sheet);border-radius:12px;padding:12px 13px;
+            margin-bottom:8px}
+  .uschritt .uk{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .uname{flex:1;min-width:0;font:600 13.5px var(--disp);letter-spacing:-.01em;
+         overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .uart{flex:none;font:600 9.5px var(--mono);letter-spacing:.07em;
+        text-transform:uppercase;border-radius:7px;padding:4px 8px;
+        background:var(--teal-l);color:var(--teal-d)}
+  .uart.tief{background:var(--amber-bg);color:var(--amber)}
+  .uart.schlecht{background:var(--neg-bg);color:var(--neg)}
+  .upfad{font:500 11.5px var(--mono);line-height:1.5;word-break:break-all}
+  .upfad.alt{color:var(--soft)}
+  .upfad.neu{color:var(--teal-d);margin-top:2px}
+  .ufuss{display:block;font:400 11.5px var(--body);color:var(--soft);
+         line-height:1.45;margin-top:9px}
+  .ulabel{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+          color:var(--soft);margin:16px 0 7px}
+  .uruhig{background:var(--sheet);border-radius:12px;padding:12px 13px;
+          margin-bottom:12px}
+  .uruhig .upfad{margin-bottom:3px}
 </style>
 </head>
 <body>
@@ -92,6 +120,14 @@
       <span class="txt">
         <span class="t">Ordner-Benennung</span>
         <span class="d" id="vorlageStatus">wird geladen …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+    <button class="row" id="umzugRow">
+      <span class="ic" id="umzugIkon">⇄</span>
+      <span class="txt">
+        <span class="t">Benennung nachziehen</span>
+        <span class="d" id="umzugStatus">wird geprüft …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -236,6 +272,26 @@
   </div>
 </dialog>
 
+<dialog id="umzugDlg">
+  <div class="dh">
+    <h2>Benennung nachziehen</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      Ordner mit altem Namen bekommen den heutigen. Verschoben wird nur —
+      <b>gelöscht oder überschrieben wird nichts</b>, die Belege ziehen mit.
+    </p>
+    <div class="meldung" id="umzugMeldung"></div>
+    <div id="umzugPlan"></div>
+    <!-- Der Fuss bleibt stehen, auch wenn nichts zu tun ist: sein Rand ist
+         zugleich der untere Rand des rollenden Bereichs. -->
+    <div class="uaktion">
+      <button class="btn" id="umzugStart" style="display:none">Ordner nachziehen</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="mailDlg">
   <div class="dh">
     <h2>Postfach verbinden</h2>
@@ -337,7 +393,7 @@
 </dialog>
 
 <script type="module">
-import { api, esc } from './assets/immo.js';
+import { api, esc, frage } from './assets/immo.js';
 
 const build = document.getElementById('build');
 const sub = document.getElementById('sub');
@@ -518,9 +574,14 @@ document.getElementById('vorlageSpeichern').addEventListener('click', async () =
     if (antwort.hinweise?.length) {
       melde(vorlageMeldung, antwort.hinweise.join(' '), false);
     } else {
-      melde(vorlageMeldung, 'Übernommen. Bereits angelegte Ordner bleiben unverändert.', true);
+      melde(vorlageMeldung, antwort.umzug_noetig
+        ? `Übernommen. ${antwort.umzug_noetig} bereits angelegte Ordner `
+          + `${antwort.umzug_noetig === 1 ? 'heißt' : 'heißen'} noch wie zuvor `
+          + '— „Benennung nachziehen" holt sie nach.'
+        : 'Übernommen. Bereits angelegte Ordner bleiben unverändert.', true);
     }
     await vorlageLaden();
+    await umzugLaden();
   } catch (fehler) {
     melde(vorlageMeldung, String(fehler.message || fehler));
   }
@@ -543,6 +604,167 @@ vorlageFeld.addEventListener('input', () => {
       })));
     } catch { /* Vorschau ist Beiwerk */ }
   }, 350);
+});
+
+/* ---- Benennung nachziehen (GET/POST /api/nextcloud/umzug) ----------------
+   Ändert sich die Vorlage, heißen die bestehenden Ordner weiter wie früher.
+   Hier steht der Weg, sie nachzuziehen: erst der Trockenlauf, dann eine
+   ausdrückliche Rückfrage, dann das Ergebnis — samt dem, was misslang. */
+const umzugDlg = document.getElementById('umzugDlg');
+const umzugMeldung = document.getElementById('umzugMeldung');
+const umzugPlan = document.getElementById('umzugPlan');
+const umzugStart = document.getElementById('umzugStart');
+const umzugStatus = document.getElementById('umzugStatus');
+let trockenlauf = null;
+
+const belegText = n => `${n} ${n === 1 ? 'Beleg' : 'Belege'}`;
+
+function schrittHtml(s) {
+  return `<div class="uschritt">
+      <div class="uk">
+        <span class="uname">${esc(s.name)}</span>
+        <span class="uart ${s.art === 'entschachteln' ? 'tief' : ''}">${
+          esc(s.art)}</span>
+      </div>
+      <div class="upfad alt">${esc(s.von)}</div>
+      <div class="upfad neu">↳ ${esc(s.nach)}</div>
+      ${s.dokumente.length ? `<span class="ufuss">${
+        belegText(s.dokumente.length)} ziehen mit</span>` : ''}
+      ${s.art === 'entschachteln'
+        ? `<span class="ufuss">${esc(s.hinweis)}</span>` : ''}
+    </div>`;
+}
+
+/* Ordner ohne Immobilie und Immobilien ohne Ordner: beides bleibt, wie es
+   ist — genannt wird es trotzdem, sonst sucht man später danach. */
+function randnotizen(p) {
+  const teile = [];
+  if (p.verwaist?.length) {
+    teile.push(`<div class="ulabel">Gehört zu keiner Immobilie</div>
+      <div class="uruhig">
+        ${p.verwaist.map(o => `<div class="upfad alt">${esc(o)}</div>`).join('')}
+        <span class="ufuss">Bleibt unangetastet — ImmoCalc fasst nur die
+          Ordner seiner Immobilien an.</span>
+      </div>`);
+  }
+  if (p.ohne_ordner?.length) {
+    teile.push(`<div class="ulabel">Noch ohne Ordner</div>
+      <div class="uruhig">
+        <div class="upfad alt">${p.ohne_ordner.map(o => esc(o.name)).join(' · ')}</div>
+        <span class="ufuss">Diese Immobilien bekommen ihren Ordner beim
+          nächsten Anlegen auf der Objektseite.</span>
+      </div>`);
+  }
+  return teile.join('');
+}
+
+function planZeigen() {
+  if (!trockenlauf) return;
+  const kopf = trockenlauf.schritte.length
+    ? `<div class="ulabel">${trockenlauf.schritte.length} ${trockenlauf.schritte.length === 1
+        ? 'Ordner weicht ab' : 'Ordner weichen ab'} · ${
+        belegText(trockenlauf.dokumente)}</div>`
+    : `<div class="uruhig"><span class="ufuss" style="margin-top:0">Alles schon
+         richtig benannt — die Ordner in der Nextcloud tragen bereits die
+         Namen aus der aktuellen Vorlage.</span></div>`;
+  umzugPlan.innerHTML = `<div class="uliste">${kopf}
+    ${trockenlauf.schritte.map(schrittHtml).join('')}${randnotizen(trockenlauf)}</div>`;
+  umzugStart.style.display = trockenlauf.schritte.length ? 'block' : 'none';
+  umzugStart.disabled = false;
+  umzugStart.textContent = 'Ordner nachziehen';
+  if (trockenlauf.hinweise?.length) melde(umzugMeldung, trockenlauf.hinweise.join(' '));
+}
+
+/** Trockenlauf holen und die Zeile beschriften. `grund` bleibt gesetzt, wenn
+    es noch nichts zu prüfen gibt — ohne Home-Ordner ist das der Normalfall. */
+async function umzugLaden() {
+  let grund = '';
+  try {
+    trockenlauf = await api('/nextcloud/umzug');
+  } catch (fehler) {
+    trockenlauf = null;
+    grund = String(fehler.message || fehler).replace(/^\d+\s*/, '')
+      || 'nicht prüfbar';
+  }
+  umzugStatus.textContent = !trockenlauf ? grund : trockenlauf.schritte.length
+    ? `${trockenlauf.schritte.length} ${trockenlauf.schritte.length === 1 ? 'Ordner weicht'
+        : 'Ordner weichen'} von der Vorlage ab`
+    : 'alles schon richtig benannt';
+  document.getElementById('umzugIkon').className =
+    'ic' + (!trockenlauf ? '' : trockenlauf.schritte.length ? ' warte' : ' aktiv');
+}
+
+document.getElementById('umzugRow').addEventListener('click', async () => {
+  meldungWeg(umzugMeldung);
+  umzugPlan.innerHTML = '';
+  umzugStart.style.display = 'none';
+  umzugDlg.showModal();
+  await umzugLaden();
+  if (trockenlauf) planZeigen();
+  else umzugPlan.innerHTML = `<div class="uruhig"><span class="ufuss"
+      style="margin-top:0">Erst Nextcloud verbinden und einen Home-Ordner
+      wählen — vorher gibt es nichts nachzuziehen.</span></div>`;
+});
+
+/* Was der Umzug wirklich getan hat — und was nicht. Fehler stehen oben und
+   in Rot: ein übersprungener Ordner ist die eine Sache, die man sehen muss. */
+function ergebnisZeigen(a, namen) {
+  const fehler = a.fehler?.length
+    ? `<div class="ulabel">Nicht verschoben</div>` + a.fehler.map(f =>
+        `<div class="uschritt">
+           <div class="uk"><span class="uname">${
+             esc(namen.get(f.objekt) || f.objekt)}</span>
+             <span class="uart schlecht">Fehler</span></div>
+           <div class="upfad alt">${esc(f.von)}</div>
+           <span class="ufuss">${esc(f.fehler)}</span>
+         </div>`).join('')
+    : '';
+  const geschafft = a.verschoben.map(v => `<div class="uschritt">
+      <div class="uk"><span class="uname">${esc(v.name)}</span>
+        <span class="uart">${esc(v.art)}</span></div>
+      <div class="upfad alt">${esc(v.von)}</div>
+      <div class="upfad neu">↳ ${esc(v.nach)}</div>
+      ${v.dokumente ? `<span class="ufuss">${belegText(v.dokumente)}
+        mitgezogen</span>` : ''}
+      ${v.geblieben?.length ? `<span class="ufuss">Liegen geblieben, weil am
+        Ziel schon vorhanden: ${v.geblieben.map(esc).join(', ')}</span>` : ''}
+    </div>`).join('');
+  umzugPlan.innerHTML = `<div class="uliste">${fehler}
+    ${geschafft ? `<div class="ulabel">Nachgezogen</div>${geschafft}` : ''}
+    ${randnotizen(a)}</div>`;
+}
+
+umzugStart.addEventListener('click', async () => {
+  if (!trockenlauf?.schritte.length) return;
+  const ja = await frage('Ordner jetzt nachziehen?',
+    `${trockenlauf.schritte.length} Ordner werden in der Nextcloud verschoben, `
+    + `${belegText(trockenlauf.dokumente)} ziehen mit. Gelöscht oder überschrieben `
+    + 'wird dabei nichts.', { knopf: 'Nachziehen' });
+  if (!ja) return;
+
+  // Die Antwort nennt bei einem Fehler nur den Kürzel des Objekts; der
+  // Klarname steht im Plan, den wir gerade noch in Händen halten.
+  const namen = new Map(trockenlauf.schritte.map(s => [s.objekt, s.name]));
+  meldungWeg(umzugMeldung);
+  umzugStart.disabled = true;
+  umzugStart.textContent = 'Ziehe nach …';
+  try {
+    const a = await api('/nextcloud/umzug', { method: 'POST' });
+    umzugStart.style.display = 'none';
+    ergebnisZeigen(a, namen);
+    melde(umzugMeldung, a.fehler.length
+      ? `${a.anzahl} von ${a.anzahl + a.fehler.length} Ordnern nachgezogen — `
+        + `${a.fehler.length} blieben stehen.`
+      : `${a.anzahl} Ordner nachgezogen · ${belegText(a.dokumente)} umgehängt.`,
+      !a.fehler.length);
+    // Die Zeile im Hintergrund erzählt danach den neuen Stand; das Ergebnis
+    // bleibt im Dialog stehen, bis er geschlossen wird.
+    await umzugLaden();
+  } catch (fehler) {
+    umzugStart.disabled = false;
+    umzugStart.textContent = 'Ordner nachziehen';
+    melde(umzugMeldung, String(fehler.message || fehler));
+  }
 });
 
 /* ---- Postfach für den Versand der Abrechnungen ---- */
@@ -698,6 +920,7 @@ document.querySelectorAll('[data-schliessen]').forEach(knopf =>
 await zustandLaden();
 await mailZustand();
 await vorlageLaden();
+await umzugLaden();
 </script>
 </body>
 </html>
