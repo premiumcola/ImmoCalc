@@ -76,6 +76,14 @@
   .paar .pv{font-family:var(--mono);font-weight:600;text-align:right;min-width:0;
             overflow-wrap:anywhere}
   .paar .pv.leer{color:var(--soft);font-weight:400;font-family:var(--body)}
+  /* Gerechnete Zeilen treten zurück — sie sind Ergebnis, nicht Eingabe. */
+  .paar .pv.abgeleitet{color:var(--teal-d)}
+  /* Freitext bekommt die ganze Zeilenbreite: nebeneinander bliebe für den
+     Wortlaut aus dem Katasterauszug eine Spalte von vier Zeichen. */
+  .paar.lang{flex-direction:column;align-items:flex-start;gap:4px}
+  .paar.lang .pv{text-align:left;font-size:13px}
+  .fussnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
+            margin:-2px 2px 10px}
 
   dialog{border:none;border-radius:18px;padding:0;max-width:420px;width:calc(100% - 32px);
          background:var(--paper);box-shadow:0 30px 70px -20px rgba(22,38,44,.5);
@@ -198,6 +206,7 @@
 import { installLogos, logoSvg, api, eur, eurVoll, esc, fristKlasse, fristText,
          melde, frage, schiebeFrage } from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
+import { auswahlfeld } from './assets/auswahl.js';
 
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
    Bewusst dynamisch geladen: fehlt die Datei, bleiben es schlichte Felder —
@@ -210,6 +219,12 @@ try {
 }
 
 installLogos();
+
+/* Ein Grundstück ist ein eigener Fall, kein Haus mit weniger Feldern: keine
+   Einheiten, keine Nebenkostenabrechnung, dafür Kataster und Grundsteuer.
+   Erkannt wird es am Objekttyp. */
+const GRUNDSTUECK = 'lg-grundstueck';
+const istGrundstueck = () => Boolean(objekt) && objekt.typ === GRUNDSTUECK;
 
 const slug = new URLSearchParams(location.search).get('o');
 const inhalt = document.getElementById('inhalt');
@@ -353,6 +368,39 @@ const BEREICHE = {
   },
 };
 
+/* Verpachtet statt vermietet: gespeichert wird derselbe Satz (ein Pachtzins
+   ist eine Miete für Grund und Boden), gefragt wird in der Sprache der
+   Landwirtschaft — und nur nach dem, was es dort gibt. Nebenkosten-
+   vorauszahlung, Stellplatz und Personen im Haushalt fallen weg. */
+const PACHT = {
+  titel: 'Pacht & Pächter', einzahl: 'Pachtverhältnis', ikon: 'Pacht',
+  felder: [
+    { k: 'partei', l: 'Pächter', typ: 'text' },
+    { k: 'kaltmiete', l: 'Pachtzins je Turnus', typ: 'number', schritt: '0.01',
+      geld: true },
+    { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus', vorgabe: 'jaehrlich' },
+    { k: 'ab_datum', l: 'Verpachtet ab', typ: 'date', pflicht: true },
+    { k: 'bis_datum', l: 'Pacht endet am', typ: 'date' },
+    { k: 'email', l: 'E-Mail', typ: 'email' },
+    { k: 'telefon', l: 'Telefon', typ: 'tel' },
+    { k: 'anschrift', l: 'Anschrift', typ: 'text' },
+    { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true },
+    { k: 'notiz', l: 'Notiz', typ: 'text' },
+  ],
+  name: e => e.partei || 'Pachtverhältnis',
+  detail: e => [
+    e.geplant ? `ab ${datum(e.ab_datum)}`
+      : (e.bis_datum ? `bis ${datum(e.bis_datum)}`
+                     : (e.ab_datum ? `seit ${datum(e.ab_datum)}` : '')),
+    e.notiz,
+  ].filter(Boolean).join(' · '),
+  wert: e => `${eur(e.kaltmiete || 0)} ${kuerzel(e.turnus)}`,
+};
+
+/** Die Beschreibung eines Bereichs — beim Grundstück in seiner Sprache. */
+const cfgFuer = bereich => bereich === 'mieten' && istGrundstueck()
+  ? { ...BEREICHE.mieten, ...PACHT } : BEREICHE[bereich];
+
 /* Stammdaten des Objekts: dieselbe Feldbeschreibung für Anzeige und Formular. */
 const STAMMFELDER = [
   { k: 'name', l: 'Name', typ: 'text', pflicht: true },
@@ -367,6 +415,41 @@ const STAMMFELDER = [
   { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
 ];
+
+/* Grundstücksangaben. `grundstueck_flaeche` steht bewusst neben `flaeche`:
+   letzteres ist Wohn-/Nutzfläche und geht in den Verteilungsschlüssel
+   „Fläche" ein — eine Ackerfläche dort verfälschte jede Abrechnung.
+
+   Der Grundstückswert ist der Verkehrswert des Objekts: beim Grund und Boden
+   ist das derselbe Wert, und so rechnet die Vermögensübersicht das Grundstück
+   ohne Zutun mit. */
+const GRUNDFELDER = [
+  { k: 'grundstueck_flaeche', l: 'Grundstücksfläche', typ: 'number',
+    schritt: '0.01', einheit: 'm²' },
+  { k: 'grundstueck_nutzungsart', l: 'Nutzungsart', typ: 'auswahl',
+    werte: ['Ackerland', 'Grünland', 'Wald', 'Bauerwartungsland', 'Gemischt',
+            'Sonstiges'] },
+  { k: 'grundstueck_wirtschaftsart', l: 'Wirtschaftsart', typ: 'text',
+    lang: true },
+  { k: 'gemarkung', l: 'Gemarkung', typ: 'text' },
+  { k: 'flurstueck', l: 'Flurstück', typ: 'text' },
+  { k: 'verkehrswert', l: 'Grundstückswert', typ: 'number', schritt: '0.01',
+    geld: true },
+  { k: 'grundsteuerwert', l: 'Grundsteuerwert', typ: 'number', schritt: '0.01',
+    geld: true },
+  { k: 'grundsteuer_messbetrag', l: 'Steuermessbetrag', typ: 'number',
+    schritt: '0.01', geld: true },
+  { k: 'grundsteuer_hebesatz', l: 'Hebesatz', typ: 'number', schritt: '1',
+    einheit: '%' },
+];
+
+/* Beim Grundstück gibt es keine Wohnfläche und kein Hauskonto — die Zeilen
+   stehen dort nicht ausgegraut herum, sie kommen gar nicht erst vor. Der
+   Verkehrswert wandert in den Grundstücksblock. */
+const OHNE_BEIM_GRUNDSTUECK = new Set(['flaeche', 'verkehrswert']);
+const stammfelder = () => istGrundstueck()
+  ? STAMMFELDER.filter(f => !OHNE_BEIM_GRUNDSTUECK.has(f.k))
+  : STAMMFELDER;
 
 const datum = s => s ? new Date(s).toLocaleDateString('de-DE') : '';
 
@@ -457,30 +540,62 @@ function kennzahlenHtml(v, jahresmiete, restschuld) {
                                : null;
   const zellen = [];
   if (v.wert != null)
-    zellen.push(['kv', eur(v.wert), v.wertquelle || 'Wert']);
+    zellen.push(['kv', eur(v.wert), istGrundstueck() ? 'Grundstückswert'
+                                                     : (v.wertquelle || 'Wert')]);
   if (rest) zellen.push(['kv neg', eur(rest), 'Restschuld']);
   if (eigen != null)
     zellen.push([`kv ${eigen >= 0 ? 'pos' : 'neg'}`, eur(eigen), 'Eigenkapital']);
-  if (jahresmiete) zellen.push(['kv', eur(jahresmiete), 'Miete pro Jahr']);
+  if (jahresmiete) zellen.push(['kv', eur(jahresmiete),
+    istGrundstueck() ? 'Pacht pro Jahr' : 'Miete pro Jahr']);
   if (!zellen.length) return '';
   return `<div class="kennzahlen">${zellen.map(([k, w, l]) =>
     `<div class="kennzahl"><span class="${k}">${w}</span>
        <span class="kl">${esc(l)}</span></div>`).join('')}</div>`;
 }
 
+function paarZeile(label, wert, { abgeleitet = false, lang = false } = {}) {
+  return `<div class="paar${lang && wert ? ' lang' : ''}">
+    <span class="pl">${esc(label)}</span>
+    <span class="pv${wert ? (abgeleitet ? ' abgeleitet' : '') : ' leer'}"
+      >${wert ? esc(wert) : 'nicht erfasst'}</span></div>`;
+}
+
 function stammHtml(o) {
-  const zeilen = STAMMFELDER.map(f => {
-    const w = stammwert(f, o);
-    return `<div class="paar"><span class="pl">${esc(f.l)}</span>
-      <span class="pv${w ? '' : ' leer'}">${w ? esc(w) : 'nicht erfasst'}</span></div>`;
-  }).join('');
+  const zeilen = stammfelder()
+    .map(f => paarZeile(f.l, stammwert(f, o))).join('');
   return `<div class="sekopf"><h2 class="sec">Stammdaten</h2>
       <button data-stamm="1">Bearbeiten</button></div>
     <div class="paare">${zeilen}</div>`;
 }
 
+/* Preis je m² und Grundsteuer werden gerechnet, nicht gepflegt: sie stünden
+   sonst irgendwann im Widerspruch zu den Zahlen, aus denen sie stammen. */
+function grundstueckHtml(o) {
+  if (!istGrundstueck()) return '';
+  const zeilen = GRUNDFELDER
+    .map(f => paarZeile(f.l, stammwert(f, o), { lang: f.lang })).join('');
+  const abgeleitet = [];
+  if (o.verkehrswert && o.grundstueck_flaeche) {
+    abgeleitet.push(['Wert je m²',
+      `${(o.verkehrswert / o.grundstueck_flaeche)
+        .toLocaleString('de-DE', { minimumFractionDigits: 2,
+                                   maximumFractionDigits: 2 })} €`]);
+  }
+  if (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz) {
+    abgeleitet.push(['Grundsteuer im Jahr',
+      eur(o.grundsteuer_messbetrag * o.grundsteuer_hebesatz / 100)]);
+  }
+  return `<div class="sekopf"><h2 class="sec">Grundstück</h2>
+      <button data-grund="1">Bearbeiten</button></div>
+    <div class="paare">${zeilen}${
+      abgeleitet.map(([l, w]) => paarZeile(l, w, { abgeleitet: true })).join('')}</div>
+    ${abgeleitet.length ? `<div class="fussnote">Wert je m² und Grundsteuer
+      rechnet ImmoCalc aus den Angaben darüber — eingetragen wird nur, was im
+      Bescheid steht.</div>` : ''}`;
+}
+
 function abschnitt(bereich, eintraege) {
-  const cfg = BEREICHE[bereich];
+  const cfg = cfgFuer(bereich);
   const zeilen = eintraege.length
     ? eintraege.map(e => {
         const marke = cfg.chip ? cfg.chip(e) : null;
@@ -572,9 +687,18 @@ async function laden() {
   // Der Ort enthaelt oft schon die Einheitenzahl ("Mixed-Use · 7 Einheiten") —
   // dann nicht zusaetzlich zaehlen, sonst steht es doppelt und die Zeile bricht um.
   const ortText = (objekt.ort || objekt.strasse || '').trim();
-  sub.textContent = /einheit|wohnung/i.test(ortText) || !ortText
-    ? (ortText || `${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'}`)
-    : `${ortText} · ${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'}`;
+  if (istGrundstueck()) {
+    // Einheiten gibt es hier nicht; was das Grundstück ausmacht, ist seine
+    // Fläche und wofür sie genutzt wird.
+    const flaeche = objekt.grundstueck_flaeche
+      ? `${Number(objekt.grundstueck_flaeche).toLocaleString('de-DE')} m²` : '';
+    sub.textContent = [ortText, objekt.grundstueck_nutzungsart, flaeche]
+      .filter(Boolean).join(' · ') || 'Grundstück';
+  } else {
+    sub.textContent = /einheit|wohnung/i.test(ortText) || !ortText
+      ? (ortText || `${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'}`)
+      : `${ortText} · ${det.einheiten.length} Einheit${det.einheiten.length === 1 ? '' : 'en'}`;
+  }
 
   const laufend = det.zeitraeume.find(z => z.status === 'in Arbeit');
   const zr = det.zeitraeume.length
@@ -601,13 +725,21 @@ async function laden() {
   const restschuld = (bereiche.kredite || []).reduce(
     (s, k) => s + (k.restschuld_aktuell ?? k.restschuld ?? 0), 0);
 
-  inhalt.innerHTML = `
-    ${bannerHtml(laufend)}
-    ${nachpflegeHtml(det.nachpflege)}
-    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld)}
+  // Ein Grundstück rechnet keine Nebenkosten ab: weder die Frist nach
+  // § 556 BGB noch die Abrechnungszeiträume haben hier etwas zu suchen.
+  const abrechnung = istGrundstueck() ? '' : `
+    ${bannerHtml(laufend)}`;
+  const zeitraumBlock = istGrundstueck() ? '' : `
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
       <button data-zeitraum-neu="1">Anlegen</button></div>
-    <div class="liste">${zr}</div>
+    <div class="liste">${zr}</div>`;
+
+  inhalt.innerHTML = `
+    ${abrechnung}
+    ${nachpflegeHtml(det.nachpflege)}
+    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld)}
+    ${zeitraumBlock}
+    ${grundstueckHtml(objekt)}
     ${stammHtml(objekt)}
     <div class="sekopf"><h2 class="sec">Dokumentenablage</h2></div>
     <div id="cloudbereich"><div class="cloudbox"><div class="zeile">
@@ -730,9 +862,21 @@ async function ordnerZeigen() {
 /* ---- Formular: eine Fabrik für alle Bereiche ---- */
 async function feldHtml(f, bereich, wert) {
   const id = `f_${f.k}`;
+  if (f.typ === 'auswahl') {
+    // Kein natives <select>: die aufgeklappte Liste zeichnete sonst das
+    // Betriebssystem. Der wirkliche Wert steht im versteckten Feld, damit
+    // `ausFormular` ihn wie bei jedem anderen Feld findet.
+    // Beschriftung ohne `for`: den Knopf baut auswahl.js selbst und gibt ihm
+    // eine eigene id — die Verknüpfung läuft über aria-label.
+    const werte = ['', ...f.werte];
+    return `<div class="field"><label>${esc(f.l)}</label>
+      <input type="hidden" id="${id}" name="${f.k}" value="${esc(wert ?? '')}">
+      <div data-auswahl="${esc(f.k)}" data-label="${esc(f.l)}"
+           data-optionen="${esc(JSON.stringify(werte))}"></div></div>`;
+  }
   if (f.typ === 'turnus') {
     const { optionen, vorgabe } = await turnusOptionen(bereich);
-    const gewaehlt = wert ?? vorgabe;
+    const gewaehlt = wert ?? f.vorgabe ?? vorgabe;
     return `<div class="field"><label for="${id}">${esc(f.l)}</label>
       <select class="inp" id="${id}" name="${f.k}">
         ${optionen.map(o => `<option value="${o.wert}"
@@ -793,6 +937,31 @@ function formateSetzen(form, felder) {
   }
 }
 
+/* Auswahlfelder im eigenen Design — je Dialog neu gebaut und beim Schliessen
+   wieder abgeräumt, wie die Formatierungen darüber. */
+let auswahlen = [];
+
+function auswahlLoesen() {
+  for (const a of auswahlen) {
+    try { a.zerstoere(); } catch { /* schon weg */ }
+  }
+  auswahlen = [];
+}
+
+function auswahlSetzen(form) {
+  auswahlLoesen();
+  for (const halter of form.querySelectorAll('[data-auswahl]')) {
+    const feld = form.elements[halter.dataset.auswahl];
+    if (!feld) continue;
+    const optionen = JSON.parse(halter.dataset.optionen)
+      .map(w => ({ wert: w, text: w || 'nicht gewählt' }));
+    auswahlen.push(auswahlfeld(halter, {
+      optionen, wert: feld.value, label: halter.dataset.label,
+      aenderung: neu => { feld.value = neu; },
+    }));
+  }
+}
+
 async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht,
                           hinweis = '', extra = '', knopf = 'Speichern' }) {
   const form = document.getElementById('dlgForm');
@@ -812,6 +981,7 @@ async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht,
   form.dataset.id = werte.id || '';
   delete form.dataset.vorgaenger;   // sonst endet beim nächsten Mal ein fremder Stand
   formateSetzen(form, felder);
+  auswahlSetzen(form);
   // Ein zweiter showModal-Aufruf auf einem offenen Dialog wirft — der Wechsel
   // von der Miete zur Erhöhung tauscht nur den Inhalt aus.
   if (!dlg.open) dlg.showModal();
@@ -934,14 +1104,18 @@ function verlaufBlock(s) {
 /* ---- Zusatzblöcke der Formulare ---- */
 
 function mietExtra(eintrag) {
+  // Ein Acker hat keine Bewohner. Die Staffelung des Pachtzinses schon —
+  // die läuft über denselben Weg wie eine Mieterhöhung.
+  const pacht = istGrundstueck();
+  const kopf = pacht ? 'Pachterhöhung' : 'Mieterhöhung';
   const kopien = (eintrag ? eintrag.bewohner : []) || [];
-  return bewohnerBlock(kopien) + (eintrag ? `<div class="block">
-      <span class="bt">Mieterhöhung</span>
+  return (pacht ? '' : bewohnerBlock(kopien)) + (eintrag ? `<div class="block">
+      <span class="bt">${kopf}</span>
       <span class="bd">Eine beschlossene Erhöhung lässt sich schon jetzt
         eintragen. Sie steht als „geplant" in der Liste, bis sie wirksam wird;
         der heutige Stand endet automatisch am Tag davor.</span>
       <button type="button" class="zusatz"
-              data-erhoehung="${eintrag.id}">＋ Mieterhöhung planen</button>
+              data-erhoehung="${eintrag.id}">＋ ${kopf} planen</button>
     </div>` : '');
 }
 
@@ -971,15 +1145,16 @@ async function erhoehungFormular(mid) {
     return melde(String(fehler.message || fehler), 'neg');
   }
   if (!alt) return;
+  const pacht = istGrundstueck();
   const bewohner = (alt.bewohner || []).map(b => ({ ...b, id: null }));
   await formular({
-    titel: 'Mieterhöhung planen',
-    hinweis: 'Trage die neue Miete und den Tag ein, ab dem sie gilt. Der '
-      + 'bisherige Stand läuft bis zum Tag davor weiter und bleibt als '
-      + 'Historie erhalten.',
-    felder: BEREICHE.mieten.felder, bereich: 'mieten', absicht: 'eintrag',
+    titel: pacht ? 'Pachterhöhung planen' : 'Mieterhöhung planen',
+    hinweis: `Trage ${pacht ? 'den neuen Pachtzins' : 'die neue Miete'} und `
+      + 'den Tag ein, ab dem er gilt. Der bisherige Stand läuft bis zum Tag '
+      + 'davor weiter und bleibt als Historie erhalten.',
+    felder: cfgFuer('mieten').felder, bereich: 'mieten', absicht: 'eintrag',
     werte: { ...alt, id: '', ab_datum: ersterNaechsterMonat(), bis_datum: null },
-    extra: bewohnerBlock(bewohner), knopf: 'Erhöhung planen',
+    extra: pacht ? '' : bewohnerBlock(bewohner), knopf: 'Erhöhung planen',
   });
   document.getElementById('dlgForm').dataset.vorgaenger = mid;
 }
@@ -1001,7 +1176,7 @@ async function standFormular(kid) {
   });
 }
 
-dlg.addEventListener('close', formateLoesen);
+dlg.addEventListener('close', () => { formateLoesen(); auswahlLoesen(); });
 
 document.getElementById('dlgForm').addEventListener('click', async e => {
   if (e.target.closest('[data-abbruch]')) return dlg.close('abbruch');
@@ -1046,7 +1221,10 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
   try {
     if (absicht === 'stamm') {
       await api(`/objekte/${encodeURIComponent(slug)}`,
-                { method: 'PATCH', body: ausFormular(form, STAMMFELDER) });
+                { method: 'PATCH', body: ausFormular(form, stammfelder()) });
+    } else if (absicht === 'grund') {
+      await api(`/objekte/${encodeURIComponent(slug)}`,
+                { method: 'PATCH', body: ausFormular(form, GRUNDFELDER) });
     } else if (absicht === 'anteil') {
       const werte = ausFormular(form, ANTEILFELDER);
       await api(`/objekte/${encodeURIComponent(slug)}/anteile`, {
@@ -1069,7 +1247,7 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
       // Gleich weiter: Jahresstände werden meist mehrere auf einmal gepflegt.
       return standFormular(id);
     } else {
-      const werte = ausFormular(form, BEREICHE[bereich].felder);
+      const werte = ausFormular(form, cfgFuer(bereich).felder);
       let miete_id = id;
       if (id) {
         await api(`/stammdaten/${bereich}/${id}`, { method: 'PATCH', body: werte });
@@ -1138,8 +1316,17 @@ inhalt.addEventListener('click', async e => {
   }
 
   if (e.target.closest('[data-stamm]')) {
-    return formular({ titel: 'Stammdaten bearbeiten', felder: STAMMFELDER,
+    return formular({ titel: 'Stammdaten bearbeiten', felder: stammfelder(),
                       werte: objekt, absicht: 'stamm' });
+  }
+
+  if (e.target.closest('[data-grund]')) {
+    return formular({ titel: 'Grundstück bearbeiten', felder: GRUNDFELDER,
+                      werte: objekt, absicht: 'grund',
+                      hinweis: 'Grundsteuerwert, Messbetrag und Hebesatz stehen '
+                        + 'im Bescheid des Finanzamts bzw. in der Satzung der '
+                        + 'Gemeinde. Wert je m² und Grundsteuer rechnet '
+                        + 'ImmoCalc daraus.' });
   }
 
   if (e.target.closest('[data-anteil-neu]')) return anteilFormular();
@@ -1217,7 +1404,7 @@ inhalt.addEventListener('click', async e => {
   if (del) {
     e.stopPropagation();
     const [bereich, id] = del.dataset.del.split(':');
-    const ja = await frage(`${BEREICHE[bereich].einzahl} löschen?`,
+    const ja = await frage(`${cfgFuer(bereich).einzahl} löschen?`,
       'Der Eintrag wird entfernt. Rückgängig machen lässt sich das nicht.',
       { knopf: 'Löschen', gefahr: true });
     if (!ja) return;
@@ -1232,9 +1419,9 @@ inhalt.addEventListener('click', async e => {
   const add = e.target.closest('[data-add]');
   if (add) {
     const bereich = add.dataset.add;
-    return formular({ titel: `${BEREICHE[bereich].einzahl} hinzufügen`,
-                      felder: BEREICHE[bereich].felder, bereich,
-                      absicht: 'eintrag',
+    const cfg = cfgFuer(bereich);
+    return formular({ titel: `${cfg.einzahl} hinzufügen`,
+                      felder: cfg.felder, bereich, absicht: 'eintrag',
                       extra: bereich === 'mieten' ? mietExtra(null) : '' });
   }
 
@@ -1246,8 +1433,9 @@ inhalt.addEventListener('click', async e => {
     if (!eintrag) return;
     const extra = bereich === 'mieten' ? mietExtra(eintrag)
                 : bereich === 'kredite' ? kreditExtra(eintrag) : '';
-    return formular({ titel: `${BEREICHE[bereich].einzahl} bearbeiten`,
-                      felder: BEREICHE[bereich].felder, bereich,
+    const cfg = cfgFuer(bereich);
+    return formular({ titel: `${cfg.einzahl} bearbeiten`,
+                      felder: cfg.felder, bereich,
                       werte: eintrag, absicht: 'eintrag', extra });
   }
 });

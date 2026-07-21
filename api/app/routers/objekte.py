@@ -193,7 +193,12 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
         raise HTTPException(404, "Objekt nicht gefunden")
     erlaubt = {"name", "ort", "strasse", "plz", "typ", "nutzung", "turnus",
                "start_monat", "flaeche", "kaufpreis", "kaufdatum", "verkehrswert",
-               "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber"}
+               "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber",
+               # Grundstück — bleibt bei jedem anderen Objekttyp einfach leer
+               "grundstueck_flaeche", "grundstueck_nutzungsart",
+               "grundstueck_wirtschaftsart", "gemarkung", "flurstueck",
+               "grundsteuerwert", "grundsteuer_messbetrag",
+               "grundsteuer_hebesatz"}
     felder = bereinige(Objekt, {k: v for k, v in data.items() if k in erlaubt})
     if not felder.get("name", "x"):
         raise HTTPException(400, "Der Name darf nicht leer sein")

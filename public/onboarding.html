@@ -24,30 +24,6 @@
   .app{width:100%;max-width:440px;min-height:100vh;background:var(--paper);position:relative;display:flex;flex-direction:column}
   @media(min-width:480px){body{padding:24px 0}.app{min-height:calc(100vh - 48px);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 24px 60px -30px rgba(22,38,44,.35)}}
 
-  /* Auf grossen Schirmen darf der Wizard atmen: breitere Spalte, Felder
-     nebeneinander, groessere Typen — statt einer Handy-Spalte in der Mitte. */
-  @media(min-width:820px){
-    body{padding:40px 0}
-    .app{max-width:760px}
-    .bar{padding:20px 30px}
-    .bar h1{font-size:19px}
-    .stepper{padding:20px 40px 12px}
-    .st .lb{font-size:11.5px}
-    .content{padding:26px 30px 12px}
-    .shead h2{font-size:26px}
-    .shead p{font-size:14.5px}
-    .foot{padding:16px 30px 26px}
-    /* Textfelder bleiben durchgehend — halbe Breite kollidiert mit der
-       PLZ/Ort-Zeile und macht das Formular unruhig. Nur Rasterinhalte
-       nutzen die zusaetzliche Breite. */
-    .lgrid{grid-template-columns:repeat(6,1fr)}
-    .lopt svg{width:64px;height:64px}
-    /* Raster statt inline-Elemente: durch den Zeilenumbruch im Markup
-       entsteht sonst ein Leerzeichen und die zweite Spalte bricht um. */
-    .togglist,.unitlist{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-    .togg,.unit{margin-bottom:0}
-  }
-
   .bar{background:var(--sheet);border-bottom:1px solid var(--line);padding:13px 16px}
   .bar .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
   .bar h1{font:600 16px var(--disp);margin:0;letter-spacing:-.01em;flex:1}
@@ -104,6 +80,12 @@
   .infobox b{font-weight:700}
 
   .cfgcount{font:600 12px var(--mono);color:var(--soft);margin:0 2px 12px}
+
+  /* Zwischenüberschrift innerhalb eines Schrittes — trennt Kataster,
+     Wert und Grundsteuer, ohne einen weiteren Schritt zu brauchen. */
+  .gruppe{display:block;font:700 12px var(--disp);letter-spacing:.02em;
+          color:var(--teal-d);margin:22px 0 10px}
+  .gruppe:first-child{margin-top:0}
   .togg{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--sheet);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;cursor:pointer}
   .togg .tn{flex:1;font:600 14px var(--disp);letter-spacing:-.01em}
   .togg .sw{width:42px;height:25px;border-radius:99px;background:#CDD5D6;position:relative;flex:none;transition:background .16s}
@@ -159,15 +141,17 @@
   dialog.immo-dlg p{font:400 13.5px var(--body);color:var(--soft);margin:0 0 18px;line-height:1.55}
   dialog.immo-dlg .btn+.btn{margin-top:8px}
 
-  /* done overlay */
-  .done{position:absolute;inset:0;background:var(--paper);z-index:40;display:none;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}
+  /* done overlay — bewusst über die id, nicht über die Klasse: ein erledigter
+     Schritt im Stepper heisst ebenfalls `done`, und `.done{display:none}` hat
+     ihn (gleiche Spezifität, später notiert) schlicht verschwinden lassen. */
+  #done{position:absolute;inset:0;background:var(--paper);z-index:40;display:none;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}
   /* align-items:center — sonst streckt die Flex-Spalte den Knopf über die
      ganze Resthöhe. */
-  .done.open{display:flex;align-items:center}
-  .done>*{flex:none}
-  .done .badge{width:70px;height:70px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font:700 30px var(--mono);margin-bottom:18px}
-  .done h2{font:700 22px var(--disp);letter-spacing:-.02em;margin:0 0 6px}
-  .done p{font:400 14px var(--body);color:var(--soft);margin:0 0 20px}
+  #done.open{display:flex;align-items:center}
+  #done>*{flex:none}
+  #done .badge{width:70px;height:70px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font:700 30px var(--mono);margin-bottom:18px}
+  #done h2{font:700 22px var(--disp);letter-spacing:-.02em;margin:0 0 6px}
+  #done p{font:400 14px var(--body);color:var(--soft);margin:0 0 20px}
   .recap{width:100%;background:var(--sheet);border:1px solid var(--line);border-radius:14px;padding:14px 16px;text-align:left;margin-bottom:18px}
   .recap .rl{display:flex;justify-content:space-between;gap:12px;font:500 13px var(--body);padding:5px 0}
   .recap .rl .rk{color:var(--soft)} .recap .rl .rv{font-weight:600;text-align:right}
@@ -175,6 +159,37 @@
     padding:12px 14px;margin-bottom:18px;font:500 12.5px var(--body);color:#916212;
     line-height:1.5;text-align:left}
   .cloudhinweis.an{display:block}
+  /* Auf grossen Schirmen darf der Wizard atmen: breitere Spalte, Felder
+     nebeneinander, groessere Typen — statt einer Handy-Spalte in der Mitte.
+
+     Steht bewusst am Ende: weiter oben (vor den Grundregeln) hat der Block
+     ausser `body` und `.app` nichts bewirkt — gleiche Spezifitaet, und die
+     spaeter notierte Grundregel gewinnt. Der Wizard sah auf dem Schreibtisch
+     deshalb aus wie auf dem Handy. */
+  @media(min-width:820px){
+    body{padding:40px 0}
+    .app{max-width:760px}
+    .bar{padding:20px 30px}
+    .bar h1{font-size:19px}
+    .stepper{padding:20px 40px 12px}
+    .st .lb{font-size:11.5px}
+    .content{padding:26px 30px 12px}
+    .shead h2{font-size:26px}
+    .shead p{font-size:14.5px}
+    .foot{padding:16px 30px 26px}
+    /* Textfelder bleiben durchgehend — halbe Breite kollidiert mit der
+       PLZ/Ort-Zeile und macht das Formular unruhig. Nur Rasterinhalte
+       nutzen die zusaetzliche Breite. */
+    /* Vier statt sechs Spalten: bei sieben Typen bliebe sonst genau einer
+       allein in der zweiten Zeile stehen. */
+    .lgrid{grid-template-columns:repeat(4,1fr)}
+    .lopt svg{width:64px;height:64px}
+    /* Raster statt inline-Elemente: durch den Zeilenumbruch im Markup
+       entsteht sonst ein Leerzeichen und die zweite Spalte bricht um. */
+    .togglist,.unitlist{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .togg,.unit{margin-bottom:0}
+  }
+
   @media(prefers-reduced-motion:reduce){*{transition:none !important}}
 </style>
 </head>
@@ -203,7 +218,7 @@
   <div class="done" id="done">
     <div class="badge">✓</div>
     <h2 id="doneTitle">Immobilie angelegt</h2>
-    <p>Grunddaten, Turnus und Kostenarten sind gespeichert.</p>
+    <p id="doneText">Grunddaten, Turnus und Kostenarten sind gespeichert.</p>
     <div class="recap" id="recap"></div>
     <div class="cloudhinweis" id="cloudhinweis"></div>
     <button class="btn" id="doneBtn" style="max-width:280px">Zur Immobilie</button>
@@ -212,18 +227,44 @@
 
 <script type="module">
 import { melde, frage } from './assets/immo.js';
-const TYPES=[['lg-villa','Villa'],['lg-bauernhof','Bauernhof'],['lg-wohnung','Einzelne Wohnung'],['lg-mfhA','Mehrfamilienhaus'],['lg-mfhB','Zwei-/Doppelhaus'],['lg-gewerbe','Gewerbe']];
+import { installGrundstueckLogo } from './assets/kostenicons.js';
+
+/* Das Grundstück bringt sein Logo selbst mit — die Haus-Symbole stehen
+   weiter oben fest im Dokument. */
+installGrundstueckLogo();
+
+const GRUND='lg-grundstueck';
+const TYPES=[['lg-villa','Villa'],['lg-bauernhof','Bauernhof'],['lg-wohnung','Einzelne Wohnung'],['lg-mfhA','Mehrfamilienhaus'],['lg-mfhB','Zwei-/Doppelhaus'],['lg-gewerbe','Gewerbe'],[GRUND,'Grundstück']];
+const NUTZUNGSARTEN=['Ackerland','Grünland','Wald','Bauerwartungsland','Gemischt','Sonstiges'];
+const PACHTTURNUS=[['jaehrlich','jährlich'],['halbjaehrlich','halbjährlich'],['vierteljaehrlich','vierteljährlich'],['monatlich','monatlich']];
 const MONATE=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const STEPS=[{se:'Schritt 1 / 5',lb:'Basis',h:'Grunddaten',p:'Adresse der Immobilie — der Name wird daraus gebildet.'},
-  {se:'Schritt 2 / 5',lb:'Typ',h:'Typ & Logo',p:'Wähle Gebäudetyp und Nutzung — das Logo ergibt sich daraus.'},
-  {se:'Schritt 3 / 5',lb:'Turnus',h:'Abrechnungsturnus',p:'Wann läuft das Abrechnungsjahr? Die Frist wird daraus automatisch abgeleitet.'},
-  {se:'Schritt 4 / 5',lb:'Kosten',h:'Kostenarten',p:'Was gehört grundsätzlich zu jeder Jahresabrechnung dieser Immobilie?'},
-  {se:'Schritt 5 / 5',lb:'Einheiten',h:'Einheiten & Parteien',p:'Wer wohnt / arbeitet hier und zahlt Abschläge?'}];
+
+/* Ein Grundstück ist kein Haus mit weniger Feldern: es hat keine Einheiten,
+   keinen Kostenartenkatalog und keine Nebenkostenabrechnung. Deshalb führt es
+   durch eine eigene, kürzere Folge von Schritten statt durch dieselbe mit
+   ausgegrauten Feldern. */
+const STEPS_GEBAEUDE=[
+  {id:'basis',lb:'Basis',h:'Grunddaten',p:'Adresse der Immobilie — der Name wird daraus gebildet.'},
+  {id:'typ',lb:'Typ',h:'Typ & Logo',p:'Wähle Gebäudetyp und Nutzung — das Logo ergibt sich daraus.'},
+  {id:'turnus',lb:'Turnus',h:'Abrechnungsturnus',p:'Wann läuft das Abrechnungsjahr? Die Frist wird daraus automatisch abgeleitet.'},
+  {id:'kosten',lb:'Kosten',h:'Kostenarten',p:'Was gehört grundsätzlich zu jeder Jahresabrechnung dieser Immobilie?'},
+  {id:'einheiten',lb:'Einheiten',h:'Einheiten & Parteien',p:'Wer wohnt / arbeitet hier und zahlt Abschläge?'}];
+const STEPS_GRUNDSTUECK=[
+  {id:'basis',lb:'Basis',h:'Grunddaten',p:'Wo liegt das Grundstück? Der Name wird daraus gebildet.'},
+  {id:'typ',lb:'Typ',h:'Typ & Logo',p:'Ein Grundstück braucht weder Einheiten noch eine Nebenkostenabrechnung.'},
+  {id:'grund',lb:'Grundstück',h:'Fläche & Bescheid',p:'Katasterauszug und Grundsteuerbescheid — alles optional, jederzeit nachtragbar.'},
+  {id:'pacht',lb:'Pacht',h:'Verpachtung',p:'Wer bewirtschaftet die Fläche, und was zahlt er dafür?'}];
 
 const defaultKosten=()=>[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Grundsteuer',1],['Gebäudeversicherung',1],['Hausmeister',1],['Allgemeinstrom',1],['Rauchwarnmelder',1],['Kaminkehrer',0],['Kaltwasserzähler',0],['Aufzug',0],['Gartenpflege',0],['Straßenreinigung / Winterdienst',0],['Bankspesen',0],['Hauskonto',0],['Internet / Kabel',0],['Schornsteinfeger',0],['Wartung Heizung',0]];
 
-const blank=()=>({strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[],eigenerName:'',nameSelbst:false});
+const blank=()=>({strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[],eigenerName:'',nameSelbst:false,
+  /* Grundstück */
+  gFlaeche:'',gNutzungsart:'',gWirtschaftsart:'',gemarkung:'',flurstueck:'',
+  gWert:'',gSteuerwert:'',gMessbetrag:'',gHebesatz:'',
+  paechter:'',pachtzins:'',pachtTurnus:'jaehrlich',pachtAb:''});
 let state={step:0,data:blank()};
+const istGrund=()=>state.data.typ===GRUND;
+const STEPS=()=>istGrund()?STEPS_GRUNDSTUECK:STEPS_GEBAEUDE;
 const $=s=>document.querySelector(s);
 const content=$('#content'),stepper=$('#stepper'),foot=$('#foot');
 
@@ -232,8 +273,19 @@ const content=$('#content'),stepper=$('#stepper'),foot=$('#foot');
    verschwindet der Einheitenanteil aus dem Namen wieder. */
 function abgeleiteterName(d){
   const ort=d.ort.trim(), strasse=d.strasse.trim();
+  /* Ein Acker hat selten eine Hausnummer. Ohne Straße heisst er nach seiner
+     Lage, und sobald das Flurstück eingetragen ist, wird er dadurch eindeutig
+     — zwei Grundstücke im selben Ort hiessen sonst gleich. */
+  if(d.typ===GRUND && !strasse){
+    if(!ort) return '';
+    // Mit Flurstück ist der Ort schon eindeutig; das Wort „Grundstück" davor
+    // wäre dann nur noch Länge — was es ist, sagt das Symbol.
+    const flur=(d.flurstueck||'').trim();
+    return flur ? `${ort} · Flurstück ${flur}` : `Grundstück ${ort}`;
+  }
   let basis = ort && strasse ? `(${ort}) ${strasse}` : (strasse || ort);
   if(!basis) return '';
+  if(d.typ===GRUND) return basis;
   if(d.einheiten.length===1){
     const bez=(d.einheiten[0].bez||'').trim();
     if(bez) basis+=` · ${bez}`;
@@ -255,7 +307,7 @@ function render(){renderStepper();renderStep();renderFoot();}
 
 function renderStepper(){
   stepper.className='stepper';
-  stepper.innerHTML=STEPS.map((s,i)=>{
+  stepper.innerHTML=STEPS().map((s,i)=>{
     const cls=i<state.step?'done':i===state.step?'active':'';
     const inner=i<state.step?'✓':(i+1);
     const tag = i<=state.step?'button':'div';
@@ -263,16 +315,67 @@ function renderStepper(){
   }).join('');
 }
 
+/* Zahl aus einem frei getippten Feld — „2.600", „46,30" und „4630" meinen
+   alle das, was sie sagen. Leer bleibt leer (null), nicht 0. */
+function nz(v){
+  const t=String(v??'').trim().replace(/[\s€%]/g,'');
+  if(!t) return null;
+  const komma=t.lastIndexOf(',');
+  const sauber = komma>=0
+    ? t.slice(0,komma).replace(/\./g,'')+'.'+t.slice(komma+1).replace(/\D/g,'')
+    : t.replace(/\.(?=\d{3}(\D|$))/g,'');
+  const n=Number(sauber);
+  return Number.isFinite(n)?n:null;
+}
+const dez=(n,k=2)=>n==null?'':n.toLocaleString('de-DE',{minimumFractionDigits:k,maximumFractionDigits:k});
+
+/* Was sich aus den Eingaben ergibt. Als Text, damit dieselbe Rechnung beim
+   Zeichnen und beim Tippen dieselbe Zeile liefert. */
+const PRO_JAHR={monatlich:12,vierteljaehrlich:4,halbjaehrlich:2,jaehrlich:1};
+function qmText(d){
+  const f=nz(d.gFlaeche), w=nz(d.gWert);
+  return f&&w ? `Das sind <b>${dez(w/f)} € je m²</b>.`
+              : 'Der Preis je m² ergibt sich daraus von selbst.';
+}
+function steuerText(d){
+  const m=nz(d.gMessbetrag), h=nz(d.gHebesatz);
+  return m!=null&&h!=null
+    ? `Grundsteuer: <b>${dez(m*h/100)} € im Jahr</b> — Messbetrag × Hebesatz.` : '';
+}
+function pachtText(d){
+  const z=nz(d.pachtzins);
+  return z!=null
+    ? `Im Jahr sind das <b>${dez(z*(PRO_JAHR[d.pachtTurnus]||1))} €</b>.`
+    : 'Ohne Pächter bleibt der Schritt leer — verpachten lässt sich das '
+      +'Grundstück später jederzeit.';
+}
+
+/* Beim Tippen nur die gerechneten Zeilen austauschen. Den ganzen Schritt neu
+   zu zeichnen würde das Feld unter dem Cursor ersetzen — beim Sprung ins
+   nächste Feld ginge die nächste Eingabe verloren. */
+function aktualisiereRechnung(){
+  const d=state.data;
+  const qm=content.querySelector('#rechnungQm');
+  if(qm) qm.innerHTML=qmText(d);
+  const st=content.querySelector('#rechnungSteuer');
+  if(st){
+    st.innerHTML=steuerText(d);
+    st.style.display=steuerText(d)?'':'none';
+  }
+  const pa=content.querySelector('#rechnungPacht');
+  if(pa) pa.innerHTML=pachtText(d);
+}
+
 function renderStep(){
-  const s=STEPS[state.step],d=state.data;
+  const s=STEPS()[state.step],d=state.data;
   let body='';
-  if(state.step===0){
+  if(s.id==='basis'){
     const abgeleitet=abgeleiteterName(d);
     body=`
-      <div class="field2"><label>Straße & Nr.</label><input class="inp" data-field="strasse" value="${esc(d.strasse)}" placeholder="Straße Hausnummer"></div>
+      <div class="field2"><label>${d.typ===GRUND?'Lage / Straße':'Straße & Nr.'}</label><input class="inp" data-field="strasse" value="${esc(d.strasse)}" placeholder="${d.typ===GRUND?'Flurname oder Straße — darf leer bleiben':'Straße Hausnummer'}"></div>
       <div class="two">
         <div class="field2"><label>PLZ</label><input class="inp" data-field="plz" value="${esc(d.plz)}" placeholder="90000" inputmode="numeric"></div>
-        <div class="field2" style="flex:2"><label>Ort</label><input class="inp" data-field="ort" value="${esc(d.ort)}" placeholder="Ort"></div>
+        <div class="field2" style="flex:2"><label>${d.typ===GRUND?'Gemeinde / Ort':'Ort'}</label><input class="inp" data-field="ort" value="${esc(d.ort)}" placeholder="Ort"></div>
       </div>
       <div class="namevz"><span>Heißt dann:</span><span class="nvn ${namenVorschau(d).leer?'blass':''}"
           >${esc(namenVorschau(d).text)}</span>
@@ -281,13 +384,60 @@ function renderStep(){
       ${d.nameSelbst?`<div class="field2"><label>Eigener Name</label>
         <input class="inp" data-field="eigenerName" value="${esc(d.eigenerName)}" placeholder="${esc(abgeleitet||'Name der Immobilie')}">
         <button type="button" class="nvbtn" data-namesel="0" style="margin-top:6px">Automatisch ableiten verwenden</button></div>`:''}
-      <div class="field2"><label>Gesamtfläche (m²)</label><input class="inp" data-field="flaeche" value="${esc(d.flaeche)}" placeholder="z. B. 320" inputmode="decimal">
-        <div class="hint">Bezieht sich auf die ganze Immobilie — optional, kann später ergänzt werden.</div></div>`;
-  } else if(state.step===1){
-    body=`<div class="lgrid">`+TYPES.map(([id,lbl])=>`<button class="lopt ${d.typ===id?'sel':''}" data-typ="${id}"><svg viewBox="0 0 96 96"><use href="#${id}"/></svg><span class="ll">${lbl}</span></button>`).join('')+`</div>
-      <div class="field2" style="margin-top:18px"><label>Nutzung</label><div class="chips">`+
-      ['Wohnen','Gewerbe','Gemischt'].map(n=>`<button class="chc ${d.nutzung===n?'sel':''}" data-nutzung="${n}">${n}</button>`).join('')+`</div></div>`;
-  } else if(state.step===2){
+      ${d.typ===GRUND?'':`<div class="field2"><label>Gesamtfläche (m²)</label><input class="inp" data-field="flaeche" value="${esc(d.flaeche)}" placeholder="z. B. 320" inputmode="decimal">
+        <div class="hint">Bezieht sich auf die ganze Immobilie — optional, kann später ergänzt werden.</div></div>`}`;
+  } else if(s.id==='typ'){
+    body=`<div class="lgrid">`+TYPES.map(([id,lbl])=>`<button class="lopt ${d.typ===id?'sel':''}" data-typ="${id}"><svg viewBox="0 0 96 96"><use href="#${id}"/></svg><span class="ll">${lbl}</span></button>`).join('')+`</div>`;
+    body+= d.typ===GRUND
+      ? `<div class="infobox" style="margin-top:18px">Für ein Grundstück entfallen Einheiten,
+           Kostenartenkatalog und Nebenkostenabrechnung. Gefragt wird stattdessen nach
+           <b>Fläche, Nutzungsart, Wert, Grundsteuer</b> und der <b>Pacht</b>.</div>`
+      : `<div class="field2" style="margin-top:18px"><label>Nutzung</label><div class="chips">`+
+        ['Wohnen','Gewerbe','Gemischt'].map(n=>`<button class="chc ${d.nutzung===n?'sel':''}" data-nutzung="${n}">${n}</button>`).join('')+`</div></div>`;
+  } else if(s.id==='grund'){
+    body=`
+      <span class="gruppe">Fläche & Nutzung</span>
+      <div class="field2"><label>Grundstücksfläche (m²)</label>
+        <input class="inp" data-field="gFlaeche" value="${esc(d.gFlaeche)}" placeholder="z. B. 4630" inputmode="decimal">
+        <div class="hint">Grund und Boden — nicht zu verwechseln mit der Wohnfläche
+          eines Gebäudes. 46 a 30 m² sind 4.630 m².</div></div>
+      <div class="field2"><label>Nutzungsart</label><div class="chips">`+
+        NUTZUNGSARTEN.map(n=>`<button class="chc ${d.gNutzungsart===n?'sel':''}" data-nutzungsart="${n}">${n}</button>`).join('')+`</div></div>
+      <div class="field2"><label>Wirtschaftsart laut Kataster</label>
+        <input class="inp" data-field="gWirtschaftsart" value="${esc(d.gWirtschaftsart)}" placeholder="z. B. Steigäcker, Waldfläche">
+        <div class="hint">Wortlaut aus dem Auszug — passt in keine Auswahlliste.</div></div>
+      <div class="two">
+        <div class="field2"><label>Gemarkung</label><input class="inp" data-field="gemarkung" value="${esc(d.gemarkung)}" placeholder="z. B. Eckenhaid"></div>
+        <div class="field2"><label>Flurstück</label><input class="inp" data-field="flurstueck" value="${esc(d.flurstueck)}" placeholder="z. B. 619"></div>
+      </div>
+
+      <span class="gruppe">Wert</span>
+      <div class="field2"><label>Grundstückswert (€)</label>
+        <input class="inp" data-field="gWert" value="${esc(d.gWert)}" placeholder="z. B. 55.000" inputmode="decimal">
+        <div class="hint" id="rechnungQm">${qmText(d)}</div></div>
+
+      <span class="gruppe">Grundsteuer</span>
+      <div class="field2"><label>Grundsteuerwert (€)</label>
+        <input class="inp" data-field="gSteuerwert" value="${esc(d.gSteuerwert)}" placeholder="z. B. 2.600" inputmode="decimal">
+        <div class="hint">Steht im Bescheid des Finanzamts.</div></div>
+      <div class="two">
+        <div class="field2"><label>Messbetrag (€)</label><input class="inp" data-field="gMessbetrag" value="${esc(d.gMessbetrag)}" placeholder="z. B. 1,43" inputmode="decimal"></div>
+        <div class="field2"><label>Hebesatz (%)</label><input class="inp" data-field="gHebesatz" value="${esc(d.gHebesatz)}" placeholder="z. B. 330" inputmode="decimal"></div>
+      </div>
+      <div class="infobox" id="rechnungSteuer"
+           ${steuerText(d)?'':'style="display:none"'}>${steuerText(d)}</div>`;
+  } else if(s.id==='pacht'){
+    body=`
+      <div class="field2"><label>Pächter</label>
+        <input class="inp" data-field="paechter" value="${esc(d.paechter)}" placeholder="Name des Pächters"></div>
+      <div class="field2"><label>Pachtzins (€ je Turnus)</label>
+        <input class="inp" data-field="pachtzins" value="${esc(d.pachtzins)}" placeholder="z. B. 320" inputmode="decimal"></div>
+      <div class="field2"><label>Zahlungsturnus</label><div class="chips">`+
+        PACHTTURNUS.map(([w,t])=>`<button class="chc ${d.pachtTurnus===w?'sel':''}" data-pachtturnus="${w}">${t}</button>`).join('')+`</div></div>
+      <div class="field2"><label>Pacht läuft ab</label>
+        <input class="inp" type="date" data-field="pachtAb" value="${esc(d.pachtAb)}"></div>
+      <div class="infobox" id="rechnungPacht">${pachtText(d)}</div>`;
+  } else if(s.id==='turnus'){
     const endName=MONATE[(d.startMonat+10)%12], startName=MONATE[d.startMonat-1];
     body=`<div class="choice">
         <button class="ch ${d.turnus==='kalender'?'sel':''}" data-turnus="kalender"><span class="rad"></span><span><span class="ct">Kalenderjahr</span><span class="cd">01. Januar – 31. Dezember</span></span></button>
@@ -301,13 +451,13 @@ function renderStep(){
       body+=`<div class="infobox">Turnus: <b>Januar – Dezember</b>. Turnus-Umstellung und Rumpf-/Zwischenabrechnungen sind später jederzeit möglich.</div>`;
     }
     body+=`<div class="infobox" style="margin-top:10px;background:#F7EFD9;border-color:#E4CF9E;color:#916212">Frist § 556 BGB: Abrechnung je Zeitraum bis <b>Ende + 12 Monate</b> — wird automatisch gesetzt und überwacht.</div>`;
-  } else if(state.step===3){
+  } else if(s.id==='kosten'){
     const aktiv=d.kosten.filter(k=>k[1]).length;
     body=`<div class="cfgcount">${aktiv} von ${d.kosten.length} aktiv</div>`+
       `<div class="togglist">`+
       d.kosten.map((k,i)=>`<button class="togg ${k[1]?'on':'off'}" data-tog="${i}"><span class="tn">${k[0]}</span><span class="sw"></span></button>`).join('')+
       `</div>`;
-  } else if(state.step===4){
+  } else if(s.id==='einheiten'){
     body = d.einheiten.length? `<div class="unitlist">`+d.einheiten.map((u,i)=>`
       <div class="unit"><div class="uhd"><span class="un">Einheit ${i+1}</span><button class="rm" data-rm="${i}" aria-label="entfernen">×</button></div>
         <input class="sm" data-ei="${i}" data-ek="bez" value="${esc(u.bez)}" placeholder="Bezeichnung (z. B. 1. OG, Büro, Garage)">
@@ -317,13 +467,16 @@ function renderStep(){
       </div>`).join('')+`</div>` : `<div class="empty">Noch keine Einheiten. Für kleine Objekte reicht auch eine.</div>`;
     body+=`<button class="addbtn" data-add="1" style="margin-top:10px">＋ Einheit hinzufügen</button>`;
   }
-  content.innerHTML=`<div class="shead"><div class="se">${s.se}</div><h2>${s.h}</h2><p>${s.p}</p></div>`+body;
+  const gesamt=STEPS().length;
+  content.innerHTML=`<div class="shead"><div class="se">Schritt ${state.step+1} / ${gesamt}</div>
+    <h2>${s.h}</h2><p>${s.p}</p></div>`+body;
+  content.scrollTop=0;
 }
 
 function renderFoot(){
-  const last=state.step===STEPS.length-1;
+  const last=state.step===STEPS().length-1;
   foot.innerHTML=(state.step>0?`<button class="btn ghost" data-prev="1">Zurück</button>`:'')+
-    `<button class="btn" data-next="1">${last?'Immobilie anlegen':'Weiter'}</button>`;
+    `<button class="btn" data-next="1">${last?(istGrund()?'Grundstück anlegen':'Immobilie anlegen'):'Weiter'}</button>`;
 }
 
 const esc=s=>String(s).replace(/"/g,'&quot;');
@@ -347,7 +500,8 @@ content.addEventListener('input',e=>{
   if(t.dataset.field==='startMonat'){state.data.startMonat=+t.value;renderStep();return;}
   if(t.dataset.field){
     state.data[t.dataset.field]=t.value;
-    if(['strasse','ort','eigenerName'].includes(t.dataset.field)) aktualisiereNamePreview();
+    if(['strasse','ort','eigenerName','flurstueck'].includes(t.dataset.field)) aktualisiereNamePreview();
+    aktualisiereRechnung();
     return;
   }
   if(t.dataset.ei!==undefined){
@@ -361,8 +515,25 @@ content.addEventListener('input',e=>{
 content.addEventListener('click',e=>{
   const typ=e.target.closest('[data-typ]'),nu=e.target.closest('[data-nutzung]'),tu=e.target.closest('[data-turnus]'),
         tg=e.target.closest('[data-tog]'),add=e.target.closest('[data-add]'),rm=e.target.closest('[data-rm]'),
-        namesel=e.target.closest('[data-namesel]');
-  if(typ){state.data.typ=typ.dataset.typ;renderStep();}
+        namesel=e.target.closest('[data-namesel]'),na=e.target.closest('[data-nutzungsart]'),
+        pt=e.target.closest('[data-pachtturnus]');
+  if(typ){
+    state.data.typ=typ.dataset.typ;
+    /* Ein Grundstück hat keine Wohnfläche, keine Einheiten und keinen
+       Kostenartenkatalog. Was dafür schon eingetippt war, wird beim Wechsel
+       fallengelassen, statt still mitgeschickt zu werden. */
+    if(istGrund()){
+      state.data.flaeche=''; state.data.einheiten=[];
+      state.data.nutzung='Landwirtschaft';
+    } else if(state.data.nutzung==='Landwirtschaft'){
+      state.data.nutzung='Wohnen';
+    }
+    // Die kürzere Folge könnte hinter dem aktuellen Schritt enden.
+    state.step=Math.min(state.step,STEPS().length-1);
+    render();
+  }
+  else if(na){state.data.gNutzungsart=na.dataset.nutzungsart;renderStep();}
+  else if(pt){state.data.pachtTurnus=pt.dataset.pachtturnus;renderStep();}
   else if(nu){state.data.nutzung=nu.dataset.nutzung;renderStep();}
   else if(tu){state.data.turnus=tu.dataset.turnus;if(tu.dataset.turnus==='kalender')state.data.startMonat=1;renderStep();}
   else if(tg){const i=+tg.dataset.tog;state.data.kosten[i][1]=state.data.kosten[i][1]?0:1;renderStep();}
@@ -383,7 +554,7 @@ stepper.addEventListener('click',e=>{
 foot.addEventListener('click',e=>{
   if(e.target.closest('[data-prev]')){state.step=Math.max(0,state.step-1);render();}
   else if(e.target.closest('[data-next]')){
-    if(state.step<STEPS.length-1){state.step++;render();}
+    if(state.step<STEPS().length-1){state.step++;render();}
     else finish();
   }
 });
@@ -391,7 +562,8 @@ foot.addEventListener('click',e=>{
 /* Schliessen: bei angefangener Eingabe erst rueckfragen, damit nichts still verfaellt */
 function beginnbar(){
   const d=state.data;
-  return !!(d.strasse||d.plz||d.ort||d.flaeche||d.eigenerName||d.einheiten.length);
+  return !!(d.strasse||d.plz||d.ort||d.flaeche||d.eigenerName||d.einheiten.length
+    ||d.gFlaeche||d.gNutzungsart||d.gWert||d.gemarkung||d.flurstueck||d.paechter);
 }
 $('#abbrechen').addEventListener('click',async()=>{
   if(beginnbar() && !$('#done').classList.contains('open')){
@@ -423,6 +595,7 @@ async function finish(){
   const knopf=foot.querySelector('[data-next]');
   if(knopf){ knopf.disabled=true; knopf.textContent='Wird angelegt …'; }
 
+  const grund=istGrund();
   try{
     const antwort=await fetch('/api/objekte',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -430,9 +603,10 @@ async function finish(){
         name, ort:d.ort, strasse:d.strasse, plz:d.plz,
         typ:d.typ, nutzung:d.nutzung, turnus:d.turnus,
         start_monat:d.turnus==='kalender'?1:d.startMonat,
-        flaeche:d.flaeche?Number(d.flaeche):null,
-        kostenarten:d.kosten.filter(k=>k[1]).map(k=>k[0]),
-        einheiten:d.einheiten.filter(u=>u.bez||u.partei).map(u=>({
+        flaeche:!grund&&d.flaeche?Number(d.flaeche):null,
+        verkehrswert:grund?nz(d.gWert):null,
+        kostenarten:grund?[]:d.kosten.filter(k=>k[1]).map(k=>k[0]),
+        einheiten:grund?[]:d.einheiten.filter(u=>u.bez||u.partei).map(u=>({
           bezeichnung:u.bez||u.partei, flaeche:u.flaeche?Number(u.flaeche):null,
           partei:u.partei, personen:u.personen?Number(u.personen):1})),
       }),
@@ -440,18 +614,71 @@ async function finish(){
     if(!antwort.ok) throw new Error(antwort.status);
     angelegterSlug=(await antwort.json()).slug;
   }catch(e){
-    if(knopf){ knopf.disabled=false; knopf.textContent='Immobilie anlegen'; }
+    if(knopf){ knopf.disabled=false; knopf.textContent=grund?'Grundstück anlegen':'Immobilie anlegen'; }
     melde('Die Immobilie konnte nicht gespeichert werden. Läuft die API?', 'neg');
     return;
   }
 
-  $('#recap').innerHTML=[
+  // Kataster und Grundsteuerbescheid folgen als eigener Schritt: das Objekt
+  // steht dann schon, und ein Fehler hier kostet nicht die ganze Eingabe.
+  if(grund) await grundstueckSpeichern(d);
+
+  $('#recap').innerHTML=(grund?[
+    ['Name', name],['Typ', typLabel(d.typ)],
+    ['Nutzungsart', d.gNutzungsart||'noch offen'],
+    ['Fläche', nz(d.gFlaeche)!=null?`${dez(nz(d.gFlaeche),0)} m²`:'noch offen'],
+    ['Grundstückswert', nz(d.gWert)!=null?`${dez(nz(d.gWert))} €`:'noch offen'],
+    ['Pacht', d.paechter||nz(d.pachtzins)!=null
+      ? `${d.paechter||'Pächter offen'}${nz(d.pachtzins)!=null?` · ${dez(nz(d.pachtzins))} €`:''}`
+      : 'keine'],
+  ]:[
     ['Name', name],['Typ', typLabel(d.typ)],['Nutzung', d.nutzung],
     ['Turnus', turnusLabel()],['Kostenarten aktiv', d.kosten.filter(k=>k[1]).length+' von '+d.kosten.length],
     ['Einheiten', d.einheiten.length]
-  ].map(([k,v])=>`<div class="rl"><span class="rk">${k}</span><span class="rv">${v}</span></div>`).join('');
+  ]).map(([k,v])=>`<div class="rl"><span class="rk">${k}</span><span class="rv">${v}</span></div>`).join('');
+  $('#doneTitle').textContent=grund?'Grundstück angelegt':'Immobilie angelegt';
+  $('#doneText').textContent=grund
+    ? 'Lage, Fläche und der Bescheid sind gespeichert.'
+    : 'Grunddaten, Turnus und Kostenarten sind gespeichert.';
   await cloudHinweis();
   $('#done').classList.add('open');
+}
+
+/* Kataster, Grundsteuerbescheid und Pacht nachtragen. Schlägt eines davon
+   fehl, bleibt das Grundstück trotzdem angelegt — gemeldet wird es, damit
+   niemand glaubt, die Zahlen stünden schon drin. */
+async function grundstueckSpeichern(d){
+  const angaben={
+    grundstueck_flaeche:nz(d.gFlaeche),
+    grundstueck_nutzungsart:d.gNutzungsart,
+    grundstueck_wirtschaftsart:d.gWirtschaftsart.trim(),
+    gemarkung:d.gemarkung.trim(), flurstueck:d.flurstueck.trim(),
+    grundsteuerwert:nz(d.gSteuerwert),
+    grundsteuer_messbetrag:nz(d.gMessbetrag),
+    grundsteuer_hebesatz:nz(d.gHebesatz),
+  };
+  const pfad=`/api/objekte/${encodeURIComponent(angelegterSlug)}`;
+  try{
+    const antwort=await fetch(pfad,{method:'PATCH',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(angaben)});
+    if(!antwort.ok) throw new Error(antwort.status);
+  }catch{
+    melde('Die Grundstücksangaben konnten nicht gespeichert werden — '
+      + 'auf der Objektseite lassen sie sich nachtragen.', 'neg');
+  }
+
+  if(!d.paechter.trim() && nz(d.pachtzins)==null) return;
+  try{
+    const antwort=await fetch(`${pfad}/mieten`,{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        partei:d.paechter.trim(), kaltmiete:nz(d.pachtzins)??0,
+        turnus:d.pachtTurnus,
+        ab_datum:d.pachtAb||new Date().toISOString().slice(0,10)})});
+    if(!antwort.ok) throw new Error(antwort.status);
+  }catch{
+    melde('Das Pachtverhältnis konnte nicht gespeichert werden.', 'neg');
+  }
 }
 
 /* Nach dem Anlegen zeigen, ob die Dokumentenablage noch fehlt — das Objekt

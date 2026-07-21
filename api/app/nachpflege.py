@@ -10,6 +10,8 @@ orangen Hinweis, entschieden wird vom Nutzer.
 """
 from __future__ import annotations
 
+from .models import ist_grundstueck
+
 # feld -> (Beschriftung, warum es nützlich ist)
 OBJEKTFELDER: dict[str, tuple[str, str]] = {
     "flaeche": ("Gesamtfläche", "Grundlage für die Verteilung nach Fläche"),
@@ -18,6 +20,23 @@ OBJEKTFELDER: dict[str, tuple[str, str]] = {
     "kaufpreis": ("Kaufpreis", "Grundlage der Vermögensübersicht"),
     "verkehrswert": ("Verkehrswert", "aktueller Wert für die Vermögensübersicht"),
     "iban": ("IBAN des Hauskontos", "gehört zur Abrechnung"),
+}
+
+# Ein Grundstück hat weder Wohnfläche noch Hauskonto — dort danach zu fragen
+# wäre kein Hinweis, sondern eine falsche Fährte. Gefragt wird nach dem, was
+# im Bescheid des Finanzamts und im Katasterauszug steht.
+GRUNDSTUECKSFELDER: dict[str, tuple[str, str]] = {
+    "grundstueck_nutzungsart": (
+        "Nutzungsart", "Ackerland, Grünland oder Wald — sagt, wie das "
+                       "Grundstück bewertet und besteuert wird"),
+    "grundstueck_flaeche": (
+        "Grundstücksfläche", "ohne sie kein Preis je m²"),
+    "gemarkung": ("Gemarkung", "gehört zur Bezeichnung des Flurstücks"),
+    "flurstueck": ("Flurstück", "benennt das Grundstück eindeutig"),
+    "verkehrswert": ("Grundstückswert", "Grundlage der Vermögensübersicht"),
+    "grundsteuerwert": (
+        "Grundsteuerwert", "steht im Bescheid des Finanzamts und ergibt "
+                           "zusammen mit dem Hebesatz die Grundsteuer"),
 }
 
 EINHEITFELDER: dict[str, tuple[str, str]] = {
@@ -43,6 +62,12 @@ def _pruefe(eintrag, felder: dict[str, tuple[str, str]], bereich: str,
 
 def hinweise(objekt, einheiten: list, mieten: list) -> list[dict]:
     """Was an diesem Objekt noch fehlt — von grob nach fein."""
+    if ist_grundstueck(objekt):
+        # Keine Einheiten, keine Nebenkostenabrechnung, also auch keine
+        # Mailadresse, an die etwas zu versenden wäre. Ein Pachtverhältnis
+        # ohne Kontakt ist hier kein Mangel.
+        return _pruefe(objekt, GRUNDSTUECKSFELDER, "objekt", objekt.name)
+
     offen = _pruefe(objekt, OBJEKTFELDER, "objekt", objekt.name)
     for e in einheiten:
         offen += _pruefe(e, EINHEITFELDER, "einheit", e.bezeichnung)

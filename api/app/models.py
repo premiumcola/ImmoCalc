@@ -5,6 +5,16 @@ from typing import Optional
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field
 
+# Ein Grundstück ist kein Haus mit weniger Feldern, sondern ein eigener Fall:
+# keine Einheiten, keine Mieter, keine Nebenkostenabrechnung. Erkannt wird es
+# am Logo-/Gebäudetyp, damit nichts Zusätzliches gepflegt werden muss.
+GRUNDSTUECK = "lg-grundstueck"
+
+
+def ist_grundstueck(objekt) -> bool:
+    """Ist dieses Objekt ein (landwirtschaftliches) Grundstück?"""
+    return getattr(objekt, "typ", "") == GRUNDSTUECK
+
 
 class Objekt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -28,6 +38,32 @@ class Objekt(SQLModel, table=True):
     bank: str = ""
     iban: str = ""
     kontoinhaber: str = ""
+    # ----------------------------------------------------------------------
+    # Grundstück (typ == GRUNDSTUECK). Bei jedem anderen Objekt bleiben diese
+    # Felder leer und werden nirgends gezeigt.
+    #
+    # `grundstueck_flaeche` ist bewusst NICHT `flaeche`: letzteres ist die
+    # Wohn-/Nutzfläche und geht in den Verteilungsschlüssel „Fläche" ein. Eine
+    # Ackerfläche dort einzutragen würde jede Nebenkostenabrechnung verfälschen.
+    #
+    # Der Grundstückswert ist der `verkehrswert` weiter oben — beim Grund und
+    # Boden ist das derselbe Wert. So rechnet die Vermögensübersicht ein
+    # Grundstück mit, ohne dass sie von ihm wissen muss; der Preis je m² ergibt
+    # sich aus Wert und Fläche und wird deshalb nicht gespeichert.
+    # ----------------------------------------------------------------------
+    grundstueck_flaeche: Optional[float] = None    # m² Grund und Boden
+    grundstueck_nutzungsart: str = ""              # Ackerland | Grünland | Wald | …
+    # Wortlaut aus dem Liegenschaftskataster, z. B. „Steigäcker, Waldfläche,
+    # Landwirtschaftsfläche" — passt in keine Auswahlliste und steht deshalb frei.
+    grundstueck_wirtschaftsart: str = ""
+    flurstueck: str = ""
+    gemarkung: str = ""
+    # Grundsteuer: der Bescheid des Finanzamts weist Wert und Messbetrag aus,
+    # den Hebesatz setzt die Gemeinde. Grundsteuer im Jahr = Messbetrag ×
+    # Hebesatz / 100 — abgeleitet, nicht gespeichert.
+    grundsteuerwert: Optional[float] = None        # § 219 BewG, zum Stichtag
+    grundsteuer_messbetrag: Optional[float] = None  # Steuermessbetrag in €
+    grundsteuer_hebesatz: Optional[float] = None   # Hebesatz der Gemeinde in %
 
 
 class Einheit(SQLModel, table=True):
@@ -129,7 +165,15 @@ class Miete(SQLModel, table=True):
     Teil der Mieterhistorie erhalten.
 
     Die Kontaktdaten hängen am Mietverhältnis, nicht an der Einheit: Beim
-    Mieterwechsel bleibt so nachvollziehbar, an wen welche Abrechnung ging."""
+    Mieterwechsel bleibt so nachvollziehbar, an wen welche Abrechnung ging.
+
+    Ein Pachtverhältnis über ein Grundstück ist derselbe Satz: Pächter statt
+    Partei, Pachtzins statt Kaltmiete, Turnus meist jährlich statt monatlich.
+    Alles, was eine Pacht braucht — Laufzeit, Kontakt, Kaution, Historie beim
+    Pächterwechsel — steht hier bereits. Ein zweites, fast gleiches Modell
+    daneben hätte nur bedeutet, dass Auswertung, Cashflow und Sicherung jede
+    Einnahme künftig an zwei Stellen suchen müssen. Die Oberfläche beschriftet
+    die Felder beim Grundstück anders; gespeichert wird derselbe Satz."""
     id: Optional[int] = Field(default=None, primary_key=True)
     objekt_id: int = Field(foreign_key="objekt.id", index=True)
     einheit: str = ""              # Bezeichnung der Einheit, leer = ganzes Objekt

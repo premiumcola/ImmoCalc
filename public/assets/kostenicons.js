@@ -41,11 +41,23 @@ const SYMBOLE = {
            <path ${P} d="M5.5 20a6.5 6.5 0 0 1 13 0"/>`,
   vertrag: `<path ${P} d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5Z"/>
             <path ${P} d="M14 3.5V8h4M9 12.5h6M9 16h4"/>`,
+  /* Grundstück: Horizont, Ackerfurchen, ein Baum am Rand. */
+  acker: `<path ${P} d="M3 11h18"/>
+          <path ${P} d="M4.5 15h15M3 19h18"/>
+          <path ${P} d="M7.5 8.5a2.6 2.6 0 1 1 5.2 0 2.6 2.6 0 0 1-5.2 0ZM10.1 11V8.5"/>`,
+  /* Grenzstein — Flurstück, Gemarkung, Vermessung. */
+  grenzstein: `<path ${P} d="M9 20V8.5l3-4.5 3 4.5V20"/>
+               <path ${P} d="M9 12h6M4.5 20h15"/>`,
 };
 
 /* Schlüsselwort -> Symbol. Erster Treffer gewinnt, deshalb stehen
    spezifische Begriffe vor allgemeinen. */
 const ZUORDNUNG = [
+  // Grundstück vor Grundsteuer: „grundsteuerwert" enthält beides nicht,
+  // aber „grundstücksfläche" darf nicht am Paragrafen landen.
+  ['grundstück', 'acker'], ['ackerland', 'acker'], ['pacht', 'acker'],
+  ['nutzungsart', 'acker'], ['flurstück', 'grenzstein'],
+  ['gemarkung', 'grenzstein'],
   ['warmwasser', 'heizung'], ['heizkosten', 'heizung'], ['heizöl', 'flamme'],
   ['heizung', 'heizung'], ['kaminkehrer', 'flamme'], ['kamin', 'flamme'],
   ['niederschlagswasser', 'wasser'], ['abwasser', 'wasser'],
@@ -79,4 +91,43 @@ export function kostenIcon(kostenart, klasse = '') {
   const symbol = SYMBOLE[symbolFuer(kostenart)] || SYMBOLE.punkt;
   return `<svg class="${klasse}" viewBox="0 0 24 24" width="24" height="24"
                aria-hidden="true">${symbol}</svg>`;
+}
+
+/* ------------------------------------------------------------------------
+   Objektlogo „Grundstück"
+
+   Die Haus-Logos liegen als Sprite in assets/immo.js. Das Grundstück kam
+   später dazu und bringt sein Symbol deshalb hier mit — im selben flachen
+   Stil und derselben Palette: Fläche #EDF1F0, Dunkel #143038, Teal #0F6E5C,
+   Grün #2E7D4F, Gelb #F4B740.
+
+   Gezeigt wird, was ein landwirtschaftliches Grundstück ausmacht: hinten der
+   Waldrand, davor ein Streifen Grünland und nach vorn der gepflügte Acker.
+   Die Streifen laufen nach unten auseinander — das gibt die Tiefe, die eine
+   Fläche von einem Gebäude unterscheidet. Die Lücken dazwischen tragen die
+   Furchen; dünne Striche würden bei 34 px verschwinden.
+   ------------------------------------------------------------------------ */
+export const GRUNDSTUECK_LOGO = 'lg-grundstueck';
+
+export const GRUNDSTUECK_SPRITE = `
+<symbol id="lg-grundstueck" viewBox="0 0 96 96">
+  <rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/>
+  <circle cx="70" cy="30" r="10" fill="#2E7D4F"/>
+  <rect x="68.5" y="38" width="3" height="11" fill="#143038"/>
+  <polygon points="21,40 58,40 61,47 18,47" fill="#0F6E5C"/>
+  <polygon points="19,51 72,51 76,59 15,59" fill="#F4B740"/>
+  <polygon points="16,63 79,63 84,72 11,72" fill="#F4B740"/>
+</symbol>`;
+
+/** Hängt das Grundstücks-Logo einmalig ins Dokument (idempotent). */
+export function installGrundstueckLogo() {
+  if (document.getElementById('immo-sprite-grundstueck')) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.id = 'immo-sprite-grundstueck';
+  svg.setAttribute('width', '0');
+  svg.setAttribute('height', '0');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.style.position = 'absolute';
+  svg.innerHTML = `<defs>${GRUNDSTUECK_SPRITE}</defs>`;
+  document.body.prepend(svg);
 }

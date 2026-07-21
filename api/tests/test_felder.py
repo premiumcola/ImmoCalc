@@ -25,6 +25,10 @@ def test_optional_und_pflicht_werden_unterschieden():
     assert darf_leer_sein(Miete, "notiz") is False         # str = ""
     assert darf_leer_sein(Objekt, "flaeche") is True
     assert darf_leer_sein(Objekt, "iban") is False
+    # Grundstück: Zahlen dürfen wirklich leer bleiben, Texte werden ""
+    assert darf_leer_sein(Objekt, "grundstueck_flaeche") is True
+    assert darf_leer_sein(Objekt, "grundsteuer_messbetrag") is True
+    assert darf_leer_sein(Objekt, "grundstueck_nutzungsart") is False
 
 
 def test_vorgabe_ist_die_leere_form_des_typs():
@@ -82,6 +86,25 @@ def test_objekt_stammdaten_lassen_sich_leeren():
         assert o["kaufpreis"] is None
         assert o["iban"] == ""                   # str-Pflichtfeld
         assert o["name"] == "Leerweg 1"          # unberuehrt
+
+
+def test_grundstuecksangaben_lassen_sich_wieder_leeren():
+    """Auch eine falsch eingetragene Fläche muss man wieder loswerden."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Leeracker", "typ": "lg-grundstueck"}).json()["slug"]
+        c.patch(f"/api/objekte/{slug}", json={
+            "grundstueck_flaeche": 4630.0, "grundstueck_nutzungsart": "Wald",
+            "grundsteuer_hebesatz": 330.0})
+        antwort = c.patch(f"/api/objekte/{slug}", json={
+            "grundstueck_flaeche": None, "grundstueck_nutzungsart": None,
+            "grundsteuer_hebesatz": None})
+        assert antwort.status_code == 200
+
+        o = c.get(f"/api/objekte/{slug}").json()["objekt"]
+        assert o["grundstueck_flaeche"] is None          # Optional -> leer
+        assert o["grundstueck_nutzungsart"] == ""        # str-Pflichtfeld
+        assert o["grundsteuer_hebesatz"] is None
 
 
 def test_auswertung_rechnet_nach_dem_leeren_weiter():

@@ -78,6 +78,83 @@ def test_derselbe_zeitraum_wird_nicht_zweimal_angelegt():
         assert zweiter.status_code == 409
 
 
+def test_grundstueck_wird_nicht_nach_wohnflaeche_gefragt():
+    """Ein Acker hat keine Wohnfläche und kein Hauskonto — dort danach zu
+    fragen wäre eine falsche Fährte. Gefragt wird nach dem Katasterauszug."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Steigäcker", typ="lg-grundstueck",
+                       nutzung="Landwirtschaft")
+        offen = c.get(f"/api/objekte/{slug}").json()["nachpflege"]
+        felder = offen["felder"]
+        assert "Nutzungsart" in felder
+        assert "Grundstücksfläche" in felder
+        assert "Grundsteuerwert" in felder
+        # nichts aus der Welt der Gebäude
+        assert "Gesamtfläche" not in felder
+        assert "IBAN des Hauskontos" not in felder
+        assert "Straße" not in felder
+
+
+def test_grundstuecksangaben_verschwinden_wenn_sie_gepflegt_sind():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Flurweg 619", typ="lg-grundstueck")
+        antwort = c.patch(f"/api/objekte/{slug}", json={
+            "grundstueck_flaeche": 4630.0,
+            "grundstueck_nutzungsart": "Gemischt",
+            "gemarkung": "Eckenhaid", "flurstueck": "619",
+            "verkehrswert": 55000.0, "grundsteuerwert": 2600.0,
+            "grundsteuer_messbetrag": 1.43, "grundsteuer_hebesatz": 330.0})
+        assert antwort.status_code == 200
+
+        det = c.get(f"/api/objekte/{slug}").json()
+        assert det["nachpflege"]["anzahl"] == 0
+        o = det["objekt"]
+        assert o["grundstueck_flaeche"] == 4630.0
+        assert o["grundsteuer_messbetrag"] == 1.43
+        # Der Grundstückswert ist der Verkehrswert — so rechnet ihn die
+        # Vermögensübersicht ohne Zutun mit.
+        assert o["verkehrswert"] == 55000.0
+        # Die Wohnfläche bleibt unberührt: sie speist den Verteilungsschlüssel
+        assert o["flaeche"] is None
+
+
+def test_pacht_ist_ein_mietverhaeltnis():
+    """Pächter, Pachtzins und Turnus passen auf das bestehende Miet-Modell —
+    ohne zweite Tabelle, die Auswertung und Sicherung übersehen könnten."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Pachtacker", typ="lg-grundstueck")
+        neu = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Landwirt Huber", "kaltmiete": 320.0,
+            "turnus": "jaehrlich", "ab_datum": "2024-01-01"})
+        assert neu.status_code == 201
+
+        pacht = c.get(f"/api/objekte/{slug}/mieten").json()[0]
+        assert pacht["partei"] == "Landwirt Huber"
+        assert pacht["kaltmiete"] == 320.0
+        # Ohne Kontakt ist eine Pacht kein Mangel: es gibt nichts zu versenden
+        assert not [h for h in c.get(f"/api/objekte/{slug}").json()
+                    ["nachpflege"]["offen"] if h["bereich"] == "miete"]
+
+
+def test_grundstueck_uebersteht_export_und_wiederherstellung():
+    """Die neuen Felder hängen am Objekt und wandern deshalb ohne Zutun in
+    die Sicherung — eine eigene Tabelle hätte hier gefehlt."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Sicherungsacker", typ="lg-grundstueck")
+        c.patch(f"/api/objekte/{slug}", json={
+            "grundstueck_flaeche": 4630.0, "grundstueck_nutzungsart": "Wald",
+            "grundsteuerwert": 2600.0})
+        sicherung = c.get(f"/api/objekte/{slug}/export").json()
+        assert sicherung["objekt"]["grundstueck_nutzungsart"] == "Wald"
+
+        zurueck = c.post("/api/objekte/import", json=sicherung)
+        assert zurueck.status_code == 201
+        wieder = c.get(f"/api/objekte/{zurueck.json()['slug']}").json()["objekt"]
+        assert wieder["grundstueck_flaeche"] == 4630.0
+        assert wieder["grundsteuerwert"] == 2600.0
+        assert wieder["typ"] == "lg-grundstueck"
+
+
 def test_turnus_auswahl_kommt_aus_der_api():
     with TestClient(app) as c:
         mieten = c.get("/api/turnus/mieten").json()
