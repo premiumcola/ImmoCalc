@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from .models import ist_grundstueck
 from .turnus import jahresbetrag
 
 
@@ -157,7 +158,12 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
         "slug": objekt.slug,
         "name": objekt.name,
         "wert": wert,
-        "wertquelle": "Verkehrswert" if objekt.verkehrswert else (
+        # Beim Grundstueck ist derselbe Wert der Grundstueckswert — das Wort
+        # „Verkehrswert" passt dort nicht zu dem, was der Nutzer eingetragen
+        # hat. Der Wert selbst ist unveraendert, nur seine Bezeichnung folgt
+        # dem Objekttyp.
+        "wertquelle": ("Grundstückswert" if ist_grundstueck(objekt) else
+                       "Verkehrswert") if objekt.verkehrswert else (
             "Kaufpreis" if objekt.kaufpreis else None),
         "kaufpreis": float(objekt.kaufpreis) if objekt.kaufpreis else None,
         "restschuld": restschuld,
