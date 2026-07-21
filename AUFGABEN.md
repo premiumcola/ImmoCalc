@@ -319,6 +319,7 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 
 | Nr. | Aufgabe | Grund |
 |---|---|---|
+| CI/CII | **Mietvergleich** | Von dir zurückgestellt (21.07.): „ich weiß nicht, ob das so wichtig ist". Das Rechenmodul samt Zensus-Daten und 56 Tests liegt fertig in `api/app/mietvergleich.py` (`ad50722`), ist aber **nirgends angebunden** — kein Endpunkt, keine Oberfläche. Anknüpfen kostet später wenig |
 | LVIII | Push-Benachrichtigungen auf iOS | von dir zurückgestellt; braucht HTTPS über den Reverse Proxy |
 | LIX | Umbenennung der App | „ImmoCalc“ bleibt vorerst; Vorschläge lagen vor (Hausflow, Immoflow) |
 
