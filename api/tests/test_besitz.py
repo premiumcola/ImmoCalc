@@ -217,6 +217,41 @@ def test_rueckwaerts_ist_die_umkehrung_der_fortschreibung():
     assert abs(zurueck - 250000.0) < 0.5
 
 
+def test_zinssatz_und_monatszins_rechnen_ineinander():
+    """CXLVIII: wer den Satz nicht kennt, gibt den Zinsanteil je Monat an."""
+    from app.vermoegen import monatszins, zinssatz_aus_monatszins
+
+    # 140.000 € zu 1,28 % sind 149,33 € Zinsen im Monat.
+    assert monatszins(140000.0, 1.28) == 149.33
+    assert zinssatz_aus_monatszins(140000.0, 149.33) == 1.28
+
+    # Und zurueck: der Weg ist in beide Richtungen derselbe.
+    assert monatszins(250000.0, 3.45) == 718.75
+    assert zinssatz_aus_monatszins(250000.0, 718.75) == 3.45
+
+
+def test_ohne_restschuld_gibt_es_nichts_umzurechnen():
+    """Kein Wert ist keine Null — 0,00 € waere eine Behauptung."""
+    from app.vermoegen import monatszins, zinssatz_aus_monatszins
+
+    assert monatszins(None, 1.28) is None
+    assert monatszins(0.0, 1.28) is None
+    assert monatszins(140000.0, None) is None
+    assert zinssatz_aus_monatszins(0.0, 149.33) is None
+    assert zinssatz_aus_monatszins(140000.0, None) is None
+
+    # Zinsfrei ist eine Angabe, kein Fehlen.
+    assert monatszins(140000.0, 0.0) == 0.0
+
+
+def test_kleine_betraege_verschwinden_nicht():
+    from app.vermoegen import monatszins, zinssatz_aus_monatszins
+
+    assert monatszins(500.0, 1.28) == 0.53      # 0,5333… -> 0,53
+    assert monatszins(1.0, 1.28) == 0.0         # unter einem Cent
+    assert zinssatz_aus_monatszins(500.0, 0.53) == 1.27
+
+
 def _kredit_mit_stand(c, slug, jahr, restschuld, zinssatz=3.0, rate=1000.0):
     kid = c.post(f"/api/objekte/{slug}/kredite", json={
         "bezeichnung": "Hauptdarlehen", "restschuld": restschuld,
@@ -318,6 +353,8 @@ def test_kredit_ohne_jahresstand_bleibt_wie_eingetragen():
         zeile = c.get(f"/api/objekte/{slug}/kredite").json()[0]
         assert zeile["restschuld_aktuell"] == 300000.0
         assert zeile["stand"]["quelle"] == "eingetragen"
+        # 300.000 € zu 2 % — 500 € der Rate sind Zinsen.
+        assert zeile["stand"]["zins_monat"] == 500.0
         vermoegen = next(z for z in c.get("/api/vermoegen").json()["objekte"]
                          if z["slug"] == slug)
         assert vermoegen["restschuld"] == 300000.0

@@ -39,6 +39,12 @@
  *
  * `zerstoere()` nimmt die Überschreibung zurück und lässt den rohen Wert im
  * Feld stehen — danach ist es wieder ein ganz normales <input>.
+ *
+ * DIE EINHEIT STEHT IM FELD. `geldFeld(el)` legt ein leises „€“ an den rechten
+ * Rand des Feldes, `geldFeld(el, 'm²')` das jeweils passende Zeichen. Es ist
+ * reine Anzeige: es hängt in einer Hülle über dem Feld, nicht im Wert. Das
+ * Feld bekommt rechts so viel Polster, dass auch eine lange Zahl nie darunter
+ * läuft.
  */
 
 /* Der native Zugriff auf `value`. Über ihn läuft alles, was die ANZEIGE
@@ -58,11 +64,14 @@ const MAX_STEUER = 13;       // bundeseinheitliches Schema
    gleicher Spezifität. ---- */
 const STIL = `
 .eingabe-feld{font-variant-numeric:tabular-nums}
-.eingabe-groesse{
-  display:block; margin-top:6px; font:500 11.5px var(--mono,ui-monospace,monospace);
-  letter-spacing:.04em; color:var(--soft,#5C6B70);
+.eingabe-huelle{position:relative; display:block}
+/* Body-Schrift, nicht Mono: eine Mono-Schrift stellt jedes Zeichen in ein
+   eigenes Fach, und „m²" fiele auseinander. */
+.eingabe-einheit{
+  position:absolute; right:13px; top:50%; transform:translateY(-50%);
+  font:500 13.5px var(--body,system-ui,sans-serif); line-height:1;
+  color:var(--soft,#5C6B70); pointer-events:none; white-space:nowrap;
 }
-.eingabe-groesse[hidden]{display:none}
 `;
 
 function stellStilBereit() {
@@ -157,25 +166,6 @@ function geldRoh(kern) {
   return (minus ? '-' : '') + (ganz || '0') + (dez ? '.' + dez : '');
 }
 
-const zahlText = (wert, stellen) =>
-  wert.toLocaleString('de-DE', { maximumFractionDigits: stellen });
-
-/**
- * Der leise Hinweis unter dem Feld. Ab zehntausend wird die Ziffernkette
- * unübersichtlich — dann sagt die Größenordnung mehr als der Betrag selbst.
- * @param {string} roh
- * @returns {string} leer, wenn kein Hinweis nötig ist
- */
-function geldGroesse(roh) {
-  const wert = Number(roh);
-  if (!roh || !Number.isFinite(wert)) return '';
-  const betrag = Math.abs(wert);
-  if (betrag < 10000) return '';
-  if (betrag >= 1e9) return zahlText(wert / 1e9, 2) + ' Mrd €';
-  if (betrag >= 1e6) return zahlText(wert / 1e6, 2) + ' Mio €';
-  return zahlText(wert / 1e3, 1) + ' T€';
-}
-
 /** Bauart „Betrag“. */
 function artGeld() {
   return {
@@ -189,7 +179,6 @@ function artGeld() {
     istKern: c => ZIFFER.test(c) || c === ',' || c === '-',
     // Ein roher Wert kommt mit Punkt als Dezimaltrenner — also locker lesen.
     vonRoh: text => geldKern(text, text.length, true).kern,
-    hinweis: geldGroesse,
     // Beim Verlassen des Feldes das angefangene Komma wegräumen.
     schluss: kern => (kern.endsWith(',') ? kern.slice(0, -1) : kern),
   };
@@ -376,9 +365,10 @@ let laufendeNummer = 0;
  * Hängt eine Bauart an ein Feld.
  * @param {HTMLInputElement} el
  * @param {object} art
+ * @param {{einheit?:string}} opt  Zeichen, das rechts im Feld stehen soll
  * @returns {{wert:Function, setze:Function, zerstoere:Function}}
  */
-function binde(el, art) {
+function binde(el, art, opt = {}) {
   if (!(el instanceof HTMLInputElement)) throw new TypeError('kein <input>');
   felder.get(el)?.zerstoere();
   kehreAus();
@@ -393,6 +383,27 @@ function binde(el, art) {
     if (!el.hasAttribute(name)) el.setAttribute(name, wert);
   }
   el.classList.add('eingabe-feld');
+
+  /* Die Einheit gehört ins Feld, nicht darunter: eine Hülle legt das Zeichen
+     über den rechten Rand des Feldes, und das Feld bekommt dort genau so viel
+     Polster, dass die Zahl nie darunter läuft — der Text eines <input> wird an
+     der Innenkante abgeschnitten, das Zeichen liegt hinter ihr. */
+  const zeichen = opt.einheit || '';
+  const altesPolster = el.style.paddingRight;
+  let huelle = null;
+  let einheitEl = null;
+  if (zeichen && el.parentNode) {
+    huelle = document.createElement('span');
+    huelle.className = 'eingabe-huelle';
+    el.before(huelle);
+    huelle.append(el);
+    einheitEl = document.createElement('span');
+    einheitEl.className = 'eingabe-einheit';
+    einheitEl.id = `eingabe-einheit-${++laufendeNummer}`;
+    einheitEl.textContent = zeichen;
+    huelle.append(einheitEl);
+    el.style.paddingRight = `${26 + 8 * zeichen.length}px`;
+  }
 
   // Ein Formular sammelt seine Werte über `new FormData(form)` — und das liest
   // den NATIVEN Wert, also die Anzeige, an der überschriebenen Eigenschaft
@@ -414,25 +425,12 @@ function binde(el, art) {
     if (spiegel) spiegel.value = roh;
   }
 
-  // Hinweiszeile unter dem Feld (nur beim Betrag).
-  let hinweis = null;
+  // Das Zeichen wird mit vorgelesen — „Restschuld, Euro“ —, sonst bliebe es
+  // eine rein optische Auskunft.
   const beschrieben = el.getAttribute('aria-describedby');
-  if (art.hinweis) {
-    hinweis = document.createElement('span');
-    hinweis.className = 'eingabe-groesse';
-    hinweis.id = `eingabe-hinweis-${++laufendeNummer}`;
-    hinweis.hidden = true;
-    el.after(hinweis);
+  if (einheitEl) {
     el.setAttribute('aria-describedby',
-      beschrieben ? `${beschrieben} ${hinweis.id}` : hinweis.id);
-  }
-
-  /** Schreibt die Größenordnung unter das Feld — oder blendet sie aus. */
-  function zeigeHinweis(roh) {
-    if (!hinweis) return;
-    const text = art.hinweis(roh);
-    hinweis.textContent = text;
-    hinweis.hidden = !text;
+      beschrieben ? `${beschrieben} ${einheitEl.id}` : einheitEl.id);
   }
 
   /**
@@ -455,7 +453,6 @@ function binde(el, art) {
       const pos = stelleNach(anzeige, vor, art.istKern);
       el.setSelectionRange(pos, pos);
     }
-    zeigeHinweis(roh);
   }
 
   const steuerung = {
@@ -507,7 +504,6 @@ function binde(el, art) {
       const kern = art.vonRoh(neu == null ? '' : String(neu));
       schreibe(el, art.anzeige(kern));
       merkeWert(art.roh(kern));
-      zeigeHinweis(el.dataset.wert);
     },
 
     zerstoere() {
@@ -520,8 +516,10 @@ function binde(el, art) {
       if (spiegel) { spiegel.remove(); el.setAttribute('name', name); }
       el.classList.remove('eingabe-feld');
       if (el.type !== alterTyp) el.type = alterTyp;
-      if (hinweis) {
-        hinweis.remove();
+      if (huelle) {
+        huelle.before(el);            // das Feld tritt an die Stelle der Hülle
+        huelle.remove();
+        el.style.paddingRight = altesPolster;
         if (beschrieben) el.setAttribute('aria-describedby', beschrieben);
         else el.removeAttribute('aria-describedby');
       }
@@ -554,12 +552,15 @@ function binde(el, art) {
    ========================================================================== */
 
 /**
- * Betrag mit Tausenderpunkten — und ab 10.000 einem leisen „1,25 Mio €“
- * unter dem Feld. `el.value` bleibt die nackte Zahl („1250000“).
+ * Betrag mit Tausenderpunkten und einem leisen Zeichen rechts im Feld.
+ * `el.value` bleibt die nackte Zahl („1250000“).
  * @param {HTMLInputElement} el
+ * @param {string} einheit  „€“, „%“, „m²“ … — leer lässt das Feld schmucklos
  * @returns {{wert:Function, setze:Function, zerstoere:Function}}
  */
-export function geldFeld(el) { return binde(el, artGeld()); }
+export function geldFeld(el, einheit = '€') {
+  return binde(el, artGeld(), { einheit });
+}
 
 /**
  * IBAN in Vierergruppen. `el.value` bleibt die IBAN ohne Leerzeichen.

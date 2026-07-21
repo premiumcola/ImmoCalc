@@ -42,6 +42,38 @@ def monatsrate(kredit) -> float:
     return round(jahresbetrag(kredit.rate_monatlich, kredit.turnus) / 12, 2)
 
 
+def monatszinssatz(zinssatz: float | None) -> float:
+    """Der Jahreszinssatz als Faktor je Monat: 1,28 % → 0,001066…"""
+    return float(zinssatz or 0) / 100 / 12
+
+
+def monatszins(restschuld: float | None, zinssatz: float | None) -> float | None:
+    """Zinsanteil einer Monatsrate: Restschuld × Zinssatz ÷ 12.
+
+    Bei 140.000 € und 1,28 % sind das 149,33 € im Monat. Gerundet wird erst
+    zum Schluss — die Rechnung selbst läuft ungerundet.
+
+    `None`, solange die Restschuld fehlt oder null ist: ohne sie gibt es
+    nichts umzurechnen, und 0,00 € wäre eine Behauptung statt einer Auskunft."""
+    rest = float(restschuld or 0)
+    if rest <= 0 or zinssatz is None:
+        return None
+    return round(rest * monatszinssatz(zinssatz), 2)
+
+
+def zinssatz_aus_monatszins(restschuld: float | None,
+                            zins_monat: float | None) -> float | None:
+    """Der umgekehrte Weg: aus dem monatlichen Zinsanteil der Jahreszinssatz.
+
+    Wer seine Rate kennt und den Satz nicht, liest den Zinsanteil aus dem
+    Kontoauszug ab — 149,33 € auf 140.000 € sind 1,28 % im Jahr. Zwei
+    Nachkommastellen, wie sie eine Bank auch ausweist."""
+    rest = float(restschuld or 0)
+    if rest <= 0 or zins_monat is None:
+        return None
+    return round(float(zins_monat) * 12 / rest * 100, 2)
+
+
 def monate_seit_jahresende(jahr: int, stichtag: date) -> int:
     """Volle Monatsraten zwischen dem 31.12. eines Jahres und dem Stichtag.
 
@@ -60,7 +92,7 @@ def stand_fortschreiben(rest: float, rate_monat: float, zinssatz: float | None,
     Deckt die Rate den Zins nicht (oder ist keine Rate erfasst), bleibt die
     Restschuld stehen. Lieber der letzte bekannte Wert als eine erfundene
     Kurve."""
-    zins_monat = float(zinssatz or 0) / 100 / 12
+    zins_monat = monatszinssatz(zinssatz)
     rate = float(rate_monat or 0)
     wert = float(rest or 0)
     if rate <= 0 or wert <= 0:
@@ -95,21 +127,26 @@ def kreditstand(kredit, staende: list | None = None,
     reihe = _reihe(staende)
     rate = monatsrate(kredit)
     if not reihe:
-        return {"restschuld": round(float(kredit.restschuld or 0), 2),
+        rest = round(float(kredit.restschuld or 0), 2)
+        return {"restschuld": rest,
                 "quelle": "eingetragen", "stand_jahr": None, "stand_wert": None,
-                "monate": 0, "rate_monat": rate}
+                "monate": 0, "rate_monat": rate,
+                "zins_monat": monatszins(rest, kredit.zinssatz)}
 
     vergangen = [s for s in reihe if date(s.jahr, 12, 31) <= heute]
     basis = vergangen[-1] if vergangen else reihe[0]
     monate = monate_seit_jahresende(basis.jahr, heute)
+    rest = stand_fortschreiben(basis.restschuld, rate, kredit.zinssatz, monate)
     return {
-        "restschuld": stand_fortschreiben(basis.restschuld, rate,
-                                          kredit.zinssatz, monate),
+        "restschuld": rest,
         "quelle": "jahresstand" if monate == 0 else "fortgeschrieben",
         "stand_jahr": basis.jahr,
         "stand_wert": round(float(basis.restschuld or 0), 2),
         "monate": monate,
         "rate_monat": rate,
+        # Was von der Rate an Zinsen weggeht — je kleiner die Restschuld
+        # wird, desto weniger.
+        "zins_monat": monatszins(rest, kredit.zinssatz),
     }
 
 

@@ -389,7 +389,17 @@ const BEREICHE = {
         geld: true },
       { k: 'restschuld', l: 'Restschuld bei Beginn', typ: 'number', schritt: '0.01',
         geld: true },
-      { k: 'zinssatz', l: 'Zinssatz %', typ: 'number', schritt: '0.01' },
+      { k: 'zinssatz', l: 'Zinssatz', typ: 'number', schritt: '0.01',
+        einheit: '%' },
+      /* CXLVIII — zwei Wege zum selben Satz. Wer den Zinssatz nicht kennt,
+         liest den monatlichen Zinsanteil aus dem Kontoauszug ab; die Kopplung
+         rechnet ihn in den Satz um (und umgekehrt). Gespeichert wird nur der
+         Zinssatz — ein zweites Feld am Modell wäre eine zweite Wahrheit,
+         deshalb `hilfe: true`. */
+      { k: 'zins_monat', l: 'Zinsanteil je Monat', typ: 'number',
+        schritt: '0.01', geld: true, hilfe: true,
+        note: 'Eines von beidem genügt — das andere ergibt sich aus der '
+            + 'Restschuld.' },
       { k: 'rate_monatlich', l: 'Rate je Turnus', typ: 'number', schritt: '0.01',
         geld: true },
       { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
@@ -1083,6 +1093,11 @@ async function ordnerZeigen() {
 }
 
 /* ---- Formular: eine Fabrik für alle Bereiche ---- */
+
+/* CXLVII — welches Zeichen rechts im Eingabefeld steht. Geld ist immer Euro,
+   alles andere sagt es selbst („m²", „%"). Leer heisst: schmuckloses Feld. */
+const feldEinheit = f => (f.geld ? '€' : f.einheit) || '';
+
 async function feldHtml(f, bereich, wert) {
   const id = `f_${f.k}`;
   if (f.typ === 'auswahl') {
@@ -1152,14 +1167,17 @@ async function feldHtml(f, bereich, wert) {
       </select></div>`;
   }
   const v = wert == null ? (f.vorgabe != null ? f.vorgabe : '') : wert;
-  // Geldfelder sind Textfelder: ein <input type="number"> nimmt keine
-  // Tausenderpunkte an. Die Zifferntastatur bleibt über inputmode erhalten.
-  const typ = f.geld ? 'text' : f.typ;
-  const zusatz = f.geld ? 'inputmode="decimal"'
-                        : (f.schritt ? `step="${f.schritt}"` : '');
+  // Felder mit Einheit sind Textfelder: ein <input type="number"> nimmt keine
+  // Tausenderpunkte an und stellte seine Pfeilchen genau dorthin, wo das
+  // Zeichen sitzt. Die Zifferntastatur bleibt über inputmode erhalten.
+  const einheit = feldEinheit(f);
+  const typ = einheit ? 'text' : f.typ;
+  const zusatz = einheit ? 'inputmode="decimal"'
+                         : (f.schritt ? `step="${f.schritt}"` : '');
   return `<div class="field"><label for="${id}">${esc(f.l)}</label>
     <input class="inp" id="${id}" name="${f.k}" type="${typ}" ${zusatz}
-           value="${esc(v)}" ${f.pflicht ? 'required' : ''}></div>`;
+           value="${esc(v)}" ${f.pflicht ? 'required' : ''}>
+    ${f.note ? `<span class="feldnote" id="n_${f.k}">${esc(f.note)}</span>` : ''}</div>`;
 }
 
 /* Lesbare Eingabe anhängen — und beim Schliessen wieder lösen, sonst häufen
@@ -1179,7 +1197,8 @@ function formateSetzen(form, felder) {
   for (const f of felder) {
     const el = form.elements[f.k];
     if (!el || el.tagName !== 'INPUT') continue;
-    const bauer = f.geld ? eingabe.geldFeld
+    const einheit = feldEinheit(f);
+    const bauer = einheit ? feld => eingabe.geldFeld(feld, einheit)
                 : f.iban ? eingabe.ibanFeld
                 : f.steuer ? eingabe.steuernummerFeld : null;
     if (typeof bauer !== 'function') continue;
@@ -1215,6 +1234,83 @@ function auswahlSetzen(form) {
   }
 }
 
+/* CXLVIII — Zinssatz und Zinsanteil je Monat halten sich gegenseitig aktuell.
+   Wer den Satz kennt, tippt ihn; wer nur den Zinsanteil aus dem Kontoauszug
+   hat, tippt den — beides führt zum selben Ergebnis. Gespeichert wird der
+   Zinssatz.
+
+   Die Regel dahinter steht in `api/app/vermoegen.py` (`monatszins` und
+   `zinssatz_aus_monatszins`) und ist dort geprüft; hier wird sie nur
+   angezeigt, damit die Zahl schon während des Tippens dasteht. Wer sie ändert,
+   ändert sie an beiden Stellen. */
+const ZINSTEXT = {
+  ja: 'Eines von beidem genügt — das andere ergibt sich aus der Restschuld.',
+  nein: 'Ohne Restschuld lässt sich das nicht umrechnen — trag sie oben ein.',
+};
+
+function zinsKopplung(form) {
+  const satz = form.querySelector('#f_zinssatz');
+  const monat = form.querySelector('#f_zins_monat');
+  const rest = form.querySelector('#f_restschuld');
+  const note = form.querySelector('#n_zins_monat');
+  if (!satz || !monat || !rest) return;
+  // Das Nachtragen im anderen Feld ist keine Eingabe des Nutzers.
+  let rechnet = false;
+
+  /* Die Restschuld, auf die sich beide Felder beziehen — null, solange keine
+     eingetragen ist. */
+  const basis = () => {
+    const r = zahlAus(rest);
+    return r && r > 0 ? r : null;
+  };
+
+  const setze = (feld, wert) => {
+    rechnet = true;
+    feld.value = wert == null ? '' : String(wert);
+    rechnet = false;
+  };
+  const auf2 = n => Math.round(n * 100) / 100;
+
+  function ausSatz() {
+    const r = basis();
+    const s = zahlAus(satz);
+    setze(monat, r == null || s == null ? null : auf2(r * s / 100 / 12));
+  }
+
+  /* Umgekehrt nur, wenn wirklich etwas dasteht: ein geleertes Hilfsfeld soll
+     keinen eingetragenen Zinssatz mitnehmen. */
+  function ausMonat() {
+    const r = basis();
+    const m = zahlAus(monat);
+    if (r == null || m == null) return;
+    setze(satz, auf2(m * 12 / r * 100));
+  }
+
+  /* Die fehlende Restschuld wird erst zum Thema, wenn wirklich etwas
+     umzurechnen wäre — ein frisch geöffnetes Formular wird nicht gleich
+     ermahnt. */
+  function melde() {
+    if (!note) return;
+    const angefangen = zahlAus(satz) != null || zahlAus(monat) != null;
+    note.textContent = !basis() && angefangen ? ZINSTEXT.nein : ZINSTEXT.ja;
+  }
+
+  const beiEingabe = rechnung => () => {
+    if (rechnet) return;
+    rechnung();
+    melde();
+  };
+
+  satz.addEventListener('input', beiEingabe(ausSatz));
+  monat.addEventListener('input', beiEingabe(ausMonat));
+  // Ändert sich die Restschuld, gilt weiter der Zinssatz — er ist das
+  // Gespeicherte, der Zinsanteil folgt ihm.
+  rest.addEventListener('input', beiEingabe(ausSatz));
+
+  melde();
+  ausSatz();
+}
+
 async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht,
                           hinweis = '', extra = '', knopf = 'Speichern' }) {
   const form = document.getElementById('dlgForm');
@@ -1235,6 +1331,7 @@ async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht,
   delete form.dataset.vorgaenger;   // sonst endet beim nächsten Mal ein fremder Stand
   formateSetzen(form, felder);
   auswahlSetzen(form);
+  zinsKopplung(form);
   // Ein zweiter showModal-Aufruf auf einem offenen Dialog wirft — der Wechsel
   // von der Miete zur Erhöhung tauscht nur den Inhalt aus.
   if (!dlg.open) dlg.showModal();
@@ -1261,6 +1358,9 @@ function zahlAus(el) {
 function ausFormular(form, felder) {
   const werte = {};
   for (const f of felder) {
+    // Hilfsfelder helfen beim Ausfüllen und werden nicht gespeichert — der
+    // Zinsanteil je Monat steckt schon im Zinssatz.
+    if (f.hilfe) continue;
     const el = form.elements[f.k];
     if (!el) continue;
     if (f.typ === 'ja_nein') { werte[f.k] = el.value === 'ja'; continue; }
@@ -1381,7 +1481,9 @@ function kreditExtra(eintrag) {
       ? `Zuletzt eingetragen zum 31.12.${s.stand_jahr}: ${eur(s.stand_wert)} —
          heute fortgeschrieben ${eur(s.restschuld)}.`
       : `Trage die Restschuld zum 31.12. ein, wie sie im Kontoauszug steht.
-         Dazwischen rechnet ImmoCalc aus Rate und Zinssatz weiter.`}</span>
+         Dazwischen rechnet ImmoCalc aus Rate und Zinssatz weiter.`}${
+      s.zins_monat ? ` Davon gehen zurzeit ${eur(s.zins_monat)} im Monat
+         an Zinsen weg.` : ''}</span>
     <button type="button" class="zusatz"
             data-staende="${eintrag.id}">Jahresstände pflegen</button>
   </div>`;
