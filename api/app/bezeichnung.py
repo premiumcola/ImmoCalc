@@ -116,8 +116,30 @@ VERBOTENE_ZEICHEN = '< > : " / \\ | ? *'
 
 # Vorlage für den Ordnernamen. Platzhalter werden ersetzt; leere Felder lassen
 # ihre Umgebung mitverschwinden, damit keine "() " Reste stehenbleiben.
-STANDARD_VORLAGE = "({ort}) {strasse} · {name}"
-PLATZHALTER = ("ort", "strasse", "name", "plz", "typ", "nutzung")
+STANDARD_VORLAGE = "({ort}) {lage} · {name}"
+# `lage` ist kein eigenes Feld, sondern das, was den Ort genauer benennt: bei
+# einem Haus die Strasse, bei einem Grundstueck Gemarkung und Flurstueck. Ohne
+# das hiess ein Feldgrundstueck nur „(Eckental) · Steigaecker" — die Strasse,
+# die es nicht hat, liess eine Luecke.
+PLATZHALTER = ("ort", "strasse", "name", "plz", "typ", "nutzung",
+               "gemarkung", "flurstueck", "lage")
+
+
+def lagebezeichnung(strasse: str = "", gemarkung: str = "",
+                    flurstueck: str = "") -> str:
+    """Was die Immobilie im Ort verortet — Strasse, ersatzweise das Flurstück.
+
+    Ein Grundstueck hat keine Hausnummer; im Grundbuch steht es als
+    „Gemarkung Eckenhaid, Flurstueck 619". Genau das nimmt hier die Stelle der
+    Strasse ein, damit der Ordnername etwas aussagt.
+    """
+    if _sauber(strasse):
+        return _sauber(strasse)
+    teile = [t for t in (_sauber(gemarkung), _sauber(flurstueck)) if t]
+    if not teile:
+        return ""
+    return "Flurstück " + " ".join(teile) if len(teile) == 1 and \
+        _sauber(flurstueck) and not _sauber(gemarkung) else " ".join(teile)
 
 
 def _entferne_leere_gruppen(text: str) -> str:
@@ -132,6 +154,12 @@ def _entferne_leere_gruppen(text: str) -> str:
 def nach_vorlage(vorlage: str, **werte: str) -> str:
     """Setzt eine Namensvorlage um und macht daraus einen gültigen Ordnernamen."""
     text = vorlage or STANDARD_VORLAGE
+    # `lage` ergibt sich aus den anderen Angaben, wenn es niemand mitgibt —
+    # sonst verlöre jeder Aufrufer, der nur `strasse` kennt, die Adresse.
+    if not werte.get("lage"):
+        werte = {**werte, "lage": lagebezeichnung(werte.get("strasse", ""),
+                                                  werte.get("gemarkung", ""),
+                                                  werte.get("flurstueck", ""))}
     for schluessel in PLATZHALTER:
         wert = _sauber(werte.get(schluessel, ""))
         # sowohl {ort} als auch %ort werden verstanden

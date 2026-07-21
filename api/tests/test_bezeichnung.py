@@ -573,3 +573,30 @@ def test_datum_und_betrag_aus_echten_dateinamen():
     # Beide fallen aus der Bezeichnung heraus, weil sie neu gesetzt werden
     assert ohne_betrag("DeltaT-2023-(200,75€)") == "DeltaT-2023"
     assert ohne_datum("DeltaT-2023") == "DeltaT"
+
+
+def test_grundstueck_bekommt_seine_lage_in_den_ordnernamen():
+    """CLXVI: ein Feldgrundstück hat keine Straße.
+
+    Die Vorlage `({ort}) {strasse} · {name}` liess bei ihm eine Lücke, wo
+    sonst die Adresse steht. Im Grundbuch heisst dieselbe Stelle „Gemarkung
+    Eckenhaid, Flurstück 619" — genau das nimmt jetzt ihren Platz ein."""
+    from app.bezeichnung import STANDARD_VORLAGE, lagebezeichnung, nach_vorlage
+
+    # Ein Haus behält seine Strasse
+    assert lagebezeichnung("Laufer Str. 5", "", "") == "Laufer Str. 5"
+    # Beim Grundstück tritt das Flurstück an ihre Stelle
+    assert lagebezeichnung("", "Eckenhaid", "619") == "Eckenhaid 619"
+    assert lagebezeichnung("", "", "619") == "Flurstück 619"
+    assert lagebezeichnung("", "Eckenhaid", "") == "Eckenhaid"
+    # Gibt es beides nicht, bleibt die Stelle leer statt „None" zu schreiben
+    assert lagebezeichnung("", "", "") == ""
+
+    ordner = nach_vorlage(STANDARD_VORLAGE, ort="Eckental", name="Steigäcker",
+                          lage=lagebezeichnung("", "Eckenhaid", "619"))
+    assert ordner == "(Eckental) Eckenhaid 619 · Steigäcker"
+
+    # Ohne jede Lageangabe bleibt der Name lesbar, ohne doppelte Trenner
+    schlicht = nach_vorlage(STANDARD_VORLAGE, ort="Eckental", name="Acker",
+                            lage="")
+    assert "  " not in schlicht and schlicht.endswith("Acker")

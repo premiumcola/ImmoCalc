@@ -6,8 +6,8 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..bezeichnung import (PLATZHALTER, STANDARD_VORLAGE, VERBOTENE_ZEICHEN,
-                           doppelt_geschachtelt, nach_vorlage, ordnerpfad,
-                           pfadteile, vorlage_pruefen)
+                           doppelt_geschachtelt, lagebezeichnung, nach_vorlage,
+                           ordnerpfad, pfadteile, vorlage_pruefen)
 from ..db import get_session
 from ..models import Dokument, Einstellung, Objekt
 from ..nextcloud import Nextcloud, NextcloudFehler
@@ -41,7 +41,14 @@ def ordner_fuer(session: Session, objekt: Objekt) -> str:
     return nach_vorlage(
         _lies(session, S_VORLAGE) or STANDARD_VORLAGE,
         ort=objekt.ort, strasse=objekt.strasse, name=objekt.name,
-        plz=objekt.plz, typ=objekt.typ, nutzung=objekt.nutzung)
+        plz=objekt.plz, typ=objekt.typ, nutzung=objekt.nutzung,
+        gemarkung=getattr(objekt, "gemarkung", "") or "",
+        flurstueck=getattr(objekt, "flurstueck", "") or "",
+        # Fuer ein Grundstueck tritt Gemarkung/Flurstueck an die Stelle der
+        # Strasse — sonst bliebe der Ordnername an dieser Stelle leer.
+        lage=lagebezeichnung(objekt.strasse,
+                             getattr(objekt, "gemarkung", "") or "",
+                             getattr(objekt, "flurstueck", "") or ""))
 
 
 def _pfad(pfad: str) -> str:
