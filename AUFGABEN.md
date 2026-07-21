@@ -151,6 +151,14 @@ daraus wirklich eine Position in der Abrechnung wird, fehlt noch:
 | CLXXIV | **Auswahlfelder schneiden den Text ab** | „(Eschenau…", „Nebenkost…" — die Felder sind zu schmal, um lesbar zu sein |
 | CLXXV | **Erledigtes wird grün** | Was gewählt und vollständig ist, färbt sich grün; ist alles grün, kann zugeordnet werden |
 
+### Unterordner nach Vorlage — aus dem Gespräch vom 21.07.2026
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CXCI | ~~**In den Nebenkosten liegt nicht alles flach**~~ — **gebaut** (`440012f`), offen bleibt nur der Umzug des Altbestands | Woertlich: „Die Unterordner in Nebenkosten und auch in anderen Ordnern sollen nach Vorlage dynamisch erzeugt werden. In NK kann nicht einfach alles flach drin liegen." Der Nutzer sortiert längst so: `60_Nebenkosten/2022 … 2026`, dazu Sammelordner wie `Ablesungsergebnisse` und `NK___PV-Anlage`; in Unterschöllenbach `NK-2018-1OG … NK-2024-1OG`; unter Steuer `2014_Renovierung`, `2020_Renovierung Haupthaus Flure`. Die App legt heute nur die elf Hauptordner an und wirft alles flach hinein. Gebraucht: eine Vorlage je Kategorie (Jahr, ggf. Einheit), aus der der Unterordner beim Einsortieren entsteht — und die vorhandenen Ordner werden dabei genutzt, nicht danebengestellt |
+
+| CXCII | **Altbestand in die Unterordner umziehen** | Neue Belege wandern seit `440012f` in `60_Nebenkosten/2025`. Die schon abgelegten liegen weiter flach. Ein Umzug bräuchte: Trockenlauf alt → neu je Datei, verschoben wird nur, was flach im Sachordner liegt **und** einen `Dokument`-Eintrag hat (selbst angelegte Ordner wie `Ablesungsergebnisse` bleiben unangetastet), Belege ohne erkennbares Jahr bleiben liegen, `Dokument.pfad` erst nach geglücktem MOVE nachziehen. Vorbild ist `POST /api/nextcloud/umzug` |
+
 ### Zwei Ebenen: Haus und Einheit — aus dem Gespräch vom 21.07.2026
 
 | Nr. | Aufgabe | Was gemeint ist |
