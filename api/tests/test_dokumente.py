@@ -28,10 +28,10 @@ def test_dateiname_folgt_dem_schema():
     sagt es schon, der Name sagt es noch einmal. Jetzt: Datum vorn, Sache in
     der Mitte, Betrag hinten, die Kategorie gar nicht."""
     assert dateiname(2024, "Nebenkosten", "Grundsteuer", ".pdf") \
-        == "2024_Grundsteuer.pdf"
+        == "2024_NK-Grundsteuer.pdf"
     # Leerzeichen werden zu Bindestrichen, Umlaute bleiben lesbar
     assert dateiname(2025, "Steuer", "Bescheid Finanzamt Süd", ".pdf") \
-        == "2025_Bescheid-Finanzamt-Süd.pdf"
+        == "2025_Steuer-Bescheid-Finanzamt-Süd.pdf"
     # ohne Beschreibung und ohne Jahr bleibt es trotzdem eindeutig — und
     # heisst nicht "Sonstiges", denn so heisst schon der Ordner
     assert dateiname(None, "Sonstiges", "", ".pdf") == "ohne-Jahr_Beleg.pdf"
@@ -43,14 +43,14 @@ def test_dateiname_nennt_nicht_doppelt_was_der_ordner_sagt():
     """CXXII, wörtlich: „Wenn was im Ordner Nebenkosten ist, dann soll die
     Datei natürlich nicht 2026_Nebenkosten_Heizkosten heissen."" """
     assert dateiname(2026, "Nebenkosten", "Nebenkosten Heizkosten", ".pdf") \
-        == "2026_Heizkosten.pdf"
+        == "2026_NK-Heizkosten.pdf"
     # auch im Kompositum: „Nebenkostenabrechnung" -> „Abrechnung"
     assert dateiname(2024, "Nebenkosten", "Nebenkostenabrechnung", ".pdf") \
-        == "2024_Abrechnung.pdf"
+        == "2024_NK-Abrechnung.pdf"
     # aber nicht mitten im Wort: aus „Grundsteuerbescheid" darf nie
     # „Grundbescheid" werden
     assert dateiname(2024, "Steuer", "Grundsteuerbescheid", ".pdf") \
-        == "2024_Grundsteuerbescheid.pdf"
+        == "2024_Steuer-Grundsteuerbescheid.pdf"
 
 
 def test_dateiname_haengt_den_betrag_hinten_an():
@@ -60,20 +60,20 @@ def test_dateiname_haengt_den_betrag_hinten_an():
     Geschrieben wird er, wie der Nutzer es selbst tut: deutsches Komma,
     Euro-Zeichen, kein Tausenderpunkt („2025_Muell_256,36€.pdf")."""
     assert dateiname(2026, "Nebenkosten", "Heizöl", ".pdf", 3, 1284.5) \
-        == "2026-03_Heizöl_1284,50€.pdf"
+        == "2026-03_NK-Heizöl_1284,50€.pdf"
     assert dateiname(2025, "Nebenkosten", "Müll", ".pdf", None, 256.36) \
-        == "2025_Müll_256,36€.pdf"
+        == "2025_NK-Müll_256,36€.pdf"
     # ohne Betrag bleibt der Name kurz, statt eine 0,00 zu behaupten
-    assert dateiname(2025, "Nebenkosten", "Müll", ".pdf") == "2025_Müll.pdf"
+    assert dateiname(2025, "Nebenkosten", "Müll", ".pdf") == "2025_NK-Müll.pdf"
     assert dateiname(2025, "Nebenkosten", "Müll", ".pdf", None, 0) \
-        == "2025_Müll.pdf"
+        == "2025_NK-Müll.pdf"
 
 
 def test_dateiname_setzt_datum_und_betrag_nicht_zweimal():
     """Beim Korrigieren wird der bestehende Name neu gebaut. Stünden Datum und
     Betrag dann ein zweites Mal drin, wüchse der Name bei jeder Änderung."""
     einmal = dateiname(2025, "Nebenkosten", "Heizöl", ".pdf", 10, 2729.91)
-    assert einmal == "2025-10_Heizöl_2729,91€.pdf"
+    assert einmal == "2025-10_NK-Heizöl_2729,91€.pdf"
     # derselbe Name als Bezeichnung wieder hineingegeben
     assert dateiname(2025, "Nebenkosten", einmal.removesuffix(".pdf"), ".pdf",
                      10, 2729.91) == einmal
@@ -271,7 +271,7 @@ def test_umbenennen_ueber_die_bezeichnung(monkeypatch):
                           json={"beschreibung": "Heizung Ablesung"})
         assert antwort.status_code == 200
         # CXXII: „Nebenkosten" steht nicht mehr im Namen — der Ordner heisst so
-        neu = "2025_Heizung-Ablesung.pdf"
+        neu = "2025_NK-Heizung-Ablesung.pdf"
         assert antwort.json()["dateiname"] == neu
         assert wolke.verschoben[-1][1] == \
             f"Home/Immobilien/Namensweg 2/60_Nebenkosten/{neu}"
@@ -292,15 +292,15 @@ def test_betrag_wandert_in_den_namen_und_bleibt_dort(monkeypatch):
 
         antwort = c.patch(f"/api/dokumente/{doc}", json={
             "beschreibung": "Heizöl", "monat": 10, "betrag": 2729.91})
-        assert antwort.json()["dateiname"] == "2025-10_Heizöl_2729,91€.pdf"
+        assert antwort.json()["dateiname"] == "2025-10_NK-Heizöl_2729,91€.pdf"
 
         # Nur das Jahr korrigiert: Bezeichnung, Monat und Betrag bleiben
         antwort = c.patch(f"/api/dokumente/{doc}", json={"jahr": 2026})
-        assert antwort.json()["dateiname"] == "2026-10_Heizöl_2729,91€.pdf"
+        assert antwort.json()["dateiname"] == "2026-10_NK-Heizöl_2729,91€.pdf"
 
         # und ausdrücklich gelöscht werden kann er auch
         antwort = c.patch(f"/api/dokumente/{doc}", json={"betrag": None})
-        assert antwort.json()["dateiname"] == "2026-10_Heizöl.pdf"
+        assert antwort.json()["dateiname"] == "2026-10_NK-Heizöl.pdf"
 
 
 def test_entfernen_loescht_nur_den_eintrag():
@@ -415,7 +415,7 @@ def test_scan_ordnet_zu_was_eindeutig_ist(monkeypatch):
 
         # CXXII: die Art steckt im Zielordner, nicht noch einmal im Namen —
         # vorher hiess die Datei „2024_Steuer_Grundsteuerbescheid.pdf".
-        ziel = "2024_Grundsteuerbescheid.pdf"
+        ziel = "2024_Steuer-Grundsteuerbescheid.pdf"
         assert wolke.verschoben[0][1] == \
             f"Home/Immobilien/Automatikweg 1/70_Steuer_Finanzamt/{ziel}"
 
@@ -651,9 +651,9 @@ def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
         objekt_id = _objekt_id(slug)
         # Eintrag auf dem Zielpfad — in der Cloud gibt es die Datei nicht mehr
         ziel = ("/Home/Immobilien/Belegtweg 4/70_Steuer_Finanzamt/"
-                "2024_Grundsteuerbescheid.pdf")
+                "2024_Steuer-Grundsteuerbescheid.pdf")
         with Session(engine) as s:
-            s.add(Dokument(pfad=ziel, dateiname="2024_Grundsteuerbescheid.pdf",
+            s.add(Dokument(pfad=ziel, dateiname="2024_Steuer-Grundsteuerbescheid.pdf",
                            objekt_id=objekt_id, status="zugeordnet"))
             s.commit()
 
@@ -663,7 +663,7 @@ def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
         ergebnis = c.post("/api/dokumente/scan").json()
         assert ergebnis["automatisch"] == 1
         # ausgewichen statt kollidiert
-        assert wolke.verschoben[-1][1].endswith("2024_Grundsteuerbescheid-2.pdf")
+        assert wolke.verschoben[-1][1].endswith("2024_Steuer-Grundsteuerbescheid-2.pdf")
 
 
 def test_scanlauf_geht_nach_einem_fehler_weiter(monkeypatch):
@@ -878,12 +878,12 @@ def test_abgleich_erkennt_eine_umbenannte_datei(monkeypatch):
         doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/alt.pdf",
                      groesse=7777)
         baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten":
-                      [("2025-10_Heizöl_2729,91€.pdf", 7777)]})
+                      [("2025-10_NK-Heizöl_2729,91€.pdf", 7777)]})
         monkeypatch.setattr(modul, "verbindung", lambda session: baum)
 
         ergebnis = c.post("/api/dokumente/abgleich").json()
         assert [v["id"] for v in ergebnis["umbenannt"]] == [doc]
-        assert _stand(doc).dateiname == "2025-10_Heizöl_2729,91€.pdf"
+        assert _stand(doc).dateiname == "2025-10_NK-Heizöl_2729,91€.pdf"
         assert baum.verschoben == []
 
 
@@ -925,7 +925,7 @@ def test_abgleich_nimmt_neue_dateien_gleich_mit(monkeypatch):
         assert ergebnis["neu"] == 1
         assert ergebnis["automatisch"] == 1
         assert baum.verschoben[-1][1] == \
-            f"{ordner}/60_Nebenkosten/2025_Wasserrechnung.pdf"
+            f"{ordner}/60_Nebenkosten/2025_NK-Wasserrechnung.pdf"
 
 
 def test_abgleich_ueberspringt_unlesbare_ordner(monkeypatch):
@@ -1050,7 +1050,7 @@ def test_belegdatum_bleibt_tagesgenau_und_benennt_die_datei(monkeypatch):
         assert antwort.json()["belegdatum"] == "2025-11-14"
         # Jahr und Monat des Dateinamens folgen dem Tag, ohne dass sie
         # mitgeschickt werden müssten.
-        assert antwort.json()["dateiname"] == "2025-11_Kaminkehrer.pdf"
+        assert antwort.json()["dateiname"] == "2025-11_NK-Kaminkehrer.pdf"
         assert antwort.json()["jahr"] == 2025
 
         gelistet = c.get("/api/dokumente", params={"objekt": slug}).json()
@@ -1060,7 +1060,7 @@ def test_belegdatum_bleibt_tagesgenau_und_benennt_die_datei(monkeypatch):
         antwort = c.patch(f"/api/dokumente/{doc}", json={"belegdatum": None})
         assert antwort.json()["belegdatum"] is None
         # und der Name behält, was er hatte — er ist die Wahrheit im Ordner
-        assert antwort.json()["dateiname"] == "2025-11_Kaminkehrer.pdf"
+        assert antwort.json()["dateiname"] == "2025-11_NK-Kaminkehrer.pdf"
 
 
 def test_scan_merkt_sich_das_belegdatum(monkeypatch):
@@ -1210,7 +1210,7 @@ def test_betrag_steht_am_beleg_nicht_nur_im_namen(monkeypatch):
                         params={"objekt": slug}).json()["dokumente"][0]
         assert eintrag["betrag"] == 214.5
         # und im Namen steht er weiterhin, so wie CXXIII es wollte
-        assert eintrag["dateiname"] == "2025-03_Wasser_214,50€.pdf"
+        assert eintrag["dateiname"] == "2025-03_NK-Wasser_214,50€.pdf"
         assert eintrag["vorschlag"]["betrag"] == 214.5
 
         # Auch der Scan legt ihn ab

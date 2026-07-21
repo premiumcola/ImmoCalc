@@ -55,6 +55,22 @@ ZIELORDNER = {
 
 DOKUMENTARTEN = list(ZIELORDNER.keys())
 
+# Kurzform der Art für den Dateinamen. Der Ordner sagt zwar schon, worum es
+# geht — aber ein Name wandert aus dem Ordner heraus: in eine Suche, in einen
+# Mailanhang, auf den Schreibtisch. „2026-02_Rechnung_104,15€.pdf" sagt dort
+# nichts; „2026-02_NK-Schornsteinfeger_104,15€.pdf" sagt alles. Kurz gehalten,
+# damit der Name nicht wieder in die Breite läuft (CXXII).
+ARTKUERZEL = {
+    "Nebenkosten": "NK",
+    "Steuer": "Steuer",
+    "Kredit": "Kredit",
+    "Versicherung": "Vers",
+    "Mietvertrag": "Miete",
+    "Korrespondenz": "Post",
+    "Hausverwaltung": "HV",
+    "Sonstiges": "",
+}
+
 # Status eines Eintrags, dessen Datei beim Abgleich nicht mehr auffindbar war
 # (CXXVII). Ein vierter Wert neben "neu" und "zugeordnet" — additiv, das
 # Datenmodell bleibt unverändert. Kommt die Datei zurück, fällt er wieder weg.
@@ -76,7 +92,7 @@ def _saubere_datei(text_: str) -> str:
 
 def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
               endung: str, monat: int | None = None,
-              betrag: float | None = None) -> str:
+              betrag: float | None = None, kostenart: str = "") -> str:
     """JJJJ-MM_Sache_1234,56€.pdf — drei Stücke, jedes genau einmal.
 
     * **Datum vorn.** Nur so sortiert sich der Ordner von selbst; der Monat
@@ -94,8 +110,42 @@ def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
     """
     roh = ohne_datum(ohne_betrag(beschreibung or ""))
     sache = _saubere_datei(ohne_ordnerwort(roh, kategorie))
-    teile = [datumsteil(jahr, monat), sache or "Beleg", betragsteil(betrag)]
+    # Der Name bleibt idempotent: steht das Kürzel schon vorn — weil dieser
+    # Name schon einmal durch diese Funktion lief —, wird es nicht doppelt
+    # gesetzt („NK-NK-Kaminkehrer").
+    vorn = ARTKUERZEL.get(kategorie, "")
+    if vorn and _kern(sache).startswith(_kern(vorn)):
+        sache = sache[len(vorn):].lstrip("-_ ") or sache
+    # Die Kostenposition sagt genauer, worum es geht, als eine Bezeichnung wie
+    # „Rechnung": aus 2026-02_Rechnung wird 2026-02_NK-Schornsteinfeger.
+    # Heisst die Position wie die Art („Nebenkosten" unter Nebenkosten), sagt
+    # sie nichts Neues — das Kürzel steht ohnehin schon vorn.
+    if kostenart and _kern(kostenart) != _kern(kategorie):
+        genau = _saubere_datei(kostenart)
+        # „Wasser" unter der Position „Wasser" braucht nicht zweimal dazustehen
+        doppelt = _kern(sache) and _kern(sache) in _kern(genau)
+        sache = (genau if not sache or _sagt_nichts(sache) or doppelt
+                 else f"{genau}-{sache}")
+    kuerzel = ARTKUERZEL.get(kategorie, "")
+    mitte = f"{kuerzel}-{sache}" if kuerzel and sache else (sache or kuerzel)
+    teile = [datumsteil(jahr, monat), mitte or "Beleg", betragsteil(betrag)]
     return "_".join(t for t in teile if t) + endung
+
+
+# Wörter, die jeder Beleg trägt und die niemandem beim Wiederfinden helfen.
+# Steht nur so etwas da, tritt die Kostenposition an ihre Stelle.
+_NICHTSSAGEND = {"rechnung", "beleg", "scan", "dokument", "schreiben",
+                 "abrechnung", "jahresabrechnung", "kopie", "pdf"}
+
+
+def _kern(text: str) -> str:
+    """Nur die Buchstaben, klein — zum Vergleichen zweier Bezeichnungen."""
+    return re.sub(r"[^a-zäöüß]+", "", (text or "").lower())
+
+
+def _sagt_nichts(text: str) -> bool:
+    """Ist das nur ein Allerweltswort wie „Rechnung"?"""
+    return _kern(text) in _NICHTSSAGEND
 
 
 def _endung(name: str) -> str:
@@ -315,7 +365,7 @@ def _automatisch(session: Session, d: Dokument, o: Objekt, client) -> bool:
     sache = _bezeichnung(d.dateiname) or vorschlag["sache"]
     name = dateiname(vorschlag["jahr"], vorschlag["kategorie"], sache,
                      _endung(d.dateiname), vorschlag["monat"],
-                     vorschlag["betrag"])
+                     vorschlag["betrag"], d.kostenart)
     alt = d.pfad
     try:
         d.pfad, d.dateiname = _einsortieren(session, d, o,
@@ -887,7 +937,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     monat = monat or erkannt_monat
     kategorie = kategorie or "Sonstiges"
     name = dateiname(jahr, kategorie, beschreibung or "Scan", ".pdf",
-                     monat, betrag)
+                     monat, betrag, kostenart)
     ziel_ordner = _zielordner(o, kategorie)
     client = verbindung(session)
     try:
@@ -972,6 +1022,9 @@ def aendern(dokument_id: int, data: AenderungIn,
             raise HTTPException(400, "Bitte die Immobilie angeben")
 
     kategorie = data.kategorie or d.kategorie or "Sonstiges"
+    # Die Kostenposition steht im Namen (CLXXI): „NK-Schornsteinfeger" statt
+    # „Rechnung". Kommt sie nicht mit, gilt die bisherige.
+    kostenart = data.kostenart if "kostenart" in gesetzt else d.kostenart
     jahr = data.jahr if "jahr" in gesetzt else d.jahr
     endung = _endung(d.dateiname)
     # Vor dem ersten MOVE prüfen: was hier scheitert, soll die Datei in der
@@ -1003,7 +1056,7 @@ def aendern(dokument_id: int, data: AenderungIn,
     if {"kategorie", "jahr", "monat", "betrag", "belegdatum",
             "beschreibung", "objekt"} & gesetzt:
         name = dateiname(jahr, kategorie, beschreibung or "", endung,
-                         monat, betrag)
+                         monat, betrag, kostenart)
     else:
         name = d.dateiname
 
@@ -1177,7 +1230,8 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
     jahr, monat = datum_aus_namen(d.dateiname)
     name = (d.dateiname if d.dateiname.lower().endswith(".pdf")
             else dateiname(d.jahr or jahr, kategorie, _bezeichnung(d.dateiname),
-                           ".pdf", monat, betrag_aus_namen(d.dateiname)))
+                           ".pdf", monat, betrag_aus_namen(d.dateiname),
+                           d.kostenart))
     client = verbindung(session)
     try:
         client.ordner_anlegen(ordner)
