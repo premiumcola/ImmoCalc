@@ -23,7 +23,7 @@ from ..cashflow import EinheitZahlen, cashflow, monate_im_jahr, sankey
 from ..turnus import jahresbetrag
 from ..db import get_session
 from ..models import (Einheit, Kostenart, Kostenposition, Kredit, Miete, Objekt,
-                      Versicherung, Zahlung, Zeitraum)
+                      Versicherung, Zahlung, Zeitraum, ist_grundstueck)
 
 router = APIRouter(prefix="/api/auswertung", tags=["auswertung"])
 
@@ -33,7 +33,10 @@ EIGENTUEMER_NAMEN = ["Kredit", "Versicherung", "Steuer", "Instandhaltung", "Sons
 # Der Kostenfluss der Mietersicht speist sich nicht aus der Miete, sondern aus
 # den Vorauszahlungen. Die Knoten kommen aus cashflow.sankey und heißen dort
 # nach der Eigentümersicht — hier tragen sie den Namen der Mietersicht.
-MIETER_KNOTEN = {"Einnahmen": "Vorauszahlungen", "Überschuss": "Guthaben"}
+# „Fehlbetrag“ ist in dieser Sicht die Nachzahlung: was der Mieter über seine
+# Vorauszahlungen hinaus schuldet, und damit die Quelle, die den Fluss schliesst.
+MIETER_KNOTEN = {"Einnahmen": "Vorauszahlungen", "Überschuss": "Guthaben",
+                 "Fehlbetrag": "Nachzahlung"}
 
 
 def _sichtname(sicht: str | None) -> str:
@@ -42,6 +45,16 @@ def _sichtname(sicht: str | None) -> str:
     Alles Unbekannte fällt auf die gewachsene Aufteilung zurück — ein Tippfehler
     im Aufruf soll eine Auswertung nicht mit einem Fehler beenden."""
     return sicht if sicht in ("mieter", "eigentuemer") else "gesamt"
+
+
+def _mietwort(o: Objekt) -> str:
+    """Wie das Entgelt bei diesem Objekt heisst.
+
+    Ein Grundstück wird verpachtet, nicht vermietet. Geführt wird beides über
+    dasselbe `Miete`-Modell — die Rechnung ist dieselbe, nur das Wort nicht.
+    Die Auswertung gibt es mit, damit die Oberfläche nicht am Objekttyp
+    herumraten muss."""
+    return "Pacht" if ist_grundstueck(o) else "Miete"
 
 
 def _monate_im_jahr(m: Miete, jahr: int) -> float:
@@ -201,15 +214,22 @@ def _einheiten_zahlen(session: DBSession, o: Objekt, jahr: int,
             partei=aktuell.partei if aktuell else "",
         ))
 
-    # Mieten ohne passende Einheit (z.B. ganzes Objekt vermietet) nicht verlieren
+    # Mieten ohne passende Einheit (z.B. ganzes Objekt vermietet) nicht verlieren.
+    # Ein Grundstück hat gar keine Einheiten — sein Pachtverhältnis läuft immer
+    # über diesen Weg. Deshalb steht hier seine Nutzungsart (Ackerland, Wald …)
+    # statt der Objektnutzung: „Wohnen“ an einem Acker wäre schlicht falsch.
     zugeordnet = {e.bezeichnung.strip().lower() for e in einheiten}
     lose = [m for m in mieten
             if (m.einheit or "").strip().lower() not in zugeordnet
             and _monate_im_jahr(m, jahr) > 0]
+    grundstueck = ist_grundstueck(o)
     for m in lose:
         zahlen.append(EinheitZahlen(
-            bezeichnung=m.einheit or m.partei or "Gesamtobjekt",
-            nutzungsart=o.nutzung, flaeche=None, terrasse=None, nebenflaeche=None,
+            bezeichnung=m.einheit or m.partei
+            or ("Gesamtgrundstück" if grundstueck else "Gesamtobjekt"),
+            nutzungsart=(o.grundstueck_nutzungsart or o.nutzung) if grundstueck
+            else o.nutzung,
+            flaeche=None, terrasse=None, nebenflaeche=None,
             einnahmen_monat=_mittel_im_jahr(m, jahr, mittel) / 12,
             kaltmiete=_monatlich(m.kaltmiete, m.turnus),
             stellplatz=_monatlich(m.stellplatz, m.turnus),
@@ -281,6 +301,7 @@ def auswertung(jahr: int = Query(default=None),
 
         zeilen.append({
             "slug": o.slug, "name": o.name, "typ": o.typ,
+            "mietwort": _mietwort(o),
             "einnahmen": round(einnahmen, 2),
             "ausgaben": round(ausgaben, 2),
             "saldo": round(einnahmen - ausgaben, 2),
@@ -334,7 +355,8 @@ def cashflow_endpoint(objekt: str = Query(...), jahr: int = Query(default=None),
     bloecke = _gefiltert(_bloecke(session, o, jahr, sicht), kategorien)
     ergebnis = cashflow(einheiten, bloecke)
     return {
-        "jahr": jahr, "objekt": o.slug, "name": o.name,
+        "jahr": jahr, "objekt": o.slug, "name": o.name, "typ": o.typ,
+        "mietwort": _mietwort(o),
         "kategorien": BLOCK_NAMEN,
         "sicht": _sichtname(sicht),
         **ergebnis,
@@ -390,7 +412,11 @@ def sankey_endpoint(jahr: int = Query(default=None), objekt: str = Query(default
 @router.get("/mietverlauf")
 def mietverlauf(objekt: str = Query(default=None),
                 session: Session = Depends(get_session)) -> dict:
-    """Kaltmiete je Jahr — für die Verlaufskurve."""
+    """Kaltmiete — beim Grundstück die Pacht — je Jahr für die Verlaufskurve.
+
+    Jede Reihe sagt selbst, wie ihr Entgelt heisst; die Kurve kann Miet- und
+    Pachtobjekte nebeneinander zeigen, ohne dass eines von beiden falsch
+    beschriftet wäre."""
     objekte = session.exec(select(Objekt)).all()
     if objekt:
         objekte = [o for o in objekte if o.slug == objekt]
@@ -404,5 +430,6 @@ def mietverlauf(objekt: str = Query(default=None),
                            * _monate_im_jahr(m, j) / 12 for m in mieten), 2)
                  for j in jahre]
         if any(werte):
-            reihen.append({"slug": o.slug, "name": o.name, "werte": werte})
+            reihen.append({"slug": o.slug, "name": o.name,
+                           "mietwort": _mietwort(o), "werte": werte})
     return {"jahre": jahre, "reihen": reihen}

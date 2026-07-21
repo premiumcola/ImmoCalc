@@ -237,10 +237,16 @@ function eigenkostenHtml(daten, jahr, besitz, objekt) {
 /* Cashflow je Einheit — was traegt eine einzelne Wohnung, was kostet sie den
    Eigentuemer, und wie liegt sie beim Quadratmeterpreis. Die Objektkosten
    verteilt die Engine nach Flaeche, deshalb hat auch eine Garage ohne
-   Flaeche keine Kostenlast. */
+   Flaeche keine Kostenlast.
+
+   Ein Grundstueck hat keine Einheiten und keine Mieter, sondern einen
+   Paechter. Wie das Entgelt heisst, sagt die Auswertung selbst (`mietwort`) —
+   hier wird nur eingesetzt, was von dort kommt. */
 function cashflowHtml(satz, einzeln) {
   const einheiten = (satz.einheiten || []).filter(e => e.einnahmen_jahr || e.kosten_jahr);
   if (!einheiten.length) return '';
+  const wort = satz.mietwort || 'Miete';
+  const pacht = wort === 'Pacht';
 
   const bloecke = einheiten.map(e => `<div class="einheit">
       <span class="ename">${esc(e.bezeichnung)}</span>
@@ -248,7 +254,7 @@ function cashflowHtml(satz, einzeln) {
       <div class="ezahlen">
         <div><i>Fläche</i><b>${qm(e.flaeche)}</b></div>
         <div><i>€/m²</i><b>${proQm(e.miete_pro_qm)}</b></div>
-        <div><i>Miete/Monat</i><b>${eurKurz(e.einnahmen_monat)}</b></div>
+        <div><i>${wort}/Monat</i><b>${eurKurz(e.einnahmen_monat)}</b></div>
         <div><i>Einnahmen/Jahr</i><b class="pos">${eurKurz(e.einnahmen_jahr)}</b></div>
         <div><i>Kosten/Jahr</i><b class="neg">${eurKurz(e.kosten_jahr)}</b></div>
         <div><i>Saldo/Jahr</i><b class="${e.saldo_jahr >= 0 ? 'pos' : 'neg'}">${
@@ -257,15 +263,26 @@ function cashflowHtml(satz, einzeln) {
     </div>`).join('');
 
   return `<div class="karte">
-      <h3>Cashflow je Einheit${einzeln ? '' : ' · ' + esc(satz.name)}</h3>
-      <div class="kartesub">Eigentümerkosten sind nach Fläche auf die Einheiten
-        verteilt. Saldo = Jahresmiete abzüglich dieses Anteils.</div>
+      <h3>Cashflow${pacht ? '' : ' je Einheit'}${einzeln ? '' : ' · ' + esc(satz.name)}</h3>
+      <div class="kartesub">${pacht
+        ? `Saldo = Jahrespacht abzüglich der Eigentümerkosten.`
+        : `Eigentümerkosten sind nach Fläche auf die Einheiten verteilt.
+           Saldo = Jahresmiete abzüglich dieses Anteils.`}</div>
       ${saeulen(einheiten.map(e => ({ name: e.bezeichnung,
                                       a: e.einnahmen_jahr, b: e.kosten_jahr })))}
       ${legende([{ name: 'Einnahmen', farbe: '#2E7D4F' },
                  { name: 'Kostenanteil', farbe: '#B24229' }])}
       <div style="margin-top:18px">${bloecke}</div>
     </div>`;
+}
+
+/* Ueberschrift der Verlaufskurve. Miete und Pacht koennen nebeneinander in
+   derselben Kurve liegen — dann muessen beide im Titel vorkommen, sonst
+   traegt ein Acker die Ueberschrift „Mietverlauf“. */
+function verlaufTitel(reihen) {
+  const woerter = new Set((reihen || []).map(r => r.mietwort || 'Miete'));
+  if (woerter.size > 1) return 'Miet- und Pachtverlauf';
+  return woerter.has('Pacht') ? 'Pachtverlauf' : 'Mietverlauf';
 }
 
 async function zeichnen() {
@@ -333,7 +350,7 @@ async function zeichnen() {
     </div>
 
     <div class="karte">
-      <h3>Mietverlauf</h3>
+      <h3>${verlaufTitel(verlauf.reihen)}</h3>
       ${linie(verlauf.jahre, verlauf.reihen)}
       ${verlauf.reihen.length ? legende(verlauf.reihen.map((r, i) => ({ name: r.name, farbe: farbe(i) }))) : ''}
     </div>`;

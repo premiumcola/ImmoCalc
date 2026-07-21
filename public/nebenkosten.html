@@ -103,6 +103,17 @@
     font:600 9.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;
     vertical-align:middle}
 
+  /* ---- nur diese Seite: welche Kostenart auf die Mieter umgelegt wird ----
+     Eine Zeile je Kostenart, Name links, Zuordnung als Chip rechts. Auf
+     breiten Schirmen mehrspaltig — siebzehn Kostenarten untereinander waeren
+     eine Liste, durch die man scrollt statt sie zu ueberblicken. */
+  .kaliste{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+           gap:8px}
+  .ka{display:flex;align-items:center;justify-content:space-between;gap:10px;
+      min-height:44px;padding:8px 12px;border-radius:12px;background:var(--paper)}
+  .kan{font:600 12.5px var(--body);letter-spacing:-.01em;min-width:0;
+       overflow-wrap:anywhere}
+
   /* Der Verweis auf die Eigentuemerseite. Steht genau einmal — die Trennung
      der beiden Bereiche muss erklaert werden, aber nicht dreimal. */
   .grenze{font:400 12px var(--body);color:var(--soft);line-height:1.5;
@@ -294,6 +305,48 @@ function standHtml(staende) {
   </div>`;
 }
 
+/* CLX — welche Kostenart wird umgelegt und welche nicht.
+   `Kostenart.umlagefaehig` entscheidet, ob eine erfasste Position auf dieser
+   Seite landet oder unter Wert & Cashflow beim Eigentuemer. Bisher war diese
+   Zuordnung nirgends zu sehen; geaendert werden kann sie noch gar nicht — es
+   fehlt der Schreibweg. Sichtbar ist sie damit wenigstens. */
+function umlageHtml(staende, einzeln) {
+  const mitArten = staende.filter(s => s.arten.length);
+  if (!mitArten.length) return '';
+
+  const gruppen = mitArten.map(s => {
+    const umgelegt = s.arten.filter(k => k.umlagefaehig).length;
+    const vollstaendig = umgelegt === s.arten.length;
+    // Ohne Objektwahl bleibt es bei der Zeile je Objekt: sechs Objekte mit je
+    // siebzehn Kostenarten waeren hundert Zeilen, durch die man scrollt.
+    const zeilen = !einzeln ? '' : `<div class="kaliste">${s.arten.map(k =>
+      `<div class="ka">
+        <span class="kan">${esc(k.name)}</span>
+        <span class="chip ${k.umlagefaehig ? 'teal' : 'amber'}">${
+          k.umlagefaehig ? 'umlagefähig' : 'Eigentümer'}</span>
+      </div>`).join('')}</div>`;
+
+    return `<div class="objgruppe">
+      <div class="objkopf">
+        <span class="objname">${esc(s.name)}</span>
+        <span class="chip ${vollstaendig ? '' : 'amber'}">${umgelegt} von
+          ${s.arten.length} umlagefähig</span>
+      </div>
+      ${zeilen}
+    </div>`;
+  }).join('');
+
+  return `<div class="karte">
+    <h3>Umlage je Kostenart</h3>
+    <div class="grenze" style="margin-bottom:14px">Diese Zuordnung entscheidet,
+      wo eine erfasste Position erscheint: „umlagefähig“ hier, alles andere
+      unter <a href="wertentwicklung.html">Wert &amp; Cashflow</a>. Ändern
+      lässt sie sich zurzeit noch nicht.${einzeln ? ''
+        : ' Ein Objekt auswählen zeigt die einzelnen Kostenarten.'}</div>
+    ${gruppen}
+  </div>`;
+}
+
 async function zeichnen() {
   const jahr = jahrWahl.wert();
   const objekt = objektWahl.wert();
@@ -338,18 +391,27 @@ async function zeichnen() {
   // sonst baut sich die Liste sichtbar Stück für Stück auf.
   const gefiltert = objekt ? objekte.filter(o => o.slug === objekt) : objekte;
   const staende = (await Promise.all(gefiltert.map(async o => {
-    const detail = await api('/objekte/' + encodeURIComponent(o.slug)).catch(() => null);
-    return detail && { name: o.name, offene_positionen: o.offene_positionen,
-                       zeitraeume: detail.zeitraeume || [] };
+    const pfad = '/objekte/' + encodeURIComponent(o.slug);
+    const [detail, arten] = await Promise.all([
+      api(pfad).catch(() => null),
+      api(pfad + '/kostenarten').catch(() => []),
+    ]);
+    return detail && {
+      name: o.name, offene_positionen: o.offene_positionen,
+      zeitraeume: detail.zeitraeume || [],
+      arten: (arten || []).filter(k => k.aktiv)
+        .sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    };
   }))).filter(Boolean);
 
   sub.textContent = `${daten.objekte.length} ${daten.objekte.length === 1 ? 'Objekt' : 'Objekte'} · ${jahr}`;
 
-  // Die Beschriftungsspalte der Balken ist schmal; „Niederschlagswasser“
-  // liefe sonst unter den Balken.
-  const kurz = n => n.length > 15 ? n.slice(0, 14) + '…' : n;
+  // Auf schmalen Schirmen bleibt die viewBox schmal, damit die Schrift beim
+  // Hochskalieren lesbar bleibt; auf breiten wird sie groesser, wodurch in die
+  // Beschriftungsspalte mehr Zeichen passen. Gekuerzt wird im Diagramm selbst.
+  const breit = window.innerWidth >= 700;
   const bloecke = Object.entries(daten.kostenbloecke)
-    .map(([name, wert]) => ({ name: kurz(name), wert, text: eurKurz(wert) }))
+    .map(([name, wert]) => ({ name, wert, text: eurKurz(wert) }))
     .sort((a, b) => b.wert - a.wert);
 
   // An der Überschrift steht, ob die Karte nur einen Ausschnitt zeigt — die
@@ -361,15 +423,18 @@ async function zeichnen() {
   // Filter stecken die ausgeblendeten Kostenarten mit darin — dann darf der
   // Knoten nicht so heißen wie die Kennzahl oben, sonst stünden zwei
   // verschiedene Zahlen unter demselben Wort.
+  // Ebenso die Gegenrichtung: die „Nachzahlung“ deckt gefiltert nur die
+  // gezeigten Kostenarten ab und ist damit nicht die des Abrechnungsjahres.
   if (gewaehlt.size) {
-    for (const k of fluss.knoten) if (k.name === 'Guthaben') k.name = 'Rest';
+    const gefiltertName = { Guthaben: 'Rest', Nachzahlung: 'Ungedeckt' };
+    for (const k of fluss.knoten) k.name = gefiltertName[k.name] || k.name;
   }
 
   kopf.innerHTML = kopfHtml(daten, jahr);
   inhalt.innerHTML = `
     <div class="karte">
       <h3>Umlagefähige Kosten ${jahr}${merker}</h3>
-      ${balken(bloecke)}
+      ${balken(bloecke, breit ? { breite: 560 } : {})}
     </div>
 
     <div class="karte">
@@ -380,6 +445,8 @@ async function zeichnen() {
         : '<div class="chartleer">Ohne umlagefähige Kosten gibt es nichts zu '
           + 'verteilen.</div>'}
     </div>
+
+    ${umlageHtml(staende, Boolean(objekt))}
 
     ${standHtml(staende)}`;
 }

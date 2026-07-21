@@ -6,21 +6,32 @@ export const farbe = i => PALETTE[i % PALETTE.length];
 
 const runden = n => Math.round(n * 100) / 100;
 
-/** Waagerechte Balken mit Beschriftung — fuer Kostenbloecke. */
-export function balken(daten, { hoehe = 30, luecke = 10, breite = 380 } = {}) {
+/** Waagerechte Balken mit Beschriftung — fuer Kostenbloecke.
+ *
+ *  Die Beschriftungsspalte waechst mit der viewBox mit, und wie viele Zeichen
+ *  hineinpassen, rechnet das Diagramm selbst aus. Vorher kuerzte die aufrufende
+ *  Seite pauschal auf 15 Zeichen — auf dem iPhone stimmte das, auf dem Desktop
+ *  stand „Niederschlagswa…" neben einer halb leeren Spalte. Der volle Name
+ *  bleibt als <title> am Balken. */
+export function balken(daten, { hoehe = 30, luecke = 10, breite = 380,
+                                labelBreite = Math.round(breite * 0.28) } = {}) {
   const eintraege = daten.filter(d => d.wert > 0);
   if (!eintraege.length) return leer('Keine Werte für diesen Zeitraum');
 
   const max = Math.max(...eintraege.map(d => d.wert));
-  const labelBreite = 104;
   const bahn = breite - labelBreite - 74;
   const h = eintraege.length * (hoehe + luecke);
+  // 6.6 viewBox-Einheiten je Zeichen bei 12 px Inter — reicht als Faustmass,
+  // die Spalte hat noch 8 Einheiten Luft bis zum Balken.
+  const maxZeichen = Math.max(8, Math.floor((labelBreite - 8) / 6.6));
+  const kurz = n => n.length > maxZeichen ? n.slice(0, maxZeichen - 1) + '…' : n;
 
   const zeilen = eintraege.map((d, i) => {
     const y = i * (hoehe + luecke);
     const w = Math.max(3, (d.wert / max) * bahn);
     return `
-      <text x="0" y="${y + hoehe / 2 + 4}" class="lbl">${d.name}</text>
+      <text x="0" y="${y + hoehe / 2 + 4}" class="lbl">${kurz(d.name)}<title>${
+        d.name}</title></text>
       <rect x="${labelBreite}" y="${y}" width="${w}" height="${hoehe}"
             rx="7" fill="${d.farbe || farbe(i)}"/>
       <text x="${labelBreite + w + 8}" y="${y + hoehe / 2 + 4}" class="val">${d.text}</text>`;
@@ -128,6 +139,17 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
   const spaltenX = s => spalten.length === 1 ? 0
     : (s / (spalten.length - 1)) * (breite - knotenBreite);
 
+  // Auf schmalen Schirmen wird das SVG stark verkleinert — dort brauchen
+  // Rand und Schrift im viewBox mehr Mass, damit die Beschriftung lesbar bleibt.
+  const schmal = breite < 400;
+  const rand = schmal ? 66 : 96;
+  const schrift = schmal ? 13 : 11;
+
+  // Überschuss und Fehlbetrag sind keine Kostenart, sondern das Ergebnis —
+  // sie tragen deshalb nicht die naechste Palettenfarbe, sondern das Vorzeichen.
+  const ROLLENFARBE = { plus: '#2E7D4F', minus: '#B24229' };
+  const knotenFarbe = i => ROLLENFARBE[knoten[i].rolle] || farbe(i);
+
   // Knoten je Spalte stapeln
   const lage = new Map();
   for (const s of spalten) {
@@ -161,7 +183,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     // Das Band trägt die Farbe seiner Quelle, nur blasser — so gehört sichtbar
     // zusammen, was zusammengehört, statt bunt durcheinanderzulaufen.
     const quelle = lage.get(f.von).spalte === spalten[0] ? f.von : f.nach;
-    return `<path d="${d}" fill="${farbe(quelle)}" fill-opacity=".3"><title>${
+    return `<path d="${d}" fill="${knotenFarbe(quelle)}" fill-opacity=".3"><title>${
       knoten[f.von].name} → ${knoten[f.nach].name}: ${format(f.wert)}</title></path>`;
   }).join('');
 
@@ -181,6 +203,32 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     }
   }
 
+  // Ist eine Mittelspalte mit einem einzigen Knoten besetzt — der Regelfall:
+  // „Einnahmen" bzw. „Vorauszahlungen" —, gehoert ihre Beschriftung ueber das
+  // ganze Bild. Direkt ueber dem Kasten lag sie auf 390 px genau auf Hoehe der
+  // obersten rechten Beschriftung und schob sich mit ihr ineinander.
+  const einzelneMitte = new Set(spalten.slice(1, -1)
+    .filter(s => knoten.filter((k, i) => k.spalte === s && benutzt.has(i)).length === 1));
+  const obenPlatz = 40;
+
+  // Die Beschriftung der Aussenspalten zeigt nach innen, ueber die Baender —
+  // seitlich waere auf dem iPhone kein Platz. Damit die beiden Seiten sich in
+  // der Mitte nicht begegnen, bekommt jede genau die Strecke bis zur
+  // Nachbarspalte; was laenger ist, wird gekuerzt und steht voll im <title>.
+  // Auf iPad und Desktop reicht diese Strecke fuer jeden vorkommenden Namen.
+  const letzteSpalte = spalten[spalten.length - 1];
+  const platz = rechts => {
+    if (spalten.length < 2) return breite;
+    return rechts
+      ? (spaltenX(letzteSpalte) - 8) - (spaltenX(spalten[spalten.length - 2])
+                                        + knotenBreite) - 8
+      : spaltenX(spalten[1]) - (spaltenX(spalten[0]) + knotenBreite + 8) - 8;
+  };
+  const kuerze = (name, rechts) => {
+    const max = Math.max(6, Math.floor(platz(rechts) / (schrift * 0.55)));
+    return name.length > max ? name.slice(0, max - 1) + '…' : name;
+  };
+
   const kaesten = [...lage.entries()].map(([i, l]) => {
     const rechts = l.spalte === spalten[spalten.length - 1];
     const mittig = !rechts && l.spalte !== spalten[0];
@@ -188,11 +236,12 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     // Mittelspalten beschriften wir ueber dem Kasten — seitlich wuerde die
     // Schrift in die Beschriftung der Nachbarspalte laufen.
     if (mittig) {
+      const ly = einzelneMitte.has(l.spalte) ? -obenPlatz + 15 : l.y - 14;
       return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
-                    rx="3" fill="${farbe(i)}"/>
-        <text x="${l.x + knotenBreite / 2}" y="${l.y - 14}" class="kn"
+                    rx="3" fill="${knotenFarbe(i)}"/>
+        <text x="${l.x + knotenBreite / 2}" y="${ly}" class="kn"
               text-anchor="middle">${knoten[i].name}</text>
-        <text x="${l.x + knotenBreite / 2}" y="${l.y - 3}" class="kw"
+        <text x="${l.x + knotenBreite / 2}" y="${ly + 11}" class="kw"
               text-anchor="middle">${format(gewicht(i))}</text>`;
     }
 
@@ -205,21 +254,18 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
                x2="${rechts ? l.x - 5 : l.x + knotenBreite + 5}" y2="${ly - 3}"
                stroke="#B9C4C5" stroke-width="1"/>` : '';
     return `${versatz}<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
-                  rx="3" fill="${farbe(i)}"/>
-      <text x="${tx}" y="${ly - 3}" class="kn" text-anchor="${anker}">${knoten[i].name}</text>
+                  rx="3" fill="${knotenFarbe(i)}"/>
+      <text x="${tx}" y="${ly - 3}" class="kn" text-anchor="${anker}">${
+        kuerze(knoten[i].name, rechts)}<title>${knoten[i].name}</title></text>
       <text x="${tx}" y="${ly + 10}" class="kw" text-anchor="${anker}">${
         format(gewicht(i))}</text>`;
   }).join('');
 
-  // Auf schmalen Schirmen wird das SVG stark verkleinert — dort brauchen
-  // Rand und Schrift im viewBox mehr Mass, damit die Beschriftung lesbar bleibt.
-  const schmal = breite < 400;
-  const rand = schmal ? 66 : 96;
   // oben Platz fuer die Beschriftung der Mittelspalte
-  return `<svg viewBox="${-rand} -28 ${breite + rand * 2} ${hoehe + 40}"
+  return `<svg viewBox="${-rand} ${-obenPlatz} ${breite + rand * 2} ${hoehe + obenPlatz + 14}"
                class="chart sankey" role="img">
       <style>
-        .kn{font:600 ${schmal ? 13 : 11}px var(--disp);fill:var(--ink)}
+        .kn{font:600 ${schrift}px var(--disp);fill:var(--ink)}
         .kw{font:500 ${schmal ? 12 : 10}px var(--mono);fill:var(--soft)}
       </style>${baender}${kaesten}
     </svg>`;

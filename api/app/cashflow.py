@@ -102,17 +102,30 @@ def cashflow(einheiten: list[EinheitZahlen], bloecke: dict[str, float]) -> dict:
 def sankey(einheiten: list[dict], bloecke: dict[str, float]) -> dict:
     """Knoten und Flüsse für das Sankey-Diagramm.
 
-    Einheit ──> Objekt ──> Kostenblock
-                      └──> Überschuss
+    Einheit ─────┐
+                 ├─> Einnahmen ─┬─> Kostenblock
+    Fehlbetrag ──┘              └─> Überschuss
+
+    Beide Seiten der Mitte tragen dieselbe Summe — sonst ist das Bild eine
+    Behauptung, keine Rechnung. Übersteigen die Kosten die Einnahmen, fehlt
+    der Unterschied nicht einfach: er wird zugeschossen. In der Mietersicht
+    ist das die Nachzahlung, die der Mieter zusätzlich zu seinen Voraus-
+    zahlungen leistet; sie kommt von aussen und steht deshalb als eigene
+    Quelle in der ersten Spalte. Der umgekehrte Fall bleibt der Überschuss
+    (Mietersicht: das Guthaben) auf der Ausgabenseite.
     """
     knoten: list[dict] = []
     fluss: list[dict] = []
 
-    def index(name: str, spalte: int) -> int:
+    def index(name: str, spalte: int, rolle: str = "") -> int:
+        """Knoten holen oder anlegen. `rolle` faerbt die beiden Ausgleichsknoten:
+        ein Überschuss ist ein Plus, ein Fehlbetrag ein Minus — welche Farbe
+        das heisst, entscheidet das Diagramm."""
         for i, k in enumerate(knoten):
             if k["name"] == name and k["spalte"] == spalte:
                 return i
-        knoten.append({"name": name, "spalte": spalte})
+        knoten.append({"name": name, "spalte": spalte, **({"rolle": rolle}
+                                                          if rolle else {})})
         return len(knoten) - 1
 
     mitte = index("Einnahmen", 1)
@@ -131,13 +144,21 @@ def sankey(einheiten: list[dict], bloecke: dict[str, float]) -> dict:
         kosten_gesamt += betrag
         fluss.append({"von": mitte, "nach": index(name, 2), "wert": round(betrag, 2)})
 
-    ueberschuss = round(einnahmen_gesamt - kosten_gesamt, 2)
-    if ueberschuss > 0:
-        fluss.append({"von": mitte, "nach": index("Überschuss", 2), "wert": ueberschuss})
+    saldo = round(einnahmen_gesamt - kosten_gesamt, 2)
+    ueberschuss = saldo if saldo > 0 else 0.0
+    fehlbetrag = -saldo if saldo < 0 else 0.0
+    if ueberschuss:
+        fluss.append({"von": mitte, "nach": index("Überschuss", 2, "plus"),
+                      "wert": ueberschuss})
+    if fehlbetrag:
+        fluss.append({"von": index("Fehlbetrag", 0, "minus"), "nach": mitte,
+                      "wert": fehlbetrag})
 
     return {"knoten": knoten, "fluss": fluss,
             "einnahmen": round(einnahmen_gesamt, 2),
-            "kosten": round(kosten_gesamt, 2)}
+            "kosten": round(kosten_gesamt, 2),
+            "ueberschuss": ueberschuss,
+            "fehlbetrag": fehlbetrag}
 
 
 def monate_im_jahr(ab: date, bis: date | None, jahr: int) -> float:
