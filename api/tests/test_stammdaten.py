@@ -134,6 +134,39 @@ def test_unbekannter_bereich_ist_404():
         assert c.get("/api/objekte/obj-a/quatsch").status_code == 404
 
 
+def test_geplante_erhoehung_entsteht_nur_einmal():
+    """CLIII: „Mieterhöhung planen" liess sich mehrfach auslösen.
+
+    Dabei entstanden mehrere offene Stände derselben Partei ab demselben Tag,
+    alle mit dem Vermerk „geplant" — welcher gilt, entschied dann die
+    Reihenfolge in der Datenbank, und die Abrechnung rechnete mit dem falschen.
+    Eine Staffel mit späterem Wirkungstag bleibt erlaubt."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Staffelweg 7"}).json()["slug"]
+        anlegen = lambda **f: c.post(f"/api/objekte/{slug}/mieten", json=f)  # noqa: E731
+
+        assert anlegen(partei="Lorenz", einheit="EG", kaltmiete=800,
+                       ab_datum="2024-01-01").status_code == 201
+        assert anlegen(partei="Lorenz", einheit="EG", kaltmiete=830,
+                       ab_datum="2026-08-01").status_code == 201
+
+        # derselbe Tag, dieselbe Partei — der zweite Anlauf wird abgewiesen
+        zweimal = anlegen(partei="Lorenz", einheit="EG", kaltmiete=830,
+                          ab_datum="2026-08-01")
+        assert zweimal.status_code == 409
+        assert "bereits einen Mietstand" in zweimal.json()["detail"]
+
+        # eine echte Staffel ein Jahr später ist kein Doppel
+        assert anlegen(partei="Lorenz", einheit="EG", kaltmiete=860,
+                       ab_datum="2027-08-01").status_code == 201
+        # und eine andere Partei darf am selben Tag beginnen
+        assert anlegen(partei="Sommer", einheit="OG", kaltmiete=900,
+                       ab_datum="2026-08-01").status_code == 201
+
+        mieten = c.get(f"/api/objekte/{slug}/mieten").json()
+        assert len(mieten) == 4
+
+
 def test_faenger_verschluckt_keine_zweisegmentigen_pfade():
     """Fund LXXI: früher stand unter /api ein Fänger `/{bereich}/{eintrag_id}`.
 

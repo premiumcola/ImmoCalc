@@ -125,10 +125,38 @@ def anlegen(slug: str, bereich: str, data: dict,
     # null an und liesse sonst das ganze Anlegen scheitern — samt Mieter,
     # Kaltmiete und Anschrift, die daneben schon eingetragen waren.
     eintrag = modell.model_validate({**bereinige(modell, data), "objekt_id": o.id})
+    if isinstance(eintrag, Miete):
+        _pruefe_mietstand(session, o.id, eintrag)
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)
     return {"id": eintrag.id}
+
+
+def _pruefe_mietstand(session: Session, objekt_id: int, neu: Miete) -> None:
+    """Verhindert zwei gleichzeitige Mietstände derselben Partei.
+
+    Eine geplante Erhöhung lässt sich sonst mehrfach anlegen — im Test
+    entstanden vier offene Stände derselben Partei ab demselben Tag, alle mit
+    dem Vermerk „geplant". Welcher davon gilt, entscheidet dann die Reihenfolge
+    in der Datenbank, und die Abrechnung rechnet mit dem falschen.
+
+    Geprüft wird je Partei und Einheit; eine Staffelmiete mit späterem
+    Wirkungstag bleibt ausdrücklich erlaubt.
+    """
+    if not neu.ab_datum or not neu.partei:
+        return
+    vorhanden = session.exec(
+        select(Miete).where(Miete.objekt_id == objekt_id,
+                            Miete.partei == neu.partei,
+                            Miete.einheit == neu.einheit)).all()
+    for m in vorhanden:
+        laeuft_noch = m.bis_datum is None or m.bis_datum >= neu.ab_datum
+        if laeuft_noch and m.ab_datum and m.ab_datum >= neu.ab_datum:
+            raise HTTPException(
+                409, f"Für {neu.partei} gibt es ab dem "
+                     f"{m.ab_datum:%d.%m.%Y} bereits einen Mietstand. "
+                     f"Ändere ihn, statt einen zweiten daneben zu stellen.")
 
 
 @router.patch("/stammdaten/{bereich}/{eintrag_id}")
