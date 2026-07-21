@@ -1,7 +1,10 @@
-"""Eigentümer, Tausendstel-Anteile und die Vermögensübersicht."""
+"""Eigentümer, Tausendstel-Anteile, die Vermögensübersicht — und was am
+Vermögen hängt: die Jahresstände eines Kredits und die Bewohner eines
+Mietverhältnisses."""
 import os
 import sys
 import tempfile
+from datetime import date, timedelta
 
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test_besitz.db")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -171,3 +174,273 @@ def test_vermoegen_ohne_angaben_faellt_nicht_um():
         assert zeile["wert"] is None
         assert zeile["restschuld"] == 0
         assert zeile["eigenkapital"] is None
+
+
+# --------------------------------------------------------------------------
+# CXV — Restschuld fortschreiben statt raten
+# --------------------------------------------------------------------------
+
+def _von_hand(rest, rate, zinssatz, monate):
+    """Dieselbe Rechnung von Hand — damit der Test nicht die Funktion prüft,
+    die er prüfen soll."""
+    z = zinssatz / 100 / 12
+    for _ in range(monate):
+        rest = rest - (rate - rest * z)
+    return round(rest, 2)
+
+
+def test_restschuld_sinkt_monatlich_um_die_tilgung():
+    from app.vermoegen import stand_fortschreiben
+
+    # 100.000 € zu 3 %, Rate 500 €: erster Monat 250 € Zins, 250 € Tilgung.
+    assert stand_fortschreiben(100000.0, 500.0, 3.0, 1) == 99750.0
+    # Danach ist der Zinsanteil kleiner, die Tilgung wächst.
+    assert stand_fortschreiben(100000.0, 500.0, 3.0, 12) == \
+        _von_hand(100000.0, 500.0, 3.0, 12)
+    assert stand_fortschreiben(100000.0, 500.0, 3.0, 12) < 97000.0
+
+
+def test_ohne_rate_wird_nicht_geraten():
+    """Deckt die Rate den Zins nicht, bleibt der letzte bekannte Wert stehen."""
+    from app.vermoegen import stand_fortschreiben
+
+    assert stand_fortschreiben(100000.0, 0.0, 3.0, 24) == 100000.0
+    assert stand_fortschreiben(100000.0, 100.0, 3.0, 24) == 100000.0
+    assert stand_fortschreiben(200.0, 500.0, 3.0, 12) == 0.0   # nie negativ
+
+
+def test_rueckwaerts_ist_die_umkehrung_der_fortschreibung():
+    from app.vermoegen import stand_fortschreiben
+
+    ende = stand_fortschreiben(250000.0, 1200.0, 2.5, 18)
+    zurueck = stand_fortschreiben(ende, 1200.0, 2.5, -18)
+    assert abs(zurueck - 250000.0) < 0.5
+
+
+def _kredit_mit_stand(c, slug, jahr, restschuld, zinssatz=3.0, rate=1000.0):
+    kid = c.post(f"/api/objekte/{slug}/kredite", json={
+        "bezeichnung": "Hauptdarlehen", "restschuld": restschuld,
+        "zinssatz": zinssatz, "rate_monatlich": rate,
+        "turnus": "monatlich"}).json()["id"]
+    antwort = c.post(f"/api/kredite/{kid}/staende",
+                     json={"jahr": jahr, "restschuld": restschuld})
+    assert antwort.status_code == 201, antwort.text
+    return kid
+
+
+def test_jahresstand_wird_bis_heute_fortgeschrieben():
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Kreditweg 12", kaufpreis=400000.0)
+        kid = _kredit_mit_stand(c, slug, heute.year - 1, 200000.0)
+
+        stand = c.get(f"/api/kredite/{kid}/staende").json()
+        assert stand["aktuell"]["stand_jahr"] == heute.year - 1
+        # Seit dem 31.12. des Vorjahres ist je Monat eine Rate geflossen.
+        assert stand["aktuell"]["monate"] == heute.month
+        assert stand["aktuell"]["quelle"] == "fortgeschrieben"
+        assert stand["aktuell"]["restschuld"] == \
+            _von_hand(200000.0, 1000.0, 3.0, heute.month)
+        assert stand["aktuell"]["restschuld"] < 200000.0
+
+
+def test_naechster_stand_korrigiert_die_rechnung():
+    """Der eingetragene Jahreswert ist die Wahrheit, nicht die Fortschreibung."""
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Korrekturweg 13", kaufpreis=400000.0)
+        kid = _kredit_mit_stand(c, slug, heute.year - 3, 200000.0)
+        c.post(f"/api/kredite/{kid}/staende",
+               json={"jahr": heute.year - 1, "restschuld": 150000.0})
+
+        stand = c.get(f"/api/kredite/{kid}/staende").json()
+        assert stand["aktuell"]["stand_jahr"] == heute.year - 1
+        assert stand["aktuell"]["stand_wert"] == 150000.0
+        assert stand["aktuell"]["restschuld"] == \
+            _von_hand(150000.0, 1000.0, 3.0, heute.month)
+
+        # Der Verlauf weist aus, welches Jahr gemessen und welches gerechnet ist.
+        jahre = {z["jahr"]: z for z in stand["verlauf"]}
+        assert jahre[heute.year - 3]["eingetragen"] is True
+        assert jahre[heute.year - 2]["eingetragen"] is False
+        assert jahre[heute.year - 1]["eingetragen"] is True
+        assert jahre[heute.year - 1]["restschuld"] == 150000.0
+
+
+def test_zweiter_stand_im_selben_jahr_aendert_statt_zu_doppeln():
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Zaehlerweg 14")
+        kid = _kredit_mit_stand(c, slug, heute.year - 1, 180000.0)
+        c.post(f"/api/kredite/{kid}/staende",
+               json={"jahr": heute.year - 1, "restschuld": 178500.0})
+
+        stand = c.get(f"/api/kredite/{kid}/staende").json()
+        assert len(stand["staende"]) == 1
+        assert stand["staende"][0]["restschuld"] == 178500.0
+
+
+def test_unsinnige_jahresstaende_werden_abgelehnt():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Grenzweg 15")
+        kid = _kredit_mit_stand(c, slug, date.today().year - 1, 100000.0)
+        assert c.post(f"/api/kredite/{kid}/staende",
+                      json={"jahr": 1234, "restschuld": 1.0}).status_code == 400
+        assert c.post(f"/api/kredite/{kid}/staende",
+                      json={"jahr": date.today().year,
+                            "restschuld": -5.0}).status_code == 400
+        assert c.post("/api/kredite/999999/staende",
+                      json={"jahr": 2024, "restschuld": 1.0}).status_code == 404
+
+
+def test_kreditliste_zeigt_die_fortgeschriebene_restschuld():
+    """Die Eingabe bleibt stehen, die Rechnung steht daneben."""
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Listenweg 16")
+        _kredit_mit_stand(c, slug, heute.year - 1, 200000.0)
+
+        zeile = c.get(f"/api/objekte/{slug}/kredite").json()[0]
+        assert zeile["restschuld"] == 200000.0          # unveraendert
+        assert zeile["restschuld_aktuell"] < 200000.0   # fortgeschrieben
+        assert zeile["staende"] == 1
+        assert zeile["stand"]["stand_jahr"] == heute.year - 1
+
+
+def test_kredit_ohne_jahresstand_bleibt_wie_eingetragen():
+    """Der gewachsene Bestand rechnet unveraendert weiter."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Bestandsweg 17", verkehrswert=500000.0)
+        c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "Alt", "restschuld": 300000.0, "zinssatz": 2.0,
+            "rate_monatlich": 1000.0, "turnus": "monatlich"})
+
+        zeile = c.get(f"/api/objekte/{slug}/kredite").json()[0]
+        assert zeile["restschuld_aktuell"] == 300000.0
+        assert zeile["stand"]["quelle"] == "eingetragen"
+        vermoegen = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                         if z["slug"] == slug)
+        assert vermoegen["restschuld"] == 300000.0
+
+
+def test_jahresstand_verschwindet_mit_dem_kredit():
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Waisenweg 18")
+        kid = _kredit_mit_stand(c, slug, heute.year - 1, 90000.0)
+        assert c.delete(f"/api/stammdaten/kredite/{kid}").status_code == 200
+        assert c.get(f"/api/kredite/{kid}/staende").status_code == 404
+
+        from sqlmodel import Session, select
+
+        from app.db import engine
+        from app.models import Kreditstand
+        with Session(engine) as s:
+            uebrig = s.exec(select(Kreditstand)
+                            .where(Kreditstand.kredit_id == kid)).all()
+        assert uebrig == []
+
+
+# --------------------------------------------------------------------------
+# CXVI — geplante Mieterhöhungen
+# --------------------------------------------------------------------------
+
+def test_kuenftiger_mietstand_gilt_als_geplant():
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Erhoehungsweg 19")
+        kuenftig = date(heute.year + 1, 1, 1)
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "einheit": "EG", "partei": "Mieter A", "kaltmiete": 800.0,
+            "ab_datum": (heute - timedelta(days=400)).isoformat(),
+            "bis_datum": (kuenftig - timedelta(days=1)).isoformat()})
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "einheit": "EG", "partei": "Mieter A", "kaltmiete": 880.0,
+            "ab_datum": kuenftig.isoformat()})
+
+        zeilen = c.get(f"/api/objekte/{slug}/mieten").json()
+        laufend = next(z for z in zeilen if z["kaltmiete"] == 800.0)
+        geplant = next(z for z in zeilen if z["kaltmiete"] == 880.0)
+        assert geplant["geplant"] is True
+        assert geplant["beendet"] is False
+        assert laufend["geplant"] is False
+        # Der laufende Stand endet erst mit der Erhoehung — heute laeuft er noch.
+        assert laufend["beendet"] is False
+
+        # Die kuenftige Miete zaehlt erst im kommenden Jahr.
+        heuer = c.get("/api/auswertung",
+                      params={"jahr": heute.year, "objekt": slug}).json()
+        naechstes = c.get("/api/auswertung",
+                          params={"jahr": heute.year + 1, "objekt": slug}).json()
+        assert naechstes["objekte"][0]["einnahmen"] > \
+            heuer["objekte"][0]["einnahmen"]
+
+
+# --------------------------------------------------------------------------
+# CXVII — Kontakt je Bewohner
+# --------------------------------------------------------------------------
+
+def _mietverhaeltnis(c, slug):
+    return c.post(f"/api/objekte/{slug}/mieten", json={
+        "einheit": "EG", "partei": "WG Nord", "kaltmiete": 900.0,
+        "email": "haupt@example.org", "ab_datum": "2024-01-01"}).json()["id"]
+
+
+def test_jeder_bewohner_hat_eigene_mail_und_nummer():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Bewohnerweg 20")
+        mid = _mietverhaeltnis(c, slug)
+        for name, mail, nummer in (("Anna", "anna@example.org", "0170 1"),
+                                   ("Ben", "ben@example.org", "0170 2")):
+            antwort = c.post(f"/api/mieten/{mid}/bewohner", json={
+                "name": name, "email": mail, "telefon": nummer})
+            assert antwort.status_code == 201, antwort.text
+
+        leute = c.get(f"/api/mieten/{mid}/bewohner").json()
+        assert [b["email"] for b in leute] == ["anna@example.org",
+                                               "ben@example.org"]
+        assert [b["telefon"] for b in leute] == ["0170 1", "0170 2"]
+        assert all(b["abrechnung"] is True for b in leute)
+
+        # Der Hauptkontakt am Mietverhaeltnis bleibt unangetastet.
+        zeile = c.get(f"/api/objekte/{slug}/mieten").json()[0]
+        assert zeile["email"] == "haupt@example.org"
+        assert len(zeile["bewohner"]) == 2
+
+
+def test_bewohner_aendern_und_entfernen():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Wechselweg 21")
+        mid = _mietverhaeltnis(c, slug)
+        bid = c.post(f"/api/mieten/{mid}/bewohner",
+                     json={"name": "Cem", "email": "alt@example.org"}).json()["id"]
+
+        assert c.patch(f"/api/bewohner/{bid}",
+                       json={"email": "neu@example.org",
+                             "abrechnung": False}).status_code == 200
+        b = c.get(f"/api/mieten/{mid}/bewohner").json()[0]
+        assert b["email"] == "neu@example.org"
+        assert b["abrechnung"] is False
+        assert b["telefon"] == ""            # geleertes Feld bleibt leer
+
+        assert c.delete(f"/api/bewohner/{bid}").status_code == 200
+        assert c.get(f"/api/mieten/{mid}/bewohner").json() == []
+
+
+def test_bewohner_ohne_jede_angabe_wird_abgelehnt():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Leerbewohnerweg 22")
+        mid = _mietverhaeltnis(c, slug)
+        assert c.post(f"/api/mieten/{mid}/bewohner",
+                      json={"name": "", "email": ""}).status_code == 400
+        assert c.post("/api/mieten/999999/bewohner",
+                      json={"name": "Niemand"}).status_code == 404
+
+
+def test_bewohner_verschwinden_mit_dem_mietverhaeltnis():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Auszugsweg 23")
+        mid = _mietverhaeltnis(c, slug)
+        c.post(f"/api/mieten/{mid}/bewohner", json={"name": "Dana"})
+        assert c.delete(f"/api/stammdaten/mieten/{mid}").status_code == 200
+        assert c.get(f"/api/mieten/{mid}/bewohner").status_code == 404

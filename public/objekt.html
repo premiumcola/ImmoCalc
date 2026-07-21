@@ -48,6 +48,10 @@
   .eintrag .et{flex:1;min-width:0}
   .eintrag .en{display:block;font:600 14px var(--disp);letter-spacing:-.01em;
                overflow-wrap:anywhere}
+  /* Der Zustandshinweis läuft mit dem Namen mit, statt ihm Platz wegzunehmen —
+     als eigene Spalte quetscht er den Namen auf schmalen Geräten Buchstabe
+     für Buchstabe um. */
+  .eintrag .en .chip{margin-left:6px;vertical-align:1px;font-size:10px}
   .eintrag .ed{display:block;font:400 12px var(--body);color:var(--soft);margin-top:3px;
                line-height:1.4;overflow-wrap:anywhere}
   .eintrag .ew{font:600 13px var(--mono);white-space:nowrap;flex:none}
@@ -118,6 +122,47 @@
   .gefahr-block p{font:400 12.5px var(--body);color:var(--soft);margin:0 0 14px;
                   line-height:1.5}
   .gefahr-block .btn + .btn{margin-top:8px}
+
+  /* Untergruppen im Dialog: Bewohner, Jahresstände — eigener Block mit Luft,
+     damit sie nicht wie ein weiteres Formularfeld wirken. */
+  .block{margin:22px 0 16px}
+  .block .bt{display:block;font:700 13px var(--disp);letter-spacing:-.01em;
+             margin-bottom:5px}
+  .block .bd{display:block;font:400 12px var(--body);color:var(--soft);
+             line-height:1.5;margin-bottom:12px}
+  .bwzeile{background:var(--sheet);border-radius:12px;padding:11px 12px;
+           margin-bottom:8px;position:relative}
+  .bwzeile input{width:100%;border:1.5px solid var(--line);border-radius:9px;
+    padding:10px 11px;font:400 14px var(--body);color:var(--ink);background:#fff;
+    margin-bottom:7px;min-height:44px}
+  .bwzeile input:last-of-type{margin-bottom:0}
+  .bwzeile input:focus{outline:none;border-color:var(--teal)}
+  .bwzeile .weg{position:absolute;top:5px;right:5px;border:none;background:none;
+    color:var(--soft);font:400 20px var(--body);cursor:pointer;
+    width:40px;height:40px;border-radius:9px}
+  .bwzeile .weg:hover{color:var(--neg);background:var(--paper)}
+  .bwzeile .nm{padding-right:44px}
+  .zusatz{width:100%;border:1.5px dashed #B4C4C1;background:transparent;
+    color:var(--teal-d);border-radius:11px;padding:11px;font:600 13px var(--disp);
+    cursor:pointer;min-height:44px}
+  .zusatz:hover{background:var(--teal-l)}
+
+  .jahre{background:var(--sheet);border-radius:12px;overflow:hidden;margin-bottom:12px}
+  .jahr{display:flex;align-items:center;gap:8px;padding:9px 10px;
+        font:500 13px var(--body)}
+  .jahr + .jahr{border-top:1px solid var(--line)}
+  .jahr .jj{font:600 12px var(--mono);color:var(--soft);flex:none;width:36px}
+  /* Der Betrag darf nie umbrechen — „240.000,00" und das € gehören zusammen. */
+  .jahr .jw{font:600 12.5px var(--mono);flex:1;text-align:right;white-space:nowrap}
+  .jahr .jq{font:500 10px var(--mono);letter-spacing:.02em;padding:4px 7px;
+            border-radius:8px;background:#F1F4F4;color:var(--soft);flex:none;
+            white-space:nowrap}
+  .jahr.gemessen .jq{background:var(--teal-l);color:var(--teal-d)}
+  .jahr .weg{border:none;background:none;color:var(--soft);font:400 18px var(--body);
+    cursor:pointer;width:40px;height:40px;border-radius:9px;flex:none}
+  .jahr .weg:hover{color:var(--neg);background:var(--paper)}
+  .dlgnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
+           margin:0 0 16px}
 </style>
 </head>
 <body>
@@ -150,9 +195,19 @@
 </dialog>
 
 <script type="module">
-import { installLogos, logoSvg, api, eur, esc, fristKlasse, fristText,
+import { installLogos, logoSvg, api, eur, eurVoll, esc, fristKlasse, fristText,
          melde, frage, schiebeFrage } from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
+
+/* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
+   Bewusst dynamisch geladen: fehlt die Datei, bleiben es schlichte Felder —
+   die Seite muss deswegen nicht ausfallen. */
+let eingabe = null;
+try {
+  eingabe = await import('./assets/eingabe.js');
+} catch {
+  eingabe = null;
+}
 
 installLogos();
 
@@ -190,10 +245,13 @@ const BEREICHE = {
     felder: [
       { k: 'einheit', l: 'Einheit', typ: 'text' },
       { k: 'partei', l: 'Mieter / Partei', typ: 'text' },
-      { k: 'kaltmiete', l: 'Kaltmiete', typ: 'number', schritt: '0.01' },
-      { k: 'nebenkosten_vz', l: 'NK-Vorauszahlung', typ: 'number', schritt: '0.01' },
-      { k: 'stellplatz', l: 'Stellplatzmiete', typ: 'number', schritt: '0.01' },
-      { k: 'sonstige', l: 'Sonstige Einnahmen', typ: 'number', schritt: '0.01' },
+      { k: 'kaltmiete', l: 'Kaltmiete', typ: 'number', schritt: '0.01', geld: true },
+      { k: 'nebenkosten_vz', l: 'NK-Vorauszahlung', typ: 'number', schritt: '0.01',
+        geld: true },
+      { k: 'stellplatz', l: 'Stellplatzmiete', typ: 'number', schritt: '0.01',
+        geld: true },
+      { k: 'sonstige', l: 'Sonstige Einnahmen', typ: 'number', schritt: '0.01',
+        geld: true },
       { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
       { k: 'ab_datum', l: 'Gültig ab', typ: 'date', pflicht: true },
       { k: 'bis_datum', l: 'Beendet am', typ: 'date' },
@@ -201,23 +259,29 @@ const BEREICHE = {
       { k: 'telefon', l: 'Telefon', typ: 'tel' },
       { k: 'anschrift', l: 'Anschrift', typ: 'text' },
       { k: 'personen', l: 'Personen im Haushalt', typ: 'number', schritt: '1' },
-      { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01' },
+      { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true },
       { k: 'notiz', l: 'Notiz', typ: 'text' },
     ],
     name: e => e.partei || e.einheit || 'Mietverhältnis',
     /* Die Mailadresse steht nicht in der Zeile — sie bricht auf dem Handy
-       mitten im Wort um. Ein Zeichen genügt als Auskunft, ob sie da ist. */
+       mitten im Wort um. Ein Zeichen genügt als Auskunft, ob sie da ist.
+       Bei mehreren Bewohnern zählt, wie viele erreichbar sind. */
     detail: e => [
       e.einheit,
-      e.bis_datum ? `bis ${datum(e.bis_datum)}` : (e.ab_datum ? `seit ${datum(e.ab_datum)}` : ''),
-      e.email ? '✉ hinterlegt' : '✉ fehlt',
+      e.geplant ? `ab ${datum(e.ab_datum)}`
+        : (e.bis_datum ? `bis ${datum(e.bis_datum)}`
+                       : (e.ab_datum ? `seit ${datum(e.ab_datum)}` : '')),
+      kontaktText(e),
     ].filter(Boolean).join(' · '),
     /* Was insgesamt hereinkommt — eine reine Stellplatzmiete stünde sonst
        mit 0,00 € in der Liste. */
     wert: e => `${eur((e.kaltmiete || 0) + (e.stellplatz || 0) + (e.sonstige || 0))
                 } ${kuerzel(e.turnus)}`,
-    /* Beendete Mietverhältnisse bleiben als Historie stehen, treten aber zurück. */
-    matt: e => Boolean(e.bis_datum),
+    /* Beendete Mietverhältnisse bleiben als Historie stehen, treten aber
+       zurück. Ein Stand, der erst mit der nächsten Erhöhung endet, läuft
+       heute noch — der darf nicht blass werden. */
+    matt: e => Boolean(e.beendet),
+    chip: e => e.geplant ? ['amber', 'geplant'] : null,
   },
   versicherungen: {
     titel: 'Versicherungen', einzahl: 'Versicherung', ikon: 'Versicherung',
@@ -225,9 +289,11 @@ const BEREICHE = {
       { k: 'art', l: 'Art', typ: 'text', pflicht: true },
       { k: 'anbieter', l: 'Anbieter', typ: 'text' },
       { k: 'police_nr', l: 'Policen-Nr.', typ: 'text' },
-      { k: 'jahresbeitrag', l: 'Beitrag je Turnus', typ: 'number', schritt: '0.01' },
+      { k: 'jahresbeitrag', l: 'Beitrag je Turnus', typ: 'number', schritt: '0.01',
+        geld: true },
       { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
-      { k: 'versicherungswert', l: 'Versicherungswert', typ: 'number', schritt: '0.01' },
+      { k: 'versicherungswert', l: 'Versicherungswert', typ: 'number',
+        schritt: '0.01', geld: true },
       { k: 'beginn', l: 'Beginn', typ: 'date' },
       { k: 'ende', l: 'Ende', typ: 'date' },
       { k: 'umlagefaehig', l: 'Umlagefähig', typ: 'ja_nein' },
@@ -244,19 +310,27 @@ const BEREICHE = {
       { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
       { k: 'bank', l: 'Bank', typ: 'text' },
       { k: 'darlehensnummer', l: 'Darlehensnummer', typ: 'text' },
-      { k: 'urspruenglich', l: 'Ursprungsbetrag', typ: 'number', schritt: '0.01' },
-      { k: 'restschuld', l: 'Restschuld', typ: 'number', schritt: '0.01' },
+      { k: 'urspruenglich', l: 'Ursprungsbetrag', typ: 'number', schritt: '0.01',
+        geld: true },
+      { k: 'restschuld', l: 'Restschuld bei Beginn', typ: 'number', schritt: '0.01',
+        geld: true },
       { k: 'zinssatz', l: 'Zinssatz %', typ: 'number', schritt: '0.01' },
-      { k: 'rate_monatlich', l: 'Rate je Turnus', typ: 'number', schritt: '0.01' },
+      { k: 'rate_monatlich', l: 'Rate je Turnus', typ: 'number', schritt: '0.01',
+        geld: true },
       { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
       { k: 'beginn', l: 'Beginn', typ: 'date' },
       { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date' },
       { k: 'notiz', l: 'Notiz', typ: 'text' },
     ],
     name: e => e.bezeichnung,
-    detail: e => [e.bank, e.restschuld ? `Rest ${eur(e.restschuld)}` : '',
-                  e.zinssatz ? `${e.zinssatz} %` : ''].filter(Boolean).join(' · '),
+    /* Gezeigt wird die fortgeschriebene Restschuld, nicht die eingetragene:
+       eingegeben wird nur der Stand zum Jahresende, dazwischen rechnet die
+       App aus Rate und Zinssatz weiter. */
+    detail: e => [e.bank, restText(e),
+                  e.zinssatz ? `${prozent(e.zinssatz)} %` : ''].filter(Boolean).join(' · '),
     wert: e => `${eur(e.rate_monatlich)} ${kuerzel(e.turnus)}`,
+    chip: e => e.stand && e.stand.quelle === 'fortgeschrieben'
+      ? ['teal', `Stand ${e.stand.stand_jahr}`] : null,
   },
   zahlungen: {
     titel: 'Steuer & Zahlungen', einzahl: 'Zahlung', ikon: 'Steuer',
@@ -266,7 +340,8 @@ const BEREICHE = {
         werte: ['Steuer', 'Kredit', 'Instandhaltung', 'Sonstiges'] },
       { k: 'jahr', l: 'Jahr', typ: 'number', pflicht: true,
         vorgabe: new Date().getFullYear() },
-      { k: 'betrag', l: 'Betrag je Turnus', typ: 'number', schritt: '0.01' },
+      { k: 'betrag', l: 'Betrag je Turnus', typ: 'number', schritt: '0.01',
+        geld: true },
       { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
       { k: 'absetzbar', l: 'Steuerlich absetzbar', typ: 'ja_nein' },
       { k: 'notiz', l: 'Notiz', typ: 'text' },
@@ -289,11 +364,46 @@ const STAMMFELDER = [
   { k: 'kaufdatum', l: 'Kaufdatum', typ: 'date' },
   { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true },
   { k: 'bank', l: 'Bank', typ: 'text' },
-  { k: 'iban', l: 'IBAN', typ: 'text' },
+  { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
 ];
 
 const datum = s => s ? new Date(s).toLocaleDateString('de-DE') : '';
+
+/* Datum als ISO-Tag ohne Umweg über UTC — `toISOString` verschiebt in
+   Mitteleuropa auf den Vortag und macht aus dem 1. den 31. */
+const isoDatum = d => `${d.getFullYear()}-${String(d.getMonth() + 1)
+  .padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const tagDavor = iso => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() - 1);
+  return isoDatum(d);
+};
+const ersterNaechsterMonat = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + 1);
+  return isoDatum(d);
+};
+
+/* Zinssatz deutsch: 2,75 statt 2.75 — zwei Nachkommastellen, mehr nie. */
+const prozent = n => Number(n).toLocaleString('de-DE', { maximumFractionDigits: 2 });
+
+/* Wer ist erreichbar: der Hauptkontakt am Mietverhältnis und die Bewohner,
+   die eine eigene Mailadresse haben. */
+function kontaktText(e) {
+  const extra = (e.bewohner || []).filter(b => b.email).length;
+  if (!e.email && !extra) return '✉ fehlt';
+  const zahl = (e.email ? 1 : 0) + extra;
+  return zahl === 1 ? '✉ hinterlegt' : `✉ ${zahl} Adressen`;
+}
+
+/* Die Restschuld, die heute gilt. Ohne Cent: zwischen zwei Jahresständen ist
+   sie gerechnet, da wäre eine Angabe auf den Cent nur vorgetäuschte Schärfe. */
+function restText(e) {
+  const rest = e.restschuld_aktuell ?? e.restschuld;
+  return rest ? `Rest ${eurVoll(rest)}` : '';
+}
 
 /* Tausendstel mit hoechstens einer Nachkommastelle — 333,3 statt 333,29999.
    Ohne Tausenderpunkt, sonst liest sich "1.000 ‰" wie eintausend Komma null. */
@@ -336,15 +446,21 @@ function nachpflegeHtml(n) {
     </span></div>`;
 }
 
-function kennzahlenHtml(v, jahresmiete) {
+function kennzahlenHtml(v, jahresmiete, restschuld) {
   if (!v) return '';
+  // Die Restschuld kommt aus den fortgeschriebenen Krediten dieser Seite.
+  // Stünde hier der eingetragene Stand, widerspräche die Kennzahl oben der
+  // Kreditzeile weiter unten.
+  const rest = restschuld != null ? Math.round(restschuld * 100) / 100
+                                  : v.restschuld;
+  const eigen = v.wert != null ? Math.round((v.wert - rest) * 100) / 100
+                               : null;
   const zellen = [];
   if (v.wert != null)
     zellen.push(['kv', eur(v.wert), v.wertquelle || 'Wert']);
-  if (v.restschuld) zellen.push(['kv neg', eur(v.restschuld), 'Restschuld']);
-  if (v.eigenkapital != null)
-    zellen.push([`kv ${v.eigenkapital >= 0 ? 'pos' : 'neg'}`,
-                 eur(v.eigenkapital), 'Eigenkapital']);
+  if (rest) zellen.push(['kv neg', eur(rest), 'Restschuld']);
+  if (eigen != null)
+    zellen.push([`kv ${eigen >= 0 ? 'pos' : 'neg'}`, eur(eigen), 'Eigenkapital']);
   if (jahresmiete) zellen.push(['kv', eur(jahresmiete), 'Miete pro Jahr']);
   if (!zellen.length) return '';
   return `<div class="kennzahlen">${zellen.map(([k, w, l]) =>
@@ -366,16 +482,19 @@ function stammHtml(o) {
 function abschnitt(bereich, eintraege) {
   const cfg = BEREICHE[bereich];
   const zeilen = eintraege.length
-    ? eintraege.map(e => `<div class="eintrag klick" data-edit="${bereich}:${e.id}"
+    ? eintraege.map(e => {
+        const marke = cfg.chip ? cfg.chip(e) : null;
+        return `<div class="eintrag klick" data-edit="${bereich}:${e.id}"
           ${cfg.matt && cfg.matt(e) ? 'style="opacity:.62"' : ''}>
         <span class="sym">${kostenIcon(cfg.ikon)}</span>
         <span class="et">
-          <span class="en">${esc(cfg.name(e))}</span>
+          <span class="en">${esc(cfg.name(e))}${marke
+            ? ` <span class="chip ${marke[0]}">${esc(marke[1])}</span>` : ''}</span>
           ${cfg.detail(e) ? `<span class="ed">${esc(cfg.detail(e))}</span>` : ''}
         </span>
         <span class="ew">${cfg.wert(e)}</span>
         <button class="del" data-del="${bereich}:${e.id}" aria-label="löschen">×</button>
-      </div>`).join('')
+      </div>`; }).join('')
     : `<div class="leerzeile">Noch nichts erfasst</div>`;
 
   return `<div class="sekopf"><h2 class="sec">${esc(cfg.titel)}</h2></div>
@@ -473,15 +592,19 @@ async function laden() {
       }).join('')
     : `<div class="leerzeile">Noch kein Abrechnungszeitraum</div>`;
 
+  // Was heute läuft: beendete Stände zählen nicht, geplante noch nicht.
   const jahresmiete = (bereiche.mieten || [])
-    .filter(m => !m.bis_datum)
+    .filter(m => !m.beendet && !m.geplant)
     .reduce((s, m) => s + (m.kaltmiete || 0) *
       ({ monatlich: 12, vierteljaehrlich: 4, halbjaehrlich: 2 }[m.turnus] || 1), 0);
+
+  const restschuld = (bereiche.kredite || []).reduce(
+    (s, k) => s + (k.restschuld_aktuell ?? k.restschuld ?? 0), 0);
 
   inhalt.innerHTML = `
     ${bannerHtml(laufend)}
     ${nachpflegeHtml(det.nachpflege)}
-    ${kennzahlenHtml(vermoegen, jahresmiete)}
+    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld)}
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
       <button data-zeitraum-neu="1">Anlegen</button></div>
     <div class="liste">${zr}</div>
@@ -632,13 +755,46 @@ async function feldHtml(f, bereich, wert) {
       </select></div>`;
   }
   const v = wert == null ? (f.vorgabe != null ? f.vorgabe : '') : wert;
+  // Geldfelder sind Textfelder: ein <input type="number"> nimmt keine
+  // Tausenderpunkte an. Die Zifferntastatur bleibt über inputmode erhalten.
+  const typ = f.geld ? 'text' : f.typ;
+  const zusatz = f.geld ? 'inputmode="decimal"'
+                        : (f.schritt ? `step="${f.schritt}"` : '');
   return `<div class="field"><label for="${id}">${esc(f.l)}</label>
-    <input class="inp" id="${id}" name="${f.k}" type="${f.typ}"
-           ${f.schritt ? `step="${f.schritt}"` : ''}
+    <input class="inp" id="${id}" name="${f.k}" type="${typ}" ${zusatz}
            value="${esc(v)}" ${f.pflicht ? 'required' : ''}></div>`;
 }
 
-async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht }) {
+/* Lesbare Eingabe anhängen — und beim Schliessen wieder lösen, sonst häufen
+   sich die Beobachter mit jedem geöffneten Dialog. */
+let formate = [];
+
+function formateLoesen() {
+  for (const f of formate) {
+    try { f.zerstoere(); } catch { /* schon weg */ }
+  }
+  formate = [];
+}
+
+function formateSetzen(form, felder) {
+  formateLoesen();
+  if (!eingabe) return;
+  for (const f of felder) {
+    const el = form.elements[f.k];
+    if (!el || el.tagName !== 'INPUT') continue;
+    const bauer = f.geld ? eingabe.geldFeld
+                : f.iban ? eingabe.ibanFeld
+                : f.steuer ? eingabe.steuernummerFeld : null;
+    if (typeof bauer !== 'function') continue;
+    try {
+      const griff = bauer(el);
+      if (griff && typeof griff.zerstoere === 'function') formate.push(griff);
+    } catch { /* eine Formatierung ist kein Muss */ }
+  }
+}
+
+async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht,
+                          hinweis = '', extra = '', knopf = 'Speichern' }) {
   const form = document.getElementById('dlgForm');
   const html = await Promise.all(
     felder.map(f => feldHtml(f, bereich, werte[f.k])));
@@ -646,14 +802,37 @@ async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht })
   // Abbrechen ist bewusst type="button": als Submit-Knopf loeste es den
   // submit-Handler aus und speicherte. Die Abfrage darauf lief ins Leere,
   // weil returnValue am <dialog> haengt, nicht am <form>.
-  form.innerHTML = html.join('') +
-    `<button class="btn" value="ok">Speichern</button>
+  form.innerHTML = (hinweis ? `<p class="dlgnote">${esc(hinweis)}</p>` : '')
+    + html.join('') + extra +
+    `<button class="btn" value="ok">${esc(knopf)}</button>
      <button class="btn leise" type="button" data-abbruch
              style="margin-top:8px">Abbrechen</button>`;
   form.dataset.absicht = absicht;
   form.dataset.bereich = bereich || '';
   form.dataset.id = werte.id || '';
-  dlg.showModal();
+  delete form.dataset.vorgaenger;   // sonst endet beim nächsten Mal ein fremder Stand
+  formateSetzen(form, felder);
+  // Ein zweiter showModal-Aufruf auf einem offenen Dialog wirft — der Wechsel
+  // von der Miete zur Erhöhung tauscht nur den Inhalt aus.
+  if (!dlg.open) dlg.showModal();
+  form.scrollTop = 0;
+}
+
+/* Was wirklich im Feld steht — auch wenn es "1.250.000" anzeigt.
+   `data-wert` hat Vorrang: dort legt die Formatierung den rohen Wert ab. */
+function zahlAus(el) {
+  const roh = el.dataset.wert != null && el.dataset.wert !== ''
+    ? el.dataset.wert : el.value;
+  const text = String(roh ?? '').replace(/[^\d,.-]/g, '');
+  if (text === '') return null;
+  const komma = text.lastIndexOf(',');
+  const sauber = komma >= 0
+    ? `${text.slice(0, komma).replace(/\./g, '')}.${text.slice(komma + 1).replace(/\D/g, '')}`
+    // Ein einzelner Punkt mit ein bis zwei Stellen dahinter ist ein
+    // Dezimalpunkt (so kommt der Wert aus der API), sonst Tausendertrennung.
+    : (/^-?\d+\.\d{1,2}$/.test(text) ? text : text.replace(/\./g, ''));
+  const zahl = Number(sauber);
+  return Number.isFinite(zahl) ? zahl : null;
 }
 
 function ausFormular(form, felder) {
@@ -662,19 +841,202 @@ function ausFormular(form, felder) {
     const el = form.elements[f.k];
     if (!el) continue;
     if (f.typ === 'ja_nein') { werte[f.k] = el.value === 'ja'; continue; }
-    if (el.value === '') {
-      // Leeren heisst hier wirklich leeren — sonst liesse sich ein einmal
-      // gesetztes Enddatum nie wieder entfernen.
-      werte[f.k] = f.typ === 'number' || f.typ === 'date' ? null : '';
-      continue;
-    }
-    werte[f.k] = f.typ === 'number' ? Number(el.value) : el.value;
+    // Leeren heisst hier wirklich leeren — sonst liesse sich ein einmal
+    // gesetztes Enddatum nie wieder entfernen.
+    if (f.typ === 'number') { werte[f.k] = zahlAus(el); continue; }
+    if (el.value === '') { werte[f.k] = f.typ === 'date' ? null : ''; continue; }
+    werte[f.k] = el.value;
   }
   return werte;
 }
 
-document.getElementById('dlgForm').addEventListener('click', e => {
-  if (e.target.closest('[data-abbruch]')) dlg.close('abbruch');
+/* ---- Bewohner: mehrere Kontakte an einem Mietverhältnis ---- */
+
+/* Beim Speichern zu entfernende Bewohner. Erst dann, nicht beim Antippen —
+   ein versehentlicher Druck lässt sich so noch mit Abbrechen zurücknehmen. */
+let bewohnerWeg = [];
+
+function bewohnerZeile(b) {
+  return `<div class="bwzeile" ${b.id ? `data-bid="${b.id}"` : ''}>
+    <button type="button" class="weg" data-bw-weg aria-label="Bewohner entfernen">×</button>
+    <input class="nm" name="bw_name" type="text" placeholder="Name"
+           value="${esc(b.name || '')}">
+    <input name="bw_email" type="email" placeholder="E-Mail"
+           value="${esc(b.email || '')}">
+    <input name="bw_telefon" type="tel" placeholder="Handy"
+           value="${esc(b.telefon || '')}">
+  </div>`;
+}
+
+function bewohnerBlock(liste) {
+  bewohnerWeg = [];
+  return `<div class="block" id="bewohnerblock">
+    <span class="bt">Bewohner</span>
+    <span class="bd">Wohnen mehrere Personen in der Einheit, bekommt jede ihre
+      eigene Adresse und Nummer. Der Kontakt oben bleibt der Hauptkontakt des
+      Mietverhältnisses.</span>
+    ${(liste || []).map(bewohnerZeile).join('')}
+    <button type="button" class="zusatz" data-bw-neu>＋ Bewohner</button>
+  </div>`;
+}
+
+/* Was im Dialog steht, mit dem Bestand abgleichen: geändert, neu, entfernt. */
+async function bewohnerSpeichern(form, miete_id) {
+  const block = form.querySelector('#bewohnerblock');
+  if (!block || !miete_id) return;
+  for (const bid of bewohnerWeg) {
+    await api(`/bewohner/${bid}`, { method: 'DELETE' });
+  }
+  bewohnerWeg = [];
+  for (const zeile of block.querySelectorAll('.bwzeile')) {
+    const daten = {
+      name: zeile.querySelector('[name=bw_name]').value.trim(),
+      email: zeile.querySelector('[name=bw_email]').value.trim(),
+      telefon: zeile.querySelector('[name=bw_telefon]').value.trim(),
+    };
+    if (zeile.dataset.bid) {
+      await api(`/bewohner/${zeile.dataset.bid}`, { method: 'PATCH', body: daten });
+    } else if (daten.name || daten.email || daten.telefon) {
+      await api(`/mieten/${miete_id}/bewohner`, { method: 'POST', body: daten });
+    }
+  }
+}
+
+/* ---- Jahresstände eines Kredits ---- */
+
+const STANDFELDER = [
+  { k: 'jahr', l: 'Jahr', typ: 'number', pflicht: true,
+    vorgabe: new Date().getFullYear() - 1 },
+  { k: 'restschuld', l: 'Restschuld am 31.12.', typ: 'number', schritt: '0.01',
+    geld: true, pflicht: true },
+];
+
+function verlaufBlock(s) {
+  const zeilen = (s.verlauf || []).map(j => `<div class="jahr${
+      j.eingetragen ? ' gemessen' : ''}">
+      <span class="jj">${j.jahr}</span>
+      <span class="jw">${eur(j.restschuld)}</span>
+      <span class="jq">${j.eingetragen ? 'eingetragen' : 'gerechnet'}</span>
+      ${j.eingetragen ? `<button type="button" class="weg"
+          data-stand-weg="${(s.staende.find(x => x.jahr === j.jahr) || {}).id}"
+          aria-label="Stand entfernen">×</button>`
+        : '<span class="weg" aria-hidden="true"></span>'}
+    </div>`).join('');
+  return `<div class="block">
+    <span class="bt">Verlauf</span>
+    <span class="bd">Grün hinterlegt ist, was du eingetragen hast. Die Jahre
+      dazwischen rechnet die App aus Rate und Zinssatz.</span>
+    ${zeilen ? `<div class="jahre">${zeilen}</div>`
+             : '<div class="bd">Noch kein Stand eingetragen.</div>'}
+  </div>`;
+}
+
+/* ---- Zusatzblöcke der Formulare ---- */
+
+function mietExtra(eintrag) {
+  const kopien = (eintrag ? eintrag.bewohner : []) || [];
+  return bewohnerBlock(kopien) + (eintrag ? `<div class="block">
+      <span class="bt">Mieterhöhung</span>
+      <span class="bd">Eine beschlossene Erhöhung lässt sich schon jetzt
+        eintragen. Sie steht als „geplant" in der Liste, bis sie wirksam wird;
+        der heutige Stand endet automatisch am Tag davor.</span>
+      <button type="button" class="zusatz"
+              data-erhoehung="${eintrag.id}">＋ Mieterhöhung planen</button>
+    </div>` : '');
+}
+
+function kreditExtra(eintrag) {
+  if (!eintrag) return '';
+  const s = eintrag.stand || {};
+  return `<div class="block">
+    <span class="bt">Restschuld</span>
+    <span class="bd">${s.stand_jahr
+      ? `Zuletzt eingetragen zum 31.12.${s.stand_jahr}: ${eur(s.stand_wert)} —
+         heute fortgeschrieben ${eur(s.restschuld)}.`
+      : `Trage die Restschuld zum 31.12. ein, wie sie im Kontoauszug steht.
+         Dazwischen rechnet ImmoCalc aus Rate und Zinssatz weiter.`}</span>
+    <button type="button" class="zusatz"
+            data-staende="${eintrag.id}">Jahresstände pflegen</button>
+  </div>`;
+}
+
+/* Eine geplante Erhöhung ist ein neuer Mietstand derselben Partei — nicht ein
+   geänderter alter. So bleibt nachvollziehbar, was wann galt. */
+async function erhoehungFormular(mid) {
+  let alt;
+  try {
+    alt = (await api(`/objekte/${encodeURIComponent(slug)}/mieten`))
+      .find(x => String(x.id) === String(mid));
+  } catch (fehler) {
+    return melde(String(fehler.message || fehler), 'neg');
+  }
+  if (!alt) return;
+  const bewohner = (alt.bewohner || []).map(b => ({ ...b, id: null }));
+  await formular({
+    titel: 'Mieterhöhung planen',
+    hinweis: 'Trage die neue Miete und den Tag ein, ab dem sie gilt. Der '
+      + 'bisherige Stand läuft bis zum Tag davor weiter und bleibt als '
+      + 'Historie erhalten.',
+    felder: BEREICHE.mieten.felder, bereich: 'mieten', absicht: 'eintrag',
+    werte: { ...alt, id: '', ab_datum: ersterNaechsterMonat(), bis_datum: null },
+    extra: bewohnerBlock(bewohner), knopf: 'Erhöhung planen',
+  });
+  document.getElementById('dlgForm').dataset.vorgaenger = mid;
+}
+
+async function standFormular(kid) {
+  let s;
+  try {
+    s = await api(`/kredite/${kid}/staende`);
+  } catch (fehler) {
+    return melde(String(fehler.message || fehler), 'neg');
+  }
+  await formular({
+    titel: 'Restschuld zum Jahresende',
+    hinweis: 'Die Bank weist die Restschuld zum 31.12. aus — trage sie ein wie '
+      + 'einen Zählerstand. Dazwischen schreibt ImmoCalc monatlich fort: Rate '
+      + 'minus Zinsanteil ist Tilgung. Jeder neue Stand korrigiert die Rechnung.',
+    felder: STANDFELDER, werte: { id: kid }, absicht: 'stand',
+    extra: verlaufBlock(s), knopf: 'Stand eintragen',
+  });
+}
+
+dlg.addEventListener('close', formateLoesen);
+
+document.getElementById('dlgForm').addEventListener('click', async e => {
+  if (e.target.closest('[data-abbruch]')) return dlg.close('abbruch');
+
+  const weg = e.target.closest('[data-bw-weg]');
+  if (weg) {
+    // Erst beim Speichern wirklich löschen — bis dahin nur gemerkt.
+    const zeile = weg.closest('.bwzeile');
+    if (zeile.dataset.bid) bewohnerWeg.push(zeile.dataset.bid);
+    zeile.remove();
+    return;
+  }
+  if (e.target.closest('[data-bw-neu]')) {
+    e.target.closest('[data-bw-neu]').insertAdjacentHTML('beforebegin',
+      bewohnerZeile({}));
+    return;
+  }
+
+  const standWeg = e.target.closest('[data-stand-weg]');
+  if (standWeg) {
+    const kid = document.getElementById('dlgForm').dataset.id;
+    try {
+      await api(`/kreditstaende/${standWeg.dataset.standWeg}`, { method: 'DELETE' });
+    } catch (fehler) {
+      return melde(String(fehler.message || fehler), 'neg');
+    }
+    await laden();
+    return standFormular(kid);
+  }
+
+  const staende = e.target.closest('[data-staende]');
+  if (staende) return standFormular(staende.dataset.staende);
+
+  const erhoehung = e.target.closest('[data-erhoehung]');
+  if (erhoehung) return erhoehungFormular(erhoehung.dataset.erhoehung);
 });
 
 document.getElementById('dlgForm').addEventListener('submit', async e => {
@@ -697,12 +1059,33 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
       const werte = ausFormular(form, ZEITRAUMFELDER);
       await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume`,
                 { method: 'POST', body: { jahr: Number(werte.jahr) } });
+    } else if (absicht === 'stand') {
+      const werte = ausFormular(form, STANDFELDER);
+      await api(`/kredite/${id}/staende`, {
+        method: 'POST',
+        body: { jahr: Number(werte.jahr), restschuld: werte.restschuld || 0 },
+      });
+      await laden();
+      // Gleich weiter: Jahresstände werden meist mehrere auf einmal gepflegt.
+      return standFormular(id);
     } else {
       const werte = ausFormular(form, BEREICHE[bereich].felder);
-      if (id) await api(`/stammdaten/${bereich}/${id}`,
-                        { method: 'PATCH', body: werte });
-      else await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`,
-                     { method: 'POST', body: werte });
+      let miete_id = id;
+      if (id) {
+        await api(`/stammdaten/${bereich}/${id}`, { method: 'PATCH', body: werte });
+      } else {
+        const neu = await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`,
+                              { method: 'POST', body: werte });
+        miete_id = neu.id;
+      }
+      if (bereich === 'mieten') {
+        await bewohnerSpeichern(form, miete_id);
+        // Die Erhöhung löst den bisherigen Stand ab — er endet am Tag davor.
+        if (form.dataset.vorgaenger && werte.ab_datum) {
+          await api(`/stammdaten/mieten/${form.dataset.vorgaenger}`, {
+            method: 'PATCH', body: { bis_datum: tagDavor(werte.ab_datum) } });
+        }
+      }
     }
     await laden();
   } catch (fehler) {
@@ -851,7 +1234,8 @@ inhalt.addEventListener('click', async e => {
     const bereich = add.dataset.add;
     return formular({ titel: `${BEREICHE[bereich].einzahl} hinzufügen`,
                       felder: BEREICHE[bereich].felder, bereich,
-                      absicht: 'eintrag' });
+                      absicht: 'eintrag',
+                      extra: bereich === 'mieten' ? mietExtra(null) : '' });
   }
 
   const edit = e.target.closest('[data-edit]');
@@ -860,9 +1244,11 @@ inhalt.addEventListener('click', async e => {
     const eintrag = (await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`))
       .find(x => String(x.id) === id);
     if (!eintrag) return;
+    const extra = bereich === 'mieten' ? mietExtra(eintrag)
+                : bereich === 'kredite' ? kreditExtra(eintrag) : '';
     return formular({ titel: `${BEREICHE[bereich].einzahl} bearbeiten`,
                       felder: BEREICHE[bereich].felder, bereich,
-                      werte: eintrag, absicht: 'eintrag' });
+                      werte: eintrag, absicht: 'eintrag', extra });
   }
 });
 

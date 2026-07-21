@@ -9,8 +9,14 @@ Rechnet je Objekt und in Summe:
 
 Fehlen Angaben, wird die Zeile trotzdem gezeigt — mit dem, was da ist. Ein
 Objekt ohne Kredit hat schlicht keine Restschuld, das ist kein Fehler.
+
+Die Restschuld eines Kredits wird nicht geraten: eingetragen wird der Stand
+zum 31.12. eines Jahres — wie ein Zählerstand —, dazwischen schreibt
+`stand_fortschreiben` monatlich fort.
 """
 from __future__ import annotations
+
+from datetime import date
 
 from .turnus import jahresbetrag
 
@@ -24,13 +30,125 @@ def _wert(objekt) -> float | None:
     return None
 
 
-def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None) -> dict:
-    """Vermögenslage eines Objekts. `anteile` sind Tausendstel je Eigentümer."""
+# --------------------------------------------------------------------------
+# Restschuld fortschreiben
+# --------------------------------------------------------------------------
+
+def monatsrate(kredit) -> float:
+    """Was monatlich an die Bank geht — unabhängig vom eingetragenen Turnus.
+
+    Eine vierteljährlich gezahlte Rate von 3000 € tilgt im Monat wie 1000 €."""
+    return round(jahresbetrag(kredit.rate_monatlich, kredit.turnus) / 12, 2)
+
+
+def monate_seit_jahresende(jahr: int, stichtag: date) -> int:
+    """Volle Monatsraten zwischen dem 31.12. eines Jahres und dem Stichtag.
+
+    Negativ, wenn der Stichtag davor liegt — dann wird zurückgerechnet."""
+    return (stichtag.year - jahr) * 12 + (stichtag.month - 12)
+
+
+def stand_fortschreiben(rest: float, rate_monat: float, zinssatz: float | None,
+                        monate: int) -> float:
+    """Restschuld um `monate` Monate fortschreiben (negativ: zurückrechnen).
+
+    Je Monat: Zins = Restschuld × Zinssatz / 12, Tilgung = Rate − Zins. Weil
+    die Restschuld sinkt, sinkt auch der Zinsanteil und die Tilgung wächst —
+    genau das macht eine Annuität aus.
+
+    Deckt die Rate den Zins nicht (oder ist keine Rate erfasst), bleibt die
+    Restschuld stehen. Lieber der letzte bekannte Wert als eine erfundene
+    Kurve."""
+    zins_monat = float(zinssatz or 0) / 100 / 12
+    rate = float(rate_monat or 0)
+    wert = float(rest or 0)
+    if rate <= 0 or wert <= 0:
+        return round(wert, 2)
+    for _ in range(abs(monate)):
+        if monate > 0:
+            tilgung = rate - wert * zins_monat
+            if tilgung <= 0:
+                break               # Rate deckt nicht einmal die Zinsen
+            wert = max(wert - tilgung, 0.0)
+            if wert <= 0:
+                break
+        else:
+            # Rückwärts: aus rest_neu = rest_alt × (1 + z) − Rate folgt
+            wert = (wert + rate) / (1 + zins_monat)
+    return round(wert, 2)
+
+
+def _reihe(staende: list | None) -> list:
+    """Jahresstände, aufsteigend nach Jahr."""
+    return sorted((s for s in (staende or []) if s.jahr), key=lambda s: s.jahr)
+
+
+def kreditstand(kredit, staende: list | None = None,
+                stichtag: date | None = None) -> dict:
+    """Restschuld eines Kredits zum Stichtag.
+
+    Ohne Jahresstände gilt weiter das Feld `Kredit.restschuld` — so bleibt
+    jeder gewachsene Bestand unverändert richtig. Mit Jahresständen wird vom
+    letzten Stand vor dem Stichtag monatlich fortgeschrieben."""
+    heute = stichtag or date.today()
+    reihe = _reihe(staende)
+    rate = monatsrate(kredit)
+    if not reihe:
+        return {"restschuld": round(float(kredit.restschuld or 0), 2),
+                "quelle": "eingetragen", "stand_jahr": None, "stand_wert": None,
+                "monate": 0, "rate_monat": rate}
+
+    vergangen = [s for s in reihe if date(s.jahr, 12, 31) <= heute]
+    basis = vergangen[-1] if vergangen else reihe[0]
+    monate = monate_seit_jahresende(basis.jahr, heute)
+    return {
+        "restschuld": stand_fortschreiben(basis.restschuld, rate,
+                                          kredit.zinssatz, monate),
+        "quelle": "jahresstand" if monate == 0 else "fortgeschrieben",
+        "stand_jahr": basis.jahr,
+        "stand_wert": round(float(basis.restschuld or 0), 2),
+        "monate": monate,
+        "rate_monat": rate,
+    }
+
+
+def verlauf(kredit, staende: list | None = None,
+            bis_jahr: int | None = None) -> list[dict]:
+    """Restschuld zum 31.12. je Jahr — eingetragene Stände und die Rechnung
+    dazwischen. Zeigt in der Oberfläche, wo gemessen und wo gerechnet wurde."""
+    reihe = _reihe(staende)
+    if not reihe:
+        return []
+    ende = max(bis_jahr or date.today().year, reihe[-1].jahr)
+    eingetragen = {s.jahr: round(float(s.restschuld or 0), 2) for s in reihe}
+    rate = monatsrate(kredit)
+    zeilen: list[dict] = []
+    wert = eingetragen[reihe[0].jahr]
+    for jahr in range(reihe[0].jahr, ende + 1):
+        if jahr in eingetragen:
+            wert = eingetragen[jahr]
+            zeilen.append({"jahr": jahr, "restschuld": wert, "eingetragen": True})
+            continue
+        wert = stand_fortschreiben(wert, rate, kredit.zinssatz, 12)
+        zeilen.append({"jahr": jahr, "restschuld": wert, "eingetragen": False})
+    return zeilen
+
+
+def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
+                     staende: dict[int, list] | None = None,
+                     stichtag: date | None = None) -> dict:
+    """Vermögenslage eines Objekts. `anteile` sind Tausendstel je Eigentümer.
+
+    `staende` sind die Jahresstände je Kredit-id. Ohne sie zählt weiter das
+    Feld `Kredit.restschuld` — die Übersicht bleibt damit unverändert
+    richtig, auch wenn noch niemand einen Jahresstand gepflegt hat."""
     wert = _wert(objekt)
-    restschuld = round(sum(float(k.restschuld or 0) for k in kredite), 2)
+    lagen = [(k, kreditstand(k, (staende or {}).get(getattr(k, "id", None)),
+                             stichtag)) for k in kredite]
+    restschuld = round(sum(lage["restschuld"] for _, lage in lagen), 2)
     annuitaet = round(sum(jahresbetrag(k.rate_monatlich, k.turnus) for k in kredite), 2)
-    zinsen = round(sum(float(k.restschuld or 0) * float(k.zinssatz or 0) / 100
-                       for k in kredite), 2)
+    zinsen = round(sum(lage["restschuld"] * float(k.zinssatz or 0) / 100
+                       for k, lage in lagen), 2)
     eigen = round(wert - restschuld, 2) if wert is not None else None
     quote = round(restschuld / wert * 100, 1) if wert else None
     gehalten = sum(int(a.tausendstel or 0) for a in (anteile or [])) or None

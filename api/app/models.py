@@ -166,6 +166,43 @@ class Kredit(SQLModel, table=True):
     notiz: str = ""
 
 
+class Kreditstand(SQLModel, table=True):
+    """Restschuld eines Kredits zum Ende eines Jahres — wie ein Zählerstand.
+
+    Die Bank weist die Restschuld immer zum 31.12. aus; nur dieser Wert lässt
+    sich verlässlich eintragen. Zwischen zwei Ständen schreibt
+    `vermoegen.stand_fortschreiben` monatlich fort (Rate minus Zinsanteil =
+    Tilgung). Der nächste eingetragene Stand ist die Wahrheit und setzt die
+    Rechnung wieder auf den echten Wert.
+
+    Ein Stand je Kredit und Jahr — ein zweiter ändert den vorhandenen."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    kredit_id: int = Field(foreign_key="kredit.id", index=True)
+    jahr: int = Field(index=True)          # der Stand gilt zum 31.12. dieses Jahres
+    restschuld: float = 0.0
+    notiz: str = ""
+
+
+class Bewohner(SQLModel, table=True):
+    """Eine Person in einem Mietverhältnis, mit eigenem Kontakt.
+
+    Am Mietverhältnis hängt weiterhin ein Hauptkontakt (`Miete.email`,
+    `Miete.telefon`) — der bleibt unangetastet. Wohnen mehrere Personen in der
+    Einheit, bekommt jede hier ihre eigene Mailadresse und Handynummer, damit
+    die Abrechnung alle erreicht und nicht nur den, der den Vertrag
+    unterschrieben hat."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    miete_id: int = Field(foreign_key="miete.id", index=True)
+    name: str = ""
+    email: str = ""
+    telefon: str = ""
+    rolle: str = ""                # 'Hauptmieter' | 'Mitbewohner' | frei
+    # Wer die Abrechnung per Mail bekommen soll. Ein Kind im Haushalt steht in
+    # der Liste, braucht aber keine Post.
+    abrechnung: bool = True
+    notiz: str = ""
+
+
 class Zahlung(SQLModel, table=True):
     """Steuer- und sonstige Zahlungen je Jahr — Grundlage für die Steuer-
     zusammenstellung und die Auswertung."""
