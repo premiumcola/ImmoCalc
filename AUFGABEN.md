@@ -180,6 +180,11 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | CXXIII | **Spezifisch benennen, Betrag anhängen** | Nicht „Heizkosten", sondern die Sache selbst: `2026_Heizöl_1.284€.pdf`. Den Betrag hinten anhängen, so wie der Nutzer es auf seinen Zetteln notiert — dann steht die wichtigste Zahl schon im Ordner |
 | CXXIV | **Datum und Betrag in der Dokumentenliste** | Fehlt heute komplett: von wann ist der Beleg, welcher Betrag wurde erkannt? Beides gehört in die Karte, nicht nur in den Dateinamen |
 | CXXV | **Rechte Spalte: erkannt → wird eingetragen** | Je Beleg sichtbar machen, was erkannt wurde und was daraus in der App entsteht — mit Bestätigung. Über den Abrechnungszeitraum ist meist klar, wohin er gehört: also vorschlagen, auswählbar lassen, bestätigen. **Kein Beleg ohne Position** in der jeweiligen Immobilie |
+| CXXVI | **Bereich heißt „Dokumente & Ereignisse"** | Es laufen dort nicht nur Dateien auf, sondern auch das, was daraus wird — Navigation und Seitenkopf entsprechend benennen |
+| CXXVII | **Ordner sofort neu einlesen** | Zusätzlich zum 15-Minuten-Takt ein Knopf, der jetzt prüft — und zwar vollständig abgleicht: auch wenn der Nutzer in der Cloud selbst umbenannt oder gelöscht hat, muss die Liste danach stimmen |
+| CXXVIII | **Kostenart statt nur Dokumentart wählen** | „Nebenkosten" allein ist nicht auswertbar. Zweite Ebene: welche Nebenkosten — Heizkosten, Wasser, Müll … Die Auswahl kommt aus den Kostenarten des jeweiligen Objekts, damit der Beleg direkt auf eine Position zeigt |
+| CXXIX | **Vorschau rechts, zum Vergrößern** | Beleg anklicken → rechts erscheint das zugeschnittene PDF mit dem, was die Texterkennung gefunden hat. Nochmal klicken → groß, sodass sich die erfassten Werte links gegen das Blatt prüfen lassen |
+| CXXX | **Belegdatum genau erkennen** | Nicht nur das Jahr: das tatsächliche Belegdatum aus dem Dokument lesen und anzeigen — es entscheidet, in welchen Abrechnungszeitraum der Beleg gehört |
 
 ### Bewusst zurückgestellt
 
