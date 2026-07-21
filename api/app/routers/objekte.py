@@ -12,7 +12,7 @@ from ..bezeichnung import anzeigename
 from ..export import als_datei, dateiname, exportiere, importiere, loesche
 from ..felder import bereinige
 from ..engine import Position, abrechnung
-from ..erinnerungen import beleg_erinnerung, frist_erinnerung
+from ..erinnerungen import beleg_erinnerung, frist_erinnerung, in_sicht
 from ..frist import frist_tage
 from ..nachpflege import hinweise, zusammenfassung
 from ..models import (Dokument, Einheit, Kostenart, Kostenposition, Miete,
@@ -258,7 +258,7 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
             label = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
             hinweis = frist_erinnerung(label, frist_tage(z),
                                        zeitraum_beendet=z.ende <= heute)
-            if hinweis:
+            if in_sicht(hinweis):
                 offen.append({"objekt": o.slug, "name": o.name, **hinweis})
 
             vorhanden = {p.kostenart for p in session.exec(
@@ -271,7 +271,7 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
                     continue
                 hinweis = beleg_erinnerung(k.name, k.beleg_monat, k.erinnerung_tage,
                                            k.name in vorhanden, heute)
-                if hinweis:
+                if in_sicht(hinweis):
                     offen.append({"objekt": o.slug, "name": o.name, **hinweis})
 
     offen.sort(key=lambda e: (not e["faellig"], e["tage"]))

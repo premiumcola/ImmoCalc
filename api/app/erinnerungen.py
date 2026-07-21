@@ -9,6 +9,19 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+# Weiter als ein Jahr voraus erinnert die App nicht. Was danach kommt, ist
+# heute nicht zu erledigen und verstellt nur den Blick auf das, was ansteht.
+HORIZONT_TAGE = 365
+
+
+def in_sicht(hinweis: dict | None) -> bool:
+    """Ist dieser Hinweis nah genug, um ihn zu zeigen?
+
+    Überfälliges (negative Tage) bleibt immer sichtbar — es verschwindet erst,
+    wenn der Beleg da ist.
+    """
+    return bool(hinweis) and hinweis["tage"] <= HORIZONT_TAGE
+
 
 def termin_im_jahr(monat: int, tage_danach: int, jahr: int) -> date:
     """Erinnerungstermin: Monatsanfang plus Karenzzeit."""

@@ -186,6 +186,19 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | CXXIX | **Vorschau rechts, zum Vergrößern** | Beleg anklicken → rechts erscheint das zugeschnittene PDF mit dem, was die Texterkennung gefunden hat. Nochmal klicken → groß, sodass sich die erfassten Werte links gegen das Blatt prüfen lassen |
 | CXXX | **Belegdatum genau erkennen** | Nicht nur das Jahr: das tatsächliche Belegdatum aus dem Dokument lesen und anzeigen — es entscheidet, in welchen Abrechnungszeitraum der Beleg gehört |
 
+### Neu aus dem Gespräch vom 21.07.2026 — dritter Teil
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CXLI | **Einheiten sichtbar und bearbeitbar** | Laufer Str. 5 hat vier Einheiten — sie sind nirgends zu sehen. Einheiten müssen auf der Objektseite stehen, anlegbar und änderbar sein |
+| CXLII | **Mietverhältnis der Einheit zuordnen — per Auswahl** | Die Einheit wird **angeklickt, nicht eingetippt**. Heute ist `Miete.einheit` Freitext; ein Tippfehler lässt die Partei stumm aus der Verteilung fallen (XCII). Die Auswahl kommt aus den Einheiten des Objekts |
+| CXLIII | **Keine Doppelbelegung** | Eine Einheit darf nicht zweimal gleichzeitig vermietet sein — beim Anlegen prüfen und den Überschneidungszeitraum nennen |
+| CXLIV | **Dialog: Hintergrund festhalten** | Bei offenem Dialog scrollt heute die Seite darunter; im Dialog selbst nur, wenn der Zeiger genau darüber steht. Der Hintergrund wird festgestellt und zurückgenommen (abgedunkelt/entsättigt), damit der Fokus sichtbar oben liegt |
+| CXLV | **Einheiten auf der Übersichtsseite** | Unter der Objektkachel die Einheiten als kleine Bubbles zeigen; das Symbol darf dafür etwas größer werden. Auf einen Blick: was gehört zu diesem Haus |
+| CXLVI | **Fristen über ein Jahr ausblenden** | „Was ansteht" zeigt Abrechnungszeiträume, die noch weit weg sind. Was mehr als ein Jahr in der Zukunft liegt, ist heute nicht relevant |
+| CXLVII | **Einheit ins Eingabefeld, nicht darunter** | Korrektur zu CXVIII: die Zeile `140 T€` unter dem Feld ist zusammenhanglos. Die Einheit steht **rechts im Feld selbst**, leicht gegraut — `€` bei Ursprungsbetrag, Restschuld und Rate, `%` beim Zinssatz. Gilt für jede Eingabezelle |
+| CXLVIII | **Zinssatz aus dem Monatszins ableiten** | Wer den Zinssatz nicht zur Hand hat, gibt den Zinsanteil je Monat ein — die App rechnet den Satz daraus aus (und umgekehrt). Beides sind Wege zum selben Wert, keiner ist Pflicht |
+
 ### Aus der Sichtung des echten Bestands (Stand: 3 von 14 Bündeln, ~35 von 466 Dokumenten)
 
 | Nr. | Fund | Was fehlt |

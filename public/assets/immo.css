@@ -264,6 +264,19 @@ select.inp{
 .melder.an{opacity:1; transform:translate(-50%,0)}
 .melder.pos{background:var(--pos)} .melder.neg{background:var(--neg)}
 
+/* ---- Solange ein Dialog offen ist, gehoert ihm die Seite ----------------
+   Vorher scrollte die Seite darunter weiter, und im Dialog nur, wenn der
+   Zeiger genau darueber stand — man verlor beim Tippen die Stelle, an der
+   man war. Die Regel gilt fuer JEDEN Dialog der App, auch die der einzelnen
+   Seiten, deshalb steht sie hier und nicht in einer Seite. */
+body:has(dialog[open]){overflow:hidden}
+/* Ohne `contain` reicht das Scrollen im Dialog an die Seite durch, sobald das
+   Blatt oben oder unten anschlaegt. */
+dialog{overscroll-behavior:contain}
+/* Der Hintergrund tritt zurueck: dunkler und leicht unscharf, damit sichtbar
+   ist, wo die Eingabe hingeht. */
+dialog::backdrop{background:rgba(22,38,44,.55); backdrop-filter:blur(2.5px)}
+
 /* ---- Rückfrage im Design der App (immo.js: frage, schiebeFrage) ---- */
 dialog.immo-dlg{
   border:none; border-radius:20px; padding:22px; max-width:400px;
