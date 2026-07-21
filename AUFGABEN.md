@@ -100,6 +100,11 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | LXXXVII | Verteilungsschlüssel aus Stammdaten ableiten (API) | `a8952a8` |
 | LXXXVIII | Dokumentenablage flach: Filter, Suche, Korrigieren, Neu-Scan | `b692b10` |
 | LXXXIX | „Was ansteht" auf der Startseite, Sicherung einlesen | `0acdaa1` |
+| XCI–XCVIII | Zeitanteilige Gewichte, sichere Automatik, Position anlegen | `9fa866c` |
+| CX | PDF-Ansicht lässt sich wieder schließen (Kreuz, Escape, daneben tippen) | `7d72976` |
+| CXI | Scan-PDF hat Seitenformat der Aufnahme — keine weißen Ränder mehr | `7d72976` |
+| CXII | Ölrechnung wird erkannt (Heizöl, Brennstoff, Pellets, Flüssiggas) | `7d72976` |
+| CXIII | Verkehrswert, Restschuld und Eigenkapital auf volle Euro | `7d72976` |
 
 ---
 
@@ -144,6 +149,33 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 |---|---|---|
 | LXXV | **Dokumentenablage ohne Verschachtelung** | Grundgerüst steht (`b692b10`). Offen: Originalname bleibt erhalten (XCVII), verwaiste Einträge aufräumbar |
 | LXXVI | **Dynamisch, filterbar, smart** | Offen: Metazeile wiederholt Jahr und Art aus dem Dateinamen, Zustand „neu" dreifach signalisiert, Art-Filter bietet leere Werte an |
+
+### Neu aus dem Gespräch vom 21.07.2026
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CI | **Mietvergleich im Mietbereich** | Zur aktuellen Miete die ortsübliche Vergleichsmiete je m² ermitteln — vergleichbare Objekte in der Lage, gleicher Standard. Ergebnis als Spanne, dazu die Einordnung: fair, zu niedrig oder zu hoch. Datenquelle steckbar halten: automatisches Abgreifen von Portalen ist rechtlich (AGB, Datenbankrecht) und technisch (Bot-Schutz) fragwürdig — erst prüfen, was tragfähig ist |
+| CII | **Hinweis bei deutlicher Abweichung** | Weicht die Miete spürbar von der Spanne ab, erscheint ein Hinweis dort, wo ohnehin Nachrichten und Dokumente auflaufen: „Was ansteht" auf der Startseite und im Dokumenteneingang |
+| CIII | **Kategorien entlang des Lebenszyklus** | Echten Dokumentenbestand einer Immobilie durchsehen (Archiv des Nutzers) und prüfen, was sich mit den heutigen Kategorien nicht einsortieren lässt. Kategorien und Stammdaten entlang des tatsächlichen Ablaufs erweitern: Bau/Bauvorgang → Kaufvorgang → Inbetriebnahme als Mietobjekt → Folgethemen wie Kredit → laufender Betrieb (Nebenkosten, hat die App schon). **Gewichtung:** was bei der Vermietung wiederkehrt, wird fein abgebildet und automatisiert — dort entsteht die Arbeit. Die einmaligen Themen am Anfang dürfen gröber bleiben |
+| CIV | **Parameter aus den Dokumenten lesen** | Beim Durchsehen erfassen, welche Angaben in den echten Unterlagen stehen (Texterkennung nutzen), und daraus ableiten, welche Felder die Stammdaten brauchen — damit ein Dokument nicht nur abgelegt, sondern ausgewertet wird |
+| CV | **Kaufnebenkosten eintragbar** | Grunderwerbsteuer, Notar, Grundbuch, Makler — beim Kaufvorgang erfassbar, damit die Anschaffungskosten vollständig sind |
+| CVI | **Erstaufnahme — der einmalige Initiallauf** | „Wo liegen deine Unterlagen?" → Ordner angeben → einmal komplett drüberfahren: alles sichten, einordnen, benennen, den Stand in der App anlegen. **Wird ausdrücklich vom Nutzer angestoßen**, läuft nie von selbst und nie im Wachdienst mit. Am Ende bestätigt der Nutzer („jetzt passt alles"), erst dann wird einmalig in den Arbeitspfad übernommen — der ist heute leer, deshalb geht es überhaupt nur so |
+| CVII | **Live-Logik und Einmal-Skript strikt getrennt** | Die Benennungs- und Einordnungslogik gehört in den laufenden Code (`bezeichnung.py`, `ocr.py`, neues `erstaufnahme.py`), damit sie später identisch weiterarbeitet. Das Initialskript bleibt dünn und ruft sie nur auf — es darf keine zweite Wahrheit entstehen, und nichts davon darf in den 15-Minuten-Takt geraten |
+| CVIII | **Rückfragen landen unter „Dokumente"** | Was die Erstaufnahme nicht sicher zuordnen kann, erscheint als offener Punkt in der App — der Nutzer arbeitet sie dort direkt ab, statt auf einen Bericht zu warten |
+| CIX | **Verständnis-Bericht nach jeder Sichtung** | Übersicht, welche Dokumente *nicht* verstanden wurden, damit gezielt nachgeschärft werden kann. Erst wenn dieser Rest klein genug ist, wird übernommen |
+
+### Neu aus dem Gespräch vom 21.07.2026 — zweiter Teil
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CXIV | **Kredit gehört nicht in die Nebenkosten** | Klare Trennung der beiden Sichten: **Nebenkosten = Mieterbereich** (was auf den Mieter umgelegt wird), **Wertentwicklung = Eigentümerbereich** — dorthin gehören die Kredite. Betrifft `auswertung.py:19` (`BLOCK_NAMEN` mischt heute Kredit unter die Kostenblöcke) und die Seitenaufteilung |
+| CXV | **Restschuld fortschreiben statt raten** | Eingetragen wird nur der Stand zum Jahresende — wie ein Zählerstand. Dazwischen rechnet die App aus Rate und Zinssatz monatlich fort; der nächste eingetragene Jahreswert korrigiert die Rechnung wieder |
+| CXVI | **Geplante Mieterhöhungen** | Künftige Erhöhung mit Datum eintragbar, damit sie in Cashflow und Erinnerungen auftaucht, bevor sie wirksam wird |
+| CXVII | **Kontakt je Bewohner** | Mail und Handy für **alle** Bewohner einer Einheit getrennt erfassbar, nicht nur ein Kontakt je Mietverhältnis |
+| CXVIII | **Eingabemasken formatieren** | €-Beträge beim Eintippen in T€ lesbar gruppieren, IBAN in Vierergruppen, Steuernummer im üblichen Schnitt — jeweils beim Eingeben, nicht erst danach |
+| CXIX | **Umbenennung zieht überall nach** | Ändert sich das Benennungsschema, wird es für **alle** Immobilien korrigiert — und die Belege bleiben dabei korrekt verknüpft (`Dokument.pfad` und die Cloud-Ordner müssen mitwandern, sonst zeigen Scans ins Leere) |
+| CXX | **Alte Benennung wurde nicht umgezogen** | Im Cloud-Ordner steht die alte Struktur neben der neuen, und die neue ist doppelt geschachtelt: `(Eschenau) Laufer Str. 5/(Eschenau) Laufer Str. 5/`. Dazu die verwaiste `Wohnung 1.OG` von der alten Benennung. Aufräumen und den Umzug nachholen |
+| CXXI | **Leerstand verschiebt Kosten auf die Mieter** | Nebenwirkung aus `9fa866c`: endet ein Mietverhältnis mitten im Jahr ohne Nachmieter, trägt der verbleibende Mieter 75 % statt 60 %. Der Leerstand braucht einen eigenen Bezug, damit er beim Eigentümer hängen bleibt |
 
 ### Bewusst zurückgestellt
 
