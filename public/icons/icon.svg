@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0F6E5C"/>
-  <rect x="150" y="150" width="212" height="30" rx="8" fill="#0B5548"/>
-  <polygon points="120,250 256,140 392,250" fill="#0B5548"/>
-  <rect x="156" y="250" width="200" height="150" fill="#FFFFFF"/>
-  <rect x="232" y="320" width="48" height="80" fill="#0B5548"/>
-  <rect x="184" y="284" width="42" height="42" fill="#F4B740"/>
-  <rect x="286" y="284" width="42" height="42" fill="#F4B740"/>
-  <circle cx="392" cy="330" r="34" fill="#2E7D4F"/>
-  <rect x="386" y="356" width="12" height="46" fill="#0B5548"/>
+  <rect width="512" height="512" rx="112" fill="#17836E"/>
+  <rect x="142" y="158" width="212" height="30" rx="8" fill="#08453A"/>
+  <polygon points="112,258 248,148 384,258" fill="#08453A"/>
+  <rect x="148" y="258" width="200" height="150" fill="#FFFFFF"/>
+  <rect x="224" y="328" width="48" height="80" fill="#08453A"/>
+  <rect x="176" y="292" width="42" height="42" fill="#F4B740"/>
+  <rect x="278" y="292" width="42" height="42" fill="#F4B740"/>
+  <circle cx="382" cy="336" r="34" fill="#B7E9C6"/>
+  <rect x="376" y="362" width="12" height="46" fill="#08453A"/>
 </svg>
