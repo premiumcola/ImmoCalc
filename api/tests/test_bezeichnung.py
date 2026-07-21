@@ -343,6 +343,44 @@ def test_umzug_hebt_den_doppelten_ordner_auf(monkeypatch):
         assert innen in wolke.ordner          # der leere Ordner bleibt liegen
 
 
+def test_lose_datei_im_objektordner_zieht_mit_um(monkeypatch):
+    """CL: eine Datei direkt im Objektordner ist beim Entschachteln selbst ein
+    Kind — sie wandert einzeln.
+
+    Vorher wurde nur "alles unterhalb" umgeschrieben: die Datei lag danach eine
+    Ebene höher, ihr `Dokument.pfad` zeigte weiter auf den alten Platz — und
+    gezählt wurde sie auch nicht, der Nutzer las "0 Belege"."""
+    # Eigene Adresse: die Ordner der anderen Tests teilen sich eine Datenbank,
+    # und der Umzug geht über die Pfade, nicht über die Objekt-id.
+    oben = f"{HOME}/(Losdorf) Loseweg 9"
+    innen = f"{oben}/(Losdorf) Loseweg 9"
+    lose_datei = f"{innen}/2024_Rechnung_Hausmeister.pdf"
+    tiefe_datei = f"{innen}/60_Nebenkosten/2024_Nebenkosten_Lose.pdf"
+    with TestClient(app) as c:
+        _cloud_bereit()
+        slug = _objekt(c, "Erdgeschoss", "Losdorf", "Loseweg 9", innen)
+        lose = _dokument(slug, lose_datei)
+        tief = _dokument(slug, tiefe_datei)
+        wolke = _Wolke(ordner=[HOME, oben, innen, f"{innen}/60_Nebenkosten"],
+                       dateien=[lose_datei, tiefe_datei])
+        monkeypatch.setattr(cloud_modul, "verbindung", lambda session: wolke)
+
+        plan = c.get("/api/nextcloud/umzug").json()
+        assert plan["dokumente"] == 2
+
+        ergebnis = c.post("/api/nextcloud/umzug").json()
+        assert ergebnis["fehler"] == []
+        assert _pfad_von(lose) == f"{oben}/2024_Rechnung_Hausmeister.pdf"
+        assert _pfad_von(tief) == f"{oben}/60_Nebenkosten/2024_Nebenkosten_Lose.pdf"
+        # Beide Einträge zeigen auf eine Datei, die es wirklich gibt
+        assert wolke.existiert(_pfad_von(lose))
+        assert wolke.existiert(_pfad_von(tief))
+        # und beide sind gezählt
+        zeile = next(z for z in ergebnis["verschoben"] if z["objekt"] == slug)
+        assert zeile["dokumente"] == 2
+        assert ergebnis["dokumente"] == 2
+
+
 def test_gescheiterter_move_laesst_die_datenbank_in_ruhe(monkeypatch):
     """CXIX: ein Ordner, der sich nicht verschieben lässt, hält den Rest nicht
     auf — und sein Dokumentpfad bleibt genau da, wo die Datei wirklich liegt."""

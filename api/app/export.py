@@ -1,8 +1,8 @@
 """Sicherung und Wiederherstellung einer Immobilie.
 
 Eine Immobilie wird vollständig als JSON ausgegeben — Stammdaten, Einheiten,
-Zeiträume samt Positionen, Mieten, Versicherungen, Kredite, Zahlungen und die
-Verweise auf die Dokumente in der Nextcloud.
+Zeiträume samt Positionen, Mieten samt Bewohnern, Versicherungen, Kredite samt
+Jahresständen, Zahlungen und die Verweise auf die Dokumente in der Nextcloud.
 
 Beim Löschen wird diese Sicherung zuerst geschrieben, dann erst gelöscht. Die
 Dateien in der Nextcloud bleiben dabei unangetastet — gelöscht wird nur, was in
@@ -18,9 +18,10 @@ from typing import Type
 
 from sqlmodel import Session, SQLModel, select
 
-from .models import (Anteil, Dokument, Eigentuemer, Einheit, Kostenart,
-                     Kostenposition, Kredit, Miete, Objekt, Partei,
-                     Versicherung, Vorauszahlung, Zahlung, Zeitraum)
+from .models import (Anteil, Bewohner, Dokument, Eigentuemer, Einheit,
+                     Kostenart, Kostenposition, Kredit, Kreditstand, Miete,
+                     Objekt, Partei, Versicherung, Vorauszahlung, Zahlung,
+                     Zeitraum)
 
 log = logging.getLogger("immocalc")
 
@@ -38,6 +39,17 @@ ANHAENGSEL: dict[str, Type[SQLModel]] = {
     "anteile": Anteil,
 }
 
+# Was nicht am Objekt hängt, sondern an einem seiner Sätze: die Jahresstände am
+# Kredit, die Bewohner am Mietverhältnis. Ohne sie wäre die Sicherung
+# unvollständig — und beim Löschen blieben sie als Waisen stehen. SQLite
+# vergibt frei gewordene rowids neu: der nächste Kredit erbte sonst die
+# Jahresstände des gelöschten, der nächste Mieter fremde Bewohner.
+# Name in der Sicherung -> (Modell, Fremdschlüssel, Name des Elternteils)
+KINDER: dict[str, tuple[Type[SQLModel], str, str]] = {
+    "kreditstaende": (Kreditstand, "kredit_id", "kredite"),
+    "bewohner": (Bewohner, "miete_id", "mieten"),
+}
+
 
 def _rein(wert):
     """date/datetime nach ISO — json.dumps kann sie sonst nicht schreiben."""
@@ -52,6 +64,16 @@ def _zeilen(session: Session, modell: Type[SQLModel], objekt_id: int) -> list[di
     return [{k: _rein(v) for k, v in z.model_dump().items()} for z in treffer]
 
 
+def _kinder(session: Session, modell: Type[SQLModel], schluessel: str,
+            eltern_ids: list[int]) -> list[SQLModel]:
+    """Alle Sätze eines Kindmodells zu einer Menge von Elternteilen — in einem
+    Zug, nicht je Elternteil einzeln."""
+    if not eltern_ids:
+        return []
+    return list(session.exec(
+        select(modell).where(getattr(modell, schluessel).in_(eltern_ids))).all())
+
+
 def exportiere(session: Session, objekt: Objekt) -> dict:
     """Vollständige Sicherung eines Objekts als reines JSON-Gerüst."""
     daten: dict = {
@@ -61,6 +83,14 @@ def exportiere(session: Session, objekt: Objekt) -> dict:
     }
     for name, modell in ANHAENGSEL.items():
         daten[name] = _zeilen(session, modell, objekt.id)
+
+    # Jahresstände und Bewohner hängen einen Schritt tiefer. Ihr Fremdschlüssel
+    # bleibt in der Sicherung stehen und wird beim Import auf die neu vergebene
+    # id des Kredits bzw. des Mietverhältnisses umgehängt.
+    for name, (modell, schluessel, eltern) in KINDER.items():
+        ids = [z["id"] for z in daten[eltern] if z.get("id") is not None]
+        daten[name] = [{k: _rein(v) for k, v in z.model_dump().items()}
+                       for z in _kinder(session, modell, schluessel, ids)]
 
     # Der Anteil zeigt auf eine Eigentümer-id. SQLite vergibt frei gewordene
     # Nummern neu — nach Löschen und Neuanlegen zeigt dieselbe id auf eine
@@ -120,6 +150,18 @@ def loesche(session: Session, objekt: Objekt) -> dict:
         session.delete(z)
     entfernt["Zeitraum"] = len(zeitraeume)
 
+    # Erst die Kinder der Sätze, dann die Sätze selbst — sonst kennt niemand
+    # mehr die Kredite und Mietverhältnisse, an denen sie hängen.
+    for name, (modell, schluessel, eltern) in KINDER.items():
+        eltern_modell = ANHAENGSEL[eltern]
+        saetze = session.exec(select(eltern_modell).where(
+            eltern_modell.objekt_id == objekt.id)).all()
+        ids = [s.id for s in saetze if s.id is not None]
+        kinder = _kinder(session, modell, schluessel, ids)
+        for kind in kinder:
+            session.delete(kind)
+        entfernt[name] = len(kinder)
+
     for name, modell in ANHAENGSEL.items():
         treffer = session.exec(
             select(modell).where(modell.objekt_id == objekt.id)).all()
@@ -169,10 +211,15 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
     session.commit()
     session.refresh(objekt)
 
+    # alte Satz-id -> neue, damit Jahresstände und Bewohner ihren Kredit bzw.
+    # ihr Mietverhältnis wiederfinden
+    eltern_ids: dict[str, dict[int, int]] = {
+        eltern: {} for _, _, eltern in KINDER.values()}
+
     for name, modell in ANHAENGSEL.items():
         for zeile in daten.get(name) or []:
             eintrag = dict(zeile)
-            eintrag.pop("id", None)
+            alte_id = eintrag.pop("id", None)
             eintrag["objekt_id"] = objekt.id
             if name == "anteile":
                 eigner = _passender_eigner(session, eintrag)
@@ -185,7 +232,27 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
                     continue
                 eintrag["eigentuemer_id"] = eigner.id
                 eintrag.pop("eigentuemer_name", None)
-            session.add(modell.model_validate(eintrag))
+            neu = modell.model_validate(eintrag)
+            session.add(neu)
+            if name in eltern_ids:
+                session.commit()
+                session.refresh(neu)
+                if alte_id is not None:
+                    eltern_ids[name][alte_id] = neu.id
+
+    # Alte Sicherungen kennen diese Schlüssel noch nicht — dann bleibt es
+    # schlicht bei nichts, und die Wiederherstellung läuft wie zuvor durch.
+    for name, (modell, schluessel, eltern) in KINDER.items():
+        for zeile in daten.get(name) or []:
+            kind = dict(zeile)
+            kind.pop("id", None)
+            neuer_elternteil = eltern_ids[eltern].get(kind.get(schluessel))
+            if neuer_elternteil is None:
+                log.info("%s ohne passenden Satz übersprungen: %s=%s",
+                         name, schluessel, kind.get(schluessel))
+                continue
+            kind[schluessel] = neuer_elternteil
+            session.add(modell.model_validate(kind))
 
     # alte Zeitraum-id -> neue, damit die Dokumente ihren Zeitraum wiederfinden
     zeitraeume: dict[int, int] = {}

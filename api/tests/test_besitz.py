@@ -323,6 +323,28 @@ def test_kredit_ohne_jahresstand_bleibt_wie_eingetragen():
         assert vermoegen["restschuld"] == 300000.0
 
 
+def test_objektseite_und_vermoegen_nennen_dieselbe_restschuld():
+    """CLII: die Vermoegensuebersicht liess die Jahresstaende liegen und nannte
+    den roh eingetragenen Wert — die Objektseite den fortgeschriebenen. Zwei
+    Zahlen fuer dieselbe Restschuld."""
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Gleichweg 24", verkehrswert=400000.0)
+        kid = _kredit_mit_stand(c, slug, heute.year - 2, 220000.0)
+        c.post(f"/api/kredite/{kid}/staende",
+               json={"jahr": heute.year - 1, "restschuld": 212400.0})
+
+        zeile = c.get(f"/api/objekte/{slug}/kredite").json()[0]
+        uebersicht = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                          if z["slug"] == slug)
+        assert zeile["restschuld"] == 220000.0            # Eingabe bleibt stehen
+        assert zeile["restschuld_aktuell"] < 212400.0     # fortgeschrieben
+        assert uebersicht["restschuld"] == zeile["restschuld_aktuell"]
+        # und daraus folgt alles Weitere
+        assert uebersicht["eigenkapital"] == \
+            round(400000.0 - zeile["restschuld_aktuell"], 2)
+
+
 def test_jahresstand_verschwindet_mit_dem_kredit():
     heute = date.today()
     with TestClient(app) as c:

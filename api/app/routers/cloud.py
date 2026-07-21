@@ -309,10 +309,18 @@ class UmzugFehler(RuntimeError):
 
 
 def _dokumente_unter(session: Session, ordner: str) -> list[Dokument]:
-    """Alle Belege, die unterhalb dieses Ordners liegen."""
-    praefix = _pfad(ordner) + "/"
+    """Alle Belege unterhalb dieses Pfades — und der Beleg, der genau er ist.
+
+    Beim Entschachteln wandert jedes Kind einzeln, und ein Kind kann auch eine
+    lose Datei sein, die direkt im Objektordner liegt. Ohne den Gleichstand
+    bliebe ihr `Dokument.pfad` stehen, während die Datei längst eine Ebene
+    höher läge — der Eintrag zeigte ins Leere, und gezählt würde sie auch
+    nicht. Bei einem Ordner ändert die Gleichheit nichts: ein Beleg ist eine
+    Datei, nie der Ordner selbst."""
+    selbst = _pfad(ordner)
+    praefix = selbst + "/"
     return [d for d in session.exec(select(Dokument)).all()
-            if _pfad(d.pfad).startswith(praefix)]
+            if _pfad(d.pfad) == selbst or _pfad(d.pfad).startswith(praefix)]
 
 
 def _umgehaengt(pfad: str, von: str, nach: str) -> str:
@@ -429,7 +437,10 @@ def _pfade_pruefen(session: Session, von: str, nach: str) -> None:
 
 
 def _pfade_umschreiben(session: Session, von: str, nach: str) -> list[int]:
-    """Hängt die Belege an den neuen Ordner. Erst nach geglücktem MOVE."""
+    """Hängt die Belege an den neuen Ort. Erst nach geglücktem MOVE.
+
+    `von` ist der bewegte Ordner — oder die bewegte Datei selbst. Die
+    zurückgegebenen ids sind zugleich die Zählung für die Rückmeldung."""
     betroffen = _dokumente_unter(session, von)
     for d in betroffen:
         d.pfad = _umgehaengt(d.pfad, von, nach)

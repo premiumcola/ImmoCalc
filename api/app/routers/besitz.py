@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..models import Anteil, Eigentuemer, Kredit, Objekt
+from ..models import Anteil, Eigentuemer, Kredit, Kreditstand, Objekt
 from ..vermoegen import gesamt, objekt_vermoegen
 
 router = APIRouter(prefix="/api", tags=["besitz"])
@@ -210,13 +210,22 @@ def anteil_loeschen(aid: int, session: Session = Depends(get_session)) -> dict:
 
 @router.get("/vermoegen")
 def uebersicht(session: Session = Depends(get_session)) -> dict:
-    """Wert, Restschuld und Eigenkapital je Objekt und in Summe."""
+    """Wert, Restschuld und Eigenkapital je Objekt und in Summe.
+
+    Die Jahresstände werden in einem Zug geladen und je Kredit zugeordnet —
+    nicht je Kredit einzeln nachgeschlagen. Ohne sie nannte diese Übersicht
+    den roh eingetragenen Wert, während die Objektseite den fortgeschriebenen
+    zeigte: zwei Zahlen für dieselbe Restschuld."""
     kredite = session.exec(select(Kredit)).all()
     anteile_alle = session.exec(select(Anteil)).all()
+    staende: dict[int, list[Kreditstand]] = {}
+    for s in session.exec(select(Kreditstand)).all():
+        staende.setdefault(s.kredit_id, []).append(s)
     zeilen = [
         objekt_vermoegen(o,
                          [k for k in kredite if k.objekt_id == o.id],
-                         [a for a in anteile_alle if a.objekt_id == o.id])
+                         [a for a in anteile_alle if a.objekt_id == o.id],
+                         staende=staende)
         for o in session.exec(select(Objekt)).all() if o.aktiv
     ]
     zeilen.sort(key=lambda z: -(z["wert"] or 0))
