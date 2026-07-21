@@ -70,6 +70,12 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 | CLXVI | Ordnervorlage läuft ohne Straße leer | Ein Grundstück hat oft keine Straße; die Vorlage `({ort}) {strasse} · {name}` sollte auf Gemarkung und Flurstück ausweichen |
 | CLXVII | Pacht heißt in der Auswertung noch „Miete" | `auswertung.py`/`cashflow.py` führen ein Objekt ohne Einheiten als Pseudo-Einheit; Pachterträge laufen mit, sind aber nicht als Pacht benannt. Ebenso zeigt `wertentwicklung.html` „Verkehrswert" statt „Grundstückswert" |
 
+### Rechtliche Grenzen bei Mieterhöhungen — belegt am 21.07.2026
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CLXXVI | **Kappungsgrenze 15 % statt 20 %** | Eckental ist seit 01.01.2026 Gebiet mit angespanntem Wohnungsmarkt (Bayerische Mieterschutzverordnung vom 16.12.2025, Anlage Nr. 5.3.5) — das betrifft Eschenau, Eckenhaid und Unterschöllenbach. Bei einer geplanten Mieterhöhung (CXVI) muss die App die **15-%-Grenze in drei Jahren** prüfen und warnen, nicht die allgemeinen 20 %. Ebenso gilt dort die Mietpreisbremse: bei Neuvermietung höchstens 110 % der ortsüblichen Vergleichsmiete. Beides läuft bis 31.12.2029.<br>**Falle:** die Verordnung schreibt „Eckenthal" mit „th" — ein Namensabgleich läuft ins Leere, sauber ist der AGS `09572121`. Belege in `docs/mietvergleich-recherche.md` |
+
 ### Aus der Erprobung der neuen Dokumentenseite (21.07.2026)
 
 | Nr. | Fund | Was gemeint ist |

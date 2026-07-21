@@ -475,3 +475,71 @@ Zum Vergleich Nürnberg Mitte: 9,53 / 9,78 / 10,19 €/m², Radius 1 km, 9 Zelle
 - § 556d BGB: <https://www.gesetze-im-internet.de/bgb/__556d.html>
 - OLG Stuttgart, Urteil vom 14.07.2010, Az. 4 U 24/10:
   <https://www.strunz-alter.de/aktuelle-informationen/auch-ein-kommunaler-qualifizierter-mietspiegel-ist-urheberrechtlich-geschuetzt/>
+
+---
+
+## Nachtrag 21.07.2026: Was für die Objekte des Nutzers konkret gilt
+
+Diese Punkte betreffen nicht nur den (zurückgestellten) Mietvergleich, sondern
+jede geplante Mieterhöhung — sie gehören deshalb in die App, auch wenn das
+Vergleichsmodul liegen bleibt.
+
+### Eckental ist seit 01.01.2026 Gebiet mit angespanntem Wohnungsmarkt
+
+Bayerische **Mieterschutzverordnung (MiSchuV) vom 16.12.2025**, GVBl. S. 718,
+BayRS 400-6-J, gültig 01.01.2026 bis 31.12.2029. Die Anlage listet 285
+Gemeinden, darunter **Nürnberg** (Nr. 5.1.3) und **Eckental** (Nr. 5.3.5).
+Eckental ist neu dabei — in der Vorgängerverordnung von 2019 war im Landkreis
+Erlangen-Höchstadt nur Uttenreuth gelistet.
+
+Damit gilt für Eschenau, Eckenhaid und Unterschöllenbach als Ortsteile:
+
+- **Kappungsgrenze 15 % statt 20 %** in drei Jahren (§ 558 Abs. 3 Satz 2 BGB)
+- **Mietpreisbremse**: bei Neuvermietung höchstens 110 % der ortsüblichen
+  Vergleichsmiete (§ 556d BGB)
+- Kündigungssperrfrist zehn Jahre (§ 577a Abs. 2 BGB)
+
+**Falle beim Abgleich:** In der rechtsverbindlichen Anlage steht die Gemeinde
+als „Eckenthal" (mit „th"), in der Begründung korrekt „Eckental". Ein
+Namensvergleich läuft ins Leere — sauber ist der **AGS 09572121**.
+
+- <https://www.justiz.bayern.de/media/pdf/gesetze/mieterschutzverordnung_vom_16._dezember_2025.pdf>
+- <https://www.gesetze-bayern.de/Content/Document/BayMiSchuV2025>
+- <https://www.verkuendung-bayern.de/files/baymbl/2025/558/baymbl-2025-558.pdf> (Begründung, Indikatoren)
+
+### Mietpreisbremse bundesweit bis 31.12.2029 verlängert
+
+Gesetz vom 17.07.2025, **BGBl. 2025 I Nr. 163**, in Kraft seit 23.07.2025:
+In § 556d Abs. 2 Satz 4 BGB wurde „2025" durch „2029" ersetzt, die Befristung
+auf jeweils fünf Jahre gestrichen. Das BVerfG hat eine Verfassungsbeschwerde
+dagegen am 08.01.2026 (1 BvR 183/25) nicht zur Entscheidung angenommen.
+
+- <https://www.recht.bund.de/bgbl/1/2025/163/VO.html>
+
+### Für Eckental gibt es keinen Mietspiegel — und für Nürnberg keinen offenen
+
+- **Nürnberg**: qualifizierter Mietenspiegel 2024 nach § 558d BGB, aber nur als
+  PDF und mit ausdrücklicher Sperrklausel („Nachdruck — auch auszugsweise — nur
+  mit schriftlicher Erlaubnis … Nicht zur Weitergabe bestimmt!"). Die Tabellen
+  dürfen also **nicht** ins Repo.
+- **Erlangen**: qualifizierter Mietspiegel 2025–2027, ebenfalls nur PDF plus
+  Formular-Rechner, trotz des Pfads „open-data".
+- **Eckental**: kein amtlicher Mietspiegel — die Pflicht nach § 558c Abs. 4 BGB
+  gilt erst ab 50 000 Einwohnern. Die Zahlen kommerzieller Portale sind kein
+  Begründungsmittel nach § 558a Abs. 2 BGB.
+- GovData-Abfrage: bundesweit 41 Mietspiegel-Datensätze, für Nürnberg und
+  Erlangen **null**.
+
+### Angebotsmieten liegen systematisch über Bestandsmieten
+
+Sachverständigenrat, Jahresgutachten 2024/25, Kapitel 4 Ziffer 325, gegen die
+Rohdaten nachgerechnet: Bestandsmieten seit 2010 +1,44 % im Jahr,
+Angebotsmieten +3,99 % — der Indexabstand ist bis 2023 auf 37,9 % aufgelaufen.
+Im Niveau (Mikrozensus 2018, Nettokaltmiete je m²): Kleinstadt/Landgemeinde
+5,66 € Bestand gegen 6,43 € Neuvermietung (+13,5 %).
+
+Vorbehalt: Angebotsmiete (Inserat) ist nicht gleich Neumiete (tatsächlich
+vereinbart) — laut BBSR liegen GdW-Wiedervermietungsmieten rund 24 % unter
+reinen Internet-Angebotsmieten. Ein Vergleich mit Inseraten überzeichnet also.
+
+- <https://www.sachverstaendigenrat-wirtschaft.de/fileadmin/dateiablage/gutachten/jg202425/JG202425_Kapitel_4.pdf>
