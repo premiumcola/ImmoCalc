@@ -23,6 +23,20 @@
  * `el.value`. Ein Formular, das beim Absenden `el.value` einsammelt, bekommt
  * den unverfälschten Wert.
  *
+ * AUCH ÜBER `new FormData(form)`. Der Weg geht am überschriebenen `value`
+ * vorbei — er liest den nativen Wert, also die Anzeige. Damit auch er den
+ * rohen Wert liefert, wandert beim Anhängen das `name`-Attribut vom
+ * sichtbaren Feld auf ein verstecktes <input type="hidden"> direkt daneben;
+ * dort steht immer der rohe Wert. Für einbindende Seiten heißt das:
+ *
+ *   new FormData(form).get('kaufpreis')  →  '1250000'   (roh)
+ *   form.elements.kaufpreis              →  das VERSTECKTE Feld
+ *   form.querySelector('#kaufpreis')     →  das sichtbare Feld
+ *
+ * Wer das sichtbare Feld braucht (Fokus, Prüfung, `dataset.wert`), sucht es
+ * also über seine id, nicht über den Namen. `zerstoere()` gibt den Namen
+ * zurück und räumt das versteckte Feld weg.
+ *
  * `zerstoere()` nimmt die Überschreibung zurück und lässt den rohen Wert im
  * Feld stehen — danach ist es wieder ein ganz normales <input>.
  */
@@ -220,28 +234,62 @@ function artIban() {
    Steuernummer
    ========================================================================== */
 
+/**
+ * Welcher Abschnitt von `neu` ist beim letzten Schritt dazugekommen?
+ *
+ * Ein Tastendruck, ein Einfügen, ein Löschen — jedes davon ändert genau ein
+ * zusammenhängendes Stück in der Mitte; Anfang und Ende bleiben stehen. Der
+ * gemeinsame Anfang und das gemeinsame Ende grenzen es ein.
+ * @returns {[number, number]} Halboffener Bereich [von, bis) in `neu`
+ */
+function neuerTeil(alt, neu) {
+  let vorn = 0;
+  while (vorn < alt.length && vorn < neu.length && alt[vorn] === neu[vorn]) vorn++;
+  const rest = Math.min(alt.length, neu.length) - vorn;
+  let hinten = 0;
+  while (hinten < rest &&
+         alt[alt.length - 1 - hinten] === neu[neu.length - 1 - hinten]) hinten++;
+  return [vorn, neu.length - hinten];
+}
+
 /** Bauart „Steuernummer“.
  *
- * Die Länge und der Schnitt hängen am Bundesland: 123/456/78901 in Bayern,
+ * Länge und Schnitt hängen am Bundesland: 123/456/78901 in Bayern,
  * 93815/08152 in Baden-Württemberg, 133/8150/8159 in Nordrhein-Westfalen. Eine
- * feste Maske müsste also für die meisten falsch sein. Deshalb: Vorgabe ist
- * der verbreitete Schnitt 3/3/Rest — wer es anders braucht, tippt oder fügt
- * eigene Schrägstriche ein, dann bleiben genau die stehen.
+ * feste Maske wäre für die meisten falsch. Deshalb führen zwei Wege zum Ziel:
+ *
+ *   nur Ziffern      Das Feld schlägt den verbreiteten Schnitt 3/3/Rest vor.
+ *                    Der Vorschlag ist reine Anzeige.
+ *   eigene Trenner   Sobald der Nutzer selbst einen „/“ setzt oder einfügt,
+ *                    gilt seiner — und der Vorschlag löst sich rückstandsfrei
+ *                    auf.
+ *
+ * Damit das zweite ohne Reste geht, muss das Feld die eigenen Vorschläge von
+ * den Trennern des Nutzers unterscheiden. Es merkt sich dazu die zuletzt
+ * ausgegebene Anzeige: Trenner, die schon darin standen, sind die eigenen;
+ * neu dazugekommene gehören dem Nutzer. Aus „938/15“ plus einem getippten
+ * „/“ wird so „93815/“ statt „938/15/“.
  */
 function artSteuernummer() {
-  // Merkt sich, ob der Nutzer selbst getrennt hat. Setzt sich zurück, sobald
-  // kein eigener Schrägstrich mehr im Feld steht.
+  // Die zuletzt ausgegebene Anzeige — der Vergleichsstand für `neuerTeil`.
+  let zuletzt = '';
+  // Trennt der Nutzer selbst? Ergibt sich aus dem zuletzt gelesenen Kern.
   let eigen = false;
 
   const kern = (text, caret) => {
+    const [von, bis] = neuerTeil(zuletzt, text);
     let aus = '';
     let vor = 0;
     let ziffern = 0;
     for (let i = 0; i < text.length; i++) {
       const c = text[i];
       if (c === '/') {
-        // Doppelte und führende Schrägstriche schluckt das Feld.
-        if (!eigen || !aus || aus.endsWith('/')) continue;
+        // Führende und doppelte Trenner schluckt das Feld …
+        if (!aus || aus.endsWith('/')) continue;
+        // … und den eigenen Vorschlag ebenso: er stand schon in der letzten
+        // Anzeige, während der Trenner des Nutzers gerade erst dazukam.
+        // Im eigenen Schnitt gibt es keine Vorschläge, dort zählt jeder.
+        if (!eigen && (i < von || i >= bis)) continue;
       } else if (!ZIFFER.test(c) || ziffern >= MAX_STEUER) {
         continue;
       } else {
@@ -254,11 +302,16 @@ function artSteuernummer() {
     return { kern: aus, vor };
   };
 
-  const anzeige = roh => {
-    if (roh.includes('/')) return roh;          // eigener Schnitt des Nutzers
-    let aus = roh.slice(0, 3);
-    if (roh.length > 3) aus += '/' + roh.slice(3, 6);
-    if (roh.length > 6) aus += '/' + roh.slice(6);
+  const anzeige = k => {
+    let aus;
+    if (k.includes('/')) {
+      aus = k;                                  // eigener Schnitt des Nutzers
+    } else {
+      aus = k.slice(0, 3);
+      if (k.length > 3) aus += '/' + k.slice(3, 6);
+      if (k.length > 6) aus += '/' + k.slice(6);
+    }
+    zuletzt = aus;
     return aus;
   };
 
@@ -271,15 +324,9 @@ function artSteuernummer() {
     anzeige,
     roh: k => k.replace(/\D/g, ''),
     istKern: c => ZIFFER.test(c) || (eigen && c === '/'),
-    vonRoh: text => { eigen = text.includes('/'); return kern(text, 0).kern; },
-    /** Merkt sich einen selbst gesetzten Trenner — getippt oder eingefügt. */
-    merke(e, text) {
-      const inputTyp = String(e.inputType || '');
-      const eingefuegt = e.dataTransfer?.getData('text') || '';
-      if ((e.data && e.data.includes('/')) ||
-          (eingefuegt.includes('/')) ||
-          (inputTyp.includes('Paste') && text.includes('/'))) eigen = true;
-    },
+    // Ein von aussen gesetzter Wert ist ganz und gar der des Nutzers —
+    // ohne Vergleichsstand zählt jeder Trenner darin als seiner.
+    vonRoh: text => { zuletzt = ''; return kern(text, 0).kern; },
   };
 }
 
@@ -347,6 +394,26 @@ function binde(el, art) {
   }
   el.classList.add('eingabe-feld');
 
+  // Ein Formular sammelt seine Werte über `new FormData(form)` — und das liest
+  // den NATIVEN Wert, also die Anzeige, an der überschriebenen Eigenschaft
+  // vorbei. Deshalb wandert der Name auf ein verstecktes Feld daneben, das
+  // immer den rohen Wert trägt; das sichtbare Feld trägt keinen mehr.
+  const name = el.getAttribute('name');
+  let spiegel = null;
+  if (name) {
+    spiegel = document.createElement('input');
+    spiegel.type = 'hidden';
+    spiegel.name = name;
+    el.removeAttribute('name');
+    el.after(spiegel);
+  }
+
+  /** Legt den rohen Wert dort ab, wo ihn alle Wege wiederfinden. */
+  function merkeWert(roh) {
+    el.dataset.wert = roh;
+    if (spiegel) spiegel.value = roh;
+  }
+
   // Hinweiszeile unter dem Feld (nur beim Betrag).
   let hinweis = null;
   const beschrieben = el.getAttribute('aria-describedby');
@@ -382,7 +449,7 @@ function binde(el, art) {
     const anzeige = art.anzeige(kern);
     if (anzeige !== text) schreibe(el, anzeige);
     const roh = art.roh(kern);
-    el.dataset.wert = roh;
+    merkeWert(roh);
 
     if (document.activeElement === el) {
       const pos = stelleNach(anzeige, vor, art.istKern);
@@ -393,7 +460,6 @@ function binde(el, art) {
 
   const steuerung = {
     beiEingabe(e) {
-      if (art.merke) art.merke(e, lies(el));
       const caret = el.selectionStart ?? 0;
       // Getippter Punkt wird zum Komma — noch bevor irgendwer den Wert liest.
       if (art.punktIstKomma && e.data === '.' && lies(el)[caret - 1] === '.') {
@@ -440,7 +506,7 @@ function binde(el, art) {
     setze(neu) {
       const kern = art.vonRoh(neu == null ? '' : String(neu));
       schreibe(el, art.anzeige(kern));
-      el.dataset.wert = art.roh(kern);
+      merkeWert(art.roh(kern));
       zeigeHinweis(el.dataset.wert);
     },
 
@@ -451,6 +517,7 @@ function binde(el, art) {
       delete el.value;                 // die eigene Eigenschaft fällt weg
       delete el.dataset.wert;
       schreibe(el, roh);
+      if (spiegel) { spiegel.remove(); el.setAttribute('name', name); }
       el.classList.remove('eingabe-feld');
       if (el.type !== alterTyp) el.type = alterTyp;
       if (hinweis) {

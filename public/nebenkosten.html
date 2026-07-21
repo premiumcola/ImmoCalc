@@ -30,6 +30,9 @@
   .filter{display:flex;gap:8px;margin-bottom:12px}
   .filter > div{flex:1;min-width:0}
   .kategorien{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
+  /* Ein leeres Jahr hat nichts zu filtern — dann steht hier auch kein
+     Zwischenraum, sonst klaffte über den Diagrammen eine Lücke. */
+  .kategorien:empty{display:none}
   .kategorien button{border:none;background:var(--sheet);color:var(--soft);
     border-radius:999px;padding:9px 14px;font:600 12px var(--disp);cursor:pointer;
     min-height:38px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -84,6 +87,22 @@
           color:var(--soft);margin-top:3px}
   .zrpfeil{color:var(--soft);font:400 16px var(--body);flex:none}
 
+  /* Reichweite des Filters — steht nur da, wenn wirklich gefiltert ist.
+     Ohne diese Zeile bliebe offen, worauf sich die Auswahl auswirkt und
+     worauf nicht. */
+  .katstand{display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+            margin:-8px 0 18px;font:400 12px var(--body);color:var(--soft)}
+  .katstand[hidden]{display:none}
+  .katstand button{border:none;background:var(--sheet);color:var(--teal-d);
+    border-radius:999px;padding:0 16px;min-height:44px;font:600 12px var(--disp);
+    cursor:pointer;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .katstand button:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  /* Merker an der Ueberschrift der gefilterten Karten. */
+  .kfilter{display:inline-block;margin-left:8px;padding:3px 9px;border-radius:999px;
+    background:var(--teal-l);color:var(--teal-d);
+    font:600 9.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+    vertical-align:middle}
+
   /* Der Verweis auf die Eigentuemerseite. Steht genau einmal — die Trennung
      der beiden Bereiche muss erklaert werden, aber nicht dreimal. */
   .grenze{font:400 12px var(--body);color:var(--soft);line-height:1.5;
@@ -108,6 +127,7 @@
     </div>
     <div id="kopf"></div>
     <div class="kategorien" id="kategorien" role="group" aria-label="Kostenarten"></div>
+    <p class="katstand" id="katstand" hidden></p>
     <div id="inhalt"></div>
   </div>
 
@@ -161,16 +181,31 @@ try {
   sub.textContent = 'API nicht erreichbar';
 }
 
-/* Kostenarten-Filter — wirkt auf Blöcke und Kostenfluss gleichermaßen.
-   Die Kennzahlen oben bleiben davon unberührt: sie zeigen das Jahr als
-   Ganzes, die Schalter darunter sind der Blick ins Einzelne. */
+/* Kostenarten-Filter — er wirkt auf die beiden Diagramme, NICHT auf die
+   Kennzahlen im Kopf.
+
+   Warum diese Trennung: „Guthaben“ und „Umlagefähig“ sind Aussagen über das
+   Abrechnungsjahr, und genau so werden sie gelesen — die Zahl geht am Ende an
+   den Mieter. Eine nach einer einzelnen Kostenart gefilterte Zahl trüge
+   dieselbe Überschrift und wäre doch etwas völlig anderes: ein „Guthaben“, das
+   nur entsteht, weil die übrigen Kosten gerade ausgeblendet sind. Der Filter
+   nur an der Kachel zu markieren, würde das nicht heilen — die Zahl bliebe
+   falsch verstehbar. Also: Kopf immer ganzes Jahr, Filter nur fürs Einzelne.
+   Wohin er wirkt, sagt die Zeile unter den Schaltern. */
 const kategorienFeld = document.getElementById('kategorien');
+const katstand = document.getElementById('katstand');
 let alleKategorien = [];
 const gewaehlt = new Set();
 
 function kategorienZeichnen() {
   kategorienFeld.innerHTML = alleKategorien.map(k =>
     `<button data-kat="${esc(k)}" aria-pressed="${gewaehlt.has(k)}">${esc(k)}</button>`).join('');
+  katstand.hidden = !gewaehlt.size;
+  if (gewaehlt.size) {
+    katstand.innerHTML = `Die Diagramme zeigen ${gewaehlt.size} von
+      ${alleKategorien.length} Kostenarten — die Kennzahlen oben das ganze Jahr.
+      <button type="button" id="katalle">Alle Kostenarten</button>`;
+  }
 }
 
 function kpiFeld(label, wert, klasse = '') {
@@ -186,9 +221,11 @@ function kpiFeld(label, wert, klasse = '') {
    Belege noch gar nicht da sind. */
 function kopfHtml(daten, jahr) {
   const vz = daten.gesamt.vorauszahlungen || 0;
-  // gesamt.ausgaben folgt dem Kostenart-Filter — sonst stünde über einem
-  // gefilterten Kostenfluss ein anderes Guthaben als darin.
-  const umlage = daten.gesamt.ausgaben || 0;
+  // mieter.summe ist die Summe des Jahres, ungefiltert — anders als
+  // gesamt.ausgaben, das dem Kostenart-Filter folgt. Die drei Zahlen hier
+  // gehören zum Abrechnungsjahr und dürfen sich mit den Schaltern darunter
+  // nicht verändern (siehe Begründung am Filter).
+  const umlage = daten.mieter.summe || 0;
   const grenze = `<p class="grenze">Kredit, Steuer und Versicherung trägt der
     Eigentümer — sie stehen unter
     <a href="wertentwicklung.html">Wert &amp; Cashflow</a>.</p>`;
@@ -212,6 +249,13 @@ kategorienFeld.addEventListener('click', e => {
   if (!knopf) return;
   const kat = knopf.dataset.kat;
   gewaehlt.has(kat) ? gewaehlt.delete(kat) : gewaehlt.add(kat);
+  kategorienZeichnen();
+  zeichnen();
+});
+
+katstand.addEventListener('click', e => {
+  if (!e.target.closest('#katalle')) return;
+  gewaehlt.clear();
   kategorienZeichnen();
   zeichnen();
 });
@@ -272,6 +316,24 @@ async function zeichnen() {
     return;
   }
 
+  // Schalter nur für die Kostenarten, die im Jahr tatsächlich vorkommen. Im
+  // leeren Jahr bleibt die Reihe leer: der ganze Katalog wären siebzehn
+  // Schalter, die auf dem iPhone ein Viertel der Seite füllen und nichts
+  // filtern könnten. mieter.bloecke folgt dem Filter nicht — die Liste steht
+  // also fest, egal was gerade gewählt ist.
+  const arten = Object.keys(daten.mieter.bloecke || {})
+    .sort((a, b) => a.localeCompare(b, 'de'));
+  if (arten.join('|') !== alleKategorien.join('|')) {
+    alleKategorien = arten;
+    const vorher = gewaehlt.size;
+    for (const k of [...gewaehlt]) if (!arten.includes(k)) gewaehlt.delete(k);
+    kategorienZeichnen();
+    // Nach einem Jahres- oder Objektwechsel kann eine gewählte Kostenart
+    // wegfallen. Dann passt die eben geholte Antwort nicht mehr zu den
+    // Schaltern und wird einmal neu geholt.
+    if (gewaehlt.size !== vorher) return zeichnen();
+  }
+
   // Die Zeiträume hängen an den einzelnen Objekten — nebenläufig holen,
   // sonst baut sich die Liste sichtbar Stück für Stück auf.
   const gefiltert = objekt ? objekte.filter(o => o.slug === objekt) : objekte;
@@ -283,18 +345,6 @@ async function zeichnen() {
 
   sub.textContent = `${daten.objekte.length} ${daten.objekte.length === 1 ? 'Objekt' : 'Objekte'} · ${jahr}`;
 
-  // Schalter für die Kostenarten, die im Jahr tatsächlich vorkommen. Erst wenn
-  // das Jahr noch leer ist, tritt der Katalog des Objekts an ihre Stelle —
-  // dann zeigen sie, was erwartet wird.
-  const belegt = Object.keys(daten.mieter.bloecke || {})
-    .sort((a, b) => a.localeCompare(b, 'de'));
-  const arten = belegt.length ? belegt : (daten.mieter_kategorien || []);
-  if (arten.join('|') !== alleKategorien.join('|')) {
-    alleKategorien = arten;
-    for (const k of [...gewaehlt]) if (!arten.includes(k)) gewaehlt.delete(k);
-    kategorienZeichnen();
-  }
-
   // Die Beschriftungsspalte der Balken ist schmal; „Niederschlagswasser“
   // liefe sonst unter den Balken.
   const kurz = n => n.length > 15 ? n.slice(0, 14) + '…' : n;
@@ -302,15 +352,28 @@ async function zeichnen() {
     .map(([name, wert]) => ({ name: kurz(name), wert, text: eurKurz(wert) }))
     .sort((a, b) => b.wert - a.wert);
 
+  // An der Überschrift steht, ob die Karte nur einen Ausschnitt zeigt — die
+  // Diagramme sind weit genug von den Schaltern entfernt, dass man es sonst
+  // vergisst.
+  const merker = gewaehlt.size ? '<span class="kfilter">gefiltert</span>' : '';
+
+  // Was im Kostenfluss übrig bleibt, ist nur ohne Filter das Guthaben. Mit
+  // Filter stecken die ausgeblendeten Kostenarten mit darin — dann darf der
+  // Knoten nicht so heißen wie die Kennzahl oben, sonst stünden zwei
+  // verschiedene Zahlen unter demselben Wort.
+  if (gewaehlt.size) {
+    for (const k of fluss.knoten) if (k.name === 'Guthaben') k.name = 'Rest';
+  }
+
   kopf.innerHTML = kopfHtml(daten, jahr);
   inhalt.innerHTML = `
     <div class="karte">
-      <h3>Umlagefähige Kosten ${jahr}</h3>
+      <h3>Umlagefähige Kosten ${jahr}${merker}</h3>
       ${balken(bloecke)}
     </div>
 
     <div class="karte">
-      <h3>Kostenfluss ${jahr}${objekt ? ' · je Einheit' : ' · je Objekt'}</h3>
+      <h3>Kostenfluss ${jahr}${objekt ? ' · je Einheit' : ' · je Objekt'}${merker}</h3>
       ${daten.gesamt.ausgaben
         ? sankey(fluss.knoten, fluss.fluss,
                  { format: eurKurz, breite: window.innerWidth < 520 ? 270 : 560 })
