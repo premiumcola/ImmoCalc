@@ -21,6 +21,7 @@ from sqlmodel import Session as DBSession
 
 from ..cashflow import EinheitZahlen, cashflow, monate_im_jahr, sankey
 from ..turnus import jahresbetrag
+from ..vermoegen import kapitaldienst_jahr
 from ..db import get_session
 from ..models import (Einheit, Kostenart, Kostenposition, Kredit, Miete, Objekt,
                       Versicherung, Zahlung, Zeitraum, ist_grundstueck)
@@ -127,7 +128,10 @@ def _sichten(session: DBSession, o: Objekt, jahr: int) -> dict[str, dict[str, fl
         select(Zahlung).where(Zahlung.objekt_id == o.id, Zahlung.jahr == jahr)).all()
     posten = _positionen(session, o, jahr)
 
-    kredit = round(sum(jahresbetrag(k.rate_monatlich, k.turnus) for k in kredite), 2)
+    # Ohne Sparraten: was in einen Bausparvertrag fliesst, ist keine Ausgabe,
+    # sondern eine Umschichtung in eigenes Vermögen (CXLIX). Sie hier
+    # mitzuzählen machte den Cashflow schlechter, als er ist.
+    kredit = kapitaldienst_jahr(kredite)
     versicherung = round(sum(jahresbetrag(v.jahresbeitrag, v.turnus) for v in vers), 2)
 
     # Mietersicht: nur die umlagefähigen Positionen, aufgeschlüsselt nach
