@@ -198,6 +198,7 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | CXLVI | **Fristen über ein Jahr ausblenden** | „Was ansteht" zeigt Abrechnungszeiträume, die noch weit weg sind. Was mehr als ein Jahr in der Zukunft liegt, ist heute nicht relevant |
 | CXLVII | **Einheit ins Eingabefeld, nicht darunter** | Korrektur zu CXVIII: die Zeile `140 T€` unter dem Feld ist zusammenhanglos. Die Einheit steht **rechts im Feld selbst**, leicht gegraut — `€` bei Ursprungsbetrag, Restschuld und Rate, `%` beim Zinssatz. Gilt für jede Eingabezelle |
 | CXLVIII | **Zinssatz aus dem Monatszins ableiten** | Wer den Zinssatz nicht zur Hand hat, gibt den Zinsanteil je Monat ein — die App rechnet den Satz daraus aus (und umgekehrt). Beides sind Wege zum selben Wert, keiner ist Pflicht |
+| CXLIX | **Bausparvertrag ist kein Darlehen** | Beim Anlegen wählbar: **Darlehen** oder **Bausparvertrag**; die Eingabemaske richtet sich danach. Darlehen: Restschuld, die sinkt. Bausparer: Bausparsumme (z. B. 140.000 €) und **angesparter Betrag** (z. B. 45.000 €) — der Rest ergibt sich als Differenz. **Wichtig fürs Vermögen:** ein Bausparguthaben ist Guthaben, keine Schuld. Heute läuft „LBS Bausparer" als Kredit und drückt über `vermoegen.py` das Eigenkapital, obwohl es es erhöhen müsste |
 
 ### Aus der Sichtung des echten Bestands (Stand: 3 von 14 Bündeln, ~35 von 466 Dokumenten)
 
