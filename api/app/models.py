@@ -245,7 +245,12 @@ class Dokument(SQLModel, table=True):
     """Datei in der Nextcloud. `status` steuert die Inbox: was noch nicht
     zugeordnet ist, wartet in der App auf eine Entscheidung."""
     id: Optional[int] = Field(default=None, primary_key=True)
-    pfad: str = Field(index=True)          # WebDAV-Pfad relativ zum Benutzer-Root
+    # Ein Pfad, ein Eintrag. Ohne diese Eindeutigkeit legen Wachdienst und
+    # „Ordner prüfen" dieselbe neue Datei zweimal an, wenn sie sich begegnen —
+    # der zweite Eintrag zeigt nach dem Verschieben ins Leere und bleibt für
+    # immer im Eingang. Bestehende Datenbanken bekommen den Index nachtraeglich
+    # (siehe `_eindeutigkeit_sichern` in routers/dokumente.py).
+    pfad: str = Field(index=True, unique=True)  # WebDAV-Pfad ab Benutzer-Root
     dateiname: str
     groesse: int = 0
     objekt_id: Optional[int] = Field(default=None, foreign_key="objekt.id", index=True)

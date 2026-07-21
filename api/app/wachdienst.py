@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from datetime import datetime
 
 from sqlmodel import Session
@@ -17,6 +18,12 @@ from .db import engine
 log = logging.getLogger("immocalc")
 
 TAKT_SEKUNDEN = 15 * 60
+
+# Nur eine Eingangsprüfung zur Zeit. Der Wachdienst läuft in einem eigenen
+# Thread, während der Nutzer „Ordner prüfen" drücken kann — ohne diese Sperre
+# sehen beide Sitzungen dieselbe Datei als neu und legen sie doppelt an.
+# Liegt hier statt im Router, weil der Wachdienst der zweite Rufer ist.
+sperre = threading.Lock()
 
 _zustand: dict[str, object] = {
     "letzter_lauf": None,
@@ -38,11 +45,21 @@ def zustand() -> dict:
 
 
 def einmal_scannen() -> int:
-    """Ein Durchlauf. Gibt die Zahl neu aufgenommener Dateien zurück."""
-    from .routers.dokumente import scan          # spät, wegen Zirkelbezug
+    """Ein Durchlauf. Gibt die Zahl neu aufgenommener Dateien zurück.
+
+    Prüft der Nutzer gerade selbst, tritt der Wachdienst zurück: das ist kein
+    Fehler, sondern genau die Aufgabe der Sperre."""
+    from fastapi import HTTPException                # noqa: PLC0415
+    from .routers.dokumente import scan              # spät, wegen Zirkelbezug
 
     with Session(engine) as session:
-        ergebnis = scan(session=session)
+        try:
+            ergebnis = scan(session=session)
+        except HTTPException as fehler:
+            if fehler.status_code == 409:
+                log.info("Eingangsprüfung übersprungen: %s", fehler.detail)
+                return 0
+            raise
     return int(ergebnis.get("neu", 0))
 
 

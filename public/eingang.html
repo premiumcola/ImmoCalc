@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Eingang · ImmoCalc</title>
+<title>Dokumente · ImmoCalc</title>
 <link rel="icon" href="icons/icon.svg">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -17,16 +17,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/immo.css">
 <style>
-  .kopfzeile{display:flex;gap:10px;align-items:center;margin-bottom:16px}
-  .kopfzeile .zahl{font:700 15px var(--disp);color:var(--ink)}
-  .kopfzeile .scan{margin-left:auto;border:none;background:var(--sheet);
-    color:var(--teal-d);border-radius:11px;padding:11px 15px;font:600 13px var(--disp);
-    cursor:pointer;min-height:44px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
-  .kopfzeile .scan:hover{background:var(--teal-l)}
-  .kopfzeile .scan[disabled]{opacity:.55;cursor:default}
-
   .kamera{display:flex;gap:14px;align-items:center;width:100%;border:none;cursor:pointer;
-    background:var(--teal);color:#fff;border-radius:16px;padding:16px;margin-bottom:16px;
+    background:var(--teal);color:#fff;border-radius:16px;padding:16px;margin-bottom:12px;
     text-align:left;font-family:var(--body);min-height:44px;
     box-shadow:0 8px 20px -10px rgba(15,110,92,.8)}
   .kamera:hover{background:var(--teal-d)}
@@ -37,6 +29,98 @@
   .kamera .k1{display:block;font:600 15px var(--disp);letter-spacing:-.01em}
   .kamera .k2{display:block;font:400 12px var(--body);opacity:.85;margin-top:3px;
               line-height:1.4}
+
+  .fussnote{display:block;font:500 11.5px var(--mono);color:var(--soft);
+            margin:0 0 12px;line-height:1.5}
+  .fussnote.warn{color:var(--amber)}
+
+  /* Werkzeugleiste: suchen und nachsehen */
+  .werkzeuge{display:flex;gap:8px;margin-bottom:10px}
+  .werkzeuge .suche{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:12px;
+    padding:11px 13px;font:500 13.5px var(--body);background:var(--sheet);
+    min-height:44px;color:var(--ink)}
+  .werkzeuge .suche:focus{outline:none;border-color:var(--teal)}
+  .werkzeuge .pruef{flex:none;border:none;background:var(--sheet);color:var(--teal-d);
+    border-radius:12px;padding:11px 15px;font:600 13px var(--disp);cursor:pointer;
+    min-height:44px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .werkzeuge .pruef:hover{background:var(--teal-l)}
+  .werkzeuge .pruef[disabled]{opacity:.55;cursor:default}
+
+  .filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+          margin-bottom:14px}
+  @media (min-width:900px){.filter{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+  .zahlzeile{display:flex;align-items:baseline;gap:8px;margin:0 2px 10px}
+  .zahlzeile .zahl{font:600 12px var(--mono);color:var(--soft)}
+  .zahlzeile .zuruecksetzen{margin-left:auto;border:none;background:none;
+    color:var(--teal-d);font:600 12px var(--disp);cursor:pointer;padding:6px 2px}
+
+  .beleg{background:var(--sheet);border-radius:16px;padding:14px;margin-bottom:10px;
+         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .beleg .kopf{display:flex;gap:12px;align-items:flex-start}
+  .beleg .sym{width:42px;height:42px;border-radius:11px;background:#EDF1F0;
+    color:var(--soft);flex:none;display:flex;align-items:center;justify-content:center;
+    font:600 13px var(--mono)}
+  .beleg[data-status="neu"] .sym{background:var(--amber-bg);color:var(--amber)}
+  .beleg .wer{flex:1;min-width:0}
+  .beleg .dn{display:block;font:600 14px var(--disp);letter-spacing:-.01em;
+    line-height:1.35;word-break:break-word}
+  .beleg .meta{display:block;font:400 11.5px var(--body);color:var(--soft);
+    margin-top:5px;line-height:1.5}
+  .beleg .marke{flex:none;font:600 10.5px var(--mono);border-radius:7px;
+    padding:4px 7px;background:var(--amber-bg);color:var(--amber);letter-spacing:.02em}
+
+  .ikons{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .ikons button{border:none;background:#F4F6F6;color:var(--soft);border-radius:11px;
+    min-width:44px;min-height:44px;padding:0 12px;cursor:pointer;
+    font:600 12.5px var(--disp);display:flex;align-items:center;gap:6px}
+  .ikons button:hover{background:var(--teal-l);color:var(--teal-d)}
+  .ikons button.gefahr{color:var(--neg)}
+  .ikons button.gefahr:hover{background:#FBEDE9;color:var(--neg)}
+  .ikons button[disabled]{opacity:.5;cursor:default}
+  .ikons .zeichen{font:400 15px var(--mono);line-height:1}
+  /* Auf dem Telefon reicht die Zeile für vier Wörter nicht — dort bleibt das
+     Zeichen, die Beschriftung liest der Screenreader aus aria-label. */
+  @media (max-width:560px){
+    .ikons{gap:8px}
+    .ikons button{padding:0;justify-content:center}
+    .ikons .wort{position:absolute;width:1px;height:1px;overflow:hidden;
+                 clip-path:inset(50%);white-space:nowrap}
+    .ikons .zeichen{font-size:17px}
+    /* Die Rückfrage muss man sehen — sie bleibt beschriftet. */
+    .ikons button.frage{padding:0 12px;gap:6px}
+    .ikons button.frage .wort{position:static;width:auto;height:auto;
+      clip-path:none;font:600 12.5px var(--disp)}
+  }
+  .ikons button.frage{background:#FBEDE9;color:var(--neg)}
+
+  .felder{margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+          gap:8px}
+  @media (min-width:900px){.felder{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  .felder .breit{grid-column:1 / -1}
+  .felder input{width:100%;border:1.5px solid var(--line);border-radius:12px;
+    padding:11px 13px;font:500 13.5px var(--body);background:var(--sheet);
+    min-height:44px;color:var(--ink)}
+  .felder input:focus{outline:none;border-color:var(--teal)}
+  .tat{display:flex;gap:8px;margin-top:10px}
+  .tat button{flex:1;border:none;border-radius:12px;padding:12px;cursor:pointer;
+    font:600 13.5px var(--disp);min-height:44px;background:var(--teal);color:#fff}
+  .tat button:hover{background:var(--teal-d)}
+  .tat .weg{flex:0 0 auto;padding:12px 16px;background:transparent;color:var(--soft);
+    box-shadow:inset 0 0 0 1.5px var(--line)}
+  .ziel{display:block;font:500 11.5px var(--mono);color:var(--soft);margin-top:9px;
+        word-break:break-word;line-height:1.5}
+  .ziel.gut{color:var(--pos)}
+  .ziel.schlecht{color:var(--neg)}
+
+  .hinweisbox{background:var(--sheet);border-radius:16px;padding:24px 22px;
+    text-align:center;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .hinweisbox .big{font:700 16px var(--disp);letter-spacing:-.015em;margin-bottom:8px}
+  .hinweisbox p{font:400 13px var(--body);color:var(--soft);margin:0 0 14px;
+    line-height:1.55}
+  .hinweisbox a{display:inline-block;text-decoration:none;background:var(--teal);
+    color:#fff;border-radius:12px;padding:12px 18px;font:600 13.5px var(--disp)}
+
   dialog{border:none;border-radius:18px;padding:0;max-width:400px;
          width:calc(100% - 32px);background:var(--paper);
          box-shadow:0 30px 70px -20px rgba(22,38,44,.5)}
@@ -48,39 +132,7 @@
          display:flex;align-items:center;justify-content:center;line-height:1}
   .dbody{padding:8px 18px 18px}
   .zinfo{font:600 12px var(--mono);color:var(--teal-d);background:var(--teal-l);
-         border-radius:10px;padding:10px 12px;margin:0 0 14px}
-  .wachdienst{font:500 11.5px var(--mono);color:var(--soft);margin:-6px 0 14px}
-  .wachdienst.warn{color:var(--amber)}
-  .beleg{background:var(--sheet);border-radius:16px;padding:15px;margin-bottom:12px;
-         box-shadow:0 1px 2px rgba(22,38,44,.05)}
-  .beleg .kopf{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px}
-  .beleg .sym{width:42px;height:42px;border-radius:11px;background:var(--amber-bg);
-    color:var(--amber);flex:none;display:flex;align-items:center;justify-content:center;
-    font:600 15px var(--mono)}
-  .beleg .wer{flex:1;min-width:0}
-  .beleg .dn{display:block;font:600 14px var(--disp);letter-spacing:-.01em;
-    line-height:1.3;word-break:break-word}
-  .beleg .meta{display:block;font:400 11.5px var(--body);color:var(--soft);margin-top:4px}
-  .beleg .felder{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:11px}
-  .beleg .felder select,.beleg .felder input{flex:1;min-width:126px;border:1.5px solid var(--line);
-    border-radius:10px;padding:10px 11px;font:500 13.5px var(--body);background:var(--sheet);
-    min-height:44px;color:var(--ink)}
-  .beleg .felder select:focus,.beleg .felder input:focus{outline:none;border-color:var(--teal)}
-  .beleg .tat{display:flex;gap:8px}
-  .beleg .tat button{flex:1;border:none;border-radius:11px;padding:12px;cursor:pointer;
-    font:600 13.5px var(--disp);min-height:44px;background:var(--teal);color:#fff}
-  .beleg .tat button:hover{background:var(--teal-d)}
-  .beleg .tat .spaeter{flex:0 0 auto;padding:12px 16px;background:transparent;
-    color:var(--soft);box-shadow:inset 0 0 0 1.5px var(--line)}
-  .vorschlag{font:500 11px var(--mono);color:var(--teal-d);background:var(--teal-l);
-    border-radius:8px;padding:6px 10px;margin-bottom:10px;display:inline-block}
-  .ziel{font:500 11.5px var(--mono);color:var(--soft);margin-top:9px;word-break:break-all}
-  .hinweisbox{background:var(--sheet);border-radius:16px;padding:22px;text-align:center;
-    box-shadow:0 1px 2px rgba(22,38,44,.05)}
-  .hinweisbox .big{font:700 16px var(--disp);letter-spacing:-.015em;margin-bottom:6px}
-  .hinweisbox p{font:400 13px var(--body);color:var(--soft);margin:0 0 14px;line-height:1.5}
-  .hinweisbox a{display:inline-block;text-decoration:none;background:var(--teal);color:#fff;
-    border-radius:11px;padding:12px 18px;font:600 13.5px var(--disp);min-height:44px}
+         border-radius:10px;padding:10px 12px;margin:0 0 14px;line-height:1.5}
 
   /* App-Symbol in der Kopfzeile — kommt auf index.html, eingang.html und
      statistik.html gleich vor; gehoert eigentlich nach immo.css. */
@@ -94,7 +146,7 @@
   <div class="bar">
     <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
     <div class="barwrap">
-      <h1>Eingang</h1>
+      <h1>Dokumente</h1>
       <div class="sub" id="sub">wird geladen …</div>
     </div>
   </div>
@@ -109,12 +161,27 @@
     </button>
     <input type="file" id="kameraFeld" accept="image/*" capture="environment"
            multiple hidden>
+    <input type="file" id="erneutFeld" accept="image/*" capture="environment"
+           multiple hidden>
 
-    <div class="kopfzeile">
-      <span class="zahl" id="zahl"></span>
-      <button class="scan" id="scan">Ordner prüfen</button>
+    <span class="fussnote" id="fussnote"></span>
+
+    <div class="werkzeuge">
+      <input class="suche" id="suche" type="search" placeholder="Dateiname suchen"
+             aria-label="Dateiname suchen">
+      <button class="pruef" id="pruef">Ordner prüfen</button>
     </div>
-    <div class="wachdienst" id="wachdienst"></div>
+    <div class="filter">
+      <div id="fObjekt"></div>
+      <div id="fArt"></div>
+      <div id="fJahr"></div>
+      <div id="fStatus"></div>
+    </div>
+
+    <div class="zahlzeile">
+      <span class="zahl" id="zahl"></span>
+      <button class="zuruecksetzen" id="zuruecksetzen" hidden>Filter zurücksetzen</button>
+    </div>
     <div id="liste"></div>
   </div>
 
@@ -137,13 +204,10 @@
   </div>
   <div class="dbody">
     <p class="zinfo" id="zielInfo"></p>
-    <div class="field"><label for="zielObjekt">Immobilie</label>
-      <select class="inp" id="zielObjekt"></select></div>
-    <div class="field"><label for="zielArt">Art</label>
-      <select class="inp" id="zielArt"></select></div>
-    <div class="field"><label for="zielJahr">Jahr</label>
-      <select class="inp" id="zielJahr"></select></div>
-    <div class="field"><label for="zielText">Kurzbeschreibung</label>
+    <div class="field"><label>Immobilie</label><div id="zielObjekt"></div></div>
+    <div class="field"><label>Art</label><div id="zielArt"></div></div>
+    <div class="field"><label>Jahr</label><div id="zielJahr"></div></div>
+    <div class="field"><label for="zielText">Bezeichnung</label>
       <input class="inp" id="zielText" placeholder="optional"></div>
     <button class="btn" id="zielOk">Ablegen</button>
   </div>
@@ -151,172 +215,363 @@
 
 <script type="module">
 import { api, esc } from './assets/immo.js';
+import { auswahlfeld } from './assets/auswahl.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
 
 const liste = document.getElementById('liste');
 const sub = document.getElementById('sub');
 const zahl = document.getElementById('zahl');
-const scanKnopf = document.getElementById('scan');
+const fussnote = document.getElementById('fussnote');
+const pruefKnopf = document.getElementById('pruef');
+const zuruecksetzen = document.getElementById('zuruecksetzen');
 
-let objekte = [];
 const jetzt = new Date().getFullYear();
+const ALLE = '';
 
-const groesse = b => !b ? '' :
-  b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+/* Ein Zustand für die ganze Seite: Filter, Stammdaten, offener Bearbeiter.
+   Die Liste wird immer aus dem gebaut, was die API zurückgibt. */
+const filter = { objekt: ALLE, kategorie: ALLE, jahr: ALLE, status: ALLE, suche: '' };
+let daten = { dokumente: [], objekte: [], arten: [], jahre: [], kategorien: [] };
+let offenerBearbeiter = null;     // id des Dokuments, dessen Felder offen sind
+let erkennungMoeglich = true;
+let zielFelder = null;            // Auswahlfelder des Ablage-Dialogs
+
+const jahresliste = () => {
+  const aus_daten = daten.jahre || [];
+  const spanne = Array.from({ length: 8 }, (_, i) => jetzt - i);
+  return [...new Set([...spanne, ...aus_daten])].sort((a, b) => b - a);
+};
+
+/* ---- Filterfelder: einmal gebaut, danach nur noch nachgefüllt ---- */
+const filterFeld = (id, label, schluessel) => auswahlfeld(
+  document.getElementById(id), {
+    optionen: [{ wert: ALLE, text: label }], wert: ALLE, label,
+    aenderung: wert => { filter[schluessel] = wert; laden(); },
+  });
+
+const fObjekt = filterFeld('fObjekt', 'Alle Immobilien', 'objekt');
+const fArt = filterFeld('fArt', 'Alle Arten', 'kategorie');
+const fJahr = filterFeld('fJahr', 'Alle Jahre', 'jahr');
+const fStatus = auswahlfeld(document.getElementById('fStatus'), {
+  optionen: [{ wert: ALLE, text: 'Alle Zustände' },
+             { wert: 'neu', text: 'Wartet auf Zuordnung' },
+             { wert: 'zugeordnet', text: 'Einsortiert' }],
+  wert: ALLE, label: 'Zustand',
+  aenderung: wert => { filter.status = wert; laden(); },
+});
+
+function filterFuellen() {
+  fObjekt.fuelle([{ wert: ALLE, text: 'Alle Immobilien' },
+    ...daten.objekte.map(o => ({ wert: o.slug, text: `${o.name} (${o.anzahl})` }))],
+    filter.objekt);
+  fArt.fuelle([{ wert: ALLE, text: 'Alle Arten' },
+    ...(daten.kategorien.length ? daten.kategorien : daten.arten)
+      .map(a => ({ wert: a, text: a }))], filter.kategorie);
+  fJahr.fuelle([{ wert: ALLE, text: 'Alle Jahre' },
+    ...jahresliste().map(j => ({ wert: String(j), text: String(j) }))], filter.jahr);
+  const gefiltert = Boolean(filter.objekt || filter.kategorie || filter.jahr
+                            || filter.status || filter.suche);
+  zuruecksetzen.hidden = !gefiltert;
+}
+
+/* ---- Eine Karte je Dokument ---- */
+/** Der Teil des Namens, der die Bezeichnung ist: JJJJ_Art_Bezeichnung.pdf */
+const bezeichnung = d => {
+  const teile = d.dateiname.replace(/\.[^.]+$/, '').split('_');
+  return teile.length > 2 ? teile.slice(2).join(' ') : '';
+};
 
 function karte(d) {
-  const v = d.vorschlag || {};
-  const artOptionen = arten.map(a =>
-    `<option ${v.kategorie === a ? 'selected' : ''}>${esc(a)}</option>`).join('');
-  const objektOptionen = objekte.map(o =>
-    `<option value="${esc(o.slug)}" ${d.objekt === o.slug ? 'selected' : ''}>${
-      esc(o.name)}</option>`).join('');
-  const jahre = Array.from({ length: 8 }, (_, i) => jetzt - i)
-    .map(j => `<option ${(v.jahr || jetzt) === j ? 'selected' : ''}>${j}</option>`).join('');
-
-  const erkannt = [d.objekt_name, groesse(d.groesse), d.erkannt_am]
+  const offen = d.status === 'neu' || offenerBearbeiter === d.id;
+  const meta = [d.objekt_name, d.kategorie, d.jahr,
+                d.groesse ? lesbareGroesse(d.groesse) : null,
+                d.abgelegt ? null : 'Datei fehlt']
     .filter(Boolean).join(' · ');
-
-  return `<div class="beleg" data-id="${d.id}">
+  return `<article class="beleg" data-id="${d.id}" data-status="${esc(d.status)}">
       <div class="kopf">
-        <span class="sym">PDF</span>
+        <span class="sym">${d.abgelegt ? 'PDF' : '—'}</span>
         <span class="wer">
           <span class="dn">${esc(d.dateiname)}</span>
-          <span class="meta">${esc(erkannt)}</span>
+          <span class="meta">${esc(meta)}</span>
         </span>
+        ${d.status === 'neu' ? '<span class="marke">neu</span>' : ''}
       </div>
-      ${v.kategorie ? `<div class="vorschlag">Vermutung: ${esc(v.kategorie)}${
-        v.jahr ? ' · ' + v.jahr : ''}</div>` : ''}
-      <div class="felder">
-        <select data-feld="objekt" aria-label="Immobilie">${objektOptionen}</select>
-        <select data-feld="kategorie" aria-label="Art">${artOptionen}</select>
-        <select data-feld="jahr" aria-label="Jahr">${jahre}</select>
-        <input data-feld="beschreibung" placeholder="Kurzbeschreibung (optional)"
-               aria-label="Beschreibung">
+      <div class="ikons">
+        ${d.abgelegt ? `<button data-tat="oeffnen" aria-label="Beleg öffnen">
+          <span class="zeichen">↗</span><span class="wort">Öffnen</span></button>` : ''}
+        ${offen ? '' : `<button data-tat="bearbeiten" aria-label="Angaben ändern">
+          <span class="zeichen">✎</span><span class="wort">Ändern</span></button>`}
+        <button data-tat="erneut" aria-label="Neu einscannen">
+          <span class="zeichen">▣</span><span class="wort">Neu scannen</span></button>
+        <button data-tat="entfernen" class="gefahr" aria-label="Eintrag entfernen">
+          <span class="zeichen">⌫</span><span class="wort">Entfernen</span></button>
       </div>
-      <div class="tat">
-        <button data-tat="zuordnen">Zuordnen und einsortieren</button>
-        <button class="spaeter" data-tat="spaeter">Später</button>
-      </div>
-      <div class="ziel" data-ziel></div>
+      ${offen ? felder(d) : ''}
+      <span class="ziel" data-ziel></span>
+    </article>`;
+}
+
+function felder(d) {
+  return `<div class="felder">
+      <div data-feld="objekt"></div>
+      <div data-feld="kategorie"></div>
+      <div data-feld="jahr"></div>
+      <div class="breit"><input data-feld="beschreibung" maxlength="60"
+        placeholder="Bezeichnung (optional)" aria-label="Bezeichnung"
+        value="${esc(bezeichnung(d))}"></div>
+    </div>
+    <div class="tat">
+      <button data-tat="speichern">${d.status === 'neu'
+        ? 'Zuordnen und einsortieren' : 'Speichern'}</button>
+      ${d.status === 'neu' ? '' :
+        '<button class="weg" data-tat="abbrechen">Abbrechen</button>'}
     </div>`;
 }
 
-let arten = [];
+/* Die Auswahlfelder einer Karte leben nur, solange sie offen ist. */
+const bearbeiter = new Map();
 
-async function wachdienstZeigen() {
-  const feld = document.getElementById('wachdienst');
+function felderBeleben(karteEl, d) {
+  const v = d.vorschlag || {};
+  const bau = (feld, optionen, wert) => auswahlfeld(
+    karteEl.querySelector(`[data-feld="${feld}"]`),
+    { optionen, wert, label: feld });
+  bearbeiter.set(d.id, {
+    objekt: bau('objekt', daten.objekte.map(o => ({ wert: o.slug, text: o.name })),
+                d.objekt || daten.objekte[0]?.slug || ''),
+    kategorie: bau('kategorie', daten.arten.map(a => ({ wert: a, text: a })),
+                   d.kategorie || v.kategorie || 'Sonstiges'),
+    jahr: bau('jahr', jahresliste().map(j => ({ wert: String(j), text: String(j) })),
+              String(d.jahr || v.jahr || jetzt)),
+  });
+}
+
+function zeichne() {
+  bearbeiter.clear();
+  const { dokumente } = daten;
+  if (!dokumente.length) {
+    liste.innerHTML = daten.gesamt
+      ? `<div class="hinweisbox">
+           <div class="big">Nichts gefunden</div>
+           <p>Zu diesen Filtern liegt kein Dokument vor.</p>
+         </div>`
+      : `<div class="hinweisbox">
+           <div class="big">Noch keine Dokumente</div>
+           <p>Fotografiere einen Beleg ab, oder lege Dateien in den Hauptordner
+              einer Immobilie — beim nächsten Blick in den Ordner erscheinen
+              sie hier.</p>
+         </div>`;
+    return;
+  }
+  liste.innerHTML = dokumente.map(karte).join('');
+  for (const d of dokumente) {
+    const el = liste.querySelector(`[data-id="${d.id}"] .felder`);
+    if (el) felderBeleben(el.closest('.beleg'), d);
+  }
+}
+
+async function laden() {
+  const frage = new URLSearchParams();
+  for (const [schluessel, wert] of Object.entries(filter)) {
+    if (wert) frage.set(schluessel, wert);
+  }
+  try {
+    daten = await api('/dokumente?' + frage.toString());
+    const { anzahl, gesamt, offen } = daten;
+    sub.textContent = offen
+      ? `${offen} ${offen === 1 ? 'wartet' : 'warten'} auf Zuordnung`
+      : gesamt ? 'alles einsortiert' : 'noch nichts abgelegt';
+    zahl.textContent = anzahl === gesamt
+      ? `${gesamt} ${gesamt === 1 ? 'Dokument' : 'Dokumente'}`
+      : `${anzahl} von ${gesamt}`;
+    filterFuellen();
+    zeichne();
+    // Ohne Immobilie gibt es keinen Ort für einen Beleg — dann gleich sagen,
+    // was fehlt, statt die Kamera ins Leere laufen zu lassen.
+    const ohneObjekt = !daten.objekte.length;
+    kameraKnopf.disabled = ohneObjekt;
+    kameraKnopf.querySelector('.k2').textContent = ohneObjekt
+      ? 'Erst eine Immobilie anlegen'
+      : 'Mehrere Seiten möglich · wird als PDF abgelegt';
+  } catch (fehler) {
+    sub.textContent = 'nicht erreichbar';
+    liste.innerHTML = `<div class="hinweisbox">
+        <div class="big">Ablage nicht verfügbar</div>
+        <p>${esc(String(fehler.message || fehler))}</p>
+      </div>`;
+  }
+}
+
+/* ---- Fußnote: Wachdienst und Texterkennung, jede Information einmal ---- */
+async function fussnoteZeigen() {
+  const teile = [];
+  let warnung = false;
   try {
     const w = await api('/dokumente/wachdienst');
     const wann = w.letzter_lauf
       ? new Date(w.letzter_lauf).toLocaleTimeString('de-DE',
           { hour: '2-digit', minute: '2-digit' })
       : null;
-    feld.textContent = w.letzter_fehler
-      ? `Automatische Prüfung alle ${w.takt_minuten} min · zuletzt fehlgeschlagen`
+    teile.push(w.letzter_fehler
+      ? `Ordner werden alle ${w.takt_minuten} min geprüft · zuletzt fehlgeschlagen`
       : wann
-      ? `Automatisch geprüft alle ${w.takt_minuten} min · zuletzt ${wann} Uhr`
-      : `Automatische Prüfung alle ${w.takt_minuten} min · erster Lauf steht aus`;
-    feld.classList.toggle('warn', Boolean(w.letzter_fehler));
-  } catch {
-    feld.textContent = '';
-  }
-}
-
-async function laden() {
+      ? `Ordner geprüft alle ${w.takt_minuten} min · zuletzt ${wann} Uhr`
+      : `Ordner werden alle ${w.takt_minuten} min geprüft`);
+    warnung = Boolean(w.letzter_fehler);
+  } catch { /* ohne API keine Fußnote */ }
   try {
-    const [objekteListe, eingang] = await Promise.all([
-      api('/objekte'), api('/dokumente/inbox'),
-    ]);
-    objekte = objekteListe;
-    arten = eingang.arten;
-    const { anzahl, dokumente } = eingang;
-    wachdienstZeigen();
-    zahl.textContent = anzahl
-      ? `${anzahl} ${anzahl === 1 ? 'Dokument wartet' : 'Dokumente warten'}`
-      : 'Nichts offen';
-    sub.textContent = anzahl ? 'bitte zuordnen' : 'alles einsortiert';
-
-    if (!dokumente.length) {
-      liste.innerHTML = `<div class="hinweisbox">
-          <div class="big">Keine offenen Dokumente</div>
-          <p>Neu eingescannte Dateien im Hauptordner einer Immobilie erscheinen
-             hier automatisch zur Zuordnung.</p>
-        </div>`;
-      return;
+    const e = await api('/dokumente/erkennung');
+    erkennungMoeglich = Boolean(e.verfuegbar);
+    if (!erkennungMoeglich) {
+      teile.push('Texterkennung ist auf diesem Server nicht eingerichtet — '
+                 + 'Art und Jahr bitte selbst wählen');
+      warnung = true;
     }
-    liste.innerHTML = dokumente.map(karte).join('');
-  } catch (fehler) {
-    sub.textContent = 'nicht erreichbar';
-    liste.innerHTML = `<div class="hinweisbox">
-        <div class="big">Eingang nicht verfügbar</div>
-        <p>${esc(String(fehler.message || fehler))}</p>
-      </div>`;
-  }
+  } catch { /* Zustand unbekannt: dann eben ohne Hinweis */ }
+  fussnote.textContent = teile.join(' · ');
+  fussnote.classList.toggle('warn', warnung);
 }
 
-scanKnopf.addEventListener('click', async () => {
-  scanKnopf.disabled = true;
-  scanKnopf.textContent = 'Prüfe …';
+/* ---- Ordner prüfen ---- */
+pruefKnopf.addEventListener('click', async () => {
+  pruefKnopf.disabled = true;
+  pruefKnopf.textContent = 'Prüfe …';
   try {
-    const { neu } = await api('/dokumente/scan', { method: 'POST' });
-    scanKnopf.textContent = neu ? `${neu} neu gefunden` : 'Nichts Neues';
+    const { neu, automatisch } = await api('/dokumente/scan', { method: 'POST' });
+    pruefKnopf.textContent = !neu ? 'Nichts Neues'
+      : automatisch ? `${neu} neu · ${automatisch} einsortiert`
+      : `${neu} neu gefunden`;
     await laden();
   } catch (fehler) {
-    scanKnopf.textContent = 'Nextcloud fehlt';
+    pruefKnopf.textContent = 'Fehlgeschlagen';
     liste.insertAdjacentHTML('afterbegin', `<div class="hinweisbox">
-        <div class="big">Nextcloud ist nicht verbunden</div>
+        <div class="big">Ordner nicht gelesen</div>
         <p>${esc(String(fehler.message || fehler))}</p>
         <a href="settings.html">Zu den Einstellungen</a>
       </div>`);
   } finally {
     setTimeout(() => {
-      scanKnopf.disabled = false;
-      scanKnopf.textContent = 'Ordner prüfen';
-    }, 2200);
+      pruefKnopf.disabled = false;
+      pruefKnopf.textContent = 'Ordner prüfen';
+    }, 2400);
   }
 });
+
+/* ---- Suche: tippen filtert, ohne bei jedem Zeichen zu fragen ---- */
+let tippuhr = 0;
+document.getElementById('suche').addEventListener('input', e => {
+  clearTimeout(tippuhr);
+  filter.suche = e.target.value.trim();
+  tippuhr = setTimeout(laden, 250);
+});
+
+zuruecksetzen.addEventListener('click', () => {
+  Object.assign(filter, { objekt: ALLE, kategorie: ALLE, jahr: ALLE,
+                          status: ALLE, suche: '' });
+  document.getElementById('suche').value = '';
+  laden();
+});
+
+/* ---- Aktionen auf einer Karte ---- */
+const meldung = (karteEl, text, art) => {
+  const feld = karteEl.querySelector('[data-ziel]');
+  feld.textContent = text;
+  feld.className = 'ziel ' + (art || '');
+};
+
+let erneutFuer = null;
 
 liste.addEventListener('click', async e => {
   const knopf = e.target.closest('[data-tat]');
   if (!knopf) return;
-  const karte = knopf.closest('[data-id]');
+  const karteEl = knopf.closest('[data-id]');
+  const id = Number(karteEl.dataset.id);
+  const tat = knopf.dataset.tat;
 
-  if (knopf.dataset.tat === 'spaeter') {
-    karte.style.display = 'none';
+  if (tat === 'oeffnen') {
+    window.open(`/api/dokumente/${id}/inhalt`, '_blank', 'noopener');
+    return;
+  }
+  if (tat === 'bearbeiten') { offenerBearbeiter = id; zeichne(); return; }
+  if (tat === 'abbrechen') { offenerBearbeiter = null; zeichne(); return; }
+  if (tat === 'erneut') { erneutFuer = id; document.getElementById('erneutFeld').click(); return; }
+
+  if (tat === 'entfernen') {
+    if (knopf.dataset.sicher !== 'ja') {
+      knopf.dataset.sicher = 'ja';
+      knopf.innerHTML = '<span class="zeichen">⌫</span><span class="wort">Wirklich?</span>';
+      knopf.setAttribute('aria-label', 'Wirklich entfernen?');
+      knopf.classList.add('frage');
+      setTimeout(() => {
+        delete knopf.dataset.sicher;
+        knopf.classList.remove('frage');
+        knopf.innerHTML = '<span class="zeichen">⌫</span><span class="wort">Entfernen</span>';
+        knopf.setAttribute('aria-label', 'Eintrag entfernen');
+      }, 4000);
+      meldung(karteEl, 'Der Eintrag verschwindet aus der App — '
+                     + 'die Datei bleibt in der Nextcloud.');
+      return;
+    }
+    knopf.disabled = true;
+    try {
+      await api(`/dokumente/${id}`, { method: 'DELETE' });
+      await laden();
+    } catch (fehler) {
+      knopf.disabled = false;
+      meldung(karteEl, String(fehler.message || fehler), 'schlecht');
+    }
     return;
   }
 
-  const wert = feld => karte.querySelector(`[data-feld="${feld}"]`).value;
-  knopf.disabled = true;
-  knopf.textContent = 'Wird einsortiert …';
-  try {
-    const antwort = await api(`/dokumente/${karte.dataset.id}/zuordnen`, {
-      method: 'POST',
-      body: {
-        objekt: wert('objekt'), kategorie: wert('kategorie'),
-        jahr: Number(wert('jahr')), beschreibung: wert('beschreibung'),
-      },
-    });
-    karte.querySelector('[data-ziel]').textContent = '✓ ' + antwort.pfad;
-    knopf.textContent = 'Einsortiert';
-    setTimeout(laden, 1400);
-  } catch (fehler) {
-    knopf.disabled = false;
-    knopf.textContent = 'Zuordnen und einsortieren';
-    karte.querySelector('[data-ziel]').textContent =
-      '⚠ ' + String(fehler.message || fehler);
+  if (tat === 'speichern') {
+    const wahl = bearbeiter.get(id);
+    if (!wahl) return;
+    knopf.disabled = true;
+    const vorher = knopf.textContent;
+    knopf.textContent = 'Wird einsortiert …';
+    try {
+      const antwort = await api(`/dokumente/${id}`, {
+        method: 'PATCH',
+        body: {
+          objekt: wahl.objekt.wert(), kategorie: wahl.kategorie.wert(),
+          jahr: Number(wahl.jahr.wert()),
+          beschreibung: karteEl.querySelector('[data-feld="beschreibung"]').value.trim(),
+        },
+      });
+      offenerBearbeiter = null;
+      meldung(karteEl, (antwort.verschoben ? '✓ ' : '✓ unverändert · ') + antwort.pfad,
+              'gut');
+      setTimeout(laden, 1200);
+    } catch (fehler) {
+      knopf.disabled = false;
+      knopf.textContent = vorher;
+      meldung(karteEl, '⚠ ' + String(fehler.message || fehler), 'schlecht');
+    }
   }
 });
 
-/* ---- Beleg abfotografieren ----------------------------------------------
+/* ---- Beleg abfotografieren ------------------------------------------------
    <input capture> öffnet auf iOS direkt die Kamera. Die Aufnahmen werden im
-   Browser verkleinert und zu einem PDF zusammengesetzt; hochgeladen wird nur
-   das fertige PDF. */
+   Browser verkleinert und zu einem PDF zusammengesetzt; die Texterkennung
+   liest die erste Seite und schlägt Art und Jahr vor. Steht die Immobilie
+   fest und ist die Art erkannt, wird ohne Rückfrage abgelegt. */
 const kameraKnopf = document.getElementById('kamera');
 const kameraFeld = document.getElementById('kameraFeld');
 
 kameraKnopf.addEventListener('click', () => kameraFeld.click());
+
+async function erkenne(bild) {
+  if (!erkennungMoeglich) return null;
+  try {
+    const paket = new FormData();
+    paket.append('datei', bild, 'seite.jpg');
+    const antwort = await fetch('/api/dokumente/erkennen',
+                                { method: 'POST', body: paket });
+    return antwort.ok ? await antwort.json() : null;
+  } catch {
+    return null;
+  }
+}
 
 kameraFeld.addEventListener('change', async () => {
   const dateien = [...kameraFeld.files];
@@ -330,8 +585,19 @@ kameraFeld.addEventListener('change', async () => {
   unterzeile.textContent = `${dateien.length} Aufnahme${dateien.length > 1 ? 'n' : ''}`;
 
   try {
-    const { pdf, seiten } = await scanZuPdf(dateien);
-    const auswahl = await zielAbfragen(seiten, pdf.size);
+    const [{ pdf, seiten }, erkannt] = await Promise.all([
+      scanZuPdf(dateien), erkenne(dateien[0]),
+    ]);
+    // Eindeutig ist die Immobilie, wenn es nur eine gibt — oder wenn gerade
+    // nach einer gefiltert wird.
+    const einzige = daten.objekte.length === 1 ? daten.objekte[0].slug : '';
+    const objekt = filter.objekt || einzige;
+    const kategorie = erkannt?.kategorie || '';
+    const vorgabe = { objekt, kategorie, jahr: erkannt?.jahr || jetzt,
+                      beschreibung: '' };
+
+    const auswahl = (objekt && kategorie) ? vorgabe
+      : await zielAbfragen(seiten, pdf.size, vorgabe, erkannt);
     if (!auswahl) throw new Error('abgebrochen');
 
     const paket = new FormData();
@@ -348,10 +614,8 @@ kameraFeld.addEventListener('change', async () => {
       throw new Error(grund || `Fehler ${antwort.status}`);
     }
     const ergebnis = await antwort.json();
-    beschriftung.textContent = ergebnis.abgelegt ? '✓ Abgelegt' : '✓ Im Eingang';
-    unterzeile.textContent = ergebnis.abgelegt
-      ? `${ergebnis.dateiname} · ${lesbareGroesse(pdf.size)}`
-      : ergebnis.hinweis;
+    beschriftung.textContent = '✓ Abgelegt';
+    unterzeile.textContent = `${ergebnis.dateiname} · ${lesbareGroesse(pdf.size)}`;
     await laden();
   } catch (fehler) {
     const text = String(fehler.message || fehler);
@@ -362,26 +626,66 @@ kameraFeld.addEventListener('change', async () => {
       kameraKnopf.disabled = false;
       beschriftung.textContent = 'Beleg abfotografieren';
       unterzeile.textContent = 'Mehrere Seiten möglich · wird als PDF abgelegt';
-    }, 3200);
+    }, 3400);
   }
 });
 
-/** Kleiner Dialog: wohin gehört der Scan? */
-function zielAbfragen(seiten, groesse) {
+/* ---- Neu einscannen: ersetzt den Beleg eines vorhandenen Eintrags ---- */
+document.getElementById('erneutFeld').addEventListener('change', async e => {
+  const dateien = [...e.target.files];
+  e.target.value = '';
+  const id = erneutFuer;
+  erneutFuer = null;
+  if (!dateien.length || !id) return;
+  const karteEl = liste.querySelector(`[data-id="${id}"]`);
+  if (karteEl) meldung(karteEl, 'Neue Aufnahme wird abgelegt …');
+  try {
+    const { pdf } = await scanZuPdf(dateien);
+    const paket = new FormData();
+    paket.append('datei', pdf, 'scan.pdf');
+    const antwort = await fetch(`/api/dokumente/${id}/neu`,
+                                { method: 'POST', body: paket });
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      throw new Error(grund || `Fehler ${antwort.status}`);
+    }
+    const ergebnis = await antwort.json();
+    await laden();
+    const neueKarte = liste.querySelector(`[data-id="${id}"]`);
+    if (neueKarte) meldung(neueKarte, '✓ ' + ergebnis.hinweis, 'gut');
+  } catch (fehler) {
+    if (karteEl) meldung(karteEl, '⚠ ' + String(fehler.message || fehler), 'schlecht');
+  }
+});
+
+/** Ein Schritt, nicht drei: alles Nötige in einem Dialog, vorbelegt mit dem,
+    was die Texterkennung gelesen hat. */
+function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
   return new Promise(fertig => {
     const dlg = document.getElementById('zielDlg');
+    const gelesen = erkannt?.kategorie || erkannt?.betrag
+      ? ` · erkannt: ${[erkannt.kategorie, erkannt.jahr,
+          erkannt.betrag ? erkannt.betrag.toFixed(2).replace('.', ',') + ' €' : null]
+          .filter(Boolean).join(' · ')}`
+      : erkennungMoeglich ? '' : ' · Texterkennung nicht eingerichtet';
     document.getElementById('zielInfo').textContent =
-      `${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(groesse)}`;
+      `${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(groesse)}${gelesen}`;
 
-    const objektWahl = document.getElementById('zielObjekt');
-    objektWahl.innerHTML = objekte.map(o =>
-      `<option value="${esc(o.slug)}">${esc(o.name)}</option>`).join('');
-    const artWahl = document.getElementById('zielArt');
-    artWahl.innerHTML = arten.map(a => `<option>${esc(a)}</option>`).join('');
-    const jahrWahl = document.getElementById('zielJahr');
-    const jetzt = new Date().getFullYear();
-    jahrWahl.innerHTML = Array.from({ length: 8 }, (_, i) => jetzt - i)
-      .map(j => `<option>${j}</option>`).join('');
+    if (!zielFelder) {
+      zielFelder = {
+        objekt: auswahlfeld(document.getElementById('zielObjekt'),
+                            { label: 'Immobilie' }),
+        art: auswahlfeld(document.getElementById('zielArt'), { label: 'Art' }),
+        jahr: auswahlfeld(document.getElementById('zielJahr'), { label: 'Jahr' }),
+      };
+    }
+    const { objekt: objektWahl, art: artWahl, jahr: jahrWahl } = zielFelder;
+    objektWahl.fuelle(daten.objekte.map(o => ({ wert: o.slug, text: o.name })),
+                      vorgabe.objekt || daten.objekte[0]?.slug || '');
+    artWahl.fuelle(daten.arten.map(a => ({ wert: a, text: a })),
+                   vorgabe.kategorie || 'Sonstiges');
+    jahrWahl.fuelle(jahresliste().map(j => ({ wert: String(j), text: String(j) })),
+                    String(vorgabe.jahr));
 
     let entschieden = false;
     const abbruch = () => { if (!entschieden) fertig(null); };
@@ -390,9 +694,9 @@ function zielAbfragen(seiten, groesse) {
       entschieden = true;
       dlg.close();
       fertig({
-        objekt: objektWahl.value,
-        kategorie: artWahl.value,
-        jahr: Number(jahrWahl.value),
+        objekt: objektWahl.wert(),
+        kategorie: artWahl.wert(),
+        jahr: Number(jahrWahl.wert()),
         beschreibung: document.getElementById('zielText').value.trim(),
       });
     };
@@ -401,6 +705,7 @@ function zielAbfragen(seiten, groesse) {
 }
 
 await laden();
+await fussnoteZeigen();
 </script>
 </body>
 </html>

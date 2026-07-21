@@ -110,16 +110,24 @@ await page.evaluate(async () => {
   feld.files = daten.files;
   feld.dispatchEvent(new Event('change', { bubbles: true }));
 });
-await page.waitForSelector('#zielDlg[open]', { timeout: 8000 })
-  .catch(() => pruefe(false, 'Ziel-Dialog öffnet nicht'));
-await page.screenshot({ path: 'tests/screenshots/scan-dialog.png', fullPage: true });
-
-const objekte = await page.$$eval('#zielObjekt option', o => o.length);
-const arten = await page.$$eval('#zielArt option', o => o.length);
-pruefe(objekte > 0, 'keine Immobilie zur Auswahl');
-pruefe(arten > 0, 'keine Dokumentart zur Auswahl');
-
-await page.click('#zielOk');
+// Der Dialog kommt nur, wenn etwas offen ist: steht die Immobilie fest und hat
+// die Texterkennung die Art gelesen, wird ohne Rückfrage abgelegt. Beide Wege
+// sind richtig — geprüft wird, dass am Ende eine Rückmeldung steht.
+const dialog = await page.waitForSelector('#zielDlg[open]', { timeout: 8000 })
+  .catch(() => null);
+if (dialog) {
+  await page.screenshot({ path: 'tests/screenshots/scan-dialog.png', fullPage: true });
+  // Auswahlfelder im eigenen Design (assets/auswahl.js), keine Systemliste
+  pruefe(await page.$$eval('#zielObjekt option', o => o.length) === 0,
+    'natives <select> im Ziel-Dialog');
+  const objekte = await page.$$eval('#zielObjekt .auswahl-liste li', o => o.length);
+  const arten = await page.$$eval('#zielArt .auswahl-liste li', o => o.length);
+  pruefe(objekte > 0, 'keine Immobilie zur Auswahl');
+  pruefe(arten > 0, 'keine Dokumentart zur Auswahl');
+  await page.click('#zielOk');
+} else {
+  console.log('   Ohne Rückfrage abgelegt (Immobilie und Art eindeutig)');
+}
 await page.waitForTimeout(1500);
 const text = await page.textContent('.kamera');
 pruefe(/Abgelegt|Eingang|Nextcloud/i.test(text), 'keine Rückmeldung: ' + text.trim());
