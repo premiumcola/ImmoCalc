@@ -70,6 +70,13 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 | CLXVI | Ordnervorlage läuft ohne Straße leer | Ein Grundstück hat oft keine Straße; die Vorlage `({ort}) {strasse} · {name}` sollte auf Gemarkung und Flurstück ausweichen |
 | CLXVII | Pacht heißt in der Auswertung noch „Miete" | `auswertung.py`/`cashflow.py` führen ein Objekt ohne Einheiten als Pseudo-Einheit; Pachterträge laufen mit, sind aber nicht als Pacht benannt. Ebenso zeigt `wertentwicklung.html` „Verkehrswert" statt „Grundstückswert" |
 
+### Zwei Ebenen: Haus und Einheit — aus dem Gespräch vom 21.07.2026
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CLXVIII | **Das Haus zeigt alles, die Einheit nur ihres** | Zwei Ebenen mit klarer Aufteilung. **Am Haus** (übergeordnet, alles zusammengefasst): Stammdaten, Eigentümer, Kredite, Versicherungen, Steuer, Zahlungen, Dokumentenablage — alles, was nicht auf eine einzelne Wohnung läuft. Von dort springt man auf die Einheiten hinunter. **An der Einheit** (im Fokus): Mieter und Mietverhältnis, Kontakt, Nebenkosten und Abrechnungszeitraum. Die Stammdaten des Hauses werden dort **nicht wiederholt**. Verkehrswert nur, wenn er für diese Einheit gepflegt ist. Von der Einheit führt ein Weg zurück zum Haus |
+| CLXIX | **Einheit per Bubble wählen** | Beim Anlegen eines Mietverhältnisses die Einheit als Bubbles anbieten — vier Blasen, eine antippen. Kein Freitext (siehe XCII: ein Tippfehler lässt die Partei stumm aus der Verteilung fallen), keine Liste zum Aufklappen |
+
 ### Eigentum je Einheit — aus dem Gespräch vom 21.07.2026
 
 | Nr. | Aufgabe | Was gemeint ist |
