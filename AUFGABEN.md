@@ -176,6 +176,10 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | CXIX | **Umbenennung zieht überall nach** | Ändert sich das Benennungsschema, wird es für **alle** Immobilien korrigiert — und die Belege bleiben dabei korrekt verknüpft (`Dokument.pfad` und die Cloud-Ordner müssen mitwandern, sonst zeigen Scans ins Leere) |
 | CXX | **Alte Benennung wurde nicht umgezogen** | Im Cloud-Ordner steht die alte Struktur neben der neuen, und die neue ist doppelt geschachtelt: `(Eschenau) Laufer Str. 5/(Eschenau) Laufer Str. 5/`. Dazu die verwaiste `Wohnung 1.OG` von der alten Benennung. Aufräumen und den Umzug nachholen |
 | CXXI | **Leerstand verschiebt Kosten auf die Mieter** | Nebenwirkung aus `9fa866c`: endet ein Mietverhältnis mitten im Jahr ohne Nachmieter, trägt der verbleibende Mieter 75 % statt 60 %. Der Leerstand braucht einen eigenen Bezug, damit er beim Eigentümer hängen bleibt |
+| CXXII | **Keine Doppelnennung im Dateinamen** | `2026_Nebenkosten_Heizkosten.pdf` im Ordner `60_Nebenkosten` sagt „Nebenkosten" zweimal. Der Ordner ist Kontext — der Dateiname nennt nur, was er hinzufügt |
+| CXXIII | **Spezifisch benennen, Betrag anhängen** | Nicht „Heizkosten", sondern die Sache selbst: `2026_Heizöl_1.284€.pdf`. Den Betrag hinten anhängen, so wie der Nutzer es auf seinen Zetteln notiert — dann steht die wichtigste Zahl schon im Ordner |
+| CXXIV | **Datum und Betrag in der Dokumentenliste** | Fehlt heute komplett: von wann ist der Beleg, welcher Betrag wurde erkannt? Beides gehört in die Karte, nicht nur in den Dateinamen |
+| CXXV | **Rechte Spalte: erkannt → wird eingetragen** | Je Beleg sichtbar machen, was erkannt wurde und was daraus in der App entsteht — mit Bestätigung. Über den Abrechnungszeitraum ist meist klar, wohin er gehört: also vorschlagen, auswählbar lassen, bestätigen. **Kein Beleg ohne Position** in der jeweiligen Immobilie |
 
 ### Bewusst zurückgestellt
 
