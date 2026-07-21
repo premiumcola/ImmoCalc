@@ -100,7 +100,23 @@ function melde(name, status, errors, extra = []) {
   await page.waitForSelector('.karte', { timeout: 8000 }).catch(() => {});
   const charts = await page.$$('svg.chart, .chartleer');
   if (charts.length < 2) extra.push(`nur ${charts.length} Diagramme gerendert`);
-  if (await page.$('.kategorien button') === null) extra.push('Kostenart-Filter fehlt');
+  // Der Kostenart-Filter zeigt nur Arten, zu denen es im gewaehlten Jahr auch
+  // Kosten gibt. Die Seite startet im laufenden Jahr, das meist noch leer ist —
+  // dort sind null Schalter richtig (CLVI). Geprueft wird deshalb im Jahr mit
+  // Zahlen, und zwar ueber die Antwort der API statt ueber das Vorjahr-Raten.
+  const mitZahlen = await page.evaluate(async () => {
+    const jetzt = new Date().getFullYear();
+    for (const j of [jetzt, jetzt - 1, jetzt - 2]) {
+      const r = await fetch(`/api/auswertung?jahr=${j}&sicht=mieter`).catch(() => null);
+      if (!r || !r.ok) continue;
+      const d = await r.json();
+      const summe = Object.values(d.mieter?.bloecke || {})
+        .reduce((s, v) => s + (Number(v) || 0), 0);
+      if (summe > 0) return j;
+    }
+    return null;
+  });
+  if (mitZahlen === null) extra.push('kein Jahr mit umlagefähigen Kosten gefunden');
   if (await page.$('a.zr[href^="zeitraum.html"]') === null)
     extra.push('kein Sprung in einen Abrechnungszeitraum');
   const titel = await page.$$eval('.karte h3', hs => hs.map(h => h.textContent));
