@@ -70,6 +70,17 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 | CLXVI | Ordnervorlage läuft ohne Straße leer | Ein Grundstück hat oft keine Straße; die Vorlage `({ort}) {strasse} · {name}` sollte auf Gemarkung und Flurstück ausweichen |
 | CLXVII | Pacht heißt in der Auswertung noch „Miete" | `auswertung.py`/`cashflow.py` führen ein Objekt ohne Einheiten als Pseudo-Einheit; Pachterträge laufen mit, sind aber nicht als Pacht benannt. Ebenso zeigt `wertentwicklung.html` „Verkehrswert" statt „Grundstückswert" |
 
+### Aus der Erprobung der neuen Dokumentenseite (21.07.2026)
+
+| Nr. | Fund | Was gemeint ist |
+|---|---|---|
+| CLXX | **Betrag aus Text-PDFs lesen** | Eine maschinengeschriebene Rechnung (Kaminkehrer, Rechnungsbetrag fett auf dem Blatt) meldet „Betrag nicht erkannt". Bei einem Text-PDF braucht es gar keine Bilderkennung — der Text steht in der Datei. Heute läuft alles über Tesseract, das hier nicht einmal eingerichtet ist |
+| CLXXI | **Kostenart wählen, nicht nur die Art** | Wie CXXVIII: „Nebenkosten" allein reicht nicht, es muss „Kaminkehrer" wählbar sein — aus den Kostenarten des jeweiligen Objekts |
+| CLXXII | **Rechnungsdatum muss in den Zeitraum passen** | Abrechnungszeiträume liegen nicht immer im Kalenderjahr (z. B. 01.10.–30.09.). Der Beleg gehört in den Zeitraum, in den sein **genaues Datum** fällt — das muss sichtbar geprüft und angezeigt werden |
+| CLXXIII | **Aufteilung am großen Schirm** | Links steht viel Leerfläche, rechts wird es eng. Links gehört mehr untereinander, rechts mehr Platz für den Beleg |
+| CLXXIV | **Auswahlfelder schneiden den Text ab** | „(Eschenau…", „Nebenkost…" — die Felder sind zu schmal, um lesbar zu sein |
+| CLXXV | **Erledigtes wird grün** | Was gewählt und vollständig ist, färbt sich grün; ist alles grün, kann zugeordnet werden |
+
 ### Zwei Ebenen: Haus und Einheit — aus dem Gespräch vom 21.07.2026
 
 | Nr. | Aufgabe | Was gemeint ist |
