@@ -30,9 +30,26 @@
   .kamera .k2{display:block;font:400 12px var(--body);opacity:.85;margin-top:3px;
               line-height:1.4}
 
+  /* Am Schreibtisch fotografiert niemand einen Beleg ab — dort ist der
+     breite Balken nur eine Bank, die den Blick auf die Arbeit versperrt. Er
+     wird zum schlanken Knopf neben der Suche; die Handlung bleibt erreichbar,
+     kostet aber keine Zeile Höhe mehr. */
+  @media (min-width:1000px){
+    .kamera{width:auto;margin:0;padding:11px 15px;border-radius:12px;
+            box-shadow:none;gap:9px;order:3;flex:none}
+    .kamera .ks{width:22px;height:22px;background:none;font-size:15px}
+    .kamera .k2{display:none}
+    .kamera .k1{font:600 13px var(--disp)}
+  }
+
   .fussnote{display:block;font:500 11.5px var(--mono);color:var(--soft);
             margin:0 0 12px;line-height:1.5}
   .fussnote.warn{color:var(--amber)}
+  /* Der Hinweis zum Ordner-Takt gehoert am Schreibtisch neben die Werkzeuge,
+     nicht als eigene Zeile darueber. */
+  @media (min-width:1000px){
+    .fussnote{margin:0 0 10px}
+  }
 
   /* Werkzeugleiste: suchen und den Ordner neu einlesen */
   .werkzeuge{display:flex;gap:8px;margin-bottom:10px}
@@ -72,11 +89,8 @@
      untereinander stehen. Vorher war es umgekehrt, und rechts wurde es eng,
      waehrend links eine handbreite Flaeche leer blieb. */
   @media (min-width:1180px){
-    .flaeche{grid-template-columns:minmax(0,1fr) minmax(430px,44%)}
+    .flaeche{grid-template-columns:minmax(320px,26rem) minmax(0,1fr)}
     .spalteblatt{position:sticky;top:8px}
-  }
-  @media (min-width:1600px){
-    .flaeche{grid-template-columns:minmax(0,1fr) minmax(520px,42%)}
   }
 
   .beleg{background:var(--sheet);border-radius:16px;padding:14px;margin-bottom:10px;
@@ -118,6 +132,12 @@
      es seinen eigenen Text ab („(Eschenau…", „Nebenkost…"). */
   .felder{margin-top:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
           gap:10px}
+  /* Steht der Beleg daneben, stehen die Angaben untereinander: schmale Spalte
+     links, dafuer das Blatt rechts so breit wie moeglich. Nebeneinander wurden
+     die Auswahlfelder so eng, dass sie ihren eigenen Text abschnitten.
+     Diese Regel muss NACH der Grundregel stehen, sonst gewinnt die
+     zweispaltige. */
+  @media (min-width:1180px){.felder{grid-template-columns:minmax(0,1fr)}}
   .felder .breit{grid-column:1 / -1}
   /* Die Felder einer Zeile fluchten unten, auch wenn eine Beschriftung
      umbricht — sonst rutscht ein Feld gegenüber seinem Nachbarn nach unten. */
@@ -144,7 +164,18 @@
   .blatt{background:var(--sheet);border-radius:16px;padding:14px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .beleg .blatt{margin-top:14px;background:var(--paper);box-shadow:none;padding:0}
+  /* Der Kopf des Prüfblatts hält sich zurück: der Dateiname steht schon auf
+     der Karte links, und je höher das Blatt beginnt, desto mehr davon sieht
+     man. Auf breiten Schirmen wandert das Kreuz deshalb über die Vorschau
+     statt über ihr zu stehen. */
   .bkopf{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  @media (min-width:1180px){
+    .bkopf{position:absolute;top:8px;right:8px;z-index:2;margin:0}
+    .bkopf .bname{display:none}
+    .bkopf .bzu{background:rgba(255,255,255,.92);
+                box-shadow:0 1px 3px rgba(22,38,44,.18)}
+    .spalteblatt .blatt{position:relative}
+  }
   .bkopf .bname{flex:1;min-width:0;font:500 11.5px var(--mono);color:var(--soft);
     line-height:1.5;word-break:break-word}
   .bkopf .bzu{flex:none;width:44px;height:44px;border:none;border-radius:12px;
@@ -802,6 +833,10 @@ async function laden() {
    nebeneinander ist dort kein Platz, und weit weg von der Karte wäre er
    nutzlos. */
 const breit = window.matchMedia('(min-width:1180px)');
+// Am Schreibtisch wandert „Beleg abfotografieren" in die Werkzeugleiste (siehe
+// die Regel dazu im Stilblock): dort bleibt die Handlung erreichbar, ohne eine
+// ganze Zeile Höhe über der Arbeitsfläche zu belegen.
+const schreibtisch = window.matchMedia('(min-width:1000px)');
 
 function blattPlatzieren() {
   const platz = (gewaehlt !== null && !breit.matches)
@@ -809,7 +844,17 @@ function blattPlatzieren() {
   (platz || spalteBlatt).appendChild(blatt);
 }
 
+function kameraPlatzieren() {
+  const knopf = document.getElementById('kamera');
+  const leiste = document.querySelector('.werkzeuge');
+  if (!knopf || !leiste) return;
+  if (schreibtisch.matches) leiste.appendChild(knopf);
+  else leiste.parentNode.insertBefore(knopf, leiste.parentNode.firstChild);
+}
+
 breit.addEventListener('change', () => { blattPlatzieren(); });
+schreibtisch.addEventListener('change', () => { kameraPlatzieren(); });
+kameraPlatzieren();
 
 function blattZeigen() {
   const d = gewaehlt !== null ? dok(gewaehlt) : null;
@@ -1326,7 +1371,13 @@ async function vorschauLaden(d) {
     vorschauAdresse = URL.createObjectURL(blob);
     const rahmen = document.createElement('iframe');
     rahmen.title = `Vorschau ${d.dateiname}`;
-    rahmen.src = vorschauAdresse;
+    // Der eingebaute PDF-Betrachter blendet ab einer gewissen Breite eine
+    // Seitenleiste mit Vorschaubildchen ein — die frisst genau den Platz, den
+    // die breite Spalte dem Blatt geben soll. `navpanes=0` haelt sie weg,
+    // `toolbar=0` nimmt die Leiste darueber, `view=FitH` legt das Blatt auf
+    // die volle Breite. Die Werte sind Bitten an den Betrachter, keine
+    // Zusicherung — ignoriert er sie, sieht es aus wie bisher.
+    rahmen.src = vorschauAdresse + '#toolbar=0&navpanes=0&statusbar=0&view=FitH';
     bSchau.appendChild(rahmen);
     bSchau.insertAdjacentHTML('beforeend', '<span class="lupe">größer ansehen</span>');
   } catch (fehler) {
