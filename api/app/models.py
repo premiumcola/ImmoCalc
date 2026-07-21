@@ -29,6 +29,11 @@ class Objekt(SQLModel, table=True):
     # Stammdaten für die Auswertung (alles optional — Objekte funktionieren auch ohne)
     strasse: str = ""
     plz: str = ""
+    # Amtlicher Gemeindeschlüssel. Bleibt leer; erkannt wird die Gemeinde
+    # sonst über PLZ und Ortsname (`kappungsgrenze.gemeinde_fuer`). Das Feld
+    # ist die Notbremse für Fälle, in denen beides nicht trägt — etwa weil
+    # eine Verordnung die Gemeinde anders schreibt als der Ort im Objekt.
+    ags: str = ""
     flaeche: Optional[float] = None
     kaufpreis: Optional[float] = None
     kaufdatum: Optional[date] = None
@@ -201,16 +206,54 @@ class Miete(SQLModel, table=True):
     notiz: str = ""
 
 
+# Vertragsarten unter „Kredite". Ein Bausparvertrag steht dort mit, weil er
+# an derselben Immobilie hängt und dieselbe Rate im Monat kostet — gerechnet
+# wird er aber umgekehrt: was eingezahlt ist, ist Guthaben, keine Schuld.
+DARLEHEN = "Darlehen"
+BAUSPARVERTRAG = "Bausparvertrag"
+VERTRAGSARTEN = (DARLEHEN, BAUSPARVERTRAG)
+
+
+def ist_bausparer(kredit) -> bool:
+    """Ist dieser Vertrag ein Bausparvertrag (statt eines Darlehens)?
+
+    Grosszügig geprüft: Bestandszeilen haben `art = 'Darlehen'` (Vorgabe der
+    Migration), neu angelegte den vollen Namen. Ein leeres Feld ist ein
+    Darlehen — so bleibt jede gewachsene Datenbank unverändert richtig."""
+    return str(getattr(kredit, "art", "") or "").strip().lower().startswith("bauspar")
+
+
 class Kredit(SQLModel, table=True):
+    """Ein Finanzierungsvertrag am Objekt — Darlehen oder Bausparvertrag.
+
+    Beide teilen sich Bank, Rate, Turnus und Zinssatz; sie unterscheiden sich
+    in dem, was der Vertrag über die Jahre aufbaut:
+
+    * **Darlehen** — `restschuld` sinkt, jede Rate besteht aus Zins und
+      Tilgung. Die Restschuld mindert das Eigenkapital.
+    * **Bausparvertrag** — `angespart` wächst auf `bausparsumme` zu, die Rate
+      ist ein Sparbeitrag. Das Guthaben *erhöht* das Eigenkapital, und in der
+      Ansparphase gibt es keine Zinslast: der Zinssatz ist ein Habenzins.
+
+    `art` ist additiv und steht auf `Darlehen`, solange niemand etwas anderes
+    wählt — jeder Bestand rechnet damit weiter wie bisher."""
     id: Optional[int] = Field(default=None, primary_key=True)
     objekt_id: int = Field(foreign_key="objekt.id", index=True)
     bezeichnung: str
+    art: str = DARLEHEN                    # 'Darlehen' | 'Bausparvertrag'
     bank: str = ""
     darlehensnummer: str = ""
     urspruenglich: Optional[float] = None
     restschuld: Optional[float] = None
-    zinssatz: Optional[float] = None       # Prozent p. a.
-    rate_monatlich: float = 0.0            # Rate je Turnus (Annuität)
+    # --- nur beim Bausparvertrag -----------------------------------------
+    # Die Bausparsumme ist das Ziel des Vertrags, `angespart` der Stand bei
+    # Beginn. „Noch zu sparen" ist die Differenz und wird nicht gespeichert —
+    # sie ergibt sich (siehe `vermoegen.kreditstand`).
+    bausparsumme: Optional[float] = None
+    angespart: Optional[float] = None
+    # ---------------------------------------------------------------------
+    zinssatz: Optional[float] = None       # Prozent p. a. (Bausparer: Habenzins)
+    rate_monatlich: float = 0.0            # Rate je Turnus (Annuität / Sparrate)
     turnus: str = "monatlich"
     zinsbindung_bis: Optional[date] = None
     beginn: Optional[date] = None
@@ -218,19 +261,27 @@ class Kredit(SQLModel, table=True):
 
 
 class Kreditstand(SQLModel, table=True):
-    """Restschuld eines Kredits zum Ende eines Jahres — wie ein Zählerstand.
+    """Der Jahresstand eines Vertrags zum 31.12. — wie ein Zählerstand.
 
-    Die Bank weist die Restschuld immer zum 31.12. aus; nur dieser Wert lässt
-    sich verlässlich eintragen. Zwischen zwei Ständen schreibt
-    `vermoegen.stand_fortschreiben` monatlich fort (Rate minus Zinsanteil =
-    Tilgung). Der nächste eingetragene Stand ist die Wahrheit und setzt die
-    Rechnung wieder auf den echten Wert.
+    Beim **Darlehen** ist das die Restschuld: die Bank weist sie immer zum
+    31.12. aus, nur dieser Wert lässt sich verlässlich eintragen. Zwischen
+    zwei Ständen schreibt `vermoegen.stand_fortschreiben` monatlich fort
+    (Rate minus Zinsanteil = Tilgung).
+
+    Beim **Bausparvertrag** steht in derselben Spalte der Sparstand — dieselbe
+    Mechanik mit umgekehrtem Vorzeichen: die Rate erhöht das Guthaben, der
+    Zins schreibt es zusätzlich fort, und über die Bausparsumme hinaus wächst
+    es nicht. Welche der beiden Lesarten gilt, sagt `Kredit.art`; die Spalte
+    heisst weiter `restschuld`, weil jede bestehende Zeile eine ist.
+
+    Der nächste eingetragene Stand ist die Wahrheit und setzt die Rechnung
+    wieder auf den echten Wert.
 
     Ein Stand je Kredit und Jahr — ein zweiter ändert den vorhandenen."""
     id: Optional[int] = Field(default=None, primary_key=True)
     kredit_id: int = Field(foreign_key="kredit.id", index=True)
     jahr: int = Field(index=True)          # der Stand gilt zum 31.12. dieses Jahres
-    restschuld: float = 0.0
+    restschuld: float = 0.0                # Bausparer: Sparstand
     notiz: str = ""
 
 

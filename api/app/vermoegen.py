@@ -3,22 +3,34 @@
 Rechnet je Objekt und in Summe:
   Wert        — Verkehrswert, ersatzweise Kaufpreis
   Restschuld  — Summe der offenen Darlehen
-  Eigenkapital = Wert − Restschuld
+  Guthaben    — Summe der Bausparguthaben
+  Eigenkapital = Wert − Restschuld + Bausparguthaben
   Volumen     — investiertes Volumen (Kaufpreis)
   Beleihung   — Restschuld / Wert in Prozent
 
 Fehlen Angaben, wird die Zeile trotzdem gezeigt — mit dem, was da ist. Ein
 Objekt ohne Kredit hat schlicht keine Restschuld, das ist kein Fehler.
 
-Die Restschuld eines Kredits wird nicht geraten: eingetragen wird der Stand
-zum 31.12. eines Jahres — wie ein Zählerstand —, dazwischen schreibt
-`stand_fortschreiben` monatlich fort.
+Der Stand eines Vertrags wird nicht geraten: eingetragen wird er zum 31.12.
+eines Jahres — wie ein Zählerstand —, dazwischen schreibt
+`stand_fortschreiben` bzw. `spar_fortschreiben` monatlich fort.
+
+**Ein Bausparvertrag ist kein Darlehen** (CXLIX). Er läuft unter derselben
+Überschrift, weil er an derselben Immobilie hängt und dieselbe Rate im Monat
+kostet — gerechnet wird er aber umgekehrt:
+
+  Darlehen         Restschuld sinkt · mindert das Eigenkapital · Zinslast
+  Bausparvertrag   Guthaben wächst · erhöht das Eigenkapital · keine Zinslast
+
+Ein Bausparguthaben in der Beleihungsquote aufzurechnen wäre falsch: die
+Quote misst, wie stark das Objekt belastet ist, und das Guthaben liegt
+daneben, nicht darin.
 """
 from __future__ import annotations
 
 from datetime import date
 
-from .models import ist_grundstueck
+from .models import ist_bausparer, ist_grundstueck
 from .turnus import jahresbetrag
 
 
@@ -111,52 +123,120 @@ def stand_fortschreiben(rest: float, rate_monat: float, zinssatz: float | None,
     return round(wert, 2)
 
 
+def spar_fortschreiben(stand: float, rate_monat: float, zinssatz: float | None,
+                       monate: int, ziel: float | None = None) -> float:
+    """Sparstand eines Bausparvertrags fortschreiben (negativ: zurückrechnen).
+
+    Dieselbe Mechanik wie `stand_fortschreiben`, nur andersherum: je Monat
+    kommt die Rate hinzu, und das vorhandene Guthaben verzinst sich mit dem
+    Habenzins. Über die Bausparsumme hinaus wächst nichts — ist sie erreicht,
+    ist die Ansparphase zu Ende und der Vertrag zuteilungsreif.
+
+    Ohne Rate bleibt der Stand stehen (bis auf die Verzinsung). Lieber der
+    letzte bekannte Wert als eine erfundene Kurve — wie beim Darlehen.
+    """
+    zins_monat = monatszinssatz(zinssatz)
+    rate = float(rate_monat or 0)
+    wert = float(stand or 0)
+    grenze = float(ziel) if ziel else None
+    for _ in range(abs(monate)):
+        if monate > 0:
+            wert = wert * (1 + zins_monat) + rate
+            if grenze is not None and wert >= grenze:
+                return round(grenze, 2)
+        else:
+            # Rückwärts: aus stand_neu = stand_alt × (1 + z) + Rate folgt
+            wert = max((wert - rate) / (1 + zins_monat), 0.0)
+    return round(max(wert, 0.0), 2)
+
+
 def _reihe(staende: list | None) -> list:
     """Jahresstände, aufsteigend nach Jahr."""
     return sorted((s for s in (staende or []) if s.jahr), key=lambda s: s.jahr)
 
 
+def _basis(reihe: list, heute: date):
+    """Der Jahresstand, von dem aus gerechnet wird — der letzte vergangene."""
+    vergangen = [s for s in reihe if date(s.jahr, 12, 31) <= heute]
+    return vergangen[-1] if vergangen else reihe[0]
+
+
+def _lage(art: str, stand: float, quelle: str, jahr: int | None,
+          stand_wert: float | None, monate: int, rate: float,
+          kredit) -> dict:
+    """Ein Vertragsstand in der Form, die Oberfläche und Übersicht lesen.
+
+    `restschuld` und `guthaben` schliessen sich aus: was kein Darlehen ist,
+    hat keine Restschuld, und was kein Bausparvertrag ist, kein Guthaben. So
+    kann keine Auswertung ein Guthaben versehentlich als Schuld addieren."""
+    bausparer = ist_bausparer(kredit)
+    ziel = float(kredit.bausparsumme) if bausparer and kredit.bausparsumme else None
+    return {
+        "art": art,
+        "restschuld": 0.0 if bausparer else stand,
+        "guthaben": stand if bausparer else 0.0,
+        "stand": stand,
+        "bausparsumme": ziel,
+        "noch_zu_sparen": round(max(ziel - stand, 0.0), 2) if ziel else None,
+        "zuteilungsreif": bool(ziel) and stand >= ziel,
+        "quelle": quelle,
+        "stand_jahr": jahr,
+        "stand_wert": stand_wert,
+        "monate": monate,
+        "rate_monat": rate,
+        # Was von der Rate an Zinsen weggeht — je kleiner die Restschuld wird,
+        # desto weniger. Ein Bausparer in der Ansparphase zahlt keine Zinsen,
+        # er bekommt welche: dort steht `None` und daneben der Habenzins.
+        "zins_monat": None if bausparer else monatszins(stand, kredit.zinssatz),
+        "habenzins_monat": monatszins(stand, kredit.zinssatz) if bausparer else None,
+    }
+
+
 def kreditstand(kredit, staende: list | None = None,
                 stichtag: date | None = None) -> dict:
-    """Restschuld eines Kredits zum Stichtag.
+    """Der Stand eines Vertrags zum Stichtag — Restschuld oder Guthaben.
 
-    Ohne Jahresstände gilt weiter das Feld `Kredit.restschuld` — so bleibt
-    jeder gewachsene Bestand unverändert richtig. Mit Jahresständen wird vom
-    letzten Stand vor dem Stichtag monatlich fortgeschrieben."""
+    Ohne Jahresstände gilt weiter das eingetragene Feld (`Kredit.restschuld`
+    beim Darlehen, `Kredit.angespart` beim Bausparvertrag) — so bleibt jeder
+    gewachsene Bestand unverändert richtig. Mit Jahresständen wird vom letzten
+    Stand vor dem Stichtag monatlich fortgeschrieben."""
     heute = stichtag or date.today()
     reihe = _reihe(staende)
     rate = monatsrate(kredit)
-    if not reihe:
-        rest = round(float(kredit.restschuld or 0), 2)
-        return {"restschuld": rest,
-                "quelle": "eingetragen", "stand_jahr": None, "stand_wert": None,
-                "monate": 0, "rate_monat": rate,
-                "zins_monat": monatszins(rest, kredit.zinssatz)}
+    bausparer = ist_bausparer(kredit)
+    art = "bausparvertrag" if bausparer else "darlehen"
+    ziel = float(kredit.bausparsumme) if bausparer and kredit.bausparsumme else None
 
-    vergangen = [s for s in reihe if date(s.jahr, 12, 31) <= heute]
-    basis = vergangen[-1] if vergangen else reihe[0]
+    if not reihe:
+        roh = kredit.angespart if bausparer else kredit.restschuld
+        stand = round(float(roh or 0), 2)
+        if ziel:
+            stand = min(stand, round(ziel, 2))
+        return _lage(art, stand, "eingetragen", None, None, 0, rate, kredit)
+
+    basis = _basis(reihe, heute)
     monate = monate_seit_jahresende(basis.jahr, heute)
-    rest = stand_fortschreiben(basis.restschuld, rate, kredit.zinssatz, monate)
-    return {
-        "restschuld": rest,
-        "quelle": "jahresstand" if monate == 0 else "fortgeschrieben",
-        "stand_jahr": basis.jahr,
-        "stand_wert": round(float(basis.restschuld or 0), 2),
-        "monate": monate,
-        "rate_monat": rate,
-        # Was von der Rate an Zinsen weggeht — je kleiner die Restschuld
-        # wird, desto weniger.
-        "zins_monat": monatszins(rest, kredit.zinssatz),
-    }
+    stand = (spar_fortschreiben(basis.restschuld, rate, kredit.zinssatz, monate, ziel)
+             if bausparer
+             else stand_fortschreiben(basis.restschuld, rate, kredit.zinssatz, monate))
+    return _lage(art, stand, "jahresstand" if monate == 0 else "fortgeschrieben",
+                 basis.jahr, round(float(basis.restschuld or 0), 2),
+                 monate, rate, kredit)
 
 
 def verlauf(kredit, staende: list | None = None,
             bis_jahr: int | None = None) -> list[dict]:
-    """Restschuld zum 31.12. je Jahr — eingetragene Stände und die Rechnung
-    dazwischen. Zeigt in der Oberfläche, wo gemessen und wo gerechnet wurde."""
+    """Der Stand zum 31.12. je Jahr — eingetragene Stände und die Rechnung
+    dazwischen. Zeigt in der Oberfläche, wo gemessen und wo gerechnet wurde.
+
+    Der Schlüssel heisst weiter `restschuld`, damit bestehende Aufrufer
+    unverändert lesen; beim Bausparvertrag steht dort der Sparstand, und
+    `stand` nennt denselben Wert unter neutralem Namen."""
     reihe = _reihe(staende)
     if not reihe:
         return []
+    bausparer = ist_bausparer(kredit)
+    ziel = float(kredit.bausparsumme) if bausparer and kredit.bausparsumme else None
     ende = max(bis_jahr or date.today().year, reihe[-1].jahr)
     eingetragen = {s.jahr: round(float(s.restschuld or 0), 2) for s in reihe}
     rate = monatsrate(kredit)
@@ -165,11 +245,31 @@ def verlauf(kredit, staende: list | None = None,
     for jahr in range(reihe[0].jahr, ende + 1):
         if jahr in eingetragen:
             wert = eingetragen[jahr]
-            zeilen.append({"jahr": jahr, "restschuld": wert, "eingetragen": True})
+            zeilen.append({"jahr": jahr, "restschuld": wert, "stand": wert,
+                           "eingetragen": True})
             continue
-        wert = stand_fortschreiben(wert, rate, kredit.zinssatz, 12)
-        zeilen.append({"jahr": jahr, "restschuld": wert, "eingetragen": False})
+        wert = (spar_fortschreiben(wert, rate, kredit.zinssatz, 12, ziel) if bausparer
+                else stand_fortschreiben(wert, rate, kredit.zinssatz, 12))
+        zeilen.append({"jahr": jahr, "restschuld": wert, "stand": wert,
+                       "eingetragen": False})
     return zeilen
+
+
+def kapitaldienst_jahr(kredite: list) -> float:
+    """Was im Jahr an die Banken geht — ohne Sparraten.
+
+    Für jede Auswertung, die Kreditkosten als Ausgabe zeigt: die Rate eines
+    Bausparvertrags ist keine Ausgabe, sondern eine Umschichtung in eigenes
+    Vermögen. Sie hier mitzuzählen machte den Cashflow schlechter, als er
+    ist."""
+    return round(sum(jahresbetrag(k.rate_monatlich, k.turnus)
+                     for k in kredite if not ist_bausparer(k)), 2)
+
+
+def sparrate_jahr(kredite: list) -> float:
+    """Was im Jahr in Bausparverträge fliesst — Gegenstück zum Kapitaldienst."""
+    return round(sum(jahresbetrag(k.rate_monatlich, k.turnus)
+                     for k in kredite if ist_bausparer(k)), 2)
 
 
 def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
@@ -183,11 +283,20 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
     wert = _wert(objekt)
     lagen = [(k, kreditstand(k, (staende or {}).get(getattr(k, "id", None)),
                              stichtag)) for k in kredite]
-    restschuld = round(sum(lage["restschuld"] for _, lage in lagen), 2)
-    annuitaet = round(sum(jahresbetrag(k.rate_monatlich, k.turnus) for k in kredite), 2)
+    darlehen = [(k, lage) for k, lage in lagen if not ist_bausparer(k)]
+    bausparer = [(k, lage) for k, lage in lagen if ist_bausparer(k)]
+
+    restschuld = round(sum(lage["restschuld"] for _, lage in darlehen), 2)
+    guthaben = round(sum(lage["guthaben"] for _, lage in bausparer), 2)
+    # Annuität ist Kapitaldienst — Zins und Tilgung. Eine Sparrate gehört
+    # nicht dazu: sie verlässt zwar das Konto, wird aber zu eigenem Vermögen.
+    annuitaet = kapitaldienst_jahr(kredite)
+    sparrate = sparrate_jahr(kredite)
     zinsen = round(sum(lage["restschuld"] * float(k.zinssatz or 0) / 100
-                       for k, lage in lagen), 2)
-    eigen = round(wert - restschuld, 2) if wert is not None else None
+                       for k, lage in darlehen), 2)
+    # Das Guthaben liegt neben der Immobilie, nicht in ihr: es erhöht das
+    # Eigenkapital, mindert aber die Beleihung nicht.
+    eigen = round(wert - restschuld + guthaben, 2) if wert is not None else None
     quote = round(restschuld / wert * 100, 1) if wert else None
     gehalten = sum(int(a.tausendstel or 0) for a in (anteile or [])) or None
 
@@ -204,9 +313,12 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
             "Kaufpreis" if objekt.kaufpreis else None),
         "kaufpreis": float(objekt.kaufpreis) if objekt.kaufpreis else None,
         "restschuld": restschuld,
+        "bauspar_guthaben": guthaben,
+        "bausparvertraege": len(bausparer),
         "eigenkapital": eigen,
         "beleihung": quote,
         "annuitaet_jahr": annuitaet,
+        "sparrate_jahr": sparrate,
         "zinslast_jahr": zinsen,
         "tilgung_jahr": round(max(annuitaet - zinsen, 0.0), 2),
         "kredite": len(kredite),
@@ -228,15 +340,18 @@ def gesamt(zeilen: list[dict]) -> dict:
     bekannt = any(z["wert"] is not None for z in zeilen)
     wert = summe("wert") if bekannt else None
     restschuld = summe("restschuld")
+    guthaben = summe("bauspar_guthaben")
     return {
         "objekte": len(zeilen),
         "wert": wert,
         "kaufpreis": summe("kaufpreis"),
         "restschuld": restschuld,
-        "eigenkapital": round(wert - restschuld, 2) if bekannt else None,
+        "bauspar_guthaben": guthaben,
+        "eigenkapital": round(wert - restschuld + guthaben, 2) if bekannt else None,
         "eigenkapital_anteilig": summe("eigenkapital_anteilig") if bekannt else None,
         "beleihung": round(restschuld / wert * 100, 1) if wert else None,
         "annuitaet_jahr": summe("annuitaet_jahr"),
+        "sparrate_jahr": summe("sparrate_jahr"),
         "zinslast_jahr": summe("zinslast_jahr"),
         "tilgung_jahr": summe("tilgung_jahr"),
         "ohne_wert": sum(1 for z in zeilen if z["wert"] is None),

@@ -401,6 +401,110 @@ def test_jahresstand_verschwindet_mit_dem_kredit():
 
 
 # --------------------------------------------------------------------------
+# CXLIX — ein Bausparvertrag ist kein Darlehen
+# --------------------------------------------------------------------------
+
+def test_bausparguthaben_erhoeht_das_eigenkapital():
+    """Der Fund: „LBS Bausparer" lief als Kredit und drueckte das Eigenkapital
+    um sein Guthaben — es muesste es erhoehen."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Sparweg 30", verkehrswert=500000.0)
+        c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "Ankaufsdarlehen", "restschuld": 200000.0,
+            "zinssatz": 2.0, "rate_monatlich": 1000.0, "turnus": "monatlich"})
+        c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "LBS Bausparer", "art": "Bausparvertrag",
+            "bausparsumme": 140000.0, "angespart": 45000.0,
+            "zinssatz": 0.1, "rate_monatlich": 300.0, "turnus": "monatlich"})
+
+        zeile = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                     if z["slug"] == slug)
+        assert zeile["restschuld"] == 200000.0        # nur das Darlehen
+        assert zeile["bauspar_guthaben"] == 45000.0
+        # 500.000 − 200.000 + 45.000 — das Guthaben kommt hinzu, statt zu fehlen
+        assert zeile["eigenkapital"] == 345000.0
+        # Die Beleihung misst die Belastung des Objekts: 200.000 / 500.000.
+        assert zeile["beleihung"] == 40.0
+        # Kapitaldienst ist Zins und Tilgung — die Sparrate steht daneben.
+        assert zeile["annuitaet_jahr"] == 12000.0
+        assert zeile["sparrate_jahr"] == 3600.0
+        assert zeile["zinslast_jahr"] == 4000.0
+        assert zeile["tilgung_jahr"] == 8000.0
+
+
+def test_bausparvertrag_nennt_was_noch_zu_sparen_ist():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Zielweg 31")
+        c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "LBS", "art": "Bausparvertrag",
+            "bausparsumme": 140000.0, "angespart": 45000.0,
+            "rate_monatlich": 250.0, "turnus": "monatlich"})
+
+        zeile = c.get(f"/api/objekte/{slug}/kredite").json()[0]
+        assert zeile["guthaben_aktuell"] == 45000.0
+        assert zeile["restschuld_aktuell"] == 0.0      # keine Schuld
+        assert zeile["noch_zu_sparen"] == 95000.0
+        # In der Ansparphase gibt es keine Zinslast im Sinne eines Darlehens.
+        assert zeile["stand"]["zins_monat"] is None
+        assert zeile["stand"]["zuteilungsreif"] is False
+
+
+def test_sparstand_waechst_statt_zu_sinken():
+    """Dieselbe Mechanik wie beim Darlehen, umgekehrtes Vorzeichen."""
+    from app.vermoegen import spar_fortschreiben
+
+    # Ohne Verzinsung ist es reines Ansparen: 12 x 300 auf 45.000.
+    assert spar_fortschreiben(45000.0, 300.0, 0.0, 12) == 48600.0
+    # Rückwärts ist die Umkehrung.
+    assert spar_fortschreiben(48600.0, 300.0, 0.0, -12) == 45000.0
+    # Über die Bausparsumme hinaus waechst nichts.
+    assert spar_fortschreiben(139000.0, 300.0, 0.0, 24, 140000.0) == 140000.0
+    # Mit Habenzins wird es etwas mehr als die reine Summe der Beitraege.
+    assert spar_fortschreiben(45000.0, 300.0, 1.0, 12) > 48600.0
+
+
+def test_sparstand_zum_jahresende_wird_fortgeschrieben():
+    heute = date.today()
+    with TestClient(app) as c:
+        slug = _objekt(c, "Standweg 32", verkehrswert=300000.0)
+        kid = c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "LBS", "art": "Bausparvertrag",
+            "bausparsumme": 140000.0, "angespart": 40000.0,
+            "rate_monatlich": 300.0, "turnus": "monatlich"}).json()["id"]
+        antwort = c.post(f"/api/kredite/{kid}/staende",
+                         json={"jahr": heute.year - 1, "sparstand": 45000.0})
+        assert antwort.status_code == 201
+
+        zeile = c.get(f"/api/objekte/{slug}/kredite").json()[0]
+        assert zeile["angespart"] == 40000.0            # Eingabe bleibt stehen
+        assert zeile["guthaben_aktuell"] >= 45000.0     # fortgeschrieben
+        assert zeile["stand"]["stand_jahr"] == heute.year - 1
+        uebersicht = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                          if z["slug"] == slug)
+        assert uebersicht["bauspar_guthaben"] == zeile["guthaben_aktuell"]
+        assert uebersicht["eigenkapital"] == \
+            round(300000.0 + zeile["guthaben_aktuell"], 2)
+
+
+def test_bestehende_kredite_bleiben_darlehen():
+    """Additiv: wer nichts waehlt, hat weiter ein Darlehen."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Bestandsweg 33", verkehrswert=400000.0)
+        c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "Alt ohne Art", "restschuld": 100000.0,
+            "zinssatz": 2.0, "rate_monatlich": 600.0, "turnus": "monatlich"})
+
+        zeile = c.get(f"/api/objekte/{slug}/kredite").json()[0]
+        assert zeile["art"] == "Darlehen"
+        assert zeile["restschuld_aktuell"] == 100000.0
+        assert zeile["guthaben_aktuell"] == 0.0
+        uebersicht = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                          if z["slug"] == slug)
+        assert uebersicht["eigenkapital"] == 300000.0
+        assert uebersicht["bauspar_guthaben"] == 0.0
+
+
+# --------------------------------------------------------------------------
 # CXVI — geplante Mieterhöhungen
 # --------------------------------------------------------------------------
 

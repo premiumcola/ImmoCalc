@@ -57,8 +57,12 @@
   .eintrag .ew{font:600 13px var(--mono);white-space:nowrap;flex:none}
   .eintrag.klick{cursor:pointer}
   .eintrag.klick:hover{background:#F6F8F8}
+  /* CLXXXVII — Löschen ist ein Ziel für den Daumen: 44x44. Die negativen
+     Ränder halten die Zeile trotzdem so hoch wie zuvor — der Knopf greift in
+     die Zeilenpolsterung hinein, statt sie zu vergrössern. */
   .eintrag .del{border:none;background:none;color:var(--soft);font:400 18px var(--body);
-                cursor:pointer;padding:6px 2px;min-width:36px;min-height:36px;flex:none}
+                cursor:pointer;padding:0;width:44px;height:44px;flex:none;
+                margin:-5px -12px -5px 0;border-radius:11px}
   .eintrag .del:hover{color:var(--neg)}
   .leerzeile{font:400 13px var(--body);color:var(--soft);padding:16px 15px;text-align:center}
   .add{width:100%;border:1.5px dashed #B4C4C1;background:transparent;color:var(--teal-d);
@@ -145,11 +149,11 @@
     margin-bottom:7px;min-height:44px}
   .bwzeile input:last-of-type{margin-bottom:0}
   .bwzeile input:focus{outline:none;border-color:var(--teal)}
-  .bwzeile .weg{position:absolute;top:5px;right:5px;border:none;background:none;
+  .bwzeile .weg{position:absolute;top:3px;right:3px;border:none;background:none;
     color:var(--soft);font:400 20px var(--body);cursor:pointer;
-    width:40px;height:40px;border-radius:9px}
+    width:44px;height:44px;border-radius:11px}
   .bwzeile .weg:hover{color:var(--neg);background:var(--paper)}
-  .bwzeile .nm{padding-right:44px}
+  .bwzeile .nm{padding-right:48px}
   .zusatz{width:100%;border:1.5px dashed #B4C4C1;background:transparent;
     color:var(--teal-d);border-radius:11px;padding:11px;font:600 13px var(--disp);
     cursor:pointer;min-height:44px}
@@ -167,7 +171,8 @@
             white-space:nowrap}
   .jahr.gemessen .jq{background:var(--teal-l);color:var(--teal-d)}
   .jahr .weg{border:none;background:none;color:var(--soft);font:400 18px var(--body);
-    cursor:pointer;width:40px;height:40px;border-radius:9px;flex:none}
+    cursor:pointer;width:44px;height:44px;border-radius:11px;flex:none;
+    margin:-6px -4px -6px 0}
   .jahr .weg:hover{color:var(--neg);background:var(--paper)}
   .dlgnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
            margin:0 0 16px}
@@ -315,6 +320,100 @@ const kuerzel = t => proTurnus[t] || '/ J';
 const proJahr = t => ({ monatlich: 12, vierteljaehrlich: 4,
                         halbjaehrlich: 2 }[t] || 1);
 
+/* ---- CXLIX: Darlehen oder Bausparvertrag --------------------------------
+   Beide hängen an derselben Immobilie und kosten dieselbe Rate im Monat —
+   gerechnet werden sie umgekehrt. Beim Darlehen sinkt die Restschuld, beim
+   Bausparvertrag wächst das Guthaben. Deshalb entscheidet die Vertragsart
+   ganz oben, wie die Maske darunter aussieht; die Regeln dazu stehen in
+   `api/app/vermoegen.py`, hier wird nur gefragt und gezeigt. */
+const VERTRAGSARTEN = ['Darlehen', 'Bausparvertrag'];
+const istBausparer = art =>
+  String(art || '').trim().toLowerCase().startsWith('bauspar');
+
+function kreditFelder(art, werte = {}) {
+  const bauspar = istBausparer(art);
+  return [
+    { k: 'art', l: 'Vertragsart', typ: 'auswahl', werte: VERTRAGSARTEN,
+      vorgabe: 'Darlehen', ohneLeer: true, umbau: true,
+      note: bauspar
+        ? 'Beim Bausparvertrag wird gespart, nicht getilgt: eingetragen '
+          + 'werden Bausparsumme und Guthaben.'
+        : 'Beim Darlehen wird getilgt: eingetragen wird die Restschuld.' },
+    { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
+    { k: 'bank', l: bauspar ? 'Bausparkasse' : 'Bank', typ: 'text' },
+    { k: 'darlehensnummer', l: bauspar ? 'Vertragsnummer' : 'Darlehensnummer',
+      typ: 'text' },
+    ...(bauspar ? [
+      { k: 'bausparsumme', l: 'Bausparsumme', typ: 'number', schritt: '0.01',
+        geld: true },
+      { k: 'angespart', l: 'Bisher angespart', typ: 'number', schritt: '0.01',
+        geld: true, note: (werte.uebernommen
+          ? 'Aus der bisherigen Restschuld vorgeschlagen — prüfe den Betrag, '
+            + 'bevor du speicherst. '
+          : '')
+          + 'Was noch zu sparen ist, ergibt sich als Differenz zur '
+          + 'Bausparsumme.' },
+    ] : [
+      { k: 'urspruenglich', l: 'Ursprungsbetrag', typ: 'number', schritt: '0.01',
+        geld: true },
+      { k: 'restschuld', l: 'Restschuld bei Beginn', typ: 'number',
+        schritt: '0.01', geld: true },
+      /* CXLVIII — zwei Wege zum selben Satz. Wer den Zinssatz nicht kennt,
+         liest den monatlichen Zinsanteil aus dem Kontoauszug ab; die Kopplung
+         rechnet ihn in den Satz um (und umgekehrt). Gespeichert wird nur der
+         Zinssatz — ein zweites Feld am Modell wäre eine zweite Wahrheit,
+         deshalb `hilfe: true`. Beim Bausparvertrag gibt es nichts
+         umzurechnen: dort fällt kein Zins an, dort kommt welcher dazu. */
+    ]),
+    { k: 'zinssatz', l: bauspar ? 'Guthabenzins' : 'Zinssatz', typ: 'number',
+      schritt: '0.01', einheit: '%' },
+    ...(bauspar ? [] : [
+      { k: 'zins_monat', l: 'Zinsanteil je Monat', typ: 'number',
+        schritt: '0.01', geld: true, hilfe: true,
+        note: 'Eines von beidem genügt — das andere ergibt sich aus der '
+            + 'Restschuld.' },
+    ]),
+    { k: 'rate_monatlich', l: bauspar ? 'Sparbeitrag je Turnus'
+                                      : 'Rate je Turnus',
+      typ: 'number', schritt: '0.01', geld: true },
+    { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
+    { k: 'beginn', l: 'Beginn', typ: 'date' },
+    ...(bauspar ? [] : [
+      { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date' },
+    ]),
+    { k: 'notiz', l: 'Notiz', typ: 'text' },
+  ];
+}
+
+/* Was ein Vertrag heute wert ist — als Schuld oder als Guthaben. */
+function kreditStandText(e) {
+  if (istBausparer(e.art)) {
+    const gespart = e.guthaben_aktuell ?? e.angespart ?? 0;
+    return e.bausparsumme
+      ? `${eurVoll(gespart)} von ${eurVoll(e.bausparsumme)}`
+      : (gespart ? `Guthaben ${eurVoll(gespart)}` : '');
+  }
+  return restText(e);
+}
+
+/* Welche Felder ein Formular zeigt. Nur die Kredite hängen von einem Wert im
+   Formular selbst ab — der Vertragsart. */
+const felderFuer = (bereich, werte = {}) => bereich === 'kredite'
+  ? kreditFelder(werte.art, werte) : cfgFuer(bereich).felder;
+
+/* Wird ein Vertrag von Darlehen auf Bausparvertrag umgestellt, ist der Betrag
+   derselbe und seine Bedeutung eine andere: aus der Restschuld wird das
+   Guthaben. Genau dieser Fall steht heute in der Datenbank — der „LBS
+   Bausparer" lief als Kredit. Der Betrag wird deshalb angeboten, nicht
+   ersetzt: er steht sichtbar im Feld und wird erst mit „Speichern" übernommen.
+   Umgekehrt gibt es nichts anzubieten — ein Guthaben ist keine Schuld. */
+function uebernahmeAnbieten(werte) {
+  if (istBausparer(werte.art) && werte.angespart == null && werte.restschuld) {
+    return { ...werte, angespart: werte.restschuld, uebernommen: true };
+  }
+  return werte;
+}
+
 /* Welche Felder hat welcher Bereich — steuert Liste, Formular und Symbol. */
 const BEREICHE = {
   mieten: {
@@ -384,42 +483,26 @@ const BEREICHE = {
     wert: e => `${eur(e.jahresbeitrag)} ${kuerzel(e.turnus)}`,
   },
   kredite: {
-    titel: 'Kredite', einzahl: 'Kredit', ikon: 'Kredit',
-    felder: [
-      { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
-      { k: 'bank', l: 'Bank', typ: 'text' },
-      { k: 'darlehensnummer', l: 'Darlehensnummer', typ: 'text' },
-      { k: 'urspruenglich', l: 'Ursprungsbetrag', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'restschuld', l: 'Restschuld bei Beginn', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'zinssatz', l: 'Zinssatz', typ: 'number', schritt: '0.01',
-        einheit: '%' },
-      /* CXLVIII — zwei Wege zum selben Satz. Wer den Zinssatz nicht kennt,
-         liest den monatlichen Zinsanteil aus dem Kontoauszug ab; die Kopplung
-         rechnet ihn in den Satz um (und umgekehrt). Gespeichert wird nur der
-         Zinssatz — ein zweites Feld am Modell wäre eine zweite Wahrheit,
-         deshalb `hilfe: true`. */
-      { k: 'zins_monat', l: 'Zinsanteil je Monat', typ: 'number',
-        schritt: '0.01', geld: true, hilfe: true,
-        note: 'Eines von beidem genügt — das andere ergibt sich aus der '
-            + 'Restschuld.' },
-      { k: 'rate_monatlich', l: 'Rate je Turnus', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
-      { k: 'beginn', l: 'Beginn', typ: 'date' },
-      { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date' },
-      { k: 'notiz', l: 'Notiz', typ: 'text' },
-    ],
+    titel: 'Kredite & Bausparen', einzahl: 'Vertrag', ikon: 'Kredit',
+    // Die tatsächlich gezeigten Felder hängen an der Vertragsart und kommen
+    // aus `kreditFelder`; dies hier ist die Ausgangslage für einen neuen
+    // Vertrag.
+    felder: kreditFelder('Darlehen'),
     name: e => e.bezeichnung,
-    /* Gezeigt wird die fortgeschriebene Restschuld, nicht die eingetragene:
+    /* Gezeigt wird der fortgeschriebene Stand, nicht der eingetragene:
        eingegeben wird nur der Stand zum Jahresende, dazwischen rechnet die
        App aus Rate und Zinssatz weiter. */
-    detail: e => [e.bank, restText(e),
-                  e.zinssatz ? `${prozent(e.zinssatz)} %` : ''].filter(Boolean).join(' · '),
+    // Der Habenzins eines Bausparers steht bewusst nicht in der Zeile: bei
+    // 0,25 % sagt er nichts, kostet aber die Breite, die der Name braucht.
+    // Dass gespart und nicht getilgt wird, sagt „47.818 € von 140.000 €".
+    detail: e => [e.bank, kreditStandText(e),
+                  !istBausparer(e.art) && e.zinssatz ? `${prozent(e.zinssatz)} %` : '']
+      .filter(Boolean).join(' · '),
     wert: e => `${eur(e.rate_monatlich)} ${kuerzel(e.turnus)}`,
-    chip: e => e.stand && e.stand.quelle === 'fortgeschrieben'
-      ? ['teal', `Stand ${e.stand.stand_jahr}`] : null,
+    chip: e => istBausparer(e.art)
+      ? (e.stand && e.stand.zuteilungsreif ? ['pos', 'zuteilungsreif'] : null)
+      : (e.stand && e.stand.quelle === 'fortgeschrieben'
+          ? ['teal', `Stand ${e.stand.stand_jahr}`] : null),
   },
   zahlungen: {
     titel: 'Steuer & Zahlungen', einzahl: 'Zahlung', ikon: 'Steuer',
@@ -632,20 +715,25 @@ function nachpflegeHtml(n) {
     </span></div>`;
 }
 
-function kennzahlenHtml(v, jahresmiete, restschuld) {
+function kennzahlenHtml(v, jahresmiete, restschuld, guthaben) {
   if (!v) return '';
   // Die Restschuld kommt aus den fortgeschriebenen Krediten dieser Seite.
   // Stünde hier der eingetragene Stand, widerspräche die Kennzahl oben der
   // Kreditzeile weiter unten.
   const rest = restschuld != null ? Math.round(restschuld * 100) / 100
                                   : v.restschuld;
-  const eigen = v.wert != null ? Math.round((v.wert - rest) * 100) / 100
-                               : null;
+  // CXLIX — ein Bausparguthaben ist Guthaben, keine Schuld: es kommt zum
+  // Eigenkapital hinzu, statt es zu drücken.
+  const gespart = guthaben != null ? Math.round(guthaben * 100) / 100
+                                   : (v.bauspar_guthaben || 0);
+  const eigen = v.wert != null
+    ? Math.round((v.wert - rest + gespart) * 100) / 100 : null;
   const zellen = [];
   if (v.wert != null)
     zellen.push(['kv', eur(v.wert), istGrundstueck() ? 'Grundstückswert'
                                                      : (v.wertquelle || 'Wert')]);
   if (rest) zellen.push(['kv neg', eur(rest), 'Restschuld']);
+  if (gespart) zellen.push(['kv pos', eur(gespart), 'Bausparguthaben']);
   if (eigen != null)
     zellen.push([`kv ${eigen >= 0 ? 'pos' : 'neg'}`, eur(eigen), 'Eigenkapital']);
   if (jahresmiete) zellen.push(['kv', eur(jahresmiete),
@@ -920,8 +1008,13 @@ async function laden() {
     .filter(m => !m.beendet && !m.geplant)
     .reduce((s, m) => s + (m.kaltmiete || 0) * proJahr(m.turnus), 0);
 
+  // Schulden und Guthaben getrennt: `restschuld_aktuell` ist beim
+  // Bausparvertrag 0 und `guthaben_aktuell` beim Darlehen — die API trennt
+  // beides, damit hier nichts zusammenfällt, was gegensätzlich ist.
   const restschuld = (bereiche.kredite || []).reduce(
     (s, k) => s + (k.restschuld_aktuell ?? k.restschuld ?? 0), 0);
+  const guthaben = (bereiche.kredite || []).reduce(
+    (s, k) => s + (k.guthaben_aktuell || 0), 0);
 
   // Ein Grundstück rechnet keine Nebenkosten ab: weder die Frist nach
   // § 556 BGB noch die Abrechnungszeiträume haben hier etwas zu suchen.
@@ -971,7 +1064,7 @@ async function laden() {
   inhalt.innerHTML = `
     ${istGrundstueck() ? '' : bannerHtml(laufend)}
     ${nachpflegeHtml(det.nachpflege)}
-    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld)}
+    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld, guthaben)}
     ${einheitenHtml()}
     ${zeitraumBlock}
     ${grundstueckHtml(objekt)}
@@ -1110,12 +1203,16 @@ async function feldHtml(f, bereich, wert) {
     // `ausFormular` ihn wie bei jedem anderen Feld findet.
     // Beschriftung ohne `for`: den Knopf baut auswahl.js selbst und gibt ihm
     // eine eigene id — die Verknüpfung läuft über aria-label.
-    const werte = ['', ...f.werte];
+    // `ohneLeer`: eine Vertragsart gibt es immer — „nicht gewählt" wäre dort
+    // keine mögliche Antwort, sondern eine Lücke im Datenmodell.
+    const werte = f.ohneLeer ? f.werte : ['', ...f.werte];
     const gesetzt = wert ?? f.vorgabe ?? '';
     return `<div class="field"><label>${esc(f.l)}</label>
       <input type="hidden" id="${id}" name="${f.k}" value="${esc(gesetzt)}">
       <div data-auswahl="${esc(f.k)}" data-label="${esc(f.l)}"
-           data-optionen="${esc(JSON.stringify(werte))}"></div></div>`;
+           ${f.umbau ? 'data-umbau="1"' : ''}
+           data-optionen="${esc(JSON.stringify(werte))}"></div>
+      ${f.note ? `<span class="feldnote">${esc(f.note)}</span>` : ''}</div>`;
   }
   if (f.typ === 'einheit') {
     // CLXIX — die Einheit wird angetippt, nicht getippt. Freitext liess einen
@@ -1233,7 +1330,13 @@ function auswahlSetzen(form) {
       .map(w => ({ wert: w, text: w || 'nicht gewählt' }));
     auswahlen.push(auswahlfeld(halter, {
       optionen, wert: feld.value, label: halter.dataset.label,
-      aenderung: neu => { feld.value = neu; },
+      aenderung: neu => {
+        feld.value = neu;
+        // Ein Feld, das die Maske umstellt (die Vertragsart), baut das
+        // Formular neu — aber erst im nächsten Anlauf: sonst zöge sich das
+        // Auswahlfeld sein eigenes DOM unter den Füssen weg.
+        if (halter.dataset.umbau && dialogUmbau) setTimeout(dialogUmbau, 0);
+      },
     }));
   }
 }
@@ -1315,8 +1418,17 @@ function zinsKopplung(form) {
   ausSatz();
 }
 
-async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht,
-                          hinweis = '', extra = '', knopf = 'Speichern' }) {
+/* Die Felder, die gerade im Dialog stehen. Beim Speichern wird genau das
+   ausgelesen, was auch gezeigt wurde — bei den Verträgen hängt das an der
+   Vertragsart und lässt sich nicht aus dem Bereich allein ableiten. */
+let dialogFelder = [];
+/* Baut den offenen Dialog mit anderen Feldern neu auf, ohne das Eingetippte
+   zu verlieren. Gesetzt von `formular`, gerufen vom Auswahlfeld mit `umbau`. */
+let dialogUmbau = null;
+
+async function formular(einst) {
+  const { titel: dtitel, felder, bereich, werte = {}, absicht,
+          hinweis = '', extra = '', knopf = 'Speichern' } = einst;
   const form = document.getElementById('dlgForm');
   const html = await Promise.all(
     felder.map(f => feldHtml(f, bereich, werte[f.k])));
@@ -1333,6 +1445,15 @@ async function formular({ titel: dtitel, felder, bereich, werte = {}, absicht,
   form.dataset.bereich = bereich || '';
   form.dataset.id = werte.id || '';
   delete form.dataset.vorgaenger;   // sonst endet beim nächsten Mal ein fremder Stand
+  dialogFelder = felder;
+  dialogUmbau = async () => {
+    // Das schon Eingetippte überlebt den Umbau — nur die Felder wechseln.
+    const stand = bereich === 'kredite'
+      ? uebernahmeAnbieten({ ...werte, ...ausFormular(form, felder) })
+      : { ...werte, ...ausFormular(form, felder) };
+    await formular({ ...einst, felder: felderFuer(bereich, stand),
+                     werte: stand });
+  };
   formateSetzen(form, felder);
   auswahlSetzen(form);
   zinsKopplung(form);
@@ -1431,14 +1552,19 @@ async function bewohnerSpeichern(form, miete_id) {
 
 /* ---- Jahresstände eines Kredits ---- */
 
-const STANDFELDER = [
+/* Das Feld heisst weiter `restschuld` — so heisst die Spalte, und beim
+   Bausparvertrag steht dort der Sparstand (siehe `models.Kreditstand`).
+   Gefragt wird trotzdem nach dem, was auf dem Auszug steht. */
+const standFelder = bauspar => [
   { k: 'jahr', l: 'Jahr', typ: 'number', pflicht: true,
     vorgabe: new Date().getFullYear() - 1 },
-  { k: 'restschuld', l: 'Restschuld am 31.12.', typ: 'number', schritt: '0.01',
-    geld: true, pflicht: true },
+  { k: 'restschuld', l: bauspar ? 'Sparstand am 31.12.'
+                                : 'Restschuld am 31.12.',
+    typ: 'number', schritt: '0.01', geld: true, pflicht: true },
 ];
 
 function verlaufBlock(s) {
+  const bauspar = istBausparer(s.art);
   const zeilen = (s.verlauf || []).map(j => `<div class="jahr${
       j.eingetragen ? ' gemessen' : ''}">
       <span class="jj">${j.jahr}</span>
@@ -1452,7 +1578,8 @@ function verlaufBlock(s) {
   return `<div class="block">
     <span class="bt">Verlauf</span>
     <span class="bd">Grün hinterlegt ist, was du eingetragen hast. Die Jahre
-      dazwischen rechnet die App aus Rate und Zinssatz.</span>
+      dazwischen rechnet die App aus ${bauspar ? 'Sparbeitrag und Guthabenzins'
+                                              : 'Rate und Zinssatz'}.</span>
     ${zeilen ? `<div class="jahre">${zeilen}</div>`
              : '<div class="bd">Noch kein Stand eingetragen.</div>'}
   </div>`;
@@ -1479,18 +1606,94 @@ function mietExtra(eintrag) {
 function kreditExtra(eintrag) {
   if (!eintrag) return '';
   const s = eintrag.stand || {};
+  const bauspar = istBausparer(eintrag.art);
+  const gemessen = s.stand_jahr
+    ? `Zuletzt eingetragen zum 31.12.${s.stand_jahr}: ${eur(s.stand_wert)} —
+       heute fortgeschrieben ${eur(s.stand)}.`
+    : (bauspar
+        ? `Trage den Sparstand zum 31.12. ein, wie er auf dem Kontoauszug
+           steht. Dazwischen rechnet ImmoCalc aus Sparbeitrag und
+           Guthabenzins weiter.`
+        : `Trage die Restschuld zum 31.12. ein, wie sie im Kontoauszug steht.
+           Dazwischen rechnet ImmoCalc aus Rate und Zinssatz weiter.`);
+  // Beim Bausparvertrag zählt, was noch fehlt — das ist die Zahl, die der
+  // Nutzer im Kopf hat: 140.000 Bausparsumme, 45.000 gespart, Rest offen.
+  const rest = bauspar && s.noch_zu_sparen != null
+    ? (s.zuteilungsreif
+        ? ` Die Bausparsumme ist erreicht — der Vertrag ist zuteilungsreif.`
+        : ` Bis zur Bausparsumme fehlen noch ${eur(s.noch_zu_sparen)}.`)
+    : '';
+  const zins = bauspar
+    ? (s.habenzins_monat ? ` Das Guthaben bringt zurzeit
+        ${eur(s.habenzins_monat)} im Monat an Zinsen.` : '')
+    : (s.zins_monat ? ` Davon gehen zurzeit ${eur(s.zins_monat)} im Monat
+        an Zinsen weg.` : '');
   return `<div class="block">
-    <span class="bt">Restschuld</span>
-    <span class="bd">${s.stand_jahr
-      ? `Zuletzt eingetragen zum 31.12.${s.stand_jahr}: ${eur(s.stand_wert)} —
-         heute fortgeschrieben ${eur(s.restschuld)}.`
-      : `Trage die Restschuld zum 31.12. ein, wie sie im Kontoauszug steht.
-         Dazwischen rechnet ImmoCalc aus Rate und Zinssatz weiter.`}${
-      s.zins_monat ? ` Davon gehen zurzeit ${eur(s.zins_monat)} im Monat
-         an Zinsen weg.` : ''}</span>
+    <span class="bt">${bauspar ? 'Sparstand' : 'Restschuld'}</span>
+    <span class="bd">${gemessen}${rest}${zins}</span>
     <button type="button" class="zusatz"
             data-staende="${eintrag.id}">Jahresstände pflegen</button>
   </div>`;
+}
+
+/* ---- CLXXVI: Kappungsgrenze nach § 558 Abs. 3 BGB -----------------------
+   Wie viel eine Erhöhung binnen drei Jahren zulegen darf, hängt an der
+   Gemeinde: 20 %, in Gebieten mit angespanntem Wohnungsmarkt 15 %. Welche
+   Gemeinden das sind und wie gerechnet wird, steht in
+   `api/app/kappungsgrenze.py` — hier wird nur gefragt und gezeigt.
+
+   Gewarnt, nicht verboten: eine Erhöhung nach Modernisierung (§ 559 BGB)
+   fällt gar nicht unter die Grenze, und über Ausnahmen entscheidet nicht
+   diese Seite. Gespeichert wird deshalb in jedem Fall. */
+async function kappungWachen(mid) {
+  const form = document.getElementById('dlgForm');
+  const feld = form.querySelector('#f_kaltmiete');
+  const abFeld = form.querySelector('#f_ab_datum');
+  if (!feld || !feld.closest('.field')) return;
+
+  const halter = document.createElement('div');
+  // Eigener Abstand nach unten: sonst klebt die Fundstelle an der
+  // Beschriftung des nächsten Feldes.
+  halter.style.margin = '-4px 0 18px';
+  feld.closest('.field').insertAdjacentElement('afterend', halter);
+
+  let lauf = 0;
+  async function zeigen() {
+    const frage = new URLSearchParams();
+    const neu = zahlAus(feld);
+    if (neu != null && neu > 0) frage.set('neu', String(neu));
+    if (abFeld && abFeld.value) frage.set('ab', abFeld.value);
+    const nummer = ++lauf;
+    let s;
+    try {
+      s = await api(`/mieten/${mid}/kappungsgrenze?${frage}`);
+    } catch {
+      return;                    // ohne Auskunft lieber nichts behaupten
+    }
+    // Eine ältere Antwort darf eine neuere nicht überschreiben, und ein
+    // umgebautes Formular hat den Platz gar nicht mehr.
+    if (nummer !== lauf || !halter.isConnected) return;
+    // Die Fundstelle steht immer, aber leise: sie gehört zur Auskunft, ist
+    // aber nicht die Nachricht. Die Warnung selbst bleibt kurz.
+    const quelle = `<span class="feldnote">Grundlage: ${esc(s.fundstelle)}.
+      ${s.ueberschritten ? 'Eine Erhöhung nach Modernisierung (§ 559 BGB) '
+        + 'fällt nicht darunter — eintragen lässt sie sich trotzdem.' : ''}</span>`;
+    halter.innerHTML = (s.ueberschritten
+      ? `<div class="merker" style="margin-top:10px">
+           <span class="hi">!</span><span class="ht">
+           <span class="t">${esc(s.titel)}</span>
+           <span class="d">${esc(s.text)}</span></span></div>`
+      : `<span class="feldnote">${esc(s.text)}</span>`) + quelle;
+  }
+
+  let warten = null;
+  const spaeter = () => {
+    clearTimeout(warten);
+    warten = setTimeout(zeigen, 350);
+  };
+  feld.addEventListener('input', spaeter);
+  if (abFeld) abFeld.addEventListener('change', spaeter);
+  await zeigen();
 }
 
 /* Eine geplante Erhöhung ist ein neuer Mietstand derselben Partei — nicht ein
@@ -1516,6 +1719,9 @@ async function erhoehungFormular(mid) {
     extra: pacht ? '' : bewohnerBlock(bewohner), knopf: 'Erhöhung planen',
   });
   document.getElementById('dlgForm').dataset.vorgaenger = mid;
+  // Beim Pachtzins gibt es keine Kappungsgrenze — § 558 BGB gilt für
+  // Wohnraum, nicht für Grund und Boden.
+  if (!pacht) await kappungWachen(mid);
 }
 
 async function standFormular(kid) {
@@ -1525,17 +1731,27 @@ async function standFormular(kid) {
   } catch (fehler) {
     return melde(String(fehler.message || fehler), 'neg');
   }
+  const bauspar = istBausparer(s.art);
   await formular({
-    titel: 'Restschuld zum Jahresende',
-    hinweis: 'Die Bank weist die Restschuld zum 31.12. aus — trage sie ein wie '
-      + 'einen Zählerstand. Dazwischen schreibt ImmoCalc monatlich fort: Rate '
-      + 'minus Zinsanteil ist Tilgung. Jeder neue Stand korrigiert die Rechnung.',
-    felder: STANDFELDER, werte: { id: kid }, absicht: 'stand',
+    titel: bauspar ? 'Sparstand zum Jahresende' : 'Restschuld zum Jahresende',
+    hinweis: bauspar
+      ? 'Die Bausparkasse weist das Guthaben zum 31.12. aus — trage es ein wie '
+        + 'einen Zählerstand. Dazwischen schreibt ImmoCalc monatlich fort: '
+        + 'Sparbeitrag plus Guthabenzins. Jeder neue Stand korrigiert die '
+        + 'Rechnung.'
+      : 'Die Bank weist die Restschuld zum 31.12. aus — trage sie ein wie '
+        + 'einen Zählerstand. Dazwischen schreibt ImmoCalc monatlich fort: Rate '
+        + 'minus Zinsanteil ist Tilgung. Jeder neue Stand korrigiert die Rechnung.',
+    felder: standFelder(bauspar), werte: { id: kid }, absicht: 'stand',
     extra: verlaufBlock(s), knopf: 'Stand eintragen',
   });
 }
 
-dlg.addEventListener('close', () => { formateLoesen(); auswahlLoesen(); });
+dlg.addEventListener('close', () => {
+  formateLoesen();
+  auswahlLoesen();
+  dialogUmbau = null;      // sonst baut ein später Klick einen toten Dialog um
+});
 
 document.getElementById('dlgForm').addEventListener('click', async e => {
   if (e.target.closest('[data-abbruch]')) return dlg.close('abbruch');
@@ -1625,7 +1841,7 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
       await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume`,
                 { method: 'POST', body: { jahr: Number(werte.jahr) } });
     } else if (absicht === 'stand') {
-      const werte = ausFormular(form, STANDFELDER);
+      const werte = ausFormular(form, dialogFelder);
       await api(`/kredite/${id}/staende`, {
         method: 'POST',
         body: { jahr: Number(werte.jahr), restschuld: werte.restschuld || 0 },
@@ -1634,7 +1850,9 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
       // Gleich weiter: Jahresstände werden meist mehrere auf einmal gepflegt.
       return standFormular(id);
     } else {
-      const werte = ausFormular(form, cfgFuer(bereich).felder);
+      // Nicht `cfgFuer(bereich).felder`: bei den Verträgen entscheidet die
+      // Vertragsart, welche Felder überhaupt dastanden.
+      const werte = ausFormular(form, dialogFelder);
       let miete_id = id;
       if (id) {
         await api(`/stammdaten/${bereich}/${id}`, { method: 'PATCH', body: werte });
@@ -1860,7 +2078,8 @@ inhalt.addEventListener('click', async e => {
     const werte = bereich === 'mieten' && fokus
       ? { einheit: fokus.bezeichnung } : {};
     return formular({ titel: `${cfg.einzahl} hinzufügen`,
-                      felder: cfg.felder, bereich, werte, absicht: 'eintrag',
+                      felder: felderFuer(bereich, werte), bereich, werte,
+                      absicht: 'eintrag',
                       extra: bereich === 'mieten' ? mietExtra(null) : '' });
   }
 
@@ -1874,7 +2093,7 @@ inhalt.addEventListener('click', async e => {
                 : bereich === 'kredite' ? kreditExtra(eintrag) : '';
     const cfg = cfgFuer(bereich);
     return formular({ titel: `${cfg.einzahl} bearbeiten`,
-                      felder: cfg.felder, bereich,
+                      felder: felderFuer(bereich, eintrag), bereich,
                       werte: eintrag, absicht: 'eintrag', extra });
   }
 });

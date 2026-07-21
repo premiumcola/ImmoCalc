@@ -4,10 +4,11 @@ Versicherungen, Mieten, Kredite, Zahlungen.
 Alle vier verhalten sich gleich, deshalb eine generische Fabrik statt
 vierfach kopierter Endpunkte.
 
-Zwei Dinge hängen nicht am Objekt, sondern an einem dieser Einträge und haben
+Drei Dinge hängen nicht am Objekt, sondern an einem dieser Einträge und haben
 deshalb eigene Pfade:
   * Jahresstände eines Kredits — /api/kredite/{id}/staende
   * Bewohner eines Mietverhältnisses — /api/mieten/{id}/bewohner
+  * Kappungsgrenze einer geplanten Erhöhung — /api/mieten/{id}/kappungsgrenze
 """
 from datetime import date
 from typing import Type
@@ -18,8 +19,9 @@ from sqlmodel import Session, SQLModel, select
 
 from ..db import get_session
 from ..felder import bereinige
+from ..kappungsgrenze import pruefe
 from ..models import (Bewohner, Kredit, Kreditstand, Miete, Objekt,
-                      Versicherung, Zahlung)
+                      Versicherung, Zahlung, ist_bausparer)
 from ..turnus import VORGABE, auswahl_fuer
 from ..vermoegen import kreditstand, verlauf
 
@@ -73,16 +75,22 @@ def turnus_auswahl(bereich: str) -> dict:
 
 
 def _kredit_zeile(session: Session, k: Kredit) -> dict:
-    """Ein Kredit mit der fortgeschriebenen Restschuld von heute.
+    """Ein Vertrag mit dem fortgeschriebenen Stand von heute.
 
-    Das Feld `restschuld` bleibt so stehen, wie es eingetragen wurde — die
-    Rechnung steht daneben. Sonst überschriebe die Fortschreibung beim
-    nächsten Speichern die Eingabe des Nutzers."""
+    Das eingetragene Feld (`restschuld` bzw. `angespart`) bleibt so stehen,
+    wie es eingetragen wurde — die Rechnung steht daneben. Sonst überschriebe
+    die Fortschreibung beim nächsten Speichern die Eingabe des Nutzers.
+
+    `guthaben_aktuell` ist beim Darlehen 0 und beim Bausparvertrag der
+    Sparstand; `restschuld_aktuell` umgekehrt. So kann keine Anzeige ein
+    Guthaben als Schuld lesen."""
     staende = session.exec(select(Kreditstand)
                            .where(Kreditstand.kredit_id == k.id)).all()
     lage = kreditstand(k, list(staende))
     return {**k.model_dump(), "stand": lage, "staende": len(staende),
-            "restschuld_aktuell": lage["restschuld"]}
+            "restschuld_aktuell": lage["restschuld"],
+            "guthaben_aktuell": lage["guthaben"],
+            "noch_zu_sparen": lage["noch_zu_sparen"]}
 
 
 def _miet_zeile(session: Session, m: Miete, heute: date) -> dict:
@@ -263,9 +271,16 @@ def loeschen(bereich: str, eintrag_id: int,
 # --------------------------------------------------------------------------
 
 class StandIn(BaseModel):
+    """Ein Jahresstand. Beim Bausparvertrag heisst dasselbe Feld `sparstand` —
+    gespeichert wird beides in `Kreditstand.restschuld` (siehe dort)."""
     jahr: int
-    restschuld: float
+    restschuld: float | None = None
+    sparstand: float | None = None
     notiz: str = ""
+
+    @property
+    def wert(self) -> float | None:
+        return self.restschuld if self.restschuld is not None else self.sparstand
 
 
 def _kredit(session: Session, kid: int) -> Kredit:
@@ -290,6 +305,7 @@ def staende(kid: int, session: Session = Depends(get_session)) -> dict:
     k = _kredit(session, kid)
     reihe = _staende(session, kid)
     return {"kredit_id": kid, "bezeichnung": k.bezeichnung,
+            "art": k.art, "bausparsumme": k.bausparsumme,
             "staende": [s.model_dump() for s in reihe],
             "aktuell": kreditstand(k, reihe),
             "verlauf": verlauf(k, reihe)}
@@ -298,28 +314,34 @@ def staende(kid: int, session: Session = Depends(get_session)) -> dict:
 @router.post("/kredite/{kid}/staende", status_code=201)
 def stand_setzen(kid: int, data: StandIn,
                  session: Session = Depends(get_session)) -> dict:
-    """Trägt den Stand zum 31.12. eines Jahres ein.
+    """Trägt den Stand zum 31.12. eines Jahres ein — Restschuld oder Sparstand.
 
     Ein Stand je Jahr: ein zweiter Eintrag für dasselbe Jahr korrigiert den
     vorhandenen, statt sich danebenzustellen."""
-    _kredit(session, kid)
+    k = _kredit(session, kid)
+    bausparer = ist_bausparer(k)
     if not 1900 <= data.jahr <= date.today().year + 50:
         raise HTTPException(400, "Das Jahr liegt ausserhalb des Möglichen")
-    if data.restschuld < 0:
-        raise HTTPException(400, "Eine Restschuld ist nie negativ")
+    wert = data.wert
+    if wert is None:
+        raise HTTPException(400, "Ohne Betrag gibt es nichts einzutragen")
+    if wert < 0:
+        raise HTTPException(400, "Ein Sparstand ist nie negativ" if bausparer
+                                 else "Eine Restschuld ist nie negativ")
 
     eintrag = session.exec(
         select(Kreditstand).where(Kreditstand.kredit_id == kid,
                                   Kreditstand.jahr == data.jahr)).first()
     if eintrag is None:
         eintrag = Kreditstand(kredit_id=kid, jahr=data.jahr)
-    eintrag.restschuld = float(data.restschuld)
+    eintrag.restschuld = float(wert)
     eintrag.notiz = data.notiz
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)
     return {"id": eintrag.id, "jahr": eintrag.jahr,
-            "restschuld": eintrag.restschuld}
+            "restschuld": eintrag.restschuld, "sparstand": eintrag.restschuld,
+            "art": k.art}
 
 
 @router.delete("/kreditstaende/{sid}")
@@ -350,6 +372,35 @@ def _miete(session: Session, mid: int) -> Miete:
     if not m:
         raise HTTPException(404, "Mietverhältnis nicht gefunden")
     return m
+
+
+# --------------------------------------------------------------------------
+# Kappungsgrenze einer geplanten Mieterhöhung (§ 558 Abs. 3 BGB)
+# --------------------------------------------------------------------------
+
+@router.get("/mieten/{mid}/kappungsgrenze", response_model=None)
+def kappungsgrenze(mid: int, neu: float | None = None, ab: date | None = None,
+                   session: Session = Depends(get_session)) -> dict:
+    """Wie viel Luft eine geplante Erhöhung noch hat.
+
+    Die Historie sind die Mietstände derselben Partei in derselben Einheit —
+    aus ihnen ergibt sich die Kaltmiete, die vor drei Jahren galt. Gerechnet
+    wird in `kappungsgrenze.py`; hier werden nur die Sätze zusammengesucht.
+
+    Ohne `neu` beschreibt die Antwort nur den Rahmen: welche Grenze gilt,
+    worauf sie sich stützt und bis zu welchem Betrag sie reicht.
+    """
+    m = _miete(session, mid)
+    o = session.get(Objekt, m.objekt_id)
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    # Dieselbe Partei in derselben Einheit: eine Erhöhung bemisst sich am
+    # eigenen Mietverhältnis, nicht an dem des Vormieters.
+    staende = [s for s in session.exec(
+        select(Miete).where(Miete.objekt_id == m.objekt_id)).all()
+        if s.partei == m.partei and s.einheit == m.einheit]
+    return {"miete_id": mid, "partei": m.partei, "einheit": m.einheit,
+            **pruefe(o, staende, neu, ab)}
 
 
 @router.get("/mieten/{mid}/bewohner", response_model=None)
