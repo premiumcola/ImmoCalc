@@ -1127,7 +1127,12 @@ function posPlanZeichnen(d) {
       + 'ist.' : '';
   bPosHinweis.classList.toggle('warn', wartet);
   if (!p.moeglich) {
-    bPosPlan.innerHTML = `<div class="pr fehlt"><span>${esc(p.grund)}</span></div>`;
+    // Der Grund vom Server beschreibt den GESPEICHERTEN Stand. Steht die
+    // fehlende Angabe längst im Formular, wäre „fehlt der Betrag" schlicht
+    // falsch — dann fehlt nur das Übernehmen.
+    bPosPlan.innerHTML = `<div class="pr fehlt"><span>${esc(wartet
+      ? 'Sobald du übernimmst, entsteht daraus die Kostenposition.'
+      : p.grund)}</span></div>`;
     bPos.disabled = true;
     bPos.className = 'posknopf';
     bPos.textContent = 'Als Kostenposition übernehmen';
@@ -1513,8 +1518,14 @@ bOk.addEventListener('click', async () => {
   bOk.textContent = 'Wird einsortiert …';
   try {
     const antwort = await api(`/dokumente/${d.id}`, { method: 'PATCH', body: s });
+    // Der Beleg ist eingeordnet — dann gehört das Prüfblatt dem nächsten, der
+    // noch wartet. Bleibt er stehen, sieht es aus, als wäre nichts passiert.
+    const naechster = daten.dokumente.find(
+      x => x.id !== d.id && (x.status === 'neu' || x.vermisst));
+    gewaehlt = naechster ? naechster.id : null;
     await laden();
-    melde((antwort.verschoben ? '✓ ' : '✓ unverändert · ') + antwort.pfad, 'gut');
+    melde((antwort.verschoben ? '✓ ' : '✓ unverändert · ') + antwort.pfad
+          + (naechster ? ' · weiter mit dem nächsten' : ''), 'gut');
   } catch (fehler) {
     bOk.disabled = false;
     bOk.textContent = vorher;
