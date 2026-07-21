@@ -997,3 +997,158 @@ def test_abgleich_und_scan_laufen_nie_gleichzeitig():
         with sperre:
             assert c.post("/api/dokumente/abgleich").status_code == 409
             assert c.get("/api/dokumente/abgleich").status_code == 409
+
+
+# --------------------------------------------------------------------------
+# CLXXI/CLXXII: die genaue Kostenposition und das tagesgenaue Belegdatum
+# --------------------------------------------------------------------------
+
+def test_beleg_zeigt_auf_eine_kostenposition(monkeypatch):
+    """CLXXI: „Nebenkosten" sagt nur den Ordner. Welche Zeile der Abrechnung
+    gemeint ist, steht in der Kostenart — und bleibt am Beleg stehen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = _mit_cloud(c, "Kaminweg 3", "Home/Immobilien/Kaminweg 3")
+        doc = _lege_dokument_an(_objekt_id(slug), "alt.pdf",
+                                kategorie="Nebenkosten", jahr=2025,
+                                status="zugeordnet")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+
+        antwort = c.patch(f"/api/dokumente/{doc}",
+                          json={"kostenart": "Kaminkehrer"})
+        assert antwort.status_code == 200
+        assert antwort.json()["kostenart"] == "Kaminkehrer"
+        # Die Kostenart steht nicht im Dateinamen — der Ordner sagt die Art,
+        # die Bezeichnung die Sache.
+        assert antwort.json()["dateiname"] == "alt.pdf"
+
+        gelistet = c.get("/api/dokumente", params={"objekt": slug}).json()
+        assert gelistet["dokumente"][0]["kostenart"] == "Kaminkehrer"
+
+        # Eine spätere Korrektur, die sie nicht erwähnt, lässt sie stehen
+        c.patch(f"/api/dokumente/{doc}", json={"jahr": 2026})
+        gelistet = c.get("/api/dokumente", params={"objekt": slug}).json()
+        assert gelistet["dokumente"][0]["kostenart"] == "Kaminkehrer"
+
+
+def test_belegdatum_bleibt_tagesgenau_und_benennt_die_datei(monkeypatch):
+    """CLXXII: Abrechnungszeiträume laufen nicht immer von Januar bis
+    Dezember. Ob ein Beleg hineinfällt, entscheidet der Tag — also muss er
+    erhalten bleiben, nicht nur sein Jahr."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = _mit_cloud(c, "Stichtagweg 1", "Home/Immobilien/Stichtagweg 1")
+        doc = _lege_dokument_an(_objekt_id(slug), "alt.pdf",
+                                kategorie="Nebenkosten", status="zugeordnet")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+
+        antwort = c.patch(f"/api/dokumente/{doc}", json={
+            "belegdatum": "2025-11-14", "beschreibung": "Kaminkehrer"})
+        assert antwort.status_code == 200
+        assert antwort.json()["belegdatum"] == "2025-11-14"
+        # Jahr und Monat des Dateinamens folgen dem Tag, ohne dass sie
+        # mitgeschickt werden müssten.
+        assert antwort.json()["dateiname"] == "2025-11_Kaminkehrer.pdf"
+        assert antwort.json()["jahr"] == 2025
+
+        gelistet = c.get("/api/dokumente", params={"objekt": slug}).json()
+        assert gelistet["dokumente"][0]["belegdatum"] == "2025-11-14"
+
+        # Ausdrücklich gelöst werden kann es auch
+        antwort = c.patch(f"/api/dokumente/{doc}", json={"belegdatum": None})
+        assert antwort.json()["belegdatum"] is None
+        # und der Name behält, was er hatte — er ist die Wahrheit im Ordner
+        assert antwort.json()["dateiname"] == "2025-11_Kaminkehrer.pdf"
+
+
+def test_scan_merkt_sich_das_belegdatum(monkeypatch):
+    """Was die Texterkennung liest, geht nicht auf dem Weg in die Ablage
+    verloren — sonst stünde beim nächsten Öffnen wieder „nicht erkannt"."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = _mit_cloud(c, "Scandatumweg 4", "Home/Immobilien/Scandatumweg 4")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+
+        antwort = c.post("/api/dokumente/scannen",
+                         data={"objekt": slug, "kategorie": "Nebenkosten",
+                               "kostenart": "Kaminkehrer",
+                               "datum": "2025-11-14", "beschreibung": "Kehrung"},
+                         files={"datei": ("scan.pdf", b"%PDF-1.4 x",
+                                          "application/pdf")})
+        assert antwort.status_code == 201
+        gelistet = c.get("/api/dokumente", params={"objekt": slug}).json()
+        eintrag = gelistet["dokumente"][0]
+        assert eintrag["belegdatum"] == "2025-11-14"
+        assert eintrag["kostenart"] == "Kaminkehrer"
+
+
+def test_halbes_datum_wird_kein_belegdatum(monkeypatch):
+    """Den Tag zu erfinden hiesse, den Beleg in einen Zeitraum zu schieben,
+    in den er vielleicht gar nicht gehört."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = _mit_cloud(c, "Halbdatumweg 7", "Home/Immobilien/Halbdatumweg 7")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+
+        c.post("/api/dokumente/scannen",
+               data={"objekt": slug, "kategorie": "Nebenkosten",
+                     "datum": "2025-11", "beschreibung": "Kehrung"},
+               files={"datei": ("scan.pdf", b"%PDF-1.4 x", "application/pdf")})
+        eintrag = c.get("/api/dokumente",
+                        params={"objekt": slug}).json()["dokumente"][0]
+        assert eintrag["belegdatum"] is None
+        # Jahr und Monat kommen trotzdem an — sie benennen die Datei
+        assert eintrag["jahr"] == 2025
+        assert eintrag["dateiname"].startswith("2025-11_")
+
+
+def test_bestandsdatenbank_bekommt_kostenart_und_belegdatum():
+    """Schemaänderungen sind additiv: eine gewachsene Datenbank bekommt die
+    neuen Spalten, ohne dass eine Zeile verlorengeht."""
+    from sqlalchemy import inspect, text
+    from app.migrate import migriere
+
+    motor = _bestands_datenbank(["/a/eins.pdf"])
+    migriere(motor)
+
+    spalten = {s["name"] for s in inspect(motor).get_columns("dokument")}
+    assert {"kostenart", "belegdatum"} <= spalten
+    with motor.begin() as conn:
+        zeile = conn.execute(text("SELECT pfad, kostenart, belegdatum "
+                                  "FROM dokument")).one()
+    assert tuple(zeile) == ("/a/eins.pdf", "", None)
+
+
+def test_vorschau_vertraegt_das_eurozeichen_im_namen(monkeypatch):
+    """Seit der Betrag hinten im Namen steht (CXXIII), heisst fast jede
+    Rechnung „…_214,00€.pdf" — und die Vorschau darauf antwortete mit 500,
+    weil ein HTTP-Kopf kein € tragen kann."""
+    import app.routers.dokumente as modul
+
+    class _Datei:
+        def hole(self, pfad):
+            return b"%PDF-1.4 x", "application/pdf"
+
+    with TestClient(app) as c:
+        slug = _mit_cloud(c, "Eurozeichenweg 9", "Home/Immobilien/Eurozeichenweg 9")
+        doc = _beleg(_objekt_id(slug),
+                     "/Home/Immobilien/Eurozeichenweg 9/60_Nebenkosten/"
+                     "2025-03_Müllabfuhr_214,00€.pdf")
+        with Session(engine) as s:
+            d = s.get(Dokument, doc)
+            d.dateiname = "2025-03_Müllabfuhr_214,00€.pdf"
+            s.add(d)
+            s.commit()
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Datei())
+
+        antwort = c.get(f"/api/dokumente/{doc}/inhalt")
+        assert antwort.status_code == 200
+        kopf = antwort.headers["content-disposition"]
+        assert kopf.startswith("inline; ")
+        # Der volle Name kommt kodiert mit — der schlichte bleibt lesbar
+        assert "filename*=UTF-8''" in kopf
+        assert "M%C3%BCllabfuhr" in kopf

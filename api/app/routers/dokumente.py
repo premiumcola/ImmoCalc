@@ -13,7 +13,9 @@ liegen, gelöscht wird dort grundsätzlich nichts.
 """
 import logging
 import re
+import unicodedata
 from datetime import date
+from urllib.parse import quote
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Response,
                      UploadFile)
@@ -152,6 +154,11 @@ def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
         "id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
         "groesse": d.groesse, "status": d.status,
         "kategorie": d.kategorie, "jahr": d.jahr,
+        # CLXXI: auf welche Zeile der Abrechnung der Beleg zeigt.
+        "kostenart": d.kostenart,
+        # CLXXII: das Rechnungsdatum tagesgenau — daran entscheidet sich, in
+        # welchen Abrechnungszeitraum der Beleg fällt.
+        "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
         "erkannt_am": d.erkannt_am.isoformat() if d.erkannt_am else None,
         "zeitraum_id": d.zeitraum_id,
         "objekt": o.slug if o else None,
@@ -820,8 +827,21 @@ def _aus_datum(datum: str) -> tuple[int | None, int | None]:
     return jahr, (monat if monat and 1 <= monat <= 12 else None)
 
 
+def _zum_datum(datum: str) -> date | None:
+    """Ein vollständiges ISO-Datum, sonst nichts (CLXXII).
+
+    Ein halbes Datum („2025-11") ist kein Belegdatum: den Tag zu erfinden
+    hiesse, den Beleg in einen Zeitraum zu schieben, in den er vielleicht gar
+    nicht gehört."""
+    try:
+        return date.fromisoformat((datum or "").strip())
+    except ValueError:
+        return None
+
+
 @router.post("/scannen", status_code=201)
 async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
+                  kostenart: str = Form(""),
                   jahr: int | None = Form(None), beschreibung: str = Form(""),
                   zeitraum_id: int | None = Form(None),
                   monat: int | None = Form(None),
@@ -838,7 +858,11 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     `betrag` und `datum` kommen von `/erkennen` durchgereicht: der Betrag
     gehört an das Ende des Dateinamens (CXXIII), das Datum an seinen Anfang.
     Gespeichert wird der Betrag nicht — er steht im Namen, und dort gehört er
-    hin."""
+    hin. Das Datum dagegen schon (CLXXII): tagesgenau entscheidet es, in
+    welchen Abrechnungszeitraum der Beleg fällt.
+
+    `kostenart` ist die genaue Position innerhalb der Art (CLXXI) —
+    „Kaminkehrer" unter „Nebenkosten"."""
     o = _eindeutiges_objekt(session, objekt)
     _cloud_pflicht(o)
     zeitraum_id = _pruefe_zeitraum(session, zeitraum_id)
@@ -864,7 +888,9 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
     d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
                  groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
-                 jahr=jahr, zeitraum_id=zeitraum_id, status="zugeordnet",
+                 kostenart=(kostenart or "").strip(),
+                 jahr=jahr, belegdatum=_zum_datum(datum),
+                 zeitraum_id=zeitraum_id, status="zugeordnet",
                  erkannt_am=date.today())
     session.add(d)
     try:
@@ -890,9 +916,16 @@ class AenderungIn(BaseModel):
     verlieren, den die App als abgelegt führt."""
     objekt: str | None = None
     kategorie: str | None = None
+    # Die genaue Position innerhalb der Art (CLXXI): „Kaminkehrer" statt nur
+    # „Nebenkosten". Sie steht nicht im Dateinamen — der Ordner sagt die Art,
+    # die Bezeichnung sagt die Sache; ein drittes Mal wäre eins zu viel.
+    kostenart: str | None = None
     jahr: int | None = None
     # Belegmonat — steht mit im Dateinamen, sobald er bekannt ist (CXXIII).
     monat: int | None = None
+    # Das Rechnungsdatum, tagesgenau (CLXXII). Kommt es mit, gelten Jahr und
+    # Monat daraus, sofern nicht ausdrücklich eigene mitgeschickt werden.
+    belegdatum: date | None = None
     # Der Dateiname entsteht immer aus Datum, Bezeichnung und Betrag — eine
     # Regel für die ganze Ablage. Umbenannt wird über die Bezeichnung.
     beschreibung: str | None = None
@@ -908,8 +941,9 @@ class AenderungIn(BaseModel):
 @router.patch("/{dokument_id}")
 def aendern(dokument_id: int, data: AenderungIn,
             session: Session = Depends(get_session)) -> dict:
-    """Ordnet zu oder korrigiert: andere Immobilie, andere Art, anderes Jahr,
-    anderer Name — die Datei wandert in der Nextcloud mit."""
+    """Ordnet zu oder korrigiert: andere Immobilie, andere Art, andere
+    Kostenposition, anderes Belegdatum, anderer Name — die Datei wandert in der
+    Nextcloud mit."""
     d = session.get(Dokument, dokument_id)
     if not d:
         raise HTTPException(404, "Dokument nicht gefunden")
@@ -944,7 +978,16 @@ def aendern(dokument_id: int, data: AenderungIn,
     if jahr is None and "jahr" not in gesetzt:
         jahr = alt_jahr
 
-    if {"kategorie", "jahr", "monat", "betrag",
+    # CLXXII: das Belegdatum ist die genauere Angabe. Wo Jahr und Monat nicht
+    # ausdrücklich mitkommen, gilt der Tag, der auf der Rechnung steht.
+    belegdatum = data.belegdatum if "belegdatum" in gesetzt else d.belegdatum
+    if belegdatum:
+        if "jahr" not in gesetzt:
+            jahr = belegdatum.year
+        if "monat" not in gesetzt:
+            monat = belegdatum.month
+
+    if {"kategorie", "jahr", "monat", "betrag", "belegdatum",
             "beschreibung", "objekt"} & gesetzt:
         name = dateiname(jahr, kategorie, beschreibung or "", endung,
                          monat, betrag)
@@ -974,7 +1017,10 @@ def aendern(dokument_id: int, data: AenderungIn,
 
     d.objekt_id = o.id
     d.kategorie = kategorie
+    if "kostenart" in gesetzt:
+        d.kostenart = (data.kostenart or "").strip()
     d.jahr = jahr
+    d.belegdatum = belegdatum
     d.dateiname = name
     d.status = "zugeordnet"
     d.zeitraum_id = zeitraum_id
@@ -985,6 +1031,8 @@ def aendern(dokument_id: int, data: AenderungIn,
         raise _pfad_konflikt(session, neuer_pfad) from e
     return {"ok": True, "id": d.id, "pfad": d.pfad, "dateiname": d.dateiname,
             "objekt": o.slug, "kategorie": kategorie, "jahr": jahr,
+            "kostenart": d.kostenart,
+            "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
             "zeitraum_id": d.zeitraum_id, "verschoben": verschoben}
 
 
@@ -1057,6 +1105,21 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
             "hinweis": "Die vorherige Datei bleibt in der Nextcloud liegen."}
 
 
+def _dateiname_kopfzeile(name: str) -> str:
+    """Der Dateiname für `Content-Disposition` — auch mit € und Umlauten.
+
+    Ein HTTP-Kopf trägt kein €. Seit der Betrag hinten im Namen steht
+    (CXXIII), heisst fast jede Rechnung „…_1234,56€.pdf" — und jede Vorschau
+    darauf antwortete mit einem 500er, weil sich der Kopf nicht kodieren
+    liess. Also beides (RFC 6266): ein Name ohne Sonderzeichen als Rückfall
+    und daneben der vollständige, prozentkodiert. Jeder heutige Browser nimmt
+    den zweiten."""
+    ohne_zoll = unicodedata.normalize("NFKD", name.replace('"', ""))
+    schlicht = ohne_zoll.encode("ascii", "ignore").decode("ascii").strip()
+    return (f'filename="{schlicht or "beleg"}"; '
+            f"filename*=UTF-8''{quote(name)}")
+
+
 @router.get("/{dokument_id}/inhalt")
 def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Response:
     """Liefert die Datei aus der Nextcloud zur Ansicht im Browser.
@@ -1077,9 +1140,8 @@ def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Respons
     # Browser herunter, statt es anzuzeigen.
     if typ == "application/octet-stream" and d.dateiname.lower().endswith(".pdf"):
         typ = "application/pdf"
-    name = d.dateiname.replace('"', "")
     return Response(content=rohdaten, media_type=typ, headers={
-        "Content-Disposition": f'inline; filename="{name}"',
+        "Content-Disposition": f"inline; {_dateiname_kopfzeile(d.dateiname)}",
         "Cache-Control": "private, max-age=60",
     })
 

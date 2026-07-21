@@ -111,21 +111,34 @@
                      box-shadow:inset 0 0 0 1.5px var(--line)}
 
   /* Erfassung an der gewählten Karte */
+  /* Zwei Spalten auf jeder Breite. Drei waren es einmal; seit die
+     Kostenposition (CLXXI) über die volle Breite läuft, blieb daneben eine
+     handbreite Lücke stehen, und die Kanten fluchteten nicht mehr. Schmaler
+     als die Hälfte darf ein Auswahlfeld ohnehin nicht werden, sonst schneidet
+     es seinen eigenen Text ab („(Eschenau…", „Nebenkost…"). */
   .felder{margin-top:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
           gap:10px}
-  @media (min-width:680px){.felder{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  /* Steht der Beleg daneben, ist die linke Spalte schmaler: dann zwei Felder
-     statt drei — sonst schneidet das Auswahlfeld seinen eigenen Text ab
-     („(Eschenau…", „Nebenkost…"). Diese Regel muss NACH der 680er stehen,
-     sonst gewinnt die dreispaltige. */
-  @media (min-width:1180px){.felder{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .felder .breit{grid-column:1 / -1}
+  /* Die Felder einer Zeile fluchten unten, auch wenn eine Beschriftung
+     umbricht — sonst rutscht ein Feld gegenüber seinem Nachbarn nach unten. */
+  .felder .fach{display:flex;flex-direction:column}
+  /* `hidden` muss die Regel darüber schlagen — sonst stünde das Jahresfeld
+     noch da, obwohl längst ein Belegdatum gewählt ist. */
+  .felder .fach[hidden]{display:none}
+  .felder .fach > :last-child{margin-top:auto}
   .felder .fl{display:block;font:600 10.5px var(--mono);color:var(--soft);
     letter-spacing:.06em;text-transform:uppercase;margin:0 0 5px 2px}
   .felder input{width:100%;border:1.5px solid var(--line);border-radius:12px;
     padding:11px 13px;font:500 13.5px var(--body);background:var(--sheet);
-    min-height:44px;color:var(--ink)}
+    min-height:44px;color:var(--ink);appearance:none}
   .felder input:focus{outline:none;border-color:var(--teal)}
+  /* CLXXV: was beisammen ist, ist grün — was fehlt, bleibt ruhig offen.
+     Kein Ampelspiel: der Rahmen wechselt die Farbe, mehr braucht es nicht. */
+  .felder .fach.gefuellt input,
+  .felder .fach.gefuellt .auswahl-knopf{border-color:var(--teal)}
+  /* CLXXVII: was die Texterkennung beigesteuert hat, sagt es auch — sie
+     schlägt vor, gespeichert wird erst mit „Übernehmen". */
+  .felder .fach.vorschlag .fl::after{content:" · Vorschlag";color:var(--teal-d)}
 
   /* ---- Prüfblatt: der Beleg und was aus ihm wird ---- */
   .blatt{background:var(--sheet);border-radius:16px;padding:14px;
@@ -157,6 +170,8 @@
   .bschau:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
   .babschnitt{margin-top:14px}
+  /* Auch der gewählte Zeitraum ist eine erledigte Angabe (CLXXV). */
+  .babschnitt .auswahl.gefuellt .auswahl-knopf{border-color:var(--teal)}
   .babschnitt .bt{display:block;font:600 10.5px var(--mono);color:var(--soft);
     letter-spacing:.09em;text-transform:uppercase;margin-bottom:8px}
   .pzeile{display:flex;align-items:baseline;gap:8px;padding:5px 0;
@@ -164,8 +179,19 @@
   .pzeile .pl{flex:none;width:82px;font:500 11.5px var(--mono);color:var(--soft)}
   .pzeile .pw{min-width:0;word-break:break-word}
   .pzeile .pw.leer{color:var(--amber)}
+  /* CLXXV: eine Angabe, die steht, ist erledigt. Sind alle Zeilen grün, kann
+     eingesortiert werden — das sagt die Farbe, ein Satz darüber wäre einer
+     zu viel. */
+  .pzeile .pw.da{color:var(--pos)}
   .pzeile .alt{color:var(--soft);text-decoration:line-through}
   .pzeile .pfeil{color:var(--soft);font:400 12px var(--mono)}
+
+  /* Eine ruhige Zeile unter einem Abschnitt: was gerade gelesen wird, oder
+     warum das Belegdatum nicht in den gewählten Zeitraum passt. */
+  .bhinweis{display:block;font:500 11.5px var(--mono);color:var(--soft);
+            margin-top:8px;line-height:1.55}
+  .bhinweis.warn{color:var(--amber)}
+  .bhinweis:empty{display:none}
 
   .bziel{margin-top:10px;background:var(--teal-l);border-radius:12px;padding:11px 12px;
     font:500 12px var(--mono);color:var(--teal-d);line-height:1.6;word-break:break-word}
@@ -286,10 +312,12 @@
           <div class="babschnitt">
             <span class="bt">Erkannt · wird eingetragen</span>
             <div id="bPlan"></div>
+            <span class="bhinweis" id="bLesen"></span>
           </div>
           <div class="babschnitt">
             <span class="bt">Abrechnungszeitraum</span>
             <div id="bZeitraum"></div>
+            <span class="bhinweis" id="bZeitHinweis"></span>
           </div>
           <div class="bziel" id="bZiel"></div>
           <div class="btat">
@@ -355,6 +383,8 @@ const leerBlatt = document.getElementById('leerBlatt');
 const bSchau = document.getElementById('bSchau');
 const bName = document.getElementById('bName');
 const bPlan = document.getElementById('bPlan');
+const bLesen = document.getElementById('bLesen');
+const bZeitHinweis = document.getElementById('bZeitHinweis');
 const bZiel = document.getElementById('bZiel');
 const bOk = document.getElementById('bOk');
 const bWeg = document.getElementById('bWeg');
@@ -378,6 +408,11 @@ let zielFelder = null;            // Auswahlfelder des Ablage-Dialogs
 let vorschauAdresse = null;       // Blob-Adresse der gezeigten Datei
 let vorschauLauf = 0;             // gegen überholende Ladevorgänge
 const zeitraeumeJeObjekt = new Map();
+const kostenartenJeObjekt = new Map();
+// Was aus einem Beleg gelesen wurde — einmal je Beleg, danach gemerkt
+// (CLXXVII). Die Datei dafür aus der Nextcloud zu holen kostet Zeit; ein
+// zweites Mal muss es nicht sein.
+const erkanntJeBeleg = new Map();
 
 const jahresliste = () => {
   const aus_daten = daten.jahre || [];
@@ -452,6 +487,21 @@ const endungVon = name => {
 const datumText = (jahr, monat) => (!jahr ? ''
   : monat ? `${MONATE[monat - 1]} ${jahr}` : String(jahr));
 
+/** 'JJJJ-MM-TT' als echtes Datum — der Wert eines Datumsfeldes. */
+const alsDatum = iso => {
+  const t = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  return t ? new Date(Number(t[1]), Number(t[2]) - 1, Number(t[3])) : null;
+};
+
+/** Ein Datum, wie es auf der Rechnung steht: 14.11.2025 (CLXXII). */
+const dmy = t => t.toLocaleDateString('de-DE',
+  { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+const tagText = iso => {
+  const t = alsDatum(iso);
+  return t ? dmy(t) : '';
+};
+
 const betragText = betrag =>
   (betrag === null || betrag === undefined ? '' : geld.format(betrag));
 
@@ -459,14 +509,23 @@ const betragText = betrag =>
 function befund(d) {
   const v = d.vorschlag || {};
   const kategorie = d.kategorie || v.kategorie || '';
+  // Steht ein tagesgenaues Belegdatum am Eintrag, ist es die feinere Wahrheit:
+  // Jahr und Monat folgen ihm, statt daneben ein zweites Datum zu behaupten.
+  const tag = d.belegdatum || '';
   return {
     sache: sacheAusNamen(d.dateiname, kategorie) || v.sache || '',
-    jahr: d.jahr || v.jahr || null,
-    monat: v.monat || null,
+    belegdatum: tag,
+    jahr: (tag ? Number(tag.slice(0, 4)) : d.jahr || v.jahr) || null,
+    monat: (tag ? Number(tag.slice(5, 7)) : v.monat) || null,
     betrag: v.betrag === undefined ? null : v.betrag,
     kategorie,
+    kostenart: d.kostenart || '',
   };
 }
+
+/** Das Datum eines Belegs in seiner feinsten bekannten Genauigkeit. */
+const belegDatumText = b =>
+  (b.belegdatum ? tagText(b.belegdatum) : datumText(b.jahr, b.monat));
 
 /** Was in der Kachel oben steht: die Sache, nicht der ganze Dateiname. */
 const titelVon = d => befund(d).sache || 'Beleg';
@@ -475,14 +534,14 @@ const titelVon = d => befund(d).sache || 'Beleg';
 function karte(d) {
   const b = befund(d);
   const gewahlt = gewaehlt === d.id;
-  const datum = datumText(b.jahr, b.monat);
+  const datum = belegDatumText(b);
   const chips = [
     datum ? `<span class="chip"><span class="ci">▤</span>${esc(datum)}</span>`
           : '<span class="chip offen">Datum fehlt</span>',
     b.betrag ? `<span class="chip geld">${esc(betragText(b.betrag))}</span>`
              : '<span class="chip offen">Betrag fehlt</span>',
   ].join('');
-  const meta = [d.objekt_name, b.kategorie,
+  const meta = [d.objekt_name, b.kategorie, b.kostenart,
                 d.groesse ? lesbareGroesse(d.groesse) : null]
     .filter(Boolean).join(' · ');
   const marke = d.vermisst
@@ -507,18 +566,36 @@ function karte(d) {
     </article>`;
 }
 
+/* Die Felder der gewählten Karte.
+   `data-fach` benennt das Fach, in dem ein Feld sitzt — daran hängen die
+   grüne Kennzeichnung (CLXXV) und der Vermerk „Vorschlag" (CLXXVII).
+   Das Belegdatum steht tagesgenau (CLXXII); das Jahr daneben ist nur für die
+   Belege, bei denen der Tag nicht bekannt ist, und weicht dem Datum, sobald
+   eines dasteht — dieselbe Angabe zweimal wäre eine zu viel. */
 function felder(d, b) {
   return `<div class="felder" data-erfassung>
-      <div><span class="fl">Immobilie</span><div data-feld="objekt"></div></div>
-      <div><span class="fl">Art</span><div data-feld="kategorie"></div></div>
-      <div><span class="fl">Jahr</span><div data-feld="jahr"></div></div>
-      <div><span class="fl">Monat</span><div data-feld="monat"></div></div>
-      <div><span class="fl" id="fl${d.id}b">Betrag</span>
+      <div class="fach" data-fach="objekt"><span class="fl">Immobilie</span>
+        <div data-feld="objekt"></div></div>
+      <div class="fach" data-fach="kategorie"><span class="fl">Art</span>
+        <div data-feld="kategorie"></div></div>
+      <div class="fach breit" data-fach="kostenart">
+        <span class="fl">Kostenposition</span>
+        <div data-feld="kostenart"></div></div>
+      <div class="fach" data-fach="belegdatum">
+        <span class="fl" id="fl${d.id}d">Datum</span>
+        <input data-feld="belegdatum" type="date" aria-labelledby="fl${d.id}d"
+               value="${esc(b.belegdatum)}">
+      </div>
+      <div class="fach" data-fach="jahr"${b.belegdatum ? ' hidden' : ''}>
+        <span class="fl">Jahr</span><div data-feld="jahr"></div></div>
+      <div class="fach" data-fach="betrag">
+        <span class="fl" id="fl${d.id}b">Betrag</span>
         <input data-feld="betrag" inputmode="decimal" placeholder="—"
                aria-labelledby="fl${d.id}b"
                value="${esc(b.betrag ? b.betrag.toFixed(2).replace('.', ',') : '')}">
       </div>
-      <div class="breit"><span class="fl" id="fl${d.id}t">Bezeichnung</span>
+      <div class="fach breit" data-fach="beschreibung">
+        <span class="fl" id="fl${d.id}t">Bezeichnung</span>
         <input data-feld="beschreibung" maxlength="60" placeholder="Wofür?"
                aria-labelledby="fl${d.id}t" value="${esc(b.sache)}">
       </div>
@@ -531,30 +608,52 @@ function erfassungBeleben(karteEl, d, b) {
     karteEl.querySelector(`[data-feld="${feld}"]`),
     { optionen, wert, label, aenderung: aenderung || (() => planZeichnen()) });
   const eingabe = feld => karteEl.querySelector(`input[data-feld="${feld}"]`);
-  const monate = [{ wert: '', text: 'ohne Monat' },
-    ...MONATE.map((m, i) => ({ wert: String(i + 1), text: m }))];
   erfassung = {
     id: d.id,
-    // Eine andere Immobilie hat andere Abrechnungszeiträume — das Feld
-    // rechts muss mitkommen, sonst zeigte es auf eine fremde Abrechnung.
+    karte: karteEl,
+    // Welche Fächer die Texterkennung gefüllt hat — nur zum Kennzeichnen.
+    vorgeschlagen: new Set(),
+    // Eine andere Immobilie hat andere Abrechnungszeiträume und einen anderen
+    // Kostenkatalog — beides muss mitkommen, sonst zeigte das Feld daneben auf
+    // eine fremde Abrechnung.
     objekt: bau('objekt', 'Immobilie',
                 daten.objekte.map(o => ({ wert: o.slug, text: o.name })),
                 d.objekt || daten.objekte[0]?.slug || '',
-                () => zeitraeumeFuellen(d)),
+                () => { kostenartenFuellen(d); zeitraeumeFuellen(d); }),
     kategorie: bau('kategorie', 'Art',
                    daten.arten.map(a => ({ wert: a, text: a })),
                    b.kategorie || 'Sonstiges'),
+    // Der Katalog kommt aus der API und trifft gleich darauf ein; bis dahin
+    // steht wenigstens da, was am Beleg schon vermerkt ist.
+    kostenart: bau('kostenart', 'Kostenposition',
+                   [{ wert: '', text: 'ohne Position' },
+                    ...(b.kostenart
+                      ? [{ wert: b.kostenart, text: b.kostenart }] : [])],
+                   b.kostenart),
     jahr: bau('jahr', 'Jahr', [{ wert: '', text: 'ohne Jahr' },
       ...jahresliste().map(j => ({ wert: String(j), text: String(j) }))],
       b.jahr ? String(b.jahr) : ''),
-    monat: bau('monat', 'Monat des Belegs', monate,
-               b.monat ? String(b.monat) : ''),
+    datumFeld: eingabe('belegdatum'),
     betragFeld: eingabe('betrag'),
     textFeld: eingabe('beschreibung'),
   };
   for (const feld of [erfassung.betragFeld, erfassung.textFeld]) {
     feld.addEventListener('input', planZeichnen);
   }
+  // Das Belegdatum ist die genauere Angabe: steht eines da, tritt das
+  // Jahresfeld zurück, und der Abrechnungszeitraum wird neu vorgeschlagen.
+  erfassung.datumFeld.addEventListener('change', () => {
+    jahresfachZeigen();
+    zeitraeumeFuellen(d);
+  });
+  kostenartenFuellen(d);
+}
+
+/** Jahr fragen wir nur, solange kein Belegdatum dasteht — sonst stünde
+    dieselbe Angabe zweimal auf dem Blatt. */
+function jahresfachZeigen() {
+  const fach = erfassung && erfassung.karte.querySelector('[data-fach="jahr"]');
+  if (fach) fach.hidden = Boolean(erfassung.datumFeld.value);
 }
 
 /** Was der Nutzer gerade eingestellt hat — die Grundlage für Vorschau und PATCH. */
@@ -563,11 +662,18 @@ function stand() {
   const zahlText = (erfassung.betragFeld.value || '').trim()
     .replace(/[€\s]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
   const betrag = zahlText ? Number(zahlText) : null;
+  const datum = (erfassung.datumFeld.value || '').trim();
   return {
     objekt: erfassung.objekt.wert(),
     kategorie: erfassung.kategorie.wert(),
-    jahr: erfassung.jahr.wert() ? Number(erfassung.jahr.wert()) : null,
-    monat: erfassung.monat.wert() ? Number(erfassung.monat.wert()) : null,
+    kostenart: erfassung.kostenart.wert(),
+    belegdatum: datum || null,
+    jahr: datum ? Number(datum.slice(0, 4))
+        : erfassung.jahr.wert() ? Number(erfassung.jahr.wert()) : null,
+    // Ohne Belegdatum bleibt der Monat, den der Dateiname trägt: `undefined`
+    // wird beim Übernehmen nicht mitgeschickt, und was nicht mitkommt, lässt
+    // die API stehen.
+    monat: datum ? Number(datum.slice(5, 7)) : undefined,
     betrag: Number.isFinite(betrag) && betrag > 0 ? Math.round(betrag * 100) / 100
                                                   : null,
     beschreibung: (erfassung.textFeld.value || '').trim(),
@@ -667,13 +773,15 @@ function blattZeigen() {
   // dann steht links schon, was zu tun ist.
   leerBlatt.hidden = Boolean(d) || !daten.dokumente.length;
   blattPlatzieren();
-  if (!d) { vorschauLeeren(); return; }
+  if (!d) { vorschauLeeren(); bLesen.textContent = ''; return; }
   bName.textContent = d.dateiname;
   bMeldung.textContent = '';
   bMeldung.className = 'bmeldung';
+  bLesen.textContent = '';
   zeitraeumeFuellen(d);
   planZeichnen();
   vorschauLaden(d);
+  erkennungHolen(d);
 }
 
 /** Wählt einen Beleg aus oder gibt ihn frei. */
@@ -683,6 +791,26 @@ function waehle(id) {
   zeichne();
 }
 
+/** CLXXV: was beisammen ist, trägt grün — was fehlt, bleibt ruhig offen.
+    Sind alle Fächer grün, ist der Beleg fertig zum Einsortieren; das sagt die
+    Farbe, ein Satz darüber wäre einer zu viel. */
+function feldstandZeigen(s) {
+  document.getElementById('bZeitraum').classList.toggle('gefuellt',
+    Boolean(zeitraumFeld && zeitraumFeld.wert()));
+  if (!erfassung || !s) return;
+  const gefuellt = {
+    objekt: s.objekt, kategorie: s.kategorie, kostenart: s.kostenart,
+    belegdatum: s.belegdatum, jahr: s.jahr, betrag: s.betrag,
+    beschreibung: s.beschreibung,
+  };
+  for (const [name, wert] of Object.entries(gefuellt)) {
+    const fach = erfassung.karte.querySelector(`[data-fach="${name}"]`);
+    if (!fach) continue;
+    fach.classList.toggle('gefuellt', Boolean(wert));
+    fach.classList.toggle('vorschlag', erfassung.vorgeschlagen.has(name));
+  }
+}
+
 /* Gegenüberstellung: was steht am Beleg, was wird daraus (CXXV). */
 function planZeichnen() {
   const d = gewaehlt !== null ? dok(gewaehlt) : null;
@@ -690,26 +818,35 @@ function planZeichnen() {
   const b = befund(d);
   // Ohne Eingabefelder (vermisster Beleg) bleibt es beim Erkannten — dann
   // stünde sonst hinter jeder Zeile ein Pfeil auf „nichts".
-  const s = stand() || { objekt: d.objekt, kategorie: b.kategorie, jahr: b.jahr,
-                         monat: b.monat, betrag: b.betrag, beschreibung: b.sache };
+  const eingestellt = stand();
+  const s = eingestellt || { objekt: d.objekt, kategorie: b.kategorie,
+                             kostenart: b.kostenart, belegdatum: b.belegdatum,
+                             jahr: b.jahr, monat: b.monat, betrag: b.betrag,
+                             beschreibung: b.sache };
+  feldstandZeigen(eingestellt);
   const objektName = slug => (daten.objekte.find(o => o.slug === slug) || {}).name;
+  // Ohne Belegdatum bleibt der Monat, den der Dateiname trägt.
+  const neuesDatum = { belegdatum: s.belegdatum, jahr: s.jahr,
+                       monat: s.monat === undefined ? b.monat : s.monat };
   const zeilen = [
     ['Sache', b.sache, s.beschreibung],
-    ['Datum', datumText(b.jahr, b.monat), datumText(s.jahr, s.monat)],
+    ['Datum', belegDatumText(b), belegDatumText(neuesDatum)],
     ['Betrag', betragText(b.betrag), betragText(s.betrag)],
     ['Immobilie', d.objekt_name || '', objektName(s.objekt) || ''],
     ['Art', b.kategorie, s.kategorie],
+    ['Position', b.kostenart, s.kostenart],
   ];
   bPlan.innerHTML = zeilen.map(([label, alt, neu]) => {
     const gleich = (alt || '') === (neu || '');
     const wert = gleich
-      ? (alt ? `<span class="pw">${esc(alt)}</span>`
-             : '<span class="pw leer">nicht erkannt</span>')
+      ? (alt ? `<span class="pw da">${esc(alt)}</span>`
+             : '<span class="pw leer">offen</span>')
       : `<span class="pw alt">${esc(alt || 'nichts')}</span>`
         + '<span class="pfeil">→</span>'
-        + `<span class="pw">${esc(neu || 'nichts')}</span>`;
+        + `<span class="pw${neu ? ' da' : ''}">${esc(neu || 'nichts')}</span>`;
     return `<div class="pzeile"><span class="pl">${label}</span>${wert}</div>`;
   }).join('');
+  zeitraumHinweisZeigen();
 
   if (d.vermisst) {
     bZiel.className = 'bziel gesperrt';
@@ -772,11 +909,24 @@ async function zeitraeumeFuer(slug) {
   }
 }
 
-/** Welcher Zeitraum zum Belegdatum passt — vorgeschlagen, nicht gesetzt. */
-function passenderZeitraum(zs, jahr, monat) {
-  if (!jahr) return null;
-  const tag = new Date(jahr, (monat || 6) - 1, 15);
-  return zs.find(z => z.von && z.bis && z.von <= tag && tag <= z.bis) || null;
+/** Enthält dieser Zeitraum den Tag? */
+const umfasst = (z, tag) =>
+  Boolean(z && tag && z.von && z.bis && z.von <= tag && tag <= z.bis);
+
+/** Welcher Zeitraum das Belegdatum enthält — vorgeschlagen, nicht gesetzt.
+    Tagesgenau (CLXXII): Abrechnungen laufen nicht immer von Januar bis
+    Dezember, sondern zum Beispiel vom 1. Oktober bis zum 30. September. */
+const passenderZeitraum = (zs, tag) =>
+  (tag ? zs.find(z => umfasst(z, tag)) || null : null);
+
+/** Der Tag, an dem der Beleg hängt. `genau` sagt, ob er auf der Rechnung
+    steht oder nur aus Jahr und Monat geschätzt ist — das ist ein Unterschied,
+    wenn ein Zeitraum mitten im Jahr endet. */
+function belegTag(s) {
+  const genau = alsDatum(s.belegdatum);
+  if (genau) return { tag: genau, genau: true };
+  if (!s.jahr) return { tag: null, genau: false };
+  return { tag: new Date(s.jahr, (s.monat || 6) - 1, 15), genau: false };
 }
 
 async function zeitraeumeFuellen(d) {
@@ -786,8 +936,8 @@ async function zeitraeumeFuellen(d) {
   const zs = await zeitraeumeFuer(slug);
   if (gewaehlt !== d.id) return;          // inzwischen etwas anderes gewählt
   zeitraumListe = zs;
-  const b = befund(d);
-  const vorschlag = passenderZeitraum(zs, b.jahr, b.monat);
+  const { tag } = belegTag(stand() || befund(d));
+  const vorschlag = passenderZeitraum(zs, tag);
   const optionen = [{ wert: '', text: 'ohne Abrechnung' },
     ...zs.map(z => ({ wert: String(z.id),
       text: z.label + (vorschlag && vorschlag.id === z.id ? ' · Vorschlag' : '') }))];
@@ -804,6 +954,152 @@ async function zeitraeumeFuellen(d) {
     zeitraumFeld.fuelle(optionen, wert);
   }
   planZeichnen();
+}
+
+/** Ehrlich, aber nicht verbietend (CLXXII): eine Nachtragsrechnung darf an
+    einen Zeitraum, in den ihr Datum nicht fällt — gesagt wird es trotzdem.
+    Und fällt das Datum in gar keinen Zeitraum, wird nicht still der erste
+    genommen, sondern es steht da. */
+function zeitraumHinweisZeigen() {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  const zs = zeitraumListe;
+  if (!d || d.vermisst) { bZeitHinweis.textContent = ''; return; }
+  const { tag, genau } = belegTag(stand() || befund(d));
+  const id = zeitraumFeld ? zeitraumFeld.wert() : '';
+  const z = id ? zs.find(x => String(x.id) === id) : null;
+  let text = '';
+  let warnen = false;
+  if (!zs.length) {
+    text = 'Für diese Immobilie ist noch kein Abrechnungszeitraum angelegt.';
+  } else if (!tag) {
+    text = 'Ohne Belegdatum lässt sich der Zeitraum nur raten — '
+         + 'trag das Datum der Rechnung ein.';
+  } else if (z && !umfasst(z, tag)) {
+    text = `${dmy(tag)} liegt außerhalb von ${z.label} — als Nachtrag möglich.`;
+    warnen = true;
+  } else if (!passenderZeitraum(zs, tag)) {
+    text = `${dmy(tag)} fällt in keinen angelegten Abrechnungszeitraum.`;
+    warnen = true;
+  } else if (!genau) {
+    text = 'Aus Jahr und Monat geschätzt — mit dem genauen Rechnungsdatum '
+         + 'stimmt die Zuordnung sicher.';
+  }
+  bZeitHinweis.textContent = text;
+  bZeitHinweis.classList.toggle('warn', warnen);
+}
+
+/* ---- Kostenposition: der Beleg soll auf eine Zeile zeigen (CLXXI) --------
+   Die Art sagt nur den Ordner. Welche Position der Abrechnung gemeint ist —
+   Kaminkehrer, Wasser, Müllabfuhr —, steht im Kostenkatalog der Immobilie. */
+async function kostenartenFuer(slug) {
+  if (!slug) return [];
+  if (kostenartenJeObjekt.has(slug)) return kostenartenJeObjekt.get(slug);
+  try {
+    const katalog = await api(`/objekte/${encodeURIComponent(slug)}/kostenarten`);
+    const namen = katalog.filter(k => k.aktiv !== false).map(k => k.name);
+    kostenartenJeObjekt.set(slug, namen);
+    return namen;
+  } catch {
+    return [];       // ohne Katalog bleibt das Feld eben leer
+  }
+}
+
+/** Welche Position zu diesem Beleg passt — geraten aus Dateiname und
+    Erkennung. Ein Vorschlag, den der Nutzer überschreiben kann. */
+function passendeKostenart(namen, d, b) {
+  const gelesen = (erkanntJeBeleg.get(d.id) || {}).werte || {};
+  const heu = [d.dateiname, b.sache, gelesen.sache]
+    .filter(Boolean).join(' ').toLowerCase();
+  return namen.find(n => n && heu.includes(n.toLowerCase())) || '';
+}
+
+async function kostenartenFuellen(d) {
+  const slug = (erfassung && erfassung.id === d.id ? erfassung.objekt.wert() : '')
+    || d.objekt || '';
+  const namen = await kostenartenFuer(slug);
+  if (!erfassung || erfassung.id !== d.id) return;
+  const b = befund(d);
+  const gesetzt = erfassung.kostenart.wert();
+  // Eine Position, die der Katalog nicht (mehr) führt, bleibt trotzdem
+  // stehen — sie ist eine Angabe des Nutzers, keine Auswahl der App. Nach
+  // einem Wechsel der Immobilie gilt das aber nicht: „Kaminkehrer" gehört
+  // dann zu einem fremden Haus und muss neu gewählt werden.
+  const eigenes = slug === (d.objekt || '');
+  const behalten = Boolean(gesetzt)
+    && (namen.includes(gesetzt) || (eigenes && gesetzt === b.kostenart));
+  let wert = behalten ? gesetzt : '';
+  if (!wert) {
+    wert = passendeKostenart(namen, d, b);
+    if (wert) erfassung.vorgeschlagen.add('kostenart');
+  }
+  const alle = behalten && !namen.includes(gesetzt) ? [...namen, gesetzt] : namen;
+  erfassung.kostenart.fuelle(
+    [{ wert: '', text: namen.length ? 'ohne Position'
+                                    : 'keine Kostenarten hinterlegt' },
+     ...alle.map(n => ({ wert: n, text: n }))], wert);
+  planZeichnen();
+}
+
+/* ---- Texterkennung am gewählten Beleg (CLXXVII) --------------------------
+   `/dokumente/{id}/erkennen` liest Betrag, Datum, Art und Sache aus der Datei,
+   die längst in der Cloud liegt — auch aus einem Text-PDF. Gefragt wird für
+   den einen Beleg, den der Nutzer gerade offen hat, und nur einmal je Beleg:
+   für jede Zeile der Liste die Datei zu holen wäre ein Zug durch die ganze
+   Ablage. Das Ergebnis ist ein Vorschlag — es füllt leere Felder, sagt dazu,
+   dass es einer ist, und gespeichert wird erst mit „Übernehmen". */
+function erkennungZeigen(d) {
+  const eintrag = erkanntJeBeleg.get(d.id) || {};
+  bLesen.textContent = eintrag.zustand === 'laeuft'
+    ? 'Der Beleg wird gelesen …' : (eintrag.grund || '');
+  bLesen.classList.toggle('warn',
+    eintrag.zustand !== 'laeuft' && Boolean(eintrag.grund));
+}
+
+async function erkennungHolen(d) {
+  if (!erkennungMoeglich || !d.abgelegt || d.vermisst) return;
+  if (!erkanntJeBeleg.has(d.id)) {
+    erkanntJeBeleg.set(d.id, { zustand: 'laeuft' });
+    erkennungZeigen(d);
+    try {
+      const werte = await api(`/dokumente/${d.id}/erkennen`);
+      erkanntJeBeleg.set(d.id,
+        { zustand: 'fertig', werte, grund: werte.hinweis || '' });
+    } catch (fehler) {
+      erkanntJeBeleg.set(d.id,
+        { zustand: 'fertig', grund: String(fehler.message || fehler) });
+    }
+  }
+  if (gewaehlt !== d.id) return;          // inzwischen etwas anderes gewählt
+  erkennungZeigen(d);
+  vorschlagEinsetzen(d);
+}
+
+/** Was gelesen wurde, wandert in die leeren Felder. Was der Beleg selbst
+    schon hergibt — aus seinem Namen oder aus früherer Zuordnung —, bleibt
+    unangetastet: die Erkennung schlägt vor, sie korrigiert nicht. */
+function vorschlagEinsetzen(d) {
+  const w = (erkanntJeBeleg.get(d.id) || {}).werte;
+  if (!w || !erfassung || erfassung.id !== d.id) return;
+  const merke = fach => erfassung.vorgeschlagen.add(fach);
+  if (w.betrag && !erfassung.betragFeld.value.trim()) {
+    erfassung.betragFeld.value = w.betrag.toFixed(2).replace('.', ',');
+    merke('betrag');
+  }
+  if (w.datum && !erfassung.datumFeld.value) {
+    erfassung.datumFeld.value = w.datum;
+    jahresfachZeigen();
+    merke('belegdatum');
+  }
+  if (w.sache && !erfassung.textFeld.value.trim()) {
+    erfassung.textFeld.value = w.sache;
+    merke('beschreibung');
+  }
+  if (w.kategorie && !d.kategorie) {
+    erfassung.kategorie.setze(w.kategorie);
+    merke('kategorie');
+  }
+  kostenartenFuellen(d);      // die Sache kann eine Position nahelegen
+  zeitraeumeFuellen(d);       // das Datum kann den Zeitraum ändern
 }
 
 /* ---- Vorschau: der Beleg selbst, ein Klick weiter in groß (CXXIX) ---- */

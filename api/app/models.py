@@ -338,7 +338,19 @@ class Dokument(SQLModel, table=True):
     groesse: int = 0
     objekt_id: Optional[int] = Field(default=None, foreign_key="objekt.id", index=True)
     zeitraum_id: Optional[int] = Field(default=None, foreign_key="zeitraum.id")
-    kategorie: str = ""                    # entspricht der Kostenart
+    kategorie: str = ""                    # Dokumentart: Nebenkosten, Steuer, …
+    # CLXXI/CXXVIII: die Art sagt nur den Ordner. Welche Zeile der Abrechnung
+    # gemeint ist — Kaminkehrer, Wasser, Müllabfuhr —, steht hier. Der Wert ist
+    # der Name einer `Kostenart` desselben Objekts; leer heisst „noch keine
+    # Position gewählt". Bewusst ein Name und keine Fremdschlüssel-Id: der
+    # Katalog wird umbenannt und ergänzt, und ein Beleg soll davon nicht
+    # plötzlich auf nichts mehr zeigen.
+    kostenart: str = ""
     jahr: Optional[int] = None
+    # CLXXII: das Rechnungsdatum, tagesgenau. `jahr` und der Monat im
+    # Dateinamen benennen die Datei und bleiben, wie sie sind. Ob ein Beleg in
+    # einen Abrechnungszeitraum fällt, entscheidet aber der Tag — die Zeiträume
+    # laufen nicht immer von Januar bis Dezember, sondern z. B. 01.10.–30.09.
+    belegdatum: Optional[date] = None
     status: str = "neu"                    # 'neu' | 'zugeordnet'
     erkannt_am: Optional[date] = None
