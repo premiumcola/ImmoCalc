@@ -38,6 +38,10 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 | CLIV/CLIX | Abrechnung erreicht alle Bewohner · Leerstand steht nicht mehr bei den Empfängern | `f377bf5` |
 | CL–CLII | Umzug lässt keine Belege zurück · keine Waisen beim Löschen · eine Zahl für die Restschuld | `6a4cce1` |
 | CLXIV | App-Symbol: hellerer Grund, Motiv mittig, Baum und Dach sichtbar | `870715e` |
+| CLV/CLVI | Steuernummer bleibt beim Tippen stehen · Kennzahlen zeigen das ganze Jahr | `a087374` |
+| CXXII/CXXIII/CXXVII | Dateinamen mit Datum, Sache und Betrag · vollständiger Ordnerabgleich | `37a3d8d` |
+| CLVIII/CLIX | „Benennung nachziehen" mit Trockenlauf · Leerstand bleibt beim Eigentümer | `f3619af` |
+| CXXXVIII | Grundstück als eigener Objekttyp: Nutzungsart, Grundsteuerwert, Pacht, Symbol | `ac3ad95` |
 
 ## Sofort zu beheben — aus der Nachprüfung vom 21.07. (Nachmittag)
 
@@ -57,6 +61,14 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 | CLVIII | **Benennung nachziehen ohne Knopf** | Die Endpunkte für CXIX stehen, aber keine Oberfläche ruft sie auf. In den Einstellungen fehlt unter „Ordner-Benennung" der Knopf samt Trockenlauf-Liste (alt → neu) und Fehlerausgabe |
 | CLIX | **Leerstand liest sich wie ein vergessener Mieter** | Im Abschluss-Dialog steht „Ohne Mailadresse und daher nicht versendbar: EG". Der Leerstand gehört von den Empfängern getrennt und als „bleibt beim Eigentümer" ausgewiesen. Ebenso: seine Personenzahl ist geraten (1), und alte, bereits abgeschlossene Abrechnungen behalten die frühere Verteilung |
 | CLX | **Umlagefähig lässt sich nicht setzen** | `Kostenart.umlagefaehig` ist nirgends änderbar — damit gilt faktisch jede Kostenposition als umlagefähig, und die Trennung aus CXIV steht auf tönernen Füßen |
+
+### Reste aus dem Grundstückstyp (CXXXVIII)
+
+| Nr. | Fund | Warum es zählt |
+|---|---|---|
+| CLXV | **Grundstück bekommt eine Abrechnungsfrist, die es nicht gibt** | `POST /api/objekte` legt für jedes Objekt einen Zeitraum an. Auf der Startseite steht dann „Frist in 528 T" und `/api/erinnerungen` mahnt eine § 556-Abrechnung an — für ein Feldgrundstück ohne Mieter sinnlos |
+| CLXVI | Ordnervorlage läuft ohne Straße leer | Ein Grundstück hat oft keine Straße; die Vorlage `({ort}) {strasse} · {name}` sollte auf Gemarkung und Flurstück ausweichen |
+| CLXVII | Pacht heißt in der Auswertung noch „Miete" | `auswertung.py`/`cashflow.py` führen ein Objekt ohne Einheiten als Pseudo-Einheit; Pachterträge laufen mit, sind aber nicht als Pacht benannt. Ebenso zeigt `wertentwicklung.html` „Verkehrswert" statt „Grundstückswert" |
 
 ### Eigentum je Einheit — aus dem Gespräch vom 21.07.2026
 
