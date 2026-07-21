@@ -13,6 +13,37 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 
 ---
 
+## Woran gerade gearbeitet wird
+
+In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
+
+| Nr. | In einfachen Worten | Stand |
+|---|---|---|
+| CXXI | Steht eine Wohnung leer, sollen die anderen Mieter das nicht bezahlen | in Arbeit |
+| CXIV | Kredite raus aus den Nebenkosten — Nebenkosten sind Mietersache, Kredite Eigentümersache | in Arbeit |
+| CXV | Beim Kredit nur den Stand zum 31.12. eintragen, den Rest rechnet die App | in Arbeit |
+| CXVI | Mieterhöhungen schon vorher eintragen können | in Arbeit |
+| CXVII | Für jeden Bewohner eigene Mailadresse und Handynummer | in Arbeit |
+| CXVIII | Beträge, IBAN und Steuernummer beim Tippen lesbar gruppieren | in Arbeit |
+| CXIX/CXX | Ordnernamen aufräumen (doppelt verschachtelt) und Umbenennung überall nachziehen, ohne dass Belege verloren gehen | in Arbeit |
+
+## Als Nächstes — in dieser Reihenfolge
+
+| Nr. | In einfachen Worten |
+|---|---|
+| CXXII/CXXIII | Dateinamen: nichts doppelt nennen, dafür die Sache und den Betrag — `2026_Heizöl_1.284€.pdf` |
+| CXXIV/CXXX | In der Dokumentenliste sehen, von wann der Beleg ist und über wie viel Euro |
+| CXXV | Rechts sehen: das wurde erkannt → das wird eingetragen, und bestätigen. Kein Beleg ohne Position |
+| CXXIX | Beleg anklicken → rechts die Vorschau, nochmal klicken → groß zum Prüfen |
+| CXXVIII | Nicht nur „Nebenkosten" wählen, sondern welche — Heizkosten, Wasser, Müll |
+| CXXVII | Ordner sofort neu einlesen, auch wenn selbst gelöscht oder umbenannt wurde |
+| CXLI–CXLIII | Die vier Einheiten der Laufer Str. sehen, bearbeiten, Mieter per Klick zuordnen — keine Doppelbelegung |
+| CXLV | Auf der Startseite die Einheiten als kleine Bubbles unter dem Haus |
+| CXLVII | Das Euro- und Prozentzeichen ins Eingabefeld, rechts, grau |
+| CXLVIII | Zinssatz oder Monatszins eingeben — die App rechnet das andere aus |
+| CXLIX | Bausparer statt Kredit wählen können: angespart statt Restschuld, zählt als Guthaben |
+| CXXVI | Der Bereich heißt „Dokumente & Ereignisse" |
+
 ## Erledigt
 
 | Nr. | Aufgabe | Commit |
@@ -156,8 +187,8 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 |---|---|---|
 | CI | **Mietvergleich im Mietbereich** | Zur aktuellen Miete die ortsübliche Vergleichsmiete je m² ermitteln — vergleichbare Objekte in der Lage, gleicher Standard. Ergebnis als Spanne, dazu die Einordnung: fair, zu niedrig oder zu hoch. Datenquelle steckbar halten: automatisches Abgreifen von Portalen ist rechtlich (AGB, Datenbankrecht) und technisch (Bot-Schutz) fragwürdig — erst prüfen, was tragfähig ist |
 | CII | **Hinweis bei deutlicher Abweichung** | Weicht die Miete spürbar von der Spanne ab, erscheint ein Hinweis dort, wo ohnehin Nachrichten und Dokumente auflaufen: „Was ansteht" auf der Startseite und im Dokumenteneingang |
-| CIII | **Kategorien entlang des Lebenszyklus** | Echten Dokumentenbestand einer Immobilie durchsehen (Archiv des Nutzers) und prüfen, was sich mit den heutigen Kategorien nicht einsortieren lässt. Kategorien und Stammdaten entlang des tatsächlichen Ablaufs erweitern: Bau/Bauvorgang → Kaufvorgang → Inbetriebnahme als Mietobjekt → Folgethemen wie Kredit → laufender Betrieb (Nebenkosten, hat die App schon). **Gewichtung:** was bei der Vermietung wiederkehrt, wird fein abgebildet und automatisiert — dort entsteht die Arbeit. Die einmaligen Themen am Anfang dürfen gröber bleiben |
-| CIV | **Parameter aus den Dokumenten lesen** | Beim Durchsehen erfassen, welche Angaben in den echten Unterlagen stehen (Texterkennung nutzen), und daraus ableiten, welche Felder die Stammdaten brauchen — damit ein Dokument nicht nur abgelegt, sondern ausgewertet wird |
+| CIII | **Kategorien entlang des Lebenszyklus** · Priorität **mittel** | Kategorien und Stammdaten entlang des tatsächlichen Ablaufs erweitern: Bau → Kaufvorgang → Inbetriebnahme als Mietobjekt → Kredit → laufender Betrieb. **Gewichtung:** was bei der Vermietung wiederkehrt, wird fein abgebildet und automatisiert. Die einmaligen Themen am Anfang dürfen gröber bleiben.<br>**Umfang bewusst klein:** je Ordner nur **ein bis zwei** Dokumente ansehen, nicht alle 466 — die Vielfalt zählt, nicht die Masse. Sieben Nebenkostenjahrgänge desselben Objekts bringen keine siebte Erkenntnis |
+| CIV | **Parameter aus den Dokumenten lesen** · Priorität **mittel** | Aus den Stichproben ableiten, welche Felder die Stammdaten brauchen — damit ein Dokument nicht nur abgelegt, sondern ausgewertet wird. Die zehn großen Lücken stehen schon fest (CXXXI–CXL); weitere Sichtung dient nur noch der Bestätigung |
 | CV | **Kaufnebenkosten eintragbar** | Grunderwerbsteuer, Notar, Grundbuch, Makler — beim Kaufvorgang erfassbar, damit die Anschaffungskosten vollständig sind |
 | CVI | **Erstaufnahme — der einmalige Initiallauf** | „Wo liegen deine Unterlagen?" → Ordner angeben → einmal komplett drüberfahren: alles sichten, einordnen, benennen, den Stand in der App anlegen. **Wird ausdrücklich vom Nutzer angestoßen**, läuft nie von selbst und nie im Wachdienst mit. Am Ende bestätigt der Nutzer („jetzt passt alles"), erst dann wird einmalig in den Arbeitspfad übernommen — der ist heute leer, deshalb geht es überhaupt nur so |
 | CVII | **Live-Logik und Einmal-Skript strikt getrennt** | Die Benennungs- und Einordnungslogik gehört in den laufenden Code (`bezeichnung.py`, `ocr.py`, neues `erstaufnahme.py`), damit sie später identisch weiterarbeitet. Das Initialskript bleibt dünn und ruft sie nur auf — es darf keine zweite Wahrheit entstehen, und nichts davon darf in den 15-Minuten-Takt geraten |
