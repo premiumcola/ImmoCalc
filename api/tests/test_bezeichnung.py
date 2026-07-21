@@ -511,3 +511,65 @@ def test_struktur_legt_den_ordner_nicht_unter_sich_selbst_an(monkeypatch):
         assert antwort.json()["ordner"] == NEU
         assert f"{NEU}/(Eschenau) Laufer Str. 5" not in wolke.ordner
         _einstellung("nc_home", HOME)
+
+
+# --------------------------------------------------------------------------
+# CXXII/CXXIII: Dateinamen — Datum vorn, Sache in der Mitte, Betrag hinten
+# --------------------------------------------------------------------------
+
+def test_ordnerwort_faellt_aus_der_bezeichnung():
+    """CXXII: was der Ordner sagt, sagt der Dateiname nicht noch einmal."""
+    from app.bezeichnung import ohne_ordnerwort
+
+    assert ohne_ordnerwort("Nebenkosten Heizkosten", "Nebenkosten") \
+        == "Heizkosten"
+    # auch im Kompositum — der Rest des Wortes bleibt stehen
+    assert ohne_ordnerwort("Nebenkostenabrechnung", "Nebenkosten") \
+        == "Abrechnung"
+    # aber nie mitten im Wort: „Grundsteuerbescheid" ist kein „Grundbescheid"
+    assert ohne_ordnerwort("Grundsteuerbescheid", "Steuer") \
+        == "Grundsteuerbescheid"
+    # bleibt nichts übrig, kommt nichts zurück
+    assert ohne_ordnerwort("Sonstiges", "Sonstiges") == ""
+
+
+def test_betrag_wird_geschrieben_wie_der_nutzer_ihn_schreibt():
+    """Deutsches Komma, Euro-Zeichen, kein Tausenderpunkt — so steht er in
+    seinen eigenen Ordnern („2025_Muell_256,36€.pdf")."""
+    from app.bezeichnung import betragsteil
+
+    assert betragsteil(256.36) == "256,36€"
+    assert betragsteil(2729.9) == "2729,90€"
+    # kein zweiter Punkt im Namen: der machte die Endung mehrdeutig
+    assert betragsteil(12345.67) == "12345,67€"
+    assert betragsteil(None) == ""
+    assert betragsteil(0) == ""
+    assert betragsteil(-12.5) == ""
+
+
+def test_datumsteil_sortiert_sich_von_selbst():
+    from app.bezeichnung import datumsteil
+
+    assert datumsteil(2026, 3) == "2026-03"
+    assert datumsteil(2026) == "2026"
+    assert datumsteil(2026, 13) == "2026"        # Unsinn wird verschwiegen
+    assert datumsteil(None) == "ohne-Jahr"
+
+
+def test_datum_und_betrag_aus_echten_dateinamen():
+    """Die Beispiele stammen aus dem Bestand des Nutzers."""
+    from app.bezeichnung import (betrag_aus_namen, datum_aus_namen,
+                                 ohne_betrag, ohne_datum)
+
+    assert datum_aus_namen("2025-10-oel-2729,91€.pdf") == (2025, 10)
+    assert datum_aus_namen("2021.09_PROKON_Strom_999,53€.pdf") == (2021, 9)
+    # „20230915" ist eine Zahl, kein Datum
+    assert datum_aus_namen("2023.09_Ablesung_20230915_666.pdf") == (2023, 9)
+
+    assert betrag_aus_namen("Öl-suft-2025-(2895,27€).pdf") == 2895.27
+    assert betrag_aus_namen("Rechnung 1.071,00 € gesamt") == 1071.00
+    assert betrag_aus_namen("kein Geld hier") is None
+
+    # Beide fallen aus der Bezeichnung heraus, weil sie neu gesetzt werden
+    assert ohne_betrag("DeltaT-2023-(200,75€)") == "DeltaT-2023"
+    assert ohne_datum("DeltaT-2023") == "DeltaT"

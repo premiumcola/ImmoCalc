@@ -38,45 +38,84 @@ _KEIN_BELEGDATUM = ("zeitraum", "abrechnungszeitraum", "gültig", "gueltig",
                     "bis zum", "zahlungsziel", "ablesung", "zählerstand",
                     "zaehlerstand", "geboren", "vertrag vom")
 
-# Wort -> Dokumentart. Die Arten entsprechen ZIELORDNER in routers/dokumente.py;
-# spezifische Begriffe stehen vor allgemeinen.
+# Wort -> (Dokumentart, Sache). Die Arten entsprechen ZIELORDNER in
+# routers/dokumente.py; spezifische Begriffe stehen vor allgemeinen.
+#
+# Die Art sagt, in welchen Ordner der Beleg gehört. Die *Sache* sagt, worum es
+# geht, und wird der Dateiname (CXXIII): „Heizöl" statt „Heizkosten", denn im
+# Ordner 60_Nebenkosten liegen zwanzig Belege, die alle Heizkosten sind.
+#
+# Wo die Sache leer bleibt, heisst der Ordner schon so wie der Begriff —
+# „Nebenkosten" im Ordner 60_Nebenkosten wäre die Doppelnennung aus CXXII.
+# Dann trägt die Bezeichnung aus dem ursprünglichen Namen den Namen.
 #
 # Gesucht wird ab Wortanfang, nie mitten im Wort: „Berggasse" ist kein Gas,
 # „Elgassner" auch nicht, „Wassermann" kein Wasser. Das war folgenlos, solange
 # nur ein Vorschlag daran hing — seit die Automatik Dateien ungefragt
 # verschiebt, ist es das nicht mehr.
 _KATEGORIEWORTE = [
-    ("grundsteuer", "Steuer"), ("finanzamt", "Steuer"), ("steuerbescheid", "Steuer"),
-    ("einkommensteuer", "Steuer"), ("steuernummer", "Steuer"),
-    ("darlehen", "Kredit"), ("tilgung", "Kredit"), ("zinsbindung", "Kredit"),
-    ("annuität", "Kredit"), ("annuitaet", "Kredit"),
-    ("versicherungsschein", "Versicherung"), ("police", "Versicherung"),
-    ("versicherung", "Versicherung"),
-    ("mietvertrag", "Mietvertrag"), ("mieterhöhung", "Mietvertrag"),
-    ("kaution", "Mietvertrag"),
-    ("hausverwaltung", "Hausverwaltung"), ("wohngeld", "Hausverwaltung"),
-    ("eigentümerversammlung", "Hausverwaltung"),
-    ("heizkosten", "Nebenkosten"), ("betriebskosten", "Nebenkosten"),
+    ("grundsteuer", "Steuer", "Grundsteuer"),
+    ("finanzamt", "Steuer", "Finanzamt"),
+    ("steuerbescheid", "Steuer", "Steuerbescheid"),
+    ("einkommensteuer", "Steuer", "Einkommensteuer"),
+    ("steuernummer", "Steuer", "Finanzamt"),
+    ("darlehen", "Kredit", "Darlehen"), ("tilgung", "Kredit", "Tilgung"),
+    ("zinsbindung", "Kredit", "Zinsbindung"),
+    ("annuität", "Kredit", "Annuität"), ("annuitaet", "Kredit", "Annuität"),
+    ("versicherungsschein", "Versicherung", "Versicherungsschein"),
+    ("police", "Versicherung", "Police"),
+    # Was der Nutzer im Bestand wirklich schreibt: „WWK-Haftpflicht",
+    # „WWK-Gebäudeversicherung". „\bversicherung" trifft das Kompositum nicht.
+    ("gebäudeversicherung", "Versicherung", "Gebäudeversicherung"),
+    ("gebaeudeversicherung", "Versicherung", "Gebäudeversicherung"),
+    ("haftpflicht", "Versicherung", "Haftpflicht"),
+    ("versicherung", "Versicherung", ""),
+    ("mietvertrag", "Mietvertrag", ""),
+    ("mieterhöhung", "Mietvertrag", "Mieterhöhung"),
+    ("kaution", "Mietvertrag", "Kaution"),
+    ("hausverwaltung", "Hausverwaltung", ""),
+    ("wohngeld", "Hausverwaltung", "Wohngeld"),
+    ("eigentümerversammlung", "Hausverwaltung", "Eigentümerversammlung"),
+    ("heizkosten", "Nebenkosten", "Heizkosten"),
+    ("betriebskosten", "Nebenkosten", "Betriebskosten"),
     # Brennstoff wird als Ganzes geliefert und gehoert zu den Heizkosten. Eine
     # Oelrechnung nennt sich selbst fast nie „Heizkosten“ — sie spricht von
     # Heizoel, Litern und dem Tank.
-    ("heizöl", "Nebenkosten"), ("heizoel", "Nebenkosten"),
-    ("brennstoff", "Nebenkosten"), ("flüssiggas", "Nebenkosten"),
-    ("fluessiggas", "Nebenkosten"), ("pellets", "Nebenkosten"),
-    ("nebenkosten", "Nebenkosten"), ("stadtwerke", "Nebenkosten"),
-    ("abwasser", "Nebenkosten"), ("trinkwasser", "Nebenkosten"),
-    ("wasser", "Nebenkosten"), ("strom", "Nebenkosten"), ("gas", "Nebenkosten"),
-    ("müll", "Nebenkosten"), ("abfall", "Nebenkosten"),
-    ("schornstein", "Nebenkosten"), ("kaminkehrer", "Nebenkosten"),
-    ("hausmeister", "Nebenkosten"), ("winterdienst", "Nebenkosten"),
-    ("grundbesitzabgaben", "Nebenkosten"),
+    ("heizöl", "Nebenkosten", "Heizöl"), ("heizoel", "Nebenkosten", "Heizöl"),
+    # Der Nutzer schreibt seine Ölrechnungen kurz: „2025-10-oel-2729,91€",
+    # „Öl-suft-2025". Ohne diese beiden bliebe der grösste Posten der
+    # Heizkosten unerkannt.
+    ("öl", "Nebenkosten", "Heizöl"), ("oel", "Nebenkosten", "Heizöl"),
+    ("brennstoff", "Nebenkosten", "Brennstoff"),
+    ("flüssiggas", "Nebenkosten", "Flüssiggas"),
+    ("fluessiggas", "Nebenkosten", "Flüssiggas"),
+    ("pellets", "Nebenkosten", "Pellets"),
+    ("nebenkosten", "Nebenkosten", ""),
+    ("stadtwerke", "Nebenkosten", "Stadtwerke"),
+    ("abwasser", "Nebenkosten", "Abwasser"),
+    ("trinkwasser", "Nebenkosten", "Trinkwasser"),
+    ("kaltwasser", "Nebenkosten", "Kaltwasser"),
+    ("warmwasser", "Nebenkosten", "Warmwasser"),
+    ("wasser", "Nebenkosten", "Wasser"),
+    ("heizstrom", "Nebenkosten", "Heizstrom"),
+    ("strom", "Nebenkosten", "Strom"),
+    ("gas", "Nebenkosten", "Gas"),
+    ("müll", "Nebenkosten", "Müll"), ("muell", "Nebenkosten", "Müll"),
+    ("abfall", "Nebenkosten", "Abfall"),
+    ("schornstein", "Nebenkosten", "Schornsteinfeger"),
+    ("kaminkehrer", "Nebenkosten", "Kaminkehrer"),
+    ("kaminfeger", "Nebenkosten", "Kaminfeger"),
+    ("hausmeister", "Nebenkosten", "Hausmeister"),
+    ("winterdienst", "Nebenkosten", "Winterdienst"),
+    ("grundbesitzabgaben", "Nebenkosten", "Grundbesitzabgaben"),
 ]
 
 # Was hinter einem Sachbegriff stehen darf, damit er noch derselbe Begriff ist:
 # grammatische Endungen und die Wörter, die aus einer Sache einen Beleg machen.
 # „Stromabrechnung" zählt, „Wassermann" nicht.
-_ANHAENGE = (
-    "", "e", "n", "en", "s", "es", "er",
+_ENDUNGEN = ("", "e", "n", "en", "s", "es", "er")
+
+_BELEGWOERTER = (
     "rechnung", "rechnungen", "abrechnung", "abrechnungen",
     "jahresabrechnung", "kosten", "kostenabrechnung",
     "gebühr", "gebühren", "gebuehr", "gebuehren",
@@ -84,28 +123,61 @@ _ANHAENGE = (
     "zahlung", "zahlungen", "abschlag", "abschläge", "abschlaege",
     "ablesung", "ablesungen", "vertrag", "vertrages", "verträge", "vertraege",
     "schein", "scheine", "geld", "werke", "versorgung", "verbrauch",
+    # Mit Fugen-s: „Darlehensvertrag", „Versicherungsbescheid". Einzeln
+    # aufgeführt statt als generisches „s?" — sonst wäre „Gasse" ein Gas.
+    "svertrag", "svertrages", "sverträge", "svertraege", "sbescheid",
+    "srechnung", "srechnungen", "sabrechnung", "skosten", "sabschlag",
 )
+
+_ANHAENGE = _ENDUNGEN + _BELEGWOERTER
+
+# Begriffe, die mit einer harmlosen Endung ein ganz anderes Wort ergeben:
+# „Müller" ist kein Müll, „Mueller" auch nicht, „Öle" kein Beleg. Sie zählen
+# nur nackt oder vor einem Belegwort — „Müllgebühren" ja, „Müller" nein.
+# Dieselbe Regel wie XCIII, nur eine Silbe später: kein Treffer am Wortende.
+_KEINE_ENDUNG = {"müll", "muell", "öl", "oel", "gas"}
 
 # Mindestens so viele Treffer, bevor ein Dateiname eine Ablage auslöst. Ein
 # einziges Wort reicht — aber nur, wenn es eindeutig ist (siehe unten).
 MINDESTPUNKTE = 1
 # Zu kurze Sachbegriffe treffen in einem Dateinamen zu leicht etwas anderes.
-MINDESTLAENGE = 3
+# Zwei Buchstaben hat in der ganzen Liste nur „öl" — und ein deutsches Wort,
+# das mit „öl" anfängt, handelt von Öl. Kürzeres gibt es nicht.
+MINDESTLAENGE = 2
 
-_ANHANG_TEIL = "|".join(sorted((re.escape(a) for a in _ANHAENGE),
-                               key=len, reverse=True))
+def _anhang_teil(anhaenge: tuple[str, ...]) -> str:
+    """Die Anhänge als Alternative, längste zuerst — sonst gewänne „e" vor
+    „en" und der Wortgrenzen-Anker schlüge fehl."""
+    return "|".join(sorted((re.escape(a) for a in anhaenge),
+                           key=len, reverse=True))
+
+
+_ANHANG_TEIL = _anhang_teil(_ANHAENGE)
+_ANHANG_KNAPP = _anhang_teil(("",) + _BELEGWOERTER)
 
 # Wortanfang + erlaubter Anhang, je Sachbegriff einmal übersetzt.
-_MUSTER: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\b" + re.escape(wort) + r"(?:" + _ANHANG_TEIL + r")\b"), art)
-    for wort, art in _KATEGORIEWORTE if len(wort) >= MINDESTLAENGE
-]
+_ENG = [(re.compile(r"\b" + re.escape(wort) + r"(?:"
+                    + (_ANHANG_KNAPP if wort in _KEINE_ENDUNG else _ANHANG_TEIL)
+                    + r")\b"), art, sache)
+        for wort, art, sache in _KATEGORIEWORTE if len(wort) >= MINDESTLAENGE]
 
 # Für gelesenen Text genügt der Wortanfang: dort steht „Wasserverbrauch je
 # Wohneinheit" in beliebiger Beugung, und ein Anhang lässt sich nicht auflisten.
-_MUSTER_WEIT: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\b" + re.escape(wort)), art) for wort, art in _KATEGORIEWORTE
-]
+# Nur die heiklen Kurzwörter bleiben auch hier eng — ein Absender „Müller
+# Immobilien" darf keine Müllabfuhr aus einer Rechnung machen.
+_WEIT = [(re.compile(r"\b" + re.escape(wort) + (r"(?:" + _ANHANG_KNAPP + r")\b"
+                                                if wort in _KEINE_ENDUNG else "")),
+          art, sache)
+         for wort, art, sache in _KATEGORIEWORTE]
+
+# Dieselben Muster, einmal nach der Art und einmal nach der Sache gebündelt —
+# gezählt wird mit derselben Funktion.
+_MUSTER: list[tuple[re.Pattern[str], str]] = [(r, art) for r, art, _ in _ENG]
+_MUSTER_WEIT: list[tuple[re.Pattern[str], str]] = [(r, art) for r, art, _ in _WEIT]
+_SACHE_MUSTER: list[tuple[re.Pattern[str], str]] = [
+    (r, sache) for r, _, sache in _ENG if sache]
+_SACHE_MUSTER_WEIT: list[tuple[re.Pattern[str], str]] = [
+    (r, sache) for r, _, sache in _WEIT if sache]
 
 
 def _punkte(text: str, muster: list[tuple[re.Pattern[str], str]]) -> dict[str, int]:
@@ -255,10 +327,40 @@ def kategorie_aus_dateiname(name: str) -> tuple[str, int]:
     return beste[0] if beste[0][1] >= MINDESTPUNKTE else ("", 0)
 
 
+def _beste_sache(punkte: dict[str, int]) -> str:
+    """Der Sachbegriff mit den meisten Treffern.
+
+    Bei Gleichstand gewinnt der zuerst gefundene — die Wortliste steht von
+    spezifisch nach allgemein, „Heizöl" also vor „Heizkosten"."""
+    if not punkte:
+        return ""
+    return max(punkte.items(), key=lambda p: p[1])[0]
+
+
+def sache_aus_text(text: str) -> str:
+    """Worum es auf dem Beleg geht — „Heizöl", „Müll", „Grundsteuer".
+
+    Feiner als die Art: die Art bestimmt den Ordner, die Sache den Dateinamen
+    (CXXIII). Leer heisst: nichts Spezifischeres als der Ordnername gefunden.
+    """
+    return _beste_sache(_punkte(text, _SACHE_MUSTER_WEIT))
+
+
+def sache_aus_dateiname(name: str) -> str:
+    """Dasselbe aus einem Dateinamen, streng gelesen.
+
+    Ein Name ist kurz; ein Zufallstreffer mittelt sich dort nicht weg. Deshalb
+    dieselbe enge Lesart wie bei `kategorie_aus_dateiname`."""
+    return _beste_sache(_punkte(name, _SACHE_MUSTER))
+
+
 def erkenne(rohdaten: bytes) -> dict:
     """Vorschlag aus einem Beleg-Bild: Betrag, Datum, Jahr."""
     if not verfuegbar():
+        # Dieselben Schlüssel wie im Erfolgsfall — die Oberfläche soll nicht
+        # zwei Antwortformen kennen müssen.
         return {"moeglich": False, "betrag": None, "datum": None, "jahr": None,
+                "monat": None, "kategorie": "", "sache": "",
                 "hinweis": "Texterkennung ist auf diesem Server nicht "
                            "eingerichtet — Betrag bitte eintragen."}
     text = text_aus_bild(rohdaten)
@@ -269,5 +371,8 @@ def erkenne(rohdaten: bytes) -> dict:
         "datum": gefunden.isoformat() if gefunden else None,
         "jahr": gefunden.year if gefunden else None,
         "kategorie": kategorie_aus_text(text),
+        # Was in den Dateinamen wandert — „Heizöl", nicht „Heizkosten".
+        "sache": sache_aus_text(text),
+        "monat": gefunden.month if gefunden else None,
         "zeichen": len(text.strip()),
     }

@@ -98,7 +98,58 @@ def test_zweistelliges_jahr_wird_ergaenzt():
 def test_erkenne_liefert_ohne_tesseract_eine_klare_antwort():
     """Fehlt das Programm, ist das kein Fehler — nur kein Vorschlag."""
     ergebnis = erkenne(b"kein echtes bild")
-    assert set(ergebnis) >= {"moeglich", "betrag", "datum"}
+    # Dieselben Schlüssel in beiden Fällen — die Oberfläche liest immer gleich
+    assert set(ergebnis) >= {"moeglich", "betrag", "datum", "jahr", "monat",
+                             "kategorie", "sache"}
     if not ergebnis["moeglich"]:
         assert ergebnis["betrag"] is None
         assert "eingerichtet" in ergebnis["hinweis"]
+
+
+# --------------------------------------------------------------------------
+# CXXIII: nicht „Heizkosten", sondern die Sache selbst
+# --------------------------------------------------------------------------
+
+def test_sache_ist_spezifischer_als_die_art():
+    """Wörtlich: „bitte macht die Benennung nicht Heizkosten, sondern am
+    besten spezifischer Heizkosten-Öl."
+
+    Die Art bestimmt den Ordner, die Sache den Dateinamen."""
+    from app.ocr import sache_aus_text
+
+    assert kategorie_aus_text("Rechnung über 3000 Liter Heizöl") == "Nebenkosten"
+    assert sache_aus_text("Rechnung über 3000 Liter Heizöl") == "Heizöl"
+    assert sache_aus_text("Abrechnung Kaltwasser je Wohneinheit") == "Kaltwasser"
+    assert sache_aus_text("Bescheid über die Grundsteuer") == "Grundsteuer"
+    assert sache_aus_text("Müllgebühren der Gemeinde") == "Müll"
+    assert sache_aus_text("Irgendein Zettel ohne Anhaltspunkt") == ""
+
+
+def test_sache_bleibt_leer_wo_schon_der_ordner_so_heisst():
+    """CXXII: „Nebenkosten" im Ordner 60_Nebenkosten wäre die Doppelnennung.
+    Dann trägt die Bezeichnung des Nutzers den Namen, nicht die Erkennung."""
+    from app.ocr import sache_aus_dateiname, sache_aus_text
+
+    assert kategorie_aus_text("Nebenkostenabrechnung 2024") == "Nebenkosten"
+    assert sache_aus_text("Nebenkostenabrechnung 2024") == ""
+    assert sache_aus_dateiname("nebenkosten 2024") == ""
+
+
+def test_kurzwoerter_ergeben_mit_endung_keinen_treffer():
+    """„Müller" ist kein Müll und „Mueller" auch nicht — dieselbe Regel wie
+    XCIII, nur eine Silbe später. „Müllgebühren" zählt weiter."""
+    from app.ocr import kategorie_aus_dateiname
+
+    for name in ["Rechnung Mueller 2024.pdf", "Notar Müller.pdf",
+                 "Kaufvertrag Berggasse 5.pdf", "Öle und Fette GmbH.pdf"]:
+        lesbar = name.lower().replace("_", " ").replace("-", " ")
+        assert kategorie_aus_dateiname(lesbar) == ("", 0), name
+
+    for name, erwartet in [("2025-01-muell.pdf", "Müll"),
+                           ("Müllgebühren 2024.pdf", "Müll"),
+                           ("2025-10-oel-2729,91€.pdf", "Heizöl"),
+                           ("Öl-suft-2025.pdf", "Heizöl")]:
+        lesbar = name.lower().replace("_", " ").replace("-", " ")
+        assert kategorie_aus_dateiname(lesbar)[0] == "Nebenkosten", name
+        from app.ocr import sache_aus_dateiname
+        assert sache_aus_dateiname(lesbar) == erwartet, name

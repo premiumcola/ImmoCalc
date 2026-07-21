@@ -19,15 +19,80 @@ from app.routers.dokumente import ZIELORDNER, dateiname  # noqa: E402
 
 
 def test_dateiname_folgt_dem_schema():
+    """CXXII/CXXIII — bewusste Änderung der Benennung.
+
+    Vorher hiess das Schema `JJJJ_Kategorie_Beschreibung`; im Ordner
+    60_Nebenkosten stand damit „2026_Nebenkosten_Heizkosten.pdf" — der Ordner
+    sagt es schon, der Name sagt es noch einmal. Jetzt: Datum vorn, Sache in
+    der Mitte, Betrag hinten, die Kategorie gar nicht."""
     assert dateiname(2024, "Nebenkosten", "Grundsteuer", ".pdf") \
-        == "2024_Nebenkosten_Grundsteuer.pdf"
+        == "2024_Grundsteuer.pdf"
     # Leerzeichen werden zu Bindestrichen, Umlaute bleiben lesbar
     assert dateiname(2025, "Steuer", "Bescheid Finanzamt Süd", ".pdf") \
-        == "2025_Steuer_Bescheid-Finanzamt-Süd.pdf"
-    # ohne Beschreibung und ohne Jahr bleibt es trotzdem eindeutig
-    assert dateiname(None, "Sonstiges", "", ".pdf") == "ohne-Jahr_Sonstiges.pdf"
+        == "2025_Bescheid-Finanzamt-Süd.pdf"
+    # ohne Beschreibung und ohne Jahr bleibt es trotzdem eindeutig — und
+    # heisst nicht "Sonstiges", denn so heisst schon der Ordner
+    assert dateiname(None, "Sonstiges", "", ".pdf") == "ohne-Jahr_Beleg.pdf"
     # Schrägstriche dürfen keinen Pfad erzeugen
     assert "/" not in dateiname(2024, "Nebenkosten", "a/b", ".pdf")
+
+
+def test_dateiname_nennt_nicht_doppelt_was_der_ordner_sagt():
+    """CXXII, wörtlich: „Wenn was im Ordner Nebenkosten ist, dann soll die
+    Datei natürlich nicht 2026_Nebenkosten_Heizkosten heissen."" """
+    assert dateiname(2026, "Nebenkosten", "Nebenkosten Heizkosten", ".pdf") \
+        == "2026_Heizkosten.pdf"
+    # auch im Kompositum: „Nebenkostenabrechnung" -> „Abrechnung"
+    assert dateiname(2024, "Nebenkosten", "Nebenkostenabrechnung", ".pdf") \
+        == "2024_Abrechnung.pdf"
+    # aber nicht mitten im Wort: aus „Grundsteuerbescheid" darf nie
+    # „Grundbescheid" werden
+    assert dateiname(2024, "Steuer", "Grundsteuerbescheid", ".pdf") \
+        == "2024_Grundsteuerbescheid.pdf"
+
+
+def test_dateiname_haengt_den_betrag_hinten_an():
+    """CXXIII, wörtlich: „Bitte im Dateinamen hinten noch mit dranhängen,
+    dann sieht man's direkt, wenn man im Ordner ist."
+
+    Geschrieben wird er, wie der Nutzer es selbst tut: deutsches Komma,
+    Euro-Zeichen, kein Tausenderpunkt („2025_Muell_256,36€.pdf")."""
+    assert dateiname(2026, "Nebenkosten", "Heizöl", ".pdf", 3, 1284.5) \
+        == "2026-03_Heizöl_1284,50€.pdf"
+    assert dateiname(2025, "Nebenkosten", "Müll", ".pdf", None, 256.36) \
+        == "2025_Müll_256,36€.pdf"
+    # ohne Betrag bleibt der Name kurz, statt eine 0,00 zu behaupten
+    assert dateiname(2025, "Nebenkosten", "Müll", ".pdf") == "2025_Müll.pdf"
+    assert dateiname(2025, "Nebenkosten", "Müll", ".pdf", None, 0) \
+        == "2025_Müll.pdf"
+
+
+def test_dateiname_setzt_datum_und_betrag_nicht_zweimal():
+    """Beim Korrigieren wird der bestehende Name neu gebaut. Stünden Datum und
+    Betrag dann ein zweites Mal drin, wüchse der Name bei jeder Änderung."""
+    einmal = dateiname(2025, "Nebenkosten", "Heizöl", ".pdf", 10, 2729.91)
+    assert einmal == "2025-10_Heizöl_2729,91€.pdf"
+    # derselbe Name als Bezeichnung wieder hineingegeben
+    assert dateiname(2025, "Nebenkosten", einmal.removesuffix(".pdf"), ".pdf",
+                     10, 2729.91) == einmal
+
+
+def test_datum_und_betrag_werden_aus_dem_alten_namen_gelesen():
+    """Der Nutzer hat beides oft selbst drangeschrieben — beim Einsortieren
+    darf es nicht verlorengehen, nur weil kein Beleg gelesen wurde."""
+    from app.bezeichnung import betrag_aus_namen, datum_aus_namen
+
+    assert datum_aus_namen("2025-10-oel-2729,91€.pdf") == (2025, 10)
+    assert datum_aus_namen("2022.08_Öl_(3099,95€).pdf") == (2022, 8)
+    assert datum_aus_namen("111_2025-Brennstoff-4158,98€.pdf") == (2025, None)
+    # keine Monatslesung aus einer längeren Zahl
+    assert datum_aus_namen("WWK-2025-1196,09€.pdf") == (2025, None)
+    assert datum_aus_namen("Rechnung ohne Datum.pdf") == (None, None)
+
+    assert betrag_aus_namen("2025_Muell_256,36€.pdf") == 256.36
+    assert betrag_aus_namen("DeltaT-2023-(200,75€).pdf") == 200.75
+    assert betrag_aus_namen("111_2025-Brennstoff-4158,98€.pdf") == 4158.98
+    assert betrag_aus_namen("Bescheid 2024.pdf") is None
 
 
 def test_jeder_zielordner_existiert_in_der_struktur():
@@ -203,10 +268,37 @@ def test_umbenennen_ueber_die_bezeichnung(monkeypatch):
         antwort = c.patch(f"/api/dokumente/{doc}",
                           json={"beschreibung": "Heizung Ablesung"})
         assert antwort.status_code == 200
-        neu = "2025_Nebenkosten_Heizung-Ablesung.pdf"
+        # CXXII: „Nebenkosten" steht nicht mehr im Namen — der Ordner heisst so
+        neu = "2025_Heizung-Ablesung.pdf"
         assert antwort.json()["dateiname"] == neu
         assert wolke.verschoben[-1][1] == \
             f"Home/Immobilien/Namensweg 2/60_Nebenkosten/{neu}"
+
+
+def test_betrag_wandert_in_den_namen_und_bleibt_dort(monkeypatch):
+    """CXXIII: der Betrag steht hinten im Namen — und überlebt eine
+    spätere Korrektur, die ihn gar nicht erwähnt."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = _mit_cloud(c, "Betragsweg 3", "Home/Immobilien/Betragsweg 3")
+        doc = _lege_dokument_an(_objekt_id(slug), "alt.pdf",
+                                kategorie="Nebenkosten", jahr=2025,
+                                status="zugeordnet")
+        wolke = _Wolke([])
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        antwort = c.patch(f"/api/dokumente/{doc}", json={
+            "beschreibung": "Heizöl", "monat": 10, "betrag": 2729.91})
+        assert antwort.json()["dateiname"] == "2025-10_Heizöl_2729,91€.pdf"
+
+        # Nur das Jahr korrigiert: Bezeichnung, Monat und Betrag bleiben
+        antwort = c.patch(f"/api/dokumente/{doc}", json={"jahr": 2026})
+        assert antwort.json()["dateiname"] == "2026-10_Heizöl_2729,91€.pdf"
+
+        # und ausdrücklich gelöscht werden kann er auch
+        antwort = c.patch(f"/api/dokumente/{doc}", json={"betrag": None})
+        assert antwort.json()["dateiname"] == "2026-10_Heizöl.pdf"
 
 
 def test_entfernen_loescht_nur_den_eintrag():
@@ -319,7 +411,9 @@ def test_scan_ordnet_zu_was_eindeutig_ist(monkeypatch):
         assert ergebnis["automatisch"] == 1
         assert ergebnis["offen"] == 1
 
-        ziel = "2024_Steuer_Grundsteuerbescheid.pdf"
+        # CXXII: die Art steckt im Zielordner, nicht noch einmal im Namen —
+        # vorher hiess die Datei „2024_Steuer_Grundsteuerbescheid.pdf".
+        ziel = "2024_Grundsteuerbescheid.pdf"
         assert wolke.verschoben[0][1] == \
             f"Home/Immobilien/Automatikweg 1/70_Steuer_Finanzamt/{ziel}"
 
@@ -528,9 +622,9 @@ def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
         objekt_id = _objekt_id(slug)
         # Eintrag auf dem Zielpfad — in der Cloud gibt es die Datei nicht mehr
         ziel = ("/Home/Immobilien/Belegtweg 4/70_Steuer_Finanzamt/"
-                "2024_Steuer_Grundsteuerbescheid.pdf")
+                "2024_Grundsteuerbescheid.pdf")
         with Session(engine) as s:
-            s.add(Dokument(pfad=ziel, dateiname="2024_Steuer_Grundsteuerbescheid.pdf",
+            s.add(Dokument(pfad=ziel, dateiname="2024_Grundsteuerbescheid.pdf",
                            objekt_id=objekt_id, status="zugeordnet"))
             s.commit()
 
@@ -540,8 +634,7 @@ def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
         ergebnis = c.post("/api/dokumente/scan").json()
         assert ergebnis["automatisch"] == 1
         # ausgewichen statt kollidiert
-        assert wolke.verschoben[-1][1].endswith(
-            "2024_Steuer_Grundsteuerbescheid-2.pdf")
+        assert wolke.verschoben[-1][1].endswith("2024_Grundsteuerbescheid-2.pdf")
 
 
 def test_scanlauf_geht_nach_einem_fehler_weiter(monkeypatch):
@@ -624,3 +717,254 @@ def test_patch_haengt_einen_beleg_an_den_zeitraum(monkeypatch):
 
         gelöst = c.patch(f"/api/dokumente/{doc}", json={"zeitraum_id": None})
         assert gelöst.json()["zeitraum_id"] is None
+
+
+# --------------------------------------------------------------------------
+# CXXVII: den Ordner vollständig neu einlesen
+# --------------------------------------------------------------------------
+
+class _Baum:
+    """Nextcloud-Ersatz mit Unterordnern — für den Abgleich.
+
+    `inhalt` bildet den Baum ab: Ordnerpfad -> [(Dateiname, Grösse)]. Ein
+    Ordner, der nicht als Schlüssel dasteht, gibt es nicht; `liste` meldet
+    dann denselben Fehler wie die echte Nextcloud."""
+
+    def __init__(self, inhalt: dict):
+        self.inhalt = {"/" + p.strip("/"): list(v) for p, v in inhalt.items()}
+        self.verschoben = []
+        self.angelegt = []
+        self.abgelegt = []
+
+    def liste(self, pfad):
+        from app.nextcloud import NextcloudFehler
+        p = "/" + pfad.strip("/")
+        if p not in self.inhalt:
+            raise NextcloudFehler(f"Ordner nicht gefunden: {p}")
+        eintraege = [SimpleNamespace(pfad=f"{p}/{n}", name=n, groesse=g,
+                                     ordner=False)
+                     for n, g in self.inhalt[p]]
+        eintraege += [SimpleNamespace(pfad=k, name=k.rsplit("/", 1)[-1],
+                                      groesse=0, ordner=True)
+                      for k in self.inhalt
+                      if k != p and k.rsplit("/", 1)[0] == p]
+        return eintraege
+
+    def ordner_anlegen(self, pfad):
+        self.angelegt.append(pfad)
+        return True
+
+    def existiert(self, pfad):
+        return False
+
+    def verschiebe(self, von, nach):
+        self.verschoben.append((von, nach))
+
+    def lege_ab(self, pfad, inhalt):
+        self.abgelegt.append(pfad)
+
+
+def _beleg(objekt_id: int, pfad: str, groesse: int = 4096, **felder) -> int:
+    """Ein Eintrag, der auf einen bestimmten Cloud-Pfad zeigt."""
+    with Session(engine) as s:
+        felder.setdefault("status", "zugeordnet")
+        felder.setdefault("kategorie", "Nebenkosten")
+        d = Dokument(pfad=pfad, dateiname=pfad.rsplit("/", 1)[-1],
+                     groesse=groesse, objekt_id=objekt_id,
+                     erkannt_am=date.today(), **felder)
+        s.add(d)
+        s.commit()
+        s.refresh(d)
+        return d.id
+
+
+def _stand(doc_id: int) -> Dokument:
+    with Session(engine) as s:
+        return s.get(Dokument, doc_id)
+
+
+def test_abgleich_meldet_eine_geloeschte_datei_als_vermisst(monkeypatch):
+    """CXXVII: der Nutzer löscht in der Nextcloud selbst. Der Eintrag bleibt
+    stehen — mit Zeitraum und Zuordnung —, tut aber nicht mehr so, als läge
+    die Datei noch da."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 1"
+        slug = _mit_cloud(c, "Abgleichweg 1", ordner)
+        doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/2025_Müll.pdf")
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert [v["id"] for v in ergebnis["vermisst"]] == [doc]
+        assert ergebnis["geprueft"] == 1
+
+        # Der Eintrag lebt weiter, nur gekennzeichnet — gelöscht wird nichts
+        assert _stand(doc) is not None
+        assert _stand(doc).status == "vermisst"
+        assert _stand(doc).kategorie == "Nebenkosten"
+
+        # und die Oberfläche kann es lesen
+        daten = c.get("/api/dokumente", params={"objekt": slug}).json()
+        assert daten["vermisst"] == 1
+        gezeigt = daten["dokumente"][0]
+        assert gezeigt["vermisst"] is True
+        assert gezeigt["abgelegt"] is False
+
+        # Korrigieren ginge ins Leere und wird ehrlich abgelehnt
+        antwort = c.patch(f"/api/dokumente/{doc}", json={"jahr": 2026})
+        assert antwort.status_code == 409
+        assert "nicht mehr" in antwort.json()["detail"]
+
+
+def test_abgleich_zieht_eine_verschobene_datei_nach(monkeypatch):
+    """Der Nutzer räumt den Beleg selbst in einen anderen Unterordner."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 2"
+        slug = _mit_cloud(c, "Abgleichweg 2", ordner)
+        doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/2025_Öl.pdf")
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": [],
+                      f"{ordner}/60_Nebenkosten/2025": [("2025_Öl.pdf", 4096)]})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert ergebnis["vermisst"] == []
+        assert [v["id"] for v in ergebnis["verschoben"]] == [doc]
+        assert _stand(doc).pfad == f"/{ordner}/60_Nebenkosten/2025/2025_Öl.pdf"
+        assert _stand(doc).status == "zugeordnet"
+        # In der Cloud wurde dabei nichts angefasst
+        assert baum.verschoben == []
+
+
+def test_abgleich_erkennt_eine_umbenannte_datei(monkeypatch):
+    """Gleicher Ordner, gleiche Grösse, anderer Name — dieselbe Datei."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 3"
+        slug = _mit_cloud(c, "Abgleichweg 3", ordner)
+        doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/alt.pdf",
+                     groesse=7777)
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten":
+                      [("2025-10_Heizöl_2729,91€.pdf", 7777)]})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert [v["id"] for v in ergebnis["umbenannt"]] == [doc]
+        assert _stand(doc).dateiname == "2025-10_Heizöl_2729,91€.pdf"
+        assert baum.verschoben == []
+
+
+def test_abgleich_trockenlauf_aendert_nichts(monkeypatch):
+    """Erst sehen, dann tun — wie beim Ordnerumzug."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 4"
+        slug = _mit_cloud(c, "Abgleichweg 4", ordner)
+        doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/weg.pdf")
+        baum = _Baum({ordner: [("Neue Wasserrechnung 2025.pdf", 900)],
+                      f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        plan = c.get("/api/dokumente/abgleich").json()
+        assert plan["trockenlauf"] is True
+        assert [v["id"] for v in plan["vermisst"]] == [doc]
+        # eine Datei in der Cloud ohne Eintrag — gemeldet, nicht angefasst
+        assert plan["ohne_eintrag"] == 1
+        assert plan["neu"] == 0
+
+        assert _stand(doc).status == "zugeordnet"
+        assert baum.verschoben == []
+
+
+def test_abgleich_nimmt_neue_dateien_gleich_mit(monkeypatch):
+    """„Neu einlesen" heisst beides: aufräumen und aufnehmen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 5"
+        slug = _mit_cloud(c, "Abgleichweg 5", ordner)
+        baum = _Baum({ordner: [("Wasserrechnung 2025.pdf", 900)],
+                      f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert ergebnis["neu"] == 1
+        assert ergebnis["automatisch"] == 1
+        assert baum.verschoben[-1][1] == \
+            f"{ordner}/60_Nebenkosten/2025_Wasserrechnung.pdf"
+
+
+def test_abgleich_ueberspringt_unlesbare_ordner(monkeypatch):
+    """Eine Cloud, die gerade nicht antwortet, darf nicht den ganzen Bestand
+    als vermisst melden — das wäre die schlimmste aller Fehlmeldungen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 6"
+        slug = _mit_cloud(c, "Abgleichweg 6", ordner)
+        doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/da.pdf")
+        # Der Objektordner fehlt im Baum — er ist nicht lesbar
+        baum = _Baum({"Home/Immobilien": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert ergebnis["vermisst"] == []
+        assert any("Abgleichweg 6" in h for h in ergebnis["hinweise"])
+        assert _stand(doc).status == "zugeordnet"
+
+
+def test_vermisster_eintrag_kommt_zurueck(monkeypatch):
+    """Der Nutzer legt die Datei wieder hin — dann ist der Eintrag wieder gut."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 7"
+        slug = _mit_cloud(c, "Abgleichweg 7", ordner)
+        pfad = f"/{ordner}/60_Nebenkosten/2025_Strom.pdf"
+        doc = _beleg(_objekt_id(slug), pfad)
+
+        leer = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: leer)
+        c.post("/api/dokumente/abgleich")
+        assert _stand(doc).status == "vermisst"
+
+        voll = _Baum({ordner: [],
+                      f"{ordner}/60_Nebenkosten": [("2025_Strom.pdf", 4096)]})
+        monkeypatch.setattr(modul, "verbindung", lambda session: voll)
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert [v["id"] for v in ergebnis["wiederda"]] == [doc]
+        assert _stand(doc).status == "zugeordnet"
+
+
+def test_abgleich_raet_nicht_bei_zwei_gleichen_dateien(monkeypatch):
+    """Zwei gleich grosse Dateien im selben Ordner lassen sich nicht
+    auseinanderhalten. Dann lieber melden als falsch umhängen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Abgleichweg 8"
+        slug = _mit_cloud(c, "Abgleichweg 8", ordner)
+        doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/alt.pdf",
+                     groesse=555)
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten":
+                      [("eins.pdf", 555), ("zwei.pdf", 555)]})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert [v["id"] for v in ergebnis["vermisst"]] == [doc]
+        assert _stand(doc).pfad == f"/{ordner}/60_Nebenkosten/alt.pdf"
+
+
+def test_abgleich_und_scan_laufen_nie_gleichzeitig():
+    """Beide lesen dieselben Ordner — sie teilen sich die Sperre."""
+    from app.wachdienst import sperre
+
+    with TestClient(app) as c:
+        with sperre:
+            assert c.post("/api/dokumente/abgleich").status_code == 409
+            assert c.get("/api/dokumente/abgleich").status_code == 409

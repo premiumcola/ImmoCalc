@@ -221,3 +221,131 @@ def adresse(strasse: str = "", plz: str = "", ort: str = "") -> str:
     """Einzeilige Adresse für Anschreiben."""
     unten = " ".join(x for x in (_sauber(plz), _sauber(ort)) if x)
     return ", ".join(x for x in (_sauber(strasse), unten) if x)
+
+
+# --------------------------------------------------------------------------
+# Dateinamen: Datum vorn, Sache in der Mitte, Betrag hinten
+#
+# CXXII — der Ordner ist Kontext, der Name nennt nur, was er hinzufügt. Im
+# Ordner "60_Nebenkosten" heisst nichts "2026_Nebenkosten_Heizkosten".
+# CXXIII — hinten steht der Betrag, damit man ihn im Ordner sofort sieht.
+#
+# Die Schreibweise ist dem Bestand des Nutzers abgesehen: er schreibt
+# "2025_Muell_256,36€.pdf", "2025-10-oel-2729,91€.pdf",
+# "111_2025-Brennstoff-4158,98€.pdf" — deutsches Komma, Euro-Zeichen hinten,
+# nie ein Tausenderpunkt. Genau so wird hier gebaut:
+#
+#   * Das Datum steht vorn, sonst sortiert sich der Ordner nicht von selbst.
+#   * Kein Tausenderpunkt — ein zweiter Punkt im Namen macht die Endung
+#     mehrdeutig (und `_freier_name` müsste raten, wo der Stamm endet).
+#   * Das Euro-Zeichen ist unproblematisch: `nextcloud._url` schickt jeden
+#     Pfadteil durch `quote()`, das € als %E2%82%AC überträgt — auch im
+#     Destination-Header eines MOVE, der damit reines ASCII bleibt.
+# --------------------------------------------------------------------------
+
+# "1.234,56 €", "256,36€" — deutsche Schreibweise, Punkt als Tausendertrenner.
+_BETRAG_IM_NAMEN = re.compile(r"(?<![\d,.])(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})\s*€")
+
+# Datum im Namen: 2025, 2025-10, 2025.10, 2025_10, 2023-04-03 — alle Trenner
+# kommen im Bestand vor ("2022.08_Öl", "2025-10-oel", "2021.09_PROKON",
+# "2023-04-03 Mietvertrag"). Der Tag wird mitgelesen, damit er nicht als Rest
+# im Namen stehenbleibt; im Dateinamen steht später nur Jahr und Monat.
+# Die Ziffernwächter halten längere Zahlen heraus: "20230915" ist kein Datum,
+# "WWK-2025-1196,09€" hat keinen Monat 11.
+_DATUM_IM_NAMEN = re.compile(
+    r"(?<!\d)(20\d{2})(?:[-._](0[1-9]|1[0-2])(?:[-._](0[1-9]|[12]\d|3[01]))?)?"
+    r"(?!\d)")
+
+
+def datumsteil(jahr: int | None, monat: int | None = None) -> str:
+    """JJJJ-MM, JJJJ oder "ohne-Jahr" — was bekannt ist, sortierbar."""
+    if not jahr:
+        return "ohne-Jahr"
+    if monat and 1 <= monat <= 12:
+        return f"{jahr:04d}-{monat:02d}"
+    return f"{jahr:04d}"
+
+
+def betragsteil(betrag: float | None) -> str:
+    """"2729,91€" — oder leer, wenn kein Betrag bekannt ist.
+
+    Nur positive Beträge: eine Gutschrift steht als solche im Beleg, im
+    Dateinamen wäre ein Minuszeichen vor der Endung nur verwirrend."""
+    if betrag is None:
+        return ""
+    try:
+        wert = round(float(betrag), 2)
+    except (TypeError, ValueError):
+        return ""
+    if wert <= 0:
+        return ""
+    return f"{wert:.2f}".replace(".", ",") + "€"
+
+
+def betrag_aus_namen(name: str) -> float | None:
+    """Der Betrag, den ein Dateiname schon trägt.
+
+    Der Nutzer hat ihn oft selbst drangeschrieben; beim Einsortieren soll er
+    nicht verlorengehen, nur weil die Texterkennung den Beleg nie gesehen hat.
+    Bei mehreren Zahlen gewinnt die letzte — Beträge stehen hinten."""
+    treffer = _BETRAG_IM_NAMEN.findall(name or "")
+    if not treffer:
+        return None
+    ganz, nachkomma = treffer[-1]
+    return round(float(ganz.replace(".", "") + "." + nachkomma), 2)
+
+
+def ohne_betrag(name: str) -> str:
+    """Derselbe Name ohne Betragsangabe — samt der Klammern drumherum.
+
+    Der Nutzer schreibt ihn mal nackt ("Muell_256,36€"), mal eingeklammert
+    ("DeltaT-2023-(200,75€)"). Beides muss weg, bevor der Betrag neu
+    angehängt wird, sonst steht er zweimal da."""
+    ohne = _BETRAG_IM_NAMEN.sub(" ", name or "")
+    ohne = re.sub(r"\(\s*\)|\[\s*\]", " ", ohne)
+    return re.sub(r"\s+", " ", ohne).strip(" -_.·")
+
+
+def datum_aus_namen(name: str) -> tuple[int | None, int | None]:
+    """Jahr und Monat aus einem Dateinamen. (None, None) heisst: da steht keins.
+
+    Es gilt das erste Datum — der Nutzer schreibt es nach vorn, alles Weitere
+    ist Aktenzeichen oder Zählerstand."""
+    treffer = _DATUM_IM_NAMEN.search(name or "")
+    if not treffer:
+        return None, None
+    monat = treffer.group(2)
+    return int(treffer.group(1)), int(monat) if monat else None
+
+
+def ohne_datum(name: str) -> str:
+    """Derselbe Name ohne Datumsangaben — sie werden vorn neu gesetzt."""
+    ohne = _DATUM_IM_NAMEN.sub(" ", name or "")
+    return re.sub(r"\s+", " ", ohne).strip(" -_.·")
+
+
+def ohne_ordnerwort(text: str, *woerter: str) -> str:
+    """Streicht aus einer Bezeichnung, was der Ordner schon sagt (CXXII).
+
+    Getroffen wird ein Wort nur *ab* seinem Anfang: "Nebenkostenabrechnung"
+    wird zu "Abrechnung", "Grundsteuerbescheid" bleibt aber "Grundsteuer­-
+    bescheid" — sonst hiesse er "Grundbescheid", und das ist kein Wort.
+
+    Bleibt danach nichts übrig, kommt nichts zurück; der Aufrufer entscheidet,
+    was er stattdessen einsetzt."""
+    rest = _sauber(text)
+    for wort in woerter:
+        wort = _sauber(wort)
+        if not wort:
+            continue
+        # Zwei Schnitte. Erst das Wort samt gebeugter Endung — "Versicherungen"
+        # soll nicht als "en" zurückbleiben. Dann derselbe Wortanfang in einem
+        # längeren Wort, dessen Rest stehen bleibt ("Nebenkostenabrechnung"
+        # -> "Abrechnung").
+        muster = re.escape(wort)
+        rest = re.sub(r"\b" + muster + r"\w{0,2}\b", " ", rest, flags=re.I)
+        rest = re.sub(r"\b" + muster, " ", rest, flags=re.I)
+        rest = re.sub(r"\s+", " ", rest).strip(" -_.·")
+    # "Nebenkostenabrechnung" liess "abrechnung" zurück — klein geschrieben,
+    # weil der grosse Anfangsbuchstabe mit weggeschnitten wurde.
+    return rest[:1].upper() + rest[1:] if rest else ""

@@ -22,6 +22,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from .. import ocr
+from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
+                           datumsteil, ohne_betrag, ohne_datum,
+                           ohne_ordnerwort)
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import Dokument, Objekt, Zeitraum
@@ -48,18 +51,46 @@ ZIELORDNER = {
 
 DOKUMENTARTEN = list(ZIELORDNER.keys())
 
+# Status eines Eintrags, dessen Datei beim Abgleich nicht mehr auffindbar war
+# (CXXVII). Ein vierter Wert neben "neu" und "zugeordnet" — additiv, das
+# Datenmodell bleibt unverändert. Kommt die Datei zurück, fällt er wieder weg.
+VERMISST = "vermisst"
+
 
 def _saubere_datei(text_: str) -> str:
-    text_ = re.sub(r"[^\wäöüÄÖÜß.\- ]+", "", text_).strip()
-    return re.sub(r"\s+", "-", text_)
+    """Ein Stück Dateiname: keine Pfadtrenner, keine Trennzeichen am Rand.
+
+    Unerlaubte Zeichen werden zum Bindestrich, nicht gelöscht — sonst klebte
+    aus „231€+10€+180€" ein „23110180" zusammen und aus „Fitness&Büro" ein
+    „FitnessBüro"."""
+    text_ = re.sub(r"[^\wäöüÄÖÜß.\- ]+", "-", text_ or "").strip()
+    text_ = re.sub(r"\s+", "-", text_)
+    # Wo etwas herausgeschnitten wurde — Datum, Betrag, Ordnerwort —, blieben
+    # sonst "--", "_-" oder ".-" stehen.
+    return re.sub(r"[-_.]{2,}", "-", text_).strip("-_.")
 
 
 def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
-              endung: str) -> str:
-    """JJJJ-MM_Kategorie_Beschreibung.pdf — sortiert sich von selbst."""
-    teile = [str(jahr) if jahr else "ohne-Jahr", _saubere_datei(kategorie)]
-    if beschreibung:
-        teile.append(_saubere_datei(beschreibung))
+              endung: str, monat: int | None = None,
+              betrag: float | None = None) -> str:
+    """JJJJ-MM_Sache_1234,56€.pdf — drei Stücke, jedes genau einmal.
+
+    * **Datum vorn.** Nur so sortiert sich der Ordner von selbst; der Monat
+      kommt mit, sobald er bekannt ist.
+    * **Die Sache in der Mitte** — und nur, was der Ordner *nicht* schon sagt
+      (CXXII): im Ordner 60_Nebenkosten heisst nichts „…_Nebenkosten_…".
+      Was der Nutzer selbst benannt hat, bleibt dabei stehen (XCVII); erkannt
+      wird nur, was sonst niemand beisteuert.
+    * **Der Betrag hinten** (CXXIII), damit man ihn im Ordner sofort sieht.
+
+    Die Funktion ist absichtlich idempotent: ein Name, der schon so aussieht,
+    kommt unverändert wieder heraus. Beim Korrigieren wird der bestehende Name
+    zerlegt und neu gesetzt — ohne das ginge bei jeder Änderung des Jahres die
+    Bezeichnung samt Betrag verloren.
+    """
+    roh = ohne_datum(ohne_betrag(beschreibung or ""))
+    sache = _saubere_datei(ohne_ordnerwort(roh, kategorie))
+    teile = [datumsteil(jahr, monat), sache or "Beleg", betragsteil(betrag)]
     return "_".join(t for t in teile if t) + endung
 
 
@@ -99,10 +130,17 @@ def _vorschlag(d: Dokument) -> dict:
     genannt = _art_im_namen(lesbar)
     erkannt, punkte = ocr.kategorie_aus_dateiname(lesbar)
     kategorie = d.kategorie or genannt or erkannt
-    jahre = re.findall(r"(20\d{2})", d.dateiname)
+    jahr, monat = datum_aus_namen(d.dateiname)
     return {
         "kategorie": kategorie,
-        "jahr": d.jahr or (int(jahre[0]) if jahre else None),
+        "jahr": d.jahr or jahr,
+        # Monat und Betrag stehen oft schon im Namen, den der Nutzer selbst
+        # vergeben hat („2025-10-oel-2729,91€.pdf"). Beim Einsortieren sollen
+        # sie nicht verlorengehen, nur weil kein Beleg gelesen wurde (CXXIII).
+        "monat": monat,
+        "betrag": betrag_aus_namen(d.dateiname),
+        # Worum es geht — feiner als die Art, für den Dateinamen.
+        "sache": ocr.sache_aus_dateiname(lesbar),
         "sicher": bool(d.kategorie or genannt
                        or (erkannt and punkte >= ocr.MINDESTPUNKTE)),
     }
@@ -120,7 +158,11 @@ def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
         "objekt_name": o.name if o else None,
         # Ein Eintrag ohne Datei in der Cloud — nur noch zu entfernen oder
         # neu einzuscannen. Ehrlich anzeigen statt so tun, als läge er dort.
-        "abgelegt": d.pfad.startswith("/"),
+        "abgelegt": d.pfad.startswith("/") and d.status != VERMISST,
+        # CXXVII: der Abgleich hat die Datei in der Cloud nicht mehr gefunden.
+        # Der Eintrag bleibt stehen — gelöscht wird nichts —, aber er tut nicht
+        # so, als läge die Datei noch da.
+        "vermisst": d.status == VERMISST,
         "vorschlag": _vorschlag(d),
     }
 
@@ -229,17 +271,18 @@ def _aufnehmen(session: Session, o: Objekt, eintrag) -> Dokument | None:
     return d
 
 
-def _bezeichnung(name: str, jahr: int | None) -> str:
-    """Der ursprüngliche Name als Bezeichnung — ohne Endung, ohne das Jahr.
+def _bezeichnung(name: str) -> str:
+    """Der ursprüngliche Name als Bezeichnung — ohne Endung, Datum und Betrag.
 
     Ohne sie hießen alle Belege eines Jahres gleich: aus
     „Grundsteuerbescheid 2024.pdf" wurde „2024_Steuer.pdf" und aus dem
     zweiten Bescheid „2024_Steuer-2.pdf". Was der Nutzer selbst benannt hat,
-    bleibt erhalten — das Jahr steht ohnehin schon vorn."""
+    bleibt erhalten (XCVII).
+
+    Datum und Betrag fallen hier heraus, weil `dateiname` sie an ihrem festen
+    Platz neu setzt — vorn und hinten. Sonst stünden sie zweimal da."""
     stamm = name.rsplit(".", 1)[0] if "." in name else name
-    if jahr:
-        stamm = re.sub(rf"\b{jahr}\b", " ", stamm)
-    return re.sub(r"\s+", " ", stamm).strip(" -_")
+    return ohne_datum(ohne_betrag(stamm))
 
 
 def _automatisch(session: Session, d: Dokument, o: Objekt, client) -> bool:
@@ -250,9 +293,12 @@ def _automatisch(session: Session, d: Dokument, o: Objekt, client) -> bool:
     vorschlag = _vorschlag(d)
     if not vorschlag["kategorie"] or not vorschlag["sicher"] or not o.nc_ordner:
         return False
-    name = dateiname(vorschlag["jahr"], vorschlag["kategorie"],
-                     _bezeichnung(d.dateiname, vorschlag["jahr"]),
-                     _endung(d.dateiname))
+    # Die eigene Benennung des Nutzers hat Vorrang; der erkannte Sachbegriff
+    # springt nur ein, wo der Name nichts hergibt („scan.pdf", „IMG_4711.pdf").
+    sache = _bezeichnung(d.dateiname) or vorschlag["sache"]
+    name = dateiname(vorschlag["jahr"], vorschlag["kategorie"], sache,
+                     _endung(d.dateiname), vorschlag["monat"],
+                     vorschlag["betrag"])
     alt = d.pfad
     try:
         d.pfad, d.dateiname = _einsortieren(session, d, o,
@@ -324,6 +370,295 @@ def _scanne(session: Session) -> dict:
 
 
 # --------------------------------------------------------------------------
+# CXXVII: den Ordner vollständig neu einlesen
+#
+# Der Scanlauf findet neue Dateien. Der Abgleich schaut in die andere
+# Richtung: stimmt noch, was die Ablage über die vorhandenen Einträge sagt?
+# Der Nutzer räumt in der Nextcloud selbst auf — er verschiebt, benennt um und
+# löscht. Ein Eintrag, dessen Datei weg ist, darf nicht so tun, als läge sie
+# noch da.
+#
+# Was der Abgleich tut:
+#   * Datei am selben Platz            -> nichts
+#   * Datei woanders, gleicher Name    -> der Eintrag zieht mit (nur Datenbank)
+#   * Datei umbenannt, gleiche Grösse  -> der Eintrag zieht mit (nur Datenbank)
+#   * Datei nirgends mehr              -> Status `vermisst`, sonst nichts
+#
+# Gelöscht wird nichts, weder in der Cloud noch in der Datenbank: ein Eintrag
+# kann Zeitraum und Zuordnung tragen, die der Nutzer mühsam gesetzt hat. Er
+# wird gekennzeichnet und gemeldet, entfernen darf ihn nur der Nutzer.
+# Angestossen wird das ausdrücklich — der Wachdienst rührt es nie an.
+# --------------------------------------------------------------------------
+
+# Wie tief unter dem Objektordner gesucht wird. ImmoCalc legt eine Ebene an;
+# der Nutzer schachtelt darunter selbst weiter ("60_Nebenkosten/2025/").
+ABGLEICH_TIEFE = 4
+
+
+def _norm(pfad: str) -> str:
+    """Vergleichsform eines Cloud-Pfades: führender Trenner, keiner am Ende."""
+    return "/" + "/".join(t for t in (pfad or "").split("/") if t)
+
+
+def _elternteil(pfad: str) -> str:
+    return _norm(pfad).rsplit("/", 1)[0] or "/"
+
+
+def _baum(client, wurzel: str, tiefe: int = ABGLEICH_TIEFE) -> dict:
+    """Alle Dateien unterhalb eines Ordners, nach Pfad. Rein lesend.
+
+    Ein *Unterordner*, der sich nicht lesen lässt, hält den Abgleich nicht an;
+    er wird protokolliert, der Rest wird trotzdem geprüft. Der Objektordner
+    selbst dagegen schon: käme dort eine leere Liste zurück, weil die Cloud
+    gerade nicht antwortet, gälten mit einem Schlag alle Belege als vermisst.
+    Deshalb reicht sein Fehler nach oben durch."""
+    gefunden: dict = {}
+    besucht: set[str] = set()
+    offen = [(_norm(wurzel), 0)]
+    while offen:
+        ordner, ebene = offen.pop()
+        if ordner in besucht:
+            continue
+        besucht.add(ordner)
+        try:
+            eintraege = client.liste(ordner)
+        except NextcloudFehler as fehler:
+            if ebene == 0:
+                raise
+            log.warning("Ordner %s nicht lesbar: %s", ordner, fehler)
+            continue
+        for e in eintraege:
+            if e.ordner:
+                if ebene < tiefe:
+                    offen.append((_norm(e.pfad), ebene + 1))
+            else:
+                gefunden[_norm(e.pfad)] = e
+    return gefunden
+
+
+def _einziger(kandidaten: list[str]) -> str:
+    """Genau ein Treffer zählt. Bei mehreren wird nicht geraten — zwei gleich
+    heissende Dateien lassen sich nicht auseinanderhalten, und ein falsch
+    umgehängter Eintrag ist schlimmer als ein gemeldeter."""
+    return kandidaten[0] if len(kandidaten) == 1 else ""
+
+
+def _wiedergefunden(d: Dokument, frei: dict, vergeben: set[str]) -> tuple[str, str]:
+    """Wohin die Datei gewandert ist: (Pfad, Art) oder ("", "").
+
+    Zuerst nach dem Namen — verschieben ist der häufigere Fall und der
+    sicherere Schluss. Danach nach Ordner und Grösse: dieselbe Datei, im
+    selben Ordner, nur anders benannt."""
+    name = d.dateiname.lower()
+    gleicher_name = [p for p, e in frei.items()
+                     if e.name.lower() == name and p not in vergeben]
+    treffer = _einziger(gleicher_name)
+    if treffer:
+        return treffer, "verschoben"
+
+    if d.groesse:
+        ordner = _elternteil(d.pfad)
+        gleiche_datei = [p for p, e in frei.items()
+                         if e.groesse == d.groesse and _elternteil(p) == ordner
+                         and p not in vergeben]
+        treffer = _einziger(gleiche_datei)
+        if treffer:
+            return treffer, "umbenannt"
+    return "", ""
+
+
+def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
+                      dateien: dict, vergeben: set[str],
+                      trocken: bool) -> dict:
+    """Zieht die Einträge einer Immobilie an den Stand der Cloud nach."""
+    ergebnis: dict[str, list] = {"verschoben": [], "umbenannt": [],
+                                 "vermisst": [], "wiederda": []}
+    unveraendert = 0
+
+    # Erst alle, die noch an ihrem Platz liegen — sie belegen ihre Datei,
+    # bevor die Suche nach den Umgezogenen beginnt.
+    offen: list[Dokument] = []
+    for d in eigene:
+        if _norm(d.pfad) in dateien:
+            vergeben.add(_norm(d.pfad))
+            unveraendert += 1
+            if d.status == VERMISST:
+                # Die Datei ist zurück — der Eintrag darf sie wieder führen.
+                ergebnis["wiederda"].append(_kurz(d, o))
+                if not trocken:
+                    d.status = "zugeordnet" if d.kategorie else "neu"
+                    session.add(d)
+        else:
+            offen.append(d)
+
+    for d in offen:
+        ziel, art = _wiedergefunden(d, dateien, vergeben)
+        if not ziel:
+            eintrag = _kurz(d, o)
+            ergebnis["vermisst"].append(eintrag)
+            if not trocken and d.status != VERMISST:
+                d.status = VERMISST
+                session.add(d)
+            continue
+        vergeben.add(ziel)
+        eintrag = _kurz(d, o)
+        eintrag.update({"von": d.pfad, "nach": ziel,
+                        "neuer_name": dateien[ziel].name})
+        ergebnis[art].append(eintrag)
+        if trocken:
+            continue
+        d.pfad = ziel
+        d.dateiname = dateien[ziel].name
+        if d.status == VERMISST:
+            d.status = "zugeordnet" if d.kategorie else "neu"
+        session.add(d)
+
+    ergebnis["unveraendert"] = unveraendert
+    return ergebnis
+
+
+def _kurz(d: Dokument, o: Objekt) -> dict:
+    """Ein Eintrag, so knapp wie die Rückmeldung ihn braucht."""
+    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+            "objekt": o.slug, "objekt_name": o.name}
+
+
+def _abgleiche(session: Session, trocken: bool) -> dict:
+    """Ein vollständiger Durchgang über alle verknüpften Objektordner."""
+    _eindeutigkeit_sichern(session)
+    client = verbindung(session)
+    zusammen: dict[str, list] = {"verschoben": [], "umbenannt": [],
+                                 "vermisst": [], "wiederda": []}
+    unveraendert = geprueft = ohne_eintrag = neu = automatisch = 0
+    hinweise: list[str] = []
+    # Über alle Immobilien hinweg: eine Datei gehört immer nur einem Eintrag.
+    vergeben = {_norm(d.pfad) for d in session.exec(select(Dokument)).all()}
+
+    for o in session.exec(select(Objekt)).all():
+        if not o.nc_ordner:
+            continue
+        try:
+            dateien = _baum(client, o.nc_ordner)
+        except NextcloudFehler as fehler:
+            # Nicht lesbar heisst nicht verschwunden. Lieber diese Immobilie
+            # überspringen, als ihren ganzen Bestand als vermisst zu melden.
+            hinweise.append(f"{o.name}: Ordner nicht lesbar — übersprungen "
+                            f"({fehler})")
+            log.warning("Abgleich übersprungen für %s: %s", o.nc_ordner, fehler)
+            continue
+
+        # Vergeben sind zunächst nur die Pfade fremder Einträge; die eigenen
+        # gibt `_abgleiche_objekt` frei zum Wiederfinden.
+        eigene = list(session.exec(select(Dokument)
+                                   .where(Dokument.objekt_id == o.id)).all())
+        geprueft += len(eigene)
+        vergeben -= {_norm(d.pfad) for d in eigene}
+
+        teil = _abgleiche_objekt(session, o, eigene, dateien, vergeben, trocken)
+        for schluessel in zusammen:
+            zusammen[schluessel] += teil[schluessel]
+        unveraendert += teil["unveraendert"]
+
+        if not trocken:
+            try:
+                session.commit()
+            except IntegrityError as fehler:
+                # Ein Zielpfad war doch belegt. Nichts geht verloren: die
+                # Einträge bleiben, wie sie waren, und der Nutzer erfährt es.
+                session.rollback()
+                hinweise.append(f"{o.name}: Änderungen nicht gespeichert "
+                                f"({fehler.orig})")
+                log.warning("Abgleich nicht gespeichert für %s: %s",
+                            o.slug, fehler)
+                continue
+            teil_neu, teil_auto = _neue_aufnehmen(session, o, dateien, client,
+                                                  vergeben)
+            neu += teil_neu
+            automatisch += teil_auto
+        ohne_eintrag += sum(1 for p in dateien if p not in vergeben)
+
+    return {
+        "trockenlauf": trocken,
+        "geprueft": geprueft,
+        "unveraendert": unveraendert,
+        "verschoben": zusammen["verschoben"],
+        "umbenannt": zusammen["umbenannt"],
+        "vermisst": zusammen["vermisst"],
+        "wiederda": zusammen["wiederda"],
+        "neu": neu,
+        "automatisch": automatisch,
+        "offen": neu - automatisch,
+        # Dateien in der Cloud, zu denen es keinen Eintrag gibt. Nur eine
+        # Zahl: aufgenommen wird weiterhin nur, was lose im Hauptordner
+        # liegt — der gewachsene Bestand in den Unterordnern gehört dem
+        # Nutzer und wird nicht ungefragt in die Ablage gezogen.
+        "ohne_eintrag": ohne_eintrag,
+        "hinweise": hinweise,
+    }
+
+
+def _neue_aufnehmen(session: Session, o: Objekt, dateien: dict, client,
+                    vergeben: set[str]) -> tuple[int, int]:
+    """Lose Dateien im Hauptordner aufnehmen — wie beim Scanlauf.
+
+    Der gewachsene Bestand in den Unterordnern bleibt aussen vor: er gehört
+    dem Nutzer, und ihn ungefragt in die Ablage zu ziehen wäre keine
+    Aufräumhilfe, sondern ein Eingang mit zweihundert Einträgen."""
+    neu = automatisch = 0
+    wurzel = _norm(o.nc_ordner)
+    for pfad, e in sorted(dateien.items()):
+        if _elternteil(pfad) != wurzel:
+            continue      # nur lose Dateien im Hauptordner sind Eingang
+        d = _aufnehmen(session, o, e)
+        if not d:
+            continue
+        neu += 1
+        vergeben.add(pfad)
+        try:
+            if _automatisch(session, d, o, client):
+                automatisch += 1
+        except Exception as fehler:                   # noqa: BLE001
+            session.rollback()
+            log.warning("Automatik gescheitert für %s: %s", pfad, fehler)
+    return neu, automatisch
+
+
+@router.get("/abgleich")
+def abgleich_plan(session: Session = Depends(get_session)) -> dict:
+    """Trockenlauf: was ein vollständiges Neueinlesen ändern würde.
+
+    Ändert nichts — weder in der Cloud noch in der Datenbank."""
+    if not sperre.acquire(blocking=False):
+        raise HTTPException(409, "Der Eingang wird gerade geprüft — "
+                                 "einen Moment, dann noch einmal versuchen.")
+    try:
+        return _abgleiche(session, trocken=True)
+    finally:
+        sperre.release()
+
+
+@router.post("/abgleich")
+def abgleich(session: Session = Depends(get_session)) -> dict:
+    """Liest die Objektordner vollständig neu ein (CXXVII).
+
+    Neue Dateien kommen herein, umgezogene Einträge ziehen mit, und was in der
+    Cloud nicht mehr auffindbar ist, wird als `vermisst` gekennzeichnet statt
+    stillschweigend weiterzuleben. Gelöscht wird nichts."""
+    if not sperre.acquire(blocking=False):
+        raise HTTPException(409, "Der Eingang wird gerade geprüft — "
+                                 "einen Moment, dann noch einmal versuchen.")
+    try:
+        ergebnis = _abgleiche(session, trocken=False)
+    finally:
+        sperre.release()
+    log.info("Abgleich: %d geprüft, %d vermisst, %d umgehängt, %d neu",
+             ergebnis["geprueft"], len(ergebnis["vermisst"]),
+             len(ergebnis["verschoben"]) + len(ergebnis["umbenannt"]),
+             ergebnis["neu"])
+    return ergebnis
+
+
+# --------------------------------------------------------------------------
 # Liste mit Filtern — eine Ansicht für Eingang und Ablage
 # --------------------------------------------------------------------------
 
@@ -351,8 +686,10 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                 and (not begriff or begriff in d.dateiname.lower()))
 
     gefiltert = [d for d in alle if passt(d)]
-    # Offenes zuerst, danach das Neueste — so steht oben, was etwas will.
-    gefiltert.sort(key=lambda d: (d.status != "neu", -(d.jahr or 0),
+    # Offenes zuerst, dann Vermisstes, danach das Neueste — so steht oben,
+    # was etwas will.
+    rang = {"neu": 0, VERMISST: 1}
+    gefiltert.sort(key=lambda d: (rang.get(d.status, 2), -(d.jahr or 0),
                                   d.dateiname.lower()))
 
     genutzt = {d.kategorie for d in alle if d.kategorie}
@@ -366,6 +703,9 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
         "anzahl": len(gefiltert),
         "gesamt": len(alle),
         "offen": sum(1 for d in alle if d.status == "neu"),
+        # CXXVII: wie viele Einträge auf eine Datei zeigen, die es in der
+        # Cloud nicht mehr gibt. Null heisst: alles am Platz.
+        "vermisst": sum(1 for d in alle if d.status == VERMISST),
         "arten": DOKUMENTARTEN,
         "kategorien": [a for a in DOKUMENTARTEN if a in genutzt],
         "jahre": jahre,
@@ -458,17 +798,39 @@ def _pfad_konflikt(session: Session, pfad: str) -> HTTPException:
                               "und gegebenenfalls entfernen.")
 
 
+def _aus_datum(datum: str) -> tuple[int | None, int | None]:
+    """Jahr und Monat aus einem ISO-Datum, wie `/erkennen` es liefert.
+
+    Unvollständiges oder Unsinniges wird still verworfen — der Beleg ist
+    wichtiger als sein Datum."""
+    teile = (datum or "").split("-")
+    try:
+        jahr = int(teile[0]) if teile[0] else None
+        monat = int(teile[1]) if len(teile) > 1 and teile[1] else None
+    except ValueError:
+        return None, None
+    return jahr, (monat if monat and 1 <= monat <= 12 else None)
+
+
 @router.post("/scannen", status_code=201)
 async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   jahr: int | None = Form(None), beschreibung: str = Form(""),
                   zeitraum_id: int | None = Form(None),
+                  monat: int | None = Form(None),
+                  betrag: float | None = Form(None),
+                  datum: str = Form(""),
                   datei: UploadFile = File(...),
                   session: Session = Depends(get_session)) -> dict:
     """Nimmt ein abfotografiertes Dokument entgegen, benennt es nach Schema
     und legt es direkt im richtigen Unterordner der Immobilie ab.
 
     Kommt der Beleg von einer Abrechnung, wandert deren `zeitraum_id` mit —
-    sonst wäre er zwar abgelegt, aber am Zeitraum nie wiederzufinden."""
+    sonst wäre er zwar abgelegt, aber am Zeitraum nie wiederzufinden.
+
+    `betrag` und `datum` kommen von `/erkennen` durchgereicht: der Betrag
+    gehört an das Ende des Dateinamens (CXXIII), das Datum an seinen Anfang.
+    Gespeichert wird der Betrag nicht — er steht im Namen, und dort gehört er
+    hin."""
     o = _eindeutiges_objekt(session, objekt)
     _cloud_pflicht(o)
     zeitraum_id = _pruefe_zeitraum(session, zeitraum_id)
@@ -477,8 +839,12 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     if not inhalt:
         raise HTTPException(400, "Leere Datei")
 
+    erkannt_jahr, erkannt_monat = _aus_datum(datum)
+    jahr = jahr or erkannt_jahr
+    monat = monat or erkannt_monat
     kategorie = kategorie or "Sonstiges"
-    name = dateiname(jahr, kategorie, beschreibung or "Scan", ".pdf")
+    name = dateiname(jahr, kategorie, beschreibung or "Scan", ".pdf",
+                     monat, betrag)
     ziel_ordner = _zielordner(o, kategorie)
     client = verbindung(session)
     try:
@@ -517,9 +883,15 @@ class AenderungIn(BaseModel):
     objekt: str | None = None
     kategorie: str | None = None
     jahr: int | None = None
-    # Der Dateiname entsteht immer aus Jahr, Art und Bezeichnung — eine Regel
-    # für die ganze Ablage. Umbenannt wird über die Bezeichnung.
+    # Belegmonat — steht mit im Dateinamen, sobald er bekannt ist (CXXIII).
+    monat: int | None = None
+    # Der Dateiname entsteht immer aus Datum, Bezeichnung und Betrag — eine
+    # Regel für die ganze Ablage. Umbenannt wird über die Bezeichnung.
     beschreibung: str | None = None
+    # Der Rechnungsbetrag. Er wandert an das Ende des Dateinamens und wird
+    # bewusst nicht am Dokument gespeichert: der Name ist die Wahrheit, die
+    # der Nutzer im Ordner sieht.
+    betrag: float | None = None
     # Zu welcher Abrechnung der Beleg gehört. Mitgeschickt heißt gesetzt,
     # `null` heißt gelöst.
     zeitraum_id: int | None = None
@@ -552,8 +924,22 @@ def aendern(dokument_id: int, data: AenderungIn,
     zeitraum_id = (_pruefe_zeitraum(session, data.zeitraum_id)
                    if "zeitraum_id" in gesetzt else d.zeitraum_id)
 
-    if {"kategorie", "jahr", "beschreibung", "objekt"} & gesetzt:
-        name = dateiname(jahr, kategorie, data.beschreibung or "", endung)
+    # Was nicht mitkommt, wird aus dem bestehenden Namen zurückgelesen. Ohne
+    # das verlöre eine Korrektur am Jahr die Bezeichnung und den Betrag —
+    # beide stehen nur im Namen.
+    alt_jahr, alt_monat = datum_aus_namen(d.dateiname)
+    monat = data.monat if "monat" in gesetzt else alt_monat
+    betrag = (data.betrag if "betrag" in gesetzt
+              else betrag_aus_namen(d.dateiname))
+    beschreibung = (data.beschreibung if "beschreibung" in gesetzt
+                    else _bezeichnung(d.dateiname))
+    if jahr is None and "jahr" not in gesetzt:
+        jahr = alt_jahr
+
+    if {"kategorie", "jahr", "monat", "betrag",
+            "beschreibung", "objekt"} & gesetzt:
+        name = dateiname(jahr, kategorie, beschreibung or "", endung,
+                         monat, betrag)
     else:
         name = d.dateiname
 
@@ -565,6 +951,12 @@ def aendern(dokument_id: int, data: AenderungIn,
         # Eintrag ohne Datei in der Cloud: Ehrlichkeit vor Erfolgsmeldung.
         raise HTTPException(409, "Zu diesem Eintrag gibt es keine Datei in der "
                                  "Cloud — bitte neu einscannen oder entfernen.")
+    if d.status == VERMISST:
+        # CXXVII: der Abgleich hat die Datei nicht mehr gefunden. Ein MOVE
+        # liefe ins Leere und der Eintrag hiesse danach „zugeordnet".
+        raise HTTPException(409, "Diese Datei liegt nicht mehr in der Nextcloud "
+                                 "— bitte den Ordner neu einlesen, den Beleg "
+                                 "neu einscannen oder den Eintrag entfernen.")
     try:
         neuer_pfad, name = _einsortieren(session, d, o, kategorie, name)
     except NextcloudFehler as e:
@@ -629,8 +1021,10 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
     ordner = _zielordner(o, kategorie)
     # Die Aufnahme kommt als PDF; ein Eintrag, der vorher anders hieß, bekommt
     # seinen Schemanamen.
+    jahr, monat = datum_aus_namen(d.dateiname)
     name = (d.dateiname if d.dateiname.lower().endswith(".pdf")
-            else dateiname(d.jahr, kategorie, "Scan", ".pdf"))
+            else dateiname(d.jahr or jahr, kategorie, _bezeichnung(d.dateiname),
+                           ".pdf", monat, betrag_aus_namen(d.dateiname)))
     client = verbindung(session)
     try:
         client.ordner_anlegen(ordner)
