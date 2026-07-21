@@ -15,6 +15,10 @@ uploads
 belege/
 belege
 *.pdf.scan
+# Echter Dokumentenbestand des Nutzers, zur Analyse in den Repo-Baum kopiert.
+# Enthaelt Mietvertraege, Kontoauszuege, Namen — gehoert niemals ins Git.
+immo_DATA/
+unterlagen/
 
 # --- Build / Tooling ---
 build.txt
