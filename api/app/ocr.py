@@ -57,6 +57,12 @@ _KATEGORIEWORTE = [
     ("hausverwaltung", "Hausverwaltung"), ("wohngeld", "Hausverwaltung"),
     ("eigentümerversammlung", "Hausverwaltung"),
     ("heizkosten", "Nebenkosten"), ("betriebskosten", "Nebenkosten"),
+    # Brennstoff wird als Ganzes geliefert und gehoert zu den Heizkosten. Eine
+    # Oelrechnung nennt sich selbst fast nie „Heizkosten“ — sie spricht von
+    # Heizoel, Litern und dem Tank.
+    ("heizöl", "Nebenkosten"), ("heizoel", "Nebenkosten"),
+    ("brennstoff", "Nebenkosten"), ("flüssiggas", "Nebenkosten"),
+    ("fluessiggas", "Nebenkosten"), ("pellets", "Nebenkosten"),
     ("nebenkosten", "Nebenkosten"), ("stadtwerke", "Nebenkosten"),
     ("abwasser", "Nebenkosten"), ("trinkwasser", "Nebenkosten"),
     ("wasser", "Nebenkosten"), ("strom", "Nebenkosten"), ("gas", "Nebenkosten"),

@@ -124,7 +124,7 @@
 /* Wertentwicklung & Cashflow — die Zahlen des Eigentuemers.
    Was auf die Mieter umgelegt wird (Kostenbloecke, Kostenfluss,
    Abrechnungsstand), steht auf nebenkosten.html. Jede Zahl nur einmal. */
-import { api, eurKurz, esc } from './assets/immo.js';
+import { api, eurKurz, eurVoll, esc } from './assets/immo.js';
 import { saeulen, linie, legende, farbe } from './assets/charts.js';
 import { auswahlfeld } from './assets/auswahl.js';
 
@@ -177,19 +177,19 @@ function vermoegenHtml(besitz, objekt) {
 
   const zeilen = besitz.objekte.map(o => `<tr>
       <td>${esc(o.name)}</td>
-      <td>${o.wert == null ? '—' : eurKurz(o.wert)}</td>
-      <td>${o.restschuld ? eurKurz(o.restschuld) : '—'}</td>
+      <td>${o.wert == null ? '—' : eurVoll(o.wert)}</td>
+      <td>${o.restschuld ? eurVoll(o.restschuld) : '—'}</td>
       <td class="${(o.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg'}">${
-        o.eigenkapital == null ? '—' : eurKurz(o.eigenkapital)}</td>
+        o.eigenkapital == null ? '—' : eurVoll(o.eigenkapital)}</td>
     </tr>`).join('');
 
   const fehlen = besitz.gesamt.ohne_wert;
   return `<div class="karte">
       <h3>Vermögen${objekt ? '' : ' · alle Objekte'}</h3>
       <div class="kpi" style="margin-bottom:${objekt ? '0' : '14px'}">
-        ${kpiFeld('Wert', z.wert == null ? '—' : eurKurz(z.wert))}
-        ${kpiFeld('Restschuld', eurKurz(z.restschuld), z.restschuld ? 'neg' : '')}
-        ${kpiFeld('Eigenkapital', z.eigenkapital == null ? '—' : eurKurz(z.eigenkapital),
+        ${kpiFeld('Wert', z.wert == null ? '—' : eurVoll(z.wert))}
+        ${kpiFeld('Restschuld', eurVoll(z.restschuld), z.restschuld ? 'neg' : '')}
+        ${kpiFeld('Eigenkapital', z.eigenkapital == null ? '—' : eurVoll(z.eigenkapital),
                   (z.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg')}
       </div>
       ${objekt ? '' : `<table class="tabelle">

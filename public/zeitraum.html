@@ -217,7 +217,7 @@
 </div>
 
 <script type="module">
-import { api, eur, eurKurz, esc, fristKlasse, melde, frage, wahl }
+import { api, eur, eurKurz, esc, fristKlasse, melde, frage, wahl, belegAnsehen }
   from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 import { sankey } from './assets/charts.js';
@@ -881,10 +881,11 @@ inhalt.addEventListener('click', async e => {
   const beleg = e.target.closest('[data-beleg]');
   if (beleg) {
     e.preventDefault();
-    // Der Beleg wird durch die API gereicht und im neuen Tab angezeigt —
-    // Nextcloud verlangt sonst eine eigene Anmeldung.
-    window.open(`/api/dokumente/${beleg.dataset.beleg}/inhalt`, '_blank',
-                'noopener');
+    // Der Beleg wird durch die API gereicht — Nextcloud verlangt sonst eine
+    // eigene Anmeldung. Angezeigt wird er im Dialog, nicht in einem neuen
+    // Fenster: aus dem kommt man auf dem Telefon nicht mehr zurueck.
+    belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`,
+                 beleg.textContent.replace(/^PDF · /, '').trim());
     return;
   }
 

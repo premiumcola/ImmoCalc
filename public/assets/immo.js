@@ -64,6 +64,16 @@ export const eurKurz = n => {
   return Math.round(v).toLocaleString('de-DE') + ' €';
 };
 
+/**
+ * Voller Betrag ohne Cent: „315.000 €“.
+ *
+ * Fuer Werte, bei denen die Groessenordnung nicht reicht und der Cent nur
+ * stoert — Verkehrswert, Restschuld, Eigenkapital. Bei einem Hauswert sind
+ * zwei Nachkommastellen eine Genauigkeit, die es gar nicht gibt.
+ */
+export const eurVoll = n =>
+  (n == null ? 0 : Math.round(n)).toLocaleString('de-DE') + ' €';
+
 export const esc = s => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -162,6 +172,57 @@ function baueDialog(inhalt) {
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   dlg.showModal();
+  return dlg;
+}
+
+/**
+ * Beleg ansehen, ohne die App zu verlassen.
+ *
+ * Vorher lief das ueber `window.open`: auf dem Telefon oeffnet die
+ * Startbildschirm-App damit einen Betrachter ohne Leiste — man sieht das PDF
+ * und kommt nicht mehr heraus. Deshalb bleibt der Beleg jetzt im Dialog, mit
+ * drei Wegen zurueck: Kreuz, Escape und Tippen neben das Blatt.
+ */
+export function belegAnsehen(url, titel = 'Beleg') {
+  const dlg = baueDialog(
+    `<div class="beleg-kopf">
+       <span class="bt">${sicher(titel)}</span>
+       <a class="bx auf" href="${sicher(url)}" target="_blank" rel="noopener"
+          title="In neuem Tab öffnen">↗</a>
+       <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
+     </div>
+     <div class="beleg-blatt lade">Beleg wird geholt …</div>`);
+  dlg.classList.add('beleg-dlg');
+  dlg.querySelector('[data-zu]').addEventListener('click', () => dlg.close());
+  // Tippen neben das Blatt schliesst ebenfalls — der Dialog selbst fuellt die
+  // Flaeche, das Blatt liegt darin.
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+  // Erst holen, dann zeigen: laedt man die Adresse direkt in den Rahmen, steht
+  // im Fehlerfall die rohe Antwort der Schnittstelle auf dem Blatt.
+  let adresse = null;
+  fetch(url)
+    .then(async antwort => {
+      if (!antwort.ok) {
+        const grund = await antwort.json().then(k => k.detail).catch(() => null);
+        throw new Error(grund || 'Der Beleg lässt sich gerade nicht öffnen.');
+      }
+      return antwort.blob();
+    })
+    .then(blob => {
+      adresse = URL.createObjectURL(blob);
+      const rahmen = document.createElement('iframe');
+      rahmen.className = 'beleg-blatt';
+      rahmen.title = titel;
+      rahmen.src = adresse;
+      dlg.querySelector('.beleg-blatt').replaceWith(rahmen);
+    })
+    .catch(fehler => {
+      const feld = dlg.querySelector('.beleg-blatt');
+      if (feld) { feld.classList.add('leer'); feld.textContent = fehler.message; }
+    });
+
+  dlg.addEventListener('close', () => { if (adresse) URL.revokeObjectURL(adresse); });
   return dlg;
 }
 

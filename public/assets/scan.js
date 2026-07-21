@@ -70,16 +70,17 @@ export function bauePdf(seiten, { titel = 'Beleg' } = {}) {
     const bildId = seitenId + 1;
     const inhaltId = seitenId + 2;
 
-    // Bild seitenfüllend einpassen, Seitenverhältnis wahren
+    // Die Seite bekommt das Format der Aufnahme, nicht umgekehrt: A4 dient nur
+    // als Groessenmass, damit ein Ausdruck stimmt. Wuerde man das Bild in ein
+    // festes A4 einpassen, blieben je nach Seitenverhaeltnis weisse Streifen
+    // stehen — im Betrachter sieht man dann Papierkanten mitten im Beleg.
     const skala = Math.min(A4.breite / seite.breite, A4.hoehe / seite.hoehe);
     const b = seite.breite * skala;
     const h = seite.hoehe * skala;
-    const x = (A4.breite - b) / 2;
-    const y = (A4.hoehe - h) / 2;
-    const strom = `q\n${b.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm\n/Bild Do\nQ\n`;
+    const strom = `q\n${b.toFixed(2)} 0 0 ${h.toFixed(2)} 0 0 cm\n/Bild Do\nQ\n`;
 
     objekt(seitenId,
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4.breite} ${A4.hoehe}] ` +
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${b.toFixed(2)} ${h.toFixed(2)}] ` +
       `/Resources << /XObject << /Bild ${bildId} 0 R >> >> /Contents ${inhaltId} 0 R >>`);
 
     // Bild als eigener Datenstrom — DCTDecode heisst: JPEG unverändert

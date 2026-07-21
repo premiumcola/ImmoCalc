@@ -277,6 +277,32 @@ dialog.immo-dlg p{font:400 13.5px var(--body); color:var(--soft); margin:0 0 18p
                   line-height:1.55}
 dialog.immo-dlg .btn + .btn{margin-top:8px}
 
+/* ---- Beleg ansehen (immo.js: belegAnsehen) ----
+   Grosszuegiger als eine Rueckfrage: das Blatt braucht Flaeche. Auf dem Telefon
+   fuellt es den Schirm, auf dem Schreibtisch bleibt ein Rand stehen, damit das
+   Tippen daneben als Weg zurueck erkennbar ist. */
+dialog.immo-dlg.beleg-dlg{
+  max-width:min(920px, calc(100% - 24px)); width:calc(100% - 24px);
+  height:min(92dvh, 1100px); padding:12px; display:flex; flex-direction:column;
+  gap:10px; background:var(--sheet); overflow:visible;
+}
+dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
+.beleg-kopf{display:flex; align-items:center; gap:8px; flex:none}
+.beleg-kopf .bt{flex:1; min-width:0; font:600 14px var(--body); color:var(--ink);
+                overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.beleg-kopf .bx{flex:none; width:44px; height:44px; border:none; cursor:pointer;
+                border-radius:12px; background:var(--paper); color:var(--ink);
+                font:400 17px var(--body); line-height:44px; text-align:center;
+                text-decoration:none; display:block}
+.beleg-kopf .bx:hover{background:var(--teal-l); color:var(--teal-d)}
+.beleg-blatt{flex:1; width:100%; border:none; border-radius:12px;
+             background:var(--paper); min-height:0}
+/* Zwischenzustand und Fehlerfall: ruhig gesetzt statt roher Antworttext */
+.beleg-blatt.lade,.beleg-blatt.leer{display:flex; align-items:center;
+  justify-content:center; text-align:center; padding:24px;
+  font:400 13.5px var(--body); color:var(--soft); line-height:1.55}
+.beleg-blatt.leer{color:var(--neg)}
+
 /* Schiebe-Regler: erst am rechten Anschlag wird gelöscht */
 .schieber{
   --anteil:0;

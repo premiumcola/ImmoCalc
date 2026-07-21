@@ -214,7 +214,7 @@
 </dialog>
 
 <script type="module">
-import { api, esc } from './assets/immo.js';
+import { api, esc, belegAnsehen } from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
 
@@ -489,7 +489,8 @@ liste.addEventListener('click', async e => {
   const tat = knopf.dataset.tat;
 
   if (tat === 'oeffnen') {
-    window.open(`/api/dokumente/${id}/inhalt`, '_blank', 'noopener');
+    const d = daten.dokumente.find(x => x.id === id);
+    belegAnsehen(`/api/dokumente/${id}/inhalt`, d ? d.dateiname : 'Beleg');
     return;
   }
   if (tat === 'bearbeiten') { offenerBearbeiter = id; zeichne(); return; }

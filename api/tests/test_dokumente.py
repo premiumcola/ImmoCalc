@@ -379,6 +379,25 @@ def test_worterkennung_trifft_nicht_die_wortmitte():
         assert kategorie_aus_dateiname(lesbar)[0] == erwartet, name
 
 
+def test_brennstoff_zaehlt_zu_den_heizkosten():
+    """Eine Ölrechnung nennt sich nie „Heizkosten".
+
+    Sie spricht von Heizöl, Litern und dem Tank — deshalb blieb sie bisher
+    unerkannt liegen, obwohl Brennstoff der grösste Posten der Heizkosten ist.
+    """
+    from app.ocr import kategorie_aus_dateiname
+
+    for name in ["Heizoelrechnung 2024.pdf", "Rechnung Heizöl 3000 Liter.pdf",
+                 "Pellets 2025.pdf", "Fluessiggas Abrechnung.pdf"]:
+        lesbar = name.lower().replace("_", " ").replace("-", " ")
+        assert kategorie_aus_dateiname(lesbar)[0] == "Nebenkosten", name
+
+    # Die Gegenprobe bleibt gültig: kein Treffer mitten im Wort
+    for name in HARMLOS:
+        lesbar = name.lower().replace("_", " ").replace("-", " ")
+        assert kategorie_aus_dateiname(lesbar) == ("", 0), name
+
+
 def test_unsichere_namen_bleiben_liegen(monkeypatch):
     """XCIII: bei unsicherer Erkennung wird nichts verschoben."""
     import app.routers.dokumente as modul
