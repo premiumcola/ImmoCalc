@@ -89,6 +89,7 @@
              letter-spacing:-.01em;overflow-wrap:anywhere}
   .ezahlen b.pos{color:var(--pos)} .ezahlen b.neg{color:var(--neg)}
   .kartesub{font:400 12px var(--body);color:var(--soft);margin:-8px 0 14px;line-height:1.45}
+  .kartesub a{color:var(--teal-d);font-weight:600}
 </style>
 </head>
 <body>
@@ -121,11 +122,13 @@
 </div>
 
 <script type="module">
-/* Wertentwicklung & Cashflow — die Zahlen des Eigentuemers.
-   Was auf die Mieter umgelegt wird (Kostenbloecke, Kostenfluss,
-   Abrechnungsstand), steht auf nebenkosten.html. Jede Zahl nur einmal. */
+/* Wertentwicklung & Cashflow — der Eigentuemerbereich. Hier steht, was der
+   Eigentuemer selbst traegt: Kredit, Steuer, Versicherung, Instandhaltung,
+   Sonstiges — dazu Vermoegen, Cashflow je Einheit und Mietverlauf.
+   Was auf die Mieter umgelegt wird, steht auf nebenkosten.html.
+   Jede Zahl nur einmal. */
 import { api, eurKurz, eurVoll, esc } from './assets/immo.js';
-import { saeulen, linie, legende, farbe } from './assets/charts.js';
+import { balken, saeulen, linie, legende, farbe } from './assets/charts.js';
 import { auswahlfeld } from './assets/auswahl.js';
 
 const inhalt = document.getElementById('inhalt');
@@ -197,18 +200,44 @@ function vermoegenHtml(besitz, objekt) {
         <tbody>${zeilen}</tbody>
       </table>`}
       ${z.beleihung != null ? `<div class="chartleer" style="padding:12px 0 0">
-        Beleihung ${z.beleihung} % · Tilgung ${eurKurz(z.tilgung_jahr)} und
-        Zinsen ${eurKurz(z.zinslast_jahr)} pro Jahr</div>` : ''}
+        Beleihung ${z.beleihung} %</div>` : ''}
       ${!objekt && fehlen ? `<div class="chartleer" style="padding:6px 0 0">
         Bei ${fehlen} Objekt${fehlen === 1 ? '' : 'en'} fehlt noch ein Wert —
         Kaufpreis oder Verkehrswert auf der Objektseite nachtragen.</div>` : ''}
     </div>`;
 }
 
-/* Cashflow je Einheit — die eigentliche Eigentuemersicht: was traegt eine
-   einzelne Wohnung, was kostet sie, und wie liegt sie beim Quadratmeterpreis.
-   Die Objektkosten (Kredit, Versicherung, Steuer) verteilt die Engine nach
-   Flaeche, deshalb hat auch eine Garage ohne Flaeche keine Kostenlast. */
+/* Die Kosten des Eigentuemers als Balken — Kredit, Steuer, Versicherung,
+   Instandhaltung, Sonstiges. Die umlagefaehigen Nebenkosten sind bewusst
+   nicht dabei: die zahlt der Mieter.
+
+   Der Kreditbalken ist die Jahresrate; dass darin Tilgung und Zinsen stecken,
+   steht darunter — an der einen Stelle, an der die Rate auch auftaucht. */
+function eigenkostenHtml(daten, jahr, besitz, objekt) {
+  const bloecke = Object.entries(daten.kostenbloecke)
+    .map(([name, wert]) => ({ name, wert, text: eurKurz(wert) }))
+    .sort((a, b) => b.wert - a.wert);
+
+  const z = !besitz ? null
+    : (objekt ? besitz.objekte.find(o => o.slug === objekt) : besitz.gesamt);
+  const teilung = z && daten.kostenbloecke.Kredit && (z.tilgung_jahr || z.zinslast_jahr)
+    ? `<div class="chartleer" style="padding:12px 0 0">In der Kreditrate stecken
+       ${eurKurz(z.tilgung_jahr)} Tilgung und ${eurKurz(z.zinslast_jahr)} Zinsen.</div>`
+    : '';
+
+  return `<div class="karte">
+      <h3>Eigentümerkosten ${jahr}</h3>
+      <div class="kartesub">Umlagefähige Kosten trägt der Mieter — sie stehen
+        unter <a href="nebenkosten.html">Nebenkosten</a>.</div>
+      ${balken(bloecke)}
+      ${teilung}
+    </div>`;
+}
+
+/* Cashflow je Einheit — was traegt eine einzelne Wohnung, was kostet sie den
+   Eigentuemer, und wie liegt sie beim Quadratmeterpreis. Die Objektkosten
+   verteilt die Engine nach Flaeche, deshalb hat auch eine Garage ohne
+   Flaeche keine Kostenlast. */
 function cashflowHtml(satz, einzeln) {
   const einheiten = (satz.einheiten || []).filter(e => e.einnahmen_jahr || e.kosten_jahr);
   if (!einheiten.length) return '';
@@ -229,7 +258,7 @@ function cashflowHtml(satz, einzeln) {
 
   return `<div class="karte">
       <h3>Cashflow je Einheit${einzeln ? '' : ' · ' + esc(satz.name)}</h3>
-      <div class="kartesub">Objektkosten sind nach Fläche auf die Einheiten
+      <div class="kartesub">Eigentümerkosten sind nach Fläche auf die Einheiten
         verteilt. Saldo = Jahresmiete abzüglich dieses Anteils.</div>
       ${saeulen(einheiten.map(e => ({ name: e.bezeichnung,
                                       a: e.einnahmen_jahr, b: e.kosten_jahr })))}
@@ -242,7 +271,8 @@ function cashflowHtml(satz, einzeln) {
 async function zeichnen() {
   const jahr = jahrWahl.wert();
   const objekt = objektWahl.wert();
-  const frage = new URLSearchParams({ jahr });
+  // sicht=eigentuemer: Ausgaben ohne die umlagefähigen Nebenkosten
+  const frage = new URLSearchParams({ jahr, sicht: 'eigentuemer' });
   if (objekt) frage.set('objekt', objekt);
 
   let daten, verlauf, besitz;
@@ -265,8 +295,8 @@ async function zeichnen() {
   // langsam und wuerde die Karten nacheinander einblenden.
   const slugs = objekt ? [objekt] : objekte.map(o => o.slug);
   const cashflows = (await Promise.all(slugs.map(s =>
-    api(`/auswertung/cashflow?objekt=${encodeURIComponent(s)}&jahr=${jahr}`)
-      .catch(() => null)))).filter(Boolean);
+    api(`/auswertung/cashflow?objekt=${encodeURIComponent(s)}&jahr=${jahr}`
+        + '&sicht=eigentuemer').catch(() => null)))).filter(Boolean);
 
   // Das Saeulendiagramm traegt nur die Objekte, die im Jahr auch Zahlen haben,
   // und hoechstens acht davon: bei zwoelf Gruppen ueberlagern sich die
@@ -288,6 +318,8 @@ async function zeichnen() {
     </div>
 
     ${vermoegenHtml(besitz, objekt)}
+
+    ${eigenkostenHtml(daten, jahr, besitz, objekt)}
 
     ${cashflows.map(c => cashflowHtml(c, Boolean(objekt))).join('')}
 

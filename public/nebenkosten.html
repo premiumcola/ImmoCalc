@@ -37,6 +37,14 @@
   .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:14px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .karte h3{font:600 13px var(--disp);letter-spacing:-.01em;margin:0 0 14px;color:var(--ink)}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+  .kpi .k{background:var(--sheet);border-radius:14px;padding:13px 12px;
+          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .kpi .kl{display:block;font:600 9.5px var(--mono);letter-spacing:.08em;
+           text-transform:uppercase;color:var(--soft)}
+  .kpi .kv{display:block;font:700 16px var(--disp);letter-spacing:-.02em;margin-top:6px}
+  .kpi .kv.pos{color:var(--pos)} .kpi .kv.neg{color:var(--neg)}
+  @media(min-width:1000px){ .kpi{max-width:560px} }
   /* max-width: die SVGs haben eine viewBox und wuerden auf breiten Schirmen
      samt Schrift und Balken ins Riesenhafte skalieren. */
   .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible}
@@ -75,6 +83,12 @@
   .zrl em{display:block;font:400 11px var(--body);font-style:normal;
           color:var(--soft);margin-top:3px}
   .zrpfeil{color:var(--soft);font:400 16px var(--body);flex:none}
+
+  /* Der Verweis auf die Eigentuemerseite. Steht genau einmal — die Trennung
+     der beiden Bereiche muss erklaert werden, aber nicht dreimal. */
+  .grenze{font:400 12px var(--body);color:var(--soft);line-height:1.5;
+          margin:0 0 18px;max-width:560px}
+  .grenze a{color:var(--teal-d);font-weight:600}
 </style>
 </head>
 <body>
@@ -92,6 +106,7 @@
       <div id="jahr"></div>
       <div id="objekt"></div>
     </div>
+    <div id="kopf"></div>
     <div class="kategorien" id="kategorien" role="group" aria-label="Kostenarten"></div>
     <div id="inhalt"></div>
   </div>
@@ -108,13 +123,16 @@
 </div>
 
 <script type="module">
-/* Nebenkostenabrechnung — die Zahlen, die auf die Mieter umgelegt werden:
-   Kostenblöcke, Kostenfluss und der Stand der Abrechnungszeiträume.
-   Vermögen, Cashflow und Mietverlauf stehen auf wertentwicklung.html. */
+/* Nebenkostenabrechnung — der Mieterbereich. Hier steht ausschliesslich, was
+   auf die Mieter umgelegt wird: ihre Vorauszahlungen, die umlagefaehigen
+   Kosten je Kostenart und der Stand der Abrechnungszeitraeume.
+   Kredit, Steuer und Versicherung traegt der Eigentuemer — die stehen auf
+   wertentwicklung.html, ebenso Vermoegen, Cashflow und Mietverlauf. */
 import { api, eurKurz, esc, fristKlasse, fristText } from './assets/immo.js';
 import { balken, sankey } from './assets/charts.js';
 import { auswahlfeld } from './assets/auswahl.js';
 
+const kopf = document.getElementById('kopf');
 const inhalt = document.getElementById('inhalt');
 const sub = document.getElementById('sub');
 
@@ -143,7 +161,9 @@ try {
   sub.textContent = 'API nicht erreichbar';
 }
 
-/* Kostenarten-Filter — wirkt auf Blöcke und Kostenfluss gleichermaßen */
+/* Kostenarten-Filter — wirkt auf Blöcke und Kostenfluss gleichermaßen.
+   Die Kennzahlen oben bleiben davon unberührt: sie zeigen das Jahr als
+   Ganzes, die Schalter darunter sind der Blick ins Einzelne. */
 const kategorienFeld = document.getElementById('kategorien');
 let alleKategorien = [];
 const gewaehlt = new Set();
@@ -151,6 +171,40 @@ const gewaehlt = new Set();
 function kategorienZeichnen() {
   kategorienFeld.innerHTML = alleKategorien.map(k =>
     `<button data-kat="${esc(k)}" aria-pressed="${gewaehlt.has(k)}">${esc(k)}</button>`).join('');
+}
+
+function kpiFeld(label, wert, klasse = '') {
+  return `<div class="k"><span class="kl">${esc(label)}</span>
+          <span class="kv ${klasse}">${wert}</span></div>`;
+}
+
+/* Die Mietersicht in drei Zahlen: was gezahlt wurde, was umgelegt wird, und
+   was am Ende zurückfließt oder nachzuzahlen ist.
+
+   Solange nichts umgelegt ist, gibt es keine dritte Zahl: „Guthaben in Höhe
+   aller Vorauszahlungen“ wäre ein falscher Schluss aus einem Jahr, dessen
+   Belege noch gar nicht da sind. */
+function kopfHtml(daten, jahr) {
+  const vz = daten.gesamt.vorauszahlungen || 0;
+  // gesamt.ausgaben folgt dem Kostenart-Filter — sonst stünde über einem
+  // gefilterten Kostenfluss ein anderes Guthaben als darin.
+  const umlage = daten.gesamt.ausgaben || 0;
+  const grenze = `<p class="grenze">Kredit, Steuer und Versicherung trägt der
+    Eigentümer — sie stehen unter
+    <a href="wertentwicklung.html">Wert &amp; Cashflow</a>.</p>`;
+
+  if (!umlage) {
+    return `<p class="grenze">Für ${jahr} ist noch nichts umgelegt${
+      vz ? ` — die Vorauszahlungen liegen bei ${eurKurz(vz)}` : ''}.</p>${grenze}`;
+  }
+
+  const diff = Math.round((vz - umlage) * 100) / 100;
+  return `<div class="kpi">
+      ${kpiFeld('Vorauszahlungen', eurKurz(vz))}
+      ${kpiFeld('Umlagefähig', eurKurz(umlage), 'neg')}
+      ${kpiFeld(diff >= 0 ? 'Guthaben' : 'Nachzahlung', eurKurz(Math.abs(diff)),
+                diff >= 0 ? 'pos' : 'neg')}
+    </div>${grenze}`;
 }
 
 kategorienFeld.addEventListener('click', e => {
@@ -199,7 +253,8 @@ function standHtml(staende) {
 async function zeichnen() {
   const jahr = jahrWahl.wert();
   const objekt = objektWahl.wert();
-  const frage = new URLSearchParams({ jahr });
+  // sicht=mieter: die API liefert nur die umlagefähigen Kosten, je Kostenart
+  const frage = new URLSearchParams({ jahr, sicht: 'mieter' });
   if (objekt) frage.set('objekt', objekt);
   // leere Auswahl = alles, sonst wäre die Ansicht nach dem ersten Klick leer
   if (gewaehlt.size) frage.set('kategorien', [...gewaehlt].join(','));
@@ -211,6 +266,7 @@ async function zeichnen() {
       api('/auswertung/sankey?' + frage),
     ]);
   } catch {
+    kopf.innerHTML = '';
     inhalt.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
       <p>Die Nebenkosten konnten nicht geladen werden.</p></div>`;
     return;
@@ -227,25 +283,39 @@ async function zeichnen() {
 
   sub.textContent = `${daten.objekte.length} ${daten.objekte.length === 1 ? 'Objekt' : 'Objekte'} · ${jahr}`;
 
-  if (!alleKategorien.length && daten.kategorien) {
-    alleKategorien = daten.kategorien;
+  // Schalter für die Kostenarten, die im Jahr tatsächlich vorkommen. Erst wenn
+  // das Jahr noch leer ist, tritt der Katalog des Objekts an ihre Stelle —
+  // dann zeigen sie, was erwartet wird.
+  const belegt = Object.keys(daten.mieter.bloecke || {})
+    .sort((a, b) => a.localeCompare(b, 'de'));
+  const arten = belegt.length ? belegt : (daten.mieter_kategorien || []);
+  if (arten.join('|') !== alleKategorien.join('|')) {
+    alleKategorien = arten;
+    for (const k of [...gewaehlt]) if (!arten.includes(k)) gewaehlt.delete(k);
     kategorienZeichnen();
   }
 
+  // Die Beschriftungsspalte der Balken ist schmal; „Niederschlagswasser“
+  // liefe sonst unter den Balken.
+  const kurz = n => n.length > 15 ? n.slice(0, 14) + '…' : n;
   const bloecke = Object.entries(daten.kostenbloecke)
-    .map(([name, wert]) => ({ name, wert, text: eurKurz(wert) }))
+    .map(([name, wert]) => ({ name: kurz(name), wert, text: eurKurz(wert) }))
     .sort((a, b) => b.wert - a.wert);
 
+  kopf.innerHTML = kopfHtml(daten, jahr);
   inhalt.innerHTML = `
     <div class="karte">
-      <h3>Kostenblöcke ${jahr}</h3>
+      <h3>Umlagefähige Kosten ${jahr}</h3>
       ${balken(bloecke)}
     </div>
 
     <div class="karte">
       <h3>Kostenfluss ${jahr}${objekt ? ' · je Einheit' : ' · je Objekt'}</h3>
-      ${sankey(fluss.knoten, fluss.fluss,
-               { format: eurKurz, breite: window.innerWidth < 520 ? 270 : 560 })}
+      ${daten.gesamt.ausgaben
+        ? sankey(fluss.knoten, fluss.fluss,
+                 { format: eurKurz, breite: window.innerWidth < 520 ? 270 : 560 })
+        : '<div class="chartleer">Ohne umlagefähige Kosten gibt es nichts zu '
+          + 'verteilen.</div>'}
     </div>
 
     ${standHtml(staende)}`;
