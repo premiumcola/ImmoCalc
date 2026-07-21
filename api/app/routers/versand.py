@@ -12,6 +12,7 @@ from ..engine import Position, abrechnung
 from ..mailversand import MailFehler
 from ..models import (Kostenposition, Miete, Objekt, Versandprotokoll,
                       Vorauszahlung, Zeitraum)
+from ..verteilung import fehlende_angaben
 from .mail import zugang
 
 log = logging.getLogger("immocalc")
@@ -25,7 +26,11 @@ def _ergebnis(session: Session, z: Zeitraum) -> dict:
         select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == z.id)).all()
     positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)
                   for p in pos if p.status == "erledigt"]
-    return abrechnung(positionen, {v.partei: v.betrag for v in vzs})
+    res = abrechnung(positionen, {v.partei: v.betrag for v in vzs})
+    # `abrechnung` selbst kennt keine offenen Posten — ohne diese Ergänzung
+    # las der Abschluss `res["offen"]` und bekam immer eine leere Liste.
+    res.update(fehlende_angaben(list(pos)))
+    return res
 
 
 def _empfaenger(session: Session, objekt_id: int) -> dict[str, dict]:
@@ -201,3 +206,34 @@ def abschliessen(zid: int, data: AbschlussIn,
     return {"ok": True, "status": z.status, "versendet": versendet,
             "ohne_mail": uebersprungen, "schon_versendet": schon_da,
             "uebergangen": offen if data.offene_uebergehen else []}
+
+
+@router.post("/{zid}/oeffnen")
+def oeffnen(zid: int, session: Session = Depends(get_session)) -> dict:
+    """Öffnet einen abgeschlossenen Zeitraum wieder.
+
+    Ein Abschluss passiert schnell — ein Beleg kommt nach, ein Betrag war
+    falsch, eine Position hatte keine Verteilung. Ohne diesen Weg bliebe der
+    Zeitraum für immer zu und verschwände zugleich aus Fristen, offenen
+    Belegen und Erinnerungen: der Fehler wäre danach nicht mehr sichtbar.
+
+    Das Versandprotokoll bleibt dabei ausdrücklich stehen. Es ist kein
+    Zustand des Zeitraums, sondern die Erinnerung daran, wer seine Abrechnung
+    schon in Händen hält. Würde es beim Öffnen gelöscht, bekäme beim nächsten
+    Abschluss jeder Mieter die Mail ein zweites Mal — auch die, bei denen sich
+    gar nichts geändert hat. Wer nach einer Korrektur bewusst erneut
+    verschicken will, tut das gezielt über den Abschluss mit `erneut`."""
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    if z.status == "in Arbeit":
+        return {"ok": True, "status": z.status, "geaendert": False,
+                "bereits_versendet": sorted(_bereits_versendet(session, zid))}
+    z.status = "in Arbeit"
+    session.add(z)
+    session.commit()
+    versendet = sorted(_bereits_versendet(session, zid))
+    log.info("Zeitraum %s wieder geöffnet (%d Partei(en) bereits beliefert)",
+             zid, len(versendet))
+    return {"ok": True, "status": z.status, "geaendert": True,
+            "bereits_versendet": versendet}

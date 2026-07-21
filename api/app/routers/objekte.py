@@ -17,6 +17,8 @@ from ..frist import frist_tage
 from ..nachpflege import hinweise, zusammenfassung
 from ..models import (Dokument, Einheit, Kostenart, Kostenposition, Miete,
                       Objekt, Partei, Vorauszahlung, Zeitraum)
+from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
+                          fehlende_angaben, stammdaten, vorschau)
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["objekte"])
@@ -303,6 +305,25 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
 
     nach_art = {p.kostenart: p for p in positionen}
+
+    def _verteilung(p: Optional[Kostenposition]) -> dict:
+        """Wie die Position verteilt wird — und ob sie das überhaupt tut.
+
+        `ohne_verteilung` ist der ehrliche Hinweis: eine erledigte Position
+        ohne Gewichte fällt aus der Abrechnung heraus, ohne dass es jemand
+        merkt. Die Zeile sieht fertig aus, ihr Betrag taucht aber nirgends
+        wieder auf."""
+        anteile = (p.anteile or {}) if p else {}
+        meta = SCHLUESSEL.get((p.schluessel if p else "") or "", {})
+        return {
+            "anteile": anteile,
+            "anteile_einheit": meta.get("einheit", ""),
+            "anteile_summe": round(sum(anteile.values()), 4),
+            "ohne_verteilung": bool(
+                p and p.status == "erledigt" and (p.betrag or 0) != 0
+                and sum(anteile.values()) <= 0),
+        }
+
     belege = {}
     for d in dokumente:
         belege.setdefault(d.kategorie or "", []).append(
@@ -320,7 +341,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "betrag": p.betrag if p else None,
             "schluessel": p.schluessel if p else None,
             "wertquelle": p.wertquelle if p else None,
-            "anteile": (p.anteile or {}) if p else {},
+            **_verteilung(p),
             "position_id": p.id if p else None,
             "beleg_monat": k.beleg_monat,
             "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
@@ -333,7 +354,8 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "kostenart": p.kostenart, "s35": p.s35,
             "erledigt": p.status == "erledigt", "betrag": p.betrag,
             "schluessel": p.schluessel, "wertquelle": p.wertquelle,
-            "anteile": p.anteile or {}, "position_id": p.id, "beleg_monat": None,
+            **_verteilung(p),
+            "position_id": p.id, "beleg_monat": None,
             "zustand": "erledigt" if p.status == "erledigt" else "offen",
         })
 
@@ -435,17 +457,111 @@ def zeitraum_anlegen(slug: str, data: ZeitraumIn,
             "kostenarten": len(arten), "vorauszahlungen": uebernommen}
 
 
+def _zeitraum(session: Session, zid: int) -> Zeitraum:
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    return z
+
+
+def _gewichte(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float]:
+    try:
+        return ableiten(session, z, schluessel)
+    except UnbekannterSchluessel as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+
+
+@router.get("/zeitraeume/{zid}/schluessel")
+def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> dict:
+    """Welche Verteilungsschlüssel für dieses Objekt taugen — und welche
+    Gewichte dabei herauskämen.
+
+    Vorschau vor der Festlegung: `moeglich` sagt, ob sich der Schlüssel aus den
+    Stammdaten ergibt. `unbekannte_vorauszahlungen` deckt den stillen Fehler
+    auf, bei dem eine Vorauszahlung auf einen Parteinamen lautet, den die
+    Verteilung gar nicht kennt — die Engine rechnet dann an ihr vorbei."""
+    z = _zeitraum(session, zid)
+    bezuege = stammdaten(session, z)
+    parteien = sorted({b.partei for b in bezuege})
+    vzs = session.exec(
+        select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
+    return {
+        "zeitraum": zid, "vorgabe": VORGABE,
+        "parteien": [{"partei": b.partei, "einheit": b.einheit,
+                      "flaeche": b.flaeche, "personen": b.personen}
+                     for b in bezuege],
+        "schluessel": vorschau(bezuege, z.start, z.ende),
+        "unbekannte_vorauszahlungen": sorted(
+            {v.partei for v in vzs} - set(parteien)),
+    }
+
+
+class PositionNeu(BaseModel):
+    """Ohne `anteile` werden die Gewichte aus dem Schlüssel abgeleitet."""
+    kostenart: str
+    betrag: float = 0.0
+    schluessel: str = VORGABE
+    wertquelle: str = "manuell"
+    status: Optional[str] = None
+    s35: Optional[bool] = None
+    anteile: Optional[dict[str, float]] = None
+
+
+@router.post("/zeitraeume/{zid}/positionen", status_code=201)
+def position_anlegen(zid: int, data: PositionNeu,
+                     session: Session = Depends(get_session)) -> dict:
+    """Legt eine Kostenposition an — mit Gewichten, nicht ohne.
+
+    Bisher entstanden Positionen nur beiläufig (Beleg-Scan) und blieben ohne
+    `anteile`; ihr Betrag fiel damit aus der Abrechnung heraus."""
+    z = _zeitraum(session, zid)
+    if not data.kostenart.strip():
+        raise HTTPException(400, "Die Kostenart darf nicht leer sein")
+    vorhanden = session.exec(select(Kostenposition).where(
+        Kostenposition.zeitraum_id == zid)).all()
+    if any(p.kostenart == data.kostenart for p in vorhanden):
+        raise HTTPException(409, f"'{data.kostenart}' ist in diesem Zeitraum "
+                                 f"bereits erfasst")
+
+    anteile = (data.anteile if data.anteile is not None
+               else _gewichte(session, z, data.schluessel))
+    # Der §35a-Vermerk hängt am Katalog des Objekts; eine neue Position erbt ihn.
+    s35 = data.s35
+    if s35 is None:
+        art = session.exec(select(Kostenart).where(
+            Kostenart.objekt_id == z.objekt_id,
+            Kostenart.name == data.kostenart)).first()
+        s35 = bool(art and art.s35)
+
+    p = Kostenposition(
+        zeitraum_id=zid, kostenart=data.kostenart, betrag=data.betrag,
+        schluessel=data.schluessel, wertquelle=data.wertquelle, s35=s35,
+        status=data.status or ("erledigt" if data.betrag else "offen"),
+        anteile=anteile)
+    session.add(p)
+    session.commit()
+    session.refresh(p)
+    return {"id": p.id, "kostenart": p.kostenart, "status": p.status,
+            "anteile": p.anteile, "abgeleitet": data.anteile is None}
+
+
 class PositionIn(BaseModel):
-    betrag: float | None = None
-    status: str | None = None
-    schluessel: str | None = None
-    wertquelle: str | None = None
+    betrag: Optional[float] = None
+    status: Optional[str] = None
+    schluessel: Optional[str] = None
+    wertquelle: Optional[str] = None
+    anteile: Optional[dict[str, float]] = None
+    s35: Optional[bool] = None
 
 
 @router.patch("/positionen/{pid}")
 def position_aendern(pid: int, data: PositionIn,
                      session: Session = Depends(get_session)) -> dict:
-    """Betrag nachtragen oder Zustand ändern — das Nachbearbeiten aus der App."""
+    """Betrag nachtragen oder Zustand ändern — das Nachbearbeiten aus der App.
+
+    Wird nur der Schlüssel umgestellt, werden die Gewichte neu abgeleitet:
+    Fläche-Gewichte unter dem Schlüssel „Personen" stehen zu lassen wäre die
+    unauffälligste Art, falsch abzurechnen."""
     p = session.get(Kostenposition, pid)
     if not p:
         raise HTTPException(404, "Position nicht gefunden")
@@ -454,25 +570,50 @@ def position_aendern(pid: int, data: PositionIn,
         # Ein eingetragener Betrag heisst: der Beleg liegt vor.
         if data.status is None and data.betrag > 0:
             p.status = "erledigt"
-    for feld in ("status", "schluessel", "wertquelle"):
+    if data.schluessel is not None and data.schluessel not in SCHLUESSEL:
+        raise HTTPException(400, f"Unbekannter Verteilungsschlüssel "
+                                 f"'{data.schluessel}'")
+    umgestellt = data.schluessel is not None and data.schluessel != p.schluessel
+    for feld in ("status", "schluessel", "wertquelle", "s35"):
         wert = getattr(data, feld)
         if wert is not None:
             setattr(p, feld, wert)
+    if data.anteile is not None:
+        p.anteile = data.anteile
+    elif umgestellt:
+        p.anteile = _gewichte(session, _zeitraum(session, p.zeitraum_id),
+                              p.schluessel)
     session.add(p)
     session.commit()
-    return {"ok": True, "betrag": p.betrag, "status": p.status}
+    return {"ok": True, "betrag": p.betrag, "status": p.status,
+            "schluessel": p.schluessel, "anteile": p.anteile}
+
+
+@router.delete("/positionen/{pid}")
+def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict:
+    """Entfernt eine Kostenposition — eine bewusste Nutzeraktion.
+
+    Die Kostenart bleibt im Katalog des Objekts stehen; die Zeile taucht in der
+    Checkliste danach wieder als „fehlt" auf, statt zu verschwinden."""
+    p = session.get(Kostenposition, pid)
+    if not p:
+        raise HTTPException(404, "Position nicht gefunden")
+    kostenart = p.kostenart
+    session.delete(p)
+    session.commit()
+    return {"ok": True, "kostenart": kostenart}
 
 
 @router.get("/zeitraeume/{zid}/abrechnung")
 def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> dict:
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    _zeitraum(session, zid)
     pos = session.exec(select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
     # offene Positionen (Betrag noch nicht da) fließen nicht in die Rechnung ein
     positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)
                   for p in pos if p.status == "erledigt"]
     res = abrechnung(positionen, {v.partei: v.betrag for v in vzs})
-    res["offen"] = [p.kostenart for p in pos if p.status == "offen"]
+    # Erledigte Positionen ohne Gewichte gehören zu den offenen: ihr Betrag
+    # verschwindet sonst lautlos, und der Abschluss übergeht sie.
+    res.update(fehlende_angaben(list(pos)))
     return res

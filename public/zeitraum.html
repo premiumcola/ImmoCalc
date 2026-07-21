@@ -97,6 +97,41 @@
   .nachtrag input:focus{outline:none;border-color:var(--teal)}
   .nachtrag button{border:none;border-radius:10px;padding:10px 16px;background:var(--teal);
     color:#fff;font:600 13px var(--disp);cursor:pointer;min-height:44px}
+  /* Verteilung: Schlüssel wählen, Gewichte lesen und überschreiben.
+     Die Zahl allein („Büro 4.1398") sagt niemandem etwas — erst Maßeinheit
+     und Prozentanteil machen sie lesbar. */
+  .vt{margin-top:2px}
+  .vt .wahl{margin:6px 0 4px}
+  .vt .hinweis{font:400 11.5px var(--body);color:var(--soft);line-height:1.45;
+               margin:8px 0 2px}
+  .gw{display:flex;align-items:center;gap:8px;padding:5px 0}
+  .gw .gn{flex:1;min-width:0;font:500 12.5px var(--body);
+          hyphens:auto;overflow-wrap:anywhere}
+  .gw input{width:92px;flex:none;border:1.5px solid var(--line);border-radius:10px;
+    padding:9px 10px;font:600 12.5px var(--mono);min-height:44px;
+    background:var(--sheet);text-align:right;color:inherit}
+  .gw input:focus{outline:none;border-color:var(--teal)}
+  .gw .gv{width:92px;flex:none;text-align:right;font:600 12.5px var(--mono)}
+  .gw .gp{width:48px;flex:none;text-align:right;
+          font:600 11.5px var(--mono);color:var(--soft)}
+  .vt .knopfzeile{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .vt .knopfzeile button{border:none;border-radius:10px;padding:10px 14px;
+    font:600 12.5px var(--disp);cursor:pointer;min-height:44px}
+  .vt .haupt{background:var(--teal);color:#fff}
+  .vt .leise{background:#EDF1F0;color:var(--ink)}
+  .vt .leise:hover{background:#E1E8E6}
+  .warnung{display:flex;gap:9px;align-items:flex-start;background:var(--neg-bg);
+    color:var(--neg);border-radius:11px;padding:11px 12px;margin:10px 0 2px;
+    font:500 11.5px var(--body);line-height:1.45}
+  .warnung b{font-weight:700}
+  .pdflink{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
+    background:#F1F4F4;color:var(--ink);border-radius:10px;padding:9px 12px;
+    font:600 11.5px var(--body);min-height:40px;margin-top:10px}
+  .pdflink:hover{background:var(--teal-l);color:var(--teal-d)}
+  .wiederauf{margin-top:12px;border:none;background:transparent;color:var(--soft);
+    text-decoration:underline;text-underline-offset:3px;cursor:pointer;
+    font:600 12px var(--disp);padding:10px 2px;min-height:44px}
+  .wiederauf:hover{color:var(--ink)}
   .belege{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
   .belege a{display:inline-flex;align-items:center;gap:6px;text-decoration:none;
     background:#F1F4F4;color:var(--ink);border-radius:9px;padding:8px 11px;
@@ -172,6 +207,7 @@
 <script type="module">
 import { api, eur, eurKurz, esc, fristKlasse, melde, frage, wahl }
   from './assets/immo.js';
+import { auswahlfeld } from './assets/auswahl.js';
 import { sankey } from './assets/charts.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
@@ -181,6 +217,9 @@ const inhalt = document.getElementById('inhalt');
 const titel = document.getElementById('titel');
 const sub = document.getElementById('sub');
 let daten = null;
+/* Welche Verteilungsschlüssel für dieses Objekt taugen und welche Gewichte
+   sie ergäben — die Vorschau, bevor man sich festlegt. */
+let schluessel = null;
 let ansicht = 'pruef';
 let sortierung = 'status';
 const offen = new Set();
@@ -227,6 +266,62 @@ function belegeHtml(kostenart) {
   ).join('')}</div>`;
 }
 
+const schluesselMeta = wert =>
+  (schluessel?.schluessel || []).find(s => s.wert === wert) || null;
+
+const prozentText = (wert, summe) =>
+  summe > 0 ? `${(Number(wert || 0) / summe * 100).toFixed(1)} %` : '—';
+
+/* Verteilung einer Position: Schlüssel wählbar, Gewichte lesbar.
+   Eine nackte Zahl („Büro 4.1398") sagt niemandem etwas — erst Maßeinheit und
+   Prozentanteil machen sie lesbar, und erst das Eingabefeld korrigierbar. */
+function verteilungHtml(k) {
+  if (!k.position_id) return '';
+  const meta = schluesselMeta(k.schluessel);
+  const eintraege = Object.entries(k.anteile || {});
+  const summe = eintraege.reduce((s, [, w]) => s + Number(w || 0), 0);
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const einheit = k.anteile_einheit || meta?.einheit || '';
+  const abzuleiten = meta?.moeglich ? Object.entries(meta.gewichte) : [];
+  const gleich = abzuleiten.length === eintraege.length &&
+    abzuleiten.every(([p, w]) => Number(k.anteile?.[p] ?? NaN) === Number(w));
+
+  const zeilen = eintraege.map(([p, w]) => `
+    <div class="gw">
+      <span class="gn">${esc(p)}</span>
+      ${bearbeitbar
+        ? `<input type="number" step="0.0001" min="0" value="${Number(w)}"
+                 data-gewicht="${esc(p)}"
+                 aria-label="Gewicht ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">`
+        : `<span class="gv">${Number(w).toLocaleString('de-DE')}</span>`}
+      <span class="gp" data-anteil>${prozentText(w, summe)}</span>
+    </div>`).join('');
+
+  const knoepfe = bearbeitbar ? `<div class="knopfzeile">
+      ${eintraege.length ? `<button class="haupt"
+        data-gewichte="${k.position_id}">Verteilung übernehmen</button>` : ''}
+      ${abzuleiten.length && !gleich ? `<button class="leise"
+        data-ableiten="${k.position_id}"
+        data-fuer="${esc(k.schluessel || '')}">${eintraege.length
+          ? 'Neu aus Stammdaten' : 'Aus Stammdaten ableiten'}</button>` : ''}
+    </div>` : '';
+
+  return `<div class="vt">
+      <div class="zk">Verteilung${bearbeitbar ? ''
+        : ` · ${esc(meta?.titel || k.schluessel || '—')}`}${
+        einheit ? ` · ${esc(einheit)}` : ''}</div>
+      ${bearbeitbar ? `<div class="wahl" data-schluesselwahl="${k.position_id}"
+           data-wert="${esc(k.schluessel || '')}"></div>` : ''}
+      ${k.ohne_verteilung ? `<div class="warnung"><span>▲</span>
+        <span><b>Ohne Gewichte wird nichts verteilt.</b> Die ${eur(k.betrag)}
+        fließen mit 0,00 € in die Abrechnung ein.</span></div>` : ''}
+      ${zeilen}
+      ${!eintraege.length && meta ? `<div class="hinweis">${esc(meta.hinweis)}</div>`
+        : ''}
+      ${knoepfe}
+    </div>`;
+}
+
 function zeileHtml(k, i) {
   const [farbe, zeichen] = HAKEN[k.zustand] || HAKEN.fehlt;
   const wert = eur(k.betrag);
@@ -240,18 +335,16 @@ function zeileHtml(k, i) {
     // Ein erfasster Beleg ohne Betrag ist etwas anderes als gar nichts —
     // ohne den Hinweis waere das nur am Farbton des Hakens zu erkennen.
     k.zustand === 'offen' ? 'Betrag fehlt' : null,
-    k.schluessel ? `Schlüssel ${k.schluessel}` : null,
+    k.ohne_verteilung ? 'Verteilung fehlt' : null,
+    k.schluessel ? `Schlüssel ${schluesselMeta(k.schluessel)?.titel
+                                || k.schluessel}` : null,
     anteilProzent != null ? `${anteilProzent} % der Kosten` : null,
     k.wertquelle && k.wertquelle !== 'manuell' ? k.wertquelle : null,
     k.s35 ? '§35a absetzbar' : null,
     !k.erledigt && k.beleg_monat ? `Beleg im ${MONATE[k.beleg_monat - 1]}` : null,
   ].filter(Boolean).join(' · ');
 
-  const anteile = Object.entries(k.anteile || {});
-  const verteilung = anteile.length
-    ? `<div class="zk">Verteilung · ${esc(k.schluessel || '—')}</div>` +
-      anteile.map(([p, w]) => `<div class="rz"><span>${esc(p)}</span><span>${w}</span></div>`).join('')
-    : '';
+  const verteilung = verteilungHtml(k);
 
   // Der Scan-Knopf steht in der Zeile selbst, nicht erst im aufgeklappten
   // Bereich: einen Beleg nachzureichen ist die haeufigste Handlung hier und
@@ -292,13 +385,21 @@ async function ergebnisHtml() {
   } catch {
     return '<div class="empty"><div class="big">Ergebnis nicht verfügbar</div></div>';
   }
+  // Die Abrechnung je Partei als PDF — dieselbe Datei, die beim Versand
+  // angehängt wird. Vor dem Verschicken einmal ansehen zu können, ist der
+  // Sinn der Vorschau.
   const zeilen = Object.entries(a.parteien || {}).map(([partei, w]) => `
     <div class="karte">
       <h3>${esc(partei)}</h3>
       <div class="summe"><span>Umlagefähige Kosten</span><b>${eur(w.kosten)}</b></div>
       <div class="summe"><span>Vorauszahlungen</span><b>${eur(w.vorauszahlungen)}</b></div>
+      ${w.s35 ? `<div class="summe"><span>davon § 35a</span><b>${eur(w.s35)}</b></div>`
+        : ''}
       <div class="summe gesamt"><span>Saldo</span>
         <b class="${(w.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(w.saldo)}</b></div>
+      <a class="pdflink" target="_blank" rel="noopener"
+         href="/api/zeitraeume/${zid}/abrechnung.pdf?partei=${
+           encodeURIComponent(partei)}">▤ Abrechnung als PDF ansehen</a>
     </div>`).join('');
 
   const g = a.gesamt || {};
@@ -310,7 +411,12 @@ async function ergebnisHtml() {
         <b class="${(g.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(g.saldo)}</b></div>
     </div>${zeilen}
     ${a.offen?.length ? `<div class="karte"><h3>Noch offen</h3>
-      <div class="summe"><span>${a.offen.map(esc).join(', ')}</span></div></div>` : ''}`;
+      ${a.ohne_betrag?.length ? `<div class="summe">
+        <span>Ohne Betrag</span><b>${a.ohne_betrag.map(esc).join(', ')}</b></div>` : ''}
+      ${a.ohne_verteilung?.length ? `<div class="summe">
+        <span>Ohne Verteilung</span>
+        <b class="neg">${a.ohne_verteilung.map(esc).join(', ')}</b></div>` : ''}
+      </div>` : ''}`;
 }
 
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
@@ -320,15 +426,22 @@ const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
    übergehst — wird der Versand freigegeben. */
 function abschlussHtml() {
   if (daten.status !== 'in Arbeit') {
+    // Zurückhaltend, aber vorhanden: ein versehentlicher Abschluss war bisher
+    // unumkehrbar — samt der Fristen und Erinnerungen, die daran hängen.
     return `<div class="abschluss fertig">
         <div class="at">Abgeschlossen</div>
         <p>Dieser Zeitraum ist abgerechnet und versendet.</p>
+        <button class="wiederauf" data-oeffnen="1">Wieder öffnen</button>
       </div>`;
   }
   const f = daten.fortschritt;
   const rest = f.gesamt - f.fertig;
+  // Eine erledigte Position ohne Gewichte sieht fertig aus, fließt aber mit
+  // 0,00 € ein. Sie gehört deshalb zu dem, was den Abschluss aufhält.
+  const ohne = daten.checkliste.filter(k => k.ohne_verteilung)
+    .map(k => k.kostenart);
 
-  if (rest === 0) {
+  if (rest === 0 && !ohne.length) {
     return `<div class="abschluss bereit">
         <div class="at">✓ Alles erfasst</div>
         <p>${f.gesamt} Positionen vollständig · ${eur(f.summe)} umlagefähig.
@@ -336,10 +449,20 @@ function abschlussHtml() {
         <button class="losbutton" data-abschluss="1">Abrechnungen erstellen und versenden</button>
       </div>`;
   }
+  const teile = [
+    rest ? `${rest} ${rest === 1 ? 'Position' : 'Positionen'} ohne Betrag` : null,
+    ohne.length ? `${ohne.length} ohne Verteilung` : null,
+  ].filter(Boolean).join(' · ');
+
   return `<div class="abschluss offen">
-      <div class="at">Noch ${rest} ${rest === 1 ? 'Position' : 'Positionen'} offen</div>
-      <p>Trage die fehlenden Beträge ein — oder bestätige, dass die restlichen
-         Posten für diesen Zeitraum nicht anfallen.</p>
+      <div class="at">Noch nicht vollständig</div>
+      <p>${teile}. Trage die fehlenden Angaben ein — oder bestätige, dass die
+         restlichen Posten für diesen Zeitraum nicht anfallen.</p>
+      ${ohne.length ? `<div class="warnung"><span>▲</span>
+        <span><b>${esc(ohne.join(', '))}</b> ${ohne.length === 1 ? 'hat' : 'haben'}
+        einen Betrag, aber keine Verteilungsgewichte — ${ohne.length === 1
+          ? 'er zählt' : 'sie zählen'} in der Abrechnung mit 0,00 €.</span>
+        </div>` : ''}
       <label class="uebergehen">
         <input type="checkbox" id="uebergehen">
         <span>Restliche Positionen fallen nicht an</span>
@@ -407,6 +530,125 @@ async function zeichnen() {
 
   if (ansicht === 'ergebnis') {
     inhalt.innerHTML = kopf + await ergebnisHtml();
+  } else if (ansicht === 'pruef') {
+    montiereSchluessel();
+  }
+}
+
+/* Die Auswahlfelder werden nach dem Zeichnen gesetzt: sie bestehen aus
+   Knopf und Liste und lassen sich nicht als Zeichenkette einfügen. */
+function montiereSchluessel() {
+  if (!schluessel) return;
+  const optionen = schluessel.schluessel.map(s => ({
+    wert: s.wert,
+    text: `${s.titel} · ${s.moeglich ? 'abgeleitet' : 'von Hand'}`,
+  }));
+  inhalt.querySelectorAll('[data-schluesselwahl]').forEach(ziel => {
+    const pid = ziel.dataset.schluesselwahl;
+    auswahlfeld(ziel, {
+      optionen, wert: ziel.dataset.wert, label: 'Verteilungsschlüssel',
+      aenderung: async neu => {
+        try {
+          // Der Server leitet die Gewichte beim Wechsel neu ab — alte
+          // Flächenwerte unter „Personen" wären still falsch.
+          await api(`/positionen/${pid}`,
+                    { method: 'PATCH', body: { schluessel: neu } });
+          await laden();
+        } catch (fehler) {
+          melde(String(fehler.message || fehler), 'neg');
+        }
+      },
+    });
+  });
+}
+
+/* Die Schlüsselliste ist mit sieben Einträgen hoch. Steht das Feld weit unten,
+   reicht der Platz darunter zwar für die Liste, nicht aber für die
+   Menüleiste — die letzten Einträge lägen dahinter und wären nicht anklickbar.
+   Deshalb vorher nach oben rollen, im Capture-Lauf: das Auswahlfeld misst den
+   Platz erst danach. */
+inhalt.addEventListener('click', e => {
+  const knopf = e.target.closest('.vt .auswahl-knopf');
+  if (!knopf || knopf.getAttribute('aria-expanded') === 'true') return;
+  const noetig = (schluessel?.schluessel.length || 7) * 44 + 120;
+  if (window.innerHeight - knopf.getBoundingClientRect().bottom < noetig) {
+    // Nicht scrollIntoView: das schöbe das Feld unter die Kopfzeile. 150 px
+    // von oben lassen die Kopfzeile stehen und die Liste ganz sichtbar werden.
+    rolleUnterDieKopfzeile(knopf, 150);
+  }
+}, true);
+
+/** Rollt `el` auf `oben` px unter den oberen Rand — im richtigen Rollbereich:
+    auf dem Handy scrollt die Seite, am Schreibtisch die Spalte `.scroll`. */
+function rolleUnterDieKopfzeile(el, oben) {
+  const delta = el.getBoundingClientRect().top - oben;
+  let bereich = el.parentElement;
+  while (bereich && bereich !== document.body) {
+    const stil = getComputedStyle(bereich);
+    if (/(auto|scroll)/.test(stil.overflowY) &&
+        bereich.scrollHeight > bereich.clientHeight) break;
+    bereich = bereich.parentElement;
+  }
+  if (bereich && bereich !== document.body) bereich.scrollTop += delta;
+  else window.scrollBy(0, delta);
+}
+
+async function verteilungSpeichern(knopf) {
+  const anteile = {};
+  knopf.closest('.vt').querySelectorAll('[data-gewicht]').forEach(feld => {
+    anteile[feld.dataset.gewicht] = Number(feld.value) || 0;
+  });
+  if (!Object.values(anteile).some(w => w > 0)) {
+    return melde('Mindestens ein Gewicht muss größer als null sein', 'neg');
+  }
+  knopf.disabled = true;
+  knopf.textContent = 'Speichere …';
+  try {
+    await api(`/positionen/${knopf.dataset.gewichte}`,
+              { method: 'PATCH', body: { anteile } });
+    melde('Verteilung übernommen', 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Verteilung übernehmen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function verteilungAbleiten(knopf) {
+  const meta = schluesselMeta(knopf.dataset.fuer);
+  if (!meta?.moeglich) return;
+  knopf.disabled = true;
+  try {
+    await api(`/positionen/${knopf.dataset.ableiten}`,
+              { method: 'PATCH', body: { anteile: meta.gewichte } });
+    melde(`Gewichte aus den Stammdaten übernommen · ${meta.titel}`, 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* Wieder öffnen — bewusst mit Rückfrage, aber ohne Drama: es geht nichts
+   verloren, und niemand bekommt dadurch eine zweite Mail. */
+async function wiederOeffnen(knopf) {
+  const ja = await frage('Zeitraum wieder öffnen?',
+    'Der Zeitraum wird wieder bearbeitbar und taucht in Fristen und '
+    + 'Erinnerungen erneut auf. Wer die Abrechnung schon bekommen hat, '
+    + 'bekommt sie dadurch nicht noch einmal.', { knopf: 'Wieder öffnen' });
+  if (!ja) return;
+  knopf.disabled = true;
+  try {
+    const antwort = await api(`/zeitraeume/${zid}/oeffnen`, { method: 'POST' });
+    const schon = antwort.bereits_versendet.length;
+    melde(schon
+      ? `Wieder geöffnet · ${schon} Partei(en) haben ihre Abrechnung bereits`
+      : 'Wieder geöffnet', 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
   }
 }
 
@@ -477,10 +719,29 @@ async function laden() {
     inhalt.innerHTML = `<div class="empty"><div class="big">Zeitraum nicht gefunden</div></div>`;
     return;
   }
+  // Die Schlüssel-Vorschau ist Beiwerk: fehlt sie, bleibt die Checkliste
+  // bedienbar, nur ohne Auswahlfeld und ohne Ableitung.
+  try {
+    schluessel = await api(`/zeitraeume/${zid}/schluessel`);
+  } catch {
+    schluessel = null;
+  }
   titel.textContent = daten.label;
   sub.textContent = `${daten.objekt_name} · ${daten.typ}`;
   await zeichnen();
 }
+
+/* Prozentanteile beim Tippen mitrechnen — sonst sieht man erst nach dem
+   Speichern, was man da eigentlich verteilt hat. */
+inhalt.addEventListener('input', e => {
+  if (!e.target.matches('[data-gewicht]')) return;
+  const felder = [...e.target.closest('.vt').querySelectorAll('[data-gewicht]')];
+  const summe = felder.reduce((s, f) => s + (Number(f.value) || 0), 0);
+  felder.forEach(f => {
+    const ziel = f.parentElement.querySelector('[data-anteil]');
+    if (ziel) ziel.textContent = prozentText(f.value, summe);
+  });
+});
 
 inhalt.addEventListener('change', e => {
   // Der Versand bleibt gesperrt, bis die Restposten bewusst abgehakt sind.
@@ -499,6 +760,15 @@ inhalt.addEventListener('click', async e => {
 
   const abschluss = e.target.closest('[data-abschluss]');
   if (abschluss) return abschliessen(abschluss);
+
+  const oeffnen = e.target.closest('[data-oeffnen]');
+  if (oeffnen) return wiederOeffnen(oeffnen);
+
+  const gewichte = e.target.closest('[data-gewichte]');
+  if (gewichte) return verteilungSpeichern(gewichte);
+
+  const ableiten = e.target.closest('[data-ableiten]');
+  if (ableiten) return verteilungAbleiten(ableiten);
 
   const auf = e.target.closest('[data-auf]');
   if (auf) {
