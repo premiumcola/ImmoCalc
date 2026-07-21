@@ -242,7 +242,11 @@
 
 <dialog id="dlg">
   <div class="dh" id="dlgTitel">Eintrag</div>
-  <form method="dialog" id="dlgForm"></form>
+  <!-- Kein method="dialog": das schliesst den Dialog beim Absenden sofort,
+       noch bevor der Handler die Antwort hat. Wird das Speichern abgelehnt —
+       etwa weil die Einheit schon vermietet ist —, waren damit alle Eingaben
+       weg. Geschlossen wird jetzt erst, wenn es geklappt hat. -->
+  <form id="dlgForm"></form>
 </dialog>
 
 <script type="module">
@@ -1583,8 +1587,15 @@ document.getElementById('dlgForm').addEventListener('click', async e => {
 });
 
 document.getElementById('dlgForm').addEventListener('submit', async e => {
+  // Der Dialog schliesst sich nicht mehr von selbst (siehe Kommentar am
+  // <form>): erst wenn gespeichert ist, geht er zu. Schlaegt es fehl, bleibt
+  // alles Eingetippte stehen und laesst sich verbessern.
+  e.preventDefault();
   const form = e.target;
   const { absicht, bereich, id } = form.dataset;
+  const knopf = form.querySelector('button[value="ok"]');
+  const beschriftung = knopf ? knopf.textContent : '';
+  if (knopf) { knopf.disabled = true; knopf.textContent = 'Wird gespeichert …'; }
 
   try {
     if (absicht === 'stamm') {
@@ -1641,9 +1652,12 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
         }
       }
     }
+    dlg.close();
     await laden();
   } catch (fehler) {
     melde(String(fehler.message || 'Konnte nicht gespeichert werden.'), 'neg');
+  } finally {
+    if (knopf) { knopf.disabled = false; knopf.textContent = beschriftung; }
   }
 });
 
