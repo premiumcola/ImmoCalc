@@ -77,7 +77,22 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 | CLXVI | Ordnervorlage läuft ohne Straße leer | Ein Grundstück hat oft keine Straße; die Vorlage `({ort}) {strasse} · {name}` sollte auf Gemarkung und Flurstück ausweichen |
 | CLXVII | Pacht heißt in der Auswertung noch „Miete" | `auswertung.py`/`cashflow.py` führen ein Objekt ohne Einheiten als Pseudo-Einheit; Pachterträge laufen mit, sind aber nicht als Pacht benannt. Ebenso zeigt `wertentwicklung.html` „Verkehrswert" statt „Grundstückswert" |
 
-### Vom Beleg zur Kostenposition — der letzte Schritt fehlt
+### ~~Vom Beleg zur Kostenposition~~ — erledigt (`1ed9801`)
+
+CLXXX–CLXXXIV sind gebaut: neues Modul `belegposten.py`, drei Endpunkte,
+`Dokument.betrag`/`position_id`, `Kostenposition.beleg_summe`. Übernommen wird
+als **eigener, sichtbarer Schritt** mit Vorschau („Bisher 1.284,50 € · Dieser
+Beleg 982,30 € · Danach 2.266,80 €") — nicht automatisch, weil Einsortieren und
+Abrechnen zwei Entscheidungen sind. Mehrere Abschlagsrechnungen laufen in
+dieselbe Position; doppeltes Klicken zählt einmal, weil die Summe jedes Mal aus
+allen verknüpften Belegen neu gebildet wird. Der Rückweg von der Abrechnung zum
+Beleg steht.
+
+| Nr. | Rest | Was fehlt |
+|---|---|---|
+| CXC | **Kostenart umbenennen zieht die Positionen nicht mit** | Kostenarten lassen sich über die API gar nicht umbenennen (kein PATCH, `stammdaten.ENTITAETEN` führt sie nicht). Sobald es diesen Weg gibt, muss er `Kostenposition.kostenart` mitziehen — so wie `einheit_aendern` es für `Miete.einheit` tut |
+
+### Alte Sammlung: vom Beleg zur Kostenposition
 
 Der Beleg trägt jetzt Kostenart, Belegdatum und Zeitraum (`61e2c5b`). Damit
 daraus wirklich eine Position in der Abrechnung wird, fehlt noch:
