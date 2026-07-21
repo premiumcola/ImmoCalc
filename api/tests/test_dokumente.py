@@ -16,6 +16,8 @@ from app.main import app  # noqa: E402
 from app.models import Dokument, Objekt  # noqa: E402
 from app.routers.cloud import STRUKTUR  # noqa: E402
 from app.routers.dokumente import ZIELORDNER, dateiname  # noqa: E402
+# Dasselbe Mini-PDF wie in der Erkennung — einmal gebaut, nicht zweimal.
+from test_ocr import mini_pdf  # noqa: E402
 
 
 def test_dateiname_folgt_dem_schema():
@@ -433,7 +435,34 @@ def test_erkennung_meldet_ihren_zustand():
     with TestClient(app) as c:
         antwort = c.get("/api/dokumente/erkennung")
         assert antwort.status_code == 200
-        assert isinstance(antwort.json()["verfuegbar"], bool)
+        stand = antwort.json()
+        assert isinstance(stand["verfuegbar"], bool)
+        # Seit CLXX gibt es zwei Wege herein; die Antwort sagt, welcher offen
+        # ist — „nicht eingerichtet" hiess vorher immer „gar nichts geht".
+        assert isinstance(stand["bilder"], bool)
+        assert isinstance(stand["pdf"], bool)
+        assert stand["verfuegbar"] == (stand["bilder"] or stand["pdf"])
+
+
+def test_erkennen_liest_ein_pdf_ohne_bilderkennung():
+    """CLXX: eine Rechnung als Text-PDF darf nicht daran scheitern, dass auf
+    dem Server kein Tesseract liegt."""
+    roh = mini_pdf(["Stadtwerke Musterstadt", "Rechnungsdatum 14.03.2025",
+                    "Gesamtbetrag 1.071,00"])
+    with TestClient(app) as c:
+        antwort = c.post("/api/dokumente/erkennen",
+                         files={"datei": ("beleg.pdf", roh, "application/pdf")})
+        assert antwort.status_code == 200
+        vorschlag = antwort.json()
+        assert vorschlag["betrag"] == 1071.00
+        assert vorschlag["datum"] == "2025-03-14"
+
+
+def test_erkennen_aus_der_ablage_braucht_ein_dokument():
+    """Der Endpunkt für einen Beleg, der schon in der Cloud liegt. Ohne
+    Eintrag gibt es nichts zu lesen — und keinen Zugriff auf die Cloud."""
+    with TestClient(app) as c:
+        assert c.get("/api/dokumente/999999/erkennen").status_code == 404
 
 
 def test_unbekanntes_dokument_ist_404():

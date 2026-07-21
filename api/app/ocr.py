@@ -1,8 +1,15 @@
-"""Texterkennung für abfotografierte Belege — optional.
+"""Texterkennung für Belege — zwei Wege, der billige zuerst.
 
-Erkannt wird über das Programm `tesseract`, falls es im Image liegt. Fehlt es,
-liefern die Funktionen einfach nichts: der Scan funktioniert weiter, nur ohne
-Vorschlag für Betrag und Datum. Deshalb bewusst kein harter Import.
+Ein maschinengeschriebenes PDF trägt seinen Text schon in sich; den liest
+`pdftext` direkt aus der Datei. Erst wo nichts drinsteht — ein Foto, ein
+eingescanntes Blatt — kommt das Programm `tesseract` an die Reihe, falls es im
+Image liegt. Fehlt beides, liefern die Funktionen einfach nichts: der Scan
+funktioniert weiter, nur ohne Vorschlag für Betrag und Datum. Deshalb bewusst
+kein harter Import.
+
+Ausgewertet wird in beiden Fällen derselbe Text von denselben Funktionen —
+`betrag_aus_text`, `datum_aus_text`, `kategorie_aus_text`. Zwei Wege herein,
+eine Auswertung.
 
 Vorgeschlagen wird nur, nie gesetzt — der Nutzer bestätigt jeden Wert.
 """
@@ -15,6 +22,8 @@ import subprocess
 import tempfile
 from datetime import date
 
+from . import pdftext
+
 log = logging.getLogger("immocalc")
 
 SPRACHE = "deu"
@@ -22,6 +31,16 @@ ZEITLIMIT = 25.0
 
 # Ein Betrag in deutscher Schreibweise: 1.234,56 oder 89,90
 _BETRAG = re.compile(r"(?<![\d,.])(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?![\d])")
+# Derselbe Betrag mit Punkt: 104.15, 1,234.56. Nicht jeder Beleg schreibt
+# deutsch — die Schornsteinfeger-Rechnung im Bestand druckt ihren
+# Rechnungsbetrag fett als „104.15", und die Bilderkennung liest ein Komma
+# ohnehin gern als Punkt.
+#
+# Nach den zwei Nachkommastellen darf keine Ziffer und kein Punkt folgen:
+# sonst wäre „12.02" aus dem Datum 12.02.2026 ein Betrag und „1.234" aus
+# 1.234,56 auch. Ein deutscher Tausenderblock hat drei Stellen, nie zwei.
+_BETRAG_PUNKT = re.compile(
+    r"(?<![\d,.])(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})(?![\d.])")
 _DATUM = re.compile(r"(?<!\d)(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})(?!\d)")
 
 # Zeilen mit diesen Wörtern tragen fast immer den Rechnungsendbetrag.
@@ -217,7 +236,28 @@ def text_aus_bild(rohdaten: bytes) -> str:
 
 
 def _zu_zahl(ganz: str, nachkomma: str) -> float:
-    return float(ganz.replace(".", "") + "." + nachkomma)
+    """Der Ganzteil kann Tausendertrenner tragen — Punkt oder Komma, je nach
+    Schreibweise. Beide fliegen raus; getrennt wurde schon im Muster."""
+    return float(re.sub(r"[.,]", "", ganz) + "." + nachkomma)
+
+
+def _betraege_der_zeile(zeile: str) -> list[float]:
+    """Alle Beträge einer Zeile — in beiden Schreibweisen.
+
+    Eine Schreibweise je Blatt zu bestimmen wäre naheliegend, hält aber nicht:
+    auf der Kaminfeger-Rechnung im Bestand stehen die Beträge mit Punkt
+    („Rechnungsbetrag 106.12"), und ein einziges Leistungsdatum „22,09" mit
+    Komma kippte die ganze Entscheidung.
+
+    Nebeneinander ist gefahrlos, weil sich die beiden Muster ausschliessen:
+    „1.234,56" findet nur das Komma-Muster (dem Punkt folgen dort drei
+    Ziffern), „104.15" nur das Punkt-Muster. Was der Punkt zusätzlich
+    aufliest, sind Anzahlen wie „1.00" und Prozentwerte wie „19.00" — beide
+    zu klein, um gegen eine Endsumme zu gewinnen.
+    """
+    return [_zu_zahl(g, n)
+            for muster in (_BETRAG, _BETRAG_PUNKT)
+            for g, n in muster.findall(zeile)]
 
 
 def betrag_aus_text(text: str) -> float | None:
@@ -229,7 +269,7 @@ def betrag_aus_text(text: str) -> float | None:
     treffer_mit_wort: list[float] = []
     alle: list[float] = []
     for zeile in (text or "").splitlines():
-        betraege = [_zu_zahl(g, n) for g, n in _BETRAG.findall(zeile)]
+        betraege = _betraege_der_zeile(zeile)
         if not betraege:
             continue
         alle += betraege
@@ -354,16 +394,65 @@ def sache_aus_dateiname(name: str) -> str:
     return _beste_sache(_punkte(name, _SACHE_MUSTER))
 
 
+def erkennung_moeglich() -> bool:
+    """Kann dieser Server überhaupt etwas lesen?
+
+    Zwei Wege, einer genügt: der eingebettete Text eines PDF oder die
+    Bilderkennung. Ohne Tesseract bleibt ein Foto stumm — ein
+    maschinengeschriebenes PDF nicht mehr."""
+    return pdftext.verfuegbar() or verfuegbar()
+
+
+def text_aus_beleg(rohdaten: bytes) -> str:
+    """Der Text eines Belegs — der billigste Weg zuerst.
+
+    Ein maschinengeschriebenes PDF trägt seinen Text schon in sich; ihn zu
+    lesen kostet nichts und verliest sich nie. Erst wenn nichts drinsteht —
+    ein Foto, ein eingescanntes Blatt —, kommt Tesseract an die Reihe. Ist
+    auch das nicht eingerichtet, bleibt es ehrlich bei nichts.
+
+    Der Fund CLXX war genau diese fehlende erste Stufe: eine Rechnung als
+    Text-PDF ging durch die Bilderkennung, fand dort kein Tesseract und
+    meldete „Betrag nicht erkannt" — obwohl der Betrag als Zeichenstrom in
+    der Datei stand.
+    """
+    text = pdftext.text_aus_pdf(rohdaten)
+    if text.strip():
+        return text
+    return text_aus_bild(rohdaten)
+
+
+def _ohne_befund() -> dict:
+    """Dieselben Schlüssel wie im Erfolgsfall — die Oberfläche soll nicht zwei
+    Antwortformen kennen müssen."""
+    return {"moeglich": erkennung_moeglich(), "betrag": None, "datum": None,
+            "jahr": None, "monat": None, "kategorie": "", "sache": "",
+            "zeichen": 0}
+
+
+def _warum_nichts(rohdaten: bytes) -> str:
+    """Warum auf diesem Beleg nichts zu lesen war — so genau wie möglich.
+
+    „Nicht erkannt" ohne Grund lässt den Nutzer raten, ob der Server etwas
+    nicht kann oder das Blatt nichts hergibt."""
+    if not erkennung_moeglich():
+        return ("Texterkennung ist auf diesem Server nicht eingerichtet — "
+                "Betrag bitte eintragen.")
+    if pdftext.ist_pdf(rohdaten) and not verfuegbar():
+        return ("Dieses PDF enthält keinen Text, sondern nur ein Bild. Für "
+                "eingescannte Belege ist auf diesem Server keine "
+                "Bilderkennung eingerichtet — Betrag bitte eintragen.")
+    return "Auf dem Beleg war kein Text zu finden — Betrag bitte eintragen."
+
+
 def erkenne(rohdaten: bytes) -> dict:
-    """Vorschlag aus einem Beleg-Bild: Betrag, Datum, Jahr."""
-    if not verfuegbar():
-        # Dieselben Schlüssel wie im Erfolgsfall — die Oberfläche soll nicht
-        # zwei Antwortformen kennen müssen.
-        return {"moeglich": False, "betrag": None, "datum": None, "jahr": None,
-                "monat": None, "kategorie": "", "sache": "",
-                "hinweis": "Texterkennung ist auf diesem Server nicht "
-                           "eingerichtet — Betrag bitte eintragen."}
-    text = text_aus_bild(rohdaten)
+    """Vorschlag aus einem Beleg: Betrag, Datum, Jahr, Art und Sache.
+
+    Gleich, ob PDF oder Foto — der Text kommt aus `text_aus_beleg`, die
+    Auswertung ist dieselbe. Vorgeschlagen wird nur, gesetzt nie."""
+    text = text_aus_beleg(rohdaten)
+    if not text.strip():
+        return {**_ohne_befund(), "hinweis": _warum_nichts(rohdaten)}
     gefunden = datum_aus_text(text)
     return {
         "moeglich": True,
@@ -374,5 +463,7 @@ def erkenne(rohdaten: bytes) -> dict:
         # Was in den Dateinamen wandert — „Heizöl", nicht „Heizkosten".
         "sache": sache_aus_text(text),
         "monat": gefunden.month if gefunden else None,
-        "zeichen": len(text.strip()),
+        # Ohne Leerraum gezählt: der Layout-Modus füllt jede Zeile bis zur
+        # Spalte auf, ein einseitiger Beleg käme sonst auf Tausende Zeichen.
+        "zeichen": len(re.sub(r"\s", "", text)),
     }

@@ -3,3 +3,7 @@ uvicorn[standard]==0.34.0
 sqlmodel==0.0.39
 httpx==0.28.1
 python-multipart==0.0.20
+# Text aus maschinengeschriebenen PDFs (app/pdftext.py). Reines Python, keine
+# weiteren Abhaengigkeiten — ohne sie bliebe der Betrag einer PDF-Rechnung von
+# der Bilderkennung abhaengig.
+pypdf==6.14.2

@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import ocr
+from .. import ocr, pdftext
 from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            datumsteil, ohne_betrag, ohne_datum,
                            ohne_ordnerwort)
@@ -733,16 +733,24 @@ def wachdienst_status() -> dict:
 
 @router.get("/erkennung")
 def erkennung_status() -> dict:
-    """Ist die Texterkennung eingerichtet? Steuert den Hinweis in der App."""
-    return {"verfuegbar": ocr.verfuegbar()}
+    """Ist die Texterkennung eingerichtet? Steuert den Hinweis in der App.
+
+    `verfuegbar` sagt, ob überhaupt etwas gelesen werden kann. Das ist mehr
+    als früher: ein maschinengeschriebenes PDF wird auch ohne Bilderkennung
+    gelesen. `bilder` und `pdf` sagen, welcher der beiden Wege offen ist —
+    fehlt Tesseract, bleiben nur Fotos stumm."""
+    return {"verfuegbar": ocr.erkennung_moeglich(),
+            "bilder": ocr.verfuegbar(),
+            "pdf": pdftext.verfuegbar()}
 
 
 @router.post("/erkennen")
 async def erkennen(datei: UploadFile = File(...)) -> dict:
-    """Liest Betrag, Datum und Art aus einer Aufnahme — als Vorschlag.
+    """Liest Betrag, Datum und Art aus einer Aufnahme oder einem PDF.
 
-    Nichts wird gespeichert: das Bild geht durch die Erkennung und wieder weg.
-    Fehlt Tesseract, kommt eine leere Antwort statt eines Fehlers zurück."""
+    Nichts wird gespeichert: die Datei geht durch die Erkennung und wieder
+    weg. Ist nichts zu lesen, kommt eine leere Antwort mit Begründung statt
+    eines Fehlers zurück."""
     rohdaten = await datei.read()
     if not rohdaten:
         raise HTTPException(400, "Leere Datei")
@@ -1074,3 +1082,33 @@ def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Respons
         "Content-Disposition": f'inline; filename="{name}"',
         "Cache-Control": "private, max-age=60",
     })
+
+
+@router.get("/{dokument_id}/erkennen")
+def erkennen_aus_ablage(dokument_id: int,
+                        session: Session = Depends(get_session)) -> dict:
+    """Liest Betrag, Datum und Art aus einem Beleg, der schon in der Cloud liegt.
+
+    `_vorschlag` kennt nur den Dateinamen. Heisst die Rechnung schlicht
+    „Rechnung_2026_01.pdf", steht im Eingang „Betrag: nicht erkannt" — obwohl
+    er auf dem Blatt steht (CLXX). Hier wird die Datei einmal geholt und
+    gelesen.
+
+    Bewusst ein eigener Endpunkt und nicht Teil der Liste: für jeden Eintrag
+    einer Ansicht die Datei aus der Nextcloud zu holen wäre ein Zug durch die
+    ganze Ablage. Gefragt wird für den einen Beleg, den der Nutzer gerade
+    ansieht.
+
+    Rein lesend — nichts wird gespeichert, nichts verschoben.
+    """
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
+    client = verbindung(session)
+    try:
+        rohdaten, _typ = client.hole(d.pfad)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    return ocr.erkenne(rohdaten)

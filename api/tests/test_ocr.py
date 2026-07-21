@@ -1,16 +1,20 @@
 """Texterkennung: das Herauslesen von Betrag und Datum.
 
-Die Erkennung selbst braucht Tesseract; geprüft wird hier das Auswerten des
-Textes — das ist der Teil, der falsch liegen kann.
+Ein Bild braucht Tesseract; ein maschinengeschriebenes PDF nicht — dessen Text
+steht in der Datei. Geprüft wird hier beides: das Auswerten des Textes (der
+Teil, der falsch liegen kann) und der Weg vom PDF zum Vorschlag.
 """
 import os
 import sys
 from datetime import date
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from app import pdftext  # noqa: E402
 from app.ocr import (betrag_aus_text, datum_aus_text,  # noqa: E402
-                     erkenne, kategorie_aus_text)
+                     erkenne, kategorie_aus_text, text_aus_beleg)
 
 RECHNUNG = """
 Stadtwerke Musterstadt
@@ -133,6 +137,137 @@ def test_sache_bleibt_leer_wo_schon_der_ordner_so_heisst():
     assert kategorie_aus_text("Nebenkostenabrechnung 2024") == "Nebenkosten"
     assert sache_aus_text("Nebenkostenabrechnung 2024") == ""
     assert sache_aus_dateiname("nebenkosten 2024") == ""
+
+
+# --------------------------------------------------------------------------
+# CLXX: der Betrag stand fett auf dem Blatt — und wurde nicht erkannt
+#
+# Die Rechnung war ein maschinengeschriebenes PDF, kein Scan. Ihr Text stand
+# als Zeichenstrom in der Datei; die Erkennung schickte sie trotzdem durch die
+# Bilderkennung, fand kein Tesseract und meldete nichts.
+# --------------------------------------------------------------------------
+
+def mini_pdf(zeilen: list[str]) -> bytes:
+    """Ein winziges PDF mit bekanntem Inhalt — von Hand gebaut.
+
+    Keine Bibliothek und keine Beispieldatei im Repo: der Test soll die Kette
+    prüfen, nicht einen Fundus pflegen. Eine Seite, eine Standardschrift, die
+    Zeilen untereinander.
+    """
+    inhalt = "BT /F1 11 Tf 40 780 Td 15 TL\n" + "".join(
+        "({}) Tj T*\n".format(z.replace("\\", r"\\").replace("(", r"\(")
+                               .replace(")", r"\)"))
+        for z in zeilen) + "ET"
+    strom = inhalt.encode("latin-1", "replace")
+    objekte = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]"
+        b"/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>",
+        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica"
+        b"/Encoding/WinAnsiEncoding>>",
+        b"<</Length %d>>stream\n" % len(strom) + strom + b"\nendstream",
+    ]
+    datei = bytearray(b"%PDF-1.4\n")
+    stellen = []
+    for nr, koerper in enumerate(objekte, 1):
+        stellen.append(len(datei))
+        datei += b"%d 0 obj\n" % nr + koerper + b"\nendobj\n"
+    tabelle = len(datei)
+    datei += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objekte) + 1)
+    for stelle in stellen:
+        datei += b"%010d 00000 n \n" % stelle
+    datei += (b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n"
+              % (len(objekte) + 1, tabelle))
+    return bytes(datei)
+
+
+def test_pdf_mit_text_braucht_keine_bilderkennung():
+    """Die dauerhafte Zusicherung zu CLXX: was als Text im PDF steht, wird
+    gelesen — auch wo kein Tesseract eingerichtet ist."""
+    roh = mini_pdf(["Stadtwerke Musterstadt", "Rechnungsdatum 14.03.2025",
+                    "Verbrauch Wasser 812,40", "Gesamtbetrag 1.071,00"])
+    assert pdftext.ist_pdf(roh)
+    assert "Gesamtbetrag" in text_aus_beleg(roh)
+
+    ergebnis = erkenne(roh)
+    assert ergebnis["moeglich"] is True
+    assert ergebnis["betrag"] == 1071.00
+    assert ergebnis["datum"] == "2025-03-14"
+    assert ergebnis["kategorie"] == "Nebenkosten"
+
+
+def test_ohne_lesbaren_text_bleibt_es_bei_einer_begruendung():
+    """Kein Vorschlag ist in Ordnung — kommentarlos nichts nicht."""
+    ergebnis = erkenne(b"weder PDF noch Bild")
+    assert ergebnis["betrag"] is None
+    assert ergebnis["hinweis"]
+
+
+def test_kein_pdf_wird_nicht_als_eines_gelesen():
+    assert pdftext.ist_pdf(b"") is False
+    assert pdftext.ist_pdf(b"\xff\xd8\xff irgendein JPEG") is False
+    assert pdftext.text_aus_pdf(b"\xff\xd8\xff irgendein JPEG") == ""
+
+
+def test_betrag_auch_mit_punkt_als_trennzeichen():
+    """Die Rechnung aus CLXX druckt „104.15", nicht „104,15" — und die
+    Bilderkennung liest ein Komma ohnehin gern als Punkt."""
+    assert betrag_aus_text("Rechnungsbetrag EUR 104.15") == 104.15
+    assert betrag_aus_text("Summe 1,234.56") == 1234.56
+
+
+def test_ein_datum_ist_kein_betrag():
+    """„12.02.2026" darf nie als 12,02 EUR durchgehen."""
+    assert betrag_aus_text("Datum: 12.02.2026") is None
+    assert betrag_aus_text("Zeitraum 01.01.2025 - 31.12.2025") is None
+
+
+def test_deutsche_schreibweise_bleibt_unberuehrt():
+    """Neben „1.234,56" steht auf derselben Rechnung die Anzahl „1.00". Der
+    Punkt darf die deutsche Lesart nicht durcheinanderbringen."""
+    assert betrag_aus_text("Anzahl 1.00\nGesamtbetrag 1.234,56") == 1234.56
+    assert betrag_aus_text("Menge 3.00 Stueck\nSumme 89,90") == 89.90
+
+
+def test_gesperrter_satz_wird_wieder_zu_einem_betrag():
+    """Manche Blätter setzen jedes Zeichen einzeln; im Layout wird aus
+    „1.225,68 EUR" dann „1. 2 2 5 , 6 8  E U R". Belegt an der
+    Gebäudeversicherung im Bestand."""
+    gesperrt = ("  vo  n     1. 2  2  5 , 6  8     E  U  R     "
+                "p  l  u  s     G  e  b  ü  h  re  n")
+    assert betrag_aus_text(pdftext._entspreizt(gesperrt)) == 1225.68
+    # Eine normal gesetzte Zeile bleibt Zeichen für Zeichen dieselbe
+    normal = "Rechnungsbetrag                    €           104.15"
+    assert pdftext._entspreizt(normal) == normal
+
+
+# --------------------------------------------------------------------------
+# Der echte Beleg. Er liegt im Bestand des Nutzers, nicht im Repo — ohne ihn
+# wird übersprungen, damit die Testreihe auch ohne die privaten Daten läuft.
+# --------------------------------------------------------------------------
+
+BESTAND = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "immo_DATA")
+KAMINRECHNUNG = os.path.join(
+    BESTAND, "Eschenau - Laufer Str. 5", "60_Nebenkosten", "2026",
+    "Rechnung_2026_01.pdf")
+
+
+def test_echte_kaminrechnung_gibt_betrag_und_datum_her():
+    """CLXX am Original: Rechnungsbetrag 104,15 EUR, Datum 12.02.2026.
+
+    Nicht 87,52 (netto), nicht 16,63 (MWSt) — und nicht der 26.02.2026, das
+    ist das Zahlungsziel.
+    """
+    if not os.path.exists(KAMINRECHNUNG):
+        pytest.skip("Bestandsdaten liegen hier nicht")
+    ergebnis = erkenne(open(KAMINRECHNUNG, "rb").read())
+    assert ergebnis["betrag"] == 104.15
+    assert ergebnis["datum"] == "2026-02-12"
+    assert ergebnis["kategorie"] == "Nebenkosten"
+    assert ergebnis["sache"] == "Schornsteinfeger"
 
 
 def test_kurzwoerter_ergeben_mit_endung_keinen_treffer():
