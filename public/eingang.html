@@ -67,9 +67,16 @@
      die gewählte Karte (siehe blattPlatzieren in der Logik). Die zweite
      Spalte ist ein Gewinn für breite Schirme, nie eine Voraussetzung. */
   .flaeche{display:grid;gap:16px;align-items:start}
+  /* Rechts steht der Beleg — das ist die Seite, die Platz braucht: dort wird
+     gelesen und geprueft. Links wird nur gewaehlt, das darf schmaler sein und
+     untereinander stehen. Vorher war es umgekehrt, und rechts wurde es eng,
+     waehrend links eine handbreite Flaeche leer blieb. */
   @media (min-width:1180px){
-    .flaeche{grid-template-columns:minmax(0,1fr) minmax(330px,380px)}
+    .flaeche{grid-template-columns:minmax(0,1fr) minmax(430px,44%)}
     .spalteblatt{position:sticky;top:8px}
+  }
+  @media (min-width:1600px){
+    .flaeche{grid-template-columns:minmax(0,1fr) minmax(520px,42%)}
   }
 
   .beleg{background:var(--sheet);border-radius:16px;padding:14px;margin-bottom:10px;
@@ -107,6 +114,11 @@
   .felder{margin-top:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
           gap:10px}
   @media (min-width:680px){.felder{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  /* Steht der Beleg daneben, ist die linke Spalte schmaler: dann zwei Felder
+     statt drei — sonst schneidet das Auswahlfeld seinen eigenen Text ab
+     („(Eschenau…", „Nebenkost…"). Diese Regel muss NACH der 680er stehen,
+     sonst gewinnt die dreispaltige. */
+  @media (min-width:1180px){.felder{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .felder .breit{grid-column:1 / -1}
   .felder .fl{display:block;font:600 10.5px var(--mono);color:var(--soft);
     letter-spacing:.06em;text-transform:uppercase;margin:0 0 5px 2px}
@@ -128,7 +140,9 @@
 
   .bschau{position:relative;border-radius:12px;overflow:hidden;background:var(--paper);
     height:300px;cursor:zoom-in;display:block;width:100%;border:none;padding:0}
-  @media (min-width:1180px){.bschau{height:min(52dvh,460px)}}
+  /* Mit der breiteren rechten Spalte lohnt sich auch mehr Hoehe: eine
+     Rechnungsseite wird lesbar, statt nur erahnbar. */
+  @media (min-width:1180px){.bschau{height:min(64dvh,620px)}}
   .bschau iframe{width:100%;height:100%;border:none;display:block;
                  pointer-events:none;background:#fff}
   .bschau .lupe{position:absolute;right:8px;bottom:8px;border-radius:9px;
@@ -213,7 +227,8 @@
 </style>
 </head>
 <body>
-<div class="app">
+<!-- „weit": diese Seite arbeitet zweispaltig, der Beleg braucht Platz -->
+<div class="app weit">
   <div class="bar">
     <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
     <div class="barwrap">

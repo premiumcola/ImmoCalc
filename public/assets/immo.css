@@ -396,6 +396,11 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
 /* ---- Desktop: Navigation wandert nach links ---- */
 @media(min-width:1000px){
   body{padding:32px; align-items:flex-start}
+  /* Seiten mit zwei Arbeitsspalten duerfen breiter werden — auf der
+     Dokumentenseite stehen Liste und Beleg nebeneinander, und bei 1180 px
+     wurde der Beleg zur Briefmarke. Andere Seiten bleiben unberuehrt: eine
+     Kachelliste auf 1560 px zu ziehen macht sie nicht besser. */
+  .app.weit{max-width:1560px}
   .app{
     max-width:1180px; min-height:calc(100dvh - 64px); padding-bottom:0;
     display:grid; grid-template-columns:236px 1fr; grid-template-rows:auto 1fr;
