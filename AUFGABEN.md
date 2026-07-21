@@ -21,6 +21,22 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 |---|---|---|
 | — | gerade nichts in Arbeit | |
 
+### Am 21.07. abends fertig geworden
+
+| Nr. | In einfachen Worten | Commit |
+|---|---|---|
+| CLXXX–CLXXXIV | Aus einem Beleg wird eine Kostenposition · mehrere Belege summieren sich · Rückweg zum Beleg | `1ed9801` |
+| CXLVII/CXLVIII | € und % im Eingabefeld · Zinssatz oder Monatszins, beides geht | `64d8597` |
+| CLXXXV | Ein abgelehntes Speichern behält die Eingaben | `1eca3c9` |
+| CLXVI | Grundstück bekommt Gemarkung und Flurstück in den Ordnernamen | `5b703ec` |
+| CLXXIII–CLXXV | Breitere Arbeitsfläche, Felder untereinander, Beleg ganz oben | `db0c01c` |
+| CLXXXVIII | Keine Cloud ist eine Auskunft, kein Fehler | `56dcd45` |
+| CLXXI | Dateiname nennt Art und Position: `2026-02_NK-Schornsteinfeger_104,15€.pdf` | `eb0f1bb` |
+| CLVII/CLXVII | Der Kostenfluss geht auf (Nachzahlung sichtbar) · Pacht heißt Pacht | `294a0d2` |
+| — | Ehrlicher Hinweis statt „fehlt der Betrag" · nach dem Einsortieren weiter zum nächsten | `3f6519e` |
+| CXLIX/CLXXVI/CLXXXVII | Bausparer zählt als Guthaben · 15-%-Kappungsgrenze warnt · Touch-Targets 44 px | `797af8a` |
+| — | Sparrate ist keine Ausgabe im Cashflow | `ec27f03` |
+
 ### Heute fertig geworden
 
 | Nr. | In einfachen Worten | Commit |
