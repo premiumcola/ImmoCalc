@@ -190,6 +190,185 @@ def vorlage_pruefen(vorlage: str) -> list[str]:
     return fehler
 
 
+# --------------------------------------------------------------------------
+# CXCI — Unterordner im Sachordner: „In NK kann nicht einfach alles flach drin
+# liegen, das sollte schon in Ordnern sein."
+#
+# Abgesehen ist das dem eigenen Bestand des Nutzers:
+#
+#   60_Nebenkosten/{2022, 2023, 2024, 2025, 2026}  und im Archiv 2000-2021
+#                 darunter noch einmal {2014 … 2021}   -> das nackte Jahr
+#   06_Nebenkosten/{NK-2018-1OG … NK-2024-1OG}         -> Jahr und Einheit
+#   07_STEUER_…/{Steuer_2017, Steuer_2018_Unterlagen, … Steuer_2024}
+#
+# Gewählt ist je Art die Schreibweise, die er selbst am häufigsten und am
+# ruhigsten führt: bei den Nebenkosten das nackte Jahr — der Ordner
+# „60_Nebenkosten" sagt die Sache bereits, ein „NK-" davor wäre dieselbe
+# Doppelnennung, die für Dateinamen schon in CXXII abgeschafft wurde. Beim
+# Finanzamt dagegen „Steuer_JJJJ": so schreibt er es dort sechsmal
+# hintereinander, und dieser Ordner verlässt sein Zuhause — er wird gepackt
+# und weitergereicht, „2023" allein sagte beim Empfänger nichts.
+#
+# Ohne Jahr entsteht kein Unterordner. Ein Ordner „ohne-Jahr" hülfe niemandem
+# beim Wiederfinden; der Beleg bleibt dann im Sachordner liegen, wie bisher.
+# --------------------------------------------------------------------------
+
+# Platzhalter der Unterordner-Vorlage. Bewusst wenige: das Jahr trägt fast
+# alles, die Einheit braucht nur, wer mehrere Wohnungen getrennt abrechnet.
+UNTERORDNER_PLATZHALTER = ("jahr", "einheit", "art")
+
+# Vorgabe je Dokumentart. Die Schlüssel sind dieselben wie in `ZIELORDNER`
+# (`routers/dokumente.py`) — ein Test wacht darüber, dass keine Art fehlt.
+STANDARD_UNTERORDNER = {
+    "Nebenkosten": "{jahr}",
+    "Steuer": "Steuer_{jahr}",
+    "Kredit": "{jahr}",
+    "Versicherung": "{jahr}",
+    "Mietvertrag": "{jahr}",
+    "Korrespondenz": "{jahr}",
+    "Hausverwaltung": "{jahr}",
+    "Sonstiges": "{jahr}",
+}
+
+
+def unterordner_name(vorlage: str, jahr: int | None, einheit: str = "",
+                     art: str = "") -> str:
+    """Der Ordnername für einen Beleg innerhalb seines Sachordners.
+
+    Leer heisst: kein Unterordner — die Datei bleibt im Sachordner. Das ist
+    der Fall bei leerer Vorlage und immer dann, wenn die Vorlage das Jahr
+    verlangt, der Beleg aber keines hat."""
+    text = (vorlage or "").strip()
+    if not text:
+        return ""
+    braucht_jahr = bool(re.search(r"\{jahr\}|%jahr\b", text, re.I))
+    if braucht_jahr and not jahr:
+        return ""
+    werte = {"jahr": str(jahr) if jahr else "", "einheit": einheit, "art": art}
+    for schluessel, wert in werte.items():
+        sauber = _sauber(wert)
+        text = text.replace("{" + schluessel + "}", sauber)
+        text = re.sub(r"%" + schluessel + r"\b", sauber, text, flags=re.IGNORECASE)
+    # Ein Unterordner ist genau eine Ebene: ein Schrägstrich in der Vorlage
+    # legte sonst ungefragt einen Baum an.
+    text = re.sub(_VERBOTEN, " ", text)
+    return _entferne_leere_gruppen(text)
+
+
+def unterordner_pruefen(vorlage: str) -> list[str]:
+    """Meldet, was an einer Unterordner-Vorlage nicht funktioniert.
+
+    Anders als beim Objektordner ist leer erlaubt: das heisst schlicht
+    „flach ablegen, wie bisher"."""
+    fehler = []
+    if not (vorlage or "").strip():
+        return fehler
+    treffer = sorted(set(re.findall(_VERBOTEN, vorlage)))
+    if treffer:
+        fehler.append("Diese Zeichen sind in Ordnernamen nicht erlaubt und "
+                      f"werden entfernt: {' '.join(treffer)}")
+    bekannt = set(UNTERORDNER_PLATZHALTER)
+    genutzt = set(re.findall(r"\{(\w+)\}", vorlage)) | \
+        {t.lower() for t in re.findall(r"%(\w+)", vorlage)}
+    unbekannt = sorted(genutzt - bekannt)
+    if unbekannt:
+        fehler.append("Unbekannte Platzhalter: " + ", ".join(unbekannt))
+    if not genutzt:
+        fehler.append("Ohne Platzhalter hiesse jeder Unterordner gleich — "
+                      "dann lieber leer lassen.")
+    return fehler
+
+
+# Ein Jahr als eigenständige Zahl, kein Stück einer längeren.
+def _jahr_muster(jahr: int) -> re.Pattern:
+    return re.compile(rf"(?<!\d){jahr}(?!\d)")
+
+
+# „2000-2021" — ein Ordner, der eine ganze Spanne aufnimmt. Genau so führt der
+# Nutzer sein Nebenkosten-Archiv.
+_SPANNE = re.compile(r"^\D*((?:19|20)\d{2})\s*[-–—/_]\s*((?:19|20)\d{2})\D*$")
+
+# Bezeichnung einer Einheit, wie sie neben dem Jahr im Ordnernamen steht:
+# „1OG", „W2", „EG", „Whg".
+_EINHEIT_KURZ = re.compile(
+    r"^(\d{0,2}[.,]?\s*(og|ug|dg|eg|kg)|w\d{1,2}|whg\d*|\d{1,2})$", re.I)
+
+# Allerweltswörter, die neben dem Jahr stehen dürfen, ohne dass der Ordner
+# etwas anderes meint — „Steuer_2018_Unterlagen" ist der Steuerordner 2018.
+_BEIWERK = {"unterlagen", "belege", "beleg", "rechnungen", "rechnung",
+            "abrechnung", "abrechnungen", "dokumente", "ordner", "archiv",
+            "gesamt", "alle", "komplett"}
+
+
+def _spanne(name: str) -> tuple[int, int] | None:
+    """Deckt dieser Ordnername eine Jahresspanne ab?"""
+    treffer = _SPANNE.match(name or "")
+    if not treffer:
+        return None
+    von, bis = int(treffer.group(1)), int(treffer.group(2))
+    return (von, bis) if von <= bis else None
+
+
+def _nur_beiwerk(rest: str, woerter: tuple[str, ...]) -> bool:
+    """Steht neben dem Jahr nur, was der Ordner ohnehin sagt?
+
+    „2025" und „NK-2025-1OG" und „Steuer_2025" meinen dasselbe Jahr;
+    „2025_Renovierung Bad EG" meint ein Vorhaben und wird nicht angerührt."""
+    marken = {w.lower() for w in woerter if w} | _BEIWERK
+    for stueck in re.split(r"[\s._\-–—()\[\]]+", rest):
+        if not stueck:
+            continue
+        if stueck.lower() in marken or _EINHEIT_KURZ.match(stueck):
+            continue
+        return False
+    return True
+
+
+def unterordner_finden(vorhandene: list[str], jahr: int | None, ziel: str = "",
+                       woerter: tuple[str, ...] = ()) -> str:
+    """Welcher vorhandene Ordner dieses Jahr schon führt — oder "".
+
+    Was der Nutzer selbst angelegt hat, wird benutzt statt danebengestellt:
+    liegt „2025" schon da, wandert der Beleg dorthin und nicht in ein zweites
+    „2025_Nebenkosten". Erkannt werden seine Schreibweisen — „2025",
+    „NK-2025-1OG", „Steuer_2025" — und die Jahresspanne „2000-2021".
+
+    Die Reihenfolge sagt, was gewinnt: der Name aus der Vorlage, dann der
+    nackte Jahresordner, dann einer mit Beiwerk, zuletzt die Spanne. Ein
+    eigener Jahresordner ist immer besser als ein Archiv.
+    """
+    if not jahr:
+        return ""
+    ziel_vergleich = vergleichsname(ziel)
+    if ziel_vergleich:
+        for name in vorhandene:
+            if vergleichsname(name) == ziel_vergleich:
+                return name
+
+    muster = _jahr_muster(jahr)
+    nackt: list[str] = []
+    mit_beiwerk: list[str] = []
+    spannen: list[str] = []
+    for name in vorhandene:
+        bereich = _spanne(name)
+        if bereich:
+            if bereich[0] <= jahr <= bereich[1]:
+                spannen.append(name)
+            continue
+        if not muster.search(name):
+            continue
+        rest = muster.sub(" ", name)
+        if not _nur_beiwerk(rest, woerter):
+            continue
+        (nackt if not rest.strip(" -_.·") else mit_beiwerk).append(name)
+
+    for gruppe in (nackt, mit_beiwerk, spannen):
+        if gruppe:
+            # Der kürzeste Name ist der, der am wenigsten nebenher behauptet.
+            return sorted(gruppe, key=lambda n: (len(n), n.lower()))[0]
+    return ""
+
+
 def ordnername(name: str, ort: str = "", strasse: str = "") -> str:
     """Ordnername im Stil des Bestands: "Eschenau - Laufer Str. 5"."""
     teile = _ohne_doppelung([_sauber(ort), _sauber(strasse), _sauber(name)])

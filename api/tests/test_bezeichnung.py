@@ -600,3 +600,110 @@ def test_grundstueck_bekommt_seine_lage_in_den_ordnernamen():
     schlicht = nach_vorlage(STANDARD_VORLAGE, ort="Eckental", name="Acker",
                             lage="")
     assert "  " not in schlicht and schlicht.endswith("Acker")
+
+
+# --------------------------------------------------------------------------
+# CXCI: Unterordner im Sachordner
+#
+# Wörtlich vom Nutzer: „Die Unterordner in Nebenkosten und auch in anderen
+# Ordnern sollen auch nach Template dynamisch erzeugt werden. […] In NK kann
+# nicht einfach alles flach drin liegen, das sollte schon in Ordnern sein."
+#
+# Die erwarteten Schreibweisen sind seinem eigenen Bestand abgesehen:
+# „2022 … 2026" und „2000-2021" in 60_Nebenkosten, „NK-2024-1OG" in
+# 06_Nebenkosten, „Steuer_2017 … Steuer_2024" beim Finanzamt.
+# --------------------------------------------------------------------------
+
+def test_unterordner_folgt_der_vorlage():
+    from app.bezeichnung import STANDARD_UNTERORDNER, unterordner_name
+
+    assert unterordner_name("{jahr}", 2025) == "2025"
+    assert unterordner_name("Steuer_{jahr}", 2024) == "Steuer_2024"
+    # Die Einheit kommt nur mit, wenn es eine gibt — sonst bliebe ein Rest-
+    # Bindestrich stehen.
+    assert unterordner_name("NK-{jahr}-{einheit}", 2024, einheit="1OG") \
+        == "NK-2024-1OG"
+    assert unterordner_name("NK-{jahr}-{einheit}", 2024) == "NK-2024"
+    assert unterordner_name("{art}_{jahr}", 2023, art="Steuer") == "Steuer_2023"
+
+    # Ohne Jahr entsteht kein Unterordner: ein Ordner „ohne-Jahr" hülfe
+    # niemandem beim Wiederfinden — der Beleg bleibt im Sachordner.
+    assert unterordner_name("{jahr}", None) == ""
+    # Leere Vorlage heisst ausdrücklich: flach ablegen wie bisher
+    assert unterordner_name("", 2025) == ""
+    # Ein Schrägstrich legte sonst ungefragt einen ganzen Baum an
+    assert "/" not in unterordner_name("{jahr}/Belege", 2025)
+
+    # Die Vorgabe des Nebenkostenordners ist das nackte Jahr: „60_Nebenkosten"
+    # sagt die Sache schon, ein „NK-" davor wäre dieselbe Doppelnennung, die
+    # für Dateinamen in CXXII abgeschafft wurde.
+    assert STANDARD_UNTERORDNER["Nebenkosten"] == "{jahr}"
+    assert STANDARD_UNTERORDNER["Steuer"] == "Steuer_{jahr}"
+
+
+def test_unterordner_vorlage_pruefen():
+    from app.bezeichnung import unterordner_pruefen
+
+    assert unterordner_pruefen("{jahr}") == []
+    # Leer ist erlaubt — anders als beim Objektordner heisst das „flach"
+    assert unterordner_pruefen("") == []
+    assert any("Unbekannte Platzhalter" in h
+               for h in unterordner_pruefen("{quartal}"))
+    assert any("gleich" in h for h in unterordner_pruefen("Belege"))
+    assert any("nicht erlaubt" in h for h in unterordner_pruefen("{jahr}/x"))
+
+
+def test_vorhandener_ordner_wird_wiedererkannt():
+    """Was der Nutzer selbst angelegt hat, wird benutzt statt danebengestellt.
+
+    Liegt „2025" schon da, wandert der Beleg dorthin — nicht in ein zweites
+    „2025_Nebenkosten"."""
+    from app.bezeichnung import unterordner_finden
+
+    nk = ("Nebenkosten", "NK")
+    vorhanden = ["2022", "2023", "2024", "2025", "2000-2021",
+                 "Ablesungsergebnisse", "M-Net Kosten", "_sonstige"]
+    assert unterordner_finden(vorhanden, 2025, "2025", nk) == "2025"
+    # Seine zweite Schreibweise, aus 06_Nebenkosten
+    assert unterordner_finden(["NK-2024-1OG", "NK-Strom-Berechnung"], 2024,
+                              "2024", nk) == "NK-2024-1OG"
+    # Und die dritte, beim Finanzamt — samt Beiwerk im Namen
+    assert unterordner_finden(["Steuer_2017", "Steuer_2018_Unterlagen"], 2018,
+                              "Steuer_2018", ("Steuer",)) == "Steuer_2018_Unterlagen"
+
+    # Der Archivordner deckt eine ganze Spanne ab …
+    assert unterordner_finden(vorhanden, 2019, "2019", nk) == "2000-2021"
+    # … verliert aber gegen einen eigenen Jahresordner
+    assert unterordner_finden(vorhanden + ["2021"], 2021, "2021", nk) == "2021"
+
+    # Gibt es nichts Passendes, entscheidet die Vorlage
+    assert unterordner_finden(vorhanden, 2026, "2026", nk) == ""
+    assert unterordner_finden([], 2025, "2025", nk) == ""
+    assert unterordner_finden(vorhanden, None, "", nk) == ""
+
+
+def test_thematischer_ordner_wird_nicht_gekapert():
+    """„2020_Renovierung Haupthaus Flure" ist ein Vorhaben, kein Jahresordner.
+
+    Er trägt zwar eine Jahreszahl, meint aber etwas anderes — Belege dürfen
+    dort nicht hineinlaufen. Was der Nutzer selbst angelegt hat, bleibt
+    unangetastet."""
+    from app.bezeichnung import unterordner_finden
+
+    thematisch = ["2014_Renovierung Golter WG", "2016_Renovierung Bad EG",
+                  "2020_Renovierung Haupthaus Flure"]
+    for jahr in (2014, 2016, 2020):
+        assert unterordner_finden(thematisch, jahr, f"Steuer_{jahr}",
+                                  ("Steuer",)) == ""
+    # Eine Jahreszahl mitten in einer längeren Zahl zählt nicht
+    assert unterordner_finden(["20250101_Export"], 2025, "2025",
+                              ("Nebenkosten", "NK")) == ""
+
+
+def test_jede_dokumentart_hat_eine_unterordner_vorlage():
+    """Sonst fiele eine Art still auf „flach" zurück — ohne dass es jemand
+    merkt."""
+    from app.bezeichnung import STANDARD_UNTERORDNER
+    from app.routers.dokumente import ZIELORDNER
+
+    assert set(STANDARD_UNTERORDNER) == set(ZIELORDNER)

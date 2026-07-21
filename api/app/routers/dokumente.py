@@ -27,7 +27,7 @@ from .. import belegposten, ocr, pdftext
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            datumsteil, ohne_betrag, ohne_datum,
-                           ohne_ordnerwort)
+                           ohne_ordnerwort, unterordner_finden)
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import Dokument, Objekt, Zeitraum
@@ -35,7 +35,7 @@ from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
 from ..wachdienst import zustand as wachdienst_zustand
-from .cloud import STRUKTUR, verbindung
+from .cloud import STRUKTUR, unterordner_fuer, verbindung
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/dokumente", tags=["dokumente"])
@@ -268,23 +268,58 @@ def _freier_name(session: Session, client, ordner: str, name: str) -> str:
 
 
 def _zielordner(o: Objekt, kategorie: str) -> str:
+    """Der Sachordner der Immobilie — „…/60_Nebenkosten"."""
     unterordner = ZIELORDNER.get(kategorie, "99_Sonstiges")
     if unterordner not in STRUKTUR:
         raise HTTPException(400, f"Unbekannter Zielordner '{unterordner}'")
     return f"{o.nc_ordner.strip('/')}/{unterordner}"
 
 
+def _ablageordner(session: Session, o: Objekt, kategorie: str,
+                  jahr: int | None, client) -> tuple[str, str]:
+    """(Sachordner, Ablageordner) — CXCI: in NK liegt nichts mehr flach.
+
+    Der Ablageordner ist der Sachordner selbst, solange die Vorlage nichts
+    hergibt (leere Vorlage, Beleg ohne Jahr). Sonst der Jahresordner darin —
+    und zwar **der vorhandene**, wenn es ihn schon gibt: liegt „2025" da,
+    wandert der Beleg dorthin und nicht in ein zweites „2025_Nebenkosten".
+
+    Lässt sich der Sachordner nicht auflisten (er ist meist noch gar nicht
+    angelegt), wird der Name aus der Vorlage genommen — das ist kein Fehler,
+    nur eine Auskunft, die es noch nicht gibt."""
+    sach = _zielordner(o, kategorie)
+    ziel = unterordner_fuer(session, o, kategorie, jahr)
+    if not ziel:
+        return sach, sach
+    try:
+        vorhandene = [e.name for e in client.liste(sach) if e.ordner]
+    except NextcloudFehler as fehler:
+        log.info("Unterordner von %s nicht gelesen: %s", sach, fehler)
+        vorhandene = []
+    treffer = unterordner_finden(vorhandene, jahr, ziel,
+                                 (kategorie, ARTKUERZEL.get(kategorie, "")))
+    return sach, f"{sach}/{treffer or ziel}"
+
+
+def _ordner_sichern(client, sach: str, ordner: str) -> None:
+    """Legt Sach- und Ablageordner an. MKCOL verträgt 405 (existiert schon),
+    und der tiefere Ordner braucht seinen Eltern vorher."""
+    client.ordner_anlegen(sach)
+    if ordner != sach:
+        client.ordner_anlegen(ordner)
+
+
 def _einsortieren(session: Session, d: Dokument, o: Objekt, kategorie: str,
-                  name: str, client=None) -> tuple[str, str]:
+                  name: str, client=None, jahr: int | None = None) -> tuple[str, str]:
     """Verschiebt die Datei an ihren Platz. Gibt (Pfad, Dateiname) zurück.
 
     Liegt sie schon dort, passiert nichts — MOVE auf sich selbst wäre ein
     Fehler, und ein zweiter Name („…-2") wäre eine Lüge."""
-    ordner = _zielordner(o, kategorie)
+    client = client or verbindung(session)
+    sach, ordner = _ablageordner(session, o, kategorie, jahr, client)
     if d.pfad.strip("/") == f"{ordner}/{name}":
         return d.pfad, name
-    client = client or verbindung(session)
-    client.ordner_anlegen(ordner)
+    _ordner_sichern(client, sach, ordner)
     frei = _freier_name(session, client, ordner, name)
     client.verschiebe(d.pfad, f"{ordner}/{frei}")
     return f"/{ordner}/{frei}", frei
@@ -369,7 +404,8 @@ def _automatisch(session: Session, d: Dokument, o: Objekt, client) -> bool:
     alt = d.pfad
     try:
         d.pfad, d.dateiname = _einsortieren(session, d, o,
-                                            vorschlag["kategorie"], name, client)
+                                            vorschlag["kategorie"], name, client,
+                                            vorschlag["jahr"])
     except NextcloudFehler as fehler:
         log.warning("Automatik übersprungen für %s: %s", alt, fehler)
         return False
@@ -938,10 +974,10 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     kategorie = kategorie or "Sonstiges"
     name = dateiname(jahr, kategorie, beschreibung or "Scan", ".pdf",
                      monat, betrag, kostenart)
-    ziel_ordner = _zielordner(o, kategorie)
     client = verbindung(session)
     try:
-        client.ordner_anlegen(ziel_ordner)
+        sach, ziel_ordner = _ablageordner(session, o, kategorie, jahr, client)
+        _ordner_sichern(client, sach, ziel_ordner)
         name = _freier_name(session, client, ziel_ordner, name)
         client.lege_ab(f"{ziel_ordner}/{name}", inhalt)
     except NextcloudFehler as e:
@@ -1075,7 +1111,8 @@ def aendern(dokument_id: int, data: AenderungIn,
                                  "— bitte den Ordner neu einlesen, den Beleg "
                                  "neu einscannen oder den Eintrag entfernen.")
     try:
-        neuer_pfad, name = _einsortieren(session, d, o, kategorie, name)
+        neuer_pfad, name = _einsortieren(session, d, o, kategorie, name,
+                                         jahr=jahr)
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
     verschoben = neuer_pfad != d.pfad
@@ -1224,7 +1261,6 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
 
     alt = d.pfad
     kategorie = d.kategorie or "Sonstiges"
-    ordner = _zielordner(o, kategorie)
     # Die Aufnahme kommt als PDF; ein Eintrag, der vorher anders hieß, bekommt
     # seinen Schemanamen.
     jahr, monat = datum_aus_namen(d.dateiname)
@@ -1234,7 +1270,9 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
                            d.kostenart))
     client = verbindung(session)
     try:
-        client.ordner_anlegen(ordner)
+        sach, ordner = _ablageordner(session, o, kategorie, d.jahr or jahr,
+                                     client)
+        _ordner_sichern(client, sach, ordner)
         name = _freier_name(session, client, ordner, name)
         client.lege_ab(f"{ordner}/{name}", inhalt)
     except NextcloudFehler as e:

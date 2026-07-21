@@ -83,6 +83,22 @@
   .uruhig{background:var(--sheet);border-radius:12px;padding:12px 13px;
           margin-bottom:12px}
   .uruhig .upfad{margin-bottom:3px}
+
+  /* Unterordner je Dokumentart: acht kleine Karten, jede mit Feld und
+     Vorschau. Der Dialog rollt, der Knopf bleibt unten stehen. */
+  #unterordnerDlg .dbody{max-height:min(76dvh,760px);overflow:auto;padding-bottom:0}
+  .uokarte{background:var(--sheet);border-radius:12px;padding:12px 13px;
+           margin-bottom:8px}
+  .uokopf{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .uoart{flex:none;font:600 13.5px var(--disp);letter-spacing:-.01em}
+  .uoordner{flex:1;min-width:0;font:500 11px var(--mono);color:var(--soft);
+            text-align:right;overflow:hidden;text-overflow:ellipsis;
+            white-space:nowrap}
+  .uokarte .inp{font:500 13px var(--mono)}
+  /* display:block, sonst greift der Abstand am inline-Element nicht */
+  .uovorschau{display:block;margin-top:8px;font:500 11.5px var(--mono);
+              color:var(--teal-d);word-break:break-all;line-height:1.5}
+  .uovorschau.flach{color:var(--soft)}
 </style>
 </head>
 <body>
@@ -120,6 +136,14 @@
       <span class="txt">
         <span class="t">Ordner-Benennung</span>
         <span class="d" id="vorlageStatus">wird geladen …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+    <button class="row" id="unterordnerRow">
+      <span class="ic">▤</span>
+      <span class="txt">
+        <span class="t">Unterordner je Art</span>
+        <span class="d" id="unterordnerStatus">wird geladen …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -269,6 +293,26 @@
     </div>
     <div class="strukturliste" id="vorlageBeispiele"></div>
     <button class="btn" id="vorlageSpeichern">Übernehmen</button>
+  </div>
+</dialog>
+
+<dialog id="unterordnerDlg">
+  <div class="dh">
+    <h2>Unterordner je Art</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      Damit in „60_Nebenkosten“ nicht alles flach liegt. Platzhalter:
+      <b>{jahr}</b> <b>{einheit}</b> <b>{art}</b> — leer heißt: ohne
+      Unterordner. Ein Beleg ohne Jahr bleibt im Sachordner.
+      <span id="unterordnerVerboten"></span>
+    </p>
+    <div class="meldung" id="unterordnerMeldung"></div>
+    <div id="unterordnerFelder"></div>
+    <div class="uaktion">
+      <button class="btn" id="unterordnerSpeichern">Übernehmen</button>
+    </div>
   </div>
 </dialog>
 
@@ -606,6 +650,97 @@ vorlageFeld.addEventListener('input', () => {
   }, 350);
 });
 
+/* ---- Unterordner je Dokumentart (GET/POST /api/nextcloud/unterordner) ----
+   CXCI: dieselbe Mechanik wie die Objektordner-Vorlage, eine Ebene tiefer.
+   Eine Vorlage je Art, Platzhalter, Beispiel — damit in „60_Nebenkosten"
+   nicht alles flach nebeneinander liegt. */
+const unterordnerDlg = document.getElementById('unterordnerDlg');
+const unterordnerMeldung = document.getElementById('unterordnerMeldung');
+const unterordnerFelder = document.getElementById('unterordnerFelder');
+let unterordnerStand = { jahr: new Date().getFullYear(), einheit: '' };
+
+/* Dieselbe Rechnung wie `bezeichnung.unterordner_name` — nur zum Ansehen
+   beim Tippen. Gespeichert wird immer, was der Server daraus macht. */
+function unterordnerName(vorlage, art) {
+  return (vorlage || '')
+    .replace(/\{jahr\}|%jahr/gi, String(unterordnerStand.jahr))
+    .replace(/\{einheit\}|%einheit/gi, unterordnerStand.einheit || '')
+    .replace(/\{art\}|%art/gi, art)
+    .replace(/[<>:"/\\|?*]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s\-_.·]+|[\s\-_.·]+$/g, '');
+}
+
+function unterordnerVorschau(karte) {
+  const feld = karte.querySelector('input');
+  const schau = karte.querySelector('.uovorschau');
+  const name = unterordnerName(feld.value, feld.dataset.art);
+  schau.textContent = name
+    ? `▸ ${feld.dataset.ordner}/${name}`
+    : `▸ ${feld.dataset.ordner} — ohne Unterordner`;
+  schau.classList.toggle('flach', !name);
+}
+
+function unterordnerZeigen(stand) {
+  unterordnerStand = stand;
+  document.getElementById('unterordnerVerboten').textContent =
+    `Nicht erlaubt: ${stand.verboten}`;
+  unterordnerFelder.innerHTML = stand.arten.map(a => `
+    <div class="uokarte">
+      <div class="uokopf">
+        <span class="uoart">${esc(a.art)}</span>
+        <span class="uoordner">${esc(a.ordner)}</span>
+      </div>
+      <input class="inp" data-art="${esc(a.art)}" data-ordner="${esc(a.ordner)}"
+             value="${esc(a.vorlage)}" placeholder="ohne Unterordner"
+             aria-label="Vorlage für ${esc(a.art)}">
+      <span class="uovorschau"></span>
+    </div>`).join('');
+  unterordnerFelder.querySelectorAll('.uokarte').forEach(unterordnerVorschau);
+  const nk = stand.arten.find(a => a.art === 'Nebenkosten');
+  document.getElementById('unterordnerStatus').textContent = nk
+    ? (nk.beispiel ? `Nebenkosten → ${nk.beispiel}` : 'ohne Unterordner')
+    : 'Standard';
+}
+
+async function unterordnerLaden() {
+  try {
+    unterordnerZeigen(await api('/nextcloud/unterordner'));
+  } catch {
+    document.getElementById('unterordnerStatus').textContent = 'Standard';
+  }
+}
+
+unterordnerFelder.addEventListener('input', e => {
+  const karte = e.target.closest('.uokarte');
+  if (karte) unterordnerVorschau(karte);
+});
+
+document.getElementById('unterordnerRow').addEventListener('click', () => {
+  meldungWeg(unterordnerMeldung);
+  unterordnerDlg.showModal();
+});
+
+document.getElementById('unterordnerSpeichern').addEventListener('click', async () => {
+  meldungWeg(unterordnerMeldung);
+  const vorlagen = {};
+  unterordnerFelder.querySelectorAll('input').forEach(f => {
+    vorlagen[f.dataset.art] = f.value;
+  });
+  try {
+    const antwort = await api('/nextcloud/unterordner',
+                              { method: 'POST', body: { vorlagen } });
+    unterordnerZeigen(antwort);
+    melde(unterordnerMeldung, antwort.hinweise?.length
+      ? antwort.hinweise.join(' ')
+      : 'Übernommen. Bereits abgelegte Belege bleiben liegen — die neue '
+        + 'Ordnung gilt für alles, was ab jetzt hereinkommt.',
+      !antwort.hinweise?.length);
+  } catch (fehler) {
+    melde(unterordnerMeldung, String(fehler.message || fehler));
+  }
+});
+
 /* ---- Benennung nachziehen (GET/POST /api/nextcloud/umzug) ----------------
    Ändert sich die Vorlage, heißen die bestehenden Ordner weiter wie früher.
    Hier steht der Weg, sie nachzuziehen: erst der Trockenlauf, dann eine
@@ -926,6 +1061,7 @@ document.querySelectorAll('[data-schliessen]').forEach(knopf =>
 await zustandLaden();
 await mailZustand();
 await vorlageLaden();
+await unterordnerLaden();
 await umzugLaden();
 </script>
 </body>
