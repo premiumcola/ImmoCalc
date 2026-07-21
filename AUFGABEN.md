@@ -27,6 +27,25 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 | CXVIII | Beträge, IBAN und Steuernummer beim Tippen lesbar gruppieren | in Arbeit |
 | CXIX/CXX | Ordnernamen aufräumen (doppelt verschachtelt) und Umbenennung überall nachziehen, ohne dass Belege verloren gehen | in Arbeit |
 
+## Sofort zu beheben — aus der Nachprüfung vom 21.07. (Nachmittag)
+
+Die sieben Punkte CXIV–CXXI sind gebaut und committet (233 Tests grün), aber die
+Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müssen.
+
+| Nr. | Fund | Warum es zählt |
+|---|---|---|
+| CL | **Umzug lässt lose Dateien zurück** | `cloud.py:469`: beim Entschachteln wandert eine Datei, die direkt im Objektordner liegt, in der Cloud mit — ihr `Dokument.pfad` aber nicht. Der Eintrag zeigt danach ins Leere, und der Vorgang meldet trotzdem Erfolg. Genau das, was bei CXIX nicht passieren durfte |
+| CLI | **Waisen nach dem Löschen einer Immobilie** | `export.py:110-139` räumt Kreditstände und Bewohner nicht mit ab. SQLite vergibt die id neu — der nächste Kredit erbt die fremden Jahresstände, der nächste Mieter fremde Bewohner. Nachgestellt und belegt |
+| CLII | **Zwei verschiedene Restschulden** | Objektseite zeigt 209.731 €, die Vermögensübersicht 212.400 € für denselben Kredit: `besitz.py:211-223` reicht die Jahresstände nicht an die Berechnung weiter |
+| CLIII | **Mieterhöhung mehrfach anlegbar** | „Planen" schließt die vorige geplante Scheibe nicht — im Test entstanden vier überlappende Stände derselben Partei ab demselben Datum, alle mit Chip „geplant" |
+| CLIV | **Versand erreicht die neuen Bewohner nicht** | `versand.py:36-45` liest weiterhin nur `Miete.email`. Der Dialog verspricht, jede Person bekomme ihre Abrechnung — bis das nachgezogen ist, stimmt der Text nicht |
+| CLV | **Steuernummer verrutscht beim Tippen** | `93815/08152` wird zu `938/15/08152`: der Vorgabe-Schrägstrich nach drei Ziffern kollidiert mit dem selbst getippten (`eingabe.js:276-282`) |
+| CLVI | **Gefilterte Kennzahl sieht aus wie die echte** | Nebenkostenseite: mit Filter „Hausmeisterdienste" steht im Kopf „Guthaben 5.660 €", tatsächlich sind es 4.812 €. Auf einer Seite, deren Zahlen an Mieter gehen, ist das die falsche Unschärfe. Dazu: der Kostenart-Filter zeigt im leeren Jahr 17 Schalter und drückt auf dem iPhone die Diagramme aus dem Bild |
+| CLVII | **Nachzahlung fehlt im Kostenfluss** | Sankey: Umlage 2.400 € gegen Vorauszahlungen 1.200 € — der Knoten gibt mehr ab, als er bekommt; die Nachzahlung taucht im Bild nicht auf |
+| CLVIII | **Benennung nachziehen ohne Knopf** | Die Endpunkte für CXIX stehen, aber keine Oberfläche ruft sie auf. In den Einstellungen fehlt unter „Ordner-Benennung" der Knopf samt Trockenlauf-Liste (alt → neu) und Fehlerausgabe |
+| CLIX | **Leerstand liest sich wie ein vergessener Mieter** | Im Abschluss-Dialog steht „Ohne Mailadresse und daher nicht versendbar: EG". Der Leerstand gehört von den Empfängern getrennt und als „bleibt beim Eigentümer" ausgewiesen. Ebenso: seine Personenzahl ist geraten (1), und alte, bereits abgeschlossene Abrechnungen behalten die frühere Verteilung |
+| CLX | **Umlagefähig lässt sich nicht setzen** | `Kostenart.umlagefaehig` ist nirgends änderbar — damit gilt faktisch jede Kostenposition als umlagefähig, und die Trennung aus CXIV steht auf tönernen Füßen |
+
 ## Als Nächstes — in dieser Reihenfolge
 
 | Nr. | In einfachen Worten |
