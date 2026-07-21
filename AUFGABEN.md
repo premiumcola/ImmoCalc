@@ -80,7 +80,10 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 
 | Nr. | Fund | Was gemeint ist |
 |---|---|---|
-| CLXX | **Betrag aus Text-PDFs lesen** | Eine maschinengeschriebene Rechnung (Kaminkehrer, Rechnungsbetrag fett auf dem Blatt) meldet „Betrag nicht erkannt". Bei einem Text-PDF braucht es gar keine Bilderkennung — der Text steht in der Datei. Heute läuft alles über Tesseract, das hier nicht einmal eingerichtet ist |
+| CLXX | ~~Betrag aus Text-PDFs lesen~~ — **behoben** (`dbdacbc`) | Zwei Ursachen: die App las nur Bilder über Tesseract (das hier fehlt), und die Rechnung schreibt „104.15" mit Punkt statt Komma. Beides gelöst; am ganzen Bestand gemessen (405 PDFs: 162 mit Textschicht, 142 Betragsvorschläge). **Braucht `./deploy.sh`** — `pypdf` ist neu in den Abhängigkeiten |
+| CLXXVII | **Erkennung für Dateien, die schon liegen** | `GET /api/dokumente/{id}/erkennen` ist gebaut, wird aber von niemandem gerufen: die Oberfläche erkennt nur beim Abfotografieren. Deshalb steht im Eingang weiter „nicht erkannt" |
+| CLXXVIII | **Betragsauswahl bei mehreren Kandidaten** | `max` über alle Schlüsselwortzeilen greift daneben, wo mehrere Summen stehen: „enth. CO2-Abgabe 429,95 €, Brutto" gewinnt gegen den Rechnungsbetrag 2.895,27 €; bei ista 986,26 statt 252,93. Nötig: eine Rangfolge (`rechnungsbetrag`/`zahlbetrag` vor `summe`/`brutto`) und kein Rückfall auf den größten Betrag, wo gar keiner ausgewiesen ist |
+| CLXXIX | **Eingescannte PDFs bleiben stumm** | 243 der 405 Belege sind reine Scans ohne Textschicht. Auch mit Tesseract käme nichts heraus, weil es keine PDFs liest — es bräuchte einen Rasterschritt PDF→Bild und damit eine weitere Abhängigkeit |
 | CLXXI | **Kostenart wählen, nicht nur die Art** | Wie CXXVIII: „Nebenkosten" allein reicht nicht, es muss „Kaminkehrer" wählbar sein — aus den Kostenarten des jeweiligen Objekts |
 | CLXXII | **Rechnungsdatum muss in den Zeitraum passen** | Abrechnungszeiträume liegen nicht immer im Kalenderjahr (z. B. 01.10.–30.09.). Der Beleg gehört in den Zeitraum, in den sein **genaues Datum** fällt — das muss sichtbar geprüft und angezeigt werden |
 | CLXXIII | **Aufteilung am großen Schirm** | Links steht viel Leerfläche, rechts wird es eng. Links gehört mehr untereinander, rechts mehr Platz für den Beleg |
