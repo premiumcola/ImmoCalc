@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from ..belegposten import (belege_je_position, handanteil, kurz,
+                           anlegen as position_bauen)
 from ..db import get_session
 from ..bezeichnung import anzeigename
 from ..export import als_datei, dateiname, exportiere, importiere, loesche
@@ -530,6 +532,10 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
 
     nach_art = {p.kostenart: p for p in positionen}
+    # CLXXXIII: der Rückweg. Welche Belege in eine Position eingerechnet sind,
+    # steht an ihnen selbst (`Dokument.position_id`) — nicht am Dateinamen und
+    # nicht an der Kostenart, die sich umbenennen liesse.
+    beleg_map = belege_je_position(session, list(positionen))
 
     def _verteilung(p: Optional[Kostenposition]) -> dict:
         """Wie die Position verteilt wird — und ob sie das überhaupt tut.
@@ -554,6 +560,19 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         belege.setdefault(d.kategorie or "", []).append(
             {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad})
 
+    def _zusammensetzung(p: Optional[Kostenposition]) -> dict:
+        """Woraus der Betrag besteht — und welche Belege dahinterstehen.
+
+        Vier Abschlagsrechnungen ergeben eine Position (CLXXXII); ohne diese
+        Aufschlüsselung stünde dort nur eine Summe, die niemand mehr auf ihre
+        Belege zurückführen kann."""
+        eigene = beleg_map.get(p.id, []) if p else []
+        return {
+            "belege": [kurz(d) for d in eigene],
+            "beleg_summe": round((p.beleg_summe or 0.0) if p else 0.0, 2),
+            "handanteil": handanteil(p) if p else 0.0,
+        }
+
     checkliste = []
     for k in arten:
         if not k.aktiv:
@@ -567,6 +586,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "schluessel": p.schluessel if p else None,
             "wertquelle": p.wertquelle if p else None,
             **_verteilung(p),
+            **_zusammensetzung(p),
             "position_id": p.id if p else None,
             "beleg_monat": k.beleg_monat,
             "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
@@ -580,6 +600,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "erledigt": p.status == "erledigt", "betrag": p.betrag,
             "schluessel": p.schluessel, "wertquelle": p.wertquelle,
             **_verteilung(p),
+            **_zusammensetzung(p),
             "position_id": p.id, "beleg_monat": None,
             "zustand": "erledigt" if p.status == "erledigt" else "offen",
         })
@@ -738,7 +759,15 @@ def position_anlegen(zid: int, data: PositionNeu,
     """Legt eine Kostenposition an — mit Gewichten, nicht ohne.
 
     Bisher entstanden Positionen nur beiläufig (Beleg-Scan) und blieben ohne
-    `anteile`; ihr Betrag fiel damit aus der Abrechnung heraus."""
+    `anteile`; ihr Betrag fiel damit aus der Abrechnung heraus.
+
+    Eine zweite Position derselben Kostenart bleibt abgewiesen (CLXXXII): eine
+    Kostenart, eine Zeile — sonst stünde „Wasser" zweimal in der Abrechnung und
+    niemand wüsste, welche der beiden gilt. Dass trotzdem vier
+    Abschlagsrechnungen auf dieselbe Zeile laufen, löst der Weg über den Beleg
+    (`POST /api/dokumente/{id}/position`): dort addiert sich der Betrag in die
+    vorhandene Position hinein, und es bleibt nachvollziehbar, aus welchen
+    Belegen die Summe entstand."""
     z = _zeitraum(session, zid)
     if not data.kostenart.strip():
         raise HTTPException(400, "Die Kostenart darf nicht leer sein")
@@ -746,24 +775,17 @@ def position_anlegen(zid: int, data: PositionNeu,
         Kostenposition.zeitraum_id == zid)).all()
     if any(p.kostenart == data.kostenart for p in vorhanden):
         raise HTTPException(409, f"'{data.kostenart}' ist in diesem Zeitraum "
-                                 f"bereits erfasst")
+                                 f"bereits erfasst. Ein weiterer Beleg wird "
+                                 f"über „Als Kostenposition übernehmen“ "
+                                 f"dazugerechnet.")
 
-    anteile = (data.anteile if data.anteile is not None
-               else _gewichte(session, z, data.schluessel))
-    # Der §35a-Vermerk hängt am Katalog des Objekts; eine neue Position erbt ihn.
-    s35 = data.s35
-    if s35 is None:
-        art = session.exec(select(Kostenart).where(
-            Kostenart.objekt_id == z.objekt_id,
-            Kostenart.name == data.kostenart)).first()
-        s35 = bool(art and art.s35)
-
-    p = Kostenposition(
-        zeitraum_id=zid, kostenart=data.kostenart, betrag=data.betrag,
-        schluessel=data.schluessel, wertquelle=data.wertquelle, s35=s35,
-        status=data.status or ("erledigt" if data.betrag else "offen"),
-        anteile=anteile)
-    session.add(p)
+    try:
+        p = position_bauen(session, z, data.kostenart, betrag=data.betrag,
+                           schluessel=data.schluessel,
+                           wertquelle=data.wertquelle, status=data.status,
+                           s35=data.s35, anteile=data.anteile)
+    except UnbekannterSchluessel as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
     session.commit()
     session.refresh(p)
     return {"id": p.id, "kostenart": p.kostenart, "status": p.status,
@@ -819,14 +841,26 @@ def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict
     """Entfernt eine Kostenposition — eine bewusste Nutzeraktion.
 
     Die Kostenart bleibt im Katalog des Objekts stehen; die Zeile taucht in der
-    Checkliste danach wieder als „fehlt" auf, statt zu verschwinden."""
+    Checkliste danach wieder als „fehlt" auf, statt zu verschwinden.
+
+    Belege, die auf die Position gezeigt haben, verlieren nur diese
+    Verknüpfung: die Dateien bleiben in der Cloud, die Einträge bleiben am
+    Zeitraum, und ein „Als Kostenposition übernehmen" legt die Zeile jederzeit
+    wieder an. Ein Beleg, der auf eine gelöschte Position zeigt, wäre dagegen
+    ein Verweis ins Leere."""
     p = session.get(Kostenposition, pid)
     if not p:
         raise HTTPException(404, "Position nicht gefunden")
     kostenart = p.kostenart
+    geloest = 0
+    for d in session.exec(select(Dokument)
+                          .where(Dokument.position_id == pid)).all():
+        d.position_id = None
+        session.add(d)
+        geloest += 1
     session.delete(p)
     session.commit()
-    return {"ok": True, "kostenart": kostenart}
+    return {"ok": True, "kostenart": kostenart, "belege_geloest": geloest}
 
 
 @router.get("/zeitraeume/{zid}/abrechnung")

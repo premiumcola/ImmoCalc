@@ -256,6 +256,10 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
 
     # alte Zeitraum-id -> neue, damit die Dokumente ihren Zeitraum wiederfinden
     zeitraeume: dict[int, int] = {}
+    # dasselbe für die Kostenpositionen (CLXXXIII): ein Beleg zeigt über die id
+    # auf seine Position. Bliebe die alte Nummer stehen, zeigte er nach dem
+    # Wiederherstellen auf eine fremde Zeile — SQLite vergibt Nummern neu.
+    positionen: dict[int, int] = {}
     for z in daten.get("zeitraeume") or []:
         roh_z = {k: v for k, v in z.items()
                  if k not in ("id", "positionen", "vorauszahlungen")}
@@ -268,9 +272,14 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
             zeitraeume[z["id"]] = zeitraum.id
         for p in z.get("positionen") or []:
             roh_p = dict(p)
-            roh_p.pop("id", None)
+            alte_id = roh_p.pop("id", None)
             roh_p["zeitraum_id"] = zeitraum.id
-            session.add(Kostenposition.model_validate(roh_p))
+            position = Kostenposition.model_validate(roh_p)
+            session.add(position)
+            if alte_id is not None:
+                session.commit()
+                session.refresh(position)
+                positionen[alte_id] = position.id
         for v in z.get("vorauszahlungen") or []:
             roh_v = dict(v)
             roh_v.pop("id", None)
@@ -286,6 +295,7 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
         roh_d.pop("id", None)
         roh_d["objekt_id"] = objekt.id
         roh_d["zeitraum_id"] = zeitraeume.get(roh_d.get("zeitraum_id"))
+        roh_d["position_id"] = positionen.get(roh_d.get("position_id"))
         if session.exec(select(Dokument).where(
                 Dokument.pfad == roh_d.get("pfad"))).first():
             continue                       # steht schon in der Datenbank

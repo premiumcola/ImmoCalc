@@ -153,7 +153,11 @@
     background:#F1F4F4;color:var(--ink);border-radius:9px;padding:8px 11px;
     font:500 11.5px var(--body);min-height:36px}
   .belege a:hover{background:var(--teal-l);color:var(--teal-d)}
-  .belege .kein{font:400 12px var(--body);color:var(--soft)}
+  .belege .kein{font:400 12px var(--body);color:var(--soft);line-height:1.45}
+  /* Woraus die Summe entstanden ist (CLXXXII) — eine ruhige Zeile über den
+     Belegen, damit vier Abschlagsrechnungen nicht als eine Zahl dastehen. */
+  .zsumme{font:500 11.5px var(--mono);color:var(--teal-d);background:var(--teal-l);
+          border-radius:9px;padding:8px 10px;margin-top:8px;line-height:1.5}
 
   .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:12px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -299,27 +303,49 @@ function bannerHtml() {
     <span>Frist § 556 BGB</span><span class="days">${tage}</span></div>`;
 }
 
-/* Welche Belege zu einer Kostenart gehören. Die API gruppiert die Dokumente
-   des Zeitraums bereits nach Art (`belege_je_art`) — das ist die verlässliche
-   Quelle. Scans aus der Checkliste laufen allerdings unter der Dokumentart
-   „Nebenkosten"; für sie greift der Dateiname, der nach Jahr und Art mit der
-   Kostenart beginnt. */
-function belegeZu(kostenart) {
-  const gruppe = (daten.belege_je_art || {})[kostenart];
+/* Welche Belege zu einer Position gehören.
+
+   CLXXXIII: die belastbare Auskunft steht seit dem Übernehmen an den Belegen
+   selbst (`position_id`) und kommt als `k.belege` mit — sie überlebt eine
+   umbenannte Kostenart und trägt den Betrag, mit dem der Beleg in der Summe
+   steckt. Erst danach greifen die beiden alten Wege: die Gruppierung nach
+   Dokumentart und, für Scans aus der Checkliste, der Dateiname. */
+function belegeZu(k) {
+  if (k.belege?.length) return k.belege;
+  const gruppe = (daten.belege_je_art || {})[k.kostenart];
   if (gruppe?.length) return gruppe;
-  const stamm = kostenart.toLowerCase().split(/[ /]/)[0];
+  const stamm = k.kostenart.toLowerCase().split(/[ /]/)[0];
   return (daten.dokumente || []).filter(d =>
     (d.dateiname || '').toLowerCase().includes(stamm));
 }
 
+/* `data-name` statt der Beschriftung: seit der Betrag mit im Text steht,
+   hiesse der Beleg im Dialog sonst „…pdf · 1.284,50 €". */
 const belegLinks = liste => `<div class="belege">${liste.map(d =>
-  `<a href="#" data-beleg="${d.id}" title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}</a>`
+  `<a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
+      title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}${
+    d.betrag ? ` · ${eur(d.betrag)}` : ''}</a>`
 ).join('')}</div>`;
 
-function belegeHtml(kostenart) {
-  const alle = belegeZu(kostenart);
-  if (!alle.length) return '<div class="belege"><span class="kein">Kein Beleg hinterlegt</span></div>';
-  return belegLinks(alle);
+/* Woraus der Betrag besteht. Vier Abschlagsrechnungen ergeben eine Position
+   (CLXXXII) — ohne diesen Satz stünde dort nur eine Summe, die niemand mehr
+   auf ihre Belege zurückführen kann. */
+function zusammensetzungHtml(k) {
+  if (!k.beleg_summe) return '';
+  const anzahl = (k.belege || []).length;
+  // „aus" verlangt den Dativ: aus einem Beleg, aus zwei Belegen.
+  const teile = [`${anzahl} ${anzahl === 1 ? 'Beleg' : 'Belegen'} · ${eur(k.beleg_summe)}`];
+  if (k.handanteil) teile.push(`${eur(k.handanteil)} von Hand`);
+  return `<div class="zsumme">Summe aus ${teile.join(' · ')}</div>`;
+}
+
+function belegeHtml(k) {
+  const alle = belegeZu(k);
+  if (!alle.length) {
+    return `<div class="belege"><span class="kein">Kein Beleg hinterlegt —
+      im Eingang lässt sich einer übernehmen.</span></div>`;
+  }
+  return zusammensetzungHtml(k) + belegLinks(alle);
 }
 
 const schluesselMeta = wert =>
@@ -416,6 +442,9 @@ function zeileHtml(k, i) {
     k.schluessel ? `Schlüssel ${schluesselMeta(k.schluessel)?.titel
                                 || k.schluessel}` : null,
     anteilProzent != null ? `${anteilProzent} % der Kosten` : null,
+    // Aus wie vielen Belegen die Summe entstand (CLXXXII) — sonst sieht eine
+    // Position mit vier Abschlagsrechnungen aus wie eine einzelne Rechnung.
+    (k.belege || []).length > 1 ? `${k.belege.length} Belege` : null,
     k.wertquelle && k.wertquelle !== 'manuell' ? k.wertquelle : null,
     k.s35 ? '§35a absetzbar' : null,
     !k.erledigt && k.beleg_monat ? `Beleg im ${MONATE[k.beleg_monat - 1]}` : null,
@@ -444,7 +473,7 @@ function zeileHtml(k, i) {
       ${aufgeklappt ? `<div class="auf">
         ${verteilung}
         <div class="zk">Belege</div>
-        ${belegeHtml(k.kostenart)}
+        ${belegeHtml(k)}
         ${k.position_id ? `<div class="nachtrag">
           <input type="number" step="0.01" placeholder="Betrag eintragen"
                  value="${k.betrag || ''}" data-betrag="${k.position_id}"
@@ -1001,7 +1030,8 @@ inhalt.addEventListener('click', async e => {
     // eigene Anmeldung. Angezeigt wird er im Dialog, nicht in einem neuen
     // Fenster: aus dem kommt man auf dem Telefon nicht mehr zurueck.
     belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`,
-                 beleg.textContent.replace(/^PDF · /, '').trim());
+                 beleg.dataset.name
+                 || beleg.textContent.replace(/^PDF · /, '').trim());
     return;
   }
 

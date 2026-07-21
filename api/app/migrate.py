@@ -74,6 +74,28 @@ EINDEUTIG: list[tuple[str, str, str]] = [
 ]
 
 
+# Suchindizes, die `create_all` ebenfalls nur an einer *neuen* Tabelle anlegt.
+# Eine per ALTER ergänzte Spalte bekommt ihren Index sonst nie —
+# `Dokument.position_id` wird an jeder Position der Zeitraumseite abgefragt
+# (CLXXXIII). Rein additiv: angelegt wird nur, was fehlt, entfernt wird nichts.
+INDEXE: list[tuple[str, str, str]] = [
+    # Tabelle, Spalte, Indexname
+    ("dokument", "position_id", "ix_dokument_position_id"),
+]
+
+
+def indizes_sichern(conn, tabellen: set[str] | None = None) -> list[str]:
+    """Legt die Suchindizes aus `INDEXE` an. Gibt die gesetzten zurück."""
+    gesetzt: list[str] = []
+    for tabelle, spalte, name in INDEXE:
+        if tabellen is not None and tabelle not in tabellen:
+            continue
+        conn.execute(text(f'CREATE INDEX IF NOT EXISTS "{name}" '
+                          f'ON "{tabelle}" ("{spalte}")'))
+        gesetzt.append(name)
+    return gesetzt
+
+
 def _doppel(conn, tabelle: str, spalte: str) -> list[tuple[str, int]]:
     """Werte, die mehrfach vorkommen — die einzige Hürde für den Index."""
     zeilen = conn.execute(text(
@@ -133,6 +155,7 @@ def migriere(engine: Engine) -> list[str]:
         # Erst nach den Spalten: der Index braucht die Tabelle, wie sie
         # danach aussieht.
         try:
+            geaendert += indizes_sichern(conn, bestehende)
             geaendert += eindeutigkeit_sichern(conn, bestehende)
         except Exception as fehler:                   # noqa: BLE001
             # Ein fehlender Index darf den Start nicht verhindern — die Sperre

@@ -439,12 +439,54 @@ def test_einzelnes_gewicht_laesst_sich_ueberschreiben():
 
 
 def test_position_zweimal_anlegen_wird_abgelehnt():
+    """CLXXXII: eine Kostenart, eine Zeile — sonst stünde „Wasser" zweimal in
+    der Abrechnung und niemand wüsste, welche der beiden gilt.
+
+    Dass trotzdem vier Abschlagsrechnungen auf dieselbe Zeile laufen, löst der
+    Weg über den Beleg (`POST /api/dokumente/{id}/position`): dort addiert sich
+    der Betrag in die vorhandene Position hinein. Die Abweisung sagt das auch,
+    statt den Nutzer vor einer Sackgasse stehen zu lassen."""
     with TestClient(app) as c:
         _, zid = _objekt_mit_zwei_wohnungen(c)
         c.post(f"/api/zeitraeume/{zid}/positionen", json={"kostenart": "Wasser"})
         zweite = c.post(f"/api/zeitraeume/{zid}/positionen",
                         json={"kostenart": "Wasser"})
         assert zweite.status_code == 409
+        assert "Beleg" in zweite.json()["detail"]
+
+
+def test_aus_belegen_gewachsene_position_verteilt_exakt():
+    """Die Invariante gilt auch für eine Summe aus mehreren Belegen: die
+    Anteile ergeben zusammen wieder exakt den Gesamtbetrag."""
+    from app import belegposten
+    from app.models import Dokument, Zeitraum
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zwei_wohnungen(c)
+        with Session(db_engine) as s:
+            objekt_id = s.get(Zeitraum, zid).objekt_id
+            for i, betrag in enumerate([333.33, 333.33, 333.34], 1):
+                d = Dokument(pfad=f"/x/{slug}/abschlag{i}.pdf",
+                             dateiname=f"abschlag{i}.pdf", objekt_id=objekt_id,
+                             kategorie="Nebenkosten", kostenart="Wasser",
+                             betrag=betrag, zeitraum_id=zid,
+                             belegdatum=date(JAHR, i, 1), status="zugeordnet")
+                s.add(d)
+                s.commit()
+                s.refresh(d)
+                belegposten.verbuche(s, d)
+                s.commit()
+
+        zeile = next(k for k in c.get(f"/api/zeitraeume/{zid}").json()["checkliste"]
+                     if k["kostenart"] == "Wasser")
+        assert zeile["betrag"] == 1000.0
+        assert zeile["beleg_summe"] == 1000.0
+        assert len(zeile["belege"]) == 3
+
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        assert a["gesamt"]["auslagen"] == 1000.0
+        assert round(sum(p["kosten"] for p in a["parteien"].values()), 2) == 1000.0
+        assert a["parteien"]["Mieter Alpha"]["kosten"] == 400.0
 
 
 def test_position_loeschen_laesst_die_kostenart_stehen():

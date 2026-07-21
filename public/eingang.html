@@ -193,6 +193,37 @@
   .bhinweis.warn{color:var(--amber)}
   .bhinweis:empty{display:none}
 
+  /* ---- CLXXX: aus dem Beleg wird eine Zeile der Abrechnung ----------------
+     Ein eigener, bestätigter Schritt: einsortieren und abrechnen sind zwei
+     Entscheidungen. Weil ein zweiter Beleg den Betrag der vorhandenen Position
+     erhöht (CLXXXII), steht die Rechnung vorher da — man soll sehen, was man
+     bestätigt. */
+  .posplan{background:var(--paper);border-radius:12px;padding:11px 12px;
+    font:500 12px var(--mono);color:var(--ink);line-height:1.55}
+  .posplan .pr{display:flex;align-items:baseline;justify-content:space-between;
+    gap:12px;padding:3px 0}
+  .posplan .pr > span:last-child{font-weight:600;white-space:nowrap}
+  .posplan .pr.summe{border-top:1px solid var(--line);margin-top:6px;
+    padding-top:8px;color:var(--teal-d)}
+  .posplan .pr.fehlt{color:var(--amber);display:block}
+  .posplan .pr.fehlt span{white-space:normal;font-weight:500}
+  .posplan .pr.fertig{color:var(--pos)}
+  .postat{display:flex;gap:8px;margin-top:10px}
+  .postat button{border:none;border-radius:12px;cursor:pointer;min-height:44px;
+    font:600 13px var(--disp)}
+  .postat .posknopf{flex:1;border:1.5px solid #BFD9D1;background:var(--teal-l);
+    color:var(--teal-d);padding:12px}
+  .postat .posknopf:hover{background:#DCEDE7}
+  .postat .posknopf[disabled]{opacity:.5;cursor:default}
+  /* Der bestätigte Zustand ist keine Sperre, sondern eine Auskunft — er darf
+     nicht blass aussehen wie ein Knopf, der gerade nicht darf. */
+  .postat .posknopf.fertig,
+  .postat .posknopf.fertig[disabled]{background:var(--pos-bg);color:var(--pos);
+    border-color:#BFD9C9;opacity:1}
+  .postat .poslos{flex:none;background:#F4F6F6;color:var(--soft);padding:0 14px;
+    font:600 12.5px var(--disp)}
+  .postat .poslos:hover{background:var(--neg-bg);color:var(--neg)}
+
   .bziel{margin-top:10px;background:var(--teal-l);border-radius:12px;padding:11px 12px;
     font:500 12px var(--mono);color:var(--teal-d);line-height:1.6;word-break:break-word}
   .bziel.gesperrt{background:var(--neg-bg);color:var(--neg)}
@@ -319,6 +350,15 @@
             <div id="bZeitraum"></div>
             <span class="bhinweis" id="bZeitHinweis"></span>
           </div>
+          <div class="babschnitt" id="bPosFach" hidden>
+            <span class="bt">Kostenposition der Abrechnung</span>
+            <div class="posplan" id="bPosPlan"></div>
+            <div class="postat">
+              <button class="posknopf" id="bPos">Als Kostenposition übernehmen</button>
+              <button class="poslos" id="bPosLos" hidden>Lösen</button>
+            </div>
+            <span class="bhinweis" id="bPosHinweis"></span>
+          </div>
           <div class="bziel" id="bZiel"></div>
           <div class="btat">
             <button class="haupt" id="bOk">Übernehmen</button>
@@ -386,6 +426,11 @@ const bPlan = document.getElementById('bPlan');
 const bLesen = document.getElementById('bLesen');
 const bZeitHinweis = document.getElementById('bZeitHinweis');
 const bZiel = document.getElementById('bZiel');
+const bPosFach = document.getElementById('bPosFach');
+const bPosPlan = document.getElementById('bPosPlan');
+const bPos = document.getElementById('bPos');
+const bPosLos = document.getElementById('bPosLos');
+const bPosHinweis = document.getElementById('bPosHinweis');
 const bOk = document.getElementById('bOk');
 const bWeg = document.getElementById('bWeg');
 const bMeldung = document.getElementById('bMeldung');
@@ -782,6 +827,7 @@ function blattZeigen() {
   planZeichnen();
   vorschauLaden(d);
   erkennungHolen(d);
+  posZeigen(d);
 }
 
 /** Wählt einen Beleg aus oder gibt ihn frei. */
@@ -865,6 +911,9 @@ function planZeichnen() {
   bOk.disabled = false;
   bOk.textContent = d.status === 'neu' ? 'Zuordnen und einsortieren'
                                        : 'Übernehmen';
+  // Der Kostenpositions-Schritt rechnet mit dem gespeicherten Stand — beim
+  // Tippen muss deshalb mitkommen, ob das Formular davon abweicht.
+  if (!bPosFach.hidden) posPlanZeichnen(d);
 }
 
 /** Der Name, den die Ablage vergeben wird: Datum_Sache_Betrag.
@@ -987,6 +1036,147 @@ function zeitraumHinweisZeigen() {
   bZeitHinweis.textContent = text;
   bZeitHinweis.classList.toggle('warn', warnen);
 }
+
+/* ---- Aus dem Beleg wird eine Kostenposition (CLXXX) -----------------------
+   Bewusst ein eigener, sichtbarer Schritt und keine Automatik beim
+   „Übernehmen": einsortieren und abrechnen sind zwei Entscheidungen. Ein Beleg
+   darf am richtigen Platz liegen, ohne schon in der Abrechnung zu stehen — ein
+   Doppel, eine Rechnung, die noch geprüft wird, ein Beleg fürs Archiv.
+
+   Und weil ein zweiter Beleg den Betrag der vorhandenen Position erhöht
+   (CLXXXII), steht die Rechnung vorher da: „bisher 300,00 € + 150,50 € =
+   450,50 €". Der Server rechnet sie, damit Vorschau und Ergebnis nicht
+   auseinanderlaufen. */
+let posPlan = null;                 // Vorschau der Buchung des gewählten Belegs
+let posLauf = 0;                    // gegen überholende Abfragen
+
+/** Steht im Formular etwas anderes als gespeichert? Dann gilt für die
+    Kostenposition noch der gespeicherte Stand — das muss dastehen, sonst
+    verbucht der Knopf scheinbar etwas anderes, als das Blatt zeigt. */
+function posUngespeichert(d) {
+  const s = stand();
+  if (!s) return false;
+  const gleich = (a, b) => (a || null) === (b || null);
+  return !(gleich(s.kostenart, d.kostenart)
+           && gleich(s.zeitraum_id, d.zeitraum_id)
+           && gleich(s.betrag, d.betrag));
+}
+
+const posZeile = (label, wert, klasse) =>
+  `<div class="pr${klasse ? ' ' + klasse : ''}"><span>${esc(label)}</span>` +
+  `<span>${esc(wert)}</span></div>`;
+
+function posPlanZeichnen(d) {
+  const p = posPlan;
+  bPosLos.hidden = !(p && p.moeglich && p.schon_verbucht);
+  if (!p) {
+    bPosPlan.innerHTML = posZeile('wird geprüft …', '');
+    bPos.disabled = true;
+    return;
+  }
+  // Steht im Formular schon, was noch fehlt, ist das die eigentliche Antwort:
+  // erst speichern, dann rechnet die Kostenposition damit.
+  const wartet = posUngespeichert(d);
+  bPosHinweis.textContent = wartet
+    ? 'Erst „Übernehmen“ — die Kostenposition rechnet mit dem, was gespeichert '
+      + 'ist.' : '';
+  bPosHinweis.classList.toggle('warn', wartet);
+  if (!p.moeglich) {
+    bPosPlan.innerHTML = `<div class="pr fehlt"><span>${esc(p.grund)}</span></div>`;
+    bPos.disabled = true;
+    bPos.className = 'posknopf';
+    bPos.textContent = 'Als Kostenposition übernehmen';
+    return;
+  }
+  // Eine neue Position aus einem einzigen Beleg braucht keine Aufstellung —
+  // dann stünde dieselbe Zahl zweimal da. Erst wo etwas dazukommt, wird
+  // gerechnet: bisher + dieser Beleg = danach.
+  const einzeln = p.neu && p.belege.length === 1;
+  const zeilen = [posZeile('Position', p.kostenart)];
+  if (!einzeln) {
+    if (p.schon_verbucht) {
+      zeilen.push(posZeile('Dieser Beleg', betragText(
+        (p.belege.find(b => b.id === d.id) || {}).betrag), 'fertig'));
+    } else {
+      if (!p.neu) zeilen.push(posZeile('Bisher', betragText(p.vorher)));
+      zeilen.push(posZeile('Dieser Beleg', betragText(d.betrag)));
+    }
+    // Aufgeschlüsselt wird nur, was „Bisher + dieser Beleg" nicht schon sagt:
+    // liegt an der Position erst ein Beleg, ist „Bisher" bereits der
+    // Handeintrag, und die Aufstellung stünde zweimal da.
+    if (p.handanteil && p.belege.length > 1) {
+      zeilen.push(posZeile(`Alle ${p.belege.length} Belege`,
+                           betragText(p.beleg_summe)));
+      zeilen.push(posZeile('Von Hand', betragText(p.handanteil)));
+    }
+  }
+  zeilen.push(posZeile(
+    einzeln ? 'Neue Position' : p.schon_verbucht ? 'Position gesamt' : 'Danach',
+    betragText(p.betrag), 'summe'));
+  bPosPlan.innerHTML = zeilen.join('');
+
+  bPos.disabled = p.schon_verbucht || wartet;
+  bPos.className = 'posknopf' + (p.schon_verbucht ? ' fertig' : '');
+  bPos.textContent = p.schon_verbucht ? '✓ Steht in der Abrechnung'
+    : p.neu ? 'Position anlegen und übernehmen'
+            : 'Betrag zur Position addieren';
+  if (!wartet && p.schon_verbucht) {
+    bPosHinweis.textContent = 'Ein zweiter Klick würde nichts verdoppeln — '
+      + 'gerechnet wird aus allen verknüpften Belegen.';
+  }
+}
+
+async function posZeigen(d) {
+  const lauf = ++posLauf;
+  posPlan = null;
+  bPosHinweis.textContent = '';
+  bPosHinweis.classList.remove('warn');
+  if (!d || d.vermisst) { bPosFach.hidden = true; return; }
+  bPosFach.hidden = false;
+  posPlanZeichnen(d);
+  try {
+    const plan = await api(`/dokumente/${d.id}/position`);
+    if (lauf !== posLauf || gewaehlt !== d.id) return;
+    posPlan = plan;
+  } catch (fehler) {
+    if (lauf !== posLauf) return;
+    posPlan = { moeglich: false, grund: String(fehler.message || fehler) };
+  }
+  posPlanZeichnen(d);
+}
+
+bPos.addEventListener('click', async () => {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  if (!d || !posPlan || !posPlan.moeglich) return;
+  bPos.disabled = true;
+  bPos.textContent = 'Wird übernommen …';
+  try {
+    const ergebnis = await api(`/dokumente/${d.id}/position`, { method: 'POST' });
+    melde(`✓ ${ergebnis.kostenart} · ${betragText(ergebnis.betrag)}`
+          + (ergebnis.belege.length > 1
+            ? ` aus ${ergebnis.belege.length} Belegen` : ''), 'gut');
+    await laden();
+  } catch (fehler) {
+    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    posZeigen(d);
+  }
+});
+
+bPosLos.addEventListener('click', async () => {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  if (!d) return;
+  bPosLos.disabled = true;
+  try {
+    const ergebnis = await api(`/dokumente/${d.id}/position`, { method: 'DELETE' });
+    melde(`Aus „${ergebnis.kostenart}“ herausgerechnet · jetzt `
+          + betragText(ergebnis.betrag));
+    await laden();
+  } catch (fehler) {
+    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+  } finally {
+    bPosLos.disabled = false;
+  }
+});
 
 /* ---- Kostenposition: der Beleg soll auf eine Zeile zeigen (CLXXI) --------
    Die Art sagt nur den Ordner. Welche Position der Abrechnung gemeint ist —

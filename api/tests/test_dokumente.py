@@ -1152,3 +1152,373 @@ def test_vorschau_vertraegt_das_eurozeichen_im_namen(monkeypatch):
         # Der volle Name kommt kodiert mit — der schlichte bleibt lesbar
         assert "filename*=UTF-8''" in kopf
         assert "M%C3%BCllabfuhr" in kopf
+
+
+# --------------------------------------------------------------------------
+# CLXXX–CLXXXIV: aus einem Beleg wird eine Kostenposition
+#
+# Wörtlich vom Nutzer: „Wir wollen ja nicht irgendeinen Beleg ohne eine
+# Position in der jeweiligen Immobilie."
+# --------------------------------------------------------------------------
+
+def _objekt_mit_zeitraum(c, name: str, ordner: str,
+                         kostenarten=("Wasser", "Heizung")) -> tuple[str, int]:
+    """Immobilie mit Cloud-Ordner, Kostenkatalog und einem Zeitraum."""
+    slug = c.post("/api/objekte", json={
+        "name": name, "kostenarten": list(kostenarten),
+        "einheiten": [{"bezeichnung": "EG", "flaeche": 60},
+                      {"bezeichnung": "OG", "flaeche": 90}]}).json()["slug"]
+    with Session(engine) as s:
+        o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+        o.nc_ordner = ordner
+        s.add(o)
+        s.commit()
+    zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+    return slug, zid
+
+
+def _zeile(c, zid: int, kostenart: str) -> dict:
+    checkliste = c.get(f"/api/zeitraeume/{zid}").json()["checkliste"]
+    return next(k for k in checkliste if k["kostenart"] == kostenart)
+
+
+def _beleg_mit_betrag(c, slug: str, zid: int, kostenart: str, betrag: float,
+                      tag: str, name: str) -> int:
+    """Ein einsortierter Beleg, wie ihn das Prüfblatt hinterlässt."""
+    doc = _lege_dokument_an(_objekt_id(slug), name, kategorie="Nebenkosten",
+                            status="zugeordnet")
+    antwort = c.patch(f"/api/dokumente/{doc}", json={
+        "kostenart": kostenart, "betrag": betrag, "belegdatum": tag,
+        "zeitraum_id": zid, "beschreibung": kostenart})
+    assert antwort.status_code == 200, antwort.text
+    return doc
+
+
+def test_betrag_steht_am_beleg_nicht_nur_im_namen(monkeypatch):
+    """CLXXXI: der Dateiname bleibt, wie er ist — gerechnet wird aber mit dem
+    gespeicherten Betrag. Aus „…-2.pdf" liest niemand mehr einen Euro."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Betragsfeldweg 1",
+                                         "Home/Immobilien/Betragsfeldweg 1")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 214.5, "2025-03-04",
+                                "alt.pdf")
+
+        eintrag = c.get("/api/dokumente",
+                        params={"objekt": slug}).json()["dokumente"][0]
+        assert eintrag["betrag"] == 214.5
+        # und im Namen steht er weiterhin, so wie CXXIII es wollte
+        assert eintrag["dateiname"] == "2025-03_Wasser_214,50€.pdf"
+        assert eintrag["vorschlag"]["betrag"] == 214.5
+
+        # Auch der Scan legt ihn ab
+        c.post("/api/dokumente/scannen",
+               data={"objekt": slug, "kategorie": "Nebenkosten",
+                     "kostenart": "Heizung", "betrag": "99.9",
+                     "datum": "2025-04-01", "beschreibung": "Heizung"},
+               files={"datei": ("scan.pdf", b"%PDF-1.4 x", "application/pdf")})
+        gescannt = next(d for d in c.get("/api/dokumente",
+                                         params={"objekt": slug}).json()["dokumente"]
+                        if d["kostenart"] == "Heizung")
+        assert gescannt["betrag"] == 99.9
+        assert doc
+
+
+def test_beleg_wird_zur_kostenposition(monkeypatch):
+    """CLXXX: der Beleg legt die Position an — als eigener, bestätigter
+    Schritt. Vorher zeigt die Vorschau, was daraus würde."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Positionsweg 2",
+                                         "Home/Immobilien/Positionsweg 2")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 300.0, "2025-02-10",
+                                "alt.pdf")
+
+        # Solange nichts übernommen wurde, gibt es keine Position
+        assert _zeile(c, zid, "Wasser")["position_id"] is None
+
+        vorschau = c.get(f"/api/dokumente/{doc}/position").json()
+        assert vorschau["moeglich"] is True
+        assert vorschau["neu"] is True
+        assert vorschau["betrag"] == 300.0
+        assert vorschau["vorher"] == 0.0
+        # Die Vorschau ändert nichts
+        assert _zeile(c, zid, "Wasser")["position_id"] is None
+
+        antwort = c.post(f"/api/dokumente/{doc}/position")
+        assert antwort.status_code == 201, antwort.text
+        assert antwort.json()["betrag"] == 300.0
+
+        zeile = _zeile(c, zid, "Wasser")
+        assert zeile["position_id"] == antwort.json()["position_id"]
+        assert zeile["betrag"] == 300.0
+        assert zeile["zustand"] == "erledigt"
+        # mit Gewichten, nicht ohne — sonst fiele der Betrag aus der Abrechnung
+        assert zeile["anteile"] == {"EG": 60, "OG": 90}
+        assert zeile["ohne_verteilung"] is False
+
+        # und die Abrechnung rechnet damit
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        assert a["gesamt"]["auslagen"] == 300.0
+
+
+def test_zweiter_beleg_addiert_sich_auf_dieselbe_position(monkeypatch):
+    """CLXXXII: vier Abschlagsrechnungen, eine Position. Der Betrag summiert
+    sich, und es bleibt sichtbar, aus welchen Belegen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Abschlagsweg 3",
+                                         "Home/Immobilien/Abschlagsweg 3")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+
+        betraege = [100.0, 100.0, 100.0, 150.5]
+        belege = []
+        for i, betrag in enumerate(betraege, 1):
+            doc = _beleg_mit_betrag(c, slug, zid, "Heizung", betrag,
+                                    f"2025-0{i}-15", f"abschlag{i}.pdf")
+            antwort = c.post(f"/api/dokumente/{doc}/position")
+            assert antwort.status_code == 201, antwort.text
+            belege.append(doc)
+
+        zeile = _zeile(c, zid, "Heizung")
+        assert zeile["betrag"] == 450.5
+        assert zeile["beleg_summe"] == 450.5
+        assert zeile["handanteil"] == 0.0
+        # Nachvollziehbar: jeder Beleg steht mit seinem Betrag an der Position
+        assert [b["betrag"] for b in zeile["belege"]] == betraege
+        assert {b["id"] for b in zeile["belege"]} == set(belege)
+        # Eine Position, nicht vier
+        assert len([k for k in c.get(f"/api/zeitraeume/{zid}").json()["checkliste"]
+                    if k["kostenart"] == "Heizung"]) == 1
+
+
+def test_zweimal_uebernehmen_zaehlt_einmal(monkeypatch):
+    """Der zweite Klick auf „Übernehmen" darf den Betrag nicht verdoppeln."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Doppelklickweg 4",
+                                         "Home/Immobilien/Doppelklickweg 4")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 250.0, "2025-05-05",
+                                "einmal.pdf")
+
+        erste = c.post(f"/api/dokumente/{doc}/position").json()
+        zweite = c.post(f"/api/dokumente/{doc}/position").json()
+        assert zweite["position_id"] == erste["position_id"]
+        assert zweite["schon_verbucht"] is True
+        assert zweite["betrag"] == 250.0
+        assert _zeile(c, zid, "Wasser")["betrag"] == 250.0
+
+        # Auch die Vorschau sagt vorher schon, dass er bereits mitzählt
+        vorschau = c.get(f"/api/dokumente/{doc}/position").json()
+        assert vorschau["schon_verbucht"] is True
+        assert vorschau["neu"] is False
+        assert vorschau["betrag"] == 250.0
+
+
+def test_korrigierter_betrag_zieht_die_position_nach(monkeypatch):
+    """Ein verbuchter Beleg, dessen Betrag korrigiert wird, darf die Summe
+    nicht falsch stehen lassen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Korrekturweg 5",
+                                         "Home/Immobilien/Korrekturweg 5")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 200.0, "2025-06-01",
+                                "tippfehler.pdf")
+        c.post(f"/api/dokumente/{doc}/position")
+
+        antwort = c.patch(f"/api/dokumente/{doc}", json={"betrag": 260.0})
+        assert antwort.json()["buchung"] == "aktualisiert"
+        assert _zeile(c, zid, "Wasser")["betrag"] == 260.0
+
+        # Zeigt der Beleg auf eine andere Kostenart, löst sich die Buchung
+        antwort = c.patch(f"/api/dokumente/{doc}", json={"kostenart": "Heizung"})
+        assert antwort.json()["buchung"] == "geloest"
+        assert antwort.json()["position_id"] is None
+        assert _zeile(c, zid, "Wasser")["betrag"] == 0.0
+
+
+def test_position_zeigt_zurueck_auf_ihre_belege(monkeypatch):
+    """CLXXXIII: aus der Abrechnung führt ein Weg zum Beleg — über die id,
+    nicht über den Dateinamen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Rueckwegweg 6",
+                                         "Home/Immobilien/Rueckwegweg 6")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 120.0, "2025-07-07",
+                                "quelle.pdf")
+        c.post(f"/api/dokumente/{doc}/position")
+
+        zeile = _zeile(c, zid, "Wasser")
+        assert [b["id"] for b in zeile["belege"]] == [doc]
+        assert zeile["belege"][0]["belegdatum"] == "2025-07-07"
+        assert zeile["belege"][0]["pfad"].endswith(".pdf")
+        # Der Beleg weiss umgekehrt, wohin er gehört
+        eintrag = c.get("/api/dokumente",
+                        params={"objekt": slug}).json()["dokumente"][0]
+        assert eintrag["position_id"] == zeile["position_id"]
+
+
+def test_umbenannte_kostenart_bricht_die_verknuepfung_nicht(monkeypatch):
+    """CLXXXIV: `Kostenposition.kostenart` ist Freitext. Der Weg vom Beleg zur
+    Position läuft deshalb über die id — ein umbenannter Katalogeintrag lässt
+    ihn unberührt."""
+    import app.routers.dokumente as modul
+    from app.models import Kostenposition
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Umbenennweg 7",
+                                         "Home/Immobilien/Umbenennweg 7")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 80.0, "2025-08-08",
+                                "wasser.pdf")
+        pid = c.post(f"/api/dokumente/{doc}/position").json()["position_id"]
+
+        # Jemand benennt die Position um — der Beleg zeigt weiter auf sie
+        with Session(engine) as s:
+            p = s.get(Kostenposition, pid)
+            p.kostenart = "Frischwasser"
+            s.add(p)
+            s.commit()
+
+        zeile = _zeile(c, zid, "Frischwasser")
+        assert [b["id"] for b in zeile["belege"]] == [doc]
+        assert zeile["betrag"] == 80.0
+
+
+def test_beleg_entfernen_schrumpft_die_position(monkeypatch):
+    """Ein Beleg, der aus der App fliegt, darf seinen Betrag nicht in der
+    Abrechnung zurücklassen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Schrumpfweg 8",
+                                         "Home/Immobilien/Schrumpfweg 8")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        eins = _beleg_mit_betrag(c, slug, zid, "Wasser", 100.0, "2025-01-10",
+                                 "eins.pdf")
+        zwei = _beleg_mit_betrag(c, slug, zid, "Wasser", 40.0, "2025-02-10",
+                                 "zwei.pdf")
+        c.post(f"/api/dokumente/{eins}/position")
+        c.post(f"/api/dokumente/{zwei}/position")
+        assert _zeile(c, zid, "Wasser")["betrag"] == 140.0
+
+        # ausdrücklich lösen — die Position bleibt, der Betrag schrumpft
+        assert c.delete(f"/api/dokumente/{zwei}/position").status_code == 200
+        assert _zeile(c, zid, "Wasser")["betrag"] == 100.0
+
+        # und den Eintrag ganz entfernen ebenso
+        assert c.delete(f"/api/dokumente/{eins}").status_code == 200
+        zeile = _zeile(c, zid, "Wasser")
+        assert zeile["betrag"] == 0.0
+        assert zeile["belege"] == []
+
+
+def test_handeintrag_bleibt_neben_dem_beleg_stehen(monkeypatch):
+    """Ein von Hand eingetragener Betrag darf durch einen Beleg nicht
+    verschwinden — und der Beleg nicht durch ihn."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Handweg 9",
+                                         "Home/Immobilien/Handweg 9")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        pid = c.post(f"/api/zeitraeume/{zid}/positionen",
+                     json={"kostenart": "Wasser", "betrag": 60.0}).json()["id"]
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 40.0, "2025-09-09",
+                                "dazu.pdf")
+
+        vorschau = c.get(f"/api/dokumente/{doc}/position").json()
+        assert vorschau["neu"] is False
+        assert vorschau["vorher"] == 60.0
+        assert vorschau["handanteil"] == 60.0
+        assert vorschau["betrag"] == 100.0
+
+        c.post(f"/api/dokumente/{doc}/position")
+        zeile = _zeile(c, zid, "Wasser")
+        assert zeile["position_id"] == pid
+        assert zeile["betrag"] == 100.0
+        assert zeile["handanteil"] == 60.0
+        assert zeile["beleg_summe"] == 40.0
+
+
+def test_uebernehmen_sagt_was_noch_fehlt(monkeypatch):
+    """„Geht nicht" allein schickt den Nutzer auf die Suche."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Luekenweg 10",
+                                         "Home/Immobilien/Luekenweg 10")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _lege_dokument_an(_objekt_id(slug), "nackt.pdf",
+                                kategorie="Nebenkosten", status="zugeordnet")
+
+        vorschau = c.get(f"/api/dokumente/{doc}/position").json()
+        assert vorschau["moeglich"] is False
+        assert "Kostenposition" in vorschau["grund"]
+        assert c.post(f"/api/dokumente/{doc}/position").status_code == 400
+
+        c.patch(f"/api/dokumente/{doc}", json={"kostenart": "Wasser",
+                                               "zeitraum_id": zid})
+        vorschau = c.get(f"/api/dokumente/{doc}/position").json()
+        assert vorschau["moeglich"] is False
+        assert "Betrag" in vorschau["grund"]
+
+        assert c.delete(f"/api/dokumente/{doc}/position").status_code == 409
+        assert c.get("/api/dokumente/999999/position").status_code == 404
+
+
+def test_position_entfernen_loest_ihre_belege(monkeypatch):
+    """Ein Beleg, der auf eine gelöschte Position zeigt, wäre ein Verweis ins
+    Leere — die Datei und der Eintrag bleiben, nur die Buchung fällt weg."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zeitraum(c, "Aufloeseweg 11",
+                                         "Home/Immobilien/Aufloeseweg 11")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke([]))
+        doc = _beleg_mit_betrag(c, slug, zid, "Wasser", 70.0, "2025-10-10",
+                                "weg.pdf")
+        pid = c.post(f"/api/dokumente/{doc}/position").json()["position_id"]
+
+        antwort = c.delete(f"/api/positionen/{pid}")
+        assert antwort.status_code == 200
+        assert antwort.json()["belege_geloest"] == 1
+
+        eintrag = c.get("/api/dokumente",
+                        params={"objekt": slug}).json()["dokumente"][0]
+        assert eintrag["position_id"] is None
+        assert eintrag["betrag"] == 70.0
+        # und er lässt sich jederzeit wieder übernehmen
+        assert c.post(f"/api/dokumente/{doc}/position").status_code == 201
+        assert _zeile(c, zid, "Wasser")["betrag"] == 70.0
+
+
+def test_bestandsdatenbank_bekommt_betrag_und_position():
+    """Schemaänderungen sind additiv (CLXXXI/CLXXXIII): die neuen Spalten
+    kommen dazu, jede Zeile bleibt stehen."""
+    from sqlalchemy import inspect, text
+    from app.migrate import migriere
+
+    motor = _bestands_datenbank(["/a/eins.pdf"])
+    migriere(motor)
+
+    spalten = {s["name"] for s in inspect(motor).get_columns("dokument")}
+    assert {"betrag", "position_id"} <= spalten
+    with motor.begin() as conn:
+        zeile = conn.execute(text("SELECT pfad, betrag, position_id "
+                                  "FROM dokument")).one()
+    assert tuple(zeile) == ("/a/eins.pdf", None, None)
+    # Der Suchindex kommt mit — eine per ALTER ergänzte Spalte bekäme ihn sonst
+    # nie, und der Rückweg von der Position fragt ihn an jeder Zeile ab.
+    assert "ix_dokument_position_id" in _indexnamen(motor)

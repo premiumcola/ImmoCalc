@@ -23,13 +23,15 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import ocr, pdftext
+from .. import belegposten, ocr, pdftext
+from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            datumsteil, ohne_betrag, ohne_datum,
                            ohne_ordnerwort)
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import Dokument, Objekt, Zeitraum
+from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
 from ..wachdienst import zustand as wachdienst_zustand
@@ -140,7 +142,11 @@ def _vorschlag(d: Dokument) -> dict:
         # vergeben hat („2025-10-oel-2729,91€.pdf"). Beim Einsortieren sollen
         # sie nicht verlorengehen, nur weil kein Beleg gelesen wurde (CXXIII).
         "monat": monat,
-        "betrag": betrag_aus_namen(d.dateiname),
+        # CLXXXI: der gespeicherte Betrag hat Vorrang. Der Name bleibt die
+        # Anzeige im Ordner, aber er wird bei jeder Korrektur zerlegt und neu
+        # gesetzt — als Grundlage einer Kostenposition ist das zu wackelig.
+        "betrag": d.betrag if d.betrag is not None
+        else betrag_aus_namen(d.dateiname),
         # Worum es geht — feiner als die Art, für den Dateinamen.
         "sache": ocr.sache_aus_dateiname(lesbar),
         "sicher": bool(d.kategorie or genannt
@@ -156,6 +162,10 @@ def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
         "kategorie": d.kategorie, "jahr": d.jahr,
         # CLXXI: auf welche Zeile der Abrechnung der Beleg zeigt.
         "kostenart": d.kostenart,
+        # CLXXXI/CLXXXIII: der Rechnungsbetrag und die Kostenposition, in die
+        # er eingerechnet ist. `position_id` leer heisst: noch nicht übernommen.
+        "betrag": d.betrag,
+        "position_id": d.position_id,
         # CLXXII: das Rechnungsdatum tagesgenau — daran entscheidet sich, in
         # welchen Abrechnungszeitraum der Beleg fällt.
         "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
@@ -857,9 +867,10 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
     `betrag` und `datum` kommen von `/erkennen` durchgereicht: der Betrag
     gehört an das Ende des Dateinamens (CXXIII), das Datum an seinen Anfang.
-    Gespeichert wird der Betrag nicht — er steht im Namen, und dort gehört er
-    hin. Das Datum dagegen schon (CLXXII): tagesgenau entscheidet es, in
-    welchen Abrechnungszeitraum der Beleg fällt.
+    Beide werden zusätzlich gespeichert — das Datum, weil tagesgenau
+    entscheidet, in welchen Abrechnungszeitraum der Beleg fällt (CLXXII), der
+    Betrag, weil aus ihm eine Kostenposition wird (CLXXXI). Im Namen stehen
+    sie weiterhin; dort sieht man sie im Ordner.
 
     `kostenart` ist die genaue Position innerhalb der Art (CLXXI) —
     „Kaminkehrer" unter „Nebenkosten"."""
@@ -889,6 +900,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
                  groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
                  kostenart=(kostenart or "").strip(),
+                 betrag=betrag if betrag and betrag > 0 else None,
                  jahr=jahr, belegdatum=_zum_datum(datum),
                  zeitraum_id=zeitraum_id, status="zugeordnet",
                  erkannt_am=date.today())
@@ -929,9 +941,10 @@ class AenderungIn(BaseModel):
     # Der Dateiname entsteht immer aus Datum, Bezeichnung und Betrag — eine
     # Regel für die ganze Ablage. Umbenannt wird über die Bezeichnung.
     beschreibung: str | None = None
-    # Der Rechnungsbetrag. Er wandert an das Ende des Dateinamens und wird
-    # bewusst nicht am Dokument gespeichert: der Name ist die Wahrheit, die
-    # der Nutzer im Ordner sieht.
+    # Der Rechnungsbetrag. Er wandert an das Ende des Dateinamens (CXXIII) —
+    # dort sieht ihn der Nutzer im Ordner — und wird zusätzlich am Dokument
+    # gespeichert (CLXXXI): aus ihm wird die Kostenposition, und dafür ist ein
+    # Name, der bei jeder Korrektur neu zusammengesetzt wird, zu wackelig.
     betrag: float | None = None
     # Zu welcher Abrechnung der Beleg gehört. Mitgeschickt heißt gesetzt,
     # `null` heißt gelöst.
@@ -1021,19 +1034,99 @@ def aendern(dokument_id: int, data: AenderungIn,
         d.kostenart = (data.kostenart or "").strip()
     d.jahr = jahr
     d.belegdatum = belegdatum
+    # CLXXXI: der Betrag steht ab hier auch am Beleg, nicht nur im Namen.
+    d.betrag = betrag if betrag and betrag > 0 else None
     d.dateiname = name
     d.status = "zugeordnet"
     d.zeitraum_id = zeitraum_id
     session.add(d)
+    # Ist der Beleg bereits in eine Kostenposition eingerechnet, zieht seine
+    # Summe mit — angelegt wird hier nichts, das bleibt der bestätigte Schritt.
+    buchung = belegposten.nachziehen(session, d)
     try:
         session.commit()
     except IntegrityError as e:
         raise _pfad_konflikt(session, neuer_pfad) from e
     return {"ok": True, "id": d.id, "pfad": d.pfad, "dateiname": d.dateiname,
             "objekt": o.slug, "kategorie": kategorie, "jahr": jahr,
-            "kostenart": d.kostenart,
+            "kostenart": d.kostenart, "betrag": d.betrag,
             "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
-            "zeitraum_id": d.zeitraum_id, "verschoben": verschoben}
+            "zeitraum_id": d.zeitraum_id, "verschoben": verschoben,
+            "position_id": d.position_id, "buchung": buchung}
+
+
+# --------------------------------------------------------------------------
+# Aus dem Beleg wird eine Kostenposition (CLXXX)
+#
+# Bewusst ein eigener, sichtbarer Schritt und keine Automatik beim
+# „Übernehmen": Einsortieren und Abrechnen sind zwei Entscheidungen. Ein Beleg
+# darf am richtigen Platz liegen, ohne dass er schon in der Abrechnung steht —
+# eine Rechnung, die noch geprüft wird, ein Doppel, ein Beleg fürs Archiv. Und
+# weil ein zweiter Beleg den Betrag der vorhandenen Position erhöht (CLXXXII),
+# ist das eine Rechnung, die man vorher sehen will. Der `GET` zeigt sie, der
+# `POST` führt sie aus.
+# --------------------------------------------------------------------------
+
+def _beleg(session: Session, dokument_id: int) -> Dokument:
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    return d
+
+
+@router.get("/{dokument_id}/position")
+def position_vorschau(dokument_id: int,
+                      session: Session = Depends(get_session)) -> dict:
+    """Was aus diesem Beleg würde. Ändert nichts.
+
+    Fehlt eine der drei Angaben (Kostenposition, Zeitraum, Betrag), steht hier
+    `moeglich: false` samt Grund — die Oberfläche sagt dann, was noch fehlt,
+    statt einen Knopf anzubieten, der scheitert."""
+    d = _beleg(session, dokument_id)
+    try:
+        return {"moeglich": True, **belegposten.vorschau(session, d).als_dict()}
+    except BelegFehler as fehler:
+        return {"moeglich": False, "grund": str(fehler),
+                "kostenart": d.kostenart, "zeitraum_id": d.zeitraum_id,
+                "betrag": d.betrag, "position_id": d.position_id}
+
+
+@router.post("/{dokument_id}/position", status_code=201)
+def position_uebernehmen(dokument_id: int,
+                         session: Session = Depends(get_session)) -> dict:
+    """Rechnet den Beleg in seine Kostenposition ein — und legt sie an, wenn es
+    sie noch nicht gibt.
+
+    Zweimal geklickt bleibt es bei derselben Summe: gerechnet wird aus allen
+    verknüpften Belegen, nie durch Draufrechnen."""
+    d = _beleg(session, dokument_id)
+    try:
+        ergebnis = belegposten.verbuche(session, d)
+    except BelegFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+    except UnbekannterSchluessel as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+    session.commit()
+    return {"ok": True, **ergebnis.als_dict()}
+
+
+@router.delete("/{dokument_id}/position")
+def position_loesen(dokument_id: int,
+                    session: Session = Depends(get_session)) -> dict:
+    """Nimmt den Beleg wieder aus seiner Kostenposition heraus.
+
+    Die Position bleibt stehen — ihr Betrag schrumpft um das, was dieser Beleg
+    beigesteuert hat. Am Beleg selbst ändert sich nichts, die Datei bleibt, wo
+    sie liegt."""
+    d = _beleg(session, dokument_id)
+    if not d.position_id:
+        raise HTTPException(409, "Dieser Beleg ist in keine Kostenposition "
+                                 "eingerechnet.")
+    p = belegposten.loese(session, d)
+    session.commit()
+    return {"ok": True, "position_id": p.id if p else None,
+            "kostenart": p.kostenart if p else "",
+            "betrag": p.betrag if p else None}
 
 
 @router.delete("/{dokument_id}")
@@ -1045,6 +1138,10 @@ def entfernen(dokument_id: int,
     if not d:
         raise HTTPException(404, "Dokument nicht gefunden")
     pfad = d.pfad
+    # War der Beleg in eine Kostenposition eingerechnet, schrumpft deren Summe
+    # um seinen Anteil. Sonst bliebe dort ein Betrag stehen, zu dem es keinen
+    # Beleg mehr gibt.
+    belegposten.loese(session, d)
     session.delete(d)
     session.commit()
     log.info("Dokumenteintrag entfernt: %s (Datei bleibt)", pfad)

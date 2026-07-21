@@ -126,6 +126,13 @@ class Kostenposition(SQLModel, table=True):
     s35: bool = False
     # Partei -> Gewicht (Verbrauch/Fläche/Personen/Bewohnermonate/%/1)
     anteile: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # CLXXXII: eine Position je Kostenart und Zeitraum bleibt die Regel — auf
+    # dieselbe Zeile laufen aber vier Abschlagsrechnungen zu. `betrag` bleibt
+    # die Wahrheit, mit der gerechnet wird; hier steht, welcher Teil davon aus
+    # verknüpften Belegen stammt. Die Differenz ist das, was von Hand
+    # eingetragen wurde — nur so lässt sich ein weiterer Beleg addieren, ohne
+    # den Handeintrag zu überschreiben oder doppelt zu zählen.
+    beleg_summe: float = 0.0
 
 
 class Vorauszahlung(SQLModel, table=True):
@@ -346,6 +353,20 @@ class Dokument(SQLModel, table=True):
     # Katalog wird umbenannt und ergänzt, und ein Beleg soll davon nicht
     # plötzlich auf nichts mehr zeigen.
     kostenart: str = ""
+    # CLXXXIII: die Kostenposition, in die dieser Beleg eingerechnet ist.
+    # Bewusst eine id und kein Name: sie ist der Rückweg von der Abrechnung zum
+    # Beleg *und* die Sperre gegen doppeltes Zählen — ein zweites „Übernehmen"
+    # findet dieselbe Position wieder, statt den Betrag noch einmal
+    # draufzurechnen. Eine umbenannte Kostenart lässt sie unberührt (CLXXXIV).
+    position_id: Optional[int] = Field(default=None,
+                                       foreign_key="kostenposition.id",
+                                       index=True)
+    # CLXXXI: der Rechnungsbetrag am Beleg selbst. Er steht weiterhin auch im
+    # Dateinamen (CXXIII) — dort sieht man ihn im Ordner. Als Grundlage einer
+    # Kostenposition ist der Name aber zu wackelig: er wird bei jeder Korrektur
+    # zerlegt und neu gesetzt, und aus „…-2.pdf" liest niemand mehr einen
+    # Betrag heraus. Gerechnet wird deshalb mit diesem Feld.
+    betrag: Optional[float] = None
     jahr: Optional[int] = None
     # CLXXII: das Rechnungsdatum, tagesgenau. `jahr` und der Monat im
     # Dateinamen benennen die Datei und bleiben, wie sie sind. Ob ein Beleg in
