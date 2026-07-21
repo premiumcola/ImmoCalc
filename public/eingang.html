@@ -34,7 +34,7 @@
             margin:0 0 12px;line-height:1.5}
   .fussnote.warn{color:var(--amber)}
 
-  /* Werkzeugleiste: suchen und nachsehen */
+  /* Werkzeugleiste: suchen und den Ordner neu einlesen */
   .werkzeuge{display:flex;gap:8px;margin-bottom:10px}
   .werkzeuge .suche{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:12px;
     padding:11px 13px;font:500 13.5px var(--body);background:var(--sheet);
@@ -46,6 +46,13 @@
   .werkzeuge .pruef:hover{background:var(--teal-l)}
   .werkzeuge .pruef[disabled]{opacity:.55;cursor:default}
 
+  /* Ergebnis des Ordner-Abgleichs — ruhig, eine Zeile, bleibt stehen */
+  .bilanz{background:var(--teal-l);color:var(--teal-d);border-radius:12px;
+    padding:11px 13px;margin-bottom:10px;font:500 12px var(--mono);line-height:1.6}
+  .bilanz.warn{background:var(--amber-bg);color:var(--amber)}
+  .bilanz a{color:inherit}
+  .bilanz .zeile{display:block}
+
   .filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
           margin-bottom:14px}
   @media (min-width:900px){.filter{grid-template-columns:repeat(4,minmax(0,1fr))}}
@@ -55,13 +62,28 @@
   .zahlzeile .zuruecksetzen{margin-left:auto;border:none;background:none;
     color:var(--teal-d);font:600 12px var(--disp);cursor:pointer;padding:6px 2px}
 
+  /* ---- Arbeitsfläche: links die Belege, rechts der Beleg selbst ------------
+     Auf dem Telefon gibt es nur eine Spalte; das Prüfblatt rückt dann unter
+     die gewählte Karte (siehe blattPlatzieren in der Logik). Die zweite
+     Spalte ist ein Gewinn für breite Schirme, nie eine Voraussetzung. */
+  .flaeche{display:grid;gap:16px;align-items:start}
+  @media (min-width:1180px){
+    .flaeche{grid-template-columns:minmax(0,1fr) minmax(330px,380px)}
+    .spalteblatt{position:sticky;top:8px}
+  }
+
   .beleg{background:var(--sheet);border-radius:16px;padding:14px;margin-bottom:10px;
-         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+         box-shadow:0 1px 2px rgba(22,38,44,.05);cursor:pointer;
+         border:1.5px solid transparent}
+  .beleg:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .beleg.gewaehlt{border-color:var(--teal);cursor:default;
+                  box-shadow:0 6px 18px -12px rgba(22,38,44,.55)}
   .beleg .kopf{display:flex;gap:12px;align-items:flex-start}
   .beleg .sym{width:42px;height:42px;border-radius:11px;background:#EDF1F0;
     color:var(--soft);flex:none;display:flex;align-items:center;justify-content:center;
     font:600 13px var(--mono)}
   .beleg[data-status="neu"] .sym{background:var(--amber-bg);color:var(--amber)}
+  .beleg[data-status="vermisst"] .sym{background:var(--neg-bg);color:var(--neg)}
   .beleg .wer{flex:1;min-width:0}
   .beleg .dn{display:block;font:600 14px var(--disp);letter-spacing:-.01em;
     line-height:1.35;word-break:break-word}
@@ -69,49 +91,98 @@
     margin-top:5px;line-height:1.5}
   .beleg .marke{flex:none;font:600 10.5px var(--mono);border-radius:7px;
     padding:4px 7px;background:var(--amber-bg);color:var(--amber);letter-spacing:.02em}
+  .beleg .marke.fehlt{background:var(--neg-bg);color:var(--neg)}
 
-  .ikons{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
-  .ikons button{border:none;background:#F4F6F6;color:var(--soft);border-radius:11px;
-    min-width:44px;min-height:44px;padding:0 12px;cursor:pointer;
-    font:600 12.5px var(--disp);display:flex;align-items:center;gap:6px}
-  .ikons button:hover{background:var(--teal-l);color:var(--teal-d)}
-  .ikons button.gefahr{color:var(--neg)}
-  .ikons button.gefahr:hover{background:#FBEDE9;color:var(--neg)}
-  .ikons button[disabled]{opacity:.5;cursor:default}
-  .ikons .zeichen{font:400 15px var(--mono);line-height:1}
-  /* Auf dem Telefon reicht die Zeile für vier Wörter nicht — dort bleibt das
-     Zeichen, die Beschriftung liest der Screenreader aus aria-label. */
-  @media (max-width:560px){
-    .ikons{gap:8px}
-    .ikons button{padding:0;justify-content:center}
-    .ikons .wort{position:absolute;width:1px;height:1px;overflow:hidden;
-                 clip-path:inset(50%);white-space:nowrap}
-    .ikons .zeichen{font-size:17px}
-    /* Die Rückfrage muss man sehen — sie bleibt beschriftet. */
-    .ikons button.frage{padding:0 12px;gap:6px}
-    .ikons button.frage .wort{position:static;width:auto;height:auto;
-      clip-path:none;font:600 12.5px var(--disp)}
-  }
-  .ikons button.frage{background:#FBEDE9;color:var(--neg)}
+  /* Datum und Betrag — das Wichtigste am Beleg, deshalb eigene Zeile (CXXIV) */
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chips .chip{display:inline-flex;align-items:center;gap:6px;border-radius:9px;
+    padding:5px 9px;background:#F1F4F4;color:var(--ink);
+    font:500 12px var(--mono);letter-spacing:-.01em}
+  .chips .chip .ci{font:400 12px var(--mono);color:var(--soft);line-height:1}
+  .chips .chip.geld{background:var(--teal-l);color:var(--teal-d)}
+  .chips .chip.offen{background:transparent;color:var(--soft);
+                     box-shadow:inset 0 0 0 1.5px var(--line)}
 
-  .felder{margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
-          gap:8px}
-  @media (min-width:900px){.felder{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  /* Erfassung an der gewählten Karte */
+  .felder{margin-top:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+          gap:10px}
+  @media (min-width:680px){.felder{grid-template-columns:repeat(3,minmax(0,1fr))}}
   .felder .breit{grid-column:1 / -1}
+  .felder .fl{display:block;font:600 10.5px var(--mono);color:var(--soft);
+    letter-spacing:.06em;text-transform:uppercase;margin:0 0 5px 2px}
   .felder input{width:100%;border:1.5px solid var(--line);border-radius:12px;
     padding:11px 13px;font:500 13.5px var(--body);background:var(--sheet);
     min-height:44px;color:var(--ink)}
   .felder input:focus{outline:none;border-color:var(--teal)}
-  .tat{display:flex;gap:8px;margin-top:10px}
-  .tat button{flex:1;border:none;border-radius:12px;padding:12px;cursor:pointer;
-    font:600 13.5px var(--disp);min-height:44px;background:var(--teal);color:#fff}
-  .tat button:hover{background:var(--teal-d)}
-  .tat .weg{flex:0 0 auto;padding:12px 16px;background:transparent;color:var(--soft);
-    box-shadow:inset 0 0 0 1.5px var(--line)}
-  .ziel{display:block;font:500 11.5px var(--mono);color:var(--soft);margin-top:9px;
-        word-break:break-word;line-height:1.5}
-  .ziel.gut{color:var(--pos)}
-  .ziel.schlecht{color:var(--neg)}
+
+  /* ---- Prüfblatt: der Beleg und was aus ihm wird ---- */
+  .blatt{background:var(--sheet);border-radius:16px;padding:14px;
+         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .beleg .blatt{margin-top:14px;background:var(--paper);box-shadow:none;padding:0}
+  .bkopf{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .bkopf .bname{flex:1;min-width:0;font:500 11.5px var(--mono);color:var(--soft);
+    line-height:1.5;word-break:break-word}
+  .bkopf .bzu{flex:none;width:44px;height:44px;border:none;border-radius:12px;
+    background:#F1F4F4;color:var(--soft);font:400 17px var(--body);cursor:pointer}
+  .bkopf .bzu:hover{background:var(--teal-l);color:var(--teal-d)}
+
+  .bschau{position:relative;border-radius:12px;overflow:hidden;background:var(--paper);
+    height:300px;cursor:zoom-in;display:block;width:100%;border:none;padding:0}
+  @media (min-width:1180px){.bschau{height:min(52dvh,460px)}}
+  .bschau iframe{width:100%;height:100%;border:none;display:block;
+                 pointer-events:none;background:#fff}
+  .bschau .lupe{position:absolute;right:8px;bottom:8px;border-radius:9px;
+    background:rgba(22,38,44,.72);color:#fff;font:500 11px var(--mono);
+    padding:6px 9px;pointer-events:none}
+  /* Ohne Blatt keine Blatthöhe: ein Satz braucht keine halbe Bildschirmseite */
+  .bschau.knapp{height:auto;cursor:default}
+  .bschau .wart{display:flex;align-items:center;justify-content:center;
+    padding:22px 18px;text-align:center;font:400 12.5px var(--body);
+    color:var(--soft);line-height:1.55}
+  .bschau .wart.leer{color:var(--neg)}
+  .bschau:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+  .babschnitt{margin-top:14px}
+  .babschnitt .bt{display:block;font:600 10.5px var(--mono);color:var(--soft);
+    letter-spacing:.09em;text-transform:uppercase;margin-bottom:8px}
+  .pzeile{display:flex;align-items:baseline;gap:8px;padding:5px 0;
+          font:500 12.5px var(--body);line-height:1.5}
+  .pzeile .pl{flex:none;width:82px;font:500 11.5px var(--mono);color:var(--soft)}
+  .pzeile .pw{min-width:0;word-break:break-word}
+  .pzeile .pw.leer{color:var(--amber)}
+  .pzeile .alt{color:var(--soft);text-decoration:line-through}
+  .pzeile .pfeil{color:var(--soft);font:400 12px var(--mono)}
+
+  .bziel{margin-top:10px;background:var(--teal-l);border-radius:12px;padding:11px 12px;
+    font:500 12px var(--mono);color:var(--teal-d);line-height:1.6;word-break:break-word}
+  .bziel.gesperrt{background:var(--neg-bg);color:var(--neg)}
+
+  .btat{display:flex;gap:8px;margin-top:14px}
+  .btat button{border:none;border-radius:12px;cursor:pointer;min-height:44px;
+    font:600 13.5px var(--disp)}
+  .btat .haupt{flex:1;background:var(--teal);color:#fff;padding:12px}
+  .btat .haupt:hover{background:var(--teal-d)}
+  .btat .haupt[disabled]{opacity:.5;cursor:default}
+  .btat .klein{flex:none;min-width:44px;padding:0 12px;background:#F4F6F6;
+    color:var(--soft);font:400 16px var(--mono)}
+  .btat .klein:hover{background:var(--teal-l);color:var(--teal-d)}
+  .btat .klein.gefahr:hover{background:var(--neg-bg);color:var(--neg)}
+  .btat .klein.frage{background:var(--neg-bg);color:var(--neg);
+    font:600 12.5px var(--disp);padding:0 14px}
+  .bmeldung{display:block;font:500 11.5px var(--mono);color:var(--soft);
+    margin-top:10px;line-height:1.5;word-break:break-word}
+  .bmeldung.gut{color:var(--pos)}
+  .bmeldung.schlecht{color:var(--neg)}
+
+  /* Rechte Spalte ohne Auswahl: eine Einladung statt einer leeren Fläche */
+  .leerblatt{display:none;background:var(--sheet);border-radius:16px;
+    padding:26px 22px;text-align:center;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  @media (min-width:1180px){.leerblatt{display:block}}
+  /* `hidden` muss die Regel oben schlagen — sonst steht die Einladung noch da,
+     wenn längst ein Beleg gewählt ist. */
+  .leerblatt[hidden]{display:none}
+  .leerblatt .lb1{font:700 15px var(--disp);letter-spacing:-.015em;margin-bottom:8px}
+  .leerblatt p{font:400 12.5px var(--body);color:var(--soft);margin:0;line-height:1.6}
 
   .hinweisbox{background:var(--sheet);border-radius:16px;padding:24px 22px;
     text-align:center;box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -169,8 +240,9 @@
     <div class="werkzeuge">
       <input class="suche" id="suche" type="search" placeholder="Dateiname suchen"
              aria-label="Dateiname suchen">
-      <button class="pruef" id="pruef">Ordner prüfen</button>
+      <button class="pruef" id="pruef">Ordner einlesen</button>
     </div>
+    <div class="bilanz" id="bilanz" hidden></div>
     <div class="filter">
       <div id="fObjekt"></div>
       <div id="fArt"></div>
@@ -182,7 +254,41 @@
       <span class="zahl" id="zahl"></span>
       <button class="zuruecksetzen" id="zuruecksetzen" hidden>Filter zurücksetzen</button>
     </div>
-    <div id="liste"></div>
+
+    <div class="flaeche">
+      <div id="liste"></div>
+      <div class="spalteblatt" id="spalteBlatt">
+        <aside class="blatt" id="blatt" hidden aria-label="Prüfblatt">
+          <div class="bkopf">
+            <span class="bname" id="bName"></span>
+            <button class="bzu" id="bZu" aria-label="Prüfblatt schließen">×</button>
+          </div>
+          <div class="bschau" id="bSchau" role="button" tabindex="0"
+               aria-label="Beleg groß ansehen"></div>
+          <div class="babschnitt">
+            <span class="bt">Erkannt · wird eingetragen</span>
+            <div id="bPlan"></div>
+          </div>
+          <div class="babschnitt">
+            <span class="bt">Abrechnungszeitraum</span>
+            <div id="bZeitraum"></div>
+          </div>
+          <div class="bziel" id="bZiel"></div>
+          <div class="btat">
+            <button class="haupt" id="bOk">Übernehmen</button>
+            <button class="klein" id="bNeu" aria-label="Beleg neu einscannen">▣</button>
+            <button class="klein gefahr" id="bWeg"
+                    aria-label="Eintrag entfernen">⌫</button>
+          </div>
+          <span class="bmeldung" id="bMeldung"></span>
+        </aside>
+        <div class="leerblatt" id="leerBlatt">
+          <div class="lb1">Beleg wählen</div>
+          <p>Ein Antippen zeigt hier den Beleg — mit allem, was erkannt wurde,
+             und dem, was daraus in der Ablage wird.</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <nav class="nav">
@@ -224,23 +330,44 @@ const zahl = document.getElementById('zahl');
 const fussnote = document.getElementById('fussnote');
 const pruefKnopf = document.getElementById('pruef');
 const zuruecksetzen = document.getElementById('zuruecksetzen');
+const bilanz = document.getElementById('bilanz');
+const blatt = document.getElementById('blatt');
+const spalteBlatt = document.getElementById('spalteBlatt');
+const leerBlatt = document.getElementById('leerBlatt');
+const bSchau = document.getElementById('bSchau');
+const bName = document.getElementById('bName');
+const bPlan = document.getElementById('bPlan');
+const bZiel = document.getElementById('bZiel');
+const bOk = document.getElementById('bOk');
+const bWeg = document.getElementById('bWeg');
+const bMeldung = document.getElementById('bMeldung');
 
 const jetzt = new Date().getFullYear();
 const ALLE = '';
+const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
+                'August', 'September', 'Oktober', 'November', 'Dezember'];
+const geld = new Intl.NumberFormat('de-DE',
+  { style: 'currency', currency: 'EUR' });
 
-/* Ein Zustand für die ganze Seite: Filter, Stammdaten, offener Bearbeiter.
+/* Ein Zustand für die ganze Seite: Filter, Stammdaten, gewählter Beleg.
    Die Liste wird immer aus dem gebaut, was die API zurückgibt. */
 const filter = { objekt: ALLE, kategorie: ALLE, jahr: ALLE, status: ALLE, suche: '' };
 let daten = { dokumente: [], objekte: [], arten: [], jahre: [], kategorien: [] };
-let offenerBearbeiter = null;     // id des Dokuments, dessen Felder offen sind
+let gewaehlt = null;              // id des Belegs, der im Prüfblatt liegt
+let erfassung = null;             // dessen Eingabefelder
 let erkennungMoeglich = true;
 let zielFelder = null;            // Auswahlfelder des Ablage-Dialogs
+let vorschauAdresse = null;       // Blob-Adresse der gezeigten Datei
+let vorschauLauf = 0;             // gegen überholende Ladevorgänge
+const zeitraeumeJeObjekt = new Map();
 
 const jahresliste = () => {
   const aus_daten = daten.jahre || [];
   const spanne = Array.from({ length: 8 }, (_, i) => jetzt - i);
   return [...new Set([...spanne, ...aus_daten])].sort((a, b) => b - a);
 };
+
+const dok = id => daten.dokumente.find(d => d.id === id) || null;
 
 /* ---- Filterfelder: einmal gebaut, danach nur noch nachgefüllt ---- */
 const filterFeld = (id, label, schluessel) => auswahlfeld(
@@ -252,10 +379,13 @@ const filterFeld = (id, label, schluessel) => auswahlfeld(
 const fObjekt = filterFeld('fObjekt', 'Alle Immobilien', 'objekt');
 const fArt = filterFeld('fArt', 'Alle Arten', 'kategorie');
 const fJahr = filterFeld('fJahr', 'Alle Jahre', 'jahr');
-const fStatus = auswahlfeld(document.getElementById('fStatus'), {
+// Der Zustandsfilter hat feste Werte — er wird nie nachgefüllt und braucht
+// deshalb auch keinen Namen.
+auswahlfeld(document.getElementById('fStatus'), {
   optionen: [{ wert: ALLE, text: 'Alle Zustände' },
              { wert: 'neu', text: 'Wartet auf Zuordnung' },
-             { wert: 'zugeordnet', text: 'Einsortiert' }],
+             { wert: 'zugeordnet', text: 'Einsortiert' },
+             { wert: 'vermisst', text: 'Datei vermisst' }],
   wert: ALLE, label: 'Zustand',
   aenderung: wert => { filter.status = wert; laden(); },
 });
@@ -274,80 +404,165 @@ function filterFuellen() {
   zuruecksetzen.hidden = !gefiltert;
 }
 
-/* ---- Eine Karte je Dokument ---- */
-/** Der Teil des Namens, der die Bezeichnung ist: JJJJ_Art_Bezeichnung.pdf */
-const bezeichnung = d => {
-  const teile = d.dateiname.replace(/\.[^.]+$/, '').split('_');
-  return teile.length > 2 ? teile.slice(2).join(' ') : '';
+/* ---- Aus dem Dateinamen lesen ---------------------------------------------
+   Der Name trägt Datum, Sache und Betrag an festen Plätzen
+   (JJJJ-MM_Sache_1234,56€.pdf). Was die API im `vorschlag` mitschickt, ist
+   dieselbe Zerlegung — hier wird nur noch die Sache herausgelöst, damit die
+   Karte einen Titel hat, der nicht Datum und Betrag ein zweites Mal zeigt. */
+const DATUM_IM_NAMEN =
+  /\b(?:(?:0?[1-9]|1[0-2])[-.])?(?:19|20)\d{2}(?:[-.](?:0?[1-9]|1[0-2]))?\b/g;
+const BETRAG_IM_NAMEN = /\(?\b\d{1,3}(?:[.\s]?\d{3})*[,.]\d{2}\s*(?:€|EUR)\)?/gi;
+
+/** Der Dateiname ohne das, was Datum und Betrag schon sagen.
+    Der Unterstrich fällt zuerst — er ist ein Wortzeichen und hebelte sonst
+    jede Wortgrenze in den beiden Mustern aus ("_1284,50€" fand kein \b). */
+function sacheAusNamen(name, kategorie) {
+  const stamm = String(name || '').replace(/\.[^.]+$/, '').replace(/_+/g, ' ');
+  let rest = stamm.replace(BETRAG_IM_NAMEN, ' ').replace(DATUM_IM_NAMEN, ' ');
+  // Was der Ordner schon sagt, gehört nicht in den Titel (CXXII/CXXVI).
+  if (kategorie) {
+    rest = rest.replace(new RegExp('\\b' + kategorie + '\\w{0,2}', 'gi'), ' ');
+  }
+  return rest.replace(/\s+/g, ' ').replace(/^[-·._\s]+|[-·._\s]+$/g, '').trim();
+}
+
+const endungVon = name => {
+  const teile = String(name || '').split('.');
+  return teile.length > 1 ? '.' + teile.pop() : '';
 };
 
+const datumText = (jahr, monat) => (!jahr ? ''
+  : monat ? `${MONATE[monat - 1]} ${jahr}` : String(jahr));
+
+const betragText = betrag =>
+  (betrag === null || betrag === undefined ? '' : geld.format(betrag));
+
+/** Belegdatum und Betrag, wie die Ablage sie sieht (CXXIV). */
+function befund(d) {
+  const v = d.vorschlag || {};
+  const kategorie = d.kategorie || v.kategorie || '';
+  return {
+    sache: sacheAusNamen(d.dateiname, kategorie) || v.sache || '',
+    jahr: d.jahr || v.jahr || null,
+    monat: v.monat || null,
+    betrag: v.betrag === undefined ? null : v.betrag,
+    kategorie,
+  };
+}
+
+/** Was in der Kachel oben steht: die Sache, nicht der ganze Dateiname. */
+const titelVon = d => befund(d).sache || 'Beleg';
+
+/* ---- Eine Karte je Dokument ---- */
 function karte(d) {
-  const offen = d.status === 'neu' || offenerBearbeiter === d.id;
-  const meta = [d.objekt_name, d.kategorie, d.jahr,
-                d.groesse ? lesbareGroesse(d.groesse) : null,
-                d.abgelegt ? null : 'Datei fehlt']
+  const b = befund(d);
+  const gewahlt = gewaehlt === d.id;
+  const datum = datumText(b.jahr, b.monat);
+  const chips = [
+    datum ? `<span class="chip"><span class="ci">▤</span>${esc(datum)}</span>`
+          : '<span class="chip offen">Datum fehlt</span>',
+    b.betrag ? `<span class="chip geld">${esc(betragText(b.betrag))}</span>`
+             : '<span class="chip offen">Betrag fehlt</span>',
+  ].join('');
+  const meta = [d.objekt_name, b.kategorie,
+                d.groesse ? lesbareGroesse(d.groesse) : null]
     .filter(Boolean).join(' · ');
-  return `<article class="beleg" data-id="${d.id}" data-status="${esc(d.status)}">
+  const marke = d.vermisst
+    ? '<span class="marke fehlt">Datei fehlt</span>'
+    : d.status === 'neu' ? '<span class="marke">neu</span>' : '';
+  // Nur die geschlossene Karte ist ein Knopf. Die offene trägt Eingabefelder —
+  // ein Knopf mit Formular darin wäre für die Sprachausgabe ein Widerspruch.
+  return `<article class="beleg${gewahlt ? ' gewaehlt' : ''}" data-id="${d.id}"
+        data-status="${esc(d.status)}"
+        ${gewahlt ? '' : 'tabindex="0" role="button"'}>
       <div class="kopf">
-        <span class="sym">${d.abgelegt ? 'PDF' : '—'}</span>
+        <span class="sym">${d.vermisst ? '!' : d.abgelegt ? 'PDF' : '—'}</span>
         <span class="wer">
-          <span class="dn">${esc(d.dateiname)}</span>
+          <span class="dn">${esc(titelVon(d))}</span>
           <span class="meta">${esc(meta)}</span>
         </span>
-        ${d.status === 'neu' ? '<span class="marke">neu</span>' : ''}
+        ${marke}
       </div>
-      <div class="ikons">
-        ${d.abgelegt ? `<button data-tat="oeffnen" aria-label="Beleg öffnen">
-          <span class="zeichen">↗</span><span class="wort">Öffnen</span></button>` : ''}
-        ${offen ? '' : `<button data-tat="bearbeiten" aria-label="Angaben ändern">
-          <span class="zeichen">✎</span><span class="wort">Ändern</span></button>`}
-        <button data-tat="erneut" aria-label="Neu einscannen">
-          <span class="zeichen">▣</span><span class="wort">Neu scannen</span></button>
-        <button data-tat="entfernen" class="gefahr" aria-label="Eintrag entfernen">
-          <span class="zeichen">⌫</span><span class="wort">Entfernen</span></button>
-      </div>
-      ${offen ? felder(d) : ''}
-      <span class="ziel" data-ziel></span>
+      ${gewahlt ? '' : `<div class="chips">${chips}</div>`}
+      ${gewahlt && !d.vermisst ? felder(d, b) : ''}
+      ${gewahlt ? '<div data-blattplatz></div>' : ''}
     </article>`;
 }
 
-function felder(d) {
-  return `<div class="felder">
-      <div data-feld="objekt"></div>
-      <div data-feld="kategorie"></div>
-      <div data-feld="jahr"></div>
-      <div class="breit"><input data-feld="beschreibung" maxlength="60"
-        placeholder="Bezeichnung (optional)" aria-label="Bezeichnung"
-        value="${esc(bezeichnung(d))}"></div>
-    </div>
-    <div class="tat">
-      <button data-tat="speichern">${d.status === 'neu'
-        ? 'Zuordnen und einsortieren' : 'Speichern'}</button>
-      ${d.status === 'neu' ? '' :
-        '<button class="weg" data-tat="abbrechen">Abbrechen</button>'}
+function felder(d, b) {
+  return `<div class="felder" data-erfassung>
+      <div><span class="fl">Immobilie</span><div data-feld="objekt"></div></div>
+      <div><span class="fl">Art</span><div data-feld="kategorie"></div></div>
+      <div><span class="fl">Jahr</span><div data-feld="jahr"></div></div>
+      <div><span class="fl">Monat</span><div data-feld="monat"></div></div>
+      <div><span class="fl" id="fl${d.id}b">Betrag</span>
+        <input data-feld="betrag" inputmode="decimal" placeholder="—"
+               aria-labelledby="fl${d.id}b"
+               value="${esc(b.betrag ? b.betrag.toFixed(2).replace('.', ',') : '')}">
+      </div>
+      <div class="breit"><span class="fl" id="fl${d.id}t">Bezeichnung</span>
+        <input data-feld="beschreibung" maxlength="60" placeholder="Wofür?"
+               aria-labelledby="fl${d.id}t" value="${esc(b.sache)}">
+      </div>
     </div>`;
 }
 
-/* Die Auswahlfelder einer Karte leben nur, solange sie offen ist. */
-const bearbeiter = new Map();
-
-function felderBeleben(karteEl, d) {
-  const v = d.vorschlag || {};
-  const bau = (feld, optionen, wert) => auswahlfeld(
+/** Die Eingabefelder der gewählten Karte — sie leben nur, solange sie offen ist. */
+function erfassungBeleben(karteEl, d, b) {
+  const bau = (feld, label, optionen, wert, aenderung) => auswahlfeld(
     karteEl.querySelector(`[data-feld="${feld}"]`),
-    { optionen, wert, label: feld });
-  bearbeiter.set(d.id, {
-    objekt: bau('objekt', daten.objekte.map(o => ({ wert: o.slug, text: o.name })),
-                d.objekt || daten.objekte[0]?.slug || ''),
-    kategorie: bau('kategorie', daten.arten.map(a => ({ wert: a, text: a })),
-                   d.kategorie || v.kategorie || 'Sonstiges'),
-    jahr: bau('jahr', jahresliste().map(j => ({ wert: String(j), text: String(j) })),
-              String(d.jahr || v.jahr || jetzt)),
-  });
+    { optionen, wert, label, aenderung: aenderung || (() => planZeichnen()) });
+  const eingabe = feld => karteEl.querySelector(`input[data-feld="${feld}"]`);
+  const monate = [{ wert: '', text: 'ohne Monat' },
+    ...MONATE.map((m, i) => ({ wert: String(i + 1), text: m }))];
+  erfassung = {
+    id: d.id,
+    // Eine andere Immobilie hat andere Abrechnungszeiträume — das Feld
+    // rechts muss mitkommen, sonst zeigte es auf eine fremde Abrechnung.
+    objekt: bau('objekt', 'Immobilie',
+                daten.objekte.map(o => ({ wert: o.slug, text: o.name })),
+                d.objekt || daten.objekte[0]?.slug || '',
+                () => zeitraeumeFuellen(d)),
+    kategorie: bau('kategorie', 'Art',
+                   daten.arten.map(a => ({ wert: a, text: a })),
+                   b.kategorie || 'Sonstiges'),
+    jahr: bau('jahr', 'Jahr', [{ wert: '', text: 'ohne Jahr' },
+      ...jahresliste().map(j => ({ wert: String(j), text: String(j) }))],
+      b.jahr ? String(b.jahr) : ''),
+    monat: bau('monat', 'Monat des Belegs', monate,
+               b.monat ? String(b.monat) : ''),
+    betragFeld: eingabe('betrag'),
+    textFeld: eingabe('beschreibung'),
+  };
+  for (const feld of [erfassung.betragFeld, erfassung.textFeld]) {
+    feld.addEventListener('input', planZeichnen);
+  }
+}
+
+/** Was der Nutzer gerade eingestellt hat — die Grundlage für Vorschau und PATCH. */
+function stand() {
+  if (!erfassung) return null;
+  const zahlText = (erfassung.betragFeld.value || '').trim()
+    .replace(/[€\s]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
+  const betrag = zahlText ? Number(zahlText) : null;
+  return {
+    objekt: erfassung.objekt.wert(),
+    kategorie: erfassung.kategorie.wert(),
+    jahr: erfassung.jahr.wert() ? Number(erfassung.jahr.wert()) : null,
+    monat: erfassung.monat.wert() ? Number(erfassung.monat.wert()) : null,
+    betrag: Number.isFinite(betrag) && betrag > 0 ? Math.round(betrag * 100) / 100
+                                                  : null,
+    beschreibung: (erfassung.textFeld.value || '').trim(),
+    zeitraum_id: zeitraumFeld && zeitraumFeld.wert()
+      ? Number(zeitraumFeld.wert()) : null,
+  };
 }
 
 function zeichne() {
-  bearbeiter.clear();
+  // Das Prüfblatt zuerst in Sicherheit bringen: gleich wird die Liste neu
+  // gebaut und alles darin verworfen.
+  spalteBlatt.appendChild(blatt);
+  erfassung = null;
   const { dokumente } = daten;
   if (!dokumente.length) {
     liste.innerHTML = daten.gesamt
@@ -361,13 +576,18 @@ function zeichne() {
               einer Immobilie — beim nächsten Blick in den Ordner erscheinen
               sie hier.</p>
          </div>`;
+    blattZeigen();
     return;
   }
   liste.innerHTML = dokumente.map(karte).join('');
-  for (const d of dokumente) {
-    const el = liste.querySelector(`[data-id="${d.id}"] .felder`);
-    if (el) felderBeleben(el.closest('.beleg'), d);
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  const karteEl = d ? liste.querySelector(`[data-id="${d.id}"]`) : null;
+  // Ein vermisster Beleg bekommt keine Felder — geändert werden kann an ihm
+  // nichts, solange seine Datei nicht wieder da ist.
+  if (karteEl && karteEl.querySelector('[data-erfassung]')) {
+    erfassungBeleben(karteEl, d, befund(d));
   }
+  blattZeigen();
 }
 
 async function laden() {
@@ -377,13 +597,18 @@ async function laden() {
   }
   try {
     daten = await api('/dokumente?' + frage.toString());
-    const { anzahl, gesamt, offen } = daten;
-    sub.textContent = offen
-      ? `${offen} ${offen === 1 ? 'wartet' : 'warten'} auf Zuordnung`
+    const { anzahl, gesamt, offen, vermisst } = daten;
+    const stimmen = [];
+    if (offen) stimmen.push(`${offen} ${offen === 1 ? 'wartet' : 'warten'}`);
+    if (vermisst) stimmen.push(`${vermisst} vermisst`);
+    sub.textContent = stimmen.length ? stimmen.join(' · ')
       : gesamt ? 'alles einsortiert' : 'noch nichts abgelegt';
     zahl.textContent = anzahl === gesamt
       ? `${gesamt} ${gesamt === 1 ? 'Dokument' : 'Dokumente'}`
       : `${anzahl} von ${gesamt}`;
+    // Ein Beleg, der aus der gefilterten Liste gefallen ist, kann nicht
+    // gewählt bleiben — sonst zeigte das Prüfblatt ins Leere.
+    if (gewaehlt !== null && !dok(gewaehlt)) gewaehlt = null;
     filterFuellen();
     zeichne();
     // Ohne Immobilie gibt es keinen Ort für einen Beleg — dann gleich sagen,
@@ -401,6 +626,220 @@ async function laden() {
       </div>`;
   }
 }
+
+/* ---- Prüfblatt ------------------------------------------------------------
+   Ein einziger Knoten für die ganze Seite. Auf breiten Schirmen steht er in
+   der zweiten Spalte, auf dem Telefon rückt er unter die gewählte Karte —
+   nebeneinander ist dort kein Platz, und weit weg von der Karte wäre er
+   nutzlos. */
+const breit = window.matchMedia('(min-width:1180px)');
+
+function blattPlatzieren() {
+  const platz = (gewaehlt !== null && !breit.matches)
+    ? liste.querySelector(`[data-id="${gewaehlt}"] [data-blattplatz]`) : null;
+  (platz || spalteBlatt).appendChild(blatt);
+}
+
+breit.addEventListener('change', () => { blattPlatzieren(); });
+
+function blattZeigen() {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  blatt.hidden = !d;
+  // Ohne Belege in der Liste ist auch die Einladung, einen zu wählen, keine —
+  // dann steht links schon, was zu tun ist.
+  leerBlatt.hidden = Boolean(d) || !daten.dokumente.length;
+  blattPlatzieren();
+  if (!d) { vorschauLeeren(); return; }
+  bName.textContent = d.dateiname;
+  bMeldung.textContent = '';
+  bMeldung.className = 'bmeldung';
+  zeitraeumeFuellen(d);
+  planZeichnen();
+  vorschauLaden(d);
+}
+
+/** Wählt einen Beleg aus oder gibt ihn frei. */
+function waehle(id) {
+  if (gewaehlt === id) return;
+  gewaehlt = id;
+  zeichne();
+}
+
+/* Gegenüberstellung: was steht am Beleg, was wird daraus (CXXV). */
+function planZeichnen() {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  if (!d) return;
+  const b = befund(d);
+  // Ohne Eingabefelder (vermisster Beleg) bleibt es beim Erkannten — dann
+  // stünde sonst hinter jeder Zeile ein Pfeil auf „nichts".
+  const s = stand() || { objekt: d.objekt, kategorie: b.kategorie, jahr: b.jahr,
+                         monat: b.monat, betrag: b.betrag, beschreibung: b.sache };
+  const objektName = slug => (daten.objekte.find(o => o.slug === slug) || {}).name;
+  const zeilen = [
+    ['Sache', b.sache, s.beschreibung],
+    ['Datum', datumText(b.jahr, b.monat), datumText(s.jahr, s.monat)],
+    ['Betrag', betragText(b.betrag), betragText(s.betrag)],
+    ['Immobilie', d.objekt_name || '', objektName(s.objekt) || ''],
+    ['Art', b.kategorie, s.kategorie],
+  ];
+  bPlan.innerHTML = zeilen.map(([label, alt, neu]) => {
+    const gleich = (alt || '') === (neu || '');
+    const wert = gleich
+      ? (alt ? `<span class="pw">${esc(alt)}</span>`
+             : '<span class="pw leer">nicht erkannt</span>')
+      : `<span class="pw alt">${esc(alt || 'nichts')}</span>`
+        + '<span class="pfeil">→</span>'
+        + `<span class="pw">${esc(neu || 'nichts')}</span>`;
+    return `<div class="pzeile"><span class="pl">${label}</span>${wert}</div>`;
+  }).join('');
+
+  if (d.vermisst) {
+    bZiel.className = 'bziel gesperrt';
+    bZiel.textContent = 'Diese Datei liegt nicht mehr in der Nextcloud. '
+      + 'Neu einscannen oder den Eintrag entfernen.';
+    bOk.disabled = true;
+    bOk.textContent = 'Nicht möglich';
+    return;
+  }
+  bZiel.className = 'bziel';
+  const zeitraum = zeitraumFeld && zeitraumFeld.wert()
+    ? (zeitraumListe.find(z => String(z.id) === zeitraumFeld.wert()) || {}).label
+    : null;
+  bZiel.textContent = 'Wird abgelegt als ' + zielName(d, s)
+    + (zeitraum ? ` · Abrechnung ${zeitraum}` : ' · ohne Abrechnung');
+  bOk.disabled = false;
+  bOk.textContent = d.status === 'neu' ? 'Zuordnen und einsortieren'
+                                       : 'Übernehmen';
+}
+
+/** Der Name, den die Ablage vergeben wird: Datum_Sache_Betrag.
+    Das letzte Wort hat die API — hier steht die Vorschau dazu. */
+function zielName(d, s) {
+  const datum = s.jahr
+    ? (s.monat ? `${s.jahr}-${String(s.monat).padStart(2, '0')}` : String(s.jahr))
+    : 'ohne-Jahr';
+  // Was der Ordner schon sagt, steht nicht noch einmal im Namen (CXXII).
+  const ohneArt = (s.beschreibung || '')
+    .replace(new RegExp('\\b' + (s.kategorie || '\\u0000'), 'gi'), ' ');
+  const sache = ohneArt.replace(/[^\wäöüÄÖÜß.\- ]+/g, '-').trim()
+    .replace(/\s+/g, '-').replace(/[-_.]{2,}/g, '-').replace(/^[-_.]+|[-_.]+$/g, '');
+  const betrag = s.betrag
+    ? s.betrag.toFixed(2).replace('.', ',') + '€' : '';
+  return [datum, sache || 'Beleg', betrag].filter(Boolean).join('_')
+    + endungVon(d.dateiname);
+}
+
+/* ---- Abrechnungszeitraum: vorschlagen, auswählen, bestätigen (CXXV) ---- */
+let zeitraumFeld = null;
+let zeitraumListe = [];
+
+const zumDatum = text => {
+  const t = /(\d{2})\.(\d{2})\.(\d{4})/.exec(text || '');
+  return t ? new Date(Number(t[3]), Number(t[2]) - 1, Number(t[1])) : null;
+};
+
+async function zeitraeumeFuer(slug) {
+  if (!slug) return [];
+  if (zeitraeumeJeObjekt.has(slug)) return zeitraeumeJeObjekt.get(slug);
+  try {
+    const antwort = await api(`/objekte/${encodeURIComponent(slug)}`);
+    const zs = (antwort.zeitraeume || []).map(z => {
+      const [von, bis] = String(z.label).split('–');
+      return { ...z, von: zumDatum(von), bis: zumDatum(bis) };
+    });
+    zeitraeumeJeObjekt.set(slug, zs);
+    return zs;
+  } catch {
+    return [];       // ohne Zeiträume bleibt das Feld eben leer
+  }
+}
+
+/** Welcher Zeitraum zum Belegdatum passt — vorgeschlagen, nicht gesetzt. */
+function passenderZeitraum(zs, jahr, monat) {
+  if (!jahr) return null;
+  const tag = new Date(jahr, (monat || 6) - 1, 15);
+  return zs.find(z => z.von && z.bis && z.von <= tag && tag <= z.bis) || null;
+}
+
+async function zeitraeumeFuellen(d) {
+  // Die gerade eingestellte Immobilie zählt, nicht die gespeicherte.
+  const slug = (erfassung && erfassung.id === d.id ? erfassung.objekt.wert() : '')
+    || d.objekt || '';
+  const zs = await zeitraeumeFuer(slug);
+  if (gewaehlt !== d.id) return;          // inzwischen etwas anderes gewählt
+  zeitraumListe = zs;
+  const b = befund(d);
+  const vorschlag = passenderZeitraum(zs, b.jahr, b.monat);
+  const optionen = [{ wert: '', text: 'ohne Abrechnung' },
+    ...zs.map(z => ({ wert: String(z.id),
+      text: z.label + (vorschlag && vorschlag.id === z.id ? ' · Vorschlag' : '') }))];
+  // Der gespeicherte Zeitraum gilt nur, wenn er zu dieser Immobilie gehört —
+  // sonst zeigte das Feld nach einem Wechsel auf eine fremde Abrechnung.
+  const gesetzt = zs.some(z => z.id === d.zeitraum_id) ? d.zeitraum_id : null;
+  const wert = String(gesetzt || (vorschlag ? vorschlag.id : '') || '');
+  if (!zeitraumFeld) {
+    zeitraumFeld = auswahlfeld(document.getElementById('bZeitraum'), {
+      optionen, wert, label: 'Abrechnungszeitraum',
+      aenderung: () => planZeichnen(),
+    });
+  } else {
+    zeitraumFeld.fuelle(optionen, wert);
+  }
+  planZeichnen();
+}
+
+/* ---- Vorschau: der Beleg selbst, ein Klick weiter in groß (CXXIX) ---- */
+function vorschauLeeren() {
+  if (vorschauAdresse) { URL.revokeObjectURL(vorschauAdresse); vorschauAdresse = null; }
+  bSchau.innerHTML = '';
+}
+
+function vorschauText(text, schlecht) {
+  vorschauLeeren();
+  bSchau.classList.add('knapp');
+  bSchau.innerHTML = `<div class="wart${schlecht ? ' leer' : ''}">${esc(text)}</div>`;
+}
+
+async function vorschauLaden(d) {
+  const lauf = ++vorschauLauf;
+  if (!d.abgelegt) {
+    vorschauText(d.vermisst
+      ? 'Die Datei ist in der Nextcloud nicht mehr auffindbar.'
+      : 'Zu diesem Eintrag liegt noch keine Datei in der Cloud.', true);
+    return;
+  }
+  vorschauText('Beleg wird geholt …');
+  try {
+    const antwort = await fetch(`/api/dokumente/${d.id}/inhalt`);
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      throw new Error(grund || 'Der Beleg lässt sich gerade nicht öffnen.');
+    }
+    const blob = await antwort.blob();
+    if (lauf !== vorschauLauf) return;    // ein neuerer Beleg ist schon dran
+    vorschauLeeren();
+    bSchau.classList.remove('knapp');
+    vorschauAdresse = URL.createObjectURL(blob);
+    const rahmen = document.createElement('iframe');
+    rahmen.title = `Vorschau ${d.dateiname}`;
+    rahmen.src = vorschauAdresse;
+    bSchau.appendChild(rahmen);
+    bSchau.insertAdjacentHTML('beforeend', '<span class="lupe">größer ansehen</span>');
+  } catch (fehler) {
+    if (lauf === vorschauLauf) {
+      vorschauText(String(fehler.message || fehler), true);
+    }
+  }
+}
+
+const grossAnsehen = () => {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  if (d && d.abgelegt) belegAnsehen(`/api/dokumente/${d.id}/inhalt`, d.dateiname);
+};
+bSchau.addEventListener('click', grossAnsehen);
+bSchau.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); grossAnsehen(); }
+});
 
 /* ---- Fußnote: Wachdienst und Texterkennung, jede Information einmal ---- */
 async function fussnoteZeigen() {
@@ -424,7 +863,7 @@ async function fussnoteZeigen() {
     erkennungMoeglich = Boolean(e.verfuegbar);
     if (!erkennungMoeglich) {
       teile.push('Texterkennung ist auf diesem Server nicht eingerichtet — '
-                 + 'Art und Jahr bitte selbst wählen');
+                 + 'Datum, Art und Betrag bitte selbst eintragen');
       warnung = true;
     }
   } catch { /* Zustand unbekannt: dann eben ohne Hinweis */ }
@@ -432,28 +871,43 @@ async function fussnoteZeigen() {
   fussnote.classList.toggle('warn', warnung);
 }
 
-/* ---- Ordner prüfen ---- */
+/* ---- Ordner einlesen ------------------------------------------------------
+   Ein Knopf, nicht zwei: der Abgleich (CXXVII) nimmt neue Dateien auf wie der
+   alte Scanlauf und zieht zusätzlich die vorhandenen Einträge nach — zwei
+   Knöpfe nebeneinander, von denen einer alles kann, wären nur eine Frage
+   mehr. Was er getan hat, steht danach in einer ruhigen Zeile darunter. */
 pruefKnopf.addEventListener('click', async () => {
   pruefKnopf.disabled = true;
-  pruefKnopf.textContent = 'Prüfe …';
+  pruefKnopf.textContent = 'Lese ein …';
+  bilanz.hidden = false;
+  bilanz.className = 'bilanz';
+  bilanz.textContent = 'Die Ordner werden gelesen …';
   try {
-    const { neu, automatisch } = await api('/dokumente/scan', { method: 'POST' });
-    pruefKnopf.textContent = !neu ? 'Nichts Neues'
-      : automatisch ? `${neu} neu · ${automatisch} einsortiert`
-      : `${neu} neu gefunden`;
+    const e = await api('/dokumente/abgleich', { method: 'POST' });
+    const umgezogen = e.verschoben.length + e.umbenannt.length;
+    const teile = [`${e.geprueft} geprüft`];
+    if (e.neu) teile.push(`${e.neu} neu` + (e.automatisch
+      ? ` · ${e.automatisch} davon einsortiert` : ''));
+    if (umgezogen) teile.push(`${umgezogen} nachgezogen`);
+    if (e.vermisst.length) teile.push(`${e.vermisst.length} vermisst`);
+    if (e.wiederda.length) teile.push(`${e.wiederda.length} wieder da`);
+    if (teile.length === 1) teile.push('alles unverändert');
+    const zeilen = [teile.join(' · '), ...e.hinweise.slice(0, 3)];
+    bilanz.innerHTML = zeilen
+      .map(z => `<span class="zeile">${esc(z)}</span>`).join('');
+    bilanz.classList.toggle('warn',
+      Boolean(e.vermisst.length || e.hinweise.length));
     await laden();
   } catch (fehler) {
-    pruefKnopf.textContent = 'Fehlgeschlagen';
-    liste.insertAdjacentHTML('afterbegin', `<div class="hinweisbox">
-        <div class="big">Ordner nicht gelesen</div>
-        <p>${esc(String(fehler.message || fehler))}</p>
-        <a href="settings.html">Zu den Einstellungen</a>
-      </div>`);
+    const text = String(fehler.message || fehler);
+    bilanz.className = 'bilanz warn';
+    bilanz.innerHTML = `<span class="zeile">${esc(text)}</span>`
+      + (/nextcloud|cloud|zugangsdaten/i.test(text)
+        ? '<span class="zeile"><a href="settings.html">Zu den Einstellungen</a></span>'
+        : '');
   } finally {
-    setTimeout(() => {
-      pruefKnopf.disabled = false;
-      pruefKnopf.textContent = 'Ordner prüfen';
-    }, 2400);
+    pruefKnopf.disabled = false;
+    pruefKnopf.textContent = 'Ordner einlesen';
   }
 });
 
@@ -472,90 +926,87 @@ zuruecksetzen.addEventListener('click', () => {
   laden();
 });
 
-/* ---- Aktionen auf einer Karte ---- */
-const meldung = (karteEl, text, art) => {
-  const feld = karteEl.querySelector('[data-ziel]');
-  feld.textContent = text;
-  feld.className = 'ziel ' + (art || '');
+/* ---- Einen Beleg wählen ---- */
+liste.addEventListener('click', e => {
+  if (e.target.closest('.blatt') || e.target.closest('[data-erfassung]')) return;
+  const karteEl = e.target.closest('[data-id]');
+  if (!karteEl) return;
+  waehle(Number(karteEl.dataset.id));
+});
+liste.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const karteEl = e.target.closest('.beleg');
+  if (!karteEl || e.target !== karteEl) return;
+  e.preventDefault();
+  waehle(Number(karteEl.dataset.id));
+});
+
+document.getElementById('bZu').addEventListener('click', () => waehle(null));
+
+const melde = (text, art) => {
+  bMeldung.textContent = text;
+  bMeldung.className = 'bmeldung ' + (art || '');
 };
 
-let erneutFuer = null;
-
-liste.addEventListener('click', async e => {
-  const knopf = e.target.closest('[data-tat]');
-  if (!knopf) return;
-  const karteEl = knopf.closest('[data-id]');
-  const id = Number(karteEl.dataset.id);
-  const tat = knopf.dataset.tat;
-
-  if (tat === 'oeffnen') {
-    const d = daten.dokumente.find(x => x.id === id);
-    belegAnsehen(`/api/dokumente/${id}/inhalt`, d ? d.dateiname : 'Beleg');
-    return;
-  }
-  if (tat === 'bearbeiten') { offenerBearbeiter = id; zeichne(); return; }
-  if (tat === 'abbrechen') { offenerBearbeiter = null; zeichne(); return; }
-  if (tat === 'erneut') { erneutFuer = id; document.getElementById('erneutFeld').click(); return; }
-
-  if (tat === 'entfernen') {
-    if (knopf.dataset.sicher !== 'ja') {
-      knopf.dataset.sicher = 'ja';
-      knopf.innerHTML = '<span class="zeichen">⌫</span><span class="wort">Wirklich?</span>';
-      knopf.setAttribute('aria-label', 'Wirklich entfernen?');
-      knopf.classList.add('frage');
-      setTimeout(() => {
-        delete knopf.dataset.sicher;
-        knopf.classList.remove('frage');
-        knopf.innerHTML = '<span class="zeichen">⌫</span><span class="wort">Entfernen</span>';
-        knopf.setAttribute('aria-label', 'Eintrag entfernen');
-      }, 4000);
-      meldung(karteEl, 'Der Eintrag verschwindet aus der App — '
-                     + 'die Datei bleibt in der Nextcloud.');
-      return;
-    }
-    knopf.disabled = true;
-    try {
-      await api(`/dokumente/${id}`, { method: 'DELETE' });
-      await laden();
-    } catch (fehler) {
-      knopf.disabled = false;
-      meldung(karteEl, String(fehler.message || fehler), 'schlecht');
-    }
-    return;
-  }
-
-  if (tat === 'speichern') {
-    const wahl = bearbeiter.get(id);
-    if (!wahl) return;
-    knopf.disabled = true;
-    const vorher = knopf.textContent;
-    knopf.textContent = 'Wird einsortiert …';
-    try {
-      const antwort = await api(`/dokumente/${id}`, {
-        method: 'PATCH',
-        body: {
-          objekt: wahl.objekt.wert(), kategorie: wahl.kategorie.wert(),
-          jahr: Number(wahl.jahr.wert()),
-          beschreibung: karteEl.querySelector('[data-feld="beschreibung"]').value.trim(),
-        },
-      });
-      offenerBearbeiter = null;
-      meldung(karteEl, (antwort.verschoben ? '✓ ' : '✓ unverändert · ') + antwort.pfad,
-              'gut');
-      setTimeout(laden, 1200);
-    } catch (fehler) {
-      knopf.disabled = false;
-      knopf.textContent = vorher;
-      meldung(karteEl, '⚠ ' + String(fehler.message || fehler), 'schlecht');
-    }
+/* ---- Übernehmen: Ablage und Zeitraum in einem Schritt ---- */
+bOk.addEventListener('click', async () => {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  const s = stand();
+  if (!d || !s) return;
+  bOk.disabled = true;
+  const vorher = bOk.textContent;
+  bOk.textContent = 'Wird einsortiert …';
+  try {
+    const antwort = await api(`/dokumente/${d.id}`, { method: 'PATCH', body: s });
+    await laden();
+    melde((antwort.verschoben ? '✓ ' : '✓ unverändert · ') + antwort.pfad, 'gut');
+  } catch (fehler) {
+    bOk.disabled = false;
+    bOk.textContent = vorher;
+    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
   }
 });
+
+/* ---- Entfernen: erst fragen, dann tun ---- */
+let sicherUhr = 0;
+bWeg.addEventListener('click', async () => {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  if (!d) return;
+  if (bWeg.dataset.sicher !== 'ja') {
+    bWeg.dataset.sicher = 'ja';
+    bWeg.textContent = 'Wirklich?';
+    bWeg.classList.add('frage');
+    melde('Der Eintrag verschwindet aus der App — '
+          + 'die Datei bleibt in der Nextcloud.');
+    clearTimeout(sicherUhr);
+    sicherUhr = setTimeout(sicherZuruecksetzen, 4000);
+    return;
+  }
+  sicherZuruecksetzen();
+  bWeg.disabled = true;
+  try {
+    await api(`/dokumente/${d.id}`, { method: 'DELETE' });
+    gewaehlt = null;
+    await laden();
+  } catch (fehler) {
+    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+  } finally {
+    bWeg.disabled = false;
+  }
+});
+
+function sicherZuruecksetzen() {
+  clearTimeout(sicherUhr);
+  delete bWeg.dataset.sicher;
+  bWeg.classList.remove('frage');
+  bWeg.textContent = '⌫';
+}
 
 /* ---- Beleg abfotografieren ------------------------------------------------
    <input capture> öffnet auf iOS direkt die Kamera. Die Aufnahmen werden im
    Browser verkleinert und zu einem PDF zusammengesetzt; die Texterkennung
-   liest die erste Seite und schlägt Art und Jahr vor. Steht die Immobilie
-   fest und ist die Art erkannt, wird ohne Rückfrage abgelegt. */
+   liest die erste Seite und schlägt Sache, Datum und Betrag vor. Steht die
+   Immobilie fest und ist die Art erkannt, wird ohne Rückfrage abgelegt. */
 const kameraKnopf = document.getElementById('kamera');
 const kameraFeld = document.getElementById('kameraFeld');
 
@@ -595,7 +1046,7 @@ kameraFeld.addEventListener('change', async () => {
     const objekt = filter.objekt || einzige;
     const kategorie = erkannt?.kategorie || '';
     const vorgabe = { objekt, kategorie, jahr: erkannt?.jahr || jetzt,
-                      beschreibung: '' };
+                      beschreibung: erkannt?.sache || '' };
 
     const auswahl = (objekt && kategorie) ? vorgabe
       : await zielAbfragen(seiten, pdf.size, vorgabe, erkannt);
@@ -606,6 +1057,11 @@ kameraFeld.addEventListener('change', async () => {
     paket.append('kategorie', auswahl.kategorie);
     paket.append('jahr', String(auswahl.jahr));
     paket.append('beschreibung', auswahl.beschreibung);
+    // Datum und Betrag der Texterkennung wandern mit — sie gehören an den
+    // Anfang und an das Ende des Dateinamens (CXXIII, CXXX).
+    if (erkannt?.datum) paket.append('datum', erkannt.datum);
+    if (erkannt?.monat) paket.append('monat', String(erkannt.monat));
+    if (erkannt?.betrag) paket.append('betrag', String(erkannt.betrag));
     paket.append('datei', pdf, 'scan.pdf');
 
     const antwort = await fetch('/api/dokumente/scannen',
@@ -632,14 +1088,17 @@ kameraFeld.addEventListener('change', async () => {
 });
 
 /* ---- Neu einscannen: ersetzt den Beleg eines vorhandenen Eintrags ---- */
+document.getElementById('bNeu').addEventListener('click', () => {
+  if (gewaehlt === null) return;
+  document.getElementById('erneutFeld').click();
+});
+
 document.getElementById('erneutFeld').addEventListener('change', async e => {
   const dateien = [...e.target.files];
   e.target.value = '';
-  const id = erneutFuer;
-  erneutFuer = null;
-  if (!dateien.length || !id) return;
-  const karteEl = liste.querySelector(`[data-id="${id}"]`);
-  if (karteEl) meldung(karteEl, 'Neue Aufnahme wird abgelegt …');
+  const id = gewaehlt;
+  if (!dateien.length || id === null) return;
+  melde('Neue Aufnahme wird abgelegt …');
   try {
     const { pdf } = await scanZuPdf(dateien);
     const paket = new FormData();
@@ -652,10 +1111,9 @@ document.getElementById('erneutFeld').addEventListener('change', async e => {
     }
     const ergebnis = await antwort.json();
     await laden();
-    const neueKarte = liste.querySelector(`[data-id="${id}"]`);
-    if (neueKarte) meldung(neueKarte, '✓ ' + ergebnis.hinweis, 'gut');
+    melde('✓ ' + ergebnis.hinweis, 'gut');
   } catch (fehler) {
-    if (karteEl) meldung(karteEl, '⚠ ' + String(fehler.message || fehler), 'schlecht');
+    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
   }
 });
 
@@ -665,9 +1123,8 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
   return new Promise(fertig => {
     const dlg = document.getElementById('zielDlg');
     const gelesen = erkannt?.kategorie || erkannt?.betrag
-      ? ` · erkannt: ${[erkannt.kategorie, erkannt.jahr,
-          erkannt.betrag ? erkannt.betrag.toFixed(2).replace('.', ',') + ' €' : null]
-          .filter(Boolean).join(' · ')}`
+      ? ` · erkannt: ${[erkannt.sache, datumText(erkannt.jahr, erkannt.monat),
+          betragText(erkannt.betrag)].filter(Boolean).join(' · ')}`
       : erkennungMoeglich ? '' : ' · Texterkennung nicht eingerichtet';
     document.getElementById('zielInfo').textContent =
       `${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(groesse)}${gelesen}`;
@@ -687,6 +1144,7 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
                    vorgabe.kategorie || 'Sonstiges');
     jahrWahl.fuelle(jahresliste().map(j => ({ wert: String(j), text: String(j) })),
                     String(vorgabe.jahr));
+    document.getElementById('zielText').value = vorgabe.beschreibung || '';
 
     let entschieden = false;
     const abbruch = () => { if (!entschieden) fertig(null); };

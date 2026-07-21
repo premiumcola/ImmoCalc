@@ -16,7 +16,7 @@ from ..erinnerungen import beleg_erinnerung, frist_erinnerung, in_sicht
 from ..frist import frist_tage
 from ..nachpflege import hinweise, zusammenfassung
 from ..models import (Dokument, Einheit, Kostenart, Kostenposition, Miete,
-                      Objekt, Partei, Vorauszahlung, Zeitraum)
+                      Objekt, Partei, Vorauszahlung, Zeitraum, ist_grundstueck)
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           fehlende_angaben, stammdaten, vorschau)
 
@@ -155,13 +155,17 @@ def objekt_anlegen(data: ObjektIn, session: Session = Depends(get_session)) -> d
     for name in data.kostenarten:
         session.add(Kostenart(objekt_id=o.id, name=name, aktiv=True))
 
-    # Erster Zeitraum ergibt sich aus dem Turnus — sonst hat das Objekt nichts zu tun.
-    heute = date.today()
-    start = date(heute.year if data.start_monat <= heute.month else heute.year - 1,
-                 data.start_monat, 1)
-    ende = date(start.year + 1, start.month, 1) - timedelta(days=1)
-    session.add(Zeitraum(objekt_id=o.id, start=start, ende=ende,
-                         typ="regulär", status="in Arbeit"))
+    # Erster Zeitraum ergibt sich aus dem Turnus — sonst hat das Objekt nichts
+    # zu tun. Ein Grundstück bekommt keinen: es hat keine Mieter, über die
+    # abzurechnen wäre, und bekäme sonst eine Frist nach § 556 BGB, die es für
+    # einen Acker nicht gibt (auf der Startseite stand dann „Frist in 528 T").
+    if not ist_grundstueck(o):
+        heute = date.today()
+        start = date(heute.year if data.start_monat <= heute.month else heute.year - 1,
+                     data.start_monat, 1)
+        ende = date(start.year + 1, start.month, 1) - timedelta(days=1)
+        session.add(Zeitraum(objekt_id=o.id, start=start, ende=ende,
+                             typ="regulär", status="in Arbeit"))
     session.commit()
     return {"slug": o.slug, "id": o.id, "name": o.name}
 
@@ -293,7 +297,10 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
     heute = date.today()
     offen = []
     for o in session.exec(select(Objekt)).all():
-        if not o.aktiv:
+        # Ein Grundstück rechnet mit niemandem ab — weder eine Frist nach
+        # § 556 BGB noch ein erwarteter Versorgerbeleg ergibt dort einen Sinn.
+        # Bestandsgrundstücke haben noch einen Zeitraum aus früheren Anlagen.
+        if not o.aktiv or ist_grundstueck(o):
             continue
         for z in session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all():
             if z.status != "in Arbeit":

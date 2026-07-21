@@ -164,6 +164,50 @@ if (!ruhe) {
   pruefe(false, `Scan endete mit "${stand}": ${grund}`);
 }
 
+// ---------------------------------------------------------------------------
+// Arbeitsfläche: Karte -> Prüfblatt (CXXIV, CXXV, CXXIX)
+// Auf dem Telefon gibt es nur eine Spalte — das Prüfblatt muss dort unter der
+// gewählten Karte liegen, nicht am Ende der Liste.
+// ---------------------------------------------------------------------------
+await page.goto(base + '/eingang.html', { waitUntil: 'networkidle' });
+const erste = await page.waitForSelector('.beleg', { timeout: 8000 })
+  .catch(() => null);
+if (!erste) {
+  console.log('   Keine Dokumente in der Ablage — Arbeitsfläche nicht geprüft');
+} else {
+  // Belegdatum und Betrag gehören in die Liste, nicht nur in den Dateinamen
+  const chips = await page.$$eval('.beleg .chip', n => n.map(c => c.textContent));
+  pruefe(chips.length > 0, 'Karten zeigen weder Datum noch Betrag');
+
+  await page.click('.beleg .dn');
+  const blatt = await page.waitForSelector('#blatt:not([hidden])', { timeout: 5000 })
+    .catch(() => null);
+  pruefe(Boolean(blatt), 'Prüfblatt öffnet sich nicht');
+  if (blatt) {
+    pruefe(await page.$eval('#blatt', b => Boolean(b.closest('.beleg'))),
+      'Prüfblatt steht auf dem Telefon nicht bei der gewählten Karte');
+    pruefe(await page.isVisible('#bSchau'), 'keine Belegvorschau');
+    pruefe((await page.textContent('#bName')).trim().length > 0,
+      'Dateiname fehlt im Prüfblatt');
+    // Die Gegenüberstellung „erkannt · wird eingetragen"
+    const plan = await page.textContent('#bPlan');
+    for (const wort of ['Sache', 'Datum', 'Betrag', 'Immobilie']) {
+      pruefe(plan.includes(wort), `Zeile "${wort}" fehlt im Prüfblatt`);
+    }
+    pruefe((await page.textContent('#bZiel')).length > 0,
+      'es steht nicht da, was aus dem Beleg wird');
+    // Entfernen fragt zuerst nach
+    await page.click('#bWeg');
+    pruefe((await page.textContent('#bWeg')).includes('Wirklich'),
+      'Entfernen fragt nicht nach');
+    await page.screenshot({ path: 'tests/screenshots/eingang-blatt.png',
+                            fullPage: true });
+    await page.click('#bZu');
+    pruefe(await page.$('#blatt[hidden]') !== null,
+      'Prüfblatt lässt sich nicht schließen');
+  }
+}
+
 pruefe(fehler.length === 0, 'JS-Fehler: ' + fehler.slice(0, 2).join(' | '));
 
 await browser.close();
