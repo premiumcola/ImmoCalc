@@ -17,8 +17,8 @@ Verteilung, Vorauszahlung und Empfänger dieselbe Partei.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
@@ -33,7 +33,8 @@ SCHLUESSEL: dict[str, dict] = {
         "titel": "Fläche", "einheit": "m²", "ableitbar": True,
         "hinweis": "Wohn-/Nutzfläche je Einheit; Terrasse und Nebenfläche "
                    "zählen zur Hälfte. Bei einem Mieterwechsel teilen sich "
-                   "Vor- und Nachmieter die Fläche nach Wohndauer.",
+                   "Vor- und Nachmieter die Fläche nach Wohndauer; "
+                   "Leerstandszeiten bleiben beim Eigentümer.",
     },
     "personen": {
         "titel": "Personen", "einheit": "Pers.", "ableitbar": True,
@@ -80,7 +81,12 @@ class Bezug:
     `Miete.einheit` ist Freitext: steht dort nichts (bei mehreren Einheiten)
     oder eine abweichende Schreibweise, dann gibt es keine Fläche, die Partei
     fällt aus der Flächenverteilung — und bekäme ihre Vorauszahlung voll
-    erstattet, ohne dass es jemandem auffällt."""
+    erstattet, ohne dass es jemandem auffällt.
+
+    `zeiten` trägt die Spannen, in denen der Bezug im Zeitraum gilt. Für ein
+    Mietverhältnis ist das genau `ab`–`bis`; ein Leerstand kann dagegen aus
+    mehreren Stücken bestehen (Januar leer, dann vermietet, im Dezember wieder
+    leer), die sich nicht als ein einzelnes ab/bis schreiben lassen."""
     partei: str
     einheit: str = ""
     flaeche: float | None = None
@@ -88,6 +94,8 @@ class Bezug:
     ab: date | None = None
     bis: date | None = None
     zugeordnet: bool = True
+    leerstand: bool = False
+    zeiten: list[tuple[date, date]] = field(default_factory=list)
 
 
 def _gesamtflaeche(e: Einheit) -> float | None:
@@ -109,19 +117,47 @@ def _laufend(mieten: list[Miete], start: date, ende: date) -> list[Miete]:
             if m.ab_datum <= ende and (m.bis_datum is None or m.bis_datum >= start)]
 
 
+def _luecken(belegt: list[tuple[date, date]],
+             start: date, ende: date) -> list[tuple[date, date]]:
+    """Die Zeitspannen, in denen eine Einheit im Zeitraum leer stand.
+
+    Die belegten Spannen sind einschliesslich zu verstehen: endet ein
+    Mietverhältnis am 30.06., beginnt der Leerstand am 01.07."""
+    frei: list[tuple[date, date]] = []
+    lauf = start
+    for von, bis in sorted(belegt):
+        if von > lauf:
+            frei.append((lauf, von - timedelta(days=1)))
+        lauf = max(lauf, bis + timedelta(days=1))
+        if lauf > ende:
+            return frei
+    if lauf <= ende:
+        frei.append((lauf, ende))
+    return frei
+
+
 def bezuege(einheiten: list[Einheit], mieten: list[Miete],
             parteien: list[Partei], start: date, ende: date) -> list[Bezug]:
     """Wer im Zeitraum abzurechnen ist — in dieser Reihenfolge:
 
     1. laufende Mietverhältnisse (dort steht auch die Mailadresse),
-    2. Einheiten ohne Mietverhältnis (Leerstand, Eigennutzung),
+    2. die unbelegte Zeit jeder Einheit (Leerstand, Eigennutzung),
     3. ersatzweise die Partei-Liste des Objekts, falls es weder Einheiten
        noch Mietverhältnisse gibt.
+
+    Punkt 2 gilt ausdrücklich auch für eine Einheit, die nur einen Teil des
+    Zeitraums vermietet war. Vorher bekam nur die ganz leerstehende Einheit
+    einen Bezug; endete ein Mietverhältnis mitten im Jahr ohne Nachmieter,
+    galt die Einheit als belegt und trug — seit die Gewichte zeitanteilig sind
+    — nur noch ihren halben Anteil. Der Rest verteilte sich auf die übrigen
+    Mieter: bei 60 m² (halbes Jahr) und 90 m² zahlte das OG 75,2 % statt 60 %.
+    Mit dem Leerstands-Bezug summiert sich jede Einheit wieder exakt auf ihre
+    Fläche, und die unbelegte Zeit bleibt beim Eigentümer.
     """
     flaechen = {e.bezeichnung: _gesamtflaeche(e) for e in einheiten}
     personen_je = {p.name: p.personen for p in parteien}
     treffer: list[Bezug] = []
-    belegt: set[str] = set()
+    belegt: dict[str, list[tuple[date, date]]] = {}
 
     for m in sorted(_laufend(mieten, start, ende),
                     key=lambda m: (m.einheit, m.ab_datum)):
@@ -131,20 +167,23 @@ def bezuege(einheiten: list[Einheit], mieten: list[Miete],
         # eindeutig zu dieser — sonst stünde die Wohnung ein zweites Mal als
         # eigene Partei in der Verteilung und bekäme Kosten aufgebrummt.
         name = m.einheit or (einheiten[0].bezeichnung if len(einheiten) == 1 else "")
-        belegt.add(name)
+        von, bis = max(m.ab_datum, start), min(m.bis_datum or ende, ende)
+        belegt.setdefault(name, []).append((von, bis))
         treffer.append(Bezug(
             partei=m.partei, einheit=name, flaeche=flaechen.get(name),
             personen=m.personen or personen_je.get(m.partei, 1),
-            ab=max(m.ab_datum, start), bis=min(m.bis_datum or ende, ende),
+            ab=von, bis=bis, zeiten=[(von, bis)],
             zugeordnet=not einheiten or name in flaechen))
 
     for e in einheiten:
-        if e.bezeichnung in belegt:
+        frei = _luecken(belegt.get(e.bezeichnung, []), start, ende)
+        if not frei:
             continue
         treffer.append(Bezug(
             partei=e.bezeichnung, einheit=e.bezeichnung,
             flaeche=flaechen[e.bezeichnung],
-            personen=personen_je.get(e.bezeichnung, 1), ab=start, bis=ende))
+            personen=personen_je.get(e.bezeichnung, 1),
+            ab=frei[0][0], bis=frei[-1][1], zeiten=frei, leerstand=True))
 
     if not treffer:
         for p in parteien:
@@ -156,13 +195,18 @@ def bezuege(einheiten: list[Einheit], mieten: list[Miete],
 
 def _monate(b: Bezug, start: date, ende: date) -> float:
     """Monate im Zeitraum, taggenau. `monate_im_jahr` rechnet je Kalenderjahr —
-    ein Wirtschaftsjahr Oktober–September berührt zwei davon."""
-    von = max(b.ab or start, start)
-    bis = min(b.bis or ende, ende)
-    if bis < von:
-        return 0.0
-    return round(sum(monate_im_jahr(von, bis, j)
-                     for j in range(von.year, bis.year + 1)), 4)
+    ein Wirtschaftsjahr Oktober–September berührt zwei davon.
+
+    Ein Leerstand besteht unter Umständen aus mehreren Stücken; sie werden
+    zusammengezählt."""
+    summe = 0.0
+    for a, z in b.zeiten or [(b.ab or start, b.bis or ende)]:
+        von, bis = max(a, start), min(z, ende)
+        if bis < von:
+            continue
+        summe += sum(monate_im_jahr(von, bis, j)
+                     for j in range(von.year, bis.year + 1))
+    return round(summe, 4)
 
 
 def _zeitraum_monate(start: date, ende: date) -> float:
@@ -249,6 +293,14 @@ def ohne_einheit(bezuege_: list[Bezug]) -> list[str]:
     return sorted({b.partei for b in bezuege_ if not b.zugeordnet})
 
 
+def leerstaende(bezuege_: list[Bezug]) -> list[str]:
+    """Bezüge, hinter denen keine Partei steht, sondern unbelegte Zeit.
+
+    Sie tragen ihren Anteil an den Kosten — der bleibt beim Eigentümer — und
+    bekommen weder Vorauszahlung noch Post."""
+    return sorted({b.partei for b in bezuege_ if b.leerstand})
+
+
 def vorschau(bezuege_: list[Bezug], start: date, ende: date) -> list[dict]:
     """Alle Schlüssel mit den Gewichten, die dabei herauskämen — damit man
     sieht, worauf man sich einlässt, bevor man sich festlegt.
@@ -259,6 +311,7 @@ def vorschau(bezuege_: list[Bezug], start: date, ende: date) -> list[dict]:
     gäbe es die Partei nicht — sie bekäme keine Kosten und ihre Vorauszahlung
     voll erstattet."""
     fehlzuordnung = ohne_einheit(bezuege_)
+    leer = leerstaende(bezuege_)
     out = []
     for wert, meta in SCHLUESSEL.items():
         g = gewichte(wert, bezuege_, start, ende)
@@ -273,6 +326,9 @@ def vorschau(bezuege_: list[Bezug], start: date, ende: date) -> list[dict]:
             if summe > 0 else {},
             "moeglich": bool(g) and not betroffen,
             "parteien_ohne_einheit": betroffen,
+            # Damit sich in der Vorschau erklärt, warum eine Einheit mit
+            # halbjährigem Leerstand zweimal auftaucht.
+            "leerstand": [name for name in leer if name in g],
         })
     return out
 

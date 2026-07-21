@@ -151,6 +151,88 @@ def test_einheiten_beim_mieterwechsel_teilen_sich_den_anteil():
     assert round(sum(g.values()), 2) == 2.0
 
 
+def _haus_mit_leerstand(bis: date | None, ab: date = START) -> list[verteilung.Bezug]:
+    """EG nur von `ab` bis `bis` vermietet, OG durchgehend."""
+    return verteilung.bezuege(
+        [_einheit("EG", 60), _einheit("OG", 90)],
+        [_miete("EG", "Vorher", personen=2, ab=ab, bis=bis),
+         _miete("OG", "Beta", personen=3)], [], START, ENDE)
+
+
+def test_leerstand_ab_jahresmitte_bleibt_bei_der_einheit():
+    """Fund CXXI: endet ein Mietverhältnis mitten im Jahr ohne Nachmieter,
+    galt die Einheit als belegt und bekam keinen Leerstands-Bezug. Ihr halber
+    Anteil wanderte auf die übrigen Mieter — das OG trug 75,2 % statt 60 %."""
+    g = verteilung.gewichte("flaeche", _haus_mit_leerstand(date(JAHR, 6, 30)),
+                            START, ENDE)
+    assert g["Beta"] == 90.0
+    assert round(g["Vorher"] + g["EG"], 2) == 60.0, "die Einheit bleibt bei 60 m²"
+    assert round(sum(g.values()), 2) == 150.0
+    assert round(g["Vorher"] / 60 * 100) == 50, "ein halbes Jahr bewohnt"
+    assert round(g["Beta"] / sum(g.values()) * 100, 1) == 60.0
+
+
+def test_leerstand_vor_dem_mietbeginn_bleibt_bei_der_einheit():
+    """Neukauf, Erstvermietung ab Juli: die leeren ersten Monate gehören dem
+    Eigentümer, nicht dem Nachbarn."""
+    g = verteilung.gewichte("flaeche",
+                            _haus_mit_leerstand(None, ab=date(JAHR, 7, 1)),
+                            START, ENDE)
+    assert g["Beta"] == 90.0
+    assert round(g["Vorher"] + g["EG"], 2) == 60.0
+    assert round(sum(g.values()), 2) == 150.0
+
+
+def test_leerstand_in_der_mitte_ergibt_zwei_stuecke():
+    """Januar leer, Februar bis Juni vermietet, danach wieder leer — beide
+    Stücke gehören zum selben Leerstands-Bezug."""
+    b = verteilung.bezuege(
+        [_einheit("EG", 60), _einheit("OG", 90)],
+        [_miete("EG", "Zwischenzeit", ab=date(JAHR, 2, 1), bis=date(JAHR, 6, 30)),
+         _miete("OG", "Beta")], [], START, ENDE)
+    leer = next(x for x in b if x.leerstand)
+    assert len(leer.zeiten) == 2
+    assert leer.zeiten[0] == (START, date(JAHR, 1, 31))
+    assert leer.zeiten[1] == (date(JAHR, 7, 1), ENDE)
+    g = verteilung.gewichte("flaeche", b, START, ENDE)
+    assert round(g["Zwischenzeit"] + g["EG"], 2) == 60.0
+    assert g["Beta"] == 90.0
+    assert verteilung.leerstaende(b) == ["EG"]
+
+
+def test_voller_leerstand_bleibt_wie_bisher():
+    """Regression: eine ganze Zeit lang leerstehende Einheit trägt ihre volle
+    Fläche — daran ändert der neue Teil-Leerstand nichts."""
+    b = verteilung.bezuege([_einheit("EG", 60), _einheit("OG", 90)],
+                           [_miete("OG", "Beta")], [], START, ENDE)
+    assert verteilung.gewichte("flaeche", b, START, ENDE) == {"EG": 60.0,
+                                                              "Beta": 90.0}
+    assert verteilung.leerstaende(b) == ["EG"]
+
+
+def test_lueckenloser_mieterwechsel_erzeugt_keinen_leerstand():
+    """Fund XCI darf nicht zurückkommen: zwei nahtlose Mietverhältnisse lassen
+    keine unbelegte Zeit übrig, es entsteht kein dritter Bezug."""
+    b = _wechsel_im_haus(date(JAHR, 7, 15))
+    assert verteilung.leerstaende(b) == []
+    g = verteilung.gewichte("flaeche", b, START, ENDE)
+    assert sorted(g) == ["Beta", "Nachher", "Vorher"]
+    assert round(g["Vorher"] + g["Nachher"], 2) == 60.0
+    assert round(sum(g.values()), 2) == 150.0
+
+
+def test_leerstand_traegt_auch_bei_personen_und_einheiten():
+    """Auch die anderen ableitbaren Schlüssel dürfen die unbelegte Zeit nicht
+    auf die Mieter schieben: die Einheit bleibt ein Anteil."""
+    b = _haus_mit_leerstand(date(JAHR, 6, 30))
+    einheiten = verteilung.gewichte("einheiten", b, START, ENDE)
+    assert round(einheiten["Vorher"] + einheiten["EG"], 4) == 1.0
+    assert einheiten["Beta"] == 1.0
+    personen = verteilung.gewichte("personen", b, START, ENDE)
+    assert personen["Beta"] == 3.0
+    assert round(personen["Vorher"], 1) == 1.0, "zwei Personen, ein halbes Jahr"
+
+
 def test_bewohnermonate_ueber_zwei_kalenderjahre():
     """Ein Wirtschaftsjahr Oktober–September berührt zwei Kalenderjahre."""
     start, ende = date(2024, 10, 1), date(2025, 9, 30)
@@ -433,6 +515,56 @@ def test_geld_beim_mieterwechsel_trifft_die_richtige_wohnung():
                      + parteien["Mieter Gamma"]["kosten"], 2) == 200.0
         # Invariante: die Summe der Anteile ist exakt die Gesamtsumme
         assert round(sum(p["kosten"] for p in parteien.values()), 2) == 500.0
+
+
+def test_geld_beim_leerstand_bleibt_beim_eigentuemer():
+    """Fund CXXI am Geld: 500 € Wasser, EG 60 m² nur bis 30.06. vermietet,
+    OG 90 m² durchgehend. Das OG trägt seine 60 % = 300,00 € — vorher waren es
+    375,77 €, weil die leere Hälfte des EG auf die Mieter umgelegt wurde.
+    Der Leerstand steht als eigene Zeile unter dem Namen der Einheit und
+    bekommt keine Mail, weil dort kein Mietverhältnis mit Adresse hängt."""
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zwei_wohnungen(c)
+        mieten = c.get(f"/api/objekte/{slug}/mieten").json()
+        eg = next(m for m in mieten if m["einheit"] == "EG")
+        c.patch(f"/api/stammdaten/mieten/{eg['id']}",
+                json={"bis_datum": f"{JAHR}-06-30"})
+
+        pos = c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Wasser", "betrag": 500.0, "schluessel": "flaeche"})
+        assert pos.status_code == 201, pos.text
+
+        parteien = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()["parteien"]
+        assert parteien["Mieter Beta"]["kosten"] == 300.00
+        assert round(parteien["Mieter Alpha"]["kosten"]
+                     + parteien["EG"]["kosten"], 2) == 200.0
+        assert parteien["Mieter Alpha"]["kosten"] < 100.0, "nur ein halbes Jahr"
+        # Invariante: die Summe der Anteile ist exakt die Gesamtsumme
+        assert round(sum(p["kosten"] for p in parteien.values()), 2) == 500.0
+
+        versand = c.get(f"/api/zeitraeume/{zid}/versand").json()
+        leer = next(r for r in versand["parteien"] if r["partei"] == "EG")
+        assert leer["versandbereit"] is False, "Leerstand bekommt keine Post"
+
+
+def test_leerstand_bekommt_keine_mail(postfach):
+    """Der Leerstand darf im Versand nicht als Empfänger auftauchen — es gibt
+    niemanden, an den die Abrechnung ginge."""
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zwei_wohnungen(c)
+        mieten = c.get(f"/api/objekte/{slug}/mieten").json()
+        eg = next(m for m in mieten if m["einheit"] == "EG")
+        c.patch(f"/api/stammdaten/mieten/{eg['id']}",
+                json={"bis_datum": f"{JAHR}-06-30"})
+        c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Wasser", "betrag": 500.0, "schluessel": "flaeche"})
+
+        fertig = c.post(f"/api/zeitraeume/{zid}/abschliessen",
+                        json={"versenden": True, "offene_uebergehen": True})
+        assert fertig.status_code == 200, fertig.text
+        assert "EG" in fertig.json()["ohne_mail"]
+        assert postfach.gesendet == ["beta@example.org"], \
+            "nur der laufende Mieter, nicht der ausgezogene und nicht der Leerstand"
 
 
 # ------------------------------------------------------- Wieder öffnen (LXVI)
