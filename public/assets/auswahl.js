@@ -15,6 +15,36 @@ const esc = s => String(s ?? '')
 
 let laufendeNummer = 0;
 
+/* Alle lebenden Felder. Seiten bauen ihre Felder oft neu auf — bei jedem
+ * Filterwechsel, bei jedem Tastendruck in der Suche. Käme pro Feld ein eigener
+ * Lauscher ans Dokument, sammelten sich in Sekunden hunderte an, deren
+ * Closures längst abgelöste DOM-Bäume am Leben hielten. Deshalb: genau ein
+ * Lauscher fürs ganze Dokument, der die Liste durchgeht. */
+const instanzen = new Set();
+let lauscherHaengt = false;
+
+/**
+ * Wirft jedes Feld weg, dessen Knoten nicht mehr im Dokument hängt — und auf
+ * Wunsch auch das, das in `ersetzt` sass, bevor dort ein neues gebaut wird.
+ * @param {HTMLElement|null} ersetzt
+ */
+function kehreAus(ersetzt = null) {
+  for (const feld of instanzen) {
+    if (!feld.ziel.isConnected || feld.ziel === ersetzt) feld.zerstoere();
+  }
+}
+
+function haengeLauscherAn() {
+  if (lauscherHaengt) return;
+  lauscherHaengt = true;
+  // pointerdown statt click: sonst schliesst der eigene Klick das Feld,
+  // bevor die Auswahl ankommt.
+  document.addEventListener('pointerdown', e => {
+    kehreAus();
+    for (const feld of instanzen) feld.klickDaneben(e.target);
+  });
+}
+
 /**
  * Baut ein Auswahlfeld in `ziel`.
  * @param {HTMLElement} ziel      Behälter, dessen Inhalt ersetzt wird
@@ -23,11 +53,17 @@ let laufendeNummer = 0;
  * @param {string}      einst.wert      vorausgewählter Wert
  * @param {string}      einst.label     Beschriftung für Screenreader
  * @param {Function}    einst.aenderung  wird mit dem neuen Wert gerufen
- * @returns {{wert:Function, setze:Function, fuelle:Function}}
+ * @returns {{wert:Function, setze:Function, fuelle:Function, zerstoere:Function}}
  */
 export function auswahlfeld(ziel, { optionen = [], wert = '', label = '',
                                     aenderung = () => {} } = {}) {
+  // Ein neues Feld ist der zuverlässigste Hinweis darauf, dass die Seite gerade
+  // umgebaut wurde — also erst einmal die abgelösten Felder wegräumen.
+  kehreAus(ziel);
+
   const id = `auswahl${++laufendeNummer}`;
+  const wache = new AbortController();
+  const { signal } = wache;
   let liste = optionen;
   let gewaehlt = wert;
   let offen = false;
@@ -103,7 +139,7 @@ export function auswahlfeld(ziel, { optionen = [], wert = '', label = '',
     feld.querySelector('.markiert')?.scrollIntoView({ block: 'nearest' });
   }
 
-  knopf.addEventListener('click', () => (offen ? schliesse() : oeffne()));
+  knopf.addEventListener('click', () => (offen ? schliesse() : oeffne()), { signal });
 
   knopf.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); bewege(1); }
@@ -114,20 +150,33 @@ export function auswahlfeld(ziel, { optionen = [], wert = '', label = '',
       e.preventDefault();
       offen ? waehle(markiert) : oeffne();
     } else if (e.key === 'Escape') schliesse();
-  });
+  }, { signal });
 
   feld.addEventListener('click', e => {
     const zeile = e.target.closest('[data-i]');
     if (zeile) waehle(Number(zeile.dataset.i));
-  });
-
-  // pointerdown statt click: sonst schliesst der eigene Klick das Feld,
-  // bevor die Auswahl ankommt.
-  document.addEventListener('pointerdown', e => {
-    if (offen && !ziel.contains(e.target)) schliesse({ zurueck: false });
-  });
+  }, { signal });
 
   zeichne();
+
+  /** Löst alle Lauscher und meldet das Feld ab. Danach ist es tot. */
+  function zerstoere() {
+    offen = false;
+    wache.abort();
+    instanzen.delete(eintragImRegister);
+  }
+
+  // Was der gemeinsame Lauscher am Dokument braucht — bleibt aus der
+  // öffentlichen Schnittstelle heraus.
+  const eintragImRegister = {
+    ziel,
+    zerstoere,
+    klickDaneben(el) {
+      if (offen && !ziel.contains(el)) schliesse({ zurueck: false });
+    },
+  };
+  instanzen.add(eintragImRegister);
+  haengeLauscherAn();
 
   return {
     wert: () => gewaehlt,
@@ -137,5 +186,6 @@ export function auswahlfeld(ziel, { optionen = [], wert = '', label = '',
       gewaehlt = neuerWert;
       zeichne();
     },
+    zerstoere,
   };
 }

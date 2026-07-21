@@ -96,6 +96,61 @@ def test_bewohnermonate_taggenau_beim_mieterwechsel():
     assert round(sum(g.values()), 2) == 12.0
 
 
+def _wechsel_im_haus(wechsel: date) -> list[verteilung.Bezug]:
+    """EG mit Mieterwechsel an diesem Tag, OG durchgehend bewohnt."""
+    return verteilung.bezuege(
+        [_einheit("EG", 60), _einheit("OG", 90)],
+        [_miete("EG", "Vorher", personen=2, ab=START, bis=wechsel),
+         _miete("EG", "Nachher", personen=2,
+                ab=date(wechsel.year, wechsel.month, wechsel.day + 1)),
+         _miete("OG", "Beta", personen=3)], [], START, ENDE)
+
+
+def test_flaeche_beim_mieterwechsel_bleibt_bei_der_einheit():
+    """Fund XCI: ohne Zeitanteil bekam jede der beiden EG-Parteien die vollen
+    60 m² angerechnet. Aus 60 + 90 m² wurden 210, das OG trug nur noch 42,86 %
+    statt 60 % — bei 500 € Wasser 214,29 € statt 300 €."""
+    g = verteilung.gewichte("flaeche", _wechsel_im_haus(date(JAHR, 7, 15)),
+                            START, ENDE)
+    assert round(g["Vorher"] + g["Nachher"], 2) == 60.0
+    assert g["Beta"] == 90.0
+    assert round(sum(g.values()), 2) == 150.0
+    assert g["Vorher"] > g["Nachher"], "wer länger wohnt, trägt mehr"
+
+
+def test_flaeche_wechsel_kurz_vor_jahresende_verschiebt_die_last():
+    """Ein Wechsel am 21.12. muss andere Zahlen ergeben als einer zur
+    Jahresmitte — solange das Gewicht die volle Fläche war, kamen exakt
+    dieselben heraus."""
+    g = verteilung.gewichte("flaeche", _wechsel_im_haus(date(JAHR, 12, 20)),
+                            START, ENDE)
+    assert round(g["Vorher"] + g["Nachher"], 2) == 60.0
+    assert round(sum(g.values()), 2) == 150.0
+    assert g["Nachher"] < 2.0, "elf Tage von zwölf Monaten"
+    zur_jahresmitte = verteilung.gewichte(
+        "flaeche", _wechsel_im_haus(date(JAHR, 7, 15)), START, ENDE)
+    assert g["Nachher"] != zur_jahresmitte["Nachher"]
+
+
+def test_personen_beim_mieterwechsel_zaehlen_die_einheit_nicht_doppelt():
+    """Zwei Personen im EG bleiben zwei — auch wenn sie mitten im Jahr
+    ausgetauscht werden."""
+    g = verteilung.gewichte("personen", _wechsel_im_haus(date(JAHR, 7, 15)),
+                            START, ENDE)
+    assert round(g["Vorher"] + g["Nachher"], 2) == 2.0
+    assert g["Beta"] == 3.0
+    assert round(sum(g.values()), 2) == 5.0
+
+
+def test_einheiten_beim_mieterwechsel_teilen_sich_den_anteil():
+    """Sonst zählte das Haus drei Einheiten statt zwei."""
+    g = verteilung.gewichte("einheiten", _wechsel_im_haus(date(JAHR, 7, 15)),
+                            START, ENDE)
+    assert round(g["Vorher"] + g["Nachher"], 4) == 1.0
+    assert g["Beta"] == 1.0
+    assert round(sum(g.values()), 2) == 2.0
+
+
 def test_bewohnermonate_ueber_zwei_kalenderjahre():
     """Ein Wirtschaftsjahr Oktober–September berührt zwei Kalenderjahre."""
     start, ende = date(2024, 10, 1), date(2025, 9, 30)
@@ -123,6 +178,51 @@ def test_einzelwohnung_ohne_einheitenzuordnung_bleibt_eine_partei():
     b = verteilung.bezuege([_einheit("1. OG", 95)],
                            [_miete("", "Mieter Meier")], [], START, ENDE)
     assert verteilung.gewichte("flaeche", b, START, ENDE) == {"Mieter Meier": 95}
+    assert verteilung.ohne_einheit(b) == [], "eindeutig zugeordnet"
+
+
+def _schluessel(bezuege_, wert: str) -> dict:
+    return next(s for s in verteilung.vorschau(bezuege_, START, ENDE)
+                if s["wert"] == wert)
+
+
+def test_partei_ohne_zuordenbare_einheit_wird_gemeldet():
+    """Fund XCII: bei zwei Einheiten bleibt ein Mietverhältnis ohne Einheit
+    ohne Fläche — die Partei fiel stumm aus der Flächenverteilung, bekam keine
+    Kosten und ihre Vorauszahlung voll erstattet."""
+    b = verteilung.bezuege([_einheit("EG", 60), _einheit("OG", 90)],
+                           [_miete("", "Mieter Ohne")], [], START, ENDE)
+    assert verteilung.ohne_einheit(b) == ["Mieter Ohne"]
+    assert "Mieter Ohne" not in verteilung.gewichte("flaeche", b, START, ENDE)
+
+    flaeche = _schluessel(b, "flaeche")
+    assert flaeche["parteien_ohne_einheit"] == ["Mieter Ohne"]
+    assert flaeche["moeglich"] is False
+    assert flaeche["ableitbar"] is False
+
+    # Personen trifft es nicht — dort ist die Partei mit dabei.
+    personen = _schluessel(b, "personen")
+    assert personen["parteien_ohne_einheit"] == []
+    assert personen["moeglich"] is True
+
+
+def test_abweichende_schreibweise_der_einheit_wird_gemeldet():
+    """`Miete.einheit` ist Freitext: „eg" trifft die Einheit „EG" nicht."""
+    b = verteilung.bezuege(
+        [_einheit("EG", 60), _einheit("OG", 90)],
+        [_miete("eg", "Mieter Klein"), _miete("OG", "Beta")], [], START, ENDE)
+    assert verteilung.ohne_einheit(b) == ["Mieter Klein"]
+    assert _schluessel(b, "flaeche")["parteien_ohne_einheit"] == ["Mieter Klein"]
+
+
+def test_saubere_zuordnung_meldet_keine_fehlzuordnung():
+    b = verteilung.bezuege([_einheit("EG", 60), _einheit("OG", 90)],
+                           [_miete("EG", "Alpha"), _miete("OG", "Beta")],
+                           [], START, ENDE)
+    assert verteilung.ohne_einheit(b) == []
+    for wert in verteilung.SCHLUESSEL:
+        assert _schluessel(b, wert)["parteien_ohne_einheit"] == []
+    assert _schluessel(b, "flaeche")["moeglich"] is True
 
 
 # ------------------------------------------------------------------ Endpunkte
@@ -210,6 +310,7 @@ def test_schluessel_vorschau_zeigt_gewichte_und_fehlzuordnung():
         assert nach_wert["personen"]["gewichte"] == {"Mieter Alpha": 1,
                                                      "Mieter Beta": 3}
         assert nach_wert["verbrauch"]["moeglich"] is False
+        assert nach_wert["flaeche"]["parteien_ohne_einheit"] == []
         assert v["unbekannte_vorauszahlungen"] == []
 
 
@@ -282,6 +383,56 @@ def test_unbekannter_schluessel_ueber_die_api():
         antwort = c.post(f"/api/zeitraeume/{zid}/positionen",
                          json={"kostenart": "Wasser", "schluessel": "mondphase"})
         assert antwort.status_code == 400
+
+
+def test_unbekannter_schluessel_beim_aendern_wird_abgelehnt():
+    """Beim Umstellen gilt derselbe Riegel wie beim Anlegen — sonst stünde in
+    der Position ein Schlüssel, zu dem es keine Ableitung gibt, und die alten
+    Gewichte blieben unter falschem Namen stehen."""
+    with TestClient(app) as c:
+        _, zid = _objekt_mit_zwei_wohnungen(c)
+        pid = c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Wasser", "betrag": 400.0,
+            "schluessel": "flaeche"}).json()["id"]
+
+        antwort = c.patch(f"/api/positionen/{pid}", json={"schluessel": "mondphase"})
+        assert antwort.status_code == 400
+        assert "mondphase" in antwort.json()["detail"]
+
+        zeile = next(k for k in c.get(f"/api/zeitraeume/{zid}").json()["checkliste"]
+                     if k["kostenart"] == "Wasser")
+        assert zeile["schluessel"] == "flaeche", "der alte Schlüssel bleibt stehen"
+
+
+def test_geld_beim_mieterwechsel_trifft_die_richtige_wohnung():
+    """Fund XCI am Geld: 500 € Wasser, EG 60 m² mit Wechsel, OG 90 m².
+    Das OG trägt 60 % = 300 €, die beiden EG-Parteien zusammen 200 €.
+    Vorher waren es 214,29 € für das OG — und dieselbe Zahl auch dann, wenn
+    der Wechsel erst am 21.12. stattfand."""
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zwei_wohnungen(c)
+        # Der EG-Mieter zieht zur Jahresmitte aus, ein neuer kommt nach.
+        mieten = c.get(f"/api/objekte/{slug}/mieten").json()
+        eg = next(m for m in mieten if m["einheit"] == "EG")
+        c.patch(f"/api/stammdaten/mieten/{eg['id']}",
+                json={"bis_datum": f"{JAHR}-06-30"})
+        neu = c.post(f"/api/objekte/{slug}/mieten", json={
+            "einheit": "EG", "partei": "Mieter Gamma", "personen": 1,
+            "kaltmiete": 500.0, "email": "gamma@example.org",
+            "ab_datum": f"{JAHR}-07-01"})
+        assert neu.status_code == 201, neu.text
+
+        pos = c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Wasser", "betrag": 500.0, "schluessel": "flaeche"})
+        assert pos.status_code == 201, pos.text
+
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        parteien = a["parteien"]
+        assert parteien["Mieter Beta"]["kosten"] == 300.0
+        assert round(parteien["Mieter Alpha"]["kosten"]
+                     + parteien["Mieter Gamma"]["kosten"], 2) == 200.0
+        # Invariante: die Summe der Anteile ist exakt die Gesamtsumme
+        assert round(sum(p["kosten"] for p in parteien.values()), 2) == 500.0
 
 
 # ------------------------------------------------------- Wieder öffnen (LXVI)

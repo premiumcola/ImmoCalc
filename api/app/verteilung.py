@@ -32,15 +32,18 @@ SCHLUESSEL: dict[str, dict] = {
     "flaeche": {
         "titel": "Fläche", "einheit": "m²", "ableitbar": True,
         "hinweis": "Wohn-/Nutzfläche je Einheit; Terrasse und Nebenfläche "
-                   "zählen zur Hälfte.",
+                   "zählen zur Hälfte. Bei einem Mieterwechsel teilen sich "
+                   "Vor- und Nachmieter die Fläche nach Wohndauer.",
     },
     "personen": {
         "titel": "Personen", "einheit": "Pers.", "ableitbar": True,
-        "hinweis": "Personenzahl des laufenden Mietverhältnisses.",
+        "hinweis": "Personenzahl des Mietverhältnisses, gewichtet nach "
+                   "Wohndauer im Zeitraum.",
     },
     "einheiten": {
         "titel": "Einheiten", "einheit": "Anteil", "ableitbar": True,
-        "hinweis": "Alle Parteien zu gleichen Teilen.",
+        "hinweis": "Alle Einheiten zu gleichen Teilen; bei einem Wechsel "
+                   "teilen sich Vor- und Nachmieter den Anteil ihrer Einheit.",
     },
     "bewohnermonate": {
         "titel": "Bewohnermonate", "einheit": "Pers.-Mon.", "ableitbar": True,
@@ -71,13 +74,20 @@ class UnbekannterSchluessel(ValueError):
 
 @dataclass
 class Bezug:
-    """Eine Partei mit allem, woraus sich ihr Gewicht ergeben kann."""
+    """Eine Partei mit allem, woraus sich ihr Gewicht ergeben kann.
+
+    `zugeordnet` sagt, ob sich die genannte Einheit im Objekt wiederfindet.
+    `Miete.einheit` ist Freitext: steht dort nichts (bei mehreren Einheiten)
+    oder eine abweichende Schreibweise, dann gibt es keine Fläche, die Partei
+    fällt aus der Flächenverteilung — und bekäme ihre Vorauszahlung voll
+    erstattet, ohne dass es jemandem auffällt."""
     partei: str
     einheit: str = ""
     flaeche: float | None = None
     personen: int = 1
     ab: date | None = None
     bis: date | None = None
+    zugeordnet: bool = True
 
 
 def _gesamtflaeche(e: Einheit) -> float | None:
@@ -125,7 +135,8 @@ def bezuege(einheiten: list[Einheit], mieten: list[Miete],
         treffer.append(Bezug(
             partei=m.partei, einheit=name, flaeche=flaechen.get(name),
             personen=m.personen or personen_je.get(m.partei, 1),
-            ab=max(m.ab_datum, start), bis=min(m.bis_datum or ende, ende)))
+            ab=max(m.ab_datum, start), bis=min(m.bis_datum or ende, ende),
+            zugeordnet=not einheiten or name in flaechen))
 
     for e in einheiten:
         if e.bezeichnung in belegt:
@@ -154,18 +165,46 @@ def _monate(b: Bezug, start: date, ende: date) -> float:
                      for j in range(von.year, bis.year + 1)), 4)
 
 
+def _zeitraum_monate(start: date, ende: date) -> float:
+    """Länge des Abrechnungszeitraums in Monaten, taggenau — die Bezugsgröße,
+    an der die Wohndauer gemessen wird."""
+    if ende < start:
+        return 0.0
+    return round(sum(monate_im_jahr(start, ende, j)
+                     for j in range(start.year, ende.year + 1)), 4)
+
+
+def _zeitanteil(b: Bezug, start: date, ende: date) -> float:
+    """Welchen Teil des Zeitraums diese Partei bewohnt hat: 1.0 durchgehend,
+    0.5 ein halbes Jahr."""
+    gesamt = _zeitraum_monate(start, ende)
+    if gesamt <= 0:
+        return 0.0
+    return _monate(b, start, ende) / gesamt
+
+
 def _gewicht(schluessel: str, b: Bezug, start: date, ende: date) -> float | None:
-    """Gewicht einer Partei — None heißt: nimmt an diesem Schlüssel nicht teil."""
-    if schluessel == "flaeche":
-        return b.flaeche if b.flaeche else None
-    if schluessel == "personen":
-        return float(b.personen or 0) or None
-    if schluessel == "einheiten":
-        return 1.0
+    """Gewicht einer Partei — None heißt: nimmt an diesem Schlüssel nicht teil.
+
+    Alle Gewichte sind zeitanteilig. Ohne das bekam bei einem Mieterwechsel
+    jede der beiden Parteien die volle Fläche ihrer Einheit angerechnet: eine
+    Wohnung mit Wechsel zählte doppelt, und die Nachbarwohnung ohne Wechsel
+    zahlte entsprechend zu wenig — beim Wechsel am 21.12. genauso viel wie bei
+    einem Wechsel zur Jahresmitte. Mit dem Zeitanteil teilen sich Vor- und
+    Nachmieter die 60 m² ihrer Einheit nach Wohndauer, und die Summe je
+    Einheit stimmt wieder."""
     if schluessel == "bewohnermonate":
-        monate = _monate(b, start, ende)
-        return round((b.personen or 0) * monate, 4) or None
-    return None
+        # Schon in Personen-Monaten gemessen — dort steckt die Dauer im Wert.
+        return round((b.personen or 0) * _monate(b, start, ende), 4) or None
+    if schluessel == "flaeche":
+        basis = b.flaeche or 0.0
+    elif schluessel == "personen":
+        basis = float(b.personen or 0)
+    elif schluessel == "einheiten":
+        basis = 1.0
+    else:
+        return None
+    return round(basis * _zeitanteil(b, start, ende), 4) or None
 
 
 def gewichte(schluessel: str, bezuege_: list[Bezug],
@@ -205,20 +244,35 @@ def ableiten(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float]
     return gewichte(schluessel, stammdaten(session, z), z.start, z.ende)
 
 
+def ohne_einheit(bezuege_: list[Bezug]) -> list[str]:
+    """Parteien, deren Mietverhältnis auf keine Einheit des Objekts zeigt."""
+    return sorted({b.partei for b in bezuege_ if not b.zugeordnet})
+
+
 def vorschau(bezuege_: list[Bezug], start: date, ende: date) -> list[dict]:
     """Alle Schlüssel mit den Gewichten, die dabei herauskämen — damit man
-    sieht, worauf man sich einlässt, bevor man sich festlegt."""
+    sieht, worauf man sich einlässt, bevor man sich festlegt.
+
+    `parteien_ohne_einheit` nennt die Parteien, die bei diesem Schlüssel leer
+    ausgingen, weil ihre Einheit nicht zu finden ist. Solange dort jemand
+    steht, gilt der Schlüssel nicht als sauber ableitbar: er würde rechnen, als
+    gäbe es die Partei nicht — sie bekäme keine Kosten und ihre Vorauszahlung
+    voll erstattet."""
+    fehlzuordnung = ohne_einheit(bezuege_)
     out = []
     for wert, meta in SCHLUESSEL.items():
         g = gewichte(wert, bezuege_, start, ende)
+        betroffen = [name for name in fehlzuordnung if name not in g]
         summe = round(sum(g.values()), 4)
         out.append({
             "wert": wert, "titel": meta["titel"], "einheit": meta["einheit"],
-            "ableitbar": meta["ableitbar"], "hinweis": meta["hinweis"],
+            "ableitbar": meta["ableitbar"] and not betroffen,
+            "hinweis": meta["hinweis"],
             "gewichte": g, "summe": summe,
             "prozent": {k: round(v / summe * 100, 2) for k, v in g.items()}
             if summe > 0 else {},
-            "moeglich": bool(g),
+            "moeglich": bool(g) and not betroffen,
+            "parteien_ohne_einheit": betroffen,
         })
     return out
 

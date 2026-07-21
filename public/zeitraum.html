@@ -91,12 +91,24 @@
                 white-space:nowrap}
   /* Auf dem Handy wird es sonst zu eng — dort trägt das Symbol allein. */
   @media(max-width:409px){ .scanmini .st{display:none} }
-  .nachtrag{display:flex;gap:8px;margin-top:10px}
-  .nachtrag input{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;
+  .nachtrag{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .nachtrag input{flex:1;min-width:130px;border:1.5px solid var(--line);
+    border-radius:10px;padding:10px 12px;
     font:500 14px var(--body);min-height:44px;background:var(--sheet)}
   .nachtrag input:focus{outline:none;border-color:var(--teal)}
   .nachtrag button{border:none;border-radius:10px;padding:10px 16px;background:var(--teal);
     color:#fff;font:600 13px var(--disp);cursor:pointer;min-height:44px}
+  /* Eine Kostenart aus dem Katalog, zu der es noch keine Position gibt:
+     hier entsteht sie. Der Betrag ist freiwillig — wer den Beleg noch sucht,
+     legt die Position leer an und trägt ihn später nach. */
+  .neu .text{display:block;font:400 11.5px var(--body);color:var(--soft);
+             line-height:1.45;margin:10px 0 0}
+  /* Entfernen steht bewusst am Ende und leise: es ist die seltenste Handlung
+     an einer Position und darf nicht neben „Übernehmen" um Klicks buhlen. */
+  .entfernen{margin-top:12px;border:none;background:transparent;color:var(--soft);
+    text-decoration:underline;text-underline-offset:3px;cursor:pointer;
+    font:600 12px var(--disp);padding:10px 2px;min-height:44px}
+  .entfernen:hover{color:var(--neg)}
   /* Verteilung: Schlüssel wählen, Gewichte lesen und überschreiben.
      Die Zahl allein („Büro 4.1398") sagt niemandem etwas — erst Maßeinheit
      und Prozentanteil machen sie lesbar. */
@@ -256,14 +268,27 @@ function bannerHtml() {
     <span>Frist § 556 BGB</span><span class="days">${tage}</span></div>`;
 }
 
+/* Welche Belege zu einer Kostenart gehören. Die API gruppiert die Dokumente
+   des Zeitraums bereits nach Art (`belege_je_art`) — das ist die verlässliche
+   Quelle. Scans aus der Checkliste laufen allerdings unter der Dokumentart
+   „Nebenkosten"; für sie greift der Dateiname, der nach Jahr und Art mit der
+   Kostenart beginnt. */
+function belegeZu(kostenart) {
+  const gruppe = (daten.belege_je_art || {})[kostenart];
+  if (gruppe?.length) return gruppe;
+  const stamm = kostenart.toLowerCase().split(/[ /]/)[0];
+  return (daten.dokumente || []).filter(d =>
+    (d.dateiname || '').toLowerCase().includes(stamm));
+}
+
+const belegLinks = liste => `<div class="belege">${liste.map(d =>
+  `<a href="#" data-beleg="${d.id}" title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}</a>`
+).join('')}</div>`;
+
 function belegeHtml(kostenart) {
-  const alle = daten.dokumente.filter(d =>
-    (d.dateiname || '').toLowerCase().includes(
-      kostenart.toLowerCase().split(/[ /]/)[0]));
+  const alle = belegeZu(kostenart);
   if (!alle.length) return '<div class="belege"><span class="kein">Kein Beleg hinterlegt</span></div>';
-  return `<div class="belege">${alle.map(d =>
-    `<a href="#" data-beleg="${d.id}" title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}</a>`
-  ).join('')}</div>`;
+  return belegLinks(alle);
 }
 
 const schluesselMeta = wert =>
@@ -285,8 +310,13 @@ function verteilungHtml(k) {
   const abzuleiten = meta?.moeglich ? Object.entries(meta.gewichte) : [];
   const gleich = abzuleiten.length === eintraege.length &&
     abzuleiten.every(([p, w]) => Number(k.anteile?.[p] ?? NaN) === Number(w));
+  /* Lässt sich der Schlüssel nicht aus den Stammdaten ableiten, bleiben die
+     Gewichte leer — ohne Eingabefelder käme man aus dieser Lage nie heraus.
+     Deshalb die Parteien des Objekts mit 0 anbieten und von Hand füllen. */
+  const felder = eintraege.length || !bearbeitbar ? eintraege
+    : (schluessel?.parteien || []).map(p => [p.partei, 0]);
 
-  const zeilen = eintraege.map(([p, w]) => `
+  const zeilen = felder.map(([p, w]) => `
     <div class="gw">
       <span class="gn">${esc(p)}</span>
       ${bearbeitbar
@@ -298,7 +328,7 @@ function verteilungHtml(k) {
     </div>`).join('');
 
   const knoepfe = bearbeitbar ? `<div class="knopfzeile">
-      ${eintraege.length ? `<button class="haupt"
+      ${felder.length ? `<button class="haupt"
         data-gewichte="${k.position_id}">Verteilung übernehmen</button>` : ''}
       ${abzuleiten.length && !gleich ? `<button class="leise"
         data-ableiten="${k.position_id}"
@@ -373,7 +403,23 @@ function zeileHtml(k, i) {
                  value="${k.betrag || ''}" data-betrag="${k.position_id}"
                  aria-label="Betrag für ${esc(k.kostenart)}">
           <button data-speichern="${k.position_id}">Übernehmen</button>
-        </div>` : `<div class="zk">Noch keine Position — der Beleg legt sie an</div>`}
+        </div>
+        ${daten.status === 'in Arbeit' ? `<button class="entfernen"
+          data-entfernen="${k.position_id}"
+          data-art="${esc(k.kostenart)}">Position entfernen</button>` : ''}`
+        : `<div class="neu">
+          <div class="zk">Position anlegen</div>
+          <div class="nachtrag">
+            <input type="number" step="0.01" placeholder="Betrag (optional)"
+                   data-neubetrag="${i}"
+                   aria-label="Betrag für ${esc(k.kostenart)}">
+            <button data-anlegen="${esc(k.kostenart)}" data-index="${i}">Anlegen</button>
+          </div>
+          <span class="text">Für „${esc(k.kostenart)}“ ist in diesem Zeitraum
+            noch nichts erfasst. Die Position entsteht mit den Gewichten aus
+            den Stammdaten; Betrag und Verteilung lassen sich danach
+            jederzeit ändern.</span>
+        </div>`}
       </div>` : ''}
     </div>`;
 }
@@ -516,14 +562,17 @@ async function zeichnen() {
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
+    // Nach Dokumentart gruppiert — so, wie die API sie liefert.
+    const gruppen = Object.entries(daten.belege_je_art || {})
+      .filter(([, liste]) => liste.length)
+      .sort(([a], [b]) => a.localeCompare(b, 'de'));
     rumpf = daten.dokumente.length
-      ? `<div class="karte"><h3>${daten.dokumente.length} Belege</h3>
-          <div class="belege">${daten.dokumente.map(d =>
-            `<a href="#" data-beleg="${d.id}" title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}</a>`
-          ).join('')}</div></div>`
+      ? gruppen.map(([art, liste]) => `<div class="karte">
+          <h3>${esc(art || 'Ohne Art')} · ${liste.length}</h3>
+          ${belegLinks(liste)}</div>`).join('')
       : `<div class="empty"><div class="big">Noch keine Belege</div>
-          <p>Dokumente aus dem Eingang landen hier, sobald sie diesem
-             Zeitraum zugeordnet sind.</p></div>`;
+          <p>Fotografiere in der Checkliste einen Beleg zu einer Position ab —
+             er wird in der Cloud abgelegt und erscheint dann hier.</p></div>`;
   }
 
   inhalt.innerHTML = kopf + rumpf;
@@ -623,6 +672,52 @@ async function verteilungAbleiten(knopf) {
     await api(`/positionen/${knopf.dataset.ableiten}`,
               { method: 'PATCH', body: { anteile: meta.gewichte } });
     melde(`Gewichte aus den Stammdaten übernommen · ${meta.titel}`, 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* Eine Kostenart des Katalogs, zu der es noch keine Position gibt, wird hier
+   zu einer. Erst danach gibt es einen Betrag, eine Verteilung und damit
+   überhaupt eine Zeile in der Abrechnung. Die Gewichte leitet der Server aus
+   den Stammdaten ab — mitgegeben wird nur, was der Nutzer eingetippt hat. */
+async function positionAnlegen(knopf) {
+  const kostenart = knopf.dataset.anlegen;
+  const i = Number(knopf.dataset.index);
+  const feld = inhalt.querySelector(`[data-neubetrag="${i}"]`);
+  const betrag = Number(feld?.value) || 0;
+  knopf.disabled = true;
+  knopf.textContent = 'Lege an …';
+  try {
+    await api(`/zeitraeume/${zid}/positionen`,
+              { method: 'POST', body: { kostenart, betrag } });
+    melde(betrag ? `„${kostenart}“ erfasst · ${eur(betrag)}`
+                 : `„${kostenart}“ angelegt — jetzt den Betrag eintragen`, 'pos');
+    offen.add(i);
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Anlegen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* Entfernen mit Rückfrage: die Kostenart bleibt im Katalog, die Zeile taucht
+   danach wieder als „noch nicht erfasst" auf. Verloren geht nur der Betrag. */
+async function positionEntfernen(knopf) {
+  const art = knopf.dataset.art;
+  const ja = await frage(`„${art}“ entfernen?`,
+    'Betrag und Verteilung dieser Position werden gelöscht. Die Kostenart '
+    + 'bleibt im Katalog der Immobilie stehen und lässt sich jederzeit neu '
+    + 'erfassen. Hinterlegte Belege bleiben unangetastet.',
+    { knopf: 'Entfernen', gefahr: true });
+  if (!ja) return;
+  knopf.disabled = true;
+  try {
+    await api(`/positionen/${knopf.dataset.entfernen}`, { method: 'DELETE' });
+    melde(`„${art}“ entfernt`, '');
     await laden();
   } catch (fehler) {
     knopf.disabled = false;
@@ -770,6 +865,12 @@ inhalt.addEventListener('click', async e => {
   const ableiten = e.target.closest('[data-ableiten]');
   if (ableiten) return verteilungAbleiten(ableiten);
 
+  const anlegen = e.target.closest('[data-anlegen]');
+  if (anlegen) return positionAnlegen(anlegen);
+
+  const entfernen = e.target.closest('[data-entfernen]');
+  if (entfernen) return positionEntfernen(entfernen);
+
   const auf = e.target.closest('[data-auf]');
   if (auf) {
     const i = Number(auf.dataset.auf);
@@ -840,6 +941,9 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
     paket.append('kategorie', 'Nebenkosten');
     paket.append('jahr', String(jahr));
     paket.append('beschreibung', ziel.kostenart);
+    // Ohne den Zeitraum hinge der Beleg nur am Objekt — der Reiter „Belege"
+    // bliebe leer und die Zuordnung müsste man von Hand nachholen.
+    paket.append('zeitraum_id', String(daten.id));
     paket.append('datei', pdf, 'scan.pdf');
 
     const [antwort, vorschlag] = await Promise.all([
@@ -882,7 +986,7 @@ async function erkennen(bild) {
 async function betragVorschlagen(kostenart, vorschlag) {
   if (!vorschlag?.betrag) return;
   const zeile = daten.checkliste.find(k => k.kostenart === kostenart);
-  if (!zeile?.position_id) return;
+  if (!zeile) return;
   const betrag = vorschlag.betrag.toLocaleString('de-DE',
     { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const ja = await frage('Betrag aus dem Beleg übernehmen?',
@@ -893,9 +997,17 @@ async function betragVorschlagen(kostenart, vorschlag) {
     + `. Als Betrag für „${kostenart}“ eintragen?`,
     { knopf: 'Übernehmen' });
   if (!ja) return;
-  await api(`/positionen/${zeile.position_id}`,
-            { method: 'PATCH', body: { betrag: vorschlag.betrag,
-                                       wertquelle: 'Scan' } });
+  // Gibt es die Position noch nicht, entsteht sie hier — sonst versickerte
+  // der erkannte Betrag an genau den Zeilen, die noch nichts haben.
+  if (zeile.position_id) {
+    await api(`/positionen/${zeile.position_id}`,
+              { method: 'PATCH', body: { betrag: vorschlag.betrag,
+                                         wertquelle: 'Scan' } });
+  } else {
+    await api(`/zeitraeume/${zid}/positionen`,
+              { method: 'POST', body: { kostenart, betrag: vorschlag.betrag,
+                                        wertquelle: 'Scan' } });
+  }
 }
 
 await laden();

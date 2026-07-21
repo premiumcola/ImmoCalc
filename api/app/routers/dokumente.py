@@ -18,13 +18,13 @@ from datetime import date
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Response,
                      UploadFile)
 from pydantic import BaseModel
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from .. import ocr
 from ..db import get_session
-from ..models import Dokument, Objekt
+from ..migrate import eindeutigkeit_sichern
+from ..models import Dokument, Objekt, Zeitraum
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
 from ..wachdienst import zustand as wachdienst_zustand
@@ -71,23 +71,41 @@ def _endung(name: str) -> str:
 # Vermutung und Darstellung
 # --------------------------------------------------------------------------
 
-def _vorschlag(d: Dokument) -> dict:
-    """Was die Ablage vermutet: Art und Jahr.
+def _art_im_namen(lesbar: str) -> str:
+    """Steht die Art wörtlich im Namen („2024_Steuer_…"), gilt sie.
 
-    Die Worterkennung kommt aus `ocr.kategorie_aus_text` — dieselbe Liste, die
-    auch den abfotografierten Beleg einordnet. Zwei Listen wären zwei
-    Wahrheiten. Beim Dateinamen hilft sie nur, wenn er etwas hergibt; ein
-    Kamerascan heißt „scan.pdf", dort liefert die Texterkennung den Vorschlag
-    schon beim Hochladen mit.
+    Ab Wortanfang gesucht — sonst macht „Steuerberater" jede Post zur
+    Steuerakte und „Nebenkostenwiderspruch" bliebe zufällig richtig."""
+    for art in DOKUMENTARTEN:
+        if re.search(r"\b" + re.escape(art.lower()), lesbar):
+            return art
+    return ""
+
+
+def _vorschlag(d: Dokument) -> dict:
+    """Was die Ablage vermutet: Art, Jahr — und wie sicher sie sich ist.
+
+    Die Worterkennung kommt aus `ocr` — dieselbe Liste, die auch den
+    abfotografierten Beleg einordnet. Zwei Listen wären zwei Wahrheiten. Beim
+    Dateinamen wird sie streng gelesen (`kategorie_aus_dateiname`): ein Name
+    ist kurz, ein Zufallstreffer mittelt sich dort nicht weg, und an dieser
+    Vermutung hängt die Automatik. Ein Kamerascan heißt „scan.pdf"; dort
+    liefert die Texterkennung den Vorschlag schon beim Hochladen mit.
+
+    `sicher` sagt, ob die Vermutung gut genug für eine Ablage ohne Rückfrage
+    ist. Alles andere wird angezeigt, aber nicht ausgeführt.
     """
-    name = d.dateiname.lower()
-    lesbar = name.replace("_", " ").replace("-", " ")
-    kategorie = (d.kategorie
-                 or next((a for a in DOKUMENTARTEN if a.lower() in lesbar), "")
-                 or ocr.kategorie_aus_text(lesbar))
+    lesbar = d.dateiname.lower().replace("_", " ").replace("-", " ")
+    genannt = _art_im_namen(lesbar)
+    erkannt, punkte = ocr.kategorie_aus_dateiname(lesbar)
+    kategorie = d.kategorie or genannt or erkannt
     jahre = re.findall(r"(20\d{2})", d.dateiname)
-    return {"kategorie": kategorie,
-            "jahr": d.jahr or (int(jahre[0]) if jahre else None)}
+    return {
+        "kategorie": kategorie,
+        "jahr": d.jahr or (int(jahre[0]) if jahre else None),
+        "sicher": bool(d.kategorie or genannt
+                       or (erkannt and punkte >= ocr.MINDESTPUNKTE)),
+    }
 
 
 def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
@@ -97,6 +115,7 @@ def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
         "groesse": d.groesse, "status": d.status,
         "kategorie": d.kategorie, "jahr": d.jahr,
         "erkannt_am": d.erkannt_am.isoformat() if d.erkannt_am else None,
+        "zeitraum_id": d.zeitraum_id,
         "objekt": o.slug if o else None,
         "objekt_name": o.name if o else None,
         # Ein Eintrag ohne Datei in der Cloud — nur noch zu entfernen oder
@@ -110,13 +129,28 @@ def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
 # Ablegen in der Cloud — eine Stelle für Zuordnen, Korrigieren und Automatik
 # --------------------------------------------------------------------------
 
-def _freier_name(client, ordner: str, name: str) -> str:
-    """Haengt -2, -3 an, falls der Name schon vergeben ist — nie ueberschreiben."""
+def _pfad_vergeben(session: Session, pfad: str) -> bool:
+    """Zeigt schon ein Eintrag dorthin? Der Unique-Index würde es später
+    ohnehin verhindern — nur dann läge die Datei bereits am neuen Platz und
+    die Datenbank am alten. Also vorher fragen."""
+    ohne = pfad.strip("/")
+    return session.exec(
+        select(Dokument).where(Dokument.pfad.in_((f"/{ohne}", ohne)))).first() is not None
+
+
+def _freier_name(session: Session, client, ordner: str, name: str) -> str:
+    """Haengt -2, -3 an, falls der Name schon vergeben ist — nie ueberschreiben.
+
+    Gefragt wird in der Cloud *und* in der Datenbank. Hat der Nutzer die Datei
+    dort gelöscht, ist der Platz in der Cloud frei, der Eintrag zeigt aber
+    weiter darauf — ohne diese zweite Frage verschöbe die Automatik die Datei
+    und scheiterte danach am Eintrag."""
     stamm, punkt, endung = name.rpartition(".")
     stamm = stamm or name
     endung = f".{endung}" if punkt else ""
     kandidat, n = name, 2
-    while client.existiert(f"{ordner}/{kandidat}"):
+    while (client.existiert(f"{ordner}/{kandidat}")
+           or _pfad_vergeben(session, f"{ordner}/{kandidat}")):
         kandidat = f"{stamm}-{n}{endung}"
         n += 1
         if n > 50:
@@ -142,7 +176,7 @@ def _einsortieren(session: Session, d: Dokument, o: Objekt, kategorie: str,
         return d.pfad, name
     client = client or verbindung(session)
     client.ordner_anlegen(ordner)
-    frei = _freier_name(client, ordner, name)
+    frei = _freier_name(session, client, ordner, name)
     client.verschiebe(d.pfad, f"{ordner}/{frei}")
     return f"/{ordner}/{frei}", frei
 
@@ -157,23 +191,23 @@ _index_geprueft = False
 def _eindeutigkeit_sichern(session: Session) -> None:
     """Ein Pfad, ein Eintrag — durchgesetzt von der Datenbank.
 
-    Additiv: der Index kommt hinzu, keine Spalte ändert sich. Enthält eine
-    gewachsene Datenbank bereits Doppel, scheitert das Anlegen — dann bleibt
-    es bei der Sperre im Code, und die Doppel entfernt der Nutzer selbst.
+    Gesetzt wird der Index beim Start (`migrate.migriere`); hier steht nur das
+    Netz darunter, falls er dort nicht durchkam. Der Merker fällt erst nach
+    dem Erfolg — ein misslungener Versuch soll wiederholt werden, sonst liefe
+    die Datenbank bis zum nächsten Neustart ohne Eindeutigkeit.
     """
     global _index_geprueft
     if _index_geprueft:
         return
-    _index_geprueft = True
     try:
-        session.connection().execute(text(
-            'CREATE UNIQUE INDEX IF NOT EXISTS "ux_dokument_pfad" '
-            'ON dokument (pfad)'))
+        gesetzt = eindeutigkeit_sichern(session.connection())
         session.commit()
+        # Doppel in der Ablage? Dann steht der Index noch aus — beim nächsten
+        # Lauf erneut versuchen, der Nutzer räumt die Doppel ja auf.
+        _index_geprueft = bool(gesetzt)
     except Exception as fehler:                       # noqa: BLE001
         session.rollback()
-        log.warning("Doppelte Pfade in der Ablage — Index nicht gesetzt: %s",
-                    fehler)
+        log.warning("Eindeutigkeit der Ablage nicht gesetzt: %s", fehler)
 
 
 def _aufnehmen(session: Session, o: Objekt, eintrag) -> Dokument | None:
@@ -195,26 +229,50 @@ def _aufnehmen(session: Session, o: Objekt, eintrag) -> Dokument | None:
     return d
 
 
+def _bezeichnung(name: str, jahr: int | None) -> str:
+    """Der ursprüngliche Name als Bezeichnung — ohne Endung, ohne das Jahr.
+
+    Ohne sie hießen alle Belege eines Jahres gleich: aus
+    „Grundsteuerbescheid 2024.pdf" wurde „2024_Steuer.pdf" und aus dem
+    zweiten Bescheid „2024_Steuer-2.pdf". Was der Nutzer selbst benannt hat,
+    bleibt erhalten — das Jahr steht ohnehin schon vorn."""
+    stamm = name.rsplit(".", 1)[0] if "." in name else name
+    if jahr:
+        stamm = re.sub(rf"\b{jahr}\b", " ", stamm)
+    return re.sub(r"\s+", " ", stamm).strip(" -_")
+
+
 def _automatisch(session: Session, d: Dokument, o: Objekt, client) -> bool:
     """Ordnet zu, wo nichts zu raten bleibt: die Immobilie steht durch den
-    Ordner fest, die Art ergibt sich aus dem Namen. Alles andere wartet auf
-    eine Entscheidung."""
+    Ordner fest, die Art steht erkennbar im Namen. Alles andere wartet auf
+    eine Entscheidung — eine unsichere Vermutung wird angezeigt, nicht
+    ausgeführt."""
     vorschlag = _vorschlag(d)
-    if not vorschlag["kategorie"] or not o.nc_ordner:
+    if not vorschlag["kategorie"] or not vorschlag["sicher"] or not o.nc_ordner:
         return False
-    name = dateiname(vorschlag["jahr"], vorschlag["kategorie"], "",
+    name = dateiname(vorschlag["jahr"], vorschlag["kategorie"],
+                     _bezeichnung(d.dateiname, vorschlag["jahr"]),
                      _endung(d.dateiname))
+    alt = d.pfad
     try:
         d.pfad, d.dateiname = _einsortieren(session, d, o,
                                             vorschlag["kategorie"], name, client)
     except NextcloudFehler as fehler:
-        log.warning("Automatik übersprungen für %s: %s", d.pfad, fehler)
+        log.warning("Automatik übersprungen für %s: %s", alt, fehler)
         return False
     d.kategorie = vorschlag["kategorie"]
     d.jahr = vorschlag["jahr"]
     d.status = "zugeordnet"
     session.add(d)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # Der Zielpfad ist inzwischen vergeben. Die Datei liegt jetzt zwar am
+        # neuen Platz, der Eintrag bleibt aber offen — der Nutzer sieht sie im
+        # Eingang und entscheidet. Der Scanlauf geht weiter.
+        session.rollback()
+        log.warning("Automatik nicht gespeichert (Pfad doppelt): %s", alt)
+        return False
     return True
 
 
@@ -253,8 +311,14 @@ def _scanne(session: Session) -> dict:
             if not d:
                 continue
             neu += 1
-            if _automatisch(session, d, o, client):
-                automatisch += 1
+            try:
+                if _automatisch(session, d, o, client):
+                    automatisch += 1
+            except Exception as fehler:               # noqa: BLE001
+                # Eine Datei darf den ganzen Lauf nicht anhalten — der Rest des
+                # Eingangs soll trotzdem hereinkommen.
+                session.rollback()
+                log.warning("Automatik gescheitert für %s: %s", e.pfad, fehler)
     return {"neu": neu, "automatisch": automatisch,
             "offen": neu - automatisch}
 
@@ -265,7 +329,7 @@ def _scanne(session: Session) -> dict:
 
 @router.get("")
 def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
-          status: str = "", suche: str = "",
+          status: str = "", suche: str = "", zeitraum: int | None = None,
           session: Session = Depends(get_session)) -> dict:
     """Alle Dokumente, gefiltert. Die Auswahlwerte kommen mit — die Oberfläche
     baut ihre Filter aus dem, was wirklich da ist."""
@@ -283,6 +347,7 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                 and (not kategorie or d.kategorie == kategorie)
                 and (jahr is None or d.jahr == jahr)
                 and (not status or d.status == status)
+                and (zeitraum is None or d.zeitraum_id == zeitraum)
                 and (not begriff or begriff in d.dateiname.lower()))
 
     gefiltert = [d for d in alle if passt(d)]
@@ -371,15 +436,42 @@ def _cloud_pflicht(o: Objekt) -> None:
                                  "Platz. Bitte zuerst den Ordner verknüpfen.")
 
 
+def _pruefe_zeitraum(session: Session, zeitraum_id: int | None) -> int | None:
+    """Der Beleg gehört zu einer Abrechnung — aber nur zu einer, die es gibt."""
+    if zeitraum_id is None:
+        return None
+    if not session.get(Zeitraum, zeitraum_id):
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    return zeitraum_id
+
+
+def _pfad_konflikt(session: Session, pfad: str) -> HTTPException:
+    """Nimmt die Änderung zurück und liefert die Meldung dazu.
+
+    Ein Eintrag zeigt schon auf diesen Ablageort. Früher lief das in einen
+    IntegrityError und damit in einen 500 — die Datei lag am Ziel, die
+    Datenbank zeigte auf den Eingang. Ehrlich sagen ist besser."""
+    session.rollback()
+    log.warning("Pfad bereits vergeben: %s", pfad)
+    return HTTPException(409, "Zu diesem Ablageort gibt es schon einen "
+                              "Eintrag. Bitte den vorhandenen Eintrag prüfen "
+                              "und gegebenenfalls entfernen.")
+
+
 @router.post("/scannen", status_code=201)
 async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   jahr: int | None = Form(None), beschreibung: str = Form(""),
+                  zeitraum_id: int | None = Form(None),
                   datei: UploadFile = File(...),
                   session: Session = Depends(get_session)) -> dict:
     """Nimmt ein abfotografiertes Dokument entgegen, benennt es nach Schema
-    und legt es direkt im richtigen Unterordner der Immobilie ab."""
+    und legt es direkt im richtigen Unterordner der Immobilie ab.
+
+    Kommt der Beleg von einer Abrechnung, wandert deren `zeitraum_id` mit —
+    sonst wäre er zwar abgelegt, aber am Zeitraum nie wiederzufinden."""
     o = _eindeutiges_objekt(session, objekt)
     _cloud_pflicht(o)
+    zeitraum_id = _pruefe_zeitraum(session, zeitraum_id)
 
     inhalt = await datei.read()
     if not inhalt:
@@ -391,20 +483,24 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     client = verbindung(session)
     try:
         client.ordner_anlegen(ziel_ordner)
-        name = _freier_name(client, ziel_ordner, name)
+        name = _freier_name(session, client, ziel_ordner, name)
         client.lege_ab(f"{ziel_ordner}/{name}", inhalt)
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
 
     d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
                  groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
-                 jahr=jahr, status="zugeordnet", erkannt_am=date.today())
+                 jahr=jahr, zeitraum_id=zeitraum_id, status="zugeordnet",
+                 erkannt_am=date.today())
     session.add(d)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as e:
+        raise _pfad_konflikt(session, f"/{ziel_ordner}/{name}") from e
     session.refresh(d)
     log.info("Scan abgelegt: %s", d.pfad)
     return {"id": d.id, "dateiname": name, "pfad": d.pfad, "abgelegt": True,
-            "objekt": o.slug}
+            "objekt": o.slug, "zeitraum_id": d.zeitraum_id}
 
 
 # --------------------------------------------------------------------------
@@ -413,14 +509,20 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
 class AenderungIn(BaseModel):
     """Alles, was sich an einem Dokument ändern lässt. Was nicht mitkommt,
-    bleibt wie es war — ein Endpunkt für Zuordnen und Korrigieren."""
+    bleibt wie es war — ein Endpunkt für Zuordnen und Korrigieren.
+
+    Ohne Schalter „nur umbenennen": der Name in der Datenbank ist der Name in
+    der Cloud. Beides auseinanderlaufen zu lassen hieße, einen Beleg zu
+    verlieren, den die App als abgelegt führt."""
     objekt: str | None = None
     kategorie: str | None = None
     jahr: int | None = None
     # Der Dateiname entsteht immer aus Jahr, Art und Bezeichnung — eine Regel
     # für die ganze Ablage. Umbenannt wird über die Bezeichnung.
     beschreibung: str | None = None
-    verschieben: bool = True
+    # Zu welcher Abrechnung der Beleg gehört. Mitgeschickt heißt gesetzt,
+    # `null` heißt gelöst.
+    zeitraum_id: int | None = None
 
 
 @router.patch("/{dokument_id}")
@@ -445,36 +547,45 @@ def aendern(dokument_id: int, data: AenderungIn,
     kategorie = data.kategorie or d.kategorie or "Sonstiges"
     jahr = data.jahr if "jahr" in gesetzt else d.jahr
     endung = _endung(d.dateiname)
+    # Vor dem ersten MOVE prüfen: was hier scheitert, soll die Datei in der
+    # Cloud noch nicht bewegt haben.
+    zeitraum_id = (_pruefe_zeitraum(session, data.zeitraum_id)
+                   if "zeitraum_id" in gesetzt else d.zeitraum_id)
 
     if {"kategorie", "jahr", "beschreibung", "objekt"} & gesetzt:
         name = dateiname(jahr, kategorie, data.beschreibung or "", endung)
     else:
         name = d.dateiname
 
-    verschoben = False
-    if data.verschieben and d.pfad.startswith("/"):
-        _cloud_pflicht(o)
-        try:
-            neuer_pfad, name = _einsortieren(session, d, o, kategorie, name)
-        except NextcloudFehler as e:
-            raise HTTPException(400, str(e)) from e
-        verschoben = neuer_pfad != d.pfad
-        d.pfad = neuer_pfad
-    elif data.verschieben:
+    # Die Datei wandert immer mit. Ein Eintrag, dessen Name nur in der
+    # Datenbank wechselt, wäre in der Cloud nicht mehr zu finden — und stünde
+    # trotzdem als „zugeordnet" da.
+    _cloud_pflicht(o)
+    if not d.pfad.startswith("/"):
         # Eintrag ohne Datei in der Cloud: Ehrlichkeit vor Erfolgsmeldung.
         raise HTTPException(409, "Zu diesem Eintrag gibt es keine Datei in der "
                                  "Cloud — bitte neu einscannen oder entfernen.")
+    try:
+        neuer_pfad, name = _einsortieren(session, d, o, kategorie, name)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    verschoben = neuer_pfad != d.pfad
+    d.pfad = neuer_pfad
 
     d.objekt_id = o.id
     d.kategorie = kategorie
     d.jahr = jahr
     d.dateiname = name
     d.status = "zugeordnet"
+    d.zeitraum_id = zeitraum_id
     session.add(d)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as e:
+        raise _pfad_konflikt(session, neuer_pfad) from e
     return {"ok": True, "id": d.id, "pfad": d.pfad, "dateiname": d.dateiname,
             "objekt": o.slug, "kategorie": kategorie, "jahr": jahr,
-            "verschoben": verschoben}
+            "zeitraum_id": d.zeitraum_id, "verschoben": verschoben}
 
 
 @router.delete("/{dokument_id}")
@@ -523,7 +634,7 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
     client = verbindung(session)
     try:
         client.ordner_anlegen(ordner)
-        name = _freier_name(client, ordner, name)
+        name = _freier_name(session, client, ordner, name)
         client.lege_ab(f"{ordner}/{name}", inhalt)
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
@@ -535,7 +646,10 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
     d.status = "zugeordnet"
     d.erkannt_am = date.today()
     session.add(d)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as e:
+        raise _pfad_konflikt(session, f"/{ordner}/{name}") from e
     return {"ok": True, "id": d.id, "pfad": d.pfad, "dateiname": name,
             "alt": alt,
             "hinweis": "Die vorherige Datei bleibt in der Nextcloud liegen."}

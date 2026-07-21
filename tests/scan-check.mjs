@@ -94,6 +94,12 @@ const pdfBytes = await page.evaluate(async () => {
 });
 writeFileSync('tests/screenshots/scan-beispiel.pdf', Buffer.from(pdfBytes));
 
+// Wie viele Dokumente kennt die Ablage vor dem Scan? Danach muss genau eines
+// mehr dastehen — sonst hat der Weg nur so ausgesehen, als hätte er geklappt.
+const gesamtVorher = await fetch(base + '/api/dokumente')
+  .then(a => a.json()).then(d => d.gesamt).catch(() => null);
+pruefe(typeof gesamtVorher === 'number', 'Ablage nicht abfragbar');
+
 // Dialog: eine echte Aufnahme ins Feld legen (ein 1x1-Bild überlebt
 // createImageBitmap nicht) und den Ablauf bis zum Ziel-Dialog fahren
 await page.evaluate(async () => {
@@ -128,10 +134,35 @@ if (dialog) {
 } else {
   console.log('   Ohne Rückfrage abgelegt (Immobilie und Art eindeutig)');
 }
-await page.waitForTimeout(1500);
-const text = await page.textContent('.kamera');
-pruefe(/Abgelegt|Eingang|Nextcloud/i.test(text), 'keine Rückmeldung: ' + text.trim());
-console.log('   Rückmeldung: ' + text.replace(/\s+/g, ' ').trim().slice(0, 80));
+
+// Der Knopf trägt genau drei Endzustände. Der Ruhetext ist keiner davon —
+// stünde er noch da, wäre der change-Handler nie angelaufen (etwa weil ein
+// Modul-Import gescheitert ist). Genau das muss rot werden, deshalb wird auf
+// einen der drei Endzustände gewartet und nicht auf ein loses Wort im Text.
+const ENDE = ['✓ Abgelegt', 'Fehlgeschlagen', 'Abgebrochen'];
+const ruhe = await page.waitForFunction(
+  enden => enden.includes(document.querySelector('.kamera .k1')?.textContent.trim()),
+  ENDE, { timeout: 12000, polling: 100 }).catch(() => null);
+
+const stand = (await page.textContent('.kamera .k1') || '').trim();
+const grund = (await page.textContent('.kamera .k2') || '').trim();
+if (!ruhe) {
+  pruefe(false, `Scan lief nicht an — Knopf steht bei "${stand}" · "${grund}"`);
+} else if (stand === '✓ Abgelegt') {
+  const gesamtNachher = await fetch(base + '/api/dokumente')
+    .then(a => a.json()).then(d => d.gesamt).catch(() => null);
+  pruefe(gesamtNachher === gesamtVorher + 1,
+    `Ablage meldet Erfolg, hat aber ${gesamtVorher} → ${gesamtNachher} Dokumente`);
+  console.log(`   Abgelegt: ${grund} (${gesamtVorher} → ${gesamtNachher})`);
+} else if (stand === 'Fehlgeschlagen'
+           && /Nextcloud|Cloud|verknüpft|Zugangsdaten/i.test(grund)) {
+  // Der Prüfstand hat keine Cloud. Der Weg ist bis zum Upload gelaufen und die
+  // API hat sauber abgelehnt — mehr ist hier ohne echte Zugangsdaten nicht zu
+  // holen. Jeder andere Fehlschlag ist ein echter.
+  console.log('   Ohne Cloud-Zugang, Upload sauber abgelehnt: ' + grund.slice(0, 70));
+} else {
+  pruefe(false, `Scan endete mit "${stand}": ${grund}`);
+}
 
 pruefe(fehler.length === 0, 'JS-Fehler: ' + fehler.slice(0, 2).join(' | '));
 

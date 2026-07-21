@@ -40,6 +40,11 @@ _KEIN_BELEGDATUM = ("zeitraum", "abrechnungszeitraum", "gültig", "gueltig",
 
 # Wort -> Dokumentart. Die Arten entsprechen ZIELORDNER in routers/dokumente.py;
 # spezifische Begriffe stehen vor allgemeinen.
+#
+# Gesucht wird ab Wortanfang, nie mitten im Wort: „Berggasse" ist kein Gas,
+# „Elgassner" auch nicht, „Wassermann" kein Wasser. Das war folgenlos, solange
+# nur ein Vorschlag daran hing — seit die Automatik Dateien ungefragt
+# verschiebt, ist es das nicht mehr.
 _KATEGORIEWORTE = [
     ("grundsteuer", "Steuer"), ("finanzamt", "Steuer"), ("steuerbescheid", "Steuer"),
     ("einkommensteuer", "Steuer"), ("steuernummer", "Steuer"),
@@ -60,6 +65,52 @@ _KATEGORIEWORTE = [
     ("hausmeister", "Nebenkosten"), ("winterdienst", "Nebenkosten"),
     ("grundbesitzabgaben", "Nebenkosten"),
 ]
+
+# Was hinter einem Sachbegriff stehen darf, damit er noch derselbe Begriff ist:
+# grammatische Endungen und die Wörter, die aus einer Sache einen Beleg machen.
+# „Stromabrechnung" zählt, „Wassermann" nicht.
+_ANHAENGE = (
+    "", "e", "n", "en", "s", "es", "er",
+    "rechnung", "rechnungen", "abrechnung", "abrechnungen",
+    "jahresabrechnung", "kosten", "kostenabrechnung",
+    "gebühr", "gebühren", "gebuehr", "gebuehren",
+    "bescheid", "bescheide", "beitrag", "beitraege", "beiträge",
+    "zahlung", "zahlungen", "abschlag", "abschläge", "abschlaege",
+    "ablesung", "ablesungen", "vertrag", "vertrages", "verträge", "vertraege",
+    "schein", "scheine", "geld", "werke", "versorgung", "verbrauch",
+)
+
+# Mindestens so viele Treffer, bevor ein Dateiname eine Ablage auslöst. Ein
+# einziges Wort reicht — aber nur, wenn es eindeutig ist (siehe unten).
+MINDESTPUNKTE = 1
+# Zu kurze Sachbegriffe treffen in einem Dateinamen zu leicht etwas anderes.
+MINDESTLAENGE = 3
+
+_ANHANG_TEIL = "|".join(sorted((re.escape(a) for a in _ANHAENGE),
+                               key=len, reverse=True))
+
+# Wortanfang + erlaubter Anhang, je Sachbegriff einmal übersetzt.
+_MUSTER: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b" + re.escape(wort) + r"(?:" + _ANHANG_TEIL + r")\b"), art)
+    for wort, art in _KATEGORIEWORTE if len(wort) >= MINDESTLAENGE
+]
+
+# Für gelesenen Text genügt der Wortanfang: dort steht „Wasserverbrauch je
+# Wohneinheit" in beliebiger Beugung, und ein Anhang lässt sich nicht auflisten.
+_MUSTER_WEIT: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b" + re.escape(wort)), art) for wort, art in _KATEGORIEWORTE
+]
+
+
+def _punkte(text: str, muster: list[tuple[re.Pattern[str], str]]) -> dict[str, int]:
+    """Wie oft welche Art im Text vorkommt."""
+    klein = (text or "").lower()
+    gefunden: dict[str, int] = {}
+    for regel, art in muster:
+        anzahl = len(regel.findall(klein))
+        if anzahl:
+            gefunden[art] = gefunden.get(art, 0) + anzahl
+    return gefunden
 
 
 def verfuegbar() -> bool:
@@ -167,17 +218,35 @@ def kategorie_aus_text(text: str) -> str:
     gäbe es gar keinen Anhaltspunkt.
 
     Gewertet wird nach Häufigkeit: ein Wort im Briefkopf entscheidet nicht
-    allein, wenn der Rest des Blattes von etwas anderem handelt.
+    allein, wenn der Rest des Blattes von etwas anderem handelt. Das Ergebnis
+    ist ein Vorschlag, den der Nutzer bestätigt — deshalb hier die weite
+    Suche ab Wortanfang.
     """
-    klein = (text or "").lower()
-    punkte: dict[str, int] = {}
-    for wort, art in _KATEGORIEWORTE:
-        anzahl = klein.count(wort)
-        if anzahl:
-            punkte[art] = punkte.get(art, 0) + anzahl
+    punkte = _punkte(text, _MUSTER_WEIT)
     if not punkte:
         return ""
     return max(punkte.items(), key=lambda p: p[1])[0]
+
+
+def kategorie_aus_dateiname(name: str) -> tuple[str, int]:
+    """Art und Sicherheit aus einem Dateinamen — dieselbe Wortliste, strenger
+    gelesen.
+
+    Ein Dateiname ist kurz: „Notar Elgassner.pdf" hat genau eine Zeile, in der
+    sich ein Zufallstreffer nicht wegmitteln kann. Deshalb zählt hier nur ein
+    Sachbegriff mit erlaubtem Anhang, und nur, wenn eine einzige Art vorn
+    liegt. Bei Gleichstand gilt: nicht erkannt — lieber liegen lassen als
+    ungefragt falsch einsortieren.
+
+    Gibt (Art, Punkte) zurück; ("", 0) heißt „keine Ahnung".
+    """
+    punkte = _punkte(name, _MUSTER)
+    if not punkte:
+        return "", 0
+    beste = sorted(punkte.items(), key=lambda p: -p[1])
+    if len(beste) > 1 and beste[0][1] == beste[1][1]:
+        return "", 0
+    return beste[0] if beste[0][1] >= MINDESTPUNKTE else ("", 0)
 
 
 def erkenne(rohdaten: bytes) -> dict:

@@ -6,9 +6,23 @@ import tempfile
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test_stammdaten.db")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+
+# Je Bereich: was angelegt wird, welches Feld geändert wird und worauf.
+# Deckt die vier echten Entitäten aus stammdaten.py ab.
+BEREICHE = [
+    ("versicherungen", {"art": "Gebäude", "jahresbeitrag": 100.0},
+     "jahresbeitrag", 125.0),
+    ("mieten", {"einheit": "EG", "partei": "Mieter A", "kaltmiete": 800.0,
+                "ab_datum": "2025-01-01"}, "kaltmiete", 850.0),
+    ("kredite", {"bezeichnung": "Kauf", "rate_monatlich": 500.0},
+     "rate_monatlich", 540.0),
+    ("zahlungen", {"jahr": 2025, "art": "Grundsteuer", "betrag": 240.0},
+     "betrag", 260.0),
+]
 
 
 def test_objekt_anlegen_und_auswerten():
@@ -78,6 +92,64 @@ def test_stammdaten_aendern_und_loeschen():
         assert c.get(f"/api/objekte/{slug}/versicherungen").json() == []
 
 
+@pytest.mark.parametrize("bereich,anlage,feld,neuer_wert", BEREICHE)
+def test_kanonischer_pfad_aendern_und_loeschen(bereich, anlage, feld, neuer_wert):
+    """Der Weg, den die Oberfläche tatsächlich geht: /api/stammdaten/…
+
+    Die Altroute ohne Präfix bleibt daneben bestehen; bricht das Präfix oder
+    die Registrierungsreihenfolge, könnte die Oberfläche weder speichern noch
+    löschen — dieser Test schlägt dann an."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte",
+                      json={"name": f"Kanonweg {bereich}"}).json()["slug"]
+        eintrag = c.post(f"/api/objekte/{slug}/{bereich}", json=anlage).json()["id"]
+
+        aendern = c.patch(f"/api/stammdaten/{bereich}/{eintrag}",
+                          json={feld: neuer_wert})
+        assert aendern.status_code == 200, aendern.text
+        assert c.get(f"/api/objekte/{slug}/{bereich}").json()[0][feld] == neuer_wert
+
+        assert c.delete(f"/api/stammdaten/{bereich}/{eintrag}").status_code == 200
+        assert c.get(f"/api/objekte/{slug}/{bereich}").json() == []
+
+
+@pytest.mark.parametrize("bereich", [b[0] for b in BEREICHE])
+def test_kanonischer_pfad_unbekannte_id_ist_404(bereich):
+    with TestClient(app) as c:
+        assert c.patch(f"/api/stammdaten/{bereich}/999999",
+                       json={"notiz": "x"}).status_code == 404
+        assert c.delete(f"/api/stammdaten/{bereich}/999999").status_code == 404
+
+
+def test_kanonischer_pfad_unbekannter_bereich_ist_404():
+    with TestClient(app) as c:
+        fehler = c.patch("/api/stammdaten/quatsch/1", json={"notiz": "x"})
+        assert fehler.status_code == 404
+        assert "Unbekannter Bereich" in fehler.json()["detail"]
+        assert c.delete("/api/stammdaten/quatsch/1").status_code == 404
+
+
 def test_unbekannter_bereich_ist_404():
     with TestClient(app) as c:
         assert c.get("/api/objekte/obj-a/quatsch").status_code == 404
+
+
+def test_faenger_verschluckt_keine_zweisegmentigen_pfade():
+    """Fund LXXI: früher stand unter /api ein Fänger `/{bereich}/{eintrag_id}`.
+
+    Der beantwortete jeden zweisegmentigen Pfad mit „Unbekannter Bereich" —
+    PATCH /api/dokumente/5 kam nie beim Dokument-Router an. Ebenso darf der
+    Fänger `/objekte/{slug}/{bereich}` die Anteile nicht abfangen."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Fängerweg 3"}).json()["slug"]
+
+        anteile = c.get(f"/api/objekte/{slug}/anteile")
+        assert anteile.status_code == 200, anteile.text
+        assert "anteile" in anteile.json()
+
+        for antwort in (c.patch("/api/dokumente/999999", json={}),
+                        c.delete("/api/dokumente/999999"),
+                        c.patch("/api/positionen/999999", json={}),
+                        c.delete("/api/positionen/999999"),
+                        c.delete("/api/anteile/999999")):
+            assert "Unbekannter Bereich" not in antwort.text, antwort.text

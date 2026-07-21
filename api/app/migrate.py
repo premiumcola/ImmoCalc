@@ -65,6 +65,46 @@ def _neutral_fuer(spalte) -> str | None:
     return None
 
 
+# Eindeutigkeiten, die `create_all` nur an einer *neuen* Tabelle anlegt. An
+# einer gewachsenen Datenbank fehlen sie sonst für immer — der Index kommt
+# additiv hinzu, keine Spalte ändert sich, gelöscht wird nichts.
+EINDEUTIG: list[tuple[str, str, str]] = [
+    # Tabelle, Spalte, Indexname
+    ("dokument", "pfad", "ux_dokument_pfad"),
+]
+
+
+def _doppel(conn, tabelle: str, spalte: str) -> list[tuple[str, int]]:
+    """Werte, die mehrfach vorkommen — die einzige Hürde für den Index."""
+    zeilen = conn.execute(text(
+        f'SELECT "{spalte}", count(*) AS anzahl FROM "{tabelle}" '
+        f'GROUP BY "{spalte}" HAVING count(*) > 1')).all()
+    return [(str(z[0]), int(z[1])) for z in zeilen]
+
+
+def eindeutigkeit_sichern(conn, tabellen: set[str] | None = None) -> list[str]:
+    """Legt die Unique-Indizes aus `EINDEUTIG` an. Gibt die gesetzten zurück.
+
+    Findet sich ein Wert doppelt, scheitert das Anlegen — dann wird der
+    Doppel-Wert protokolliert, statt still nichts zu tun. Entfernt wird
+    nichts: welcher der beiden Einträge weg soll, entscheidet der Nutzer.
+    """
+    gesetzt: list[str] = []
+    for tabelle, spalte, name in EINDEUTIG:
+        if tabellen is not None and tabelle not in tabellen:
+            continue
+        doppel = _doppel(conn, tabelle, spalte)
+        if doppel:
+            log.warning("%s.%s ist nicht eindeutig — kein Index. Mehrfach: %s",
+                        tabelle, spalte,
+                        ", ".join(f"{w} ({n}x)" for w, n in doppel[:10]))
+            continue
+        conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS "{name}" '
+                          f'ON "{tabelle}" ("{spalte}")'))
+        gesetzt.append(name)
+    return gesetzt
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -89,6 +129,15 @@ def migriere(engine: Engine) -> list[str]:
                         f'UPDATE "{tabelle.name}" SET "{spalte.name}" = {vorgabe} '
                         f'WHERE "{spalte.name}" IS NULL'))
                 geaendert.append(f"{tabelle.name}.{spalte.name}")
+
+        # Erst nach den Spalten: der Index braucht die Tabelle, wie sie
+        # danach aussieht.
+        try:
+            geaendert += eindeutigkeit_sichern(conn, bestehende)
+        except Exception as fehler:                   # noqa: BLE001
+            # Ein fehlender Index darf den Start nicht verhindern — die Sperre
+            # im Code greift weiter, der Betrieb geht ohne ihn.
+            log.warning("Eindeutigkeit nicht gesetzt: %s", fehler)
 
     if geaendert:
         log.info("Schema ergänzt: %s", ", ".join(geaendert))

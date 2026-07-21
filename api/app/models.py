@@ -248,8 +248,10 @@ class Dokument(SQLModel, table=True):
     # Ein Pfad, ein Eintrag. Ohne diese Eindeutigkeit legen Wachdienst und
     # „Ordner prüfen" dieselbe neue Datei zweimal an, wenn sie sich begegnen —
     # der zweite Eintrag zeigt nach dem Verschieben ins Leere und bleibt für
-    # immer im Eingang. Bestehende Datenbanken bekommen den Index nachtraeglich
-    # (siehe `_eindeutigkeit_sichern` in routers/dokumente.py).
+    # immer im Eingang.
+    # `unique=True` wirkt nur, wenn `create_all` die Tabelle neu anlegt — eine
+    # gewachsene Datenbank bekommt den Index beim Start durch
+    # `migrate.eindeutigkeit_sichern`, nicht erst beim ersten Scanlauf.
     pfad: str = Field(index=True, unique=True)  # WebDAV-Pfad ab Benutzer-Root
     dateiname: str
     groesse: int = 0
