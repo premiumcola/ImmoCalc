@@ -186,6 +186,21 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 | CXXIX | **Vorschau rechts, zum Vergrößern** | Beleg anklicken → rechts erscheint das zugeschnittene PDF mit dem, was die Texterkennung gefunden hat. Nochmal klicken → groß, sodass sich die erfassten Werte links gegen das Blatt prüfen lassen |
 | CXXX | **Belegdatum genau erkennen** | Nicht nur das Jahr: das tatsächliche Belegdatum aus dem Dokument lesen und anzeigen — es entscheidet, in welchen Abrechnungszeitraum der Beleg gehört |
 
+### Aus der Sichtung des echten Bestands (Stand: 3 von 14 Bündeln, ~35 von 466 Dokumenten)
+
+| Nr. | Fund | Was fehlt |
+|---|---|---|
+| CXXXI | **Erkannter Betrag wird weggeworfen** | Die Texterkennung liest den Betrag (z. B. Notarkosten 156,25 €) und `dokumente.py` speichert ihn nicht. `Dokument` braucht Betrag und Belegdatum als Felder — sonst ist jede Erkennung folgenlos |
+| CXXXII | **Nur 8 Dokumentarten — der Lebenszyklus fehlt** | Es gibt kein Kauf, Notar, Grundbuch, Bau, Abnahme, Foto, Verbandspost. Die Eintragungsbekanntmachung — der Eigentumsnachweis — landet in `99_Sonstiges`. Die Ordner `50_Bauphase_Projekte` und `10_Fotos_Lage` werden angelegt, aber **keine Kategorie zeigt darauf**: sie bleiben für immer leer |
+| CXXXIII | **Unterordner werden nie gescannt** | `dokumente.py:307-309` liest nur den Hauptordner eines Objekts. Der komplette Unterordner `Fotos/` mit 15 Baufortschrittsbildern ist für die App unsichtbar — und der Nutzer sortiert in Unterordnern |
+| CXXXIV | **Kaufnebenkosten existieren nicht** | Grep über `api/app` und `public`: null Treffer für Notar, Grunderwerbsteuer, Grundbuch, Makler. Notarkosten lassen sich nur als Zahlung „Sonstiges" ablegen — ein Anschaffungsnebenkostenposten landet damit im falschen Topf (CV) |
+| CXXXV | **Objekt-Stammdaten des Grundbuchs fehlen** | Kein Feld für Grundbuchamt, Blatt, Bezirk/Gemarkung, Flurstück, Wohnungsnummer, Notar-URNr, Auflassungs- und Eintragungsdatum. `Objekt.kaufdatum` ist ein einziges Feld — im Bestand liegen aber drei fachlich verschiedene Daten (Bauträgervertrag 2017, Auflassung 12.06.2019, Eintragung 27.06.2019), und von der richtigen hängt die Spekulationsfrist ab |
+| CXXXVI | **Grundsteuer ist nicht nachvollziehbar** | Kein Feld für Einheitswert, Grundsteuerwert, Messbetrag, Steuermesszahl, Hebesatz. Die Kette Einheitswert → Messbetrag → Hebesatz → Grundsteuer ist nicht abbildbar, obwohl „Grundsteuer" überall als Kostenart aktiv ist. Beim Grundstück Eckenhaid springt der Messbetrag durch die Reform von 0,61 € auf 1,43 € — in der App wäre das eine zusammenhanglose zweite Zahl |
+| CXXXVII | **Kein Baujahr, keine AfA-Grundlage** | `Objekt` (models.py:9-30) hat kein Baujahr. Der Einheitswertbescheid nennt die Aufteilung Gebäude 17.940 DM zu Boden 1.836 DM — genau die AfA-Bemessungsgrundlage. Abschreibung kommt im ganzen Repo nicht vor |
+| CXXXVIII | **Grundstück ist kein Objekttyp** | Eckenhaid (4.630 m² Wald- und Landwirtschaftsfläche) passt in kein Modell: `Objekt.flaeche` ist faktisch Wohnfläche und geht in den Verteilungsschlüssel — die Feldfläche dort einzutragen wäre fachlich falsch. Die Ordnervorlage `({ort}) {strasse} · {name}` läuft ohne Straße leer |
+| CXXXIX | **Keine Fälligkeit, kein Zahlstatus** | Der Grundsteuerbescheid nennt „fällig 15.08." — der Turnus ist heute nur ein Hochrechnungsfaktor, es entsteht kein Zahlungsvorgang und keine Erinnerung. Offen/bezahlt, Mahnung, fortgeltender Bescheid: alles nicht vorhanden |
+| CXL | **Verträge nur als Versicherung modelliert** | Verbandsbeitrag mit SEPA-Mandat (Gläubiger-ID, Mandatsreferenz), Kündigungsfrist, im Vertrag bereits festgeschriebene Beitragsstaffel (30 € → 36 €) — nichts davon hat ein Feld. Außerdem ist `Zahlung.objekt_id` Pflicht: eine Kostenzeile für **alle** Objekte ist nicht vorgesehen |
+
 ### Bewusst zurückgestellt
 
 | Nr. | Aufgabe | Grund |
