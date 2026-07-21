@@ -172,6 +172,51 @@ def ordnername(name: str, ort: str = "", strasse: str = "") -> str:
     return re.sub(r"\s+", " ", roh).strip(" .")
 
 
+# --------------------------------------------------------------------------
+# Ordnerpfade: wo ein Objektordner hingehört und wann er doppelt dasteht
+# --------------------------------------------------------------------------
+
+def vergleichsname(name: str) -> str:
+    """Vergleichsform eines Ordnernamens.
+
+    Groß-/Kleinschreibung, Leerzeichen und Satzzeichen spielen keine Rolle:
+    "Wohnung 1.OG" und "Wohnung 1. OG" meinen dieselbe Einheit."""
+    return re.sub(r"\W+", "", (name or "").lower())
+
+
+def gleicher_ordner(a: str, b: str) -> bool:
+    """Zwei Ordnernamen, die dasselbe meinen."""
+    links, rechts = vergleichsname(a), vergleichsname(b)
+    return bool(links) and links == rechts
+
+
+def pfadteile(pfad: str) -> list[str]:
+    """Die Ebenen eines Pfades, ohne leere Stücke."""
+    return [t for t in (pfad or "").split("/") if t and t != "."]
+
+
+def doppelt_geschachtelt(pfad: str) -> bool:
+    """Liegt der Ordner in einem Ordner desselben Namens? ("X/X")
+
+    Genau das entstand, als der Objektordner ein zweites Mal unterhalb seiner
+    selbst angelegt wurde — doppelt gemoppelt ohne Mehrwert."""
+    teile = pfadteile(pfad)
+    return len(teile) >= 2 and gleicher_ordner(teile[-1], teile[-2])
+
+
+def ordnerpfad(home: str, ordner: str) -> str:
+    """Pfad des Objektordners unter dem Home-Ordner, ohne führenden Trenner.
+
+    Ist der Home-Ordner bereits dieser Ordner, wird er nicht ein zweites Mal
+    darunter angelegt — sonst entstünde "(Eschenau) Laufer Str. 5 /
+    (Eschenau) Laufer Str. 5"."""
+    teile = pfadteile(home)
+    name = _sauber(ordner)
+    if name and not (teile and gleicher_ordner(teile[-1], name)):
+        teile.append(name)
+    return "/".join(teile)
+
+
 def adresse(strasse: str = "", plz: str = "", ort: str = "") -> str:
     """Einzeilige Adresse für Anschreiben."""
     unten = " ".join(x for x in (_sauber(plz), _sauber(ort)) if x)
