@@ -69,6 +69,19 @@
   .haus .grid .tile{min-height:148px; padding:12px}
   .haus .grid .tile .ico{width:48px; height:48px; border-radius:12px}
   @media(min-width:680px){ .haus .grid .tile .ico{width:54px; height:54px} }
+
+  /* LXX — Was ansteht. Ruhig: derselbe Merkstreifen wie auf der Objektseite,
+     nur anklickbar. Steht unter den Kacheln, damit es sie nicht erschlaegt. */
+  .merker.sprung{width:100%; text-align:left; border:none; cursor:pointer;
+                 font-family:var(--body); align-items:center}
+  .merker.sprung:hover{filter:brightness(.98)}
+  .merker .wann{font:600 11px var(--mono); white-space:nowrap; flex:none;
+                opacity:.85; align-self:center}
+  .weitere{display:block; font:400 12.5px var(--body); color:var(--soft);
+           margin:2px 0 6px; padding-left:2px}
+  /* Luft zwischen der letzten Kachel und der Überschrift — sonst klebt sie an
+     der Kachelkante. */
+  #ansteht h2.sec{margin-top:26px}
 </style>
 </head>
 <body>
@@ -83,6 +96,8 @@
 
   <div class="scroll">
     <div id="objekte"></div>
+
+    <div id="ansteht"></div>
 
     <h2 class="sec">Verwalten</h2>
     <a class="row ghost" href="onboarding.html">
@@ -258,6 +273,56 @@ try {
          Container <code>immocalc-api</code> läuft.</p>
     </div>`;
 }
+
+/* ---- Was ansteht ---------------------------------------------------------
+   Fristen nach § 556 BGB und erwartete Jahresabrechnungen, beides aus
+   /api/erinnerungen. Steht unter den Kacheln und zeigt nur die dringendsten —
+   die Liste ist serverseitig sortiert (Fälliges zuerst). Ist nichts offen,
+   erscheint gar nichts: eine leere Überschrift wäre nur Lärm. */
+const MAX_ERINNERUNGEN = 4;
+const tageText = t => t == null ? ''
+  : t < 0 ? `${Math.abs(t)} Tage über` : t === 0 ? 'heute' : `in ${t} Tagen`;
+
+/* Ein volles Jahr liest sich als Jahreszahl — "01.01.2024 – 31.12.2024" ist
+   in einer Zeile nur Ballast. */
+const kurzZeitraum = l => (/^01\.01\.(\d{4}) – 31\.12\.\1$/.exec(l || '') || [, l])[1];
+
+/* Der Text der API nennt Frist und Restzeit noch einmal im Satz; hier stehen
+   beide ohnehin als Titel und als Zeitangabe rechts. Deshalb kurz halten —
+   jede Information nur einmal. */
+function erinnerungHtml(e) {
+  const frist = e.art === 'frist';
+  const titel = frist ? `Abrechnungsfrist § 556 · ${kurzZeitraum(e.zeitraum)}`
+                      : e.kostenart;
+  const unten = frist ? e.name : `${e.name} · Jahresabrechnung erwartet`;
+  return `<button class="merker sprung ${e.faellig ? 'neg' : ''}"
+                  data-slug="${esc(e.objekt)}">
+      <span class="hi">${frist ? '§' : '▤'}</span>
+      <span class="ht">
+        <span class="t">${esc(titel)}</span>
+        <span class="d">${esc(unten)}</span>
+      </span>
+      <span class="wann">${esc(tageText(e.tage))}</span>
+    </button>`;
+}
+
+const ansteht = document.getElementById('ansteht');
+try {
+  const { erinnerungen } = await api('/erinnerungen');
+  if (erinnerungen.length) {
+    const rest = erinnerungen.length - MAX_ERINNERUNGEN;
+    ansteht.innerHTML = '<h2 class="sec">Was ansteht</h2>'
+      + erinnerungen.slice(0, MAX_ERINNERUNGEN).map(erinnerungHtml).join('')
+      + (rest > 0 ? `<span class="weitere">und ${rest} weitere</span>` : '');
+  }
+} catch {
+  /* Erinnerungen sind Beiwerk — ohne sie bleibt die Seite vollständig. */
+}
+
+ansteht.addEventListener('click', e => {
+  const t = e.target.closest('[data-slug]');
+  if (t) location.href = `objekt.html?o=${encodeURIComponent(t.dataset.slug)}`;
+});
 
 ziel.addEventListener('click', e => {
   const kopf = e.target.closest('[data-gruppe]');
