@@ -10,9 +10,9 @@ from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..db import get_session
 from ..engine import Position, abrechnung
 from ..mailversand import MailFehler
-from ..models import (Kostenposition, Miete, Objekt, Versandprotokoll,
-                      Vorauszahlung, Zeitraum)
-from ..verteilung import fehlende_angaben
+from ..models import (Bewohner, Kostenposition, Miete, Objekt,
+                      Versandprotokoll, Vorauszahlung, Zeitraum)
+from ..verteilung import fehlende_angaben, leerstaende, stammdaten
 from .mail import zugang
 
 log = logging.getLogger("immocalc")
@@ -34,14 +34,35 @@ def _ergebnis(session: Session, z: Zeitraum) -> dict:
 
 
 def _empfaenger(session: Session, objekt_id: int) -> dict[str, dict]:
-    """Aktuelle Mietverhältnisse je Partei — dort hängen die Kontaktdaten."""
+    """Aktuelle Mietverhältnisse je Partei — dort hängen die Kontaktdaten.
+
+    Neben dem Hauptkontakt am Mietverhältnis zählen die Bewohner mit eigener
+    Adresse: wohnen zwei Personen in der Wohnung und haben beide eine
+    Mailadresse hinterlegt, bekommen auch beide die Abrechnung. `adressen`
+    enthält jede Adresse genau einmal, Hauptkontakt zuerst.
+    """
     mieten = session.exec(select(Miete).where(Miete.objekt_id == objekt_id)).all()
     laufend = [m for m in mieten if m.bis_datum is None]
+    ids = [m.id for m in laufend if m.id is not None]
+    bewohner: dict[int, list[Bewohner]] = {i: [] for i in ids}
+    if ids:
+        for b in session.exec(
+                select(Bewohner).where(Bewohner.miete_id.in_(ids))).all():
+            bewohner.setdefault(b.miete_id, []).append(b)
+
     treffer = {}
     for m in laufend:
-        if m.partei:
-            treffer[m.partei] = {"email": m.email, "einheit": m.einheit,
-                                 "telefon": m.telefon}
+        if not m.partei:
+            continue
+        adressen: list[str] = []
+        for adresse in [m.email] + [b.email for b in bewohner.get(m.id, [])
+                                    if b.abrechnung]:
+            adresse = (adresse or "").strip()
+            if adresse and adresse not in adressen:
+                adressen.append(adresse)
+        treffer[m.partei] = {"email": adressen[0] if adressen else "",
+                             "adressen": adressen,
+                             "einheit": m.einheit, "telefon": m.telefon}
     return treffer
 
 
@@ -54,17 +75,25 @@ def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
     res = _ergebnis(session, z)
     kontakte = _empfaenger(session, z.objekt_id)
 
+    # Leerstand ist kein Empfänger, sondern der Anteil, den der Eigentümer
+    # selbst trägt. Ohne diese Unterscheidung stand er unter „ohne
+    # Mailadresse" und las sich wie ein vergessener Mieter.
+    leer = set(leerstaende(stammdaten(session, z)))
+
     zeilen = []
     for partei, werte in (res.get("parteien") or {}).items():
         kontakt = kontakte.get(partei, {})
+        ist_leerstand = partei in leer
         zeilen.append({
             "partei": partei,
             "einheit": kontakt.get("einheit", ""),
             "email": kontakt.get("email", ""),
+            "adressen": kontakt.get("adressen", []),
             "kosten": werte.get("kosten"),
             "vz": werte.get("vorauszahlungen"),
             "saldo": werte.get("saldo"),
-            "versandbereit": bool(kontakt.get("email")),
+            "leerstand": ist_leerstand,
+            "versandbereit": bool(kontakt.get("email")) and not ist_leerstand,
         })
     zeilen.sort(key=lambda r: r["partei"])
     return {
@@ -72,7 +101,9 @@ def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
         "status": z.status,
         "offen": res.get("offen", []),
         "parteien": zeilen,
-        "ohne_mail": [r["partei"] for r in zeilen if not r["versandbereit"]],
+        "ohne_mail": [r["partei"] for r in zeilen
+                      if not r["versandbereit"] and not r["leerstand"]],
+        "leerstand": [r["partei"] for r in zeilen if r["leerstand"]],
     }
 
 
@@ -145,6 +176,7 @@ def abschliessen(zid: int, data: AbschlussIn,
         raise HTTPException(400, "Noch offene Positionen: " + ", ".join(offen))
 
     kontakte = _empfaenger(session, z.objekt_id)
+    leer = set(leerstaende(stammdaten(session, z)))
     zeitraum_text = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
     versendet, uebersprungen, schon_da = [], [], []
 
@@ -157,8 +189,12 @@ def abschliessen(zid: int, data: AbschlussIn,
             if partei in fertig:
                 schon_da.append(partei)
                 continue
-            adresse = kontakte.get(partei, {}).get("email")
-            if not adresse:
+            # Alle Bewohner mit eigener Adresse bekommen die Abrechnung, nicht
+            # nur wer den Vertrag unterschrieben hat. Der Leerstand bekommt
+            # nichts — hinter ihm steht keine Partei, sondern der Eigentümer.
+            adressen = [a for a in kontakte.get(partei, {}).get("adressen", [])
+                        if partei not in leer]
+            if not adressen:
                 uebersprungen.append(partei)
                 continue
             saldo = werte.get("saldo") or 0
@@ -181,23 +217,26 @@ def abschliessen(zid: int, data: AbschlussIn,
                                         absender=z_mail.absender_name)
                 anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
                           inhalt, "pdf")
-            try:
-                z_mail.sende(adresse,
-                             f"Betriebskostenabrechnung {o.name} · {zeitraum_text}",
-                             text, anhang=anhang)
-            except MailFehler as e:
-                # Sofort festhalten, was bis hierher rausging — sonst steht
-                # beim naechsten Versuch niemand in der Liste.
+            for adresse in adressen:
+                try:
+                    z_mail.sende(adresse,
+                                 f"Betriebskostenabrechnung {o.name} · {zeitraum_text}",
+                                 text, anhang=anhang)
+                except MailFehler as e:
+                    # Sofort festhalten, was bis hierher rausging — sonst steht
+                    # beim naechsten Versuch niemand in der Liste.
+                    session.commit()
+                    raise HTTPException(
+                        400, f"Versand an {partei} ({adresse}) fehlgeschlagen: "
+                             f"{e}. Bereits verschickt: "
+                             f"{', '.join(versendet) or 'niemand'}.") from e
+                # Je Adresse eine Zeile: erst wenn alle Bewohner einer Partei
+                # ihre Mail haben, gilt die Partei als versorgt.
+                session.add(Versandprotokoll(
+                    zeitraum_id=zid, partei=partei, empfaenger=adresse,
+                    versendet_am=date.today()))
                 session.commit()
-                raise HTTPException(
-                    400, f"Versand an {partei} fehlgeschlagen: {e}. "
-                         f"Bereits verschickt: "
-                         f"{', '.join(versendet) or 'niemand'}.") from e
             versendet.append(partei)
-            session.add(Versandprotokoll(
-                zeitraum_id=zid, partei=partei, empfaenger=adresse,
-                versendet_am=date.today()))
-            session.commit()
 
     z.status = "abgeschlossen"
     session.add(z)
