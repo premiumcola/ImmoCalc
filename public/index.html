@@ -70,6 +70,60 @@
   .haus .grid .tile .ico{width:48px; height:48px; border-radius:12px}
   @media(min-width:680px){ .haus .grid .tile .ico{width:54px; height:54px} }
 
+  /* CXLV — Die Einheiten eines Hauses. Gemeint ist die Tabelle `Einheit`
+     INNERHALB eines Objekts (1. OG, 2. OG, EG / Buero, Garage), nicht die
+     Gruppierung mehrerer Objekte derselben Adresse weiter oben.
+     Die Karte nimmt die ganze Breite: vier Bubbles passen in keine halbe
+     Spalte, ohne die Nachbarkachel auf dieselbe Hoehe leer mitzuziehen.
+     Rahmen und Farbabstufung wie bei .haus — dieselbe Sprache. */
+  .mitbubbles{
+    grid-column:1/-1; background:#DFE5E5; border-radius:20px; padding:8px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .mitbubbles > .tile{
+    width:100%; min-height:0; flex-direction:row; align-items:center;
+    gap:14px; flex-wrap:wrap; border-radius:14px; padding:16px;
+  }
+  .mitbubbles > .tile .txt{flex:1 1 140px; min-width:0}
+  .mitbubbles > .tile .name{font-size:17px}
+  /* Schmal: die Chips unter den Namen. Breit: neben ihn — sonst bliebe rechts
+     eine handbreite leere Flaeche stehen. */
+  .mitbubbles > .tile .foot{flex-basis:100%; margin-top:6px}
+  @media(min-width:680px){
+    .mitbubbles > .tile .foot{flex-basis:auto; margin:0 0 0 auto}
+  }
+  /* Das Haussymbol darf hier groesser sein — die Karte hat die Breite dafuer. */
+  .mitbubbles > .tile .ico{width:76px; height:76px; border-radius:18px}
+  @media(min-width:680px){
+    .mitbubbles > .tile .ico{width:84px; height:84px; border-radius:20px}
+  }
+
+  .bubbles{display:flex; flex-wrap:wrap; gap:6px; padding:0 2px 2px}
+  .bubble{
+    display:inline-flex; align-items:center; gap:8px; max-width:100%;
+    min-height:44px; padding:8px 16px; border:none; border-radius:999px;
+    background:var(--sheet); color:inherit; font-family:var(--body);
+    text-align:left; cursor:pointer; box-shadow:0 1px 2px rgba(22,38,44,.06);
+    transition:transform .1s, box-shadow .15s;
+  }
+  .bubble:hover{box-shadow:0 5px 14px -8px rgba(22,38,44,.3)}
+  .bubble:active{transform:scale(.97)}
+  .bubble:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+  /* [hidden] allein reicht nicht — display:inline-flex schlaegt es. */
+  .bubble[hidden]{display:none}
+  .bubble .bt{font:600 13.5px var(--body); line-height:1.3;
+              overflow-wrap:anywhere; min-width:0}
+  .bubble .bf{font:500 10.5px var(--mono); color:var(--soft); white-space:nowrap}
+  /* Nur die Ausnahme wird benannt: vermietet ist der Normalfall. */
+  .bubble.frei{background:var(--amber-bg)}
+  .bubble .bfrei{font:600 10.5px var(--mono); color:var(--amber);
+                 letter-spacing:.06em; text-transform:uppercase;
+                 white-space:nowrap}
+  /* Der Aufklapper bleibt leise — er ist keine Einheit. */
+  .bubble.mehr{background:rgba(255,255,255,.5); box-shadow:none;
+               font:600 11.5px var(--mono); color:var(--soft);
+               letter-spacing:.04em}
+
   /* LXX — Was ansteht. Ruhig: derselbe Merkstreifen wie auf der Objektseite,
      nur anklickbar. Steht unter den Kacheln, damit es sie nicht erschlaegt. */
   .merker.sprung{width:100%; text-align:left; border:none; cursor:pointer;
@@ -177,25 +231,63 @@ function chips(frist_tage, offen) {
   return `<span class="foot">${teile.join('')}</span>`;
 }
 
+/* ---- CXLV — die Einheiten INNERHALB eines Objekts ------------------------
+   Nicht zu verwechseln mit der Gruppierung weiter unten: dort sind es eigene
+   Objekte derselben Adresse, hier die Tabelle `Einheit` eines Objekts.
+   Ab zwei Einheiten lohnt die Aufzaehlung; bei einer einzigen stuende dieselbe
+   Angabe nur ein zweites Mal in der Kachel. */
+const flaecheText = f => `${Number(f).toLocaleString('de-DE',
+  { maximumFractionDigits: 1 })} m²`;
+
+/* Ab hier wird zugeklappt: ein Haus mit zwanzig Einheiten wuerde die Karte
+   sonst ueber den ganzen Schirm ziehen. */
+const MAX_BUBBLES = 6;
+
+function bubble(o, e, versteckt = false) {
+  return `<button class="bubble${e.vermietet ? '' : ' frei'}"
+          data-slug="${esc(o.slug)}"${versteckt ? ' data-rest hidden' : ''}
+          title="${esc(e.bezeichnung || 'Einheit')} · ${
+            e.vermietet ? 'vermietet' : 'nicht vermietet'}">
+      <span class="bt">${esc(e.bezeichnung || 'Einheit')}</span>
+      ${e.flaeche ? `<span class="bf">${flaecheText(e.flaeche)}</span>` : ''}
+      ${e.vermietet ? '' : '<span class="bfrei">frei</span>'}
+    </button>`;
+}
+
+function bubbles(o) {
+  const liste = o.einheiten_liste || [];
+  if (liste.length < 2) return '';
+  const rest = liste.length - MAX_BUBBLES;
+  const label = `+${rest} weitere`;
+  return `<div class="bubbles">
+      ${liste.map((e, i) => bubble(o, e, i >= MAX_BUBBLES)).join('')}
+      ${rest > 0 ? `<button class="bubble mehr" data-mehr="${esc(label)}"
+                            aria-expanded="false">${esc(label)}</button>` : ''}
+    </div>`;
+}
+
 /* Einzelkachel. `feinste` zeigt nur die Einheit gross — innerhalb einer
-   Hausgruppe stehen Ort und Strasse bereits in der Oberkachel. */
+   Hausgruppe stehen Ort und Strasse bereits in der Oberkachel; Bubbles
+   entfallen dort, weil die Gruppe schon die feine Ebene ist. */
 function kachel(o, feinste = false) {
   const h = o._h;
   const gross = feinste ? (h.einheit || h.strasse) : h.strasse;
   const oben = feinste ? '' : (h.ort ? `<span class="ortszeile">${esc(h.ort)}</span>` : '');
+  const bub = feinste ? '' : bubbles(o);
   const unten = feinste
     ? (h.einheit ? '' : `<span class="einheit">${o.einheiten || 1} Einheit${(o.einheiten || 1) > 1 ? 'en' : ''}</span>`)
     : (h.einheit ? `<span class="einheit">${esc(h.einheit)}</span>` : '');
 
-  return `<button class="tile" data-slug="${esc(o.slug)}">
+  const knopf = `<button class="tile" data-slug="${esc(o.slug)}">
       <span class="ico">${logoSvg(o.typ)}</span>
-      <span>
+      <span class="txt">
         ${oben}
         <span class="name">${esc(gross)}</span>
         ${unten}
       </span>
       ${chips(o.frist_tage, o.offene_positionen)}
     </button>`;
+  return bub ? `<section class="mitbubbles">${knopf}${bub}</section>` : knopf;
 }
 
 /* Oberkachel einer Adresse: Stammdaten und die zusammengefassten Zahlen.
@@ -239,8 +331,13 @@ function gruppieren(objekte) {
     eimer.get(k).objekte.push(o);
   }
   const gruppen = [...eimer.values()].filter(g => g.objekte.length > 1);
+  // Haeuser mit mehreren Einheiten nehmen die ganze Zeile ein. Stuenden sie
+  // zwischen den halbbreiten Kacheln, liesse das Raster Loecher — deshalb
+  // zuerst. Innerhalb der beiden Bloecke bleibt die Reihenfolge der API.
+  const breit = o => (o.einheiten_liste || []).length > 1 ? 0 : 1;
   const einzeln = [...eimer.values()].filter(g => g.objekte.length === 1)
-    .flatMap(g => g.objekte);
+    .flatMap(g => g.objekte)
+    .sort((a, b) => breit(a) - breit(b));
   return { gruppen, einzeln };
 }
 
@@ -325,6 +422,15 @@ ansteht.addEventListener('click', e => {
 });
 
 ziel.addEventListener('click', e => {
+  const mehr = e.target.closest('[data-mehr]');
+  if (mehr) {                       // restliche Einheiten ein- und ausblenden
+    const auf = mehr.getAttribute('aria-expanded') === 'true';
+    for (const b of mehr.parentElement.querySelectorAll('.bubble[data-rest]'))
+      b.hidden = auf;
+    mehr.setAttribute('aria-expanded', auf ? 'false' : 'true');
+    mehr.textContent = auf ? mehr.dataset.mehr : 'weniger';
+    return;
+  }
   const kopf = e.target.closest('[data-gruppe]');
   if (kopf) {                       // Oberkachel: Einheiten auf-/zuklappen
     const auf = kopf.getAttribute('aria-expanded') === 'true';

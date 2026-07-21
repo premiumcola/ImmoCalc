@@ -70,29 +70,67 @@ class ObjektIn(BaseModel):
     einheiten: list[EinheitIn] = []
 
 
+def _je_objekt(zeilen: list, ids: list[int]) -> dict[int, list]:
+    """Ordnet Zeilen ihrem Objekt zu — jedes Objekt kommt vor, auch leer."""
+    eimer: dict[int, list] = {i: [] for i in ids}
+    for zeile in zeilen:
+        eimer.setdefault(zeile.objekt_id, []).append(zeile)
+    return eimer
+
+
 @router.get("/objekte")
 def objekte(session: Session = Depends(get_session)) -> list[dict]:
+    """Die Objektliste der Startseite — mit den Einheiten je Objekt.
+
+    Geholt wird in wenigen Abfragen für alle Objekte zusammen und danach in
+    Python zugeordnet: je Objekt einzeln nachzuladen ergäbe bei zwanzig
+    Immobilien hundert Abfragen für eine einzige Seite."""
+    alle = session.exec(select(Objekt)).all()
+    ids = [o.id for o in alle if o.id is not None]
+    if not ids:
+        return []
+
+    zeitraeume = _je_objekt(session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id.in_(ids))).all(), ids)
+    einheiten = _je_objekt(session.exec(
+        select(Einheit).where(Einheit.objekt_id.in_(ids))).all(), ids)
+    mieten = _je_objekt(session.exec(
+        select(Miete).where(Miete.objekt_id.in_(ids))).all(), ids)
+
+    aktive = {oid: next((z for z in zs if z.status == "in Arbeit"), None)
+              for oid, zs in zeitraeume.items()}
+    zids = [z.id for z in aktive.values() if z is not None]
+    offene: dict[int, int] = {}
+    if zids:
+        for p in session.exec(select(Kostenposition).where(
+                Kostenposition.zeitraum_id.in_(zids))).all():
+            if p.status == "offen":
+                offene[p.zeitraum_id] = offene.get(p.zeitraum_id, 0) + 1
+
     out = []
-    for o in session.exec(select(Objekt)).all():
-        zs = session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
-        aktiv = next((z for z in zs if z.status == "in Arbeit"), None)
-        offen = 0
-        if aktiv:
-            pos = session.exec(
-                select(Kostenposition).where(Kostenposition.zeitraum_id == aktiv.id)).all()
-            offen = sum(1 for p in pos if p.status == "offen")
-        einheiten = session.exec(select(Einheit).where(Einheit.objekt_id == o.id)).all()
-        mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
-        aktuell = [m for m in mieten if m.bis_datum is None]
+    for o in alle:
+        aktiv = aktive.get(o.id)
+        laufend = [m for m in mieten[o.id] if m.bis_datum is None]
+        # Eine Miete ohne Einheitsangabe meint das ganze Objekt — dann gilt
+        # jede Einheit als vermietet, sonst keine einzige.
+        ganzes_objekt = any(not m.einheit.strip() for m in laufend)
+        belegt = {m.einheit.strip() for m in laufend if m.einheit.strip()}
         out.append({
             "id": o.id, "slug": o.slug, "name": o.name, "ort": o.ort,
             "anzeigename": anzeigename(o.name, o.ort, o.strasse, o.plz),
             "strasse": o.strasse, "plz": o.plz,
             "typ": o.typ, "turnus": o.turnus, "aktiv": o.aktiv,
-            "einheiten": len(einheiten),
-            "offene_positionen": offen,
+            "einheiten": len(einheiten[o.id]),
+            # Die Einheiten selbst — die Startseite zeigt sie als Bubbles.
+            # `einheiten` bleibt die Anzahl, damit bestehende Aufrufer bleiben.
+            "einheiten_liste": [
+                {"id": e.id, "bezeichnung": e.bezeichnung,
+                 "nutzungsart": e.nutzungsart, "flaeche": e.flaeche,
+                 "vermietet": ganzes_objekt or e.bezeichnung.strip() in belegt}
+                for e in einheiten[o.id]],
+            "offene_positionen": offene.get(aktiv.id, 0) if aktiv else 0,
             "frist_tage": frist_tage(aktiv) if aktiv else None,
-            "miete_monatlich": round(sum(m.kaltmiete for m in aktuell), 2),
+            "miete_monatlich": round(sum(m.kaltmiete for m in laufend), 2),
         })
     return out
 
