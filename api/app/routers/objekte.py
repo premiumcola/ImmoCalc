@@ -292,6 +292,72 @@ def kostenarten(slug: str, session: Session = Depends(get_session)) -> list[Kost
     return session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
 
 
+@router.patch("/kostenarten/{kid}")
+def kostenart_aendern(kid: int, data: dict,
+                      session: Session = Depends(get_session)) -> dict:
+    """Ändert eine Kostenart — und zieht einen neuen Namen in den Positionen
+    nach.
+
+    Zwei Dinge hängen daran, die ohne diesen Weg nicht zu erreichen waren:
+
+    * **umlagefähig** (CLX) entscheidet, ob eine Kostenart in der
+      Mieterabrechnung landet oder beim Eigentümer bleibt. Das Feld stand im
+      Modell, war aber nirgends änderbar — damit galt faktisch alles als
+      umlagefähig und die ganze Trennung war eine Behauptung.
+    * **Der Name** (CXC) verbindet `Kostenposition.kostenart` mit dem Katalog.
+      Er ist Freitext, kein Fremdschlüssel; wird er nur hier geändert, zeigen
+      die Positionen auf einen Namen, den es nicht mehr gibt. Deshalb wandern
+      sie mit — so wie `Miete.einheit` beim Umbenennen einer Einheit.
+
+    Gelöscht wird eine Kostenart nicht: der Katalog kennt dafür `aktiv=False`.
+    Eine gelöschte Art nähme die Geschichte ihrer Positionen mit.
+    """
+    k = session.get(Kostenart, kid)
+    if not k:
+        raise HTTPException(404, "Kostenart nicht gefunden")
+    erlaubt = {"name", "aktiv", "umlagefaehig", "s35", "beleg_monat",
+               "erinnerung_tage", "lieferant", "kundennummer", "turnus",
+               "schluessel", "notiz"}
+    felder = bereinige(Kostenart, {a: b for a, b in data.items() if a in erlaubt})
+
+    alt = k.name
+    if "name" in felder:
+        neu = (felder["name"] or "").strip()
+        if not neu:
+            raise HTTPException(400, "Die Kostenart braucht einen Namen")
+        doppelt = session.exec(select(Kostenart).where(
+            Kostenart.objekt_id == k.objekt_id, Kostenart.name == neu)).all()
+        if any(a.id != k.id for a in doppelt):
+            raise HTTPException(
+                409, f"„{neu}“ gibt es an dieser Immobilie schon")
+        felder["name"] = neu
+
+    geprueft = Kostenart.model_validate({**k.model_dump(), **felder})
+    for feld in felder:
+        setattr(k, feld, getattr(geprueft, feld))
+    session.add(k)
+
+    nachgezogen = 0
+    if k.name != alt:
+        zids = [z.id for z in session.exec(
+            select(Zeitraum).where(Zeitraum.objekt_id == k.objekt_id)).all()]
+        if zids:
+            for p in session.exec(select(Kostenposition).where(
+                    Kostenposition.zeitraum_id.in_(zids),
+                    Kostenposition.kostenart == alt)).all():
+                p.kostenart = k.name
+                session.add(p)
+                nachgezogen += 1
+        for d in session.exec(select(Dokument).where(
+                Dokument.objekt_id == k.objekt_id,
+                Dokument.kostenart == alt)).all():
+            d.kostenart = k.name
+            session.add(d)
+    session.commit()
+    return {"ok": True, "name": k.name, "umlagefaehig": k.umlagefaehig,
+            "positionen_nachgezogen": nachgezogen}
+
+
 # --------------------------------------------------------------------------
 # Einheiten — die Wohnungen, Büros und Stellplätze eines Hauses
 #

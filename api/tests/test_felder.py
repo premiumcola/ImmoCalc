@@ -118,3 +118,43 @@ def test_auswertung_rechnet_nach_dem_leeren_weiter():
 
         assert c.get("/api/auswertung?jahr=2025").status_code == 200
         assert c.get("/api/vermoegen").status_code == 200
+
+
+def test_kostenart_umlagefaehig_und_umbenennen():
+    """CLX/CXC: die Kostenart war nirgends änderbar.
+
+    `umlagefaehig` entscheidet, ob eine Position in der Mieterabrechnung
+    landet oder beim Eigentümer bleibt — ohne Schreibweg galt faktisch alles
+    als umlagefähig. Und der Name verbindet die Position mit dem Katalog:
+    wird er nur im Katalog geändert, zeigt die Position ins Leere."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte",
+                      json={"name": "Katalogweg 2",
+                            "kostenarten": ["Wasser", "Kamin"]}).json()["slug"]
+        arten = c.get(f"/api/objekte/{slug}/kostenarten").json()
+        wasser = next(a for a in arten if a["name"] == "Wasser")
+        assert wasser["umlagefaehig"] is True
+
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        c.post(f"/api/zeitraeume/{zid}/positionen", json={"kostenart": "Wasser"})
+
+        aus = c.patch(f"/api/kostenarten/{wasser['id']}",
+                      json={"umlagefaehig": False})
+        assert aus.status_code == 200
+        assert aus.json()["umlagefaehig"] is False
+
+        um = c.patch(f"/api/kostenarten/{wasser['id']}",
+                     json={"name": "Kaltwasser"})
+        assert um.status_code == 200
+        # die Position wandert mit, sonst zeigte sie auf einen toten Namen
+        assert um.json()["positionen_nachgezogen"] == 1
+        zeitraum = c.get(f"/api/zeitraeume/{zid}").json()
+        namen = [p["kostenart"] for p in zeitraum["checkliste"]]
+        assert "Kaltwasser" in namen and "Wasser" not in namen
+
+        kamin = next(a for a in c.get(f"/api/objekte/{slug}/kostenarten").json()
+                     if a["name"] == "Kamin")
+        assert c.patch(f"/api/kostenarten/{kamin['id']}",
+                       json={"name": "Kaltwasser"}).status_code == 409
+        assert c.patch(f"/api/kostenarten/{kamin['id']}",
+                       json={"name": "  "}).status_code == 400

@@ -83,6 +83,12 @@ h2.sec:first-child{margin-top:0}
   font:600 10.5px var(--mono); padding:4px 9px; border-radius:999px;
   background:#F1F4F4; color:var(--soft); white-space:nowrap; letter-spacing:.02em;
 }
+/* Ist der Chip ein Knopf, verhaelt er sich auch so: greifbare Flaeche, ohne
+   dass die Zeile dadurch waechst. */
+button.chip{border:none; cursor:pointer; font-family:var(--mono);
+            min-height:44px; padding-block:0; display:inline-flex;
+            align-items:center; margin-block:-10px}
+button.chip:hover{filter:brightness(.96)}
 .chip.teal{color:var(--teal-d); background:var(--teal-l)}
 .chip.amber{color:var(--amber); background:var(--amber-bg)}
 .chip.pos{color:var(--pos); background:var(--pos-bg)}

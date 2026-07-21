@@ -159,7 +159,7 @@
    Kosten je Kostenart und der Stand der Abrechnungszeitraeume.
    Kredit, Steuer und Versicherung traegt der Eigentuemer — die stehen auf
    wertentwicklung.html, ebenso Vermoegen, Cashflow und Mietverlauf. */
-import { api, eurKurz, esc, fristKlasse, fristText } from './assets/immo.js';
+import { api, eurKurz, esc, fristKlasse, fristText, melde } from './assets/immo.js';
 import { balken, sankey } from './assets/charts.js';
 import { auswahlfeld } from './assets/auswahl.js';
 
@@ -319,11 +319,14 @@ function umlageHtml(staende, einzeln) {
     const vollstaendig = umgelegt === s.arten.length;
     // Ohne Objektwahl bleibt es bei der Zeile je Objekt: sechs Objekte mit je
     // siebzehn Kostenarten waeren hundert Zeilen, durch die man scrollt.
+    // Der Chip ist zugleich der Schalter: umlagefähig hin und her, ein Tipp.
     const zeilen = !einzeln ? '' : `<div class="kaliste">${s.arten.map(k =>
       `<div class="ka">
         <span class="kan">${esc(k.name)}</span>
-        <span class="chip ${k.umlagefaehig ? 'teal' : 'amber'}">${
-          k.umlagefaehig ? 'umlagefähig' : 'Eigentümer'}</span>
+        <button class="chip ${k.umlagefaehig ? 'teal' : 'amber'}"
+                data-umlage="${k.id}" data-an="${k.umlagefaehig ? '1' : ''}"
+                title="Umschalten: trägt der Mieter oder der Eigentümer?">${
+          k.umlagefaehig ? 'umlagefähig' : 'Eigentümer'}</button>
       </div>`).join('')}</div>`;
 
     return `<div class="objgruppe">
@@ -340,8 +343,8 @@ function umlageHtml(staende, einzeln) {
     <h3>Umlage je Kostenart</h3>
     <div class="grenze" style="margin-bottom:14px">Diese Zuordnung entscheidet,
       wo eine erfasste Position erscheint: „umlagefähig“ hier, alles andere
-      unter <a href="wertentwicklung.html">Wert &amp; Cashflow</a>. Ändern
-      lässt sie sich zurzeit noch nicht.${einzeln ? ''
+      unter <a href="wertentwicklung.html">Wert &amp; Cashflow</a>.${einzeln
+        ? ' Zum Ändern auf die Marke tippen.'
         : ' Ein Objekt auswählen zeigt die einzelnen Kostenarten.'}</div>
     ${gruppen}
   </div>`;
@@ -450,6 +453,24 @@ async function zeichnen() {
 
     ${standHtml(staende)}`;
 }
+
+/* Umlagefähig umschalten — der Chip ist der Schalter (CLX). Geändert wird an
+   der Kostenart selbst; die Seite lädt danach neu, weil sich damit auch die
+   Kostenblöcke und der Fluss verschieben. */
+inhalt.addEventListener('click', async e => {
+  const knopf = e.target.closest('[data-umlage]');
+  if (!knopf) return;
+  const an = knopf.dataset.an === '1';
+  knopf.disabled = true;
+  try {
+    await api(`/kostenarten/${knopf.dataset.umlage}`,
+              { method: 'PATCH', body: { umlagefaehig: !an } });
+    await zeichnen();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+});
 
 await zeichnen();
 </script>
