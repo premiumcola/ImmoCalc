@@ -484,8 +484,20 @@ def _entschachtele(session: Session, client: Nextcloud, von: str,
 
 @router.get("/umzug")
 def umzug_pruefen(session: Session = Depends(get_session)) -> dict:
-    """Trockenlauf — zeigt alt → neu, je Ordner und je Beleg. Ändert nichts."""
-    return umzug_plan(session)
+    """Trockenlauf — zeigt alt → neu, je Ordner und je Beleg. Ändert nichts.
+
+    Ohne verbundene Cloud gibt es schlicht nichts nachzuziehen — das ist eine
+    Auskunft, kein Fehler. Vorher antwortete schon der Trockenlauf mit 400,
+    und die Einstellungsseite trug beim blossen Aufruf einen Fehler in die
+    Konsole. Die Ausführung (POST) bleibt dagegen bei 400: dort ist der
+    fehlende Home-Ordner wirklich ein Hindernis.
+    """
+    if not _lies(session, S_HOME):
+        return {"moeglich": False,
+                "grund": "Noch keine Nextcloud verbunden",
+                "schritte": [], "anzahl": 0, "unveraendert": [],
+                "ohne_ordner": [], "verwaist": [], "hinweise": []}
+    return {"moeglich": True, "grund": "", **umzug_plan(session)}
 
 
 @router.post("/umzug")

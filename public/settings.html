@@ -681,6 +681,12 @@ async function umzugLaden() {
   let grund = '';
   try {
     trockenlauf = await api('/nextcloud/umzug');
+    // Ohne verbundene Cloud antwortet der Trockenlauf ruhig mit `moeglich:
+    // false` statt mit einem Fehler — dann gibt es nichts zu zeigen.
+    if (trockenlauf && trockenlauf.moeglich === false) {
+      grund = trockenlauf.grund || 'nicht prüfbar';
+      trockenlauf = null;
+    }
   } catch (fehler) {
     trockenlauf = null;
     grund = String(fehler.message || fehler).replace(/^\d+\s*/, '')
