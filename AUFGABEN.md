@@ -19,9 +19,7 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | In einfachen Worten | Stand |
 |---|---|---|
-| CXXII/CXXIII/CXXVII | Dateinamen ohne Doppelnennung, mit Sache und Betrag · Ordner vollständig neu einlesen | in Arbeit |
-| CXXXVIII | Neuer Typ Grundstück: Nutzungsart, Grundstückswert, Pacht, Grundsteuerwert, eigenes Symbol | in Arbeit |
-| CLV/CLVI | Steuernummer verrutscht beim Tippen · gefilterte Kennzahlen sehen aus wie echte | in Arbeit |
+| — | gerade nichts in Arbeit | |
 
 ### Heute fertig geworden
 
@@ -42,6 +40,15 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 | CXXII/CXXIII/CXXVII | Dateinamen mit Datum, Sache und Betrag · vollständiger Ordnerabgleich | `37a3d8d` |
 | CLVIII/CLIX | „Benennung nachziehen" mit Trockenlauf · Leerstand bleibt beim Eigentümer | `f3619af` |
 | CXXXVIII | Grundstück als eigener Objekttyp: Nutzungsart, Grundsteuerwert, Pacht, Symbol | `ac3ad95` |
+| CXXIV/CXXV/CXXIX | Dokumentenseite zweispaltig: Datum, Betrag, Vorschau, „erkannt → wird eingetragen" | `cd4ea56` |
+| CXXVI | Der Bereich heißt „Dokumente & Ereignisse" | `4cd2d05` |
+| CLIII | Eine geplante Mieterhöhung entsteht nur einmal | `3b5e526` |
+| CLXV | Grundstück bekommt keine Abrechnungsfrist mehr | `cd4ea56` |
+| CLXXIII/CLXXIV | Breitere Arbeitsfläche, lesbare Auswahlfelder am großen Schirm | `c9a4841` |
+| CLXX | Betrag wird aus Text-PDFs gelesen (dein Kaminkehrer: 104,15 €) | `dbdacbc` |
+| CLXVII | Beim Grundstück heißt der Wert „Grundstückswert" | `cb759a1` |
+| CLXXI/CLXXII/CLXXV/CLXXVII | Kostenart wählbar · Zeitraum aus dem genauen Belegdatum · erledigt wird grün · Erkennung auch für liegende Dateien | `61e2c5b` |
+| CXLI/CXLII/CXLIII/CLXVIII/CLXIX | Haus- und Einheitenebene · Einheiten bearbeiten · Einheit per Bubble · keine Doppelbelegung | `051611a` |
 
 ## Sofort zu beheben — aus der Nachprüfung vom 21.07. (Nachmittag)
 
@@ -69,6 +76,29 @@ Gegenprüfung hat Fehler gefunden, die vor der nächsten echten Nutzung weg müs
 | CLXV | **Grundstück bekommt eine Abrechnungsfrist, die es nicht gibt** | `POST /api/objekte` legt für jedes Objekt einen Zeitraum an. Auf der Startseite steht dann „Frist in 528 T" und `/api/erinnerungen` mahnt eine § 556-Abrechnung an — für ein Feldgrundstück ohne Mieter sinnlos |
 | CLXVI | Ordnervorlage läuft ohne Straße leer | Ein Grundstück hat oft keine Straße; die Vorlage `({ort}) {strasse} · {name}` sollte auf Gemarkung und Flurstück ausweichen |
 | CLXVII | Pacht heißt in der Auswertung noch „Miete" | `auswertung.py`/`cashflow.py` führen ein Objekt ohne Einheiten als Pseudo-Einheit; Pachterträge laufen mit, sind aber nicht als Pacht benannt. Ebenso zeigt `wertentwicklung.html` „Verkehrswert" statt „Grundstückswert" |
+
+### Vom Beleg zur Kostenposition — der letzte Schritt fehlt
+
+Der Beleg trägt jetzt Kostenart, Belegdatum und Zeitraum (`61e2c5b`). Damit
+daraus wirklich eine Position in der Abrechnung wird, fehlt noch:
+
+| Nr. | Fund | Was fehlt |
+|---|---|---|
+| CLXXX | **Niemand legt die Position an** | `POST /api/zeitraeume/{zid}/positionen` wird vom Beleg aus nicht gerufen. Nötig: ein Schritt „als Position übernehmen" oder eine Automatik beim Einsortieren |
+| CLXXXI | **Der Betrag steht nur im Dateinamen** | Bewusst so (CXXIII), aber für die Position unzuverlässig — eine eigene Spalte am Dokument wäre belastbarer |
+| CLXXXII | **Eine Position je Kostenart und Zeitraum** | Der Endpunkt lehnt eine zweite mit 409 ab. Für vier Abschlagsrechnungen auf dieselbe Position braucht es eine Regel: summieren statt ablehnen |
+| CLXXXIII | **Kein Rückweg von der Abrechnung zum Beleg** | `Kostenposition` kennt kein Dokument. Additiv ergänzbar (`dokument_id` oder Belegliste) |
+| CLXXXIV | **Umbenannte Kostenart bricht die Verknüpfung** | Der Beleg zeigt auf einen Namen, den es nicht mehr gibt (`Kostenposition.kostenart` ist Freitext, kein Fremdschlüssel) |
+
+### Reste aus der Einheiten-Ebene
+
+| Nr. | Fund | Was fehlt |
+|---|---|---|
+| CLXXXV | **Dialog schließt beim abgewiesenen Speichern** | `<form method="dialog">` schließt, bevor der Handler antwortet — nach einem 409 sind alle Eingaben weg. Betrifft alle Formulare der Objektseite, fällt bei der Doppelbelegung am meisten auf |
+| CLXXXVI | **Verkehrswert je Einheit** | `Einheit` hat kein Wertfeld; der Fokus zeigt deshalb Miete und €/m² statt Wert und Eigenkapital. Gehört zu CLXI (Eigentum je Einheit) |
+| CLXXXVII | **Löschknöpfe sind 36×36 px** | Gefordert sind 44×44 (Bestand in allen Listen von `objekt.html`) |
+| CLXXXVIII | **`GET /api/nextcloud/umzug` antwortet mit 400** | Wirft auf `settings.html` einen JS-Fehler; liegt in `cloud.py` |
+| CLXXXIX | **Umbenannte Einheit und alte Abrechnungen** | Mietverhältnisse ziehen mit, aber in bereits gespeicherten `Kostenposition.anteile` steht der alte Einheitsname als Partei — betrifft abgeschlossene Zeiträume mit Leerstand |
 
 ### Rechtliche Grenzen bei Mieterhöhungen — belegt am 21.07.2026
 
