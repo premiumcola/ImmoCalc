@@ -167,6 +167,173 @@ def test_geplante_erhoehung_entsteht_nur_einmal():
         assert len(mieten) == 4
 
 
+def test_doppelbelegung_einer_einheit_wird_abgewiesen():
+    """CXLIII: eine Einheit ist nicht zweimal gleichzeitig vermietet.
+
+    Der Hinweis muss die Überschneidung nennen — sonst rät der Nutzer, welches
+    Enddatum fehlt."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Doppelweg 2",
+            "einheiten": [{"bezeichnung": "EG"}, {"bezeichnung": "OG"}],
+        }).json()["slug"]
+        anlegen = lambda **f: c.post(f"/api/objekte/{slug}/mieten", json=f)  # noqa: E731
+
+        assert anlegen(partei="Alt", einheit="EG", kaltmiete=800,
+                       ab_datum="2024-01-01").status_code == 201
+
+        # offenes Ende -> jeder spätere Beginn in derselben Einheit kollidiert
+        doppelt = anlegen(partei="Neu", einheit="EG", kaltmiete=900,
+                          ab_datum="2025-07-01")
+        assert doppelt.status_code == 409
+        text = doppelt.json()["detail"]
+        assert "01.07.2025" in text and "Alt" in text
+
+        # eine andere Einheit geht selbstverständlich
+        assert anlegen(partei="Neu", einheit="OG", kaltmiete=900,
+                       ab_datum="2025-07-01").status_code == 201
+
+
+def test_lueckenloser_mieterwechsel_bleibt_erlaubt():
+    """Der alte endet am 30.06., der neue beginnt am 01.07. — kein Doppel."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Wechselweg 4",
+            "einheiten": [{"bezeichnung": "EG"}]}).json()["slug"]
+
+        assert c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Vormieter", "einheit": "EG", "kaltmiete": 800.0,
+            "ab_datum": "2024-01-01", "bis_datum": "2025-06-30"}).status_code == 201
+        nach = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Nachmieter", "einheit": "EG", "kaltmiete": 860.0,
+            "ab_datum": "2025-07-01"})
+        assert nach.status_code == 201, nach.text
+
+        # ein Tag früher überschneidet sich und wird abgewiesen
+        frueher = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Zufrüh", "einheit": "EG", "kaltmiete": 860.0,
+            "ab_datum": "2025-06-30", "bis_datum": "2025-06-30"})
+        assert frueher.status_code == 409
+        assert "30.06.2025" in frueher.json()["detail"]
+
+
+def test_enddatum_entfernen_darf_keine_doppelbelegung_erzeugen():
+    """Die Lücke schliesst sich auch beim Ändern: nimmt man dem Vormieter sein
+    Enddatum weg, wohnen plötzlich zwei gleichzeitig in derselben Wohnung."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Rückwärtsweg 1",
+            "einheiten": [{"bezeichnung": "EG"}]}).json()["slug"]
+        alt = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Vormieter", "einheit": "EG", "kaltmiete": 800.0,
+            "ab_datum": "2024-01-01", "bis_datum": "2025-06-30"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Nachmieter", "einheit": "EG", "kaltmiete": 860.0,
+            "ab_datum": "2025-07-01"})
+
+        offen = c.patch(f"/api/stammdaten/mieten/{alt}", json={"bis_datum": None})
+        assert offen.status_code == 409
+        assert "Nachmieter" in offen.json()["detail"]
+
+        # die Miete desselben Standes zu ändern bleibt jederzeit möglich
+        assert c.patch(f"/api/stammdaten/mieten/{alt}",
+                       json={"kaltmiete": 820.0}).status_code == 200
+
+
+def test_einheiten_anlegen_aendern_und_loeschen():
+    """CXLI: die Einheiten eines Hauses sind sichtbar und bearbeitbar."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Einheitenweg 5"}).json()["slug"]
+        assert c.get(f"/api/objekte/{slug}/einheiten").json() == []
+
+        neu = c.post(f"/api/objekte/{slug}/einheiten", json={
+            "bezeichnung": "1. OG", "nutzungsart": "Wohnen", "flaeche": 78.0,
+            "nebenflaeche": 6.0, "stellplaetze": 1})
+        assert neu.status_code == 201, neu.text
+        eid = neu.json()["id"]
+
+        zeile = c.get(f"/api/objekte/{slug}/einheiten").json()[0]
+        assert zeile["bezeichnung"] == "1. OG"
+        assert zeile["flaeche"] == 78.0 and zeile["stellplaetze"] == 1
+        assert zeile["vermietet"] is False
+
+        # dieselbe Bezeichnung ein zweites Mal — auch in anderer Schreibweise
+        assert c.post(f"/api/objekte/{slug}/einheiten",
+                      json={"bezeichnung": "1. og"}).status_code == 409
+
+        assert c.patch(f"/api/einheiten/{eid}",
+                       json={"flaeche": 80.5, "nutzungsart": "Gewerbe"}).status_code == 200
+        zeile = c.get(f"/api/objekte/{slug}/einheiten").json()[0]
+        assert zeile["flaeche"] == 80.5 and zeile["nutzungsart"] == "Gewerbe"
+
+        assert c.delete(f"/api/einheiten/{eid}").status_code == 200
+        assert c.get(f"/api/objekte/{slug}/einheiten").json() == []
+        assert c.delete(f"/api/einheiten/{eid}").status_code == 404
+
+
+def test_einheit_zeigt_ihren_heutigen_mieter():
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Belegtweg 8",
+            "einheiten": [{"bezeichnung": "EG"}, {"bezeichnung": "OG"}]}).json()["slug"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Frau Sommer", "einheit": "EG", "kaltmiete": 700.0,
+            "ab_datum": "2020-01-01"})
+
+        zeilen = {e["bezeichnung"]: e for e in
+                  c.get(f"/api/objekte/{slug}/einheiten").json()}
+        assert zeilen["EG"]["vermietet"] is True
+        assert zeilen["EG"]["mieter"] == "Frau Sommer"
+        assert zeilen["EG"]["kaltmiete"] == 700.0
+        assert zeilen["OG"]["vermietet"] is False and zeilen["OG"]["mieter"] == ""
+
+
+def test_umbenennen_zieht_die_mietverhaeltnisse_mit():
+    """Fund XCII in Zeitlupe: hiesse die Einheit nach dem Umbenennen anders als
+    in der Miete, fiele die Partei stumm aus der Kostenverteilung."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Namensweg 9",
+            "einheiten": [{"bezeichnung": "EG", "flaeche": 60}]}).json()["slug"]
+        eid = c.get(f"/api/objekte/{slug}/einheiten").json()[0]["id"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Herr Berg", "einheit": "EG", "kaltmiete": 700.0,
+            "ab_datum": "2020-01-01"})
+
+        antwort = c.patch(f"/api/einheiten/{eid}", json={"bezeichnung": "EG links"})
+        assert antwort.status_code == 200
+        assert antwort.json()["mieten_umbenannt"] == 1
+        assert c.get(f"/api/objekte/{slug}/mieten").json()[0]["einheit"] == "EG links"
+        assert c.get(f"/api/objekte/{slug}/einheiten").json()[0]["vermietet"] is True
+
+
+def test_einheit_mit_mietverhaeltnis_wird_nicht_geloescht():
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Haltweg 3",
+            "einheiten": [{"bezeichnung": "EG"}, {"bezeichnung": "OG"}]}).json()["slug"]
+        eid = next(e["id"] for e in c.get(f"/api/objekte/{slug}/einheiten").json()
+                   if e["bezeichnung"] == "EG")
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Herr Klein", "einheit": "EG", "kaltmiete": 700.0,
+            "ab_datum": "2020-01-01"})
+
+        weg = c.delete(f"/api/einheiten/{eid}")
+        assert weg.status_code == 409
+        assert "Herr Klein" in weg.json()["detail"]
+        assert len(c.get(f"/api/objekte/{slug}/einheiten").json()) == 2
+
+
+def test_grundstueck_bekommt_keine_einheiten():
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Steigäcker",
+                                            "typ": "lg-grundstueck"}).json()["slug"]
+        antwort = c.post(f"/api/objekte/{slug}/einheiten",
+                         json={"bezeichnung": "Acker"})
+        assert antwort.status_code == 400
+        assert "Grundstück" in antwort.json()["detail"]
+
+
 def test_faenger_verschluckt_keine_zweisegmentigen_pfade():
     """Fund LXXI: früher stand unter /api ein Fänger `/{bereich}/{eintrag_id}`.
 

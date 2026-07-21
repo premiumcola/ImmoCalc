@@ -52,9 +52,28 @@ function melde(name, status, errors, extra = []) {
   await page.waitForSelector('h2.sec', { timeout: 8000 })
     .catch(() => extra.push('Objektseite ohne Abschnitte'));
 
+  // CLXVIII — das Haus fuehrt alles Uebergeordnete und die Einheiten; die
+  // Mieter stehen eine Ebene tiefer, an der Einheit.
   const abschnitte = await page.$$eval('h2.sec', hs => hs.map(h => h.textContent.trim()));
-  for (const soll of ['Mieten', 'Versicherungen', 'Kredite']) {
+  for (const soll of ['Einheiten', 'Versicherungen', 'Kredite']) {
     if (!abschnitte.some(a => a.includes(soll))) extra.push(`Abschnitt fehlt: ${soll}`);
+  }
+
+  const einheit = await page.$('[data-einheit]');
+  if (!einheit) {
+    extra.push('keine Einheit zum Anklicken');
+  } else {
+    await einheit.click();
+    await page.waitForSelector('.hausweg', { timeout: 8000 })
+      .catch(() => extra.push('Einheit oeffnet sich nicht'));
+    const tief = await page.$$eval('h2.sec', hs => hs.map(h => h.textContent.trim()));
+    if (!tief.some(a => a.includes('Mieten'))) extra.push('Einheit ohne Mieten-Abschnitt');
+    if (tief.some(a => a.includes('Stammdaten'))) {
+      extra.push('Einheit wiederholt die Stammdaten des Hauses');
+    }
+    await page.goBack();
+    await page.waitForSelector('[data-add="versicherungen"]', { timeout: 8000 })
+      .catch(() => extra.push('Weg zurueck zum Haus fehlt'));
   }
 
   // Versicherung anlegen — der Dialog muss speichern und die Liste nachladen

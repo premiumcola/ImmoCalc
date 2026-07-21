@@ -46,7 +46,8 @@ def _objekt(session: Session, slug: str) -> Objekt:
 WEGWEISER: dict[str, str] = {
     "zeitraeume": "Zeiträume stehen in GET /api/objekte/{slug} unter "
                   "'zeitraeume'; anlegen mit POST /api/objekte/{slug}/zeitraeume",
-    "einheiten": "Einheiten stehen in GET /api/objekte/{slug} unter 'einheiten'",
+    "einheiten": "Einheiten haben eigene Endpunkte: GET/POST "
+                 "/api/objekte/{slug}/einheiten, PATCH/DELETE /api/einheiten/{id}",
     "dokumente": "Dokumente eines Objekts: GET /api/dokumente/objekt/{slug}",
     "positionen": "Positionen haengen am Zeitraum: "
                   "GET /api/zeitraeume/{zid}/positionen",
@@ -133,30 +134,78 @@ def anlegen(slug: str, bereich: str, data: dict,
     return {"id": eintrag.id}
 
 
-def _pruefe_mietstand(session: Session, objekt_id: int, neu: Miete) -> None:
-    """Verhindert zwei gleichzeitige Mietstände derselben Partei.
+def _tag(d: date | None) -> str:
+    """Ein Datum, wie es in einem Satz steht — ein offenes Ende bleibt offen."""
+    return f"{d:%d.%m.%Y}" if d else "offen"
 
-    Eine geplante Erhöhung lässt sich sonst mehrfach anlegen — im Test
-    entstanden vier offene Stände derselben Partei ab demselben Tag, alle mit
-    dem Vermerk „geplant". Welcher davon gilt, entscheidet dann die Reihenfolge
-    in der Datenbank, und die Abrechnung rechnet mit dem falschen.
 
-    Geprüft wird je Partei und Einheit; eine Staffelmiete mit späterem
-    Wirkungstag bleibt ausdrücklich erlaubt.
+def _ueberschneidung(a: Miete, b: Miete) -> tuple[date, date | None] | None:
+    """Die Zeitspanne, in der zwei Mietverhältnisse gleichzeitig laufen.
+
+    Ein offenes Ende (`bis_datum is None`) reicht bis auf Weiteres. Endet das
+    eine am 30.06. und beginnt das andere am 01.07., berühren sie sich nicht —
+    ein lückenloser Mieterwechsel ist keine Doppelbelegung."""
+    beginn = max(a.ab_datum, b.ab_datum)
+    enden = [d for d in (a.bis_datum, b.bis_datum) if d is not None]
+    ende = min(enden) if enden else None
+    if ende is not None and ende < beginn:
+        return None
+    return beginn, ende
+
+
+def _pruefe_mietstand(session: Session, objekt_id: int, neu: Miete,
+                      ausser: int | None = None) -> None:
+    """Verhindert zwei gleichzeitige Mietstände in derselben Einheit.
+
+    Zwei Fälle, ein Prüfweg — beide enden damit, dass die Abrechnung mit dem
+    falschen Stand rechnet:
+
+    * **Dieselbe Partei** bekommt keinen zweiten offenen Stand ab demselben
+      Tag. Eine geplante Erhöhung liess sich sonst mehrfach anlegen; im Test
+      entstanden vier Stände derselben Partei ab demselben Tag, alle mit dem
+      Vermerk „geplant". Welcher gilt, entschied die Reihenfolge in der
+      Datenbank. Eine echte Staffel mit späterem Wirkungstag bleibt erlaubt.
+    * **Verschiedene Parteien** bewohnen dieselbe Einheit nicht gleichzeitig
+      (CXLIII). Der Hinweis nennt die Überschneidung, damit klar ist, welches
+      Enddatum fehlt. Der lückenlose Wechsel — der alte endet am 30.06., der
+      neue beginnt am 01.07. — bleibt ausdrücklich erlaubt.
+
+    `ausser` ist die eigene id beim Ändern: ein bearbeiteter Stand ist kein
+    zweiter. Die Staffelregel greift dann nicht — sonst liesse sich ein
+    laufender Stand nicht mehr anfassen, sobald für dieselbe Partei eine
+    Erhöhung geplant ist.
     """
-    if not neu.ab_datum or not neu.partei:
+    if not neu.ab_datum:
         return
     vorhanden = session.exec(
         select(Miete).where(Miete.objekt_id == objekt_id,
-                            Miete.partei == neu.partei,
                             Miete.einheit == neu.einheit)).all()
     for m in vorhanden:
-        laeuft_noch = m.bis_datum is None or m.bis_datum >= neu.ab_datum
-        if laeuft_noch and m.ab_datum and m.ab_datum >= neu.ab_datum:
+        if ausser is not None and m.id == ausser:
+            continue
+        if neu.partei and m.partei == neu.partei:
+            if ausser is not None:
+                continue
+            laeuft_noch = m.bis_datum is None or m.bis_datum >= neu.ab_datum
+            if laeuft_noch and m.ab_datum and m.ab_datum >= neu.ab_datum:
+                raise HTTPException(
+                    409, f"Für {neu.partei} gibt es ab dem "
+                         f"{m.ab_datum:%d.%m.%Y} bereits einen Mietstand. "
+                         f"Ändere ihn, statt einen zweiten daneben zu stellen.")
+            continue
+        # Ohne benannte Einheit ist nicht zu erkennen, ob zwei Mietverhältnisse
+        # dieselbe Wohnung meinen oder zwei verschiedene — dann lieber nichts
+        # behaupten. Die Oberfläche lässt die Einheit antippen, sobald es
+        # welche gibt; nur Bestandsdaten kommen noch ohne.
+        if not neu.einheit.strip() or not neu.partei or not m.partei:
+            continue
+        spanne = _ueberschneidung(m, neu)
+        if spanne:
+            von, bis = spanne
             raise HTTPException(
-                409, f"Für {neu.partei} gibt es ab dem "
-                     f"{m.ab_datum:%d.%m.%Y} bereits einen Mietstand. "
-                     f"Ändere ihn, statt einen zweiten daneben zu stellen.")
+                409, f"„{neu.einheit}“ ist schon an {m.partei} vermietet — "
+                     f"Überschneidung {_tag(von)} bis {_tag(bis)}. Beende das "
+                     f"bisherige Mietverhältnis am Tag davor.")
 
 
 @router.patch("/stammdaten/{bereich}/{eintrag_id}")
@@ -170,6 +219,10 @@ def aendern(bereich: str, eintrag_id: int, data: dict,
                                 if k not in ("id", "objekt_id")
                                 and hasattr(eintrag, k)})
     geprueft = modell.model_validate({**eintrag.model_dump(), **felder})
+    # Auch beim Ändern: eine Einheit umzuhängen oder ein Enddatum zu entfernen
+    # kann dieselbe Doppelbelegung erzeugen wie ein neuer Eintrag.
+    if isinstance(eintrag, Miete):
+        _pruefe_mietstand(session, eintrag.objekt_id, geprueft, ausser=eintrag_id)
     for k in felder:
         setattr(eintrag, k, getattr(geprueft, k))
     session.add(eintrag)

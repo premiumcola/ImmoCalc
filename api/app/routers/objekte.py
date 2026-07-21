@@ -290,6 +290,181 @@ def kostenarten(slug: str, session: Session = Depends(get_session)) -> list[Kost
     return session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
 
 
+# --------------------------------------------------------------------------
+# Einheiten — die Wohnungen, Büros und Stellplätze eines Hauses
+#
+# `Miete.einheit` verweist über die Bezeichnung hierher, nicht über eine id.
+# Deshalb ist die Bezeichnung je Objekt eindeutig und wird beim Umbenennen in
+# den Mietverhältnissen mitgezogen: sonst zeigte die Miete ins Leere, und die
+# Partei fiele stumm aus der Kostenverteilung (Fund XCII).
+# --------------------------------------------------------------------------
+
+class EinheitNeu(BaseModel):
+    """Was eine Einheit ausmacht. Nur die Bezeichnung ist Pflicht — Flächen und
+    Stellplätze trägt man oft erst nach, wenn der Grundriss vorliegt."""
+    bezeichnung: str
+    nutzungsart: str = "Wohnen"
+    flaeche: Optional[float] = None
+    terrasse: Optional[float] = None
+    nebenflaeche: Optional[float] = None
+    # Optional, obwohl das Modell eine Zahl erwartet: ein leer gelassenes Feld
+    # kommt aus dem Formular als null und darf das Anlegen nicht scheitern lassen.
+    stellplaetze: Optional[int] = 0
+
+
+def _objekt(session: Session, slug: str) -> Objekt:
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    return o
+
+
+def _einheit(session: Session, eid: int) -> Einheit:
+    e = session.get(Einheit, eid)
+    if not e:
+        raise HTTPException(404, "Einheit nicht gefunden")
+    return e
+
+
+def _zuordnung(m: Miete, einheiten: list[Einheit]) -> str:
+    """Auf welche Einheit ein Mietverhältnis zeigt — wie in `verteilung.bezuege`:
+    ohne Angabe gehört es bei einem Objekt mit genau einer Einheit zu dieser."""
+    if m.einheit.strip():
+        return m.einheit.strip()
+    return einheiten[0].bezeichnung if len(einheiten) == 1 else ""
+
+
+def _laeuft(m: Miete, heute: date) -> bool:
+    """Gilt dieses Mietverhältnis heute? Ein geplanter Stand gilt noch nicht,
+    ein beendeter nicht mehr."""
+    return m.ab_datum <= heute and (m.bis_datum is None or m.bis_datum >= heute)
+
+
+def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
+                   heute: date) -> dict:
+    """Eine Einheit mit dem, was heute darin wohnt.
+
+    `vermietet` ist die eine Auskunft, die man auf einen Blick braucht — sie
+    entscheidet, ob die Blase in der Oberfläche als „frei" erscheint."""
+    eigene = [m for m in mieten if _zuordnung(m, einheiten) == e.bezeichnung]
+    laufend = [m for m in eigene if _laeuft(m, heute)]
+    return {
+        **e.model_dump(),
+        "vermietet": bool(laufend),
+        "mieter": ", ".join(sorted({m.partei for m in laufend if m.partei})),
+        "kaltmiete": round(sum(m.kaltmiete for m in laufend), 2),
+        "mietverhaeltnisse": len(eigene),
+    }
+
+
+@router.get("/objekte/{slug}/einheiten")
+def einheiten_liste(slug: str,
+                    session: Session = Depends(get_session)) -> list[dict]:
+    """Die Einheiten eines Objekts, jede mit ihrem heutigen Mieter."""
+    o = _objekt(session, slug)
+    einheiten = list(session.exec(
+        select(Einheit).where(Einheit.objekt_id == o.id)).all())
+    mieten = list(session.exec(select(Miete).where(Miete.objekt_id == o.id)).all())
+    heute = date.today()
+    return [_einheit_zeile(e, mieten, einheiten, heute) for e in einheiten]
+
+
+def _bezeichnung_frei(session: Session, objekt_id: int, bezeichnung: str,
+                      ausser: Optional[int] = None) -> None:
+    """Zwei gleichnamige Einheiten wären nicht auseinanderzuhalten — weder für
+    den Nutzer noch für `Miete.einheit`."""
+    for e in session.exec(select(Einheit).where(Einheit.objekt_id == objekt_id)).all():
+        if e.id != ausser and e.bezeichnung.strip().casefold() == bezeichnung.casefold():
+            raise HTTPException(409, f"„{bezeichnung}“ gibt es in diesem Objekt "
+                                     f"schon. Wähle eine andere Bezeichnung.")
+
+
+@router.post("/objekte/{slug}/einheiten", status_code=201)
+def einheit_anlegen(slug: str, data: EinheitNeu,
+                    session: Session = Depends(get_session)) -> dict:
+    o = _objekt(session, slug)
+    if ist_grundstueck(o):
+        raise HTTPException(400, "Ein Grundstück hat keine Einheiten — "
+                                 "Fläche und Nutzungsart stehen am Objekt.")
+    bezeichnung = data.bezeichnung.strip()
+    if not bezeichnung:
+        raise HTTPException(400, "Die Einheit braucht eine Bezeichnung")
+    _bezeichnung_frei(session, o.id, bezeichnung)
+    e = Einheit(objekt_id=o.id, bezeichnung=bezeichnung,
+                nutzungsart=data.nutzungsart.strip() or "Wohnen",
+                flaeche=data.flaeche, terrasse=data.terrasse,
+                nebenflaeche=data.nebenflaeche,
+                stellplaetze=data.stellplaetze or 0)
+    session.add(e)
+    session.commit()
+    session.refresh(e)
+    return {"id": e.id, "bezeichnung": e.bezeichnung}
+
+
+@router.patch("/einheiten/{eid}")
+def einheit_aendern(eid: int, data: dict,
+                    session: Session = Depends(get_session)) -> dict:
+    """Ändert eine Einheit — und zieht eine neue Bezeichnung in den
+    Mietverhältnissen nach.
+
+    Ohne das Nachziehen zeigte `Miete.einheit` nach dem Umbenennen auf eine
+    Einheit, die es nicht mehr gibt: die Partei bekäme keine Kosten mehr und
+    ihre Vorauszahlung voll erstattet, ohne dass es irgendwo auffiele."""
+    e = _einheit(session, eid)
+    erlaubt = {"bezeichnung", "nutzungsart", "flaeche", "terrasse",
+               "nebenflaeche", "stellplaetze"}
+    felder = bereinige(Einheit, {k: v for k, v in data.items() if k in erlaubt})
+    if "bezeichnung" in felder:
+        neu = (felder["bezeichnung"] or "").strip()
+        if not neu:
+            raise HTTPException(400, "Die Einheit braucht eine Bezeichnung")
+        _bezeichnung_frei(session, e.objekt_id, neu, ausser=e.id)
+        felder["bezeichnung"] = neu
+    alt = e.bezeichnung
+    geprueft = Einheit.model_validate({**e.model_dump(), **felder})
+    for k in felder:
+        setattr(e, k, getattr(geprueft, k))
+    session.add(e)
+
+    umbenannt = 0
+    if e.bezeichnung != alt:
+        for m in session.exec(select(Miete).where(Miete.objekt_id == e.objekt_id,
+                                                  Miete.einheit == alt)).all():
+            m.einheit = e.bezeichnung
+            session.add(m)
+            umbenannt += 1
+    session.commit()
+    return {"ok": True, "bezeichnung": e.bezeichnung, "mieten_umbenannt": umbenannt}
+
+
+@router.delete("/einheiten/{eid}")
+def einheit_loeschen(eid: int, session: Session = Depends(get_session)) -> dict:
+    """Entfernt eine Einheit — aber nur, solange nichts daran hängt.
+
+    Ein Mietverhältnis ohne Einheit ist genau der stille Fehler aus XCII.
+    Deshalb wird hier lieber abgewiesen und gesagt, wer im Weg steht."""
+    e = _einheit(session, eid)
+    einheiten = list(session.exec(
+        select(Einheit).where(Einheit.objekt_id == e.objekt_id)).all())
+    mieten = [m for m in session.exec(
+        select(Miete).where(Miete.objekt_id == e.objekt_id)).all()
+        if _zuordnung(m, einheiten) == e.bezeichnung]
+    if mieten:
+        namen = sorted({m.partei for m in mieten if m.partei})
+        eins = len(mieten) == 1
+        raise HTTPException(
+            409, f"An „{e.bezeichnung}“ "
+                 + ("hängt noch ein Mietverhältnis" if eins
+                    else f"hängen noch {len(mieten)} Mietverhältnisse")
+                 + (f" ({', '.join(namen)})" if namen else "")
+                 + ". Entferne " + ("es" if eins else "sie")
+                 + " zuerst — sonst gehört die Miete zu keiner Einheit mehr.")
+    bezeichnung = e.bezeichnung
+    session.delete(e)
+    session.commit()
+    return {"ok": True, "bezeichnung": bezeichnung}
+
+
 @router.get("/erinnerungen")
 def erinnerungen(session: Session = Depends(get_session)) -> dict:
     """Was ansteht: Abrechnungsfristen und erwartete Jahresabrechnungen.

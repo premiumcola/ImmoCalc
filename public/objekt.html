@@ -171,6 +171,49 @@
   .jahr .weg:hover{color:var(--neg);background:var(--paper)}
   .dlgnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
            margin:0 0 16px}
+
+  /* ---- CLXVIII: zwei Ebenen ------------------------------------------
+     Der Weg zurück zum Haus steht ganz oben und sieht aus wie eine Karte,
+     nicht wie ein Formularknopf — er führt eine Stufe hinauf, nicht weiter. */
+  .hausweg{display:flex;align-items:center;gap:12px;width:100%;border:none;
+    background:var(--sheet);border-radius:14px;padding:12px 14px;cursor:pointer;
+    font-family:var(--body);color:inherit;text-align:left;margin-bottom:20px;
+    min-height:56px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .hausweg:hover{background:#F6F8F8}
+  .hausweg:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .hausweg .pfeil{font:400 20px var(--body);color:var(--soft);flex:none;
+    width:22px;text-align:center}
+  .hausweg .ic{width:38px;height:38px;border-radius:10px;overflow:hidden;flex:none}
+  .hausweg .ic svg{width:100%;height:100%;display:block}
+  .hausweg .ht{flex:1;min-width:0}
+  .hausweg .hl{display:block;font:500 10.5px var(--mono);color:var(--soft);
+    letter-spacing:.06em;text-transform:uppercase}
+  .hausweg .hn{display:block;font:600 14.5px var(--disp);letter-spacing:-.01em;
+    margin-top:3px;overflow-wrap:anywhere}
+
+  /* ---- CLXIX: Einheiten als Blasen — dieselbe Sprache wie die Startseite */
+  .bubbles{display:flex;flex-wrap:wrap;gap:6px}
+  .bubble{display:inline-flex;align-items:center;gap:8px;max-width:100%;
+    min-height:44px;padding:8px 16px;border:none;border-radius:999px;
+    background:var(--sheet);color:inherit;font-family:var(--body);
+    text-align:left;cursor:pointer;box-shadow:0 1px 2px rgba(22,38,44,.06);
+    transition:transform .1s,box-shadow .15s}
+  .bubble:hover{box-shadow:0 5px 14px -8px rgba(22,38,44,.3)}
+  .bubble:active{transform:scale(.97)}
+  .bubble:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .bubble .bt{font:600 13.5px var(--body);line-height:1.3;
+              overflow-wrap:anywhere;min-width:0}
+  .bubble .bf{font:500 10.5px var(--mono);color:var(--soft);white-space:nowrap}
+  .bubble.frei{background:#F1F4F4}
+  .bubble .bfrei{font:600 10.5px var(--mono);color:var(--amber);
+    letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+  /* Die gewählte Blase trägt die Auszeichnungsfarbe — eine Wahl, sichtbar
+     ohne Häkchen. */
+  .bubble.gewaehlt{background:var(--teal);box-shadow:none}
+  .bubble.gewaehlt .bt{color:#fff}
+  .bubble.gewaehlt .bf,.bubble.gewaehlt .bfrei{color:rgba(255,255,255,.8)}
+  .feldnote{display:block;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.5;margin-top:8px}
 </style>
 </head>
 <body>
@@ -226,14 +269,26 @@ installLogos();
 const GRUNDSTUECK = 'lg-grundstueck';
 const istGrundstueck = () => Boolean(objekt) && objekt.typ === GRUNDSTUECK;
 
-const slug = new URLSearchParams(location.search).get('o');
+const anfrage = new URLSearchParams(location.search);
+const slug = anfrage.get('o');
+/* CLXVIII — dieselbe Seite, zwei Ebenen: ohne `e` das ganze Haus, mit `e` die
+   eine Einheit im Fokus. Als zweite Datei wären Mietverhältnis, Kontakte und
+   Abrechnung ein zweites Mal zu pflegen und liefen mit der Zeit auseinander. */
+const fokusWunsch = anfrage.get('e');
 const inhalt = document.getElementById('inhalt');
 const titel = document.getElementById('titel');
 const sub = document.getElementById('sub');
 const dlg = document.getElementById('dlg');
 
-document.getElementById('back').addEventListener('click', () => history.length > 1
-  ? history.back() : location.href = 'index.html');
+const hausUrl = () => `objekt.html?o=${encodeURIComponent(slug)}`;
+const einheitUrl = id => `${hausUrl()}&e=${id}`;
+
+/* Aus dem Fokus führt „Zurück" immer ans Haus — auch wenn man über einen Link
+   direkt in der Einheit gelandet ist und es gar keine Historie gibt. */
+document.getElementById('back').addEventListener('click', () => {
+  if (fokus) { location.href = hausUrl(); return; }
+  return history.length > 1 ? history.back() : location.href = 'index.html';
+});
 
 /* Zahlungsturnus kommt aus der API — die Bereiche haben unterschiedliche
    sinnvolle Auswahlen, und die soll nicht doppelt gepflegt werden. */
@@ -252,13 +307,16 @@ async function turnusOptionen(bereich) {
 const proTurnus = { monatlich: '/ M', vierteljaehrlich: '/ Q', halbjaehrlich: '/ HJ',
                     jaehrlich: '/ J', einmalig: 'einm.' };
 const kuerzel = t => proTurnus[t] || '/ J';
+/* Wie oft im Jahr gezahlt wird — Grundlage für Monats- und Jahresgrößen. */
+const proJahr = t => ({ monatlich: 12, vierteljaehrlich: 4,
+                        halbjaehrlich: 2 }[t] || 1);
 
 /* Welche Felder hat welcher Bereich — steuert Liste, Formular und Symbol. */
 const BEREICHE = {
   mieten: {
     titel: 'Mieten & Mieter', einzahl: 'Mietverhältnis', ikon: 'Miete',
     felder: [
-      { k: 'einheit', l: 'Einheit', typ: 'text' },
+      { k: 'einheit', l: 'Einheit', typ: 'einheit' },
       { k: 'partei', l: 'Mieter / Partei', typ: 'text' },
       { k: 'kaltmiete', l: 'Kaltmiete', typ: 'number', schritt: '0.01', geld: true },
       { k: 'nebenkosten_vz', l: 'NK-Vorauszahlung', typ: 'number', schritt: '0.01',
@@ -281,8 +339,10 @@ const BEREICHE = {
     /* Die Mailadresse steht nicht in der Zeile — sie bricht auf dem Handy
        mitten im Wort um. Ein Zeichen genügt als Auskunft, ob sie da ist.
        Bei mehreren Bewohnern zählt, wie viele erreichbar sind. */
-    detail: e => [
-      e.einheit,
+    /* Im Fokus steht die Einheit schon in der Kopfzeile — sie ein zweites Mal
+       in jede Zeile zu schreiben, sagt nichts Neues. */
+    detail: (e, imFokus = false) => [
+      imFokus ? '' : e.einheit,
       e.geplant ? `ab ${datum(e.ab_datum)}`
         : (e.bis_datum ? `bis ${datum(e.bis_datum)}`
                        : (e.ab_datum ? `seit ${datum(e.ab_datum)}` : '')),
@@ -443,6 +503,22 @@ const GRUNDFELDER = [
     einheit: '%' },
 ];
 
+/* CXLI — was eine Einheit ausmacht. Dieselbe Beschreibung trägt die Anzeige
+   im Fokus und das Formular; die Feldnamen sind die des Modells. */
+const EINHEITFELDER = [
+  { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
+  { k: 'nutzungsart', l: 'Nutzungsart', typ: 'auswahl', vorgabe: 'Wohnen',
+    werte: ['Wohnen', 'WG', 'Büro', 'Gewerbe', 'Praxis', 'Laden', 'Lager',
+            'Stellplatz', 'Garage', 'Sonstiges'] },
+  { k: 'flaeche', l: 'Wohn-/Nutzfläche', typ: 'number', schritt: '0.01',
+    einheit: 'm²' },
+  { k: 'terrasse', l: 'Terrasse / Balkon', typ: 'number', schritt: '0.01',
+    einheit: 'm²' },
+  { k: 'nebenflaeche', l: 'Nebenfläche', typ: 'number', schritt: '0.01',
+    einheit: 'm²' },
+  { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1' },
+];
+
 /* Beim Grundstück gibt es keine Wohnfläche und kein Hauskonto — die Zeilen
    stehen dort nicht ausgegraut herum, sie kommen gar nicht erst vor. Der
    Verkehrswert wandert in den Grundstücksblock. */
@@ -506,6 +582,19 @@ function stammwert(f, o) {
 
 let objekt = null;
 let daten = null;
+/* Die Einheiten des Hauses — gebraucht von der Hausebene, vom Fokus und von
+   den Blasen im Mietformular. Ein Grundstück hat keine. */
+let einheiten = [];
+/* Die Einheit, auf die gerade geschaut wird — null heisst: das ganze Haus. */
+let fokus = null;
+
+const flaecheText = f => `${Number(f).toLocaleString('de-DE',
+  { maximumFractionDigits: 1 })} m²`;
+
+/* Auf welche Einheit ein Mietverhältnis zeigt. Spiegelt `verteilung.bezuege`:
+   ohne Angabe gehört es bei genau einer Einheit zu dieser — sonst nirgendwohin. */
+const zuEinheit = m => (m.einheit || '').trim()
+  || (einheiten.length === 1 ? einheiten[0].bezeichnung : '');
 
 function bannerHtml(z) {
   if (!z || z.frist_tage == null) return '';
@@ -594,27 +683,105 @@ function grundstueckHtml(o) {
       Bescheid steht.</div>` : ''}`;
 }
 
-function abschnitt(bereich, eintraege) {
+function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
+                                        vorspann = '' } = {}) {
   const cfg = cfgFuer(bereich);
   const zeilen = eintraege.length
     ? eintraege.map(e => {
         const marke = cfg.chip ? cfg.chip(e) : null;
+        const beschreibung = cfg.detail(e, imFokus);
         return `<div class="eintrag klick" data-edit="${bereich}:${e.id}"
           ${cfg.matt && cfg.matt(e) ? 'style="opacity:.62"' : ''}>
         <span class="sym">${kostenIcon(cfg.ikon)}</span>
         <span class="et">
           <span class="en">${esc(cfg.name(e))}${marke
             ? ` <span class="chip ${marke[0]}">${esc(marke[1])}</span>` : ''}</span>
-          ${cfg.detail(e) ? `<span class="ed">${esc(cfg.detail(e))}</span>` : ''}
+          ${beschreibung ? `<span class="ed">${esc(beschreibung)}</span>` : ''}
         </span>
         <span class="ew">${cfg.wert(e)}</span>
         <button class="del" data-del="${bereich}:${e.id}" aria-label="löschen">×</button>
       </div>`; }).join('')
     : `<div class="leerzeile">Noch nichts erfasst</div>`;
 
-  return `<div class="sekopf"><h2 class="sec">${esc(cfg.titel)}</h2></div>
+  return `<div class="sekopf"><h2 class="sec">${esc(kopf || cfg.titel)}</h2></div>
+    ${vorspann}
     <div class="liste">${zeilen}</div>
     <button class="add" data-add="${bereich}">＋ ${esc(cfg.einzahl)} hinzufügen</button>`;
+}
+
+/* ---- CXLI/CLXVIII: die Einheiten des Hauses und ihr Fokus ---------------- */
+
+function einheitDetail(e) {
+  return [e.nutzungsart,
+          e.flaeche ? flaecheText(e.flaeche) : '',
+          e.stellplaetze ? (e.stellplaetze > 1 ? `${e.stellplaetze} Stellplätze`
+                                               : '1 Stellplatz') : '',
+          e.mieter].filter(Boolean).join(' · ');
+}
+
+/* Die Zeile führt eine Ebene tiefer — angetippt wird sie ganz, nicht ein
+   Pfeilchen am Rand. */
+function einheitenHtml() {
+  if (istGrundstueck()) return '';
+  const zeilen = einheiten.length
+    ? einheiten.map(e => `<div class="eintrag klick" data-einheit="${e.id}">
+        <span class="sym">${kostenIcon('Miete')}</span>
+        <span class="et">
+          <span class="en">${esc(e.bezeichnung)}${e.vermietet ? ''
+            : ' <span class="chip amber">frei</span>'}</span>
+          ${einheitDetail(e) ? `<span class="ed">${esc(einheitDetail(e))}</span>` : ''}
+        </span>
+        <span class="ew">${e.vermietet && e.kaltmiete ? `${eur(e.kaltmiete)} / M` : ''}</span>
+        <button class="del" data-einheit-weg="${e.id}" aria-label="löschen">×</button>
+      </div>`).join('')
+    : `<div class="leerzeile">Noch keine Einheit erfasst</div>`;
+
+  return `<div class="sekopf"><h2 class="sec">Einheiten</h2></div>
+    <div class="liste">${zeilen}</div>
+    <button class="add" data-einheit-neu="1">＋ Einheit hinzufügen</button>
+    ${einheiten.length ? `<div class="fussnote">Eine Einheit antippen: dort
+      stehen Mieter, Kontakt und Nebenkosten dieser Wohnung. Alles Übergeordnete
+      — Stammdaten, Eigentümer, Kredite, Versicherungen, Steuer und Ablage —
+      bleibt hier am Haus.</div>` : ''}`;
+}
+
+function hausWegHtml() {
+  return `<button class="hausweg" data-haus="1">
+      <span class="pfeil" aria-hidden="true">‹</span>
+      <span class="ic">${logoSvg(objekt.typ)}</span>
+      <span class="ht"><span class="hl">Zurück zum Haus</span>
+        <span class="hn">${esc(objekt.name)}</span></span>
+    </button>`;
+}
+
+/* Die Einheit selbst — ohne ihre Bezeichnung: die steht schon in der Kopfzeile. */
+function einheitStammHtml(e) {
+  const zeilen = EINHEITFELDER.filter(f => f.k !== 'bezeichnung')
+    .map(f => paarZeile(f.l, stammwert(f, e))).join('');
+  return `<div class="sekopf"><h2 class="sec">Einheit</h2>
+      <button data-einheit-edit="${e.id}">Bearbeiten</button></div>
+    <div class="paare">${zeilen}</div>`;
+}
+
+/* Im Fokus zählt, was diese Wohnung einbringt — Wert und Restschuld gehören
+   dem ganzen Haus und stehen deshalb nur dort. Ein Verkehrswert je Einheit
+   liesse sich heute nirgends pflegen. */
+function einheitKennzahlen(e, eigene) {
+  const laufende = eigene.filter(m => !m.beendet && !m.geplant);
+  const monat = (m, feld) => (m[feld] || 0) * proJahr(m.turnus) / 12;
+  const kalt = laufende.reduce((s, m) => s + monat(m, 'kaltmiete')
+    + monat(m, 'stellplatz') + monat(m, 'sonstige'), 0);
+  const nk = laufende.reduce((s, m) => s + monat(m, 'nebenkosten_vz'), 0);
+  const zellen = [];
+  if (kalt) zellen.push(['kv', eur(kalt), 'Miete / Monat']);
+  if (nk) zellen.push(['kv', eur(nk), 'NK-Vorauszahlung']);
+  if (kalt && e.flaeche) zellen.push(['kv', `${(kalt / e.flaeche)
+    .toLocaleString('de-DE', { minimumFractionDigits: 2,
+                               maximumFractionDigits: 2 })} €`, 'je m²']);
+  if (!zellen.length) return '';
+  return `<div class="kennzahlen">${zellen.map(([k, w, l]) =>
+    `<div class="kennzahl"><span class="${k}">${w}</span>
+       <span class="kl">${esc(l)}</span></div>`).join('')}</div>`;
 }
 
 function eigentuemerHtml(stand) {
@@ -668,7 +835,7 @@ async function laden() {
     try { return await ruf(); }
     catch (fehler) { luecken.push(`${was}: ${fehler.message || fehler}`); return ersatz; }
   };
-  const [bereiche, anteile, vermoegen] = await Promise.all([
+  const [bereiche, anteile, vermoegen, einheitenRoh] = await Promise.all([
     Promise.all(Object.keys(BEREICHE).map(async b =>
       [b, await zweig(BEREICHE[b].titel,
                       () => api(`/objekte/${encodeURIComponent(slug)}/${b}`), [])]))
@@ -677,17 +844,35 @@ async function laden() {
     zweig('Vermögen',
           async () => (await api('/vermoegen')).objekte.find(z => z.slug === slug),
           null),
+    zweig('Einheiten',
+          () => api(`/objekte/${encodeURIComponent(slug)}/einheiten`), []),
   ]);
   if (luecken.length) melde(`Nicht alles konnte geladen werden — ${luecken[0]}`, 'neg');
 
   objekt = det.objekt;
   daten = det;
-  titel.textContent = objekt.name;
+  // Ein Grundstück hat keine Einheiten — dort darf die zweite Ebene gar nicht
+  // erst auftauchen, auch nicht über einen alten Link.
+  einheiten = istGrundstueck() ? [] : (einheitenRoh || []);
+  fokus = fokusWunsch
+    ? (einheiten.find(e => String(e.id) === String(fokusWunsch)) || null)
+    : null;
+  if (fokusWunsch && !fokus) {
+    melde('Diese Einheit gibt es nicht mehr — hier steht das ganze Haus.', '');
+  }
+
+  titel.textContent = fokus ? fokus.bezeichnung : objekt.name;
   document.getElementById('barlogo').innerHTML = logoSvg(objekt.typ);
   // Der Ort enthaelt oft schon die Einheitenzahl ("Mixed-Use · 7 Einheiten") —
   // dann nicht zusaetzlich zaehlen, sonst steht es doppelt und die Zeile bricht um.
   const ortText = (objekt.ort || objekt.strasse || '').trim();
-  if (istGrundstueck()) {
+  if (fokus) {
+    // Im Fokus beschreibt die Unterzeile die Einheit. Das Haus steht in der
+    // Karte darunter — hier stünde es ein zweites Mal.
+    sub.textContent = [fokus.nutzungsart,
+                       fokus.flaeche ? flaecheText(fokus.flaeche) : '',
+                       fokus.mieter].filter(Boolean).join(' · ') || 'Einheit';
+  } else if (istGrundstueck()) {
     // Einheiten gibt es hier nicht; was das Grundstück ausmacht, ist seine
     // Fläche und wofür sie genutzt wird.
     const flaeche = objekt.grundstueck_flaeche
@@ -719,25 +904,61 @@ async function laden() {
   // Was heute läuft: beendete Stände zählen nicht, geplante noch nicht.
   const jahresmiete = (bereiche.mieten || [])
     .filter(m => !m.beendet && !m.geplant)
-    .reduce((s, m) => s + (m.kaltmiete || 0) *
-      ({ monatlich: 12, vierteljaehrlich: 4, halbjaehrlich: 2 }[m.turnus] || 1), 0);
+    .reduce((s, m) => s + (m.kaltmiete || 0) * proJahr(m.turnus), 0);
 
   const restschuld = (bereiche.kredite || []).reduce(
     (s, k) => s + (k.restschuld_aktuell ?? k.restschuld ?? 0), 0);
 
   // Ein Grundstück rechnet keine Nebenkosten ab: weder die Frist nach
   // § 556 BGB noch die Abrechnungszeiträume haben hier etwas zu suchen.
-  const abrechnung = istGrundstueck() ? '' : `
-    ${bannerHtml(laufend)}`;
   const zeitraumBlock = istGrundstueck() ? '' : `
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
-      <button data-zeitraum-neu="1">Anlegen</button></div>
-    <div class="liste">${zr}</div>`;
+      ${fokus ? '' : '<button data-zeitraum-neu="1">Anlegen</button>'}</div>
+    <div class="liste">${zr}</div>
+    ${fokus ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
+      im Zeitraum steht, was davon auf diese Einheit entfällt.</div>` : ''}`;
+
+  if (fokus) {
+    // CLXVIII — im Fokus zählen die Mieterthemen. Stammdaten, Eigentümer,
+    // Kredite, Versicherungen, Steuer und Ablage gehören dem Haus und werden
+    // hier bewusst nicht wiederholt.
+    const eigene = (bereiche.mieten || [])
+      .filter(m => zuEinheit(m) === fokus.bezeichnung);
+    inhalt.innerHTML = `
+      ${hausWegHtml()}
+      ${bannerHtml(laufend)}
+      ${einheitKennzahlen(fokus, eigene)}
+      ${einheitStammHtml(fokus)}
+      ${abschnitt('mieten', eigene, { imFokus: true })}
+      ${zeitraumBlock}`;
+    return;
+  }
+
+  // Mietverhältnisse, die auf keine Einheit zeigen. Sie fallen aus der
+  // Kostenverteilung (Fund XCII) — deshalb stehen sie am Haus, nicht im
+  // Nirgendwo. Gibt es überhaupt keine Einheiten, ist das der Normalfall und
+  // die Liste heisst schlicht „Mieten & Mieter".
+  const bekannt = new Set(einheiten.map(e => e.bezeichnung));
+  const heimatlos = (bereiche.mieten || []).filter(m => !bekannt.has(zuEinheit(m)));
+  const mietBlock = !einheiten.length
+    ? abschnitt('mieten', bereiche.mieten)
+    : (heimatlos.length ? abschnitt('mieten', heimatlos, {
+        kopf: 'Ohne Einheit',
+        vorspann: `<div class="merker"><span class="hi">!</span><span class="ht">
+            <span class="t">${heimatlos.length === 1
+              ? 'Ein Mietverhältnis gehört zu keiner Einheit'
+              : `${heimatlos.length} Mietverhältnisse gehören zu keiner Einheit`}</span>
+            <span class="d">Ohne Einheit fällt die Partei aus der
+              Kostenverteilung: sie bekommt keine Kosten und ihre Vorauszahlung
+              voll erstattet. Eintrag öffnen und die Einheit antippen.</span>
+          </span></div>`,
+      }) : '');
 
   inhalt.innerHTML = `
-    ${abrechnung}
+    ${istGrundstueck() ? '' : bannerHtml(laufend)}
     ${nachpflegeHtml(det.nachpflege)}
     ${kennzahlenHtml(vermoegen, jahresmiete, restschuld)}
+    ${einheitenHtml()}
     ${zeitraumBlock}
     ${grundstueckHtml(objekt)}
     ${stammHtml(objekt)}
@@ -747,7 +968,9 @@ async function laden() {
       <span class="txt"><span class="t">wird geprüft …</span></span>
     </div></div></div>
     ${eigentuemerHtml(anteile)}
-    ${Object.keys(BEREICHE).map(b => abschnitt(b, bereiche[b])).join('')}
+    ${mietBlock}
+    ${['versicherungen', 'kredite', 'zahlungen']
+      .map(b => abschnitt(b, bereiche[b])).join('')}
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>
       <p>Die Sicherung enthält alle Daten dieser Immobilie und lässt sich
@@ -869,10 +1092,40 @@ async function feldHtml(f, bereich, wert) {
     // Beschriftung ohne `for`: den Knopf baut auswahl.js selbst und gibt ihm
     // eine eigene id — die Verknüpfung läuft über aria-label.
     const werte = ['', ...f.werte];
+    const gesetzt = wert ?? f.vorgabe ?? '';
     return `<div class="field"><label>${esc(f.l)}</label>
-      <input type="hidden" id="${id}" name="${f.k}" value="${esc(wert ?? '')}">
+      <input type="hidden" id="${id}" name="${f.k}" value="${esc(gesetzt)}">
       <div data-auswahl="${esc(f.k)}" data-label="${esc(f.l)}"
            data-optionen="${esc(JSON.stringify(werte))}"></div></div>`;
+  }
+  if (f.typ === 'einheit') {
+    // CLXIX — die Einheit wird angetippt, nicht getippt. Freitext liess einen
+    // Tippfehler durch, und die Partei fiel stumm aus der Kostenverteilung
+    // (Fund XCII). Ohne erfasste Einheiten bleibt es ein Textfeld: sonst
+    // liesse sich an einem Bestandsobjekt gar kein Mietverhältnis anlegen.
+    if (!einheiten.length) {
+      return `<div class="field"><label for="${id}">${esc(f.l)}</label>
+        <input class="inp" id="${id}" name="${f.k}" type="text"
+               value="${esc(wert ?? '')}"></div>`;
+    }
+    const gewaehlt = wert ?? (einheiten.length === 1
+      ? einheiten[0].bezeichnung : '');
+    const blasen = einheiten.map(e => {
+      const an = e.bezeichnung === gewaehlt;
+      return `<button type="button" class="bubble${an ? ' gewaehlt' : ''}${
+          e.vermietet ? '' : ' frei'}" data-wahl="${esc(e.bezeichnung)}"
+          aria-pressed="${an}">
+        <span class="bt">${esc(e.bezeichnung)}</span>
+        ${e.flaeche ? `<span class="bf">${flaecheText(e.flaeche)}</span>` : ''}
+        ${e.vermietet ? '' : '<span class="bfrei">frei</span>'}
+      </button>`;
+    }).join('');
+    return `<div class="field"><label>${esc(f.l)}</label>
+      <input type="hidden" id="${id}" name="${f.k}" value="${esc(gewaehlt)}">
+      <div class="bubbles" data-wahlfeld="${esc(f.k)}" role="group"
+           aria-label="${esc(f.l)}">${blasen}</div>
+      <span class="feldnote">Antippen statt tippen — nur so findet die
+        Kostenverteilung die Einheit wieder.</span></div>`;
   }
   if (f.typ === 'turnus') {
     const { optionen, vorgabe } = await turnusOptionen(bereich);
@@ -1181,6 +1434,19 @@ dlg.addEventListener('close', () => { formateLoesen(); auswahlLoesen(); });
 document.getElementById('dlgForm').addEventListener('click', async e => {
   if (e.target.closest('[data-abbruch]')) return dlg.close('abbruch');
 
+  const wahl = e.target.closest('[data-wahl]');
+  if (wahl) {
+    const gruppe = wahl.closest('[data-wahlfeld]');
+    const form = document.getElementById('dlgForm');
+    form.elements[gruppe.dataset.wahlfeld].value = wahl.dataset.wahl;
+    for (const blase of gruppe.querySelectorAll('.bubble')) {
+      const an = blase === wahl;
+      blase.classList.toggle('gewaehlt', an);
+      blase.setAttribute('aria-pressed', String(an));
+    }
+    return;
+  }
+
   const weg = e.target.closest('[data-bw-weg]');
   if (weg) {
     // Erst beim Speichern wirklich löschen — bis dahin nur gemerkt.
@@ -1233,6 +1499,14 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
                 promille: Number(werte.promille) || 1000,
                 notiz: werte.notiz || '' },
       });
+    } else if (absicht === 'einheit') {
+      const werte = ausFormular(form, EINHEITFELDER);
+      if (id) {
+        await api(`/einheiten/${id}`, { method: 'PATCH', body: werte });
+      } else {
+        await api(`/objekte/${encodeURIComponent(slug)}/einheiten`,
+                  { method: 'POST', body: werte });
+      }
     } else if (absicht === 'zeitraum') {
       const werte = ausFormular(form, ZEITRAUMFELDER);
       await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume`,
@@ -1304,6 +1578,52 @@ async function anteilFormular() {
 }
 
 inhalt.addEventListener('click', async e => {
+  if (e.target.closest('[data-haus]')) {
+    location.href = hausUrl();
+    return;
+  }
+
+  const einheitWeg = e.target.closest('[data-einheit-weg]');
+  if (einheitWeg) {
+    e.stopPropagation();
+    const eintrag = einheiten.find(x =>
+      String(x.id) === einheitWeg.dataset.einheitWeg);
+    const ja = await frage(`„${eintrag ? eintrag.bezeichnung : 'Einheit'}“ entfernen?`,
+      'Die Einheit wird gelöscht. Mietverhältnisse, die daran hängen, müssen '
+      + 'vorher weg — sonst gehörten sie zu keiner Wohnung mehr.',
+      { knopf: 'Entfernen', gefahr: true });
+    if (!ja) return;
+    try {
+      await api(`/einheiten/${einheitWeg.dataset.einheitWeg}`, { method: 'DELETE' });
+    } catch (fehler) {
+      return melde(String(fehler.message || 'Konnte nicht entfernt werden.'), 'neg');
+    }
+    return laden();
+  }
+
+  const einheitEdit = e.target.closest('[data-einheit-edit]');
+  if (einheitEdit) {
+    const eintrag = einheiten.find(x =>
+      String(x.id) === einheitEdit.dataset.einheitEdit);
+    if (!eintrag) return;
+    return formular({ titel: 'Einheit bearbeiten', felder: EINHEITFELDER,
+                      werte: eintrag, absicht: 'einheit' });
+  }
+
+  if (e.target.closest('[data-einheit-neu]')) {
+    return formular({ titel: 'Einheit anlegen', felder: EINHEITFELDER,
+                      absicht: 'einheit', knopf: 'Anlegen',
+                      hinweis: 'Wohnung, Büro oder Stellplatz — die Bezeichnung '
+                        + 'steht später auf den Mietverhältnissen und in der '
+                        + 'Abrechnung.' });
+  }
+
+  const einheit = e.target.closest('[data-einheit]');
+  if (einheit) {
+    location.href = einheitUrl(einheit.dataset.einheit);
+    return;
+  }
+
   const zeitraum = e.target.closest('[data-zeitraum]');
   if (zeitraum) {
     location.href = `zeitraum.html?z=${zeitraum.dataset.zeitraum}`;
@@ -1420,8 +1740,11 @@ inhalt.addEventListener('click', async e => {
   if (add) {
     const bereich = add.dataset.add;
     const cfg = cfgFuer(bereich);
+    // Im Fokus ist die Einheit schon entschieden — die Blase steht vorgewählt da.
+    const werte = bereich === 'mieten' && fokus
+      ? { einheit: fokus.bezeichnung } : {};
     return formular({ titel: `${cfg.einzahl} hinzufügen`,
-                      felder: cfg.felder, bereich, absicht: 'eintrag',
+                      felder: cfg.felder, bereich, werte, absicht: 'eintrag',
                       extra: bereich === 'mieten' ? mietExtra(null) : '' });
   }
 
