@@ -19,13 +19,25 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | In einfachen Worten | Stand |
 |---|---|---|
-| CXXI | Steht eine Wohnung leer, sollen die anderen Mieter das nicht bezahlen | in Arbeit |
-| CXIV | Kredite raus aus den Nebenkosten — Nebenkosten sind Mietersache, Kredite Eigentümersache | in Arbeit |
-| CXV | Beim Kredit nur den Stand zum 31.12. eintragen, den Rest rechnet die App | in Arbeit |
-| CXVI | Mieterhöhungen schon vorher eintragen können | in Arbeit |
-| CXVII | Für jeden Bewohner eigene Mailadresse und Handynummer | in Arbeit |
-| CXVIII | Beträge, IBAN und Steuernummer beim Tippen lesbar gruppieren | in Arbeit |
-| CXIX/CXX | Ordnernamen aufräumen (doppelt verschachtelt) und Umbenennung überall nachziehen, ohne dass Belege verloren gehen | in Arbeit |
+| CXXII/CXXIII/CXXVII | Dateinamen ohne Doppelnennung, mit Sache und Betrag · Ordner vollständig neu einlesen | in Arbeit |
+| CXXXVIII | Neuer Typ Grundstück: Nutzungsart, Grundstückswert, Pacht, Grundsteuerwert, eigenes Symbol | in Arbeit |
+| CLV/CLVI | Steuernummer verrutscht beim Tippen · gefilterte Kennzahlen sehen aus wie echte | in Arbeit |
+
+### Heute fertig geworden
+
+| Nr. | In einfachen Worten | Commit |
+|---|---|---|
+| CX–CXIII | PDF-Ansicht schließbar · Scan ohne weiße Ränder · Ölrechnung erkannt · volle Euro | `7d72976` |
+| CXXI | Steht eine Wohnung leer, zahlen das nicht mehr die anderen Mieter | `082f678` |
+| CXIV | Kredite raus aus den Nebenkosten — Mietersache und Eigentümersache getrennt | `0a98941` |
+| CXV–CXVII | Kreditstand zum 31.12. · geplante Mieterhöhungen · Kontakt je Bewohner | `a9c57f9` |
+| CXVIII | Beträge, IBAN und Steuernummer beim Tippen gruppiert | `20b7a4e` |
+| CXIX/CXX | Ordner entschachtelt, Umbenennung zieht die Belege mit | `957e644` |
+| CXLIV/CXLVI | Bei offenem Dialog steht die Seite still · Fristen über ein Jahr ausgeblendet | `5703ef6` |
+| CXLV | Einheiten als Bubbles auf der Startseite | `ba4e721` |
+| CLIV/CLIX | Abrechnung erreicht alle Bewohner · Leerstand steht nicht mehr bei den Empfängern | `f377bf5` |
+| CL–CLII | Umzug lässt keine Belege zurück · keine Waisen beim Löschen · eine Zahl für die Restschuld | `6a4cce1` |
+| CLXIV | App-Symbol: hellerer Grund, Motiv mittig, Baum und Dach sichtbar | `870715e` |
 
 ## Sofort zu beheben — aus der Nachprüfung vom 21.07. (Nachmittag)
 
