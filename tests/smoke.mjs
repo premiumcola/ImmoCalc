@@ -41,7 +41,10 @@ async function must(page, sels) {
 function report(name, { status, ctype, errors, downloads }, miss, expectType = 'text/html') {
   // Ein ausgelöster Download bedeutet: der Browser hat die Seite nicht
   // gerendert, sondern als Datei gespeichert -- fast immer ein MIME-Fehler.
-  const typeBad = expectType && !ctype.startsWith(expectType);
+  // expectType darf ein Präfix oder ein Muster sein — dieselbe Datei kommt
+  // hinter nginx und im Prüfstand mit unterschiedlichem, aber gleich gutem Typ.
+  const typeBad = expectType && !(expectType instanceof RegExp
+    ? expectType.test(ctype) : ctype.startsWith(expectType));
   const bad = status !== 200 || miss.length || errors.length || downloads.length || typeBad;
   if (bad) fails++;
   console.log(`${bad ? '✗' : '✓'} ${name}  status=${status}  type=${ctype || '-'}  missing=[${miss}]  jsErrors=${errors.length}`);
@@ -67,11 +70,26 @@ function report(name, { status, ctype, errors, downloads }, miss, expectType = '
   report('app.html (Klick-Flow)', r, miss); await r.page.close(); }
 
 // 3) onboarding – 5 Schritte durchklicken bis Abschluss
+// Bewusst NICHT bis zum Anlegen: `make check` läuft gegen die laufende
+// Instanz, und dort stehen echte Immobilien. Der letzte Klick würde eine
+// Testimmobilie in die Daten des Nutzers schreiben. Geprüft wird deshalb nur,
+// dass der Wizard bis zum letzten Schritt trägt — das vollständige Anlegen
+// deckt tests/onboarding-check.mjs gegen den Prüfstand ab.
 { const r = await open('/onboarding.html');
   const miss = await must(r.page, ['#stepper', '#content', '#foot']);
   try {
-    for (let i = 0; i < 5; i++) await r.page.click('[data-next]');
-    await r.page.waitForSelector('#done.open');
+    // Der Name entsteht aus der Adresse — ohne Straße oder Ort trägt der
+    // Wizard am Ende nicht.
+    await r.page.fill('[data-field="strasse"]', 'Rauchweg 3');
+    await r.page.fill('[data-field="ort"]', 'Prüfstadt');
+    // Die Vorschau steht in Schritt 1 und zeigt, wie die Immobilie heißen wird
+    const vorschau = (await r.page.textContent('.namevz')).replace(/\s+/g, ' ');
+    if (!vorschau.includes('Rauchweg 3') || !vorschau.includes('Prüfstadt')) {
+      throw new Error('Name wird nicht aus der Adresse gebildet: ' + vorschau);
+    }
+    for (let i = 0; i < 4; i++) await r.page.click('[data-next]');
+    const schritt = await r.page.textContent('#content');
+    if (!/Einheit/i.test(schritt)) throw new Error('letzter Schritt nicht erreicht');
   } catch (e) { r.errors.push('wizard: ' + e.message); }
   await r.page.screenshot({ path: 'tests/screenshots/onboarding-done.png', fullPage: true });
   report('onboarding.html (Wizard)', r, miss); await r.page.close(); }
@@ -83,8 +101,12 @@ function report(name, { status, ctype, errors, downloads }, miss, expectType = '
   report('status.html (API)', r, miss); await r.page.close(); }
 
 // 5) Dokumente müssen im Browser ANGEZEIGT werden, nicht heruntergeladen
+// nginx liefert text/plain (so wird es im Browser angezeigt statt geladen);
+// der Prüfstand serviert dieselbe Datei als text/markdown. Beides ist in
+// Ordnung — verboten ist nur ein Typ, der einen Download auslöst.
 { const r = await open('/docs/rechenlogik.md');
-  report('docs/rechenlogik.md', r, [], 'text/plain'); await r.page.close(); }
+  report('docs/rechenlogik.md', r, [], /^text\/(plain|markdown)/);
+  await r.page.close(); }
 
 await browser.close();
 console.log(fails ? `\n${fails} Seite(n) mit Problemen` : '\nAlle Seiten OK ✔');

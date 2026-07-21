@@ -30,10 +30,26 @@ def _objekt(session: Session, slug: str) -> Objekt:
     return o
 
 
+# Segmente, die unter /objekte/{slug}/… naheliegen, hier aber nichts zu suchen
+# haben. Ohne diesen Wegweiser bekaeme der Aufrufer nur „Unbekannter Bereich"
+# und suchte den Fehler bei sich.
+WEGWEISER: dict[str, str] = {
+    "zeitraeume": "Zeiträume stehen in GET /api/objekte/{slug} unter "
+                  "'zeitraeume'; anlegen mit POST /api/objekte/{slug}/zeitraeume",
+    "einheiten": "Einheiten stehen in GET /api/objekte/{slug} unter 'einheiten'",
+    "dokumente": "Dokumente eines Objekts: GET /api/dokumente/objekt/{slug}",
+    "positionen": "Positionen haengen am Zeitraum: "
+                  "GET /api/zeitraeume/{zid}/positionen",
+}
+
+
 def _modell(bereich: str) -> Type[SQLModel]:
     modell = ENTITAETEN.get(bereich)
     if modell is None:
-        raise HTTPException(404, f"Unbekannter Bereich '{bereich}'")
+        hinweis = WEGWEISER.get(bereich)
+        raise HTTPException(404, f"Unbekannter Bereich '{bereich}' — hier gibt es "
+                                 f"{', '.join(ENTITAETEN)}."
+                                 + (f" {hinweis}" if hinweis else ""))
     return modell
 
 
@@ -72,7 +88,7 @@ def anlegen(slug: str, bereich: str, data: dict,
     return {"id": eintrag.id}
 
 
-@router.patch("/{bereich}/{eintrag_id}")
+@router.patch("/stammdaten/{bereich}/{eintrag_id}")
 def aendern(bereich: str, eintrag_id: int, data: dict,
             session: Session = Depends(get_session)) -> dict:
     modell = _modell(bereich)
@@ -90,7 +106,7 @@ def aendern(bereich: str, eintrag_id: int, data: dict,
     return {"ok": True}
 
 
-@router.delete("/{bereich}/{eintrag_id}")
+@router.delete("/stammdaten/{bereich}/{eintrag_id}")
 def loeschen(bereich: str, eintrag_id: int,
              session: Session = Depends(get_session)) -> dict:
     modell = _modell(bereich)
@@ -100,3 +116,30 @@ def loeschen(bereich: str, eintrag_id: int,
     session.delete(eintrag)
     session.commit()
     return {"ok": True}
+
+
+def _altpfad(bereich: str) -> None:
+    """Alter Pfad ohne Praefix — /api/mieten/7 statt /api/stammdaten/mieten/7.
+
+    Frueher stand hier ein Fänger `/{bereich}/{eintrag_id}` direkt unter /api.
+    Der verschluckte jeden zweisegmentigen Pfad (PATCH /api/dokumente/5 ->
+    „Unbekannter Bereich"). Deshalb wird der alte Weg jetzt nur noch fuer die
+    vier echten Bereiche einzeln registriert: eine Seite, die noch im Browser
+    steht, funktioniert weiter, alles andere faellt nicht mehr hinein.
+
+    Diese vier Routen koennen entfallen, sobald niemand mehr eine alte Seite
+    offen hat — die Oberflaeche ruft nur noch /api/stammdaten/… auf.
+    """
+    @router.patch(f"/{bereich}/{{eintrag_id}}", include_in_schema=False)
+    def alt_aendern(eintrag_id: int, data: dict,
+                    session: Session = Depends(get_session)) -> dict:
+        return aendern(bereich, eintrag_id, data, session)
+
+    @router.delete(f"/{bereich}/{{eintrag_id}}", include_in_schema=False)
+    def alt_loeschen(eintrag_id: int,
+                     session: Session = Depends(get_session)) -> dict:
+        return loeschen(bereich, eintrag_id, session)
+
+
+for _bereich in ENTITAETEN:
+    _altpfad(_bereich)

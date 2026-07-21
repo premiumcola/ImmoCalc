@@ -417,22 +417,34 @@ async function laden() {
       <p>Zurück zur Übersicht und eine Immobilie antippen.</p></div>`;
     return;
   }
-  let det, bereiche, anteile, vermoegen;
+  let det;
   try {
     det = await api(`/objekte/${encodeURIComponent(slug)}`);
-    [bereiche, anteile, vermoegen] = await Promise.all([
-      Promise.all(Object.keys(BEREICHE).map(async b =>
-        [b, await api(`/objekte/${encodeURIComponent(slug)}/${b}`)]))
-        .then(Object.fromEntries),
-      api(`/objekte/${encodeURIComponent(slug)}/anteile`).catch(() => null),
-      api('/vermoegen').then(v => v.objekte.find(z => z.slug === slug))
-        .catch(() => null),
-    ]);
-  } catch {
+  } catch (fehler) {
     inhalt.innerHTML = `<div class="empty"><div class="big">Objekt nicht gefunden</div>
-      <p>Die Daten konnten nicht geladen werden.</p></div>`;
+      <p>${esc(String(fehler.message || 'Die Daten konnten nicht geladen werden.'))}</p></div>`;
     return;
   }
+
+  // Die Nebenabrufe duerfen einzeln danebengehen — dass eine Versicherungsliste
+  // hakt, heisst nicht, dass es das Objekt nicht gibt. Fehlende Bereiche bleiben
+  // leer, gemeldet wird einmal am Ende.
+  const luecken = [];
+  const zweig = async (was, ruf, ersatz) => {
+    try { return await ruf(); }
+    catch (fehler) { luecken.push(`${was}: ${fehler.message || fehler}`); return ersatz; }
+  };
+  const [bereiche, anteile, vermoegen] = await Promise.all([
+    Promise.all(Object.keys(BEREICHE).map(async b =>
+      [b, await zweig(BEREICHE[b].titel,
+                      () => api(`/objekte/${encodeURIComponent(slug)}/${b}`), [])]))
+      .then(Object.fromEntries),
+    zweig('Eigentümer', () => api(`/objekte/${encodeURIComponent(slug)}/anteile`), null),
+    zweig('Vermögen',
+          async () => (await api('/vermoegen')).objekte.find(z => z.slug === slug),
+          null),
+  ]);
+  if (luecken.length) melde(`Nicht alles konnte geladen werden — ${luecken[0]}`, 'neg');
 
   objekt = det.objekt;
   daten = det;
@@ -501,8 +513,17 @@ async function cloudZeigen() {
   let s;
   try {
     s = await api(`/nextcloud/objekte/${encodeURIComponent(slug)}/status`);
-  } catch {
-    ziel.innerHTML = '';
+  } catch (fehler) {
+    // Frueher verschwand der ganze Block hier kommentarlos — dann sah es aus,
+    // als gaebe es die Dokumentenablage gar nicht.
+    ziel.innerHTML = `<div class="cloudbox"><div class="zeile">
+        <span class="sym offen">⬡</span>
+        <span class="txt">
+          <span class="t">Status der Ablage nicht abrufbar</span>
+          <span class="d">${esc(String(fehler.message || fehler))}</span>
+        </span></div>
+        <div class="tat nebensache"><button data-cloud="status">Nochmal prüfen</button></div>
+      </div>`;
     return;
   }
 
@@ -566,7 +587,9 @@ async function ordnerZeigen() {
   let s;
   try {
     s = await api(`/nextcloud/objekte/${encodeURIComponent(slug)}/ordner`);
-  } catch {
+  } catch (fehler) {
+    ziel.innerHTML = `<span class="d" style="display:block;margin-top:10px">Ordnerliste
+      nicht lesbar — ${esc(String(fehler.message || fehler))}</span>`;
     return;
   }
   if (!s.ordner.length) return;
@@ -676,7 +699,8 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
                 { method: 'POST', body: { jahr: Number(werte.jahr) } });
     } else {
       const werte = ausFormular(form, BEREICHE[bereich].felder);
-      if (id) await api(`/${bereich}/${id}`, { method: 'PATCH', body: werte });
+      if (id) await api(`/stammdaten/${bereich}/${id}`,
+                        { method: 'PATCH', body: werte });
       else await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`,
                      { method: 'POST', body: werte });
     }
@@ -743,11 +767,16 @@ inhalt.addEventListener('click', async e => {
       'Der Eigentümer bleibt erhalten — nur die Beteiligung an dieser '
       + 'Immobilie wird gelöst.', { knopf: 'Entfernen', gefahr: true });
     if (!ja) return;
-    await api(`/anteile/${anteilWeg.dataset.anteil}`, { method: 'DELETE' });
+    try {
+      await api(`/anteile/${anteilWeg.dataset.anteil}`, { method: 'DELETE' });
+    } catch (fehler) {
+      return melde(String(fehler.message || 'Konnte nicht entfernt werden.'), 'neg');
+    }
     return laden();
   }
 
   const cloud = e.target.closest('[data-cloud]');
+  if (cloud && cloud.dataset.cloud === 'status') return cloudZeigen();
   if (cloud) {
     cloud.disabled = true;
     cloud.textContent = 'Lege an …';
@@ -809,7 +838,11 @@ inhalt.addEventListener('click', async e => {
       'Der Eintrag wird entfernt. Rückgängig machen lässt sich das nicht.',
       { knopf: 'Löschen', gefahr: true });
     if (!ja) return;
-    await api(`/${bereich}/${id}`, { method: 'DELETE' });
+    try {
+      await api(`/stammdaten/${bereich}/${id}`, { method: 'DELETE' });
+    } catch (fehler) {
+      return melde(String(fehler.message || 'Konnte nicht gelöscht werden.'), 'neg');
+    }
     return laden();
   }
 

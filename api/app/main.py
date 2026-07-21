@@ -55,6 +55,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
 app.include_router(objekte.router)
 # besitz vor stammdaten: dort faengt /objekte/{slug}/{bereich} sonst
 # /objekte/{slug}/anteile ab und meldet einen unbekannten Bereich.
+# Der zweite Fänger (frueher /{bereich}/{eintrag_id} direkt unter /api) ist
+# entschaerft: er liegt jetzt unter /api/stammdaten/… und verschluckt keine
+# zweisegmentigen Pfade mehr (siehe stammdaten.py:_altpfad).
 app.include_router(besitz.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
