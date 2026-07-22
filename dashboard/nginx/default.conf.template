@@ -15,6 +15,10 @@ server {
         proxy_pass http://${API_UPSTREAM}/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
+        # Belege sind PDFs, oft mehrseitige Scans mit Bildern und OCR-Textschicht
+        # — die Vorgabe von 1 MB reicht nicht (Foto-Scanner wie Bestandsimport
+        # laufen sonst in 413). Grosszuegig, aber begrenzt.
+        client_max_body_size 50m;
     }
 
     # .webmanifest kennt die mitgelieferte mime.types nicht — ohne den
