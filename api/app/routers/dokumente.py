@@ -1061,7 +1061,11 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     jahr = jahr or erkannt_jahr
     monat = monat or erkannt_monat
     kategorie = kategorie or "Sonstiges"
-    name = dateiname(jahr, kategorie, beschreibung or "Scan", ".pdf",
+    # Die Endung der hochgeladenen Datei erhalten — ein Foto oder eine Tabelle
+    # darf nicht als „.pdf" abgelegt werden. Ohne Endung (z. B. Kamerascan
+    # „scan.pdf") bleibt es beim PDF.
+    endung = _endung(datei.filename or "") or ".pdf"
+    name = dateiname(jahr, kategorie, beschreibung or "Scan", endung,
                      monat, betrag, kostenart)
     client = verbindung(session)
     try:
