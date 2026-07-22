@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select
 
 from fastapi import HTTPException
-from sqlmodel import Session as DBSession
 
 from ..cashflow import EinheitZahlen, cashflow, monate_im_jahr, sankey
 from ..turnus import jahresbetrag
@@ -88,7 +87,7 @@ def _miete_im_jahr(m: Miete, jahr: int) -> float:
     return _mittel_im_jahr(m, jahr)
 
 
-def _positionen(session: DBSession, o: Objekt,
+def _positionen(session: Session, o: Objekt,
                 jahr: int) -> list[tuple[str, float, bool]]:
     """Erledigte Kostenpositionen des Jahres: Kostenart, Betrag, umlagefähig.
 
@@ -117,7 +116,7 @@ def _zahlungsblock(kategorie: str) -> str:
     return passend.get((kategorie or "").strip().lower(), "Sonstiges")
 
 
-def _sichten(session: DBSession, o: Objekt, jahr: int) -> dict[str, dict[str, float]]:
+def _sichten(session: Session, o: Objekt, jahr: int) -> dict[str, dict[str, float]]:
     """Jahreskosten eines Objekts in allen drei Zuschnitten.
 
     Ein Durchgang für alle drei, damit dieselben Datensätze nicht dreimal
@@ -168,13 +167,13 @@ def _sichten(session: DBSession, o: Objekt, jahr: int) -> dict[str, dict[str, fl
     }
 
 
-def _bloecke(session: DBSession, o: Objekt, jahr: int,
+def _bloecke(session: Session, o: Objekt, jahr: int,
              sicht: str | None = None) -> dict[str, float]:
     """Kostenblöcke eines Objekts in der gewünschten Sicht."""
     return _sichten(session, o, jahr)[_sichtname(sicht)]
 
 
-def _umlagearten(session: DBSession, objekte: list[Objekt]) -> list[str]:
+def _umlagearten(session: Session, objekte: list[Objekt]) -> list[str]:
     """Umlagefähige Kostenarten der Objekte — die Filterschalter der Mietersicht.
 
     Bewusst aus dem Katalog und nicht aus den Positionen des Jahres: sonst
@@ -187,7 +186,7 @@ def _umlagearten(session: DBSession, objekte: list[Objekt]) -> list[str]:
     return sorted(namen)
 
 
-def _einheiten_zahlen(session: DBSession, o: Objekt, jahr: int,
+def _einheiten_zahlen(session: Session, o: Objekt, jahr: int,
                       mittel: str = "miete") -> list[EinheitZahlen]:
     """Einheiten mit ihren Einnahmen im gewählten Jahr.
 
@@ -243,7 +242,7 @@ def _einheiten_zahlen(session: DBSession, o: Objekt, jahr: int,
     return zahlen
 
 
-def _vz_quellen(session: DBSession, o: Objekt, jahr: int) -> list[dict]:
+def _vz_quellen(session: Session, o: Objekt, jahr: int) -> list[dict]:
     """Nebenkosten-Vorauszahlungen je Einheit — die Mittel der Mietersicht.
 
     Der Schlüssel heißt `einnahmen_jahr`, weil `cashflow.sankey` seine Quellen

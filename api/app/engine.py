@@ -6,7 +6,7 @@ Bewohnermonate, Einheiten, Prozent, individuell), Zeitanteiligkeit sowie die
 Abrechnung je Partei inkl. §35a-Summe und Gesamtübersicht.
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 
