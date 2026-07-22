@@ -20,7 +20,10 @@ body{
 }
 .app{
   width:100%; max-width:440px; min-height:100dvh; background:var(--paper);
-  position:relative; display:flex; flex-direction:column; padding-bottom:96px;
+  position:relative; display:flex; flex-direction:column;
+  /* Platz für die fixe Navi UND den Home-Indikator (Notch-iPhones), sonst
+     verdeckt der Fuß den letzten Inhalt (env ist 0 ohne sichere Zone). */
+  padding-bottom:calc(96px + env(safe-area-inset-bottom));
 }
 @media(min-width:480px){
   body{padding:24px 0}
@@ -31,7 +34,10 @@ body{
 /* ---- Kopfzeile ---- */
 .bar{
   position:sticky; top:0; z-index:20; background:var(--sheet);
-  padding:15px 18px 14px; display:flex; align-items:center; gap:12px; min-height:58px;
+  /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
+     füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet. */
+  padding:calc(15px + env(safe-area-inset-top)) 18px 14px;
+  display:flex; align-items:center; gap:12px; min-height:58px;
 }
 .bar h1{font:600 18px var(--disp); margin:0; letter-spacing:-.015em; flex:1}
 .bar .sub{font:500 11.5px var(--mono); color:var(--soft); margin-top:3px}
