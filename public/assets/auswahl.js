@@ -144,8 +144,17 @@ export function auswahlfeld(ziel, { optionen = [], wert = '', label = '',
   knopf.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); bewege(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); bewege(-1); }
-    else if (e.key === 'Home') { e.preventDefault(); markiert = 0; zeichne(); }
-    else if (e.key === 'End') { e.preventDefault(); markiert = liste.length - 1; zeichne(); }
+    else if (e.key === 'Home') {
+      e.preventDefault();
+      markiert = 0;
+      zeichne();
+      feld.querySelector('.markiert')?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      markiert = liste.length - 1;
+      zeichne();
+      feld.querySelector('.markiert')?.scrollIntoView({ block: 'nearest' });
+    }
     else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       offen ? waehle(markiert) : oeffne();

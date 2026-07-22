@@ -27,7 +27,7 @@ from .. import belegposten, ocr, pdftext
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            datumsteil, ohne_betrag, ohne_datum,
-                           ohne_ordnerwort, unterordner_finden)
+                           ohne_ordnerwort, unterordner_finden, vergleichsname)
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import Dokument, Objekt, Zeitraum
@@ -139,8 +139,15 @@ _NICHTSSAGEND = {"rechnung", "beleg", "scan", "dokument", "schreiben",
 
 
 def _kern(text: str) -> str:
-    """Nur die Buchstaben, klein — zum Vergleichen zweier Bezeichnungen."""
-    return re.sub(r"[^a-zäöüß]+", "", (text or "").lower())
+    """Vergleichsform für Kürzel/Kostenart/Sache (CCXXII).
+
+    Dasselbe wie `bezeichnung.vergleichsname` — dort für Ordnernamen gedacht,
+    hier für die Bausteine des Dateinamens wiederverwendet, damit es nicht
+    zweimal dieselbe Regel gibt. Ziffern bleiben absichtlich erhalten (wie
+    dort): ein `§35a` in einer Kostenart soll nicht mit einem beliebigen
+    zufällig anderen Textfetzen verwechselt werden, nur weil beide nach dem
+    Entfernen der Ziffern gleich aussehen."""
+    return vergleichsname(text)
 
 
 def _sagt_nichts(text: str) -> bool:
