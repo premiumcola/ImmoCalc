@@ -440,7 +440,8 @@
 <script type="module">
 import { api, eur, esc, belegAnsehen, installNav } from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
-import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
+import { lesbareGroesse } from './assets/scan.js';
+import { kamerascanStarten } from './assets/kamerascan.js';
 installNav();
 
 const liste = document.getElementById('liste');
@@ -1630,9 +1631,11 @@ kameraFeld.addEventListener('change', async () => {
   unterzeile.textContent = `${dateien.length} Aufnahme${dateien.length > 1 ? 'n' : ''}`;
 
   try {
-    const [{ pdf, seiten }, erkannt] = await Promise.all([
-      scanZuPdf(dateien), erkenne(dateien[0]),
+    const [scanErgebnis, erkannt] = await Promise.all([
+      kamerascanStarten(dateien), erkenne(dateien[0]),
     ]);
+    if (!scanErgebnis) throw new Error('abgebrochen');
+    const { pdf, seiten } = scanErgebnis;
     // Eindeutig ist die Immobilie, wenn es nur eine gibt — oder wenn gerade
     // nach einer gefiltert wird.
     const einzige = daten.objekte.length === 1 ? daten.objekte[0].slug : '';
@@ -1691,9 +1694,11 @@ document.getElementById('erneutFeld').addEventListener('change', async e => {
   e.target.value = '';
   const id = gewaehlt;
   if (!dateien.length || id === null) return;
-  melde('Neue Aufnahme wird abgelegt …');
   try {
-    const { pdf } = await scanZuPdf(dateien);
+    const scanErgebnis = await kamerascanStarten(dateien);
+    if (!scanErgebnis) { melde('Abgebrochen'); return; }
+    const { pdf } = scanErgebnis;
+    melde('Neue Aufnahme wird abgelegt …');
     const paket = new FormData();
     paket.append('datei', pdf, 'scan.pdf');
     const antwort = await fetch(`/api/dokumente/${id}/neu`,
