@@ -23,6 +23,10 @@ unterlagen/
 # --- Build / Tooling ---
 build.txt
 node_modules/
+# JEDER screenshots-Ordner (Test-Artefakte) auf jeder Ebene — nicht nur
+# tests/screenshots, sondern auch api/tests/screenshots. Ohne Wurzel-Anker,
+# sonst rutschen Prüfstand-Screenshots (evtl. mit echten Daten) doch ins Git.
+screenshots/
 tests/screenshots/
 __pycache__/
 *.pyc

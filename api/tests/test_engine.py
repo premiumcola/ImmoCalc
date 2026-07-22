@@ -31,7 +31,7 @@ def test_bewohnermonate_wg_drittel():
     assert abs(v["WG"] - 300.0) < 1e-6
 
 
-def test_einhorn_abrechnung_nachzahlung():
+def test_abrechnung_nachzahlung_einzelpartei():
     # Objekt Wohnung 2024: Kosten 3121.33, Vorauszahlung 12x220 = 2640
     pos = [Position("Gesamt", 3121.33, "individuell", {"Wohnung": 1.0})]
     res = abrechnung(pos, {"Wohnung": 2640.0})
