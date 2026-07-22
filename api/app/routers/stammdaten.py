@@ -18,6 +18,7 @@ from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, SQLModel, select
 
 from ..db import get_session
+from ..deps import objekt_holen
 from ..felder import bereinige
 from ..kappungsgrenze import pruefe
 from ..models import (Bewohner, Kredit, Kreditstand, Miete, Objekt,
@@ -33,13 +34,6 @@ ENTITAETEN: dict[str, Type[SQLModel]] = {
     "kredite": Kredit,
     "zahlungen": Zahlung,
 }
-
-
-def _objekt(session: Session, slug: str) -> Objekt:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
-    return o
 
 
 # Segmente, die unter /objekte/{slug}/… naheliegen, hier aber nichts zu suchen
@@ -111,9 +105,9 @@ def _miet_zeile(session: Session, m: Miete, heute: date) -> dict:
 # FastAPI gegen die Basisklasse SQLModel serialisieren und alle Felder schlucken.
 @router.get("/objekte/{slug}/{bereich}", response_model=None)
 def liste(slug: str, bereich: str,
-          session: Session = Depends(get_session)) -> list:
+          session: Session = Depends(get_session),
+          o: Objekt = Depends(objekt_holen)) -> list:
     modell = _modell(bereich)
-    o = _objekt(session, slug)
     zeilen = session.exec(select(modell).where(modell.objekt_id == o.id)).all()
     if bereich == "kredite":
         return [_kredit_zeile(session, k) for k in zeilen]
@@ -125,9 +119,9 @@ def liste(slug: str, bereich: str,
 
 @router.post("/objekte/{slug}/{bereich}", status_code=201)
 def anlegen(slug: str, bereich: str, data: dict,
-            session: Session = Depends(get_session)) -> dict:
+            session: Session = Depends(get_session),
+            o: Objekt = Depends(objekt_holen)) -> dict:
     modell = _modell(bereich)
-    o = _objekt(session, slug)
     # model_validate statt modell(**data): nur so werden Datumsstrings aus JSON
     # zu echten date-Objekten konvertiert, die SQLite akzeptiert.
     # bereinige davor: ein im Formular leer gelassenes Betragsfeld kommt als

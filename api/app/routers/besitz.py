@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
+from ..deps import objekt_holen
 from ..models import (Anteil, Einheit, Eigentuemer, Kredit, Kreditstand, Miete,
                       Objekt, ist_grundstueck)
 from ..turnus import jahresbetrag
@@ -19,13 +20,6 @@ VOLL = 1000.0        # ein ganzes Objekt in Promille
 # vollstaendig gelten. Auf mehr Genauigkeit zu bestehen liesse sich bei
 # Dritteln nie erfuellen.
 TOLERANZ = 0.1
-
-
-def _objekt(session: Session, slug: str) -> Objekt:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
-    return o
 
 
 def promille_von(a: Anteil) -> float:
@@ -190,13 +184,13 @@ def _stand(zeilen: list[Anteil], einheiten: list[Einheit] | None = None) -> dict
 
 
 @router.get("/objekte/{slug}/anteile", response_model=None)
-def anteile(slug: str, session: Session = Depends(get_session)) -> dict:
+def anteile(slug: str, session: Session = Depends(get_session),
+           o: Objekt = Depends(objekt_holen)) -> dict:
     """Beteiligungen an einem Objekt. `frei` zeigt, was noch nicht verteilt ist.
 
     Ein Anteil kann am ganzen Objekt hängen (`einheit` leer) oder an einer
     Einheit (CLXI). Die Einheiten kommen mit, damit die Oberfläche zur Auswahl
     stellt, worauf ein Anteil zeigt."""
-    o = _objekt(session, slug)
     eigner = {e.id: e for e in session.exec(select(Eigentuemer)).all()}
     einheiten = list(session.exec(
         select(Einheit).where(Einheit.objekt_id == o.id)).all())
@@ -241,14 +235,14 @@ def anteilsstand(session: Session = Depends(get_session)) -> list:
 
 @router.post("/objekte/{slug}/anteile", status_code=201)
 def anteil_setzen(slug: str, data: AnteilIn,
-                  session: Session = Depends(get_session)) -> dict:
+                  session: Session = Depends(get_session),
+                  o: Objekt = Depends(objekt_holen)) -> dict:
     """Legt eine Beteiligung an oder ändert eine bestehende desselben Eigners.
 
     Bewusst kein zweiter Eintrag pro Person *und Einheit*: sonst stünde dieselbe
     Beteiligung doppelt in der Liste und die Tausendstel gingen nicht mehr auf.
     Dieselbe Person kann aber sehr wohl am ganzen Objekt *und* an einer Einheit
     beteiligt sein — das sind zwei verschiedene Zuordnungen (CLXI)."""
-    o = _objekt(session, slug)
     if not session.get(Eigentuemer, data.eigentuemer_id):
         raise HTTPException(404, "Eigentümer nicht gefunden")
     wert = runde(data.promille if data.promille is not None else data.tausendstel)

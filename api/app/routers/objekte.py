@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from ..belegposten import (belege_je_position, handanteil, kurz,
                            anlegen as position_bauen)
 from ..db import get_session
+from ..deps import objekt_holen
 from ..bezeichnung import anzeigename
 from ..export import als_datei, dateiname, exportiere, importiere, loesche
 from ..felder import bereinige
@@ -399,13 +400,6 @@ class EinheitNeu(BaseModel):
     verkehrswert: Optional[float] = None
 
 
-def _objekt(session: Session, slug: str) -> Objekt:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
-    return o
-
-
 def _einheit(session: Session, eid: int) -> Einheit:
     e = session.get(Einheit, eid)
     if not e:
@@ -446,9 +440,9 @@ def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
 
 @router.get("/objekte/{slug}/einheiten")
 def einheiten_liste(slug: str,
-                    session: Session = Depends(get_session)) -> list[dict]:
+                    session: Session = Depends(get_session),
+                    o: Objekt = Depends(objekt_holen)) -> list[dict]:
     """Die Einheiten eines Objekts, jede mit ihrem heutigen Mieter."""
-    o = _objekt(session, slug)
     einheiten = list(session.exec(
         select(Einheit).where(Einheit.objekt_id == o.id)).all())
     mieten = list(session.exec(select(Miete).where(Miete.objekt_id == o.id)).all())
@@ -468,8 +462,8 @@ def _bezeichnung_frei(session: Session, objekt_id: int, bezeichnung: str,
 
 @router.post("/objekte/{slug}/einheiten", status_code=201)
 def einheit_anlegen(slug: str, data: EinheitNeu,
-                    session: Session = Depends(get_session)) -> dict:
-    o = _objekt(session, slug)
+                    session: Session = Depends(get_session),
+                    o: Objekt = Depends(objekt_holen)) -> dict:
     if ist_grundstueck(o):
         raise HTTPException(400, "Ein Grundstück hat keine Einheiten — "
                                  "Fläche und Nutzungsart stehen am Objekt.")
