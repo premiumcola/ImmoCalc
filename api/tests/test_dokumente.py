@@ -437,7 +437,7 @@ def test_scan_ordnet_zu_was_eindeutig_ist(monkeypatch):
         # allein sagte beim Empfänger nichts.
         ziel = "2024_Steuer-Grundsteuerbescheid.pdf"
         assert wolke.verschoben[0][1] == \
-            f"Home/Immobilien/Automatikweg 1/70_Steuer_Finanzamt/Steuer_2024/{ziel}"
+            f"Home/Immobilien/Automatikweg 1/70_Steuer_Finanzamt/2024/{ziel}"
 
         docs = c.get("/api/dokumente", params={"objekt": slug}).json()["dokumente"]
         nach_status = {d["status"]: d for d in docs}
@@ -562,7 +562,7 @@ def test_unterordner_vorlagen_sind_einstellbar():
         nach_art = {a["art"]: a for a in stand["arten"]}
         assert nach_art["Nebenkosten"]["vorlage"] == "{jahr}"
         assert nach_art["Nebenkosten"]["beispiel"] == str(stand["jahr"])
-        assert nach_art["Steuer"]["beispiel"] == f"Steuer_{stand['jahr']}"
+        assert nach_art["Steuer"]["beispiel"] == str(stand['jahr'])
 
         antwort = c.post("/api/nextcloud/unterordner",
                          json={"vorlagen": {"Nebenkosten": "NK-{jahr}"}})
@@ -570,7 +570,7 @@ def test_unterordner_vorlagen_sind_einstellbar():
         nach_art = {a["art"]: a for a in antwort.json()["arten"]}
         assert nach_art["Nebenkosten"]["beispiel"] == f"NK-{stand['jahr']}"
         # Die anderen Arten bleiben, wie sie waren
-        assert nach_art["Steuer"]["vorlage"] == "Steuer_{jahr}"
+        assert nach_art["Steuer"]["vorlage"] == "{jahr}"
 
         # Unbekannte Platzhalter und unbekannte Arten werden abgewiesen
         assert c.post("/api/nextcloud/unterordner",
@@ -808,7 +808,7 @@ def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
         slug = _mit_cloud(c, "Belegtweg 4", ordner)
         objekt_id = _objekt_id(slug)
         # Eintrag auf dem Zielpfad — in der Cloud gibt es die Datei nicht mehr
-        ziel = ("/Home/Immobilien/Belegtweg 4/70_Steuer_Finanzamt/Steuer_2024/"
+        ziel = ("/Home/Immobilien/Belegtweg 4/70_Steuer_Finanzamt/2024/"
                 "2024_Steuer-Grundsteuerbescheid.pdf")
         with Session(engine) as s:
             s.add(Dokument(pfad=ziel, dateiname="2024_Steuer-Grundsteuerbescheid.pdf",

@@ -234,7 +234,10 @@ UNTERORDNER_PLATZHALTER = ("jahr", "einheit", "art")
 # (`routers/dokumente.py`) — ein Test wacht darüber, dass keine Art fehlt.
 STANDARD_UNTERORDNER = {
     "Nebenkosten": "{jahr}",
-    "Steuer": "Steuer_{jahr}",
+    # Kurz und einheitlich: der Hauptordner heisst schon „…Steuer…", der
+    # Unterordner braucht das Wort nicht zu wiederholen — nur das Jahr. Alte
+    # „Steuer_JJJJ"-Ordner werden weiter gefunden (unterordner_finden).
+    "Steuer": "{jahr}",
     "Kredit": "{jahr}",
     "Versicherung": "{jahr}",
     "Mietvertrag": "{jahr}",

@@ -638,7 +638,7 @@ def test_unterordner_folgt_der_vorlage():
     # sagt die Sache schon, ein „NK-" davor wäre dieselbe Doppelnennung, die
     # für Dateinamen in CXXII abgeschafft wurde.
     assert STANDARD_UNTERORDNER["Nebenkosten"] == "{jahr}"
-    assert STANDARD_UNTERORDNER["Steuer"] == "Steuer_{jahr}"
+    assert STANDARD_UNTERORDNER["Steuer"] == "{jahr}"
 
 
 def test_unterordner_vorlage_pruefen():
