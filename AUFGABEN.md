@@ -19,9 +19,10 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | In einfachen Worten | Stand |
 |---|---|---|
-| CCXXVII | Neue Foto-/Scan-PDFs bekommen automatisch eine durchsuchbare Textschicht (OCR im Normalbetrieb) | offen — als Nächstes |
-| CCXXVIII | Mehrseitige Dokumente einfach abfotografieren: Rand erkennen, entzerren, zu einem PDF, dann OCR | offen — als Nächstes |
-| CCXXIX–CCXLVIII | 20 Modell-Lücken aus der OCR-Dokumentanalyse (Grundschuld, variabler Zins, Zinsen-Ist, Nießbrauch, Rücklagen-Historie, HKVO-Split, Kaution, Mängelliste …) | eingetragen, offen |
+| CCXXVII | ~~OCR-Textschicht automatisch für neue PDFs~~ **erledigt** `4e6291b` (Deploy nötig) | Hintergrund-Wachdienst OCRt textlose PDFs nach |
+| CCXXVIII | ~~Mehrseitiger Foto-Scan mit Zuschnitt/Entzerrung + Guards~~ **erledigt** `edb8f69` | `kamerascan.js` |
+| CCXXIX–CCXXXI, CCXXXV | **Rote Lücken** (Grundschuld, variabler Zins, Zinsen-Ist, Erwerbsart/Nießbrauch) — Backend `326504f` | Formular-UI in Arbeit (Agent) |
+| CCXXXII–CCXXXIV, CCXXXVI–CCXLVIII | übrige Modell-Lücken (gelb/weiß) aus der OCR-Analyse | eingetragen, offen |
 
 ---
 
@@ -29,8 +30,8 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | Anforderung | Was zu tun ist |
 |---|---|---|
-| CCXXVII | **OCR-Textschicht auch im Normalbetrieb** | Der einmalige Master-Lauf (`tools/ocr_ersetzen.py`, rapidocr → durchsuchbares PDF) muss in die Standard-Dokumentaufnahme wandern: jedes neu aufgenommene PDF ohne Textschicht bekommt sie automatisch, bevor es abgelegt wird. Betrifft `dokumente.py`/`scan.js`/Cloud-Upload; der API-Container braucht die OCR-Abhängigkeiten (`rapidocr-onnxruntime`, `pymupdf`/`pypdfium2`) → Deploy nötig. OCR bleibt optional (fehlt die Lib, still weiter wie bisher). **Priorität hoch** |
-| CCXXVIII | **Mehrseitiger Foto-Scan mit Zuschnitt & Entzerrung** | Dokumentseiten abfotografieren (mehrere nacheinander), den Rand des Dokuments erkennen und abschneiden, das Rest-Papier rechtwinklig skalieren (Perspektivkorrektur/Homographie), die Seiten zu **einem** PDF zusammenfügen, danach OCR (CCXXVII). **Guard:** abbrechen/warnen, wenn der Zuschnitt unrealistisch viel wegschneidet oder das erkannte Viereck sehr unparallel/ungleichseitig ist (schlechte Kantenerkennung → lieber manuell nachziehen). Vanilla, keine Libraries: Kamera über `<input capture>`, Ecken automatisch schätzen + manuell nachziehbar, Entzerrung auf Canvas per Zwei-Dreieck-Textur-Trick, PDF-Bau von Hand wie `abrechnung_pdf.py`. **Priorität hoch** |
+| CCXXVII | ~~**OCR-Textschicht auch im Normalbetrieb**~~ **erledigt** `4e6291b` | Der einmalige Master-Lauf (`tools/ocr_ersetzen.py`, rapidocr → durchsuchbares PDF) muss in die Standard-Dokumentaufnahme wandern: jedes neu aufgenommene PDF ohne Textschicht bekommt sie automatisch, bevor es abgelegt wird. Betrifft `dokumente.py`/`scan.js`/Cloud-Upload; der API-Container braucht die OCR-Abhängigkeiten (`rapidocr-onnxruntime`, `pymupdf`/`pypdfium2`) → Deploy nötig. OCR bleibt optional (fehlt die Lib, still weiter wie bisher). **Priorität hoch** |
+| CCXXVIII | ~~**Mehrseitiger Foto-Scan mit Zuschnitt & Entzerrung**~~ **erledigt** `edb8f69` | Dokumentseiten abfotografieren (mehrere nacheinander), den Rand des Dokuments erkennen und abschneiden, das Rest-Papier rechtwinklig skalieren (Perspektivkorrektur/Homographie), die Seiten zu **einem** PDF zusammenfügen, danach OCR (CCXXVII). **Guard:** abbrechen/warnen, wenn der Zuschnitt unrealistisch viel wegschneidet oder das erkannte Viereck sehr unparallel/ungleichseitig ist (schlechte Kantenerkennung → lieber manuell nachziehen). Vanilla, keine Libraries: Kamera über `<input capture>`, Ecken automatisch schätzen + manuell nachziehbar, Entzerrung auf Canvas per Zwei-Dreieck-Textur-Trick, PDF-Bau von Hand wie `abrechnung_pdf.py`. **Priorität hoch** |
 
 ### Am 21.07. abends fertig geworden
 
