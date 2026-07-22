@@ -80,6 +80,14 @@ class Einheit(SQLModel, table=True):
     terrasse: Optional[float] = None         # Terrasse/Balkon in m²
     nebenflaeche: Optional[float] = None     # Keller, Abstellraum in m²
     stellplaetze: int = 0
+    # CXCIII: eine Einheit ganz aus der Nebenkostenabrechnung nehmen —
+    # selbstgenutzt, separat abgerechnet, gewerblich mit eigenem Zähler. Der
+    # Vorgabewert True hält jeden Bestand unverändert; steht er auf False,
+    # zählt die Einheit in keinem Verteilungsschlüssel mehr mit.
+    nk_abrechnung: bool = True
+    # CLXXXVI: ein Verkehrswert je Einheit — nur gepflegt, wo er bekannt ist.
+    # Die Vermögenssicht am Haus bleibt maßgeblich, die Einheit ergänzt.
+    verkehrswert: Optional[float] = None
 
 
 class Partei(SQLModel, table=True):
@@ -126,6 +134,11 @@ class Kostenposition(SQLModel, table=True):
     kostenart: str
     betrag: float
     schluessel: str = "individuell"
+    # CXCIV: ein Sonderposten, der ganz einer Einheit gehört (Reparatur nur in
+    # Wohnung 2, eigener Warmwasserboiler). Ist eine Einheit genannt, geht der
+    # Schlüssel leer aus und diese eine Einheit trägt 100 %. Leer = normal,
+    # über alle verteilt.
+    nur_einheit: str = ""
     wertquelle: str = "manuell"   # 'Scan'|'Zähler'|'extern'|'manuell'
     status: str = "erledigt"      # 'erledigt' | 'offen'
     s35: bool = False
@@ -370,6 +383,11 @@ class Anteil(SQLModel, table=True):
     # koennte den Anteilen widersprechen (600 ‰ und trotzdem
     # „Alleineigentuemer"), eine abgeleitete nie.
     rolle: str = "Eigentümer"
+    # CLXI: Eigentum je Einheit. Ohne Angabe (leer) gilt die Beteiligung fürs
+    # ganze Objekt — jeder Bestand bleibt damit unverändert. Ist eine Einheit
+    # genannt, gehört dieser Anteil nur ihr: so lässt sich „mir gehört Wohnung 2"
+    # ausdrücken, statt nur „mir gehören 200 ‰ des Hauses".
+    einheit: str = ""
     notiz: str = ""
 
 

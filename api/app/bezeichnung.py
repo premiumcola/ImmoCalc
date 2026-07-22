@@ -156,10 +156,23 @@ def nach_vorlage(vorlage: str, **werte: str) -> str:
     text = vorlage or STANDARD_VORLAGE
     # `lage` ergibt sich aus den anderen Angaben, wenn es niemand mitgibt —
     # sonst verlöre jeder Aufrufer, der nur `strasse` kennt, die Adresse.
+    werte = dict(werte)
     if not werte.get("lage"):
-        werte = {**werte, "lage": lagebezeichnung(werte.get("strasse", ""),
-                                                  werte.get("gemarkung", ""),
-                                                  werte.get("flurstueck", ""))}
+        werte["lage"] = lagebezeichnung(werte.get("strasse", ""),
+                                        werte.get("gemarkung", ""),
+                                        werte.get("flurstueck", ""))
+    # Kein doppelter Straßenname: heißt das Objekt selbst wie seine Lage oder
+    # sein Ort („Laufer Str. 5" als Name UND als Straße), fiele „(Eschenau)
+    # Laufer Str. 5 · Laufer Str. 5" heraus. Dann tritt {name} zurück — der
+    # leere „· "-Rest wird ohnehin weggeräumt.
+    name = _sauber(werte.get("name", ""))
+    if name:
+        for feld in ("lage", "ort", "strasse"):
+            andere = _sauber(werte.get(feld, ""))
+            if andere and (name.lower() in andere.lower()
+                           or andere.lower() in name.lower()):
+                werte["name"] = ""
+                break
     for schluessel in PLATZHALTER:
         wert = _sauber(werte.get(schluessel, ""))
         # sowohl {ort} als auch %ort werden verstanden
