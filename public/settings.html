@@ -382,8 +382,8 @@
     <div class="meldung" id="mailMeldung"></div>
     <form id="mailForm">
       <div class="field">
-        <label for="mailAnbieter">Anbieter</label>
-        <select class="inp" id="mailAnbieter"></select>
+        <label>Anbieter</label>
+        <div id="mailAnbieter"></div>
       </div>
       <div class="zeile2" id="mailServerZeile" style="display:none">
         <div class="field">
@@ -469,6 +469,7 @@
 
 <script type="module">
 import { api, esc, frage } from './assets/immo.js';
+import { auswahlfeld } from './assets/auswahl.js';
 
 const build = document.getElementById('build');
 const sub = document.getElementById('sub');
@@ -572,8 +573,8 @@ async function ordnerZeigen(pfad = '') {
     const eintraege = daten.ordner.map(o =>
       `<button data-pfad="${o.pfad.replace(/^\//, '')}">
          <span class="sym">▸</span>${o.name}</button>`).join('');
-    ordnerliste.innerHTML = hoch + eintraege ||
-      '<div class="leer">Keine Unterordner — dieser Ordner ist wählbar</div>';
+    ordnerliste.innerHTML = hoch + (eintraege ||
+      '<div class="leer">Keine Unterordner — dieser Ordner ist wählbar</div>');
   } catch (fehler) {
     ordnerliste.innerHTML = '<div class="leer">Ordner nicht lesbar</div>';
     melde(ordnerMeldung, String(fehler.message || fehler));
@@ -1087,12 +1088,11 @@ einsortierenStart.addEventListener('click', async () => {
 const mailDlg = document.getElementById('mailDlg');
 const mailStatus = document.getElementById('mailStatus');
 const mailMeldung = document.getElementById('mailMeldung');
-const anbieterWahl = document.getElementById('mailAnbieter');
 const serverZeile = document.getElementById('mailServerZeile');
 let anbieterListe = [];
 
 function anbieterUebernehmen() {
-  const a = anbieterListe.find(x => x.id === anbieterWahl.value);
+  const a = anbieterListe.find(x => x.id === anbieterWahl.wert());
   if (!a) return;
   // Nur beim freien Anbieter muss der Server von Hand eingetragen werden
   serverZeile.style.display = a.id === 'custom' ? 'flex' : 'none';
@@ -1100,15 +1100,19 @@ function anbieterUebernehmen() {
   document.getElementById('mailPort').value = a.port;
 }
 
+const anbieterWahl = auswahlfeld(document.getElementById('mailAnbieter'), {
+  label: 'Anbieter',
+  aenderung: anbieterUebernehmen,
+});
+
 async function mailZustand() {
   try {
     const [{ anbieter }, status] = await Promise.all([
       api('/mail/anbieter'), api('/mail/status'),
     ]);
     anbieterListe = anbieter;
-    anbieterWahl.innerHTML = anbieter.map(a =>
-      `<option value="${a.id}" ${status.anbieter === a.id ? 'selected' : ''}>${
-        esc(a.name)}</option>`).join('');
+    anbieterWahl.fuelle(anbieter.map(a => ({ wert: a.id, text: a.name })),
+                        status.anbieter);
     anbieterUebernehmen();
 
     if (status.verbunden) {
@@ -1127,8 +1131,6 @@ async function mailZustand() {
   }
 }
 
-anbieterWahl.addEventListener('change', anbieterUebernehmen);
-
 document.getElementById('mailRow').addEventListener('click', () => {
   meldungWeg(mailMeldung);
   mailDlg.showModal();
@@ -1144,7 +1146,7 @@ document.getElementById('mailForm').addEventListener('submit', async e => {
     await api('/mail/verbindung', {
       method: 'POST',
       body: {
-        anbieter: anbieterWahl.value,
+        anbieter: anbieterWahl.wert(),
         server: document.getElementById('mailServer').value.trim(),
         port: Number(document.getElementById('mailPort').value) || 587,
         benutzer: document.getElementById('mailBenutzer').value.trim(),
