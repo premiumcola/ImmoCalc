@@ -205,17 +205,17 @@ Reihenfolge: erst echte Bugs, dann Modularisierung/Regelverstöße, dann Kosmeti
 
 | Nr. | Fund | Datei |
 |---|---|---|
-| CCX | **Ausgezogene Mieter bekommen ihre Abrechnung nie** | `versand.py:45` — `_empfaenger` zählt nur Mieter mit `bis_datum is None`, die Verteilung aber alle, die den Zeitraum schneiden. Ein 2024 ausgezogener Mieter mit Nachzahlung und hinterlegter Mail wird als „ohne Mailadresse" übersprungen. Fix: dasselbe Prädikat wie `verteilung._laufend`, Zeitraum durchreichen |
-| CCXI | **Teilversand gilt beim Retry als vollständig** | `versand.py:185` — Dedup auf Partei-Ebene, Versand aber je Adresse. Ehepaar mit zwei Mails, SMTP-Fehler bei Adresse 2 → nach dem Retry gilt die Partei als versorgt, die zweite Person bekommt nie etwas. Fix: Dedup auf `(Partei, Empfänger)` |
-| CCXII | **Korrigierte Abrechnung nicht erneut zustellbar** | `versand.py:189` — `erneut=True` umgeht den 409, aber der Loop überspringt alle schon belieferten Parteien. Nach einer Korrektur bekommt niemand die neue Abrechnung. Fix: Versandprotokoll beim erneuten Abschluss zurücksetzen |
+| CCX | ~~**Ausgezogene Mieter bekommen ihre Abrechnung nie**~~ **erledigt** `e14a366` | `versand.py:45` — `_empfaenger` zählt nur Mieter mit `bis_datum is None`, die Verteilung aber alle, die den Zeitraum schneiden. Ein 2024 ausgezogener Mieter mit Nachzahlung und hinterlegter Mail wird als „ohne Mailadresse" übersprungen. Fix: dasselbe Prädikat wie `verteilung._laufend`, Zeitraum durchreichen |
+| CCXI | ~~**Teilversand gilt beim Retry als vollständig**~~ **erledigt** `e14a366` | `versand.py:185` — Dedup auf Partei-Ebene, Versand aber je Adresse. Ehepaar mit zwei Mails, SMTP-Fehler bei Adresse 2 → nach dem Retry gilt die Partei als versorgt, die zweite Person bekommt nie etwas. Fix: Dedup auf `(Partei, Empfänger)` |
+| CCXII | ~~**Korrigierte Abrechnung nicht erneut zustellbar**~~ **erledigt** `e14a366` | `versand.py:189` — `erneut=True` umgeht den 409, aber der Loop überspringt alle schon belieferten Parteien. Nach einer Korrektur bekommt niemand die neue Abrechnung. Fix: Versandprotokoll beim erneuten Abschluss zurücksetzen |
 
 **Wichtig — Modularisierung, Regelverstöße:**
 
 | Nr. | Fund | Datei |
 |---|---|---|
-| CCXIII | **Natives `<select>` im Mailversand** | `settings.html:386` — Anbieter-Wähler ist ein natives select (Regelverstoß, System-Auswahlrad auf iOS). Auf `auswahlfeld` aus auswahl.js umstellen |
+| CCXIII | ~~**Natives `<select>` im Mailversand**~~ **erledigt** `0a15f38` | `settings.html:386` — Anbieter-Wähler ist ein natives select (Regelverstoß, System-Auswahlrad auf iOS). Auf `auswahlfeld` aus auswahl.js umstellen |
 | CCXIV | **Import-Zirkel cloud ↔ dokumente** | `cloud.py:76` — geteilte Infrastruktur (`_lies`/`_schreib`/`verbindung`/`STRUKTUR`) liegt im cloud-Router, dokumente importiert daraus, cloud fünfmal lazy zurück. In neutrale Module herauslösen |
-| CCXV | **`_objekt(session, slug)` 3× identisch, 17× inline** | `stammdaten.py:38` (+ besitz.py, objekte.py) — als gemeinsame FastAPI-Dependency `objekt_holen` herauslösen |
+| CCXV | ~~**`_objekt(session, slug)` 3× identisch, 17× inline**~~ **erledigt** `fb44d33` | `stammdaten.py:38` (+ besitz.py, objekte.py) — als gemeinsame FastAPI-Dependency `objekt_holen` herauslösen |
 | CCXVI | **Navigationsleiste in 8 Seiten kopiert** | `index.html:167` — den `<nav>`-Block zentral aus immo.js injizieren (wie `installLogos()`) statt 8× pflegen |
 | CCXVII | **`.applogo`/Kachel-CSS in 4 Seiten dupliziert** | `index.html:22` — die Regeln einmal nach immo.css, die inline-Kopien entfernen |
 
@@ -223,12 +223,12 @@ Reihenfolge: erst echte Bugs, dann Modularisierung/Regelverstöße, dann Kosmeti
 
 | Nr. | Fund | Datei |
 |---|---|---|
-| CCXVIII | Leerzustand-Hinweis des Ordner-Browsers greift nur an der Wurzel (Operator-Präzedenz) | `settings.html:575` |
-| CCXIX | Home/End scrollt die Markierung nicht ins Sichtfeld (A11y) | `auswahl.js:147` |
+| CCXVIII | ~~Leerzustand-Hinweis des Ordner-Browsers greift nur an der Wurzel (Operator-Präzedenz)~~ **erledigt** `0a15f38` | `settings.html:575` |
+| CCXIX | ~~Home/End scrollt die Markierung nicht ins Sichtfeld (A11y)~~ **erledigt** `ecd955f` | `auswahl.js:147` |
 | CCXX | Euro-/Promille-Formatierer je Seite neu statt aus immo.js (`eur`/`eurKurz`/`eurVoll` + ein neues `promille`) | eingang/status/app/onboarding/eigentuemer/objekt |
-| CCXXI | `Session` doppelt importiert (auch als `DBSession`) | `auswertung.py:17` |
-| CCXXII | `_kern` dupliziert `bezeichnung.vergleichsname` (abweichend bei Ziffern) | `dokumente.py:141` |
-| CCXXIII | Ungenutzter Import `field` | `engine.py:9` |
+| CCXXI | ~~`Session` doppelt importiert (auch als `DBSession`)~~ **erledigt** `7251ec2` | `auswertung.py:17` |
+| CCXXII | ~~`_kern` dupliziert `bezeichnung.vergleichsname` (abweichend bei Ziffern)~~ **erledigt** `ecd955f` | `dokumente.py:141` |
+| CCXXIII | ~~Ungenutzter Import `field`~~ **erledigt** `7251ec2` | `engine.py:9` |
 | CCXXIV | Fehlende Type-Hints auf Signaturen (breit: kappungsgrenze, nachpflege, export, seed, dokumente, cloud) | mehrere |
 | CCXXV | `mietvergleich.py` in keinen Router verdrahtet (bewusst geparkt, CI/CII) | `mietvergleich.py` |
 | CCXXVI | `alert()` + hartcodierte Mockup-Daten in Dev-Seiten aus public/ erreichbar | `app.html:357`, `logos.html:151` |
