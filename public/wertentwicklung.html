@@ -199,7 +199,11 @@ function vermoegenHtml(besitz, objekt) {
         <thead><tr><th>Objekt</th><th>Wert</th><th>Schuld</th><th>Eigen</th></tr></thead>
         <tbody>${zeilen}</tbody>
       </table>`}
-      ${z.beleihung != null ? `<div class="chartleer" style="padding:12px 0 0">
+      ${z.bauspar_guthaben ? `<div class="chartleer" style="padding:12px 0 0">
+        Darin ${eurVoll(z.bauspar_guthaben)} Bausparguthaben — es zählt zum
+        Eigenkapital, nicht zur Beleihung.</div>` : ''}
+      ${z.beleihung != null ? `<div class="chartleer" style="padding:${
+        z.bauspar_guthaben ? '6' : '12'}px 0 0">
         Beleihung ${z.beleihung} %</div>` : ''}
       ${!objekt && fehlen ? `<div class="chartleer" style="padding:6px 0 0">
         Bei ${fehlen} Objekt${fehlen === 1 ? '' : 'en'} fehlt noch ein Wert —

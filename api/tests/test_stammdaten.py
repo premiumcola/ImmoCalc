@@ -353,3 +353,16 @@ def test_faenger_verschluckt_keine_zweisegmentigen_pfade():
                         c.delete("/api/positionen/999999"),
                         c.delete("/api/anteile/999999")):
             assert "Unbekannter Bereich" not in antwort.text, antwort.text
+
+
+def test_fehlendes_pflichtfeld_ist_400_kein_500():
+    """Ein Kredit ohne Bezeichnung ist ein Eingabefehler, kein Serverfehler.
+
+    Vorher warf `model_validate` eine ValidationError durch bis zum 500 — die
+    Oberfläche bekam eine leere Fehlermeldung. Jetzt: 400 mit dem Feldnamen."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Pflichtweg 1"}).json()["slug"]
+        antwort = c.post(f"/api/objekte/{slug}/kredite",
+                         json={"bank": "Sparkasse", "restschuld": 100000})
+        assert antwort.status_code == 400
+        assert "bezeichnung" in antwort.json()["detail"].lower()

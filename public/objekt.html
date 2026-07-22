@@ -46,8 +46,11 @@
                 color:var(--soft)}
   .eintrag .sym svg{width:20px;height:20px;display:block}
   .eintrag .et{flex:1;min-width:0}
+  /* hyphens vor overflow-wrap: aus „Ankaufsdarlehen" wird ein getrenntes
+     „Ankaufs-darlehen" statt eines Bruchs mitten im Wort. break-word bricht
+     nur, wo eine Wortgrenze ist; anywhere zerschnitt jedes Wort. */
   .eintrag .en{display:block;font:600 14px var(--disp);letter-spacing:-.01em;
-               overflow-wrap:anywhere}
+               hyphens:auto;overflow-wrap:break-word}
   /* Der Zustandshinweis läuft mit dem Namen mit, statt ihm Platz wegzunehmen —
      als eigene Spalte quetscht er den Namen auf schmalen Geräten Buchstabe
      für Buchstabe um. */

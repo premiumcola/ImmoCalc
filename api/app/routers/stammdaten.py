@@ -14,7 +14,7 @@ from datetime import date
 from typing import Type
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, SQLModel, select
 
 from ..db import get_session
@@ -133,7 +133,14 @@ def anlegen(slug: str, bereich: str, data: dict,
     # bereinige davor: ein im Formular leer gelassenes Betragsfeld kommt als
     # null an und liesse sonst das ganze Anlegen scheitern — samt Mieter,
     # Kaltmiete und Anschrift, die daneben schon eingetragen waren.
-    eintrag = modell.model_validate({**bereinige(modell, data), "objekt_id": o.id})
+    try:
+        eintrag = modell.model_validate(
+            {**bereinige(modell, data), "objekt_id": o.id})
+    except ValidationError as fehler:
+        # Ein fehlendes Pflichtfeld ist ein Eingabefehler, kein Serverfehler —
+        # 400 mit den Feldnamen ist für die Oberfläche brauchbar, ein 500 nicht.
+        fehlt = ", ".join(str(e["loc"][-1]) for e in fehler.errors())
+        raise HTTPException(400, f"Es fehlen Angaben: {fehlt}") from fehler
     if isinstance(eintrag, Miete):
         _pruefe_mietstand(session, o.id, eintrag)
     session.add(eintrag)
