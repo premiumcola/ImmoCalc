@@ -707,3 +707,150 @@ def test_jede_dokumentart_hat_eine_unterordner_vorlage():
     from app.routers.dokumente import ZIELORDNER
 
     assert set(STANDARD_UNTERORDNER) == set(ZIELORDNER)
+
+
+# --------------------------------------------------------------------------
+# CXCII: den entdoppelten Hauptordnernamen zieht /umzug schon nach
+# --------------------------------------------------------------------------
+
+def test_umzug_erkennt_den_entdoppelten_hauptordner(monkeypatch):
+    """8d4e8aa hat den doppelten Namen entdoppelt: aus „(Eschenau) Laufer Str. 5
+    · Laufer Str. 5" wird „(Eschenau) Laufer Str. 5". Der bestehende Umzug zieht
+    das über `nach_vorlage` nach — hier belegt: der alte, doppelte Ordnername
+    wird als Verschiebe-Schritt auf den kurzen erkannt."""
+    doppelt = f"{HOME}/(Eschenau) Laufer Str. 5 · Laufer Str. 5"
+    with TestClient(app) as c:
+        _cloud_bereit(STANDARD_VORLAGE)          # ({ort}) {lage} · {name}
+        # Name UND Straße „Laufer Str. 5": genau der Fall, den der Fix entdoppelt.
+        slug = _objekt(c, "Laufer Str. 5", "Eschenau", "Laufer Str. 5", doppelt)
+        wolke = _Wolke(ordner=[HOME, doppelt])
+        monkeypatch.setattr(cloud_modul, "verbindung", lambda session: wolke)
+
+        plan = c.get("/api/nextcloud/umzug").json()
+        schritt = next(s for s in plan["schritte"] if s["objekt"] == slug)
+        assert schritt["art"] == "verschieben"
+        assert (schritt["von"], schritt["nach"]) == (doppelt, NEU)
+
+
+# --------------------------------------------------------------------------
+# CXCII: Altbestand aus dem flachen Sachordner in die Jahresordner umziehen
+# --------------------------------------------------------------------------
+
+def _flach_beleg(slug: str, pfad: str, jahr=2024,
+                 kategorie: str = "Nebenkosten") -> int:
+    with Session(engine) as s:
+        o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+        d = Dokument(pfad=pfad, dateiname=pfad.rsplit("/", 1)[-1],
+                     objekt_id=o.id, kategorie=kategorie, jahr=jahr,
+                     status="zugeordnet")
+        s.add(d)
+        s.commit()
+        s.refresh(d)
+        return d.id
+
+
+def test_flache_datei_landet_im_jahresordner(monkeypatch):
+    """CXCII: ein Beleg, der flach im Sachordner liegt, zieht in seinen
+    Jahresordner — die Datei wandert, ihr Eintrag zieht mit."""
+    sach = f"{NEU}/60_Nebenkosten"
+    flach = f"{sach}/2024_NK-Wasser.pdf"
+    with TestClient(app) as c:
+        _cloud_bereit()
+        slug = _objekt(c, "Wohnung 1.OG", "Eschenau", "Laufer Str. 5", NEU)
+        beleg = _flach_beleg(slug, flach, jahr=2024)
+        wolke = _Wolke(ordner=[HOME, NEU, sach], dateien=[flach])
+        monkeypatch.setattr(cloud_modul, "verbindung", lambda session: wolke)
+
+        plan = c.get("/api/nextcloud/unterordner-umzug").json()
+        assert plan["dokumente"] == 1
+        dok = plan["schritte"][0]["dokumente"][0]
+        assert (dok["von"], dok["nach"]) == (flach, f"{sach}/2024/2024_NK-Wasser.pdf")
+
+        ergebnis = c.post("/api/nextcloud/unterordner-umzug").json()
+        assert ergebnis["fehler"] == []
+        assert ergebnis["anzahl"] == 1
+        assert _pfad_von(beleg) == f"{sach}/2024/2024_NK-Wasser.pdf"
+        assert wolke.existiert(_pfad_von(beleg))
+        assert f"{sach}/2024" in wolke.ordner
+
+        # Ein zweiter Lauf hat nichts mehr zu tun
+        assert c.post("/api/nextcloud/unterordner-umzug").json()["anzahl"] == 0
+
+
+def test_vorhandener_jahresordner_wird_wiederverwendet(monkeypatch):
+    """Liegt „2025" schon da, wandert der Beleg dorthin — nicht in ein zweites
+    Jahresordner daneben."""
+    sach = f"{NEU}/60_Nebenkosten"
+    vorhanden = f"{sach}/2025"
+    flach = f"{sach}/2025_NK-Strom.pdf"
+    with TestClient(app) as c:
+        _cloud_bereit()
+        slug = _objekt(c, "Wohnung 1.OG", "Eschenau", "Laufer Str. 5", NEU)
+        beleg = _flach_beleg(slug, flach, jahr=2025)
+        wolke = _Wolke(ordner=[HOME, NEU, sach, vorhanden], dateien=[flach])
+        monkeypatch.setattr(cloud_modul, "verbindung", lambda session: wolke)
+
+        ergebnis = c.post("/api/nextcloud/unterordner-umzug").json()
+        assert ergebnis["fehler"] == []
+        assert _pfad_von(beleg) == f"{vorhanden}/2025_NK-Strom.pdf"
+        # kein zweiter „2025"-Ordner ist entstanden
+        assert sorted(o for o in wolke.ordner if o.startswith(sach + "/")) \
+            == [vorhanden]
+
+
+def test_beleg_ohne_jahr_bleibt_flach_liegen(monkeypatch):
+    """Ein Ordner „ohne-Jahr" hülfe niemandem beim Wiederfinden — ohne
+    erkennbares Jahr bleibt der Beleg im Sachordner."""
+    sach = f"{NEU}/60_Nebenkosten"
+    flach = f"{sach}/NK-Hausordnung.pdf"
+    with TestClient(app) as c:
+        _cloud_bereit()
+        slug = _objekt(c, "Wohnung 1.OG", "Eschenau", "Laufer Str. 5", NEU)
+        beleg = _flach_beleg(slug, flach, jahr=None)
+        wolke = _Wolke(ordner=[HOME, NEU, sach], dateien=[flach])
+        monkeypatch.setattr(cloud_modul, "verbindung", lambda session: wolke)
+
+        plan = c.get("/api/nextcloud/unterordner-umzug").json()
+        assert plan["dokumente"] == 0
+        assert [x["id"] for x in plan["ohne_jahr"]] == [beleg]
+
+        ergebnis = c.post("/api/nextcloud/unterordner-umzug").json()
+        assert ergebnis["anzahl"] == 0
+        assert ergebnis["ohne_jahr"] == 1
+        assert wolke.verschoben == []
+        assert _pfad_von(beleg) == flach          # unverändert
+
+
+def test_selbst_angelegter_ordner_und_datei_ohne_eintrag_bleiben(monkeypatch):
+    """Nur was flach im Sachordner liegt UND einen Eintrag hat, wird bewegt.
+
+    Ein selbst angelegter Unterordner, eine Datei ohne Eintrag und ein Beleg,
+    der schon im Jahresordner liegt, bleiben unangetastet."""
+    sach = f"{NEU}/60_Nebenkosten"
+    eigen = f"{sach}/Ablesungsergebnisse"           # selbst angelegt
+    eigen_datei = f"{eigen}/Zaehlerstand.pdf"        # ohne Eintrag
+    schon_drin = f"{sach}/2023/2023_NK-Muell.pdf"    # liegt schon richtig
+    flach = f"{sach}/2024_NK-Gas.pdf"                # der einzige, der zieht
+    with TestClient(app) as c:
+        _cloud_bereit()
+        slug = _objekt(c, "Wohnung 1.OG", "Eschenau", "Laufer Str. 5", NEU)
+        beleg = _flach_beleg(slug, flach, jahr=2024)
+        tief = _flach_beleg(slug, schon_drin, jahr=2023)
+        wolke = _Wolke(ordner=[HOME, NEU, sach, eigen, f"{sach}/2023"],
+                       dateien=[flach, eigen_datei, schon_drin])
+        monkeypatch.setattr(cloud_modul, "verbindung", lambda session: wolke)
+
+        plan = c.get("/api/nextcloud/unterordner-umzug").json()
+        assert plan["dokumente"] == 1              # nur der flache Beleg
+
+        ergebnis = c.post("/api/nextcloud/unterordner-umzug").json()
+        assert ergebnis["fehler"] == []
+        assert ergebnis["anzahl"] == 1
+        # Der flache Beleg ist umgezogen …
+        assert _pfad_von(beleg) == f"{sach}/2024/2024_NK-Gas.pdf"
+        # … der selbst angelegte Ordner und seine Datei sind unberührt …
+        assert eigen in wolke.ordner
+        assert eigen_datei in wolke.dateien
+        # … und der bereits einsortierte Beleg blieb, wo er lag.
+        assert _pfad_von(tief) == schon_drin
+        assert schon_drin not in [v[0] for v in wolke.verschoben]

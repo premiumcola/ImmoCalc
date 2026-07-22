@@ -9,10 +9,10 @@ from sqlmodel import Session, select
 
 from ..bezeichnung import (PLATZHALTER, STANDARD_UNTERORDNER, STANDARD_VORLAGE,
                            UNTERORDNER_PLATZHALTER, VERBOTENE_ZEICHEN,
-                           doppelt_geschachtelt, hierarchie, lagebezeichnung,
-                           nach_vorlage, ordnerpfad, pfadteile,
-                           unterordner_name, unterordner_pruefen,
-                           vorlage_pruefen)
+                           datum_aus_namen, doppelt_geschachtelt, hierarchie,
+                           lagebezeichnung, nach_vorlage, ordnerpfad, pfadteile,
+                           unterordner_finden, unterordner_name,
+                           unterordner_pruefen, vorlage_pruefen)
 from ..db import get_session
 from ..models import Dokument, Einstellung, Objekt
 from ..nextcloud import Nextcloud, NextcloudFehler
@@ -668,3 +668,189 @@ def umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
             "dokumente": bewegt, "fehler": fehler,
             "unveraendert": len(plan["unveraendert"]),
             "verwaist": plan["verwaist"]}
+
+
+# --------------------------------------------------------------------------
+# CXCII: Altbestand in die Jahres-Unterordner umziehen
+#
+# Seit CXCI wandert jeder neue Beleg in einen Jahresordner („60_Nebenkosten/
+# 2025", „70_Steuer_Finanzamt/Steuer_2024" …). Was vorher schon abgelegt wurde,
+# liegt aber noch flach im Sachordner. Dieser Vorgang zieht es nach —
+# ausdrücklich angestoßen, nie im Wachdienst.
+#
+# Bewegt wird ausschließlich, was flach in einem bekannten Sachordner liegt UND
+# einen Dokument-Eintrag hat. Selbst angelegte Unterordner
+# („Ablesungsergebnisse", „M-Net Kosten", „_sonstige") bleiben unangetastet,
+# ebenso Dateien ohne Eintrag. Ein Beleg ohne erkennbares Jahr bleibt liegen —
+# ein Ordner „ohne-Jahr" hülfe niemandem beim Wiederfinden. Verschoben wird per
+# MOVE auf einen freien Namen; `Dokument.pfad` zieht erst nach geglücktem MOVE
+# mit, je Datei einzeln festgeschrieben.
+# --------------------------------------------------------------------------
+
+def _sachordner_kategorie() -> dict[str, str]:
+    """Sachordner-Name → Dokumentart. Umkehrung von `ZIELORDNER`."""
+    from .dokumente import ZIELORDNER            # zirkelfrei zur Laufzeit
+    return {ordner: art for art, ordner in ZIELORDNER.items()}
+
+
+def _flache_belege(session: Session, objekt: Objekt,
+                   nach_ordner: dict[str, str]) -> list[tuple[Dokument, str]]:
+    """Belege, die genau eine Ebene tief in einem bekannten Sachordner liegen.
+
+    Nur solche werden umgezogen: eine lose Datei direkt im Objektordner (eine
+    Ebene) gehört zum großen Umzug, ein Beleg in einem Jahresordner (drei
+    Ebenen) liegt schon richtig, und ein selbst angelegter Ordner ist kein
+    Sachordner und fällt hier ohnehin heraus."""
+    wurzel = _pfad(objekt.nc_ordner)
+    ergebnis: list[tuple[Dokument, str]] = []
+    for d in session.exec(select(Dokument)
+                          .where(Dokument.objekt_id == objekt.id)).all():
+        if d.status == "vermisst":
+            continue                     # die Datei liegt gar nicht mehr da
+        rel = _pfad(d.pfad)
+        if not rel.startswith(wurzel + "/"):
+            continue
+        teile = pfadteile(rel[len(wurzel):])
+        if len(teile) != 2:              # [Sachordner, Dateiname]
+            continue
+        kategorie = nach_ordner.get(teile[0])
+        if kategorie:
+            ergebnis.append((d, kategorie))
+    return ergebnis
+
+
+def _ziel_unterordner(session: Session, objekt: Objekt, kategorie: str,
+                      jahr: int, client) -> tuple[str, str] | None:
+    """(Sachordner, Ablageordner) für diesen Beleg — oder None, wenn er flach
+    bleibt (leere Vorlage).
+
+    Ein bereits vorhandener Jahresordner wird wiederverwendet statt
+    danebengestellt: liegt „2025" schon da, wandert der Beleg dorthin und nicht
+    in ein zweites. Ohne erreichbare Cloud gilt der Name aus der Vorlage — das
+    ist kein Fehler, nur eine Auskunft, die es noch nicht gibt."""
+    from .dokumente import ARTKUERZEL, ZIELORDNER   # zirkelfrei zur Laufzeit
+    ziel = unterordner_fuer(session, objekt, kategorie, jahr)
+    if not ziel:
+        return None
+    sach = f"{_pfad(objekt.nc_ordner)}/{ZIELORDNER[kategorie]}".rstrip("/")
+    vorhandene: list[str] = []
+    if client is not None:
+        try:
+            vorhandene = [e.name for e in client.liste(sach) if e.ordner]
+        except NextcloudFehler as fehler:
+            log.info("Unterordner von %s nicht gelesen: %s", sach, fehler)
+    treffer = unterordner_finden(vorhandene, jahr, ziel,
+                                 (kategorie, ARTKUERZEL.get(kategorie, "")))
+    return sach, f"{sach}/{treffer or ziel}"
+
+
+def unterordner_umzug_plan(session: Session, client=None) -> dict:
+    """Trockenlauf: welche flach abgelegten Belege in einen Jahresordner ziehen.
+
+    Rein rechnend bis auf das Lesen vorhandener Unterordner — und das scheitert
+    lautlos, wenn die Cloud gerade nicht antwortet. Belege ohne Jahr werden
+    getrennt ausgewiesen: sie bleiben liegen."""
+    home = _lies(session, S_HOME)
+    if not home:
+        raise HTTPException(400, "Kein Home-Ordner gewählt")
+
+    nach_ordner = _sachordner_kategorie()
+    schritte: list[dict] = []
+    ohne_jahr: list[dict] = []
+    for o in session.exec(select(Objekt)).all():
+        if not o.nc_ordner:
+            continue
+        dokumente: list[dict] = []
+        for d, kategorie in _flache_belege(session, o, nach_ordner):
+            jahr = d.jahr or datum_aus_namen(d.dateiname)[0]
+            if not jahr:
+                ohne_jahr.append({"id": d.id, "dateiname": d.dateiname,
+                                  "objekt": o.slug, "pfad": d.pfad})
+                continue
+            ziel = _ziel_unterordner(session, o, kategorie, jahr, client)
+            if not ziel:
+                continue                 # leere Vorlage: bleibt flach
+            _sach, ordner = ziel
+            neu = f"{ordner}/{d.dateiname}"
+            if _pfad(d.pfad) == _pfad(neu):
+                continue                 # liegt schon richtig
+            dokumente.append({"id": d.id, "dateiname": d.dateiname,
+                              "kategorie": kategorie, "jahr": jahr,
+                              "von": d.pfad, "nach": _pfad(neu)})
+        if dokumente:
+            schritte.append({"objekt": o.slug, "name": o.name,
+                             "dokumente": dokumente})
+
+    return {
+        "home": _pfad(home),
+        "schritte": schritte,
+        "anzahl": len(schritte),
+        "dokumente": sum(len(s["dokumente"]) for s in schritte),
+        "ohne_jahr": ohne_jahr,
+    }
+
+
+@router.get("/unterordner-umzug")
+def unterordner_umzug_pruefen(session: Session = Depends(get_session)) -> dict:
+    """Trockenlauf — zeigt alt → neu je Beleg. Ändert nichts.
+
+    Ohne verbundene Cloud gibt es nichts einzusortieren: das ist eine Auskunft,
+    kein Fehler (wie bei /umzug)."""
+    if not _lies(session, S_HOME):
+        return {"moeglich": False, "grund": "Noch keine Nextcloud verbunden",
+                "schritte": [], "anzahl": 0, "dokumente": 0, "ohne_jahr": []}
+    try:
+        client = verbindung(session)
+    except HTTPException:
+        client = None
+    return {"moeglich": True, "grund": "",
+            **unterordner_umzug_plan(session, client)}
+
+
+@router.post("/unterordner-umzug")
+def unterordner_umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
+    """Zieht die flach abgelegten Belege in ihre Jahresordner.
+
+    Jede Datei einzeln: MKCOL für den Jahresordner (405 = existiert, ok), MOVE
+    auf einen freien Namen, dann erst `Dokument.pfad` nachziehen und
+    festschreiben. Eine misslungene Datei hält den Rest nicht auf — sie wird
+    gemeldet, ihr Eintrag bleibt unverändert."""
+    from .dokumente import _einsortieren        # zirkelfrei zur Laufzeit
+
+    client = verbindung(session)
+    plan = unterordner_umzug_plan(session, client)
+    erledigt: list[dict] = []
+    fehler: list[dict] = []
+
+    for schritt in plan["schritte"]:
+        objekt = session.exec(
+            select(Objekt).where(Objekt.slug == schritt["objekt"])).first()
+        if not objekt:
+            continue
+        for dok in schritt["dokumente"]:
+            d = session.get(Dokument, dok["id"])
+            if not d:
+                continue
+            try:
+                neu_pfad, neu_name = _einsortieren(
+                    session, d, objekt, dok["kategorie"], d.dateiname, client,
+                    dok["jahr"])
+                d.pfad, d.dateiname = neu_pfad, neu_name
+                session.add(d)
+                session.commit()
+            except Exception as f:                    # noqa: BLE001
+                session.rollback()
+                log.warning("Einsortieren übersprungen für %s: %s",
+                            dok["von"], f)
+                fehler.append({"id": dok["id"], "dateiname": dok["dateiname"],
+                               "objekt": schritt["objekt"], "von": dok["von"],
+                               "fehler": str(f)})
+                continue
+            log.info("Einsortiert: %s -> %s", dok["von"], neu_pfad)
+            erledigt.append({"id": dok["id"], "objekt": schritt["objekt"],
+                             "name": schritt["name"], "von": dok["von"],
+                             "nach": neu_pfad})
+
+    return {"verschoben": erledigt, "anzahl": len(erledigt),
+            "dokumente": len(erledigt), "fehler": fehler,
+            "ohne_jahr": len(plan["ohne_jahr"])}
