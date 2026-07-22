@@ -169,6 +169,22 @@ function kpiFeld(label, wert, klasse = '') {
           <span class="kv ${klasse}">${wert}</span></div>`;
 }
 
+/* CCIX — das Rücklagenkonto als eigene Zeile: zurückgelegtes Eigentümergeld,
+   bewusst neben dem Eigenkapital, nicht darin. Es ist für die Instandhaltung
+   gebunden, deshalb wäre es als freies Eigenkapital überzeichnet — und es zählt
+   nicht zur Beleihung. Der Saldo ist der Stand, die monatliche Rücklage der
+   laufende Betrag. */
+function ruecklageHtml(z) {
+  if (!z.ruecklage_saldo && !z.ruecklage_monatlich) return '';
+  const teile = [];
+  if (z.ruecklage_saldo) teile.push(`Stand ${eurVoll(z.ruecklage_saldo)}`);
+  if (z.ruecklage_monatlich)
+    teile.push(`monatlich ${eurVoll(z.ruecklage_monatlich)}`);
+  return `<div class="chartleer" style="padding:6px 0 0">
+    Rücklagenkonto: ${teile.join(' · ')} — zurückgelegtes Eigentümergeld,
+    zählt nicht zur Beleihung.</div>`;
+}
+
 /* Vermögenslage: Wert, Restschuld, Eigenkapital. Bei gewähltem Objekt nur
    dessen Zeile, sonst die Summe über alle. */
 function vermoegenHtml(besitz, objekt) {
@@ -176,7 +192,8 @@ function vermoegenHtml(besitz, objekt) {
   const z = objekt
     ? besitz.objekte.find(o => o.slug === objekt)
     : besitz.gesamt;
-  if (!z || (z.wert == null && !z.restschuld)) return '';
+  if (!z || (z.wert == null && !z.restschuld && !z.ruecklage_saldo
+             && !z.ruecklage_monatlich && !z.hausgeld_jahr)) return '';
 
   const zeilen = besitz.objekte.map(o => `<tr>
       <td>${esc(o.name)}</td>
@@ -205,6 +222,10 @@ function vermoegenHtml(besitz, objekt) {
       ${z.beleihung != null ? `<div class="chartleer" style="padding:${
         z.bauspar_guthaben ? '6' : '12'}px 0 0">
         Beleihung ${z.beleihung} %</div>` : ''}
+      ${ruecklageHtml(z)}
+      ${z.hausgeld_jahr ? `<div class="chartleer" style="padding:6px 0 0">
+        Hausgeld ${eurVoll(z.hausgeld_jahr)} im Jahr an die WEG — zählt zu den
+        Eigentümerkosten.</div>` : ''}
       ${!objekt && fehlen ? `<div class="chartleer" style="padding:6px 0 0">
         Bei ${fehlen} Objekt${fehlen === 1 ? '' : 'en'} fehlt noch ein Wert —
         Kaufpreis oder Verkehrswert auf der Objektseite nachtragen.</div>` : ''}

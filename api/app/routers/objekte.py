@@ -17,8 +17,9 @@ from ..engine import Position, abrechnung
 from ..erinnerungen import beleg_erinnerung, frist_erinnerung, in_sicht
 from ..frist import frist_tage
 from ..nachpflege import hinweise, zusammenfassung
-from ..models import (Dokument, Einheit, Kostenart, Kostenposition, Miete,
-                      Objekt, Partei, Vorauszahlung, Zeitraum, ist_grundstueck)
+from ..models import (GRUNDSTUECK, Dokument, Einheit, Kostenart, Kostenposition,
+                      Miete, Objekt, Partei, Vorauszahlung, Zeitraum,
+                      ist_grundstueck)
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, fehlende_angaben, stammdaten,
                           vorschau)
@@ -69,6 +70,9 @@ class ObjektIn(BaseModel):
     flaeche: Optional[float] = None
     kaufpreis: Optional[float] = None
     verkehrswert: Optional[float] = None
+    # CCVIII: beim Anlegen wählbar, ob das Objekt Teil einer WEG ist. Ein
+    # Grundstück kann keine WEG sein — das wird beim Anlegen erzwungen.
+    weg: bool = False
     kostenarten: list[str] = []
     einheiten: list[EinheitIn] = []
 
@@ -140,11 +144,14 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
 
 @router.post("/objekte", status_code=201)
 def objekt_anlegen(data: ObjektIn, session: Session = Depends(get_session)) -> dict:
+    # Ein Grundstück hat keine Mieter und keine WEG-Nebenkostenverteilung —
+    # die WEG-Ebene ergäbe dort keinen Sinn und bleibt aus.
+    weg = data.weg and data.typ != GRUNDSTUECK
     o = Objekt(
         slug=_freier_slug(session, data.name), name=data.name, ort=data.ort,
         strasse=data.strasse, plz=data.plz, typ=data.typ, nutzung=data.nutzung,
         turnus=data.turnus, start_monat=data.start_monat, flaeche=data.flaeche,
-        kaufpreis=data.kaufpreis, verkehrswert=data.verkehrswert,
+        kaufpreis=data.kaufpreis, verkehrswert=data.verkehrswert, weg=weg,
     )
     session.add(o)
     session.commit()
@@ -205,10 +212,19 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
                "grundstueck_flaeche", "grundstueck_nutzungsart",
                "grundstueck_wirtschaftsart", "gemarkung", "flurstueck",
                "grundsteuerwert", "grundsteuer_messbetrag",
-               "grundsteuer_hebesatz"}
+               "grundsteuer_hebesatz",
+               # CCIX — Rücklagenkonto
+               "ruecklage_saldo", "ruecklage_monatlich",
+               # CCVIII — WEG-Ebene
+               "weg", "hausgeld_monatlich", "weg_ruecklage_zufuehrung",
+               "weg_verwalter"}
     felder = bereinige(Objekt, {k: v for k, v in data.items() if k in erlaubt})
     if not felder.get("name", "x"):
         raise HTTPException(400, "Der Name darf nicht leer sein")
+    # Ein Grundstück kann keine WEG sein — dort gibt es keine Mieter, über die
+    # eine Hausverwaltung Nebenkosten verteilen würde.
+    if felder.get("weg") and (felder.get("typ", o.typ) == GRUNDSTUECK):
+        raise HTTPException(400, "Ein Grundstück kann nicht Teil einer WEG sein.")
     # ueber model_validate, damit Datumsstrings aus JSON zu echten date-Objekten
     # werden — als Zeichenkette gespeichert liesse sich das Feld nicht mehr lesen.
     geprueft = Objekt.model_validate({**o.model_dump(), **felder})
@@ -701,6 +717,10 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
 
     return {
         "id": z.id, "objekt": o.slug, "objekt_name": o.name,
+        # CCVIII: ist das Objekt Teil einer WEG, verteilt die Hausverwaltung —
+        # die Abrechnungsseite bietet dann den Mieter-Direkteintrag an, statt
+        # selbst über einen Schlüssel zu verteilen.
+        "weg": bool(o.weg),
         "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
         "start": z.start.isoformat(), "ende": z.ende.isoformat(),
         "typ": z.typ, "status": z.status,

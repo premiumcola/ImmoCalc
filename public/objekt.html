@@ -582,9 +582,38 @@ const STAMMFELDER = [
   { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
   { k: 'kaufdatum', l: 'Kaufdatum', typ: 'date' },
   { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true },
+  // CCIX — Rücklagenkonto: zurückgelegtes Geld für die Immobilie und die
+  // laufende Sparrate. Beides optional, jederzeit nachtragbar.
+  { k: 'ruecklage_saldo', l: 'Rücklagenkonto (Stand)', typ: 'number',
+    schritt: '0.01', geld: true, voll: true,
+    note: 'Zurückgelegtes Eigentümergeld für Instandhaltung und Sanierung — '
+        + 'steht in der Wertentwicklung als eigene Zeile.' },
+  { k: 'ruecklage_monatlich', l: 'Monatliche Rücklage', typ: 'number',
+    schritt: '0.01', geld: true },
   { k: 'bank', l: 'Bank', typ: 'text' },
   { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
+];
+
+/* CCVIII — die WEG-Ebene. Nur bei einem Objekt sichtbar, das Teil einer
+   Wohnungseigentümergemeinschaft ist. Das Hausgeld ist Eigentümerkosten (an die
+   WEG gezahlt), die Rücklagenzuführung der Sparanteil darin; der Verwalter ist
+   die Hausverwaltung/Abrechnungsfirma, die die Nebenkosten für die Mieter
+   verteilt. Der Schalter selbst schaltet die Ebene an oder aus. */
+const WEGFELDER = [
+  { k: 'weg', l: 'Teil einer Wohnungseigentümergemeinschaft', typ: 'schalter',
+    vorgabe: false,
+    note: 'An: die Hausverwaltung verteilt die Nebenkosten, du trägst die '
+        + 'fertigen Werte je Mieter direkt in die Abrechnung ein. '
+        + 'Aus: ImmoCalc verteilt selbst über einen Schlüssel.' },
+  { k: 'hausgeld_monatlich', l: 'Hausgeld (monatlich)', typ: 'number',
+    schritt: '0.01', geld: true, voll: true,
+    note: 'Was du monatlich an die WEG zahlst — ein Eigentümerkosten.' },
+  { k: 'weg_ruecklage_zufuehrung', l: 'davon Rücklagenzuführung (mtl.)',
+    typ: 'number', schritt: '0.01', geld: true,
+    note: 'Der Sparanteil im Hausgeld, der in die gemeinschaftliche Rücklage '
+        + 'der WEG fliesst.' },
+  { k: 'weg_verwalter', l: 'Hausverwaltung / Abrechnungsfirma', typ: 'text' },
 ];
 
 /* Grundstücksangaben. `grundstueck_flaeche` steht bewusst neben `flaeche`:
@@ -819,6 +848,41 @@ function grundstueckHtml(o) {
     ${abgeleitet.length ? `<div class="fussnote">Wert je m² und Grundsteuer
       rechnet ImmoCalc aus den Angaben darüber — eingetragen wird nur, was im
       Bescheid steht.</div>` : ''}`;
+}
+
+/* CCVIII — die WEG-Ebene. Beim Grundstück gibt es sie nicht (keine Mieter, keine
+   Hausverwaltung). Ist das Objekt keine WEG, steht hier nur der Hinweis, wie man
+   es einschaltet; ist es eine, stehen Hausgeld, Rücklagenzuführung und
+   Verwalter. Der Wirtschaftsplan hat vorerst keinen eigenen Datensatz — Platz
+   dafür schafft die Notiz am Verwalter und die Fussnote. */
+function wegHtml(o) {
+  if (istGrundstueck()) return '';
+  if (!o.weg) {
+    return `<div class="sekopf"><h2 class="sec">WEG-Ebene</h2>
+        <button data-weg="1">Einrichten</button></div>
+      <div class="fussnote">Ist diese Wohnung Teil einer
+        Wohnungseigentümergemeinschaft, verteilt die Hausverwaltung die
+        Nebenkosten. Schalte die WEG-Ebene ein: du trägst dann die fertigen
+        Werte je Mieter direkt ein und pflegst hier Hausgeld und
+        Wirtschaftsplan.</div>`;
+  }
+  const zeilen = WEGFELDER
+    .filter(f => f.k !== 'weg')
+    // Der Verwaltername ist oft lang — als eigene Zeilenbreite statt eines
+    // Bruchs mitten im Wort in der schmalen rechten Spalte.
+    .map(f => paarZeile(f.l, stammwert(f, o),
+                        { lang: f.k === 'weg_verwalter' })).join('');
+  const jahr = o.hausgeld_monatlich
+    ? paarZeile('Hausgeld im Jahr', eurVoll(o.hausgeld_monatlich * 12),
+                { abgeleitet: true })
+    : '';
+  return `<div class="sekopf"><h2 class="sec">WEG-Ebene</h2>
+      <button data-weg="1">Bearbeiten</button></div>
+    <div class="paare">${zeilen}${jahr}</div>
+    <div class="fussnote">Die Hausverwaltung verteilt die Nebenkosten auf die
+      Mieter — in der Abrechnung trägst du die Werte vom Zettel je Mieter direkt
+      ein, ImmoCalc verteilt sie nicht selbst. Das Hausgeld zählt zu deinen
+      Eigentümerkosten und steht in der Wertentwicklung.</div>`;
 }
 
 function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
@@ -1142,6 +1206,7 @@ async function laden() {
     ${zeitraumBlock}
     ${grundstueckHtml(objekt)}
     ${stammHtml(objekt)}
+    ${wegHtml(objekt)}
     <div class="sekopf"><h2 class="sec">Dokumentenablage</h2></div>
     <div id="cloudbereich"><div class="cloudbox"><div class="zeile">
       <span class="sym offen">…</span>
@@ -1938,6 +2003,9 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
     } else if (absicht === 'grund') {
       await api(`/objekte/${encodeURIComponent(slug)}`,
                 { method: 'PATCH', body: ausFormular(form, GRUNDFELDER) });
+    } else if (absicht === 'weg') {
+      await api(`/objekte/${encodeURIComponent(slug)}`,
+                { method: 'PATCH', body: ausFormular(form, WEGFELDER) });
     } else if (absicht === 'anteil') {
       const werte = ausFormular(form, ANTEILFELDER);
       await api(`/objekte/${encodeURIComponent(slug)}/anteile`, {
@@ -2106,6 +2174,17 @@ inhalt.addEventListener('click', async e => {
                         + 'im Bescheid des Finanzamts bzw. in der Satzung der '
                         + 'Gemeinde. Wert je m² und Grundsteuer rechnet '
                         + 'ImmoCalc daraus.' });
+  }
+
+  if (e.target.closest('[data-weg]')) {
+    return formular({ titel: 'WEG-Ebene bearbeiten', felder: WEGFELDER,
+                      werte: objekt, absicht: 'weg',
+                      hinweis: 'Ist die Wohnung Teil einer '
+                        + 'Wohnungseigentümergemeinschaft, verteilt die '
+                        + 'Hausverwaltung die Nebenkosten. ImmoCalc verteilt '
+                        + 'dann nicht selbst — du trägst die fertigen Werte je '
+                        + 'Mieter direkt ein. Hausgeld ist ein '
+                        + 'Eigentümerkosten.' });
   }
 
   if (e.target.closest('[data-anteil-neu]')) return anteilFormular();

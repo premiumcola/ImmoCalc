@@ -177,6 +177,75 @@ def test_vermoegen_ohne_angaben_faellt_nicht_um():
 
 
 # --------------------------------------------------------------------------
+# CCIX — Rücklagenkonto je Objekt
+# --------------------------------------------------------------------------
+
+def test_ruecklage_erscheint_als_eigene_zeile_im_vermoegen():
+    """Der Saldo ist zurückgelegtes Eigentümergeld, die monatliche Rücklage ein
+    laufender Betrag — beide als eigene Felder, nicht ins Eigenkapital gemischt."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Rücklagenweg 50", verkehrswert=500000.0)
+        c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "Darlehen", "restschuld": 200000.0,
+            "zinssatz": 2.0, "rate_monatlich": 1000.0, "turnus": "monatlich"})
+        c.patch(f"/api/objekte/{slug}", json={
+            "ruecklage_saldo": 15000.0, "ruecklage_monatlich": 250.0})
+
+        zeile = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                     if z["slug"] == slug)
+        assert zeile["ruecklage_saldo"] == 15000.0
+        assert zeile["ruecklage_monatlich"] == 250.0
+        # Der Saldo bleibt aus Eigenkapital und Beleihung heraus.
+        assert zeile["eigenkapital"] == 300000.0
+        assert zeile["beleihung"] == 40.0
+
+
+def test_ruecklage_summiert_sich_ueber_alle_objekte():
+    with TestClient(app) as c:
+        a = _objekt(c, "Summenweg 51")
+        b = _objekt(c, "Summenweg 52")
+        c.patch(f"/api/objekte/{a}", json={"ruecklage_saldo": 8000.0,
+                                           "ruecklage_monatlich": 100.0})
+        c.patch(f"/api/objekte/{b}", json={"ruecklage_saldo": 2000.0,
+                                           "ruecklage_monatlich": 50.0})
+        # Die Summe läuft über alle Objekte der (im Test geteilten) Datenbank —
+        # diese beiden steuern zusammen 10.000 € / 150 € bei.
+        gesamt = c.get("/api/vermoegen").json()["gesamt"]
+        assert gesamt["ruecklage_saldo"] >= 10000.0
+        assert gesamt["ruecklage_monatlich"] >= 150.0
+
+
+def test_objekt_ohne_ruecklage_bleibt_unveraendert():
+    """Additiv: ein Bestandsobjekt ohne Rücklage nennt None, nicht 0 — und sein
+    Eigenkapital bleibt exakt wie zuvor."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Bestandsweg 53", verkehrswert=300000.0)
+        zeile = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                     if z["slug"] == slug)
+        assert zeile["ruecklage_saldo"] is None
+        assert zeile["ruecklage_monatlich"] is None
+        assert zeile["eigenkapital"] == 300000.0
+
+
+# --------------------------------------------------------------------------
+# CCVIII — WEG-Ebene: Hausgeld als Eigentümerkosten
+# --------------------------------------------------------------------------
+
+def test_weg_hausgeld_erscheint_im_vermoegen():
+    with TestClient(app) as c:
+        slug = _objekt(c, "WEG-Weg 54", verkehrswert=300000.0)
+        c.patch(f"/api/objekte/{slug}", json={
+            "weg": True, "hausgeld_monatlich": 320.0,
+            "weg_ruecklage_zufuehrung": 90.0, "weg_verwalter": "HV Müller"})
+        zeile = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                     if z["slug"] == slug)
+        assert zeile["weg"] is True
+        assert zeile["hausgeld_monatlich"] == 320.0
+        assert zeile["hausgeld_jahr"] == 3840.0
+        assert c.get("/api/vermoegen").json()["gesamt"]["hausgeld_jahr"] >= 3840.0
+
+
+# --------------------------------------------------------------------------
 # CLXI/CLXII/CLXXXVI — Eigentum je Einheit
 # --------------------------------------------------------------------------
 

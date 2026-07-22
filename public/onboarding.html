@@ -257,7 +257,7 @@ const STEPS_GRUNDSTUECK=[
 
 const defaultKosten=()=>[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Grundsteuer',1],['Gebäudeversicherung',1],['Hausmeister',1],['Allgemeinstrom',1],['Rauchwarnmelder',1],['Kaminkehrer',0],['Kaltwasserzähler',0],['Aufzug',0],['Gartenpflege',0],['Straßenreinigung / Winterdienst',0],['Bankspesen',0],['Hauskonto',0],['Internet / Kabel',0],['Schornsteinfeger',0],['Wartung Heizung',0]];
 
-const blank=()=>({strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[],eigenerName:'',nameSelbst:false,
+const blank=()=>({strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[],eigenerName:'',nameSelbst:false,weg:false,
   /* Grundstück */
   gFlaeche:'',gNutzungsart:'',gWirtschaftsart:'',gemarkung:'',flurstueck:'',
   gWert:'',gSteuerwert:'',gMessbetrag:'',gHebesatz:'',
@@ -393,7 +393,17 @@ function renderStep(){
            Kostenartenkatalog und Nebenkostenabrechnung. Gefragt wird stattdessen nach
            <b>Fläche, Nutzungsart, Wert, Grundsteuer</b> und der <b>Pacht</b>.</div>`
       : `<div class="field2" style="margin-top:18px"><label>Nutzung</label><div class="chips">`+
-        ['Wohnen','Gewerbe','Gemischt'].map(n=>`<button class="chc ${d.nutzung===n?'sel':''}" data-nutzung="${n}">${n}</button>`).join('')+`</div></div>`;
+        ['Wohnen','Gewerbe','Gemischt'].map(n=>`<button class="chc ${d.nutzung===n?'sel':''}" data-nutzung="${n}">${n}</button>`).join('')+`</div></div>`+
+        /* CCVIII — WEG-Ebene beim Anlegen wählbar. Ist die Wohnung Teil einer
+           Wohnungseigentümergemeinschaft, verteilt die Hausverwaltung die
+           Nebenkosten; ImmoCalc verteilt dann nicht selbst. */
+        `<div class="field2"><label>Wohnungseigentümergemeinschaft</label>
+          <button class="togg ${d.weg?'on':'off'}" data-weg="1">
+            <span class="tn">Teil einer WEG</span><span class="sw"></span></button>
+          <div class="hint">Bei einer Eigentumswohnung in einer WEG rechnet die
+            Hausverwaltung die Nebenkosten ab. Du trägst die fertigen Werte je
+            Mieter später direkt ein, statt selbst zu verteilen. Jederzeit auf
+            der Objektseite änderbar.</div></div>`;
   } else if(s.id==='grund'){
     body=`
       <span class="gruppe">Fläche & Nutzung</span>
@@ -516,14 +526,15 @@ content.addEventListener('click',e=>{
   const typ=e.target.closest('[data-typ]'),nu=e.target.closest('[data-nutzung]'),tu=e.target.closest('[data-turnus]'),
         tg=e.target.closest('[data-tog]'),add=e.target.closest('[data-add]'),rm=e.target.closest('[data-rm]'),
         namesel=e.target.closest('[data-namesel]'),na=e.target.closest('[data-nutzungsart]'),
-        pt=e.target.closest('[data-pachtturnus]');
+        pt=e.target.closest('[data-pachtturnus]'),weg=e.target.closest('[data-weg]');
+  if(weg){state.data.weg=!state.data.weg;renderStep();return;}
   if(typ){
     state.data.typ=typ.dataset.typ;
     /* Ein Grundstück hat keine Wohnfläche, keine Einheiten und keinen
        Kostenartenkatalog. Was dafür schon eingetippt war, wird beim Wechsel
        fallengelassen, statt still mitgeschickt zu werden. */
     if(istGrund()){
-      state.data.flaeche=''; state.data.einheiten=[];
+      state.data.flaeche=''; state.data.einheiten=[]; state.data.weg=false;
       state.data.nutzung='Landwirtschaft';
     } else if(state.data.nutzung==='Landwirtschaft'){
       state.data.nutzung='Wohnen';
@@ -603,6 +614,7 @@ async function finish(){
         name, ort:d.ort, strasse:d.strasse, plz:d.plz,
         typ:d.typ, nutzung:d.nutzung, turnus:d.turnus,
         start_monat:d.turnus==='kalender'?1:d.startMonat,
+        weg:!grund&&d.weg,
         flaeche:!grund&&d.flaeche?Number(d.flaeche):null,
         verkehrswert:grund?nz(d.gWert):null,
         kostenarten:grund?[]:d.kosten.filter(k=>k[1]).map(k=>k[0]),

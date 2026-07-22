@@ -69,6 +69,31 @@ class Objekt(SQLModel, table=True):
     grundsteuerwert: Optional[float] = None        # § 219 BewG, zum Stichtag
     grundsteuer_messbetrag: Optional[float] = None  # Steuermessbetrag in €
     grundsteuer_hebesatz: Optional[float] = None   # Hebesatz der Gemeinde in %
+    # ----------------------------------------------------------------------
+    # CCIX — Rücklagenkonto je Objekt. Der Eigentümer legt Geld für die Immo
+    # zurück (Instandhaltung, Sanierung). Beides optional: ein Bestandsobjekt
+    # ohne Rücklage bleibt unverändert. `ruecklage_saldo` ist der aktuelle Stand
+    # des zurückgelegten Geldes, `ruecklage_monatlich` die laufende Sparrate.
+    # ----------------------------------------------------------------------
+    ruecklage_saldo: Optional[float] = None        # Stand des Rücklagenkontos
+    ruecklage_monatlich: Optional[float] = None    # monatliche Rücklage/Sparrate
+    # ----------------------------------------------------------------------
+    # CCVIII — WEG-Ebene. Ist das Objekt eine Eigentumswohnung in einer
+    # Wohnungseigentümergemeinschaft, verteilt die Hausverwaltung/Abrechnungs-
+    # firma die Nebenkosten; ImmoCalc verteilt dann nicht selbst, sondern die
+    # abgetippten Endwerte je Mieter werden direkt eingetragen (Direkt-Modus
+    # über `Kostenposition.nur_einheit`). Additiv: `weg` steht auf False, jeder
+    # Bestand rechnet unverändert weiter. Ein Grundstück kann keine WEG sein.
+    #
+    # Die WEG-Ebene selbst ist Vermietersicht: das Hausgeld ist, was der
+    # Eigentümer monatlich an die WEG zahlt (Eigentümerkosten, keine automatische
+    # Mietersache), die Rücklagenzuführung der darin enthaltene Sparanteil, der
+    # in die gemeinschaftliche Rücklage der WEG fliesst.
+    # ----------------------------------------------------------------------
+    weg: bool = False                              # Objekt ist Teil einer WEG
+    hausgeld_monatlich: Optional[float] = None     # Hausgeld an die WEG, monatlich
+    weg_ruecklage_zufuehrung: Optional[float] = None  # Sparanteil im Hausgeld, mtl.
+    weg_verwalter: str = ""                        # Hausverwaltung/Abrechnungsfirma
 
 
 class Einheit(SQLModel, table=True):

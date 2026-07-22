@@ -387,6 +387,24 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
     quote = round(restschuld / wert * 100, 1) if wert else None
     gehalten = sum(int(a.tausendstel or 0) for a in (anteile or [])) or None
 
+    # CCIX — Rücklagenkonto: der Stand ist zurückgelegtes Eigentümergeld, die
+    # monatliche Rücklage ein laufender Betrag. Bewusst NICHT ins Eigenkapital
+    # gemischt und nicht in die Beleihung: die Beleihung misst die Belastung des
+    # Objekts, und eine Instandhaltungsrücklage ist für den Bau gebunden — sie
+    # als freies Eigenkapital auszuweisen überzeichnete es. Sie steht deshalb als
+    # eigene Zeile daneben (wie das Bausparguthaben eine eigene Zeile hat).
+    ruecklage_saldo = (round(float(objekt.ruecklage_saldo), 2)
+                       if objekt.ruecklage_saldo else None)
+    ruecklage_monatlich = (round(float(objekt.ruecklage_monatlich), 2)
+                           if objekt.ruecklage_monatlich else None)
+    # CCVIII — Hausgeld: was der Eigentümer monatlich an die WEG zahlt, ein
+    # Eigentümerkosten. Als Jahreswert mitgeführt, damit die Wertentwicklung ihn
+    # neben den übrigen Eigentümerkosten zeigen kann.
+    hausgeld_monatlich = (round(float(objekt.hausgeld_monatlich), 2)
+                          if objekt.hausgeld_monatlich else None)
+    hausgeld_jahr = (round(hausgeld_monatlich * 12, 2)
+                     if hausgeld_monatlich else 0.0)
+
     return {
         "slug": objekt.slug,
         "name": objekt.name,
@@ -413,6 +431,13 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
         # Anteilig bewertet — bei Alleineigentum identisch mit eigenkapital
         "eigenkapital_anteilig": round(eigen * gehalten / 1000, 2)
         if eigen is not None and gehalten else eigen,
+        # CCIX — Rücklagenkonto, eigene Zeilen neben dem Eigenkapital.
+        "ruecklage_saldo": ruecklage_saldo,
+        "ruecklage_monatlich": ruecklage_monatlich,
+        # CCVIII — WEG-Ebene: Kennzeichen und Hausgeld als Eigentümerkosten.
+        "weg": bool(objekt.weg),
+        "hausgeld_monatlich": hausgeld_monatlich,
+        "hausgeld_jahr": hausgeld_jahr,
     }
 
 
@@ -441,5 +466,9 @@ def gesamt(zeilen: list[dict]) -> dict:
         "sparrate_jahr": summe("sparrate_jahr"),
         "zinslast_jahr": summe("zinslast_jahr"),
         "tilgung_jahr": summe("tilgung_jahr"),
+        # CCIX/CCVIII — Rücklagen und Hausgeld über alle Objekte.
+        "ruecklage_saldo": summe("ruecklage_saldo"),
+        "ruecklage_monatlich": summe("ruecklage_monatlich"),
+        "hausgeld_jahr": summe("hausgeld_jahr"),
         "ohne_wert": sum(1 for z in zeilen if z["wert"] is None),
     }

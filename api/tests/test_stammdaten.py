@@ -324,6 +324,85 @@ def test_einheit_mit_mietverhaeltnis_wird_nicht_geloescht():
         assert len(c.get(f"/api/objekte/{slug}/einheiten").json()) == 2
 
 
+# --------------------------------------------------------------------------
+# CCVIII — WEG-Ebene je Objekt an-/abschaltbar
+# --------------------------------------------------------------------------
+
+def test_weg_beim_anlegen_und_in_den_stammdaten_schaltbar():
+    with TestClient(app) as c:
+        # Beim Anlegen gewählt
+        slug = c.post("/api/objekte", json={
+            "name": "WEG-Anlage 1", "weg": True}).json()["slug"]
+        assert c.get(f"/api/objekte/{slug}").json()["objekt"]["weg"] is True
+
+        # Und in den Stammdaten umschaltbar samt Hausgeld-Angaben
+        c.patch(f"/api/objekte/{slug}", json={
+            "hausgeld_monatlich": 250.0, "weg_ruecklage_zufuehrung": 60.0,
+            "weg_verwalter": "Hausverwaltung Nord"})
+        o = c.get(f"/api/objekte/{slug}").json()["objekt"]
+        assert o["hausgeld_monatlich"] == 250.0
+        assert o["weg_ruecklage_zufuehrung"] == 60.0
+        assert o["weg_verwalter"] == "Hausverwaltung Nord"
+
+        c.patch(f"/api/objekte/{slug}", json={"weg": False})
+        assert c.get(f"/api/objekte/{slug}").json()["objekt"]["weg"] is False
+
+
+def test_bestandsobjekt_ist_ohne_zutun_keine_weg():
+    """Additiv: wer nichts wählt, hat kein WEG-Objekt und verteilt weiter selbst."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Normalweg 1"}).json()["slug"]
+        assert c.get(f"/api/objekte/{slug}").json()["objekt"]["weg"] is False
+
+
+def test_grundstueck_kann_keine_weg_sein():
+    with TestClient(app) as c:
+        # Beim Anlegen wird das WEG-Flag für ein Grundstück ignoriert
+        slug = c.post("/api/objekte", json={
+            "name": "Ackerweg WEG", "typ": "lg-grundstueck",
+            "weg": True}).json()["slug"]
+        assert c.get(f"/api/objekte/{slug}").json()["objekt"]["weg"] is False
+        # Und ein PATCH auf weg=True wird abgewiesen
+        antwort = c.patch(f"/api/objekte/{slug}", json={"weg": True})
+        assert antwort.status_code == 400
+        assert "Grundstück" in antwort.json()["detail"]
+
+
+def test_zeitraum_meldet_die_weg_ebene():
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "WEG-Zeitraum 1", "weg": True}).json()["slug"]
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        assert c.get(f"/api/zeitraeume/{zid}").json()["weg"] is True
+
+
+def test_weg_direkteintrag_je_mieter_ueber_nur_einheit():
+    """Für ein WEG-Objekt wird die abgetippte umlagefähige NK-Summe je Mieter
+    direkt als Position mit `nur_einheit` erfasst — ohne Verteilungsschlüssel.
+    Die bestehende Abrechnungsmaschinerie rechnet sie gegen die Vorauszahlung."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "WEG-Direkt 1", "weg": True,
+            "einheiten": [{"bezeichnung": "Wohnung 3"}]}).json()["slug"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "einheit": "Wohnung 3", "partei": "Mieter Zettel", "kaltmiete": 900.0,
+            "nebenkosten_vz": 150.0, "ab_datum": "2024-01-01"})
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+
+        # Der abgetippte Endwert der Hausverwaltung: 2100 € umlagefähig, ohne
+        # Verteilungsschlüssel — zu 100 % auf die Einheit/den Mieter.
+        pos = c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Nebenkosten laut HV · Wohnung 3", "betrag": 2100.0,
+            "nur_einheit": "Wohnung 3"})
+        assert pos.status_code == 201, pos.text
+        assert pos.json()["anteile"] == {"Mieter Zettel": 1.0}
+
+        abr = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        partei = abr["parteien"]["Mieter Zettel"]
+        assert partei["kosten"] == 2100.0        # der abgetippte Endwert exakt
+        assert partei["saldo"] == -2100.0        # volle Nachzahlung (keine VZ)
+
+
 def test_grundstueck_bekommt_keine_einheiten():
     with TestClient(app) as c:
         slug = c.post("/api/objekte", json={"name": "Steigäcker",

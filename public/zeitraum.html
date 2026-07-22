@@ -727,6 +727,54 @@ function sonderpostenHtml() {
     </div>`;
 }
 
+/* ---- CCVIII: Mieter-Direkteintrag für ein WEG-Objekt --------------------
+   Ist die Wohnung Teil einer Wohnungseigentümergemeinschaft, verteilt die
+   Hausverwaltung die Nebenkosten. ImmoCalc verteilt dann nicht selbst: der
+   Nutzer trägt je Mieter die umlagefähige NK-Summe vom Zettel direkt ein. Das
+   läuft über die vorhandene 100-%-je-Einheit-Mechanik (`nur_einheit`) — die
+   Summe geht ganz auf die Partei der Einheit, ohne Verteilungsschlüssel, und
+   die bestehende Abrechnungs-/Versandmaschinerie rechnet sie gegen die
+   Vorauszahlung. */
+const WEG_ART = einheit => `Nebenkosten (WEG) · ${einheit}`;
+
+function wegDirektHtml() {
+  if (!daten.weg) return '';
+  const einheiten = sonderEinheiten();
+  const bereit = daten.status === 'in Arbeit';
+  const bestehende = new Map((daten.checkliste || []).map(k => [k.kostenart, k]));
+
+  const zeilen = einheiten.map(e => {
+    const vorhanden = bestehende.get(WEG_ART(e.einheit));
+    const betrag = vorhanden && vorhanden.betrag != null ? vorhanden.betrag : '';
+    return `<div class="gw">
+        <span class="gn">${esc(e.einheit)}${e.parteien.length
+          ? `<span class="gsub">${esc(e.parteien.join(' · '))}</span>` : ''}</span>
+        ${bereit
+          ? `<input type="number" step="0.01" min="0" value="${betrag}"
+                   data-weg-betrag="${esc(e.einheit)}" placeholder="NK-Summe"
+                   aria-label="Umlagefähige NK-Summe ${esc(e.einheit)}">`
+          : `<span class="gv">${betrag !== '' ? eur(betrag) : '—'}</span>`}
+      </div>`;
+  }).join('');
+
+  const koerper = einheiten.length
+    ? zeilen + (bereit ? `<div class="nachtrag" style="margin-top:12px">
+        <button data-weg-speichern="1">Werte je Mieter übernehmen</button>
+      </div>` : '')
+    : `<div class="belege"><span class="kein">Noch keine vermietete Einheit —
+        lege auf der Objektseite Einheiten und Mieter an, dann steht hier je
+        Mieter ein Feld für die NK-Summe.</span></div>`;
+
+  return `<div class="karte sonder">
+      <h3>Nebenkosten laut Hausverwaltung <span class="marke post">WEG</span></h3>
+      <span class="erklaer">Diese Wohnung gehört zu einer WEG — die
+        Hausverwaltung verteilt die Nebenkosten. Trage je Mieter die
+        umlagefähige NK-Summe vom Abrechnungszettel direkt ein. ImmoCalc
+        verteilt nichts, sondern rechnet sie gegen die Vorauszahlung und erstellt
+        Saldo, PDF und Versand wie gewohnt.</span>
+      ${koerper}</div>`;
+}
+
 async function zeichnen() {
   const f = daten.fortschritt;
   const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
@@ -766,7 +814,7 @@ async function zeichnen() {
       .map((k, i) => ({ k, i }))
       .sort((a, b) => SORTIERUNG[sortierung](a.k, b.k));
 
-    rumpf = flussKarte + sortWahl +
+    rumpf = wegDirektHtml() + flussKarte + sortWahl +
       sortiert.map(({ k, i }) => zeileHtml(k, i)).join('')
       + sonderpostenHtml() + abschlussHtml();
   } else if (ansicht === 'ergebnis') {
@@ -936,6 +984,44 @@ async function sonderpostenAnlegen(knopf) {
   } catch (fehler) {
     knopf.disabled = false;
     knopf.textContent = 'Anlegen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* CCVIII — die abgetippten NK-Summen je Mieter übernehmen. Je Einheit eine
+   Position mit `nur_einheit`: bestehende werden aktualisiert, neue angelegt —
+   so lässt sich der Zettel der Hausverwaltung mehrfach nachtragen, ohne dass
+   sich Positionen doppeln. */
+async function wegDirektSpeichern(knopf) {
+  const eingaben = [...inhalt.querySelectorAll('[data-weg-betrag]')]
+    .map(f => ({ einheit: f.dataset.wegBetrag, betrag: Number(f.value) }))
+    .filter(x => x.betrag > 0);
+  if (!eingaben.length) {
+    return melde('Trage mindestens eine NK-Summe ein', 'neg');
+  }
+  knopf.disabled = true;
+  knopf.textContent = 'Übernehme …';
+  const bestehende = new Map((daten.checkliste || []).map(k => [k.kostenart, k]));
+  try {
+    for (const { einheit, betrag } of eingaben) {
+      const art = WEG_ART(einheit);
+      const vorhanden = bestehende.get(art);
+      if (vorhanden && vorhanden.position_id) {
+        await api(`/positionen/${vorhanden.position_id}`,
+                  { method: 'PATCH', body: { betrag } });
+      } else {
+        await api(`/zeitraeume/${zid}/positionen`, {
+          method: 'POST',
+          body: { kostenart: art, betrag, nur_einheit: einheit },
+        });
+      }
+    }
+    melde(`NK-Summe je Mieter übernommen · ${eingaben.length} ${
+      eingaben.length === 1 ? 'Mieter' : 'Mieter'}`, 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Werte je Mieter übernehmen';
     melde(String(fehler.message || fehler), 'neg');
   }
 }
@@ -1172,6 +1258,9 @@ inhalt.addEventListener('click', async e => {
   }
   const sonderNeu = e.target.closest('[data-sonder-anlegen]');
   if (sonderNeu) return sonderpostenAnlegen(sonderNeu);
+
+  const wegSpeichern = e.target.closest('[data-weg-speichern]');
+  if (wegSpeichern) return wegDirektSpeichern(wegSpeichern);
 
   const entfernen = e.target.closest('[data-entfernen]');
   if (entfernen) return positionEntfernen(entfernen);
