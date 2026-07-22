@@ -163,20 +163,25 @@
   .zusatz:hover{background:var(--teal-l)}
 
   .jahre{background:var(--sheet);border-radius:12px;overflow:hidden;margin-bottom:12px}
-  .jahr{display:flex;align-items:center;gap:8px;padding:9px 10px;
-        font:500 13px var(--body)}
+  .jahr{padding:9px 10px;font:500 13px var(--body)}
   .jahr + .jahr{border-top:1px solid var(--line)}
-  .jahr .jj{font:600 12px var(--mono);color:var(--soft);flex:none;width:36px}
+  /* Die eigentliche Zeile bleibt eine flexe Reihe — die Zinszeile (CCXXXI)
+     haengt sich als eigene, ruhigere Zeile darunter, statt die erste zu
+     stauchen. */
+  .jzeile{display:flex;align-items:center;gap:8px}
+  .jzeile .jj{font:600 12px var(--mono);color:var(--soft);flex:none;width:36px}
   /* Der Betrag darf nie umbrechen — „240.000,00" und das € gehören zusammen. */
-  .jahr .jw{font:600 12.5px var(--mono);flex:1;text-align:right;white-space:nowrap}
-  .jahr .jq{font:500 10px var(--mono);letter-spacing:.02em;padding:4px 7px;
+  .jzeile .jw{font:600 12.5px var(--mono);flex:1;text-align:right;white-space:nowrap}
+  .jzeile .jq{font:500 10px var(--mono);letter-spacing:.02em;padding:4px 7px;
             border-radius:8px;background:#F1F4F4;color:var(--soft);flex:none;
             white-space:nowrap}
-  .jahr.gemessen .jq{background:var(--teal-l);color:var(--teal-d)}
-  .jahr .weg{border:none;background:none;color:var(--soft);font:400 18px var(--body);
+  .jahr.gemessen .jzeile .jq{background:var(--teal-l);color:var(--teal-d)}
+  .jzeile .weg{border:none;background:none;color:var(--soft);font:400 18px var(--body);
     cursor:pointer;width:44px;height:44px;border-radius:11px;flex:none;
     margin:-6px -4px -6px 0}
-  .jahr .weg:hover{color:var(--neg);background:var(--paper)}
+  .jzeile .weg:hover{color:var(--neg);background:var(--paper)}
+  .jz{font:400 11.5px var(--mono);color:var(--soft);text-align:right;
+      margin-top:2px;padding-right:2px}
   .dlgnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
            margin:0 0 16px}
 
@@ -387,6 +392,11 @@ function kreditFelder(art, werte = {}) {
     { k: 'beginn', l: 'Beginn', typ: 'date' },
     ...(bauspar ? [] : [
       { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date' },
+      // CCXXX — der Satz, der ab Ende der Bindung gilt, wenn schon bekannt.
+      // Optional: bleibt er leer, rechnet ImmoCalc wie bisher mit dem
+      // gebundenen Zinssatz weiter.
+      { k: 'zinssatz_variabel', l: 'Anschlusszins ab Bindungsende (variabel)',
+        typ: 'number', schritt: '0.01', einheit: '%' },
     ]),
     { k: 'notiz', l: 'Notiz', typ: 'text' },
   ];
@@ -574,6 +584,15 @@ const STAMMFELDER = [
   { k: 'flaeche', l: 'Gesamtfläche', typ: 'number', schritt: '0.01', einheit: 'm²' },
   { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
   { k: 'kaufdatum', l: 'Kaufdatum', typ: 'date' },
+  // CCXXXV — wie die Immobilie ins Eigentum kam. Bei Kauf zählt der Kaufpreis
+  // als AfA-Basis; bei Schenkung, Erbschaft oder Überlassung übernimmt man
+  // stattdessen die AfA-Basis des Vorbesitzers.
+  { k: 'erwerbsart', l: 'Erwerbsart', typ: 'auswahl', ohneLeer: true,
+    vorgabe: 'Kauf', werte: ['Kauf', 'Schenkung', 'Erbschaft', 'Überlassung'] },
+  { k: 'afa_basis_uebernommen', l: 'Übernommene AfA-Bemessung (vom Vorbesitzer)',
+    typ: 'number', schritt: '0.01', geld: true, voll: true, lang: true,
+    note: 'Nur bei Erwerb ohne Kaufpreis relevant — bei Schenkung, Erbschaft '
+        + 'oder Überlassung übernimmt man die AfA-Basis des Vorbesitzers.' },
   { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true },
   // CCIX — Rücklagenkonto: zurückgelegtes Geld für die Immobilie und die
   // laufende Sparrate. Beides optional, jederzeit nachtragbar.
@@ -586,6 +605,9 @@ const STAMMFELDER = [
   { k: 'bank', l: 'Bank', typ: 'text' },
   { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
+  // CCXXXV — ein eingetragenes Nießbrauchrecht. Leer heisst: keins.
+  { k: 'niessbrauch_berechtigt', l: 'Nießbrauch: Berechtigter', typ: 'text' },
+  { k: 'niessbrauch_bis', l: 'Nießbrauch bis', typ: 'date' },
 ];
 
 /* CCVIII — die WEG-Ebene. Nur bei einem Objekt sichtbar, das Teil einer
@@ -735,6 +757,9 @@ let daten = null;
 let einheiten = [];
 /* Die Einheit, auf die gerade geschaut wird — null heisst: das ganze Haus. */
 let fokus = null;
+/* CCXXIX — Grundschulden auf diesem Objekt. Nur am Haus gepflegt, nicht in
+   der Einheiten-Ansicht — wie die Kredite auch. */
+let grundschulden = [];
 
 const flaecheText = f => `${Number(f).toLocaleString('de-DE',
   { maximumFractionDigits: 1 })} m²`;
@@ -796,7 +821,12 @@ function kennzahlenHtml(v, jahresmiete, restschuld, guthaben) {
 }
 
 function paarZeile(label, wert, { abgeleitet = false, lang = false } = {}) {
-  return `<div class="paar${lang && wert ? ' lang' : ''}">
+  // `lang` gilt für die Beschriftung, nicht nur den Wert — ein langes Label
+  // wie „Übernommene AfA-Bemessung (vom Vorbesitzer)" drückt die Wertspalte
+  // sonst auf null Breite, und „nicht erfasst" bricht Buchstabe für
+  // Buchstabe um (Fund bei CCXXXV). Deshalb gilt die gestapelte Form auch,
+  // wenn noch kein Wert erfasst ist.
+  return `<div class="paar${lang ? ' lang' : ''}">
     <span class="pl">${esc(label)}</span>
     <span class="pv${wert ? (abgeleitet ? ' abgeleitet' : '') : ' leer'}"
       >${wert ? esc(wert) : 'nicht erfasst'}</span></div>`;
@@ -804,7 +834,7 @@ function paarZeile(label, wert, { abgeleitet = false, lang = false } = {}) {
 
 function stammHtml(o) {
   const zeilen = stammfelder()
-    .map(f => paarZeile(f.l, stammwert(f, o))).join('');
+    .map(f => paarZeile(f.l, stammwert(f, o), { lang: f.lang })).join('');
   return `<div class="sekopf"><h2 class="sec">Stammdaten</h2>
       <button data-stamm="1">Bearbeiten</button></div>
     <div class="paare">${zeilen}</div>`;
@@ -1056,7 +1086,7 @@ async function laden() {
     try { return await ruf(); }
     catch (fehler) { luecken.push(`${was}: ${fehler.message || fehler}`); return ersatz; }
   };
-  const [bereiche, anteile, vermoegen, einheitenRoh] = await Promise.all([
+  const [bereiche, anteile, vermoegen, einheitenRoh, grundschuldenRoh] = await Promise.all([
     Promise.all(Object.keys(BEREICHE).map(async b =>
       [b, await zweig(BEREICHE[b].titel,
                       () => api(`/objekte/${encodeURIComponent(slug)}/${b}`), [])]))
@@ -1067,6 +1097,8 @@ async function laden() {
           null),
     zweig('Einheiten',
           () => api(`/objekte/${encodeURIComponent(slug)}/einheiten`), []),
+    zweig('Grundschulden',
+          () => api(`/objekte/${encodeURIComponent(slug)}/grundschulden`), []),
   ]);
   if (luecken.length) melde(`Nicht alles konnte geladen werden — ${luecken[0]}`, 'neg');
 
@@ -1075,6 +1107,7 @@ async function laden() {
   // Ein Grundstück hat keine Einheiten — dort darf die zweite Ebene gar nicht
   // erst auftauchen, auch nicht über einen alten Link.
   einheiten = istGrundstueck() ? [] : (einheitenRoh || []);
+  grundschulden = grundschuldenRoh || [];
   fokus = fokusWunsch
     ? (einheiten.find(e => String(e.id) === String(fokusWunsch)) || null)
     : null;
@@ -1196,8 +1229,10 @@ async function laden() {
     </div></div></div>
     ${eigentuemerHtml(anteile)}
     ${mietBlock}
-    ${['versicherungen', 'kredite', 'zahlungen']
-      .map(b => abschnitt(b, bereiche[b])).join('')}
+    ${abschnitt('versicherungen', bereiche.versicherungen)}
+    ${abschnitt('kredite', bereiche.kredite)}
+    ${grundschuldenHtml()}
+    ${abschnitt('zahlungen', bereiche.zahlungen)}
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>
       <p>Die Sicherung enthält alle Daten dieser Immobilie und lässt sich
@@ -1723,19 +1758,40 @@ const standFelder = bauspar => [
   { k: 'restschuld', l: bauspar ? 'Sparstand am 31.12.'
                                 : 'Restschuld am 31.12.',
     typ: 'number', schritt: '0.01', geld: true, pflicht: true },
+  // CCXXXI — was laut Kontoauszug tatsächlich an Zinsen floss, neben der
+  // Kalkulation aus Rate und Zinssatz. Optional: ohne Angabe zeigt der
+  // Verlauf weiter nur die gerechnete Zahl.
+  { k: 'zinsen_ist', l: bauspar ? 'Erhaltene Zinsen lt. Kontoauszug'
+                                : 'Gezahlte Zinsen lt. Kontoauszug',
+    typ: 'number', schritt: '0.01', geld: true },
 ];
+
+/* CCXXXI — Zinsen je Jahr: was laut Kontoauszug wirklich anfiel (`zinsen_ist`)
+   neben dem, was aus Rate und Zinssatz gerechnet ist (`zinsen_kalk`). Fehlt
+   der Ist-Wert, bleibt nur die Kalkulation stehen; fehlen beide, bleibt die
+   Zeile ganz weg — eine leere Zinszeile wäre nur Rauschen. */
+function zinsZeile(j) {
+  if (j.zinsen_ist == null && j.zinsen_kalk == null) return '';
+  const teile = [];
+  if (j.zinsen_ist != null) teile.push(`ist ${eur(j.zinsen_ist)}`);
+  if (j.zinsen_kalk != null) teile.push(`kalk ${eur(j.zinsen_kalk)}`);
+  return `<div class="jz">Zinsen: ${teile.join(' · ')}</div>`;
+}
 
 function verlaufBlock(s) {
   const bauspar = istBausparer(s.art);
   const zeilen = (s.verlauf || []).map(j => `<div class="jahr${
       j.eingetragen ? ' gemessen' : ''}">
-      <span class="jj">${j.jahr}</span>
-      <span class="jw">${eur(j.restschuld)}</span>
-      <span class="jq">${j.eingetragen ? 'eingetragen' : 'gerechnet'}</span>
-      ${j.eingetragen ? `<button type="button" class="weg"
-          data-stand-weg="${(s.staende.find(x => x.jahr === j.jahr) || {}).id}"
-          aria-label="Stand entfernen">×</button>`
-        : '<span class="weg" aria-hidden="true"></span>'}
+      <div class="jzeile">
+        <span class="jj">${j.jahr}</span>
+        <span class="jw">${eur(j.restschuld)}</span>
+        <span class="jq">${j.eingetragen ? 'eingetragen' : 'gerechnet'}</span>
+        ${j.eingetragen ? `<button type="button" class="weg"
+            data-stand-weg="${(s.staende.find(x => x.jahr === j.jahr) || {}).id}"
+            aria-label="Stand entfernen">×</button>`
+          : '<span class="weg" aria-hidden="true"></span>'}
+      </div>
+      ${zinsZeile(j)}
     </div>`).join('');
   return `<div class="block">
     <span class="bt">Verlauf</span>
@@ -1796,6 +1852,104 @@ function kreditExtra(eintrag) {
     <button type="button" class="zusatz"
             data-staende="${eintrag.id}">Jahresstände pflegen</button>
   </div>`;
+}
+
+/* ---- CCXXIX: Grundschulden ------------------------------------------------
+   Eine eigene Liste, kein Eintrag in BEREICHE: die Endpunkte liegen anders
+   (`/objekte/{slug}/grundschulden`, `/grundschulden/{id}`, nicht der
+   generische `/stammdaten/{bereich}/{id}`-Weg) — wie bei den Einheiten.
+
+   Die Zuordnung zu Krediten ist eine Mehrfachauswahl, und zwar
+   objektübergreifend: eine Grundschuld auf diesem Grundstück kann einen
+   Kredit an einem ganz anderen Objekt sichern. Gelöst als Reihe ankreuzbarer
+   Blasen (`data-gs-kredit`) statt eines nativen multiselect — jede Blase
+   trägt ihren Zustand selbst, ohne die übrigen abzuwählen; das unterscheidet
+   sie von den Einheiten-Blasen (`data-wahl`/`data-wahlfeld`), die immer nur
+   eine Auswahl zulassen. */
+const GRUNDSCHULDFELDER = [
+  { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01', geld: true,
+    voll: true, pflicht: true },
+  { k: 'rang', l: 'Rang', typ: 'number', schritt: '1' },
+  { k: 'grundbuch_blatt', l: 'Grundbuchblatt', typ: 'text' },
+  { k: 'glaeubiger', l: 'Gläubiger', typ: 'text' },
+  { k: 'brief', l: 'Briefgrundschuld', typ: 'schalter', vorgabe: false,
+    note: 'Aus: Buchgrundschuld — kein Grundschuldbrief ausgestellt.' },
+  { k: 'notiz', l: 'Notiz', typ: 'text' },
+];
+
+const grundschuldName = g =>
+  g.glaeubiger || (g.grundbuch_blatt ? `Blatt ${g.grundbuch_blatt}` : 'Grundschuld');
+
+const grundschuldDetail = g => [
+  g.rang != null && g.rang !== '' ? `Rang ${g.rang}` : '',
+  g.grundbuch_blatt ? `Blatt ${g.grundbuch_blatt}` : '',
+  g.brief ? 'Brief' : 'Buch',
+  (g.kredit_ids || []).length
+    ? `sichert ${g.kredit_ids.length} Kredit${g.kredit_ids.length === 1 ? '' : 'e'}`
+    : 'sichert keinen Kredit',
+].filter(Boolean).join(' · ');
+
+/** Alle Kredite über alle Objekte — eine Grundschuld kann anderswo sichern. */
+async function grundschuldKrediteListe() {
+  try { return await api('/grundschulden/kredit-auswahl'); }
+  catch { return []; }
+}
+
+function grundschuldKreditBlock(kreditListe, ausgewaehlt) {
+  if (!kreditListe.length) {
+    return `<div class="block">
+      <span class="bt">Gesicherte Kredite</span>
+      <span class="bd">Noch kein Kredit angelegt — lege zuerst einen an, um
+        ihn hier zu verknüpfen.</span>
+    </div>`;
+  }
+  const gewaehlt = new Set(ausgewaehlt.map(String));
+  const blasen = kreditListe.map(k => {
+    const an = gewaehlt.has(String(k.id));
+    return `<button type="button" class="bubble${an ? ' gewaehlt' : ''}"
+        data-gs-kredit="${k.id}" aria-pressed="${an}">
+      <span class="bt">${esc(k.bezeichnung)}</span>
+      <span class="bf">${esc(k.objekt)}</span>
+    </button>`;
+  }).join('');
+  return `<div class="block">
+    <span class="bt">Gesicherte Kredite</span>
+    <span class="bd">Eine Grundschuld kann auch einen Kredit an einem anderen
+      Objekt sichern — deshalb stehen hier alle Kredite, objektübergreifend.
+      Mehrfachauswahl möglich.</span>
+    <div class="bubbles" role="group"
+         aria-label="Gesicherte Kredite">${blasen}</div>
+  </div>`;
+}
+
+async function grundschuldFormular(g = null) {
+  const kreditListe = await grundschuldKrediteListe();
+  await formular({
+    titel: g ? 'Grundschuld bearbeiten' : 'Grundschuld hinzufügen',
+    hinweis: 'Rang und Grundbuchblatt stehen im Grundbuchauszug. Eine '
+      + 'Grundschuld sichert einen oder mehrere Kredite ab — auch an einem '
+      + 'anderen Objekt.',
+    felder: GRUNDSCHULDFELDER, werte: g || {}, absicht: 'grundschuld',
+    extra: grundschuldKreditBlock(kreditListe, g ? (g.kredit_ids || []) : []),
+    knopf: g ? 'Speichern' : 'Anlegen',
+  });
+}
+
+function grundschuldenHtml() {
+  const zeilen = grundschulden.length
+    ? grundschulden.map(g => `<div class="eintrag klick" data-gs-edit="${g.id}">
+        <span class="sym">${kostenIcon('Kredit')}</span>
+        <span class="et">
+          <span class="en">${esc(grundschuldName(g))}</span>
+          <span class="ed">${esc(grundschuldDetail(g))}</span>
+        </span>
+        <span class="ew">${eurVoll(g.betrag)}</span>
+        <button class="del" data-gs-weg="${g.id}" aria-label="löschen">×</button>
+      </div>`).join('')
+    : `<div class="leerzeile">Noch keine Grundschuld hinterlegt</div>`;
+  return `<div class="sekopf"><h2 class="sec">Grundschulden</h2></div>
+    <div class="liste">${zeilen}</div>
+    <button class="add" data-gs-neu="1">＋ Grundschuld hinzufügen</button>`;
 }
 
 /* ---- CLXXVI: Kappungsgrenze nach § 558 Abs. 3 BGB -----------------------
@@ -1918,6 +2072,16 @@ dlg.addEventListener('close', () => {
 document.getElementById('dlgForm').addEventListener('click', async e => {
   if (e.target.closest('[data-abbruch]')) return dlg.close('abbruch');
 
+  // CCXXIX — Mehrfachauswahl der gesicherten Kredite: jede Blase schaltet
+  // nur sich selbst, im Unterschied zu den Einzelauswahl-Blasen unten.
+  const gsKredit = e.target.closest('[data-gs-kredit]');
+  if (gsKredit) {
+    const an = !gsKredit.classList.contains('gewaehlt');
+    gsKredit.classList.toggle('gewaehlt', an);
+    gsKredit.setAttribute('aria-pressed', String(an));
+    return;
+  }
+
   const wahl = e.target.closest('[data-wahl]');
   if (wahl) {
     const gruppe = wahl.closest('[data-wahlfeld]');
@@ -2013,11 +2177,26 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
       const werte = ausFormular(form, dialogFelder);
       await api(`/kredite/${id}/staende`, {
         method: 'POST',
-        body: { jahr: Number(werte.jahr), restschuld: werte.restschuld || 0 },
+        body: { jahr: Number(werte.jahr), restschuld: werte.restschuld || 0,
+                ...(werte.zinsen_ist != null ? { zinsen_ist: werte.zinsen_ist } : {}) },
       });
       await laden();
       // Gleich weiter: Jahresstände werden meist mehrere auf einmal gepflegt.
       return standFormular(id);
+    } else if (absicht === 'grundschuld') {
+      const werte = ausFormular(form, GRUNDSCHULDFELDER);
+      // Immer mitgeschickt, nie weggelassen: die Blasen zeigen den Stand, den
+      // der Nutzer gerade bestätigt hat — „unangetastet lassen" gibt es in
+      // dieser Maske nicht, hier wird stets neu gesetzt.
+      const kredit_ids = [...form.querySelectorAll('[data-gs-kredit].gewaehlt')]
+        .map(b => Number(b.dataset.gsKredit));
+      const body = { ...werte, kredit_ids };
+      if (id) {
+        await api(`/grundschulden/${id}`, { method: 'PATCH', body });
+      } else {
+        await api(`/objekte/${encodeURIComponent(slug)}/grundschulden`,
+                  { method: 'POST', body });
+      }
     } else {
       // Nicht `cfgFuer(bereich).felder`: bei den Verträgen entscheidet die
       // Vertragsart, welche Felder überhaupt dastanden.
@@ -2281,6 +2460,31 @@ inhalt.addEventListener('click', async e => {
     return formular({ titel: `${cfg.einzahl} bearbeiten`,
                       felder: felderFuer(bereich, eintrag), bereich,
                       werte: eintrag, absicht: 'eintrag', extra });
+  }
+
+  // CCXXIX — Grundschulden hängen nicht an BEREICHE (eigene Endpunkte), daher
+  // eigene data-Attribute statt data-add/-edit/-del.
+  if (e.target.closest('[data-gs-neu]')) return grundschuldFormular(null);
+
+  const gsEdit = e.target.closest('[data-gs-edit]');
+  if (gsEdit) {
+    const g = grundschulden.find(x => String(x.id) === gsEdit.dataset.gsEdit);
+    return g ? grundschuldFormular(g) : undefined;
+  }
+
+  const gsWeg = e.target.closest('[data-gs-weg]');
+  if (gsWeg) {
+    e.stopPropagation();
+    const ja = await frage('Grundschuld löschen?',
+      'Der Eintrag wird entfernt. Rückgängig machen lässt sich das nicht.',
+      { knopf: 'Löschen', gefahr: true });
+    if (!ja) return;
+    try {
+      await api(`/grundschulden/${gsWeg.dataset.gsWeg}`, { method: 'DELETE' });
+    } catch (fehler) {
+      return melde(String(fehler.message || 'Konnte nicht gelöscht werden.'), 'neg');
+    }
+    return laden();
   }
 });
 
