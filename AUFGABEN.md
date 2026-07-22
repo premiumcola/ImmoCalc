@@ -21,7 +21,7 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 |---|---|---|
 | CCXXVII | ~~OCR-Textschicht automatisch für neue PDFs~~ **erledigt** `4e6291b` (Deploy nötig) | Hintergrund-Wachdienst OCRt textlose PDFs nach |
 | CCXXVIII | ~~Mehrseitiger Foto-Scan mit Zuschnitt/Entzerrung + Guards~~ **erledigt** `edb8f69` | `kamerascan.js` |
-| CCXXIX–CCXXXI, CCXXXV | **Rote Lücken** (Grundschuld, variabler Zins, Zinsen-Ist, Erwerbsart/Nießbrauch) — Backend `326504f` | Formular-UI in Arbeit (Agent) |
+| CCXXIX–CCXXXI, CCXXXV | ~~**Rote Lücken** (Grundschuld, variabler Zins, Zinsen-Ist, Erwerbsart/Nießbrauch)~~ **erledigt** `326504f`/`05d0c42` | Deploy nötig, damit die neuen API-Felder live sind |
 | CCXXXII–CCXXXIV, CCXXXVI–CCXLVIII | übrige Modell-Lücken (gelb/weiß) aus der OCR-Analyse | eingetragen, offen |
 
 ---
@@ -256,9 +256,9 @@ Vorschläge additiv (neue Optional-Felder/Tabellen, kein Bruch am Bestand).
 
 | Nr. | Lücke | Was zu tun ist |
 |---|---|---|
-| CCXXIX | **Grundschuld als dingliche Sicherheit** — hoch | Zweckerklärungen: Betrag, Rang, Grundbuchblatt, mit/ohne Brief; im Bestand sichert eine Grundschuld auf Objekt A einen Kredit für Objekt B (Cross-Collateral). `Kredit` ist 1:1 zu `objekt_id`. → neue Tabelle `Grundschuld` + m:n-Zuordnung zu `Kredit` |
-| CCXXX | **Variabler Anschlusszins nach Zinsbindung** — hoch | Verträge legen nach `zinsbindung_bis` einen variablen Satz (Referenzzins + Aufschlag) fest; `vermoegen.stand_fortschreiben` rechnet über das Bindungsende hinaus mit dem alten Satz weiter → für Bestandsverträge falsch. → `zinssatz_variabel`/`referenzzins` an `Kredit`, greift ab Bindungsende |
-| CCXXXI | **Zinsen-Ist aus Kontoauszug** — hoch | Jahreskontoauszug weist den echten Sollzins-Jahresbetrag aus (→ Anlage V). App hat nur die Kalkulation. → Feld `zinsen_ist` je Jahr an `Kreditstand`, Auswertung zeigt beide Werte nebeneinander |
+| CCXXIX | ~~**Grundschuld als dingliche Sicherheit**~~ **erledigt** `326504f`/`05d0c42` — hoch | Zweckerklärungen: Betrag, Rang, Grundbuchblatt, mit/ohne Brief; im Bestand sichert eine Grundschuld auf Objekt A einen Kredit für Objekt B (Cross-Collateral). `Kredit` ist 1:1 zu `objekt_id`. → neue Tabelle `Grundschuld` + m:n-Zuordnung zu `Kredit` |
+| CCXXX | ~~**Variabler Anschlusszins nach Zinsbindung**~~ **erledigt** `326504f`/`05d0c42` — hoch | Verträge legen nach `zinsbindung_bis` einen variablen Satz (Referenzzins + Aufschlag) fest; `vermoegen.stand_fortschreiben` rechnet über das Bindungsende hinaus mit dem alten Satz weiter → für Bestandsverträge falsch. → `zinssatz_variabel`/`referenzzins` an `Kredit`, greift ab Bindungsende |
+| CCXXXI | ~~**Zinsen-Ist aus Kontoauszug**~~ **erledigt** `326504f`/`05d0c42` — hoch | Jahreskontoauszug weist den echten Sollzins-Jahresbetrag aus (→ Anlage V). App hat nur die Kalkulation. → Feld `zinsen_ist` je Jahr an `Kreditstand`, Auswertung zeigt beide Werte nebeneinander |
 | CCXXXII | **Bereitstellungszinsen** — mittel | Eigener Satz p.a. auf nicht abgerufenen Betrag ab Datum. → `bereitstellungszins_satz`/`_ab` an `Kredit`, getrennter Ausweis |
 | CCXXXIII | **Sondertilgungsrecht** — mittel | „bis X €/Kalenderjahr". → `sondertilgung_jahr_max` an `Kredit` (später ggf. Erinnerung „dieses Jahr noch nicht genutzt") |
 | CCXXXIV | **Auszahlungskurs/Disagio** — niedrig | Nennbetrag ≠ Nettodarlehen über Auszahlkurs %. → `auszahlungskurs_pct` (Default 100) an `Kredit` |
@@ -267,7 +267,7 @@ Vorschläge additiv (neue Optional-Felder/Tabellen, kein Bruch am Bestand).
 
 | Nr. | Lücke | Was zu tun ist |
 |---|---|---|
-| CCXXXV | **Unentgeltlicher Erwerb + Nießbrauch** — hoch | Überlassung/Vermächtnis mit vorbehaltenem Nießbrauch; App unterstellt Kauf. Betrifft AfA-Fortführung (Fußstapfenprinzip) und Einkünftezurechnung (Nießbraucher ≠ Eigentümer). → `Objekt.erwerbsart` (Kauf/Schenkung/Erbschaft/Überlassung), AfA-Basis vom Vorbesitzer, Nießbrauch-Felder |
+| CCXXXV | ~~**Unentgeltlicher Erwerb + Nießbrauch**~~ **erledigt** `326504f`/`05d0c42` — hoch | Überlassung/Vermächtnis mit vorbehaltenem Nießbrauch; App unterstellt Kauf. Betrifft AfA-Fortführung (Fußstapfenprinzip) und Einkünftezurechnung (Nießbraucher ≠ Eigentümer). → `Objekt.erwerbsart` (Kauf/Schenkung/Erbschaft/Überlassung), AfA-Basis vom Vorbesitzer, Nießbrauch-Felder |
 | CCXXXVI | **Bauträger-Kaufpreisraten (MaBV)** — mittel | Gestaffelt nach Baufortschritt, Bezug auf Notar/UR-Nr., getrenntes Sammelkonto, Sonderausstattung. `Objekt` hat nur `kaufpreis`/`kaufdatum`. → Tabelle `Kaufpreisrate` + `notar`/`urkunden_nr` |
 | CCXXXVII | **Grundbuch-Belastungen** — niedrig | Dienstbarkeiten (Leitungs-/Wegerecht), Veräußerungsverbote, Verfügungsbeschränkungen aus Abt. II; heute nur `flurstueck`/`gemarkung` als Freitext. → Feld `dingliche_lasten` (Freitext) am Objekt |
 | CCXXXVIII | **Grundstückskauf: schwebende Genehmigungen** — niedrig | Fälligkeit hing an Behördengenehmigungen (GrdstVG-Zeugnis, Vorkaufsrechtsverzicht) mit Fristenlauf. → Status-/Freitextfelder am Grundstücks-Objekt |
