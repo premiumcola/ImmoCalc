@@ -123,15 +123,7 @@
     </button>
   </div>
 
-  <nav class="nav">
-    <a class="brand" href="index.html">ImmoCalc</a>
-    <a href="index.html"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
-    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
-    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
-    <a href="eigentuemer.html" aria-current="page"><span class="ni">☗</span>Eigentümer</a>
-    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
-  </nav>
+  <div data-nav></div>
 </div>
 
 <dialog id="dlg">
@@ -180,7 +172,8 @@
 </dialog>
 
 <script type="module">
-import { api, esc, frage, melde, eurKurz } from './assets/immo.js';
+import { api, esc, frage, melde, eurKurz, promille, installNav } from './assets/immo.js';
+installNav();
 
 const liste = document.getElementById('liste');
 const standFeld = document.getElementById('stand');
@@ -208,11 +201,6 @@ const zeigeFehler = text => {
   dlgMeldung.className = 'meldung an schlecht';
 };
 const fehlerWeg = () => { dlgMeldung.className = 'meldung'; };
-
-/** Promille lesbar: 500 ‰, 333,3 ‰ — nie 333.29999. Bewusst ohne
-    Tausenderpunkt: „1.000 ‰" liest sich sonst wie eintausend Komma null. */
-const pm = n => (n ?? 0).toLocaleString('de-DE',
-  { maximumFractionDigits: 1, useGrouping: false }) + ' ‰';
 
 /* ---- Verteilungsstand: was fehlt, was ist zu viel ---- */
 async function standLaden() {
@@ -249,8 +237,8 @@ async function standLaden() {
     const text = o.beteiligte === 0
       ? 'Noch niemandem zugeordnet — es fehlen 1000 ‰.'
       : o.frei > 0
-        ? `Es fehlen noch ${pm(o.frei)} von 1000 ‰.`
-        : `${pm(-o.frei)} zu viel verteilt (${pm(o.vergeben)} vergeben).`;
+        ? `Es fehlen noch ${promille(o.frei)} von 1000 ‰.`
+        : `${promille(-o.frei)} zu viel verteilt (${promille(o.vergeben)} vergeben).`;
     return `<div class="merker">
         <span class="hi">‰</span>
         <span class="ht">
@@ -323,7 +311,7 @@ async function eignerLaden() {
     const bet = e.objekte.length
       ? e.objekte.map(o => `<div class="bet">
             <span class="bn">${esc(o.name)}</span>
-            <span class="bw">${pm(o.promille)}</span>
+            <span class="bw">${promille(o.promille)}</span>
             <span class="chip ${o.einheit || o.rolle === 'Alleineigentümer'
               ? 'teal' : ''}">${esc(o.einheit || o.rolle)}</span>
           </div>`).join('')

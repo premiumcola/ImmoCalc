@@ -81,12 +81,54 @@ export const eurKurz = n => {
 export const eurVoll = n =>
   (n == null ? 0 : Math.round(n)).toLocaleString('de-DE') + ' €';
 
+/**
+ * Miteigentumsanteil lesbar: „500 ‰", „333,3 ‰" — nie 333,29999999. Bewusst
+ * ohne Tausenderpunkt: „1.000 ‰" liest sich sonst wie eintausend Komma null.
+ */
+export const promille = n => (n ?? 0).toLocaleString('de-DE',
+  { maximumFractionDigits: 1, useGrouping: false }) + ' ‰';
+
 export const esc = s => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** Fristklasse fuer die Ampel-Chips: rot ab 30, gelb ab 90 Tagen. */
 export const fristKlasse = tage =>
   tage == null ? '' : tage < 0 ? 'neg' : tage <= 30 ? 'neg' : tage <= 90 ? 'amber' : 'pos';
+
+/* ---- Navigation (CCXVI) -------------------------------------------------
+   Die Leiste stand wortgleich in acht Seiten. Jetzt liegt sie einmal hier:
+   `installNav()` baut sie aus `NAV` und haengt sie anstelle eines
+   Platzhalter-Elements `[data-nav]` ein. */
+
+export const NAV = [
+  ['Objekte', 'index.html', '▤'],
+  ['Dokumente', 'eingang.html', '▣'],
+  ['Wert', 'wertentwicklung.html', '◔'],
+  ['Nebenkosten', 'nebenkosten.html', '≡'],
+  ['Eigentümer', 'eigentuemer.html', '☗'],
+  ['Einstellungen', 'settings.html', '⚙'],
+];
+
+// objekt.html und zeitraum.html stehen selbst nicht in der Leiste — sie
+// sind Detailansichten der Objektliste und zaehlen fuer die Markierung als
+// "Objekte".
+const NAV_ALIAS = { 'objekt.html': 'index.html', 'zeitraum.html': 'index.html' };
+
+/** Haengt die Navigationsleiste anstelle von `[data-nav]` ins Dokument. */
+export function installNav() {
+  const platz = document.querySelector('[data-nav]');
+  if (!platz) return;
+  const datei = location.pathname.split('/').pop() || 'index.html';
+  const aktiv = NAV_ALIAS[datei] || datei;
+  const nav = document.createElement('nav');
+  nav.className = 'nav';
+  nav.innerHTML = `<a class="brand" href="index.html">ImmoCalc</a>`
+    + NAV.map(([label, href, icon]) => `<a href="${href}"${
+        href === aktiv ? ' aria-current="page"' : ''
+      }><span class="ni">${icon}</span>${label}</a>`).join('');
+  platz.replaceWith(nav);
+  navAufraeumen();
+}
 
 /* ---- Navigation auf dem Handy ------------------------------------------
    Sechs Einträge nebeneinander sind auf einem iPhone zu eng: die

@@ -248,15 +248,7 @@
 
   <div class="scroll" id="inhalt"></div>
 
-  <nav class="nav">
-    <a class="brand" href="index.html">ImmoCalc</a>
-    <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
-    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
-    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
-    <a href="eigentuemer.html"><span class="ni">☗</span>Eigentümer</a>
-    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
-  </nav>
+  <div data-nav></div>
 </div>
 
 <dialog id="dlg">
@@ -269,10 +261,11 @@
 </dialog>
 
 <script type="module">
-import { installLogos, logoSvg, api, eur, eurVoll, esc, fristKlasse, fristText,
-         melde, frage, schiebeFrage } from './assets/immo.js';
+import { installLogos, installNav, logoSvg, api, eur, eurVoll, esc, fristKlasse,
+         fristText, melde, frage, schiebeFrage, promille } from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { auswahlfeld } from './assets/auswahl.js';
+installNav();
 
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
    Bewusst dynamisch geladen: fehlt die Datei, bleiben es schlichte Felder —
@@ -717,13 +710,6 @@ function restText(e) {
   return rest ? `Rest ${eurVoll(rest)}` : '';
 }
 
-/* Tausendstel mit hoechstens einer Nachkommastelle — 333,3 statt 333,29999.
-   Ohne Tausenderpunkt, sonst liest sich "1.000 ‰" wie eintausend Komma null. */
-const zahl = n => Number(n ?? 0).toLocaleString('de-DE',
-  { maximumFractionDigits: 1, useGrouping: false });
-/* Bestandszeilen kennen nur `tausendstel`; neue tragen `promille`. */
-const promille = a => zahl(a.promille ?? a.tausendstel ?? 0);
-
 /* IBAN in Vierergruppen, egal wie sie gespeichert wurde: „DE42 7635 0000 …".
    Die letzte Gruppe darf kürzer sein. */
 const ibanSchoen = s => String(s || '').replace(/\s+/g, '').toUpperCase()
@@ -832,10 +818,7 @@ function grundstueckHtml(o) {
     .map(f => paarZeile(f.l, stammwert(f, o), { lang: f.lang })).join('');
   const abgeleitet = [];
   if (o.verkehrswert && o.grundstueck_flaeche) {
-    abgeleitet.push(['Wert je m²',
-      `${(o.verkehrswert / o.grundstueck_flaeche)
-        .toLocaleString('de-DE', { minimumFractionDigits: 2,
-                                   maximumFractionDigits: 2 })} €`]);
+    abgeleitet.push(['Wert je m²', eur(o.verkehrswert / o.grundstueck_flaeche)]);
   }
   if (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz) {
     abgeleitet.push(['Grundsteuer im Jahr',
@@ -990,9 +973,7 @@ function einheitKennzahlen(e, eigene) {
   const zellen = [];
   if (kalt) zellen.push(['kv', eur(kalt), 'Miete / Monat']);
   if (nk) zellen.push(['kv', eur(nk), 'NK-Vorauszahlung']);
-  if (kalt && e.flaeche) zellen.push(['kv', `${(kalt / e.flaeche)
-    .toLocaleString('de-DE', { minimumFractionDigits: 2,
-                               maximumFractionDigits: 2 })} €`, 'je m²']);
+  if (kalt && e.flaeche) zellen.push(['kv', eur(kalt / e.flaeche), 'je m²']);
   if (!zellen.length) return '';
   return `<div class="kennzahlen">${zellen.map(([k, w, l]) =>
     `<div class="kennzahl"><span class="${k}">${w}</span>
@@ -1003,6 +984,7 @@ function eigentuemerHtml(stand) {
   if (!stand) return '';
   // CLXI — ein Anteil zeigt aufs ganze Haus oder auf eine Einheit. Die Einheit
   // steht als Auszeichnung am Namen, damit „mir gehört Wohnung 2" sichtbar ist.
+  // Bestandszeilen kennen nur `tausendstel`; neue tragen `promille`.
   const zeilen = stand.anteile.length
     ? stand.anteile.map(a => `<div class="eintrag">
         <span class="sym">${kostenIcon('Eigentümer')}</span>
@@ -1011,7 +993,7 @@ function eigentuemerHtml(stand) {
           <span class="ed">${esc([a.einheit ? '' : a.rolle, a.notiz]
             .filter(Boolean).join(' · '))}</span>
         </span>
-        <span class="ew">${promille(a)} ‰</span>
+        <span class="ew">${promille(a.promille ?? a.tausendstel ?? 0)}</span>
         <button class="del" data-anteil="${a.id}" aria-label="entfernen">×</button>
       </div>`).join('')
     : `<div class="leerzeile">Noch kein Eigentümer zugeordnet</div>`;
@@ -1021,10 +1003,10 @@ function eigentuemerHtml(stand) {
   const probleme = [];
   if (stand.objekt_noetig && stand.frei !== 0) {
     probleme.push(stand.frei > 0
-      ? `Am Haus fehlen noch ${zahl(stand.frei)} ‰`
-      : `Am Haus sind ${zahl(-stand.frei)} ‰ zu viel verteilt`);
+      ? `Am Haus fehlen noch ${promille(stand.frei)}`
+      : `Am Haus sind ${promille(-stand.frei)} zu viel verteilt`);
   } else if (!stand.objekt_noetig && stand.vergeben > 0) {
-    probleme.push(`${zahl(stand.vergeben)} ‰ am Haus, obwohl schon jede Einheit `
+    probleme.push(`${promille(stand.vergeben)} am Haus, obwohl schon jede Einheit `
       + `einzeln zugeordnet ist`);
   }
   for (const es of (stand.einheiten_stand || [])) {
@@ -1032,8 +1014,8 @@ function eigentuemerHtml(stand) {
     probleme.push(es.unbekannt
       ? `„${es.einheit}" gibt es als Einheit nicht (mehr)`
       : (es.frei > 0
-          ? `In „${es.einheit}" fehlen noch ${zahl(es.frei)} ‰`
-          : `In „${es.einheit}" sind ${zahl(-es.frei)} ‰ zu viel verteilt`));
+          ? `In „${es.einheit}" fehlen noch ${promille(es.frei)}`
+          : `In „${es.einheit}" sind ${promille(-es.frei)} zu viel verteilt`));
   }
   const rest = !stand.stimmig
     ? `<div class="merker"><span class="hi">!</span><span class="ht">

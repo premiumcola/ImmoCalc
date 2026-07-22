@@ -191,8 +191,8 @@
   </div>
 </div>
 
-<script>
-const eur=n=>n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+<script type="module">
+import { eur } from './assets/immo.js';
 const LOGOS=[['lg-villa','Villa'],['lg-bauernhof','Bauernhof'],['lg-wohnung','Wohnung'],['lg-mfhA','Mehrfam.'],['lg-mfhB','Doppelhaus'],['lg-gewerbe','Gewerbe']];
 const svgUse=id=>`<svg class="logo" viewBox="0 0 96 96"><use href="#${id}"/></svg>`;
 

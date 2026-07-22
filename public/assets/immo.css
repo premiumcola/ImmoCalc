@@ -42,6 +42,13 @@ body{
 }
 .back::before{content:"‹  "}
 
+/* App-Symbol in der Kopfzeile (CCXVII) — stand wortgleich in mehreren
+   Seiten, jetzt einmal hier. Nicht jede Seite verlinkt es: auf index.html
+   ist es der Startpunkt selbst, dort steht nur `.applogo` ohne den Link. */
+.applogo{width:34px; height:34px; border-radius:9px; flex:none; display:block}
+.applogo-link{display:block; border-radius:9px}
+.applogo-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+
 .scroll{flex:1; padding:18px 18px 8px}
 .eyebrow{
   font:600 11px var(--mono); letter-spacing:.13em; text-transform:uppercase;

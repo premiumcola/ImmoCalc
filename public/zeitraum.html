@@ -258,24 +258,17 @@
          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
          tabindex="-1" aria-hidden="true">
 
-  <nav class="nav">
-    <a class="brand" href="index.html">ImmoCalc</a>
-    <a href="index.html" aria-current="page"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
-    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
-    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
-    <a href="eigentuemer.html"><span class="ni">☗</span>Eigentümer</a>
-    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
-  </nav>
+  <div data-nav></div>
 </div>
 
 <script type="module">
-import { api, eur, eurKurz, esc, fristKlasse, melde, frage, belegAnsehen }
+import { api, eur, eurKurz, esc, fristKlasse, melde, frage, belegAnsehen, installNav }
   from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 import { sankey } from './assets/charts.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
+installNav();
 
 const zid = new URLSearchParams(location.search).get('z');
 const inhalt = document.getElementById('inhalt');
@@ -1383,10 +1376,8 @@ async function betragVorschlagen(kostenart, vorschlag) {
   if (!vorschlag?.betrag) return;
   const zeile = daten.checkliste.find(k => k.kostenart === kostenart);
   if (!zeile) return;
-  const betrag = vorschlag.betrag.toLocaleString('de-DE',
-    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const ja = await frage('Betrag aus dem Beleg übernehmen?',
-    `Erkannt wurden ${betrag} €`
+    `Erkannt wurden ${eur(vorschlag.betrag)}`
     + (vorschlag.datum
       ? ` vom ${new Date(vorschlag.datum).toLocaleDateString('de-DE')}`
       : '')

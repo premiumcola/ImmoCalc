@@ -22,8 +22,8 @@
      Sie stammen aus der frueheren statistik.html und stehen bewusst
      doppelt in beiden Seiten, weil immo.css hier nicht angefasst werden
      darf. GEHOERT SPAETER NACH immo.css: .filter, .kategorien, .karte,
-     .chart, .chartleer, .legende und .applogo — alles davon ist
-     seitenuebergreifend und nicht seitenspezifisch.
+     .chart, .chartleer, .legende — alles davon ist seitenuebergreifend und
+     nicht seitenspezifisch. (.applogo ist bereits in immo.css, CCXVII.)
      ------------------------------------------------------------------ */
   /* Pillenform wie die Kategorie-Schalter darunter — sonst wirken die
      Auswahlfelder als einzige Elemente der Seite kantig. */
@@ -57,11 +57,6 @@
                color:var(--soft)}
   .legende .le i{width:10px;height:10px;border-radius:3px;flex:none}
 
-  /* App-Symbol in der Kopfzeile — kommt auf index.html und eingang.html
-     gleich vor; gehoert eigentlich nach immo.css. */
-  .applogo{width:34px;height:34px;border-radius:9px;flex:none;display:block}
-  .applogo-link{display:block;border-radius:9px}
-  .applogo-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 
   /* ---- nur diese Seite: Stand der Abrechnungszeitraeume ----------------
      Je Objekt eine Gruppe, darunter die Zeitraeume als Sprungziele nach
@@ -142,15 +137,7 @@
     <div id="inhalt"></div>
   </div>
 
-  <nav class="nav">
-    <a class="brand" href="index.html">ImmoCalc</a>
-    <a href="index.html"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
-    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
-    <a href="nebenkosten.html" aria-current="page"><span class="ni">≡</span>Nebenkosten</a>
-    <a href="eigentuemer.html"><span class="ni">☗</span>Eigentümer</a>
-    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
-  </nav>
+  <div data-nav></div>
 </div>
 
 <script type="module">
@@ -159,7 +146,9 @@
    Kosten je Kostenart und der Stand der Abrechnungszeitraeume.
    Kredit, Steuer und Versicherung traegt der Eigentuemer — die stehen auf
    wertentwicklung.html, ebenso Vermoegen, Cashflow und Mietverlauf. */
-import { api, eurKurz, esc, fristKlasse, fristText, melde } from './assets/immo.js';
+import { api, eurKurz, esc, fristKlasse, fristText, melde, installNav }
+  from './assets/immo.js';
+installNav();
 import { balken, sankey } from './assets/charts.js';
 import { auswahlfeld } from './assets/auswahl.js';
 

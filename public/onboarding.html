@@ -226,7 +226,7 @@
 </div>
 
 <script type="module">
-import { melde, frage } from './assets/immo.js';
+import { melde, frage, eur } from './assets/immo.js';
 import { installGrundstueckLogo } from './assets/kostenicons.js';
 
 /* Das Grundstück bringt sein Logo selbst mit — die Haus-Symbole stehen
@@ -334,18 +334,18 @@ const dez=(n,k=2)=>n==null?'':n.toLocaleString('de-DE',{minimumFractionDigits:k,
 const PRO_JAHR={monatlich:12,vierteljaehrlich:4,halbjaehrlich:2,jaehrlich:1};
 function qmText(d){
   const f=nz(d.gFlaeche), w=nz(d.gWert);
-  return f&&w ? `Das sind <b>${dez(w/f)} € je m²</b>.`
+  return f&&w ? `Das sind <b>${eur(w/f)} je m²</b>.`
               : 'Der Preis je m² ergibt sich daraus von selbst.';
 }
 function steuerText(d){
   const m=nz(d.gMessbetrag), h=nz(d.gHebesatz);
   return m!=null&&h!=null
-    ? `Grundsteuer: <b>${dez(m*h/100)} € im Jahr</b> — Messbetrag × Hebesatz.` : '';
+    ? `Grundsteuer: <b>${eur(m*h/100)} im Jahr</b> — Messbetrag × Hebesatz.` : '';
 }
 function pachtText(d){
   const z=nz(d.pachtzins);
   return z!=null
-    ? `Im Jahr sind das <b>${dez(z*(PRO_JAHR[d.pachtTurnus]||1))} €</b>.`
+    ? `Im Jahr sind das <b>${eur(z*(PRO_JAHR[d.pachtTurnus]||1))}</b>.`
     : 'Ohne Pächter bleibt der Schritt leer — verpachten lässt sich das '
       +'Grundstück später jederzeit.';
 }
@@ -639,9 +639,9 @@ async function finish(){
     ['Name', name],['Typ', typLabel(d.typ)],
     ['Nutzungsart', d.gNutzungsart||'noch offen'],
     ['Fläche', nz(d.gFlaeche)!=null?`${dez(nz(d.gFlaeche),0)} m²`:'noch offen'],
-    ['Grundstückswert', nz(d.gWert)!=null?`${dez(nz(d.gWert))} €`:'noch offen'],
+    ['Grundstückswert', nz(d.gWert)!=null?eur(nz(d.gWert)):'noch offen'],
     ['Pacht', d.paechter||nz(d.pachtzins)!=null
-      ? `${d.paechter||'Pächter offen'}${nz(d.pachtzins)!=null?` · ${dez(nz(d.pachtzins))} €`:''}`
+      ? `${d.paechter||'Pächter offen'}${nz(d.pachtzins)!=null?` · ${eur(nz(d.pachtzins))}`:''}`
       : 'keine'],
   ]:[
     ['Name', name],['Typ', typLabel(d.typ)],['Nutzung', d.nutzung],

@@ -321,11 +321,6 @@
   .zinfo{font:600 12px var(--mono);color:var(--teal-d);background:var(--teal-l);
          border-radius:10px;padding:10px 12px;margin:0 0 14px;line-height:1.5}
 
-  /* App-Symbol in der Kopfzeile — kommt auf index.html, eingang.html und
-     statistik.html gleich vor; gehoert eigentlich nach immo.css. */
-  .applogo{width:34px;height:34px;border-radius:9px;flex:none;display:block}
-  .applogo-link{display:block;border-radius:9px}
-  .applogo-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 </style>
 </head>
 <body>
@@ -422,15 +417,7 @@
     </div>
   </div>
 
-  <nav class="nav">
-    <a class="brand" href="index.html">ImmoCalc</a>
-    <a href="index.html"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html" aria-current="page"><span class="ni">▣</span>Dokumente</a>
-    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
-    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
-    <a href="eigentuemer.html"><span class="ni">☗</span>Eigentümer</a>
-    <a href="settings.html"><span class="ni">⚙</span>Einstellungen</a>
-  </nav>
+  <div data-nav></div>
 </div>
 
 <dialog id="zielDlg">
@@ -451,9 +438,10 @@
 </dialog>
 
 <script type="module">
-import { api, esc, belegAnsehen } from './assets/immo.js';
+import { api, eur, esc, belegAnsehen, installNav } from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
+installNav();
 
 const liste = document.getElementById('liste');
 const sub = document.getElementById('sub');
@@ -484,9 +472,6 @@ const jetzt = new Date().getFullYear();
 const ALLE = '';
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
                 'August', 'September', 'Oktober', 'November', 'Dezember'];
-const geld = new Intl.NumberFormat('de-DE',
-  { style: 'currency', currency: 'EUR' });
-
 /* Ein Zustand für die ganze Seite: Filter, Stammdaten, gewählter Beleg.
    Die Liste wird immer aus dem gebaut, was die API zurückgibt. */
 const filter = { objekt: ALLE, kategorie: ALLE, jahr: ALLE, status: ALLE, suche: '' };
@@ -593,7 +578,7 @@ const tagText = iso => {
 };
 
 const betragText = betrag =>
-  (betrag === null || betrag === undefined ? '' : geld.format(betrag));
+  (betrag === null || betrag === undefined ? '' : eur(betrag));
 
 /** Belegdatum und Betrag, wie die Ablage sie sieht (CXXIV). */
 function befund(d) {

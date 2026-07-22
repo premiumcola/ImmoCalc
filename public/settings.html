@@ -241,15 +241,7 @@
     </div>
   </div>
 
-  <nav class="nav">
-    <a class="brand" href="index.html">ImmoCalc</a>
-    <a href="index.html"><span class="ni">▤</span>Objekte</a>
-    <a href="eingang.html"><span class="ni">▣</span>Dokumente</a>
-    <a href="wertentwicklung.html"><span class="ni">◔</span>Wert</a>
-    <a href="nebenkosten.html"><span class="ni">≡</span>Nebenkosten</a>
-    <a href="eigentuemer.html"><span class="ni">☗</span>Eigentümer</a>
-    <a href="settings.html" aria-current="page"><span class="ni">⚙</span>Einstellungen</a>
-  </nav>
+  <div data-nav></div>
 </div>
 
 <dialog id="ncDlg">
@@ -468,8 +460,9 @@
 </dialog>
 
 <script type="module">
-import { api, esc, frage } from './assets/immo.js';
+import { api, esc, frage, installNav } from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
+installNav();
 
 const build = document.getElementById('build');
 const sub = document.getElementById('sub');
