@@ -222,6 +222,17 @@
   .bubble.gewaehlt .bf,.bubble.gewaehlt .bfrei{color:rgba(255,255,255,.8)}
   .feldnote{display:block;font:400 11.5px var(--body);color:var(--soft);
     line-height:1.5;margin-top:8px}
+  /* ---- CXCIII: gedeckter Ja/Nein-Schalter, im Ton der Blasen ---- */
+  .schalter{display:inline-flex;gap:4px;padding:4px;border-radius:999px;
+    background:var(--paper);box-shadow:inset 0 1px 2px rgba(22,38,44,.06)}
+  .schaltknopf{min-height:40px;min-width:72px;padding:8px 20px;border:none;
+    border-radius:999px;background:transparent;color:var(--soft);
+    font:600 13.5px var(--body);cursor:pointer;transition:background .12s,
+    color .12s,box-shadow .12s}
+  .schaltknopf:active{transform:scale(.97)}
+  .schaltknopf:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .schaltknopf.an{background:var(--teal);color:#fff;
+    box-shadow:0 1px 2px rgba(22,38,44,.12)}
 </style>
 </head>
 <body>
@@ -617,6 +628,12 @@ const EINHEITFELDER = [
   { k: 'nebenflaeche', l: 'Nebenfläche', typ: 'number', schritt: '0.01',
     einheit: 'm²' },
   { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1' },
+  // CXCIII — eine Einheit ganz aus der Nebenkostenabrechnung nehmen.
+  { k: 'nk_abrechnung', l: 'Nimmt an der Nebenkostenabrechnung teil',
+    typ: 'schalter', vorgabe: true,
+    note: 'Aus: selbstgenutzt, separat abgerechnet oder gewerblich mit '
+        + 'eigenem Zähler. Die Einheit zählt dann in keinem '
+        + 'Verteilungsschlüssel mehr mit.' },
 ];
 
 /* Beim Grundstück gibt es keine Wohnfläche und kein Hauskonto — die Zeilen
@@ -842,7 +859,9 @@ function einheitenHtml() {
         <span class="sym">${kostenIcon('Miete')}</span>
         <span class="et">
           <span class="en">${esc(e.bezeichnung)}${e.vermietet ? ''
-            : ' <span class="chip amber">frei</span>'}</span>
+            : ' <span class="chip amber">frei</span>'}${
+            e.nk_abrechnung === false
+              ? ' <span class="chip">nicht in NK</span>' : ''}</span>
           ${einheitDetail(e) ? `<span class="ed">${esc(einheitDetail(e))}</span>` : ''}
         </span>
         <span class="ew">${e.vermietet && e.kaltmiete ? `${eur(e.kaltmiete)} / M` : ''}</span>
@@ -870,11 +889,22 @@ function hausWegHtml() {
 
 /* Die Einheit selbst — ohne ihre Bezeichnung: die steht schon in der Kopfzeile. */
 function einheitStammHtml(e) {
-  const zeilen = EINHEITFELDER.filter(f => f.k !== 'bezeichnung')
+  // Der NK-Schalter (CXCIII) ist ein bool — als „true"-Zeile stünde er nur im
+  // Weg. Die Teilnahme ist der Normalfall und bleibt still; nur der Ausschluss
+  // wird als eigener Hinweis gezeigt.
+  const zeilen = EINHEITFELDER
+    .filter(f => f.k !== 'bezeichnung' && f.k !== 'nk_abrechnung')
     .map(f => paarZeile(f.l, stammwert(f, e))).join('');
+  const aus = e.nk_abrechnung === false
+    ? `<div class="merker"><span class="hi">i</span><span class="ht">
+         <span class="t">Nicht Teil der Nebenkostenabrechnung</span>
+         <span class="d">Diese Einheit zählt in keinem Verteilungsschlüssel mit
+           — selbstgenutzt, separat abgerechnet oder mit eigenem Zähler.
+           „Bearbeiten" schaltet die Teilnahme wieder ein.</span>
+       </span></div>` : '';
   return `<div class="sekopf"><h2 class="sec">Einheit</h2>
       <button data-einheit-edit="${e.id}">Bearbeiten</button></div>
-    <div class="paare">${zeilen}</div>`;
+    <div class="paare">${zeilen}</div>${aus}`;
 }
 
 /* Im Fokus zählt, was diese Wohnung einbringt — Wert und Restschuld gehören
@@ -1279,6 +1309,23 @@ async function feldHtml(f, bereich, wert) {
         <option value="nein" ${ja ? '' : 'selected'}>nein</option>
       </select></div>`;
   }
+  if (f.typ === 'schalter') {
+    // CXCIII — ein gedeckter Ja/Nein-Schalter im Stil der Seite, kein natives
+    // Kästchen. Er borgt sich die Blasen-Verdrahtung (data-wahl/-wahlfeld): der
+    // echte Wert steht im versteckten Feld, `ausFormular` liest ihn als bool.
+    const ja = wert == null ? (f.vorgabe == null ? true : Boolean(f.vorgabe))
+                            : Boolean(wert);
+    const knopf = (w, an, text) => `<button type="button"
+        class="schaltknopf${an ? ' an' : ''}" data-wahl="${w}"
+        aria-pressed="${an}">${text}</button>`;
+    return `<div class="field"><label>${esc(f.l)}</label>
+      <input type="hidden" id="${id}" name="${f.k}" value="${ja ? 'ja' : 'nein'}">
+      <div class="schalter" data-wahlfeld="${esc(f.k)}" role="group"
+           aria-label="${esc(f.l)}">
+        ${knopf('ja', ja, 'Ja')}${knopf('nein', !ja, 'Nein')}
+      </div>
+      ${f.note ? `<span class="feldnote">${esc(f.note)}</span>` : ''}</div>`;
+  }
   const v = wert == null ? (f.vorgabe != null ? f.vorgabe : '') : wert;
   // Felder mit Einheit sind Textfelder: ein <input type="number"> nimmt keine
   // Tausenderpunkte an und stellte seine Pfeilchen genau dorthin, wo das
@@ -1500,7 +1547,9 @@ function ausFormular(form, felder) {
     if (f.hilfe) continue;
     const el = form.elements[f.k];
     if (!el) continue;
-    if (f.typ === 'ja_nein') { werte[f.k] = el.value === 'ja'; continue; }
+    if (f.typ === 'ja_nein' || f.typ === 'schalter') {
+      werte[f.k] = el.value === 'ja'; continue;
+    }
     // Leeren heisst hier wirklich leeren — sonst liesse sich ein einmal
     // gesetztes Enddatum nie wieder entfernen.
     if (f.typ === 'number') { werte[f.k] = zahlAus(el); continue; }
@@ -1773,10 +1822,13 @@ document.getElementById('dlgForm').addEventListener('click', async e => {
     const gruppe = wahl.closest('[data-wahlfeld]');
     const form = document.getElementById('dlgForm');
     form.elements[gruppe.dataset.wahlfeld].value = wahl.dataset.wahl;
-    for (const blase of gruppe.querySelectorAll('.bubble')) {
-      const an = blase === wahl;
-      blase.classList.toggle('gewaehlt', an);
-      blase.setAttribute('aria-pressed', String(an));
+    // Blasen (Einheitenwahl) und der Ja/Nein-Schalter (CXCIII) teilen sich
+    // diese Verdrahtung — jeder trägt seine eigene Aktiv-Klasse.
+    for (const knopf of gruppe.querySelectorAll('[data-wahl]')) {
+      const an = knopf === wahl;
+      knopf.classList.toggle(
+        knopf.classList.contains('schaltknopf') ? 'an' : 'gewaehlt', an);
+      knopf.setAttribute('aria-pressed', String(an));
     }
     return;
   }

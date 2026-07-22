@@ -158,6 +158,29 @@
      Belegen, damit vier Abschlagsrechnungen nicht als eine Zahl dastehen. */
   .zsumme{font:500 11.5px var(--mono);color:var(--teal-d);background:var(--teal-l);
           border-radius:9px;padding:8px 10px;margin-top:8px;line-height:1.5}
+  /* ---- CXCIV: Sonderposten nur für eine Einheit ---- */
+  .sonder .erklaer{display:block;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.5;margin:0 0 12px}
+  .sonder .starten{border:1.5px dashed var(--line);background:transparent;
+    color:var(--teal-d);border-radius:12px;padding:12px 16px;width:100%;
+    font:600 13px var(--disp);cursor:pointer;min-height:48px}
+  .sonder .starten:hover{border-color:var(--teal);background:var(--teal-l)}
+  .sonder .feldlabel{display:block;font:600 10px var(--mono);letter-spacing:.07em;
+    text-transform:uppercase;color:var(--soft);margin:14px 0 8px}
+  .sonder .einheiten{display:flex;flex-wrap:wrap;gap:8px}
+  .ewahl{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;
+    min-height:44px;padding:8px 15px;border:none;border-radius:999px;
+    background:var(--paper);color:inherit;cursor:pointer;text-align:left;
+    box-shadow:inset 0 1px 2px rgba(22,38,44,.05)}
+  .ewahl .ename{font:600 13px var(--body);line-height:1.2}
+  .ewahl .epartei{font:500 10px var(--mono);color:var(--soft);white-space:nowrap}
+  .ewahl.an{background:var(--teal);box-shadow:none}
+  .ewahl.an .ename{color:#fff}
+  .ewahl.an .epartei{color:rgba(255,255,255,.8)}
+  .sonder .abbrechen{margin-top:10px;border:none;background:transparent;
+    color:var(--soft);text-decoration:underline;text-underline-offset:3px;
+    cursor:pointer;font:600 12px var(--disp);padding:10px 2px;min-height:44px}
+  .sonder .abbrechen:hover{color:var(--ink)}
 
   .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:12px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -270,6 +293,10 @@ let leerstaende = new Set();
 let ansicht = 'pruef';
 let sortierung = 'status';
 const offen = new Set();
+/* CXCIV — Sonderposten nur für eine Einheit: ob das Formular aufgeklappt ist
+   und welche Einheit gerade gewählt wurde. */
+let sonderOffen = false;
+let sonderEinheit = '';
 
 /* Welche Position gerade einen Beleg erwartet — gesetzt beim Klick auf den
    Scan-Knopf, gelesen, wenn die Kamera zurückkommt. */
@@ -373,6 +400,21 @@ function doppelteEinheit(namen) {
    Prozentanteil machen sie lesbar, und erst das Eingabefeld korrigierbar. */
 function verteilungHtml(k) {
   if (!k.position_id) return '';
+  // CXCIV: ein Sonderposten wird nicht über einen Schlüssel verteilt — er geht
+  // ganz auf seine Einheit. Schlüsselwahl und Gewichtszeilen entfielen hier
+  // sonst sinnlos nebeneinander.
+  if (k.nur_einheit) {
+    const traeger = Object.keys(k.anteile || {});
+    return `<div class="vt">
+        <div class="zk">Verteilung · Sonderposten</div>
+        <div class="zsumme">Zu 100 % auf ${esc(k.nur_einheit)}${
+          traeger.length ? ` · ${traeger.map(esc).join(' · ')}` : ''}</div>
+        ${!traeger.length ? `<div class="warnung"><span>▲</span>
+          <span><b>Keine Partei für ${esc(k.nur_einheit)}.</b> Ist die Einheit
+          im Zeitraum vermietet oder von der NK-Abrechnung ausgeschlossen?</span>
+          </div>` : ''}
+      </div>`;
+  }
   const meta = schluesselMeta(k.schluessel);
   const eintraege = Object.entries(k.anteile || {});
   const summe = eintraege.reduce((s, [, w]) => s + Number(w || 0), 0);
@@ -439,7 +481,9 @@ function zeileHtml(k, i) {
     // ohne den Hinweis waere das nur am Farbton des Hakens zu erkennen.
     k.zustand === 'offen' ? 'Betrag fehlt' : null,
     k.ohne_verteilung ? 'Verteilung fehlt' : null,
-    k.schluessel ? `Schlüssel ${schluesselMeta(k.schluessel)?.titel
+    // CXCIV: ein Sonderposten nennt seine Einheit statt eines Schlüssels.
+    k.nur_einheit ? `Nur ${k.nur_einheit} · 100 %` : null,
+    !k.nur_einheit && k.schluessel ? `Schlüssel ${schluesselMeta(k.schluessel)?.titel
                                 || k.schluessel}` : null,
     anteilProzent != null ? `${anteilProzent} % der Kosten` : null,
     // Aus wie vielen Belegen die Summe entstand (CLXXXII) — sonst sieht eine
@@ -616,6 +660,73 @@ function abschlussHtml() {
     </div>`;
 }
 
+/* Die Einheiten des Objekts samt der Partei, die einen Sonderposten dort
+   tragen würde. Grundlage ist die Schlüssel-Vorschau: dort steht je Bezug
+   Partei und Einheit — und ausgeschlossene Einheiten (CXCIII) fehlen bereits,
+   für sie käme ohnehin keine Verteilung zustande. */
+function sonderEinheiten() {
+  const map = new Map();
+  for (const p of (schluessel?.parteien || [])) {
+    if (!p.einheit) continue;
+    if (!map.has(p.einheit)) map.set(p.einheit, new Set());
+    map.get(p.einheit).add(p.partei);
+  }
+  return [...map.entries()].map(([einheit, parteien]) =>
+    ({ einheit, parteien: [...parteien] }));
+}
+
+/* CXCIV — der Sonderweg neben der Katalog-Checkliste: eine Position, die zu
+   100 % auf eine einzige Einheit geht (Reparatur nur in Wohnung 2, eigener
+   Warmwasserboiler). Der Schlüssel spielt dabei keine Rolle. */
+function sonderpostenHtml() {
+  if (daten.status !== 'in Arbeit') return '';
+  const einheiten = sonderEinheiten();
+  if (!einheiten.length) return '';
+
+  if (!sonderOffen) {
+    return `<div class="karte sonder">
+        <h3>Sonderposten</h3>
+        <span class="erklaer">Eine Kostenart trifft nur eine Einheit — eine
+          Reparatur in einer Wohnung, ein eigener Boiler. Sie wird dann zu
+          100 % auf diese Einheit verrechnet, nicht über einen Schlüssel
+          verteilt.</span>
+        <button class="starten" data-sonder-auf="1">＋ Sonderposten für eine
+          Einheit anlegen</button>
+      </div>`;
+  }
+
+  const gewaehlt = einheiten.some(e => e.einheit === sonderEinheit)
+    ? sonderEinheit : '';
+  const blasen = einheiten.map(e => `
+    <button type="button" class="ewahl${e.einheit === gewaehlt ? ' an' : ''}"
+            data-sonder-einheit="${esc(e.einheit)}"
+            aria-pressed="${e.einheit === gewaehlt}">
+      <span class="ename">${esc(e.einheit)}</span>
+      ${e.parteien.length
+        ? `<span class="epartei">${esc(e.parteien.join(' · '))}</span>` : ''}
+    </button>`).join('');
+
+  return `<div class="karte sonder">
+      <h3>Sonderposten anlegen</h3>
+      <span class="erklaer">Der Betrag geht zu 100 % auf die gewählte Einheit —
+        ihre Partei trägt ihn allein.</span>
+      <span class="feldlabel">Bezeichnung</span>
+      <div class="nachtrag">
+        <input type="text" id="sonderName" placeholder="z. B. Reparatur Bad"
+               aria-label="Bezeichnung des Sonderpostens">
+      </div>
+      <span class="feldlabel">Einheit — trägt zu 100 %</span>
+      <div class="einheiten">${blasen}</div>
+      <div class="nachtrag">
+        <input type="number" step="0.01" id="sonderBetrag"
+               placeholder="Betrag (optional)"
+               aria-label="Betrag des Sonderpostens">
+        <button data-sonder-anlegen="1">Anlegen</button>
+      </div>
+      <button class="abbrechen" data-sonder-zu="1">Abbrechen</button>
+    </div>`;
+}
+
 async function zeichnen() {
   const f = daten.fortschritt;
   const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
@@ -656,7 +767,8 @@ async function zeichnen() {
       .sort((a, b) => SORTIERUNG[sortierung](a.k, b.k));
 
     rumpf = flussKarte + sortWahl +
-      sortiert.map(({ k, i }) => zeileHtml(k, i)).join('') + abschlussHtml();
+      sortiert.map(({ k, i }) => zeileHtml(k, i)).join('')
+      + sonderpostenHtml() + abschlussHtml();
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
@@ -794,6 +906,32 @@ async function positionAnlegen(knopf) {
     melde(betrag ? `„${kostenart}“ erfasst · ${eur(betrag)}`
                  : `„${kostenart}“ angelegt — jetzt den Betrag eintragen`, 'pos');
     offen.add(i);
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Anlegen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* CXCIV — der Sonderposten geht mit `nur_einheit` an den Server; die Engine
+   setzt die Gewichte auf 100 % für die Partei dieser Einheit. Der Schlüssel
+   spielt keine Rolle. */
+async function sonderpostenAnlegen(knopf) {
+  const kostenart = inhalt.querySelector('#sonderName')?.value.trim();
+  const betrag = Number(inhalt.querySelector('#sonderBetrag')?.value) || 0;
+  if (!kostenart) return melde('Der Sonderposten braucht eine Bezeichnung', 'neg');
+  if (!sonderEinheit) return melde('Wähle die Einheit, die ihn trägt', 'neg');
+  knopf.disabled = true;
+  knopf.textContent = 'Lege an …';
+  try {
+    await api(`/zeitraeume/${zid}/positionen`, {
+      method: 'POST',
+      body: { kostenart, betrag, nur_einheit: sonderEinheit },
+    });
+    melde(`„${kostenart}“ · zu 100 % auf ${sonderEinheit}`, 'pos');
+    sonderOffen = false;
+    sonderEinheit = '';
     await laden();
   } catch (fehler) {
     knopf.disabled = false;
@@ -1012,6 +1150,28 @@ inhalt.addEventListener('click', async e => {
 
   const anlegen = e.target.closest('[data-anlegen]');
   if (anlegen) return positionAnlegen(anlegen);
+
+  // CXCIV — Sonderposten für eine Einheit
+  if (e.target.closest('[data-sonder-auf]')) {
+    sonderOffen = true; return zeichnen();
+  }
+  if (e.target.closest('[data-sonder-zu]')) {
+    sonderOffen = false; sonderEinheit = ''; return zeichnen();
+  }
+  const sonderEinh = e.target.closest('[data-sonder-einheit]');
+  if (sonderEinh) {
+    sonderEinheit = sonderEinh.dataset.sonderEinheit;
+    // Nur die Blasen umschalten, damit die eingetippte Bezeichnung stehen
+    // bleibt — ein voller Neuaufbau würde die Eingabefelder leeren.
+    for (const knopf of inhalt.querySelectorAll('[data-sonder-einheit]')) {
+      const an = knopf === sonderEinh;
+      knopf.classList.toggle('an', an);
+      knopf.setAttribute('aria-pressed', String(an));
+    }
+    return;
+  }
+  const sonderNeu = e.target.closest('[data-sonder-anlegen]');
+  if (sonderNeu) return sonderpostenAnlegen(sonderNeu);
 
   const entfernen = e.target.closest('[data-entfernen]');
   if (entfernen) return positionEntfernen(entfernen);

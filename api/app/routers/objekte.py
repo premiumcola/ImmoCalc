@@ -20,7 +20,8 @@ from ..nachpflege import hinweise, zusammenfassung
 from ..models import (Dokument, Einheit, Kostenart, Kostenposition, Miete,
                       Objekt, Partei, Vorauszahlung, Zeitraum, ist_grundstueck)
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
-                          fehlende_angaben, stammdaten, vorschau)
+                          ableiten_einheit, fehlende_angaben, stammdaten,
+                          vorschau)
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["objekte"])
@@ -480,7 +481,7 @@ def einheit_aendern(eid: int, data: dict,
     ihre Vorauszahlung voll erstattet, ohne dass es irgendwo auffiele."""
     e = _einheit(session, eid)
     erlaubt = {"bezeichnung", "nutzungsart", "flaeche", "terrasse",
-               "nebenflaeche", "stellplaetze"}
+               "nebenflaeche", "stellplaetze", "nk_abrechnung"}
     felder = bereinige(Einheit, {k: v for k, v in data.items() if k in erlaubt})
     if "bezeichnung" in felder:
         neu = (felder["bezeichnung"] or "").strip()
@@ -650,6 +651,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "erledigt": erledigt,
             "betrag": p.betrag if p else None,
             "schluessel": p.schluessel if p else None,
+            "nur_einheit": p.nur_einheit if p else "",
             "wertquelle": p.wertquelle if p else None,
             **_verteilung(p),
             **_zusammensetzung(p),
@@ -664,7 +666,8 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         checkliste.append({
             "kostenart": p.kostenart, "s35": p.s35,
             "erledigt": p.status == "erledigt", "betrag": p.betrag,
-            "schluessel": p.schluessel, "wertquelle": p.wertquelle,
+            "schluessel": p.schluessel, "nur_einheit": p.nur_einheit,
+            "wertquelle": p.wertquelle,
             **_verteilung(p),
             **_zusammensetzung(p),
             "position_id": p.id, "beleg_monat": None,
@@ -809,10 +812,15 @@ def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> di
 
 
 class PositionNeu(BaseModel):
-    """Ohne `anteile` werden die Gewichte aus dem Schlüssel abgeleitet."""
+    """Ohne `anteile` werden die Gewichte aus dem Schlüssel abgeleitet.
+
+    `nur_einheit` (CXCIV) macht daraus einen Sonderposten: ist eine Einheit
+    genannt, geht die Position zu 100 % auf diese Einheit, der Schlüssel spielt
+    keine Rolle mehr."""
     kostenart: str
     betrag: float = 0.0
     schluessel: str = VORGABE
+    nur_einheit: str = ""
     wertquelle: str = "manuell"
     status: Optional[str] = None
     s35: Optional[bool] = None
@@ -845,23 +853,33 @@ def position_anlegen(zid: int, data: PositionNeu,
                                  f"über „Als Kostenposition übernehmen“ "
                                  f"dazugerechnet.")
 
+    # CXCIV: ein Sonderposten trägt seine Gewichte selbst — zu 100 % auf die
+    # genannte Einheit. Der Schlüssel wird nicht abgeleitet.
+    anteile = data.anteile
+    if data.nur_einheit and anteile is None:
+        anteile = ableiten_einheit(session, z, data.nur_einheit)
     try:
         p = position_bauen(session, z, data.kostenart, betrag=data.betrag,
                            schluessel=data.schluessel,
                            wertquelle=data.wertquelle, status=data.status,
-                           s35=data.s35, anteile=data.anteile)
+                           s35=data.s35, anteile=anteile)
     except UnbekannterSchluessel as fehler:
         raise HTTPException(400, str(fehler)) from fehler
+    if data.nur_einheit:
+        p.nur_einheit = data.nur_einheit
+        session.add(p)
     session.commit()
     session.refresh(p)
     return {"id": p.id, "kostenart": p.kostenart, "status": p.status,
-            "anteile": p.anteile, "abgeleitet": data.anteile is None}
+            "anteile": p.anteile, "nur_einheit": p.nur_einheit,
+            "abgeleitet": data.anteile is None}
 
 
 class PositionIn(BaseModel):
     betrag: Optional[float] = None
     status: Optional[str] = None
     schluessel: Optional[str] = None
+    nur_einheit: Optional[str] = None
     wertquelle: Optional[str] = None
     anteile: Optional[dict[str, float]] = None
     s35: Optional[bool] = None
@@ -887,19 +905,27 @@ def position_aendern(pid: int, data: PositionIn,
         raise HTTPException(400, f"Unbekannter Verteilungsschlüssel "
                                  f"'{data.schluessel}'")
     umgestellt = data.schluessel is not None and data.schluessel != p.schluessel
-    for feld in ("status", "schluessel", "wertquelle", "s35"):
+    # CXCIV: die Einheit eines Sonderpostens wechseln — oder ihn wieder zum
+    # normalen, über den Schlüssel verteilten Posten machen (leerer Wert).
+    neue_einheit = (data.nur_einheit is not None
+                    and data.nur_einheit != p.nur_einheit)
+    for feld in ("status", "schluessel", "nur_einheit", "wertquelle", "s35"):
         wert = getattr(data, feld)
         if wert is not None:
             setattr(p, feld, wert)
     if data.anteile is not None:
         p.anteile = data.anteile
-    elif umgestellt:
-        p.anteile = _gewichte(session, _zeitraum(session, p.zeitraum_id),
-                              p.schluessel)
+    elif neue_einheit or umgestellt:
+        z = _zeitraum(session, p.zeitraum_id)
+        # Solange eine Einheit genannt ist, trägt sie zu 100 %; sonst zählt
+        # wieder der Schlüssel über alle Parteien.
+        p.anteile = (ableiten_einheit(session, z, p.nur_einheit)
+                     if p.nur_einheit else _gewichte(session, z, p.schluessel))
     session.add(p)
     session.commit()
     return {"ok": True, "betrag": p.betrag, "status": p.status,
-            "schluessel": p.schluessel, "anteile": p.anteile}
+            "schluessel": p.schluessel, "nur_einheit": p.nur_einheit,
+            "anteile": p.anteile}
 
 
 @router.delete("/positionen/{pid}")

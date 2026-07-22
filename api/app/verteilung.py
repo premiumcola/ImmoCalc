@@ -153,8 +153,17 @@ def bezuege(einheiten: list[Einheit], mieten: list[Miete],
     Mieter: bei 60 m² (halbes Jahr) und 90 m² zahlte das OG 75,2 % statt 60 %.
     Mit dem Leerstands-Bezug summiert sich jede Einheit wieder exakt auf ihre
     Fläche, und die unbelegte Zeit bleibt beim Eigentümer.
+
+    CXCIII: eine Einheit mit `nk_abrechnung == False` ist gar nicht Teil dieser
+    Abrechnung — selbstgenutzt, separat abgerechnet oder gewerblich mit eigenem
+    Zähler. Sie taucht in keinem Schlüssel auf: weder ihr Mietverhältnis noch
+    ein Leerstands-Bezug entsteht. Die Kosten verteilen sich allein auf die
+    teilnehmenden Einheiten und gehen dort exakt auf — die ausgeschlossene
+    Einheit verzerrt die Anteile der übrigen nicht.
     """
-    flaechen = {e.bezeichnung: _gesamtflaeche(e) for e in einheiten}
+    teilnehmend = [e for e in einheiten if e.nk_abrechnung]
+    ausgeschlossen = {e.bezeichnung for e in einheiten if not e.nk_abrechnung}
+    flaechen = {e.bezeichnung: _gesamtflaeche(e) for e in teilnehmend}
     personen_je = {p.name: p.personen for p in parteien}
     treffer: list[Bezug] = []
     belegt: dict[str, list[tuple[date, date]]] = {}
@@ -167,15 +176,19 @@ def bezuege(einheiten: list[Einheit], mieten: list[Miete],
         # eindeutig zu dieser — sonst stünde die Wohnung ein zweites Mal als
         # eigene Partei in der Verteilung und bekäme Kosten aufgebrummt.
         name = m.einheit or (einheiten[0].bezeichnung if len(einheiten) == 1 else "")
+        # Zeigt das Mietverhältnis auf eine ausgeschlossene Einheit, gehört es
+        # nicht in diese Abrechnung — der Mieter wird separat abgerechnet.
+        if name in ausgeschlossen:
+            continue
         von, bis = max(m.ab_datum, start), min(m.bis_datum or ende, ende)
         belegt.setdefault(name, []).append((von, bis))
         treffer.append(Bezug(
             partei=m.partei, einheit=name, flaeche=flaechen.get(name),
             personen=m.personen or personen_je.get(m.partei, 1),
             ab=von, bis=bis, zeiten=[(von, bis)],
-            zugeordnet=not einheiten or name in flaechen))
+            zugeordnet=not teilnehmend or name in flaechen))
 
-    for e in einheiten:
+    for e in teilnehmend:
         frei = _luecken(belegt.get(e.bezeichnung, []), start, ende)
         if not frei:
             continue
@@ -272,6 +285,29 @@ def gewichte(schluessel: str, bezuege_: list[Bezug],
     return out if sum(out.values()) > 0 else {}
 
 
+def nur_einheit_gewichte(bezuege_: list[Bezug], einheit: str,
+                         start: date, ende: date) -> dict[str, float]:
+    """CXCIV: Gewichte für einen Sonderposten, der zu 100 % auf eine Einheit
+    geht (Reparatur nur in Wohnung 2, eigener Warmwasserboiler).
+
+    Nur die Bezüge dieser einen Einheit tragen — nach Wohndauer, genau wie beim
+    Schlüssel „einheiten", bloß auf diese Einheit beschränkt. Zusammen ergeben
+    sie 1,0, sodass der volle Betrag exakt bei dieser Einheit landet. Bei einem
+    Mieterwechsel teilen Vor- und Nachmieter sich den Posten nach Dauer; stand
+    die Einheit einen Teil des Jahres leer, bleibt dieser Anteil beim
+    Eigentümer. Es steht immer die Partei/der Mieter der Einheit da, nie ein
+    Pseudo-Name."""
+    out: dict[str, float] = {}
+    for b in bezuege_:
+        if b.einheit != einheit:
+            continue
+        w = _gewicht("einheiten", b, start, ende)
+        if w is None:
+            continue
+        out[b.partei] = round(out.get(b.partei, 0.0) + w, 4)
+    return out if sum(out.values()) > 0 else {}
+
+
 def stammdaten(session: Session, z: Zeitraum) -> list[Bezug]:
     """Bezüge eines Zeitraums aus der Datenbank."""
     einheiten = list(session.exec(
@@ -286,6 +322,14 @@ def stammdaten(session: Session, z: Zeitraum) -> list[Bezug]:
 def ableiten(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float]:
     """Gewichte für eine neue oder umgestellte Position."""
     return gewichte(schluessel, stammdaten(session, z), z.start, z.ende)
+
+
+def ableiten_einheit(session: Session, z: Zeitraum,
+                     einheit: str) -> dict[str, float]:
+    """CXCIV: Gewichte für einen Sonderposten, der zu 100 % auf eine Einheit
+    geht — der Schlüssel spielt dabei keine Rolle."""
+    return nur_einheit_gewichte(stammdaten(session, z), einheit,
+                                z.start, z.ende)
 
 
 def ohne_einheit(bezuege_: list[Bezug]) -> list[str]:

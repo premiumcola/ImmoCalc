@@ -30,9 +30,11 @@ START, ENDE = date(JAHR, 1, 1), date(JAHR, 12, 31)
 
 # ---------------------------------------------------------------- Ableitung
 
-def _einheit(bezeichnung: str, flaeche=None, terrasse=None, nebenflaeche=None):
+def _einheit(bezeichnung: str, flaeche=None, terrasse=None, nebenflaeche=None,
+             nk_abrechnung: bool = True):
     return Einheit(objekt_id=1, bezeichnung=bezeichnung, flaeche=flaeche,
-                   terrasse=terrasse, nebenflaeche=nebenflaeche)
+                   terrasse=terrasse, nebenflaeche=nebenflaeche,
+                   nk_abrechnung=nk_abrechnung)
 
 
 def _miete(einheit: str, partei: str, personen: int = 1,
@@ -254,6 +256,88 @@ def test_unbekannter_schluessel_wird_abgelehnt():
         verteilung.gewichte("mondphase", [], START, ENDE)
 
 
+# ---------------------------------------------- CXCIII: Einheit ausschliessen
+
+def test_ausgeschlossene_einheit_zaehlt_in_keinem_schluessel():
+    """Fund CXCIII: eine Einheit mit nk_abrechnung=False (selbstgenutzt,
+    separat abgerechnet) taucht in keinem Schlüssel auf — weder ihr Mieter noch
+    ein Leerstand. Die übrigen Einheiten tragen exakt ihre eigene Fläche,
+    nichts wird verzerrt."""
+    einheiten = [_einheit("EG", 60), _einheit("OG", 90),
+                 _einheit("Laden", 50, nk_abrechnung=False)]
+    mieten = [_miete("EG", "Alpha", personen=2),
+              _miete("OG", "Beta", personen=3),
+              _miete("Laden", "Gamma", personen=1)]
+    b = verteilung.bezuege(einheiten, mieten, [], START, ENDE)
+    assert "Gamma" not in {x.partei for x in b}, "der Ladenmieter ist raus"
+
+    flaeche = verteilung.gewichte("flaeche", b, START, ENDE)
+    assert flaeche == {"Alpha": 60, "Beta": 90}, "ohne die 50 m² des Ladens"
+    personen = verteilung.gewichte("personen", b, START, ENDE)
+    assert personen == {"Alpha": 2, "Beta": 3}
+    einh = verteilung.gewichte("einheiten", b, START, ENDE)
+    assert einh == {"Alpha": 1.0, "Beta": 1.0}, "zwei Einheiten, nicht drei"
+
+
+def test_ausgeschlossene_einheit_bekommt_keinen_leerstand():
+    """Auch die leere Zeit einer ausgeschlossenen Einheit gehört nicht in diese
+    Abrechnung — sie darf keinen Leerstands-Bezug erzeugen."""
+    b = verteilung.bezuege(
+        [_einheit("EG", 60), _einheit("DG", 50, nk_abrechnung=False)],
+        [_miete("EG", "Alpha")], [], START, ENDE)
+    assert verteilung.leerstaende(b) == [], "das leere DG bleibt draussen"
+    assert verteilung.gewichte("flaeche", b, START, ENDE) == {"Alpha": 60}
+
+
+def test_ausschluss_verzerrt_die_uebrigen_anteile_nicht():
+    """Die Kernbedingung am Geld: 300 € nach Fläche auf drei Einheiten, eine
+    davon ausgeschlossen. Die übrigen zwei (60 + 90 m²) tragen zusammen exakt
+    300 €, als gäbe es die dritte nicht."""
+    from app.engine import Position, abrechnung
+    b = verteilung.bezuege(
+        [_einheit("EG", 60), _einheit("OG", 90),
+         _einheit("Laden", 50, nk_abrechnung=False)],
+        [_miete("EG", "Alpha"), _miete("OG", "Beta"),
+         _miete("Laden", "Gamma")], [], START, ENDE)
+    anteile = verteilung.gewichte("flaeche", b, START, ENDE)
+    res = abrechnung([Position("Wasser", 300.0, "flaeche", anteile, False)], {})
+    kosten = {p: res["parteien"][p]["kosten"] for p in res["parteien"]}
+    assert kosten == {"Alpha": 120.0, "Beta": 180.0}
+    assert "Gamma" not in kosten
+    assert round(sum(kosten.values()), 2) == 300.0, "die Summe geht exakt auf"
+
+
+# ---------------------------------------------- CXCIV: Sonderposten je Einheit
+
+def test_nur_einheit_gewicht_geht_ganz_an_die_partei():
+    """Fund CXCIV: ein Sonderposten geht zu 100 % auf eine Einheit — ihre
+    Partei trägt ihn allein, kein Pseudo-Name."""
+    b = verteilung.bezuege([_einheit("EG", 60), _einheit("OG", 90)],
+                           [_miete("EG", "Alpha"), _miete("OG", "Beta")],
+                           [], START, ENDE)
+    assert verteilung.nur_einheit_gewichte(b, "OG", START, ENDE) == {"Beta": 1.0}
+    assert verteilung.nur_einheit_gewichte(b, "EG", START, ENDE) == {"Alpha": 1.0}
+
+
+def test_nur_einheit_teilt_beim_mieterwechsel_nach_dauer():
+    """Bei einem Mieterwechsel in der Einheit teilen Vor- und Nachmieter den
+    Sonderposten nach Wohndauer — zusammen ergeben sie exakt 1,0."""
+    b = _wechsel_im_haus(date(JAHR, 7, 15))
+    g = verteilung.nur_einheit_gewichte(b, "EG", START, ENDE)
+    assert sorted(g) == ["Nachher", "Vorher"]
+    assert "Beta" not in g, "das OG trägt den Posten nicht mit"
+    assert round(sum(g.values()), 4) == 1.0
+    assert g["Vorher"] > g["Nachher"], "wer länger wohnt, trägt mehr"
+
+
+def test_nur_einheit_selbstgenutzt_bleibt_beim_eigentuemer():
+    """Eine ohne Mietverhältnis geführte Einheit (Eigennutzung) trägt den
+    Sonderposten unter ihrem eigenen Namen — er bleibt beim Eigentümer."""
+    b = verteilung.bezuege([_einheit("EG", 60), _einheit("OG", 90)],
+                           [_miete("OG", "Beta")], [], START, ENDE)
+    assert verteilung.nur_einheit_gewichte(b, "EG", START, ENDE) == {"EG": 1.0}
+
+
 def test_einzelwohnung_ohne_einheitenzuordnung_bleibt_eine_partei():
     """Ein Mietverhältnis ohne gewählte Einheit gehört bei genau einer Einheit
     zu dieser — sonst stünde die Wohnung zweimal in der Verteilung."""
@@ -352,6 +436,89 @@ def test_kernfall_position_mit_flaeche_ergibt_echte_betraege():
         assert round(sum(p["kosten"] for p in a["parteien"].values()), 2) == 500.0
         # und die Vorauszahlungen treffen dieselben Parteien
         assert a["parteien"]["Mieter Alpha"]["saldo"] == 100.0
+
+
+def _dritte_einheit_mit_mieter(c, slug: str, bezeichnung: str,
+                               partei: str, flaeche: float) -> int:
+    """Legt eine weitere Einheit samt Mieter an und gibt ihre id zurück."""
+    eid = c.post(f"/api/objekte/{slug}/einheiten",
+                 json={"bezeichnung": bezeichnung, "flaeche": flaeche}).json()["id"]
+    antwort = c.post(f"/api/objekte/{slug}/mieten", json={
+        "einheit": bezeichnung, "partei": partei, "personen": 1,
+        "kaltmiete": 800.0, "email": "gewerbe@example.org",
+        "ab_datum": f"{JAHR}-01-01"})
+    assert antwort.status_code == 201, antwort.text
+    return eid
+
+
+def test_endpunkt_ausschluss_haelt_die_summe():
+    """CXCIII über die API: eine dritte Einheit „Laden" wird ausgeschlossen.
+    300 € Wasser nach Fläche verteilen sich exakt auf EG (60) und OG (90) —
+    120 € und 180 € —, der Ladenmieter taucht in der Abrechnung nicht auf."""
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zwei_wohnungen(c)
+        eid = _dritte_einheit_mit_mieter(c, slug, "Laden", "Mieter Gamma", 50)
+        aus = c.patch(f"/api/einheiten/{eid}", json={"nk_abrechnung": False})
+        assert aus.status_code == 200, aus.text
+
+        pos = c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Wasser", "betrag": 300.0, "schluessel": "flaeche"})
+        assert pos.status_code == 201, pos.text
+        assert pos.json()["anteile"] == {"Mieter Alpha": 60, "Mieter Beta": 90}
+
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        parteien = a["parteien"]
+        assert "Mieter Gamma" not in parteien, "der Laden wird separat abgerechnet"
+        assert parteien["Mieter Alpha"]["kosten"] == 120.0
+        assert parteien["Mieter Beta"]["kosten"] == 180.0
+        assert round(sum(p["kosten"] for p in parteien.values()), 2) == 300.0
+
+
+def test_endpunkt_sonderposten_geht_ganz_auf_eine_einheit():
+    """CXCIV über die API: ein Sonderposten „Reparatur" nur für das OG geht zu
+    100 % auf dessen Mieter — der Schlüssel spielt keine Rolle."""
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zwei_wohnungen(c)
+        pos = c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Reparatur OG", "betrag": 200.0,
+            "nur_einheit": "OG"})
+        assert pos.status_code == 201, pos.text
+        assert pos.json()["nur_einheit"] == "OG"
+        assert pos.json()["anteile"] == {"Mieter Beta": 1.0}
+
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        assert a["parteien"]["Mieter Beta"]["kosten"] == 200.0
+        # Der EG-Mieter trägt vom Sonderposten nichts — er kommt in dieser
+        # einen Position gar nicht vor.
+        assert "Mieter Alpha" not in a["parteien"]
+        assert round(sum(p["kosten"] for p in a["parteien"].values()), 2) == 200.0
+
+        # In der Checkliste ist die Einheit sichtbar hinterlegt.
+        zeile = next(k for k in c.get(f"/api/zeitraeume/{zid}").json()["checkliste"]
+                     if k["kostenart"] == "Reparatur OG")
+        assert zeile["nur_einheit"] == "OG"
+
+
+def test_sonderposten_laesst_sich_zum_normalen_posten_zuruecknehmen():
+    """Wird die Einheit eines Sonderpostens geleert, verteilt er sich wieder
+    über den Schlüssel auf alle Parteien."""
+    with TestClient(app) as c:
+        slug, zid = _objekt_mit_zwei_wohnungen(c)
+        pid = c.post(f"/api/zeitraeume/{zid}/positionen", json={
+            "kostenart": "Wasser", "betrag": 300.0,
+            "nur_einheit": "EG"}).json()["id"]
+        assert c.get(f"/api/zeitraeume/{zid}/abrechnung").json()[
+            "parteien"]["Mieter Alpha"]["kosten"] == 300.0
+
+        geaendert = c.patch(f"/api/positionen/{pid}",
+                            json={"nur_einheit": "", "schluessel": "flaeche"})
+        assert geaendert.status_code == 200, geaendert.text
+        assert geaendert.json()["nur_einheit"] == ""
+        assert geaendert.json()["anteile"] == {"Mieter Alpha": 60,
+                                               "Mieter Beta": 90}
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        assert a["parteien"]["Mieter Alpha"]["kosten"] == 120.0
+        assert a["parteien"]["Mieter Beta"]["kosten"] == 180.0
 
 
 def test_erledigte_position_ohne_gewichte_wird_gemeldet():
