@@ -196,6 +196,43 @@ zutage. Nach Priorität (was jährlich wiederkehrt zuerst):
 | CCVIII | **WEG-Ebene je Objekt an-/abschaltbar** | Beim Objekt wählbar, ob es eine Eigentümergemeinschaft (WEG) ist. **Ist sie an:** die Mieter-Nebenkosten werden als fertige Endwerte vom Zettel der Abrechnungsfirma direkt eingetragen (kein Verteilungsrechnen der App), und es gibt eine WEG-Ebene für die Werte, die nur aus Vermietersicht zählen — Hausgeld, Wirtschaftsplan, Rücklagenzuführung. Ersetzt CLXIII/CCIII |
 | CCIX | **Rücklagenkonto je Objekt** | Ein Saldo (Stand des Rücklagenkontos) plus optional eine monatliche Rücklage/Sparrate. In der Eigentümersicht (Wertentwicklung) sichtbar; der Saldo ist zurückgelegtes Eigentümergeld |
 
+### Aus der Code-Prüfung — 22.07.2026 (4 Finder parallel, jeder Fund gegengeprüft)
+
+Vollständiger Bericht lokal in analyse/review/ bzw. scratch/review/GESAMT.md.
+Reihenfolge: erst echte Bugs, dann Modularisierung/Regelverstöße, dann Kosmetik.
+
+**Bugs — Geld/Zustellung:**
+
+| Nr. | Fund | Datei |
+|---|---|---|
+| CCX | **Ausgezogene Mieter bekommen ihre Abrechnung nie** | `versand.py:45` — `_empfaenger` zählt nur Mieter mit `bis_datum is None`, die Verteilung aber alle, die den Zeitraum schneiden. Ein 2024 ausgezogener Mieter mit Nachzahlung und hinterlegter Mail wird als „ohne Mailadresse" übersprungen. Fix: dasselbe Prädikat wie `verteilung._laufend`, Zeitraum durchreichen |
+| CCXI | **Teilversand gilt beim Retry als vollständig** | `versand.py:185` — Dedup auf Partei-Ebene, Versand aber je Adresse. Ehepaar mit zwei Mails, SMTP-Fehler bei Adresse 2 → nach dem Retry gilt die Partei als versorgt, die zweite Person bekommt nie etwas. Fix: Dedup auf `(Partei, Empfänger)` |
+| CCXII | **Korrigierte Abrechnung nicht erneut zustellbar** | `versand.py:189` — `erneut=True` umgeht den 409, aber der Loop überspringt alle schon belieferten Parteien. Nach einer Korrektur bekommt niemand die neue Abrechnung. Fix: Versandprotokoll beim erneuten Abschluss zurücksetzen |
+
+**Wichtig — Modularisierung, Regelverstöße:**
+
+| Nr. | Fund | Datei |
+|---|---|---|
+| CCXIII | **Natives `<select>` im Mailversand** | `settings.html:386` — Anbieter-Wähler ist ein natives select (Regelverstoß, System-Auswahlrad auf iOS). Auf `auswahlfeld` aus auswahl.js umstellen |
+| CCXIV | **Import-Zirkel cloud ↔ dokumente** | `cloud.py:76` — geteilte Infrastruktur (`_lies`/`_schreib`/`verbindung`/`STRUKTUR`) liegt im cloud-Router, dokumente importiert daraus, cloud fünfmal lazy zurück. In neutrale Module herauslösen |
+| CCXV | **`_objekt(session, slug)` 3× identisch, 17× inline** | `stammdaten.py:38` (+ besitz.py, objekte.py) — als gemeinsame FastAPI-Dependency `objekt_holen` herauslösen |
+| CCXVI | **Navigationsleiste in 8 Seiten kopiert** | `index.html:167` — den `<nav>`-Block zentral aus immo.js injizieren (wie `installLogos()`) statt 8× pflegen |
+| CCXVII | **`.applogo`/Kachel-CSS in 4 Seiten dupliziert** | `index.html:22` — die Regeln einmal nach immo.css, die inline-Kopien entfernen |
+
+**Kosmetik — Aufräumen:**
+
+| Nr. | Fund | Datei |
+|---|---|---|
+| CCXVIII | Leerzustand-Hinweis des Ordner-Browsers greift nur an der Wurzel (Operator-Präzedenz) | `settings.html:575` |
+| CCXIX | Home/End scrollt die Markierung nicht ins Sichtfeld (A11y) | `auswahl.js:147` |
+| CCXX | Euro-/Promille-Formatierer je Seite neu statt aus immo.js (`eur`/`eurKurz`/`eurVoll` + ein neues `promille`) | eingang/status/app/onboarding/eigentuemer/objekt |
+| CCXXI | `Session` doppelt importiert (auch als `DBSession`) | `auswertung.py:17` |
+| CCXXII | `_kern` dupliziert `bezeichnung.vergleichsname` (abweichend bei Ziffern) | `dokumente.py:141` |
+| CCXXIII | Ungenutzter Import `field` | `engine.py:9` |
+| CCXXIV | Fehlende Type-Hints auf Signaturen (breit: kappungsgrenze, nachpflege, export, seed, dokumente, cloud) | mehrere |
+| CCXXV | `mietvergleich.py` in keinen Router verdrahtet (bewusst geparkt, CI/CII) | `mietvergleich.py` |
+| CCXXVI | `alert()` + hartcodierte Mockup-Daten in Dev-Seiten aus public/ erreichbar | `app.html:357`, `logos.html:151` |
+
 ### OCR für Scan-PDFs — 22.07.2026
 
 | Nr. | Aufgabe | Was gemeint ist |
