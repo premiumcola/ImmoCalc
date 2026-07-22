@@ -237,6 +237,50 @@ def spar_fortschreiben(stand: float, rate_monat: float, zinssatz: float | None,
     return round(max(wert, 0.0), 2)
 
 
+def _fortschreiben_darlehen(kredit, basis_jahr: int, basis_wert: float,
+                            rate: float, monate: int) -> float:
+    """Restschuld fortschreiben, mit Zinswechsel am Ende der Zinsbindung (CCXXX).
+
+    Bis zum Bindungsende gilt der feste Satz, danach der variable Anschlusszins.
+    Ist keiner gepflegt oder wird nur rückwärts gerechnet, verhält es sich
+    exakt wie `stand_fortschreiben` — jeder Bestand bleibt unverändert."""
+    fest = kredit.zinssatz
+    variabel = getattr(kredit, "zinssatz_variabel", None)
+    if variabel is None or kredit.zinsbindung_bis is None or monate <= 0:
+        return stand_fortschreiben(basis_wert, rate, fest, monate)
+    # Monate vom Basis-Jahresende bis zum Bindungsende — davor fest, danach variabel.
+    m_wechsel = monate_seit_jahresende(basis_jahr, kredit.zinsbindung_bis)
+    if m_wechsel <= 0:
+        return stand_fortschreiben(basis_wert, rate, variabel, monate)
+    if m_wechsel >= monate:
+        return stand_fortschreiben(basis_wert, rate, fest, monate)
+    zwischen = stand_fortschreiben(basis_wert, rate, fest, m_wechsel)
+    return stand_fortschreiben(zwischen, rate, variabel, monate - m_wechsel)
+
+
+def _jahreszins_kalk(kredit, basis_jahr: int, wert_start: float,
+                     rate: float) -> float:
+    """Kalkulierte Sollzinsen eines Jahres: die Summe der zwölf monatlichen
+    Zinsanteile beim Fortschreiben (mit Zinswechsel). Das Gegenstück zum
+    echten Ist-Wert vom Kontoauszug (CCXXXI)."""
+    fest = kredit.zinssatz
+    variabel = getattr(kredit, "zinssatz_variabel", None)
+    m_wechsel = (monate_seit_jahresende(basis_jahr, kredit.zinsbindung_bis)
+                 if variabel is not None and kredit.zinsbindung_bis else None)
+    wert = float(wert_start or 0)
+    r = float(rate or 0)
+    zinsen = 0.0
+    for i in range(12):
+        satz = variabel if (m_wechsel is not None and i >= m_wechsel) else fest
+        zins = wert * monatszinssatz(satz)
+        zinsen += zins
+        if r > 0 and wert > 0:
+            tilgung = r - zins
+            if tilgung > 0:
+                wert = max(wert - tilgung, 0.0)
+    return round(zinsen, 2)
+
+
 def _reihe(staende: list | None) -> list:
     """Jahresstände, aufsteigend nach Jahr."""
     return sorted((s for s in (staende or []) if s.jahr), key=lambda s: s.jahr)
@@ -305,7 +349,8 @@ def kreditstand(kredit, staende: list | None = None,
     monate = monate_seit_jahresende(basis.jahr, heute)
     stand = (spar_fortschreiben(basis.restschuld, rate, kredit.zinssatz, monate, ziel)
              if bausparer
-             else stand_fortschreiben(basis.restschuld, rate, kredit.zinssatz, monate))
+             else _fortschreiben_darlehen(kredit, basis.jahr, basis.restschuld,
+                                          rate, monate))
     return _lage(art, stand, "jahresstand" if monate == 0 else "fortgeschrieben",
                  basis.jahr, round(float(basis.restschuld or 0), 2),
                  monate, rate, kredit)
@@ -326,19 +371,27 @@ def verlauf(kredit, staende: list | None = None,
     ziel = float(kredit.bausparsumme) if bausparer and kredit.bausparsumme else None
     ende = max(bis_jahr or date.today().year, reihe[-1].jahr)
     eingetragen = {s.jahr: round(float(s.restschuld or 0), 2) for s in reihe}
+    # CCXXXI — die echten Sollzinsen je Jahr, wo der Nutzer sie vom Kontoauszug
+    # eingetragen hat. Steht neben den kalkulierten Zinsen zum Vergleich.
+    ist = {s.jahr: s.zinsen_ist for s in reihe if s.zinsen_ist is not None}
     rate = monatsrate(kredit)
     zeilen: list[dict] = []
     wert = eingetragen[reihe[0].jahr]
     for jahr in range(reihe[0].jahr, ende + 1):
-        if jahr in eingetragen:
+        start = wert                       # Restschuld zum Ende des Vorjahres
+        anker = jahr == reihe[0].jahr      # erstes Jahr: kein Vorjahr zum Rechnen
+        eingetragen_flag = jahr in eingetragen
+        if eingetragen_flag:
             wert = eingetragen[jahr]
-            zeilen.append({"jahr": jahr, "restschuld": wert, "stand": wert,
-                           "eingetragen": True})
-            continue
-        wert = (spar_fortschreiben(wert, rate, kredit.zinssatz, 12, ziel) if bausparer
-                else stand_fortschreiben(wert, rate, kredit.zinssatz, 12))
+        else:
+            wert = (spar_fortschreiben(start, rate, kredit.zinssatz, 12, ziel)
+                    if bausparer
+                    else _fortschreiben_darlehen(kredit, jahr - 1, start, rate, 12))
+        zinsen_kalk = (None if bausparer or anker
+                       else _jahreszins_kalk(kredit, jahr - 1, start, rate))
         zeilen.append({"jahr": jahr, "restschuld": wert, "stand": wert,
-                       "eingetragen": False})
+                       "eingetragen": eingetragen_flag,
+                       "zinsen_kalk": zinsen_kalk, "zinsen_ist": ist.get(jahr)})
     return zeilen
 
 

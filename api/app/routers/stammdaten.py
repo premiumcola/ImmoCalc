@@ -277,6 +277,7 @@ class StandIn(BaseModel):
     jahr: int
     restschuld: float | None = None
     sparstand: float | None = None
+    zinsen_ist: float | None = None       # CCXXXI — echte Sollzinsen laut Kontoauszug
     notiz: str = ""
 
     @property
@@ -333,16 +334,23 @@ def stand_setzen(kid: int, data: StandIn,
     eintrag = session.exec(
         select(Kreditstand).where(Kreditstand.kredit_id == kid,
                                   Kreditstand.jahr == data.jahr)).first()
+    if data.zinsen_ist is not None and data.zinsen_ist < 0:
+        raise HTTPException(400, "Gezahlte Zinsen sind nie negativ")
+
     if eintrag is None:
         eintrag = Kreditstand(kredit_id=kid, jahr=data.jahr)
     eintrag.restschuld = float(wert)
+    # Die echten Zinsen sind optional — ein Stand ohne Kontoauszug bleibt gültig,
+    # ein bereits eingetragener Wert wird nur bei ausdrücklicher Angabe geändert.
+    if data.zinsen_ist is not None:
+        eintrag.zinsen_ist = float(data.zinsen_ist)
     eintrag.notiz = data.notiz
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)
     return {"id": eintrag.id, "jahr": eintrag.jahr,
             "restschuld": eintrag.restschuld, "sparstand": eintrag.restschuld,
-            "art": k.art}
+            "zinsen_ist": eintrag.zinsen_ist, "art": k.art}
 
 
 @router.delete("/kreditstaende/{sid}")

@@ -7,7 +7,8 @@ from sqlmodel import Session, select
 
 from ..db import get_session
 from ..deps import objekt_holen
-from ..models import (Anteil, Einheit, Eigentuemer, Kredit, Kreditstand, Miete,
+from ..models import (Anteil, Einheit, Eigentuemer, Grundschuld,
+                      GrundschuldKredit, Kredit, Kreditstand, Miete,
                       Objekt, ist_grundstueck)
 from ..turnus import jahresbetrag
 from ..vermoegen import (attributionswert, eigentuemer_fraktion, gesamt,
@@ -472,3 +473,114 @@ def eigentuemer_uebersicht(session: Session = Depends(get_session)) -> dict:
             },
         })
     return {"eigentuemer": out}
+
+
+# --------------------------------------------------------------------------
+# CCXXIX — Grundschulden. Eine Grundschuld belastet ein Objekt, sichert aber
+# über die Verknüpfungstabelle einen oder mehrere Kredite — auch Kredite an
+# anderen Objekten (Cross-Collateral). Additiv: ohne Eintrag ändert sich nichts.
+# --------------------------------------------------------------------------
+class GrundschuldIn(BaseModel):
+    betrag: float | None = None
+    rang: str = ""
+    grundbuch_blatt: str = ""
+    glaeubiger: str = ""
+    brief: bool = False
+    notiz: str = ""
+    # None: Verknüpfung unangetastet lassen; eine (auch leere) Liste: neu setzen.
+    kredit_ids: list[int] | None = None
+
+
+def _grundschuld_dict(session: Session, g: Grundschuld) -> dict:
+    kredit_ids = [v.kredit_id for v in session.exec(
+        select(GrundschuldKredit).where(
+            GrundschuldKredit.grundschuld_id == g.id)).all()]
+    return {**g.model_dump(), "kredit_ids": kredit_ids}
+
+
+def _setze_kredite(session: Session, gid: int, kredit_ids: list[int]) -> None:
+    """Die gesicherten Kredite neu verknüpfen: alte Zuordnung weg, gewünschte
+    anlegen. Unbekannte oder doppelte IDs werden still übergangen."""
+    for v in session.exec(select(GrundschuldKredit).where(
+            GrundschuldKredit.grundschuld_id == gid)).all():
+        session.delete(v)
+    gesehen: set[int] = set()
+    for kid in kredit_ids:
+        if kid in gesehen or not session.get(Kredit, kid):
+            continue
+        gesehen.add(kid)
+        session.add(GrundschuldKredit(grundschuld_id=gid, kredit_id=kid))
+
+
+@router.get("/grundschulden/kredit-auswahl", response_model=None)
+def grundschuld_kredit_auswahl(session: Session = Depends(get_session)) -> list:
+    """Alle Kredite über alle Objekte — die Auswahl, welche eine Grundschuld
+    sichert. Eine Grundschuld kann einen Kredit an einem anderen Objekt decken,
+    darum objektübergreifend."""
+    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    reihe = session.exec(select(Kredit)).all()
+    return [{"id": k.id, "bezeichnung": k.bezeichnung, "bank": k.bank,
+             "objekt": (objekte.get(k.objekt_id).name
+                        if objekte.get(k.objekt_id) else "")}
+            for k in reihe]
+
+
+@router.get("/objekte/{slug}/grundschulden", response_model=None)
+def grundschulden(slug: str, session: Session = Depends(get_session),
+                  o: Objekt = Depends(objekt_holen)) -> list:
+    reihe = session.exec(select(Grundschuld)
+                         .where(Grundschuld.objekt_id == o.id)).all()
+    return [_grundschuld_dict(session, g) for g in reihe]
+
+
+@router.post("/objekte/{slug}/grundschulden", status_code=201)
+def grundschuld_anlegen(slug: str, data: GrundschuldIn,
+                        session: Session = Depends(get_session),
+                        o: Objekt = Depends(objekt_holen)) -> dict:
+    if data.betrag is not None and data.betrag < 0:
+        raise HTTPException(400, "Der Betrag einer Grundschuld ist nie negativ")
+    g = Grundschuld(objekt_id=o.id, betrag=data.betrag, rang=data.rang,
+                    grundbuch_blatt=data.grundbuch_blatt,
+                    glaeubiger=data.glaeubiger, brief=data.brief, notiz=data.notiz)
+    session.add(g)
+    session.commit()
+    session.refresh(g)
+    _setze_kredite(session, g.id, data.kredit_ids or [])
+    session.commit()
+    return _grundschuld_dict(session, g)
+
+
+@router.patch("/grundschulden/{gid}")
+def grundschuld_aendern(gid: int, data: GrundschuldIn,
+                        session: Session = Depends(get_session)) -> dict:
+    g = session.get(Grundschuld, gid)
+    if not g:
+        raise HTTPException(404, "Grundschuld nicht gefunden")
+    if data.betrag is not None and data.betrag < 0:
+        raise HTTPException(400, "Der Betrag einer Grundschuld ist nie negativ")
+    g.betrag = data.betrag
+    g.rang = data.rang
+    g.grundbuch_blatt = data.grundbuch_blatt
+    g.glaeubiger = data.glaeubiger
+    g.brief = data.brief
+    g.notiz = data.notiz
+    session.add(g)
+    if data.kredit_ids is not None:
+        _setze_kredite(session, gid, data.kredit_ids)
+    session.commit()
+    session.refresh(g)
+    return _grundschuld_dict(session, g)
+
+
+@router.delete("/grundschulden/{gid}")
+def grundschuld_loeschen(gid: int,
+                         session: Session = Depends(get_session)) -> dict:
+    g = session.get(Grundschuld, gid)
+    if not g:
+        raise HTTPException(404, "Grundschuld nicht gefunden")
+    for v in session.exec(select(GrundschuldKredit).where(
+            GrundschuldKredit.grundschuld_id == gid)).all():
+        session.delete(v)
+    session.delete(g)
+    session.commit()
+    return {"ok": True}

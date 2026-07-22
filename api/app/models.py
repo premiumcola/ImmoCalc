@@ -94,6 +94,18 @@ class Objekt(SQLModel, table=True):
     hausgeld_monatlich: Optional[float] = None     # Hausgeld an die WEG, monatlich
     weg_ruecklage_zufuehrung: Optional[float] = None  # Sparanteil im Hausgeld, mtl.
     weg_verwalter: str = ""                        # Hausverwaltung/Abrechnungsfirma
+    # ----------------------------------------------------------------------
+    # CCXXXV — Erwerbsart. Nicht jedes Objekt wurde gekauft: geerbt, geschenkt
+    # oder überlassen kommt vor. Das ändert die Abschreibung — die AfA wird vom
+    # Rechtsvorgänger fortgeführt („Fußstapfenprinzip", `afa_basis_uebernommen`)
+    # — und, bei vorbehaltenem Nießbrauch, wem die Mieteinnahmen steuerlich
+    # zuzurechnen sind (dann nicht dem eingetragenen Eigentümer). Additiv:
+    # `erwerbsart` steht auf „Kauf", jeder Bestand bleibt unverändert.
+    # ----------------------------------------------------------------------
+    erwerbsart: str = "Kauf"        # Kauf | Schenkung | Erbschaft | Überlassung
+    afa_basis_uebernommen: Optional[float] = None   # vom Vorbesitzer fortgeführte AfA-Bemessung
+    niessbrauch_berechtigt: str = ""   # wer den Nießbrauch hält (leer = keiner)
+    niessbrauch_bis: Optional[date] = None
 
 
 class Einheit(SQLModel, table=True):
@@ -296,6 +308,11 @@ class Kredit(SQLModel, table=True):
     zinsbindung_bis: Optional[date] = None
     beginn: Optional[date] = None
     notiz: str = ""
+    # CCXXX — Anschlusszins nach der Zinsbindung. Läuft die Sollzinsbindung
+    # (`zinsbindung_bis`) aus, gilt meist ein variabler Satz. Ist er hier
+    # gepflegt, schreibt die Restschuld-Rechnung ab dem Bindungsende mit ihm
+    # fort statt stur mit dem alten Satz. Leer = alles wie bisher.
+    zinssatz_variabel: Optional[float] = None   # Prozent p. a., ab zinsbindung_bis
 
 
 class Kreditstand(SQLModel, table=True):
@@ -320,7 +337,38 @@ class Kreditstand(SQLModel, table=True):
     kredit_id: int = Field(foreign_key="kredit.id", index=True)
     jahr: int = Field(index=True)          # der Stand gilt zum 31.12. dieses Jahres
     restschuld: float = 0.0                # Bausparer: Sparstand
+    # CCXXXI — die echten Sollzinsen dieses Jahres laut Bank-Kontoauszug
+    # (Finanzierungskostennachweis). Für die Anlage V zählt dieser Ist-Wert,
+    # nicht die Kalkulation. Leer = es gilt weiter nur die berechnete Zinslast.
+    zinsen_ist: Optional[float] = None
     notiz: str = ""
+
+
+class Grundschuld(SQLModel, table=True):
+    """CCXXIX — eine Grundschuld: das dingliche Pfandrecht, mit dem eine Bank
+    ihren Kredit im Grundbuch absichert.
+
+    Sie hängt am belasteten Objekt (`objekt_id`), sichert aber über die
+    Verknüpfungstabelle `GrundschuldKredit` einen oder mehrere Kredite — auch
+    Kredite an *anderen* Objekten. Genau dieser Fall kommt im Bestand vor: die
+    Grundschuld auf Haus A besichert das Darlehen für Haus B. Additiv: ohne
+    Grundschuld-Eintrag ändert sich an keinem Objekt etwas."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)  # das belastete Objekt
+    betrag: Optional[float] = None
+    rang: str = ""                # Rang im Grundbuch, z. B. „I", „II"
+    grundbuch_blatt: str = ""     # Grundbuchbezirk/Blatt
+    glaeubiger: str = ""          # begünstigte Bank
+    brief: bool = False           # Brief- (True) oder Buchgrundschuld (False)
+    notiz: str = ""
+
+
+class GrundschuldKredit(SQLModel, table=True):
+    """Welche Kredite eine Grundschuld besichert (m:n). Eine Grundschuld kann
+    mehrere Kredite decken, ein Kredit durch mehrere Grundschulden gesichert
+    sein."""
+    grundschuld_id: int = Field(foreign_key="grundschuld.id", primary_key=True)
+    kredit_id: int = Field(foreign_key="kredit.id", primary_key=True)
 
 
 class Bewohner(SQLModel, table=True):
