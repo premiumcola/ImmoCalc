@@ -19,7 +19,19 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | In einfachen Worten | Stand |
 |---|---|---|
-| — | gerade nichts in Arbeit | |
+| CCXIV/CCXVI/CCXVII/CCXX | Restliche Modularisierung: Navigationsleiste, App-Logo-CSS, Euro-Formatierer zentral · Import-Zirkel cloud↔dokumente auflösen | Agents laufen (22.07.) |
+| CCXXVII | Neue Foto-/Scan-PDFs bekommen automatisch eine durchsuchbare Textschicht (OCR im Normalbetrieb) | offen |
+| CCXXVIII | Mehrseitige Dokumente einfach abfotografieren: Rand erkennen, entzerren, zu einem PDF, dann OCR | offen |
+| — | Lücken-Analyse: 390 OCR-Dokumente werden auf fehlende App-Felder durchgesehen (3 Agents) | läuft (22.07.) |
+
+---
+
+## Neu gewünscht — 22.07. nachmittags
+
+| Nr. | Anforderung | Was zu tun ist |
+|---|---|---|
+| CCXXVII | **OCR-Textschicht auch im Normalbetrieb** | Der einmalige Master-Lauf (`tools/ocr_ersetzen.py`, rapidocr → durchsuchbares PDF) muss in die Standard-Dokumentaufnahme wandern: jedes neu aufgenommene PDF ohne Textschicht bekommt sie automatisch, bevor es abgelegt wird. Betrifft `dokumente.py`/`scan.js`/Cloud-Upload; der API-Container braucht die OCR-Abhängigkeiten (`rapidocr-onnxruntime`, `pymupdf`/`pypdfium2`) → Deploy nötig. OCR bleibt optional (fehlt die Lib, still weiter wie bisher). **Priorität hoch** |
+| CCXXVIII | **Mehrseitiger Foto-Scan mit Zuschnitt & Entzerrung** | Dokumentseiten abfotografieren (mehrere nacheinander), den Rand des Dokuments erkennen und abschneiden, das Rest-Papier rechtwinklig skalieren (Perspektivkorrektur/Homographie), die Seiten zu **einem** PDF zusammenfügen, danach OCR (CCXXVII). **Guard:** abbrechen/warnen, wenn der Zuschnitt unrealistisch viel wegschneidet oder das erkannte Viereck sehr unparallel/ungleichseitig ist (schlechte Kantenerkennung → lieber manuell nachziehen). Vanilla, keine Libraries: Kamera über `<input capture>`, Ecken automatisch schätzen + manuell nachziehbar, Entzerrung auf Canvas per Zwei-Dreieck-Textur-Trick, PDF-Bau von Hand wie `abrechnung_pdf.py`. **Priorität hoch** |
 
 ### Am 21.07. abends fertig geworden
 
@@ -214,7 +226,7 @@ Reihenfolge: erst echte Bugs, dann Modularisierung/Regelverstöße, dann Kosmeti
 | Nr. | Fund | Datei |
 |---|---|---|
 | CCXIII | ~~**Natives `<select>` im Mailversand**~~ **erledigt** `0a15f38` | `settings.html:386` — Anbieter-Wähler ist ein natives select (Regelverstoß, System-Auswahlrad auf iOS). Auf `auswahlfeld` aus auswahl.js umstellen |
-| CCXIV | **Import-Zirkel cloud ↔ dokumente** | `cloud.py:76` — geteilte Infrastruktur (`_lies`/`_schreib`/`verbindung`/`STRUKTUR`) liegt im cloud-Router, dokumente importiert daraus, cloud fünfmal lazy zurück. In neutrale Module herauslösen |
+| CCXIV | ~~**Import-Zirkel cloud ↔ dokumente**~~ **erledigt** `2d0badf` | `cloud.py:76` — geteilte Infrastruktur (`_lies`/`_schreib`/`verbindung`/`STRUKTUR`) liegt im cloud-Router, dokumente importiert daraus, cloud fünfmal lazy zurück. In neutrale Module herauslösen |
 | CCXV | ~~**`_objekt(session, slug)` 3× identisch, 17× inline**~~ **erledigt** `fb44d33` | `stammdaten.py:38` (+ besitz.py, objekte.py) — als gemeinsame FastAPI-Dependency `objekt_holen` herauslösen |
 | CCXVI | **Navigationsleiste in 8 Seiten kopiert** | `index.html:167` — den `<nav>`-Block zentral aus immo.js injizieren (wie `installLogos()`) statt 8× pflegen |
 | CCXVII | **`.applogo`/Kachel-CSS in 4 Seiten dupliziert** | `index.html:22` — die Regeln einmal nach immo.css, die inline-Kopien entfernen |
@@ -232,6 +244,57 @@ Reihenfolge: erst echte Bugs, dann Modularisierung/Regelverstöße, dann Kosmeti
 | CCXXIV | Fehlende Type-Hints auf Signaturen (breit: kappungsgrenze, nachpflege, export, seed, dokumente, cloud) | mehrere |
 | CCXXV | `mietvergleich.py` in keinen Router verdrahtet (bewusst geparkt, CI/CII) | `mietvergleich.py` |
 | CCXXVI | `alert()` + hartcodierte Mockup-Daten in Dev-Seiten aus public/ erreichbar | `app.html:357`, `logos.html:151` |
+
+### Aus der Dokument-Lücken-Analyse — 22.07.2026 (3 Fach-Agents, 82 echte OCR-Dokumente)
+
+Vollständiger Bericht lokal in `analyse/gap-analyse-22-07.md`. Nur NEUE Lücken
+sind hier nummeriert; viele Dokumente bestätigen nur bestehende Punkte
+(CXCVI–CCXII) — die Bestätigungen/Verfeinerungen stehen im Bericht. Alle
+Vorschläge additiv (neue Optional-Felder/Tabellen, kein Bruch am Bestand).
+
+**Finanzierung / Kredit / Steuer:**
+
+| Nr. | Lücke | Was zu tun ist |
+|---|---|---|
+| CCXXIX | **Grundschuld als dingliche Sicherheit** — hoch | Zweckerklärungen: Betrag, Rang, Grundbuchblatt, mit/ohne Brief; im Bestand sichert eine Grundschuld auf Objekt A einen Kredit für Objekt B (Cross-Collateral). `Kredit` ist 1:1 zu `objekt_id`. → neue Tabelle `Grundschuld` + m:n-Zuordnung zu `Kredit` |
+| CCXXX | **Variabler Anschlusszins nach Zinsbindung** — hoch | Verträge legen nach `zinsbindung_bis` einen variablen Satz (Referenzzins + Aufschlag) fest; `vermoegen.stand_fortschreiben` rechnet über das Bindungsende hinaus mit dem alten Satz weiter → für Bestandsverträge falsch. → `zinssatz_variabel`/`referenzzins` an `Kredit`, greift ab Bindungsende |
+| CCXXXI | **Zinsen-Ist aus Kontoauszug** — hoch | Jahreskontoauszug weist den echten Sollzins-Jahresbetrag aus (→ Anlage V). App hat nur die Kalkulation. → Feld `zinsen_ist` je Jahr an `Kreditstand`, Auswertung zeigt beide Werte nebeneinander |
+| CCXXXII | **Bereitstellungszinsen** — mittel | Eigener Satz p.a. auf nicht abgerufenen Betrag ab Datum. → `bereitstellungszins_satz`/`_ab` an `Kredit`, getrennter Ausweis |
+| CCXXXIII | **Sondertilgungsrecht** — mittel | „bis X €/Kalenderjahr". → `sondertilgung_jahr_max` an `Kredit` (später ggf. Erinnerung „dieses Jahr noch nicht genutzt") |
+| CCXXXIV | **Auszahlungskurs/Disagio** — niedrig | Nennbetrag ≠ Nettodarlehen über Auszahlkurs %. → `auszahlungskurs_pct` (Default 100) an `Kredit` |
+
+**Erwerb / Eigentum / Grundstück:**
+
+| Nr. | Lücke | Was zu tun ist |
+|---|---|---|
+| CCXXXV | **Unentgeltlicher Erwerb + Nießbrauch** — hoch | Überlassung/Vermächtnis mit vorbehaltenem Nießbrauch; App unterstellt Kauf. Betrifft AfA-Fortführung (Fußstapfenprinzip) und Einkünftezurechnung (Nießbraucher ≠ Eigentümer). → `Objekt.erwerbsart` (Kauf/Schenkung/Erbschaft/Überlassung), AfA-Basis vom Vorbesitzer, Nießbrauch-Felder |
+| CCXXXVI | **Bauträger-Kaufpreisraten (MaBV)** — mittel | Gestaffelt nach Baufortschritt, Bezug auf Notar/UR-Nr., getrenntes Sammelkonto, Sonderausstattung. `Objekt` hat nur `kaufpreis`/`kaufdatum`. → Tabelle `Kaufpreisrate` + `notar`/`urkunden_nr` |
+| CCXXXVII | **Grundbuch-Belastungen** — niedrig | Dienstbarkeiten (Leitungs-/Wegerecht), Veräußerungsverbote, Verfügungsbeschränkungen aus Abt. II; heute nur `flurstueck`/`gemarkung` als Freitext. → Feld `dingliche_lasten` (Freitext) am Objekt |
+| CCXXXVIII | **Grundstückskauf: schwebende Genehmigungen** — niedrig | Fälligkeit hing an Behördengenehmigungen (GrdstVG-Zeugnis, Vorkaufsrechtsverzicht) mit Fristenlauf. → Status-/Freitextfelder am Grundstücks-Objekt |
+
+**WEG / Nebenkosten / Zähler:**
+
+| Nr. | Lücke | Was zu tun ist |
+|---|---|---|
+| CCXXXIX | **Rücklagenkonto-Historie** — mittel | Jahresblatt mit Anfangs-/Endsaldo, Einzahlung, Bankspesen. `Objekt.ruecklage_saldo` (CCIX) ist nur ein aktueller Wert. → Tabelle analog `Kreditstand` (objekt_id, jahr, saldo, notiz) |
+| CCXL | **HKVO Grund-/Verbrauchssplit** — mittel | Heizkosten zwingend in Grund (Fläche) und Verbrauch (Zähler) geteilt, meist 30/70 (§7 HeizkostenV). Kostenart kennt keinen Split-Faktor. → Feld `grundkosten_anteil` an `Kostenart`, Engine teilt automatisch in zwei Positionen |
+| CCXLI | **Flächenvariante je Zweck** — niedrig | Heiz-/Warmwasserfläche ≠ Wohnfläche (ista-Nutzerlisten). `Einheit.flaeche` ist ein einziger Wert. → optionale Zusatzflächen je Einheit, nur wirksam wenn gepflegt |
+
+**Mietverhältnis / Bau / Gewährleistung:**
+
+| Nr. | Lücke | Was zu tun ist |
+|---|---|---|
+| CCXLII | **Übergabe-/Abnahmeprotokoll je Mietverhältnis** — mittel | Zustand je Raum + Zählerstände (Gas/Wasser/Strom/Heizung/WW/Öl) zum Ein-/Auszug, Mängel. `Miete` hat nur ab/bis. → Tabelle `Übergabeprotokoll` (miete_id, Zeitpunkt, Zählerstände, Mängel) |
+| CCXLIII | **Kaution: Anlageart/Rückgabe/Einbehalt** — mittel | `Miete.kaution` ist nur ein Betrag. → `kaution_anlageart`, `kaution_rueckgabe_datum`, `kaution_einbehalt` |
+| CCXLIV | **Schönheitsreparaturen-/Kleinreparaturklausel** — mittel | Grenze je Fall/Jahr; wirkt auf §35a-/Instandhaltungszuordnung (wer zahlt die kleine Reparatur). → `kleinreparatur_grenze_position`/`_jahr`, `schoenheitsreparaturen` am Mietverhältnis |
+| CCXLV | **Abnahme-Mängelliste** — mittel | Je Gewerk/Raum, Frist, Minderungsbetrag; auch Schornsteinfeger-Mängelbescheid mit Frist. → Tabelle `Mangel` (objekt_id, gewerk, beschreibung, frist, minderung_betrag, status) |
+| CCXLVI | **Kündigungsfrist-Staffelung + Befristung** — niedrig | Verlängerung nach 5/8 Jahren, Befristungsgrund §575, Kündigungsverzicht. → `mietvertrag_typ`, `befristungsgrund`, `kuendigungsverzicht_bis` |
+| CCXLVII | **Modernisierungsumlage §559** — niedrig | Maßnahme → Kaltmieten-Erhöhung, heute kein Bezug. → Datensatz „Mieterhöhung" mit Grund (Modernisierung/Index/Staffel/Vergleich) und Verweis auf die Maßnahme |
+| CCXLVIII | **Gewährleistungsfrist ab Abnahme** — niedrig | Abnahmedatum = Fristbeginn (Bau i.d.R. 5 J.); `erinnerungen.py` kennt nur wiederkehrende Termine. → `gewaehrleistung_bis` am Abnahme-/Mangel-Datensatz, von `erinnerungen.py` erfasst |
+
+> Präzisierung zu **CCVII** (kein eigener Punkt): Der „Pflichttermine ohne
+> Zahlung"-Anlass sollte ein freier Text statt fester Enum sein, damit auch
+> Nachbarschafts-/Rechtsfristen mit Eskalationsstufe hineinpassen.
 
 ### OCR für Scan-PDFs — 22.07.2026
 
