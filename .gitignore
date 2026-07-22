@@ -35,3 +35,7 @@ __pycache__/
 scratch/
 node_modules/
 tests/screenshots/
+
+# Laufzeit-Dateien des Auto-Updaters (dürfen den Pull nicht blockieren)
+tools/auto-update.log
+tools/.auto-update.lock
