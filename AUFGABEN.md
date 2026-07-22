@@ -177,7 +177,7 @@ zutage. Nach Priorität (was jährlich wiederkehrt zuerst):
 | Nr. | Aufgabe | Priorität |
 |---|---|---|
 | CXCVI | **Beleg-Metadaten vervollständigen** — Belegdatum, Abrechnungszeitraum (von–bis, jahresübergreifend erlaubt, Semester-Stichtag 30.09.), Zahldatum getrennt vom Belegdatum, Fälligkeit | hoch |
-| CXCVII | **Zahlplan je Beleg (mehrere Termine) + Abschlag/Guthaben/Nachzahlung** — reale Belege haben 2–11 Ratentermine und einen Saldo aus geleisteten Abschlägen, nicht ein einzelnes Fälligkeitsdatum | hoch |
+| CXCVII | ~~Zahlplan je Beleg~~ **verworfen** — der Nutzer: nur der finale echte Rechnungsbetrag zählt, die Zahltermine sind egal. Der Betrag am Beleg (CXXXI) deckt das ab | — |
 | CXCVIII | **Zähler-Stammdaten + Ableseereignisse** — Zählernummer, Typ, Stand alt/neu, Ablesedatum, Zählerwechsel, Zählermiete als Position, Verbrauch als Umlagebasis | hoch |
 | CXCIX | **Kombi-/Sammelbeleg aufteilbar** — ein Bescheid mischt mehrere Kostenarten (Grundsteuer + Wasser) oder zwei Perioden; muss auf mehrere Positionen/Zeiträume verteilbar sein | hoch |
 | CC | **Darlehen mit Konditionen, mehrere je Objekt** — Sollzins, Effektivzins, Zinsbindungsende, Tilgung, Disagio, Rate (Zins/Tilgung getrennt), Auszahlung, Laufzeit, Belastungs-IBAN, Restschuld-Verlauf; Vertragsarten Annuität/Ratenkredit/Bausparer/Zwischenfinanzierung. `vermoegen.py` auf mehrere Tranchen erweitern | mittel |
@@ -188,6 +188,13 @@ zutage. Nach Priorität (was jährlich wiederkehrt zuerst):
 | CCV | **CO2-Kostenaufteilung** je Brennstoffbeleg (kWh, CO2-kg, CO2-Abgabe, Vermieteranteil ab 2023 nach CO2KostAufG) | niedrig |
 | CCVI | **PV-Einspeisung als Einnahmequelle** im Cashflow (kWp, Inbetriebnahme, kWh, gestaffelter Tarif, Abschlagsplan) | niedrig |
 | CCVII | **Weitere Stammdaten** — Objekt-Hauskonto (IBAN) + SEPA-Mandat, Vergleichsmiete/Mietspiegel je Objekt, Eigentümer als Gemeinschaft/GbR, Objekttyp unbebautes Grundstück (Grundsteuer A), Pflichttermine ohne Zahlung (Feuerstättenschau), Inventarliste je Einheit, §-35a-Flag je Position mit Belegzuordnung, unterjähriger Versorger-/Mieterwechsel | niedrig |
+
+### WEG-Ebene und Rücklagenkonto — 22.07.2026
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CCVIII | **WEG-Ebene je Objekt an-/abschaltbar** | Beim Objekt wählbar, ob es eine Eigentümergemeinschaft (WEG) ist. **Ist sie an:** die Mieter-Nebenkosten werden als fertige Endwerte vom Zettel der Abrechnungsfirma direkt eingetragen (kein Verteilungsrechnen der App), und es gibt eine WEG-Ebene für die Werte, die nur aus Vermietersicht zählen — Hausgeld, Wirtschaftsplan, Rücklagenzuführung. Ersetzt CLXIII/CCIII |
+| CCIX | **Rücklagenkonto je Objekt** | Ein Saldo (Stand des Rücklagenkontos) plus optional eine monatliche Rücklage/Sparrate. In der Eigentümersicht (Wertentwicklung) sichtbar; der Saldo ist zurückgelegtes Eigentümergeld |
 
 ### OCR für Scan-PDFs — 22.07.2026
 
