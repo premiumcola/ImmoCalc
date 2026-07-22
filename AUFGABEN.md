@@ -166,6 +166,13 @@ daraus wirklich eine Position in der Abrechnung wird, fehlt noch:
 | CLXVIII | **Das Haus zeigt alles, die Einheit nur ihres** | Zwei Ebenen mit klarer Aufteilung. **Am Haus** (übergeordnet, alles zusammengefasst): Stammdaten, Eigentümer, Kredite, Versicherungen, Steuer, Zahlungen, Dokumentenablage — alles, was nicht auf eine einzelne Wohnung läuft. Von dort springt man auf die Einheiten hinunter. **An der Einheit** (im Fokus): Mieter und Mietverhältnis, Kontakt, Nebenkosten und Abrechnungszeitraum. Die Stammdaten des Hauses werden dort **nicht wiederholt**. Verkehrswert nur, wenn er für diese Einheit gepflegt ist. Von der Einheit führt ein Weg zurück zum Haus |
 | CLXIX | **Einheit per Bubble wählen** | Beim Anlegen eines Mietverhältnisses die Einheit als Bubbles anbieten — vier Blasen, eine antippen. Kein Freitext (siehe XCII: ein Tippfehler lässt die Partei stumm aus der Verteilung fallen), keine Liste zum Aufklappen |
 
+### OCR für Scan-PDFs — 22.07.2026
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CLXXIX | **Scan-PDFs per lokalem OCR lesbar machen** | 243 der 405 Belege haben keine Textschicht. Rastern (pypdfium2) -> tesseract -> Betrag/Datum wie bei Text-PDFs. Laeuft lokal im Container (dort ist tesseract), Agents bauen und testen nur. **Originale werden nur gelesen** — immo_DATA ist der neue Master |
+| CXCV | **Scan-PDF durch durchsuchbare OCR-Variante ersetzen** | Vom Nutzer erlaubt: „wenn es funktioniert, darfst du die PDF gerne mit neuer besserer OCR-Variante ersetzen." **Erst nachdem CLXXIX steht und die Qualitaet geprueft ist.** Sicher: neue durchsuchbare Datei erzeugen, pruefen (gleiche Seitenzahl, enthaelt den Text, nicht kaputt), Original als Backup sichern, dann atomar ersetzen. Ausdruecklich angestossen, nie automatisch |
+
 ### Nebenkosten: global verteilen, Sonderfälle je Einheit — 22.07.2026
 
 Grundlage steht schon: `Kostenart` hängt an der Immobilie, eine Kostenposition
