@@ -9,39 +9,23 @@ from sqlmodel import Session, select
 
 from ..bezeichnung import (PLATZHALTER, STANDARD_UNTERORDNER, STANDARD_VORLAGE,
                            UNTERORDNER_PLATZHALTER, VERBOTENE_ZEICHEN,
-                           datum_aus_namen, doppelt_geschachtelt, hierarchie,
+                           datum_aus_namen, doppelt_geschachtelt,
                            lagebezeichnung, nach_vorlage, ordnerpfad, pfadteile,
                            unterordner_finden, unterordner_name,
                            unterordner_pruefen, vorlage_pruefen)
+from ..cloudkern import (ARTKUERZEL, STRUKTUR, S_HOME, S_TLS, S_UNTERORDNER,
+                        S_URL, S_BENUTZER, S_PASSWORT, ZIELORDNER, _lies,
+                        einheit_von, unterordner_fuer, unterordner_vorlagen,
+                        verbindung)
 from ..db import get_session
 from ..models import Dokument, Einstellung, Objekt
 from ..nextcloud import Nextcloud, NextcloudFehler
+from .dokumente import _einsortieren
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/nextcloud", tags=["nextcloud"])
 
-# Vereinheitlichte Struktur je Immobilie — Zehnerschritte lassen Platz zum
-# Einfuegen, die Nummern folgen dem gewachsenen Bestand.
-STRUKTUR = [
-    "01_Allgemein_Hauskonto",
-    "10_Fotos_Lage",
-    "20_Mietvertraege_Vermietung",
-    "30_Kommunikation",
-    "40_Kauf_Eigentum_Finanzierung",
-    "50_Bauphase_Projekte",
-    "60_Nebenkosten",
-    "70_Steuer_Finanzamt",
-    "80_Hausverwaltung",
-    "98_Archiv",
-    "99_Sonstiges",
-]
-
-S_URL, S_BENUTZER, S_PASSWORT, S_HOME, S_TLS, S_VORLAGE = (
-    "nc_url", "nc_benutzer", "nc_passwort", "nc_home", "nc_tls_pruefen",
-    "nc_ordner_vorlage")
-# CXCI: die Unterordner-Vorlagen je Dokumentart, als JSON in einer Zeile.
-# Ein Schlüssel je Art wäre ein Dutzend Einstellungen für eine Entscheidung.
-S_UNTERORDNER = "nc_unterordner_vorlagen"
+S_VORLAGE = "nc_ordner_vorlage"
 
 
 def ordner_fuer(session: Session, objekt: Objekt) -> str:
@@ -73,11 +57,6 @@ def zielordner_fuer(session: Session, objekt: Objekt, home: str) -> str:
     return _pfad(ordnerpfad(home, ordner_fuer(session, objekt)))
 
 
-def _lies(session: Session, schluessel: str, vorgabe: str = "") -> str:
-    eintrag = session.get(Einstellung, schluessel)
-    return eintrag.wert if eintrag else vorgabe
-
-
 def _schreib(session: Session, schluessel: str, wert: str) -> None:
     eintrag = session.get(Einstellung, schluessel)
     if eintrag:
@@ -85,18 +64,6 @@ def _schreib(session: Session, schluessel: str, wert: str) -> None:
     else:
         eintrag = Einstellung(schluessel=schluessel, wert=wert)
     session.add(eintrag)
-
-
-def verbindung(session: Session) -> Nextcloud:
-    url = _lies(session, S_URL)
-    benutzer = _lies(session, S_BENUTZER)
-    passwort = _lies(session, S_PASSWORT)
-    if not (url and benutzer and passwort):
-        raise HTTPException(400, "Nextcloud ist noch nicht eingerichtet")
-    # heimat begrenzt jeden schreibenden Zugriff auf den gewählten Ordner
-    return Nextcloud(url, benutzer, passwort,
-                     zertifikat_pruefen=_lies(session, S_TLS) == "1",
-                     heimat=_lies(session, S_HOME))
 
 
 class VerbindungIn(BaseModel):
@@ -237,40 +204,6 @@ def vorlage_speichern(data: VorlageIn,
 # stammen aus dem Bestand des Nutzers (siehe `bezeichnung.STANDARD_UNTERORDNER`).
 # --------------------------------------------------------------------------
 
-def unterordner_vorlagen(session: Session) -> dict[str, str]:
-    """Die Vorlagen je Dokumentart — eingestellte vor Vorgabe.
-
-    Unlesbar Gespeichertes wird gemeldet und übergangen, nie zum Fehler: eine
-    kaputte Einstellung darf keinen Beleg am Einsortieren hindern."""
-    eigene: dict[str, str] = {}
-    roh = _lies(session, S_UNTERORDNER)
-    if roh:
-        try:
-            geladen = json.loads(roh)
-        except ValueError as fehler:
-            log.warning("Unterordner-Vorlagen unlesbar: %s", fehler)
-            geladen = None
-        if isinstance(geladen, dict):
-            eigene = {str(k): str(v) for k, v in geladen.items()}
-    return {**STANDARD_UNTERORDNER, **eigene}
-
-
-def einheit_von(objekt: Objekt) -> str:
-    """Was die Einheit im Haus benennt — „Whg 1. OG", sonst nichts.
-
-    Nur wer mehrere Wohnungen getrennt ablegt, braucht sie im Ordnernamen;
-    bei einem Haus bleibt der Platzhalter leer und fällt weg."""
-    return hierarchie(objekt.name, objekt.ort or "",
-                      objekt.strasse or "")["einheit"]
-
-
-def unterordner_fuer(session: Session, objekt: Objekt, kategorie: str,
-                     jahr: int | None) -> str:
-    """Der Ordnername für diesen Beleg — leer heisst: kein Unterordner."""
-    return unterordner_name(unterordner_vorlagen(session).get(kategorie, ""),
-                            jahr, einheit=einheit_von(objekt), art=kategorie)
-
-
 class UnterordnerIn(BaseModel):
     vorlagen: dict[str, str]
 
@@ -281,8 +214,6 @@ def _unterordner_antwort(session: Session) -> dict:
     Das Beispiel rechnet mit dem laufenden Jahr und der Einheit der ersten
     Immobilie, die eine hat: so sieht der Nutzer den Ordnernamen, der heute
     entstünde, statt einer Vorlage mit geschweiften Klammern."""
-    from .dokumente import ZIELORDNER            # zirkelfrei zur Laufzeit
-
     vorlagen = unterordner_vorlagen(session)
     objekte = session.exec(select(Objekt)).all()
     einheit = next((e for e in (einheit_von(o) for o in objekte) if e), "")
@@ -316,8 +247,6 @@ def unterordner_speichern(data: UnterordnerIn,
 
     Bereits abgelegte Belege bleiben liegen, wo sie liegen — verschoben wird
     hier nichts. Die neue Ordnung gilt für alles, was ab jetzt hereinkommt."""
-    from .dokumente import ZIELORDNER            # zirkelfrei zur Laufzeit
-
     unbekannt = sorted(set(data.vorlagen) - set(ZIELORDNER))
     if unbekannt:
         raise HTTPException(400, "Unbekannte Dokumentart: "
@@ -689,7 +618,6 @@ def umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
 
 def _sachordner_kategorie() -> dict[str, str]:
     """Sachordner-Name → Dokumentart. Umkehrung von `ZIELORDNER`."""
-    from .dokumente import ZIELORDNER            # zirkelfrei zur Laufzeit
     return {ordner: art for art, ordner in ZIELORDNER.items()}
 
 
@@ -728,7 +656,6 @@ def _ziel_unterordner(session: Session, objekt: Objekt, kategorie: str,
     danebengestellt: liegt „2025" schon da, wandert der Beleg dorthin und nicht
     in ein zweites. Ohne erreichbare Cloud gilt der Name aus der Vorlage — das
     ist kein Fehler, nur eine Auskunft, die es noch nicht gibt."""
-    from .dokumente import ARTKUERZEL, ZIELORDNER   # zirkelfrei zur Laufzeit
     ziel = unterordner_fuer(session, objekt, kategorie, jahr)
     if not ziel:
         return None
@@ -815,8 +742,6 @@ def unterordner_umzug_ausfuehren(session: Session = Depends(get_session)) -> dic
     auf einen freien Namen, dann erst `Dokument.pfad` nachziehen und
     festschreiben. Eine misslungene Datei hält den Rest nicht auf — sie wird
     gemeldet, ihr Eintrag bleibt unverändert."""
-    from .dokumente import _einsortieren        # zirkelfrei zur Laufzeit
-
     client = verbindung(session)
     plan = unterordner_umzug_plan(session, client)
     erledigt: list[dict] = []

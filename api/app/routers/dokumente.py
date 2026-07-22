@@ -28,6 +28,8 @@ from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            datumsteil, ohne_betrag, ohne_datum,
                            ohne_ordnerwort, unterordner_finden, vergleichsname)
+from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, unterordner_fuer,
+                        verbindung)
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import Dokument, Objekt, Zeitraum
@@ -35,41 +37,11 @@ from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
 from ..wachdienst import zustand as wachdienst_zustand
-from .cloud import STRUKTUR, unterordner_fuer, verbindung
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/dokumente", tags=["dokumente"])
 
-# Wohin eine Kategorie einsortiert wird. Alles Abrechnungsrelevante landet
-# unter Nebenkosten, der Rest bei seinem Thema.
-ZIELORDNER = {
-    "Nebenkosten": "60_Nebenkosten",
-    "Steuer": "70_Steuer_Finanzamt",
-    "Kredit": "40_Kauf_Eigentum_Finanzierung",
-    "Versicherung": "01_Allgemein_Hauskonto",
-    "Mietvertrag": "20_Mietvertraege_Vermietung",
-    "Korrespondenz": "30_Kommunikation",
-    "Hausverwaltung": "80_Hausverwaltung",
-    "Sonstiges": "99_Sonstiges",
-}
-
 DOKUMENTARTEN = list(ZIELORDNER.keys())
-
-# Kurzform der Art für den Dateinamen. Der Ordner sagt zwar schon, worum es
-# geht — aber ein Name wandert aus dem Ordner heraus: in eine Suche, in einen
-# Mailanhang, auf den Schreibtisch. „2026-02_Rechnung_104,15€.pdf" sagt dort
-# nichts; „2026-02_NK-Schornsteinfeger_104,15€.pdf" sagt alles. Kurz gehalten,
-# damit der Name nicht wieder in die Breite läuft (CXXII).
-ARTKUERZEL = {
-    "Nebenkosten": "NK",
-    "Steuer": "Steuer",
-    "Kredit": "Kredit",
-    "Versicherung": "Vers",
-    "Mietvertrag": "Miete",
-    "Korrespondenz": "Post",
-    "Hausverwaltung": "HV",
-    "Sonstiges": "",
-}
 
 # Status eines Eintrags, dessen Datei beim Abgleich nicht mehr auffindbar war
 # (CXXVII). Ein vierter Wert neben "neu" und "zugeordnet" — additiv, das
