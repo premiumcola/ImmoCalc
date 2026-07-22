@@ -763,8 +763,11 @@ def test_leerstand_bekommt_keine_mail(postfach):
         slug, zid = _objekt_mit_zwei_wohnungen(c)
         mieten = c.get(f"/api/objekte/{slug}/mieten").json()
         eg = next(m for m in mieten if m["einheit"] == "EG")
+        # EG zieht zur Jahresmitte aus und hinterlässt keine erreichbare
+        # Adresse — ein echter Leerstand ohne Empfänger. (Ein ausgezogener
+        # Mieter MIT Mail bekommt seine Abrechnung sehr wohl, siehe CCX.)
         c.patch(f"/api/stammdaten/mieten/{eg['id']}",
-                json={"bis_datum": f"{JAHR}-06-30"})
+                json={"bis_datum": f"{JAHR}-06-30", "email": ""})
         c.post(f"/api/zeitraeume/{zid}/positionen", json={
             "kostenart": "Wasser", "betrag": 500.0, "schluessel": "flaeche"})
 

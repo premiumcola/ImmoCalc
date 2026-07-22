@@ -12,7 +12,7 @@ from ..engine import Position, abrechnung
 from ..mailversand import MailFehler
 from ..models import (Bewohner, Kostenposition, Miete, Objekt,
                       Versandprotokoll, Vorauszahlung, Zeitraum)
-from ..verteilung import fehlende_angaben, leerstaende, stammdaten
+from ..verteilung import _laufend, fehlende_angaben, leerstaende, stammdaten
 from .mail import zugang
 
 log = logging.getLogger("immocalc")
@@ -33,8 +33,16 @@ def _ergebnis(session: Session, z: Zeitraum) -> dict:
     return res
 
 
-def _empfaenger(session: Session, objekt_id: int) -> dict[str, dict]:
-    """Aktuelle Mietverhältnisse je Partei — dort hängen die Kontaktdaten.
+def _empfaenger(session: Session, objekt_id: int,
+                start: date, ende: date) -> dict[str, dict]:
+    """Mietverhältnisse, die den Zeitraum berühren, je Partei — dort hängen die
+    Kontaktdaten.
+
+    Maßgeblich ist dieselbe Menge wie in der Verteilung (`verteilung._laufend`):
+    auch ein Mieter, der mitten im Jahr ausgezogen ist, steht mit seinem Anteil
+    in der Abrechnung und muss sie bekommen. Zählte man hier nur die laufenden
+    (`bis_datum is None`), verlöre der ausgezogene Mieter seine Abrechnung samt
+    Nachzahlungsforderung, obwohl seine Adresse gespeichert ist.
 
     Neben dem Hauptkontakt am Mietverhältnis zählen die Bewohner mit eigener
     Adresse: wohnen zwei Personen in der Wohnung und haben beide eine
@@ -42,7 +50,7 @@ def _empfaenger(session: Session, objekt_id: int) -> dict[str, dict]:
     enthält jede Adresse genau einmal, Hauptkontakt zuerst.
     """
     mieten = session.exec(select(Miete).where(Miete.objekt_id == objekt_id)).all()
-    laufend = [m for m in mieten if m.bis_datum is None]
+    laufend = _laufend(mieten, start, ende)
     ids = [m.id for m in laufend if m.id is not None]
     bewohner: dict[int, list[Bewohner]] = {i: [] for i in ids}
     if ids:
@@ -73,7 +81,7 @@ def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
     if not z:
         raise HTTPException(404, "Zeitraum nicht gefunden")
     res = _ergebnis(session, z)
-    kontakte = _empfaenger(session, z.objekt_id)
+    kontakte = _empfaenger(session, z.objekt_id, z.start, z.ende)
 
     # Leerstand ist kein Empfänger, sondern der Anteil, den der Eigentümer
     # selbst trägt. Ohne diese Unterscheidung stand er unter „ohne
@@ -148,8 +156,14 @@ class AbschlussIn(BaseModel):
     erneut: bool = False
 
 
-def _bereits_versendet(session: Session, zid: int) -> set[str]:
-    return {p.partei for p in session.exec(
+def _versendete_adressen(session: Session, zid: int) -> set[tuple[str, str]]:
+    """Welche (Partei, Empfänger)-Paare schon eine Mail bekommen haben.
+
+    Adressgenau, nicht nur je Partei: hat ein Ehepaar zwei Adressen und schlug
+    die zweite Mail beim ersten Anlauf fehl, muss der zweite Anlauf genau diese
+    eine Adresse nachliefern — nicht die Partei als Ganzes überspringen und die
+    zweite Person nie erreichen."""
+    return {(p.partei, p.empfaenger) for p in session.exec(
         select(Versandprotokoll).where(Versandprotokoll.zeitraum_id == zid)).all()
         if p.versendet_am}
 
@@ -175,20 +189,23 @@ def abschliessen(zid: int, data: AbschlussIn,
     if offen and not data.offene_uebergehen:
         raise HTTPException(400, "Noch offene Positionen: " + ", ".join(offen))
 
-    kontakte = _empfaenger(session, z.objekt_id)
+    kontakte = _empfaenger(session, z.objekt_id, z.start, z.ende)
     leer = set(leerstaende(stammdaten(session, z)))
     zeitraum_text = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
     versendet, uebersprungen, schon_da = [], [], []
 
     if data.versenden:
         z_mail = zugang(session)          # wirft, wenn kein Postfach verbunden
-        fertig = _bereits_versendet(session, zid)
+        # Ein ausdrücklicher Neuversand nach einer Korrektur (`erneut`) soll
+        # wirklich alle wieder erreichen — dann zählt das alte Protokoll nicht
+        # mehr. Ohne `erneut` bleibt es stehen und schützt vor Doppelversand.
+        if data.erneut:
+            for p in session.exec(select(Versandprotokoll).where(
+                    Versandprotokoll.zeitraum_id == zid)).all():
+                session.delete(p)
+            session.commit()
+        fertig = _versendete_adressen(session, zid)
         for partei, werte in (res.get("parteien") or {}).items():
-            # Ein zweiter Anlauf nach einem Fehler in der Mitte darf nicht bei
-            # Partei eins wieder anfangen.
-            if partei in fertig:
-                schon_da.append(partei)
-                continue
             # Alle Bewohner mit eigener Adresse bekommen die Abrechnung, nicht
             # nur wer den Vertrag unterschrieben hat. Der Leerstand bekommt
             # nichts — hinter ihm steht keine Partei, sondern der Eigentümer.
@@ -196,6 +213,13 @@ def abschliessen(zid: int, data: AbschlussIn,
                         if partei not in leer]
             if not adressen:
                 uebersprungen.append(partei)
+                continue
+            # Adressgenau: nur die noch nicht belieferten Adressen dieser Partei.
+            # Ein zweiter Anlauf nach einem Fehler in der Mitte fängt so genau
+            # dort an, wo er abbrach, statt eine Partei ganz zu überspringen.
+            adressen = [a for a in adressen if (partei, a) not in fertig]
+            if not adressen:
+                schon_da.append(partei)
                 continue
             saldo = werte.get("saldo") or 0
             richtung = ("Guthaben zu Ihren Gunsten" if saldo >= 0
@@ -265,13 +289,14 @@ def oeffnen(zid: int, session: Session = Depends(get_session)) -> dict:
     z = session.get(Zeitraum, zid)
     if not z:
         raise HTTPException(404, "Zeitraum nicht gefunden")
+    beliefert = lambda: sorted({p for p, _ in _versendete_adressen(session, zid)})
     if z.status == "in Arbeit":
         return {"ok": True, "status": z.status, "geaendert": False,
-                "bereits_versendet": sorted(_bereits_versendet(session, zid))}
+                "bereits_versendet": beliefert()}
     z.status = "in Arbeit"
     session.add(z)
     session.commit()
-    versendet = sorted(_bereits_versendet(session, zid))
+    versendet = beliefert()
     log.info("Zeitraum %s wieder geöffnet (%d Partei(en) bereits beliefert)",
              zid, len(versendet))
     return {"ok": True, "status": z.status, "geaendert": True,
