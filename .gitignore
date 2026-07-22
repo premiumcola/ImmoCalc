@@ -46,3 +46,8 @@ tools/ocr_nachziehen.json
 
 # Analyse-Reports mit echten Namen/IBANs — nur lokal, nie ins Git
 analyse/
+
+# OCR-Ersetzung: Backup der Originale + Log — nur lokal
+analyse/
+tools/ocr_ersetzen.log
+tools/ocr_ersetzen.json
