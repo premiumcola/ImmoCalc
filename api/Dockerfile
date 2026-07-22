@@ -4,8 +4,15 @@ ARG GIT_SHA=local
 WORKDIR /srv
 # Texterkennung fuer abfotografierte Belege. Rein optional: fehlt tesseract,
 # laeuft der Scan weiter, nur ohne Vorschlag fuer Betrag und Datum.
+#
+# libgl1/libglib2.0-0: keine Texterkennung selbst, sondern eine Abhaengigkeit
+# von opencv-python, das rapidocr-onnxruntime mitbringt (CCXXVII, unsichtbare
+# Textschicht fuer Scans). Ohne die beiden Bibliotheken scheitert schon der
+# Import mit "libGL.so.1: cannot open shared object file" — das python:slim-
+# Image bringt sie nicht mit.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-deu \
+    libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

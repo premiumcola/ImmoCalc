@@ -843,6 +843,113 @@ async def erkennen(datei: UploadFile = File(...)) -> dict:
 
 
 # --------------------------------------------------------------------------
+# CCXXVII: Textschicht im laufenden Betrieb nachtragen
+#
+# Der Upload selbst bleibt schnell — OCR kostet Sekunden je Seite, das darf
+# den Nutzer nie warten lassen (siehe `wachdienst.py`, das diese Funktion im
+# 15-Minuten-Takt ruft). Ein Beleg bekommt seine Textschicht deshalb nach dem
+# Ablegen, nicht davor: erst liegt die Datei wie immer, danach zieht der
+# Wachdienst nach.
+#
+# Ersetzt wird nur per MOVE, nie durch Überschreiben (CLAUDE.md: „nichts
+# überschrieben"): das Original wandert zuerst unangetastet in einen
+# Punkt-Ordner neben der Datei — von Cloud-Clients meist ausgeblendet, aber
+# nie gelöscht —, erst danach bekommt der freigewordene Platz die geprüfte,
+# durchsuchbare Fassung. Scheitert das Ablegen, wandert das Original sofort
+# zurück.
+# --------------------------------------------------------------------------
+
+# Wie viele Belege ein Lauf höchstens ansieht (billige Prüfung: Datei holen,
+# Text zählen) bzw. wirklich neu erkennt (teuer: ~10 s Bilderkennung je
+# Datei). Letzteres begrenzt, damit ein einzelner Wachdienst-Takt nicht durch
+# einen grossen Rückstau blockiert — der Rest kommt beim nächsten Takt dran.
+OCR_PRUEF_GRENZE = 200
+OCR_STAPEL = 5
+
+# Versteckt neben der Originaldatei, nicht in einem globalen Sammelordner —
+# so bleibt die Sicherung auffindbar genau dort, wo der Beleg auch liegt.
+OCR_SICHERUNGSORDNER = ".ocr-original"
+
+
+def _ocr_kandidaten(session: Session) -> list[Dokument]:
+    """PDFs, die noch keine Textschicht haben könnten.
+
+    Vermisste Einträge fallen weg — ihre Datei ist ja nicht mehr da (CXXVII).
+    Alles andere wird angesehen; ob wirklich OCR nötig ist, entscheidet erst
+    `ocr.durchsuchbar_machen` anhand des eingebetteten Texts."""
+    return list(session.exec(
+        select(Dokument)
+        .where(Dokument.status != VERMISST)
+        .where(Dokument.dateiname.ilike("%.pdf"))
+        .order_by(Dokument.id)
+        .limit(OCR_PRUEF_GRENZE)))
+
+
+def _ocr_ersetzen(client, pfad: str, neu: bytes) -> None:
+    """Setzt die geprüfte, durchsuchbare Fassung an die Stelle des Originals —
+    ausschliesslich per MOVE, nie durch Überschreiben.
+
+    Das Original wandert zuerst in `OCR_SICHERUNGSORDNER` neben der Datei
+    (MKCOL verträgt 405, falls der Ordner schon besteht), erst danach bekommt
+    der freie Platz die neue Fassung. Scheitert das Ablegen, wandert das
+    Original sofort zurück — der Beleg darf nie unerreichbar werden."""
+    ordner, trenner, name = pfad.strip("/").rpartition("/")
+    sicher = f"{ordner}/{OCR_SICHERUNGSORDNER}/{name}" if trenner \
+        else f"{OCR_SICHERUNGSORDNER}/{name}"
+    client.ordner_anlegen(f"{ordner}/{OCR_SICHERUNGSORDNER}" if trenner
+                          else OCR_SICHERUNGSORDNER)
+    client.verschiebe(pfad, sicher)
+    try:
+        client.lege_ab(pfad, neu)
+    except NextcloudFehler:
+        client.verschiebe(sicher, pfad)     # zurück — nichts geht verloren
+        raise
+
+
+def nachtraeglich_ocren(session: Session, client=None) -> dict:
+    """Ein Nachpflege-Lauf: legt liegen gebliebenen Scans ihre Textschicht
+    unter. Vom Wachdienst gerufen, nie vom Upload selbst.
+
+    Rein additiv gegenüber dem normalen Betrieb: ein Beleg, der schon Text
+    trägt — ob von Anfang an oder aus einem früheren Lauf —, wird nie
+    zweimal angefasst. Fehlen die Bibliotheken (rapidocr-onnxruntime,
+    PyMuPDF), meldet der erste Blick das sofort, und es passiert nichts."""
+    ergebnis = {"geprueft": 0, "ergaenzt": 0, "uebersprungen": 0}
+    if not ocr.durchsuchbar_verfuegbar():
+        return ergebnis
+    client = client or verbindung(session)
+    for d in _ocr_kandidaten(session):
+        if ergebnis["ergaenzt"] >= OCR_STAPEL:
+            break
+        try:
+            roh, _typ = client.hole(d.pfad)
+        except NextcloudFehler as fehler:
+            log.info("OCR-Nachpflege: %s nicht lesbar (%s)", d.pfad, fehler)
+            continue
+        ergebnis["geprueft"] += 1
+        try:
+            neu = ocr.durchsuchbar_machen(roh)
+        except Exception as fehler:                        # noqa: BLE001
+            log.warning("OCR fehlgeschlagen für %s: %s", d.pfad, fehler)
+            continue
+        if neu is None:
+            ergebnis["uebersprungen"] += 1
+            continue
+        try:
+            _ocr_ersetzen(client, d.pfad, neu)
+        except NextcloudFehler as fehler:
+            log.warning("Textschicht konnte nicht abgelegt werden (%s): %s",
+                       d.pfad, fehler)
+            continue
+        d.groesse = len(neu)
+        session.add(d)
+        session.commit()
+        ergebnis["ergaenzt"] += 1
+        log.info("Textschicht ergänzt: %s", d.pfad)
+    return ergebnis
+
+
+# --------------------------------------------------------------------------
 # Abfotografieren
 # --------------------------------------------------------------------------
 

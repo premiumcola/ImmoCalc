@@ -29,6 +29,9 @@ _zustand: dict[str, object] = {
     "letzter_lauf": None,
     "letzter_fehler": None,
     "gefunden_gesamt": 0,
+    # CCXXVII: wie viele Belege der Wachdienst insgesamt schon eine
+    # durchsuchbare Textschicht nachgetragen hat.
+    "ocr_ergaenzt_gesamt": 0,
     "laeuft": False,
 }
 
@@ -41,6 +44,7 @@ def zustand() -> dict:
         "letzter_lauf": letzter.isoformat() if letzter else None,
         "letzter_fehler": _zustand["letzter_fehler"],
         "gefunden_gesamt": _zustand["gefunden_gesamt"],
+        "ocr_ergaenzt_gesamt": _zustand["ocr_ergaenzt_gesamt"],
     }
 
 
@@ -63,6 +67,24 @@ def einmal_scannen() -> int:
     return int(ergebnis.get("neu", 0))
 
 
+def _ocr_lauf() -> dict:
+    """Ein Nachpflege-Lauf: trägt liegen gebliebenen Scans ihre Textschicht
+    nach (CCXXVII). Teilt sich die Sperre mit `einmal_scannen` — beide bewegen
+    Dateien in der Cloud, und sollen das nie gleichzeitig tun.
+
+    Prüft der Nutzer gerade selbst den Eingang, tritt der Wachdienst zurück:
+    kein Fehler, der nächste Takt in 15 Minuten holt es nach."""
+    from .routers.dokumente import nachtraeglich_ocren  # spät, wegen Zirkelbezug
+
+    if not sperre.acquire(blocking=False):
+        return {"ergaenzt": 0}
+    try:
+        with Session(engine) as session:
+            return nachtraeglich_ocren(session)
+    finally:
+        sperre.release()
+
+
 async def schleife() -> None:
     """Läuft neben der API und prüft den Eingang in festem Takt."""
     _zustand["laeuft"] = True
@@ -76,6 +98,15 @@ async def schleife() -> None:
             if neu:
                 _zustand["gefunden_gesamt"] = int(_zustand["gefunden_gesamt"]) + neu
                 log.info("Eingang: %d neue Datei(en)", neu)
+            # CCXXVII: im selben Takt liegen gebliebene Scans nachpflegen.
+            # RapidOCR kostet Sekunden je Beleg — das darf den Nutzer beim
+            # Hochladen nie warten lassen, deshalb hier statt im Upload.
+            ocr_ergebnis = await asyncio.to_thread(_ocr_lauf)
+            ergaenzt = int(ocr_ergebnis.get("ergaenzt", 0))
+            if ergaenzt:
+                _zustand["ocr_ergaenzt_gesamt"] = \
+                    int(_zustand["ocr_ergaenzt_gesamt"]) + ergaenzt
+                log.info("Textschicht ergänzt: %d Beleg(e)", ergaenzt)
         except asyncio.CancelledError:
             _zustand["laeuft"] = False
             raise

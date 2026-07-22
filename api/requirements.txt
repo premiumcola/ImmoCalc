@@ -13,3 +13,12 @@ pypdf==6.14.2
 # poppler, kein Ghostscript, keine System-Binaries. Ohne diese Bibliothek
 # bleibt ein Scan stumm wie zuvor (weicher Import).
 pypdfium2==5.12.1
+# Dauerhafte, unsichtbare Textschicht fuer neu aufgenommene Scans (CCXXVII,
+# app/ocr.py: durchsuchbar_machen). Dieselbe Technik wie der einmalige
+# Master-Lauf tools/ocr_ersetzen.py: PyMuPDF (fitz) rastert eine Seite und
+# traegt den erkannten Text unsichtbar ein, RapidOCR liest ihn ueber ONNX
+# Runtime — kein Tesseract, keine nachzuladenden Modelle zur Laufzeit (sie
+# liegen im Wheel). Beide Importe sind weich: fehlen sie, bleibt ein Scan wie
+# bisher ohne Textschicht (kein Fehler).
+pymupdf==1.28.0
+rapidocr-onnxruntime==1.4.4

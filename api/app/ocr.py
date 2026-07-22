@@ -496,3 +496,165 @@ def erkenne(rohdaten: bytes) -> dict:
         # Spalte auf, ein einseitiger Beleg käme sonst auf Tausende Zeichen.
         "zeichen": len(re.sub(r"\s", "", text)),
     }
+
+
+# --------------------------------------------------------------------------
+# CCXXVII: eine dauerhafte, unsichtbare Textschicht für Scans
+#
+# Der einmalige Master-Lauf (tools/ocr_ersetzen.py) hat die Technik erprobt:
+# RapidOCR liest jede gerasterte Seite, PyMuPDF (fitz) trägt den erkannten
+# Text unsichtbar (render_mode 3) an dieselbe Stelle — die Optik bleibt Pixel
+# für Pixel erhalten, es kommt nur ein durchsuchbarer Text dazu. Dieselbe
+# Logik steht hier, für den laufenden Betrieb statt für einen Durchlauf über
+# den Bestand: neu aufgenommene Scans bekommen sie im Wachdienst, nicht im
+# Master-Lauf.
+#
+# Beide Bibliotheken sind optional (weicher Import): fehlen sie — etwa in der
+# Devbox —, bleibt ein Scan wie zuvor ohne Textschicht, kein Fehler.
+# --------------------------------------------------------------------------
+
+try:                                                     # pragma: no cover
+    import fitz                                         # PyMuPDF
+except ImportError:                                      # pragma: no cover
+    fitz = None
+    log.info("PyMuPDF ist nicht installiert — Scans bekommen keine "
+             "nachträgliche Textschicht")
+
+try:                                                     # pragma: no cover
+    import numpy as _np
+except ImportError:                                      # pragma: no cover
+    _np = None
+
+try:                                                     # pragma: no cover
+    from rapidocr_onnxruntime import RapidOCR
+except ImportError:                                      # pragma: no cover
+    RapidOCR = None
+    log.info("rapidocr-onnxruntime ist nicht installiert — Scans bekommen "
+             "keine nachträgliche Textschicht")
+
+# Auflösung, mit der eine Seite gerastert wird — wie im Master-Lauf.
+_TEXTSCHICHT_DPI = 220
+# Ab so vielen Zeichen gilt ein PDF als bereits durchsuchbar. Klein genug für
+# eine kurze Quittung, gross genug, dass ein leerer Zufallstreffer nicht
+# schon als „erledigt" durchgeht.
+_TEXTSCHICHT_MINDESTZEICHEN = 40
+
+_rapidocr_engine = None
+
+
+def durchsuchbar_verfuegbar() -> bool:
+    """Kann dieser Server überhaupt eine Textschicht nachtragen?
+
+    Alle drei Bibliotheken zusammen — PyMuPDF zum Rastern und Beschriften,
+    NumPy für die Bildmatrix, RapidOCR zum Lesen. Fehlt eine, bleibt ein Scan
+    stumm wie vor CCXXVII — genauso, wie `ocr` ohne Tesseract stumm bleibt."""
+    return fitz is not None and _np is not None and RapidOCR is not None
+
+
+def _ocr_engine():
+    """Die RapidOCR-Instanz, einmal gebaut. Der Aufbau lädt Modelle von der
+    Platte und kostet spürbar Zeit — das soll nicht bei jeder Seite neu
+    passieren."""
+    global _rapidocr_engine
+    if _rapidocr_engine is None:
+        _rapidocr_engine = RapidOCR()
+    return _rapidocr_engine
+
+
+def _zeichen_gesamt(dokument) -> int:
+    """Wie viel Text ein geöffnetes PDF (fitz.Document) insgesamt trägt."""
+    return sum(len(seite.get_text().strip()) for seite in dokument)
+
+
+def _seite_beschriften(seite) -> None:
+    """Rastert eine Seite, liest sie per RapidOCR und trägt den erkannten
+    Text unsichtbar an den gefundenen Wortkästen ein.
+
+    `render_mode=3` heisst: der Text existiert im PDF und lässt sich
+    markieren, kopieren und durchsuchen — sichtbar ist er nie. Am Bild selbst
+    ändert sich nichts."""
+    pixmap = seite.get_pixmap(dpi=_TEXTSCHICHT_DPI)
+    arr = _np.frombuffer(pixmap.samples, dtype=_np.uint8).reshape(
+        pixmap.height, pixmap.width, pixmap.n)
+    if pixmap.n == 4:                                    # RGBA -> RGB
+        arr = arr[:, :, :3]
+    treffer, _ = _ocr_engine()(_np.ascontiguousarray(arr))
+    if not treffer:
+        return
+    # Bildpixel (bei _TEXTSCHICHT_DPI) -> PDF-Punkte (72 dpi).
+    skala = 72.0 / _TEXTSCHICHT_DPI
+    for box, text, score in treffer:
+        if not text or score < 0.3:
+            continue
+        xs = [p[0] for p in box]
+        ys = [p[1] for p in box]
+        x0, y1 = min(xs) * skala, max(ys) * skala
+        hoehe = (max(ys) - min(ys)) * skala
+        groesse = max(hoehe * 0.85, 4)
+        try:
+            seite.insert_text((x0, y1 - hoehe * 0.15), text,
+                              fontsize=groesse, render_mode=3, color=(0, 0, 0))
+        except Exception as fehler:                       # noqa: BLE001
+            log.info("Textschicht: ein Wortkasten liess sich nicht setzen: %s",
+                     fehler)
+
+
+def _textschicht_ok(pdf_bytes: bytes, seiten_vorher: int) -> bool:
+    """Ist das Ergebnis brauchbar? Gleiche Seitenzahl wie das Original, und
+    wirklich genug Text entstanden — dieselbe Prüfung wie im Master-Lauf,
+    bevor irgendetwas an die Stelle des Originals rückt."""
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as pruef:
+            if pruef.page_count != seiten_vorher:
+                log.warning("OCR: Seitenzahl weicht ab (%d statt %d)",
+                           pruef.page_count, seiten_vorher)
+                return False
+            return _zeichen_gesamt(pruef) >= _TEXTSCHICHT_MINDESTZEICHEN
+    except Exception as fehler:                           # noqa: BLE001
+        log.warning("OCR-Ergebnis nicht lesbar: %s", fehler)
+        return False
+
+
+def durchsuchbar_machen(pdf_bytes: bytes) -> "bytes | None":
+    """Legt über einen Scan eine unsichtbare, durchsuchbare Textschicht.
+
+    `None` heisst „nichts zu tun" — nie ein Fehler. Das deckt drei Fälle ab,
+    die der Aufrufer nicht unterscheiden muss:
+
+    * Die Bibliotheken fehlen (`durchsuchbar_verfuegbar()` ist falsch).
+    * Das PDF trägt schon genug Text — ob von Anfang an oder aus einem
+      früheren Lauf, spielt keine Rolle: nie zweimal erkennen.
+    * Die Erkennung fand nichts, oder das Ergebnis liess sich nicht
+      bestätigen (andere Seitenzahl, zu wenig Text).
+
+    Wo Bytes herauskommen, sind sie geprüft — der Aufrufer darf sie ohne
+    weitere Kontrolle an die Stelle des Originals setzen, muss das Original
+    davor aber selbst sichern (siehe `routers.dokumente.nachtraeglich_ocren`):
+    diese Funktion selbst rührt keine Datei in der Cloud an, sie kennt nur
+    Bytes.
+    """
+    if not durchsuchbar_verfuegbar() or not pdf_bytes:
+        return None
+    try:
+        quelle = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as fehler:                           # noqa: BLE001
+        log.info("PDF nicht für die Textschicht zu öffnen: %s", fehler)
+        return None
+    try:
+        with quelle:
+            if _zeichen_gesamt(quelle) >= _TEXTSCHICHT_MINDESTZEICHEN:
+                return None                               # schon durchsuchbar
+            seiten_vorher = quelle.page_count
+            for seite in quelle:
+                if seite.number >= pdftext.MAX_SEITEN:
+                    break                                 # wie beim Lesen: genug ist genug
+                try:
+                    _seite_beschriften(seite)
+                except Exception as fehler:                # noqa: BLE001
+                    log.warning("OCR einer Seite fehlgeschlagen: %s", fehler)
+            neu = quelle.tobytes(garbage=3, deflate=True)
+    except Exception as fehler:                           # noqa: BLE001
+        log.warning("Textschicht konnte nicht erzeugt werden: %s", fehler)
+        return None
+
+    return neu if _textschicht_ok(neu, seiten_vorher) else None
