@@ -106,6 +106,10 @@ export const NAV = [
   ['Wert', 'wertentwicklung.html', '◔'],
   ['Nebenkosten', 'nebenkosten.html', '≡'],
   ['Eigentümer', 'eigentuemer.html', '☗'],
+  // CCXL — das Immobilien-Lexikon. Steht bewusst vor „Einstellungen", damit die
+  // Einstellungen der letzte Eintrag bleiben; auf dem Handy wandert es dadurch
+  // von selbst hinter „Mehr" (Index ≥ SICHTBAR).
+  ['Lexikon', 'lexikon.html', '?'],
   ['Einstellungen', 'settings.html', '⚙'],
 ];
 
@@ -389,3 +393,157 @@ export function schiebeFrage(titel, text, label = 'Zum Löschen schieben') {
 
 export const fristText = tage =>
   tage == null ? null : tage < 0 ? `${Math.abs(tage)} T über Frist` : `Frist in ${tage} T`;
+
+/* ---- CCXL: kontextsensitive Hilfe (?-Icon + Lexikon-Popover) -------------
+   Ein kleines, unauffälliges ?-Icon neben echten Fachbegriff-Feldern. Beim
+   Antippen öffnet ein Popover mit der Kurzerklärung aus dem Lexikon und einem
+   Link in den vollen Eintrag.
+
+   Die Wissensbasis (`lexikon-daten.js`) wird bewusst erst beim ersten Öffnen
+   dynamisch geladen — sonst zöge jede Seite, die nur ein Formular zeigt, die
+   ganze Datei mit. Das Icon selbst entsteht ohne die Daten; gebraucht werden
+   sie erst, wenn wirklich jemand fragt. */
+
+let lexikonDaten = null;            // Cache des dynamischen Imports (Promise)
+function ladeLexikon() {
+  if (!lexikonDaten) lexikonDaten = import('./lexikon-daten.js');
+  return lexikonDaten;
+}
+
+// feather „help-circle" — flacher Strich-Stil wie die übrigen Icons.
+const HILFE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    aria-hidden="true"><circle cx="12" cy="12" r="10"/>
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+    <line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+
+const HILFE_STIL = `
+  .immo-hilfe{display:inline-flex;align-items:center;justify-content:center;
+    width:44px;height:44px;margin:-12px -8px -12px 0;padding:0;border:none;
+    background:none;color:var(--soft,#5A6B70);cursor:pointer;vertical-align:middle;
+    border-radius:50%;-webkit-tap-highlight-color:transparent;flex:none}
+  .immo-hilfe svg{width:16px;height:16px;display:block}
+  .immo-hilfe:hover{color:var(--teal,#0F6E5C)}
+  .immo-hilfe:focus-visible{outline:2px solid var(--teal,#0F6E5C);outline-offset:2px}
+  .immo-lx-overlay{position:fixed;inset:0;z-index:1200;background:transparent}
+  .immo-lx-card{position:fixed;z-index:1201;background:var(--sheet,#fff);
+    border-radius:14px;box-shadow:0 22px 55px -14px rgba(22,38,44,.45);
+    padding:16px 18px;width:300px;max-width:calc(100vw - 24px);
+    font-family:var(--body,system-ui);color:var(--ink,#16262C)}
+  .immo-lx-titel{font:700 15px var(--disp,var(--body));letter-spacing:-.01em;
+    margin-bottom:6px}
+  .immo-lx-kurz{font:400 13px/1.5 var(--body,system-ui);
+    color:var(--ink,#16262C);margin:0 0 12px}
+  .immo-lx-mehr{display:inline-block;min-height:36px;line-height:36px;
+    font:600 12.5px var(--disp,var(--body));color:var(--teal-d,#0B5648);
+    text-decoration:none}
+  .immo-lx-mehr:hover{text-decoration:underline}
+  @media (max-width:700px){
+    .immo-lx-overlay.sheet{background:rgba(22,38,44,.35)}
+    .immo-lx-card.sheet{left:0;right:0;bottom:0;top:auto;width:auto;
+      max-width:none;border-radius:18px 18px 0 0;
+      padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+      animation:immo-lx-auf .18s ease-out}
+    .immo-lx-mehr{min-height:44px;line-height:44px}
+  }
+  @keyframes immo-lx-auf{from{transform:translateY(100%)}to{transform:translateY(0)}}`;
+
+function installHilfeStil() {
+  if (document.getElementById('immo-hilfe-stil')) return;
+  const s = document.createElement('style');
+  s.id = 'immo-hilfe-stil';
+  s.textContent = HILFE_STIL;
+  document.head.appendChild(s);
+}
+
+let hilfeOffen = null;
+// Escape schliesst zuerst nur das Popover — und nicht gleich den Dialog
+// darunter mit. Deshalb in der Capture-Phase abgefangen und die
+// Standardaktion (Dialog schliessen) unterbunden, solange ein Popover offen ist.
+function hilfeEsc(e) {
+  if (e.key !== 'Escape' || !hilfeOffen) return;
+  e.preventDefault();
+  e.stopPropagation();
+  hilfeSchliessen();
+}
+function hilfeSchliessen() {
+  if (!hilfeOffen) return;
+  document.removeEventListener('keydown', hilfeEsc, true);
+  hilfeOffen.remove();
+  hilfeOffen = null;
+}
+
+function zeigePopover(anker, eintrag) {
+  hilfeSchliessen();
+  const sheet = window.matchMedia('(max-width:700px)').matches;
+  const overlay = document.createElement('div');
+  overlay.className = 'immo-lx-overlay' + (sheet ? ' sheet' : '');
+  const card = document.createElement('div');
+  card.className = 'immo-lx-card' + (sheet ? ' sheet' : '');
+  card.innerHTML = `
+    <div class="immo-lx-titel">${sicher(eintrag.begriff)}</div>
+    <p class="immo-lx-kurz">${sicher(eintrag.kurz)}</p>
+    <a class="immo-lx-mehr" href="lexikon.html#${encodeURIComponent(eintrag.id)}"
+       >Mehr im Lexikon →</a>`;
+  overlay.appendChild(card);
+  // Sitzt das Icon in einem modalen <dialog>, liegt der ganze Dialog in der
+  // Top-Layer — ein an <body> gehängtes Popover verschwände dahinter. Deshalb
+  // wird es in den offenen Dialog gehängt, sonst an <body>.
+  (anker.closest('dialog[open]') || document.body).appendChild(overlay);
+
+  // Auf dem Desktop dockt die Karte unter dem Icon an — und klappt darüber,
+  // wenn unten kein Platz ist. Am Rand wird sie ins Fenster gezogen.
+  if (!sheet) {
+    const r = anker.getBoundingClientRect();
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    let left = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12));
+    let top = r.bottom + 8;
+    if (top + ch > window.innerHeight - 12) top = Math.max(12, r.top - ch - 8);
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+  }
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) hilfeSchliessen(); });
+  document.addEventListener('keydown', hilfeEsc, true);
+  hilfeOffen = overlay;
+  card.querySelector('.immo-lx-mehr').focus();
+}
+
+/**
+ * Ein ?-Icon-Element zu einem Lexikon-Begriff. Klick öffnet das Popover.
+ * Robust: Fehlt der Begriff in der Wissensbasis, verschwindet das Icon beim
+ * ersten Antippen lautlos, statt einen Fehler zu werfen.
+ */
+export function hilfe(begriffId) {
+  installHilfeStil();
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'immo-hilfe';
+  b.dataset.begriff = begriffId;
+  b.setAttribute('aria-label', 'Erklärung anzeigen');
+  b.innerHTML = HILFE_ICON;
+  b.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    ladeLexikon()
+      .then(mod => {
+        const eintrag = (mod.BEGRIFFE || []).find(x => x.id === begriffId);
+        if (!eintrag) { b.remove(); return; }   // (noch) kein Eintrag → Icon weg
+        zeigePopover(b, eintrag);
+      })
+      .catch(() => { /* Wissensbasis nicht ladbar — dann eben still */ });
+  });
+  return b;
+}
+
+/**
+ * Ersetzt alle Platzhalter `[data-hilfe="<id>"]` unterhalb von `root` durch
+ * ein ?-Icon. So bleibt das Markup der Seiten schlicht — sie setzen nur den
+ * Platzhalter, das Icon baut diese Stelle.
+ */
+export function installHilfe(root = document) {
+  root.querySelectorAll('[data-hilfe]').forEach(halter => {
+    const id = halter.getAttribute('data-hilfe');
+    if (id) halter.replaceWith(hilfe(id));
+  });
+}

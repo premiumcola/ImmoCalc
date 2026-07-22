@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Lexikon · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* ---- Segmentierte Umschaltung: Ablauf ⇄ Nachschlagen ---- */
+  .tabs{display:flex; gap:5px; background:#DFE5E5; padding:5px; border-radius:14px;
+        margin-bottom:18px}
+  .tabs button{flex:1; border:none; background:none; padding:10px 8px; cursor:pointer;
+        border-radius:10px; font:600 13px var(--disp); letter-spacing:-.01em;
+        color:var(--soft); min-height:44px; display:flex; align-items:center;
+        justify-content:center; gap:7px; transition:background .12s, color .12s}
+  .tabs button .ti{font:400 15px var(--mono); line-height:1}
+  .tabs button[aria-selected=true]{background:var(--sheet); color:var(--teal-d);
+        box-shadow:0 1px 2px rgba(22,38,44,.08)}
+
+  .lead{font:400 13px var(--body); color:var(--soft); margin:-4px 0 16px;
+        line-height:1.5}
+
+  /* ---- Suche ---- */
+  .suchfeld{position:relative; margin-bottom:12px}
+  .suchfeld .lupe{position:absolute; left:14px; top:50%; transform:translateY(-50%);
+        color:var(--soft); font:400 16px var(--mono); pointer-events:none}
+  #suche{padding-left:42px; padding-right:42px}
+  .suchfeld .leeren{position:absolute; right:6px; top:50%; transform:translateY(-50%);
+        width:38px; height:38px; border:none; background:none; color:var(--soft);
+        font:400 20px var(--body); cursor:pointer; border-radius:10px; display:none;
+        align-items:center; justify-content:center}
+  .suchfeld .leeren.an{display:flex}
+  .suchfeld .leeren:hover{background:#F1F4F4; color:var(--ink)}
+
+  .kats{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px}
+  .kats button{border:none; cursor:pointer; font:600 11px var(--mono);
+        letter-spacing:.02em; padding:8px 13px; border-radius:999px; min-height:40px;
+        background:#F1F4F4; color:var(--soft)}
+  .kats button:hover{filter:brightness(.97)}
+  .kats button[aria-pressed=true]{background:var(--teal-l); color:var(--teal-d)}
+
+  .zaehler{font:600 10.5px var(--mono); letter-spacing:.06em; text-transform:uppercase;
+        color:var(--soft); margin:0 0 12px}
+
+  /* ---- Trefferzeile ---- */
+  .lxrow{display:block; background:var(--sheet); border-radius:14px; padding:14px 16px;
+        margin-bottom:10px; text-decoration:none; color:inherit;
+        box-shadow:0 1px 2px rgba(22,38,44,.05); transition:box-shadow .15s, transform .1s}
+  .lxrow:hover{box-shadow:0 5px 14px -8px rgba(22,38,44,.3)}
+  .lxrow:active{transform:scale(.995)}
+  .lxrow:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+  .lxr-kat{display:block; font:600 10px var(--mono); letter-spacing:.08em;
+        text-transform:uppercase; color:var(--teal-d); margin-bottom:5px}
+  .lxr-t{display:block; font:600 15.5px var(--disp); letter-spacing:-.01em}
+  .lxr-d{display:block; font:400 12.5px var(--body); color:var(--soft); margin-top:5px;
+        line-height:1.45}
+
+  /* ---- Ablaufplan: Handy als verbundene Timeline, breit als Raster ---- */
+  .flow{position:relative; background:var(--sheet); border-radius:16px; overflow:hidden;
+        box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  /* Verbindungslinie hinter den Nummern (nur Einspaltenansicht) */
+  .flow::before{content:''; position:absolute; left:34px; top:30px; bottom:30px;
+        width:2px; background:var(--line)}
+  .step{position:relative}
+  .step + .step{border-top:1px solid #EEF1F1}
+  .step-btn{display:flex; gap:13px; align-items:center; width:100%; text-align:left;
+        border:none; background:none; padding:14px 15px; cursor:pointer; min-height:44px;
+        font-family:var(--body); color:inherit}
+  .step-no{position:relative; z-index:1; width:38px; height:38px; border-radius:11px;
+        background:var(--teal-l); color:var(--teal-d); flex:none; display:flex;
+        align-items:center; justify-content:center; font:600 15px var(--disp);
+        box-shadow:0 0 0 4px var(--sheet); transition:background .15s, color .15s}
+  .step.auf .step-no{background:var(--teal); color:#fff}
+  .step-txt{flex:1; min-width:0}
+  .step-titel{display:block; font:600 14.5px var(--disp); letter-spacing:-.01em;
+        line-height:1.3}
+  .step-dauer{display:block; font:500 11px var(--mono); color:var(--soft); margin-top:3px}
+  .step-chev{flex:none; color:var(--soft); font:400 17px var(--body);
+        transition:transform .15s}
+  .step.auf .step-chev{transform:rotate(90deg); color:var(--teal-d)}
+  .step-detail{padding:0 15px 16px 66px}
+  .step-detail p{margin:0 0 12px; font:400 13px var(--body); color:var(--ink);
+        line-height:1.55}
+
+  /* Bausteine im Detail und unter dem Artikel */
+  .begriffe{display:flex; flex-wrap:wrap; gap:8px}
+  .lx-chip{display:inline-flex; align-items:center; min-height:40px; padding:8px 14px;
+        border-radius:999px; background:var(--teal-l); color:var(--teal-d);
+        font:600 12.5px var(--body); letter-spacing:-.01em; text-decoration:none}
+  .lx-chip:hover{background:#D3E9E2}
+  .lx-chip.tot{background:#F1F4F4; color:var(--soft); cursor:default}
+
+  @media(min-width:760px){
+    .flow{background:transparent; box-shadow:none; overflow:visible;
+          display:grid; grid-template-columns:repeat(2,1fr); gap:12px;
+          align-items:start}
+    .flow::before{display:none}
+    .step{background:var(--sheet); border-radius:14px; overflow:hidden;
+          box-shadow:0 1px 2px rgba(22,38,44,.06)}
+    .step + .step{border-top:none}
+    .step-no{box-shadow:none}
+    .step-detail{padding-left:15px}
+  }
+  @media(min-width:1100px){
+    .flow{grid-template-columns:repeat(3,1fr)}
+  }
+
+  /* ---- Artikel ---- */
+  #artikel{display:none}
+  .art-back{border:none; background:none; font:600 15px var(--body); color:var(--teal);
+        cursor:pointer; padding:8px 6px; margin:-8px -6px 8px; min-height:44px}
+  .art-back::before{content:"‹  "}
+  .art-kat{font:600 11px var(--mono); letter-spacing:.11em; text-transform:uppercase;
+        color:var(--teal-d); margin:6px 0 8px}
+  .art-titel{font:700 23px var(--disp); letter-spacing:-.02em; margin:0 0 18px;
+        line-height:1.2}
+  .art-body p{font:400 14.5px var(--body); color:var(--ink); line-height:1.62;
+        margin:0 0 15px}
+  .art-body em{font-style:italic}
+  .lx-link{color:var(--teal-d); text-decoration:none; font-weight:600;
+        border-bottom:1.5px solid var(--teal-l)}
+  .lx-link:hover{border-bottom-color:var(--teal)}
+  .lx-link.tot{color:var(--soft); font-weight:500; border-bottom:1.5px dotted var(--line);
+        cursor:default}
+  .art-siehe{margin-top:26px}
+  .art-siehe h3{font:600 10.5px var(--mono); letter-spacing:.09em; text-transform:uppercase;
+        color:var(--soft); margin:0 0 12px}
+
+  /* Auf breiten Schirmen bekommt der Artikel eine ruhige Lesespalte */
+  @media(min-width:760px){
+    .art-body, .art-siehe{max-width:680px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <img src="icons/icon.svg" alt="" width="34" height="34"
+         style="border-radius:9px;flex:none">
+    <div class="barwrap">
+      <h1>Lexikon</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll" id="scroll">
+
+    <!-- Hauptansicht: Ablauf + Nachschlagen -->
+    <div id="main">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-ablauf" aria-selected="true" data-tab="ablauf">
+          <span class="ti">⇢</span>Ablauf</button>
+        <button role="tab" id="tab-lexikon" aria-selected="false" data-tab="lexikon">
+          <span class="ti">⌕</span>Nachschlagen</button>
+      </div>
+
+      <!-- Ablaufplan -->
+      <section id="pane-ablauf">
+        <p class="lead">
+          Der Weg zur vermieteten Immobilie in Schritten — von der Kaufentscheidung
+          über den Bau bis zum laufenden Betrieb. Tippe einen Schritt an: Er erklärt,
+          was passiert, und verlinkt in die Fachbegriffe.
+        </p>
+        <div class="flow" id="flow"></div>
+      </section>
+
+      <!-- Nachschlagen -->
+      <section id="pane-lexikon" hidden>
+        <div class="suchfeld">
+          <span class="lupe">⌕</span>
+          <input class="inp" id="suche" type="search" enterkeyhint="search"
+                 autocomplete="off" placeholder="Begriff, Synonym oder Stichwort …"
+                 aria-label="Lexikon durchsuchen">
+          <button class="leeren" id="leeren" type="button" aria-label="Suche leeren">×</button>
+        </div>
+        <div class="kats" id="kats" role="group" aria-label="Nach Kategorie filtern"></div>
+        <p class="zaehler" id="zaehler"></p>
+        <div id="treffer"></div>
+      </section>
+    </div>
+
+    <!-- Artikelansicht -->
+    <div id="artikel">
+      <button class="art-back" id="artZurueck">zurück</button>
+      <div class="art-kat" id="artKat"></div>
+      <h2 class="art-titel" id="artTitel"></h2>
+      <div class="art-body" id="artBody"></div>
+      <div class="art-siehe" id="artSiehe"></div>
+    </div>
+
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+import { esc, melde, installNav } from './assets/immo.js';
+import { KATEGORIEN, BEGRIFFE, ABLAUF } from './assets/lexikon-daten.js';
+installNav();
+
+const byId = new Map(BEGRIFFE.map(b => [b.id, b]));
+const katName = id => (KATEGORIEN.find(k => k.id === id) || {}).name || id;
+
+const scroll = document.getElementById('scroll');
+const sub = document.getElementById('sub');
+const mainView = document.getElementById('main');
+const artView = document.getElementById('artikel');
+
+sub.textContent = BEGRIFFE.length === 1
+  ? '1 Begriff' : `${BEGRIFFE.length} Begriffe · ${ABLAUF.length} Schritte`;
+
+/* ---- Textmarken: [[id]] / [[id|Text]] → Link, *…* → Betonung ---- */
+function linkHtml(id, label) {
+  return byId.has(id)
+    ? `<a class="lx-link" href="#${id}">${label}</a>`
+    : `<span class="lx-link tot" title="Eintrag folgt">${label}</span>`;
+}
+function inlineMarkup(raw) {
+  let s = esc(raw);
+  s = s.replace(/\[\[([a-z0-9-]+)(?:\|([^\]]+))?\]\]/g, (_m, id, txt) => {
+    const label = txt != null ? txt : esc(byId.get(id)?.begriff || id);
+    return linkHtml(id, label);
+  });
+  s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return s;
+}
+function chipHtml(id) {
+  const b = byId.get(id);
+  const label = esc(b?.begriff || id);
+  return b
+    ? `<a class="lx-chip" href="#${id}">${label}</a>`
+    : `<span class="lx-chip tot" title="Eintrag folgt">${label}</span>`;
+}
+
+/* ---- Ablaufplan ---- */
+function baueFlow() {
+  document.getElementById('flow').innerHTML = ABLAUF.map(s => {
+    const chips = (s.begriffe || []).map(chipHtml).join('');
+    return `<div class="step" data-step="${s.id}">
+        <button class="step-btn" type="button" aria-expanded="false">
+          <span class="step-no">${s.phase}</span>
+          <span class="step-txt">
+            <span class="step-titel">${esc(s.titel)}</span>
+            <span class="step-dauer">${esc(s.dauer || '')}</span>
+          </span>
+          <span class="step-chev" aria-hidden="true">›</span>
+        </button>
+        <div class="step-detail" hidden>
+          <p>${inlineMarkup(s.kurz)}</p>
+          ${chips ? `<div class="begriffe">${chips}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+document.getElementById('flow').addEventListener('click', e => {
+  const btn = e.target.closest('.step-btn');
+  if (!btn) return;
+  const step = btn.closest('.step');
+  const detail = step.querySelector('.step-detail');
+  const auf = step.classList.toggle('auf');
+  btn.setAttribute('aria-expanded', auf ? 'true' : 'false');
+  detail.hidden = !auf;
+});
+
+/* ---- Nachschlagen ---- */
+let q = '';
+let kat = 'alle';
+
+function baueKats() {
+  const alle = [['alle', 'Alle'], ...KATEGORIEN.map(k => [k.id, k.name])];
+  document.getElementById('kats').innerHTML = alle.map(([id, name]) =>
+    `<button type="button" data-kat="${id}" aria-pressed="${id === kat}">${esc(name)}</button>`
+  ).join('');
+}
+
+function treffer() {
+  return BEGRIFFE
+    .filter(b => (kat === 'alle' || b.kategorie === kat))
+    .filter(b => {
+      if (!q) return true;
+      const heu = [b.begriff, (b.synonyme || []).join(' '), b.kurz, b.lang]
+        .join(' ').toLowerCase();
+      return heu.includes(q);
+    })
+    .sort((a, b) => a.begriff.localeCompare(b.begriff, 'de'));
+}
+
+function baueTreffer() {
+  const feld = document.getElementById('treffer');
+  const zaehler = document.getElementById('zaehler');
+  const liste = treffer();
+
+  if (!BEGRIFFE.length) {
+    zaehler.textContent = '';
+    feld.innerHTML = `<div class="empty">
+        <div class="big">Das Lexikon wird gefüllt</div>
+        <p>Sobald die ersten Begriffe erfasst sind, kannst du hier suchen.</p>
+      </div>`;
+    return;
+  }
+  if (!liste.length) {
+    zaehler.textContent = '';
+    feld.innerHTML = `<div class="empty">
+        <div class="big">Kein Treffer</div>
+        <p>Für „${esc(q)}" ist hier nichts hinterlegt. Ein anderes Stichwort
+           oder eine andere Kategorie hilft vielleicht weiter.</p>
+      </div>`;
+    return;
+  }
+  zaehler.textContent = liste.length === 1 ? '1 Begriff' : `${liste.length} Begriffe`;
+  feld.innerHTML = liste.map(b => `<a class="lxrow" href="#${b.id}">
+      <span class="lxr-kat">${esc(katName(b.kategorie))}</span>
+      <span class="lxr-t">${esc(b.begriff)}</span>
+      <span class="lxr-d">${esc(b.kurz)}</span>
+    </a>`).join('');
+}
+
+const suche = document.getElementById('suche');
+const leeren = document.getElementById('leeren');
+suche.addEventListener('input', () => {
+  q = suche.value.trim().toLowerCase();
+  leeren.classList.toggle('an', suche.value.length > 0);
+  baueTreffer();
+});
+leeren.addEventListener('click', () => {
+  suche.value = ''; q = ''; leeren.classList.remove('an'); baueTreffer(); suche.focus();
+});
+document.getElementById('kats').addEventListener('click', e => {
+  const b = e.target.closest('[data-kat]');
+  if (!b) return;
+  kat = b.dataset.kat;
+  document.querySelectorAll('#kats button').forEach(x =>
+    x.setAttribute('aria-pressed', x.dataset.kat === kat ? 'true' : 'false'));
+  baueTreffer();
+});
+
+/* ---- Tabs ---- */
+let letzterTab = 'ablauf';
+function zeigeTab(name) {
+  letzterTab = name;
+  document.getElementById('tab-ablauf').setAttribute('aria-selected', name === 'ablauf');
+  document.getElementById('tab-lexikon').setAttribute('aria-selected', name === 'lexikon');
+  document.getElementById('pane-ablauf').hidden = name !== 'ablauf';
+  document.getElementById('pane-lexikon').hidden = name !== 'lexikon';
+}
+document.querySelector('.tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (b) zeigeTab(b.dataset.tab);
+});
+
+/* ---- Artikel ---- */
+function zeigeArtikel(id) {
+  const b = byId.get(id);
+  if (!b) return zeigeMain();
+  document.getElementById('artKat').textContent = katName(b.kategorie);
+  document.getElementById('artTitel').textContent = b.begriff;
+  document.getElementById('artBody').innerHTML = (b.lang || '').split('\n\n')
+    .map(abs => `<p>${inlineMarkup(abs)}</p>`).join('');
+
+  const siehe = document.getElementById('artSiehe');
+  const verwandt = (b.verwandt || []);
+  siehe.innerHTML = verwandt.length
+    ? `<h3>Siehe auch</h3><div class="begriffe">${verwandt.map(chipHtml).join('')}</div>`
+    : '';
+
+  mainView.style.display = 'none';
+  artView.style.display = 'block';
+  hochScrollen();
+}
+function zeigeMain() {
+  artView.style.display = 'none';
+  mainView.style.display = 'block';
+  hochScrollen();
+}
+function hochScrollen() {
+  window.scrollTo(0, 0);
+  scroll.scrollTop = 0;
+}
+document.getElementById('artZurueck').addEventListener('click', () => {
+  if (history.length > 1) history.back();
+  else { location.hash = ''; }
+});
+
+/* Fehlende Ziele (Eintrag folgt) sanft abfangen, statt ins Leere zu springen */
+document.addEventListener('click', e => {
+  const tot = e.target.closest('.lx-link.tot, .lx-chip.tot');
+  if (tot) { e.preventDefault(); melde('Dieser Eintrag folgt noch.', 'amber'); }
+});
+
+/* ---- Routing über den Hash (Deeplink + Zurück-Taste) ---- */
+function route() {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (id && byId.has(id)) {
+    zeigeArtikel(id);
+  } else {
+    zeigeMain();
+    zeigeTab(letzterTab);
+    if (id && !byId.has(id)) melde('Dieser Eintrag folgt noch.', 'amber');
+  }
+}
+window.addEventListener('hashchange', route);
+
+/* ---- Start ---- */
+baueFlow();
+baueKats();
+baueTreffer();
+route();
+</script>
+</body>
+</html>

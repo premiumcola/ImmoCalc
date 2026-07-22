@@ -267,7 +267,8 @@
 
 <script type="module">
 import { installLogos, installNav, logoSvg, api, eur, eurVoll, esc, fristKlasse,
-         fristText, melde, frage, schiebeFrage, promille } from './assets/immo.js';
+         fristText, melde, frage, schiebeFrage, promille, installHilfe }
+  from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { auswahlfeld } from './assets/auswahl.js';
 installNav();
@@ -346,7 +347,7 @@ function kreditFelder(art, werte = {}) {
   const bauspar = istBausparer(art);
   return [
     { k: 'art', l: 'Vertragsart', typ: 'auswahl', werte: VERTRAGSARTEN,
-      vorgabe: 'Darlehen', ohneLeer: true, umbau: true,
+      vorgabe: 'Darlehen', ohneLeer: true, umbau: true, lex: 'bausparvertrag',
       note: bauspar
         ? 'Beim Bausparvertrag wird gespart, nicht getilgt: eingetragen '
           + 'werden Bausparsumme und Guthaben.'
@@ -369,7 +370,7 @@ function kreditFelder(art, werte = {}) {
       { k: 'urspruenglich', l: 'Ursprungsbetrag', typ: 'number', schritt: '0.01',
         geld: true },
       { k: 'restschuld', l: 'Restschuld bei Beginn', typ: 'number',
-        schritt: '0.01', geld: true },
+        schritt: '0.01', geld: true, lex: 'restschuld' },
       /* CXLVIII — zwei Wege zum selben Satz. Wer den Zinssatz nicht kennt,
          liest den monatlichen Zinsanteil aus dem Kontoauszug ab; die Kopplung
          rechnet ihn in den Satz um (und umgekehrt). Gespeichert wird nur der
@@ -378,7 +379,7 @@ function kreditFelder(art, werte = {}) {
          umzurechnen: dort fällt kein Zins an, dort kommt welcher dazu. */
     ]),
     { k: 'zinssatz', l: bauspar ? 'Guthabenzins' : 'Zinssatz', typ: 'number',
-      schritt: '0.01', einheit: '%' },
+      schritt: '0.01', einheit: '%', lex: bauspar ? null : 'sollzins' },
     ...(bauspar ? [] : [
       { k: 'zins_monat', l: 'Zinsanteil je Monat', typ: 'number',
         schritt: '0.01', geld: true, hilfe: true,
@@ -387,16 +388,18 @@ function kreditFelder(art, werte = {}) {
     ]),
     { k: 'rate_monatlich', l: bauspar ? 'Sparbeitrag je Turnus'
                                       : 'Rate je Turnus',
-      typ: 'number', schritt: '0.01', geld: true },
+      typ: 'number', schritt: '0.01', geld: true,
+      lex: bauspar ? null : 'annuitaet' },
     { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
     { k: 'beginn', l: 'Beginn', typ: 'date' },
     ...(bauspar ? [] : [
-      { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date' },
+      { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date',
+        lex: 'zinsbindung' },
       // CCXXX — der Satz, der ab Ende der Bindung gilt, wenn schon bekannt.
       // Optional: bleibt er leer, rechnet ImmoCalc wie bisher mit dem
       // gebundenen Zinssatz weiter.
       { k: 'zinssatz_variabel', l: 'Anschlusszins ab Bindungsende (variabel)',
-        typ: 'number', schritt: '0.01', einheit: '%' },
+        typ: 'number', schritt: '0.01', einheit: '%', lex: 'anschlusszins' },
     ]),
     { k: 'notiz', l: 'Notiz', typ: 'text' },
   ];
@@ -1242,6 +1245,7 @@ async function laden() {
       <button class="btn gefahr" data-loeschen="1">Immobilie löschen</button>
     </div>`;
 
+  installHilfe(inhalt);
   cloudZeigen();
 }
 
@@ -1350,6 +1354,12 @@ async function ordnerZeigen() {
    alles andere sagt es selbst („m²", „%"). Leer heisst: schmuckloses Feld. */
 const feldEinheit = f => (f.geld ? '€' : f.einheit) || '';
 
+/* Beschriftung eines Feldes — bei echten Fachbegriffen (`f.lex`) mit einem
+   ?-Hilfe-Platzhalter. `installHilfe` macht nach dem Rendern ein anklickbares
+   Icon daraus. Triviale Felder (Name, Betrag, Bank) tragen kein `lex`. */
+const feldLabel = f => `${esc(f.l)}${
+  f.lex ? ` <span data-hilfe="${esc(f.lex)}"></span>` : ''}`;
+
 async function feldHtml(f, bereich, wert) {
   const id = `f_${f.k}`;
   if (f.typ === 'auswahl') {
@@ -1362,7 +1372,7 @@ async function feldHtml(f, bereich, wert) {
     // keine mögliche Antwort, sondern eine Lücke im Datenmodell.
     const werte = f.ohneLeer ? f.werte : ['', ...f.werte];
     const gesetzt = wert ?? f.vorgabe ?? '';
-    return `<div class="field"><label>${esc(f.l)}</label>
+    return `<div class="field"><label>${feldLabel(f)}</label>
       <input type="hidden" id="${id}" name="${f.k}" value="${esc(gesetzt)}">
       <div data-auswahl="${esc(f.k)}" data-label="${esc(f.l)}"
            ${f.umbau ? 'data-umbau="1"' : ''}
@@ -1454,7 +1464,7 @@ async function feldHtml(f, bereich, wert) {
     const knopf = (w, an, text) => `<button type="button"
         class="schaltknopf${an ? ' an' : ''}" data-wahl="${w}"
         aria-pressed="${an}">${text}</button>`;
-    return `<div class="field"><label>${esc(f.l)}</label>
+    return `<div class="field"><label>${feldLabel(f)}</label>
       <input type="hidden" id="${id}" name="${f.k}" value="${ja ? 'ja' : 'nein'}">
       <div class="schalter" data-wahlfeld="${esc(f.k)}" role="group"
            aria-label="${esc(f.l)}">
@@ -1470,7 +1480,7 @@ async function feldHtml(f, bereich, wert) {
   const typ = einheit ? 'text' : f.typ;
   const zusatz = einheit ? 'inputmode="decimal"'
                          : (f.schritt ? `step="${f.schritt}"` : '');
-  return `<div class="field"><label for="${id}">${esc(f.l)}</label>
+  return `<div class="field"><label for="${id}">${feldLabel(f)}</label>
     <input class="inp" id="${id}" name="${f.k}" type="${typ}" ${zusatz}
            value="${esc(v)}" ${f.pflicht ? 'required' : ''}>
     ${f.note ? `<span class="feldnote" id="n_${f.k}">${esc(f.note)}</span>` : ''}</div>`;
@@ -1652,6 +1662,7 @@ async function formular(einst) {
   formateSetzen(form, felder);
   auswahlSetzen(form);
   zinsKopplung(form);
+  installHilfe(form);
   // Ein zweiter showModal-Aufruf auf einem offenen Dialog wirft — der Wechsel
   // von der Miete zur Erhöhung tauscht nur den Inhalt aus.
   if (!dlg.open) dlg.showModal();
@@ -1869,10 +1880,11 @@ function kreditExtra(eintrag) {
 const GRUNDSCHULDFELDER = [
   { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01', geld: true,
     voll: true, pflicht: true },
-  { k: 'rang', l: 'Rang', typ: 'number', schritt: '1' },
-  { k: 'grundbuch_blatt', l: 'Grundbuchblatt', typ: 'text' },
+  { k: 'rang', l: 'Rang', typ: 'number', schritt: '1', lex: 'rang' },
+  { k: 'grundbuch_blatt', l: 'Grundbuchblatt', typ: 'text', lex: 'grundbuch' },
   { k: 'glaeubiger', l: 'Gläubiger', typ: 'text' },
   { k: 'brief', l: 'Briefgrundschuld', typ: 'schalter', vorgabe: false,
+    lex: 'brief-buchgrundschuld',
     note: 'Aus: Buchgrundschuld — kein Grundschuldbrief ausgestellt.' },
   { k: 'notiz', l: 'Notiz', typ: 'text' },
 ];
@@ -1947,7 +1959,8 @@ function grundschuldenHtml() {
         <button class="del" data-gs-weg="${g.id}" aria-label="löschen">×</button>
       </div>`).join('')
     : `<div class="leerzeile">Noch keine Grundschuld hinterlegt</div>`;
-  return `<div class="sekopf"><h2 class="sec">Grundschulden</h2></div>
+  return `<div class="sekopf"><h2 class="sec">Grundschulden<span
+        data-hilfe="grundschuld"></span></h2></div>
     <div class="liste">${zeilen}</div>
     <button class="add" data-gs-neu="1">＋ Grundschuld hinzufügen</button>`;
 }

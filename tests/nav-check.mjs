@@ -1,9 +1,9 @@
 // Die Navigationsleiste auf schmalen Schirmen.
 //
-// Sechs Einträge nebeneinander sind auf einem iPhone zu eng — die
+// Sieben Einträge nebeneinander sind auf einem iPhone zu eng — die
 // Beschriftungen schrumpfen und die Ziele werden schmaler als ein Daumen.
 // Geprüft wird: auf dem Handy stehen vier Einträge plus „Mehr", der Rest ist
-// über das Blatt erreichbar; auf dem Desktop sind alle sechs sichtbar.
+// über das Blatt erreichbar; auf dem Desktop sind alle sieben sichtbar.
 import { chromium } from 'playwright';
 import { mkdirSync } from 'fs';
 
@@ -70,7 +70,7 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
   await ctx.close();
 }
 
-/* ---- Desktop: alle sechs stehen in der Seitenleiste ---- */
+/* ---- Desktop: alle sieben stehen in der Seitenleiste ---- */
 {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
@@ -78,7 +78,7 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
   await page.waitForTimeout(300);
   const sichtbar = await page.$$eval('nav.nav a:not(.brand)',
     as => as.filter(a => a.offsetParent !== null).length);
-  pruefe(sichtbar === 6, `Desktop zeigt ${sichtbar} Einträge statt 6`);
+  pruefe(sichtbar === 7, `Desktop zeigt ${sichtbar} Einträge statt 7`);
   const mehrDa = await page.$eval('nav.nav .mehr', el => el.offsetParent !== null)
     .catch(() => false);
   pruefe(!mehrDa, 'auf dem Desktop steht „Mehr" im Weg');
