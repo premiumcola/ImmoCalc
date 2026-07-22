@@ -568,9 +568,9 @@ const STAMMFELDER = [
   { k: 'plz', l: 'PLZ', typ: 'text' },
   { k: 'ort', l: 'Ort', typ: 'text' },
   { k: 'flaeche', l: 'Gesamtfläche', typ: 'number', schritt: '0.01', einheit: 'm²' },
-  { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true },
+  { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
   { k: 'kaufdatum', l: 'Kaufdatum', typ: 'date' },
-  { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true },
+  { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true },
   { k: 'bank', l: 'Bank', typ: 'text' },
   { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
@@ -594,9 +594,9 @@ const GRUNDFELDER = [
   { k: 'gemarkung', l: 'Gemarkung', typ: 'text' },
   { k: 'flurstueck', l: 'Flurstück', typ: 'text' },
   { k: 'verkehrswert', l: 'Grundstückswert', typ: 'number', schritt: '0.01',
-    geld: true },
+    geld: true, voll: true },
   { k: 'grundsteuerwert', l: 'Grundsteuerwert', typ: 'number', schritt: '0.01',
-    geld: true },
+    geld: true, voll: true },
   { k: 'grundsteuer_messbetrag', l: 'Steuermessbetrag', typ: 'number',
     schritt: '0.01', geld: true },
   { k: 'grundsteuer_hebesatz', l: 'Hebesatz', typ: 'number', schritt: '1',
@@ -671,11 +671,20 @@ const zahl = n => Number(n ?? 0).toLocaleString('de-DE',
 /* Bestandszeilen kennen nur `tausendstel`; neue tragen `promille`. */
 const promille = a => zahl(a.promille ?? a.tausendstel ?? 0);
 
+/* IBAN in Vierergruppen, egal wie sie gespeichert wurde: „DE42 7635 0000 …".
+   Die letzte Gruppe darf kürzer sein. */
+const ibanSchoen = s => String(s || '').replace(/\s+/g, '').toUpperCase()
+  .replace(/(.{4})/g, '$1 ').trim();
+
 function stammwert(f, o) {
   const v = o[f.k];
   if (v == null || v === '') return null;
   if (f.typ === 'date') return datum(v);
-  if (f.geld) return eur(v);
+  if (f.iban) return ibanSchoen(v);
+  // `voll`: ein Kaufpreis oder Verkehrswert ist ein runder Betrag — die zwei
+  // Nachkommastellen sind dort nur Rauschen. Der Grundsteuer-Messbetrag (1,43 €)
+  // trägt sie dagegen bewusst.
+  if (f.geld) return f.voll ? eurVoll(v) : eur(v);
   if (f.einheit) return `${Number(v).toLocaleString('de-DE')} ${f.einheit}`;
   return String(v);
 }
