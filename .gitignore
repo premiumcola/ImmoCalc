@@ -41,5 +41,8 @@ tools/auto-update.log
 tools/.auto-update.lock
 tools/.zuletzt-deployt
 
+# OCR-Nachzieh-Bericht (CLXXIX): kann echte Betraege/Namen aus Belegen tragen
+tools/ocr_nachziehen.json
+
 # Analyse-Reports mit echten Namen/IBANs — nur lokal, nie ins Git
 analyse/

@@ -15,6 +15,14 @@ komprimierten Objektströmen.
 
 Fehlt die Bibliothek, bleibt das Modul stumm — wie `ocr` ohne Tesseract: kein
 Fehler, nur kein Vorschlag. Der Import ist deshalb bewusst weich.
+
+Ein reiner Scan trägt gar keinen Text — nur ein Bild der Seite. Für ihn gibt es
+`seiten_als_bilder`: jede Seite wird zu einem Rasterbild, das dann Tesseract
+liest (CLXXIX). Gerendert wird mit `pypdfium2` — ein kleines Wheel ohne
+System-Abhängigkeit (kein poppler, kein Ghostscript), das die eigentliche
+PDFium-Engine schon mitbringt. Auch dieser Import ist weich: fehlt die
+Bibliothek, kann eben nicht gerastert werden, und ein Scan bleibt stumm wie
+zuvor.
 """
 from __future__ import annotations
 
@@ -33,16 +41,37 @@ MAX_SEITEN = 30
 # eine Handvoll Bytes; alles danach ist kein PDF mehr.
 KOPF_FENSTER = 1024
 
+# Auflösung, mit der eine Scan-Seite zum Bild wird. 200 dpi ist der übliche
+# Zielwert für Texterkennung: fein genug, dass Tesseract auch kleine Beträge
+# liest, grob genug, dass ein mehrseitiger Beleg nicht Hunderte Megabyte wird.
+# Der Skalierungsfaktor bezieht sich auf die PDF-Grundauflösung von 72 dpi.
+RASTER_DPI = 200
+RASTER_SKALIERUNG = RASTER_DPI / 72
+
 try:  # pragma: no cover - hängt davon ab, was im Image liegt
     from pypdf import PdfReader
 except ImportError:  # pragma: no cover
     PdfReader = None
     log.info("pypdf ist nicht installiert — PDFs werden nicht gelesen")
 
+try:  # pragma: no cover - hängt davon ab, was im Image liegt
+    import pypdfium2 as pdfium
+except ImportError:  # pragma: no cover
+    pdfium = None
+    log.info("pypdfium2 ist nicht installiert — Scans werden nicht gerastert")
+
 
 def verfuegbar() -> bool:
     """Lässt sich überhaupt ein PDF lesen?"""
     return PdfReader is not None
+
+
+def kann_rastern() -> bool:
+    """Lässt sich eine Scan-Seite überhaupt zu einem Bild rendern?
+
+    Ohne `pypdfium2` bleibt ein reiner Scan stumm — der eingebettete Text
+    eines Text-PDF wird trotzdem weiter gelesen."""
+    return pdfium is not None
 
 
 def ist_pdf(rohdaten: bytes) -> bool:
@@ -131,3 +160,66 @@ def text_aus_pdf(rohdaten: bytes) -> str:
         return ""
     roh = "\n".join(_seitentext(s) for s in seiten)
     return "\n".join(_entspreizt(z) for z in roh.splitlines())
+
+
+def _als_ppm(bitmap: Any) -> bytes:
+    """Eine gerenderte Seite als PPM (P6) — ein Bild ohne fremde Bibliothek.
+
+    Tesseract liest über Leptonica auch das schlichte PPM-Format; einen
+    PNG-Kodierer und damit Pillow brauchen wir dafür nicht. `pypdfium2` liefert
+    mit `rev_byteorder` schon RGB in Leserichtung, und die Zeilen liegen ohne
+    Rand dicht beieinander (`stride == breite*3`) — der Puffer wandert dann in
+    einem Stück in die Datei.
+    """
+    breite, hoehe, stride = bitmap.width, bitmap.height, bitmap.stride
+    kanaele = len(bitmap.mode)          # "RGB" -> 3, "RGBA" -> 4
+    puffer = bytes(bitmap.buffer)
+    kopf = b"P6\n%d %d\n255\n" % (breite, hoehe)
+    if kanaele == 3 and stride == breite * 3:
+        return kopf + puffer
+    # Der seltene Fall: eine Zeile trägt Randbytes oder einen Alphakanal. Dann
+    # Zeile für Zeile die drei Farbkanäle herausschneiden.
+    zeilen = bytearray()
+    for y in range(hoehe):
+        anfang = y * stride
+        zeile = memoryview(puffer)[anfang:anfang + breite * kanaele]
+        if kanaele == 3:
+            zeilen += bytes(zeile)
+        else:
+            for x in range(breite):
+                zeilen += bytes(zeile[x * kanaele:x * kanaele + 3])
+    return kopf + bytes(zeilen)
+
+
+def seiten_als_bilder(rohdaten: bytes, max_seiten: int = MAX_SEITEN) -> list[bytes]:
+    """Jede Seite eines PDF als Rasterbild — der Weg für einen reinen Scan.
+
+    Ein eingescanntes Blatt trägt keinen Text, nur ein Bild. Damit Tesseract
+    es überhaupt sieht, muss die Seite erst zu Pixeln werden; genau das fehlte
+    bisher (CLXXIX), denn Tesseract liest PDFs nicht, nur Bilder.
+
+    Leer heisst: kein PDF, keine Rasterbibliothek, oder die Datei liess sich
+    nicht öffnen. Ein Fehler wird daraus nie — ein unlesbarer Scan soll das
+    Hochladen so wenig verhindern wie ein unlesbares Text-PDF."""
+    if not kann_rastern() or not ist_pdf(rohdaten):
+        return []
+    try:
+        doc = pdfium.PdfDocument(rohdaten)
+    except Exception as fehler:                            # noqa: BLE001
+        log.warning("PDF nicht zu rastern: %s", fehler)
+        return []
+    bilder: list[bytes] = []
+    try:
+        for nr in range(min(len(doc), max_seiten)):
+            try:
+                bitmap = doc[nr].render(scale=RASTER_SKALIERUNG,
+                                        draw_annots=False, rev_byteorder=True)
+                bilder.append(_als_ppm(bitmap))
+            except Exception as fehler:                    # noqa: BLE001
+                log.warning("Seite nicht zu rastern: %s", fehler)
+    finally:
+        try:
+            doc.close()
+        except Exception:                                  # noqa: BLE001
+            pass
+    return bilder

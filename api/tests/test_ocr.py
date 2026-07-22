@@ -4,6 +4,7 @@ Ein Bild braucht Tesseract; ein maschinengeschriebenes PDF nicht — dessen Text
 steht in der Datei. Geprüft wird hier beides: das Auswerten des Textes (der
 Teil, der falsch liegen kann) und der Weg vom PDF zum Vorschlag.
 """
+import io
 import os
 import sys
 from datetime import date
@@ -12,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app import pdftext  # noqa: E402
+from app import ocr, pdftext  # noqa: E402
 from app.ocr import (betrag_aus_text, datum_aus_text,  # noqa: E402
                      erkenne, kategorie_aus_text, text_aus_beleg)
 
@@ -180,6 +181,146 @@ def mini_pdf(zeilen: list[str]) -> bytes:
     datei += (b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n"
               % (len(objekte) + 1, tabelle))
     return bytes(datei)
+
+
+# --------------------------------------------------------------------------
+# CLXXIX: ein reiner Scan trägt keinen Text — nur ein Bild der Seite. Tesseract
+# liest aber keine PDFs, nur Bilder. Es fehlte der Schritt Seite -> Bild ->
+# Tesseract. Gerastert wird mit pypdfium2; die echte Erkennung greift erst im
+# Container mit Tesseract, hier wird nur die Verdrahtung geprüft.
+# --------------------------------------------------------------------------
+
+def bild_pdf(breite: int = 200, hoehe: int = 120) -> bytes:
+    """Ein winziges PDF ganz ohne Textschicht — nur ein Bild-XObject.
+
+    So sieht ein Scan aus: `pdftext.text_aus_pdf` findet darin keinen Text und
+    der Beleg nimmt den Rasterweg. Von Hand gebaut wie `mini_pdf`, ohne
+    Bibliothek und ohne Beispieldatei — ein 2×2-Bild, über die ganze Seite
+    gezogen."""
+    pixel = bytes([200, 200, 200,  40, 40, 40,
+                    40, 40, 40,   200, 200, 200])   # 2×2 RGB
+    inhalt = ("q %d 0 0 %d 0 0 cm /Im0 Do Q" % (breite, hoehe)).encode("latin-1")
+    objekte = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 %d %d]"
+        b"/Resources<</XObject<</Im0 4 0 R>>>>/Contents 5 0 R>>" % (breite, hoehe),
+        b"<</Type/XObject/Subtype/Image/Width 2/Height 2/ColorSpace/DeviceRGB"
+        b"/BitsPerComponent 8/Length %d>>stream\n" % len(pixel)
+        + pixel + b"\nendstream",
+        b"<</Length %d>>stream\n" % len(inhalt) + inhalt + b"\nendstream",
+    ]
+    datei = bytearray(b"%PDF-1.4\n")
+    stellen = []
+    for nr, koerper in enumerate(objekte, 1):
+        stellen.append(len(datei))
+        datei += b"%d 0 obj\n" % nr + koerper + b"\nendobj\n"
+    tabelle = len(datei)
+    datei += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objekte) + 1)
+    for stelle in stellen:
+        datei += b"%010d 00000 n \n" % stelle
+    datei += (b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n"
+              % (len(objekte) + 1, tabelle))
+    return bytes(datei)
+
+
+def _ppm_groesse(daten: bytes) -> tuple[int, int]:
+    """Breite und Höhe aus dem P6-Kopf: „P6\\n{breite} {hoehe}\\n255\\n…"."""
+    assert daten.startswith(b"P6"), "kein PPM"
+    _, masse, _rest = daten.split(b"\n", 2)
+    breite, hoehe = masse.split()
+    return int(breite), int(hoehe)
+
+
+def test_scan_pdf_wird_zu_einem_bild_der_erwarteten_groesse():
+    """Die Rasterstufe für sich — läuft ohne Tesseract.
+
+    Ein Bild-PDF (keine Textschicht) wird Seite für Seite gerendert. Erwartet
+    ist genau die Größe, die pypdfium2 direkt aus derselben Seite liefert, und
+    sie ist deutlich größer als die Seite in Punkten — also hochskaliert."""
+    if not pdftext.kann_rastern():
+        pytest.skip("pypdfium2 ist hier nicht installiert")
+    import pypdfium2 as pdfium
+
+    roh = bild_pdf(200, 120)
+    # Ein Scan: kein eingebetteter Text.
+    assert pdftext.text_aus_pdf(roh).strip() == ""
+
+    bilder = pdftext.seiten_als_bilder(roh)
+    assert len(bilder) == 1
+
+    doc = pdfium.PdfDocument(roh)
+    bezug = doc[0].render(scale=pdftext.RASTER_SKALIERUNG, rev_byteorder=True)
+    erwartet = (bezug.width, bezug.height)
+    doc.close()
+
+    assert _ppm_groesse(bilder[0]) == erwartet
+    breite, hoehe = erwartet
+    assert breite > 200 and hoehe > 120       # gegenüber den Punkten skaliert
+
+
+def test_text_pdf_geht_nicht_ueber_die_rasterung(monkeypatch):
+    """Verdrahtung: ein Text-PDF wird über `pdftext` gelesen — es wird nie
+    gerastert. Gerufen würde die Rasterung nur, wenn kein Text da ist."""
+    gerufen = []
+    monkeypatch.setattr(pdftext, "seiten_als_bilder",
+                        lambda *a, **k: gerufen.append(1) or [])
+    roh = mini_pdf(["Stadtwerke Musterstadt", "Rechnungsdatum 14.03.2025",
+                    "Gesamtbetrag 1.071,00"])
+    text = ocr.text_aus_beleg(roh)
+    assert "Gesamtbetrag" in text
+    assert not gerufen                        # kein Rasterweg nötig
+
+
+def test_bild_pdf_nimmt_den_rasterweg(monkeypatch):
+    """Verdrahtung: ein PDF ohne Textschicht wird gerastert und Bild für Bild
+    durch Tesseract gelesen. Ohne echtes Tesseract geprüft — die Bilderkennung
+    ist gestellt, gerendert wird aber wirklich."""
+    if not pdftext.kann_rastern():
+        pytest.skip("pypdfium2 ist hier nicht installiert")
+    roh = bild_pdf(200, 120)
+    assert pdftext.text_aus_pdf(roh).strip() == ""
+
+    # Tesseract vortäuschen, damit der Rasterweg auch ohne das Programm greift,
+    # und seine Lesung durch eine bekannte Antwort ersetzen.
+    monkeypatch.setattr(ocr, "verfuegbar", lambda: True)
+    gelesen = []
+
+    def gestelltes_tesseract(daten: bytes) -> str:
+        gelesen.append(daten)
+        return "Gesamtbetrag 555,00"
+
+    monkeypatch.setattr(ocr, "text_aus_bild", gestelltes_tesseract)
+
+    ergebnis = erkenne(roh)
+    assert ergebnis["betrag"] == 555.00
+    # Was Tesseract bekam, waren echte Rasterbilder — kein durchgereichtes PDF.
+    assert gelesen and all(bild.startswith(b"P6") for bild in gelesen)
+
+
+def test_tesseract_liest_den_gerasterten_scan():
+    """Die echte Erkennung eines Scans — nur mit Tesseract. Die Devbox hat
+    keins und überspringt; im Container greift sie wirklich.
+
+    Ein Bild-PDF mit gemaltem Text (kein Zeichenstrom) wird gerastert und
+    gelesen; erwartet ist der aufgedruckte Betrag."""
+    if not ocr.verfuegbar():
+        pytest.skip("Tesseract ist hier nicht installiert")
+    if not pdftext.kann_rastern():
+        pytest.skip("pypdfium2 ist hier nicht installiert")
+    Image = pytest.importorskip("PIL.Image")     # nur zum Erzeugen des Fixtures
+    ImageDraw = pytest.importorskip("PIL.ImageDraw")
+
+    bild = Image.new("RGB", (1000, 240), "white")
+    zeichner = ImageDraw.Draw(bild)
+    zeichner.text((40, 90), "Gesamtbetrag  555,00 EUR", fill="black")
+    puffer = io.BytesIO()
+    bild.save(puffer, "PDF")                       # Bild-PDF, keine Textschicht
+    roh = puffer.getvalue()
+    assert pdftext.text_aus_pdf(roh).strip() == ""
+
+    ergebnis = erkenne(roh)
+    assert ergebnis["betrag"] == 555.00
 
 
 def test_pdf_mit_text_braucht_keine_bilderkennung():

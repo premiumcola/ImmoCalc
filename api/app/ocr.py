@@ -403,22 +403,48 @@ def erkennung_moeglich() -> bool:
     return pdftext.verfuegbar() or verfuegbar()
 
 
+def _text_aus_scan(rohdaten: bytes) -> str:
+    """Ein PDF ohne Textschicht — Seite für Seite rastern und lesen.
+
+    Der fehlende Zwischenschritt aus CLXXIX: Tesseract liest keine PDFs, nur
+    Bilder. Ein reiner Scan muss also erst zu Pixeln werden. Jede Seite wird
+    gerendert und einzeln erkannt; die Ergebnisse stehen untereinander, damit
+    `betrag_aus_text` und `datum_aus_text` sie zeilenweise durchsuchen.
+
+    Ohne Rasterbibliothek oder ohne Tesseract kommt nichts heraus — dann
+    verhält sich alles wie vor CLXXIX: kein Fehler, nur kein Vorschlag."""
+    if not verfuegbar():
+        return ""
+    bilder = pdftext.seiten_als_bilder(rohdaten)
+    if not bilder:
+        return ""
+    return "\n".join(text_aus_bild(bild) for bild in bilder)
+
+
 def text_aus_beleg(rohdaten: bytes) -> str:
     """Der Text eines Belegs — der billigste Weg zuerst.
 
-    Ein maschinengeschriebenes PDF trägt seinen Text schon in sich; ihn zu
-    lesen kostet nichts und verliest sich nie. Erst wenn nichts drinsteht —
-    ein Foto, ein eingescanntes Blatt —, kommt Tesseract an die Reihe. Ist
-    auch das nicht eingerichtet, bleibt es ehrlich bei nichts.
+    Drei Stufen, jede greift erst, wo die vorige nichts hergibt:
 
-    Der Fund CLXX war genau diese fehlende erste Stufe: eine Rechnung als
-    Text-PDF ging durch die Bilderkennung, fand dort kein Tesseract und
-    meldete „Betrag nicht erkannt" — obwohl der Betrag als Zeichenstrom in
-    der Datei stand.
+    1. Der eingebettete Text eines maschinengeschriebenen PDF. Ihn zu lesen
+       kostet nichts und verliest sich nie.
+    2. Fehlt der Text — ein reiner Scan —, werden die Seiten gerastert und
+       durch Tesseract gelesen (CLXXIX). Genau dieser Schritt fehlte bisher:
+       Tesseract liest keine PDFs, nur Bilder.
+    3. Ist es gar kein PDF, sondern ein Foto, geht das Bild direkt an
+       Tesseract.
+
+    Fehlt eine Bibliothek — kein Tesseract, keine Rasterlib —, bleibt es
+    ehrlich bei nichts. Der Fund CLXX war die fehlende erste Stufe: eine
+    Rechnung als Text-PDF ging durch die Bilderkennung, fand dort kein
+    Tesseract und meldete „Betrag nicht erkannt" — obwohl der Betrag als
+    Zeichenstrom in der Datei stand.
     """
     text = pdftext.text_aus_pdf(rohdaten)
     if text.strip():
         return text
+    if pdftext.ist_pdf(rohdaten):
+        return _text_aus_scan(rohdaten)
     return text_aus_bild(rohdaten)
 
 
@@ -438,7 +464,10 @@ def _warum_nichts(rohdaten: bytes) -> str:
     if not erkennung_moeglich():
         return ("Texterkennung ist auf diesem Server nicht eingerichtet — "
                 "Betrag bitte eintragen.")
-    if pdftext.ist_pdf(rohdaten) and not verfuegbar():
+    # Ein PDF ohne eingebetteten Text ist ein Scan. Um ihn zu lesen, braucht es
+    # beides: die Rasterbibliothek, die die Seite zum Bild macht (CLXXIX), und
+    # Tesseract, das das Bild liest. Fehlt eines, bleibt der Scan stumm.
+    if pdftext.ist_pdf(rohdaten) and not (verfuegbar() and pdftext.kann_rastern()):
         return ("Dieses PDF enthält keinen Text, sondern nur ein Bild. Für "
                 "eingescannte Belege ist auf diesem Server keine "
                 "Bilderkennung eingerichtet — Betrag bitte eintragen.")

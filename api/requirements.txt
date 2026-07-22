@@ -7,3 +7,9 @@ python-multipart==0.0.20
 # weiteren Abhaengigkeiten — ohne sie bliebe der Betrag einer PDF-Rechnung von
 # der Bilderkennung abhaengig.
 pypdf==6.14.2
+# Rastern eingescannter PDFs zu Bildern (app/pdftext.seiten_als_bilder, CLXXIX).
+# Ein reiner Scan traegt keinen Text; Tesseract liest aber nur Bilder, keine
+# PDFs. pypdfium2 bringt die PDFium-Engine als kleines Wheel mit — kein
+# poppler, kein Ghostscript, keine System-Binaries. Ohne diese Bibliothek
+# bleibt ein Scan stumm wie zuvor (weicher Import).
+pypdfium2==5.12.1

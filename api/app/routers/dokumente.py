@@ -841,10 +841,13 @@ def erkennung_status() -> dict:
     `verfuegbar` sagt, ob überhaupt etwas gelesen werden kann. Das ist mehr
     als früher: ein maschinengeschriebenes PDF wird auch ohne Bilderkennung
     gelesen. `bilder` und `pdf` sagen, welcher der beiden Wege offen ist —
-    fehlt Tesseract, bleiben nur Fotos stumm."""
+    fehlt Tesseract, bleiben nur Fotos stumm. `scan` sagt, ob auch ein
+    eingescanntes PDF gelesen wird (CLXXIX): das braucht beides — die
+    Rasterbibliothek *und* Tesseract."""
     return {"verfuegbar": ocr.erkennung_moeglich(),
             "bilder": ocr.verfuegbar(),
-            "pdf": pdftext.verfuegbar()}
+            "pdf": pdftext.verfuegbar(),
+            "scan": pdftext.kann_rastern() and ocr.verfuegbar()}
 
 
 @router.post("/erkennen")
