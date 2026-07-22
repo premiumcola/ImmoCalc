@@ -166,6 +166,29 @@ daraus wirklich eine Position in der Abrechnung wird, fehlt noch:
 | CLXVIII | **Das Haus zeigt alles, die Einheit nur ihres** | Zwei Ebenen mit klarer Aufteilung. **Am Haus** (übergeordnet, alles zusammengefasst): Stammdaten, Eigentümer, Kredite, Versicherungen, Steuer, Zahlungen, Dokumentenablage — alles, was nicht auf eine einzelne Wohnung läuft. Von dort springt man auf die Einheiten hinunter. **An der Einheit** (im Fokus): Mieter und Mietverhältnis, Kontakt, Nebenkosten und Abrechnungszeitraum. Die Stammdaten des Hauses werden dort **nicht wiederholt**. Verkehrswert nur, wenn er für diese Einheit gepflegt ist. Von der Einheit führt ein Weg zurück zum Haus |
 | CLXIX | **Einheit per Bubble wählen** | Beim Anlegen eines Mietverhältnisses die Einheit als Bubbles anbieten — vier Blasen, eine antippen. Kein Freitext (siehe XCII: ein Tippfehler lässt die Partei stumm aus der Verteilung fallen), keine Liste zum Aufklappen |
 
+### Aus der Bestandssichtung — 22.07.2026 (Details lokal in analyse/sichtung/)
+
+Sichtung der Text-PDFs des echten Bestands, 6 Agents parallel. Ergebnis: die
+meisten wichtigen Belege (Kauf-, Miet-, Darlehensverträge, Handwerker, ältere
+Bescheide) sind Scans ohne Text -> brauchen CLXXIX (OCR). Die lesbaren Text-PDFs
+(Versorger, delta-t, Bescheide, PV) bestätigen CXXXI–CXL und fördern neue Lücken
+zutage. Nach Priorität (was jährlich wiederkehrt zuerst):
+
+| Nr. | Aufgabe | Priorität |
+|---|---|---|
+| CXCVI | **Beleg-Metadaten vervollständigen** — Belegdatum, Abrechnungszeitraum (von–bis, jahresübergreifend erlaubt, Semester-Stichtag 30.09.), Zahldatum getrennt vom Belegdatum, Fälligkeit | hoch |
+| CXCVII | **Zahlplan je Beleg (mehrere Termine) + Abschlag/Guthaben/Nachzahlung** — reale Belege haben 2–11 Ratentermine und einen Saldo aus geleisteten Abschlägen, nicht ein einzelnes Fälligkeitsdatum | hoch |
+| CXCVIII | **Zähler-Stammdaten + Ableseereignisse** — Zählernummer, Typ, Stand alt/neu, Ablesedatum, Zählerwechsel, Zählermiete als Position, Verbrauch als Umlagebasis | hoch |
+| CXCIX | **Kombi-/Sammelbeleg aufteilbar** — ein Bescheid mischt mehrere Kostenarten (Grundsteuer + Wasser) oder zwei Perioden; muss auf mehrere Positionen/Zeiträume verteilbar sein | hoch |
+| CC | **Darlehen mit Konditionen, mehrere je Objekt** — Sollzins, Effektivzins, Zinsbindungsende, Tilgung, Disagio, Rate (Zins/Tilgung getrennt), Auszahlung, Laufzeit, Belastungs-IBAN, Restschuld-Verlauf; Vertragsarten Annuität/Ratenkredit/Bausparer/Zwischenfinanzierung. `vermoegen.py` auf mehrere Tranchen erweitern | mittel |
+| CCI | **Grundsteuer-Herleitung über zwei Bescheide** — Grundsteuerwert → Messzahl → Messbetrag → Hebesatz → Jahresbetrag (Finanzamt + Gemeinde), mit Aktenzeichen; Weg Bescheid → NK-Umlage. Erweitert CXXXVI/CXXXVII | mittel |
+| CCII | **Vertrags-Stammdaten** — Mietvertrag (Grundmiete, NK-Split Wärme/WW vs. übrige, Kaution, Staffel, Umlagemaßstab je Kostenart, Laufzeit) und Versicherungspolice als eigene Objekte, nicht nur Belege. AcroForm-Formulare brauchen Feldauslesen, nicht nur OCR | mittel |
+| CCIII | **WEG-Ebene** — Wirtschaftsplan + Hausgeld je Einheit (getrennt von der Mieter-NK), Rücklagen-/Girokonto mit Stichtagsständen, Dokumenttyp Protokoll/Beschluss, getrennte offizielle vs. interne Verteilerschlüssel | mittel |
+| CCIV | **Anschaffungskosten/AfA** — Grund/Gebäude-Aufteilung, AfA-Basis, Kaufnebenkosten getrennt, anschaffungsnahe Herstellungskosten aggregieren (15-%-Grenze, 3-Jahres-Frist) | mittel |
+| CCV | **CO2-Kostenaufteilung** je Brennstoffbeleg (kWh, CO2-kg, CO2-Abgabe, Vermieteranteil ab 2023 nach CO2KostAufG) | niedrig |
+| CCVI | **PV-Einspeisung als Einnahmequelle** im Cashflow (kWp, Inbetriebnahme, kWh, gestaffelter Tarif, Abschlagsplan) | niedrig |
+| CCVII | **Weitere Stammdaten** — Objekt-Hauskonto (IBAN) + SEPA-Mandat, Vergleichsmiete/Mietspiegel je Objekt, Eigentümer als Gemeinschaft/GbR, Objekttyp unbebautes Grundstück (Grundsteuer A), Pflichttermine ohne Zahlung (Feuerstättenschau), Inventarliste je Einheit, §-35a-Flag je Position mit Belegzuordnung, unterjähriger Versorger-/Mieterwechsel | niedrig |
+
 ### OCR für Scan-PDFs — 22.07.2026
 
 | Nr. | Aufgabe | Was gemeint ist |
