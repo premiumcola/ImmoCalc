@@ -19,10 +19,9 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | In einfachen Worten | Stand |
 |---|---|---|
-| CCXIV/CCXVI/CCXVII/CCXX | Restliche Modularisierung: Navigationsleiste, App-Logo-CSS, Euro-Formatierer zentral · Import-Zirkel cloud↔dokumente auflösen | Agents laufen (22.07.) |
-| CCXXVII | Neue Foto-/Scan-PDFs bekommen automatisch eine durchsuchbare Textschicht (OCR im Normalbetrieb) | offen |
-| CCXXVIII | Mehrseitige Dokumente einfach abfotografieren: Rand erkennen, entzerren, zu einem PDF, dann OCR | offen |
-| — | Lücken-Analyse: 390 OCR-Dokumente werden auf fehlende App-Felder durchgesehen (3 Agents) | läuft (22.07.) |
+| CCXXVII | Neue Foto-/Scan-PDFs bekommen automatisch eine durchsuchbare Textschicht (OCR im Normalbetrieb) | offen — als Nächstes |
+| CCXXVIII | Mehrseitige Dokumente einfach abfotografieren: Rand erkennen, entzerren, zu einem PDF, dann OCR | offen — als Nächstes |
+| CCXXIX–CCXLVIII | 20 Modell-Lücken aus der OCR-Dokumentanalyse (Grundschuld, variabler Zins, Zinsen-Ist, Nießbrauch, Rücklagen-Historie, HKVO-Split, Kaution, Mängelliste …) | eingetragen, offen |
 
 ---
 
@@ -228,8 +227,8 @@ Reihenfolge: erst echte Bugs, dann Modularisierung/Regelverstöße, dann Kosmeti
 | CCXIII | ~~**Natives `<select>` im Mailversand**~~ **erledigt** `0a15f38` | `settings.html:386` — Anbieter-Wähler ist ein natives select (Regelverstoß, System-Auswahlrad auf iOS). Auf `auswahlfeld` aus auswahl.js umstellen |
 | CCXIV | ~~**Import-Zirkel cloud ↔ dokumente**~~ **erledigt** `2d0badf` | `cloud.py:76` — geteilte Infrastruktur (`_lies`/`_schreib`/`verbindung`/`STRUKTUR`) liegt im cloud-Router, dokumente importiert daraus, cloud fünfmal lazy zurück. In neutrale Module herauslösen |
 | CCXV | ~~**`_objekt(session, slug)` 3× identisch, 17× inline**~~ **erledigt** `fb44d33` | `stammdaten.py:38` (+ besitz.py, objekte.py) — als gemeinsame FastAPI-Dependency `objekt_holen` herauslösen |
-| CCXVI | **Navigationsleiste in 8 Seiten kopiert** | `index.html:167` — den `<nav>`-Block zentral aus immo.js injizieren (wie `installLogos()`) statt 8× pflegen |
-| CCXVII | **`.applogo`/Kachel-CSS in 4 Seiten dupliziert** | `index.html:22` — die Regeln einmal nach immo.css, die inline-Kopien entfernen |
+| CCXVI | ~~**Navigationsleiste in 8 Seiten kopiert**~~ **erledigt** `fc21f44` | `index.html:167` — den `<nav>`-Block zentral aus immo.js injizieren (wie `installLogos()`) statt 8× pflegen |
+| CCXVII | ~~**`.applogo`/Kachel-CSS in 4 Seiten dupliziert**~~ **erledigt** `fc21f44` | `index.html:22` — die Regeln einmal nach immo.css, die inline-Kopien entfernen |
 
 **Kosmetik — Aufräumen:**
 
@@ -237,7 +236,7 @@ Reihenfolge: erst echte Bugs, dann Modularisierung/Regelverstöße, dann Kosmeti
 |---|---|---|
 | CCXVIII | ~~Leerzustand-Hinweis des Ordner-Browsers greift nur an der Wurzel (Operator-Präzedenz)~~ **erledigt** `0a15f38` | `settings.html:575` |
 | CCXIX | ~~Home/End scrollt die Markierung nicht ins Sichtfeld (A11y)~~ **erledigt** `ecd955f` | `auswahl.js:147` |
-| CCXX | Euro-/Promille-Formatierer je Seite neu statt aus immo.js (`eur`/`eurKurz`/`eurVoll` + ein neues `promille`) | eingang/status/app/onboarding/eigentuemer/objekt |
+| CCXX | ~~Euro-/Promille-Formatierer je Seite neu statt aus immo.js (`eur`/`eurKurz`/`eurVoll` + ein neues `promille`)~~ **erledigt** `fc21f44` | eingang/status/app/onboarding/eigentuemer/objekt |
 | CCXXI | ~~`Session` doppelt importiert (auch als `DBSession`)~~ **erledigt** `7251ec2` | `auswertung.py:17` |
 | CCXXII | ~~`_kern` dupliziert `bezeichnung.vergleichsname` (abweichend bei Ziffern)~~ **erledigt** `ecd955f` | `dokumente.py:141` |
 | CCXXIII | ~~Ungenutzter Import `field`~~ **erledigt** `7251ec2` | `engine.py:9` |
