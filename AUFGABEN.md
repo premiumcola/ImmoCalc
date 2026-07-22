@@ -166,6 +166,18 @@ daraus wirklich eine Position in der Abrechnung wird, fehlt noch:
 | CLXVIII | **Das Haus zeigt alles, die Einheit nur ihres** | Zwei Ebenen mit klarer Aufteilung. **Am Haus** (übergeordnet, alles zusammengefasst): Stammdaten, Eigentümer, Kredite, Versicherungen, Steuer, Zahlungen, Dokumentenablage — alles, was nicht auf eine einzelne Wohnung läuft. Von dort springt man auf die Einheiten hinunter. **An der Einheit** (im Fokus): Mieter und Mietverhältnis, Kontakt, Nebenkosten und Abrechnungszeitraum. Die Stammdaten des Hauses werden dort **nicht wiederholt**. Verkehrswert nur, wenn er für diese Einheit gepflegt ist. Von der Einheit führt ein Weg zurück zum Haus |
 | CLXIX | **Einheit per Bubble wählen** | Beim Anlegen eines Mietverhältnisses die Einheit als Bubbles anbieten — vier Blasen, eine antippen. Kein Freitext (siehe XCII: ein Tippfehler lässt die Partei stumm aus der Verteilung fallen), keine Liste zum Aufklappen |
 
+### Nebenkosten: global verteilen, Sonderfälle je Einheit — 22.07.2026
+
+Grundlage steht schon: `Kostenart` hängt an der Immobilie, eine Kostenposition
+wird per Schlüssel (Fläche, Personen, Zähler …) über alle Einheiten verteilt.
+Grundsteuer & Co. werden also **einmal global** angelegt, nicht je Einheit. Was
+fehlt, sind die zwei Sonderwege:
+
+| Nr. | Aufgabe | Was gemeint ist |
+|---|---|---|
+| CXCIII | **Einheit von der NK-Abrechnung ausschließen** | Eine Einheit soll ganz aus der Verteilung fallen können — selbstgenutzt, separat abgerechnet oder gewerblich mit eigenem Zähler. Neues Feld an `Einheit` (z. B. `nk_abrechnung: bool = True`); `verteilung.bezuege` lässt sie dann in keinem Schlüssel mitzählen. **Wichtig:** die Summe muss trotzdem exakt aufgehen — die ausgeschlossene Fläche darf die Anteile der übrigen nicht verzerren |
+| CXCIV | **Position zu 100 % auf eine Einheit** | Der Sonderfall: eine Position gehört ganz einer Einheit (Reparatur nur in Wohnung 2, eigener Warmwasserboiler). Statt global anlegen und Gewichte von Hand setzen — direkt an der Einheit anlegen, dann trägt sie den Betrag allein. Neues Feld an `Kostenposition` (z. B. `nur_einheit: str = ""`); ist es gesetzt, geht der Schlüssel leer aus und die eine Einheit bekommt 100 %. In der Oberfläche: NK global am Haus **oder** als Sonderposten in der Einheit anlegbar |
+
 ### Eigentum je Einheit — aus dem Gespräch vom 21.07.2026
 
 | Nr. | Aufgabe | Was gemeint ist |
