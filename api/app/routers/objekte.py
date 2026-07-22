@@ -379,6 +379,8 @@ class EinheitNeu(BaseModel):
     # Optional, obwohl das Modell eine Zahl erwartet: ein leer gelassenes Feld
     # kommt aus dem Formular als null und darf das Anlegen nicht scheitern lassen.
     stellplaetze: Optional[int] = 0
+    # CLXXXVI: ein Verkehrswert je Einheit — nur gepflegt, wo er bekannt ist.
+    verkehrswert: Optional[float] = None
 
 
 def _objekt(session: Session, slug: str) -> Objekt:
@@ -463,7 +465,8 @@ def einheit_anlegen(slug: str, data: EinheitNeu,
                 nutzungsart=data.nutzungsart.strip() or "Wohnen",
                 flaeche=data.flaeche, terrasse=data.terrasse,
                 nebenflaeche=data.nebenflaeche,
-                stellplaetze=data.stellplaetze or 0)
+                stellplaetze=data.stellplaetze or 0,
+                verkehrswert=data.verkehrswert)
     session.add(e)
     session.commit()
     session.refresh(e)
@@ -481,7 +484,7 @@ def einheit_aendern(eid: int, data: dict,
     ihre Vorauszahlung voll erstattet, ohne dass es irgendwo auffiele."""
     e = _einheit(session, eid)
     erlaubt = {"bezeichnung", "nutzungsart", "flaeche", "terrasse",
-               "nebenflaeche", "stellplaetze", "nk_abrechnung"}
+               "nebenflaeche", "stellplaetze", "nk_abrechnung", "verkehrswert"}
     felder = bereinige(Einheit, {k: v for k, v in data.items() if k in erlaubt})
     if "bezeichnung" in felder:
         neu = (felder["bezeichnung"] or "").strip()

@@ -126,7 +126,7 @@ daraus wirklich eine Position in der Abrechnung wird, fehlt noch:
 | Nr. | Fund | Was fehlt |
 |---|---|---|
 | CLXXXV | **Dialog schließt beim abgewiesenen Speichern** | `<form method="dialog">` schließt, bevor der Handler antwortet — nach einem 409 sind alle Eingaben weg. Betrifft alle Formulare der Objektseite, fällt bei der Doppelbelegung am meisten auf |
-| CLXXXVI | **Verkehrswert je Einheit** | `Einheit` hat kein Wertfeld; der Fokus zeigt deshalb Miete und €/m² statt Wert und Eigenkapital. Gehört zu CLXI (Eigentum je Einheit) |
+| CLXXXVI | ~~**Verkehrswert je Einheit**~~ **erledigt** (Commit offen) | Feld `Einheit.verkehrswert` (schon im Modell) ist nun im Einheit-Formular pflegbar (`objekt.html`) und gewichtet die Wertzurechnung je Eigentümer (`vermoegen.eigentuemer_fraktion`): der teureren Wohnung fällt der grössere Anteil am Objektwert zu. Ohne eigenen Wert bleibt die Fläche (ersatzweise Gleichverteilung) massgeblich |
 | CLXXXVII | **Löschknöpfe sind 36×36 px** | Gefordert sind 44×44 (Bestand in allen Listen von `objekt.html`) |
 | CLXXXVIII | **`GET /api/nextcloud/umzug` antwortet mit 400** | Wirft auf `settings.html` einen JS-Fehler; liegt in `cloud.py` |
 | CLXXXIX | **Umbenannte Einheit und alte Abrechnungen** | Mietverhältnisse ziehen mit, aber in bereits gespeicherten `Kostenposition.anteile` steht der alte Einheitsname als Partei — betrifft abgeschlossene Zeiträume mit Leerstand |
@@ -189,8 +189,8 @@ fehlt, sind die zwei Sonderwege:
 
 | Nr. | Aufgabe | Was gemeint ist |
 |---|---|---|
-| CLXI | **Eigentümer je Einheit statt nur je Objekt** | `Anteil` hängt heute am Objekt (`objekt_id`, Promille). In einem Haus mit fünf Einheiten, von denen drei dem einen und eine einem Familienmitglied gehören, lässt sich das nicht ausdrücken. Gebraucht: je Einheit ein Eigentümer (bzw. Anteile daran). **Wichtig:** die Umlage auf die Mieter bleibt davon unberührt — sie verteilt nach Fläche/Personen, unabhängig vom Eigentum. Der Eigentümer entscheidet nur, wer die Abrechnung verschickt und wem Einnahmen und Vermögen zugerechnet werden |
-| CLXII | **Auswertung je Eigentümer** | Cashflow, Vermögen und Mietverlauf zeigen heute das ganze Objekt. Gehört einem nur ein Teil, muss sich die Sicht auf die eigenen Einheiten einschränken lassen — sonst stehen fremde Einnahmen in der eigenen Übersicht |
+| CLXI | ~~**Eigentümer je Einheit statt nur je Objekt**~~ **erledigt** (Commit offen) | `Anteil.einheit` (leer = ganzes Haus) trägt jetzt optional eine Einheit. Anteile-Endpunkte (`besitz.py`) nehmen `einheit` entgegen, Eindeutigkeit je (Eigentümer, Einheit) — dieselbe Person kann Haus **und** Einheit halten. In `objekt.html` wird die Einheit beim Zuordnen als Blase gewählt („Ganzes Haus" + je Einheit). **Zusammenspiel:** Einheit-Anteile haben Vorrang für ihre Einheit, der Objekt-Anteil deckt den Rest. Konsistenz je Haus **und** je Einheit auf 1000 ‰ geprüft, Warnung analog `parteien_ohne_einheit`. Umlage auf die Mieter unberührt (`verteilung.py` nicht angefasst) |
+| CLXII | ~~**Auswertung je Eigentümer**~~ **erledigt** (Commit offen) | Neuer Endpunkt `GET /api/eigentuemer/uebersicht` (`besitz.py`): Wert, Restschuld, Eigenkapital und Miete je Eigentümer — auf seine Einheiten eingeschränkt. Wert/Restschuld nach wertgewichtetem Anteil, die Miete konkret aus den eigenen Einheiten. Gezeigt je Person auf `eigentuemer.html` (Kennzahlen „Mein Wert / Mein Eigenkapital / Miete pro Jahr" + Einheiten je Objekt). Gesamtsicht `/vermoegen` bleibt unberührt |
 | CLXIII | **Zwei Wege in die Kosten: roh oder schon verteilt** | Selbstverwaltetes Haus (Laufer Str. 5): Rechnungen kommen roh herein, die App verteilt. Eigentumswohnung in einer WEG (Unterschöllenbach, Klausner Winkel): die **Hausgeldabrechnung** der Verwaltung ist die Quelle, dort ist bereits verteilt. Beide Wege müssen erfassbar sein, ohne dass Beträge doppelt gezählt werden |
 
 ## Als Nächstes — in dieser Reihenfolge

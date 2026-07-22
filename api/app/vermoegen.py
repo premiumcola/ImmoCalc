@@ -44,6 +44,93 @@ def _wert(objekt) -> float | None:
 
 
 # --------------------------------------------------------------------------
+# Eigentum je Einheit (CLXI/CLXII/CLXXXVI)
+#
+# Ein Anteil hängt entweder am ganzen Objekt (`einheit` leer) oder an einer
+# Einheit. Die Umlage auf die Mieter bleibt davon unberührt — das Eigentum
+# entscheidet nur, wem Wert und Einnahmen zugerechnet werden.
+#
+# Zusammenspiel: **Einheit-Anteile haben Vorrang für ihre Einheit; der
+# Objekt-Anteil deckt alle Einheiten ohne eigene Zuordnung ("der Rest").**
+# Gehört einem Wohnung 2 (Einheit-Anteil) und einem anderen der Rest
+# (Objekt-Anteil), zählt für Wohnung 2 der Einheit-Anteil, für die übrigen
+# Wohnungen der Objekt-Anteil. Ohne Einheiten gilt der Objekt-Anteil
+# unmittelbar fürs ganze Objekt — der gewachsene Fall bleibt unverändert.
+# --------------------------------------------------------------------------
+
+def _pm(anteil) -> float:
+    """Massgeblicher Anteil in Promille — `promille`, ersatzweise `tausendstel`.
+
+    Wie `besitz.promille_von`, hier eigenständig, damit die Engine ohne den
+    Endpunkt auskommt."""
+    roh = getattr(anteil, "promille", None)
+    if roh is None:
+        roh = getattr(anteil, "tausendstel", 0)
+    return float(roh or 0)
+
+
+def _einheit_gewicht(einheit) -> float:
+    """Womit eine Einheit in die Wertzurechnung eingeht: ihr Verkehrswert
+    (CLXXXVI), ersatzweise ihre Fläche, sonst zu gleichen Teilen (1)."""
+    if einheit.verkehrswert:
+        return float(einheit.verkehrswert)
+    if einheit.flaeche:
+        return float(einheit.flaeche)
+    return 1.0
+
+
+def attributionswert(objekt, einheiten: list | None = None) -> float | None:
+    """Der Objektwert, der auf die Eigentümer verteilt wird.
+
+    Der Objektwert (Verkehrswert, ersatzweise Kaufpreis) ist massgeblich. Fehlt
+    er ganz, tritt die Summe der je Einheit gepflegten Verkehrswerte an seine
+    Stelle — so trägt CLXXXVI die Sicht auch dann, wenn am Haus noch kein Wert
+    steht."""
+    w = _wert(objekt)
+    if w:
+        return w
+    summe = round(sum(float(e.verkehrswert) for e in (einheiten or [])
+                      if e.verkehrswert), 2)
+    return summe or None
+
+
+def eigentuemer_fraktion(objekt, einheiten: list | None,
+                         anteile: list) -> dict[int, float]:
+    """Anteil je Eigentümer am Objekt (0..1), wertgewichtet über die Einheiten.
+
+    Für jede Einheit gelten ihre eigenen Anteile; hat sie keine, greift der
+    Objekt-Anteil. Gewichtet wird mit `_einheit_gewicht`, damit dem Eigentümer
+    der teureren Wohnung auch der grössere Anteil zufällt. Ohne Einheiten
+    zählt der Objekt-Anteil unmittelbar."""
+    objekt_anteile = [a for a in anteile if not (getattr(a, "einheit", "") or "").strip()]
+    out: dict[int, float] = {}
+
+    # Ungerundet aufsummiert — erst der Aufrufer rundet. Ein früh gerundeter
+    # Bruchteil (0,733333) verfehlte den vollen Objektwert um ein paar Cent.
+    def add(eid: int, wert: float) -> None:
+        out[eid] = out.get(eid, 0.0) + wert
+
+    if not einheiten:
+        for a in objekt_anteile:
+            add(a.eigentuemer_id, _pm(a) / 1000)
+        return out
+
+    je_einheit: dict[str, list] = {}
+    for a in anteile:
+        b = (getattr(a, "einheit", "") or "").strip()
+        if b:
+            je_einheit.setdefault(b, []).append(a)
+
+    gesamtgewicht = sum(_einheit_gewicht(e) for e in einheiten) or 1.0
+    for e in einheiten:
+        anteil_gewicht = _einheit_gewicht(e) / gesamtgewicht
+        zeilen = je_einheit.get(e.bezeichnung.strip()) or objekt_anteile
+        for a in zeilen:
+            add(a.eigentuemer_id, anteil_gewicht * _pm(a) / 1000)
+    return out
+
+
+# --------------------------------------------------------------------------
 # Restschuld fortschreiben
 # --------------------------------------------------------------------------
 

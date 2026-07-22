@@ -177,6 +177,206 @@ def test_vermoegen_ohne_angaben_faellt_nicht_um():
 
 
 # --------------------------------------------------------------------------
+# CLXI/CLXII/CLXXXVI — Eigentum je Einheit
+# --------------------------------------------------------------------------
+
+def _einheit(c, slug, bezeichnung, flaeche=None, verkehrswert=None):
+    return c.post(f"/api/objekte/{slug}/einheiten", json={
+        "bezeichnung": bezeichnung, "flaeche": flaeche,
+        "verkehrswert": verkehrswert}).json()
+
+
+def _miete(c, slug, einheit, partei, kaltmiete):
+    return c.post(f"/api/objekte/{slug}/mieten", json={
+        "einheit": einheit, "partei": partei, "kaltmiete": kaltmiete,
+        "ab_datum": "2024-01-01"}).json()
+
+
+def test_anteil_kann_an_einer_einheit_haengen():
+    """CLXI: „mir gehört Wohnung 2" — ein Anteil trägt optional eine Einheit."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Einheitseigen 40")
+        _einheit(c, slug, "Wohnung 1")
+        _einheit(c, slug, "Wohnung 2")
+        e = c.post("/api/eigentuemer", json={"name": "Eigner"}).json()["id"]
+
+        antwort = c.post(f"/api/objekte/{slug}/anteile", json={
+            "eigentuemer_id": e, "promille": 1000, "einheit": "Wohnung 2"})
+        assert antwort.status_code == 201, antwort.text
+        assert antwort.json()["einheit"] == "Wohnung 2"
+
+        stand = c.get(f"/api/objekte/{slug}/anteile").json()
+        zeile = stand["anteile"][0]
+        assert zeile["einheit"] == "Wohnung 2"
+        assert [e["bezeichnung"] for e in stand["einheiten"]] == \
+            ["Wohnung 1", "Wohnung 2"]
+
+
+def test_person_kann_objekt_und_einheit_zugleich_halten():
+    """Objekt-Anteil und Einheit-Anteil sind zwei verschiedene Zuordnungen —
+    dieselbe Person darf beide tragen, ohne dass sie sich überschreiben."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Doppelt 41")
+        _einheit(c, slug, "Wohnung 1")
+        e = c.post("/api/eigentuemer", json={"name": "Eigner"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 500})
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 1000, "einheit": "Wohnung 1"})
+
+        stand = c.get(f"/api/objekte/{slug}/anteile").json()
+        assert len(stand["anteile"]) == 2
+        einheiten = {z["einheit"]: z["promille"] for z in stand["anteile"]}
+        assert einheiten == {"": 500.0, "Wohnung 1": 1000.0}
+
+
+def test_zweiter_anteil_derselben_einheit_aendert_statt_zu_doppeln():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Einmal 42")
+        _einheit(c, slug, "Wohnung 1")
+        e = c.post("/api/eigentuemer", json={"name": "Eigner"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 400, "einheit": "Wohnung 1"})
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 1000, "einheit": "Wohnung 1"})
+
+        zeilen = [z for z in c.get(f"/api/objekte/{slug}/anteile").json()["anteile"]
+                  if z["einheit"] == "Wohnung 1"]
+        assert len(zeilen) == 1
+        assert zeilen[0]["promille"] == 1000.0
+
+
+def test_anteil_auf_unbekannte_einheit_wird_abgelehnt():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Unbekannt 43")
+        _einheit(c, slug, "Wohnung 1")
+        e = c.post("/api/eigentuemer", json={"name": "Eigner"}).json()["id"]
+        antwort = c.post(f"/api/objekte/{slug}/anteile", json={
+            "eigentuemer_id": e, "promille": 1000, "einheit": "Wohnung 9"})
+        assert antwort.status_code == 404
+
+
+def test_einheit_anteile_pro_einheit_stimmig():
+    """Je Einheit müssen 1000 ‰ verteilt sein; sind alle Einheiten zugeordnet,
+    braucht es keinen Objekt-Anteil mehr."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Prostimmig 44")
+        _einheit(c, slug, "Wohnung 1")
+        _einheit(c, slug, "Wohnung 2")
+        a = c.post("/api/eigentuemer", json={"name": "A"}).json()["id"]
+        b = c.post("/api/eigentuemer", json={"name": "B"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": a, "promille": 1000, "einheit": "Wohnung 1"})
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": b, "promille": 1000, "einheit": "Wohnung 2"})
+
+        stand = c.get(f"/api/objekte/{slug}/anteile").json()
+        assert stand["stimmig"] is True
+        assert stand["objekt_noetig"] is False
+        # Wohnung 2 nur halb verteilt -> unstimmig
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": a, "promille": 500, "einheit": "Wohnung 2"})
+        stand = c.get(f"/api/objekte/{slug}/anteile").json()
+        assert stand["stimmig"] is False
+
+
+def test_gemischtes_eigentum_rechnet_je_eigentuemer_getrennt():
+    """Der Fall des Nutzers: fünf Einheiten, dem einen gehören drei, dem
+    anderen eine, eine ist extern. Jeder sieht nur seine Einheiten."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Fünferhaus 45")
+        for n in range(1, 6):
+            _einheit(c, slug, f"Wohnung {n}", flaeche=50, verkehrswert=100000.0)
+        a = c.post("/api/eigentuemer", json={"name": "Eigner A"}).json()["id"]
+        b = c.post("/api/eigentuemer", json={"name": "Eigner B"}).json()["id"]
+        # A: Wohnungen 1-3, B: Wohnung 4, Wohnung 5 extern (kein Anteil)
+        for n in (1, 2, 3):
+            c.post(f"/api/objekte/{slug}/anteile", json={
+                "eigentuemer_id": a, "promille": 1000, "einheit": f"Wohnung {n}"})
+            _miete(c, slug, f"Wohnung {n}", f"Mieter {n}", 800.0)
+        c.post(f"/api/objekte/{slug}/anteile", json={
+            "eigentuemer_id": b, "promille": 1000, "einheit": "Wohnung 4"})
+        _miete(c, slug, "Wohnung 4", "Mieter 4", 900.0)
+        _miete(c, slug, "Wohnung 5", "Mieter 5", 1000.0)
+
+        ueber = c.get("/api/eigentuemer/uebersicht").json()["eigentuemer"]
+        za = next(z for z in ueber if z["id"] == a)
+        zb = next(z for z in ueber if z["id"] == b)
+
+        # A: drei Wohnungen à 800 € -> 28.800 €/Jahr, Wert 300.000
+        assert za["gesamt"]["miete_jahr"] == round(3 * 800 * 12, 2)
+        assert za["gesamt"]["wert"] == 300000.0
+        # B: nur Wohnung 4 -> 900 €/Monat, Wert 100.000 — nicht das ganze Haus
+        assert zb["gesamt"]["miete_jahr"] == round(900 * 12, 2)
+        assert zb["gesamt"]["wert"] == 100000.0
+        # Wohnung 5 (extern) taucht in keiner der beiden Sichten auf
+        assert all("Wohnung 5" not in
+                   {e["bezeichnung"] for e in o["einheiten"]}
+                   for o in za["objekte"] + zb["objekte"])
+
+
+def test_verkehrswert_je_einheit_gewichtet_die_zurechnung():
+    """CLXXXVI: der teureren Wohnung fällt der grössere Anteil am Objektwert zu."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Wertgewicht 46", verkehrswert=400000.0)
+        _einheit(c, slug, "Groß", verkehrswert=300000.0)
+        _einheit(c, slug, "Klein", verkehrswert=100000.0)
+        a = c.post("/api/eigentuemer", json={"name": "Groß-Eigner"}).json()["id"]
+        b = c.post("/api/eigentuemer", json={"name": "Klein-Eigner"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": a, "promille": 1000, "einheit": "Groß"})
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": b, "promille": 1000, "einheit": "Klein"})
+
+        ueber = c.get("/api/eigentuemer/uebersicht").json()["eigentuemer"]
+        za = next(z for z in ueber if z["id"] == a)
+        zb = next(z for z in ueber if z["id"] == b)
+        # 400.000 Objektwert nach Verkehrswert gewichtet: 300k zu 100k
+        assert za["objekte"][0]["wert"] == 300000.0
+        assert zb["objekte"][0]["wert"] == 100000.0
+        assert za["objekte"][0]["fraktion"] == 0.75
+
+
+def test_verkehrswert_je_einheit_ist_pflegbar():
+    with TestClient(app) as c:
+        slug = _objekt(c, "Pflege 47")
+        eid = _einheit(c, slug, "Wohnung 1")["id"]
+        c.patch(f"/api/einheiten/{eid}", json={"verkehrswert": 250000.0})
+        e = next(x for x in c.get(f"/api/objekte/{slug}/einheiten").json()
+                 if x["id"] == eid)
+        assert e["verkehrswert"] == 250000.0
+
+
+def test_objektanteil_deckt_die_einheiten_ohne_eigene_zuordnung():
+    """Einheit-Anteile haben Vorrang; der Objekt-Anteil gilt für den Rest —
+    hier bekommt der Objekt-Eigner die nicht einzeln zugeordnete Wohnung."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Rest 48", verkehrswert=200000.0)
+        _einheit(c, slug, "Wohnung 1", verkehrswert=120000.0)
+        _einheit(c, slug, "Wohnung 2", verkehrswert=80000.0)
+        a = c.post("/api/eigentuemer", json={"name": "Einheitseigner"}).json()["id"]
+        b = c.post("/api/eigentuemer", json={"name": "Resteigner"}).json()["id"]
+        # A: Wohnung 1 einzeln; B: ganzes Objekt (deckt den Rest = Wohnung 2)
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": a, "promille": 1000, "einheit": "Wohnung 1"})
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": b, "promille": 1000})
+        _miete(c, slug, "Wohnung 1", "Mieter 1", 700.0)
+        _miete(c, slug, "Wohnung 2", "Mieter 2", 500.0)
+
+        stand = c.get(f"/api/objekte/{slug}/anteile").json()
+        assert stand["stimmig"] is True
+
+        ueber = c.get("/api/eigentuemer/uebersicht").json()["eigentuemer"]
+        za = next(z for z in ueber if z["id"] == a)
+        zb = next(z for z in ueber if z["id"] == b)
+        assert za["objekte"][0]["wert"] == 120000.0   # nur Wohnung 1
+        assert zb["objekte"][0]["wert"] == 80000.0    # der Rest: Wohnung 2
+        assert za["gesamt"]["miete_jahr"] == round(700 * 12, 2)
+        assert zb["gesamt"]["miete_jahr"] == round(500 * 12, 2)
+
+
+# --------------------------------------------------------------------------
 # CXV — Restschuld fortschreiben statt raten
 # --------------------------------------------------------------------------
 

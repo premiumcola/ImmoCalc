@@ -69,7 +69,22 @@
   .bet .bn{flex:1;min-width:0;font:500 13px var(--body);
            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .bet .bw{font:600 12.5px var(--mono);color:var(--teal-d);flex:none}
+  /* Welche Einheiten dem Eigentümer an diesem Objekt gehören (CLXI). */
+  .bet .beh{display:block;font:500 10.5px var(--mono);color:var(--soft);
+            margin-top:2px;white-space:normal;overflow-wrap:anywhere}
   .bet .leer{font:400 12.5px var(--body);color:var(--soft);padding:9px 0}
+
+  /* ---- CLXII: Vermögen und Miete je Eigentümer ----
+     Nur seine Einheiten, nicht das ganze Haus. Drei Kennzahlen, die sich auf
+     dem iPhone umbrechen. */
+  .eigwert{border-top:1px solid var(--line);display:grid;
+           grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line)}
+  .eigwert .ew{background:var(--sheet);padding:12px 14px}
+  .eigwert .ewl{display:block;font:600 9px var(--mono);letter-spacing:.07em;
+                text-transform:uppercase;color:var(--soft)}
+  .eigwert .ewv{display:block;font:700 15px var(--disp);letter-spacing:-.02em;
+                margin-top:5px;overflow-wrap:anywhere}
+  .eigwert .ewv.pos{color:var(--pos)} .eigwert .ewv.neg{color:var(--neg)}
 </style>
 </head>
 <body>
@@ -165,7 +180,7 @@
 </dialog>
 
 <script type="module">
-import { api, esc, frage, melde } from './assets/immo.js';
+import { api, esc, frage, melde, eurKurz } from './assets/immo.js';
 
 const liste = document.getElementById('liste');
 const standFeld = document.getElementById('stand');
@@ -249,9 +264,37 @@ async function standLaden() {
 /* ---- Personen ---- */
 let eigner = [];
 
+/* CLXII — Vermögen und Miete je Eigentümer, auf seine Einheiten eingeschränkt.
+   Best effort: hängt der Abruf, bleibt die reine Liste stehen. */
+let uebersicht = new Map();
+async function uebersichtLaden() {
+  try {
+    const d = await api('/eigentuemer/uebersicht');
+    uebersicht = new Map(d.eigentuemer.map(e => [e.id, e]));
+  } catch {
+    uebersicht = new Map();
+  }
+}
+
+/* Die drei Kennzahlen einer Person: nur das, was ihr zugerechnet wird. */
+function eigwertHtml(id) {
+  const u = uebersicht.get(id);
+  if (!u) return '';
+  const g = u.gesamt;
+  if (!g.wert && !g.eigenkapital && !g.miete_jahr) return '';
+  const zelle = (l, v, k = '') => `<div class="ew"><span class="ewl">${l}</span>
+    <span class="ewv ${k}">${v}</span></div>`;
+  return `<div class="eigwert">
+    ${zelle('Mein Wert', g.wert == null ? '—' : eurKurz(g.wert))}
+    ${zelle('Mein Eigenkapital', g.eigenkapital == null ? '—' : eurKurz(g.eigenkapital),
+            (g.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg')}
+    ${zelle('Miete / Jahr', eurKurz(g.miete_jahr), 'pos')}
+  </div>`;
+}
+
 async function eignerLaden() {
   try {
-    eigner = await api('/eigentuemer');
+    [eigner] = await Promise.all([api('/eigentuemer'), uebersichtLaden()]);
   } catch {
     liste.innerHTML = '';
     sub.textContent = 'API nicht erreichbar';
@@ -274,12 +317,15 @@ async function eignerLaden() {
       || 'keine Kontaktdaten hinterlegt';
     // Die Beteiligungen stehen unter der Person: erst dadurch ist zu sehen,
     // wem was gehört — eine reine Namensliste sagt nichts.
+    // CLXI — hängt der Anteil an einer Einheit, steht sie unter dem Objekt und
+    // die Rolle bezieht sich auf die Einheit („Alleineigentümer" der Wohnung);
+    // sonst gilt die Rolle fürs ganze Haus.
     const bet = e.objekte.length
       ? e.objekte.map(o => `<div class="bet">
             <span class="bn">${esc(o.name)}</span>
             <span class="bw">${pm(o.promille)}</span>
-            <span class="chip ${o.rolle === 'Alleineigentümer' ? 'teal' : ''}"
-              >${esc(o.rolle)}</span>
+            <span class="chip ${o.einheit || o.rolle === 'Alleineigentümer'
+              ? 'teal' : ''}">${esc(o.einheit || o.rolle)}</span>
           </div>`).join('')
       : '<div class="leer">Noch keinem Objekt zugeordnet</div>';
     return `<div class="person">
@@ -295,6 +341,7 @@ async function eignerLaden() {
                   aria-label="${esc(e.name)} entfernen">×</button>
         </div>
         <div class="beteiligungen">${bet}</div>
+        ${eigwertHtml(e.id)}
       </div>`;
   }).join('');
 }

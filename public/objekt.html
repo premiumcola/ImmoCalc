@@ -628,6 +628,13 @@ const EINHEITFELDER = [
   { k: 'nebenflaeche', l: 'Nebenfläche', typ: 'number', schritt: '0.01',
     einheit: 'm²' },
   { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1' },
+  // CLXXXVI — ein Verkehrswert je Einheit. Nur pflegen, wo er bekannt ist;
+  // sonst bleibt der Wert am Haus maßgeblich. Er gewichtet die Zurechnung des
+  // Objektwerts auf die Eigentümer.
+  { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01',
+    geld: true, voll: true,
+    note: 'Optional. Ist er gesetzt, zählt diese Einheit mit ihm in der '
+        + 'Vermögenssicht je Eigentümer; sonst gilt der Wert am Haus.' },
   // CXCIII — eine Einheit ganz aus der Nebenkostenabrechnung nehmen.
   { k: 'nk_abrechnung', l: 'Nimmt an der Nebenkostenabrechnung teil',
     typ: 'schalter', vorgabe: true,
@@ -930,25 +937,49 @@ function einheitKennzahlen(e, eigene) {
 
 function eigentuemerHtml(stand) {
   if (!stand) return '';
+  // CLXI — ein Anteil zeigt aufs ganze Haus oder auf eine Einheit. Die Einheit
+  // steht als Auszeichnung am Namen, damit „mir gehört Wohnung 2" sichtbar ist.
   const zeilen = stand.anteile.length
     ? stand.anteile.map(a => `<div class="eintrag">
         <span class="sym">${kostenIcon('Eigentümer')}</span>
-        <span class="et"><span class="en">${esc(a.name)}</span>
-          <span class="ed">${esc([a.rolle, a.notiz].filter(Boolean).join(' · '))}</span>
+        <span class="et"><span class="en">${esc(a.name)}${a.einheit
+            ? ` <span class="chip teal">${esc(a.einheit)}</span>` : ''}</span>
+          <span class="ed">${esc([a.einheit ? '' : a.rolle, a.notiz]
+            .filter(Boolean).join(' · '))}</span>
         </span>
         <span class="ew">${promille(a)} ‰</span>
         <button class="del" data-anteil="${a.id}" aria-label="entfernen">×</button>
       </div>`).join('')
     : `<div class="leerzeile">Noch kein Eigentümer zugeordnet</div>`;
 
-  // Auch ohne jede Zuordnung hinweisen — ein Objekt ganz ohne Eigentümer
-  // fällt sonst nirgends auf.
+  // Warnung analog zu `parteien_ohne_einheit`: erst das Haus (der „Rest"),
+  // dann jede Einheit, deren Anteile nicht aufgehen.
+  const probleme = [];
+  if (stand.objekt_noetig && stand.frei !== 0) {
+    probleme.push(stand.frei > 0
+      ? `Am Haus fehlen noch ${zahl(stand.frei)} ‰`
+      : `Am Haus sind ${zahl(-stand.frei)} ‰ zu viel verteilt`);
+  } else if (!stand.objekt_noetig && stand.vergeben > 0) {
+    probleme.push(`${zahl(stand.vergeben)} ‰ am Haus, obwohl schon jede Einheit `
+      + `einzeln zugeordnet ist`);
+  }
+  for (const es of (stand.einheiten_stand || [])) {
+    if (es.stimmig) continue;
+    probleme.push(es.unbekannt
+      ? `„${es.einheit}" gibt es als Einheit nicht (mehr)`
+      : (es.frei > 0
+          ? `In „${es.einheit}" fehlen noch ${zahl(es.frei)} ‰`
+          : `In „${es.einheit}" sind ${zahl(-es.frei)} ‰ zu viel verteilt`));
+  }
   const rest = !stand.stimmig
     ? `<div class="merker"><span class="hi">!</span><span class="ht">
-         <span class="t">${stand.frei > 0 ? `${zahl(stand.frei)} ‰ nicht verteilt`
-                                          : `${zahl(-stand.frei)} ‰ zu viel verteilt`}</span>
-         <span class="d">Die Anteile sollten zusammen 1000 ‰ ergeben.
-           Eine Nachkommastelle genügt — 333,3 dreimal gilt als vollständig.</span>
+         <span class="t">Zurechnung geht noch nicht auf</span>
+         <span class="d">${probleme.length
+            ? esc(probleme.join(' · ')) + '. '
+            : ''}Je Haus und je Einheit sollten 1000 ‰ verteilt sein. Eine
+           Nachkommastelle genügt — 333,3 dreimal gilt als vollständig.
+           Einheit-Anteile haben Vorrang für ihre Einheit, der Haus-Anteil
+           deckt den Rest.</span>
        </span></div>` : '';
 
   return `<div class="sekopf"><h2 class="sec">Eigentümer</h2>
@@ -1284,6 +1315,29 @@ async function feldHtml(f, bereich, wert) {
            aria-label="${esc(f.l)}">${blasen}</div>
       <span class="feldnote">Antippen statt tippen — nur so findet die
         Kostenverteilung die Einheit wieder.</span></div>`;
+  }
+  if (f.typ === 'anteileinheit') {
+    // CLXI — worauf ein Eigentümer-Anteil zeigt: das ganze Haus oder eine
+    // Einheit. „Ganzes Haus" steht als erste Blase und ist vorgewählt — der
+    // gewachsene Fall bleibt der Normalfall. Dieselbe Blasen-Verdrahtung wie
+    // bei der Einheitenwahl der Miete (data-wahl/data-wahlfeld).
+    const gewaehlt = wert ?? '';
+    const blase = (w, text, extra) => {
+      const an = w === gewaehlt;
+      return `<button type="button" class="bubble${an ? ' gewaehlt' : ''}"
+          data-wahl="${esc(w)}" aria-pressed="${an}">
+        <span class="bt">${esc(text)}</span>${extra || ''}</button>`;
+    };
+    const blasen = blase('', 'Ganzes Haus')
+      + einheiten.map(e => blase(e.bezeichnung, e.bezeichnung,
+          e.flaeche ? `<span class="bf">${flaecheText(e.flaeche)}</span>` : '')).join('');
+    return `<div class="field"><label>${esc(f.l)}</label>
+      <input type="hidden" id="${id}" name="${f.k}" value="${esc(gewaehlt)}">
+      <div class="bubbles" data-wahlfeld="${esc(f.k)}" role="group"
+           aria-label="${esc(f.l)}">${blasen}</div>
+      <span class="feldnote">Gehört dem Eigentümer nur eine Wohnung, hier die
+        Einheit wählen — sonst „Ganzes Haus". Einheit-Anteile haben Vorrang für
+        ihre Einheit, der Haus-Anteil deckt den Rest.</span></div>`;
   }
   if (f.typ === 'turnus') {
     const { optionen, vorgabe } = await turnusOptionen(bereich);
@@ -1890,6 +1944,7 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
         method: 'POST',
         body: { eigentuemer_id: Number(werte.eigentuemer_id),
                 promille: Number(werte.promille) || 1000,
+                einheit: werte.einheit || '',
                 notiz: werte.notiz || '' },
       });
     } else if (absicht === 'einheit') {
@@ -1964,6 +2019,12 @@ async function anteilFormular() {
   ANTEILFELDER = [
     { k: 'eigentuemer_id', l: 'Eigentümer', typ: 'select',
       werte: eigner.map(e => e.name) },
+    // Die Einheitenwahl nur, wenn es überhaupt Einheiten gibt — ein
+    // Grundstück oder ein Objekt ohne erfasste Einheiten kennt nur den
+    // Haus-Anteil.
+    ...(einheiten.length
+      ? [{ k: 'einheit', l: 'Gehört dem Eigentümer', typ: 'anteileinheit' }]
+      : []),
     { k: 'promille', l: 'Anteil in Tausendstel (‰)', typ: 'number', schritt: '0.1',
       vorgabe: 1000, pflicht: true },
     { k: 'notiz', l: 'Notiz', typ: 'text' },
