@@ -724,6 +724,10 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None,
         "fortschritt": {"fertig": fertig, "gesamt": len(checkliste),
                         "summe": round(summe_erledigt, 2)},
+        # Was an diesem Zeitraum wirklich hängt. Ist alles null, gilt er als
+        # leer und wird automatisch entfernt — kein Löschknopf nötig.
+        "verknuepft": {"positionen": len(positionen), "belege": len(dokumente),
+                       "vorauszahlungen": len(vzs)},
         "checkliste": checkliste,
         "sankey": {"knoten": knoten, "fluss": fluss},
         "dokumente": [{"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
@@ -790,6 +794,56 @@ def zeitraum_anlegen(slug: str, data: ZeitraumIn,
         select(Kostenart).where(Kostenart.objekt_id == o.id)).all() if k.aktiv]
     return {"id": z.id, "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
             "kostenarten": len(arten), "vorauszahlungen": uebernommen}
+
+
+def _verknuepfungen(session: Session, zid: int) -> dict[str, int]:
+    """Was an einem Zeitraum hängt: Kostenpositionen, Belege, Vorauszahlungen.
+    Sind alle drei null, ist der Zeitraum leer und darf verschwinden."""
+    return {
+        "positionen": len(session.exec(select(Kostenposition)
+                          .where(Kostenposition.zeitraum_id == zid)).all()),
+        "belege": len(session.exec(select(Dokument)
+                          .where(Dokument.zeitraum_id == zid)).all()),
+        "vorauszahlungen": len(session.exec(select(Vorauszahlung)
+                          .where(Vorauszahlung.zeitraum_id == zid)).all()),
+    }
+
+
+def _zeitraum_leer_entfernen(session: Session, zid: int) -> bool:
+    """Entfernt einen Zeitraum, wenn nichts mehr an ihm hängt — der
+    automatische Ersatz für einen Löschknopf. War die entfernte Position der
+    letzte Inhalt, verschwindet der leere Zeitraum von selbst. Ein Zeitraum
+    mit auch nur einer Verknüpfung bleibt unangetastet.
+
+    Gibt True zurück, wenn entfernt wurde. Löscht nur additiv-sicher: ein
+    leerer Zeitraum hat weder Positionen noch Belege noch Vorauszahlungen, es
+    kann also nichts verwaisen."""
+    if any(_verknuepfungen(session, zid).values()):
+        return False
+    z = session.get(Zeitraum, zid)
+    if z:
+        session.delete(z)
+        session.commit()
+    return True
+
+
+@router.post("/zeitraeume/aufraeumen")
+def zeitraeume_aufraeumen(session: Session = Depends(get_session)) -> dict:
+    """Räumt alle leeren Abrechnungszeiträume weg — objektübergreifend.
+
+    Nach einer Bestandsrücknahme (alle Belege wieder herausgenommen) bleiben
+    Zeiträume ohne jeden Inhalt zurück. Statt sie einzeln zu löschen, wischt
+    dieser Aufruf sie in einem Zug. Angefasst wird nur, was komplett leer ist —
+    ein Zeitraum mit Position, Beleg oder Vorauszahlung bleibt."""
+    entfernt = 0
+    for z in session.exec(select(Zeitraum)).all():
+        if not any(_verknuepfungen(session, z.id).values()):
+            session.delete(z)
+            entfernt += 1
+    if entfernt:
+        session.commit()
+    logging.info("Leere Zeiträume aufgeräumt: %d entfernt", entfernt)
+    return {"entfernt": entfernt}
 
 
 def _zeitraum(session: Session, zid: int) -> Zeitraum:
@@ -964,6 +1018,7 @@ def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict
     if not p:
         raise HTTPException(404, "Position nicht gefunden")
     kostenart = p.kostenart
+    zid = p.zeitraum_id
     geloest = 0
     for d in session.exec(select(Dokument)
                           .where(Dokument.position_id == pid)).all():
@@ -972,7 +1027,11 @@ def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict
         geloest += 1
     session.delete(p)
     session.commit()
-    return {"ok": True, "kostenart": kostenart, "belege_geloest": geloest}
+    # War das die letzte Position und hängt sonst nichts mehr am Zeitraum,
+    # verschwindet der leere Zeitraum von selbst — kein Löschknopf nötig.
+    zeitraum_entfernt = _zeitraum_leer_entfernen(session, zid)
+    return {"ok": True, "kostenart": kostenart, "belege_geloest": geloest,
+            "zeitraum_entfernt": zeitraum_entfernt}
 
 
 @router.get("/zeitraeume/{zid}/abrechnung")
