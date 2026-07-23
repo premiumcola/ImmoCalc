@@ -50,8 +50,8 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 | CCLXIII | ~~**Objekt-Ordner automatisch umbenennen**~~ **erledigt** (Deploy nötig; Nutzer-Abnahme mit Testobjekt empfohlen) | `cloud.ordner_nachziehen` + PATCH-Hook: nur bei ordnernamens-relevanten Feldern, MOVE via `verschiebe` (Schreibrecht-Riegel), Kollision→`-2`, Präfix-Update aller `Dokument.pfad` + `nc_ordner`, Fehlerpfad lässt alten Ordner/DB unberührt. Kein Extra-Button |
 | CCLXIV | ~~**Versions-Zeitpunkt = echter Live-Stand**~~ **erledigt** `d0ff1e4` | Cron schreibt `public/version.json` (SHA + Commit-Zeit) bei jedem neuen HEAD, auch bei reinen Frontend-Deploys — nicht mehr der 2-Minuten-Cron-Tick |
 | CCLXV | ~~**Release-Notes (letzte 5 Änderungen) in den Einstellungen**~~ **erledigt** `d0ff1e4` | einzeilig unter der Version, „Zuletzt geändert" |
-| CCLXVI | **Kontakt-Doppelung bei Mietverhältnissen entfernen**: obere E-Mail/Telefon/Anschrift raus, Kontakt pro Bewohner (inkl. Anschrift); NK-Abrechnung geht automatisch an alle Bewohner mit Mail (Versand kann das schon) | **in Arbeit** (Agent) — `objekt.html`/`models.py` |
-| CCLXVII | **Fachbegriffe erklären**: Lexikon-Einträge (Nebenflächen/Terrassenflächen — wie viel anzusetzen, u. a.) ✓ + kleine ?-Info-Icons an fachlichen Feldern in Maske & Übersicht | Lexikon **erledigt** (6 Begriffe, `lexikon-daten.js`); ?-Icons **in Arbeit** (Agent, `objekt.html`) |
+| CCLXVI | ~~**Kontakt-Doppelung bei Mietverhältnissen entfernen**~~ **erledigt** (Deploy nötig) | obere E-Mail/Telefon/Anschrift raus, Kontakt pro Bewohner inkl. neuer `Bewohner.anschrift`; Hinweis angepasst; `BewohnerIn`-Schema + POST-Validierung (`stammdaten.py`) um `anschrift` ergänzt; NK-Versand an alle Bewohner-Mails läuft bereits |
+| CCLXVII | ~~**Fachbegriffe erklären**~~ **erledigt** | Lexikon: 6 neue Begriffe (Wohn-/Neben-/Terrassenfläche, Stellplatz, Nutzungsart, Personen); ?-Info-Icons an fachlichen Feldern in Maske & Übersicht der Objektseite (`data-hilfe`/`installHilfe`) |
 
 ---
 
