@@ -44,7 +44,9 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 | CCLX | ~~**Dokument-Karte im Eingang sauber zuklappen**~~ **erledigt** (Frontend, sofort live) | Kopfzeile der offenen Karte antippen klappt zu; Zuklapp-× oben rechts in der Kopfzeile; das irreführende × in der eingebetteten Vorschau ausgeblendet (mobil); Desktop behält das Blatt-× in der eigenen Spalte |
 | CCLXI | ~~**Build-Zeitpunkt in den Einstellungen**~~ **erledigt** (Deploy nötig) | `build.txt` zweizeilig (SHA + Build-Zeit ISO-UTC, `api/Dockerfile`), `/api/health` liefert `build_zeit`; Settings zeigt „ImmoCalc … · Build `<sha>` · TT.MM.JJJJ, HH:MM Uhr" in Ortszeit — so ist ablesbar, ob der Auto-Deploy den neuen Stand hat |
 | CCLXII | ~~**Doppelte Schließer / überlappendes × beheben**~~ **erledigt** `d3045ac` | `[data-nein]` in den Retrofit-Guard: kein zweites × mehr auf Dialogen mit unterem Abbrechen. „Mehr"-Menü: unteren „Schließen"-Knopf entfernt (nur × oben), Titelzeile reserviert die ×-Höhe (keine Überlappung mehr), Tap-außerhalb schließt. **Abnahme-Lehre:** Retrofit-× in ALLEN Dialogtypen prüfen, nicht nur einem. Systematischer Audit läuft (Agent) |
-| CCLVIII/CCLIX | Zeitraum-Autoerkennung + mehrseitige Vorschau | **in Arbeit** (Agents) |
+| CCLVIII | ~~**Abrechnungszeitraum beim Beleg automatisch erkennen/vorschlagen**~~ **erledigt** (Deploy nötig) | `GET /objekte/{slug}/zeitraum-fuer?datum=` liefert vorhandenen Zeitraum oder Vorschlags-Grenzen (Startmonat-/Wirtschaftsjahr-Logik); eingang.html wählt ihn vor oder bietet „<Jahr> anlegen" — legt an + gruppiert ein. Fallback vor Deploy sauber |
+| CCLIX | ~~**Mehrseitige PDF-Vorschau**~~ **erledigt** | `GET /dokumente/{id}/seiten` + `/vorschau?seite=N`; `belegAnsehen` zeigt alle Seiten gestapelt (Doc 612: 4 Seiten geladen, verifiziert). Zusammen mit ↗-Entfernung ist CCLIX komplett |
+| Audit | Systemweiter Doppel-Schließer-Check | erledigt — einziger echter Fund war das „Mehr"-Menü (behoben, CCLXII); `objekt #dlg` × + Abbrechen ist gewollt (Formular, scrollbar); Rest sauber |
 
 ---
 
