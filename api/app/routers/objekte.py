@@ -193,6 +193,13 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
     offen = hinweise(o, einheiten, mieten)
     return {
         "objekt": o, "einheiten": einheiten, "parteien": parteien,
+        # Aus den Einheiten summiert — die maßgebliche Wohnfläche und die
+        # Stellplätze des Objekts. Single Source of Truth fürs Frontend: die
+        # manuelle Objektfläche (o.flaeche) wird nur noch als mögliche
+        # Abweichung dagegen geprüft, nicht mehr als primäre Angabe geführt.
+        "wohnflaeche_summe": round(sum(e.flaeche or 0 for e in einheiten), 2),
+        "stellplaetze_summe": sum(e.stellplaetze or 0 for e in einheiten),
+        "einheiten_mit_flaeche": sum(1 for e in einheiten if e.flaeche),
         "nachpflege": {**zusammenfassung(offen), "offen": offen},
         "zeitraeume": [{"id": z.id, "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
                         "typ": z.typ, "status": z.status,

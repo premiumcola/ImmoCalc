@@ -85,6 +85,13 @@
   .paar .pv.leer{color:var(--soft);font-weight:400;font-family:var(--body)}
   /* Gerechnete Zeilen treten zurück — sie sind Ergebnis, nicht Eingabe. */
   .paar .pv.abgeleitet{color:var(--teal-d)}
+  /* Woher ein gerechneter Wert stammt („aus 5 Einheiten") — eine ruhige
+     zweite Zeile unter dem Wert, im Fließtext statt in Mono. */
+  .paar .pv .pq{display:block;font:400 11px var(--body);color:var(--soft);
+                font-weight:400;margin-top:3px}
+  /* CCLIV — weicht die manuell geführte Wohnfläche von den Einheiten ab, ein
+     dezenter Hinweis in der Warnfarbe, kein Fehlerblock. */
+  .fussnote.warn{color:var(--amber)}
   /* Freitext bekommt die ganze Zeilenbreite: nebeneinander bliebe für den
      Wortlaut aus dem Katasterauszug eine Spalte von vier Zeichen. */
   .paar.lang{flex-direction:column;align-items:flex-start;gap:4px}
@@ -584,7 +591,19 @@ const STAMMFELDER = [
   { k: 'strasse', l: 'Straße', typ: 'text' },
   { k: 'plz', l: 'PLZ', typ: 'text' },
   { k: 'ort', l: 'Ort', typ: 'text' },
-  { k: 'flaeche', l: 'Gesamtfläche', typ: 'number', schritt: '0.01', einheit: 'm²' },
+  { k: 'flaeche', l: 'Wohnfläche (manuell)', typ: 'number', schritt: '0.01',
+    einheit: 'm²',
+    note: 'Optional. Die Wohnfläche summiert ImmoCalc aus den Einheiten. Hier '
+        + 'nur eintragen, wenn du sie unabhängig führen willst — weicht sie von '
+        + 'den Einheiten ab, weist ImmoCalc darauf hin. Maßgeblich bleibt die '
+        + 'aus den Einheiten berechnete Fläche.' },
+  // CCLIV — die Grundstücksfläche (Grund und Boden) lässt sich für jede
+  // Immobilie eintragen, nicht nur für den Grundstückstyp: auch zu einem
+  // normalen Haus will man oft wissen, wie viel Grund dazugehört. Beim
+  // Grundstückstyp steht dasselbe Feld im Grundstück-Block (siehe GRUNDFELDER),
+  // deshalb hier für diesen Typ ausgeblendet.
+  { k: 'grundstueck_flaeche', l: 'Grundstücksfläche / Grund', typ: 'number',
+    schritt: '0.01', einheit: 'm²' },
   { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
   { k: 'kaufdatum', l: 'Kaufdatum', typ: 'date' },
   // CCXXXV — wie die Immobilie ins Eigentum kam. Bei Kauf zählt der Kaufpreis
@@ -693,7 +712,8 @@ const EINHEITFELDER = [
 /* Beim Grundstück gibt es keine Wohnfläche und kein Hauskonto — die Zeilen
    stehen dort nicht ausgegraut herum, sie kommen gar nicht erst vor. Der
    Verkehrswert wandert in den Grundstücksblock. */
-const OHNE_BEIM_GRUNDSTUECK = new Set(['flaeche', 'verkehrswert']);
+const OHNE_BEIM_GRUNDSTUECK = new Set(['flaeche', 'verkehrswert',
+                                       'grundstueck_flaeche']);
 const stammfelder = () => istGrundstueck()
   ? STAMMFELDER.filter(f => !OHNE_BEIM_GRUNDSTUECK.has(f.k))
   : STAMMFELDER;
@@ -835,12 +855,84 @@ function paarZeile(label, wert, { abgeleitet = false, lang = false } = {}) {
       >${wert ? esc(wert) : 'nicht erfasst'}</span></div>`;
 }
 
+/* Eine gerechnete Zeile mit Herkunftsangabe — „Wohnfläche · 205 m² · aus 5
+   Einheiten". Die Herkunft steht ruhig unter dem Wert. */
+function paarAbgeleitet(label, wert, quelle = null) {
+  return `<div class="paar">
+    <span class="pl">${esc(label)}</span>
+    <span class="pv ${wert ? 'abgeleitet' : 'leer'}">${wert ? esc(wert)
+      : 'nicht erfasst'}${quelle ? `<span class="pq">${esc(quelle)}</span>`
+                                 : ''}</span></div>`;
+}
+
+/* CCLIV — Wohnfläche und Stellplätze eines Objekts kommen aus den Einheiten,
+   nicht mehr aus einer eigenen Objektangabe. Bevorzugt die vom Backend
+   gelieferten Summen (Single Source of Truth); fehlen sie (noch nicht
+   deployt), summiert es die geladenen Einheiten selbst. */
+function flaechenSummen() {
+  if (daten && daten.wohnflaeche_summe != null) {
+    return { wohn: daten.wohnflaeche_summe,
+             stell: daten.stellplaetze_summe || 0,
+             mit: daten.einheiten_mit_flaeche || 0 };
+  }
+  const mitFlaeche = einheiten.filter(e => e.flaeche);
+  return {
+    wohn: mitFlaeche.reduce((sum, e) => sum + (e.flaeche || 0), 0),
+    stell: einheiten.reduce((sum, e) => sum + (e.stellplaetze || 0), 0),
+    mit: mitFlaeche.length,
+  };
+}
+
+/* Die gerechneten Flächenzeilen, die im Stammdatenblock die Stelle der
+   früheren manuellen „Gesamtfläche" einnehmen. */
+function wohnflaecheRows(o, s) {
+  const anzahl = einheiten.length;
+  const einheitWort = n => `${n} Einheit${n === 1 ? '' : 'en'}`;
+  const rows = [];
+  if (s.mit) {
+    const quelle = s.mit === anzahl ? `aus ${einheitWort(anzahl)}`
+                                    : `aus ${s.mit} von ${einheitWort(anzahl)}`;
+    rows.push(paarAbgeleitet('Wohnfläche', flaecheText(s.wohn), quelle));
+  } else if (o.flaeche) {
+    // Noch keine Einheitenfläche erfasst — dann ist die manuelle Angabe alles,
+    // was es gibt, und steht schlicht als Wohnfläche da.
+    rows.push(paarAbgeleitet('Wohnfläche', flaecheText(o.flaeche),
+                             'manuell — noch keine Einheitenfläche erfasst'));
+  } else {
+    rows.push(paarAbgeleitet('Wohnfläche', null,
+      anzahl ? 'in den Einheiten noch keine Fläche erfasst'
+             : 'noch keine Einheit erfasst'));
+  }
+  if (s.stell) {
+    rows.push(paarAbgeleitet('Stellplätze', String(s.stell),
+                             `aus ${einheitWort(anzahl)}`));
+  }
+  return rows;
+}
+
+/* Dezenter Hinweis, wenn die manuell geführte Wohnfläche von der aus den
+   Einheiten berechneten abweicht. */
+function flaecheWarnung(manuell, s) {
+  if (!manuell || !s.mit || Math.abs(manuell - s.wohn) < 0.05) return '';
+  return `<div class="fussnote warn">Manuell eingetragene Wohnfläche
+    ${esc(flaecheText(manuell))} weicht von der Summe der Einheiten
+    (${esc(flaecheText(s.wohn))}) ab. Maßgeblich ist die aus den Einheiten
+    berechnete Fläche.</div>`;
+}
+
 function stammHtml(o) {
-  const zeilen = stammfelder()
-    .map(f => paarZeile(f.l, stammwert(f, o), { lang: f.lang })).join('');
+  const s = flaechenSummen();
+  const zeilen = [];
+  for (const f of stammfelder()) {
+    // Die frühere manuelle Fläche wird zu den gerechneten Zeilen aus den
+    // Einheiten; beim Grundstück kommt `flaeche` gar nicht erst vor.
+    if (f.k === 'flaeche') { zeilen.push(...wohnflaecheRows(o, s)); continue; }
+    zeilen.push(paarZeile(f.l, stammwert(f, o), { lang: f.lang }));
+  }
   return `<div class="sekopf"><h2 class="sec">Stammdaten</h2>
       <button data-stamm="1">Bearbeiten</button></div>
-    <div class="paare">${zeilen}</div>`;
+    <div class="paare">${zeilen.join('')}</div>
+    ${flaecheWarnung(o.flaeche, s)}`;
 }
 
 /* Preis je m² und Grundsteuer werden gerechnet, nicht gepflegt: sie stünden
