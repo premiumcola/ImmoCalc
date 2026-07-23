@@ -212,6 +212,10 @@ def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
         # welchen Abrechnungszeitraum der Beleg fällt.
         "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
         "erkannt_am": d.erkannt_am.isoformat() if d.erkannt_am else None,
+        # CCLXXIII: die KI-Einordnung — ein bis zwei kurze Sätze zum Beleg.
+        # Leer, solange die KI noch nichts geliefert hat; das Frontend zeigt
+        # den Bereich dann einfach nicht.
+        "ki_einordnung": d.ki_einordnung or "",
         "zeitraum_id": d.zeitraum_id,
         "objekt": o.slug if o else None,
         "objekt_name": o.name if o else None,
@@ -1741,7 +1745,10 @@ def erkennen_aus_ablage(dokument_id: int,
     ganze Ablage. Gefragt wird für den einen Beleg, den der Nutzer gerade
     ansieht.
 
-    Rein lesend — nichts wird gespeichert, nichts verschoben.
+    Die KI-Einordnung wird dabei am Beleg festgehalten (CCLXXIII): sie kostet
+    einen KI-Aufruf, und der Nutzer soll den erläuternden Satz später wieder
+    sehen, ohne den Beleg neu lesen zu lassen. Sonst rein lesend — die Datei
+    wird nicht verschoben.
     """
     d = session.get(Dokument, dokument_id)
     if not d:
@@ -1757,5 +1764,15 @@ def erkennen_aus_ablage(dokument_id: int,
     # frisch abfotografierten Beleg (CCLXVIII). CCLXIX: auch die Erkennungs-
     # muster (CCXLIX) anwenden, damit Nutzerregeln beim Cloud-Beleg genauso
     # greifen wie beim Foto-Upload.
-    return ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
-                       ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+    ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
+                           ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+    # CCLXXIII: die KI-Einordnung festhalten, damit die App sie zeigen kann,
+    # ohne den Beleg jedes Mal neu zu lesen. Nur setzen, wenn die KI etwas
+    # geliefert hat — ein leeres Feld soll eine vorhandene Einordnung nicht
+    # überschreiben.
+    einordnung = (ergebnis.get("einordnung") or "").strip()
+    if einordnung and einordnung != (d.ki_einordnung or ""):
+        d.ki_einordnung = einordnung
+        session.add(d)
+        session.commit()
+    return ergebnis

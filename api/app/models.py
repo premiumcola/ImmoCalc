@@ -545,3 +545,10 @@ class Dokument(SQLModel, table=True):
     belegdatum: Optional[date] = None
     status: str = "neu"                    # 'neu' | 'zugeordnet'
     erkannt_am: Optional[date] = None
+    # CCLXXIII: die KI-Einordnung — ein bis zwei kurze deutsche Sätze, was für
+    # ein Beleg das ist (Absender, worum es geht, Datum, Betrag). Kommt aus der
+    # KI-Auslese (`kiauslese.py`, CCLXVIII) und wird beim Erkennen eines
+    # abgelegten Belegs gespeichert, damit die App sie zeigen kann, ohne den
+    # Beleg jedes Mal neu zu lesen. Additiv, Default leer: migrate.py legt die
+    # Spalte für den Bestand an, ein Beleg ohne Einordnung bleibt unverändert.
+    ki_einordnung: str = ""
