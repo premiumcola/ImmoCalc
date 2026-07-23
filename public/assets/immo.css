@@ -319,6 +319,22 @@ dialog.immo-dlg .dt{font:700 17px var(--disp); letter-spacing:-.02em;
 dialog.immo-dlg p{font:400 13.5px var(--body); color:var(--soft); margin:0 0 18px;
                   line-height:1.55}
 dialog.immo-dlg .btn + .btn{margin-top:8px}
+/* Schließen-Kreuz oben rechts (immo.js: baueDialog) — bewusst gut sichtbar:
+   weißer Kreis mit dunklem Kreuz und leichter Tiefe, nicht grau-unscheinbar.
+   Sitzt über allem, damit es auch bei langem Titel frei bleibt. */
+.immo-dlg-zu{
+  position:absolute; top:14px; right:14px; z-index:20;
+  width:38px; height:38px; border:none; border-radius:50%;
+  background:var(--sheet); color:var(--ink);
+  font:400 17px/1 var(--body); cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 3px 10px -3px rgba(22,38,44,.4);
+  transition:background .12s, transform .12s;
+}
+.immo-dlg-zu:hover{background:var(--paper)}
+.immo-dlg-zu:active{transform:scale(.9)}
+/* Titel weicht dem Kreuz aus, damit nichts darunter läuft. */
+dialog.immo-dlg .dt{padding-right:34px}
 
 /* ---- Beleg ansehen (immo.js: belegAnsehen) ----
    Grosszuegiger als eine Rueckfrage: das Blatt braucht Flaeche. Auf dem Telefon

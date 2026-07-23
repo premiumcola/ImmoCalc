@@ -222,6 +222,18 @@ function baueDialog(inhalt) {
   const dlg = document.createElement('dialog');
   dlg.className = 'immo-dlg';
   dlg.innerHTML = inhalt;
+  // Sichtbares Schließen-Kreuz oben rechts — überall, wo der Dialog nicht schon
+  // selbst eines mitbringt. Sonst muss man zum Abbrechen erst nach unten
+  // scrollen. Bewusst gut sichtbar (heller Kreis), nicht grau-unscheinbar.
+  if (!dlg.querySelector('[data-zu]')) {
+    const zu = document.createElement('button');
+    zu.type = 'button';
+    zu.className = 'immo-dlg-zu';
+    zu.setAttribute('aria-label', 'Schließen');
+    zu.textContent = '✕';
+    zu.addEventListener('click', () => dlg.close());
+    dlg.appendChild(zu);
+  }
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   dlg.showModal();
