@@ -107,10 +107,19 @@ def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
     # sie nichts Neues — das Kürzel steht ohnehin schon vorn.
     if kostenart and _kern(kostenart) != _kern(kategorie):
         genau = _saubere_datei(kostenart)
+        if not sache or _sagt_nichts(sache):
+            sache = genau
+        # Steht die Kostenart schon vorn (weil dieser Name schon einmal durch
+        # diese Funktion lief), NICHT doppeln — „Hausmeister-Polster" bleibt,
+        # wird nicht zu „Hausmeister-Hausmeister-Polster" (Idempotenz).
+        elif _kern(sache).startswith(_kern(genau)):
+            pass
         # „Wasser" unter der Position „Wasser" braucht nicht zweimal dazustehen
-        doppelt = _kern(sache) and _kern(sache) in _kern(genau)
-        sache = (genau if not sache or _sagt_nichts(sache) or doppelt
-                 else f"{genau}-{sache}")
+        elif _kern(sache) in _kern(genau):
+            sache = genau
+        else:
+            sache = f"{genau}-{sache}"
+    sache = _ohne_dopplung(sache)
     kuerzel = ARTKUERZEL.get(kategorie, "")
     mitte = f"{kuerzel}-{sache}" if kuerzel and sache else (sache or kuerzel)
     teile = [datumsteil(jahr, monat), mitte or "Beleg", betragsteil(betrag)]
@@ -138,6 +147,17 @@ def _kern(text: str) -> str:
 def _sagt_nichts(text: str) -> bool:
     """Ist das nur ein Allerweltswort wie „Rechnung"?"""
     return _kern(text) in _NICHTSSAGEND
+
+
+def _ohne_dopplung(sache: str) -> str:
+    """Aufeinanderfolgende gleiche Bausteine zusammenfassen — das Idempotenz-
+    Netz: „Hausmeister-Hausmeister-Polster" → „Hausmeister-Polster". Heilt
+    auch Namen, die ein früherer, noch nicht idempotenter Lauf verdoppelt hat."""
+    raus: list[str] = []
+    for t in (t for t in sache.split("-") if t):
+        if not raus or _kern(raus[-1]) != _kern(t):
+            raus.append(t)
+    return "-".join(raus)
 
 
 def _endung(name: str) -> str:
