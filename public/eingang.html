@@ -73,6 +73,18 @@
   .filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
           margin-bottom:14px}
   @media (min-width:900px){.filter{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  /* Kostenart-Filter: anklickbare Chips mit Anzahl */
+  .ka-leiste{display:flex;flex-wrap:wrap;gap:7px;margin:-4px 0 16px}
+  .kabtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
+         background:var(--sheet);color:var(--ink);border-radius:999px;
+         padding:7px 12px;min-height:36px;font:600 12.5px var(--body);cursor:pointer;
+         transition:background .12s,border-color .12s,color .12s}
+  .kabtn:hover{border-color:var(--teal)}
+  .kabtn .n{font:600 11px var(--mono);color:var(--soft);
+            background:var(--paper);border-radius:999px;padding:1px 7px;min-width:20px;
+            text-align:center}
+  .kabtn.an{background:var(--teal);border-color:var(--teal);color:#fff}
+  .kabtn.an .n{background:rgba(255,255,255,.22);color:#fff}
 
   .zahlzeile{display:flex;align-items:baseline;gap:8px;margin:0 2px 10px}
   .zahlzeile .zahl{font:600 12px var(--mono);color:var(--soft)}
@@ -408,6 +420,10 @@
       <div id="fStatus"></div>
     </div>
 
+    <!-- Kostenart-Filter: anklickbare Buttons mit Anzahl, die sich mit den
+         übrigen Filtern (Objekt/Jahr/Status) aktualisiert. -->
+    <div class="ka-leiste" id="fKostenart" hidden></div>
+
     <div class="zahlzeile">
       <span class="zahl" id="zahl"></span>
       <button class="zuruecksetzen" id="zuruecksetzen" hidden>Filter zurücksetzen</button>
@@ -533,8 +549,8 @@ const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
                 'August', 'September', 'Oktober', 'November', 'Dezember'];
 /* Ein Zustand für die ganze Seite: Filter, Stammdaten, gewählter Beleg.
    Die Liste wird immer aus dem gebaut, was die API zurückgibt. */
-const filter = { objekt: ALLE, kategorie: ALLE, jahr: ALLE, status: ALLE, suche: '' };
-let daten = { dokumente: [], objekte: [], arten: [], jahre: [], kategorien: [] };
+const filter = { objekt: ALLE, kategorie: ALLE, kostenart: ALLE, jahr: ALLE, status: ALLE, suche: '' };
+let daten = { dokumente: [], objekte: [], arten: [], jahre: [], kategorien: [], kostenarten: [] };
 let gewaehlt = null;              // id des Belegs, der im Prüfblatt liegt
 let erfassung = null;             // dessen Eingabefelder
 let erkennungMoeglich = true;
@@ -586,10 +602,34 @@ function filterFuellen() {
       .map(a => ({ wert: a, text: a }))], filter.kategorie);
   fJahr.fuelle([{ wert: ALLE, text: 'Alle Jahre' },
     ...jahresliste().map(j => ({ wert: String(j), text: String(j) }))], filter.jahr);
-  const gefiltert = Boolean(filter.objekt || filter.kategorie || filter.jahr
-                            || filter.status || filter.suche);
+  kostenartenLeiste();
+  const gefiltert = Boolean(filter.objekt || filter.kategorie || filter.kostenart
+                            || filter.jahr || filter.status || filter.suche);
   zuruecksetzen.hidden = !gefiltert;
 }
+
+/* Kostenart-Filter als Button-Leiste: je Kostenart ein Knopf mit Anzahl. Die
+   Zahlen kommen aus `daten.kostenarten` (serverseitig über die übrigen Filter
+   gezählt) und ziehen so bei Objekt-/Jahrwechsel mit. Klick schaltet den Filter
+   an/aus. */
+const fKostenart = document.getElementById('fKostenart');
+function kostenartenLeiste() {
+  const arten = daten.kostenarten || [];
+  if (!arten.length) { fKostenart.hidden = true; fKostenart.innerHTML = ''; return; }
+  fKostenart.hidden = false;
+  fKostenart.innerHTML = arten.map(a => {
+    const an = filter.kostenart === a.name;
+    return `<button class="kabtn${an ? ' an' : ''}" type="button" data-ka="${esc(a.name)}"
+              aria-pressed="${an}">${esc(a.name)}<span class="n">${a.anzahl}</span></button>`;
+  }).join('');
+}
+fKostenart.addEventListener('click', e => {
+  const b = e.target.closest('[data-ka]');
+  if (!b) return;
+  const ka = b.dataset.ka;
+  filter.kostenart = (filter.kostenart === ka) ? ALLE : ka;
+  laden();
+});
 
 /* ---- Aus dem Dateinamen lesen ---------------------------------------------
    Der Name trägt Datum, Sache und Betrag an festen Plätzen
@@ -1765,8 +1805,8 @@ document.getElementById('suche').addEventListener('input', e => {
 });
 
 zuruecksetzen.addEventListener('click', () => {
-  Object.assign(filter, { objekt: ALLE, kategorie: ALLE, jahr: ALLE,
-                          status: ALLE, suche: '' });
+  Object.assign(filter, { objekt: ALLE, kategorie: ALLE, kostenart: ALLE,
+                          jahr: ALLE, status: ALLE, suche: '' });
   document.getElementById('suche').value = '';
   laden();
 });

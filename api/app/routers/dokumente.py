@@ -804,6 +804,7 @@ def abgleich(session: Session = Depends(get_session)) -> dict:
 @router.get("")
 def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
           status: str = "", suche: str = "", zeitraum: int | None = None,
+          kostenart: str = "",
           session: Session = Depends(get_session)) -> dict:
     """Alle Dokumente, gefiltert. Die Auswahlwerte kommen mit — die Oberfläche
     baut ihre Filter aus dem, was wirklich da ist."""
@@ -822,6 +823,7 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
         return (not _ist_sidecar(d.dateiname)
                 and (not ziel_id or d.objekt_id == ziel_id)
                 and (not kategorie or d.kategorie == kategorie)
+                and (not kostenart or d.kostenart == kostenart)
                 and (jahr is None or d.jahr == jahr)
                 and (not status or d.status == status)
                 and (zeitraum is None or d.zeitraum_id == zeitraum)
@@ -835,6 +837,23 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                                   d.dateiname.lower()))
 
     genutzt = {d.kategorie for d in alle if d.kategorie}
+    # Kostenart-Facette mit Anzahl — gezählt über die ÜBRIGEN Filter (Objekt,
+    # Jahr, Status …), aber NICHT über die Kostenart-Wahl selbst. So ziehen die
+    # Zahlen an den Buttons mit, sobald man das Objekt oder Jahr wechselt.
+    def _passt_ohne_kostenart(d: Dokument) -> bool:
+        return (not _ist_sidecar(d.dateiname)
+                and (not ziel_id or d.objekt_id == ziel_id)
+                and (not kategorie or d.kategorie == kategorie)
+                and (jahr is None or d.jahr == jahr)
+                and (not status or d.status == status)
+                and (zeitraum is None or d.zeitraum_id == zeitraum)
+                and (not begriff or begriff in d.dateiname.lower()))
+    _ka_zahl: dict[str, int] = {}
+    for d in alle:
+        if d.kostenart and _passt_ohne_kostenart(d):
+            _ka_zahl[d.kostenart] = _ka_zahl.get(d.kostenart, 0) + 1
+    kostenarten = [{"name": k, "anzahl": n} for k, n in
+                   sorted(_ka_zahl.items(), key=lambda kv: (-kv[1], kv[0]))]
     jahre = sorted({d.jahr for d in alle if d.jahr}, reverse=True)
     je_objekt: dict[int, int] = {}
     for d in alle:
@@ -850,6 +869,7 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
         "vermisst": sum(1 for d in alle if d.status == VERMISST),
         "arten": DOKUMENTARTEN,
         "kategorien": [a for a in DOKUMENTARTEN if a in genutzt],
+        "kostenarten": kostenarten,
         "jahre": jahre,
         "objekte": [{"slug": o.slug, "name": o.name,
                      "anzahl": je_objekt.get(o.id, 0),
