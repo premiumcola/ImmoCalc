@@ -216,6 +216,13 @@ def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
         # Leer, solange die KI noch nichts geliefert hat; das Frontend zeigt
         # den Bereich dann einfach nicht.
         "ki_einordnung": d.ki_einordnung or "",
+        # CCLXXIV: das Raster der KI-Auslese — erkannte Liegenschaft, Einheit
+        # und die typspezifischen Felder (Mieter, Jahresbeitrag, Restschuld …).
+        # Additiv; das Prüfblatt belegt daraus die Eingaben vor. Leer, solange
+        # die KI nichts geliefert hat.
+        "ki_immobilie": d.ki_immobilie or "",
+        "ki_einheit": d.ki_einheit or "",
+        "ki_felder": d.ki_felder or {},
         "zeitraum_id": d.zeitraum_id,
         "objekt": o.slug if o else None,
         "objekt_name": o.name if o else None,

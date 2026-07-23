@@ -264,6 +264,23 @@
   .bein .beintext{min-width:0;font:500 12.5px var(--body);color:var(--teal-d);
     line-height:1.55;word-break:break-word}
 
+  /* ---- CCLXXIV: KI-Vorbelegung — erkannte Liegenschaft und Felder ----------
+     Was die KI aus dem Beleg gezogen hat, als kompakte Liste im selben dezenten
+     Ton wie die ✦-Einordnungskarte. Der Nutzer bestätigt nur noch. Nur da,
+     wenn die KI etwas geliefert hat — sonst ausgeblendet. */
+  .bki{background:var(--teal-l);border-radius:12px;padding:12px 13px;margin-top:16px}
+  .bki[hidden]{display:none}
+  .bki .bkikopf{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+  .bki .bkisym{flex:none;color:var(--teal-d);font:600 13px var(--mono);line-height:1.3}
+  .bki .bkitit{font:600 10.5px var(--mono);color:var(--teal-d);letter-spacing:.09em;
+    text-transform:uppercase}
+  .bki .bkiliste{display:flex;flex-direction:column;gap:5px}
+  .bki .bkizeile{display:flex;align-items:baseline;gap:10px;line-height:1.45}
+  .bki .bkik{flex:none;width:96px;font:500 11.5px var(--mono);color:var(--teal-d);
+    opacity:.85}
+  .bki .bkiv{min-width:0;font:500 12.5px var(--body);color:var(--ink);
+    word-break:break-word}
+
   /* ---- CLXXX: aus dem Beleg wird eine Zeile der Abrechnung ----------------
      Die Rechnung liegt in einer dezenten Paper-Insel — man soll sehen, was man
      bestätigt (ein zweiter Beleg erhöht den Betrag, CLXXXII). */
@@ -414,6 +431,10 @@
             <span class="beinsym" aria-hidden="true">✦</span>
             <span class="beintext" id="bEinText"></span>
           </div>
+          <!-- CCLXXIV: die KI-Vorbelegung — erkannte Liegenschaft, Einheit und
+               die typspezifischen Felder. Inhalt kommt aus der Logik; der Block
+               bleibt aus, solange die KI nichts geliefert hat. -->
+          <div class="bki" id="bKi" hidden></div>
           <div class="bsek">
             <span class="bt">Abrechnungszeitraum</span>
             <div id="bZeitraum"></div>
@@ -490,6 +511,7 @@ const bPlan = document.getElementById('bPlan');
 const bLesen = document.getElementById('bLesen');
 const bEin = document.getElementById('bEin');
 const bEinText = document.getElementById('bEinText');
+const bKi = document.getElementById('bKi');
 const bZeitHinweis = document.getElementById('bZeitHinweis');
 const bZiel = document.getElementById('bZiel');
 const bPosFach = document.getElementById('bPosFach');
@@ -941,6 +963,8 @@ function blattZeigen() {
   vorschauLaden(d);
   erkennungHolen(d);
   einordnungZeigen(d);
+  kiVorbelegungZeigen(d);
+  kiFelderEinsetzen(d);
   posZeigen(d);
 }
 
@@ -1420,7 +1444,16 @@ async function kostenartenFuellen(d) {
     wert = passendeKostenart(namen, d, b);
     if (wert) erfassung.vorgeschlagen.add('kostenart');
   }
-  const alle = behalten && !namen.includes(gesetzt) ? [...namen, gesetzt] : namen;
+  // CCLXXIV: die KI hat eine Kostenposition erkannt — als Vorbelegung nehmen,
+  // wo der Nutzer (noch) keine gewählt hat und der Beleg zu dieser Immobilie
+  // gehört. Steht sie nicht im Katalog, kommt sie als eigene Angabe dazu.
+  if (!wert && eigenes) {
+    const kiArt = String((d.ki_felder || {}).kostenart || '').trim();
+    if (kiArt) { wert = kiArt; erfassung.vorgeschlagen.add('kostenart'); }
+  }
+  const alle = [...namen];
+  if (behalten && !namen.includes(gesetzt)) alle.push(gesetzt);
+  if (wert && !alle.includes(wert)) alle.push(wert);
   erfassung.kostenart.fuelle(
     [{ wert: '', text: namen.length ? 'ohne Position'
                                     : 'keine Kostenarten hinterlegt' },
@@ -1451,6 +1484,92 @@ function einordnungZeigen(d) {
   const text = ((gelesen || d.ki_einordnung) || '').trim();
   bEinText.textContent = text;
   bEin.hidden = !text;
+}
+
+/* ---- CCLXXIV: KI-Vorbelegung ---------------------------------------------
+   Die KI-Auslese legt am Beleg `ki_immobilie`, `ki_einheit` und `ki_felder`
+   ab (typspezifisch: Mieter/Kaltmiete beim Mietvertrag, Police/Jahresbeitrag
+   bei der Versicherung, Darlehen/Restschuld beim Kredit, Messbetrag/Hebesatz
+   bei der Grundsteuer …). Hier werden sie kompakt gezeigt — der Nutzer
+   bestätigt nur noch. Für Versicherung/Kredit/Mietvertrag/Steuer, wo der
+   eigentliche Datensatz-Weg noch aussteht, heißt der Block „bereit zum
+   Übernehmen": die Werte stehen 1:1 zum Abtippen bereit. */
+const KI_LABELS = {
+  mieter: 'Mieter', vermieter: 'Vermieter', kaltmiete: 'Kaltmiete',
+  warmmiete: 'Warmmiete', nettomiete: 'Nettomiete', kaution: 'Kaution',
+  nebenkosten: 'Nebenkosten', betrag: 'Betrag', kostenart: 'Kostenposition',
+  police_nr: 'Policennummer', policennummer: 'Policennummer',
+  versicherer: 'Versicherer', versicherung: 'Versicherung',
+  jahresbeitrag: 'Jahresbeitrag', beitrag: 'Beitrag', rate: 'Rate',
+  darlehensnummer: 'Darlehensnummer', darlehen: 'Darlehen', bank: 'Bank',
+  restschuld: 'Restschuld', zinssatz: 'Zinssatz', tilgung: 'Tilgung',
+  messbetrag: 'Messbetrag', hebesatz: 'Hebesatz', grundsteuer: 'Grundsteuer',
+  steuernummer: 'Steuernummer', aktenzeichen: 'Aktenzeichen',
+  flaeche: 'Fläche', wohnflaeche: 'Wohnfläche', einheit: 'Einheit',
+  sache: 'Sache', datum: 'Datum', zeitraum: 'Zeitraum',
+};
+
+/** Für diese Arten steht der Datensatz-Weg noch aus — die Vorbelegung dient
+    dann dem händischen Übertragen der Werte. */
+const KI_UEBERNAHME = new Set(['Versicherung', 'Kredit', 'Mietvertrag', 'Steuer']);
+
+const kiLabel = schluessel => KI_LABELS[schluessel]
+  || KI_LABELS[String(schluessel).toLowerCase()]
+  || String(schluessel).charAt(0).toUpperCase()
+     + String(schluessel).slice(1).replace(/_/g, ' ');
+
+/** Wie ein KI-Wert dasteht: Geldbeträge hübsch, sonst roh. */
+function kiWert(schluessel, wert) {
+  if (typeof wert === 'number') {
+    const geld = /miete|beitrag|schuld|kaution|betrag|rate|kosten|messbetrag/
+      .test(String(schluessel).toLowerCase());
+    return geld ? eur(wert) : String(wert);
+  }
+  return String(wert);
+}
+
+const kiZeile = (label, wert) =>
+  `<div class="bkizeile"><span class="bkik">${esc(label)}</span>` +
+  `<span class="bkiv">${esc(wert)}</span></div>`;
+
+function kiVorbelegungZeigen(d) {
+  const felder = d.ki_felder || {};
+  const eintraege = Object.entries(felder).filter(([, v]) =>
+    v !== null && v !== undefined && typeof v !== 'object'
+    && String(v).trim() !== '');
+  const ort = [d.ki_immobilie, d.ki_einheit].filter(Boolean).join(' · ');
+  if (!eintraege.length && !ort) { bKi.hidden = true; bKi.innerHTML = ''; return; }
+  const art = d.kategorie || (d.vorschlag || {}).kategorie || '';
+  const titel = KI_UEBERNAHME.has(art) ? 'Bereit zum Übernehmen' : 'KI-Vorbelegung';
+  const zeilen = [];
+  if (ort) zeilen.push(kiZeile('Immobilie', ort));
+  for (const [k, v] of eintraege) zeilen.push(kiZeile(kiLabel(k), kiWert(k, v)));
+  bKi.innerHTML =
+    `<div class="bkikopf"><span class="bkisym" aria-hidden="true">✦</span>` +
+    `<span class="bkitit">${esc(titel)}</span></div>` +
+    `<div class="bkiliste">${zeilen.join('')}</div>`;
+  bKi.hidden = false;
+}
+
+/** Eine Zahl aus einem KI-Feld — Zahl oder deutscher Betragstext („1.234,56 €"). */
+function zahlAus(x) {
+  if (typeof x === 'number') return Number.isFinite(x) && x > 0 ? x : null;
+  const t = String(x || '').replace(/[€\s]/g, '')
+    .replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
+  const n = t ? Number(t) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** CCLXXIV: die KI-Felder belegen leere Eingaben vor — der Betrag hier, die
+    Kostenposition in `kostenartenFuellen`. Getipptes bleibt unangetastet. */
+function kiFelderEinsetzen(d) {
+  if (!erfassung || erfassung.id !== d.id) return;
+  const betrag = zahlAus((d.ki_felder || {}).betrag);
+  if (betrag && !erfassung.betragFeld.value.trim()) {
+    erfassung.betragFeld.value = betrag.toFixed(2).replace('.', ',');
+    erfassung.vorgeschlagen.add('betrag');
+    planZeichnen();
+  }
 }
 
 async function erkennungHolen(d) {
