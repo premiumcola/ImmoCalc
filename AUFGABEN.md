@@ -26,6 +26,20 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 ---
 
+## Neu gewünscht — 23.07.
+
+| Nr. | In einfachen Worten | Stand |
+|---|---|---|
+| CCXLIX | ~~**Erkennungs-Muster-Wörter** im Dokumenteneingang: Textstücke, die auf dem PDF stehen, bestimmen künftig die Richtung (Kostenart / kostenfrei). Bestand zurücknehmen und neu klassifizieren~~ **erledigt** `a815170`/`9b7017f` | Regel-CRUD + `/neu-klassifizieren`; 11 Startregeln aus deinen Korrekturen; 649 Belege stabil klassifiziert (Re-Lauf = 0 Änderungen) |
+| CCL | ~~**Schließen-× oben rechts in allen Dialogen**~~ **erledigt** `0c8c958`/`d2a1515` | zentral in `baueDialog` **und** als Retrofit für die statisch im HTML stehenden Dialoge (Mietverhältnis, Einheit …); gut sichtbarer weißer Kreis, kein Doppel-× |
+| CCLI | ~~**Leere Abrechnungszeiträume automatisch entfernen**~~ **erledigt** `0a88dac`/`44a6be7` | `POST /zeitraeume/aufraeumen` (räumt beim Öffnen der NK-Übersicht) + Auto-Entfernen, wenn die letzte Position weg ist; Fußzeile zeigt Verknüpfungen; kein Löschknopf. 32 leere Zeiträume weggeräumt |
+| CCLII | ~~**Gefüllte Belege/Positionen farblich hervorheben**~~ **erledigt** `44a6be7` | gefüllte Zeile hebt sich sanft grün ab (Verlauf + Akzentkante + grüner Betrag) |
+| CCLIII | ~~**Beleg-übernehmen-Ansicht flacher & schöner**~~ **erledigt** `9a30070` | einheitlicher Hintergrund, weniger Text, eingebettete Vorschau der ganzen ersten Seite |
+| CCLIV | **Wohnfläche & Stellplätze aus den Einheiten berechnen**, in den Stammdaten anzeigen. Manuelle Eingabe nur mit Plausibilitätsprüfung gegen die Einheiten. Zusätzlich **Grundstücksfläche** (Grund) eingebbar (z. B. Klausner Winkel) | **offen** — `Objekt.flaeche` / `grundstueck_flaeche` existieren; Wohnfläche/Stellplätze sollen sich aus `Einheit` summieren statt Handeingabe |
+| CCLV | **Kostenfreie Belege** (SEPA-Mandat, Zählerstände/Ableseergebnisse): korrekt benennen, ablegen, klassifizieren — **keine** Kostenposition. Klärung: sie sollen als organisatorischer Beleg (ohne Kostenanteil) beim Zeitraum bzw. an der zähler-basierten Position hängen können, nicht eigens gepflegt werden | **offen** — heute: abgelegt + klassifiziert, keine Position; Zeitraum-Verknüpfung als Beleg noch nicht angeboten |
+
+---
+
 ## Neu gewünscht — 22.07. nachmittags
 
 | Nr. | Anforderung | Was zu tun ist |
