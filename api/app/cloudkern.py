@@ -19,19 +19,64 @@ log = logging.getLogger("immocalc")
 
 # Vereinheitlichte Struktur je Immobilie — Zehnerschritte lassen Platz zum
 # Einfuegen, die Nummern folgen dem gewachsenen Bestand.
-STRUKTUR = [
+# CCL — die Ordnerstruktur hängt vom Fall der Immobilie ab. Ein Grundstück
+# braucht keine Nebenkosten oder Mietverträge; eine Eigentumswohnung in einer
+# WEG führt Eigentümerversammlungen und Hausverwaltung statt eigener
+# NK-Verteilung; ein selbstverwaltetes Haus verteilt die Nebenkosten selbst und
+# hat objekteigene Projekte (Garten, Hof, Umbau). Die Ordnernamen bleiben über
+# alle Typen gleich (damit ZIELORDNER weiter greift) — nur die Auswahl ändert
+# sich. Abgeleitet aus den Vorgabeordnern des Nutzers.
+
+STRUKTUR_GRUNDSTUECK = [
+    "01_Allgemein_Hauskonto",
+    "10_Fotos_Lage",
+    "40_Kauf_Eigentum_Finanzierung",   # Kaufvertrag, Notar, Grundbuch
+    "70_Steuer_Finanzamt",             # Grundsteuer
+    "30_Kommunikation",
+    "99_Sonstiges",
+]
+
+STRUKTUR_WEG = [
+    "01_Allgemein_Hauskonto",
+    "10_Fotos_Lage",
+    "20_Mietvertraege_Vermietung",
+    "40_Kauf_Eigentum_Finanzierung",
+    "50_Bauphase_Projekte",
+    "51_Mieterhoehungen",
+    "60_Nebenkosten",
+    "70_Steuer_Finanzamt",
+    "55_Eigentuemerversammlungen",     # nur WEG
+    "80_Hausverwaltung",               # nur WEG
+    "99_Sonstiges",
+]
+
+STRUKTUR_MFH = [                       # selbstverwaltet (eigene NK-Verteilung)
     "01_Allgemein_Hauskonto",
     "10_Fotos_Lage",
     "20_Mietvertraege_Vermietung",
     "30_Kommunikation",
     "40_Kauf_Eigentum_Finanzierung",
-    "50_Bauphase_Projekte",
+    "50_Bauphase_Projekte",            # Umbau/Renovierung, Garten, Hof
     "60_Nebenkosten",
     "70_Steuer_Finanzamt",
-    "80_Hausverwaltung",
     "98_Archiv",
     "99_Sonstiges",
 ]
+
+
+def struktur_fuer(objekt) -> list[str]:
+    """Die passende Ordnerstruktur zum Fall der Immobilie."""
+    from .models import ist_grundstueck
+    if ist_grundstueck(objekt):
+        return STRUKTUR_GRUNDSTUECK
+    if getattr(objekt, "weg", False):
+        return STRUKTUR_WEG
+    return STRUKTUR_MFH
+
+
+# Obermenge aller möglichen Hauptordner — für die Prüfung „ist das ein
+# Hauptordner (und kein Sachordner darunter)?" und als neutraler Bezug.
+STRUKTUR = sorted(set(STRUKTUR_GRUNDSTUECK + STRUKTUR_WEG + STRUKTUR_MFH))
 
 # Wohin eine Kategorie einsortiert wird. Alles Abrechnungsrelevante landet
 # unter Nebenkosten, der Rest bei seinem Thema.

@@ -3,7 +3,8 @@ import json
 import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     UploadFile)
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -15,8 +16,8 @@ from ..bezeichnung import (PLATZHALTER, STANDARD_UNTERORDNER, STANDARD_VORLAGE,
                            unterordner_pruefen, vorlage_pruefen)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, S_HOME, S_TLS, S_UNTERORDNER,
                         S_URL, S_BENUTZER, S_PASSWORT, ZIELORDNER, _lies,
-                        einheit_von, unterordner_fuer, unterordner_vorlagen,
-                        verbindung)
+                        einheit_von, struktur_fuer, unterordner_fuer,
+                        unterordner_vorlagen, verbindung)
 from ..db import get_session
 from ..models import Dokument, Einstellung, Objekt
 from ..nextcloud import Nextcloud, NextcloudFehler
@@ -281,7 +282,7 @@ def objekt_status(slug: str, session: Session = Depends(get_session)) -> dict:
         "angelegt": bool(objekt.nc_ordner),
         "vorschlag": zielordner_fuer(session, objekt, home).lstrip("/")
                      if home else "",
-        "struktur": STRUKTUR,
+        "struktur": struktur_fuer(objekt),
     }
 
 
@@ -309,7 +310,7 @@ def objekt_ordner(slug: str, session: Session = Depends(get_session)) -> dict:
         "wurzel": objekt.nc_ordner,
         "ordner": [{"name": n, "eigen": n not in bekannt} for n in vorhanden],
         "eigene": [n for n in vorhanden if n not in bekannt],
-        "fehlend": [n for n in STRUKTUR if n not in vorhanden],
+        "fehlend": [n for n in struktur_fuer(objekt) if n not in vorhanden],
         "dateien": sum(1 for e in eintraege if not e.ordner),
     }
 
@@ -332,7 +333,7 @@ def struktur_anlegen(slug: str, session: Session = Depends(get_session)) -> dict
             else zielordner_fuer(session, objekt, home)).strip("/")
     client = verbindung(session)
     try:
-        neu = client.ordner_baum_anlegen(ziel, STRUKTUR)
+        neu = client.ordner_baum_anlegen(ziel, struktur_fuer(objekt))
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
 
@@ -340,7 +341,75 @@ def struktur_anlegen(slug: str, session: Session = Depends(get_session)) -> dict
     session.add(objekt)
     session.commit()
     return {"ordner": objekt.nc_ordner, "neu_angelegt": neu,
-            "unveraendert": len(STRUKTUR) + 1 - len(neu)}
+            "unveraendert": len(struktur_fuer(objekt)) + 1 - len(neu)}
+
+
+# --------------------------------------------------------------------------
+# CCLI — Originalgetreu spiegeln: den eigenen Ordnerbaum 1:1 in die Cloud.
+#
+# Anders als der Beleg-Scan (der nach Kategorie umsortiert und umbenennt) legt
+# `spiegeln` eine Datei UNVERÄNDERT an ihrem Ort im Objektordner ab — gleiche
+# Unterordner, gleicher Name. `leeren` räumt den Objektordner davor, damit ein
+# sauberer Neuaufbau möglich ist. Beides ausdrücklich vom Nutzer angestoßen.
+# --------------------------------------------------------------------------
+def _saubere_teile(subpfad: str) -> list[str]:
+    """Relativer Pfad → sichere Teile (kein '..', keine leeren, kein führendes /)."""
+    roh = (subpfad or "").replace("\\", "/").split("/")
+    return [t.strip() for t in roh if t.strip() and t.strip() != ".."]
+
+
+@router.post("/objekte/{slug}/leeren")
+def objekt_leeren(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Löscht ALLE Inhalte des Objektordners (Dateien und Unterordner) — für
+    einen sauberen Neuaufbau. Der Objektordner selbst bleibt. Nur unterhalb des
+    Home-Ordners (Schreibschutz)."""
+    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not objekt:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    if not objekt.nc_ordner:
+        return {"geloescht": 0}
+    client = verbindung(session)
+    wurzel = _pfad(objekt.nc_ordner).strip("/")
+    geloescht = 0
+    try:
+        for e in client.liste(objekt.nc_ordner):
+            client.loesche(f"{wurzel}/{e.name}")
+            geloescht += 1
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ordner": objekt.nc_ordner, "geloescht": geloescht}
+
+
+@router.post("/objekte/{slug}/spiegeln", status_code=201)
+async def objekt_spiegeln(slug: str, subpfad: str = Form(...),
+                          datei: UploadFile = File(...),
+                          session: Session = Depends(get_session)) -> dict:
+    """Legt eine Datei UNVERÄNDERT unter `subpfad` im Objektordner ab — die
+    Ordnerkette wird angelegt, der Dateiname bleibt. Für die 1:1-Übertragung
+    des eigenen Archivs, ohne Umbenennung oder Umsortierung."""
+    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not objekt:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    if not objekt.nc_ordner:
+        raise HTTPException(400, "Objekt ist mit keinem Cloud-Ordner verknüpft")
+    teile = _saubere_teile(subpfad)
+    if not teile:
+        raise HTTPException(400, "Kein gültiger Zielpfad")
+    inhalt = await datei.read()
+    if not inhalt:
+        raise HTTPException(400, "Leere Datei")
+    client = verbindung(session)
+    pfad = _pfad(objekt.nc_ordner).strip("/")
+    try:
+        for ordner in teile[:-1]:            # Ordnerkette anlegen (405 = existiert)
+            pfad = f"{pfad}/{ordner}"
+            client.ordner_anlegen(pfad)
+        ziel = f"{pfad}/{teile[-1]}"
+        client.lege_ab(ziel, inhalt,
+                       typ=datei.content_type or "application/octet-stream")
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    return {"pfad": "/" + ziel}
 
 
 # --------------------------------------------------------------------------

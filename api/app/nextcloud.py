@@ -223,3 +223,14 @@ class Nextcloud:
         if antwort.status_code >= 400:
             raise NextcloudFehler(
                 f"Verschieben fehlgeschlagen ({antwort.status_code}): {von} -> {nach}")
+
+    def loesche(self, pfad: str) -> None:
+        """Datei oder Ordner löschen — nur unterhalb des Home-Ordners (derselbe
+        Riegel wie beim Schreiben). 404 gilt als Erfolg: was weg soll, ist weg.
+
+        Bewusst zurückhaltend gehalten — der Aufrufer muss das Löschen wollen."""
+        self._pruefe_schreibrecht(pfad)
+        antwort = self._anfrage("DELETE", pfad)
+        if antwort.status_code not in (200, 204, 404):
+            raise NextcloudFehler(
+                f"Löschen fehlgeschlagen ({antwort.status_code}): {pfad}")
