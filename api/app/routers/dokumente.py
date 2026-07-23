@@ -1999,6 +1999,10 @@ def geradedrehen(dokument_id: int, grad: int = Query(0),
     (`ocr.seite_png`), aber die Datei in der Cloud bleibt schief — und wer sie
     herunterlädt, sieht sie gekippt. Dieser Endpunkt setzt die Drehung fest.
 
+    Ohne `?grad=` wird je Seite zuerst die zuverlässige KI-Orientierung
+    versucht (mit dem in den Einstellungen hinterlegten Schlüssel), sonst
+    Tesseract-OSD — beides in `ocr.pdf_geradedrehen`.
+
     Datensicher: geändert wird nur die /Rotate-Angabe jeder Seite, der Inhalt
     bleibt unangetastet (`ocr.pdf_geradedrehen`). Erst wenn wirklich etwas zu
     drehen war, wird die Datei am selben Platz in der Cloud überschrieben —
@@ -2025,7 +2029,10 @@ def geradedrehen(dokument_id: int, grad: int = Query(0),
         neu = ocr.pdf_drehen(rohdaten, grad % 360)
         gedreht = [{"seite": "alle", "grad": grad % 360}] if neu else []
     else:
-        neu, gedreht = ocr.pdf_geradedrehen(rohdaten)
+        # Der in den Einstellungen hinterlegte Schlüssel gibt der zuverlässigen
+        # KI-Orientierung den Vorrang; ohne Key greift OSD (env-Fallback in
+        # `kiauslese`).
+        neu, gedreht = ocr.pdf_geradedrehen(rohdaten, _ki_key(session))
     if neu is None or not gedreht:
         # Nichts lag schief — oder die Orientierungserkennung fehlt. Beides ist
         # kein Fehler: die Datei bleibt, wie sie ist.
@@ -2047,3 +2054,128 @@ def geradedrehen(dokument_id: int, grad: int = Query(0),
     session.commit()
     log.info("Geradegedreht: %s (%d Seite(n))", d.pfad, len(gedreht))
     return {"ok": True, "gedreht": gedreht, "geaendert": True}
+
+
+# --------------------------------------------------------------------------
+# Standard-Umbenennung: die KI-verarbeiteten Belege tragen noch ihre
+# Originalnamen. Sie sollen den Standardnamen
+# `JJJJ-MM_Kürzel-Sache_Betrag€.endung` bekommen — aber IM SELBEN ORDNER
+# bleiben (kein Move in Kategorie-/Jahresordner). Gebaut wird der Name aus den
+# am Dokument gespeicherten Feldern (Kategorie, Belegdatum, Betrag, Kostenart)
+# und der Bezeichnung aus dem Originalnamen (XCVII — die vom Nutzer gewählte
+# Benennung bleibt erhalten).
+# --------------------------------------------------------------------------
+
+def _elternordner(pfad: str) -> str:
+    """Der Elternordner eines Cloud-Pfades, ohne führenden Trenner —
+    passend für `_freier_name`/`client.verschiebe`. Leer, wenn die Datei im
+    Wurzelverzeichnis liegt."""
+    return pfad.strip("/").rpartition("/")[0]
+
+
+def _sidecar_mitnehmen(client, alt_pfad: str, neu_pfad: str) -> bool:
+    """Benennt die `.immocalc`-Sidecar-Datei mit um, wenn es sie gibt.
+
+    Liegt neben dem alten Beleg ein `<altname>.immocalc`, wird er per MOVE zum
+    `<neuname>.immocalc` — Steckbrief und Beleg bleiben zusammen. Kein harter
+    Fehler, wenn das scheitert (oder gar kein Sidecar existiert): der Beleg ist
+    schon umbenannt, der Steckbrief ist Beiwerk."""
+    alt_sc = _sidecar_pfad(alt_pfad)
+    neu_sc = _sidecar_pfad(neu_pfad)
+    if alt_sc == neu_sc:
+        return False
+    try:
+        if not client.existiert(alt_sc):
+            return False
+        client.verschiebe(alt_sc, neu_sc)
+        return True
+    except Exception as fehler:                            # noqa: BLE001
+        log.info("Sidecar nicht mitverschoben (%s → %s): %s",
+                 alt_sc, neu_sc, fehler)
+        return False
+
+
+@router.post("/{dokument_id}/umbenennen")
+def umbenennen(dokument_id: int,
+               session: Session = Depends(get_session)) -> dict:
+    """Benennt den Beleg auf den Standardnamen um — IM SELBEN ORDNER.
+
+    Der Name wird aus den am Dokument gespeicherten Feldern gebaut: Kategorie
+    (Kürzel), Belegdatum (Jahr/Monat), Betrag, Kostenart — und die Bezeichnung
+    aus dem Originalnamen (`_bezeichnung`, XCVII). Die Datei bleibt in ihrem
+    aktuellen Verzeichnis; sie wird nur umbenannt, nicht in einen Kategorie-
+    oder Jahresordner verschoben. Kategorie- und Objektzuordnung bleiben
+    unangetastet.
+
+    Datensicher: nie überschreiben (freier Name in demselben Ordner), nie
+    löschen; scheitert der Cloud-MOVE, bleiben Datei und Datenbank unberührt.
+    Idempotent: heißt die Datei schon Standard → `{"ok": true, "geaendert":
+    false}`. Die `.immocalc`-Sidecar wird mit umbenannt (kein harter Fehler,
+    wenn das scheitert).
+
+    Antwort: `{"ok": true, "alt": …, "neu": …, "pfad": …, "geaendert": <bool>}`.
+    """
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der "
+                                 "Cloud — es lässt sich nicht umbenennen.")
+
+    alt_name = d.dateiname
+    alt_pfad = d.pfad
+    # Jahr/Monat aus dem Belegdatum, mit Rückfall auf das gespeicherte Jahr und
+    # den Namen — genug, um den Datumsteil vorn zu setzen.
+    jahr, monat = datum_aus_namen(alt_name)
+    if d.belegdatum:
+        jahr, monat = d.belegdatum.year, d.belegdatum.month
+    elif d.jahr:
+        jahr = d.jahr
+    # Die Bezeichnung aus dem Originalnamen bewahrt die Benennung des Nutzers.
+    sache = _bezeichnung(alt_name)
+    neu_name = dateiname(jahr, d.kategorie or "", sache, _endung(alt_name),
+                         monat, d.betrag, d.kostenart or "")
+
+    # Idempotent: heisst die Datei schon so, gibt es nichts zu tun.
+    if neu_name == alt_name:
+        return {"ok": True, "alt": alt_name, "neu": alt_name,
+                "pfad": alt_pfad, "geaendert": False}
+
+    ordner = _elternordner(alt_pfad)
+    client = verbindung(session)
+    frei = _freier_name(session, client, ordner, neu_name)
+    ziel = f"/{ordner}/{frei}" if ordner else f"/{frei}"
+
+    try:
+        client.verschiebe(alt_pfad, ziel.lstrip("/"))
+    except NextcloudFehler as fehler:
+        # MOVE gescheitert: Datei und Datenbank unberührt, sauberer Hinweis.
+        log.warning("Umbenennen fehlgeschlagen (%s → %s): %s",
+                    alt_pfad, ziel, fehler)
+        raise HTTPException(
+            502, "Der Beleg konnte in der Cloud nicht umbenannt werden — er "
+                 "bleibt unverändert.") from fehler
+
+    d.pfad = ziel
+    d.dateiname = frei
+    session.add(d)
+    try:
+        session.commit()
+    except IntegrityError as e:
+        # Der Zielpfad ist inzwischen in der Datenbank vergeben. Die Datei liegt
+        # zwar schon am neuen Platz — sie zurückzuschieben hält die beiden
+        # Stände zusammen.
+        session.rollback()
+        try:
+            client.verschiebe(ziel.lstrip("/"), alt_pfad.lstrip("/"))
+        except Exception as zurueck:                       # noqa: BLE001
+            log.warning("Rückverschieben nach Konflikt gescheitert (%s): %s",
+                        ziel, zurueck)
+        raise _pfad_konflikt(session, ziel) from e
+
+    # Den Steckbrief mitnehmen — kein harter Fehler, wenn das scheitert.
+    _sidecar_mitnehmen(client, alt_pfad, ziel)
+
+    log.info("Umbenannt: %s → %s", alt_name, frei)
+    return {"ok": True, "alt": alt_name, "neu": frei, "pfad": d.pfad,
+            "geaendert": True}

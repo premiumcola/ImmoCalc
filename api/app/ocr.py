@@ -792,17 +792,46 @@ def _gerade_seiten_bilder(rohdaten: bytes) -> "list[bytes] | None":
         return None
 
 
-def pdf_geradedrehen(pdf_bytes: bytes) -> "tuple[bytes | None, list[dict]]":
-    """Dreht jede Seite eines PDF per OSD dauerhaft in die aufrechte Lage.
+def _seiten_drehung(png: bytes, ki_key: str = "") -> int:
+    """Um wie viel Grad IM UHRZEIGERSINN ein Seitenbild aufzurichten ist.
+
+    Ist ein KI-Schlüssel verfügbar, hat das Vision-Modell Vorrang — es erkennt
+    die Orientierung zuverlässiger als Tesseract-OSD, das bei zerknitterten
+    Foto-Scans die Drehrichtung verfehlt (ein Mietvertrag wurde kopfüber
+    gedreht). Ohne Key oder wenn die KI 0 liefert (kein Befund, Netzwerkfehler),
+    fällt es auf OSD zurück. Nie eine Exception — beide Wege geben im Zweifel 0."""
+    if kiauslese is not None and kiauslese.verfuegbar(ki_key):
+        try:
+            grad = kiauslese.orientierung(png, ki_key)
+        except Exception as fehler:                      # noqa: BLE001
+            log.info("KI-Orientierung fehlgeschlagen, OSD-Fallback: %s",
+                     type(fehler).__name__)
+            grad = 0
+        if grad:
+            return grad
+    return _osd_drehung(png)
+
+
+def pdf_geradedrehen(pdf_bytes: bytes,
+                     ki_key: str = "") -> "tuple[bytes | None, list[dict]]":
+    """Dreht jede Seite eines PDF dauerhaft in die aufrechte Lage.
+
+    Je Seite wird zuerst die KI-Orientierung versucht (wenn ein Schlüssel
+    verfügbar ist — zuverlässiger als OSD bei Foto-Scans), sonst Tesseract-OSD.
+    Denselben Key-Vorrang wie sonst: übergebener `ki_key` (aus den
+    Einstellungen) vor `ANTHROPIC_API_KEY`; ohne beides bleibt es bei OSD.
 
     Datensicher: geändert wird ausschließlich die /Rotate-Angabe jeder Seite
     (`set_rotation`), die Pixel bleiben unangetastet — kein Neu-Rendern des
     Inhalts. Gibt `(neue_bytes, [{seite, grad}, …])` zurück.
 
-    `(None, [])` heißt „nichts zu tun": PyMuPDF oder Tesseract fehlt, das PDF
-    ließ sich nicht öffnen, oder keine Seite lag schief. Nie eine Exception
-    nach außen — scheitert etwas, bleibt das Original unberührt."""
-    if fitz is None or not verfuegbar() or not pdf_bytes:
+    `(None, [])` heißt „nichts zu tun": PyMuPDF fehlt, das PDF ließ sich nicht
+    öffnen, oder keine Seite lag schief. Nie eine Exception nach außen —
+    scheitert etwas, bleibt das Original unberührt."""
+    # Ohne KI-Schlüssel braucht es Tesseract-OSD; mit Schlüssel genügt PyMuPDF,
+    # weil das Vision-Modell die Orientierung liefert.
+    ki_da = kiauslese is not None and kiauslese.verfuegbar(ki_key)
+    if fitz is None or not pdf_bytes or (not ki_da and not verfuegbar()):
         return None, []
     gedreht: list[dict] = []
     try:
@@ -811,7 +840,7 @@ def pdf_geradedrehen(pdf_bytes: bytes) -> "tuple[bytes | None, list[dict]]":
                 seite = d[i]
                 pix = seite.get_pixmap(matrix=fitz.Matrix(_OSD_RENDER_ZOOM,
                                                           _OSD_RENDER_ZOOM))
-                grad = _osd_drehung(pix.tobytes("png"))
+                grad = _seiten_drehung(pix.tobytes("png"), ki_key)
                 if grad:
                     seite.set_rotation((seite.rotation + grad) % 360)
                     gedreht.append({"seite": i, "grad": grad})

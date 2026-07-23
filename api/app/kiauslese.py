@@ -23,6 +23,7 @@ funktioniert dann wie bisher, nur ohne KI-Vorschlag.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -310,6 +311,95 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
     log.info("KI-Auslese gelesen (Datum %s)",
              "vorhanden" if ergebnis["datum"] else "keins")
     return ergebnis
+
+
+# --------------------------------------------------------------------------
+# Orientierung eines gescannten Blattes über das Vision-Modell.
+#
+# Tesseract-OSD verfehlt bei zerknitterten Foto-Scans die Drehrichtung (ein
+# Mietvertrag wurde kopfüber gedreht). Ein Vision-Modell erkennt die
+# Orientierung dagegen zuverlässig — es „sieht" das Blatt statt Zeichenkanten
+# zu zählen. Gesendet wird nur das gerenderte Seitenbild, kein OCR-Text; die
+# Antwort ist eine einzige Zahl.
+# --------------------------------------------------------------------------
+ORIENT_PROMPT = (
+    "Um wie viel Grad im Uhrzeigersinn muss dieses gescannte Dokument gedreht "
+    "werden, damit der Text normal aufrecht (nicht kopfüber, nicht seitlich) "
+    "steht? Antworte NUR mit einer Zahl: 0, 90, 180 oder 270."
+)
+ORIENT_TOKENS = 10
+ORIENT_ZEITLIMIT = 20.0
+_ORIENT_ZAHL = re.compile(r"\d+")
+
+
+def _winkel(text: str) -> int:
+    """Die erste Zahl der Modellantwort, auf 0/90/180/270 gerundet.
+
+    Alles andere (kein Treffer, krummer Winkel) wird zu 0 — lieber nicht drehen
+    als falsch drehen."""
+    treffer = _ORIENT_ZAHL.search(text or "")
+    if not treffer:
+        return 0
+    grad = int(treffer.group()) % 360
+    # Auf das nächste rechte-Winkel-Vielfache runden (91 → 90, 179 → 180).
+    gerundet = (round(grad / 90) * 90) % 360
+    return gerundet if gerundet in (90, 180, 270) else 0
+
+
+def orientierung(png_bytes: bytes, schluessel: str = "") -> int:
+    """Um wie viel Grad IM UHRZEIGERSINN ein Seitenbild gedreht werden muss,
+    damit der Text aufrecht steht — erkannt vom Vision-Modell.
+
+    Gibt 0/90/180/270 zurück. Bei JEDEM Fehler (kein httpx, kein Key, Netzwerk,
+    Timeout, ungültige Antwort, kein Vielfaches von 90°) `0`, nie eine
+    Exception — dann bleibt die Seite ungedreht (der Aufrufer weicht auf OSD
+    aus). Denselben Key-Vorrang wie `lies_beleg`: übergebener Schlüssel vor Env.
+    """
+    if httpx is None or not png_bytes:
+        return 0
+    schluessel = _schluessel(schluessel)
+    if not schluessel:
+        return 0
+
+    try:
+        b64 = base64.b64encode(png_bytes).decode("ascii")
+    except Exception:                                      # noqa: BLE001
+        return 0
+    rumpf = {
+        "model": _modell(),
+        "max_tokens": ORIENT_TOKENS,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": "image/png", "data": b64}},
+                {"type": "text", "text": ORIENT_PROMPT},
+            ],
+        }],
+    }
+    kopf = {
+        "x-api-key": schluessel,
+        "anthropic-version": API_VERSION,
+        "content-type": "application/json",
+    }
+
+    try:
+        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
+                             timeout=ORIENT_ZEITLIMIT)
+    except Exception as fehler:                            # noqa: BLE001
+        log.info("KI-Orientierung nicht erreichbar: %s", type(fehler).__name__)
+        return 0
+    if antwort.status_code != 200:
+        log.info("KI-Orientierung meldete HTTP %s", antwort.status_code)
+        return 0
+    try:
+        daten = antwort.json()
+        bloecke = daten.get("content") or []
+        roh = "".join(b.get("text", "") for b in bloecke
+                      if isinstance(b, dict) and b.get("type") == "text")
+    except Exception:                                      # noqa: BLE001
+        return 0
+    return _winkel(roh)
 
 
 # Ein winziger, günstiger Ping: ein Zeichen Prompt, eine Antwort-Token, kurzer
