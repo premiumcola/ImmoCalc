@@ -321,6 +321,101 @@
   .zinfo{font:600 12px var(--mono);color:var(--teal-d);background:var(--teal-l);
          border-radius:10px;padding:10px 12px;margin:0 0 14px;line-height:1.5}
 
+  /* ---- CCXLIX: Erkennungsmuster — dem Erkenner Wörter beibringen ----------
+     Ein eigener, aufklappbarer Abschnitt: er stellt den Beleg-Alltag nicht zu,
+     ist aber immer erreichbar. Zugeklappt bleibt er, bis der Nutzer ein Muster
+     pflegen will. */
+  .regeln{background:var(--sheet);border-radius:16px;margin-top:20px;
+    box-shadow:0 1px 2px rgba(22,38,44,.05);overflow:hidden}
+  .regeln > summary{list-style:none;cursor:pointer;min-height:56px;
+    display:flex;align-items:center;gap:11px;padding:13px 15px;
+    font:600 14.5px var(--disp);letter-spacing:-.01em;color:var(--ink)}
+  .regeln > summary::-webkit-details-marker{display:none}
+  .regeln > summary .rsym{width:36px;height:36px;border-radius:11px;flex:none;
+    display:flex;align-items:center;justify-content:center;background:var(--teal-l);
+    color:var(--teal-d);font:600 16px var(--mono)}
+  .regeln > summary .rtitel{flex:1;min-width:0;display:block}
+  .regeln > summary .rzahl{display:block;font:400 11.5px var(--mono);
+    color:var(--soft);margin-top:2px}
+  .regeln > summary .rchevron{flex:none;color:var(--soft);font:400 13px var(--body);
+    transition:transform .15s}
+  .regeln[open] > summary .rchevron{transform:rotate(90deg)}
+  .rbody{padding:2px 15px 18px}
+  .rintro{font:400 12.5px var(--body);color:var(--soft);line-height:1.6;
+    margin:0 0 16px}
+
+  /* Liste der gepflegten Muster */
+  .rliste{display:flex;flex-direction:column;gap:8px;margin-bottom:18px}
+  .rregel{display:flex;align-items:center;gap:8px;background:var(--paper);
+    border-radius:12px;padding:9px 8px 9px 13px}
+  .rregel .rt{flex:1;min-width:0}
+  .rregel .rm{display:block;font:600 13.5px var(--disp);letter-spacing:-.01em;
+    color:var(--ink);word-break:break-word;line-height:1.3}
+  .rregel .rz{display:block;font:500 11.5px var(--mono);color:var(--soft);
+    margin-top:4px;line-height:1.45;word-break:break-word}
+  .rregel .rz.kein{color:var(--neg)}
+  .rregel.aus .rt{opacity:.5}
+  .rleer{background:var(--paper);border-radius:12px;padding:20px 16px;
+    text-align:center;font:400 12.5px var(--body);color:var(--soft);
+    line-height:1.6;margin-bottom:18px}
+  .rregel .rweg{flex:none;width:44px;height:44px;border:none;border-radius:11px;
+    background:transparent;color:var(--soft);font:400 19px var(--body);
+    cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .rregel .rweg:hover{background:var(--neg-bg);color:var(--neg)}
+
+  /* Schalter im App-Stil (aktiv / Kostenbeleg) — Trefferfläche 44 px hoch,
+     der sichtbare Gleiter darin schlanker. */
+  .schalter{flex:none;width:52px;height:44px;border:none;background:none;
+    cursor:pointer;padding:0;position:relative;-webkit-tap-highlight-color:transparent}
+  .schalter::before{content:'';position:absolute;left:4px;right:4px;top:8px;
+    height:28px;border-radius:999px;background:var(--line);transition:background .15s}
+  .schalter[aria-checked=true]::before{background:var(--teal)}
+  .schalter::after{content:'';position:absolute;top:11px;left:7px;width:22px;
+    height:22px;border-radius:50%;background:#fff;transition:transform .15s;
+    box-shadow:0 1px 3px rgba(22,38,44,.35)}
+  .schalter[aria-checked=true]::after{transform:translateX(18px)}
+  .schalter:focus-visible{outline:none}
+  .schalter:focus-visible::before{box-shadow:0 0 0 3px rgba(15,110,92,.25)}
+
+  /* Formular: neue Regel */
+  .rform{background:var(--paper);border-radius:12px;padding:14px;
+    display:grid;gap:12px}
+  .rform .rf{display:flex;flex-direction:column;min-width:0}
+  .rform .rf > label{display:block;font:600 10.5px var(--mono);color:var(--soft);
+    letter-spacing:.06em;text-transform:uppercase;margin:0 0 6px 2px}
+  .rform input{width:100%;border:1.5px solid var(--line);border-radius:12px;
+    padding:11px 13px;font:500 13.5px var(--body);background:var(--sheet);
+    min-height:44px;color:var(--ink);appearance:none}
+  .rform input:focus{outline:none;border-color:var(--teal)}
+  .rform .rkosten{grid-column:1 / -1;display:flex;align-items:center;gap:10px;
+    background:var(--sheet);border:1.5px solid var(--line);border-radius:12px;
+    padding:8px 8px 8px 13px;min-height:44px}
+  .rform .rkosten .rkt{flex:1;min-width:0}
+  .rform .rkosten .rk1{display:block;font:600 12.5px var(--disp);color:var(--ink)}
+  .rform .rkosten .rk2{display:block;font:400 11px var(--body);color:var(--soft);
+    margin-top:2px;line-height:1.45}
+  .rform .ranleg{grid-column:1 / -1;border:none;border-radius:12px;
+    background:var(--teal);color:#fff;min-height:46px;font:600 13.5px var(--disp);
+    cursor:pointer}
+  .rform .ranleg:hover{background:var(--teal-d)}
+  .rform .ranleg[disabled]{opacity:.5;cursor:default}
+  @media (min-width:640px){
+    .rform{grid-template-columns:1fr 1fr}
+    .rform .rf.breit{grid-column:1 / -1}
+  }
+
+  /* Bestand neu klassifizieren — langer Lauf über alle Belege */
+  .rklass{margin-top:16px;width:100%;border:1.5px solid #BFD9D1;
+    background:var(--teal-l);color:var(--teal-d);border-radius:12px;
+    min-height:48px;font:600 13.5px var(--disp);cursor:pointer}
+  .rklass:hover{background:#DCEDE7}
+  .rklass[disabled]{opacity:.6;cursor:default}
+  .rmeld{display:block;font:500 11.5px var(--mono);color:var(--soft);
+    margin-top:11px;line-height:1.55;word-break:break-word}
+  .rmeld:empty{display:none}
+  .rmeld.gut{color:var(--pos)}
+  .rmeld.schlecht{color:var(--neg)}
+
 </style>
 </head>
 <body>
@@ -415,6 +510,53 @@
         </div>
       </div>
     </div>
+
+    <!-- CCXLIX: Erkennungsmuster — der Nutzer bringt der Erkennung eigene
+         Wörter bei. Aufklappbar, damit es den Beleg-Alltag nicht zustellt. -->
+    <details class="regeln" id="regeln">
+      <summary>
+        <span class="rsym">✦</span>
+        <span class="rtitel">Erkennungsmuster
+          <span class="rzahl" id="rZahl">wird geladen …</span></span>
+        <span class="rchevron" aria-hidden="true">▸</span>
+      </summary>
+      <div class="rbody">
+        <p class="rintro">Bring der Beleg-Erkennung Wörter bei, die auf deinen
+          Belegen stehen. Steht ein Muster im erkannten Text, gilt seine
+          Richtung — so lassen sich Fehlerkennungen dauerhaft korrigieren
+          (etwa „N-ERGIE Netz“ als Zählerablesung, nicht als Kostenbeleg).</p>
+        <div class="rliste" id="rListe"></div>
+        <form class="rform" id="rForm">
+          <div class="rf breit">
+            <label for="rMuster">Muster (Wort auf dem Beleg)</label>
+            <input id="rMuster" maxlength="80" placeholder="z. B. N-ERGIE Netz"
+                   autocomplete="off">
+          </div>
+          <div class="rf">
+            <label>Kategorie</label>
+            <div id="rKategorie"></div>
+          </div>
+          <div class="rf">
+            <label for="rKostenart">Kostenart (optional)</label>
+            <input id="rKostenart" maxlength="60" placeholder="z. B. Wasser"
+                   autocomplete="off">
+          </div>
+          <div class="rkosten">
+            <span class="rkt">
+              <span class="rk1">Kostenbeleg</span>
+              <span class="rk2">Aus = kein Kostenbeleg (Ablesung, Mandat) —
+                keine Position</span>
+            </span>
+            <button type="button" class="schalter" id="rKosten" role="switch"
+                    aria-checked="true" aria-label="Ist ein Kostenbeleg"></button>
+          </div>
+          <button type="submit" class="ranleg" id="rAnleg">Muster anlegen</button>
+        </form>
+        <button type="button" class="rklass" id="rKlass">Bestand neu
+          klassifizieren</button>
+        <span class="rmeld" id="rMeld"></span>
+      </div>
+    </details>
   </div>
 
   <div data-nav></div>
@@ -438,7 +580,8 @@
 </dialog>
 
 <script type="module">
-import { api, eur, esc, belegAnsehen, installNav } from './assets/immo.js';
+import { api, eur, esc, belegAnsehen, installNav, melde as melden, frage }
+  from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 import { lesbareGroesse } from './assets/scan.js';
 import { kamerascanStarten } from './assets/kamerascan.js';
@@ -1761,8 +1904,192 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
   });
 }
 
+/* ---- CCXLIX: Erkennungsmuster ---------------------------------------------
+   Der Nutzer bringt der Beleg-Erkennung eigene Muster-Wörter bei. Steht ein
+   Muster im OCR-Text, gilt seine Richtung — Kategorie, Kostenart und ob es
+   überhaupt ein Kostenbeleg ist. So werden Fehlerkennungen dauerhaft
+   korrigiert. Die Endpunkte liegen unter /dokumente/erkennungsregeln. */
+const KATEGORIEN = ['Nebenkosten', 'Steuer', 'Kredit', 'Versicherung',
+  'Mietvertrag', 'Korrespondenz', 'Hausverwaltung', 'Sonstiges'];
+const rListe = document.getElementById('rListe');
+const rZahl = document.getElementById('rZahl');
+const rMeldFeld = document.getElementById('rMeld');
+const rMuster = document.getElementById('rMuster');
+const rKostenart = document.getElementById('rKostenart');
+const rKosten = document.getElementById('rKosten');
+const rForm = document.getElementById('rForm');
+const rAnleg = document.getElementById('rAnleg');
+const rKlass = document.getElementById('rKlass');
+let regeln = [];
+
+const rKategorie = auswahlfeld(document.getElementById('rKategorie'), {
+  optionen: KATEGORIEN.map(k => ({ wert: k, text: k })),
+  wert: 'Nebenkosten', label: 'Kategorie',
+});
+
+const rMeldung = (text, art = '') => {
+  rMeldFeld.textContent = text;
+  rMeldFeld.className = 'rmeld ' + art;
+};
+
+/** Kippt einen role="switch"-Knopf und gibt den neuen Zustand zurück. */
+function schalterUm(el) {
+  const an = el.getAttribute('aria-checked') !== 'true';
+  el.setAttribute('aria-checked', String(an));
+  return an;
+}
+const schalterAn = el => el.getAttribute('aria-checked') === 'true';
+
+// Der Kostenbeleg-Schalter im Anlege-Formular
+rKosten.addEventListener('click', () => schalterUm(rKosten));
+
+function regelZeile(r) {
+  const richtung = r.ist_kosten
+    ? `→ ${esc(r.kategorie)}${r.kostenart ? ' · ' + esc(r.kostenart) : ''}`
+    : 'kein Kostenbeleg';
+  return `<div class="rregel${r.aktiv ? '' : ' aus'}" data-id="${r.id}">
+      <span class="rt">
+        <span class="rm">${esc(r.muster)}</span>
+        <span class="rz${r.ist_kosten ? '' : ' kein'}">${richtung}</span>
+      </span>
+      <button type="button" class="schalter" role="switch" data-akt
+              aria-checked="${r.aktiv}" aria-label="Regel aktiv"></button>
+      <button type="button" class="rweg" data-weg
+              aria-label="Muster löschen">×</button>
+    </div>`;
+}
+
+function regelnZeichnen() {
+  rZahl.textContent = regeln.length
+    ? `${regeln.length} ${regeln.length === 1 ? 'Muster' : 'Muster'} gepflegt`
+    : '';
+  rListe.innerHTML = regeln.length
+    ? regeln.map(regelZeile).join('')
+    : `<div class="rleer">Noch keine Muster — lege das erste an, damit die
+         Erkennung deine Belege lernt.</div>`;
+}
+
+async function regelnLaden() {
+  try {
+    regeln = await api('/dokumente/erkennungsregeln');
+    regelnZeichnen();
+  } catch (fehler) {
+    rZahl.textContent = '';
+    rListe.innerHTML =
+      `<div class="rleer">${esc(String(fehler.message || fehler))}</div>`;
+  }
+}
+
+// Aktiv umschalten und löschen — delegiert über die Liste
+rListe.addEventListener('click', async e => {
+  const zeile = e.target.closest('[data-id]');
+  if (!zeile) return;
+  const id = Number(zeile.dataset.id);
+  const aktKnopf = e.target.closest('[data-akt]');
+  if (aktKnopf) {
+    const an = schalterUm(aktKnopf);
+    zeile.classList.toggle('aus', !an);
+    try {
+      await api(`/dokumente/erkennungsregeln/${id}`,
+                { method: 'PATCH', body: { aktiv: an } });
+      const r = regeln.find(x => x.id === id);
+      if (r) r.aktiv = an;
+    } catch (fehler) {
+      schalterUm(aktKnopf);                 // zurückdrehen
+      zeile.classList.toggle('aus', an);
+      melden('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    }
+    return;
+  }
+  if (e.target.closest('[data-weg]')) {
+    const r = regeln.find(x => x.id === id);
+    const ja = await frage('Muster löschen?',
+      `„${r ? r.muster : ''}“ wird aus den Erkennungsmustern entfernt.`,
+      { knopf: 'Löschen', gefahr: true });
+    if (!ja) return;
+    try {
+      await api(`/dokumente/erkennungsregeln/${id}`, { method: 'DELETE' });
+      regeln = regeln.filter(x => x.id !== id);
+      regelnZeichnen();
+      rMeldung('Muster gelöscht.');
+    } catch (fehler) {
+      melden('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    }
+  }
+});
+
+// Neue Regel anlegen. Leeres Muster fängt der Server mit 400 ab — die Meldung
+// wird gezeigt, statt es hier still zu verschlucken.
+rForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  rAnleg.disabled = true;
+  const vorher = rAnleg.textContent;
+  rAnleg.textContent = 'Wird angelegt …';
+  try {
+    const neu = await api('/dokumente/erkennungsregeln', {
+      method: 'POST',
+      body: {
+        muster: rMuster.value.trim(),
+        kategorie: rKategorie.wert(),
+        kostenart: rKostenart.value.trim(),
+        ist_kosten: schalterAn(rKosten),
+      },
+    });
+    regeln.push(neu);
+    regelnZeichnen();
+    rMuster.value = '';
+    rKostenart.value = '';
+    rMeldung('✓ Muster angelegt.', 'gut');
+    rMuster.focus();
+  } catch (fehler) {
+    rMeldung('⚠ ' + String(fehler.message || fehler), 'schlecht');
+  } finally {
+    rAnleg.disabled = false;
+    rAnleg.textContent = vorher;
+  }
+});
+
+// Bestand neu klassifizieren — liest den OCR-Text ALLER Belege und dauert
+// Sekunden bis über eine Minute. Erst fragen, während des Laufs sperren, das
+// Ergebnis melden. Großzügiger Timeout, sonst bricht der Browser vorher ab.
+rKlass.addEventListener('click', async () => {
+  const ja = await frage('Bestand neu klassifizieren?',
+    'Der erkannte Text aller Belege wird gegen deine Muster geprüft und die '
+    + 'Zuordnung nachgezogen. Das kann über eine Minute dauern.',
+    { knopf: 'Jetzt prüfen' });
+  if (!ja) return;
+  rKlass.disabled = true;
+  const vorher = rKlass.textContent;
+  rKlass.textContent = 'Läuft … das dauert einen Moment';
+  rMeldung('');
+  const steuer = new AbortController();
+  const uhr = setTimeout(() => steuer.abort(), 240000);
+  try {
+    const e = await api('/dokumente/neu-klassifizieren',
+                        { method: 'POST', signal: steuer.signal });
+    const teile = [`${e.geaendert} von ${e.geprueft} Belegen neu zugeordnet`];
+    if (e.positionen_geloest) teile.push(`${e.positionen_geloest} Positionen gelöst`);
+    if (e.hinweis) teile.push(e.hinweis);
+    const text = '✓ ' + teile.join(' · ');
+    rMeldung(text, 'gut');
+    melden(text, 'gut');
+    await laden();                          // die Belegliste kann sich ändern
+  } catch (fehler) {
+    const text = steuer.signal.aborted
+      ? 'Der Lauf hat zu lange gedauert und wurde abgebrochen.'
+      : String(fehler.message || fehler);
+    rMeldung('⚠ ' + text, 'schlecht');
+    melden('⚠ ' + text, 'schlecht');
+  } finally {
+    clearTimeout(uhr);
+    rKlass.disabled = false;
+    rKlass.textContent = vorher;
+  }
+});
+
 await laden();
 await fussnoteZeigen();
+regelnLaden();
 </script>
 </body>
 </html>
