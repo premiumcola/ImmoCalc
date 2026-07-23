@@ -174,76 +174,73 @@
      schlägt vor, gespeichert wird erst mit „Übernehmen". */
   .felder .fach.vorschlag .fl::after{content:" · Vorschlag";color:var(--teal-d)}
 
-  /* ---- Prüfblatt: der Beleg und was aus ihm wird ---- */
-  .blatt{background:var(--sheet);border-radius:16px;padding:14px;
+  /* ---- Beleg übernehmen: der Beleg und was aus ihm wird -------------------
+     Eine ruhige, flache Fläche. Ein weißes Sheet, darin dezente Paper-Inseln
+     für Vorschau und Rechnung, ein Akzent (Teal) für die Haupthandlung —
+     kein Wechselspiel aus grauen und grünen Kästen, nichts klebt am Rand.
+     Tiefe kommt aus der Farbabstufung, nicht aus Rahmenlinien. */
+  .blatt{position:relative;background:var(--sheet);border-radius:16px;padding:16px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
-  .beleg .blatt{margin-top:14px;background:var(--paper);box-shadow:none;padding:0}
-  /* Der Kopf des Prüfblatts hält sich zurück: der Dateiname steht schon auf
-     der Karte links, und je höher das Blatt beginnt, desto mehr davon sieht
-     man. Auf breiten Schirmen wandert das Kreuz deshalb über die Vorschau
-     statt über ihr zu stehen. */
-  .bkopf{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-  @media (min-width:1180px){
-    .bkopf{position:absolute;top:8px;right:8px;z-index:2;margin:0}
-    .bkopf .bname{display:none}
-    .bkopf .bzu{background:rgba(255,255,255,.92);
-                box-shadow:0 1px 3px rgba(22,38,44,.18)}
-    .spalteblatt .blatt{position:relative}
-  }
-  .bkopf .bname{flex:1;min-width:0;font:500 11.5px var(--mono);color:var(--soft);
-    line-height:1.5;word-break:break-word}
-  .bkopf .bzu{flex:none;width:44px;height:44px;border:none;border-radius:12px;
-    background:#F1F4F4;color:var(--soft);font:400 17px var(--body);cursor:pointer}
-  .bkopf .bzu:hover{background:var(--teal-l);color:var(--teal-d)}
+  @media (min-width:1180px){.blatt{padding:18px}}
+  /* Auf dem Telefon liegt das Blatt in der weißen Karte — dieselbe Fläche,
+     nur durch eine feine Linie und Luft abgesetzt, keine zweite Farbe. */
+  .beleg .blatt{margin-top:14px;padding:14px 0 0;background:none;box-shadow:none;
+                border-top:1px solid var(--line);border-radius:0}
 
-  .bschau{position:relative;border-radius:12px;overflow:hidden;background:var(--paper);
-    height:300px;cursor:zoom-in;display:block;width:100%;border:none;padding:0}
-  /* Mit der breiteren rechten Spalte lohnt sich auch mehr Hoehe: eine
-     Rechnungsseite wird lesbar, statt nur erahnbar. */
-  @media (min-width:1180px){.bschau{height:min(64dvh,620px)}}
-  .bschau iframe{width:100%;height:100%;border:none;display:block;
-                 pointer-events:none;background:#fff}
+  /* Schließen: ein dezentes Kreuz, über der Vorschau schwebend. */
+  .bzu{position:absolute;top:20px;right:8px;z-index:2;width:38px;height:38px;
+    border:none;border-radius:11px;background:rgba(255,255,255,.9);color:var(--soft);
+    font:400 19px var(--body);cursor:pointer;line-height:1;display:flex;
+    align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(22,38,44,.16)}
+  .bzu:hover{background:var(--teal-l);color:var(--teal-d)}
+  @media (min-width:1180px){.bzu{top:26px;right:26px;width:40px;height:40px}}
+
+  /* Vorschau: die GANZE erste Seite als Bild, volle Breite, nichts
+     beschnitten. Ein Tippen öffnet die große Ansicht. */
+  .bschau{position:relative;display:block;width:100%;border:none;padding:0;
+    border-radius:12px;overflow:hidden;background:var(--paper);cursor:zoom-in}
+  .bschau img{display:block;width:100%;height:auto}
   .bschau .lupe{position:absolute;right:8px;bottom:8px;border-radius:9px;
     background:rgba(22,38,44,.72);color:#fff;font:500 11px var(--mono);
     padding:6px 9px;pointer-events:none}
-  /* Ohne Blatt keine Blatthöhe: ein Satz braucht keine halbe Bildschirmseite */
-  .bschau.knapp{height:auto;cursor:default}
-  .bschau .wart{display:flex;align-items:center;justify-content:center;
-    padding:22px 18px;text-align:center;font:400 12.5px var(--body);
+  .bschau.knapp{cursor:default}
+  .bschau .wart{display:flex;flex-direction:column;align-items:center;gap:12px;
+    padding:28px 18px;text-align:center;font:400 12.5px var(--body);
     color:var(--soft);line-height:1.55}
   .bschau .wart.leer{color:var(--neg)}
+  .bschau .wart a{color:var(--teal-d);font:600 12.5px var(--disp);
+    text-decoration:none}
   .bschau:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
-  .babschnitt{margin-top:14px}
+  /* Abschnitte: durch Luft getrennt, nicht durch Farbwechsel. */
+  .bsek{margin-top:18px}
+  .bsek .bt{display:block;font:600 10.5px var(--mono);color:var(--soft);
+    letter-spacing:.09em;text-transform:uppercase;margin-bottom:9px}
   /* Auch der gewählte Zeitraum ist eine erledigte Angabe (CLXXV). */
-  .babschnitt .auswahl.gefuellt .auswahl-knopf{border-color:var(--teal)}
-  .babschnitt .bt{display:block;font:600 10.5px var(--mono);color:var(--soft);
-    letter-spacing:.09em;text-transform:uppercase;margin-bottom:8px}
+  .bsek .auswahl.gefuellt .auswahl-knopf{border-color:var(--teal)}
+
+  /* Gegenüberstellung: erkannt → wird eingetragen. Ruhige Zeilen, kein Kasten. */
   .pzeile{display:flex;align-items:baseline;gap:8px;padding:5px 0;
           font:500 12.5px var(--body);line-height:1.5}
   .pzeile .pl{flex:none;width:82px;font:500 11.5px var(--mono);color:var(--soft)}
   .pzeile .pw{min-width:0;word-break:break-word}
   .pzeile .pw.leer{color:var(--amber)}
-  /* CLXXV: eine Angabe, die steht, ist erledigt. Sind alle Zeilen grün, kann
-     eingesortiert werden — das sagt die Farbe, ein Satz darüber wäre einer
-     zu viel. */
+  /* CLXXV: eine Angabe, die steht, ist erledigt. Grün sagt das, ein Satz
+     darüber wäre einer zu viel. */
   .pzeile .pw.da{color:var(--pos)}
   .pzeile .alt{color:var(--soft);text-decoration:line-through}
   .pzeile .pfeil{color:var(--soft);font:400 12px var(--mono)}
 
-  /* Eine ruhige Zeile unter einem Abschnitt: was gerade gelesen wird, oder
-     warum das Belegdatum nicht in den gewählten Zeitraum passt. */
+  /* Höchstens eine ruhige Hinweiszeile je Abschnitt — sonst weg. */
   .bhinweis{display:block;font:500 11.5px var(--mono);color:var(--soft);
             margin-top:8px;line-height:1.55}
   .bhinweis.warn{color:var(--amber)}
   .bhinweis:empty{display:none}
 
   /* ---- CLXXX: aus dem Beleg wird eine Zeile der Abrechnung ----------------
-     Ein eigener, bestätigter Schritt: einsortieren und abrechnen sind zwei
-     Entscheidungen. Weil ein zweiter Beleg den Betrag der vorhandenen Position
-     erhöht (CLXXXII), steht die Rechnung vorher da — man soll sehen, was man
-     bestätigt. */
-  .posplan{background:var(--paper);border-radius:12px;padding:11px 12px;
+     Die Rechnung liegt in einer dezenten Paper-Insel — man soll sehen, was man
+     bestätigt (ein zweiter Beleg erhöht den Betrag, CLXXXII). */
+  .posplan{background:var(--paper);border-radius:12px;padding:12px 13px;
     font:500 12px var(--mono);color:var(--ink);line-height:1.55}
   .posplan .pr{display:flex;align-items:baseline;justify-content:space-between;
     gap:12px;padding:3px 0}
@@ -256,37 +253,39 @@
   .postat{display:flex;gap:8px;margin-top:10px}
   .postat button{border:none;border-radius:12px;cursor:pointer;min-height:44px;
     font:600 13px var(--disp)}
-  .postat .posknopf{flex:1;border:1.5px solid #BFD9D1;background:var(--teal-l);
-    color:var(--teal-d);padding:12px}
+  .postat .posknopf{flex:1;background:var(--teal-l);color:var(--teal-d);padding:12px}
   .postat .posknopf:hover{background:#DCEDE7}
   .postat .posknopf[disabled]{opacity:.5;cursor:default}
-  /* Der bestätigte Zustand ist keine Sperre, sondern eine Auskunft — er darf
-     nicht blass aussehen wie ein Knopf, der gerade nicht darf. */
+  /* Der bestätigte Zustand ist keine Sperre, sondern eine Auskunft. */
   .postat .posknopf.fertig,
   .postat .posknopf.fertig[disabled]{background:var(--pos-bg);color:var(--pos);
-    border-color:#BFD9C9;opacity:1}
-  .postat .poslos{flex:none;background:#F4F6F6;color:var(--soft);padding:0 14px;
+    opacity:1}
+  .postat .poslos{flex:none;background:var(--paper);color:var(--soft);padding:0 14px;
     font:600 12.5px var(--disp)}
   .postat .poslos:hover{background:var(--neg-bg);color:var(--neg)}
 
-  .bziel{margin-top:10px;background:var(--teal-l);border-radius:12px;padding:11px 12px;
-    font:500 12px var(--mono);color:var(--teal-d);line-height:1.6;word-break:break-word}
-  .bziel.gesperrt{background:var(--neg-bg);color:var(--neg)}
-
-  .btat{display:flex;gap:8px;margin-top:14px}
-  .btat button{border:none;border-radius:12px;cursor:pointer;min-height:44px;
-    font:600 13.5px var(--disp)}
+  /* Haupthandlung: übernehmen, daneben zwei klar erkennbare Icon-Knöpfe. */
+  .btat{display:flex;gap:8px;margin-top:18px}
+  .btat button{border:none;border-radius:12px;cursor:pointer;min-height:48px;
+    font:600 14px var(--disp)}
   .btat .haupt{flex:1;background:var(--teal);color:#fff;padding:12px}
   .btat .haupt:hover{background:var(--teal-d)}
   .btat .haupt[disabled]{opacity:.5;cursor:default}
-  .btat .klein{flex:none;min-width:44px;padding:0 12px;background:#F4F6F6;
-    color:var(--soft);font:400 16px var(--mono)}
+  .btat .klein{flex:none;min-width:48px;padding:0 12px;background:var(--paper);
+    color:var(--soft);font:400 18px var(--mono)}
   .btat .klein:hover{background:var(--teal-l);color:var(--teal-d)}
   .btat .klein.gefahr:hover{background:var(--neg-bg);color:var(--neg)}
   .btat .klein.frage{background:var(--neg-bg);color:var(--neg);
     font:600 12.5px var(--disp);padding:0 14px}
+
+  /* Ziel-Dateiname: eine dezente Zeile, kein eigener Kasten. */
+  .bziel{display:block;font:500 11px var(--mono);color:var(--soft);
+    margin-top:10px;line-height:1.55;word-break:break-word}
+  .bziel.gesperrt{color:var(--neg)}
+  .bziel:empty{display:none}
+
   .bmeldung{display:block;font:500 11.5px var(--mono);color:var(--soft);
-    margin-top:10px;line-height:1.5;word-break:break-word}
+    margin-top:8px;line-height:1.5;word-break:break-word}
   .bmeldung.gut{color:var(--pos)}
   .bmeldung.schlecht{color:var(--neg)}
 
@@ -468,25 +467,22 @@
     <div class="flaeche">
       <div id="liste"></div>
       <div class="spalteblatt" id="spalteBlatt">
-        <aside class="blatt" id="blatt" hidden aria-label="Prüfblatt">
-          <div class="bkopf">
-            <span class="bname" id="bName"></span>
-            <button class="bzu" id="bZu" aria-label="Prüfblatt schließen">×</button>
-          </div>
+        <aside class="blatt" id="blatt" hidden aria-label="Beleg übernehmen">
+          <button class="bzu" id="bZu" aria-label="Schließen" title="Schließen">×</button>
           <div class="bschau" id="bSchau" role="button" tabindex="0"
                aria-label="Beleg groß ansehen"></div>
-          <div class="babschnitt">
-            <span class="bt">Erkannt · wird eingetragen</span>
+          <div class="bsek">
+            <span class="bt">Erkannt → wird eingetragen</span>
             <div id="bPlan"></div>
             <span class="bhinweis" id="bLesen"></span>
           </div>
-          <div class="babschnitt">
+          <div class="bsek">
             <span class="bt">Abrechnungszeitraum</span>
             <div id="bZeitraum"></div>
             <span class="bhinweis" id="bZeitHinweis"></span>
           </div>
-          <div class="babschnitt" id="bPosFach" hidden>
-            <span class="bt">Kostenposition der Abrechnung</span>
+          <div class="bsek" id="bPosFach" hidden>
+            <span class="bt">Kostenposition</span>
             <div class="posplan" id="bPosPlan"></div>
             <div class="postat">
               <button class="posknopf" id="bPos">Als Kostenposition übernehmen</button>
@@ -494,12 +490,13 @@
             </div>
             <span class="bhinweis" id="bPosHinweis"></span>
           </div>
-          <div class="bziel" id="bZiel"></div>
+          <span class="bziel" id="bZiel"></span>
           <div class="btat">
             <button class="haupt" id="bOk">Übernehmen</button>
-            <button class="klein" id="bNeu" aria-label="Beleg neu einscannen">▣</button>
-            <button class="klein gefahr" id="bWeg"
-                    aria-label="Eintrag entfernen">⌫</button>
+            <button class="klein" id="bNeu" aria-label="Beleg neu einscannen"
+                    title="Beleg neu einscannen">▣</button>
+            <button class="klein gefahr" id="bWeg" aria-label="Eintrag entfernen"
+                    title="Eintrag entfernen">⌫</button>
           </div>
           <span class="bmeldung" id="bMeldung"></span>
         </aside>
@@ -598,7 +595,6 @@ const blatt = document.getElementById('blatt');
 const spalteBlatt = document.getElementById('spalteBlatt');
 const leerBlatt = document.getElementById('leerBlatt');
 const bSchau = document.getElementById('bSchau');
-const bName = document.getElementById('bName');
 const bPlan = document.getElementById('bPlan');
 const bLesen = document.getElementById('bLesen');
 const bZeitHinweis = document.getElementById('bZeitHinweis');
@@ -1035,7 +1031,6 @@ function blattZeigen() {
   leerBlatt.hidden = Boolean(d) || !daten.dokumente.length;
   blattPlatzieren();
   if (!d) { vorschauLeeren(); bLesen.textContent = ''; return; }
-  bName.textContent = d.dateiname;
   bMeldung.textContent = '';
   bMeldung.className = 'bmeldung';
   bLesen.textContent = '';
@@ -1293,16 +1288,16 @@ function posPlanZeichnen(d) {
   // Steht im Formular schon, was noch fehlt, ist das die eigentliche Antwort:
   // erst speichern, dann rechnet die Kostenposition damit.
   const wartet = posUngespeichert(d);
-  bPosHinweis.textContent = wartet
-    ? 'Erst „Übernehmen“ — die Kostenposition rechnet mit dem, was gespeichert '
-      + 'ist.' : '';
-  bPosHinweis.classList.toggle('warn', wartet);
+  // Höchstens eine knappe Zeile: der Hinweis steht in der Aufstellung selbst,
+  // eine zweite Erklärung darüber wäre eine zu viel.
+  bPosHinweis.textContent = '';
+  bPosHinweis.classList.remove('warn');
   if (!p.moeglich) {
     // Der Grund vom Server beschreibt den GESPEICHERTEN Stand. Steht die
     // fehlende Angabe längst im Formular, wäre „fehlt der Betrag" schlicht
     // falsch — dann fehlt nur das Übernehmen.
     bPosPlan.innerHTML = `<div class="pr fehlt"><span>${esc(wartet
-      ? 'Sobald du übernimmst, entsteht daraus die Kostenposition.'
+      ? 'Erst übernehmen — dann entsteht die Position.'
       : p.grund)}</span></div>`;
     bPos.disabled = true;
     bPos.className = 'posknopf';
@@ -1341,10 +1336,6 @@ function posPlanZeichnen(d) {
   bPos.textContent = p.schon_verbucht ? '✓ Steht in der Abrechnung'
     : p.neu ? 'Position anlegen und übernehmen'
             : 'Betrag zur Position addieren';
-  if (!wartet && p.schon_verbucht) {
-    bPosHinweis.textContent = 'Ein zweiter Klick würde nichts verdoppeln — '
-      + 'gerechnet wird aus allen verknüpften Belegen.';
-  }
 }
 
 async function posZeigen(d) {
@@ -1535,7 +1526,20 @@ async function vorschauLaden(d) {
   }
   vorschauText('Beleg wird geholt …');
   try {
-    const antwort = await fetch(`/api/dokumente/${d.id}/inhalt`);
+    // Die GANZE erste Seite als Bild (serverseitig gerendert): so füllt die
+    // Vorschau die Breite, statt dass ein PDF-Betrachter sie beschneidet.
+    const antwort = await fetch(`/api/dokumente/${d.id}/vorschau`);
+    // 415 = keine Bildvorschau (z. B. Tabelle) — dezent anbieten, im Tab zu
+    // öffnen, statt eine Fehlermeldung zu zeigen.
+    if (antwort.status === 415) {
+      if (lauf !== vorschauLauf) return;
+      vorschauLeeren();
+      bSchau.classList.add('knapp');
+      bSchau.innerHTML = '<div class="wart">Keine Bildvorschau möglich.'
+        + `<a href="/api/dokumente/${d.id}/inhalt" target="_blank"`
+        + ' rel="noopener">Im neuen Tab öffnen ↗</a></div>';
+      return;
+    }
     if (!antwort.ok) {
       const grund = await antwort.json().then(k => k.detail).catch(() => null);
       throw new Error(grund || 'Der Beleg lässt sich gerade nicht öffnen.');
@@ -1545,16 +1549,10 @@ async function vorschauLaden(d) {
     vorschauLeeren();
     bSchau.classList.remove('knapp');
     vorschauAdresse = URL.createObjectURL(blob);
-    const rahmen = document.createElement('iframe');
-    rahmen.title = `Vorschau ${d.dateiname}`;
-    // Der eingebaute PDF-Betrachter blendet ab einer gewissen Breite eine
-    // Seitenleiste mit Vorschaubildchen ein — die frisst genau den Platz, den
-    // die breite Spalte dem Blatt geben soll. `navpanes=0` haelt sie weg,
-    // `toolbar=0` nimmt die Leiste darueber, `view=FitH` legt das Blatt auf
-    // die volle Breite. Die Werte sind Bitten an den Betrachter, keine
-    // Zusicherung — ignoriert er sie, sieht es aus wie bisher.
-    rahmen.src = vorschauAdresse + '#toolbar=0&navpanes=0&statusbar=0&view=FitH';
-    bSchau.appendChild(rahmen);
+    const bild = document.createElement('img');
+    bild.alt = `Vorschau ${d.dateiname}`;
+    bild.src = vorschauAdresse;
+    bSchau.appendChild(bild);
     bSchau.insertAdjacentHTML('beforeend', '<span class="lupe">größer ansehen</span>');
   } catch (fehler) {
     if (lauf === vorschauLauf) {
