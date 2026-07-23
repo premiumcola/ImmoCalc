@@ -32,7 +32,7 @@ from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, unterordner_fuer,
                         verbindung)
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
-from ..models import Dokument, Objekt, Zeitraum
+from ..models import Dokument, Erkennungsregel, Objekt, Zeitraum
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
@@ -829,17 +829,118 @@ def erkennung_status() -> dict:
             "scan": pdftext.kann_rastern() and ocr.verfuegbar()}
 
 
+def _regeln(session: Session) -> list[Erkennungsregel]:
+    """Die aktiven Erkennungsregeln des Nutzers."""
+    return list(session.exec(select(Erkennungsregel)
+                             .where(Erkennungsregel.aktiv == True)).all())  # noqa: E712
+
+
 @router.post("/erkennen")
-async def erkennen(datei: UploadFile = File(...)) -> dict:
+async def erkennen(datei: UploadFile = File(...),
+                   session: Session = Depends(get_session)) -> dict:
     """Liest Betrag, Datum und Art aus einer Aufnahme oder einem PDF.
 
-    Nichts wird gespeichert: die Datei geht durch die Erkennung und wieder
-    weg. Ist nichts zu lesen, kommt eine leere Antwort mit Begründung statt
-    eines Fehlers zurück."""
+    Die Erkennungsregeln des Nutzers haben Vorrang: trifft ein Muster, gilt
+    dessen Richtung. Nichts wird gespeichert."""
     rohdaten = await datei.read()
     if not rohdaten:
         raise HTTPException(400, "Leere Datei")
-    return ocr.erkenne(rohdaten)
+    return ocr.erkenne(rohdaten, _regeln(session))
+
+
+# --------------------------------------------------------------------------
+# CCXLIX — Erkennungsmuster: der Nutzer bringt der Erkennung eigene Wörter bei.
+# --------------------------------------------------------------------------
+class RegelIn(BaseModel):
+    muster: str
+    kategorie: str = "Nebenkosten"
+    kostenart: str = ""
+    ist_kosten: bool = True
+    rang: int = 0
+    aktiv: bool = True
+
+
+@router.get("/erkennungsregeln", response_model=None)
+def regeln_liste(session: Session = Depends(get_session)) -> list:
+    reihe = session.exec(select(Erkennungsregel)
+                         .order_by(Erkennungsregel.rang, Erkennungsregel.id)).all()
+    return [r.model_dump() for r in reihe]
+
+
+@router.post("/erkennungsregeln", status_code=201)
+def regel_anlegen(data: RegelIn, session: Session = Depends(get_session)) -> dict:
+    if not (data.muster or "").strip():
+        raise HTTPException(400, "Das Muster darf nicht leer sein")
+    r = Erkennungsregel(**data.model_dump())
+    r.muster = r.muster.strip()
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+    return r.model_dump()
+
+
+@router.patch("/erkennungsregeln/{rid}")
+def regel_aendern(rid: int, data: dict,
+                  session: Session = Depends(get_session)) -> dict:
+    r = session.get(Erkennungsregel, rid)
+    if not r:
+        raise HTTPException(404, "Regel nicht gefunden")
+    for feld in ("muster", "kategorie", "kostenart", "ist_kosten", "rang", "aktiv"):
+        if feld in data:
+            setattr(r, feld, data[feld])
+    session.add(r)
+    session.commit()
+    return {"ok": True}
+
+
+@router.delete("/erkennungsregeln/{rid}")
+def regel_loeschen(rid: int, session: Session = Depends(get_session)) -> dict:
+    r = session.get(Erkennungsregel, rid)
+    if not r:
+        raise HTTPException(404, "Regel nicht gefunden")
+    session.delete(r)
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/neu-klassifizieren")
+def neu_klassifizieren(session: Session = Depends(get_session)) -> dict:
+    """Wendet die Erkennungsregeln auf den ganzen Bestand an — liest je Beleg
+    den OCR-Text und setzt Kategorie/Kostenart, wo ein Muster trifft. Die
+    Dateien bleiben, wo sie liegen (nur die Zuordnung ändert sich); ein
+    Nicht-Kostenbeleg verliert eine etwaige Kostenposition."""
+    regeln = _regeln(session)
+    if not regeln:
+        return {"geprueft": 0, "geaendert": 0, "hinweis": "Keine aktiven Regeln"}
+    client = verbindung(session)
+    geprueft = geaendert = geloest = 0
+    for d in session.exec(select(Dokument).where(Dokument.status != VERMISST)).all():
+        if not (d.pfad or "").startswith("/"):
+            continue
+        geprueft += 1
+        try:
+            rohdaten, _typ = client.hole(d.pfad)
+            text = ocr.text_aus_beleg(rohdaten)
+        except Exception:                    # noqa: BLE001 — ein Beleg blockt nicht alle
+            continue
+        treffer = ocr.regel_richtung(text, regeln)
+        if not treffer:
+            continue
+        kat, art, ist_kosten = treffer
+        if d.kategorie == kat and (d.kostenart or "") == (art or "") \
+                and (ist_kosten or not d.position_id):
+            continue
+        d.kategorie = kat
+        d.kostenart = art or ""
+        if not ist_kosten and d.position_id:
+            belegposten.loese(session, d)
+            geloest += 1
+        session.add(d)
+        geaendert += 1
+    session.commit()
+    log.info("Neu klassifiziert: %d von %d geprüft, %d Positionen gelöst",
+             geaendert, geprueft, geloest)
+    return {"geprueft": geprueft, "geaendert": geaendert, "positionen_geloest": geloest}
 
 
 # --------------------------------------------------------------------------

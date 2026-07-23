@@ -474,16 +474,49 @@ def _warum_nichts(rohdaten: bytes) -> str:
     return "Auf dem Beleg war kein Text zu finden — Betrag bitte eintragen."
 
 
-def erkenne(rohdaten: bytes) -> dict:
+def regel_kompakt(text: str) -> str:
+    """Text auf das Nötigste bringen: klein, ohne Umlaute und ohne Leer-/
+    Sonderzeichen. So trifft „N-ERGIE Netz" auch den zerrupften Scan
+    „N - E R G I E   N e t z"."""
+    t = (text or "").lower().replace("ä", "a").replace("ö", "o").replace(
+        "ü", "u").replace("ß", "ss")
+    return re.sub(r"[^a-z0-9]", "", t)
+
+
+def regel_richtung(text: str, regeln) -> tuple[str, str, bool] | None:
+    """Erste passende Nutzer-Regel: (kategorie, kostenart, ist_kosten) oder None.
+
+    `regeln` sind `Erkennungsregel`-Objekte (Attribute muster/kategorie/
+    kostenart/ist_kosten/rang/aktiv). Kleinerer `rang` zuerst, bei Gleichstand
+    das längere (spezifischere) Muster."""
+    k = regel_kompakt(text)
+    if not k:
+        return None
+    geordnet = sorted(regeln, key=lambda r: (getattr(r, "rang", 0) or 0,
+                                             -len(getattr(r, "muster", "") or "")))
+    for r in geordnet:
+        if not getattr(r, "aktiv", True):
+            continue
+        muster = regel_kompakt(getattr(r, "muster", ""))
+        if muster and muster in k:
+            return (r.kategorie, r.kostenart, bool(getattr(r, "ist_kosten", True)))
+    return None
+
+
+def erkenne(rohdaten: bytes, regeln=None) -> dict:
     """Vorschlag aus einem Beleg: Betrag, Datum, Jahr, Art und Sache.
 
     Gleich, ob PDF oder Foto — der Text kommt aus `text_aus_beleg`, die
-    Auswertung ist dieselbe. Vorgeschlagen wird nur, gesetzt nie."""
+    Auswertung ist dieselbe. Vorgeschlagen wird nur, gesetzt nie.
+
+    `regeln` (Erkennungsregeln des Nutzers) haben Vorrang vor der Automatik:
+    trifft ein Muster, gilt dessen Richtung. Ein Nicht-Kostenbeleg (Ablesung,
+    Mandat …) verliert dabei seinen Betrag, damit keine Kostenposition entsteht."""
     text = text_aus_beleg(rohdaten)
     if not text.strip():
         return {**_ohne_befund(), "hinweis": _warum_nichts(rohdaten)}
     gefunden = datum_aus_text(text)
-    return {
+    ergebnis = {
         "moeglich": True,
         "betrag": betrag_aus_text(text),
         "datum": gefunden.isoformat() if gefunden else None,
@@ -492,10 +525,22 @@ def erkenne(rohdaten: bytes) -> dict:
         # Was in den Dateinamen wandert — „Heizöl", nicht „Heizkosten".
         "sache": sache_aus_text(text),
         "monat": gefunden.month if gefunden else None,
+        "ist_kosten": True,
         # Ohne Leerraum gezählt: der Layout-Modus füllt jede Zeile bis zur
         # Spalte auf, ein einseitiger Beleg käme sonst auf Tausende Zeichen.
         "zeichen": len(re.sub(r"\s", "", text)),
     }
+    treffer = regel_richtung(text, regeln or [])
+    if treffer:
+        kat, art, ist_kosten = treffer
+        ergebnis["kategorie"] = kat
+        if art:
+            ergebnis["sache"] = art
+        ergebnis["ist_kosten"] = ist_kosten
+        ergebnis["regel"] = True
+        if not ist_kosten:
+            ergebnis["betrag"] = None      # kein Kostenbeleg → keine Position
+    return ergebnis
 
 
 # --------------------------------------------------------------------------

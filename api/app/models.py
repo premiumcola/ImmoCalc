@@ -371,6 +371,30 @@ class GrundschuldKredit(SQLModel, table=True):
     kredit_id: int = Field(foreign_key="kredit.id", primary_key=True)
 
 
+class Erkennungsregel(SQLModel, table=True):
+    """CCXLIX — vom Nutzer gepflegte Erkennungsregel für die Belegeingabe.
+
+    Steht ein `muster` (ein Textstück, das auf dem Beleg steht — „N-ERGIE Netz",
+    „WWK", „Schornsteinfeger") im OCR-Text, gilt die zugeordnete Richtung. So
+    lernt die Erkennung die eigenen Belege statt zu raten:
+
+      * `ist_kosten = False` — der Beleg ist gar keine Kostenrechnung
+        (Ablesung, SEPA-Mandat, Anmeldung, Abrechnungs-Übersicht): er wird nach
+        `kategorie` einsortiert, aber es entsteht keine Kostenposition.
+      * `ist_kosten = True` — Kostenbeleg mit dieser `kategorie`/`kostenart`.
+
+    Verglichen wird normalisiert (Kleinschreibung, ohne Leer-/Sonderzeichen),
+    damit auch die zerrupften Scans („N - E R G I E") treffen. Die zuerst
+    passende aktive Regel (nach `rang`, dann Länge des Musters) gewinnt."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    muster: str                          # Textstück, das auf dem Beleg steht
+    kategorie: str = "Nebenkosten"       # Zielkategorie
+    kostenart: str = ""                  # Ziel-Kostenart (leer = keine)
+    ist_kosten: bool = True              # False = kein Kostenbeleg
+    rang: int = 0                        # kleiner = wird zuerst geprüft
+    aktiv: bool = True
+
+
 class Bewohner(SQLModel, table=True):
     """Eine Person in einem Mietverhältnis, mit eigenem Kontakt.
 
