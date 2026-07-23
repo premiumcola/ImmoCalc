@@ -73,23 +73,53 @@
   .filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
           margin-bottom:14px}
   @media (min-width:900px){.filter{grid-template-columns:repeat(4,minmax(0,1fr))}}
-  /* Kostenart-Filter: anklickbare Chips mit Anzahl */
-  .ka-leiste{display:flex;flex-wrap:wrap;gap:7px;margin:-4px 0 16px}
+  /* Immobilien-Filter als Buttons: nur Immo-Icon + Adresse */
+  .im-leiste{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+  .imbtn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);
+         background:var(--sheet);color:var(--ink);border-radius:12px;
+         padding:9px 13px;min-height:44px;font:600 13px var(--body);cursor:pointer;
+         transition:background .12s,border-color .12s,color .12s}
+  .imbtn:hover{border-color:var(--teal)}
+  .imbtn{white-space:nowrap;max-width:100%}
+  .imbtn svg{width:17px;height:17px;flex:none;opacity:.8}
+  .imbtn.an{background:var(--teal);border-color:var(--teal);color:#fff}
+  .imbtn.an svg{opacity:1}
+
+  /* Kostenart: Dropdown-Auslöser (im Filterraster) + aufklappbare Bubbles */
+  .ka-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    width:100%;border:1.5px solid var(--line);background:var(--sheet);color:var(--ink);
+    border-radius:12px;padding:0 13px;min-height:44px;font:600 13px var(--body);
+    cursor:pointer;transition:border-color .12s}
+  .ka-trigger:hover{border-color:var(--teal)}
+  .ka-trigger .chev{flex:none;color:var(--soft);transition:transform .16s}
+  .ka-trigger[aria-expanded="true"] .chev{transform:rotate(180deg)}
+  .ka-trigger.an{background:var(--teal);border-color:var(--teal);color:#fff}
+  .ka-trigger.an .chev{color:rgba(255,255,255,.85)}
+  .ka-pop{display:flex;flex-wrap:wrap;gap:7px;margin:-4px 0 16px;padding:13px;
+    background:var(--sheet);border:1px solid var(--line);border-radius:14px;
+    max-height:46vh;overflow:auto;box-shadow:0 6px 20px rgba(22,38,44,.08)}
   .kabtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
-         background:var(--sheet);color:var(--ink);border-radius:999px;
+         background:var(--paper);color:var(--ink);border-radius:999px;
          padding:7px 12px;min-height:36px;font:600 12.5px var(--body);cursor:pointer;
          transition:background .12s,border-color .12s,color .12s}
   .kabtn:hover{border-color:var(--teal)}
   .kabtn .n{font:600 11px var(--mono);color:var(--soft);
-            background:var(--paper);border-radius:999px;padding:1px 7px;min-width:20px;
+            background:var(--sheet);border-radius:999px;padding:1px 7px;min-width:20px;
             text-align:center}
+  .kabtn.alle{border-style:dashed}
   .kabtn.an{background:var(--teal);border-color:var(--teal);color:#fff}
   .kabtn.an .n{background:rgba(255,255,255,.22);color:#fff}
 
-  .zahlzeile{display:flex;align-items:baseline;gap:8px;margin:0 2px 10px}
+  .zahlzeile{display:flex;align-items:center;gap:8px;margin:0 2px 10px}
   .zahlzeile .zahl{font:600 12px var(--mono);color:var(--soft)}
-  .zahlzeile .zuruecksetzen{margin-left:auto;border:none;background:none;
+  .zahlzeile .warte{margin-left:auto;border:1px solid var(--amber);background:none;
+    color:var(--amber);font:600 12px var(--disp);cursor:pointer;padding:7px 12px;
+    border-radius:999px;min-height:34px}
+  .zahlzeile .warte:hover{background:var(--amber-bg)}
+  .zahlzeile .zuruecksetzen{border:none;background:none;
     color:var(--teal-d);font:600 12px var(--disp);cursor:pointer;padding:6px 2px}
+  .zahlzeile .warte + .zuruecksetzen{margin-left:0}
+  .zahlzeile .warte[hidden] + .zuruecksetzen{margin-left:auto}
 
   /* ---- Arbeitsfläche: links die Belege, rechts der Beleg selbst ------------
      Auf dem Telefon gibt es nur eine Spalte; das Prüfblatt rückt dann unter
@@ -413,19 +443,30 @@
       <button class="pruef" id="pruef">Ordner einlesen</button>
     </div>
     <div class="bilanz" id="bilanz" hidden></div>
+    <!-- Immobilien-Filter als Buttons: nur Immo-Icon + Adresse (CCLXXIX). -->
+    <div class="im-leiste" id="fObjektBtns"></div>
+
     <div class="filter">
-      <div id="fObjekt"></div>
       <div id="fArt"></div>
       <div id="fJahr"></div>
       <div id="fStatus"></div>
+      <!-- Kostenart: aufklappbares Dropdown, die Bubbles stehen darin (CCLXXIX). -->
+      <button class="ka-trigger" id="kaTrigger" type="button" aria-expanded="false"
+              aria-controls="fKostenart">
+        <span class="lbl" id="kaLabel">Kostenart</span>
+        <svg class="chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
     </div>
 
-    <!-- Kostenart-Filter: anklickbare Buttons mit Anzahl, die sich mit den
-         übrigen Filtern (Objekt/Jahr/Status) aktualisiert. -->
-    <div class="ka-leiste" id="fKostenart" hidden></div>
+    <!-- Kostenart-Bubbles mit Anzahl, aufgeklappt unter dem Dropdown. -->
+    <div class="ka-pop" id="fKostenart" hidden></div>
 
     <div class="zahlzeile">
       <span class="zahl" id="zahl"></span>
+      <button class="warte" id="warteArchiv" hidden>Angezeigte ins Warten</button>
       <button class="zuruecksetzen" id="zuruecksetzen" hidden>Filter zurücksetzen</button>
     </div>
 
@@ -579,7 +620,6 @@ const filterFeld = (id, label, schluessel) => auswahlfeld(
     aenderung: wert => { filter[schluessel] = wert; laden(); },
   });
 
-const fObjekt = filterFeld('fObjekt', 'Alle Immobilien', 'objekt');
 const fArt = filterFeld('fArt', 'Alle Arten', 'kategorie');
 const fJahr = filterFeld('fJahr', 'Alle Jahre', 'jahr');
 // Der Zustandsfilter hat feste Werte — er wird nie nachgefüllt und braucht
@@ -594,9 +634,7 @@ auswahlfeld(document.getElementById('fStatus'), {
 });
 
 function filterFuellen() {
-  fObjekt.fuelle([{ wert: ALLE, text: 'Alle Immobilien' },
-    ...daten.objekte.map(o => ({ wert: o.slug, text: `${o.name} (${o.anzahl})` }))],
-    filter.objekt);
+  objektButtons();
   fArt.fuelle([{ wert: ALLE, text: 'Alle Arten' },
     ...(daten.kategorien.length ? daten.kategorien : daten.arten)
       .map(a => ({ wert: a, text: a }))], filter.kategorie);
@@ -606,29 +644,98 @@ function filterFuellen() {
   const gefiltert = Boolean(filter.objekt || filter.kategorie || filter.kostenart
                             || filter.jahr || filter.status || filter.suche);
   zuruecksetzen.hidden = !gefiltert;
+  // „Angezeigte ins Warten" nur, wenn ein Filter aktiv ist und etwas übrig
+  // bleibt — so schickt man bewusst einen Ausschnitt zurück, nie versehentlich
+  // den ganzen Bestand.
+  warteArchiv.hidden = !(gefiltert && daten.anzahl > 0);
 }
 
-/* Kostenart-Filter als Button-Leiste: je Kostenart ein Knopf mit Anzahl. Die
-   Zahlen kommen aus `daten.kostenarten` (serverseitig über die übrigen Filter
-   gezählt) und ziehen so bei Objekt-/Jahrwechsel mit. Klick schaltet den Filter
-   an/aus. */
+/* ---- Immobilien-Filter als Buttons: nur Immo-Icon + Adresse (CCLXXIX) ---- */
+const fObjektBtns = document.getElementById('fObjektBtns');
+const HAUS_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/></svg>`;
+function objektButtons() {
+  const alle = !filter.objekt;
+  const knoepfe = [`<button class="imbtn${alle ? ' an' : ''}" type="button"
+      data-slug="" aria-pressed="${alle}">Alle</button>`];
+  for (const o of daten.objekte) {
+    const an = filter.objekt === o.slug;
+    knoepfe.push(`<button class="imbtn${an ? ' an' : ''}" type="button"
+      data-slug="${esc(o.slug)}" aria-pressed="${an}">${HAUS_SVG}${esc(o.name)}</button>`);
+  }
+  fObjektBtns.innerHTML = knoepfe.join('');
+}
+fObjektBtns.addEventListener('click', e => {
+  const b = e.target.closest('[data-slug]');
+  if (!b) return;
+  const slug = b.dataset.slug;
+  filter.objekt = (filter.objekt === slug) ? ALLE : slug;
+  laden();
+});
+
+/* ---- Kostenart-Filter: Dropdown, die Bubbles stehen aufgeklappt darin.
+   Zahlen aus `daten.kostenarten` (serverseitig über die übrigen Filter
+   gezählt) ziehen bei Objekt-/Jahrwechsel mit. Klick schaltet an/aus. ---- */
 const fKostenart = document.getElementById('fKostenart');
+const kaTrigger = document.getElementById('kaTrigger');
+const kaLabel = document.getElementById('kaLabel');
+function kaAufklappen(auf) {
+  fKostenart.hidden = !auf;
+  kaTrigger.setAttribute('aria-expanded', String(auf));
+}
 function kostenartenLeiste() {
   const arten = daten.kostenarten || [];
-  if (!arten.length) { fKostenart.hidden = true; fKostenart.innerHTML = ''; return; }
-  fKostenart.hidden = false;
-  fKostenart.innerHTML = arten.map(a => {
+  kaTrigger.hidden = !arten.length && !filter.kostenart;
+  const aktiv = Boolean(filter.kostenart);
+  kaTrigger.classList.toggle('an', aktiv);
+  kaLabel.textContent = aktiv ? filter.kostenart : 'Kostenart';
+  const alleAn = !filter.kostenart;
+  const chips = [`<button class="kabtn alle${alleAn ? ' an' : ''}" type="button"
+      data-ka="" aria-pressed="${alleAn}">Alle</button>`];
+  for (const a of arten) {
     const an = filter.kostenart === a.name;
-    return `<button class="kabtn${an ? ' an' : ''}" type="button" data-ka="${esc(a.name)}"
-              aria-pressed="${an}">${esc(a.name)}<span class="n">${a.anzahl}</span></button>`;
-  }).join('');
+    chips.push(`<button class="kabtn${an ? ' an' : ''}" type="button"
+      data-ka="${esc(a.name)}" aria-pressed="${an}">${esc(a.name)}<span class="n">${a.anzahl}</span></button>`);
+  }
+  fKostenart.innerHTML = chips.join('');
 }
+kaTrigger.addEventListener('click', () => kaAufklappen(fKostenart.hidden));
 fKostenart.addEventListener('click', e => {
   const b = e.target.closest('[data-ka]');
   if (!b) return;
   const ka = b.dataset.ka;
   filter.kostenart = (filter.kostenart === ka) ? ALLE : ka;
+  kaAufklappen(false);
   laden();
+});
+// Tap außerhalb schließt das aufgeklappte Kostenart-Dropdown wieder.
+document.addEventListener('click', e => {
+  if (fKostenart.hidden) return;
+  if (e.target.closest('#fKostenart') || e.target.closest('#kaTrigger')) return;
+  kaAufklappen(false);
+});
+
+/* ---- Angezeigte Belege gesammelt zurück ins Warten (CCLXXXII) ---- */
+const warteArchiv = document.getElementById('warteArchiv');
+warteArchiv.addEventListener('click', async () => {
+  const n = daten.anzahl || 0;
+  if (!n) return;
+  const ok = await frage('Zurück ins Warten',
+    `${n} angezeigte ${n === 1 ? 'Beleg wird' : 'Belege werden'} zurück ins Warten `
+    + 'gestellt: Zuordnungen und vorläufige (orange) Entwürfe werden entfernt. '
+    + 'Die Dateien in der Nextcloud bleiben unangetastet.',
+    { knopf: 'Ins Warten', gefahr: true });
+  if (!ok) return;
+  const frageStr = new URLSearchParams();
+  for (const [k, v] of Object.entries(filter)) if (v) frageStr.set(k, v);
+  try {
+    const r = await api('/dokumente/warte-archiv?' + frageStr.toString(),
+                        { method: 'POST' });
+    melden(`${r.belege} zurück ins Warten`
+      + (r.zeitraeume_entfernt ? ` · ${r.zeitraeume_entfernt} leere Zeiträume weg` : ''));
+    await laden();
+  } catch (e) { melden(e.message || 'Fehlgeschlagen', 'warn'); }
 });
 
 /* ---- Aus dem Dateinamen lesen ---------------------------------------------
