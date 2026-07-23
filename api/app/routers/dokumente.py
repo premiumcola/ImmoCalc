@@ -17,8 +17,8 @@ import unicodedata
 from datetime import date
 from urllib.parse import quote
 
-from fastapi import (APIRouter, Depends, File, Form, HTTPException, Response,
-                     UploadFile)
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     Response, UploadFile)
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -1636,13 +1636,17 @@ def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Respons
     })
 
 
-@router.get("/{dokument_id}/vorschau")
-def vorschau(dokument_id: int, session: Session = Depends(get_session)) -> Response:
-    """Eine Vorschau, die die GANZE erste Seite zeigt statt eines Ausschnitts:
-    PDF → die erste Seite als Bild gerendert, ein Bild → direkt. So passt sich
-    die Vorschau in der Seite an die Breite an, ohne dass ein Viewer beschneidet.
-    Was sich nicht rendern lässt (z. B. Tabellen), meldet 415 — die Oberfläche
-    bietet dann das Öffnen im neuen Tab an."""
+@router.get("/{dokument_id}/seiten")
+def seiten(dokument_id: int,
+           session: Session = Depends(get_session)) -> dict:
+    """Wie viele Bildseiten die Vorschau dieses Belegs hat (CCLIX).
+
+    Ein PDF hat so viele Seiten, wie es Blätter trägt; ein Bild (jpg/png) ist
+    eine einzelne Seite. Was sich gar nicht rendern lässt (xlsx, docx) hat
+    keine Bildseiten: 0. Damit weiss das Frontend, wie viele
+    `?seite=`-Anfragen es an `/vorschau` stellen kann.
+
+    Rein lesend — die Datei wird nur geholt, nichts geändert."""
     d = session.get(Dokument, dokument_id)
     if not d:
         raise HTTPException(404, "Dokument nicht gefunden")
@@ -1655,12 +1659,51 @@ def vorschau(dokument_id: int, session: Session = Depends(get_session)) -> Respo
         raise HTTPException(400, str(e)) from e
     name = d.dateiname.lower()
     if name.endswith(".pdf") or typ == "application/pdf":
-        png = ocr.erste_seite_png(rohdaten)
+        anzahl = ocr.seiten_anzahl(rohdaten)
+        return {"seiten": anzahl}
+    if typ.startswith("image/") or name.endswith(
+            (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+        return {"seiten": 1}
+    return {"seiten": 0}
+
+
+@router.get("/{dokument_id}/vorschau")
+def vorschau(dokument_id: int,
+             seite: int = Query(0, ge=0),
+             session: Session = Depends(get_session)) -> Response:
+    """Eine Vorschau, die die GANZE Seite zeigt statt eines Ausschnitts:
+    PDF → die Seite `seite` als Bild gerendert, ein Bild → direkt. So passt
+    sich die Vorschau in der Seite an die Breite an, ohne dass ein Viewer
+    beschneidet. Was sich nicht rendern lässt (z. B. Tabellen), meldet 415 —
+    die Oberfläche bietet dann das Öffnen im neuen Tab an.
+
+    `?seite=` (Default 0) wählt bei mehrseitigen PDFs die Seite (CCLIX). Ohne
+    den Parameter verhält sich der Endpunkt exakt wie zuvor: die erste Seite.
+    Eine Seite jenseits des Endes meldet 416 statt eines leeren Bildes."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
+    client = verbindung(session)
+    try:
+        rohdaten, typ = client.hole(d.pfad)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    name = d.dateiname.lower()
+    if name.endswith(".pdf") or typ == "application/pdf":
+        anzahl = ocr.seiten_anzahl(rohdaten)
+        if anzahl and seite >= anzahl:
+            raise HTTPException(416, f"Dieses PDF hat nur {anzahl} Seite(n)")
+        png = ocr.seite_png(rohdaten, seite)
         if png is None:
             raise HTTPException(415, "Vorschau nicht möglich")
         return Response(content=png, media_type="image/png",
                         headers={"Cache-Control": "private, max-age=300"})
+    # Ein Bild hat nur eine Seite; eine höhere Anforderung geht ins Leere.
     if typ.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")):
+        if seite > 0:
+            raise HTTPException(416, "Dieses Dokument hat nur eine Seite")
         return Response(content=rohdaten, media_type=typ if typ.startswith("image/")
                         else "image/jpeg",
                         headers={"Cache-Control": "private, max-age=300"})

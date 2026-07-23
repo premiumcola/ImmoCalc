@@ -566,22 +566,48 @@ except ImportError:                                      # pragma: no cover
              "nachträgliche Textschicht")
 
 
-def erste_seite_png(rohdaten: bytes, breite: int = 1240) -> bytes | None:
-    """Rendert die erste Seite eines PDFs als PNG (auf `breite` px skaliert) —
+def seiten_anzahl(rohdaten: bytes) -> int:
+    """Wie viele Seiten ein PDF hat — für die mehrseitige Vorschau (CCLIX).
+
+    Ohne PyMuPDF, bei einem Fehler oder wenn es gar kein PDF ist: 0. Der
+    Aufrufer weiss dann, dass es keine gerenderten Bildseiten gibt (ein Foto
+    ist eine Seite, aber keine, die diese Funktion rendert)."""
+    if fitz is None or not rohdaten:
+        return 0
+    try:
+        with fitz.open(stream=rohdaten, filetype="pdf") as d:
+            return int(d.page_count)
+    except Exception:                                    # noqa: BLE001
+        return 0
+
+
+def seite_png(rohdaten: bytes, index: int = 0, breite: int = 1240) -> bytes | None:
+    """Rendert Seite `index` eines PDFs als PNG (auf `breite` px skaliert) —
     für eine Vorschau, die die GANZE Seite zeigt statt eines Ausschnitts.
-    Ohne PyMuPDF oder bei einem Fehler: None (der Aufrufer weicht aus."""
+
+    Der Index wird auf den gültigen Bereich [0, letzte Seite] geklemmt: eine
+    Seite jenseits des Endes liefert die letzte Seite, ein negativer Index die
+    erste. Ohne PyMuPDF, bei einem leeren Dokument oder einem Fehler: None (der
+    Aufrufer weicht aus)."""
     if fitz is None:
         return None
     try:
         with fitz.open(stream=rohdaten, filetype="pdf") as d:
             if d.page_count == 0:
                 return None
-            seite = d[0]
+            i = max(0, min(index, d.page_count - 1))
+            seite = d[i]
             zoom = max(0.5, min(3.0, breite / max(seite.rect.width, 1)))
             pix = seite.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             return pix.tobytes("png")
     except Exception:                                    # noqa: BLE001
         return None
+
+
+def erste_seite_png(rohdaten: bytes, breite: int = 1240) -> bytes | None:
+    """Rendert die erste Seite eines PDFs als PNG — unverändert der Sonderfall
+    `seite_png(rohdaten, 0, breite)`."""
+    return seite_png(rohdaten, 0, breite)
 
 try:                                                     # pragma: no cover
     import numpy as _np

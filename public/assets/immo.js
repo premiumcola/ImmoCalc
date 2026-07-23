@@ -283,7 +283,10 @@ export function belegAnsehen(url, titel = 'Beleg') {
   // nicht mehr schließen. Zurück geht es allein über das × oben (oder Tippen
   // daneben, oder Escape). Das ↗ erscheint nur, wenn es gar keine Bildvorschau
   // gibt (xlsx/docx) — dann ist der neue Tab der einzige Weg zum Inhalt.
-  const vorschauUrl = url.replace('/inhalt', '/vorschau');
+  // Alle Seiten des PDFs untereinander, jede als serverseitig gerendertes Bild
+  // (`/seiten` sagt wie viele, `/vorschau?seite=i` liefert Blatt i, 0-basiert).
+  // Fällt der Seiten-Endpunkt aus (alter Stand), bleibt es bei einer Seite.
+  const basis = url.replace('/inhalt', '');
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${sicher(titel)}</span>
@@ -296,20 +299,41 @@ export function belegAnsehen(url, titel = 'Beleg') {
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
   const flaeche = dlg.querySelector('.beleg-flaeche');
-  let adresse = null;
-  fetch(vorschauUrl)
-    .then(antwort => {
-      if (!antwort.ok) throw new Error('keine-vorschau');
-      return antwort.blob();
-    })
+  const adressen = [];
+
+  const seiteBild = (i) => fetch(`${basis}/vorschau?seite=${i}`)
+    .then(a => { if (!a.ok) throw new Error('seite'); return a.blob(); })
     .then(blob => {
-      adresse = URL.createObjectURL(blob);
+      const adr = URL.createObjectURL(blob);
+      adressen.push(adr);
       const bild = document.createElement('img');
       bild.className = 'beleg-bild';
-      bild.alt = titel;
-      bild.src = adresse;
+      bild.alt = `${titel} – Seite ${i + 1}`;
+      bild.src = adr;
+      return bild;
+    });
+
+  fetch(`${basis}/seiten`)
+    .then(r => (r.ok ? r.json() : { seiten: 1 }))
+    .then(d => (d && typeof d.seiten === 'number') ? d.seiten : 1)
+    .catch(() => 1)
+    .then(async (anzahl) => {
+      if (anzahl === 0) throw new Error('keine-vorschau');   // xlsx/docx u. Ä.
+      // Erste Seite zuerst — klappt die nicht, greift der Fallback. Danach die
+      // weiteren Blätter in Reihenfolge nachladen (Platz sofort, Bild folgt).
+      const erste = await seiteBild(0);
       flaeche.innerHTML = '';
-      flaeche.appendChild(bild);
+      flaeche.appendChild(erste);
+      for (let i = 1; i < anzahl; i++) {
+        const platz = document.createElement('img');
+        platz.className = 'beleg-bild';
+        platz.alt = `${titel} – Seite ${i + 1}`;
+        flaeche.appendChild(platz);
+        fetch(`${basis}/vorschau?seite=${i}`)
+          .then(a => (a.ok ? a.blob() : Promise.reject(a)))
+          .then(blob => { const adr = URL.createObjectURL(blob); adressen.push(adr); platz.src = adr; })
+          .catch(() => platz.remove());
+      }
     })
     .catch(() => {
       flaeche.innerHTML = '<div class="beleg-blatt leer">Für diese Datei gibt '
@@ -318,7 +342,7 @@ export function belegAnsehen(url, titel = 'Beleg') {
         + '</div>';
     });
 
-  dlg.addEventListener('close', () => { if (adresse) URL.revokeObjectURL(adresse); });
+  dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
   return dlg;
 }
 

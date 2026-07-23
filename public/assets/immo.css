@@ -363,8 +363,8 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
 /* Die Bildvorschau: ganze erste Seite, breitenfüllend, bei Bedarf scrollt die
    Fläche vertikal — nichts wird beschnitten. */
 .beleg-flaeche{flex:1; min-height:0; overflow:auto; border-radius:12px;
-  background:var(--paper); display:flex; justify-content:center;
-  align-items:flex-start; -webkit-overflow-scrolling:touch}
+  background:var(--paper); display:flex; flex-direction:column; gap:10px;
+  justify-content:flex-start; align-items:center; -webkit-overflow-scrolling:touch}
 .beleg-bild{display:block; width:100%; height:auto; border-radius:12px}
 /* Zwischenzustand und Fehlerfall: ruhig gesetzt statt roher Antworttext */
 .beleg-blatt.lade,.beleg-blatt.leer{display:flex; align-items:center;
