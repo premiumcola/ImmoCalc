@@ -26,6 +26,14 @@ mkdir -p "${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}"
 # 3) GIT_SHA fürs build.txt (falls Git vorhanden)
 export GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 
+# 3b) Vor dem Bauen aufraeumen. Jeder Rebuild hinterlaesst verwaiste (dangling)
+# Image-Layer und Build-Cache; ohne Aufraeumen laeuft die Docker-Platte mit der
+# Zeit voll ("No space left on device" beim pip install). Dangling Images und
+# Build-Cache sind gefahrlos wegraeumbar — laufende Container, getaggte Images
+# und Volumes (die Daten!) bleiben unangetastet.
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -af >/dev/null 2>&1 || true
+
 # 4) Bauen und starten. --remove-orphans raeumt Container weg, die nicht mehr
 #    im Compose stehen (z.B. der frueher separate DEV-Stack).
 echo "→ Deploy ($DC up -d --build --remove-orphans) …"
