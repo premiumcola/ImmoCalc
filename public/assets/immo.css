@@ -367,6 +367,11 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
   justify-content:center; text-align:center; padding:24px;
   font:400 13.5px var(--body); color:var(--soft); line-height:1.55}
 .beleg-blatt.leer{color:var(--neg)}
+/* Nur im Fallback (keine Bildvorschau möglich, z. B. xlsx/docx): der einzige
+   Weg zum Inhalt ist dann der neue Tab. */
+.beleg-tab{display:inline-block; margin-top:12px; padding:9px 16px;
+  border-radius:10px; background:var(--teal); color:#fff; text-decoration:none;
+  font:600 13px var(--body)}
 
 /* Schiebe-Regler: erst am rechten Anschlag wird gelöscht */
 .schieber{

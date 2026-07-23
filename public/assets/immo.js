@@ -272,15 +272,16 @@ function baueDialog(inhalt) {
  * drei Wegen zurueck: Kreuz, Escape und Tippen neben das Blatt.
  */
 export function belegAnsehen(url, titel = 'Beleg') {
-  // Vorschau der GANZEN ersten Seite als Bild (serverseitig gerendert), damit
-  // sie breitenfüllend in der Seite steht statt beschnitten. Das ↗ öffnet das
-  // vollständige Dokument im neuen Tab. Eine Ansicht, kein Zoom-Ärger.
+  // Die GANZE Seite als serverseitig gerendertes Bild, breitenfüllend statt
+  // beschnitten — das ist die alleinige große Ansicht. Kein zusätzliches ↗ in
+  // einen zweiten Tab: auf dem iPhone lässt sich der native PDF-Betrachter dort
+  // nicht mehr schließen. Zurück geht es allein über das × oben (oder Tippen
+  // daneben, oder Escape). Das ↗ erscheint nur, wenn es gar keine Bildvorschau
+  // gibt (xlsx/docx) — dann ist der neue Tab der einzige Weg zum Inhalt.
   const vorschauUrl = url.replace('/inhalt', '/vorschau');
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${sicher(titel)}</span>
-       <a class="bx auf" href="${sicher(url)}" target="_blank" rel="noopener"
-          title="Ganzes Dokument im neuen Tab">↗</a>
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
      <div class="beleg-flaeche"><div class="beleg-blatt lade">Beleg wird geholt …</div></div>`);
@@ -307,7 +308,9 @@ export function belegAnsehen(url, titel = 'Beleg') {
     })
     .catch(() => {
       flaeche.innerHTML = '<div class="beleg-blatt leer">Für diese Datei gibt '
-        + 'es keine Bildvorschau — mit ↗ im neuen Tab öffnen.</div>';
+        + 'es keine Bildvorschau.<br><a class="beleg-tab" href="'
+        + sicher(url) + '" target="_blank" rel="noopener">Im neuen Tab öffnen ↗</a>'
+        + '</div>';
     });
 
   dlg.addEventListener('close', () => { if (adresse) URL.revokeObjectURL(adresse); });
