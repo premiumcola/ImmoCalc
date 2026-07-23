@@ -15,6 +15,7 @@ import logging
 import re
 import unicodedata
 from datetime import date
+from typing import Optional
 from urllib.parse import quote
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
@@ -33,7 +34,8 @@ from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
 from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
-from ..models import Dokument, Erkennungsregel, Objekt, Zeitraum
+from ..models import (Bewohner, Dokument, Erkennungsregel, Kostenposition,
+                      Kredit, Miete, Objekt, Versicherung, Zeitraum)
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
@@ -377,8 +379,19 @@ def _eindeutigkeit_sichern(session: Session) -> None:
         log.warning("Eindeutigkeit der Ablage nicht gesetzt: %s", fehler)
 
 
+# CCLXXVIII: `.immocalc`-Steckbriefe (CCLXXIV) liegen als Sidecar neben dem
+# Beleg. Sie sind keine eigenständigen Belege und dürfen nie als Dokument in den
+# Eingang wandern — sonst stünde neben jedem PDF eine zweite, sinnlose Zeile.
+def _ist_sidecar(name: str) -> bool:
+    """Ist das ein `.immocalc`-Steckbrief statt eines echten Belegs?"""
+    return (name or "").lower().endswith(".immocalc")
+
+
 def _aufnehmen(session: Session, o: Objekt, eintrag) -> Dokument | None:
-    """Legt einen Eingangseintrag an. `None`, wenn es ihn schon gibt."""
+    """Legt einen Eingangseintrag an. `None`, wenn es ihn schon gibt oder wenn
+    es ein `.immocalc`-Steckbrief ist (der gehört zum Beleg, nicht daneben)."""
+    if _ist_sidecar(eintrag.name):
+        return None
     if session.exec(select(Dokument)
                     .where(Dokument.pfad == eintrag.pfad)).first():
         return None
@@ -804,7 +817,10 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
     begriff = suche.strip().lower()
 
     def passt(d: Dokument) -> bool:
-        return ((not ziel_id or d.objekt_id == ziel_id)
+        # CCLXXVIII: fälschlich früher angelegte `.immocalc`-Steckbriefe nicht
+        # mehr anzeigen (gelöscht wird nichts — sie fallen nur aus der Liste).
+        return (not _ist_sidecar(d.dateiname)
+                and (not ziel_id or d.objekt_id == ziel_id)
                 and (not kategorie or d.kategorie == kategorie)
                 and (jahr is None or d.jahr == jahr)
                 and (not status or d.status == status)
@@ -1458,6 +1474,300 @@ def position_loesen(dokument_id: int,
     return {"ok": True, "position_id": p.id if p else None,
             "kostenart": p.kostenart if p else "",
             "betrag": p.betrag if p else None}
+
+
+# --------------------------------------------------------------------------
+# CCLXXVIII: Aus dem KI-Raster wird ein vorläufiger (orange) Datensatz
+#
+# Der Beleg ist erkannt und trägt sein KI-Raster (`ki_felder`, `ki_einheit`,
+# Kategorie, Belegdatum, Betrag, Kostenart). Daraus wird an der richtigen Stelle
+# ein **vorläufiger** Datensatz angelegt — orange, weil noch unbestätigt. Der
+# Nutzer bestätigt ihn später (`/entwuerfe/{typ}/{id}/bestaetigen`) oder verwirft
+# ihn (`/verwerfen`); bis dahin bleibt der Beleg im Prüfmodus.
+#
+# Datensicher: nur NEUE Datensätze mit `vorlaeufig=True`, nichts wird
+# überschrieben. Idempotent: existiert zum Beleg bereits ein vorläufiger
+# Datensatz desselben Typs, entsteht kein zweiter.
+# --------------------------------------------------------------------------
+
+def _ki_zahl(wert) -> Optional[float]:
+    """Ein Rasterwert als Zahl — deutsches Komma und Tausenderpunkt inklusive.
+
+    Das Modell soll Punkt-Dezimalzahlen liefern, aber ein „1.234,56 €" aus dem
+    Beleg darf nicht scheitern. `None`, wenn nichts Brauchbares dasteht."""
+    if isinstance(wert, bool):        # bool ist in Python eine Zahl — hier nicht
+        return None
+    if isinstance(wert, (int, float)):
+        return round(float(wert), 2)
+    if not isinstance(wert, str):
+        return None
+    roh = re.sub(r"[^\d,.-]", "", wert)
+    if not roh or roh in ("-", ".", ","):
+        return None
+    if "," in roh:
+        # Deutsches Format: Punkt ist Tausendertrenner, Komma das Dezimalzeichen.
+        roh = roh.replace(".", "").replace(",", ".")
+    elif roh.count(".") > 1:
+        # Nur Punkte, mehrere davon → alle sind Tausendertrenner (1.234.567).
+        roh = roh.replace(".", "")
+    else:
+        # Genau ein Punkt: eine dreistellige Endgruppe ist ein Tausendertrenner
+        # (1.234 → 1234), zwei Stellen sind Nachkommastellen (12.50 → 12,50).
+        ganz, _, rest = roh.rpartition(".")
+        if ganz and len(rest) == 3:
+            roh = ganz + rest
+    try:
+        return round(float(roh), 2)
+    except ValueError:
+        return None
+
+
+def _ki_datum(wert) -> date | None:
+    """Ein Rasterwert als Datum — ISO (YYYY-MM-DD) oder deutsch (TT.MM.JJJJ).
+
+    Ein blosses Jahr („2024") ergibt kein Datum: den Tag zu erfinden hiesse,
+    einen Zeitraum zu behaupten, den der Beleg nicht nennt."""
+    if isinstance(wert, date):
+        return wert
+    if not isinstance(wert, str):
+        return None
+    roh = wert.strip()
+    treffer = re.match(r"(\d{4})-(\d{2})-(\d{2})", roh)
+    if treffer:
+        try:
+            return date(int(treffer[1]), int(treffer[2]), int(treffer[3]))
+        except ValueError:
+            return None
+    treffer = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", roh)
+    if treffer:
+        try:
+            return date(int(treffer[3]), int(treffer[2]), int(treffer[1]))
+        except ValueError:
+            return None
+    return None
+
+
+def _ki_text(wert) -> str:
+    """Ein Rasterwert als knapper Klartext, ohne Umbrüche."""
+    if wert is None or isinstance(wert, (dict, list)):
+        return ""
+    return str(wert).strip().replace("\n", " ")[:120]
+
+
+def _schon_vorlaeufig(session: Session, modell, dokument_id: int):
+    """Der bereits aus diesem Beleg entstandene vorläufige Datensatz — oder None.
+
+    Die Sperre gegen ein zweites Anlegen: ein erneutes Zuordnen findet den
+    vorhandenen Entwurf wieder, statt einen Zwilling zu erzeugen."""
+    return session.exec(select(modell).where(
+        modell.quelle_dokument_id == dokument_id,
+        modell.vorlaeufig == True)).first()      # noqa: E712
+
+
+def _zeitraum_fuer_beleg(session: Session, o: Objekt, d: Dokument):
+    """Der Abrechnungszeitraum, in den der Beleg fällt — vorhandener oder neuer.
+
+    Nach dem Belegdatum (Rückfall: gespeichertes Jahr). Gibt es schon einen
+    Zeitraum, der den Tag umfasst, gilt der; sonst wird der passende nach der
+    Turnus-Regel des Objekts angelegt (`_zeitraum_grenzen`/`_zeitraum_jahr` aus
+    `objekte`, damit Anlegen und Erkennen deckungsgleich bleiben). `None`, wenn
+    sich weder Tag noch Jahr bestimmen lassen."""
+    from .objekte import _zeitraum_grenzen, _zeitraum_jahr    # zirkelfrei zur Laufzeit
+    belegdatum = d.belegdatum or _ki_datum((d.ki_felder or {}).get("datum"))
+    bestehende = session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
+    if belegdatum:
+        treffer = next((z for z in bestehende
+                        if z.start <= belegdatum <= z.ende), None)
+        if treffer:
+            return treffer
+        jahr = _zeitraum_jahr(o, belegdatum)
+    elif d.jahr:
+        jahr = d.jahr
+    else:
+        return None
+    start, ende = _zeitraum_grenzen(o, jahr)
+    treffer = next((z for z in bestehende
+                    if z.start == start and z.ende == ende), None)
+    if treffer:
+        return treffer
+    z = Zeitraum(objekt_id=o.id, start=start, ende=ende, typ="regulär",
+                 status="in Arbeit")
+    session.add(z)
+    session.flush()
+    return z
+
+
+def _entwurf_nebenkosten(session: Session, d: Dokument, o: Objekt,
+                         felder: dict) -> list[dict]:
+    """Vorläufige Kostenposition im passenden Zeitraum — eine je (Zeitraum,
+    Kostenart), keine zweite."""
+    if _schon_vorlaeufig(session, Kostenposition, d.id):
+        p = _schon_vorlaeufig(session, Kostenposition, d.id)
+        return [{"typ": "Kostenposition", "id": p.id, "objekt": o.slug,
+                 "wo": f"{p.kostenart} (schon angelegt)"}]
+    z = _zeitraum_fuer_beleg(session, o, d)
+    if z is None:
+        return []
+    kostenart = ((d.kostenart or "").strip()
+                 or _ki_text(felder.get("kostenart")) or "Nebenkosten")
+    betrag = (d.betrag if d.betrag is not None
+              else _ki_zahl(felder.get("betrag"))) or 0.0
+    # Eine Kostenart, eine Zeile (CLXXXII): gibt es die Position schon, keine
+    # zweite — auch keine vorläufige daneben.
+    for p in session.exec(select(Kostenposition).where(
+            Kostenposition.zeitraum_id == z.id)).all():
+        if p.kostenart == kostenart:
+            return []
+    p = Kostenposition(
+        zeitraum_id=z.id, kostenart=kostenart, betrag=round(betrag, 2),
+        wertquelle="Scan", status="erledigt" if betrag else "offen",
+        s35=bool(felder.get("s35a")), anteile={},
+        vorlaeufig=True, quelle_dokument_id=d.id)
+    session.add(p)
+    session.flush()
+    return [{"typ": "Kostenposition", "id": p.id, "objekt": o.slug,
+             "wo": f"Zeitraum {z.start:%d.%m.%Y}–{z.ende:%d.%m.%Y} · {kostenart}"}]
+
+
+def _entwurf_miete(session: Session, d: Dokument, o: Objekt,
+                   felder: dict) -> list[dict]:
+    """Vorläufiges Mietverhältnis (+ optional Bewohner) aus dem Mietvertrag."""
+    if _schon_vorlaeufig(session, Miete, d.id):
+        m = _schon_vorlaeufig(session, Miete, d.id)
+        return [{"typ": "Miete", "id": m.id, "objekt": o.slug,
+                 "wo": f"{m.partei or m.einheit or 'Mietverhältnis'} (schon angelegt)"}]
+    einheit = (d.ki_einheit or _ki_text(felder.get("einheit"))).strip()
+    mieter = _ki_text(felder.get("mieter"))
+    ab = (_ki_datum(felder.get("mietbeginn")) or d.belegdatum or date.today())
+    m = Miete(
+        objekt_id=o.id, einheit=einheit, partei=mieter,
+        kaltmiete=_ki_zahl(felder.get("kaltmiete")) or 0.0,
+        nebenkosten_vz=_ki_zahl(felder.get("nebenkosten_vz")) or 0.0,
+        stellplatz=_ki_zahl(felder.get("stellplatzmiete")) or 0.0,
+        sonstige=_ki_zahl(felder.get("sonstige_einnahmen")) or 0.0,
+        ab_datum=ab, kaution=_ki_zahl(felder.get("kaution")),
+        personen=int(_ki_zahl(felder.get("personen")) or 1),
+        email=_ki_text(felder.get("mieter_email")),
+        telefon=_ki_text(felder.get("mieter_telefon")),
+        vorlaeufig=True, quelle_dokument_id=d.id)
+    session.add(m)
+    session.flush()
+    angelegt = [{"typ": "Miete", "id": m.id, "objekt": o.slug,
+                 "wo": f"Einheit {einheit or 'ganzes Objekt'}"
+                       + (f" · {mieter}" if mieter else "")}]
+    if mieter:
+        b = Bewohner(miete_id=m.id, name=mieter,
+                     email=_ki_text(felder.get("mieter_email")),
+                     telefon=_ki_text(felder.get("mieter_telefon")),
+                     rolle="Hauptmieter", vorlaeufig=True,
+                     quelle_dokument_id=d.id)
+        session.add(b)
+        session.flush()
+        angelegt.append({"typ": "Bewohner", "id": b.id, "objekt": o.slug,
+                         "wo": f"{mieter} in {einheit or 'ganzes Objekt'}"})
+    return angelegt
+
+
+def _entwurf_versicherung(session: Session, d: Dokument, o: Objekt,
+                          felder: dict) -> list[dict]:
+    """Vorläufige Versicherung aus dem Versicherungsbeleg."""
+    if _schon_vorlaeufig(session, Versicherung, d.id):
+        v = _schon_vorlaeufig(session, Versicherung, d.id)
+        return [{"typ": "Versicherung", "id": v.id, "objekt": o.slug,
+                 "wo": f"{v.art} (schon angelegt)"}]
+    art = _ki_text(felder.get("art")) or (d.kostenart or "").strip() or "Gebäude"
+    umlage = felder.get("umlagefaehig")
+    v = Versicherung(
+        objekt_id=o.id, art=art, anbieter=_ki_text(felder.get("anbieter")),
+        police_nr=_ki_text(felder.get("police_nr")),
+        jahresbeitrag=_ki_zahl(felder.get("jahresbeitrag")) or 0.0,
+        turnus=_ki_text(felder.get("turnus")) or "jaehrlich",
+        versicherungswert=_ki_zahl(felder.get("versicherungssumme")),
+        beginn=_ki_datum(felder.get("beginn")),
+        ende=_ki_datum(felder.get("ende")),
+        umlagefaehig=bool(umlage) if isinstance(umlage, bool) else True,
+        vorlaeufig=True, quelle_dokument_id=d.id)
+    session.add(v)
+    session.flush()
+    return [{"typ": "Versicherung", "id": v.id, "objekt": o.slug, "wo": art}]
+
+
+def _entwurf_kredit(session: Session, d: Dokument, o: Objekt,
+                    felder: dict) -> list[dict]:
+    """Vorläufiger Kredit/Bausparvertrag aus dem Finanzierungsbeleg."""
+    if _schon_vorlaeufig(session, Kredit, d.id):
+        k = _schon_vorlaeufig(session, Kredit, d.id)
+        return [{"typ": "Kredit", "id": k.id, "objekt": o.slug,
+                 "wo": f"{k.bezeichnung} (schon angelegt)"}]
+    bezeichnung = (_ki_text(felder.get("bezeichnung"))
+                   or _ki_text(felder.get("bank"))
+                   or (d.kostenart or "").strip() or "Darlehen")
+    k = Kredit(
+        objekt_id=o.id, bezeichnung=bezeichnung,
+        bank=_ki_text(felder.get("bank")),
+        darlehensnummer=_ki_text(felder.get("darlehensnummer")),
+        urspruenglich=_ki_zahl(felder.get("darlehenssumme")),
+        restschuld=_ki_zahl(felder.get("restschuld")),
+        bausparsumme=_ki_zahl(felder.get("bausparsumme")),
+        angespart=_ki_zahl(felder.get("angespart")),
+        zinssatz=_ki_zahl(felder.get("zinssatz")),
+        rate_monatlich=_ki_zahl(felder.get("rate_monatlich")) or 0.0,
+        zinsbindung_bis=_ki_datum(felder.get("zinsbindung_bis")),
+        beginn=_ki_datum(felder.get("beginn")),
+        vorlaeufig=True, quelle_dokument_id=d.id)
+    session.add(k)
+    session.flush()
+    return [{"typ": "Kredit", "id": k.id, "objekt": o.slug, "wo": bezeichnung}]
+
+
+# Kategorie → Bauplan des vorläufigen Datensatzes. Was nicht hier steht
+# (Steuer, Hausverwaltung, Korrespondenz, Sonstiges), legt keinen an.
+_ENTWURF_BAUER = {
+    "Nebenkosten": _entwurf_nebenkosten,
+    "Mietvertrag": _entwurf_miete,
+    "Versicherung": _entwurf_versicherung,
+    "Kredit": _entwurf_kredit,
+}
+
+
+@router.post("/{dokument_id}/zuordnen")
+def zuordnen(dokument_id: int,
+             session: Session = Depends(get_session)) -> dict:
+    """Legt aus dem Beleg einen vorläufigen (orange) Datensatz an (CCLXXVIII).
+
+    Aus der Kategorie ergibt sich, was entsteht: Nebenkosten → Kostenposition,
+    Mietvertrag → Miete (+ Bewohner), Versicherung → Versicherung, Kredit →
+    Kredit. Andere Kategorien legen nichts an (`angelegt: []`). Alle Datensätze
+    tragen `vorlaeufig=True` und `quelle_dokument_id`; idempotent — ein zweiter
+    Aufruf findet den vorhandenen Entwurf wieder, statt einen zweiten zu bauen.
+
+    Datensicher: nichts wird überschrieben, nur Neues additiv angelegt. Fehlt
+    das Objekt, wird das ehrlich gemeldet statt in einen 500 zu laufen."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
+    if not o:
+        return {"ok": False, "angelegt": [],
+                "grund": "Dem Beleg fehlt die Immobilie — bitte zuerst zuordnen."}
+
+    bauer = _ENTWURF_BAUER.get((d.kategorie or "").strip())
+    if not bauer:
+        return {"ok": True, "angelegt": [],
+                "grund": f"Für die Kategorie „{d.kategorie or 'unbekannt'}“ "
+                         f"wird kein Datensatz angelegt."}
+    try:
+        angelegt = bauer(session, d, o, d.ki_felder or {})
+        session.commit()
+    except Exception as fehler:                       # noqa: BLE001
+        session.rollback()
+        log.warning("Zuordnen von Dokument %s gescheitert: %s", dokument_id, fehler)
+        raise HTTPException(
+            400, "Der vorläufige Datensatz konnte nicht angelegt werden.") from fehler
+    log.info("Dokument %s zugeordnet: %s", dokument_id,
+             ", ".join(f"{e['typ']}#{e['id']}" for e in angelegt) or "nichts")
+    return {"ok": True, "angelegt": angelegt}
 
 
 # --------------------------------------------------------------------------

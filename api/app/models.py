@@ -188,6 +188,13 @@ class Kostenposition(SQLModel, table=True):
     # eingetragen wurde — nur so lässt sich ein weiterer Beleg addieren, ohne
     # den Handeintrag zu überschreiben oder doppelt zu zählen.
     beleg_summe: float = 0.0
+    # CCLXXVIII — Orange-Entwurf: ein aus einem Beleg vorläufig angelegter
+    # Datensatz, den der Nutzer erst bestätigt (`vorlaeufig=False`) oder
+    # verwirft. `quelle_dokument_id` zeigt auf den Beleg, aus dem er entstand.
+    # Additiv, Default False/None: jeder Bestand ist damit schon „bestätigt".
+    vorlaeufig: bool = False
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
 
 
 class Vorauszahlung(SQLModel, table=True):
@@ -218,6 +225,10 @@ class Versicherung(SQLModel, table=True):
     ende: Optional[date] = None
     umlagefaehig: bool = True
     notiz: str = ""
+    # CCLXXVIII — Orange-Entwurf (siehe Kostenposition).
+    vorlaeufig: bool = False
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
 
 
 class Miete(SQLModel, table=True):
@@ -254,6 +265,10 @@ class Miete(SQLModel, table=True):
     personen: int = 1
     kaution: Optional[float] = None
     notiz: str = ""
+    # CCLXXVIII — Orange-Entwurf (siehe Kostenposition).
+    vorlaeufig: bool = False
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
 
 
 # Vertragsarten unter „Kredite". Ein Bausparvertrag steht dort mit, weil er
@@ -313,6 +328,10 @@ class Kredit(SQLModel, table=True):
     # gepflegt, schreibt die Restschuld-Rechnung ab dem Bindungsende mit ihm
     # fort statt stur mit dem alten Satz. Leer = alles wie bisher.
     zinssatz_variabel: Optional[float] = None   # Prozent p. a., ab zinsbindung_bis
+    # CCLXXVIII — Orange-Entwurf (siehe Kostenposition).
+    vorlaeufig: bool = False
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
 
 
 class Kreditstand(SQLModel, table=True):
@@ -417,6 +436,10 @@ class Bewohner(SQLModel, table=True):
     # der Liste, braucht aber keine Post.
     abrechnung: bool = True
     notiz: str = ""
+    # CCLXXVIII — Orange-Entwurf (siehe Kostenposition).
+    vorlaeufig: bool = False
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
 
 
 class Zahlung(SQLModel, table=True):
