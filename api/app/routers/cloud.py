@@ -1,6 +1,7 @@
 """Nextcloud-Anbindung: einrichten, Ordner durchsehen, Struktur anlegen."""
 import json
 import logging
+import re
 from datetime import date
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
@@ -358,6 +359,25 @@ def _saubere_teile(subpfad: str) -> list[str]:
     return [t.strip() for t in roh if t.strip() and t.strip() != ".."]
 
 
+# Hauptordner → Kategorie, damit ein gespiegelter Beleg gleich eine sinnvolle
+# Kategorie trägt (die genaue Kostenart bestimmt später der Nutzer/die Regeln).
+_HAUPT_KATEGORIE = {
+    "60_Nebenkosten": "Nebenkosten",
+    "70_Steuer_Finanzamt": "Steuer",
+    "40_Kauf_Eigentum_Finanzierung": "Kredit",
+    "20_Mietvertraege_Vermietung": "Mietvertrag",
+    "51_Mieterhoehungen": "Mietvertrag",
+    "30_Kommunikation": "Korrespondenz",
+    "80_Hausverwaltung": "Hausverwaltung",
+    "55_Eigentuemerversammlungen": "Hausverwaltung",
+}
+
+
+def _jahr_aus_name(name: str) -> int | None:
+    treffer = re.search(r"(19|20)\d{2}", name or "")
+    return int(treffer.group(0)) if treffer else None
+
+
 @router.post("/objekte/{slug}/leeren")
 def objekt_leeren(slug: str, session: Session = Depends(get_session)) -> dict:
     """Löscht ALLE Inhalte des Objektordners (Dateien und Unterordner) — für
@@ -409,6 +429,20 @@ async def objekt_spiegeln(slug: str, subpfad: str = Form(...),
                        typ=datei.content_type or "application/octet-stream")
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
+    # Beim Spiegeln gleich indexieren, damit die App die Datei kennt (der
+    # Abgleich adoptiert direkt platzierte Dateien sonst nicht). Kategorie aus
+    # dem Hauptordner, Jahr aus dem Namen — genau wird es später bestimmt.
+    haupt = teile[0] if len(teile) >= 2 else ""
+    d = Dokument(pfad="/" + ziel, dateiname=teile[-1], groesse=len(inhalt),
+                 objekt_id=objekt.id,
+                 kategorie=_HAUPT_KATEGORIE.get(haupt, "Sonstiges"),
+                 jahr=_jahr_aus_name(teile[-1]), status="zugeordnet",
+                 erkannt_am=date.today())
+    session.add(d)
+    try:
+        session.commit()
+    except Exception:                       # noqa: BLE001 — Pfad schon indexiert
+        session.rollback()
     return {"pfad": "/" + ziel}
 
 
