@@ -552,3 +552,12 @@ class Dokument(SQLModel, table=True):
     # Beleg jedes Mal neu zu lesen. Additiv, Default leer: migrate.py legt die
     # Spalte für den Bestand an, ein Beleg ohne Einordnung bleibt unverändert.
     ki_einordnung: str = ""
+    # CCLXXIV: das Raster der KI-Auslese. `ki_felder` sind die typspezifischen
+    # App-Eingabefelder, die die KI aus dem Beleg gezogen hat (Mieter,
+    # Jahresbeitrag, Restschuld …) — als JSON, weil je Dokumenttyp andere Felder
+    # anfallen. `ki_immobilie` ist die erkannte Liegenschaft/das Anwesen (NICHT
+    # die Postanschrift), `ki_einheit` die erkannte Einheit. Alle additiv mit
+    # Default: migrate.py legt die Spalten für den Bestand an.
+    ki_felder: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    ki_immobilie: str = ""
+    ki_einheit: str = ""

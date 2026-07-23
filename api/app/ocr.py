@@ -570,6 +570,17 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
     ergebnis["ist_kosten"] = bool(ki.get("ist_kosten", ergebnis["ist_kosten"]))
     if ki.get("einordnung"):
         ergebnis["einordnung"] = ki["einordnung"]        # KI-Klartext (CCLXXIII)
+    # CCLXXIV: das Raster durchreichen — Liegenschaft (nicht Postanschrift),
+    # Einheit, Dokumenttyp und die typspezifischen Felder. Nur übernehmen, was
+    # die KI wirklich geliefert hat; leere Werte überschreiben nichts.
+    if ki.get("immobilie"):
+        ergebnis["immobilie"] = ki["immobilie"]
+    if ki.get("einheit"):
+        ergebnis["einheit"] = ki["einheit"]
+    if ki.get("dokumenttyp"):
+        ergebnis["dokumenttyp"] = ki["dokumenttyp"]
+    if ki.get("felder"):
+        ergebnis["felder"] = ki["felder"]
     ergebnis["ki"] = True
 
 

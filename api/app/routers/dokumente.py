@@ -1434,6 +1434,210 @@ def position_loesen(dokument_id: int,
 
 
 # --------------------------------------------------------------------------
+# CCLXXIV: Das KI-Raster festhalten — am Dokument UND als `.immocalc`-Steckbrief
+# neben dem PDF in der Nextcloud.
+#
+# Der Massenlauf schickt je Beleg das ausgelesene Raster (Dokumenttyp,
+# Liegenschaft, Einheit, typspezifische Felder). Es wird additiv am Dokument
+# gespeichert — leere Werte überschreiben nie einen vorhandenen — und als
+# menschenlesbarer Steckbrief neben die Datei geschrieben. Die Cloud-Datei
+# selbst wird NICHT verschoben; scheitert das Sidecar-Schreiben, bleibt die
+# DB-Speicherung trotzdem bestehen (`sidecar: false`), nie fliegt eine Exception.
+# --------------------------------------------------------------------------
+
+class ImmoCalcIn(BaseModel):
+    """Das von der KI-Auslese gezogene Raster für einen Beleg — alles optional.
+
+    Was mitkommt, wird gesetzt; was fehlt, lässt den bestehenden Wert stehen."""
+    datum: str | None = None
+    betrag: float | None = None
+    kategorie: str | None = None
+    kostenart: str | None = None
+    ist_kosten: bool | None = None
+    immobilie: str | None = None
+    einheit: str | None = None
+    felder: dict = {}
+    einordnung: str | None = None
+
+
+def _sidecar_pfad(pfad: str) -> str:
+    """Der Pfad der `.immocalc`-Datei neben dem Beleg: die Endung wird ersetzt,
+    ein Beleg ohne Endung bekommt sie angehängt."""
+    stamm, punkt, endung = pfad.rpartition(".")
+    if punkt and "/" not in endung:      # der Punkt gehört zur Dateiendung
+        return f"{stamm}.immocalc"
+    return f"{pfad}.immocalc"
+
+
+# Wie die Rasterfelder im Steckbrief heissen — technischer Schlüssel → Klartext.
+# Was nicht in der Karte steht, wird mit seinem Schlüssel gezeigt (nichts geht
+# verloren), damit ein neues Feld nicht stumm bleibt.
+_FELD_TITEL = {
+    "mieter": "Mieter", "kaltmiete": "Kaltmiete",
+    "nebenkosten_vz": "Nebenkosten-Vorauszahlung",
+    "stellplatzmiete": "Stellplatzmiete",
+    "sonstige_einnahmen": "Sonstige Einnahmen", "mietbeginn": "Mietbeginn",
+    "kaution": "Kaution", "personen": "Personen",
+    "mieter_email": "E-Mail Mieter", "mieter_telefon": "Telefon Mieter",
+    "art": "Art", "anbieter": "Anbieter", "police_nr": "Police-Nr.",
+    "jahresbeitrag": "Jahresbeitrag", "turnus": "Turnus",
+    "versicherungssumme": "Versicherungssumme", "beginn": "Beginn",
+    "ende": "Ende", "umlagefaehig": "Umlagefähig",
+    "bezeichnung": "Bezeichnung", "bank": "Bank",
+    "darlehensnummer": "Darlehensnummer", "darlehenssumme": "Darlehenssumme",
+    "bausparsumme": "Bausparsumme", "angespart": "Angespart",
+    "restschuld": "Restschuld", "zinssatz": "Zinssatz",
+    "rate_monatlich": "Rate monatlich", "zinsbindung_bis": "Zinsbindung bis",
+    "schuldzinsen_jahr": "Schuldzinsen im Jahr", "jahr": "Jahr",
+    "grundsteuerwert": "Grundsteuerwert",
+    "grundsteuer_messbetrag": "Grundsteuer-Messbetrag",
+    "grundsteuer_hebesatz": "Hebesatz", "jahresbetrag": "Jahresbetrag",
+    "kaufpreis": "Kaufpreis", "kaufdatum": "Kaufdatum",
+    "gemarkung": "Gemarkung", "flurstueck": "Flurstück",
+    "grundbuch_blatt": "Grundbuchblatt", "glaeubiger": "Gläubiger",
+    "grundschuld_betrag": "Grundschuld-Betrag", "rang": "Rang",
+    "verwalter": "Verwalter", "hausgeld_monatlich": "Hausgeld monatlich",
+    "ruecklage_zufuehrung": "Rücklagenzuführung",
+    "zeitraum": "Zeitraum", "s35a": "Haushaltsnahe Dienstleistung (§ 35a)",
+    "verbrauch": "Verbrauch",
+}
+
+
+def _feld_wert(wert) -> str:
+    """Ein Rasterwert als Klartext — Ja/Nein für Wahrheitswerte."""
+    if isinstance(wert, bool):
+        return "Ja" if wert else "Nein"
+    return str(wert)
+
+
+def _immocalc_text(d: Dokument, body: ImmoCalcIn) -> str:
+    """Der menschenlesbare Steckbrief, der neben dem PDF landet.
+
+    Zeigt Datei, Dokumenttyp/Kategorie samt Zielordner, Liegenschaft, Einheit,
+    Belegdatum, Betrag, Umlagefähigkeit und die erkannten Rasterangaben — knapp
+    und ohne technische Wortwahl, damit der Steckbrief auch in der Cloud gelesen
+    werden kann, ohne ImmoCalc zu öffnen."""
+    zeilen: list[str] = ["ImmoCalc — Steckbrief zum Beleg", ""]
+    zeilen.append(f"Datei: {d.dateiname}")
+    kategorie = body.kategorie or d.kategorie
+    if kategorie:
+        ordner = ZIELORDNER.get(kategorie, "99_Sonstiges")
+        zeilen.append(f"Kategorie: {kategorie} → {ordner}")
+    if body.immobilie:
+        zeilen.append(f"Immobilie: {body.immobilie}")
+    if body.einheit:
+        zeilen.append(f"Einheit: {body.einheit}")
+    belegdatum = _zum_datum(body.datum or "") or d.belegdatum
+    if belegdatum:
+        zeilen.append(f"Belegdatum: {belegdatum.isoformat()}")
+    betrag = body.betrag if body.betrag is not None else d.betrag
+    if betrag is not None:
+        zeilen.append(f"Betrag: {betrag:.2f} €".replace(".", ","))
+    umlage = (body.felder or {}).get("umlagefaehig")
+    if isinstance(umlage, bool):
+        zeilen.append(f"Umlagefähig: {'Ja' if umlage else 'Nein'}")
+
+    weitere = {k: v for k, v in (body.felder or {}).items()
+               if k != "umlagefaehig"}
+    if weitere:
+        zeilen += ["", "Erkannte Angaben:"]
+        for schluessel, wert in weitere.items():
+            titel = _FELD_TITEL.get(schluessel, schluessel)
+            zeilen.append(f"  - {titel}: {_feld_wert(wert)}")
+
+    einordnung = (body.einordnung or d.ki_einordnung or "").strip()
+    if einordnung:
+        zeilen += ["", "Einordnung:", f"  {einordnung}"]
+    return "\n".join(zeilen) + "\n"
+
+
+def _adr_norm(text: str) -> str:
+    """Vergleichsform einer Adresse für den Objekt-Abgleich: klein, ohne
+    Sonderzeichen, „Straße"/„Str."/„str" auf denselben Nenner gebracht."""
+    t = (text or "").lower().replace("ß", "ss")
+    t = t.replace("strasse", "str")
+    t = re.sub(r"[^0-9a-zäöü]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _objekt_aus_immobilie(session: Session, immobilie: str) -> Objekt | None:
+    """Sucht das Objekt, dessen Straße in der erkannten Liegenschaft steckt.
+
+    Bewusst einfach: normalisierter Teilstring-Abgleich der `Objekt.strasse`.
+    Kein eindeutiger Treffer → None (dann bleibt die Zuordnung offen)."""
+    ziel = _adr_norm(immobilie)
+    if not ziel:
+        return None
+    treffer = [o for o in session.exec(select(Objekt)).all()
+               if o.strasse and _adr_norm(o.strasse) in ziel]
+    return treffer[0] if len(treffer) == 1 else None
+
+
+@router.post("/{dokument_id}/immocalc")
+def immocalc(dokument_id: int, body: ImmoCalcIn,
+             session: Session = Depends(get_session)) -> dict:
+    """Hält das KI-Raster am Beleg fest und legt einen `.immocalc`-Steckbrief
+    neben das PDF (CCLXXIV).
+
+    Additiv: gesetzte Werte gewinnen, leere lassen den Bestand unberührt. Die
+    Cloud-Datei wird nicht verschoben. Scheitert das Sidecar-Schreiben, wird
+    trotzdem gespeichert und `sidecar: false` gemeldet — nie eine Exception."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    gesetzt = body.model_fields_set
+
+    # Das Raster am Dokument festhalten (additiv, leere Werte überschreiben nie).
+    if body.felder:
+        d.ki_felder = body.felder
+    if body.immobilie:
+        d.ki_immobilie = body.immobilie
+    if body.einheit:
+        d.ki_einheit = body.einheit
+    if body.einordnung:
+        d.ki_einordnung = body.einordnung
+    # Kernangaben zusätzlich in die regulären Felder — nur wenn gesetzt.
+    if "kategorie" in gesetzt and body.kategorie:
+        d.kategorie = body.kategorie
+    if "kostenart" in gesetzt and body.kostenart:
+        d.kostenart = body.kostenart.strip()
+    if "datum" in gesetzt:
+        neu_datum = _zum_datum(body.datum or "")
+        if neu_datum:
+            d.belegdatum = neu_datum
+            if d.jahr is None:
+                d.jahr = neu_datum.year
+    if "betrag" in gesetzt and body.betrag and body.betrag > 0:
+        d.betrag = body.betrag
+
+    # Immobilie → Objekt zuordnen, wenn der Beleg noch keins hat.
+    if not d.objekt_id and body.immobilie:
+        o = _objekt_aus_immobilie(session, body.immobilie)
+        if o:
+            d.objekt_id = o.id
+
+    # Der Steckbrief neben das PDF — scheitert das, bleibt die DB-Speicherung.
+    sidecar_pfad = _sidecar_pfad(d.pfad)
+    sidecar_ok = False
+    if d.pfad.startswith("/"):
+        try:
+            client = verbindung(session)
+            client.lege_ab(sidecar_pfad, _immocalc_text(d, body).encode("utf-8"),
+                           typ="text/plain; charset=utf-8")
+            sidecar_ok = True
+        except Exception as fehler:                        # noqa: BLE001
+            log.warning("Sidecar nicht geschrieben (%s): %s", sidecar_pfad, fehler)
+
+    session.add(d)
+    session.commit()
+    session.refresh(d)
+    o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
+    return {"ok": True, "gespeichert": True, "sidecar": sidecar_ok,
+            "sidecar_pfad": sidecar_pfad if sidecar_ok else "",
+            "objekt": o.slug if o else None}
+
+
+# --------------------------------------------------------------------------
 # CCLV: Kostenfreie Belege als Themen-Anhänger
 #
 # Manche Belege sind Zusatzinformationen zu einer Kostenart, tragen aber

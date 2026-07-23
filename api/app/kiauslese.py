@@ -50,33 +50,65 @@ MAX_ZEICHEN = 6000
 MAX_TOKENS = 300
 ZEITLIMIT = 15.0
 
-# Knappe, deutsche Anweisung. Das Modell soll NUR JSON liefern — der Rest wird
-# beim Parsen ohnehin verworfen, aber eine klare Vorgabe spart Tokens.
+# CCLXXIV: Das Modell zieht NUR die App-Eingabefelder je Dokumenttyp — das
+# „Raster". Was auf dem Beleg fehlt, lässt es weg (kein erfundener Wert). Immer
+# dabei: die IMMOBILIE (Liegenschaft/Anwesen, NICHT die Postanschrift), ggf. die
+# Einheit, und die Einordnung. Knappe, deutsche Anweisung; das Modell soll NUR
+# JSON liefern.
 SYSTEM_PROMPT = (
-    "Du liest einen deutschen Beleg (Rechnung/Bescheid). Gib NUR JSON zurück, "
-    "kein weiterer Text:\n"
-    '{"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,"kostenart":"…",'
-    '"kategorie":"…","ist_kosten":true|false,"einordnung":"…"}\n'
+    "Du liest einen deutschen Immobilien-Beleg (Rechnung/Bescheid/Vertrag). "
+    "Gib NUR JSON zurück, kein weiterer Text:\n"
+    '{"dokumenttyp":"…","kategorie":"…","immobilie":"…","einheit":"…",'
+    '"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,"ist_kosten":true|false,'
+    '"kostenart":"…","felder":{…},"einordnung":"…"}\n'
+    "dokumenttyp = kurze Bezeichnung der Belegart (Mietvertrag, Versicherung, "
+    "Kredit, Grundsteuerbescheid, Kaufvertrag, Grundbuch, WEG-Abrechnung, "
+    "Nebenkosten-Rechnung, Zählerstand …). "
+    "kategorie = bestimmt den Ablage-Ordner und MUSS EXAKT EINER dieser Werte "
+    "sein: \"Nebenkosten\", \"Steuer\", \"Versicherung\", \"Kredit\", "
+    "\"Mietvertrag\", \"Hausverwaltung\", \"Korrespondenz\", \"Sonstiges\". "
+    "immobilie = Adresse der LIEGENSCHAFT/des Objekts, um die es geht "
+    "(Straße + Nr, PLZ, Ort). Suche die Bezeichnungen \"Anwesen\", "
+    "\"Liegenschaft\", \"Objekt\", \"Grundstück\", \"Verbrauchsstelle\", "
+    "\"Lieferadresse\". Das ist NICHT die Empfänger-/Postanschrift. Beispiel: "
+    "Ein Brief geht an \"Tauchersreuther Str. 7\", nennt aber \"Anwesen: Laufer "
+    "Str. 5\" → immobilie = \"Laufer Str. 5\". Steht keine Liegenschaft dabei, "
+    "immobilie weglassen. "
+    "einheit = die betroffene Wohnung/Einheit, falls genannt (z. B. \"Whg 1. "
+    "OG\", \"EG rechts\"), sonst weglassen. "
     "datum = Ausstellungs-/Rechnungsdatum aus dem Briefkopf, NICHT das "
-    "Zahlungsziel, NICHT eine Zeitraumgrenze, NICHT handschriftliche Notizen. "
+    "Zahlungsziel, NICHT eine Zeitraumgrenze. "
     "betrag = Gesamt-/Rechnungsbetrag in Euro als Zahl (Punkt als Dezimal-"
     "trenner, ohne Währungszeichen). "
-    "kostenart = worum es GENAU geht, kurz für den Dateinamen (z. B. Heizöl, "
-    "Grundsteuer, Wasser, Gebäudeversicherung, Schornsteinfeger, Müll, "
-    "Darlehen). "
-    "kategorie = bestimmt den Ablage-Ordner und MUSS EXAKT einer dieser Werte "
-    "sein: \"Nebenkosten\" (Betriebs-/Heizkosten, Wasser, Strom, Müll, "
-    "Schornsteinfeger, Grundsteuer als Betriebskosten), \"Steuer\" (Finanzamt, "
-    "Steuerbescheid), \"Versicherung\" (Gebäude-, Haftpflicht-, Elementar-"
-    "versicherung, Policen), \"Kredit\" (Darlehen, Tilgung, Zinsen, "
-    "Finanzierung), \"Mietvertrag\" (Mietvertrag, Mieterhöhung, Kaution), "
-    "\"Hausverwaltung\" (Wohngeld, Eigentümerversammlung, WEG-Verwalter), "
-    "\"Korrespondenz\" (Schreiben, Briefe, Mandate ohne Kostenbezug), "
-    "\"Sonstiges\" (wenn nichts davon passt). Wähle den treffendsten Ordner. "
     "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand, "
     "Ableseprotokoll), sonst true. "
-    "einordnung = ein bis zwei kurze deutsche Sätze für den schnellen Blick: "
-    "was für ein Beleg das ist, von wem, worum es geht, mit Datum und Betrag."
+    "kostenart = worum es GENAU geht, kurz (z. B. Heizöl, Grundsteuer, Wasser, "
+    "Gebäudeversicherung, Schornsteinfeger, Müll, Darlehen). "
+    "einordnung = ein bis zwei kurze deutsche Sätze: was für ein Beleg das ist, "
+    "von wem, worum es geht, mit Datum und Betrag.\n"
+    "felder = NUR die zum Typ passenden Angaben, die WIRKLICH auf dem Beleg "
+    "stehen (Fehlendes weglassen). Raster je Typ:\n"
+    "MIETVERTRAG: mieter, kaltmiete, nebenkosten_vz, stellplatzmiete, "
+    "sonstige_einnahmen, mietbeginn, kaution, personen, mieter_email, "
+    "mieter_telefon.\n"
+    "VERSICHERUNG: art, anbieter, police_nr, jahresbeitrag, turnus, "
+    "versicherungssumme, beginn, ende, umlagefaehig.\n"
+    "KREDIT/BAUSPAREN: bezeichnung, bank, darlehensnummer, darlehenssumme, "
+    "bausparsumme, angespart, restschuld, zinssatz, rate_monatlich, "
+    "zinsbindung_bis, beginn, schuldzinsen_jahr, jahr.\n"
+    "GRUNDSTEUER: grundsteuerwert, grundsteuer_messbetrag, "
+    "grundsteuer_hebesatz, jahresbetrag.\n"
+    "KAUFVERTRAG: kaufpreis, kaufdatum.\n"
+    "GRUNDBUCH/GRUNDSCHULD: gemarkung, flurstueck, grundbuch_blatt, glaeubiger, "
+    "grundschuld_betrag, rang.\n"
+    "WEG: verwalter, hausgeld_monatlich, ruecklage_zufuehrung.\n"
+    "NEBENKOSTEN-RECHNUNG: kostenart, betrag, zeitraum, s35a (true bei "
+    "haushaltsnaher Dienstleistung: Schornsteinfeger, Wartung, Hausmeister, "
+    "Winterdienst, Gartenpflege), verbrauch.\n"
+    "INFO-BELEG (Zählerstand/Ableseprotokoll/SEPA-Mandat): keine felder, "
+    "ist_kosten=false.\n"
+    "Nimm KEINE Felder wie Zahlstatus/\"bezahlt\", KEINE fremde IBAN, KEINE "
+    "Notar- oder Sachbearbeiternamen auf."
 )
 
 
@@ -158,6 +190,45 @@ def _text(wert) -> str:
     return wert.strip().replace("\n", " ")[:60]
 
 
+def _adresse(wert) -> str:
+    """Eine Adresse (Liegenschaft/Einheit) — etwas länger als ein Klartextfeld,
+    weil „Laufer Str. 5, 91207 Lauf" hineinpassen muss, aber ohne Umbrüche."""
+    if not isinstance(wert, str):
+        return ""
+    return " ".join(wert.strip().split())[:120]
+
+
+# So viele Felder nimmt ein Raster höchstens auf — genug für den grössten Typ
+# (Mietvertrag/Kredit), eng genug, dass eine ausufernde Modellantwort nicht
+# beliebig viel Müll ins Dokument schreibt.
+_MAX_FELDER = 30
+
+
+def _felder(wert) -> dict:
+    """Das Raster-Feld der KI säubern: nur ein flaches dict mit knappen, string-
+    fähigen Schlüsseln und Werten. Verschachteltes, Listen und Unfug fliegen
+    raus — lieber ein Feld weniger als ein kaputtes."""
+    if not isinstance(wert, dict):
+        return {}
+    sauber: dict = {}
+    for schluessel, roh in wert.items():
+        if len(sauber) >= _MAX_FELDER:
+            break
+        name = str(schluessel).strip().replace("\n", " ")[:40]
+        if not name:
+            continue
+        if isinstance(roh, bool):
+            sauber[name] = roh
+        elif isinstance(roh, (int, float)):
+            sauber[name] = roh
+        elif isinstance(roh, str):
+            gekuerzt = " ".join(roh.split())[:120]
+            if gekuerzt:
+                sauber[name] = gekuerzt
+        # Listen/dicts/None werden bewusst übergangen.
+    return sauber
+
+
 def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
                modell: str = "") -> dict | None:
     """Liest einen Beleg mit dem günstigen Claude-Modell.
@@ -227,6 +298,12 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         "ist_kosten": bool(block.get("ist_kosten", True)),
         # Kurze Klartext-Einordnung für die Anzeige unter dem Dokument (CCLXXIII).
         "einordnung": _text(block.get("einordnung")),
+        # CCLXXIV: das Raster — Liegenschaft (nicht Postanschrift), Einheit und
+        # die typspezifischen App-Eingabefelder.
+        "dokumenttyp": _text(block.get("dokumenttyp")),
+        "immobilie": _adresse(block.get("immobilie")),
+        "einheit": _adresse(block.get("einheit")),
+        "felder": _felder(block.get("felder")),
     }
     # Dezent loggen — OHNE Datum, Betrag oder Namen (Datenschutz). Nur, dass
     # eine Antwort kam und ob ein Datum darin stand.
