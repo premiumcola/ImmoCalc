@@ -752,6 +752,78 @@ export const BEGRIFFE = [
       'Für dich als Vermieter: Prüfe vor der Neuvermietung, ob dein Objekt in einem ausgewiesenen Gebiet liegt, und begründe die Miete am Mietspiegel. Lag die Vormiete bereits höher, darfst du sie meist halten (Bestandsschutz). Bei einer [[staffelmiete]] muss jede Stufe die Grenze wahren. Verstöße kann der Mieter rügen und zu viel Gezahltes zurückfordern.',
     verwandt: ['kaltmiete', 'mietspiegel', 'kappungsgrenze', 'staffelmiete'],
   },
+  {
+    id: 'wohnflaeche',
+    begriff: 'Wohnfläche (WoFlV)',
+    kategorie: 'miete',
+    synonyme: ['Wohnflächenverordnung', 'WoFlV', 'anrechenbare Fläche', 'Quadratmeter', 'm²', 'Grundfläche'],
+    kurz: 'Die maßgebliche Fläche der Wohnung. Wohnräume zählen voll, Balkon und Terrasse nur anteilig (meist 25 %), Keller und Nebenräume gar nicht.',
+    lang:
+      'Die Wohnfläche ist die Summe der anrechenbaren Grundflächen aller Räume, die zur Wohnung gehören. Wie viel jede Fläche zählt, regelt die Wohnflächenverordnung (WoFlV): Wohnräume mit voller Raumhöhe zählen zu 100 %, Flächen unter Dachschrägen zwischen 1 und 2 m Höhe nur zur Hälfte, unter 1 m gar nicht. [[terrassenflaeche|Balkon, Terrasse und Loggia]] werden in der Regel zu einem Viertel angesetzt (höchstens zur Hälfte), und reine [[nebenflaeche|Nebenflächen]] wie Keller, Waschküche oder Dachboden zählen mit 0 %.\n\n' +
+      'Es gibt diese einheitliche Regel, weil die Fläche über Geld entscheidet und deshalb nicht jeder anders messen soll: Kaltmiete je m², die ortsübliche Vergleichsmiete im [[mietspiegel]] und ein großer Teil der Betriebskosten hängen unmittelbar an der Quadratmeterzahl.\n\n' +
+      'Für dich als Eigentümer: Setze die Wohnfläche korrekt nach WoFlV an, nicht die Bau- oder Grundfläche aus dem Grundriss — eine zu hoch angegebene Fläche kann eine Mietminderung und fehlerhafte Abrechnungen auslösen (Rechtsprechung: schon ab mehr als 10 % Abweichung). Nach dieser Fläche verteilt der flächenbezogene [[verteilerschluessel]] die [[nebenkosten]]. [[stellplatz|Stellplätze und Garagen]] gehören nie zur Wohnfläche.',
+    verwandt: ['nebenflaeche', 'terrassenflaeche', 'stellplatz', 'verteilerschluessel', 'kaltmiete', 'mietspiegel'],
+  },
+  {
+    id: 'nebenflaeche',
+    begriff: 'Nebenflächen (Keller, Abstellraum, Dachboden)',
+    kategorie: 'miete',
+    synonyme: ['Nebenfläche', 'Nutzfläche', 'Kellerfläche', 'Abstellraum', 'Dachboden', 'Trockenraum', 'Waschküche'],
+    kurz: 'Räume wie Keller, Waschküche, Dachboden oder ein Abstellraum außerhalb der Wohnung. Sie zählen in der Regel nicht zur Wohnfläche.',
+    lang:
+      'Nebenflächen sind Räume, die zwar zur Immobilie gehören, aber nicht dem eigentlichen Wohnen dienen — Keller, Waschküche, Trockenraum, Heizungsraum, ein nicht ausgebauter Dachboden oder ein Abstellraum außerhalb der Wohnung. Nach der Wohnflächenverordnung (siehe [[wohnflaeche]]) bleiben solche Zubehörräume bei der Wohnfläche außen vor: Keller und Waschküche zählen mit 0 %.\n\n' +
+      'Diese Grenze gibt es, weil die Wohnfläche den bewohnbaren Raum abbilden soll, für den Miete gezahlt und nach dem umgelegt wird — ein feuchter Kellerverschlag ist damit nicht vergleichbar. Sonst ließe sich die Fläche und damit die Miete künstlich aufblähen.\n\n' +
+      'Für dich als Eigentümer: Rechne Nebenflächen nicht in die [[wohnflaeche]] ein, auch wenn sie zur Wohnung gehören. Eine Ausnahme ist ein Abstellraum *innerhalb* der Wohnung mit normaler Raumhöhe — der zählt voll mit. Ein separater Kellerraum kann als Ausstattungsmerkmal den Mietwert erhöhen, wird aber getrennt bewertet, nicht als Quadratmeter Wohnfläche. Ein [[stellplatz|Stellplatz oder eine Garage]] ist ebenfalls keine Nebenfläche im Sinne der Wohnfläche.',
+    verwandt: ['wohnflaeche', 'terrassenflaeche', 'stellplatz', 'verteilerschluessel'],
+  },
+  {
+    id: 'terrassenflaeche',
+    begriff: 'Terrasse, Balkon & Loggia (Anrechnung)',
+    kategorie: 'miete',
+    synonyme: ['Terrasse', 'Terrassenfläche', 'Balkon', 'Loggia', 'Dachgarten', 'Freisitz', 'Wintergarten'],
+    kurz: 'Freiflächen wie Terrasse, Balkon oder Loggia zählen nach WoFlV in der Regel zu einem Viertel (25 %) zur Wohnfläche, höchstens zur Hälfte (50 %).',
+    lang:
+      'Balkone, Loggien, Dachgärten und Terrassen gehören zur Wohnung, sind aber keine vollwertigen Wohnräume. Die Wohnflächenverordnung setzt sie deshalb nur anteilig an: in der Regel zu einem Viertel (25 %) ihrer Grundfläche, bei besonders hochwertiger Ausführung — geschützte Südlage, gute Nutzbarkeit — höchstens zur Hälfte (50 %). Ein beheizbarer Wintergarten kann dagegen voll zählen.\n\n' +
+      'Diese Abstufung gibt es, weil eine Freifläche einen echten Wohnwert hat, aber nicht mit einem geschlossenen, beheizten Zimmer gleichzusetzen ist — sie ist wetterabhängig und nur einen Teil des Jahres nutzbar. Der reduzierte Ansatz bildet diesen geringeren Nutzen ab.\n\n' +
+      'Für dich als Eigentümer: Miss die Terrassen- oder Balkonfläche getrennt und rechne sie mit dem gewählten Prozentsatz in die [[wohnflaeche]] ein — 25 % ist der sichere Standard, die 50 % musst du mit besonderer Qualität begründen können. Übernimm nicht ungeprüft die volle Fläche aus dem Bauplan, sonst ist die Wohnfläche zu hoch und die [[kaltmiete|Miete]] und [[nebenkosten|Nebenkostenumlage]] angreifbar.',
+    verwandt: ['wohnflaeche', 'nebenflaeche', 'stellplatz', 'kaltmiete'],
+  },
+  {
+    id: 'stellplatz',
+    begriff: 'Stellplatz, Garage & Carport',
+    kategorie: 'miete',
+    synonyme: ['Stellplatz', 'Garage', 'Carport', 'Tiefgarage', 'TG-Stellplatz', 'Autoabstellplatz', 'Duplex'],
+    kurz: 'Ein Platz fürs Auto — offen, überdacht oder in der Garage. Er zählt nie zur Wohnfläche und wird getrennt erfasst und vermietet.',
+    lang:
+      'Ein Stellplatz (offen), Carport (überdacht) oder eine Garage bzw. ein Tiefgaragenplatz dient dem Abstellen des Fahrzeugs. Solche Flächen gehören nach der Wohnflächenverordnung nicht zur [[wohnflaeche]] und werden vollständig getrennt geführt — mit eigener Fläche, eigenem Entgelt und oft eigenem Rechtsstatus.\n\n' +
+      'Die Trennung gibt es, weil ein Stellplatz kein Wohnraum ist: Er hat einen eigenen Markt- und Mietwert und folgt teils anderen Regeln — die [[mietpreisbremse]] etwa gilt für ihn nicht, wenn er separat vermietet wird. Bei [[weg|Wohnungseigentum]] ist er häufig ein eigener Miteigentumsanteil oder ein Sondernutzungsrecht aus der [[teilungserklaerung]].\n\n' +
+      'Für dich als Eigentümer: Erfasse den Stellplatz getrennt von der Wohnung — als eigene Position mit eigener Miete. Ist er im Wohnungsmietvertrag mitvermietet, gilt er mietrechtlich als Teil der Wohnung (eine Kündigung nur zusammen); wird er separat vermietet, ist er eigenständig kündbar. Die Stellplatzmiete zählt wie die [[kaltmiete]] zu deinen Einnahmen, seine Fläche aber nie zu den Wohnquadratmetern.',
+    verwandt: ['wohnflaeche', 'nebenflaeche', 'teilungserklaerung', 'weg', 'kaltmiete'],
+  },
+  {
+    id: 'nutzungsart',
+    begriff: 'Nutzungsart: Wohnen oder Gewerbe',
+    kategorie: 'miete',
+    synonyme: ['Gewerbe', 'gewerbliche Nutzung', 'Wohnnutzung', 'Mischnutzung', 'teilgewerblich', 'Gewerbemiete'],
+    kurz: 'Ob eine Einheit zum Wohnen oder gewerblich genutzt wird. Das entscheidet über Mietrecht, Umsatzsteuer und die Verteilung der Nebenkosten.',
+    lang:
+      'Die Nutzungsart unterscheidet, ob eine Einheit dem Wohnen dient oder gewerblich genutzt wird (Laden, Büro, Praxis) — manche Häuser sind gemischt genutzt. Für Wohnraum gilt das strenge soziale Mietrecht mit [[mietspiegel]], [[kappungsgrenze]] und [[mietpreisbremse]]; die Gewerbemiete ist dagegen weitgehend frei verhandelbar und kennt diese Schutzvorschriften nicht.\n\n' +
+      'Die Unterscheidung gibt es, weil Wohnen als Grundbedürfnis besonders geschützt ist, ein Gewerbemieter aber als Unternehmer auf Augenhöhe verhandelt. Auch steuerlich trennen sich die Wege: Bei Gewerbe kann zur Umsatzsteuer optiert werden (Vorsteuerabzug), bei Wohnraum ist die Vermietung umsatzsteuerfrei.\n\n' +
+      'Für dich als Eigentümer: Halte die Nutzungsart je Einheit fest — sie bestimmt, welche Mietrechtsregeln greifen und wie du die [[nebenkosten]] verteilst (Gewerbe verursacht oft höhere Kosten und rechtfertigt einen eigenen [[verteilerschluessel|Umlageschlüssel]], z. B. einen Vorwegabzug). Prüfe außerdem, ob die [[teilungserklaerung]] oder der Bebauungsplan die gewerbliche Nutzung überhaupt zulässt.',
+    verwandt: ['kaltmiete', 'nebenkosten', 'verteilerschluessel', 'mietspiegel', 'teilungserklaerung'],
+  },
+  {
+    id: 'personen-im-haushalt',
+    begriff: 'Personen im Haushalt',
+    kategorie: 'nebenkosten',
+    synonyme: ['Personenzahl', 'Bewohnerzahl', 'Personenmonate', 'personenbezogene Umlage', 'Kopfzahl'],
+    kurz: 'Die Zahl der in einer Einheit wohnenden Personen. Nach ihr werden Kostenarten verteilt, die eher von der Bewohnerzahl als von der Fläche abhängen.',
+    lang:
+      'Die Personenzahl gibt an, wie viele Menschen tatsächlich in einer Einheit leben. Sie ist neben der [[wohnflaeche|Fläche]] ein wichtiger [[verteilerschluessel]]: Kostenarten, die stärker von der Kopfzahl als von der Wohnungsgröße abhängen — Müllabfuhr, Wasser/Abwasser (ohne eigene [[zaehler|Zähler]]), teils Aufzug oder Gebäudereinigung — verteilt man gerechter nach Personen als nach Quadratmetern.\n\n' +
+      'Diesen Maßstab gibt es, weil manche Kosten pro Bewohner entstehen und nicht pro Fläche: Ein Single im 100-m²-Loft produziert weniger Müll und verbraucht weniger Wasser als eine fünfköpfige Familie auf 70 m². Ein reiner Flächenschlüssel wäre hier unbillig.\n\n' +
+      'Für dich als Eigentümer: Ändert sich die Bewohnerzahl unterjährig (Einzug, Auszug, Geburt), rechnest du zeitanteilig über Personenmonate — die Summe der Personen mal Monate ist die Verteilbasis. Halte die Zahl je Einheit und Zeitraum aktuell, sonst stimmt die personenbezogene Umlage nicht. Welcher Schlüssel für welche Kostenart gilt, sollte im Mietvertrag stehen; ohne Vereinbarung ist die [[wohnflaeche|Fläche]] der gesetzliche Auffangschlüssel.',
+    verwandt: ['verteilerschluessel', 'wohnflaeche', 'zaehler', 'nebenkosten'],
+  },
   // ---------------------------------------------------------------- Wert & Rendite
   {
     id: 'verkehrswert',
