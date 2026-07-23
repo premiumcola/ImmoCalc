@@ -28,8 +28,9 @@ from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            datumsteil, ohne_betrag, ohne_datum,
                            ohne_ordnerwort, unterordner_finden, vergleichsname)
-from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, unterordner_fuer,
-                        verbindung)
+from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
+                        unterordner_fuer, verbindung)
+from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import Dokument, Erkennungsregel, Objekt, Zeitraum
@@ -42,6 +43,18 @@ log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/dokumente", tags=["dokumente"])
 
 DOKUMENTARTEN = list(ZIELORDNER.keys())
+
+
+def _ki_key(session: Session) -> str:
+    """Der in den Einstellungen hinterlegte Anthropic-Schlüssel (CCLXXI) —
+    leer, wenn keiner gespeichert ist. Dann greift der env-Fallback in
+    `kiauslese`."""
+    return _lies(session, S_KI_KEY)
+
+
+def _ki_modell(session: Session) -> str:
+    """Das hinterlegte KI-Modell — leer heißt: Vorgabe aus `kiauslese`."""
+    return _lies(session, S_KI_MODELL)
 
 # Status eines Eintrags, dessen Datei beim Abgleich nicht mehr auffindbar war
 # (CXXVII). Ein vierter Wert neben "neu" und "zugeordnet" — additiv, das
@@ -847,7 +860,8 @@ async def erkennen(datei: UploadFile = File(...),
         raise HTTPException(400, "Leere Datei")
     # Der Dateiname als zusätzlicher Kontext für die KI-Auslese (CCLXVIII):
     # „2025-10-oel-2729,91€.pdf" nennt Datum und Betrag schon mit.
-    return ocr.erkenne(rohdaten, _regeln(session), datei.filename or "")
+    return ocr.erkenne(rohdaten, _regeln(session), datei.filename or "",
+                       ki_key=_ki_key(session), ki_modell=_ki_modell(session))
 
 
 # --------------------------------------------------------------------------
@@ -1743,4 +1757,5 @@ def erkennen_aus_ablage(dokument_id: int,
     # frisch abfotografierten Beleg (CCLXVIII). CCLXIX: auch die Erkennungs-
     # muster (CCXLIX) anwenden, damit Nutzerregeln beim Cloud-Beleg genauso
     # greifen wie beim Foto-Upload.
-    return ocr.erkenne(rohdaten, _regeln(session), d.dateiname)
+    return ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
+                       ki_key=_ki_key(session), ki_modell=_ki_modell(session))

@@ -107,6 +107,11 @@
   .uovorschau{display:block;margin-top:8px;font:500 11.5px var(--mono);
               color:var(--teal-d);word-break:break-all;line-height:1.5}
   .uovorschau.flach{color:var(--soft)}
+
+  /* KI-Auslese: rote Statuskachel für „eingerichtet, aber nicht erreichbar".
+     .aktiv (grün) und .warte (gelb) kommen aus immo.css; für Rot fehlt dort
+     eine Variante — sie steht deshalb hier. */
+  .row .ic.fehler{background:var(--neg-bg);color:var(--neg)}
 </style>
 </head>
 <body>
@@ -168,6 +173,15 @@
       <span class="txt">
         <span class="t">Benennung nachziehen</span>
         <span class="d" id="umzugStatus">wird geprüft …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+
+    <button class="row" id="kiRow">
+      <span class="ic" id="kiIkon">✦</span>
+      <span class="txt">
+        <span class="t">KI-Beleg-Auslese</span>
+        <span class="d" id="kiStatus">wird geprüft …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -281,6 +295,42 @@
       </div>
       <button class="btn" type="submit" id="ncSpeichern">Verbinden und prüfen</button>
     </form>
+  </div>
+</dialog>
+
+<dialog id="kiDlg">
+  <div class="dh">
+    <h2>KI-Beleg-Auslese</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      Mit einem Anthropic-Schlüssel liest ein günstiges Sprachmodell das
+      Belegdatum und den Betrag aus — dort, wo die Mustererkennung sich
+      verliest (Zahlungsziel statt Rechnungsdatum). Den Schlüssel erzeugst du
+      unter <b>console.anthropic.com</b>.
+    </p>
+    <p class="hinweis">
+      <b>Datenschutz:</b> Der gelesene Belegtext — mit Namen, IBANs und
+      Beträgen — wird dafür an Anthropic gesendet. Ohne hinterlegten Schlüssel
+      bleibt die Auslese aus und nichts verlässt das Haus.
+    </p>
+    <div class="meldung" id="kiMeldung"></div>
+    <form id="kiForm">
+      <div class="field">
+        <label for="kiKey">API-Schlüssel</label>
+        <input class="inp" id="kiKey" type="password" autocomplete="off"
+               placeholder="sk-ant-…">
+      </div>
+      <div class="field">
+        <label for="kiModell">Modell (optional)</label>
+        <input class="inp" id="kiModell"
+               placeholder="Vorgabe: günstigstes Modell">
+      </div>
+      <button class="btn" type="submit" id="kiSpeichern">Speichern und prüfen</button>
+    </form>
+    <button class="btn leise" id="kiEntfernen"
+            style="margin-top:8px;display:none">Schlüssel entfernen</button>
   </div>
 </dialog>
 
@@ -648,6 +698,106 @@ document.getElementById('homeWaehlen').addEventListener('click', async () => {
     ordnerDlg.close();
   } catch (fehler) {
     melde(ordnerMeldung, String(fehler.message || fehler));
+  }
+});
+
+/* ---- KI-Beleg-Auslese (GET/POST/DELETE /api/ki/…) ----------------------
+   Anthropic-Schlüssel eintragen (wie die Nextcloud-Zugangsdaten) und sehen,
+   dass das KI-Tool online und erreichbar ist. Der Schlüssel wird NIE im
+   Klartext angezeigt — nur „gespeichert" oder leer. */
+const kiDlg = document.getElementById('kiDlg');
+const kiStatus = document.getElementById('kiStatus');
+const kiIkon = document.getElementById('kiIkon');
+const kiMeldung = document.getElementById('kiMeldung');
+const kiKey = document.getElementById('kiKey');
+const kiModell = document.getElementById('kiModell');
+const kiEntfernen = document.getElementById('kiEntfernen');
+let kiZustand = { eingerichtet: false };
+
+/* Aus dem Status eine Zeile und eine Kachelfarbe machen:
+   grün = online, rot = eingerichtet aber nicht erreichbar,
+   grau = nicht eingerichtet. */
+function kiZeigen(z) {
+  kiZustand = z || { eingerichtet: false };
+  const modell = z && z.modell ? ` · ${z.modell}` : '';
+  let text, ikon;
+  if (!z || !z.eingerichtet) {
+    text = 'nicht eingerichtet';
+    ikon = '';
+  } else if (z.erreichbar === true) {
+    const quelle = z.gespeichert ? '' : (z.aus_umgebung ? ' · aus Umgebung' : '');
+    text = `online · erreichbar${quelle}${modell}`;
+    ikon = ' aktiv';
+  } else if (z.erreichbar === false) {
+    text = 'eingerichtet, aber nicht erreichbar'
+      + (z.fehler ? ` — ${z.fehler}` : '');
+    ikon = ' fehler';
+  } else {
+    text = `eingerichtet${modell}`;
+    ikon = ' warte';
+  }
+  kiStatus.textContent = text;
+  kiIkon.className = 'ic' + ikon;
+  // Ein gespeicherter Schlüssel lässt sich entfernen; ein env-Schlüssel nicht.
+  kiEntfernen.style.display = z && z.gespeichert ? 'block' : 'none';
+}
+
+async function kiZustandLaden() {
+  try {
+    kiZeigen(await api('/ki/status'));
+  } catch {
+    kiStatus.textContent = 'Status nicht abrufbar';
+    kiIkon.className = 'ic';
+  }
+}
+
+document.getElementById('kiRow').addEventListener('click', () => {
+  meldungWeg(kiMeldung);
+  // Den Schlüssel nie vorbelegen — nur das Modell, das kein Geheimnis ist.
+  kiKey.value = '';
+  kiModell.value = kiZustand.gespeichert && kiZustand.modell ? kiZustand.modell : '';
+  kiDlg.showModal();
+});
+
+document.getElementById('kiForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const knopf = document.getElementById('kiSpeichern');
+  const key = kiKey.value.trim();
+  if (!key) return melde(kiMeldung, 'Bitte einen Schlüssel eingeben.');
+  knopf.disabled = true;
+  knopf.textContent = 'Speichere und prüfe …';
+  meldungWeg(kiMeldung);
+  try {
+    const a = await api('/ki/schluessel', {
+      method: 'POST', body: { key, modell: kiModell.value.trim() },
+    });
+    melde(kiMeldung, a.erreichbar
+      ? 'Gespeichert. Das KI-Tool ist online und erreichbar.'
+      : `Gespeichert, aber nicht erreichbar${a.fehler ? ` — ${a.fehler}` : ''}.`,
+      !!a.erreichbar);
+    kiKey.value = '';
+    await kiZustandLaden();
+  } catch (fehler) {
+    melde(kiMeldung, String(fehler.message || fehler).replace(/^\d+\s*/, '')
+      || 'Speichern fehlgeschlagen');
+  } finally {
+    knopf.disabled = false;
+    knopf.textContent = 'Speichern und prüfen';
+  }
+});
+
+kiEntfernen.addEventListener('click', async () => {
+  const ja = await frage('Schlüssel entfernen?',
+    'Die KI-Auslese wird danach nicht mehr genutzt; Belege werden wieder rein '
+    + 'über die Mustererkennung gelesen.', { knopf: 'Entfernen' });
+  if (!ja) return;
+  meldungWeg(kiMeldung);
+  try {
+    await api('/ki/schluessel', { method: 'DELETE' });
+    melde(kiMeldung, 'Schlüssel entfernt.', true);
+    await kiZustandLaden();
+  } catch (fehler) {
+    melde(kiMeldung, String(fehler.message || fehler));
   }
 });
 
@@ -1276,6 +1426,7 @@ document.querySelectorAll('[data-schliessen]').forEach(knopf =>
   knopf.addEventListener('click', () => knopf.closest('dialog').close()));
 
 await zustandLaden();
+await kiZustandLaden();
 await mailZustand();
 await vorlageLaden();
 await unterordnerLaden();

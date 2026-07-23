@@ -521,20 +521,22 @@ def regel_richtung(text: str, regeln) -> tuple[str, str, bool] | None:
     return None
 
 
-def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "") -> None:
+def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
+                  ki_key: str = "", ki_modell: str = "") -> None:
     """Ergänzt den Heuristik-Vorschlag um die KI-Auslese (CCLXVIII).
 
-    Ist die KI verfügbar (nur mit vom Nutzer gesetztem `ANTHROPIC_API_KEY`) und
-    liefert sie ein Ergebnis, haben ihr `datum` und `betrag` Vorrang — genau
-    dort verliest sich die Heuristik (Zahlungsziel statt Kopfdatum). Kategorie
-    und Sache füllt sie nur, wo die Heuristik nichts fand; die Richtung bleibt
-    den Erkennungsregeln (CCXLIX) überlassen, die danach greifen.
+    Ist die KI verfügbar (mit einem in den Einstellungen hinterlegten Schlüssel
+    ODER gesetztem `ANTHROPIC_API_KEY`) und liefert sie ein Ergebnis, haben ihr
+    `datum` und `betrag` Vorrang — genau dort verliest sich die Heuristik
+    (Zahlungsziel statt Kopfdatum). Kategorie und Sache füllt sie nur, wo die
+    Heuristik nichts fand; die Richtung bleibt den Erkennungsregeln (CCXLIX)
+    überlassen, die danach greifen.
 
     Ohne Key oder bei jedem Fehler passiert nichts — der Heuristik-Vorschlag
     bleibt unverändert."""
-    if kiauslese is None or not kiauslese.verfuegbar():
+    if kiauslese is None or not kiauslese.verfuegbar(ki_key):
         return
-    ki = kiauslese.lies_beleg(text, dateiname)
+    ki = kiauslese.lies_beleg(text, dateiname, schluessel=ki_key, modell=ki_modell)
     if not ki:
         return
     if ki.get("datum"):
@@ -558,7 +560,8 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "") -> None:
     ergebnis["ki"] = True
 
 
-def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "") -> dict:
+def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "",
+            ki_key: str = "", ki_modell: str = "") -> dict:
     """Vorschlag aus einem Beleg: Betrag, Datum, Jahr, Art und Sache.
 
     Gleich, ob PDF oder Foto — der Text kommt aus `text_aus_beleg`, die
@@ -566,7 +569,8 @@ def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "") -> dict:
 
     Reihenfolge der Quellen, von grob nach fein:
       1. Die Heuristik (Wortlisten, Datums-/Betragsmuster) — immer.
-      2. Die KI-Auslese (CCLXVIII) — nur mit gesetztem `ANTHROPIC_API_KEY`;
+      2. Die KI-Auslese (CCLXVIII) — mit einem in den Einstellungen
+         hinterlegten Schlüssel (`ki_key`) oder gesetztem `ANTHROPIC_API_KEY`;
          ihr Datum und Betrag haben Vorrang vor der Heuristik.
       3. Die Erkennungsregeln des Nutzers — sie geben die Richtung vor: trifft
          ein Muster, gilt dessen Kategorie. Ein Nicht-Kostenbeleg (Ablesung,
@@ -591,7 +595,7 @@ def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "") -> dict:
     }
     # Die KI ergänzt v. a. das Belegdatum, wo die Heuristik ein Zahlungsziel
     # oder eine Zeitraumgrenze erwischt (nur mit Key, sonst stumm).
-    _ki_ergaenzen(ergebnis, text, dateiname)
+    _ki_ergaenzen(ergebnis, text, dateiname, ki_key=ki_key, ki_modell=ki_modell)
     treffer = regel_richtung(text, regeln or [])
     if treffer:
         kat, art, ist_kosten = treffer

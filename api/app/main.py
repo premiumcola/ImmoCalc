@@ -12,7 +12,7 @@ from . import wachdienst
 from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere
-from .routers import (auswertung, besitz, cloud, dokumente, mail, objekte,
+from .routers import (auswertung, besitz, cloud, dokumente, ki, mail, objekte,
                       stammdaten, versand)
 from .seed import seed
 
@@ -65,6 +65,8 @@ app.include_router(cloud.router)
 app.include_router(dokumente.router)
 app.include_router(mail.router)
 app.include_router(versand.router)
+# Eigener Prefix /api/ki — Reihenfolge unkritisch.
+app.include_router(ki.router)
 
 
 def _build_zeilen() -> list[str]:

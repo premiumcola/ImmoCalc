@@ -68,17 +68,24 @@ SYSTEM_PROMPT = (
 )
 
 
-def verfuegbar() -> bool:
+def verfuegbar(schluessel: str = "") -> bool:
     """Ist die KI-Auslese eingerichtet?
 
-    Nur mit einem vom Nutzer gesetzten `ANTHROPIC_API_KEY` — ohne ihn bleibt
-    das Feature stumm, damit kein Beleginhalt ungewollt das Haus verlässt."""
-    return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+    Mit einem ausdrücklich übergebenen Schlüssel (aus den Einstellungen) ODER
+    einem gesetzten `ANTHROPIC_API_KEY`. Ohne beides bleibt das Feature stumm,
+    damit kein Beleginhalt ungewollt das Haus verlässt."""
+    return bool((schluessel or os.environ.get("ANTHROPIC_API_KEY") or "").strip())
 
 
-def _modell() -> str:
-    """Das zu nutzende Modell — der Nutzer darf es per Env überschreiben."""
-    return (os.environ.get("ANTHROPIC_MODEL") or "").strip() or STANDARD_MODELL
+def _schluessel(schluessel: str = "") -> str:
+    """Der zu nutzende Schlüssel — der übergebene hat Vorrang vor der Env."""
+    return (schluessel or os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+
+
+def _modell(modell: str = "") -> str:
+    """Das zu nutzende Modell — ein übergebenes hat Vorrang, dann die Env, dann
+    der Vorgabewert (das kleinste, günstigste Modell)."""
+    return (modell or os.environ.get("ANTHROPIC_MODEL") or "").strip() or STANDARD_MODELL
 
 
 def _json_block(text: str) -> dict | None:
@@ -139,7 +146,8 @@ def _text(wert) -> str:
     return wert.strip().replace("\n", " ")[:60]
 
 
-def lies_beleg(text: str, dateiname: str = "") -> dict | None:
+def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
+               modell: str = "") -> dict | None:
     """Liest einen Beleg mit dem günstigen Claude-Modell.
 
     Gibt bei Erfolg ein dict mit den Schlüsseln `datum` (ISO-String oder None),
@@ -147,11 +155,14 @@ def lies_beleg(text: str, dateiname: str = "") -> dict | None:
     zurück. Bei jedem Fehler — fehlender Key, kein httpx, Netzwerk, Timeout,
     ungültige Antwort — `None`, nie eine Exception.
 
+    `schluessel`/`modell` (aus den Einstellungen) haben Vorrang vor der Env;
+    ohne beides bleibt die Auslese stumm.
+
     `dateiname` ist optional und dient nur als zusätzlicher Kontext (ein Name
     wie „2025-10-oel-2729,91€.pdf" nennt Datum und Betrag mit)."""
     if httpx is None:
         return None
-    schluessel = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    schluessel = _schluessel(schluessel)
     if not schluessel:
         return None
     inhalt = (text or "").strip()
@@ -161,7 +172,7 @@ def lies_beleg(text: str, dateiname: str = "") -> dict | None:
     gekuerzt = inhalt[:MAX_ZEICHEN]
     nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
     rumpf = {
-        "model": _modell(),
+        "model": _modell(modell),
         "max_tokens": MAX_TOKENS,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": nutzer}],
@@ -208,3 +219,46 @@ def lies_beleg(text: str, dateiname: str = "") -> dict | None:
     log.info("KI-Auslese gelesen (Datum %s)",
              "vorhanden" if ergebnis["datum"] else "keins")
     return ergebnis
+
+
+# Ein winziger, günstiger Ping: ein Zeichen Prompt, eine Antwort-Token, kurzer
+# Timeout. Genug, um zu wissen, ob Schlüssel und Netz stehen — ohne echte Kosten.
+PRUEF_TOKENS = 1
+PRUEF_ZEITLIMIT = 10.0
+
+
+def pruefe(schluessel: str = "", modell: str = "") -> dict:
+    """Prüft, ob die KI erreichbar ist — ein minimaler echter Call.
+
+    Gibt `{"erreichbar": bool, "fehler": str}` zurück. Jeder Fehler — kein Key,
+    kein httpx, Netzwerk, Timeout, HTTP-Status — wird zu `erreichbar: false`
+    mit knappem Grund; nie fliegt eine Exception nach außen. `schluessel`/
+    `modell` (aus den Einstellungen) haben Vorrang vor der Env.
+
+    Der Beleginhalt spielt hier keine Rolle: gesendet wird nur „ping", damit
+    keine echten Daten für den bloßen Erreichbarkeitstest das Haus verlassen."""
+    if httpx is None:
+        return {"erreichbar": False, "fehler": "httpx fehlt"}
+    schluessel = _schluessel(schluessel)
+    if not schluessel:
+        return {"erreichbar": False, "fehler": "kein Key"}
+    rumpf = {
+        "model": _modell(modell),
+        "max_tokens": PRUEF_TOKENS,
+        "messages": [{"role": "user", "content": "ping"}],
+    }
+    kopf = {
+        "x-api-key": schluessel,
+        "anthropic-version": API_VERSION,
+        "content-type": "application/json",
+    }
+    try:
+        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
+                             timeout=PRUEF_ZEITLIMIT)
+    except Exception as fehler:                            # noqa: BLE001
+        return {"erreichbar": False, "fehler": type(fehler).__name__}
+    if antwort.status_code == 200:
+        return {"erreichbar": True, "fehler": ""}
+    if antwort.status_code == 401:
+        return {"erreichbar": False, "fehler": "Schlüssel abgelehnt (401)"}
+    return {"erreichbar": False, "fehler": f"HTTP {antwort.status_code}"}
