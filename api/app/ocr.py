@@ -565,6 +565,24 @@ except ImportError:                                      # pragma: no cover
     log.info("PyMuPDF ist nicht installiert — Scans bekommen keine "
              "nachträgliche Textschicht")
 
+
+def erste_seite_png(rohdaten: bytes, breite: int = 1240) -> bytes | None:
+    """Rendert die erste Seite eines PDFs als PNG (auf `breite` px skaliert) —
+    für eine Vorschau, die die GANZE Seite zeigt statt eines Ausschnitts.
+    Ohne PyMuPDF oder bei einem Fehler: None (der Aufrufer weicht aus."""
+    if fitz is None:
+        return None
+    try:
+        with fitz.open(stream=rohdaten, filetype="pdf") as d:
+            if d.page_count == 0:
+                return None
+            seite = d[0]
+            zoom = max(0.5, min(3.0, breite / max(seite.rect.width, 1)))
+            pix = seite.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+            return pix.tobytes("png")
+    except Exception:                                    # noqa: BLE001
+        return None
+
 try:                                                     # pragma: no cover
     import numpy as _np
 except ImportError:                                      # pragma: no cover

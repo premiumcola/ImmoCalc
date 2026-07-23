@@ -1529,6 +1529,37 @@ def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Respons
     })
 
 
+@router.get("/{dokument_id}/vorschau")
+def vorschau(dokument_id: int, session: Session = Depends(get_session)) -> Response:
+    """Eine Vorschau, die die GANZE erste Seite zeigt statt eines Ausschnitts:
+    PDF → die erste Seite als Bild gerendert, ein Bild → direkt. So passt sich
+    die Vorschau in der Seite an die Breite an, ohne dass ein Viewer beschneidet.
+    Was sich nicht rendern lässt (z. B. Tabellen), meldet 415 — die Oberfläche
+    bietet dann das Öffnen im neuen Tab an."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
+    client = verbindung(session)
+    try:
+        rohdaten, typ = client.hole(d.pfad)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    name = d.dateiname.lower()
+    if name.endswith(".pdf") or typ == "application/pdf":
+        png = ocr.erste_seite_png(rohdaten)
+        if png is None:
+            raise HTTPException(415, "Vorschau nicht möglich")
+        return Response(content=png, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=300"})
+    if typ.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")):
+        return Response(content=rohdaten, media_type=typ if typ.startswith("image/")
+                        else "image/jpeg",
+                        headers={"Cache-Control": "private, max-age=300"})
+    raise HTTPException(415, "Für diese Datei gibt es keine Bildvorschau")
+
+
 @router.get("/{dokument_id}/erkennen")
 def erkennen_aus_ablage(dokument_id: int,
                         session: Session = Depends(get_session)) -> dict:

@@ -237,42 +237,42 @@ function baueDialog(inhalt) {
  * drei Wegen zurueck: Kreuz, Escape und Tippen neben das Blatt.
  */
 export function belegAnsehen(url, titel = 'Beleg') {
+  // Vorschau der GANZEN ersten Seite als Bild (serverseitig gerendert), damit
+  // sie breitenfüllend in der Seite steht statt beschnitten. Das ↗ öffnet das
+  // vollständige Dokument im neuen Tab. Eine Ansicht, kein Zoom-Ärger.
+  const vorschauUrl = url.replace('/inhalt', '/vorschau');
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${sicher(titel)}</span>
        <a class="bx auf" href="${sicher(url)}" target="_blank" rel="noopener"
-          title="In neuem Tab öffnen">↗</a>
+          title="Ganzes Dokument im neuen Tab">↗</a>
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
-     <div class="beleg-blatt lade">Beleg wird geholt …</div>`);
+     <div class="beleg-flaeche"><div class="beleg-blatt lade">Beleg wird geholt …</div></div>`);
   dlg.classList.add('beleg-dlg');
   dlg.querySelector('[data-zu]').addEventListener('click', () => dlg.close());
-  // Tippen neben das Blatt schliesst ebenfalls — der Dialog selbst fuellt die
-  // Flaeche, das Blatt liegt darin.
+  // Tippen neben die Fläche schliesst ebenfalls.
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
-  // Erst holen, dann zeigen: laedt man die Adresse direkt in den Rahmen, steht
-  // im Fehlerfall die rohe Antwort der Schnittstelle auf dem Blatt.
+  const flaeche = dlg.querySelector('.beleg-flaeche');
   let adresse = null;
-  fetch(url)
-    .then(async antwort => {
-      if (!antwort.ok) {
-        const grund = await antwort.json().then(k => k.detail).catch(() => null);
-        throw new Error(grund || 'Der Beleg lässt sich gerade nicht öffnen.');
-      }
+  fetch(vorschauUrl)
+    .then(antwort => {
+      if (!antwort.ok) throw new Error('keine-vorschau');
       return antwort.blob();
     })
     .then(blob => {
       adresse = URL.createObjectURL(blob);
-      const rahmen = document.createElement('iframe');
-      rahmen.className = 'beleg-blatt';
-      rahmen.title = titel;
-      rahmen.src = adresse;
-      dlg.querySelector('.beleg-blatt').replaceWith(rahmen);
+      const bild = document.createElement('img');
+      bild.className = 'beleg-bild';
+      bild.alt = titel;
+      bild.src = adresse;
+      flaeche.innerHTML = '';
+      flaeche.appendChild(bild);
     })
-    .catch(fehler => {
-      const feld = dlg.querySelector('.beleg-blatt');
-      if (feld) { feld.classList.add('leer'); feld.textContent = fehler.message; }
+    .catch(() => {
+      flaeche.innerHTML = '<div class="beleg-blatt leer">Für diese Datei gibt '
+        + 'es keine Bildvorschau — mit ↗ im neuen Tab öffnen.</div>';
     });
 
   dlg.addEventListener('close', () => { if (adresse) URL.revokeObjectURL(adresse); });
