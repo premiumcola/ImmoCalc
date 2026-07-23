@@ -568,6 +568,8 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
     if ki.get("kostenart"):
         ergebnis["sache"] = ki["kostenart"]
     ergebnis["ist_kosten"] = bool(ki.get("ist_kosten", ergebnis["ist_kosten"]))
+    if ki.get("einordnung"):
+        ergebnis["einordnung"] = ki["einordnung"]        # KI-Klartext (CCLXXIII)
     ergebnis["ki"] = True
 
 

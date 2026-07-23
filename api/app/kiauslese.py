@@ -56,7 +56,7 @@ SYSTEM_PROMPT = (
     "Du liest einen deutschen Beleg (Rechnung/Bescheid). Gib NUR JSON zurück, "
     "kein weiterer Text:\n"
     '{"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,"kostenart":"…",'
-    '"kategorie":"…","ist_kosten":true|false}\n'
+    '"kategorie":"…","ist_kosten":true|false,"einordnung":"…"}\n'
     "datum = Ausstellungs-/Rechnungsdatum aus dem Briefkopf, NICHT das "
     "Zahlungsziel, NICHT eine Zeitraumgrenze, NICHT handschriftliche Notizen. "
     "betrag = Gesamt-/Rechnungsbetrag in Euro als Zahl (Punkt als Dezimal-"
@@ -74,7 +74,9 @@ SYSTEM_PROMPT = (
     "\"Korrespondenz\" (Schreiben, Briefe, Mandate ohne Kostenbezug), "
     "\"Sonstiges\" (wenn nichts davon passt). Wähle den treffendsten Ordner. "
     "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand, "
-    "Ableseprotokoll), sonst true."
+    "Ableseprotokoll), sonst true. "
+    "einordnung = ein bis zwei kurze deutsche Sätze für den schnellen Blick: "
+    "was für ein Beleg das ist, von wem, worum es geht, mit Datum und Betrag."
 )
 
 
@@ -223,6 +225,8 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         "kostenart": _text(block.get("kostenart")),
         "kategorie": _text(block.get("kategorie")),
         "ist_kosten": bool(block.get("ist_kosten", True)),
+        # Kurze Klartext-Einordnung für die Anzeige unter dem Dokument (CCLXXIII).
+        "einordnung": _text(block.get("einordnung")),
     }
     # Dezent loggen — OHNE Datum, Betrag oder Namen (Datenschutz). Nur, dass
     # eine Antwort kam und ob ein Datum darin stand.
