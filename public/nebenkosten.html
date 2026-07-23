@@ -181,6 +181,12 @@ try {
   sub.textContent = 'API nicht erreichbar';
 }
 
+// Leere Abrechnungszeiträume (ohne Position, Beleg und Vorauszahlung) beim
+// Öffnen der Übersicht automatisch wegräumen — nach einer Bestandsrücknahme
+// bleiben sonst viele leere Zeiträume stehen, die niemand von Hand löschen
+// will. Bewusst vor dem ersten Zeichnen, damit sie gar nicht erst auftauchen.
+await api('/zeitraeume/aufraeumen', { method: 'POST' }).catch(() => {});
+
 /* Kostenarten-Filter — er wirkt auf die beiden Diagramme, NICHT auf die
    Kennzahlen im Kopf.
 

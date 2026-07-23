@@ -42,6 +42,21 @@
 
   .pruef{background:var(--sheet);border-radius:14px;margin-bottom:10px;overflow:hidden;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  /* Gefüllte Zeile sanft grün herausheben: man sieht auf einen Blick, wo schon
+     ein Betrag steht — und in welcher Höhe. Kein greller Block, sondern ein
+     weicher Verlauf von links plus ein schmaler Akzent an der Kante. */
+  .pruef.gefuellt{background:linear-gradient(100deg,var(--pos-bg) 0%,var(--sheet) 58%);
+         box-shadow:inset 3px 0 0 var(--pos),0 1px 3px rgba(22,38,44,.07)}
+  .pruef.gefuellt .wert{color:var(--pos)}
+  /* Fußzeile: was am Zeitraum hängt, und der ruhige Hinweis auf das
+     automatische Entfernen — kein Löschknopf. */
+  .zr-fuss{margin-top:18px;padding:14px 16px;border-radius:14px;
+           background:var(--sheet);box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .zr-fuss .zeilen{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  .zr-fuss .chip{font:600 11.5px var(--mono);padding:5px 10px;border-radius:999px;
+                 background:#EDF1F0;color:var(--soft)}
+  .zr-fuss .chip.hat{background:var(--pos-bg);color:var(--pos)}
+  .zr-fuss .hinweis{font:400 12px var(--body);color:var(--soft);line-height:1.5}
   .pruef .zeile{display:flex;gap:12px;align-items:center;padding:13px 15px;
                 width:100%;border:none;background:none;text-align:left;cursor:pointer;
                 font-family:var(--body);color:inherit;min-height:44px}
@@ -487,12 +502,31 @@ function zeileHtml(k, i) {
     !k.erledigt && k.beleg_monat ? `Beleg im ${MONATE[k.beleg_monat - 1]}` : null,
   ].filter(Boolean).join(' · ');
 
-  const verteilung = verteilungHtml(k);
+  return zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen);
+}
 
-  // Der Scan-Knopf steht in der Zeile selbst, nicht erst im aufgeklappten
-  // Bereich: einen Beleg nachzureichen ist die haeufigste Handlung hier und
-  // soll keinen Umweg ueber einen zweiten Klick brauchen.
-  return `<div class="pruef">
+// Fußzeile des Zeitraums: was hängt dran — und der ruhige Hinweis, dass ein
+// leerer Zeitraum von selbst verschwindet (statt eines Löschknopfs).
+function zeitraumFussHtml() {
+  const v = daten.verknuepft || {};
+  const chips = [
+    ['Positionen', v.positionen || 0],
+    ['Belege', v.belege || 0],
+    ['Vorauszahlungen', v.vorauszahlungen || 0],
+  ];
+  const leer = chips.every(([, n]) => n === 0);
+  return `<div class="zr-fuss">
+    <div class="zeilen">${chips.map(([l, n]) =>
+      `<span class="chip${n > 0 ? ' hat' : ''}">${n}&nbsp;${l}</span>`).join('')}</div>
+    <div class="hinweis">${leer
+      ? 'An diesem Zeitraum hängt nichts mehr — beim nächsten Aufräumen verschwindet er automatisch.'
+      : 'Nimmst du die letzte Position und den letzten Beleg heraus, wird der dann leere Zeitraum von selbst entfernt. Einen Löschknopf gibt es bewusst nicht.'}</div>
+  </div>`;
+}
+
+function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
+  const verteilung = verteilungHtml(k);
+  return `<div class="pruef${k.erledigt ? ' gefuellt' : ''}">
       <div class="kopf">
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
@@ -809,7 +843,7 @@ async function zeichnen() {
 
     rumpf = wegDirektHtml() + flussKarte + sortWahl +
       sortiert.map(({ k, i }) => zeileHtml(k, i)).join('')
-      + sonderpostenHtml() + abschlussHtml();
+      + sonderpostenHtml() + abschlussHtml() + zeitraumFussHtml();
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
