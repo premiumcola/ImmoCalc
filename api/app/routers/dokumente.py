@@ -1740,5 +1740,7 @@ def erkennen_aus_ablage(dokument_id: int,
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
     # Dateiname als Kontext mitgeben — dieselbe KI-gestützte Auslese wie beim
-    # frisch abfotografierten Beleg (CCLXVIII). Regeln bleiben wie bisher aus.
-    return ocr.erkenne(rohdaten, dateiname=d.dateiname)
+    # frisch abfotografierten Beleg (CCLXVIII). CCLXIX: auch die Erkennungs-
+    # muster (CCXLIX) anwenden, damit Nutzerregeln beim Cloud-Beleg genauso
+    # greifen wie beim Foto-Upload.
+    return ocr.erkenne(rohdaten, _regeln(session), d.dateiname)
