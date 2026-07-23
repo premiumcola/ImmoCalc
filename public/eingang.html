@@ -2198,8 +2198,11 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
   const kostenart = p.get('kostenart') || '';
   const ziel = p.get('zuordnenZeitraum') || '';
   if (!objekt && !kostenart && !ziel) return;
+  // Nur auf das Objekt + Warten vorfiltern, NICHT auf die Kostenart: die
+  // NK-Checkliste nutzt einen anderen Katalog (Heizkosten/Warmwasser) als die
+  // normalisierten Dokument-Kostenarten (Heizung/Heizöl) — ein Kostenart-Filter
+  // träfe hier oft nichts. Die Ziel-Kostenart nennt stattdessen der Banner.
   if (objekt) filter.objekt = objekt;
-  if (kostenart) filter.kostenart = kostenart;
   if (ziel) filter.status = 'neu';
   let zurueck = p.get('zurueck') || '';
   if (!/^\/?zeitraum\.html\?/.test(zurueck)) zurueck = 'nebenkosten.html';
