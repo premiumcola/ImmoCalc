@@ -335,6 +335,10 @@ dialog.immo-dlg .btn + .btn{margin-top:8px}
 .immo-dlg-zu:active{transform:scale(.9)}
 /* Titel weicht dem Kreuz aus, damit nichts darunter läuft. */
 dialog.immo-dlg .dt{padding-right:34px}
+/* „Mehr"-Menü: Titelzeile so hoch wie das Schließen-× (40px), damit das × in
+   der Kopfzeile sitzt und nicht auf die erste Kachel rutscht. */
+dialog.immo-dlg.mehr-dlg .dt{min-height:40px; display:flex; align-items:center;
+  margin-bottom:4px; padding-right:48px}
 
 /* ---- Beleg ansehen (immo.js: belegAnsehen) ----
    Grosszuegiger als eine Rueckfrage: das Blatt braucht Flaeche. Auf dem Telefon

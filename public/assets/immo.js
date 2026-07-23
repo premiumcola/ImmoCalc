@@ -175,6 +175,8 @@ function navAufraeumen() {
 }
 
 function mehrOeffnen(eintraege) {
+  // Nur das × oben schließt (von baueDialog nachgerüstet) — kein zweiter
+  // „Schließen"-Knopf unten. Tippen neben das Menü schließt ebenfalls.
   const dlg = baueDialog(`
     <div class="dt">Mehr</div>
     <div class="mehrliste">${eintraege.map(a => `
@@ -182,9 +184,9 @@ function mehrOeffnen(eintraege) {
          ${a.getAttribute('aria-current') ? 'aria-current="page"' : ''}>
         <span class="ni">${a.querySelector('.ni')?.textContent ?? ''}</span>
         ${a.lastChild?.textContent?.trim() ?? ''}
-      </a>`).join('')}</div>
-    <button class="btn leise" data-nein>Schließen</button>`);
-  dlg.querySelector('[data-nein]').addEventListener('click', () => dlg.close());
+      </a>`).join('')}</div>`);
+  dlg.classList.add('mehr-dlg');
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 }
 
 // Auch bei Drehung und beim Wechsel auf ein breiteres Fenster nachziehen
@@ -222,8 +224,11 @@ export function melde(text, art = '') {
 // dann wird keins nachgerüstet. Deckt beide Welten ab: die per baueDialog
 // erzeugten (data-zu / .immo-dlg-zu) und die statisch im HTML stehenden
 // (.close/data-schliessen in settings & eigentuemer, .bzu/.bx in eingang).
+// `data-nein` gehört dazu: ein Dialog mit unterem Abbrechen/Schließen-Knopf
+// braucht kein zweites × oben — sonst „doppelt gemoppelt". Wer nur das ×
+// will, lässt den unteren Knopf weg (siehe „Mehr"-Menü).
 const SCHLIESS_MARKER =
-  '[data-schliessen],[data-zu],.immo-dlg-zu,.close,.bzu,.bx';
+  '[data-schliessen],[data-zu],[data-nein],.immo-dlg-zu,.close,.bzu,.bx';
 
 // Sichtbares Schließen-Kreuz oben rechts anbringen, falls der Dialog noch
 // keins hat. Bewusst gut sichtbar (heller Kreis mit Tiefe), nicht grau-
