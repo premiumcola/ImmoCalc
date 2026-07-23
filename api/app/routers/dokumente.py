@@ -1990,7 +1990,7 @@ def erkennen_aus_ablage(dokument_id: int,
 
 
 @router.post("/{dokument_id}/geradedrehen")
-def geradedrehen(dokument_id: int,
+def geradedrehen(dokument_id: int, grad: int = Query(0),
                  session: Session = Depends(get_session)) -> dict:
     """Dreht ein gedreht abgelegtes PDF dauerhaft in die aufrechte Lage.
 
@@ -2019,7 +2019,13 @@ def geradedrehen(dokument_id: int,
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
 
-    neu, gedreht = ocr.pdf_geradedrehen(rohdaten)
+    # Manueller Override: gibt der Aufrufer `?grad=90|180|270`, wird genau das
+    # gedreht (wenn die OSD-Automatik danebenlag). Ohne `grad` erkennt OSD selbst.
+    if grad and grad % 90 == 0 and grad % 360 != 0:
+        neu = ocr.pdf_drehen(rohdaten, grad % 360)
+        gedreht = [{"seite": "alle", "grad": grad % 360}] if neu else []
+    else:
+        neu, gedreht = ocr.pdf_geradedrehen(rohdaten)
     if neu is None or not gedreht:
         # Nichts lag schief — oder die Orientierungserkennung fehlt. Beides ist
         # kein Fehler: die Datei bleibt, wie sie ist.

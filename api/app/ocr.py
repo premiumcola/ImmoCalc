@@ -823,6 +823,25 @@ def pdf_geradedrehen(pdf_bytes: bytes) -> "tuple[bytes | None, list[dict]]":
         log.warning("PDF-Geradedrehen fehlgeschlagen: %s", fehler)
         return None, []
 
+
+def pdf_drehen(pdf_bytes: bytes, grad: int) -> "bytes | None":
+    """Dreht JEDE Seite um `grad` (90/180/270) — manuell, ohne OSD/Key.
+
+    Der Escape-Hatch, wenn die Orientierungserkennung danebenliegt: der Nutzer
+    (oder die zuverlässigere KI-Orientierung) gibt den Winkel vor. Geändert wird
+    nur die /Rotate-Angabe, die Pixel bleiben unangetastet. `None` bei fehlendem
+    PyMuPDF, Fehler oder Vielfachem von 360 (nichts zu tun)."""
+    if fitz is None or not pdf_bytes or grad % 360 == 0:
+        return None
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as d:
+            for i in range(d.page_count):
+                d[i].set_rotation((d[i].rotation + grad) % 360)
+            return d.tobytes(garbage=3, deflate=True)
+    except Exception as fehler:                          # noqa: BLE001
+        log.warning("PDF-Drehen fehlgeschlagen: %s", fehler)
+        return None
+
 try:                                                     # pragma: no cover
     import numpy as _np
 except ImportError:                                      # pragma: no cover
