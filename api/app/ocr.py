@@ -309,9 +309,11 @@ def datum_aus_text(text: str) -> date | None:
     Zählerstand), bleiben aussen vor.
     """
     benannt: list[date] = []
-    uebrig: list[date] = []
+    # Unbeschriftete Daten mit ihrer Position (Zeilenindex) und ob die Zeile
+    # ein Zeitraum ist — die Reihenfolge entscheidet, nicht die Größe.
+    uebrig: list[tuple[int, date, bool]] = []
 
-    for zeile in (text or "").splitlines():
+    for i, zeile in enumerate((text or "").splitlines()):
         klein = zeile.lower()
         treffer = _daten_der_zeile(zeile)
         if not treffer:
@@ -321,13 +323,22 @@ def datum_aus_text(text: str) -> date | None:
         if any(wort in klein for wort in _BELEGDATUM):
             benannt += treffer
         else:
-            uebrig += treffer
+            # Mehrere Daten oder ein Bindestrich in der Zeile = meist ein
+            # Zeitraum ("01.01.2024 – 31.12.2024"), nicht das Belegdatum.
+            bereich = len(treffer) > 1 or "–" in zeile or " - " in zeile
+            uebrig += [(i, d, bereich) for d in treffer]
 
     if benannt:
         return min(benannt)
-    # Ohne Beschriftung: das späteste Datum ist eher das Rechnungsdatum als
-    # der Anfang eines Zeitraums.
-    return max(uebrig) if uebrig else None
+    if not uebrig:
+        return None
+    # Ohne Beschriftung: das Belegdatum steht fast immer OBEN im Briefkopf
+    # (rechts neben der Anschrift). Also das oberste eigenständige Datum nehmen —
+    # nicht das letzte unten (Zahlungsziel, handschriftliche Notiz) und nicht
+    # eine Zeitraum-Grenze. Erst wenn es gar kein eigenständiges gibt, das oberste.
+    eigenstaendig = [(i, d) for i, d, b in uebrig if not b]
+    quelle = eigenstaendig or [(i, d) for i, d, _ in uebrig]
+    return min(quelle, key=lambda t: t[0])[1]
 
 
 def kategorie_aus_text(text: str) -> str:
