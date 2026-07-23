@@ -67,19 +67,33 @@ app.include_router(mail.router)
 app.include_router(versand.router)
 
 
-def _build() -> str:
-    """Git-Kurz-SHA aus dem Image; im Prüfstand nicht vorhanden."""
+def _build_zeilen() -> list[str]:
+    """Inhalt von build.txt: Zeile 1 = Kurz-SHA, Zeile 2 = Build-Zeit (ISO UTC).
+    Im Prüfstand nicht vorhanden."""
     try:
         with open("/srv/build.txt", encoding="utf-8") as f:
-            return f.read().strip() or "local"
+            return [z.strip() for z in f.read().splitlines() if z.strip()]
     except OSError:
-        return "local"
+        return []
+
+
+def _build() -> str:
+    """Git-Kurz-SHA aus dem Image."""
+    zeilen = _build_zeilen()
+    return zeilen[0] if zeilen else "local"
+
+
+def _build_zeit() -> str:
+    """Zeitpunkt des Image-Builds als ISO-UTC, sofern hinterlegt — damit man in
+    den Einstellungen ablesen kann, ob der Auto-Deploy den neuen Stand hat."""
+    zeilen = _build_zeilen()
+    return zeilen[1] if len(zeilen) > 1 else ""
 
 
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "service": "immocalc-api",
-            "version": app.version, "build": _build()}
+            "version": app.version, "build": _build(), "build_zeit": _build_zeit()}
 
 
 @app.get("/")

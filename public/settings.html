@@ -469,8 +469,16 @@ const sub = document.getElementById('sub');
 
 try {
   const gesundheit = await api('/health');
+  // Build-Zeit (ISO UTC) in Ortszeit — so sieht man auf einen Blick, ob der
+  // Auto-Deploy den neuen Stand gezogen hat („von vor drei Minuten").
+  const wann = gesundheit.build_zeit
+    ? new Date(gesundheit.build_zeit).toLocaleString('de-DE',
+        { day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit' })
+    : null;
   build.textContent =
-    `ImmoCalc ${gesundheit.version ?? '–'} · Build ${gesundheit.build ?? 'unbekannt'}`;
+    `ImmoCalc ${gesundheit.version ?? '–'} · Build ${gesundheit.build ?? 'unbekannt'}`
+    + (wann ? ` · ${wann} Uhr` : '');
   sub.textContent = 'API verbunden';
 } catch {
   build.textContent = 'API nicht erreichbar';

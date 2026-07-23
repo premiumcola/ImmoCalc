@@ -17,7 +17,7 @@ RUN apt-get update \
 COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY api/app ./app
-RUN printf '%s\n' "$GIT_SHA" > /srv/build.txt
+RUN printf '%s\n%s\n' "$GIT_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /srv/build.txt
 ENV DB_PATH=/data/immocalc.db
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
