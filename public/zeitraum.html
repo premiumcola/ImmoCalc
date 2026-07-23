@@ -48,6 +48,40 @@
   .pruef.gefuellt{background:linear-gradient(100deg,var(--pos-bg) 0%,var(--sheet) 58%);
          box-shadow:inset 3px 0 0 var(--pos),0 1px 3px rgba(22,38,44,.07)}
   .pruef.gefuellt .wert{color:var(--pos)}
+  /* CCLXXVIII — vorläufige (orange) Position aus einem Beleg: dieselbe Sprache
+     wie die grüne „gefüllt"-Zeile, nur in Amber. Der Nutzer sieht auf einen
+     Blick, dass hier noch eine Entscheidung aussteht — dezent, nicht grell.
+     Amber übersticht Grün: eine bestätigte Position wird grün, hier ist noch
+     nichts bestätigt. */
+  .pruef.entwurf{background:linear-gradient(100deg,var(--amber-bg) 0%,var(--sheet) 60%);
+         box-shadow:inset 3px 0 0 var(--amber),0 1px 3px rgba(22,38,44,.07)}
+  .pruef.entwurf .wert{color:var(--amber)}
+  .pruef.entwurf .ikon.fertig,.pruef.entwurf .ikon.warte{
+         background:var(--amber-bg);color:var(--amber)}
+  .pruef.entwurf .haken{background:var(--amber-bg);color:var(--amber)}
+  /* Das kleine „Entwurf aus Beleg"-Etikett unter dem Namen — eine eigene Zeile,
+     so breit wie sein Text, damit es nicht am Titel klebt. */
+  .entw-badge{display:block;width:fit-content;max-width:100%;margin-top:6px;
+    font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--amber);background:var(--amber-bg);border-radius:7px;padding:4px 8px}
+  /* Der Entscheidungsblock im aufgeklappten Bereich: ein ruhiger Amber-Kasten
+     mit zwei klaren Wegen — bestätigen (wird grün) oder zurück in den Prüfmodus. */
+  .entwurf-box{background:var(--amber-bg);border-radius:12px;padding:13px 14px;
+    margin-bottom:6px}
+  .entwurf-box .ek{display:flex;align-items:center;gap:7px;
+    font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--amber);margin-bottom:7px}
+  .entwurf-box p{font:400 12px var(--body);color:var(--ink);line-height:1.5;
+    margin:0 0 12px}
+  .entwurf-aktionen{display:flex;flex-wrap:wrap;gap:8px}
+  .entwurf-aktionen button{flex:1;min-width:140px;border:none;border-radius:11px;
+    padding:12px 14px;font:600 13px var(--disp);cursor:pointer;min-height:44px}
+  .entwurf-ja{background:var(--pos);color:#fff}
+  .entwurf-ja:hover{background:#276b44}
+  .entwurf-nein{background:var(--sheet);color:var(--amber);
+    box-shadow:inset 0 0 0 1.5px var(--amber-li)}
+  .entwurf-nein:hover{background:#fff;box-shadow:inset 0 0 0 1.5px var(--amber)}
+  .entwurf-aktionen button[disabled]{opacity:.65;cursor:default}
   /* Fußzeile: was am Zeitraum hängt, und der ruhige Hinweis auf das
      automatische Entfernen — kein Löschknopf. */
   .zr-fuss{margin-top:18px;padding:14px 16px;border-radius:14px;
@@ -607,14 +641,37 @@ function zeitraumFussHtml() {
   </div>`;
 }
 
+/* CCLXXVIII — der Entscheidungsblock einer vorläufigen (orange) Position: sie
+   entstand automatisch aus einem Beleg und wartet auf ein Ja. „Bestätigen"
+   macht sie zur regulären (grünen) Position; „Zurück zum Prüfen" verwirft die
+   Position wieder — der Beleg selbst bleibt und geht zurück in den Prüfmodus. */
+function entwurfAktionHtml(k) {
+  return `<div class="entwurf-box">
+      <div class="ek"><span>▣</span><span>Entwurf aus Beleg</span></div>
+      <p>Diese Position wurde automatisch aus einem Beleg angelegt. Prüfe Betrag
+        und Kostenart — dann bestätige sie, oder gib den Beleg zurück in den
+        Prüfmodus. Der Beleg selbst bleibt in beiden Fällen erhalten.</p>
+      <div class="entwurf-aktionen">
+        <button class="entwurf-ja" data-entwurf-ja="${k.position_id}"
+          >✓ Bestätigen</button>
+        <button class="entwurf-nein" data-entwurf-nein="${k.position_id}"
+          data-art="${esc(k.kostenart)}">↩ Zurück zum Prüfen</button>
+      </div>
+    </div>`;
+}
+
 function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   const verteilung = verteilungHtml(k);
-  return `<div class="pruef${k.erledigt ? ' gefuellt' : ''}">
+  // CCLXXVIII: eine vorläufige Position ist orange, nicht grün — auch wenn sie
+  // schon einen Betrag trägt. Erst das Bestätigen macht sie grün.
+  const zustandKlasse = k.vorlaeufig ? ' entwurf' : (k.erledigt ? ' gefuellt' : '');
+  return `<div class="pruef${zustandKlasse}">
       <div class="kopf">
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
-          <span class="name">${esc(k.kostenart)}
+          <span class="name">${esc(k.kostenart)}${
+            k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}
             ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
           ${k.erledigt ? `<span class="rechts"><span class="wert">${wert}</span></span>` : ''}
         </button>
@@ -626,6 +683,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
       </div>
       ${anhaengerStrip(k)}
       ${aufgeklappt ? `<div class="auf">
+        ${k.vorlaeufig && k.position_id ? entwurfAktionHtml(k) : ''}
         ${verteilung}
         <div class="zk">Belege</div>
         ${belegeHtml(k)}
@@ -1165,6 +1223,40 @@ async function positionEntfernen(knopf) {
   }
 }
 
+/* CCLXXVIII — eine vorläufige (orange) Position bestätigen: sie wird zur
+   regulären Position und die Zeile danach grün. Nur `vorlaeufig=False`, sonst
+   bleibt alles, wie der Beleg es ergab. */
+async function entwurfBestaetigen(pid, knopf) {
+  knopf.disabled = true;
+  knopf.textContent = 'Bestätige …';
+  try {
+    await api(`/entwuerfe/kostenposition/${pid}/bestaetigen`, { method: 'POST' });
+    melde('Position bestätigt', 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = '✓ Bestätigen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* CCLXXVIII — die vorläufige Position verwerfen: sie verschwindet, der Beleg
+   bleibt und steht wieder im Prüfmodus. Die Zeile fällt danach auf „offen/fehlt"
+   zurück, sofern es keine bestätigte Position zur selben Kostenart gibt. */
+async function entwurfVerwerfen(pid, art, knopf) {
+  knopf.disabled = true;
+  knopf.textContent = 'Setze zurück …';
+  try {
+    await api(`/entwuerfe/kostenposition/${pid}/verwerfen`, { method: 'POST' });
+    melde(`„${art}“ zurück im Prüfmodus — der Beleg bleibt erhalten`, '');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = '↩ Zurück zum Prüfen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
 /* CCLV — den kostenfreien Beleg aus dem Bestand wählen. Eigener Dialog wie der
    Versandplan: eine Zeile je Kandidat. Liefert die Dokument-Id oder null. */
 function anhaengerWaehlen(kostenart) {
@@ -1446,6 +1538,13 @@ inhalt.addEventListener('click', async e => {
 
   const wegSpeichern = e.target.closest('[data-weg-speichern]');
   if (wegSpeichern) return wegDirektSpeichern(wegSpeichern);
+
+  const entwJa = e.target.closest('[data-entwurf-ja]');
+  if (entwJa) return entwurfBestaetigen(entwJa.dataset.entwurfJa, entwJa);
+
+  const entwNein = e.target.closest('[data-entwurf-nein]');
+  if (entwNein) return entwurfVerwerfen(entwNein.dataset.entwurfNein,
+                                        entwNein.dataset.art, entwNein);
 
   const entfernen = e.target.closest('[data-entfernen]');
   if (entfernen) return positionEntfernen(entfernen);

@@ -68,6 +68,39 @@
                 margin:-5px -12px -5px 0;border-radius:11px}
   .eintrag .del:hover{color:var(--neg)}
   .leerzeile{font:400 13px var(--body);color:var(--soft);padding:16px 15px;text-align:center}
+
+  /* CCLXXVIII — Orange-Entwurf: ein aus einem Beleg vorläufig angelegter
+     Datensatz. Linker Amber-Streifen + leicht getönter Grund, im Ton der
+     gefüllten NK-Zeile, nur amber. Der Eintrag steht dabei als eigener Block
+     mit Fußleiste (Marke + zwei Aktionen), nicht als schlichte Listenzeile. */
+  .entwurf{background:var(--amber-bg);border-left:3px solid var(--amber);
+           position:relative}
+  .entwurf + .entwurf,.entwurf + .eintrag,.eintrag + .entwurf{
+           border-top:1px solid var(--amber-li)}
+  .entwurf .eintrag{background:none}
+  .entwurf .eintrag.klick:hover{background:rgba(145,98,18,.06)}
+  .entwurf .eintrag .sym{background:#EFE3C4;color:var(--amber)}
+  .entfuss{display:flex;align-items:center;flex-wrap:wrap;gap:8px;
+           padding:0 15px 12px 15px}
+  .entfuss .marke{display:inline-flex;align-items:center;gap:5px;
+           font:600 10.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;
+           color:var(--amber);white-space:nowrap}
+  .entfuss .marke .pt{width:7px;height:7px;border-radius:50%;
+           background:var(--amber);flex:none}
+  .entfuss .beleg{border:none;background:none;color:var(--amber);cursor:pointer;
+           font:600 11.5px var(--body);text-decoration:underline;padding:6px 2px;
+           min-height:36px}
+  .entfuss .beleg:hover{color:var(--ink)}
+  .entfuss .luecke{flex:1 1 auto;min-width:8px}
+  .entfuss .ea{display:inline-flex;align-items:center;justify-content:center;gap:5px;
+           border:none;border-radius:10px;cursor:pointer;min-height:40px;
+           padding:8px 14px;font:600 12.5px var(--disp);white-space:nowrap}
+  .entfuss .ea.ok{background:var(--pos);color:#fff}
+  .entfuss .ea.ok:hover{background:#256640}
+  .entfuss .ea.ok[disabled]{opacity:.6;cursor:default}
+  .entfuss .ea.zurueck{background:transparent;color:var(--amber);
+           box-shadow:inset 0 0 0 1.5px var(--amber-li)}
+  .entfuss .ea.zurueck:hover{background:rgba(145,98,18,.08)}
   .add{width:100%;border:1.5px dashed #B4C4C1;background:transparent;color:var(--teal-d);
        border-radius:12px;padding:12px;font:600 13.5px var(--disp);cursor:pointer;
        min-height:44px;margin-bottom:4px}
@@ -274,7 +307,8 @@
 
 <script type="module">
 import { installLogos, installNav, logoSvg, api, eur, eurVoll, esc, fristKlasse,
-         fristText, melde, frage, schiebeFrage, promille, installHilfe }
+         fristText, melde, frage, schiebeFrage, promille, installHilfe,
+         belegAnsehen }
   from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { auswahlfeld } from './assets/auswahl.js';
@@ -1008,24 +1042,60 @@ function wegHtml(o) {
       Eigentümerkosten und steht in der Wertentwicklung.</div>`;
 }
 
+/* CCLXXVIII — welcher Bereich welchen Entwurfstyp am Backend hat. Nur diese
+   Bereiche können vorläufige (orange) Einträge tragen; alles andere ignoriert
+   `vorlaeufig` einfach. */
+const ENTWURF_TYP = { mieten: 'miete', versicherungen: 'versicherung',
+                      kredite: 'kredit' };
+
+/* Die schlichte Listenzeile — der gemeinsame Kern von normaler und
+   vorläufiger Darstellung. */
+function eintragZeile(cfg, bereich, e, imFokus, { mitDel = true } = {}) {
+  const marke = cfg.chip ? cfg.chip(e) : null;
+  const beschreibung = cfg.detail(e, imFokus);
+  return `<div class="eintrag klick" data-edit="${bereich}:${e.id}"
+      ${cfg.matt && cfg.matt(e) ? 'style="opacity:.62"' : ''}>
+    <span class="sym">${kostenIcon(cfg.ikon)}</span>
+    <span class="et">
+      <span class="en">${esc(cfg.name(e))}${marke
+        ? ` <span class="chip ${marke[0]}">${esc(marke[1])}</span>` : ''}</span>
+      ${beschreibung ? `<span class="ed">${esc(beschreibung)}</span>` : ''}
+    </span>
+    <span class="ew">${cfg.wert(e)}</span>
+    ${mitDel
+      ? `<button class="del" data-del="${bereich}:${e.id}" aria-label="löschen">×</button>`
+      : ''}
+  </div>`;
+}
+
+/* Ein vorläufiger Datensatz: derselbe Kern, aber in Amber gerahmt und mit
+   Fußleiste — „Entwurf aus Beleg", optional der Belegblick, und die zwei
+   Entscheidungen Bestätigen / Zurück zum Prüfen. */
+function entwurfZeile(cfg, bereich, e, imFokus) {
+  const typ = ENTWURF_TYP[bereich];
+  const beleg = e.quelle_dokument_id
+    ? `<button class="beleg" data-beleg="${e.quelle_dokument_id}">aus Beleg</button>`
+    : '';
+  return `<div class="entwurf">
+    ${eintragZeile(cfg, bereich, e, imFokus, { mitDel: false })}
+    <div class="entfuss">
+      <span class="marke"><span class="pt"></span>Entwurf aus Beleg</span>
+      ${beleg}
+      <span class="luecke"></span>
+      <button class="ea ok" data-ok="${typ}:${e.id}">✓ Bestätigen</button>
+      <button class="ea zurueck" data-zurueck="${typ}:${e.id}">↩ Zurück zum Prüfen</button>
+    </div>
+  </div>`;
+}
+
 function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
                                         vorspann = '' } = {}) {
   const cfg = cfgFuer(bereich);
+  const istEntwurf = e => e && e.vorlaeufig === true && ENTWURF_TYP[bereich];
   const zeilen = eintraege.length
-    ? eintraege.map(e => {
-        const marke = cfg.chip ? cfg.chip(e) : null;
-        const beschreibung = cfg.detail(e, imFokus);
-        return `<div class="eintrag klick" data-edit="${bereich}:${e.id}"
-          ${cfg.matt && cfg.matt(e) ? 'style="opacity:.62"' : ''}>
-        <span class="sym">${kostenIcon(cfg.ikon)}</span>
-        <span class="et">
-          <span class="en">${esc(cfg.name(e))}${marke
-            ? ` <span class="chip ${marke[0]}">${esc(marke[1])}</span>` : ''}</span>
-          ${beschreibung ? `<span class="ed">${esc(beschreibung)}</span>` : ''}
-        </span>
-        <span class="ew">${cfg.wert(e)}</span>
-        <button class="del" data-del="${bereich}:${e.id}" aria-label="löschen">×</button>
-      </div>`; }).join('')
+    ? eintraege.map(e => istEntwurf(e)
+        ? entwurfZeile(cfg, bereich, e, imFokus)
+        : eintragZeile(cfg, bereich, e, imFokus)).join('')
     : `<div class="leerzeile">Noch nichts erfasst</div>`;
 
   return `<div class="sekopf"><h2 class="sec">${esc(kopf || cfg.titel)}</h2></div>
@@ -2543,6 +2613,45 @@ inhalt.addEventListener('click', async e => {
       melde(String(fehler.message || fehler), 'neg');
     }
     return;
+  }
+
+  // CCLXXVIII — Orange-Entwürfe: den Beleg ansehen, bestätigen, verwerfen.
+  const beleg = e.target.closest('[data-beleg]');
+  if (beleg) {
+    e.stopPropagation();
+    belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`, 'Beleg');
+    return;
+  }
+
+  const ok = e.target.closest('[data-ok]');
+  if (ok) {
+    e.stopPropagation();
+    const [typ, id] = ok.dataset.ok.split(':');
+    ok.disabled = true;
+    try {
+      await api(`/entwuerfe/${typ}/${id}/bestaetigen`, { method: 'POST' });
+    } catch (fehler) {
+      ok.disabled = false;
+      return melde(String(fehler.message || 'Konnte nicht bestätigt werden.'), 'neg');
+    }
+    return laden();
+  }
+
+  const zurueck = e.target.closest('[data-zurueck]');
+  if (zurueck) {
+    e.stopPropagation();
+    const [typ, id] = zurueck.dataset.zurueck.split(':');
+    const ja = await frage('Zurück zum Prüfen?',
+      'Der Entwurf wird verworfen. Der Beleg bleibt erhalten und geht zurück in '
+      + 'den Prüfmodus, wo du ihn neu zuordnen kannst.',
+      { knopf: 'Verwerfen', gefahr: true });
+    if (!ja) return;
+    try {
+      await api(`/entwuerfe/${typ}/${id}/verwerfen`, { method: 'POST' });
+    } catch (fehler) {
+      return melde(String(fehler.message || 'Konnte nicht verworfen werden.'), 'neg');
+    }
+    return laden();
   }
 
   const del = e.target.closest('[data-del]');
