@@ -218,22 +218,45 @@ export function melde(text, art = '') {
   feld._zeit = setTimeout(() => { feld.className = 'melder'; }, 5200);
 }
 
+// Woran ein Dialog erkennt, dass er schon ein eigenes Schließen-Element hat —
+// dann wird keins nachgerüstet. Deckt beide Welten ab: die per baueDialog
+// erzeugten (data-zu / .immo-dlg-zu) und die statisch im HTML stehenden
+// (.close/data-schliessen in settings & eigentuemer, .bzu/.bx in eingang).
+const SCHLIESS_MARKER =
+  '[data-schliessen],[data-zu],.immo-dlg-zu,.close,.bzu,.bx';
+
+// Sichtbares Schließen-Kreuz oben rechts anbringen, falls der Dialog noch
+// keins hat. Bewusst gut sichtbar (heller Kreis mit Tiefe), nicht grau-
+// unscheinbar — sonst muss man zum Abbrechen erst nach unten scrollen.
+export function kreuzAnbringen(dlg) {
+  if (!dlg || dlg.querySelector(SCHLIESS_MARKER)) return;
+  const zu = document.createElement('button');
+  zu.type = 'button';
+  zu.className = 'immo-dlg-zu';
+  zu.setAttribute('aria-label', 'Schließen');
+  zu.textContent = '✕';
+  zu.addEventListener('click', () => dlg.close());
+  dlg.appendChild(zu);
+}
+
+// Statische <dialog>-Elemente (Mietverhältnis, Einheit …) bekommen dasselbe
+// Kreuz wie die dynamischen. Läuft einmal, wenn das Modul geladen ist.
+function dialogeNachruesten() {
+  document.querySelectorAll('dialog').forEach(kreuzAnbringen);
+}
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', dialogeNachruesten);
+  } else {
+    dialogeNachruesten();
+  }
+}
+
 function baueDialog(inhalt) {
   const dlg = document.createElement('dialog');
   dlg.className = 'immo-dlg';
   dlg.innerHTML = inhalt;
-  // Sichtbares Schließen-Kreuz oben rechts — überall, wo der Dialog nicht schon
-  // selbst eines mitbringt. Sonst muss man zum Abbrechen erst nach unten
-  // scrollen. Bewusst gut sichtbar (heller Kreis), nicht grau-unscheinbar.
-  if (!dlg.querySelector('[data-zu]')) {
-    const zu = document.createElement('button');
-    zu.type = 'button';
-    zu.className = 'immo-dlg-zu';
-    zu.setAttribute('aria-label', 'Schließen');
-    zu.textContent = '✕';
-    zu.addEventListener('click', () => dlg.close());
-    dlg.appendChild(zu);
-  }
+  kreuzAnbringen(dlg);
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   dlg.showModal();
