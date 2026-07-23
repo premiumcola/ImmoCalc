@@ -31,6 +31,7 @@ from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            ohne_ordnerwort, unterordner_finden, vergleichsname)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
                         unterordner_fuer, verbindung)
+from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
@@ -823,7 +824,8 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
         return (not _ist_sidecar(d.dateiname)
                 and (not ziel_id or d.objekt_id == ziel_id)
                 and (not kategorie or d.kategorie == kategorie)
-                and (not kostenart or d.kostenart == kostenart)
+                and (not kostenart
+                     or kostenart_normalisieren(d.kostenart) == kostenart)
                 and (jahr is None or d.jahr == jahr)
                 and (not status or d.status == status)
                 and (zeitraum is None or d.zeitraum_id == zeitraum)
@@ -851,7 +853,8 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
     _ka_zahl: dict[str, int] = {}
     for d in alle:
         if d.kostenart and _passt_ohne_kostenart(d):
-            _ka_zahl[d.kostenart] = _ka_zahl.get(d.kostenart, 0) + 1
+            kanon = kostenart_normalisieren(d.kostenart)
+            _ka_zahl[kanon] = _ka_zahl.get(kanon, 0) + 1
     kostenarten = [{"name": k, "anzahl": n} for k, n in
                    sorted(_ka_zahl.items(), key=lambda kv: (-kv[1], kv[0]))]
     jahre = sorted({d.jahr for d in alle if d.jahr}, reverse=True)
@@ -877,6 +880,157 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                     for o in objekte.values()],
         "dokumente": [_zeige(d, objekte) for d in gefiltert],
     }
+
+
+# --------------------------------------------------------------------------
+# CCLXXXI/CCLXXXII: Belege gesammelt zurück ins Warten
+#
+# „Zurück ins Warten" macht einen Beleg wieder zum offenen Fall: die aus ihm
+# vorläufig (orange) angelegten Datensätze werden gelöscht, seine NK-Bindung
+# (Kostenposition-Anteil, Zeitraum) gelöst, der Status auf „neu". Das Quell-
+# Dokument und die Datei in der Cloud bleiben unangetastet — es wird nur die
+# App-seitige Zuordnung zurückgenommen, nichts in der Nextcloud angefasst.
+# --------------------------------------------------------------------------
+
+_ENTWURF_TABELLEN = (Kostenposition, Miete, Versicherung, Kredit, Bewohner)
+
+
+def _entwuerfe_des_belegs(session: Session, dokument_id: int) -> list:
+    """Alle noch vorläufigen (orange) Datensätze, die aus diesem Beleg entstanden."""
+    treffer: list = []
+    for modell in _ENTWURF_TABELLEN:
+        treffer += session.exec(select(modell).where(
+            modell.quelle_dokument_id == dokument_id,
+            modell.vorlaeufig == True)).all()          # noqa: E712
+    return treffer
+
+
+def _zurueck_ins_warten(session: Session, d: Dokument) -> set[int]:
+    """Nimmt einen Beleg aus allen NK-Bindungen und stellt ihn auf „neu".
+
+    Gibt die berührten Zeitraum-IDs zurück, damit der Aufrufer danach leer
+    gewordene Zeiträume aufräumen kann. Löscht ausschließlich vorläufige
+    Entwürfe — ein bestätigter Datensatz bleibt unangetastet."""
+    beruehrt: set[int] = set()
+    if d.zeitraum_id:
+        beruehrt.add(d.zeitraum_id)
+    if d.position_id:
+        p = belegposten.loese(session, d)
+        if p:
+            beruehrt.add(p.zeitraum_id)
+    for e in _entwuerfe_des_belegs(session, d.id):
+        if isinstance(e, Kostenposition):
+            beruehrt.add(e.zeitraum_id)
+        session.delete(e)
+    d.zeitraum_id = None
+    d.status = "neu"
+    session.add(d)
+    return beruehrt
+
+
+@router.post("/warte-archiv")
+def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
+                 status: str = "", suche: str = "", zeitraum: int | None = None,
+                 kostenart: str = "", vorschau: bool = False,
+                 session: Session = Depends(get_session)) -> dict:
+    """Schickt alle aktuell gefilterten Belege gesammelt zurück ins Warten.
+
+    Dieselben Filter wie die Liste — was der Nutzer sieht, wird verschoben.
+    `vorschau=1` zählt nur, ohne etwas zu ändern. Sidecars bleiben außen vor."""
+    nach_slug = {o.slug: o for o in session.exec(select(Objekt)).all()}
+    if objekt and objekt not in nach_slug:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    ziel_id = nach_slug[objekt].id if objekt else None
+    begriff = suche.strip().lower()
+
+    def passt(d: Dokument) -> bool:
+        return (not _ist_sidecar(d.dateiname)
+                and (not ziel_id or d.objekt_id == ziel_id)
+                and (not kategorie or d.kategorie == kategorie)
+                and (not kostenart
+                     or kostenart_normalisieren(d.kostenart) == kostenart)
+                and (jahr is None or d.jahr == jahr)
+                and (not status or d.status == status)
+                and (zeitraum is None or d.zeitraum_id == zeitraum)
+                and (not begriff or begriff in d.dateiname.lower()))
+
+    treffer = [d for d in session.exec(select(Dokument)).all() if passt(d)]
+    if vorschau:
+        return {"vorschau": True, "belege": len(treffer)}
+    beruehrt: set[int] = set()
+    for d in treffer:
+        beruehrt |= _zurueck_ins_warten(session, d)
+    session.commit()
+    from .objekte import _zeitraum_leer_entfernen
+    entfernt = sum(1 for z in beruehrt if _zeitraum_leer_entfernen(session, z))
+    log.info("Warte-Archiv: %d Belege zurückgestellt, %d leere Zeiträume weg",
+             len(treffer), entfernt)
+    return {"ok": True, "belege": len(treffer), "zeitraeume_entfernt": entfernt}
+
+
+@router.post("/nk-vor-jahr-entfernen")
+def nk_vor_jahr_entfernen(grenze_jahr: int = 2025, vorschau: bool = False,
+                          session: Session = Depends(get_session)) -> dict:
+    """Nimmt automatisch (orange) aus Belegen angelegte NK-Eintragungen zu
+    Abrechnungszeiträumen VOR `grenze_jahr` wieder heraus, Belege zurück ins
+    Warten. Bestätigte/geseedete Positionen bleiben unberührt (nur
+    `vorlaeufig=True` wird gelöscht). `vorschau=1` zählt nur."""
+    vor = {z.id for z in session.exec(select(Zeitraum)).all()
+           if z.start and z.start.year < grenze_jahr}
+    drafts = [p for p in session.exec(select(Kostenposition).where(
+                  Kostenposition.vorlaeufig == True)).all()   # noqa: E712
+              if p.zeitraum_id in vor and p.quelle_dokument_id]
+    beleg_ids = {p.quelle_dokument_id for p in drafts}
+    for d in session.exec(select(Dokument)).all():
+        if d.zeitraum_id in vor:
+            beleg_ids.add(d.id)
+    if vorschau:
+        return {"vorschau": True, "grenze_jahr": grenze_jahr,
+                "zeitraeume_vor_grenze": len(vor),
+                "orange_positionen": len(drafts), "belege": len(beleg_ids)}
+    beruehrt: set[int] = set(vor)
+    for did in beleg_ids:
+        d = session.get(Dokument, did)
+        if d:
+            beruehrt |= _zurueck_ins_warten(session, d)
+    session.commit()
+    from .objekte import _zeitraum_leer_entfernen
+    entfernt = sum(1 for z in beruehrt if _zeitraum_leer_entfernen(session, z))
+    log.info("NK vor %d entfernt: %d orange Positionen, %d Belege zurück, "
+             "%d Zeiträume weg", grenze_jahr, len(drafts), len(beleg_ids), entfernt)
+    return {"ok": True, "grenze_jahr": grenze_jahr,
+            "orange_positionen_geloescht": len(drafts),
+            "belege_zurueck": len(beleg_ids), "zeitraeume_entfernt": entfernt}
+
+
+@router.post("/kostenarten-normalisieren")
+def kostenarten_normalisieren(vorschau: bool = False,
+                              session: Session = Depends(get_session)) -> dict:
+    """Fasst Kostenart-Dubletten im Bestand auf ihre kanonische Form zusammen
+    (CCLXXX) — an Belegen wie an Kostenpositionen. `vorschau=1` zählt nur."""
+    geaendert = 0
+    proben: list[str] = []
+    for d in session.exec(select(Dokument)).all():
+        if d.kostenart:
+            kanon = kostenart_normalisieren(d.kostenart)
+            if kanon != d.kostenart:
+                if len(proben) < 12:
+                    proben.append(f"{d.kostenart} → {kanon}")
+                if not vorschau:
+                    d.kostenart = kanon
+                    session.add(d)
+                geaendert += 1
+    for p in session.exec(select(Kostenposition)).all():
+        if p.kostenart:
+            kanon = kostenart_normalisieren(p.kostenart)
+            if kanon != p.kostenart:
+                if not vorschau:
+                    p.kostenart = kanon
+                    session.add(p)
+                geaendert += 1
+    if not vorschau:
+        session.commit()
+    return {"vorschau": vorschau, "geaendert": geaendert, "proben": proben}
 
 
 @router.get("/objekt/{slug}")
@@ -1398,7 +1552,7 @@ def aendern(dokument_id: int, data: AenderungIn,
     d.objekt_id = o.id
     d.kategorie = kategorie
     if "kostenart" in gesetzt:
-        d.kostenart = (data.kostenart or "").strip()
+        d.kostenart = kostenart_normalisieren(data.kostenart)
     d.jahr = jahr
     d.belegdatum = belegdatum
     # CLXXXI: der Betrag steht ab hier auch am Beleg, nicht nur im Namen.
@@ -1629,8 +1783,9 @@ def _entwurf_nebenkosten(session: Session, d: Dokument, o: Objekt,
     z = _zeitraum_fuer_beleg(session, o, d)
     if z is None:
         return []
-    kostenart = ((d.kostenart or "").strip()
-                 or _ki_text(felder.get("kostenart")) or "Nebenkosten")
+    kostenart = (kostenart_normalisieren(d.kostenart)
+                 or kostenart_normalisieren(_ki_text(felder.get("kostenart")))
+                 or "Nebenkosten")
     betrag = (d.betrag if d.betrag is not None
               else _ki_zahl(felder.get("betrag"))) or 0.0
     # Eine Kostenart, eine Zeile (CLXXXII): gibt es die Position schon, keine
@@ -1957,7 +2112,7 @@ def immocalc(dokument_id: int, body: ImmoCalcIn,
     if "kategorie" in gesetzt and body.kategorie:
         d.kategorie = body.kategorie
     if "kostenart" in gesetzt and body.kostenart:
-        d.kostenart = body.kostenart.strip()
+        d.kostenart = kostenart_normalisieren(body.kostenart)
     if "datum" in gesetzt:
         neu_datum = _zum_datum(body.datum or "")
         if neu_datum:
@@ -2071,7 +2226,7 @@ def anhaenger_setzen(dokument_id: int, data: AnhaengerIn,
         raise HTTPException(409, "Dieser Beleg ist in eine Kostenposition "
                                  "eingerechnet — er trägt einen Kostenanteil "
                                  "und ist kein kostenfreier Anhänger.")
-    kostenart = (data.kostenart or "").strip()
+    kostenart = kostenart_normalisieren(data.kostenart)
     if not kostenart:
         raise HTTPException(400, "Für den Anhänger fehlt das Kostenart-Thema.")
     _pruefe_zeitraum(session, data.zeitraum_id)
