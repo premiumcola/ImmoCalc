@@ -371,6 +371,7 @@ class BewohnerIn(BaseModel):
     name: str = ""
     email: str = ""
     telefon: str = ""
+    anschrift: str = ""
     rolle: str = ""
     abrechnung: bool = True
     notiz: str = ""
@@ -424,8 +425,8 @@ def bewohner_liste(mid: int, session: Session = Depends(get_session)) -> list:
 def bewohner_anlegen(mid: int, data: BewohnerIn,
                      session: Session = Depends(get_session)) -> dict:
     _miete(session, mid)
-    if not (data.name or data.email or data.telefon).strip():
-        raise HTTPException(400, "Ein Bewohner braucht Name, Mail oder Nummer")
+    if not (data.name or data.email or data.telefon or data.anschrift).strip():
+        raise HTTPException(400, "Ein Bewohner braucht Name, Mail, Nummer oder Anschrift")
     eintrag = Bewohner.model_validate({**data.model_dump(), "miete_id": mid})
     session.add(eintrag)
     session.commit()

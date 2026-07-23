@@ -458,11 +458,15 @@ const BEREICHE = {
       { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
       { k: 'ab_datum', l: 'Gültig ab', typ: 'date', pflicht: true },
       { k: 'bis_datum', l: 'Beendet am', typ: 'date' },
-      { k: 'email', l: 'E-Mail', typ: 'email' },
-      { k: 'telefon', l: 'Telefon', typ: 'tel' },
-      { k: 'anschrift', l: 'Anschrift', typ: 'text' },
-      { k: 'personen', l: 'Personen im Haushalt', typ: 'number', schritt: '1' },
-      { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true },
+      // CCLXVI — die Kontaktdaten (E-Mail, Telefon, Anschrift) werden nicht
+      // mehr am Mietverhältnis abgefragt, sondern je Bewohner (siehe
+      // bewohnerZeile). Die Spalten Miete.email/telefon/anschrift bleiben im
+      // Modell bestehen — Altbestand bleibt gültig, es wird nur nicht mehr
+      // hier eingegeben.
+      { k: 'personen', l: 'Personen im Haushalt', typ: 'number', schritt: '1',
+        lex: 'personen-im-haushalt' },
+      { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true,
+        lex: 'kaution' },
       { k: 'notiz', l: 'Notiz', typ: 'text' },
     ],
     name: e => e.partei || e.einheit || 'Mietverhältnis',
@@ -568,7 +572,8 @@ const PACHT = {
     { k: 'email', l: 'E-Mail', typ: 'email' },
     { k: 'telefon', l: 'Telefon', typ: 'tel' },
     { k: 'anschrift', l: 'Anschrift', typ: 'text' },
-    { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true },
+    { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true,
+      lex: 'kaution' },
     { k: 'notiz', l: 'Notiz', typ: 'text' },
   ],
   name: e => e.partei || 'Pachtverhältnis',
@@ -592,7 +597,7 @@ const STAMMFELDER = [
   { k: 'plz', l: 'PLZ', typ: 'text' },
   { k: 'ort', l: 'Ort', typ: 'text' },
   { k: 'flaeche', l: 'Wohnfläche (manuell)', typ: 'number', schritt: '0.01',
-    einheit: 'm²',
+    einheit: 'm²', lex: 'wohnflaeche',
     note: 'Optional. Die Wohnfläche summiert ImmoCalc aus den Einheiten. Hier '
         + 'nur eintragen, wenn du sie unabhängig führen willst — weicht sie von '
         + 'den Einheiten ab, weist ImmoCalc darauf hin. Maßgeblich bleibt die '
@@ -688,12 +693,13 @@ const EINHEITFELDER = [
     werte: ['Wohnen', 'WG', 'Büro', 'Gewerbe', 'Praxis', 'Laden', 'Lager',
             'Stellplatz', 'Garage', 'Sonstiges'] },
   { k: 'flaeche', l: 'Wohn-/Nutzfläche', typ: 'number', schritt: '0.01',
-    einheit: 'm²' },
+    einheit: 'm²', lex: 'wohnflaeche' },
   { k: 'terrasse', l: 'Terrasse / Balkon', typ: 'number', schritt: '0.01',
-    einheit: 'm²' },
+    einheit: 'm²', lex: 'terrassenflaeche' },
   { k: 'nebenflaeche', l: 'Nebenfläche', typ: 'number', schritt: '0.01',
-    einheit: 'm²' },
-  { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1' },
+    einheit: 'm²', lex: 'nebenflaeche' },
+  { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1',
+    lex: 'stellplatz' },
   // CLXXXVI — ein Verkehrswert je Einheit. Nur pflegen, wo er bekannt ist;
   // sonst bleibt der Wert am Haus maßgeblich. Er gewichtet die Zurechnung des
   // Objektwerts auf die Eigentümer.
@@ -843,23 +849,30 @@ function kennzahlenHtml(v, jahresmiete, restschuld, guthaben) {
        <span class="kl">${esc(l)}</span></div>`).join('')}</div>`;
 }
 
-function paarZeile(label, wert, { abgeleitet = false, lang = false } = {}) {
+/* CCLXVII — ein fachliches Label in der Übersicht trägt denselben ?-Platzhalter
+   wie im Formular. `installHilfe(inhalt)` macht nach dem Rendern ein Icon
+   daraus. Triviale Zeilen bekommen kein `lex` und bleiben schmucklos. */
+const paarLabel = (label, lex) => `${esc(label)}${
+  lex ? ` <span data-hilfe="${esc(lex)}"></span>` : ''}`;
+
+function paarZeile(label, wert, { abgeleitet = false, lang = false,
+                                  lex = null } = {}) {
   // `lang` gilt für die Beschriftung, nicht nur den Wert — ein langes Label
   // wie „Übernommene AfA-Bemessung (vom Vorbesitzer)" drückt die Wertspalte
   // sonst auf null Breite, und „nicht erfasst" bricht Buchstabe für
   // Buchstabe um (Fund bei CCXXXV). Deshalb gilt die gestapelte Form auch,
   // wenn noch kein Wert erfasst ist.
   return `<div class="paar${lang ? ' lang' : ''}">
-    <span class="pl">${esc(label)}</span>
+    <span class="pl">${paarLabel(label, lex)}</span>
     <span class="pv${wert ? (abgeleitet ? ' abgeleitet' : '') : ' leer'}"
       >${wert ? esc(wert) : 'nicht erfasst'}</span></div>`;
 }
 
 /* Eine gerechnete Zeile mit Herkunftsangabe — „Wohnfläche · 205 m² · aus 5
    Einheiten". Die Herkunft steht ruhig unter dem Wert. */
-function paarAbgeleitet(label, wert, quelle = null) {
+function paarAbgeleitet(label, wert, quelle = null, lex = null) {
   return `<div class="paar">
-    <span class="pl">${esc(label)}</span>
+    <span class="pl">${paarLabel(label, lex)}</span>
     <span class="pv ${wert ? 'abgeleitet' : 'leer'}">${wert ? esc(wert)
       : 'nicht erfasst'}${quelle ? `<span class="pq">${esc(quelle)}</span>`
                                  : ''}</span></div>`;
@@ -892,20 +905,22 @@ function wohnflaecheRows(o, s) {
   if (s.mit) {
     const quelle = s.mit === anzahl ? `aus ${einheitWort(anzahl)}`
                                     : `aus ${s.mit} von ${einheitWort(anzahl)}`;
-    rows.push(paarAbgeleitet('Wohnfläche', flaecheText(s.wohn), quelle));
+    rows.push(paarAbgeleitet('Wohnfläche', flaecheText(s.wohn), quelle,
+                             'wohnflaeche'));
   } else if (o.flaeche) {
     // Noch keine Einheitenfläche erfasst — dann ist die manuelle Angabe alles,
     // was es gibt, und steht schlicht als Wohnfläche da.
     rows.push(paarAbgeleitet('Wohnfläche', flaecheText(o.flaeche),
-                             'manuell — noch keine Einheitenfläche erfasst'));
+                             'manuell — noch keine Einheitenfläche erfasst',
+                             'wohnflaeche'));
   } else {
     rows.push(paarAbgeleitet('Wohnfläche', null,
       anzahl ? 'in den Einheiten noch keine Fläche erfasst'
-             : 'noch keine Einheit erfasst'));
+             : 'noch keine Einheit erfasst', 'wohnflaeche'));
   }
   if (s.stell) {
     rows.push(paarAbgeleitet('Stellplätze', String(s.stell),
-                             `aus ${einheitWort(anzahl)}`));
+                             `aus ${einheitWort(anzahl)}`, 'stellplatz'));
   }
   return rows;
 }
@@ -927,7 +942,7 @@ function stammHtml(o) {
     // Die frühere manuelle Fläche wird zu den gerechneten Zeilen aus den
     // Einheiten; beim Grundstück kommt `flaeche` gar nicht erst vor.
     if (f.k === 'flaeche') { zeilen.push(...wohnflaecheRows(o, s)); continue; }
-    zeilen.push(paarZeile(f.l, stammwert(f, o), { lang: f.lang }));
+    zeilen.push(paarZeile(f.l, stammwert(f, o), { lang: f.lang, lex: f.lex }));
   }
   return `<div class="sekopf"><h2 class="sec">Stammdaten</h2>
       <button data-stamm="1">Bearbeiten</button></div>
@@ -1073,7 +1088,7 @@ function einheitStammHtml(e) {
   // wird als eigener Hinweis gezeigt.
   const zeilen = EINHEITFELDER
     .filter(f => f.k !== 'bezeichnung' && f.k !== 'nk_abrechnung')
-    .map(f => paarZeile(f.l, stammwert(f, e))).join('');
+    .map(f => paarZeile(f.l, stammwert(f, e), { lex: f.lex })).join('');
   const aus = e.nk_abrechnung === false
     ? `<div class="merker"><span class="hi">i</span><span class="ht">
          <span class="t">Nicht Teil der Nebenkostenabrechnung</span>
@@ -1285,6 +1300,9 @@ async function laden() {
       ${einheitStammHtml(fokus)}
       ${abschnitt('mieten', eigene, { imFokus: true })}
       ${zeitraumBlock}`;
+    // Die ?-Icons an Wohnfläche, Terrasse, Nebenfläche und Stellplätzen dieser
+    // Einheit brauchen dieselbe Verdrahtung wie die Hausansicht.
+    installHilfe(inhalt);
     return;
   }
 
@@ -1813,16 +1831,18 @@ function bewohnerZeile(b) {
            value="${esc(b.email || '')}">
     <input name="bw_telefon" type="tel" placeholder="Handy"
            value="${esc(b.telefon || '')}">
+    <input name="bw_anschrift" type="text" placeholder="Anschrift"
+           value="${esc(b.anschrift || '')}">
   </div>`;
 }
 
 function bewohnerBlock(liste) {
   bewohnerWeg = [];
   return `<div class="block" id="bewohnerblock">
-    <span class="bt">Bewohner</span>
-    <span class="bd">Wohnen mehrere Personen in der Einheit, bekommt jede ihre
-      eigene Adresse und Nummer. Der Kontakt oben bleibt der Hauptkontakt des
-      Mietverhältnisses.</span>
+    <span class="bt">Bewohner &amp; Kontakt</span>
+    <span class="bd">Der Kontakt gehört zu den Bewohnern: jede Person bekommt
+      hier ihre eigene E-Mail, Handynummer und Anschrift. Die
+      Nebenkostenabrechnung geht an alle Bewohner mit hinterlegter Mailadresse.</span>
     ${(liste || []).map(bewohnerZeile).join('')}
     <button type="button" class="zusatz" data-bw-neu>＋ Bewohner</button>
   </div>`;
@@ -1841,10 +1861,11 @@ async function bewohnerSpeichern(form, miete_id) {
       name: zeile.querySelector('[name=bw_name]').value.trim(),
       email: zeile.querySelector('[name=bw_email]').value.trim(),
       telefon: zeile.querySelector('[name=bw_telefon]').value.trim(),
+      anschrift: zeile.querySelector('[name=bw_anschrift]').value.trim(),
     };
     if (zeile.dataset.bid) {
       await api(`/bewohner/${zeile.dataset.bid}`, { method: 'PATCH', body: daten });
-    } else if (daten.name || daten.email || daten.telefon) {
+    } else if (daten.name || daten.email || daten.telefon || daten.anschrift) {
       await api(`/mieten/${miete_id}/bewohner`, { method: 'POST', body: daten });
     }
   }

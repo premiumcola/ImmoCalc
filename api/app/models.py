@@ -408,6 +408,10 @@ class Bewohner(SQLModel, table=True):
     name: str = ""
     email: str = ""
     telefon: str = ""
+    # Eigene Anschrift der Person — der Kontakt liegt seit CCLXVI bei den
+    # Bewohnern, nicht mehr am Mietverhältnis. Additiv, Default leer:
+    # migrate.py legt die Spalte für den Bestand an.
+    anschrift: str = ""
     rolle: str = ""                # 'Hauptmieter' | 'Mitbewohner' | frei
     # Wer die Abrechnung per Mail bekommen soll. Ein Kind im Haushalt steht in
     # der Liste, braucht aber keine Post.
