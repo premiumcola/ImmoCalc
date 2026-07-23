@@ -85,6 +85,50 @@
   .eigwert .ewv{display:block;font:700 15px var(--disp);letter-spacing:-.02em;
                 margin-top:5px;overflow-wrap:anywhere}
   .eigwert .ewv.pos{color:var(--pos)} .eigwert .ewv.neg{color:var(--neg)}
+
+  /* ---- CCLVII: orange Karte ist anklickbar und öffnet die Zuweisung ----
+     Button statt div, damit Tastatur und Screenreader ihn als Aktion sehen;
+     das ›-Zeichen signalisiert, dass hier etwas passiert. */
+  .merker.offen{width:100%;text-align:left;border:none;cursor:pointer;
+                font:inherit;-webkit-appearance:none;appearance:none;
+                transition:filter .12s,transform .06s}
+  .merker.offen:hover{filter:brightness(.98)}
+  .merker.offen:active{transform:scale(.995)}
+  .merker.offen:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .merker .go{font:600 22px var(--body);color:var(--amber);opacity:.55;
+              flex:none;align-self:center;line-height:1}
+
+  /* ---- Zuweisungs-Dialog: Schnellwahl gross, ‰-Eingabe klein/eingeklappt --- */
+  .frei-band{background:var(--amber-bg);color:var(--amber);border-radius:12px;
+             padding:12px 14px;font:600 13px var(--body);margin-bottom:16px;
+             line-height:1.45}
+  .feldlabel{display:block;font:600 10px var(--mono);letter-spacing:.06em;
+             text-transform:uppercase;color:var(--soft);margin:0 0 9px}
+  .schnell{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  /* 60px hoch: klar über den 44px Touch-Mindestzielen */
+  .qbtn{display:flex;flex-direction:column;align-items:center;
+        justify-content:center;gap:3px;min-height:62px;border-radius:13px;
+        border:1.5px solid var(--line);background:var(--sheet);color:var(--ink);
+        cursor:pointer;padding:8px 4px;transition:border-color .12s,background .12s}
+  .qbtn b{font:600 19px var(--disp);line-height:1}
+  .qbtn span{font:500 11px var(--mono);color:var(--soft)}
+  .qbtn:hover:not(:disabled){border-color:var(--teal);background:var(--teal-l)}
+  .qbtn.aktiv{border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)}
+  .qbtn.aktiv span{color:var(--teal-d)}
+  .qbtn:disabled{opacity:.38;cursor:not-allowed}
+  .gewaehlt{margin-top:14px;font:500 13px var(--body);color:var(--soft);
+            text-align:center;line-height:1.4}
+  .gewaehlt b{color:var(--teal-d);font-family:var(--mono)}
+  details.detail{margin-top:16px;border-top:1px solid var(--line);padding-top:6px}
+  details.detail summary{font:500 12.5px var(--body);color:var(--teal-d);
+                         cursor:pointer;list-style:none;padding:8px 0;
+                         min-height:24px}
+  details.detail summary::-webkit-details-marker{display:none}
+  details.detail summary::before{content:'›';display:inline-block;
+                                 margin-right:7px;transition:transform .15s}
+  details.detail[open] summary::before{transform:rotate(90deg)}
+  .mini{font:400 11.5px var(--body);color:var(--soft);margin:8px 0 0;
+        line-height:1.45}
 </style>
 </head>
 <body>
@@ -171,6 +215,46 @@
   </div>
 </dialog>
 
+<!-- CCLVII: Anteil direkt aus der orangen Karte zuweisen, ohne Umweg über die
+     Objektseite. Eigenes .close-Kreuz — darum rüstet immo.js keins nach. -->
+<dialog id="zdlg">
+  <div class="dh">
+    <h2 id="zTitel">Anteil zuweisen</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <div class="frei-band" id="zFrei"></div>
+    <div class="meldung" id="zMeldung"></div>
+    <form id="zform">
+      <div class="field">
+        <label for="zEigner">Eigentümer</label>
+        <select class="inp" id="zEigner"></select>
+      </div>
+      <span class="feldlabel">Anteil</span>
+      <div class="schnell" id="zSchnell">
+        <button type="button" class="qbtn" data-teil="500">
+          <b>½</b><span>500 ‰</span></button>
+        <button type="button" class="qbtn" data-teil="333.3">
+          <b>⅓</b><span>333,3 ‰</span></button>
+        <button type="button" class="qbtn" data-teil="rest">
+          <b>Rest</b><span id="zRestW">— ‰</span></button>
+      </div>
+      <div class="gewaehlt" id="zGewaehlt">Noch nichts gewählt</div>
+      <details class="detail">
+        <summary>Genau in ‰ angeben</summary>
+        <div class="field" style="margin-top:8px;margin-bottom:0">
+          <input class="inp" id="zPromille" type="number" inputmode="decimal"
+                 step="0.1" min="0.1" placeholder="z. B. 250">
+          <p class="mini" id="zMax"></p>
+        </div>
+      </details>
+    </form>
+  </div>
+  <div class="dfuss">
+    <button class="btn" type="submit" form="zform" id="zSpeichern">Zuweisen</button>
+  </div>
+</dialog>
+
 <script type="module">
 import { api, esc, frage, melde, eurKurz, promille, installNav } from './assets/immo.js';
 installNav();
@@ -203,6 +287,8 @@ const zeigeFehler = text => {
 const fehlerWeg = () => { dlgMeldung.className = 'meldung'; };
 
 /* ---- Verteilungsstand: was fehlt, was ist zu viel ---- */
+/** Stand je Objekt-Slug — der Zuweisungs-Dialog liest daraus das Verfügbare. */
+let standMap = new Map();
 async function standLaden() {
   let objekte;
   try {
@@ -211,6 +297,7 @@ async function standLaden() {
     standFeld.innerHTML = '';
     return;
   }
+  standMap = new Map(objekte.map(o => [o.slug, o]));
   if (!objekte.length) {
     standFeld.innerHTML = `<div class="empty">
         <div class="big">Noch keine Immobilie</div>
@@ -239,13 +326,14 @@ async function standLaden() {
       : o.frei > 0
         ? `Es fehlen noch ${promille(o.frei)} von 1000 ‰.`
         : `${promille(-o.frei)} zu viel verteilt (${promille(o.vergeben)} vergeben).`;
-    return `<div class="merker">
+    return `<button class="merker offen" type="button" data-zuweisen="${esc(o.slug)}">
         <span class="hi">‰</span>
         <span class="ht">
           <span class="t">${esc(o.name)}</span>
           <span class="d">${esc(text)}</span>
         </span>
-      </div>`;
+        <span class="go" aria-hidden="true">›</span>
+      </button>`;
   }).join('');
 }
 
@@ -400,6 +488,146 @@ liste.addEventListener('click', async e => {
     await Promise.all([eignerLaden(), standLaden()]);
   } catch (fehler) {
     melde(String(fehler.message || fehler), "neg");
+  }
+});
+
+/* ---- CCLVII: Anteil direkt aus der orangen Karte zuweisen ---- */
+const zdlg = document.getElementById('zdlg');
+const zTitel = document.getElementById('zTitel');
+const zFrei = document.getElementById('zFrei');
+const zMeldung = document.getElementById('zMeldung');
+const zform = document.getElementById('zform');
+const zEigner = document.getElementById('zEigner');
+const zSchnell = document.getElementById('zSchnell');
+const zGewaehlt = document.getElementById('zGewaehlt');
+const zRestW = document.getElementById('zRestW');
+const zPromille = document.getElementById('zPromille');
+const zMax = document.getElementById('zMax');
+const zSpeichern = document.getElementById('zSpeichern');
+const zButtons = [...zSchnell.querySelectorAll('.qbtn')];
+
+/** Aktuelles Objekt der Zuweisung und der noch freie Rest in ‰. */
+let zSlug = null;
+let zFreiWert = 0;
+/** Gewählter Anteil in ‰ (null = noch nichts gewählt). */
+let zWert = null;
+
+const zFehler = text => { zMeldung.textContent = text;
+  zMeldung.className = 'meldung an schlecht'; };
+const zFehlerWeg = () => { zMeldung.className = 'meldung'; };
+
+/** Eine Nachkommastelle — passend zur Engine (333,3 dreimal gilt als voll). */
+const runde1 = w => Math.round(w * 10) / 10;
+
+function zMarkiere() {
+  for (const b of zButtons) {
+    const wert = b.dataset.teil === 'rest' ? runde1(zFreiWert) : Number(b.dataset.teil);
+    b.classList.toggle('aktiv', zWert != null && Math.abs(wert - zWert) < 0.05);
+  }
+}
+
+/** Anteil setzen — gekappt auf das Verfügbare, nie darüber. */
+function zSetze(wert, ausEingabe = false) {
+  let v = runde1(wert);
+  if (!(v > 0)) { zWert = null; zGewaehlt.textContent = 'Noch nichts gewählt';
+    if (!ausEingabe) zPromille.value = ''; zMarkiere(); return; }
+  let gekappt = false;
+  if (v > zFreiWert) { v = runde1(zFreiWert); gekappt = true; }
+  zWert = v;
+  zGewaehlt.innerHTML = `<b>${promille(v)}</b> für dieses Objekt`
+    + (gekappt ? ' <span style="opacity:.75">(auf den Rest begrenzt)</span>' : '');
+  if (!ausEingabe) zPromille.value = String(v).replace('.', ',');
+  zMarkiere();
+}
+
+function zFuelleEigner() {
+  zEigner.innerHTML = eigner.length
+    ? eigner.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')
+    : '<option value="">Noch kein Eigentümer angelegt</option>';
+}
+
+function oeffneZuweisen(slug) {
+  const s = standMap.get(slug);
+  if (!s) return;
+  zSlug = slug;
+  zFreiWert = runde1(s.frei);
+  zWert = null;
+  zFehlerWeg();
+  zTitel.textContent = s.name;
+  zFuelleEigner();
+  zPromille.value = '';
+  zGewaehlt.textContent = 'Noch nichts gewählt';
+  zRestW.textContent = promille(Math.max(0, zFreiWert));
+  zPromille.max = String(zFreiWert);
+  zMax.textContent = `Höchstens ${promille(Math.max(0, zFreiWert))} — das ist der Rest.`;
+
+  // Object-level Zuweisung passt nur, wenn hier überhaupt noch Platz ist und
+  // das Objekt nicht schon nach Einheiten aufgeteilt wurde.
+  const kannZuweisen = eigner.length && zFreiWert > 0.05 && s.objekt_noetig !== false;
+  if (!eigner.length) {
+    zFrei.textContent = 'Erst einen Eigentümer anlegen, dann lässt sich hier '
+      + 'ein Anteil zuordnen.';
+  } else if (s.objekt_noetig === false) {
+    zFrei.textContent = 'Dieses Objekt ist bereits nach Einheiten aufgeteilt — '
+      + 'Anteile je Einheit ordnest du auf der Objektseite zu.';
+  } else if (zFreiWert <= 0.05) {
+    zFrei.textContent = 'Hier sind bereits alle 1000 ‰ verteilt. Anpassen lässt '
+      + 'sich das auf der Objektseite.';
+  } else {
+    zFrei.innerHTML = `Noch <b>${promille(zFreiWert)}</b> von 1000 ‰ frei.`;
+  }
+
+  for (const b of zButtons) {
+    const wert = b.dataset.teil === 'rest' ? zFreiWert : Number(b.dataset.teil);
+    b.disabled = !kannZuweisen || wert > zFreiWert + 0.05;
+  }
+  zButtons.forEach(b => b.classList.remove('aktiv'));
+  zEigner.disabled = !kannZuweisen;
+  zPromille.disabled = !kannZuweisen;
+  zSpeichern.disabled = !kannZuweisen;
+  zSpeichern.textContent = 'Zuweisen';
+  zdlg.showModal();
+}
+
+zSchnell.addEventListener('click', e => {
+  const b = e.target.closest('.qbtn');
+  if (!b || b.disabled) return;
+  zFehlerWeg();
+  zSetze(b.dataset.teil === 'rest' ? zFreiWert : Number(b.dataset.teil));
+});
+
+zPromille.addEventListener('input', () => {
+  zFehlerWeg();
+  const v = Number(zPromille.value.replace(',', '.'));
+  zSetze(Number.isFinite(v) ? v : 0, true);
+});
+
+standFeld.addEventListener('click', e => {
+  const karte = e.target.closest('[data-zuweisen]');
+  if (karte) oeffneZuweisen(karte.dataset.zuweisen);
+});
+
+zform.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (zSpeichern.disabled) return;
+  const eid = Number(zEigner.value);
+  if (!eid) return zFehler('Bitte einen Eigentümer wählen');
+  if (!(zWert > 0)) return zFehler('Bitte einen Anteil wählen');
+
+  zSpeichern.disabled = true;
+  zSpeichern.textContent = 'Weise zu …';
+  zFehlerWeg();
+  try {
+    await api(`/objekte/${encodeURIComponent(zSlug)}/anteile`,
+      { method: 'POST', body: { eigentuemer_id: eid, promille: zWert } });
+    const name = eigner.find(p => p.id === eid)?.name ?? 'Eigentümer';
+    zdlg.close();
+    melde(`${promille(zWert)} an ${name} zugewiesen`, 'pos');
+    await Promise.all([eignerLaden(), standLaden()]);
+  } catch (fehler) {
+    zFehler(String(fehler.message || fehler));
+    zSpeichern.disabled = false;
+    zSpeichern.textContent = 'Zuweisen';
   }
 });
 
