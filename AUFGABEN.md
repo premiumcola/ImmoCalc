@@ -47,6 +47,11 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 | CCLVIII | ~~**Abrechnungszeitraum beim Beleg automatisch erkennen/vorschlagen**~~ **erledigt** (Deploy nötig) | `GET /objekte/{slug}/zeitraum-fuer?datum=` liefert vorhandenen Zeitraum oder Vorschlags-Grenzen (Startmonat-/Wirtschaftsjahr-Logik); eingang.html wählt ihn vor oder bietet „<Jahr> anlegen" — legt an + gruppiert ein. Fallback vor Deploy sauber |
 | CCLIX | ~~**Mehrseitige PDF-Vorschau**~~ **erledigt** | `GET /dokumente/{id}/seiten` + `/vorschau?seite=N`; `belegAnsehen` zeigt alle Seiten gestapelt (Doc 612: 4 Seiten geladen, verifiziert). Zusammen mit ↗-Entfernung ist CCLIX komplett |
 | Audit | Systemweiter Doppel-Schließer-Check | erledigt — einziger echter Fund war das „Mehr"-Menü (behoben, CCLXII); `objekt #dlg` × + Abbrechen ist gewollt (Formular, scrollbar); Rest sauber |
+| CCLXIII | ~~**Objekt-Ordner automatisch umbenennen**~~ **erledigt** (Deploy nötig; Nutzer-Abnahme mit Testobjekt empfohlen) | `cloud.ordner_nachziehen` + PATCH-Hook: nur bei ordnernamens-relevanten Feldern, MOVE via `verschiebe` (Schreibrecht-Riegel), Kollision→`-2`, Präfix-Update aller `Dokument.pfad` + `nc_ordner`, Fehlerpfad lässt alten Ordner/DB unberührt. Kein Extra-Button |
+| CCLXIV | ~~**Versions-Zeitpunkt = echter Live-Stand**~~ **erledigt** `d0ff1e4` | Cron schreibt `public/version.json` (SHA + Commit-Zeit) bei jedem neuen HEAD, auch bei reinen Frontend-Deploys — nicht mehr der 2-Minuten-Cron-Tick |
+| CCLXV | ~~**Release-Notes (letzte 5 Änderungen) in den Einstellungen**~~ **erledigt** `d0ff1e4` | einzeilig unter der Version, „Zuletzt geändert" |
+| CCLXVI | **Kontakt-Doppelung bei Mietverhältnissen entfernen**: obere E-Mail/Telefon/Anschrift raus, Kontakt pro Bewohner (inkl. Anschrift); NK-Abrechnung geht automatisch an alle Bewohner mit Mail (Versand kann das schon) | **in Arbeit** (Agent) — `objekt.html`/`models.py` |
+| CCLXVII | **Fachbegriffe erklären**: Lexikon-Einträge (Nebenflächen/Terrassenflächen — wie viel anzusetzen, u. a.) ✓ + kleine ?-Info-Icons an fachlichen Feldern in Maske & Übersicht | Lexikon **erledigt** (6 Begriffe, `lexikon-daten.js`); ?-Icons **in Arbeit** (Agent, `objekt.html`) |
 
 ---
 
