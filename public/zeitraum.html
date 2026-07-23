@@ -138,6 +138,10 @@
   .scanmini .si{font:400 15px var(--mono);line-height:1;flex:none}
   .scanmini .st{font:600 11.5px var(--disp);letter-spacing:-.005em;
                 white-space:nowrap}
+  /* „Aus Ablage" steht neben der Kamera, aber ruhiger (neutral statt Teal) —
+     die zweite, sekundäre Art, einen Beleg an die Position zu holen. */
+  .scanmini.ablage{border-color:var(--line);background:var(--sheet);color:var(--ink)}
+  .scanmini.ablage:hover{background:var(--paper)}
   /* Auf dem Handy wird es sonst zu eng — dort trägt das Symbol allein. */
   @media(max-width:409px){ .scanmini .st{display:none} }
   .nachtrag{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
@@ -678,6 +682,10 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
         ${k.erledigt ? '' : `<button class="scanmini" data-scan="${esc(k.kostenart)}"
             title="Beleg für ${esc(k.kostenart)} abfotografieren">
             <span class="si">▣</span><span class="st">Beleg erfassen</span>
+          </button>
+          <button class="scanmini ablage" data-ablage="${esc(k.kostenart)}"
+            title="Beleg aus der Ablage / Nextcloud wählen">
+            <span class="si">☁</span><span class="st">Aus Ablage</span>
           </button>`}
         <span class="haken ${farbe}">${zeichen}</span>
       </div>
@@ -1578,6 +1586,21 @@ inhalt.addEventListener('click', async e => {
   if (scan) {
     scanZiel = { kostenart: scan.dataset.scan, knopf: scan };
     document.getElementById('scanFeld').click();
+    return;
+  }
+
+  // CCLXXXIII — Beleg aus der Ablage/Nextcloud wählen: hinüber in den
+  // Dokumenteneingang, dort auf dieses Objekt + diese Kostenart vorgefiltert.
+  // Das Prüfblatt kennt die Ziel-Abrechnung und ordnet den gewählten Beleg
+  // beim Übernehmen genau dieser Position zu.
+  const ablage = e.target.closest('[data-ablage]');
+  if (ablage) {
+    const p = new URLSearchParams({
+      objekt: daten.objekt, kostenart: ablage.dataset.ablage,
+      zuordnenZeitraum: String(daten.id),
+      zurueck: location.pathname + location.search,
+    });
+    location.href = 'eingang.html?' + p.toString();
     return;
   }
 

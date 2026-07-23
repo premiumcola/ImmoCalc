@@ -73,6 +73,18 @@
   .filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
           margin-bottom:14px}
   @media (min-width:900px){.filter{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  /* Kontext-Banner beim Sprung aus der NK-Abrechnung (Beleg wählen) */
+  .nkkontext{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:var(--teal-l);color:var(--teal-d);border:1px solid #BFD9D1;
+    border-radius:14px;padding:12px 15px;margin:0 0 12px;
+    font:500 13px var(--body);line-height:1.45}
+  .nkkontext .kx{font:400 17px var(--mono);flex:none}
+  .nkkontext strong{font-weight:700}
+  .nkkontext .zur{margin-left:auto;color:var(--teal-d);font:600 12.5px var(--disp);
+    text-decoration:none;white-space:nowrap;border:1px solid #BFD9D1;
+    border-radius:999px;padding:7px 13px;background:var(--sheet)}
+  .nkkontext .zur:hover{background:#DCEDE7}
+
   /* Immobilien-Filter als Buttons: nur Immo-Icon + Adresse */
   .im-leiste{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
   .imbtn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);
@@ -424,6 +436,8 @@
   </div>
 
   <div class="scroll">
+    <!-- CCLXXXIII — aus der NK-Abrechnung hierher gesprungen: Kontext + Rückweg. -->
+    <div class="nkkontext" id="nkKontext" hidden></div>
     <button class="kamera" id="kamera">
       <span class="ks">▣</span>
       <span class="kt">
@@ -2174,6 +2188,29 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
     dlg.showModal();
   });
 }
+
+/* CCLXXXIII — aus einer NK-Abrechnung hierher gesprungen: Objekt + Kostenart
+   vorfiltern, Warte-Belege zeigen, Rückweg anbieten. Das Prüfblatt ordnet den
+   gewählten Beleg dann wie im Dokumentenmodus zu (mit Zeitraum-Vorschlag). */
+(function nkKontextInit() {
+  const p = new URLSearchParams(location.search);
+  const objekt = p.get('objekt') || '';
+  const kostenart = p.get('kostenart') || '';
+  const ziel = p.get('zuordnenZeitraum') || '';
+  if (!objekt && !kostenart && !ziel) return;
+  if (objekt) filter.objekt = objekt;
+  if (kostenart) filter.kostenart = kostenart;
+  if (ziel) filter.status = 'neu';
+  let zurueck = p.get('zurueck') || '';
+  if (!/^\/?zeitraum\.html\?/.test(zurueck)) zurueck = 'nebenkosten.html';
+  const el = document.getElementById('nkKontext');
+  el.innerHTML = `<span class="kx">☁</span>
+    <span>Beleg für die Abrechnung wählen${kostenart
+      ? ` — <strong>${esc(kostenart)}</strong>` : ''}. Antippen öffnet das
+      Prüfblatt wie bei einem neuen Beleg.</span>
+    <a class="zur" href="${esc(zurueck)}">← zurück zur Abrechnung</a>`;
+  el.hidden = false;
+})();
 
 await laden();
 await fussnoteZeigen();
