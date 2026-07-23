@@ -12,9 +12,9 @@ from sqlmodel import Session, select
 from ..bezeichnung import (PLATZHALTER, STANDARD_UNTERORDNER, STANDARD_VORLAGE,
                            UNTERORDNER_PLATZHALTER, VERBOTENE_ZEICHEN,
                            datum_aus_namen, doppelt_geschachtelt,
-                           lagebezeichnung, nach_vorlage, ordnerpfad, pfadteile,
-                           unterordner_finden, unterordner_name,
-                           unterordner_pruefen, vorlage_pruefen)
+                           gleicher_ordner, lagebezeichnung, nach_vorlage,
+                           ordnerpfad, pfadteile, unterordner_finden,
+                           unterordner_name, unterordner_pruefen, vorlage_pruefen)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, S_HOME, S_TLS, S_UNTERORDNER,
                         S_URL, S_BENUTZER, S_PASSWORT, ZIELORDNER, _lies,
                         einheit_von, struktur_fuer, unterordner_fuer,
@@ -634,6 +634,77 @@ def _entschachtele(session: Session, client: Nextcloud, von: str,
         bewegt += _pfade_umschreiben(session, _pfad(kind.pfad), ziel)
         session.commit()
     return _pfad(nach), bewegt, geblieben
+
+
+# --------------------------------------------------------------------------
+# CCLXIII: Objektordner beim Speichern der Stammdaten automatisch umbenennen
+#
+# Ändert der Nutzer Ort, Straße, Name o. Ä., ergibt die Vorlage einen anderen
+# Ordnernamen. Statt eines eigenen „Umbenennen"-Knopfs zieht der Ordner direkt
+# beim Speichern nach — dieselbe Mechanik wie der große Umzug, aber für genau
+# eine Immobilie und in ihrem bisherigen Elternordner (reine Umbenennung, kein
+# Wechsel des Home-Ordners; das Entschachteln bleibt dem expliziten Umzug).
+#
+# Aufgerufen aus `objekte.objekt_aendern`, NACHDEM die Stammdaten schon
+# festgeschrieben sind. Reihenfolge wie beim Umzug: erst MOVE (auf einen freien
+# Namen, nie überschreiben), dann `Dokument.pfad` per Präfix und `nc_ordner`
+# nachziehen, dann committen. Scheitert der MOVE, bleibt in der Datenbank alles
+# beim Alten — der alte Ordner ebenso — und der Aufrufer behält die übrigen
+# Stammdaten-Änderungen.
+# --------------------------------------------------------------------------
+
+def ordner_nachziehen(session: Session, objekt: Objekt,
+                      war_name: str = "") -> dict:
+    """Benennt den Objektordner um, wenn der abgeleitete Name sich geändert hat.
+
+    Rein additiv und still, wenn nichts zu tun ist: ohne verknüpften Ordner,
+    ohne Home-Ordner, ohne eingerichtete Cloud oder bei unverändertem Namen
+    passiert nichts und es fliegt kein Fehler. Der Rückgabewert sagt, was
+    geschah — der Aufrufer hängt ihn nur als Hinweis an seine Antwort.
+
+    `war_name` ist der Vorlagenname aus den *alten* Stammdaten. Ist er gesetzt
+    und trägt der Ordner ihn gerade, folgte er bisher der Vorlage und darf
+    nachziehen. Weicht der Ordner davon ab, hat der Nutzer ihn selbst benannt —
+    dann wird nichts erzwungen."""
+    if not objekt.nc_ordner:
+        return {"umbenannt": False, "grund": "kein Ordner verknüpft"}
+    if not _lies(session, S_HOME):
+        return {"umbenannt": False, "grund": "kein Home-Ordner"}
+    try:
+        client = verbindung(session)
+    except HTTPException as fehler:
+        return {"umbenannt": False, "grund": fehler.detail}
+
+    von = _pfad(objekt.nc_ordner)
+    if war_name and not gleicher_ordner(pfadteile(von)[-1], war_name):
+        return {"umbenannt": False, "grund": "Ordner folgt nicht der Vorlage"}
+    # Reine Umbenennung: der neue Name entsteht im bisherigen Elternordner.
+    # `ordnerpfad` verhindert dabei, dass ein Ordner gleichen Namens doppelt
+    # geschachtelt würde.
+    nach = _pfad(ordnerpfad(_eltern(von), ordner_fuer(session, objekt)))
+    if nach == von:
+        return {"umbenannt": False, "grund": "Name unverändert"}
+
+    try:
+        frei = _freier_ordner(client, nach)     # nie überschreiben
+        _pfade_pruefen(session, von, frei)       # Unique-Index vor dem MOVE
+        client.verschiebe(von, frei)             # MOVE, geprüftes Schreibrecht
+    except (NextcloudFehler, UmzugFehler) as fehler:
+        # Der MOVE ist nicht geglückt — Datenbank und alter Ordner bleiben, wie
+        # sie sind. Kein Verweis zeigt ins Leere.
+        log.warning("Ordner-Umbenennung übersprungen für %s: %s", von, fehler)
+        return {"umbenannt": False, "von": von, "nach": nach,
+                "fehler": str(fehler)}
+
+    # MOVE geglückt — erst jetzt zieht die Datenbank nach.
+    dokumente = _pfade_umschreiben(session, von, frei)
+    objekt.nc_ordner = frei
+    session.add(objekt)
+    session.commit()
+    log.info("Objektordner umbenannt: %s -> %s (%d Belege)",
+             von, frei, len(dokumente))
+    return {"umbenannt": True, "von": von, "nach": frei,
+            "dokumente": len(dokumente)}
 
 
 @router.get("/umzug")

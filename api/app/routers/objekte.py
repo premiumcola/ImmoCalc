@@ -32,6 +32,13 @@ router = APIRouter(prefix="/api", tags=["objekte"])
 # die bleibt beim Löschen ja gerade bestehen.
 SICHERUNGSORDNER = "00_ImmoCalc_Sicherungen"
 
+# CCLXIII: Genau diese Stammdaten gehen über die Vorlage in den Ordnernamen ein
+# (siehe cloud.ordner_fuer → bezeichnung.nach_vorlage). Nur wenn sich eines von
+# ihnen ändert, lohnt der Cloud-Round-Trip zum Prüfen/Umbenennen — ein Umschalten
+# von `aktiv` oder ein neuer Kaufpreis lässt den Ordner unberührt.
+_ORDNER_FELDER = {"name", "ort", "strasse", "plz", "typ", "nutzung",
+                  "gemarkung", "flurstueck"}
+
 
 def _slugify(name: str) -> str:
     umlaute = {"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}
@@ -238,12 +245,39 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
         raise HTTPException(400, "Ein Grundstück kann nicht Teil einer WEG sein.")
     # ueber model_validate, damit Datumsstrings aus JSON zu echten date-Objekten
     # werden — als Zeichenkette gespeichert liesse sich das Feld nicht mehr lesen.
+    # CCLXIII: ändert sich ein Feld, das in den Ordnernamen eingeht, zieht der
+    # Nextcloud-Ordner automatisch nach — ohne eigenen Knopf. Der Vorlagenname
+    # aus den *alten* Werten wird noch vor dem Überschreiben festgehalten: nur
+    # ein Ordner, der ihm bisher folgte, wird umbenannt (ein selbst benannter
+    # bleibt). Setzt der Nutzer `nc_ordner` in derselben Anfrage selbst, hat das
+    # Vorrang — dann keine automatische Umbenennung.
+    benennt_um = bool(felder.keys() & _ORDNER_FELDER
+                      and "nc_ordner" not in felder and o.nc_ordner)
+    war_name = ""
+    if benennt_um:
+        from .cloud import ordner_fuer                 # zirkelfrei zur Laufzeit
+        war_name = ordner_fuer(session, o)             # aus den alten Stammdaten
+
     geprueft = Objekt.model_validate({**o.model_dump(), **felder})
     for k in felder:
         setattr(o, k, getattr(geprueft, k))
     session.add(o)
     session.commit()
-    return {"ok": True, "slug": o.slug}
+
+    antwort = {"ok": True, "slug": o.slug}
+    if benennt_um:
+        from .cloud import ordner_nachziehen          # zirkelfrei zur Laufzeit
+        try:
+            ergebnis = ordner_nachziehen(session, o, war_name=war_name)
+        except Exception as fehler:      # noqa: BLE001 — Stammdaten sind sicher
+            log.warning("Ordner-Umbenennung fehlgeschlagen: %s", fehler)
+            session.rollback()
+            ergebnis = {"umbenannt": False, "fehler": str(fehler)}
+        if ergebnis.get("umbenannt"):
+            antwort["ordner_umbenannt"] = ergebnis
+        elif ergebnis.get("fehler"):
+            antwort["ordner_hinweis"] = ergebnis
+    return antwort
 
 
 @router.get("/objekte/{slug}/export")
