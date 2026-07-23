@@ -1413,6 +1413,113 @@ def position_loesen(dokument_id: int,
             "betrag": p.betrag if p else None}
 
 
+# --------------------------------------------------------------------------
+# CCLV: Kostenfreie Belege als Themen-Anhänger
+#
+# Manche Belege sind Zusatzinformationen zu einer Kostenart, tragen aber
+# keinen eigenen Kostenanteil — ein SEPA-Lastschriftmandat, ein Zählerstand.
+# Sie hängen am **Thema** (Zeitraum + Kostenart), nicht an einer
+# Kostenposition: wird die Position getauscht oder entfernt, bleibt der
+# Anhänger. Schlüssel ist deshalb (`zeitraum_id` + `kostenart`), und
+# `position_id` bleibt bewusst leer — es entsteht keine Kostenposition und es
+# wird kein Betrag verrechnet.
+# --------------------------------------------------------------------------
+
+def _ist_kostenfrei(d: Dokument) -> bool:
+    """Ein Beleg ohne eigenen Kostenanteil: in keine Kostenposition
+    eingerechnet (`position_id` leer) und ohne Betrag."""
+    return d.position_id is None and not d.betrag
+
+
+def _anh_zeige(d: Dokument) -> dict:
+    """Ein Anhänger, so knapp wie die Chip-Anzeige ihn braucht."""
+    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+            "kategorie": d.kategorie, "kostenart": d.kostenart, "jahr": d.jahr}
+
+
+class AnhaengerIn(BaseModel):
+    """Ein kostenfreier Beleg wird an ein Kostenart-Thema gehängt."""
+    zeitraum_id: int
+    kostenart: str
+
+
+@router.get("/anhaenger/{zeitraum_id}")
+def anhaenger_liste(zeitraum_id: int,
+                    session: Session = Depends(get_session)) -> dict:
+    """Die kostenfreien Themen-Anhänger eines Zeitraums, nach Kostenart
+    gruppiert — und die Belege, die sich noch anhängen ließen.
+
+    Angehängt ist, was auf diesen Zeitraum zeigt, ohne in eine Kostenposition
+    eingerechnet zu sein (`position_id` leer), mit einer Kostenart als Thema.
+    Kandidaten sind die übrigen kostenfreien Belege derselben Immobilie."""
+    z = session.get(Zeitraum, zeitraum_id)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    alle = session.exec(
+        select(Dokument).where(Dokument.status != VERMISST)).all()
+
+    angehaengt: dict[str, list] = {}
+    for d in alle:
+        if (d.zeitraum_id == zeitraum_id and d.position_id is None
+                and (d.kostenart or "").strip()):
+            angehaengt.setdefault(d.kostenart, []).append(_anh_zeige(d))
+
+    schon = {e["id"] for liste in angehaengt.values() for e in liste}
+    kandidaten = [
+        _anh_zeige(d) for d in alle
+        if d.objekt_id == z.objekt_id and _ist_kostenfrei(d)
+        and d.id not in schon]
+    # Neueste zuerst — der frisch abgelegte Beleg steht oben.
+    kandidaten.sort(key=lambda e: (-(e["jahr"] or 0), e["dateiname"].lower()))
+    for liste in angehaengt.values():
+        liste.sort(key=lambda e: e["dateiname"].lower())
+    return {"zeitraum_id": zeitraum_id, "angehaengt": angehaengt,
+            "kandidaten": kandidaten}
+
+
+@router.post("/{dokument_id}/anhaenger")
+def anhaenger_setzen(dokument_id: int, data: AnhaengerIn,
+                     session: Session = Depends(get_session)) -> dict:
+    """Hängt einen kostenfreien Beleg an ein Kostenart-Thema.
+
+    Setzt nur `zeitraum_id` und `kostenart` am Beleg — es entsteht keine
+    Kostenposition, `position_id` bleibt leer, kein Betrag wird verrechnet. Die
+    Datei in der Cloud bleibt unangetastet, wo sie liegt."""
+    d = _beleg(session, dokument_id)
+    if d.position_id:
+        raise HTTPException(409, "Dieser Beleg ist in eine Kostenposition "
+                                 "eingerechnet — er trägt einen Kostenanteil "
+                                 "und ist kein kostenfreier Anhänger.")
+    kostenart = (data.kostenart or "").strip()
+    if not kostenart:
+        raise HTTPException(400, "Für den Anhänger fehlt das Kostenart-Thema.")
+    _pruefe_zeitraum(session, data.zeitraum_id)
+    d.zeitraum_id = data.zeitraum_id
+    d.kostenart = kostenart
+    session.add(d)
+    session.commit()
+    session.refresh(d)
+    log.info("Anhänger gesetzt: Dokument %s an Zeitraum %s · %s",
+             d.id, data.zeitraum_id, kostenart)
+    return {"ok": True, **_anh_zeige(d), "zeitraum_id": d.zeitraum_id}
+
+
+@router.delete("/{dokument_id}/anhaenger")
+def anhaenger_loesen(dokument_id: int,
+                     session: Session = Depends(get_session)) -> dict:
+    """Löst einen Themen-Anhänger wieder vom Zeitraum.
+
+    Nimmt nur die Zeitraum-Zuordnung zurück (`zeitraum_id` leer); die
+    Klassifizierung (Art, Kostenart) und die Datei bleiben unangetastet. Eine
+    Kostenposition war nie im Spiel, `position_id` bleibt unberührt leer."""
+    d = _beleg(session, dokument_id)
+    d.zeitraum_id = None
+    session.add(d)
+    session.commit()
+    log.info("Anhänger gelöst: Dokument %s", d.id)
+    return {"ok": True, "id": d.id, "kostenart": d.kostenart}
+
+
 @router.delete("/{dokument_id}")
 def entfernen(dokument_id: int,
               session: Session = Depends(get_session)) -> dict:

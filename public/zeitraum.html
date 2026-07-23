@@ -169,6 +169,48 @@
     font:500 11.5px var(--body);min-height:36px}
   .belege a:hover{background:var(--teal-l);color:var(--teal-d)}
   .belege .kein{font:400 12px var(--body);color:var(--soft);line-height:1.45}
+  /* CCLV — kostenfreie Belege als kleiner Anhänger („Kleideranhänger") am
+     Kostenart-Thema. Dezent und gedeckt-grau, klar ohne Betrag — nie mit den
+     grün gefüllten Kostenzeilen zu verwechseln. Sitzt unter der Kopfzeile und
+     erscheint auch bei „offen"/„fehlt", weil er am Thema hängt, nicht an der
+     Position. */
+  .anh{display:flex;flex-wrap:wrap;gap:6px;padding:0 15px 12px}
+  .anh-chip{display:inline-flex;align-items:center;max-width:100%;
+            background:#EDF1F0;border-radius:9px;overflow:hidden}
+  .anh-chip a{display:inline-flex;align-items:center;gap:5px;min-width:0;
+              text-decoration:none;color:var(--soft);padding:7px 6px 7px 10px;
+              min-height:32px;font:600 11px var(--mono)}
+  .anh-chip a:hover{color:var(--teal-d)}
+  .anh-chip svg{width:13px;height:13px;flex:none}
+  .anh-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+  .anh-x{border:none;background:none;color:var(--soft);cursor:pointer;
+         font:400 15px var(--body);line-height:1;padding:0 10px;
+         align-self:stretch;min-width:34px}
+  .anh-x:hover{color:var(--neg);background:rgba(178,66,41,.09)}
+  /* Anhängen aus dem Bestand — leise und gestrichelt, im aufgeklappten Bereich. */
+  .anh-verwalt{margin-top:14px}
+  .anh-anbau{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+             border:1.5px dashed var(--line);background:transparent;
+             color:var(--soft);border-radius:11px;padding:10px 13px;
+             font:600 12px var(--disp);min-height:44px}
+  .anh-anbau:hover{border-color:var(--teal);color:var(--teal-d);background:var(--teal-l)}
+  .anh-anbau svg{width:15px;height:15px;flex:none}
+  .anh-hint{display:block;font:400 11px var(--body);color:var(--soft);
+            line-height:1.45;margin-top:8px}
+  /* Auswahl-Dialog der kostenfreien Belege aus dem Bestand. */
+  .ahdlg .ahliste{max-height:min(50dvh,360px);overflow:auto;margin:6px 0 14px}
+  .ahdlg .ahz{display:flex;align-items:center;gap:11px;width:100%;cursor:pointer;
+              border:none;background:var(--sheet);border-radius:12px;
+              padding:12px 13px;margin-bottom:8px;min-height:52px;text-align:left;
+              font-family:var(--body);color:var(--ink);
+              box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .ahdlg .ahz:hover{background:var(--teal-l)}
+  .ahdlg .ahz svg{width:18px;height:18px;flex:none;color:var(--soft)}
+  .ahdlg .ahn{flex:1;min-width:0;font:600 13px var(--body);overflow-wrap:anywhere}
+  .ahdlg .ahsub{display:block;font:400 10.5px var(--mono);color:var(--soft);
+                margin-top:2px}
+  .ahdlg .ahleer{font:400 12.5px var(--body);color:var(--soft);line-height:1.55;
+                 margin:4px 0 14px}
   /* Woraus die Summe entstanden ist (CLXXXII) — eine ruhige Zeile über den
      Belegen, damit vier Abschlagsrechnungen nicht als eine Zahl dastehen. */
   .zsumme{font:500 11.5px var(--mono);color:var(--teal-d);background:var(--teal-l);
@@ -293,6 +335,9 @@ let daten = null;
 /* Welche Verteilungsschlüssel für dieses Objekt taugen und welche Gewichte
    sie ergäben — die Vorschau, bevor man sich festlegt. */
 let schluessel = null;
+/* CCLV — kostenfreie Themen-Anhänger: was am Zeitraum hängt (nach Kostenart
+   gruppiert) und welche kostenfreien Belege sich noch anhängen ließen. */
+let anhaenger = null;
 /* Welche Zeilen der Verteilung kein Mieter sind, sondern unbelegte Zeit. Die
    Schlüssel-Vorschau nennt sie je Schlüssel; zusammen sind das die Leerstände
    des Zeitraums. Ohne diese Kennzeichnung liest sich der Anteil, den der
@@ -381,6 +426,44 @@ function belegeHtml(k) {
       im Eingang lässt sich einer übernehmen.</span></div>`;
   }
   return zusammensetzungHtml(k) + belegLinks(alle);
+}
+
+/* CCLV — der kleine Anhänger („Kleideranhänger"): ein flaches Etikett-Symbol
+   im bestehenden Strichstil, kein Emoji. */
+const ANH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.4-7.4A2 2
+  0 0 1 2.6 11.8V4.8a2 2 0 0 1 2-2h7a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0
+  2.8Z"/><circle cx="7.8" cy="7.8" r="1.4"/></svg>`;
+
+/* Der Dateiname als kurze Chip-Beschriftung: Endung, führendes Datum und ein
+   etwaiger Betrag hinten fallen weg — übrig bleibt die Sache selbst. */
+const kurzBeleg = name => (name || '')
+  .replace(/\.[^.]+$/, '')
+  .replace(/^\d{4}(-\d{2})?[_-]/, '')
+  .replace(/_-?\d[\d.,]*\s*€$/, '')
+  .replace(/[_-]+/g, ' ')
+  .trim() || (name || 'Beleg');
+
+const anhaengerZu = kostenart => (anhaenger?.angehaengt || {})[kostenart] || [];
+
+/* Die Chip-Leiste unter der Kopfzeile: je Anhänger ein gedeckter Chip
+   (antippen → ansehen) und, solange der Zeitraum in Arbeit ist, ein leises ×
+   zum Lösen. Sie erscheint unabhängig davon, ob es eine Kostenposition gibt. */
+function anhaengerStrip(k) {
+  const liste = anhaengerZu(k.kostenart);
+  if (!liste.length) return '';
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const chips = liste.map(d => `
+    <span class="anh-chip">
+      <a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
+         title="${esc(d.pfad)} · Zusatzbeleg ohne Kostenanteil">${ANH_ICON}<span
+         class="anh-t">${esc(kurzBeleg(d.dateiname))}</span></a>
+      ${bearbeitbar ? `<button class="anh-x" data-anh-loesen="${d.id}"
+        title="Anhänger lösen" aria-label="Anhänger von ${esc(k.kostenart)} lösen"
+        >×</button>` : ''}
+    </span>`).join('');
+  return `<div class="anh">${chips}</div>`;
 }
 
 const schluesselMeta = wert =>
@@ -541,10 +624,18 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
           </button>`}
         <span class="haken ${farbe}">${zeichen}</span>
       </div>
+      ${anhaengerStrip(k)}
       ${aufgeklappt ? `<div class="auf">
         ${verteilung}
         <div class="zk">Belege</div>
         ${belegeHtml(k)}
+        ${daten.status === 'in Arbeit' ? `<div class="anh-verwalt">
+          <button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}">${
+            ANH_ICON}＋ Kostenfreien Beleg anhängen</button>
+          <span class="anh-hint">Zusatzbelege ohne Kostenanteil — Zählerstand,
+            SEPA-Mandat. Sie hängen am Thema „${esc(k.kostenart)}“, nicht an der
+            Position, und tragen keinen Betrag.</span>
+        </div>` : ''}
         ${k.position_id ? `<div class="nachtrag">
           <input type="number" step="0.01" placeholder="Betrag eintragen"
                  value="${k.betrag || ''}" data-betrag="${k.position_id}"
@@ -1074,6 +1165,66 @@ async function positionEntfernen(knopf) {
   }
 }
 
+/* CCLV — den kostenfreien Beleg aus dem Bestand wählen. Eigener Dialog wie der
+   Versandplan: eine Zeile je Kandidat. Liefert die Dokument-Id oder null. */
+function anhaengerWaehlen(kostenart) {
+  const kandidaten = anhaenger?.kandidaten || [];
+  const liste = kandidaten.length
+    ? kandidaten.map(d => `
+        <button class="ahz" data-pick="${d.id}">
+          ${ANH_ICON}
+          <span class="ahn">${esc(kurzBeleg(d.dateiname))}
+            <span class="ahsub">${esc(d.kategorie || 'Ohne Art')}${
+              d.jahr ? ` · ${d.jahr}` : ''}</span></span>
+        </button>`).join('')
+    : `<div class="ahleer">Kein kostenfreier Beleg im Bestand dieser Immobilie.
+       Ein Beleg wird kostenfrei, wenn er im Eingang ohne Kostenposition bleibt —
+       etwa ein Zählerstand oder ein SEPA-Mandat.</div>`;
+
+  return new Promise(fertig => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'immo-dlg ahdlg';
+    dlg.innerHTML = `
+      <div class="dt">Beleg an „${esc(kostenart)}“ hängen</div>
+      <p>Ein Zusatzbeleg ohne Kostenanteil — er erscheint als kleiner Anhänger
+        am Thema, ohne Betrag.</p>
+      <div class="ahliste">${liste}</div>
+      <button class="btn leise" data-nein>Abbrechen</button>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.addEventListener('cancel', () => fertig(null));
+    dlg.addEventListener('click', e => {
+      const pick = e.target.closest('[data-pick]');
+      if (pick) { fertig(Number(pick.dataset.pick)); dlg.close(); }
+      else if (e.target.closest('[data-nein]')) { fertig(null); dlg.close(); }
+    });
+    dlg.showModal();
+  });
+}
+
+async function anhaengen(kostenart) {
+  const id = await anhaengerWaehlen(kostenart);
+  if (!id) return;
+  try {
+    await api(`/dokumente/${id}/anhaenger`,
+      { method: 'POST', body: { zeitraum_id: Number(zid), kostenart } });
+    melde(`Anhänger an „${kostenart}“ gesetzt`, 'pos');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function anhaengerLoesen(id) {
+  try {
+    await api(`/dokumente/${id}/anhaenger`, { method: 'DELETE' });
+    melde('Anhänger gelöst', '');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
 /* Wieder öffnen — bewusst mit Rückfrage, aber ohne Drama: es geht nichts
    verloren, und niemand bekommt dadurch eine zweite Mail. */
 async function wiederOeffnen(knopf) {
@@ -1217,6 +1368,13 @@ async function laden() {
   }
   leerstaende = new Set(
     (schluessel?.schluessel || []).flatMap(s => s.leerstand || []));
+  // CCLV — die kostenfreien Themen-Anhänger. Beiwerk: fehlt der Endpunkt (noch
+  // nicht deployt), bleibt die Checkliste ohne Anhänger bedienbar.
+  try {
+    anhaenger = await api(`/dokumente/anhaenger/${zid}`);
+  } catch {
+    anhaenger = null;
+  }
   titel.textContent = daten.label;
   sub.textContent = `${daten.objekt_name} · ${daten.typ}`;
   await zeichnen();
@@ -1298,6 +1456,12 @@ inhalt.addEventListener('click', async e => {
     offen.has(i) ? offen.delete(i) : offen.add(i);
     return zeichnen();
   }
+
+  const anhaengenKnopf = e.target.closest('[data-anhaengen]');
+  if (anhaengenKnopf) return anhaengen(anhaengenKnopf.dataset.anhaengen);
+
+  const anhLoesen = e.target.closest('[data-anh-loesen]');
+  if (anhLoesen) return anhaengerLoesen(Number(anhLoesen.dataset.anhLoesen));
 
   const beleg = e.target.closest('[data-beleg]');
   if (beleg) {
