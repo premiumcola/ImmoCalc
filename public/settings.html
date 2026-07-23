@@ -80,6 +80,13 @@
          line-height:1.45;margin-top:9px}
   .ulabel{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
           color:var(--soft);margin:16px 0 7px}
+  /* Release-Notes: die letzten fünf Änderungen, einzeilig, dezent unter der Version */
+  .rnotes{margin:8px 0 4px;padding:11px 13px;background:var(--sheet);
+          border-radius:12px}
+  .rnotes .rn-titel{display:block;font:600 10px var(--mono);letter-spacing:.06em;
+          text-transform:uppercase;color:var(--soft);margin-bottom:7px}
+  .rnotes .rn-zeile{display:block;font:400 12px var(--body);color:var(--ink);
+          line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .uruhig{background:var(--sheet);border-radius:12px;padding:12px 13px;
           margin-bottom:12px}
   .uruhig .upfad{margin-bottom:3px}
@@ -239,6 +246,7 @@
         <span class="d" id="build">wird geladen …</span>
       </span>
     </div>
+    <div class="rnotes" id="rnotes" hidden></div>
   </div>
 
   <div data-nav></div>
@@ -465,21 +473,52 @@ import { auswahlfeld } from './assets/auswahl.js';
 installNav();
 
 const build = document.getElementById('build');
+const rnotes = document.getElementById('rnotes');
 const sub = document.getElementById('sub');
 
+const ortszeit = (iso) => iso
+  ? new Date(iso).toLocaleString('de-DE',
+      { day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit' })
+  : null;
+
+// Die letzten fünf Änderungen als einzelne Zeilen (textContent → keine
+// Interpretation von Sonderzeichen aus den Commit-Titeln).
+function zeigeNotizen(notes) {
+  if (!Array.isArray(notes) || !notes.length) return;
+  rnotes.textContent = '';
+  const titel = document.createElement('span');
+  titel.className = 'rn-titel';
+  titel.textContent = 'Zuletzt geändert';
+  rnotes.appendChild(titel);
+  for (const n of notes.slice(0, 5)) {
+    const z = document.createElement('span');
+    z.className = 'rn-zeile';
+    z.textContent = n;
+    rnotes.appendChild(z);
+  }
+  rnotes.hidden = false;
+}
+
 try {
-  const gesundheit = await api('/health');
-  // Build-Zeit (ISO UTC) in Ortszeit — so sieht man auf einen Blick, ob der
-  // Auto-Deploy den neuen Stand gezogen hat („von vor drei Minuten").
-  const wann = gesundheit.build_zeit
-    ? new Date(gesundheit.build_zeit).toLocaleString('de-DE',
-        { day: '2-digit', month: '2-digit', year: 'numeric',
-          hour: '2-digit', minute: '2-digit' })
-    : null;
-  build.textContent =
-    `ImmoCalc ${gesundheit.version ?? '–'} · Build ${gesundheit.build ?? 'unbekannt'}`
-    + (wann ? ` · ${wann} Uhr` : '');
-  sub.textContent = 'API verbunden';
+  // Bevorzugt version.json: vom Auto-Updater bei JEDEM neuen Stand geschrieben
+  // (auch reine Frontend-Deploys) → zeigt den echten Live-Stand mit Commit-Zeit
+  // und den letzten fünf Änderungen. Fällt sie aus, der gebackene Build aus der API.
+  const v = await fetch('/version.json', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null)).catch(() => null);
+  if (v && v.sha) {
+    const wann = ortszeit(v.zeit);
+    build.textContent = `ImmoCalc · ${v.sha}` + (wann ? ` · ${wann} Uhr` : '');
+    zeigeNotizen(v.notes);
+    sub.textContent = 'API verbunden';
+  } else {
+    const g = await api('/health');
+    const wann = ortszeit(g.build_zeit);
+    build.textContent =
+      `ImmoCalc ${g.version ?? '–'} · Build ${g.build ?? 'unbekannt'}`
+      + (wann ? ` · ${wann} Uhr` : '');
+    sub.textContent = 'API verbunden';
+  }
 } catch {
   build.textContent = 'API nicht erreichbar';
   sub.textContent = 'API nicht erreichbar';

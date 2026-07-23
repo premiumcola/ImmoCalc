@@ -22,6 +22,23 @@ STAND="$REPO/tools/.zuletzt-deployt"        # SHA, der zuletzt live gebracht wur
 
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$LOG"; }
 
+# Schreibt public/version.json (gemountet -> ohne Rebuild sofort live): aktueller
+# Kurz-SHA, Commit-Zeitpunkt und die letzten fuenf Aenderungen. Wird bei jedem
+# NEUEN HEAD aktualisiert -- auch bei reinen Frontend-Deploys --, damit die
+# Einstellungen den echten Live-Stand zeigen und nicht den letzten Cron-Tick.
+schreibe_version() {
+  local sha zeit noten="" zeile erste=1
+  sha="$(git rev-parse --short HEAD)"
+  zeit="$(git show -s --format=%cI HEAD)"
+  while IFS= read -r zeile; do
+    zeile="${zeile//\\/\\\\}"; zeile="${zeile//\"/\\\"}"
+    if [ "$erste" -eq 1 ]; then noten="\"$zeile\""; erste=0
+    else noten="$noten,\"$zeile\""; fi
+  done < <(git log -5 --format=%s)
+  printf '{"sha":"%s","zeit":"%s","notes":[%s]}\n' "$sha" "$zeit" "$noten" \
+    >"$REPO/public/version.json"
+}
+
 # Nur ein Lauf gleichzeitig — sonst überholen sich zwei Ticks beim Bauen.
 exec 9>"$REPO/tools/.auto-update.lock"
 flock -n 9 || exit 0
@@ -42,6 +59,7 @@ LETZTER="$(cat "$STAND" 2>/dev/null || echo '')"
 deploy() {
   if ./deploy.sh >>"$LOG" 2>&1; then
     echo "$HEAD" >"$STAND"
+    schreibe_version
     log "Deploy fertig ($HEAD)"
   else
     log "FEHLER: deploy.sh scheiterte — App läuft noch auf dem alten Stand"
@@ -68,5 +86,6 @@ if [ "$GEAENDERT" = "?" ] || grep -qE "$BRAUCHT_DEPLOY" <<<"$GEAENDERT"; then
   deploy
 else
   echo "$HEAD" >"$STAND"
+  schreibe_version
   log "kein Deploy — $ANZAHL neue(r) Commit(s), nur Frontend/Doku, sofort live ($HEAD)"
 fi

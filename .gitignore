@@ -44,6 +44,8 @@ tests/screenshots/
 tools/auto-update.log
 tools/.auto-update.lock
 tools/.zuletzt-deployt
+# Vom Auto-Updater pro Umgebung geschrieben (SHA + Zeit + letzte 5 Änderungen)
+public/version.json
 
 # OCR-Nachzieh-Bericht (CLXXIX): kann echte Betraege/Namen aus Belegen tragen
 tools/ocr_nachziehen.json
