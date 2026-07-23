@@ -100,6 +100,22 @@
   .beleg.gewaehlt{border-color:var(--teal);cursor:default;
                   box-shadow:0 6px 18px -12px rgba(22,38,44,.55)}
   .beleg .kopf{display:flex;gap:12px;align-items:flex-start}
+  /* Zuklappen (CCLX): der Kopf der offenen Karte ist der Umschalter — ein Tipp
+     darauf klappt sie wieder zu. Das × oben rechts sagt dasselbe für alle, die
+     ein klares Ziel suchen; es schließt die GANZE Karte, nicht nur die
+     Vorschau. Deshalb liegt es hier oben und nicht unten im Beleg. */
+  .beleg.gewaehlt .kopf{cursor:pointer}
+  .beleg .kzu{flex:none;align-self:flex-start;width:40px;height:40px;
+    margin:-7px -6px -7px 0;border:none;border-radius:11px;background:none;
+    color:var(--soft);font:400 22px var(--body);line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-tap-highlight-color:transparent}
+  .beleg .kzu:hover{background:var(--teal-l);color:var(--teal-d)}
+  /* Liegt das Prüfblatt in der Karte (Telefon, Tablet), säße sein × mitten in
+     der PDF-Vorschau und schlösse doch die ganze Karte — irreführend. Dort
+     übernimmt der Kopf; das Blatt-× bleibt nur in der eigenen Spalte breiter
+     Schirme, wo es über der Vorschau eindeutig ist. */
+  .beleg .bzu{display:none}
   .beleg .sym{width:42px;height:42px;border-radius:11px;background:#EDF1F0;
     color:var(--soft);flex:none;display:flex;align-items:center;justify-content:center;
     font:600 13px var(--mono)}
@@ -773,7 +789,10 @@ function karte(d) {
           <span class="dn">${esc(titelVon(d))}</span>
           <span class="meta">${esc(meta)}</span>
         </span>
-        ${marke}
+        ${gewahlt
+          ? `<button type="button" class="kzu" aria-label="Karte schließen"
+                     title="Schließen">×</button>`
+          : marke}
       </div>
       ${gewahlt ? '' : `<div class="chips">${chips}</div>`}
       ${gewahlt && !d.vermisst ? felder(d, b) : ''}
@@ -1657,10 +1676,19 @@ zuruecksetzen.addEventListener('click', () => {
 
 /* ---- Einen Beleg wählen ---- */
 liste.addEventListener('click', e => {
+  // Klicks im Prüfblatt oder in den Eingabefeldern wählen keine Karte.
   if (e.target.closest('.blatt') || e.target.closest('[data-erfassung]')) return;
   const karteEl = e.target.closest('[data-id]');
   if (!karteEl) return;
-  waehle(Number(karteEl.dataset.id));
+  const id = Number(karteEl.dataset.id);
+  // Die offene Karte am Kopf antippen — oder ihr × — klappt sie wieder zu,
+  // damit die nächste darunter in den Blick rückt (CCLX). Der übrige Karten-
+  // körper (Felder, Blatt) bleibt vom Zuklappen unberührt.
+  if (id === gewaehlt) {
+    if (e.target.closest('.kopf')) waehle(null);
+    return;
+  }
+  waehle(id);
 });
 liste.addEventListener('keydown', e => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
