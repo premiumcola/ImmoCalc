@@ -550,11 +550,22 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
             ergebnis["monat"] = d.month
     if ki.get("betrag") is not None:
         ergebnis["betrag"] = ki["betrag"]
-    # Nur auffüllen, nicht überschreiben: die Wortlisten der Heuristik sind für
-    # die Ordnerzuordnung maßgeblich, die KI liefert hier nur eine Andeutung.
-    if not ergebnis.get("kategorie") and ki.get("kategorie"):
-        ergebnis["kategorie"] = ki["kategorie"]
-    if not ergebnis.get("sache") and ki.get("kostenart"):
+    # CCLXXI: Die KI versteht den Beleg besser als die Wortlisten und soll die
+    # ORDNERZUORDNUNG bestimmen. Ihre Kategorie überschreibt die Heuristik —
+    # aber nur, wenn sie einen echten Zielordner benennt (sonst könnte ein
+    # erfundener Wert einen Beleg fehlablegen). Die Nutzerregeln (CCXLIX) greifen
+    # danach und behalten das letzte Wort. Die Sache (Dateiname) übernimmt die KI.
+    try:
+        from .cloudkern import ZIELORDNER
+    except Exception:                                    # noqa: BLE001
+        ZIELORDNER = {}
+    ki_kat = (ki.get("kategorie") or "").strip()
+    kanonisch = {k.lower(): k for k in ZIELORDNER}.get(ki_kat.lower())
+    if kanonisch:
+        ergebnis["kategorie"] = kanonisch
+    elif ki_kat and not ergebnis.get("kategorie"):
+        ergebnis["kategorie"] = ki_kat
+    if ki.get("kostenart"):
         ergebnis["sache"] = ki["kostenart"]
     ergebnis["ist_kosten"] = bool(ki.get("ist_kosten", ergebnis["ist_kosten"]))
     ergebnis["ki"] = True

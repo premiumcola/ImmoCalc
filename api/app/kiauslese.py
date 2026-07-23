@@ -61,10 +61,20 @@ SYSTEM_PROMPT = (
     "Zahlungsziel, NICHT eine Zeitraumgrenze, NICHT handschriftliche Notizen. "
     "betrag = Gesamt-/Rechnungsbetrag in Euro als Zahl (Punkt als Dezimal-"
     "trenner, ohne Währungszeichen). "
-    "kostenart = worum es geht (z. B. Heizöl, Grundsteuer, Wasser). "
-    "kategorie = grobe Art (z. B. Nebenkosten, Steuer, Versicherung). "
-    "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand), "
-    "sonst true."
+    "kostenart = worum es GENAU geht, kurz für den Dateinamen (z. B. Heizöl, "
+    "Grundsteuer, Wasser, Gebäudeversicherung, Schornsteinfeger, Müll, "
+    "Darlehen). "
+    "kategorie = bestimmt den Ablage-Ordner und MUSS EXAKT einer dieser Werte "
+    "sein: \"Nebenkosten\" (Betriebs-/Heizkosten, Wasser, Strom, Müll, "
+    "Schornsteinfeger, Grundsteuer als Betriebskosten), \"Steuer\" (Finanzamt, "
+    "Steuerbescheid), \"Versicherung\" (Gebäude-, Haftpflicht-, Elementar-"
+    "versicherung, Policen), \"Kredit\" (Darlehen, Tilgung, Zinsen, "
+    "Finanzierung), \"Mietvertrag\" (Mietvertrag, Mieterhöhung, Kaution), "
+    "\"Hausverwaltung\" (Wohngeld, Eigentümerversammlung, WEG-Verwalter), "
+    "\"Korrespondenz\" (Schreiben, Briefe, Mandate ohne Kostenbezug), "
+    "\"Sonstiges\" (wenn nichts davon passt). Wähle den treffendsten Ordner. "
+    "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand, "
+    "Ableseprotokoll), sonst true."
 )
 
 
@@ -261,4 +271,13 @@ def pruefe(schluessel: str = "", modell: str = "") -> dict:
         return {"erreichbar": True, "fehler": ""}
     if antwort.status_code == 401:
         return {"erreichbar": False, "fehler": "Schlüssel abgelehnt (401)"}
-    return {"erreichbar": False, "fehler": f"HTTP {antwort.status_code}"}
+    # Anthropics eigene Fehlermeldung durchreichen — „HTTP 400" allein sagt
+    # nichts; „model: … not found" schon. Enthält nie den Beleginhalt.
+    grund = ""
+    try:
+        grund = ((antwort.json().get("error") or {}).get("message") or "").strip()
+    except Exception:                                      # noqa: BLE001
+        grund = ""
+    return {"erreichbar": False,
+            "fehler": f"HTTP {antwort.status_code}: {grund}" if grund
+                      else f"HTTP {antwort.status_code}"}
