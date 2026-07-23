@@ -149,11 +149,17 @@ def anlegen(session: Session, z: Zeitraum, kostenart: str, *,
             Kostenart.objekt_id == z.objekt_id,
             Kostenart.name == kostenart)).first()
         s35 = bool(art and art.s35)
+    # Eine Position gilt nur als erledigt, wenn sie eine Zahl trägt — aus einem
+    # Betrag oder aus verknüpften Belegen. Eine 0-€-Zeile ohne Beleg ist eine
+    # leere Hülle (so entstanden die „Wasser/Strom 0,00 €“-Reste); sie bleibt
+    # „offen“, auch wenn der Aufrufer „erledigt“ wünscht.
+    gewuenscht = status or ("erledigt" if betrag else "offen")
+    if gewuenscht == "erledigt" and not _geld(betrag) and not _geld(beleg_summe):
+        gewuenscht = "offen"
     p = Kostenposition(
         zeitraum_id=z.id, kostenart=kostenart, betrag=_geld(betrag),
         schluessel=schluessel, wertquelle=wertquelle, s35=s35,
-        status=status or ("erledigt" if betrag else "offen"),
-        anteile=gewichte, beleg_summe=_geld(beleg_summe))
+        status=gewuenscht, anteile=gewichte, beleg_summe=_geld(beleg_summe))
     session.add(p)
     return p
 
