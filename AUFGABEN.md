@@ -43,6 +43,8 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 | CCLIX | **Beleg-Großansicht = ganzes PDF**: das ↗ (zweiter Tab, auf iOS unschließbar) ist raus, das × oben bleibt der Rückweg, erste Seite breitenfüllend/unbeschnitten ✓. **Offen:** mehrseitige PDFs als gestapelte Seitenbilder zeigen (nicht nur Seite 1) | **teils erledigt** `immo.js`/`immo.css` (↗ entfernt, volle Breite). Multi-Seiten-Render braucht `dokumente.py`/`ocr.py` → nach CCLV-Agent |
 | CCLX | ~~**Dokument-Karte im Eingang sauber zuklappen**~~ **erledigt** (Frontend, sofort live) | Kopfzeile der offenen Karte antippen klappt zu; Zuklapp-× oben rechts in der Kopfzeile; das irreführende × in der eingebetteten Vorschau ausgeblendet (mobil); Desktop behält das Blatt-× in der eigenen Spalte |
 | CCLXI | ~~**Build-Zeitpunkt in den Einstellungen**~~ **erledigt** (Deploy nötig) | `build.txt` zweizeilig (SHA + Build-Zeit ISO-UTC, `api/Dockerfile`), `/api/health` liefert `build_zeit`; Settings zeigt „ImmoCalc … · Build `<sha>` · TT.MM.JJJJ, HH:MM Uhr" in Ortszeit — so ist ablesbar, ob der Auto-Deploy den neuen Stand hat |
+| CCLXII | ~~**Doppelte Schließer / überlappendes × beheben**~~ **erledigt** `d3045ac` | `[data-nein]` in den Retrofit-Guard: kein zweites × mehr auf Dialogen mit unterem Abbrechen. „Mehr"-Menü: unteren „Schließen"-Knopf entfernt (nur × oben), Titelzeile reserviert die ×-Höhe (keine Überlappung mehr), Tap-außerhalb schließt. **Abnahme-Lehre:** Retrofit-× in ALLEN Dialogtypen prüfen, nicht nur einem. Systematischer Audit läuft (Agent) |
+| CCLVIII/CCLIX | Zeitraum-Autoerkennung + mehrseitige Vorschau | **in Arbeit** (Agents) |
 
 ---
 
