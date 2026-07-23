@@ -36,6 +36,19 @@ log = logging.getLogger("immocalc")
 SPRACHE = "deu"
 ZEITLIMIT = 25.0
 
+# --- Auto-Geraderichten (OSD) ---------------------------------------------
+# Tesseract kann die Orientierung einer Seite erkennen (Orientation & Script
+# Detection, `--psm 0`). Es meldet in „Rotate: <grad>", um wie viel das Bild
+# IM UHRZEIGERSINN gedreht werden muss, damit der Text aufrecht steht, und
+# dazu eine Konfidenz. Ein eingescanntes oder abfotografiertes Blatt liegt
+# manchmal um 90/180/270° gedreht — die Vorschau UND die KI-Auslese bekommen
+# dann ein gekipptes Bild, auf dem nichts zu lesen ist.
+_OSD_ZEITLIMIT = 15.0            # kurz: scheitert OSD, soll es nicht bremsen
+_OSD_MINDESTKONFIDENZ = 1.0      # darunter wird nicht gedreht (zu unsicher)
+_OSD_RENDER_ZOOM = 2.0           # 144 dpi genügt der Orientierungserkennung
+_OSD_ROTATE = re.compile(r"Rotate:\s*(\d+)")
+_OSD_KONFIDENZ = re.compile(r"Orientation confidence:\s*([\d.]+)")
+
 # Ein Betrag in deutscher Schreibweise: 1.234,56 oder 89,90
 _BETRAG = re.compile(r"(?<![\d,.])(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?![\d])")
 # Derselbe Betrag mit Punkt: 104.15, 1,234.56. Nicht jeder Beleg schreibt
@@ -242,6 +255,41 @@ def text_aus_bild(rohdaten: bytes) -> str:
     return ergebnis.stdout.decode("utf-8", "replace")
 
 
+def _osd_drehung(png: bytes) -> int:
+    """Um wie viel Grad IM UHRZEIGERSINN ein gerendertes Seitenbild gedreht
+    werden muss, damit der Text aufrecht steht — per Tesseract-OSD (`--psm 0`).
+
+    Gibt 0 zurück, wo nicht gedreht werden soll: kein Tesseract, OSD scheitert,
+    die gemeldete Konfidenz ist zu klein, oder der Winkel ist kein Vielfaches
+    von 90°. Nie eine Exception, nie eine erzwungene Verzögerung (kurzer
+    Zeitrahmen) — fehlt OSD, bleibt alles wie bisher."""
+    if not verfuegbar() or not png:
+        return 0
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png") as quelle:
+            quelle.write(png)
+            quelle.flush()
+            ergebnis = subprocess.run(
+                ["tesseract", quelle.name, "stdout", "--psm", "0"],
+                capture_output=True, timeout=_OSD_ZEITLIMIT, check=False)
+    except (OSError, subprocess.SubprocessError) as fehler:
+        log.info("Orientierungserkennung nicht möglich: %s", fehler)
+        return 0
+    if ergebnis.returncode != 0:
+        return 0
+    text = ergebnis.stdout.decode("utf-8", "replace")
+    treffer = _OSD_ROTATE.search(text)
+    if not treffer:
+        return 0
+    grad = int(treffer.group(1)) % 360
+    if grad not in (90, 180, 270):
+        return 0
+    konf = _OSD_KONFIDENZ.search(text)
+    if konf and float(konf.group(1)) < _OSD_MINDESTKONFIDENZ:
+        return 0
+    return grad
+
+
 def _zu_zahl(ganz: str, nachkomma: str) -> float:
     """Der Ganzteil kann Tausendertrenner tragen — Punkt oder Komma, je nach
     Schreibweise. Beide fliegen raus; getrennt wurde schon im Muster."""
@@ -433,7 +481,13 @@ def _text_aus_scan(rohdaten: bytes) -> str:
     verhält sich alles wie vor CLXXIX: kein Fehler, nur kein Vorschlag."""
     if not verfuegbar():
         return ""
-    bilder = pdftext.seiten_als_bilder(rohdaten)
+    # Wo PyMuPDF vorhanden ist, werden die Seiten geradegerichtet gerastert
+    # (OSD), damit die Heuristik-OCR auf aufrechtem Text läuft. Fehlt es,
+    # bleibt es beim bisherigen Weg über pdftext — kein Fehler, nur ohne
+    # Geraderichten.
+    bilder = _gerade_seiten_bilder(rohdaten)
+    if bilder is None:
+        bilder = pdftext.seiten_als_bilder(rohdaten)
     if not bilder:
         return ""
     return "\n".join(text_aus_bild(bild) for bild in bilder)
@@ -689,7 +743,16 @@ def seite_png(rohdaten: bytes, index: int = 0, breite: int = 1240) -> bytes | No
             seite = d[i]
             zoom = max(0.5, min(3.0, breite / max(seite.rect.width, 1)))
             pix = seite.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-            return pix.tobytes("png")
+            png = pix.tobytes("png")
+            # Liegt die Seite gedreht (eingescanntes/abfotografiertes Blatt),
+            # richtet OSD sie auf: die /Rotate-Angabe temporär setzen und neu
+            # rendern. So bekommt die Vorschau UND die KI ein aufrechtes Bild.
+            grad = _osd_drehung(png)
+            if grad:
+                seite.set_rotation((seite.rotation + grad) % 360)
+                pix = seite.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                png = pix.tobytes("png")
+            return png
     except Exception:                                    # noqa: BLE001
         return None
 
@@ -698,6 +761,67 @@ def erste_seite_png(rohdaten: bytes, breite: int = 1240) -> bytes | None:
     """Rendert die erste Seite eines PDFs als PNG — unverändert der Sonderfall
     `seite_png(rohdaten, 0, breite)`."""
     return seite_png(rohdaten, 0, breite)
+
+
+def _gerade_seiten_bilder(rohdaten: bytes) -> "list[bytes] | None":
+    """Alle Seiten eines PDF als aufrechte PNG-Bilder — per PyMuPDF gerendert
+    und, wo OSD eine Drehung erkennt, geradegerichtet.
+
+    `None` heißt: PyMuPDF fehlt oder die Datei ließ sich nicht öffnen — dann
+    nimmt der Aufrufer den bisherigen Weg über pdftext (ohne Geraderichten).
+    Eine leere Liste heißt: geöffnet, aber keine Seiten."""
+    if fitz is None:
+        return None
+    try:
+        with fitz.open(stream=rohdaten, filetype="pdf") as d:
+            bilder: list[bytes] = []
+            for i in range(min(d.page_count, pdftext.MAX_SEITEN)):
+                seite = d[i]
+                pix = seite.get_pixmap(matrix=fitz.Matrix(_OSD_RENDER_ZOOM,
+                                                          _OSD_RENDER_ZOOM))
+                png = pix.tobytes("png")
+                grad = _osd_drehung(png)
+                if grad:
+                    seite.set_rotation((seite.rotation + grad) % 360)
+                    png = seite.get_pixmap(matrix=fitz.Matrix(
+                        _OSD_RENDER_ZOOM, _OSD_RENDER_ZOOM)).tobytes("png")
+                bilder.append(png)
+            return bilder
+    except Exception as fehler:                          # noqa: BLE001
+        log.info("Gerades Rastern fehlgeschlagen: %s", fehler)
+        return None
+
+
+def pdf_geradedrehen(pdf_bytes: bytes) -> "tuple[bytes | None, list[dict]]":
+    """Dreht jede Seite eines PDF per OSD dauerhaft in die aufrechte Lage.
+
+    Datensicher: geändert wird ausschließlich die /Rotate-Angabe jeder Seite
+    (`set_rotation`), die Pixel bleiben unangetastet — kein Neu-Rendern des
+    Inhalts. Gibt `(neue_bytes, [{seite, grad}, …])` zurück.
+
+    `(None, [])` heißt „nichts zu tun": PyMuPDF oder Tesseract fehlt, das PDF
+    ließ sich nicht öffnen, oder keine Seite lag schief. Nie eine Exception
+    nach außen — scheitert etwas, bleibt das Original unberührt."""
+    if fitz is None or not verfuegbar() or not pdf_bytes:
+        return None, []
+    gedreht: list[dict] = []
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as d:
+            for i in range(d.page_count):
+                seite = d[i]
+                pix = seite.get_pixmap(matrix=fitz.Matrix(_OSD_RENDER_ZOOM,
+                                                          _OSD_RENDER_ZOOM))
+                grad = _osd_drehung(pix.tobytes("png"))
+                if grad:
+                    seite.set_rotation((seite.rotation + grad) % 360)
+                    gedreht.append({"seite": i, "grad": grad})
+            if not gedreht:
+                return None, []
+            neu = d.tobytes(garbage=3, deflate=True)
+        return neu, gedreht
+    except Exception as fehler:                          # noqa: BLE001
+        log.warning("PDF-Geradedrehen fehlgeschlagen: %s", fehler)
+        return None, []
 
 try:                                                     # pragma: no cover
     import numpy as _np

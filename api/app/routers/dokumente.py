@@ -1987,3 +1987,57 @@ def erkennen_aus_ablage(dokument_id: int,
         session.add(d)
         session.commit()
     return ergebnis
+
+
+@router.post("/{dokument_id}/geradedrehen")
+def geradedrehen(dokument_id: int,
+                 session: Session = Depends(get_session)) -> dict:
+    """Dreht ein gedreht abgelegtes PDF dauerhaft in die aufrechte Lage.
+
+    Manche eingescannten oder abfotografierten Seiten liegen um 90/180/270°
+    gedreht. Die serverseitige Vorschau richtet sie beim Rendern schon auf
+    (`ocr.seite_png`), aber die Datei in der Cloud bleibt schief — und wer sie
+    herunterlädt, sieht sie gekippt. Dieser Endpunkt setzt die Drehung fest.
+
+    Datensicher: geändert wird nur die /Rotate-Angabe jeder Seite, der Inhalt
+    bleibt unangetastet (`ocr.pdf_geradedrehen`). Erst wenn wirklich etwas zu
+    drehen war, wird die Datei am selben Platz in der Cloud überschrieben —
+    scheitert das Schreiben, bleiben Cloud-Original und Datenbank unberührt.
+
+    Antwort: `{"ok": true, "gedreht": [{seite, grad}, …], "geaendert": <bool>}`.
+    """
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
+    if not d.dateiname.lower().endswith(".pdf"):
+        raise HTTPException(415, "Nur PDFs lassen sich geradedrehen")
+    client = verbindung(session)
+    try:
+        rohdaten, _typ = client.hole(d.pfad)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+
+    neu, gedreht = ocr.pdf_geradedrehen(rohdaten)
+    if neu is None or not gedreht:
+        # Nichts lag schief — oder die Orientierungserkennung fehlt. Beides ist
+        # kein Fehler: die Datei bleibt, wie sie ist.
+        return {"ok": True, "gedreht": [], "geaendert": False}
+
+    try:
+        client.lege_ab(d.pfad, neu)
+    except NextcloudFehler as fehler:
+        # Cloud-Schreiben gescheitert: Original und Datenbank unberührt, ein
+        # sauberer Hinweis statt einer durchschlagenden Exception.
+        log.warning("Geradegedrehtes PDF nicht abgelegt (%s): %s",
+                    d.pfad, fehler)
+        raise HTTPException(
+            502, "Das geradegedrehte PDF konnte nicht in der Cloud "
+                 "gespeichert werden — es bleibt unverändert.") from fehler
+
+    d.groesse = len(neu)
+    session.add(d)
+    session.commit()
+    log.info("Geradegedreht: %s (%d Seite(n))", d.pfad, len(gedreht))
+    return {"ok": True, "gedreht": gedreht, "geaendert": True}
