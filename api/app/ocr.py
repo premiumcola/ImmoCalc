@@ -24,6 +24,13 @@ from datetime import date
 
 from . import pdftext
 
+# Weicher Import: die KI-Auslese (CCLXVIII) ist optional. Fehlt das Modul oder
+# httpx, bleibt alles wie zuvor bei der Heuristik — genau wie ohne API-Key.
+try:                                                     # pragma: no cover
+    from . import kiauslese
+except Exception:                                        # noqa: BLE001
+    kiauslese = None
+
 log = logging.getLogger("immocalc")
 
 SPRACHE = "deu"
@@ -514,15 +521,56 @@ def regel_richtung(text: str, regeln) -> tuple[str, str, bool] | None:
     return None
 
 
-def erkenne(rohdaten: bytes, regeln=None) -> dict:
+def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "") -> None:
+    """Ergänzt den Heuristik-Vorschlag um die KI-Auslese (CCLXVIII).
+
+    Ist die KI verfügbar (nur mit vom Nutzer gesetztem `ANTHROPIC_API_KEY`) und
+    liefert sie ein Ergebnis, haben ihr `datum` und `betrag` Vorrang — genau
+    dort verliest sich die Heuristik (Zahlungsziel statt Kopfdatum). Kategorie
+    und Sache füllt sie nur, wo die Heuristik nichts fand; die Richtung bleibt
+    den Erkennungsregeln (CCXLIX) überlassen, die danach greifen.
+
+    Ohne Key oder bei jedem Fehler passiert nichts — der Heuristik-Vorschlag
+    bleibt unverändert."""
+    if kiauslese is None or not kiauslese.verfuegbar():
+        return
+    ki = kiauslese.lies_beleg(text, dateiname)
+    if not ki:
+        return
+    if ki.get("datum"):
+        try:
+            d = date.fromisoformat(ki["datum"])
+        except ValueError:
+            d = None
+        if d:
+            ergebnis["datum"] = d.isoformat()
+            ergebnis["jahr"] = d.year
+            ergebnis["monat"] = d.month
+    if ki.get("betrag") is not None:
+        ergebnis["betrag"] = ki["betrag"]
+    # Nur auffüllen, nicht überschreiben: die Wortlisten der Heuristik sind für
+    # die Ordnerzuordnung maßgeblich, die KI liefert hier nur eine Andeutung.
+    if not ergebnis.get("kategorie") and ki.get("kategorie"):
+        ergebnis["kategorie"] = ki["kategorie"]
+    if not ergebnis.get("sache") and ki.get("kostenart"):
+        ergebnis["sache"] = ki["kostenart"]
+    ergebnis["ist_kosten"] = bool(ki.get("ist_kosten", ergebnis["ist_kosten"]))
+    ergebnis["ki"] = True
+
+
+def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "") -> dict:
     """Vorschlag aus einem Beleg: Betrag, Datum, Jahr, Art und Sache.
 
     Gleich, ob PDF oder Foto — der Text kommt aus `text_aus_beleg`, die
     Auswertung ist dieselbe. Vorgeschlagen wird nur, gesetzt nie.
 
-    `regeln` (Erkennungsregeln des Nutzers) haben Vorrang vor der Automatik:
-    trifft ein Muster, gilt dessen Richtung. Ein Nicht-Kostenbeleg (Ablesung,
-    Mandat …) verliert dabei seinen Betrag, damit keine Kostenposition entsteht."""
+    Reihenfolge der Quellen, von grob nach fein:
+      1. Die Heuristik (Wortlisten, Datums-/Betragsmuster) — immer.
+      2. Die KI-Auslese (CCLXVIII) — nur mit gesetztem `ANTHROPIC_API_KEY`;
+         ihr Datum und Betrag haben Vorrang vor der Heuristik.
+      3. Die Erkennungsregeln des Nutzers — sie geben die Richtung vor: trifft
+         ein Muster, gilt dessen Kategorie. Ein Nicht-Kostenbeleg (Ablesung,
+         Mandat …) verliert dabei seinen Betrag, damit keine Position entsteht."""
     text = text_aus_beleg(rohdaten)
     if not text.strip():
         return {**_ohne_befund(), "hinweis": _warum_nichts(rohdaten)}
@@ -541,6 +589,9 @@ def erkenne(rohdaten: bytes, regeln=None) -> dict:
         # Spalte auf, ein einseitiger Beleg käme sonst auf Tausende Zeichen.
         "zeichen": len(re.sub(r"\s", "", text)),
     }
+    # Die KI ergänzt v. a. das Belegdatum, wo die Heuristik ein Zahlungsziel
+    # oder eine Zeitraumgrenze erwischt (nur mit Key, sonst stumm).
+    _ki_ergaenzen(ergebnis, text, dateiname)
     treffer = regel_richtung(text, regeln or [])
     if treffer:
         kat, art, ist_kosten = treffer

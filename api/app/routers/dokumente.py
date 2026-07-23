@@ -845,7 +845,9 @@ async def erkennen(datei: UploadFile = File(...),
     rohdaten = await datei.read()
     if not rohdaten:
         raise HTTPException(400, "Leere Datei")
-    return ocr.erkenne(rohdaten, _regeln(session))
+    # Der Dateiname als zusätzlicher Kontext für die KI-Auslese (CCLXVIII):
+    # „2025-10-oel-2729,91€.pdf" nennt Datum und Betrag schon mit.
+    return ocr.erkenne(rohdaten, _regeln(session), datei.filename or "")
 
 
 # --------------------------------------------------------------------------
@@ -1737,4 +1739,6 @@ def erkennen_aus_ablage(dokument_id: int,
         rohdaten, _typ = client.hole(d.pfad)
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
-    return ocr.erkenne(rohdaten)
+    # Dateiname als Kontext mitgeben — dieselbe KI-gestützte Auslese wie beim
+    # frisch abfotografierten Beleg (CCLXVIII). Regeln bleiben wie bisher aus.
+    return ocr.erkenne(rohdaten, dateiname=d.dateiname)

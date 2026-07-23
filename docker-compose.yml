@@ -24,6 +24,9 @@ services:
       PUID: ${PUID:-99}
       PGID: ${PGID:-100}
       DB_PATH: /data/immocalc.db
+      # KI-Beleg-Auslese (CCLXVIII) — optional. Ohne Key stumm.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
     volumes:
       - ${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}:/data
 
