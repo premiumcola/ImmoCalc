@@ -744,6 +744,58 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     }
 
 
+def _zeitraum_grenzen(objekt: Objekt, jahr: int) -> tuple[date, date]:
+    """Start und Ende eines Abrechnungsjahres aus dem Turnus des Objekts.
+
+    Ein Zeitraum läuft ab dem `start_monat` zwölf Monate lang — bei einem
+    Kalenderjahr also vom 1.1. bis 31.12., bei Start im Oktober vom 1.10. bis
+    zum 30.9. des Folgejahres. Diese eine Regel gilt fürs Anlegen wie fürs
+    Erkennen, damit ein vorgeschlagener Zeitraum exakt dem entspricht, der beim
+    Anlegen entsteht."""
+    start = date(jahr, objekt.start_monat or 1, 1)
+    ende = date(start.year + 1, start.month, 1) - timedelta(days=1)
+    return start, ende
+
+
+def _zeitraum_jahr(objekt: Objekt, datum: date) -> int:
+    """In welches Abrechnungsjahr ein Datum fällt — nach dem Startmonat.
+
+    Vor dem Startmonat gehört ein Datum noch zum vorigen Abrechnungsjahr: bei
+    Start im Oktober fällt der 15.9.2026 in das Jahr, das am 1.10.2025 begann."""
+    return datum.year if datum.month >= (objekt.start_monat or 1) else datum.year - 1
+
+
+@router.get("/objekte/{slug}/zeitraum-fuer")
+def zeitraum_fuer(slug: str, datum: date,
+                  session: Session = Depends(get_session)) -> dict:
+    """Welcher Abrechnungszeitraum zu einem Beleg-Datum passt.
+
+    Der Dokumenteneingang fragt hier für den erkannten Beleg-Tag: gibt es
+    bereits einen Zeitraum, der ihn umfasst, wird der vorgeschlagen und
+    vorausgewählt (`vorschlag: false`, mit `id`). Gibt es keinen, kommen die
+    Grenzen des passenden Jahres zurück (`vorschlag: true`) — der Eingang bietet
+    sie als „…anlegen" an und legt sie über `POST /zeitraeume` an, bevor der
+    Beleg dort eingruppiert wird. Anlegen und Erkennen nutzen dieselbe
+    Grenzen-Regel (`_zeitraum_grenzen`), damit beides deckungsgleich ist."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+
+    bestehende = session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
+    treffer = next((z for z in bestehende if z.start <= datum <= z.ende), None)
+    if treffer:
+        return {"vorschlag": False, "id": treffer.id,
+                "label": f"{treffer.start:%d.%m.%Y} – {treffer.ende:%d.%m.%Y}",
+                "start": treffer.start.isoformat(), "ende": treffer.ende.isoformat()}
+
+    jahr = _zeitraum_jahr(o, datum)
+    start, ende = _zeitraum_grenzen(o, jahr)
+    return {"vorschlag": True, "id": None, "jahr": jahr,
+            "label": f"{start:%d.%m.%Y} – {ende:%d.%m.%Y}",
+            "start": start.isoformat(), "ende": ende.isoformat()}
+
+
 class ZeitraumIn(BaseModel):
     """Ein Jahr genügt — Start und Ende ergeben sich aus dem Turnus des Objekts.
     Wer abweichende Grenzen braucht, gibt sie direkt an."""
@@ -769,8 +821,7 @@ def zeitraum_anlegen(slug: str, data: ZeitraumIn,
         start, ende = data.start, data.ende
     else:
         jahr = data.jahr or (date.today().year - 1)
-        start = date(jahr, o.start_monat or 1, 1)
-        ende = date(start.year + 1, start.month, 1) - timedelta(days=1)
+        start, ende = _zeitraum_grenzen(o, jahr)
     if ende <= start:
         raise HTTPException(400, "Das Ende muss nach dem Start liegen")
 

@@ -626,6 +626,10 @@ const bMeldung = document.getElementById('bMeldung');
 
 const jetzt = new Date().getFullYear();
 const ALLE = '';
+// CCLVIII: Wert der „…anlegen"-Option im Zeitraum-Feld. Kein echter Zeitraum,
+// sondern der Auftrag, den vorgeschlagenen erst anzulegen — deshalb ein
+// Sentinel, der nie als id durchgeht.
+const ANLEGEN = '__anlegen__';
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
                 'August', 'September', 'Oktober', 'November', 'Dezember'];
 /* Ein Zustand für die ganze Seite: Filter, Stammdaten, gewählter Beleg.
@@ -911,8 +915,10 @@ function stand() {
     betrag: Number.isFinite(betrag) && betrag > 0 ? Math.round(betrag * 100) / 100
                                                   : null,
     beschreibung: (erfassung.textFeld.value || '').trim(),
+    // Der Sentinel „…anlegen" ist keine id — er löst das Anlegen aus und wird
+    // gleich durch die echte id ersetzt; bis dahin gilt „ohne Abrechnung".
     zeitraum_id: zeitraumFeld && zeitraumFeld.wert()
-      ? Number(zeitraumFeld.wert()) : null,
+      && zeitraumFeld.wert() !== ANLEGEN ? Number(zeitraumFeld.wert()) : null,
   };
 }
 
@@ -1166,6 +1172,10 @@ function zielName(d, s) {
 /* ---- Abrechnungszeitraum: vorschlagen, auswählen, bestätigen (CXXV) ---- */
 let zeitraumFeld = null;
 let zeitraumListe = [];
+// CCLVIII: liegt ein Beleg-Datum in keinem angelegten Zeitraum, hält dies die
+// vom Server vorgeschlagenen Grenzen ({jahr, start, ende, label}) — daraus wird
+// die „…anlegen"-Option gebaut, die den Zeitraum bei Wahl anlegt.
+let zeitraumVorschlag = null;
 
 const zumDatum = text => {
   const t = /(\d{2})\.(\d{2})\.(\d{4})/.exec(text || '');
@@ -1208,6 +1218,25 @@ function belegTag(s) {
   return { tag: new Date(s.jahr, (s.monat || 6) - 1, 15), genau: false };
 }
 
+/** Ein JS-Datum als 'JJJJ-MM-TT' für die Abfrage — lokal, ohne Zeitzonenversatz
+    (toISOString gäbe UTC und könnte auf den Vortag rutschen). */
+const isoTag = t => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`
+  + `-${String(t.getDate()).padStart(2, '0')}`;
+
+/** CCLVIII: Der Server sagt, welcher Abrechnungszeitraum zum Beleg-Datum passt —
+    entweder ein vorhandener (`id`) oder die Grenzen zum Anlegen (`vorschlag`).
+    Fällt die Abfrage aus (etwa vor dem Deploy), bleibt es beim rein
+    client-seitigen Vorschlag, und die Seite verhält sich wie zuvor. */
+async function zeitraumErkennen(slug, tag) {
+  if (!slug || !tag) return null;
+  try {
+    return await api(`/objekte/${encodeURIComponent(slug)}`
+      + `/zeitraum-fuer?datum=${isoTag(tag)}`);
+  } catch {
+    return null;
+  }
+}
+
 async function zeitraeumeFuellen(d) {
   // Die gerade eingestellte Immobilie zählt, nicht die gespeicherte.
   const slug = (erfassung && erfassung.id === d.id ? erfassung.objekt.wert() : '')
@@ -1216,23 +1245,83 @@ async function zeitraeumeFuellen(d) {
   if (gewaehlt !== d.id) return;          // inzwischen etwas anderes gewählt
   zeitraumListe = zs;
   const { tag } = belegTag(stand() || befund(d));
-  const vorschlag = passenderZeitraum(zs, tag);
+  const treffer = await zeitraumErkennen(slug, tag);
+  if (gewaehlt !== d.id) return;          // die Abfrage hat gewartet
+  // Der Server ist die maßgebliche Quelle; fällt er aus, greift der
+  // client-seitige Abgleich als Rückfall (kein „…anlegen", aber Vorauswahl).
+  const vorhanden = treffer && !treffer.vorschlag
+    ? zs.find(z => z.id === treffer.id) || null
+    : (treffer ? null : passenderZeitraum(zs, tag));
+  zeitraumVorschlag = treffer && treffer.vorschlag ? treffer : null;
+
   const optionen = [{ wert: '', text: 'ohne Abrechnung' },
     ...zs.map(z => ({ wert: String(z.id),
-      text: z.label + (vorschlag && vorschlag.id === z.id ? ' · Vorschlag' : '') }))];
+      text: z.label + (vorhanden && vorhanden.id === z.id ? ' · Vorschlag' : '') }))];
+  // Kein passender Zeitraum da → den vorgeschlagenen zum Anlegen anbieten.
+  if (zeitraumVorschlag) {
+    optionen.push({ wert: ANLEGEN,
+      text: `${zeitraumVorschlag.jahr} anlegen (${zeitraumVorschlag.label})` });
+  }
   // Der gespeicherte Zeitraum gilt nur, wenn er zu dieser Immobilie gehört —
   // sonst zeigte das Feld nach einem Wechsel auf eine fremde Abrechnung.
   const gesetzt = zs.some(z => z.id === d.zeitraum_id) ? d.zeitraum_id : null;
-  const wert = String(gesetzt || (vorschlag ? vorschlag.id : '') || '');
+  const wert = String(gesetzt || (vorhanden ? vorhanden.id : '') || '');
   if (!zeitraumFeld) {
     zeitraumFeld = auswahlfeld(document.getElementById('bZeitraum'), {
       optionen, wert, label: 'Abrechnungszeitraum',
-      aenderung: () => planZeichnen(),
+      aenderung: () => zeitraumGewaehlt(),
     });
   } else {
     zeitraumFeld.fuelle(optionen, wert);
   }
   planZeichnen();
+}
+
+/** Reagiert auf die Auswahl im Zeitraum-Feld. Ist es die „…anlegen"-Option,
+    wird der vorgeschlagene Zeitraum erst angelegt und dann gewählt; sonst
+    genügt das Neuzeichnen. */
+function zeitraumGewaehlt() {
+  if (zeitraumFeld && zeitraumFeld.wert() === ANLEGEN && zeitraumVorschlag) {
+    zeitraumAnlegenUndWaehlen(zeitraumVorschlag);
+    return;
+  }
+  planZeichnen();
+}
+
+/** CCLVIII: legt den vorgeschlagenen Zeitraum an (POST) und wählt ihn im Feld.
+    Danach läuft der Beleg über den unveränderten Übernehmen-Weg in diesen
+    Zeitraum. Server und Anlegen nutzen dieselbe Grenzen-Regel — es entsteht
+    genau der Zeitraum, der vorgeschlagen wurde. */
+async function zeitraumAnlegenUndWaehlen(vorschlag) {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  if (!d) return;
+  const slug = (erfassung && erfassung.id === d.id ? erfassung.objekt.wert() : '')
+    || d.objekt || '';
+  if (!slug) return;
+  bZeitHinweis.textContent = `Abrechnungszeitraum ${vorschlag.label} wird angelegt …`;
+  bZeitHinweis.classList.remove('warn');
+  try {
+    const neu = await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume`,
+      { method: 'POST', body: { jahr: vorschlag.jahr } });
+    zeitraeumeJeObjekt.delete(slug);       // Cache verwerfen — der neue muss rein
+    const zs = await zeitraeumeFuer(slug);
+    if (gewaehlt !== d.id) return;
+    zeitraumListe = zs;
+    zeitraumVorschlag = null;
+    const optionen = [{ wert: '', text: 'ohne Abrechnung' },
+      ...zs.map(z => ({ wert: String(z.id),
+        text: z.label + (z.id === neu.id ? ' · Vorschlag' : '') }))];
+    if (zeitraumFeld) zeitraumFeld.fuelle(optionen, String(neu.id));
+    melde(`✓ Abrechnungszeitraum ${neu.label} angelegt`, 'gut');
+    planZeichnen();
+  } catch (fehler) {
+    // Auswahl zurücknehmen, damit kein Sentinel im Stand hängen bleibt.
+    if (zeitraumFeld) zeitraumFeld.setze('');
+    bZeitHinweis.textContent = '⚠ Zeitraum ließ sich nicht anlegen: '
+      + String(fehler.message || fehler);
+    bZeitHinweis.classList.add('warn');
+    planZeichnen();
+  }
 }
 
 /** Ehrlich, aber nicht verbietend (CLXXII): eine Nachtragsrechnung darf an
