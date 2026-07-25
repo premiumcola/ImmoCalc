@@ -12,6 +12,11 @@
   --mono:"IBM Plex Mono",ui-monospace,monospace;
 }
 *{box-sizing:border-box}
+/* Das `hidden`-Attribut bedeutet immer „weg". Ohne diese Regel überschreibt
+   jede Klasse mit eigenem `display:flex/grid` das native `[hidden]:display:none`
+   und bräuchte ihr eigenes `.klasse[hidden]{display:none}`-Pflaster. Einmal
+   zentral, `!important`, damit es auch die Klassen-Regeln schlägt. */
+[hidden]{display:none !important}
 html,body{margin:0;padding:0}
 body{
   background:var(--paper); color:var(--ink); font-family:var(--body);
