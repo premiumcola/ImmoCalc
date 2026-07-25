@@ -802,6 +802,22 @@ def abgleich(session: Session = Depends(get_session)) -> dict:
 # Liste mit Filtern — eine Ansicht für Eingang und Ablage
 # --------------------------------------------------------------------------
 
+def _dokument_passt(d: Dokument, *, ziel_id, kategorie, kostenart, jahr,
+                    status, zeitraum, begriff) -> bool:
+    """Ob ein Beleg in einen Filter passt — die eine Wahrheit für Liste,
+    Facette und die Sammelaktion (`warte_archiv`). `.immocalc`-Steckbriefe
+    fallen immer heraus; `kostenart=""` zählt über alle Kostenarten."""
+    return (not _ist_sidecar(d.dateiname)
+            and (not ziel_id or d.objekt_id == ziel_id)
+            and (not kategorie or d.kategorie == kategorie)
+            and (not kostenart
+                 or kostenart_normalisieren(d.kostenart) == kostenart)
+            and (jahr is None or d.jahr == jahr)
+            and (not status or d.status == status)
+            and (zeitraum is None or d.zeitraum_id == zeitraum)
+            and (not begriff or begriff in d.dateiname.lower()))
+
+
 @router.get("")
 def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
           status: str = "", suche: str = "", zeitraum: int | None = None,
@@ -818,20 +834,11 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
     ziel_id = nach_slug[objekt].id if objekt else None
     begriff = suche.strip().lower()
 
-    def passt(d: Dokument) -> bool:
-        # CCLXXVIII: fälschlich früher angelegte `.immocalc`-Steckbriefe nicht
-        # mehr anzeigen (gelöscht wird nichts — sie fallen nur aus der Liste).
-        return (not _ist_sidecar(d.dateiname)
-                and (not ziel_id or d.objekt_id == ziel_id)
-                and (not kategorie or d.kategorie == kategorie)
-                and (not kostenart
-                     or kostenart_normalisieren(d.kostenart) == kostenart)
-                and (jahr is None or d.jahr == jahr)
-                and (not status or d.status == status)
-                and (zeitraum is None or d.zeitraum_id == zeitraum)
-                and (not begriff or begriff in d.dateiname.lower()))
-
-    gefiltert = [d for d in alle if passt(d)]
+    # Ein Filter, mehrere Verwender: die übrigen Kriterien einmal bündeln, die
+    # Kostenart variiert (Liste: gewählte; Facette: alle).
+    flt = dict(ziel_id=ziel_id, kategorie=kategorie, jahr=jahr, status=status,
+               zeitraum=zeitraum, begriff=begriff)
+    gefiltert = [d for d in alle if _dokument_passt(d, kostenart=kostenart, **flt)]
     # Offenes zuerst, dann Vermisstes, danach das Neueste — so steht oben,
     # was etwas will.
     rang = {"neu": 0, VERMISST: 1}
@@ -842,17 +849,9 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
     # Kostenart-Facette mit Anzahl — gezählt über die ÜBRIGEN Filter (Objekt,
     # Jahr, Status …), aber NICHT über die Kostenart-Wahl selbst. So ziehen die
     # Zahlen an den Buttons mit, sobald man das Objekt oder Jahr wechselt.
-    def _passt_ohne_kostenart(d: Dokument) -> bool:
-        return (not _ist_sidecar(d.dateiname)
-                and (not ziel_id or d.objekt_id == ziel_id)
-                and (not kategorie or d.kategorie == kategorie)
-                and (jahr is None or d.jahr == jahr)
-                and (not status or d.status == status)
-                and (zeitraum is None or d.zeitraum_id == zeitraum)
-                and (not begriff or begriff in d.dateiname.lower()))
     _ka_zahl: dict[str, int] = {}
     for d in alle:
-        if d.kostenart and _passt_ohne_kostenart(d):
+        if d.kostenart and _dokument_passt(d, kostenart="", **flt):
             kanon = kostenart_normalisieren(d.kostenart)
             _ka_zahl[kanon] = _ka_zahl.get(kanon, 0) + 1
     kostenarten = [{"name": k, "anzahl": n} for k, n in
@@ -892,13 +891,14 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
 # App-seitige Zuordnung zurückgenommen, nichts in der Nextcloud angefasst.
 # --------------------------------------------------------------------------
 
-_ENTWURF_TABELLEN = (Kostenposition, Miete, Versicherung, Kredit, Bewohner)
-
-
 def _entwuerfe_des_belegs(session: Session, dokument_id: int) -> list:
-    """Alle noch vorläufigen (orange) Datensätze, die aus diesem Beleg entstanden."""
+    """Alle noch vorläufigen (orange) Datensätze, die aus diesem Beleg entstanden.
+
+    Nutzt dieselbe Entwurfs-Registry wie `entwurf_verwerfen` (`_ENTWURF_MODELLE`
+    in `objekte.py`) — eine Wahrheit, welche Modelle Entwürfe sind."""
+    from .objekte import _ENTWURF_MODELLE           # zirkelfrei zur Laufzeit
     treffer: list = []
-    for modell in _ENTWURF_TABELLEN:
+    for modell in _ENTWURF_MODELLE.values():
         treffer += session.exec(select(modell).where(
             modell.quelle_dokument_id == dokument_id,
             modell.vorlaeufig == True)).all()          # noqa: E712
@@ -928,6 +928,17 @@ def _zurueck_ins_warten(session: Session, d: Dokument) -> set[int]:
     return beruehrt
 
 
+def _leere_zeitraeume_raeumen(session: Session, zeitraum_ids: set[int]) -> int:
+    """Räumt die berührten, jetzt leeren Zeiträume weg — in einem einzigen
+    Commit statt einem pro Zeitraum."""
+    from .objekte import _zeitraum_leer_entfernen    # zirkelfrei zur Laufzeit
+    entfernt = sum(1 for z in zeitraum_ids
+                   if _zeitraum_leer_entfernen(session, z, commit=False))
+    if entfernt:
+        session.commit()
+    return entfernt
+
+
 @router.post("/warte-archiv")
 def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                  status: str = "", suche: str = "", zeitraum: int | None = None,
@@ -943,26 +954,17 @@ def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
     ziel_id = nach_slug[objekt].id if objekt else None
     begriff = suche.strip().lower()
 
-    def passt(d: Dokument) -> bool:
-        return (not _ist_sidecar(d.dateiname)
-                and (not ziel_id or d.objekt_id == ziel_id)
-                and (not kategorie or d.kategorie == kategorie)
-                and (not kostenart
-                     or kostenart_normalisieren(d.kostenart) == kostenart)
-                and (jahr is None or d.jahr == jahr)
-                and (not status or d.status == status)
-                and (zeitraum is None or d.zeitraum_id == zeitraum)
-                and (not begriff or begriff in d.dateiname.lower()))
-
-    treffer = [d for d in session.exec(select(Dokument)).all() if passt(d)]
+    treffer = [d for d in session.exec(select(Dokument)).all()
+               if _dokument_passt(d, ziel_id=ziel_id, kategorie=kategorie,
+                                   kostenart=kostenart, jahr=jahr, status=status,
+                                   zeitraum=zeitraum, begriff=begriff)]
     if vorschau:
         return {"vorschau": True, "belege": len(treffer)}
     beruehrt: set[int] = set()
     for d in treffer:
         beruehrt |= _zurueck_ins_warten(session, d)
     session.commit()
-    from .objekte import _zeitraum_leer_entfernen
-    entfernt = sum(1 for z in beruehrt if _zeitraum_leer_entfernen(session, z))
+    entfernt = _leere_zeitraeume_raeumen(session, beruehrt)
     log.info("Warte-Archiv: %d Belege zurückgestellt, %d leere Zeiträume weg",
              len(treffer), entfernt)
     return {"ok": True, "belege": len(treffer), "zeitraeume_entfernt": entfernt}
@@ -994,8 +996,7 @@ def nk_vor_jahr_entfernen(grenze_jahr: int = 2025, vorschau: bool = False,
         if d:
             beruehrt |= _zurueck_ins_warten(session, d)
     session.commit()
-    from .objekte import _zeitraum_leer_entfernen
-    entfernt = sum(1 for z in beruehrt if _zeitraum_leer_entfernen(session, z))
+    entfernt = _leere_zeitraeume_raeumen(session, beruehrt)
     log.info("NK vor %d entfernt: %d orange Positionen, %d Belege zurück, "
              "%d Zeiträume weg", grenze_jahr, len(drafts), len(beleg_ids), entfernt)
     return {"ok": True, "grenze_jahr": grenze_jahr,
@@ -1168,7 +1169,7 @@ def neu_klassifizieren(session: Session = Depends(get_session)) -> dict:
                 and (ist_kosten or not d.position_id):
             continue
         d.kategorie = kat
-        d.kostenart = art or ""
+        d.kostenart = kostenart_normalisieren(art)
         if not ist_kosten and d.position_id:
             belegposten.loese(session, d)
             geloest += 1
@@ -1416,7 +1417,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
     d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
                  groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
-                 kostenart=(kostenart or "").strip(),
+                 kostenart=kostenart_normalisieren(kostenart),
                  betrag=betrag if betrag and betrag > 0 else None,
                  jahr=jahr, belegdatum=_zum_datum(datum),
                  zeitraum_id=zeitraum_id, status="zugeordnet",

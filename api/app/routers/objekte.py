@@ -908,7 +908,8 @@ def _verknuepfungen(session: Session, zid: int) -> dict[str, int]:
     }
 
 
-def _zeitraum_leer_entfernen(session: Session, zid: int) -> bool:
+def _zeitraum_leer_entfernen(session: Session, zid: int,
+                             commit: bool = True) -> bool:
     """Entfernt einen Zeitraum, wenn nichts mehr an ihm hängt — der
     automatische Ersatz für einen Löschknopf. War die entfernte Position der
     letzte Inhalt, verschwindet der leere Zeitraum von selbst. Ein Zeitraum
@@ -916,13 +917,15 @@ def _zeitraum_leer_entfernen(session: Session, zid: int) -> bool:
 
     Gibt True zurück, wenn entfernt wurde. Löscht nur additiv-sicher: ein
     leerer Zeitraum hat weder Positionen noch Belege noch Vorauszahlungen, es
-    kann also nichts verwaisen."""
+    kann also nichts verwaisen. `commit=False` staged nur — für Sammel-
+    Aufräumen, das am Ende einmal committet."""
     if any(_verknuepfungen(session, zid).values()):
         return False
     z = session.get(Zeitraum, zid)
     if z:
         session.delete(z)
-        session.commit()
+        if commit:
+            session.commit()
     return True
 
 
