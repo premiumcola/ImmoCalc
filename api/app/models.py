@@ -231,6 +231,25 @@ class Versicherung(SQLModel, table=True):
         default=None, foreign_key="dokument.id")
 
 
+class Notarvertrag(SQLModel, table=True):
+    """Ein notariell beurkundeter Vertrag am Objekt — Kaufvertrag, Auflassung,
+    Grundschuldbestellung, Teilungserklärung, Nießbrauch … Additiv, hängt am
+    Objekt und gilt für jeden Objekttyp, auch für ein Grundstück (CCLXXXVII)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    art: str                       # 'Kaufvertrag' | 'Auflassung' | 'Grundschuld' …
+    notar: str = ""                # Notar / Notariat
+    urnr: str = ""                 # Urkundenrollen-Nummer (URNr)
+    datum: Optional[date] = None   # Beurkundungsdatum
+    betrag: float = 0.0            # beurkundeter Betrag / Kaufpreis
+    beteiligte: str = ""           # Parteien der Urkunde
+    notiz: str = ""
+    # CCLXXVIII — Orange-Entwurf (siehe Kostenposition).
+    vorlaeufig: bool = False
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
+
+
 class Miete(SQLModel, table=True):
     """Ein Eintrag je Mietverhältnis/Mietstand. Historie entsteht durch mehrere
     Einträge mit unterschiedlichem `ab_datum` — daraus wird der Mietverlauf.

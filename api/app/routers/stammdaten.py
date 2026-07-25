@@ -21,7 +21,7 @@ from ..db import get_session
 from ..deps import objekt_holen
 from ..felder import bereinige
 from ..kappungsgrenze import pruefe
-from ..models import (Bewohner, Kredit, Kreditstand, Miete, Objekt,
+from ..models import (Bewohner, Kredit, Kreditstand, Miete, Notarvertrag, Objekt,
                       Versicherung, Zahlung, ist_bausparer)
 from ..turnus import VORGABE, auswahl_fuer
 from ..vermoegen import kreditstand, verlauf
@@ -33,6 +33,7 @@ ENTITAETEN: dict[str, Type[SQLModel]] = {
     "mieten": Miete,
     "kredite": Kredit,
     "zahlungen": Zahlung,
+    "notarvertraege": Notarvertrag,
 }
 
 
