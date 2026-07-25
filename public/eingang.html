@@ -86,12 +86,16 @@
   .nkkontext .zur:hover{background:#DCEDE7}
   .nkkontext[hidden]{display:none}
 
-  /* Immobilien-Filter als kurze Code-Buttons (lau 5, tau 5 …) — einzeilig */
-  .im-leiste{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
-  .imbtn{display:inline-flex;align-items:center;justify-content:center;
+  /* Immobilien-Filter als kurze Code-Buttons (lau 5, tau 5 …) — einzeilig.
+     Passen sie doch nicht in eine Zeile, scrollt die Leiste seitwärts statt
+     umzubrechen: so bleibt der Filter immer eine Zeile hoch. */
+  .im-leiste{display:flex;flex-wrap:nowrap;gap:6px;margin:0 0 12px;
+             overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .im-leiste::-webkit-scrollbar{display:none}
+  .imbtn{display:inline-flex;align-items:center;justify-content:center;flex:none;
          border:1px solid var(--line);background:var(--sheet);color:var(--ink);
-         border-radius:11px;padding:8px 13px;min-height:40px;white-space:nowrap;
-         font:600 13px var(--body);cursor:pointer;
+         border-radius:11px;padding:8px 11px;min-height:44px;white-space:nowrap;
+         font:600 12.5px var(--body);cursor:pointer;
          transition:background .12s,border-color .12s,color .12s}
   .imbtn:hover{border-color:var(--teal)}
   .imbtn.an{background:var(--teal);border-color:var(--teal);color:#fff}
