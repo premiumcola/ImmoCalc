@@ -84,18 +84,17 @@
     text-decoration:none;white-space:nowrap;border:1px solid #BFD9D1;
     border-radius:999px;padding:7px 13px;background:var(--sheet)}
   .nkkontext .zur:hover{background:#DCEDE7}
+  .nkkontext[hidden]{display:none}
 
-  /* Immobilien-Filter als Buttons: nur Immo-Icon + Adresse */
-  .im-leiste{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
-  .imbtn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);
-         background:var(--sheet);color:var(--ink);border-radius:12px;
-         padding:9px 13px;min-height:44px;font:600 13px var(--body);cursor:pointer;
+  /* Immobilien-Filter als kurze Code-Buttons (lau 5, tau 5 …) — einzeilig */
+  .im-leiste{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
+  .imbtn{display:inline-flex;align-items:center;justify-content:center;
+         border:1px solid var(--line);background:var(--sheet);color:var(--ink);
+         border-radius:11px;padding:8px 13px;min-height:40px;white-space:nowrap;
+         font:600 13px var(--body);cursor:pointer;
          transition:background .12s,border-color .12s,color .12s}
   .imbtn:hover{border-color:var(--teal)}
-  .imbtn{white-space:nowrap;max-width:100%}
-  .imbtn svg{width:17px;height:17px;flex:none;opacity:.8}
   .imbtn.an{background:var(--teal);border-color:var(--teal);color:#fff}
-  .imbtn.an svg{opacity:1}
 
   /* Kostenart: Dropdown-Auslöser (im Filterraster) + aufklappbare Bubbles */
   .ka-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -665,11 +664,18 @@ function filterFuellen() {
   warteArchiv.hidden = !(gefiltert && daten.anzahl > 0);
 }
 
-/* ---- Immobilien-Filter als Buttons: nur Immo-Icon + Adresse (CCLXXIX) ---- */
+/* ---- Immobilien-Filter als Buttons: kurze Codes, eine Zeile (CCLXXXVIII).
+   „(Eschenau) Laufer Str. 5" → „lau 5": erste 3 Buchstaben der Straße + Haus-
+   nummer; ein Grundstück ohne Nummer bekommt die ersten Buchstaben des Namens.
+   Der volle Name steht im title/aria — so bleibt die Leiste einzeilig. ---- */
 const fObjektBtns = document.getElementById('fObjektBtns');
-const HAUS_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/></svg>`;
+function kurzObjekt(name) {
+  const ohneOrt = String(name || '').replace(/^\([^)]*\)\s*/, '').trim();
+  const num = (ohneOrt.match(/(\d+\s*[a-zA-Z]?)\s*$/) || [, ''])[1].replace(/\s+/g, '');
+  const wort = (ohneOrt.match(/[A-Za-zÄÖÜäöüß]{2,}/) || [ohneOrt])[0];
+  const kurz = wort.slice(0, 3).toLowerCase();
+  return (num ? `${kurz} ${num}` : kurz) || String(name || '').slice(0, 4);
+}
 function objektButtons() {
   const alle = !filter.objekt;
   const knoepfe = [`<button class="imbtn${alle ? ' an' : ''}" type="button"
@@ -677,7 +683,8 @@ function objektButtons() {
   for (const o of daten.objekte) {
     const an = filter.objekt === o.slug;
     knoepfe.push(`<button class="imbtn${an ? ' an' : ''}" type="button"
-      data-slug="${esc(o.slug)}" aria-pressed="${an}">${HAUS_SVG}${esc(o.name)}</button>`);
+      data-slug="${esc(o.slug)}" title="${esc(o.name)}" aria-label="${esc(o.name)}"
+      aria-pressed="${an}">${esc(kurzObjekt(o.name))}</button>`);
   }
   fObjektBtns.innerHTML = knoepfe.join('');
 }

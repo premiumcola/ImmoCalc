@@ -550,6 +550,24 @@ const BEREICHE = {
                   e.umlagefaehig ? 'umlagefähig' : ''].filter(Boolean).join(' · '),
     wert: e => `${eur(e.jahresbeitrag)} ${kuerzel(e.turnus)}`,
   },
+  notarvertraege: {
+    titel: 'Notarverträge', einzahl: 'Notarvertrag', ikon: 'Notarvertrag',
+    felder: [
+      { k: 'art', l: 'Art', typ: 'text', pflicht: true },
+      { k: 'notar', l: 'Notar / Notariat', typ: 'text' },
+      { k: 'urnr', l: 'URNr', typ: 'text' },
+      { k: 'datum', l: 'Beurkundet am', typ: 'date' },
+      { k: 'betrag', l: 'Betrag / Kaufpreis', typ: 'number', schritt: '0.01',
+        geld: true },
+      { k: 'beteiligte', l: 'Beteiligte', typ: 'text' },
+      { k: 'notiz', l: 'Notiz', typ: 'text' },
+    ],
+    name: e => e.art || 'Notarvertrag',
+    detail: e => [e.notar, e.urnr ? `URNr ${e.urnr}` : '',
+                  e.datum ? datum(e.datum) : '',
+                  e.beteiligte].filter(Boolean).join(' · '),
+    wert: e => e.betrag ? eur(e.betrag) : '',
+  },
   kredite: {
     titel: 'Kredite & Bausparen', einzahl: 'Vertrag', ikon: 'Kredit',
     // Die tatsächlich gezeigten Felder hängen an der Vertragsart und kommen
@@ -1415,12 +1433,15 @@ async function laden() {
     </div></div></div>
     ${eigentuemerHtml(anteile)}
     ${mietBlock}
-    ${abschnitt('versicherungen', bereiche.versicherungen, {
-      vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
-        als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen
-        nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
-    ${abschnitt('kredite', bereiche.kredite)}
-    ${grundschuldenHtml()}
+    ${istGrundstueck() ? '' : `
+      ${abschnitt('versicherungen', bereiche.versicherungen, {
+        vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
+          als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen
+          nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
+      ${abschnitt('kredite', bereiche.kredite)}
+      ${grundschuldenHtml()}
+    `}
+    ${abschnitt('notarvertraege', bereiche.notarvertraege)}
     ${abschnitt('zahlungen', bereiche.zahlungen)}
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>

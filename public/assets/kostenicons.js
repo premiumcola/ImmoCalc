@@ -75,6 +75,7 @@ const ZUORDNUNG = [
   ['korrespondenz', 'brief'], ['nebenkosten', 'haus'],
   ['mietvertrag', 'vertrag'], ['miete', 'schluessel'], ['mieter', 'person'],
   ['eigentümer', 'person'], ['zahlung', 'paragraf'],
+  ['notarvertrag', 'paragraf'], ['notar', 'paragraf'],
 ];
 
 /** Symbolname zu einer Kostenart — mit Rückfall auf einen neutralen Punkt. */
