@@ -271,9 +271,24 @@ katstand.addEventListener('click', e => {
    für den Zeitraum „in Arbeit“. */
 const STATUSKLASSE = { 'in Arbeit': 'amber', 'abgeschlossen': 'pos', 'versendet': 'teal' };
 
+/* Reihenfolge im „Stand der Abrechnung": der zunächst fällige, noch offene
+   Zeitraum zuerst (kleinste verbleibende Frist), danach die bereits über-
+   schrittenen (§ 556 verstrichen), zuletzt die fertigen. So führt die Übersicht,
+   was als Nächstes ansteht — nicht eine längst abgelaufene Frist. */
+function zeitraumRang(z) {
+  if (z.status !== 'in Arbeit') return [2, 0];          // abgeschlossen/versendet
+  const t = z.frist_tage;
+  if (t == null) return [1, 0];
+  return t >= 0 ? [0, t] : [1, -t];                     // erst fällig-werdend, dann überfällig
+}
+
 function standHtml(staende) {
   const gruppen = staende.filter(s => s.zeitraeume.length).map(s => {
-    const zeilen = s.zeitraeume.map(z => {
+    const geordnet = [...s.zeitraeume].sort((a, b) => {
+      const [ra, sa] = zeitraumRang(a), [rb, sb] = zeitraumRang(b);
+      return ra - rb || sa - sb;
+    });
+    const zeilen = geordnet.map(z => {
       const frist = z.status === 'in Arbeit' ? fristText(z.frist_tage) : null;
       return `<a class="zr" href="zeitraum.html?z=${z.id}">
         <span class="zrl">${esc(z.label)}<em>${esc(z.typ)}</em></span>

@@ -30,6 +30,9 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | In einfachen Worten | Stand |
 |---|---|---|
+| CCXC | **NK-Übersicht nach zunächst fälligem Zeitraum ordnen**: die Abrechnungszeiträume im „Stand der Abrechnung" so sortieren, dass der als Nächstes fällige offene Zeitraum oben steht — nicht eine bereits überschrittene (§ 556) Frist | **offen** — `nebenkosten.html` (Sortierung) |
+| CCXCI | **Menüleisten-Icons etwas größer** (über dem Text) | **offen** — `immo.css` `.nav .ni` |
+| CCXCII | **Aktive Nav-Fläche drängt an den Nachbarn**: beim Antippen berührt der grüne Hintergrund des aktiven Buttons das Nachbar-Element — braucht Abstand | **offen** — `immo.css` `.nav` (gap) |
 | CCXLIX | ~~**Erkennungs-Muster-Wörter** im Dokumenteneingang: Textstücke, die auf dem PDF stehen, bestimmen künftig die Richtung (Kostenart / kostenfrei). Bestand zurücknehmen und neu klassifizieren~~ **erledigt** `a815170`/`9b7017f` | Regel-CRUD + `/neu-klassifizieren`; 11 Startregeln aus deinen Korrekturen; 649 Belege stabil klassifiziert (Re-Lauf = 0 Änderungen) |
 | CCL | ~~**Schließen-× oben rechts in allen Dialogen**~~ **erledigt** `0c8c958`/`d2a1515` | zentral in `baueDialog` **und** als Retrofit für die statisch im HTML stehenden Dialoge (Mietverhältnis, Einheit …); gut sichtbarer weißer Kreis, kein Doppel-× |
 | CCLI | ~~**Leere Abrechnungszeiträume automatisch entfernen**~~ **erledigt** `0a88dac`/`44a6be7` | `POST /zeitraeume/aufraeumen` (räumt beim Öffnen der NK-Übersicht) + Auto-Entfernen, wenn die letzte Position weg ist; Fußzeile zeigt Verknüpfungen; kein Löschknopf. 32 leere Zeiträume weggeräumt |

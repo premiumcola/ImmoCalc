@@ -161,7 +161,7 @@ button.chip:hover{filter:brightness(.96)}
 /* ---- untere Navigation ---- */
 .nav{
   position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--sheet);
-  display:flex; padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+  display:flex; gap:5px; padding:8px 8px calc(8px + env(safe-area-inset-bottom));
   box-shadow:0 -1px 0 rgba(22,38,44,.07);
 }
 @media(min-width:480px){
@@ -176,7 +176,7 @@ button.chip:hover{filter:brightness(.96)}
      Leiste nicht auseinanderdruecken. Lieber kuerzen als umbrechen. */
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-.nav a .ni{font:400 19px var(--mono); line-height:1}
+.nav a .ni{font:400 23px var(--mono); line-height:1}
 
 /* „Mehr" sieht aus wie die übrigen Einträge — es ist einer. Eingehängt wird
    es von immo.js (navAufraeumen), damit die Leiste nur an einer Stelle
@@ -188,7 +188,7 @@ button.chip:hover{filter:brightness(.96)}
   cursor:pointer; letter-spacing:.01em;
 }
 .nav .mehr.an{display:flex}
-.nav .mehr .ni{font:400 19px var(--mono); line-height:1}
+.nav .mehr .ni{font:400 23px var(--mono); line-height:1}
 .nav .mehr.hier{color:var(--teal-d); background:var(--teal-l)}
 .nav a.weg{display:none}
 
