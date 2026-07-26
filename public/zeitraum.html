@@ -40,6 +40,43 @@
     box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .tabs button[aria-selected=true]{background:var(--teal-l);color:var(--teal-d)}
 
+  /* Ablese-Wizard (CCXCIII) */
+  .ablesebtn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;
+    border:1.5px solid #BFD9D1;background:var(--teal-l);color:var(--teal-d);border-radius:13px;
+    padding:13px;min-height:48px;font:600 14px var(--disp);cursor:pointer;margin-bottom:14px}
+  .ablesebtn:hover{background:#DCEDE7}
+  .ablesebtn .si{font:400 18px var(--mono);line-height:1}
+  .ablese-dlg{border:none;border-radius:18px;padding:0;max-width:440px;width:calc(100vw - 28px);
+    background:var(--sheet);color:var(--ink);box-shadow:0 18px 50px rgba(22,38,44,.25)}
+  .ablese-dlg::backdrop{background:rgba(22,38,44,.45)}
+  .aw-kopf{display:flex;align-items:center;gap:10px;padding:16px 18px 10px}
+  .aw-kopf .t{font:700 15px var(--disp);flex:1;min-width:0}
+  .aw-x{border:none;background:var(--paper);width:32px;height:32px;border-radius:50%;
+    font-size:18px;color:var(--ink);cursor:pointer;flex:none;line-height:1}
+  .aw-bahn{height:6px;background:#E4EAEA;margin:0 18px;border-radius:99px;overflow:hidden}
+  .aw-bahn i{display:block;height:100%;background:var(--teal);border-radius:99px;transition:width .2s}
+  .aw-schritt{font:600 11px var(--mono);color:var(--soft);padding:9px 18px 0}
+  .aw-body{padding:4px 18px 14px}
+  .aw-name{font:700 20px var(--disp);letter-spacing:-.01em;margin:4px 0 9px;line-height:1.15}
+  .aw-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+  .aw-chips .c{font:600 11.5px var(--body);background:var(--paper);color:var(--soft);
+    border-radius:99px;padding:4px 10px}
+  .aw-vor{font:500 12.5px var(--body);color:var(--soft);margin-bottom:13px;line-height:1.5}
+  .aw-vor strong{color:var(--ink)}
+  .aw-feld{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+  .aw-feld label{font:600 11px var(--mono);text-transform:uppercase;color:var(--soft);letter-spacing:.03em}
+  .aw-feld input{border:1.5px solid var(--line);border-radius:12px;padding:12px 13px;
+    font:600 16px var(--body);background:var(--sheet);color:var(--ink);min-height:48px}
+  .aw-feld input:focus{outline:none;border-color:var(--teal)}
+  .aw-verb{font:600 12.5px var(--body);color:var(--teal-d);background:var(--teal-l);
+    border-radius:11px;padding:10px 13px;margin-top:2px;line-height:1.45}
+  .aw-fuss{display:flex;gap:10px;padding:12px 18px 18px}
+  .aw-fuss button{flex:1;border-radius:12px;padding:13px;min-height:48px;
+    font:600 14px var(--disp);cursor:pointer;border:none}
+  .aw-zurueck{background:var(--paper);color:var(--ink)}
+  .aw-zurueck[disabled]{opacity:.4;cursor:default}
+  .aw-weiter{background:var(--teal);color:#fff}
+
   .pruef{background:var(--sheet);border-radius:14px;margin-bottom:10px;overflow:hidden;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
   /* Gefüllte Zeile sanft grün herausheben: man sieht auf einen Blick, wo schon
@@ -998,7 +1035,7 @@ async function zeichnen() {
       .map((k, i) => ({ k, i }))
       .sort((a, b) => SORTIERUNG[sortierung](a.k, b.k));
 
-    rumpf = wegDirektHtml() + flussKarte + sortWahl +
+    rumpf = wegDirektHtml() + ablesenKnopfHtml() + flussKarte + sortWahl +
       sortiert.map(({ k, i }) => zeileHtml(k, i)).join('')
       + sonderpostenHtml() + abschlussHtml() + zeitraumFussHtml();
   } else if (ansicht === 'ergebnis') {
@@ -1715,6 +1752,113 @@ async function betragVorschlagen(kostenart, vorschlag) {
               { method: 'POST', body: { kostenart, betrag: vorschlag.betrag,
                                         wertquelle: 'Scan' } });
   }
+}
+
+/* ---- Ablese-Wizard (CCXCIII) — Zählerstände durchscrollend eingeben --------
+   Ein Zähler je Schritt, Weiter/Zurück; der Verbrauch wird serverseitig linear
+   auf den Abrechnungszeitraum interpoliert. Speichern ist idempotent je
+   Zeitraum, deshalb darf man beliebig vor- und zurückgehen. */
+function ablesenKnopfHtml() {
+  return `<button class="ablesebtn" id="ableseWizard" type="button">
+    <span class="si">▦</span> Ablesewerte eingeben</button>`;
+}
+
+const zahl = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 3 });
+
+inhalt.addEventListener('click', e => {
+  if (e.target.closest('#ableseWizard')) ablesungWizard();
+});
+
+async function ablesungWizard() {
+  let maske;
+  try { maske = await api(`/zeitraeume/${zid}/ablesung`); }
+  catch (fehler) { melde(fehler.message || 'Ablesewerte nicht ladbar', 'neg'); return; }
+  const zl = maske.zaehler || [];
+  if (!zl.length) {
+    melde('Für diese Immobilie sind noch keine Zähler angelegt.', '');
+    return;
+  }
+  let idx = 0;
+  const dlg = document.createElement('dialog');
+  dlg.className = 'ablese-dlg';
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => { dlg.remove(); laden(); });
+
+  async function speichereAktuell() {
+    const feld = dlg.querySelector('#awStand');
+    if (!feld) return;                                  // Rest-Zähler: nichts einzugeben
+    const roh = feld.value.trim().replace(',', '.');
+    if (roh === '') return;                             // leer gelassen → nicht speichern
+    const stand = Number(roh);
+    if (!Number.isFinite(stand)) return;
+    const datum = dlg.querySelector('#awDatum').value || maske.zeitraum.ende;
+    zl[idx].ablesung = { stand, datum };
+    try {
+      await api(`/zaehler/${zl[idx].id}/ablesungen`,
+        { method: 'POST', body: { stand, datum, zeitraum_id: Number(zid) } });
+    } catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
+  }
+
+  function render() {
+    const z = zl[idx];
+    const rest = z.typ === 'rest';
+    const vor = z.vorwert
+      ? `Vorstand: <strong>${zahl(z.vorwert.stand)} ${esc(z.messeinheit)}</strong>
+         <span>(${new Date(z.vorwert.datum).toLocaleDateString('de-DE')})</span>`
+      : 'Erste Ablesung — kein Vorstand. Das wird die Startablesung.';
+    const chips = [z.kostenart, z.einheit_bezug || 'Haus / Gesamt',
+                   rest ? 'berechneter Rest' : z.messeinheit]
+      .filter(Boolean).map(c => `<span class="c">${esc(c)}</span>`).join('');
+    dlg.innerHTML = `
+      <div class="aw-kopf">
+        <span class="t">Ablesewerte · ${esc(maske.zeitraum.label)}</span>
+        <button class="aw-x" data-schliessen aria-label="Schließen">×</button>
+      </div>
+      <div class="aw-bahn"><i style="width:${Math.round((idx / zl.length) * 100)}%"></i></div>
+      <div class="aw-schritt">Zähler ${idx + 1} von ${zl.length}</div>
+      <div class="aw-body">
+        <div class="aw-name">${esc(z.name)}</div>
+        <div class="aw-chips">${chips}</div>
+        <div class="aw-vor">${vor}</div>
+        ${rest
+          ? `<div class="aw-verb">Berechneter Rest-Zähler — kein Wert nötig. Er
+             ergibt sich aus Gesamt minus die gemessenen Unterzähler.</div>`
+          : `<div class="aw-feld">
+              <label for="awStand">Aktueller Zählerstand (${esc(z.messeinheit)})</label>
+              <input id="awStand" type="text" inputmode="decimal" placeholder="z. B. 234,8"
+                     value="${z.ablesung ? zahl(z.ablesung.stand) : ''}">
+             </div>
+             <div class="aw-feld">
+              <label for="awDatum">Abgelesen am</label>
+              <input id="awDatum" type="date"
+                     value="${z.ablesung ? z.ablesung.datum : maske.zeitraum.ende}">
+             </div>`}
+        ${z.verbrauch != null && !rest
+          ? `<div class="aw-verb">Verbrauch im Zeitraum:
+             ${zahl(z.verbrauch)} ${esc(z.messeinheit)}</div>` : ''}
+      </div>
+      <div class="aw-fuss">
+        <button class="aw-zurueck" data-zurueck ${idx === 0 ? 'disabled' : ''}>‹ Zurück</button>
+        <button class="aw-weiter" data-weiter>${
+          idx === zl.length - 1 ? 'Fertig' : 'Weiter ›'}</button>
+      </div>`;
+    const feld = dlg.querySelector('#awStand');
+    if (feld) feld.focus();
+  }
+
+  dlg.addEventListener('click', async e => {
+    if (e.target.closest('[data-schliessen]')) { await speichereAktuell(); dlg.close(); return; }
+    if (e.target.closest('[data-zurueck]')) {
+      await speichereAktuell(); idx = Math.max(0, idx - 1); render(); return;
+    }
+    if (e.target.closest('[data-weiter]')) {
+      await speichereAktuell();
+      if (idx === zl.length - 1) { dlg.close(); return; }
+      idx += 1; render();
+    }
+  });
+  render();
+  dlg.showModal();
 }
 
 await laden();
