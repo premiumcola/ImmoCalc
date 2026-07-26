@@ -30,6 +30,7 @@ In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 
 | Nr. | In einfachen Worten | Stand |
 |---|---|---|
+| CCXCIII | **Zähler-Ablesewerte-Maske**: je Immobilie die Ablesewerte in einer Maske eingeben (Wizard: ein Wert weiter/zurück, durchscrollen), linear auf Tagesbasis auf den Abrechnungszeitraum interpolieren, als Verbrauch in die NK-Kostenarten eintragen; Verteilungsschlüssel wählt der Nutzer | **Backend-Fundament erledigt** — `Zaehler`+`Ablesung`-Modelle, `ablesung.py` (verdrahtet `engine.interpoliere_verbrauch`/`rest_verbrauch`, reproduziert 142.577), Router `zaehler.py` (CRUD + `/zeitraeume/{zid}/ablesung`-Maske). **Offen: Laufer-Zähler seeden + Frontend-Wizard + Übernehmen→Positionen mit Schlüssel** |
 | CCXC | ~~**NK-Übersicht nach zunächst fälligem Zeitraum ordnen**~~ **erledigt** `feec8a1` | `zeitraumRang` in `nebenkosten.html`: offene „in Arbeit"-Zeiträume nach kleinster Restfrist zuerst (rang 0), dann überschrittene (rang 1), zuletzt fertige (rang 2). Reihenfolge per DOM verifiziert (früher fälliger oben) |
 | CCXCI | ~~**Menüleisten-Icons etwas größer**~~ **erledigt** `feec8a1` | `.nav .ni` 19→23 px (auch im „Mehr") |
 | CCXCII | ~~**Aktive Nav-Fläche drängt an den Nachbarn**~~ **erledigt** `feec8a1` | `.nav` bekam `gap:5px` — die mint Fläche des aktiven Buttons hat jetzt rundum Luft, klebt nicht mehr am Nachbarn. Visuell abgenommen |

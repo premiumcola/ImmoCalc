@@ -204,6 +204,36 @@ class Vorauszahlung(SQLModel, table=True):
     betrag: float
 
 
+class Zaehler(SQLModel, table=True):
+    """Ein Zähler (oder berechneter Rest-Zähler) an einem Objekt. Die Ablese-
+    stände werden linear auf den Abrechnungszeitraum interpoliert
+    (`engine.interpoliere_verbrauch`) und fließen als Verbrauch in die NK-
+    Kostenposition der `kostenart`. Additiv, hängt am Objekt (CCXCIII)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    name: str                         # 'Gesamt Wasser', 'Büro KW', …
+    kostenart: str = ""               # NK-Kostenart, in die der Verbrauch zählt
+    einheit_bezug: str = ""           # Partei/Einheit des Verbrauchs ('' = Haus/Gesamt)
+    messeinheit: str = "m³"           # 'm³' | 'kWh' | 'Liter'
+    typ: str = "gemessen"             # 'gemessen' | 'rest' (Gesamt minus Unterzähler)
+    hauptzaehler_id: Optional[int] = Field(default=None, foreign_key="zaehler.id")
+    reihenfolge: int = 0              # Reihenfolge in der Eingabemaske
+    aktiv: bool = True
+    notiz: str = ""
+
+
+class Ablesung(SQLModel, table=True):
+    """Ein Zählerstand zu einem Ablesedatum. Historie entsteht durch mehrere
+    Einträge je Zähler; daraus interpoliert die Engine den Stand zum Soll-
+    Stichtag des Abrechnungszeitraums. Additiv (CCXCIII)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    zaehler_id: int = Field(foreign_key="zaehler.id", index=True)
+    datum: date                       # Ablesedatum (Ist)
+    stand: float                      # abgelesener Zählerstand (kumuliert)
+    zeitraum_id: Optional[int] = Field(default=None, foreign_key="zeitraum.id")
+    notiz: str = ""
+
+
 # --------------------------------------------------------------------------
 # Immobilien-Informationen jenseits der Nebenkostenabrechnung.
 # Speisen die Auswertung: Einnahmen (Miete) gegen Ausgaben (Kredit,
