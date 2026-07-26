@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from .. import ablesung
+from .. import ablesung, belegposten, verteilung
 from ..db import get_session
 from ..deps import objekt_holen
 from ..models import Ablesung, Objekt, Zaehler, Zeitraum
@@ -41,6 +41,11 @@ class AblesungIn(BaseModel):
     stand: float
     zeitraum_id: int | None = None
     notiz: str = ""
+
+
+class UebernahmeIn(BaseModel):
+    kostenart: str
+    schluessel: str = "verbrauch"
 
 
 def _zaehler(session: Session, zid: int) -> Zaehler:
@@ -173,7 +178,64 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
                      "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"},
         "vorheriges_ende": vorher.ende.isoformat() if vorher else None,
         "zaehler": zeilen,
+        "schluessel_optionen": [
+            {"wert": k, "titel": v["titel"], "ableitbar": v["ableitbar"]}
+            for k, v in verteilung.SCHLUESSEL.items()],
     }
+
+
+@router.post("/zeitraeume/{zid}/ablesung/uebernehmen")
+def uebernehmen(zid: int, data: UebernahmeIn,
+                session: Session = Depends(get_session)) -> dict:
+    """Trägt den interpolierten Verbrauch einer Kostenart als Verteilung in die
+    NK-Kostenposition ein. Bei `schluessel='verbrauch'` werden die Gewichte je
+    Partei aus den Zählern gebildet (Untermesser/Rest, gruppiert nach
+    `einheit_bezug`); bei jedem anderen Schlüssel werden sie aus den Stammdaten
+    abgeleitet. Der Betrag (aus dem Beleg) bleibt unberührt — nur die Verteilung
+    wird gesetzt. Eine bestehende Position wird aktualisiert, sonst angelegt."""
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    if data.schluessel not in verteilung.SCHLUESSEL:
+        raise HTTPException(400, f"Unbekannter Schlüssel „{data.schluessel}“")
+
+    zaehler = session.exec(select(Zaehler).where(
+        Zaehler.objekt_id == z.objekt_id, Zaehler.kostenart == data.kostenart,
+        Zaehler.aktiv)).all()
+    if not zaehler:
+        raise HTTPException(404, f"Keine Zähler für „{data.kostenart}“")
+
+    # Gewichte je Partei aus dem Verbrauch — nur bei Verbrauchsschlüssel.
+    anteile = None
+    if data.schluessel == "verbrauch":
+        zeitraeume = session.exec(
+            select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
+        zma = [(zae, session.exec(select(Ablesung).where(
+                Ablesung.zaehler_id == zae.id)).all()) for zae in zaehler]
+        verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume, zid)
+        anteile = {}
+        for zae in zaehler:
+            # Der Gesamtzähler (ohne einheit_bezug) ist die Kontrollsumme, keine
+            # Partei — nur die zugeordneten Unter-/Rest-Zähler tragen Gewicht.
+            if zae.einheit_bezug and verb.get(zae.id):
+                anteile[zae.einheit_bezug] = round(
+                    anteile.get(zae.einheit_bezug, 0.0) + verb[zae.id], 4)
+
+    pos = belegposten.finde(session, zid, data.kostenart)
+    if pos:
+        pos.schluessel = data.schluessel
+        pos.wertquelle = "Zähler"
+        pos.anteile = (anteile if anteile is not None
+                       else verteilung.ableiten(session, z, data.schluessel))
+        session.add(pos)
+    else:
+        pos = belegposten.anlegen(session, z, data.kostenart,
+                                  schluessel=data.schluessel, wertquelle="Zähler",
+                                  anteile=anteile)
+    session.commit()
+    session.refresh(pos)
+    return {"ok": True, "kostenart": data.kostenart, "schluessel": pos.schluessel,
+            "anteile": pos.anteile, "position_id": pos.id}
 
 
 def _zeige(session: Session, z: Zaehler) -> dict:
