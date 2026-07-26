@@ -221,21 +221,23 @@ def uebernehmen(zid: int, data: UebernahmeIn,
                 anteile[zae.einheit_bezug] = round(
                     anteile.get(zae.einheit_bezug, 0.0) + verb[zae.id], 4)
 
+    # Nur eine BESTEHENDE Position wird konfiguriert. Keine leere Hülle anlegen
+    # (CCLVI: keine 0-€-Position ohne Beleg) — der Betrag kommt aus dem Beleg,
+    # die Position entsteht dort; hier wird nur die Verteilung gesetzt.
     pos = belegposten.finde(session, zid, data.kostenart)
-    if pos:
-        pos.schluessel = data.schluessel
-        pos.wertquelle = "Zähler"
-        pos.anteile = (anteile if anteile is not None
-                       else verteilung.ableiten(session, z, data.schluessel))
-        session.add(pos)
-    else:
-        pos = belegposten.anlegen(session, z, data.kostenart,
-                                  schluessel=data.schluessel, wertquelle="Zähler",
-                                  anteile=anteile)
+    if not pos:
+        return {"ok": True, "kostenart": data.kostenart, "angewandt": False,
+                "grund": "Noch keine Position — erst den Beleg/Betrag erfassen."}
+    pos.schluessel = data.schluessel
+    pos.wertquelle = "Zähler"
+    pos.anteile = (anteile if anteile is not None
+                   else verteilung.ableiten(session, z, data.schluessel))
+    session.add(pos)
     session.commit()
     session.refresh(pos)
-    return {"ok": True, "kostenart": data.kostenart, "schluessel": pos.schluessel,
-            "anteile": pos.anteile, "position_id": pos.id}
+    return {"ok": True, "kostenart": data.kostenart, "angewandt": True,
+            "schluessel": pos.schluessel, "anteile": pos.anteile,
+            "position_id": pos.id}
 
 
 def _zeige(session: Session, z: Zaehler) -> dict:

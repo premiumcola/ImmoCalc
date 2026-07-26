@@ -1916,11 +1916,17 @@ async function ablesungWizard() {
       const selects = [...dlg.querySelectorAll('.aw-select')];
       ueb.disabled = true; ueb.textContent = 'Übernehme …';
       try {
+        let angewandt = 0;
         for (const s of selects) {
-          await api(`/zeitraeume/${zid}/ablesung/uebernehmen`,
+          const r = await api(`/zeitraeume/${zid}/ablesung/uebernehmen`,
             { method: 'POST', body: { kostenart: s.dataset.ka, schluessel: s.value } });
+          if (r.angewandt) angewandt += 1;
         }
-        melde('Verbrauch in die Abrechnung übernommen', 'pos');
+        const rest = selects.length - angewandt;
+        melde(angewandt
+          ? `Verbrauch übernommen für ${angewandt} Kostenart${angewandt === 1 ? '' : 'en'}`
+            + (rest ? ` · ${rest} braucht${rest === 1 ? '' : 'en'} erst einen Beleg` : '')
+          : 'Noch keine passende Position — erst die Belege/Beträge erfassen', angewandt ? 'pos' : '');
         dlg.close();
       } catch (fehler) {
         ueb.disabled = false; ueb.textContent = 'Übernehmen';
