@@ -156,7 +156,7 @@
      getrenntes "Gebäude-versicherung" statt eines Bruchs mitten im Wort.
      overflow-wrap bleibt als Notnagel fuer Woerter ohne Trennstelle. */
   .pruef .name{flex:1;min-width:0;font:600 14px var(--disp);letter-spacing:-.01em;
-               hyphens:auto;overflow-wrap:anywhere;padding-right:4px}
+               hyphens:auto;overflow-wrap:break-word;padding-right:4px}
   .pruef .unter{display:block;font:400 11.5px var(--body);color:var(--soft);
                 margin-top:3px;line-height:1.4;letter-spacing:0}
   .pruef .rechts{display:flex;align-items:center;gap:10px;flex:none}
@@ -192,8 +192,10 @@
      die zweite, sekundäre Art, einen Beleg an die Position zu holen. */
   .scanmini.ablage{border-color:var(--line);background:var(--sheet);color:var(--ink)}
   .scanmini.ablage:hover{background:var(--paper)}
-  /* Auf dem Handy wird es sonst zu eng — dort trägt das Symbol allein. */
-  @media(max-width:409px){ .scanmini .st{display:none} }
+  /* Auf dem Handy tragen die zwei Knöpfe nur ihr Symbol — sonst quetschen die
+     Labels („Beleg erfassen" + „Aus Ablage") den Kostenart-Namen zeichenweise
+     um. Erst ab Tablet-Breite ist Platz für die Beschriftung. */
+  @media(max-width:560px){ .scanmini .st{display:none} }
   .nachtrag{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   .nachtrag input{flex:1;min-width:130px;border:1.5px solid var(--line);
     border-radius:10px;padding:10px 12px;
