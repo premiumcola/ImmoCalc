@@ -76,6 +76,19 @@
   .aw-zurueck{background:var(--paper);color:var(--ink)}
   .aw-zurueck[disabled]{opacity:.4;cursor:default}
   .aw-weiter{background:var(--teal);color:#fff}
+  .aw-weiter[disabled]{opacity:.5;cursor:default}
+  .aw-block{background:var(--paper);border-radius:13px;padding:12px 13px;margin-bottom:11px}
+  .aw-bk{font:700 14px var(--disp);margin-bottom:8px}
+  .aw-zeile{display:flex;justify-content:space-between;gap:10px;
+    font:500 13px var(--body);padding:4px 0;border-top:1px solid var(--line)}
+  .aw-zeile:first-of-type{border-top:none}
+  .aw-zeile b{font-weight:700;white-space:nowrap}
+  .aw-leer{font:500 12.5px var(--body);color:var(--soft);padding:2px 0}
+  .aw-sk{display:flex;flex-direction:column;gap:6px;margin-top:10px;
+    font:600 11px var(--mono);text-transform:uppercase;color:var(--soft);letter-spacing:.03em}
+  .aw-select{border:1.5px solid var(--line);border-radius:11px;padding:11px 12px;
+    font:600 14px var(--body);background:var(--sheet);color:var(--ink);min-height:46px}
+  .aw-select:focus{outline:none;border-color:var(--teal)}
 
   .pruef{background:var(--sheet);border-radius:14px;margin-bottom:10px;overflow:hidden;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -1799,7 +1812,52 @@ async function ablesungWizard() {
     } catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
   }
 
+  function gruppenNachKostenart() {
+    const m = new Map();
+    for (const z of zl) {
+      if (!z.kostenart) continue;
+      if (!m.has(z.kostenart)) m.set(z.kostenart, []);
+      m.get(z.kostenart).push(z);
+    }
+    return [...m.entries()];
+  }
+
+  /* Letzter Schritt: je Kostenart die Partei-Aufteilung aus dem Verbrauch, dazu
+     der Verteilungsschlüssel zur Wahl (Vorgabe: Verbrauch). „Übernehmen" setzt
+     Schlüssel + Gewichte an der Position; der Betrag bleibt beim Beleg. */
+  function renderZusammenfassung() {
+    const opts = maske.schluessel_optionen || [];
+    const bloecke = gruppenNachKostenart().map(([ka, zs]) => {
+      const zeilen = zs.filter(z => z.einheit_bezug).map(z =>
+        `<div class="aw-zeile"><span>${esc(z.einheit_bezug)}</span>
+          <b>${z.verbrauch != null ? zahl(z.verbrauch) + ' ' + esc(z.messeinheit)
+              : '—'}</b></div>`).join('');
+      const sel = `<select class="aw-select" data-ka="${esc(ka)}">${opts.map(o =>
+        `<option value="${o.wert}"${o.wert === 'verbrauch' ? ' selected' : ''}>${
+          esc(o.titel)}</option>`).join('')}</select>`;
+      return `<div class="aw-block">
+        <div class="aw-bk">${esc(ka)}</div>
+        ${zeilen || '<div class="aw-leer">Nur Gesamtzähler — keine Aufteilung.</div>'}
+        <label class="aw-sk">Verteilungsschlüssel${sel}</label>
+      </div>`;
+    }).join('');
+    dlg.innerHTML = `
+      <div class="aw-kopf">
+        <span class="t">Übernehmen · ${esc(maske.zeitraum.label)}</span>
+        <button class="aw-x" data-schliessen aria-label="Schließen">×</button>
+      </div>
+      <div class="aw-bahn"><i style="width:100%"></i></div>
+      <div class="aw-schritt">Verbrauch in die Abrechnung übernehmen</div>
+      <div class="aw-body">${bloecke
+        || '<div class="aw-vor">Keine Zähler mit Kostenart angelegt.</div>'}</div>
+      <div class="aw-fuss">
+        <button class="aw-zurueck" data-zurueck>‹ Zurück</button>
+        <button class="aw-weiter" data-uebernehmen ${bloecke ? '' : 'disabled'}>Übernehmen</button>
+      </div>`;
+  }
+
   function render() {
+    if (idx >= zl.length) { renderZusammenfassung(); return; }
     const z = zl[idx];
     const rest = z.typ === 'rest';
     const vor = z.vorwert
@@ -1839,8 +1897,7 @@ async function ablesungWizard() {
       </div>
       <div class="aw-fuss">
         <button class="aw-zurueck" data-zurueck ${idx === 0 ? 'disabled' : ''}>‹ Zurück</button>
-        <button class="aw-weiter" data-weiter>${
-          idx === zl.length - 1 ? 'Fertig' : 'Weiter ›'}</button>
+        <button class="aw-weiter" data-weiter>Weiter ›</button>
       </div>`;
     const feld = dlg.querySelector('#awStand');
     if (feld) feld.focus();
@@ -1852,9 +1909,23 @@ async function ablesungWizard() {
       await speichereAktuell(); idx = Math.max(0, idx - 1); render(); return;
     }
     if (e.target.closest('[data-weiter]')) {
-      await speichereAktuell();
-      if (idx === zl.length - 1) { dlg.close(); return; }
-      idx += 1; render();
+      await speichereAktuell(); idx += 1; render(); return;   // letzter → Zusammenfassung
+    }
+    const ueb = e.target.closest('[data-uebernehmen]');
+    if (ueb) {
+      const selects = [...dlg.querySelectorAll('.aw-select')];
+      ueb.disabled = true; ueb.textContent = 'Übernehme …';
+      try {
+        for (const s of selects) {
+          await api(`/zeitraeume/${zid}/ablesung/uebernehmen`,
+            { method: 'POST', body: { kostenart: s.dataset.ka, schluessel: s.value } });
+        }
+        melde('Verbrauch in die Abrechnung übernommen', 'pos');
+        dlg.close();
+      } catch (fehler) {
+        ueb.disabled = false; ueb.textContent = 'Übernehmen';
+        melde(fehler.message || 'Übernehmen fehlgeschlagen', 'neg');
+      }
     }
   });
   render();
