@@ -20,6 +20,10 @@
   .barlogo{width:34px;height:34px;border-radius:9px;overflow:hidden;flex:none;
            border:none;background:none;padding:0;cursor:pointer;display:block}
   .barlogo:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  /* CCCXXXVI — Kopf-Titel und -Unterzeile bleiben einzeilig: beim Grundstück
+     trägt die Unterzeile Ort · Gemarkung · Flur · Nutzungsart · Fläche und würde
+     sonst umbrechen. Zu lang wird abgeschnitten (…). */
+  #titel,#sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .banner{display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:12px;
           font:600 12px var(--mono);margin-bottom:18px;line-height:1.4}
   .banner .d{width:8px;height:8px;border-radius:50%;flex:none}
@@ -1105,18 +1109,43 @@ const OHNE_BEIM_GRUNDSTUECK = new Set([
   'strasse', 'baudatum',
   'ruecklage_saldo', 'ruecklage_monatlich',
   'bank', 'iban', 'kontoinhaber']);
+
+/* CCCXXXVI — beim Grundstück bilden Stammdaten und Grundstücksangaben EINE
+   Feldbeschreibung, von grob nach fein geordnet: was es ist (Objektart, Adresse
+   inkl. Flurnummer, Fläche, Nutzungsart, geschätzter m²-Preis), wie es erworben
+   wurde (Erwerbsart, Kaufpreis/-datum), die Grundsteuer-Kette und zuletzt der
+   Nießbrauch. Ein einziges Formular bearbeitet alles (alle Felder gehören zum
+   Objekt und werden an dieselbe Route gePATCHt); die Anzeige teilt es in die
+   drei Blöcke Stammdaten / Erwerb & Kosten / Nutzung & Pacht. */
+const feldAus = (pool, k) => pool.find(f => f.k === k);
+const GRUND_STAMMFELDER = () => {
+  const s = k => feldAus(STAMMFELDER, k);
+  const g = k => feldAus(GRUNDFELDER, k);
+  return [
+    s('name'), s('objektart'),
+    s('plz'), s('ort'),
+    g('gemarkung'), g('flurstueck'),
+    g('grundstueck_flaeche'), g('grundstueck_nutzungsart'),
+    g('grundstueck_m2_preis'),
+    s('erwerbsart'), s('kaufpreis'), s('kaufdatum'),
+    g('grundsteuerwert'), g('grundsteuer_messbetrag'), g('grundsteuer_hebesatz'),
+    s('niessbrauch_aktiv'), s('niessbrauch_berechtigt'), s('niessbrauch_bis'),
+  ].filter(Boolean);
+};
+
 /* Die Stammfelder — typ- und zustandsabhängig (CCCI). `aktiv` ist der aktuelle
    Nießbrauch-Zustand: er entscheidet, ob Berechtigter und Frist mitkommen. Für
    das Formular übergibt der Aufrufer den Stand aus dem Schalter; für die Ansicht
-   den gespeicherten Wert. Der Berechtigte bekommt die Eigentümer als Auswahl. */
+   den gespeicherten Wert. Der Berechtigte bekommt ALLE app-weit geführten
+   Eigentümer als Auswahl (CCCXXXV) — der Nießbraucher ist meist nicht Eigentümer
+   dieses Objekts; Fallback bleibt die Eigentümerliste des Objekts. */
 function stammfelder(aktiv = objekt?.niessbrauch_aktiv) {
-  let felder = istGrundstueck()
-    ? STAMMFELDER.filter(f => !OHNE_BEIM_GRUNDSTUECK.has(f.k))
-    : STAMMFELDER;
+  let felder = istGrundstueck() ? GRUND_STAMMFELDER() : STAMMFELDER;
+  const berechtigte = alleEigentuemer.length ? alleEigentuemer : objektEigentuemer;
   felder = felder
     .filter(f => !(f.nurWennNiessbrauch && !aktiv))
     .map(f => f.k === 'niessbrauch_berechtigt'
-      ? { ...f, werte: objektEigentuemer } : f);
+      ? { ...f, werte: berechtigte } : f);
   return felder;
 }
 
@@ -1188,6 +1217,10 @@ let fokus = null;
 let grundschulden = [];
 /* CCCI — die Eigentümer-Namen dieses Objekts, für die Nießbrauch-Auswahl. */
 let objektEigentuemer = [];
+/* CCCXXXV — alle app-weit geführten Eigentümer (Personen), damit als
+   Nießbrauch-Berechtigter auch jemand wählbar ist, der nicht Miteigentümer
+   dieses Objekts ist. Fällt der Abruf aus, bleibt es bei objektEigentuemer. */
+let alleEigentuemer = [];
 /* CCCIX — die geladenen Bereiche, damit der Zuordnen-Dialog die vorhandenen
    Einträge einer Rubrik anbieten kann. */
 let bereicheDaten = {};
@@ -1429,66 +1462,138 @@ function stammHtml(o) {
     ${flaecheWarnung(o.flaeche, s)}`;
 }
 
-/* Preis je m² und Grundsteuer werden gerechnet, nicht gepflegt: sie stünden
-   sonst irgendwann im Widerspruch zu den Zahlen, aus denen sie stammen. */
-function grundstueckHtml(o, pachtJahr = 0) {
-  if (!istGrundstueck()) return '';
-  const zeilen = GRUNDFELDER
-    .map(f => paarZeile(f.l, stammwert(f, o), { lang: f.lang })).join('');
-  const abgeleitet = [];
-  // Grundstückswert aus dem geschätzten m²-Preis × Fläche (CCXCVII).
+/* ---- CCCXXXVI — das Grundstück in drei Blöcken ---------------------------
+   Preis je m² und Grundsteuer werden gerechnet, nicht gepflegt: sie stünden
+   sonst irgendwann im Widerspruch zu den Zahlen, aus denen sie stammen. Bearbeitet
+   wird alles über EIN Stammdaten-Formular (data-stamm, GRUND_STAMMFELDER). */
+
+/* Der Grundstückswert: geschätzter m²-Preis × Fläche, sonst der Verkehrswert. */
+function grundstueckswert(o) {
   if (o.grundstueck_m2_preis && o.grundstueck_flaeche) {
-    abgeleitet.push(['Grundstückswert (errechnet)',
-      eur(o.grundstueck_m2_preis * o.grundstueck_flaeche)]);
-  } else if (o.verkehrswert) {
-    abgeleitet.push(['Grundstückswert', eur(o.verkehrswert)]);
+    return { betrag: o.grundstueck_m2_preis * o.grundstueck_flaeche,
+             quelle: `aus ${eur(o.grundstueck_m2_preis)} / m² × ${
+               flaecheText(o.grundstueck_flaeche)}` };
   }
-  // Grundsteuer als Rechenkette in der Reihenfolge, in der sie entsteht (CCXCVI):
-  // Grundsteuerwert × Steuermesszahl = Steuermessbetrag × Hebesatz = Jahr.
+  if (o.verkehrswert) return { betrag: o.verkehrswert, quelle: 'Verkehrswert' };
+  return null;
+}
+
+/* Grundsteuer im Jahr: Steuermessbetrag × Hebesatz. */
+const grundsteuerJahrVon = o => (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz)
+  ? o.grundsteuer_messbetrag * o.grundsteuer_hebesatz / 100 : 0;
+
+/* Block A — Stammdaten: was das Grundstück ist. Objektart, Adresse inkl.
+   Flurnummer (Ort · Gemarkung · Flurstück), Fläche, Nutzungsart, Grundstückswert;
+   ist ein Nießbrauch eingetragen, klingt er als abgesetzter Block mit aus. */
+function grundStammHtml(o) {
+  const felder = stammfelder();
+  const def = k => felder.find(f => f.k === k);
+  const zeilen = [];
+  const zeile = c => zeilen.push(cellZeile(c));
+  if (def('objektart')) {
+    zeile({ label: 'Objektart', wert: stammwert(def('objektart'), o) });
+  }
+  const plzOrt = [o.plz, o.ort].filter(Boolean).join(' ');
+  const adresse = [plzOrt, o.gemarkung && `Gemarkung ${o.gemarkung}`,
+                   o.flurstueck && `Flur ${o.flurstueck}`].filter(Boolean).join(' · ');
+  zeile({ label: 'Adresse', wert: adresse || null });
+  if (def('grundstueck_flaeche')) {
+    zeile({ label: 'Grundstücksfläche',
+            wert: stammwert(def('grundstueck_flaeche'), o) });
+  }
+  if (def('grundstueck_nutzungsart')) {
+    zeile({ label: 'Nutzungsart',
+            wert: stammwert(def('grundstueck_nutzungsart'), o) });
+  }
+  const gw = grundstueckswert(o);
+  zeile({ label: 'Grundstückswert', wert: gw ? eur(gw.betrag) : null,
+          quelle: gw ? gw.quelle : null, abgeleitet: Boolean(gw) });
+  if (o.niessbrauch_aktiv) {
+    zeilen.push('<div class="paar-trenn"><span>Nießbrauch</span></div>');
+    for (const k of ['niessbrauch_berechtigt', 'niessbrauch_bis']) {
+      const f = def(k);
+      if (f) zeile({ label: f.l, wert: stammwert(f, o) });
+    }
+  }
+  return `<div class="sekopf"><span class="seikon" style="color:var(--teal-d)"
+        >${kostenIcon('Grundstück')}</span>
+      <h2 class="sec">Stammdaten${o.name
+        ? ` <span class="secsub">· ${esc(o.name)}</span>` : ''}</h2>
+      <button data-stamm="1">Bearbeiten</button></div>
+    <div class="paare">${zeilen.join('')}</div>`;
+}
+
+/* Block B, Kopf — Erwerb & Kosten: wie erworben wurde. Erwerbsart, Kaufpreis,
+   Kauf-/Erbschaftsdatum. Die Rubriken (Notar, Erwerbsnebenkosten, Finanzamt)
+   und die Grundsteuer-Kette folgen im Aufbau darunter (laden). */
+function erwerbKopfHtml(o) {
+  const felder = stammfelder();
+  const def = k => felder.find(f => f.k === k);
+  const zeilen = [];
+  for (const k of ['erwerbsart', 'kaufpreis', 'kaufdatum']) {
+    const f = def(k);
+    if (f) zeilen.push(cellZeile({ label: f.l, wert: stammwert(f, o), lex: f.lex }));
+  }
+  return `<div class="sekopf"><span class="seikon" style="color:var(--amber)"
+        >${kostenIcon('Erwerb')}</span>
+      <h2 class="sec">Erwerb &amp; Kosten</h2>
+      <button data-stamm="1">Bearbeiten</button></div>
+    <div class="paare">${zeilen.join('')}</div>`;
+}
+
+/* Block B, Finanzamt/Grundsteuer — die Rechenkette, in der Reihenfolge, in der
+   sie entsteht (CCXCVI): Grundsteuerwert × Steuermesszahl = Steuermessbetrag
+   × Hebesatz = Grundsteuer im Jahr. Steht direkt über der Finanzamt-Rubrik. */
+function grundsteuerHtml(o) {
+  const g = k => feldAus(GRUNDFELDER, k);
+  const zeilen = [];
+  for (const k of ['grundsteuerwert', 'grundsteuer_messbetrag']) {
+    const f = g(k);
+    const w = stammwert(f, o);
+    if (w) zeilen.push(cellZeile({ label: f.l, wert: w, lex: f.lex }));
+  }
   if (o.grundsteuerwert && o.grundsteuer_messbetrag) {
     const promille = o.grundsteuer_messbetrag / o.grundsteuerwert * 1000;
-    abgeleitet.push(['Steuermesszahl (rechnerisch)',
-      `${promille.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ‰`]);
+    zeilen.push(cellZeile({ label: 'Steuermesszahl (rechnerisch)', abgeleitet: true,
+      wert: `${promille.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ‰` }));
   }
-  const grundsteuerJahr = (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz)
-    ? o.grundsteuer_messbetrag * o.grundsteuer_hebesatz / 100 : 0;
-  if (grundsteuerJahr) {
-    abgeleitet.push([`Grundsteuer im Jahr (× Hebesatz ${o.grundsteuer_hebesatz} %)`,
-      eur(grundsteuerJahr)]);
+  const hebe = g('grundsteuer_hebesatz');
+  if (stammwert(hebe, o)) {
+    zeilen.push(cellZeile({ label: hebe.l, wert: stammwert(hebe, o) }));
   }
-  // CCCIII — statt eines eigenen NK-Zeitraums die kleine Rechnung direkt:
-  // NK-Höhe = Grundsteuer/Jahr, Ertrag = Pacht/Jahr − Grundsteuer/Jahr.
+  const jahr = grundsteuerJahrVon(o);
+  if (jahr) {
+    zeilen.push(cellZeile({ label: 'Grundsteuer im Jahr', wert: eur(jahr),
+      quelle: `Steuermessbetrag × Hebesatz ${o.grundsteuer_hebesatz} %`,
+      abgeleitet: true }));
+  }
+  if (!zeilen.length) return '';
+  const kette = `<div class="fussnote">So entsteht die Grundsteuer:
+       <strong>Grundsteuerwert</strong> (vom Finanzamt) × Steuermesszahl =
+       <strong>Steuermessbetrag</strong> (vom Finanzamt) × <strong>Hebesatz</strong>
+       (von der Gemeinde) = Grundsteuer&nbsp;im&nbsp;Jahr. Der Hebesatz steht nicht
+       auf dem Finanzamts-Bescheid, sondern auf dem Grundsteuerbescheid der
+       Stadt.</div>`;
+  return `${sekopfHtml('Grundsteuer', 'Finanzamt', '', 'var(--amber)')}
+    <div class="paare">${zeilen.join('')}</div>${kette}`;
+}
+
+/* Block C, Abschluss — die kleine Ertragsrechnung: Pacht/Jahr − Grundsteuer/Jahr
+   (CCCIII). Die Grundsteuer ist beim verpachteten Grundstück die einzige
+   Nebenkostenposition. Steht unter der Pacht-Rubrik. */
+function pachtErtragHtml(o, pachtJahr = 0) {
+  const jahr = grundsteuerJahrVon(o);
   const ertrag = [];
   if (pachtJahr) ertrag.push(['Pacht im Jahr', eur(pachtJahr)]);
-  if (grundsteuerJahr) {
-    ertrag.push(['Nebenkosten im Jahr (Grundsteuer)', eur(grundsteuerJahr)]);
-  }
-  // Ertrag nur, wenn es Pacht gibt — ohne Einnahme ist die Grundsteuer bloß
-  // eine Ausgabe, kein „Ertrag".
-  if (pachtJahr) {
-    ertrag.push(['Ertrag im Jahr', eur(pachtJahr - grundsteuerJahr)]);
-  }
-  const kette = (o.grundsteuerwert || o.grundsteuer_messbetrag)
-    ? `<div class="fussnote">So entsteht die Grundsteuer: <strong>Grundsteuerwert</strong>
-       (vom Finanzamt) × Steuermesszahl = <strong>Steuermessbetrag</strong> (vom
-       Finanzamt) × <strong>Hebesatz</strong> (von der Gemeinde) =
-       Grundsteuer&nbsp;im&nbsp;Jahr. Der Hebesatz steht nicht auf dem
-       Finanzamts-Bescheid, sondern auf dem Grundsteuerbescheid der Stadt.</div>`
-    : '';
-  const ertragBlock = ertrag.length
-    ? `<div class="sekopf"><span class="seikon" style="color:var(--pos)">${kostenIcon('Miete')}</span><h2 class="sec">Pacht &amp; Ertrag</h2></div>
-       <div class="paare">${ertrag.map(([l, w], i) =>
-         paarZeile(l, w, { abgeleitet: i < ertrag.length - 1 })).join('')}</div>
-       <div class="fussnote">Beim verpachteten Grundstück ist die Grundsteuer die
-         einzige Nebenkostenposition — sie wird auf den Pächter umgelegt. Der
-         Ertrag ist die Pacht abzüglich der Grundsteuer.</div>`
-    : '';
-  return `<div class="sekopf"><span class="seikon" style="color:var(--teal-d)">${kostenIcon('Grundstück')}</span><h2 class="sec">Grundstück</h2>
-      <button data-grund="1">Bearbeiten</button></div>
-    <div class="paare">${zeilen}${
-      abgeleitet.map(([l, w]) => paarZeile(l, w, { abgeleitet: true })).join('')}</div>
-    ${kette}
-    ${ertragBlock}`;
+  if (jahr) ertrag.push(['Nebenkosten im Jahr (Grundsteuer)', eur(jahr)]);
+  if (pachtJahr) ertrag.push(['Ertrag im Jahr', eur(pachtJahr - jahr)]);
+  if (!ertrag.length) return '';
+  return `${sekopfHtml('Ertrag', 'Miete', '', 'var(--pos)')}
+    <div class="paare">${ertrag.map(([l, w], i) =>
+      paarZeile(l, w, { abgeleitet: i < ertrag.length - 1 })).join('')}</div>
+    <div class="fussnote">Beim verpachteten Grundstück ist die Grundsteuer die
+      einzige Nebenkostenposition — sie wird auf den Pächter umgelegt. Der Ertrag
+      ist die Pacht abzüglich der Grundsteuer.</div>`;
 }
 
 /* CCVIII — die WEG-Ebene. Beim Grundstück gibt es sie nicht (keine Mieter, keine
@@ -1893,7 +1998,8 @@ async function laden() {
     try { return await ruf(); }
     catch (fehler) { luecken.push(`${was}: ${fehler.message || fehler}`); return ersatz; }
   };
-  const [bereiche, anteile, vermoegen, einheitenRoh, grundschuldenRoh] = await Promise.all([
+  const [bereiche, anteile, vermoegen, einheitenRoh, grundschuldenRoh,
+         eigentuemerAlle] = await Promise.all([
     Promise.all(Object.keys(BEREICHE).map(async b =>
       [b, await zweig(BEREICHE[b].titel,
                       () => api(`/objekte/${encodeURIComponent(slug)}/${b}`), [])]))
@@ -1906,6 +2012,8 @@ async function laden() {
           () => api(`/objekte/${encodeURIComponent(slug)}/einheiten`), []),
     zweig('Grundschulden',
           () => api(`/objekte/${encodeURIComponent(slug)}/grundschulden`), []),
+    // CCCXXXV — alle Personen für die Nießbrauch-Auswahl; darf leer bleiben.
+    zweig('Eigentümerliste', () => api('/eigentuemer'), []),
   ]);
   if (luecken.length) melde(`Nicht alles konnte geladen werden — ${luecken[0]}`, 'neg');
 
@@ -1918,6 +2026,9 @@ async function laden() {
   bereicheDaten = bereiche || {};
   objektEigentuemer = [...new Set((anteile?.anteile || [])
     .map(a => a.name).filter(Boolean))];
+  // CCCXXXV — Namen aller app-weit geführten Eigentümer (Personen).
+  alleEigentuemer = [...new Set((Array.isArray(eigentuemerAlle) ? eigentuemerAlle : [])
+    .map(e => e && e.name).filter(Boolean))];
   fokus = fokusWunsch
     ? (einheiten.find(e => String(e.id) === String(fokusWunsch)) || null)
     : null;
@@ -1937,11 +2048,15 @@ async function laden() {
                        fokus.flaeche ? flaecheText(fokus.flaeche) : '',
                        fokus.mieter].filter(Boolean).join(' · ') || 'Einheit';
   } else if (istGrundstueck()) {
-    // Einheiten gibt es hier nicht; was das Grundstück ausmacht, ist seine
-    // Fläche und wofür sie genutzt wird.
+    // CCCXXXVI — der Objektname allein sagt beim Grundstück wenig. Die Unterzeile
+    // trägt deshalb die Flurnummer: Ort · Gemarkung · Flur · Nutzungsart · Fläche.
+    // Einzeilig gekürzt (siehe #sub im <style>), damit nichts umbricht.
     const flaeche = objekt.grundstueck_flaeche
       ? `${Number(objekt.grundstueck_flaeche).toLocaleString('de-DE')} m²` : '';
-    sub.textContent = [ortText, objekt.grundstueck_nutzungsart, flaeche]
+    sub.textContent = [ortText,
+                       objekt.gemarkung && `Gemarkung ${objekt.gemarkung}`,
+                       objekt.flurstueck && `Flur ${objekt.flurstueck}`,
+                       objekt.grundstueck_nutzungsart, flaeche]
       .filter(Boolean).join(' · ') || 'Grundstück';
   } else {
     sub.textContent = /einheit|wohnung/i.test(ortText) || !ortText
@@ -2039,44 +2154,16 @@ async function laden() {
   const finanzZahlungen = (bereiche.zahlungen || [])
     .filter(z => z.kategorie !== ERWERB_KATEGORIE);
 
-  inhalt.innerHTML = `
-    ${istGrundstueck() ? '' : bannerHtml(laufend)}
-    ${nachpflegeHtml(det.nachpflege)}
-    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld, guthaben)}
-    ${einheitenHtml()}
-    ${zeitraumBlock}
-    ${grundstueckHtml(objekt, jahresmiete)}
-    ${stammHtml(objekt)}
-    ${wegHtml(objekt)}
+  // Gemeinsame Bausteine — Ablage/Cloud und der Sicherungs-/Löschblock stehen in
+  // beiden Ansichten gleich.
+  const ablageBlock = `
     <div class="sekopf ablage-kopf"><span class="seikon">${kostenIcon('Dokument')}</span><h2 class="sec">Dokumentenablage</h2></div>
     <div class="ablage-pfad" id="ablagePfad"></div>
     <div id="cloudbereich"><div class="cloudbox"><div class="zeile">
       <span class="sym offen">…</span>
       <span class="txt"><span class="t">wird geprüft …</span></span>
-    </div></div></div>
-    ${eigentuemerHtml(anteile)}
-    ${istGrundstueck()
-      // CCCIV — beim Grundstück in der logischen Reihenfolge: erst der
-      // Erwerb (Notarverträge), dann das Finanzamt, dann die Erträge, zuletzt
-      // die einmaligen Erwerbsnebenkosten (CCCXIX).
-      ? `${abschnitt('notarvertraege', bereiche.notarvertraege)}
-         ${abschnitt('zahlungen', finanzZahlungen)}
-         ${mietBlock}
-         ${abschnitt('erwerbskosten', erwerbZahlungen)}`
-      // CCCXXXII — sinnvolle Reihenfolge: erst die Mieten (das Kerngeschäft),
-      // dann der Erwerbs-/Finanzierungs-Cluster (Notar, Grundschulden, einmalige
-      // Erwerbsnebenkosten), dann Versicherungen und Kredite, das Finanzamt
-      // (Steuer) zuletzt.
-      : `${mietBlock}
-         ${abschnitt('notarvertraege', bereiche.notarvertraege)}
-         ${grundschuldenHtml()}
-         ${abschnitt('erwerbskosten', erwerbZahlungen)}
-         ${abschnitt('versicherungen', bereiche.versicherungen, {
-           vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
-             als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen
-             nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
-         ${abschnitt('kredite', bereiche.kredite)}
-         ${abschnitt('zahlungen', finanzZahlungen)}`}
+    </div></div></div>`;
+  const gefahrBlock = `
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>
       <p>Die Sicherung enthält alle Daten dieser Immobilie und lässt sich
@@ -2085,6 +2172,55 @@ async function laden() {
       <button class="btn leise" data-export="1">Sicherung herunterladen</button>
       <button class="btn gefahr" data-loeschen="1">Immobilie löschen</button>
     </div>`;
+
+  if (istGrundstueck()) {
+    // CCCXXXVI — das Grundstück in drei logischen Blöcken, von grob nach fein:
+    //   A) Stammdaten — was es ist (Objektart, Adresse+Flur, Fläche, Nutzungsart,
+    //      Grundstückswert).
+    //   B) Erwerb & Kosten — wie erworben (Erwerbsart, Kaufpreis/-datum) und die
+    //      Rubriken Notar, einmalige Erwerbsnebenkosten, Finanzamt/Grundsteuer.
+    //   C) Nutzung & Pacht — die Pacht und die kleine Ertragsrechnung.
+    // Eigentümer und Ablage folgen den drei Blöcken.
+    inhalt.innerHTML = `
+      ${nachpflegeHtml(det.nachpflege)}
+      ${kennzahlenHtml(vermoegen, jahresmiete, restschuld, guthaben)}
+      ${grundStammHtml(objekt)}
+      ${erwerbKopfHtml(objekt)}
+      ${abschnitt('notarvertraege', bereiche.notarvertraege)}
+      ${abschnitt('erwerbskosten', erwerbZahlungen)}
+      ${grundsteuerHtml(objekt)}
+      ${abschnitt('zahlungen', finanzZahlungen)}
+      ${mietBlock}
+      ${pachtErtragHtml(objekt, jahresmiete)}
+      ${eigentuemerHtml(anteile)}
+      ${ablageBlock}
+      ${gefahrBlock}`;
+    installHilfe(inhalt);
+    cloudZeigen();
+    return;
+  }
+
+  inhalt.innerHTML = `
+    ${bannerHtml(laufend)}
+    ${nachpflegeHtml(det.nachpflege)}
+    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld, guthaben)}
+    ${einheitenHtml()}
+    ${zeitraumBlock}
+    ${stammHtml(objekt)}
+    ${wegHtml(objekt)}
+    ${ablageBlock}
+    ${eigentuemerHtml(anteile)}
+    ${mietBlock}
+    ${abschnitt('notarvertraege', bereiche.notarvertraege)}
+    ${grundschuldenHtml()}
+    ${abschnitt('erwerbskosten', erwerbZahlungen)}
+    ${abschnitt('versicherungen', bereiche.versicherungen, {
+      vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
+        als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen
+        nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
+    ${abschnitt('kredite', bereiche.kredite)}
+    ${abschnitt('zahlungen', finanzZahlungen)}
+    ${gefahrBlock}`;
 
   installHilfe(inhalt);
   cloudZeigen();
@@ -3579,9 +3715,6 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
       // inkl. der beim Nießbrauch-Umschalten dazugekommenen (CCCI).
       await api(`/objekte/${encodeURIComponent(slug)}`,
                 { method: 'PATCH', body: ausFormular(form, dialogFelder) });
-    } else if (absicht === 'grund') {
-      await api(`/objekte/${encodeURIComponent(slug)}`,
-                { method: 'PATCH', body: ausFormular(form, GRUNDFELDER) });
     } else if (absicht === 'weg') {
       await api(`/objekte/${encodeURIComponent(slug)}`,
                 { method: 'PATCH', body: ausFormular(form, WEGFELDER) });
@@ -3833,18 +3966,18 @@ inhalt.addEventListener('click', async e => {
   }
 
   if (e.target.closest('[data-stamm]')) {
+    // CCCXXXVI — beim Grundstück bearbeitet dieses eine Formular auch die
+    // Grundstücks- und Grundsteuer-Angaben (GRUND_STAMMFELDER). Der Kopfhinweis
+    // erklärt die Grundsteuer-Kette; die Feld-Notizen tun das je Feld.
     return formular({ titel: 'Stammdaten bearbeiten', felder: stammfelder(),
-                      werte: objekt, absicht: 'stamm' });
-  }
-
-  if (e.target.closest('[data-grund]')) {
-    return formular({ titel: 'Grundstück bearbeiten', felder: GRUNDFELDER,
-                      werte: objekt, absicht: 'grund',
-                      hinweis: 'Reihenfolge der Grundsteuer: Grundsteuerwert '
-                        + '(Finanzamt) × Steuermesszahl = Steuermessbetrag '
-                        + '(Finanzamt) × Hebesatz (Gemeinde) = Grundsteuer/Jahr. '
-                        + 'Der Grundstückswert ist der Marktwert und steht nicht '
-                        + 'im Bescheid.' });
+                      werte: objekt, absicht: 'stamm',
+                      hinweis: istGrundstueck()
+                        ? 'Reihenfolge der Grundsteuer: Grundsteuerwert '
+                          + '(Finanzamt) × Steuermesszahl = Steuermessbetrag '
+                          + '(Finanzamt) × Hebesatz (Gemeinde) = Grundsteuer/Jahr. '
+                          + 'Der Grundstückswert ist der Marktwert und steht nicht '
+                          + 'im Bescheid.'
+                        : '' });
   }
 
   if (e.target.closest('[data-weg]')) {
