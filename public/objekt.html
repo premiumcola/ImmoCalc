@@ -64,8 +64,23 @@
     cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .frucht .fn:hover{text-decoration:underline}
   .frucht.offen .fn{color:var(--soft)}
-  .frucht .fok{color:var(--pos);font:600 13px var(--body);flex:none}
+  /* CCCXXI — Statuszeichen als Knopf (antippen zum Umhängen) */
+  .frucht .fstatus{flex:none;display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:8px;border:1px solid transparent;
+    background:none;cursor:pointer;padding:0}
+  .frucht .fstatus.pos{color:var(--pos)}
+  .frucht .fstatus.info{color:var(--soft)}
+  .frucht .fstatus:hover{border-color:var(--line);background:var(--paper)}
   .frucht .fgrau{font:500 11px var(--mono);color:var(--soft);flex:none}
+  .baum-legende{display:flex;flex-wrap:wrap;align-items:center;gap:5px 12px;
+    margin:0 2px 10px;font:500 11px var(--body);color:var(--soft)}
+  .baum-legende span{display:inline-flex;align-items:center;margin-right:2px}
+  .baum-legende .bl-hak{color:var(--pos)}
+  .baum-legende .bl-off{font:600 13px var(--mono);color:var(--soft)}
+  .zd-loesen{display:block;width:calc(100% - 36px);margin:0 18px 12px;
+    border:1px solid var(--neg);background:none;color:var(--neg);border-radius:11px;
+    padding:9px;font:600 12px var(--disp);cursor:pointer}
+  .zd-loesen:hover{background:var(--neg-bg)}
   .frucht .fzu{border:1px solid var(--line);background:var(--paper);color:var(--teal-d);
     border-radius:999px;padding:4px 10px;font:600 11.5px var(--disp);cursor:pointer;flex:none}
   .frucht .fzu:hover{background:var(--teal-l);border-color:var(--teal)}
@@ -1743,6 +1758,16 @@ const ORDNER_IKON = {
 const ordnerNr = o => (o || '').slice(0, 2).match(/^\d\d$/) ? o.slice(0, 2) : '';
 const ordnerFarbe = o => ORDNER_FARBE[ordnerNr(o)] || 'var(--soft)';
 const ordnerIkon = o => ORDNER_IKON[ordnerNr(o)] || 'Dokument';
+// Statuszeichen im Baum (CCCXXI): der Haken für „einem Eintrag zugeordnet",
+// ein kleines Belegblatt für „als Beleg angehängt" (statt des ⊙-Kreises).
+const HAKEN_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+  stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4 10-10.5"/></svg>`;
+const BELEG_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+  stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M7 3.5h6l4 4V19a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z"/>
+  <path d="M13 3.5V8h4M8.5 12.5h7M8.5 15.5h5"/></svg>`;
 const PRO_AST = 10;                     // so viele Früchte je Ast, dann „mehr"
 let baumDaten = null;
 let baumFilter = '';                    // '' = alle Äste
@@ -1777,6 +1802,7 @@ function baumMalen() {
                                 ordnerFarbe(a.ordner), a.anzahl))).join('');
 
   // Eine Frucht (Dokument) — optional eingerückt als Kind einer Hauptdatei.
+  // Ist es zugeordnet, ist das Statuszeichen ein Knopf: antippen zum Umhängen.
   const frucht = (d, farbe, kind = false) => `
       <div class="frucht${d.zugeordnet ? '' : ' offen'}${kind ? ' kind' : ''}"
            data-dok="${d.id}">
@@ -1785,8 +1811,10 @@ function baumMalen() {
         <span class="fn" data-beleg="${d.id}"
               data-name="${esc(d.dateiname)}">${esc(d.dateiname)}</span>
         ${d.zugeordnet
-          ? `<span class="fok" title="${d.info ? 'als Beleg angehängt'
-              : 'einem Eintrag zugeordnet'}">${d.info ? '⊙' : '✓'}</span>`
+          ? `<button class="fstatus${d.info ? ' info' : ' pos'}"
+               data-umhaengen="${d.id}" data-rubrik="${esc(ORDNER_RUBRIK[a_ordner] || '')}"
+               title="${d.info ? 'Als Beleg angehängt' : 'Einem Eintrag zugeordnet'}
+ — antippen zum Umhängen">${d.info ? BELEG_ICON : HAKEN_ICON}</button>`
           : `<button class="fzu" data-zuordnen="${d.id}"
                data-rubrik="${esc(ORDNER_RUBRIK[a_ordner] || '')}"
                title="Diesem Beleg einen Eintrag anlegen">zuordnen</button>`}
@@ -1827,6 +1855,11 @@ function baumMalen() {
   }).join('');
 
   ziel.innerHTML = `<div class="bfilter-leiste">${filter}</div>
+    <div class="baum-legende">
+      <span class="bl-hak">${HAKEN_ICON}</span> einem Eintrag zugeordnet
+      <span class="bl-bel">${BELEG_ICON}</span> als Beleg angehängt
+      <span class="bl-off">○</span> noch offen — antippen zum Zuordnen
+    </div>
     <div class="baum">${zweige}</div>`;
 }
 
@@ -1849,7 +1882,7 @@ const RUBRIK_WAHL = [
     typ: 'kredit', wiederkehrend: true, nurHaus: true },
 ];
 
-function zuordnenDialog(dok, vorgabe) {
+function zuordnenDialog(dok, vorgabe, umhaengen = false) {
   const wahlen = RUBRIK_WAHL.filter(r => !(r.nurHaus && istGrundstueck()));
   let rubrik = vorgabe && wahlen.some(r => r.wert === vorgabe) ? vorgabe
     : (wahlen[0] && wahlen[0].wert);
@@ -1872,10 +1905,12 @@ function zuordnenDialog(dok, vorgabe) {
       }));
       dlg.innerHTML = `
         <div class="zd-kopf">
-          <span class="zd-t">Zuordnen</span>
+          <span class="zd-t">${umhaengen ? 'Umhängen' : 'Zuordnen'}</span>
           <button class="zd-x" data-nein aria-label="Schließen">×</button>
         </div>
         <p class="zd-datei">${esc(dok.dateiname)}</p>
+        ${umhaengen ? `<button class="zd-loesen" data-entfernen>Zuordnung ganz lösen
+          — Beleg wieder offen</button>` : ''}
 
         <div class="zd-block"><span class="zd-l">Wohin gehört es?</span>
           <div class="zd-chips">${wahlen.map(r => `
@@ -1918,6 +1953,7 @@ function zuordnenDialog(dok, vorgabe) {
       if (a) { art = a.dataset.art; male(); return; }
       const an = e.target.closest('[data-an]');
       if (an) { anId = an.dataset.an; male(); return; }
+      if (e.target.closest('[data-entfernen]')) { fertig({ entfernen: true }); dlg.close(); return; }
       if (e.target.closest('[data-nein]')) { fertig(null); dlg.close(); return; }
       if (e.target.closest('[data-ja]')) {
         const cfg = wahlen.find(x => x.wert === rubrik) || wahlen[0];
@@ -2983,6 +3019,30 @@ inhalt.addEventListener('click', async e => {
   }
   const bm = e.target.closest('[data-bmehr]');
   if (bm) { baumMehr.add(bm.dataset.bmehr); baumMalen(); return; }
+  // CCCXXI — auf das Statuszeichen eines zugeordneten Belegs tippen: umhängen.
+  // Erst die alte Zuordnung lösen, dann den Zuordnen-Dialog wie sonst.
+  const um = e.target.closest('[data-umhaengen]');
+  if (um) {
+    const dokId = Number(um.dataset.umhaengen);
+    const dok = (baumDaten?.aeste || []).flatMap(a => a.dokumente)
+      .find(d => d.id === dokId) || { dateiname: 'Dokument' };
+    const wahl = await zuordnenDialog(dok, um.dataset.rubrik || '', true);
+    if (!wahl) return;
+    try {
+      await api(`/dokumente/${dokId}/loese-zuordnung`, { method: 'POST' });
+      if (wahl.entfernen) {
+        melde('Zuordnung gelöst — der Beleg ist wieder offen', '');
+      } else {
+        const r = await api(`/dokumente/${dokId}/zuordnen`,
+                            { method: 'POST', body: wahl });
+        const wo = (r.angelegt || []).map(a => a.wo).filter(Boolean).join(' · ');
+        melde(wo ? `Umgehängt: ${wo}` : 'Neu zugeordnet', 'pos');
+      }
+      await laden();
+    } catch (fehler) { melde(fehler.message || 'Umhängen fehlgeschlagen', 'neg'); }
+    return;
+  }
+
   const zu = e.target.closest('[data-zuordnen]');
   if (zu) {
     const dokId = Number(zu.dataset.zuordnen);
