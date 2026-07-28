@@ -104,10 +104,13 @@ def _gesamtflaeche(e: Einheit) -> float | None:
     wäre gelogen und würde die Partei aus der Verteilung werfen, ohne dass es
     auffällt."""
     teile = [e.flaeche, e.terrasse, e.nebenflaeche]
-    if all(t is None for t in teile):
+    # CCCXXVII — anteilige Gemeinschaftsflächen zählen mit. Ohne erfasste
+    # Gemeinschaftsflächen ist der Beitrag 0 und der Bestand bleibt unverändert.
+    gemein = e.gemein_flaeche()
+    if all(t is None for t in teile) and gemein == 0:
         return None
     return round((e.flaeche or 0) + (e.terrasse or 0) * 0.5
-                 + (e.nebenflaeche or 0) * 0.5, 2)
+                 + (e.nebenflaeche or 0) * 0.5 + gemein, 2)
 
 
 def _laufend(mieten: list[Miete], start: date, ende: date) -> list[Miete]:

@@ -1,4 +1,5 @@
 """Objekte, Zeiträume, Positionen, Abrechnung."""
+import json
 import logging
 from datetime import date, timedelta
 from typing import Optional
@@ -458,6 +459,8 @@ class EinheitNeu(BaseModel):
     stellplaetze: Optional[int] = 0
     # CLXXXVI: ein Verkehrswert je Einheit — nur gepflegt, wo er bekannt ist.
     verkehrswert: Optional[float] = None
+    # CCCXXVII: Gemeinschaftsflächen [{bezeichnung, flaeche, personen}, …].
+    gemeinflaechen: Optional[list] = None
 
 
 def _einheit(session: Session, eid: int) -> Einheit:
@@ -491,11 +494,44 @@ def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
     laufend = [m for m in eigene if _laeuft(m, heute)]
     return {
         **e.model_dump(),
+        # CCCXXVII — die Gemeinschaftsflächen als Liste (nicht als roher JSON-
+        # Text) und der daraus errechnete anteilige Flächenbeitrag.
+        "gemeinflaechen": _gemeinflaechen_liste(e),
+        "gemein_flaeche": e.gemein_flaeche(),
         "vermietet": bool(laufend),
         "mieter": ", ".join(sorted({m.partei for m in laufend if m.partei})),
         "kaltmiete": round(sum(m.kaltmiete for m in laufend), 2),
         "mietverhaeltnisse": len(eigene),
     }
+
+
+def _gemeinflaechen_liste(e: Einheit) -> list:
+    """Die Gemeinschaftsflächen einer Einheit als Liste — leer bei kaputtem
+    oder fehlendem JSON, damit die Oberfläche nie über einen String stolpert."""
+    try:
+        wert = json.loads(e.gemeinflaechen or "[]")
+        return wert if isinstance(wert, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def _gemein_bereinigt(posten: list) -> list:
+    """Nur die drei Felder je Gemeinschaftsfläche, sauber getypt. Zeilen ohne
+    Fläche werden verworfen — eine leere Zeile aus dem Formular ist kein Posten."""
+    sauber = []
+    for p in posten:
+        if not isinstance(p, dict):
+            continue
+        try:
+            flaeche = float(p.get("flaeche") or 0)
+            personen = int(float(p.get("personen") or 0))
+        except (ValueError, TypeError):
+            continue
+        if flaeche <= 0:
+            continue
+        sauber.append({"bezeichnung": str(p.get("bezeichnung") or "").strip(),
+                       "flaeche": flaeche, "personen": max(personen, 0)})
+    return sauber
 
 
 @router.get("/objekte/{slug}/einheiten")
@@ -536,7 +572,9 @@ def einheit_anlegen(slug: str, data: EinheitNeu,
                 flaeche=data.flaeche, terrasse=data.terrasse,
                 nebenflaeche=data.nebenflaeche,
                 stellplaetze=data.stellplaetze or 0,
-                verkehrswert=data.verkehrswert)
+                verkehrswert=data.verkehrswert,
+                gemeinflaechen=json.dumps(_gemein_bereinigt(data.gemeinflaechen or []),
+                                          ensure_ascii=False))
     session.add(e)
     session.commit()
     session.refresh(e)
@@ -554,8 +592,15 @@ def einheit_aendern(eid: int, data: dict,
     ihre Vorauszahlung voll erstattet, ohne dass es irgendwo auffiele."""
     e = _einheit(session, eid)
     erlaubt = {"bezeichnung", "nutzungsart", "flaeche", "terrasse",
-               "nebenflaeche", "stellplaetze", "nk_abrechnung", "verkehrswert"}
-    felder = bereinige(Einheit, {k: v for k, v in data.items() if k in erlaubt})
+               "nebenflaeche", "stellplaetze", "nk_abrechnung", "verkehrswert",
+               "gemeinflaechen"}
+    daten = dict(data)
+    # CCCXXVII — die Gemeinschaftsflächen kommen als Liste und werden als JSON
+    # gespeichert (das Modell hält eine Zeichenkette).
+    if isinstance(daten.get("gemeinflaechen"), list):
+        daten["gemeinflaechen"] = json.dumps(_gemein_bereinigt(daten["gemeinflaechen"]),
+                                             ensure_ascii=False)
+    felder = bereinige(Einheit, {k: v for k, v in daten.items() if k in erlaubt})
     if "bezeichnung" in felder:
         neu = (felder["bezeichnung"] or "").strip()
         if not neu:

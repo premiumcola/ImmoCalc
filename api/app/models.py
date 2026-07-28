@@ -1,5 +1,6 @@
 """Datenmodell (SQLModel/SQLite) — abgeleitet aus dem ER-Diagramm."""
 from __future__ import annotations
+import json as _json
 from datetime import date
 from typing import Optional
 from sqlalchemy import Column, JSON
@@ -132,6 +133,32 @@ class Einheit(SQLModel, table=True):
     # CLXXXVI: ein Verkehrswert je Einheit — nur gepflegt, wo er bekannt ist.
     # Die Vermögenssicht am Haus bleibt maßgeblich, die Einheit ergänzt.
     verkehrswert: Optional[float] = None
+    # CCCXXVII: anteilig mitgenutzte Gemeinschaftsflächen als JSON-Liste
+    # [{"bezeichnung": "Treppenhaus", "flaeche": 20, "personen": 4}, …].
+    # Jede Fläche zählt geteilt durch die Zahl der Nutzer zur Einheitsfläche.
+    # Leerer Bestand („[]") lässt jede bestehende Verteilung unverändert.
+    gemeinflaechen: str = "[]"
+
+    def gemein_flaeche(self) -> float:
+        """Der anteilige Flächenbeitrag der Gemeinschaftsflächen: Summe über
+        Fläche ÷ Nutzerzahl. Fehlt die Nutzerzahl (0), zählt der Posten nicht —
+        eine Division durch null wäre sinnlos."""
+        try:
+            posten = _json.loads(self.gemeinflaechen or "[]")
+        except (ValueError, TypeError):
+            return 0.0
+        if not isinstance(posten, list):
+            return 0.0
+        summe = 0.0
+        for p in posten:
+            try:
+                flaeche = float(p.get("flaeche") or 0)
+                personen = float(p.get("personen") or 0)
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if personen > 0:
+                summe += flaeche / personen
+        return round(summe, 2)
 
 
 class Partei(SQLModel, table=True):
