@@ -1726,9 +1726,6 @@ const KAT_FARBE = {
   Versicherung: 'var(--soft)', Mietvertrag: 'var(--pos)',
   Korrespondenz: '#5C6B70', Hausverwaltung: '#5C6B70', Sonstiges: '#8A9599',
 };
-const KAT_ZUORDENBAR = new Set(
-  ['Nebenkosten', 'Steuer', 'Notarvertrag', 'Kredit', 'Versicherung',
-   'Mietvertrag']);
 const PRO_AST = 10;                     // so viele Früchte je Ast, dann „mehr"
 let baumDaten = null;
 let baumFilter = '';                    // '' = alle Äste
@@ -1774,12 +1771,13 @@ function baumMalen() {
         <span class="fn" data-beleg="${d.id}"
               data-name="${esc(d.dateiname)}">${esc(d.dateiname)}</span>
         ${d.zugeordnet
-          ? '<span class="fok" title="einem Eintrag zugeordnet">✓</span>'
-          : (KAT_ZUORDENBAR.has(a.kategorie)
-              ? `<button class="fzu" data-zuordnen="${d.id}"
-                   data-rubrik="${esc(KAT_RUBRIK[a.kategorie] || '')}"
-                   title="Diesem Beleg einen Eintrag anlegen">zuordnen</button>`
-              : '<span class="fgrau">frei</span>')}
+          ? `<span class="fok" title="${d.info ? 'als Beleg angehängt'
+              : 'einem Eintrag zugeordnet'}">${d.info ? '⊙' : '✓'}</span>`
+          // CCCIX: jede Kategorie ist zuordenbar — die Zielrubrik wählt der
+          // Dialog, auch für „Sonstiges" (Kaufvertrag-Bestätigung u. Ä.).
+          : `<button class="fzu" data-zuordnen="${d.id}"
+               data-rubrik="${esc(KAT_RUBRIK[a.kategorie] || '')}"
+               title="Diesem Beleg einen Eintrag anlegen">zuordnen</button>`}
       </div>`).join('');
     const rest = a.dokumente.length - docs.length;
     return `<section class="zweig" style="--zw:${farbe}">
