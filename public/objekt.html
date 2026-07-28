@@ -301,6 +301,24 @@
   dialog form{padding:12px 20px 20px;overflow-y:auto;max-height:calc(86dvh - 60px)}
   .zeile2{display:flex;gap:10px} .zeile2 > *{flex:1}
 
+  /* CCCXXIII — Bearbeiten mit Beleg daneben. Ohne Beleg ist .dlg-pdf aus und
+     der Dialog bleibt die schmale Standardmaske. */
+  .dlg-pdf{display:none}
+  dialog#dlg.mit-pdf{max-width:min(1000px,calc(100vw - 24px));
+    width:calc(100vw - 24px);max-height:92dvh}
+  dialog#dlg.mit-pdf .dlg-koerper{display:flex;flex-direction:column}
+  dialog#dlg.mit-pdf form{max-height:none}
+  dialog#dlg.mit-pdf .dlg-pdf{display:flex;padding:0 20px 20px}
+  dialog#dlg.mit-pdf .dlg-pdf .beleg-flaeche{flex:1;min-height:260px;overflow:auto;
+    border-radius:14px;background:var(--paper);display:flex;flex-direction:column;
+    gap:10px;align-items:center;padding:10px;-webkit-overflow-scrolling:touch}
+  @media (min-width:760px){
+    dialog#dlg.mit-pdf .dlg-koerper{flex-direction:row;height:calc(92dvh - 56px)}
+    dialog#dlg.mit-pdf form{width:360px;flex:none;max-height:none;
+      border-right:1px solid var(--line)}
+    dialog#dlg.mit-pdf .dlg-pdf{flex:1;padding:16px 20px;min-width:0}
+  }
+
   .cloudbox{background:var(--sheet);border-radius:14px;padding:15px;margin-bottom:10px;
             box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .cloudbox .zeile{display:flex;gap:12px;align-items:center}
@@ -463,7 +481,12 @@
        noch bevor der Handler die Antwort hat. Wird das Speichern abgelehnt —
        etwa weil die Einheit schon vermietet ist —, waren damit alle Eingaben
        weg. Geschlossen wird jetzt erst, wenn es geklappt hat. -->
-  <form id="dlgForm"></form>
+  <!-- CCCXXIII — beim Bearbeiten steht der Beleg daneben: Felder links, PDF
+       rechts. Ohne Beleg bleibt der Dialog die schmale Standardmaske. -->
+  <div class="dlg-koerper">
+    <form id="dlgForm"></form>
+    <div class="dlg-pdf" id="dlgPdf"></div>
+  </div>
 </dialog>
 
 <script type="module">
@@ -2199,7 +2222,10 @@ async function eintragDetail(bereich, id) {
     </div>`;
 
   const flaeche = dlg.querySelector('.beleg-flaeche');
+  // Der gerade gezeigte Beleg — er wandert beim „Bearbeiten" mit in die Maske.
+  let aktuellerBeleg = null;
   const zeigeDoc = (docId, name) => {
+    aktuellerBeleg = { id: Number(docId), dateiname: name };
     dlg.querySelectorAll('.dd-beleg').forEach(b =>
       b.classList.toggle('an', b.dataset.doc === String(docId)));
     adressListen.push(belegSeitenLaden(`/api/dokumente/${docId}`, flaeche,
@@ -2216,7 +2242,7 @@ async function eintragDetail(bereich, id) {
     if (b) { zeigeDoc(b.dataset.doc, b.dataset.name); return; }
     if (e.target.closest('[data-bearbeiten]')) {
       dlg.close();
-      oeffneEintragFormular(bereich, eintrag);
+      oeffneEintragFormular(bereich, eintrag, aktuellerBeleg);
     }
   });
   dlg.showModal();
@@ -2224,13 +2250,18 @@ async function eintragDetail(bereich, id) {
 
 /* Das bewährte Bearbeiten-Formular — aus der Detailansicht heraus erreichbar
    und weiterhin der direkte Weg für Rubriken ohne Belegbezug. */
-function oeffneEintragFormular(bereich, eintrag) {
+function oeffneEintragFormular(bereich, eintrag, beleg = null) {
   const extra = bereich === 'mieten' ? mietExtra(eintrag)
               : bereich === 'kredite' ? kreditExtra(eintrag) : '';
   const cfg = cfgFuer(bereich);
+  // CCCXXIII — hat der Eintrag einen Beleg, steht er beim Bearbeiten daneben.
+  const dok = beleg && beleg.id ? beleg
+    : (eintrag.quelle_dokument_id
+        ? { id: eintrag.quelle_dokument_id, dateiname: eintrag.beleg_dateiname }
+        : null);
   return formular({ titel: `${cfg.einzahl} bearbeiten`,
                     felder: felderFuer(bereich, eintrag), bereich,
-                    werte: eintrag, absicht: 'eintrag', extra });
+                    werte: eintrag, absicht: 'eintrag', extra, beleg: dok });
 }
 
 /* Die Ordnerstruktur lässt sich jederzeit nachträglich anlegen — auch wenn
@@ -2614,10 +2645,45 @@ let dialogFelder = [];
    zu verlieren. Gesetzt von `formular`, gerufen vom Auswahlfeld mit `umbau`. */
 let dialogUmbau = null;
 
+// CCCXXIII — die PDF-Spalte des Bearbeiten-Dialogs sauber wieder abräumen,
+// sobald er schliesst: Klasse weg (nächste schmale Maske bleibt schmal),
+// Object-URLs freigeben, Inhalt leeren.
+if (!dlg._pdfWired) {
+  dlg._pdfWired = true;
+  dlg.addEventListener('close', () => {
+    (dlg._pdfUrls || []).forEach(u => URL.revokeObjectURL(u));
+    dlg._pdfUrls = [];
+    dlg.classList.remove('mit-pdf');
+    const p = document.getElementById('dlgPdf');
+    p.innerHTML = '';
+    delete p.dataset.docId;
+  });
+}
+
 async function formular(einst) {
   const { titel: dtitel, felder, bereich, werte = {}, absicht,
-          hinweis = '', extra = '', knopf = 'Speichern' } = einst;
+          hinweis = '', extra = '', knopf = 'Speichern', beleg = null } = einst;
   const form = document.getElementById('dlgForm');
+  // Beleg daneben (CCCXXIII): nur laden, wenn sich das Dokument ändert — sonst
+  // flackerte die Vorschau bei jedem reaktiven Umbau des Formulars.
+  const pdf = document.getElementById('dlgPdf');
+  if (beleg && beleg.id) {
+    dlg.classList.add('mit-pdf');
+    if (pdf.dataset.docId !== String(beleg.id)) {
+      (dlg._pdfUrls || []).forEach(u => URL.revokeObjectURL(u));
+      pdf.innerHTML = '<div class="beleg-flaeche"></div>';
+      dlg._pdfUrls = belegSeitenLaden(`/api/dokumente/${beleg.id}`,
+        pdf.querySelector('.beleg-flaeche'), beleg.dateiname || 'Beleg',
+        `/api/dokumente/${beleg.id}/inhalt`);
+      pdf.dataset.docId = String(beleg.id);
+    }
+  } else {
+    dlg.classList.remove('mit-pdf');
+    (dlg._pdfUrls || []).forEach(u => URL.revokeObjectURL(u));
+    dlg._pdfUrls = [];
+    pdf.innerHTML = '';
+    delete pdf.dataset.docId;
+  }
   const html = await Promise.all(
     felder.map(f => feldHtml(f, bereich, werte[f.k])));
   document.getElementById('dlgTitel').textContent = dtitel;
