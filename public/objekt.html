@@ -1949,6 +1949,15 @@ const ORDNER_IKON = {
   '70': 'Finanzamt', '80': 'Haus', '99': 'Dokument', '01': 'Versicherung',
   '': 'Dokument',
 };
+// CCCXXXII-c — klarere Anzeige-Namen für Ordner, deren echter Name nicht sagt,
+// was drin liegt (Cloud-Ordnername bleibt unangetastet). Grobe Ordner tragen
+// die Rubriken, die sie bündeln, damit Filter und Rubrik zueinander passen.
+const ORDNER_ANZEIGE = {
+  '01_Allgemein_Hauskonto': 'Allgemein & Versicherungen',
+  '40_Kauf_Eigentum_Finanzierung': 'Kauf · Notar · Kredite · Grundschuld',
+  '50_Bauphase_Projekte': 'Bauphase & Instandhaltung',
+};
+const ordnerTitel = a => ORDNER_ANZEIGE[a.ordner] || a.titel;
 const ordnerNr = o => (o || '').slice(0, 2).match(/^\d\d$/) ? o.slice(0, 2) : '';
 const ordnerFarbe = o => ORDNER_FARBE[ordnerNr(o)] || 'var(--soft)';
 const ordnerIkon = o => ORDNER_IKON[ordnerNr(o)] || 'Dokument';
@@ -1992,7 +2001,7 @@ function baumMalen() {
       <span class="bz">${zahl}</span></button>`;
 
   const filter = [chip('', 'Alle', 'Dokument', 'var(--ink)', baumDaten.gesamt)]
-    .concat(aeste.map(a => chip(a.ordner, a.titel, ordnerIkon(a.ordner),
+    .concat(aeste.map(a => chip(a.ordner, ordnerTitel(a), ordnerIkon(a.ordner),
                                 ordnerFarbe(a.ordner), a.anzahl))).join('');
 
   // Eine Frucht (Dokument) — optional eingerückt als Kind einer Hauptdatei.
@@ -2038,7 +2047,7 @@ function baumMalen() {
     return `<section class="zweig" style="--zw:${farbe}">
       <div class="zkopf">
         <span class="zi">${kostenIcon(ordnerIkon(a.ordner))}</span>
-        <span class="zt"><span class="zn">${esc(a.titel)}</span>
+        <span class="zt"><span class="zn">${esc(ordnerTitel(a))}</span>
           <span class="zo">${esc(a.ordner || 'im Hauptordner')}</span></span>
         <span class="zz">${a.offen ? `${a.offen} offen` : 'alles zugeordnet'}</span>
       </div>
