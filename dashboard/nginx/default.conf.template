@@ -55,4 +55,11 @@ server {
     # bekommt ein 304 *ohne* Content-Type zurueck -- er behaelt dann den alten,
     # ggf. falschen Typ aus dem Cache und laedt die Seite als Datei herunter.
     location ~* \.html$ { add_header Cache-Control "no-store" always; }
+    # CCCXXXVII-Nachtrag: public/ ist live gemountet — Frontend-Aenderungen sind
+    # ohne Deploy sofort wirksam. Damit der Browser aber nie einen veralteten
+    # (oder waehrend eines Zwischenstands kaputt geladenen) JS-/CSS-Baustein aus
+    # dem Cache haelt, werden auch die Assets nicht gespeichert. Kleine Dateien
+    # im lokalen Netz -- der Verzicht auf Caching kostet praktisch nichts und
+    # macht das Modul-System robust gegen gecachte Fehlstaende.
+    location ~* \.(js|mjs|css)$ { add_header Cache-Control "no-store" always; }
 }
