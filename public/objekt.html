@@ -731,13 +731,28 @@ const GRUNDFELDER = [
   { k: 'gemarkung', l: 'Gemarkung', typ: 'text' },
   { k: 'flurstueck', l: 'Flurstück', typ: 'text' },
   { k: 'verkehrswert', l: 'Grundstückswert', typ: 'number', schritt: '0.01',
-    geld: true, voll: true },
+    geld: true, voll: true,
+    note: 'Der geschätzte Marktwert (Verkehrswert) — steht NICHT auf dem '
+        + 'Finanzamts-Bescheid und ist etwas anderes als der Grundsteuerwert. '
+        + 'Nur für die Vermögensübersicht.' },
+  // Die drei folgenden bilden die Rechenkette der Grundsteuer, in der
+  // Reihenfolge, in der sie entsteht (CCXCVI).
   { k: 'grundsteuerwert', l: 'Grundsteuerwert', typ: 'number', schritt: '0.01',
-    geld: true, voll: true },
+    geld: true, voll: true,
+    note: '① Vom Finanzamt — „Bescheid über den Grundsteuerwert". Bei Land-/'
+        + 'Forstwirtschaft: Summe der Reinerträge × Kapitalisierungsfaktor (18,6), '
+        + 'abgerundet auf volle 100 € (Eckenhaid: 144,60 € × 18,6 ≈ 2.689 € → '
+        + '2.600 €).' },
   { k: 'grundsteuer_messbetrag', l: 'Steuermessbetrag', typ: 'number',
-    schritt: '0.01', geld: true },
+    schritt: '0.01', geld: true,
+    note: '② Vom Finanzamt — „Bescheid über den Grundsteuermessbetrag" = '
+        + 'Grundsteuerwert × Steuermesszahl (bei Land-/Forstwirtschaft 0,55 ‰; '
+        + 'Eckenhaid: 2.600 € × 0,55 ‰ = 1,43 €).' },
   { k: 'grundsteuer_hebesatz', l: 'Hebesatz', typ: 'number', schritt: '1',
-    einheit: '%' },
+    einheit: '%',
+    note: '③ Von der GEMEINDE (Eckental), nicht vom Finanzamt — steht auf dem '
+        + 'Grundsteuerbescheid der Stadt (Hebesatz Grundsteuer A). '
+        + 'Steuermessbetrag × Hebesatz = Grundsteuer im Jahr.' },
 ];
 
 /* CXLI — was eine Einheit ausmacht. Dieselbe Beschreibung trägt die Anzeige
@@ -1015,17 +1030,29 @@ function grundstueckHtml(o) {
   if (o.verkehrswert && o.grundstueck_flaeche) {
     abgeleitet.push(['Wert je m²', eur(o.verkehrswert / o.grundstueck_flaeche)]);
   }
+  // Grundsteuer als Rechenkette in der Reihenfolge, in der sie entsteht (CCXCVI):
+  // Grundsteuerwert × Steuermesszahl = Steuermessbetrag × Hebesatz = Jahr.
+  if (o.grundsteuerwert && o.grundsteuer_messbetrag) {
+    const promille = o.grundsteuer_messbetrag / o.grundsteuerwert * 1000;
+    abgeleitet.push(['Steuermesszahl (rechnerisch)',
+      `${promille.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ‰`]);
+  }
   if (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz) {
-    abgeleitet.push(['Grundsteuer im Jahr',
+    abgeleitet.push([`Grundsteuer im Jahr (× Hebesatz ${o.grundsteuer_hebesatz} %)`,
       eur(o.grundsteuer_messbetrag * o.grundsteuer_hebesatz / 100)]);
   }
+  const kette = (o.grundsteuerwert || o.grundsteuer_messbetrag)
+    ? `<div class="fussnote">So entsteht die Grundsteuer: <strong>Grundsteuerwert</strong>
+       (vom Finanzamt) × Steuermesszahl = <strong>Steuermessbetrag</strong> (vom
+       Finanzamt) × <strong>Hebesatz</strong> (von der Gemeinde) =
+       Grundsteuer&nbsp;im&nbsp;Jahr. Der Hebesatz steht nicht auf dem
+       Finanzamts-Bescheid, sondern auf dem Grundsteuerbescheid der Stadt.</div>`
+    : '';
   return `<div class="sekopf"><h2 class="sec">Grundstück</h2>
       <button data-grund="1">Bearbeiten</button></div>
     <div class="paare">${zeilen}${
       abgeleitet.map(([l, w]) => paarZeile(l, w, { abgeleitet: true })).join('')}</div>
-    ${abgeleitet.length ? `<div class="fussnote">Wert je m² und Grundsteuer
-      rechnet ImmoCalc aus den Angaben darüber — eingetragen wird nur, was im
-      Bescheid steht.</div>` : ''}`;
+    ${kette}`;
 }
 
 /* CCVIII — die WEG-Ebene. Beim Grundstück gibt es sie nicht (keine Mieter, keine
@@ -2554,10 +2581,11 @@ inhalt.addEventListener('click', async e => {
   if (e.target.closest('[data-grund]')) {
     return formular({ titel: 'Grundstück bearbeiten', felder: GRUNDFELDER,
                       werte: objekt, absicht: 'grund',
-                      hinweis: 'Grundsteuerwert, Messbetrag und Hebesatz stehen '
-                        + 'im Bescheid des Finanzamts bzw. in der Satzung der '
-                        + 'Gemeinde. Wert je m² und Grundsteuer rechnet '
-                        + 'ImmoCalc daraus.' });
+                      hinweis: 'Reihenfolge der Grundsteuer: Grundsteuerwert '
+                        + '(Finanzamt) × Steuermesszahl = Steuermessbetrag '
+                        + '(Finanzamt) × Hebesatz (Gemeinde) = Grundsteuer/Jahr. '
+                        + 'Der Grundstückswert ist der Marktwert und steht nicht '
+                        + 'im Bescheid.' });
   }
 
   if (e.target.closest('[data-weg]')) {
