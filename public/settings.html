@@ -112,6 +112,35 @@
      .aktiv (grün) und .warte (gelb) kommen aus immo.css; für Rot fehlt dort
      eine Variante — sie steht deshalb hier. */
   .row .ic.fehler{background:var(--neg-bg);color:var(--neg)}
+
+  /* Rechenlogik-Übersicht: die vier Schritte einer Abrechnung und die acht
+     Verteilerschlüssel, gegliedert statt als roher Markdown-Text. Der Dialog
+     rollt in sich, damit die lange Übersicht nicht den Bildschirm sprengt. */
+  #rlDlg .dbody{max-height:min(80dvh,780px);overflow:auto}
+  .rlschritt{display:flex;gap:11px;background:var(--sheet);border-radius:12px;
+             padding:12px 13px;margin-bottom:8px}
+  .rlnum{flex:none;width:27px;height:27px;border-radius:9px;background:var(--teal-l);
+         color:var(--teal-d);font:600 13px var(--mono);display:flex;
+         align-items:center;justify-content:center}
+  .rlnum.sm{width:23px;height:23px;border-radius:7px;font-size:11.5px}
+  .rltxt{min-width:0}
+  .rltitel{font:600 13.5px var(--disp);letter-spacing:-.01em;margin-bottom:4px}
+  .rlbeschr{font:400 12px var(--body);color:var(--soft);line-height:1.55}
+  .rlbeschr b{color:var(--ink);font-weight:600}
+  /* Formelkasten: monospace, teal, bricht bei schmalem Schirm um statt zu
+     überlaufen. display:block, damit der Abstand am inline-Element greift. */
+  .rlformel{display:block;background:var(--teal-l);color:var(--teal-d);
+            border-radius:10px;padding:10px 12px;margin-top:9px;
+            font:500 11.5px var(--mono);line-height:1.65;word-break:break-word}
+  .rlformel b{color:var(--teal-d);font-weight:600}
+  .rlkarte{background:var(--sheet);border-radius:12px;padding:11px 13px;
+           margin-bottom:7px}
+  .rlkkopf{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+  .rlkname{font:600 13px var(--disp);letter-spacing:-.01em}
+  .rlkformel{display:block;font:500 11px var(--mono);color:var(--soft);
+             line-height:1.55;word-break:break-word}
+  .rluruhig{background:var(--sheet);border-radius:12px;padding:12px 13px;
+            margin-top:8px}
 </style>
 </head>
 <body>
@@ -206,51 +235,15 @@
       <span class="arr">›</span>
     </button>
 
-    <h2 class="sec">Entwicklung &amp; Diagnose</h2>
-    <p style="font:400 12.5px var(--body);color:var(--soft);margin:-4px 0 12px;line-height:1.5">
-      Werkzeuge für die Entwicklung. Für den normalen Betrieb nicht nötig.
-    </p>
-
-    <a class="row" href="app.html">
-      <span class="ic">▤</span>
-      <span class="txt">
-        <span class="t">App-Mockup</span>
-        <span class="d">Klickbarer Entwurf mit Beispieldaten</span>
-      </span>
-      <span class="arr">›</span>
-    </a>
-    <a class="row" href="status.html">
-      <span class="ic">◎</span>
-      <span class="txt">
-        <span class="t">Live-Daten (API)</span>
-        <span class="d">Rohdaten aus dem Backend</span>
-      </span>
-      <span class="arr">›</span>
-    </a>
-    <a class="row" href="logos.html">
-      <span class="ic">◧</span>
-      <span class="txt">
-        <span class="t">Logo-Auswahl</span>
-        <span class="d">Alle Gebäudetypen im Überblick</span>
-      </span>
-      <span class="arr">›</span>
-    </a>
-    <a class="row" href="docs/rechenlogik.md">
+    <h2 class="sec">Rechenlogik</h2>
+    <button class="row" id="rlRow">
       <span class="ic">ƒ</span>
       <span class="txt">
-        <span class="t">Rechenlogik &amp; Schlüssel</span>
-        <span class="d">Fachkonzept der Verteilung</span>
+        <span class="t">Rechenlogik &amp; Verteilerschlüssel</span>
+        <span class="d">Wie ImmoCalc jede Abrechnung berechnet</span>
       </span>
       <span class="arr">›</span>
-    </a>
-    <a class="row" href="docs/er-diagramm.mermaid">
-      <span class="ic">⌗</span>
-      <span class="txt">
-        <span class="t">ER-Diagramm</span>
-        <span class="d">Datenstruktur</span>
-      </span>
-      <span class="arr">›</span>
-    </a>
+    </button>
 
     <h2 class="sec">System</h2>
     <div class="row" style="cursor:default">
@@ -514,6 +507,121 @@
     <div class="ordnerliste" id="ordnerliste"></div>
     <div class="strukturliste" id="strukturliste"></div>
     <button class="btn" id="homeWaehlen">Diesen Ordner verwenden</button>
+  </div>
+</dialog>
+
+<dialog id="rlDlg">
+  <div class="dh">
+    <h2>Rechenlogik</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      So kommt jede Nebenkostenabrechnung zustande — von der Rechnung bis zum
+      Saldo je Partei. Rechnen musst du nichts davon selbst; die Übersicht zeigt,
+      was ImmoCalc im Hintergrund tut.
+    </p>
+
+    <div class="ulabel">Vier Schritte je Abrechnung</div>
+
+    <div class="rlschritt">
+      <span class="rlnum">1</span>
+      <div class="rltxt">
+        <div class="rltitel">Zeitraum festlegen</div>
+        <div class="rlbeschr">Start- und Enddatum frei wählen — regulär, Rumpf-
+          oder Zwischenabrechnung. Das Enddatum ist der <b>Soll-Stichtag</b>, auf
+          den alle Zähler bezogen werden.</div>
+      </div>
+    </div>
+
+    <div class="rlschritt">
+      <span class="rlnum">2</span>
+      <div class="rltxt">
+        <div class="rltitel">Betrag je Position bestimmen</div>
+        <div class="rlbeschr">Je nach Wertquelle: <b>Scan / extern</b> — der
+          Betrag steht auf der Rechnung und wird übernommen. <b>Zähler</b> — der
+          Verbrauch wird auf den Stichtag interpoliert, nicht gemessene Zähler als
+          Rest berechnet. <b>Manuell</b> — freie Position, etwa eine Gutschrift.</div>
+        <span class="rlformel">Interpolierter Verbrauch =
+          Ist-Differenz × Soll-Tage / Ist-Tage<br>
+          146,874 × 365 / 376 = <b>142,577</b></span>
+      </div>
+    </div>
+
+    <div class="rlschritt">
+      <span class="rlnum">3</span>
+      <div class="rltxt">
+        <div class="rltitel">Auf die Parteien verteilen</div>
+        <div class="rlbeschr">Jede Position trägt genau einen Verteilerschlüssel
+          (siehe unten). Beispiel Wasser: Rate = Kosten / Gesamtverbrauch, der
+          Anteil einer Partei ist ihr Verbrauch × Rate.</div>
+      </div>
+    </div>
+
+    <div class="rlschritt">
+      <span class="rlnum">4</span>
+      <div class="rltxt">
+        <div class="rltitel">Ergebnis je Partei</div>
+        <div class="rlbeschr">Alle Anteile einer Partei aufsummieren, die
+          Vorauszahlungen gegenrechnen. Haushaltsnahe Leistungen nach <b>§ 35a</b>
+          werden separat ausgewiesen.</div>
+        <span class="rlformel">Saldo = umgelegte Kosten − Vorauszahlungen</span>
+      </div>
+    </div>
+
+    <div class="ulabel">Die acht Verteilerschlüssel</div>
+
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">1</span>
+        <span class="rlkname">Nach Wohnfläche</span></div>
+      <span class="rlkformel">Anteil = Kosten × Fläche der Einheit / Gesamtfläche</span>
+    </div>
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">2</span>
+        <span class="rlkname">Nach Personen</span></div>
+      <span class="rlkformel">Anteil = Kosten × Personen der Partei / Gesamtpersonen</span>
+    </div>
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">3</span>
+        <span class="rlkname">Nach Bewohnermonaten</span></div>
+      <span class="rlkformel">Bewohnermonate = Personen × anwesende Monate<br>
+        Anteil = Kosten × Bewohnermonate der Partei / Summe aller Bewohnermonate</span>
+    </div>
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">4</span>
+        <span class="rlkname">Nach Einheiten</span></div>
+      <span class="rlkformel">Anteil = Kosten / Anzahl Einheiten</span>
+    </div>
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">5</span>
+        <span class="rlkname">Nach Verbrauch</span></div>
+      <span class="rlkformel">Rate = Kosten / Gesamtverbrauch<br>
+        Anteil = Verbrauch der Partei × Rate</span>
+    </div>
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">6</span>
+        <span class="rlkname">Fester Prozent-Split</span></div>
+      <span class="rlkformel">Anteil = Kosten × Prozentsatz (z. B. 2. OG 50 %)</span>
+    </div>
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">7</span>
+        <span class="rlkname">Individuell / Direktzuordnung</span></div>
+      <span class="rlkformel">Ganze Position genau einer Partei (z. B. Gartenwasser)</span>
+    </div>
+    <div class="rlkarte">
+      <div class="rlkkopf"><span class="rlnum sm">8</span>
+        <span class="rlkname">Heizkosten (HeizkostenV)</span></div>
+      <span class="rlkformel">Grundanteil nach Fläche + Verbrauchsanteil nach
+        Wärmezählern (typ. 30/70 oder 50/50)</span>
+    </div>
+
+    <div class="rluruhig">
+      <div class="rltitel" style="margin-bottom:4px">Zeitanteiligkeit</div>
+      <div class="rlbeschr">Querliegend über alle Schlüssel: Deckt die Nutzungszeit
+        einer Partei nicht den ganzen Zeitraum ab, wird ihr Anteil taggenau
+        gekürzt.</div>
+      <span class="rlformel">Faktor = Nutzungstage der Partei / Tage im Zeitraum</span>
+    </div>
   </div>
 </dialog>
 
@@ -1421,6 +1529,10 @@ document.getElementById('importStart').addEventListener('click', async () => {
     knopf.textContent = 'Einlesen';
   }
 });
+
+/* ---- Rechenlogik-Übersicht (statischer Inhalt, nur öffnen) ---- */
+const rlDlg = document.getElementById('rlDlg');
+document.getElementById('rlRow').addEventListener('click', () => rlDlg.showModal());
 
 document.querySelectorAll('[data-schliessen]').forEach(knopf =>
   knopf.addEventListener('click', () => knopf.closest('dialog').close()));
