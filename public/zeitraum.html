@@ -203,6 +203,10 @@
   .nachtrag input:focus{outline:none;border-color:var(--teal)}
   .nachtrag button{border:none;border-radius:10px;padding:10px 16px;background:var(--teal);
     color:#fff;font:600 13px var(--disp);cursor:pointer;min-height:44px}
+  /* Den Betrag einer bestehenden Position ändern ist eine leise Korrektur, kein
+     Haupt-Aufruf — grau statt grün, damit nur „Anlegen"/„Bestätigen" grün rufen. */
+  .nachtrag button.leise{background:#EDF1F0;color:var(--ink)}
+  .nachtrag button.leise:hover{background:#E1E8E6}
   /* Eine Kostenart aus dem Katalog, zu der es noch keine Position gibt:
      hier entsteht sie. Der Betrag ist freiwillig — wer den Beleg noch sucht,
      legt die Position leer an und trägt ihn später nach. */
@@ -238,9 +242,15 @@
   .vt .knopfzeile{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   .vt .knopfzeile button{border:none;border-radius:10px;padding:10px 14px;
     font:600 12.5px var(--disp);cursor:pointer;min-height:44px}
-  .vt .haupt{background:var(--teal);color:#fff}
   .vt .leise{background:#EDF1F0;color:var(--ink)}
   .vt .leise:hover{background:#E1E8E6}
+  /* Die Verteilung wird beim Verlassen der Felder gespeichert (kein eigener
+     „Übernehmen"-Knopf mehr, der mit „Bestätigen" um Klicks buhlt). Ein ruhiger
+     Hinweis sagt es, die Rückmeldung kommt als kurzer Toast. */
+  .vt .autohint{font:500 11px var(--mono);color:var(--soft);margin-top:9px;
+                display:flex;align-items:center;gap:6px}
+  .vt .autohint::before{content:"";width:6px;height:6px;border-radius:50%;
+                        background:var(--teal);flex:none}
   .warnung{display:flex;gap:9px;align-items:flex-start;background:var(--neg-bg);
     color:var(--neg);border-radius:11px;padding:11px 12px;margin:10px 0 2px;
     font:500 11.5px var(--body);line-height:1.45}
@@ -622,16 +632,23 @@ function verteilungHtml(k) {
       <span class="gp" data-anteil>${prozentText(w, summe)}</span>
     </div>`).join('');
 
-  const knoepfe = bearbeitbar ? `<div class="knopfzeile">
-      ${felder.length ? `<button class="haupt"
-        data-gewichte="${k.position_id}">Verteilung übernehmen</button>` : ''}
-      ${abzuleiten.length && !gleich ? `<button class="leise"
+  // Ableiten bleibt als leiser Zweitweg; die Gewichte selbst speichern sich
+  // beim Verlassen der Felder (verteilungAutoSpeichern) — kein grüner
+  // „Verteilung übernehmen"-Knopf mehr, der neben „Bestätigen" um Klicks buhlt.
+  const ableitenBtn = abzuleiten.length && !gleich ? `<button class="leise"
         data-ableiten="${k.position_id}"
         data-fuer="${esc(k.schluessel || '')}">${eintraege.length
-          ? 'Neu aus Stammdaten' : 'Aus Stammdaten ableiten'}</button>` : ''}
-    </div>` : '';
+          ? 'Neu aus Stammdaten' : 'Aus Stammdaten ableiten'}</button>` : '';
+  const knoepfe = bearbeitbar
+    ? (felder.length ? '<div class="autohint">Änderungen werden gespeichert</div>' : '')
+      + (ableitenBtn ? `<div class="knopfzeile">${ableitenBtn}</div>` : '')
+    : '';
+  // Ausgangswerte für die Änderungserkennung: nur wirklich Geändertes wird
+  // gespeichert, bloßes Durchtabben löst nichts aus.
+  const basis = esc(JSON.stringify(Object.fromEntries(
+    felder.map(([p, w]) => [p, Number(w) || 0]))));
 
-  return `<div class="vt">
+  return `<div class="vt" data-pid="${k.position_id}" data-basis="${basis}">
       <div class="zk">Verteilung${bearbeitbar ? ''
         : ` · ${esc(meta?.titel || k.schluessel || '—')}`}${
         einheit ? ` · ${esc(einheit)}` : ''}</div>
@@ -758,7 +775,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
           <input type="number" step="0.01" placeholder="Betrag eintragen"
                  value="${k.betrag || ''}" data-betrag="${k.position_id}"
                  aria-label="Betrag für ${esc(k.kostenart)}">
-          <button data-speichern="${k.position_id}">Übernehmen</button>
+          <button class="leise" data-speichern="${k.position_id}">Übernehmen</button>
         </div>
         ${daten.status === 'in Arbeit' ? `<button class="entfernen"
           data-entfernen="${k.position_id}"
@@ -1136,27 +1153,47 @@ function rolleUnterDieKopfzeile(el, oben) {
   else window.scrollBy(0, delta);
 }
 
-async function verteilungSpeichern(knopf) {
+/* Die Verteilung speichert sich, sobald die Gewichtsfelder den Fokus verlassen
+   — kein eigener „Verteilung übernehmen"-Knopf mehr. Gespeichert wird nur, was
+   sich gegenüber dem Ausgangsstand (data-basis) wirklich geändert hat; bloßes
+   Durchtabben oder ein noch leerer (alles-null) Block löst nichts aus. Die
+   Rückmeldung ist ein kurzer, nicht anklickbarer Toast. */
+async function verteilungAutoSpeichern(vt) {
+  const felder = [...vt.querySelectorAll('[data-gewicht]')];
+  if (!felder.length) return;
   const anteile = {};
-  knopf.closest('.vt').querySelectorAll('[data-gewicht]').forEach(feld => {
-    anteile[feld.dataset.gewicht] = Number(feld.value) || 0;
-  });
-  if (!Object.values(anteile).some(w => w > 0)) {
-    return melde('Mindestens ein Gewicht muss größer als null sein', 'neg');
-  }
-  knopf.disabled = true;
-  knopf.textContent = 'Speichere …';
+  felder.forEach(f => { anteile[f.dataset.gewicht] = Number(f.value) || 0; });
+
+  let basis = {};
+  try { basis = JSON.parse(vt.dataset.basis || '{}'); } catch { basis = {}; }
+  const unveraendert = Object.keys(anteile).length === Object.keys(basis).length
+    && Object.entries(anteile).every(([p, w]) => Number(basis[p]) === w);
+  if (unveraendert) return;
+  // Alles null lassen ist erlaubt (die Warnung bleibt stehen), aber nichts wird
+  // dafür gespeichert — sonst käme bei jedem Verlassen eine Fehlermeldung.
+  if (!Object.values(anteile).some(w => w > 0)) return;
+
+  vt.dataset.basis = JSON.stringify(anteile);   // gespeicherten Stand nachziehen
   try {
-    await api(`/positionen/${knopf.dataset.gewichte}`,
+    await api(`/positionen/${vt.dataset.pid}`,
               { method: 'PATCH', body: { anteile } });
-    melde('Verteilung übernommen', 'pos');
+    melde('✓ Verteilung gespeichert', 'pos');
     await laden();
   } catch (fehler) {
-    knopf.disabled = false;
-    knopf.textContent = 'Verteilung übernehmen';
     melde(String(fehler.message || fehler), 'neg');
   }
 }
+
+/* Verlässt der Fokus den ganzen Verteilungsblock (nicht nur ein Feld daneben),
+   wird gespeichert. So greift die Speicherung auch, wenn danach „Bestätigen"
+   oder eine Zeile angeklickt wird — der focusout läuft vor dem Klick. */
+inhalt.addEventListener('focusout', e => {
+  const feld = e.target.closest?.('[data-gewicht]');
+  if (!feld) return;
+  const vt = feld.closest('.vt');
+  if (!vt || vt.contains(e.relatedTarget)) return;
+  verteilungAutoSpeichern(vt);
+});
 
 async function verteilungAbleiten(knopf) {
   const meta = schluesselMeta(knopf.dataset.fuer);
@@ -1564,9 +1601,6 @@ inhalt.addEventListener('click', async e => {
 
   const oeffnen = e.target.closest('[data-oeffnen]');
   if (oeffnen) return wiederOeffnen(oeffnen);
-
-  const gewichte = e.target.closest('[data-gewichte]');
-  if (gewichte) return verteilungSpeichern(gewichte);
 
   const ableiten = e.target.closest('[data-ableiten]');
   if (ableiten) return verteilungAbleiten(ableiten);
