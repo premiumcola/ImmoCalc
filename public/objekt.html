@@ -43,9 +43,27 @@
   .bfilter.an .bi,.bfilter.an .bz{color:#fff}
   .bfilter.an .bz{background:rgba(255,255,255,.24)}
   .baum{display:flex;flex-direction:column;gap:10px}
+  /* CCCXXXI — verknüpfter Cloud-Pfad klein/kursiv unter dem Ablage-Header */
+  .ablage-pfad:not(:empty){font:italic 400 11.5px var(--body);color:var(--soft);
+    margin:-8px 2px 12px;overflow-wrap:anywhere;display:block}
   .zweig{background:var(--sheet);border-radius:14px;padding:12px 13px;
     border-left:4px solid var(--zw,var(--line))}
-  .zkopf{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .zweig.zu{padding:8px 13px}
+  /* CCCXXXI — der Ordnerkopf ist ein Knopf: antippen klappt auf/zu */
+  .zkopf{display:flex;align-items:center;gap:9px;margin-bottom:8px;width:100%;
+    border:none;background:none;text-align:left;cursor:pointer;padding:4px 0;
+    font-family:var(--body);color:var(--ink)}
+  .zweig.zu .zkopf{margin-bottom:0}
+  .zkopf:hover .zn{color:var(--teal-d)}
+  .zkopf .zpfeil{flex:none;font:400 18px var(--body);color:var(--soft);
+    transition:transform .15s;transform:rotate(90deg)}
+  .zkopf .zpfeil.auf{transform:rotate(-90deg)}
+  /* CCCXXXI — Jahres-Filter im Nebenkosten-Ordner */
+  .jahr-leiste{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px 21px}
+  .jchip{border:1px solid var(--line);background:var(--paper);color:var(--soft);
+    border-radius:999px;padding:4px 11px;font:600 11px var(--mono);cursor:pointer;
+    min-height:30px}
+  .jchip.an{background:var(--teal);border-color:var(--teal);color:#fff}
   .zkopf .zi{display:inline-flex;color:var(--zw);flex:none}
   .zkopf .zi svg{width:19px;height:19px}
   .zkopf .zt{flex:1;min-width:0;display:flex;flex-direction:column}
@@ -1251,23 +1269,11 @@ function zelleInner({ label, wert, quelle = null, lex = null, abgeleitet = false
         ? `<span class="pq">${esc(quelle)}</span>` : ''}</span>`;
 }
 
-/* CCCXXX — eine Reihe von Zellen kompakt darstellen: je zwei nebeneinander,
-   damit die Anzeige nicht so hoch wird. Zellen mit `voll` (langer Wert)
-   bekommen die ganze Zeile. */
-function kompaktZeilen(zellen) {
-  const out = [];
-  for (let i = 0; i < zellen.length; i++) {
-    const a = zellen[i];
-    const b = zellen[i + 1];
-    if (!a.voll && b && !b.voll) {
-      out.push(`<div class="paar duo"><div class="du">${zelleInner(a)}</div>`
-             + `<div class="du">${zelleInner(b)}</div></div>`);
-      i++;
-    } else {
-      out.push(`<div class="paar${a.lang ? ' lang' : ''}">${zelleInner(a)}</div>`);
-    }
-  }
-  return out.join('');
+/* CCCXXX (korrigiert) — eine Zelle als eigene, EINSPALTIGE Zeile. Das
+   Zwei-Spalten-Raster war unübersichtlich; kurze Werte werden stattdessen
+   gezielt im Wert selbst zusammengezogen (IBAN (Bank), Stand · mtl.). */
+function cellZeile(c) {
+  return `<div class="paar${c.lang ? ' lang' : ''}">${zelleInner(c)}</div>`;
 }
 
 /* CCLIV — Wohnfläche und Stellplätze eines Objekts kommen aus den Einheiten,
@@ -1341,65 +1347,66 @@ function stammHtml(o) {
     return { label: f.l, wert: stammwert(f, o), lex: f.lex, lang: f.lang, ...extra };
   };
   const zeilen = [];
+  // CCCXXX (korrigiert) — wieder EINSPALTIG: jede Angabe eine Zeile. Nur wo der
+  // Wert kurz ist, werden zwei Angaben in EINER Zeile zusammengezogen (IBAN mit
+  // Bank in Klammern, Rücklagen-Stand neben der Monatsrate). Kein Zwei-Spalten-
+  // Raster (das war unübersichtlich).
+  const zeile = (k, extra = {}) => zeilen.push(cellZeile(feldZelle(k, extra)));
 
-  // Kopf: Objektart und (falls vorhanden) Erwerbsart nebeneinander.
-  const kopf = [];
-  if (hat('objektart')) kopf.push(feldZelle('objektart'));
-  if (hat('erwerbsart')) kopf.push(feldZelle('erwerbsart'));
-  zeilen.push(kompaktZeilen(kopf));
+  // Kopf: Objektart, Erwerbsart.
+  if (hat('objektart')) zeile('objektart');
+  if (hat('erwerbsart')) zeile('erwerbsart');
 
   // Adresse einzeilig: Straße · PLZ Ort. Beim Grundstück fehlt die Straße.
   const strasse = hat('strasse') ? o.strasse : '';
   const plzOrt = [hat('plz') && o.plz, hat('ort') && o.ort].filter(Boolean).join(' ');
   const adresse = [strasse, plzOrt].filter(Boolean).join(' · ');
-  zeilen.push(kompaktZeilen([{ label: 'Adresse', wert: adresse || null, voll: true }]));
+  zeilen.push(cellZeile({ label: 'Adresse', wert: adresse || null }));
 
-  // Flächen: Wohnfläche und Stellplätze aus den Einheiten, dazu die
-  // Grundstücksfläche — kompakt nebeneinander (beim Grundstück nicht hier).
-  const flaechen = [];
-  if (hat('flaeche')) flaechen.push(...wohnflaecheCells(o, s));
-  if (hat('grundstueck_flaeche')) flaechen.push(feldZelle('grundstueck_flaeche'));
-  zeilen.push(kompaktZeilen(flaechen));
+  // Flächen: Wohnfläche (mit Herkunft „aus N Einheiten") und Stellplätze,
+  // dazu die Grundstücksfläche — jede in ihrer eigenen Zeile.
+  if (hat('flaeche')) for (const c of wohnflaecheCells(o, s)) zeilen.push(cellZeile(c));
+  if (hat('grundstueck_flaeche')) zeile('grundstueck_flaeche');
 
-  // Erwerb & Wert: Kaufpreis (bei Erbschaft ohne Sinn, deshalb ausgeblendet),
+  // Erwerb & Wert: Kaufpreis (bei Erbschaft ohne Sinn → ausgeblendet),
   // Kauf-/Erbschaftsdatum bzw. Baudatum, Verkehrswert.
-  const erwerb = [];
-  if (hat('kaufpreis') && !erbe) erwerb.push(feldZelle('kaufpreis'));
-  if (erbe) {
-    if (hat('baudatum')) erwerb.push(feldZelle('baudatum', { label: 'Baudatum' }));
-  } else {
-    if (hat('kaufdatum')) erwerb.push(feldZelle('kaufdatum'));
-    if (hat('baudatum')) erwerb.push(feldZelle('baudatum'));
-  }
-  if (hat('verkehrswert')) erwerb.push(feldZelle('verkehrswert'));
-  zeilen.push(kompaktZeilen(erwerb));
+  if (hat('kaufpreis') && !erbe) zeile('kaufpreis');
+  if (erbe) { if (hat('baudatum')) zeile('baudatum', { label: 'Baudatum' }); }
+  else { if (hat('kaufdatum')) zeile('kaufdatum'); if (hat('baudatum')) zeile('baudatum'); }
+  if (hat('verkehrswert')) zeile('verkehrswert');
 
-  // Konto & Rücklage als eigener, optisch abgesetzter Block.
-  const konto = [];
-  for (const k of ['kontoinhaber', 'iban', 'bank']) {
-    if (hat(k)) konto.push(feldZelle(k, { voll: true }));
-  }
-  const ruecklage = [];
-  for (const k of ['ruecklage_saldo', 'ruecklage_monatlich']) {
-    if (hat(k)) ruecklage.push(feldZelle(k));
-  }
-  if (konto.length || ruecklage.length) {
+  // Konto & Rücklage — abgesetzter Block. Kontoinhaber eigene Zeile, dann IBAN
+  // mit der Bank in Klammern, dann Rücklagenstand und Monatsrate zusammen.
+  const iban = o.iban ? ibanSchoen(o.iban) : '';
+  const bank = (o.bank || '').trim();
+  const ibanBank = iban ? (bank ? `${iban} (${bank})` : iban) : (bank || null);
+  const saldo = (hat('ruecklage_saldo') && o.ruecklage_saldo != null)
+    ? stammwert(def('ruecklage_saldo'), o) : '';
+  const rate = (hat('ruecklage_monatlich') && o.ruecklage_monatlich != null)
+    ? stammwert(def('ruecklage_monatlich'), o) : '';
+  const ruecklageWert = [saldo && `Stand ${saldo}`, rate && `mtl. ${rate}`]
+    .filter(Boolean).join(' · ');
+  const hatKonto = hat('kontoinhaber') || hat('iban') || hat('bank');
+  if (hatKonto || saldo || rate) {
     zeilen.push('<div class="paar-trenn"><span>Konto &amp; Rücklage</span></div>');
-    zeilen.push(kompaktZeilen(konto));
-    zeilen.push(kompaktZeilen(ruecklage));
+    if (hat('kontoinhaber')) zeile('kontoinhaber');
+    if (hat('iban') || hat('bank')) {
+      zeilen.push(cellZeile({ label: 'IBAN', wert: ibanBank }));
+    }
+    if (saldo || rate) {
+      zeilen.push(cellZeile({ label: 'Rücklage', wert: ruecklageWert || null }));
+    }
   }
 
-  // Nießbrauch: ist er eingetragen, ein eigener abgesetzter Block mit
-  // Berechtigtem und Frist; sonst nur die eine ruhige „Nein"-Zeile wie bisher.
+  // Nießbrauch: ist er eingetragen, ein eigener abgesetzter Block; sonst die
+  // eine ruhige „Nein"-Zeile.
   if (o.niessbrauch_aktiv) {
-    const niess = [];
-    for (const k of ['niessbrauch_aktiv', 'niessbrauch_berechtigt', 'niessbrauch_bis']) {
-      if (hat(k)) niess.push(feldZelle(k, { voll: true }));
-    }
     zeilen.push('<div class="paar-trenn"><span>Nießbrauch</span></div>');
-    zeilen.push(kompaktZeilen(niess));
+    for (const k of ['niessbrauch_aktiv', 'niessbrauch_berechtigt', 'niessbrauch_bis']) {
+      if (hat(k)) zeile(k);
+    }
   } else if (hat('niessbrauch_aktiv')) {
-    zeilen.push(kompaktZeilen([feldZelle('niessbrauch_aktiv', { voll: true })]));
+    zeile('niessbrauch_aktiv');
   }
 
   return `<div class="sekopf"><span class="seikon">${kostenIcon('Haus')}</span>
@@ -1997,7 +2004,8 @@ async function laden() {
     ${grundstueckHtml(objekt, jahresmiete)}
     ${stammHtml(objekt)}
     ${wegHtml(objekt)}
-    <div class="sekopf"><span class="seikon">${kostenIcon('Dokument')}</span><h2 class="sec">Dokumentenablage</h2></div>
+    <div class="sekopf ablage-kopf"><span class="seikon">${kostenIcon('Dokument')}</span><h2 class="sec">Dokumentenablage</h2></div>
+    <div class="ablage-pfad" id="ablagePfad"></div>
     <div id="cloudbereich"><div class="cloudbox"><div class="zeile">
       <span class="sym offen">…</span>
       <span class="txt"><span class="t">wird geprüft …</span></span>
@@ -2090,6 +2098,10 @@ const PRO_AST = 10;                     // so viele Früchte je Ast, dann „meh
 let baumDaten = null;
 let baumFilter = '';                    // '' = alle Äste
 let baumMehr = new Set();               // Äste, die alles zeigen
+// CCCXXXI — Ordner sind standardmäßig eingeklappt; `baumOffen` merkt die
+// aufgeklappten. `baumJahr` filtert die Nebenkosten-Belege auf ein Jahr.
+let baumOffen = new Set();
+let baumJahr = '';
 
 async function baumZeigen() {
   const ziel = document.getElementById('dokbaum');
@@ -2143,6 +2155,10 @@ function baumMalen() {
   const zweige = gezeigt.map(a => {
     a_ordner = a.ordner;
     const farbe = ordnerFarbe(a.ordner);
+    // CCCXXXI — standardmäßig eingeklappt; ein gesetzter Filter klappt den
+    // betroffenen Ordner auf. (Leerer Filter darf den Hauptordner-Ast mit
+    // ordner==='' nicht versehentlich öffnen.)
+    const offen = baumOffen.has(a.ordner) || (!!baumFilter && baumFilter === a.ordner);
     // CCCXVII — Kinder (Info-Belege) unter ihre Hauptdatei einrücken, aber nur,
     // wenn die Hauptdatei im selben Ordner liegt. Liegt sie woanders, steht das
     // Kind eigenständig hier (sonst verschwände es aus dem Baum).
@@ -2152,20 +2168,41 @@ function baumMalen() {
       if (!kinderVon.has(d.unter)) kinderVon.set(d.unter, []);
       kinderVon.get(d.unter).push(d);
     }
-    const oberste = a.dokumente.filter(d => !d.unter || !idsHier.has(d.unter));
+    let oberste = a.dokumente.filter(d => !d.unter || !idsHier.has(d.unter));
+    // CCCXXXI — neueste oben: nach Jahr, dann Dateiname absteigend.
+    oberste = oberste.slice().sort((x, y) => (y.jahr || 0) - (x.jahr || 0)
+      || String(y.dateiname).localeCompare(String(x.dateiname), 'de'));
+    const kopf = `<button class="zkopf" data-bast="${esc(a.ordner)}"
+        aria-expanded="${offen}">
+        <span class="zi">${kostenIcon(ordnerIkon(a.ordner))}</span>
+        <span class="zt"><span class="zn">${esc(ordnerTitel(a))}</span>
+          <span class="zo">${esc(a.ordner || 'im Hauptordner')}</span></span>
+        <span class="zz">${a.offen ? `${a.offen} offen` : 'alles zugeordnet'}</span>
+        <span class="zpfeil${offen ? ' auf' : ''}" aria-hidden="true">›</span>
+      </button>`;
+    if (!offen) {
+      return `<section class="zweig zu" style="--zw:${farbe}">${kopf}</section>`;
+    }
+    // CCCXXXI — Jahres-Filter nur im Nebenkosten-Ordner (60_…), viele Belege.
+    const istNK = ordnerNr(a.ordner) === '60';
+    let jahre = [];
+    if (istNK) {
+      jahre = [...new Set(oberste.map(d => d.jahr).filter(Boolean))]
+        .sort((p, q) => q - p);
+      if (baumJahr) oberste = oberste.filter(d => String(d.jahr) === String(baumJahr));
+    }
     const alle = baumMehr.has(a.ordner);
     const docs = alle ? oberste : oberste.slice(0, PRO_AST);
     const fruechte = docs.map(d =>
       frucht(d, farbe) + (kinderVon.get(d.id) || [])
         .map(k => frucht(k, farbe, true)).join('')).join('');
     const rest = oberste.length - docs.length;
-    return `<section class="zweig" style="--zw:${farbe}">
-      <div class="zkopf">
-        <span class="zi">${kostenIcon(ordnerIkon(a.ordner))}</span>
-        <span class="zt"><span class="zn">${esc(ordnerTitel(a))}</span>
-          <span class="zo">${esc(a.ordner || 'im Hauptordner')}</span></span>
-        <span class="zz">${a.offen ? `${a.offen} offen` : 'alles zugeordnet'}</span>
-      </div>
+    const jahrLeiste = istNK && jahre.length > 1 ? `<div class="jahr-leiste">
+        <button class="jchip${!baumJahr ? ' an' : ''}" data-bjahr="">Alle</button>
+        ${jahre.map(j => `<button class="jchip${String(baumJahr) === String(j)
+          ? ' an' : ''}" data-bjahr="${j}">${j}</button>`).join('')}</div>` : '';
+    return `<section class="zweig" style="--zw:${farbe}">${kopf}
+      ${jahrLeiste}
       <div class="fruechte">${fruechte}</div>
       ${rest > 0 ? `<button class="mehrbtn" data-bmehr="${esc(a.ordner)}"
           >… ${rest} weitere zeigen</button>` : ''}
@@ -2487,14 +2524,11 @@ async function cloudZeigen() {
     // CCCXVI — schlank: nur „Ordner verknüpft", darunter die Filter und die
     // Dateiübersicht. Fehlende Unterordner legt ImmoCalc still selbst an; die
     // Ordner-Chipliste und der Knopf sind weg (wenig gewinnbringend).
-    ziel.innerHTML = `<div class="cloudbox schlank"><div class="zeile">
-        <span class="sym fertig">✓</span>
-        <span class="txt">
-          <span class="t">Ordner verknüpft</span>
-          <span class="d">${esc(s.ordner)}</span>
-        </span></div>
-      </div>
-      <div id="dokbaum"></div>`;
+    // CCCXXXI — der verknüpfte Pfad steht klein/kursiv direkt unter dem
+    // Dokumentenablage-Header; die frühere „Ordner verknüpft"-Box entfällt.
+    const pfadEl = document.getElementById('ablagePfad');
+    if (pfadEl) pfadEl.textContent = s.ordner || '';
+    ziel.innerHTML = `<div id="dokbaum"></div>`;
     // Fehlt ein Unterordner der Vorlage, wird er im Hintergrund angelegt —
     // ohne Knopf. Erst prüfen (fehlend?), dann nur bei Bedarf anlegen.
     ordnerAutoAnlegen();
@@ -3601,6 +3635,17 @@ inhalt.addEventListener('click', async e => {
   }
   const bm = e.target.closest('[data-bmehr]');
   if (bm) { baumMehr.add(bm.dataset.bmehr); baumMalen(); return; }
+  // CCCXXXI — Ordnerkopf antippen: auf-/zuklappen.
+  const ba = e.target.closest('[data-bast]');
+  if (ba) {
+    const o = ba.dataset.bast;
+    if (baumOffen.has(o)) baumOffen.delete(o); else baumOffen.add(o);
+    baumMalen();
+    return;
+  }
+  // CCCXXXI — Jahres-Filter im Nebenkosten-Ordner.
+  const bj = e.target.closest('[data-bjahr]');
+  if (bj) { baumJahr = bj.dataset.bjahr; baumMalen(); return; }
   // CCCXXI — auf das Statuszeichen eines zugeordneten Belegs tippen: umhängen.
   // Erst die alte Zuordnung lösen, dann den Zuordnen-Dialog wie sonst.
   const um = e.target.closest('[data-umhaengen]');
