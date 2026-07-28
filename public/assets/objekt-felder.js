@@ -448,6 +448,21 @@ const EINHEITFELDER = [
     einheit: 'm²', lex: 'nebenflaeche' },
   { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1',
     lex: 'stellplatz' },
+  // CCCXXXIII — €/m²-Ansätze je Flächenart. Aus ihnen leitet ImmoCalc eine
+  // Kaltmiete her, die das Miet-Formular als überschreibbaren Vorschlag anbietet.
+  // Der Mietpreis selbst gehört ans Mietverhältnis, nicht an die Einheit —
+  // hier steht nur der Ansatz je Quadratmeter. Alle optional.
+  { k: 'miete_qm_wohn', l: 'Miete je m² Wohn-/Nutzfläche', typ: 'number',
+    schritt: '0.01', geld: true,
+    note: 'Optional. Kaltmiete je m² Wohn-/Nutzfläche (inkl. voller '
+        + 'Zusatz-Nutzflächen). Dient nur zum Herleiten eines Mietvorschlags — '
+        + 'die tatsächliche Kaltmiete steht am Mietverhältnis.' },
+  { k: 'miete_qm_neben', l: 'Miete je m² Nebenfläche', typ: 'number',
+    schritt: '0.01', geld: true,
+    note: 'Optional. Kaltmiete je m² Nebenfläche (Keller, Abstellraum).' },
+  { k: 'miete_qm_gemein', l: 'Miete je m² Gemeinschaftsfläche', typ: 'number',
+    schritt: '0.01', geld: true,
+    note: 'Optional. Kaltmiete je m² anteiliger Gemeinschaftsfläche.' },
   // CLXXXVI — ein Verkehrswert je Einheit. Nur pflegen, wo er bekannt ist;
   // sonst bleibt der Wert am Haus maßgeblich. Er gewichtet die Zurechnung des
   // Objektwerts auf die Eigentümer.

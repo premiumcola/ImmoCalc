@@ -150,6 +150,15 @@ class Einheit(SQLModel, table=True):
     # der Wohnfläche (z. B. ein separates Bad). Leerer Bestand („[]") lässt
     # jede bestehende Verteilung unverändert.
     nutzflaechen: str = "[]"
+    # CCCXXXIII: €/m²-Ansätze je Flächenart. Aus ihnen leitet die Oberfläche
+    # eine Kaltmiete her (Flächen × €/m²) und bietet sie im Miet-Formular als
+    # überschreibbaren Vorschlag an. Der Mietpreis selbst gehört NICHT an die
+    # Einheit — die tatsächliche Kaltmiete lebt am Mietverhältnis
+    # (`Miete.kaltmiete`); hier steht nur der Ansatz je Quadratmeter. Alle
+    # optional/None, additiv: ein Bestand ohne Ansatz bleibt unverändert.
+    miete_qm_wohn: Optional[float] = None    # €/m² Wohn-/Nutzfläche (inkl. voller Zusatz-Nutzflächen)
+    miete_qm_neben: Optional[float] = None   # €/m² Nebenfläche
+    miete_qm_gemein: Optional[float] = None  # €/m² anteilige Gemeinschaftsfläche
 
     def gemein_flaeche(self) -> float:
         """Der anteilige Flächenbeitrag der Gemeinschaftsflächen: Summe über

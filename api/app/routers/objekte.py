@@ -465,6 +465,11 @@ class EinheitNeu(BaseModel):
     gemeinflaechen: Optional[list] = None
     # CCCXXIX: zusätzliche Nutzflächen [{bezeichnung, flaeche}, …] — voll gezählt.
     nutzflaechen: Optional[list] = None
+    # CCCXXXIII: €/m²-Ansätze je Flächenart — Grundlage der hergeleiteten
+    # Kaltmiete (Vorschlag im Miet-Formular). Alle optional/None.
+    miete_qm_wohn: Optional[float] = None
+    miete_qm_neben: Optional[float] = None
+    miete_qm_gemein: Optional[float] = None
 
 
 def _einheit(session: Session, eid: int) -> Einheit:
@@ -643,7 +648,11 @@ def einheit_anlegen(slug: str, data: EinheitNeu,
                 gemeinflaechen=json.dumps(_gemein_bereinigt(data.gemeinflaechen or []),
                                           ensure_ascii=False),
                 nutzflaechen=json.dumps(_nutz_bereinigt(data.nutzflaechen or []),
-                                        ensure_ascii=False))
+                                        ensure_ascii=False),
+                # CCCXXXIII — €/m²-Ansätze je Flächenart (optional).
+                miete_qm_wohn=data.miete_qm_wohn,
+                miete_qm_neben=data.miete_qm_neben,
+                miete_qm_gemein=data.miete_qm_gemein)
     session.add(e)
     session.commit()
     session.refresh(e)
@@ -662,7 +671,9 @@ def einheit_aendern(eid: int, data: dict,
     e = _einheit(session, eid)
     erlaubt = {"bezeichnung", "nutzungsart", "flaeche", "terrasse",
                "nebenflaeche", "stellplaetze", "nk_abrechnung", "verkehrswert",
-               "gemeinflaechen", "nutzflaechen"}
+               "gemeinflaechen", "nutzflaechen",
+               # CCCXXXIII — €/m²-Ansätze je Flächenart
+               "miete_qm_wohn", "miete_qm_neben", "miete_qm_gemein"}
     daten = dict(data)
     # CCCXXVII — die Gemeinschaftsflächen kommen als Liste und werden als JSON
     # gespeichert (das Modell hält eine Zeichenkette).

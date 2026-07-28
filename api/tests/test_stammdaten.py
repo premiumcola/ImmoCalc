@@ -445,3 +445,36 @@ def test_fehlendes_pflichtfeld_ist_400_kein_500():
                          json={"bank": "Sparkasse", "restschuld": 100000})
         assert antwort.status_code == 400
         assert "bezeichnung" in antwort.json()["detail"].lower()
+
+
+def test_miete_qm_ansaetze_werden_gespeichert_und_zurueckgeliefert():
+    """CCCXXXIII — die drei €/m²-Ansätze je Flächenart überleben Anlegen und
+    Ändern und kommen unverfälscht aus der Einheitenliste zurück.
+
+    Sie tragen keinen Mietpreis an der Einheit, nur den Ansatz je Quadratmeter;
+    hergeleitet wird daraus eine Kaltmiete, die das Frontend als Vorschlag
+    anbietet. Alle drei sind optional (Default None)."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Ansatzweg 3"}).json()["slug"]
+
+        # Anlegen mit €/m²-Ansätzen (nur Wohn und Neben gesetzt, Gemein leer).
+        neu = c.post(f"/api/objekte/{slug}/einheiten", json={
+            "bezeichnung": "EG", "flaeche": 50.0, "nebenflaeche": 10.0,
+            "miete_qm_wohn": 12.5, "miete_qm_neben": 4.0})
+        assert neu.status_code == 201
+        eid = neu.json()["id"]
+
+        liste = c.get(f"/api/objekte/{slug}/einheiten").json()
+        e = next(x for x in liste if x["id"] == eid)
+        assert e["miete_qm_wohn"] == 12.5
+        assert e["miete_qm_neben"] == 4.0
+        assert e["miete_qm_gemein"] is None      # optional, nie erzwungen
+
+        # Ändern: Gemein nachtragen, Wohn korrigieren.
+        assert c.patch(f"/api/einheiten/{eid}", json={
+            "miete_qm_wohn": 13.0, "miete_qm_gemein": 2.0}).status_code == 200
+        e = next(x for x in c.get(f"/api/objekte/{slug}/einheiten").json()
+                 if x["id"] == eid)
+        assert e["miete_qm_wohn"] == 13.0
+        assert e["miete_qm_neben"] == 4.0        # unverändert
+        assert e["miete_qm_gemein"] == 2.0
