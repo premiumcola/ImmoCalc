@@ -79,6 +79,8 @@ const ZUORDNUNG = [
   // sonst sähen die beiden Rubriken gleich aus (CCCIV).
   ['notarvertrag', 'vertrag'], ['notar', 'vertrag'],
   ['finanzamt', 'paragraf'], ['dokument', 'brief'],
+  // „haus" ganz zuletzt: hausmeister/hausverwaltung oben haben Vorrang.
+  ['haus', 'haus'],
 ];
 
 /** Symbolname zu einer Kostenart — mit Rückfall auf einen neutralen Punkt. */
