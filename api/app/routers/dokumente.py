@@ -1061,6 +1061,122 @@ _ZUORDNUNG_MODELLE = (
     (Zahlung, "zahlungen"),
 )
 
+# CCCX/CCCXI — an welchen bestehenden Eintrag sich ein Beleg hängen lässt:
+# Kurzname (`an_typ`) → Modell und Rubrik der Objektansicht.
+_AN_TYP_MODELLE = {
+    "notarvertrag": (Notarvertrag, "notarvertraege"),
+    "zahlung": (Zahlung, "zahlungen"),
+    "kredit": (Kredit, "kredite"),
+    "versicherung": (Versicherung, "versicherungen"),
+    "miete": (Miete, "mieten"),
+    "kostenposition": (Kostenposition, "Nebenkosten"),
+}
+
+# Rubrik eines Info-Belegs im Dokumentenbaum. „objekt" ist der Beleg, der zur
+# Immobilie als Ganzes gehört und an keinem einzelnen Eintrag hängt.
+_INFO_RUBRIK = {typ: rubrik for typ, (_m, rubrik) in _AN_TYP_MODELLE.items()}
+_INFO_RUBRIK["objekt"] = "objekt"
+
+
+def _dateien_im_objekt(client, o: Objekt) -> dict[str, str]:
+    """Wo welche Datei der Immobilie wirklich liegt: Dateiname → Cloud-Pfad.
+
+    Angesehen werden der Hauptordner und eine Ebene darunter — tiefer legt die
+    App nichts ab. Der erste Fund gewinnt. Rein lesend."""
+    wo: dict[str, str] = {}
+    wurzel = (o.nc_ordner or "").strip("/")
+    if not wurzel:
+        return wo
+    ebenen = [wurzel] + [f"{wurzel}/{e.name}" for e in client.liste(wurzel)
+                         if e.ordner]
+    for ordner in ebenen:
+        try:
+            for e in client.liste(ordner):
+                if not e.ordner:
+                    wo.setdefault(e.name, f"/{ordner}/{e.name}")
+        except NextcloudFehler:
+            continue
+    return wo
+
+
+def _pfad_belegt_von(session: Session, pfad: str,
+                     ausser_id: Optional[int]) -> Optional[int]:
+    """Die Id eines ANDEREN Dokuments, das diesen Pfad schon hält — sonst None.
+
+    `dokument.pfad` ist eindeutig (`migrate.eindeutigkeit_sichern`): ein Pfad,
+    ein Eintrag. Zeigen nach einer Berichtigung zwei Einträge auf dieselbe
+    Datei — etwa ein Alteintrag unter dem alten Dateinamen und der neue —,
+    scheitert der Commit. Deshalb wird vorher gefragt, nicht hinterher."""
+    treffer = session.exec(select(Dokument).where(
+        Dokument.pfad == pfad, Dokument.id != ausser_id)).first()
+    return treffer.id if treffer else None
+
+
+def _pfad_heilen(session: Session, client, d: Dokument) -> str:
+    """Sucht eine vermisste Datei unter ihrem Namen im Objektordner (CCCVII).
+
+    Dieselbe Suche wie in `pfade_reparieren`, nur für einen einzelnen Beleg —
+    damit die Vorschau sich selbst heilt, statt „Datei nicht gefunden" zu
+    melden, obwohl die Datei nur einen Ordner tiefer liegt. Zurück kommt der
+    gefundene Pfad (leer, wenn sie nirgends liegt).
+
+    Der gespeicherte Pfad wird nur dann berichtigt, wenn ihn kein anderes
+    Dokument hält; sonst bleibt die Datenbank unberührt und der Aufrufer liest
+    trotzdem aus dem gefundenen Pfad. Verschoben oder gelöscht wird nichts."""
+    o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
+    if not o or not o.nc_ordner:
+        return ""
+    try:
+        wo = _dateien_im_objekt(client, o)
+    except NextcloudFehler as fehler:
+        log.info("Pfad nicht heilbar (%s): %s", d.dateiname, fehler)
+        return ""
+    richtig = wo.get(d.dateiname) or ""
+    if not richtig or richtig == d.pfad:
+        return richtig
+    belegt = _pfad_belegt_von(session, richtig, d.id)
+    if belegt:
+        # Ein anderer Eintrag hält diesen Pfad schon. Die Vorschau bekommt den
+        # gefundenen Pfad trotzdem — nur gespeichert wird nichts.
+        log.info("Pfad %s schon von Dokument #%s belegt — nur gelesen",
+                 richtig, belegt)
+        return richtig
+    alt = d.pfad
+    d.pfad = richtig
+    if d.status == VERMISST:
+        d.status = "zugeordnet"
+    session.add(d)
+    try:
+        session.commit()
+    except IntegrityError:
+        # Nebenläufig dazwischengekommen: lieber alles lassen, wie es war.
+        session.rollback()
+        log.info("Pfad nicht gespeichert (Konflikt): %s → %s", alt, richtig)
+        return richtig
+    log.info("Pfad geheilt: %s → %s", alt, richtig)
+    return richtig
+
+
+def _datei_holen(session: Session, client, d: Dokument) -> tuple[bytes, str]:
+    """Die Datei zu einem Beleg — selbstheilend (CCCVII).
+
+    Zeigt der gespeicherte Pfad ins Leere (die Datei wurde in der Nextcloud in
+    einen Unterordner gezogen), wird sie einmalig im Objektordner gesucht, der
+    Pfad — wo möglich — berichtigt und die Datei dann normal geliefert. Erst
+    wenn sie wirklich nirgends liegt, kommt der bisherige Fehler."""
+    try:
+        return client.hole(d.pfad)
+    except NextcloudFehler as fehler:
+        if "nicht gefunden" not in str(fehler).lower():
+            raise HTTPException(400, str(fehler)) from fehler
+        richtig = _pfad_heilen(session, client, d)
+        if not richtig:
+            raise HTTPException(400, str(fehler)) from fehler
+    try:
+        return client.hole(richtig)
+    except NextcloudFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+
 
 @router.post("/objekt/{slug}/pfade-reparieren")
 def pfade_reparieren(slug: str, vorschau: bool = False,
@@ -1071,7 +1187,12 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
     beim Einsortieren), zeigt der gespeicherte Pfad ins Leere — die Vorschau
     meldet dann „Datei nicht gefunden". Hier wird jede vermisste Datei in den
     Unterordnern des Objekts unter ihrem Namen gesucht und der Pfad berichtigt.
-    Verschoben oder gelöscht wird nichts."""
+    Verschoben oder gelöscht wird nichts.
+
+    Ein Pfad, ein Eintrag: hält bereits ein anderes Dokument den berichtigten
+    Pfad (zwei Einträge zu derselben Datei), wird dieser Eintrag übersprungen
+    und in `uebersprungen` mitgezählt — statt den Commit an der Eindeutigkeit
+    scheitern zu lassen."""
     o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
@@ -1079,23 +1200,14 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
         raise HTTPException(400, "Für dieses Objekt ist kein Ordner verknüpft.")
     client = verbindung(session)
 
-    # Wo liegt welche Datei wirklich? Hauptordner + eine Ebene darunter.
-    wo: dict[str, str] = {}
-    wurzel = o.nc_ordner.strip("/")
+    # Wo liegt welche Datei wirklich? Hauptordner + eine Ebene darunter —
+    # dieselbe Suche, die auch die Vorschau einzeln benutzt (`_pfad_heilen`).
     try:
-        ebenen = [wurzel] + [f"{wurzel}/{e.name}" for e in client.liste(wurzel)
-                             if e.ordner]
+        wo = _dateien_im_objekt(client, o)
     except NextcloudFehler as fehler:
         raise HTTPException(400, str(fehler)) from fehler
-    for ordner in ebenen:
-        try:
-            for e in client.liste(ordner):
-                if not e.ordner:
-                    wo.setdefault(e.name, f"/{ordner}/{e.name}")
-        except NextcloudFehler:
-            continue
 
-    geprueft = berichtigt = 0
+    geprueft = berichtigt = uebersprungen = 0
     proben: list[str] = []
     for d in session.exec(select(Dokument).where(Dokument.objekt_id == o.id)).all():
         if _ist_sidecar(d.dateiname):
@@ -1103,6 +1215,15 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
         geprueft += 1
         richtig = wo.get(d.dateiname)
         if not richtig or richtig == d.pfad:
+            continue
+        belegt = _pfad_belegt_von(session, richtig, d.id)
+        if belegt:
+            # Zwei Einträge zu derselben Datei — der zweite bliebe an der
+            # Eindeutigkeit hängen. Also stehen lassen und ehrlich melden.
+            uebersprungen += 1
+            if len(proben) < 10:
+                proben.append(f"{d.dateiname}: übersprungen — Pfad schon von "
+                              f"Dokument #{belegt} belegt")
             continue
         if len(proben) < 10:
             proben.append(f"{d.dateiname}: {d.pfad} → {richtig}")
@@ -1113,10 +1234,23 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
             session.add(d)
         berichtigt += 1
     if not vorschau:
-        session.commit()
-    log.info("Pfade repariert (%s): %d von %d", slug, berichtigt, geprueft)
+        try:
+            session.commit()
+        except IntegrityError as fehler:
+            # Rest-Konflikt (nebenläufig dazwischengekommen): nichts speichern
+            # ist besser als ein 500er. Die Datei bleibt unangetastet.
+            session.rollback()
+            log.warning("Pfade reparieren (%s): Konflikt beim Speichern: %s",
+                        slug, fehler)
+            proben.append("Nicht gespeichert: ein Zielpfad ist doppelt belegt.")
+            return {"vorschau": vorschau, "geprueft": geprueft, "berichtigt": 0,
+                    "uebersprungen": uebersprungen + berichtigt,
+                    "proben": proben}
+    log.info("Pfade repariert (%s): %d von %d, %d übersprungen",
+             slug, berichtigt, geprueft, uebersprungen)
     return {"vorschau": vorschau, "geprueft": geprueft,
-            "berichtigt": berichtigt, "proben": proben}
+            "berichtigt": berichtigt, "uebersprungen": uebersprungen,
+            "proben": proben}
 
 
 @router.get("/objekt/{slug}/baum")
@@ -1146,10 +1280,17 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
         # Eine Kostenposition zählt auch über `position_id` als Zuordnung —
         # so gilt ein in die Abrechnung eingerechneter Beleg als erledigt.
         rubrik = haengt_an.get(d.id) or ("Nebenkosten" if d.position_id else "")
+        # CCCX: ein Info-Beleg hängt an einem Eintrag, ohne ihn hervorgebracht
+        # zu haben — auch er ist zugeordnet, wird aber anders gezeichnet.
+        info = False
+        if not rubrik and (d.info_zu_typ or ""):
+            rubrik = _INFO_RUBRIK.get(d.info_zu_typ, "objekt")
+            info = True
         ast["dokumente"].append({
             "id": d.id, "dateiname": d.dateiname, "jahr": d.jahr,
             "betrag": d.betrag, "kostenart": d.kostenart,
             "status": d.status, "zugeordnet": bool(rubrik), "rubrik": rubrik,
+            "info": info,
         })
 
     for ast in aeste.values():
@@ -2078,9 +2219,84 @@ _ENTWURF_BAUER = {
     "Notarvertrag": _entwurf_notarvertrag,
 }
 
+# CCCIX — dieselben Baupläne, adressiert über die Rubrik statt über die
+# Kategorie: so lässt sich ein Beleg der Kategorie „Sonstiges" bewusst als
+# Notarvertrag anlegen, ohne ihn vorher umzuetikettieren.
+_ZIEL_BAUER = {
+    "nebenkosten": _entwurf_nebenkosten,
+    "mieten": _entwurf_miete,
+    "versicherungen": _entwurf_versicherung,
+    "kredite": _entwurf_kredit,
+    "notarvertraege": _entwurf_notarvertrag,
+    "zahlungen": _entwurf_steuer,
+}
+
+
+def _gehoert_zum_objekt(session: Session, eintrag, o: Objekt) -> bool:
+    """Hängt dieser Eintrag an derselben Immobilie? Eine Kostenposition hängt
+    nur mittelbar daran — über ihren Zeitraum."""
+    if isinstance(eintrag, Kostenposition):
+        z = session.get(Zeitraum, eintrag.zeitraum_id)
+        return bool(z and z.objekt_id == o.id)
+    return getattr(eintrag, "objekt_id", None) == o.id
+
+
+def _eintrag_wo(eintrag) -> str:
+    """Wie ein bestehender Eintrag in der Antwort heisst — dieselbe knappe
+    Benennung wie in den `_entwurf_*`-Bauplänen."""
+    if isinstance(eintrag, Notarvertrag):
+        return eintrag.art or "Notarvertrag"
+    if isinstance(eintrag, Zahlung):
+        return f"{eintrag.art} {eintrag.jahr}".strip()
+    if isinstance(eintrag, Kredit):
+        return eintrag.bezeichnung or "Kredit"
+    if isinstance(eintrag, Versicherung):
+        return eintrag.art or "Versicherung"
+    if isinstance(eintrag, Miete):
+        return eintrag.partei or eintrag.einheit or "Mietverhältnis"
+    if isinstance(eintrag, Kostenposition):
+        return eintrag.kostenart or "Kostenposition"
+    return type(eintrag).__name__
+
+
+def _eintrag_holen(session: Session, an_typ: str, an_id: Optional[int],
+                   o: Objekt):
+    """Der bestehende Eintrag, an den der Beleg gehängt werden soll (CCCXI).
+
+    Gibt Eintrag und Rubrik zurück. Ein unbekannter Typ, eine fehlende Id oder
+    ein Eintrag einer anderen Immobilie werden sauber gemeldet, statt still
+    etwas Falsches zu verknüpfen."""
+    paar = _AN_TYP_MODELLE.get(an_typ)
+    if not paar:
+        raise HTTPException(400, f"Unbekannter Eintragstyp „{an_typ}“")
+    if not an_id:
+        raise HTTPException(400, "Zu diesem Eintragstyp fehlt die Id.")
+    modell, rubrik = paar
+    eintrag = session.get(modell, an_id)
+    if not eintrag:
+        raise HTTPException(404, "Der gewählte Eintrag wurde nicht gefunden.")
+    if not _gehoert_zum_objekt(session, eintrag, o):
+        raise HTTPException(400, "Der Eintrag gehört zu einer anderen Immobilie.")
+    return eintrag, rubrik
+
+
+class ZuordnenIn(BaseModel):
+    """Wohin ein Beleg gehört — alles freiwillig (CCCIX/CCCX/CCCXI).
+
+    Ohne Body bleibt es beim alten Weg: die Kategorie bestimmt den Bauplan."""
+    # Rubrik statt Kategorie: 'notarvertraege' | 'zahlungen' | 'kredite' |
+    # 'versicherungen' | 'mieten' | 'nebenkosten'
+    ziel: Optional[str] = ""
+    # 'position' = ein Datensatz entsteht · 'beleg' = nur ein Info-Beleg
+    art: Optional[str] = "position"
+    # bestehender Eintrag: 'notarvertrag' | 'zahlung' | 'kredit' |
+    # 'versicherung' | 'miete' | 'kostenposition' | 'objekt' | null
+    an_typ: Optional[str] = ""
+    an_id: Optional[int] = None
+
 
 @router.post("/{dokument_id}/zuordnen")
-def zuordnen(dokument_id: int,
+def zuordnen(dokument_id: int, data: Optional[ZuordnenIn] = None,
              session: Session = Depends(get_session)) -> dict:
     """Legt aus dem Beleg einen vorläufigen (orange) Datensatz an (CCLXXVIII).
 
@@ -2089,6 +2305,15 @@ def zuordnen(dokument_id: int,
     Kredit. Andere Kategorien legen nichts an (`angelegt: []`). Alle Datensätze
     tragen `vorlaeufig=True` und `quelle_dokument_id`; idempotent — ein zweiter
     Aufruf findet den vorhandenen Entwurf wieder, statt einen zweiten zu bauen.
+
+    Der Body ist freiwillig; ohne ihn bleibt alles wie bisher (CCCIX):
+
+    * `ziel` schlägt die Kategorie — ein Beleg unter „Sonstiges" lässt sich so
+      bewusst als Notarvertrag anlegen.
+    * `art: "beleg"` legt gar keinen Datensatz an: der Beleg hängt nur als
+      Info an einem Eintrag — oder, ohne `an_*`, an der Immobilie (CCCX).
+    * `an_typ`/`an_id` hängen den Beleg an einen **bestehenden** Eintrag,
+      statt einen zweiten daneben zu bauen (CCCXI).
 
     Datensicher: nichts wird überschrieben, nur Neues additiv angelegt. Fehlt
     das Objekt, wird das ehrlich gemeldet statt in einen 500 zu laufen."""
@@ -2100,7 +2325,54 @@ def zuordnen(dokument_id: int,
         return {"ok": False, "angelegt": [],
                 "grund": "Dem Beleg fehlt die Immobilie — bitte zuerst zuordnen."}
 
-    bauer = _ENTWURF_BAUER.get((d.kategorie or "").strip())
+    wahl = data or ZuordnenIn()
+    ziel = (wahl.ziel or "").strip().lower()
+    art = (wahl.art or "position").strip().lower()
+    an_typ = (wahl.an_typ or "").strip().lower()
+    an_id = wahl.an_id
+    # „objekt" (und ein leer übergebenes null) meint: an keinem einzelnen
+    # Eintrag, sondern an der Immobilie selbst.
+    if an_typ in ("objekt", "null", "none"):
+        an_typ, an_id = "", None
+
+    eintrag = _eintrag_holen(session, an_typ, an_id, o)[0] if an_typ else None
+
+    # ---- Info-Beleg: kein Datensatz, nur ein Hinweis am Eintrag (CCCX) -----
+    if art == "beleg":
+        d.info_zu_typ = an_typ or "objekt"
+        d.info_zu_id = an_id if an_typ else o.id
+        woran = _eintrag_wo(eintrag) if eintrag else (o.name or o.slug)
+        session.add(d)
+        session.commit()
+        log.info("Dokument %s hängt als Info-Beleg an %s#%s", dokument_id,
+                 d.info_zu_typ, d.info_zu_id)
+        return {"ok": True, "info": True,
+                "angelegt": [{"typ": "Beleg", "id": d.id, "objekt": o.slug,
+                              "wo": woran}]}
+
+    # ---- an einen bestehenden Eintrag hängen, statt einen neuen zu bauen ---
+    if eintrag is not None:
+        d.info_zu_typ, d.info_zu_id = an_typ, an_id
+        session.add(d)
+        # Kennt der Eintrag noch keinen Quellbeleg, wird dieser es. Ein
+        # vorhandener Verweis bleibt unangetastet — nie überschreiben.
+        if getattr(eintrag, "quelle_dokument_id", None) is None:
+            eintrag.quelle_dokument_id = d.id
+            session.add(eintrag)
+        session.commit()
+        log.info("Dokument %s an bestehenden %s#%s gehängt", dokument_id,
+                 an_typ, an_id)
+        return {"ok": True,
+                "angelegt": [{"typ": type(eintrag).__name__, "id": eintrag.id,
+                              "objekt": o.slug, "wo": _eintrag_wo(eintrag)}]}
+
+    # ---- neuer vorläufiger Datensatz: Rubrik schlägt Kategorie (CCCIX) -----
+    if ziel:
+        bauer = _ZIEL_BAUER.get(ziel)
+        if not bauer:
+            raise HTTPException(400, f"Unbekanntes Ziel „{wahl.ziel}“")
+    else:
+        bauer = _ENTWURF_BAUER.get((d.kategorie or "").strip())
     if not bauer:
         return {"ok": True, "angelegt": [],
                 "grund": f"Für die Kategorie „{d.kategorie or 'unbekannt'}“ "
@@ -2531,10 +2803,7 @@ def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Respons
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     client = verbindung(session)
-    try:
-        rohdaten, typ = client.hole(d.pfad)
-    except NextcloudFehler as e:
-        raise HTTPException(400, str(e)) from e
+    rohdaten, typ = _datei_holen(session, client, d)
     # Nextcloud liefert für unbekannte Endungen octet-stream; das laedt der
     # Browser herunter, statt es anzuzeigen.
     if typ == "application/octet-stream" and d.dateiname.lower().endswith(".pdf"):
@@ -2562,10 +2831,7 @@ def seiten(dokument_id: int,
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     client = verbindung(session)
-    try:
-        rohdaten, typ = client.hole(d.pfad)
-    except NextcloudFehler as e:
-        raise HTTPException(400, str(e)) from e
+    rohdaten, typ = _datei_holen(session, client, d)
     name = d.dateiname.lower()
     if name.endswith(".pdf") or typ == "application/pdf":
         anzahl = ocr.seiten_anzahl(rohdaten)
@@ -2595,10 +2861,7 @@ def vorschau(dokument_id: int,
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     client = verbindung(session)
-    try:
-        rohdaten, typ = client.hole(d.pfad)
-    except NextcloudFehler as e:
-        raise HTTPException(400, str(e)) from e
+    rohdaten, typ = _datei_holen(session, client, d)
     name = d.dateiname.lower()
     if name.endswith(".pdf") or typ == "application/pdf":
         anzahl = ocr.seiten_anzahl(rohdaten)

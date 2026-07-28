@@ -342,9 +342,20 @@ def test_einheit_anteile_pro_einheit_stimmig():
         stand = c.get(f"/api/objekte/{slug}/anteile").json()
         assert stand["stimmig"] is True
         assert stand["objekt_noetig"] is False
-        # Wohnung 2 nur halb verteilt -> unstimmig
+
+        # CCCVIII: „Wohnung 2" ist mit 1000 ‰ voll — ein weiterer Anteil darf
+        # dort nicht mehr angelegt werden (früher entstand still eine Summe von
+        # 1500 ‰, die nur als „unstimmig" auffiel).
+        antwort = c.post(f"/api/objekte/{slug}/anteile",
+                         json={"eigentuemer_id": a, "promille": 500,
+                               "einheit": "Wohnung 2"})
+        assert antwort.status_code == 400
+        assert "1000" in antwort.json()["detail"]
+
+        # Unstimmig wird es weiterhin, wenn zu WENIG verteilt ist: B auf 500 ‰
+        # verkleinern lässt 500 ‰ von „Wohnung 2" offen.
         c.post(f"/api/objekte/{slug}/anteile",
-               json={"eigentuemer_id": a, "promille": 500, "einheit": "Wohnung 2"})
+               json={"eigentuemer_id": b, "promille": 500, "einheit": "Wohnung 2"})
         stand = c.get(f"/api/objekte/{slug}/anteile").json()
         assert stand["stimmig"] is False
 

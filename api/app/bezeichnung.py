@@ -238,6 +238,8 @@ STANDARD_UNTERORDNER = {
     # Unterordner braucht das Wort nicht zu wiederholen — nur das Jahr. Alte
     # „Steuer_JJJJ"-Ordner werden weiter gefunden (unterordner_finden).
     "Steuer": "{jahr}",
+    # CCCII — notariell beurkundete Verträge liegen bei Kauf/Eigentum.
+    "Notarvertrag": "{jahr}",
     "Kredit": "{jahr}",
     "Versicherung": "{jahr}",
     "Mietvertrag": "{jahr}",

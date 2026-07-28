@@ -644,3 +644,14 @@ class Dokument(SQLModel, table=True):
     ki_felder: dict = Field(default_factory=dict, sa_column=Column(JSON))
     ki_immobilie: str = ""
     ki_einheit: str = ""
+    # CCCX: der Info-Beleg. Nicht jeder Beleg begründet einen eigenen Datensatz
+    # — die Bestätigung zum Kaufvertrag, das Anschreiben zur Police, der
+    # Zahlungsnachweis zur Grundsteuer erläutern nur einen vorhandenen Eintrag.
+    # `info_zu_typ` sagt woran ('notarvertrag' | 'zahlung' | 'kredit' |
+    # 'versicherung' | 'miete' | 'kostenposition' | 'objekt'), `info_zu_id`
+    # welcher Eintrag es ist (beim Objekt dessen Id). Bewusst getrennt von
+    # `quelle_dokument_id` am Datensatz: der Beleg hat den Eintrag nicht
+    # hervorgebracht, er hängt nur daran. Additiv mit Default: migrate.py legt
+    # die Spalten für den Bestand an, ein Beleg ohne Info bleibt unverändert.
+    info_zu_typ: str = ""
+    info_zu_id: Optional[int] = None
