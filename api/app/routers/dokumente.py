@@ -1253,52 +1253,82 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
             "proben": proben}
 
 
+def _ordner_aus_pfad(pfad: str, wurzel: str) -> str:
+    """Der echte Unterordner, in dem eine Datei liegt (CCCXVI).
+
+    Aus `pfad` wird der Teil unter dem Objektordner genommen; der erste
+    Abschnitt davon ist der Ordner. Liegt die Datei direkt im Hauptordner,
+    ist das Ergebnis leer ("") — sie ist frisch hereingekommen."""
+    p = (pfad or "").strip("/")
+    w = (wurzel or "").strip("/")
+    if w and p.startswith(w):
+        p = p[len(w):].strip("/")
+    teile = p.split("/")
+    return teile[0] if len(teile) > 1 else ""
+
+
+def _ordner_titel(ordner: str) -> str:
+    """Der Ordnername lesbar: „40_Kauf_Eigentum_Finanzierung" → „Kauf Eigentum
+    Finanzierung". Leer heißt Hauptordner (frisch hereingekommen)."""
+    if not ordner:
+        return "Neu / Hauptordner"
+    ohne_nr = ordner.split("_", 1)[-1] if ordner[:2].isdigit() else ordner
+    return ohne_nr.replace("_", " ").strip() or ordner
+
+
 @router.get("/objekt/{slug}/baum")
 def baum(slug: str, session: Session = Depends(get_session)) -> dict:
-    """Dokumentenbaum je Kategorie — mit der Auskunft, was schon an einem
-    Eintrag hängt und was noch offen ist."""
+    """Dokumentenbaum nach dem ECHTEN Ordner (CCCXVI): jeder Ast ist ein
+    Nextcloud-Unterordner, so wie er in Windows steht. Untergeordnete Info-
+    Belege stehen eingerückt unter ihrer Hauptdatei (CCCXVII)."""
     o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
 
-    # Woran hängt ein Beleg? (Beleg-Id → Rubrik des Datensatzes)
+    # Woran hängt ein Beleg? (Beleg-Id → Rubrik) und: welcher Datensatz stammt
+    # aus welchem Beleg (Datensatz → Quell-Beleg), um die Hierarchie zu bauen.
     haengt_an: dict[int, str] = {}
+    quelle_von: dict[tuple[str, int], int] = {}   # (typ, id) → Quell-Beleg-Id
+    typname = {Notarvertrag: "notarvertrag", Zahlung: "zahlung", Kredit: "kredit",
+               Versicherung: "versicherung", Miete: "miete",
+               Kostenposition: "kostenposition", Bewohner: "bewohner"}
     for modell, rubrik in _ZUORDNUNG_MODELLE:
         for e in session.exec(select(modell).where(
                 modell.quelle_dokument_id.is_not(None))).all():
             haengt_an.setdefault(e.quelle_dokument_id, rubrik)
+            quelle_von[(typname[modell], e.id)] = e.quelle_dokument_id
 
     dokumente = [d for d in session.exec(select(Dokument).where(
         Dokument.objekt_id == o.id)).all() if not _ist_sidecar(d.dateiname)]
 
     aeste: dict[str, dict] = {}
     for d in sorted(dokumente, key=lambda x: (-(x.jahr or 0), x.dateiname.lower())):
-        kat = (d.kategorie or "Sonstiges").strip() or "Sonstiges"
-        ast = aeste.setdefault(kat, {
-            "kategorie": kat, "ordner": ZIELORDNER.get(kat, "99_Sonstiges"),
-            "dokumente": []})
-        # Eine Kostenposition zählt auch über `position_id` als Zuordnung —
-        # so gilt ein in die Abrechnung eingerechneter Beleg als erledigt.
+        ordner = _ordner_aus_pfad(d.pfad, o.nc_ordner)
+        ast = aeste.setdefault(ordner, {
+            "ordner": ordner, "titel": _ordner_titel(ordner), "dokumente": []})
+        # Eine Kostenposition zählt auch über `position_id` als Zuordnung.
         rubrik = haengt_an.get(d.id) or ("Nebenkosten" if d.position_id else "")
-        # CCCX: ein Info-Beleg hängt an einem Eintrag, ohne ihn hervorgebracht
-        # zu haben — auch er ist zugeordnet, wird aber anders gezeichnet.
+        # CCCXVII: hängt der Beleg als Info an einem Eintrag, der selbst aus
+        # einem anderen Beleg stammt, ist jener andere Beleg seine Hauptdatei.
         info = False
+        unter = None
         if not rubrik and (d.info_zu_typ or ""):
             rubrik = _INFO_RUBRIK.get(d.info_zu_typ, "objekt")
             info = True
+            if d.info_zu_typ and d.info_zu_id:
+                unter = quelle_von.get((d.info_zu_typ, d.info_zu_id))
         ast["dokumente"].append({
             "id": d.id, "dateiname": d.dateiname, "jahr": d.jahr,
-            "betrag": d.betrag, "kostenart": d.kostenart,
+            "betrag": d.betrag, "kostenart": d.kostenart, "kategorie": d.kategorie,
             "status": d.status, "zugeordnet": bool(rubrik), "rubrik": rubrik,
-            "info": info,
+            "info": info, "unter": unter,
         })
 
     for ast in aeste.values():
         ast["anzahl"] = len(ast["dokumente"])
         ast["offen"] = sum(1 for x in ast["dokumente"] if not x["zugeordnet"])
 
-    # Reihenfolge wie die Ordner: nach Ordnernamen (10_, 30_, 40_ …)
-    reihe = sorted(aeste.values(), key=lambda a: (a["ordner"], a["kategorie"]))
+    reihe = sorted(aeste.values(), key=lambda a: (a["ordner"] or "￿"))
     return {
         "objekt": o.slug, "name": o.name,
         "gesamt": len(dokumente),
