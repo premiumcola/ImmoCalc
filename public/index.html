@@ -275,7 +275,12 @@ function kachel(o, feinste = false) {
         <span class="name">${esc(gross)}</span>
         ${unten}
       </span>
-      ${chips(o.frist_tage, o.offene_positionen)}
+      ${o.typ === 'lg-grundstueck'
+        // CCCV — ein Grundstück rechnet keine Nebenkosten ab: statt der
+        // § 556-Frist steht hier, worum es geht — die Flurnummer.
+        ? (o.flurstueck
+            ? `<span class="chip">${esc(o.flurstueck)}</span>` : '')
+        : chips(o.frist_tage, o.offene_positionen)}
     </button>`;
   return bub ? `<section class="mitbubbles">${knopf}${bub}</section>` : knopf;
 }

@@ -27,7 +27,9 @@ BESCHRIFTUNG = {
 # Sinnvolle Auswahl je Bereich. Mieten laufen monatlich, eine einmalige Miete
 # gibt es nicht; eine Steuerzahlung kann dagegen einmalig sein.
 AUSWAHL = {
-    "mieten": ["monatlich", "vierteljaehrlich"],
+    # Eine Miete läuft monatlich, eine Landpacht dagegen fast immer jährlich —
+    # deshalb stehen hier alle laufenden Turnusse zur Wahl (CCCV).
+    "mieten": ["monatlich", "vierteljaehrlich", "halbjaehrlich", "jaehrlich"],
     "versicherungen": ["jaehrlich", "halbjaehrlich", "vierteljaehrlich", "monatlich"],
     "kredite": ["monatlich", "vierteljaehrlich", "halbjaehrlich", "jaehrlich"],
     "zahlungen": ["jaehrlich", "vierteljaehrlich", "halbjaehrlich", "monatlich",

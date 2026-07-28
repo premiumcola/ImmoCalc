@@ -626,16 +626,16 @@ const PACHT = {
   titel: 'Pacht & Erträge', einzahl: 'Pachtverhältnis', ikon: 'Miete',
   felder: [
     { k: 'partei', l: 'Pächter', typ: 'text' },
-    { k: 'kaltmiete', l: 'Pachtzins je Turnus', typ: 'number', schritt: '0.01',
-      geld: true },
+    { k: 'kaltmiete', l: 'Pacht', typ: 'number', schritt: '0.01', geld: true,
+      note: 'Der Betrag je Zahlung — bei jährlicher Pacht also der Jahresbetrag.' },
     { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus', vorgabe: 'jaehrlich' },
     { k: 'ab_datum', l: 'Verpachtet ab', typ: 'date', pflicht: true },
     { k: 'bis_datum', l: 'Pacht endet am', typ: 'date' },
     { k: 'email', l: 'E-Mail', typ: 'email' },
     { k: 'telefon', l: 'Telefon', typ: 'tel' },
     { k: 'anschrift', l: 'Anschrift', typ: 'text' },
-    { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true,
-      lex: 'kaution' },
+    // Kaution gibt es bei einer Landpacht nicht — das Feld kommt hier gar
+    // nicht erst vor.
     { k: 'notiz', l: 'Notiz', typ: 'text' },
   ],
   name: e => e.partei || 'Pachtverhältnis',
@@ -1760,21 +1760,24 @@ async function feldHtml(f, bereich, wert) {
         Einheit wählen — sonst „Ganzes Haus". Einheit-Anteile haben Vorrang für
         ihre Einheit, der Haus-Anteil deckt den Rest.</span></div>`;
   }
+  // Turnus und Auswahllisten tragen dasselbe eigene Auswahlfeld wie `auswahl`
+  // — ein natives <select> zeichnet sonst das Betriebssystem und fällt aus dem
+  // Design der Seite (blaue Kästen, eckige Liste).
   if (f.typ === 'turnus') {
     const { optionen, vorgabe } = await turnusOptionen(bereich);
     const gewaehlt = wert ?? f.vorgabe ?? vorgabe;
-    return `<div class="field"><label for="${id}">${esc(f.l)}</label>
-      <select class="inp" id="${id}" name="${f.k}">
-        ${optionen.map(o => `<option value="${o.wert}"
-          ${o.wert === gewaehlt ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}
-      </select></div>`;
+    return `<div class="field"><label>${feldLabel(f)}</label>
+      <input type="hidden" id="${id}" name="${f.k}" value="${esc(gewaehlt)}">
+      <div data-auswahl="${esc(f.k)}" data-label="${esc(f.l)}"
+           data-optionen="${esc(JSON.stringify(optionen))}"></div>
+      ${f.note ? `<span class="feldnote">${esc(f.note)}</span>` : ''}</div>`;
   }
   if (f.typ === 'select') {
-    return `<div class="field"><label for="${id}">${esc(f.l)}</label>
-      <select class="inp" id="${id}" name="${f.k}">
-        ${f.werte.map(w => `<option ${w === wert ? 'selected' : ''}>${esc(w)}</option>`)
-          .join('')}
-      </select></div>`;
+    return `<div class="field"><label>${feldLabel(f)}</label>
+      <input type="hidden" id="${id}" name="${f.k}" value="${esc(wert ?? '')}">
+      <div data-auswahl="${esc(f.k)}" data-label="${esc(f.l)}"
+           data-optionen="${esc(JSON.stringify(f.werte))}"></div>
+      ${f.note ? `<span class="feldnote">${esc(f.note)}</span>` : ''}</div>`;
   }
   if (f.typ === 'ja_nein') {
     const ja = wert === undefined ? true : Boolean(wert);
@@ -1860,8 +1863,12 @@ function auswahlSetzen(form) {
   for (const halter of form.querySelectorAll('[data-auswahl]')) {
     const feld = form.elements[halter.dataset.auswahl];
     if (!feld) continue;
+    // Reine Zeichenketten (Nutzungsart, Erwerbsart …) oder Wert/Text-Paare
+    // (Turnus: „jaehrlich" heisst „jährlich").
     const optionen = JSON.parse(halter.dataset.optionen)
-      .map(w => ({ wert: w, text: w || 'nicht gewählt' }));
+      .map(w => (w && typeof w === 'object')
+        ? { wert: w.wert, text: w.text }
+        : { wert: w, text: w || 'nicht gewählt' });
     auswahlen.push(auswahlfeld(halter, {
       optionen, wert: feld.value, label: halter.dataset.label,
       aenderung: neu => {

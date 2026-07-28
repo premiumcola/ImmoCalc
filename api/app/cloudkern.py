@@ -83,6 +83,9 @@ STRUKTUR = sorted(set(STRUKTUR_GRUNDSTUECK + STRUKTUR_WEG + STRUKTUR_MFH))
 ZIELORDNER = {
     "Nebenkosten": "60_Nebenkosten",
     "Steuer": "70_Steuer_Finanzamt",
+    # CCCII — notariell beurkundete Verträge (Kauf, Auflassung, Grundschuld­
+    # bestellung) sind eine eigene Art: aus ihnen entsteht ein Notarvertrag.
+    "Notarvertrag": "40_Kauf_Eigentum_Finanzierung",
     "Kredit": "40_Kauf_Eigentum_Finanzierung",
     "Versicherung": "01_Allgemein_Hauskonto",
     "Mietvertrag": "20_Mietvertraege_Vermietung",

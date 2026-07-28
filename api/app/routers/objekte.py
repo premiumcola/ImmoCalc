@@ -146,6 +146,9 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
             "offene_positionen": offene.get(aktiv.id, 0) if aktiv else 0,
             "frist_tage": frist_tage(aktiv) if aktiv else None,
             "miete_monatlich": round(sum(m.kaltmiete for m in laufend), 2),
+            # CCCV — beim Grundstück trägt die Kachel die Flurnummer statt
+            # einer Nebenkostenfrist, die es dort nicht gibt.
+            "flurstueck": o.flurstueck, "gemarkung": o.gemarkung,
         })
     return out
 

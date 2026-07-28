@@ -36,7 +36,8 @@ from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import (Bewohner, Dokument, Erkennungsregel, Kostenposition,
-                      Kredit, Miete, Objekt, Versicherung, Zeitraum)
+                      Kredit, Miete, Notarvertrag, Objekt, Versicherung,
+                      Zeitraum)
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
@@ -1042,6 +1043,71 @@ def je_objekt(slug: str, session: Session = Depends(get_session)) -> list[dict]:
     return liste(objekt=slug, status="zugeordnet", session=session)["dokumente"]
 
 
+# --------------------------------------------------------------------------
+# CCXCIX — der Dokumentenbaum einer Immobilie
+#
+# Die Ablage als Gliederung: je Kategorie ein Ast (mit ihrem Cloud-Ordner),
+# daran die Dokumente. Entscheidend ist `zugeordnet`: hängt an dem Beleg schon
+# ein Datensatz (Kostenposition, Miete, Versicherung, Kredit, Notarvertrag) —
+# oder wartet er noch? Nur das Wartende muss der Nutzer anfassen.
+# --------------------------------------------------------------------------
+
+# Modelle, die per `quelle_dokument_id` auf einen Beleg zeigen, samt der
+# Rubrik, unter der sie in der Objektansicht stehen.
+_ZUORDNUNG_MODELLE = (
+    (Kostenposition, "Nebenkosten"), (Miete, "mieten"),
+    (Versicherung, "versicherungen"), (Kredit, "kredite"),
+    (Notarvertrag, "notarvertraege"), (Bewohner, "mieten"),
+)
+
+
+@router.get("/objekt/{slug}/baum")
+def baum(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Dokumentenbaum je Kategorie — mit der Auskunft, was schon an einem
+    Eintrag hängt und was noch offen ist."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+
+    # Woran hängt ein Beleg? (Beleg-Id → Rubrik des Datensatzes)
+    haengt_an: dict[int, str] = {}
+    for modell, rubrik in _ZUORDNUNG_MODELLE:
+        for e in session.exec(select(modell).where(
+                modell.quelle_dokument_id.is_not(None))).all():
+            haengt_an.setdefault(e.quelle_dokument_id, rubrik)
+
+    dokumente = [d for d in session.exec(select(Dokument).where(
+        Dokument.objekt_id == o.id)).all() if not _ist_sidecar(d.dateiname)]
+
+    aeste: dict[str, dict] = {}
+    for d in sorted(dokumente, key=lambda x: (-(x.jahr or 0), x.dateiname.lower())):
+        kat = (d.kategorie or "Sonstiges").strip() or "Sonstiges"
+        ast = aeste.setdefault(kat, {
+            "kategorie": kat, "ordner": ZIELORDNER.get(kat, "99_Sonstiges"),
+            "dokumente": []})
+        # Eine Kostenposition zählt auch über `position_id` als Zuordnung —
+        # so gilt ein in die Abrechnung eingerechneter Beleg als erledigt.
+        rubrik = haengt_an.get(d.id) or ("Nebenkosten" if d.position_id else "")
+        ast["dokumente"].append({
+            "id": d.id, "dateiname": d.dateiname, "jahr": d.jahr,
+            "betrag": d.betrag, "kostenart": d.kostenart,
+            "status": d.status, "zugeordnet": bool(rubrik), "rubrik": rubrik,
+        })
+
+    for ast in aeste.values():
+        ast["anzahl"] = len(ast["dokumente"])
+        ast["offen"] = sum(1 for x in ast["dokumente"] if not x["zugeordnet"])
+
+    # Reihenfolge wie die Ordner: nach Ordnernamen (10_, 30_, 40_ …)
+    reihe = sorted(aeste.values(), key=lambda a: (a["ordner"], a["kategorie"]))
+    return {
+        "objekt": o.slug, "name": o.name,
+        "gesamt": len(dokumente),
+        "offen": sum(a["offen"] for a in reihe),
+        "aeste": reihe,
+    }
+
+
 @router.get("/wachdienst")
 def wachdienst_status() -> dict:
     """Wann zuletzt automatisch nachgesehen wurde."""
@@ -1897,6 +1963,33 @@ def _entwurf_kredit(session: Session, d: Dokument, o: Objekt,
     return [{"typ": "Kredit", "id": k.id, "objekt": o.slug, "wo": bezeichnung}]
 
 
+def _entwurf_notarvertrag(session: Session, d: Dokument, o: Objekt,
+                          felder: dict) -> list[dict]:
+    """Vorläufiger Notarvertrag aus einer beurkundeten Urkunde (CCCII).
+
+    Was die KI im PDF nicht findet, bleibt leer — der Eintrag entsteht trotzdem,
+    damit der Vertrag samt PDF an seinem Platz steht und von Hand nachgepflegt
+    werden kann."""
+    if _schon_vorlaeufig(session, Notarvertrag, d.id):
+        n = _schon_vorlaeufig(session, Notarvertrag, d.id)
+        return [{"typ": "Notarvertrag", "id": n.id, "objekt": o.slug,
+                 "wo": f"{n.art} (schon angelegt)"}]
+    art = (_ki_text(felder.get("vertragsart")) or _ki_text(felder.get("art"))
+           or (d.kostenart or "").strip() or "Kaufvertrag")
+    n = Notarvertrag(
+        objekt_id=o.id, art=art,
+        notar=_ki_text(felder.get("notar")),
+        urnr=_ki_text(felder.get("urnr")) or _ki_text(felder.get("urkundenrolle")),
+        datum=_ki_datum(felder.get("datum")) or d.belegdatum,
+        betrag=_ki_zahl(felder.get("kaufpreis"))
+        or _ki_zahl(felder.get("betrag")) or 0.0,
+        beteiligte=_ki_text(felder.get("beteiligte")),
+        vorlaeufig=True, quelle_dokument_id=d.id)
+    session.add(n)
+    session.flush()
+    return [{"typ": "Notarvertrag", "id": n.id, "objekt": o.slug, "wo": art}]
+
+
 # Kategorie → Bauplan des vorläufigen Datensatzes. Was nicht hier steht
 # (Steuer, Hausverwaltung, Korrespondenz, Sonstiges), legt keinen an.
 _ENTWURF_BAUER = {
@@ -1904,6 +1997,7 @@ _ENTWURF_BAUER = {
     "Mietvertrag": _entwurf_miete,
     "Versicherung": _entwurf_versicherung,
     "Kredit": _entwurf_kredit,
+    "Notarvertrag": _entwurf_notarvertrag,
 }
 
 
