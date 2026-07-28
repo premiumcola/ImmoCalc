@@ -97,6 +97,23 @@
     .mitbubbles > .tile .ico{width:84px; height:84px; border-radius:20px}
   }
 
+  /* CCCXLIX — Cashflow-Indikator oben rechts in der Kachel. Schlicht: ein
+     kleiner runder Punkt mit Pfeil, gruen bei Ueberschuss, rot bei Fehlbetrag.
+     Kein Betrag, keine Zahl — nur die Richtung. `position:relative` auf .tile,
+     damit der Punkt in der Kachel sitzt (gehoert spaeter nach immo.css). */
+  .tile{position:relative}
+  .tile .cf{
+    position:absolute; top:12px; right:12px; width:26px; height:26px;
+    border-radius:999px; display:inline-flex; align-items:center;
+    justify-content:center; box-shadow:0 1px 2px rgba(22,38,44,.06);
+  }
+  .tile .cf svg{display:block; fill:currentColor}
+  .tile .cf.pos{background:var(--pos-bg); color:var(--pos)}
+  .tile .cf.neg{background:var(--neg-bg); color:var(--neg)}
+  /* In der breiten Bubble-Karte sitzt der Fuss (Chips) rechts — dort ruecken
+     wir den Punkt etwas hoeher, damit er nicht auf die Chips trifft. */
+  .mitbubbles > .tile .cf{top:10px; right:14px}
+
   .bubbles{display:flex; flex-wrap:wrap; gap:6px; padding:0 2px 2px}
   .bubble{
     display:inline-flex; align-items:center; gap:8px; max-width:100%;
@@ -238,7 +255,7 @@ const MAX_BUBBLES = 6;
 
 function bubble(o, e, versteckt = false) {
   return `<button class="bubble${e.vermietet ? '' : ' frei'}"
-          data-slug="${esc(o.slug)}"${versteckt ? ' data-rest hidden' : ''}
+          data-slug="${esc(o.slug)}"${e.id != null ? ` data-e="${esc(String(e.id))}"` : ''}${versteckt ? ' data-rest hidden' : ''}
           title="${esc(e.bezeichnung || 'Einheit')} · ${
             e.vermietet ? 'vermietet' : 'nicht vermietet'}">
       <span class="bt">${esc(e.bezeichnung || 'Einheit')}</span>
@@ -257,6 +274,24 @@ function bubbles(o) {
       ${rest > 0 ? `<button class="bubble mehr" data-mehr="${esc(label)}"
                             aria-expanded="false">${esc(label)}</button>` : ''}
     </div>`;
+}
+
+/* ---- CCCXLIX — Cashflow je Objekt ---------------------------------------
+   Der Jahres-Saldo (Einnahmen − Ausgaben) kommt aus /api/auswertung, je Objekt
+   nach slug. Gezeigt wird nur die Richtung als kleiner Pfeil: ein grüner nach
+   oben bei Überschuss, ein roter nach unten bei Fehlbetrag. Fehlt der Wert oder
+   ist er glatt null, bleibt der Punkt weg — nichts wird erfunden. */
+const saldoMap = new Map();
+
+function saldoIndikator(slug) {
+  const s = saldoMap.get(slug);
+  if (s == null || s === 0) return '';
+  const pos = s > 0;
+  const pfeil = pos ? 'M8 4l4 6H4z' : 'M8 12l-4-6h8z';   // Dreieck hoch / runter
+  return `<span class="cf ${pos ? 'pos' : 'neg'}"
+                title="Cashflow ${pos ? 'positiv' : 'negativ'}" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="12" height="12"><path d="${pfeil}"/></svg>
+    </span>`;
 }
 
 /* Einzelkachel. `feinste` zeigt nur die Einheit gross — innerhalb einer
@@ -278,6 +313,7 @@ function kachel(o, feinste = false) {
       : (h.einheit ? `<span class="einheit">${esc(h.einheit)}</span>` : '');
 
   const knopf = `<button class="tile" data-slug="${esc(o.slug)}">
+      ${saldoIndikator(o.slug)}
       <span class="ico">${logoSvg(o.typ)}</span>
       <span class="txt">
         ${oben}
@@ -341,7 +377,15 @@ function gruppieren(objekte) {
 }
 
 try {
-  const objekte = (await api('/objekte')).filter(o => o.aktiv !== false);
+  // Objektliste und Jahres-Saldi parallel holen. Die Auswertung ist Beiwerk —
+  // scheitert sie, fehlt nur der Cashflow-Punkt, die Kacheln stehen trotzdem.
+  const [roh, auswertung] = await Promise.all([
+    api('/objekte'),
+    api('/auswertung').catch(() => null),
+  ]);
+  const objekte = roh.filter(o => o.aktiv !== false);
+  if (auswertung && Array.isArray(auswertung.objekte))
+    for (const z of auswertung.objekte) saldoMap.set(z.slug, z.saldo);
 
   if (!objekte.length) {
     sub.textContent = 'noch keine Immobilie';
@@ -438,7 +482,13 @@ ziel.addEventListener('click', e => {
     return;
   }
   const t = e.target.closest('[data-slug]');
-  if (t) location.href = `objekt.html?o=${encodeURIComponent(t.dataset.slug)}`;
+  if (t) {
+    // CCCXLVIII — eine Einheiten-Bubble trägt ihre Einheit-ID und springt direkt
+    // auf diese Ebene; eine Kachel ohne ID öffnet wie bisher das Haus.
+    const eid = t.dataset.e;
+    location.href = `objekt.html?o=${encodeURIComponent(t.dataset.slug)}`
+      + (eid ? `&e=${encodeURIComponent(eid)}` : '');
+  }
 });
 </script>
 </body>

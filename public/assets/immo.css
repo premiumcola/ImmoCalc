@@ -216,6 +216,13 @@ button.chip:hover{filter:brightness(.96)}
   font:500 15px var(--body); color:var(--ink); background:var(--sheet); min-height:44px;
 }
 .inp:focus{outline:none; border-color:var(--teal); box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+/* CCCLI — iOS Safari zoomt beim Fokus in ein Feld mit computed font-size < 16px
+   hinein und zoomt danach nicht zurück: die ganze Seite bleibt vergrössert,
+   Menü und Layout verrutschen. Auf Touch-Geräten daher überall mindestens 16px;
+   am Desktop (feiner Zeiger) bleibt das ruhigere 15px-Design unverändert. */
+@media (pointer:coarse){
+  .inp, select.inp, input, select, textarea{ font-size:16px; }
+}
 select.inp{
   appearance:none;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235C6B70' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");

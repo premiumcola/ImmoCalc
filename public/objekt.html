@@ -366,6 +366,41 @@
     dialog#dlg.mit-pdf .dlg-pdf{flex:1;padding:16px 20px;min-width:0}
   }
 
+  /* CCCLI — die dialogeigenen Felder (Bewohner, Gemeinschafts-/Nutzfläche)
+     liegen unter der .inp-Regel und müssen auf Touch ebenfalls auf 16px, sonst
+     zoomt iOS beim Fokus hinein und die Seite bleibt vergrössert. */
+  @media (pointer:coarse){
+    .bwzeile input,.gfzeile input,.nfzeile input{font-size:16px}
+  }
+
+  /* CCCL — auf dem iPhone nutzt der Bearbeiten-Dialog den ganzen Schirm und
+     respektiert die Safe-Areas: oben Abstand zur Uhrzeit/Notch, unten zum
+     Home-Indikator. Ab iPad-Breite bleibt die schwebende, abgerundete Maske. */
+  @media (max-width:560px){
+    dialog#dlg{
+      top:0;left:0;margin:0;max-width:none;width:100vw;
+      max-height:none;height:100dvh;border-radius:0;
+      display:flex;flex-direction:column;
+      box-shadow:none;
+    }
+    dialog#dlg .dh{
+      padding:calc(18px + env(safe-area-inset-top)) 20px 12px;
+      background:var(--paper);flex:none;
+      box-shadow:0 1px 0 rgba(22,38,44,.08);
+    }
+    dialog#dlg .dlg-koerper{flex:1;min-height:0;display:flex;flex-direction:column}
+    dialog#dlg form{
+      flex:1;min-height:0;max-height:none;overflow-y:auto;
+      padding-bottom:calc(20px + env(safe-area-inset-bottom));
+    }
+    /* Mit danebenliegendem Beleg (CCCXXIII): Felder oben, Beleg füllt den Rest. */
+    dialog#dlg.mit-pdf form{flex:none}
+    dialog#dlg.mit-pdf .dlg-pdf{
+      flex:1;min-height:0;
+      padding-bottom:calc(20px + env(safe-area-inset-bottom));
+    }
+  }
+
   .cloudbox{background:var(--sheet);border-radius:14px;padding:15px;margin-bottom:10px;
             box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .cloudbox .zeile{display:flex;gap:12px;align-items:center}
@@ -805,6 +840,11 @@ function stammHtml(o) {
   if (erbe) { if (hat('baudatum')) zeile('baudatum', { label: 'Baudatum' }); }
   else { if (hat('kaufdatum')) zeile('kaufdatum'); if (hat('baudatum')) zeile('baudatum'); }
   if (hat('verkehrswert')) zeile('verkehrswert');
+  // CCCXLII — den Ausschalter nur zeigen, wenn er AUS ist (der Normalfall „Ja"
+  // würde nur Zeilen fluten); dann erklärt er, warum die Einheiten keinen
+  // Verkehrswert führen. Editierbar bleibt er stets im Bearbeiten-Dialog.
+  if (hat('einheit_verkehrswert') && o.einheit_verkehrswert === false)
+    zeilen.push(cellZeile({ label: 'Verkehrswert je Einheit', wert: 'ausgeblendet' }));
 
   // Konto & Rücklage — abgesetzter Block. Kontoinhaber eigene Zeile, dann IBAN
   // mit der Bank in Klammern, dann Rücklagenstand und Monatsrate zusammen.
