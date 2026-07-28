@@ -2420,6 +2420,38 @@ def zuordnen(dokument_id: int, data: Optional[ZuordnenIn] = None,
     return {"ok": True, "angelegt": angelegt}
 
 
+@router.post("/{dokument_id}/loese-zuordnung")
+def loese_zuordnung(dokument_id: int,
+                    session: Session = Depends(get_session)) -> dict:
+    """Nimmt die Zuordnung eines Belegs zurück (CCCXXI — Umhängen).
+
+    Löst die Info-Verknüpfung (`info_zu_*`) und löscht die aus diesem Beleg
+    entstandenen VORLÄUFIGEN (orange) Datensätze wieder. Ein bereits bestätigter
+    Datensatz bleibt unangetastet — er ist gewollter Bestand; dann wird nur die
+    Info-Verknüpfung gelöst. Danach lässt sich der Beleg neu zuordnen."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    geloest = []
+    # Info-Verknüpfung lösen.
+    if d.info_zu_typ:
+        d.info_zu_typ, d.info_zu_id = "", None
+        session.add(d)
+        geloest.append("Info-Verknüpfung")
+    # Vorläufige Entwürfe dieses Belegs entfernen; bestätigte bleiben stehen.
+    for e in _entwuerfe_des_belegs(session, d.id):
+        session.delete(e)
+        geloest.append(type(e).__name__)
+    # Ein in eine Kostenposition eingerechneter Beleg wird herausgelöst.
+    if d.position_id:
+        belegposten.loese(session, d)
+        geloest.append("Kostenposition")
+    session.commit()
+    log.info("Zuordnung von Dokument %s gelöst: %s", dokument_id,
+             ", ".join(geloest) or "nichts")
+    return {"ok": True, "geloest": geloest}
+
+
 # --------------------------------------------------------------------------
 # CCLXXIV: Das KI-Raster festhalten — am Dokument UND als `.immocalc`-Steckbrief
 # neben dem PDF in der Nextcloud.
