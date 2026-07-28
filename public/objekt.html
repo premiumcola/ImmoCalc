@@ -136,6 +136,9 @@
   .sekopf button{border:none;background:none;color:var(--teal-d);cursor:pointer;
     font:600 12.5px var(--disp);padding:8px 4px;margin:-8px -4px;min-height:44px}
   .sekopf button:hover{color:var(--teal)}
+  .sekopf .voll-hinweis{flex:none;color:var(--soft);font:600 11px var(--mono);
+    display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .sekopf .voll-hinweis::before{content:"✓";color:var(--pos);font-weight:700}
   .sekopf:first-child{margin-top:0}
 
   .liste{background:var(--sheet);border-radius:14px;overflow:hidden;margin-bottom:10px;
@@ -1519,8 +1522,19 @@ function eigentuemerHtml(stand) {
            deckt den Rest.</span>
        </span></div>` : '';
 
+  // CCCXXII — „Zuordnen" nur, wenn es überhaupt noch freie ‰ gibt. Ist alles
+  // verteilt, wäre der Knopf eine Sackgasse (jede Zuweisung überbucht) —
+  // stattdessen ein ruhiger Hinweis. Wird später etwas frei, kommt er zurück.
+  const freiObjekt = stand.objekt_noetig === false ? 0 : (stand.frei || 0);
+  const freiEinheit = (stand.einheiten_stand || [])
+    .reduce((m, es) => Math.max(m, es.frei || 0), 0);
+  const platz = Math.max(freiObjekt, freiEinheit) > 0.05;
+  const kopfKnopf = platz
+    ? `<button data-anteil-neu="1">Zuordnen</button>`
+    : `<span class="voll-hinweis" title="Erst einen Anteil verkleinern oder entfernen, dann wird wieder etwas frei">Alle 1000 ‰ verteilt</span>`;
+
   return `<div class="sekopf"><span class="seikon">${kostenIcon('Eigentümer')}</span><h2 class="sec">Eigentümer</h2>
-      <button data-anteil-neu="1">Zuordnen</button></div>
+      ${kopfKnopf}</div>
     <div class="liste">${zeilen}</div>${rest}`;
 }
 
