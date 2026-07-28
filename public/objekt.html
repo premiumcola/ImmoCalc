@@ -291,6 +291,9 @@
        border-radius:12px;padding:12px;font:600 13.5px var(--disp);cursor:pointer;
        min-height:44px;margin-bottom:4px}
   .add:hover{background:var(--teal-l)}
+  /* CCCXXVI — der Lageplan-Weg ist ein <label> über einem versteckten
+     Datei-Feld: als Block, damit die Breite wie beim Knopf greift. */
+  label.add{display:block;text-align:center}
 
   /* Stammdaten als Paarliste — Beschriftung links, Wert rechts */
   .paare{background:var(--sheet);border-radius:14px;padding:4px 15px;margin-bottom:10px;
@@ -1205,6 +1208,17 @@ function stammwert(f, o) {
   return String(v);
 }
 
+/* CCCXLII — ein Feld gilt als leer, wenn kein Wert erfasst ist; bei den
+   optionalen Zahlenfeldern (Verkehrswert, Terrasse, Nebenfläche, Stellplätze)
+   zählt auch die 0 als „nicht erfasst". Solche Felder werden dann gar nicht
+   erst als Zeile gezeigt, statt eine Reihe leerer „nicht erfasst" aufzuziehen.
+   Schalter/Ja-Nein-Felder sind nie leer — sie tragen bewusst „Ja"/„Nein". */
+function feldLeer(f, v) {
+  if (f.typ === 'schalter' || f.typ === 'ja_nein') return false;
+  if (v == null || v === '') return true;
+  return f.typ === 'number' && Number(v) === 0;
+}
+
 let objekt = null;
 let daten = null;
 /* Die Einheiten des Hauses — gebraucht von der Hausebene, vom Fokus und von
@@ -1396,7 +1410,13 @@ function stammHtml(o) {
   // Wert kurz ist, werden zwei Angaben in EINER Zeile zusammengezogen (IBAN mit
   // Bank in Klammern, Rücklagen-Stand neben der Monatsrate). Kein Zwei-Spalten-
   // Raster (das war unübersichtlich).
-  const zeile = (k, extra = {}) => zeilen.push(cellZeile(feldZelle(k, extra)));
+  // CCCXLII — leere Felder nicht als „nicht erfasst"-Zeile führen. Die
+  // gerechneten Zellen (Wohnfläche, Adresse) laufen über cellZeile direkt und
+  // behalten ihren Herkunfts-/Leerhinweis.
+  const zeile = (k, extra = {}) => {
+    if (feldLeer(def(k), o[k])) return;
+    zeilen.push(cellZeile(feldZelle(k, extra)));
+  };
 
   // Kopf: Objektart, Erwerbsart.
   if (hat('objektart')) zeile('objektart');
@@ -1876,9 +1896,12 @@ function einheitStammHtml(e) {
   // CCCXXIX — direkt unter der Basis-Wohnfläche folgen die Zusatz- und
   // Gemeinschaftsflächen und die effektive Gesamtfläche.
   const flaechen = flaechenZeilenHtml(e);
+  // CCCXLII — leere Felder (Verkehrswert, Terrasse, Nebenfläche, Stellplätze=0)
+  // erscheinen nicht mehr als „nicht erfasst"-Zeile, sondern werden schlicht
+  // weggelassen. Die Flächenaufstellung bleibt an der Wohnfläche hängen.
   const zeilen = EINHEITFELDER
     .filter(f => f.k !== 'bezeichnung' && f.k !== 'nk_abrechnung')
-    .map(f => paarZeile(f.l, stammwert(f, e), { lex: f.lex })
+    .map(f => (feldLeer(f, e[f.k]) ? '' : paarZeile(f.l, stammwert(f, e), { lex: f.lex }))
       + (f.k === 'flaeche' ? flaechen : '')).join('');
   const aus = e.nk_abrechnung === false
     ? `<div class="merker"><span class="hi">i</span><span class="ht">
@@ -1889,7 +1912,29 @@ function einheitStammHtml(e) {
        </span></div>` : '';
   return `<div class="sekopf"><h2 class="sec">Einheit</h2>
       <button data-einheit-edit="${e.id}">Bearbeiten</button></div>
-    <div class="paare">${zeilen}</div>${aus}`;
+    <div class="paare">${zeilen}</div>${aus}
+    ${lageplanHtml(e)}`;
+}
+
+/* CCCXXVI — Lagepläne je Einheit. Vorhandene öffnen als Bild-Vorschau über den
+   bestehenden Dokument-Inhalt (belegAnsehen); dazu ein Weg zum Aufnehmen oder
+   Hochladen. Der eigentliche Upload läuft über den change-Handler auf `inhalt`
+   (POST /api/einheiten/{id}/lageplan als FormData). */
+function lageplanHtml(e) {
+  const plaene = e.lageplaene || [];
+  const zeilen = plaene.length
+    ? plaene.map(p => `<button class="eintrag klick" data-lageplan="${p.id}">
+        <span class="sym">${kostenIcon('Grundstück')}</span>
+        <span class="et"><span class="en">${esc(p.dateiname || 'Lageplan')}</span></span>
+        <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
+      </button>`).join('')
+    : `<div class="leerzeile">Noch kein Lageplan hinterlegt</div>`;
+  return `<div class="sekopf"><span class="seikon">${kostenIcon('Grundstück')}</span>
+      <h2 class="sec">Lageplan</h2></div>
+    <div class="liste">${zeilen}</div>
+    <label class="add lageplan-neu">＋ Lageplan aufnehmen oder hochladen
+      <input type="file" accept="image/*" capture="environment"
+             data-lageplan-neu="${e.id}" hidden></label>`;
 }
 
 /* Im Fokus zählt, was diese Wohnung einbringt — Wert und Restschuld gehören
@@ -4062,6 +4107,15 @@ inhalt.addEventListener('click', async e => {
     return;
   }
 
+  // CCCXXVI — einen hinterlegten Lageplan als Bild-Vorschau öffnen (dieselbe
+  // Ansicht wie ein Beleg, über den Dokument-Inhalt).
+  const lageplan = e.target.closest('[data-lageplan]');
+  if (lageplan) {
+    e.stopPropagation();
+    belegAnsehen(`/api/dokumente/${lageplan.dataset.lageplan}/inhalt`, 'Lageplan');
+    return;
+  }
+
   // CCLXXVIII — Orange-Entwürfe: den Beleg ansehen, bestätigen, verwerfen.
   const beleg = e.target.closest('[data-beleg]');
   if (beleg) {
@@ -4162,6 +4216,32 @@ inhalt.addEventListener('click', async e => {
     }
     return laden();
   }
+});
+
+/* CCCXXVI — ein gewählter oder aufgenommener Lageplan wird direkt hochgeladen
+   (multipart, Feld „datei"). Danach wird die Einheit neu geladen, damit der
+   frische Plan in der Liste steht. Fehler dezent über melde. */
+inhalt.addEventListener('change', async e => {
+  const feld = e.target.closest('[data-lageplan-neu]');
+  if (!feld || !feld.files || !feld.files.length) return;
+  const datei = feld.files[0];
+  const fd = new FormData();
+  fd.append('datei', datei);
+  melde('Lageplan wird hochgeladen …');
+  try {
+    const antwort = await fetch(
+      `/api/einheiten/${feld.dataset.lageplanNeu}/lageplan`,
+      { method: 'POST', body: fd });
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      throw new Error(grund || `${antwort.status}`);
+    }
+  } catch (fehler) {
+    return melde(String(fehler.message
+      || 'Lageplan konnte nicht hochgeladen werden.'), 'neg');
+  }
+  melde('Lageplan gespeichert.', 'pos');
+  return laden();
 });
 
 await laden();
