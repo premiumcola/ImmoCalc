@@ -75,7 +75,10 @@ const ZUORDNUNG = [
   ['korrespondenz', 'brief'], ['nebenkosten', 'haus'],
   ['mietvertrag', 'vertrag'], ['miete', 'schluessel'], ['mieter', 'person'],
   ['eigentümer', 'person'], ['zahlung', 'paragraf'],
-  ['notarvertrag', 'paragraf'], ['notar', 'paragraf'],
+  // Notarvertrag trägt das Vertrags-Symbol, Steuer/Finanzamt den Paragrafen —
+  // sonst sähen die beiden Rubriken gleich aus (CCCIV).
+  ['notarvertrag', 'vertrag'], ['notar', 'vertrag'],
+  ['finanzamt', 'paragraf'], ['dokument', 'brief'],
 ];
 
 /** Symbolname zu einer Kostenart — mit Rückfall auf einen neutralen Punkt. */

@@ -30,6 +30,10 @@
 
   .sekopf{display:flex;align-items:baseline;gap:10px;margin:26px 0 12px}
   .sekopf h2.sec{font:700 17px var(--disp);letter-spacing:-.015em;margin:0;flex:1}
+  /* CCCIV — Rubrik-Symbol in der Überschrift, in der Farbe der Rubrik */
+  .sekopf .seikon{flex:none;display:inline-flex;align-items:center;
+    color:var(--soft);align-self:center}
+  .sekopf .seikon svg{width:20px;height:20px}
   .sekopf button{border:none;background:none;color:var(--teal-d);cursor:pointer;
     font:600 12.5px var(--disp);padding:8px 4px;margin:-8px -4px;min-height:44px}
   .sekopf button:hover{color:var(--teal)}
@@ -619,7 +623,7 @@ const BEREICHE = {
    Landwirtschaft — und nur nach dem, was es dort gibt. Nebenkosten-
    vorauszahlung, Stellplatz und Personen im Haushalt fallen weg. */
 const PACHT = {
-  titel: 'Pacht & Pächter', einzahl: 'Pachtverhältnis', ikon: 'Pacht',
+  titel: 'Pacht & Erträge', einzahl: 'Pachtverhältnis', ikon: 'Miete',
   felder: [
     { k: 'partei', l: 'Pächter', typ: 'text' },
     { k: 'kaltmiete', l: 'Pachtzins je Turnus', typ: 'number', schritt: '0.01',
@@ -644,9 +648,16 @@ const PACHT = {
   wert: e => `${eur(e.kaltmiete || 0)} ${kuerzel(e.turnus)}`,
 };
 
-/** Die Beschreibung eines Bereichs — beim Grundstück in seiner Sprache. */
-const cfgFuer = bereich => bereich === 'mieten' && istGrundstueck()
-  ? { ...BEREICHE.mieten, ...PACHT } : BEREICHE[bereich];
+/** Die Beschreibung eines Bereichs — beim Grundstück in seiner Sprache.
+    „Steuer & Zahlungen" heisst dort schlicht „Finanzamt" (CCCIV). */
+const cfgFuer = (bereich) => {
+  if (!istGrundstueck()) return BEREICHE[bereich];
+  if (bereich === 'mieten') return { ...BEREICHE.mieten, ...PACHT };
+  if (bereich === 'zahlungen') {
+    return { ...BEREICHE.zahlungen, titel: 'Finanzamt', ikon: 'Finanzamt' };
+  }
+  return BEREICHE[bereich];
+};
 
 /* Stammdaten des Objekts: dieselbe Feldbeschreibung für Anzeige und Formular. */
 const STAMMFELDER = [
@@ -1045,7 +1056,7 @@ function stammHtml(o) {
     if (f.k === 'flaeche') { zeilen.push(...wohnflaecheRows(o, s)); continue; }
     zeilen.push(paarZeile(f.l, stammwert(f, o), { lang: f.lang, lex: f.lex }));
   }
-  return `<div class="sekopf"><h2 class="sec">Stammdaten</h2>
+  return `<div class="sekopf"><span class="seikon">${kostenIcon('Haus')}</span><h2 class="sec">Stammdaten</h2>
       <button data-stamm="1">Bearbeiten</button></div>
     <div class="paare">${zeilen.join('')}</div>
     ${flaecheWarnung(o.flaeche, s)}`;
@@ -1098,14 +1109,14 @@ function grundstueckHtml(o, pachtJahr = 0) {
        Finanzamts-Bescheid, sondern auf dem Grundsteuerbescheid der Stadt.</div>`
     : '';
   const ertragBlock = ertrag.length
-    ? `<div class="sekopf"><h2 class="sec">Pacht & Ertrag</h2></div>
+    ? `<div class="sekopf"><span class="seikon" style="color:var(--pos)">${kostenIcon('Miete')}</span><h2 class="sec">Pacht &amp; Ertrag</h2></div>
        <div class="paare">${ertrag.map(([l, w], i) =>
          paarZeile(l, w, { abgeleitet: i < ertrag.length - 1 })).join('')}</div>
        <div class="fussnote">Beim verpachteten Grundstück ist die Grundsteuer die
          einzige Nebenkostenposition — sie wird auf den Pächter umgelegt. Der
          Ertrag ist die Pacht abzüglich der Grundsteuer.</div>`
     : '';
-  return `<div class="sekopf"><h2 class="sec">Grundstück</h2>
+  return `<div class="sekopf"><span class="seikon" style="color:var(--teal-d)">${kostenIcon('Grundstück')}</span><h2 class="sec">Grundstück</h2>
       <button data-grund="1">Bearbeiten</button></div>
     <div class="paare">${zeilen}${
       abgeleitet.map(([l, w]) => paarZeile(l, w, { abgeleitet: true })).join('')}</div>
@@ -1194,6 +1205,20 @@ function entwurfZeile(cfg, bereich, e, imFokus) {
   </div>`;
 }
 
+/* CCCIV — jede Rubrik trägt ihr Symbol in der Überschrift, in der Farbe der
+   Rubrik. Dieselbe Zuordnung nutzt der Dokumentenbaum, damit oben und unten
+   dieselbe Sprache gesprochen wird. */
+const RUBRIKFARBE = {
+  notarvertraege: 'var(--teal)', zahlungen: 'var(--amber)',
+  mieten: 'var(--pos)', versicherungen: 'var(--soft)',
+  kredite: 'var(--neg)', grundstueck: 'var(--teal-d)',
+};
+const sekopfHtml = (titel, ikon = '', knopf = '', farbe = '') =>
+  `<div class="sekopf">${ikon
+      ? `<span class="seikon"${farbe ? ` style="color:${farbe}"` : ''}
+         >${kostenIcon(ikon)}</span>` : ''}
+    <h2 class="sec">${esc(titel)}</h2>${knopf}</div>`;
+
 function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
                                         vorspann = '' } = {}) {
   const cfg = cfgFuer(bereich);
@@ -1204,7 +1229,7 @@ function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
         : eintragZeile(cfg, bereich, e, imFokus)).join('')
     : `<div class="leerzeile">Noch nichts erfasst</div>`;
 
-  return `<div class="sekopf"><h2 class="sec">${esc(kopf || cfg.titel)}</h2></div>
+  return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, '', RUBRIKFARBE[bereich])}
     ${vorspann}
     <div class="liste">${zeilen}</div>
     <button class="add" data-add="${bereich}">＋ ${esc(cfg.einzahl)} hinzufügen</button>`;
@@ -1344,7 +1369,7 @@ function eigentuemerHtml(stand) {
            deckt den Rest.</span>
        </span></div>` : '';
 
-  return `<div class="sekopf"><h2 class="sec">Eigentümer</h2>
+  return `<div class="sekopf"><span class="seikon">${kostenIcon('Eigentümer')}</span><h2 class="sec">Eigentümer</h2>
       <button data-anteil-neu="1">Zuordnen</button></div>
     <div class="liste">${zeilen}</div>${rest}`;
 }
@@ -1519,23 +1544,27 @@ async function laden() {
     ${grundstueckHtml(objekt, jahresmiete)}
     ${stammHtml(objekt)}
     ${wegHtml(objekt)}
-    <div class="sekopf"><h2 class="sec">Dokumentenablage</h2></div>
+    <div class="sekopf"><span class="seikon">${kostenIcon('Dokument')}</span><h2 class="sec">Dokumentenablage</h2></div>
     <div id="cloudbereich"><div class="cloudbox"><div class="zeile">
       <span class="sym offen">…</span>
       <span class="txt"><span class="t">wird geprüft …</span></span>
     </div></div></div>
     ${eigentuemerHtml(anteile)}
-    ${mietBlock}
-    ${istGrundstueck() ? '' : `
-      ${abschnitt('versicherungen', bereiche.versicherungen, {
-        vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
-          als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen
-          nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
-      ${abschnitt('kredite', bereiche.kredite)}
-      ${grundschuldenHtml()}
-    `}
-    ${abschnitt('notarvertraege', bereiche.notarvertraege)}
-    ${abschnitt('zahlungen', bereiche.zahlungen)}
+    ${istGrundstueck()
+      // CCCIV — beim Grundstück in der logischen Reihenfolge: erst der
+      // Erwerb (Notarverträge), dann das Finanzamt, dann die Erträge.
+      ? `${abschnitt('notarvertraege', bereiche.notarvertraege)}
+         ${abschnitt('zahlungen', bereiche.zahlungen)}
+         ${mietBlock}`
+      : `${mietBlock}
+         ${abschnitt('versicherungen', bereiche.versicherungen, {
+           vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
+             als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen
+             nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
+         ${abschnitt('kredite', bereiche.kredite)}
+         ${grundschuldenHtml()}
+         ${abschnitt('notarvertraege', bereiche.notarvertraege)}
+         ${abschnitt('zahlungen', bereiche.zahlungen)}`}
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>
       <p>Die Sicherung enthält alle Daten dieser Immobilie und lässt sich
