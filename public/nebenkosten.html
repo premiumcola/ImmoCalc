@@ -51,6 +51,10 @@
   /* max-width: die SVGs haben eine viewBox und wuerden auf breiten Schirmen
      samt Schrift und Balken ins Riesenhafte skalieren. */
   .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible}
+  /* CCCXXXVIII — der Kostenfluss (Sankey) darf die volle Kartenbreite nutzen:
+     mehr Raum für die Bänder und die Beschriftung, auf dem PC gut lesbar. Die
+     viewBox skaliert mit, die interne Breite wächst mit dem Schirm (siehe Aufruf). */
+  .chart.sankey{max-width:100%}
   .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;padding:22px 8px}
   .legende{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
   .legende .le{display:flex;align-items:center;gap:6px;font:500 11.5px var(--body);
@@ -454,7 +458,11 @@ async function zeichnen() {
       <h3>Kostenfluss ${jahr}${objekt ? ' · je Einheit' : ' · je Objekt'}${merker}</h3>
       ${daten.gesamt.ausgaben
         ? sankey(fluss.knoten, fluss.fluss,
-                 { format: eurKurz, breite: window.innerWidth < 520 ? 270 : 560 })
+                 // CCCXXXVIII — die interne Breite wächst mit dem Schirm, damit
+                 // Bänder und Beschriftung auf dem PC mehr Raum bekommen und
+                 // lesbar bleiben; die Karte lässt den Sankey voll breit werden.
+                 { format: eurKurz, breite: window.innerWidth < 520 ? 270
+                     : window.innerWidth < 900 ? 620 : 900 })
         : '<div class="chartleer">Ohne umlagefähige Kosten gibt es nichts zu '
           + 'verteilen.</div>'}
     </div>
