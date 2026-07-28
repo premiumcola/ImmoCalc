@@ -100,7 +100,7 @@ function grundsteuerHtml(o) {
   }
   const hebe = g('grundsteuer_hebesatz');
   if (stammwert(hebe, o)) {
-    zeilen.push(cellZeile({ label: hebe.l, wert: stammwert(hebe, o) }));
+    zeilen.push(cellZeile({ label: hebe.l, wert: stammwert(hebe, o), lex: hebe.lex }));
   }
   const jahr = grundsteuerJahrVon(o);
   if (jahr) {

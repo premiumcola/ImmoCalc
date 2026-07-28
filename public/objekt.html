@@ -823,7 +823,8 @@ function stammHtml(o) {
       zeilen.push(cellZeile({ label: 'IBAN', wert: ibanBank }));
     }
     if (saldo || rate) {
-      zeilen.push(cellZeile({ label: 'Rücklage', wert: ruecklageWert || null }));
+      zeilen.push(cellZeile({ label: 'Rücklage', wert: ruecklageWert || null,
+                              lex: 'ruecklage' }));
     }
   }
 
@@ -867,7 +868,7 @@ function wegHtml(o) {
     // Der Verwaltername ist oft lang — als eigene Zeilenbreite statt eines
     // Bruchs mitten im Wort in der schmalen rechten Spalte.
     .map(f => paarZeile(f.l, stammwert(f, o),
-                        { lang: f.k === 'weg_verwalter' })).join('');
+                        { lang: f.k === 'weg_verwalter', lex: f.lex })).join('');
   const jahr = o.hausgeld_monatlich
     ? paarZeile('Hausgeld im Jahr', eurVoll(o.hausgeld_monatlich * 12),
                 { abgeleitet: true })
@@ -1648,7 +1649,7 @@ async function eintragDetail(bereich, id) {
   const felder = felderFuer(bereich, eintrag).filter(f => !f.hilfe && f.typ !== 'block');
   const datenHtml = felder.map(f => {
     const t = feldWertText(f, eintrag[f.k]);
-    return `<div class="dd-zeile"><span class="dd-l">${esc(f.l)}</span>
+    return `<div class="dd-zeile"><span class="dd-l">${feldLabel(f)}</span>
       <span class="dd-v">${esc(t)}</span></div>`;
   }).join('');
 
@@ -1697,6 +1698,8 @@ async function eintragDetail(bereich, id) {
           : '<div class="beleg-blatt leer">Kein Beleg zum Anzeigen.</div>'}</div>
       </div>
     </div>`;
+  // Fachbegriffe in der Zusammenfassung bekommen dasselbe ?-Icon wie im Formular.
+  installHilfe(dlg);
 
   const flaeche = dlg.querySelector('.beleg-flaeche');
   // Der gerade gezeigte Beleg — er wandert beim „Bearbeiten" mit in die Maske.

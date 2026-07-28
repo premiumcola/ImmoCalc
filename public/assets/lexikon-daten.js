@@ -246,6 +246,18 @@ export const BEGRIFFE = [
     verwandt: ['auflassung', 'grundschuld', 'dienstbarkeit', 'niessbrauch', 'rang', 'teilungserklaerung'],
   },
   {
+    id: 'flurstueck',
+    begriff: 'Flurstück & Gemarkung',
+    kategorie: 'grundbuch',
+    synonyme: ['Flurstück', 'Gemarkung', 'Flurnummer', 'Flur', 'Liegenschaftskataster', 'Katasterbezeichnung', 'Parzelle'],
+    kurz: 'Die amtliche Kennung eines Grundstücks im Kataster: Die Gemarkung ist der Vermessungsbezirk, das Flurstück die einzelne vermessene Parzelle.',
+    lang:
+      'Jedes Grundstück ist im Liegenschaftskataster eindeutig bezeichnet — nicht über die Postadresse, sondern über Gemarkung und Flurstück. Die Gemarkung ist ein abgegrenzter Vermessungsbezirk (meist ein Ort oder Ortsteil), innerhalb dessen die Fläche in Fluren und weiter in Flurstücke unterteilt ist. Das Flurstück (mit seiner Flurstücksnummer) ist die kleinste amtlich vermessene Einheit — eine konkrete Parzelle mit fester Grenze und Größe.\n\n' +
+      'Diese Katasterbezeichnung gibt es, weil das [[grundbuch]] ein Grundstück zweifelsfrei benennen muss: Straßennamen ändern sich, Hausnummern sind ungenau, aber Gemarkung und Flurstück identifizieren die Fläche eindeutig. Das Bestandsverzeichnis des Grundbuchblatts übernimmt genau diese Angaben aus dem Kataster.\n\n' +
+      'Für dich als Eigentümer: Gemarkung und Flurstück findest du im Grundbuchauszug und im Kaufvertrag — sie sind die richtige Angabe, um dein Grundstück gegenüber Finanzamt, Gemeinde oder Katasteramt zu bezeichnen (etwa beim [[grundsteuerwert]]). Ein Grundstück kann aus mehreren Flurstücken bestehen; bei [[teilungserklaerung|Wohnungseigentum]] gehört dir ein Miteigentumsanteil am gemeinsamen Flurstück.',
+    verwandt: ['grundbuch', 'teilungserklaerung', 'grundsteuerwert'],
+  },
+  {
     id: 'notar',
     begriff: 'Notar & notarielle Beurkundung',
     kategorie: 'grundbuch',
@@ -497,6 +509,42 @@ export const BEGRIFFE = [
       'Es gibt sie, weil Kommunen eine verlässliche, an den Grundbesitz gebundene Einnahme brauchen — sie finanziert lokale Infrastruktur. Anders als die einmalige [[grunderwerbsteuer]] fällt sie jedes Jahr an, solange du Eigentümer bist.\n\n' +
       'Für dich: Die Grundsteuer ist eine umlagefähige Betriebskostenart (siehe [[umlagefaehigkeit]]) und wird über die [[nebenkosten]] auf den Mieter verteilt — bei mehreren Einheiten meist nach Fläche. Prüfe Messbescheid und Hebesatz nach der Reform, denn viele Werte haben sich verschoben. Änderungsbescheide mitten im Jahr müssen anteilig berücksichtigt werden.',
     verwandt: ['nebenkosten', 'umlagefaehigkeit', 'grunderwerbsteuer', 'verteilerschluessel'],
+  },
+  {
+    id: 'grundsteuerwert',
+    begriff: 'Grundsteuerwert (Bewertung des Grundbesitzes)',
+    kategorie: 'steuer',
+    synonyme: ['Grundsteuerwert', 'Einheitswert', 'Grundbesitzwert', 'Bescheid über den Grundsteuerwert'],
+    kurz: 'Der vom Finanzamt festgestellte Wert deines Grundbesitzes — die erste Stufe der Grundsteuer. Aus ihm wird über die Steuermesszahl der Steuermessbetrag.',
+    lang:
+      'Der Grundsteuerwert ist der Wert, den das Finanzamt deinem Grundbesitz zur Bemessung der [[grundsteuer]] beimisst — festgesetzt im „Bescheid über den Grundsteuerwert". Er trat mit der Grundsteuerreform 2025 an die Stelle des früheren Einheitswerts. Wie er ermittelt wird, hängt vom Bundesland ab (Bundesmodell oder eigene Landesmodelle). Bei Land- und Forstwirtschaft ergibt er sich aus den Reinerträgen der Fläche, kapitalisiert mit dem Faktor 18,6 und auf volle 100 € abgerundet.\n\n' +
+      'Diese Bewertung gibt es, weil die Grundsteuer nicht am Kaufpreis, sondern an einem einheitlich ermittelten Wert des Grundbesitzes anknüpfen soll — sonst wären gleich große, gleich gelegene Grundstücke unterschiedlich belastet, je nachdem, wann und zu welchem Preis sie gekauft wurden.\n\n' +
+      'Für dich als Eigentümer: Der Grundsteuerwert ist der Startpunkt der Rechenkette. Multipliziert mit der Steuermesszahl ergibt er den [[steuermessbetrag]], dieser mit dem [[hebesatz]] der Gemeinde die jährliche Grundsteuer. Er steht auf dem Finanzamts-Bescheid und ist etwas anderes als der Kaufpreis oder der geschätzte Marktwert je m². Prüfe ihn nach der Reform, denn viele Werte haben sich verschoben.',
+    verwandt: ['grundsteuer', 'steuermessbetrag', 'hebesatz', 'flurstueck'],
+  },
+  {
+    id: 'steuermessbetrag',
+    begriff: 'Steuermessbetrag & Steuermesszahl',
+    kategorie: 'steuer',
+    synonyme: ['Grundsteuermessbetrag', 'Steuermessbetrag', 'Steuermesszahl', 'Messbetrag', 'Bescheid über den Grundsteuermessbetrag'],
+    kurz: 'Grundsteuerwert × Steuermesszahl = Steuermessbetrag. Die zweite Stufe der Grundsteuer, ebenfalls vom Finanzamt festgesetzt.',
+    lang:
+      'Der Steuermessbetrag ist die mittlere Stufe der [[grundsteuer]]: Das Finanzamt multipliziert den [[grundsteuerwert]] mit der gesetzlichen Steuermesszahl und setzt das Ergebnis im „Bescheid über den Grundsteuermessbetrag" fest. Die Steuermesszahl ist ein kleiner Promillewert, der je nach Grundstücksart unterschiedlich ist — bei Land- und Forstwirtschaft 0,55 ‰, bei Wohngrundstücken im Bundesmodell rund 0,31 ‰.\n\n' +
+      'Diese Zwischenstufe gibt es, damit der Gesetzgeber über die Steuermesszahl bestimmte Nutzungsarten (z. B. Wohnen) gezielt geringer belasten kann, bevor die Gemeinde mit ihrem [[hebesatz]] ansetzt. So bleibt die Bewertung beim Finanzamt und die Höhe bei der Kommune getrennt.\n\n' +
+      'Für dich als Eigentümer: Der Steuermessbetrag steht auf dem Finanzamts-Bescheid; mit ihm und dem [[hebesatz]] der Gemeinde ergibt sich die Grundsteuer im Jahr (Steuermessbetrag × Hebesatz). ImmoCalc rechnet die Steuermesszahl aus Grundsteuerwert und Messbetrag zur Kontrolle zurück — weicht sie stark vom erwarteten Wert ab, lohnt ein Blick auf die Bescheide.',
+    verwandt: ['grundsteuer', 'grundsteuerwert', 'hebesatz'],
+  },
+  {
+    id: 'hebesatz',
+    begriff: 'Hebesatz',
+    kategorie: 'steuer',
+    synonyme: ['Hebesatz', 'Grundsteuer A', 'Grundsteuer B', 'Gemeindehebesatz'],
+    kurz: 'Der Prozentsatz, mit dem die Gemeinde den Steuermessbetrag multipliziert. Steuermessbetrag × Hebesatz = Grundsteuer im Jahr.',
+    lang:
+      'Der Hebesatz ist die letzte Stufe der [[grundsteuer]]: Die Gemeinde legt ihn selbst fest und multipliziert damit den vom Finanzamt bestimmten [[steuermessbetrag]]. Für land- und forstwirtschaftliche Flächen gilt der Hebesatz „Grundsteuer A", für bebaute und bebaubare Grundstücke „Grundsteuer B". Die Höhe ist von Gemeinde zu Gemeinde sehr verschieden — von wenigen hundert bis über tausend Prozent.\n\n' +
+      'Den Hebesatz gibt es, weil die Grundsteuer eine Gemeindesteuer ist: Die Kommune soll ihre Einnahme an den eigenen Bedarf anpassen können, ohne dass Bewertung und Steuermesszahl (beim Finanzamt) angetastet werden. Er ist die kommunale Stellschraube.\n\n' +
+      'Für dich als Eigentümer: Der Hebesatz steht nicht auf dem Finanzamts-Bescheid, sondern auf dem Grundsteuerbescheid der Stadt oder Gemeinde. Steuermessbetrag × Hebesatz ergibt die jährliche Grundsteuer, die als [[umlagefaehigkeit|umlagefähige]] Betriebskostenart über die [[nebenkosten]] auf den Mieter verteilt wird. Nach der Reform 2025 haben viele Gemeinden ihre Hebesätze angepasst.',
+    verwandt: ['grundsteuer', 'steuermessbetrag', 'grundsteuerwert', 'nebenkosten'],
   },
   // ------------------------------------------------------------ Nebenkosten & WEG
   {

@@ -100,11 +100,12 @@ const BEREICHE = {
     felder: [
       { k: 'einheit', l: 'Einheit', typ: 'einheit' },
       { k: 'partei', l: 'Mieter / Partei', typ: 'text' },
-      { k: 'kaltmiete', l: 'Kaltmiete', typ: 'number', schritt: '0.01', geld: true },
+      { k: 'kaltmiete', l: 'Kaltmiete', typ: 'number', schritt: '0.01', geld: true,
+        lex: 'kaltmiete' },
       { k: 'nebenkosten_vz', l: 'NK-Vorauszahlung', typ: 'number', schritt: '0.01',
-        geld: true },
+        geld: true, lex: 'vorauszahlung' },
       { k: 'stellplatz', l: 'Stellplatzmiete', typ: 'number', schritt: '0.01',
-        geld: true },
+        geld: true, lex: 'stellplatz' },
       { k: 'sonstige', l: 'Sonstige Einnahmen', typ: 'number', schritt: '0.01',
         geld: true },
       { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
@@ -157,7 +158,7 @@ const BEREICHE = {
         schritt: '0.01', geld: true },
       { k: 'beginn', l: 'Beginn', typ: 'date' },
       { k: 'ende', l: 'Ende', typ: 'date' },
-      { k: 'umlagefaehig', l: 'Umlagefähig', typ: 'ja_nein' },
+      { k: 'umlagefaehig', l: 'Umlagefähig', typ: 'ja_nein', lex: 'umlagefaehigkeit' },
       { k: 'notiz', l: 'Notiz', typ: 'text' },
     ],
     name: e => e.art,
@@ -271,7 +272,7 @@ const ERWERB = {
     // liesse sich (ohne Auswahl) ein Posten ohne Art speichern (auswahl.js
     // meldet den Wert erst bei Nutzer-Auswahl zurück).
     { k: 'art', l: 'Art', typ: 'auswahl', werte: ERWERB_ARTEN, ohneLeer: true,
-      vorgabe: ERWERB_ARTEN[0], pflicht: true },
+      vorgabe: ERWERB_ARTEN[0], pflicht: true, lex: 'kaufnebenkosten' },
     { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01', geld: true,
       voll: true, pflicht: true },
     { k: 'jahr', l: 'Jahr', typ: 'number', vorgabe: new Date().getFullYear() },
@@ -335,13 +336,15 @@ const STAMMFELDER = [
   // als AfA-Basis; bei Schenkung, Erbschaft oder Überlassung übernimmt man
   // stattdessen die AfA-Basis des Vorbesitzers.
   { k: 'erwerbsart', l: 'Erwerbsart', typ: 'auswahl', ohneLeer: true,
-    vorgabe: 'Kauf', werte: ['Kauf', 'Schenkung', 'Erbschaft', 'Überlassung'] },
+    vorgabe: 'Kauf', werte: ['Kauf', 'Schenkung', 'Erbschaft', 'Überlassung'],
+    lex: 'erwerbsart' },
   { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
   { k: 'kaufdatum', l: 'Kauf-/Erbschaftsdatum', typ: 'date' },
   // CCCXXX — das Baujahr/Baudatum getrennt vom Kaufdatum: bei einer Erbschaft
   // gibt es kein sinnvolles Kaufdatum, wohl aber ein Baujahr.
   { k: 'baudatum', l: 'Baujahr / Baudatum', typ: 'date' },
-  { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true },
+  { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true,
+    lex: 'verkehrswert' },
   // CCCXXX — Konto & Rücklage bilden einen eigenen Block: erst wer und wo
   // (Kontoinhaber, IBAN, Bank), dann was zurückgelegt ist (Stand, Sparrate).
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
@@ -350,17 +353,17 @@ const STAMMFELDER = [
   // CCIX — Rücklagenkonto: zurückgelegtes Geld für die Immobilie und die
   // laufende Sparrate. Beides optional, jederzeit nachtragbar.
   { k: 'ruecklage_saldo', l: 'Rücklagenkonto (Stand)', typ: 'number',
-    schritt: '0.01', geld: true, voll: true,
+    schritt: '0.01', geld: true, voll: true, lex: 'ruecklage',
     note: 'Zurückgelegtes Eigentümergeld für Instandhaltung und Sanierung — '
         + 'steht in der Wertentwicklung als eigene Zeile.' },
   { k: 'ruecklage_monatlich', l: 'Monatliche Rücklage', typ: 'number',
-    schritt: '0.01', geld: true },
+    schritt: '0.01', geld: true, lex: 'ruecklage' },
   // CCCI — Nießbrauch als aktivierbarer Block. Der Schalter trägt den Umbau
   // (`umbau: true`): geht er aus, verschwinden Berechtigter und Frist. Der
   // Berechtigte ist einer der Eigentümer (Auswahl, kein Freitext) — die Werte
   // füllt `stammfelder()` beim Öffnen aus der Eigentümerliste des Objekts.
   { k: 'niessbrauch_aktiv', l: 'Nießbrauch eingetragen', typ: 'schalter',
-    vorgabe: false, umbau: true },
+    vorgabe: false, umbau: true, lex: 'niessbrauch' },
   { k: 'niessbrauch_berechtigt', l: 'Nießbrauch: Berechtigter', typ: 'auswahl',
     werte: [], nurWennNiessbrauch: true },
   { k: 'niessbrauch_bis', l: 'Nießbrauch bis', typ: 'date',
@@ -374,15 +377,15 @@ const STAMMFELDER = [
    verteilt. Der Schalter selbst schaltet die Ebene an oder aus. */
 const WEGFELDER = [
   { k: 'weg', l: 'Teil einer Wohnungseigentümergemeinschaft', typ: 'schalter',
-    vorgabe: false,
+    vorgabe: false, lex: 'weg',
     note: 'An: die Hausverwaltung verteilt die Nebenkosten, du trägst die '
         + 'fertigen Werte je Mieter direkt in die Abrechnung ein. '
         + 'Aus: ImmoCalc verteilt selbst über einen Schlüssel.' },
   { k: 'hausgeld_monatlich', l: 'Hausgeld (monatlich)', typ: 'number',
-    schritt: '0.01', geld: true, voll: true,
+    schritt: '0.01', geld: true, voll: true, lex: 'hausgeld',
     note: 'Was du monatlich an die WEG zahlst — ein Eigentümerkosten.' },
   { k: 'weg_ruecklage_zufuehrung', l: 'davon Rücklagenzuführung (mtl.)',
-    typ: 'number', schritt: '0.01', geld: true,
+    typ: 'number', schritt: '0.01', geld: true, lex: 'ruecklage',
     note: 'Der Sparanteil im Hausgeld, der in die gemeinschaftliche Rücklage '
         + 'der WEG fliesst.' },
   { k: 'weg_verwalter', l: 'Hausverwaltung / Abrechnungsfirma', typ: 'text' },
@@ -403,8 +406,8 @@ const GRUNDFELDER = [
             'Sonstiges'] },
   // CCCXXX — die Wirtschaftsart (grundstueck_wirtschaftsart) wird nicht mehr
   // gezeigt; das Modellfeld bleibt bestehen, nur ohne Formular- und Anzeigezeile.
-  { k: 'gemarkung', l: 'Gemarkung', typ: 'text' },
-  { k: 'flurstueck', l: 'Flurstück', typ: 'text' },
+  { k: 'gemarkung', l: 'Gemarkung', typ: 'text', lex: 'flurstueck' },
+  { k: 'flurstueck', l: 'Flurstück', typ: 'text', lex: 'flurstueck' },
   { k: 'grundstueck_m2_preis', l: 'Wert je m² (geschätzt)', typ: 'number',
     schritt: '0.01', geld: true,
     note: 'Dein geschätzter Marktwert je m². ImmoCalc errechnet daraus den '
@@ -413,18 +416,18 @@ const GRUNDFELDER = [
   // Die drei folgenden bilden die Rechenkette der Grundsteuer, in der
   // Reihenfolge, in der sie entsteht (CCXCVI).
   { k: 'grundsteuerwert', l: 'Grundsteuerwert', typ: 'number', schritt: '0.01',
-    geld: true, voll: true,
+    geld: true, voll: true, lex: 'grundsteuerwert',
     note: '① Vom Finanzamt — „Bescheid über den Grundsteuerwert". Bei Land-/'
         + 'Forstwirtschaft: Summe der Reinerträge × Kapitalisierungsfaktor (18,6), '
         + 'abgerundet auf volle 100 € (Eckenhaid: 144,60 € × 18,6 ≈ 2.689 € → '
         + '2.600 €).' },
   { k: 'grundsteuer_messbetrag', l: 'Steuermessbetrag', typ: 'number',
-    schritt: '0.01', geld: true,
+    schritt: '0.01', geld: true, lex: 'steuermessbetrag',
     note: '② Vom Finanzamt — „Bescheid über den Grundsteuermessbetrag" = '
         + 'Grundsteuerwert × Steuermesszahl (bei Land-/Forstwirtschaft 0,55 ‰; '
         + 'Eckenhaid: 2.600 € × 0,55 ‰ = 1,43 €).' },
   { k: 'grundsteuer_hebesatz', l: 'Hebesatz', typ: 'number', schritt: '1',
-    einheit: '%',
+    einheit: '%', lex: 'hebesatz',
     note: '③ Von der GEMEINDE (Eckental), nicht vom Finanzamt — steht auf dem '
         + 'Grundsteuerbescheid der Stadt (Hebesatz Grundsteuer A). '
         + 'Steuermessbetrag × Hebesatz = Grundsteuer im Jahr.' },
@@ -436,7 +439,7 @@ const EINHEITFELDER = [
   { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
   { k: 'nutzungsart', l: 'Nutzungsart', typ: 'auswahl', vorgabe: 'Wohnen',
     werte: ['Wohnen', 'WG', 'Büro', 'Gewerbe', 'Praxis', 'Laden', 'Lager',
-            'Stellplatz', 'Garage', 'Sonstiges'] },
+            'Stellplatz', 'Garage', 'Sonstiges'], lex: 'nutzungsart' },
   { k: 'flaeche', l: 'Wohn-/Nutzfläche', typ: 'number', schritt: '0.01',
     einheit: 'm²', lex: 'wohnflaeche' },
   { k: 'terrasse', l: 'Terrasse / Balkon', typ: 'number', schritt: '0.01',
@@ -449,7 +452,7 @@ const EINHEITFELDER = [
   // sonst bleibt der Wert am Haus maßgeblich. Er gewichtet die Zurechnung des
   // Objektwerts auf die Eigentümer.
   { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01',
-    geld: true, voll: true,
+    geld: true, voll: true, lex: 'verkehrswert',
     note: 'Optional. Ist er gesetzt, zählt diese Einheit mit ihm in der '
         + 'Vermögenssicht je Eigentümer; sonst gilt der Wert am Haus.' },
   // CXCIII — eine Einheit ganz aus der Nebenkostenabrechnung nehmen.
