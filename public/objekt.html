@@ -30,6 +30,45 @@
 
   .sekopf{display:flex;align-items:baseline;gap:10px;margin:26px 0 12px}
   .sekopf h2.sec{font:700 17px var(--disp);letter-spacing:-.015em;margin:0;flex:1}
+  /* CCXCIX — Dokumentenbaum: Filter-Chips, farbige Äste, Dokumente als Früchte */
+  .bfilter-leiste{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 10px}
+  .bfilter{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
+    background:var(--sheet);color:var(--ink);border-radius:999px;padding:6px 11px;
+    min-height:38px;font:600 12.5px var(--body);cursor:pointer}
+  .bfilter .bi{display:inline-flex;color:var(--bf,var(--soft))}
+  .bfilter .bi svg{width:16px;height:16px}
+  .bfilter .bz{font:600 11px var(--mono);color:var(--soft);background:var(--paper);
+    border-radius:999px;padding:1px 6px}
+  .bfilter.an{background:var(--bf,var(--teal));border-color:var(--bf,var(--teal));color:#fff}
+  .bfilter.an .bi,.bfilter.an .bz{color:#fff}
+  .bfilter.an .bz{background:rgba(255,255,255,.24)}
+  .baum{display:flex;flex-direction:column;gap:10px}
+  .zweig{background:var(--sheet);border-radius:14px;padding:12px 13px;
+    border-left:4px solid var(--zw,var(--line))}
+  .zkopf{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .zkopf .zi{display:inline-flex;color:var(--zw);flex:none}
+  .zkopf .zi svg{width:19px;height:19px}
+  .zkopf .zt{flex:1;min-width:0;display:flex;flex-direction:column}
+  .zkopf .zn{font:700 14px var(--disp)}
+  .zkopf .zo{font:500 11px var(--mono);color:var(--soft)}
+  .zkopf .zz{font:600 11px var(--mono);color:var(--soft);white-space:nowrap}
+  .fruechte{display:flex;flex-direction:column;gap:3px;
+    border-left:1px dashed var(--line);margin-left:9px;padding-left:12px}
+  .frucht{display:flex;align-items:center;gap:8px;padding:5px 0;min-height:32px}
+  .frucht .fp{width:9px;height:9px;border-radius:50%;border:1.5px solid;flex:none}
+  .frucht .fn{flex:1;min-width:0;font:500 12.5px var(--body);color:var(--ink);
+    cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .frucht .fn:hover{text-decoration:underline}
+  .frucht.offen .fn{color:var(--soft)}
+  .frucht .fok{color:var(--pos);font:600 13px var(--body);flex:none}
+  .frucht .fgrau{font:500 11px var(--mono);color:var(--soft);flex:none}
+  .frucht .fzu{border:1px solid var(--line);background:var(--paper);color:var(--teal-d);
+    border-radius:999px;padding:4px 10px;font:600 11.5px var(--disp);cursor:pointer;flex:none}
+  .frucht .fzu:hover{background:var(--teal-l);border-color:var(--teal)}
+  .mehrbtn{margin:8px 0 0 21px;border:none;background:none;color:var(--teal-d);
+    font:600 12px var(--disp);cursor:pointer;padding:4px 0}
+  .baumleer{font:500 12.5px var(--body);color:var(--soft);padding:10px 2px}
+
   /* CCCIV — Rubrik-Symbol in der Überschrift, in der Farbe der Rubrik */
   .sekopf .seikon{flex:none;display:inline-flex;align-items:center;
     color:var(--soft);align-self:center}
@@ -1578,6 +1617,93 @@ async function laden() {
   cloudZeigen();
 }
 
+/* ---- CCXCIX — der Dokumentenbaum -----------------------------------------
+   Die Ablage als Gliederung: je Kategorie ein Ast in seiner Farbe und mit dem
+   Symbol der Rubrik, darunter „wie Früchte" die Dokumente. Grau = hängt noch an
+   keinem Eintrag; von dort lässt es sich zuordnen. Oben Filter-Chips mit
+   denselben Symbolen — sie zeigen nur, was es wirklich gibt. */
+const KAT_RUBRIK = {
+  Nebenkosten: 'nebenkosten', Steuer: 'zahlungen', Notarvertrag: 'notarvertraege',
+  Kredit: 'kredite', Versicherung: 'versicherungen', Mietvertrag: 'mieten',
+  Korrespondenz: '', Hausverwaltung: '', Sonstiges: '',
+};
+const KAT_FARBE = {
+  Nebenkosten: 'var(--teal-d)', Steuer: 'var(--amber)',
+  Notarvertrag: 'var(--teal)', Kredit: 'var(--neg)',
+  Versicherung: 'var(--soft)', Mietvertrag: 'var(--pos)',
+  Korrespondenz: '#5C6B70', Hausverwaltung: '#5C6B70', Sonstiges: '#8A9599',
+};
+const KAT_ZUORDENBAR = new Set(
+  ['Nebenkosten', 'Notarvertrag', 'Kredit', 'Versicherung', 'Mietvertrag']);
+const PRO_AST = 10;                     // so viele Früchte je Ast, dann „mehr"
+let baumDaten = null;
+let baumFilter = '';                    // '' = alle Äste
+let baumMehr = new Set();               // Äste, die alles zeigen
+
+async function baumZeigen() {
+  const ziel = document.getElementById('dokbaum');
+  if (!ziel) return;
+  try {
+    baumDaten = await api(`/dokumente/objekt/${encodeURIComponent(slug)}/baum`);
+  } catch { ziel.innerHTML = ''; return; }
+  baumMalen();
+}
+
+function baumMalen() {
+  const ziel = document.getElementById('dokbaum');
+  if (!ziel || !baumDaten) return;
+  const aeste = baumDaten.aeste || [];
+  if (!aeste.length) {
+    ziel.innerHTML = `<div class="baumleer">Noch keine Dokumente in der Ablage
+      dieser Immobilie.</div>`;
+    return;
+  }
+  const chip = (wert, text, ikon, farbe, zahl) => `
+    <button class="bfilter${baumFilter === wert ? ' an' : ''}" data-bfilter="${esc(wert)}"
+            ${farbe ? `style="--bf:${farbe}"` : ''}>
+      ${ikon ? `<span class="bi">${kostenIcon(ikon)}</span>` : ''}${esc(text)}
+      <span class="bz">${zahl}</span></button>`;
+
+  const filter = [chip('', 'Alle', 'Dokument', 'var(--ink)', baumDaten.gesamt)]
+    .concat(aeste.map(a => chip(a.kategorie, a.kategorie, a.kategorie,
+                                KAT_FARBE[a.kategorie], a.anzahl))).join('');
+
+  const gezeigt = baumFilter ? aeste.filter(a => a.kategorie === baumFilter) : aeste;
+  const zweige = gezeigt.map(a => {
+    const farbe = KAT_FARBE[a.kategorie] || 'var(--soft)';
+    const alle = baumMehr.has(a.kategorie);
+    const docs = alle ? a.dokumente : a.dokumente.slice(0, PRO_AST);
+    const fruechte = docs.map(d => `
+      <div class="frucht${d.zugeordnet ? '' : ' offen'}" data-dok="${d.id}">
+        <span class="fp" style="background:${d.zugeordnet ? farbe : 'transparent'};
+              border-color:${farbe}"></span>
+        <span class="fn" data-beleg="${d.id}"
+              data-name="${esc(d.dateiname)}">${esc(d.dateiname)}</span>
+        ${d.zugeordnet
+          ? '<span class="fok" title="einem Eintrag zugeordnet">✓</span>'
+          : (KAT_ZUORDENBAR.has(a.kategorie)
+              ? `<button class="fzu" data-zuordnen="${d.id}"
+                   title="Diesem Beleg einen Eintrag anlegen">zuordnen</button>`
+              : '<span class="fgrau">frei</span>')}
+      </div>`).join('');
+    const rest = a.dokumente.length - docs.length;
+    return `<section class="zweig" style="--zw:${farbe}">
+      <div class="zkopf">
+        <span class="zi">${kostenIcon(a.kategorie)}</span>
+        <span class="zt"><span class="zn">${esc(a.kategorie)}</span>
+          <span class="zo">${esc(a.ordner)}</span></span>
+        <span class="zz">${a.offen ? `${a.offen} offen` : 'alles zugeordnet'}</span>
+      </div>
+      <div class="fruechte">${fruechte}</div>
+      ${rest > 0 ? `<button class="mehrbtn" data-bmehr="${esc(a.kategorie)}"
+          >… ${rest} weitere zeigen</button>` : ''}
+    </section>`;
+  }).join('');
+
+  ziel.innerHTML = `<div class="bfilter-leiste">${filter}</div>
+    <div class="baum">${zweige}</div>`;
+}
+
 /* Die Ordnerstruktur lässt sich jederzeit nachträglich anlegen — auch wenn
    das Objekt längst existiert und Nextcloud erst später verbunden wurde. */
 async function cloudZeigen() {
@@ -1611,8 +1737,10 @@ async function cloudZeigen() {
         <div class="tat nebensache">
           <button data-cloud="struktur">Fehlende Unterordner anlegen</button>
         </div>
-      </div>`;
+      </div>
+      <div id="dokbaum"></div>`;
     ordnerZeigen();
+    baumZeigen();
     return;
   }
 
@@ -2625,6 +2753,33 @@ async function anteilFormular() {
 inhalt.addEventListener('click', async e => {
   if (e.target.closest('[data-haus]')) {
     location.href = hausUrl();
+    return;
+  }
+
+  /* ---- Dokumentenbaum (CCXCIX) ---- */
+  const bf = e.target.closest('[data-bfilter]');
+  if (bf) {
+    const wert = bf.dataset.bfilter;
+    baumFilter = (baumFilter === wert) ? '' : wert;
+    baumMalen();
+    return;
+  }
+  const bm = e.target.closest('[data-bmehr]');
+  if (bm) { baumMehr.add(bm.dataset.bmehr); baumMalen(); return; }
+  const zu = e.target.closest('[data-zuordnen]');
+  if (zu) {
+    zu.disabled = true; zu.textContent = '…';
+    try {
+      const r = await api(`/dokumente/${zu.dataset.zuordnen}/zuordnen`,
+                          { method: 'POST' });
+      const wo = (r.angelegt || []).map(a => a.wo).filter(Boolean).join(' · ');
+      melde(wo ? `Angelegt: ${wo} — unten als Entwurf bestätigen`
+                : 'Aus diesem Beleg liess sich kein Eintrag ableiten', wo ? 'pos' : '');
+      await laden();
+    } catch (fehler) {
+      zu.disabled = false; zu.textContent = 'zuordnen';
+      melde(fehler.message || 'Zuordnen fehlgeschlagen', 'neg');
+    }
     return;
   }
 
