@@ -144,6 +144,12 @@ class Einheit(SQLModel, table=True):
     # Jede Fläche zählt geteilt durch die Zahl der Nutzer zur Einheitsfläche.
     # Leerer Bestand („[]") lässt jede bestehende Verteilung unverändert.
     gemeinflaechen: str = "[]"
+    # CCCXXIX: zusätzliche Nutzflächen als JSON-Liste
+    # [{"bezeichnung": "Bad", "flaeche": 8}, …]. Anders als die Gemeinschafts-
+    # flächen zählen sie VOLL (ungeteilt) zur Einheitsfläche — benannte Teile
+    # der Wohnfläche (z. B. ein separates Bad). Leerer Bestand („[]") lässt
+    # jede bestehende Verteilung unverändert.
+    nutzflaechen: str = "[]"
 
     def gemein_flaeche(self) -> float:
         """Der anteilige Flächenbeitrag der Gemeinschaftsflächen: Summe über
@@ -164,6 +170,24 @@ class Einheit(SQLModel, table=True):
                 continue
             if personen > 0:
                 summe += flaeche / personen
+        return round(summe, 2)
+
+    def nutz_flaeche(self) -> float:
+        """CCCXXIX: der volle Flächenbeitrag der zusätzlichen Nutzflächen —
+        die Summe der `flaeche`-Werte, ungeteilt. Defensiv gegen kaputtes
+        JSON: ein unlesbarer Wert ergibt 0, nie einen Fehler."""
+        try:
+            posten = _json.loads(self.nutzflaechen or "[]")
+        except (ValueError, TypeError):
+            return 0.0
+        if not isinstance(posten, list):
+            return 0.0
+        summe = 0.0
+        for p in posten:
+            try:
+                summe += float(p.get("flaeche") or 0)
+            except (ValueError, TypeError, AttributeError):
+                continue
         return round(summe, 2)
 
 

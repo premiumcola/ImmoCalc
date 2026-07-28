@@ -208,7 +208,7 @@ def _einheiten_zahlen(session: Session, o: Objekt, jahr: int,
         zahlen.append(EinheitZahlen(
             bezeichnung=e.bezeichnung, nutzungsart=e.nutzungsart,
             flaeche=e.flaeche, terrasse=e.terrasse, nebenflaeche=e.nebenflaeche,
-            gemein=e.gemein_flaeche(),
+            gemein=e.gemein_flaeche(), nutz=e.nutz_flaeche(),
             einnahmen_monat=monatlich,
             kaltmiete=_monatlich(aktuell.kaltmiete, aktuell.turnus) if aktuell else 0.0,
             stellplatz=_monatlich(aktuell.stellplatz, aktuell.turnus) if aktuell else 0.0,

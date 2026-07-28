@@ -107,10 +107,13 @@ def _gesamtflaeche(e: Einheit) -> float | None:
     # CCCXXVII — anteilige Gemeinschaftsflächen zählen mit. Ohne erfasste
     # Gemeinschaftsflächen ist der Beitrag 0 und der Bestand bleibt unverändert.
     gemein = e.gemein_flaeche()
-    if all(t is None for t in teile) and gemein == 0:
+    # CCCXXIX — zusätzliche Nutzflächen zählen VOLL mit. Ohne erfasste
+    # Nutzflächen ist der Beitrag 0 und der Bestand bleibt unverändert.
+    nutz = e.nutz_flaeche()
+    if all(t is None for t in teile) and gemein == 0 and nutz == 0:
         return None
     return round((e.flaeche or 0) + (e.terrasse or 0) * 0.5
-                 + (e.nebenflaeche or 0) * 0.5 + gemein, 2)
+                 + (e.nebenflaeche or 0) * 0.5 + gemein + nutz, 2)
 
 
 def _laufend(mieten: list[Miete], start: date, ende: date) -> list[Miete]:

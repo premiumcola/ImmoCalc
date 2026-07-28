@@ -20,6 +20,9 @@ class EinheitZahlen:
     # CCCXXVII — anteilige Gemeinschaftsfläche (Fläche ÷ Nutzer). 0, wo keine
     # erfasst ist; dann bleibt die Gesamtfläche wie bisher.
     gemein: float = 0.0
+    # CCCXXIX — zusätzliche Nutzfläche, voll gerechnet (ungeteilt). 0, wo keine
+    # erfasst ist; dann bleibt die Gesamtfläche wie bisher.
+    nutz: float = 0.0
     einnahmen_monat: float = 0.0
     kaltmiete: float = 0.0
     stellplatz: float = 0.0
@@ -47,9 +50,11 @@ class EinheitZahlen:
     @property
     def gesamtflaeche(self) -> float:
         """Terrasse und Nebenfläche zählen anteilig (zur Hälfte), erfasste
-        Gemeinschaftsflächen anteilig nach Nutzerzahl (CCCXXVII)."""
+        Gemeinschaftsflächen anteilig nach Nutzerzahl (CCCXXVII), zusätzliche
+        Nutzflächen voll (CCCXXIX)."""
         return round((self.flaeche or 0) + (self.terrasse or 0) * 0.5
-                     + (self.nebenflaeche or 0) * 0.5 + self.gemein, 2)
+                     + (self.nebenflaeche or 0) * 0.5 + self.gemein
+                     + self.nutz, 2)
 
 
 def verteile(betrag: float, einheiten: list[EinheitZahlen]) -> list[float]:

@@ -463,6 +463,8 @@ class EinheitNeu(BaseModel):
     verkehrswert: Optional[float] = None
     # CCCXXVII: Gemeinschaftsflächen [{bezeichnung, flaeche, personen}, …].
     gemeinflaechen: Optional[list] = None
+    # CCCXXIX: zusätzliche Nutzflächen [{bezeichnung, flaeche}, …] — voll gezählt.
+    nutzflaechen: Optional[list] = None
 
 
 def _einheit(session: Session, eid: int) -> Einheit:
@@ -500,6 +502,10 @@ def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
         # Text) und der daraus errechnete anteilige Flächenbeitrag.
         "gemeinflaechen": _gemeinflaechen_liste(e),
         "gemein_flaeche": e.gemein_flaeche(),
+        # CCCXXIX — die zusätzlichen Nutzflächen als Liste und ihr voller
+        # Flächenbeitrag.
+        "nutzflaechen": _nutzflaechen_liste(e),
+        "nutz_flaeche": e.nutz_flaeche(),
         "vermietet": bool(laufend),
         "mieter": ", ".join(sorted({m.partei for m in laufend if m.partei})),
         "kaltmiete": round(sum(m.kaltmiete for m in laufend), 2),
@@ -533,6 +539,36 @@ def _gemein_bereinigt(posten: list) -> list:
             continue
         sauber.append({"bezeichnung": str(p.get("bezeichnung") or "").strip(),
                        "flaeche": flaeche, "personen": max(personen, 0)})
+    return sauber
+
+
+def _nutzflaechen_liste(e: Einheit) -> list:
+    """CCCXXIX — die zusätzlichen Nutzflächen einer Einheit als Liste — leer
+    bei kaputtem oder fehlendem JSON, damit die Oberfläche nie über einen
+    String stolpert."""
+    try:
+        wert = json.loads(e.nutzflaechen or "[]")
+        return wert if isinstance(wert, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def _nutz_bereinigt(posten: list) -> list:
+    """CCCXXIX — nur {bezeichnung, flaeche} je Nutzfläche, sauber getypt. Zeilen
+    ohne Fläche werden verworfen — eine leere Zeile aus dem Formular ist kein
+    Posten. Personen gibt es hier nicht: die Nutzfläche zählt voll."""
+    sauber = []
+    for p in posten:
+        if not isinstance(p, dict):
+            continue
+        try:
+            flaeche = float(p.get("flaeche") or 0)
+        except (ValueError, TypeError):
+            continue
+        if flaeche <= 0:
+            continue
+        sauber.append({"bezeichnung": str(p.get("bezeichnung") or "").strip(),
+                       "flaeche": flaeche})
     return sauber
 
 
@@ -576,7 +612,9 @@ def einheit_anlegen(slug: str, data: EinheitNeu,
                 stellplaetze=data.stellplaetze or 0,
                 verkehrswert=data.verkehrswert,
                 gemeinflaechen=json.dumps(_gemein_bereinigt(data.gemeinflaechen or []),
-                                          ensure_ascii=False))
+                                          ensure_ascii=False),
+                nutzflaechen=json.dumps(_nutz_bereinigt(data.nutzflaechen or []),
+                                        ensure_ascii=False))
     session.add(e)
     session.commit()
     session.refresh(e)
@@ -595,13 +633,17 @@ def einheit_aendern(eid: int, data: dict,
     e = _einheit(session, eid)
     erlaubt = {"bezeichnung", "nutzungsart", "flaeche", "terrasse",
                "nebenflaeche", "stellplaetze", "nk_abrechnung", "verkehrswert",
-               "gemeinflaechen"}
+               "gemeinflaechen", "nutzflaechen"}
     daten = dict(data)
     # CCCXXVII — die Gemeinschaftsflächen kommen als Liste und werden als JSON
     # gespeichert (das Modell hält eine Zeichenkette).
     if isinstance(daten.get("gemeinflaechen"), list):
         daten["gemeinflaechen"] = json.dumps(_gemein_bereinigt(daten["gemeinflaechen"]),
                                              ensure_ascii=False)
+    # CCCXXIX — dasselbe für die zusätzlichen Nutzflächen.
+    if isinstance(daten.get("nutzflaechen"), list):
+        daten["nutzflaechen"] = json.dumps(_nutz_bereinigt(daten["nutzflaechen"]),
+                                           ensure_ascii=False)
     felder = bereinige(Einheit, {k: v for k, v in daten.items() if k in erlaubt})
     if "bezeichnung" in felder:
         neu = (felder["bezeichnung"] or "").strip()

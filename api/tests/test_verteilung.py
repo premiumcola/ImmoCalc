@@ -89,6 +89,29 @@ def test_ohne_gemeinschaftsflaeche_bleibt_die_flaeche_gleich():
     assert verteilung.gewichte("flaeche", b, START, ENDE) == {"EG": 60}
 
 
+def test_nutzflaeche_zaehlt_voll_mit():
+    """CCCXXIX: eine 8-m²-Nutzfläche (z. B. ein separates Bad) zählt VOLL —
+    ungeteilt — zur Einheitsfläche; die Flächenverteilung verschiebt sich um +8."""
+    import json
+    eg = Einheit(objekt_id=1, bezeichnung="EG", flaeche=60,
+                 nutzflaechen=json.dumps([{"bezeichnung": "Bad", "flaeche": 8}]))
+    og = Einheit(objekt_id=1, bezeichnung="OG", flaeche=90)
+    assert eg.nutz_flaeche() == 8.0
+    b = verteilung.bezuege([eg, og],
+                           [_miete("EG", "Alpha"), _miete("OG", "Beta")],
+                           [], START, ENDE)
+    assert verteilung.gewichte("flaeche", b, START, ENDE) == {"Alpha": 68.0, "Beta": 90}
+
+
+def test_ohne_nutzflaeche_bleibt_die_flaeche_gleich():
+    """Additive Sicherheit: der Bestand (leere Nutzflächen) rechnet exakt wie
+    zuvor — nichts an der Verteilung verschiebt sich."""
+    e = Einheit(objekt_id=1, bezeichnung="EG", flaeche=60)
+    assert e.nutz_flaeche() == 0.0
+    b = verteilung.bezuege([e], [], [], START, ENDE)
+    assert verteilung.gewichte("flaeche", b, START, ENDE) == {"EG": 60}
+
+
 def test_personen_aus_dem_laufenden_mietverhaeltnis():
     b = verteilung.bezuege([_einheit("EG", 60), _einheit("OG", 60)],
                            [_miete("EG", "Alpha", personen=3),
