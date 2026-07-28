@@ -23,6 +23,9 @@ class Objekt(SQLModel, table=True):
     name: str
     ort: str = ""
     typ: str = "lg-mfhA"          # Logo-/Gebäudetyp
+    # CCCXXXIV — freie Objektart für Anzeige/Übersicht (z. B. „Mehrfamilienhaus",
+    # „Villa", „Grundstück"). Leer = aus `typ` abgeleitet.
+    objektart: str = ""
     nutzung: str = "Wohnen"
     turnus: str = "kalender"      # 'kalender' | 'individuell'
     start_monat: int = 1
@@ -38,6 +41,9 @@ class Objekt(SQLModel, table=True):
     flaeche: Optional[float] = None
     kaufpreis: Optional[float] = None
     kaufdatum: Optional[date] = None
+    # CCCXXX — Baujahr/Baudatum, getrennt vom Kaufdatum (ein Objekt wird
+    # später gekauft als gebaut). Additiv, Default None.
+    baudatum: Optional[date] = None
     verkehrswert: Optional[float] = None
     nc_ordner: str = ""           # verknüpfter Nextcloud-Ordner
     # Konto, von dem die Kosten dieses Objekts abgebucht werden

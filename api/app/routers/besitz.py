@@ -46,6 +46,28 @@ def runde(wert: float) -> float:
     return round(wert + 0.0, 1)
 
 
+# CCCXXXIV — Fallback Objektart aus dem Logo-/Gebäudetyp, solange am Objekt
+# keine freie Objektart gepflegt ist. So zeigt die Übersicht immer etwas
+# Sprechendes statt eines leeren Feldes.
+_TYP_OBJEKTART = {
+    "lg-grundstueck": "Grundstück",
+    "lg-villa": "Villa",
+    "lg-mfhA": "Mehrfamilienhaus",
+    "lg-mfhB": "Zwei-/Doppelhaus",
+    "lg-wohnung": "Einzelne Wohnung",
+    "lg-bauernhof": "Bauernhof",
+    "lg-gewerbe": "Gewerbe",
+}
+
+
+def objektart_von(o: Objekt) -> str:
+    """Anzuzeigende Objektart: die gepflegte, sonst aus `typ` abgeleitet."""
+    frei = (getattr(o, "objektart", "") or "").strip()
+    if frei:
+        return frei
+    return _TYP_OBJEKTART.get(getattr(o, "typ", ""), "Immobilie")
+
+
 class EigentuemerIn(BaseModel):
     name: str
     email: str = ""
@@ -73,6 +95,16 @@ def liste(session: Session = Depends(get_session)) -> list:
                          # — am ganzen Haus oder an genau der Einheit.
                          "einheit": (getattr(a, "einheit", "") or "").strip(),
                          "rolle": rolle_von(promille_von(a)),
+                         # CCCXXXIV — Objektart und Adresse für die dreigeteilte
+                         # Darstellung (Objektart · Einheit / Adresse). Beim
+                         # Grundstück ist die Flurnummer die Adresse.
+                         "objektart": objektart_von(objekte[a.objekt_id]),
+                         "typ": objekte[a.objekt_id].typ,
+                         "strasse": objekte[a.objekt_id].strasse,
+                         "plz": objekte[a.objekt_id].plz,
+                         "ort": objekte[a.objekt_id].ort,
+                         "flurstueck": objekte[a.objekt_id].flurstueck,
+                         "gemarkung": objekte[a.objekt_id].gemarkung,
                          "notiz": a.notiz}
                         for a in meine if a.objekt_id in objekte],
         })

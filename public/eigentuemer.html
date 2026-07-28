@@ -66,8 +66,15 @@
   .beteiligungen{border-top:1px solid var(--line);padding:4px 14px 10px}
   .bet{display:flex;align-items:center;gap:10px;padding:9px 0;min-width:0}
   .bet + .bet{border-top:1px solid #EEF1F1}
-  .bet .bn{flex:1;min-width:0;font:500 13px var(--body);
-           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* CCCXXXIV — dreigeteilte Objektbezeichnung: Objektart (fett, Display) ·
+     Einheit (dünn), darunter die Adresse klein in Mono. */
+  .bet .bo{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .bet .bo-art{font:600 13.5px var(--disp);letter-spacing:-.01em;
+               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bet .bo-eh{font:400 12px var(--body);font-style:italic;
+              color:var(--soft);letter-spacing:0}
+  .bet .bo-adr{font:500 10.5px var(--mono);color:var(--soft);
+               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .bet .bw{font:600 12.5px var(--mono);color:var(--teal-d);flex:none}
   /* Welche Einheiten dem Eigentümer an diesem Objekt gehören (CLXI). */
   .bet .beh{display:block;font:500 10.5px var(--mono);color:var(--soft);
@@ -368,6 +375,25 @@ function eigwertHtml(id) {
   </div>`;
 }
 
+/* CCCXXXIV — die linke Objektbezeichnung, dreigeteilt: Objektart (fett) ·
+   Einheit (dünn), darunter die Adresse in Mono. Beim Grundstück ist die
+   Flurnummer die Adresse. Defensiv: fehlt die Objektart (alter API-Stand),
+   fällt sie auf den Objektnamen zurück. */
+function betObjekt(o) {
+  const art = esc(o.objektart || o.name || 'Immobilie');
+  const einheit = (o.einheit || '').trim();
+  const grundstueck = o.typ === 'lg-grundstueck' || o.objektart === 'Grundstück';
+  const adr = grundstueck
+    ? [o.flurstueck, o.gemarkung].filter(Boolean).join(' · ')
+    : [o.strasse, [o.plz, o.ort].filter(Boolean).join(' ').trim()]
+        .filter(Boolean).join(', ');
+  return `<span class="bo">
+      <span class="bo-art">${art}${einheit
+        ? `<span class="bo-eh"> · ${esc(einheit)}</span>` : ''}</span>
+      ${adr ? `<span class="bo-adr">${esc(adr)}</span>` : ''}
+    </span>`;
+}
+
 async function eignerLaden() {
   try {
     [eigner] = await Promise.all([api('/eigentuemer'), uebersichtLaden()]);
@@ -398,10 +424,10 @@ async function eignerLaden() {
     // sonst gilt die Rolle fürs ganze Haus.
     const bet = e.objekte.length
       ? e.objekte.map(o => `<div class="bet">
-            <span class="bn">${esc(o.name)}</span>
+            ${betObjekt(o)}
             <span class="bw">${promille(o.promille)}</span>
-            <span class="chip ${o.einheit || o.rolle === 'Alleineigentümer'
-              ? 'teal' : ''}">${esc(o.einheit || o.rolle)}</span>
+            <span class="chip ${o.rolle === 'Alleineigentümer'
+              ? 'teal' : ''}">${esc(o.rolle)}</span>
           </div>`).join('')
       : '<div class="leer">Noch keinem Objekt zugeordnet</div>';
     return `<div class="person">
