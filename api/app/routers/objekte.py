@@ -224,7 +224,8 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
                "start_monat", "flaeche", "kaufpreis", "kaufdatum", "verkehrswert",
                "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber",
                # Grundstück — bleibt bei jedem anderen Objekttyp einfach leer
-               "grundstueck_flaeche", "grundstueck_nutzungsart",
+               "grundstueck_flaeche", "grundstueck_m2_preis",
+               "grundstueck_nutzungsart",
                "grundstueck_wirtschaftsart", "gemarkung", "flurstueck",
                "grundsteuerwert", "grundsteuer_messbetrag",
                "grundsteuer_hebesatz",
@@ -261,6 +262,11 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
     geprueft = Objekt.model_validate({**o.model_dump(), **felder})
     for k in felder:
         setattr(o, k, getattr(geprueft, k))
+    # CCXCVII — beim Grundstück den Grundstückswert aus dem geschätzten m²-Preis
+    # errechnen (Preis × Fläche). So bleibt `verkehrswert` die eine Quelle für
+    # die Vermögensübersicht, ohne dass sie vom m²-Preis wissen muss.
+    if o.grundstueck_m2_preis and o.grundstueck_flaeche:
+        o.verkehrswert = round(o.grundstueck_m2_preis * o.grundstueck_flaeche, 2)
     session.add(o)
     session.commit()
 

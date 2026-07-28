@@ -57,6 +57,10 @@ class Objekt(SQLModel, table=True):
     # sich aus Wert und Fläche und wird deshalb nicht gespeichert.
     # ----------------------------------------------------------------------
     grundstueck_flaeche: Optional[float] = None    # m² Grund und Boden
+    # CCXCVII — geschätzter Wert je m². Ist er gesetzt, errechnet sich der
+    # Grundstückswert (`verkehrswert`) daraus × Fläche; sonst bleibt der von
+    # Hand eingetragene Verkehrswert maßgeblich.
+    grundstueck_m2_preis: Optional[float] = None   # € je m² (geschätzt)
     grundstueck_nutzungsart: str = ""              # Ackerland | Grünland | Wald | …
     # Wortlaut aus dem Liegenschaftskataster, z. B. „Steigäcker, Waldfläche,
     # Landwirtschaftsfläche" — passt in keine Auswahlliste und steht deshalb frei.

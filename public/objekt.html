@@ -730,11 +730,11 @@ const GRUNDFELDER = [
     lang: true },
   { k: 'gemarkung', l: 'Gemarkung', typ: 'text' },
   { k: 'flurstueck', l: 'Flurstück', typ: 'text' },
-  { k: 'verkehrswert', l: 'Grundstückswert', typ: 'number', schritt: '0.01',
-    geld: true, voll: true,
-    note: 'Der geschätzte Marktwert (Verkehrswert) — steht NICHT auf dem '
-        + 'Finanzamts-Bescheid und ist etwas anderes als der Grundsteuerwert. '
-        + 'Nur für die Vermögensübersicht.' },
+  { k: 'grundstueck_m2_preis', l: 'Wert je m² (geschätzt)', typ: 'number',
+    schritt: '0.01', geld: true,
+    note: 'Dein geschätzter Marktwert je m². ImmoCalc errechnet daraus den '
+        + 'Grundstückswert (× Grundstücksfläche). Steht NICHT auf dem '
+        + 'Finanzamts-Bescheid und ist etwas anderes als der Grundsteuerwert.' },
   // Die drei folgenden bilden die Rechenkette der Grundsteuer, in der
   // Reihenfolge, in der sie entsteht (CCXCVI).
   { k: 'grundsteuerwert', l: 'Grundsteuerwert', typ: 'number', schritt: '0.01',
@@ -788,8 +788,15 @@ const EINHEITFELDER = [
 /* Beim Grundstück gibt es keine Wohnfläche und kein Hauskonto — die Zeilen
    stehen dort nicht ausgegraut herum, sie kommen gar nicht erst vor. Der
    Verkehrswert wandert in den Grundstücksblock. */
-const OHNE_BEIM_GRUNDSTUECK = new Set(['flaeche', 'verkehrswert',
-                                       'grundstueck_flaeche']);
+// CCXCVII — ein landwirtschaftliches Grundstück braucht vieles nicht: keine
+// Straße (es ist ein Flurstück), keine AfA (Grund und Boden wird nicht
+// abgeschrieben), kein Rücklagenkonto und kein Hauskonto. Diese Zeilen kommen
+// dort gar nicht erst vor — der Verkehrswert wandert in den Grundstücksblock.
+const OHNE_BEIM_GRUNDSTUECK = new Set([
+  'flaeche', 'verkehrswert', 'grundstueck_flaeche',
+  'strasse', 'afa_basis_uebernommen',
+  'ruecklage_saldo', 'ruecklage_monatlich',
+  'bank', 'iban', 'kontoinhaber']);
 const stammfelder = () => istGrundstueck()
   ? STAMMFELDER.filter(f => !OHNE_BEIM_GRUNDSTUECK.has(f.k))
   : STAMMFELDER;
@@ -1027,8 +1034,12 @@ function grundstueckHtml(o) {
   const zeilen = GRUNDFELDER
     .map(f => paarZeile(f.l, stammwert(f, o), { lang: f.lang })).join('');
   const abgeleitet = [];
-  if (o.verkehrswert && o.grundstueck_flaeche) {
-    abgeleitet.push(['Wert je m²', eur(o.verkehrswert / o.grundstueck_flaeche)]);
+  // Grundstückswert aus dem geschätzten m²-Preis × Fläche (CCXCVII).
+  if (o.grundstueck_m2_preis && o.grundstueck_flaeche) {
+    abgeleitet.push(['Grundstückswert (errechnet)',
+      eur(o.grundstueck_m2_preis * o.grundstueck_flaeche)]);
+  } else if (o.verkehrswert) {
+    abgeleitet.push(['Grundstückswert', eur(o.verkehrswert)]);
   }
   // Grundsteuer als Rechenkette in der Reihenfolge, in der sie entsteht (CCXCVI):
   // Grundsteuerwert × Steuermesszahl = Steuermessbetrag × Hebesatz = Jahr.
