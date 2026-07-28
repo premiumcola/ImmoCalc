@@ -1337,6 +1337,45 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
     }
 
 
+def _beleg_karte(d: Dokument) -> dict:
+    """Das Wenige, das die Detailansicht zu einem Beleg braucht."""
+    return {"id": d.id, "dateiname": d.dateiname, "jahr": d.jahr,
+            "status": d.status, "info": bool(d.info_zu_typ)}
+
+
+@router.get("/objekt/{slug}/eintrag/{typ}/{eid}/belege")
+def belege_zum_eintrag(slug: str, typ: str, eid: int,
+                       session: Session = Depends(get_session)) -> dict:
+    """Die Belege eines einzelnen Eintrags für die Detailansicht (CCCXIII).
+
+    `haupt` ist der Beleg, aus dem der Eintrag entstand (`quelle_dokument_id`).
+    `unter` sind die Info-Belege, die als Nachweis an ihm hängen
+    (`info_zu_typ`/`info_zu_id`) — im Baum stehen sie eingerückt darunter."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    paar = _AN_TYP_MODELLE.get(typ)
+    if not paar:
+        raise HTTPException(404, f"Unbekannter Eintragstyp: {typ}")
+    modell, _rubrik = paar
+    eintrag = session.get(modell, eid)
+    if not eintrag or getattr(eintrag, "objekt_id", o.id) != o.id:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+
+    haupt = None
+    quelle = getattr(eintrag, "quelle_dokument_id", None)
+    if quelle:
+        d = session.get(Dokument, quelle)
+        if d and not _ist_sidecar(d.dateiname):
+            haupt = _beleg_karte(d)
+
+    unter = [_beleg_karte(d) for d in session.exec(select(Dokument).where(
+        Dokument.info_zu_typ == typ, Dokument.info_zu_id == eid)).all()
+        if not _ist_sidecar(d.dateiname) and d.id != quelle]
+    unter.sort(key=lambda x: (-(x["jahr"] or 0), x["dateiname"].lower()))
+    return {"haupt": haupt, "unter": unter}
+
+
 @router.get("/wachdienst")
 def wachdienst_status() -> dict:
     """Wann zuletzt automatisch nachgesehen wurde."""

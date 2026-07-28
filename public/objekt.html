@@ -129,6 +129,58 @@
   .zd-ab{background:var(--paper);color:var(--ink)}
   .zd-ok{background:var(--teal);color:#fff}
 
+  /* CCCXIII — Eintrags-Detail: Daten links, Beleg rechts. Auf dem Telefon
+     stapelt sich alles (Daten oben, Beleg darunter), ab Tablet nebeneinander. */
+  dialog.detail-dlg{max-width:min(1000px,calc(100vw - 24px));width:calc(100vw - 24px);
+    height:min(92dvh,1080px);padding:0;background:var(--sheet);color:var(--ink);
+    display:flex;flex-direction:column;overflow:hidden;border-radius:20px}
+  dialog.detail-dlg::backdrop{background:rgba(22,38,44,.55)}
+  .dd-kopf{display:flex;align-items:center;gap:10px;padding:16px 18px;flex:none;
+    border-bottom:1px solid var(--line)}
+  .dd-ikon{flex:none;display:inline-flex}.dd-ikon svg{width:22px;height:22px}
+  .dd-t{flex:1;font:700 16px var(--disp);letter-spacing:-.015em;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dd-x{flex:none;border:none;background:var(--paper);width:38px;height:38px;
+    border-radius:50%;font-size:20px;color:var(--ink);cursor:pointer;line-height:1}
+  .dd-x:hover{background:var(--teal-l);color:var(--teal-d)}
+  .dd-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
+  .dd-links{flex:none;padding:16px 18px;display:flex;flex-direction:column;gap:16px}
+  .dd-daten{display:flex;flex-direction:column;gap:1px;background:var(--paper);
+    border-radius:14px;overflow:hidden}
+  .dd-zeile{display:flex;gap:12px;justify-content:space-between;align-items:baseline;
+    padding:11px 14px;background:var(--sheet)}
+  .dd-l{font:500 12.5px var(--body);color:var(--soft);flex:none}
+  .dd-v{font:600 13.5px var(--body);color:var(--ink);text-align:right;
+    overflow-wrap:anywhere}
+  .dd-belege{display:flex;flex-direction:column;gap:6px}
+  .dd-sub{font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.03em;
+    color:var(--soft);margin-bottom:2px}
+  .dd-beleg{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+    border:1px solid var(--line);background:var(--sheet);border-radius:12px;
+    padding:10px 12px;min-height:44px;cursor:pointer;font-family:var(--body)}
+  .dd-beleg.unter{margin-left:18px;border-style:dashed}
+  .dd-beleg.an{border-color:var(--teal);background:var(--teal-l)}
+  .dd-beleg .dd-bi{flex:none;display:inline-flex;color:var(--teal-d)}
+  .dd-beleg .dd-bi svg{width:16px;height:16px}
+  .dd-beleg .dd-bn{flex:1;min-width:0;font:600 12.5px var(--body);color:var(--ink);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dd-beleg .dd-bj{flex:none;font:600 11px var(--mono);color:var(--soft)}
+  .dd-keinbeleg{font:500 12.5px var(--body);color:var(--soft);line-height:1.5;
+    padding:2px 0}
+  .dd-edit{align-self:flex-start;border:1px solid var(--line);background:var(--paper);
+    color:var(--teal-d);border-radius:12px;padding:11px 16px;min-height:44px;
+    font:600 13px var(--disp);cursor:pointer}
+  .dd-edit:hover{background:var(--teal);color:#fff;border-color:var(--teal)}
+  .dd-rechts{flex:1;min-height:340px;padding:0 18px 18px;display:flex}
+  .dd-rechts .beleg-flaeche{flex:1;min-height:0;overflow:auto;border-radius:14px;
+    background:var(--paper);display:flex;flex-direction:column;gap:10px;
+    align-items:center;padding:10px;-webkit-overflow-scrolling:touch}
+  @media (min-width:760px){
+    .dd-body{flex-direction:row}
+    .dd-links{width:340px;overflow:auto;border-right:1px solid var(--line)}
+    .dd-rechts{padding:18px}
+  }
+
   /* CCCIV — Rubrik-Symbol in der Überschrift, in der Farbe der Rubrik */
   .sekopf .seikon{flex:none;display:inline-flex;align-items:center;
     color:var(--soft);align-self:center}
@@ -417,7 +469,7 @@
 <script type="module">
 import { installLogos, installNav, logoSvg, api, eur, eurVoll, esc, fristKlasse,
          fristText, melde, frage, schiebeFrage, promille, installHilfe,
-         belegAnsehen }
+         belegAnsehen, belegSeitenLaden }
   from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { auswahlfeld } from './assets/auswahl.js';
@@ -1270,6 +1322,9 @@ function wegHtml(o) {
 const ENTWURF_TYP = { mieten: 'miete', versicherungen: 'versicherung',
                       kredite: 'kredit', notarvertraege: 'notarvertrag',
                       zahlungen: 'zahlung' };
+// Rubrik (Frontend) → Eintragstyp (Backend `an_typ`), inkl. Nebenkosten. Die
+// Detailansicht (CCCXIII) holt darüber die Belege eines Eintrags.
+const AN_TYP = { ...ENTWURF_TYP, nebenkosten: 'kostenposition' };
 
 /* Die schlichte Listenzeile — der gemeinsame Kern von normaler und
    vorläufiger Darstellung. */
@@ -1979,6 +2034,142 @@ function zuordnenDialog(dok, vorgabe, umhaengen = false) {
     male();
     dlg.showModal();
   });
+}
+
+/* ---- CCCXIII — Eintrags-Detailansicht: Daten links, Beleg rechts -----------
+   Klick auf einen Eintrag (z. B. Grundsteuer) öffnet nicht mehr direkt das
+   Formular, sondern eine geteilte Ansicht wie im Dokumentenmodus: links die
+   Felder des Eintrags und seine Belege (Hauptbeleg + eingerückt die Info-
+   Belege), rechts das PDF. Ein Beleg antippen tauscht die Vorschau, „Bearbeiten"
+   führt ins bewährte Formular. Auf dem Telefon stapelt sich alles. */
+function feldWertText(f, wert) {
+  if (wert == null || wert === '') return '—';
+  if (f.typ === 'ja_nein' || f.typ === 'schalter') return wert ? 'Ja' : 'Nein';
+  if (f.typ === 'number') {
+    if (f.geld) return f.voll ? eurVoll(wert) : eur(wert);
+    // Jahreszahlen ohne Tausenderpunkt (2025, nicht 2.025).
+    if (/jahr/i.test(f.k)) return String(wert);
+    const zahl = Number(wert);
+    const txt = Number.isFinite(zahl) ? zahl.toLocaleString('de-DE') : String(wert);
+    return f.einheit ? `${txt} ${f.einheit}` : txt;
+  }
+  if (f.typ === 'date') {
+    const d = new Date(wert);
+    return isNaN(d) ? String(wert) : d.toLocaleDateString('de-DE');
+  }
+  return String(wert);
+}
+
+async function eintragDetail(bereich, id) {
+  const cfg = cfgFuer(bereich);
+  const typ = AN_TYP[bereich];
+  let eintrag;
+  try {
+    eintrag = (await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`))
+      .find(x => String(x.id) === String(id));
+  } catch { eintrag = null; }
+  if (!eintrag) return;
+
+  // Belege des Eintrags (nur für Typen, die das Backend kennt). Fällt der
+  // Endpunkt aus (z. B. API noch nicht neu gebaut), bleibt wenigstens der
+  // Quell-Beleg des Eintrags — sein `quelle_dokument_id` liegt schon vor.
+  let belege = { haupt: null, unter: [] };
+  if (typ) {
+    try {
+      belege = await api(`/dokumente/objekt/${encodeURIComponent(slug)}/eintrag/${typ}/${id}/belege`);
+    } catch {
+      if (eintrag.quelle_dokument_id) {
+        belege = { haupt: { id: eintrag.quelle_dokument_id,
+          dateiname: eintrag.beleg_dateiname || 'Beleg', jahr: eintrag.jahr },
+          unter: [] };
+      }
+    }
+  }
+  const alle = [belege.haupt, ...(belege.unter || [])].filter(Boolean);
+
+  // Felder als ruhige Zusammenfassung — dieselbe Beschreibung wie das Formular.
+  const felder = felderFuer(bereich, eintrag).filter(f => !f.hilfe && f.typ !== 'block');
+  const datenHtml = felder.map(f => {
+    const t = feldWertText(f, eintrag[f.k]);
+    return `<div class="dd-zeile"><span class="dd-l">${esc(f.l)}</span>
+      <span class="dd-v">${esc(t)}</span></div>`;
+  }).join('');
+
+  const belegItem = (d, unter) => `<button class="dd-beleg${unter ? ' unter' : ''}"
+      data-doc="${d.id}" data-name="${esc(d.dateiname)}">
+      <span class="dd-bi">${unter ? BELEG_ICON : HAKEN_ICON}</span>
+      <span class="dd-bn">${esc(d.dateiname)}</span>
+      ${d.jahr ? `<span class="dd-bj">${d.jahr}</span>` : ''}</button>`;
+  const belegeHtml = alle.length
+    ? (belege.haupt ? belegItem(belege.haupt, false) : '')
+      + (belege.unter || []).map(d => belegItem(d, true)).join('')
+    : `<div class="dd-keinbeleg">Noch kein Beleg hinterlegt — über den
+        Dokumentenbaum oben lässt sich einer anhängen.</div>`;
+
+  const dlg = document.createElement('dialog');
+  dlg.className = 'immo-dlg detail-dlg';
+  document.body.appendChild(dlg);
+  // Jeder Beleg-Wechsel liefert ein eigenes Array von Object-URLs (es füllt
+  // sich asynchron). Wir merken die Arrays und geben beim Schließen alles frei.
+  const adressListen = [];
+  dlg.addEventListener('close', () => {
+    for (const liste of adressListen) liste.forEach(a => URL.revokeObjectURL(a));
+    dlg.remove();
+  });
+
+  dlg.innerHTML = `
+    <div class="dd-kopf">
+      <span class="dd-ikon" style="color:${RUBRIKFARBE[bereich] || 'var(--teal)'}"
+        >${kostenIcon(cfg.ikon)}</span>
+      <span class="dd-t">${esc(cfg.name(eintrag))}</span>
+      <button class="dd-x" data-zu aria-label="Schließen">×</button>
+    </div>
+    <div class="dd-body">
+      <div class="dd-links">
+        <div class="dd-daten">${datenHtml}</div>
+        <div class="dd-belege"><span class="dd-sub">Belege</span>${belegeHtml}</div>
+        <button class="dd-edit" data-bearbeiten>✎ Bearbeiten</button>
+      </div>
+      <div class="dd-rechts">
+        <div class="beleg-flaeche">${alle.length
+          ? '<div class="beleg-blatt lade">Beleg wird geholt …</div>'
+          : '<div class="beleg-blatt leer">Kein Beleg zum Anzeigen.</div>'}</div>
+      </div>
+    </div>`;
+
+  const flaeche = dlg.querySelector('.beleg-flaeche');
+  const zeigeDoc = (docId, name) => {
+    dlg.querySelectorAll('.dd-beleg').forEach(b =>
+      b.classList.toggle('an', b.dataset.doc === String(docId)));
+    adressListen.push(belegSeitenLaden(`/api/dokumente/${docId}`, flaeche,
+      name || 'Beleg', `/api/dokumente/${docId}/inhalt`));
+  };
+  if (alle.length) {
+    const erst = belege.haupt || alle[0];
+    zeigeDoc(erst.id, erst.dateiname);
+  }
+
+  dlg.addEventListener('click', e => {
+    if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
+    const b = e.target.closest('[data-doc]');
+    if (b) { zeigeDoc(b.dataset.doc, b.dataset.name); return; }
+    if (e.target.closest('[data-bearbeiten]')) {
+      dlg.close();
+      oeffneEintragFormular(bereich, eintrag);
+    }
+  });
+  dlg.showModal();
+}
+
+/* Das bewährte Bearbeiten-Formular — aus der Detailansicht heraus erreichbar
+   und weiterhin der direkte Weg für Rubriken ohne Belegbezug. */
+function oeffneEintragFormular(bereich, eintrag) {
+  const extra = bereich === 'mieten' ? mietExtra(eintrag)
+              : bereich === 'kredite' ? kreditExtra(eintrag) : '';
+  const cfg = cfgFuer(bereich);
+  return formular({ titel: `${cfg.einzahl} bearbeiten`,
+                    felder: felderFuer(bereich, eintrag), bereich,
+                    werte: eintrag, absicht: 'eintrag', extra });
 }
 
 /* Die Ordnerstruktur lässt sich jederzeit nachträglich anlegen — auch wenn
@@ -3296,18 +3487,12 @@ inhalt.addEventListener('click', async e => {
                       extra: bereich === 'mieten' ? mietExtra(null) : '' });
   }
 
+  // CCCXIII — Klick auf einen Eintrag öffnet die Detailansicht (Daten links,
+  // Beleg rechts). Das Bearbeiten-Formular ist von dort aus erreichbar.
   const edit = e.target.closest('[data-edit]');
   if (edit) {
     const [bereich, id] = edit.dataset.edit.split(':');
-    const eintrag = (await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`))
-      .find(x => String(x.id) === id);
-    if (!eintrag) return;
-    const extra = bereich === 'mieten' ? mietExtra(eintrag)
-                : bereich === 'kredite' ? kreditExtra(eintrag) : '';
-    const cfg = cfgFuer(bereich);
-    return formular({ titel: `${cfg.einzahl} bearbeiten`,
-                      felder: felderFuer(bereich, eintrag), bereich,
-                      werte: eintrag, absicht: 'eintrag', extra });
+    return eintragDetail(bereich, id);
   }
 
   // CCXXIX — Grundschulden hängen nicht an BEREICHE (eigene Endpunkte), daher

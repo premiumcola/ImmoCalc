@@ -299,7 +299,23 @@ export function belegAnsehen(url, titel = 'Beleg') {
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
   const flaeche = dlg.querySelector('.beleg-flaeche');
+  const adressen = belegSeitenLaden(basis, flaeche, titel, url);
+
+  dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
+  return dlg;
+}
+
+/**
+ * Füllt ein Element mit allen Seiten eines Belegs als serverseitig gerenderten
+ * Bildern (`/seiten` sagt wie viele, `/vorschau?seite=i` liefert Blatt i,
+ * 0-basiert). `basis` ist die Dokument-URL OHNE `/inhalt`. Gibt das Array der
+ * erzeugten Object-URLs zurück — der Aufrufer gibt sie beim Schließen frei.
+ * Wiederverwendbar: die Beleg-Ansicht wie auch die Eintrags-Detailansicht
+ * (objekt.html, CCCXIII) zeigen darüber dasselbe PDF.
+ */
+export function belegSeitenLaden(basis, flaeche, titel = 'Beleg', tabUrl = '') {
   const adressen = [];
+  flaeche.innerHTML = '<div class="beleg-blatt lade">Beleg wird geholt …</div>';
 
   const seiteBild = (i) => fetch(`${basis}/vorschau?seite=${i}`)
     .then(a => { if (!a.ok) throw new Error('seite'); return a.blob(); })
@@ -337,13 +353,13 @@ export function belegAnsehen(url, titel = 'Beleg') {
     })
     .catch(() => {
       flaeche.innerHTML = '<div class="beleg-blatt leer">Für diese Datei gibt '
-        + 'es keine Bildvorschau.<br><a class="beleg-tab" href="'
-        + sicher(url) + '" target="_blank" rel="noopener">Im neuen Tab öffnen ↗</a>'
+        + 'es keine Bildvorschau.'
+        + (tabUrl ? '<br><a class="beleg-tab" href="' + sicher(tabUrl)
+            + '" target="_blank" rel="noopener">Im neuen Tab öffnen ↗</a>' : '')
         + '</div>';
     });
 
-  dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
-  return dlg;
+  return adressen;
 }
 
 const sicher = s => String(s ?? '')

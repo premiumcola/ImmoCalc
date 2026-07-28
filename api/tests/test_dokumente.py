@@ -323,6 +323,41 @@ def test_entfernen_loescht_nur_den_eintrag():
             assert s.get(Dokument, doc) is None
 
 
+def test_belege_zum_eintrag_haupt_und_unter():
+    """CCCXIII: Die Detailansicht bekommt den Quell-Beleg als `haupt` und die
+    Info-Belege des Eintrags eingerückt als `unter`."""
+    from app.models import Zahlung
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Detailweg 3"}).json()["slug"]
+        oid = _objekt_id(slug)
+        haupt = _lege_dokument_an(oid, "2025_Grundsteuerbescheid.pdf", jahr=2025)
+        with Session(engine) as s:
+            z = Zahlung(objekt_id=oid, jahr=2025, art="Grundsteuer",
+                        kategorie="Steuer", betrag=4.72, quelle_dokument_id=haupt)
+            s.add(z)
+            s.commit()
+            s.refresh(z)
+            zid = z.id
+        # Ein Info-Beleg, der an genau diesem Eintrag hängt.
+        _lege_dokument_an(oid, "2025_Zahlungsnachweis.pdf", jahr=2025,
+                          info_zu_typ="zahlung", info_zu_id=zid)
+        # Ein fremder Info-Beleg an einem anderen Eintrag zählt NICHT dazu.
+        _lege_dokument_an(oid, "fremd.pdf", info_zu_typ="zahlung", info_zu_id=zid + 999)
+
+        antwort = c.get(f"/api/dokumente/objekt/{slug}/eintrag/zahlung/{zid}/belege")
+        assert antwort.status_code == 200
+        daten = antwort.json()
+        assert daten["haupt"]["dateiname"] == "2025_Grundsteuerbescheid.pdf"
+        namen = [u["dateiname"] for u in daten["unter"]]
+        assert namen == ["2025_Zahlungsnachweis.pdf"]
+
+        # Unbekannter Typ und fehlender Eintrag: sauberes 404, kein Absturz.
+        assert c.get(f"/api/dokumente/objekt/{slug}/eintrag/quatsch/{zid}/belege"
+                     ).status_code == 404
+        assert c.get(f"/api/dokumente/objekt/{slug}/eintrag/zahlung/999999/belege"
+                     ).status_code == 404
+
+
 def test_pfade_bleiben_eindeutig():
     """LXVIII: derselbe Pfad darf nur einmal in der Ablage stehen."""
     from app.routers.dokumente import _eindeutigkeit_sichern
