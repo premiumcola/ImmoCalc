@@ -1062,6 +1062,63 @@ _ZUORDNUNG_MODELLE = (
 )
 
 
+@router.post("/objekt/{slug}/pfade-reparieren")
+def pfade_reparieren(slug: str, vorschau: bool = False,
+                     session: Session = Depends(get_session)) -> dict:
+    """Zieht veraltete Dateipfade nach (CCCVII).
+
+    Wandert eine Datei in der Nextcloud in einen Unterordner (von Hand oder
+    beim Einsortieren), zeigt der gespeicherte Pfad ins Leere — die Vorschau
+    meldet dann „Datei nicht gefunden". Hier wird jede vermisste Datei in den
+    Unterordnern des Objekts unter ihrem Namen gesucht und der Pfad berichtigt.
+    Verschoben oder gelöscht wird nichts."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    if not o.nc_ordner:
+        raise HTTPException(400, "Für dieses Objekt ist kein Ordner verknüpft.")
+    client = verbindung(session)
+
+    # Wo liegt welche Datei wirklich? Hauptordner + eine Ebene darunter.
+    wo: dict[str, str] = {}
+    wurzel = o.nc_ordner.strip("/")
+    try:
+        ebenen = [wurzel] + [f"{wurzel}/{e.name}" for e in client.liste(wurzel)
+                             if e.ordner]
+    except NextcloudFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+    for ordner in ebenen:
+        try:
+            for e in client.liste(ordner):
+                if not e.ordner:
+                    wo.setdefault(e.name, f"/{ordner}/{e.name}")
+        except NextcloudFehler:
+            continue
+
+    geprueft = berichtigt = 0
+    proben: list[str] = []
+    for d in session.exec(select(Dokument).where(Dokument.objekt_id == o.id)).all():
+        if _ist_sidecar(d.dateiname):
+            continue
+        geprueft += 1
+        richtig = wo.get(d.dateiname)
+        if not richtig or richtig == d.pfad:
+            continue
+        if len(proben) < 10:
+            proben.append(f"{d.dateiname}: {d.pfad} → {richtig}")
+        if not vorschau:
+            d.pfad = richtig
+            if d.status == VERMISST:
+                d.status = "zugeordnet"
+            session.add(d)
+        berichtigt += 1
+    if not vorschau:
+        session.commit()
+    log.info("Pfade repariert (%s): %d von %d", slug, berichtigt, geprueft)
+    return {"vorschau": vorschau, "geprueft": geprueft,
+            "berichtigt": berichtigt, "proben": proben}
+
+
 @router.get("/objekt/{slug}/baum")
 def baum(slug: str, session: Session = Depends(get_session)) -> dict:
     """Dokumentenbaum je Kategorie — mit der Auskunft, was schon an einem

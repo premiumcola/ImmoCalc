@@ -264,6 +264,23 @@ def anteil_setzen(slug: str, data: AnteilIn,
         select(Anteil).where(Anteil.objekt_id == o.id,
                              Anteil.eigentuemer_id == data.eigentuemer_id,
                              Anteil.einheit == einheit)).first()
+
+    # CCCVIII — mehr als das Ganze lässt sich nicht verteilen. Die Summe je
+    # Ebene (ganzes Objekt oder eine Einheit) bleibt bei höchstens 1000 ‰; der
+    # eigene bisherige Anteil zählt beim Ändern nicht doppelt mit.
+    schon = runde(sum(promille_von(a) for a in session.exec(
+        select(Anteil).where(Anteil.objekt_id == o.id,
+                             Anteil.einheit == einheit)).all()
+        if not (vorhanden and a.id == vorhanden.id)))
+    if runde(schon + wert) > VOLL:
+        frei = runde(VOLL - schon)
+        wo = f"an „{einheit}“" if einheit else "am Objekt"
+        raise HTTPException(400, (
+            f"{wo} sind bereits {schon:.10g} ‰ von 1000 ‰ vergeben — "
+            + (f"frei sind noch {frei:.10g} ‰."
+               if frei > 0 else
+               "es ist nichts mehr frei. Bitte zuerst einen bestehenden "
+               "Anteil löschen oder verkleinern, dann neu zuordnen.")))
     eintrag = vorhanden or Anteil(objekt_id=o.id,
                                   eigentuemer_id=data.eigentuemer_id,
                                   einheit=einheit)
