@@ -293,6 +293,25 @@
      Wortlaut aus dem Katasterauszug eine Spalte von vier Zeichen. */
   .paar.lang{flex-direction:column;align-items:flex-start;gap:4px}
   .paar.lang .pv{text-align:left;font-size:13px}
+  /* CCCXXX — kompakte Zweiergruppen: zwei kurze Werte teilen sich eine Zeile
+     und sparen so vertikale Höhe. Auf schmalen Geräten wieder gestapelt. */
+  .paar.duo{gap:26px;align-items:stretch}
+  .paar.duo .du{flex:1;min-width:0;display:flex;justify-content:space-between;
+                align-items:baseline;gap:10px}
+  @media(max-width:460px){
+    .paar.duo{flex-direction:column;gap:0}
+    .paar.duo .du{align-items:baseline}
+    .paar.duo .du + .du{border-top:1px solid var(--line);
+                        padding-top:11px;margin-top:11px}
+  }
+  /* CCCXXX — Konto & Rücklage und Nießbrauch als abgesetzte Blöcke: ein
+     ruhiger Mono-Titel mit einer feinen Linie, die die Zeile ausklingen lässt. */
+  .paar-trenn{display:flex;align-items:center;gap:12px;padding:16px 0 6px;
+              font:600 10.5px var(--mono);letter-spacing:.07em;
+              text-transform:uppercase;color:var(--soft)}
+  .paar-trenn::after{content:"";flex:1;height:1px;background:var(--line)}
+  /* CCCXXX — der Objektname klingt als ruhiger Zusatz im Stammdaten-Kopf mit. */
+  .sekopf h2.sec .secsub{font-weight:500;color:var(--soft)}
   .fussnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
             margin:-2px 2px 10px}
 
@@ -892,6 +911,13 @@ const cfgFuer = (bereich) => {
 /* Stammdaten des Objekts: dieselbe Feldbeschreibung für Anzeige und Formular. */
 const STAMMFELDER = [
   { k: 'name', l: 'Name', typ: 'text', pflicht: true },
+  // CCCXXX — die Objektart bestimmt, wie das Haus gedacht ist. Weit oben, weil
+  // sie den Charakter des Objekts festlegt.
+  { k: 'objektart', l: 'Objektart', typ: 'auswahl', ohneLeer: true,
+    vorgabe: 'Mehrfamilienhaus',
+    werte: ['Einfamilienhaus', 'Reihenhaus', 'Mehrfamilienhaus', 'Villa',
+            'Zwei-/Doppelhaus', 'Einzelne Wohnung', 'Bauernhof', 'Gewerbe',
+            'Grundstück'] },
   { k: 'strasse', l: 'Straße', typ: 'text' },
   { k: 'plz', l: 'PLZ', typ: 'text' },
   { k: 'ort', l: 'Ort', typ: 'text' },
@@ -908,18 +934,22 @@ const STAMMFELDER = [
   // deshalb hier für diesen Typ ausgeblendet.
   { k: 'grundstueck_flaeche', l: 'Grundstücksfläche / Grund', typ: 'number',
     schritt: '0.01', einheit: 'm²' },
-  { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
-  { k: 'kaufdatum', l: 'Kaufdatum', typ: 'date' },
   // CCXXXV — wie die Immobilie ins Eigentum kam. Bei Kauf zählt der Kaufpreis
   // als AfA-Basis; bei Schenkung, Erbschaft oder Überlassung übernimmt man
   // stattdessen die AfA-Basis des Vorbesitzers.
   { k: 'erwerbsart', l: 'Erwerbsart', typ: 'auswahl', ohneLeer: true,
     vorgabe: 'Kauf', werte: ['Kauf', 'Schenkung', 'Erbschaft', 'Überlassung'] },
-  { k: 'afa_basis_uebernommen', l: 'Übernommene AfA-Bemessung (vom Vorbesitzer)',
-    typ: 'number', schritt: '0.01', geld: true, voll: true, lang: true,
-    note: 'Nur bei Erwerb ohne Kaufpreis relevant — bei Schenkung, Erbschaft '
-        + 'oder Überlassung übernimmt man die AfA-Basis des Vorbesitzers.' },
+  { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
+  { k: 'kaufdatum', l: 'Kauf-/Erbschaftsdatum', typ: 'date' },
+  // CCCXXX — das Baujahr/Baudatum getrennt vom Kaufdatum: bei einer Erbschaft
+  // gibt es kein sinnvolles Kaufdatum, wohl aber ein Baujahr.
+  { k: 'baudatum', l: 'Baujahr / Baudatum', typ: 'date' },
   { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true },
+  // CCCXXX — Konto & Rücklage bilden einen eigenen Block: erst wer und wo
+  // (Kontoinhaber, IBAN, Bank), dann was zurückgelegt ist (Stand, Sparrate).
+  { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
+  { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
+  { k: 'bank', l: 'Bank', typ: 'text' },
   // CCIX — Rücklagenkonto: zurückgelegtes Geld für die Immobilie und die
   // laufende Sparrate. Beides optional, jederzeit nachtragbar.
   { k: 'ruecklage_saldo', l: 'Rücklagenkonto (Stand)', typ: 'number',
@@ -928,9 +958,6 @@ const STAMMFELDER = [
         + 'steht in der Wertentwicklung als eigene Zeile.' },
   { k: 'ruecklage_monatlich', l: 'Monatliche Rücklage', typ: 'number',
     schritt: '0.01', geld: true },
-  { k: 'bank', l: 'Bank', typ: 'text' },
-  { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
-  { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
   // CCCI — Nießbrauch als aktivierbarer Block. Der Schalter trägt den Umbau
   // (`umbau: true`): geht er aus, verschwinden Berechtigter und Frist. Der
   // Berechtigte ist einer der Eigentümer (Auswahl, kein Freitext) — die Werte
@@ -977,8 +1004,8 @@ const GRUNDFELDER = [
   { k: 'grundstueck_nutzungsart', l: 'Nutzungsart', typ: 'auswahl',
     werte: ['Ackerland', 'Grünland', 'Wald', 'Bauerwartungsland', 'Gemischt',
             'Sonstiges'] },
-  { k: 'grundstueck_wirtschaftsart', l: 'Wirtschaftsart', typ: 'text',
-    lang: true },
+  // CCCXXX — die Wirtschaftsart (grundstueck_wirtschaftsart) wird nicht mehr
+  // gezeigt; das Modellfeld bleibt bestehen, nur ohne Formular- und Anzeigezeile.
   { k: 'gemarkung', l: 'Gemarkung', typ: 'text' },
   { k: 'flurstueck', l: 'Flurstück', typ: 'text' },
   { k: 'grundstueck_m2_preis', l: 'Wert je m² (geschätzt)', typ: 'number',
@@ -1045,7 +1072,7 @@ const EINHEITFELDER = [
 // dort gar nicht erst vor — der Verkehrswert wandert in den Grundstücksblock.
 const OHNE_BEIM_GRUNDSTUECK = new Set([
   'flaeche', 'verkehrswert', 'grundstueck_flaeche',
-  'strasse', 'afa_basis_uebernommen',
+  'strasse', 'baudatum',
   'ruecklage_saldo', 'ruecklage_monatlich',
   'bank', 'iban', 'kontoinhaber']);
 /* Die Stammfelder — typ- und zustandsabhängig (CCCI). `aktiv` ist der aktuelle
@@ -1215,12 +1242,32 @@ function paarZeile(label, wert, { abgeleitet = false, lang = false,
 
 /* Eine gerechnete Zeile mit Herkunftsangabe — „Wohnfläche · 205 m² · aus 5
    Einheiten". Die Herkunft steht ruhig unter dem Wert. */
-function paarAbgeleitet(label, wert, quelle = null, lex = null) {
-  return `<div class="paar">
-    <span class="pl">${paarLabel(label, lex)}</span>
-    <span class="pv ${wert ? 'abgeleitet' : 'leer'}">${wert ? esc(wert)
-      : 'nicht erfasst'}${quelle ? `<span class="pq">${esc(quelle)}</span>`
-                                 : ''}</span></div>`;
+/* CCCXXX — eine Zelle (Label + Wert, optional mit Herkunft) als gemeinsamer
+   Baustein für ganze Zeilen und für die kompakten Zweiergruppen. */
+function zelleInner({ label, wert, quelle = null, lex = null, abgeleitet = false }) {
+  return `<span class="pl">${paarLabel(label, lex)}</span>
+    <span class="pv${wert ? (abgeleitet ? ' abgeleitet' : '') : ' leer'}"
+      >${wert ? esc(wert) : 'nicht erfasst'}${quelle
+        ? `<span class="pq">${esc(quelle)}</span>` : ''}</span>`;
+}
+
+/* CCCXXX — eine Reihe von Zellen kompakt darstellen: je zwei nebeneinander,
+   damit die Anzeige nicht so hoch wird. Zellen mit `voll` (langer Wert)
+   bekommen die ganze Zeile. */
+function kompaktZeilen(zellen) {
+  const out = [];
+  for (let i = 0; i < zellen.length; i++) {
+    const a = zellen[i];
+    const b = zellen[i + 1];
+    if (!a.voll && b && !b.voll) {
+      out.push(`<div class="paar duo"><div class="du">${zelleInner(a)}</div>`
+             + `<div class="du">${zelleInner(b)}</div></div>`);
+      i++;
+    } else {
+      out.push(`<div class="paar${a.lang ? ' lang' : ''}">${zelleInner(a)}</div>`);
+    }
+  }
+  return out.join('');
 }
 
 /* CCLIV — Wohnfläche und Stellplätze eines Objekts kommen aus den Einheiten,
@@ -1241,33 +1288,35 @@ function flaechenSummen() {
   };
 }
 
-/* Die gerechneten Flächenzeilen, die im Stammdatenblock die Stelle der
-   früheren manuellen „Gesamtfläche" einnehmen. */
-function wohnflaecheRows(o, s) {
+/* Die gerechneten Flächenzellen, die im Stammdatenblock die Stelle der
+   früheren manuellen „Gesamtfläche" einnehmen — als Zell-Daten, damit sie
+   kompakt neben den Stellplätzen stehen können. */
+function wohnflaecheCells(o, s) {
   const anzahl = einheiten.length;
   const einheitWort = n => `${n} Einheit${n === 1 ? '' : 'en'}`;
-  const rows = [];
+  const cells = [];
   if (s.mit) {
     const quelle = s.mit === anzahl ? `aus ${einheitWort(anzahl)}`
                                     : `aus ${s.mit} von ${einheitWort(anzahl)}`;
-    rows.push(paarAbgeleitet('Wohnfläche', flaecheText(s.wohn), quelle,
-                             'wohnflaeche'));
+    cells.push({ label: 'Wohnfläche', wert: flaecheText(s.wohn), quelle,
+                 lex: 'wohnflaeche', abgeleitet: true });
   } else if (o.flaeche) {
     // Noch keine Einheitenfläche erfasst — dann ist die manuelle Angabe alles,
     // was es gibt, und steht schlicht als Wohnfläche da.
-    rows.push(paarAbgeleitet('Wohnfläche', flaecheText(o.flaeche),
-                             'manuell — noch keine Einheitenfläche erfasst',
-                             'wohnflaeche'));
+    cells.push({ label: 'Wohnfläche', wert: flaecheText(o.flaeche),
+                 quelle: 'manuell — noch keine Einheitenfläche erfasst',
+                 lex: 'wohnflaeche', abgeleitet: true });
   } else {
-    rows.push(paarAbgeleitet('Wohnfläche', null,
-      anzahl ? 'in den Einheiten noch keine Fläche erfasst'
-             : 'noch keine Einheit erfasst', 'wohnflaeche'));
+    cells.push({ label: 'Wohnfläche', wert: null, abgeleitet: true,
+      quelle: anzahl ? 'in den Einheiten noch keine Fläche erfasst'
+                     : 'noch keine Einheit erfasst', lex: 'wohnflaeche' });
   }
   if (s.stell) {
-    rows.push(paarAbgeleitet('Stellplätze', String(s.stell),
-                             `aus ${einheitWort(anzahl)}`, 'stellplatz'));
+    cells.push({ label: 'Stellplätze', wert: String(s.stell),
+                 quelle: `aus ${einheitWort(anzahl)}`, lex: 'stellplatz',
+                 abgeleitet: true });
   }
-  return rows;
+  return cells;
 }
 
 /* Dezenter Hinweis, wenn die manuell geführte Wohnfläche von der aus den
@@ -1282,14 +1331,80 @@ function flaecheWarnung(manuell, s) {
 
 function stammHtml(o) {
   const s = flaechenSummen();
+  const felder = stammfelder();
+  const def = k => felder.find(f => f.k === k);
+  const hat = k => Boolean(def(k));
+  const erbe = o.erwerbsart === 'Erbschaft';
+  // Eine Zelle aus einem Stammfeld — Label, formatierter Wert, Hilfe-Lexikon.
+  const feldZelle = (k, extra = {}) => {
+    const f = def(k);
+    return { label: f.l, wert: stammwert(f, o), lex: f.lex, lang: f.lang, ...extra };
+  };
   const zeilen = [];
-  for (const f of stammfelder()) {
-    // Die frühere manuelle Fläche wird zu den gerechneten Zeilen aus den
-    // Einheiten; beim Grundstück kommt `flaeche` gar nicht erst vor.
-    if (f.k === 'flaeche') { zeilen.push(...wohnflaecheRows(o, s)); continue; }
-    zeilen.push(paarZeile(f.l, stammwert(f, o), { lang: f.lang, lex: f.lex }));
+
+  // Kopf: Objektart und (falls vorhanden) Erwerbsart nebeneinander.
+  const kopf = [];
+  if (hat('objektart')) kopf.push(feldZelle('objektart'));
+  if (hat('erwerbsart')) kopf.push(feldZelle('erwerbsart'));
+  zeilen.push(kompaktZeilen(kopf));
+
+  // Adresse einzeilig: Straße · PLZ Ort. Beim Grundstück fehlt die Straße.
+  const strasse = hat('strasse') ? o.strasse : '';
+  const plzOrt = [hat('plz') && o.plz, hat('ort') && o.ort].filter(Boolean).join(' ');
+  const adresse = [strasse, plzOrt].filter(Boolean).join(' · ');
+  zeilen.push(kompaktZeilen([{ label: 'Adresse', wert: adresse || null, voll: true }]));
+
+  // Flächen: Wohnfläche und Stellplätze aus den Einheiten, dazu die
+  // Grundstücksfläche — kompakt nebeneinander (beim Grundstück nicht hier).
+  const flaechen = [];
+  if (hat('flaeche')) flaechen.push(...wohnflaecheCells(o, s));
+  if (hat('grundstueck_flaeche')) flaechen.push(feldZelle('grundstueck_flaeche'));
+  zeilen.push(kompaktZeilen(flaechen));
+
+  // Erwerb & Wert: Kaufpreis (bei Erbschaft ohne Sinn, deshalb ausgeblendet),
+  // Kauf-/Erbschaftsdatum bzw. Baudatum, Verkehrswert.
+  const erwerb = [];
+  if (hat('kaufpreis') && !erbe) erwerb.push(feldZelle('kaufpreis'));
+  if (erbe) {
+    if (hat('baudatum')) erwerb.push(feldZelle('baudatum', { label: 'Baudatum' }));
+  } else {
+    if (hat('kaufdatum')) erwerb.push(feldZelle('kaufdatum'));
+    if (hat('baudatum')) erwerb.push(feldZelle('baudatum'));
   }
-  return `<div class="sekopf"><span class="seikon">${kostenIcon('Haus')}</span><h2 class="sec">Stammdaten</h2>
+  if (hat('verkehrswert')) erwerb.push(feldZelle('verkehrswert'));
+  zeilen.push(kompaktZeilen(erwerb));
+
+  // Konto & Rücklage als eigener, optisch abgesetzter Block.
+  const konto = [];
+  for (const k of ['kontoinhaber', 'iban', 'bank']) {
+    if (hat(k)) konto.push(feldZelle(k, { voll: true }));
+  }
+  const ruecklage = [];
+  for (const k of ['ruecklage_saldo', 'ruecklage_monatlich']) {
+    if (hat(k)) ruecklage.push(feldZelle(k));
+  }
+  if (konto.length || ruecklage.length) {
+    zeilen.push('<div class="paar-trenn"><span>Konto &amp; Rücklage</span></div>');
+    zeilen.push(kompaktZeilen(konto));
+    zeilen.push(kompaktZeilen(ruecklage));
+  }
+
+  // Nießbrauch: ist er eingetragen, ein eigener abgesetzter Block mit
+  // Berechtigtem und Frist; sonst nur die eine ruhige „Nein"-Zeile wie bisher.
+  if (o.niessbrauch_aktiv) {
+    const niess = [];
+    for (const k of ['niessbrauch_aktiv', 'niessbrauch_berechtigt', 'niessbrauch_bis']) {
+      if (hat(k)) niess.push(feldZelle(k, { voll: true }));
+    }
+    zeilen.push('<div class="paar-trenn"><span>Nießbrauch</span></div>');
+    zeilen.push(kompaktZeilen(niess));
+  } else if (hat('niessbrauch_aktiv')) {
+    zeilen.push(kompaktZeilen([feldZelle('niessbrauch_aktiv', { voll: true })]));
+  }
+
+  return `<div class="sekopf"><span class="seikon">${kostenIcon('Haus')}</span>
+      <h2 class="sec">Stammdaten${objekt?.name
+        ? ` <span class="secsub">· ${esc(objekt.name)}</span>` : ''}</h2>
       <button data-stamm="1">Bearbeiten</button></div>
     <div class="paare">${zeilen.join('')}</div>
     ${flaecheWarnung(o.flaeche, s)}`;
