@@ -36,6 +36,9 @@
     display:block; font:400 12px var(--body); color:var(--soft);
     margin-top:4px; line-height:1.35; overflow-wrap:anywhere;
   }
+  /* Flurnummer des Grundstücks — gesetzt wie ein Label (mono), gedeckt */
+  .tile .einheit.flur{font:600 11.5px var(--mono); letter-spacing:.02em;
+    color:var(--soft)}
 
   /* LXXIX — Haus: Oberkachel mit angedockten Einheiten. Die gemeinsame,
      etwas dunklere Flaeche haelt die Gruppe zusammen; die Einzelkacheln
@@ -264,9 +267,15 @@ function kachel(o, feinste = false) {
   const gross = feinste ? (h.einheit || h.strasse) : h.strasse;
   const oben = feinste ? '' : (h.ort ? `<span class="ortszeile">${esc(h.ort)}</span>` : '');
   const bub = feinste ? '' : bubbles(o);
-  const unten = feinste
-    ? (h.einheit ? '' : `<span class="einheit">${o.einheiten || 1} Einheit${(o.einheiten || 1) > 1 ? 'en' : ''}</span>`)
-    : (h.einheit ? `<span class="einheit">${esc(h.einheit)}</span>` : '');
+  // CCCXIV — das Grundstück trägt unter dem Namen seine Flurnummer, gesetzt wie
+  // die Einheitenzeile links (mono, gedeckt), statt eines Chips am Fuss. So ist
+  // die Kachel gleich formatiert wie die eines Hauses: Ort · Name · Unterzeile.
+  const grundstueck = o.typ === 'lg-grundstueck';
+  const unten = grundstueck
+    ? (o.flurstueck ? `<span class="einheit flur">${esc(o.flurstueck)}</span>` : '')
+    : feinste
+      ? (h.einheit ? '' : `<span class="einheit">${o.einheiten || 1} Einheit${(o.einheiten || 1) > 1 ? 'en' : ''}</span>`)
+      : (h.einheit ? `<span class="einheit">${esc(h.einheit)}</span>` : '');
 
   const knopf = `<button class="tile" data-slug="${esc(o.slug)}">
       <span class="ico">${logoSvg(o.typ)}</span>
@@ -275,12 +284,7 @@ function kachel(o, feinste = false) {
         <span class="name">${esc(gross)}</span>
         ${unten}
       </span>
-      ${o.typ === 'lg-grundstueck'
-        // CCCV — ein Grundstück rechnet keine Nebenkosten ab: statt der
-        // § 556-Frist steht hier, worum es geht — die Flurnummer.
-        ? (o.flurstueck
-            ? `<span class="chip">${esc(o.flurstueck)}</span>` : '')
-        : chips(o.frist_tage, o.offene_positionen)}
+      ${grundstueck ? '' : chips(o.frist_tage, o.offene_positionen)}
     </button>`;
   return bub ? `<section class="mitbubbles">${knopf}${bub}</section>` : knopf;
 }

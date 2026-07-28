@@ -113,8 +113,14 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
     mieten = _je_objekt(session.exec(
         select(Miete).where(Miete.objekt_id.in_(ids))).all(), ids)
 
-    aktive = {oid: next((z for z in zs if z.status == "in Arbeit"), None)
-              for oid, zs in zeitraeume.items()}
+    # CCCXV — sind mehrere Abrechnungen offen, zeigt die Kachel die *nächst-
+    # fällige* (kleinste § 556-Restfrist), nicht die erste in der Datenbank —
+    # sonst stünde oben eine Frist von 800 Tagen, während eine andere längst
+    # drängt. `frist_tage` ist die Zahl der Tage bis zur Frist (klein = eilig).
+    def _naechste(zs: list) -> Zeitraum | None:
+        offen = [z for z in zs if z.status == "in Arbeit"]
+        return min(offen, key=frist_tage) if offen else None
+    aktive = {oid: _naechste(zs) for oid, zs in zeitraeume.items()}
     zids = [z.id for z in aktive.values() if z is not None]
     offene: dict[int, int] = {}
     if zids:
