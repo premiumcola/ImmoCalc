@@ -55,6 +55,10 @@
   .fruechte{display:flex;flex-direction:column;gap:3px;
     border-left:1px dashed var(--line);margin-left:9px;padding-left:12px}
   .frucht{display:flex;align-items:center;gap:8px;padding:5px 0;min-height:32px}
+  /* CCCXVII — untergeordneter Beleg: eingerückt, mit Anschluss-Linie */
+  .frucht.kind{margin-left:16px;padding-left:12px;
+    border-left:2px solid var(--line)}
+  .frucht.kind .fn{font-size:12px;color:var(--soft)}
   .frucht .fp{width:9px;height:9px;border-radius:50%;border:1.5px solid;flex:none}
   .frucht .fn{flex:1;min-width:0;font:500 12.5px var(--body);color:var(--ink);
     cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1715,17 +1719,30 @@ async function laden() {
    Symbol der Rubrik, darunter „wie Früchte" die Dokumente. Grau = hängt noch an
    keinem Eintrag; von dort lässt es sich zuordnen. Oben Filter-Chips mit
    denselben Symbolen — sie zeigen nur, was es wirklich gibt. */
-const KAT_RUBRIK = {
-  Nebenkosten: 'nebenkosten', Steuer: 'zahlungen', Notarvertrag: 'notarvertraege',
-  Kredit: 'kredite', Versicherung: 'versicherungen', Mietvertrag: 'mieten',
-  Korrespondenz: '', Hausverwaltung: '', Sonstiges: '',
+// Vorschlag der Zielrubrik beim Zuordnen, abgeleitet aus dem echten Ordner
+// (CCCXVI). Der Dialog lässt sie ohnehin ändern.
+const ORDNER_RUBRIK = {
+  '60_Nebenkosten': 'nebenkosten', '70_Steuer_Finanzamt': 'zahlungen',
+  '40_Kauf_Eigentum_Finanzierung': 'notarvertraege',
+  '50_Pacht_und_Paechter': 'mieten', '20_Mietvertraege_Vermietung': 'mieten',
+  '01_Allgemein_Hauskonto': 'versicherungen',
 };
-const KAT_FARBE = {
-  Nebenkosten: 'var(--teal-d)', Steuer: 'var(--amber)',
-  Notarvertrag: 'var(--teal)', Kredit: 'var(--neg)',
-  Versicherung: 'var(--soft)', Mietvertrag: 'var(--pos)',
-  Korrespondenz: '#5C6B70', Hausverwaltung: '#5C6B70', Sonstiges: '#8A9599',
+// Farbe/Symbol je Ordner — an der Zahl (10_/40_/60_ …) festgemacht.
+const ORDNER_FARBE = {
+  '10': '#5C6B70', '20': 'var(--pos)', '30': '#5C6B70',
+  '40': 'var(--teal)', '50': 'var(--pos)', '55': '#5C6B70',
+  '60': 'var(--teal-d)', '70': 'var(--amber)', '80': '#5C6B70',
+  '98': '#8A9599', '99': '#8A9599', '01': 'var(--soft)', '': 'var(--neg)',
 };
+const ORDNER_IKON = {
+  '10': 'Dokument', '20': 'Miete', '30': 'Korrespondenz',
+  '40': 'Notarvertrag', '50': 'Miete', '60': 'Nebenkosten',
+  '70': 'Finanzamt', '80': 'Haus', '99': 'Dokument', '01': 'Versicherung',
+  '': 'Dokument',
+};
+const ordnerNr = o => (o || '').slice(0, 2).match(/^\d\d$/) ? o.slice(0, 2) : '';
+const ordnerFarbe = o => ORDNER_FARBE[ordnerNr(o)] || 'var(--soft)';
+const ordnerIkon = o => ORDNER_IKON[ordnerNr(o)] || 'Dokument';
 const PRO_AST = 10;                     // so viele Früchte je Ast, dann „mehr"
 let baumDaten = null;
 let baumFilter = '';                    // '' = alle Äste
@@ -1756,16 +1773,13 @@ function baumMalen() {
       <span class="bz">${zahl}</span></button>`;
 
   const filter = [chip('', 'Alle', 'Dokument', 'var(--ink)', baumDaten.gesamt)]
-    .concat(aeste.map(a => chip(a.kategorie, a.kategorie, a.kategorie,
-                                KAT_FARBE[a.kategorie], a.anzahl))).join('');
+    .concat(aeste.map(a => chip(a.ordner, a.titel, ordnerIkon(a.ordner),
+                                ordnerFarbe(a.ordner), a.anzahl))).join('');
 
-  const gezeigt = baumFilter ? aeste.filter(a => a.kategorie === baumFilter) : aeste;
-  const zweige = gezeigt.map(a => {
-    const farbe = KAT_FARBE[a.kategorie] || 'var(--soft)';
-    const alle = baumMehr.has(a.kategorie);
-    const docs = alle ? a.dokumente : a.dokumente.slice(0, PRO_AST);
-    const fruechte = docs.map(d => `
-      <div class="frucht${d.zugeordnet ? '' : ' offen'}" data-dok="${d.id}">
+  // Eine Frucht (Dokument) — optional eingerückt als Kind einer Hauptdatei.
+  const frucht = (d, farbe, kind = false) => `
+      <div class="frucht${d.zugeordnet ? '' : ' offen'}${kind ? ' kind' : ''}"
+           data-dok="${d.id}">
         <span class="fp" style="background:${d.zugeordnet ? farbe : 'transparent'};
               border-color:${farbe}"></span>
         <span class="fn" data-beleg="${d.id}"
@@ -1773,22 +1787,39 @@ function baumMalen() {
         ${d.zugeordnet
           ? `<span class="fok" title="${d.info ? 'als Beleg angehängt'
               : 'einem Eintrag zugeordnet'}">${d.info ? '⊙' : '✓'}</span>`
-          // CCCIX: jede Kategorie ist zuordenbar — die Zielrubrik wählt der
-          // Dialog, auch für „Sonstiges" (Kaufvertrag-Bestätigung u. Ä.).
           : `<button class="fzu" data-zuordnen="${d.id}"
-               data-rubrik="${esc(KAT_RUBRIK[a.kategorie] || '')}"
+               data-rubrik="${esc(ORDNER_RUBRIK[a_ordner] || '')}"
                title="Diesem Beleg einen Eintrag anlegen">zuordnen</button>`}
-      </div>`).join('');
-    const rest = a.dokumente.length - docs.length;
+      </div>`;
+
+  let a_ordner = '';
+  const gezeigt = baumFilter ? aeste.filter(a => a.ordner === baumFilter) : aeste;
+  const zweige = gezeigt.map(a => {
+    a_ordner = a.ordner;
+    const farbe = ordnerFarbe(a.ordner);
+    // CCCXVII — Kinder (Info-Belege) ihrer Hauptdatei zuordnen; alles andere
+    // steht auf oberster Ebene.
+    const kinderVon = new Map();
+    for (const d of a.dokumente) if (d.unter) {
+      if (!kinderVon.has(d.unter)) kinderVon.set(d.unter, []);
+      kinderVon.get(d.unter).push(d);
+    }
+    const oberste = a.dokumente.filter(d => !d.unter);
+    const alle = baumMehr.has(a.ordner);
+    const docs = alle ? oberste : oberste.slice(0, PRO_AST);
+    const fruechte = docs.map(d =>
+      frucht(d, farbe) + (kinderVon.get(d.id) || [])
+        .map(k => frucht(k, farbe, true)).join('')).join('');
+    const rest = oberste.length - docs.length;
     return `<section class="zweig" style="--zw:${farbe}">
       <div class="zkopf">
-        <span class="zi">${kostenIcon(a.kategorie)}</span>
-        <span class="zt"><span class="zn">${esc(a.kategorie)}</span>
-          <span class="zo">${esc(a.ordner)}</span></span>
+        <span class="zi">${kostenIcon(ordnerIkon(a.ordner))}</span>
+        <span class="zt"><span class="zn">${esc(a.titel)}</span>
+          <span class="zo">${esc(a.ordner || 'im Hauptordner')}</span></span>
         <span class="zz">${a.offen ? `${a.offen} offen` : 'alles zugeordnet'}</span>
       </div>
       <div class="fruechte">${fruechte}</div>
-      ${rest > 0 ? `<button class="mehrbtn" data-bmehr="${esc(a.kategorie)}"
+      ${rest > 0 ? `<button class="mehrbtn" data-bmehr="${esc(a.ordner)}"
           >… ${rest} weitere zeigen</button>` : ''}
     </section>`;
   }).join('');
@@ -1921,19 +1952,20 @@ async function cloudZeigen() {
   }
 
   if (s.angelegt) {
-    ziel.innerHTML = `<div class="cloudbox"><div class="zeile">
+    // CCCXVI — schlank: nur „Ordner verknüpft", darunter die Filter und die
+    // Dateiübersicht. Fehlende Unterordner legt ImmoCalc still selbst an; die
+    // Ordner-Chipliste und der Knopf sind weg (wenig gewinnbringend).
+    ziel.innerHTML = `<div class="cloudbox schlank"><div class="zeile">
         <span class="sym fertig">✓</span>
         <span class="txt">
           <span class="t">Ordner verknüpft</span>
           <span class="d">${esc(s.ordner)}</span>
         </span></div>
-        <div id="ordnerliste"></div>
-        <div class="tat nebensache">
-          <button data-cloud="struktur">Fehlende Unterordner anlegen</button>
-        </div>
       </div>
       <div id="dokbaum"></div>`;
-    ordnerZeigen();
+    // Fehlt ein Unterordner der Vorlage, wird er im Hintergrund angelegt —
+    // ohne Knopf. Erst prüfen (fehlend?), dann nur bei Bedarf anlegen.
+    ordnerAutoAnlegen();
     baumZeigen();
     return;
   }
@@ -1974,29 +2006,18 @@ async function cloudZeigen() {
     </div>`;
 }
 
-/* Selbst angelegte Ordner werden mit ausgewiesen — ImmoCalc rührt sie nicht an,
-   aber verschweigen soll es sie auch nicht. */
-async function ordnerZeigen() {
-  const ziel = document.getElementById('ordnerliste');
-  if (!ziel) return;
-  let s;
+/* CCCXVI — fehlt ein Unterordner der Vorlage, legt ImmoCalc ihn still an
+   (kein Knopf). Nur wenn wirklich etwas fehlt, geht eine Anfrage raus; danach
+   frischt sich der Baum auf, damit neue Ordner sofort sichtbar sind. */
+async function ordnerAutoAnlegen() {
   try {
-    s = await api(`/nextcloud/objekte/${encodeURIComponent(slug)}/ordner`);
-  } catch (fehler) {
-    ziel.innerHTML = `<span class="d" style="display:block;margin-top:10px">Ordnerliste
-      nicht lesbar — ${esc(String(fehler.message || fehler))}</span>`;
-    return;
-  }
-  if (!s.ordner.length) return;
-  const eigene = s.eigene.length;
-  ziel.innerHTML = `
-    <div class="strukturliste">${s.ordner.map(o =>
-      `<span class="${o.eigen ? 'eigen' : ''}" title="${esc(o.name)}">${esc(o.name)}</span>`
-    ).join('')}</div>
-    <span class="d" style="display:block;margin-top:10px;font:400 12px var(--body);
-      color:var(--soft)">${s.ordner.length} Ordner${eigene
-        ? ` · ${eigene} davon von dir angelegt (grün) — die bleiben unverändert`
-        : ''}${s.fehlend.length ? ` · ${s.fehlend.length} aus der Struktur fehlen` : ''}</span>`;
+    const s = await api(`/nextcloud/objekte/${encodeURIComponent(slug)}/ordner`);
+    if ((s.fehlend || []).length) {
+      await api(`/nextcloud/objekte/${encodeURIComponent(slug)}/struktur`,
+                { method: 'POST' });
+      baumZeigen();
+    }
+  } catch { /* Ordner nicht lesbar — der Baum zeigt trotzdem, was da ist */ }
 }
 
 /* ---- Formular: eine Fabrik für alle Bereiche ---- */
