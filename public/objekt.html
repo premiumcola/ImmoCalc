@@ -167,6 +167,7 @@
   .dd-beleg .dd-bj{flex:none;font:600 11px var(--mono);color:var(--soft)}
   .dd-keinbeleg{font:500 12.5px var(--body);color:var(--soft);line-height:1.5;
     padding:2px 0}
+  .dd-aktionen{display:flex;flex-wrap:wrap;gap:8px}
   .dd-edit{align-self:flex-start;border:1px solid var(--line);background:var(--paper);
     color:var(--teal-d);border-radius:12px;padding:11px 16px;min-height:44px;
     font:600 13px var(--disp);cursor:pointer}
@@ -491,7 +492,7 @@
 
 <script type="module">
 import { installLogos, installNav, logoSvg, api, eur, eurVoll, esc, fristKlasse,
-         fristText, melde, frage, schiebeFrage, promille, installHilfe,
+         fristText, melde, frage, wahl, schiebeFrage, promille, installHilfe,
          belegAnsehen, belegSeitenLaden }
   from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
@@ -1388,6 +1389,15 @@ const ENTWURF_TYP = { mieten: 'miete', versicherungen: 'versicherung',
 // Erwerbsnebenkosten sind Zahlungen — dieselbe Typkennung wie „zahlungen".
 const AN_TYP = { ...ENTWURF_TYP, nebenkosten: 'kostenposition',
                  erwerbskosten: 'zahlung' };
+// CCCXXIV — zwischen welchen Rubriken sich ein Eintrag umklassifizieren lässt
+// (der „Erwerb/Steuer"-Cluster). Der Wert ist zugleich der Bereich und das
+// Backend-Ziel.
+const UMKLASS_ZIELE = [
+  { wert: 'erwerbskosten', titel: 'Einmalige Erwerbsnebenkosten' },
+  { wert: 'zahlungen', titel: 'Finanzamt' },
+  { wert: 'notarvertraege', titel: 'Notarverträge' },
+];
+const kannUmklassifizieren = b => UMKLASS_ZIELE.some(z => z.wert === b);
 
 /* Die schlichte Listenzeile — der gemeinsame Kern von normaler und
    vorläufiger Darstellung. */
@@ -2212,7 +2222,11 @@ async function eintragDetail(bereich, id) {
       <div class="dd-links">
         <div class="dd-daten">${datenHtml}</div>
         <div class="dd-belege"><span class="dd-sub">Belege</span>${belegeHtml}</div>
-        <button class="dd-edit" data-bearbeiten>✎ Bearbeiten</button>
+        <div class="dd-aktionen">
+          <button class="dd-edit" data-bearbeiten>✎ Bearbeiten</button>
+          ${kannUmklassifizieren(bereich)
+            ? `<button class="dd-edit" data-umklass>⇄ Rubrik ändern</button>` : ''}
+        </div>
       </div>
       <div class="dd-rechts">
         <div class="beleg-flaeche">${alle.length
@@ -2243,6 +2257,24 @@ async function eintragDetail(bereich, id) {
     if (e.target.closest('[data-bearbeiten]')) {
       dlg.close();
       oeffneEintragFormular(bereich, eintrag, aktuellerBeleg);
+      return;
+    }
+    if (e.target.closest('[data-umklass]')) {
+      const ziele = UMKLASS_ZIELE.filter(z => z.wert !== bereich);
+      wahl('Rubrik ändern', `„${cfg.name(eintrag)}" gehört eigentlich zu …`,
+           ziele.map(z => ({ wert: z.wert, text: z.titel }))).then(async gewaehlt => {
+        if (!gewaehlt) return;
+        try {
+          await api(`/dokumente/eintrag/${AN_TYP[bereich]}/${id}/umklassifizieren`,
+                    { method: 'POST', body: { ziel: gewaehlt } });
+        } catch (fehler) {
+          return melde(String(fehler.message || 'Konnte nicht geändert werden.'), 'neg');
+        }
+        dlg.close();
+        const titel = (UMKLASS_ZIELE.find(z => z.wert === gewaehlt) || {}).titel;
+        melde(`Eintrag nach „${titel}" verschoben`, 'pos');
+        await laden();
+      });
     }
   });
   dlg.showModal();

@@ -1376,6 +1376,110 @@ def belege_zum_eintrag(slug: str, typ: str, eid: int,
     return {"haupt": haupt, "unter": unter}
 
 
+# CCCXXIV — einen Eintrag in eine andere Rubrik überführen. Wohin: Kurzname →
+# Zieltyp und (bei Zahlungen) die feste Kategorie/Turnus. Bewusst auf den
+# „Erwerb/Steuer"-Cluster beschränkt, wo eine Umklassifizierung fachlich vorkommt.
+_UMKLASS_ZIEL = {
+    "erwerbskosten": {"typ": "zahlung", "kategorie": "Erwerbsnebenkosten",
+                      "turnus": "einmalig", "absetzbar": False},
+    "zahlungen": {"typ": "zahlung", "kategorie": "Steuer",
+                  "turnus": "jaehrlich", "absetzbar": True},
+    "notarvertraege": {"typ": "notarvertrag"},
+}
+
+
+def _eintrag_kern(eintrag) -> dict:
+    """Die übertragbaren Felder eines Eintrags — modellübergreifend. Das Jahr
+    kommt aus `jahr` (Zahlung) oder dem Beurkundungsdatum (Notarvertrag)."""
+    jahr = getattr(eintrag, "jahr", None)
+    if not jahr:
+        d = getattr(eintrag, "datum", None)
+        jahr = d.year if d else None
+    return {
+        "art": (getattr(eintrag, "art", None)
+                or getattr(eintrag, "bezeichnung", None) or "Sonstiges"),
+        "betrag": getattr(eintrag, "betrag", 0.0) or 0.0,
+        "jahr": jahr,
+        "notiz": getattr(eintrag, "notiz", "") or "",
+        "beteiligte": getattr(eintrag, "beteiligte", "") or "",
+        "quelle_dokument_id": getattr(eintrag, "quelle_dokument_id", None),
+    }
+
+
+class UmklassifizierenIn(BaseModel):
+    ziel: str
+
+
+@router.post("/eintrag/{typ}/{eid}/umklassifizieren")
+def umklassifizieren(typ: str, eid: int, data: UmklassifizierenIn,
+                     session: Session = Depends(get_session)) -> dict:
+    """Überführt einen Eintrag in eine andere Rubrik (CCCXXIV).
+
+    Beispiel: der „Notarvertrag Kaufvertrag" ist eigentlich die Notargebühren-
+    Rechnung und gehört zu den einmaligen Erwerbsnebenkosten. Die Belege
+    (Quell-Beleg + Info-Belege) wandern mit; der alte Eintrag wird gelöscht.
+    Innerhalb derselben Tabelle (Zahlung → Zahlung) bleibt die id erhalten und
+    es wird nur die Kategorie umgestellt — dann muss gar nichts umgehängt werden.
+    Datensicher: erst das Ziel anlegen, dann den alten Eintrag entfernen."""
+    paar = _AN_TYP_MODELLE.get(typ)
+    if not paar:
+        raise HTTPException(404, f"Unbekannter Eintragstyp: {typ}")
+    modell, _rubrik = paar
+    eintrag = session.get(modell, eid)
+    if not eintrag:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    o = session.get(Objekt, getattr(eintrag, "objekt_id", None))
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+
+    ziel = (data.ziel or "").strip().lower()
+    cfg = _UMKLASS_ZIEL.get(ziel)
+    if not cfg:
+        raise HTTPException(400, f"Unbekanntes Ziel „{data.ziel}“")
+    ziel_typ = cfg["typ"]
+
+    # Gleiche Tabelle (Zahlung → Zahlung): nur die Kategorie umstellen. id und
+    # alle Belege bleiben hängen — nichts wird gelöscht oder umgehängt.
+    if typ == ziel_typ == "zahlung":
+        eintrag.kategorie = cfg["kategorie"]
+        eintrag.turnus = cfg["turnus"]
+        eintrag.absetzbar = cfg["absetzbar"]
+        session.add(eintrag)
+        session.commit()
+        return {"ok": True, "neu": {"typ": "zahlung", "id": eintrag.id,
+                                    "art": eintrag.art}}
+
+    kern = _eintrag_kern(eintrag)
+    if ziel_typ == "zahlung":
+        neu = Zahlung(objekt_id=o.id, jahr=kern["jahr"] or date.today().year,
+                      art=kern["art"], kategorie=cfg["kategorie"],
+                      turnus=cfg["turnus"], absetzbar=cfg["absetzbar"],
+                      betrag=kern["betrag"], notiz=kern["notiz"],
+                      quelle_dokument_id=kern["quelle_dokument_id"])
+    elif ziel_typ == "notarvertrag":
+        datum = date(kern["jahr"], 1, 1) if kern["jahr"] else None
+        neu = Notarvertrag(objekt_id=o.id, art=kern["art"], betrag=kern["betrag"],
+                           datum=datum, beteiligte=kern["beteiligte"],
+                           notiz=kern["notiz"],
+                           quelle_dokument_id=kern["quelle_dokument_id"])
+    else:                                               # pragma: no cover
+        raise HTTPException(400, f"Ziel „{ziel}“ wird nicht unterstützt")
+    session.add(neu)
+    session.flush()
+
+    # Info-Belege des alten Eintrags an den neuen hängen.
+    for d in session.exec(select(Dokument).where(
+            Dokument.info_zu_typ == typ, Dokument.info_zu_id == eid)).all():
+        d.info_zu_typ = ziel_typ
+        d.info_zu_id = neu.id
+        session.add(d)
+    session.delete(eintrag)
+    session.commit()
+    log.info("Eintrag %s#%s nach %s umklassifiziert → %s#%s", typ, eid,
+             ziel, ziel_typ, neu.id)
+    return {"ok": True, "neu": {"typ": ziel_typ, "id": neu.id, "art": neu.art}}
+
+
 @router.get("/wachdienst")
 def wachdienst_status() -> dict:
     """Wann zuletzt automatisch nachgesehen wurde."""

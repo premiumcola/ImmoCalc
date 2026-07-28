@@ -389,6 +389,70 @@ def test_zuordnen_als_erwerbsnebenkosten_baut_einmalige_zahlung():
             assert anzahl == 1
 
 
+def test_umklassifizieren_notarvertrag_zu_erwerbsnebenkosten():
+    """CCCXXIV: ein Notarvertrag, der eigentlich die Notargebühren-Rechnung ist,
+    wird zu einer einmaligen Erwerbsnebenkosten-Zahlung — samt Belegen; der
+    alte Eintrag verschwindet."""
+    from app.models import Notarvertrag, Zahlung
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Umklassweg 2"}).json()["slug"]
+        oid = _objekt_id(slug)
+        haupt = _lege_dokument_an(oid, "2022_Kaufvertrag-Rechnung.pdf", jahr=2022)
+        with Session(engine) as s:
+            nv = Notarvertrag(objekt_id=oid, art="Kaufvertrag", betrag=156.25,
+                              datum=date(2022, 4, 14), quelle_dokument_id=haupt)
+            s.add(nv)
+            s.commit()
+            s.refresh(nv)
+            nid = nv.id
+        info = _lege_dokument_an(oid, "2022_Anlage.pdf", jahr=2022,
+                                 info_zu_typ="notarvertrag", info_zu_id=nid)
+
+        antwort = c.post(f"/api/dokumente/eintrag/notarvertrag/{nid}/umklassifizieren",
+                         json={"ziel": "erwerbskosten"})
+        assert antwort.status_code == 200, antwort.text
+        neu = antwort.json()["neu"]
+        assert neu["typ"] == "zahlung"
+        with Session(engine) as s:
+            # Der Notarvertrag ist weg …
+            assert s.get(Notarvertrag, nid) is None
+            # … und es gibt eine einmalige Erwerbsnebenkosten-Zahlung mit den Werten.
+            z = s.get(Zahlung, neu["id"])
+            assert z.kategorie == "Erwerbsnebenkosten"
+            assert z.turnus == "einmalig"
+            assert z.art == "Kaufvertrag"
+            assert z.betrag == 156.25
+            assert z.jahr == 2022
+            assert z.quelle_dokument_id == haupt
+            # Der Info-Beleg hängt jetzt an der neuen Zahlung.
+            d = s.get(Dokument, info)
+            assert d.info_zu_typ == "zahlung"
+            assert d.info_zu_id == z.id
+
+
+def test_umklassifizieren_zahlung_bleibt_in_der_tabelle():
+    """CCCXXIV: Zahlung → Zahlung stellt nur die Kategorie um, die id bleibt."""
+    from app.models import Zahlung
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Umklassweg 3"}).json()["slug"]
+        oid = _objekt_id(slug)
+        with Session(engine) as s:
+            z = Zahlung(objekt_id=oid, jahr=2021, art="Grunderwerbsteuer",
+                        kategorie="Steuer", betrag=9000.0)
+            s.add(z)
+            s.commit()
+            s.refresh(z)
+            zid = z.id
+        antwort = c.post(f"/api/dokumente/eintrag/zahlung/{zid}/umklassifizieren",
+                         json={"ziel": "erwerbskosten"})
+        assert antwort.status_code == 200
+        assert antwort.json()["neu"]["id"] == zid           # dieselbe id
+        with Session(engine) as s:
+            z = s.get(Zahlung, zid)
+            assert z.kategorie == "Erwerbsnebenkosten"
+            assert z.turnus == "einmalig"
+
+
 def test_pfade_bleiben_eindeutig():
     """LXVIII: derselbe Pfad darf nur einmal in der Ablage stehen."""
     from app.routers.dokumente import _eindeutigkeit_sichern
