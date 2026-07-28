@@ -69,6 +69,40 @@
     font:600 12px var(--disp);cursor:pointer;padding:4px 0}
   .baumleer{font:500 12.5px var(--body);color:var(--soft);padding:10px 2px}
 
+  /* CCCXII — Jahresstaffel einer wiederkehrenden Position */
+  .eintrag.staffel{align-items:flex-start}
+  .eintrag.staffel .en .stz{font:600 10.5px var(--mono);color:var(--soft);
+    background:var(--paper);border-radius:99px;padding:1px 7px;margin-left:7px}
+  .staffel-jahre{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+  .stjahr{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--line);
+    background:var(--sheet);border-radius:9px;padding:4px 8px;cursor:pointer}
+  .stjahr:hover{border-color:var(--teal);background:var(--teal-l)}
+  .stjahr .sj{font:600 11px var(--mono);color:var(--ink)}
+  .stjahr .sb{font:500 11px var(--body);color:var(--soft)}
+
+  /* CCCIX/CCCX — Zuordnen-Dialog */
+  .zuord-dlg{border:none;border-radius:18px;padding:0 0 4px;max-width:460px;
+    width:calc(100vw - 28px);background:var(--sheet);color:var(--ink);
+    box-shadow:0 18px 50px rgba(22,38,44,.25)}
+  .zuord-dlg::backdrop{background:rgba(22,38,44,.45)}
+  .zd-kopf{display:flex;align-items:center;gap:10px;padding:16px 18px 6px}
+  .zd-t{font:700 15px var(--disp);flex:1}
+  .zd-datei{margin:0 18px 12px;font:500 12.5px var(--mono);color:var(--soft);
+    overflow-wrap:anywhere;line-height:1.5}
+  .zd-block{padding:0 18px 14px}
+  .zd-l{display:block;font:600 11px var(--mono);text-transform:uppercase;
+    color:var(--soft);letter-spacing:.03em;margin-bottom:7px}
+  .zd-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .zd-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
+    background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 12px;
+    min-height:40px;font:600 12.5px var(--body);cursor:pointer}
+  .zd-chip .zi{display:inline-flex;color:var(--soft)}
+  .zd-chip .zi svg{width:16px;height:16px}
+  .zd-chip.an{background:var(--teal);border-color:var(--teal);color:#fff}
+  .zd-chip.an .zi{color:#fff}
+  .zd-hint{display:block;margin-top:8px;font:500 12px var(--body);color:var(--soft);
+    line-height:1.5}
+
   /* CCCIV — Rubrik-Symbol in der Überschrift, in der Farbe der Rubrik */
   .sekopf .seikon{flex:none;display:inline-flex;align-items:center;
     color:var(--soft);align-self:center}
@@ -940,6 +974,9 @@ let fokus = null;
 let grundschulden = [];
 /* CCCI — die Eigentümer-Namen dieses Objekts, für die Nießbrauch-Auswahl. */
 let objektEigentuemer = [];
+/* CCCIX — die geladenen Bereiche, damit der Zuordnen-Dialog die vorhandenen
+   Einträge einer Rubrik anbieten kann. */
+let bereicheDaten = {};
 
 const flaecheText = f => `${Number(f).toLocaleString('de-DE',
   { maximumFractionDigits: 1 })} m²`;
@@ -1259,15 +1296,62 @@ const sekopfHtml = (titel, ikon = '', knopf = '', farbe = '') =>
          >${kostenIcon(ikon)}</span>` : ''}
     <h2 class="sec">${esc(titel)}</h2>${knopf}</div>`;
 
+/* CCCXII — Wiederkehrendes staffeln statt stapeln: zehn Grundsteuerbescheide
+   sind zehn Jahre derselben Sache, nicht zehn Sachen. Sie stehen deshalb als
+   EINE Zeile mit einer Jahresstaffel darunter; jedes Jahr bleibt einzeln
+   anklickbar. Entwürfe (orange) bleiben eigenständig — sie wollen erst
+   bestätigt werden. */
+function staffelHtml(cfg, bereich, art, gruppe) {
+  const nachJahr = [...gruppe].sort((a, b) => (b.jahr || 0) - (a.jahr || 0));
+  const neuestes = nachJahr[0];
+  const jahre = nachJahr.map(e => `
+    <button class="stjahr" data-edit="${bereich}:${e.id}"
+            title="${esc(cfg.name(e))} ${e.jahr || ''} öffnen">
+      <span class="sj">${e.jahr || '—'}</span>
+      <span class="sb">${eur(e.betrag || 0)}</span></button>`).join('');
+  return `<div class="eintrag staffel">
+      <span class="sym">${kostenIcon(art)}</span>
+      <span class="et">
+        <span class="en">${esc(art)}
+          <span class="stz">${gruppe.length} Jahre</span></span>
+        <span class="ed">zuletzt ${neuestes.jahr || '—'} · ${
+          esc(cfg.detail ? cfg.detail(neuestes) : '')}</span>
+        <span class="staffel-jahre">${jahre}</span>
+      </span>
+      <span class="ew">${cfg.wert ? cfg.wert(neuestes) : eur(neuestes.betrag || 0)}</span>
+    </div>`;
+}
+
 function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
                                         vorspann = '' } = {}) {
   const cfg = cfgFuer(bereich);
   const istEntwurf = e => e && e.vorlaeufig === true && ENTWURF_TYP[bereich];
-  const zeilen = eintraege.length
-    ? eintraege.map(e => istEntwurf(e)
-        ? entwurfZeile(cfg, bereich, e, imFokus)
-        : eintragZeile(cfg, bereich, e, imFokus)).join('')
-    : `<div class="leerzeile">Noch nichts erfasst</div>`;
+  let zeilen;
+  if (!eintraege.length) {
+    zeilen = `<div class="leerzeile">Noch nichts erfasst</div>`;
+  } else if (bereich === 'zahlungen') {
+    // Nach Art gruppieren; nur was mehrfach vorkommt, wird gestaffelt.
+    const gruppen = new Map();
+    const einzeln = [];
+    for (const e of eintraege) {
+      if (istEntwurf(e)) { einzeln.push(e); continue; }
+      const art = (e.art || 'Zahlung').trim();
+      if (!gruppen.has(art)) gruppen.set(art, []);
+      gruppen.get(art).push(e);
+    }
+    const teile = [];
+    for (const [art, gruppe] of gruppen) {
+      teile.push(gruppe.length > 1
+        ? staffelHtml(cfg, bereich, art, gruppe)
+        : eintragZeile(cfg, bereich, gruppe[0], imFokus));
+    }
+    for (const e of einzeln) teile.push(entwurfZeile(cfg, bereich, e, imFokus));
+    zeilen = teile.join('');
+  } else {
+    zeilen = eintraege.map(e => istEntwurf(e)
+      ? entwurfZeile(cfg, bereich, e, imFokus)
+      : eintragZeile(cfg, bereich, e, imFokus)).join('');
+  }
 
   return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, '', RUBRIKFARBE[bereich])}
     ${vorspann}
@@ -1459,6 +1543,7 @@ async function laden() {
   // erst auftauchen, auch nicht über einen alten Link.
   einheiten = istGrundstueck() ? [] : (einheitenRoh || []);
   grundschulden = grundschuldenRoh || [];
+  bereicheDaten = bereiche || {};
   objektEigentuemer = [...new Set((anteile?.anteile || [])
     .map(a => a.name).filter(Boolean))];
   fokus = fokusWunsch
@@ -1704,6 +1789,107 @@ function baumMalen() {
 
   ziel.innerHTML = `<div class="bfilter-leiste">${filter}</div>
     <div class="baum">${zweige}</div>`;
+}
+
+/* ---- CCCIX/CCCX/CCCXI — Zuordnen-Dialog -----------------------------------
+   Drei Fragen in einem Blatt: Wohin gehört das Dokument (Rubrik)? Wird daraus
+   eine Kostenposition oder ist es nur ein Info-Beleg? Und hängt es an einem
+   bestehenden Eintrag (z. B. die Bestätigung an ihrem Kaufvertrag)? */
+const RUBRIK_WAHL = [
+  { wert: 'notarvertraege', titel: 'Notarverträge', ikon: 'Notarvertrag',
+    typ: 'notarvertrag', wiederkehrend: false },
+  { wert: 'zahlungen', titel: 'Finanzamt', ikon: 'Finanzamt',
+    typ: 'zahlung', wiederkehrend: true },
+  { wert: 'nebenkosten', titel: 'Nebenkosten', ikon: 'Nebenkosten',
+    typ: 'kostenposition', wiederkehrend: true },
+  { wert: 'mieten', titel: 'Pacht & Erträge', ikon: 'Miete',
+    typ: 'miete', wiederkehrend: true, nurHaus: false },
+  { wert: 'versicherungen', titel: 'Versicherungen', ikon: 'Versicherung',
+    typ: 'versicherung', wiederkehrend: true, nurHaus: true },
+  { wert: 'kredite', titel: 'Kredite', ikon: 'Kredit',
+    typ: 'kredit', wiederkehrend: true, nurHaus: true },
+];
+
+function zuordnenDialog(dok, vorgabe) {
+  const wahlen = RUBRIK_WAHL.filter(r => !(r.nurHaus && istGrundstueck()));
+  let rubrik = vorgabe && wahlen.some(r => r.wert === vorgabe) ? vorgabe
+    : (wahlen[0] && wahlen[0].wert);
+  let art = 'position';
+  let anId = '';
+
+  return new Promise(fertig => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'immo-dlg zuord-dlg';
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.addEventListener('cancel', () => fertig(null));
+
+    const male = () => {
+      const cfg = wahlen.find(r => r.wert === rubrik) || wahlen[0];
+      // Bestehende Einträge derselben Rubrik — daran lässt sich anhängen.
+      const eintraege = (bereicheDaten[cfg.wert] || []).map(e => ({
+        id: e.id,
+        text: (cfgFuer(cfg.wert)?.name?.(e)) || e.art || e.bezeichnung || `#${e.id}`,
+      }));
+      dlg.innerHTML = `
+        <div class="zd-kopf">
+          <span class="zd-t">Zuordnen</span>
+          <button class="aw-x" data-nein aria-label="Schließen">×</button>
+        </div>
+        <p class="zd-datei">${esc(dok.dateiname)}</p>
+
+        <div class="zd-block"><span class="zd-l">Wohin gehört es?</span>
+          <div class="zd-chips">${wahlen.map(r => `
+            <button class="zd-chip${r.wert === rubrik ? ' an' : ''}" data-rubrik="${r.wert}">
+              <span class="zi">${kostenIcon(r.ikon)}</span>${esc(r.titel)}</button>`).join('')}
+          </div></div>
+
+        <div class="zd-block"><span class="zd-l">Was ist es?</span>
+          <div class="zd-chips">
+            <button class="zd-chip${art === 'position' ? ' an' : ''}" data-art="position"
+              ${cfg.wiederkehrend ? '' : ''}>Kostenposition (mit Betrag)</button>
+            <button class="zd-chip${art === 'beleg' ? ' an' : ''}" data-art="beleg"
+              >Nur Beleg (Information)</button>
+          </div>
+          <span class="zd-hint">${art === 'position'
+            ? (cfg.wiederkehrend
+                ? 'Wiederkehrend — trägt einen Betrag je Jahr/Turnus.'
+                : 'Einmalig — trägt einen Betrag (z. B. Kaufpreis).')
+            : 'Hängt ohne Betrag als Information am Eintrag, z. B. eine Bestätigung.'}</span>
+        </div>
+
+        ${eintraege.length ? `<div class="zd-block">
+          <span class="zd-l">An einen bestehenden Eintrag hängen?</span>
+          <div class="zd-chips">
+            <button class="zd-chip${!anId ? ' an' : ''}" data-an="">neuer Eintrag</button>
+            ${eintraege.map(e => `<button class="zd-chip${String(anId) === String(e.id)
+              ? ' an' : ''}" data-an="${e.id}">${esc(e.text)}</button>`).join('')}
+          </div></div>` : ''}
+
+        <div class="aw-fuss">
+          <button class="aw-zurueck" data-nein>Abbrechen</button>
+          <button class="aw-weiter" data-ja>Zuordnen</button>
+        </div>`;
+    };
+
+    dlg.addEventListener('click', e => {
+      const r = e.target.closest('[data-rubrik]');
+      if (r) { rubrik = r.dataset.rubrik; anId = ''; male(); return; }
+      const a = e.target.closest('[data-art]');
+      if (a) { art = a.dataset.art; male(); return; }
+      const an = e.target.closest('[data-an]');
+      if (an) { anId = an.dataset.an; male(); return; }
+      if (e.target.closest('[data-nein]')) { fertig(null); dlg.close(); return; }
+      if (e.target.closest('[data-ja]')) {
+        const cfg = wahlen.find(x => x.wert === rubrik) || wahlen[0];
+        fertig({ ziel: rubrik, art,
+                 an_typ: anId ? cfg.typ : null, an_id: anId ? Number(anId) : null });
+        dlg.close();
+      }
+    });
+    male();
+    dlg.showModal();
+  });
 }
 
 /* Die Ordnerstruktur lässt sich jederzeit nachträglich anlegen — auch wenn
@@ -2770,10 +2956,15 @@ inhalt.addEventListener('click', async e => {
   if (bm) { baumMehr.add(bm.dataset.bmehr); baumMalen(); return; }
   const zu = e.target.closest('[data-zuordnen]');
   if (zu) {
+    const dokId = Number(zu.dataset.zuordnen);
+    const dok = (baumDaten?.aeste || []).flatMap(a => a.dokumente)
+      .find(d => d.id === dokId) || { dateiname: 'Dokument' };
+    const wahl = await zuordnenDialog(dok, zu.dataset.rubrik || '');
+    if (!wahl) return;
     zu.disabled = true; zu.textContent = '…';
     try {
-      const r = await api(`/dokumente/${zu.dataset.zuordnen}/zuordnen`,
-                          { method: 'POST' });
+      const r = await api(`/dokumente/${dokId}/zuordnen`,
+                          { method: 'POST', body: wahl });
       const wo = (r.angelegt || []).map(a => a.wo).filter(Boolean).join(' · ');
       melde(wo ? `Angelegt: ${wo} — unten als Entwurf bestätigen`
                 : 'Aus diesem Beleg liess sich kein Eintrag ableiten', wo ? 'pos' : '');
