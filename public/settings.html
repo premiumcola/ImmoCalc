@@ -103,6 +103,8 @@
             text-align:right;overflow:hidden;text-overflow:ellipsis;
             white-space:nowrap}
   .uokarte .inp{font:500 13px var(--mono)}
+  /* iOS zoomt bei Fokus auf Felder < 16px hinein und nicht zurueck (CCCLII). */
+  @media(pointer:coarse){.uokarte .inp{font-size:16px}}
   /* display:block, sonst greift der Abstand am inline-Element nicht */
   .uovorschau{display:block;margin-top:8px;font:500 11.5px var(--mono);
               color:var(--teal-d);word-break:break-all;line-height:1.5}
