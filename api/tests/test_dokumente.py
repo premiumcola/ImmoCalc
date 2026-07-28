@@ -1811,3 +1811,85 @@ def test_bestandsdatenbank_bekommt_betrag_und_position():
     # Der Suchindex kommt mit — eine per ALTER ergänzte Spalte bekäme ihn sonst
     # nie, und der Rückweg von der Position fragt ihn an jeder Zeile ab.
     assert "ix_dokument_position_id" in _indexnamen(motor)
+
+
+# --------------------------------------------------------------------------
+# CCCXXVI: Lageplan je Einheit
+# --------------------------------------------------------------------------
+
+def test_lageplan_ohne_cloud_wird_ehrlich_abgelehnt():
+    """Ohne verknüpften Nextcloud-Ordner gibt es keinen Ablageort — das wird
+    ehrlich als 409 gemeldet, nicht als 500 (wie bei den Scan-Endpunkten)."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte",
+                      json={"name": "Lageplanweg 1"}).json()["slug"]
+        eid = c.post(f"/api/objekte/{slug}/einheiten",
+                     json={"bezeichnung": "Wohnung 1"}).json()["id"]
+        antwort = c.post(f"/api/einheiten/{eid}/lageplan",
+                         files={"datei": ("plan.pdf", b"%PDF-1.4 lage",
+                                          "application/pdf")})
+        assert antwort.status_code == 409
+        assert "Nextcloud" in antwort.json()["detail"]
+
+
+def test_lageplan_zu_unbekannter_einheit_ist_404():
+    """Kein Ablegen für eine Einheit, die es nicht gibt."""
+    with TestClient(app) as c:
+        antwort = c.post("/api/einheiten/999999/lageplan",
+                         files={"datei": ("plan.pdf", b"%PDF-1.4",
+                                          "application/pdf")})
+        assert antwort.status_code == 404
+
+
+def test_lageplan_wird_abgelegt_und_gelistet(monkeypatch):
+    """Der Lageplan wandert in den Objektordner (99_Sonstiges), hängt über
+    info_zu_* an der Einheit und trägt kategorie=„Lageplan". Er taucht in der
+    Lageplan-Liste und in der Einheit-Zeile auf; die Endung bleibt erhalten."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Lageplanweg 2"
+        slug = _mit_cloud(c, "Lageplanweg 2", ordner)
+        eid = c.post(f"/api/objekte/{slug}/einheiten",
+                     json={"bezeichnung": "Wohnung 1"}).json()["id"]
+        wolke = _Wolke([], ordner)
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        antwort = c.post(f"/api/einheiten/{eid}/lageplan",
+                         files={"datei": ("grundriss.jpg", b"JPEGDATA",
+                                          "image/jpeg")})
+        assert antwort.status_code == 201
+        body = antwort.json()
+        assert body["einheit_id"] == eid
+        # Ein Foto darf nicht als „.pdf" landen — die Endung bleibt.
+        assert body["pfad"].endswith(".jpg")
+        assert f"{ordner}/99_Sonstiges" in wolke.abgelegt[-1]
+
+        # Der Listen-Endpunkt zeigt den Lageplan.
+        liste = c.get(f"/api/einheiten/{eid}/lageplaene").json()
+        assert [p["id"] for p in liste] == [body["id"]]
+        assert liste[0]["dateiname"].endswith(".jpg")
+
+        # Und die Einheit-Zeile trägt ihn ebenfalls (CCCXXVI in _einheit_zeile).
+        zeilen = c.get(f"/api/objekte/{slug}/einheiten").json()
+        meine = next(z for z in zeilen if z["id"] == eid)
+        assert [p["id"] for p in meine["lageplaene"]] == [body["id"]]
+
+        # Der Eintrag ist als Lageplan an der Einheit markiert.
+        with Session(engine) as s:
+            d = s.get(Dokument, body["id"])
+            assert d.kategorie == "Lageplan"
+            assert d.info_zu_typ == "einheit"
+            assert d.info_zu_id == eid
+
+
+def test_lageplaene_liste_ist_leer_ohne_plaene():
+    """Eine Einheit ohne Lageplan liefert eine leere Liste, keinen Fehler."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte",
+                      json={"name": "Lageplanweg 3"}).json()["slug"]
+        eid = c.post(f"/api/objekte/{slug}/einheiten",
+                     json={"bezeichnung": "Wohnung 1"}).json()["id"]
+        assert c.get(f"/api/einheiten/{eid}/lageplaene").json() == []
+        zeilen = c.get(f"/api/objekte/{slug}/einheiten").json()
+        assert zeilen[0]["lageplaene"] == []

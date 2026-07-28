@@ -35,9 +35,9 @@ from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
-from ..models import (Bewohner, Dokument, Erkennungsregel, Kostenposition,
-                      Kredit, Miete, Notarvertrag, Objekt, Versicherung,
-                      Zahlung, Zeitraum)
+from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel,
+                      Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
+                      Versicherung, Zahlung, Zeitraum)
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
@@ -1869,6 +1869,114 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     log.info("Scan abgelegt: %s", d.pfad)
     return {"id": d.id, "dateiname": name, "pfad": d.pfad, "abgelegt": True,
             "objekt": o.slug, "zeitraum_id": d.zeitraum_id}
+
+
+# --------------------------------------------------------------------------
+# CCCXXVI: Lageplan je Einheit
+#
+# Ein Lageplan (Foto oder PDF) gehört zu einer Einheit und wird später unter
+# ihr angezeigt. Er braucht kein eigenes Modell: es ist ein ganz normaler
+# `Dokument`, der über die vorhandenen Info-Felder an die Einheit gehängt wird
+# (`info_zu_typ="einheit"`, `info_zu_id=<Einheit.id>`) und über `kategorie=
+# "Lageplan"` als solcher markiert ist. Die Datei landet — wie jeder Scan —
+# im Objektordner der zugehörigen Immobilie (99_Sonstiges), über dieselbe
+# Ablagelogik (`_ablageordner`/`_ordner_sichern`/`_freier_name`/`lege_ab`).
+#
+# Der eigentliche Inhalt/die Vorschau läuft über die bestehenden Endpunkte
+# `/api/dokumente/{id}/vorschau|inhalt|seiten` — hier wird nur aufgenommen und
+# aufgelistet.
+#
+# Wohnt an einem eigenen Router mit Präfix `/einheiten`, den `objekte.py` (das
+# den `/api`-Router hält) einhängt — so entsteht `/api/einheiten/{id}/…`, ohne
+# dass die Ablagelogik doppelt geschrieben werden muss.
+# --------------------------------------------------------------------------
+
+LAGEPLAN = "Lageplan"
+
+lageplan_router = APIRouter(prefix="/einheiten", tags=["lageplan"])
+
+
+def _einheit_holen(session: Session, einheit_id: int) -> Einheit:
+    e = session.get(Einheit, einheit_id)
+    if not e:
+        raise HTTPException(404, "Einheit nicht gefunden")
+    return e
+
+
+def lageplaene_der_einheit(session: Session, einheit_id: int) -> list[dict]:
+    """Die Lagepläne einer Einheit als [{id, dateiname}] (CCCXXVI).
+
+    Eine Wahrheit für den Listen-Endpunkt und für `_einheit_zeile` in
+    `objekte.py`. Defensiv: leere Liste, wenn keine da sind."""
+    treffer = session.exec(
+        select(Dokument).where(
+            Dokument.info_zu_typ == "einheit",
+            Dokument.info_zu_id == einheit_id,
+            Dokument.kategorie == LAGEPLAN)).all()
+    return [{"id": d.id, "dateiname": d.dateiname} for d in treffer]
+
+
+@lageplan_router.post("/{einheit_id}/lageplan", status_code=201)
+async def lageplan_hochladen(einheit_id: int,
+                             datei: UploadFile = File(...),
+                             session: Session = Depends(get_session)) -> dict:
+    """Hinterlegt einen Lageplan (Foto/PDF) zu einer Einheit (CCCXXVI).
+
+    Die Datei wandert in den Objektordner der zugehörigen Immobilie — über
+    dieselbe Ablagelogik wie ein Scan (Bezeichnung, freier Name, MKCOL/PUT).
+    Der Eintrag hängt über `info_zu_*` an der Einheit und trägt
+    `kategorie="Lageplan"`. Ohne verknüpften Nextcloud-Ordner gibt es einen
+    ehrlichen 409 statt eines 500 — wie bei den anderen Upload-Endpunkten."""
+    e = _einheit_holen(session, einheit_id)
+    o = session.get(Objekt, e.objekt_id)
+    if not o:
+        raise HTTPException(404, "Zur Einheit gehört keine Immobilie")
+    _cloud_pflicht(o)
+
+    inhalt = await datei.read()
+    if not inhalt:
+        raise HTTPException(400, "Leere Datei")
+
+    # Die Endung der hochgeladenen Datei erhalten — ein Foto darf nicht als
+    # „.pdf" abgelegt werden. Ohne Endung bleibt es beim PDF.
+    endung = _endung(datei.filename or "") or ".pdf"
+    # Über „Sonstiges" für Ordner und Namensschema (→ 99_Sonstiges), damit die
+    # bestehende Ablagelogik greift; die Einordnung als Lageplan steht an der
+    # `kategorie` des Eintrags.
+    name = dateiname(None, "Sonstiges", f"Lageplan {e.bezeichnung}", endung)
+    client = verbindung(session)
+    try:
+        sach, ziel_ordner = _ablageordner(session, o, "Sonstiges", None, client)
+        _ordner_sichern(client, sach, ziel_ordner)
+        name = _freier_name(session, client, ziel_ordner, name)
+        client.lege_ab(f"{ziel_ordner}/{name}", inhalt)
+    except NextcloudFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+
+    d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
+                 groesse=len(inhalt), objekt_id=o.id, kategorie=LAGEPLAN,
+                 info_zu_typ="einheit", info_zu_id=e.id,
+                 status="zugeordnet", erkannt_am=date.today())
+    session.add(d)
+    try:
+        session.commit()
+    except IntegrityError as fehler:
+        raise _pfad_konflikt(session, f"/{ziel_ordner}/{name}") from fehler
+    session.refresh(d)
+    log.info("Lageplan abgelegt: %s (Einheit %s)", d.pfad, e.id)
+    return {"id": d.id, "dateiname": name, "pfad": d.pfad,
+            "einheit_id": e.id, "objekt": o.slug}
+
+
+@lageplan_router.get("/{einheit_id}/lageplaene")
+def lageplaene_liste(einheit_id: int,
+                     session: Session = Depends(get_session)) -> list[dict]:
+    """Die Lagepläne einer Einheit — [{id, dateiname}] (CCCXXVI).
+
+    Die Vorschau/der Inhalt läuft über die bestehenden Dokument-Endpunkte
+    (`/api/dokumente/{id}/vorschau|inhalt|seiten`)."""
+    _einheit_holen(session, einheit_id)
+    return lageplaene_der_einheit(session, einheit_id)
 
 
 # --------------------------------------------------------------------------

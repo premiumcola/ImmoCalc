@@ -489,11 +489,15 @@ def _laeuft(m: Miete, heute: date) -> bool:
 
 
 def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
-                   heute: date) -> dict:
+                   heute: date, lageplaene: Optional[dict] = None) -> dict:
     """Eine Einheit mit dem, was heute darin wohnt.
 
     `vermietet` ist die eine Auskunft, die man auf einen Blick braucht — sie
-    entscheidet, ob die Blase in der Oberfläche als „frei" erscheint."""
+    entscheidet, ob die Blase in der Oberfläche als „frei" erscheint.
+
+    `lageplaene` ist die vorab gebündelte Zuordnung Einheit-ID → Lagepläne
+    (CCCXXVI); ohne sie bleibt die Liste leer, damit die Zeile auch ohne diese
+    Vorarbeit funktioniert."""
     eigene = [m for m in mieten if _zuordnung(m, einheiten) == e.bezeichnung]
     laufend = [m for m in eigene if _laeuft(m, heute)]
     return {
@@ -510,7 +514,29 @@ def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
         "mieter": ", ".join(sorted({m.partei for m in laufend if m.partei})),
         "kaltmiete": round(sum(m.kaltmiete for m in laufend), 2),
         "mietverhaeltnisse": len(eigene),
+        # CCCXXVI — die hinterlegten Lagepläne dieser Einheit als
+        # [{id, dateiname}]. Defensiv (leer, wenn keine); die Vorschau läuft
+        # über die bestehenden Dokument-Endpunkte.
+        "lageplaene": (lageplaene or {}).get(e.id, []),
     }
+
+
+def _lageplaene_je_einheit(session: Session, einheit_ids: list[int]) -> dict:
+    """CCCXXVI — die Lagepläne aller genannten Einheiten in einer Abfrage,
+    nach Einheit-ID gebündelt. Ein Lageplan ist ein `Dokument` mit
+    `kategorie="Lageplan"`, das über `info_zu_*` an der Einheit hängt — dieselbe
+    Definition wie im Listen-Endpunkt in `dokumente.py`."""
+    if not einheit_ids:
+        return {}
+    treffer = session.exec(select(Dokument).where(
+        Dokument.kategorie == "Lageplan",
+        Dokument.info_zu_typ == "einheit",
+        Dokument.info_zu_id.in_(einheit_ids))).all()
+    eimer: dict[int, list] = {}
+    for d in treffer:
+        eimer.setdefault(d.info_zu_id, []).append(
+            {"id": d.id, "dateiname": d.dateiname})
+    return eimer
 
 
 def _gemeinflaechen_liste(e: Einheit) -> list:
@@ -581,7 +607,10 @@ def einheiten_liste(slug: str,
         select(Einheit).where(Einheit.objekt_id == o.id)).all())
     mieten = list(session.exec(select(Miete).where(Miete.objekt_id == o.id)).all())
     heute = date.today()
-    return [_einheit_zeile(e, mieten, einheiten, heute) for e in einheiten]
+    lageplaene = _lageplaene_je_einheit(
+        session, [e.id for e in einheiten if e.id is not None])
+    return [_einheit_zeile(e, mieten, einheiten, heute, lageplaene)
+            for e in einheiten]
 
 
 def _bezeichnung_frei(session: Session, objekt_id: int, bezeichnung: str,
@@ -1322,3 +1351,14 @@ def entwurf_verwerfen(typ: str, eintrag_id: int,
              typ, eintrag_id, quelle)
     return {"ok": True, "typ": typ.lower(), "id": eintrag_id, "verworfen": True,
             "quelle_dokument_id": quelle}
+
+
+# --------------------------------------------------------------------------
+# CCCXXVI: Lageplan je Einheit — die Endpunkte (`/api/einheiten/{id}/lageplan`,
+# `…/lageplaene`) leben in `dokumente.py`, wo die Upload-/Ablagelogik zu Hause
+# ist. Ihr Router trägt nur `/einheiten`; hier wird er unter den `/api`-Router
+# gehängt, damit `/api/einheiten/…` entsteht — ohne die Ablagelogik zu doppeln
+# und ohne `main.py` anzufassen.
+# --------------------------------------------------------------------------
+from .dokumente import lageplan_router  # noqa: E402  (zirkelfrei: dokumente ist
+router.include_router(lageplan_router)  # beim Laden von main.py schon importiert)
