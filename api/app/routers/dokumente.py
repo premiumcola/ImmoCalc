@@ -37,7 +37,7 @@ from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import (Bewohner, Dokument, Erkennungsregel, Kostenposition,
                       Kredit, Miete, Notarvertrag, Objekt, Versicherung,
-                      Zeitraum)
+                      Zahlung, Zeitraum)
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
@@ -1058,6 +1058,7 @@ _ZUORDNUNG_MODELLE = (
     (Kostenposition, "Nebenkosten"), (Miete, "mieten"),
     (Versicherung, "versicherungen"), (Kredit, "kredite"),
     (Notarvertrag, "notarvertraege"), (Bewohner, "mieten"),
+    (Zahlung, "zahlungen"),
 )
 
 
@@ -1990,9 +1991,29 @@ def _entwurf_notarvertrag(session: Session, d: Dokument, o: Objekt,
     return [{"typ": "Notarvertrag", "id": n.id, "objekt": o.slug, "wo": art}]
 
 
+def _entwurf_steuer(session: Session, d: Dokument, o: Objekt,
+                    felder: dict) -> list[dict]:
+    """Vorläufige Zahlung aus einem Finanzamts-Beleg (CCXCIX) — z. B. der
+    Grundsteuerbescheid. Jahr und Betrag kommen aus dem Beleg, wo vorhanden."""
+    if _schon_vorlaeufig(session, Zahlung, d.id):
+        z = _schon_vorlaeufig(session, Zahlung, d.id)
+        return [{"typ": "Zahlung", "id": z.id, "objekt": o.slug,
+                 "wo": f"{z.art} {z.jahr} (schon angelegt)"}]
+    art = (_ki_text(felder.get("steuerart")) or (d.kostenart or "").strip()
+           or "Grundsteuer")
+    jahr = d.jahr or (d.belegdatum.year if d.belegdatum else date.today().year)
+    z = Zahlung(objekt_id=o.id, jahr=jahr, art=art, kategorie="Steuer",
+                betrag=_ki_zahl(felder.get("betrag")) or d.betrag or 0.0,
+                vorlaeufig=True, quelle_dokument_id=d.id)
+    session.add(z)
+    session.flush()
+    return [{"typ": "Zahlung", "id": z.id, "objekt": o.slug, "wo": f"{art} {jahr}"}]
+
+
 # Kategorie → Bauplan des vorläufigen Datensatzes. Was nicht hier steht
-# (Steuer, Hausverwaltung, Korrespondenz, Sonstiges), legt keinen an.
+# (Hausverwaltung, Korrespondenz, Sonstiges), legt keinen an.
 _ENTWURF_BAUER = {
+    "Steuer": _entwurf_steuer,
     "Nebenkosten": _entwurf_nebenkosten,
     "Mietvertrag": _entwurf_miete,
     "Versicherung": _entwurf_versicherung,

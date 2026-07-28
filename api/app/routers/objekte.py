@@ -19,8 +19,9 @@ from ..erinnerungen import beleg_erinnerung, frist_erinnerung, in_sicht
 from ..frist import frist_tage
 from ..nachpflege import hinweise, zusammenfassung
 from ..models import (GRUNDSTUECK, Bewohner, Dokument, Einheit, Kostenart,
-                      Kostenposition, Kredit, Miete, Objekt, Partei,
-                      Versicherung, Vorauszahlung, Zeitraum, ist_grundstueck)
+                      Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
+                      Partei, Versicherung, Vorauszahlung, Zahlung, Zeitraum,
+                      ist_grundstueck)
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, fehlende_angaben, stammdaten,
                           vorschau)
@@ -1177,6 +1178,8 @@ _ENTWURF_MODELLE = {
     "bewohner": Bewohner,
     "versicherung": Versicherung,
     "kredit": Kredit,
+    "notarvertrag": Notarvertrag,
+    "zahlung": Zahlung,
 }
 
 

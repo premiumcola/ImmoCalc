@@ -510,6 +510,10 @@ class Zahlung(SQLModel, table=True):
     turnus: str = "jaehrlich"      # Steuervorauszahlungen laufen oft quartalsweise
     absetzbar: bool = True
     notiz: str = ""
+    # CCXCIX — Orange-Entwurf aus einem Beleg (siehe Kostenposition).
+    vorlaeufig: bool = False
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
 
 
 class Versandprotokoll(SQLModel, table=True):
