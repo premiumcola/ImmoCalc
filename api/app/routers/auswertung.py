@@ -243,6 +243,42 @@ def _einheiten_zahlen(session: Session, o: Objekt, jahr: int,
     return zahlen
 
 
+def _einheiten_quellen(session: Session, o: Objekt, jahr: int) -> list[dict]:
+    """Empfänger des per-Objekt-Kostenflusses — strikt einheitenbasiert (CCCXLI).
+
+    Die rechte Sankey-Seite zeigt Einheiten, nie Parteinamen. Jede Miete zählt
+    zu ihrer Einheit (Feld `Miete.einheit`, getrimmt und klein geschrieben —
+    dieselbe Zuordnung wie in `_einheiten_zahlen`). Ein Mietverhältnis ohne
+    zuordenbare Einheit fällt unter den Sammelknoten „Ohne Einheit"; so
+    erscheint eine Einheit nie zusätzlich als Partei-Dopplung und kein
+    Parteiname als eigener Empfänger.
+
+    Der Schlüssel heißt `einnahmen_jahr`, weil `cashflow.sankey` seine Quellen
+    so liest — inhaltlich sind es die Mieteinnahmen des Jahres."""
+    einheiten = session.exec(select(Einheit).where(Einheit.objekt_id == o.id)).all()
+    mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
+    zugeordnet = {e.bezeichnung.strip().lower(): e.bezeichnung for e in einheiten}
+
+    quellen: dict[str, float] = {}
+    reihenfolge: list[str] = []
+
+    def dazu(name: str, betrag: float) -> None:
+        if name not in quellen:
+            quellen[name] = 0.0
+            reihenfolge.append(name)
+        quellen[name] += betrag
+
+    for m in mieten:
+        betrag = _mittel_im_jahr(m, jahr, "miete")
+        if betrag <= 0:
+            continue
+        einheit = zugeordnet.get((m.einheit or "").strip().lower())
+        dazu(einheit if einheit else "Ohne Einheit", betrag)
+
+    return [{"bezeichnung": n, "einnahmen_jahr": round(quellen[n], 2)}
+            for n in reihenfolge]
+
+
 def _vz_quellen(session: Session, o: Objekt, jahr: int) -> list[dict]:
     """Nebenkosten-Vorauszahlungen je Einheit — die Mittel der Mietersicht.
 
@@ -394,8 +430,8 @@ def sankey_endpoint(jahr: int = Query(default=None), objekt: str = Query(default
                 einzeln = [{"bezeichnung": o.name,
                             "einnahmen_jahr": round(sum(q["einnahmen_jahr"]
                                                         for q in einzeln), 2)}]
-        elif objekt:    # ein Objekt -> je Einheit aufschlüsseln
-            einzeln = cashflow(_einheiten_zahlen(session, o, jahr), {})["einheiten"]
+        elif objekt:    # ein Objekt -> je Einheit aufschlüsseln (CCCXLI: nie Partei)
+            einzeln = _einheiten_quellen(session, o, jahr)
         else:           # alle Objekte -> je Objekt
             mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
             einzeln = [{"bezeichnung": o.name,
