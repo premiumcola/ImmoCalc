@@ -345,6 +345,12 @@ const STAMMFELDER = [
   { k: 'baudatum', l: 'Baujahr / Baudatum', typ: 'date' },
   { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true,
     lex: 'verkehrswert' },
+  // CCCXLII — Schalter: ob der Verkehrswert je Einzeleinheit geführt wird. Aus:
+  // die Verkehrswert-Zeile entfällt in allen Einheiten dieses Objekts.
+  { k: 'einheit_verkehrswert', l: 'Verkehrswert je Einheit anzeigen',
+    typ: 'ja_nein', vorgabe: true,
+    note: 'Aus: der Verkehrswert wird in den Einheiten dieses Objekts nicht '
+        + 'geführt und die Zeile entfällt dort.' },
   // CCCXXX — Konto & Rücklage bilden einen eigenen Block: erst wer und wo
   // (Kontoinhaber, IBAN, Bank), dann was zurückgelegt ist (Stand, Sparrate).
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },

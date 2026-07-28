@@ -609,11 +609,13 @@ const dlg = document.getElementById('dlg');
 const hausUrl = () => `objekt.html?o=${encodeURIComponent(slug)}`;
 const einheitUrl = id => `${hausUrl()}&e=${id}`;
 
-/* Aus dem Fokus führt „Zurück" immer ans Haus — auch wenn man über einen Link
-   direkt in der Einheit gelandet ist und es gar keine Historie gibt. */
+/* CCCXLVII — „Zurück" navigiert immer zum logischen Elternteil, NIE über
+   history.back(): aus der Einheit ans Haus, vom Haus zur Objektliste. Das
+   frühere history.back() im Haus sprang zur gerade verlassenen Einheit zurück
+   (die Einheit-Zurück fügte per location.href einen History-Eintrag hinzu) —
+   Ergebnis war eine Endlosschleife Einheit⇄Haus, man kam nie zur Startseite. */
 document.getElementById('back').addEventListener('click', () => {
-  if (fokus) { location.href = hausUrl(); return; }
-  return history.length > 1 ? history.back() : location.href = 'index.html';
+  location.href = fokus ? hausUrl() : 'index.html';
 });
 
 /* Zahlungsturnus kommt aus der API — die Bereiche haben unterschiedliche
@@ -1105,15 +1107,6 @@ function einheitenHtml() {
       bleibt hier am Haus.</div>` : ''}`;
 }
 
-function hausWegHtml() {
-  return `<button class="hausweg" data-haus="1">
-      <span class="pfeil" aria-hidden="true">‹</span>
-      <span class="ic">${logoSvg(objekt.typ)}</span>
-      <span class="ht"><span class="hl">Zurück zum Haus</span>
-        <span class="hn">${esc(objekt.name)}</span></span>
-    </button>`;
-}
-
 /* CCCXXVII/CCCXXIX — die erfassten Zusatz- und Gemeinschaftsflächen als Zeilen,
    gefolgt von der effektiven Gesamtfläche. Ohne erfasste Flächen bleibt es leer,
    dann steht nur die Basis-Wohnfläche wie bisher. */
@@ -1151,7 +1144,9 @@ function einheitStammHtml(e) {
   // erscheinen nicht mehr als „nicht erfasst"-Zeile, sondern werden schlicht
   // weggelassen. Die Flächenaufstellung bleibt an der Wohnfläche hängen.
   const zeilen = EINHEITFELDER
-    .filter(f => f.k !== 'bezeichnung' && f.k !== 'nk_abrechnung')
+    .filter(f => f.k !== 'bezeichnung' && f.k !== 'nk_abrechnung'
+      // CCCXLII — Verkehrswert je Einheit lässt sich am Objekt abschalten.
+      && !(f.k === 'verkehrswert' && objekt?.einheit_verkehrswert === false))
     .map(f => (feldLeer(f, e[f.k]) ? '' : paarZeile(f.l, stammwert(f, e), { lex: f.lex }))
       + (f.k === 'flaeche' ? flaechen : '')).join('');
   // CCCXXXIII — sind €/m²-Ansätze gesetzt, folgt die daraus hergeleitete
@@ -1418,8 +1413,10 @@ async function laden() {
     // hier bewusst nicht wiederholt.
     const eigene = (bereiche.mieten || [])
       .filter(m => zuEinheit(m) === fokus.bezeichnung);
+    // CCCXLVI — keine zweite „Zurück zum Haus"-Titelkarte mehr: die Kopfzeile
+    // bezieht sich auf die Einheit (das aktuelle Element), und „‹ Zurück" oben
+    // führt ohnehin ans Haus. Die geschachtelte Titelzeile entfällt.
     inhalt.innerHTML = `
-      ${hausWegHtml()}
       ${bannerHtml(laufend)}
       ${einheitKennzahlen(fokus, eigene)}
       ${einheitStammHtml(fokus)}
@@ -2993,11 +2990,6 @@ async function anteilFormular() {
 }
 
 inhalt.addEventListener('click', async e => {
-  if (e.target.closest('[data-haus]')) {
-    location.href = hausUrl();
-    return;
-  }
-
   /* ---- Dokumentenbaum (CCXCIX) ---- */
   const bf = e.target.closest('[data-bfilter]');
   if (bf) { baumFilterUmschalten(bf.dataset.bfilter); return; }

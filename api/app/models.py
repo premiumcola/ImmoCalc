@@ -45,6 +45,10 @@ class Objekt(SQLModel, table=True):
     # später gekauft als gebaut). Additiv, Default None.
     baudatum: Optional[date] = None
     verkehrswert: Optional[float] = None
+    # CCCXLII — ob der Verkehrswert je Einzeleinheit in der Einheitsansicht
+    # geführt/angezeigt wird. Aus: die Zeile entfällt in allen Einheiten dieses
+    # Objekts. Vorgabe True hält den Bestand unverändert (Anzeige wie bisher).
+    einheit_verkehrswert: bool = True
     nc_ordner: str = ""           # verknüpfter Nextcloud-Ordner
     # Konto, von dem die Kosten dieses Objekts abgebucht werden
     bank: str = ""

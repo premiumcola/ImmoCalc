@@ -236,6 +236,8 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
                "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber",
                # CCCXXXIV / CCCXXX — Objektart (Anzeige) und Baujahr/Baudatum
                "objektart", "baudatum",
+               # CCCXLII — Verkehrswert je Einheit anzeigen (Schalter)
+               "einheit_verkehrswert",
                # Grundstück — bleibt bei jedem anderen Objekttyp einfach leer
                "grundstueck_flaeche", "grundstueck_m2_preis",
                "grundstueck_nutzungsart",
