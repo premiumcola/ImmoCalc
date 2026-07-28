@@ -108,6 +108,9 @@ class Objekt(SQLModel, table=True):
     # ----------------------------------------------------------------------
     erwerbsart: str = "Kauf"        # Kauf | Schenkung | Erbschaft | Überlassung
     afa_basis_uebernommen: Optional[float] = None   # vom Vorbesitzer fortgeführte AfA-Bemessung
+    # CCCI — Nießbrauch ausdrücklich an/aus; ist er aus, bleiben Berechtigter und
+    # Frist verborgen. Der Berechtigte ist einer der Eigentümer (Auswahl).
+    niessbrauch_aktiv: bool = False
     niessbrauch_berechtigt: str = ""   # wer den Nießbrauch hält (leer = keiner)
     niessbrauch_bis: Optional[date] = None
 

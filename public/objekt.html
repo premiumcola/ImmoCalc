@@ -460,10 +460,13 @@ function kreditStandText(e) {
   return restText(e);
 }
 
-/* Welche Felder ein Formular zeigt. Nur die Kredite hängen von einem Wert im
-   Formular selbst ab — der Vertragsart. */
-const felderFuer = (bereich, werte = {}) => bereich === 'kredite'
-  ? kreditFelder(werte.art, werte) : cfgFuer(bereich).felder;
+/* Welche Felder ein Formular zeigt. Kredite hängen von der Vertragsart ab, die
+   Stammdaten vom Nießbrauch-Schalter (CCCI) — beide bauen sich beim Umschalten
+   im Formular selbst um. */
+const felderFuer = (bereich, werte = {}, absicht = bereich) =>
+  absicht === 'stamm' ? stammfelder(werte.niessbrauch_aktiv)
+  : bereich === 'kredite' ? kreditFelder(werte.art, werte)
+  : cfgFuer(bereich).felder;
 
 /* Wird ein Vertrag von Darlehen auf Bausparvertrag umgestellt, ist der Betrag
    derselbe und seine Bedeutung eine andere: aus der Restschuld wird das
@@ -687,9 +690,16 @@ const STAMMFELDER = [
   { k: 'bank', l: 'Bank', typ: 'text' },
   { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
-  // CCXXXV — ein eingetragenes Nießbrauchrecht. Leer heisst: keins.
-  { k: 'niessbrauch_berechtigt', l: 'Nießbrauch: Berechtigter', typ: 'text' },
-  { k: 'niessbrauch_bis', l: 'Nießbrauch bis', typ: 'date' },
+  // CCCI — Nießbrauch als aktivierbarer Block. Der Schalter trägt den Umbau
+  // (`umbau: true`): geht er aus, verschwinden Berechtigter und Frist. Der
+  // Berechtigte ist einer der Eigentümer (Auswahl, kein Freitext) — die Werte
+  // füllt `stammfelder()` beim Öffnen aus der Eigentümerliste des Objekts.
+  { k: 'niessbrauch_aktiv', l: 'Nießbrauch eingetragen', typ: 'schalter',
+    vorgabe: false, umbau: true },
+  { k: 'niessbrauch_berechtigt', l: 'Nießbrauch: Berechtigter', typ: 'auswahl',
+    werte: [], nurWennNiessbrauch: true },
+  { k: 'niessbrauch_bis', l: 'Nießbrauch bis', typ: 'date',
+    nurWennNiessbrauch: true },
 ];
 
 /* CCVIII — die WEG-Ebene. Nur bei einem Objekt sichtbar, das Teil einer
@@ -797,9 +807,20 @@ const OHNE_BEIM_GRUNDSTUECK = new Set([
   'strasse', 'afa_basis_uebernommen',
   'ruecklage_saldo', 'ruecklage_monatlich',
   'bank', 'iban', 'kontoinhaber']);
-const stammfelder = () => istGrundstueck()
-  ? STAMMFELDER.filter(f => !OHNE_BEIM_GRUNDSTUECK.has(f.k))
-  : STAMMFELDER;
+/* Die Stammfelder — typ- und zustandsabhängig (CCCI). `aktiv` ist der aktuelle
+   Nießbrauch-Zustand: er entscheidet, ob Berechtigter und Frist mitkommen. Für
+   das Formular übergibt der Aufrufer den Stand aus dem Schalter; für die Ansicht
+   den gespeicherten Wert. Der Berechtigte bekommt die Eigentümer als Auswahl. */
+function stammfelder(aktiv = objekt?.niessbrauch_aktiv) {
+  let felder = istGrundstueck()
+    ? STAMMFELDER.filter(f => !OHNE_BEIM_GRUNDSTUECK.has(f.k))
+    : STAMMFELDER;
+  felder = felder
+    .filter(f => !(f.nurWennNiessbrauch && !aktiv))
+    .map(f => f.k === 'niessbrauch_berechtigt'
+      ? { ...f, werte: objektEigentuemer } : f);
+  return felder;
+}
 
 const datum = s => s ? new Date(s).toLocaleDateString('de-DE') : '';
 
@@ -845,6 +866,7 @@ const ibanSchoen = s => String(s || '').replace(/\s+/g, '').toUpperCase()
 
 function stammwert(f, o) {
   const v = o[f.k];
+  if (f.typ === 'schalter' || f.typ === 'ja_nein') return v ? 'Ja' : 'Nein';
   if (v == null || v === '') return null;
   if (f.typ === 'date') return datum(v);
   if (f.iban) return ibanSchoen(v);
@@ -866,6 +888,8 @@ let fokus = null;
 /* CCXXIX — Grundschulden auf diesem Objekt. Nur am Haus gepflegt, nicht in
    der Einheiten-Ansicht — wie die Kredite auch. */
 let grundschulden = [];
+/* CCCI — die Eigentümer-Namen dieses Objekts, für die Nießbrauch-Auswahl. */
+let objektEigentuemer = [];
 
 const flaecheText = f => `${Number(f).toLocaleString('de-DE',
   { maximumFractionDigits: 1 })} m²`;
@@ -1347,6 +1371,8 @@ async function laden() {
   // erst auftauchen, auch nicht über einen alten Link.
   einheiten = istGrundstueck() ? [] : (einheitenRoh || []);
   grundschulden = grundschuldenRoh || [];
+  objektEigentuemer = [...new Set((anteile?.anteile || [])
+    .map(a => a.name).filter(Boolean))];
   fokus = fokusWunsch
     ? (einheiten.find(e => String(e.id) === String(fokusWunsch)) || null)
     : null;
@@ -1723,7 +1749,7 @@ async function feldHtml(f, bereich, wert) {
     return `<div class="field"><label>${feldLabel(f)}</label>
       <input type="hidden" id="${id}" name="${f.k}" value="${ja ? 'ja' : 'nein'}">
       <div class="schalter" data-wahlfeld="${esc(f.k)}" role="group"
-           aria-label="${esc(f.l)}">
+           ${f.umbau ? 'data-umbau="1"' : ''} aria-label="${esc(f.l)}">
         ${knopf('ja', ja, 'Ja')}${knopf('nein', !ja, 'Nein')}
       </div>
       ${f.note ? `<span class="feldnote">${esc(f.note)}</span>` : ''}</div>`;
@@ -1912,7 +1938,7 @@ async function formular(einst) {
     const stand = bereich === 'kredite'
       ? uebernahmeAnbieten({ ...werte, ...ausFormular(form, felder) })
       : { ...werte, ...ausFormular(form, felder) };
-    await formular({ ...einst, felder: felderFuer(bereich, stand),
+    await formular({ ...einst, felder: felderFuer(bereich, stand, absicht),
                      werte: stand });
   };
   formateSetzen(form, felder);
@@ -2367,6 +2393,9 @@ document.getElementById('dlgForm').addEventListener('click', async e => {
         knopf.classList.contains('schaltknopf') ? 'an' : 'gewaehlt', an);
       knopf.setAttribute('aria-pressed', String(an));
     }
+    // Ein Schalter mit Umbau (CCCI: Nießbrauch) baut das Formular neu auf, sobald
+    // er umgelegt wird — dann kommen/gehen die abhängigen Felder.
+    if (gruppe.dataset.umbau && dialogUmbau) setTimeout(dialogUmbau, 0);
     return;
   }
 
@@ -2416,8 +2445,10 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
 
   try {
     if (absicht === 'stamm') {
+      // dialogFelder statt stammfelder(): nur die tatsächlich gezeigten Felder,
+      // inkl. der beim Nießbrauch-Umschalten dazugekommenen (CCCI).
       await api(`/objekte/${encodeURIComponent(slug)}`,
-                { method: 'PATCH', body: ausFormular(form, stammfelder()) });
+                { method: 'PATCH', body: ausFormular(form, dialogFelder) });
     } else if (absicht === 'grund') {
       await api(`/objekte/${encodeURIComponent(slug)}`,
                 { method: 'PATCH', body: ausFormular(form, GRUNDFELDER) });

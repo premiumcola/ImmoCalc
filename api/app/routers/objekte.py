@@ -236,7 +236,7 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
                "weg_verwalter",
                # CCXXXV — Erwerbsart und Nießbrauch
                "erwerbsart", "afa_basis_uebernommen",
-               "niessbrauch_berechtigt", "niessbrauch_bis"}
+               "niessbrauch_aktiv", "niessbrauch_berechtigt", "niessbrauch_bis"}
     felder = bereinige(Objekt, {k: v for k, v in data.items() if k in erlaubt})
     if not felder.get("name", "x"):
         raise HTTPException(400, "Der Name darf nicht leer sein")
