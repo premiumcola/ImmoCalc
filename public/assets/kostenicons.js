@@ -72,6 +72,7 @@ const ZUORDNUNG = [
   ['aufzug', 'aufzug'], ['rauchwarnmelder', 'melder'], ['rauchmelder', 'melder'],
   ['winterdienst', 'schnee'], ['straßenreinigung', 'schnee'],
   ['bankspesen', 'bank'], ['kredit', 'bank'], ['darlehen', 'bank'],
+  ['grundschuld', 'bank'],
   // Erwerbsnebenkosten vor „nebenkosten": sonst landeten die einmaligen
   // Kaufnebenkosten (CCCXIX) beim Haus-Symbol statt beim Geld-Symbol.
   ['erwerbsnebenkosten', 'bank'], ['erwerb', 'bank'], ['kaufnebenkosten', 'bank'],

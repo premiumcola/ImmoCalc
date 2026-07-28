@@ -1896,16 +1896,20 @@ async function laden() {
          ${abschnitt('zahlungen', finanzZahlungen)}
          ${mietBlock}
          ${abschnitt('erwerbskosten', erwerbZahlungen)}`
+      // CCCXXXII — sinnvolle Reihenfolge: erst die Mieten (das Kerngeschäft),
+      // dann der Erwerbs-/Finanzierungs-Cluster (Notar, Grundschulden, einmalige
+      // Erwerbsnebenkosten), dann Versicherungen und Kredite, das Finanzamt
+      // (Steuer) zuletzt.
       : `${mietBlock}
+         ${abschnitt('notarvertraege', bereiche.notarvertraege)}
+         ${grundschuldenHtml()}
+         ${abschnitt('erwerbskosten', erwerbZahlungen)}
          ${abschnitt('versicherungen', bereiche.versicherungen, {
            vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
              als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen
              nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
          ${abschnitt('kredite', bereiche.kredite)}
-         ${grundschuldenHtml()}
-         ${abschnitt('notarvertraege', bereiche.notarvertraege)}
-         ${abschnitt('zahlungen', finanzZahlungen)}
-         ${abschnitt('erwerbskosten', erwerbZahlungen)}`}
+         ${abschnitt('zahlungen', finanzZahlungen)}`}
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>
       <p>Die Sicherung enthält alle Daten dieser Immobilie und lässt sich
@@ -3117,8 +3121,11 @@ function grundschuldenHtml() {
         <button class="del" data-gs-weg="${g.id}" aria-label="löschen">×</button>
       </div>`).join('')
     : `<div class="leerzeile">Noch keine Grundschuld hinterlegt</div>`;
-  return `<div class="sekopf"><h2 class="sec">Grundschulden<span
-        data-hilfe="grundschuld"></span></h2></div>
+  // CCCXXXII — Grundschulden bekommen ein Symbol (Finanzierungs-Cluster wie
+  // Kredite) und die Hilfe hängt daneben, nicht am nackten Titel.
+  return `<div class="sekopf"><span class="seikon"
+        style="color:var(--neg)">${kostenIcon('Grundschuld')}</span>
+      <h2 class="sec">Grundschulden</h2><span data-hilfe="grundschuld"></span></div>
     <div class="liste">${zeilen}</div>
     <button class="add" data-gs-neu="1">＋ Grundschuld hinzufügen</button>`;
 }
