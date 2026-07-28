@@ -567,6 +567,21 @@ import { installLogos, installNav, logoSvg, api, eur, eurVoll, esc, fristKlasse,
   from './assets/immo.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { auswahlfeld } from './assets/auswahl.js';
+import { proJahr, istBausparer, datum, tagDavor, ersterNaechsterMonat, ibanSchoen,
+         stammwert, feldLeer, flaecheText, paarZeile, cellZeile, sekopfHtml,
+         feldWertText }
+  from './assets/objekt-format.js';
+import { felderFuer, uebernahmeAnbieten, BEREICHE, endpunktBereich, RUBRIK_FESTWERTE,
+         ERWERB_KATEGORIE, cfgFuer, WEGFELDER, EINHEITFELDER, stammfelder }
+  from './assets/objekt-felder.js';
+import { grundStammHtml, erwerbKopfHtml, grundsteuerHtml, pachtErtragHtml }
+  from './assets/objekt-grundstueck.js';
+import { baumZeigen, baumMalen, HAKEN_ICON, BELEG_ICON, baumFilterUmschalten,
+         baumMehrZeigen, baumAstUmschalten, baumJahrSetzen, getBaumDaten }
+  from './assets/objekt-baum.js';
+import { slug, objekt, istGrundstueck, setObjekt, setObjektEigentuemer,
+         setAlleEigentuemer }
+  from './assets/objekt-state.js';
 installNav();
 
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
@@ -581,14 +596,7 @@ try {
 
 installLogos();
 
-/* Ein Grundstück ist ein eigener Fall, kein Haus mit weniger Feldern: keine
-   Einheiten, keine Nebenkostenabrechnung, dafür Kataster und Grundsteuer.
-   Erkannt wird es am Objekttyp. */
-const GRUNDSTUECK = 'lg-grundstueck';
-const istGrundstueck = () => Boolean(objekt) && objekt.typ === GRUNDSTUECK;
-
 const anfrage = new URLSearchParams(location.search);
-const slug = anfrage.get('o');
 /* CLXVIII — dieselbe Seite, zwei Ebenen: ohne `e` das ganze Haus, mit `e` die
    eine Einheit im Fokus. Als zweite Datei wären Mietverhältnis, Kontakte und
    Abrechnung ein zweites Mal zu pflegen und liefen mit der Zeit auseinander. */
@@ -622,604 +630,6 @@ async function turnusOptionen(bereich) {
   return turnusCache.get(bereich);
 }
 
-const proTurnus = { monatlich: '/ M', vierteljaehrlich: '/ Q', halbjaehrlich: '/ HJ',
-                    jaehrlich: '/ J', einmalig: 'einm.' };
-const kuerzel = t => proTurnus[t] || '/ J';
-/* Wie oft im Jahr gezahlt wird — Grundlage für Monats- und Jahresgrößen. */
-const proJahr = t => ({ monatlich: 12, vierteljaehrlich: 4,
-                        halbjaehrlich: 2 }[t] || 1);
-
-/* ---- CXLIX: Darlehen oder Bausparvertrag --------------------------------
-   Beide hängen an derselben Immobilie und kosten dieselbe Rate im Monat —
-   gerechnet werden sie umgekehrt. Beim Darlehen sinkt die Restschuld, beim
-   Bausparvertrag wächst das Guthaben. Deshalb entscheidet die Vertragsart
-   ganz oben, wie die Maske darunter aussieht; die Regeln dazu stehen in
-   `api/app/vermoegen.py`, hier wird nur gefragt und gezeigt. */
-const VERTRAGSARTEN = ['Darlehen', 'Bausparvertrag'];
-const istBausparer = art =>
-  String(art || '').trim().toLowerCase().startsWith('bauspar');
-
-function kreditFelder(art, werte = {}) {
-  const bauspar = istBausparer(art);
-  return [
-    { k: 'art', l: 'Vertragsart', typ: 'auswahl', werte: VERTRAGSARTEN,
-      vorgabe: 'Darlehen', ohneLeer: true, umbau: true, lex: 'bausparvertrag',
-      note: bauspar
-        ? 'Beim Bausparvertrag wird gespart, nicht getilgt: eingetragen '
-          + 'werden Bausparsumme und Guthaben.'
-        : 'Beim Darlehen wird getilgt: eingetragen wird die Restschuld.' },
-    { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
-    { k: 'bank', l: bauspar ? 'Bausparkasse' : 'Bank', typ: 'text' },
-    { k: 'darlehensnummer', l: bauspar ? 'Vertragsnummer' : 'Darlehensnummer',
-      typ: 'text' },
-    ...(bauspar ? [
-      { k: 'bausparsumme', l: 'Bausparsumme', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'angespart', l: 'Bisher angespart', typ: 'number', schritt: '0.01',
-        geld: true, note: (werte.uebernommen
-          ? 'Aus der bisherigen Restschuld vorgeschlagen — prüfe den Betrag, '
-            + 'bevor du speicherst. '
-          : '')
-          + 'Was noch zu sparen ist, ergibt sich als Differenz zur '
-          + 'Bausparsumme.' },
-    ] : [
-      { k: 'urspruenglich', l: 'Ursprungsbetrag', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'restschuld', l: 'Restschuld bei Beginn', typ: 'number',
-        schritt: '0.01', geld: true, lex: 'restschuld' },
-      /* CXLVIII — zwei Wege zum selben Satz. Wer den Zinssatz nicht kennt,
-         liest den monatlichen Zinsanteil aus dem Kontoauszug ab; die Kopplung
-         rechnet ihn in den Satz um (und umgekehrt). Gespeichert wird nur der
-         Zinssatz — ein zweites Feld am Modell wäre eine zweite Wahrheit,
-         deshalb `hilfe: true`. Beim Bausparvertrag gibt es nichts
-         umzurechnen: dort fällt kein Zins an, dort kommt welcher dazu. */
-    ]),
-    { k: 'zinssatz', l: bauspar ? 'Guthabenzins' : 'Zinssatz', typ: 'number',
-      schritt: '0.01', einheit: '%', lex: bauspar ? null : 'sollzins' },
-    ...(bauspar ? [] : [
-      { k: 'zins_monat', l: 'Zinsanteil je Monat', typ: 'number',
-        schritt: '0.01', geld: true, hilfe: true,
-        note: 'Eines von beidem genügt — das andere ergibt sich aus der '
-            + 'Restschuld.' },
-    ]),
-    { k: 'rate_monatlich', l: bauspar ? 'Sparbeitrag je Turnus'
-                                      : 'Rate je Turnus',
-      typ: 'number', schritt: '0.01', geld: true,
-      lex: bauspar ? null : 'annuitaet' },
-    { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
-    { k: 'beginn', l: 'Beginn', typ: 'date' },
-    ...(bauspar ? [] : [
-      { k: 'zinsbindung_bis', l: 'Zinsbindung bis', typ: 'date',
-        lex: 'zinsbindung' },
-      // CCXXX — der Satz, der ab Ende der Bindung gilt, wenn schon bekannt.
-      // Optional: bleibt er leer, rechnet ImmoCalc wie bisher mit dem
-      // gebundenen Zinssatz weiter.
-      { k: 'zinssatz_variabel', l: 'Anschlusszins ab Bindungsende (variabel)',
-        typ: 'number', schritt: '0.01', einheit: '%', lex: 'anschlusszins' },
-    ]),
-    { k: 'notiz', l: 'Notiz', typ: 'text' },
-  ];
-}
-
-/* Was ein Vertrag heute wert ist — als Schuld oder als Guthaben. */
-function kreditStandText(e) {
-  if (istBausparer(e.art)) {
-    const gespart = e.guthaben_aktuell ?? e.angespart ?? 0;
-    return e.bausparsumme
-      ? `${eurVoll(gespart)} von ${eurVoll(e.bausparsumme)}`
-      : (gespart ? `Guthaben ${eurVoll(gespart)}` : '');
-  }
-  return restText(e);
-}
-
-/* Welche Felder ein Formular zeigt. Kredite hängen von der Vertragsart ab, die
-   Stammdaten vom Nießbrauch-Schalter (CCCI) — beide bauen sich beim Umschalten
-   im Formular selbst um. */
-const felderFuer = (bereich, werte = {}, absicht = bereich) =>
-  absicht === 'stamm' ? stammfelder(werte.niessbrauch_aktiv)
-  : bereich === 'kredite' ? kreditFelder(werte.art, werte)
-  : cfgFuer(bereich).felder;
-
-/* Wird ein Vertrag von Darlehen auf Bausparvertrag umgestellt, ist der Betrag
-   derselbe und seine Bedeutung eine andere: aus der Restschuld wird das
-   Guthaben. Genau dieser Fall steht heute in der Datenbank — der „LBS
-   Bausparer" lief als Kredit. Der Betrag wird deshalb angeboten, nicht
-   ersetzt: er steht sichtbar im Feld und wird erst mit „Speichern" übernommen.
-   Umgekehrt gibt es nichts anzubieten — ein Guthaben ist keine Schuld. */
-function uebernahmeAnbieten(werte) {
-  if (istBausparer(werte.art) && werte.angespart == null && werte.restschuld) {
-    return { ...werte, angespart: werte.restschuld, uebernommen: true };
-  }
-  return werte;
-}
-
-/* Welche Felder hat welcher Bereich — steuert Liste, Formular und Symbol. */
-const BEREICHE = {
-  mieten: {
-    titel: 'Mieten & Mieter', einzahl: 'Mietverhältnis', ikon: 'Miete',
-    felder: [
-      { k: 'einheit', l: 'Einheit', typ: 'einheit' },
-      { k: 'partei', l: 'Mieter / Partei', typ: 'text' },
-      { k: 'kaltmiete', l: 'Kaltmiete', typ: 'number', schritt: '0.01', geld: true },
-      { k: 'nebenkosten_vz', l: 'NK-Vorauszahlung', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'stellplatz', l: 'Stellplatzmiete', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'sonstige', l: 'Sonstige Einnahmen', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
-      { k: 'ab_datum', l: 'Gültig ab', typ: 'date', pflicht: true },
-      { k: 'bis_datum', l: 'Beendet am', typ: 'date' },
-      // CCLXVI — die Kontaktdaten (E-Mail, Telefon, Anschrift) werden nicht
-      // mehr am Mietverhältnis abgefragt, sondern je Bewohner (siehe
-      // bewohnerZeile). Die Spalten Miete.email/telefon/anschrift bleiben im
-      // Modell bestehen — Altbestand bleibt gültig, es wird nur nicht mehr
-      // hier eingegeben.
-      { k: 'personen', l: 'Personen im Haushalt', typ: 'number', schritt: '1',
-        lex: 'personen-im-haushalt' },
-      { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true,
-        lex: 'kaution' },
-      { k: 'notiz', l: 'Notiz', typ: 'text' },
-    ],
-    name: e => e.partei || e.einheit || 'Mietverhältnis',
-    /* Die Mailadresse steht nicht in der Zeile — sie bricht auf dem Handy
-       mitten im Wort um. Ein Zeichen genügt als Auskunft, ob sie da ist.
-       Bei mehreren Bewohnern zählt, wie viele erreichbar sind. */
-    /* Im Fokus steht die Einheit schon in der Kopfzeile — sie ein zweites Mal
-       in jede Zeile zu schreiben, sagt nichts Neues. */
-    detail: (e, imFokus = false) => [
-      imFokus ? '' : e.einheit,
-      e.geplant ? `ab ${datum(e.ab_datum)}`
-        : (e.bis_datum ? `bis ${datum(e.bis_datum)}`
-                       : (e.ab_datum ? `seit ${datum(e.ab_datum)}` : '')),
-      kontaktText(e),
-    ].filter(Boolean).join(' · '),
-    /* Was insgesamt hereinkommt — eine reine Stellplatzmiete stünde sonst
-       mit 0,00 € in der Liste. */
-    wert: e => `${eur((e.kaltmiete || 0) + (e.stellplatz || 0) + (e.sonstige || 0))
-                } ${kuerzel(e.turnus)}`,
-    /* Beendete Mietverhältnisse bleiben als Historie stehen, treten aber
-       zurück. Ein Stand, der erst mit der nächsten Erhöhung endet, läuft
-       heute noch — der darf nicht blass werden. */
-    matt: e => Boolean(e.beendet),
-    chip: e => e.geplant ? ['amber', 'geplant'] : null,
-  },
-  versicherungen: {
-    titel: 'Zusätzliche Versicherungen', einzahl: 'Versicherung', ikon: 'Versicherung',
-    felder: [
-      { k: 'art', l: 'Art', typ: 'text', pflicht: true },
-      { k: 'anbieter', l: 'Anbieter', typ: 'text' },
-      { k: 'police_nr', l: 'Policen-Nr.', typ: 'text' },
-      { k: 'jahresbeitrag', l: 'Beitrag je Turnus', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
-      { k: 'versicherungswert', l: 'Versicherungswert', typ: 'number',
-        schritt: '0.01', geld: true },
-      { k: 'beginn', l: 'Beginn', typ: 'date' },
-      { k: 'ende', l: 'Ende', typ: 'date' },
-      { k: 'umlagefaehig', l: 'Umlagefähig', typ: 'ja_nein' },
-      { k: 'notiz', l: 'Notiz', typ: 'text' },
-    ],
-    name: e => e.art,
-    detail: e => [e.anbieter, e.police_nr,
-                  e.umlagefaehig ? 'umlagefähig' : ''].filter(Boolean).join(' · '),
-    wert: e => `${eur(e.jahresbeitrag)} ${kuerzel(e.turnus)}`,
-  },
-  notarvertraege: {
-    titel: 'Notarverträge', einzahl: 'Notarvertrag', ikon: 'Notarvertrag',
-    felder: [
-      { k: 'art', l: 'Art', typ: 'text', pflicht: true },
-      { k: 'notar', l: 'Notar / Notariat', typ: 'text' },
-      { k: 'urnr', l: 'URNr', typ: 'text' },
-      { k: 'datum', l: 'Beurkundet am', typ: 'date' },
-      { k: 'betrag', l: 'Betrag / Kaufpreis', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'beteiligte', l: 'Beteiligte', typ: 'text' },
-      { k: 'notiz', l: 'Notiz', typ: 'text' },
-    ],
-    name: e => e.art || 'Notarvertrag',
-    detail: e => [e.notar, e.urnr ? `URNr ${e.urnr}` : '',
-                  e.datum ? datum(e.datum) : '',
-                  e.beteiligte].filter(Boolean).join(' · '),
-    wert: e => e.betrag ? eur(e.betrag) : '',
-  },
-  kredite: {
-    titel: 'Kredite & Bausparen', einzahl: 'Vertrag', ikon: 'Kredit',
-    // Die tatsächlich gezeigten Felder hängen an der Vertragsart und kommen
-    // aus `kreditFelder`; dies hier ist die Ausgangslage für einen neuen
-    // Vertrag.
-    felder: kreditFelder('Darlehen'),
-    name: e => e.bezeichnung,
-    /* Gezeigt wird der fortgeschriebene Stand, nicht der eingetragene:
-       eingegeben wird nur der Stand zum Jahresende, dazwischen rechnet die
-       App aus Rate und Zinssatz weiter. */
-    // Der Habenzins eines Bausparers steht bewusst nicht in der Zeile: bei
-    // 0,25 % sagt er nichts, kostet aber die Breite, die der Name braucht.
-    // Dass gespart und nicht getilgt wird, sagt „47.818 € von 140.000 €".
-    detail: e => [e.bank, kreditStandText(e),
-                  !istBausparer(e.art) && e.zinssatz ? `${prozent(e.zinssatz)} %` : '']
-      .filter(Boolean).join(' · '),
-    wert: e => `${eur(e.rate_monatlich)} ${kuerzel(e.turnus)}`,
-    chip: e => istBausparer(e.art)
-      ? (e.stand && e.stand.zuteilungsreif ? ['pos', 'zuteilungsreif'] : null)
-      : (e.stand && e.stand.quelle === 'fortgeschrieben'
-          ? ['teal', `Stand ${e.stand.stand_jahr}`] : null),
-  },
-  zahlungen: {
-    titel: 'Steuer & Zahlungen', einzahl: 'Zahlung', ikon: 'Steuer',
-    felder: [
-      { k: 'art', l: 'Art', typ: 'text', pflicht: true },
-      { k: 'kategorie', l: 'Kategorie', typ: 'select',
-        werte: ['Steuer', 'Kredit', 'Instandhaltung', 'Sonstiges'] },
-      { k: 'jahr', l: 'Jahr', typ: 'number', pflicht: true,
-        vorgabe: new Date().getFullYear() },
-      { k: 'betrag', l: 'Betrag je Turnus', typ: 'number', schritt: '0.01',
-        geld: true },
-      { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus' },
-      { k: 'absetzbar', l: 'Steuerlich absetzbar', typ: 'ja_nein' },
-      { k: 'notiz', l: 'Notiz', typ: 'text' },
-    ],
-    name: e => e.art,
-    detail: e => [e.kategorie, e.jahr, e.absetzbar ? 'absetzbar' : ''].
-      filter(Boolean).join(' · '),
-    wert: e => `${eur(e.betrag)} ${kuerzel(e.turnus)}`,
-  },
-};
-
-/* Verpachtet statt vermietet: gespeichert wird derselbe Satz (ein Pachtzins
-   ist eine Miete für Grund und Boden), gefragt wird in der Sprache der
-   Landwirtschaft — und nur nach dem, was es dort gibt. Nebenkosten-
-   vorauszahlung, Stellplatz und Personen im Haushalt fallen weg. */
-const PACHT = {
-  titel: 'Pacht & Erträge', einzahl: 'Pachtverhältnis', ikon: 'Miete',
-  felder: [
-    { k: 'partei', l: 'Pächter', typ: 'text' },
-    { k: 'kaltmiete', l: 'Pacht', typ: 'number', schritt: '0.01', geld: true,
-      note: 'Der Betrag je Zahlung — bei jährlicher Pacht also der Jahresbetrag.' },
-    { k: 'turnus', l: 'Zahlungsturnus', typ: 'turnus', vorgabe: 'jaehrlich' },
-    { k: 'ab_datum', l: 'Verpachtet ab', typ: 'date', pflicht: true },
-    { k: 'bis_datum', l: 'Pacht endet am', typ: 'date' },
-    { k: 'email', l: 'E-Mail', typ: 'email' },
-    { k: 'telefon', l: 'Telefon', typ: 'tel' },
-    { k: 'anschrift', l: 'Anschrift', typ: 'text' },
-    // Kaution gibt es bei einer Landpacht nicht — das Feld kommt hier gar
-    // nicht erst vor.
-    { k: 'notiz', l: 'Notiz', typ: 'text' },
-  ],
-  name: e => e.partei || 'Pachtverhältnis',
-  detail: e => [
-    e.geplant ? `ab ${datum(e.ab_datum)}`
-      : (e.bis_datum ? `bis ${datum(e.bis_datum)}`
-                     : (e.ab_datum ? `seit ${datum(e.ab_datum)}` : '')),
-    e.notiz,
-  ].filter(Boolean).join(' · '),
-  wert: e => `${eur(e.kaltmiete || 0)} ${kuerzel(e.turnus)}`,
-};
-
-/* CCCXIX — Einmalige Kauferwerbsnebenkosten: bei jeder Immobilie die Kosten,
-   die beim Erwerb einmalig anfallen (Notar, Grunderwerbsteuer, Grundbuch,
-   Makler …). Technisch eine Zahlung mit fester Kategorie „Erwerbsnebenkosten"
-   und Turnus „einmalig" — deshalb ein eigenes Kürzel, keine /Jahr-Angabe. Die
-   Rubrik teilt sich den Zahlungs-Endpunkt (siehe RUBRIK_ENDPUNKT). */
-const ERWERB_ARTEN = ['Notar', 'Grunderwerbsteuer', 'Grundbuch / Grundschuld',
-                      'Makler', 'Gutachter', 'Sonstiges'];
-const ERWERB = {
-  titel: 'Einmalige Erwerbsnebenkosten', einzahl: 'Erwerbsnebenkosten',
-  ikon: 'Erwerbsnebenkosten',
-  felder: [
-    // ohneLeer + Vorgabe: eine Erwerbsnebenkosten-Art gibt es immer — sonst
-    // liesse sich (ohne Auswahl) ein Posten ohne Art speichern (auswahl.js
-    // meldet den Wert erst bei Nutzer-Auswahl zurück).
-    { k: 'art', l: 'Art', typ: 'auswahl', werte: ERWERB_ARTEN, ohneLeer: true,
-      vorgabe: ERWERB_ARTEN[0], pflicht: true },
-    { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01', geld: true,
-      voll: true, pflicht: true },
-    { k: 'jahr', l: 'Jahr', typ: 'number', vorgabe: new Date().getFullYear() },
-    { k: 'notiz', l: 'Notiz', typ: 'text' },
-  ],
-  name: e => e.art || 'Erwerbsnebenkosten',
-  detail: e => [e.jahr, e.notiz].filter(Boolean).join(' · '),
-  wert: e => eurVoll(e.betrag || 0),
-};
-
-// Rubriken, die keinen eigenen Endpunkt haben, sondern auf einem anderen
-// aufsetzen (Erwerbsnebenkosten sind Zahlungen einer festen Kategorie).
-const RUBRIK_ENDPUNKT = { erwerbskosten: 'zahlungen' };
-const endpunktBereich = b => RUBRIK_ENDPUNKT[b] || b;
-// Feste Feldwerte, die eine Pseudo-Rubrik beim Speichern immer mitschickt.
-const RUBRIK_FESTWERTE = {
-  erwerbskosten: { kategorie: 'Erwerbsnebenkosten', turnus: 'einmalig',
-                   absetzbar: false },
-};
-const ERWERB_KATEGORIE = 'Erwerbsnebenkosten';
-
-/** Die Beschreibung eines Bereichs — beim Grundstück in seiner Sprache.
-    „Steuer & Zahlungen" heisst dort schlicht „Finanzamt" (CCCIV). */
-const cfgFuer = (bereich) => {
-  if (bereich === 'erwerbskosten') return ERWERB;
-  if (!istGrundstueck()) return BEREICHE[bereich];
-  if (bereich === 'mieten') return { ...BEREICHE.mieten, ...PACHT };
-  if (bereich === 'zahlungen') {
-    return { ...BEREICHE.zahlungen, titel: 'Finanzamt', ikon: 'Finanzamt' };
-  }
-  return BEREICHE[bereich];
-};
-
-/* Stammdaten des Objekts: dieselbe Feldbeschreibung für Anzeige und Formular. */
-const STAMMFELDER = [
-  { k: 'name', l: 'Name', typ: 'text', pflicht: true },
-  // CCCXXX — die Objektart bestimmt, wie das Haus gedacht ist. Weit oben, weil
-  // sie den Charakter des Objekts festlegt.
-  { k: 'objektart', l: 'Objektart', typ: 'auswahl', ohneLeer: true,
-    vorgabe: 'Mehrfamilienhaus',
-    werte: ['Einfamilienhaus', 'Reihenhaus', 'Mehrfamilienhaus', 'Villa',
-            'Zwei-/Doppelhaus', 'Einzelne Wohnung', 'Bauernhof', 'Gewerbe',
-            'Grundstück'] },
-  { k: 'strasse', l: 'Straße', typ: 'text' },
-  { k: 'plz', l: 'PLZ', typ: 'text' },
-  { k: 'ort', l: 'Ort', typ: 'text' },
-  { k: 'flaeche', l: 'Wohnfläche (manuell)', typ: 'number', schritt: '0.01',
-    einheit: 'm²', lex: 'wohnflaeche',
-    note: 'Optional. Die Wohnfläche summiert ImmoCalc aus den Einheiten. Hier '
-        + 'nur eintragen, wenn du sie unabhängig führen willst — weicht sie von '
-        + 'den Einheiten ab, weist ImmoCalc darauf hin. Maßgeblich bleibt die '
-        + 'aus den Einheiten berechnete Fläche.' },
-  // CCLIV — die Grundstücksfläche (Grund und Boden) lässt sich für jede
-  // Immobilie eintragen, nicht nur für den Grundstückstyp: auch zu einem
-  // normalen Haus will man oft wissen, wie viel Grund dazugehört. Beim
-  // Grundstückstyp steht dasselbe Feld im Grundstück-Block (siehe GRUNDFELDER),
-  // deshalb hier für diesen Typ ausgeblendet.
-  { k: 'grundstueck_flaeche', l: 'Grundstücksfläche / Grund', typ: 'number',
-    schritt: '0.01', einheit: 'm²' },
-  // CCXXXV — wie die Immobilie ins Eigentum kam. Bei Kauf zählt der Kaufpreis
-  // als AfA-Basis; bei Schenkung, Erbschaft oder Überlassung übernimmt man
-  // stattdessen die AfA-Basis des Vorbesitzers.
-  { k: 'erwerbsart', l: 'Erwerbsart', typ: 'auswahl', ohneLeer: true,
-    vorgabe: 'Kauf', werte: ['Kauf', 'Schenkung', 'Erbschaft', 'Überlassung'] },
-  { k: 'kaufpreis', l: 'Kaufpreis', typ: 'number', schritt: '0.01', geld: true, voll: true },
-  { k: 'kaufdatum', l: 'Kauf-/Erbschaftsdatum', typ: 'date' },
-  // CCCXXX — das Baujahr/Baudatum getrennt vom Kaufdatum: bei einer Erbschaft
-  // gibt es kein sinnvolles Kaufdatum, wohl aber ein Baujahr.
-  { k: 'baudatum', l: 'Baujahr / Baudatum', typ: 'date' },
-  { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true },
-  // CCCXXX — Konto & Rücklage bilden einen eigenen Block: erst wer und wo
-  // (Kontoinhaber, IBAN, Bank), dann was zurückgelegt ist (Stand, Sparrate).
-  { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
-  { k: 'iban', l: 'IBAN', typ: 'text', iban: true },
-  { k: 'bank', l: 'Bank', typ: 'text' },
-  // CCIX — Rücklagenkonto: zurückgelegtes Geld für die Immobilie und die
-  // laufende Sparrate. Beides optional, jederzeit nachtragbar.
-  { k: 'ruecklage_saldo', l: 'Rücklagenkonto (Stand)', typ: 'number',
-    schritt: '0.01', geld: true, voll: true,
-    note: 'Zurückgelegtes Eigentümergeld für Instandhaltung und Sanierung — '
-        + 'steht in der Wertentwicklung als eigene Zeile.' },
-  { k: 'ruecklage_monatlich', l: 'Monatliche Rücklage', typ: 'number',
-    schritt: '0.01', geld: true },
-  // CCCI — Nießbrauch als aktivierbarer Block. Der Schalter trägt den Umbau
-  // (`umbau: true`): geht er aus, verschwinden Berechtigter und Frist. Der
-  // Berechtigte ist einer der Eigentümer (Auswahl, kein Freitext) — die Werte
-  // füllt `stammfelder()` beim Öffnen aus der Eigentümerliste des Objekts.
-  { k: 'niessbrauch_aktiv', l: 'Nießbrauch eingetragen', typ: 'schalter',
-    vorgabe: false, umbau: true },
-  { k: 'niessbrauch_berechtigt', l: 'Nießbrauch: Berechtigter', typ: 'auswahl',
-    werte: [], nurWennNiessbrauch: true },
-  { k: 'niessbrauch_bis', l: 'Nießbrauch bis', typ: 'date',
-    nurWennNiessbrauch: true },
-];
-
-/* CCVIII — die WEG-Ebene. Nur bei einem Objekt sichtbar, das Teil einer
-   Wohnungseigentümergemeinschaft ist. Das Hausgeld ist Eigentümerkosten (an die
-   WEG gezahlt), die Rücklagenzuführung der Sparanteil darin; der Verwalter ist
-   die Hausverwaltung/Abrechnungsfirma, die die Nebenkosten für die Mieter
-   verteilt. Der Schalter selbst schaltet die Ebene an oder aus. */
-const WEGFELDER = [
-  { k: 'weg', l: 'Teil einer Wohnungseigentümergemeinschaft', typ: 'schalter',
-    vorgabe: false,
-    note: 'An: die Hausverwaltung verteilt die Nebenkosten, du trägst die '
-        + 'fertigen Werte je Mieter direkt in die Abrechnung ein. '
-        + 'Aus: ImmoCalc verteilt selbst über einen Schlüssel.' },
-  { k: 'hausgeld_monatlich', l: 'Hausgeld (monatlich)', typ: 'number',
-    schritt: '0.01', geld: true, voll: true,
-    note: 'Was du monatlich an die WEG zahlst — ein Eigentümerkosten.' },
-  { k: 'weg_ruecklage_zufuehrung', l: 'davon Rücklagenzuführung (mtl.)',
-    typ: 'number', schritt: '0.01', geld: true,
-    note: 'Der Sparanteil im Hausgeld, der in die gemeinschaftliche Rücklage '
-        + 'der WEG fliesst.' },
-  { k: 'weg_verwalter', l: 'Hausverwaltung / Abrechnungsfirma', typ: 'text' },
-];
-
-/* Grundstücksangaben. `grundstueck_flaeche` steht bewusst neben `flaeche`:
-   letzteres ist Wohn-/Nutzfläche und geht in den Verteilungsschlüssel
-   „Fläche" ein — eine Ackerfläche dort verfälschte jede Abrechnung.
-
-   Der Grundstückswert ist der Verkehrswert des Objekts: beim Grund und Boden
-   ist das derselbe Wert, und so rechnet die Vermögensübersicht das Grundstück
-   ohne Zutun mit. */
-const GRUNDFELDER = [
-  { k: 'grundstueck_flaeche', l: 'Grundstücksfläche', typ: 'number',
-    schritt: '0.01', einheit: 'm²' },
-  { k: 'grundstueck_nutzungsart', l: 'Nutzungsart', typ: 'auswahl',
-    werte: ['Ackerland', 'Grünland', 'Wald', 'Bauerwartungsland', 'Gemischt',
-            'Sonstiges'] },
-  // CCCXXX — die Wirtschaftsart (grundstueck_wirtschaftsart) wird nicht mehr
-  // gezeigt; das Modellfeld bleibt bestehen, nur ohne Formular- und Anzeigezeile.
-  { k: 'gemarkung', l: 'Gemarkung', typ: 'text' },
-  { k: 'flurstueck', l: 'Flurstück', typ: 'text' },
-  { k: 'grundstueck_m2_preis', l: 'Wert je m² (geschätzt)', typ: 'number',
-    schritt: '0.01', geld: true,
-    note: 'Dein geschätzter Marktwert je m². ImmoCalc errechnet daraus den '
-        + 'Grundstückswert (× Grundstücksfläche). Steht NICHT auf dem '
-        + 'Finanzamts-Bescheid und ist etwas anderes als der Grundsteuerwert.' },
-  // Die drei folgenden bilden die Rechenkette der Grundsteuer, in der
-  // Reihenfolge, in der sie entsteht (CCXCVI).
-  { k: 'grundsteuerwert', l: 'Grundsteuerwert', typ: 'number', schritt: '0.01',
-    geld: true, voll: true,
-    note: '① Vom Finanzamt — „Bescheid über den Grundsteuerwert". Bei Land-/'
-        + 'Forstwirtschaft: Summe der Reinerträge × Kapitalisierungsfaktor (18,6), '
-        + 'abgerundet auf volle 100 € (Eckenhaid: 144,60 € × 18,6 ≈ 2.689 € → '
-        + '2.600 €).' },
-  { k: 'grundsteuer_messbetrag', l: 'Steuermessbetrag', typ: 'number',
-    schritt: '0.01', geld: true,
-    note: '② Vom Finanzamt — „Bescheid über den Grundsteuermessbetrag" = '
-        + 'Grundsteuerwert × Steuermesszahl (bei Land-/Forstwirtschaft 0,55 ‰; '
-        + 'Eckenhaid: 2.600 € × 0,55 ‰ = 1,43 €).' },
-  { k: 'grundsteuer_hebesatz', l: 'Hebesatz', typ: 'number', schritt: '1',
-    einheit: '%',
-    note: '③ Von der GEMEINDE (Eckental), nicht vom Finanzamt — steht auf dem '
-        + 'Grundsteuerbescheid der Stadt (Hebesatz Grundsteuer A). '
-        + 'Steuermessbetrag × Hebesatz = Grundsteuer im Jahr.' },
-];
-
-/* CXLI — was eine Einheit ausmacht. Dieselbe Beschreibung trägt die Anzeige
-   im Fokus und das Formular; die Feldnamen sind die des Modells. */
-const EINHEITFELDER = [
-  { k: 'bezeichnung', l: 'Bezeichnung', typ: 'text', pflicht: true },
-  { k: 'nutzungsart', l: 'Nutzungsart', typ: 'auswahl', vorgabe: 'Wohnen',
-    werte: ['Wohnen', 'WG', 'Büro', 'Gewerbe', 'Praxis', 'Laden', 'Lager',
-            'Stellplatz', 'Garage', 'Sonstiges'] },
-  { k: 'flaeche', l: 'Wohn-/Nutzfläche', typ: 'number', schritt: '0.01',
-    einheit: 'm²', lex: 'wohnflaeche' },
-  { k: 'terrasse', l: 'Terrasse / Balkon', typ: 'number', schritt: '0.01',
-    einheit: 'm²', lex: 'terrassenflaeche' },
-  { k: 'nebenflaeche', l: 'Nebenfläche', typ: 'number', schritt: '0.01',
-    einheit: 'm²', lex: 'nebenflaeche' },
-  { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1',
-    lex: 'stellplatz' },
-  // CLXXXVI — ein Verkehrswert je Einheit. Nur pflegen, wo er bekannt ist;
-  // sonst bleibt der Wert am Haus maßgeblich. Er gewichtet die Zurechnung des
-  // Objektwerts auf die Eigentümer.
-  { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01',
-    geld: true, voll: true,
-    note: 'Optional. Ist er gesetzt, zählt diese Einheit mit ihm in der '
-        + 'Vermögenssicht je Eigentümer; sonst gilt der Wert am Haus.' },
-  // CXCIII — eine Einheit ganz aus der Nebenkostenabrechnung nehmen.
-  { k: 'nk_abrechnung', l: 'Nimmt an der Nebenkostenabrechnung teil',
-    typ: 'schalter', vorgabe: true,
-    note: 'Aus: selbstgenutzt, separat abgerechnet oder gewerblich mit '
-        + 'eigenem Zähler. Die Einheit zählt dann in keinem '
-        + 'Verteilungsschlüssel mehr mit.' },
-];
-
-/* Beim Grundstück gibt es keine Wohnfläche und kein Hauskonto — die Zeilen
-   stehen dort nicht ausgegraut herum, sie kommen gar nicht erst vor. Der
-   Verkehrswert wandert in den Grundstücksblock. */
-// CCXCVII — ein landwirtschaftliches Grundstück braucht vieles nicht: keine
-// Straße (es ist ein Flurstück), keine AfA (Grund und Boden wird nicht
-// abgeschrieben), kein Rücklagenkonto und kein Hauskonto. Diese Zeilen kommen
-// dort gar nicht erst vor — der Verkehrswert wandert in den Grundstücksblock.
-const OHNE_BEIM_GRUNDSTUECK = new Set([
-  'flaeche', 'verkehrswert', 'grundstueck_flaeche',
-  'strasse', 'baudatum',
-  'ruecklage_saldo', 'ruecklage_monatlich',
-  'bank', 'iban', 'kontoinhaber']);
-
-/* CCCXXXVI — beim Grundstück bilden Stammdaten und Grundstücksangaben EINE
-   Feldbeschreibung, von grob nach fein geordnet: was es ist (Objektart, Adresse
-   inkl. Flurnummer, Fläche, Nutzungsart, geschätzter m²-Preis), wie es erworben
-   wurde (Erwerbsart, Kaufpreis/-datum), die Grundsteuer-Kette und zuletzt der
-   Nießbrauch. Ein einziges Formular bearbeitet alles (alle Felder gehören zum
-   Objekt und werden an dieselbe Route gePATCHt); die Anzeige teilt es in die
-   drei Blöcke Stammdaten / Erwerb & Kosten / Nutzung & Pacht. */
-const feldAus = (pool, k) => pool.find(f => f.k === k);
-const GRUND_STAMMFELDER = () => {
-  const s = k => feldAus(STAMMFELDER, k);
-  const g = k => feldAus(GRUNDFELDER, k);
-  return [
-    s('name'), s('objektart'),
-    s('plz'), s('ort'),
-    g('gemarkung'), g('flurstueck'),
-    g('grundstueck_flaeche'), g('grundstueck_nutzungsart'),
-    g('grundstueck_m2_preis'),
-    s('erwerbsart'), s('kaufpreis'), s('kaufdatum'),
-    g('grundsteuerwert'), g('grundsteuer_messbetrag'), g('grundsteuer_hebesatz'),
-    s('niessbrauch_aktiv'), s('niessbrauch_berechtigt'), s('niessbrauch_bis'),
-  ].filter(Boolean);
-};
-
-/* Die Stammfelder — typ- und zustandsabhängig (CCCI). `aktiv` ist der aktuelle
-   Nießbrauch-Zustand: er entscheidet, ob Berechtigter und Frist mitkommen. Für
-   das Formular übergibt der Aufrufer den Stand aus dem Schalter; für die Ansicht
-   den gespeicherten Wert. Der Berechtigte bekommt ALLE app-weit geführten
-   Eigentümer als Auswahl (CCCXXXV) — der Nießbraucher ist meist nicht Eigentümer
-   dieses Objekts; Fallback bleibt die Eigentümerliste des Objekts. */
-function stammfelder(aktiv = objekt?.niessbrauch_aktiv) {
-  let felder = istGrundstueck() ? GRUND_STAMMFELDER() : STAMMFELDER;
-  const berechtigte = alleEigentuemer.length ? alleEigentuemer : objektEigentuemer;
-  felder = felder
-    .filter(f => !(f.nurWennNiessbrauch && !aktiv))
-    .map(f => f.k === 'niessbrauch_berechtigt'
-      ? { ...f, werte: berechtigte } : f);
-  return felder;
-}
-
-const datum = s => s ? new Date(s).toLocaleDateString('de-DE') : '';
-
-/* Datum als ISO-Tag ohne Umweg über UTC — `toISOString` verschiebt in
-   Mitteleuropa auf den Vortag und macht aus dem 1. den 31. */
-const isoDatum = d => `${d.getFullYear()}-${String(d.getMonth() + 1)
-  .padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const tagDavor = iso => {
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate() - 1);
-  return isoDatum(d);
-};
-const ersterNaechsterMonat = () => {
-  const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + 1);
-  return isoDatum(d);
-};
-
-/* Zinssatz deutsch: 2,75 statt 2.75 — zwei Nachkommastellen, mehr nie. */
-const prozent = n => Number(n).toLocaleString('de-DE', { maximumFractionDigits: 2 });
-
-/* Wer ist erreichbar: der Hauptkontakt am Mietverhältnis und die Bewohner,
-   die eine eigene Mailadresse haben. */
-function kontaktText(e) {
-  const extra = (e.bewohner || []).filter(b => b.email).length;
-  if (!e.email && !extra) return '✉ fehlt';
-  const zahl = (e.email ? 1 : 0) + extra;
-  return zahl === 1 ? '✉ hinterlegt' : `✉ ${zahl} Adressen`;
-}
-
-/* Die Restschuld, die heute gilt. Ohne Cent: zwischen zwei Jahresständen ist
-   sie gerechnet, da wäre eine Angabe auf den Cent nur vorgetäuschte Schärfe. */
-function restText(e) {
-  const rest = e.restschuld_aktuell ?? e.restschuld;
-  return rest ? `Rest ${eurVoll(rest)}` : '';
-}
-
-/* IBAN in Vierergruppen, egal wie sie gespeichert wurde: „DE42 7635 0000 …".
-   Die letzte Gruppe darf kürzer sein. */
-const ibanSchoen = s => String(s || '').replace(/\s+/g, '').toUpperCase()
-  .replace(/(.{4})/g, '$1 ').trim();
-
-function stammwert(f, o) {
-  const v = o[f.k];
-  if (f.typ === 'schalter' || f.typ === 'ja_nein') return v ? 'Ja' : 'Nein';
-  if (v == null || v === '') return null;
-  if (f.typ === 'date') return datum(v);
-  if (f.iban) return ibanSchoen(v);
-  // `voll`: ein Kaufpreis oder Verkehrswert ist ein runder Betrag — die zwei
-  // Nachkommastellen sind dort nur Rauschen. Der Grundsteuer-Messbetrag (1,43 €)
-  // trägt sie dagegen bewusst.
-  if (f.geld) return f.voll ? eurVoll(v) : eur(v);
-  if (f.einheit) return `${Number(v).toLocaleString('de-DE')} ${f.einheit}`;
-  return String(v);
-}
-
-/* CCCXLII — ein Feld gilt als leer, wenn kein Wert erfasst ist; bei den
-   optionalen Zahlenfeldern (Verkehrswert, Terrasse, Nebenfläche, Stellplätze)
-   zählt auch die 0 als „nicht erfasst". Solche Felder werden dann gar nicht
-   erst als Zeile gezeigt, statt eine Reihe leerer „nicht erfasst" aufzuziehen.
-   Schalter/Ja-Nein-Felder sind nie leer — sie tragen bewusst „Ja"/„Nein". */
-function feldLeer(f, v) {
-  if (f.typ === 'schalter' || f.typ === 'ja_nein') return false;
-  if (v == null || v === '') return true;
-  return f.typ === 'number' && Number(v) === 0;
-}
-
-let objekt = null;
 let daten = null;
 /* Die Einheiten des Hauses — gebraucht von der Hausebene, vom Fokus und von
    den Blasen im Mietformular. Ein Grundstück hat keine. */
@@ -1229,18 +639,9 @@ let fokus = null;
 /* CCXXIX — Grundschulden auf diesem Objekt. Nur am Haus gepflegt, nicht in
    der Einheiten-Ansicht — wie die Kredite auch. */
 let grundschulden = [];
-/* CCCI — die Eigentümer-Namen dieses Objekts, für die Nießbrauch-Auswahl. */
-let objektEigentuemer = [];
-/* CCCXXXV — alle app-weit geführten Eigentümer (Personen), damit als
-   Nießbrauch-Berechtigter auch jemand wählbar ist, der nicht Miteigentümer
-   dieses Objekts ist. Fällt der Abruf aus, bleibt es bei objektEigentuemer. */
-let alleEigentuemer = [];
 /* CCCIX — die geladenen Bereiche, damit der Zuordnen-Dialog die vorhandenen
    Einträge einer Rubrik anbieten kann. */
 let bereicheDaten = {};
-
-const flaecheText = f => `${Number(f).toLocaleString('de-DE',
-  { maximumFractionDigits: 1 })} m²`;
 
 /* Auf welche Einheit ein Mietverhältnis zeigt. Spiegelt `verteilung.bezuege`:
    ohne Angabe gehört es bei genau einer Einheit zu dieser — sonst nirgendwohin. */
@@ -1296,43 +697,6 @@ function kennzahlenHtml(v, jahresmiete, restschuld, guthaben) {
   return `<div class="kennzahlen">${zellen.map(([k, w, l]) =>
     `<div class="kennzahl"><span class="${k}">${w}</span>
        <span class="kl">${esc(l)}</span></div>`).join('')}</div>`;
-}
-
-/* CCLXVII — ein fachliches Label in der Übersicht trägt denselben ?-Platzhalter
-   wie im Formular. `installHilfe(inhalt)` macht nach dem Rendern ein Icon
-   daraus. Triviale Zeilen bekommen kein `lex` und bleiben schmucklos. */
-const paarLabel = (label, lex) => `${esc(label)}${
-  lex ? ` <span data-hilfe="${esc(lex)}"></span>` : ''}`;
-
-function paarZeile(label, wert, { abgeleitet = false, lang = false,
-                                  lex = null } = {}) {
-  // `lang` gilt für die Beschriftung, nicht nur den Wert — ein langes Label
-  // wie „Übernommene AfA-Bemessung (vom Vorbesitzer)" drückt die Wertspalte
-  // sonst auf null Breite, und „nicht erfasst" bricht Buchstabe für
-  // Buchstabe um (Fund bei CCXXXV). Deshalb gilt die gestapelte Form auch,
-  // wenn noch kein Wert erfasst ist.
-  return `<div class="paar${lang ? ' lang' : ''}">
-    <span class="pl">${paarLabel(label, lex)}</span>
-    <span class="pv${wert ? (abgeleitet ? ' abgeleitet' : '') : ' leer'}"
-      >${wert ? esc(wert) : 'nicht erfasst'}</span></div>`;
-}
-
-/* Eine gerechnete Zeile mit Herkunftsangabe — „Wohnfläche · 205 m² · aus 5
-   Einheiten". Die Herkunft steht ruhig unter dem Wert. */
-/* CCCXXX — eine Zelle (Label + Wert, optional mit Herkunft) als gemeinsamer
-   Baustein für ganze Zeilen und für die kompakten Zweiergruppen. */
-function zelleInner({ label, wert, quelle = null, lex = null, abgeleitet = false }) {
-  return `<span class="pl">${paarLabel(label, lex)}</span>
-    <span class="pv${wert ? (abgeleitet ? ' abgeleitet' : '') : ' leer'}"
-      >${wert ? esc(wert) : 'nicht erfasst'}${quelle
-        ? `<span class="pq">${esc(quelle)}</span>` : ''}</span>`;
-}
-
-/* CCCXXX (korrigiert) — eine Zelle als eigene, EINSPALTIGE Zeile. Das
-   Zwei-Spalten-Raster war unübersichtlich; kurze Werte werden stattdessen
-   gezielt im Wert selbst zusammengezogen (IBAN (Bank), Stand · mtl.). */
-function cellZeile(c) {
-  return `<div class="paar${c.lang ? ' lang' : ''}">${zelleInner(c)}</div>`;
 }
 
 /* CCLIV — Wohnfläche und Stellplätze eines Objekts kommen aus den Einheiten,
@@ -1482,140 +846,6 @@ function stammHtml(o) {
     ${flaecheWarnung(o.flaeche, s)}`;
 }
 
-/* ---- CCCXXXVI — das Grundstück in drei Blöcken ---------------------------
-   Preis je m² und Grundsteuer werden gerechnet, nicht gepflegt: sie stünden
-   sonst irgendwann im Widerspruch zu den Zahlen, aus denen sie stammen. Bearbeitet
-   wird alles über EIN Stammdaten-Formular (data-stamm, GRUND_STAMMFELDER). */
-
-/* Der Grundstückswert: geschätzter m²-Preis × Fläche, sonst der Verkehrswert. */
-function grundstueckswert(o) {
-  if (o.grundstueck_m2_preis && o.grundstueck_flaeche) {
-    return { betrag: o.grundstueck_m2_preis * o.grundstueck_flaeche,
-             quelle: `aus ${eur(o.grundstueck_m2_preis)} / m² × ${
-               flaecheText(o.grundstueck_flaeche)}` };
-  }
-  if (o.verkehrswert) return { betrag: o.verkehrswert, quelle: 'Verkehrswert' };
-  return null;
-}
-
-/* Grundsteuer im Jahr: Steuermessbetrag × Hebesatz. */
-const grundsteuerJahrVon = o => (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz)
-  ? o.grundsteuer_messbetrag * o.grundsteuer_hebesatz / 100 : 0;
-
-/* Block A — Stammdaten: was das Grundstück ist. Objektart, Adresse inkl.
-   Flurnummer (Ort · Gemarkung · Flurstück), Fläche, Nutzungsart, Grundstückswert;
-   ist ein Nießbrauch eingetragen, klingt er als abgesetzter Block mit aus. */
-function grundStammHtml(o) {
-  const felder = stammfelder();
-  const def = k => felder.find(f => f.k === k);
-  const zeilen = [];
-  const zeile = c => zeilen.push(cellZeile(c));
-  if (def('objektart')) {
-    zeile({ label: 'Objektart', wert: stammwert(def('objektart'), o) });
-  }
-  const plzOrt = [o.plz, o.ort].filter(Boolean).join(' ');
-  const adresse = [plzOrt, o.gemarkung && `Gemarkung ${o.gemarkung}`,
-                   o.flurstueck && `Flur ${o.flurstueck}`].filter(Boolean).join(' · ');
-  zeile({ label: 'Adresse', wert: adresse || null });
-  if (def('grundstueck_flaeche')) {
-    zeile({ label: 'Grundstücksfläche',
-            wert: stammwert(def('grundstueck_flaeche'), o) });
-  }
-  if (def('grundstueck_nutzungsart')) {
-    zeile({ label: 'Nutzungsart',
-            wert: stammwert(def('grundstueck_nutzungsart'), o) });
-  }
-  const gw = grundstueckswert(o);
-  zeile({ label: 'Grundstückswert', wert: gw ? eur(gw.betrag) : null,
-          quelle: gw ? gw.quelle : null, abgeleitet: Boolean(gw) });
-  if (o.niessbrauch_aktiv) {
-    zeilen.push('<div class="paar-trenn"><span>Nießbrauch</span></div>');
-    for (const k of ['niessbrauch_berechtigt', 'niessbrauch_bis']) {
-      const f = def(k);
-      if (f) zeile({ label: f.l, wert: stammwert(f, o) });
-    }
-  }
-  return `<div class="sekopf"><span class="seikon" style="color:var(--teal-d)"
-        >${kostenIcon('Grundstück')}</span>
-      <h2 class="sec">Stammdaten${o.name
-        ? ` <span class="secsub">· ${esc(o.name)}</span>` : ''}</h2>
-      <button data-stamm="1">Bearbeiten</button></div>
-    <div class="paare">${zeilen.join('')}</div>`;
-}
-
-/* Block B, Kopf — Erwerb & Kosten: wie erworben wurde. Erwerbsart, Kaufpreis,
-   Kauf-/Erbschaftsdatum. Die Rubriken (Notar, Erwerbsnebenkosten, Finanzamt)
-   und die Grundsteuer-Kette folgen im Aufbau darunter (laden). */
-function erwerbKopfHtml(o) {
-  const felder = stammfelder();
-  const def = k => felder.find(f => f.k === k);
-  const zeilen = [];
-  for (const k of ['erwerbsart', 'kaufpreis', 'kaufdatum']) {
-    const f = def(k);
-    if (f) zeilen.push(cellZeile({ label: f.l, wert: stammwert(f, o), lex: f.lex }));
-  }
-  return `<div class="sekopf"><span class="seikon" style="color:var(--amber)"
-        >${kostenIcon('Erwerb')}</span>
-      <h2 class="sec">Erwerb &amp; Kosten</h2>
-      <button data-stamm="1">Bearbeiten</button></div>
-    <div class="paare">${zeilen.join('')}</div>`;
-}
-
-/* Block B, Finanzamt/Grundsteuer — die Rechenkette, in der Reihenfolge, in der
-   sie entsteht (CCXCVI): Grundsteuerwert × Steuermesszahl = Steuermessbetrag
-   × Hebesatz = Grundsteuer im Jahr. Steht direkt über der Finanzamt-Rubrik. */
-function grundsteuerHtml(o) {
-  const g = k => feldAus(GRUNDFELDER, k);
-  const zeilen = [];
-  for (const k of ['grundsteuerwert', 'grundsteuer_messbetrag']) {
-    const f = g(k);
-    const w = stammwert(f, o);
-    if (w) zeilen.push(cellZeile({ label: f.l, wert: w, lex: f.lex }));
-  }
-  if (o.grundsteuerwert && o.grundsteuer_messbetrag) {
-    const promille = o.grundsteuer_messbetrag / o.grundsteuerwert * 1000;
-    zeilen.push(cellZeile({ label: 'Steuermesszahl (rechnerisch)', abgeleitet: true,
-      wert: `${promille.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ‰` }));
-  }
-  const hebe = g('grundsteuer_hebesatz');
-  if (stammwert(hebe, o)) {
-    zeilen.push(cellZeile({ label: hebe.l, wert: stammwert(hebe, o) }));
-  }
-  const jahr = grundsteuerJahrVon(o);
-  if (jahr) {
-    zeilen.push(cellZeile({ label: 'Grundsteuer im Jahr', wert: eur(jahr),
-      quelle: `Steuermessbetrag × Hebesatz ${o.grundsteuer_hebesatz} %`,
-      abgeleitet: true }));
-  }
-  if (!zeilen.length) return '';
-  const kette = `<div class="fussnote">So entsteht die Grundsteuer:
-       <strong>Grundsteuerwert</strong> (vom Finanzamt) × Steuermesszahl =
-       <strong>Steuermessbetrag</strong> (vom Finanzamt) × <strong>Hebesatz</strong>
-       (von der Gemeinde) = Grundsteuer&nbsp;im&nbsp;Jahr. Der Hebesatz steht nicht
-       auf dem Finanzamts-Bescheid, sondern auf dem Grundsteuerbescheid der
-       Stadt.</div>`;
-  return `${sekopfHtml('Grundsteuer', 'Finanzamt', '', 'var(--amber)')}
-    <div class="paare">${zeilen.join('')}</div>${kette}`;
-}
-
-/* Block C, Abschluss — die kleine Ertragsrechnung: Pacht/Jahr − Grundsteuer/Jahr
-   (CCCIII). Die Grundsteuer ist beim verpachteten Grundstück die einzige
-   Nebenkostenposition. Steht unter der Pacht-Rubrik. */
-function pachtErtragHtml(o, pachtJahr = 0) {
-  const jahr = grundsteuerJahrVon(o);
-  const ertrag = [];
-  if (pachtJahr) ertrag.push(['Pacht im Jahr', eur(pachtJahr)]);
-  if (jahr) ertrag.push(['Nebenkosten im Jahr (Grundsteuer)', eur(jahr)]);
-  if (pachtJahr) ertrag.push(['Ertrag im Jahr', eur(pachtJahr - jahr)]);
-  if (!ertrag.length) return '';
-  return `${sekopfHtml('Ertrag', 'Miete', '', 'var(--pos)')}
-    <div class="paare">${ertrag.map(([l, w], i) =>
-      paarZeile(l, w, { abgeleitet: i < ertrag.length - 1 })).join('')}</div>
-    <div class="fussnote">Beim verpachteten Grundstück ist die Grundsteuer die
-      einzige Nebenkostenposition — sie wird auf den Pächter umgelegt. Der Ertrag
-      ist die Pacht abzüglich der Grundsteuer.</div>`;
-}
-
 /* CCVIII — die WEG-Ebene. Beim Grundstück gibt es sie nicht (keine Mieter, keine
    Hausverwaltung). Ist das Objekt keine WEG, steht hier nur der Hinweis, wie man
    es einschaltet; ist es eine, stehen Hausgeld, Rücklagenzuführung und
@@ -1721,11 +951,6 @@ const RUBRIKFARBE = {
   kredite: 'var(--neg)', grundstueck: 'var(--teal-d)',
   erwerbskosten: 'var(--amber)',
 };
-const sekopfHtml = (titel, ikon = '', knopf = '', farbe = '') =>
-  `<div class="sekopf">${ikon
-      ? `<span class="seikon"${farbe ? ` style="color:${farbe}"` : ''}
-         >${kostenIcon(ikon)}</span>` : ''}
-    <h2 class="sec">${esc(titel)}</h2>${knopf}</div>`;
 
 /* CCCXII — Wiederkehrendes staffeln statt stapeln: zehn Grundsteuerbescheide
    sind zehn Jahre derselben Sache, nicht zehn Sachen. Sie stehen deshalb als
@@ -2062,18 +1287,18 @@ async function laden() {
   ]);
   if (luecken.length) melde(`Nicht alles konnte geladen werden — ${luecken[0]}`, 'neg');
 
-  objekt = det.objekt;
+  setObjekt(det.objekt);
   daten = det;
   // Ein Grundstück hat keine Einheiten — dort darf die zweite Ebene gar nicht
   // erst auftauchen, auch nicht über einen alten Link.
   einheiten = istGrundstueck() ? [] : (einheitenRoh || []);
   grundschulden = grundschuldenRoh || [];
   bereicheDaten = bereiche || {};
-  objektEigentuemer = [...new Set((anteile?.anteile || [])
-    .map(a => a.name).filter(Boolean))];
+  setObjektEigentuemer([...new Set((anteile?.anteile || [])
+    .map(a => a.name).filter(Boolean))]);
   // CCCXXXV — Namen aller app-weit geführten Eigentümer (Personen).
-  alleEigentuemer = [...new Set((Array.isArray(eigentuemerAlle) ? eigentuemerAlle : [])
-    .map(e => e && e.name).filter(Boolean))];
+  setAlleEigentuemer([...new Set((Array.isArray(eigentuemerAlle) ? eigentuemerAlle : [])
+    .map(e => e && e.name).filter(Boolean))]);
   fokus = fokusWunsch
     ? (einheiten.find(e => String(e.id) === String(fokusWunsch)) || null)
     : null;
@@ -2271,178 +1496,6 @@ async function laden() {
   cloudZeigen();
 }
 
-/* ---- CCXCIX — der Dokumentenbaum -----------------------------------------
-   Die Ablage als Gliederung: je Kategorie ein Ast in seiner Farbe und mit dem
-   Symbol der Rubrik, darunter „wie Früchte" die Dokumente. Grau = hängt noch an
-   keinem Eintrag; von dort lässt es sich zuordnen. Oben Filter-Chips mit
-   denselben Symbolen — sie zeigen nur, was es wirklich gibt. */
-// Vorschlag der Zielrubrik beim Zuordnen, abgeleitet aus dem echten Ordner
-// (CCCXVI). Der Dialog lässt sie ohnehin ändern.
-const ORDNER_RUBRIK = {
-  '60_Nebenkosten': 'nebenkosten', '70_Steuer_Finanzamt': 'zahlungen',
-  '40_Kauf_Eigentum_Finanzierung': 'notarvertraege',
-  '50_Pacht_und_Paechter': 'mieten', '20_Mietvertraege_Vermietung': 'mieten',
-  '01_Allgemein_Hauskonto': 'versicherungen',
-};
-// Farbe/Symbol je Ordner — an der Zahl (10_/40_/60_ …) festgemacht.
-const ORDNER_FARBE = {
-  '10': '#5C6B70', '20': 'var(--pos)', '30': '#5C6B70',
-  '40': 'var(--teal)', '50': 'var(--pos)', '55': '#5C6B70',
-  '60': 'var(--teal-d)', '70': 'var(--amber)', '80': '#5C6B70',
-  '98': '#8A9599', '99': '#8A9599', '01': 'var(--soft)', '': 'var(--neg)',
-};
-const ORDNER_IKON = {
-  '10': 'Dokument', '20': 'Miete', '30': 'Korrespondenz',
-  '40': 'Notarvertrag', '50': 'Miete', '60': 'Nebenkosten',
-  '70': 'Finanzamt', '80': 'Haus', '99': 'Dokument', '01': 'Versicherung',
-  '': 'Dokument',
-};
-// CCCXXXII-c — klarere Anzeige-Namen für Ordner, deren echter Name nicht sagt,
-// was drin liegt (Cloud-Ordnername bleibt unangetastet). Grobe Ordner tragen
-// die Rubriken, die sie bündeln, damit Filter und Rubrik zueinander passen.
-const ORDNER_ANZEIGE = {
-  '01_Allgemein_Hauskonto': 'Allgemein & Versicherungen',
-  '40_Kauf_Eigentum_Finanzierung': 'Kauf · Notar · Kredite · Grundschuld',
-  '50_Bauphase_Projekte': 'Bauphase & Instandhaltung',
-};
-const ordnerTitel = a => ORDNER_ANZEIGE[a.ordner] || a.titel;
-const ordnerNr = o => (o || '').slice(0, 2).match(/^\d\d$/) ? o.slice(0, 2) : '';
-const ordnerFarbe = o => ORDNER_FARBE[ordnerNr(o)] || 'var(--soft)';
-const ordnerIkon = o => ORDNER_IKON[ordnerNr(o)] || 'Dokument';
-// Statuszeichen im Baum (CCCXXI): der Haken für „einem Eintrag zugeordnet",
-// ein kleines Belegblatt für „als Beleg angehängt" (statt des ⊙-Kreises).
-const HAKEN_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
-  stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
-  stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4 10-10.5"/></svg>`;
-const BELEG_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
-  stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
-  stroke-linejoin="round" aria-hidden="true">
-  <path d="M7 3.5h6l4 4V19a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z"/>
-  <path d="M13 3.5V8h4M8.5 12.5h7M8.5 15.5h5"/></svg>`;
-const PRO_AST = 10;                     // so viele Früchte je Ast, dann „mehr"
-let baumDaten = null;
-let baumFilter = '';                    // '' = alle Äste
-let baumMehr = new Set();               // Äste, die alles zeigen
-// CCCXXXI — Ordner sind standardmäßig eingeklappt; `baumOffen` merkt die
-// aufgeklappten. `baumJahr` filtert die Nebenkosten-Belege auf ein Jahr.
-let baumOffen = new Set();
-let baumJahr = '';
-
-async function baumZeigen() {
-  const ziel = document.getElementById('dokbaum');
-  if (!ziel) return;
-  try {
-    baumDaten = await api(`/dokumente/objekt/${encodeURIComponent(slug)}/baum`);
-  } catch { ziel.innerHTML = ''; return; }
-  baumMalen();
-}
-
-function baumMalen() {
-  const ziel = document.getElementById('dokbaum');
-  if (!ziel || !baumDaten) return;
-  const aeste = baumDaten.aeste || [];
-  if (!aeste.length) {
-    ziel.innerHTML = `<div class="baumleer">Noch keine Dokumente in der Ablage
-      dieser Immobilie.</div>`;
-    return;
-  }
-  const chip = (wert, text, ikon, farbe, zahl) => `
-    <button class="bfilter${baumFilter === wert ? ' an' : ''}" data-bfilter="${esc(wert)}"
-            ${farbe ? `style="--bf:${farbe}"` : ''}>
-      ${ikon ? `<span class="bi">${kostenIcon(ikon)}</span>` : ''}${esc(text)}
-      <span class="bz">${zahl}</span></button>`;
-
-  const filter = [chip('', 'Alle', 'Dokument', 'var(--ink)', baumDaten.gesamt)]
-    .concat(aeste.map(a => chip(a.ordner, ordnerTitel(a), ordnerIkon(a.ordner),
-                                ordnerFarbe(a.ordner), a.anzahl))).join('');
-
-  // Eine Frucht (Dokument) — optional eingerückt als Kind einer Hauptdatei.
-  // Ist es zugeordnet, ist das Statuszeichen ein Knopf: antippen zum Umhängen.
-  const frucht = (d, farbe, kind = false) => `
-      <div class="frucht${d.zugeordnet ? '' : ' offen'}${kind ? ' kind' : ''}"
-           data-dok="${d.id}">
-        <span class="fp" style="background:${d.zugeordnet ? farbe : 'transparent'};
-              border-color:${farbe}"></span>
-        <span class="fn" data-beleg="${d.id}"
-              data-name="${esc(d.dateiname)}">${esc(d.dateiname)}</span>
-        ${d.zugeordnet
-          ? `<button class="fstatus${d.info ? ' info' : ' pos'}"
-               data-umhaengen="${d.id}" data-rubrik="${esc(ORDNER_RUBRIK[a_ordner] || '')}"
-               title="${d.info ? 'Als Beleg angehängt' : 'Einem Eintrag zugeordnet'}
- — antippen zum Umhängen">${d.info ? BELEG_ICON : HAKEN_ICON}</button>`
-          : `<button class="fzu" data-zuordnen="${d.id}"
-               data-rubrik="${esc(ORDNER_RUBRIK[a_ordner] || '')}"
-               title="Diesem Beleg einen Eintrag anlegen">zuordnen</button>`}
-      </div>`;
-
-  let a_ordner = '';
-  const gezeigt = baumFilter ? aeste.filter(a => a.ordner === baumFilter) : aeste;
-  const zweige = gezeigt.map(a => {
-    a_ordner = a.ordner;
-    const farbe = ordnerFarbe(a.ordner);
-    // CCCXXXI — standardmäßig eingeklappt; ein gesetzter Filter klappt den
-    // betroffenen Ordner auf. (Leerer Filter darf den Hauptordner-Ast mit
-    // ordner==='' nicht versehentlich öffnen.)
-    const offen = baumOffen.has(a.ordner) || (!!baumFilter && baumFilter === a.ordner);
-    // CCCXVII — Kinder (Info-Belege) unter ihre Hauptdatei einrücken, aber nur,
-    // wenn die Hauptdatei im selben Ordner liegt. Liegt sie woanders, steht das
-    // Kind eigenständig hier (sonst verschwände es aus dem Baum).
-    const idsHier = new Set(a.dokumente.map(d => d.id));
-    const kinderVon = new Map();
-    for (const d of a.dokumente) if (d.unter && idsHier.has(d.unter)) {
-      if (!kinderVon.has(d.unter)) kinderVon.set(d.unter, []);
-      kinderVon.get(d.unter).push(d);
-    }
-    let oberste = a.dokumente.filter(d => !d.unter || !idsHier.has(d.unter));
-    // CCCXXXI — neueste oben: nach Jahr, dann Dateiname absteigend.
-    oberste = oberste.slice().sort((x, y) => (y.jahr || 0) - (x.jahr || 0)
-      || String(y.dateiname).localeCompare(String(x.dateiname), 'de'));
-    const kopf = `<button class="zkopf" data-bast="${esc(a.ordner)}"
-        aria-expanded="${offen}">
-        <span class="zi">${kostenIcon(ordnerIkon(a.ordner))}</span>
-        <span class="zt"><span class="zn">${esc(ordnerTitel(a))}</span>
-          <span class="zo">${esc(a.ordner || 'im Hauptordner')}</span></span>
-        <span class="zz">${a.offen ? `${a.offen} offen` : 'alles zugeordnet'}</span>
-        <span class="zpfeil${offen ? ' auf' : ''}" aria-hidden="true">›</span>
-      </button>`;
-    if (!offen) {
-      return `<section class="zweig zu" style="--zw:${farbe}">${kopf}</section>`;
-    }
-    // CCCXXXI — Jahres-Filter nur im Nebenkosten-Ordner (60_…), viele Belege.
-    const istNK = ordnerNr(a.ordner) === '60';
-    let jahre = [];
-    if (istNK) {
-      jahre = [...new Set(oberste.map(d => d.jahr).filter(Boolean))]
-        .sort((p, q) => q - p);
-      if (baumJahr) oberste = oberste.filter(d => String(d.jahr) === String(baumJahr));
-    }
-    const alle = baumMehr.has(a.ordner);
-    const docs = alle ? oberste : oberste.slice(0, PRO_AST);
-    const fruechte = docs.map(d =>
-      frucht(d, farbe) + (kinderVon.get(d.id) || [])
-        .map(k => frucht(k, farbe, true)).join('')).join('');
-    const rest = oberste.length - docs.length;
-    const jahrLeiste = istNK && jahre.length > 1 ? `<div class="jahr-leiste">
-        <button class="jchip${!baumJahr ? ' an' : ''}" data-bjahr="">Alle</button>
-        ${jahre.map(j => `<button class="jchip${String(baumJahr) === String(j)
-          ? ' an' : ''}" data-bjahr="${j}">${j}</button>`).join('')}</div>` : '';
-    return `<section class="zweig" style="--zw:${farbe}">${kopf}
-      ${jahrLeiste}
-      <div class="fruechte">${fruechte}</div>
-      ${rest > 0 ? `<button class="mehrbtn" data-bmehr="${esc(a.ordner)}"
-          >… ${rest} weitere zeigen</button>` : ''}
-    </section>`;
-  }).join('');
-
-  ziel.innerHTML = `<div class="bfilter-leiste">${filter}</div>
-    <div class="baum-legende">
-      <span class="bl-hak">${HAKEN_ICON}</span> einem Eintrag zugeordnet
-      <span class="bl-bel">${BELEG_ICON}</span> als Beleg angehängt
-      <span class="bl-off">○</span> noch offen — antippen zum Zuordnen
-    </div>
-    <div class="baum">${zweige}</div>`;
-}
-
 /* ---- CCCIX/CCCX/CCCXI — Zuordnen-Dialog -----------------------------------
    Drei Fragen in einem Blatt: Wohin gehört das Dokument (Rubrik)? Wird daraus
    eine Kostenposition oder ist es nur ein Info-Beleg? Und hängt es an einem
@@ -2563,23 +1616,6 @@ function zuordnenDialog(dok, vorgabe, umhaengen = false) {
    Felder des Eintrags und seine Belege (Hauptbeleg + eingerückt die Info-
    Belege), rechts das PDF. Ein Beleg antippen tauscht die Vorschau, „Bearbeiten"
    führt ins bewährte Formular. Auf dem Telefon stapelt sich alles. */
-function feldWertText(f, wert) {
-  if (wert == null || wert === '') return '—';
-  if (f.typ === 'ja_nein' || f.typ === 'schalter') return wert ? 'Ja' : 'Nein';
-  if (f.typ === 'number') {
-    if (f.geld) return f.voll ? eurVoll(wert) : eur(wert);
-    // Jahreszahlen ohne Tausenderpunkt (2025, nicht 2.025).
-    if (/jahr/i.test(f.k)) return String(wert);
-    const zahl = Number(wert);
-    const txt = Number.isFinite(zahl) ? zahl.toLocaleString('de-DE') : String(wert);
-    return f.einheit ? `${txt} ${f.einheit}` : txt;
-  }
-  if (f.typ === 'date') {
-    const d = new Date(wert);
-    return isNaN(d) ? String(wert) : d.toLocaleDateString('de-DE');
-  }
-  return String(wert);
-}
 
 async function eintragDetail(bereich, id) {
   const cfg = cfgFuer(bereich);
@@ -3890,31 +2926,21 @@ inhalt.addEventListener('click', async e => {
 
   /* ---- Dokumentenbaum (CCXCIX) ---- */
   const bf = e.target.closest('[data-bfilter]');
-  if (bf) {
-    const wert = bf.dataset.bfilter;
-    baumFilter = (baumFilter === wert) ? '' : wert;
-    baumMalen();
-    return;
-  }
+  if (bf) { baumFilterUmschalten(bf.dataset.bfilter); return; }
   const bm = e.target.closest('[data-bmehr]');
-  if (bm) { baumMehr.add(bm.dataset.bmehr); baumMalen(); return; }
+  if (bm) { baumMehrZeigen(bm.dataset.bmehr); return; }
   // CCCXXXI — Ordnerkopf antippen: auf-/zuklappen.
   const ba = e.target.closest('[data-bast]');
-  if (ba) {
-    const o = ba.dataset.bast;
-    if (baumOffen.has(o)) baumOffen.delete(o); else baumOffen.add(o);
-    baumMalen();
-    return;
-  }
+  if (ba) { baumAstUmschalten(ba.dataset.bast); return; }
   // CCCXXXI — Jahres-Filter im Nebenkosten-Ordner.
   const bj = e.target.closest('[data-bjahr]');
-  if (bj) { baumJahr = bj.dataset.bjahr; baumMalen(); return; }
+  if (bj) { baumJahrSetzen(bj.dataset.bjahr); return; }
   // CCCXXI — auf das Statuszeichen eines zugeordneten Belegs tippen: umhängen.
   // Erst die alte Zuordnung lösen, dann den Zuordnen-Dialog wie sonst.
   const um = e.target.closest('[data-umhaengen]');
   if (um) {
     const dokId = Number(um.dataset.umhaengen);
-    const dok = (baumDaten?.aeste || []).flatMap(a => a.dokumente)
+    const dok = (getBaumDaten()?.aeste || []).flatMap(a => a.dokumente)
       .find(d => d.id === dokId) || { dateiname: 'Dokument' };
     const wahl = await zuordnenDialog(dok, um.dataset.rubrik || '', true);
     if (!wahl) return;
@@ -3936,7 +2962,7 @@ inhalt.addEventListener('click', async e => {
   const zu = e.target.closest('[data-zuordnen]');
   if (zu) {
     const dokId = Number(zu.dataset.zuordnen);
-    const dok = (baumDaten?.aeste || []).flatMap(a => a.dokumente)
+    const dok = (getBaumDaten()?.aeste || []).flatMap(a => a.dokumente)
       .find(d => d.id === dokId) || { dateiname: 'Dokument' };
     const wahl = await zuordnenDialog(dok, zu.dataset.rubrik || '');
     if (!wahl) return;
