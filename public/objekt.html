@@ -802,9 +802,47 @@ const PACHT = {
   wert: e => `${eur(e.kaltmiete || 0)} ${kuerzel(e.turnus)}`,
 };
 
+/* CCCXIX — Einmalige Kauferwerbsnebenkosten: bei jeder Immobilie die Kosten,
+   die beim Erwerb einmalig anfallen (Notar, Grunderwerbsteuer, Grundbuch,
+   Makler …). Technisch eine Zahlung mit fester Kategorie „Erwerbsnebenkosten"
+   und Turnus „einmalig" — deshalb ein eigenes Kürzel, keine /Jahr-Angabe. Die
+   Rubrik teilt sich den Zahlungs-Endpunkt (siehe RUBRIK_ENDPUNKT). */
+const ERWERB_ARTEN = ['Notar', 'Grunderwerbsteuer', 'Grundbuch / Grundschuld',
+                      'Makler', 'Gutachter', 'Sonstiges'];
+const ERWERB = {
+  titel: 'Einmalige Erwerbsnebenkosten', einzahl: 'Erwerbsnebenkosten',
+  ikon: 'Erwerbsnebenkosten',
+  felder: [
+    // ohneLeer + Vorgabe: eine Erwerbsnebenkosten-Art gibt es immer — sonst
+    // liesse sich (ohne Auswahl) ein Posten ohne Art speichern (auswahl.js
+    // meldet den Wert erst bei Nutzer-Auswahl zurück).
+    { k: 'art', l: 'Art', typ: 'auswahl', werte: ERWERB_ARTEN, ohneLeer: true,
+      vorgabe: ERWERB_ARTEN[0], pflicht: true },
+    { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01', geld: true,
+      voll: true, pflicht: true },
+    { k: 'jahr', l: 'Jahr', typ: 'number', vorgabe: new Date().getFullYear() },
+    { k: 'notiz', l: 'Notiz', typ: 'text' },
+  ],
+  name: e => e.art || 'Erwerbsnebenkosten',
+  detail: e => [e.jahr, e.notiz].filter(Boolean).join(' · '),
+  wert: e => eurVoll(e.betrag || 0),
+};
+
+// Rubriken, die keinen eigenen Endpunkt haben, sondern auf einem anderen
+// aufsetzen (Erwerbsnebenkosten sind Zahlungen einer festen Kategorie).
+const RUBRIK_ENDPUNKT = { erwerbskosten: 'zahlungen' };
+const endpunktBereich = b => RUBRIK_ENDPUNKT[b] || b;
+// Feste Feldwerte, die eine Pseudo-Rubrik beim Speichern immer mitschickt.
+const RUBRIK_FESTWERTE = {
+  erwerbskosten: { kategorie: 'Erwerbsnebenkosten', turnus: 'einmalig',
+                   absetzbar: false },
+};
+const ERWERB_KATEGORIE = 'Erwerbsnebenkosten';
+
 /** Die Beschreibung eines Bereichs — beim Grundstück in seiner Sprache.
     „Steuer & Zahlungen" heisst dort schlicht „Finanzamt" (CCCIV). */
 const cfgFuer = (bereich) => {
+  if (bereich === 'erwerbskosten') return ERWERB;
   if (!istGrundstueck()) return BEREICHE[bereich];
   if (bereich === 'mieten') return { ...BEREICHE.mieten, ...PACHT };
   if (bereich === 'zahlungen') {
@@ -1324,7 +1362,9 @@ const ENTWURF_TYP = { mieten: 'miete', versicherungen: 'versicherung',
                       zahlungen: 'zahlung' };
 // Rubrik (Frontend) → Eintragstyp (Backend `an_typ`), inkl. Nebenkosten. Die
 // Detailansicht (CCCXIII) holt darüber die Belege eines Eintrags.
-const AN_TYP = { ...ENTWURF_TYP, nebenkosten: 'kostenposition' };
+// Erwerbsnebenkosten sind Zahlungen — dieselbe Typkennung wie „zahlungen".
+const AN_TYP = { ...ENTWURF_TYP, nebenkosten: 'kostenposition',
+                 erwerbskosten: 'zahlung' };
 
 /* Die schlichte Listenzeile — der gemeinsame Kern von normaler und
    vorläufiger Darstellung. */
@@ -1373,6 +1413,7 @@ const RUBRIKFARBE = {
   notarvertraege: 'var(--teal)', zahlungen: 'var(--amber)',
   mieten: 'var(--pos)', versicherungen: 'var(--soft)',
   kredite: 'var(--neg)', grundstueck: 'var(--teal-d)',
+  erwerbskosten: 'var(--amber)',
 };
 const sekopfHtml = (titel, ikon = '', knopf = '', farbe = '') =>
   `<div class="sekopf">${ikon
@@ -1755,6 +1796,13 @@ async function laden() {
           </span></div>`,
       }) : '');
 
+  // CCCXIX — die Zahlungen teilen sich auf: das Finanzamt (Steuern u. Ä.) und
+  // die einmaligen Erwerbsnebenkosten stehen in getrennten Rubriken.
+  const erwerbZahlungen = (bereiche.zahlungen || [])
+    .filter(z => z.kategorie === ERWERB_KATEGORIE);
+  const finanzZahlungen = (bereiche.zahlungen || [])
+    .filter(z => z.kategorie !== ERWERB_KATEGORIE);
+
   inhalt.innerHTML = `
     ${istGrundstueck() ? '' : bannerHtml(laufend)}
     ${nachpflegeHtml(det.nachpflege)}
@@ -1772,10 +1820,12 @@ async function laden() {
     ${eigentuemerHtml(anteile)}
     ${istGrundstueck()
       // CCCIV — beim Grundstück in der logischen Reihenfolge: erst der
-      // Erwerb (Notarverträge), dann das Finanzamt, dann die Erträge.
+      // Erwerb (Notarverträge), dann das Finanzamt, dann die Erträge, zuletzt
+      // die einmaligen Erwerbsnebenkosten (CCCXIX).
       ? `${abschnitt('notarvertraege', bereiche.notarvertraege)}
-         ${abschnitt('zahlungen', bereiche.zahlungen)}
-         ${mietBlock}`
+         ${abschnitt('zahlungen', finanzZahlungen)}
+         ${mietBlock}
+         ${abschnitt('erwerbskosten', erwerbZahlungen)}`
       : `${mietBlock}
          ${abschnitt('versicherungen', bereiche.versicherungen, {
            vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
@@ -1784,7 +1834,8 @@ async function laden() {
          ${abschnitt('kredite', bereiche.kredite)}
          ${grundschuldenHtml()}
          ${abschnitt('notarvertraege', bereiche.notarvertraege)}
-         ${abschnitt('zahlungen', bereiche.zahlungen)}`}
+         ${abschnitt('zahlungen', finanzZahlungen)}
+         ${abschnitt('erwerbskosten', erwerbZahlungen)}`}
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>
       <p>Die Sicherung enthält alle Daten dieser Immobilie und lässt sich
@@ -2065,7 +2116,7 @@ async function eintragDetail(bereich, id) {
   const typ = AN_TYP[bereich];
   let eintrag;
   try {
-    eintrag = (await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`))
+    eintrag = (await api(`/objekte/${encodeURIComponent(slug)}/${endpunktBereich(bereich)}`))
       .find(x => String(x.id) === String(id));
   } catch { eintrag = null; }
   if (!eintrag) return;
@@ -3143,12 +3194,16 @@ document.getElementById('dlgForm').addEventListener('submit', async e => {
     } else {
       // Nicht `cfgFuer(bereich).felder`: bei den Verträgen entscheidet die
       // Vertragsart, welche Felder überhaupt dastanden.
-      const werte = ausFormular(form, dialogFelder);
+      // Pseudo-Rubriken (Erwerbsnebenkosten) schicken feste Werte mit und
+      // sprechen den geteilten Endpunkt an (CCCXIX).
+      const werte = { ...ausFormular(form, dialogFelder),
+                      ...(RUBRIK_FESTWERTE[bereich] || {}) };
+      const ep = endpunktBereich(bereich);
       let miete_id = id;
       if (id) {
-        await api(`/stammdaten/${bereich}/${id}`, { method: 'PATCH', body: werte });
+        await api(`/stammdaten/${ep}/${id}`, { method: 'PATCH', body: werte });
       } else {
-        const neu = await api(`/objekte/${encodeURIComponent(slug)}/${bereich}`,
+        const neu = await api(`/objekte/${encodeURIComponent(slug)}/${ep}`,
                               { method: 'POST', body: werte });
         miete_id = neu.id;
       }
@@ -3467,7 +3522,7 @@ inhalt.addEventListener('click', async e => {
       { knopf: 'Löschen', gefahr: true });
     if (!ja) return;
     try {
-      await api(`/stammdaten/${bereich}/${id}`, { method: 'DELETE' });
+      await api(`/stammdaten/${endpunktBereich(bereich)}/${id}`, { method: 'DELETE' });
     } catch (fehler) {
       return melde(String(fehler.message || 'Konnte nicht gelöscht werden.'), 'neg');
     }
