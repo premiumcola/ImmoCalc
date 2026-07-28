@@ -27,13 +27,13 @@ log = logging.getLogger("immocalc")
 # alle Typen gleich (damit ZIELORDNER weiter greift) — nur die Auswahl ändert
 # sich. Abgeleitet aus den Vorgabeordnern des Nutzers.
 
-STRUKTUR_GRUNDSTUECK = [
-    "01_Allgemein_Hauskonto",
+STRUKTUR_GRUNDSTUECK = [                # CCXCVIII — schlank: Pacht + Grundsteuer
     "10_Fotos_Lage",
-    "40_Kauf_Eigentum_Finanzierung",   # Kaufvertrag, Notar, Grundbuch
-    "70_Steuer_Finanzamt",             # Grundsteuer
     "30_Kommunikation",
-    "99_Sonstiges",
+    "40_Kauf_Eigentum_Finanzierung",   # Kaufvertrag, Notar, Grundbuch
+    "50_Pacht_und_Paechter",           # Pachtverträge, Pächter
+    "60_Nebenkosten",                  # Grundsteuer als jährliche NK
+    "70_Steuer_Finanzamt",
 ]
 
 STRUKTUR_WEG = [
