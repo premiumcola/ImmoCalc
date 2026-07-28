@@ -1,7 +1,7 @@
 import { eur, esc } from './immo.js';
 import { kostenIcon } from './kostenicons.js';
-import { flaecheText, cellZeile, sekopfHtml, paarZeile, stammwert } from './objekt-format.js';
-import { stammfelder, feldAus, GRUNDFELDER } from './objekt-felder.js';
+import { flaecheText, cellZeile, sekopfHtml, paarZeile, stammwert } from './objekt-format.js?v=2';
+import { stammfelder, feldAus, GRUNDFELDER } from './objekt-felder.js?v=2';
 
 /* ---- CCCXXXVI — das Grundstück in drei Blöcken ---------------------------
    Preis je m² und Grundsteuer werden gerechnet, nicht gepflegt: sie stünden

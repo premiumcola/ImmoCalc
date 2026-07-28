@@ -1,6 +1,6 @@
 import { api, esc } from './immo.js';
 import { kostenIcon } from './kostenicons.js';
-import { slug } from './objekt-state.js';
+import { slug } from './objekt-state.js?v=2';
 
 /* ---- CCXCIX — der Dokumentenbaum -----------------------------------------
    Die Ablage als Gliederung: je Kategorie ein Ast in seiner Farbe und mit dem

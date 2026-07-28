@@ -1,6 +1,6 @@
 import { eur, eurVoll } from './immo.js';
-import { kuerzel, datum, prozent, kontaktText, istBausparer, kreditStandText } from './objekt-format.js';
-import { istGrundstueck, objekt, objektEigentuemer, alleEigentuemer } from './objekt-state.js';
+import { kuerzel, datum, prozent, kontaktText, istBausparer, kreditStandText } from './objekt-format.js?v=2';
+import { istGrundstueck, objekt, objektEigentuemer, alleEigentuemer } from './objekt-state.js?v=2';
 
 /* ---- CXLIX: Darlehen oder Bausparvertrag --------------------------------
    Beide hängen an derselben Immobilie und kosten dieselbe Rate im Monat —
