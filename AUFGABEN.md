@@ -635,3 +635,6 @@ fehlt, sind die zwei Sonderwege:
 - **Push scheitert:** In der Entwicklungsumgebung fehlen GitHub-Zugangsdaten —
   `git push origin main` musst du selbst ausführen.
 - **Nextcloud und Postfach** brauchen deine Zugangsdaten in der Oberfläche.
+
+| CCCXIV | ~~**Grundstück-Kachel wie eine Haus-Kachel formatieren**~~ **erledigt** `9de8f76` | Ort (ortszeile) · Name · **Flurnummer als Unterzeile** (mono, gedeckt, wie die Einheitenzeile „Wohnung 1.OG"), statt eines Chips am Fuss. Verifiziert: „ECKENTAL / Eckenhaid / Flst. 619" spiegelt „UNTERSCHÖLLENBACH / Hauptstr. 6a / Wohnung 1.OG" |
+| CCCXV | ~~**Nur die nächstfällige NK-Abrechnung anschreiben**~~ **erledigt** `9de8f76` | Bei mehreren offenen Zeiträumen wählt die Kachel jetzt die kleinste § 556-Restfrist statt des ersten in der DB. Verifiziert an Laufer Str. 5 (zwei offen: 795 & 429 Tage → Kachel zeigt jetzt **429**, vorher 795) |
