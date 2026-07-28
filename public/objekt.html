@@ -1381,9 +1381,13 @@ async function laden() {
   const laufend = det.zeitraeume.find(z => z.status === 'in Arbeit');
   const zr = det.zeitraeume.length
     ? det.zeitraeume.map(z => {
-        const chip = z.status === 'in Arbeit'
-          ? `<span class="chip ${fristKlasse(z.frist_tage)}">${esc(fristText(z.frist_tage) || 'in Arbeit')}</span>`
-          : '<span class="chip">abgeschlossen</span>';
+        // Beim Grundstück gilt keine § 556-Mietrechtsfrist — dort steht ein
+        // neutraler Zustand statt „noch X Tage" (CCC).
+        const chip = z.status !== 'in Arbeit'
+          ? '<span class="chip">abgeschlossen</span>'
+          : istGrundstueck()
+            ? '<span class="chip">in Arbeit</span>'
+            : `<span class="chip ${fristKlasse(z.frist_tage)}">${esc(fristText(z.frist_tage) || 'in Arbeit')}</span>`;
         return `<button class="eintrag klick" data-zeitraum="${z.id}"
                         style="cursor:pointer">
             <span class="et">
@@ -1407,13 +1411,20 @@ async function laden() {
   const guthaben = (bereiche.kredite || []).reduce(
     (s, k) => s + (k.guthaben_aktuell || 0), 0);
 
-  // Ein Grundstück rechnet keine Nebenkosten ab: weder die Frist nach
-  // § 556 BGB noch die Abrechnungszeiträume haben hier etwas zu suchen.
-  const zeitraumBlock = istGrundstueck() ? '' : `
-    <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
+  // Beim Grundstück gibt es keine Mieter-Nebenkostenabrechnung nach § 556 BGB —
+  // aber die Grundsteuer fällt jährlich an und wird auf den Pächter umgelegt.
+  // Deshalb ein schlanker Nebenkosten-Bereich (CCC): derselbe Abrechnungs-
+  // zeitraum, nur anders betitelt und ohne Mietrechtsfrist.
+  const zeitraumTitel = istGrundstueck()
+    ? 'Nebenkosten & Grundsteuer' : 'Abrechnungszeiträume';
+  const zeitraumBlock = `
+    <div class="sekopf"><h2 class="sec">${zeitraumTitel}</h2>
       ${fokus ? '' : '<button data-zeitraum-neu="1">Anlegen</button>'}</div>
     <div class="liste">${zr}</div>
-    ${fokus ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
+    ${istGrundstueck() ? `<div class="fussnote">Die Grundsteuer ist beim
+      verpachteten Grundstück eine jährliche Nebenkostenposition, die auf den
+      Pächter umgelegt wird. Ein Abrechnungszeitraum je Jahr genügt.</div>`
+      : fokus ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
       im Zeitraum steht, was davon auf diese Einheit entfällt.</div>` : ''}`;
 
   if (fokus) {
