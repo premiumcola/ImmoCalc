@@ -102,6 +102,13 @@
   .zd-chip.an .zi{color:#fff}
   .zd-hint{display:block;margin-top:8px;font:500 12px var(--body);color:var(--soft);
     line-height:1.5}
+  .zd-x{border:none;background:var(--paper);width:32px;height:32px;border-radius:50%;
+    font-size:18px;color:var(--ink);cursor:pointer;flex:none;line-height:1}
+  .zd-fuss{display:flex;gap:10px;padding:4px 18px 18px}
+  .zd-fuss button{flex:1;border-radius:12px;padding:13px;min-height:48px;border:none;
+    font:600 14px var(--disp);cursor:pointer}
+  .zd-ab{background:var(--paper);color:var(--ink)}
+  .zd-ok{background:var(--teal);color:#fff}
 
   /* CCCIV — Rubrik-Symbol in der Überschrift, in der Farbe der Rubrik */
   .sekopf .seikon{flex:none;display:inline-flex;align-items:center;
@@ -1770,6 +1777,7 @@ function baumMalen() {
           ? '<span class="fok" title="einem Eintrag zugeordnet">✓</span>'
           : (KAT_ZUORDENBAR.has(a.kategorie)
               ? `<button class="fzu" data-zuordnen="${d.id}"
+                   data-rubrik="${esc(KAT_RUBRIK[a.kategorie] || '')}"
                    title="Diesem Beleg einen Eintrag anlegen">zuordnen</button>`
               : '<span class="fgrau">frei</span>')}
       </div>`).join('');
@@ -1834,7 +1842,7 @@ function zuordnenDialog(dok, vorgabe) {
       dlg.innerHTML = `
         <div class="zd-kopf">
           <span class="zd-t">Zuordnen</span>
-          <button class="aw-x" data-nein aria-label="Schließen">×</button>
+          <button class="zd-x" data-nein aria-label="Schließen">×</button>
         </div>
         <p class="zd-datei">${esc(dok.dateiname)}</p>
 
@@ -1866,9 +1874,9 @@ function zuordnenDialog(dok, vorgabe) {
               ? ' an' : ''}" data-an="${e.id}">${esc(e.text)}</button>`).join('')}
           </div></div>` : ''}
 
-        <div class="aw-fuss">
-          <button class="aw-zurueck" data-nein>Abbrechen</button>
-          <button class="aw-weiter" data-ja>Zuordnen</button>
+        <div class="zd-fuss">
+          <button class="zd-ab" data-nein>Abbrechen</button>
+          <button class="zd-ok" data-ja>Zuordnen</button>
         </div>`;
     };
 
