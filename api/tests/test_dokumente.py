@@ -358,6 +358,37 @@ def test_belege_zum_eintrag_haupt_und_unter():
                      ).status_code == 404
 
 
+def test_zuordnen_als_erwerbsnebenkosten_baut_einmalige_zahlung():
+    """CCCXIX: ziel=erwerbskosten legt eine vorläufige Zahlung fester Kategorie
+    „Erwerbsnebenkosten" mit Turnus „einmalig" an."""
+    from app.models import Zahlung
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Erwerbweg 1"}).json()["slug"]
+        oid = _objekt_id(slug)
+        doc = _lege_dokument_an(oid, "2022_Maklerprovision_4500€.pdf", jahr=2022,
+                                betrag=4500.0, kostenart="Makler")
+        antwort = c.post(f"/api/dokumente/{doc}/zuordnen",
+                         json={"ziel": "erwerbskosten", "art": "position"})
+        assert antwort.status_code == 200, antwort.text
+        assert antwort.json()["ok"] is True
+        with Session(engine) as s:
+            z = s.exec(select(Zahlung).where(
+                Zahlung.quelle_dokument_id == doc)).first()
+            assert z is not None
+            assert z.kategorie == "Erwerbsnebenkosten"
+            assert z.turnus == "einmalig"
+            assert z.vorlaeufig is True
+            assert z.betrag == 4500.0
+            assert z.art == "Makler"
+        # Idempotent: ein zweiter Aufruf baut keinen zweiten Entwurf.
+        c.post(f"/api/dokumente/{doc}/zuordnen",
+               json={"ziel": "erwerbskosten", "art": "position"})
+        with Session(engine) as s:
+            anzahl = len(s.exec(select(Zahlung).where(
+                Zahlung.quelle_dokument_id == doc)).all())
+            assert anzahl == 1
+
+
 def test_pfade_bleiben_eindeutig():
     """LXVIII: derselbe Pfad darf nur einmal in der Ablage stehen."""
     from app.routers.dokumente import _eindeutigkeit_sichern

@@ -2277,6 +2277,28 @@ def _entwurf_steuer(session: Session, d: Dokument, o: Objekt,
     return [{"typ": "Zahlung", "id": z.id, "objekt": o.slug, "wo": f"{art} {jahr}"}]
 
 
+def _entwurf_erwerb(session: Session, d: Dokument, o: Objekt,
+                    felder: dict) -> list[dict]:
+    """Vorläufige einmalige Erwerbsnebenkosten aus einem Beleg (CCCXIX) — Notar,
+    Grunderwerbsteuer, Grundbuch, Makler … Eine Zahlung fester Kategorie
+    „Erwerbsnebenkosten" mit Turnus „einmalig"; die Art kommt, wo erkennbar, aus
+    der Kostenart, sonst „Sonstiges"."""
+    if _schon_vorlaeufig(session, Zahlung, d.id):
+        z = _schon_vorlaeufig(session, Zahlung, d.id)
+        return [{"typ": "Zahlung", "id": z.id, "objekt": o.slug,
+                 "wo": f"{z.art} {z.jahr} (schon angelegt)"}]
+    art = (_ki_text(felder.get("erwerbsart")) or (d.kostenart or "").strip()
+           or "Sonstiges")
+    jahr = d.jahr or (d.belegdatum.year if d.belegdatum else date.today().year)
+    z = Zahlung(objekt_id=o.id, jahr=jahr, art=art, kategorie="Erwerbsnebenkosten",
+                turnus="einmalig", absetzbar=False,
+                betrag=_ki_zahl(felder.get("betrag")) or d.betrag or 0.0,
+                vorlaeufig=True, quelle_dokument_id=d.id)
+    session.add(z)
+    session.flush()
+    return [{"typ": "Zahlung", "id": z.id, "objekt": o.slug, "wo": f"{art} {jahr}"}]
+
+
 # Kategorie → Bauplan des vorläufigen Datensatzes. Was nicht hier steht
 # (Hausverwaltung, Korrespondenz, Sonstiges), legt keinen an.
 _ENTWURF_BAUER = {
@@ -2298,6 +2320,7 @@ _ZIEL_BAUER = {
     "kredite": _entwurf_kredit,
     "notarvertraege": _entwurf_notarvertrag,
     "zahlungen": _entwurf_steuer,
+    "erwerbskosten": _entwurf_erwerb,
 }
 
 

@@ -1359,7 +1359,7 @@ function wegHtml(o) {
    `vorlaeufig` einfach. */
 const ENTWURF_TYP = { mieten: 'miete', versicherungen: 'versicherung',
                       kredite: 'kredit', notarvertraege: 'notarvertrag',
-                      zahlungen: 'zahlung' };
+                      zahlungen: 'zahlung', erwerbskosten: 'zahlung' };
 // Rubrik (Frontend) → Eintragstyp (Backend `an_typ`), inkl. Nebenkosten. Die
 // Detailansicht (CCCXIII) holt darüber die Belege eines Eintrags.
 // Erwerbsnebenkosten sind Zahlungen — dieselbe Typkennung wie „zahlungen".
@@ -1994,6 +1994,9 @@ const RUBRIK_WAHL = [
     typ: 'zahlung', wiederkehrend: true },
   { wert: 'nebenkosten', titel: 'Nebenkosten', ikon: 'Nebenkosten',
     typ: 'kostenposition', wiederkehrend: true },
+  // CCCXIX — dritte Belegart: einmalige Erwerbsnebenkosten (Notar, Makler …).
+  { wert: 'erwerbskosten', titel: 'Erwerbsnebenkosten', ikon: 'Erwerbsnebenkosten',
+    typ: 'zahlung', wiederkehrend: false },
   { wert: 'mieten', titel: 'Pacht & Erträge', ikon: 'Miete',
     typ: 'miete', wiederkehrend: true, nurHaus: false },
   { wert: 'versicherungen', titel: 'Versicherungen', ikon: 'Versicherung',
@@ -2019,7 +2022,14 @@ function zuordnenDialog(dok, vorgabe, umhaengen = false) {
     const male = () => {
       const cfg = wahlen.find(r => r.wert === rubrik) || wahlen[0];
       // Bestehende Einträge derselben Rubrik — daran lässt sich anhängen.
-      const eintraege = (bereicheDaten[cfg.wert] || []).map(e => ({
+      // Erwerbsnebenkosten und Finanzamt teilen sich die Zahlungen und werden
+      // über die Kategorie auseinandergehalten (CCCXIX).
+      const roh = cfg.wert === 'erwerbskosten'
+        ? (bereicheDaten.zahlungen || []).filter(z => z.kategorie === ERWERB_KATEGORIE)
+        : cfg.wert === 'zahlungen'
+          ? (bereicheDaten.zahlungen || []).filter(z => z.kategorie !== ERWERB_KATEGORIE)
+          : (bereicheDaten[cfg.wert] || []);
+      const eintraege = roh.map(e => ({
         id: e.id,
         text: (cfgFuer(cfg.wert)?.name?.(e)) || e.art || e.bezeichnung || `#${e.id}`,
       }));
