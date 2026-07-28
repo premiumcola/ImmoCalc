@@ -1053,7 +1053,7 @@ function stammHtml(o) {
 
 /* Preis je m² und Grundsteuer werden gerechnet, nicht gepflegt: sie stünden
    sonst irgendwann im Widerspruch zu den Zahlen, aus denen sie stammen. */
-function grundstueckHtml(o) {
+function grundstueckHtml(o, pachtJahr = 0) {
   if (!istGrundstueck()) return '';
   const zeilen = GRUNDFELDER
     .map(f => paarZeile(f.l, stammwert(f, o), { lang: f.lang })).join('');
@@ -1072,9 +1072,23 @@ function grundstueckHtml(o) {
     abgeleitet.push(['Steuermesszahl (rechnerisch)',
       `${promille.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ‰`]);
   }
-  if (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz) {
+  const grundsteuerJahr = (o.grundsteuer_messbetrag && o.grundsteuer_hebesatz)
+    ? o.grundsteuer_messbetrag * o.grundsteuer_hebesatz / 100 : 0;
+  if (grundsteuerJahr) {
     abgeleitet.push([`Grundsteuer im Jahr (× Hebesatz ${o.grundsteuer_hebesatz} %)`,
-      eur(o.grundsteuer_messbetrag * o.grundsteuer_hebesatz / 100)]);
+      eur(grundsteuerJahr)]);
+  }
+  // CCCIII — statt eines eigenen NK-Zeitraums die kleine Rechnung direkt:
+  // NK-Höhe = Grundsteuer/Jahr, Ertrag = Pacht/Jahr − Grundsteuer/Jahr.
+  const ertrag = [];
+  if (pachtJahr) ertrag.push(['Pacht im Jahr', eur(pachtJahr)]);
+  if (grundsteuerJahr) {
+    ertrag.push(['Nebenkosten im Jahr (Grundsteuer)', eur(grundsteuerJahr)]);
+  }
+  // Ertrag nur, wenn es Pacht gibt — ohne Einnahme ist die Grundsteuer bloß
+  // eine Ausgabe, kein „Ertrag".
+  if (pachtJahr) {
+    ertrag.push(['Ertrag im Jahr', eur(pachtJahr - grundsteuerJahr)]);
   }
   const kette = (o.grundsteuerwert || o.grundsteuer_messbetrag)
     ? `<div class="fussnote">So entsteht die Grundsteuer: <strong>Grundsteuerwert</strong>
@@ -1083,11 +1097,20 @@ function grundstueckHtml(o) {
        Grundsteuer&nbsp;im&nbsp;Jahr. Der Hebesatz steht nicht auf dem
        Finanzamts-Bescheid, sondern auf dem Grundsteuerbescheid der Stadt.</div>`
     : '';
+  const ertragBlock = ertrag.length
+    ? `<div class="sekopf"><h2 class="sec">Pacht & Ertrag</h2></div>
+       <div class="paare">${ertrag.map(([l, w], i) =>
+         paarZeile(l, w, { abgeleitet: i < ertrag.length - 1 })).join('')}</div>
+       <div class="fussnote">Beim verpachteten Grundstück ist die Grundsteuer die
+         einzige Nebenkostenposition — sie wird auf den Pächter umgelegt. Der
+         Ertrag ist die Pacht abzüglich der Grundsteuer.</div>`
+    : '';
   return `<div class="sekopf"><h2 class="sec">Grundstück</h2>
       <button data-grund="1">Bearbeiten</button></div>
     <div class="paare">${zeilen}${
       abgeleitet.map(([l, w]) => paarZeile(l, w, { abgeleitet: true })).join('')}</div>
-    ${kette}`;
+    ${kette}
+    ${ertragBlock}`;
 }
 
 /* CCVIII — die WEG-Ebene. Beim Grundstück gibt es sie nicht (keine Mieter, keine
@@ -1437,20 +1460,15 @@ async function laden() {
   const guthaben = (bereiche.kredite || []).reduce(
     (s, k) => s + (k.guthaben_aktuell || 0), 0);
 
-  // Beim Grundstück gibt es keine Mieter-Nebenkostenabrechnung nach § 556 BGB —
-  // aber die Grundsteuer fällt jährlich an und wird auf den Pächter umgelegt.
-  // Deshalb ein schlanker Nebenkosten-Bereich (CCC): derselbe Abrechnungs-
-  // zeitraum, nur anders betitelt und ohne Mietrechtsfrist.
-  const zeitraumTitel = istGrundstueck()
-    ? 'Nebenkosten & Grundsteuer' : 'Abrechnungszeiträume';
-  const zeitraumBlock = `
-    <div class="sekopf"><h2 class="sec">${zeitraumTitel}</h2>
+  // Ein Grundstück rechnet keine Mieter-Nebenkosten ab: § 556-Frist und
+  // Abrechnungszeiträume gehören nicht hierher. Die Grundsteuer ist so gering,
+  // dass sie ohne eigenen Zeitraum direkt im Grundstücksblock verrechnet wird
+  // (CCCIII, ersetzt CCC).
+  const zeitraumBlock = istGrundstueck() ? '' : `
+    <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
       ${fokus ? '' : '<button data-zeitraum-neu="1">Anlegen</button>'}</div>
     <div class="liste">${zr}</div>
-    ${istGrundstueck() ? `<div class="fussnote">Die Grundsteuer ist beim
-      verpachteten Grundstück eine jährliche Nebenkostenposition, die auf den
-      Pächter umgelegt wird. Ein Abrechnungszeitraum je Jahr genügt.</div>`
-      : fokus ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
+    ${fokus ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
       im Zeitraum steht, was davon auf diese Einheit entfällt.</div>` : ''}`;
 
   if (fokus) {
@@ -1498,7 +1516,7 @@ async function laden() {
     ${kennzahlenHtml(vermoegen, jahresmiete, restschuld, guthaben)}
     ${einheitenHtml()}
     ${zeitraumBlock}
-    ${grundstueckHtml(objekt)}
+    ${grundstueckHtml(objekt, jahresmiete)}
     ${stammHtml(objekt)}
     ${wegHtml(objekt)}
     <div class="sekopf"><h2 class="sec">Dokumentenablage</h2></div>
