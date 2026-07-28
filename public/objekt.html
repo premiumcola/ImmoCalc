@@ -1797,14 +1797,16 @@ function baumMalen() {
   const zweige = gezeigt.map(a => {
     a_ordner = a.ordner;
     const farbe = ordnerFarbe(a.ordner);
-    // CCCXVII — Kinder (Info-Belege) ihrer Hauptdatei zuordnen; alles andere
-    // steht auf oberster Ebene.
+    // CCCXVII — Kinder (Info-Belege) unter ihre Hauptdatei einrücken, aber nur,
+    // wenn die Hauptdatei im selben Ordner liegt. Liegt sie woanders, steht das
+    // Kind eigenständig hier (sonst verschwände es aus dem Baum).
+    const idsHier = new Set(a.dokumente.map(d => d.id));
     const kinderVon = new Map();
-    for (const d of a.dokumente) if (d.unter) {
+    for (const d of a.dokumente) if (d.unter && idsHier.has(d.unter)) {
       if (!kinderVon.has(d.unter)) kinderVon.set(d.unter, []);
       kinderVon.get(d.unter).push(d);
     }
-    const oberste = a.dokumente.filter(d => !d.unter);
+    const oberste = a.dokumente.filter(d => !d.unter || !idsHier.has(d.unter));
     const alle = baumMehr.has(a.ordner);
     const docs = alle ? oberste : oberste.slice(0, PRO_AST);
     const fruechte = docs.map(d =>
