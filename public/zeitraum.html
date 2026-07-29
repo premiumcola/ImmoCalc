@@ -144,6 +144,33 @@
   .vt.zeige-gewichte .vt-ergebnis{display:none}
   /* Einheit-Auswähler für „Nur eine Einheit/Person". */
   .einzel-wahl{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  /* CCCLIX — Teilbetrag direkt auf eine Einheit. Zarter Zugang unter der
+     Aufteilung; leiser Textlink, aufgeklappt Betrag · Einheit · §35a. */
+  .vorab-link{align-self:flex-start;border:none;background:transparent;
+    color:var(--soft);cursor:pointer;font:600 12px var(--disp);padding:9px 2px;
+    min-height:44px;margin-top:6px;
+    text-decoration:underline;text-underline-offset:3px}
+  .vorab-link:hover{color:var(--teal-d)}
+  .vorab{margin-top:10px;background:var(--paper);border-radius:12px;padding:12px 13px}
+  .vorab-kopf{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .vorab-t{flex:1;min-width:0;font:600 10px var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;color:var(--soft)}
+  .vorab-x{border:none;background:none;color:var(--soft);cursor:pointer;
+    font:400 18px var(--body);line-height:1;padding:0;flex:none;
+    width:32px;height:32px;border-radius:8px}
+  .vorab-x:hover{color:var(--neg);background:rgba(178,66,41,.09)}
+  .vorab-betrag{display:flex;align-items:center;gap:9px}
+  .vorab-betrag input{flex:1;min-width:0;border:1.5px solid var(--line);
+    border-radius:11px;padding:11px 12px;font:600 15px var(--body);min-height:46px;
+    background:var(--sheet);color:var(--ink)}
+  .vorab-betrag input:focus{outline:none;border-color:var(--teal)}
+  .vorab-eur{font:600 13px var(--mono);color:var(--soft);flex:none}
+  .vorab .einzel-wahl{margin-top:10px}
+  .vorab-s35{display:flex;align-items:center;gap:10px;margin-top:10px;
+    font:500 12.5px var(--body);color:var(--ink);cursor:pointer;min-height:44px}
+  .vorab-s35 input{width:20px;height:20px;flex:none}
+  /* Die Vorab-Zeile ganz oben in der Aufteilung — ruhig, teal-getönt. */
+  .vorab-zeile{color:var(--teal-d)}
   /* Fußzeile: was am Zeitraum hängt, und der ruhige Hinweis auf das
      automatische Entfernen — kein Löschknopf. */
   .zr-fuss{margin-top:18px;padding:14px 16px;border-radius:14px;
@@ -455,6 +482,10 @@ const offen = new Set();
    Variable merkt sich, für welche Position der Einheit-Auswähler offen ist,
    solange noch keine Einheit gesetzt wurde. */
 let einzelWahl = null;
+/* CCCLIX — für welche Position der „Teilbetrag direkt auf eine Einheit"-Zugang
+   offen ist, obwohl noch kein Vorab-Betrag gesetzt wurde. Ist einer gesetzt,
+   ist der Bereich ohnehin offen. */
+const vorabOffen = new Set();
 
 /* Welche Position gerade einen Beleg erwartet — gesetzt beim Klick auf den
    Scan-Knopf, gelesen, wenn die Kamera zurückkommt. */
@@ -612,6 +643,64 @@ function einheitChips(pid, aktuell) {
     </button>`).join('');
 }
 
+/* CCCLIX — der Vorab-Anteil ist nur dann wirksam (und wird nur dann von der
+   Verteilung abgezogen), wenn ein Betrag > 0 UND eine Einheit gesetzt sind —
+   genau wie es die Engine handhabt. */
+const vorabAktiv = k => (k.vorab_betrag || 0) > 0 && !!(k.vorab_einheit || '');
+
+/* Die ruhige Extra-Zeile ganz oben in der Aufteilung: „Vorab → 1. OG · §35a"
+   mit dem €-Betrag rechts. Nur wenn ein Teilbetrag wirklich abgezweigt wird. */
+function vorabZeileHtml(k) {
+  if (!vorabAktiv(k)) return '';
+  return `<div class="rz vorab-zeile">
+      <span>Vorab → ${esc(k.vorab_einheit)}${k.vorab_s35
+        ? '<span class="rzp"> · §35a</span>' : ''}</span>
+      <span>${eur(k.vorab_betrag)}</span>
+    </div>`;
+}
+
+/* Der zarte Zugang „Teilbetrag direkt auf eine Einheit" (nur bearbeitbar und
+   nicht im Einzel-Modus). Geschlossen ein leiser Link; offen ein kleines
+   Betragsfeld, der Einheit-Auswähler und der §35a-Schalter — alles
+   auto-speichernd. Offen, sobald ein Vorab-Betrag gesetzt ist. */
+function vorabHtml(k) {
+  if (daten.status !== 'in Arbeit') return '';
+  const offenJetzt = (k.vorab_betrag || 0) > 0 || vorabOffen.has(k.position_id);
+  if (!offenJetzt) {
+    return `<button class="vorab-link" data-vorab-oeffnen="${k.position_id}"
+      >＋ Teilbetrag direkt auf eine Einheit</button>`;
+  }
+  const chips = sonderEinheiten().map(e => `
+    <button type="button" class="ewahl${e.einheit === k.vorab_einheit ? ' an' : ''}"
+        data-vorab-einheit-pid="${k.position_id}" data-vorab-einheit="${esc(e.einheit)}"
+        aria-pressed="${e.einheit === k.vorab_einheit}">
+      <span class="ename">${esc(e.einheit)}</span>
+      ${e.parteien.length
+        ? `<span class="epartei">${esc(e.parteien.join(' · '))}</span>` : ''}
+    </button>`).join('');
+  const hat = (k.vorab_betrag || 0) > 0;
+  return `<div class="vorab">
+      <div class="vorab-kopf">
+        <span class="vorab-t">Teilbetrag direkt auf eine Einheit</span>
+        <button class="vorab-x" data-vorab-entfernen="${k.position_id}"
+          data-hat="${hat ? '1' : ''}" aria-label="Teilbetrag entfernen">×</button>
+      </div>
+      <div class="vorab-betrag">
+        <input type="number" step="0.01" min="0" inputmode="decimal"
+               placeholder="Betrag" value="${hat ? k.vorab_betrag : ''}"
+               data-vorab-betrag="${k.position_id}"
+               aria-label="Teilbetrag in Euro">
+        <span class="vorab-eur">€</span>
+      </div>
+      <div class="einzel-wahl">${chips}</div>
+      <label class="vorab-s35">
+        <input type="checkbox" data-vorab-s35="${k.position_id}"
+               ${k.vorab_s35 ? 'checked' : ''}>
+        <span>mit Steuer (§35a)</span>
+      </label>
+    </div>`;
+}
+
 /* Verteilung einer Position: „Verteilen nach" (Schlüssel oder „Nur eine
    Einheit/Person") und darunter die Aufteilung. */
 function verteilungHtml(k) {
@@ -669,8 +758,11 @@ function verteilungHtml(k) {
   const abgeleitet = ABGELEITET.has(k.schluessel);
   let aufteilung;
   if (abgeleitet && eintraege.length) {
+    // CCCLIX — die €-Beträge beziehen sich auf den Rest (Betrag − Vorab), damit
+    // Vorab-Zeile + Rest-Verteilung zusammen den vollen Betrag ergeben.
+    const rest = (k.betrag || 0) - (vorabAktiv(k) ? k.vorab_betrag : 0);
     const euroRows = felder.map(([p, w]) => {
-      const euro = summe > 0 ? (k.betrag || 0) * (Number(w) || 0) / summe : 0;
+      const euro = summe > 0 ? rest * (Number(w) || 0) / summe : 0;
       return `<div class="rz"><span>${esc(p)}${leerstaende.has(p)
           ? '<span class="gsub">Leerstand · Eigentümer</span>' : ''}</span>
         <span>${eur(euro)} <span class="rzp">${prozentText(w, summe)}</span></span>
@@ -694,8 +786,10 @@ function verteilungHtml(k) {
         <span><b>Ohne Gewichte fließen die ${eur(k.betrag)} mit 0,00 € ein.</b>
         </span></div>` : ''}
       <div class="zk">Aufteilung</div>
+      ${vorabZeileHtml(k)}
       ${aufteilung}
       ${doppelteEinheit(felder.map(([p]) => p))}
+      ${vorabHtml(k)}
     </div>`;
 }
 
@@ -1213,6 +1307,41 @@ async function betragSpeichern(feld) {
   }
 }
 
+/* CCCLIX — der Teilbetrag speichert sich wie der Betrag: ein geänderter Wert
+   per PATCH, kein Übernehmen-Knopf. Backend rechnet den Rest nach Schlüssel. */
+async function vorabPatch(pid, body) {
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body });
+    melde('✓ Teilbetrag gespeichert', 'pos');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* Betragsfeld verlassen: leer/0 leert den Teilbetrag samt Einheit, sonst wird
+   der neue Betrag gesetzt. */
+async function vorabBetragSpeichern(feld) {
+  const pid = feld.dataset.vorabBetrag;
+  const roh = String(feld.value).trim().replace(',', '.');
+  const betrag = roh === '' ? 0 : Number(roh);
+  if (!Number.isFinite(betrag) || betrag < 0) return;
+  if (betrag === 0) { vorabOffen.delete(Number(pid)); }
+  return vorabPatch(pid, betrag === 0
+    ? { vorab_betrag: 0, vorab_einheit: '' } : { vorab_betrag: betrag });
+}
+
+/* Das × am Teilbetrag: gesetzten Teilbetrag leeren, sonst nur wieder
+   zuklappen. */
+async function vorabEntfernen(knopf) {
+  const pid = Number(knopf.dataset.vorabEntfernen);
+  vorabOffen.delete(pid);
+  if (knopf.dataset.hat === '1') {
+    return vorabPatch(pid, { vorab_betrag: 0, vorab_einheit: '' });
+  }
+  return zeichnen();
+}
+
 /* CCVIII — die abgetippten NK-Summen je Mieter übernehmen. Je Einheit eine
    Position mit `nur_einheit`: bestehende werden aktualisiert, neue angelegt —
    so lässt sich der Zettel der Hausverwaltung mehrfach nachtragen, ohne dass
@@ -1542,6 +1671,11 @@ inhalt.addEventListener('change', e => {
   }
   // Der Betrag speichert sich beim Verlassen des Feldes.
   if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
+  // CCCLIX — Teilbetrag und §35a-Schalter speichern sich auf dieselbe Art.
+  if (e.target.matches('[data-vorab-betrag]')) vorabBetragSpeichern(e.target);
+  if (e.target.matches('[data-vorab-s35]')) {
+    vorabPatch(e.target.dataset.vorabS35, { vorab_s35: e.target.checked });
+  }
 });
 
 inhalt.addEventListener('click', async e => {
@@ -1579,6 +1713,18 @@ inhalt.addEventListener('click', async e => {
   const einzel = e.target.closest('[data-einzel-einheit]');
   if (einzel) return einzelSetzen(einzel.dataset.einzelPid,
                                   einzel.dataset.einzelEinheit);
+
+  // CCCLIX — Teilbetrag: Zugang aufklappen, Einheit wählen, entfernen.
+  const vorabAuf = e.target.closest('[data-vorab-oeffnen]');
+  if (vorabAuf) {
+    vorabOffen.add(Number(vorabAuf.dataset.vorabOeffnen));
+    return zeichnen();
+  }
+  const vorabE = e.target.closest('[data-vorab-einheit-pid]');
+  if (vorabE) return vorabPatch(vorabE.dataset.vorabEinheitPid,
+                                { vorab_einheit: vorabE.dataset.vorabEinheit });
+  const vorabWeg = e.target.closest('[data-vorab-entfernen]');
+  if (vorabWeg) return vorabEntfernen(vorabWeg);
 
   // „Fertig": die Karte einfach wieder zuklappen.
   const fertig = e.target.closest('[data-fertig]');
