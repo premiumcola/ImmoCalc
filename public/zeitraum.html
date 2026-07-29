@@ -149,6 +149,21 @@
   /* Aufteilung als €-Ergebnis je Partei; der Prozentanteil steht ruhig dahinter. */
   .rzp{color:var(--soft);font-weight:500;font-size:11px}
   .vt-gewichte{margin-top:4px}
+  /* CCCLXI — Anteil je Zeile auch bei abgeleiteten Schlüsseln überschreibbar.
+     Der €-Betrag bleibt die Leitzahl; das kleine Anteil-Feld sitzt ruhig und
+     rechtsbündig daneben, ohne die Zahl von früher wiederzubeleben. */
+  .rz.vt-abg{align-items:center}
+  .rz.vt-abg .gn{flex:1;min-width:0;font:500 12.5px var(--body);
+    hyphens:auto;overflow-wrap:anywhere}
+  .rz.vt-abg .gsub{display:block;font:400 11px var(--body);color:var(--soft);
+    margin-top:2px;line-height:1.35}
+  .rz.vt-abg .vt-euro{flex:none;font:600 12.5px var(--mono);white-space:nowrap;
+    color:var(--ink)}
+  .rz.vt-abg .vt-euro .rzp{font-weight:500}
+  .anteil-mini{flex:none;width:62px;border:1.5px solid var(--line);border-radius:9px;
+    padding:8px 9px;font:600 12px var(--mono);min-height:44px;background:var(--sheet);
+    color:var(--soft);text-align:right}
+  .anteil-mini:focus{outline:none;border-color:var(--teal);color:var(--ink)}
   /* Einheit-Auswähler für „Nur eine Einheit/Person". */
   .einzel-wahl{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   /* CCCLIX — Teilbetrag direkt auf eine Einheit. Zarter Zugang unter der
@@ -779,6 +794,9 @@ function verteilungHtml(k) {
   // Nicht ableitbar → Parteien mit 0 anbieten, damit man von Hand füllen kann.
   const felder = eintraege.length || !bearbeitbar ? eintraege
     : (schluessel?.parteien || []).map(p => [p.partei, 0]);
+  // Die €-Beträge beziehen sich auf den Rest (Betrag − Vorab-Brutto, CCCLX),
+  // damit Vorab-Zeile + Rest den vollen Positionsbetrag ergeben.
+  const rest = (k.betrag || 0) - (vorabAktiv(k) ? k.vorab_betrag : 0);
 
   const gwRows = felder.map(([p, w]) => `
     <div class="gw">
@@ -801,15 +819,21 @@ function verteilungHtml(k) {
   const abgeleitet = ABGELEITET.has(k.schluessel);
   let aufteilung;
   if (abgeleitet && eintraege.length) {
-    // Abgeleiteter Schlüssel: schlicht die €-Beträge je Partei samt Prozent —
-    // keine Roh-Gewichte, kein „Anpassen". Die Beträge beziehen sich auf den
-    // Rest (Betrag − Vorab), damit Vorab-Zeile + Rest den vollen Betrag ergeben.
-    const rest = (k.betrag || 0) - (vorabAktiv(k) ? k.vorab_betrag : 0);
+    // Abgeleiteter Schlüssel: der €-Betrag je Partei bleibt die Leitzahl (samt
+    // Prozent). Zusätzlich ein kleines, dezentes Anteil-Feld rechts, mit dem
+    // sich einzelne Anteile überschreiben lassen (z. B. eine Partei auf 0) —
+    // über denselben data-gewicht-Mechanismus wie die manuellen Schlüssel.
     const euroRows = felder.map(([p, w]) => {
       const euro = summe > 0 ? rest * (Number(w) || 0) / summe : 0;
-      return `<div class="rz"><span>${esc(p)}${leerstaende.has(p)
+      return `<div class="rz vt-abg"><span class="gn">${esc(p)}${leerstaende.has(p)
           ? '<span class="gsub">Leerstand · Eigentümer</span>' : ''}</span>
-        <span>${eur(euro)} <span class="rzp">${prozentText(w, summe)}</span></span>
+        <span class="vt-euro"><span data-euro>${eur(euro)}</span>
+          <span class="rzp" data-anteil>${prozentText(w, summe)}</span></span>
+        ${bearbeitbar
+          ? `<input class="anteil-mini" type="number" step="0.0001" min="0"
+                    inputmode="decimal" value="${Number(w)}" data-gewicht="${esc(p)}"
+                    aria-label="Anteil ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">`
+          : ''}
       </div>`;
     }).join('');
     aufteilung = `<div class="vt-ergebnis">${euroRows}</div>${
@@ -824,7 +848,8 @@ function verteilungHtml(k) {
   const basis = esc(JSON.stringify(Object.fromEntries(
     felder.map(([p, w]) => [p, Number(w) || 0]))));
 
-  return `<div class="vt" data-pid="${k.position_id}" data-basis="${basis}">
+  return `<div class="vt" data-pid="${k.position_id}" data-basis="${basis}"
+      data-rest="${rest}">
       <div class="zk">Verteilen nach</div>
       ${wahl}
       ${k.ohne_verteilung ? `<div class="warnung"><span>▲</span>
@@ -1721,11 +1746,19 @@ inhalt.addEventListener('input', e => {
     return;
   }
   if (!e.target.matches('[data-gewicht]')) return;
-  const felder = [...e.target.closest('.vt').querySelectorAll('[data-gewicht]')];
+  const vt = e.target.closest('.vt');
+  const felder = [...vt.querySelectorAll('[data-gewicht]')];
   const summe = felder.reduce((s, f) => s + (Number(f.value) || 0), 0);
+  // Bei abgeleiteten Schlüsseln rechnet der €-Betrag (Leitzahl) live mit — der
+  // Rest steht am Block. Beim manuellen Schlüssel fehlt das €-Ziel und es bleibt
+  // beim Prozent-Update; endgültig gerechnet wird ohnehin nach dem Speichern.
+  const rest = Number(vt.dataset.rest || 0);
   felder.forEach(f => {
     const ziel = f.parentElement.querySelector('[data-anteil]');
     if (ziel) ziel.textContent = prozentText(f.value, summe);
+    const euroZiel = f.parentElement.querySelector('[data-euro]');
+    if (euroZiel) euroZiel.textContent = eur(summe > 0
+      ? rest * (Number(f.value) || 0) / summe : 0);
   });
 });
 
