@@ -103,15 +103,20 @@
      damit der Punkt in der Kachel sitzt (gehoert spaeter nach immo.css). */
   .tile{position:relative}
   .tile .cf{
-    position:absolute; top:12px; right:12px; width:26px; height:26px;
-    border-radius:999px; display:inline-flex; align-items:center;
-    justify-content:center; box-shadow:0 1px 2px rgba(22,38,44,.06);
+    position:absolute; top:12px; right:12px;
+    display:inline-flex; align-items:center; gap:4px;
+    padding:4px 9px 4px 7px; border-radius:999px;
+    font:600 12px var(--mono); line-height:1; white-space:nowrap;
+    box-shadow:0 1px 2px rgba(22,38,44,.06);
   }
-  .tile .cf svg{display:block; fill:currentColor}
+  .tile .cf svg{display:block; fill:currentColor; flex:none}
   .tile .cf.pos{background:var(--pos-bg); color:var(--pos)}
   .tile .cf.neg{background:var(--neg-bg); color:var(--neg)}
+  /* Platz oben rechts freihalten, damit ein langer Name nicht unter die
+     Cashflow-Pille laeuft. Nur wo eine Pille sitzt. */
+  .tile.hat-cf .txt{padding-right:96px}
   /* In der breiten Bubble-Karte sitzt der Fuss (Chips) rechts — dort ruecken
-     wir den Punkt etwas hoeher, damit er nicht auf die Chips trifft. */
+     wir die Pille etwas hoeher, damit sie nicht auf die Chips trifft. */
   .mitbubbles > .tile .cf{top:10px; right:14px}
 
   .bubbles{display:flex; flex-wrap:wrap; gap:6px; padding:0 2px 2px}
@@ -288,9 +293,12 @@ function saldoIndikator(slug) {
   if (s == null || s === 0) return '';
   const pos = s > 0;
   const pfeil = pos ? 'M8 4l4 6H4z' : 'M8 12l-4-6h8z';   // Dreieck hoch / runter
+  // Kleine Zahl dazu: der Jahres-Cashflow, gerundet, mit Vorzeichen (CCCLV).
+  const betrag = `${pos ? '+' : '−'}${Math.abs(Math.round(s)).toLocaleString('de-DE')} €`;
   return `<span class="cf ${pos ? 'pos' : 'neg'}"
-                title="Cashflow ${pos ? 'positiv' : 'negativ'}" aria-hidden="true">
-      <svg viewBox="0 0 16 16" width="12" height="12"><path d="${pfeil}"/></svg>
+                title="Cashflow pro Jahr: ${betrag}">
+      <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="${pfeil}"/></svg>
+      <span class="cfv">${betrag}</span>
     </span>`;
 }
 
@@ -312,8 +320,9 @@ function kachel(o, feinste = false) {
       ? (h.einheit ? '' : `<span class="einheit">${o.einheiten || 1} Einheit${(o.einheiten || 1) > 1 ? 'en' : ''}</span>`)
       : (h.einheit ? `<span class="einheit">${esc(h.einheit)}</span>` : '');
 
-  const knopf = `<button class="tile" data-slug="${esc(o.slug)}">
-      ${saldoIndikator(o.slug)}
+  const cf = grundstueck ? '' : saldoIndikator(o.slug);
+  const knopf = `<button class="tile${cf ? ' hat-cf' : ''}" data-slug="${esc(o.slug)}">
+      ${cf}
       <span class="ico">${logoSvg(o.typ)}</span>
       <span class="txt">
         ${oben}
