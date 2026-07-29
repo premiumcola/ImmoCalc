@@ -74,7 +74,9 @@ const feld = await page.$('[data-betrag]');
 pruefe(feld !== null, 'kein Feld zum Nachtragen bei offener Position');
 if (feld) {
   await feld.fill('412.90');
-  await page.click('[data-speichern]');
+  // CCCLVIII — kein „Übernehmen"-Knopf mehr: der Betrag speichert beim Verlassen
+  // des Feldes (blur) von selbst.
+  await feld.evaluate(el => el.blur());
   await page.waitForTimeout(1400);
   const nachher = await page.textContent('.fortschritt .gross');
   pruefe(nachher !== vorher, `Fortschritt zieht nicht mit (${vorher} -> ${nachher})`);

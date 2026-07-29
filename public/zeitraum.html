@@ -114,24 +114,36 @@
   .entw-badge{display:block;width:fit-content;max-width:100%;margin-top:6px;
     font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;
     color:var(--amber);background:var(--amber-bg);border-radius:7px;padding:4px 8px}
-  /* Der Entscheidungsblock im aufgeklappten Bereich: ein ruhiger Amber-Kasten
-     mit zwei klaren Wegen — bestätigen (wird grün) oder zurück in den Prüfmodus. */
-  .entwurf-box{background:var(--amber-bg);border-radius:12px;padding:13px 14px;
-    margin-bottom:6px}
-  .entwurf-box .ek{display:flex;align-items:center;gap:7px;
-    font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;
-    color:var(--amber);margin-bottom:7px}
-  .entwurf-box p{font:400 12px var(--body);color:var(--ink);line-height:1.5;
-    margin:0 0 12px}
-  .entwurf-aktionen{display:flex;flex-wrap:wrap;gap:8px}
-  .entwurf-aktionen button{flex:1;min-width:140px;border:none;border-radius:11px;
-    padding:12px 14px;font:600 13px var(--disp);cursor:pointer;min-height:44px}
-  .entwurf-ja{background:var(--pos);color:#fff}
-  .entwurf-ja:hover{background:#276b44}
-  .entwurf-nein{background:var(--sheet);color:var(--amber);
-    box-shadow:inset 0 0 0 1.5px var(--amber-li)}
-  .entwurf-nein:hover{background:#fff;box-shadow:inset 0 0 0 1.5px var(--amber)}
-  .entwurf-aktionen button[disabled]{opacity:.65;cursor:default}
+  /* Genau eine primäre Aktion unten in der aufgeklappten Karte — schließt sie
+     („Fertig"), legt an („Anlegen") oder bestätigt einen Entwurf. */
+  .kartenfuss{display:flex;flex-direction:column;gap:4px;margin-top:18px}
+  .hauptaktion{width:100%;border:none;border-radius:12px;padding:13px;
+    font:600 14px var(--disp);cursor:pointer;min-height:48px;color:#fff;
+    background:var(--teal)}
+  .hauptaktion:hover{background:var(--teal-d)}
+  .hauptaktion.ja{background:var(--pos)} .hauptaktion.ja:hover{background:#276b44}
+  .hauptaktion[disabled]{opacity:.6;cursor:default}
+  /* Zarte Textlinks: „Anpassen", „Ableiten", „Zurück zum Prüfen", „Entfernen".
+     Keine konkurrierenden Knöpfe, nur ruhige Zweitwege. */
+  .minilink{align-self:flex-start;border:none;background:transparent;
+    color:var(--soft);text-decoration:underline;text-underline-offset:3px;
+    cursor:pointer;font:600 12px var(--disp);padding:9px 2px;min-height:44px}
+  .minilink:hover{color:var(--ink)}
+  .minilink.gefahr:hover{color:var(--neg)}
+  /* Das eine Betragsfeld, weit oben im Fluss — speichert beim Verlassen. */
+  .betragfeld{margin-top:12px}
+  .betragfeld input{width:100%;border:1.5px solid var(--line);border-radius:12px;
+    padding:13px 14px;font:600 17px var(--body);min-height:50px;
+    background:var(--sheet);color:var(--ink)}
+  .betragfeld input:focus{outline:none;border-color:var(--teal)}
+  /* Aufteilung als €-Ergebnis je Partei; die Roh-Gewichte erscheinen erst
+     hinter „Anpassen". */
+  .rzp{color:var(--soft);font-weight:500;font-size:11px}
+  .vt-gewichte{display:none;margin-top:4px}
+  .vt.zeige-gewichte .vt-gewichte{display:block}
+  .vt.zeige-gewichte .vt-ergebnis{display:none}
+  /* Einheit-Auswähler für „Nur eine Einheit/Person". */
+  .einzel-wahl{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   /* Fußzeile: was am Zeitraum hängt, und der ruhige Hinweis auf das
      automatische Entfernen — kein Löschknopf. */
   .zr-fuss{margin-top:18px;padding:14px 16px;border-radius:14px;
@@ -244,13 +256,6 @@
     font:600 12.5px var(--disp);cursor:pointer;min-height:44px}
   .vt .leise{background:#EDF1F0;color:var(--ink)}
   .vt .leise:hover{background:#E1E8E6}
-  /* Die Verteilung wird beim Verlassen der Felder gespeichert (kein eigener
-     „Übernehmen"-Knopf mehr, der mit „Bestätigen" um Klicks buhlt). Ein ruhiger
-     Hinweis sagt es, die Rückmeldung kommt als kurzer Toast. */
-  .vt .autohint{font:500 11px var(--mono);color:var(--soft);margin-top:9px;
-                display:flex;align-items:center;gap:6px}
-  .vt .autohint::before{content:"";width:6px;height:6px;border-radius:50%;
-                        background:var(--teal);flex:none}
   .warnung{display:flex;gap:9px;align-items:flex-start;background:var(--neg-bg);
     color:var(--neg);border-radius:11px;padding:11px 12px;margin:10px 0 2px;
     font:500 11.5px var(--body);line-height:1.45}
@@ -446,10 +451,10 @@ let leerstaende = new Set();
 let ansicht = 'pruef';
 let sortierung = 'status';
 const offen = new Set();
-/* CXCIV — Sonderposten nur für eine Einheit: ob das Formular aufgeklappt ist
-   und welche Einheit gerade gewählt wurde. */
-let sonderOffen = false;
-let sonderEinheit = '';
+/* „Nur eine Einheit/Person" ist Teil der Verteilungs-Auswahl geworden. Diese
+   Variable merkt sich, für welche Position der Einheit-Auswähler offen ist,
+   solange noch keine Einheit gesetzt wurde. */
+let einzelWahl = null;
 
 /* Welche Position gerade einen Beleg erwartet — gesetzt beim Klick auf den
    Scan-Knopf, gelesen, wenn die Kamera zurückkommt. */
@@ -581,49 +586,72 @@ function doppelteEinheit(namen) {
   const doppelt = namen.filter(n => leerstaende.has(n) && einheit.get(n)
     && namen.some(m => m !== n && einheit.get(m) === einheit.get(n)));
   if (!doppelt.length) return '';
-  return `<div class="hinweis">${doppelt.map(esc).join(', ')} ${
-    doppelt.length === 1 ? 'steht' : 'stehen'} zweimal in der Liste: einmal für
-    die vermietete Zeit, einmal für den Leerstand.</div>`;
+  return `<div class="hinweis">${doppelt.map(esc).join(', ')}: vermietete Zeit
+    und Leerstand getrennt.</div>`;
 }
 
-/* Verteilung einer Position: Schlüssel wählbar, Gewichte lesbar.
-   Eine nackte Zahl („Büro 4.1398") sagt niemandem etwas — erst Maßeinheit und
-   Prozentanteil machen sie lesbar, und erst das Eingabefeld korrigierbar. */
+/* Welche Schlüssel sich aus den Stammdaten ergeben (verteilung.py: ableitbar).
+   Bei ihnen zeigt die Karte nur das €-Ergebnis; die Roh-Gewichte kommen erst
+   hinter „Anpassen". Manuelle Schlüssel (Verbrauch/Prozent/Individuell) müssen
+   direkt eingegeben werden. */
+const ABGELEITET = new Set(['flaeche', 'personen', 'einheiten', 'bewohnermonate']);
+/* Der Sonder-Eintrag am Ende der „Verteilen nach"-Auswahl. */
+const NUR_EINHEIT_WAHL = '__nur_einheit__';
+
+/* Die Einheit-Chips des Objekts für „Nur eine Einheit/Person" — dieselbe
+   Datenquelle wie der frühere Sonderposten-Bereich. */
+function einheitChips(pid, aktuell) {
+  if (daten.status !== 'in Arbeit') return '';
+  return sonderEinheiten().map(e => `
+    <button type="button" class="ewahl${e.einheit === aktuell ? ' an' : ''}"
+        data-einzel-pid="${pid}" data-einzel-einheit="${esc(e.einheit)}"
+        aria-pressed="${e.einheit === aktuell}">
+      <span class="ename">${esc(e.einheit)}</span>
+      ${e.parteien.length
+        ? `<span class="epartei">${esc(e.parteien.join(' · '))}</span>` : ''}
+    </button>`).join('');
+}
+
+/* Verteilung einer Position: „Verteilen nach" (Schlüssel oder „Nur eine
+   Einheit/Person") und darunter die Aufteilung. */
 function verteilungHtml(k) {
   if (!k.position_id) return '';
-  // CXCIV: ein Sonderposten wird nicht über einen Schlüssel verteilt — er geht
-  // ganz auf seine Einheit. Schlüsselwahl und Gewichtszeilen entfielen hier
-  // sonst sinnlos nebeneinander.
-  if (k.nur_einheit) {
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const einzelOffen = k.nur_einheit || einzelWahl === k.position_id;
+  const wahlWert = einzelOffen ? NUR_EINHEIT_WAHL : (k.schluessel || '');
+  const wahl = bearbeitbar
+    ? `<div class="wahl" data-schluesselwahl="${k.position_id}"
+         data-wert="${esc(wahlWert)}"></div>` : '';
+
+  // „Nur eine Einheit/Person": kein Schlüssel, 100 % auf eine Einheit.
+  if (einzelOffen) {
     const traeger = Object.keys(k.anteile || {});
-    return `<div class="vt">
-        <div class="zk">Verteilung · Sonderposten</div>
-        <div class="zsumme">Zu 100 % auf ${esc(k.nur_einheit)}${
-          traeger.length ? ` · ${traeger.map(esc).join(' · ')}` : ''}</div>
-        ${!traeger.length ? `<div class="warnung"><span>▲</span>
-          <span><b>Keine Partei für ${esc(k.nur_einheit)}.</b> Ist die Einheit
-          im Zeitraum vermietet oder von der NK-Abrechnung ausgeschlossen?</span>
-          </div>` : ''}
+    return `<div class="vt" data-pid="${k.position_id}">
+        <div class="zk">Verteilen nach</div>
+        ${wahl}
+        <div class="einzel-wahl">${einheitChips(k.position_id, k.nur_einheit)}</div>
+        ${k.nur_einheit ? `<div class="zsumme">Zu 100 % auf ${esc(k.nur_einheit)}${
+          traeger.length ? ` · ${traeger.map(esc).join(' · ')}` : ''}</div>` : ''}
+        ${k.nur_einheit && !traeger.length ? `<div class="warnung"><span>▲</span>
+          <span><b>Keine Partei für ${esc(k.nur_einheit)}.</b></span></div>` : ''}
       </div>`;
   }
+
   const meta = schluesselMeta(k.schluessel);
   const eintraege = Object.entries(k.anteile || {});
   const summe = eintraege.reduce((s, [, w]) => s + Number(w || 0), 0);
-  const bearbeitbar = daten.status === 'in Arbeit';
   const einheit = k.anteile_einheit || meta?.einheit || '';
   const abzuleiten = meta?.moeglich ? Object.entries(meta.gewichte) : [];
   const gleich = abzuleiten.length === eintraege.length &&
     abzuleiten.every(([p, w]) => Number(k.anteile?.[p] ?? NaN) === Number(w));
-  /* Lässt sich der Schlüssel nicht aus den Stammdaten ableiten, bleiben die
-     Gewichte leer — ohne Eingabefelder käme man aus dieser Lage nie heraus.
-     Deshalb die Parteien des Objekts mit 0 anbieten und von Hand füllen. */
+  // Nicht ableitbar → Parteien mit 0 anbieten, damit man von Hand füllen kann.
   const felder = eintraege.length || !bearbeitbar ? eintraege
     : (schluessel?.parteien || []).map(p => [p.partei, 0]);
 
-  const zeilen = felder.map(([p, w]) => `
+  const gwRows = felder.map(([p, w]) => `
     <div class="gw">
       <span class="gn">${esc(p)}${leerstaende.has(p)
-        ? '<span class="gsub">Leerstand · beim Eigentümer</span>' : ''}</span>
+        ? '<span class="gsub">Leerstand · Eigentümer</span>' : ''}</span>
       ${bearbeitbar
         ? `<input type="number" step="0.0001" min="0" value="${Number(w)}"
                  data-gewicht="${esc(p)}"
@@ -632,36 +660,42 @@ function verteilungHtml(k) {
       <span class="gp" data-anteil>${prozentText(w, summe)}</span>
     </div>`).join('');
 
-  // Ableiten bleibt als leiser Zweitweg; die Gewichte selbst speichern sich
-  // beim Verlassen der Felder (verteilungAutoSpeichern) — kein grüner
-  // „Verteilung übernehmen"-Knopf mehr, der neben „Bestätigen" um Klicks buhlt.
-  const ableitenBtn = abzuleiten.length && !gleich ? `<button class="leise"
-        data-ableiten="${k.position_id}"
+  // Ableiten bleibt als leiser Textlink im Anpassen-Bereich.
+  const ableiten = bearbeitbar && abzuleiten.length && !gleich
+    ? `<button class="minilink" data-ableiten="${k.position_id}"
         data-fuer="${esc(k.schluessel || '')}">${eintraege.length
-          ? 'Neu aus Stammdaten' : 'Aus Stammdaten ableiten'}</button>` : '';
-  const knoepfe = bearbeitbar
-    ? (felder.length ? '<div class="autohint">Änderungen werden gespeichert</div>' : '')
-      + (ableitenBtn ? `<div class="knopfzeile">${ableitenBtn}</div>` : '')
-    : '';
-  // Ausgangswerte für die Änderungserkennung: nur wirklich Geändertes wird
-  // gespeichert, bloßes Durchtabben löst nichts aus.
+          ? 'Aus Stammdaten neu ableiten' : 'Aus Stammdaten ableiten'}</button>` : '';
+
+  const abgeleitet = ABGELEITET.has(k.schluessel);
+  let aufteilung;
+  if (abgeleitet && eintraege.length) {
+    const euroRows = felder.map(([p, w]) => {
+      const euro = summe > 0 ? (k.betrag || 0) * (Number(w) || 0) / summe : 0;
+      return `<div class="rz"><span>${esc(p)}${leerstaende.has(p)
+          ? '<span class="gsub">Leerstand · Eigentümer</span>' : ''}</span>
+        <span>${eur(euro)} <span class="rzp">${prozentText(w, summe)}</span></span>
+      </div>`;
+    }).join('');
+    aufteilung = `<div class="vt-ergebnis">${euroRows}</div>
+      ${bearbeitbar ? `<div class="vt-gewichte">${gwRows}${ableiten}</div>
+        <button class="minilink" data-anpassen>Anpassen</button>` : ''}`;
+  } else {
+    aufteilung = `<div class="vt-gewichte" style="display:block">${gwRows}${ableiten}</div>`;
+  }
+
+  // Ausgangswerte für die Änderungserkennung beim Auto-Speichern.
   const basis = esc(JSON.stringify(Object.fromEntries(
     felder.map(([p, w]) => [p, Number(w) || 0]))));
 
   return `<div class="vt" data-pid="${k.position_id}" data-basis="${basis}">
-      <div class="zk">Verteilung${bearbeitbar ? ''
-        : ` · ${esc(meta?.titel || k.schluessel || '—')}`}${
-        einheit ? ` · ${esc(einheit)}` : ''}</div>
-      ${bearbeitbar ? `<div class="wahl" data-schluesselwahl="${k.position_id}"
-           data-wert="${esc(k.schluessel || '')}"></div>` : ''}
+      <div class="zk">Verteilen nach</div>
+      ${wahl}
       ${k.ohne_verteilung ? `<div class="warnung"><span>▲</span>
-        <span><b>Ohne Gewichte wird nichts verteilt.</b> Die ${eur(k.betrag)}
-        fließen mit 0,00 € in die Abrechnung ein.</span></div>` : ''}
-      ${zeilen}
+        <span><b>Ohne Gewichte fließen die ${eur(k.betrag)} mit 0,00 € ein.</b>
+        </span></div>` : ''}
+      <div class="zk">Aufteilung</div>
+      ${aufteilung}
       ${doppelteEinheit(felder.map(([p]) => p))}
-      ${!eintraege.length && meta ? `<div class="hinweis">${esc(meta.hinweis)}</div>`
-        : ''}
-      ${knoepfe}
     </div>`;
 }
 
@@ -670,26 +704,10 @@ function zeileHtml(k, i) {
   const wert = eur(k.betrag);
   const aufgeklappt = offen.has(i);
 
-  // Zweite Zeile: Schlüssel, Anteil an der Gesamtsumme, Quelle, §35a
-  const summe = daten.fortschritt.summe || 0;
-  const anteilProzent = k.erledigt && summe > 0
-    ? Math.round((k.betrag / summe) * 100) : null;
+  // Nur ein kurzer Zustandshinweis, wo wirklich etwas fehlt — kein Sermon.
   const infos = [
-    // Ein erfasster Beleg ohne Betrag ist etwas anderes als gar nichts —
-    // ohne den Hinweis waere das nur am Farbton des Hakens zu erkennen.
     k.zustand === 'offen' ? 'Betrag fehlt' : null,
     k.ohne_verteilung ? 'Verteilung fehlt' : null,
-    // CXCIV: ein Sonderposten nennt seine Einheit statt eines Schlüssels.
-    k.nur_einheit ? `Nur ${k.nur_einheit} · 100 %` : null,
-    !k.nur_einheit && k.schluessel ? `Schlüssel ${schluesselMeta(k.schluessel)?.titel
-                                || k.schluessel}` : null,
-    anteilProzent != null ? `${anteilProzent} % der Kosten` : null,
-    // Aus wie vielen Belegen die Summe entstand (CLXXXII) — sonst sieht eine
-    // Position mit vier Abschlagsrechnungen aus wie eine einzelne Rechnung.
-    (k.belege || []).length > 1 ? `${k.belege.length} Belege` : null,
-    k.wertquelle && k.wertquelle !== 'manuell' ? k.wertquelle : null,
-    k.s35 ? '§35a absetzbar' : null,
-    !k.erledigt && k.beleg_monat ? `Beleg im ${MONATE[k.beleg_monat - 1]}` : null,
   ].filter(Boolean).join(' · ');
 
   return zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen);
@@ -714,30 +732,43 @@ function zeitraumFussHtml() {
   </div>`;
 }
 
-/* CCLXXVIII — der Entscheidungsblock einer vorläufigen (orange) Position: sie
-   entstand automatisch aus einem Beleg und wartet auf ein Ja. „Bestätigen"
-   macht sie zur regulären (grünen) Position; „Zurück zum Prüfen" verwirft die
-   Position wieder — der Beleg selbst bleibt und geht zurück in den Prüfmodus. */
-function entwurfAktionHtml(k) {
-  return `<div class="entwurf-box">
-      <div class="ek"><span>▣</span><span>Entwurf aus Beleg</span></div>
-      <p>Diese Position wurde automatisch aus einem Beleg angelegt. Prüfe Betrag
-        und Kostenart — dann bestätige sie, oder gib den Beleg zurück in den
-        Prüfmodus. Der Beleg selbst bleibt in beiden Fällen erhalten.</p>
-      <div class="entwurf-aktionen">
-        <button class="entwurf-ja" data-entwurf-ja="${k.position_id}"
-          >✓ Bestätigen</button>
-        <button class="entwurf-nein" data-entwurf-nein="${k.position_id}"
-          data-art="${esc(k.kostenart)}">↩ Zurück zum Prüfen</button>
-      </div>
-    </div>`;
-}
-
 function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
-  const verteilung = verteilungHtml(k);
-  // CCLXXVIII: eine vorläufige Position ist orange, nicht grün — auch wenn sie
-  // schon einen Betrag trägt. Erst das Bestätigen macht sie grün.
+  // Eine vorläufige (orange) Position bleibt orange, bis sie bestätigt ist.
   const zustandKlasse = k.vorlaeufig ? ' entwurf' : (k.erledigt ? ' gefuellt' : '');
+  const bearbeitbar = daten.status === 'in Arbeit';
+
+  let koerper = '';
+  if (aufgeklappt && k.position_id) {
+    const betrag = `<div class="betragfeld">
+        <input type="number" step="0.01" placeholder="Betrag" value="${k.betrag ?? ''}"
+               data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
+               aria-label="Betrag für ${esc(k.kostenart)}"></div>`;
+    const belege = `<div class="zk">Belege</div>${belegeHtml(k)}${bearbeitbar
+      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
+          >${ANH_ICON} Beleg anhängen</button>` : ''}`;
+    // Unten genau eine primäre Aktion + genau ein dezenter Link.
+    const fuss = k.vorlaeufig
+      ? `<button class="hauptaktion ja" data-entwurf-ja="${k.position_id}"
+          >✓ Bestätigen</button>
+         <button class="minilink" data-entwurf-nein="${k.position_id}"
+          data-art="${esc(k.kostenart)}">Zurück zum Prüfen</button>`
+      : `<button class="hauptaktion" data-fertig="${i}">Fertig</button>
+         ${bearbeitbar ? `<button class="minilink gefahr"
+          data-entfernen="${k.position_id}"
+          data-art="${esc(k.kostenart)}">Entfernen</button>` : ''}`;
+    koerper = `${betrag}${verteilungHtml(k)}${belege}
+      <div class="kartenfuss">${fuss}</div>`;
+  } else if (aufgeklappt) {
+    // Katalog-Kostenart ohne Position: hier entsteht sie.
+    koerper = `<div class="betragfeld">
+        <input type="number" step="0.01" placeholder="Betrag (optional)"
+               data-neubetrag="${i}" aria-label="Betrag für ${esc(k.kostenart)}"></div>
+      <div class="kartenfuss">
+        <button class="hauptaktion" data-anlegen="${esc(k.kostenart)}"
+                data-index="${i}">Anlegen</button>
+      </div>`;
+  }
+
   return `<div class="pruef${zustandKlasse}">
       <div class="kopf">
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
@@ -759,41 +790,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
         <span class="haken ${farbe}">${zeichen}</span>
       </div>
       ${anhaengerStrip(k)}
-      ${aufgeklappt ? `<div class="auf">
-        ${k.vorlaeufig && k.position_id ? entwurfAktionHtml(k) : ''}
-        ${verteilung}
-        <div class="zk">Belege</div>
-        ${belegeHtml(k)}
-        ${daten.status === 'in Arbeit' ? `<div class="anh-verwalt">
-          <button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}">${
-            ANH_ICON}＋ Kostenfreien Beleg anhängen</button>
-          <span class="anh-hint">Zusatzbelege ohne Kostenanteil — Zählerstand,
-            SEPA-Mandat. Sie hängen am Thema „${esc(k.kostenart)}“, nicht an der
-            Position, und tragen keinen Betrag.</span>
-        </div>` : ''}
-        ${k.position_id ? `<div class="nachtrag">
-          <input type="number" step="0.01" placeholder="Betrag eintragen"
-                 value="${k.betrag || ''}" data-betrag="${k.position_id}"
-                 aria-label="Betrag für ${esc(k.kostenart)}">
-          <button class="leise" data-speichern="${k.position_id}">Übernehmen</button>
-        </div>
-        ${daten.status === 'in Arbeit' ? `<button class="entfernen"
-          data-entfernen="${k.position_id}"
-          data-art="${esc(k.kostenart)}">Position entfernen</button>` : ''}`
-        : `<div class="neu">
-          <div class="zk">Position anlegen</div>
-          <div class="nachtrag">
-            <input type="number" step="0.01" placeholder="Betrag (optional)"
-                   data-neubetrag="${i}"
-                   aria-label="Betrag für ${esc(k.kostenart)}">
-            <button data-anlegen="${esc(k.kostenart)}" data-index="${i}">Anlegen</button>
-          </div>
-          <span class="text">Für „${esc(k.kostenart)}“ ist in diesem Zeitraum
-            noch nichts erfasst. Die Position entsteht mit den Gewichten aus
-            den Stammdaten; Betrag und Verteilung lassen sich danach
-            jederzeit ändern.</span>
-        </div>`}
-      </div>` : ''}
+      ${aufgeklappt ? `<div class="auf">${koerper}</div>` : ''}
     </div>`;
 }
 
@@ -860,9 +857,6 @@ async function ergebnisHtml() {
       </div>` : ''}`;
 }
 
-const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
-  'August', 'September', 'Oktober', 'November', 'Dezember'];
-
 /* Abschluss: erst wenn nichts mehr offen ist — oder du die Reste bewusst
    übergehst — wird der Versand freigegeben. */
 function abschlussHtml() {
@@ -926,58 +920,6 @@ function sonderEinheiten() {
   }
   return [...map.entries()].map(([einheit, parteien]) =>
     ({ einheit, parteien: [...parteien] }));
-}
-
-/* CXCIV — der Sonderweg neben der Katalog-Checkliste: eine Position, die zu
-   100 % auf eine einzige Einheit geht (Reparatur nur in Wohnung 2, eigener
-   Warmwasserboiler). Der Schlüssel spielt dabei keine Rolle. */
-function sonderpostenHtml() {
-  if (daten.status !== 'in Arbeit') return '';
-  const einheiten = sonderEinheiten();
-  if (!einheiten.length) return '';
-
-  if (!sonderOffen) {
-    return `<div class="karte sonder">
-        <h3>Sonderposten</h3>
-        <span class="erklaer">Eine Kostenart trifft nur eine Einheit — eine
-          Reparatur in einer Wohnung, ein eigener Boiler. Sie wird dann zu
-          100 % auf diese Einheit verrechnet, nicht über einen Schlüssel
-          verteilt.</span>
-        <button class="starten" data-sonder-auf="1">＋ Sonderposten für eine
-          Einheit anlegen</button>
-      </div>`;
-  }
-
-  const gewaehlt = einheiten.some(e => e.einheit === sonderEinheit)
-    ? sonderEinheit : '';
-  const blasen = einheiten.map(e => `
-    <button type="button" class="ewahl${e.einheit === gewaehlt ? ' an' : ''}"
-            data-sonder-einheit="${esc(e.einheit)}"
-            aria-pressed="${e.einheit === gewaehlt}">
-      <span class="ename">${esc(e.einheit)}</span>
-      ${e.parteien.length
-        ? `<span class="epartei">${esc(e.parteien.join(' · '))}</span>` : ''}
-    </button>`).join('');
-
-  return `<div class="karte sonder">
-      <h3>Sonderposten anlegen</h3>
-      <span class="erklaer">Der Betrag geht zu 100 % auf die gewählte Einheit —
-        ihre Partei trägt ihn allein.</span>
-      <span class="feldlabel">Bezeichnung</span>
-      <div class="nachtrag">
-        <input type="text" id="sonderName" placeholder="z. B. Reparatur Bad"
-               aria-label="Bezeichnung des Sonderpostens">
-      </div>
-      <span class="feldlabel">Einheit — trägt zu 100 %</span>
-      <div class="einheiten">${blasen}</div>
-      <div class="nachtrag">
-        <input type="number" step="0.01" id="sonderBetrag"
-               placeholder="Betrag (optional)"
-               aria-label="Betrag des Sonderpostens">
-        <button data-sonder-anlegen="1">Anlegen</button>
-      </div>
-      <button class="abbrechen" data-sonder-zu="1">Abbrechen</button>
-    </div>`;
 }
 
 /* ---- CCVIII: Mieter-Direkteintrag für ein WEG-Objekt --------------------
@@ -1069,7 +1011,7 @@ async function zeichnen() {
 
     rumpf = wegDirektHtml() + ablesenKnopfHtml() + flussKarte + sortWahl +
       sortiert.map(({ k, i }) => zeileHtml(k, i)).join('')
-      + sonderpostenHtml() + abschlussHtml() + zeitraumFussHtml();
+      + abschlussHtml() + zeitraumFussHtml();
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
@@ -1099,20 +1041,23 @@ async function zeichnen() {
    Knopf und Liste und lassen sich nicht als Zeichenkette einfügen. */
 function montiereSchluessel() {
   if (!schluessel) return;
-  const optionen = schluessel.schluessel.map(s => ({
-    wert: s.wert,
-    text: `${s.titel} · ${s.moeglich ? 'abgeleitet' : 'von Hand'}`,
-  }));
+  // Klartext-Namen der Schlüssel, dazu am Ende „Nur eine Einheit/Person".
+  const optionen = schluessel.schluessel.map(s => ({ wert: s.wert, text: s.titel }));
+  optionen.push({ wert: NUR_EINHEIT_WAHL, text: 'Nur eine Einheit/Person' });
   inhalt.querySelectorAll('[data-schluesselwahl]').forEach(ziel => {
     const pid = ziel.dataset.schluesselwahl;
     auswahlfeld(ziel, {
-      optionen, wert: ziel.dataset.wert, label: 'Verteilungsschlüssel',
+      optionen, wert: ziel.dataset.wert, label: 'Verteilen nach',
       aenderung: async neu => {
+        // „Nur eine Einheit/Person": erst den Einheit-Auswähler zeigen, gesetzt
+        // wird nur_einheit dann über den Klick auf eine Einheit.
+        if (neu === NUR_EINHEIT_WAHL) { einzelWahl = Number(pid); return zeichnen(); }
         try {
-          // Der Server leitet die Gewichte beim Wechsel neu ab — alte
-          // Flächenwerte unter „Personen" wären still falsch.
+          // Der Server leitet die Gewichte beim Wechsel neu ab; nur_einheit wird
+          // dabei geleert, falls die Position vorher ein Einzelposten war.
           await api(`/positionen/${pid}`,
-                    { method: 'PATCH', body: { schluessel: neu } });
+                    { method: 'PATCH', body: { schluessel: neu, nur_einheit: '' } });
+          einzelWahl = null;
           await laden();
         } catch (fehler) {
           melde(String(fehler.message || fehler), 'neg');
@@ -1235,28 +1180,35 @@ async function positionAnlegen(knopf) {
   }
 }
 
-/* CXCIV — der Sonderposten geht mit `nur_einheit` an den Server; die Engine
-   setzt die Gewichte auf 100 % für die Partei dieser Einheit. Der Schlüssel
-   spielt keine Rolle. */
-async function sonderpostenAnlegen(knopf) {
-  const kostenart = inhalt.querySelector('#sonderName')?.value.trim();
-  const betrag = Number(inhalt.querySelector('#sonderBetrag')?.value) || 0;
-  if (!kostenart) return melde('Der Sonderposten braucht eine Bezeichnung', 'neg');
-  if (!sonderEinheit) return melde('Wähle die Einheit, die ihn trägt', 'neg');
-  knopf.disabled = true;
-  knopf.textContent = 'Lege an …';
+/* „Nur eine Einheit/Person": die gewählte Einheit als nur_einheit setzen. Die
+   Engine legt die Gewichte auf 100 % für die Partei dieser Einheit. */
+async function einzelSetzen(pid, einheit) {
   try {
-    await api(`/zeitraeume/${zid}/positionen`, {
-      method: 'POST',
-      body: { kostenart, betrag, nur_einheit: sonderEinheit },
-    });
-    melde(`„${kostenart}“ · zu 100 % auf ${sonderEinheit}`, 'pos');
-    sonderOffen = false;
-    sonderEinheit = '';
+    await api(`/positionen/${pid}`,
+              { method: 'PATCH', body: { nur_einheit: einheit } });
+    einzelWahl = null;
+    melde(`Zu 100 % auf ${einheit}`, 'pos');
     await laden();
   } catch (fehler) {
-    knopf.disabled = false;
-    knopf.textContent = 'Anlegen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* Der Betrag speichert sich beim Verlassen des Feldes — kein „Übernehmen"-Knopf
+   mehr. Nur ein wirklich geänderter, gültiger Wert löst etwas aus. */
+async function betragSpeichern(feld) {
+  const pid = feld.dataset.betrag;
+  const roh = String(feld.value).trim().replace(',', '.');
+  if (roh === '') return;
+  const betrag = Number(roh);
+  if (!Number.isFinite(betrag)) return;
+  if (String(feld.dataset.wert) === String(betrag)) return;
+  feld.dataset.wert = String(betrag);
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body: { betrag } });
+    melde('✓ Betrag gespeichert', 'pos');
+    await laden();
+  } catch (fehler) {
     melde(String(fehler.message || fehler), 'neg');
   }
 }
@@ -1586,7 +1538,10 @@ inhalt.addEventListener('change', e => {
   if (e.target.id === 'uebergehen') {
     const knopf = document.getElementById('abschlussKnopf');
     if (knopf) knopf.disabled = !e.target.checked;
+    return;
   }
+  // Der Betrag speichert sich beim Verlassen des Feldes.
+  if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
 });
 
 inhalt.addEventListener('click', async e => {
@@ -1608,27 +1563,26 @@ inhalt.addEventListener('click', async e => {
   const anlegen = e.target.closest('[data-anlegen]');
   if (anlegen) return positionAnlegen(anlegen);
 
-  // CXCIV — Sonderposten für eine Einheit
-  if (e.target.closest('[data-sonder-auf]')) {
-    sonderOffen = true; return zeichnen();
-  }
-  if (e.target.closest('[data-sonder-zu]')) {
-    sonderOffen = false; sonderEinheit = ''; return zeichnen();
-  }
-  const sonderEinh = e.target.closest('[data-sonder-einheit]');
-  if (sonderEinh) {
-    sonderEinheit = sonderEinh.dataset.sonderEinheit;
-    // Nur die Blasen umschalten, damit die eingetippte Bezeichnung stehen
-    // bleibt — ein voller Neuaufbau würde die Eingabefelder leeren.
-    for (const knopf of inhalt.querySelectorAll('[data-sonder-einheit]')) {
-      const an = knopf === sonderEinh;
-      knopf.classList.toggle('an', an);
-      knopf.setAttribute('aria-pressed', String(an));
+  // „Anpassen": die Roh-Gewichte eines abgeleiteten Schlüssels ein-/ausblenden,
+  // ohne Neuaufbau — sonst gingen halb getippte Werte verloren.
+  const anpassen = e.target.closest('[data-anpassen]');
+  if (anpassen) {
+    const vt = anpassen.closest('.vt');
+    if (vt) {
+      const auf = vt.classList.toggle('zeige-gewichte');
+      anpassen.textContent = auf ? 'Ergebnis zeigen' : 'Anpassen';
     }
     return;
   }
-  const sonderNeu = e.target.closest('[data-sonder-anlegen]');
-  if (sonderNeu) return sonderpostenAnlegen(sonderNeu);
+
+  // „Nur eine Einheit/Person": die gewählte Einheit setzen.
+  const einzel = e.target.closest('[data-einzel-einheit]');
+  if (einzel) return einzelSetzen(einzel.dataset.einzelPid,
+                                  einzel.dataset.einzelEinheit);
+
+  // „Fertig": die Karte einfach wieder zuklappen.
+  const fertig = e.target.closest('[data-fertig]');
+  if (fertig) { offen.delete(Number(fertig.dataset.fertig)); return zeichnen(); }
 
   const wegSpeichern = e.target.closest('[data-weg-speichern]');
   if (wegSpeichern) return wegDirektSpeichern(wegSpeichern);
@@ -1688,24 +1642,6 @@ inhalt.addEventListener('click', async e => {
     });
     location.href = 'eingang.html?' + p.toString();
     return;
-  }
-
-  const speichern = e.target.closest('[data-speichern]');
-  if (speichern) {
-    const pid = speichern.dataset.speichern;
-    const feld = inhalt.querySelector(`[data-betrag="${pid}"]`);
-    const betrag = Number(feld.value);
-    if (!betrag) return;
-    speichern.disabled = true;
-    speichern.textContent = '…';
-    try {
-      await api(`/positionen/${pid}`, { method: 'PATCH', body: { betrag } });
-      await laden();
-    } catch (fehler) {
-      speichern.disabled = false;
-      speichern.textContent = 'Übernehmen';
-      melde(String(fehler.message || fehler), 'neg');
-    }
   }
 });
 
