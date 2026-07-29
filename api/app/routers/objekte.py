@@ -803,10 +803,15 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     dokumente = session.exec(
         select(Dokument).where(Dokument.zeitraum_id == zid)).all()
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
-    # CCCLVII — Einheiten und Mieten, um den Kostenfluss-Sankey rechts strikt auf
-    # Einheiten zu aggregieren (nie Parteinamen, wie beim Nebenkosten-Sankey).
+    # CCCLVII — Einheiten, Mieten und Bewohner, um den Kostenfluss-Sankey rechts
+    # strikt auf Einheiten zu aggregieren (nie Partei- oder Bewohnernamen, wie
+    # beim Nebenkosten-Sankey). Bewohner tragen die Schlüssel bei „bewohner-
+    # monate"; auch sie zählen über ihre Miete zu einer Einheit.
     einheiten = session.exec(select(Einheit).where(Einheit.objekt_id == o.id)).all()
     mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
+    _mieten_ids = [m.id for m in mieten]
+    bewohner = (session.exec(select(Bewohner).where(Bewohner.miete_id.in_(_mieten_ids))).all()
+                if _mieten_ids else [])
 
     nach_art = {p.kostenart: p for p in positionen}
     # CLXXXIII: der Rückweg. Welche Belege in eine Position eingerechnet sind,
@@ -901,26 +906,34 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         knoten.append({"name": k["kostenart"], "spalte": 0})
         fluss.append({"von": len(knoten) - 1, "nach": 0, "wert": round(k["betrag"], 2)})
     if summe_erledigt > 0:
-        # CCCLVII — rechts stehen nur Einheiten, nie Parteinamen. Jede Partei
-        # zählt zu ihrer Einheit (über die Mieten); ein Schlüssel, der schon ein
-        # Einheitsname ist (leerstehende Einheit), bleibt; alles Unzuordenbare
-        # sammelt sich unter „Ohne Einheit" (dieselbe Regel wie CCCXLI). So
-        # erscheint keine Einheit doppelt als Einheit UND als Partei.
+        # CCCLVII — rechts stehen nur Einheiten, nie Partei- oder Bewohnernamen.
+        # Jede Partei (Miete) und jeder Bewohner zählt über seine Miete zu einer
+        # Einheit; ein Schlüssel, der schon ein Einheitsname ist (leerstehende
+        # Einheit), bleibt; alles Unzuordenbare sammelt sich unter „Ohne Einheit"
+        # (dieselbe Regel wie CCCXLI). So erscheint keine Einheit doppelt als
+        # Einheit UND als Partei und kein Personenname als eigener Empfänger.
         einheit_kanon = {e.bezeichnung.strip().lower(): e.bezeichnung
                          for e in einheiten if (e.bezeichnung or "").strip()}
-        partei_zu_einheit = {}
-        for m in mieten:
-            if not (m.partei or "").strip():
-                continue
-            kanon = einheit_kanon.get((m.einheit or "").strip().lower())
-            partei_zu_einheit[m.partei.strip()] = (
-                kanon or (m.einheit.strip() if (m.einheit or "").strip() else "Ohne Einheit"))
 
-        def zu_einheit(partei: str) -> str:
-            p = (partei or "").strip()
+        def _miete_einheit(m) -> str:
+            return (einheit_kanon.get((m.einheit or "").strip().lower())
+                    or (m.einheit.strip() if (m.einheit or "").strip() else "Ohne Einheit"))
+
+        partei_zu_einheit = {m.partei.strip(): _miete_einheit(m)
+                             for m in mieten if (m.partei or "").strip()}
+        miete_einheit = {m.id: _miete_einheit(m) for m in mieten}
+        bewohner_zu_einheit = {b.name.strip(): miete_einheit.get(b.miete_id, "Ohne Einheit")
+                               for b in bewohner if (b.name or "").strip()}
+
+        def zu_einheit(schluessel: str) -> str:
+            p = (schluessel or "").strip()
             if p in partei_zu_einheit:
                 return partei_zu_einheit[p]
-            return einheit_kanon.get(p.lower(), p if p else "Ohne Einheit")
+            if p in bewohner_zu_einheit:
+                return bewohner_zu_einheit[p]
+            if p.lower() in einheit_kanon:
+                return einheit_kanon[p.lower()]
+            return "Ohne Einheit"
 
         gewichte = {}
         for k in checkliste:
