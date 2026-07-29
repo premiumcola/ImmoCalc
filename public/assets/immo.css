@@ -57,8 +57,11 @@ body{
    Seiten, jetzt einmal hier. Nicht jede Seite verlinkt es: auf index.html
    ist es der Startpunkt selbst, dort steht nur `.applogo` ohne den Link. */
 .applogo{width:34px; height:34px; border-radius:9px; flex:none; display:block}
-.applogo-link{display:block; border-radius:9px}
+.applogo-link{display:block; border-radius:9px; position:relative}
 .applogo-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+/* Unsichtbares 44x44-Klickfeld um das 34px-Logo — Aussehen bleibt gleich,
+   nur die Tippflaeche waechst auf Fingergroesse (CCCLIII). */
+.applogo-link::before{content:""; position:absolute; inset:-5px}
 
 .scroll{flex:1; padding:18px 18px 8px}
 .eyebrow{

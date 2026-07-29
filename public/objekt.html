@@ -17,9 +17,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/immo.css">
 <style>
-  .barlogo{width:34px;height:34px;border-radius:9px;overflow:hidden;flex:none;
-           border:none;background:none;padding:0;cursor:pointer;display:block}
+  .barlogo{width:34px;height:34px;border-radius:9px;flex:none;
+           border:none;background:none;padding:0;cursor:pointer;display:block;
+           position:relative}
+  /* Rundung aufs SVG statt per overflow:hidden — so schneidet das Logo das
+     unsichtbare 44x44-Klickfeld (::after) nicht weg (CCCLIII). */
+  .barlogo svg{border-radius:9px}
   .barlogo:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  /* Unsichtbares 44x44-Klickfeld ums 34px-Logo — Aussehen gleich, Tippflaeche
+     waechst auf Fingergroesse. */
+  .barlogo::after{content:"";position:absolute;inset:-5px}
   /* CCCXXXVI — Kopf-Titel und -Unterzeile bleiben einzeilig: beim Grundstück
      trägt die Unterzeile Ort · Gemarkung · Flur · Nutzungsart · Fläche und würde
      sonst umbrechen. Zu lang wird abgeschnitten (…). */
@@ -115,8 +122,9 @@
   .eintrag.staffel .en .stz{font:600 10.5px var(--mono);color:var(--soft);
     background:var(--paper);border-radius:99px;padding:1px 7px;margin-left:7px}
   .staffel-jahre{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
-  .stjahr{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--line);
-    background:var(--sheet);border-radius:9px;padding:4px 8px;cursor:pointer}
+  .stjahr{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
+    background:var(--sheet);border-radius:9px;padding:4px 12px;cursor:pointer;
+    min-height:44px}
   .stjahr:hover{border-color:var(--teal);background:var(--teal-l)}
   .stjahr .sj{font:600 11px var(--mono);color:var(--ink)}
   .stjahr .sb{font:500 11px var(--body);color:var(--soft)}

@@ -179,10 +179,10 @@
      Zeilenknopf, nicht darin: Knöpfe lassen sich nicht schachteln. */
   .pruef .kopf{display:flex;align-items:center;gap:8px;padding-right:15px}
   .pruef .kopf > .zeile{flex:1;min-width:0;padding-right:2px}
-  .scanmini{display:flex;align-items:center;gap:7px;flex:none;
+  .scanmini{display:flex;align-items:center;justify-content:center;gap:7px;flex:none;
     border:1.5px solid #BFD9D1;background:var(--teal-l);color:var(--teal-d);
     border-radius:11px;padding:9px 11px;cursor:pointer;font-family:var(--body);
-    min-height:44px}
+    min-height:44px;min-width:44px}
   .scanmini:hover{background:#DCEDE7}
   .scanmini[disabled]{opacity:.65;cursor:default}
   .scanmini .si{font:400 15px var(--mono);line-height:1;flex:none}
