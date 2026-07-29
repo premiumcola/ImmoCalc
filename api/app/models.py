@@ -261,6 +261,13 @@ class Kostenposition(SQLModel, table=True):
     wertquelle: str = "manuell"   # 'Scan'|'Zähler'|'extern'|'manuell'
     status: str = "erledigt"      # 'erledigt' | 'offen'
     s35: bool = False
+    # CCCLIX — ein Teilbetrag kann vorab direkt auf EINE Einheit gehen (z.B.
+    # 35 € einer 147-€-Rechnung), mit eigenem §35a-Status; der Rest (Betrag −
+    # Vorab) läuft nach Schlüssel. Additiv, Default 0/""/False → kein Split, der
+    # Bestand rechnet unverändert.
+    vorab_betrag: float = 0.0
+    vorab_einheit: str = ""
+    vorab_s35: bool = False
     # Partei -> Gewicht (Verbrauch/Fläche/Personen/Bewohnermonate/%/1)
     anteile: dict = Field(default_factory=dict, sa_column=Column(JSON))
     # CLXXXII: eine Position je Kostenart und Zeitraum bleibt die Regel — auf

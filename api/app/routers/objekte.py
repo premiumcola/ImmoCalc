@@ -832,6 +832,10 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "anteile": anteile,
             "anteile_einheit": meta.get("einheit", ""),
             "anteile_summe": round(sum(anteile.values()), 4),
+            # CCCLIX — Vorab-Anteil direkt auf eine Einheit (für Anzeige + Sankey)
+            "vorab_betrag": round(p.vorab_betrag or 0, 2) if p else 0,
+            "vorab_einheit": (p.vorab_einheit if p else "") or "",
+            "vorab_s35": bool(p and p.vorab_s35),
             "ohne_verteilung": bool(
                 p and p.status == "erledigt" and (p.betrag or 0) != 0
                 and sum(anteile.values()) <= 0),
@@ -939,11 +943,19 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         for k in checkliste:
             if not k["erledigt"]:
                 continue
+            # CCCLIX — ein Vorab-Anteil geht direkt auf seine Einheit; nur der
+            # Rest (Betrag − Vorab) wird über den Schlüssel verteilt.
+            vorab = k.get("vorab_betrag") or 0
+            veinheit = (k.get("vorab_einheit") or "").strip()
+            if vorab > 0 and veinheit:
+                ziel = zu_einheit(veinheit)
+                gewichte[ziel] = gewichte.get(ziel, 0.0) + vorab
+            rest = (k["betrag"] or 0) - (vorab if veinheit else 0)
             gesamt_anteil = sum(k["anteile"].values()) or 1
             for partei, anteil in (k["anteile"] or {}).items():
                 ziel = zu_einheit(partei)
                 gewichte[ziel] = gewichte.get(ziel, 0.0) + \
-                    (k["betrag"] or 0) * anteil / gesamt_anteil
+                    rest * anteil / gesamt_anteil
         for ziel, betrag in sorted(gewichte.items(), key=lambda p: -p[1]):
             knoten.append({"name": ziel, "spalte": 2})
             fluss.append({"von": 0, "nach": len(knoten) - 1, "wert": round(betrag, 2)})
@@ -1247,6 +1259,10 @@ class PositionIn(BaseModel):
     wertquelle: Optional[str] = None
     anteile: Optional[dict[str, float]] = None
     s35: Optional[bool] = None
+    # CCCLIX — Vorab-Anteil direkt auf eine Einheit (mit eigenem §35a)
+    vorab_betrag: Optional[float] = None
+    vorab_einheit: Optional[str] = None
+    vorab_s35: Optional[bool] = None
 
 
 @router.patch("/positionen/{pid}")
@@ -1273,7 +1289,8 @@ def position_aendern(pid: int, data: PositionIn,
     # normalen, über den Schlüssel verteilten Posten machen (leerer Wert).
     neue_einheit = (data.nur_einheit is not None
                     and data.nur_einheit != p.nur_einheit)
-    for feld in ("status", "schluessel", "nur_einheit", "wertquelle", "s35"):
+    for feld in ("status", "schluessel", "nur_einheit", "wertquelle", "s35",
+                 "vorab_betrag", "vorab_einheit", "vorab_s35"):
         wert = getattr(data, feld)
         if wert is not None:
             setattr(p, feld, wert)
@@ -1324,14 +1341,32 @@ def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict
             "zeitraum_entfernt": zeitraum_entfernt}
 
 
+def _engine_positionen(session: Session, z: Zeitraum,
+                       p: Kostenposition) -> list[Position]:
+    """CCCLIX — eine Kostenposition in die zu rechnenden Engine-Positionen
+    übersetzen. Trägt sie einen Vorab-Anteil direkt auf eine Einheit, entstehen
+    zwei: der Vorab-Betrag zu 100 % auf diese Einheit (mit eigenem §35a) und der
+    Rest (Betrag − Vorab) nach dem gewählten Schlüssel. Ohne Vorab bleibt es die
+    eine Position wie bisher."""
+    vorab = round(p.vorab_betrag or 0, 2)
+    if vorab > 0 and (p.vorab_einheit or "").strip():
+        aus = [Position(p.kostenart, vorab, "individuell",
+                        ableiten_einheit(session, z, p.vorab_einheit), p.vorab_s35)]
+        rest = round((p.betrag or 0) - vorab, 2)
+        if rest > 0.005:
+            aus.append(Position(p.kostenart, rest, p.schluessel, p.anteile or {}, p.s35))
+        return aus
+    return [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)]
+
+
 @router.get("/zeitraeume/{zid}/abrechnung")
 def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> dict:
-    _zeitraum(session, zid)
+    z = _zeitraum(session, zid)
     pos = session.exec(select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
     # offene Positionen (Betrag noch nicht da) fließen nicht in die Rechnung ein
-    positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)
-                  for p in pos if p.status == "erledigt"]
+    positionen = [ep for p in pos if p.status == "erledigt"
+                  for ep in _engine_positionen(session, z, p)]
     res = abrechnung(positionen, {v.partei: v.betrag for v in vzs})
     # Erledigte Positionen ohne Gewichte gehören zu den offenen: ihr Betrag
     # verschwindet sonst lautlos, und der Abschluss übergeht sie.
