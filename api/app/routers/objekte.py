@@ -836,6 +836,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "vorab_betrag": round(p.vorab_betrag or 0, 2) if p else 0,
             "vorab_einheit": (p.vorab_einheit if p else "") or "",
             "vorab_s35": bool(p and p.vorab_s35),
+            "vorab_netto": round(p.vorab_netto or 0, 2) if p else 0,
             "ohne_verteilung": bool(
                 p and p.status == "erledigt" and (p.betrag or 0) != 0
                 and sum(anteile.values()) <= 0),
@@ -1263,6 +1264,7 @@ class PositionIn(BaseModel):
     vorab_betrag: Optional[float] = None
     vorab_einheit: Optional[str] = None
     vorab_s35: Optional[bool] = None
+    vorab_netto: Optional[float] = None   # CCCLX — eingegebener Netto (Anzeige)
 
 
 @router.patch("/positionen/{pid}")
@@ -1290,7 +1292,7 @@ def position_aendern(pid: int, data: PositionIn,
     neue_einheit = (data.nur_einheit is not None
                     and data.nur_einheit != p.nur_einheit)
     for feld in ("status", "schluessel", "nur_einheit", "wertquelle", "s35",
-                 "vorab_betrag", "vorab_einheit", "vorab_s35"):
+                 "vorab_betrag", "vorab_einheit", "vorab_s35", "vorab_netto"):
         wert = getattr(data, feld)
         if wert is not None:
             setattr(p, feld, wert)

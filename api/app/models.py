@@ -268,6 +268,10 @@ class Kostenposition(SQLModel, table=True):
     vorab_betrag: float = 0.0
     vorab_einheit: str = ""
     vorab_s35: bool = False
+    # CCCLX — der Nettobetrag, den der Nutzer eingegeben hat; `vorab_betrag` ist
+    # der daraus gerechnete Brutto (× 1,19), mit dem die Engine verteilt. Nur zur
+    # exakten Wiederanzeige. 0 = kein Netto/Brutto-Split (Betrag = Betrag).
+    vorab_netto: float = 0.0
     # Partei -> Gewicht (Verbrauch/Fläche/Personen/Bewohnermonate/%/1)
     anteile: dict = Field(default_factory=dict, sa_column=Column(JSON))
     # CLXXXII: eine Position je Kostenart und Zeitraum bleibt die Regel — auf
