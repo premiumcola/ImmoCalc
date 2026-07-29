@@ -306,6 +306,12 @@ const cfgFuer = (bereich) => {
   return BEREICHE[bereich];
 };
 
+/* CCCLVI — die zwei Modi, wie der Verkehrswert/Marktwert erfasst wird. Der Wert
+   wird als lesbarer Text gespeichert (wie objektart/erwerbsart). */
+const VERKEHRSWERT_GESAMT = 'Für das ganze Objekt';
+const VERKEHRSWERT_EINHEIT = 'Je Einheit einzeln';
+const istEinheitswert = (o) => o?.verkehrswert_modus === VERKEHRSWERT_EINHEIT;
+
 /* Stammdaten des Objekts: dieselbe Feldbeschreibung für Anzeige und Formular. */
 const STAMMFELDER = [
   { k: 'name', l: 'Name', typ: 'text', pflicht: true },
@@ -343,14 +349,15 @@ const STAMMFELDER = [
   // CCCXXX — das Baujahr/Baudatum getrennt vom Kaufdatum: bei einer Erbschaft
   // gibt es kein sinnvolles Kaufdatum, wohl aber ein Baujahr.
   { k: 'baudatum', l: 'Baujahr / Baudatum', typ: 'date' },
+  // CCCLVI — der Modus entscheidet, wie der Verkehrswert erfasst wird. Steht er
+  // vor dem Wert, damit klar ist, worauf sich der folgende Wert bezieht.
+  { k: 'verkehrswert_modus', l: 'Verkehrswert erfassen', typ: 'auswahl',
+    ohneLeer: true, vorgabe: VERKEHRSWERT_GESAMT,
+    werte: [VERKEHRSWERT_GESAMT, VERKEHRSWERT_EINHEIT], lex: 'verkehrswert',
+    note: 'Für das ganze Objekt: ein Wert in den Stammdaten. Je Einheit einzeln: '
+        + 'jede Einheit trägt ihren Verkehrswert, das Objekt zeigt die Summe.' },
   { k: 'verkehrswert', l: 'Verkehrswert', typ: 'number', schritt: '0.01', geld: true, voll: true,
     lex: 'verkehrswert' },
-  // CCCXLII — Schalter: ob der Verkehrswert je Einzeleinheit geführt wird. Aus:
-  // die Verkehrswert-Zeile entfällt in allen Einheiten dieses Objekts.
-  { k: 'einheit_verkehrswert', l: 'Verkehrswert je Einheit anzeigen',
-    typ: 'ja_nein', vorgabe: true,
-    note: 'Aus: der Verkehrswert wird in den Einheiten dieses Objekts nicht '
-        + 'geführt und die Zeile entfällt dort.' },
   // CCCXXX — Konto & Rücklage bilden einen eigenen Block: erst wer und wo
   // (Kontoinhaber, IBAN, Bank), dann was zurückgelegt ist (Stand, Sparrate).
   { k: 'kontoinhaber', l: 'Kontoinhaber', typ: 'text' },
@@ -536,4 +543,4 @@ function stammfelder(aktiv = objekt?.niessbrauch_aktiv) {
   return felder;
 }
 
-export { VERTRAGSARTEN, kreditFelder, felderFuer, uebernahmeAnbieten, BEREICHE, PACHT, ERWERB_ARTEN, ERWERB, RUBRIK_ENDPUNKT, endpunktBereich, RUBRIK_FESTWERTE, ERWERB_KATEGORIE, cfgFuer, STAMMFELDER, WEGFELDER, GRUNDFELDER, EINHEITFELDER, OHNE_BEIM_GRUNDSTUECK, feldAus, GRUND_STAMMFELDER, stammfelder };
+export { VERTRAGSARTEN, kreditFelder, felderFuer, uebernahmeAnbieten, BEREICHE, PACHT, ERWERB_ARTEN, ERWERB, RUBRIK_ENDPUNKT, endpunktBereich, RUBRIK_FESTWERTE, ERWERB_KATEGORIE, cfgFuer, STAMMFELDER, WEGFELDER, GRUNDFELDER, EINHEITFELDER, OHNE_BEIM_GRUNDSTUECK, feldAus, GRUND_STAMMFELDER, stammfelder, istEinheitswert, VERKEHRSWERT_GESAMT, VERKEHRSWERT_EINHEIT };

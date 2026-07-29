@@ -49,6 +49,11 @@ class Objekt(SQLModel, table=True):
     # geführt/angezeigt wird. Aus: die Zeile entfällt in allen Einheiten dieses
     # Objekts. Vorgabe True hält den Bestand unverändert (Anzeige wie bisher).
     einheit_verkehrswert: bool = True
+    # CCCLVI — wie der Verkehrswert/Marktwert erfasst wird: für das ganze Objekt
+    # (ein Wert in den Stammdaten) oder je Einheit einzeln (dann zeigt das Objekt
+    # die Summe der Einheitenwerte). Additiv; Default hält den Bestand unverändert
+    # (Objektwert wie bisher). Löst den Ja/Nein-Schalter aus CCCXLII ab.
+    verkehrswert_modus: str = "Für das ganze Objekt"
     nc_ordner: str = ""           # verknüpfter Nextcloud-Ordner
     # Konto, von dem die Kosten dieses Objekts abgebucht werden
     bank: str = ""

@@ -618,7 +618,7 @@ import { proJahr, istBausparer, datum, tagDavor, ersterNaechsterMonat, ibanSchoe
          feldWertText }
   from './assets/objekt-format.js?v=2';
 import { felderFuer, uebernahmeAnbieten, BEREICHE, endpunktBereich, RUBRIK_FESTWERTE,
-         ERWERB_KATEGORIE, cfgFuer, WEGFELDER, EINHEITFELDER, stammfelder }
+         ERWERB_KATEGORIE, cfgFuer, WEGFELDER, EINHEITFELDER, stammfelder, istEinheitswert }
   from './assets/objekt-felder.js?v=2';
 import { grundStammHtml, erwerbKopfHtml, grundsteuerHtml, pachtErtragHtml }
   from './assets/objekt-grundstueck.js?v=2';
@@ -850,12 +850,26 @@ function stammHtml(o) {
   if (hat('kaufpreis') && !erbe) zeile('kaufpreis');
   if (erbe) { if (hat('baudatum')) zeile('baudatum', { label: 'Baudatum' }); }
   else { if (hat('kaufdatum')) zeile('kaufdatum'); if (hat('baudatum')) zeile('baudatum'); }
-  if (hat('verkehrswert')) zeile('verkehrswert');
-  // CCCXLII — den Ausschalter nur zeigen, wenn er AUS ist (der Normalfall „Ja"
-  // würde nur Zeilen fluten); dann erklärt er, warum die Einheiten keinen
-  // Verkehrswert führen. Editierbar bleibt er stets im Bearbeiten-Dialog.
-  if (hat('einheit_verkehrswert') && o.einheit_verkehrswert === false)
-    zeilen.push(cellZeile({ label: 'Verkehrswert je Einheit', wert: 'ausgeblendet' }));
+  // CCCLVI — Verkehrswert je Modus: „ganzes Objekt" zeigt den Objektwert; „je
+  // Einheit" die Summe der Einheiten-Verkehrswerte — aber nur, wenn mindestens
+  // eine Einheit bewertet ist (sonst bleibt die Zeile schlicht weg).
+  if (hat('verkehrswert')) {
+    if (istEinheitswert(o)) {
+      const bewertet = einheiten.filter(e => e.verkehrswert != null && e.verkehrswert !== '');
+      if (bewertet.length) {
+        const summe = bewertet.reduce((s, e) => s + Number(e.verkehrswert), 0);
+        // Kurzes Label, damit der Betrag rechts einzeilig passt; die Herkunft
+        // (Summe aus N Einheiten) steht als Herkunftshinweis darunter.
+        zeilen.push(cellZeile({
+          label: 'Verkehrswert (Summe)',
+          wert: stammwert(def('verkehrswert'), { verkehrswert: summe }),
+          quelle: `aus ${bewertet.length} Einheit${bewertet.length === 1 ? '' : 'en'}`,
+          lex: 'verkehrswert' }));
+      }
+    } else {
+      zeile('verkehrswert');
+    }
+  }
 
   // Konto & Rücklage — abgesetzter Block. Kontoinhaber eigene Zeile, dann IBAN
   // mit der Bank in Klammern, dann Rücklagenstand und Monatsrate zusammen.
@@ -1196,8 +1210,9 @@ function einheitStammHtml(e) {
   // weggelassen. Die Flächenaufstellung bleibt an der Wohnfläche hängen.
   const zeilen = EINHEITFELDER
     .filter(f => f.k !== 'bezeichnung' && f.k !== 'nk_abrechnung'
-      // CCCXLII — Verkehrswert je Einheit lässt sich am Objekt abschalten.
-      && !(f.k === 'verkehrswert' && objekt?.einheit_verkehrswert === false))
+      // CCCLVI — der Einheiten-Verkehrswert erscheint nur im Modus „je Einheit";
+      // erfasst man den Wert für das ganze Objekt, entfällt die Zeile hier.
+      && !(f.k === 'verkehrswert' && !istEinheitswert(objekt)))
     .map(f => (feldLeer(f, e[f.k]) ? '' : paarZeile(f.l, stammwert(f, e), { lex: f.lex }))
       + (f.k === 'flaeche' ? flaechen : '')).join('');
   // CCCXXXIII — sind €/m²-Ansätze gesetzt, folgt die daraus hergeleitete

@@ -238,6 +238,8 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
                "objektart", "baudatum",
                # CCCXLII — Verkehrswert je Einheit anzeigen (Schalter)
                "einheit_verkehrswert",
+               # CCCLVI — Verkehrswert-Modus: ganzes Objekt oder je Einheit
+               "verkehrswert_modus",
                # Grundstück — bleibt bei jedem anderen Objekttyp einfach leer
                "grundstueck_flaeche", "grundstueck_m2_preis",
                "grundstueck_nutzungsart",
