@@ -377,7 +377,10 @@
      respektiert die Safe-Areas: oben Abstand zur Uhrzeit/Notch, unten zum
      Home-Indikator. Ab iPad-Breite bleibt die schwebende, abgerundete Maske. */
   @media (max-width:560px){
-    dialog#dlg{
+    /* NUR im offenen Zustand Vollbild — ohne [open] wuerde display:flex das
+       UA-display:none eines geschlossenen <dialog> ueberschreiben und der leere
+       Dialog legte sich als 100dvh-Block ueber den ersten Screen (CCCLII-Fix). */
+    dialog#dlg[open]{
       top:0;left:0;margin:0;max-width:none;width:100vw;
       max-height:none;height:100dvh;border-radius:0;
       display:flex;flex-direction:column;
