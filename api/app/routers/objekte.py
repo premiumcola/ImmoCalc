@@ -25,7 +25,7 @@ from ..models import (GRUNDSTUECK, Bewohner, Dokument, Einheit, Kostenart,
                       ist_grundstueck)
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, fehlende_angaben, stammdaten,
-                          vorschau)
+                          vorauszahlung_je_partei, vorschau)
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["objekte"])
@@ -1369,7 +1369,11 @@ def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> di
     # offene Positionen (Betrag noch nicht da) fließen nicht in die Rechnung ein
     positionen = [ep for p in pos if p.status == "erledigt"
                   for ep in _engine_positionen(session, z, p)]
-    res = abrechnung(positionen, {v.partei: v.betrag for v in vzs})
+    # CCCLXIV — Vorauszahlungen aus der Miete ableiten (monatliche NK × belegte
+    # Monate); separat erfasste Vorauszahlungs-Datensätze haben Vorrang.
+    vorausz = {**vorauszahlung_je_partei(session, z),
+               **{v.partei: v.betrag for v in vzs}}
+    res = abrechnung(positionen, vorausz)
     # Erledigte Positionen ohne Gewichte gehören zu den offenen: ihr Betrag
     # verschwindet sonst lautlos, und der Abschluss übergeht sie.
     res.update(fehlende_angaben(list(pos)))

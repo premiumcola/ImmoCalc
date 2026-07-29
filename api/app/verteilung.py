@@ -24,6 +24,7 @@ from sqlmodel import Session, select
 
 from .cashflow import monate_im_jahr
 from .models import Einheit, Kostenposition, Miete, Partei, Zeitraum
+from .turnus import jahresbetrag
 
 # Was jeder Schlüssel bedeutet und ob er sich aus den Stammdaten ergibt.
 # `einheit` ist die Maßeinheit des Gewichts — ohne sie steht in der Oberfläche
@@ -323,6 +324,28 @@ def stammdaten(session: Session, z: Zeitraum) -> list[Bezug]:
     parteien = list(session.exec(
         select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
     return bezuege(einheiten, mieten, parteien, z.start, z.ende)
+
+
+def vorauszahlung_je_partei(session: Session, z: Zeitraum) -> dict[str, float]:
+    """CCCLXIV — NK-Vorauszahlung je Partei aus der Miete abgeleitet: die
+    monatliche Vorauszahlung × die im Zeitraum belegten Monate (taggenau,
+    zeitanteilig ab Einzug/Auszug). So erscheinen die Vorauszahlungen ohne
+    separate Erfassung. Erfasste Vorauszahlungs-Datensätze haben Vorrang und
+    werden vom Aufrufer über dieses Ergebnis gelegt."""
+    mieten = list(session.exec(
+        select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
+    ergebnis: dict[str, float] = {}
+    for m in _laufend(mieten, z.start, z.ende):
+        partei = (m.partei or "").strip()
+        if not partei:
+            continue
+        monatlich = jahresbetrag(m.nebenkosten_vz, m.turnus) / 12
+        if monatlich <= 0:
+            continue
+        monate = _monate(Bezug(partei=partei, ab=m.ab_datum, bis=m.bis_datum),
+                         z.start, z.ende)
+        ergebnis[partei] = ergebnis.get(partei, 0.0) + monatlich * monate
+    return {k: round(v, 2) for k, v in ergebnis.items() if round(v, 2)}
 
 
 def ableiten(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float]:

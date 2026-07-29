@@ -400,7 +400,11 @@ def test_weg_direkteintrag_je_mieter_ueber_nur_einheit():
         abr = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
         partei = abr["parteien"]["Mieter Zettel"]
         assert partei["kosten"] == 2100.0        # der abgetippte Endwert exakt
-        assert partei["saldo"] == -2100.0        # volle Nachzahlung (keine VZ)
+        # CCCLXIV — die Vorauszahlung wird jetzt aus der Miete abgeleitet
+        # (150 €/Monat × belegte Monate); der Saldo ist Kosten minus dieser VZ.
+        assert partei["vorauszahlungen"] > 0
+        assert round(partei["saldo"], 2) == round(
+            partei["vorauszahlungen"] - 2100.0, 2)
 
 
 def test_grundstueck_bekommt_keine_einheiten():
