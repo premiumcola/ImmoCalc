@@ -803,6 +803,10 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     dokumente = session.exec(
         select(Dokument).where(Dokument.zeitraum_id == zid)).all()
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
+    # CCCLVII — Einheiten und Mieten, um den Kostenfluss-Sankey rechts strikt auf
+    # Einheiten zu aggregieren (nie Parteinamen, wie beim Nebenkosten-Sankey).
+    einheiten = session.exec(select(Einheit).where(Einheit.objekt_id == o.id)).all()
+    mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
 
     nach_art = {p.kostenart: p for p in positionen}
     # CLXXXIII: der Rückweg. Welche Belege in eine Position eingerechnet sind,
@@ -897,16 +901,38 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         knoten.append({"name": k["kostenart"], "spalte": 0})
         fluss.append({"von": len(knoten) - 1, "nach": 0, "wert": round(k["betrag"], 2)})
     if summe_erledigt > 0:
+        # CCCLVII — rechts stehen nur Einheiten, nie Parteinamen. Jede Partei
+        # zählt zu ihrer Einheit (über die Mieten); ein Schlüssel, der schon ein
+        # Einheitsname ist (leerstehende Einheit), bleibt; alles Unzuordenbare
+        # sammelt sich unter „Ohne Einheit" (dieselbe Regel wie CCCXLI). So
+        # erscheint keine Einheit doppelt als Einheit UND als Partei.
+        einheit_kanon = {e.bezeichnung.strip().lower(): e.bezeichnung
+                         for e in einheiten if (e.bezeichnung or "").strip()}
+        partei_zu_einheit = {}
+        for m in mieten:
+            if not (m.partei or "").strip():
+                continue
+            kanon = einheit_kanon.get((m.einheit or "").strip().lower())
+            partei_zu_einheit[m.partei.strip()] = (
+                kanon or (m.einheit.strip() if (m.einheit or "").strip() else "Ohne Einheit"))
+
+        def zu_einheit(partei: str) -> str:
+            p = (partei or "").strip()
+            if p in partei_zu_einheit:
+                return partei_zu_einheit[p]
+            return einheit_kanon.get(p.lower(), p if p else "Ohne Einheit")
+
         gewichte = {}
         for k in checkliste:
             if not k["erledigt"]:
                 continue
             gesamt_anteil = sum(k["anteile"].values()) or 1
             for partei, anteil in (k["anteile"] or {}).items():
-                gewichte[partei] = gewichte.get(partei, 0.0) + \
+                ziel = zu_einheit(partei)
+                gewichte[ziel] = gewichte.get(ziel, 0.0) + \
                     (k["betrag"] or 0) * anteil / gesamt_anteil
-        for partei, betrag in sorted(gewichte.items(), key=lambda p: -p[1]):
-            knoten.append({"name": partei, "spalte": 2})
+        for ziel, betrag in sorted(gewichte.items(), key=lambda p: -p[1]):
+            knoten.append({"name": ziel, "spalte": 2})
             fluss.append({"von": 0, "nach": len(knoten) - 1, "wert": round(betrag, 2)})
 
     return {
