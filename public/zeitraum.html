@@ -114,34 +114,41 @@
   .entw-badge{display:block;width:fit-content;max-width:100%;margin-top:6px;
     font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;
     color:var(--amber);background:var(--amber-bg);border-radius:7px;padding:4px 8px}
-  /* Genau eine primäre Aktion unten in der aufgeklappten Karte — schließt sie
-     („Fertig"), legt an („Anlegen") oder bestätigt einen Entwurf. */
-  .kartenfuss{display:flex;flex-direction:column;gap:4px;margin-top:18px}
-  .hauptaktion{width:100%;border:none;border-radius:12px;padding:13px;
+  /* Fuß der aufgeklappten Karte: primäre Aktion und der leise Zweitweg stehen
+     nebeneinander in einer Zeile — „Fertig"/„Bestätigen" breit und teal, der
+     Zweitweg dezent daneben. */
+  .kartenfuss{display:flex;align-items:center;gap:10px;margin-top:18px}
+  .hauptaktion{flex:1;min-width:0;border:none;border-radius:12px;padding:13px;
     font:600 14px var(--disp);cursor:pointer;min-height:48px;color:#fff;
     background:var(--teal)}
   .hauptaktion:hover{background:var(--teal-d)}
   .hauptaktion.ja{background:var(--pos)} .hauptaktion.ja:hover{background:#276b44}
   .hauptaktion[disabled]{opacity:.6;cursor:default}
-  /* Zarte Textlinks: „Anpassen", „Ableiten", „Zurück zum Prüfen", „Entfernen".
-     Keine konkurrierenden Knöpfe, nur ruhige Zweitwege. */
+  /* Zarte Textlinks: „Ableiten", „Zurück zum Prüfen", „Entfernen". Keine
+     konkurrierenden Knöpfe, nur ruhige Zweitwege. Im Fuß mittig, nicht
+     umbrechend, damit sie neben der breiten Hauptaktion sitzen. */
   .minilink{align-self:flex-start;border:none;background:transparent;
     color:var(--soft);text-decoration:underline;text-underline-offset:3px;
     cursor:pointer;font:600 12px var(--disp);padding:9px 2px;min-height:44px}
   .minilink:hover{color:var(--ink)}
   .minilink.gefahr:hover{color:var(--neg)}
-  /* Das eine Betragsfeld, weit oben im Fluss — speichert beim Verlassen. */
-  .betragfeld{margin-top:12px}
+  .kartenfuss .minilink{align-self:center;flex:none;white-space:nowrap;padding:9px 6px}
+  /* Der Betrag lebt oben im Kopf: aufgeklappt ein schlankes Eingabefeld rechts
+     (speichert beim Verlassen), sonst der lesbare Wert. Kein zweites, großes
+     Feld mehr weiter unten. */
+  .kopf-betrag{flex:none;width:118px;border:1.5px solid var(--line);
+    border-radius:11px;padding:10px 11px;font:600 15px var(--body);min-height:44px;
+    background:var(--sheet);color:var(--ink);text-align:right}
+  .kopf-betrag:focus{outline:none;border-color:var(--teal)}
+  /* Das Anlege-Betragsfeld einer Katalog-Kostenart (nur beim Neuanlegen). */
+  .betragfeld{margin-top:2px}
   .betragfeld input{width:100%;border:1.5px solid var(--line);border-radius:12px;
     padding:13px 14px;font:600 17px var(--body);min-height:50px;
     background:var(--sheet);color:var(--ink)}
   .betragfeld input:focus{outline:none;border-color:var(--teal)}
-  /* Aufteilung als €-Ergebnis je Partei; die Roh-Gewichte erscheinen erst
-     hinter „Anpassen". */
+  /* Aufteilung als €-Ergebnis je Partei; der Prozentanteil steht ruhig dahinter. */
   .rzp{color:var(--soft);font-weight:500;font-size:11px}
-  .vt-gewichte{display:none;margin-top:4px}
-  .vt.zeige-gewichte .vt-gewichte{display:block}
-  .vt.zeige-gewichte .vt-ergebnis{display:none}
+  .vt-gewichte{margin-top:4px}
   /* Einheit-Auswähler für „Nur eine Einheit/Person". */
   .einzel-wahl{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   /* CCCLIX — Teilbetrag direkt auf eine Einheit. Zarter Zugang unter der
@@ -164,9 +171,15 @@
     border-radius:11px;padding:11px 12px;font:600 15px var(--body);min-height:46px;
     background:var(--sheet);color:var(--ink)}
   .vorab-betrag input:focus{outline:none;border-color:var(--teal)}
-  .vorab-eur{font:600 13px var(--mono);color:var(--soft);flex:none}
-  .vorab .einzel-wahl{margin-top:10px}
-  .vorab-s35{display:flex;align-items:center;gap:10px;margin-top:10px;
+  .vorab-eur{font:600 11px var(--mono);color:var(--soft);flex:none;
+    text-transform:uppercase;letter-spacing:.04em}
+  /* Netto rein, Brutto (× 1,19) rechnet live daneben — ruhig teal, damit klar
+     ist, welcher Betrag am Ende auf die Einheit geht. */
+  .vorab-brutto{margin-top:8px;font:600 12.5px var(--body);color:var(--teal-d);
+    background:var(--teal-l);border-radius:9px;padding:8px 11px;line-height:1.4}
+  .vorab .einzel-wahl{margin-top:12px}
+  .vorab-s35{display:flex;align-items:center;gap:10px;margin-top:12px;
+    padding-top:10px;border-top:1px solid var(--line);
     font:500 12.5px var(--body);color:var(--ink);cursor:pointer;min-height:44px}
   .vorab-s35 input{width:20px;height:20px;flex:none}
   /* Die Vorab-Zeile ganz oben in der Aufteilung — ruhig, teal-getönt. */
@@ -198,14 +211,13 @@
                hyphens:auto;overflow-wrap:break-word;padding-right:4px}
   .pruef .unter{display:block;font:400 11.5px var(--body);color:var(--soft);
                 margin-top:3px;line-height:1.4;letter-spacing:0}
-  .pruef .rechts{display:flex;align-items:center;gap:10px;flex:none}
+  .pruef .wert{flex:none;font:600 13px var(--mono);white-space:nowrap}
   /* Einheitliches Kategorie-Symbol; die Farbe traegt den Zustand. */
   .ikon{width:34px;height:34px;border-radius:10px;flex:none;display:flex;
         align-items:center;justify-content:center}
   .ikon svg{width:21px;height:21px;display:block}
   .ikon.fertig{background:var(--pos-bg);color:var(--pos)}
   .ikon.warte{background:#EDF1F0;color:var(--soft)}
-  .pruef .wert{font:600 13px var(--mono);white-space:nowrap}
   .pruef .wert.fehlt{color:var(--neg)}
   .pruef .auf{padding:0 15px 14px;border-top:1px solid var(--line)}
   .pruef .auf .zk{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
@@ -295,7 +307,7 @@
     text-decoration:underline;text-underline-offset:3px;cursor:pointer;
     font:600 12px var(--disp);padding:10px 2px;min-height:44px}
   .wiederauf:hover{color:var(--ink)}
-  .belege{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .belege{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
   .belege a{display:inline-flex;align-items:center;gap:6px;text-decoration:none;
     background:#F1F4F4;color:var(--ink);border-radius:9px;padding:8px 11px;
     font:500 11.5px var(--body);min-height:36px}
@@ -537,11 +549,11 @@ function belegeZu(k) {
 
 /* `data-name` statt der Beschriftung: seit der Betrag mit im Text steht,
    hiesse der Beleg im Dialog sonst „…pdf · 1.284,50 €". */
-const belegLinks = liste => `<div class="belege">${liste.map(d =>
+const belegLinks = (liste, extra = '') => `<div class="belege">${liste.map(d =>
   `<a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
       title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}${
     d.betrag ? ` · ${eur(d.betrag)}` : ''}</a>`
-).join('')}</div>`;
+).join('')}${extra}</div>`;
 
 /* Woraus der Betrag besteht. Vier Abschlagsrechnungen ergeben eine Position
    (CLXXXII) — ohne diesen Satz stünde dort nur eine Summe, die niemand mehr
@@ -555,13 +567,13 @@ function zusammensetzungHtml(k) {
   return `<div class="zsumme">Summe aus ${teile.join(' · ')}</div>`;
 }
 
-function belegeHtml(k) {
+function belegeHtml(k, extra = '') {
   const alle = belegeZu(k);
   if (!alle.length) {
     return `<div class="belege"><span class="kein">Kein Beleg hinterlegt —
-      im Eingang lässt sich einer übernehmen.</span></div>`;
+      im Eingang lässt sich einer übernehmen.</span>${extra}</div>`;
   }
-  return zusammensetzungHtml(k) + belegLinks(alle);
+  return zusammensetzungHtml(k) + belegLinks(alle, extra);
 }
 
 /* CCLV — der kleine Anhänger („Kleideranhänger"): ein flaches Etikett-Symbol
@@ -583,11 +595,29 @@ const kurzBeleg = name => (name || '')
 
 const anhaengerZu = kostenart => (anhaenger?.angehaengt || {})[kostenart] || [];
 
+/* Normalisiert einen Namen für den Vergleich „sagt das dasselbe wie die
+   Kostenart?" — Kleinschreibung, ein führendes „NK"/„Nebenkosten" weg, alle
+   Trenn- und Satzzeichen raus. */
+const normThema = s => (s || '').toLowerCase()
+  .replace(/^(nk|nebenkosten)\b[\s·:.,–-]*/, '')
+  .replace(/[^a-zäöüß0-9]+/g, '');
+
+/* Ein Anhänger-Etikett verdient seinen Chip nur, wenn es etwas Neues sagt —
+   nicht, wenn sein Kern bloß den Kostenart-Namen wiederholt (Beleg „NK
+   Schornsteinfeger" an der Position „Schornsteinfeger"). */
+const anhaengerSagtNeues = (dateiname, kostenart) => {
+  const kern = normThema(kurzBeleg(dateiname));
+  return kern !== '' && kern !== normThema(kostenart);
+};
+
 /* Die Chip-Leiste unter der Kopfzeile: je Anhänger ein gedeckter Chip
    (antippen → ansehen) und, solange der Zeitraum in Arbeit ist, ein leises ×
    zum Lösen. Sie erscheint unabhängig davon, ob es eine Kostenposition gibt. */
 function anhaengerStrip(k) {
-  const liste = anhaengerZu(k.kostenart);
+  // Nur Anhänger zeigen, die etwas Neues sagen — ein Chip, der bloß den
+  // Kostenart-Namen doppelt, wird weggelassen (kein zweiter Titel unter dem Titel).
+  const liste = anhaengerZu(k.kostenart)
+    .filter(d => anhaengerSagtNeues(d.dateiname, k.kostenart));
   if (!liste.length) return '';
   const bearbeitbar = daten.status === 'in Arbeit';
   const chips = liste.map(d => `
@@ -648,14 +678,22 @@ function einheitChips(pid, aktuell) {
    genau wie es die Engine handhabt. */
 const vorabAktiv = k => (k.vorab_betrag || 0) > 0 && !!(k.vorab_einheit || '');
 
+/* Netto → Brutto: 19 % dazu, kaufmännisch auf den Cent gerundet — genau der
+   Wert, der als vorab_betrag gespeichert wird und sich oben vom Gesamtbetrag
+   abzieht. Der Nutzer gibt netto ein, brutto rechnet live daneben. */
+const vorabBrutto = netto => Math.round((Number(netto) || 0) * 1.19 * 100) / 100;
+const bruttoAnzeige = netto => (Number(netto) || 0) > 0
+  ? `= ${eur(vorabBrutto(netto))} brutto (19 %)`
+  : 'netto eingeben — Brutto rechnet 19 % dazu';
+
 /* Die ruhige Extra-Zeile ganz oben in der Aufteilung: „Vorab → 1. OG · §35a"
    mit dem €-Betrag rechts. Nur wenn ein Teilbetrag wirklich abgezweigt wird. */
 function vorabZeileHtml(k) {
   if (!vorabAktiv(k)) return '';
   return `<div class="rz vorab-zeile">
-      <span>Vorab → ${esc(k.vorab_einheit)}${k.vorab_s35
+      <span>→ ${esc(k.vorab_einheit)}${k.vorab_s35
         ? '<span class="rzp"> · §35a</span>' : ''}</span>
-      <span>${eur(k.vorab_betrag)}</span>
+      <span>− ${eur(k.vorab_betrag)}</span>
     </div>`;
 }
 
@@ -665,7 +703,8 @@ function vorabZeileHtml(k) {
    auto-speichernd. Offen, sobald ein Vorab-Betrag gesetzt ist. */
 function vorabHtml(k) {
   if (daten.status !== 'in Arbeit') return '';
-  const offenJetzt = (k.vorab_betrag || 0) > 0 || vorabOffen.has(k.position_id);
+  const offenJetzt = (k.vorab_betrag || 0) > 0 || (k.vorab_netto || 0) > 0
+    || vorabOffen.has(k.position_id);
   if (!offenJetzt) {
     return `<button class="vorab-link" data-vorab-oeffnen="${k.position_id}"
       >＋ Teilbetrag direkt auf eine Einheit</button>`;
@@ -678,7 +717,9 @@ function vorabHtml(k) {
       ${e.parteien.length
         ? `<span class="epartei">${esc(e.parteien.join(' · '))}</span>` : ''}
     </button>`).join('');
-  const hat = (k.vorab_betrag || 0) > 0;
+  const netto = k.vorab_netto || 0;
+  const brutto = k.vorab_betrag || 0;
+  const hat = netto > 0 || brutto > 0;
   return `<div class="vorab">
       <div class="vorab-kopf">
         <span class="vorab-t">Teilbetrag direkt auf eine Einheit</span>
@@ -687,16 +728,18 @@ function vorabHtml(k) {
       </div>
       <div class="vorab-betrag">
         <input type="number" step="0.01" min="0" inputmode="decimal"
-               placeholder="Betrag" value="${hat ? k.vorab_betrag : ''}"
-               data-vorab-betrag="${k.position_id}"
-               aria-label="Teilbetrag in Euro">
-        <span class="vorab-eur">€</span>
+               placeholder="Netto" value="${netto > 0 ? netto : ''}"
+               data-vorab-netto="${k.position_id}"
+               aria-label="Teilbetrag netto in Euro">
+        <span class="vorab-eur">€ netto</span>
       </div>
+      <div class="vorab-brutto" data-vorab-brutto="${k.position_id}"
+        >${bruttoAnzeige(netto)}</div>
       <div class="einzel-wahl">${chips}</div>
       <label class="vorab-s35">
         <input type="checkbox" data-vorab-s35="${k.position_id}"
                ${k.vorab_s35 ? 'checked' : ''}>
-        <span>mit Steuer (§35a)</span>
+        <span>§35a absetzbar</span>
       </label>
     </div>`;
 }
@@ -749,7 +792,7 @@ function verteilungHtml(k) {
       <span class="gp" data-anteil>${prozentText(w, summe)}</span>
     </div>`).join('');
 
-  // Ableiten bleibt als leiser Textlink im Anpassen-Bereich.
+  // Ableiten bleibt als leiser Textlink erhalten (kein Umschalten mehr).
   const ableiten = bearbeitbar && abzuleiten.length && !gleich
     ? `<button class="minilink" data-ableiten="${k.position_id}"
         data-fuer="${esc(k.schluessel || '')}">${eintraege.length
@@ -758,8 +801,9 @@ function verteilungHtml(k) {
   const abgeleitet = ABGELEITET.has(k.schluessel);
   let aufteilung;
   if (abgeleitet && eintraege.length) {
-    // CCCLIX — die €-Beträge beziehen sich auf den Rest (Betrag − Vorab), damit
-    // Vorab-Zeile + Rest-Verteilung zusammen den vollen Betrag ergeben.
+    // Abgeleiteter Schlüssel: schlicht die €-Beträge je Partei samt Prozent —
+    // keine Roh-Gewichte, kein „Anpassen". Die Beträge beziehen sich auf den
+    // Rest (Betrag − Vorab), damit Vorab-Zeile + Rest den vollen Betrag ergeben.
     const rest = (k.betrag || 0) - (vorabAktiv(k) ? k.vorab_betrag : 0);
     const euroRows = felder.map(([p, w]) => {
       const euro = summe > 0 ? rest * (Number(w) || 0) / summe : 0;
@@ -768,11 +812,12 @@ function verteilungHtml(k) {
         <span>${eur(euro)} <span class="rzp">${prozentText(w, summe)}</span></span>
       </div>`;
     }).join('');
-    aufteilung = `<div class="vt-ergebnis">${euroRows}</div>
-      ${bearbeitbar ? `<div class="vt-gewichte">${gwRows}${ableiten}</div>
-        <button class="minilink" data-anpassen>Anpassen</button>` : ''}`;
+    aufteilung = `<div class="vt-ergebnis">${euroRows}</div>${
+      bearbeitbar ? ableiten : ''}`;
   } else {
-    aufteilung = `<div class="vt-gewichte" style="display:block">${gwRows}${ableiten}</div>`;
+    // Manueller Schlüssel (Verbrauch/Prozent/Individuell): die Eingabefelder
+    // direkt zeigen — die braucht man hier wirklich.
+    aufteilung = `<div class="vt-gewichte">${gwRows}${ableiten}</div>`;
   }
 
   // Ausgangswerte für die Änderungserkennung beim Auto-Speichern.
@@ -833,14 +878,13 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
 
   let koerper = '';
   if (aufgeklappt && k.position_id) {
-    const betrag = `<div class="betragfeld">
-        <input type="number" step="0.01" placeholder="Betrag" value="${k.betrag ?? ''}"
-               data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
-               aria-label="Betrag für ${esc(k.kostenart)}"></div>`;
-    const belege = `<div class="zk">Belege</div>${belegeHtml(k)}${bearbeitbar
+    // Der Betrag steht jetzt oben im Kopf (kopf-betrag) — kein zweites Feld hier.
+    // „Beleg anhängen" sitzt neben den Belegen in derselben Zeile.
+    const anbau = bearbeitbar
       ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
-          >${ANH_ICON} Beleg anhängen</button>` : ''}`;
-    // Unten genau eine primäre Aktion + genau ein dezenter Link.
+          >${ANH_ICON} Beleg anhängen</button>` : '';
+    const belege = `<div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+    // Unten Hauptaktion und dezenter Zweitweg nebeneinander.
     const fuss = k.vorlaeufig
       ? `<button class="hauptaktion ja" data-entwurf-ja="${k.position_id}"
           >✓ Bestätigen</button>
@@ -850,7 +894,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
          ${bearbeitbar ? `<button class="minilink gefahr"
           data-entfernen="${k.position_id}"
           data-art="${esc(k.kostenart)}">Entfernen</button>` : ''}`;
-    koerper = `${betrag}${verteilungHtml(k)}${belege}
+    koerper = `${verteilungHtml(k)}${belege}
       <div class="kartenfuss">${fuss}</div>`;
   } else if (aufgeklappt) {
     // Katalog-Kostenart ohne Position: hier entsteht sie.
@@ -863,6 +907,26 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
       </div>`;
   }
 
+  // Der Betrag im Kopf: aufgeklappt ein schlankes Eingabefeld (speichert beim
+  // Verlassen), sonst der lesbare Wert — so steht er nur einmal in der Karte.
+  const betragEl = (aufgeklappt && k.position_id && bearbeitbar)
+    ? `<input class="kopf-betrag" type="number" step="0.01" inputmode="decimal"
+         placeholder="Betrag" value="${k.betrag ?? ''}"
+         data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
+         aria-label="Betrag für ${esc(k.kostenart)}">`
+    : (k.erledigt ? `<span class="wert">${wert}</span>` : '');
+  // Quick-Capture nur an der geschlossenen, offenen Zeile — aufgeklappt macht
+  // der Betrag im Kopf Platz, Belege kommen dann über „Beleg anhängen".
+  const quickScan = (!k.erledigt && !aufgeklappt)
+    ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
+          title="Beleg für ${esc(k.kostenart)} abfotografieren">
+          <span class="si">▣</span><span class="st">Beleg erfassen</span>
+        </button>
+        <button class="scanmini ablage" data-ablage="${esc(k.kostenart)}"
+          title="Beleg aus der Ablage / Nextcloud wählen">
+          <span class="si">☁</span><span class="st">Aus Ablage</span>
+        </button>` : '';
+
   return `<div class="pruef${zustandKlasse}">
       <div class="kopf">
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
@@ -871,16 +935,9 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
           <span class="name">${esc(k.kostenart)}${
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}
             ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
-          ${k.erledigt ? `<span class="rechts"><span class="wert">${wert}</span></span>` : ''}
         </button>
-        ${k.erledigt ? '' : `<button class="scanmini" data-scan="${esc(k.kostenart)}"
-            title="Beleg für ${esc(k.kostenart)} abfotografieren">
-            <span class="si">▣</span><span class="st">Beleg erfassen</span>
-          </button>
-          <button class="scanmini ablage" data-ablage="${esc(k.kostenart)}"
-            title="Beleg aus der Ablage / Nextcloud wählen">
-            <span class="si">☁</span><span class="st">Aus Ablage</span>
-          </button>`}
+        ${betragEl}
+        ${quickScan}
         <span class="haken ${farbe}">${zeichen}</span>
       </div>
       ${anhaengerStrip(k)}
@@ -1319,16 +1376,19 @@ async function vorabPatch(pid, body) {
   }
 }
 
-/* Betragsfeld verlassen: leer/0 leert den Teilbetrag samt Einheit, sonst wird
-   der neue Betrag gesetzt. */
-async function vorabBetragSpeichern(feld) {
-  const pid = feld.dataset.vorabBetrag;
+/* Netto-Feld verlassen: leer/0 leert den Teilbetrag samt Einheit, sonst wird
+   der Netto-Wert gesetzt und der Brutto (× 1,19, auf den Cent) als vorab_betrag
+   mitgeschrieben — genau der Betrag, der sich oben vom Gesamtbetrag abzieht. */
+async function vorabNettoSpeichern(feld) {
+  const pid = feld.dataset.vorabNetto;
   const roh = String(feld.value).trim().replace(',', '.');
-  const betrag = roh === '' ? 0 : Number(roh);
-  if (!Number.isFinite(betrag) || betrag < 0) return;
-  if (betrag === 0) { vorabOffen.delete(Number(pid)); }
-  return vorabPatch(pid, betrag === 0
-    ? { vorab_betrag: 0, vorab_einheit: '' } : { vorab_betrag: betrag });
+  const netto = roh === '' ? 0 : Number(roh);
+  if (!Number.isFinite(netto) || netto < 0) return;
+  if (netto === 0) {
+    vorabOffen.delete(Number(pid));
+    return vorabPatch(pid, { vorab_netto: 0, vorab_betrag: 0, vorab_einheit: '' });
+  }
+  return vorabPatch(pid, { vorab_netto: netto, vorab_betrag: vorabBrutto(netto) });
 }
 
 /* Das × am Teilbetrag: gesetzten Teilbetrag leeren, sonst nur wieder
@@ -1337,7 +1397,7 @@ async function vorabEntfernen(knopf) {
   const pid = Number(knopf.dataset.vorabEntfernen);
   vorabOffen.delete(pid);
   if (knopf.dataset.hat === '1') {
-    return vorabPatch(pid, { vorab_betrag: 0, vorab_einheit: '' });
+    return vorabPatch(pid, { vorab_netto: 0, vorab_betrag: 0, vorab_einheit: '' });
   }
   return zeichnen();
 }
@@ -1653,6 +1713,13 @@ async function laden() {
 /* Prozentanteile beim Tippen mitrechnen — sonst sieht man erst nach dem
    Speichern, was man da eigentlich verteilt hat. */
 inhalt.addEventListener('input', e => {
+  // CCCLIX — Teilbetrag: netto tippen, Brutto (× 1,19) rechnet live daneben.
+  if (e.target.matches('[data-vorab-netto]')) {
+    const netto = Number(String(e.target.value).replace(',', '.')) || 0;
+    const ziel = e.target.closest('.vorab')?.querySelector('[data-vorab-brutto]');
+    if (ziel) ziel.textContent = bruttoAnzeige(netto);
+    return;
+  }
   if (!e.target.matches('[data-gewicht]')) return;
   const felder = [...e.target.closest('.vt').querySelectorAll('[data-gewicht]')];
   const summe = felder.reduce((s, f) => s + (Number(f.value) || 0), 0);
@@ -1671,8 +1738,8 @@ inhalt.addEventListener('change', e => {
   }
   // Der Betrag speichert sich beim Verlassen des Feldes.
   if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
-  // CCCLIX — Teilbetrag und §35a-Schalter speichern sich auf dieselbe Art.
-  if (e.target.matches('[data-vorab-betrag]')) vorabBetragSpeichern(e.target);
+  // CCCLIX — Teilbetrag (netto) und §35a-Schalter speichern sich auf dieselbe Art.
+  if (e.target.matches('[data-vorab-netto]')) vorabNettoSpeichern(e.target);
   if (e.target.matches('[data-vorab-s35]')) {
     vorabPatch(e.target.dataset.vorabS35, { vorab_s35: e.target.checked });
   }
@@ -1696,18 +1763,6 @@ inhalt.addEventListener('click', async e => {
 
   const anlegen = e.target.closest('[data-anlegen]');
   if (anlegen) return positionAnlegen(anlegen);
-
-  // „Anpassen": die Roh-Gewichte eines abgeleiteten Schlüssels ein-/ausblenden,
-  // ohne Neuaufbau — sonst gingen halb getippte Werte verloren.
-  const anpassen = e.target.closest('[data-anpassen]');
-  if (anpassen) {
-    const vt = anpassen.closest('.vt');
-    if (vt) {
-      const auf = vt.classList.toggle('zeige-gewichte');
-      anpassen.textContent = auf ? 'Ergebnis zeigen' : 'Anpassen';
-    }
-    return;
-  }
 
   // „Nur eine Einheit/Person": die gewählte Einheit setzen.
   const einzel = e.target.closest('[data-einzel-einheit]');
