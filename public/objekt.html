@@ -213,6 +213,10 @@
   .dd-scan.leise{border:none;background:none;padding:8px 2px;
     color:var(--soft);font:600 12px var(--body)}
   .dd-scan.leise:hover{background:none;color:var(--teal-d)}
+  /* CCCLXXXII — mehrere Belegarten am Mietverhältnis: kleine Knopfreihe. */
+  .dd-scanwahl{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+  .dd-scanlabel{flex-basis:100%;font:600 10px var(--mono);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--soft)}
   .dd-aktionen{display:flex;flex-wrap:wrap;gap:8px}
   .dd-edit{align-self:flex-start;border:1px solid var(--line);background:var(--paper);
     color:var(--teal-d);border-radius:12px;padding:11px 16px;min-height:44px;
@@ -988,6 +992,15 @@ const SCAN_KATEGORIE = { mieten: 'Mietvertrag', versicherungen: 'Versicherung',
 /* Wie der Beleg an dieser Stelle heisst. „Mietvertrag abfotografieren" sagt
    mehr als „Beleg abfotografieren", wo es nur einen geben kann. */
 const SCAN_WORT = { mieten: 'Mietvertrag', notarvertraege: 'Notarvertrag' };
+// CCCLXXXII — am Mietverhältnis mehr als nur der Vertrag: Übergabeprotokolle
+// und Kautionsunterlagen. Der Typ steckt in Bezeichnung/Dateiname; abgelegt
+// wird wie der Mietvertrag (SCAN_KATEGORIE.mieten).
+const SCAN_TYPEN = { mieten: [
+  ['Mietvertrag', 'Mietvertrag'],
+  ['Übergabeprotokoll Einzug', 'Übergabe Einzug'],
+  ['Übergabeprotokoll Auszug', 'Übergabe Auszug'],
+  ['Mietkautionskonto', 'Kaution'],
+] };
 const KAMERA_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
   stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
   stroke-linejoin="round" aria-hidden="true">
@@ -1803,14 +1816,23 @@ async function eintragDetail(bereich, id) {
   // als Knopf unter dem Hinweis; ist schon einer da, bleibt nur eine leise
   // Zeile für den nächsten. Nur für Rubriken, die das Backend als Ziel kennt.
   const scanWort = SCAN_WORT[bereich] || 'Beleg';
+  const typen = SCAN_TYPEN[bereich];
+  // Welcher Belegtyp abfotografiert wird — bei mehreren Typen setzt ihn der Klick.
+  let gewaehltWort = typen ? typen[0][0] : scanWort;
+  const scanFeldHtml = `<input type="file" accept="image/*,application/pdf"
+       capture="environment" multiple hidden data-scanfeld>`;
   const scanText = alle.length ? `Weiteren ${scanWort} abfotografieren`
                                : `${scanWort} abfotografieren`;
-  const scanHtml = typ
-    ? `<button type="button" data-scan class="dd-scan${alle.length ? ' leise' : ''}"
+  const scanKnopf = (voll, kurz, leise) => `<button type="button" data-scan
+       data-wort="${esc(voll)}" class="dd-scan${leise ? ' leise' : ''}"
        ><span class="dd-si">${KAMERA_ICON}</span
-       ><span class="dd-st">${esc(scanText)}</span></button>
-       <input type="file" accept="image/*,application/pdf" capture="environment"
-         multiple hidden data-scanfeld>` : '';
+       ><span class="dd-st">${esc(kurz)}</span></button>`;
+  const scanHtml = !typ ? ''
+    : typen
+      ? `<div class="dd-scanwahl"><span class="dd-scanlabel">Abfotografieren</span>${
+          typen.map(([voll, kurz]) => scanKnopf(voll, kurz, true)).join('')
+        }</div>${scanFeldHtml}`
+      : scanKnopf(scanWort, scanText, alle.length) + scanFeldHtml;
   const belegeHtml = (alle.length
     ? (belege.haupt ? belegItem(belege.haupt, false) : '')
       + (belege.unter || []).map(d => belegItem(d, true)).join('')
@@ -1889,8 +1911,8 @@ async function eintragDetail(bereich, id) {
     try {
       ergebnis = await belegScannen(dateien, {
         objekt: slug, kategorie: SCAN_KATEGORIE[bereich] || 'Sonstiges',
-        jahr: scanJahr(eintrag), beschreibung: cfg.name(eintrag),
-        anTyp: typ, anId: id, titel: `${scanWort} · ${cfg.name(eintrag)}`,
+        jahr: scanJahr(eintrag), beschreibung: gewaehltWort,
+        anTyp: typ, anId: id, titel: `${gewaehltWort} · ${cfg.name(eintrag)}`,
       });
     } catch (fehler) {
       // Die Ansicht bleibt bewusst zu: der Melder sitzt unter einem modalen
@@ -1908,7 +1930,8 @@ async function eintragDetail(bereich, id) {
 
   dlg.addEventListener('click', e => {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
-    if (e.target.closest('[data-scan]')) { scanFeld.click(); return; }
+    const scanBtn = e.target.closest('[data-scan]');
+    if (scanBtn) { gewaehltWort = scanBtn.dataset.wort || gewaehltWort; scanFeld.click(); return; }
     const b = e.target.closest('[data-doc]');
     if (b) { zeigeDoc(b.dataset.doc, b.dataset.name); return; }
     if (e.target.closest('[data-bearbeiten]')) {
