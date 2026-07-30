@@ -23,6 +23,7 @@ from ..models import (GRUNDSTUECK, Bewohner, Dokument, Einheit, Kostenart,
                       Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
                       Partei, Versicherung, Vorauszahlung, Zahlung, Zeitraum,
                       ist_grundstueck)
+from ..turnus import jahresbetrag
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, fehlende_angaben, stammdaten,
                           vorauszahlung_je_partei, vorschau)
@@ -95,6 +96,48 @@ def _je_objekt(zeilen: list, ids: list[int]) -> dict[int, list]:
     return eimer
 
 
+def _miete_je_einheit(mieten: list[Miete], einheiten: list[Einheit],
+                      heute: date) -> dict[str, float]:
+    """Was jede Einheit heute im Monat einbringt — aus den bereits geladenen
+    Mietzeilen, ohne weitere Abfrage.
+
+    Beträge stehen *je Turnus* (`models.Miete`): eine vierteljährlich gezahlte
+    Pacht ist nicht das Monatsergebnis. Ohne die Umrechnung über
+    `jahresbetrag` stünde in der Blase das Dreifache.
+
+    Eine Miete, die keiner Einheit zuzuordnen ist (Objektmiete bei mehreren
+    Einheiten), bleibt draußen — sie mehrfach voll auszuweisen wäre falsch."""
+    je_einheit: dict[str, float] = {}
+    for m in mieten:
+        if not _laeuft(m, heute):
+            continue
+        ziel = _zuordnung(m, einheiten)
+        if not ziel:
+            continue
+        monat = jahresbetrag(m.kaltmiete + m.stellplatz + m.sonstige,
+                             m.turnus) / 12
+        je_einheit[ziel] = je_einheit.get(ziel, 0.0) + monat
+    return je_einheit
+
+
+def _miete_felder(e: Einheit, je_einheit: dict[str, float]) -> dict:
+    """CCCLXVII — Monatsmiete und Miete je m² für eine Einheit.
+
+    `miete_qm` teilt durch DIESELBE Fläche, die die Kachel als m² zeigt (die
+    Wohn-/Nutzfläche der Einheit) — sonst stünden in einer Blase zwei nicht
+    zusammenpassende Zahlen. Die effektive Fläche (mit Gemeinschaftsanteilen)
+    ist die Bezugsgröße der Kostenverteilung, nicht des Miet-Quadratmeterpreises.
+    `miete_qm` bleibt `None`, wo nichts zu rechnen ist — „keine Angabe" ist
+    etwas anderes als „0 €/m²". Bewusst nicht `kaltmiete` genannt: das Feld gibt
+    es im Detail-Payload bereits mit anderer Bedeutung."""
+    monat = round(je_einheit.get(e.bezeichnung.strip(), 0.0), 2)
+    flaeche = e.flaeche or 0.0
+    return {
+        "miete_monat": monat,
+        "miete_qm": round(monat / flaeche, 2) if monat and flaeche else None,
+    }
+
+
 @router.get("/objekte")
 def objekte(session: Session = Depends(get_session)) -> list[dict]:
     """Die Objektliste der Startseite — mit den Einheiten je Objekt.
@@ -131,6 +174,7 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
                 offene[p.zeitraum_id] = offene.get(p.zeitraum_id, 0) + 1
 
     out = []
+    heute = date.today()
     for o in alle:
         aktiv = aktive.get(o.id)
         laufend = [m for m in mieten[o.id] if m.bis_datum is None]
@@ -138,6 +182,7 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
         # jede Einheit als vermietet, sonst keine einzige.
         ganzes_objekt = any(not m.einheit.strip() for m in laufend)
         belegt = {m.einheit.strip() for m in laufend if m.einheit.strip()}
+        je_einheit = _miete_je_einheit(mieten[o.id], einheiten[o.id], heute)
         out.append({
             "id": o.id, "slug": o.slug, "name": o.name, "ort": o.ort,
             "anzeigename": anzeigename(o.name, o.ort, o.strasse, o.plz),
@@ -149,7 +194,11 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
             "einheiten_liste": [
                 {"id": e.id, "bezeichnung": e.bezeichnung,
                  "nutzungsart": e.nutzungsart, "flaeche": e.flaeche,
-                 "vermietet": ganzes_objekt or e.bezeichnung.strip() in belegt}
+                 "vermietet": ganzes_objekt or e.bezeichnung.strip() in belegt,
+                 # CCCLXVII — die Blase auf der Startseite nennt die laufende
+                 # Monatsmiete und was sie je m² bedeutet. Beides additiv;
+                 # 0.0 / None heißt „nicht gepflegt" und wird nicht gezeigt.
+                 **_miete_felder(e, je_einheit)}
                 for e in einheiten[o.id]],
             "offene_positionen": offene.get(aktiv.id, 0) if aktiv else 0,
             "frist_tage": frist_tage(aktiv) if aktiv else None,

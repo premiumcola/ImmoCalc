@@ -64,3 +64,34 @@ def test_leerstand_ist_an_der_einheit_erkennbar():
                       if o["slug"] == neu["slug"])
         assert [e["vermietet"] for e in objekt["einheiten_liste"]] == [True, False]
         assert objekt["miete_monatlich"] == 700.0
+
+
+def test_einheiten_liste_nennt_die_monatsmiete():
+    """CCCLXVII — die Blase auf der Startseite zeigt Miete und €/m². Beträge
+    stehen je Turnus: eine vierteljährliche Miete darf nicht als Monatsmiete
+    durchgereicht werden."""
+    with TestClient(app) as c:
+        neu = c.post("/api/objekte", json={
+            "name": "Mietweg 3", "einheiten": [
+                {"bezeichnung": "EG", "flaeche": 50},
+                {"bezeichnung": "OG", "flaeche": 80},
+                {"bezeichnung": "Laden", "flaeche": 25}]}).json()
+        c.post(f"/api/objekte/{neu['slug']}/mieten", json={
+            "einheit": "EG", "partei": "Mieter A", "kaltmiete": 600,
+            "stellplatz": 50, "ab_datum": "2024-01-01"})
+        # vierteljährlich gezahlt: 1800 im Quartal sind 600 im Monat
+        c.post(f"/api/objekte/{neu['slug']}/mieten", json={
+            "einheit": "OG", "partei": "Mieter B", "kaltmiete": 1800,
+            "turnus": "vierteljaehrlich", "ab_datum": "2024-01-01"})
+
+        einheiten = {e["bezeichnung"]: e for e in next(
+            o for o in c.get("/api/objekte").json()
+            if o["slug"] == neu["slug"])["einheiten_liste"]}
+
+        assert einheiten["EG"]["miete_monat"] == 650.0
+        assert einheiten["EG"]["miete_qm"] == 13.0
+        assert einheiten["OG"]["miete_monat"] == 600.0
+        assert einheiten["OG"]["miete_qm"] == 7.5
+        # Ohne Mietverhältnis wird nichts erfunden.
+        assert einheiten["Laden"]["miete_monat"] == 0.0
+        assert einheiten["Laden"]["miete_qm"] is None

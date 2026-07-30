@@ -135,8 +135,14 @@
   .bubble .bt{font:600 13.5px var(--body); line-height:1.3;
               overflow-wrap:anywhere; min-width:0}
   .bubble .bf{font:500 10.5px var(--mono); color:var(--soft); white-space:nowrap}
-  /* Nur die Ausnahme wird benannt: vermietet ist der Normalfall. */
+  /* CCCLXVII — beide Zustaende tragen jetzt Farbe: vermietet ruhig gruen
+     (dieselbe Paarung wie die Cashflow-Pille), frei weiter warm amber. */
+  .bubble.vermietet{background:var(--pos-bg)}
   .bubble.frei{background:var(--amber-bg)}
+  /* Die Monatsmiete ist die Zahl, wegen der man hinsieht — mono, gruen. */
+  .bubble .bm{font:600 12px var(--mono); color:var(--pos); white-space:nowrap}
+  /* Der Quadratmeterpreis ordnet nur ein und bleibt leise. */
+  .bubble .bqm{font:500 10px var(--mono); color:var(--soft); white-space:nowrap}
   .bubble .bfrei{font:600 10.5px var(--mono); color:var(--amber);
                  letter-spacing:.06em; text-transform:uppercase;
                  white-space:nowrap}
@@ -189,8 +195,8 @@
 </div>
 
 <script type="module">
-import { installLogos, installNav, logoSvg, api, esc, fristKlasse, fristText }
-  from './assets/immo.js';
+import { installLogos, installNav, logoSvg, api, esc, eurVoll, fristKlasse,
+         fristText } from './assets/immo.js';
 installNav();
 
 installLogos();
@@ -254,17 +260,30 @@ function chips(frist_tage, offen) {
 const flaecheText = f => `${Number(f).toLocaleString('de-DE',
   { maximumFractionDigits: 1 })} m²`;
 
+/* CCCLXVII — Miete je m²: eine Nachkommastelle reicht, der Cent je
+   Quadratmeter sagt nichts und macht die Blase nur breiter. */
+const qmMieteText = v => `${Number(v).toLocaleString('de-DE',
+  { minimumFractionDigits: 1, maximumFractionDigits: 1 })} €/m²`;
+
 /* Ab hier wird zugeklappt: ein Haus mit zwanzig Einheiten wuerde die Karte
    sonst ueber den ganzen Schirm ziehen. */
 const MAX_BUBBLES = 6;
 
+/* CCCLXVII — vermietet ist gruen und nennt die Miete, frei bleibt amber.
+   Ist keine Miete gepflegt, bleibt die Blase gruen und zeigt nur, was da ist —
+   eine Zahl wird nicht erfunden. */
 function bubble(o, e, versteckt = false) {
-  return `<button class="bubble${e.vermietet ? '' : ' frei'}"
+  const name = e.bezeichnung || 'Einheit';
+  const miete = e.vermietet && e.miete_monat > 0 ? e.miete_monat : 0;
+  const titel = `${name} · ${e.vermietet ? 'vermietet' : 'nicht vermietet'}`
+    + (miete ? ` · ${eurVoll(miete)} im Monat` : '');
+  return `<button class="bubble ${e.vermietet ? 'vermietet' : 'frei'}"
           data-slug="${esc(o.slug)}"${e.id != null ? ` data-e="${esc(String(e.id))}"` : ''}${versteckt ? ' data-rest hidden' : ''}
-          title="${esc(e.bezeichnung || 'Einheit')} · ${
-            e.vermietet ? 'vermietet' : 'nicht vermietet'}">
-      <span class="bt">${esc(e.bezeichnung || 'Einheit')}</span>
+          title="${esc(titel)}">
+      <span class="bt">${esc(name)}</span>
       ${e.flaeche ? `<span class="bf">${flaecheText(e.flaeche)}</span>` : ''}
+      ${miete ? `<span class="bm">${eurVoll(miete)}</span>` : ''}
+      ${miete && e.miete_qm ? `<span class="bqm">${qmMieteText(e.miete_qm)}</span>` : ''}
       ${e.vermietet ? '' : '<span class="bfrei">frei</span>'}
     </button>`;
 }
