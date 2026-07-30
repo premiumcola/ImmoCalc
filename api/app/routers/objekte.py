@@ -939,7 +939,8 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "beleg_monat": k.beleg_monat,
             # CCCLXIII — Anbieter/Gewerk der Kostenart (z. B. WWK, Zweckverband),
             # für den Tag in der Zeitraum-Zeile. Feld `lieferant` gibt es schon.
-            "anbieter": k.lieferant or "",
+            # Die Kostenart-ID, damit sich der Anbieter dort setzen lässt.
+            "anbieter": k.lieferant or "", "kostenart_id": k.id,
             "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
         })
     # Positionen zu Kostenarten, die nicht im Katalog stehen, gehen sonst verloren

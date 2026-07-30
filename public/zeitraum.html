@@ -313,6 +313,17 @@
      Labels („Beleg erfassen" + „Aus Ablage") den Kostenart-Namen zeichenweise
      um. Erst ab Tablet-Breite ist Platz für die Beschriftung. */
   @media(max-width:560px){ .scanmini .st{display:none} }
+  /* CCCLXIII — Anbieter/Gewerk: Tag in der Zeile + Setz-Feld in der Karte. */
+  .anbieter-tag{flex:none;align-self:center;font:600 10px var(--mono);
+    letter-spacing:.02em;color:var(--teal-d);background:var(--teal-l);
+    border-radius:8px;padding:4px 8px;max-width:130px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .anbieterzeile{margin-top:10px}
+  .anbieterzeile label{display:block;font:600 10px var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;color:var(--soft);margin-bottom:4px}
+  .anbieterzeile input{width:100%;border:1.5px solid var(--line);border-radius:11px;
+    padding:10px 12px;font-size:16px;background:var(--sheet);color:var(--ink)}
+  .anbieterzeile input:focus{outline:none;border-color:var(--teal)}
   .nachtrag{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   .nachtrag input{flex:1;min-width:130px;border:1.5px solid var(--line);
     border-radius:10px;padding:10px 12px;
@@ -970,7 +981,14 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
          ${bearbeitbar ? `<button class="minilink gefahr"
           data-entfernen="${k.position_id}"
           data-art="${esc(k.kostenart)}">Entfernen</button>` : ''}`;
-    koerper = `${verteilungHtml(k)}${belege}
+    // CCCLXIII — Anbieter/Gewerk der Kostenart (WWK, Zweckverband, Firma …);
+    // gilt über alle Zeiträume, erscheint als Tag in der Zeile.
+    const anbieterFeld = (bearbeitbar && k.kostenart_id)
+      ? `<div class="anbieterzeile"><label>Anbieter / Gewerk</label>
+          <input type="text" data-anbieter="${k.kostenart_id}"
+            value="${esc(k.anbieter || '')}" data-wert="${esc(k.anbieter || '')}"
+            placeholder="z. B. WWK, Zweckverband, Firma …"></div>` : '';
+    koerper = `${verteilungHtml(k)}${belege}${anbieterFeld}
       <div class="kartenfuss">${fuss}</div>`;
   } else if (aufgeklappt) {
     // Katalog-Kostenart ohne Position: hier entsteht sie.
@@ -1012,6 +1030,8 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}
             ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
         </button>
+        ${k.anbieter ? `<span class="anbieter-tag" title="Anbieter / Gewerk"
+          >${esc(k.anbieter)}</span>` : ''}
         ${betragEl}
         ${quickScan}
         <span class="haken ${farbe}">${zeichen}</span>
@@ -1440,6 +1460,20 @@ async function betragSpeichern(feld) {
   }
 }
 
+/* CCCLXIII — der Anbieter/das Gewerk gehört an die Kostenart (Feld `lieferant`),
+   nicht an die einzelne Position; einmal gesetzt, gilt er über alle Zeiträume. */
+async function anbieterSpeichern(feld) {
+  const kid = feld.dataset.anbieter;
+  if (!kid) return;
+  const wert = feld.value.trim();
+  if (String(feld.dataset.wert || '') === wert) return;
+  feld.dataset.wert = wert;
+  try {
+    await api(`/kostenarten/${kid}`, { method: 'PATCH', body: { lieferant: wert } });
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
 /* CCCLIX — der Teilbetrag speichert sich wie der Betrag: ein geänderter Wert
    per PATCH, kein Übernehmen-Knopf. Backend rechnet den Rest nach Schlüssel. */
 async function vorabPatch(pid, body) {
@@ -1822,6 +1856,8 @@ inhalt.addEventListener('change', e => {
   }
   // Der Betrag speichert sich beim Verlassen des Feldes.
   if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
+  // CCCLXIII — Anbieter/Gewerk der Kostenart speichert sich genauso.
+  if (e.target.matches('[data-anbieter]')) anbieterSpeichern(e.target);
   // CCCLIX — Teilbetrag (netto) und §35a-Schalter speichern sich auf dieselbe Art.
   if (e.target.matches('[data-vorab-netto]')) vorabNettoSpeichern(e.target);
   if (e.target.matches('[data-vorab-s35]')) {
