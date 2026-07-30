@@ -1036,9 +1036,13 @@ function zeichne() {
   // Blick. Es verschwindet nicht, es klappt zu.
   const offenNoch = dokumente.filter(x => !fertig(x));
   const erledigt = dokumente.filter(fertig);
+  // CCCLXX — bleibt oben nichts übrig, darf das Erledigte nicht zugeklappt
+  // bleiben: die Seite sah sonst leer aus, obwohl Treffer da waren (Filter
+  // „lau 5" + Jahr 2045 zeigte „1 von 663" und darunter nichts).
+  const erledigtAuf = erledigtOffen || !offenNoch.length;
   liste.innerHTML = offenNoch.map(karte).join('')
     + (erledigt.length ? `
-      <details class="erledigt" ${erledigtOffen ? 'open' : ''}>
+      <details class="erledigt" ${erledigtAuf ? 'open' : ''}>
         <summary>${erledigt.length} erledigt</summary>
         <div class="ebox">${erledigt.map(karte).join('')}</div>
       </details>` : '');

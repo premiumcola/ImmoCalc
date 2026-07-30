@@ -470,7 +470,7 @@
   <div class="scroll" id="inhalt"></div>
   <!-- Kamera fuer den Scan an einer offenen Position. capture=environment
        oeffnet auf iOS direkt die Ruecckamera. -->
-  <input type="file" id="scanFeld" accept="image/*" capture="environment" multiple
+  <input type="file" id="scanFeld" accept="image/*,application/pdf,.pdf" capture="environment" multiple
          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
          tabindex="-1" aria-hidden="true">
 
@@ -1898,31 +1898,49 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
   if (beschriftung) beschriftung.textContent = 'Verarbeite …';
 
   try {
-    const { pdf, seiten } = await scanZuPdf(dateien);
+    // CCCLXXI — am Rechner lassen sich auch fertige PDFs wählen (Belege sind
+    // meist PDF). Ein PDF geht unverändert hoch, Fotos werden wie bisher zu
+    // EINEM PDF zusammengebaut; beides zusammen ergibt mehrere Belege.
+    const istPdf = d => d.type === 'application/pdf' || /\.pdf$/i.test(d.name || '');
+    const pdfs = dateien.filter(istPdf);
+    const bilder = dateien.filter(d => !istPdf(d));
     const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
 
-    const paket = new FormData();
-    paket.append('objekt', daten.objekt);
-    paket.append('kategorie', 'Nebenkosten');
-    paket.append('jahr', String(jahr));
-    paket.append('beschreibung', ziel.kostenart);
-    // Ohne den Zeitraum hinge der Beleg nur am Objekt — der Reiter „Belege"
-    // bliebe leer und die Zuordnung müsste man von Hand nachholen.
-    paket.append('zeitraum_id', String(daten.id));
-    paket.append('datei', pdf, 'scan.pdf');
-
-    const [antwort, vorschlag] = await Promise.all([
-      fetch('/api/dokumente/scannen', { method: 'POST', body: paket }),
-      erkennen(dateien[0]),
-    ]);
-    if (!antwort.ok) {
-      const grund = await antwort.json().then(k => k.detail).catch(() => null);
-      throw new Error(grund || `Fehler ${antwort.status}`);
+    const sendungen = [];
+    if (bilder.length) {
+      const { pdf, seiten } = await scanZuPdf(bilder);
+      sendungen.push({ datei: pdf, name: 'scan.pdf', seiten });
     }
-    const ergebnis = await antwort.json();
+    for (const p of pdfs) sendungen.push({ datei: p, name: p.name, seiten: null });
+
+    const hochladen = async ({ datei, name }) => {
+      const paket = new FormData();
+      paket.append('objekt', daten.objekt);
+      paket.append('kategorie', 'Nebenkosten');
+      paket.append('jahr', String(jahr));
+      paket.append('beschreibung', ziel.kostenart);
+      // Ohne den Zeitraum hinge der Beleg nur am Objekt — der Reiter „Belege"
+      // bliebe leer und die Zuordnung müsste man von Hand nachholen.
+      paket.append('zeitraum_id', String(daten.id));
+      paket.append('datei', datei, name);
+      const antwort = await fetch('/api/dokumente/scannen',
+                                  { method: 'POST', body: paket });
+      if (!antwort.ok) {
+        const grund = await antwort.json().then(k => k.detail).catch(() => null);
+        throw new Error(grund || `Fehler ${antwort.status}`);
+      }
+      return antwort.json();
+    };
+
+    const [ergebnisse, vorschlag] = await Promise.all([
+      Promise.all(sendungen.map(hochladen)),
+      erkennen(bilder[0] || pdfs[0]),
+    ]);
+    const seiten = sendungen.reduce((s, x) => s + (x.seiten || 1), 0);
+    const groesse = sendungen.reduce((s, x) => s + (x.datei.size || 0), 0);
     if (beschriftung) {
-      beschriftung.textContent = ergebnis.abgelegt
-        ? `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(pdf.size)}`
+      beschriftung.textContent = ergebnisse.every(r => r.abgelegt)
+        ? `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(groesse)}`
         : '✓ Im Eingang';
     }
 
@@ -1937,9 +1955,11 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
 
 /** Texterkennung — schlägt fehl sie, gibt es eben keinen Vorschlag. */
 async function erkennen(bild) {
+  if (!bild) return null;
   try {
     const paket = new FormData();
-    paket.append('datei', bild, 'seite.jpg');
+    // Der Dateiname sagt dem Server, womit er es zu tun hat (Bild oder PDF).
+    paket.append('datei', bild, bild.name || 'seite.jpg');
     const antwort = await fetch('/api/dokumente/erkennen',
                                 { method: 'POST', body: paket });
     return antwort.ok ? await antwort.json() : null;
