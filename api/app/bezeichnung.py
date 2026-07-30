@@ -478,8 +478,18 @@ _BETRAG_IM_NAMEN = re.compile(r"(?<![\d,.])(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})\s*�
 # Die Ziffernwächter halten längere Zahlen heraus: "20230915" ist kein Datum,
 # "WWK-2025-1196,09€" hat keinen Monat 11.
 _DATUM_IM_NAMEN = re.compile(
-    r"(?<!\d)(20\d{2})(?:[-._](0[1-9]|1[0-2])(?:[-._](0[1-9]|[12]\d|3[01]))?)?"
+    r"(?<!\d)((?:19|20)\d{2})(?:[-._](0[1-9]|1[0-2])(?:[-._](0[1-9]|[12]\d|3[01]))?)?"
     r"(?!\d)")
+
+
+def _jahr_plausibel(jahr: int) -> bool:
+    """CCCLXXIII — ein Jahr ist nur plausibel zwischen 1990 und heute+10.
+
+    „2045_204596-00-GPIE.jpg" trug sonst das Jahr 2045 (die ersten vier Stellen
+    einer Artikelnummer). Vorlaufjahre gibt es (ein Abrechnungszeitraum reicht
+    ins Folgejahr, Verträge datieren voraus) — aber nicht Jahrzehnte."""
+    from datetime import date
+    return 1990 <= jahr <= date.today().year + 10
 
 
 def datumsteil(jahr: int | None, monat: int | None = None) -> str:
@@ -534,18 +544,25 @@ def ohne_betrag(name: str) -> str:
 def datum_aus_namen(name: str) -> tuple[int | None, int | None]:
     """Jahr und Monat aus einem Dateinamen. (None, None) heisst: da steht keins.
 
-    Es gilt das erste Datum — der Nutzer schreibt es nach vorn, alles Weitere
-    ist Aktenzeichen oder Zählerstand."""
-    treffer = _DATUM_IM_NAMEN.search(name or "")
-    if not treffer:
-        return None, None
-    monat = treffer.group(2)
-    return int(treffer.group(1)), int(monat) if monat else None
+    Es gilt das erste PLAUSIBLE Datum — der Nutzer schreibt es nach vorn, alles
+    Weitere ist Aktenzeichen oder Zählerstand. Ein unplausibles Jahr (Artikel-
+    nummer) wird übergangen, nicht als Datum gelesen (CCCLXXIII)."""
+    for treffer in _DATUM_IM_NAMEN.finditer(name or ""):
+        if not _jahr_plausibel(int(treffer.group(1))):
+            continue
+        monat = treffer.group(2)
+        return int(treffer.group(1)), int(monat) if monat else None
+    return None, None
 
 
 def ohne_datum(name: str) -> str:
-    """Derselbe Name ohne Datumsangaben — sie werden vorn neu gesetzt."""
-    ohne = _DATUM_IM_NAMEN.sub(" ", name or "")
+    """Derselbe Name ohne Datumsangaben — sie werden vorn neu gesetzt.
+
+    Nur ein PLAUSIBLES Jahr wird gestrichen; eine unplausible Ziffernfolge
+    (Artikelnummer) bleibt Teil des Namens — konsistent zu `datum_aus_namen`."""
+    def weg(m: re.Match) -> str:
+        return " " if _jahr_plausibel(int(m.group(1))) else m.group(0)
+    ohne = _DATUM_IM_NAMEN.sub(weg, name or "")
     return re.sub(r"\s+", " ", ohne).strip(" -_.·")
 
 
