@@ -313,6 +313,23 @@
      Labels („Beleg erfassen" + „Aus Ablage") den Kostenart-Namen zeichenweise
      um. Erst ab Tablet-Breite ist Platz für die Beschriftung. */
   @media(max-width:560px){ .scanmini .st{display:none} }
+  /* ---- NK-STRUKTUR: Bereiche, Zähler-Chip, Schlüsselwort ----------------- */
+  /* Bereichs-Überschrift über einer Gruppe von Kostenzeilen: dezente
+     Abtrennung, kleine gedeckte Mono-Marke — ordnet, ohne zu rufen. */
+  .kat-kopf{display:flex;align-items:center;gap:10px;margin:20px 2px 8px}
+  .kat-kopf span{font:600 10px var(--mono);letter-spacing:.09em;flex:none;
+    text-transform:uppercase;color:var(--soft)}
+  .kat-kopf::after{content:"";flex:1;height:1px;background:var(--line)}
+  /* Zähler-Chip: der abgelesene Medienverbrauch an der Position — bewusst
+     eigenständig (gedeckt-teal, mono, rund) und klar KEIN €-Betrag, damit er
+     der Verteilung nicht widerspricht (Tooltip sagt es aus). */
+  .mchip{display:inline-flex;align-items:center;vertical-align:middle;
+    font:600 10.5px var(--mono);color:var(--teal-d);background:var(--teal-l);
+    border-radius:999px;padding:2px 9px;margin-right:7px;white-space:nowrap}
+  /* Verteilungsschlüssel als ein ruhiges Wort an der Zeile. */
+  .vkey{display:inline-block;vertical-align:middle;margin-left:7px;
+    font:600 10px var(--mono);letter-spacing:.02em;color:var(--soft);
+    background:#EDF1F0;border-radius:6px;padding:2px 8px;white-space:nowrap}
   /* CCCLXIII — Anbieter/Gewerk: Tag in der Zeile + Setz-Feld in der Karte. */
   .anbieter-tag{flex:none;align-self:center;font:600 10px var(--mono);
     letter-spacing:.02em;color:var(--teal-d);background:var(--teal-l);
@@ -580,6 +597,17 @@ const vorabOffen = new Set();
    Scan-Knopf, gelesen, wenn die Kamera zurückkommt. */
 let scanZiel = null;
 
+/* NK-STRUKTUR — die Ablese-Maske (Zähler samt interpoliertem Verbrauch) und
+   daraus der Chip je Kostenart. Beiwerk: fehlt sie, bleibt die Checkliste ohne
+   Chips bedienbar. */
+let ablesungMaske = null;
+let chipMap = new Map();
+
+/* Geräte ohne Kamera (Schreibtisch, Maus): dort genügt EIN neutraler Knopf, der
+   den lokalen Datei-Dialog öffnet — die „Beleg erfassen"-Kamera hätte hier
+   nichts aufzunehmen. Auf Touch-Geräten bleiben beide Wege. */
+const KEINE_KAMERA = window.matchMedia('(pointer: fine)').matches;
+
 const SORTIERUNG = {
   status: (a, b) => Number(a.erledigt) - Number(b.erledigt) ||
                     (b.betrag || 0) - (a.betrag || 0),
@@ -714,6 +742,94 @@ const schluesselMeta = wert =>
 
 const prozentText = (wert, summe) =>
   summe > 0 ? `${(Number(wert || 0) / summe * 100).toFixed(1)} %` : '—';
+
+/* ---- NK-STRUKTUR — Bereiche, Zähler-Chip, Schlüsselwort ------------------ */
+
+/* Umlaut-tolerant + case-insensitiv: für den Wortvergleich der Bereiche und der
+   Zähler-Zuordnung. */
+const normUml = s => (s || '').toLowerCase()
+  .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+
+/* Fünf Bereiche in fester Anzeige-Reihenfolge. Geprüft wird Bereich 2 (Heizung/
+   Warmwasser) VOR Bereich 1, damit „Warmwasser" zu 2 fällt und nicht zu 1. */
+const BEREICHE = [
+  { titel: 'Wasser & Abwasser',
+    muster: ['wasser', 'abwasser', 'kanal', 'niederschlag', 'entwaesser'] },
+  { titel: 'Heizung & Warmwasser',
+    muster: ['heiz', 'oel', 'gas', 'fernwaerme', 'warmwasser', 'brennstoff'] },
+  { titel: 'Strom & Beleuchtung',
+    muster: ['strom', 'beleucht'] },
+  { titel: 'Reinigung & Außenanlagen',
+    muster: ['reinig', 'winterdienst', 'streu', 'garten', 'gruenpflege', 'muell',
+             'entsorg', 'hausmeist', 'hauswart', 'schornstein', 'kamin', 'aufzug',
+             'fahrstuhl'] },
+  { titel: 'Verwaltung & Sonstiges', muster: [] },
+];
+// Prüf-Reihenfolge: Bereich 2 (Heizung) zuerst, dann 1, dann 3, 4; Rest → 5.
+const BEREICH_PRUEF = [1, 0, 2, 3];
+
+function bereichIndex(kostenart) {
+  const n = normUml(kostenart);
+  for (const i of BEREICH_PRUEF) {
+    if (BEREICHE[i].muster.some(m => n.includes(m))) return i;
+  }
+  return 4;
+}
+
+/* Eine reine Zähler-Kostenart (Name enthält „zähler") OHNE Betrag UND OHNE
+   Position ist keine Kostenposition — sie entfällt als Zeile. Steht ein Betrag
+   oder eine Position dahinter (z. B. „Kaltwasserzähler · 51,41 €"), bleibt sie
+   eine ganz normale Kostenzeile. Defensiv, damit echte Kosten nie verschwinden. */
+/* Zähler-Zuordnung über den Namen, wenn am Zähler keine Kostenart hängt. */
+function zaehlerNameZuKostenart(name) {
+  const n = normUml(name);
+  if (n.includes('warmwasser')) return 'Warmwasser';
+  if (n.includes('wasser')) return 'Wasser';
+  if (n.includes('oel')) return 'Heizkosten';
+  if (n.includes('strom')) return 'Allgemeinstrom';
+  return '';
+}
+
+/* Der abgelesene Medienverbrauch je Kostenart — mehrere Zähler derselben
+   Kostenart werden summiert. KEIN Verteilungsgewicht: er beschreibt die
+   Messung, nicht die Aufteilung. */
+function baueChipMap() {
+  const map = new Map();
+  for (const z of (ablesungMaske?.zaehler || [])) {
+    if (z.verbrauch == null) continue;
+    const ziel = z.kostenart || zaehlerNameZuKostenart(z.name);
+    if (!ziel) continue;
+    const cur = map.get(ziel) || { verbrauch: 0, messeinheit: z.messeinheit };
+    cur.verbrauch += z.verbrauch;
+    map.set(ziel, cur);
+  }
+  return map;
+}
+
+/* Liter kurz als „l"; m³/kWh bleiben, wie sie sind. */
+const chipEinheit = e => (e === 'Liter' ? 'l' : e);
+/* Der Verbrauch im Chip auf ganze Einheiten gerundet — kompakt (1.237 m³), die
+   Nachkommastellen leben in der Ablese-Maske. */
+const chipZahl = n => Math.round(n || 0).toLocaleString('de-DE');
+
+/* Der runde Zähler-Chip vor dem Namen. Der Tooltip stellt klar, dass hier der
+   abgelesene Verbrauch steht — nicht die Verteilungsgewichte der Position. */
+function chipHtml(k) {
+  const c = chipMap.get(k.kostenart);
+  if (!c) return '';
+  return `<span class="mchip" title="Zählerstand · abgelesener Verbrauch im ` +
+    `Zeitraum — nicht die Verteilungsgewichte">${chipZahl(c.verbrauch)}&nbsp;${
+      esc(chipEinheit(c.messeinheit))}</span>`;
+}
+
+/* Der Verteilungsschlüssel als ein ruhiges Wort an der Zeile. Bei „nur eine
+   Einheit" steht dort „1 Einheit" statt eines Schlüssels. */
+function schluesselWort(k) {
+  if (!k.position_id) return '';
+  if (k.nur_einheit) return '1 Einheit';
+  if (!k.schluessel) return '';
+  return schluesselMeta(k.schluessel)?.titel || k.schluessel;
+}
 
 /* Warum eine Einheit zweimal in der Verteilung steht: war sie nur einen Teil
    des Zeitraums vermietet, trägt der Mieter seine Wohndauer und der Eigentümer
@@ -1011,22 +1127,31 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
     : (k.erledigt ? `<span class="wert">${wert}</span>` : '');
   // Quick-Capture nur an der geschlossenen, offenen Zeile — aufgeklappt macht
   // der Betrag im Kopf Platz, Belege kommen dann über „Beleg anhängen".
+  // Ohne Kamera (Schreibtisch) genügt EIN neutraler Knopf — er öffnet über
+  // data-scan das lokale #scanFeld (nimmt PDFs an), navigiert also NICHT bloß in
+  // den Eingang. Mit Kamera bleiben beide Wege: erfassen (teal) und aus Ablage.
   const quickScan = (!k.erledigt && !aufgeklappt)
-    ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
-          title="Beleg für ${esc(k.kostenart)} abfotografieren">
-          <span class="si">▣</span><span class="st">Beleg erfassen</span>
-        </button>
-        <button class="scanmini ablage" data-ablage="${esc(k.kostenart)}"
-          title="Beleg aus der Ablage / Nextcloud wählen">
-          <span class="si">☁</span><span class="st">Aus Ablage</span>
-        </button>` : '';
+    ? (KEINE_KAMERA
+      ? `<button class="scanmini ablage" data-scan="${esc(k.kostenart)}"
+            title="Beleg-PDF von diesem Rechner wählen">
+            <span class="si">▤</span><span class="st">Beleg wählen</span>
+          </button>`
+      : `<button class="scanmini" data-scan="${esc(k.kostenart)}"
+            title="Beleg für ${esc(k.kostenart)} abfotografieren">
+            <span class="si">▣</span><span class="st">Beleg erfassen</span>
+          </button>
+          <button class="scanmini ablage" data-ablage="${esc(k.kostenart)}"
+            title="Beleg aus der Ablage / Nextcloud wählen">
+            <span class="si">☁</span><span class="st">Aus Ablage</span>
+          </button>`) : '';
 
   return `<div class="pruef${zustandKlasse}">
       <div class="kopf">
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
-          <span class="name">${esc(k.kostenart)}${
+          <span class="name">${chipHtml(k)}${esc(k.kostenart)}${
+            (w => w ? `<span class="vkey">${esc(w)}</span>` : '')(schluesselWort(k))}${
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}
             ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
         </button>
@@ -1252,13 +1377,25 @@ async function zeichnen() {
             aria-pressed="${sortierung === k}">${l}</button>`).join('')}
       </div>`;
 
+    // Jede Kostenart bleibt als Zeile — auch eine, die „Zähler" heißt (etwa die
+    // umlagefähige Zählermiete): sie trägt einen Betrag und muss erfassbar
+    // bleiben. Der abgelesene Verbrauch erscheint als Chip an der Position, nicht
+    // als eigene Zeile. Sortiert, dann in Bereiche gruppiert; der echte Index i
+    // aus dem Original-Array bleibt an der Zeile, damit data-auf/offen/index passen.
     const sortiert = daten.checkliste
       .map((k, i) => ({ k, i }))
       .sort((a, b) => SORTIERUNG[sortierung](a.k, b.k));
+    const bereiche = BEREICHE.map(() => []);
+    for (const eintrag of sortiert) {
+      bereiche[bereichIndex(eintrag.k.kostenart)].push(eintrag);
+    }
+    const zeilen = bereiche.map((liste, bi) => liste.length
+      ? `<div class="kat-kopf"><span>${esc(BEREICHE[bi].titel)}</span></div>`
+        + liste.map(({ k, i }) => zeileHtml(k, i)).join('')
+      : '').join('');
 
     rumpf = wegDirektHtml() + ablesenKnopfHtml() + flussKarte + sortWahl +
-      sortiert.map(({ k, i }) => zeileHtml(k, i)).join('')
-      + abschlussHtml() + zeitraumFussHtml();
+      zeilen + abschlussHtml() + zeitraumFussHtml();
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
@@ -1288,13 +1425,25 @@ async function zeichnen() {
    Knopf und Liste und lassen sich nicht als Zeichenkette einfügen. */
 function montiereSchluessel() {
   if (!schluessel) return;
-  // Klartext-Namen der Schlüssel, dazu am Ende „Nur eine Einheit/Person".
-  const optionen = schluessel.schluessel.map(s => ({ wert: s.wert, text: s.titel }));
-  optionen.push({ wert: NUR_EINHEIT_WAHL, text: 'Nur eine Einheit/Person' });
+  // Nur noch vier Schlüssel zur Wahl: Fläche · Personen · Einheiten · Verbrauch.
+  const WAHL = ['flaeche', 'personen', 'einheiten', 'verbrauch'];
+  const titel = new Map(schluessel.schluessel.map(s => [s.wert, s.titel]));
+  const basis = WAHL.filter(w => titel.has(w))
+    .map(w => ({ wert: w, text: titel.get(w) }));
   inhalt.querySelectorAll('[data-schluesselwahl]').forEach(ziel => {
     const pid = ziel.dataset.schluesselwahl;
+    const jetzt = ziel.dataset.wert || '';
+    // Eine Bestandsposition mit entferntem Schlüssel (Bewohnermonate, Prozent,
+    // Individuell) oder „nur eine Einheit" darf nicht brechen: ihren aktuellen
+    // Wert als zusätzliche Option zeigen, damit das Feld ihn weiter nennt.
+    const optionen = basis.slice();
+    if (jetzt === NUR_EINHEIT_WAHL) {
+      optionen.push({ wert: NUR_EINHEIT_WAHL, text: '1 Einheit' });
+    } else if (jetzt && !WAHL.includes(jetzt)) {
+      optionen.push({ wert: jetzt, text: titel.get(jetzt) || jetzt });
+    }
     auswahlfeld(ziel, {
-      optionen, wert: ziel.dataset.wert, label: 'Verteilen nach',
+      optionen, wert: jetzt, label: 'Verteilen nach',
       aenderung: async neu => {
         // „Nur eine Einheit/Person": erst den Einheit-Auswähler zeigen, gesetzt
         // wird nur_einheit dann über den Klick auf eine Einheit.
@@ -1815,6 +1964,14 @@ async function laden() {
   } catch {
     anhaenger = null;
   }
+  // NK-STRUKTUR — die Ablese-Maske liefert den Zählerverbrauch je Kostenart für
+  // den Chip. Beiwerk: fehlt der Endpunkt, bleibt die Checkliste ohne Chips.
+  try {
+    ablesungMaske = await api(`/zeitraeume/${zid}/ablesung`);
+  } catch {
+    ablesungMaske = null;
+  }
+  chipMap = baueChipMap();
   titel.textContent = daten.label;
   sub.textContent = `${daten.objekt_name} · ${daten.typ}`;
   await zeichnen();
