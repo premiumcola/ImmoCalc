@@ -1054,6 +1054,9 @@ function zeichne() {
   // CCCLXXXIII — nur PDFs zeigen. Alles wird zu PDF gewandelt und erkannt;
   // Fremdformate (Excel, Bilder, …) gehören nicht in die Beleg-Übersicht.
   const dokumente = (daten.dokumente || []).filter(d => /\.pdf$/i.test(d.dateiname || ''));
+  // Der Kopf-Zähler zählt die tatsächlich gezeigten PDF-Belege, nicht die
+  // Fremdformate, die aus der Liste fallen (CCCLXXXIII).
+  zahl.textContent = `${dokumente.length} ${dokumente.length === 1 ? 'Beleg' : 'Belege'}`;
   if (!dokumente.length) {
     liste.innerHTML = daten.gesamt
       ? `<div class="hinweisbox">
