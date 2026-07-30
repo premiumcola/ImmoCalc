@@ -92,6 +92,17 @@
   .eigwert .ewv{display:block;font:700 15px var(--disp);letter-spacing:-.02em;
                 margin-top:5px;overflow-wrap:anywhere}
   .eigwert .ewv.pos{color:var(--pos)} .eigwert .ewv.neg{color:var(--neg)}
+  /* CCCLXXVII — Objektwert/Beleihung je Beteiligung + Investitionsspielraum. */
+  .bo-wrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .bvz{font:500 11px var(--mono);color:var(--soft)}
+  .invest{border-top:1px solid var(--line);padding:12px 14px;background:var(--paper)}
+  .invest .il{font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--teal-d)}
+  .invest .ih{display:block;font:400 10.5px var(--body);letter-spacing:0;
+    text-transform:none;color:var(--soft);margin-top:2px}
+  .invest .iv{font:600 13px var(--disp);color:var(--ink);margin-top:6px}
+  .invest .iv b,.invest .is b{color:var(--teal-d)}
+  .invest .is{font:400 12px var(--body);color:var(--soft);margin-top:2px;line-height:1.4}
 
   /* ---- CCLVII: orange Karte ist anklickbar und öffnet die Zuweisung ----
      Button statt div, damit Tastatur und Screenreader ihn als Aktion sehen;
@@ -367,12 +378,27 @@ function eigwertHtml(id) {
   if (!g.wert && !g.eigenkapital && !g.miete_jahr) return '';
   const zelle = (l, v, k = '') => `<div class="ew"><span class="ewl">${l}</span>
     <span class="ewv ${k}">${v}</span></div>`;
+  // CCCLXXVII — Beleihungsquote (Restschuld/Wert) und ein grober Spielraum für
+  // neues Investment: freie Beleihung bis 80 % des Werts, und was das als ~20 %
+  // Eigenkapital an Kaufvolumen trägt. Ausdrücklich nur Orientierung.
+  const quote = (g.wert && g.wert > 0) ? Math.round((g.restschuld / g.wert) * 100) : null;
+  const frei = (g.wert && g.wert > 0) ? Math.max(0, Math.round(0.8 * g.wert - g.restschuld)) : null;
+  const invest = frei != null ? `<div class="invest">
+      <div class="il">Investitionsspielraum
+        <span class="ih">grobe Orientierung, keine Finanzierungszusage</span></div>
+      <div class="iv">Freie Beleihung bis 80 %: <b>${eurKurz(frei)}</b></div>
+      <div class="is">Als ~20 % Eigenkapital rechnerisch für rund
+        <b>${eurKurz(frei * 5)}</b> neues Kaufvolumen.</div>
+    </div>` : '';
   return `<div class="eigwert">
     ${zelle('Mein Wert', g.wert == null ? '—' : eurKurz(g.wert))}
+    ${zelle('Restschuld', eurKurz(g.restschuld), g.restschuld > 0 ? 'neg' : '')}
+    ${zelle('Beleihung', quote == null ? '—' : quote + ' %',
+            quote == null ? '' : (quote <= 60 ? 'pos' : (quote >= 90 ? 'neg' : '')))}
     ${zelle('Mein Eigenkapital', g.eigenkapital == null ? '—' : eurKurz(g.eigenkapital),
             (g.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg')}
     ${zelle('Miete / Jahr', eurKurz(g.miete_jahr), 'pos')}
-  </div>`;
+  </div>${invest}`;
 }
 
 /* CCCXXXIV — die linke Objektbezeichnung, dreigeteilt: Objektart (fett) ·
@@ -422,9 +448,19 @@ async function eignerLaden() {
     // CLXI — hängt der Anteil an einer Einheit, steht sie unter dem Objekt und
     // die Rolle bezieht sich auf die Einheit („Alleineigentümer" der Wohnung);
     // sonst gilt die Rolle fürs ganze Haus.
+    // CCCLXXVII — je Objekt der auf die Person entfallende Wert (nach ‰) und
+    // die Beleihung. Kommt aus der Vermögens-Übersicht, per slug verknüpft.
+    const uv = new Map((uebersicht.get(e.id)?.objekte || []).map(o => [o.slug, o]));
+    const objWert = o => {
+      const w = uv.get(o.slug);
+      if (!w || w.wert == null) return '';
+      const q = w.wert > 0 ? Math.round((w.restschuld / w.wert) * 100) : null;
+      return `<span class="bvz">${eurKurz(w.wert)}${
+        q == null ? '' : ` · Beleihung ${q} %`}</span>`;
+    };
     const bet = e.objekte.length
       ? e.objekte.map(o => `<div class="bet">
-            ${betObjekt(o)}
+            <span class="bo-wrap">${betObjekt(o)}${objWert(o)}</span>
             <span class="bw">${promille(o.promille)}</span>
             <span class="chip ${o.rolle === 'Alleineigentümer'
               ? 'teal' : ''}">${esc(o.rolle)}</span>
