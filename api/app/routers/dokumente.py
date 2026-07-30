@@ -26,8 +26,8 @@ from sqlmodel import Session, select
 
 from .. import belegposten, kiauslese, ocr, pdftext
 from ..belegposten import BelegFehler
-from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
-                           datumsteil, ohne_betrag, ohne_datum,
+from ..bezeichnung import (_jahr_plausibel, betrag_aus_namen, betragsteil,
+                           datum_aus_namen, datumsteil, ohne_betrag, ohne_datum,
                            ohne_ordnerwort, unterordner_finden, vergleichsname)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
                         unterordner_fuer, verbindung)
@@ -1801,6 +1801,30 @@ def _zum_datum(datum: str) -> date | None:
         return None
 
 
+def _jahr_mit_fallback(jahr: int | None, name: str,
+                       datei_jahr: int | None) -> int | None:
+    """Das Belegjahr — das Datei-Datum zählt nur als Rückfall (CCCLXXXIV).
+
+    Vorrang hat, was Name oder erkanntes Datum sagen, solange es plausibel ist
+    (1990 … heute+10). Erst wenn von dort kein Jahr kommt, tritt das
+    mitgeschickte Erstellungs-/Änderungsdatum der Datei ein. So wird aus einer
+    Artikelnummer wie „2045_204596-…" kein Unsinnsjahr 2045 — und ein Beleg
+    ohne Jahr im Namen bekommt wenigstens das Jahr seiner Datei statt gar keins.
+
+    `jahr` ist das, was vorher feststand (ausgewähltes Jahr oder das aus dem
+    erkannten Datum); `name` der Dateiname, aus dem ein Jahr gelesen werden darf
+    (`datum_aus_namen` liefert von sich aus nur plausible Jahre); `datei_jahr`
+    das Jahr des Datei-Datums."""
+    if jahr and _jahr_plausibel(jahr):
+        return jahr
+    aus_name, _ = datum_aus_namen(name or "")
+    if aus_name:
+        return aus_name
+    if datei_jahr and _jahr_plausibel(datei_jahr):
+        return datei_jahr
+    return jahr
+
+
 @router.post("/scannen", status_code=201)
 async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   kostenart: str = Form(""),
@@ -1809,6 +1833,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   monat: int | None = Form(None),
                   betrag: float | None = Form(None),
                   datum: str = Form(""),
+                  datei_jahr: int | None = Form(None),
                   an_typ: str = Form(""),
                   an_id: int | None = Form(None),
                   datei: UploadFile = File(...),
@@ -1828,6 +1853,12 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
     `kostenart` ist die genaue Position innerhalb der Art (CLXXI) —
     „Kaminkehrer" unter „Nebenkosten".
+
+    `datei_jahr` ist ein freiwilliger Rückfall (CCCLXXXIV): das Jahr des
+    Datei-Datums (`File.lastModified`), das die Oberfläche mitschickt. Es greift
+    nur, wenn weder Auswahl noch erkanntes Datum noch der Dateiname ein
+    plausibles Jahr liefern — so entsteht aus einer Artikelnummer kein
+    Unsinnsjahr, ein Beleg ohne Jahr im Namen bekommt aber wenigstens eins.
 
     `an_typ`/`an_id` sind freiwillig (CCCLXVII): sind sie gesetzt, hängt der
     frische Scan gleich am gemeinten Eintrag — so lässt sich der Mietvertrag
@@ -1855,6 +1886,12 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
     erkannt_jahr, erkannt_monat = _aus_datum(datum)
     jahr = jahr or erkannt_jahr
+    # CCCLXXXIV — kommt aus Auswahl und erkanntem Datum kein plausibles Jahr,
+    # springt der Dateiname ein und, wenn auch er nichts hergibt, das vom
+    # Browser mitgeschickte Datei-Datum (`File.lastModified`). So entsteht kein
+    # Unsinnsjahr aus einer Artikelnummer, aber ein Beleg ohne Jahr im Namen
+    # bekommt wenigstens das Jahr seiner Datei.
+    jahr = _jahr_mit_fallback(jahr, datei.filename or "", datei_jahr)
     monat = monat or erkannt_monat
     kategorie = kategorie or "Sonstiges"
     # Die Endung der hochgeladenen Datei erhalten — ein Foto oder eine Tabelle

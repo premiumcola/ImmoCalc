@@ -43,9 +43,23 @@ async function aufnahmeVorbereiten(dateien, titel) {
   return null;
 }
 
+/** Das Jahr aus dem Datei-Datum (`File.lastModified`) — nur ein Rückfall für
+    den Server, falls Name und erkanntes Datum kein plausibles Jahr hergeben
+    (CCCLXXXIV). Genommen wird das früheste der übergebenen Fotos: bei einem
+    mehrseitigen Scan ist das die erste Aufnahme, näher am Belegdatum als eine
+    zuletzt nachgeschossene Seite. `null`, wenn kein Zeitstempel vorliegt —
+    dann bleibt alles wie bisher. */
+function dateiJahr(dateien) {
+  const zeiten = Array.from(dateien || [])
+    .map(d => d && d.lastModified)
+    .filter(t => Number.isFinite(t) && t > 0);
+  if (!zeiten.length) return null;
+  return new Date(Math.min(...zeiten)).getFullYear();
+}
+
 /** Nur belegte Felder wandern mit: ein leeres `jahr` würde sonst als „0"
     ankommen und den Beleg in einen Ordner ohne Jahr sortieren. */
-function paketBauen(datei, name, ziel) {
+function paketBauen(datei, name, ziel, jahrHinweis) {
   const paket = new FormData();
   paket.append('objekt', ziel.objekt || '');
   paket.append('kategorie', ziel.kategorie || 'Sonstiges');
@@ -53,6 +67,9 @@ function paketBauen(datei, name, ziel) {
   if (ziel.jahr) paket.append('jahr', String(ziel.jahr));
   if (ziel.beschreibung) paket.append('beschreibung', ziel.beschreibung);
   if (ziel.zeitraumId) paket.append('zeitraum_id', String(ziel.zeitraumId));
+  // Immer als Rückfall mitschicken; der Server nimmt es nur, wenn sonst kein
+  // plausibles Jahr zustande kommt — ein gewähltes `jahr` behält den Vorrang.
+  if (jahrHinweis) paket.append('datei_jahr', String(jahrHinweis));
   if (ziel.anTyp && ziel.anId) {
     paket.append('an_typ', ziel.anTyp);
     paket.append('an_id', String(ziel.anId));
@@ -81,6 +98,10 @@ async function fehlertext(antwort) {
  * `Error` mit einem Satz, den man anzeigen kann.
  */
 export async function belegScannen(dateien, ziel = {}) {
+  // Aus den Originaldateien lesen, nicht aus dem gebauten Scan-PDF: dessen
+  // Zeitstempel wäre „jetzt". Das Foto bzw. die gewählte Datei trägt dagegen
+  // ein Datum nahe am Beleg.
+  const jahrHinweis = dateiJahr(dateien);
   const aufnahme = await aufnahmeVorbereiten(dateien, ziel.titel);
   if (!aufnahme) return null;
 
@@ -89,7 +110,8 @@ export async function belegScannen(dateien, ziel = {}) {
   let antwort;
   try {
     antwort = await fetch('/api/dokumente/scannen', {
-      method: 'POST', body: paketBauen(aufnahme.datei, aufnahme.name, ziel),
+      method: 'POST',
+      body: paketBauen(aufnahme.datei, aufnahme.name, ziel, jahrHinweis),
       signal: abbruch.signal,
     });
   } catch (fehler) {
