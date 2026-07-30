@@ -188,7 +188,9 @@
   .dd-beleg{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
     border:1px solid var(--line);background:var(--sheet);border-radius:12px;
     padding:10px 12px;min-height:44px;cursor:pointer;font-family:var(--body)}
-  .dd-beleg.unter{margin-left:18px;border-style:dashed}
+  /* Eingerückt heisst schmaler: mit `width:100%` lief der Info-Beleg um genau
+     die Einrückung nach rechts aus der Karte heraus. */
+  .dd-beleg.unter{margin-left:18px;width:calc(100% - 18px);border-style:dashed}
   .dd-beleg.an{border-color:var(--teal);background:var(--teal-l)}
   .dd-beleg .dd-bi{flex:none;display:inline-flex;color:var(--teal-d)}
   .dd-beleg .dd-bi svg{width:16px;height:16px}
@@ -197,6 +199,20 @@
   .dd-beleg .dd-bj{flex:none;font:600 11px var(--mono);color:var(--soft)}
   .dd-keinbeleg{font:500 12.5px var(--body);color:var(--soft);line-height:1.5;
     padding:2px 0}
+  /* CCCLXVII — direkt am Eintrag abfotografieren. Ohne Beleg ein sichtbarer
+     Knopf, mit Beleg nur eine leise Zeile: der Weg soll da sein, ohne sich
+     vorzudrängen. */
+  .dd-scan{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;
+    max-width:100%;border:1px solid var(--line);background:var(--paper);
+    color:var(--teal-d);border-radius:12px;padding:10px 14px;min-height:44px;
+    font:600 12.5px var(--disp);cursor:pointer;text-align:left}
+  .dd-scan:hover{background:var(--teal);color:#fff;border-color:var(--teal)}
+  .dd-scan .dd-si{flex:none;display:inline-flex}
+  .dd-scan .dd-si svg{width:15px;height:15px}
+  /* Leise heisst gedeckt, nicht klein: die Fläche bleibt fingergerecht. */
+  .dd-scan.leise{border:none;background:none;padding:8px 2px;
+    color:var(--soft);font:600 12px var(--body)}
+  .dd-scan.leise:hover{background:none;color:var(--teal-d)}
   .dd-aktionen{display:flex;flex-wrap:wrap;gap:8px}
   .dd-edit{align-self:flex-start;border:1px solid var(--line);background:var(--paper);
     color:var(--teal-d);border-radius:12px;padding:11px 16px;min-height:44px;
@@ -628,6 +644,7 @@ import { baumZeigen, baumMalen, HAKEN_ICON, BELEG_ICON, baumFilterUmschalten,
 import { slug, objekt, istGrundstueck, setObjekt, setObjektEigentuemer,
          setAlleEigentuemer }
   from './assets/objekt-state.js?v=2';
+import { belegScannen } from './assets/belegscan.js';
 installNav();
 
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
@@ -960,6 +977,34 @@ const ENTWURF_TYP = { mieten: 'miete', versicherungen: 'versicherung',
 // Erwerbsnebenkosten sind Zahlungen — dieselbe Typkennung wie „zahlungen".
 const AN_TYP = { ...ENTWURF_TYP, nebenkosten: 'kostenposition',
                  erwerbskosten: 'zahlung' };
+/* CCCLXVII — welche Dokumentart ein direkt am Eintrag abfotografierter Beleg
+   bekommt. Sie entscheidet über Ablageordner und Dateinamen (`ZIELORDNER`,
+   `ARTKUERZEL` im Backend); die Rubrik allein sagt das nicht. Was hier fehlt,
+   landet unter „Sonstiges" — nie geraten. */
+const SCAN_KATEGORIE = { mieten: 'Mietvertrag', versicherungen: 'Versicherung',
+                         kredite: 'Kredit', notarvertraege: 'Notarvertrag',
+                         nebenkosten: 'Nebenkosten', zahlungen: 'Steuer',
+                         erwerbskosten: 'Steuer' };
+/* Wie der Beleg an dieser Stelle heisst. „Mietvertrag abfotografieren" sagt
+   mehr als „Beleg abfotografieren", wo es nur einen geben kann. */
+const SCAN_WORT = { mieten: 'Mietvertrag', notarvertraege: 'Notarvertrag' };
+const KAMERA_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+  stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M4 8.5h3.2L9 6h6l1.8 2.5H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0
+    0 1-1-1V9.5a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.2"/></svg>`;
+
+/* Unter welchem Jahr ein frischer Beleg abgelegt wird: was der Eintrag selbst
+   sagt — `jahr` (Zahlung), `ab_datum` (Miete), `beginn` (Versicherung,
+   Kredit), `datum` (Notarvertrag). Findet sich nichts, bleibt es ohne Jahr:
+   der Beleg liegt dann im Sachordner, statt in einem erfundenen Jahrgang. */
+function scanJahr(eintrag) {
+  for (const k of ['jahr', 'ab_datum', 'beginn', 'datum']) {
+    const jahr = parseInt(String(eintrag[k] ?? '').slice(0, 4), 10);
+    if (jahr > 1900) return jahr;
+  }
+  return null;
+}
 // CCCXXIV — zwischen welchen Rubriken sich ein Eintrag umklassifizieren lässt
 // (der „Erwerb/Steuer"-Cluster). Der Wert ist zugleich der Bereich und das
 // Backend-Ziel.
@@ -1754,11 +1799,24 @@ async function eintragDetail(bereich, id) {
       <span class="dd-bi">${unter ? BELEG_ICON : HAKEN_ICON}</span>
       <span class="dd-bn">${esc(d.dateiname)}</span>
       ${d.jahr ? `<span class="dd-bj">${d.jahr}</span>` : ''}</button>`;
-  const belegeHtml = alle.length
+  // CCCLXVII — den Beleg gleich hier abfotografieren. Fehlt er, steht der Weg
+  // als Knopf unter dem Hinweis; ist schon einer da, bleibt nur eine leise
+  // Zeile für den nächsten. Nur für Rubriken, die das Backend als Ziel kennt.
+  const scanWort = SCAN_WORT[bereich] || 'Beleg';
+  const scanText = alle.length ? `Weiteren ${scanWort} abfotografieren`
+                               : `${scanWort} abfotografieren`;
+  const scanHtml = typ
+    ? `<button type="button" data-scan class="dd-scan${alle.length ? ' leise' : ''}"
+       ><span class="dd-si">${KAMERA_ICON}</span
+       ><span class="dd-st">${esc(scanText)}</span></button>
+       <input type="file" accept="image/*,application/pdf" capture="environment"
+         multiple hidden data-scanfeld>` : '';
+  const belegeHtml = (alle.length
     ? (belege.haupt ? belegItem(belege.haupt, false) : '')
       + (belege.unter || []).map(d => belegItem(d, true)).join('')
-    : `<div class="dd-keinbeleg">Noch kein Beleg hinterlegt — über den
-        Dokumentenbaum oben lässt sich einer anhängen.</div>`;
+    : `<div class="dd-keinbeleg">Noch kein Beleg hinterlegt — hier
+        abfotografieren oder über den Dokumentenbaum oben anhängen.</div>`)
+    + scanHtml;
 
   const dlg = document.createElement('dialog');
   dlg.className = 'immo-dlg detail-dlg';
@@ -1812,8 +1870,45 @@ async function eintragDetail(bereich, id) {
     zeigeDoc(erst.id, erst.dateiname);
   }
 
+  /* CCCLXVII — die Aufnahmen laufen durch die gemeinsame Choreografie
+     (`belegscan.js`): zuschneiden, mehrseitig als PDF ablegen, Textschicht
+     nachtragen.
+
+     Die Detailansicht schliesst dafür zuerst. Sie steht als `showModal()` in
+     der obersten Ebene des Browsers — die Scanner-Oberfläche läge sonst
+     dahinter und liesse sich nicht bedienen (kein z-index hilft dagegen).
+     Danach wird sie mit dem frischen Beleg neu aufgebaut; der Nutzer landet
+     wieder genau dort, wo er losgegangen ist. */
+  const scanFeld = dlg.querySelector('[data-scanfeld]');
+  if (scanFeld) scanFeld.addEventListener('change', async () => {
+    const dateien = [...scanFeld.files];
+    scanFeld.value = '';
+    if (!dateien.length) return;
+    dlg.close();
+    let ergebnis;
+    try {
+      ergebnis = await belegScannen(dateien, {
+        objekt: slug, kategorie: SCAN_KATEGORIE[bereich] || 'Sonstiges',
+        jahr: scanJahr(eintrag), beschreibung: cfg.name(eintrag),
+        anTyp: typ, anId: id, titel: `${scanWort} · ${cfg.name(eintrag)}`,
+      });
+    } catch (fehler) {
+      // Die Ansicht bleibt bewusst zu: der Melder sitzt unter einem modalen
+      // Dialog (oberste Browser-Ebene schlägt jeden z-index) und wäre sonst
+      // nicht zu lesen. Der Eintrag ist einen Tipp entfernt.
+      return melde(String(fehler.message || 'Der Beleg wurde nicht abgelegt.'),
+                   'neg');
+    }
+    if (!ergebnis) return eintragDetail(bereich, id);   // abgebrochen
+    // Kein Erfolgs-Toast: der frische Beleg steht gleich in der Liste und
+    // sagt dasselbe — nur sichtbar und dauerhaft.
+    await laden();
+    return eintragDetail(bereich, id);
+  });
+
   dlg.addEventListener('click', e => {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
+    if (e.target.closest('[data-scan]')) { scanFeld.click(); return; }
     const b = e.target.closest('[data-doc]');
     if (b) { zeigeDoc(b.dataset.doc, b.dataset.name); return; }
     if (e.target.closest('[data-bearbeiten]')) {

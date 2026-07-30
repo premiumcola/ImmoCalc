@@ -1809,6 +1809,8 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   monat: int | None = Form(None),
                   betrag: float | None = Form(None),
                   datum: str = Form(""),
+                  an_typ: str = Form(""),
+                  an_id: int | None = Form(None),
                   datei: UploadFile = File(...),
                   session: Session = Depends(get_session)) -> dict:
     """Nimmt ein abfotografiertes Dokument entgegen, benennt es nach Schema
@@ -1825,10 +1827,27 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     sie weiterhin; dort sieht man sie im Ordner.
 
     `kostenart` ist die genaue Position innerhalb der Art (CLXXI) —
-    „Kaminkehrer" unter „Nebenkosten"."""
+    „Kaminkehrer" unter „Nebenkosten".
+
+    `an_typ`/`an_id` sind freiwillig (CCCLXVII): sind sie gesetzt, hängt der
+    frische Scan gleich am gemeinten Eintrag — so lässt sich der Mietvertrag
+    direkt am Mietverhältnis abfotografieren, statt ihn danach im Baum zu
+    suchen. Ohne die beiden Felder bleibt alles wie bisher; jeder bestehende
+    Aufrufer läuft unverändert weiter.
+
+    Geprüft wird das Ziel **vor** der Ablage: ein unbekannter Typ oder ein
+    Eintrag einer fremden Immobilie soll nicht erst eine Datei in der Cloud
+    und einen halben Eintrag in der Datenbank hinterlassen."""
     o = _eindeutiges_objekt(session, objekt)
     _cloud_pflicht(o)
     zeitraum_id = _pruefe_zeitraum(session, zeitraum_id)
+    # „objekt" (und ein leer übergebenes null) meint: an keinem einzelnen
+    # Eintrag — dieselbe Lesart wie in `/zuordnen`.
+    an_typ = (an_typ or "").strip().lower()
+    if an_typ in ("objekt", "null", "none"):
+        an_typ, an_id = "", None
+    ziel_eintrag = (_eintrag_holen(session, an_typ, an_id, o)[0]
+                    if an_typ else None)
 
     inhalt = await datei.read()
     if not inhalt:
@@ -1867,8 +1886,23 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
         raise _pfad_konflikt(session, f"/{ziel_ordner}/{name}") from e
     session.refresh(d)
     log.info("Scan abgelegt: %s", d.pfad)
+
+    # CCCLXVII — der Scan hängt sich gleich an den gemeinten Eintrag. Der
+    # Quellbeleg des Eintrags wird nur gesetzt, wenn er noch leer ist: eine
+    # bestehende Verknüpfung bleibt unangetastet, nie überschrieben.
+    if ziel_eintrag is not None:
+        d.info_zu_typ, d.info_zu_id = an_typ, an_id
+        session.add(d)
+        if getattr(ziel_eintrag, "quelle_dokument_id", None) is None:
+            ziel_eintrag.quelle_dokument_id = d.id
+            session.add(ziel_eintrag)
+        session.commit()
+        session.refresh(d)
+        log.info("Scan %s an bestehenden %s#%s gehängt", d.id, an_typ, an_id)
+
     return {"id": d.id, "dateiname": name, "pfad": d.pfad, "abgelegt": True,
-            "objekt": o.slug, "zeitraum_id": d.zeitraum_id}
+            "objekt": o.slug, "zeitraum_id": d.zeitraum_id,
+            "an_typ": an_typ, "an_id": an_id if an_typ else None}
 
 
 # --------------------------------------------------------------------------
@@ -3331,6 +3365,64 @@ def geradedrehen(dokument_id: int, grad: int = Query(0),
     session.commit()
     log.info("Geradegedreht: %s (%d Seite(n))", d.pfad, len(gedreht))
     return {"ok": True, "gedreht": gedreht, "geaendert": True}
+
+
+@router.post("/{dokument_id}/durchsuchbar")
+def durchsuchbar(dokument_id: int,
+                 session: Session = Depends(get_session)) -> dict:
+    """Legt einem einzelnen Beleg seine unsichtbare Textschicht unter.
+
+    Denselben Weg geht der Wachdienst über `nachtraeglich_ocren`, nur eben für
+    alle liegen gebliebenen Belege. Hier fragt der Aufrufer für genau einen —
+    ein frisch abfotografierter Scan soll durchsuchbar sein, ohne auf den
+    nächsten Takt zu warten.
+
+    Datensicher wie dort: ersetzt wird ausschliesslich per MOVE
+    (`_ocr_ersetzen`) — das Original wandert zuerst unangetastet in den
+    Sicherungsordner neben der Datei, erst danach bekommt der freie Platz die
+    geprüfte Fassung. Scheitert das Ablegen, kommt das Original sofort zurück.
+
+    Nichts zu tun ist kein Fehler: fehlt das Werkzeug, oder trägt der Beleg
+    schon Text, lautet die Antwort `ok: true, ergaenzt: false` samt Grund."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
+    if not d.dateiname.lower().endswith(".pdf"):
+        raise HTTPException(415, "Nur PDFs bekommen eine Textschicht")
+    if not ocr.durchsuchbar_verfuegbar():
+        return {"ok": True, "ergaenzt": False, "grund": "Werkzeug nicht verfügbar"}
+
+    client = verbindung(session)
+    try:
+        rohdaten, _typ = client.hole(d.pfad)
+    except NextcloudFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+    try:
+        neu = ocr.durchsuchbar_machen(rohdaten)
+    except Exception as fehler:                                # noqa: BLE001
+        log.warning("Textschicht fehlgeschlagen für %s: %s", d.pfad, fehler)
+        return {"ok": True, "ergaenzt": False,
+                "grund": "Die Texterkennung ist gescheitert."}
+    if neu is None:
+        return {"ok": True, "ergaenzt": False,
+                "grund": "Der Beleg trägt schon Text — nichts nachzutragen."}
+
+    try:
+        _ocr_ersetzen(client, d.pfad, neu)
+    except NextcloudFehler as fehler:
+        log.warning("Textschicht konnte nicht abgelegt werden (%s): %s",
+                    d.pfad, fehler)
+        raise HTTPException(
+            502, "Die durchsuchbare Fassung konnte nicht in der Cloud "
+                 "gespeichert werden — der Beleg bleibt unverändert.") from fehler
+
+    d.groesse = len(neu)
+    session.add(d)
+    session.commit()
+    log.info("Textschicht ergänzt: %s", d.pfad)
+    return {"ok": True, "ergaenzt": True, "grund": "Textschicht ergänzt"}
 
 
 # --------------------------------------------------------------------------
