@@ -278,6 +278,23 @@
                 cursor:pointer;padding:0;width:44px;height:44px;flex:none;
                 margin:-5px -12px -5px 0;border-radius:11px}
   .eintrag .del:hover{color:var(--neg)}
+  /* CCCLXIX/CCCLXXXI — Lageplan: Inline-Vorschau des ersten Plans (höhen-
+     begrenzt), plus je Zeile zwei leise Aktionen (umbenennen, entfernen). */
+  .lp-vorschau{display:block;width:100%;border:none;padding:12px 12px 13px;
+    background:var(--paper);border-bottom:1px solid var(--line);cursor:pointer;
+    line-height:0}
+  .lp-vorschau img{display:block;width:100%;max-height:160px;object-fit:contain;
+    border-radius:10px;background:var(--sheet)}
+  .lp-zeile .et{min-width:0}
+  .lp-akt{border:none;background:none;color:var(--soft);font:400 17px var(--body);
+    cursor:pointer;padding:0;width:44px;height:44px;flex:none;border-radius:11px;
+    margin:-5px 0;display:flex;align-items:center;justify-content:center}
+  .lp-zeile .lp-akt:last-child{margin-right:-12px}
+  .lp-akt:hover{background:#EDF1F0;color:var(--ink)}
+  .lp-akt.lp-weg:hover{color:var(--neg)}
+  .lp-eingabe{width:100%;border:1.5px solid var(--line);border-radius:10px;
+    padding:11px 12px;font:500 15px var(--body);color:var(--ink);background:#fff}
+  .lp-eingabe:focus{outline:none;border-color:var(--teal)}
   .leerzeile{font:400 13px var(--body);color:var(--soft);padding:16px 15px;text-align:center}
   .sehinweis{font:400 12.5px var(--body);color:var(--soft);line-height:1.5;
     margin:-2px 2px 12px;padding:11px 13px;background:var(--paper);border-radius:12px}
@@ -649,6 +666,7 @@ import { slug, objekt, istGrundstueck, setObjekt, setObjektEigentuemer,
          setAlleEigentuemer }
   from './assets/objekt-state.js?v=2';
 import { belegScannen } from './assets/belegscan.js';
+import { kamerascanStarten } from './assets/kamerascan.js';
 installNav();
 
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
@@ -1294,25 +1312,119 @@ function einheitStammHtml(e) {
     ${lageplanHtml(e)}`;
 }
 
-/* CCCXXVI — Lagepläne je Einheit. Vorhandene öffnen als Bild-Vorschau über den
-   bestehenden Dokument-Inhalt (belegAnsehen); dazu ein Weg zum Aufnehmen oder
-   Hochladen. Der eigentliche Upload läuft über den change-Handler auf `inhalt`
-   (POST /api/einheiten/{id}/lageplan als FormData). */
+/* CCCXXVI / CCCLXIX / CCCLXXXI — Lagepläne je Einheit.
+
+   Vorhandene öffnen als Bild-Vorschau über den bestehenden Dokument-Inhalt
+   (belegAnsehen). Der ZUERST hinterlegte Plan bekommt zusätzlich eine kleine,
+   höhenbegrenzte Inline-Vorschau (über denselben Weg wie das Ansehen: das
+   serverseitig gerenderte Bild als Blob, `lageplanVorschauFuellen`). Je Zeile
+   zwei leise Aktionen: umbenennen (✎, nur Anzeigename) und entfernen (×, nur
+   der Eintrag — die Cloud-Datei bleibt).
+
+   Der Upload läuft über den change-Handler auf `inhalt`: ein Foto geht durch
+   dieselbe Aufbereitung wie die Belege (zuschneiden, drehen, klein als PDF),
+   ein fertiges PDF unverändert (POST /api/einheiten/{id}/lageplan). */
+function lageplanRow(p, e) {
+  return `<div class="eintrag klick lp-zeile" data-lageplan="${p.id}">
+      <span class="sym">${kostenIcon('Grundstück')}</span>
+      <span class="et"><span class="en">${esc(p.dateiname || 'Lageplan')}</span></span>
+      <button class="lp-akt" data-lageplan-rename="${p.id}" data-e="${e.id}"
+        data-name="${esc(p.dateiname || '')}" title="Umbenennen"
+        aria-label="Lageplan umbenennen">✎</button>
+      <button class="lp-akt lp-weg" data-lageplan-weg="${p.id}" data-e="${e.id}"
+        title="Entfernen" aria-label="Lageplan entfernen">×</button>
+    </div>`;
+}
 function lageplanHtml(e) {
   const plaene = e.lageplaene || [];
-  const zeilen = plaene.length
-    ? plaene.map(p => `<button class="eintrag klick" data-lageplan="${p.id}">
-        <span class="sym">${kostenIcon('Grundstück')}</span>
-        <span class="et"><span class="en">${esc(p.dateiname || 'Lageplan')}</span></span>
-        <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
-      </button>`).join('')
-    : `<div class="leerzeile">Noch kein Lageplan hinterlegt</div>`;
+  let inhalt;
+  if (!plaene.length) {
+    inhalt = `<div class="leerzeile">Noch kein Lageplan hinterlegt</div>`;
+  } else {
+    const [erst, ...weitere] = plaene;
+    inhalt = `<button class="lp-vorschau klick" data-lageplan="${erst.id}"
+        aria-label="Lageplan ansehen">
+        <img data-lp-bild="${erst.id}" alt="Vorschau des Lageplans">
+      </button>${lageplanRow(erst, e)}${weitere.map(p => lageplanRow(p, e)).join('')}`;
+  }
   return `<div class="sekopf"><span class="seikon">${kostenIcon('Grundstück')}</span>
       <h2 class="sec">Lageplan</h2></div>
-    <div class="liste">${zeilen}</div>
+    <div class="liste">${inhalt}</div>
     <label class="add lageplan-neu">＋ Lageplan aufnehmen oder hochladen
-      <input type="file" accept="image/*" capture="environment"
+      <input type="file" accept="image/*,application/pdf" capture="environment"
              data-lageplan-neu="${e.id}" hidden></label>`;
+}
+
+/* Die Inline-Vorschau des ersten Plans: das Bild über denselben Weg holen, über
+   den ein Lageplan angesehen wird (serverseitig gerendert, auch für PDF), als
+   Object-URL setzen. Alte URLs werden beim erneuten Rendern freigegeben. */
+let lageplanVorschauUrls = [];
+function lageplanVorschauAufraeumen() {
+  lageplanVorschauUrls.forEach(u => URL.revokeObjectURL(u));
+  lageplanVorschauUrls = [];
+}
+async function lageplanVorschauFuellen(root) {
+  const bild = root.querySelector('[data-lp-bild]');
+  if (!bild) return;
+  try {
+    const antwort = await fetch(`/api/dokumente/${bild.dataset.lpBild}/vorschau?seite=0`);
+    if (!antwort.ok) throw new Error(String(antwort.status));
+    const adr = URL.createObjectURL(await antwort.blob());
+    lageplanVorschauUrls.push(adr);
+    bild.src = adr;
+  } catch {
+    // Ohne Cloud-Anbindung (oder wenn sich der Plan nicht rendern lässt) bleibt
+    // die Liste stehen — die leere Vorschaufläche wird eingeklappt.
+    const rahmen = bild.closest('.lp-vorschau');
+    if (rahmen) rahmen.remove();
+  }
+}
+
+/* CCCLXXXI — kleiner Umbenennen-Dialog: nur der Anzeigename. Die Datei in der
+   Nextcloud wird nicht berührt (das erledigt der Endpunkt), hier wird bloss der
+   Name erfragt. Im Stil des Zuordnen-Dialogs, damit nichts Neues nötig ist. */
+function lageplanUmbenennen(einheitId, id, name) {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'immo-dlg zuord-dlg';
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.innerHTML = `
+    <div class="zd-kopf">
+      <span class="zd-t">Lageplan umbenennen</span>
+      <button class="zd-x" data-nein aria-label="Schließen">×</button>
+    </div>
+    <div class="zd-block">
+      <span class="zd-l">Anzeigename</span>
+      <input class="lp-eingabe" type="text" value="${esc(name || '')}"
+             maxlength="120" aria-label="Anzeigename des Lageplans">
+      <span class="zd-hint">Nur die Bezeichnung in der App ändert sich — die
+        Datei in der Nextcloud bleibt, wo sie liegt.</span>
+    </div>
+    <div class="zd-fuss">
+      <button class="zd-ab" data-nein>Abbrechen</button>
+      <button class="zd-ok" data-ja>Speichern</button>
+    </div>`;
+  const feld = dlg.querySelector('.lp-eingabe');
+  const speichern = async () => {
+    const wert = feld.value.trim();
+    if (!wert) return feld.focus();
+    dlg.close();
+    try {
+      await api(`/einheiten/${einheitId}/lageplan/${id}`,
+                { method: 'PATCH', body: { name: wert } });
+    } catch (fehler) {
+      return melde(String(fehler.message || 'Umbenennen ging nicht.'), 'neg');
+    }
+    return laden();
+  };
+  dlg.addEventListener('click', e => {
+    if (e.target.closest('[data-nein]')) return dlg.close();
+    if (e.target.closest('[data-ja]')) return speichern();
+  });
+  feld.addEventListener('keydown', e => { if (e.key === 'Enter') speichern(); });
+  dlg.showModal();
+  feld.focus();
+  feld.select();
 }
 
 /* Im Fokus zählt, was diese Wohnung einbringt — Wert und Restschuld gehören
@@ -1399,6 +1511,8 @@ function eigentuemerHtml(stand) {
 }
 
 async function laden() {
+  // Beim Neuaufbau die Object-URLs der Lageplan-Vorschau freigeben.
+  lageplanVorschauAufraeumen();
   if (!slug) {
     inhalt.innerHTML = `<div class="empty"><div class="big">Kein Objekt gewählt</div>
       <p>Zurück zur Übersicht und eine Immobilie antippen.</p></div>`;
@@ -1549,6 +1663,9 @@ async function laden() {
     // Die ?-Icons an Wohnfläche, Terrasse, Nebenfläche und Stellplätzen dieser
     // Einheit brauchen dieselbe Verdrahtung wie die Hausansicht.
     installHilfe(inhalt);
+    // Die Inline-Vorschau des ersten Lageplans nachladen (asynchron, stört den
+    // Aufbau der Seite nicht).
+    lageplanVorschauFuellen(inhalt);
     return;
   }
 
@@ -3383,6 +3500,33 @@ inhalt.addEventListener('click', async e => {
     return;
   }
 
+  // CCCLXXXI — einen Lageplan umbenennen (nur der Anzeigename am Datensatz).
+  const lpUm = e.target.closest('[data-lageplan-rename]');
+  if (lpUm) {
+    e.stopPropagation();
+    return lageplanUmbenennen(lpUm.dataset.e, lpUm.dataset.lageplanRename,
+                              lpUm.dataset.name);
+  }
+
+  // CCCLXXXI — einen Lageplan entfernen. Nur der Eintrag geht; die Datei in der
+  // Nextcloud bleibt (der Endpunkt fasst die Cloud gar nicht an).
+  const lpWeg = e.target.closest('[data-lageplan-weg]');
+  if (lpWeg) {
+    e.stopPropagation();
+    const ja = await frage('Lageplan entfernen?',
+      'Der Eintrag wird aus der App genommen. Die Datei in der Nextcloud '
+      + 'bleibt unberührt — dort wird nichts gelöscht.',
+      { knopf: 'Entfernen', gefahr: true });
+    if (!ja) return;
+    try {
+      await api(`/einheiten/${lpWeg.dataset.e}/lageplan/${lpWeg.dataset.lageplanWeg}`,
+                { method: 'DELETE' });
+    } catch (fehler) {
+      return melde(String(fehler.message || 'Konnte nicht entfernt werden.'), 'neg');
+    }
+    return laden();
+  }
+
   // CCCXXVI — einen hinterlegten Lageplan als Bild-Vorschau öffnen (dieselbe
   // Ansicht wie ein Beleg, über den Dokument-Inhalt).
   const lageplan = e.target.closest('[data-lageplan]');
@@ -3494,15 +3638,39 @@ inhalt.addEventListener('click', async e => {
   }
 });
 
-/* CCCXXVI — ein gewählter oder aufgenommener Lageplan wird direkt hochgeladen
-   (multipart, Feld „datei"). Danach wird die Einheit neu geladen, damit der
-   frische Plan in der Liste steht. Fehler dezent über melde. */
+/* CCCXXVI / CCCLXIX — ein aufgenommener oder gewählter Lageplan wird abgelegt.
+   Ein Foto läuft durch dieselbe Aufbereitung wie die Belege (`kamerascan`:
+   Kanten erkennen, drehen, zuschneiden, klein als PDF); ein bereits fertiges
+   PDF geht unverändert durch. Das Ergebnis wandert als multipart (Feld „datei")
+   an den Lageplan-Endpunkt. Danach neu laden, damit der frische Plan — mitsamt
+   Inline-Vorschau — in der Liste steht. Fehler dezent über melde. */
 inhalt.addEventListener('change', async e => {
   const feld = e.target.closest('[data-lageplan-neu]');
   if (!feld || !feld.files || !feld.files.length) return;
-  const datei = feld.files[0];
+  const dateien = [...feld.files];
+  feld.value = '';        // damit dieselbe Datei danach erneut wählbar bleibt
+
+  const bilder = dateien.filter(d => (d.type || '').startsWith('image/'));
+  const pdf = dateien.find(d => (d.type || '') === 'application/pdf');
+  let datei, name;
+  if (bilder.length) {
+    let ergebnis;
+    try {
+      ergebnis = await kamerascanStarten(bilder, { titel: 'Lageplan' });
+    } catch (fehler) {
+      return melde(String(fehler.message
+        || 'Der Lageplan konnte nicht aufbereitet werden.'), 'neg');
+    }
+    if (!ergebnis) return;            // Zuschnitt abgebrochen
+    datei = ergebnis.pdf; name = 'lageplan.pdf';
+  } else if (pdf) {
+    datei = pdf; name = pdf.name;
+  } else {
+    return;
+  }
+
   const fd = new FormData();
-  fd.append('datei', datei);
+  fd.append('datei', datei, name);
   melde('Lageplan wird hochgeladen …');
   try {
     const antwort = await fetch(

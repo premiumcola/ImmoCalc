@@ -2013,6 +2013,72 @@ def lageplaene_liste(einheit_id: int,
     return lageplaene_der_einheit(session, einheit_id)
 
 
+def _lageplan_holen(session: Session, einheit_id: int,
+                    dokument_id: int) -> Dokument:
+    """Der Lageplan-Datensatz einer Einheit — oder 404 (CCCLXXXI).
+
+    Trifft nur einen echten Lageplan (`kategorie="Lageplan"`), der auch wirklich
+    an genau dieser Einheit hängt. So kann ein Aufruf über die falsche Einheit —
+    oder auf einen fremden Beleg — nichts anrichten."""
+    _einheit_holen(session, einheit_id)
+    d = session.get(Dokument, dokument_id)
+    if (not d or d.kategorie != LAGEPLAN or d.info_zu_typ != "einheit"
+            or d.info_zu_id != einheit_id):
+        raise HTTPException(404, "Lageplan nicht gefunden")
+    return d
+
+
+class LageplanNameIn(BaseModel):
+    """Der neue Anzeigename eines Lageplans (CCCLXXXI)."""
+    name: str
+
+
+@lageplan_router.patch("/{einheit_id}/lageplan/{dokument_id}")
+def lageplan_umbenennen(einheit_id: int, dokument_id: int,
+                        data: LageplanNameIn,
+                        session: Session = Depends(get_session)) -> dict:
+    """Gibt einem Lageplan einen Anzeigenamen (CCCLXXXI).
+
+    Bewusst nur der Name am Datensatz: die Datei in der Nextcloud wird NICHT
+    berührt und NICHT verschoben. Das ist der sichere Weg — sie liegt weiter
+    unter `pfad`, über den die App sie immer holt (Ansehen, Vorschau, Abgleich),
+    und der Abgleich findet sie dort per Pfad wieder und lässt den Anzeigenamen
+    stehen. Die Endung bleibt erhalten, damit Vorschau und Download den Dateityp
+    weiter erkennen."""
+    d = _lageplan_holen(session, einheit_id, dokument_id)
+    name = (data.name or "").strip()
+    if not name:
+        raise HTTPException(400, "Bitte einen Namen angeben")
+    endung = _endung(d.dateiname)
+    if endung and not name.lower().endswith(endung.lower()):
+        name += endung
+    d.dateiname = name
+    session.add(d)
+    session.commit()
+    session.refresh(d)
+    log.info("Lageplan umbenannt: %s (Einheit %s, Datei unberührt)",
+             d.id, einheit_id)
+    return {"id": d.id, "dateiname": d.dateiname}
+
+
+@lageplan_router.delete("/{einheit_id}/lageplan/{dokument_id}")
+def lageplan_entfernen(einheit_id: int, dokument_id: int,
+                       session: Session = Depends(get_session)) -> dict:
+    """Nimmt einen Lageplan aus der App (CCCLXXXI).
+
+    Entfernt ausschließlich den Datensatz. Die Datei in der Nextcloud bleibt
+    unangetastet — dort wird grundsätzlich nichts gelöscht. Der Aufruf fasst die
+    Cloud gar nicht erst an (kein Client, kein DELETE, kein MOVE)."""
+    d = _lageplan_holen(session, einheit_id, dokument_id)
+    pfad = d.pfad
+    session.delete(d)
+    session.commit()
+    log.info("Lageplan-Eintrag entfernt: %s (Datei bleibt in der Cloud)", pfad)
+    return {"ok": True, "pfad": pfad, "datei_bleibt": True,
+            "hinweis": "Der Eintrag ist weg, die Datei liegt weiter in der "
+                       "Nextcloud."}
+
+
 # --------------------------------------------------------------------------
 # Kontrolle: ändern, verschieben, ersetzen, entfernen
 # --------------------------------------------------------------------------
