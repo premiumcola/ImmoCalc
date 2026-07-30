@@ -90,6 +90,57 @@
     font:600 14px var(--body);background:var(--sheet);color:var(--ink);min-height:46px}
   .aw-select:focus{outline:none;border-color:var(--teal)}
 
+  /* CCCLXXX — „Ablesewerte eingeben" und der Zahnrad-Knopf zum Konfigurieren
+     stehen nebeneinander in einer Leiste. */
+  .ablese-leiste{display:flex;gap:8px;margin-bottom:14px}
+  .ablese-leiste .ablesebtn{flex:1;margin-bottom:0}
+  .zk-gear{flex:none;width:48px;min-height:48px;display:flex;align-items:center;
+    justify-content:center;border:1.5px solid #BFD9D1;background:var(--teal-l);
+    color:var(--teal-d);border-radius:13px;cursor:pointer}
+  .zk-gear:hover{background:#DCEDE7}
+  .zk-gear svg{width:22px;height:22px;display:block}
+
+  /* Zähler-Konfig-Maske (nutzt den Rahmen der Ablese-Maske: .ablese-dlg). */
+  .zk-body{max-height:min(74dvh,620px);overflow:auto}
+  .zk-intro{font:500 12.5px var(--body);color:var(--soft);line-height:1.5;
+    margin:2px 0 12px}
+  .zk-karte{background:var(--paper);border-radius:14px;padding:12px 12px 4px;
+    margin-bottom:11px}
+  .zk-kopf{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .zk-name{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;
+    padding:10px 11px;font:700 14px var(--disp);background:var(--sheet);
+    color:var(--ink);min-height:44px}
+  .zk-name:focus{outline:none;border-color:var(--teal)}
+  .zk-tools{display:flex;gap:4px;flex:none}
+  .zk-ic{width:38px;height:38px;min-width:38px;border:none;border-radius:9px;
+    background:var(--sheet);color:var(--soft);cursor:pointer;display:flex;
+    align-items:center;justify-content:center;font:600 15px var(--body);line-height:1}
+  .zk-ic:hover{background:#E1E8E6;color:var(--ink)}
+  .zk-ic[disabled]{opacity:.35;cursor:default}
+  .zk-ic.gefahr:hover{background:var(--neg-bg);color:var(--neg)}
+  .zk-ic svg{width:16px;height:16px;display:block}
+  .zk-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  @media(max-width:400px){ .zk-grid{grid-template-columns:1fr} }
+  .zk-feld{display:flex;flex-direction:column;gap:5px;min-width:0;margin-bottom:9px}
+  .zk-feld.voll{grid-column:1 / -1}
+  .zk-feld label{font:600 9.5px var(--mono);text-transform:uppercase;
+    letter-spacing:.05em;color:var(--soft)}
+  .zk-feld select,.zk-feld input{border:1.5px solid var(--line);border-radius:10px;
+    padding:9px 10px;font:600 13px var(--body);background:var(--sheet);
+    color:var(--ink);min-height:44px;width:100%}
+  .zk-feld select:focus,.zk-feld input:focus{outline:none;border-color:var(--teal)}
+  .zk-anfang{display:flex;gap:8px;align-items:flex-end}
+  .zk-anfang .zk-feld{flex:1;margin-bottom:9px}
+  .zk-rest{font:500 11.5px var(--body);color:var(--teal-d);background:var(--teal-l);
+    border-radius:9px;padding:8px 10px;margin:0 0 9px;line-height:1.45}
+  .zk-add{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+    border:1.5px dashed var(--line);background:transparent;color:var(--teal-d);
+    border-radius:13px;padding:12px;font:600 13px var(--disp);cursor:pointer;
+    min-height:48px;margin-top:2px}
+  .zk-add:hover{border-color:var(--teal);background:var(--teal-l)}
+  .zk-leer{font:500 12.5px var(--body);color:var(--soft);line-height:1.5;
+    padding:6px 2px 14px}
+
   .pruef{background:var(--sheet);border-radius:14px;margin-bottom:10px;overflow:hidden;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
   /* Gefüllte Zeile sanft grün herausheben: man sieht auf einen Blick, wo schon
@@ -1997,15 +2048,37 @@ async function betragVorschlagen(kostenart, vorschlag) {
    Ein Zähler je Schritt, Weiter/Zurück; der Verbrauch wird serverseitig linear
    auf den Abrechnungszeitraum interpoliert. Speichern ist idempotent je
    Zeitraum, deshalb darf man beliebig vor- und zurückgehen. */
+const GEAR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2
+  2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0
+  0 1-4 0v-.09A1.65 1.65 0 0 0 8.6 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1
+  1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0
+  1 0-4h.09A1.65 1.65 0 0 0 3.6 8.6a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1
+  2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1
+  4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83
+  2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.2.63.77 1.06 1.43 1.09H22a2 2 0 0 1 0
+  4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>`;
+const MUELL_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"/></svg>`;
+
+/* CCCLXXX — der Zahnrad-Knopf neben „Ablesewerte eingeben" öffnet die
+   Zähler-Konfiguration dieser Immobilie. */
 function ablesenKnopfHtml() {
-  return `<button class="ablesebtn" id="ableseWizard" type="button">
-    <span class="si">▦</span> Ablesewerte eingeben</button>`;
+  return `<div class="ablese-leiste">
+    <button class="ablesebtn" id="ableseWizard" type="button">
+      <span class="si">▦</span> Ablesewerte eingeben</button>
+    <button class="zk-gear" id="zaehlerKonfig" type="button"
+      aria-label="Zähler konfigurieren" title="Zähler konfigurieren">${GEAR_ICON}</button>
+  </div>`;
 }
 
 const zahl = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 3 });
 
 inhalt.addEventListener('click', e => {
   if (e.target.closest('#ableseWizard')) ablesungWizard();
+  else if (e.target.closest('#zaehlerKonfig')) zaehlerKonfig();
 });
 
 async function ablesungWizard() {
@@ -2160,6 +2233,234 @@ async function ablesungWizard() {
       }
     }
   });
+  render();
+  dlg.showModal();
+}
+
+/* ---- Zähler-Konfiguration (CCCLXXX) --------------------------------------
+   Zahnrad neben „Ablesewerte eingeben": Zähler je Immobilie anlegen/entfernen/
+   verschieben, Messeinheit·Bezug·Kostenart einstellen, die Verrechnung setzen
+   (Rest = Hauptzähler − Unterzähler) und den Anfangsstand vor der ersten
+   Abrechnung erfassen. Nutzt die vorhandenen Endpunkte; gespeichert wird
+   sofort (PATCH/POST/DELETE). */
+const MESSEINHEITEN = ['m³', 'kWh', 'Liter'];
+
+/* Frühester Periodenbeginn (ISO) — dorthin gehört der Anfangsstand, damit er die
+   erste Abrechnung öffnet. Labels der Objektseite: „dd.mm.yyyy – dd.mm.yyyy". */
+function fruehesterStartISO(objektDaten) {
+  const daten2 = (objektDaten?.zeitraeume || [])
+    .map(z => (z.label || '').match(/(\d{2})\.(\d{2})\.(\d{4})/))
+    .filter(Boolean).map(m => `${m[3]}-${m[2]}-${m[1]}`).sort();
+  return daten2[0] || null;
+}
+
+async function zaehlerKonfig() {
+  const slug = daten.objekt;
+  let meters, objektDaten;
+  try {
+    [meters, objektDaten] = await Promise.all([
+      api(`/objekte/${slug}/zaehler`), api(`/objekte/${slug}`)]);
+  } catch (fehler) { melde(fehler.message || 'Zähler nicht ladbar', 'neg'); return; }
+
+  const startISO = fruehesterStartISO(objektDaten) || daten.start;
+  const kostenarten = [...new Set((daten.checkliste || []).map(k => k.kostenart))];
+  const bezuege = [...new Set((schluessel?.parteien || []).map(p => p.partei))];
+
+  const dlg = document.createElement('dialog');
+  dlg.className = 'ablese-dlg';
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => { dlg.remove(); laden(); });
+
+  async function neuLaden() {
+    try { meters = await api(`/objekte/${slug}/zaehler`); } catch { /* Ansicht bleibt */ }
+    render();
+  }
+
+  const opt = (wert, text, sel) =>
+    `<option value="${esc(String(wert))}"${sel ? ' selected' : ''}>${esc(text)}</option>`;
+
+  function karte(z, i) {
+    const rest = z.typ === 'rest';
+    const messSel = MESSEINHEITEN.map(m => opt(m, m, m === z.messeinheit)).join('')
+      + (MESSEINHEITEN.includes(z.messeinheit) ? '' : opt(z.messeinheit, z.messeinheit, true));
+    const bezugSel = opt('', 'Haus / Gesamt', !z.einheit_bezug)
+      + bezuege.map(b => opt(b, b, b === z.einheit_bezug)).join('')
+      + (z.einheit_bezug && !bezuege.includes(z.einheit_bezug)
+         ? opt(z.einheit_bezug, z.einheit_bezug, true) : '');
+    const kaSel = opt('', '— keine —', !z.kostenart)
+      + kostenarten.map(k => opt(k, k, k === z.kostenart)).join('')
+      + (z.kostenart && !kostenarten.includes(z.kostenart)
+         ? opt(z.kostenart, z.kostenart, true) : '');
+    const modus = rest ? 'rest' : (z.hauptzaehler_id ? 'unter' : 'frei');
+    const verrSel = opt('frei', 'Eigenständig / Gesamt', modus === 'frei')
+      + opt('unter', 'Unterzähler von …', modus === 'unter')
+      + opt('rest', 'Rest von …', modus === 'rest');
+    const andere = meters.filter(m => m.id !== z.id);
+    const hauptSel = andere.length
+      ? andere.map(m => opt(m.id, m.name, m.id === z.hauptzaehler_id)).join('')
+      : opt('', 'kein anderer Zähler', true);
+    let restInfo = '';
+    if (rest && z.hauptzaehler_id) {
+      const haupt = meters.find(m => m.id === z.hauptzaehler_id);
+      const unter = meters.filter(m => m.typ === 'gemessen'
+        && m.hauptzaehler_id === z.hauptzaehler_id);
+      restInfo = `<div class="zk-rest">Rest = ${esc(haupt?.name || '?')}${
+        unter.length ? unter.map(u => ` − ${esc(u.name)}`).join('')
+                     : ' − (noch keine Unterzähler)'}</div>`;
+    }
+    const anf = z.anfangsstand;
+    const anfBlock = rest ? '' : `<div class="zk-anfang">
+        <div class="zk-feld"><label>Anfangsstand</label>
+          <input type="number" step="0.001" inputmode="decimal" placeholder="—"
+            value="${anf ? anf.stand : ''}" data-zk-anf-stand="${z.id}"
+            aria-label="Anfangsstand ${esc(z.name)}"></div>
+        <div class="zk-feld"><label>am</label>
+          <input type="date" value="${anf ? anf.datum : startISO}"
+            data-zk-anf-datum="${z.id}" aria-label="Datum Anfangsstand"></div>
+      </div>`;
+
+    return `<div class="zk-karte" data-zid="${z.id}">
+      <div class="zk-kopf">
+        <input class="zk-name" value="${esc(z.name)}" data-zk-f="name" data-zid="${z.id}"
+          aria-label="Zählername">
+        <div class="zk-tools">
+          <button class="zk-ic" data-zk-up="${z.id}" ${i === 0 ? 'disabled' : ''}
+            aria-label="nach oben">↑</button>
+          <button class="zk-ic" data-zk-down="${z.id}"
+            ${i === meters.length - 1 ? 'disabled' : ''} aria-label="nach unten">↓</button>
+          <button class="zk-ic gefahr" data-zk-del="${z.id}"
+            aria-label="Zähler entfernen">${MUELL_ICON}</button>
+        </div>
+      </div>
+      <div class="zk-grid">
+        <div class="zk-feld"><label>Einheit</label>
+          <select data-zk-f="messeinheit" data-zid="${z.id}">${messSel}</select></div>
+        <div class="zk-feld"><label>Bezug</label>
+          <select data-zk-f="einheit_bezug" data-zid="${z.id}">${bezugSel}</select></div>
+        <div class="zk-feld"><label>Kostenart</label>
+          <select data-zk-f="kostenart" data-zid="${z.id}">${kaSel}</select></div>
+        <div class="zk-feld"><label>Verrechnung</label>
+          <select data-zk-verr="${z.id}">${verrSel}</select></div>
+        ${modus !== 'frei' ? `<div class="zk-feld voll"><label>Hauptzähler</label>
+          <select data-zk-f="hauptzaehler_id" data-zid="${z.id}">${hauptSel}</select></div>` : ''}
+      </div>
+      ${restInfo}
+      ${anfBlock}
+    </div>`;
+  }
+
+  function render() {
+    const liste = meters.length
+      ? meters.map((z, i) => karte(z, i)).join('')
+      : `<div class="zk-leer">Noch keine Zähler für diese Immobilie. Lege den
+          ersten an — Gesamtzähler, Unterzähler je Einheit und, wenn nötig, einen
+          berechneten Rest.</div>`;
+    dlg.innerHTML = `
+      <div class="aw-kopf">
+        <span class="t">Zähler · ${esc(daten.objekt_name)}</span>
+        <button class="aw-x" data-zk-schliessen aria-label="Schließen">×</button>
+      </div>
+      <div class="aw-body zk-body">
+        <p class="zk-intro">Zähler dieser Immobilie: Messeinheit, Bezug und
+          Kostenart einstellen, die Verrechnung festlegen (Rest = Hauptzähler −
+          Unterzähler) und den Anfangsstand vor der ersten Abrechnung setzen.</p>
+        <div class="zk-liste">${liste}</div>
+        <button class="zk-add" data-zk-add>＋ Zähler hinzufügen</button>
+      </div>
+      <div class="aw-fuss">
+        <button class="aw-weiter" data-zk-schliessen style="flex:1">Fertig</button>
+      </div>`;
+  }
+
+  dlg.addEventListener('change', async e => {
+    const f = e.target.closest('[data-zk-f]');
+    if (f) {
+      const id = f.dataset.zid;
+      let wert = f.value;
+      if (f.dataset.zkF === 'hauptzaehler_id') wert = wert ? Number(wert) : null;
+      const z = meters.find(m => String(m.id) === String(id));
+      if (z) z[f.dataset.zkF] = wert;               // lokal nachziehen
+      try { await api(`/zaehler/${id}`, { method: 'PATCH', body: { [f.dataset.zkF]: wert } }); }
+      catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
+      return;
+    }
+    const verr = e.target.closest('[data-zk-verr]');
+    if (verr) return verrechnungSetzen(Number(verr.dataset.zkVerr), verr.value);
+    const anf = e.target.closest('[data-zk-anf-stand],[data-zk-anf-datum]');
+    if (anf) return anfangsstandSpeichern(
+      Number(anf.dataset.zkAnfStand || anf.dataset.zkAnfDatum));
+  });
+
+  async function verrechnungSetzen(id, modus) {
+    const z = meters.find(m => m.id === id);
+    const andere = meters.filter(m => m.id !== id);
+    const haupt = z?.hauptzaehler_id || (andere[0] && andere[0].id) || null;
+    const body = modus === 'frei'
+      ? { typ: 'gemessen', hauptzaehler_id: null }
+      : { typ: modus === 'rest' ? 'rest' : 'gemessen', hauptzaehler_id: haupt };
+    try { await api(`/zaehler/${id}`, { method: 'PATCH', body }); await neuLaden(); }
+    catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
+  }
+
+  async function anfangsstandSpeichern(id) {
+    const s = dlg.querySelector(`[data-zk-anf-stand="${id}"]`);
+    const d = dlg.querySelector(`[data-zk-anf-datum="${id}"]`);
+    const roh = (s?.value || '').trim().replace(',', '.');
+    if (roh === '') return;                          // leer → nichts speichern
+    const stand = Number(roh);
+    if (!Number.isFinite(stand)) return;
+    const datum = d?.value || startISO;
+    try {
+      await api(`/zaehler/${id}/ablesungen`,
+        { method: 'POST', body: { stand, datum, notiz: 'Anfangsstand' } });
+      const z = meters.find(m => m.id === id);
+      if (z) z.anfangsstand = { stand, datum };
+      melde('✓ Anfangsstand gespeichert', 'pos');
+    } catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
+  }
+
+  dlg.addEventListener('click', async e => {
+    if (e.target.closest('[data-zk-schliessen]')) { dlg.close(); return; }
+    if (e.target.closest('[data-zk-add]')) {
+      try {
+        await api(`/objekte/${slug}/zaehler`, { method: 'POST',
+          body: { name: 'Neuer Zähler', messeinheit: 'm³', reihenfolge: meters.length } });
+        await neuLaden();
+      } catch (fehler) { melde(fehler.message || 'Anlegen fehlgeschlagen', 'neg'); }
+      return;
+    }
+    const del = e.target.closest('[data-zk-del]');
+    if (del) {
+      const z = meters.find(m => m.id === Number(del.dataset.zkDel));
+      const ja = await frage(`„${z?.name || 'Zähler'}" entfernen?`,
+        'Der Zähler und seine Ablesungen werden gelöscht. Kostenpositionen und '
+        + 'Belege bleiben unangetastet.', { knopf: 'Entfernen', gefahr: true });
+      if (!ja) return;
+      try { await api(`/zaehler/${del.dataset.zkDel}`, { method: 'DELETE' }); await neuLaden(); }
+      catch (fehler) { melde(fehler.message || 'Löschen fehlgeschlagen', 'neg'); }
+      return;
+    }
+    const bewegung = e.target.closest('[data-zk-up],[data-zk-down]');
+    if (bewegung) return verschieben(
+      Number(bewegung.dataset.zkUp || bewegung.dataset.zkDown),
+      bewegung.dataset.zkUp ? -1 : 1);
+  });
+
+  async function verschieben(id, richtung) {
+    const i = meters.findIndex(m => m.id === id);
+    const j = i + richtung;
+    if (i < 0 || j < 0 || j >= meters.length) return;
+    const neu = [...meters];
+    [neu[i], neu[j]] = [neu[j], neu[i]];
+    meters = neu;
+    render();                                        // sofort sichtbar
+    try {
+      await Promise.all(neu.map((m, k) => m.reihenfolge === k ? null
+        : api(`/zaehler/${m.id}`, { method: 'PATCH', body: { reihenfolge: k } })));
+      neu.forEach((m, k) => { m.reihenfolge = k; });
+    } catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
+  }
+
   render();
   dlg.showModal();
 }

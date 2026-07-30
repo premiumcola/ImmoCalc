@@ -10,6 +10,7 @@ Routen-Reihenfolge: `/objekte/{slug}/zaehler` muss VOR dem Stammdaten-Fänger
 """
 import logging
 from datetime import date
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -22,6 +23,35 @@ from ..models import Ablesung, Objekt, Zaehler, Zeitraum
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["zaehler"])
+
+# CCCLXXX — der Anfangsstand („Erststand" vor der ersten Abrechnung) ist eine
+# ganz normale Ablesung, nur mit dieser Notiz markiert und ohne Zeitraum-Tag.
+# So bleibt das Modell unverändert (kein neues Feld), und die Interpolation
+# behandelt ihn wie jeden anderen Stand.
+ANFANGSSTAND = "Anfangsstand"
+# Id der synthetischen Vorlauf-Periode (siehe `_mit_vorlauf`). 0 kollidiert nicht
+# mit realen Zeitraum-Ids (SQLite-Autoincrement beginnt bei 1).
+_VORLAUF_ID = 0
+
+
+def _mit_vorlauf(zeitraeume: list, zma: list) -> tuple[list, object | None]:
+    """Ergänzt die Periodenliste um eine synthetische Vorlauf-Periode, sobald ein
+    Anfangsstand (Ablesung am/vor dem Beginn der ersten Abrechnung) vorliegt.
+
+    Ohne sie behandelt `verbrauchsreihe` die erste reale Periode als Start-
+    ablesung (Verbrauch 0) — der Anfangsstand bliebe wirkungslos. Die Vorlauf-
+    Periode endet am Beginn der ersten realen Periode; dadurch wird der Anfangs-
+    stand ihr Randwert und die erste Abrechnung bekommt ihre echte Differenz.
+    Für Zähler ohne Anfangsstand bleibt alles unverändert: der bisherige
+    Startablesungs-Randwert ist identisch (end-to-end verifiziert)."""
+    if not zeitraeume:
+        return list(zeitraeume), None
+    erste_start = min(z.start for z in zeitraeume)
+    hat_anfang = any(a.datum <= erste_start for _, abls in zma for a in abls)
+    if not hat_anfang:
+        return list(zeitraeume), None
+    vorlauf = SimpleNamespace(id=_VORLAUF_ID, start=erste_start, ende=erste_start)
+    return [vorlauf, *zeitraeume], vorlauf
 
 
 class ZaehlerIn(BaseModel):
@@ -124,6 +154,13 @@ def ablesung_speichern(zid: int, data: AblesungIn,
         vorhanden = session.exec(select(Ablesung).where(
             Ablesung.zaehler_id == zid,
             Ablesung.zeitraum_id == data.zeitraum_id)).first()
+    elif (data.notiz or "") == ANFANGSSTAND:
+        # CCCLXXX — der Anfangsstand ist ebenso idempotent, aber je Zähler (er
+        # hängt an keinem Zeitraum): ein vorhandener wird aktualisiert statt
+        # verdoppelt, damit die Konfig-Maske ihn ohne Dublette nachbessern kann.
+        vorhanden = session.exec(select(Ablesung).where(
+            Ablesung.zaehler_id == zid, Ablesung.zeitraum_id.is_(None),
+            Ablesung.notiz == ANFANGSSTAND)).first()
     a = vorhanden or Ablesung(zaehler_id=zid, datum=data.datum, stand=data.stand)
     a.datum, a.stand = data.datum, data.stand
     a.zeitraum_id, a.notiz = data.zeitraum_id, data.notiz
@@ -152,12 +189,24 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
         .order_by(Zaehler.reihenfolge, Zaehler.id)).all()
     zma = [(zae, session.exec(select(Ablesung).where(Ablesung.zaehler_id == zae.id)
             .order_by(Ablesung.datum)).all()) for zae in zaehler]
-    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume, zid)
+    # CCCLXXX — ein Anfangsstand vor der ersten Abrechnung wird über eine
+    # synthetische Vorlauf-Periode Teil derselben Interpolation (`verbrauchsreihe`).
+    zeitraeume_i, vorlauf = _mit_vorlauf(zeitraeume, zma)
+    erste_start = min((p.start for p in zeitraeume), default=None)
+    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
 
     zeilen = []
     for zae, abls in zma:
-        reihe = ablesung.verbrauchsreihe(abls, zeitraeume)
-        vorwert = reihe.get(vorher.id) if vorher else None
+        reihe = ablesung.verbrauchsreihe(abls, zeitraeume_i)
+        # Der Vorstand kommt aus der vorigen realen Periode; für die erste Periode
+        # ist es — falls vorhanden — der Anfangsstand (Randwert der Vorlauf-Periode).
+        if vorher:
+            vorwert = reihe.get(vorher.id)
+        elif (vorlauf and erste_start is not None
+              and any(a.datum <= erste_start for a in abls)):
+            vorwert = reihe.get(_VORLAUF_ID)
+        else:
+            vorwert = None
         erfasst = next((a for a in abls if a.zeitraum_id == zid), None)
         zeilen.append({
             "id": zae.id, "name": zae.name, "messeinheit": zae.messeinheit,
@@ -212,7 +261,10 @@ def uebernehmen(zid: int, data: UebernahmeIn,
             select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
         zma = [(zae, session.exec(select(Ablesung).where(
                 Ablesung.zaehler_id == zae.id)).all()) for zae in zaehler]
-        verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume, zid)
+        # Gleiche Vorlauf-Periode wie in der Maske: der Anfangsstand zählt so auch
+        # bei der Übernahme in die erste Abrechnung mit (CCCLXXX).
+        zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
+        verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
         anteile = {}
         for zae in zaehler:
             # Der Gesamtzähler (ohne einheit_bezug) ist die Kontrollsumme, keine
@@ -241,10 +293,16 @@ def uebernehmen(zid: int, data: UebernahmeIn,
 
 
 def _zeige(session: Session, z: Zaehler) -> dict:
-    anzahl = len(session.exec(select(Ablesung).where(
-        Ablesung.zaehler_id == z.id)).all())
+    abls = session.exec(select(Ablesung).where(Ablesung.zaehler_id == z.id)
+                        .order_by(Ablesung.datum)).all()
+    # CCCLXXX — der Anfangsstand (Notiz-Markierung, sonst der früheste untaggte
+    # Stand) kommt mit, damit die Konfig-Maske ihn ohne Extra-Abfrage zeigt.
+    anfang = next((a for a in abls if (a.notiz or "") == ANFANGSSTAND), None) \
+        or next((a for a in abls if a.zeitraum_id is None), None)
     return {"id": z.id, "name": z.name, "kostenart": z.kostenart,
             "einheit_bezug": z.einheit_bezug, "messeinheit": z.messeinheit,
             "typ": z.typ, "hauptzaehler_id": z.hauptzaehler_id,
             "reihenfolge": z.reihenfolge, "aktiv": z.aktiv, "notiz": z.notiz,
-            "ablesungen": anzahl}
+            "ablesungen": len(abls),
+            "anfangsstand": None if not anfang else {
+                "stand": anfang.stand, "datum": anfang.datum.isoformat()}}
