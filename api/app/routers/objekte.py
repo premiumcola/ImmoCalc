@@ -177,7 +177,11 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
     heute = date.today()
     for o in alle:
         aktiv = aktive.get(o.id)
-        laufend = [m for m in mieten[o.id] if m.bis_datum is None]
+        # CCCLXXVIII — dieselbe Definition von „läuft heute" wie in
+        # `_einheit_zeile`/`_miete_je_einheit`: Einzug berücksichtigen und ein
+        # befristetes, aber laufendes Mietverhältnis als vermietet zählen (nicht
+        # jedes gesetzte `bis_datum` als beendet).
+        laufend = [m for m in mieten[o.id] if _laeuft(m, heute)]
         # Eine Miete ohne Einheitsangabe meint das ganze Objekt — dann gilt
         # jede Einheit als vermietet, sonst keine einzige.
         ganzes_objekt = any(not m.einheit.strip() for m in laufend)
