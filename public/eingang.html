@@ -1051,7 +1051,9 @@ function zeichne() {
   spalteDok.appendChild(bDok);
   spalteDok.appendChild(blatt);
   erfassung = null;
-  const { dokumente } = daten;
+  // CCCLXXXIII — nur PDFs zeigen. Alles wird zu PDF gewandelt und erkannt;
+  // Fremdformate (Excel, Bilder, …) gehören nicht in die Beleg-Übersicht.
+  const dokumente = (daten.dokumente || []).filter(d => /\.pdf$/i.test(d.dateiname || ''));
   if (!dokumente.length) {
     liste.innerHTML = daten.gesamt
       ? `<div class="hinweisbox">
