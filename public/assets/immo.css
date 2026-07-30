@@ -515,6 +515,32 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
   .grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
 }
 
+/* ---- Einheiten-Blasen — geteilte Grundform (CCCLXXVIII c) -----------------
+   Die runden „Bubbles" für Einheiten. Startseite (index.html) und die Objekt-/
+   Einheiten-Ansicht (objekt.html) teilten sich diese Grundform bislang doppelt;
+   hier steht sie einmal. Die farbigen Zustände bleiben BEWUSST seitenspezifisch
+   im jeweiligen <style> stehen: der freie Zustand ist auf der Startseite amber
+   (mit Miete daneben), im Mietformular der Objektseite dagegen grau — deshalb
+   keine .frei/.vermietet/.gewaehlt-Farbe hier. */
+.bubbles{display:flex; flex-wrap:wrap; gap:6px}
+.bubble{
+  display:inline-flex; align-items:center; gap:8px; max-width:100%;
+  min-height:44px; padding:8px 16px; border:none; border-radius:999px;
+  background:var(--sheet); color:inherit; font-family:var(--body);
+  text-align:left; cursor:pointer; box-shadow:0 1px 2px rgba(22,38,44,.06);
+  transition:transform .1s, box-shadow .15s;
+}
+.bubble:hover{box-shadow:0 5px 14px -8px rgba(22,38,44,.3)}
+.bubble:active{transform:scale(.97)}
+.bubble:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+/* [hidden] allein reicht nicht — display:inline-flex schlaegt es. */
+.bubble[hidden]{display:none}
+.bubble .bt{font:600 13.5px var(--body); line-height:1.3;
+            overflow-wrap:anywhere; min-width:0}
+.bubble .bf{font:500 10.5px var(--mono); color:var(--soft); white-space:nowrap}
+.bubble .bfrei{font:600 10.5px var(--mono); color:var(--amber);
+               letter-spacing:.06em; text-transform:uppercase; white-space:nowrap}
+
 /* Wer Bewegung abbestellt hat, bekommt keine — die Farbe allein sagt es auch. */
 @media(prefers-reduced-motion:reduce){
   *{transition:none !important; animation:none !important}

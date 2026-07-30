@@ -300,6 +300,27 @@
     margin:-2px 2px 12px;padding:11px 13px;background:var(--paper);border-radius:12px}
   .sehinweis strong{color:var(--ink);font-weight:600}
 
+  /* CCCLXXX (a) — Anfangszählerstand-Rubrik unter den Abrechnungszeiträumen. Ruhig:
+     eine einzelne Karte in der Blattfarbe, links ein gedecktes Symbol, rechts ein
+     Pfeil, wenn es etwas zu tun gibt. Im erledigten Zustand ohne Pfeil, grüner
+     Haken — dieselbe Sprache wie die übrigen Rubriken. */
+  .erststand{display:flex;align-items:center;gap:12px;width:100%;
+    background:var(--sheet);border-radius:14px;padding:13px 15px;margin-top:10px;
+    text-align:left;font-family:var(--body);color:inherit;
+    box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  button.erststand{border:none;cursor:pointer}
+  button.erststand:hover{background:#F6F8F8}
+  button.erststand:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .erststand .es-ik{width:34px;height:34px;border-radius:10px;flex:none;display:flex;
+    align-items:center;justify-content:center;background:#EDF1F0;color:var(--soft)}
+  .erststand .es-ik svg{width:20px;height:20px;display:block}
+  .erststand .es-ik.ok{background:var(--pos-bg);color:var(--pos)}
+  .erststand .es-tx{flex:1;min-width:0}
+  .erststand .es-t{display:block;font:600 13.5px var(--disp);letter-spacing:-.01em}
+  .erststand .es-d{display:block;font:400 12px var(--body);color:var(--soft);
+    margin-top:3px;line-height:1.45;overflow-wrap:anywhere}
+  .erststand .es-arr{flex:none;color:var(--soft);font:400 18px var(--body)}
+
   /* CCLXXVIII — Orange-Entwurf: ein aus einem Beleg vorläufig angelegter
      Datensatz. Linker Amber-Streifen + leicht getönter Grund, im Ton der
      gefüllten NK-Zeile, nur amber. Der Eintrag steht dabei als eigener Block
@@ -577,24 +598,13 @@
   .hausweg .hn{display:block;font:600 14.5px var(--disp);letter-spacing:-.01em;
     margin-top:3px;overflow-wrap:anywhere}
 
-  /* ---- CLXIX: Einheiten als Blasen — dieselbe Sprache wie die Startseite */
-  .bubbles{display:flex;flex-wrap:wrap;gap:6px}
-  .bubble{display:inline-flex;align-items:center;gap:8px;max-width:100%;
-    min-height:44px;padding:8px 16px;border:none;border-radius:999px;
-    background:var(--sheet);color:inherit;font-family:var(--body);
-    text-align:left;cursor:pointer;box-shadow:0 1px 2px rgba(22,38,44,.06);
-    transition:transform .1s,box-shadow .15s}
-  .bubble:hover{box-shadow:0 5px 14px -8px rgba(22,38,44,.3)}
-  .bubble:active{transform:scale(.97)}
-  .bubble:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .bubble .bt{font:600 13.5px var(--body);line-height:1.3;
-              overflow-wrap:anywhere;min-width:0}
-  .bubble .bf{font:500 10.5px var(--mono);color:var(--soft);white-space:nowrap}
+  /* ---- CLXIX: Einheiten als Blasen — dieselbe Sprache wie die Startseite.
+     Grundform (CCCLXXVIII c) steht geteilt in immo.css; hier bleiben nur die
+     objektseiten-eigenen Zustände: der freie Zustand ist grau (nicht amber wie
+     auf der Startseite), die gewählte Blase trägt die Auszeichnungsfarbe. */
   .bubble.frei{background:#F1F4F4}
-  .bubble .bfrei{font:600 10.5px var(--mono);color:var(--amber);
-    letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
   /* Die gewählte Blase trägt die Auszeichnungsfarbe — eine Wahl, sichtbar
-     ohne Häkchen. */
+     ohne Häkchen. Steht NACH .frei, damit die Wahl den freien Grau-Ton schlägt. */
   .bubble.gewaehlt{background:var(--teal);box-shadow:none}
   .bubble.gewaehlt .bt{color:#fff}
   .bubble.gewaehlt .bf,.bubble.gewaehlt .bfrei{color:rgba(255,255,255,.8)}
@@ -729,6 +739,9 @@ let grundschulden = [];
 /* CCCIX — die geladenen Bereiche, damit der Zuordnen-Dialog die vorhandenen
    Einträge einer Rubrik anbieten kann. */
 let bereicheDaten = {};
+/* CCCLXXX (a) — die Zähler des Objekts (mit ihrem Anfangsstand-Zustand) für die
+   Anfangszählerstand-Rubrik unter den Abrechnungszeiträumen. Nur gelesen. */
+let zaehlerListe = [];
 
 /* Auf welche Einheit ein Mietverhältnis zeigt. Spiegelt `verteilung.bezuege`:
    ohne Angabe gehört es bei genau einer Einheit zu dieser — sonst nirgendwohin. */
@@ -755,6 +768,62 @@ function nachpflegeHtml(n) {
       <span class="d">${esc(n.text)}. Nichts davon ist dringend — die
         Abrechnung läuft auch ohne. Ergänzen kannst du es jederzeit.</span>
     </span></div>`;
+}
+
+/* CCCLXXX (a) — Anfangszählerstände. Zeigt ruhig, ob für die Zähler des Objekts
+   ein Erststand vor der ersten Abrechnung hinterlegt ist. Datenquelle sind die
+   Objekt-Zähler (GET /objekte/{slug}/zaehler); jeder trägt seinen `anfangsstand`
+   (oder null). Rest-Zähler brauchen keinen (ihr Stand ergibt sich rechnerisch)
+   und zählen nicht mit. Führt zur Erfassung in der Zähler-Konfig, die in
+   zeitraum.html liegt — hier wird nur dorthin geführt, nie selbst erfasst.
+   `zielId` ist der Abrechnungszeitraum, über den die Konfig erreichbar ist. */
+const GAUGE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true"><path d="M5 16.5a7 7 0 0 1 14 0"/>
+  <path d="M12 16.5l3.6-3.1"/><path d="M12 6.5V8M5.7 9.7l1 1M18.3 9.7l-1 1"/>
+  <circle cx="12" cy="16.5" r="1.15" fill="currentColor" stroke="none"/></svg>`;
+
+function erststandHtml(zielId) {
+  if (istGrundstueck()) return '';
+  // Nur gemessene, aktive Zähler brauchen einen Anfangsstand.
+  const mess = (zaehlerListe || []).filter(z => z.aktiv !== false && z.typ !== 'rest');
+  const ohne = mess.filter(z => !z.anfangsstand);
+  // Zähler vorhanden, aber keiner misst (nur Rest/inaktiv) — kein Anfangsstand nötig.
+  if (zaehlerListe.length && mess.length === 0) return '';
+
+  // Alles hinterlegt — ruhige Bestätigung, kein Weg, kein Pfeil.
+  if (mess.length && !ohne.length) {
+    return `<div class="erststand fertig">
+        <span class="es-ik ok">${HAKEN_ICON}</span>
+        <span class="es-tx">
+          <span class="es-t">Anfangszählerstände hinterlegt</span>
+          <span class="es-d">${mess.length === 1
+            ? 'Für den Zähler ist ein Erststand'
+            : `Für alle ${mess.length} Zähler ist ein Erststand`} vor der ersten
+            Abrechnung erfasst.</span>
+        </span></div>`;
+  }
+
+  const text = !zaehlerListe.length
+    ? 'Noch keine Zähler angelegt — für verbrauchsabhängige Kosten die Zähler '
+      + 'und ihren Anfangsstand vor der ersten Abrechnung einrichten.'
+    : ohne.length === mess.length
+      ? (mess.length === 1
+          ? 'Dem Zähler fehlt noch der Anfangsstand vor der ersten Abrechnung.'
+          : `Allen ${mess.length} Zählern fehlt noch der Anfangsstand vor der `
+            + 'ersten Abrechnung.')
+      : `${ohne.length} von ${mess.length} Zählern `
+        + `${ohne.length === 1 ? 'hat' : 'haben'} noch keinen Anfangsstand.`;
+
+  const zielAttr = zielId != null ? ` data-z="${esc(String(zielId))}"` : '';
+  return `<button class="erststand offen" data-erststand="1"${zielAttr}>
+      <span class="es-ik">${GAUGE_ICON}</span>
+      <span class="es-tx">
+        <span class="es-t">Anfangszählerstand erfassen</span>
+        <span class="es-d">${esc(text)}</span>
+      </span>
+      <span class="es-arr" aria-hidden="true">›</span>
+    </button>`;
 }
 
 function kennzahlenHtml(v, jahresmiete, restschuld, guthaben) {
@@ -1536,7 +1605,7 @@ async function laden() {
     catch (fehler) { luecken.push(`${was}: ${fehler.message || fehler}`); return ersatz; }
   };
   const [bereiche, anteile, vermoegen, einheitenRoh, grundschuldenRoh,
-         eigentuemerAlle] = await Promise.all([
+         eigentuemerAlle, zaehlerRoh] = await Promise.all([
     Promise.all(Object.keys(BEREICHE).map(async b =>
       [b, await zweig(BEREICHE[b].titel,
                       () => api(`/objekte/${encodeURIComponent(slug)}/${b}`), [])]))
@@ -1551,6 +1620,9 @@ async function laden() {
           () => api(`/objekte/${encodeURIComponent(slug)}/grundschulden`), []),
     // CCCXXXV — alle Personen für die Nießbrauch-Auswahl; darf leer bleiben.
     zweig('Eigentümerliste', () => api('/eigentuemer'), []),
+    // CCCLXXX (a) — Zähler des Objekts für die Anfangszählerstand-Rubrik. Beiwerk:
+    // scheitert der Abruf, bleibt die Rubrik einfach weg.
+    zweig('Zähler', () => api(`/objekte/${encodeURIComponent(slug)}/zaehler`), []),
   ]);
   if (luecken.length) melde(`Nicht alles konnte geladen werden — ${luecken[0]}`, 'neg');
 
@@ -1561,6 +1633,7 @@ async function laden() {
   einheiten = istGrundstueck() ? [] : (einheitenRoh || []);
   grundschulden = grundschuldenRoh || [];
   bereicheDaten = bereiche || {};
+  zaehlerListe = Array.isArray(zaehlerRoh) ? zaehlerRoh : [];
   setObjektEigentuemer([...new Set((anteile?.anteile || [])
     .map(a => a.name).filter(Boolean))]);
   // CCCXXXV — Namen aller app-weit geführten Eigentümer (Personen).
@@ -1638,12 +1711,17 @@ async function laden() {
   // Abrechnungszeiträume gehören nicht hierher. Die Grundsteuer ist so gering,
   // dass sie ohne eigenen Zeitraum direkt im Grundstücksblock verrechnet wird
   // (CCCIII, ersetzt CCC).
+  // Die Zähler-Konfig (samt Anfangsstand-Erfassung) liegt in zeitraum.html und
+  // ist über einen Abrechnungszeitraum erreichbar — bevorzugt der laufende.
+  const erststandZielId = (laufend && laufend.id != null) ? laufend.id
+    : (det.zeitraeume[0] && det.zeitraeume[0].id != null ? det.zeitraeume[0].id : null);
   const zeitraumBlock = istGrundstueck() ? '' : `
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
       ${fokus ? '' : '<button data-zeitraum-neu="1">Anlegen</button>'}</div>
     <div class="liste">${zr}</div>
     ${fokus ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
-      im Zeitraum steht, was davon auf diese Einheit entfällt.</div>` : ''}`;
+      im Zeitraum steht, was davon auf diese Einheit entfällt.</div>` : ''}
+    ${erststandHtml(erststandZielId)}`;
 
   if (fokus) {
     // CLXVIII — im Fokus zählen die Mieterthemen. Stammdaten, Eigentümer,
@@ -3395,6 +3473,20 @@ inhalt.addEventListener('click', async e => {
   const zeitraum = e.target.closest('[data-zeitraum]');
   if (zeitraum) {
     location.href = `zeitraum.html?z=${zeitraum.dataset.zeitraum}`;
+    return;
+  }
+
+  // CCCLXXX (a) — die Anfangszählerstand-Rubrik führt zur Zähler-Konfig im
+  // Abrechnungszeitraum (dort wird der Erststand erfasst). Ohne Zeitraum ist
+  // die Konfig nicht erreichbar — dann zuerst einen Zeitraum anlegen.
+  const erststand = e.target.closest('[data-erststand]');
+  if (erststand) {
+    if (erststand.dataset.z) {
+      location.href = `zeitraum.html?z=${encodeURIComponent(erststand.dataset.z)}`;
+    } else {
+      formular({ titel: 'Abrechnungszeitraum anlegen', felder: ZEITRAUMFELDER,
+                 absicht: 'zeitraum' });
+    }
     return;
   }
 
