@@ -574,7 +574,11 @@ def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
         "nutz_flaeche": e.nutz_flaeche(),
         "vermietet": bool(laufend),
         "mieter": ", ".join(sorted({m.partei for m in laufend if m.partei})),
-        "kaltmiete": round(sum(m.kaltmiete for m in laufend), 2),
+        # CCCLXXVIII b — auf den Monatsbetrag normalisieren (Turnus heraus-
+        # rechnen); die Einheit zeigt „… €/M" und leitet daraus €/m² ab, sonst
+        # verdreifachte eine vierteljährliche Miete den Quadratmeterpreis.
+        "kaltmiete": round(sum(jahresbetrag(m.kaltmiete, m.turnus) / 12
+                               for m in laufend), 2),
         "mietverhaeltnisse": len(eigene),
         # CCCXXVI — die hinterlegten Lagepläne dieser Einheit als
         # [{id, dateiname}]. Defensiv (leer, wenn keine); die Vorschau läuft
