@@ -296,6 +296,40 @@ def _zu_zahl(ganz: str, nachkomma: str) -> float:
     return float(re.sub(r"[.,]", "", ganz) + "." + nachkomma)
 
 
+def _ist_freier_betrag(zeile: str, treffer: "re.Match[str]") -> bool:
+    """Steht die Zahl frei — oder klebt sie in einer Kennung/Serien-/Datumsfolge?
+
+    Ein Rechnungsbetrag steht hinter Leerraum, „€", „EUR" oder einem
+    Doppelpunkt. Eine Zahl, die unmittelbar an weiteren Zeichen einer Kennung
+    hängt, ist keiner: „2003,03/2004" ist das Herstelldatum einer Weishaupt-
+    Brennerplakette (CCCLXVII), kein Betrag, und „WTU30,00" eine Typennummer.
+    """
+    vor = zeile[treffer.start() - 1] if treffer.start() > 0 else ""
+    nach = zeile[treffer.end()] if treffer.end() < len(zeile) else ""
+    # Ein Schrägstrich direkt dahinter = Datums-/Kennungsfolge (…/2004).
+    if nach == "/":
+        return False
+    # Ein Buchstabe unmittelbar davor gehört zu einer Typ-/Seriennummer
+    # (WTU30G…) — ein echter Betrag steht dort nie direkt an einem Buchstaben.
+    if vor.isalpha():
+        return False
+    return True
+
+
+def _plausibler_betrag(wert: float, ganzteil: str) -> bool:
+    """Ist die Zahl als Geldbetrag plausibel?
+
+    Positiv, und der Ganzteil ist keine lange trennerlose Ziffernkette: eine
+    Seriennummer wie „6138521,20" wäre als echter Betrag mit Tausenderpunkt
+    geschrieben („6.138.521,20"), nie nackt."""
+    if not wert or wert <= 0:
+        return False
+    nackte_ziffern = re.sub(r"\D", "", ganzteil)
+    if len(nackte_ziffern) >= 7 and not re.search(r"[.,]", ganzteil):
+        return False
+    return True
+
+
 def _betraege_der_zeile(zeile: str) -> list[float]:
     """Alle Beträge einer Zeile — in beiden Schreibweisen.
 
@@ -309,10 +343,20 @@ def _betraege_der_zeile(zeile: str) -> list[float]:
     Ziffern), „104.15" nur das Punkt-Muster. Was der Punkt zusätzlich
     aufliest, sind Anzahlen wie „1.00" und Prozentwerte wie „19.00" — beide
     zu klein, um gegen eine Endsumme zu gewinnen.
+
+    Verworfen wird, was nur nach einem Betrag aussieht: eine Zahl, die an eine
+    Kennung, Serien- oder Datumsfolge klebt (CCCLXVII), oder eine unplausible
+    Ziffernkette — sonst wird aus einer Gerätenummer ein €-Betrag.
     """
-    return [_zu_zahl(g, n)
-            for muster in (_BETRAG, _BETRAG_PUNKT)
-            for g, n in muster.findall(zeile)]
+    treffer: list[float] = []
+    for muster in (_BETRAG, _BETRAG_PUNKT):
+        for m in muster.finditer(zeile or ""):
+            if not _ist_freier_betrag(zeile, m):
+                continue
+            wert = _zu_zahl(m.group(1), m.group(2))
+            if _plausibler_betrag(wert, m.group(1)):
+                treffer.append(wert)
+    return treffer
 
 
 def betrag_aus_text(text: str) -> float | None:
@@ -525,7 +569,8 @@ def _ohne_befund() -> dict:
     Antwortformen kennen müssen."""
     return {"moeglich": erkennung_moeglich(), "betrag": None, "datum": None,
             "jahr": None, "monat": None, "kategorie": "", "sache": "",
-            "zeichen": 0}
+            "zeichen": 0, "kosten_relevant": None, "nebenkosten": None,
+            "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": ""}
 
 
 def _warum_nichts(rohdaten: bytes) -> str:
@@ -622,8 +667,19 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
     if ki.get("kostenart"):
         ergebnis["sache"] = ki["kostenart"]
     ergebnis["ist_kosten"] = bool(ki.get("ist_kosten", ergebnis["ist_kosten"]))
-    if ki.get("einordnung"):
-        ergebnis["einordnung"] = ki["einordnung"]        # KI-Klartext (CCLXXIII)
+    # CCCLXVII: die inhaltliche KI-Einschätzung — sind echte Kosten entstanden,
+    # gehört es in die Nebenkostenabrechnung, welcher Abrechnungszeitraum, und
+    # eine längere Zusammenfassung. Die Zusammenfassung ist zugleich die
+    # (bisher zu knapp abgeschnittene) Einordnung, die am Beleg festgehalten
+    # und angezeigt wird.
+    ergebnis["kosten_relevant"] = ki.get("kosten_relevant")
+    ergebnis["nebenkosten"] = ki.get("nebenkosten")
+    if ki.get("zeitraum_hinweis"):
+        ergebnis["zeitraum_hinweis"] = ki["zeitraum_hinweis"]
+    zusammenfassung = ki.get("zusammenfassung") or ki.get("einordnung")
+    if zusammenfassung:
+        ergebnis["zusammenfassung"] = zusammenfassung
+        ergebnis["einordnung"] = zusammenfassung          # KI-Klartext (CCLXXIII)
     # CCLXXIV: das Raster durchreichen — Liegenschaft (nicht Postanschrift),
     # Einheit, Dokumenttyp und die typspezifischen Felder. Nur übernehmen, was
     # die KI wirklich geliefert hat; leere Werte überschreiben nichts.
@@ -635,6 +691,14 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
         ergebnis["dokumenttyp"] = ki["dokumenttyp"]
     if ki.get("felder"):
         ergebnis["felder"] = ki["felder"]
+    # CCCLXVII: eine Bescheinigung/Info ohne geforderten Rechnungsbetrag hat
+    # keine umlagefähigen Kosten ausgelöst — dann KEIN Betrag vorschlagen, damit
+    # nicht eine Geräte-Kennung (Weishaupt-Plakette 2.003,03) als € durchgeht.
+    # Auch aus dem Raster fliegt der Betrag, sonst belegte ihn das Prüfblatt vor.
+    if ki.get("kosten_relevant") is False:
+        ergebnis["betrag"] = None
+        if isinstance(ergebnis.get("felder"), dict):
+            ergebnis["felder"].pop("betrag", None)
     ergebnis["ki"] = True
 
 
@@ -670,6 +734,11 @@ def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "",
         # Ohne Leerraum gezählt: der Layout-Modus füllt jede Zeile bis zur
         # Spalte auf, ein einseitiger Beleg käme sonst auf Tausende Zeichen.
         "zeichen": len(re.sub(r"\s", "", text)),
+        # CCCLXVII: die inhaltliche KI-Einschätzung — offen, bis die KI (mit
+        # Schlüssel) etwas liefert. So bleibt die Antwortform mit und ohne KI
+        # gleich, und die Oberfläche muss nicht zwei Fälle kennen.
+        "kosten_relevant": None, "nebenkosten": None,
+        "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": "",
     }
     # Die KI ergänzt v. a. das Belegdatum, wo die Heuristik ein Zahlungsziel
     # oder eine Zeitraumgrenze erwischt (nur mit Key, sonst stumm).

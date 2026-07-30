@@ -48,7 +48,10 @@ API_VERSION = "2023-06-01"
 # Mehr Text kostet mehr Tokens, ohne dass der Briefkopf (mit dem Datum) besser
 # würde — er steht ohnehin oben. 6000 Zeichen decken die erste Seite ab.
 MAX_ZEICHEN = 6000
-MAX_TOKENS = 300
+# CCCLXVII: die Antwort trägt jetzt zusätzlich eine mehrsätzige Zusammenfassung
+# und die inhaltliche Einschätzung (Kosten? NK? Zeitraum?) — dafür etwas mehr
+# Raum, damit der Schluss-Satz nicht mitten im Wort abbricht.
+MAX_TOKENS = 700
 ZEITLIMIT = 15.0
 
 # CCLXXIV: Das Modell zieht NUR die App-Eingabefelder je Dokumenttyp — das
@@ -61,7 +64,9 @@ SYSTEM_PROMPT = (
     "Gib NUR JSON zurück, kein weiterer Text:\n"
     '{"dokumenttyp":"…","kategorie":"…","immobilie":"…","einheit":"…",'
     '"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,"ist_kosten":true|false,'
-    '"kostenart":"…","felder":{…},"einordnung":"…"}\n'
+    '"kosten_relevant":true|false,"nebenkosten":true|false,'
+    '"zeitraum_hinweis":"…","kostenart":"…","felder":{…},'
+    '"zusammenfassung":"…"}\n'
     "dokumenttyp = kurze Bezeichnung der Belegart (Mietvertrag, Versicherung, "
     "Kredit, Grundsteuerbescheid, Kaufvertrag, Grundbuch, WEG-Abrechnung, "
     "Nebenkosten-Rechnung, Zählerstand …). "
@@ -79,14 +84,32 @@ SYSTEM_PROMPT = (
     "OG\", \"EG rechts\"), sonst weglassen. "
     "datum = Ausstellungs-/Rechnungsdatum aus dem Briefkopf, NICHT das "
     "Zahlungsziel, NICHT eine Zeitraumgrenze. "
-    "betrag = Gesamt-/Rechnungsbetrag in Euro als Zahl (Punkt als Dezimal-"
-    "trenner, ohne Währungszeichen). "
+    "betrag = NUR der tatsächlich geforderte Gesamt-/Rechnungsbetrag in Euro als "
+    "Zahl (Punkt als Dezimaltrenner, ohne Währungszeichen). Zahlen aus Geräte-"
+    "Kennungen, Serien-/Zählernummern oder Datumsangaben (z. B. …,2003,03/2004 "
+    "auf einer Typenplakette) sind KEIN Betrag — dann null. "
     "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand, "
     "Ableseprotokoll), sonst true. "
+    "kosten_relevant = true NUR, wenn auf dem Beleg echte, bezifferte Kosten "
+    "gefordert werden (eine Rechnung/ein Bescheid mit Rechnungsbetrag). Eine "
+    "bloße Bescheinigung, ein Mess-/Prüfprotokoll (z. B. Schornsteinfeger-"
+    "Messbescheinigung), ein Zählerstand oder ein Informationsschreiben OHNE "
+    "geforderten Betrag = false. Ist kosten_relevant=false, setze betrag=null. "
+    "nebenkosten = true, wenn diese Kosten in die Nebenkosten-/Betriebskosten-"
+    "abrechnung des Mieters gehören (umlagefähig: Wasser, Abwasser, Müll, "
+    "Heizung, Schornsteinfeger, Grundsteuer, Gebäudeversicherung, Hausmeister, "
+    "Winterdienst …); false bei nicht umlagefähigen Kosten (Instandhaltung, "
+    "Verwaltervergütung, Kontoführung) oder wenn keine Kosten entstanden. "
+    "zeitraum_hinweis = für welchen Abrechnungszeitraum/welches Jahr der Beleg "
+    "zählt. Beachte: eine Rechnung trägt oft ein späteres Datum als der "
+    "Zeitraum, den sie abrechnet (Rechnung im März 2025 für das Abrechnungsjahr "
+    "2024) — nenne das Jahr des ABRECHNUNGSZEITRAUMS, nicht bloß das "
+    "Rechnungsdatum. Leer, wenn es kein Abrechnungsbeleg ist. "
     "kostenart = worum es GENAU geht, kurz (z. B. Heizöl, Grundsteuer, Wasser, "
     "Gebäudeversicherung, Schornsteinfeger, Müll, Darlehen). "
-    "einordnung = ein bis zwei kurze deutsche Sätze: was für ein Beleg das ist, "
-    "von wem, worum es geht, mit Datum und Betrag.\n"
+    "zusammenfassung = 2 bis 4 vollständige deutsche Sätze: was für ein Dokument "
+    "das ist (Art, Absender), ob echte Kosten entstanden sind, ob es in die "
+    "Nebenkostenabrechnung gehört, und für welchen Abrechnungszeitraum.\n"
     "felder = NUR die zum Typ passenden Angaben, die WIRKLICH auf dem Beleg "
     "stehen (Fehlendes weglassen). Raster je Typ:\n"
     "MIETVERTRAG: mieter, kaltmiete, nebenkosten_vz, stellplatzmiete, "
@@ -199,6 +222,35 @@ def _adresse(wert) -> str:
     return " ".join(wert.strip().split())[:120]
 
 
+def _langtext(wert) -> str:
+    """Ein mehrsätziges Feld (Zusammenfassung, Zeitraum-Hinweis) — CCCLXVII.
+
+    Länger als ein Klartextfeld, damit der Schluss-Satz nicht mitten im Wort
+    abbricht (genau der Grund, warum die alte 60-Zeichen-Einordnung „zu kurz
+    und abgeschnitten" wirkte), aber begrenzt, damit eine ausufernde Antwort
+    das Dokument nicht flutet."""
+    if not isinstance(wert, str):
+        return ""
+    return " ".join(wert.split())[:400]
+
+
+def _wahrheit(wert):
+    """Ein echtes bool oder None — CCCLXVII.
+
+    Fehlt die Angabe (ältere Antwort ohne das Feld), bleibt sie offen (None),
+    nicht stillschweigend false: nur ein ausdrückliches false darf später den
+    vorgeschlagenen Betrag streichen."""
+    if isinstance(wert, bool):
+        return wert
+    if isinstance(wert, str):
+        w = wert.strip().lower()
+        if w in ("true", "ja", "yes", "1"):
+            return True
+        if w in ("false", "nein", "no", "0"):
+            return False
+    return None
+
+
 # So viele Felder nimmt ein Raster höchstens auf — genug für den grössten Typ
 # (Mietvertrag/Kredit), eng genug, dass eine ausufernde Modellantwort nicht
 # beliebig viel Müll ins Dokument schreibt.
@@ -291,14 +343,25 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         log.info("KI-Auslese lieferte kein verwertbares JSON")
         return None
 
+    # CCCLXVII: die mehrsätzige Zusammenfassung ist die neue, längere Fassung
+    # der Einordnung. Ältere Antworten kennen nur „einordnung" — dann gilt die.
+    zusammenfassung = _langtext(block.get("zusammenfassung")
+                                or block.get("einordnung"))
     ergebnis = {
         "datum": _datum(block.get("datum")),
         "betrag": _betrag(block.get("betrag")),
         "kostenart": _text(block.get("kostenart")),
         "kategorie": _text(block.get("kategorie")),
         "ist_kosten": bool(block.get("ist_kosten", True)),
-        # Kurze Klartext-Einordnung für die Anzeige unter dem Dokument (CCLXXIII).
-        "einordnung": _text(block.get("einordnung")),
+        # CCCLXVII: die inhaltliche Einschätzung — sind Kosten entstanden, NK?,
+        # welcher Abrechnungszeitraum, und die längere Zusammenfassung. Die
+        # Zusammenfassung dient zugleich als (nicht mehr abgeschnittene)
+        # Einordnung für die Anzeige und das Festhalten am Beleg (CCLXXIII).
+        "kosten_relevant": _wahrheit(block.get("kosten_relevant")),
+        "nebenkosten": _wahrheit(block.get("nebenkosten")),
+        "zeitraum_hinweis": _langtext(block.get("zeitraum_hinweis")),
+        "zusammenfassung": zusammenfassung,
+        "einordnung": zusammenfassung,
         # CCLXXIV: das Raster — Liegenschaft (nicht Postanschrift), Einheit und
         # die typspezifischen App-Eingabefelder.
         "dokumenttyp": _text(block.get("dokumenttyp")),

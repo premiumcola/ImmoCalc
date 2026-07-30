@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import belegposten, ocr, pdftext
+from .. import belegposten, kiauslese, ocr, pdftext
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, betragsteil, datum_aus_namen,
                            datumsteil, ohne_betrag, ohne_datum,
@@ -3252,6 +3252,58 @@ def vorschau(dokument_id: int,
     raise HTTPException(415, "Für diese Datei gibt es keine Bildvorschau")
 
 
+def _ki_am_beleg_festhalten(session: Session, d: Dokument, ergebnis: dict) -> bool:
+    """Hält die frische KI-Auslese am Beleg fest — nur, wo die KI wirklich etwas
+    geliefert hat (CCLXXIII/CCCLXVII).
+
+    Die (jetzt mehrsätzige) Zusammenfassung steht als `ki_einordnung`, das
+    Raster als `ki_felder`/`ki_immobilie`/`ki_einheit`. So sieht der Nutzer die
+    Einschätzung später wieder, ohne den Beleg erneut lesen zu lassen. Ein
+    leeres Feld überschreibt nie einen vorhandenen Wert; nur was sich wirklich
+    ändert, wird geschrieben. Gibt zurück, ob etwas geändert wurde."""
+    geaendert = False
+    einordnung = (ergebnis.get("einordnung") or "").strip()
+    if einordnung and einordnung != (d.ki_einordnung or ""):
+        d.ki_einordnung = einordnung
+        geaendert = True
+    # Das Raster nur nachziehen, wenn die KI-Auslese wirklich lief (`ki`) — die
+    # reine Heuristik liefert keine Felder und soll ein vorhandenes Raster nicht
+    # leeren.
+    if ergebnis.get("ki"):
+        felder = ergebnis.get("felder")
+        if isinstance(felder, dict) and felder != (d.ki_felder or {}):
+            d.ki_felder = felder
+            geaendert = True
+        immobilie = (ergebnis.get("immobilie") or "").strip()
+        if immobilie and immobilie != (d.ki_immobilie or ""):
+            d.ki_immobilie = immobilie
+            geaendert = True
+        einheit = (ergebnis.get("einheit") or "").strip()
+        if einheit and einheit != (d.ki_einheit or ""):
+            d.ki_einheit = einheit
+            geaendert = True
+    if geaendert:
+        session.add(d)
+        session.commit()
+    return geaendert
+
+
+def _hole_beleg_bytes(session: Session, dokument_id: int) -> tuple[Dokument, bytes]:
+    """Der Beleg und seine Bytes aus der Cloud — die gemeinsame Vorstufe von
+    Erkennen und Neu-Analysieren."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
+    client = verbindung(session)
+    try:
+        rohdaten, _typ = client.hole(d.pfad)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    return d, rohdaten
+
+
 @router.get("/{dokument_id}/erkennen")
 def erkennen_aus_ablage(dokument_id: int,
                         session: Session = Depends(get_session)) -> dict:
@@ -3267,37 +3319,51 @@ def erkennen_aus_ablage(dokument_id: int,
     ganze Ablage. Gefragt wird für den einen Beleg, den der Nutzer gerade
     ansieht.
 
-    Die KI-Einordnung wird dabei am Beleg festgehalten (CCLXXIII): sie kostet
-    einen KI-Aufruf, und der Nutzer soll den erläuternden Satz später wieder
-    sehen, ohne den Beleg neu lesen zu lassen. Sonst rein lesend — die Datei
-    wird nicht verschoben.
+    Die KI-Einordnung und das Raster werden dabei am Beleg festgehalten
+    (CCLXXIII/CCCLXVII): sie kosten einen KI-Aufruf, und der Nutzer soll die
+    Einschätzung später wieder sehen, ohne den Beleg neu lesen zu lassen. Sonst
+    rein lesend — die Datei wird nicht verschoben.
     """
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
-    if not d.pfad.startswith("/"):
-        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
-    client = verbindung(session)
-    try:
-        rohdaten, _typ = client.hole(d.pfad)
-    except NextcloudFehler as e:
-        raise HTTPException(400, str(e)) from e
+    d, rohdaten = _hole_beleg_bytes(session, dokument_id)
     # Dateiname als Kontext mitgeben — dieselbe KI-gestützte Auslese wie beim
     # frisch abfotografierten Beleg (CCLXVIII). CCLXIX: auch die Erkennungs-
     # muster (CCXLIX) anwenden, damit Nutzerregeln beim Cloud-Beleg genauso
     # greifen wie beim Foto-Upload.
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
                            ki_key=_ki_key(session), ki_modell=_ki_modell(session))
-    # CCLXXIII: die KI-Einordnung festhalten, damit die App sie zeigen kann,
-    # ohne den Beleg jedes Mal neu zu lesen. Nur setzen, wenn die KI etwas
-    # geliefert hat — ein leeres Feld soll eine vorhandene Einordnung nicht
-    # überschreiben.
-    einordnung = (ergebnis.get("einordnung") or "").strip()
-    if einordnung and einordnung != (d.ki_einordnung or ""):
-        d.ki_einordnung = einordnung
-        session.add(d)
-        session.commit()
+    _ki_am_beleg_festhalten(session, d, ergebnis)
     return ergebnis
+
+
+@router.post("/{dokument_id}/neu-analysieren")
+def neu_analysieren(dokument_id: int,
+                    session: Session = Depends(get_session)) -> dict:
+    """Führt die KI-Analyse für einen abgelegten Beleg erneut aus (CCCLXVII).
+
+    Der Nutzer stößt es an, nachdem er den API-Schlüssel hinterlegt hat oder
+    einen Beleg neu bewerten lassen will. Anders als `/erkennen` sagt die
+    Antwort ehrlich, ob die KI überhaupt lief: ohne Schlüssel oder ohne Guthaben
+    bleibt es bei der einfachen Erkennung — dann erklärt `meldung`, warum keine
+    KI-Einschätzung kam. Es stürzt nichts ab, es entstehen keine Daten von
+    selbst. Rein lesend an der Cloud-Datei; festgehalten werden nur die frischen
+    KI-Angaben am Beleg."""
+    d, rohdaten = _hole_beleg_bytes(session, dokument_id)
+    ki_key = _ki_key(session)
+    eingerichtet = kiauslese.verfuegbar(ki_key)
+    ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
+                           ki_key=ki_key, ki_modell=_ki_modell(session))
+    _ki_am_beleg_festhalten(session, d, ergebnis)
+    gelaufen = bool(ergebnis.get("ki"))
+    if not eingerichtet:
+        meldung = ("Für die KI-Analyse ist kein Anthropic-Schlüssel hinterlegt — "
+                   "in den Einstellungen eintragen, dann erneut versuchen.")
+    elif not gelaufen:
+        meldung = ("Die KI war nicht erreichbar (kein Guthaben oder ein "
+                   "Netzwerkproblem) — es gilt weiter die einfache Erkennung.")
+    else:
+        meldung = "KI-Analyse aktualisiert."
+    return {**ergebnis, "ki_eingerichtet": eingerichtet,
+            "ki_gelaufen": gelaufen, "meldung": meldung}
 
 
 @router.post("/{dokument_id}/geradedrehen")

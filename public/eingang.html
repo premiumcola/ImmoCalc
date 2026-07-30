@@ -137,19 +137,26 @@
   .zahlzeile .warte + .zuruecksetzen{margin-left:0}
   .zahlzeile .warte[hidden] + .zuruecksetzen{margin-left:auto}
 
-  /* ---- Arbeitsfläche: links die Belege, rechts der Beleg selbst ------------
-     Auf dem Telefon gibt es nur eine Spalte; das Prüfblatt rückt dann unter
-     die gewählte Karte (siehe blattPlatzieren in der Logik). Die zweite
-     Spalte ist ein Gewinn für breite Schirme, nie eine Voraussetzung. */
+  /* ---- Arbeitsfläche: links die Arbeit, rechts das Dokument -----------------
+     CCCLXVII: Links steht alles zum Anfassen — die Belege, die Eingabefelder
+     und das Ergebnis-Prüfblatt (unter der gewählten Karte). Rechts steht NUR
+     das Dokument, ruhig und sticky. So liegen Felder/Ergebnis und Dokument
+     nebeneinander statt in einem langen „Dokument + drunter noch was"-Turm.
+     Auf dem Telefon gibt es eine Spalte; Dokument und Prüfblatt rücken dann
+     unter die gewählte Karte (siehe blattPlatzieren in der Logik). */
   .flaeche{display:grid;gap:16px;align-items:start}
-  /* Rechts steht der Beleg — das ist die Seite, die Platz braucht: dort wird
-     gelesen und geprueft. Links wird nur gewaehlt, das darf schmaler sein und
-     untereinander stehen. Vorher war es umgekehrt, und rechts wurde es eng,
-     waehrend links eine handbreite Flaeche leer blieb. */
   @media (min-width:1180px){
-    .flaeche{grid-template-columns:minmax(320px,26rem) minmax(0,1fr)}
-    .spalteblatt{position:sticky;top:8px}
+    .flaeche{grid-template-columns:minmax(340px,30rem) minmax(0,1fr)}
+    .spaltedok{position:sticky;top:8px}
+    /* Das Dokument nicht über die halbe Wand ziehen — lesbar genug, den Rest
+       füllt Weißraum; „größer ansehen" zeigt es voll. */
+    .bdok{max-width:560px}
   }
+  /* Schmale Schirme: das Dokument sitzt unter der Karte, die rechte Spalte
+     trägt dann nichts — sie soll auch keine leere Zeile erzeugen. */
+  @media (max-width:1179px){.spaltedok{display:contents}}
+  .bdok{position:relative}
+  .bdok[hidden]{display:none}
 
   .beleg{background:var(--sheet);border-radius:16px;padding:14px;margin-bottom:10px;
          box-shadow:0 1px 2px rgba(22,38,44,.05);cursor:pointer;
@@ -169,11 +176,6 @@
     display:flex;align-items:center;justify-content:center;
     -webkit-tap-highlight-color:transparent}
   .beleg .kzu:hover{background:var(--teal-l);color:var(--teal-d)}
-  /* Liegt das Prüfblatt in der Karte (Telefon, Tablet), säße sein × mitten in
-     der PDF-Vorschau und schlösse doch die ganze Karte — irreführend. Dort
-     übernimmt der Kopf; das Blatt-× bleibt nur in der eigenen Spalte breiter
-     Schirme, wo es über der Vorschau eindeutig ist. */
-  .beleg .bzu{display:none}
   .beleg .sym{width:42px;height:42px;border-radius:11px;background:#EDF1F0;
     color:var(--soft);flex:none;display:flex;align-items:center;justify-content:center;
     font:600 13px var(--mono)}
@@ -256,18 +258,12 @@
   .blatt{position:relative;background:var(--sheet);border-radius:16px;padding:16px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
   @media (min-width:1180px){.blatt{padding:18px}}
-  /* Auf dem Telefon liegt das Blatt in der weißen Karte — dieselbe Fläche,
-     nur durch eine feine Linie und Luft abgesetzt, keine zweite Farbe. */
+  /* CCCLXVII: das Ergebnis-Prüfblatt liegt jetzt IMMER in der weißen Karte —
+     unter den Eingabefeldern, links neben dem Dokument. Dieselbe Fläche, nur
+     durch eine feine Linie und Luft abgesetzt, keine zweite Farbe. Geschlossen
+     wird die Karte über ihr × im Kopf (kzu). */
   .beleg .blatt{margin-top:14px;padding:14px 0 0;background:none;box-shadow:none;
                 border-top:1px solid var(--line);border-radius:0}
-
-  /* Schließen: ein dezentes Kreuz, über der Vorschau schwebend. */
-  .bzu{position:absolute;top:20px;right:8px;z-index:2;width:38px;height:38px;
-    border:none;border-radius:11px;background:rgba(255,255,255,.9);color:var(--soft);
-    font:400 19px var(--body);cursor:pointer;line-height:1;display:flex;
-    align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(22,38,44,.16)}
-  .bzu:hover{background:var(--teal-l);color:var(--teal-d)}
-  @media (min-width:1180px){.bzu{top:26px;right:26px;width:40px;height:40px}}
 
   /* Vorschau: die GANZE erste Seite als Bild, volle Breite, nichts
      beschnitten. Ein Tippen öffnet die große Ansicht. */
@@ -311,16 +307,35 @@
   .bhinweis.warn{color:var(--amber)}
   .bhinweis:empty{display:none}
 
-  /* ---- CCLXXIII: KI-Einordnung — ein bis zwei Sätze, was der Beleg ist -----
-     Dezent unter den Feldern: ein ✦ und ruhiger Klartext der KI. Nur da, wenn
-     die KI etwas geliefert hat — sonst bleibt der Block ausgeblendet. */
+  /* ---- CCLXXIII/CCCLXVII: KI-Einschätzung — Kosten? NK? Zeitraum? + Satz ----
+     Dezent unter den Feldern: ein ✦, kompakte Marken (Kosten/Nebenkosten/
+     Zeitraum) und der ruhige Klartext der KI. Nur da, wenn die KI etwas
+     geliefert hat — sonst bleibt der Block ausgeblendet. */
   .bein{display:flex;gap:9px;background:var(--teal-l);border-radius:12px;
     padding:11px 13px;margin-top:16px}
   .bein[hidden]{display:none}
   .bein .beinsym{flex:none;color:var(--teal-d);font:600 14px var(--mono);
     line-height:1.5}
+  .bein .beinbody{min-width:0;display:flex;flex-direction:column;gap:8px}
+  .bein .beintags{display:flex;flex-wrap:wrap;gap:6px}
+  .bein .beintags:empty{display:none}
+  .kitag{font:600 11px var(--mono);border-radius:999px;padding:3px 9px;
+    background:var(--sheet);color:var(--teal-d);white-space:nowrap}
+  .kitag.ja{background:var(--pos-bg);color:var(--pos)}
+  .kitag.nein{background:var(--sheet);color:var(--soft)}
   .bein .beintext{min-width:0;font:500 12.5px var(--body);color:var(--teal-d);
     line-height:1.55;word-break:break-word}
+  .bein .beintext:empty{display:none}
+
+  /* Ein dezenter Knopf, die KI-Analyse neu anzustoßen (CCCLXVII) — z. B. wenn
+     der Schlüssel erst jetzt hinterlegt wurde. Text-leise, mit ✦, links. */
+  .kineu{display:inline-flex;align-items:center;gap:7px;margin-top:10px;
+    border:1px solid var(--line);background:var(--sheet);color:var(--teal-d);
+    border-radius:999px;padding:8px 13px;min-height:36px;cursor:pointer;
+    font:600 12px var(--disp)}
+  .kineu:hover{border-color:var(--teal);background:var(--teal-l)}
+  .kineu[disabled]{opacity:.6;cursor:default}
+  .kineu .kns{font:600 12px var(--mono);line-height:1}
 
   /* ---- CCLXXIV: KI-Vorbelegung — erkannte Liegenschaft und Felder ----------
      Was die KI aus dem Beleg gezogen hat, als kompakte Liste im selben dezenten
@@ -490,57 +505,73 @@
 
     <div class="flaeche">
       <div id="liste"></div>
-      <div class="spalteblatt" id="spalteBlatt">
-        <aside class="blatt" id="blatt" hidden aria-label="Beleg übernehmen">
-          <button class="bzu" id="bZu" aria-label="Schließen" title="Schließen">×</button>
+      <!-- CCCLXVII: rechts steht NUR das Dokument (sticky); auf schmalen
+           Schirmen rückt es unter die gewählte Karte. Das Ergebnis-Prüfblatt
+           liegt links unter der Karte (siehe #blatt weiter unten). -->
+      <div class="spaltedok" id="spalteDok">
+        <div class="bdok" id="bDok" hidden>
           <div class="bschau" id="bSchau" role="button" tabindex="0"
                aria-label="Beleg groß ansehen"></div>
-          <div class="bsek">
-            <span class="bt">Erkannt → wird eingetragen</span>
-            <div id="bPlan"></div>
-            <span class="bhinweis" id="bLesen"></span>
-          </div>
-          <!-- CCLXXIII: die KI-Einordnung — ein bis zwei Sätze, was der Beleg
-               ist. Dezent, nur sichtbar, wenn die KI etwas geliefert hat. -->
-          <div class="bein" id="bEin" hidden>
-            <span class="beinsym" aria-hidden="true">✦</span>
-            <span class="beintext" id="bEinText"></span>
-          </div>
-          <!-- CCLXXIV: die KI-Vorbelegung — erkannte Liegenschaft, Einheit und
-               die typspezifischen Felder. Inhalt kommt aus der Logik; der Block
-               bleibt aus, solange die KI nichts geliefert hat. -->
-          <div class="bki" id="bKi" hidden></div>
-          <div class="bsek">
-            <span class="bt">Abrechnungszeitraum</span>
-            <div id="bZeitraum"></div>
-            <span class="bhinweis" id="bZeitHinweis"></span>
-          </div>
-          <div class="bsek" id="bPosFach" hidden>
-            <span class="bt">Kostenposition</span>
-            <div class="posplan" id="bPosPlan"></div>
-            <div class="postat">
-              <button class="posknopf" id="bPos">Als Kostenposition übernehmen</button>
-              <button class="poslos" id="bPosLos" hidden>Lösen</button>
-            </div>
-            <span class="bhinweis" id="bPosHinweis"></span>
-          </div>
-          <span class="bziel" id="bZiel"></span>
-          <div class="btat">
-            <button class="haupt" id="bOk">Übernehmen</button>
-            <button class="klein" id="bNeu" aria-label="Beleg neu einscannen"
-                    title="Beleg neu einscannen">▣</button>
-            <button class="klein gefahr" id="bWeg" aria-label="Eintrag entfernen"
-                    title="Eintrag entfernen">⌫</button>
-          </div>
-          <span class="bmeldung" id="bMeldung"></span>
-        </aside>
+        </div>
         <div class="leerblatt" id="leerBlatt">
           <div class="lb1">Beleg wählen</div>
-          <p>Ein Antippen zeigt hier den Beleg — mit allem, was erkannt wurde,
-             und dem, was daraus in der Ablage wird.</p>
+          <p>Ein Antippen zeigt links das Prüfblatt — mit allem, was erkannt
+             wurde, und dem, was daraus in der Ablage wird — und hier den Beleg
+             selbst.</p>
         </div>
       </div>
     </div>
+
+    <!-- Das Ergebnis-Prüfblatt: es wird unter die gewählte Karte gesetzt
+         (blattPlatzieren), damit Felder + Ergebnis links beisammen stehen und
+         das Dokument rechts daneben (CCCLXVII). Hier nur der Ausgangsknoten. -->
+    <aside class="blatt" id="blatt" hidden aria-label="Beleg übernehmen">
+      <div class="bsek">
+        <span class="bt">Erkannt → wird eingetragen</span>
+        <div id="bPlan"></div>
+        <span class="bhinweis" id="bLesen"></span>
+      </div>
+      <!-- CCLXXIII/CCCLXVII: die KI-Einschätzung — Marken (Kosten/NK/Zeitraum)
+           und ein bis vier Sätze. Dezent, nur sichtbar, wenn die KI etwas
+           geliefert hat. -->
+      <div class="bein" id="bEin" hidden>
+        <span class="beinsym" aria-hidden="true">✦</span>
+        <div class="beinbody">
+          <div class="beintags" id="bEinTags"></div>
+          <span class="beintext" id="bEinText"></span>
+        </div>
+      </div>
+      <!-- CCLXXIV: die KI-Vorbelegung — erkannte Liegenschaft, Einheit und
+           die typspezifischen Felder. Inhalt kommt aus der Logik; der Block
+           bleibt aus, solange die KI nichts geliefert hat. -->
+      <div class="bki" id="bKi" hidden></div>
+      <button class="kineu" id="bKiNeu" type="button">
+        <span class="kns" aria-hidden="true">✦</span>KI-Analyse neu starten</button>
+      <span class="bhinweis" id="bKiMeldung"></span>
+      <div class="bsek">
+        <span class="bt">Abrechnungszeitraum</span>
+        <div id="bZeitraum"></div>
+        <span class="bhinweis" id="bZeitHinweis"></span>
+      </div>
+      <div class="bsek" id="bPosFach" hidden>
+        <span class="bt">Kostenposition</span>
+        <div class="posplan" id="bPosPlan"></div>
+        <div class="postat">
+          <button class="posknopf" id="bPos">Als Kostenposition übernehmen</button>
+          <button class="poslos" id="bPosLos" hidden>Lösen</button>
+        </div>
+        <span class="bhinweis" id="bPosHinweis"></span>
+      </div>
+      <span class="bziel" id="bZiel"></span>
+      <div class="btat">
+        <button class="haupt" id="bOk">Übernehmen</button>
+        <button class="klein" id="bNeu" aria-label="Beleg neu einscannen"
+                title="Beleg neu einscannen">▣</button>
+        <button class="klein gefahr" id="bWeg" aria-label="Eintrag entfernen"
+                title="Eintrag entfernen">⌫</button>
+      </div>
+      <span class="bmeldung" id="bMeldung"></span>
+    </aside>
   </div>
 
   <div data-nav></div>
@@ -579,13 +610,16 @@ const pruefKnopf = document.getElementById('pruef');
 const zuruecksetzen = document.getElementById('zuruecksetzen');
 const bilanz = document.getElementById('bilanz');
 const blatt = document.getElementById('blatt');
-const spalteBlatt = document.getElementById('spalteBlatt');
+const bDok = document.getElementById('bDok');
+const spalteDok = document.getElementById('spalteDok');
 const leerBlatt = document.getElementById('leerBlatt');
 const bSchau = document.getElementById('bSchau');
 const bPlan = document.getElementById('bPlan');
 const bLesen = document.getElementById('bLesen');
 const bEin = document.getElementById('bEin');
+const bEinTags = document.getElementById('bEinTags');
 const bEinText = document.getElementById('bEinText');
+const bKiMeldung = document.getElementById('bKiMeldung');
 const bKi = document.getElementById('bKi');
 const bZeitHinweis = document.getElementById('bZeitHinweis');
 const bZiel = document.getElementById('bZiel');
@@ -872,6 +906,7 @@ function karte(d) {
       </div>
       ${gewahlt ? '' : `<div class="chips">${chips}</div>`}
       ${gewahlt && !d.vermisst ? felder(d, b) : ''}
+      ${gewahlt ? '<div data-dokplatz></div>' : ''}
       ${gewahlt ? '<div data-blattplatz></div>' : ''}
     </article>`;
 }
@@ -1011,9 +1046,10 @@ const fertig = d => d.status === 'zugeordnet' && !d.vermisst
   && (!BRAUCHT_POSITION.has(d.kategorie) || Boolean(d.position_id));
 
 function zeichne() {
-  // Das Prüfblatt zuerst in Sicherheit bringen: gleich wird die Liste neu
-  // gebaut und alles darin verworfen.
-  spalteBlatt.appendChild(blatt);
+  // Prüfblatt und Dokument zuerst in Sicherheit bringen: gleich wird die Liste
+  // neu gebaut und alles darin (auch die Blattplätze) verworfen.
+  spalteDok.appendChild(bDok);
+  spalteDok.appendChild(blatt);
   erfassung = null;
   const { dokumente } = daten;
   if (!dokumente.length) {
@@ -1095,11 +1131,12 @@ async function laden() {
   }
 }
 
-/* ---- Prüfblatt ------------------------------------------------------------
-   Ein einziger Knoten für die ganze Seite. Auf breiten Schirmen steht er in
-   der zweiten Spalte, auf dem Telefon rückt er unter die gewählte Karte —
-   nebeneinander ist dort kein Platz, und weit weg von der Karte wäre er
-   nutzlos. */
+/* ---- Prüfblatt & Dokument platzieren --------------------------------------
+   CCCLXVII: Das Ergebnis-Prüfblatt (#blatt) liegt IMMER unter der gewählten
+   Karte — so stehen Eingabefelder und Ergebnis links beisammen. Das Dokument
+   (#bDok) steht auf breiten Schirmen rechts daneben (sticky), auf schmalen
+   rückt es unter die Karte über das Prüfblatt. Ohne Auswahl kehren beide in
+   die rechte Spalte zurück (dort sind sie ausgeblendet). */
 const breit = window.matchMedia('(min-width:1180px)');
 // Am Schreibtisch wandert „Beleg abfotografieren" in die Werkzeugleiste (siehe
 // die Regel dazu im Stilblock): dort bleibt die Handlung erreichbar, ohne eine
@@ -1107,9 +1144,14 @@ const breit = window.matchMedia('(min-width:1180px)');
 const schreibtisch = window.matchMedia('(min-width:1000px)');
 
 function blattPlatzieren() {
-  const platz = (gewaehlt !== null && !breit.matches)
-    ? liste.querySelector(`[data-id="${gewaehlt}"] [data-blattplatz]`) : null;
-  (platz || spalteBlatt).appendChild(blatt);
+  const karteEl = gewaehlt !== null
+    ? liste.querySelector(`[data-id="${gewaehlt}"]`) : null;
+  const platzBlatt = karteEl && karteEl.querySelector('[data-blattplatz]');
+  (platzBlatt || spalteDok).appendChild(blatt);
+  // Das Dokument: breit → rechte Spalte, schmal → unter die Karte.
+  const platzDok = karteEl && !breit.matches
+    && karteEl.querySelector('[data-dokplatz]');
+  (platzDok || spalteDok).appendChild(bDok);
 }
 
 function kameraPlatzieren() {
@@ -1127,6 +1169,7 @@ kameraPlatzieren();
 function blattZeigen() {
   const d = gewaehlt !== null ? dok(gewaehlt) : null;
   blatt.hidden = !d;
+  bDok.hidden = !d;
   // Ohne Belege in der Liste ist auch die Einladung, einen zu wählen, keine —
   // dann steht links schon, was zu tun ist.
   leerBlatt.hidden = Boolean(d) || !daten.dokumente.length;
@@ -1135,11 +1178,13 @@ function blattZeigen() {
   bMeldung.textContent = '';
   bMeldung.className = 'bmeldung';
   bLesen.textContent = '';
+  bKiMeldung.textContent = '';
+  bKiMeldung.classList.remove('warn');
   zeitraeumeFuellen(d);
   planZeichnen();
   vorschauLaden(d);
   erkennungHolen(d);
-  einordnungZeigen(d);
+  kiEinschaetzungZeigen(d);
   kiVorbelegungZeigen(d);
   kiFelderEinsetzen(d);
   posZeigen(d);
@@ -1653,14 +1698,28 @@ function erkennungZeigen(d) {
     eintrag.zustand !== 'laeuft' && Boolean(eintrag.grund));
 }
 
-/* CCLXXIII: die KI-Einordnung dezent unter den Feldern zeigen. Frisch Gelesenes
-   hat Vorrang; sonst der am Beleg gespeicherte Text (`ki_einordnung`). Fehlt
-   beides, bleibt der Block aus. */
-function einordnungZeigen(d) {
-  const gelesen = ((erkanntJeBeleg.get(d.id) || {}).werte || {}).einordnung;
-  const text = ((gelesen || d.ki_einordnung) || '').trim();
+/* CCLXXIII/CCCLXVII: die KI-Einschätzung dezent unter den Feldern zeigen —
+   Marken (Kosten? · Nebenkosten? · Zeitraum) und der zusammenfassende Satz.
+   Die Marken kommen aus der frischen Analyse; die Zusammenfassung notfalls aus
+   dem am Beleg gespeicherten Text (`ki_einordnung`). Fehlt alles, bleibt der
+   Block aus. */
+const jaNeinMarke = (label, ja) =>
+  `<span class="kitag ${ja ? 'ja' : 'nein'}">${esc(label)}: ${ja ? 'ja' : 'nein'}</span>`;
+const infoMarke = (label, wert) =>
+  `<span class="kitag">${esc(label)}: ${esc(wert)}</span>`;
+
+function kiEinschaetzungZeigen(d) {
+  const w = ((erkanntJeBeleg.get(d.id) || {}).werte) || {};
+  const text = (((w.zusammenfassung || w.einordnung) || d.ki_einordnung) || '').trim();
+  const marken = [];
+  if (w.kosten_relevant === true || w.kosten_relevant === false)
+    marken.push(jaNeinMarke('Kosten', w.kosten_relevant));
+  if (w.nebenkosten === true || w.nebenkosten === false)
+    marken.push(jaNeinMarke('Nebenkosten', w.nebenkosten));
+  if (w.zeitraum_hinweis) marken.push(infoMarke('Zeitraum', w.zeitraum_hinweis));
+  bEinTags.innerHTML = marken.join('');
   bEinText.textContent = text;
-  bEin.hidden = !text;
+  bEin.hidden = !(text || marken.length);
 }
 
 /* ---- CCLXXIV: KI-Vorbelegung ---------------------------------------------
@@ -1749,6 +1808,18 @@ function kiFelderEinsetzen(d) {
   }
 }
 
+/** Die frischen KI-Angaben in die Kopie des Dokuments übernehmen — damit
+    Raster (Vorbelegung) und Einschätzung mit dem Gelesenen übereinstimmen, ohne
+    auf ein volles Neuladen zu warten. Nur, was die KI wirklich lieferte. */
+function kiWerteUebernehmen(d, w) {
+  if (!w) return;
+  if (w.felder) d.ki_felder = w.felder;
+  if (w.immobilie) d.ki_immobilie = w.immobilie;
+  if (w.einheit) d.ki_einheit = w.einheit;
+  const satz = (w.zusammenfassung || w.einordnung || '').trim();
+  if (satz) d.ki_einordnung = satz;
+}
+
 async function erkennungHolen(d) {
   if (!erkennungMoeglich || !d.abgelegt || d.vermisst) return;
   if (!erkanntJeBeleg.has(d.id)) {
@@ -1758,6 +1829,7 @@ async function erkennungHolen(d) {
       const werte = await api(`/dokumente/${d.id}/erkennen`);
       erkanntJeBeleg.set(d.id,
         { zustand: 'fertig', werte, grund: werte.hinweis || '' });
+      kiWerteUebernehmen(dok(d.id) || d, werte);
     } catch (fehler) {
       erkanntJeBeleg.set(d.id,
         { zustand: 'fertig', grund: String(fehler.message || fehler) });
@@ -1765,7 +1837,8 @@ async function erkennungHolen(d) {
   }
   if (gewaehlt !== d.id) return;          // inzwischen etwas anderes gewählt
   erkennungZeigen(d);
-  einordnungZeigen(d);                    // die KI-Einordnung kann jetzt da sein
+  kiEinschaetzungZeigen(d);               // die KI-Einschätzung kann jetzt da sein
+  kiVorbelegungZeigen(d);                 // das Raster ggf. mit frischen Werten
   vorschlagEinsetzen(d);
 }
 
@@ -1972,12 +2045,53 @@ liste.addEventListener('keydown', e => {
   waehle(Number(karteEl.dataset.id));
 });
 
-document.getElementById('bZu').addEventListener('click', () => waehle(null));
-
 const melde = (text, art) => {
   bMeldung.textContent = text;
   bMeldung.className = 'bmeldung ' + (art || '');
 };
+
+/* ---- KI-Analyse neu starten (CCCLXVII) ------------------------------------
+   Liest den Beleg erneut über die KI ein — z. B. nachdem der API-Schlüssel
+   hinterlegt wurde. Ohne Schlüssel/Guthaben sagt der Server ehrlich, dass keine
+   KI-Einschätzung kam; die Seite bricht nicht, es entstehen keine Daten. */
+const bKiNeu = document.getElementById('bKiNeu');
+bKiNeu.addEventListener('click', async () => {
+  const d = gewaehlt !== null ? dok(gewaehlt) : null;
+  if (!d || !d.abgelegt || d.vermisst) return;
+  const vorher = bKiNeu.innerHTML;
+  bKiNeu.disabled = true;
+  bKiNeu.textContent = 'KI liest den Beleg …';
+  bKiMeldung.textContent = '';
+  bKiMeldung.classList.remove('warn');
+  try {
+    const w = await api(`/dokumente/${d.id}/neu-analysieren`, { method: 'POST' });
+    erkanntJeBeleg.set(d.id, { zustand: 'fertig', werte: w, grund: w.hinweis || '' });
+    kiWerteUebernehmen(d, w);
+    // Sagt die frische Analyse, dass keine echten Kosten entstanden sind, darf
+    // ein nur vorgeschlagener Betrag nicht stehen bleiben (die Geräte-Kennung).
+    if (w.ki_gelaufen && w.kosten_relevant === false && erfassung
+        && erfassung.id === d.id && erfassung.vorgeschlagen.has('betrag')) {
+      erfassung.betragFeld.value = '';
+      erfassung.vorgeschlagen.delete('betrag');
+    }
+    bKiMeldung.textContent = w.meldung || '';
+    bKiMeldung.classList.toggle('warn', !w.ki_gelaufen);
+    if (gewaehlt === d.id) {
+      erkennungZeigen(d);
+      kiEinschaetzungZeigen(d);
+      kiVorbelegungZeigen(d);
+      vorschlagEinsetzen(d);
+      kiFelderEinsetzen(d);
+      planZeichnen();
+    }
+  } catch (fehler) {
+    bKiMeldung.textContent = '⚠ ' + String(fehler.message || fehler);
+    bKiMeldung.classList.add('warn');
+  } finally {
+    bKiNeu.disabled = false;
+    bKiNeu.innerHTML = vorher;
+  }
+});
 
 /* ---- Übernehmen: Ablage und Zeitraum in einem Schritt ---- */
 bOk.addEventListener('click', async () => {
