@@ -2293,7 +2293,7 @@ async function belegPerDrop(kostenart, dateien) {
       sendungen.push({ datei: pdf, name: 'scan.pdf' });
     }
     for (const p of pdfs) sendungen.push({ datei: p, name: p.name });
-    for (const { datei, name } of sendungen) {
+    const hochladen = async ({ datei, name }) => {
       const paket = new FormData();
       paket.append('objekt', daten.objekt);
       paket.append('kategorie', 'Nebenkosten');
@@ -2306,9 +2306,17 @@ async function belegPerDrop(kostenart, dateien) {
         const grund = await antwort.json().then(k => k.detail).catch(() => null);
         throw new Error(grund || `Fehler ${antwort.status}`);
       }
-    }
+      return antwort.json();
+    };
+    // Hochladen und die erste Datei parallel durch die KI-Erkennung schicken —
+    // wie beim Scan-Weg, damit ein erkannter Betrag angeboten wird (CCCLXXXVI).
+    const [, vorschlag] = await Promise.all([
+      Promise.all(sendungen.map(hochladen)),
+      erkennen(bilder[0] || pdfs[0]),
+    ]);
     const n = sendungen.length;
     melde(`✓ ${n} Beleg${n > 1 ? 'e' : ''} „${kostenart}“ zugeordnet`, 'pos');
+    await betragVorschlagen(kostenart, vorschlag);
     await laden();
   } catch (fehler) {
     melde(String(fehler.message || fehler), 'neg');
