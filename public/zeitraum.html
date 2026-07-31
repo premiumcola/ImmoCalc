@@ -279,7 +279,6 @@
   .pruef .zeile{display:flex;gap:12px;align-items:center;padding:13px 15px;
                 width:100%;border:none;background:none;text-align:left;cursor:pointer;
                 font-family:var(--body);color:inherit;min-height:44px}
-  .pruef .zeile + .auf{border-top:1px solid var(--line)}
   .haken{width:24px;height:24px;border-radius:50%;flex:none;display:flex;
          align-items:center;justify-content:center;font:600 12px var(--mono)}
   .haken.gruen{background:var(--pos-bg);color:var(--pos)}
@@ -302,7 +301,7 @@
   .ikon.fertig{background:var(--pos-bg);color:var(--pos)}
   .ikon.warte{background:#EDF1F0;color:var(--soft)}
   .pruef .wert.fehlt{color:var(--neg)}
-  .pruef .auf{padding:0 15px 14px;border-top:1px solid var(--line)}
+  .pruef .auf{padding:2px 15px 14px}
   .pruef .auf .zk{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
                   color:var(--soft);margin:12px 0 6px}
   .pruef .auf .rz{display:flex;justify-content:space-between;gap:10px;
@@ -313,19 +312,22 @@
      Zeilenknopf, nicht darin: Knöpfe lassen sich nicht schachteln. */
   .pruef .kopf{display:flex;align-items:center;gap:8px;padding-right:15px}
   .pruef .kopf > .zeile{flex:1;min-width:0;padding-right:2px}
-  .scanmini{display:flex;align-items:center;justify-content:center;gap:7px;flex:none;
-    border:1.5px solid #BFD9D1;background:var(--teal-l);color:var(--teal-d);
-    border-radius:11px;padding:9px 11px;cursor:pointer;font-family:var(--body);
-    min-height:44px;min-width:44px}
-  .scanmini:hover{background:#DCEDE7}
+  /* CCCLXXXVII — die zwei Beleg-Knöpfe: klare Icons (Kamera / Wolke bzw. Upload)
+     in gedämpftem Blau statt Grün, damit sie sich vom teal-Rest abheben und
+     eindeutig als „Beleg holen" lesen. Etwas größer, das Symbol trägt allein. */
+  .scanmini{display:flex;align-items:center;justify-content:center;gap:8px;flex:none;
+    border:1.5px solid #BBD4E5;background:#E8F1F7;color:#255676;
+    border-radius:12px;padding:9px 12px;cursor:pointer;font-family:var(--body);
+    min-height:46px;min-width:46px}
+  .scanmini:hover{background:#D8E8F2}
   .scanmini[disabled]{opacity:.65;cursor:default}
-  .scanmini .si{font:400 15px var(--mono);line-height:1;flex:none}
+  .scanmini svg{width:22px;height:22px;display:block;flex:none}
   .scanmini .st{font:600 11.5px var(--disp);letter-spacing:-.005em;
                 white-space:nowrap}
-  /* „Aus Ablage" steht neben der Kamera, aber ruhiger (neutral statt Teal) —
-     die zweite, sekundäre Art, einen Beleg an die Position zu holen. */
-  .scanmini.ablage{border-color:var(--line);background:var(--sheet);color:var(--ink)}
-  .scanmini.ablage:hover{background:var(--paper)}
+  /* „Aus Ablage" steht neben der Kamera, aber ruhiger (weißer Grund, blauer
+     Rahmen) — die zweite Art, einen Beleg an die Position zu holen. */
+  .scanmini.ablage{border-color:#C4D6E4;background:var(--sheet);color:#2C6A93}
+  .scanmini.ablage:hover{background:#EEF4F9}
   /* Auf dem Handy tragen die zwei Knöpfe nur ihr Symbol — sonst quetschen die
      Labels („Beleg erfassen" + „Aus Ablage") den Kostenart-Namen zeichenweise
      um. Erst ab Tablet-Breite ist Platz für die Beschriftung. */
@@ -1177,17 +1179,17 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   // den Eingang. Mit Kamera bleiben beide Wege: erfassen (teal) und aus Ablage.
   const quickScan = (!k.erledigt && !aufgeklappt)
     ? (KEINE_KAMERA
-      ? `<button class="scanmini ablage" data-scan="${esc(k.kostenart)}"
-            title="Beleg-PDF von diesem Rechner wählen">
-            <span class="si">▤</span><span class="st">Beleg wählen</span>
+      ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
+            title="Beleg-PDF von diesem Rechner wählen" aria-label="Beleg-Datei wählen">
+            ${UPLOAD_ICON}<span class="st">Datei wählen</span>
           </button>`
       : `<button class="scanmini" data-scan="${esc(k.kostenart)}"
-            title="Beleg für ${esc(k.kostenart)} abfotografieren">
-            <span class="si">▣</span><span class="st">Beleg erfassen</span>
+            title="Beleg für ${esc(k.kostenart)} abfotografieren" aria-label="Beleg abfotografieren">
+            ${FOTO_ICON}<span class="st">Foto</span>
           </button>
           <button class="scanmini ablage" data-ablage="${esc(k.kostenart)}"
-            title="Beleg aus der Ablage / Nextcloud wählen">
-            <span class="si">☁</span><span class="st">Aus Ablage</span>
+            title="Beleg aus der Ablage / Nextcloud wählen" aria-label="Beleg aus der Ablage wählen">
+            ${WOLKE_ICON}<span class="st">Aus Ablage</span>
           </button>`) : '';
 
   return `<div class="pruef${zustandKlasse}" data-kostenart="${esc(k.kostenart)}">
@@ -1204,7 +1206,8 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
           >${esc(k.anbieter)}</span>` : ''}
         ${betragEl}
         ${quickScan}
-        <span class="haken ${farbe}">${zeichen}</span>
+        ${k.zustand !== 'fehlt'
+          ? `<span class="haken ${farbe}">${zeichen}</span>` : ''}
       </div>
       ${anhaengerStrip(k)}
       ${aufgeklappt ? `<div class="auf">${koerper}</div>` : ''}
@@ -2510,7 +2513,9 @@ async function betragVorschlagen(kostenart, vorschlag) {
    Ein Zähler je Schritt, Weiter/Zurück; der Verbrauch wird serverseitig linear
    auf den Abrechnungszeitraum interpoliert. Speichern ist idempotent je
    Zeitraum, deshalb darf man beliebig vor- und zurückgehen. */
-const GEAR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+/* CCCLXXXVII — der viewBox bekommt Rand (-2 … 28), sonst sitzen die äußeren
+   Zahnrad-Zähne auf der 0/24-Kante und werden von der Strichbreite beschnitten. */
+const GEAR_ICON = `<svg viewBox="-2 -2 28 28" fill="none" stroke="currentColor"
   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2
   2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0
@@ -2524,6 +2529,20 @@ const GEAR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const MUELL_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"/></svg>`;
+/* CCCLXXXVII — klare Beleg-Icons: Kamera (Foto machen), Upload-Pfeil (Datei vom
+   Rechner) und Wolke (aus der Nextcloud-Ablage). Flacher Strich-Stil wie GEAR. */
+const FOTO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h1.7l1-1.6A1 1 0 0 1 9.9 5h4.2a1 1 0 0 1 .84.45L15.8 7h1.7A1.5 1.5 0 0 1 19 8.5v8A1.5 1.5 0 0 1 17.5 18h-11A1.5 1.5 0 0 1 5 16.5Z"/>
+  <circle cx="12" cy="12.5" r="3.1"/></svg>`;
+const UPLOAD_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 15V4.5"/><path d="M8 8l4-4 4 4"/>
+  <path d="M5 15v3a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18v-3"/></svg>`;
+const WOLKE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M7 18a4 4 0 0 1-.4-7.98A5 5 0 0 1 16.3 9.2 3.9 3.9 0 0 1 17 18Z"/>
+  <path d="M12 15.5V10m0 0-2 2m2-2 2 2"/></svg>`;
 
 /* CCCLXXX — der Zahnrad-Knopf neben „Ablesewerte eingeben" öffnet die
    Zähler-Konfiguration dieser Immobilie. */
