@@ -774,16 +774,25 @@ export function kamerascanStarten(dateien, optionen = {}) {
         const ziel = s.ecken[i];
         const proAnzeige = s.bitmap.width / rect.width;   // Bitmap- je Anzeige-Pixel
         const halb = (m / zoom) * proAnzeige;
+        // CCCXCIX — den Quell-Ausschnitt INS Bitmap klemmen: liegt die Ecke am
+        // Bildrand, ragte er sonst hinaus und die Lupe wurde großflächig schwarz.
+        // Jetzt „pant" die Lupe am Rand (zeigt weiter Bild), das Fadenkreuz sitzt
+        // trotzdem auf der echten Ecke (cx/cy statt fix Mitte).
+        const bw = s.bitmap.width, bh = s.bitmap.height;
+        const sw = Math.min(halb * 2, bw), sh = Math.min(halb * 2, bh);
+        const sx = Math.max(0, Math.min(ziel.x * bw - halb, bw - sw));
+        const sy = Math.max(0, Math.min(ziel.y * bh - halb, bh - sh));
         lupeCtx.setTransform(1, 0, 0, 1, 0, 0);
         lupeCtx.fillStyle = '#0B1012';
         lupeCtx.fillRect(0, 0, g, g);
-        lupeCtx.drawImage(s.bitmap,
-          ziel.x * s.bitmap.width - halb, ziel.y * s.bitmap.height - halb, halb * 2, halb * 2,
-          0, 0, g, g);
+        lupeCtx.drawImage(s.bitmap, sx, sy, sw, sh, 0, 0, g, g);
+        const skalaX = g / sw, skalaY = g / sh;
+        const cx = (ziel.x * bw - sx) * skalaX;   // Position der Ecke in der Lupe
+        const cy = (ziel.y * bh - sy) * skalaY;
 
         const zuLupe = p => ({
-          x: m + (p.x - ziel.x) * rect.width * zoom,
-          y: m + (p.y - ziel.y) * rect.height * zoom,
+          x: cx + (p.x - ziel.x) * bw * skalaX,
+          y: cy + (p.y - ziel.y) * bh * skalaY,
         });
         const davor = zuLupe(s.ecken[(i + 3) % 4]);
         const danach = zuLupe(s.ecken[(i + 1) % 4]);
@@ -794,7 +803,7 @@ export function kamerascanStarten(dateien, optionen = {}) {
           lupeCtx.lineWidth = breite * lupeDicht;
           lupeCtx.beginPath();
           lupeCtx.moveTo(davor.x, davor.y);
-          lupeCtx.lineTo(m, m);
+          lupeCtx.lineTo(cx, cy);
           lupeCtx.lineTo(danach.x, danach.y);
           lupeCtx.stroke();
         }
@@ -805,11 +814,11 @@ export function kamerascanStarten(dateien, optionen = {}) {
         const kreuz = () => {
           lupeCtx.beginPath();
           for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-            lupeCtx.moveTo(m + dx * luecke, m + dy * luecke);
-            lupeCtx.lineTo(m + dx * arm, m + dy * arm);
+            lupeCtx.moveTo(cx + dx * luecke, cy + dy * luecke);
+            lupeCtx.lineTo(cx + dx * arm, cy + dy * arm);
           }
-          lupeCtx.moveTo(m + luecke, m);
-          lupeCtx.arc(m, m, luecke, 0, Math.PI * 2);
+          lupeCtx.moveTo(cx + luecke, cy);
+          lupeCtx.arc(cx, cy, luecke, 0, Math.PI * 2);
           lupeCtx.stroke();
         };
         lupeCtx.strokeStyle = 'rgba(10,14,16,.55)';
