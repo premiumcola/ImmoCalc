@@ -62,7 +62,7 @@ ZEITLIMIT = 15.0
 SYSTEM_PROMPT = (
     "Du liest einen deutschen Immobilien-Beleg (Rechnung/Bescheid/Vertrag). "
     "Gib NUR JSON zurück, kein weiterer Text:\n"
-    '{"dokumenttyp":"…","kategorie":"…","immobilie":"…","einheit":"…",'
+    '{"dokumenttyp":"…","kategorie":"…","absender":"…","immobilie":"…","einheit":"…",'
     '"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,"ist_kosten":true|false,'
     '"kosten_relevant":true|false,"nebenkosten":true|false,'
     '"zeitraum_hinweis":"…","kostenart":"…","felder":{…},'
@@ -84,8 +84,15 @@ SYSTEM_PROMPT = (
     "OG\", \"EG rechts\"), sonst weglassen. "
     "datum = Ausstellungs-/Rechnungsdatum aus dem Briefkopf, NICHT das "
     "Zahlungsziel, NICHT eine Zeitraumgrenze. "
+    "absender = der/die Ausstellende des Belegs: Firma, Behörde, Zweckverband, "
+    "Gemeinde/Stadt, Versorger oder Versicherer, als Name (z. B. \"Zweckverband "
+    "Wasserversorgung\", \"WWK Versicherung AG\", \"Stadt Eckental\", \"E.ON\"). "
+    "Das ist der Rechnungssteller/Absender im Briefkopf, NICHT der Empfänger. "
+    "Steht keiner erkennbar dabei, absender weglassen. "
     "betrag = NUR der tatsächlich geforderte Gesamt-/Rechnungsbetrag in Euro als "
-    "Zahl (Punkt als Dezimaltrenner, ohne Währungszeichen). Zahlen aus Geräte-"
+    "Zahl (Punkt als Dezimaltrenner, ohne Währungszeichen). Der Betrag ist IMMER "
+    "POSITIV — die Höhe der Forderung, nie negativ; ein Minus/Klammern auf einer "
+    "Saldo- oder Gutschriftzeile ändert daran nichts. Zahlen aus Geräte-"
     "Kennungen, Serien-/Zählernummern oder Datumsangaben (z. B. …,2003,03/2004 "
     "auf einer Typenplakette) sind KEIN Betrag — dann null. "
     "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand, "
@@ -192,8 +199,9 @@ def _betrag(wert) -> float | None:
     doch ein deutsches Komma oder ein Währungszeichen, wird es aufgeräumt."""
     if isinstance(wert, bool):        # bool ist eine Zahl in Python — hier nicht
         return None
+    # CCCXCIII — ein Betrag ist die Höhe der Forderung, immer positiv.
     if isinstance(wert, (int, float)):
-        return round(float(wert), 2)
+        return round(abs(float(wert)), 2)
     if isinstance(wert, str):
         roh = re.sub(r"[^\d,.-]", "", wert).replace(",", ".")
         # Mehrere Punkte (Tausendertrenner) → nur der letzte zählt als Dezimal
@@ -201,7 +209,7 @@ def _betrag(wert) -> float | None:
             ganz, _, rest = roh.rpartition(".")
             roh = ganz.replace(".", "") + "." + rest
         try:
-            return round(float(roh), 2)
+            return round(abs(float(roh)), 2)
         except ValueError:
             return None
     return None

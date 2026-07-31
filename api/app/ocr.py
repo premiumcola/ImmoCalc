@@ -355,7 +355,10 @@ def _betraege_der_zeile(zeile: str) -> list[float]:
                 continue
             wert = _zu_zahl(m.group(1), m.group(2))
             if _plausibler_betrag(wert, m.group(1)):
-                treffer.append(wert)
+                # CCCXCIII — ein Rechnungs-/Bescheidbetrag ist nie negativ. Ein
+                # führendes Minus (Gutschrift-/Saldozeile, „− 61,40") ergäbe sonst
+                # einen unsinnigen Negativbetrag; der Betrag ist die Höhe, positiv.
+                treffer.append(abs(wert))
     return treffer
 
 

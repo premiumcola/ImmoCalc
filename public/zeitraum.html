@@ -2308,7 +2308,7 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse }) {
     const ki = [];
     if (vorschlag?.sache) ki.push(esc(vorschlag.sache));
     if (vorschlag?.datum) ki.push(new Date(vorschlag.datum).toLocaleDateString('de-DE'));
-    if (vorschlag?.betrag) ki.push(eur(vorschlag.betrag));
+    if (vorschlag?.betrag) ki.push(eur(Math.abs(vorschlag.betrag)));
     const kiText = ki.length ? ` · erkannt: ${ki.join(' · ')}` : '';
     const dupHtml = dup?.gefunden ? `<div class="dup-hinweis">
         <strong>Diese Datei liegt schon in der Ablage.</strong>
@@ -2326,7 +2326,8 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse }) {
         <input class="inp" type="number" data-f="jahr" value="${jahr}"></div>
       <div class="field"><label>Betrag (€) — optional</label>
         <input class="inp" type="number" step="0.01" data-f="betrag"
-               value="${vorschlag?.betrag ?? ''}" placeholder="aus dem Beleg"></div>
+               value="${vorschlag?.betrag != null ? Math.abs(vorschlag.betrag) : ''}"
+               placeholder="aus dem Beleg"></div>
       <button class="btn" data-ok>${dup?.gefunden ? 'Verknüpfen' : 'Ablegen'}</button>`;
     dlg.querySelector('[data-nein]').onclick = () => dlg.close();
     dlg.querySelector('[data-ok]').onclick = () => {
