@@ -1316,6 +1316,11 @@ def position_anlegen(zid: int, data: PositionNeu,
 class PositionIn(BaseModel):
     betrag: Optional[float] = None
     status: Optional[str] = None
+    # CCCLXII — die Position auf eine andere Kostenart umhängen (z. B. generische
+    # „Versicherung" → spezifische „Gebäudeversicherung"). Freitext wie im Modell;
+    # eine noch unbekannte Art wird als Katalog-Eintrag angelegt, damit sie nicht
+    # als namenlose Waise dasteht.
+    kostenart: Optional[str] = None
     schluessel: Optional[str] = None
     nur_einheit: Optional[str] = None
     wertquelle: Optional[str] = None
@@ -1339,6 +1344,34 @@ def position_aendern(pid: int, data: PositionIn,
     p = session.get(Kostenposition, pid)
     if not p:
         raise HTTPException(404, "Position nicht gefunden")
+    # CCCLXII — die Position auf eine andere Kostenart setzen. Nur diese eine
+    # Position wandert (kein globales Umbenennen — das macht kostenart_aendern).
+    if data.kostenart is not None:
+        neu = data.kostenart.strip()
+        if not neu:
+            raise HTTPException(400, "Die Kostenart braucht einen Namen")
+        if neu != p.kostenart:
+            z = _zeitraum(session, p.zeitraum_id)
+            # In einem Zeitraum bleibt eine Position je Kostenart die Regel
+            # (CLXXXII) — sonst kollidieren zwei Zeilen auf denselben Namen.
+            kollision = session.exec(select(Kostenposition).where(
+                Kostenposition.zeitraum_id == p.zeitraum_id,
+                Kostenposition.kostenart == neu,
+                Kostenposition.id != p.id)).first()
+            if kollision:
+                raise HTTPException(
+                    409, f"Zu „{neu}“ gibt es in diesem Zeitraum schon eine "
+                         f"Position — trag den Betrag dort ein.")
+            # Ist die Zielart im Katalog des Objekts noch unbekannt, wird sie
+            # angelegt (additiv): so bleibt sie konfigurierbar und für kommende
+            # Zeiträume wählbar, statt als namenlose Waise dazustehen.
+            bekannt = session.exec(select(Kostenart).where(
+                Kostenart.objekt_id == z.objekt_id,
+                Kostenart.name == neu)).first()
+            if not bekannt:
+                session.add(Kostenart(objekt_id=z.objekt_id, name=neu,
+                                      umlagefaehig=True, s35=p.s35, aktiv=True))
+            p.kostenart = neu
     if data.betrag is not None:
         p.betrag = data.betrag
         # Ein eingetragener Betrag heisst: der Beleg liegt vor.
@@ -1368,6 +1401,7 @@ def position_aendern(pid: int, data: PositionIn,
     session.add(p)
     session.commit()
     return {"ok": True, "betrag": p.betrag, "status": p.status,
+            "kostenart": p.kostenart,
             "schluessel": p.schluessel, "nur_einheit": p.nur_einheit,
             "anteile": p.anteile}
 
