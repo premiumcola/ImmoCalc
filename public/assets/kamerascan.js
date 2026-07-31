@@ -640,6 +640,18 @@ export function kamerascanStarten(dateien, optionen = {}) {
       return createImageBitmap(c);
     }
 
+    // CD — die vier Ecken (normalisiert, Reihenfolge TL,TR,BR,BL) 90° mitdrehen,
+    // damit eine Drehung die schon korrigierten Ecken NICHT verwirft. Im/Gegen den
+    // Uhrzeigersinn dreht jede Rolle um eine Position weiter, darum wird das Array
+    // passend rotiert.
+    const eckenMitdrehen = (ecken, gegen) => {
+      const t = gegen
+        ? e => ({ x: e.y, y: 1 - e.x })       // gegen den Uhrzeigersinn
+        : e => ({ x: 1 - e.y, y: e.x });      // im Uhrzeigersinn
+      const g = ecken.map(t);
+      return gegen ? [g[1], g[2], g[3], g[0]] : [g[3], g[0], g[1], g[2]];
+    };
+
     async function dreheSeite(gegenUhrzeiger) {
       const s = seiten[aktiv];
       if (!s) return;
@@ -647,9 +659,9 @@ export function kamerascanStarten(dateien, optionen = {}) {
       s.bitmap.close?.();
       URL.revokeObjectURL(s.thumbUrl);
       s.bitmap = neu;
-      // Nach der Drehung die Kanten neu schätzen — die alten Ecken passen nicht mehr.
-      s.ecken = eckenSchaetzen(neu);
-      s.eckenErkannt = s.ecken.map(e => ({ ...e }));
+      // Korrigierte Ecken bleiben erhalten — mitgedreht statt neu geschätzt.
+      s.ecken = eckenMitdrehen(s.ecken, gegenUhrzeiger);
+      s.eckenErkannt = eckenMitdrehen(s.eckenErkannt, gegenUhrzeiger);
       s.vorschau = await vorschauCanvas(neu);
       const thumbBlob = await new Promise(r => s.vorschau.toBlob(r, 'image/jpeg', 0.6));
       s.thumbUrl = URL.createObjectURL(thumbBlob);
