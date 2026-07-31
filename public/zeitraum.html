@@ -531,6 +531,22 @@
     border-radius:999px;padding:8px 13px;font:600 11.5px var(--disp);cursor:pointer;
     min-height:38px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .sortleiste button[aria-pressed=true]{background:var(--teal-l);color:var(--teal-d)}
+  /* CCCXCVI — Settings-Knopf rechts: NK-Positionen ein-/ausblenden. */
+  .sortleiste .pos-konfig{margin-left:auto;display:inline-flex;align-items:center;gap:5px;
+    color:var(--teal-d);background:var(--teal-l)}
+  .sortleiste .pos-konfig svg{width:15px;height:15px}
+  .pk-liste{display:flex;flex-direction:column;max-height:52dvh;overflow:auto;margin-bottom:16px}
+  .pk-zeile{display:flex;align-items:center;gap:12px;padding:10px 2px;cursor:pointer;
+    border-bottom:1px solid var(--line);min-height:46px;position:relative}
+  .pk-zeile:last-child{border-bottom:none}
+  .pk-name{flex:1;font:500 14px var(--body);color:var(--ink)}
+  .pk-zeile input{position:absolute;opacity:0;pointer-events:none}
+  .pk-sw{flex:none;width:42px;height:24px;border-radius:999px;background:var(--line);
+    position:relative;transition:background .15s}
+  .pk-sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;
+    border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .pk-zeile input:checked ~ .pk-sw{background:var(--teal)}
+  .pk-zeile input:checked ~ .pk-sw::after{transform:translateX(18px)}
 
   .abschluss{border-radius:16px;padding:18px;margin:16px 0 4px}
   .abschluss .at{font:700 16px var(--disp);letter-spacing:-.015em;margin-bottom:6px}
@@ -790,17 +806,20 @@ const BEREICHE = [
     muster: ['reinig', 'winterdienst', 'streu', 'garten', 'gruenpflege', 'muell',
              'entsorg', 'hausmeist', 'hauswart', 'schornstein', 'kamin', 'aufzug',
              'fahrstuhl'] },
+  // CCCXCV — Grundsteuer/Versicherungen gehören nicht in „Verwaltung & Sonstiges".
+  { titel: 'Versicherung & Steuer',
+    muster: ['versicher', 'haftpflicht', 'grundsteuer', 'steuer', 'police'] },
   { titel: 'Verwaltung & Sonstiges', muster: [] },
 ];
-// Prüf-Reihenfolge: Bereich 2 (Heizung) zuerst, dann 1, dann 3, 4; Rest → 5.
-const BEREICH_PRUEF = [1, 0, 2, 3];
+// Prüf-Reihenfolge: Heizung zuerst, dann Wasser/Strom/Reinigung/Versicherung; Rest → Sonstiges.
+const BEREICH_PRUEF = [1, 0, 2, 3, 4];
 
 function bereichIndex(kostenart) {
   const n = normUml(kostenart);
   for (const i of BEREICH_PRUEF) {
     if (BEREICHE[i].muster.some(m => n.includes(m))) return i;
   }
-  return 4;
+  return BEREICHE.length - 1;   // „Verwaltung & Sonstiges" als Auffangbereich
 }
 
 /* Eine reine Zähler-Kostenart (Name enthält „zähler") OHNE Betrag UND OHNE
@@ -1423,6 +1442,9 @@ async function zeichnen() {
         ${Object.entries({ status: 'Offene zuerst', betrag: 'Größe', name: 'Name' })
           .map(([k, l]) => `<button data-sort="${k}"
             aria-pressed="${sortierung === k}">${l}</button>`).join('')}
+        <button class="pos-konfig" data-pos-konfig
+          title="Positionen ein- oder ausblenden"
+          aria-label="Positionen ein- oder ausblenden">${GEAR_ICON} Positionen</button>
       </div>`;
 
     // Jede Kostenart bleibt als Zeile — auch eine, die „Zähler" heißt (etwa die
@@ -2111,6 +2133,7 @@ inhalt.addEventListener('click', async e => {
 
   const sort = e.target.closest('[data-sort]');
   if (sort) { sortierung = sort.dataset.sort; return zeichnen(); }
+  if (e.target.closest('[data-pos-konfig]')) return positionenKonfig();
 
   const abschluss = e.target.closest('[data-abschluss]');
   if (abschluss) return abschliessen(abschluss);
@@ -2343,6 +2366,49 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse }) {
     };
     dlg.showModal();
   });
+}
+
+/* CCCXCVI — NK-Positionen ein-/ausblenden. Jede Kostenart des Objekts als
+   Schalter; „aus" setzt `Kostenart.aktiv=false` (die Checkliste blendet sie dann
+   aus, die Daten bleiben). Beim Schließen wird neu geladen. Nützlich für
+   Positionen ohne laufende Kosten (z. B. Rauchwarnmelder, einmalig angeschafft). */
+async function positionenKonfig() {
+  let arten;
+  try {
+    arten = await api(`/objekte/${encodeURIComponent(daten.objekt)}/kostenarten`);
+  } catch (fehler) {
+    return melde('Kostenarten nicht ladbar', 'neg');
+  }
+  arten = (arten || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const dlg = document.createElement('dialog');
+  dlg.className = 'immo-dlg';
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => { dlg.remove(); laden(); });
+  const zeile = a => `<label class="pk-zeile">
+      <span class="pk-name">${esc(a.name)}</span>
+      <input type="checkbox" data-pk="${a.id}"${a.aktiv !== false ? ' checked' : ''}>
+      <span class="pk-sw" aria-hidden="true"></span>
+    </label>`;
+  dlg.innerHTML = `
+    <button class="immo-dlg-zu" data-nein aria-label="Schließen">×</button>
+    <div class="dt">Positionen ein- oder ausblenden</div>
+    <p>Ausgeblendete Positionen verschwinden aus der Checkliste — die Daten
+       bleiben erhalten und lassen sich hier jederzeit wieder einblenden.</p>
+    <div class="pk-liste">${arten.map(zeile).join('')
+      || '<div class="leerzeile">Keine Kostenarten</div>'}</div>
+    <button class="btn" data-nein>Fertig</button>`;
+  dlg.addEventListener('change', async e => {
+    const cb = e.target.closest('[data-pk]');
+    if (!cb) return;
+    try {
+      await api(`/kostenarten/${cb.dataset.pk}`, { method: 'PATCH', body: { aktiv: cb.checked } });
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+      cb.checked = !cb.checked;
+    }
+  });
+  dlg.querySelectorAll('[data-nein]').forEach(b => (b.onclick = () => dlg.close()));
+  dlg.showModal();
 }
 
 /* CCCLXXXVI — eine oder mehrere Dateien einer NK-Zeile zuordnen (Drag&Drop aus

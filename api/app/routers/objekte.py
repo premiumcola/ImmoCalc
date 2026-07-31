@@ -943,9 +943,13 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "anbieter": k.lieferant or "", "kostenart_id": k.id,
             "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
         })
-    # Positionen zu Kostenarten, die nicht im Katalog stehen, gehen sonst verloren
+    # Positionen zu Kostenarten, die nicht im Katalog stehen, gehen sonst verloren.
+    # CCCXCVI — ausgeblendete (inaktive) Kostenarten bleiben aber ausgeblendet,
+    # auch wenn sie schon eine Position tragen (sonst käme die Zeile als Waise zurück).
+    inaktiv = {k.name for k in arten if not k.aktiv}
+    sichtbar = {k["kostenart"] for k in checkliste}
     for p in positionen:
-        if p.kostenart in {k["kostenart"] for k in checkliste}:
+        if p.kostenart in sichtbar or p.kostenart in inaktiv:
             continue
         checkliste.append({
             "kostenart": p.kostenart, "s35": p.s35,
