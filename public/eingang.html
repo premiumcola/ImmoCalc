@@ -2353,19 +2353,24 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
   const objekt = p.get('objekt') || '';
   const kostenart = p.get('kostenart') || '';
   const ziel = p.get('zuordnenZeitraum') || '';
+  const jahr = p.get('jahr') || '';
   if (!objekt && !kostenart && !ziel) return;
-  // Nur auf das Objekt + Warten vorfiltern, NICHT auf die Kostenart: die
-  // NK-Checkliste nutzt einen anderen Katalog (Heizkosten/Warmwasser) als die
-  // normalisierten Dokument-Kostenarten (Heizung/Heizöl) — ein Kostenart-Filter
-  // träfe hier oft nichts. Die Ziel-Kostenart nennt stattdessen der Banner.
+  // Auf Objekt + Jahr vorfiltern, NICHT auf die Kostenart: die NK-Checkliste
+  // nutzt einen anderen Katalog (Heizkosten/Warmwasser) als die normalisierten
+  // Dokument-Kostenarten (Heizung/Heizöl) — ein Kostenart-Filter träfe hier oft
+  // nichts. Die Ziel-Kostenart nennt stattdessen der Banner.
   if (objekt) filter.objekt = objekt;
-  if (ziel) filter.status = 'neu';
+  // CCCLXXII — mit dem Abrechnungsjahr landet die Auswahl gleich am richtigen
+  // Ordner (…/60_Nebenkosten/<Jahr>). Der Status bleibt offen (alle), damit auch
+  // bereits abgelegte Belege des Ordners wählbar sind, nicht nur wartende.
+  if (jahr) filter.jahr = jahr;
   let zurueck = p.get('zurueck') || '';
   if (!/^\/?zeitraum\.html\?/.test(zurueck)) zurueck = 'nebenkosten.html';
   const el = document.getElementById('nkKontext');
   el.innerHTML = `<span class="kx">☁</span>
     <span>Beleg für die Abrechnung wählen${kostenart
-      ? ` — <strong>${esc(kostenart)}</strong>` : ''}. Antippen öffnet das
+      ? ` — <strong>${esc(kostenart)}</strong>` : ''}${jahr
+      ? ` · Ordner <strong>${esc(jahr)}</strong>` : ''}. Antippen öffnet das
       Prüfblatt wie bei einem neuen Beleg.</span>
     <a class="zur" href="${esc(zurueck)}">← zurück zur Abrechnung</a>`;
   el.hidden = false;

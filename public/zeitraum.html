@@ -2176,9 +2176,12 @@ inhalt.addEventListener('click', async e => {
   // beim Übernehmen genau dieser Position zu.
   const ablage = e.target.closest('[data-ablage]');
   if (ablage) {
+    // CCCLXXII — das Abrechnungsjahr (Ende des Zeitraums) mitgeben, damit der
+    // Eingang gleich am richtigen Ordner (…/60_Nebenkosten/<Jahr>) startet.
+    const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
     const p = new URLSearchParams({
       objekt: daten.objekt, kostenart: ablage.dataset.ablage,
-      zuordnenZeitraum: String(daten.id),
+      zuordnenZeitraum: String(daten.id), jahr: String(jahr),
       zurueck: location.pathname + location.search,
     });
     location.href = 'eingang.html?' + p.toString();
