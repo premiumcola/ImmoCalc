@@ -1943,6 +1943,121 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
 
 # --------------------------------------------------------------------------
+# CCCLXXXVI: byte-exakte Duplikaterkennung
+#
+# Bevor ein Beleg hochgeladen wird, lässt sich fragen: liegt genau diese Datei
+# (byte-identisch, per SHA1) schon in der Cloud? Zwei schlanke Endpunkte:
+#   * `/duplikat-pruefen` schaut nur nach — rein lesend (PROPFIND).
+#   * `/vorhandenen-zuordnen` legt für eine schon vorhandene Datei einen
+#     Dokument-Eintrag an, ohne sie erneut hochzuladen (kein PUT/MOVE).
+# Beide fassen die Nextcloud nie schreibend an; das Zuordnen ist reine
+# Datenbank-Arbeit. Idempotent: derselbe Pfad ergibt denselben Eintrag.
+# --------------------------------------------------------------------------
+
+def _objekt_nach_slug(session: Session, slug: str) -> Objekt:
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    return o
+
+
+def _dokument_am_pfad(session: Session, pfad: str) -> Dokument | None:
+    """Der Eintrag, der auf diesen Pfad zeigt — mit und ohne führenden Trenner
+    gesucht, weil beide Schreibweisen im Bestand vorkommen können."""
+    ohne = pfad.strip("/")
+    return session.exec(select(Dokument).where(
+        Dokument.pfad.in_((f"/{ohne}", ohne)))).first()
+
+
+class DuplikatPruefung(BaseModel):
+    objekt: str
+    sha1: str
+    name: str = ""
+    jahr: int | None = None
+
+
+@router.post("/duplikat-pruefen")
+def duplikat_pruefen(data: DuplikatPruefung,
+                     session: Session = Depends(get_session)) -> dict:
+    """Liegt eine byte-gleiche Datei (SHA1) schon in der Cloud? (CCCLXXXVI)
+
+    Sucht im gesamten Objektbaum. `im_ziel_ordner` sagt, ob der Fund im
+    erwarteten NK-Jahr-Ordner liegt oder anderswo im Baum; `schon_erfasst`, ob
+    es zu ihm bereits einen Dokument-Eintrag gibt. Rein lesend — nichts wird
+    angelegt. Ohne verknüpften Cloud-Ordner ein ehrlicher 409."""
+    o = _objekt_nach_slug(session, data.objekt)
+    _cloud_pflicht(o)
+    client = verbindung(session)
+    # Wo ein NK-Beleg dieses Jahres landen würde — daran misst sich, ob der
+    # Fund schon am richtigen Platz liegt.
+    _sach, ziel_ordner = _ablageordner(session, o, "Nebenkosten", data.jahr,
+                                        client)
+    treffer = client.finde_nach_checksum(o.nc_ordner, data.sha1)
+    if not treffer:
+        return {"gefunden": False, "pfad": None, "dateiname": None,
+                "im_ziel_ordner": False, "schon_erfasst": False,
+                "dokument_id": None}
+    pfad = _norm(treffer.pfad)
+    im_ziel = _elternteil(pfad) == _norm(ziel_ordner)
+    vorhanden = _dokument_am_pfad(session, pfad)
+    return {"gefunden": True, "pfad": pfad, "dateiname": treffer.name,
+            "im_ziel_ordner": im_ziel,
+            "schon_erfasst": vorhanden is not None,
+            "dokument_id": vorhanden.id if vorhanden else None}
+
+
+class VorhandenerBeleg(BaseModel):
+    objekt: str
+    pfad: str
+    kategorie: str = "Nebenkosten"
+    beschreibung: str = ""
+    jahr: int | None = None
+    zeitraum_id: int | None = None
+
+
+@router.post("/vorhandenen-zuordnen")
+def vorhandenen_zuordnen(data: VorhandenerBeleg,
+                         session: Session = Depends(get_session)) -> dict:
+    """Legt für eine schon in der Cloud liegende Datei einen Dokument-Eintrag
+    an — ohne erneuten Upload (CCCLXXXVI). Kein PUT/MOVE, reine Datenbank.
+
+    Idempotent: gibt es zu diesem Pfad bereits einen Eintrag, wird er nicht
+    verdoppelt. Fehlende Bezüge (Objekt, Kategorie, Zeitraum) werden dann nur
+    additiv ergänzt — nichts Bestehendes überschrieben."""
+    o = _objekt_nach_slug(session, data.objekt)
+    zeitraum_id = _pruefe_zeitraum(session, data.zeitraum_id)
+    pfad = _norm(data.pfad)
+    name = pfad.rstrip("/").split("/")[-1]
+
+    vorhanden = _dokument_am_pfad(session, pfad)
+    if vorhanden:
+        if vorhanden.objekt_id is None:
+            vorhanden.objekt_id = o.id
+        if not vorhanden.kategorie and data.kategorie:
+            vorhanden.kategorie = data.kategorie
+        if vorhanden.zeitraum_id is None and zeitraum_id is not None:
+            vorhanden.zeitraum_id = zeitraum_id
+        session.add(vorhanden)
+        session.commit()
+        session.refresh(vorhanden)
+        return {"id": vorhanden.id, "dateiname": vorhanden.dateiname,
+                "pfad": vorhanden.pfad, "abgelegt": True, "vorhanden": True}
+
+    d = Dokument(pfad=pfad, dateiname=name, groesse=0, objekt_id=o.id,
+                 kategorie=data.kategorie, zeitraum_id=zeitraum_id,
+                 status="zugeordnet", erkannt_am=date.today())
+    session.add(d)
+    try:
+        session.commit()
+    except IntegrityError as e:
+        raise _pfad_konflikt(session, pfad) from e
+    session.refresh(d)
+    log.info("Vorhandener Beleg zugeordnet: %s", d.pfad)
+    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+            "abgelegt": True, "vorhanden": True}
+
+
+# --------------------------------------------------------------------------
 # CCCXXVI: Lageplan je Einheit
 #
 # Ein Lageplan (Foto oder PDF) gehört zu einer Einheit und wird später unter

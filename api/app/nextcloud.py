@@ -16,10 +16,27 @@ import httpx
 log = logging.getLogger("immocalc")
 
 DAV = "{DAV:}"
+# Nextcloud/ownCloud liefern Prüfsummen im eigenen Namespace `oc`. Wir fragen
+# sie mit an — sie kommen als ein Textfeld „SHA1:… MD5:… ADLER32:…" zurück.
+OC = "{http://owncloud.org/ns}"
 PROPFIND_RUMPF = """<?xml version="1.0"?>
-<d:propfind xmlns:d="DAV:"><d:prop>
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop>
   <d:resourcetype/><d:getcontentlength/><d:getlastmodified/>
+  <oc:checksums/>
 </d:prop></d:propfind>"""
+
+
+def _sha1_aus_checksums(text: str | None) -> str:
+    """Zieht das `SHA1:<hex>`-Token aus dem `oc:checksum`-Feld.
+
+    Nextcloud legt dort mehrere Prüfsummen whitespace-getrennt ab, z. B.
+    „SHA1:abc… MD5:… ADLER32:…". Nicht jede Datei hat welche — dann kommt
+    hier ein leerer String heraus. Case-insensitiv gesucht, der Hex-Wert
+    selbst wird kleingeschrieben zurückgegeben, damit Vergleiche greifen."""
+    for teil in (text or "").split():
+        if teil.upper().startswith("SHA1:"):
+            return teil[len("SHA1:"):].strip().lower()
+    return ""
 
 
 @dataclass
@@ -28,6 +45,9 @@ class Eintrag:
     pfad: str
     ordner: bool
     groesse: int = 0
+    # Byte-exakte Prüfsumme aus der Cloud (CCCLXXXVI) — leer, wenn Nextcloud für
+    # diese Datei keine liefert. Additiv, damit kein bestehender Aufrufer bricht.
+    sha1: str = ""
 
 
 class NextcloudFehler(RuntimeError):
@@ -150,15 +170,50 @@ class Nextcloud:
             ist_ordner = props is not None and \
                 props.find(f"{DAV}resourcetype/{DAV}collection") is not None
             groesse = props.findtext(f"{DAV}getcontentlength") if props is not None else None
+            sha1 = _sha1_aus_checksums(
+                props.findtext(f"{OC}checksums/{OC}checksum")
+                if props is not None else None)
             eintraege.append(Eintrag(
                 name=relativ.rstrip("/").split("/")[-1],
                 pfad=relativ.rstrip("/"),
                 ordner=ist_ordner,
                 groesse=int(groesse) if groesse and groesse.isdigit() else 0,
+                sha1=sha1,
             ))
 
         eintraege.sort(key=lambda e: (not e.ordner, e.name.lower()))
         return eintraege
+
+    def finde_nach_checksum(self, wurzel: str, sha1: str,
+                            max_tiefe: int = 3) -> "Eintrag | None":
+        """Sucht byte-exakt: der erste Datei-Eintrag unter `wurzel`, dessen
+        SHA1 dem gesuchten gleicht (CCCLXXXVI). Rein lesend (nur PROPFIND).
+
+        Steigt bis `max_tiefe` Ebenen in Unterordner ab. Ein Unterordner, der
+        sich gerade nicht lesen lässt, hält die Suche nicht an — er wird
+        übersprungen. `sha1` leer heisst: nichts zu suchen, gibt None."""
+        gesucht = (sha1 or "").strip().lower()
+        if not gesucht:
+            return None
+        besucht: set[str] = set()
+        offen: list[tuple[str, int]] = [(_normpfad(wurzel), 0)]
+        while offen:
+            ordner, ebene = offen.pop()
+            if ordner in besucht:
+                continue
+            besucht.add(ordner)
+            try:
+                eintraege = self.liste(ordner)
+            except NextcloudFehler as fehler:
+                log.info("Checksum-Suche: %s nicht lesbar (%s)", ordner, fehler)
+                continue
+            for e in eintraege:
+                if e.ordner:
+                    if ebene < max_tiefe:
+                        offen.append((e.pfad, ebene + 1))
+                elif e.sha1 and e.sha1.lower() == gesucht:
+                    return e
+        return None
 
     def ordner_anlegen(self, pfad: str) -> bool:
         """Legt einen Ordner an. Bestehende bleiben unangetastet."""
