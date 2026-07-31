@@ -373,6 +373,9 @@
        border-radius:12px;padding:12px;font:600 13.5px var(--disp);cursor:pointer;
        min-height:44px;margin-bottom:4px}
   .add:hover{background:var(--teal-l)}
+  /* CCCLXXXIX — statt des Hinzufügen-Knopfs, wenn schon aktuell vermietet. */
+  .add-gesperrt{font:500 12px var(--body);color:var(--soft);line-height:1.5;
+       padding:10px 13px;background:var(--paper);border-radius:12px;margin-bottom:4px}
   /* CCCXXVI — der Lageplan-Weg ist ein <label> über einem versteckten
      Datei-Feld: als Block, damit die Breite wie beim Knopf greift. */
   label.add{display:block;text-align:center}
@@ -1102,7 +1105,7 @@ const SCAN_TYPEN = { mieten: [
   ['Mietvertrag', 'Mietvertrag'],
   ['Übergabeprotokoll Einzug', 'Übergabe Einzug'],
   ['Übergabeprotokoll Auszug', 'Übergabe Auszug'],
-  ['Mietkautionskonto', 'Kaution'],
+  ['Mietkautionskonto', 'Kautionsunterlagen'],
 ] };
 const KAMERA_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
   stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
@@ -1238,10 +1241,18 @@ function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
       : eintragZeile(cfg, bereich, e, imFokus)).join('');
   }
 
+  // CCCLXXXIX — solange die Wohnung aktuell vermietet ist, lässt sich kein
+  // zweites Mietverhältnis daneben anlegen; erst das laufende beenden.
+  const mietGesperrt = bereich === 'mieten'
+    && eintraege.some(m => !m.beendet && !m.geplant);
+  const addHtml = mietGesperrt
+    ? `<div class="add-gesperrt">Aktuell vermietet — zum Wechseln erst das
+        laufende Mietverhältnis beenden.</div>`
+    : `<button class="add" data-add="${bereich}">＋ ${esc(cfg.einzahl)} hinzufügen</button>`;
   return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, '', RUBRIKFARBE[bereich])}
     ${vorspann}
     <div class="liste">${zeilen}</div>
-    <button class="add" data-add="${bereich}">＋ ${esc(cfg.einzahl)} hinzufügen</button>`;
+    ${addHtml}`;
 }
 
 /* ---- CXLI/CLXVIII: die Einheiten des Hauses und ihr Fokus ---------------- */
@@ -2043,6 +2054,9 @@ async function eintragDetail(bereich, id) {
   // als Knopf unter dem Hinweis; ist schon einer da, bleibt nur eine leise
   // Zeile für den nächsten. Nur für Rubriken, die das Backend als Ziel kennt.
   const scanWort = SCAN_WORT[bereich] || 'Beleg';
+  // CCCLXXXIX — beim Mietverhältnis sind es Dokumente (Mietvertrag, Übergaben,
+  // Kaution), keine „Belege".
+  const dokLabel = bereich === 'mieten' ? 'Zugehörige Dokumente' : 'Belege';
   const typen = SCAN_TYPEN[bereich];
   // Welcher Belegtyp abfotografiert wird — bei mehreren Typen setzt ihn der Klick.
   let gewaehltWort = typen ? typen[0][0] : scanWort;
@@ -2063,8 +2077,8 @@ async function eintragDetail(bereich, id) {
   const belegeHtml = (alle.length
     ? (belege.haupt ? belegItem(belege.haupt, false) : '')
       + (belege.unter || []).map(d => belegItem(d, true)).join('')
-    : `<div class="dd-keinbeleg">Noch kein Beleg hinterlegt — hier
-        abfotografieren oder über den Dokumentenbaum oben anhängen.</div>`)
+    : `<div class="dd-keinbeleg">Noch ${bereich === 'mieten' ? 'kein Dokument' : 'kein Beleg'}
+        hinterlegt — hier abfotografieren oder über den Dokumentenbaum oben anhängen.</div>`)
     + scanHtml;
 
   const dlg = document.createElement('dialog');
@@ -2088,17 +2102,17 @@ async function eintragDetail(bereich, id) {
     <div class="dd-body">
       <div class="dd-links">
         <div class="dd-daten">${datenHtml}</div>
-        <div class="dd-belege"><span class="dd-sub">Belege</span>${belegeHtml}</div>
         <div class="dd-aktionen">
           <button class="dd-edit" data-bearbeiten>✎ Bearbeiten</button>
           ${kannUmklassifizieren(bereich)
             ? `<button class="dd-edit" data-umklass>⇄ Rubrik ändern</button>` : ''}
         </div>
+        <div class="dd-belege"><span class="dd-sub">${esc(dokLabel)}</span>${belegeHtml}</div>
       </div>
       <div class="dd-rechts">
-        <div class="beleg-flaeche">${alle.length
-          ? '<div class="beleg-blatt lade">Beleg wird geholt …</div>'
-          : '<div class="beleg-blatt leer">Kein Beleg zum Anzeigen.</div>'}</div>
+        <div class="beleg-flaeche"><div class="beleg-blatt leer">${alle.length
+          ? 'Tippe ein Dokument an, um es anzusehen.'
+          : 'Kein Dokument zum Anzeigen.'}</div></div>
       </div>
     </div>`;
   // Fachbegriffe in der Zusammenfassung bekommen dasselbe ?-Icon wie im Formular.
@@ -2114,10 +2128,9 @@ async function eintragDetail(bereich, id) {
     adressListen.push(belegSeitenLaden(`/api/dokumente/${docId}`, flaeche,
       name || 'Beleg', `/api/dokumente/${docId}/inhalt`));
   };
-  if (alle.length) {
-    const erst = belege.haupt || alle[0];
-    zeigeDoc(erst.id, erst.dateiname);
-  }
+  // CCCLXXXIX — das PDF wird NICHT mehr automatisch geladen; es erscheint erst,
+  // wenn man ein Dokument antippt (zeigeDoc). Das hielt die Ansicht ruhig, statt
+  // gleich das ganze Blatt einzublenden.
 
   /* CCCLXVII — die Aufnahmen laufen durch die gemeinsame Choreografie
      (`belegscan.js`): zuschneiden, mehrseitig als PDF ablegen, Textschicht
