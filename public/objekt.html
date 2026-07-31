@@ -217,6 +217,28 @@
   .dd-scanwahl{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
   .dd-scanlabel{flex-basis:100%;font:600 10px var(--mono);letter-spacing:.08em;
     text-transform:uppercase;color:var(--soft)}
+  /* CCCLXXXIX — Dokument-Checkliste je Mietverhältnis (Haken/fehlt/ersetzen). */
+  .dd-checkliste{display:flex;flex-direction:column;gap:6px}
+  .dd-check{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:11px;
+    background:var(--paper);min-height:46px}
+  .dd-check.da{background:var(--pos-bg)}
+  .dd-ci{flex:none;width:22px;height:22px;border-radius:50%;display:flex;
+    align-items:center;justify-content:center}
+  .dd-ci.ok{background:var(--pos);color:#fff}
+  .dd-ci.ok svg{width:13px;height:13px}
+  .dd-check.fehlt .dd-ci{border:1.5px dashed #B4C4C1}
+  .dd-cn{flex:1;min-width:0;text-align:left;border:none;background:none;cursor:pointer;
+    font:600 13.5px var(--disp);color:var(--ink);padding:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .dd-cn.leer{color:var(--soft);font-weight:500;cursor:default}
+  .dd-cx{flex:none;border:none;background:none;color:var(--teal-d);cursor:pointer;
+    font:600 11.5px var(--disp);text-decoration:underline;padding:8px 6px;min-height:44px}
+  .dd-cx:hover{color:var(--teal)}
+  .dd-cadd{flex:none;display:inline-flex;align-items:center;gap:6px;border:1.5px solid #C3DAD2;
+    background:var(--sheet);color:var(--teal-d);border-radius:10px;cursor:pointer;
+    font:600 11.5px var(--disp);padding:8px 11px;min-height:44px}
+  .dd-cadd svg{width:15px;height:15px}
+  .dd-cadd:hover{background:var(--teal-l)}
   .dd-aktionen{display:flex;flex-wrap:wrap;gap:8px}
   .dd-edit{align-self:flex-start;border:1px solid var(--line);background:var(--paper);
     color:var(--teal-d);border-radius:12px;padding:11px 16px;min-height:44px;
@@ -2091,12 +2113,40 @@ async function eintragDetail(bereich, id) {
           typen.map(([voll, kurz]) => scanKnopf(voll, kurz, true)).join('')
         }</div>${scanFeldHtml}`
       : scanKnopf(scanWort, scanText, alle.length) + scanFeldHtml;
-  const belegeHtml = (alle.length
-    ? (belege.haupt ? belegItem(belege.haupt, false) : '')
-      + (belege.unter || []).map(d => belegItem(d, true)).join('')
-    : `<div class="dd-keinbeleg">Noch ${bereich === 'mieten' ? 'kein Dokument' : 'kein Beleg'}
-        hinterlegt — hier abfotografieren oder über den Dokumentenbaum oben anhängen.</div>`)
-    + scanHtml;
+  // CCCLXXXIX — beim Mietverhältnis eine Checkliste je Dokumentart in logischer
+  // Reihenfolge: grüner Haken + Name (antippen zeigt es, „Ersetzen" tauscht) wo
+  // vorhanden, sonst „fehlt" mit Aufnehmen-Knopf. So bleibt es EIN Dokument je Art.
+  const mietChecklistHtml = () => {
+    const norm = s => (s || '').toLowerCase();
+    // Unerkanntes (z. B. Alt-„Miete") gilt als Mietvertrag (das Hauptdokument).
+    const typVon = d =>
+      (typen.find(([voll]) => norm(d.dateiname).includes(norm(voll))) || [])[0] || 'Mietvertrag';
+    return `<div class="dd-checkliste">${typen.map(([voll, kurz]) => {
+      const da = alle.find(d => typVon(d) === voll);
+      return da
+        ? `<div class="dd-check da">
+             <span class="dd-ci ok">${HAKEN_ICON}</span>
+             <button class="dd-cn" data-doc="${da.id}" data-name="${esc(da.dateiname)}"
+               >${esc(kurz)}</button>
+             <button class="dd-cx" data-scan data-wort="${esc(voll)}"
+               title="${esc(kurz)} ersetzen" aria-label="${esc(kurz)} ersetzen">Ersetzen</button>
+           </div>`
+        : `<div class="dd-check fehlt">
+             <span class="dd-ci"></span>
+             <span class="dd-cn leer">${esc(kurz)}</span>
+             <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
+               aria-label="${esc(kurz)} aufnehmen">${KAMERA_ICON}<span>aufnehmen</span></button>
+           </div>`;
+    }).join('')}</div>${scanFeldHtml}`;
+  };
+  const belegeHtml = (bereich === 'mieten' && typen)
+    ? mietChecklistHtml()
+    : (alle.length
+        ? (belege.haupt ? belegItem(belege.haupt, false) : '')
+          + (belege.unter || []).map(d => belegItem(d, true)).join('')
+        : `<div class="dd-keinbeleg">Noch kein Beleg
+            hinterlegt — hier abfotografieren oder über den Dokumentenbaum oben anhängen.</div>`)
+      + scanHtml;
 
   const dlg = document.createElement('dialog');
   dlg.className = 'immo-dlg detail-dlg';
