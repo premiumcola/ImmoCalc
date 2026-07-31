@@ -463,10 +463,13 @@
         <span class="k2">Mehrere Seiten möglich · wird als PDF abgelegt</span>
       </span>
     </button>
-    <input type="file" id="kameraFeld" accept="image/*" capture="environment"
-           multiple hidden>
-    <input type="file" id="erneutFeld" accept="image/*" capture="environment"
-           multiple hidden>
+    <!-- CCCLXXI — auf dem Telefon führt `capture` direkt zur Kamera; am PC
+         (keine Kamera) zählt der `accept`-Filter, der auch PDFs zulässt, damit
+         ein fertiger Beleg nicht durch den Bild-Filter ausgeblendet wird. -->
+    <input type="file" id="kameraFeld" accept="image/*,application/pdf,.pdf"
+           capture="environment" multiple hidden>
+    <input type="file" id="erneutFeld" accept="image/*,application/pdf,.pdf"
+           capture="environment" multiple hidden>
 
     <span class="fussnote" id="fussnote"></span>
 
@@ -2168,11 +2171,27 @@ const kameraFeld = document.getElementById('kameraFeld');
 
 kameraKnopf.addEventListener('click', () => kameraFeld.click());
 
+/* Bilder gehen durch den Zuschnitt (Kanten erkennen, entzerren, PDF bauen); ein
+   schon fertiges PDF (aus der Dateiauswahl am PC statt aus der Kamera) läuft
+   ohne Zuschnitt direkt durch — dieselbe Aufteilung wie in `belegscan.js`.
+   `null` = der Nutzer hat den Zuschnitt abgebrochen (CCCLXXI). */
+async function belegPdf(dateien) {
+  const bilder = dateien.filter(d => (d.type || '').startsWith('image/'));
+  const pdf = dateien.find(d => (d.type || '') === 'application/pdf');
+  if (bilder.length) {
+    const s = await kamerascanStarten(bilder);
+    return s ? { pdf: s.pdf, name: 'scan.pdf', seiten: s.seiten, quelle: bilder[0] } : null;
+  }
+  if (pdf) return { pdf, name: pdf.name, seiten: 0, quelle: pdf };
+  return null;
+}
+
 async function erkenne(bild) {
-  if (!erkennungMoeglich) return null;
+  if (!erkennungMoeglich || !bild) return null;
   try {
     const paket = new FormData();
-    paket.append('datei', bild, 'seite.jpg');
+    // Mit echtem Namen — so erkennt der Server ein PDF an der Endung.
+    paket.append('datei', bild, bild.name || 'seite.jpg');
     const antwort = await fetch('/api/dokumente/erkennen',
                                 { method: 'POST', body: paket });
     return antwort.ok ? await antwort.json() : null;
@@ -2193,11 +2212,11 @@ kameraFeld.addEventListener('change', async () => {
   unterzeile.textContent = `${dateien.length} Aufnahme${dateien.length > 1 ? 'n' : ''}`;
 
   try {
-    const [scanErgebnis, erkannt] = await Promise.all([
-      kamerascanStarten(dateien), erkenne(dateien[0]),
-    ]);
-    if (!scanErgebnis) throw new Error('abgebrochen');
-    const { pdf, seiten } = scanErgebnis;
+    // Bilder werden zugeschnitten, ein gewähltes PDF geht direkt durch (CCCLXXI).
+    const aufnahme = await belegPdf(dateien);
+    if (!aufnahme) throw new Error('abgebrochen');
+    const { pdf, seiten, name } = aufnahme;
+    const erkannt = await erkenne(aufnahme.quelle);
     // Eindeutig ist die Immobilie, wenn es nur eine gibt — oder wenn gerade
     // nach einer gefiltert wird.
     const einzige = daten.objekte.length === 1 ? daten.objekte[0].slug : '';
@@ -2220,7 +2239,7 @@ kameraFeld.addEventListener('change', async () => {
     if (erkannt?.datum) paket.append('datum', erkannt.datum);
     if (erkannt?.monat) paket.append('monat', String(erkannt.monat));
     if (erkannt?.betrag) paket.append('betrag', String(erkannt.betrag));
-    paket.append('datei', pdf, 'scan.pdf');
+    paket.append('datei', pdf, name);
 
     const antwort = await fetch('/api/dokumente/scannen',
       { method: 'POST', body: paket });
@@ -2257,12 +2276,12 @@ document.getElementById('erneutFeld').addEventListener('change', async e => {
   const id = gewaehlt;
   if (!dateien.length || id === null) return;
   try {
-    const scanErgebnis = await kamerascanStarten(dateien);
-    if (!scanErgebnis) { melde('Abgebrochen'); return; }
-    const { pdf } = scanErgebnis;
+    // Bilder zuschneiden, ein gewähltes PDF direkt übernehmen (CCCLXXI).
+    const aufnahme = await belegPdf(dateien);
+    if (!aufnahme) { melde('Abgebrochen'); return; }
     melde('Neue Aufnahme wird abgelegt …');
     const paket = new FormData();
-    paket.append('datei', pdf, 'scan.pdf');
+    paket.append('datei', aufnahme.pdf, aufnahme.name);
     const antwort = await fetch(`/api/dokumente/${id}/neu`,
                                 { method: 'POST', body: paket });
     if (!antwort.ok) {
@@ -2286,8 +2305,11 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
       ? ` · erkannt: ${[erkannt.sache, datumText(erkannt.jahr, erkannt.monat),
           betragText(erkannt.betrag)].filter(Boolean).join(' · ')}`
       : erkennungMoeglich ? '' : ' · Texterkennung nicht eingerichtet';
+    // Ein direkt gewähltes PDF trägt keine gezählten Seiten (seiten = 0) — dann
+    // steht schlicht „PDF" statt „0 Seite".
+    const mengeText = seiten > 0 ? `${seiten} Seite${seiten > 1 ? 'n' : ''}` : 'PDF';
     document.getElementById('zielInfo').textContent =
-      `${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(groesse)}${gelesen}`;
+      `${mengeText} · ${lesbareGroesse(groesse)}${gelesen}`;
 
     if (!zielFelder) {
       zielFelder = {
