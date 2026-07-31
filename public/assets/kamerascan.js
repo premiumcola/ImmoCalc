@@ -58,7 +58,11 @@ function stilSicherstellen() {
   stil.textContent = `
 .kscan-overlay{position:fixed;inset:0;z-index:9000;background:rgba(15,20,22,.94);
   display:flex;flex-direction:column;height:100dvh;font-family:var(--body,sans-serif);
-  color:#fff}
+  color:#fff;
+  /* CCCLXXXVIII — beim langsamen Ziehen einer Ecke fing iOS sonst an, Text im
+     Hintergrund zu markieren (Kopieren/Nachschlagen-Menü). Im ganzen Scanner
+     ist nichts zu markieren, also Auswahl und Langdruck-Menü komplett aus. */
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .kscan-kopf{flex:none;display:flex;align-items:center;gap:10px;padding:12px 12px;
   padding-top:max(12px,env(safe-area-inset-top))}
 .kscan-x{flex:none;width:44px;height:44px;border:none;border-radius:12px;
@@ -126,6 +130,12 @@ function stilSicherstellen() {
   font:500 11.5px var(--mono,monospace);text-decoration:underline;cursor:pointer;
   padding:8px 12px;min-height:44px;min-width:44px}
 .kscan-entfernen{color:#F2A98D}
+/* CCCLXXXVIII — Drehen links/rechts, falls das Foto quer aufgenommen wurde. */
+.kscan-dreh{background:rgba(255,255,255,.12);border:none;border-radius:11px;
+  color:#fff;cursor:pointer;padding:0;min-height:44px;min-width:44px;
+  display:flex;align-items:center;justify-content:center}
+.kscan-dreh:hover{background:rgba(255,255,255,.22)}
+.kscan-dreh svg{width:22px;height:22px;display:block}
 .kscan-aktionen{display:flex;gap:8px}
 .kscan-aktionen button{flex:1;border:none;border-radius:12px;min-height:48px;
   font:600 14px var(--disp,sans-serif);cursor:pointer}
@@ -616,6 +626,37 @@ export function kamerascanStarten(dateien, optionen = {}) {
       };
     }
 
+    /* CCCLXXXVIII — die Aufnahme um 90° drehen (quer gehaltenes Handy). Die
+       EXIF-Orientierung greift schon beim Laden; das hier ist der manuelle Weg,
+       wenn kein Tag da ist oder das Blatt quer liegt. */
+    async function bitmapDrehen(bitmap, gegenUhrzeiger) {
+      const c = document.createElement('canvas');
+      c.width = bitmap.height;
+      c.height = bitmap.width;
+      const x = c.getContext('2d');
+      if (gegenUhrzeiger) { x.translate(0, c.height); x.rotate(-Math.PI / 2); }
+      else { x.translate(c.width, 0); x.rotate(Math.PI / 2); }
+      x.drawImage(bitmap, 0, 0);
+      return createImageBitmap(c);
+    }
+
+    async function dreheSeite(gegenUhrzeiger) {
+      const s = seiten[aktiv];
+      if (!s) return;
+      const neu = await bitmapDrehen(s.bitmap, gegenUhrzeiger);
+      s.bitmap.close?.();
+      URL.revokeObjectURL(s.thumbUrl);
+      s.bitmap = neu;
+      // Nach der Drehung die Kanten neu schätzen — die alten Ecken passen nicht mehr.
+      s.ecken = eckenSchaetzen(neu);
+      s.eckenErkannt = s.ecken.map(e => ({ ...e }));
+      s.vorschau = await vorschauCanvas(neu);
+      const thumbBlob = await new Promise(r => s.vorschau.toBlob(r, 'image/jpeg', 0.6));
+      s.thumbUrl = URL.createObjectURL(thumbBlob);
+      zeichneAktuelleSeite();
+      thumbsZeichnen();
+    }
+
     function guardsVon(seite) {
       const px = seite.ecken.map(e => ({ x: e.x * seite.bitmap.width, y: e.y * seite.bitmap.height }));
       return guards(px, seite.bitmap.width, seite.bitmap.height);
@@ -835,6 +876,23 @@ export function kamerascanStarten(dateien, optionen = {}) {
 
       const werkzeuge = document.createElement('div');
       werkzeuge.className = 'kscan-werkzeuge';
+      // CCCLXXXVIII — links/rechts drehen, wenn die Aufnahme quer liegt.
+      const drehIcon = pfad => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${pfad}</svg>`;
+      const drehL = document.createElement('button');
+      drehL.className = 'kscan-dreh';
+      drehL.setAttribute('aria-label', 'Nach links drehen');
+      drehL.title = 'Nach links drehen';
+      drehL.innerHTML = drehIcon('<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>');
+      drehL.addEventListener('click', () => dreheSeite(true));
+      werkzeuge.appendChild(drehL);
+      const drehR = document.createElement('button');
+      drehR.className = 'kscan-dreh';
+      drehR.setAttribute('aria-label', 'Nach rechts drehen');
+      drehR.title = 'Nach rechts drehen';
+      drehR.innerHTML = drehIcon('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>');
+      drehR.addEventListener('click', () => dreheSeite(false));
+      werkzeuge.appendChild(drehR);
       const reset = document.createElement('button');
       reset.className = 'kscan-reset';
       reset.textContent = 'Ecken zurücksetzen';
