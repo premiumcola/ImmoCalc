@@ -280,18 +280,34 @@
   .eintrag .del:hover{color:var(--neg)}
   /* CCCLXIX/CCCLXXXI — Lageplan: Inline-Vorschau des ersten Plans (höhen-
      begrenzt), plus je Zeile zwei leise Aktionen (umbenennen, entfernen). */
-  .lp-vorschau{display:block;width:100%;border:none;padding:12px 12px 13px;
-    background:var(--paper);border-bottom:1px solid var(--line);cursor:pointer;
-    line-height:0}
+  .lp-karte{position:relative}
+  .lp-karte + .lp-karte{border-top:1px solid var(--line)}
+  .lp-vorschau{position:relative;display:block;width:100%;border:none;
+    padding:12px 12px 13px;background:var(--paper);cursor:pointer;line-height:0}
   .lp-vorschau img{display:block;width:100%;max-height:160px;object-fit:contain;
     border-radius:10px;background:var(--sheet)}
-  .lp-zeile .et{min-width:0}
-  .lp-akt{border:none;background:none;color:var(--soft);font:400 17px var(--body);
-    cursor:pointer;padding:0;width:44px;height:44px;flex:none;border-radius:11px;
-    margin:-5px 0;display:flex;align-items:center;justify-content:center}
-  .lp-zeile .lp-akt:last-child{margin-right:-12px}
-  .lp-akt:hover{background:#EDF1F0;color:var(--ink)}
+  /* CCCLXXXV — der Anzeigename, sanft über das Bild gelegt: unten links eine
+     gedämpfte Pille, damit sich Pläne (1.OG, DG …) auf einen Blick auseinander
+     halten lassen, ohne das Bild zu verdecken. */
+  .lp-name{position:absolute;left:20px;bottom:21px;max-width:calc(100% - 40px);
+    padding:4px 11px;border-radius:999px;background:rgba(15,20,22,.6);color:#fff;
+    font:600 11.5px var(--mono);letter-spacing:.02em;line-height:1.35;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;
+    -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+  /* Zwei leise Aktionen schweben oben rechts auf der Karte. */
+  .lp-akte{position:absolute;top:16px;right:16px;display:flex;gap:5px}
+  .lp-akt{width:34px;height:34px;border-radius:9px;border:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.85);color:var(--ink);font:400 15px var(--body);
+    box-shadow:0 1px 3px rgba(22,38,44,.16)}
+  .lp-akt:hover{background:#fff}
   .lp-akt.lp-weg:hover{color:var(--neg)}
+  /* Vorschau nicht ladbar (ohne Cloud): Bild weg, Name/Aktionen bleiben. */
+  .lp-karte.lp-ohne-bild .lp-vorschau{min-height:66px;display:flex;
+    align-items:center;justify-content:center}
+  .lp-karte.lp-ohne-bild .lp-vorschau img{display:none}
+  .lp-karte.lp-ohne-bild .lp-name{position:static;background:var(--sheet);
+    color:var(--soft);-webkit-backdrop-filter:none;backdrop-filter:none;max-width:none}
   .lp-eingabe{width:100%;border:1.5px solid var(--line);border-radius:10px;
     padding:11px 12px;font:500 15px var(--body);color:var(--ink);background:#fff}
   .lp-eingabe:focus{outline:none;border-color:var(--teal)}
@@ -1393,29 +1409,44 @@ function einheitStammHtml(e) {
    Der Upload läuft über den change-Handler auf `inhalt`: ein Foto geht durch
    dieselbe Aufbereitung wie die Belege (zuschneiden, drehen, klein als PDF),
    ein fertiges PDF unverändert (POST /api/einheiten/{id}/lageplan). */
-function lageplanRow(p, e) {
-  return `<div class="eintrag klick lp-zeile" data-lageplan="${p.id}">
-      <span class="sym">${kostenIcon('Grundstück')}</span>
-      <span class="et"><span class="en">${esc(p.dateiname || 'Lageplan')}</span></span>
-      <button class="lp-akt" data-lageplan-rename="${p.id}" data-e="${e.id}"
-        data-name="${esc(p.dateiname || '')}" title="Umbenennen"
-        aria-label="Lageplan umbenennen">✎</button>
-      <button class="lp-akt lp-weg" data-lageplan-weg="${p.id}" data-e="${e.id}"
-        title="Entfernen" aria-label="Lageplan entfernen">×</button>
+/* Der Anzeigename eines Plans, aufgeräumt für die Beschriftung: ohne Endung und
+   ohne die Ablage-Vorsilben (ohne-Jahr_, Jahr_, Lageplan …). Frisch umbenannt
+   ist er schon kurz („1.OG"); bei Alt-Uploads bleibt wenigstens der Kern übrig. */
+function planLabel(p) {
+  return ((p.dateiname || 'Lageplan')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/^ohne-jahr[ _-]+/i, '')
+    .replace(/^(?:19|20)\d{2}[ _-]+/, '')
+    .replace(/^lageplan[ _-]*/i, '')
+    .trim()) || 'Lageplan';
+}
+
+/* Ein Plan als Karte: höhenbegrenzte Vorschau mit dem Namen sanft überlagert,
+   dazu die zwei leisen Aktionen (umbenennen ✎, entfernen ×) oben rechts. Jeder
+   Plan bekommt seine eigene Vorschau — so lassen sich 1.OG, DG … auseinander
+   halten (CCCLXXXV). */
+function lageplanKarte(p, e) {
+  const label = planLabel(p);
+  return `<div class="lp-karte" data-lp-karte="${p.id}">
+      <button class="lp-vorschau klick" data-lageplan="${p.id}"
+        aria-label="Lageplan „${esc(label)}“ ansehen">
+        <img data-lp-bild="${p.id}" alt="">
+        <span class="lp-name">${esc(label)}</span>
+      </button>
+      <span class="lp-akte">
+        <button class="lp-akt" data-lageplan-rename="${p.id}" data-e="${e.id}"
+          data-name="${esc(label)}" title="Umbenennen"
+          aria-label="Lageplan umbenennen">✎</button>
+        <button class="lp-akt lp-weg" data-lageplan-weg="${p.id}" data-e="${e.id}"
+          title="Entfernen" aria-label="Lageplan entfernen">×</button>
+      </span>
     </div>`;
 }
 function lageplanHtml(e) {
   const plaene = e.lageplaene || [];
-  let inhalt;
-  if (!plaene.length) {
-    inhalt = `<div class="leerzeile">Noch kein Lageplan hinterlegt</div>`;
-  } else {
-    const [erst, ...weitere] = plaene;
-    inhalt = `<button class="lp-vorschau klick" data-lageplan="${erst.id}"
-        aria-label="Lageplan ansehen">
-        <img data-lp-bild="${erst.id}" alt="Vorschau des Lageplans">
-      </button>${lageplanRow(erst, e)}${weitere.map(p => lageplanRow(p, e)).join('')}`;
-  }
+  const inhalt = plaene.length
+    ? plaene.map(p => lageplanKarte(p, e)).join('')
+    : `<div class="leerzeile">Noch kein Lageplan hinterlegt</div>`;
   return `<div class="sekopf"><span class="seikon">${kostenIcon('Grundstück')}</span>
       <h2 class="sec">Lageplan</h2></div>
     <div class="liste">${inhalt}</div>
@@ -1433,20 +1464,21 @@ function lageplanVorschauAufraeumen() {
   lageplanVorschauUrls = [];
 }
 async function lageplanVorschauFuellen(root) {
-  const bild = root.querySelector('[data-lp-bild]');
-  if (!bild) return;
-  try {
-    const antwort = await fetch(`/api/dokumente/${bild.dataset.lpBild}/vorschau?seite=0`);
-    if (!antwort.ok) throw new Error(String(antwort.status));
-    const adr = URL.createObjectURL(await antwort.blob());
-    lageplanVorschauUrls.push(adr);
-    bild.src = adr;
-  } catch {
-    // Ohne Cloud-Anbindung (oder wenn sich der Plan nicht rendern lässt) bleibt
-    // die Liste stehen — die leere Vorschaufläche wird eingeklappt.
-    const rahmen = bild.closest('.lp-vorschau');
-    if (rahmen) rahmen.remove();
-  }
+  const bilder = [...root.querySelectorAll('[data-lp-bild]')];
+  await Promise.all(bilder.map(async bild => {
+    try {
+      const antwort = await fetch(`/api/dokumente/${bild.dataset.lpBild}/vorschau?seite=0`);
+      if (!antwort.ok) throw new Error(String(antwort.status));
+      const adr = URL.createObjectURL(await antwort.blob());
+      lageplanVorschauUrls.push(adr);
+      bild.src = adr;
+    } catch {
+      // Ohne Cloud-Anbindung (oder wenn sich der Plan nicht rendern lässt) bleibt
+      // die Karte stehen — nur das Bild wird eingeklappt, Name und Aktionen
+      // (umbenennen/entfernen) bleiben erreichbar.
+      bild.closest('.lp-karte')?.classList.add('lp-ohne-bild');
+    }
+  }));
 }
 
 /* CCCLXXXI — kleiner Umbenennen-Dialog: nur der Anzeigename. Die Datei in der
