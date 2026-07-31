@@ -143,6 +143,15 @@
 
   .pruef{background:var(--sheet);border-radius:14px;margin-bottom:10px;overflow:hidden;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  /* CCCLXXXVI — eine PDF aus dem Explorer über eine NK-Zeile ziehen: NUR die
+     gerade überflogene Zeile bekommt eine Drop-Zone. Das Overlay liegt über der
+     Zeile (pointer-events aus, damit die Zieh-Erkennung nicht flackert). */
+  .pruef.dropziel{position:relative}
+  .pruef.dropziel::after{content:"＋ Beleg hier ablegen";position:absolute;inset:0;
+    z-index:6;display:flex;align-items:center;justify-content:center;
+    background:rgba(15,110,92,.14);border:2px dashed var(--teal);border-radius:14px;
+    color:var(--teal-d);font:600 13px var(--disp);letter-spacing:-.01em;
+    pointer-events:none;-webkit-backdrop-filter:blur(1px);backdrop-filter:blur(1px)}
   /* Gefüllte Zeile sanft grün herausheben: man sieht auf einen Blick, wo schon
      ein Betrag steht — und in welcher Höhe. Kein greller Block, sondern ein
      weicher Verlauf von links plus ein schmaler Akzent an der Kante. */
@@ -1173,7 +1182,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
             <span class="si">☁</span><span class="st">Aus Ablage</span>
           </button>`) : '';
 
-  return `<div class="pruef${zustandKlasse}">
+  return `<div class="pruef${zustandKlasse}" data-kostenart="${esc(k.kostenart)}">
       <div class="kopf">
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
@@ -2262,6 +2271,90 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
     melde(String(fehler.message || fehler), 'neg');
   }
 });
+
+/* CCCLXXXVI — eine oder mehrere Dateien einer NK-Zeile zuordnen (Drag&Drop aus
+   dem Explorer). PDFs gehen unverändert hoch, Bilder werden zu EINEM PDF
+   zusammengebaut; beides landet über denselben Weg wie „Beleg wählen" am
+   Zeitraum, mit der Kostenart der Zeile als Bezeichnung. */
+async function belegPerDrop(kostenart, dateien) {
+  const istPdf = d => d.type === 'application/pdf' || /\.pdf$/i.test(d.name || '');
+  const pdfs = dateien.filter(istPdf);
+  const bilder = dateien.filter(d => !istPdf(d) && (d.type || '').startsWith('image/'));
+  if (!pdfs.length && !bilder.length) {
+    melde('Nur PDF- oder Bilddateien lassen sich hier ablegen.', 'neg');
+    return;
+  }
+  const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
+  melde(`Beleg wird „${kostenart}“ zugeordnet …`);
+  try {
+    const sendungen = [];
+    if (bilder.length) {
+      const { pdf } = await scanZuPdf(bilder);
+      sendungen.push({ datei: pdf, name: 'scan.pdf' });
+    }
+    for (const p of pdfs) sendungen.push({ datei: p, name: p.name });
+    for (const { datei, name } of sendungen) {
+      const paket = new FormData();
+      paket.append('objekt', daten.objekt);
+      paket.append('kategorie', 'Nebenkosten');
+      paket.append('jahr', String(jahr));
+      paket.append('beschreibung', kostenart);
+      paket.append('zeitraum_id', String(daten.id));
+      paket.append('datei', datei, name);
+      const antwort = await fetch('/api/dokumente/scannen', { method: 'POST', body: paket });
+      if (!antwort.ok) {
+        const grund = await antwort.json().then(k => k.detail).catch(() => null);
+        throw new Error(grund || `Fehler ${antwort.status}`);
+      }
+    }
+    const n = sendungen.length;
+    melde(`✓ ${n} Beleg${n > 1 ? 'e' : ''} „${kostenart}“ zugeordnet`, 'pos');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* Drag&Drop nur am Zeiger-Gerät (PC): eine Datei aus dem Explorer über die
+   Liste ziehen markiert GENAU die überflogene NK-Zeile als Drop-Zone; fällt sie
+   dort, wird sie dieser Kostenart zugeordnet. Ein Drop daneben wird verworfen,
+   damit der Browser die Datei nicht als Seite öffnet. */
+if (KEINE_KAMERA) {
+  const istDateiZug = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  let dropZeile = null;
+  const markiere = z => {
+    if (z === dropZeile) return;
+    dropZeile?.classList.remove('dropziel');
+    dropZeile = z || null;
+    dropZeile?.classList.add('dropziel');
+  };
+  inhalt.addEventListener('dragover', e => {
+    if (!istDateiZug(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    markiere(e.target.closest('.pruef[data-kostenart]'));
+  });
+  inhalt.addEventListener('dragleave', e => {
+    if (e.relatedTarget && inhalt.contains(e.relatedTarget)) return;
+    markiere(null);
+  });
+  inhalt.addEventListener('drop', e => {
+    if (!istDateiZug(e)) return;
+    e.preventDefault();
+    const zeile = e.target.closest('.pruef[data-kostenart]');
+    const dateien = [...(e.dataTransfer.files || [])];
+    markiere(null);
+    if (zeile && dateien.length) belegPerDrop(zeile.dataset.kostenart, dateien);
+  });
+  // Ein Datei-Drop irgendwo sonst darf die Seite nicht überschreiben.
+  document.addEventListener('dragover', e => { if (istDateiZug(e)) e.preventDefault(); });
+  document.addEventListener('drop', e => {
+    if (istDateiZug(e) && !e.target.closest('.pruef[data-kostenart]')) {
+      e.preventDefault();
+      markiere(null);
+    }
+  });
+}
 
 /** Texterkennung — schlägt fehl sie, gibt es eben keinen Vorschlag. */
 async function erkennen(bild) {
