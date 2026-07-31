@@ -152,20 +152,34 @@
     background:rgba(15,110,92,.14);border:2px dashed var(--teal);border-radius:14px;
     color:var(--teal-d);font:600 13px var(--disp);letter-spacing:-.01em;
     pointer-events:none;-webkit-backdrop-filter:blur(1px);backdrop-filter:blur(1px)}
-  /* CCCXCIV — breiterer Drop-Dialog: Formular links, PDF-Vorschau rechts. */
-  dialog.immo-dlg.beleg-drop-dlg{max-width:min(780px,calc(100% - 24px));width:calc(100% - 24px)}
-  .bdd-body{display:flex;gap:16px}
-  .bdd-links{flex:1 1 300px;min-width:0}
-  .bdd-rechts{flex:1 1 320px;min-width:0;background:var(--paper);border-radius:12px;
-    overflow:hidden;display:flex;align-items:stretch;min-height:360px}
-  .bdd-embed{width:100%;height:100%;min-height:360px;border:none}
-  .bdd-img{width:100%;height:auto;max-height:70dvh;object-fit:contain;align-self:flex-start}
+  /* CCCXCIV — großer Drop-Dialog am PC: Formular links, PDF-Vorschau rechts groß. */
+  dialog.immo-dlg.beleg-drop-dlg{max-width:min(1060px,calc(100% - 32px));
+    width:calc(100% - 32px)}
+  .bdd-body{display:flex;gap:18px;align-items:stretch}
+  .bdd-links{flex:1 1 340px;min-width:0;display:flex;flex-direction:column}
+  .bdd-rechts{flex:1.5 1 460px;min-width:0;background:var(--paper);border-radius:12px;
+    overflow:hidden;display:flex;align-items:stretch;min-height:min(74dvh,760px)}
+  .bdd-embed{width:100%;height:100%;min-height:min(74dvh,760px);border:none}
+  .bdd-img{width:100%;height:auto;max-height:74dvh;object-fit:contain;align-self:flex-start}
   .bdd-leer{margin:auto;color:var(--soft);font:500 13px var(--body)}
   .bdd-ki{font-style:italic;color:var(--soft)}
   .field.zwei{display:flex;gap:10px}
   .field.zwei > div{flex:1}
-  @media(max-width:640px){ .bdd-body{flex-direction:column-reverse}
-    .bdd-rechts{min-height:240px} .bdd-embed{min-height:240px} }
+  /* KI-neu-Knopf: dezent, animiert, während die KI liest. */
+  .bdd-kibtn{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;
+    border:1.5px solid #C7B8E0;background:#F1ECF9;color:#5B3E8F;border-radius:10px;
+    padding:8px 12px;font:600 12px var(--disp);cursor:pointer;margin:2px 0 14px}
+  .bdd-kibtn:hover{background:#E9E0F5}
+  .bdd-kibtn[disabled]{cursor:default}
+  .bdd-kibtn .funke{display:inline-block}
+  .bdd-kibtn.laedt .funke{animation:bddspin .8s linear infinite}
+  @keyframes bddspin{to{transform:rotate(360deg)}}
+  .bdd-kibtn.laedt{background:#E9E0F5;color:#5B3E8F}
+  .bdd-zus{font:400 12px var(--body);color:var(--soft);line-height:1.5;
+    background:var(--paper);border-radius:10px;padding:9px 11px;margin:0 0 12px}
+  .bdd-fuss{margin-top:auto}
+  @media(max-width:720px){ .bdd-body{flex-direction:column-reverse}
+    .bdd-rechts{min-height:44dvh} .bdd-embed{min-height:44dvh} }
   /* Hinweis in der Drop-Maske, wenn die Datei schon in der Ablage liegt. */
   .beleg-drop-dlg .dup-hinweis{background:var(--amber-bg);border-radius:12px;
     padding:11px 13px;margin:0 0 15px;font:400 12.5px var(--body);color:var(--ink);
@@ -2345,11 +2359,14 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbi
       dlg.remove();
       if (!entschieden) fertig(null);
     }, { once: true });
-    const ki = [];
-    if (vorschlag?.sache) ki.push(esc(vorschlag.sache));
-    if (vorschlag?.datum) ki.push(new Date(vorschlag.datum).toLocaleDateString('de-DE'));
-    if (vorschlag?.betrag) ki.push(eur(Math.abs(vorschlag.betrag)));
-    const kiText = ki.length ? `erkannt: ${ki.join(' · ')}` : 'keine automatische Erkennung';
+    const kiZeile = v => {
+      const t = [];
+      if (v?.sache) t.push(esc(v.sache));
+      if (v?.absender) t.push(esc(v.absender));
+      if (v?.datum) t.push(new Date(v.datum).toLocaleDateString('de-DE'));
+      if (v?.betrag) t.push(eur(Math.abs(v.betrag)));
+      return t.length ? `erkannt: ${t.join(' · ')}` : 'keine automatische Erkennung';
+    };
     const dupHtml = dup?.gefunden ? `<div class="dup-hinweis">
         <strong>Diese Datei liegt schon in der Ablage.</strong>
         ${dup.im_ziel_ordner ? 'Im richtigen Ordner ✓' : 'Aber in einem anderen Ordner.'}
@@ -2365,12 +2382,17 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbi
       <div class="bdd-body">
         <div class="bdd-links">
           <p class="zinfo">→ <strong>${esc(kostenart)}</strong> · ${lesbareGroesse(groesse)}
-            <br><span class="bdd-ki">${kiText}</span></p>
+            <br><span class="bdd-ki" data-ki-zeile>${kiZeile(vorschlag)}</span></p>
+          <button class="bdd-kibtn" data-ki-neu type="button"
+            title="Beleg noch einmal von der KI lesen lassen">
+            <span class="funke">✦</span><span class="lbl">KI neu lesen</span></button>
+          <div class="bdd-zus" data-zus${vorschlag?.zusammenfassung ? '' : ' hidden'}
+            >${esc(vorschlag?.zusammenfassung || '')}</div>
           ${dupHtml}
           <div class="field"><label>Bezeichnung</label>
             <input class="inp" data-f="beschreibung" value="${esc(vorschlag?.sache || kostenart)}"></div>
           <div class="field"><label>Firma / Gemeinde / Zweckverband</label>
-            <input class="inp" data-f="firma" value="${esc(anbieter || '')}"
+            <input class="inp" data-f="firma" value="${esc(vorschlag?.absender || anbieter || '')}"
               placeholder="z. B. Zweckverband, Versicherer …"></div>
           <div class="field zwei">
             <div><label>Jahr</label>
@@ -2380,10 +2402,50 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbi
                 value="${vorschlag?.betrag != null ? Math.abs(vorschlag.betrag) : ''}"
                 placeholder="optional"></div>
           </div>
-          <button class="btn" data-ok>${dup?.gefunden ? 'Verknüpfen' : 'Ablegen'}</button>
+          <div class="bdd-fuss">
+            <button class="btn" data-ok>${dup?.gefunden ? 'Verknüpfen' : 'Ablegen'}</button>
+          </div>
         </div>
         <div class="bdd-rechts">${vorschau}</div>
       </div>`;
+    // CCCXCIV — die KI den Beleg (neu) lesen lassen: der Knopf animiert, bis das
+    // Ergebnis da ist, dann füllen sich Bezeichnung/Firma/Jahr/Betrag neu.
+    const kibtn = dlg.querySelector('[data-ki-neu]');
+    async function neuErkennen() {
+      if (!datei || kibtn.classList.contains('laedt')) return;
+      kibtn.classList.add('laedt'); kibtn.disabled = true;
+      kibtn.querySelector('.lbl').textContent = 'KI liest …';
+      try {
+        const fd = new FormData();
+        fd.append('datei', datei, datei.name || 'beleg.pdf');
+        const r = await fetch('/api/dokumente/erkennen', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error(`Fehler ${r.status}`);
+        const v = await r.json();
+        const setF = (s, val) => {
+          const el = dlg.querySelector(`[data-f="${s}"]`);
+          if (el && val != null && val !== '') el.value = val;
+        };
+        if (v.sache) setF('beschreibung', v.sache);
+        if (v.absender) setF('firma', v.absender);
+        if (v.betrag) setF('betrag', Math.abs(v.betrag));
+        if (v.jahr) setF('jahr', v.jahr);
+        dlg.querySelector('[data-ki-zeile]').textContent = kiZeile(v);
+        const zus = dlg.querySelector('[data-zus]');
+        if (v.zusammenfassung) { zus.textContent = v.zusammenfassung; zus.hidden = false; }
+        if (!v.ki) {
+          melde('KI nicht aktiv (kein Schlüssel/Guthaben) — es gilt die einfache '
+            + 'Erkennung. In den Einstellungen den Anthropic-Schlüssel hinterlegen.', 'neg');
+        } else {
+          melde('✦ KI-Erkennung aktualisiert', 'pos');
+        }
+      } catch (fehler) {
+        melde('KI-Erkennung nicht möglich: ' + String(fehler.message || fehler), 'neg');
+      } finally {
+        kibtn.classList.remove('laedt'); kibtn.disabled = false;
+        kibtn.querySelector('.lbl').textContent = 'KI neu lesen';
+      }
+    }
+    kibtn.onclick = neuErkennen;
     dlg.querySelector('[data-nein]').onclick = () => dlg.close();
     dlg.querySelector('[data-ok]').onclick = () => {
       entschieden = true;

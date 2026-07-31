@@ -573,7 +573,8 @@ def _ohne_befund() -> dict:
     return {"moeglich": erkennung_moeglich(), "betrag": None, "datum": None,
             "jahr": None, "monat": None, "kategorie": "", "sache": "",
             "zeichen": 0, "kosten_relevant": None, "nebenkosten": None,
-            "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": ""}
+            "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": "",
+            "absender": ""}
 
 
 def _warum_nichts(rohdaten: bytes) -> str:
@@ -683,6 +684,8 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
     if zusammenfassung:
         ergebnis["zusammenfassung"] = zusammenfassung
         ergebnis["einordnung"] = zusammenfassung          # KI-Klartext (CCLXXIII)
+    if ki.get("absender"):
+        ergebnis["absender"] = ki["absender"].strip()     # Absender durchreichen
     # CCLXXIV: das Raster durchreichen — Liegenschaft (nicht Postanschrift),
     # Einheit, Dokumenttyp und die typspezifischen Felder. Nur übernehmen, was
     # die KI wirklich geliefert hat; leere Werte überschreiben nichts.
@@ -742,6 +745,9 @@ def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "",
         # gleich, und die Oberfläche muss nicht zwei Fälle kennen.
         "kosten_relevant": None, "nebenkosten": None,
         "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": "",
+        # CCCLXVII: Absender des Belegs (Firma/Behörde/Zweckverband/Gemeinde/
+        # Versicherer) — die KI liest ihn aus, die Heuristik lässt ihn offen.
+        "absender": "",
     }
     # Die KI ergänzt v. a. das Belegdatum, wo die Heuristik ein Zahlungsziel
     # oder eine Zeitraumgrenze erwischt (nur mit Key, sonst stumm).

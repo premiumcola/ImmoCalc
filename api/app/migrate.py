@@ -9,9 +9,66 @@ import json
 import logging
 
 from sqlalchemy import Engine, inspect, text
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel, select
 
 log = logging.getLogger("immocalc")
+
+
+# CCCLXII: Jede Immobilie braucht diese beiden umlagefähigen Kostenarten. Der
+# Bestand hat oft nur „Gebäudeversicherung" (oder keine) — hier wird je Objekt
+# nachgezogen, was fehlt. Rein additiv, idempotent, nichts wird angefasst.
+PFLICHT_KOSTENARTEN: tuple[str, ...] = ("Gebäudeversicherung", "Gebäudehaftpflicht")
+
+
+def _fold(text_: str | None) -> str:
+    """Vergleichsschlüssel: klein, ohne Umlaute/ß, ohne Randweißraum.
+
+    Umlaut-tolerant wie `kostenarten._fold`, damit „Gebaeudehaftpflicht" und
+    „Gebäudehaftpflicht" als dieselbe Kostenart gelten und kein Duplikat
+    entsteht. Dort geliehen, wenn vorhanden; sonst diese schlanke Kopie."""
+    s = (text_ or "").strip().lower()
+    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        s = s.replace(a, b)
+    return s
+
+
+try:                                                     # pragma: no cover
+    from .kostenarten import _fold as _fold             # bevorzugt die zentrale
+except Exception:                                        # noqa: BLE001
+    pass                                                 # Fallback bleibt gültig
+
+
+def pflicht_kostenarten_sichern(engine: Engine) -> list[str]:
+    """Stellt je Objekt sicher, dass jede Pflicht-Kostenart existiert (CCCLXII).
+
+    Für JEDES Objekt wird geprüft, ob eine aktive Kostenart mit dem passenden
+    Namen (umlaut-/schreibweisentolerant) schon da ist. Fehlt sie, wird sie
+    angelegt — sonst nichts. Es wird nie gelöscht, umbenannt oder deaktiviert;
+    keine bestehende Kostenart wird angefasst. Idempotent: ein zweiter Lauf
+    legt nichts Doppeltes an. Gibt die neu angelegten „objekt.name"-Paare
+    zurück. Robust ohne Objekte (dann leere Liste, kein Commit-Effekt)."""
+    from .models import Kostenart, Objekt
+
+    gesetzt: list[str] = []
+    with Session(engine) as session:
+        objekte = session.exec(select(Objekt)).all()
+        for o in objekte:
+            vorhanden = session.exec(
+                select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
+            bekannt = {_fold(k.name) for k in vorhanden}
+            for name in PFLICHT_KOSTENARTEN:
+                if _fold(name) in bekannt:
+                    continue
+                session.add(Kostenart(objekt_id=o.id, name=name,
+                                      umlagefaehig=True, aktiv=True))
+                # gleich mitzählen: zwei Pflichtnamen desselben Objekts dürfen
+                # sich im selben Lauf nicht gegenseitig als „fehlt" ausweisen.
+                bekannt.add(_fold(name))
+                gesetzt.append(f"{o.id}:{name}")
+        session.commit()
+    if gesetzt:
+        log.info("Pflicht-Kostenarten ergänzt: %s", ", ".join(gesetzt))
+    return gesetzt
 
 
 def _literal(wert) -> str | None:
@@ -161,6 +218,14 @@ def migriere(engine: Engine) -> list[str]:
             # Ein fehlender Index darf den Start nicht verhindern — die Sperre
             # im Code greift weiter, der Betrieb geht ohne ihn.
             log.warning("Eindeutigkeit nicht gesetzt: %s", fehler)
+
+    # Nach den Spalten, in eigener Session: die Pflicht-Kostenarten je Objekt
+    # nachziehen (CCCLXII). Betrifft Bestandsobjekte, die schon in der Datenbank
+    # stehen; rein additiv, idempotent.
+    try:
+        geaendert += pflicht_kostenarten_sichern(engine)
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Pflicht-Kostenarten nicht gesetzt: %s", fehler)
 
     if geaendert:
         log.info("Schema ergänzt: %s", ", ".join(geaendert))

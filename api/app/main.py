@@ -11,7 +11,7 @@ from sqlmodel import SQLModel
 from . import wachdienst
 from .db import engine
 from .engine import NegativesGewicht
-from .migrate import migriere
+from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, ki, mail, objekte,
                       stammdaten, versand, zaehler)
 from .seed import seed
@@ -24,6 +24,10 @@ async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     migriere(engine)          # muss vor dem Seed laufen — der liest die Tabellen
     seed(engine)
+    # CCCXCVIII — Pflichtversicherungen (Gebäudeversicherung/-haftpflicht) auch
+    # für frisch geseedete Objekte sicherstellen; für den Bestand lief der
+    # Backfill schon in `migriere`. Idempotent, additiv.
+    pflicht_kostenarten_sichern(engine)
     log.info("ImmoCalc API bereit")
 
     wache = asyncio.create_task(wachdienst.schleife())
