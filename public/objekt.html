@@ -376,6 +376,17 @@
   /* CCCLXXXIX — statt des Hinzufügen-Knopfs, wenn schon aktuell vermietet. */
   .add-gesperrt{font:500 12px var(--body);color:var(--soft);line-height:1.5;
        padding:10px 13px;background:var(--paper);border-radius:12px;margin-bottom:4px}
+  /* CCCXC — kompakter „＋"-Knopf oben rechts am Rubrik-Titel statt eines
+     vollbreiten Kastens, der die Seite in die Länge zog. 40px sichtbar, 44px
+     tippbar (iOS) über die ::after-Fläche. */
+  .sekopf-add{flex:none;align-self:center;position:relative;display:inline-flex;
+       align-items:center;justify-content:center;width:40px;height:40px;
+       border-radius:11px;background:var(--teal-l);color:var(--teal-d);
+       border:1.5px solid #C3DAD2;font:400 24px var(--body);line-height:1;
+       cursor:pointer;padding:0}
+  .sekopf-add::after{content:"";position:absolute;inset:-2px}
+  .sekopf-add:hover{background:#DCEDE7}
+  label.sekopf-add{display:inline-flex}
   /* CCCXXVI — der Lageplan-Weg ist ein <label> über einem versteckten
      Datei-Feld: als Block, damit die Breite wie beim Knopf greift. */
   label.add{display:block;text-align:center}
@@ -1245,14 +1256,18 @@ function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
   // zweites Mietverhältnis daneben anlegen; erst das laufende beenden.
   const mietGesperrt = bereich === 'mieten'
     && eintraege.some(m => !m.beendet && !m.geplant);
-  const addHtml = mietGesperrt
+  // CCCXC — der Hinzufügen-Knopf sitzt jetzt kompakt oben rechts im Titel.
+  const kopfAdd = mietGesperrt ? ''
+    : `<button class="sekopf-add" data-add="${bereich}"
+         aria-label="${esc(cfg.einzahl)} hinzufügen"
+         title="${esc(cfg.einzahl)} hinzufügen">＋</button>`;
+  const fuss = mietGesperrt
     ? `<div class="add-gesperrt">Aktuell vermietet — zum Wechseln erst das
-        laufende Mietverhältnis beenden.</div>`
-    : `<button class="add" data-add="${bereich}">＋ ${esc(cfg.einzahl)} hinzufügen</button>`;
-  return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, '', RUBRIKFARBE[bereich])}
+        laufende Mietverhältnis beenden.</div>` : '';
+  return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, kopfAdd, RUBRIKFARBE[bereich])}
     ${vorspann}
     <div class="liste">${zeilen}</div>
-    ${addHtml}`;
+    ${fuss}`;
 }
 
 /* ---- CXLI/CLXVIII: die Einheiten des Hauses und ihr Fokus ---------------- */
@@ -1335,9 +1350,10 @@ function einheitenHtml() {
       </div>`).join('')
     : `<div class="leerzeile">Noch keine Einheit erfasst</div>`;
 
-  return `<div class="sekopf"><h2 class="sec">Einheiten</h2></div>
+  return `<div class="sekopf"><h2 class="sec">Einheiten</h2>
+      <button class="sekopf-add" data-einheit-neu="1" aria-label="Einheit hinzufügen"
+        title="Einheit hinzufügen">＋</button></div>
     <div class="liste">${zeilen}</div>
-    <button class="add" data-einheit-neu="1">＋ Einheit hinzufügen</button>
     ${einheiten.length ? `<div class="fussnote">Eine Einheit antippen: dort
       stehen Mieter, Kontakt und Nebenkosten dieser Wohnung. Alles Übergeordnete
       — Stammdaten, Eigentümer, Kredite, Versicherungen, Steuer und Ablage —
@@ -1459,11 +1475,12 @@ function lageplanHtml(e) {
     ? plaene.map(p => lageplanKarte(p, e)).join('')
     : `<div class="leerzeile">Noch kein Lageplan hinterlegt</div>`;
   return `<div class="sekopf"><span class="seikon">${kostenIcon('Grundstück')}</span>
-      <h2 class="sec">Lageplan</h2></div>
-    <div class="liste">${inhalt}</div>
-    <label class="add lageplan-neu">＋ Lageplan aufnehmen oder hochladen
-      <input type="file" accept="image/*,application/pdf" capture="environment"
-             data-lageplan-neu="${e.id}" hidden></label>`;
+      <h2 class="sec">Lageplan</h2>
+      <label class="sekopf-add lageplan-neu" title="Lageplan aufnehmen oder hochladen"
+        aria-label="Lageplan aufnehmen oder hochladen">＋
+        <input type="file" accept="image/*,application/pdf" capture="environment"
+               data-lageplan-neu="${e.id}" hidden></label></div>
+    <div class="liste">${inhalt}</div>`;
 }
 
 /* Die Inline-Vorschau des ersten Plans: das Bild über denselben Weg holen, über
@@ -3056,9 +3073,10 @@ function grundschuldenHtml() {
   // Kredite) und die Hilfe hängt daneben, nicht am nackten Titel.
   return `<div class="sekopf"><span class="seikon"
         style="color:var(--neg)">${kostenIcon('Grundschuld')}</span>
-      <h2 class="sec">Grundschulden</h2><span data-hilfe="grundschuld"></span></div>
-    <div class="liste">${zeilen}</div>
-    <button class="add" data-gs-neu="1">＋ Grundschuld hinzufügen</button>`;
+      <h2 class="sec">Grundschulden</h2><span data-hilfe="grundschuld"></span>
+      <button class="sekopf-add" data-gs-neu="1" aria-label="Grundschuld hinzufügen"
+        title="Grundschuld hinzufügen">＋</button></div>
+    <div class="liste">${zeilen}</div>`;
 }
 
 /* ---- CLXXVI: Kappungsgrenze nach § 558 Abs. 3 BGB -----------------------
