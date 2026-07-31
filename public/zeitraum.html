@@ -2344,19 +2344,6 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse }) {
   });
 }
 
-/* Den (bestätigten) Betrag direkt an die Position schreiben — Position anlegen,
-   falls es sie noch nicht gibt. Ohne Rückfrage, die Maske hat schon bestätigt. */
-async function betragSetzen(kostenart, betrag) {
-  const zeile = (daten.checkliste || []).find(k => k.kostenart === kostenart);
-  if (zeile?.position_id) {
-    await api(`/positionen/${zeile.position_id}`,
-              { method: 'PATCH', body: { betrag, wertquelle: 'Scan' } });
-  } else {
-    await api(`/zeitraeume/${zid}/positionen`,
-              { method: 'POST', body: { kostenart, betrag, wertquelle: 'Scan' } });
-  }
-}
-
 /* CCCLXXXVI — eine oder mehrere Dateien einer NK-Zeile zuordnen (Drag&Drop aus
    dem Explorer). Ablauf: Prüfsumme + KI-Erkennung der ersten Datei, Duplikat im
    Nextcloud-Ordner suchen, schlanke Bestätigung, dann verknüpfen (Duplikat) oder
@@ -2393,11 +2380,15 @@ async function belegPerDrop(kostenart, dateien) {
 
   melde('Beleg wird zugeordnet …');
   try {
+    const dokIds = [];
     if (wahl.aktion === 'verknuepfen' && dup.pfad) {
-      // Schon in der Cloud — nur den vorhandenen Beleg verknüpfen, kein Upload.
-      await api('/dokumente/vorhandenen-zuordnen', { method: 'POST', body: {
+      // Schon in der Cloud — nur verknüpfen, kein Upload. Kostenart/Betrag mit,
+      // damit der Beleg gleich an seiner Position landet.
+      const res = await api('/dokumente/vorhandenen-zuordnen', { method: 'POST', body: {
         objekt: daten.objekt, pfad: dup.pfad, kategorie: 'Nebenkosten',
-        beschreibung: wahl.beschreibung || kostenart, jahr: wahl.jahr, zeitraum_id: daten.id } });
+        kostenart, beschreibung: wahl.beschreibung || kostenart,
+        betrag: wahl.betrag > 0 ? wahl.betrag : null, jahr: wahl.jahr, zeitraum_id: daten.id } });
+      if (res?.id) dokIds.push(res.id);
     } else {
       const sendungen = [];
       if (bilder.length) {
@@ -2405,22 +2396,34 @@ async function belegPerDrop(kostenart, dateien) {
         sendungen.push({ datei: pdf, name: 'scan.pdf' });
       }
       for (const p of pdfs) sendungen.push({ datei: p, name: p.name });
-      for (const { datei, name } of sendungen) {
+      for (let i = 0; i < sendungen.length; i++) {
+        const { datei, name } = sendungen[i];
         const paket = new FormData();
         paket.append('objekt', daten.objekt);
         paket.append('kategorie', 'Nebenkosten');
+        // CCCXCII — die Kostenart als eigenes Feld (nicht nur in der Bezeichnung):
+        // erst damit findet `verbuche` die Position und setzt `position_id`.
+        paket.append('kostenart', kostenart);
         paket.append('jahr', String(wahl.jahr));
         paket.append('beschreibung', wahl.beschreibung || kostenart);
         paket.append('zeitraum_id', String(daten.id));
+        // Bestätigter Betrag nur EINMAL, sonst summiert verbuche ihn mehrfach.
+        if (i === 0 && wahl.betrag > 0) paket.append('betrag', String(wahl.betrag));
         paket.append('datei', datei, name);
         const antwort = await fetch('/api/dokumente/scannen', { method: 'POST', body: paket });
         if (!antwort.ok) {
           const grund = await antwort.json().then(k => k.detail).catch(() => null);
           throw new Error(grund || `Fehler ${antwort.status}`);
         }
+        const res = await antwort.json();
+        if (res?.id) dokIds.push(res.id);
       }
     }
-    if (wahl.betrag > 0) await betragSetzen(kostenart, wahl.betrag);
+    // CCCXCII — den/die Belege in die Kostenposition verbuchen: erst dadurch
+    // bekommt das Dokument seine `position_id` und erscheint an der Zeile.
+    for (const id of dokIds) {
+      await api(`/dokumente/${id}/position`, { method: 'POST' }).catch(() => {});
+    }
     melde(`✓ Beleg „${kostenart}“ zugeordnet`, 'pos');
     await laden();
   } catch (fehler) {

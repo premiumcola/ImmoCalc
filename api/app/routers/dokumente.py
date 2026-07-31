@@ -2011,6 +2011,10 @@ class VorhandenerBeleg(BaseModel):
     pfad: str
     kategorie: str = "Nebenkosten"
     beschreibung: str = ""
+    # CCCXCII — Kostenart/Betrag mit, damit der zugeordnete Beleg über `verbuche`
+    # gleich an seiner Kostenposition landet (position_id wird gesetzt).
+    kostenart: str = ""
+    betrag: float | None = None
     jahr: int | None = None
     zeitraum_id: int | None = None
 
@@ -2037,6 +2041,10 @@ def vorhandenen_zuordnen(data: VorhandenerBeleg,
             vorhanden.kategorie = data.kategorie
         if vorhanden.zeitraum_id is None and zeitraum_id is not None:
             vorhanden.zeitraum_id = zeitraum_id
+        if not vorhanden.kostenart and data.kostenart:
+            vorhanden.kostenart = kostenart_normalisieren(data.kostenart)
+        if vorhanden.betrag is None and data.betrag and data.betrag > 0:
+            vorhanden.betrag = data.betrag
         session.add(vorhanden)
         session.commit()
         session.refresh(vorhanden)
@@ -2045,6 +2053,8 @@ def vorhandenen_zuordnen(data: VorhandenerBeleg,
 
     d = Dokument(pfad=pfad, dateiname=name, groesse=0, objekt_id=o.id,
                  kategorie=data.kategorie, zeitraum_id=zeitraum_id,
+                 kostenart=kostenart_normalisieren(data.kostenart),
+                 betrag=data.betrag if data.betrag and data.betrag > 0 else None,
                  status="zugeordnet", erkannt_am=date.today())
     session.add(d)
     try:
