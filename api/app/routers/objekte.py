@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..belegposten import (BelegFehler, belege_je_position, handanteil, kurz,
@@ -264,6 +265,24 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
     zeitraeume = session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
     mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
     offen = hinweise(o, einheiten, mieten)
+    # Wie viele Kostenpositionen und wie viele zugeordnete Belege hängen an jedem
+    # Zeitraum? Zwei gruppierte Zählungen statt einer Abfrage je Zeitraum (kein
+    # N+1). Das Frontend blendet leere Zeiträume (0 Positionen) aus und bietet
+    # die mit Belegen dezent zum Öffnen an.
+    zr_ids = [z.id for z in zeitraeume]
+    pos_zahl: dict[int, int] = {}
+    beleg_zahl: dict[int, int] = {}
+    if zr_ids:
+        for zid, n in session.exec(
+                select(Kostenposition.zeitraum_id, func.count())
+                .where(Kostenposition.zeitraum_id.in_(zr_ids))
+                .group_by(Kostenposition.zeitraum_id)).all():
+            pos_zahl[zid] = n
+        for zid, n in session.exec(
+                select(Dokument.zeitraum_id, func.count())
+                .where(Dokument.zeitraum_id.in_(zr_ids))
+                .group_by(Dokument.zeitraum_id)).all():
+            beleg_zahl[zid] = n
     return {
         "objekt": o, "einheiten": einheiten, "parteien": parteien,
         # Aus den Einheiten summiert — die maßgebliche Wohnfläche und die
@@ -279,6 +298,11 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
                         "typ": z.typ, "status": z.status,
                         # N35 — ISO-Grenzen fürs Umstellen-Werkzeug (Datumsfelder)
                         "start": z.start.isoformat(), "ende": z.ende.isoformat(),
+                        # Additiv (N…): Anzahl Kostenpositionen bzw. zugeordneter
+                        # Belege. Das Frontend blendet leere Zeiträume aus, außer
+                        # dem laufenden, und bietet belegbehaftete dezent an.
+                        "positionen": pos_zahl.get(z.id, 0),
+                        "belege": beleg_zahl.get(z.id, 0),
                         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None}
                        for z in zeitraeume],
     }
