@@ -58,6 +58,7 @@ class ZaehlerIn(BaseModel):
     name: str
     kostenart: str = ""
     einheit_bezug: str = ""
+    art: str = ""
     messeinheit: str = "m³"
     typ: str = "gemessen"
     hauptzaehler_id: int | None = None
@@ -111,7 +112,7 @@ def anlegen(slug: str, data: ZaehlerIn, session: Session = Depends(get_session),
 @router.patch("/zaehler/{zid}")
 def aendern(zid: int, data: dict, session: Session = Depends(get_session)) -> dict:
     z = _zaehler(session, zid)
-    for feld in ("name", "kostenart", "einheit_bezug", "messeinheit", "typ",
+    for feld in ("name", "kostenart", "einheit_bezug", "art", "messeinheit", "typ",
                  "hauptzaehler_id", "reihenfolge", "aktiv", "notiz"):
         if feld in data:
             setattr(z, feld, data[feld])
@@ -300,7 +301,7 @@ def _zeige(session: Session, z: Zaehler) -> dict:
     anfang = next((a for a in abls if (a.notiz or "") == ANFANGSSTAND), None) \
         or next((a for a in abls if a.zeitraum_id is None), None)
     return {"id": z.id, "name": z.name, "kostenart": z.kostenart,
-            "einheit_bezug": z.einheit_bezug, "messeinheit": z.messeinheit,
+            "einheit_bezug": z.einheit_bezug, "art": z.art, "messeinheit": z.messeinheit,
             "typ": z.typ, "hauptzaehler_id": z.hauptzaehler_id,
             "reihenfolge": z.reihenfolge, "aktiv": z.aktiv, "notiz": z.notiz,
             "ablesungen": len(abls),

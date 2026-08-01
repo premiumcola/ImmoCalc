@@ -315,6 +315,8 @@ class Zaehler(SQLModel, table=True):
     name: str                         # 'Gesamt Wasser', 'Büro KW', …
     kostenart: str = ""               # NK-Kostenart, in die der Verbrauch zählt
     einheit_bezug: str = ""           # Partei/Einheit des Verbrauchs ('' = Haus/Gesamt)
+    art: str = ""                     # N47: 'Kaltwasser'|'Warmwasser'|'Waschmaschine'|
+                                      # 'Gartenwasser'|'Heizung' — Zeile in der Detailübersicht
     messeinheit: str = "m³"           # 'm³' | 'kWh' | 'Liter'
     typ: str = "gemessen"             # 'gemessen' | 'rest' (Gesamt minus Unterzähler)
     hauptzaehler_id: Optional[int] = Field(default=None, foreign_key="zaehler.id")
