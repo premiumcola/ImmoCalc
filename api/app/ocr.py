@@ -809,14 +809,20 @@ def seiten_anzahl(rohdaten: bytes) -> int:
         return 0
 
 
-def seite_png(rohdaten: bytes, index: int = 0, breite: int = 1240) -> bytes | None:
+def seite_png(rohdaten: bytes, index: int = 0, breite: int = 1240,
+              osd: bool = True) -> bytes | None:
     """Rendert Seite `index` eines PDFs als PNG (auf `breite` px skaliert) —
     für eine Vorschau, die die GANZE Seite zeigt statt eines Ausschnitts.
 
     Der Index wird auf den gültigen Bereich [0, letzte Seite] geklemmt: eine
     Seite jenseits des Endes liefert die letzte Seite, ein negativer Index die
     erste. Ohne PyMuPDF, bei einem leeren Dokument oder einem Fehler: None (der
-    Aufrufer weicht aus)."""
+    Aufrufer weicht aus).
+
+    `osd=False` schaltet die Tesseract-Auto-Aufrichtung ab: für einen Lageplan
+    (N12) ist die im Scanner bewusst gewählte Orientierung richtig — OSD würde
+    sie am „aufrechten Text" ausrichten und den Plan wieder ins Hochformat
+    kippen."""
     if fitz is None:
         return None
     try:
@@ -831,7 +837,7 @@ def seite_png(rohdaten: bytes, index: int = 0, breite: int = 1240) -> bytes | No
             # Liegt die Seite gedreht (eingescanntes/abfotografiertes Blatt),
             # richtet OSD sie auf: die /Rotate-Angabe temporär setzen und neu
             # rendern. So bekommt die Vorschau UND die KI ein aufrechtes Bild.
-            grad = _osd_drehung(png)
+            grad = _osd_drehung(png) if osd else 0
             if grad:
                 seite.set_rotation((seite.rotation + grad) % 360)
                 pix = seite.get_pixmap(matrix=fitz.Matrix(zoom, zoom))

@@ -31,11 +31,12 @@ from ..bezeichnung import (_jahr_plausibel, betrag_aus_namen, betragsteil,
                            ohne_ordnerwort, unterordner_finden, vergleichsname)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
                         unterordner_fuer, verbindung)
+from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
-from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel,
+from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel, Kostenart,
                       Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
                       Versicherung, Zahlung, Zeitraum)
 from ..verteilung import UnbekannterSchluessel
@@ -2454,6 +2455,74 @@ def _beleg(session: Session, dokument_id: int) -> Dokument:
     return d
 
 
+def _beleg_anbieter(d: Dokument) -> str:
+    """Der Aussteller/Anbieter des Belegs aus dem KI-Raster (N37).
+
+    Für Versicherungsbelege liefert die KI-Auslese den `anbieter` im Raster
+    (`kiauslese`, Raster VERSICHERUNG); andere Belege tragen ihn als
+    `absender`. Leer, wenn keiner erkannt wurde."""
+    felder = d.ki_felder or {}
+    roh = felder.get("anbieter") or felder.get("absender") or ""
+    return roh.strip() if isinstance(roh, str) else ""
+
+
+def _an_anbieter_position_angleichen(session: Session, d: Dokument) -> None:
+    """N37: Ein Beleg soll auf der spezifischen Kostenposition landen, die
+    seinen Anbieter führt — nicht auf einer zweiten, generischen daneben.
+
+    Der gemeldete Fall (Laufer Str. 5 · 2026): der Anbieter „WWK" hing an der
+    Position „Gebäudeversicherung", der Beleg trug aber die generische Kostenart
+    „Versicherung" und legte dadurch eine zweite Position an. Hier bekommt der
+    Beleg die spezifische Kostenart, sodass `verbuche` ihn in die vorhandene
+    Position einrechnet, statt eine generische zu erzeugen.
+
+    Streng doppelt abgesichert, damit keine Verbuchung kaputtgeht und nie
+    geraten wird — rein additiv, legt nichts an, löscht nichts:
+
+    * Der Beleg ist noch in keine Position eingerechnet, und für seine eigene
+      Kostenart gibt es in diesem Zeitraum noch keine Position (sonst wäre die
+      Zuordnung schon eindeutig und würde hier nur gestört).
+    * Der Beleg nennt einen Anbieter.
+    * Es gibt GENAU EINE vorhandene Position, deren Katalog-Kostenart denselben
+      Anbieter (`Kostenart.lieferant`) trägt. Bei mehreren wird nicht geraten.
+    * Diese Kostenart ist eine Spezialisierung der Beleg-Kostenart
+      (`Versicherung` ⊂ `Gebäudeversicherung`) — oder der Beleg trägt noch gar
+      keine. So kann ein fremder Anbieter-Zufallstreffer keinen „Müll"-Beleg auf
+      eine Versicherungszeile umhängen."""
+    if not d.zeitraum_id or d.position_id:
+        return
+    if belegposten.finde(session, d.zeitraum_id, d.kostenart) is not None:
+        return
+    anbieter = _fold_kostenart(_beleg_anbieter(d))
+    if not anbieter:
+        return
+    z = session.get(Zeitraum, d.zeitraum_id)
+    if z is None:
+        return
+    # Kostenarten des Objekts, deren Anbieter (Lieferant) zum Beleg passt.
+    passende = {k.name for k in session.exec(select(Kostenart).where(
+        Kostenart.objekt_id == z.objekt_id)).all()
+        if k.lieferant and _fold_kostenart(k.lieferant) == anbieter}
+    if not passende:
+        return
+    # ... und davon die, für die es in diesem Zeitraum schon eine Position gibt.
+    treffer = [p for p in session.exec(select(Kostenposition).where(
+        Kostenposition.zeitraum_id == d.zeitraum_id)).all()
+        if p.kostenart in passende]
+    if len(treffer) != 1:
+        return
+    ziel = (treffer[0].kostenart or "").strip()
+    eigen = _fold_kostenart(d.kostenart)
+    # Spezialisierung: die Ziel-Kostenart enthält die generische des Belegs
+    # (oder der Beleg trägt noch keine). Nie in die andere Richtung.
+    if ziel == (d.kostenart or "").strip() or (eigen and eigen not in _fold_kostenart(ziel)):
+        return
+    log.info("Beleg %s über Anbieter auf Kostenart „%s“ ausgerichtet (statt „%s“)",
+             d.id, ziel, d.kostenart or "—")
+    d.kostenart = ziel
+    session.add(d)
+
+
 @router.get("/{dokument_id}/position")
 def position_vorschau(dokument_id: int,
                       session: Session = Depends(get_session)) -> dict:
@@ -2463,6 +2532,10 @@ def position_vorschau(dokument_id: int,
     `moeglich: false` samt Grund — die Oberfläche sagt dann, was noch fehlt,
     statt einen Knopf anzubieten, der scheitert."""
     d = _beleg(session, dokument_id)
+    # N37 — dieselbe Anbieter-Ausrichtung wie beim Übernehmen, damit die
+    # Vorschau zeigt, wo der Beleg wirklich landet. Der GET committet nicht;
+    # die Angleichung bleibt in dieser Anfrage und wird nicht gespeichert.
+    _an_anbieter_position_angleichen(session, d)
     try:
         return {"moeglich": True, **belegposten.vorschau(session, d).als_dict()}
     except BelegFehler as fehler:
@@ -2480,6 +2553,9 @@ def position_uebernehmen(dokument_id: int,
     Zweimal geklickt bleibt es bei derselben Summe: gerechnet wird aus allen
     verknüpften Belegen, nie durch Draufrechnen."""
     d = _beleg(session, dokument_id)
+    # N37 — vor dem Verbuchen den Beleg über seinen Anbieter auf die vorhandene
+    # spezifische Position ausrichten, statt eine zweite generische zu erzeugen.
+    _an_anbieter_position_angleichen(session, d)
     try:
         ergebnis = belegposten.verbuche(session, d)
     except BelegFehler as fehler:
@@ -3638,7 +3714,10 @@ def vorschau(dokument_id: int,
         anzahl = ocr.seiten_anzahl(rohdaten)
         if anzahl and seite >= anzahl:
             raise HTTPException(416, f"Dieses PDF hat nur {anzahl} Seite(n)")
-        png = ocr.seite_png(rohdaten, seite)
+        # N12 — ein Lageplan behält seine im Scanner gewählte Orientierung; die
+        # OSD-Auto-Aufrichtung (richtet Text auf) würde einen Querplan wieder ins
+        # Hochformat kippen. Belege dagegen sollen aufrecht stehen.
+        png = ocr.seite_png(rohdaten, seite, osd=(d.kategorie != LAGEPLAN))
         if png is None:
             raise HTTPException(415, "Vorschau nicht möglich")
         return Response(content=png, media_type="image/png",
@@ -4015,3 +4094,134 @@ def umbenennen(dokument_id: int,
     log.info("Umbenannt: %s → %s", alt_name, frei)
     return {"ok": True, "alt": alt_name, "neu": frei, "pfad": d.pfad,
             "geaendert": True}
+
+
+# --------------------------------------------------------------------------
+# N24 — Batch-Migration bestehender Cloud-Dateien: „ohne-Jahr_"-Präfix raus,
+# Lagepläne in ihren Sammelordner. Beide idempotent, kollisionssicher,
+# rein additiv (nie überschreiben, nie löschen) und standardmäßig „trocken".
+# --------------------------------------------------------------------------
+
+def _beleg_umziehen(session: Session, client, d: Dokument, ziel_ordner: str,
+                    neu_name: str) -> str | None:
+    """Verschiebt Beleg `d` (Datei + `.immocalc`-Sidecar + DB-Eintrag) nach
+    `ziel_ordner/neu_name`. Kollisionssicher (`_freier_name`), nie überschreiben,
+    nie löschen. Gibt den tatsächlichen neuen Namen zurück — oder None, wenn der
+    Beleg schon richtig liegt und heißt.
+
+    Scheitert der Cloud-MOVE, wird die Ausnahme durchgereicht (Datei und
+    Datenbank bleiben unberührt). Kippt der DB-Commit (Pfad vergeben), wird die
+    Datei zurückgeschoben, damit Cloud und Datenbank zusammenbleiben."""
+    alt_pfad = d.pfad
+    alt_ordner = _elternordner(alt_pfad)
+    ziel_ordner = (ziel_ordner or "").strip("/")
+    if alt_ordner == ziel_ordner and d.dateiname == neu_name:
+        return None
+    frei = _freier_name(session, client, ziel_ordner, neu_name)
+    ziel = f"/{ziel_ordner}/{frei}" if ziel_ordner else f"/{frei}"
+    if ziel == alt_pfad:
+        return None
+    client.verschiebe(alt_pfad, ziel.lstrip("/"))
+    d.pfad = ziel
+    d.dateiname = frei
+    session.add(d)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        try:
+            client.verschiebe(ziel.lstrip("/"), alt_pfad.lstrip("/"))
+        except Exception as zurueck:                          # noqa: BLE001
+            log.warning("Rückverschieben nach Konflikt gescheitert (%s): %s",
+                        ziel, zurueck)
+        raise
+    _sidecar_mitnehmen(client, alt_pfad, ziel)
+    return frei
+
+
+@router.post("/praefix-entfernen")
+def praefix_entfernen(trocken: bool = True,
+                      session: Session = Depends(get_session)) -> dict:
+    """N24 — entfernt das führende „ohne-Jahr_" aus Cloud-Dateinamen.
+
+    Das Präfix ist ein alter Sortier-Vorsatz für Dateien ohne Jahr und hilft
+    beim Wiederfinden nicht. Jede betroffene Datei wird IM SELBEN Ordner
+    umbenannt (MOVE), kollisionssicher; die `.immocalc`-Sidecar wandert mit.
+    Rein additiv: nie überschreiben, nie löschen.
+
+    `?trocken=true` (Vorgabe) zeigt nur den Plan; erst `?trocken=false` führt
+    aus. Idempotent: ein zweiter Lauf findet nichts mehr."""
+    praefix = "ohne-Jahr_"
+    kandidaten = [d for d in session.exec(select(Dokument)).all()
+                  if (d.pfad or "").startswith("/")
+                  and (d.dateiname or "").startswith(praefix)]
+    if trocken:
+        return {"trocken": True, "anzahl": len(kandidaten),
+                "plan": [{"id": d.id, "alt": d.dateiname,
+                          "neu": d.dateiname[len(praefix):]} for d in kandidaten]}
+    client = verbindung(session)
+    verschoben: list[dict] = []
+    uebersprungen: list[int] = []
+    fehler: list[dict] = []
+    for d in kandidaten:
+        neu = d.dateiname[len(praefix):]
+        ordner = _elternordner(d.pfad)
+        try:
+            frei = _beleg_umziehen(session, client, d, ordner, neu)
+        except Exception as e:                                # noqa: BLE001
+            session.rollback()
+            log.warning("Präfix nicht entfernt (%s): %s", d.pfad, e)
+            fehler.append({"id": d.id, "name": d.dateiname, "grund": str(e)})
+            continue
+        if frei is None:
+            uebersprungen.append(d.id)
+        else:
+            verschoben.append({"id": d.id, "neu": frei})
+    log.info("Präfix-Bereinigung: %d verschoben, %d übersprungen, %d Fehler",
+             len(verschoben), len(uebersprungen), len(fehler))
+    return {"trocken": False, "verschoben": verschoben,
+            "übersprungen": uebersprungen, "fehler": fehler}
+
+
+@router.post("/lageplaene-einsortieren")
+def lageplaene_einsortieren(trocken: bool = True,
+                            session: Session = Depends(get_session)) -> dict:
+    """N24/N9 — zieht bestehende Lagepläne in ihren Sammelordner
+    „10_Fotos_Lage/00_Lagepläne" (dieselbe Ablage, die neue Lagepläne bekommen).
+
+    Betrifft nur Belege mit `kategorie == "Lageplan"`, die noch woanders liegen
+    (etwa im alten „99_Sonstiges"). Der Zielordner wird bei Bedarf angelegt
+    (MKCOL, 405-sicher), dann MOVE — kollisionssicher, Sidecar wandert mit,
+    nichts wird überschrieben oder gelöscht. `?trocken=true` zeigt nur den Plan."""
+    kandidaten = [d for d in session.exec(
+        select(Dokument).where(Dokument.kategorie == LAGEPLAN)).all()
+        if (d.pfad or "").startswith("/")]
+    client = verbindung(session)
+    plan: list[tuple[Dokument, str, str]] = []
+    for d in kandidaten:
+        o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
+        if not o or not (o.nc_ordner or "").strip():
+            continue
+        sach, ablage = _ablageordner(session, o, LAGEPLAN, None, client)
+        if _elternordner(d.pfad) == ablage.strip("/"):
+            continue                                          # liegt schon richtig
+        plan.append((d, sach, ablage))
+    if trocken:
+        return {"trocken": True, "anzahl": len(plan),
+                "plan": [{"id": d.id, "name": d.dateiname, "ziel": ablage}
+                         for d, _sach, ablage in plan]}
+    verschoben: list[dict] = []
+    fehler: list[dict] = []
+    for d, sach, ablage in plan:
+        try:
+            _ordner_sichern(client, sach, ablage)
+            _beleg_umziehen(session, client, d, ablage, d.dateiname)
+        except Exception as e:                                # noqa: BLE001
+            session.rollback()
+            log.warning("Lageplan nicht einsortiert (%s): %s", d.pfad, e)
+            fehler.append({"id": d.id, "name": d.dateiname, "grund": str(e)})
+            continue
+        verschoben.append({"id": d.id, "ziel": d.pfad})
+    log.info("Lagepläne einsortiert: %d verschoben, %d Fehler",
+             len(verschoben), len(fehler))
+    return {"trocken": False, "verschoben": verschoben, "fehler": fehler}

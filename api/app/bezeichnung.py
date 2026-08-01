@@ -245,9 +245,9 @@ STANDARD_UNTERORDNER = {
     "Mietvertrag": "{jahr}",
     "Korrespondenz": "{jahr}",
     "Hausverwaltung": "{jahr}",
-    # N9 — ein Lageplan hat kein Belegjahr: er liegt direkt im Fotos-/Lage-Ordner
-    # (10_Fotos_Lage), ohne Jahres-Unterordner.
-    "Lageplan": "",
+    # N9/N24 — ein Lageplan hat kein Belegjahr; er liegt unter 10_Fotos_Lage
+    # in einem festen Sammelordner „00_Lagepläne" (kein Jahres-Unterordner).
+    "Lageplan": "00_Lagepläne",
     "Sonstiges": "{jahr}",
 }
 
