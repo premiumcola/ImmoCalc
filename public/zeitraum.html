@@ -544,37 +544,71 @@
     font:500 11.5px var(--body);line-height:1.45}
   .warnung b{font-weight:700}
 
-  /* ---- N47: Wasser-Zählererfassung unter der Wasser-Gruppe --------------- */
-  .wz-block{background:var(--sheet);border-radius:14px;padding:14px 15px 9px;
-    margin:2px 0 10px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
-  .wz-kopf{font:700 13px var(--disp);letter-spacing:-.01em;
-    display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px}
-  .wz-hint{font:400 11.5px var(--body);color:var(--soft)}
-  .wz-gruppe{margin-top:12px}
-  .wz-gt{font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  /* ---- N58–N61: Zählerstände-Übersicht (Einklapper) --------------------- */
+  .zu-panel{background:var(--sheet);border-radius:14px;margin:2px 0 12px;
+    box-shadow:0 1px 2px rgba(22,38,44,.05);overflow:hidden}
+  .zu-sum{width:100%;display:flex;align-items:center;gap:10px;padding:14px 15px;
+    background:none;border:none;cursor:pointer;text-align:left;min-height:52px}
+  .zu-st{font:700 13.5px var(--disp);letter-spacing:-.01em;color:var(--ink);flex:none}
+  .zu-meta{flex:1;min-width:0;font:400 11px var(--body);color:var(--soft)}
+  .zu-chev{flex:none;display:flex;color:var(--soft);transition:transform .18s}
+  .zu-chev svg{width:18px;height:18px}
+  .zu-panel.offen .zu-chev{transform:rotate(180deg)}
+  .zu-inhalt{display:none;padding:0 15px 12px}
+  .zu-panel.offen .zu-inhalt{display:block}
+  .zu-block{margin-top:14px}
+  .zu-bt{display:flex;align-items:center;gap:8px;font:700 12.5px var(--disp);
+    color:var(--ink);margin-bottom:8px}
+  .zu-bi{flex:none;display:flex;width:22px;height:22px;color:var(--teal)}
+  .zu-bi svg{width:22px;height:22px}
+  .zu-art{margin:10px 0 4px}
+  .zu-at{font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;
     color:var(--soft);margin-bottom:6px}
-  .wz-zeile{display:flex;align-items:center;gap:10px;padding:8px 11px;margin-bottom:6px;
-    background:var(--paper);border-radius:11px;box-shadow:inset 3px 0 0 transparent}
-  .wz-zeile.fertig{background:linear-gradient(100deg,var(--pos-bg) 0%,var(--paper) 72%);
-    box-shadow:inset 3px 0 0 var(--pos)}
-  .wz-name{flex:1;min-width:0;font:600 12.5px var(--body);color:var(--ink);
-    overflow-wrap:anywhere}
-  .wz-sub{display:block;font:400 10.5px var(--body);color:var(--soft);margin-top:1px}
-  .wz-feld{flex:none;display:flex;flex-direction:column;gap:3px}
-  .wz-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
+  .zu-kein{font:400 11.5px var(--body);color:var(--soft);padding:4px 2px 6px}
+  .zu-zeile{padding:9px 11px;margin-bottom:7px;background:var(--paper);
+    border-radius:11px;box-shadow:inset 3px 0 0 transparent}
+  .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos)}
+  .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:9px 12px}
+  .zu-op{flex:none;align-self:center;font:700 16px var(--mono);color:var(--neg)}
+  .zu-name{flex:1;min-width:110px;align-self:center;font:600 12.5px var(--body);
+    color:var(--ink);overflow-wrap:anywhere}
+  .zu-sub{display:block;font:400 10.5px var(--body);color:var(--soft);margin-top:1px}
+  .zu-feld{flex:none;display:flex;flex-direction:column;gap:4px}
+  .zu-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
     text-transform:uppercase;color:var(--soft)}
-  .wz-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap;padding:8px 0}
-  .wz-feld input{width:96px;border:1.5px solid var(--line);border-radius:9px;
-    padding:8px 9px;font:600 12.5px var(--mono);background:var(--sheet);
-    color:var(--ink);min-height:40px;text-align:right}
-  .wz-feld input:focus{outline:none;border-color:var(--teal)}
-  .wz-verb{flex:none;width:82px;text-align:right;font:600 12px var(--mono);
-    color:var(--soft);white-space:nowrap}
-  .wz-zeile.fertig .wz-verb{color:var(--pos)}
+  .zu-feld input{box-sizing:border-box;border:1.5px solid var(--line);
+    border-radius:9px;padding:9px 10px;font:600 12px var(--mono);
+    background:var(--sheet);color:var(--ink)}
+  .zu-feld input[type=text]{width:100px;min-height:44px;text-align:right}
+  .zu-feld input.zu-datum{width:138px;font-size:11px;min-height:40px}
+  .zu-feld input:focus{outline:none;border-color:var(--teal)}
+  .zu-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap;padding:6px 0 0}
+  .zu-dt{font:500 10.5px var(--mono);color:var(--soft)}
+  .zu-verb{flex:none;min-width:78px;align-self:center;text-align:right;
+    font:700 12.5px var(--mono);color:var(--soft);white-space:nowrap}
+  .zu-verb small{font:600 8.5px var(--mono);color:var(--soft);text-transform:uppercase}
+  .zu-zeile.fertig .zu-verb{color:var(--pos)}
+  .zu-ehwahl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:9px;
+    padding-top:9px;border-top:1px dashed var(--line)}
+  .zu-ehl{flex:none;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft)}
+  .zu-ehchips{display:flex;flex-wrap:wrap;gap:6px}
+  .zu-eh{min-height:40px;padding:6px 13px;border-radius:999px;
+    border:1.5px solid var(--line);background:var(--sheet);color:var(--soft);
+    font:600 11.5px var(--body);cursor:pointer}
+  .zu-eh.an{border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)}
+  .zu-kalt-abzug{margin:2px 0 6px 10px;padding-left:11px;
+    border-left:2px solid var(--line)}
+  .zu-zeile.minus{background:transparent;box-shadow:none;padding:6px 9px;margin-bottom:2px}
+  .zu-zeile.rest{background:var(--teal-l);box-shadow:inset 3px 0 0 var(--teal);
+    margin-top:6px}
+  .zu-zeile.rest .zu-name{color:var(--teal-d)}
+  .zu-zeile.rest .zu-verb{color:var(--teal-d)}
   @media(max-width:520px){
-    .wz-zeile{flex-wrap:wrap;gap:8px 12px}
-    .wz-name{flex-basis:100%}
-    .wz-verb{width:auto;flex:1;text-align:right}
+    .zu-name{min-width:100%}
+    .zu-feld{flex:1 1 calc(50% - 6px);min-width:0}
+    .zu-feld input[type=text],.zu-feld input.zu-datum{width:100%}
+    .zu-verb{min-width:0;flex:1 1 100%;text-align:right;margin-top:2px}
   }
   /* Detail-Knopf an der Wasser-Sammelposition (teal, wie „Aus Ablage"). */
   .wdetail{display:flex;align-items:center;justify-content:center;gap:7px;flex:none;
@@ -604,6 +638,14 @@
   .wd-kbox.preis{background:var(--teal)}
   .wd-kbox.preis .wd-kl{color:rgba(255,255,255,.82)}
   .wd-kbox.preis .wd-kv{color:#fff}
+  /* N57 — die drei Bestandteile im Popup als Eingabefelder. */
+  .wd-kbox.wd-edit{gap:5px;background:var(--teal-l)}
+  .wd-kin{display:flex;align-items:center;gap:6px}
+  .wd-kin input{width:100%;min-width:0;border:1.5px solid #BFD9D1;border-radius:9px;
+    padding:8px 10px;font:700 14px var(--disp);color:var(--ink);background:var(--sheet);
+    min-height:44px}
+  .wd-kin input:focus{outline:none;border-color:var(--teal)}
+  .wd-kve{flex:none;font:600 13px var(--mono);color:var(--teal-d)}
   .wd-tabelle{overflow-x:auto;border-radius:12px;border:1px solid var(--line)}
   .wd-tab{border-collapse:collapse;width:100%;min-width:420px}
   .wd-tab th,.wd-tab td{text-align:right;padding:9px 11px;vertical-align:top;
@@ -849,6 +891,12 @@ let scanZiel = null;
    Chips bedienbar. */
 let ablesungMaske = null;
 let chipMap = new Map();
+/* N58 — die realen Einheiten-Bezeichnungen des Objekts als Fallback zur
+   Schlüssel-Vorschau (dynamisch aus GET /objekte/{slug}, Feld `einheiten`). */
+let objektEinheiten = [];
+/* N60 — Auf-/Zu-Zustand des Zählerstände-Einklappers, damit er einen Neuaufbau
+   der Ansicht (z. B. nach dem Umschalten einer Einheit-Zuordnung) übersteht. */
+let zaehlerOffen = false;
 
 /* Geräte ohne Kamera (Schreibtisch, Maus): dort genügt EIN neutraler Knopf, der
    den lokalen Datei-Dialog öffnet — die „Beleg erfassen"-Kamera hätte hier
@@ -957,6 +1005,11 @@ const DROP_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
   aria-hidden="true"><path d="M12 2.7S5.5 9.9 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5
   9.9 12 2.7 12 2.7Z"/><path d="M9 15a3 3 0 0 0 3 3"/></svg>`;
+
+/* Chevron für den Zählerstände-Einklapper (N60). */
+const CHEV_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
 
 /* Kleine Symbole für den Verteilungsschlüssel-Chip an der Zeile — flacher
    Strich-Stil wie kostenicons.js, aber winzig (12 px), damit „nach Fläche"
@@ -1095,8 +1148,7 @@ function chipHtml(k) {
 
 /* ---- N47: Wasser — Zähler-Erfassung + Detail-Sammelposition -------------- */
 
-/* Die vier wasser-bezogenen Zähler-Arten in Anzeige-Reihenfolge. */
-const WASSER_ARTEN = ['Kaltwasser', 'Warmwasser', 'Waschmaschine', 'Gartenwasser'];
+/* Anzeige-Titel je Wasser-Art in der Zählerübersicht. */
 const WASSER_GRUPPE = { Kaltwasser: 'Kaltwasser', Warmwasser: 'Warmwasser',
   Waschmaschine: 'Waschmaschinen', Gartenwasser: 'Gartenwasser' };
 
@@ -1129,48 +1181,234 @@ function istWasserSammel(k) {
 /* Wasser als m³ (deutsch, bis 2 Nachkommastellen). */
 const m3 = n => `${(n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 2 })} m³`;
 
-/* Die Zähler-Erfassungszeilen unter der Wasser-Gruppe: je wasser-bezogenem
-   Zähler eine kompakte Zeile mit Anfangsstand (aus dem Vorwert, read-only) und
-   einem Endstand-Feld. Grün, sobald Anfang UND Ende da sind (verbrauch != null).
-   Gruppiert nach Art (Kaltwasser / Warmwasser / Waschmaschinen / Gartenwasser). */
-function wasserZaehlerHtml() {
+/* ISO-Datum (yyyy-mm-dd) kurz als dd.mm.yyyy — für die Ablese-Daten (N60b). */
+const datumKurz = iso => {
+  const m = /(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso || '');
+};
+
+/* N57 — diese Wasser-Bestandteile leben nur noch im Detail-Popup und werden aus
+   der Checkliste herausgefiltert: Abwasser/Schmutzwasser, Niederschlagswasser
+   und der Kaltwasserzähler. Die reine „Wasser"-Sammelposition bleibt sichtbar. */
+function istImDetailPopup(k) {
+  if (istWasserSammel(k)) return false;
+  const n = normUml(k.kostenart);
+  if (n.includes('abwasser') || n.includes('schmutzwasser')) return true;
+  if (n.includes('niederschlag') || n.includes('entwaesser')) return true;
+  if (n.includes('kaltwasser') && n.includes('zaehler')) return true;
+  return false;
+}
+
+/* ---- N58–N61: Zählerstände-Übersicht ------------------------------------
+   Ein Einklapp-Panel, das ALLE Zähler nach Kostenblock (Wasser/Heizung/Strom/
+   Sonstige) gruppiert; innerhalb Wasser nach Art, mit Kaltwasser als laufender
+   Subtraktion vom Gesamtverbrauch. Jede Zeile: Anfang + Ende editierbar (mit
+   Datum) und ein Mehrfach-Auswähler aller Einheiten des Objekts. */
+
+const KOSTENBLOCK_ORDER = ['Wasser', 'Heizung', 'Strom', 'Sonstige'];
+/* Stichwort je Block für kostenIcon() — parallel zu BEREICH_IKON. */
+const KOSTENBLOCK_IKON = { Wasser: 'Wasser', Heizung: 'Heizung', Strom: 'Strom',
+  Sonstige: 'Hausverwaltung' };
+
+/* Der Kostenblock eines Zählers aus Kostenart/Name — ohne Kontext. Serverfeld
+   `kostenblock` hat Vorrang (Backend-Vertrag). '' = aus dem Namen nicht ableitbar
+   (z. B. ein Unterzähler „Büro"), dann erbt er später vom Hauptzähler. */
+function zaehlerBlockBasis(z) {
+  if (z.kostenblock && KOSTENBLOCK_ORDER.includes(z.kostenblock)) return z.kostenblock;
+  const n = normUml(z.kostenart || z.name || '');
+  if (n.includes('wasser') || n.includes('niederschlag') || n.includes('entwaesser'))
+    return 'Wasser';
+  if (n.includes('heiz') || n.includes('waerme') || n.includes('gas')
+      || n.includes('oel') || n.includes('brennstoff')) return 'Heizung';
+  if (n.includes('strom') || n.includes('beleucht')) return 'Strom';
+  return '';
+}
+
+/* Kostenblock je Zähler-id, kontextbewusst: ein Unterzähler oder Rest ohne
+   eigenes Stichwort erbt den Block seines Hauptzählers (so landet „Büro" als
+   Kaltwasser-Unterzähler im Wasser-Block). Ohne Ableitung → „Sonstige". */
+function zaehlerBloecke(zaehler) {
+  const byId = new Map(zaehler.map(z => [z.id, z]));
+  const cache = new Map();
+  const block = (z, tiefe = 0) => {
+    if (cache.has(z.id)) return cache.get(z.id);
+    cache.set(z.id, 'Sonstige');                       // Zyklus-Schutz
+    let b = zaehlerBlockBasis(z);
+    if (!b && z.hauptzaehler_id && byId.has(z.hauptzaehler_id) && tiefe < 8) {
+      b = block(byId.get(z.hauptzaehler_id), tiefe + 1);
+    }
+    b = KOSTENBLOCK_ORDER.includes(b) ? b : 'Sonstige';
+    cache.set(z.id, b);
+    return b;
+  };
+  const map = new Map();
+  for (const z of zaehler) map.set(z.id, block(z));
+  return map;
+}
+
+/* Die Einheiten-Zuordnung eines Zählers: das Serverfeld `einheiten`, sonst der
+   einzelne `einheit_bezug` als Liste (Fallback laut Backend-Vertrag). */
+function zaehlerEinheiten(z) {
+  if (Array.isArray(z.einheiten) && z.einheiten.length) return z.einheiten;
+  return z.einheit_bezug ? [z.einheit_bezug] : [];
+}
+
+/* Alle realen Einheiten-Bezeichnungen des Objekts (Schlüssel-Vorschau + Objekt-
+   Fallback) — dynamisch, nichts hartcodiert. */
+function alleEinheiten() {
+  const set = new Set();
+  for (const p of (schluessel?.parteien || [])) if (p.einheit) set.add(p.einheit);
+  for (const e of (objektEinheiten || [])) if (e) set.add(e);
+  // Bereits gesetzte (evtl. veraltete) Zuordnungen mitnehmen, damit die aktuelle
+  // Zuordnung eines Zählers immer sichtbar ist und sich abwählen lässt.
+  for (const z of (ablesungMaske?.zaehler || []))
+    for (const e of zaehlerEinheiten(z)) if (e) set.add(e);
+  return [...set];
+}
+
+/* N58 — kompakter Mehrfach-Auswähler aller Einheiten für einen Zähler. Gewählte
+   Einheiten sind gefüllt (teal), die übrigen als Umriss-Chip. Ein Tipp schaltet
+   um und speichert sofort via PATCH /zaehler/{id} {einheiten:[…]}. */
+function einheitChooserHtml(z) {
+  const alle = alleEinheiten();
+  if (!alle.length) return '';
+  const gewaehlt = new Set(zaehlerEinheiten(z));
+  const chips = alle.map(e => `<button type="button"
+      class="zu-eh${gewaehlt.has(e) ? ' an' : ''}"
+      data-einheit-toggle="${z.id}" data-einheit="${esc(e)}"
+      aria-pressed="${gewaehlt.has(e)}">${esc(e)}</button>`).join('');
+  return `<div class="zu-ehwahl"><span class="zu-ehl">Zählt auf</span>
+    <div class="zu-ehchips">${chips}</div></div>`;
+}
+
+/* Eine Zähler-Zeile: Anfang + Ende editierbar (mit Datum, N60) und der Einheiten-
+   Auswähler (N58). `rest` = berechneter Rest (keine Eingabe), `minus` = im
+   Kaltwasser-Block eingerückt als Abzug (N59), `label` überschreibt den Namen. */
+function meterZeileHtml(z, { rest = false, minus = false, label = null } = {}) {
   const bearbeitbar = daten.status === 'in Arbeit';
-  const mitArt = (ablesungMaske?.zaehler || [])
-    .map(z => ({ z, art: wasserArt(z) }))
-    .filter(x => x.art);
-  if (!mitArt.length) return '';
-  const bloecke = WASSER_ARTEN.map(art => {
-    const liste = mitArt.filter(x => x.art === art).map(x => x.z);
-    if (!liste.length) return '';
-    const zeilen = liste.map(z => {
-      // Grün, sobald Anfang UND Ende vorliegen — dann steht der Verbrauch fest.
-      // (Die API liefert `verbrauch` auch als 0, wenn nur der Anfang da ist.)
-      const fertig = z.vorwert != null && z.ablesung != null;
-      const eh = esc(z.messeinheit || 'm³');
-      const ende = z.ablesung ? zahl(z.ablesung.stand) : '';
-      return `<div class="wz-zeile${fertig ? ' fertig' : ''}">
-        <span class="wz-name">${esc(z.name)}${z.einheit_bezug
-          ? `<span class="wz-sub">${esc(z.einheit_bezug)}</span>` : ''}</span>
-        <span class="wz-feld"><label>Anfang</label>
-          <span class="wz-anf">${z.vorwert
-            ? `${zahl(z.vorwert.stand)}&nbsp;${eh}` : '—'}</span></span>
-        <span class="wz-feld"><label>Ende</label>${bearbeitbar
-          ? `<input type="text" inputmode="decimal" data-endstand="${z.id}"
-               value="${ende}" placeholder="Stand"
-               aria-label="Endstand ${esc(z.name)}">`
-          : `<span class="wz-anf">${ende ? `${ende}&nbsp;${eh}` : '—'}</span>`}</span>
-        <span class="wz-verb">${fertig ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—'}</span>
-      </div>`;
-    }).join('');
-    return `<div class="wz-gruppe"><div class="wz-gt">${esc(WASSER_GRUPPE[art])}</div>
-      ${zeilen}</div>`;
+  const eh = esc(z.messeinheit || 'm³');
+  const fertig = z.verbrauch != null
+    && (rest || (z.vorwert != null && z.ablesung != null));
+  const startStand = z.vorwert ? zahl(z.vorwert.stand) : '';
+  const startDatum = z.vorwert?.datum || ablesungMaske?.zeitraum?.start || daten.start || '';
+  const endStand = z.ablesung ? zahl(z.ablesung.stand) : '';
+  const endDatum = z.ablesung?.datum || ablesungMaske?.zeitraum?.ende || daten.ende || '';
+
+  const standFeld = (kind, wert, datum, standAttr, datumAttr) => bearbeitbar
+    ? `<div class="zu-feld"><label>${kind}</label>
+        <input type="text" inputmode="decimal" ${standAttr}="${z.id}"
+          value="${wert}" placeholder="Stand" aria-label="${kind}sstand ${esc(z.name)}">
+        <input type="date" class="zu-datum" ${datumAttr}="${z.id}"
+          value="${datum}" aria-label="Datum ${kind}">
+      </div>`
+    : `<div class="zu-feld"><label>${kind}</label>
+        <span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span>
+        ${datum && wert ? `<span class="zu-dt">${datumKurz(datum)}</span>` : ''}</div>`;
+
+  const startFeld = rest ? ''
+    : standFeld('Anfang', startStand, startDatum, 'data-anfangstand', 'data-anfangdatum');
+  const endFeld = rest ? ''
+    : standFeld('Ende', endStand, endDatum, 'data-endstand', 'data-enddatum');
+
+  const verb = z.verbrauch != null ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—';
+  return `<div class="zu-zeile${fertig ? ' fertig' : ''}${minus ? ' minus' : ''}${
+      rest ? ' rest' : ''}" data-zid="${z.id}">
+    <div class="zu-haupt">
+      ${minus ? '<span class="zu-op" aria-hidden="true">−</span>' : ''}
+      <span class="zu-name">${esc(label || z.name)}${z.einheit_bezug
+        ? `<span class="zu-sub">${esc(z.einheit_bezug)}</span>` : ''}</span>
+      ${startFeld}${endFeld}
+      <span class="zu-verb">${rest ? '<small>berechnet</small> ' : ''}${verb}</span>
+    </div>
+    ${rest ? '' : einheitChooserHtml(z)}
+  </div>`;
+}
+
+/* Die Kaltwasser-Struktur über den Hauptzähler: der (kalte) Gesamtzähler, auf den
+   andere via hauptzaehler_id zeigen, samt ALLEN seinen gemessenen Unterzählern
+   (auch Waschmaschinen am Kaltwasser-Zähler gehören in den Abzug) und dem Rest.
+   So bildet die Subtraktion die Rest-Rechnung vollständig ab. */
+function kaltwasserStruktur(liste) {
+  const istWarm = z => wasserArt(z) === 'Warmwasser'
+    || normUml(z.name).includes('warmwasser');
+  const hauptIds = new Set(liste.filter(z => z.hauptzaehler_id).map(z => z.hauptzaehler_id));
+  const kandidaten = liste.filter(z => hauptIds.has(z.id) && z.typ !== 'rest' && !istWarm(z));
+  const haupt = kandidaten.find(z => normUml(z.name).includes('kaltwasser')
+      || normUml(z.name).includes('gesamt'))
+    || kandidaten[0]
+    || liste.find(z => normUml(z.name).includes('gesamt') && !istWarm(z));
+  if (!haupt) return null;
+  const subs = liste.filter(z => z.id !== haupt.id && z.typ !== 'rest'
+    && z.hauptzaehler_id === haupt.id);
+  const rest = liste.find(z => z.typ === 'rest' && z.hauptzaehler_id === haupt.id)
+    || liste.find(z => z.typ === 'rest' && !istWarm(z));
+  if (!subs.length && !rest) return null;
+  return { haupt, subs, rest };
+}
+
+/* N59 — der Kaltwasser-Block: „Gesamt Kaltwasser" oben, darunter eingerückt alle
+   Unterzähler als laufende Subtraktion (− Büro − Roman Bad − …), am Ende der
+   Rest (WG), der per Person·Mietdauer auf die Haupthaus-Einheiten geht. */
+function kaltwasserBlockHtml(s) {
+  const subZeilen = s.subs.map(z => meterZeileHtml(z, { minus: true })).join('');
+  const restZeile = s.rest ? meterZeileHtml(s.rest, { rest: true, label: 'Rest (WG)' }) : '';
+  return `<div class="zu-art zu-kalt"><div class="zu-at">Kaltwasser</div>
+    ${meterZeileHtml(s.haupt)}
+    <div class="zu-kalt-abzug">${subZeilen || `<div class="zu-kein">Noch keine
+      Unterzähler zugeordnet.</div>`}${restZeile}</div>
+  </div>`;
+}
+
+/* Der Wasser-Block: Kaltwasser (mit vollständigem Abzug über den Hauptzähler)
+   zuerst, dann die übrigen Wasser-Zähler nach Art (Warmwasser, Waschmaschinen,
+   Gartenwasser, Weitere) als einfache Listen — jeder Zähler nur einmal. */
+function wasserBlockHtml(liste) {
+  const teile = [];
+  const verbraucht = new Set();
+  const s = kaltwasserStruktur(liste);
+  if (s) {
+    for (const z of [s.haupt, ...s.subs, s.rest]) if (z) verbraucht.add(z.id);
+    teile.push(kaltwasserBlockHtml(s));
+  }
+  const rest = liste.filter(z => !verbraucht.has(z.id));
+  const nachArt = [['Warmwasser', 'Warmwasser'], ['Waschmaschine', 'Waschmaschinen'],
+    ['Gartenwasser', 'Gartenwasser']];
+  for (const [art, titel] of nachArt) {
+    const grp = rest.filter(z => wasserArt(z) === art);
+    if (grp.length) teile.push(`<div class="zu-art"><div class="zu-at">${esc(titel)}</div>
+      ${grp.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('')}</div>`);
+  }
+  const uebrig = rest.filter(z =>
+    !['Warmwasser', 'Waschmaschine', 'Gartenwasser'].includes(wasserArt(z)));
+  if (uebrig.length) teile.push(`<div class="zu-art"><div class="zu-at">Weitere</div>
+    ${uebrig.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('')}</div>`);
+  return teile.join('');
+}
+
+/* N60/N61 — das Zählerstände-Panel: nach Kostenblock gegliedert, im Einklapper. */
+function wasserZaehlerHtml() {
+  const zaehler = ablesungMaske?.zaehler || [];
+  if (!zaehler.length) return '';
+  const blockVon = zaehlerBloecke(zaehler);
+  const bloecke = KOSTENBLOCK_ORDER.map(block => {
+    const teil = zaehler.filter(z => blockVon.get(z.id) === block);
+    if (!teil.length) return '';
+    const inner = block === 'Wasser'
+      ? wasserBlockHtml(teil)
+      : teil.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('');
+    return `<div class="zu-block"><div class="zu-bt"><span class="zu-bi">${
+        kostenIcon(KOSTENBLOCK_IKON[block])}</span>${esc(block)}</div>${inner}</div>`;
   }).join('');
   if (!bloecke) return '';
-  return `<div class="wz-block">
-    <div class="wz-kopf">Zählerstände Wasser
-      <span class="wz-hint">Anfang + Ende ergeben den Verbrauch für die
-        Verrechnung</span></div>
-    ${bloecke}</div>`;
+  return `<div class="zu-panel${zaehlerOffen ? ' offen' : ''}">
+    <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${zaehlerOffen}">
+      <span class="zu-st">Zählerstände</span>
+      <span class="zu-meta">${zaehler.length} Zähler · Anfang + Ende ergeben den
+        Verbrauch</span>
+      <span class="zu-chev">${CHEV_ICON}</span>
+    </button>
+    <div class="zu-inhalt">${bloecke}</div>
+  </div>`;
 }
 
 /* CCCLXII — die Kostenarten des Objekts (Katalog-Zeilen mit kostenart_id) als
@@ -1805,8 +2043,11 @@ async function zeichnen() {
     // bleiben. Der abgelesene Verbrauch erscheint als Chip an der Position, nicht
     // als eigene Zeile. Sortiert, dann in Bereiche gruppiert; der echte Index i
     // aus dem Original-Array bleibt an der Zeile, damit data-auf/offen/index passen.
+    // N57 — Abwasser/Niederschlag/Kaltwasserzähler leben nur noch im Wasser-
+    // Detail-Popup; ihre Daten bleiben erhalten, nur die Zeilen entfallen hier.
     const sortiert = daten.checkliste
       .map((k, i) => ({ k, i }))
+      .filter(({ k }) => !istImDetailPopup(k))
       .sort((a, b) => SORTIERUNG[sortierung](a.k, b.k));
     const bereiche = BEREICHE.map(() => []);
     for (const eintrag of sortiert) {
@@ -2425,6 +2666,15 @@ async function laden() {
   } catch {
     ablesungMaske = null;
   }
+  // N58 — die realen Einheiten des Objekts als Fallback für den Auswähler.
+  // Beiwerk: fehlt der Endpunkt, genügt die Schlüssel-Vorschau.
+  try {
+    const o = await api(`/objekte/${daten.objekt}`);
+    objektEinheiten = (o.einheiten || []).map(e => typeof e === 'string'
+      ? e : (e.bezeichnung || e.name || e.einheit || '')).filter(Boolean);
+  } catch {
+    objektEinheiten = [];
+  }
   chipMap = baueChipMap();
   // N34 — Titel: „Abrechnungszeitraum <Jahr> · von – bis" (Jahr = Jahr mit den
   // meisten Tagen). Fällt das Backend-`jahr` mal aus, gilt das Jahr aus dem Ende.
@@ -2473,8 +2723,9 @@ inhalt.addEventListener('change', e => {
   if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
   // CCCLXIII — Anbieter/Gewerk der Kostenart speichert sich genauso.
   if (e.target.matches('[data-anbieter]')) anbieterSpeichern(e.target);
-  // N47 — Endstand eines Wasser-Zählers speichern (Anfang + Ende → Verbrauch).
-  if (e.target.matches('[data-endstand]')) endstandSpeichern(e.target);
+  // N47/N60 — Anfang/Ende (Stand oder Datum) eines Zählers speichern.
+  if (e.target.matches('[data-endstand],[data-enddatum]')) endstandSpeichern(e.target);
+  if (e.target.matches('[data-anfangstand],[data-anfangdatum]')) anfangstandSpeichern(e.target);
   // CCCLXII — Kostenart der Position wechseln (Wähler + Freitext für eine neue).
   if (e.target.matches('[data-kostenart-pos]')) kostenartWechseln(e.target);
   if (e.target.matches('[data-kostenart-neu]')) kostenartNeu(e.target);
@@ -2494,6 +2745,19 @@ inhalt.addEventListener('click', async e => {
   if (e.target.closest('[data-pos-konfig]')) return positionenKonfig();
   // N47 — Wasser-Detailübersicht an der Sammelposition öffnen.
   if (e.target.closest('[data-wasser-detail]')) return wasserDetailPopup();
+
+  // N60 — Zählerstände-Einklapper auf/zu (ohne Neuaufbau; Zustand gemerkt).
+  const zt = e.target.closest('[data-zu-toggle]');
+  if (zt) {
+    const panel = zt.closest('.zu-panel');
+    zaehlerOffen = !panel.classList.contains('offen');
+    panel.classList.toggle('offen', zaehlerOffen);
+    zt.setAttribute('aria-expanded', String(zaehlerOffen));
+    return;
+  }
+  // N58 — eine Einheit-Zuordnung eines Zählers umschalten.
+  const eToggle = e.target.closest('[data-einheit-toggle]');
+  if (eToggle) return einheitToggle(eToggle);
 
   const abschluss = e.target.closest('[data-abschluss]');
   if (abschluss) return abschliessen(abschluss);
@@ -3256,18 +3520,25 @@ async function ablesungWizard() {
   dlg.showModal();
 }
 
-/* N47 — Endstand eines Wasser-Zählers direkt aus der Checkliste speichern. Der
-   Anfangsstand kommt aus dem interpolierten Vorwert; hier wird nur das Ende
-   gesetzt. Deutsche Eingabe: Punkt = Tausender, Komma = Dezimal (zahl()-Format).
-   Danach die Ablese-Maske neu laden — erst dann trägt der Zähler `verbrauch`
-   und die Zeile wird grün. */
+/* Deutsche Zahleneingabe → Number: Punkt = Tausender, Komma = Dezimal
+   (Umkehr des zahl()-Formats). '' bei leerer/ungültiger Eingabe. */
+function standAusFeld(el) {
+  const roh = (el?.value || '').trim().replace(/\./g, '').replace(',', '.');
+  if (roh === '') return null;
+  const n = Number(roh);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/* N47/N60 — Endstand eines Zählers aus der Übersicht speichern; das Ablese-Datum
+   kommt aus dem begleitenden Datumsfeld (N60b), sonst aus dem Zeitraum-Ende.
+   Danach die Ablese-Maske neu laden — erst dann trägt der Zähler `verbrauch`. */
 async function endstandSpeichern(input) {
-  const id = input.dataset.endstand;
-  const roh = input.value.trim().replace(/\./g, '').replace(',', '.');
-  if (roh === '') return;                              // leer → nichts speichern
-  const stand = Number(roh);
-  if (!Number.isFinite(stand)) { melde('Ungültiger Zählerstand', 'neg'); return; }
-  const datum = ablesungMaske?.zeitraum?.ende || daten.ende;
+  const id = input.dataset.endstand || input.dataset.enddatum;
+  const stand = standAusFeld(inhalt.querySelector(`[data-endstand="${id}"]`));
+  if (stand === null) return;                          // kein Stand → nichts speichern
+  if (Number.isNaN(stand)) { melde('Ungültiger Zählerstand', 'neg'); return; }
+  const datumEl = inhalt.querySelector(`[data-enddatum="${id}"]`);
+  const datum = datumEl?.value || ablesungMaske?.zeitraum?.ende || daten.ende;
   try {
     await api(`/zaehler/${id}/ablesungen`,
       { method: 'POST', body: { stand, datum, zeitraum_id: Number(zid) } });
@@ -3277,6 +3548,49 @@ async function endstandSpeichern(input) {
     await zeichnen();
   } catch (fehler) {
     melde(fehler.message || 'Speichern fehlgeschlagen', 'neg');
+  }
+}
+
+/* N60 — Anfangsstand eines Zählers aus der Übersicht speichern (idempotent, mit
+   Datum). POST /zaehler/{id}/anfangsstand; danach die Ablese-Maske neu laden. */
+async function anfangstandSpeichern(input) {
+  const id = input.dataset.anfangstand || input.dataset.anfangdatum;
+  const stand = standAusFeld(inhalt.querySelector(`[data-anfangstand="${id}"]`));
+  if (stand === null) return;
+  if (Number.isNaN(stand)) { melde('Ungültiger Anfangsstand', 'neg'); return; }
+  const datumEl = inhalt.querySelector(`[data-anfangdatum="${id}"]`);
+  const datum = datumEl?.value || ablesungMaske?.zeitraum?.start || daten.start;
+  try {
+    await api(`/zaehler/${id}/anfangsstand`,
+      { method: 'POST', body: { stand, datum, zeitraum_id: Number(zid) } });
+    ablesungMaske = await api(`/zeitraeume/${zid}/ablesung`);
+    chipMap = baueChipMap();
+    melde('Anfangsstand gespeichert', 'pos');
+    await zeichnen();
+  } catch (fehler) {
+    melde(fehler.message || 'Speichern fehlgeschlagen', 'neg');
+  }
+}
+
+/* N58 — die Einheiten-Zuordnung eines Zählers umschalten und sofort speichern
+   (PATCH /zaehler/{id} {einheiten:[…]}). Ohne vollen Neuaufbau: nur der Chip
+   wird umgeschaltet, damit der Einklapper offen und die Position stabil bleibt. */
+async function einheitToggle(btn) {
+  const id = Number(btn.dataset.einheitToggle);
+  const einheit = btn.dataset.einheit;
+  const z = (ablesungMaske?.zaehler || []).find(m => m.id === id);
+  if (!z) return;
+  const set = new Set(zaehlerEinheiten(z));
+  if (set.has(einheit)) set.delete(einheit); else set.add(einheit);
+  const neu = [...set];
+  z.einheiten = neu;                                   // lokal nachziehen
+  const an = set.has(einheit);
+  btn.classList.toggle('an', an);
+  btn.setAttribute('aria-pressed', String(an));
+  try {
+    await api(`/zaehler/${id}`, { method: 'PATCH', body: { einheiten: neu } });
+  } catch (fehler) {
+    melde(fehler.message || 'Zuordnung nicht gespeichert', 'neg');
   }
 }
 
@@ -3294,6 +3608,11 @@ async function wasserDetailPopup() {
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   dlg.querySelectorAll('[data-nein]').forEach(b => (b.onclick = () => dlg.close()));
+  // N57 — die drei Bestandteil-Beträge speichern sich beim Verlassen des Feldes.
+  dlg.addEventListener('change', e => {
+    if (e.target.matches('[data-wasser-pid],[data-wasser-ka]'))
+      wasserBetragSpeichern(e.target, dlg);
+  });
   dlg.showModal();
   try {
     const d = await api(`/zeitraeume/${zid}/wasser`);
@@ -3305,6 +3624,67 @@ async function wasserDetailPopup() {
   }
 }
 
+/* N57 — die Checklisten-Position hinter einem der drei Bestandteile. `wasser` =
+   die reine „Wasser"-Sammelposition, `schmutz` = Abwasser, `niederschlag` =
+   Niederschlagswasser. Nur mit position_id lässt sich der Betrag speichern. */
+function wasserPosFuer(art) {
+  const treffer = {
+    wasser: k => istWasserSammel(k),
+    schmutz: k => {
+      const n = normUml(k.kostenart);
+      return n.includes('abwasser') || n.includes('schmutzwasser');
+    },
+    niederschlag: k => normUml(k.kostenart).includes('niederschlag'),
+  }[art];
+  return (daten.checkliste || []).find(treffer) || null;
+}
+
+/* N57 — eine Kostenbox im Popup: als Eingabefeld, wenn der Zeitraum bearbeitbar
+   ist. Existiert schon eine Position, wird ihr Betrag per PATCH gesetzt; sonst
+   legt das Speichern die Position beim ersten Betrag an. Sonst lesbarer Wert. */
+function wdKostenBox(label, art, kostenWert) {
+  const pos = wasserPosFuer(art);
+  if (pos && daten.status === 'in Arbeit') {
+    const val = pos.betrag != null ? pos.betrag : (kostenWert ?? '');
+    const ziel = pos.position_id
+      ? `data-wasser-pid="${pos.position_id}"`
+      : `data-wasser-ka="${esc(pos.kostenart)}"`;
+    return `<div class="wd-kbox wd-edit"><span class="wd-kl">${label}</span>
+      <span class="wd-kin"><input type="number" step="0.01" inputmode="decimal"
+        value="${val ?? ''}" ${ziel} data-wert="${val ?? ''}"
+        aria-label="${label} Betrag"><span class="wd-kve">€</span></span></div>`;
+  }
+  return `<div class="wd-kbox"><span class="wd-kl">${label}</span>
+    <span class="wd-kv">${eur(kostenWert)}</span></div>`;
+}
+
+/* N57 — einen der drei Bestandteil-Beträge speichern: gleicher Weg wie jeder
+   Positionsbetrag (PATCH /positionen/{id} {betrag}); fehlt die Position noch,
+   wird sie beim ersten Betrag angelegt. Danach Popup + Untergrund auffrischen. */
+async function wasserBetragSpeichern(input, dlg) {
+  const roh = String(input.value).trim().replace(',', '.');
+  if (roh === '') return;
+  const betrag = Number(roh);
+  if (!Number.isFinite(betrag)) { melde('Ungültiger Betrag', 'neg'); return; }
+  if (String(input.dataset.wert) === String(betrag)) return;
+  input.dataset.wert = String(betrag);
+  try {
+    if (input.dataset.wasserPid) {
+      await api(`/positionen/${input.dataset.wasserPid}`,
+        { method: 'PATCH', body: { betrag } });
+    } else {
+      await api(`/zeitraeume/${zid}/positionen`,
+        { method: 'POST', body: { kostenart: input.dataset.wasserKa, betrag } });
+    }
+    melde('✓ Betrag gespeichert', 'pos');
+    daten = await api(`/zeitraeume/${zid}`);
+    const d = await api(`/zeitraeume/${zid}/wasser`);
+    const body = dlg.querySelector('.wd-body');
+    if (body) body.innerHTML = wasserDetailInhalt(d);
+    await zeichnen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
 /* Der Rumpf des Wasser-Popups aus der /wasser-Antwort. */
 function wasserDetailInhalt(d) {
   const k = d.kosten || {};
@@ -3312,9 +3692,9 @@ function wasserDetailInhalt(d) {
     `<div class="wd-kbox${extra}"><span class="wd-kl">${label}</span>
       <span class="wd-kv">${wert}</span></div>`;
   const kosten = `<div class="wd-kosten">
-    ${kbox('Frischwasser', eur(k.wasser))}
-    ${kbox('Schmutzwasser', eur(k.schmutz))}
-    ${kbox('Niederschlag', eur(k.niederschlag))}
+    ${wdKostenBox('Frischwasser', 'wasser', k.wasser)}
+    ${wdKostenBox('Schmutzwasser', 'schmutz', k.schmutz)}
+    ${wdKostenBox('Niederschlag', 'niederschlag', k.niederschlag)}
     ${kbox('Gesamt', eur(k.gesamt), ' gesamt')}
     ${kbox('Preis / m³', `${(k.preis_m3 ?? 0).toLocaleString('de-DE',
       { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`, ' preis')}
