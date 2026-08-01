@@ -31,6 +31,7 @@ class Zaehlerposten:
     name: str
     einheit: str          # Ziel-Einheit (Bezeichnung/Slug), z. B. "Büro"
     m3: float             # verbrauchte Menge (Ablesung Ende − Anfang)
+    art: str = "Kaltwasser"   # Zeile im Popup: Kaltwasser|Warmwasser|Waschmaschine
 
 
 @dataclass
