@@ -710,6 +710,7 @@ import { auswahlfeld } from './assets/auswahl.js';
 import { sankey } from './assets/charts.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
+import { belegScannen } from './assets/belegscan.js';
 installNav();
 
 const zid = new URLSearchParams(location.search).get('z');
@@ -2411,57 +2412,40 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
 
   const knopf = ziel.knopf;
   const beschriftung = knopf.querySelector('.st');
+  const urText = beschriftung ? beschriftung.textContent : '';
   knopf.disabled = true;
   if (beschriftung) beschriftung.textContent = 'Verarbeite …';
 
+  const istPdf = d => d.type === 'application/pdf' || /\.pdf$/i.test(d.name || '');
+  const erstes = dateien.find(d => !istPdf(d)) || dateien[0];
+  const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
+
   try {
-    // CCCLXXI — am Rechner lassen sich auch fertige PDFs wählen (Belege sind
-    // meist PDF). Ein PDF geht unverändert hoch, Fotos werden wie bisher zu
-    // EINEM PDF zusammengebaut; beides zusammen ergibt mehrere Belege.
-    const istPdf = d => d.type === 'application/pdf' || /\.pdf$/i.test(d.name || '');
-    const pdfs = dateien.filter(istPdf);
-    const bilder = dateien.filter(d => !istPdf(d));
-    const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
-
-    const sendungen = [];
-    if (bilder.length) {
-      const { pdf, seiten } = await scanZuPdf(bilder);
-      sendungen.push({ datei: pdf, name: 'scan.pdf', seiten });
-    }
-    for (const p of pdfs) sendungen.push({ datei: p, name: p.name, seiten: null });
-
-    const hochladen = async ({ datei, name }) => {
-      const paket = new FormData();
-      paket.append('objekt', daten.objekt);
-      paket.append('kategorie', 'Nebenkosten');
-      paket.append('jahr', String(jahr));
-      paket.append('beschreibung', ziel.kostenart);
-      // Ohne den Zeitraum hinge der Beleg nur am Objekt — der Reiter „Belege"
-      // bliebe leer und die Zuordnung müsste man von Hand nachholen.
-      paket.append('zeitraum_id', String(daten.id));
-      paket.append('datei', datei, name);
-      const antwort = await fetch('/api/dokumente/scannen',
-                                  { method: 'POST', body: paket });
-      if (!antwort.ok) {
-        const grund = await antwort.json().then(k => k.detail).catch(() => null);
-        throw new Error(grund || `Fehler ${antwort.status}`);
-      }
-      return antwort.json();
-    };
-
-    const [ergebnisse, vorschlag] = await Promise.all([
-      Promise.all(sendungen.map(hochladen)),
-      erkennen(bilder[0] || pdfs[0]),
+    // N42 — ÜBERALL dieselbe Scan-Oberfläche: der Kamerascan-Overlay über
+    // `belegScannen` (zuschneiden, mehrseitig, iOS-fest — N41), statt des alten
+    // stillen `scanZuPdf`. Der Kontext gibt die Ablage vor (ich bin in dieser
+    // Kostenart dieses Zeitraums), die KI-Erkennung liefert parallel den
+    // Betragsvorschlag. So sieht und funktioniert Scannen hier wie unter
+    // Vermietung.
+    const [ergebnis, vorschlag] = await Promise.all([
+      belegScannen(dateien, {
+        objekt: daten.objekt, kategorie: 'Nebenkosten',
+        kostenart: ziel.kostenart, jahr, zeitraumId: daten.id,
+        titel: ziel.kostenart,
+      }),
+      erkennen(erstes).catch(() => null),
     ]);
-    const seiten = sendungen.reduce((s, x) => s + (x.seiten || 1), 0);
-    const groesse = sendungen.reduce((s, x) => s + (x.datei.size || 0), 0);
-    if (beschriftung) {
-      beschriftung.textContent = ergebnisse.every(r => r.abgelegt)
-        ? `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''} · ${lesbareGroesse(groesse)}`
-        : '✓ Im Eingang';
+    if (!ergebnis) {                                   // Zuschnitt abgebrochen
+      knopf.disabled = false;
+      if (beschriftung) beschriftung.textContent = urText;
+      return;
     }
-
-    await betragVorschlagen(ziel.kostenart, vorschlag);
+    const seiten = ergebnis.seiten || 1;
+    if (beschriftung) {
+      beschriftung.textContent = `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''}`
+        + (ergebnis.groesse ? ` · ${lesbareGroesse(ergebnis.groesse)}` : '');
+    }
+    if (vorschlag) await betragVorschlagen(ziel.kostenart, vorschlag);
     await laden();
   } catch (fehler) {
     if (beschriftung) beschriftung.textContent = 'Fehlgeschlagen';

@@ -602,7 +602,7 @@ import { api, eur, esc, belegAnsehen, installNav, melde as melden, frage }
   from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 import { lesbareGroesse } from './assets/scan.js';
-import { kamerascanStarten } from './assets/kamerascan.js';
+import { kamerascanStarten, istBildDatei } from './assets/kamerascan.js';
 installNav();
 
 const liste = document.getElementById('liste');
@@ -2176,8 +2176,11 @@ kameraKnopf.addEventListener('click', () => kameraFeld.click());
    ohne Zuschnitt direkt durch — dieselbe Aufteilung wie in `belegscan.js`.
    `null` = der Nutzer hat den Zuschnitt abgebrochen (CCCLXXI). */
 async function belegPdf(dateien) {
-  const bilder = dateien.filter(d => (d.type || '').startsWith('image/'));
-  const pdf = dateien.find(d => (d.type || '') === 'application/pdf');
+  // N42 — dieselbe robuste Aufteilung wie in belegscan.js: iOS-Fotos mit leerem
+  // `type` gelten als Bild (sonst fielen sie durch und der Zuschnitt bliebe aus).
+  const bilder = dateien.filter(istBildDatei);
+  const pdf = dateien.find(d => (d.type || '') === 'application/pdf'
+                             || /\.pdf$/i.test(d.name || ''));
   if (bilder.length) {
     const s = await kamerascanStarten(bilder);
     return s ? { pdf: s.pdf, name: 'scan.pdf', seiten: s.seiten, quelle: bilder[0] } : null;
