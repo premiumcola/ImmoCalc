@@ -1397,20 +1397,21 @@ def zeitraum_teilen(zid: int, data: TeilenIn,
 @router.post("/objekte/{slug}/zeitraeume/belege-abgleichen")
 def belege_abgleichen(slug: str, vorschau: bool = True,
                       session: Session = Depends(get_session)) -> dict:
-    """Ordnet die Belege eines Objekts ihren Zeiträumen NACH DATUM neu zu (N35).
+    """Ordnet die Belege eines Objekts ihren Zeiträumen übers ABRECHNUNGSJAHR
+    neu zu (N35/N50).
 
-    Nach einer Umstellung (Grenzen verschoben, Zeitraum geteilt) sitzen Belege
-    noch im alten Zeitraum. Diese Funktion schiebt jeden Beleg in den Zeitraum,
-    in dessen Fenster sein Belegdatum fällt, und rechnet ihn dort neu ein
-    (`loese`+`verbuche`), falls er verbucht war. Ein Beleg gehört immer in GENAU
-    EINEN Zeitraum — kein Doppelpflegen.
+    Nach einer Umstellung (Grenzen verschoben, Zeitraum geteilt) kann ein Beleg
+    im falschen Zeitraum sitzen. Diese Funktion schiebt jeden Beleg in die
+    offene Periode, deren Label-Jahr sein Abrechnungsjahr (`d.jahr`, N14) trifft
+    — nicht nach rohem Belegdatum, denn NK wird oft nachträglich in Rechnung
+    gestellt (Datum ≠ Jahr). So bewegt die Umstellung nur, was wirklich sein
+    Jahr wechselt, und lässt Belege unangetasteter Jahre in Ruhe. Verbuchte
+    Belege werden am Zielort neu eingerechnet (`loese`+`verbuche`).
 
     `?vorschau=true` (Vorgabe) ändert nichts, sondern meldet, was passieren
     würde: welche Belege wohin wandern und welche **Grenzfälle** Handarbeit
-    brauchen — `kein_datum`, `kein_zeitraum` (Datum in keiner Periode) oder
-    `randnah` (dicht an einer inneren Grenze → evtl. zeitanteilig auf zwei
-    Zeiträume aufzuteilen, z. B. eine Jahresrechnung). Abgeschlossene Zeiträume
-    werden nie angetastet."""
+    brauchen — `kein_datum` (weder Jahr noch Datum am Beleg) oder `kein_zeitraum`
+    (kein passendes Jahr/Fenster). Abgeschlossene Zeiträume bleiben unberührt."""
     o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
@@ -1419,11 +1420,27 @@ def belege_abgleichen(slug: str, vorschau: bool = True,
     gesperrt = {z.id for z in perioden if z.status == "abgeschlossen"}
     p_nach_id = {z.id: z for z in perioden}
     offene = [z for z in perioden if z.id not in gesperrt]
-    # Innere Grenzen: nur wo eine Nachbarperiode anschließt, ist „randnah" ein
-    # echtes Übergangsfenster (sonst wäre jeder Dezember/Januar-Beleg markiert).
-    starts = {z.start for z in perioden}
-    enden = {z.ende for z in perioden}
-    RAND = timedelta(days=31)
+    def ziel_periode(d: Dokument):
+        """N50 — Zuordnung übers ABRECHNUNGSJAHR (N14, `d.jahr`): der Beleg
+        gehört in die offene Periode, deren Label-Jahr sein Jahr trifft. NK wird
+        oft nachträglich abgerechnet (Belegdatum ≠ Abrechnungsjahr) — nach
+        Belegdatum verschöbe die Umstellung sonst Belege aus Jahren, die gar
+        nicht angefasst wurden. Nur wenn am Beleg kein Jahr steht, entscheidet
+        das Belegdatum."""
+        if d.jahr:
+            treffer = [z for z in offene
+                       if zeitraum_label_jahr(z.start, z.ende) == d.jahr]
+            if treffer:
+                if d.belegdatum:
+                    enth = [z for z in treffer
+                            if z.start <= d.belegdatum <= z.ende]
+                    if enth:
+                        return enth[0]
+                return treffer[0]
+        if d.belegdatum:
+            return next((z for z in offene
+                         if z.start <= d.belegdatum <= z.ende), None)
+        return None
 
     belege = session.exec(select(Dokument).where(
         Dokument.objekt_id == o.id, Dokument.zeitraum_id.is_not(None))).all()
@@ -1431,24 +1448,13 @@ def belege_abgleichen(slug: str, vorschau: bool = True,
     for d in belege:
         if d.zeitraum_id in gesperrt:
             continue
-        if not d.belegdatum:
-            grenzfaelle.append({"id": d.id, "name": d.dateiname,
-                                "typ": "kein_datum"})
-            continue
-        ziel = next((z for z in offene
-                     if z.start <= d.belegdatum <= z.ende), None)
+        ziel = ziel_periode(d)
         if ziel is None:
-            grenzfaelle.append({"id": d.id, "name": d.dateiname,
-                                "typ": "kein_zeitraum"})
+            grenzfaelle.append({
+                "id": d.id, "name": d.dateiname,
+                "typ": "kein_datum" if not (d.jahr or d.belegdatum)
+                else "kein_zeitraum"})
             continue
-        # randnah nur an einer inneren Grenze (Nachbarperiode vorhanden)
-        nah_vorn = (d.belegdatum - ziel.start < RAND
-                    and (ziel.start - timedelta(days=1)) in enden)
-        nah_hinten = (ziel.ende - d.belegdatum < RAND
-                      and (ziel.ende + timedelta(days=1)) in starts)
-        if nah_vorn or nah_hinten:
-            grenzfaelle.append({"id": d.id, "name": d.dateiname,
-                                "typ": "randnah"})
         if d.zeitraum_id != ziel.id:
             moves.append({
                 "id": d.id, "name": d.dateiname,
