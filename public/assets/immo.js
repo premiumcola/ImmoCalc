@@ -108,6 +108,10 @@ export const fristKlasse = tage =>
 
 export const NAV = [
   ['Objekte', 'index.html', '▤'],
+  // N23 — Vermietungsstatistik: Miete + Nebenkosten, Durchschnitte,
+  // Mieterhöhungen über die eigenen Objekte und Einheiten. Steht direkt
+  // hinter „Objekte", weil es dieselben Daten aus einem anderen Blick zeigt.
+  ['Vermietungen', 'vermietungen.html', '▦'],
   ['Dokumente', 'eingang.html', '▣'],
   ['Wert', 'wertentwicklung.html', '◔'],
   ['Nebenkosten', 'nebenkosten.html', '≡'],

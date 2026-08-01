@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vermietungen · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* ------------------------------------------------------------------
+     Seitenübergreifende Bausteine, wortgleich aus wertentwicklung.html
+     und nebenkosten.html übernommen — sie gehören später nach immo.css,
+     das hier bewusst nicht angefasst wird: .filter, .karte, .chart,
+     .chartleer, .kpi, .legende, .tabelle.
+     ------------------------------------------------------------------ */
+  .filter{display:flex;gap:8px;margin-bottom:18px}
+  .filter > div{flex:1;min-width:0}
+  .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:14px;
+         box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .karte h3{font:600 13px var(--disp);letter-spacing:-.01em;margin:0 0 14px;color:var(--ink)}
+  .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible}
+  @media(min-width:1000px){
+    .kpi{max-width:560px}
+    .tabelle{max-width:720px}
+  }
+  .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;padding:22px 8px}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .kpi .k{background:var(--sheet);border-radius:14px;padding:13px 12px;
+          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .kpi .kl{display:block;font:600 9.5px var(--mono);letter-spacing:.08em;
+           text-transform:uppercase;color:var(--soft)}
+  .kpi .kv{display:block;font:700 16px var(--disp);letter-spacing:-.02em;margin-top:6px}
+  .kpi .kv.pos{color:var(--pos)} .kpi .kv.amber{color:var(--amber)}
+  .legende{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+  .legende .le{display:flex;align-items:center;gap:6px;font:500 11.5px var(--body);
+               color:var(--soft)}
+  .legende .le i{width:10px;height:10px;border-radius:3px;flex:none}
+  .tabelle{width:100%;border-collapse:collapse;margin-top:2px}
+  .tabelle th{font:600 9.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+              color:var(--soft);text-align:right;padding:0 0 8px;white-space:nowrap}
+  .tabelle th:first-child{text-align:left}
+  .tabelle th + th, .tabelle td + td{padding-left:12px}
+  .tabelle td{font:500 13px var(--body);padding:9px 0;border-top:1px solid var(--line);
+              text-align:right;white-space:nowrap}
+  .tabelle td:first-child{white-space:normal}
+  .tabelle td:first-child{text-align:left;font-weight:600}
+  .tabelle td.pos{color:var(--pos)} .tabelle td.amber{color:var(--amber)}
+  .kartesub{font:400 12px var(--body);color:var(--soft);margin:-8px 0 14px;line-height:1.45}
+  .kartesub a{color:var(--teal-d);font-weight:600}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
+    <div class="barwrap">
+      <h1>Vermietungen</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <div class="filter">
+      <div id="objekt"></div>
+      <div id="einheit"></div>
+    </div>
+    <div id="inhalt"></div>
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+/* Vermietungen — die Statistik über die eigenen Mietverhältnisse. Anders als
+   die Wertentwicklung (was der Eigentümer trägt) und die Nebenkosten (was der
+   Mieter zahlt) zeigt diese Seite die Vermietung selbst: laufende Kaltmiete +
+   Nebenkosten je Monat, Durchschnittswerte und Mieterhöhungen über die Zeit.
+
+   Alle Zahlen entstehen clientseitig aus den Mietverhältnissen
+   (GET /api/objekte/{slug}/mieten) und den Einheiten
+   (GET /api/objekte/{slug}/einheiten). Der Turnus (monatlich … jährlich) wird
+   über `proJahr` auf einen Monatsbetrag normiert. */
+import { api, eur, eurKurz, esc, installNav, installLogos } from './assets/immo.js';
+import { mietChart, balken, legende } from './assets/charts.js';
+import { auswahlfeld } from './assets/auswahl.js';
+import { proJahr } from './assets/objekt-format.js';
+
+installLogos();
+installNav();
+
+const inhalt = document.getElementById('inhalt');
+const sub = document.getElementById('sub');
+
+/* ---- Turnus auf Monatsbeträge normieren --------------------------------- */
+const proMonat = m => proJahr(m.turnus) / 12;
+const kaltM = m => (m.kaltmiete || 0) * proMonat(m);
+const nkM = m => (m.nebenkosten_vz || 0) * proMonat(m);
+
+/* Auf welche Einheit ein Mietverhältnis zeigt — dieselbe Regel wie im Backend:
+   ohne Angabe gehört es bei genau einer Einheit zu dieser. */
+const zuordnung = (m, einheiten) => {
+  const e = (m.einheit || '').trim();
+  if (e) return e;
+  return einheiten.length === 1 ? einheiten[0].bezeichnung : '';
+};
+
+/* Vorläufige (orange) Entwürfe zählen nicht in die Statistik. */
+const echt = m => m && m.vorlaeufig !== true && m.ab_datum;
+const laeuft = m => echt(m) && !m.geplant && !m.beendet;
+
+const qmText = n => n == null ? '—'
+  : (Math.round(n * 100) / 100).toLocaleString('de-DE',
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €/m²';
+const jahrVon = iso => String(iso || '').slice(0, 4);
+
+function kpiFeld(label, wert, klasse = '') {
+  return `<div class="k"><span class="kl">${label}</span>
+          <span class="kv ${klasse}">${wert}</span></div>`;
+}
+
+/* ---- Daten laden -------------------------------------------------------- */
+let objekte = [];
+const detail = {};   // slug → { objekt, einheiten, mieten }
+
+try {
+  objekte = await api('/objekte');
+  await Promise.all(objekte.map(async o => {
+    const [einheiten, mieten] = await Promise.all([
+      api(`/objekte/${encodeURIComponent(o.slug)}/einheiten`).catch(() => []),
+      api(`/objekte/${encodeURIComponent(o.slug)}/mieten`).catch(() => []),
+    ]);
+    detail[o.slug] = {
+      objekt: o,
+      einheiten: Array.isArray(einheiten) ? einheiten : [],
+      mieten: (Array.isArray(mieten) ? mieten : []).filter(echt),
+    };
+  }));
+} catch {
+  sub.textContent = 'API nicht erreichbar';
+  inhalt.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
+    <p>Die Vermietungsdaten konnten nicht geladen werden.</p></div>`;
+}
+
+/* ---- Filter ------------------------------------------------------------- */
+const objektWahl = auswahlfeld(document.getElementById('objekt'), {
+  label: 'Objekt',
+  optionen: [{ wert: '', text: 'Alle Objekte' },
+             ...objekte.map(o => ({ wert: o.slug, text: o.name }))],
+  wert: '',
+  aenderung: () => { einheitenFuellen(); zeichnen(); },
+});
+
+const einheitWahl = auswahlfeld(document.getElementById('einheit'), {
+  label: 'Einheit',
+  optionen: [{ wert: '', text: 'Alle Einheiten' }],
+  wert: '',
+  aenderung: () => zeichnen(),
+});
+
+/* Die Einheiten-Auswahl folgt dem gewählten Objekt: ohne Objekt gibt es keine
+   sinnvolle Einheitenliste, mit Objekt stehen dessen Einheiten zur Wahl. */
+function einheitenFuellen() {
+  const slug = objektWahl.wert();
+  const d = slug ? detail[slug] : null;
+  const opt = [{ wert: '', text: 'Alle Einheiten' }];
+  if (d) for (const e of d.einheiten)
+    opt.push({ wert: e.bezeichnung, text: e.bezeichnung });
+  einheitWahl.fuelle(opt, '');
+}
+
+/* ---- Aggregation -------------------------------------------------------- */
+/* Ein Objekt insgesamt: laufende Miete + NK je Monat und der €/m² über die
+   vermietete Fläche. */
+function objAgg(d) {
+  const aktiv = d.mieten.filter(laeuft);
+  const miete = aktiv.reduce((s, m) => s + kaltM(m), 0);
+  const nk = aktiv.reduce((s, m) => s + nkM(m), 0);
+  const vermietet = new Set(aktiv.map(m => zuordnung(m, d.einheiten)));
+  const flaeche = d.einheiten
+    .filter(e => vermietet.has(e.bezeichnung))
+    .reduce((s, e) => s + (e.flaeche || 0), 0);
+  return { miete, nk, flaeche, anzahl: vermietet.size,
+           qm: flaeche > 0 ? miete / flaeche : null };
+}
+
+/* Eine einzelne Einheit: laufende Miete + NK je Monat, €/m² über ihre Fläche. */
+function einAgg(d, e) {
+  const aktiv = d.mieten.filter(m => laeuft(m) && zuordnung(m, d.einheiten) === e.bezeichnung);
+  const miete = aktiv.reduce((s, m) => s + kaltM(m), 0);
+  const nk = aktiv.reduce((s, m) => s + nkM(m), 0);
+  return { miete, nk, flaeche: e.flaeche || 0,
+           qm: e.flaeche ? miete / e.flaeche : null };
+}
+
+/* Mieterhöhungen: je Einheit die Mietverhältnisse in der Zeit sortieren und
+   jeden Sprung nach oben als Balken zeigen — sowohl die Erhöhung beim
+   laufenden Mieter als auch die höhere Neuvermietung nach einem Wechsel.
+   Beträge auf den Monat normiert, damit unterschiedliche Turnusse vergleichbar
+   bleiben. */
+function erhoehungen(paare) {
+  const events = [];
+  for (const { d, einheit } of paare) {
+    const reihe = d.mieten
+      .filter(m => zuordnung(m, d.einheiten) === einheit)
+      .sort((a, b) => String(a.ab_datum).localeCompare(String(b.ab_datum)));
+    for (let i = 1; i < reihe.length; i++) {
+      const delta = kaltM(reihe[i]) - kaltM(reihe[i - 1]);
+      if (delta > 0.5) events.push({
+        ab: reihe[i].ab_datum,
+        name: `${einheit || d.objekt.name} · ${jahrVon(reihe[i].ab_datum)}`,
+        wert: delta,
+        text: '+' + eurKurz(delta),
+      });
+    }
+  }
+  return events.sort((a, b) => String(a.ab).localeCompare(String(b.ab)));
+}
+
+/* ---- Zeichnen ----------------------------------------------------------- */
+function zeichnen() {
+  if (!objekte.length) {
+    sub.textContent = 'Keine Objekte';
+    inhalt.innerHTML = `<div class="empty"><div class="big">Noch keine Objekte</div>
+      <p>Sobald Objekte mit Mietverhältnissen angelegt sind, erscheint hier die
+      Vermietungsstatistik.</p></div>`;
+    return;
+  }
+
+  const slug = objektWahl.wert();
+  const einheit = einheitWahl.wert();
+  const objekteAuswahl = slug ? [detail[slug]] : Object.values(detail);
+
+  /* Auf welchen Mietverhältnissen die Kennzahlen fußen — mit Einheitenfilter,
+     wenn ein Objekt und eine Einheit gewählt sind. */
+  const paare = objekteAuswahl.flatMap(d => d.einheiten
+    .filter(e => !einheit || !slug || e.bezeichnung === einheit)
+    .map(einh => ({ d, einheit: einh.bezeichnung, e: einh })));
+
+  /* Gesamtkennzahlen (laufend). */
+  let mieteSum = 0, nkSum = 0, flaecheSum = 0, vermietet = 0;
+  for (const d of objekteAuswahl) {
+    const aktiv = d.mieten.filter(m => laeuft(m)
+      && (!einheit || !slug || zuordnung(m, d.einheiten) === einheit));
+    for (const m of aktiv) {
+      mieteSum += kaltM(m); nkSum += nkM(m); vermietet++;
+    }
+    const drin = new Set(aktiv.map(m => zuordnung(m, d.einheiten)));
+    flaecheSum += d.einheiten
+      .filter(e => drin.has(e.bezeichnung)
+        && (!einheit || !slug || e.bezeichnung === einheit))
+      .reduce((s, e) => s + (e.flaeche || 0), 0);
+  }
+  const oQm = flaecheSum > 0 ? mieteSum / flaecheSum : null;
+  const oJeEinheit = vermietet > 0 ? mieteSum / vermietet : null;
+  const nkQuote = mieteSum > 0 ? (nkSum / mieteSum) * 100 : null;
+
+  /* Diagramm 1 — gestapelte Balken Miete + NK je Monat. Ebene je nach Filter:
+     alle Objekte → je Objekt · ein Objekt → je Einheit · eine Einheit → ihre
+     Mietstände über die Zeit. */
+  let punkte = [], titel1 = '', hinweis1 = '';
+  if (!slug) {
+    titel1 = 'Miete und Nebenkosten je Objekt';
+    punkte = objekteAuswahl.map(d => {
+      const a = objAgg(d);
+      return { label: d.objekt.name, miete: a.miete, nk: a.nk, qm: a.qm };
+    }).filter(p => p.miete > 0 || p.nk > 0);
+  } else if (!einheit) {
+    const d = detail[slug];
+    titel1 = 'Miete und Nebenkosten je Einheit';
+    punkte = d.einheiten.map(e => {
+      const a = einAgg(d, e);
+      return { label: e.bezeichnung, miete: a.miete, nk: a.nk, qm: a.qm };
+    }).filter(p => p.miete > 0 || p.nk > 0);
+  } else {
+    const d = detail[slug];
+    const e = d.einheiten.find(x => x.bezeichnung === einheit);
+    titel1 = 'Mietstände über die Zeit';
+    hinweis1 = 'Jeder Balken ist ein Mietverhältnis dieser Einheit — laufende '
+      + 'wie beendete, in zeitlicher Reihenfolge.';
+    punkte = d.mieten
+      .filter(m => zuordnung(m, d.einheiten) === einheit)
+      .sort((a, b) => String(a.ab_datum).localeCompare(String(b.ab_datum)))
+      .map(m => ({
+        label: jahrVon(m.ab_datum),
+        miete: kaltM(m), nk: nkM(m),
+        qm: e && e.flaeche ? kaltM(m) / e.flaeche : null,
+      }));
+  }
+
+  /* Diagramm 3 — Mieterhöhungen. */
+  const stufen = erhoehungen(paare);
+
+  /* Durchschnitts-Tabelle je Objekt. Sie zeigt das ganze Objekt, folgt also
+     dem Objekt-, aber nicht dem Einheitenfilter — deshalb entfällt sie, sobald
+     eine einzelne Einheit gewählt ist, damit sie den gefilterten Kennzahlen
+     darüber nicht widerspricht. */
+  const schnittZeilen = einheit ? [] : objekteAuswahl.map(d => {
+    const a = objAgg(d);
+    return { name: d.objekt.name, miete: a.miete, qm: a.qm, anzahl: a.anzahl };
+  }).filter(z => z.miete > 0);
+
+  const n = objekteAuswahl.length;
+  sub.textContent = `${n} ${n === 1 ? 'Objekt' : 'Objekte'} · ${vermietet} `
+    + `vermietete${vermietet === 1 ? '' : ''} Einheit${vermietet === 1 ? '' : 'en'}`;
+
+  const legendeMiet = legende([
+    { name: 'Kaltmiete', farbe: '#0F6E5C' },
+    { name: 'Nebenkosten', farbe: '#916212' },
+    { name: '€/m² (Linie)', farbe: '#16262C' },
+  ]);
+
+  inhalt.innerHTML = `
+    <div class="kpi">
+      ${kpiFeld('Kaltmiete / Monat', eurKurz(mieteSum), 'pos')}
+      ${kpiFeld('Nebenkosten / Monat', eurKurz(nkSum), 'amber')}
+      ${kpiFeld('Ø €/m²', oQm == null ? '—' : qmText(oQm))}
+    </div>
+
+    <div class="karte">
+      <h3>${titel1}</h3>
+      ${hinweis1 ? `<div class="kartesub">${hinweis1}</div>` : ''}
+      ${mietChart(punkte, { format: eur })}
+      ${punkte.length ? legendeMiet : ''}
+    </div>
+
+    <div class="karte">
+      <h3>Durchschnittswerte</h3>
+      <div class="kartesub">Laufende Mietverhältnisse, auf den Monat normiert
+        (Turnus berücksichtigt).</div>
+      <div class="kpi" style="margin-bottom:${schnittZeilen.length ? '16px' : '0'}">
+        ${kpiFeld('Ø Kaltmiete / Einheit', oJeEinheit == null ? '—' : eurKurz(oJeEinheit))}
+        ${kpiFeld('Ø €/m²', oQm == null ? '—' : qmText(oQm))}
+        ${kpiFeld('NK-Quote', nkQuote == null ? '—'
+            : Math.round(nkQuote) + ' %', 'amber')}
+      </div>
+      ${schnittZeilen.length ? `<table class="tabelle">
+        <thead><tr><th>Objekt</th><th>Miete/M</th><th>€/m²</th><th>Einh.</th></tr></thead>
+        <tbody>${schnittZeilen.map(z => `<tr>
+          <td>${esc(z.name)}</td>
+          <td class="pos">${eurKurz(z.miete)}</td>
+          <td>${z.qm == null ? '—' : qmText(z.qm)}</td>
+          <td>${z.anzahl}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : ''}
+    </div>
+
+    <div class="karte">
+      <h3>Mieterhöhungen</h3>
+      <div class="kartesub">Jeder Sprung der Kaltmiete nach oben — beim laufenden
+        Mieter wie bei einer höheren Neuvermietung. Beträge je Monat.</div>
+      ${balken(stufen)}
+    </div>`;
+}
+
+einheitenFuellen();
+zeichnen();
+</script>
+</body>
+</html>
