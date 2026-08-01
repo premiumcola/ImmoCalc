@@ -710,6 +710,46 @@
   .legende .le{display:flex;align-items:center;gap:6px;font:500 11.5px var(--body);
     color:var(--soft)}
   .legende .le i{width:11px;height:11px;border-radius:3px;flex:none}
+
+  /* N32 — Objekt-Übersichtswerte rechts neben dem Diagramm (mobil darunter) */
+  .diagramm-wrap{display:flex;flex-direction:column;gap:14px}
+  .objekt-summen{background:var(--sheet);border-radius:16px;padding:12px 16px;
+    display:flex;flex-direction:column}
+  .os-grp{display:flex;flex-direction:column;padding:6px 0}
+  .os-grp + .os-grp{border-top:1px solid var(--line)}
+  .os-zeile{display:flex;justify-content:space-between;align-items:baseline;
+    gap:12px;padding:5px 0}
+  .os-l{font:500 12px var(--body);color:var(--soft)}
+  .os-w{font:700 13.5px var(--mono);color:var(--ink);white-space:nowrap}
+  .os-grp.jahr .os-w{color:var(--teal-d)}
+  @media(min-width:680px){
+    .diagramm-wrap{flex-direction:row;align-items:flex-start;gap:18px}
+    .diagramm-wrap .diagramm-karte{flex:1;min-width:0}
+    .objekt-summen{flex:none;width:214px;align-self:stretch;justify-content:center}
+  }
+
+  /* N31 — Vermietet-Stempel + grün getönte Zeile · N33 — Mini-Timeline je Einheit */
+  .einheit-block + .einheit-block{border-top:1px solid var(--line)}
+  .eintrag.vermietet{background:#F1F8F3;box-shadow:inset 3px 0 0 var(--pos)}
+  .eintrag.vermietet.klick:hover{background:#E8F3EC}
+  .eintrag .ewwrap{display:flex;align-items:center;gap:10px;justify-content:flex-end}
+  .e-stempel{flex:none;display:none;flex-direction:column;align-items:center;
+    gap:1px;pointer-events:none;user-select:none}
+  .stempel-svg{display:block;opacity:.6}
+  .e-seit{font:700 9px var(--mono);color:var(--pos);opacity:.85;
+    letter-spacing:.02em;text-align:center;white-space:nowrap}
+  .ed-seit{color:var(--pos);font-weight:600}
+  .einheit-tl{padding:1px 15px 12px 61px}
+  .miet-timeline.mini{margin:0}
+  .miet-timeline.mini .tl-track{height:13px;border-radius:5px}
+  .miet-timeline.mini .tl-seg{border-radius:4px}
+  .miet-timeline.mini .tl-achse{height:12px;margin-top:3px}
+  .miet-timeline.mini .tl-tick{font-size:9px}
+  @media(min-width:680px){
+    .eintrag.vermietet .ewwrap{flex:1}
+    .e-stempel{display:flex}
+    .eintrag.vermietet .ed-seit{display:none}
+  }
 </style>
 </head>
 <body>
@@ -1283,6 +1323,13 @@ const MIET_PALETTE = ['#0F6E5C', '#916212', '#B24229', '#5B3E8F', '#1F6F8B',
 
 const _isoTag = iso => iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : '';
 
+// Heute als ISO-Tag (lokal) — für laufende Mietdauer und den Vermietet-Status.
+const _heuteIso = () => {
+  const h = new Date();
+  return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${
+    String(h.getDate()).padStart(2, '0')}`;
+};
+
 function _tagPlus(iso, d) {
   const t = new Date(`${iso}T00:00:00Z`);
   t.setUTCDate(t.getUTCDate() + d);
@@ -1336,7 +1383,7 @@ function mietModell(eintraege) {
   return { mieten, leerstaende, pct, minIso, maxIso, heute, jahre };
 }
 
-function mietTimelineHtml(mo) {
+function mietTimelineHtml(mo, mini = false) {
   const seg = (l, w, farbe, titel, leer) =>
     `<span class="tl-seg${leer ? ' leer' : ''}" title="${esc(titel)}"
        style="left:${l}%;width:${w}%;${leer ? '' : `background:${farbe}`}"></span>`;
@@ -1352,7 +1399,7 @@ function mietTimelineHtml(mo) {
   }).join('');
   const ticks = mo.jahre.map(j =>
     `<span class="tl-tick" style="left:${mo.pct(`${j}-01-01`)}%">${j}</span>`).join('');
-  return `<div class="miet-timeline">
+  return `<div class="miet-timeline${mini ? ' mini' : ''}">
       <div class="tl-track">${leer}${balken}</div>
       <div class="tl-achse">${ticks}</div>
     </div>`;
@@ -1503,26 +1550,111 @@ function einheitDetail(e) {
           e.mieter].filter(Boolean).join(' · ');
 }
 
+/* N31 — das aktuell laufende Mietverhältnis einer Einheit: ab_datum ≤ heute,
+   kein Enddatum oder Enddatum ≥ heute, nicht geplant. Bei mehreren das jüngste.
+   Grundlage für Vermietet-Status, laufende Mietdauer und die Objekt-Summen. */
+function laufendeMiete(e) {
+  const heute = _heuteIso();
+  return (bereicheDaten.mieten || [])
+    .filter(m => m && m.ab_datum && !m.geplant && zuEinheit(m) === e.bezeichnung
+      && m.ab_datum <= heute && (!m.bis_datum || m.bis_datum >= heute))
+    .sort((a, b) => b.ab_datum.localeCompare(a.ab_datum))[0] || null;
+}
+
+/* N31 — angeschrägter Gummistempel „VERMIETET": zwei gerundete Rahmen und der
+   Schriftzug, leicht gedreht und transparent im Pos-Grün. Reines Inline-SVG. */
+function vermietetStempel() {
+  return `<svg class="stempel-svg" viewBox="0 0 132 40" width="112" height="34"
+       role="img" aria-label="Vermietet">
+      <g transform="rotate(-7 66 20)" fill="none" style="stroke:var(--pos)">
+        <rect x="3" y="4" width="126" height="32" rx="7" style="stroke-width:2.2"/>
+        <rect x="7.5" y="8.5" width="117" height="23" rx="4.5" style="stroke-width:1"/>
+        <text x="66" y="25" text-anchor="middle"
+          style="fill:var(--pos);stroke:none;font:800 14px var(--disp);letter-spacing:1.4px">VERMIETET</text>
+      </g>
+    </svg>`;
+}
+
+/* N33 — kompakte Vermietungs-Timeline EINER Einheit (Balken + Leerstand-Lücken),
+   dieselbe Sprache wie N19, nur schlanker. Ohne Mietverhältnisse: nichts. */
+function miniMietTimelineHtml(eintraege) {
+  const mo = mietModell(eintraege);
+  if (!mo) return '';
+  return `<div class="einheit-tl">${mietTimelineHtml(mo, true)}</div>`;
+}
+
+/* N32 — die vier Objekt-Kennzahlen rechts neben dem Diagramm: Miete/Monat und
+   NK/Monat (Summe der laufenden Verhältnisse, jeder Turnus auf Monat normiert),
+   daraus Ertrag/Jahr und NK-Pauschale/Jahr. */
+function objektSummenHtml() {
+  let mMonat = 0, nkMonat = 0;
+  for (const e of einheiten) {
+    const lm = laufendeMiete(e);
+    if (!lm) continue;
+    const f = proJahr(lm.turnus) / 12;   // Turnus → Monatsbetrag
+    mMonat += (lm.kaltmiete || 0) * f;
+    nkMonat += (lm.nebenkosten_vz || 0) * f;
+  }
+  const zeile = (l, w) =>
+    `<div class="os-zeile"><span class="os-l">${l}</span><span class="os-w">${eur(w)}</span></div>`;
+  return `<div class="objekt-summen">
+      <div class="os-grp monat">
+        ${zeile('Miete / Monat', mMonat)}
+        ${zeile('Nebenkosten / Monat', nkMonat)}
+      </div>
+      <div class="os-grp jahr">
+        ${zeile('Ertrag / Jahr', mMonat * 12)}
+        ${zeile('NK-Pauschale / Jahr', nkMonat * 12)}
+      </div>
+    </div>`;
+}
+
 /* Die Zeile führt eine Ebene tiefer — angetippt wird sie ganz, nicht ein
-   Pfeilchen am Rand. */
+   Pfeilchen am Rand. N31 setzt den Vermietet-Stempel und die grüne Tönung,
+   N33 hängt die Mini-Timeline unter jede Zeile. */
 function einheitenHtml() {
   if (istGrundstueck()) return '';
+  const alleMieten = bereicheDaten.mieten || [];
   const zeilen = einheiten.length
-    ? einheiten.map(e => `<div class="eintrag klick" data-einheit="${e.id}">
-        <span class="sym">${kostenIcon('Miete')}</span>
-        <span class="et">
-          <span class="en">${esc(e.bezeichnung)}${e.vermietet ? ''
-            : ' <span class="chip amber">frei</span>'}${
-            e.nk_abrechnung === false
-              ? ' <span class="chip">nicht in NK</span>' : ''}</span>
-          ${einheitDetail(e) ? `<span class="ed">${esc(einheitDetail(e))}</span>` : ''}
-        </span>
-        <span class="ew">${e.vermietet && e.kaltmiete
+    ? einheiten.map(e => {
+        const lm = laufendeMiete(e);
+        const vermietet = !!(e.vermietet || lm);
+        const seit = lm ? _dauerText(lm.ab_datum, _heuteIso()) : '';
+        const stempel = vermietet
+          ? `<span class="e-stempel">${vermietetStempel()}${seit
+              ? `<span class="e-seit">seit ${esc(seit)}</span>` : ''}</span>`
+          : '';
+        const detail = einheitDetail(e);
+        // Der Trenner „·" gehört IN die ed-seit-Spanne — auf dem Desktop ist die
+        // Dauer dort verborgen (sie steht im Stempel), sonst bliebe ein loser „·".
+        const seitSpan = seit
+          ? `<span class="ed-seit">${detail ? ' · ' : ''}seit ${esc(seit)}</span>` : '';
+        const detailZeile = (detail || seit)
+          ? `<span class="ed">${esc(detail)}${seitSpan}</span>`
+          : '';
+        const wert = e.vermietet && e.kaltmiete
           ? `${eur(e.kaltmiete)} / M${qmMiete(e)
               ? `<span class="ew-sub">${eur(qmMiete(e))} / m²</span>` : ''}`
-          : ''}</span>
-        <button class="del" data-einheit-weg="${e.id}" aria-label="löschen">×</button>
-      </div>`).join('')
+          : '';
+        const chips = `${vermietet ? '' : ' <span class="chip amber">frei</span>'}${
+          e.nk_abrechnung === false ? ' <span class="chip">nicht in NK</span>' : ''}`;
+        const tl = miniMietTimelineHtml(alleMieten.filter(m => zuEinheit(m) === e.bezeichnung));
+        return `<div class="einheit-block">
+          <div class="eintrag klick${vermietet ? ' vermietet' : ''}" data-einheit="${e.id}">
+            <span class="sym">${kostenIcon('Miete')}</span>
+            <span class="et">
+              <span class="en">${esc(e.bezeichnung)}${chips}</span>
+              ${detailZeile}
+            </span>
+            ${stempel}
+            <span class="ewwrap">
+              <span class="ew">${wert}</span>
+              <button class="del" data-einheit-weg="${e.id}" aria-label="löschen">×</button>
+            </span>
+          </div>
+          ${tl}
+        </div>`;
+      }).join('')
     : `<div class="leerzeile">Noch keine Einheit erfasst</div>`;
 
   return `<div class="sekopf"><h2 class="sec">Einheiten</h2>
@@ -1845,7 +1977,7 @@ function mietVerlauf(mieten, flaeche) {
 
 /* Der Diagramm-Block: Überschrift, Säulen+Linie, Legende. Bei fehlenden Daten
    zeigt mietChart selbst einen ruhigen Leer-Hinweis; dann entfällt die Legende. */
-function mietDiagrammHtml(mieten, flaeche) {
+function mietDiagrammHtml(mieten, flaeche, uebersicht = '') {
   const punkte = mietVerlauf(mieten, flaeche);
   const svg = mietChart(punkte, { format: eur });
   const hatWerte = punkte.some(p => (p.miete || 0) + (p.nk || 0) > 0);
@@ -1854,9 +1986,14 @@ function mietDiagrammHtml(mieten, flaeche) {
     { name: 'Nebenkosten', farbe: '#916212' },
     { name: '€ / m²', farbe: '#16262C' },
   ]) : '';
+  const karte = `<div class="diagramm-karte">${svg}${leg}</div>`;
+  // N32 — auf der Hausebene stehen die vier Objekt-Summen rechts daneben.
+  const koerper = uebersicht
+    ? `<div class="diagramm-wrap">${karte}${uebersicht}</div>`
+    : karte;
   return `<div class="sekopf"><span class="seikon">${kostenIcon('Miete')}</span>
       <h2 class="sec">Miete &amp; Nebenkosten</h2></div>
-    <div class="diagramm-karte">${svg}${leg}</div>`;
+    ${koerper}`;
 }
 
 function eigentuemerHtml(stand) {
@@ -2177,7 +2314,7 @@ async function laden() {
   const gesamtFlaeche = einheiten.reduce((s, e) => s + effektiveFlaeche(e), 0);
 
   inhalt.innerHTML = `
-    ${mietDiagrammHtml(bereiche.mieten, gesamtFlaeche)}
+    ${mietDiagrammHtml(bereiche.mieten, gesamtFlaeche, objektSummenHtml())}
     ${einheitenHtml()}
     ${zeitraumBlock}
     ${stammHtml(objekt)}
