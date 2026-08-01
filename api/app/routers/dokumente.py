@@ -3074,6 +3074,77 @@ def _sidecar_pfad(pfad: str) -> str:
     return f"{pfad}.immocalc"
 
 
+def _dateistamm(name: str) -> str:
+    """Der Name ohne Endung — „2025_NK-Müll.pdf" → „2025_NK-Müll". Die `.immocalc`
+    -Sidecar teilt sich den Stamm mit ihrem Beleg."""
+    stamm, punkt, endung = name.rpartition(".")
+    return stamm if (punkt and "/" not in endung) else name
+
+
+# N30 — Ordner nicht endlos tief absteigen: Belege liegen ein bis zwei Ebenen
+# unter dem Objektordner (60_Nebenkosten/2025/…). Fünf Ebenen decken alles ab
+# und begrenzen die WebDAV-Aufrufe je Lauf.
+_IMMOCALC_MAX_TIEFE = 5
+
+
+def verwaiste_immocalc_aufraeumen(session: Session) -> dict:
+    """N30 — verwaiste `.immocalc`-Steckbriefe aufräumen.
+
+    Löscht der Nutzer ein PDF/Bild von Hand in der Nextcloud, bleibt die
+    `.immocalc`-Sidecar (CCLXXIV) als Waise liegen. Dieser Hintergrundlauf sucht
+    je Objektordner nach `.immocalc`-Dateien, zu denen KEIN gleichnamiger Beleg
+    (mit anderer Endung) mehr im selben Ordner liegt, und entfernt genau diese —
+    nur unterhalb des Home-Ordners (der `loesche`-Riegel `_pruefe_schreibrecht`
+    greift). Rein zurückhaltend: eine `.immocalc` MIT Beleg wird nie angefasst.
+
+    Gibt `{"geloescht": n, "geprueft": m}` zurück. Bei jedem Cloud-Fehler wird
+    der betroffene Ordner/das Objekt übersprungen, nie eine Exception geworfen.
+    """
+    try:
+        client = verbindung(session)
+    except Exception:                                    # noqa: BLE001
+        return {"geloescht": 0, "geprueft": 0}
+    objekte = session.exec(
+        select(Objekt).where(Objekt.nc_ordner.is_not(None))).all()
+    geloescht = 0
+    geprueft = 0
+    for o in objekte:
+        wurzel = (o.nc_ordner or "").strip()
+        if not wurzel:
+            continue
+        offen: list[tuple[str, int]] = [(wurzel, 0)]
+        besucht: set[str] = set()
+        while offen:
+            ordner, tiefe = offen.pop()
+            if ordner in besucht:
+                continue
+            besucht.add(ordner)
+            try:
+                eintraege = client.liste(ordner)
+            except NextcloudFehler:
+                continue
+            dateien = [e for e in eintraege if not e.ordner]
+            for e in eintraege:
+                if e.ordner and tiefe < _IMMOCALC_MAX_TIEFE and e.pfad not in besucht:
+                    offen.append((e.pfad, tiefe + 1))
+            # Die Stämme der echten Belege in DIESEM Ordner (ohne .immocalc).
+            belegstaemme = {_dateistamm(e.name) for e in dateien
+                            if not e.name.lower().endswith(".immocalc")}
+            for e in dateien:
+                if not e.name.lower().endswith(".immocalc"):
+                    continue
+                geprueft += 1
+                if _dateistamm(e.name) in belegstaemme:
+                    continue                             # hat noch seinen Beleg
+                try:
+                    client.loesche(e.pfad)
+                    geloescht += 1
+                    log.info("Verwaiste .immocalc entfernt: %s", e.pfad)
+                except NextcloudFehler as fehler:
+                    log.info("Verwaiste .immocalc nicht löschbar: %s", fehler)
+    return {"geloescht": geloescht, "geprueft": geprueft}
+
+
 # Wie die Rasterfelder im Steckbrief heissen — technischer Schlüssel → Klartext.
 # Was nicht in der Karte steht, wird mit seinem Schlüssel gezeigt (nichts geht
 # verloren), damit ein neues Feld nicht stumm bleibt.

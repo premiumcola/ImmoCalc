@@ -32,6 +32,8 @@ _zustand: dict[str, object] = {
     # CCXXVII: wie viele Belege der Wachdienst insgesamt schon eine
     # durchsuchbare Textschicht nachgetragen hat.
     "ocr_ergaenzt_gesamt": 0,
+    # N30: wie viele verwaiste `.immocalc`-Steckbriefe insgesamt aufgeräumt.
+    "immocalc_aufgeraeumt_gesamt": 0,
     "laeuft": False,
 }
 
@@ -45,6 +47,7 @@ def zustand() -> dict:
         "letzter_fehler": _zustand["letzter_fehler"],
         "gefunden_gesamt": _zustand["gefunden_gesamt"],
         "ocr_ergaenzt_gesamt": _zustand["ocr_ergaenzt_gesamt"],
+        "immocalc_aufgeraeumt_gesamt": _zustand["immocalc_aufgeraeumt_gesamt"],
     }
 
 
@@ -85,6 +88,22 @@ def _ocr_lauf() -> dict:
         sperre.release()
 
 
+def _immocalc_lauf() -> dict:
+    """N30 — verwaiste `.immocalc`-Steckbriefe aufräumen: löscht der Nutzer ein
+    PDF/Bild von Hand in der Cloud, bleibt die Sidecar als Waise liegen. Teilt
+    sich die Sperre mit den anderen Läufen (alle bewegen Dateien in der Cloud).
+    Prüft der Nutzer gerade selbst, tritt der Wachdienst zurück."""
+    from .routers.dokumente import verwaiste_immocalc_aufraeumen  # spät, Zirkel
+
+    if not sperre.acquire(blocking=False):
+        return {"geloescht": 0}
+    try:
+        with Session(engine) as session:
+            return verwaiste_immocalc_aufraeumen(session)
+    finally:
+        sperre.release()
+
+
 async def schleife() -> None:
     """Läuft neben der API und prüft den Eingang in festem Takt."""
     _zustand["laeuft"] = True
@@ -107,6 +126,13 @@ async def schleife() -> None:
                 _zustand["ocr_ergaenzt_gesamt"] = \
                     int(_zustand["ocr_ergaenzt_gesamt"]) + ergaenzt
                 log.info("Textschicht ergänzt: %d Beleg(e)", ergaenzt)
+            # N30: verwaiste `.immocalc`-Steckbriefe im selben Takt aufräumen.
+            aufgeraeumt = await asyncio.to_thread(_immocalc_lauf)
+            weg = int(aufgeraeumt.get("geloescht", 0))
+            if weg:
+                _zustand["immocalc_aufgeraeumt_gesamt"] = \
+                    int(_zustand["immocalc_aufgeraeumt_gesamt"]) + weg
+                log.info("Verwaiste .immocalc entfernt: %d", weg)
         except asyncio.CancelledError:
             _zustand["laeuft"] = False
             raise
