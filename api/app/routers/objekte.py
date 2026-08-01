@@ -272,6 +272,8 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
     zr_ids = [z.id for z in zeitraeume]
     pos_zahl: dict[int, int] = {}
     beleg_zahl: dict[int, int] = {}
+    kosten_summe: dict[int, float] = {}     # erfasste NK je Zeitraum (Σ Positionsbeträge)
+    abschlag_summe: dict[int, float] = {}   # eingezahlte Abschläge (Σ Vorauszahlungen)
     if zr_ids:
         for zid, n in session.exec(
                 select(Kostenposition.zeitraum_id, func.count())
@@ -283,6 +285,16 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
                 .where(Dokument.zeitraum_id.in_(zr_ids))
                 .group_by(Dokument.zeitraum_id)).all():
             beleg_zahl[zid] = n
+        for zid, s in session.exec(
+                select(Kostenposition.zeitraum_id, func.sum(Kostenposition.betrag))
+                .where(Kostenposition.zeitraum_id.in_(zr_ids))
+                .group_by(Kostenposition.zeitraum_id)).all():
+            kosten_summe[zid] = round(s or 0.0, 2)
+        for zid, s in session.exec(
+                select(Vorauszahlung.zeitraum_id, func.sum(Vorauszahlung.betrag))
+                .where(Vorauszahlung.zeitraum_id.in_(zr_ids))
+                .group_by(Vorauszahlung.zeitraum_id)).all():
+            abschlag_summe[zid] = round(s or 0.0, 2)
     return {
         "objekt": o, "einheiten": einheiten, "parteien": parteien,
         # Aus den Einheiten summiert — die maßgebliche Wohnfläche und die
@@ -303,6 +315,11 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
                         # dem laufenden, und bietet belegbehaftete dezent an.
                         "positionen": pos_zahl.get(z.id, 0),
                         "belege": beleg_zahl.get(z.id, 0),
+                        # N49 — erfasste NK (Σ Positionen) und eingezahlte
+                        # Abschläge (Σ Vorauszahlungen), damit man je Zeitraum den
+                        # Stand + über-/unterlaufen sieht.
+                        "kosten_summe": kosten_summe.get(z.id, 0.0),
+                        "abschlag_summe": abschlag_summe.get(z.id, 0.0),
                         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None}
                        for z in zeitraeume],
     }

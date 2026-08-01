@@ -2224,11 +2224,27 @@ async function laden() {
         : istGrundstueck()
           ? '<span class="chip">in Arbeit</span>'
           : `<span class="chip ${fristKlasse(z.frist_tage)}">${esc(fristText(z.frist_tage) || 'in Arbeit')}</span>`;
+    // N49 — Stand je Zeitraum: erfasste NK (Σ Positionen) und, wenn vorhanden,
+    // die eingezahlten Abschläge samt Prozent + über-/unterlaufen. Nur an
+    // sichtbaren (bearbeiteten) Zeiträumen; bei verborgenen wäre es 0.
+    const k = z.kosten_summe || 0, a = z.abschlag_summe || 0;
+    let stand = '';
+    if (!alt && (k || a)) {
+      const teile = [`NK erfasst <b>${eur(k)}</b>`];
+      if (a > 0) {
+        const pct = Math.round(k / a * 100);
+        const farbe = k > a ? 'var(--neg)' : 'var(--pos)';
+        teile.push(`Abschläge ${eur(a)}`,
+          `<b style="color:${farbe}">${pct}%${k > a ? ' · über' : ''}</b>`);
+      }
+      stand = `<span class="ed" style="margin-top:3px;font-family:var(--mono);font-size:11px">${teile.join(' · ')}</span>`;
+    }
     return `<button class="eintrag klick" data-zeitraum="${z.id}"
                     style="cursor:pointer${alt ? ';opacity:.66' : ''}">
         <span class="et">
           <span class="en">${z.jahr ? `Abrechnungszeitraum ${z.jahr}` : esc(z.label)}</span>
-          <span class="ed">${z.jahr ? `${esc(z.label)} · ${esc(z.typ)}` : esc(z.typ)}</span></span>${chip}
+          <span class="ed">${z.jahr ? `${esc(z.label)} · ${esc(z.typ)}` : esc(z.typ)}</span>
+          ${stand}</span>${chip}
         <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
       </button>`;
   };
