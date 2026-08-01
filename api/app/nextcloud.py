@@ -6,6 +6,7 @@ bzw. umbenennen).
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlparse
@@ -246,8 +247,15 @@ class Nextcloud:
         """Datei hochladen. Ueberschreibt eine gleichnamige Datei nicht —
         der Aufrufer sorgt fuer einen freien Namen."""
         self._pruefe_schreibrecht(pfad)
+        # N15 — die SHA1-Prüfsumme mitschicken, damit Nextcloud sie speichert.
+        # Ohne diesen Header rechnet Nextcloud bei einem app-eigenen Upload KEINE
+        # Prüfsumme aus → `finde_nach_checksum` fand nichts (e.sha1 leer) → jede
+        # Datei galt als „nirgends vorhanden" und wurde erneut abgelegt (die 3×
+        # dieselbe Müll-PDF in zwei Zeiträumen). Format: „SHA1:<hex>".
+        pruef = hashlib.sha1(inhalt).hexdigest()
         antwort = self._anfrage("PUT", pfad, content=inhalt,
-                                headers={"Content-Type": typ})
+                                headers={"Content-Type": typ,
+                                         "OC-Checksum": f"SHA1:{pruef}"})
         if antwort.status_code >= 400:
             raise NextcloudFehler(
                 f"Hochladen fehlgeschlagen ({antwort.status_code}): {pfad}")

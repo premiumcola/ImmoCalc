@@ -78,6 +78,28 @@ def test_liste_fuellt_sha1_aus_propfind(monkeypatch):
     assert nach_name["ohne.pdf"].sha1 == ""
 
 
+def test_lege_ab_sendet_sha1_pruefsumme(monkeypatch):
+    """N15 — der Upload schickt die SHA1-Prüfsumme als OC-Checksum-Header mit.
+    Ohne ihn rechnet Nextcloud bei app-eigenen Uploads keine Prüfsumme aus, und
+    `finde_nach_checksum` fände die Datei später nie (byte-gleiche Duplikate
+    würden erneut abgelegt)."""
+    import hashlib
+    c = _client()
+    erfasst = {}
+
+    def _anfrage(methode, pfad, content=None, headers=None, **k):
+        erfasst["methode"] = methode
+        erfasst["headers"] = headers or {}
+        return SimpleNamespace(status_code=201, text="")
+
+    monkeypatch.setattr(c, "_anfrage", _anfrage)
+    monkeypatch.setattr(c, "_pruefe_schreibrecht", lambda pfad: None)
+    inhalt = b"BYTE-GLEICHER-INHALT"
+    c.lege_ab("Home/Immobilien/x/y.pdf", inhalt)
+    assert erfasst["methode"] == "PUT"
+    assert erfasst["headers"].get("OC-Checksum") == "SHA1:" + hashlib.sha1(inhalt).hexdigest()
+
+
 # --------------------------------------------------------------------------
 # finde_nach_checksum — rekursiv, rein lesend
 # --------------------------------------------------------------------------
