@@ -1937,6 +1937,21 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     session.refresh(d)
     log.info("Scan abgelegt: %s", d.pfad)
 
+    # CD — byte-gleiche Zweitkopie desselben Objekts nicht stehen lassen: legt
+    # der Nutzer denselben Beleg unter einem detaillierteren Namen erneut ab,
+    # weicht die schlechtere Kopie (Keeper-Regel `_dedup_rang`). Best-effort und
+    # streng gekapselt — schlägt der Cloud-Zugriff fehl oder ist nichts
+    # byte-gleich, bleibt der Scan unangetastet erfolgreich; der Dedup darf den
+    # Upload nie scheitern lassen.
+    dublette_entfernt = False
+    try:
+        d, entfernt = _dedup_nach_scan(session, client, d, inhalt)
+        dublette_entfernt = entfernt > 0
+    except Exception as fehler:                       # noqa: BLE001
+        session.rollback()
+        d = session.get(Dokument, d.id) or d
+        log.warning("Dedup nach Scan übersprungen: %s", fehler)
+
     # CCCLXVII — der Scan hängt sich gleich an den gemeinten Eintrag. Der
     # Quellbeleg des Eintrags wird nur gesetzt, wenn er noch leer ist: eine
     # bestehende Verknüpfung bleibt unangetastet, nie überschrieben.
@@ -1950,8 +1965,11 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
         session.refresh(d)
         log.info("Scan %s an bestehenden %s#%s gehängt", d.id, an_typ, an_id)
 
-    return {"id": d.id, "dateiname": name, "pfad": d.pfad, "abgelegt": True,
-            "objekt": o.slug, "zeitraum_id": d.zeitraum_id,
+    # Der behaltene Beleg wird zurückgegeben — nach dem Dedup kann das eine
+    # ANDERE (die bessere, ältere) Kopie sein als die gerade abgelegte.
+    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+            "abgelegt": True, "objekt": o.slug, "zeitraum_id": d.zeitraum_id,
+            "dublette_entfernt": dublette_entfernt,
             "an_typ": an_typ, "an_id": an_id if an_typ else None}
 
 
@@ -3126,6 +3144,116 @@ def loese_zuordnung(dokument_id: int,
     return {"ok": True, "geloest": geloest}
 
 
+class _NichtByteGleich(Exception):
+    """Die beiden Belege sind NICHT byte-identisch — es darf nichts weichen."""
+
+
+def _duplikat_weg(session: Session, client, weg: Dokument,
+                  behalten: Dokument) -> list[str]:
+    """N16b — entfernt `weg` NUR, wenn er byte-gleich zu `behalten` ist.
+
+    Die Byte-Gleichheit wird durch Herunterladen und SHA1-Vergleich beider
+    Dateien bewiesen — nie wird eine einzigartige Datei gelöscht (der Grundsatz
+    „nie Daten verlieren" bleibt gewahrt, es geht nur eine nachweislich
+    identische Zweitkopie, während `behalten` erhalten bleibt). Löst eine
+    Verbuchung (die erhaltene Kopie trägt die Kosten weiter), entfernt Datei,
+    `.immocalc`-Sidecar und den DB-Eintrag. Committet NICHT — das überlässt der
+    Helfer dem Aufrufer, damit er es in seine eigene Transaktion einbetten kann.
+
+    Wirft `NextcloudFehler`, wenn eine Datei nicht ladbar ist, und
+    `_NichtByteGleich`, wenn die Inhalte sich unterscheiden — in beiden Fällen
+    ist noch nichts geändert (nichts gelöscht). Gibt die entfernten Cloud-Pfade
+    zurück."""
+    import hashlib
+    b_weg, _ = client.hole(weg.pfad)
+    b_behalten, _ = client.hole(behalten.pfad)
+    if hashlib.sha1(b_weg).hexdigest() != hashlib.sha1(b_behalten).hexdigest():
+        raise _NichtByteGleich(weg.pfad)
+    # Verbuchung lösen (die erhaltene Kopie trägt die Kosten weiter), dann Datei
+    # und Sidecar entfernen — nur unterhalb des Home-Ordners (loesche-Riegel).
+    belegposten.loese(session, weg)
+    geloescht: list[str] = []
+    for pfad in (weg.pfad, _sidecar_pfad(weg.pfad)):
+        try:
+            client.loesche(pfad)
+            geloescht.append(pfad)
+        except NextcloudFehler as fehler:
+            log.info("Duplikat-Datei nicht löschbar (%s): %s", pfad, fehler)
+    session.delete(weg)
+    return geloescht
+
+
+def _dedup_rang(d: Dokument) -> tuple[int, int, int, int]:
+    """Keeper-Wahl beim Scan-Dedup — der kleinste Schlüssel bleibt (CD).
+
+    Vorrang: verbucht (`position_id`) vor unverbucht, dann ein Beleg mit Betrag
+    vor einem ohne, dann der detailliertere (längere) Name, zuletzt der neuere
+    (grössere `id`). Also: verbucht > hat Betrag > detaillierterer Name > neuer."""
+    return (0 if d.position_id else 1,
+            0 if d.betrag else 1,
+            -len(d.dateiname or ""),
+            -(d.id or 0))
+
+
+def _byte_gleiche_geschwister(session: Session, client, d: Dokument,
+                              inhalt: bytes) -> list[Dokument]:
+    """Andere Belege desselben Objekts, die byte-gleich zu `d` sind (CD).
+
+    Rein über den Inhalt, kein Namensvergleich: der SHA1 des frisch abgelegten
+    Inhalts wird gegen den jeder anderen Datei gehalten. Nach Grösse vorgefiltert
+    — was anders gross ist, kann nie byte-gleich sein und wird gar nicht erst
+    geladen. Sidecars und Belege ohne abgelegte Datei bleiben aussen vor. Ein
+    nicht ladbarer Beleg wird übersprungen, nie als gleich behandelt."""
+    import hashlib
+    ziel_sha1 = hashlib.sha1(inhalt).hexdigest()
+    gleiche: list[Dokument] = []
+    andere = session.exec(select(Dokument).where(
+        Dokument.objekt_id == d.objekt_id, Dokument.id != d.id)).all()
+    for k in andere:
+        if _ist_sidecar(k.dateiname) or not (k.pfad or "").startswith("/"):
+            continue
+        if k.groesse and d.groesse and k.groesse != d.groesse:
+            continue
+        try:
+            roh, _ = client.hole(k.pfad)
+        except NextcloudFehler as fehler:
+            log.info("Dedup: %s nicht ladbar (%s)", k.pfad, fehler)
+            continue
+        if hashlib.sha1(roh).hexdigest() == ziel_sha1:
+            gleiche.append(k)
+    return gleiche
+
+
+def _dedup_nach_scan(session: Session, client, d: Dokument,
+                     inhalt: bytes) -> tuple[Dokument, int]:
+    """Best-effort: entfernt byte-gleiche Zweitkopien des frisch abgelegten
+    Belegs `d` im selben Objekt (CD). Gibt `(keeper, anzahl_entfernt)` zurück.
+
+    Von allen byte-gleichen Belegen (der neue `d` und seine Geschwister) bleibt
+    der beste stehen (`_dedup_rang`), die übrigen weichen über `_duplikat_weg`
+    (Byte-Gleichheit erneut bewiesen, Sidecar + DB-Eintrag + Verbuchung sauber
+    behandelt). Ist die ALTE Kopie besser, weicht der gerade angelegte `d`, und
+    zurück kommt der erhaltene Beleg. Gelöscht wird nur, solange der Keeper
+    bleibt — nie die einzige/letzte Kopie."""
+    gleiche = _byte_gleiche_geschwister(session, client, d, inhalt)
+    if not gleiche:
+        return d, 0
+    kandidaten = sorted([d, *gleiche], key=_dedup_rang)
+    keeper = kandidaten[0]
+    entfernt = 0
+    for verlierer in kandidaten[1:]:
+        try:
+            _duplikat_weg(session, client, verlierer, keeper)
+            entfernt += 1
+        except (NextcloudFehler, _NichtByteGleich) as fehler:
+            # Nicht (mehr) byte-gleich oder nicht ladbar: nichts entfernen.
+            log.warning("Dedup: %s nicht entfernt (%s)", verlierer.pfad, fehler)
+    if entfernt:
+        session.commit()
+        session.refresh(keeper)
+    return keeper, entfernt
+
+
 class DuplikatEntfernenIn(BaseModel):
     """N16b — welches byte-gleiche Dokument erhalten bleibt."""
     behalten_id: int
@@ -3142,7 +3270,6 @@ def duplikat_entfernen(dokument_id: int, data: DuplikatEntfernenIn,
     „nie Daten verlieren" bleibt gewahrt, es geht nur eine identische Kopie).
     Entfernt Datei, `.immocalc`-Sidecar und den DB-Eintrag; eine Verbuchung wird
     vorher gelöst (die erhaltene Kopie trägt die Kosten weiter)."""
-    import hashlib
     weg = session.get(Dokument, dokument_id)
     behalten = session.get(Dokument, data.behalten_id)
     if not weg or not behalten:
@@ -3154,28 +3281,18 @@ def duplikat_entfernen(dokument_id: int, data: DuplikatEntfernenIn,
         raise HTTPException(400, "Zum Dokument gehört keine Immobilie.")
     _cloud_pflicht(o)
     client = verbindung(session)
+    weg_pfad, behalten_pfad = weg.pfad, behalten.pfad
     try:
-        b_weg, _ = client.hole(weg.pfad)
-        b_behalten, _ = client.hole(behalten.pfad)
+        geloescht = _duplikat_weg(session, client, weg, behalten)
     except NextcloudFehler as fehler:
         raise HTTPException(400, str(fehler)) from fehler
-    if hashlib.sha1(b_weg).hexdigest() != hashlib.sha1(b_behalten).hexdigest():
+    except _NichtByteGleich as fehler:
         raise HTTPException(
-            409, "Die Dateien sind NICHT byte-gleich — es wird nichts gelöscht.")
-    # Verbuchung lösen (die erhaltene Kopie trägt die Kosten weiter), dann Datei
-    # und Sidecar entfernen — nur unterhalb des Home-Ordners (loesche-Riegel).
-    belegposten.loese(session, weg)
-    geloescht = []
-    for pfad in (weg.pfad, _sidecar_pfad(weg.pfad)):
-        try:
-            client.loesche(pfad)
-            geloescht.append(pfad)
-        except NextcloudFehler as fehler:
-            log.info("Duplikat-Datei nicht löschbar (%s): %s", pfad, fehler)
-    session.delete(weg)
+            409, "Die Dateien sind NICHT byte-gleich — es wird nichts gelöscht."
+        ) from fehler
     session.commit()
-    log.info("Duplikat entfernt: %s (behalten: %s)", weg.pfad, behalten.pfad)
-    return {"ok": True, "geloescht": geloescht, "behalten_pfad": behalten.pfad}
+    log.info("Duplikat entfernt: %s (behalten: %s)", weg_pfad, behalten_pfad)
+    return {"ok": True, "geloescht": geloescht, "behalten_pfad": behalten_pfad}
 
 
 # --------------------------------------------------------------------------
