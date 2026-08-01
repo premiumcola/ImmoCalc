@@ -1624,6 +1624,30 @@ function laufendeMiete(e) {
     .sort((a, b) => b.ab_datum.localeCompare(a.ab_datum))[0] || null;
 }
 
+/* N53 — Beginn der DURCHGEHENDEN Mietzeit desselben Mieters. Eine Mieterhöhung
+   (auch eine geplante) ist ein eigener Vertrag, der nahtlos an den vorigen
+   anschließt (altes Ende = neuer Beginn − 1 Tag). Für „seit X" zählt nicht der
+   jüngste Vertrag, sondern der erste einer solchen Kette gleicher Partei ohne
+   Leerstands-Lücke. Bei echter Lücke (Auszug, später wieder eingezogen) bricht
+   die Kette — das ist dann keine bloße Erhöhung mehr. */
+function mietzeitBeginn(e, lm) {
+  const mieten = (bereicheDaten.mieten || [])
+    .filter(m => m && m.ab_datum && zuEinheit(m) === e.bezeichnung
+      && m.partei === lm.partei)
+    .sort((a, b) => a.ab_datum.localeCompare(b.ab_datum));
+  let beginn = lm.ab_datum;
+  for (let weiter = true; weiter;) {
+    weiter = false;
+    // Vertrag, dessen Ende nahtlos vor `beginn` liegt (bis == beginn−1 oder
+    // beginn, also keine Lücke). Von mehreren Anschlüssen den frühesten nehmen.
+    const grenze = _tagPlus(beginn, -1);
+    const vor = mieten.filter(m => m.bis_datum && m.ab_datum < beginn
+      && m.bis_datum >= grenze);
+    if (vor.length) { beginn = vor[0].ab_datum; weiter = true; }
+  }
+  return beginn;
+}
+
 /* N31 — angeschrägter Gummistempel „VERMIETET": zwei gerundete Rahmen und der
    Schriftzug, leicht gedreht und transparent im Pos-Grün. Reines Inline-SVG. */
 function vermietetStempel() {
@@ -1684,7 +1708,7 @@ function einheitenHtml() {
     ? einheiten.map(e => {
         const lm = laufendeMiete(e);
         const vermietet = !!(e.vermietet || lm);
-        const seit = lm ? _dauerText(lm.ab_datum, _heuteIso()) : '';
+        const seit = lm ? _dauerText(mietzeitBeginn(e, lm), _heuteIso()) : '';
         const stempel = vermietet
           ? `<span class="e-stempel">${vermietetStempel()}${seit
               ? `<span class="e-seit">seit ${esc(seit)}</span>` : ''}</span>`
