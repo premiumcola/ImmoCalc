@@ -271,6 +271,105 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     </svg>`;
 }
 
+/** Miete-Diagramm: gestapelte Säulen (Kaltmiete + Nebenkosten-Vorauszahlung)
+ *  je Monat oder Quartal, darüber eine Linie für die Kaltmiete je m².
+ *
+ *  `punkte`: [{ label, miete, nk, qm }] — miete/nk sind Monatsbeträge (€),
+ *  qm ist Kaltmiete ÷ effektive Fläche (€/m², null wenn keine Fläche bekannt).
+ *  Die beiden Größen tragen unterschiedliche Maßstäbe, deshalb bekommt die
+ *  €/m²-Linie eine eigene, dezent angedeutete Achse rechts. */
+export function mietChart(punkte, { breite = 380, hoehe = 205,
+                                    format = v => `${Math.round(v)} €` } = {}) {
+  if (!punkte || !punkte.length)
+    return leer('Noch keine Mietdaten für ein Diagramm');
+
+  const summen = punkte.map(p => (p.miete || 0) + (p.nk || 0));
+  const echtMax = Math.max(0, ...summen);
+  const qmWerte = punkte.map(p => p.qm).filter(v => v != null && isFinite(v) && v > 0);
+  const hatQm = qmWerte.length > 0;
+  // Alles null (z. B. eine Einheit ganz ohne Miet-/NK-Betrag): ein ruhiger
+  // Hinweis ist ehrlicher als ein leeres Achsenkreuz.
+  if (echtMax <= 0 && !hatQm)
+    return leer('Keine Miet- oder Nebenkostenbeträge hinterlegt');
+
+  const rohMax = Math.max(1, echtMax);
+  // Runde € Achse auf einen glatten Wert und lass Luft nach oben, damit die
+  // €/m²-Linie frei über den Säulen liegt, statt in den Balkenköpfen zu kleben.
+  const stufe = rohMax > 2000 ? 500 : rohMax > 500 ? 200 : 100;
+  const maxE = Math.ceil(rohMax * 1.18 / stufe) * stufe;
+
+  const qmMax = hatQm ? Math.max(...qmWerte) : 1;
+  const maxQ = qmMax * 1.05;
+  const fmtQm = v => (Math.round(v * 10) / 10).toLocaleString('de-DE');
+
+  const padL = 6, padR = hatQm ? 34 : 6, padOben = 16, padUnten = 30;
+  const nutzB = breite - padL - padR;
+  const nutzH = hoehe - padOben - padUnten;
+  const baseY = padOben + nutzH;
+  const n = punkte.length;
+  const step = nutzB / n;
+  const bw = Math.min(30, step * 0.62);
+  const eH = v => (v / maxE) * nutzH;
+  const qY = v => baseY - (v / maxQ) * nutzH;
+  const cx = i => padL + i * step + step / 2;
+
+  // Waagerechte Hilfslinien (nur € Maßstab) — ruhig, ohne Zahlenflut.
+  const gitter = [0.5, 1].map(f =>
+    `<line x1="${padL}" y1="${runden(baseY - nutzH * f)}" x2="${breite - padR}"
+           y2="${runden(baseY - nutzH * f)}" stroke="#EDF0F0" stroke-width="1"/>`).join('');
+
+  const saeulen = punkte.map((p, i) => {
+    const x = runden(cx(i) - bw / 2);
+    const mH = eH(p.miete || 0), nH = eH(p.nk || 0);
+    const gap = mH > 0.5 && nH > 0.5 ? 2 : 0;
+    let s = '';
+    if (mH > 0.5)
+      s += `<rect x="${x}" y="${runden(baseY - mH)}" width="${runden(bw)}"
+              height="${runden(mH)}" rx="3" fill="#0F6E5C"/>`;
+    if (nH > 0.5)
+      s += `<rect x="${x}" y="${runden(baseY - mH - gap - nH)}" width="${runden(bw)}"
+              height="${runden(nH)}" rx="3" fill="#916212"/>`;
+    return `<g><title>${p.label}: ${format(p.miete || 0)} Miete + ${
+      format(p.nk || 0)} NK${p.qm != null && p.qm > 0
+        ? ` · ${fmtQm(p.qm)} €/m²` : ''}</title>${s || `<rect x="${x}" y="${
+        runden(baseY - 2)}" width="${runden(bw)}" height="2" rx="1" fill="#D6DCDD"/>`}</g>`;
+  }).join('');
+
+  let linie = '', qmAchse = '';
+  if (hatQm) {
+    const pkt = punkte.map((p, i) => p.qm != null && p.qm > 0 ? [cx(i), qY(p.qm)] : null);
+    const d = pkt.filter(Boolean)
+      .map((pt, k) => `${k ? 'L' : 'M'}${runden(pt[0])},${runden(pt[1])}`).join(' ');
+    const dots = n <= 14 ? pkt.filter(Boolean).map(pt =>
+      `<circle cx="${runden(pt[0])}" cy="${runden(pt[1])}" r="3.4"
+               fill="#16262C" stroke="#FFF" stroke-width="1.6"/>`).join('') : '';
+    linie = `<path d="${d}" fill="none" stroke="#16262C" stroke-width="2"
+                   stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+    // Angedeutete €/m² Achse rechts: Höchstwert oben, Einheit als Hinweis.
+    const top = qY(qmMax);
+    qmAchse = `<text x="${breite - padR + 5}" y="${runden(top) + 4}" class="qax">${
+      fmtQm(qmMax)}</text>
+      <text x="${breite - padR + 5}" y="${runden(top) + 16}" class="qax qu">€/m²</text>`;
+  }
+
+  const schritt = Math.max(1, Math.ceil(n / 8));
+  const achse = punkte.map((p, i) => i % schritt === 0
+    ? `<text x="${runden(cx(i))}" y="${hoehe - 9}" class="ax">${p.label}</text>` : '')
+    .join('');
+
+  return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img">
+      <style>
+        .ax{font:500 9.5px var(--mono);fill:var(--soft);text-anchor:middle}
+        .qax{font:600 10px var(--mono);fill:var(--ink);text-anchor:start}
+        .qax.qu{font-weight:500;fill:var(--soft)}
+      </style>
+      ${gitter}
+      <line x1="${padL}" y1="${baseY}" x2="${breite - padR}" y2="${baseY}"
+            stroke="#D6DCDD" stroke-width="1"/>
+      ${saeulen}${linie}${qmAchse}${achse}
+    </svg>`;
+}
+
 export function legende(eintraege) {
   return `<div class="legende">` + eintraege.map((e, i) =>
     `<span class="le"><i style="background:${e.farbe || farbe(i)}"></i>${e.name}</span>`

@@ -700,6 +700,19 @@
   .schaltknopf:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .schaltknopf.an{background:var(--teal);color:#fff;
     box-shadow:0 1px 2px rgba(22,38,44,.12)}
+
+  /* N20/N21 — grafischer Einstieg: Miete & Nebenkosten als gestapelte Säulen
+     mit €/m²-Linie. Die Diagramm-Klassen sind seitenübergreifend (auch in
+     nebenkosten.html/wertentwicklung.html) und gehören perspektivisch nach
+     immo.css. */
+  .diagramm-karte{background:var(--sheet);border-radius:16px;padding:16px 16px 14px}
+  .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible}
+  .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;
+    padding:26px 8px}
+  .legende{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
+  .legende .le{display:flex;align-items:center;gap:6px;font:500 11.5px var(--body);
+    color:var(--soft)}
+  .legende .le i{width:11px;height:11px;border-radius:3px;flex:none}
 </style>
 </head>
 <body>
@@ -756,6 +769,7 @@ import { slug, objekt, istGrundstueck, setObjekt, setObjektEigentuemer,
   from './assets/objekt-state.js?v=2';
 import { belegScannen } from './assets/belegscan.js';
 import { kamerascanStarten } from './assets/kamerascan.js';
+import { mietChart, legende } from './assets/charts.js';
 installNav();
 
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
@@ -827,16 +841,9 @@ let zaehlerListe = [];
 const zuEinheit = m => (m.einheit || '').trim()
   || (einheiten.length === 1 ? einheiten[0].bezeichnung : '');
 
-function bannerHtml(z) {
-  if (!z || z.frist_tage == null) return '';
-  const k = fristKlasse(z.frist_tage);
-  const tage = z.frist_tage < 0
-    ? `${Math.abs(z.frist_tage)} Tage über`
-    : `noch ${z.frist_tage} Tage`;
-  return `<div class="banner ${k}"><span class="d"></span>
-      <span>Frist § 556 BGB · ${esc(z.label)}</span>
-      <span class="days">${tage}</span></div>`;
-}
+// N20/N21 — die penetrante § 556-Fristleiste (früher `bannerHtml`) ist aus
+// beiden Kopfbereichen (Einheit wie Haus) entfernt. Die Frist steht weiterhin
+// als Chip an jedem Abrechnungszeitraum (fristKlasse/fristText weiter unten).
 
 /* Was nach einem Update noch nachzutragen wäre — ruhig, nie als Fehler. */
 function nachpflegeHtml(n) {
@@ -1765,23 +1772,92 @@ function lageplanTitelAbfragen() {
   });
 }
 
-/* Im Fokus zählt, was diese Wohnung einbringt — Wert und Restschuld gehören
-   dem ganzen Haus und stehen deshalb nur dort. Ein Verkehrswert je Einheit
-   liesse sich heute nirgends pflegen. */
-function einheitKennzahlen(e, eigene) {
-  const laufende = eigene.filter(m => !m.beendet && !m.geplant);
-  const monat = (m, feld) => (m[feld] || 0) * proJahr(m.turnus) / 12;
-  const kalt = laufende.reduce((s, m) => s + monat(m, 'kaltmiete')
-    + monat(m, 'stellplatz') + monat(m, 'sonstige'), 0);
-  const nk = laufende.reduce((s, m) => s + monat(m, 'nebenkosten_vz'), 0);
-  const zellen = [];
-  if (kalt) zellen.push(['kv', eur(kalt), 'Miete / Monat']);
-  if (nk) zellen.push(['kv', eur(nk), 'NK-Vorauszahlung']);
-  if (kalt && effektiveFlaeche(e)) zellen.push(['kv', eur(kalt / effektiveFlaeche(e)), 'je m²']);
-  if (!zellen.length) return '';
-  return `<div class="kennzahlen">${zellen.map(([k, w, l]) =>
-    `<div class="kennzahl"><span class="${k}">${w}</span>
-       <span class="kl">${esc(l)}</span></div>`).join('')}</div>`;
+/* N20/N21 — grafischer Einstieg statt Kennzahlen-Kacheln: der Miet- und
+   Nebenkostenverlauf aus den Mietverhältnissen. Ein Mietverhältnis steuert
+   seinen Monatsbetrag (Turnus normalisiert) zu jedem Monat bei, den es abdeckt
+   (ab_datum … bis_datum ||heute). Ein Monat ohne aktives Verhältnis bleibt leer
+   — das ist der Leerstand und wird als solcher gezeigt.
+
+   `flaeche` ist der Teiler für die €/m²-Linie: im Fokus die effektive Fläche
+   der Einheit, am Haus die Summe über alle Einheiten (Ø €/m²). Ist sie 0,
+   entfällt die Linie.
+
+   Bis ~24 Monate monatlich; wird die Historie länger als 30 Monate, wird auf
+   Quartale verdichtet (Ø Monatsbetrag je Quartal) und auf die letzten drei
+   Jahre begrenzt — sonst quetschen sich zu viele Säulen ins Bild. */
+const MONATS_KURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
+function mietVerlauf(mieten, flaeche) {
+  // Geplante zählen noch nicht; beendete gehören zur Historie und bleiben drin.
+  const aktive = (mieten || []).filter(m => !m.geplant && m.ab_datum);
+  if (!aktive.length) return [];
+
+  const idx = s => { const d = new Date(s); return d.getFullYear() * 12 + d.getMonth(); };
+  const heute = new Date();
+  const endM = heute.getFullYear() * 12 + heute.getMonth();
+  let startM = Math.min(...aktive.map(m => idx(m.ab_datum)));
+  if (startM > endM) startM = endM;
+
+  const faktor = m => proJahr(m.turnus) / 12;  // Turnus auf Monatsbetrag
+  const monate = [];
+  for (let mm = startM; mm <= endM; mm++) {
+    let miete = 0, nk = 0;
+    for (const m of aktive) {
+      const a = idx(m.ab_datum);
+      const b = m.bis_datum ? idx(m.bis_datum) : endM;
+      if (mm >= a && mm <= b) {
+        const f = faktor(m);
+        miete += (m.kaltmiete || 0) * f;
+        nk += (m.nebenkosten_vz || 0) * f;
+      }
+    }
+    monate.push({ m: mm, miete, nk });
+  }
+
+  const punkt = (miete, nk, label) => ({
+    miete, nk, label,
+    qm: flaeche > 0 ? miete / flaeche : null,
+  });
+
+  if (monate.length > 30) {
+    // Auf Quartale verdichten: Ø Monatsbetrag je Quartal, letzte 12 Quartale.
+    const eimer = new Map();
+    for (const b of monate) {
+      const y = Math.floor(b.m / 12), q = Math.floor((b.m % 12) / 3);
+      const key = y * 4 + q;
+      const e = eimer.get(key) || { y, q, miete: 0, nk: 0, n: 0 };
+      e.miete += b.miete; e.nk += b.nk; e.n++;
+      eimer.set(key, e);
+    }
+    const quartale = [...eimer.values()].sort((a, b) => (a.y * 4 + a.q) - (b.y * 4 + b.q))
+      .slice(-12);
+    return quartale.map(e =>
+      punkt(e.miete / e.n, e.nk / e.n, `Q${e.q + 1}/${String(e.y).slice(2)}`));
+  }
+
+  // Monatlich, höchstens die letzten 24 Monate.
+  return monate.slice(-24).map(b => {
+    const y = Math.floor(b.m / 12), mo = b.m % 12;
+    const label = mo === 0 ? `${MONATS_KURZ[mo]} ${String(y).slice(2)}` : MONATS_KURZ[mo];
+    return punkt(b.miete, b.nk, label);
+  });
+}
+
+/* Der Diagramm-Block: Überschrift, Säulen+Linie, Legende. Bei fehlenden Daten
+   zeigt mietChart selbst einen ruhigen Leer-Hinweis; dann entfällt die Legende. */
+function mietDiagrammHtml(mieten, flaeche) {
+  const punkte = mietVerlauf(mieten, flaeche);
+  const svg = mietChart(punkte, { format: eur });
+  const hatWerte = punkte.some(p => (p.miete || 0) + (p.nk || 0) > 0);
+  const leg = hatWerte ? legende([
+    { name: 'Kaltmiete', farbe: '#0F6E5C' },
+    { name: 'Nebenkosten', farbe: '#916212' },
+    { name: '€ / m²', farbe: '#16262C' },
+  ]) : '';
+  return `<div class="sekopf"><span class="seikon">${kostenIcon('Miete')}</span>
+      <h2 class="sec">Miete &amp; Nebenkosten</h2></div>
+    <div class="diagramm-karte">${svg}${leg}</div>`;
 }
 
 function eigentuemerHtml(stand) {
@@ -2001,9 +2077,11 @@ async function laden() {
     // CCCXLVI — keine zweite „Zurück zum Haus"-Titelkarte mehr: die Kopfzeile
     // bezieht sich auf die Einheit (das aktuelle Element), und „‹ Zurück" oben
     // führt ohnehin ans Haus. Die geschachtelte Titelzeile entfällt.
+    // N20 — kein penetranter § 556-Fristbanner mehr oben in der Einheit; die
+    // Frist steht weiterhin an den Abrechnungszeiträumen. Statt der drei
+    // Kennzahl-Kacheln der grafische Einstieg: Miete/NK-Verlauf mit €/m²-Linie.
     inhalt.innerHTML = `
-      ${bannerHtml(laufend)}
-      ${einheitKennzahlen(fokus, eigene)}
+      ${mietDiagrammHtml(eigene, effektiveFlaeche(fokus))}
       ${einheitStammHtml(fokus)}
       ${abschnitt('mieten', eigene, { imFokus: true })}
       ${zeitraumBlock}`;
@@ -2089,10 +2167,18 @@ async function laden() {
     return;
   }
 
+  // N21 — grafischer Einstieg GANZ OBEN: Miete/NK über alle Einheiten summiert,
+  // die €/m²-Linie über die effektive Gesamtfläche (Ø €/m²). Der obere
+  // KPI-Streifen entfällt: Verkehrswert und Eigenkapital gehören in die
+  // Eigentümerübersicht, die Jahresmiete steckt jetzt im Diagramm. Die
+  // §-556-Fristleiste ist oben raus (die Frist steht an den Zeiträumen), und der
+  // „Angaben fehlen noch"-Hinweis rückt zu den sonstigen Hinweisen nach unten.
+  // Reihenfolge: Chart → Einheiten → Abrechnungszeiträume → Stammdaten →
+  // Dokumente/sonstige Hinweise.
+  const gesamtFlaeche = einheiten.reduce((s, e) => s + effektiveFlaeche(e), 0);
+
   inhalt.innerHTML = `
-    ${bannerHtml(laufend)}
-    ${nachpflegeHtml(det.nachpflege)}
-    ${kennzahlenHtml(vermoegen, jahresmiete, restschuld, guthaben)}
+    ${mietDiagrammHtml(bereiche.mieten, gesamtFlaeche)}
     ${einheitenHtml()}
     ${zeitraumBlock}
     ${stammHtml(objekt)}
@@ -2109,6 +2195,7 @@ async function laden() {
         nur <strong>zusätzliche</strong> Policen (z. B. Rechtsschutz, Elementar).</p>` })}
     ${abschnitt('kredite', bereiche.kredite)}
     ${abschnitt('zahlungen', finanzZahlungen)}
+    ${nachpflegeHtml(det.nachpflege)}
     ${gefahrBlock}`;
 
   installHilfe(inhalt);
