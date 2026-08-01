@@ -532,6 +532,11 @@
     font:500 11.5px var(--body);min-height:36px}
   .belege a:hover{background:var(--teal-l);color:var(--teal-d)}
   .belege .kein{font:400 12px var(--body);color:var(--soft);line-height:1.45}
+  /* N8 — genaues Belegdatum an der Beleg-Zeile: dezentes Mono-Etikett in
+     gedeckter Farbe, damit man sieht, in welche (vermietete) Zeit die Position
+     fiel — rein informativ, ändert nichts an der anteiligen Verteilung. */
+  .belege .beleg-datum{margin-left:2px;font:600 10.5px var(--mono);
+    color:var(--soft);white-space:nowrap}
   /* CCLV — kostenfreie Belege als kleiner Anhänger („Kleideranhänger") am
      Kostenart-Thema. Dezent und gedeckt-grau, klar ohne Betrag — nie mit den
      grün gefüllten Kostenzeilen zu verwechseln. Sitzt unter der Kopfzeile und
@@ -800,13 +805,23 @@ function belegeZu(k) {
     (d.dateiname || '').toLowerCase().includes(stamm));
 }
 
+/* N8 — das genaue Belegdatum als DD.MM.YYYY. Direkt aus dem ISO-String
+   (YYYY-MM-DD) geschnitten statt über `new Date`, damit keine Zeitzone einen
+   Tag verschiebt. Ohne Datum bleibt es leer (kein „null"). */
+const belegDatumText = iso => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
+};
+
 /* `data-name` statt der Beschriftung: seit der Betrag mit im Text steht,
    hiesse der Beleg im Dialog sonst „…pdf · 1.284,50 €". */
-const belegLinks = (liste, extra = '') => `<div class="belege">${liste.map(d =>
-  `<a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
+const belegLinks = (liste, extra = '') => `<div class="belege">${liste.map(d => {
+  const datum = belegDatumText(d.belegdatum);
+  return `<a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
       title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}${
-    d.betrag ? ` · ${eur(d.betrag)}` : ''}</a>`
-).join('')}${extra}</div>`;
+    d.betrag ? ` · ${eur(d.betrag)}` : ''}${
+    datum ? `<span class="beleg-datum">${datum}</span>` : ''}</a>`;
+}).join('')}${extra}</div>`;
 
 /* Woraus der Betrag besteht. Vier Abschlagsrechnungen ergeben eine Position
    (CLXXXII) — ohne diesen Satz stünde dort nur eine Summe, die niemand mehr
