@@ -4237,3 +4237,139 @@ def lageplaene_einsortieren(trocken: bool = True,
     log.info("Lagepläne einsortiert: %d verschoben, %d Fehler",
              len(verschoben), len(fehler))
     return {"trocken": False, "verschoben": verschoben, "fehler": fehler}
+
+
+# --------------------------------------------------------------------------
+# Byte-gleiche Duplikate bündeln — inhaltsbasiert, unabhängig vom Dateinamen.
+#
+# Zwei verschieden benannte, aber byte-identische Dateien sind Duplikate. Statt
+# eine davon zu löschen (nie löschen), wird eine „behalten"-Kopie am Platz
+# gelassen und die übrigen der Gruppe in einen Sammel-Unterordner
+# „99_Duplikate" verschoben — per MOVE über `_beleg_umziehen`, also
+# kollisionssicher, mit Sidecar und DB-Eintrag, nie überschreiben.
+#
+# Byte-Gleichheit wird bewiesen, indem jede Datei geladen und selbst per SHA1
+# gehasht wird — namensunabhängig und wirklich byte-genau, nicht über einen
+# Namens- oder Größenvergleich. Nur eine Gruppe mit mehr als einer identischen
+# Datei zählt; die einzige Kopie einer Datei wird nie bewegt.
+#
+# Idempotent: Dokumente, die bereits im „99_Duplikate"-Ordner liegen, werden von
+# der Betrachtung ausgenommen — weder als „behalten"-Kandidat noch als zu
+# verschieben. So findet ein zweiter Lauf keine Duplikate mehr und nichts wandert
+# ein zweites Mal (keine Endlosverschiebung).
+# --------------------------------------------------------------------------
+
+DUPLIKAT_ORDNER = "99_Duplikate"
+
+
+def _duplikat_ziel(o: Objekt) -> str:
+    """Der Sammelordner für verschobene Duplikate: „<Objektordner>/99_Duplikate"."""
+    return f"{o.nc_ordner.strip('/')}/{DUPLIKAT_ORDNER}"
+
+
+def _duplikat_rang(d: Dokument) -> tuple[int, int, int]:
+    """Sortierschlüssel für die „behalten"-Wahl — der kleinste bleibt.
+
+    Vorrang: verbucht (`position_id` gesetzt) vor unverbucht, dann ein Beleg mit
+    `zeitraum_id` vor einem ohne, zuletzt die kleinste `id`. So bleibt die
+    „beste" Kopie am Platz und verschoben werden bevorzugt die nicht verbuchten."""
+    return (0 if d.position_id else 1, 0 if d.zeitraum_id else 1, d.id or 0)
+
+
+def _duplikat_gruppen(session: Session, client, o: Objekt
+                      ) -> tuple[list[tuple[str, Dokument, list[Dokument]]],
+                                 list[dict]]:
+    """Bildet die Duplikatgruppen einer Immobilie über einen SHA1 des Inhalts.
+
+    Gibt `(gruppen, fehler)` zurück. `gruppen`: je echtem Duplikat ein Tupel
+    `(sha1, behalten, [verschieben…])`, wobei `verschieben` nie leer und
+    `behalten` die beste Kopie ist. `fehler`: nicht ladbare Belege, die
+    übersprungen (nicht abgebrochen) wurden.
+
+    Ausgenommen sind Sidecars, Lagepläne (mehrere Fotos desselben Plans sind
+    gewollt) und Belege, die bereits im Sammelordner liegen (Idempotenz)."""
+    import hashlib
+    ziel = _duplikat_ziel(o).strip("/")
+    kandidaten = [
+        d for d in session.exec(
+            select(Dokument).where(Dokument.objekt_id == o.id)).all()
+        if (d.pfad or "").startswith("/")
+        and not _ist_sidecar(d.dateiname)
+        and d.kategorie != LAGEPLAN
+        and _elternordner(d.pfad) != ziel]
+
+    nach_sha1: dict[str, list[Dokument]] = {}
+    fehler: list[dict] = []
+    for d in kandidaten:
+        try:
+            rohdaten, _typ = client.hole(d.pfad)
+        except NextcloudFehler as f:
+            # Ein nicht ladbarer Beleg hält den Lauf nicht an — er wird
+            # übersprungen, nie als Duplikat behandelt (byte-genau geht nicht).
+            log.info("Duplikat-Prüfung übersprungen (%s): %s", d.pfad, f)
+            fehler.append({"id": d.id, "name": d.dateiname, "grund": str(f)})
+            continue
+        sha1 = hashlib.sha1(rohdaten).hexdigest()
+        nach_sha1.setdefault(sha1, []).append(d)
+
+    gruppen: list[tuple[str, Dokument, list[Dokument]]] = []
+    for sha1, docs in nach_sha1.items():
+        if len(docs) < 2:
+            continue                                   # keine Kopie = kein Duplikat
+        docs.sort(key=_duplikat_rang)
+        gruppen.append((sha1, docs[0], docs[1:]))
+    return gruppen, fehler
+
+
+@router.post("/objekte/{slug}/duplikate-buendeln")
+def duplikate_buendeln(slug: str, trocken: bool = True,
+                       session: Session = Depends(get_session)) -> dict:
+    """Verschiebt byte-gleiche Duplikat-Belege in den Ordner „99_Duplikate".
+
+    Inhaltsbasiert, unabhängig vom Dateinamen: jede Datei wird geladen und per
+    SHA1 gehasht; nur wirklich byte-gleiche Belege gelten als Duplikat. Je Gruppe
+    bleibt die beste Kopie am Platz (`_duplikat_rang`: verbucht > mit Zeitraum >
+    kleinste id), die übrigen werden nach „99_Duplikate" verschoben (`_beleg_
+    umziehen`: Datei + Sidecar + DB-Eintrag, kollisionssicher, nie überschreiben,
+    nie löschen). Eine einzige/letzte Kopie wird nie bewegt.
+
+    `?trocken=true` (Vorgabe): ändert nichts, liefert nur den Plan — je Gruppe
+    `{sha1, behalten:{id,name}, verschieben:[{id,name}…]}`. `?trocken=false`:
+    führt aus und liefert `{gebündelt, gruppen, fehler}`.
+
+    Idempotent: Belege, die schon in „99_Duplikate" liegen, werden nicht erneut
+    betrachtet — ein zweiter Lauf verschiebt nichts mehr."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    _cloud_pflicht(o)
+    client = verbindung(session)
+    gruppen, fehler = _duplikat_gruppen(session, client, o)
+
+    if trocken:
+        return {
+            "trocken": True,
+            "gruppen": [{
+                "sha1": sha1,
+                "behalten": {"id": behalten.id, "name": behalten.dateiname},
+                "verschieben": [{"id": d.id, "name": d.dateiname}
+                                for d in verschieben],
+            } for sha1, behalten, verschieben in gruppen],
+        }
+
+    ziel = _duplikat_ziel(o)
+    gebuendelt = 0
+    for _sha1, _behalten, verschieben in gruppen:
+        for d in verschieben:
+            try:
+                _ordner_sichern(client, ziel, ziel)
+                _beleg_umziehen(session, client, d, ziel, d.dateiname)
+            except Exception as e:                            # noqa: BLE001
+                session.rollback()
+                log.warning("Duplikat nicht gebündelt (%s): %s", d.pfad, e)
+                fehler.append({"id": d.id, "name": d.dateiname, "grund": str(e)})
+                continue
+            gebuendelt += 1
+    log.info("Duplikate gebündelt für %s: %d verschoben, %d Gruppen, %d Fehler",
+             o.slug, gebuendelt, len(gruppen), len(fehler))
+    return {"gebündelt": gebuendelt, "gruppen": len(gruppen), "fehler": fehler}
