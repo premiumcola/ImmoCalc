@@ -313,6 +313,14 @@
      Hochformat schmal-hoch; beide bleiben kompakt. */
   .lp-vorschau img{display:block;height:158px;width:auto;max-width:100%;
     object-fit:contain;background:var(--sheet)}
+  /* N13 — auf iOS/schmal alle Pläne in EINER Zeile: zweiter/dritter klein
+     rechts neben dem ersten, horizontal scrollbar statt Umbruch. */
+  @media(max-width:520px){
+    .lp-liste{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+      padding-bottom:6px;scroll-snap-type:x proximity}
+    .lp-karte{scroll-snap-align:start}
+    .lp-vorschau img{height:130px}
+  }
   /* N4 — der Anzeigename als gedämpfte Pille UNTEN LINKS in der Ecke über dem
      Plan, damit sich Pläne (1.OG, DG …) auseinanderhalten lassen. */
   .lp-name{position:absolute;left:10px;bottom:10px;max-width:calc(100% - 20px);
