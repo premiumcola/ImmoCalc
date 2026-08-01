@@ -458,6 +458,14 @@
      und Prozentanteil machen sie lesbar. */
   .vt{margin-top:2px}
   .vt .wahl{margin:6px 0 4px}
+  /* N7 — die Aufteilung hängt sichtbar unter dem „Verteilen nach"-Wähler:
+     eine Stufe eingerückt, dezent vertieft („eingebrannt") und oben nah an
+     den Chooser angedockt. */
+  .vt-aufteilung{margin:3px 0 2px 14px;background:var(--paper);
+    border-radius:12px;padding:6px 13px 12px;
+    box-shadow:inset 0 1px 2px rgba(22,38,44,.06)}
+  .vt-aufteilung > .zk:first-child{margin-top:6px}
+  @media(max-width:520px){ .vt-aufteilung{margin-left:9px;padding:6px 10px 11px} }
   .vt .hinweis{font:400 11.5px var(--body);color:var(--soft);line-height:1.45;
                margin:8px 0 2px}
   .gw{display:flex;align-items:center;gap:8px;padding:5px 0}
@@ -1158,10 +1166,12 @@ function verteilungHtml(k) {
       ${k.ohne_verteilung ? `<div class="warnung"><span>▲</span>
         <span><b>Ohne Gewichte fließen die ${eur(k.betrag)} mit 0,00 € ein.</b>
         </span></div>` : ''}
-      <div class="zk">Aufteilung</div>
-      ${vorabZeileHtml(k)}
-      ${aufteilung}
-      ${doppelteEinheit(felder.map(([p]) => p))}
+      <div class="vt-aufteilung">
+        <div class="zk">Aufteilung</div>
+        ${vorabZeileHtml(k)}
+        ${aufteilung}
+        ${doppelteEinheit(felder.map(([p]) => p))}
+      </div>
       ${vorabHtml(k)}
     </div>`;
 }
