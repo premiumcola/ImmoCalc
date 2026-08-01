@@ -218,6 +218,20 @@
     border:3px solid rgba(255,255,255,.32);border-top-color:#fff;
     animation:bddspin .8s linear infinite}
   .drop-lade .txt{color:#fff;font:600 13px var(--disp);letter-spacing:-.01em}
+  /* N54 — Ladeanzeige DIREKT in der NK-Zeile, während ein abgelegter Beleg
+     hochgeladen und verbucht wird: der Nutzer sieht am richtigen Ort „ich
+     verarbeite das gerade", statt nur einen Toast. Solange sie läuft, treten
+     „Datei wählen", Haken, Betragsfeld und Detail-Knopf zurück. */
+  .pruef.verarbeitet .scanmini,
+  .pruef.verarbeitet .haken,
+  .pruef.verarbeitet .kopf-betrag-box,
+  .pruef.verarbeitet .wdetail{display:none}
+  .zeile-lade{display:inline-flex;align-items:center;gap:8px;flex:none;
+    padding:6px 12px;border-radius:999px;background:var(--teal-l);color:var(--teal-d);
+    font:600 12px var(--disp);letter-spacing:-.01em;white-space:nowrap}
+  .zeile-lade .kringel{width:14px;height:14px;border-radius:50%;flex:none;
+    border:2px solid rgba(15,110,92,.28);border-top-color:var(--teal);
+    animation:bddspin .7s linear infinite}
   /* Hinweis in der Drop-Maske, wenn die Datei schon in der Ablage liegt. */
   .beleg-drop-dlg .dup-hinweis{background:var(--amber-bg);border-radius:12px;
     padding:11px 13px;margin:0 0 15px;font:400 12.5px var(--body);color:var(--ink);
@@ -226,6 +240,10 @@
     margin-bottom:2px}
   .beleg-drop-dlg .dup-hinweis .pfad{display:block;font:500 11px var(--mono);
     color:var(--soft);margin:4px 0 3px;word-break:break-all}
+  /* N54 — Inline-Fehler im Drop-Dialog (fehlender Betrag), sichtbar direkt über
+     dem Knopf statt als Toast hinter dem Modal. */
+  .beleg-drop-dlg .bdd-err{background:var(--neg);color:#fff;border-radius:11px;
+    padding:9px 12px;margin:0 0 11px;font:600 12px var(--body);line-height:1.45}
   /* Gefüllte Zeile sanft grün herausheben: man sieht auf einen Blick, wo schon
      ein Betrag steht — und in welcher Höhe. Kein greller Block, sondern ein
      weicher Verlauf von links plus ein schmaler Akzent an der Kante. */
@@ -2644,8 +2662,9 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbi
             <div><label>Betrag (€)</label>
               <input class="inp" type="number" step="0.01" data-f="betrag"
                 value="${vorschlag?.betrag != null ? Math.abs(vorschlag.betrag) : ''}"
-                placeholder="optional"></div>
+                placeholder="Rechnungsbetrag"></div>
           </div>
+          <div class="bdd-err" data-err hidden></div>
           <div class="bdd-fuss">
             <button class="btn" data-ok>${dup?.gefunden ? 'Verknüpfen' : 'Ablegen'}</button>
           </div>
@@ -2692,14 +2711,27 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbi
     kibtn.onclick = neuErkennen;
     dlg.querySelector('[data-nein]').onclick = () => dlg.close();
     dlg.querySelector('[data-ok]').onclick = () => {
-      entschieden = true;
       const f = s => dlg.querySelector(`[data-f="${s}"]`).value;
+      const betrag = parseFloat(String(f('betrag')).replace(',', '.')) || 0;
+      // N54 — ohne Betrag kann die Position keine Zahl tragen und bliebe grau;
+      // der Server würde die Verbuchung verweigern. Also hier klar sagen, statt
+      // scheinbar „abzulegen" und die Zeile ungefüllt zu lassen.
+      if (!(betrag > 0)) {
+        const err = dlg.querySelector('[data-err]');
+        err.textContent = 'Bitte den Rechnungsbetrag eintragen — ohne ihn '
+          + 'bleibt die Zeile leer.';
+        err.hidden = false;
+        const bf = dlg.querySelector('[data-f="betrag"]');
+        bf.focus(); bf.select?.();
+        return;
+      }
+      entschieden = true;
       fertig({
         aktion: dup?.gefunden ? 'verknuepfen' : 'ablegen',
         beschreibung: f('beschreibung').trim(),
         firma: f('firma').trim(),
         jahr: Number(f('jahr')) || jahr,
-        betrag: parseFloat(String(f('betrag')).replace(',', '.')) || 0,
+        betrag,
       });
       dlg.close();
     };
@@ -2755,6 +2787,24 @@ async function positionenKonfig() {
    Nextcloud-Ordner suchen, schlanke Bestätigung, dann verknüpfen (Duplikat) oder
    hochladen (PDF direkt, Bilder zu EINEM PDF). Objekt/Art/Kostenart aus dem
    Kontext, Bezeichnung/Jahr/Betrag aus der Maske. */
+/* N54 — Ladeanzeige in genau der NK-Zeile einer Kostenart einblenden (Spinner +
+   Text). `laden()` zeichnet die Liste danach neu und räumt den Zustand von
+   selbst wieder ab — grün bei Erfolg, alter Zustand bei Fehler. */
+function zeileVerarbeitet(kostenart, text) {
+  const zeile = inhalt.querySelector(`.pruef[data-kostenart="${CSS.escape(kostenart)}"]`);
+  if (!zeile) return;
+  zeile.classList.add('verarbeitet');
+  const kopf = zeile.querySelector('.kopf');
+  let badge = kopf.querySelector('.zeile-lade');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'zeile-lade';
+    badge.innerHTML = '<span class="kringel"></span><span class="zl-txt"></span>';
+    kopf.appendChild(badge);
+  }
+  badge.querySelector('.zl-txt').textContent = text;
+}
+
 async function belegPerDrop(kostenart, dateien) {
   const istPdf = d => d.type === 'application/pdf' || /\.pdf$/i.test(d.name || '');
   const pdfs = dateien.filter(istPdf);
@@ -2804,7 +2854,8 @@ async function belegPerDrop(kostenart, dateien) {
       { method: 'PATCH', body: { lieferant: wahl.firma } }).catch(() => {});
   }
 
-  melde('Beleg wird zugeordnet …');
+  // N54 — jetzt sichtbar IN der Zeile arbeiten, bis der Beleg verbucht ist.
+  zeileVerarbeitet(kostenart, 'Beleg wird abgelegt …');
   try {
     const dokIds = [];
     if (wahl.aktion === 'verknuepfen' && dup.pfad) {
@@ -2845,15 +2896,20 @@ async function belegPerDrop(kostenart, dateien) {
         if (res?.id) dokIds.push(res.id);
       }
     }
-    // CCCXCII — den/die Belege in die Kostenposition verbuchen: erst dadurch
-    // bekommt das Dokument seine `position_id` und erscheint an der Zeile.
+    // CCCXCII/N54 — den/die Belege in die Kostenposition verbuchen: erst dadurch
+    // bekommt das Dokument seine `position_id`, einen Betrag und die Zeile wird
+    // grün. Fehler NICHT verschlucken (früher `.catch(()=>{})` → „✓" gelogen,
+    // Zeile blieb grau): schlägt es fehl, sagen wir warum.
+    if (!dokIds.length) throw new Error('Der Beleg wurde nicht abgelegt.');
+    zeileVerarbeitet(kostenart, 'wird verbucht …');
     for (const id of dokIds) {
-      await api(`/dokumente/${id}/position`, { method: 'POST' }).catch(() => {});
+      await api(`/dokumente/${id}/position`, { method: 'POST' });
     }
     melde(`✓ Beleg „${kostenart}“ zugeordnet`, 'pos');
     await laden();
   } catch (fehler) {
-    melde(String(fehler.message || fehler), 'neg');
+    melde('Beleg nicht zugeordnet: ' + String(fehler.message || fehler), 'neg');
+    await laden();   // Zeile zurücksetzen (Ladeanzeige weg, alter Zustand)
   }
 }
 
