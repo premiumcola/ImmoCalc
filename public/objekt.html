@@ -258,9 +258,12 @@
   .sekopf .seikon{flex:none;display:inline-flex;align-items:center;
     color:var(--soft);align-self:center}
   .sekopf .seikon svg{width:20px;height:20px}
-  .sekopf button{border:none;background:none;color:var(--teal-d);cursor:pointer;
-    font:600 12.5px var(--disp);padding:8px 4px;margin:-8px -4px;min-height:44px}
-  .sekopf button:hover{color:var(--teal)}
+  /* N22 — Rubrik-Aktionen als einheitlicher teal Textlink: „Anlegen",
+     „Bearbeiten" und der „Hinzufügen"-Zugang (Button ODER Datei-Label). */
+  .sekopf button,.sekopf .seakt{border:none;background:none;color:var(--teal-d);
+    cursor:pointer;font:600 12.5px var(--disp);padding:8px 4px;margin:-8px -4px;
+    min-height:44px;display:inline-flex;align-items:center}
+  .sekopf button:hover,.sekopf .seakt:hover{color:var(--teal)}
   .sekopf .voll-hinweis{flex:none;color:var(--soft);font:600 11px var(--mono);
     display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
   .sekopf .voll-hinweis::before{content:"✓";color:var(--pos);font-weight:700}
@@ -428,14 +431,8 @@
      tippbar (iOS) über die ::after-Fläche. */
   /* N10 — EIN einheitlicher „＋"-Stil für alle Rubriken (Lageplan wie Mieten):
      farblos-neutral, gut sichtbar, aber nicht dominant. Kein Teal-Grün mehr. */
-  .sekopf-add{flex:none;align-self:center;position:relative;display:inline-flex;
-       align-items:center;justify-content:center;width:40px;height:40px;
-       border-radius:11px;background:var(--sheet);color:var(--ink);
-       border:1.5px solid var(--line);font:400 24px var(--body);line-height:1;
-       cursor:pointer;padding:0;box-shadow:0 1px 2px rgba(22,38,44,.06)}
-  .sekopf-add::after{content:"";position:absolute;inset:-2px}
-  .sekopf-add:hover{background:#F1F4F4;border-color:var(--soft)}
-  label.sekopf-add{display:inline-flex}
+  /* N22 — „hinzufügen" ist jetzt ein Textlink (.seakt, siehe .sekopf button),
+     kein „+"-Kasten mehr; der alte .sekopf-add-Stil entfällt. */
   /* CCCXXVI — der Lageplan-Weg ist ein <label> über einem versteckten
      Datei-Feld: als Block, damit die Breite wie beim Knopf greift. */
   label.add{display:block;text-align:center}
@@ -1438,9 +1435,11 @@ function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
   // N3 — Mietverhältnisse (auch Vormietverhältnisse) lassen sich JEDERZEIT
   // hinzufügen; ein laufendes muss dafür nicht beendet werden. Rücknahme der
   // CCCLXXXIX-Sperre — der „＋" oben rechts im Titel bleibt immer aktiv (CCCXC).
-  const kopfAdd = `<button class="sekopf-add" data-add="${bereich}"
+  // N22 — der „hinzufügen"-Zugang ist ein Textlink im selben Stil wie
+  // „Anlegen"/„Bearbeiten" der übrigen Rubriken, kein eigener „＋"-Kasten.
+  const kopfAdd = `<button class="seakt" data-add="${bereich}"
        aria-label="${esc(cfg.einzahl)} hinzufügen"
-       title="${esc(cfg.einzahl)} hinzufügen">＋</button>`;
+       title="${esc(cfg.einzahl)} hinzufügen">Hinzufügen</button>`;
   return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, kopfAdd, RUBRIKFARBE[bereich])}
     ${timelineHtml}${vorspann}
     <div class="liste">${zeilen}</div>`;
@@ -1527,8 +1526,8 @@ function einheitenHtml() {
     : `<div class="leerzeile">Noch keine Einheit erfasst</div>`;
 
   return `<div class="sekopf"><h2 class="sec">Einheiten</h2>
-      <button class="sekopf-add" data-einheit-neu="1" aria-label="Einheit hinzufügen"
-        title="Einheit hinzufügen">＋</button></div>
+      <button class="seakt" data-einheit-neu="1" aria-label="Einheit hinzufügen"
+        title="Einheit hinzufügen">Hinzufügen</button></div>
     <div class="liste">${zeilen}</div>
     ${einheiten.length ? `<div class="fussnote">Eine Einheit antippen: dort
       stehen Mieter, Kontakt und Nebenkosten dieser Wohnung. Alles Übergeordnete
@@ -1649,8 +1648,8 @@ function lageplanHtml(e) {
   const plaene = e.lageplaene || [];
   // N4 — Kopf über den gemeinsamen sekopfHtml-Helfer (bündig + gleiche
   // Icon-Ausrichtung/-Farbe wie die anderen Rubriken, kein Sonderweg mehr).
-  const add = `<label class="sekopf-add" title="Lageplan aufnehmen oder hochladen"
-        aria-label="Lageplan aufnehmen oder hochladen">＋
+  const add = `<label class="seakt" title="Lageplan aufnehmen oder hochladen"
+        aria-label="Lageplan aufnehmen oder hochladen">Hinzufügen
         <input type="file" accept="image/*,application/pdf" capture="environment"
                data-lageplan-neu="${e.id}" hidden></label>`;
   const kopf = sekopfHtml('Lageplan', 'Grundstück', add, RUBRIKFARBE.grundstueck);
@@ -3398,8 +3397,8 @@ function grundschuldenHtml() {
   return `<div class="sekopf"><span class="seikon"
         style="color:var(--neg)">${kostenIcon('Grundschuld')}</span>
       <h2 class="sec">Grundschulden</h2><span data-hilfe="grundschuld"></span>
-      <button class="sekopf-add" data-gs-neu="1" aria-label="Grundschuld hinzufügen"
-        title="Grundschuld hinzufügen">＋</button></div>
+      <button class="seakt" data-gs-neu="1" aria-label="Grundschuld hinzufügen"
+        title="Grundschuld hinzufügen">Hinzufügen</button></div>
     <div class="liste">${zeilen}</div>`;
 }
 

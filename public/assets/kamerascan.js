@@ -40,7 +40,7 @@ const SEITE_MIN_ANTEIL = 0.04;    // Seite ohne genug Hüllenlänge -> unsicher
 const KANTE_MAX_ABWEICHUNG = 32;  // Grad: Hüllenkante zählt noch zu der Seite
 const QUAD_ANTEIL_MIN = 0.75;     // Viereck vs. erkannte Fläche — Plausibilität
 const QUAD_ANTEIL_MAX = 1.6;
-const MIN_FLAECHE_ANTEIL = 0.55;  // Wächter a) zu viel abgeschnitten
+const MIN_FLAECHE_ANTEIL = 0.40;  // Wächter a) Abdeckung (N11): 51% bleibt grün, ruhiger Hinweis erst unter 40%
 const SEITENVERHAELTNIS_MIN = 0.7; // Wächter b) Längenverhältnis Gegenseiten
 const SEITENVERHAELTNIS_MAX = 1.4;
 const WINKEL_TOLERANZ_GRAD = 15;   // Wächter b) Winkeldifferenz Gegenseiten
@@ -766,8 +766,8 @@ export function kamerascanStarten(dateien, optionen = {}) {
         overlay.classList.toggle('kscan-warnt', g.flaecheZuKlein || g.schief);
         let hinweis;
         if (g.flaecheZuKlein) {
-          hinweis = `Nur ${Math.round(g.flaecheAnteil * 100)}% der Aufnahme erkannt — `
-            + 'Ecken bitte prüfen und auf die echten Blattkanten ziehen.';
+          hinweis = 'Foto bitte näher aufnehmen für bessere Qualität '
+            + `(nur ${Math.round(g.flaecheAnteil * 100)}% der Aufnahme erkannt).`;
         } else if (g.schief) {
           hinweis = 'Die erkannten Ecken wirken schief oder ungleich — bitte auf die '
             + 'vier echten Blattecken ziehen.';
