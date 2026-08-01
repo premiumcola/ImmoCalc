@@ -151,6 +151,80 @@ def test_anfangsstand_ist_idempotent(client):
     assert z_zeige["anfangsstand"] == {"stand": 1010.0, "datum": start}
 
 
+def test_anfangsstand_endpoint_anlegen_und_aktualisieren(client):
+    """CD — POST /zaehler/{id}/anfangsstand legt den Anfangsstand an und
+    aktualisiert ihn idempotent (eine Ablesung, kein Duplikat)."""
+    slug, zid, maske = _neues_objekt(client)
+    start, ende = maske["zeitraum"]["start"], maske["zeitraum"]["ende"]
+    z = _anlegen(client, slug, name="Kaltwasser", kostenart="Wasser",
+                 einheit_bezug="Büro")
+
+    # anlegen — Antwort ist die _zeige-Form mit dem gesetzten Anfangsstand.
+    r = client.post(f"/api/zaehler/{z}/anfangsstand",
+                    json={"stand": 1000.0, "datum": start})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == z
+    assert body["anfangsstand"] == {"stand": 1000.0, "datum": start}
+    assert body["ablesungen"] == 1
+
+    # aktualisieren — dieselbe Ablesung, kein Duplikat.
+    r2 = client.post(f"/api/zaehler/{z}/anfangsstand",
+                     json={"stand": 1010.0, "datum": start})
+    assert r2.status_code == 200
+    assert r2.json()["anfangsstand"] == {"stand": 1010.0, "datum": start}
+    abls = client.get(f"/api/zaehler/{z}/ablesungen").json()
+    assert len(abls) == 1
+    assert abls[0]["notiz"] == "Anfangsstand"
+    assert abls[0]["zeitraum_id"] is None
+
+    # der Anfangsstand wirkt in der Interpolation als Vorwert der ersten Periode.
+    client.post(f"/api/zaehler/{z}/ablesungen",
+                json={"stand": 1210.0, "datum": ende, "zeitraum_id": zid})
+    zeile = next(zz for zz in
+                 client.get(f"/api/zeitraeume/{zid}/ablesung").json()["zaehler"]
+                 if zz["id"] == z)
+    assert zeile["verbrauch"] == 200.0
+    assert zeile["vorwert"] == {"stand": 1010.0, "datum": start}
+
+
+def test_ablesung_output_einheiten_und_kostenblock(client):
+    """CD — die Ablesungs-Maske führt je Zähler `einheiten` (Mehrfachzuordnung,
+    geparst) und `kostenblock` (aus der Kostenart abgeleitet)."""
+    slug, zid, _maske = _neues_objekt(client)
+    # Mehrfachzuordnung EG+1.OG über PATCH; Kostenart Warmwasser → Block Heizung.
+    a = _anlegen(client, slug, name="Boiler", kostenart="Warmwasser",
+                 einheit_bezug="EG")
+    assert client.patch(f"/api/zaehler/{a}",
+                        json={"einheiten": ["EG", " 1.OG "]}).status_code == 200
+    # weitere Zähler zur Block-Prüfung.
+    b = _anlegen(client, slug, name="Frisch", kostenart="Abwasser")
+    c = _anlegen(client, slug, name="Zähler-Strom", kostenart="Allgemeinstrom")
+    d = _anlegen(client, slug, name="Sonst", kostenart="Kabelanschluss")
+    e = _anlegen(client, slug, name="Fallback", kostenart="Wasser",
+                 einheit_bezug="Büro")   # ohne einheiten → Fallback einheit_bezug
+
+    zeilen = {zz["name"]: zz for zz in
+              client.get(f"/api/zeitraeume/{zid}/ablesung").json()["zaehler"]}
+    # Mehrfachzuordnung getrimmt geparst.
+    assert zeilen["Boiler"]["einheiten"] == ["EG", "1.OG"]
+    assert zeilen["Boiler"]["kostenblock"] == "Heizung"
+    # Kostenblöcke.
+    assert zeilen["Frisch"]["kostenblock"] == "Wasser"
+    assert zeilen["Zähler-Strom"]["kostenblock"] == "Strom"
+    assert zeilen["Sonst"]["kostenblock"] == "Sonstige"
+    # Fallback: leeres einheiten-Feld → [einheit_bezug].
+    assert zeilen["Fallback"]["einheiten"] == ["Büro"]
+    assert zeilen["Fallback"]["kostenblock"] == "Wasser"
+    # PATCH auf leere Liste räumt die Mehrfachzuordnung wieder ab.
+    assert client.patch(f"/api/zaehler/{a}",
+                        json={"einheiten": []}).status_code == 200
+    zeilen = {zz["name"]: zz for zz in
+              client.get(f"/api/zeitraeume/{zid}/ablesung").json()["zaehler"]}
+    assert zeilen["Boiler"]["einheiten"] == ["EG"]   # Fallback einheit_bezug
+    assert b and c and d and e
+
+
 # --------------------------------------------------------------------------
 # 3) Rest-/Hauptzähler-Verknüpfung per PATCH (Verrechnungsart)
 # --------------------------------------------------------------------------

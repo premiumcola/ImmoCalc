@@ -315,6 +315,13 @@ class Zaehler(SQLModel, table=True):
     name: str                         # 'Gesamt Wasser', 'Büro KW', …
     kostenart: str = ""               # NK-Kostenart, in die der Verbrauch zählt
     einheit_bezug: str = ""           # Partei/Einheit des Verbrauchs ('' = Haus/Gesamt)
+    # CD — Mehrfachzuordnung: komma-separierte Liste von Einheit-`bezeichnung`en,
+    # denen der Verbrauch dieses Zählers gemeinsam gehört (z. B. ein Boiler-Zulauf
+    # für "EG,1.OG"). Der Verbrauch/die Kosten werden dann über diese Einheiten
+    # nach Person·Mietdauer aufgeteilt. `einheit_bezug` (Einzelwert) bleibt als
+    # Fallback bestehen: ist `einheiten` leer, gilt weiterhin `einheit_bezug`.
+    # Additiv, Default leer — jeder Bestand rechnet unverändert weiter.
+    einheiten: str = ""
     art: str = ""                     # N47: 'Kaltwasser'|'Warmwasser'|'Waschmaschine'|
                                       # 'Gartenwasser'|'Heizung' — Zeile in der Detailübersicht
     messeinheit: str = "m³"           # 'm³' | 'kWh' | 'Liter'

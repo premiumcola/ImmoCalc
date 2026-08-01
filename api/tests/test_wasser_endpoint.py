@@ -130,6 +130,69 @@ def test_wasser_endpoint_kostensplit_2024():
     assert abs(eg["summe"] / og["summe"] - 2.0) <= 0.02
 
 
+def _aufbau_mehrfach():
+    """CD — ein Warmwasser-Boiler versorgt EG UND 1.OG gemeinsam. Sein Verbrauch
+    (30 m³) wird über die Mehrfachzuordnung nach Person·Mietdauer EG:1.OG = 2:1
+    aufgeteilt; der verbleibende Rest (10 m³) geht denselben 2:1-Weg."""
+    with Session(db.engine) as s:
+        o = Objekt(slug="boiler-haus", name="Boiler-Haus", start_monat=1)
+        s.add(o)
+        s.commit()
+        s.refresh(o)
+        oid = o.id
+        for bez in ("EG", "1.OG"):
+            s.add(Einheit(objekt_id=oid, bezeichnung=bez))
+        for einheit, partei, pers in (("EG", "EG-Mieter", 2),
+                                      ("1.OG", "OG-Mieter", 1)):
+            s.add(Miete(objekt_id=oid, einheit=einheit, partei=partei,
+                        personen=pers, ab_datum=START))
+        z = Zeitraum(objekt_id=oid, start=START, ende=ENDE, status="in Arbeit")
+        s.add(z)
+        s.commit()
+        s.refresh(z)
+        zid = z.id
+        s.add(Kostenposition(zeitraum_id=zid, kostenart="Wasser", betrag=120.0))
+        s.commit()
+
+        haupt = _zaehler(s, oid, "Gesamt Wasser", "Kaltwasser")
+        # Gemeinsamer Warmwasser-Boiler für EG + 1.OG (Mehrfachzuordnung).
+        boiler = Zaehler(objekt_id=oid, name="Boiler-Zulauf", art="Warmwasser",
+                         typ="gemessen", hauptzaehler_id=haupt, kostenart="Wasser",
+                         einheiten="EG,1.OG")
+        s.add(boiler)
+        s.commit()
+        s.refresh(boiler)
+        _ablesungen(s, haupt, zid, 40.0)     # Gesamt 40 m³
+        _ablesungen(s, boiler.id, zid, 30.0)  # Boiler 30 m³ → Rest 10 m³
+        return zid
+
+
+def test_wasser_endpoint_mehrfach_einheiten_split():
+    zid = _aufbau_mehrfach()
+    with Session(db.engine) as s:
+        res = wasser_detail(zid, session=s)
+
+    assert res["bereit"] is True, res
+    assert res["kosten"]["gesamt"] == 120.0
+    assert res["gesamt_m3"] == 40.0
+    # preis = 120/40 = 3. Boiler 30 m³ → 90 € (2:1: EG 60, 1.OG 30); Rest 10 m³
+    # → 30 € (2:1: EG 20, 1.OG 10). Summe EG 80, 1.OG 40 → Verhältnis 2:1.
+    summe = {e["name"]: e["summe"] for e in res["einheiten"]}
+    assert summe["EG"] == 80.0
+    assert summe["1.OG"] == 40.0
+    # Der Boiler erscheint als gemessene Zeile bei BEIDER Einheit, anteilig 2:1.
+    eg = next(e for e in res["einheiten"] if e["name"] == "EG")
+    og = next(e for e in res["einheiten"] if e["name"] == "1.OG")
+    eg_gemessen = [z for z in eg["zeilen"] if z["quelle"] == "gemessen"]
+    og_gemessen = [z for z in og["zeilen"] if z["quelle"] == "gemessen"]
+    assert eg_gemessen == [
+        {"art": "Warmwasser", "m3": 20.0, "kosten": 60.0, "quelle": "gemessen"}]
+    assert og_gemessen == [
+        {"art": "Warmwasser", "m3": 10.0, "kosten": 30.0, "quelle": "gemessen"}]
+    # Kontrollsumme exakt = Gesamtkosten.
+    assert abs(res["kontrolle"] - 120.0) <= 0.01
+
+
 def test_wasser_endpoint_nicht_bereit_ohne_betraege():
     """Ohne Wasserbeträge ist der Endpunkt nicht bereit und sagt, was fehlt."""
     with Session(db.engine) as s:

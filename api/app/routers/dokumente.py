@@ -3224,6 +3224,34 @@ def _byte_gleiche_geschwister(session: Session, client, d: Dokument,
     return gleiche
 
 
+def _keeper_erbt_luecken(keeper: Dokument, quellen: list[Dokument]) -> bool:
+    """Füllt fehlende Angaben des Keepers additiv aus den weichenden byte-
+    gleichen Kopien (N54). Nur Lücken werden gefüllt, nie ein vorhandener Wert
+    überschrieben; die Quellen stehen in Vorzugsreihenfolge (der frisch
+    abgelegte Beleg zuerst). Gibt zurück, ob sich etwas geändert hat."""
+    geaendert = False
+    for q in quellen:
+        if keeper.zeitraum_id is None and q.zeitraum_id is not None:
+            keeper.zeitraum_id = q.zeitraum_id
+            geaendert = True
+        if not keeper.kostenart and q.kostenart:
+            keeper.kostenart = q.kostenart
+            geaendert = True
+        if keeper.betrag is None and q.betrag is not None:
+            keeper.betrag = q.betrag
+            geaendert = True
+        if not keeper.jahr and q.jahr:
+            keeper.jahr = q.jahr
+            geaendert = True
+        if keeper.belegdatum is None and q.belegdatum is not None:
+            keeper.belegdatum = q.belegdatum
+            geaendert = True
+        if not keeper.kategorie and q.kategorie:
+            keeper.kategorie = q.kategorie
+            geaendert = True
+    return geaendert
+
+
 def _dedup_nach_scan(session: Session, client, d: Dokument,
                      inhalt: bytes) -> tuple[Dokument, int]:
     """Best-effort: entfernt byte-gleiche Zweitkopien des frisch abgelegten
@@ -3240,6 +3268,15 @@ def _dedup_nach_scan(session: Session, client, d: Dokument,
         return d, 0
     kandidaten = sorted([d, *gleiche], key=_dedup_rang)
     keeper = kandidaten[0]
+    # N54 — der Keeper erbt fehlende Angaben von den weichenden Kopien, den
+    # frischen `d` zuerst. Ohne das ging die gerade bewusst gesetzte Zuordnung
+    # verloren, wenn die ältere byte-gleiche Kopie als Keeper bestehen blieb:
+    # der Nutzer zog den Beleg in einen Zeitraum, der Keeper hatte aber keinen —
+    # und das Verbuchen scheiterte an „fehlt der Abrechnungszeitraum". Additiv:
+    # nur Lücken werden gefüllt, nie ein vorhandener Wert überschrieben. Vor dem
+    # Entfernen, solange die Verlierer-Objekte noch gültig sind.
+    geerbt = _keeper_erbt_luecken(
+        keeper, [k for k in ([d, *kandidaten[1:]]) if k is not keeper])
     entfernt = 0
     for verlierer in kandidaten[1:]:
         try:
@@ -3248,7 +3285,8 @@ def _dedup_nach_scan(session: Session, client, d: Dokument,
         except (NextcloudFehler, _NichtByteGleich) as fehler:
             # Nicht (mehr) byte-gleich oder nicht ladbar: nichts entfernen.
             log.warning("Dedup: %s nicht entfernt (%s)", verlierer.pfad, fehler)
-    if entfernt:
+    if entfernt or geerbt:
+        session.add(keeper)
         session.commit()
         session.refresh(keeper)
     return keeper, entfernt

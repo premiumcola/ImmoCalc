@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from .. import ablesung, belegposten, verteilung, wasser
+from .. import ablesung, belegposten, kostenarten, verteilung, wasser
 from ..db import get_session
 from ..deps import objekt_holen
 from ..models import (Ablesung, Einheit, Kostenposition, Miete, Objekt, Partei,
@@ -24,6 +24,32 @@ from ..models import (Ablesung, Einheit, Kostenposition, Miete, Objekt, Partei,
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["zaehler"])
+
+# CD — Ableitung des Kostenblocks aus der Kostenart. Zuerst über
+# `kostenarten.normalisieren` kanonisieren, dann umlaut-/schreibweisentolerant
+# auf einen der vier Blöcke abbilden. Heizung VOR Wasser prüfen, damit
+# „Warmwasser" (Heizung) nicht am „…wasser" hängenbleibt.
+def _kostenblock(kostenart: str) -> str:
+    """Einer von 'Wasser'|'Heizung'|'Strom'|'Sonstige'."""
+    k = kostenarten._fold(kostenarten.normalisieren(kostenart))
+    if any(t in k for t in ("heizung", "heizkost", "warmwasser", "heizoel",
+                            "oel", "warmwaerme", "waermewasser")):
+        return "Heizung"
+    if any(t in k for t in ("wasser", "abwasser", "niederschlag", "frischwasser")):
+        return "Wasser"
+    if "strom" in k:
+        return "Strom"
+    return "Sonstige"
+
+
+def _parse_einheiten(z: Zaehler) -> list[str]:
+    """CD — die Einheiten dieses Zählers als Liste. Aus dem komma-separierten
+    Feld `einheiten` (getrimmt, Leere raus); ist es leer, fällt es auf den
+    Einzelwert `einheit_bezug` zurück (leer → leere Liste)."""
+    liste = [t.strip() for t in (z.einheiten or "").split(",") if t.strip()]
+    if liste:
+        return liste
+    return [z.einheit_bezug] if z.einheit_bezug else []
 
 # CCCLXXX — der Anfangsstand („Erststand" vor der ersten Abrechnung) ist eine
 # ganz normale Ablesung, nur mit dieser Notiz markiert und ohne Zeitraum-Tag.
@@ -75,6 +101,12 @@ class AblesungIn(BaseModel):
     notiz: str = ""
 
 
+class AnfangsstandIn(BaseModel):
+    stand: float
+    datum: date
+    zeitraum_id: int | None = None
+
+
 class UebernahmeIn(BaseModel):
     kostenart: str
     schluessel: str = "verbrauch"
@@ -117,6 +149,11 @@ def aendern(zid: int, data: dict, session: Session = Depends(get_session)) -> di
                  "hauptzaehler_id", "reihenfolge", "aktiv", "notiz"):
         if feld in data:
             setattr(z, feld, data[feld])
+    # CD — Mehrfachzuordnung: `einheiten` kommt als Liste und wird komma-gejoint
+    # gespeichert (leere Liste → ""). Getrimmt, Leere raus.
+    if "einheiten" in data:
+        liste = data["einheiten"] or []
+        z.einheiten = ",".join(str(x).strip() for x in liste if str(x).strip())
     session.add(z)
     session.commit()
     return {"ok": True}
@@ -172,6 +209,31 @@ def ablesung_speichern(zid: int, data: AblesungIn,
     return {"id": a.id}
 
 
+@router.post("/zaehler/{zid}/anfangsstand")
+def anfangsstand_setzen(zid: int, data: AnfangsstandIn,
+                        session: Session = Depends(get_session)) -> dict:
+    """CD — den Anfangsstand (den `vorwert` der ersten Abrechnung) direkt in der
+    Maske editierbar machen. Idempotent: existiert schon eine Anfangs-Ablesung
+    (per Notiz markiert, sonst die früheste untaggte), wird deren Stand/Datum
+    aktualisiert; sonst wird sie neu angelegt. Der Anfangsstand ist eine ganz
+    normale Ablesung mit der Markierung `ANFANGSSTAND` und ohne Zeitraum-Tag —
+    so behandelt die Interpolation ihn wie jeden anderen Stand (CCCLXXX).
+
+    Gibt den aktualisierten Zähler-Stand zurück (wie `_zeige`)."""
+    z = _zaehler(session, zid)
+    abls = session.exec(select(Ablesung).where(Ablesung.zaehler_id == zid)
+                        .order_by(Ablesung.datum)).all()
+    vorhanden = next((a for a in abls if (a.notiz or "") == ANFANGSSTAND), None) \
+        or next((a for a in abls if a.zeitraum_id is None), None)
+    a = vorhanden or Ablesung(zaehler_id=zid, datum=data.datum, stand=data.stand)
+    a.datum, a.stand = data.datum, data.stand
+    a.zeitraum_id = data.zeitraum_id
+    a.notiz = ANFANGSSTAND
+    session.add(a)
+    session.commit()
+    return _zeige(session, z)
+
+
 # --------------------------------------------------------------------------
 # Eingabemaske je Abrechnungszeitraum — die Zähler in Reihenfolge mit Vorwert
 # und (falls erfasst) interpoliertem Verbrauch.
@@ -213,6 +275,9 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
         zeilen.append({
             "id": zae.id, "name": zae.name, "messeinheit": zae.messeinheit,
             "kostenart": zae.kostenart, "einheit_bezug": zae.einheit_bezug,
+            # CD — Mehrfachzuordnung + Kostenblock (bestehende Felder unverändert).
+            "einheiten": _parse_einheiten(zae),
+            "kostenblock": _kostenblock(zae.kostenart),
             "typ": zae.typ, "hauptzaehler_id": zae.hauptzaehler_id,
             "vorwert": None if not vorwert else {
                 "stand": round(vorwert["randwert"], 3),
@@ -302,7 +367,9 @@ def _zeige(session: Session, z: Zaehler) -> dict:
     anfang = next((a for a in abls if (a.notiz or "") == ANFANGSSTAND), None) \
         or next((a for a in abls if a.zeitraum_id is None), None)
     return {"id": z.id, "name": z.name, "kostenart": z.kostenart,
-            "einheit_bezug": z.einheit_bezug, "art": z.art, "messeinheit": z.messeinheit,
+            "einheit_bezug": z.einheit_bezug, "einheiten": _parse_einheiten(z),
+            "kostenblock": _kostenblock(z.kostenart),
+            "art": z.art, "messeinheit": z.messeinheit,
             "typ": z.typ, "hauptzaehler_id": z.hauptzaehler_id,
             "reihenfolge": z.reihenfolge, "aktiv": z.aktiv, "notiz": z.notiz,
             "ablesungen": len(abls),
@@ -351,20 +418,38 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
     zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
     verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
 
-    # Gesamtverbrauch = Hauptzähler (Kaltwasser, gemessen, ohne eigenen Haupt).
-    haupt = next((zae for zae in zaehler if zae.art == "Kaltwasser"
-                  and zae.typ == "gemessen" and zae.hauptzaehler_id is None), None)
+    # Gesamtverbrauch = Wasser-Hauptzähler: gemessen, ohne eigenen Haupt und
+    # Wasser-bezogen. Robuster als nur `art=='Kaltwasser'` — der reale „Gesamt
+    # Kaltwasser" trägt oft kein `art`-Feld, nur Name + Kostenart „Wasser"
+    # (sonst hieß es fälschlich „Gesamtverbrauch nicht verfügbar").
+    def _ist_wasser_haupt(zae: Zaehler) -> bool:
+        if zae.typ != "gemessen" or zae.hauptzaehler_id is not None:
+            return False
+        if zae.art == "Kaltwasser":
+            return True
+        if zae.art:                       # ein anderes spezifisches art ≠ Haupt
+            return False
+        name = (zae.name or "").lower()
+        return ("kaltwasser" in name or "gesamt" in name
+                or _kostenblock(zae.kostenart) == "Wasser")
+
+    haupt = next((zae for zae in zaehler if _ist_wasser_haupt(zae)), None)
     gesamt_m3 = verb.get(haupt.id) if haupt else None
 
-    # Unterzähler → Zaehlerposten (verbrauchsscharf einer Einheit zugeordnet).
-    posten = [
-        wasser.Zaehlerposten(name=zae.name, einheit=zae.einheit_bezug,
-                             m3=verb[zae.id], art=zae.art)
-        for zae in zaehler
-        if zae.typ == "gemessen" and zae.hauptzaehler_id
-        and zae.art in _UNTER_ARTEN and zae.einheit_bezug
-        and verb.get(zae.id) is not None
-    ]
+    # Unterzähler → Zaehlerposten. Verbrauchsscharf einer Einheit zugeordnet,
+    # oder (CD) über mehrere Einheiten aufgeteilt (Person·Mietdauer). Die Ziele
+    # kommen aus `einheiten` (mit `einheit_bezug` als Fallback).
+    posten = []
+    for zae in zaehler:
+        if not (zae.typ == "gemessen" and zae.hauptzaehler_id
+                and zae.art in _UNTER_ARTEN and verb.get(zae.id) is not None):
+            continue
+        ziele = _parse_einheiten(zae)
+        if not ziele:
+            continue
+        posten.append(wasser.Zaehlerposten(
+            name=zae.name, einheit=zae.einheit_bezug, m3=verb[zae.id],
+            art=zae.art, einheiten=ziele))
 
     # Gartenwasser — Menge aus dem Rest heraus, Kosten trägt der Eigentümer.
     garten_z = next((zae for zae in zaehler if zae.art == "Gartenwasser"), None)
@@ -398,9 +483,13 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
         select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
     parteien = list(session.exec(
         select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
-    kalt_einheiten = {zae.einheit_bezug for zae in zaehler
-                      if zae.art == "Kaltwasser" and zae.typ == "gemessen"
-                      and zae.hauptzaehler_id}
+    # CD — auch die Einheiten eines mehrfach zugeordneten Kaltwasser-Zählers
+    # haben einen eigenen Vollzähler und fallen aus dem Haupthaus-Rest heraus.
+    kalt_einheiten: set[str] = set()
+    for zae in zaehler:
+        if (zae.art == "Kaltwasser" and zae.typ == "gemessen"
+                and zae.hauptzaehler_id):
+            kalt_einheiten.update(_parse_einheiten(zae))
     bez = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
     partei_einheit = {b.partei: b.einheit for b in bez}
     rest_gewichte: dict[str, float] = {}

@@ -27,11 +27,22 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Zaehlerposten:
-    """Ein Unterzähler, der einer Einheit direkt zugeordnet ist."""
+    """Ein Unterzähler, der einer oder mehreren Einheiten zugeordnet ist."""
     name: str
-    einheit: str          # Ziel-Einheit (Bezeichnung/Slug), z. B. "Büro"
+    einheit: str          # Ziel-Einheit (Bezeichnung/Slug), z. B. "Büro" — Fallback
     m3: float             # verbrauchte Menge (Ablesung Ende − Anfang)
     art: str = "Kaltwasser"   # Zeile im Popup: Kaltwasser|Warmwasser|Waschmaschine
+    # CD — Mehrfachzuordnung: teilt dieser Zähler seinen Verbrauch/seine Kosten
+    # unter mehreren Einheiten (Person·Mietdauer), stehen sie hier. Leer =
+    # Einzelzuordnung über `einheit` (Fallback), Verhalten wie bisher.
+    einheiten: list[str] = field(default_factory=list)
+
+    def ziele(self) -> list[str]:
+        """Die Einheiten, auf die dieser Posten aufgeteilt wird. Fällt auf den
+        Einzelwert `einheit` zurück, wenn `einheiten` leer ist."""
+        if self.einheiten:
+            return list(self.einheiten)
+        return [self.einheit] if self.einheit else []
 
 
 @dataclass
@@ -88,7 +99,23 @@ def verrechne(komponenten: dict[str, float], gesamt_m3: float,
         betrag = preis * max(0.0, z.m3)
         zaehler_zeige.append({"name": z.name, "einheit": z.einheit,
                               "m3": round(z.m3, 3), "kosten": _r2(betrag)})
-        zu_einheit(z.einheit, betrag, f"Zähler {z.name}", z.m3)
+        ziele = z.ziele()
+        if len(ziele) <= 1:
+            # Einzelzuordnung (oder gar keine Einheit) — alles auf eine Einheit.
+            name = ziele[0] if ziele else z.einheit
+            zu_einheit(name, betrag, f"Zähler {z.name}", z.m3)
+            continue
+        # CD — Mehrfachzuordnung: m³ UND Kosten über die Einheiten dieses Zählers
+        # nach Person·Mietdauer (dieselben `rest_gewichte`, beschränkt auf genau
+        # diese Einheiten). Haben sie keine Gewichte, zu gleichen Teilen.
+        gew = {name: max(0.0, rest_gewichte.get(name, 0.0)) for name in ziele}
+        summe_gew = sum(gew.values())
+        if summe_gew <= 0:
+            gew = {name: 1.0 for name in ziele}
+            summe_gew = float(len(ziele))
+        for name in ziele:
+            anteil = gew[name] / summe_gew
+            zu_einheit(name, betrag * anteil, f"Zähler {z.name}", z.m3 * anteil)
 
     # Rest per Gewicht auf die Haupthaus-Einheiten.
     gew_summe = sum(max(0.0, g) for g in rest_gewichte.values())
