@@ -302,30 +302,34 @@
   .eintrag .del:hover{color:var(--neg)}
   /* CCCLXIX/CCCLXXXI — Lageplan: Inline-Vorschau des ersten Plans (höhen-
      begrenzt), plus je Zeile zwei leise Aktionen (umbenennen, entfernen). */
-  .lp-karte{position:relative}
-  .lp-karte + .lp-karte{border-top:1px solid var(--line)}
-  .lp-vorschau{position:relative;display:block;width:100%;border:none;
-    padding:12px 12px 13px;background:var(--paper);cursor:pointer;line-height:0}
-  .lp-vorschau img{display:block;width:100%;max-height:160px;object-fit:contain;
-    border-radius:10px;background:var(--sheet)}
-  /* CCCLXXXV — der Anzeigename, sanft über das Bild gelegt: unten links eine
-     gedämpfte Pille, damit sich Pläne (1.OG, DG …) auf einen Blick auseinander
-     halten lassen, ohne das Bild zu verdecken. */
-  .lp-name{position:absolute;left:20px;bottom:21px;max-width:calc(100% - 40px);
-    padding:4px 11px;border-radius:999px;background:rgba(15,20,22,.6);color:#fff;
+  /* N4 — mehrere Pläne als kompakte Elemente NEBENEINANDER, jedes im
+     Seitenverhältnis des Plans (nicht ganzseitig gedehnt), links bündig. */
+  .lp-liste{display:flex;flex-wrap:wrap;gap:12px;padding:2px 0 2px}
+  .lp-karte{position:relative;flex:0 0 auto;max-width:100%}
+  .lp-vorschau{position:relative;display:block;border:none;padding:0;
+    background:var(--paper);cursor:pointer;line-height:0;border-radius:12px;
+    overflow:hidden;box-shadow:0 1px 3px rgba(22,38,44,.10)}
+  /* Höhe fest, Breite aus dem Seitenverhältnis — Querformat wird breit-flach,
+     Hochformat schmal-hoch; beide bleiben kompakt. */
+  .lp-vorschau img{display:block;height:158px;width:auto;max-width:100%;
+    object-fit:contain;background:var(--sheet)}
+  /* N4 — der Anzeigename als gedämpfte Pille UNTEN LINKS in der Ecke über dem
+     Plan, damit sich Pläne (1.OG, DG …) auseinanderhalten lassen. */
+  .lp-name{position:absolute;left:10px;bottom:10px;max-width:calc(100% - 20px);
+    padding:4px 11px;border-radius:999px;background:rgba(15,20,22,.62);color:#fff;
     font:600 11.5px var(--mono);letter-spacing:.02em;line-height:1.35;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;
     -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
   /* Zwei leise Aktionen schweben oben rechts auf der Karte. */
-  .lp-akte{position:absolute;top:16px;right:16px;display:flex;gap:5px}
+  .lp-akte{position:absolute;top:9px;right:9px;display:flex;gap:5px}
   .lp-akt{width:34px;height:34px;border-radius:9px;border:none;cursor:pointer;
     display:flex;align-items:center;justify-content:center;
-    background:rgba(255,255,255,.85);color:var(--ink);font:400 15px var(--body);
+    background:rgba(255,255,255,.88);color:var(--ink);font:400 15px var(--body);
     box-shadow:0 1px 3px rgba(22,38,44,.16)}
   .lp-akt:hover{background:#fff}
   .lp-akt.lp-weg:hover{color:var(--neg)}
-  /* Vorschau nicht ladbar (ohne Cloud): Bild weg, Name/Aktionen bleiben. */
-  .lp-karte.lp-ohne-bild .lp-vorschau{min-height:66px;display:flex;
+  /* Vorschau nicht ladbar (ohne Cloud): kompaktes Kästchen mit Name statt Bild. */
+  .lp-karte.lp-ohne-bild .lp-vorschau{width:210px;height:132px;display:flex;
     align-items:center;justify-content:center}
   .lp-karte.lp-ohne-bild .lp-vorschau img{display:none}
   .lp-karte.lp-ohne-bild .lp-name{position:static;background:var(--sheet);
@@ -1483,16 +1487,19 @@ function lageplanKarte(p, e) {
 }
 function lageplanHtml(e) {
   const plaene = e.lageplaene || [];
-  const inhalt = plaene.length
-    ? plaene.map(p => lageplanKarte(p, e)).join('')
-    : `<div class="leerzeile">Noch kein Lageplan hinterlegt</div>`;
-  return `<div class="sekopf"><span class="seikon">${kostenIcon('Grundstück')}</span>
-      <h2 class="sec">Lageplan</h2>
-      <label class="sekopf-add lageplan-neu" title="Lageplan aufnehmen oder hochladen"
+  // N4 — Kopf über den gemeinsamen sekopfHtml-Helfer (bündig + gleiche
+  // Icon-Ausrichtung/-Farbe wie die anderen Rubriken, kein Sonderweg mehr).
+  const add = `<label class="sekopf-add lageplan-neu" title="Lageplan aufnehmen oder hochladen"
         aria-label="Lageplan aufnehmen oder hochladen">＋
         <input type="file" accept="image/*,application/pdf" capture="environment"
-               data-lageplan-neu="${e.id}" hidden></label></div>
-    <div class="liste">${inhalt}</div>`;
+               data-lageplan-neu="${e.id}" hidden></label>`;
+  const kopf = sekopfHtml('Lageplan', 'Grundstück', add, RUBRIKFARBE.grundstueck);
+  // N4 — Pläne als kompakte Elemente im Seitenverhältnis nebeneinander (Flex),
+  // nicht als ganzseitige Kästen untereinander.
+  const inhalt = plaene.length
+    ? `<div class="lp-liste">${plaene.map(p => lageplanKarte(p, e)).join('')}</div>`
+    : `<div class="liste"><div class="leerzeile">Noch kein Lageplan hinterlegt</div></div>`;
+  return `${kopf}${inhalt}`;
 }
 
 /* Die Inline-Vorschau des ersten Plans: das Bild über denselben Weg holen, über
