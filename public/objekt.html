@@ -395,9 +395,6 @@
        border-radius:12px;padding:12px;font:600 13.5px var(--disp);cursor:pointer;
        min-height:44px;margin-bottom:4px}
   .add:hover{background:var(--teal-l)}
-  /* CCCLXXXIX — statt des Hinzufügen-Knopfs, wenn schon aktuell vermietet. */
-  .add-gesperrt{font:500 12px var(--body);color:var(--soft);line-height:1.5;
-       padding:10px 13px;background:var(--paper);border-radius:12px;margin-bottom:4px}
   /* CCCXC — kompakter „＋"-Knopf oben rechts am Rubrik-Titel statt eines
      vollbreiten Kastens, der die Seite in die Länge zog. 40px sichtbar, 44px
      tippbar (iOS) über die ::after-Fläche. */
@@ -1274,22 +1271,15 @@ function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
       : eintragZeile(cfg, bereich, e, imFokus)).join('');
   }
 
-  // CCCLXXXIX — solange die Wohnung aktuell vermietet ist, lässt sich kein
-  // zweites Mietverhältnis daneben anlegen; erst das laufende beenden.
-  const mietGesperrt = bereich === 'mieten'
-    && eintraege.some(m => !m.beendet && !m.geplant);
-  // CCCXC — der Hinzufügen-Knopf sitzt jetzt kompakt oben rechts im Titel.
-  const kopfAdd = mietGesperrt ? ''
-    : `<button class="sekopf-add" data-add="${bereich}"
-         aria-label="${esc(cfg.einzahl)} hinzufügen"
-         title="${esc(cfg.einzahl)} hinzufügen">＋</button>`;
-  const fuss = mietGesperrt
-    ? `<div class="add-gesperrt">Aktuell vermietet — zum Wechseln erst das
-        laufende Mietverhältnis beenden.</div>` : '';
+  // N3 — Mietverhältnisse (auch Vormietverhältnisse) lassen sich JEDERZEIT
+  // hinzufügen; ein laufendes muss dafür nicht beendet werden. Rücknahme der
+  // CCCLXXXIX-Sperre — der „＋" oben rechts im Titel bleibt immer aktiv (CCCXC).
+  const kopfAdd = `<button class="sekopf-add" data-add="${bereich}"
+       aria-label="${esc(cfg.einzahl)} hinzufügen"
+       title="${esc(cfg.einzahl)} hinzufügen">＋</button>`;
   return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, kopfAdd, RUBRIKFARBE[bereich])}
     ${vorspann}
-    <div class="liste">${zeilen}</div>
-    ${fuss}`;
+    <div class="liste">${zeilen}</div>`;
 }
 
 /* ---- CXLI/CLXVIII: die Einheiten des Hauses und ihr Fokus ---------------- */
