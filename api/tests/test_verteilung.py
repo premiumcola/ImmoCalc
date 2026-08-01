@@ -145,6 +145,19 @@ def test_bewohnermonate_taggenau_beim_mieterwechsel():
     assert round(sum(g.values()), 2) == 12.0
 
 
+def test_mietverhaeltnis_nach_dem_zeitraum_erzeugt_keinen_bezug():
+    """N5 — ein Mietverhältnis, das erst NACH dem Abrechnungszeitraum beginnt,
+    gehört nicht in dessen Abrechnung: die Einheit steht die ganze Zeit leer
+    (Eigentümer), der künftige Mieter taucht in keinem Schlüssel auf."""
+    kuenftig = _miete("OG", "Zukunft", ab=date(JAHR + 1, 5, 1), bis=None)
+    b = verteilung.bezuege([_einheit("EG", 60), _einheit("OG", 90)],
+                           [_miete("EG", "Alpha"), kuenftig], [], START, ENDE)
+    assert "Zukunft" not in {bez.partei for bez in b}
+    # Die volle OG-Fläche fällt als Leerstand an die Einheit (Eigentümer).
+    assert verteilung.gewichte("flaeche", b, START, ENDE) == {"Alpha": 60, "OG": 90}
+    assert any(bez.leerstand and bez.partei == "OG" for bez in b)
+
+
 def _wechsel_im_haus(wechsel: date) -> list[verteilung.Bezug]:
     """EG mit Mieterwechsel an diesem Tag, OG durchgehend bewohnt."""
     return verteilung.bezuege(

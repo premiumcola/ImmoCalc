@@ -274,6 +274,14 @@ class Kostenposition(SQLModel, table=True):
     vorab_netto: float = 0.0
     # Partei -> Gewicht (Verbrauch/Fläche/Personen/Bewohnermonate/%/1)
     anteile: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # N5 — Herkunft der Gewichte. True = aus den Stammdaten abgeleitet (Fläche/
+    # Personen/Bewohnermonate/„nur eine Einheit"): darf sich automatisch neu
+    # ableiten, wenn sich ein Mietverhältnis oder eine Einheit ändert, damit ein
+    # korrigierter Mietzeitraum nicht in einer alten Momentaufnahme weiterlebt.
+    # False = von Hand gesetzt (Zählerwerte, Prozent, individuelle Überschreibung)
+    # — bleibt unangetastet. Additiv, Default True: der Bestand gilt als abgeleitet
+    # und heilt sich beim nächsten Stammdaten-Update selbst.
+    abgeleitet: bool = True
     # CLXXXII: eine Position je Kostenart und Zeitraum bleibt die Regel — auf
     # dieselbe Zeile laufen aber vier Abschlagsrechnungen zu. `betrag` bleibt
     # die Wahrheit, mit der gerechnet wird; hier steht, welcher Teil davon aus

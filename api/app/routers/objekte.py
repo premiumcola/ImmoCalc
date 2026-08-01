@@ -25,7 +25,8 @@ from ..models import (GRUNDSTUECK, Bewohner, Dokument, Einheit, Kostenart,
                       ist_grundstueck)
 from ..turnus import jahresbetrag
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
-                          ableiten_einheit, fehlende_angaben, stammdaten,
+                          ableiten_einheit, fehlende_angaben,
+                          positionen_neu_ableiten, stammdaten,
                           vorauszahlung_je_partei, vorschau)
 
 log = logging.getLogger("immocalc")
@@ -766,6 +767,9 @@ def einheit_aendern(eid: int, data: dict,
             session.add(m)
             umbenannt += 1
     session.commit()
+    # N5 — geänderte Fläche/Bezeichnung/nk_abrechnung verschiebt die abgeleiteten
+    # Gewichte offener Zeiträume; neu berechnen (Handeingaben bleiben).
+    positionen_neu_ableiten(session, e.objekt_id)
     return {"ok": True, "bezeichnung": e.bezeichnung, "mieten_umbenannt": umbenannt}
 
 
@@ -1309,12 +1313,16 @@ def position_anlegen(zid: int, data: PositionNeu,
         raise HTTPException(400, str(fehler)) from fehler
     if data.nur_einheit:
         p.nur_einheit = data.nur_einheit
-        session.add(p)
+    # N5 — ohne mitgelieferte anteile sind die Gewichte abgeleitet und dürfen
+    # sich bei Stammdaten-Änderungen selbst neu berechnen; mit anteile sind sie
+    # eine Handeingabe und bleiben.
+    p.abgeleitet = data.anteile is None
+    session.add(p)
     session.commit()
     session.refresh(p)
     return {"id": p.id, "kostenart": p.kostenart, "status": p.status,
             "anteile": p.anteile, "nur_einheit": p.nur_einheit,
-            "abgeleitet": data.anteile is None}
+            "abgeleitet": p.abgeleitet}
 
 
 class PositionIn(BaseModel):
@@ -1329,6 +1337,10 @@ class PositionIn(BaseModel):
     nur_einheit: Optional[str] = None
     wertquelle: Optional[str] = None
     anteile: Optional[dict[str, float]] = None
+    # N5 — Herkunft der mitgesendeten Gewichte: true = aus den Stammdaten
+    # abgeleitet („Aus Stammdaten ableiten"-Knopf), false = Handeingabe. Fehlt
+    # das Flag bei gesetzten anteile, gilt es als Handeingabe.
+    abgeleitet: Optional[bool] = None
     s35: Optional[bool] = None
     # CCCLIX — Vorab-Anteil direkt auf eine Einheit (mit eigenem §35a)
     vorab_betrag: Optional[float] = None
@@ -1394,14 +1406,23 @@ def position_aendern(pid: int, data: PositionIn,
         wert = getattr(data, feld)
         if wert is not None:
             setattr(p, feld, wert)
+    # N5 — Herkunfts-Flag mitführen: der „Aus Stammdaten ableiten"-Knopf sendet
+    # anteile MIT abgeleitet=true (bleibt automatisch aktualisierbar), das Ändern
+    # einzelner Gewichte sendet anteile MIT abgeleitet=false (Handeingabe).
+    if data.abgeleitet is not None:
+        p.abgeleitet = data.abgeleitet
     if data.anteile is not None:
         p.anteile = data.anteile
+        # Ausdrücklich gesetzte anteile ohne Herkunfts-Flag = Handeingabe.
+        if data.abgeleitet is None:
+            p.abgeleitet = False
     elif neue_einheit or umgestellt:
         z = _zeitraum(session, p.zeitraum_id)
         # Solange eine Einheit genannt ist, trägt sie zu 100 %; sonst zählt
-        # wieder der Schlüssel über alle Parteien.
+        # wieder der Schlüssel über alle Parteien. Serverseitig abgeleitet.
         p.anteile = (ableiten_einheit(session, z, p.nur_einheit)
                      if p.nur_einheit else _gewichte(session, z, p.schluessel))
+        p.abgeleitet = True
     session.add(p)
     session.commit()
     return {"ok": True, "betrag": p.betrag, "status": p.status,

@@ -361,6 +361,48 @@ def ableiten_einheit(session: Session, z: Zeitraum,
                                 z.start, z.ende)
 
 
+def positionen_neu_ableiten(session: Session, objekt_id: int) -> int:
+    """N5 — nach einer Stammdaten-Änderung (Mietverhältnis/Einheit) die
+    ABGELEITETEN Gewichte offener Zeiträume neu berechnen.
+
+    `Kostenposition.anteile` ist eine gespeicherte Momentaufnahme. Wird ein
+    Mietverhältnis nachträglich korrigiert (z. B. Mietstart 2025 → 2026), lebt
+    der alte, falsche Anteil sonst in der Position weiter und ein längst nicht
+    mehr zum Zeitraum gehörender Mieter wird weiter belastet.
+
+    Unangetastet bleiben: von Hand gesetzte Anteile (`abgeleitet=False`) und
+    nicht ableitbare Schlüssel (Verbrauch/Prozent/individuell — deren Zahlen
+    kommen von Hand; `gewichte` gäbe hier `{}` zurück und würde sie löschen).
+    Nur Zeiträume „in Arbeit" — ein abgeschlossener Zeitraum ist ein Dokument
+    und bleibt, wie er abgerechnet wurde.
+
+    Gibt die Zahl der neu berechneten Positionen zurück."""
+    zeitraeume = list(session.exec(select(Zeitraum).where(
+        Zeitraum.objekt_id == objekt_id, Zeitraum.status == "in Arbeit")).all())
+    geaendert = 0
+    for z in zeitraeume:
+        bez = stammdaten(session, z)                 # einmal je Zeitraum lesen
+        posten = list(session.exec(select(Kostenposition).where(
+            Kostenposition.zeitraum_id == z.id)).all())
+        for p in posten:
+            if not getattr(p, "abgeleitet", True):
+                continue
+            einheit = (p.nur_einheit or "").strip()
+            if einheit:
+                neu = nur_einheit_gewichte(bez, einheit, z.start, z.ende)
+            elif SCHLUESSEL.get(p.schluessel, {}).get("ableitbar"):
+                neu = gewichte(p.schluessel, bez, z.start, z.ende)
+            else:
+                continue                             # manuelle Zahlen bleiben
+            if neu != (p.anteile or {}):
+                p.anteile = neu
+                session.add(p)
+                geaendert += 1
+    if geaendert:
+        session.commit()
+    return geaendert
+
+
 def ohne_einheit(bezuege_: list[Bezug]) -> list[str]:
     """Parteien, deren Mietverhältnis auf keine Einheit des Objekts zeigt."""
     return sorted({b.partei for b in bezuege_ if not b.zugeordnet})

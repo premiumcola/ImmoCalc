@@ -25,6 +25,7 @@ from ..models import (Bewohner, Kredit, Kreditstand, Miete, Notarvertrag, Objekt
                       Versicherung, Zahlung, ist_bausparer)
 from ..turnus import VORGABE, auswahl_fuer
 from ..vermoegen import kreditstand, verlauf
+from ..verteilung import positionen_neu_ableiten
 
 router = APIRouter(prefix="/api", tags=["stammdaten"])
 
@@ -141,6 +142,10 @@ def anlegen(slug: str, bereich: str, data: dict,
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)
+    # N5 — ein neues Mietverhältnis verändert die zeitanteilige Verteilung;
+    # abgeleitete Positionen offener Zeiträume neu berechnen.
+    if isinstance(eintrag, Miete):
+        positionen_neu_ableiten(session, eintrag.objekt_id)
     return {"id": eintrag.id}
 
 
@@ -237,6 +242,11 @@ def aendern(bereich: str, eintrag_id: int, data: dict,
         setattr(eintrag, k, getattr(geprueft, k))
     session.add(eintrag)
     session.commit()
+    # N5 — ein korrigiertes Mietverhältnis (Datum/Einheit) verschiebt die
+    # zeitanteilige Verteilung; abgeleitete Positionen neu berechnen, damit ein
+    # nun außerhalb liegender Mieter nicht in der alten Momentaufnahme bleibt.
+    if isinstance(eintrag, Miete):
+        positionen_neu_ableiten(session, eintrag.objekt_id)
     return {"ok": True}
 
 
@@ -263,8 +273,14 @@ def loeschen(bereich: str, eintrag_id: int,
     if not eintrag:
         raise HTTPException(404, "Eintrag nicht gefunden")
     _anhaengsel_loeschen(session, bereich, eintrag_id)
+    # N5 — vor dem Löschen merken; danach die abgeleiteten Positionen neu
+    # berechnen (ein entferntes Mietverhältnis gibt Leerstand zurück).
+    ist_miete = isinstance(eintrag, Miete)
+    objekt_id = getattr(eintrag, "objekt_id", None)
     session.delete(eintrag)
     session.commit()
+    if ist_miete and objekt_id is not None:
+        positionen_neu_ableiten(session, objekt_id)
     return {"ok": True}
 
 

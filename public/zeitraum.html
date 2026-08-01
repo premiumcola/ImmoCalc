@@ -1665,8 +1665,10 @@ async function verteilungAutoSpeichern(vt) {
 
   vt.dataset.basis = JSON.stringify(anteile);   // gespeicherten Stand nachziehen
   try {
+    // N5 — von Hand geänderte Gewichte sind eine Handeingabe (abgeleitet=false):
+    // sie werden bei einer späteren Mietänderung nicht automatisch überschrieben.
     await api(`/positionen/${vt.dataset.pid}`,
-              { method: 'PATCH', body: { anteile } });
+              { method: 'PATCH', body: { anteile, abgeleitet: false } });
     melde('✓ Verteilung gespeichert', 'pos');
     await laden();
   } catch (fehler) {
@@ -1690,8 +1692,10 @@ async function verteilungAbleiten(knopf) {
   if (!meta?.moeglich) return;
   knopf.disabled = true;
   try {
+    // N5 — „Aus Stammdaten ableiten": die Gewichte bleiben abgeleitet
+    // (abgeleitet=true) und aktualisieren sich künftig bei Mietänderungen mit.
     await api(`/positionen/${knopf.dataset.ableiten}`,
-              { method: 'PATCH', body: { anteile: meta.gewichte } });
+              { method: 'PATCH', body: { anteile: meta.gewichte, abgeleitet: true } });
     melde(`Gewichte aus den Stammdaten übernommen · ${meta.titel}`, 'pos');
     await laden();
   } catch (fehler) {
