@@ -127,7 +127,15 @@ def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
     sache = _ohne_dopplung(sache)
     kuerzel = ARTKUERZEL.get(kategorie, "")
     mitte = f"{kuerzel}-{sache}" if kuerzel and sache else (sache or kuerzel)
-    teile = [datumsteil(jahr, monat), mitte or "Beleg", betragsteil(betrag)]
+    # N24 — ein Lageplan trägt KEIN Belegjahr: „ohne-Jahr_" wäre nur Rauschen.
+    # Der Name sagt selbst „Lageplan …" (wie der Upload-Weg, N9) — daher kein
+    # Datumsteil und ein vorangestelltes „Lageplan", falls es noch fehlt.
+    if kategorie == "Lageplan":
+        if not _kern(mitte).startswith(_kern("Lageplan")):
+            mitte = f"Lageplan-{mitte}" if mitte else "Lageplan"
+        teile = [mitte, betragsteil(betrag)]
+    else:
+        teile = [datumsteil(jahr, monat), mitte or "Beleg", betragsteil(betrag)]
     return "_".join(t for t in teile if t) + endung
 
 
