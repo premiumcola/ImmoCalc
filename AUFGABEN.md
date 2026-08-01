@@ -13,7 +13,24 @@ was der Browser zeichnet: keine `alert`, keine `confirm`, keine Systemlisten.
 
 ---
 
-## Woran gerade gearbeitet wird
+## N-Serie — neue Zählung (ab 01.08.2026)
+
+Die römische Reihe wurde sehr hoch (bis CD ≈ 400); ab hier läuft eine frische,
+arabische **N-Zählung** von vorn. Jede Nutzer-Eingabe wird in saubere
+Einzelthemen zerlegt und hier systematisch getrackt. Die römische Historie
+bleibt unten als Archiv stehen.
+
+| Nr. | Thema | Stand |
+|---|---|---|
+| N7 | **Aufteilung unter den „Verteilen nach"-Wähler einrücken** — die Aufteilungs-Liste eine Stufe (Tab) einrücken, farblich abgesetzt/„eingebrannt" hinterlegen und optisch an den Chooser hängen (gehört inhaltlich unter den Verteiler). Nur `zeitraum.html`. | **offen** |
+| N6 | **Investitionsspielraum verständlich erklären + 0 %-Eigenanteil-Modell** — der Satz „Als ~20 % Eigenkapital rechnerisch für rund 1.894k € neues Kaufvolumen" ist unklar. Rechenweg offenlegen (freie Beleihung ÷ 20 % = Volumen) UND auf die reale Annahme umstellen: **0 % Eigenanteil**, der Nutzer zahlt nur die **Kaufnebenkosten** → mögliches Investitionsvolumen auf dieser Basis schätzen. `vermoegen.py` + `wertentwicklung.html`. | **offen** |
+| N5 | **NK-Anteiligkeit ignoriert Mietverhältnis-Zeitraum (Rechenfehler)** — Mietverhältnis ab **1.5.2026** (Heuser-Teubert, „Wohnug 1.OG") wird in der **2025**-Abrechnung anteilig herangezogen, Maske schlägt sogar 1.5.2025 vor. Korrekt: außerhalb des Abrechnungszeitraums → Eigentümer/Leerstand, keine Zuordnung auf diesen Mieter. Engine-Zeitanteiligkeit + Vorbelegung prüfen. | **offen — Rechenlogik, Priorität** |
+| N4 | **Lageplan-Bereich aufräumen (objekt.html)** — (a) Kopf-Icon versetzt → mittig; (b) Bereich unnötig hoch → kompakter; (c) horizontaler Versatz der Karte ggü. anderen Rubriken → bündig; (d) Vorschau nicht ganzseitig, sondern im **Seitenverhältnis** (Element links, weiterer Plan daneben); (e) Namens-Branding **unten links** über den Plan. Nur `objekt.html` (+ ggf. immo.css). | **offen** |
+| N3 | **Mietverhältnis jederzeit hinzufügbar (Rücknahme der Sperre)** — Vormietverhältnisse auch bei aktuell vermieteter Einheit hinzufügbar; laufendes muss NICHT beendet werden. `mietGesperrt` zurücknehmen, „+" bleibt aktiv. Nur `objekt.html`. | **offen** |
+| N2 | ~~**NK-Position aufgeklappt: Struktur neu ordnen**~~ **erledigt** — Reihenfolge logisch: Kostenart + Anbieter oben, dann Verteilen nach, dann Aufteilung, dann Belege. Aufteilungs-Zeilen entzerrt (€ + Prozent gestapelt), **Fläche als m²** am Eingabefeld, Betrag im Kopf mit **€**, Body an der Titelzeile (61 px) ausgerichtet, Anbieter-Tag im aufgeklappten Zustand raus (steht als Feld). Nur `zeitraum.html`. Verifiziert (Harness, iPhone/iPad/Desktop, 0 Fehler). | **erledigt** |
+| N1 | ~~**Drop-Dialog „Beleg zuordnen" — Feinschliff**~~ **erledigt (Backend-Deploy offen)** — (a) erste A4-Seite ohne Scrollen (Vorschau Hochformat, `view=Fit`); (b) dynamischer Titel (Immobilie · Nebenkosten); (c) erkannter **Absender** wird automatisch ins Firma-Feld eingetragen — Ursache: `kiauslese.lies_beleg` reichte `absender` nie durch, `_ki_ergaenzen` fand es leer (`kiauslese.py`); (d) **Ladeschleier** zwischen Drop und Dialog. Frontend `zeitraum.html` + Backend `kiauslese.py`. | **erledigt — Backend braucht Deploy** |
+
+## Woran gerade gearbeitet wird (römische Historie)
 
 In einfachen Worten, damit man die eigenen Wünsche wiedererkennt.
 

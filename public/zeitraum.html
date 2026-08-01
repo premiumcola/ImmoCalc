@@ -155,12 +155,19 @@
   /* CCCXCIV — großer Drop-Dialog am PC: Formular links, PDF-Vorschau rechts groß. */
   dialog.immo-dlg.beleg-drop-dlg{max-width:min(1060px,calc(100% - 32px));
     width:calc(100% - 32px)}
+  /* Eyebrow über dem Dialogtitel: welche Immobilie, welcher Bereich (CD). */
+  .bdd-eyebrow{display:block;font:600 11px var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;color:var(--teal-d);margin:0 0 3px}
   .bdd-body{display:flex;gap:18px;align-items:stretch}
   .bdd-links{flex:1 1 340px;min-width:0;display:flex;flex-direction:column}
-  .bdd-rechts{flex:1.5 1 460px;min-width:0;background:var(--paper);border-radius:12px;
-    overflow:hidden;display:flex;align-items:stretch;min-height:min(74dvh,760px)}
-  .bdd-embed{width:100%;height:100%;min-height:min(74dvh,760px);border:none}
-  .bdd-img{width:100%;height:auto;max-height:74dvh;object-fit:contain;align-self:flex-start}
+  /* CD — die Vorschau bekommt A4-Hochformat, damit die erste Seite immer GANZ
+     ohne Scrollen sichtbar ist; das PDF wird per view=Fit eingepasst. */
+  .bdd-rechts{flex:1.5 1 460px;min-width:0;align-self:flex-start;
+    aspect-ratio:1 / 1.414;max-height:min(86dvh,960px);
+    background:var(--paper);border-radius:12px;
+    overflow:hidden;display:flex;align-items:stretch}
+  .bdd-embed{width:100%;height:100%;border:none}
+  .bdd-img{width:100%;height:100%;object-fit:contain}
   .bdd-leer{margin:auto;color:var(--soft);font:500 13px var(--body)}
   .bdd-ki{font-style:italic;color:var(--soft)}
   .field.zwei{display:flex;gap:10px}
@@ -179,7 +186,16 @@
     background:var(--paper);border-radius:10px;padding:9px 11px;margin:0 0 12px}
   .bdd-fuss{margin-top:auto}
   @media(max-width:720px){ .bdd-body{flex-direction:column-reverse}
-    .bdd-rechts{min-height:44dvh} .bdd-embed{min-height:44dvh} }
+    .bdd-rechts{aspect-ratio:auto;min-height:44dvh;max-height:64dvh} }
+  /* CD — Ladeschleier zwischen Drop und Dialog: Prüfsumme + KI-Erkennung
+     dauern kurz; ein Kringel zeigt „ich arbeite", statt dass nichts passiert. */
+  .drop-lade{position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:15px;
+    background:rgba(22,38,44,.44);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+  .drop-lade .kringel{width:46px;height:46px;border-radius:50%;
+    border:3px solid rgba(255,255,255,.32);border-top-color:#fff;
+    animation:bddspin .8s linear infinite}
+  .drop-lade .txt{color:#fff;font:600 13px var(--disp);letter-spacing:-.01em}
   /* Hinweis in der Drop-Maske, wenn die Datei schon in der Ablage liegt. */
   .beleg-drop-dlg .dup-hinweis{background:var(--amber-bg);border-radius:12px;
     padding:11px 13px;margin:0 0 15px;font:400 12.5px var(--body);color:var(--ink);
@@ -232,10 +248,15 @@
   /* Der Betrag lebt oben im Kopf: aufgeklappt ein schlankes Eingabefeld rechts
      (speichert beim Verlassen), sonst der lesbare Wert. Kein zweites, großes
      Feld mehr weiter unten. */
-  .kopf-betrag{flex:none;width:118px;border:1.5px solid var(--line);
-    border-radius:11px;padding:10px 11px;font:600 15px var(--body);min-height:44px;
+  /* CDII — Betrag im Kopf mit sichtbarem €-Zeichen; die Zahl ist rechtsbündig,
+     das € sitzt ruhig dahinter. */
+  .kopf-betrag-box{flex:none;position:relative;display:inline-flex;align-items:center}
+  .kopf-betrag{width:126px;border:1.5px solid var(--line);
+    border-radius:11px;padding:10px 30px 10px 11px;font:600 15px var(--body);min-height:44px;
     background:var(--sheet);color:var(--ink);text-align:right}
   .kopf-betrag:focus{outline:none;border-color:var(--teal)}
+  .kbe{position:absolute;right:12px;pointer-events:none;font:600 13px var(--mono);
+    color:var(--soft)}
   /* Das Anlege-Betragsfeld einer Katalog-Kostenart (nur beim Neuanlegen). */
   .betragfeld{margin-top:2px}
   .betragfeld input{width:100%;border:1.5px solid var(--line);border-radius:12px;
@@ -248,15 +269,19 @@
   /* CCCLXI — Anteil je Zeile auch bei abgeleiteten Schlüsseln überschreibbar.
      Der €-Betrag bleibt die Leitzahl; das kleine Anteil-Feld sitzt ruhig und
      rechtsbündig daneben, ohne die Zahl von früher wiederzubeleben. */
-  .rz.vt-abg{align-items:center}
-  .rz.vt-abg .gn{flex:1;min-width:0;font:500 12.5px var(--body);
+  /* CDII — Aufteilungszeile entzerrt: Name links, €-Ergebnis + Prozent
+     GESTAPELT (nicht zusammengequetscht) rechts daneben, dann das Anteil-Feld
+     mit Maßeinheit. */
+  .rz.vt-abg{align-items:center;gap:14px;padding:7px 0}
+  .rz.vt-abg .gn{flex:1;min-width:0;font:500 13px var(--body);
     hyphens:auto;overflow-wrap:anywhere}
   .rz.vt-abg .gsub{display:block;font:400 11px var(--body);color:var(--soft);
     margin-top:2px;line-height:1.35}
-  .rz.vt-abg .vt-euro{flex:none;font:600 12.5px var(--mono);white-space:nowrap;
-    color:var(--ink)}
-  .rz.vt-abg .vt-euro .rzp{font-weight:500}
-  .anteil-mini{flex:none;width:62px;border:1.5px solid var(--line);border-radius:9px;
+  .rz.vt-abg .vt-euro{flex:none;display:flex;flex-direction:column;align-items:flex-end;
+    line-height:1.3;min-width:74px}
+  .rz.vt-abg .vt-euro .euro-z{font:600 13px var(--mono);color:var(--ink);white-space:nowrap}
+  .rz.vt-abg .vt-euro .rzp{font:500 11px var(--mono);color:var(--soft)}
+  .anteil-mini{flex:none;width:58px;border:1.5px solid var(--line);border-radius:9px;
     padding:8px 9px;font:600 12px var(--mono);min-height:44px;background:var(--sheet);
     color:var(--soft);text-align:right}
   .anteil-mini:focus{outline:none;border-color:var(--teal);color:var(--ink)}
@@ -329,12 +354,21 @@
   .ikon.fertig{background:var(--pos-bg);color:var(--pos)}
   .ikon.warte{background:#EDF1F0;color:var(--soft)}
   .pruef .wert.fehlt{color:var(--neg)}
-  .pruef .auf{padding:2px 15px 14px}
+  /* CDII — der aufgeklappte Körper wird links an der TITELZEILE ausgerichtet
+     (Icon 34 + 15 Rand + 12 Abstand = 61 px), damit nicht „alles ganz links
+     hängt", während der Titel eingerückt ist. Rechts ruhig Luft. */
+  .pruef .auf{padding:4px 16px 18px 61px}
   .pruef .auf .zk{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
-                  color:var(--soft);margin:12px 0 6px}
+                  color:var(--soft);margin:16px 0 7px}
+  .pruef .auf .zk:first-child{margin-top:6px}
   .pruef .auf .rz{display:flex;justify-content:space-between;gap:10px;
                   font:500 12.5px var(--body);padding:4px 0}
   .pruef .auf .rz span:last-child{font-family:var(--mono);font-weight:600}
+  /* CDII — Maßeinheit (m², Pers. …) direkt am Eingabefeld; die Zahl allein
+     sagt nicht, dass „40" eine Fläche ist. */
+  .mini-wrap{flex:none;display:inline-flex;align-items:center;gap:6px}
+  .mini-einheit{font:600 11px var(--mono);color:var(--soft);white-space:nowrap;min-width:16px}
+  @media(max-width:520px){ .pruef .auf{padding-left:50px} }
   /* Scan direkt in der Zeile: einladend, aber nicht grell — gedecktes Grün
      auf hellem Grund statt eines vollflächigen Knopfes. Steht neben dem
      Zeilenknopf, nicht darin: Knöpfe lassen sich nicht schachteln. */
@@ -1054,6 +1088,9 @@ function verteilungHtml(k) {
   const eintraege = Object.entries(k.anteile || {});
   const summe = eintraege.reduce((s, [, w]) => s + Number(w || 0), 0);
   const einheit = k.anteile_einheit || meta?.einheit || '';
+  // CDII — die Maßeinheit (z. B. m², Pers.) sichtbar am Eingabefeld, damit eine
+  // nackte „40" als Fläche erkennbar ist statt bloß eine Zahl.
+  const einheitTag = einheit ? `<span class="mini-einheit">${esc(einheit)}</span>` : '';
   const abzuleiten = meta?.moeglich ? Object.entries(meta.gewichte) : [];
   const gleich = abzuleiten.length === eintraege.length &&
     abzuleiten.every(([p, w]) => Number(k.anteile?.[p] ?? NaN) === Number(w));
@@ -1068,11 +1105,11 @@ function verteilungHtml(k) {
     <div class="gw">
       <span class="gn">${esc(p)}${leerstaende.has(p)
         ? '<span class="gsub">Leerstand · Eigentümer</span>' : ''}</span>
-      ${bearbeitbar
+      <span class="mini-wrap">${bearbeitbar
         ? `<input type="number" step="0.0001" min="0" value="${Number(w)}"
                  data-gewicht="${esc(p)}"
                  aria-label="Gewicht ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">`
-        : `<span class="gv">${Number(w).toLocaleString('de-DE')}</span>`}
+        : `<span class="gv">${Number(w).toLocaleString('de-DE')}</span>`}${einheitTag}</span>
       <span class="gp" data-anteil>${prozentText(w, summe)}</span>
     </div>`).join('');
 
@@ -1093,13 +1130,13 @@ function verteilungHtml(k) {
       const euro = summe > 0 ? rest * (Number(w) || 0) / summe : 0;
       return `<div class="rz vt-abg"><span class="gn">${esc(p)}${leerstaende.has(p)
           ? '<span class="gsub">Leerstand · Eigentümer</span>' : ''}</span>
-        <span class="vt-euro"><span data-euro>${eur(euro)}</span>
+        <span class="vt-euro"><span class="euro-z" data-euro>${eur(euro)}</span>
           <span class="rzp" data-anteil>${prozentText(w, summe)}</span></span>
         ${bearbeitbar
-          ? `<input class="anteil-mini" type="number" step="0.0001" min="0"
+          ? `<span class="mini-wrap"><input class="anteil-mini" type="number" step="0.0001" min="0"
                     inputmode="decimal" value="${Number(w)}" data-gewicht="${esc(p)}"
-                    aria-label="Anteil ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">`
-          : ''}
+                    aria-label="Anteil ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">${einheitTag}</span>`
+          : `<span class="mini-wrap"><span class="gv">${Number(w).toLocaleString('de-DE')}</span>${einheitTag}</span>`}
       </div>`;
     }).join('');
     aufteilung = `<div class="vt-ergebnis">${euroRows}</div>${
@@ -1199,7 +1236,10 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
             aria-label="Kostenart dieser Position">${artOptionen(k.kostenart)}</select>
           <input class="ka-neu" data-kostenart-neu="${k.position_id}" hidden
             placeholder="Neue Kostenart …" aria-label="Neue Kostenart"></div>` : '';
-    koerper = `${verteilungHtml(k)}${belege}${kostenartFeld}${anbieterFeld}
+    // CDII — logische Reihenfolge: erst die allgemeinen Infos (Kostenart,
+    // Anbieter) oben, dann die Verteilung + Aufteilung (beide in verteilungHtml),
+    // dann die Belege, zuletzt der Fuß.
+    koerper = `${kostenartFeld}${anbieterFeld}${verteilungHtml(k)}${belege}
       <div class="kartenfuss">${fuss}</div>`;
   } else if (aufgeklappt) {
     // Katalog-Kostenart ohne Position: hier entsteht sie.
@@ -1215,10 +1255,10 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   // Der Betrag im Kopf: aufgeklappt ein schlankes Eingabefeld (speichert beim
   // Verlassen), sonst der lesbare Wert — so steht er nur einmal in der Karte.
   const betragEl = (aufgeklappt && k.position_id && bearbeitbar)
-    ? `<input class="kopf-betrag" type="number" step="0.01" inputmode="decimal"
-         placeholder="Betrag" value="${k.betrag ?? ''}"
+    ? `<span class="kopf-betrag-box"><input class="kopf-betrag" type="number" step="0.01"
+         inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
-         aria-label="Betrag für ${esc(k.kostenart)}">`
+         aria-label="Betrag für ${esc(k.kostenart)}"><span class="kbe">€</span></span>`
     : (k.erledigt ? `<span class="wert">${wert}</span>` : '');
   // Quick-Capture nur an der geschlossenen, offenen Zeile — aufgeklappt macht
   // der Betrag im Kopf Platz, Belege kommen dann über „Beleg anhängen".
@@ -1250,7 +1290,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}
             ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
         </button>
-        ${k.anbieter ? `<span class="anbieter-tag" title="Anbieter / Gewerk"
+        ${(k.anbieter && !aufgeklappt) ? `<span class="anbieter-tag" title="Anbieter / Gewerk"
           >${esc(k.anbieter)}</span>` : ''}
         ${betragEl}
         ${quickScan}
@@ -2374,10 +2414,14 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbi
         Statt sie erneut hochzuladen, wird der vorhandene Beleg verknüpft.</div>` : '';
     const istPdf = (datei?.type || '') === 'application/pdf' || /\.pdf$/i.test(datei?.name || '');
     const vorschau = !blobUrl ? '<div class="bdd-leer">Keine Vorschau</div>'
-      : istPdf ? `<embed class="bdd-embed" src="${blobUrl}#toolbar=0&navpanes=0" type="application/pdf">`
+      : istPdf ? `<embed class="bdd-embed" src="${blobUrl}#toolbar=0&navpanes=0&view=Fit" type="application/pdf">`
       : `<img class="bdd-img" src="${blobUrl}" alt="Beleg-Vorschau">`;
+    // CD — dynamischer Eyebrow: welche Immobilie, welcher Bereich. Gilt für
+    // alle Einheiten (der Name kommt aus dem geladenen Zeitraum).
+    const eyebrow = [daten.objekt_name, 'Nebenkosten'].filter(Boolean).map(esc).join(' · ');
     dlg.innerHTML = `
       <button class="immo-dlg-zu" data-nein aria-label="Schließen">×</button>
+      ${eyebrow ? `<span class="bdd-eyebrow">${eyebrow}</span>` : ''}
       <div class="dt">Beleg zuordnen</div>
       <div class="bdd-body">
         <div class="bdd-links">
@@ -2522,24 +2566,36 @@ async function belegPerDrop(kostenart, dateien) {
   const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
   const erste = pdfs[0] || bilder[0];
 
-  // Prüfsumme nur bei EINEM fertigen PDF — aus Bildern entsteht erst ein neues
-  // PDF, das nie ein Duplikat sein kann. KI-Erkennung läuft immer.
-  const [sha1, vorschlag] = await Promise.all([
-    (pdfs.length === 1 && !bilder.length) ? sha1Hex(erste).catch(() => null) : Promise.resolve(null),
-    erkennen(erste),
-  ]);
-  let dup = { gefunden: false };
-  if (sha1) {
-    try {
-      dup = await api('/dokumente/duplikat-pruefen',
-        { method: 'POST', body: { objekt: daten.objekt, sha1, name: erste.name || '', jahr } }) || dup;
-    } catch { /* Endpunkt/Cloud nicht da → einfach normal ablegen */ }
-  }
+  // CD — sofort einen Ladeschleier zeigen: Prüfsumme + KI-Erkennung brauchen
+  // einen Moment, in dem sonst gefühlt „nichts passiert", bis der Dialog kommt.
+  const schleier = document.createElement('div');
+  schleier.className = 'drop-lade';
+  schleier.innerHTML = '<div class="kringel"></div><div class="txt">Beleg wird gelesen …</div>';
+  document.body.appendChild(schleier);
 
-  const groesse = dateien.reduce((s, d) => s + (d.size || 0), 0);
   const zeile = (daten.checkliste || []).find(k => k.kostenart === kostenart);
-  const wahl = await belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse,
-    datei: erste, anbieter: zeile?.anbieter || '' });
+  let wahl, dup = { gefunden: false };
+  try {
+    // Prüfsumme nur bei EINEM fertigen PDF — aus Bildern entsteht erst ein neues
+    // PDF, das nie ein Duplikat sein kann. KI-Erkennung läuft immer.
+    const [sha1, vorschlag] = await Promise.all([
+      (pdfs.length === 1 && !bilder.length) ? sha1Hex(erste).catch(() => null) : Promise.resolve(null),
+      erkennen(erste),
+    ]);
+    if (sha1) {
+      try {
+        dup = await api('/dokumente/duplikat-pruefen',
+          { method: 'POST', body: { objekt: daten.objekt, sha1, name: erste.name || '', jahr } }) || dup;
+      } catch { /* Endpunkt/Cloud nicht da → einfach normal ablegen */ }
+    }
+
+    const groesse = dateien.reduce((s, d) => s + (d.size || 0), 0);
+    schleier.remove();      // Dialog übernimmt jetzt sichtbar
+    wahl = await belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse,
+      datei: erste, anbieter: zeile?.anbieter || '' });
+  } finally {
+    schleier.remove();      // auch bei Fehler nie hängenbleiben
+  }
   if (!wahl) return;
   // CCCXCV — die eingetragene Firma/Gemeinde als Anbieter der Kostenart merken;
   // sie erscheint dann in der Zeile (kursiv, zurückgesetzt).
