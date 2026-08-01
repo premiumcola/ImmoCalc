@@ -284,6 +284,11 @@
   .anteil-mini{flex:none;width:58px;border:1.5px solid var(--line);border-radius:9px;
     padding:8px 9px;font:600 12px var(--mono);min-height:44px;background:var(--sheet);
     color:var(--soft);text-align:right}
+  /* N17 — die kleinen Hoch/Runter-Pfeilchen der Zahlenfelder sind schwer zu
+     treffen und überflüssig: der Wert wird eingetippt. Überall ausblenden. */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield;appearance:textfield}
   .anteil-mini:focus{outline:none;border-color:var(--teal);color:var(--ink)}
   /* Einheit-Auswähler für „Nur eine Einheit/Person". */
   .einzel-wahl{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
