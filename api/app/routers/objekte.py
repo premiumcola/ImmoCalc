@@ -25,8 +25,8 @@ from ..models import (GRUNDSTUECK, Bewohner, Dokument, Einheit, Kostenart,
                       ist_grundstueck)
 from ..turnus import jahresbetrag
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
-                          ableiten_einheit, fehlende_angaben,
-                          positionen_neu_ableiten, stammdaten,
+                          ableiten_einheit, anteil_details, bezuege,
+                          fehlende_angaben, positionen_neu_ableiten, stammdaten,
                           vorauszahlung_je_partei, vorschau)
 
 log = logging.getLogger("immocalc")
@@ -874,6 +874,13 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     _mieten_ids = [m.id for m in mieten]
     bewohner = (session.exec(select(Bewohner).where(Bewohner.miete_id.in_(_mieten_ids))).all()
                 if _mieten_ids else [])
+    parteien = session.exec(select(Partei).where(Partei.objekt_id == o.id)).all()
+    # N29 — je Partei: Einheit, Mieter (bzw. Leerstand) und belegte Monate, damit
+    # die Aufteilungszeile nicht nur den Parteinamen zeigt. Einmal je Zeitraum
+    # abgeleitet (gilt für alle Positionen gleich), an der Position nur die
+    # tatsächlich verteilten Parteien angehängt.
+    _bez = bezuege(list(einheiten), list(mieten), list(parteien), z.start, z.ende)
+    detail_map = anteil_details(_bez, z.start, z.ende)
 
     nach_art = {p.kostenart: p for p in positionen}
     # CLXXXIII: der Rückweg. Welche Belege in eine Position eingerechnet sind,
@@ -894,6 +901,9 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "anteile": anteile,
             "anteile_einheit": meta.get("einheit", ""),
             "anteile_summe": round(sum(anteile.values()), 4),
+            # N29 — Einheit · Mieter · belegte Monate je verteilter Partei.
+            "anteil_details": [detail_map[name] for name in anteile
+                               if name in detail_map],
             # CCCLIX — Vorab-Anteil direkt auf eine Einheit (für Anzeige + Sankey)
             "vorab_betrag": round(p.vorab_betrag or 0, 2) if p else 0,
             "vorab_einheit": (p.vorab_einheit if p else "") or "",

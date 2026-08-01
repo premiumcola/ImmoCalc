@@ -416,6 +416,41 @@ def leerstaende(bezuege_: list[Bezug]) -> list[str]:
     return sorted({b.partei for b in bezuege_ if b.leerstand})
 
 
+def anteil_details(bezuege_: list[Bezug], start: date,
+                   ende: date) -> dict[str, dict]:
+    """N29 — je Partei: Einheit, Mieter (bzw. Leerstand) und die im Zeitraum
+    belegten Monate. So steht in der Aufteilung nicht nur „Meier", sondern
+    „EG · Meier · 7 von 12 Monaten": man sieht, welche Einheit die Partei bewohnt
+    und ob sie den Zeitraum ganz oder nur anteilig belegt.
+
+    `zeitraum_monate` ist die Länge des Abrechnungszeitraums; liegt `monate`
+    darunter, war die Partei nur einen Teil des Jahres da (Ein-/Auszug,
+    Leerstands-Stück). Mehrere Bezüge derselben Partei (Wohnung + Garage) werden
+    zusammengefasst: die Einheiten gesammelt, die längste Belegung als Maß."""
+    zr = _zeitraum_monate(start, ende)
+    out: dict[str, dict] = {}
+    for b in bezuege_:
+        mon = _monate(b, start, ende)
+        d = out.get(b.partei)
+        if d is None:
+            out[b.partei] = {
+                "partei": b.partei,
+                "einheit": b.einheit or "",
+                "mieter": None if b.leerstand else b.partei,
+                "leerstand": b.leerstand,
+                "monate": mon,
+                "zeitraum_monate": zr,
+            }
+            continue
+        if b.einheit and b.einheit not in d["einheit"].split(" · "):
+            d["einheit"] = (d["einheit"] + " · " + b.einheit).strip(" · ")
+        d["monate"] = max(d["monate"], mon)
+        d["leerstand"] = d["leerstand"] and b.leerstand
+        if not d["leerstand"] and d["mieter"] is None:
+            d["mieter"] = b.partei
+    return out
+
+
 def vorschau(bezuege_: list[Bezug], start: date, ende: date) -> list[dict]:
     """Alle Schlüssel mit den Gewichten, die dabei herauskämen — damit man
     sieht, worauf man sich einlässt, bevor man sich festlegt.
