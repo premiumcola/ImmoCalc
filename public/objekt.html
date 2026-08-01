@@ -734,7 +734,7 @@
   .eintrag.vermietet.klick:hover{background:#E8F3EC}
   .eintrag .ewwrap{display:flex;align-items:center;gap:10px;justify-content:flex-end}
   .e-stempel{flex:none;display:none;flex-direction:column;align-items:center;
-    gap:1px;pointer-events:none;user-select:none}
+    gap:3px;pointer-events:none;user-select:none}
   .stempel-svg{display:block;opacity:.6}
   .e-seit{font:700 9px var(--mono);color:var(--pos);opacity:.85;
     letter-spacing:.02em;text-align:center;white-space:nowrap}
@@ -1564,12 +1564,14 @@ function laufendeMiete(e) {
 /* N31 — angeschrägter Gummistempel „VERMIETET": zwei gerundete Rahmen und der
    Schriftzug, leicht gedreht und transparent im Pos-Grün. Reines Inline-SVG. */
 function vermietetStempel() {
-  return `<svg class="stempel-svg" viewBox="0 0 132 40" width="112" height="34"
+  // N36 — die viewBox muss die -7°-Drehung fassen (gedrehte Höhe ~47 statt 32),
+  // sonst ragen die Rahmen-Ecken aus dem Kasten und der Text darunter überlappt.
+  return `<svg class="stempel-svg" viewBox="0 0 134 52" width="116" height="45"
        role="img" aria-label="Vermietet">
-      <g transform="rotate(-7 66 20)" fill="none" style="stroke:var(--pos)">
-        <rect x="3" y="4" width="126" height="32" rx="7" style="stroke-width:2.2"/>
-        <rect x="7.5" y="8.5" width="117" height="23" rx="4.5" style="stroke-width:1"/>
-        <text x="66" y="25" text-anchor="middle"
+      <g transform="rotate(-7 67 26)" fill="none" style="stroke:var(--pos)">
+        <rect x="4" y="10" width="126" height="32" rx="7" style="stroke-width:2.2"/>
+        <rect x="8.5" y="14.5" width="117" height="23" rx="4.5" style="stroke-width:1"/>
+        <text x="67" y="31" text-anchor="middle"
           style="fill:var(--pos);stroke:none;font:800 14px var(--disp);letter-spacing:1.4px">VERMIETET</text>
       </g>
     </svg>`;
