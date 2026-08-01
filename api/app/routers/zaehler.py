@@ -16,10 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from .. import ablesung, belegposten, verteilung
+from .. import ablesung, belegposten, verteilung, wasser
 from ..db import get_session
 from ..deps import objekt_holen
-from ..models import Ablesung, Objekt, Zaehler, Zeitraum
+from ..models import (Ablesung, Einheit, Kostenposition, Miete, Objekt, Partei,
+                      Zaehler, Zeitraum)
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["zaehler"])
@@ -307,3 +308,141 @@ def _zeige(session: Session, z: Zaehler) -> dict:
             "ablesungen": len(abls),
             "anfangsstand": None if not anfang else {
                 "stand": anfang.stand, "datum": anfang.datum.isoformat()}}
+
+
+# --------------------------------------------------------------------------
+# N47 — Wasser-Detailübersicht je Abrechnungszeitraum
+#
+# Bindet den getesteten Rechenkern (`wasser.verrechne`) an die gespeicherten
+# Zähler, Ablesungen und Kostenpositionen: drei Kostenbestandteile (Frisch-,
+# Schmutz-, Niederschlagswasser) werden über die Unterzähler verbrauchsscharf
+# den Einheiten zugeordnet, der Rest (Haupthaus ohne eigenen Kaltzähler) per
+# Personen·Mietdauer verteilt, das Gartenwasser als Menge herausgenommen.
+# Der Endpunkt selbst bleibt dünn — er sammelt nur und mappt aufs Ergebnis.
+# --------------------------------------------------------------------------
+
+# Zeilenarten eines Unterzählers im Wasser-Popup.
+_UNTER_ARTEN = frozenset({"Kaltwasser", "Warmwasser", "Waschmaschine"})
+# Kostenart je Wasser-Bestandteil.
+_KOMPONENTEN_ART = {"wasser": "Wasser", "schmutz": "Abwasser",
+                    "niederschlag": "Niederschlagswasser"}
+
+
+@router.get("/zeitraeume/{zid}/wasser")
+def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
+    """Wasser-Verrechnung dieses Zeitraums, aufgeschlüsselt je Einheit.
+
+    Nicht bereit (`bereit=False`), solange der Hauptzähler-Verbrauch oder die
+    Wasserbeträge fehlen — dann nennt `hinweis`, was noch gebraucht wird.
+    """
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+
+    # Verbrauch je Zähler-Id für diesen Zeitraum — wie in der Ablesungs-Maske,
+    # inkl. synthetischer Vorlauf-Periode für einen Anfangsstand (CCCLXXX).
+    zaehler = session.exec(
+        select(Zaehler).where(Zaehler.objekt_id == z.objekt_id, Zaehler.aktiv)
+        .order_by(Zaehler.reihenfolge, Zaehler.id)).all()
+    zma = [(zae, session.exec(select(Ablesung).where(Ablesung.zaehler_id == zae.id)
+            .order_by(Ablesung.datum)).all()) for zae in zaehler]
+    zeitraeume = session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
+    zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
+    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
+
+    # Gesamtverbrauch = Hauptzähler (Kaltwasser, gemessen, ohne eigenen Haupt).
+    haupt = next((zae for zae in zaehler if zae.art == "Kaltwasser"
+                  and zae.typ == "gemessen" and zae.hauptzaehler_id is None), None)
+    gesamt_m3 = verb.get(haupt.id) if haupt else None
+
+    # Unterzähler → Zaehlerposten (verbrauchsscharf einer Einheit zugeordnet).
+    posten = [
+        wasser.Zaehlerposten(name=zae.name, einheit=zae.einheit_bezug,
+                             m3=verb[zae.id], art=zae.art)
+        for zae in zaehler
+        if zae.typ == "gemessen" and zae.hauptzaehler_id
+        and zae.art in _UNTER_ARTEN and zae.einheit_bezug
+        and verb.get(zae.id) is not None
+    ]
+
+    # Gartenwasser — Menge aus dem Rest heraus, Kosten trägt der Eigentümer.
+    garten_z = next((zae for zae in zaehler if zae.art == "Gartenwasser"), None)
+    garten_m3 = (verb.get(garten_z.id) or 0.0) if garten_z else 0.0
+    garten_einheit = garten_z.einheit_bezug if garten_z else ""
+
+    # Kostenbestandteile aus den Kostenpositionen des Zeitraums (fehlende = 0).
+    betrag_je_art = {p.kostenart: (p.betrag or 0.0) for p in session.exec(
+        select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()}
+    komponenten = {schluessel: round(betrag_je_art.get(kostenart, 0.0), 2)
+                   for schluessel, kostenart in _KOMPONENTEN_ART.items()}
+
+    # Bereitschaft: ohne Gesamtverbrauch oder ohne Beträge lässt sich nichts
+    # rechnen — dann konkret sagen, was fehlt.
+    fehlt = []
+    if not gesamt_m3 or gesamt_m3 <= 0:
+        fehlt.append("die Hauptzähler-Ablesung (Gesamtverbrauch)")
+    if sum(komponenten.values()) <= 0:
+        fehlt.append("die Wasserbeträge (Wasser/Abwasser/Niederschlagswasser)")
+    if fehlt:
+        return {"bereit": False,
+                "hinweis": "Es fehlt noch " + " und ".join(fehlt) + "."}
+
+    # Rest-Gewichte (Haupthaus EG+1.OG): Personen·Mietdauer je Einheit, die
+    # KEINEN eigenen Kaltwasser-Unterzähler hat. `gewichte("personen", …)`
+    # liefert {Partei: Gewicht}; über die Bezüge wird Partei→Einheit abgebildet
+    # und je Haupthaus-Einheit summiert.
+    einheiten = list(session.exec(
+        select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
+    mieten = list(session.exec(
+        select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
+    parteien = list(session.exec(
+        select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
+    kalt_einheiten = {zae.einheit_bezug for zae in zaehler
+                      if zae.art == "Kaltwasser" and zae.typ == "gemessen"
+                      and zae.hauptzaehler_id}
+    bez = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
+    partei_einheit = {b.partei: b.einheit for b in bez}
+    rest_gewichte: dict[str, float] = {}
+    for partei, gew in verteilung.gewichte("personen", bez, z.start, z.ende).items():
+        einheit = partei_einheit.get(partei, "")
+        if einheit and einheit not in kalt_einheiten:
+            rest_gewichte[einheit] = round(rest_gewichte.get(einheit, 0.0) + gew, 4)
+
+    e = wasser.verrechne(komponenten, gesamt_m3, posten, garten_m3, rest_gewichte)
+
+    # Ergebnis auf den Vertrag mappen: je Einheit ihre Zeilen (Art, m³, €,
+    # Quelle). Die Art steckt am Zählerposten; der Rest-Anteil ist berechnet.
+    name_art = {p.name: p.art for p in posten}
+    einheiten_out = []
+    for name, daten in e.einheiten.items():
+        zeilen = []
+        for p in daten["posten"]:
+            quelle_txt = p["quelle"]
+            if quelle_txt.startswith("Zähler "):
+                art = name_art.get(quelle_txt[len("Zähler "):], "Kaltwasser")
+                quelle = "gemessen"
+            else:
+                art, quelle = "Anteil Haupthaus", "berechnet"
+            zeilen.append({"art": art, "m3": round(p["m3"], 2),
+                           "kosten": p["kosten"], "quelle": quelle})
+        einheiten_out.append({"name": name, "zeilen": zeilen,
+                              "summe": daten["kosten"]})
+
+    garten = None
+    if e.garten_m3 > 0:
+        garten = {"einheit": garten_einheit or None, "m3": round(e.garten_m3, 2),
+                  "kosten": e.garten_kosten}
+
+    return {
+        "bereit": True,
+        "hinweis": "",
+        "kosten": {**komponenten, "gesamt": e.gesamt_kosten,
+                   "preis_m3": round(e.preis_m3, 2)},
+        "gesamt_m3": round(e.gesamt_m3, 2),
+        "garten": garten,
+        "einheiten": einheiten_out,
+        "rest_m3": round(e.rest_m3, 2),
+        "rest_kosten": e.rest_kosten,
+        "kontrolle": e.kontrolle,
+    }
