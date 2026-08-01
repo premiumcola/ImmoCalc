@@ -7,17 +7,11 @@
 // frueher oder later auseinanderlaufen.
 import { GRUNDSTUECK_LOGO, GRUNDSTUECK_SPRITE } from './kostenicons.js';
 
-// N18 — Datumsfelder öffnen am Desktop (Chromium/Firefox) den Kalender NICHT,
-// wenn man den Textteil antippt; nur der native Picker-Knopf tut das. Da der
-// aus Designgründen ersetzt ist, holt showPicker() den Kalender aus der echten
-// Nutzergeste hervor. In try/catch: nicht jeder Browser/Kontext erlaubt es
-// (dann bleibt das Tippen der Zahlen möglich wie bisher). Einmal je Seite
-// registriert (immo.js wird von allen Seiten geladen).
-document.addEventListener('click', e => {
-  const feld = e.target.closest?.('input[type="date"], input[type="month"], input[type="time"]');
-  if (!feld || feld.disabled || feld.readOnly) return;
-  try { feld.showPicker?.(); } catch { /* nicht erlaubt/unterstützt */ }
-});
+// N18 — Datumsfelder: den Kalender öffnet der Klick aufs SYMBOL rechts (die
+// klickbare, transparente Picker-Indicator-Fläche aus immo.css). Der Textteil
+// bleibt frei zum Tippen: „01112026" springt nativ Tag→Monat→Jahr weiter. Es
+// gibt bewusst KEINEN globalen showPicker()-auf-Klick-Handler mehr — der öffnete
+// den Kalender bei jedem Klick und machte das Eintippen unmöglich (N18-b).
 
 const LOGO_SPRITES = `
 <symbol id="lg-villa" viewBox="0 0 96 96"><rect x="2" y="2" width="92" height="92" rx="20" fill="#EDF1F0"/><circle cx="80" cy="54" r="8" fill="#2E7D4F"/><rect x="78.5" y="60" width="3" height="12" fill="#143038"/><polygon points="22,46 48,27 74,46" fill="#143038"/><rect x="57" y="31" width="5" height="11" fill="#143038"/><rect x="29" y="46" width="38" height="26" fill="#0F6E5C"/><rect x="44" y="57" width="8" height="15" fill="#143038"/><rect x="33" y="51" width="8" height="8" fill="#F4B740"/><rect x="55" y="51" width="8" height="8" fill="#F4B740"/></symbol>
