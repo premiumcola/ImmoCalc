@@ -651,6 +651,12 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
             ergebnis["datum"] = d.isoformat()
             ergebnis["jahr"] = d.year
             ergebnis["monat"] = d.month
+    # N14 — das Abrechnungsjahr (der abgerechnete Zeitraum) bestimmt die Ablage,
+    # NICHT das Rechnungs-/Briefdatum: ein Bescheid „Abrechnung 2025, Grundgebühr
+    # 2026" gehört ins Jahr 2025, obwohl der Brief 2026 datiert ist. Das Datum
+    # bleibt das Rechnungsdatum; nur das Ablagejahr folgt dem Abrechnungszeitraum.
+    if isinstance(ki.get("abrechnungsjahr"), int):
+        ergebnis["jahr"] = ki["abrechnungsjahr"]
     if ki.get("betrag") is not None:
         ergebnis["betrag"] = ki["betrag"]
     # CCLXXI: Die KI versteht den Beleg besser als die Wortlisten und soll die

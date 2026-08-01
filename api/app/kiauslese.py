@@ -65,7 +65,8 @@ SYSTEM_PROMPT = (
     '{"dokumenttyp":"…","kategorie":"…","absender":"…","immobilie":"…","einheit":"…",'
     '"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,"ist_kosten":true|false,'
     '"kosten_relevant":true|false,"nebenkosten":true|false,'
-    '"zeitraum_hinweis":"…","kostenart":"…","felder":{…},'
+    '"zeitraum_hinweis":"…","abrechnungsjahr":<Jahr|null>,'
+    '"kostenart":"…","felder":{…},'
     '"zusammenfassung":"…"}\n'
     "dokumenttyp = kurze Bezeichnung der Belegart (Mietvertrag, Versicherung, "
     "Kredit, Grundsteuerbescheid, Kaufvertrag, Grundbuch, WEG-Abrechnung, "
@@ -112,6 +113,14 @@ SYSTEM_PROMPT = (
     "Zeitraum, den sie abrechnet (Rechnung im März 2025 für das Abrechnungsjahr "
     "2024) — nenne das Jahr des ABRECHNUNGSZEITRAUMS, nicht bloß das "
     "Rechnungsdatum. Leer, wenn es kein Abrechnungsbeleg ist. "
+    "abrechnungsjahr = das JAHR des abgerechneten Zeitraums als Zahl. Trägt ein "
+    "Beleg BEIDES — einen abgerechneten Zeitraum UND einen Abschlags-/Voraus-"
+    "zahlungs-/Grundgebühr-Zeitraum für die Zukunft —, zählt der ABGERECHNETE "
+    "Zeitraum, nicht der Abschlag. Beispiel: \"Abrechnung 2025, Grundgebühr "
+    "2026\" → abrechnungsjahr = 2025 (NICHT 2026). Nimm auch NICHT das bloße "
+    "Rechnungs-/"
+    "Briefdatum, wenn der abgerechnete Zeitraum davorliegt (Bescheid vom Januar "
+    "2026 rechnet 2025 ab → 2025). Kein Abrechnungsbeleg → null. "
     "kostenart = worum es GENAU geht, kurz (z. B. Heizöl, Grundsteuer, Wasser, "
     "Gebäudeversicherung, Schornsteinfeger, Müll, Darlehen). "
     "zusammenfassung = 2 bis 4 vollständige deutsche Sätze: was für ein Dokument "
@@ -213,6 +222,18 @@ def _betrag(wert) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def _jahr(wert) -> int | None:
+    """Ein plausibles Abrechnungsjahr als int (1990..heute+1) — N14. Alles andere
+    (Unfug, weit daneben) fliegt raus; lieber kein Jahr als ein falsches."""
+    if isinstance(wert, bool):
+        return None
+    try:
+        j = int(str(wert).strip()[:4])
+    except (ValueError, TypeError):
+        return None
+    return j if 1990 <= j <= date.today().year + 1 else None
 
 
 def _text(wert) -> str:
@@ -368,6 +389,8 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         "kosten_relevant": _wahrheit(block.get("kosten_relevant")),
         "nebenkosten": _wahrheit(block.get("nebenkosten")),
         "zeitraum_hinweis": _langtext(block.get("zeitraum_hinweis")),
+        # N14 — das Jahr des abgerechneten Zeitraums (nicht des Abschlags/Briefes).
+        "abrechnungsjahr": _jahr(block.get("abrechnungsjahr")),
         "zusammenfassung": zusammenfassung,
         "einordnung": zusammenfassung,
         # CD — der Aussteller/Absender (Firma, Zweckverband, Gemeinde,
