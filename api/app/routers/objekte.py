@@ -274,6 +274,7 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
         "einheiten_mit_flaeche": sum(1 for e in einheiten if e.flaeche),
         "nachpflege": {**zusammenfassung(offen), "offen": offen},
         "zeitraeume": [{"id": z.id, "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
+                        "jahr": zeitraum_label_jahr(z.start, z.ende),   # N34
                         "typ": z.typ, "status": z.status,
                         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None}
                        for z in zeitraeume],
@@ -1037,6 +1038,9 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         # selbst über einen Schlüssel zu verteilen.
         "weg": bool(o.weg),
         "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
+        # N34 — das Jahr des Zeitraums (Jahr mit den meisten Tagen), für Titel
+        # „Abrechnungszeitraum <Jahr> · von–bis" und die jahr-basierte Zuordnung.
+        "jahr": zeitraum_label_jahr(z.start, z.ende),
         "start": z.start.isoformat(), "ende": z.ende.isoformat(),
         "typ": z.typ, "status": z.status,
         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None,
@@ -1055,25 +1059,52 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     }
 
 
-def _zeitraum_grenzen(objekt: Objekt, jahr: int) -> tuple[date, date]:
-    """Start und Ende eines Abrechnungsjahres aus dem Turnus des Objekts.
+def zeitraum_label_jahr(start: date, ende: date) -> int:
+    """N34 — das Kalenderjahr, das die MEISTEN Tage im Zeitraum hat.
 
-    Ein Zeitraum läuft ab dem `start_monat` zwölf Monate lang — bei einem
-    Kalenderjahr also vom 1.1. bis 31.12., bei Start im Oktober vom 1.10. bis
-    zum 30.9. des Folgejahres. Diese eine Regel gilt fürs Anlegen wie fürs
-    Erkennen, damit ein vorgeschlagener Zeitraum exakt dem entspricht, der beim
-    Anlegen entsteht."""
-    start = date(jahr, objekt.start_monat or 1, 1)
+    Ein Wirtschaftsjahr Okt–Sep gehört nach dieser Regel zum Endjahr: Okt2024–
+    Sep2025 hat 92 Tage in 2024, aber 273 in 2025 → 2025. Ein Kalenderjahr
+    trägt sein Jahr ohnehin. Gleichstand (selten) → das spätere Jahr."""
+    tage: dict[int, int] = {}
+    for jahr in range(start.year, ende.year + 1):
+        von = max(start, date(jahr, 1, 1))
+        bis = min(ende, date(jahr, 12, 31))
+        tage[jahr] = (bis - von).days + 1
+    return max(tage, key=lambda j: (tage[j], j))
+
+
+def _grenzen_ab_startjahr(startjahr: int, start_monat: int) -> tuple[date, date]:
+    """Zwölf Monate ab `startjahr`/`start_monat`."""
+    start = date(startjahr, start_monat, 1)
     ende = date(start.year + 1, start.month, 1) - timedelta(days=1)
     return start, ende
 
 
-def _zeitraum_jahr(objekt: Objekt, datum: date) -> int:
-    """In welches Abrechnungsjahr ein Datum fällt — nach dem Startmonat.
+def _zeitraum_grenzen(objekt: Objekt, jahr: int) -> tuple[date, date]:
+    """Start und Ende des Abrechnungsjahres `jahr` aus dem Turnus des Objekts.
 
-    Vor dem Startmonat gehört ein Datum noch zum vorigen Abrechnungsjahr: bei
-    Start im Oktober fällt der 15.9.2026 in das Jahr, das am 1.10.2025 begann."""
-    return datum.year if datum.month >= (objekt.start_monat or 1) else datum.year - 1
+    N34 — `jahr` ist das Jahr mit den MEISTEN Tagen (`zeitraum_label_jahr`), nicht
+    das Startjahr. Bei Start im Oktober gehört „2025" also zu 1.10.2024–30.9.2025.
+    Kalenderjahr bleibt 1.1.–31.12. Diese eine Regel gilt fürs Anlegen wie fürs
+    Erkennen, damit ein vorgeschlagener Zeitraum exakt dem entspricht, der beim
+    Anlegen entsteht."""
+    monat = objekt.start_monat or 1
+    # Für ein gegebenes Label-Jahr kommt der Zeitraum entweder aus demselben oder
+    # dem vorigen Startjahr — genau der, dessen „meiste-Tage-Jahr" `jahr` ergibt.
+    for startjahr in (jahr, jahr - 1):
+        start, ende = _grenzen_ab_startjahr(startjahr, monat)
+        if zeitraum_label_jahr(start, ende) == jahr:
+            return start, ende
+    return _grenzen_ab_startjahr(jahr, monat)          # Rückfall (Kalenderjahr)
+
+
+def _zeitraum_jahr(objekt: Objekt, datum: date) -> int:
+    """In welches Abrechnungsjahr (Label nach `zeitraum_label_jahr`) ein Datum
+    fällt — der Zeitraum, dessen zwölf Monate den Tag enthalten."""
+    monat = objekt.start_monat or 1
+    startjahr = datum.year if datum.month >= monat else datum.year - 1
+    start, ende = _grenzen_ab_startjahr(startjahr, monat)
+    return zeitraum_label_jahr(start, ende)
 
 
 @router.get("/objekte/{slug}/zeitraum-fuer")

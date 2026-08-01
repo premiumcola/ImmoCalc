@@ -2168,8 +2168,11 @@ async function laden() {
     ablesungMaske = null;
   }
   chipMap = baueChipMap();
-  titel.textContent = daten.label;
-  sub.textContent = `${daten.objekt_name} · ${daten.typ}`;
+  // N34 — Titel: „Abrechnungszeitraum <Jahr> · von – bis" (Jahr = Jahr mit den
+  // meisten Tagen). Fällt das Backend-`jahr` mal aus, gilt das Jahr aus dem Ende.
+  const jahrLabel = daten.jahr || Number((daten.ende || '').slice(0, 4)) || '';
+  titel.textContent = `Abrechnungszeitraum ${jahrLabel}`.trim();
+  sub.textContent = `${daten.label} · ${daten.objekt_name}`;
   await zeichnen();
 }
 

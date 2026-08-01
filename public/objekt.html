@@ -2168,8 +2168,8 @@ async function laden() {
         return `<button class="eintrag klick" data-zeitraum="${z.id}"
                         style="cursor:pointer">
             <span class="et">
-              <span class="en">${esc(z.label)}</span>
-              <span class="ed">${esc(z.typ)}</span></span>${chip}
+              <span class="en">${z.jahr ? `Abrechnungszeitraum ${z.jahr}` : esc(z.label)}</span>
+              <span class="ed">${z.jahr ? `${esc(z.label)} · ${esc(z.typ)}` : esc(z.typ)}</span></span>${chip}
             <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
           </button>`;
       }).join('')
