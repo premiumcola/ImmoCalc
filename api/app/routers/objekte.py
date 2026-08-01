@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from ..belegposten import (belege_je_position, handanteil, kurz,
+from ..belegposten import (BelegFehler, belege_je_position, handanteil, kurz,
+                           loese as beleg_loese, verbuche as beleg_verbuche,
                            anlegen as position_bauen)
 from ..db import get_session
 from ..deps import objekt_holen
@@ -276,6 +277,8 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
         "zeitraeume": [{"id": z.id, "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
                         "jahr": zeitraum_label_jahr(z.start, z.ende),   # N34
                         "typ": z.typ, "status": z.status,
+                        # N35 — ISO-Grenzen fürs Umstellen-Werkzeug (Datumsfelder)
+                        "start": z.start.isoformat(), "ende": z.ende.isoformat(),
                         "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None}
                        for z in zeitraeume],
     }
@@ -1264,6 +1267,182 @@ def _zeitraum(session: Session, zid: int) -> Zeitraum:
     if not z:
         raise HTTPException(404, "Zeitraum nicht gefunden")
     return z
+
+
+# --------------------------------------------------------------------------
+# N35 — Zeiträume umstellen: Grenzen verschieben, teilen, Belege neu zuordnen.
+# Werkzeug über der Zeitraumliste; z. B. Wirtschaftsjahr (Okt–Sep) auf volle
+# Kalenderjahre. Additiv, abgeschlossene Zeiträume bleiben gesperrt.
+# --------------------------------------------------------------------------
+
+def _z_label(z: Zeitraum) -> str:
+    return f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
+
+
+class ZeitraumPatch(BaseModel):
+    """Grenzen oder Art eines bestehenden Zeitraums ändern (N35)."""
+    start: Optional[date] = None
+    ende: Optional[date] = None
+    typ: Optional[str] = None
+
+
+@router.patch("/zeitraeume/{zid}")
+def zeitraum_grenzen_aendern(zid: int, data: ZeitraumPatch,
+                             session: Session = Depends(get_session)) -> dict:
+    """Verschiebt/erweitert die Grenzen eines Abrechnungszeitraums (N35).
+
+    Für die Turnus-Umstellung (Wirtschaftsjahr → Kalenderjahr): einen Zeitraum
+    verlängern oder das Ende vorziehen, einen Rumpf kennzeichnen. Additiv — kein
+    Beleg wird hier verschoben (das macht danach `belege-abgleichen`). Die
+    abgeleiteten Gewichte offener Zeiträume werden neu berechnet, weil sich mit
+    den Grenzen die Mietermonate ändern (N5). Ein abgeschlossener Zeitraum bleibt
+    gesperrt — er ist ein fertiges Dokument."""
+    z = _zeitraum(session, zid)
+    if z.status == "abgeschlossen":
+        raise HTTPException(409, "Ein abgeschlossener Zeitraum lässt sich nicht "
+                                 "mehr verschieben.")
+    start = data.start or z.start
+    ende = data.ende or z.ende
+    if ende <= start:
+        raise HTTPException(400, "Das Ende muss nach dem Start liegen")
+    andere = session.exec(select(Zeitraum).where(
+        Zeitraum.objekt_id == z.objekt_id, Zeitraum.id != zid)).all()
+    if any(a.start == start and a.ende == ende for a in andere):
+        raise HTTPException(409, "Diesen Zeitraum gibt es bereits")
+    z.start, z.ende = start, ende
+    if data.typ:
+        z.typ = data.typ
+    session.add(z)
+    session.commit()
+    positionen_neu_ableiten(session, z.objekt_id)
+    session.commit()
+    return {"id": z.id, "typ": z.typ, "label": _z_label(z),
+            "start": z.start.isoformat(), "ende": z.ende.isoformat()}
+
+
+class TeilenIn(BaseModel):
+    """Ein Zeitraum wird an diesem Datum in zwei geteilt (N35)."""
+    datum: date
+
+
+@router.post("/zeitraeume/{zid}/teilen", status_code=201)
+def zeitraum_teilen(zid: int, data: TeilenIn,
+                    session: Session = Depends(get_session)) -> dict:
+    """Teilt einen Zeitraum am `datum` in [start, datum-1] und [datum, ende].
+
+    Der alte Zeitraum wird verkürzt, ein zweiter für den Rest angelegt. Belege
+    werden hier NICHT verschoben — danach `belege-abgleichen` ordnet sie nach
+    Datum den beiden Hälften zu. Additiv, nichts geht verloren."""
+    z = _zeitraum(session, zid)
+    if z.status == "abgeschlossen":
+        raise HTTPException(409, "Ein abgeschlossener Zeitraum lässt sich nicht "
+                                 "teilen.")
+    if not (z.start < data.datum <= z.ende):
+        raise HTTPException(400, "Das Teilungsdatum muss innerhalb des Zeitraums "
+                                 "liegen.")
+    neu = Zeitraum(objekt_id=z.objekt_id, start=data.datum, ende=z.ende,
+                   typ=z.typ, status="in Arbeit")
+    z.ende = data.datum - timedelta(days=1)
+    session.add(z)
+    session.add(neu)
+    session.commit()
+    session.refresh(neu)
+    positionen_neu_ableiten(session, z.objekt_id)
+    session.commit()
+    return {"alt": {"id": z.id, "label": _z_label(z)},
+            "neu": {"id": neu.id, "label": _z_label(neu)}}
+
+
+@router.post("/objekte/{slug}/zeitraeume/belege-abgleichen")
+def belege_abgleichen(slug: str, vorschau: bool = True,
+                      session: Session = Depends(get_session)) -> dict:
+    """Ordnet die Belege eines Objekts ihren Zeiträumen NACH DATUM neu zu (N35).
+
+    Nach einer Umstellung (Grenzen verschoben, Zeitraum geteilt) sitzen Belege
+    noch im alten Zeitraum. Diese Funktion schiebt jeden Beleg in den Zeitraum,
+    in dessen Fenster sein Belegdatum fällt, und rechnet ihn dort neu ein
+    (`loese`+`verbuche`), falls er verbucht war. Ein Beleg gehört immer in GENAU
+    EINEN Zeitraum — kein Doppelpflegen.
+
+    `?vorschau=true` (Vorgabe) ändert nichts, sondern meldet, was passieren
+    würde: welche Belege wohin wandern und welche **Grenzfälle** Handarbeit
+    brauchen — `kein_datum`, `kein_zeitraum` (Datum in keiner Periode) oder
+    `randnah` (dicht an einer inneren Grenze → evtl. zeitanteilig auf zwei
+    Zeiträume aufzuteilen, z. B. eine Jahresrechnung). Abgeschlossene Zeiträume
+    werden nie angetastet."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    perioden = sorted(session.exec(select(Zeitraum).where(
+        Zeitraum.objekt_id == o.id)).all(), key=lambda z: z.start)
+    gesperrt = {z.id for z in perioden if z.status == "abgeschlossen"}
+    p_nach_id = {z.id: z for z in perioden}
+    offene = [z for z in perioden if z.id not in gesperrt]
+    # Innere Grenzen: nur wo eine Nachbarperiode anschließt, ist „randnah" ein
+    # echtes Übergangsfenster (sonst wäre jeder Dezember/Januar-Beleg markiert).
+    starts = {z.start for z in perioden}
+    enden = {z.ende for z in perioden}
+    RAND = timedelta(days=31)
+
+    belege = session.exec(select(Dokument).where(
+        Dokument.objekt_id == o.id, Dokument.zeitraum_id.is_not(None))).all()
+    moves, grenzfaelle = [], []
+    for d in belege:
+        if d.zeitraum_id in gesperrt:
+            continue
+        if not d.belegdatum:
+            grenzfaelle.append({"id": d.id, "name": d.dateiname,
+                                "typ": "kein_datum"})
+            continue
+        ziel = next((z for z in offene
+                     if z.start <= d.belegdatum <= z.ende), None)
+        if ziel is None:
+            grenzfaelle.append({"id": d.id, "name": d.dateiname,
+                                "typ": "kein_zeitraum"})
+            continue
+        # randnah nur an einer inneren Grenze (Nachbarperiode vorhanden)
+        nah_vorn = (d.belegdatum - ziel.start < RAND
+                    and (ziel.start - timedelta(days=1)) in enden)
+        nah_hinten = (ziel.ende - d.belegdatum < RAND
+                      and (ziel.ende + timedelta(days=1)) in starts)
+        if nah_vorn or nah_hinten:
+            grenzfaelle.append({"id": d.id, "name": d.dateiname,
+                                "typ": "randnah"})
+        if d.zeitraum_id != ziel.id:
+            moves.append({
+                "id": d.id, "name": d.dateiname,
+                "von": _z_label(p_nach_id[d.zeitraum_id])
+                if d.zeitraum_id in p_nach_id else "—",
+                "nach": _z_label(ziel), "ziel_id": ziel.id,
+                "verbucht": d.position_id is not None})
+
+    if vorschau:
+        return {"vorschau": True, "wandern": len(moves), "moves": moves,
+                "grenzfaelle": grenzfaelle}
+
+    verschoben, fehler = 0, []
+    for m in moves:
+        d = session.get(Dokument, m["id"])
+        if d is None:
+            continue
+        try:
+            if d.position_id:
+                beleg_loese(session, d)
+            d.zeitraum_id = m["ziel_id"]
+            session.add(d)
+            if m["verbucht"] and (d.kostenart or "").strip():
+                beleg_verbuche(session, d)
+            verschoben += 1
+        except BelegFehler as e:
+            session.rollback()
+            fehler.append({"id": d.id, "name": d.dateiname, "grund": str(e)})
+    session.commit()
+    positionen_neu_ableiten(session, o.id)
+    session.commit()
+    logging.info("Belege abgeglichen für %s: %d verschoben, %d Grenzfälle, "
+                 "%d Fehler", slug, verschoben, len(grenzfaelle), len(fehler))
+    return {"vorschau": False, "verschoben": verschoben,
+            "grenzfaelle": grenzfaelle, "fehler": fehler}
 
 
 def _gewichte(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float]:

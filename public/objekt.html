@@ -159,6 +159,39 @@
   .zd-ab{background:var(--paper);color:var(--ink)}
   .zd-ok{background:var(--teal);color:#fff}
 
+  /* N35 — Zeiträume-umstellen-Werkzeug */
+  .sekopf-akt{display:flex;gap:16px;align-items:center}
+  .zw-intro{margin:0 18px 12px;font:500 12.5px var(--body);color:var(--soft);
+    line-height:1.55}
+  .zw-row{margin:0 18px 10px;padding:11px 12px;background:var(--paper);
+    border-radius:13px}
+  .zw-lbl{font:600 12.5px var(--body);color:var(--ink);margin-bottom:8px;
+    display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .zw-lbl .zw-typ{font:600 10px var(--mono);text-transform:uppercase;
+    color:var(--soft);letter-spacing:.04em}
+  .zw-lbl .zw-zu{font:600 10px var(--mono);color:var(--amber)}
+  .zw-felder{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .zw-felder input[type=date]{flex:1;min-width:130px;border:1.5px solid var(--line);
+    border-radius:10px;padding:9px 10px;font:600 12.5px var(--body);
+    background:var(--sheet);color:var(--ink);min-height:42px}
+  .zw-felder input[type=date]:focus{outline:none;border-color:var(--teal)}
+  .zw-b{border:1px solid var(--line);background:var(--sheet);color:var(--ink);
+    border-radius:10px;padding:9px 12px;min-height:42px;font:600 12.5px var(--body);
+    cursor:pointer;white-space:nowrap}
+  .zw-b:hover{border-color:var(--teal);color:var(--teal-d)}
+  .zw-b.teil{color:var(--amber)}
+  .zw-teil{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .zw-teil label{font:600 10px var(--mono);text-transform:uppercase;color:var(--soft)}
+  .zw-neu{margin:14px 18px 6px;padding-top:14px;border-top:1px solid var(--line)}
+  .zw-abgl{margin:6px 18px 4px}
+  .zw-abgl .zd-ok{width:100%;border-radius:12px;padding:14px;min-height:52px;
+    border:none;font:600 14px var(--disp);cursor:pointer}
+  .zw-erg{margin:10px 18px 0;font:500 12.5px var(--body);color:var(--ink);
+    line-height:1.55;max-height:34vh;overflow:auto}
+  .zw-erg .zw-move{color:var(--teal-d)}
+  .zw-erg .zw-gf{color:var(--amber)}
+  .zw-erg b{font-weight:700}
+
   /* CCCXIII — Eintrags-Detail: Daten links, Beleg rechts. Auf dem Telefon
      stapelt sich alles (Daten oben, Beleg darunter), ab Tablet nebeneinander. */
   dialog.detail-dlg{max-width:min(1000px,calc(100vw - 24px));width:calc(100vw - 24px);
@@ -2209,7 +2242,9 @@ async function laden() {
     : (det.zeitraeume[0] && det.zeitraeume[0].id != null ? det.zeitraeume[0].id : null);
   const zeitraumBlock = istGrundstueck() ? '' : `
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
-      ${fokus ? '' : '<button data-zeitraum-neu="1">Anlegen</button>'}</div>
+      ${fokus ? '' : `<span class="sekopf-akt">
+        <button data-zeitraum-werkzeug="1">Umstellen</button>
+        <button data-zeitraum-neu="1">Anlegen</button></span>`}</div>
     <div class="liste">${zr}</div>
     ${fokus ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
       im Zeitraum steht, was davon auf diese Einheit entfällt.</div>` : ''}
@@ -3155,6 +3190,144 @@ async function formular(einst) {
   form.scrollTop = 0;
 }
 
+/* N35 — Werkzeug „Zeiträume umstellen": Grenzen verschieben, teilen, neuen
+   Zeitraum anlegen und Belege nach Datum neu zuordnen. Reine GUI über die
+   Zeitraum-Endpunkte (PATCH /zeitraeume, /teilen, /belege-abgleichen). */
+async function zeitraumWerkzeug() {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'immo-dlg zuord-dlg';
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  let veraendert = false;   // ob die Seite dahinter neu geladen werden muss
+
+  const rowHtml = z => {
+    const offen = z.status === 'in Arbeit';
+    return `<div class="zw-row">
+        <div class="zw-lbl">${esc(z.label)}
+          <span class="zw-typ">${esc(z.typ)}</span>
+          ${offen ? '' : '<span class="zw-zu">abgeschlossen</span>'}</div>
+        ${offen ? `<div class="zw-felder">
+          <input type="date" data-zw-start value="${esc(z.start || '')}" aria-label="Start">
+          <input type="date" data-zw-ende value="${esc(z.ende || '')}" aria-label="Ende">
+          <button class="zw-b" data-zw-save="${z.id}">Speichern</button></div>
+        <div class="zw-teil"><label>teilen ab</label>
+          <input type="date" data-zw-teildatum aria-label="Teilungsdatum">
+          <button class="zw-b teil" data-zw-teilen="${z.id}">Teilen</button></div>`
+        : ''}
+      </div>`;
+  };
+
+  async function rendern() {
+    const det = await api(`/objekte/${encodeURIComponent(slug)}`);
+    const zs = (det.zeitraeume || []).slice()
+      .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+    dlg.innerHTML = `
+      <div class="zd-kopf"><span class="zd-t">Zeiträume umstellen</span>
+        <button class="zd-x" data-nein aria-label="Schließen">×</button></div>
+      <p class="zw-intro">Jeder Beleg gehört in <b>genau einen</b> Zeitraum — den,
+        in dessen Datumsfenster er fällt. Grenzen ändern oder teilen, dann unten
+        <b>Belege neu zuordnen</b>: die App schiebt jeden Beleg ins richtige
+        Fenster und markiert Grenzfälle (z. B. Jahresrechnungen, die anteilig in
+        zwei Zeiträume gehören — die teilst du danach per Teilbetrag auf).</p>
+      ${zs.map(rowHtml).join('') || '<p class="zw-intro">Noch kein Zeitraum.</p>'}
+      <div class="zw-neu"><span class="zd-l">Neuer Zeitraum</span>
+        <div class="zw-felder">
+          <input type="date" data-zw-neu-start aria-label="Start neuer Zeitraum">
+          <input type="date" data-zw-neu-ende aria-label="Ende neuer Zeitraum">
+          <button class="zw-b" data-zw-neu>Anlegen</button></div></div>
+      <div class="zw-abgl">
+        <button class="zd-ok" data-zw-abgleich>Belege nach Datum neu zuordnen</button></div>
+      <div class="zw-erg" id="zwErg"></div>
+      <div class="zd-fuss"><button class="zd-ab" data-nein>Schließen</button></div>`;
+  }
+
+  const erg = () => dlg.querySelector('#zwErg');
+  const fehlerText = f => String(f?.message || f || 'Das ging nicht.');
+
+  async function speichern(id, row) {
+    const start = row.querySelector('[data-zw-start]').value;
+    const ende = row.querySelector('[data-zw-ende]').value;
+    if (!start || !ende) return melde('Start und Ende angeben.', 'neg');
+    try {
+      await api(`/zeitraeume/${id}`, { method: 'PATCH', body: { start, ende } });
+    } catch (f) { return melde(fehlerText(f), 'neg'); }
+    veraendert = true; melde('Grenzen gespeichert.'); await rendern();
+  }
+
+  async function teilen(id, row) {
+    const datum = row.querySelector('[data-zw-teildatum]').value;
+    if (!datum) return melde('Teilungsdatum angeben.', 'neg');
+    try {
+      await api(`/zeitraeume/${id}/teilen`, { method: 'POST', body: { datum } });
+    } catch (f) { return melde(fehlerText(f), 'neg'); }
+    veraendert = true; melde('Zeitraum geteilt.'); await rendern();
+  }
+
+  async function neuAnlegen() {
+    const start = dlg.querySelector('[data-zw-neu-start]').value;
+    const ende = dlg.querySelector('[data-zw-neu-ende]').value;
+    if (!start || !ende) return melde('Start und Ende angeben.', 'neg');
+    try {
+      await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume`,
+                { method: 'POST', body: { start, ende } });
+    } catch (f) { return melde(fehlerText(f), 'neg'); }
+    veraendert = true; melde('Zeitraum angelegt.'); await rendern();
+  }
+
+  function abgleichBericht(v, angewandt) {
+    const moves = (v.moves || []).map(m =>
+      `<div class="zw-move">• <b>${esc(m.name)}</b>: ${esc(m.von)} → ${esc(m.nach)}</div>`).join('');
+    const GF = { kein_datum: 'kein Belegdatum', kein_zeitraum: 'Datum in keinem Zeitraum',
+                 randnah: 'randnah — evtl. zeitanteilig prüfen' };
+    const gf = (v.grenzfaelle || []).map(g =>
+      `<div class="zw-gf">▲ <b>${esc(g.name)}</b>: ${esc(GF[g.typ] || g.typ)}</div>`).join('');
+    const kopf = angewandt
+      ? `<b>${v.verschoben} Beleg(e) verschoben.</b>`
+      : `<b>${v.wandern} Beleg(e) würden wandern.</b>`;
+    const knopf = (!angewandt && v.wandern)
+      ? `<div class="zw-abgl" style="margin-top:10px"><button class="zd-ok"
+           data-zw-anwenden>Übernehmen — ${v.wandern} Beleg(e) verschieben</button></div>`
+      : '';
+    erg().innerHTML = kopf
+      + (moves ? `<div style="margin-top:6px">${moves}</div>` : '')
+      + (gf ? `<div style="margin-top:8px"><b>Grenzfälle (${(v.grenzfaelle || []).length}):</b>${gf}</div>` : '')
+      + knopf;
+  }
+
+  async function abgleichVorschau() {
+    erg().textContent = 'Prüfe …';
+    try {
+      const v = await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume/belege-abgleichen`,
+                          { method: 'POST' });
+      abgleichBericht(v, false);
+    } catch (f) { melde(fehlerText(f), 'neg'); erg().textContent = ''; }
+  }
+
+  async function abgleichAnwenden() {
+    try {
+      const v = await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume/`
+                          + 'belege-abgleichen?vorschau=false', { method: 'POST' });
+      veraendert = true;
+      abgleichBericht(v, true);
+      melde(`${v.verschoben} Beleg(e) neu zugeordnet.`);
+    } catch (f) { melde(fehlerText(f), 'neg'); }
+  }
+
+  dlg.addEventListener('click', async e => {
+    if (e.target.closest('[data-nein]')) { dlg.close(); if (veraendert) laden(); return; }
+    const save = e.target.closest('[data-zw-save]');
+    if (save) return speichern(save.dataset.zwSave, save.closest('.zw-row'));
+    const teil = e.target.closest('[data-zw-teilen]');
+    if (teil) return teilen(teil.dataset.zwTeilen, teil.closest('.zw-row'));
+    if (e.target.closest('[data-zw-neu]')) return neuAnlegen();
+    if (e.target.closest('[data-zw-abgleich]')) return abgleichVorschau();
+    if (e.target.closest('[data-zw-anwenden]')) return abgleichAnwenden();
+  });
+
+  await rendern();
+  dlg.showModal();
+}
+
 /* Was wirklich im Feld steht — auch wenn es "1.250.000" anzeigt.
    `data-wert` hat Vorrang: dort legt die Formatierung den rohen Wert ab. */
 function zahlAus(el) {
@@ -4022,6 +4195,10 @@ inhalt.addEventListener('click', async e => {
                  absicht: 'zeitraum' });
     }
     return;
+  }
+
+  if (e.target.closest('[data-zeitraum-werkzeug]')) {
+    return zeitraumWerkzeug();
   }
 
   if (e.target.closest('[data-zeitraum-neu]')) {
