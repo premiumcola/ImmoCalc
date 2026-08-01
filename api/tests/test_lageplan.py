@@ -124,9 +124,11 @@ def test_lageplan_anlegen_landet_in_der_liste(monkeypatch):
         assert antwort.status_code == 201
         neu = antwort.json()
         assert neu["einheit_id"] == eid
-        # Die Datei wurde in der Cloud abgelegt — genau einmal, unter Sonstiges.
+        # N9 — die Datei wurde genau einmal abgelegt, im Fotos-/Lage-Ordner
+        # (10_Fotos_Lage) mit sauberem „Lageplan-…"-Namen (kein „ohne-Jahr_").
         assert len(wolke.abgelegt) == 1
-        assert "99_Sonstiges" in wolke.abgelegt[0]
+        assert "10_Fotos_Lage" in wolke.abgelegt[0]
+        assert "ohne-Jahr" not in wolke.abgelegt[0]
 
         liste = c.get(f"/api/einheiten/{eid}/lageplaene").json()
         assert [p["id"] for p in liste] == [neu["id"]]

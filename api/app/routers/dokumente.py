@@ -2318,8 +2318,11 @@ def aendern(dokument_id: int, data: AenderungIn,
     # beide stehen nur im Namen.
     alt_jahr, alt_monat = datum_aus_namen(d.dateiname)
     monat = data.monat if "monat" in gesetzt else alt_monat
+    # N26 — Betrag aus dem Namen, aber der am Beleg gespeicherte Betrag ist der
+    # Rückfall: ein Jahreswechsel darf die Summe nicht verlieren, nur weil der
+    # Dateiname (noch) keinen Betrag trägt.
     betrag = (data.betrag if "betrag" in gesetzt
-              else betrag_aus_namen(d.dateiname))
+              else (betrag_aus_namen(d.dateiname) or d.betrag))
     beschreibung = (data.beschreibung if "beschreibung" in gesetzt
                     else _bezeichnung(d.dateiname))
     if jahr is None and "jahr" not in gesetzt:
@@ -2373,11 +2376,53 @@ def aendern(dokument_id: int, data: AenderungIn,
     d.betrag = betrag if betrag and betrag > 0 else None
     d.dateiname = name
     d.status = "zugeordnet"
+    # N26 — ändert sich das Jahr/Belegdatum und ist kein Zeitraum ausdrücklich
+    # genannt, wandert der Beleg in den Abrechnungszeitraum des NEUEN Jahres
+    # (vorhandener oder neu angelegter, nach dem Turnus des Objekts). Ohne das
+    # blieb die Kostenposition im alten Jahr hängen, obwohl die Datei längst ins
+    # richtige Jahr verschoben war.
+    if "zeitraum_id" not in gesetzt and ({"jahr", "belegdatum"} & gesetzt):
+        if "jahr" in gesetzt and jahr:
+            # Ein AUSDRÜCKLICH gesetztes Jahr (das Abrechnungsjahr) hat Vorrang
+            # vor dem Belegdatum — das ist das Rechnungsdatum, und der
+            # abgerechnete Zeitraum kann davon abweichen (N14). Zeitraum nach der
+            # Turnus-Regel des Objekts finden oder anlegen.
+            from .objekte import _zeitraum_grenzen
+            start_z, ende_z = _zeitraum_grenzen(o, jahr)
+            ziel = next((z for z in session.exec(select(Zeitraum).where(
+                Zeitraum.objekt_id == o.id)).all()
+                if z.start == start_z and z.ende == ende_z), None)
+            if ziel is None:
+                ziel = Zeitraum(objekt_id=o.id, start=start_z, ende=ende_z,
+                                typ="regulär", status="in Arbeit")
+                session.add(ziel)
+                session.flush()
+        else:
+            ziel = _zeitraum_fuer_beleg(session, o, d)
+        if ziel is not None:
+            zeitraum_id = ziel.id
+    alt_position_id = d.position_id
     d.zeitraum_id = zeitraum_id
     session.add(d)
-    # Ist der Beleg bereits in eine Kostenposition eingerechnet, zieht seine
-    # Summe mit — angelegt wird hier nichts, das bleibt der bestätigte Schritt.
-    buchung = belegposten.nachziehen(session, d)
+    # N26 — war der Beleg verbucht und wechselt er den Abrechnungszeitraum, zieht
+    # die KOSTENPOSITION mit: im alten Jahr gelöst, im neuen neu gebildet. Andere
+    # Belege der alten Position (z. B. ein SEPA-Mandat ohne Kosten) bleiben
+    # unberührt. Ohne Zeitraumwechsel bleibt es beim ehrlichen Nachziehen (die
+    # Summe darf bei geändertem Betrag/Kostenart nicht falsch stehenbleiben).
+    alt_pos = (session.get(Kostenposition, alt_position_id)
+               if alt_position_id else None)
+    if alt_pos is not None and alt_pos.zeitraum_id != zeitraum_id:
+        belegposten.loese(session, d)              # Kosten aus dem alten Jahr nehmen
+        if d.betrag and (d.kostenart or "").strip():
+            try:
+                belegposten.verbuche(session, d)   # im neuen Jahr neu verbuchen
+                buchung = "verschoben"
+            except BelegFehler:
+                buchung = "geloest"
+        else:
+            buchung = "geloest"
+    else:
+        buchung = belegposten.nachziehen(session, d)
     try:
         session.commit()
     except IntegrityError as e:

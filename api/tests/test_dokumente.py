@@ -1897,3 +1897,49 @@ def test_lageplaene_liste_ist_leer_ohne_plaene():
         assert c.get(f"/api/einheiten/{eid}/lageplaene").json() == []
         zeilen = c.get(f"/api/objekte/{slug}/einheiten").json()
         assert zeilen[0]["lageplaene"] == []
+
+
+def test_jahreswechsel_zieht_kostenposition_ins_richtige_jahr(monkeypatch):
+    """N26 — ändert man das Jahr eines verbuchten Belegs, wandert die
+    Kostenposition in die Abrechnung des NEUEN Jahres; im alten Jahr wird sie
+    gelöst. Vorher blieb die Position im alten Jahr hängen, obwohl die Datei
+    längst ins richtige Jahr verschoben war."""
+    import app.routers.dokumente as modul
+    from app.models import Kostenposition, Zeitraum
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/N26weg 1"
+        slug = _mit_cloud(c, "N26weg 1", ordner)
+        zid25 = c.post(f"/api/objekte/{slug}/zeitraeume",
+                       json={"jahr": 2025}).json()["id"]
+        did = c.post("/api/dokumente/vorhandenen-zuordnen", json={
+            "objekt": slug,
+            "pfad": f"/{ordner}/60_Nebenkosten/2025/muell.pdf",
+            "kategorie": "Nebenkosten", "kostenart": "Müll", "betrag": 200.0,
+            "jahr": 2025, "zeitraum_id": zid25}).json()["id"]
+        assert c.post(f"/api/dokumente/{did}/position").status_code in (200, 201)
+        with Session(engine) as s:
+            pos25 = s.exec(select(Kostenposition).where(
+                Kostenposition.zeitraum_id == zid25,
+                Kostenposition.kostenart == "Müll")).first()
+            assert pos25 and round(pos25.betrag or 0, 2) == 200.0
+            pos25_id = pos25.id
+
+        # Jahr manuell auf 2024 korrigieren — Cloud mocken (Datei wandert mit).
+        monkeypatch.setattr(modul, "verbindung",
+                            lambda session: _Wolke([], ordner))
+        r = c.patch(f"/api/dokumente/{did}", json={"jahr": 2024})
+        assert r.status_code == 200, r.text
+
+        with Session(engine) as s:
+            dok = s.get(Dokument, did)
+            assert dok.zeitraum_id != zid25            # neuer Abrechnungszeitraum
+            z24 = s.get(Zeitraum, dok.zeitraum_id)
+            assert 2024 in (z24.start.year, z24.ende.year)
+            pos24 = s.exec(select(Kostenposition).where(
+                Kostenposition.zeitraum_id == z24.id,
+                Kostenposition.kostenart == "Müll")).first()
+            assert pos24 and round(pos24.betrag or 0, 2) == 200.0
+            assert dok.position_id == pos24.id
+            # Die alte 2025-Position hat die Kosten verloren.
+            assert round(s.get(Kostenposition, pos25_id).betrag or 0, 2) == 0.0
