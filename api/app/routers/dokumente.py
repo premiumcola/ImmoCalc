@@ -3038,6 +3038,58 @@ def loese_zuordnung(dokument_id: int,
     return {"ok": True, "geloest": geloest}
 
 
+class DuplikatEntfernenIn(BaseModel):
+    """N16b — welches byte-gleiche Dokument erhalten bleibt."""
+    behalten_id: int
+
+
+@router.post("/{dokument_id}/duplikat-entfernen")
+def duplikat_entfernen(dokument_id: int, data: DuplikatEntfernenIn,
+                       session: Session = Depends(get_session)) -> dict:
+    """N16b — ein Dokument NUR entfernen, wenn es byte-gleich zu einem anderen
+    ist, das ERHALTEN bleibt (`behalten_id`).
+
+    Die Byte-Gleichheit wird durch Herunterladen und SHA1-Vergleich beider
+    Dateien bewiesen — nie wird eine einzigartige Datei gelöscht (der Grundsatz
+    „nie Daten verlieren" bleibt gewahrt, es geht nur eine identische Kopie).
+    Entfernt Datei, `.immocalc`-Sidecar und den DB-Eintrag; eine Verbuchung wird
+    vorher gelöst (die erhaltene Kopie trägt die Kosten weiter)."""
+    import hashlib
+    weg = session.get(Dokument, dokument_id)
+    behalten = session.get(Dokument, data.behalten_id)
+    if not weg or not behalten:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if weg.id == behalten.id:
+        raise HTTPException(400, "Beide Angaben zeigen auf dasselbe Dokument.")
+    o = session.get(Objekt, weg.objekt_id) if weg.objekt_id else None
+    if not o:
+        raise HTTPException(400, "Zum Dokument gehört keine Immobilie.")
+    _cloud_pflicht(o)
+    client = verbindung(session)
+    try:
+        b_weg, _ = client.hole(weg.pfad)
+        b_behalten, _ = client.hole(behalten.pfad)
+    except NextcloudFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+    if hashlib.sha1(b_weg).hexdigest() != hashlib.sha1(b_behalten).hexdigest():
+        raise HTTPException(
+            409, "Die Dateien sind NICHT byte-gleich — es wird nichts gelöscht.")
+    # Verbuchung lösen (die erhaltene Kopie trägt die Kosten weiter), dann Datei
+    # und Sidecar entfernen — nur unterhalb des Home-Ordners (loesche-Riegel).
+    belegposten.loese(session, weg)
+    geloescht = []
+    for pfad in (weg.pfad, _sidecar_pfad(weg.pfad)):
+        try:
+            client.loesche(pfad)
+            geloescht.append(pfad)
+        except NextcloudFehler as fehler:
+            log.info("Duplikat-Datei nicht löschbar (%s): %s", pfad, fehler)
+    session.delete(weg)
+    session.commit()
+    log.info("Duplikat entfernt: %s (behalten: %s)", weg.pfad, behalten.pfad)
+    return {"ok": True, "geloescht": geloescht, "behalten_pfad": behalten.pfad}
+
+
 # --------------------------------------------------------------------------
 # CCLXXIV: Das KI-Raster festhalten — am Dokument UND als `.immocalc`-Steckbrief
 # neben dem PDF in der Nextcloud.
