@@ -442,9 +442,13 @@
   /* ---- NK-STRUKTUR: Bereiche, Zähler-Chip, Schlüsselwort ----------------- */
   /* Bereichs-Überschrift über einer Gruppe von Kostenzeilen: dezente
      Abtrennung, kleine gedeckte Mono-Marke — ordnet, ohne zu rufen. */
-  .kat-kopf{display:flex;align-items:center;gap:10px;margin:20px 2px 8px}
-  .kat-kopf span{font:600 10px var(--mono);letter-spacing:.09em;flex:none;
+  .kat-kopf{display:flex;align-items:center;gap:9px;margin:20px 2px 8px}
+  .kat-kopf .kat-t{font:600 10px var(--mono);letter-spacing:.09em;flex:none;
     text-transform:uppercase;color:var(--soft)}
+  /* Bereichs-Symbol: dezent, gedeckt, mittig zur Marke — ordnet, ruft nicht. */
+  .kat-kopf .kat-ikon{flex:none;display:inline-flex;align-items:center;
+    justify-content:center;color:var(--soft)}
+  .kat-kopf .kat-ikon svg{width:17px;height:17px;display:block}
   .kat-kopf::after{content:"";flex:1;height:1px;background:var(--line)}
   /* Zähler-Chip: der abgelesene Medienverbrauch an der Position — bewusst
      eigenständig (gedeckt-teal, mono, rund) und klar KEIN €-Betrag, damit er
@@ -453,15 +457,18 @@
     font:600 10.5px var(--mono);color:var(--teal-d);background:var(--teal-l);
     border-radius:999px;padding:2px 9px;margin-right:7px;white-space:nowrap}
   /* Verteilungsschlüssel als ein ruhiges Wort an der Zeile. */
-  .vkey{display:inline-block;vertical-align:middle;margin-left:7px;
-    font:600 10px var(--mono);letter-spacing:.02em;color:var(--soft);
+  .vkey{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;
+    margin-left:7px;font:600 10px var(--mono);letter-spacing:.02em;color:var(--soft);
     background:#EDF1F0;border-radius:6px;padding:2px 8px;white-space:nowrap}
+  .vkey svg{flex:none;width:12px;height:12px;display:block;opacity:.85}
   /* CCCLXIII — Anbieter/Gewerk: Tag in der Zeile + Setz-Feld in der Karte. */
   /* CCCXCV — Firma/Anbieter reichert die Zeile an: mittig, kursiv und
      zurückgesetzt (gedeckte Schrift), nicht als lauter Chip. */
-  .anbieter-tag{flex:none;align-self:center;font:italic 500 11.5px var(--body);
-    color:var(--soft);max-width:160px;overflow:hidden;text-overflow:ellipsis;
-    white-space:nowrap;text-align:center}
+  /* Anbieter/Gewerk als ruhige Unterzeile unter dem Namen — voll lesbar, bricht
+     bei langen Behördennamen um, nimmt dem Namen aber keine Breite mehr weg
+     (früher: rechts angeklemmt, abgeschnitten, quetschte den Namen zeichenweise). */
+  .anbieter-tag{display:block;margin-top:4px;font:italic 500 11.5px var(--body);
+    color:var(--soft);line-height:1.35;overflow-wrap:break-word}
   .anbieterzeile{margin-top:10px}
   .anbieterzeile label{display:block;font:600 10px var(--mono);letter-spacing:.06em;
     text-transform:uppercase;color:var(--soft);margin-bottom:4px}
@@ -951,6 +958,32 @@ const DROP_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   aria-hidden="true"><path d="M12 2.7S5.5 9.9 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5
   9.9 12 2.7 12 2.7Z"/><path d="M9 15a3 3 0 0 0 3 3"/></svg>`;
 
+/* Kleine Symbole für den Verteilungsschlüssel-Chip an der Zeile — flacher
+   Strich-Stil wie kostenicons.js, aber winzig (12 px), damit „nach Fläche"
+   auf einen Blick als Aufteilung lesbar wird. */
+const VST = 'stroke="currentColor" stroke-width="2" fill="none" ' +
+  'stroke-linecap="round" stroke-linejoin="round"';
+const vsvg = inner => `<svg viewBox="0 0 24 24" width="12" height="12"
+  aria-hidden="true">${inner}</svg>`;
+const VKEY_IKON = {
+  flaeche: vsvg(`<rect ${VST} x="4" y="4" width="16" height="16" rx="2"/>
+    <path ${VST} d="M9 4v16M4 9h16" opacity=".45"/>`),
+  personen: vsvg(`<circle ${VST} cx="9" cy="8" r="3"/>
+    <path ${VST} d="M3.5 20a5.5 5.5 0 0 1 11 0"/>
+    <path ${VST} d="M16 5.4a3 3 0 0 1 0 5.9M15 15.3a5.5 5.5 0 0 1 3.5 4.7"/>`),
+  bewohnermonate: vsvg(`<circle ${VST} cx="12" cy="8" r="3.2"/>
+    <path ${VST} d="M5.5 20a6.5 6.5 0 0 1 13 0"/>`),
+  einheiten: vsvg(`<path ${VST} d="M4 10.5 12 4l8 6.5"/>
+    <path ${VST} d="M6 9.8V20h12V9.8"/>`),
+  verbrauch: vsvg(`<circle ${VST} cx="12" cy="12" r="8"/>
+    <path ${VST} d="M12 12l3.5-2.5M12 7v1"/>`),
+  prozent: vsvg(`<path ${VST} d="M6 18 18 6"/>
+    <circle ${VST} cx="7.5" cy="7.5" r="1.7"/><circle ${VST} cx="16.5" cy="16.5" r="1.7"/>`),
+  individuell: vsvg(`<circle ${VST} cx="12" cy="12" r="3"/>
+    <path ${VST} d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3"/>`),
+  punkt: vsvg(`<circle ${VST} cx="12" cy="12" r="7.5"/>`),
+};
+
 /* Der Dateiname als kurze Chip-Beschriftung: Endung, führendes Datum und ein
    etwaiger Betrag hinten fallen weg — übrig bleibt die Sache selbst. */
 const kurzBeleg = name => (name || '')
@@ -998,6 +1031,11 @@ const BEREICHE = [
     muster: ['versicher', 'haftpflicht', 'grundsteuer', 'steuer', 'police'] },
   { titel: 'Verwaltung & Sonstiges', muster: [] },
 ];
+/* Ein dezentes Symbol vor jeder Bereichs-Überschrift — parallel zur BEREICHE-
+   Reihenfolge. Wiederverwendet die kostenicons-Zuordnung über ein typisches
+   Stichwort je Bereich (Tropfen, Flamme, Blitz, Müll, Schild, Haus). */
+const BEREICH_IKON = ['Wasser', 'Heizung', 'Strom', 'Müll',
+                      'Versicherung', 'Hausverwaltung'];
 // Prüf-Reihenfolge: Heizung zuerst, dann Wasser/Strom/Reinigung/Versicherung; Rest → Sonstiges.
 const BEREICH_PRUEF = [1, 0, 2, 3, 4];
 
@@ -1155,6 +1193,19 @@ function schluesselWort(k) {
   if (k.nur_einheit) return '1 Einheit';
   if (!k.schluessel) return '';
   return schluesselMeta(k.schluessel)?.titel || k.schluessel;
+}
+
+/* Verteilungsschlüssel-Chip an der Zeile: kleines Symbol + „nach X"
+   (z. B. „⬚ nach Fläche"). Bei einer Einzelzuordnung steht „1 Einheit"
+   ohne „nach". Baut auf schluesselWort auf, damit die Wortlogik nur
+   einmal existiert. */
+function vkeyChip(k) {
+  const wort = schluesselWort(k);
+  if (!wort) return '';
+  const key = k.nur_einheit ? 'einheiten' : (k.schluessel || '');
+  const ikon = VKEY_IKON[key] || VKEY_IKON.punkt;
+  const text = k.nur_einheit ? wort : `nach ${wort}`;
+  return `<span class="vkey">${ikon}<span>${esc(text)}</span></span>`;
 }
 
 /* Warum eine Einheit zweimal in der Verteilung steht: war sie nur einen Teil
@@ -1515,13 +1566,13 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
-          <span class="name">${chipHtml(k)}${esc(k.kostenart)}${
-            (w => w ? `<span class="vkey">${esc(w)}</span>` : '')(schluesselWort(k))}${
-            k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}
-            ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
+          <span class="name">${chipHtml(k)}${esc(k.kostenart)}${vkeyChip(k)}${
+            k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}${
+            (k.anbieter && !aufgeklappt && k.zustand !== 'fehlt')
+              ? `<span class="anbieter-tag" title="Anbieter / Gewerk">${esc(k.anbieter)}</span>`
+              : ''}${
+            infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
         </button>
-        ${(k.anbieter && !aufgeklappt && k.zustand !== 'fehlt') ? `<span class="anbieter-tag"
-          title="Anbieter / Gewerk">${esc(k.anbieter)}</span>` : ''}
         ${betragEl}
         ${istWasserSammel(k) ? `<button class="wdetail" data-wasser-detail
           title="Wasser-Verrechnung im Detail ansehen"
@@ -1765,7 +1816,9 @@ async function zeichnen() {
     const zeilen = bereiche.map((liste, bi) => {
       const wz = bi === 0 ? wasserZaehlerHtml() : '';
       if (!liste.length && !wz) return '';
-      return `<div class="kat-kopf"><span>${esc(BEREICHE[bi].titel)}</span></div>`
+      return `<div class="kat-kopf"><span class="kat-ikon">${
+          kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
+          esc(BEREICHE[bi].titel)}</span></div>`
         + liste.map(({ k, i }) => zeileHtml(k, i)).join('') + wz;
     }).join('');
 
