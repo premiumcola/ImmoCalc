@@ -1397,7 +1397,16 @@ function mietTimelineHtml(mo, mini = false) {
     return seg(l, Math.max(1.5, r - l), '',
       `Leerstand: ${_isoTag(x.von)} – ${_isoTag(x.bis)} · ${x.dauer}`, true);
   }).join('');
-  const ticks = mo.jahre.map(j =>
+  // N39 — Jahres-Achse ausdünnen: bei langer Historie (17 Jahre bei „seit 17
+  // Jahren") kleben sonst alle Jahreszahlen zu „200920102011…" zusammen. Wir
+  // wählen einen runden Schritt (1/2/5/10 …), sodass höchstens ~5 (mini) bzw.
+  // ~8 (voll) Marken bleiben, und beschriften nur Jahre, die durch ihn teilbar
+  // sind — die Balken decken weiterhin die volle Spanne ab.
+  const maxMarken = mini ? 5 : 8;
+  const roh = Math.ceil(mo.jahre.length / maxMarken);
+  const schritt = [1, 2, 5, 10, 20, 25, 50].find(s => s >= roh)
+    || Math.ceil(roh / 50) * 50;
+  const ticks = mo.jahre.filter(j => j % schritt === 0).map(j =>
     `<span class="tl-tick" style="left:${mo.pct(`${j}-01-01`)}%">${j}</span>`).join('');
   return `<div class="miet-timeline${mini ? ' mini' : ''}">
       <div class="tl-track">${leer}${balken}</div>

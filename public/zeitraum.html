@@ -1377,8 +1377,8 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}
             ${infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
         </button>
-        ${(k.anbieter && !aufgeklappt) ? `<span class="anbieter-tag" title="Anbieter / Gewerk"
-          >${esc(k.anbieter)}</span>` : ''}
+        ${(k.anbieter && !aufgeklappt && k.zustand !== 'fehlt') ? `<span class="anbieter-tag"
+          title="Anbieter / Gewerk">${esc(k.anbieter)}</span>` : ''}
         ${betragEl}
         ${quickScan}
         ${k.zustand !== 'fehlt'
