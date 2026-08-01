@@ -12,7 +12,7 @@
  * danach nebenher angestossen: sie dauert Sekunden, und der Beleg ist auch
  * ohne sie schon sicher abgelegt.
  */
-import { kamerascanStarten } from './kamerascan.js';
+import { kamerascanStarten, istBildDatei } from './kamerascan.js';
 
 // Ein mehrseitiger Scan wandert als PDF über die Leitung; auf dem Telefon ist
 // das gerne mal eine schmale Mobilfunkverbindung. Lieber grosszügig warten
@@ -22,9 +22,13 @@ const ZEITLIMIT_MS = 120000;
 /** Bilder gehen durch den Zuschnitt, ein fertiges PDF geht direkt durch. */
 function aufteilen(dateien) {
   const liste = Array.from(dateien || []);
+  // iOS liefert für Kamerafotos manchmal einen leeren `type` — `istBildDatei`
+  // fängt das ab (alles außer PDF gilt als Bild), damit kein Foto still
+  // verschwindet und das Zuschnitt-Overlay ausbleibt.
   return {
-    bilder: liste.filter(d => (d.type || '').startsWith('image/')),
-    fertig: liste.filter(d => (d.type || '') === 'application/pdf'),
+    bilder: liste.filter(istBildDatei),
+    fertig: liste.filter(d => (d.type || '') === 'application/pdf'
+                           || /\.pdf$/i.test(d.name || '')),
   };
 }
 

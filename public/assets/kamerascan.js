@@ -63,6 +63,9 @@ function stilSicherstellen() {
      Hintergrund zu markieren (Kopieren/Nachschlagen-Menü). Im ganzen Scanner
      ist nichts zu markieren, also Auswahl und Langdruck-Menü komplett aus. */
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.kscan-leer{max-width:340px;margin:auto;padding:24px;text-align:center;
+  font:500 14px var(--body,sans-serif);line-height:1.6;color:#fff}
+.kscan-leer b{font-weight:700}
 .kscan-kopf{flex:none;display:flex;align-items:center;gap:10px;padding:12px 12px;
   padding-top:max(12px,env(safe-area-inset-top))}
 .kscan-x{flex:none;width:44px;height:44px;border:none;border-radius:12px;
@@ -551,6 +554,55 @@ async function vorschauCanvas(bitmap) {
   return c;
 }
 
+/* Ein Foto in etwas Zeichenbares verwandeln — robust über die Browser hinweg.
+ *
+ * `createImageBitmap` ist der schnelle Weg (mit EXIF-Ausrichtung), aber iOS-
+ * Safari kann die Options-Angabe `{imageOrientation}` nicht und dekodiert HEIC
+ * darüber gar nicht — dann warf der Scanner still und das Overlay blieb leer.
+ * Deshalb: erst mit Option, dann ohne, und als sicherer Rückfall über ein
+ * <img> (das Safari inkl. HEIC lädt und EXIF-korrekt ausrichtet) auf ein
+ * Canvas. Das Canvas ist überall via `drawImage` nutzbar — dieselbe Rolle wie
+ * ein ImageBitmap (Breite/Höhe, zeichenbar; `.close?.()` greift ins Leere). */
+async function zuBitmap(datei) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(datei, { imageOrientation: 'from-image' });
+    } catch { /* Option nicht unterstützt — ohne Option weiter */ }
+    try {
+      return await createImageBitmap(datei);
+    } catch { /* HEIC o. ä. — der <img>-Weg unten fängt es */ }
+  }
+  const url = URL.createObjectURL(datei);
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    await new Promise((ok, fail) => {
+      img.onload = () => ok();
+      img.onerror = () => fail(new Error('Das Foto ließ sich nicht laden.'));
+      img.src = url;
+    });
+    if (img.decode) { try { await img.decode(); } catch { /* onload genügt */ } }
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || img.width;
+    c.height = img.naturalHeight || img.height;
+    if (!c.width || !c.height) throw new Error('Das Foto ist leer.');
+    c.getContext('2d').drawImage(img, 0, 0);
+    return c;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/* Ist die Datei ein Foto? iOS liefert manchmal einen leeren `type`; dann darf
+ * die Datei nicht durchs Raster fallen. Alles außer einem PDF gilt als Bild —
+ * ein PDF läuft ohne Zuschnitt durch (siehe belegscan.js). */
+export function istBildDatei(datei) {
+  const typ = (datei && datei.type) || '';
+  if (typ === 'application/pdf') return false;
+  if (typ.startsWith('image/')) return true;
+  return !/\.pdf$/i.test((datei && datei.name) || '');
+}
+
 /**
  * Öffnet die Bearbeitung für eine Reihe frisch aufgenommener Fotos.
  * Löst mit `{ pdf, seiten }` auf (gleiche Form wie `scanZuPdf`), oder mit
@@ -558,7 +610,7 @@ async function vorschauCanvas(bitmap) {
  */
 export function kamerascanStarten(dateien, optionen = {}) {
   stilSicherstellen();
-  const bilder = Array.from(dateien).filter(d => d.type.startsWith('image/'));
+  const bilder = Array.from(dateien).filter(istBildDatei);
   if (!bilder.length) return Promise.reject(new Error('Keine Bilder erhalten'));
 
   return new Promise(fertigMit => {
@@ -616,7 +668,7 @@ export function kamerascanStarten(dateien, optionen = {}) {
     }
 
     async function seiteAnlegen(datei) {
-      const bitmap = await createImageBitmap(datei, { imageOrientation: 'from-image' });
+      const bitmap = await zuBitmap(datei);
       const ecken = eckenSchaetzen(bitmap);
       const vorschau = await vorschauCanvas(bitmap);
       const thumbBlob = await new Promise(r => vorschau.toBlob(r, 'image/jpeg', 0.6));
@@ -637,7 +689,9 @@ export function kamerascanStarten(dateien, optionen = {}) {
       if (gegenUhrzeiger) { x.translate(0, c.height); x.rotate(-Math.PI / 2); }
       else { x.translate(c.width, 0); x.rotate(Math.PI / 2); }
       x.drawImage(bitmap, 0, 0);
-      return createImageBitmap(c);
+      // Das Canvas direkt zurückgeben — überall via drawImage nutzbar und ohne
+      // Abhängigkeit von createImageBitmap (das iOS-Safari nicht immer kann).
+      return c;
     }
 
     // CD — die vier Ecken (normalisiert, Reihenfolge TL,TR,BR,BL) 90° mitdrehen,
@@ -943,9 +997,24 @@ export function kamerascanStarten(dateien, optionen = {}) {
     }
 
     async function dateienHinzufuegen(liste) {
-      const bilderNeu = Array.from(liste).filter(d => d.type.startsWith('image/'));
+      const bilderNeu = Array.from(liste).filter(istBildDatei);
+      let fehlgeschlagen = 0;
       for (const datei of bilderNeu) {
-        seiten.push(await seiteAnlegen(datei));
+        try {
+          seiten.push(await seiteAnlegen(datei));
+        } catch {
+          fehlgeschlagen++;         // ein kaputtes Foto blockiert nicht den Rest
+        }
+      }
+      if (!seiten.length) {
+        // Nichts ließ sich laden — statt eines leeren, „kaputten" Overlays ein
+        // klarer Hinweis (statt stillem Nichts wie bisher auf iOS).
+        mitte.innerHTML = `<div class="kscan-leer">Das Foto ließ sich nicht
+          öffnen.<br>Bitte erneut aufnehmen. Falls es weiter klemmt: am iPhone
+          unter <b>Einstellungen → Kamera → Formate</b> „Maximale Kompatibilität"
+          wählen (JPEG statt HEIC).</div>`;
+        primaer.disabled = true;
+        return;
       }
       aktiv = seiten.length - 1;
       zeichneAktuelleSeite();
