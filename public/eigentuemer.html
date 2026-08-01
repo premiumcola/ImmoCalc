@@ -378,17 +378,33 @@ function eigwertHtml(id) {
   if (!g.wert && !g.eigenkapital && !g.miete_jahr) return '';
   const zelle = (l, v, k = '') => `<div class="ew"><span class="ewl">${l}</span>
     <span class="ewv ${k}">${v}</span></div>`;
-  // CCCLXXVII — Beleihungsquote (Restschuld/Wert) und ein grober Spielraum für
-  // neues Investment: freie Beleihung bis 80 % des Werts, und was das als ~20 %
-  // Eigenkapital an Kaufvolumen trägt. Ausdrücklich nur Orientierung.
+  // CCCLXXVII/N6 — Beleihungsquote (Restschuld/Wert) und ein grober Spielraum
+  // für neues Investment. Modell (auf Wunsch): 0 % Eigenanteil — der Kaufpreis
+  // wird zu 100 % finanziert, selbst gezahlt werden nur die Kaufnebenkosten.
+  // Rechenweg offengelegt, damit der Schluss nachvollziehbar ist:
+  //   freie Beleihung = 80 % des Werts − Restschuld  (was die Bank noch beleiht)
+  //   Kaufvolumen     = freie Beleihung ÷ 20 %        (sie trägt die 20 %-Lücke,
+  //                     = freie Beleihung × 5           die neue Immobilie die 80 %)
+  //   Kaufnebenkosten = ~10 % des Kaufpreises          (bar; Grunderwerbst./Notar)
+  const KNK = 0.10;                                   // grobe Kaufnebenkosten-Quote
   const quote = (g.wert && g.wert > 0) ? Math.round((g.restschuld / g.wert) * 100) : null;
   const frei = (g.wert && g.wert > 0) ? Math.max(0, Math.round(0.8 * g.wert - g.restschuld)) : null;
+  const kaufvolumen = frei != null ? frei * 5 : null;
+  const nebenkosten = kaufvolumen != null ? Math.round(kaufvolumen * KNK) : null;
   const invest = frei != null ? `<div class="invest">
       <div class="il">Investitionsspielraum
         <span class="ih">grobe Orientierung, keine Finanzierungszusage</span></div>
-      <div class="iv">Freie Beleihung bis 80 %: <b>${eurKurz(frei)}</b></div>
-      <div class="is">Als ~20 % Eigenkapital rechnerisch für rund
-        <b>${eurKurz(frei * 5)}</b> neues Kaufvolumen.</div>
+      <div class="iv">Freie Beleihung: <b>${eurKurz(frei)}</b></div>
+      <div class="is">So viel würde die Bank zusätzlich beleihen (80 % des Werts
+        <b>${eurKurz(Math.round(0.8 * g.wert))}</b> minus Restschuld
+        <b>${eurKurz(g.restschuld)}</b>).</div>
+      <div class="is">Bei <b>0 % Eigenanteil</b> ersetzt sie die üblichen 20 %
+        Anzahlung, die restlichen 80 % trägt die neue Immobilie selbst — rechnerisch
+        also <b>${eurKurz(kaufvolumen)}</b> Kaufvolumen (freie Beleihung ÷ 20 %,
+        also × 5).</div>
+      <div class="is">Dein Einsatz: nur die Kaufnebenkosten, rund
+        <b>${eurKurz(nebenkosten)}</b> (~10 % vom Kaufpreis: Grunderwerbsteuer,
+        Notar, Grundbuch).</div>
     </div>` : '';
   return `<div class="eigwert">
     ${zelle('Mein Wert', g.wert == null ? '—' : eurKurz(g.wert))}
