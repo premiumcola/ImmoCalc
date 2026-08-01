@@ -287,7 +287,13 @@ function zeitraumRang(z) {
 }
 
 function standHtml(staende) {
-  const gruppen = staende.filter(s => s.zeitraeume.length).map(s => {
+  // N71 — leere, auto-angelegte Zeiträume (keine Kostenposition) sind keine
+  // echte laufende Abrechnung: nicht listen und keine „über Frist"-Warnung.
+  // Abgeschlossene/versendete bleiben immer sichtbar.
+  const echt = z => (z.positionen || 0) > 0 || z.status !== 'in Arbeit';
+  const gruppen = staende
+    .map(s => ({ ...s, zeitraeume: (s.zeitraeume || []).filter(echt) }))
+    .filter(s => s.zeitraeume.length).map(s => {
     const geordnet = [...s.zeitraeume].sort((a, b) => {
       const [ra, sa] = zeitraumRang(a), [rb, sb] = zeitraumRang(b);
       return ra - rb || sa - sb;
