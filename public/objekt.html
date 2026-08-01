@@ -1585,6 +1585,43 @@ function lageplanUmbenennen(einheitId, id, name) {
   feld.select();
 }
 
+/* N9 — beim Anlegen direkt einen Zusatztitel (z. B. „Bad", „DG") vergeben; er
+   fließt in Datei- und Anzeigenamen. Liefert den Titel (auch leer „") oder
+   null (abgebrochen). */
+function lageplanTitelAbfragen() {
+  return new Promise(fertig => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'immo-dlg zuord-dlg';
+    document.body.appendChild(dlg);
+    let ok = false;
+    dlg.addEventListener('close', () => { dlg.remove(); if (!ok) fertig(null); });
+    dlg.innerHTML = `
+      <div class="zd-kopf">
+        <span class="zd-t">Lageplan hinzufügen</span>
+        <button class="zd-x" data-nein aria-label="Schließen">×</button>
+      </div>
+      <div class="zd-block">
+        <span class="zd-l">Zusatztitel (optional)</span>
+        <input class="lp-eingabe" type="text" placeholder="z. B. Bad, DG, Grundriss …"
+               maxlength="80" aria-label="Zusatztitel des Lageplans">
+        <span class="zd-hint">Kommt in den Datei- und Anzeigenamen. Leer lassen ist ok.</span>
+      </div>
+      <div class="zd-fuss">
+        <button class="zd-ab" data-nein>Abbrechen</button>
+        <button class="zd-ok" data-ja>Hochladen</button>
+      </div>`;
+    const feld = dlg.querySelector('.lp-eingabe');
+    const weiter = () => { ok = true; const w = feld.value.trim(); dlg.close(); fertig(w); };
+    dlg.addEventListener('click', e => {
+      if (e.target.closest('[data-nein]')) return dlg.close();
+      if (e.target.closest('[data-ja]')) return weiter();
+    });
+    feld.addEventListener('keydown', e => { if (e.key === 'Enter') weiter(); });
+    dlg.showModal();
+    feld.focus();
+  });
+}
+
 /* Im Fokus zählt, was diese Wohnung einbringt — Wert und Restschuld gehören
    dem ganzen Haus und stehen deshalb nur dort. Ein Verkehrswert je Einheit
    liesse sich heute nirgends pflegen. */
@@ -3881,8 +3918,12 @@ inhalt.addEventListener('change', async e => {
     return;
   }
 
+  // N9 — Zusatztitel direkt beim Erstellen erfragen; fließt in den Dateinamen.
+  const tag = await lageplanTitelAbfragen();
+  if (tag === null) return;               // abgebrochen
   const fd = new FormData();
   fd.append('datei', datei, name);
+  if (tag) fd.append('bezeichnung', tag);
   melde('Lageplan wird hochgeladen …');
   try {
     const antwort = await fetch(

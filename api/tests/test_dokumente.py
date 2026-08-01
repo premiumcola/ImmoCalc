@@ -1842,7 +1842,8 @@ def test_lageplan_zu_unbekannter_einheit_ist_404():
 
 
 def test_lageplan_wird_abgelegt_und_gelistet(monkeypatch):
-    """Der Lageplan wandert in den Objektordner (99_Sonstiges), hängt über
+    """N9 — der Lageplan wandert in den Fotos-/Lage-Ordner (10_Fotos_Lage) mit
+    sauberem Namen „Lageplan-<Einheit>[…]" (ohne „ohne-Jahr_"-Präfix), hängt über
     info_zu_* an der Einheit und trägt kategorie=„Lageplan". Er taucht in der
     Lageplan-Liste und in der Einheit-Zeile auf; die Endung bleibt erhalten."""
     import app.routers.dokumente as modul
@@ -1863,7 +1864,10 @@ def test_lageplan_wird_abgelegt_und_gelistet(monkeypatch):
         assert body["einheit_id"] == eid
         # Ein Foto darf nicht als „.pdf" landen — die Endung bleibt.
         assert body["pfad"].endswith(".jpg")
-        assert f"{ordner}/99_Sonstiges" in wolke.abgelegt[-1]
+        # N9 — Fotos-/Lage-Ordner statt 99_Sonstiges, Name ohne „ohne-Jahr_".
+        assert f"{ordner}/10_Fotos_Lage" in wolke.abgelegt[-1]
+        assert "ohne-Jahr" not in body["dateiname"]
+        assert body["dateiname"] == "Lageplan-Wohnung-1.jpg"
 
         # Der Listen-Endpunkt zeigt den Lageplan.
         liste = c.get(f"/api/einheiten/{eid}/lageplaene").json()

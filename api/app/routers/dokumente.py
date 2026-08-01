@@ -2115,6 +2115,7 @@ def lageplaene_der_einheit(session: Session, einheit_id: int) -> list[dict]:
 @lageplan_router.post("/{einheit_id}/lageplan", status_code=201)
 async def lageplan_hochladen(einheit_id: int,
                              datei: UploadFile = File(...),
+                             bezeichnung: str = Form(""),
                              session: Session = Depends(get_session)) -> dict:
     """Hinterlegt einen Lageplan (Foto/PDF) zu einer Einheit (CCCXXVI).
 
@@ -2136,13 +2137,17 @@ async def lageplan_hochladen(einheit_id: int,
     # Die Endung der hochgeladenen Datei erhalten — ein Foto darf nicht als
     # „.pdf" abgelegt werden. Ohne Endung bleibt es beim PDF.
     endung = _endung(datei.filename or "") or ".pdf"
-    # Über „Sonstiges" für Ordner und Namensschema (→ 99_Sonstiges), damit die
-    # bestehende Ablagelogik greift; die Einordnung als Lageplan steht an der
-    # `kategorie` des Eintrags.
-    name = dateiname(None, "Sonstiges", f"Lageplan {e.bezeichnung}", endung)
+    # N9 — sauberer Name OHNE „ohne-Jahr_"-Präfix und ohne Datum: ein Lageplan
+    # hat kein Belegjahr. Name = „Lageplan <Einheit>[ - <Zusatztitel>]"; der
+    # Zusatztitel (z. B. „Bad") kommt beim Erstellen direkt mit und steht so im
+    # Dateinamen wie im Anzeigenamen.
+    tag = (bezeichnung or "").strip()
+    roh = f"Lageplan {e.bezeichnung}" + (f" - {tag}" if tag else "")
+    name = _saubere_datei(roh) + endung
     client = verbindung(session)
     try:
-        sach, ziel_ordner = _ablageordner(session, o, "Sonstiges", None, client)
+        # N9 — in den Fotos-/Lage-Ordner (10_Fotos_Lage) statt 99_Sonstiges.
+        sach, ziel_ordner = _ablageordner(session, o, "Lageplan", None, client)
         _ordner_sichern(client, sach, ziel_ordner)
         name = _freier_name(session, client, ziel_ordner, name)
         client.lege_ab(f"{ziel_ordner}/{name}", inhalt)

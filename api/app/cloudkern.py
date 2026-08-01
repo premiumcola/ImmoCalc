@@ -91,6 +91,8 @@ ZIELORDNER = {
     "Mietvertrag": "20_Mietvertraege_Vermietung",
     "Korrespondenz": "30_Kommunikation",
     "Hausverwaltung": "80_Hausverwaltung",
+    # N9 — Lagepläne gehören zu Fotos & Lage, nicht in „Sonstiges".
+    "Lageplan": "10_Fotos_Lage",
     "Sonstiges": "99_Sonstiges",
 }
 
@@ -107,6 +109,8 @@ ARTKUERZEL = {
     "Mietvertrag": "Miete",
     "Korrespondenz": "Post",
     "Hausverwaltung": "HV",
+    # N9 — kein Kürzel für Lagepläne: der Name trägt „Lageplan …" schon selbst.
+    "Lageplan": "",
     "Sonstiges": "",
 }
 
