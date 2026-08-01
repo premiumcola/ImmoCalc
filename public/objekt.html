@@ -191,6 +191,11 @@
   .zw-erg .zw-move{color:var(--teal-d)}
   .zw-erg .zw-gf{color:var(--amber)}
   .zw-erg b{font-weight:700}
+  /* N52 — Dialog-interne Meldung (Toast läge hinter dem modalen Dialog) */
+  .zw-erg .zw-fehler{background:var(--neg);color:#fff;border-radius:10px;
+    padding:9px 12px;font-weight:600}
+  .zw-erg .zw-ok{background:var(--teal-l);color:var(--teal-d);border-radius:10px;
+    padding:9px 12px;font-weight:600}
   .zw-leer{margin:2px 18px 10px;font:500 11.5px var(--mono);color:var(--soft);
     letter-spacing:.02em}
   /* Auf dem Handy einspaltig: die Wrapper verschwinden, die Zeilen behalten
@@ -3322,35 +3327,42 @@ async function zeitraumWerkzeug() {
 
   const erg = () => dlg.querySelector('#zwErg');
   const fehlerText = f => String(f?.message || f || 'Das ging nicht.');
+  // N52 — Meldungen IM Dialog zeigen: ein modaler <dialog> liegt in der obersten
+  // Browser-Ebene, ein normaler Toast (`melde`) läge dahinter (unlesbar). Erfolg
+  // grün, Fehler rot, direkt im Ergebnis-Bereich.
+  const zeigeErg = (text, art = 'fehler') => {
+    const e = erg();
+    if (e) e.innerHTML = `<div class="zw-${art}">${esc(text)}</div>`;
+  };
 
   async function speichern(id, row) {
     const start = row.querySelector('[data-zw-start]').value;
     const ende = row.querySelector('[data-zw-ende]').value;
-    if (!start || !ende) return melde('Start und Ende angeben.', 'neg');
+    if (!start || !ende) return zeigeErg('Start und Ende angeben.');
     try {
       await api(`/zeitraeume/${id}`, { method: 'PATCH', body: { start, ende } });
-    } catch (f) { return melde(fehlerText(f), 'neg'); }
-    veraendert = true; melde('Grenzen gespeichert.'); await rendern();
+    } catch (f) { return zeigeErg(fehlerText(f)); }
+    veraendert = true; await rendern(); zeigeErg('Grenzen gespeichert.', 'ok');
   }
 
   async function teilen(id, row) {
     const datum = row.querySelector('[data-zw-teildatum]').value;
-    if (!datum) return melde('Teilungsdatum angeben.', 'neg');
+    if (!datum) return zeigeErg('Teilungsdatum angeben.');
     try {
       await api(`/zeitraeume/${id}/teilen`, { method: 'POST', body: { datum } });
-    } catch (f) { return melde(fehlerText(f), 'neg'); }
-    veraendert = true; melde('Zeitraum geteilt.'); await rendern();
+    } catch (f) { return zeigeErg(fehlerText(f)); }
+    veraendert = true; await rendern(); zeigeErg('Zeitraum geteilt.', 'ok');
   }
 
   async function neuAnlegen() {
     const start = dlg.querySelector('[data-zw-neu-start]').value;
     const ende = dlg.querySelector('[data-zw-neu-ende]').value;
-    if (!start || !ende) return melde('Start und Ende angeben.', 'neg');
+    if (!start || !ende) return zeigeErg('Start und Ende angeben.');
     try {
       await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume`,
                 { method: 'POST', body: { start, ende } });
-    } catch (f) { return melde(fehlerText(f), 'neg'); }
-    veraendert = true; melde('Zeitraum angelegt.'); await rendern();
+    } catch (f) { return zeigeErg(fehlerText(f)); }
+    veraendert = true; await rendern(); zeigeErg('Zeitraum angelegt.', 'ok');
   }
 
   function abgleichBericht(v, angewandt) {
@@ -3379,7 +3391,7 @@ async function zeitraumWerkzeug() {
       const v = await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume/belege-abgleichen`,
                           { method: 'POST' });
       abgleichBericht(v, false);
-    } catch (f) { melde(fehlerText(f), 'neg'); erg().textContent = ''; }
+    } catch (f) { zeigeErg(fehlerText(f)); }
   }
 
   async function abgleichAnwenden() {
@@ -3388,8 +3400,7 @@ async function zeitraumWerkzeug() {
                           + 'belege-abgleichen?vorschau=false', { method: 'POST' });
       veraendert = true;
       abgleichBericht(v, true);
-      melde(`${v.verschoben} Beleg(e) neu zugeordnet.`);
-    } catch (f) { melde(fehlerText(f), 'neg'); }
+    } catch (f) { zeigeErg(fehlerText(f)); }
   }
 
   dlg.addEventListener('click', async e => {
