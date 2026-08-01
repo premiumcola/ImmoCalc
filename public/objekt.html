@@ -402,13 +402,15 @@
   /* CCCXC — kompakter „＋"-Knopf oben rechts am Rubrik-Titel statt eines
      vollbreiten Kastens, der die Seite in die Länge zog. 40px sichtbar, 44px
      tippbar (iOS) über die ::after-Fläche. */
+  /* N10 — EIN einheitlicher „＋"-Stil für alle Rubriken (Lageplan wie Mieten):
+     farblos-neutral, gut sichtbar, aber nicht dominant. Kein Teal-Grün mehr. */
   .sekopf-add{flex:none;align-self:center;position:relative;display:inline-flex;
        align-items:center;justify-content:center;width:40px;height:40px;
-       border-radius:11px;background:var(--teal-l);color:var(--teal-d);
-       border:1.5px solid #C3DAD2;font:400 24px var(--body);line-height:1;
-       cursor:pointer;padding:0}
+       border-radius:11px;background:var(--sheet);color:var(--ink);
+       border:1.5px solid var(--line);font:400 24px var(--body);line-height:1;
+       cursor:pointer;padding:0;box-shadow:0 1px 2px rgba(22,38,44,.06)}
   .sekopf-add::after{content:"";position:absolute;inset:-2px}
-  .sekopf-add:hover{background:#DCEDE7}
+  .sekopf-add:hover{background:#F1F4F4;border-color:var(--soft)}
   label.sekopf-add{display:inline-flex}
   /* CCCXXVI — der Lageplan-Weg ist ein <label> über einem versteckten
      Datei-Feld: als Block, damit die Breite wie beim Knopf greift. */
@@ -1489,7 +1491,7 @@ function lageplanHtml(e) {
   const plaene = e.lageplaene || [];
   // N4 — Kopf über den gemeinsamen sekopfHtml-Helfer (bündig + gleiche
   // Icon-Ausrichtung/-Farbe wie die anderen Rubriken, kein Sonderweg mehr).
-  const add = `<label class="sekopf-add lageplan-neu" title="Lageplan aufnehmen oder hochladen"
+  const add = `<label class="sekopf-add" title="Lageplan aufnehmen oder hochladen"
         aria-label="Lageplan aufnehmen oder hochladen">＋
         <input type="file" accept="image/*,application/pdf" capture="environment"
                data-lageplan-neu="${e.id}" hidden></label>`;
