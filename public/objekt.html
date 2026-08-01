@@ -2573,7 +2573,12 @@ async function eintragDetail(bereich, id) {
   // Reihenfolge: grüner Haken + Name (antippen zeigt es, „Ersetzen" tauscht) wo
   // vorhanden, sonst „fehlt" mit Aufnehmen-Knopf. So bleibt es EIN Dokument je Art.
   const mietChecklistHtml = () => {
-    const norm = s => (s || '').toLowerCase();
+    // Trennzeichen-blind vergleichen: der Dateiname trägt „Übergabeprotokoll
+    // Einzug" als „…Miete-Übergabeprotokoll-Einzug" (Leerzeichen → Bindestrich,
+    // vorangestelltes Kürzel), der Wahlname hat Leerzeichen. Ohne das Entfernen
+    // aller Nicht-Buchstaben fiele jedes Übergabeprotokoll auf „Mietvertrag"
+    // zurück und verschwände aus seiner Zeile.
+    const norm = s => (s || '').toLowerCase().replace(/[^0-9a-zäöüß]+/g, '');
     // Unerkanntes (z. B. Alt-„Miete") gilt als Mietvertrag (das Hauptdokument).
     const typVon = d =>
       (typen.find(([voll]) => norm(d.dateiname).includes(norm(voll))) || [])[0] || 'Mietvertrag';

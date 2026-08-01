@@ -163,6 +163,46 @@ def test_vorhandener_quellbeleg_wird_nie_ueberschrieben(monkeypatch):
         assert [u["id"] for u in belege["unter"]] == [zweit]
 
 
+def test_uebergabeprotokoll_erscheint_am_mietverhaeltnis(monkeypatch):
+    """Der reale Fund: neben dem Mietvertrag wird ein Übergabeprotokoll
+    Einzug am selben Mietverhältnis abfotografiert. Beide müssen in der
+    Belegliste des Eintrags auftauchen — der Vertrag als `haupt`, das
+    Protokoll als `unter`.
+
+    Zusätzlich wird der abgelegte Dateiname geprüft: er trägt „Übergabe" mit
+    Bindestrichen statt Leerzeichen (das Kürzel „Miete" davor). Genau daran
+    scheiterte die trennzeichen-empfindliche Zuordnung in der Checkliste der
+    Objektansicht — das Protokoll fiel auf „Mietvertrag" zurück und
+    verschwand aus seiner Zeile. Der Name ist hier festgehalten, damit der
+    Frontend-Abgleich (Nicht-Buchstaben entfernen) belastbar bleibt."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = _mit_cloud(c, "Protokollweg 11")
+        mid = _miete(c, slug)
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke())
+
+        vertrag = _scanne(c, slug, beschreibung="Mietvertrag",
+                          an_typ="miete", an_id=mid).json()["id"]
+        protokoll = _scanne(c, slug, beschreibung="Übergabeprotokoll Einzug",
+                            an_typ="miete", an_id=mid).json()
+        pid, pname = protokoll["id"], protokoll["dateiname"]
+
+        # Der Dateiname trägt die Belegart mit Bindestrich, nicht mit
+        # Leerzeichen — genau der Fall, der die Zeile verschwinden liess.
+        assert "Übergabeprotokoll-Einzug" in pname
+        assert " " not in pname
+
+        belege = c.get(
+            f"/api/dokumente/objekt/{slug}/eintrag/miete/{mid}/belege").json()
+        assert belege["haupt"]["id"] == vertrag
+        assert [u["id"] for u in belege["unter"]] == [pid]
+        # das Protokoll steht als Info-Beleg am selben Eintrag
+        with Session(engine) as s:
+            d = s.get(Dokument, pid)
+            assert (d.info_zu_typ, d.info_zu_id) == ("miete", mid)
+
+
 def test_fremdes_oder_unbekanntes_ziel_legt_nichts_halb_an(monkeypatch):
     """Ein Eintrag der Nachbarimmobilie, eine Id, die es nicht gibt, ein Typ,
     den niemand kennt: sauber gemeldet — und ohne Datei in der Cloud und ohne
