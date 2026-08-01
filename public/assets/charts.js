@@ -126,15 +126,6 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     knoten.reduce((sum, k, i) => sum + (k.spalte === s && benutzt.has(i) ? gewicht(i) : 0), 0)));
   if (!gesamt) return leer('Keine Beträge');
 
-  // Höhe so wählen, dass auch der kleinste Block sichtbar ist UND jede
-  // Beschriftung Platz hat — sonst rutschen die untersten aus dem Bild.
-  const proSpalte = Math.max(...spalten.map(s =>
-    knoten.filter((k, i) => k.spalte === s && benutzt.has(i)).length));
-  const MINDEST_ABSTAND = 27;
-  const hoehe = Math.max(190, proSpalte * Math.max(zeilenhoehe + luecke,
-                                                   MINDEST_ABSTAND));
-  const skala = (hoehe - luecke * (proSpalte - 1)) / gesamt;
-
   const knotenBreite = 13;
   const spaltenX = s => spalten.length === 1 ? 0
     : (s / (spalten.length - 1)) * (breite - knotenBreite);
@@ -150,18 +141,44 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
   const ROLLENFARBE = { plus: '#2E7D4F', minus: '#B24229' };
   const knotenFarbe = i => ROLLENFARBE[knoten[i].rolle] || farbe(i);
 
-  // Knoten je Spalte stapeln
+  // Der Massstab der Baender richtet sich nach der dichtesten Spalte: so hoch,
+  // dass der groesste Fluss ansehnlich breit wird. Bei wenigen grossen Posten
+  // bleibt damit alles wie bisher.
+  const spaltenKnoten = s => knoten.map((k, i) => ({ k, i }))
+    .filter(({ k, i }) => k.spalte === s && benutzt.has(i));
+  const proSpalte = Math.max(...spalten.map(s => spaltenKnoten(s).length));
+  const bandHoehe = Math.max(190, proSpalte * (zeilenhoehe + luecke));
+  const skala = (bandHoehe - luecke * (proSpalte - 1)) / gesamt;
+
+  // Jeder Knoten bekommt einen sichtbaren Marker — auch bei Winzbetraegen —
+  // und vor allem genug senkrechten Abstand fuer sein zweizeiliges Label. Das
+  // Band selbst bleibt duenn und massstabsgetreu; nur Marker und Schrift
+  // erhalten diese Mindestluft. Ohne sie fielen bei einem grossen und mehreren
+  // winzigen Posten die untersten Beschriftungen ineinander und aus dem Bild.
+  const MIN_MARKER = 6;
+  const MIN_ABSTAND = schmal ? 33 : 29;
+  const markHoehe = i => Math.max(MIN_MARKER, gewicht(i) * skala);
+  const abstand = i => Math.max(markHoehe(i) + luecke, MIN_ABSTAND);
+  const bandPad = i => Math.max(0, (markHoehe(i) - gewicht(i) * skala) / 2);
+
+  // Tatsaechliche Spaltenhoehe = Summe der Knotenabstaende. Die viewBox waechst
+  // im Eng-Fall mit, statt die untersten Labels aus dem Bild zu draengen.
+  const stapelHoehe = s =>
+    spaltenKnoten(s).reduce((sum, { i }) => sum + abstand(i), 0) - luecke;
+  const hoehe = Math.max(190, ...spalten.map(stapelHoehe));
+
+  // Knoten je Spalte mittig stapeln — jeder in seinem Abstands-Slot zentriert,
+  // damit Marker (l.h) und Label (l.mitte) gleichmaessig Luft haben. Das Band
+  // sitzt zentriert im Marker (bandPad), auch wenn der Marker hoeher ist.
   const lage = new Map();
   for (const s of spalten) {
-    const drin = knoten.map((k, i) => ({ k, i }))
-      .filter(({ k, i }) => k.spalte === s && benutzt.has(i));
-    const gesamtHoehe = drin.reduce((sum, { i }) => sum + gewicht(i) * skala, 0)
-      + luecke * (drin.length - 1);
-    let y = (hoehe - gesamtHoehe) / 2;
-    for (const { i } of drin) {
-      const h = Math.max(2, gewicht(i) * skala);
-      lage.set(i, { x: spaltenX(s), y, h, spalte: s });
-      y += h + luecke;
+    let y = (hoehe - stapelHoehe(s)) / 2;
+    for (const { i } of spaltenKnoten(s)) {
+      const slot = abstand(i) - luecke;
+      const h = markHoehe(i);
+      lage.set(i, { x: spaltenX(s), y: y + (slot - h) / 2, h, spalte: s,
+                    mitte: y + slot / 2 });
+      y += abstand(i);
     }
   }
 
@@ -171,8 +188,8 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     const a = lage.get(f.von), b = lage.get(f.nach);
     if (!a || !b) return '';
     const ha = f.wert * skala, hb = f.wert * skala;
-    const y0 = a.y + (ausOffset.get(f.von) || 0);
-    const y1 = b.y + (einOffset.get(f.nach) || 0);
+    const y0 = a.y + bandPad(f.von) + (ausOffset.get(f.von) || 0);
+    const y1 = b.y + bandPad(f.nach) + (einOffset.get(f.nach) || 0);
     ausOffset.set(f.von, (ausOffset.get(f.von) || 0) + ha);
     einOffset.set(f.nach, (einOffset.get(f.nach) || 0) + hb);
 
@@ -186,22 +203,6 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     return `<path d="${d}" fill="${knotenFarbe(quelle)}" fill-opacity=".3"><title>${
       knoten[f.von].name} → ${knoten[f.nach].name}: ${format(f.wert)}</title></path>`;
   }).join('');
-
-  // Beschriftungen je Spalte kollisionsfrei stapeln: dünne Baender liegen sonst
-  // so dicht, dass Name und Betrag uebereinanderfallen. Die Baender selbst
-  // bleiben massstabsgetreu — nur die Schrift rueckt aus.
-  const labelY = new Map();
-  for (const s of spalten) {
-    const drin = [...lage.entries()]
-      .filter(([, l]) => l.spalte === s)
-      .sort((a, b) => a[1].y - b[1].y);
-    let letzte = -Infinity;
-    for (const [i, l] of drin) {
-      const y = Math.max(l.y + l.h / 2, letzte + MINDEST_ABSTAND);
-      labelY.set(i, y);
-      letzte = y;
-    }
-  }
 
   // Ist eine Mittelspalte mit einem einzigen Knoten besetzt — der Regelfall:
   // „Einnahmen" bzw. „Vorauszahlungen" —, gehoert ihre Beschriftung ueber das
@@ -245,15 +246,13 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
               text-anchor="middle">${format(gewicht(i))}</text>`;
     }
 
+    // Label sitzt auf der Knotenmitte — der Mindestabstand der Knoten (abstand)
+    // haelt Name und Betrag benachbarter Posten schon auseinander, deshalb
+    // braucht es weder Ausweich-Stapeln noch Fuehrungslinien.
     const tx = rechts ? l.x - 8 : l.x + knotenBreite + 8;
     const anker = rechts ? 'end' : 'start';
-    const ly = labelY.get(i);
-    // Fuehrungslinie, wenn die Schrift vom Kasten wegrutschen musste
-    const versatz = Math.abs(ly - (l.y + l.h / 2)) > 3
-      ? `<line x1="${rechts ? l.x : l.x + knotenBreite}" y1="${l.y + l.h / 2}"
-               x2="${rechts ? l.x - 5 : l.x + knotenBreite + 5}" y2="${ly - 3}"
-               stroke="#B9C4C5" stroke-width="1"/>` : '';
-    return `${versatz}<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
+    const ly = l.mitte;
+    return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
                   rx="3" fill="${knotenFarbe(i)}"/>
       <text x="${tx}" y="${ly - 3}" class="kn" text-anchor="${anker}">${
         kuerze(knoten[i].name, rechts)}<title>${knoten[i].name}</title></text>
