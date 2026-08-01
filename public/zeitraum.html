@@ -1092,6 +1092,12 @@ const BEREICH_IKON = ['Wasser', 'Heizung', 'Strom', 'Müll',
 // Prüf-Reihenfolge: Heizung zuerst, dann Wasser/Strom/Reinigung/Versicherung; Rest → Sonstiges.
 const BEREICH_PRUEF = [1, 0, 2, 3, 4];
 
+/* N62 — Anzeige-Alias je Kostenart: in der Oberfläche der offizielle Begriff,
+   der Datei-/Speichername bleibt die Kurzform. Nur für die Beschriftung — die
+   Kostenart selbst (Matching, data-Attribute, Dateiname) bleibt unverändert. */
+const KOSTENART_ALIAS = { 'Müll': 'Abfallwirtschaft' };
+const kostenartAnzeige = k => KOSTENART_ALIAS[k] || k;
+
 function bereichIndex(kostenart) {
   const n = normUml(kostenart);
   for (const i of BEREICH_PRUEF) {
@@ -1284,7 +1290,8 @@ function einheitChooserHtml(z) {
 /* Eine Zähler-Zeile: Anfang + Ende editierbar (mit Datum, N60) und der Einheiten-
    Auswähler (N58). `rest` = berechneter Rest (keine Eingabe), `minus` = im
    Kaltwasser-Block eingerückt als Abzug (N59), `label` überschreibt den Namen. */
-function meterZeileHtml(z, { rest = false, minus = false, label = null } = {}) {
+function meterZeileHtml(z, { rest = false, minus = false, label = null,
+                            keinChooser = false } = {}) {
   const bearbeitbar = daten.status === 'in Arbeit';
   const eh = esc(z.messeinheit || 'm³');
   const fertig = z.verbrauch != null
@@ -1320,7 +1327,7 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null } = {}) {
       ${startFeld}${endFeld}
       <span class="zu-verb">${rest ? '<small>berechnet</small> ' : ''}${verb}</span>
     </div>
-    ${rest ? '' : einheitChooserHtml(z)}
+    ${rest || keinChooser ? '' : einheitChooserHtml(z)}
   </div>`;
 }
 
@@ -1353,7 +1360,7 @@ function kaltwasserBlockHtml(s) {
   const subZeilen = s.subs.map(z => meterZeileHtml(z, { minus: true })).join('');
   const restZeile = s.rest ? meterZeileHtml(s.rest, { rest: true, label: 'Rest (WG)' }) : '';
   return `<div class="zu-art zu-kalt"><div class="zu-at">Kaltwasser</div>
-    ${meterZeileHtml(s.haupt)}
+    ${meterZeileHtml(s.haupt, { keinChooser: true })}
     <div class="zu-kalt-abzug">${subZeilen || `<div class="zu-kein">Noch keine
       Unterzähler zugeordnet.</div>`}${restZeile}</div>
   </div>`;
@@ -1804,7 +1811,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
         <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
-          <span class="name">${chipHtml(k)}${esc(k.kostenart)}${vkeyChip(k)}${
+          <span class="name">${chipHtml(k)}${esc(kostenartAnzeige(k.kostenart))}${vkeyChip(k)}${
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}${
             (k.anbieter && !aufgeklappt && k.zustand !== 'fehlt')
               ? `<span class="anbieter-tag" title="Anbieter / Gewerk">${esc(k.anbieter)}</span>`
@@ -2063,7 +2070,10 @@ async function zeichnen() {
         + liste.map(({ k, i }) => zeileHtml(k, i)).join('') + wz;
     }).join('');
 
-    rumpf = wegDirektHtml() + ablesenKnopfHtml() + flussKarte + sortWahl +
+    // N66 — der globale „Ablesewerte eingeben"-Knopf + das Zahnrad sind raus:
+    // die Zählerstände werden jetzt inline je Kategorie (Wasser/Heizung/Strom)
+    // im aufklappbaren Panel erfasst.
+    rumpf = wegDirektHtml() + flussKarte + sortWahl +
       zeilen + abschlussHtml() + zeitraumFussHtml();
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
