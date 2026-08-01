@@ -1104,6 +1104,12 @@ function verteilungHtml(k) {
   // CDII — die Maßeinheit (z. B. m², Pers.) sichtbar am Eingabefeld, damit eine
   // nackte „40" als Fläche erkennbar ist statt bloß eine Zahl.
   const einheitTag = einheit ? `<span class="mini-einheit">${esc(einheit)}</span>` : '';
+  // N28 — „Personen" sind ganze Zahlen: kein 0,0001, keine Nachkommastellen.
+  // Ganzzahliges Feld (step 1, Ziffern-Tastatur) + gerundeter Anzeigewert.
+  const ganzzahl = k.schluessel === 'personen';
+  const schritt = ganzzahl ? '1' : '0.0001';
+  const imode = ganzzahl ? 'numeric' : 'decimal';
+  const wZahl = w => ganzzahl ? Math.round(Number(w) || 0) : (Number(w) || 0);
   const abzuleiten = meta?.moeglich ? Object.entries(meta.gewichte) : [];
   const gleich = abzuleiten.length === eintraege.length &&
     abzuleiten.every(([p, w]) => Number(k.anteile?.[p] ?? NaN) === Number(w));
@@ -1119,10 +1125,10 @@ function verteilungHtml(k) {
       <span class="gn">${esc(p)}${leerstaende.has(p)
         ? '<span class="gsub">Leerstand · Eigentümer</span>' : ''}</span>
       <span class="mini-wrap">${bearbeitbar
-        ? `<input type="number" step="0.0001" min="0" value="${Number(w)}"
-                 data-gewicht="${esc(p)}"
+        ? `<input type="number" step="${schritt}" min="0" inputmode="${imode}"
+                 value="${wZahl(w)}" data-gewicht="${esc(p)}"
                  aria-label="Gewicht ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">`
-        : `<span class="gv">${Number(w).toLocaleString('de-DE')}</span>`}${einheitTag}</span>
+        : `<span class="gv">${wZahl(w).toLocaleString('de-DE')}</span>`}${einheitTag}</span>
       <span class="gp" data-anteil>${prozentText(w, summe)}</span>
     </div>`).join('');
 
@@ -1146,10 +1152,10 @@ function verteilungHtml(k) {
         <span class="vt-euro"><span class="euro-z" data-euro>${eur(euro)}</span>
           <span class="rzp" data-anteil>${prozentText(w, summe)}</span></span>
         ${bearbeitbar
-          ? `<span class="mini-wrap"><input class="anteil-mini" type="number" step="0.0001" min="0"
-                    inputmode="decimal" value="${Number(w)}" data-gewicht="${esc(p)}"
+          ? `<span class="mini-wrap"><input class="anteil-mini" type="number" step="${schritt}" min="0"
+                    inputmode="${imode}" value="${wZahl(w)}" data-gewicht="${esc(p)}"
                     aria-label="Anteil ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">${einheitTag}</span>`
-          : `<span class="mini-wrap"><span class="gv">${Number(w).toLocaleString('de-DE')}</span>${einheitTag}</span>`}
+          : `<span class="mini-wrap"><span class="gv">${wZahl(w).toLocaleString('de-DE')}</span>${einheitTag}</span>`}
       </div>`;
     }).join('');
     aufteilung = `<div class="vt-ergebnis">${euroRows}</div>${
