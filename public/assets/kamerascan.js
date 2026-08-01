@@ -563,7 +563,7 @@ async function vorschauCanvas(bitmap) {
  * <img> (das Safari inkl. HEIC lädt und EXIF-korrekt ausrichtet) auf ein
  * Canvas. Das Canvas ist überall via `drawImage` nutzbar — dieselbe Rolle wie
  * ein ImageBitmap (Breite/Höhe, zeichenbar; `.close?.()` greift ins Leere). */
-async function zuBitmap(datei) {
+export async function zuBitmap(datei) {
   if (typeof createImageBitmap === 'function') {
     try {
       return await createImageBitmap(datei, { imageOrientation: 'from-image' });

@@ -7,11 +7,15 @@
  * nicht ein zweites Mal komprimiert wird.
  */
 
+import { zuBitmap } from './kamerascan.js';
+
 const A4 = { breite: 595.28, hoehe: 841.89 };   // Punkte
 
 /** Bild verkleinern und als JPEG kodieren. Liefert Bytes plus Masse. */
 export async function aufbereiten(datei, { maxKante = 1700, guete = 0.72 } = {}) {
-  const bitmap = await createImageBitmap(datei);
+  // N41/N42 — robuster Decoder (createImageBitmap→<img>-Rückfall), damit auch
+  // dieser Weg HEIC/iOS-fest ist, statt still an createImageBitmap zu scheitern.
+  const bitmap = await zuBitmap(datei);
   const faktor = Math.min(1, maxKante / Math.max(bitmap.width, bitmap.height));
   const breite = Math.round(bitmap.width * faktor);
   const hoehe = Math.round(bitmap.height * faktor);
