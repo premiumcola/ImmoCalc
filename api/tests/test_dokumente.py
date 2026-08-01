@@ -34,7 +34,8 @@ def test_dateiname_folgt_dem_schema():
         == "2025_Steuer-Bescheid-Finanzamt-Süd.pdf"
     # ohne Beschreibung und ohne Jahr bleibt es trotzdem eindeutig — und
     # heisst nicht "Sonstiges", denn so heisst schon der Ordner
-    assert dateiname(None, "Sonstiges", "", ".pdf") == "ohne-Jahr_Beleg.pdf"
+    # N44 — kein „ohne-Jahr"-Vorsatz mehr: fehlt das Jahr, entfällt der Datumsteil.
+    assert dateiname(None, "Sonstiges", "", ".pdf") == "Beleg.pdf"
     # Schrägstriche dürfen keinen Pfad erzeugen
     assert "/" not in dateiname(2024, "Nebenkosten", "a/b", ".pdf")
 
@@ -620,8 +621,9 @@ def test_beleg_ohne_jahr_bleibt_im_sachordner(monkeypatch):
         monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
 
         c.patch(f"/api/dokumente/{doc}", json={"beschreibung": "Ablesung"})
+        # N44 — bleibt im Sachordner, aber ohne „ohne-Jahr_"-Vorsatz im Namen.
         assert wolke.verschoben[-1][1] == \
-            f"{ordner}/60_Nebenkosten/ohne-Jahr_NK-Ablesung.pdf"
+            f"{ordner}/60_Nebenkosten/NK-Ablesung.pdf"
 
 
 def test_vorhandener_jahresordner_wird_benutzt(monkeypatch):

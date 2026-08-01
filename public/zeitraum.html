@@ -537,24 +537,6 @@
      fiel — rein informativ, ändert nichts an der anteiligen Verteilung. */
   .belege .beleg-datum{margin-left:2px;font:600 10.5px var(--mono);
     color:var(--soft);white-space:nowrap}
-  /* CCLV — kostenfreie Belege als kleiner Anhänger („Kleideranhänger") am
-     Kostenart-Thema. Dezent und gedeckt-grau, klar ohne Betrag — nie mit den
-     grün gefüllten Kostenzeilen zu verwechseln. Sitzt unter der Kopfzeile und
-     erscheint auch bei „offen"/„fehlt", weil er am Thema hängt, nicht an der
-     Position. */
-  .anh{display:flex;flex-wrap:wrap;gap:6px;padding:0 15px 12px}
-  .anh-chip{display:inline-flex;align-items:center;max-width:100%;
-            background:#EDF1F0;border-radius:9px;overflow:hidden}
-  .anh-chip a{display:inline-flex;align-items:center;gap:5px;min-width:0;
-              text-decoration:none;color:var(--soft);padding:7px 6px 7px 10px;
-              min-height:32px;font:600 11px var(--mono)}
-  .anh-chip a:hover{color:var(--teal-d)}
-  .anh-chip svg{width:13px;height:13px;flex:none}
-  .anh-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
-  .anh-x{border:none;background:none;color:var(--soft);cursor:pointer;
-         font:400 15px var(--body);line-height:1;padding:0 10px;
-         align-self:stretch;min-width:34px}
-  .anh-x:hover{color:var(--neg);background:rgba(178,66,41,.09)}
   /* Anhängen aus dem Bestand — leise und gestrichelt, im aufgeklappten Bereich. */
   .anh-verwalt{margin-top:14px}
   .anh-anbau{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
@@ -861,45 +843,6 @@ const kurzBeleg = name => (name || '')
   .replace(/_-?\d[\d.,]*\s*€$/, '')
   .replace(/[_-]+/g, ' ')
   .trim() || (name || 'Beleg');
-
-const anhaengerZu = kostenart => (anhaenger?.angehaengt || {})[kostenart] || [];
-
-/* Normalisiert einen Namen für den Vergleich „sagt das dasselbe wie die
-   Kostenart?" — Kleinschreibung, ein führendes „NK"/„Nebenkosten" weg, alle
-   Trenn- und Satzzeichen raus. */
-const normThema = s => (s || '').toLowerCase()
-  .replace(/^(nk|nebenkosten)\b[\s·:.,–-]*/, '')
-  .replace(/[^a-zäöüß0-9]+/g, '');
-
-/* Ein Anhänger-Etikett verdient seinen Chip nur, wenn es etwas Neues sagt —
-   nicht, wenn sein Kern bloß den Kostenart-Namen wiederholt (Beleg „NK
-   Schornsteinfeger" an der Position „Schornsteinfeger"). */
-const anhaengerSagtNeues = (dateiname, kostenart) => {
-  const kern = normThema(kurzBeleg(dateiname));
-  return kern !== '' && kern !== normThema(kostenart);
-};
-
-/* Die Chip-Leiste unter der Kopfzeile: je Anhänger ein gedeckter Chip
-   (antippen → ansehen) und, solange der Zeitraum in Arbeit ist, ein leises ×
-   zum Lösen. Sie erscheint unabhängig davon, ob es eine Kostenposition gibt. */
-function anhaengerStrip(k) {
-  // Nur Anhänger zeigen, die etwas Neues sagen — ein Chip, der bloß den
-  // Kostenart-Namen doppelt, wird weggelassen (kein zweiter Titel unter dem Titel).
-  const liste = anhaengerZu(k.kostenart)
-    .filter(d => anhaengerSagtNeues(d.dateiname, k.kostenart));
-  if (!liste.length) return '';
-  const bearbeitbar = daten.status === 'in Arbeit';
-  const chips = liste.map(d => `
-    <span class="anh-chip">
-      <a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
-         title="${esc(d.pfad)} · Zusatzbeleg ohne Kostenanteil">${ANH_ICON}<span
-         class="anh-t">${esc(kurzBeleg(d.dateiname))}</span></a>
-      ${bearbeitbar ? `<button class="anh-x" data-anh-loesen="${d.id}"
-        title="Anhänger lösen" aria-label="Anhänger von ${esc(k.kostenart)} lösen"
-        >×</button>` : ''}
-    </span>`).join('');
-  return `<div class="anh">${chips}</div>`;
-}
 
 const schluesselMeta = wert =>
   (schluessel?.schluessel || []).find(s => s.wert === wert) || null;
@@ -1385,7 +1328,6 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
         ${k.zustand !== 'fehlt'
           ? `<span class="haken ${farbe}">${zeichen}</span>` : ''}
       </div>
-      ${anhaengerStrip(k)}
       ${aufgeklappt ? `<div class="auf">${koerper}</div>` : ''}
     </div>`;
 }
@@ -2067,16 +2009,6 @@ async function anhaengen(kostenart) {
   }
 }
 
-async function anhaengerLoesen(id) {
-  try {
-    await api(`/dokumente/${id}/anhaenger`, { method: 'DELETE' });
-    melde('Anhänger gelöst', '');
-    await laden();
-  } catch (fehler) {
-    melde(String(fehler.message || fehler), 'neg');
-  }
-}
-
 /* Wieder öffnen — bewusst mit Rückfrage, aber ohne Drama: es geht nichts
    verloren, und niemand bekommt dadurch eine zweite Mail. */
 async function wiederOeffnen(knopf) {
@@ -2355,9 +2287,6 @@ inhalt.addEventListener('click', async e => {
 
   const anhaengenKnopf = e.target.closest('[data-anhaengen]');
   if (anhaengenKnopf) return anhaengen(anhaengenKnopf.dataset.anhaengen);
-
-  const anhLoesen = e.target.closest('[data-anh-loesen]');
-  if (anhLoesen) return anhaengerLoesen(Number(anhLoesen.dataset.anhLoesen));
 
   const beleg = e.target.closest('[data-beleg]');
   if (beleg) {

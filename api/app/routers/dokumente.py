@@ -135,7 +135,11 @@ def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
             mitte = f"Lageplan-{mitte}" if mitte else "Lageplan"
         teile = [mitte, betragsteil(betrag)]
     else:
-        teile = [datumsteil(jahr, monat), mitte or "Beleg", betragsteil(betrag)]
+        # N44 — KEIN „ohne-Jahr"-Vorsatz mehr: fehlt das Jahr, entfällt der
+        # Datumsteil ganz. Ein Beleg ohne Jahr sortiert nach seinem Namen, nicht
+        # unter einem sinnlosen Präfix, das der Nutzer wieder wegräumen müsste.
+        datum = datumsteil(jahr, monat) if jahr else ""
+        teile = [datum, mitte or "Beleg", betragsteil(betrag)]
     return "_".join(t for t in teile if t) + endung
 
 
