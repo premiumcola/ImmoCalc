@@ -4152,9 +4152,13 @@ def praefix_entfernen(trocken: bool = True,
     `?trocken=true` (Vorgabe) zeigt nur den Plan; erst `?trocken=false` führt
     aus. Idempotent: ein zweiter Lauf findet nichts mehr."""
     praefix = "ohne-Jahr_"
+    # `.immocalc`-Steckbriefe sind Sidecars, keine Belege — sie wandern mit ihrem
+    # Beleg (`_sidecar_mitnehmen`), nicht als eigener Eintrag. Sie hier zu
+    # überspringen verhindert 404-Scheinfehler (die Datei ist schon mitgezogen).
     kandidaten = [d for d in session.exec(select(Dokument)).all()
                   if (d.pfad or "").startswith("/")
-                  and (d.dateiname or "").startswith(praefix)]
+                  and (d.dateiname or "").startswith(praefix)
+                  and not _ist_sidecar(d.dateiname)]
     if trocken:
         return {"trocken": True, "anzahl": len(kandidaten),
                 "plan": [{"id": d.id, "alt": d.dateiname,

@@ -125,6 +125,19 @@ def test_praefix_entfernen_benennt_um(monkeypatch):
         assert r2["verschoben"] == []
 
 
+def test_praefix_ueberspringt_immocalc_sidecar(monkeypatch):
+    with TestClient(app) as c:
+        oid = _objekt(c, "Sidecar Test")
+        _dokument(oid, "ohne-Jahr_Vertrag.immocalc",
+                  "/Obj/20_Mietvertraege/ohne-Jahr_Vertrag.immocalc")
+        fake = _FakeCloud(dateien=["Obj/20_Mietvertraege/ohne-Jahr_Vertrag.immocalc"])
+        monkeypatch.setattr(dok, "verbindung", lambda session: fake)
+
+        # Die Sidecar taucht im Plan NICHT auf (kein Beleg, wandert mit ihrem Beleg).
+        plan = c.post("/api/dokumente/praefix-entfernen").json()["plan"]
+        assert all(not p["alt"].lower().endswith(".immocalc") for p in plan)
+
+
 def test_lageplaene_einsortieren_zieht_in_sammelordner(monkeypatch):
     with TestClient(app) as c:
         oid = _objekt(c, "Lageplan Umzug")
