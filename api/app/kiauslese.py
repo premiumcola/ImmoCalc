@@ -370,6 +370,11 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         "zeitraum_hinweis": _langtext(block.get("zeitraum_hinweis")),
         "zusammenfassung": zusammenfassung,
         "einordnung": zusammenfassung,
+        # CD — der Aussteller/Absender (Firma, Zweckverband, Gemeinde,
+        # Versicherer). Der Prompt fragt ihn längst ab, nur durchgereicht wurde
+        # er nie: `_ki_ergaenzen` fand `absender` deshalb immer leer, das
+        # Firma-Feld im Drop-Dialog blieb trotz klarer Erkennung unbefüllt.
+        "absender": _text(block.get("absender")),
         # CCLXXIV: das Raster — Liegenschaft (nicht Postanschrift), Einheit und
         # die typspezifischen App-Eingabefelder.
         "dokumenttyp": _text(block.get("dokumenttyp")),
