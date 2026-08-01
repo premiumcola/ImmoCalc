@@ -300,6 +300,22 @@
                 cursor:pointer;padding:0;width:44px;height:44px;flex:none;
                 margin:-5px -12px -5px 0;border-radius:11px}
   .eintrag .del:hover{color:var(--neg)}
+  /* N19 — Mieter-Timeline: farbige Balken je Mietverhältnis, schraffierte
+     Lücken für Leerstände, Jahres-Achse darunter. */
+  .miet-timeline{margin:2px 2px 14px}
+  .tl-track{position:relative;height:28px;background:#E3E9E9;border-radius:8px;overflow:hidden}
+  .tl-seg{position:absolute;top:0;height:100%;border-radius:6px;min-width:3px}
+  .tl-seg.leer{background:repeating-linear-gradient(45deg,#C9D3D3,#C9D3D3 5px,#DCE3E3 5px,#DCE3E3 10px)}
+  .tl-achse{position:relative;height:15px;margin-top:5px}
+  .tl-tick{position:absolute;transform:translateX(-50%);font:600 10px var(--mono);
+    color:var(--soft);white-space:nowrap}
+  .tl-tick:first-child{transform:translateX(0)}
+  .tl-tick:last-child{transform:translateX(-100%)}
+  .miet-dot{flex:none;width:14px;height:14px;border-radius:50%;align-self:center;
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.55)}
+  .miet-dot.leer{background:repeating-linear-gradient(45deg,#B9C6C6,#B9C6C6 3px,#DCE3E3 3px,#DCE3E3 6px)}
+  .eintrag.leerstand{background:#F4F6F6}
+  .eintrag.leerstand .en{color:var(--soft)}
   /* CCCLXIX/CCCLXXXI — Lageplan: Inline-Vorschau des ersten Plans (höhen-
      begrenzt), plus je Zeile zwei leise Aktionen (umbenennen, entfernen). */
   /* N4 — mehrere Pläne als kompakte Elemente NEBENEINANDER, jedes im
@@ -1254,13 +1270,140 @@ function staffelHtml(cfg, bereich, art, gruppe) {
     </div>`;
 }
 
+/* ---- N19: Mieter-Timeline über „Mieten & Mieter" ---------------------------
+   Die Mietverhältnisse einer Einheit als farbige Zeitleiste; je Verhältnis eine
+   Farbe (nach Startdatum), die Dauer je Abschnitt, und erkannte Leerstände als
+   Lücken — sowohl grafisch als auch als eigene Zeilen in der Liste. */
+const MIET_PALETTE = ['#0F6E5C', '#916212', '#B24229', '#5B3E8F', '#1F6F8B',
+                      '#2E7D4F', '#8A6D1E'];
+
+const _isoTag = iso => iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : '';
+
+function _tagPlus(iso, d) {
+  const t = new Date(`${iso}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + d);
+  return t.toISOString().slice(0, 10);
+}
+
+function _dauerText(vonIso, bisIso) {
+  const [vy, vm, vd] = vonIso.split('-').map(Number);
+  const [by, bm, bd] = bisIso.split('-').map(Number);
+  let monate = (by - vy) * 12 + (bm - vm) - (bd < vd ? 1 : 0);
+  monate = Math.max(0, monate);
+  const j = Math.floor(monate / 12), m = monate % 12;
+  const teile = [];
+  if (j) teile.push(`${j} Jahr${j > 1 ? 'e' : ''}`);
+  if (m || !j) teile.push(`${m} Monat${m === 1 ? '' : 'e'}`);
+  return teile.join(' ');
+}
+
+function mietModell(eintraege) {
+  const h = new Date();
+  const heute = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${
+    String(h.getDate()).padStart(2, '0')}`;
+  const roh = (eintraege || []).filter(m => m && m.ab_datum && m.vorlaeufig !== true);
+  if (!roh.length) return null;
+  const mieten = roh.map(m => ({ ...m })).sort((a, b) => a.ab_datum.localeCompare(b.ab_datum));
+  const ende = m => m.bis_datum || heute;
+  mieten.forEach((m, i) => {
+    m.farbe = MIET_PALETTE[i % MIET_PALETTE.length];
+    m.laufend = !m.bis_datum && !m.geplant;
+    m.dauer = _dauerText(m.ab_datum, ende(m));
+  });
+  const minIso = mieten[0].ab_datum;
+  const maxIso = mieten.reduce((a, m) => ende(m) > a ? ende(m) : a, ende(mieten[0]));
+  const t0 = Date.parse(`${minIso}T00:00:00Z`);
+  const spanne = Math.max(1, Date.parse(`${maxIso}T00:00:00Z`) - t0);
+  const pct = iso => Math.min(100, Math.max(0,
+    (Date.parse(`${iso}T00:00:00Z`) - t0) / spanne * 100));
+  // Leerstände: chronologisch durchlaufen, jede Lücke zur bisherigen Deckung.
+  const leerstaende = [];
+  let deckung = minIso;
+  for (const m of mieten) {
+    if (m.ab_datum > deckung) {
+      const von = _tagPlus(deckung, 1), bis = _tagPlus(m.ab_datum, -1);
+      if (bis >= von) leerstaende.push({ von, bis, ab: deckung, endeIso: m.ab_datum,
+        dauer: _dauerText(deckung, m.ab_datum) });
+    }
+    if (ende(m) > deckung) deckung = ende(m);
+  }
+  const jahre = [];
+  for (let j = Number(minIso.slice(0, 4)); j <= Number(maxIso.slice(0, 4)); j++) jahre.push(j);
+  return { mieten, leerstaende, pct, minIso, maxIso, heute, jahre };
+}
+
+function mietTimelineHtml(mo) {
+  const seg = (l, w, farbe, titel, leer) =>
+    `<span class="tl-seg${leer ? ' leer' : ''}" title="${esc(titel)}"
+       style="left:${l}%;width:${w}%;${leer ? '' : `background:${farbe}`}"></span>`;
+  const balken = mo.mieten.map(m => {
+    const l = mo.pct(m.ab_datum), r = mo.pct(m.bis_datum || mo.heute);
+    return seg(l, Math.max(2, r - l), m.farbe,
+      `${m.partei}: ${_isoTag(m.ab_datum)} – ${m.bis_datum ? _isoTag(m.bis_datum) : 'heute'} · ${m.dauer}`);
+  }).join('');
+  const leer = mo.leerstaende.map(x => {
+    const l = mo.pct(x.ab), r = mo.pct(x.endeIso);
+    return seg(l, Math.max(1.5, r - l), '',
+      `Leerstand: ${_isoTag(x.von)} – ${_isoTag(x.bis)} · ${x.dauer}`, true);
+  }).join('');
+  const ticks = mo.jahre.map(j =>
+    `<span class="tl-tick" style="left:${mo.pct(`${j}-01-01`)}%">${j}</span>`).join('');
+  return `<div class="miet-timeline">
+      <div class="tl-track">${leer}${balken}</div>
+      <div class="tl-achse">${ticks}</div>
+    </div>`;
+}
+
+function mietZeile(cfg, e, imFokus) {
+  const besch = cfg.detail(e, imFokus);
+  const dauer = e.dauer ? (e.laufend ? `seit ${e.dauer}` : `${e.dauer} gesamt`) : '';
+  return `<div class="eintrag klick" data-edit="mieten:${e.id}">
+      <span class="miet-dot" style="background:${e.farbe}"></span>
+      <span class="et">
+        <span class="en">${esc(e.partei || cfg.name(e))}</span>
+        <span class="ed">${esc(besch)}${dauer ? ` · ${esc(dauer)}` : ''}</span>
+      </span>
+      <span class="ew">${cfg.wert(e)}</span>
+      <button class="del" data-del="mieten:${e.id}" aria-label="löschen">×</button>
+    </div>`;
+}
+
+function leerstandZeile(x) {
+  return `<div class="eintrag leerstand">
+      <span class="miet-dot leer"></span>
+      <span class="et">
+        <span class="en">Leerstand</span>
+        <span class="ed">${_isoTag(x.von)} – ${_isoTag(x.bis)} · ${x.dauer}</span>
+      </span>
+      <span class="ew">—</span>
+    </div>`;
+}
+
 function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
                                         vorspann = '' } = {}) {
   const cfg = cfgFuer(bereich);
   const istEntwurf = e => e && e.vorlaeufig === true && ENTWURF_TYP[bereich];
   let zeilen;
+  let timelineHtml = '';
   if (!eintraege.length) {
     zeilen = `<div class="leerzeile">Noch nichts erfasst</div>`;
+  } else if (bereich === 'mieten') {
+    // N19 — Timeline + farbige Zeilen + erkannte Leerstände als eigene Zeilen.
+    const mo = mietModell(eintraege);
+    if (mo) {
+      timelineHtml = mietTimelineHtml(mo);
+      const gemischt = [
+        ...mo.mieten.map(m => ({ t: m.ab_datum, html: mietZeile(cfg, m, imFokus) })),
+        ...mo.leerstaende.map(x => ({ t: x.von, html: leerstandZeile(x) })),
+      ].sort((a, b) => a.t.localeCompare(b.t));       // chronologisch …
+      const entwuerfe = eintraege.filter(istEntwurf)
+        .map(e => entwurfZeile(cfg, bereich, e, imFokus)).join('');
+      zeilen = entwuerfe + gemischt.reverse().map(x => x.html).join('');  // … neueste oben
+    } else {
+      zeilen = eintraege.map(e => istEntwurf(e)
+        ? entwurfZeile(cfg, bereich, e, imFokus)
+        : eintragZeile(cfg, bereich, e, imFokus)).join('');
+    }
   } else if (bereich === 'zahlungen') {
     // Nach Art gruppieren; nur was mehrfach vorkommt, wird gestaffelt.
     const gruppen = new Map();
@@ -1292,7 +1435,7 @@ function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
        aria-label="${esc(cfg.einzahl)} hinzufügen"
        title="${esc(cfg.einzahl)} hinzufügen">＋</button>`;
   return `${sekopfHtml(kopf || cfg.titel, cfg.ikon, kopfAdd, RUBRIKFARBE[bereich])}
-    ${vorspann}
+    ${timelineHtml}${vorspann}
     <div class="liste">${zeilen}</div>`;
 }
 
