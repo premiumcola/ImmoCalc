@@ -191,6 +191,22 @@
   .zw-erg .zw-move{color:var(--teal-d)}
   .zw-erg .zw-gf{color:var(--amber)}
   .zw-erg b{font-weight:700}
+  .zw-leer{margin:2px 18px 10px;font:500 11.5px var(--mono);color:var(--soft);
+    letter-spacing:.02em}
+  /* Auf dem Handy einspaltig: die Wrapper verschwinden, die Zeilen behalten
+     ihre bisherigen Ränder. Ab 900px zweispaltig — links die Zeiträume,
+     rechts Neuanlegen/Abgleich/Bericht — damit der Dialog nicht so hoch wird. */
+  .zw-body,.zw-links,.zw-rechts{display:contents}
+  @media(min-width:900px){
+    .immo-dlg.zw-breit{max-width:820px}
+    .zw-breit .zw-body{display:grid;grid-template-columns:1fr 1fr;
+      column-gap:22px;padding:0 18px;align-items:start}
+    .zw-breit .zw-links,.zw-breit .zw-rechts{display:block;min-width:0}
+    .zw-breit .zw-row,.zw-breit .zw-neu,.zw-breit .zw-abgl,
+    .zw-breit .zw-erg,.zw-breit .zw-leer{margin-left:0;margin-right:0}
+    .zw-breit .zw-neu{margin-top:0;padding-top:0;border-top:none}
+    .zw-breit .zw-erg{max-height:46vh}
+  }
 
   /* CCCXIII — Eintrags-Detail: Daten links, Beleg rechts. Auf dem Telefon
      stapelt sich alles (Daten oben, Beleg darunter), ab Tablet nebeneinander. */
@@ -3244,7 +3260,7 @@ async function formular(einst) {
    Zeitraum-Endpunkte (PATCH /zeitraeume, /teilen, /belege-abgleichen). */
 async function zeitraumWerkzeug() {
   const dlg = document.createElement('dialog');
-  dlg.className = 'immo-dlg zuord-dlg';
+  dlg.className = 'immo-dlg zuord-dlg zw-breit';
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   let veraendert = false;   // ob die Seite dahinter neu geladen werden muss
@@ -3268,25 +3284,39 @@ async function zeitraumWerkzeug() {
 
   async function rendern() {
     const det = await api(`/objekte/${encodeURIComponent(slug)}`);
-    const zs = (det.zeitraeume || []).slice()
+    const alle = (det.zeitraeume || []).slice()
       .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+    // Nur bestückte Zeiträume zeigen — die vielen leeren, automatisch
+    // angelegten Alt-Jahre gehören nicht in dieses Werkzeug.
+    const zs = alle.filter(z => (z.positionen || 0) > 0);
+    const versteckt = alle.length - zs.length;
+    const verstecktText = versteckt === 1
+      ? '1 leerer Zeitraum ausgeblendet'
+      : `${versteckt} leere Zeiträume ausgeblendet`;
     dlg.innerHTML = `
       <div class="zd-kopf"><span class="zd-t">Zeiträume umstellen</span>
         <button class="zd-x" data-nein aria-label="Schließen">×</button></div>
       <p class="zw-intro">Jeder Beleg gehört in <b>genau einen</b> Zeitraum — den,
-        in dessen Datumsfenster er fällt. Grenzen ändern oder teilen, dann unten
+        in dessen Datumsfenster er fällt. Grenzen ändern oder teilen, dann
         <b>Belege neu zuordnen</b>: die App schiebt jeden Beleg ins richtige
         Fenster und markiert Grenzfälle (z. B. Jahresrechnungen, die anteilig in
         zwei Zeiträume gehören — die teilst du danach per Teilbetrag auf).</p>
-      ${zs.map(rowHtml).join('') || '<p class="zw-intro">Noch kein Zeitraum.</p>'}
-      <div class="zw-neu"><span class="zd-l">Neuer Zeitraum</span>
-        <div class="zw-felder">
-          <input type="date" data-zw-neu-start aria-label="Start neuer Zeitraum">
-          <input type="date" data-zw-neu-ende aria-label="Ende neuer Zeitraum">
-          <button class="zw-b" data-zw-neu>Anlegen</button></div></div>
-      <div class="zw-abgl">
-        <button class="zd-ok" data-zw-abgleich>Belege nach Datum neu zuordnen</button></div>
-      <div class="zw-erg" id="zwErg"></div>
+      <div class="zw-body">
+        <div class="zw-links">
+          ${zs.map(rowHtml).join('') || '<p class="zw-intro">Noch kein bestückter Zeitraum.</p>'}
+          ${versteckt ? `<div class="zw-leer">${verstecktText}</div>` : ''}
+        </div>
+        <div class="zw-rechts">
+          <div class="zw-neu"><span class="zd-l">Neuer Zeitraum</span>
+            <div class="zw-felder">
+              <input type="date" data-zw-neu-start aria-label="Start neuer Zeitraum">
+              <input type="date" data-zw-neu-ende aria-label="Ende neuer Zeitraum">
+              <button class="zw-b" data-zw-neu>Anlegen</button></div></div>
+          <div class="zw-abgl">
+            <button class="zd-ok" data-zw-abgleich>Belege nach Datum neu zuordnen</button></div>
+          <div class="zw-erg" id="zwErg"></div>
+        </div>
+      </div>
       <div class="zd-fuss"><button class="zd-ab" data-nein>Schließen</button></div>`;
   }
 

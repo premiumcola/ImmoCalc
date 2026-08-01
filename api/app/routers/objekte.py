@@ -861,16 +861,21 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
         for z in session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all():
             if z.status != "in Arbeit":
                 continue
+            positionen = list(session.exec(select(Kostenposition).where(
+                Kostenposition.zeitraum_id == z.id)).all())
+            # N51 — leere, automatisch angelegte Zeiträume (keine Kostenposition)
+            # sind keine echte Abrechnung in Arbeit: keine § 556-Fristwarnung und
+            # keine Beleg-Erinnerung. Sie sind auch in der Liste ausgeblendet.
+            if not positionen:
+                continue
             label = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
             hinweis = frist_erinnerung(label, frist_tage(z),
                                        zeitraum_beendet=z.ende <= heute)
             if in_sicht(hinweis):
                 offen.append({"objekt": o.slug, "name": o.name, **hinweis})
 
-            vorhanden = {p.kostenart for p in session.exec(
-                select(Kostenposition).where(
-                    Kostenposition.zeitraum_id == z.id)).all()
-                if p.status == "erledigt"}
+            vorhanden = {p.kostenart for p in positionen
+                         if p.status == "erledigt"}
             for k in session.exec(
                     select(Kostenart).where(Kostenart.objekt_id == o.id)).all():
                 if not k.aktiv:
