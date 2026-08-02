@@ -21,7 +21,13 @@ def _ablesung_fuer(ablesungen: list, z) -> Optional[object]:
     Periodenende nächstgelegenen Datum."""
     getaggt = [a for a in ablesungen if getattr(a, "zeitraum_id", None) == z.id]
     if getaggt:
-        return max(getaggt, key=lambda a: a.datum)
+        # N109 - bei mehreren Ablesungen desselben Zeitraums zaehlt die, die der
+        # Periodengrenze am naechsten liegt, NICHT die spaeteste. Nach einem
+        # Perioden-Split bleiben Altablesungen mit derselben `zeitraum_id`, aber
+        # weit spaeterem Datum stehen; die spaeteste zu nehmen streckte die
+        # Interpolation auf den alten, laengeren Zeitraum (28,1 m3 wurden so zu
+        # 17,758 m3).
+        return min(getaggt, key=lambda a: abs(engine.tage(z.ende, a.datum)))
     if not ablesungen:
         return None
     return min(ablesungen, key=lambda a: abs(engine.tage(z.ende, a.datum)))
