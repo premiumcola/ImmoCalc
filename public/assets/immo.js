@@ -289,7 +289,7 @@ function baueDialog(inhalt) {
  * und kommt nicht mehr heraus. Deshalb bleibt der Beleg jetzt im Dialog, mit
  * drei Wegen zurueck: Kreuz, Escape und Tippen neben das Blatt.
  */
-export function belegAnsehen(url, titel = 'Beleg', pfad = '') {
+export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null) {
   // Die GANZE Seite als serverseitig gerendertes Bild, breitenfüllend statt
   // beschnitten — das ist die alleinige große Ansicht. Kein zusätzliches ↗ in
   // einen zweiten Tab: auf dem iPhone lässt sich der native PDF-Betrachter dort
@@ -306,17 +306,116 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '') {
          ? `<span class="bpfad" title="Ablageort in der Nextcloud">${sicher(pfad)}</span>` : ''}</span>
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
+     <div class="beleg-ki" hidden></div>
      <div class="beleg-flaeche"><div class="beleg-blatt lade">Beleg wird geholt …</div></div>`);
   dlg.classList.add('beleg-dlg');
   dlg.querySelector('[data-zu]').addEventListener('click', () => dlg.close());
   // Tippen neben die Fläche schliesst ebenfalls.
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
+  // N102 — was zu diesem Beleg schon ausgelesen wurde, steht über der Vorschau.
+  kiAusleseZeigen(dokumentId ?? dokumentIdAus(url), dlg.querySelector('.beleg-ki'));
+
   const flaeche = dlg.querySelector('.beleg-flaeche');
   const adressen = belegSeitenLaden(basis, flaeche, titel, url);
 
   dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
   return dlg;
+}
+
+/* ---- KI-Auslese im Beleg-Fenster (N102) ----
+   Beim Ansehen eines verknüpften Belegs soll gleich oben stehen, was zu dieser
+   Datei schon erkannt wurde. Bewusst OHNE `?neu=true`: `GET …/erkennen` gibt
+   seit N98 die in der Datenbank festgehaltene Auslese zurück (`aus_db`), es
+   wird von hier aus nie eine neue KI-Anfrage ausgelöst. */
+
+/** Dokument-Id aus einer Beleg-URL wie `/api/dokumente/605/inhalt`. */
+const dokumentIdAus = url => {
+  const treffer = /\/dokumente\/(\d+)(?:\/|\?|$)/.exec(String(url ?? ''));
+  return treffer ? treffer[1] : null;
+};
+
+const datumDe = wert => {
+  const t = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(wert ?? ''));
+  return t ? `${t[3]}.${t[2]}.${t[1]}` : String(wert ?? '').trim();
+};
+
+/** Feldname aus dem KI-Raster als Beschriftung: `abrechnungs_zeitraum` → „Abrechnungs zeitraum". */
+const feldLabel = name => {
+  const t = String(name ?? '').replace(/[_-]+/g, ' ').trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : '';
+};
+
+/** Ein Wert aus dem KI-Raster als Text. Verschachteltes wird ausgelassen. */
+function feldWert(name, wert) {
+  if (wert === null || wert === undefined || wert === '') return '';
+  if (Array.isArray(wert)) return wert.map(w => feldWert(name, w)).filter(Boolean).join(', ');
+  if (typeof wert === 'object') return '';
+  if (typeof wert === 'boolean') return wert ? 'ja' : 'nein';
+  if (typeof wert === 'number') {
+    return /betrag|summe|preis|kosten|brutto|netto/i.test(name)
+      ? eur(wert) : wert.toLocaleString('de-DE');
+  }
+  return String(wert).trim();
+}
+
+/** Die anzeigbaren Angaben einer Auslese als [Beschriftung, Wert]-Paare. */
+function kiZeilen(w) {
+  const zeilen = [];
+  const gesehen = new Set();
+  const dazu = (label, wert) => {
+    const text = String(wert ?? '').trim();
+    const schluessel = label.toLowerCase();
+    if (!text || !label || gesehen.has(schluessel)) return;
+    gesehen.add(schluessel);
+    zeilen.push([label, text]);
+  };
+  if (typeof w.betrag === 'number') dazu('Betrag', eur(w.betrag));
+  if (w.datum) dazu('Datum', datumDe(w.datum));
+  else if (w.jahr) dazu('Jahr', w.jahr);
+  dazu('Kategorie', w.kategorie);
+  dazu('Kostenart', w.kostenart);
+  dazu('Sache', w.sache);
+  dazu('Immobilie', w.immobilie);
+  dazu('Einheit', w.einheit);
+  const felder = (w.felder && typeof w.felder === 'object') ? w.felder : {};
+  Object.entries(felder).forEach(([name, wert]) =>
+    dazu(feldLabel(name), feldWert(name, wert)));
+  return zeilen;
+}
+
+/** Der ruhige Block über der Vorschau — leer, wenn nichts gespeichert ist. */
+function kiAusleseHtml(w) {
+  const satz = String(w.zusammenfassung || w.einordnung || '').trim();
+  const zeilen = kiZeilen(w);
+  if (!satz && !zeilen.length) return '';
+  return `<div class="ki-kopf"><span class="kt">KI-Auslese</span>${
+      w.aus_db ? '<span class="kq">gespeicherte Auslese</span>' : ''}</div>`
+    + (satz ? `<p class="ki-satz">${sicher(satz)}</p>` : '')
+    + (zeilen.length
+        ? `<div class="ki-chips">${zeilen.map(([l, v]) =>
+            `<span class="ki-chip"><span class="kl">${sicher(l)}</span>`
+            + `<span class="kw">${sicher(v)}</span></span>`).join('')}</div>`
+        : '');
+}
+
+/**
+ * Holt die gespeicherte Auslese und setzt sie in `kasten`. Still bei jedem
+ * Fehler (404, kein Schlüssel, altes Backend): die Vorschau darf nie brechen,
+ * dann bleibt der Kasten schlicht weg.
+ */
+function kiAusleseZeigen(id, kasten) {
+  if (!id || !kasten) return;
+  fetch(`/api/dokumente/${id}/erkennen`)
+    .then(a => (a.ok ? a.json() : Promise.reject(new Error('erkennen'))))
+    .then(w => {
+      if (!w || !kasten.isConnected) return;
+      const html = kiAusleseHtml(w);
+      if (!html) return;
+      kasten.innerHTML = html;
+      kasten.hidden = false;
+    })
+    .catch(() => {});
 }
 
 /**

@@ -4011,7 +4011,10 @@ def _ki_aus_db(d: Dokument) -> dict | None:
     return {
         "betrag": d.betrag, "datum": d.belegdatum.isoformat() if d.belegdatum else None,
         "jahr": d.jahr, "kategorie": d.kategorie, "kostenart": d.kostenart,
-        "sache": d.beschreibung or "", "zusammenfassung": d.ki_einordnung,
+        # Eine eigene „Bezeichnung" gibt es am Dokument nicht — sie steckt im
+        # Dateinamen (ohne Datums- und Betragsteil, siehe `bezeichnung.py`).
+        "sache": ohne_betrag(ohne_datum(d.dateiname or "")).strip(" _-"),
+        "zusammenfassung": d.ki_einordnung,
         "einordnung": d.ki_einordnung, "immobilie": d.ki_immobilie,
         "einheit": getattr(d, "ki_einheit", "") or "",
         "felder": d.ki_felder or {}, "ki": True, "aus_db": True,
