@@ -805,3 +805,43 @@ class Heizverteiler(SQLModel, table=True):
     faktor: float = 1.0               # Bewertungsfaktor (einmalig)
     einheiten_stand: float = 0.0      # abgelesene Einheiten der Periode
     notiz: str = ""
+
+
+class Stromjahr(SQLModel, table=True):
+    """N83 — Strom/PV-Eingaben eines Objekts für ein Jahr.
+
+    Strom ist zu vielschichtig für einen einzigen Betrag (siehe `app.strom`):
+    aus drei Zählerständen entstehen zwei Verbrauchsgruppen (WG-Wohnungen und
+    Büro/Studio = Rest), auf die die Bezugsquellen Netz/Solar/Akku verteilt
+    werden, dazu die PV-Anlage mit Ertrag und Anschaffung. Hier stehen nur die
+    Eingabewerte; gerechnet wird in der Engine.
+
+    Ein Datensatz je Objekt und Jahr (`GET/PUT …/strom/{jahr}` legt bei Bedarf
+    an). Alle Felder mit Default 0/„" — additiv, ganz neue Tabelle (von
+    `create_all` angelegt), jeder Bestand bleibt unverändert."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    jahr: int = Field(index=True)
+    # Zählerstände als Jahresverbrauch (kWh): Gesamt, WG/Haus (2 Wohnungen),
+    # Garage — Büro/Studio ergibt sich als Rest (Gesamt − WG − Garage).
+    gesamt_kwh: float = 0.0           # Stromzähler 666 GESAMT
+    wg_kwh: float = 0.0               # Zwischenzähler WG/Haus (EG + 1.OG)
+    garage_kwh: float = 0.0           # Garage (separat)
+    # Aufteilung WG vs. Büro/Studio: fester Split in Prozent (0 = aus den kWh
+    # ableiten), abzüglich des E-Auto-Ladestroms (aus dem Split herausgerechnet).
+    wg_anteil_prozent: float = 0.0    # z. B. 60 (= WG 60 % / Büro 40 %)
+    tanken_kwh: float = 0.0           # E-Auto-Ladung (nicht mit-geteilt)
+    # Bezugsquellen: Menge (kWh) und Preis (€/kWh) je Netz/Solar/Akku.
+    netz_kwh: float = 0.0
+    netz_preis: float = 0.0
+    solar_kwh: float = 0.0
+    solar_preis: float = 0.0
+    akku_kwh: float = 0.0
+    akku_preis: float = 0.0
+    # PV-Anlage.
+    pv_produktion_kwh: float = 0.0
+    einspeisung_kwh: float = 0.0
+    pv_kwp: float = 0.0               # installierte Leistung (Vergütungssatz)
+    verguetung_eur: float = 0.0       # 0 = aus Einspeisung × Satz(kwp) rechnen
+    anschaffung_eur: float = 0.0      # Investment der PV-Anlage
+    notiz: str = ""

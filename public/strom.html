@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Strom &amp; PV · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* ------------------------------------------------------------------
+     Nur strom.html (N83). immo.css wird hier nicht angefasst; was sich
+     spaeter als seitenuebergreifend erweist, wandert dann dorthin.
+     ------------------------------------------------------------------ */
+  .filter{display:flex;gap:8px;margin-bottom:14px}
+  .filter > div{flex:1;min-width:0}
+
+  .karte{background:var(--sheet);border-radius:16px;padding:16px 16px 6px;
+         margin-bottom:14px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .karte.eng{padding-bottom:16px}
+  .karte h3{font:600 13px var(--disp);letter-spacing:-.01em;margin:0 0 4px;
+            color:var(--ink)}
+  .karte .hh{display:flex;align-items:baseline;justify-content:space-between;
+             gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .karte .hint{font:400 12px var(--body);color:var(--soft);line-height:1.5;
+               margin:0 0 14px;max-width:600px}
+
+  /* Eingabe-Raster: auf breiten Schirmen mehrspaltig, auf dem iPhone eine
+     Spalte. minmax verhindert, dass ein langes Label die Spalte sprengt. */
+  .raster{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+          gap:12px 14px}
+  .raster .field{margin-bottom:2px}
+  .field .einheit{font-weight:400;text-transform:none;letter-spacing:0;
+                  color:var(--soft)}
+
+  /* Quellen-Zeile: Menge + Preis nebeneinander, Kosten als Chip rechts. */
+  .quelle{display:grid;grid-template-columns:1fr 1fr auto;gap:12px 14px;
+          align-items:end;padding:12px 0;border-top:1px solid var(--line)}
+  .quelle:first-of-type{border-top:none}
+  .quelle .qname{grid-column:1/-1;font:600 12.5px var(--disp);color:var(--ink);
+                 display:flex;align-items:center;gap:8px}
+  .quelle .qkosten{justify-self:end;align-self:end;text-align:right;min-width:92px}
+  .quelle .qkosten .kl{display:block;font:600 9px var(--mono);letter-spacing:.07em;
+                       text-transform:uppercase;color:var(--soft)}
+  .quelle .qkosten .kv{display:block;font:700 15px var(--disp);
+                       letter-spacing:-.02em;color:var(--ink);margin-top:3px}
+  @media(max-width:439px){
+    .quelle{grid-template-columns:1fr 1fr}
+    .quelle .qkosten{grid-column:1/-1;justify-self:start;text-align:left;
+                     display:flex;align-items:baseline;gap:8px}
+    .quelle .qkosten .kv{margin-top:0}
+  }
+
+  /* Ergebnis: die beiden Verbrauchsgruppen nebeneinander. */
+  .gruppen{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+           gap:12px}
+  .gr{background:var(--paper);border-radius:14px;padding:14px}
+  .gr .gt{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+          margin-bottom:10px}
+  .gr .gn{font:600 13px var(--disp);letter-spacing:-.01em;color:var(--ink)}
+  .gr .gs{font:700 18px var(--disp);letter-spacing:-.02em;color:var(--teal-d)}
+  .gr .zeile{display:flex;align-items:baseline;justify-content:space-between;
+             gap:10px;padding:6px 0;font:500 12.5px var(--body);color:var(--soft)}
+  .gr .zeile b{font:600 12.5px var(--body);color:var(--ink)}
+  .gr .zeile .kwhx{font:400 11px var(--mono);color:var(--soft)}
+
+  /* Kennzahlen (PV-Ergebnis). */
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+       gap:10px;margin-top:4px}
+  .kpi .k{background:var(--paper);border-radius:14px;padding:12px 13px}
+  .kpi .kl{display:block;font:600 9px var(--mono);letter-spacing:.07em;
+           text-transform:uppercase;color:var(--soft)}
+  .kpi .kv{display:block;font:700 16px var(--disp);letter-spacing:-.02em;
+           margin-top:6px;color:var(--ink)}
+  .kpi .kv.pos{color:var(--pos)}
+
+  /* Eigentuemer-Verteilung. */
+  .eig{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+       gap:12px}
+  .eig .ez{background:var(--paper);border-radius:14px;padding:14px}
+  .eig .eanteil{display:inline-block;font:600 11px var(--mono);color:var(--teal-d);
+                background:var(--teal-l);border-radius:999px;padding:3px 10px;
+                margin-bottom:10px}
+  .eig .ezeile{display:flex;align-items:baseline;justify-content:space-between;
+               gap:10px;padding:5px 0;font:500 12.5px var(--body);color:var(--soft)}
+  .eig .ezeile b{font:700 14px var(--disp);color:var(--ink);letter-spacing:-.01em}
+
+  /* Rest-Chip / abgeleitete Werte an einer Karte. */
+  .abgeleitet{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
+  .abgeleitet .chip{font:600 11px var(--mono)}
+
+  .warnung{display:flex;gap:10px;align-items:flex-start;background:var(--amber-bg);
+           color:var(--amber);border-radius:12px;padding:12px 14px;margin-bottom:14px;
+           font:500 12.5px var(--body);line-height:1.5}
+  .warnung .wi{font-size:15px;line-height:1.3;flex:none}
+
+  .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;
+             padding:22px 8px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
+    <div class="barwrap">
+      <h1>Strom &amp; PV</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <div class="filter">
+      <div id="objekt"></div>
+      <div id="jahr"></div>
+    </div>
+    <div id="inhalt"></div>
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+/* N83 — Strom/PV je Objekt und Jahr. Strom ist zu vielschichtig für einen
+   Betrag: drei Zählerstände ergeben zwei Verbrauchsgruppen (WG-Wohnungen und
+   Büro/Studio = Rest), auf die die Quellen Netz/Solar/Akku verteilt werden;
+   dazu die PV-Anlage mit Ertrag und Anschaffung, verteilt auf die Eigentümer
+   (5/6 + 1/6). Gerechnet wird im Backend (app/strom.py); diese Seite pflegt die
+   Eingaben und zeigt das Ergebnis live. Externe Stromlieferanten-Belege laufen
+   weiter normal über die Belegeingabe — die sind hier nicht gemeint. */
+import { api, eur, esc, melde, installNav } from './assets/immo.js';
+installNav();
+import { auswahlfeld } from './assets/auswahl.js';
+
+const sub = document.getElementById('sub');
+const inhalt = document.getElementById('inhalt');
+const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' kWh';
+const proz = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' %';
+
+/* Die Eingabefelder — dieselbe Liste, aus der die Maske gebaut und die Werte
+   ausgelesen werden. `s` = Nachkommastellen im Eingabefeld (step). */
+const F_ZAEHLER = [
+  ['gesamt_kwh', 'Gesamt (Zähler 666)', 'kWh', 1],
+  ['wg_kwh', 'WG / Haus (2 Wohnungen)', 'kWh', 1],
+  ['garage_kwh', 'Garage', 'kWh', 1],
+];
+const F_AUFTEILUNG = [
+  ['wg_anteil_prozent', 'WG-Anteil (0 = aus kWh)', '%', 1],
+  ['tanken_kwh', 'davon E-Auto „Tanken"', 'kWh', 1],
+];
+const F_QUELLEN = [
+  ['netz', 'Netz (Zukauf)'],
+  ['solar', 'Solar (Direkt)'],
+  ['akku', 'Akku'],
+];
+const F_PV = [
+  ['pv_produktion_kwh', 'PV-Produktion', 'kWh', 1],
+  ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
+  ['pv_kwp', 'Anlagenleistung', 'kWp', 0.1],
+  ['verguetung_eur', 'Vergütung (0 = rechnen)', '€', 0.01],
+  ['anschaffung_eur', 'Anschaffung', '€', 1],
+];
+
+function feldHtml(name, label, einheit, step) {
+  return `<div class="field">
+    <label for="f_${name}">${esc(label)} <span class="einheit">(${esc(einheit)})</span></label>
+    <input class="inp" type="number" inputmode="decimal" step="${step}" min="0"
+           id="f_${name}" data-feld="${name}">
+  </div>`;
+}
+
+function skelett() {
+  return `
+    <div class="karte">
+      <div class="hh"><h3>Zählerstände</h3></div>
+      <p class="hint">Drei Stände je Abrechnungsjahr. Büro + Studio ergibt sich
+        als Rest: Gesamt − WG/Haus − Garage.</p>
+      <div class="raster">
+        ${F_ZAEHLER.map(f => feldHtml(...f)).join('')}
+      </div>
+      <div class="abgeleitet" id="rest"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>Aufteilung WG / Büro-Studio</h3></div>
+      <p class="hint">Netz, Solar und Akku werden im Verhältnis der beiden
+        Gruppen aufgeteilt. Ein fester Anteil (z. B. 60) hat Vorrang; sonst wird
+        er aus den kWh abgeleitet, abzüglich des E-Auto-Ladestroms.</p>
+      <div class="raster">
+        ${F_AUFTEILUNG.map(f => feldHtml(...f)).join('')}
+      </div>
+      <div class="abgeleitet" id="split"></div>
+    </div>
+
+    <div class="karte eng">
+      <div class="hh"><h3>Bezugsquellen</h3></div>
+      <p class="hint">Menge und Preis je Quelle. Kosten = Menge × €/kWh.</p>
+      ${F_QUELLEN.map(([q, name]) => `
+        <div class="quelle">
+          <div class="qname">${esc(name)}</div>
+          <div class="field">
+            <label for="f_${q}_kwh">Menge <span class="einheit">(kWh)</span></label>
+            <input class="inp" type="number" inputmode="decimal" step="1" min="0"
+                   id="f_${q}_kwh" data-feld="${q}_kwh">
+          </div>
+          <div class="field">
+            <label for="f_${q}_preis">Preis <span class="einheit">(€/kWh)</span></label>
+            <input class="inp" type="number" inputmode="decimal" step="0.01" min="0"
+                   id="f_${q}_preis" data-feld="${q}_preis">
+          </div>
+          <div class="qkosten"><span class="kl">Kosten</span>
+            <span class="kv" id="k_${q}">–</span></div>
+        </div>`).join('')}
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>Kosten je Verbrauchsgruppe</h3></div>
+      <div class="gruppen" id="gruppen"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>PV-Anlage</h3></div>
+      <p class="hint">Eigenverbrauch = Produktion − Einspeisung. Ertrag =
+        Einspeisevergütung (EEG-Stufen 0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) +
+        ersparter Zukauf (Eigenverbrauch × Netzpreis).</p>
+      <div class="raster">
+        ${F_PV.map(f => feldHtml(...f)).join('')}
+      </div>
+      <div class="kpi" id="pv"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>PV auf Eigentümer</h3></div>
+      <p class="hint">Ertrag und Anschaffung der Anlage, verteilt auf die
+        Eigentümer (5/6 + 1/6), cent-genau.</p>
+      <div class="eig" id="eig"></div>
+    </div>
+
+    <div id="warnungen"></div>`;
+}
+
+/* Werte aus allen Eingabefeldern als Objekt (leeres Feld = 0). */
+function werteAusForm() {
+  const werte = {};
+  inhalt.querySelectorAll('input[data-feld]').forEach(el => {
+    const v = parseFloat(el.value);
+    werte[el.dataset.feld] = Number.isFinite(v) ? v : 0;
+  });
+  return werte;
+}
+
+/* Eingaben in die Maske schreiben. 0 bleibt leer, damit die Maske nicht mit
+   Nullen zugestellt ist und man gleich lostippen kann. */
+function formFuellen(werte) {
+  inhalt.querySelectorAll('input[data-feld]').forEach(el => {
+    const v = werte[el.dataset.feld];
+    el.value = (v == null || v === 0) ? '' : v;
+  });
+}
+
+/* Das Engine-Ergebnis in die Karten schreiben (Inputs bleiben unberührt). */
+function ergebnisZeigen(r) {
+  const rest = document.getElementById('rest');
+  rest.innerHTML = `<span class="chip teal">Büro / Studio: ${kwh(r.verbrauch.buero_kwh)}</span>`;
+
+  const split = document.getElementById('split');
+  split.innerHTML =
+    `<span class="chip teal">WG ${proz(r.wg_anteil * 100)}</span>`
+    + `<span class="chip amber">Büro/Studio ${proz(r.buero_anteil * 100)}</span>`;
+
+  for (const q of ['netz', 'solar', 'akku']) {
+    document.getElementById('k_' + q).textContent = eur(r.quellen[q].kosten);
+  }
+
+  const gr = (name, key, cls) => {
+    const g = r.gruppen[key];
+    const zeile = (label, q) => `<div class="zeile"><span>${label}</span>
+      <span><b>${eur(g[q + '_kosten'])}</b>
+        <span class="kwhx">${kwh(g[q + '_kwh'])}</span></span></div>`;
+    return `<div class="gr">
+      <div class="gt"><span class="gn">${esc(name)}</span>
+        <span class="gs" style="color:${cls}">${eur(g.kosten)}</span></div>
+      ${zeile('Netz', 'netz')}
+      ${zeile('Solar', 'solar')}
+      ${zeile('Akku', 'akku')}
+      <div class="zeile" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px">
+        <span>Summe</span><span><b>${kwh(g.kwh)}</b></span></div>
+    </div>`;
+  };
+  document.getElementById('gruppen').innerHTML =
+    gr('WG (Wohnungen)', 'WG', 'var(--teal-d)')
+    + gr('Büro / Studio', 'Büro/Studio', 'var(--amber)');
+
+  const pv = r.pv;
+  document.getElementById('pv').innerHTML = `
+    <div class="k"><span class="kl">Eigenverbrauch</span><span class="kv">${kwh(pv.eigenverbrauch_kwh)}</span></div>
+    <div class="k"><span class="kl">Satz</span><span class="kv">${(pv.satz_ct ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ct</span></div>
+    <div class="k"><span class="kl">Einspeisevergütung</span><span class="kv">${eur(pv.einspeiseverguetung)}</span></div>
+    <div class="k"><span class="kl">Ersparnis Zukauf</span><span class="kv">${eur(pv.eigenverbrauch_ersparnis)}</span></div>
+    <div class="k"><span class="kl">PV-Ertrag</span><span class="kv pos">${eur(pv.ertrag)}</span></div>`;
+
+  document.getElementById('eig').innerHTML = r.eigentuemer.map(e => `
+    <div class="ez">
+      <span class="eanteil">${esc(e.anteil)}</span>
+      <div class="ezeile"><span>PV-Ertrag</span><b>${eur(e.ertrag)}</b></div>
+      <div class="ezeile"><span>Anschaffung</span><b>${eur(e.anschaffung)}</b></div>
+    </div>`).join('');
+
+  const w = document.getElementById('warnungen');
+  w.innerHTML = (r.warnungen || []).map(t =>
+    `<div class="warnung"><span class="wi" aria-hidden="true">⚠</span><span>${esc(t)}</span></div>`).join('');
+}
+
+let objektSlug = '';
+let speicherZeit = null;
+let letzteWerte = '';
+
+async function rechnen() {
+  if (!objektSlug) return;
+  try {
+    const r = await api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}/rechnung`);
+    ergebnisZeigen(r);
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* Nach jeder Eingabe: kurz warten, dann speichern und neu rechnen. Das
+   Sammeln vermeidet einen Schreibvorgang je Tastendruck. */
+function angestossen() {
+  const werte = werteAusForm();
+  const stempel = JSON.stringify(werte);
+  if (stempel === letzteWerte) return;
+  clearTimeout(speicherZeit);
+  speicherZeit = setTimeout(async () => {
+    letzteWerte = stempel;
+    try {
+      await api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}`,
+                { method: 'PUT', body: werte });
+      await rechnen();
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+    }
+  }, 550);
+}
+
+async function laden() {
+  if (!objektSlug) {
+    inhalt.innerHTML = `<div class="karte"><div class="chartleer">
+      Kein Objekt vorhanden. Lege zuerst ein Objekt an.</div></div>`;
+    sub.textContent = 'kein Objekt';
+    return;
+  }
+  inhalt.innerHTML = skelett();
+  inhalt.querySelectorAll('input[data-feld]').forEach(el =>
+    el.addEventListener('input', angestossen));
+
+  let werte;
+  try {
+    werte = await api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}`);
+  } catch (fehler) {
+    inhalt.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
+      <p>Die Stromdaten konnten nicht geladen werden.</p></div>`;
+    return;
+  }
+  formFuellen(werte);
+  letzteWerte = JSON.stringify(werteAusForm());
+  await rechnen();
+}
+
+/* ---- Kopf: Objekt- und Jahr-Auswahl ---- */
+const jetzt = new Date().getFullYear();
+const jahrWahl = auswahlfeld(document.getElementById('jahr'), {
+  label: 'Jahr',
+  optionen: Array.from({ length: 6 }, (_, i) => jetzt - i)
+    .map(j => ({ wert: String(j), text: String(j) })),
+  wert: String(jetzt),
+  aenderung: () => laden(),
+});
+
+const objektWahl = auswahlfeld(document.getElementById('objekt'), {
+  label: 'Objekt',
+  optionen: [{ wert: '', text: '—' }],
+  wert: '',
+  aenderung: (wert) => { objektSlug = wert; laden(); },
+});
+
+let objekte = [];
+try {
+  objekte = await api('/objekte');
+} catch {
+  sub.textContent = 'API nicht erreichbar';
+}
+
+if (objekte.length) {
+  objektSlug = objekte[0].slug;
+  objektWahl.fuelle(objekte.map(o => ({ wert: o.slug, text: o.titel || o.name })),
+                    objektSlug);
+  sub.textContent = `${objekte.length} ${objekte.length === 1 ? 'Objekt' : 'Objekte'}`;
+  await laden();
+} else {
+  await laden();
+}
+</script>
+</body>
+</html>
