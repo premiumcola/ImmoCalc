@@ -22,7 +22,7 @@ from .models import (Anteil, Belegdaten, Bewohner, Dokument, Eigentuemer,
                      Einheit, Heizoellieferung, Heizverteiler, Kostenart,
                      Kostenposition, Kredit, Kreditstand, Miete, Objekt,
                      Partei, Stromjahr, Versicherung, Vorauszahlung, Zahlung,
-                     Zeitraum, PVAnlage, Tankladung)
+                     Zeitraum, PVAnlage, Tankladung, Tanknutzer)
 
 log = logging.getLogger("immocalc")
 
@@ -46,6 +46,7 @@ ANHAENGSEL: dict[str, Type[SQLModel]] = {
     "stromjahre": Stromjahr,
     "belegdaten": Belegdaten,
     # N112/N139 — Ladungen der E-Tankstelle und die Stammdaten der PV-Anlage.
+    "tanknutzer": Tanknutzer,
     "tankladungen": Tankladung,
     "pv_anlagen": PVAnlage,
 }

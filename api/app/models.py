@@ -962,6 +962,34 @@ class Belegdaten(SQLModel, table=True):
     quelle: str = ""                  # 'ki' | 'regel' | 'hand'
     erfasst_am: Optional[date] = None
 
+class Tanknutzer(SQLModel, table=True):
+    """N164 — wer an der Ladestation lädt, mit den Stammdaten für den Versand.
+
+    Lag bisher als JSON in einer Einstellung — das trug Name und E-Mail, mehr
+    nicht. Für eine Quartalsabrechnung braucht es Anschrift und Bankverbindung,
+    und die gehören in eine eigene Tabelle statt in einen JSON-Klumpen.
+
+    Ein Nutzer muss **nicht** Eigentümer sein: an der Station lädt, wer darf.
+    `person_id` verknüpft ihn mit einem Eigentümer, wenn es einer ist.
+
+    Additiv, ganz neue Tabelle; jeder Bestand bleibt unverändert."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    name: str
+    email: str = ""
+    person_id: Optional[int] = Field(default=None, foreign_key="eigentuemer.id")
+    # Anschrift für die Abrechnung
+    strasse: str = ""
+    plz: str = ""
+    ort: str = ""
+    # Bankverbindung — wohin das Geld geht bzw. wovon abgebucht wird
+    iban: str = ""
+    bic: str = ""
+    kontoinhaber: str = ""
+    aktiv: bool = True
+    notiz: str = ""
+
+
 class Tankladung(SQLModel, table=True):
     """N112 — eine Ladung an der E-Tankstelle der PV-Anlage.
 
