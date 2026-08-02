@@ -186,7 +186,101 @@ def test_rechne_cent_summe_bei_krummen_werten():
 
 
 # --------------------------------------------------------------------------
-# 5) Endpunkte
+# 5) N89 — von der Gruppe zur Einheit
+# --------------------------------------------------------------------------
+
+def test_einheiten_liste_bereinigt():
+    # Komma-Liste mit Leerraum, leeren Einträgen und einer Dublette.
+    assert strom.einheiten_liste(" EG , 1.OG ,, EG ") == ["EG", "1.OG"]
+    # Auch eine fertige Liste wird angenommen; nichts drin = nichts raus.
+    assert strom.einheiten_liste(["Studio", "Büro"]) == ["Studio", "Büro"]
+    assert strom.einheiten_liste("") == []
+    assert strom.einheiten_liste(None) == []
+
+
+def test_rechne_einheiten_zwei_plus_zwei():
+    """Der Kern von N89: WG 1272 € auf zwei Wohnungen, Büro/Studio 848 € auf
+    zwei Einheiten — je gleichmäßig, und die Summe ist exakt die Gesamtsumme."""
+    e = strom.rechne(_beispiel(wg_einheiten="EG, 1.OG",
+                               buero_einheiten="Büro EG,Studio 1.OG"))
+    assert [(x["name"], x["gruppe"], x["kosten"]) for x in e["einheiten"]] == [
+        ("EG", "WG", 636.0), ("1.OG", "WG", 636.0),
+        ("Büro EG", "Büro/Studio", 424.0), ("Studio 1.OG", "Büro/Studio", 424.0)]
+    # kWh mitgeführt: WG 7200 → 2×3600, Büro 4800 → 2×2400.
+    assert [x["kwh"] for x in e["einheiten"]] == [3600.0, 3600.0, 2400.0, 2400.0]
+    # Invariante: Σ Einheiten == Σ Gruppen == Quellenkosten.
+    assert round(sum(x["kosten"] for x in e["einheiten"]), 2) \
+        == e["quellen_kosten_gesamt"] == 2120.0
+    assert not e["warnungen"]
+
+
+def test_rechne_ohne_zuordnung_unveraendert():
+    """Regression: ohne `wg_einheiten`/`buero_einheiten` rechnet alles wie
+    bisher — der Einheiten-Block ist dann leer, sonst ändert sich kein Wert."""
+    ohne = strom.rechne(_beispiel())
+    assert ohne["einheiten"] == []
+    mit = strom.rechne(_beispiel(wg_einheiten="EG,1.OG",
+                                 buero_einheiten="Büro,Studio"))
+    assert {k: v for k, v in mit.items() if k != "einheiten"} \
+        == {k: v for k, v in ohne.items() if k != "einheiten"}
+
+
+def test_rechne_einheiten_krumme_betraege_summieren_exakt():
+    """Krumme Beträge auf ungerade Einheitenzahlen: keine verlorenen Cents.
+    3 Wohnungen + 2 Büroeinheiten, damit sich nichts glatt teilt."""
+    for netz, np_, solar, sp, akku, ap, proz in [
+            (4000, 0.35, 6000, 0.08, 2000, 0.12, 60),
+            (3333, 0.2871, 1234, 0.0731, 777, 0.191, 0),
+            (1, 0.99, 1, 0.33, 1, 0.11, 33),
+            (100, 0.3333, 0, 0.0, 0, 0.0, 50),
+            (0, 0.30, 0, 0.10, 0, 0.10, 0)]:
+        e = strom.rechne(_beispiel(
+            netz_kwh=netz, netz_preis=np_, solar_kwh=solar, solar_preis=sp,
+            akku_kwh=akku, akku_preis=ap, wg_anteil_prozent=proz,
+            wg_einheiten="EG,1.OG,2.OG", buero_einheiten="Büro,Studio"))
+        assert len(e["einheiten"]) == 5
+        summe = round(sum(x["kosten"] for x in e["einheiten"]), 2)
+        assert summe == e["quellen_kosten_gesamt"], (netz, np_, proz)
+        # Auch je Gruppe exakt: die Einheiten einer Gruppe ergeben deren Kosten.
+        for gruppe in ("WG", "Büro/Studio"):
+            teil = round(sum(x["kosten"] for x in e["einheiten"]
+                             if x["gruppe"] == gruppe), 2)
+            assert teil == e["gruppen"][gruppe]["kosten"], (gruppe, netz, proz)
+        # Und die kWh gehen ebenso auf.
+        assert round(sum(x["kwh"] for x in e["einheiten"]), 3) \
+            == round(e["gruppen"]["WG"]["kwh"]
+                     + e["gruppen"]["Büro/Studio"]["kwh"], 3)
+
+
+def test_rechne_einheiten_nur_eine_gruppe_zugeordnet():
+    # Ist nur die WG zugeordnet, deckt der Block auch nur deren Kosten ab.
+    e = strom.rechne(_beispiel(wg_einheiten="EG,1.OG"))
+    assert len(e["einheiten"]) == 2
+    assert round(sum(x["kosten"] for x in e["einheiten"]), 2) == 1272.0
+
+
+def test_rechne_einheit_in_beiden_gruppen_warnt():
+    e = strom.rechne(_beispiel(wg_einheiten="EG,Studio",
+                               buero_einheiten="Studio,Büro"))
+    assert any("beiden Gruppen" in w for w in e["warnungen"])
+
+
+def test_nk_positionen_schlanke_liste():
+    """Was die Nebenkosten-Seite übernimmt: je Einheit Bezeichnung, € und kWh."""
+    p = strom.nk_positionen(strom.rechne(_beispiel(
+        wg_einheiten="EG,1.OG", buero_einheiten="Büro,Studio")))
+    assert p["positionen"][0] == {"einheit": "EG", "betrag": 636.0,
+                                 "kwh": 3600.0}
+    assert p["gesamt"] == 2120.0
+    assert p["kwh_gesamt"] == 12000.0
+    assert p["warnungen"] == []
+    # Ohne Zuordnung: leere Liste statt einer falschen Zahl.
+    leer = strom.nk_positionen(strom.rechne(_beispiel()))
+    assert leer["positionen"] == [] and leer["gesamt"] == 0.0
+
+
+# --------------------------------------------------------------------------
+# 6) Endpunkte
 # --------------------------------------------------------------------------
 
 @pytest.fixture()
@@ -239,6 +333,68 @@ def test_endpunkt_leer_dann_speichern_und_rechnen(client):
     e0 = r["eigentuemer"][0]
     assert (e0["anteil"], e0["ertrag"], e0["anschaffung"]) \
         == ("5/6", 1950.42, 29750.0)
+
+
+def test_endpunkt_rechnung_mit_einheiten_parametern(client):
+    """N89 — die Zuordnung kommt als Abfrageparameter an den Endpunkt; ohne sie
+    bleibt der Einheiten-Block leer (Verhalten wie bisher)."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/strom/2025", json={
+        "gesamt_kwh": 12000, "wg_kwh": 7000, "garage_kwh": 500,
+        "wg_anteil_prozent": 60, "tanken_kwh": 1500,
+        "netz_kwh": 4000, "netz_preis": 0.35,
+        "solar_kwh": 6000, "solar_preis": 0.08,
+        "akku_kwh": 2000, "akku_preis": 0.12,
+    })
+
+    ohne = client.get(f"/api/objekte/{slug}/strom/2025/rechnung").json()
+    assert ohne["einheiten"] == []
+
+    mit = client.get(f"/api/objekte/{slug}/strom/2025/rechnung",
+                     params={"wg": "EG,1.OG", "buero": "Büro,Studio"}).json()
+    assert [(x["name"], x["kosten"]) for x in mit["einheiten"]] == [
+        ("EG", 636.0), ("1.OG", 636.0), ("Büro", 424.0), ("Studio", 424.0)]
+
+
+def test_endpunkt_nk_positionen(client):
+    """Die schlanke Liste für die Nebenkostenabrechnung."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/strom/2025", json={
+        "gesamt_kwh": 12000, "wg_kwh": 7000, "garage_kwh": 500,
+        "wg_anteil_prozent": 60, "tanken_kwh": 1500,
+        "netz_kwh": 4000, "netz_preis": 0.35,
+        "solar_kwh": 6000, "solar_preis": 0.08,
+        "akku_kwh": 2000, "akku_preis": 0.12,
+    })
+    p = client.get(f"/api/objekte/{slug}/strom/2025/nk-positionen",
+                   params={"wg": "EG,1.OG", "buero": "Büro,Studio"}).json()
+    assert p["jahr"] == 2025
+    assert p["positionen"] == [
+        {"einheit": "EG", "betrag": 636.0, "kwh": 3600.0},
+        {"einheit": "1.OG", "betrag": 636.0, "kwh": 3600.0},
+        {"einheit": "Büro", "betrag": 424.0, "kwh": 2400.0},
+        {"einheit": "Studio", "betrag": 424.0, "kwh": 2400.0}]
+    assert p["gesamt"] == 2120.0
+    # Ohne Zuordnung liefert der Endpunkt eine leere Liste, keinen Fehler.
+    leer = client.get(f"/api/objekte/{slug}/strom/2025/nk-positionen").json()
+    assert leer["positionen"] == [] and leer["gesamt"] == 0.0
+
+
+def test_endpunkt_put_nimmt_einheiten_zuordnung_an(client):
+    """Der PUT nimmt die Zuordnung entgegen, ohne die übrigen Werte zu
+    beschädigen. Ob sie überdauert, hängt an der Spalte `gruppen_einheiten` —
+    solange es sie nicht gibt, kommt sie leer zurück (siehe Router)."""
+    from app.routers import strom as strom_router
+
+    slug = _neues_objekt(client)
+    antwort = client.put(f"/api/objekte/{slug}/strom/2025", json={
+        "gesamt_kwh": 12000, "wg_einheiten": "EG,1.OG",
+        "buero_einheiten": "Büro,Studio"})
+    assert antwort.status_code == 200
+    assert antwort.json()["gesamt_kwh"] == 12000
+    erwartet = "EG,1.OG" if strom_router._HAT_SPALTE else ""
+    assert client.get(f"/api/objekte/{slug}/strom/2025").json()["wg_einheiten"] \
+        == erwartet
 
 
 def test_endpunkt_put_aktualisiert_bestehenden(client):

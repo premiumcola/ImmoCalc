@@ -34,6 +34,19 @@ Der Vergütungssatz folgt den EEG-Stufen (0–10 kWp: 8,2 ct, 10–40 kWp: 7,1 c
 als mit der Anlagengröße gemischter Satz. Ertrag *und* Anschaffung der Anlage
 werden cent-genau auf die Eigentümer verteilt (Vorgabe 5/6 + 1/6).
 
+**4) Von der Gruppe zur Einheit (N89).**
+Zwei Gruppen sind noch keine Abrechnung: die Nebenkostenabrechnung braucht
+einen Betrag je *Immobilien-Einheit*. Wer zu welcher Gruppe gehört, sagen die
+Felder `wg_einheiten` und `buero_einheiten` (je eine komma-separierte Liste von
+Einheiten-Bezeichnungen). Die Gruppenkosten werden gleichmäßig und cent-genau
+auf die zugeordneten Einheiten verteilt — es gilt
+
+    Σ einheiten.kosten == Σ gruppen.kosten == quellen_kosten_gesamt
+
+(sofern beide Gruppen zugeordnet sind; ist nur eine zugeordnet, deckt der Block
+nur deren Kosten ab). Fehlt die Zuordnung ganz, bleibt `einheiten` leer und
+alles rechnet wie bisher.
+
 Der Modul ist rein: er kennt keine Datenbank, sondern liest die Eingaben aus
 einem Objekt mit Attributen ODER einem dict (wie `models.Stromjahr` bzw. ein
 Testobjekt) und gibt ein verschachteltes Ergebnis-dict zurück. Cent-Summen
@@ -77,6 +90,92 @@ def _feld(daten: Any, name: str, vorgabe: float = 0.0) -> float:
         return float(wert if wert is not None else vorgabe)
     except (ValueError, TypeError):
         return float(vorgabe)
+
+
+def _text(daten: Any, name: str, vorgabe: str = "") -> Any:
+    """Liest ein Textfeld aus Attribut oder dict-Schlüssel (wie `_feld`, nur
+    ohne Zahlenwandlung — der Wert kommt roh zurück, damit auch eine fertige
+    Liste durchgereicht werden kann). `None`/fehlend ergibt die Vorgabe."""
+    wert = daten.get(name, vorgabe) if isinstance(daten, dict) \
+        else getattr(daten, name, vorgabe)
+    return vorgabe if wert is None else wert
+
+
+def einheiten_liste(roh: Any) -> list[str]:
+    """Eine Zuordnungsangabe zu einer sauberen Liste von Bezeichnungen machen.
+
+    Angenommen wird eine komma-separierte Zeichenkette („EG, 1.OG") oder eine
+    fertige Liste. Leerraum fällt weg, leere Einträge fallen weg, Dubletten
+    fallen weg — die Reihenfolge der ersten Nennung bleibt erhalten."""
+    if not roh:
+        return []
+    teile = roh if isinstance(roh, (list, tuple)) else str(roh).split(",")
+    namen: list[str] = []
+    for t in teile:
+        name = str(t).strip()
+        if name and name not in namen:
+            namen.append(name)
+    return namen
+
+
+def _gleichmaessig(menge: float, anzahl: int, stellen: int = 3) -> list[float]:
+    """Eine Menge gleichmäßig auf `anzahl` Empfänger aufteilen, ohne dass durch
+    das Runden etwas verloren geht: gerechnet wird in ganzen Einheiten der
+    letzten Stelle, der Rest geht der Reihe nach an die vorderen Empfänger."""
+    if anzahl <= 0:
+        return []
+    faktor = 10 ** stellen
+    ziel = round(float(menge) * faktor)
+    basis, rest = divmod(ziel, anzahl)
+    werte = [basis] * anzahl
+    for i in range(rest):
+        werte[i] += 1
+    return [w / faktor for w in werte]
+
+
+def verteile_auf_einheiten(gruppen: dict[str, dict],
+                           zuordnung: dict[str, list[str]]) -> list[dict]:
+    """N89 — die Gruppenkosten auf die zugeordneten Einheiten herunterbrechen.
+
+    `gruppen` ist der Gruppenblock aus `rechne` ({Gruppe: {kwh, kosten, …}}),
+    `zuordnung` sagt, welche Einheiten-Bezeichnungen zu welcher Gruppe gehören.
+    Innerhalb einer Gruppe wird gleichmäßig geteilt — die Kosten cent-genau über
+    `verteile_nach_wert` (Größte-Reste), damit die Summe der Einheiten exakt der
+    Gruppensumme entspricht; die kWh entsprechend auf drei Stellen.
+
+    Rückgabe: [{"name", "gruppe", "kwh", "kosten"}] in der Reihenfolge der
+    Gruppen und innerhalb einer Gruppe in der Reihenfolge der Nennung. Gruppen
+    ohne Zuordnung liefern keine Zeilen."""
+    zeilen: list[dict] = []
+    for gruppe, namen in zuordnung.items():
+        if not namen:
+            continue
+        werte = gruppen.get(gruppe, {})
+        kosten = verteile_nach_wert(float(werte.get("kosten", 0.0)),
+                                    {n: 1.0 for n in namen})
+        mengen = _gleichmaessig(float(werte.get("kwh", 0.0)), len(namen))
+        zeilen.extend(
+            {"name": name, "gruppe": gruppe, "kwh": kwh,
+             "kosten": kosten.get(name, 0.0)}
+            for name, kwh in zip(namen, mengen))
+    return zeilen
+
+
+def nk_positionen(rechnung: dict) -> dict:
+    """N89 — das Rechenergebnis auf das eindampfen, was die
+    Nebenkostenabrechnung braucht: je Einheit ein Betrag.
+
+    Rückgabe: `positionen` ([{einheit, betrag, kwh}]), `gesamt` (Summe der
+    Beträge), `kwh_gesamt` und die `warnungen` der Rechnung — damit die
+    Oberfläche einen Ablesefehler nicht stillschweigend übernimmt."""
+    positionen = [{"einheit": z["name"], "betrag": z["kosten"], "kwh": z["kwh"]}
+                  for z in rechnung.get("einheiten", [])]
+    return {
+        "positionen": positionen,
+        "gesamt": round(sum(p["betrag"] for p in positionen), 2),
+        "kwh_gesamt": round(sum(p["kwh"] for p in positionen), 3),
+        "warnungen": rechnung.get("warnungen", []),
+    }
 
 
 def buero_kwh(gesamt: float, wg: float, garage: float) -> float:
@@ -217,14 +316,17 @@ def rechne(daten: Any) -> dict:
       * `quellen_kosten_gesamt` — Summe der Quellenkosten.
       * `gruppen`    — je Gruppe (WG, Büro/Studio) die auf sie entfallenden
                        kWh und € je Quelle plus Summen (`kwh`, `kosten`).
+      * `einheiten`  — N89: die Gruppenkosten heruntergebrochen auf die
+                       zugeordneten Einheiten ([{name, gruppe, kwh, kosten}]);
+                       leer, solange `wg_einheiten`/`buero_einheiten` fehlen.
       * `pv`         — Produktion/Einspeisung/Eigenverbrauch, Satz, Vergütung,
                        Ersparnis, Ertrag, Anschaffung.
       * `eigentuemer`— Ertrag und Anschaffung je Eigentümer (5/6 + 1/6).
       * `warnungen`  — Liste von Hinweisen (Ablesefehler u. Ä.).
 
     Cent-Invarianten: die Gruppen-Kosten summieren sich exakt auf
-    `quellen_kosten_gesamt`; die Eigentümer-Anteile exakt auf Ertrag bzw.
-    Anschaffung."""
+    `quellen_kosten_gesamt`; die Einheiten-Kosten exakt auf ihre Gruppe; die
+    Eigentümer-Anteile exakt auf Ertrag bzw. Anschaffung."""
     warnungen: list[str] = []
 
     gesamt = _feld(daten, "gesamt_kwh")
@@ -277,6 +379,19 @@ def rechne(daten: Any) -> dict:
             gruppen[gruppe]["kwh"] = round(gruppen[gruppe]["kwh"] + k_kwh, 3)
             gruppen[gruppe]["kosten"] = round(
                 gruppen[gruppe]["kosten"] + k_kosten, 2)
+
+    # N89 — von der Gruppe zur Einheit: die Gruppenkosten gleichmäßig auf die
+    # zugeordneten Einheiten. Ohne Zuordnung bleibt der Block leer.
+    zuordnung = {
+        GRUPPE_WG: einheiten_liste(_text(daten, "wg_einheiten")),
+        GRUPPE_BUERO: einheiten_liste(_text(daten, "buero_einheiten")),
+    }
+    doppelt = sorted(set(zuordnung[GRUPPE_WG]) & set(zuordnung[GRUPPE_BUERO]))
+    if doppelt:
+        warnungen.append(
+            "Diese Einheiten stehen in beiden Gruppen und bekommen deshalb "
+            "zweimal einen Anteil: " + ", ".join(doppelt) + ".")
+    einheiten = verteile_auf_einheiten(gruppen, zuordnung)
 
     # PV-Ertrag.
     produktion = _feld(daten, "pv_produktion_kwh")
@@ -353,6 +468,7 @@ def rechne(daten: Any) -> dict:
         "quellen": quellen,
         "quellen_kosten_gesamt": quellen_kosten_gesamt,
         "gruppen": gruppen,
+        "einheiten": einheiten,
         "pv": pv,
         "tankstelle": tankstelle,
         "eigentuemer": eigentuemer,

@@ -851,4 +851,8 @@ class Stromjahr(SQLModel, table=True):
     pv_anteile: str = ""
     tanken_preis: float = 0.0
     tanken_person: str = ""           # wem die Tankstelle berechnet wird
+    # N89 - welche Immobilien-Einheiten zu welcher Verbrauchsgruppe gehoeren,
+    # als JSON {Gruppe: "A,B"}. Erst damit wird aus zwei Gruppen ein Betrag je
+    # Einheit, der in die Nebenkostenabrechnung zurueckfliesst.
+    gruppen_einheiten: str = ""
     notiz: str = ""
