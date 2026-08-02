@@ -64,8 +64,14 @@
   .pkopf .d{display:block;font:400 12.5px var(--body);color:var(--soft);
             margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
   .beteiligungen{border-top:1px solid var(--line);padding:4px 14px 10px}
-  .bet{display:flex;align-items:center;gap:10px;padding:9px 0;min-width:0}
+  .bet{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:9px 0;min-width:0}
   .bet + .bet{border-top:1px solid #EEF1F1}
+  /* N86 — auf schmalen Screens Name/Rendite (volle Breite) über ‰ + Rolle-Chip
+     legen, damit die Renditezeile nicht unter den „Miteigentümer"-Chip läuft. */
+  @media(max-width:439px){
+    .bet .bo-wrap{flex:1 1 100%}
+    .bet .bw{margin-left:auto}
+  }
   /* CCCXXXIV — dreigeteilte Objektbezeichnung: Objektart (fett, Display) ·
      Einheit (dünn), darunter die Adresse klein in Mono. */
   .bet .bo{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
@@ -104,9 +110,15 @@
     color:var(--teal-d)}
   .invest .ih{display:block;font:400 10.5px var(--body);letter-spacing:0;
     text-transform:none;color:var(--soft);margin-top:2px}
-  .invest .iv{font:600 13px var(--disp);color:var(--ink);margin-top:6px}
-  .invest .iv b,.invest .is b{color:var(--teal-d)}
-  .invest .is{font:400 12px var(--body);color:var(--soft);margin-top:2px;line-height:1.4}
+  .invest .is b{color:var(--teal-d)}
+  .invest .is{font:400 11.5px var(--body);color:var(--soft);margin-top:8px;line-height:1.4}
+  /* N86 — Kaufvolumen + Einsatz als kompakte Mini-Kacheln statt Fließtext. */
+  .invest .istats{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .invest .istat{flex:1 1 130px;background:var(--sheet);border-radius:11px;padding:9px 12px}
+  .invest .isl{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft)}
+  .invest .isv{display:block;font:700 15px var(--disp);color:var(--teal-d);margin-top:4px}
+  .invest .isk{display:block;font:400 9.5px var(--body);color:var(--soft);margin-top:1px}
 
   /* ---- CCLVII: orange Karte ist anklickbar und öffnet die Zuweisung ----
      Button statt div, damit Tastatur und Screenreader ihn als Aktion sehen;
@@ -412,14 +424,13 @@ const prozVz = n => n == null ? '—'
 function renditeHtml(slug) {
   const r = rendite.get(slug);
   if (!r || (r.cagr == null && r.gesamt == null)) return '';
+  // N86 — knapp: „Wertsteig." + „Rendite", das „p. a." nur einmal am Ende.
   const teile = [];
   if (r.cagr != null)
-    teile.push(`Wertsteig. <b class="${r.cagr >= 0 ? 'pos' : 'neg'}">${
-      prozVz(r.cagr)}</b> p. a.`);
+    teile.push(`Wertsteig. <b class="${r.cagr >= 0 ? 'pos' : 'neg'}">${prozVz(r.cagr)}</b>`);
   if (r.gesamt != null)
-    teile.push(`Gesamtrendite <b class="${r.gesamt >= 0 ? 'pos' : 'neg'}">${
-      prozVz(r.gesamt)}</b> p. a.`);
-  return `<span class="brend">${teile.join(' · ')}</span>`;
+    teile.push(`Rendite <b class="${r.gesamt >= 0 ? 'pos' : 'neg'}">${prozVz(r.gesamt)}</b>`);
+  return `<span class="brend">${teile.join(' · ')} p. a.</span>`;
 }
 
 /* Die drei Kennzahlen einer Person: nur das, was ihr zugerechnet wird. */
@@ -443,20 +454,22 @@ function eigwertHtml(id) {
   const frei = (g.wert && g.wert > 0) ? Math.max(0, Math.round(0.8 * g.wert - g.restschuld)) : null;
   const kaufvolumen = frei != null ? frei * 5 : null;
   const nebenkosten = kaufvolumen != null ? Math.round(kaufvolumen * KNK) : null;
+  // N86 — der Investitionsspielraum kompakt & visuell: die Kernzahl „Freie
+  // Beleihung" wandert in die Kachel-Reihe (unten), hier bleiben nur die zwei
+  // abgeleiteten Größen als Mini-Kacheln plus ein Satz statt drei Absätze.
   const invest = frei != null ? `<div class="invest">
       <div class="il">Investitionsspielraum
         <span class="ih">grobe Orientierung, keine Finanzierungszusage</span></div>
-      <div class="iv">Freie Beleihung: <b>${eurKurz(frei)}</b></div>
-      <div class="is">So viel würde die Bank zusätzlich beleihen (80 % des Werts
-        <b>${eurKurz(Math.round(0.8 * g.wert))}</b> minus Restschuld
-        <b>${eurKurz(g.restschuld)}</b>).</div>
-      <div class="is">Bei <b>0 % Eigenanteil</b> ersetzt sie die üblichen 20 %
-        Anzahlung, die restlichen 80 % trägt die neue Immobilie selbst — rechnerisch
-        also <b>${eurKurz(kaufvolumen)}</b> Kaufvolumen (freie Beleihung ÷ 20 %,
-        also × 5).</div>
-      <div class="is">Dein Einsatz: nur die Kaufnebenkosten, rund
-        <b>${eurKurz(nebenkosten)}</b> (~10 % vom Kaufpreis: Grunderwerbsteuer,
-        Notar, Grundbuch).</div>
+      <div class="istats">
+        <div class="istat"><span class="isl">Mögliches Kaufvolumen</span>
+          <span class="isv">${eurKurz(kaufvolumen)}</span></div>
+        <div class="istat"><span class="isl">Dein Einsatz</span>
+          <span class="isv">${eurKurz(nebenkosten)}</span>
+          <span class="isk">Kaufnebenkosten ~10 %</span></div>
+      </div>
+      <div class="is">Bei <b>0 % Eigenanteil</b> trägt die neue Immobilie die 80 %
+        selbst — du bringst nur die Kaufnebenkosten (Grunderwerbsteuer, Notar,
+        Grundbuch) ein.</div>
     </div>` : '';
   return `<div class="eigwert">
     ${zelle('Mein Wert', g.wert == null ? '—' : eurKurz(g.wert))}
@@ -466,6 +479,8 @@ function eigwertHtml(id) {
     ${zelle('Mein Eigenkapital', g.eigenkapital == null ? '—' : eurKurz(g.eigenkapital),
             (g.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg')}
     ${zelle('Miete / Jahr', eurKurz(g.miete_jahr), 'pos')}
+    ${zelle('Freie Beleihung', frei == null ? '—' : eurKurz(frei),
+            frei && frei > 0 ? 'pos' : '')}
   </div>${invest}`;
 }
 
