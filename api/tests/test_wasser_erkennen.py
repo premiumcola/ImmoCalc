@@ -56,10 +56,12 @@ def test_ist_wasser_kontext_erkennt_die_bereiche():
 def test_lies_wasser_parst_drei_bereiche(monkeypatch):
     """Die drei Bereichs-Gebühren kommen als Floats durch; ein deutsches Komma
     oder Währungszeichen wird aufgeräumt, die Werte sind immer positiv."""
-    antwort = ('{"wasser":298.05,"schmutz":362.56,"niederschlag":186.91}')
+    antwort = ('{"wasser":298.05,"schmutz":362.56,"niederschlag":186.91,'
+               '"gesamt_m3":122}')
     monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
     ki = kiauslese.lies_wasser("irgendein OCR-Text", schluessel="test-key")
-    assert ki == {"wasser": 298.05, "schmutz": 362.56, "niederschlag": 186.91}
+    assert ki == {"wasser": 298.05, "schmutz": 362.56, "niederschlag": 186.91,
+                  "gesamt_m3": 122.0}
 
 
 def test_lies_wasser_fehlender_bereich_bleibt_none(monkeypatch):
@@ -75,6 +77,74 @@ def test_lies_wasser_fehlender_bereich_bleibt_none(monkeypatch):
 def test_lies_wasser_ohne_key_ist_stumm(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert kiauslese.lies_wasser("text") is None
+
+
+# --------------------------------------------------------------------------
+# 1b) N102b — der Gesamtwasserverbrauch in m³
+# --------------------------------------------------------------------------
+
+def test_gesamt_m3_deutsches_komma_und_einheit(monkeypatch):
+    """Der Bescheid nennt die Bemessungsgrundlage als \"122,00 cbm\" — daraus
+    wird die Zahl 122.0."""
+    antwort = ('{"wasser":298.05,"schmutz":362.56,"niederschlag":186.91,'
+               '"gesamt_m3":"122,00 cbm"}')
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
+    ki = kiauslese.lies_wasser("text", schluessel="test-key")
+    assert ki["gesamt_m3"] == 122.0
+    # Die drei Beträge bleiben davon unberührt.
+    assert (ki["wasser"], ki["schmutz"], ki["niederschlag"]) == (
+        298.05, 362.56, 186.91)
+
+
+def test_gesamt_m3_mit_einheit_m3_und_tausendertrenner(monkeypatch):
+    antwort = '{"wasser":null,"schmutz":null,"niederschlag":null,' \
+              '"gesamt_m3":"1.234,50 m³"}'
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
+    ki = kiauslese.lies_wasser("text", schluessel="test-key")
+    assert ki["gesamt_m3"] == 1234.5
+
+
+def test_gesamt_m3_teilmengen_werden_summiert(monkeypatch):
+    """Nach einem Zählerwechsel führt der Wasser-Block Teilmengen. Summiert das
+    Modell sie nicht selbst, addiert der Parser die Liste (102 + 40 = 142)."""
+    antwort = ('{"wasser":298.05,"schmutz":null,"niederschlag":null,'
+               '"gesamt_m3":["102 m³","40 m3"]}')
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
+    ki = kiauslese.lies_wasser("text", schluessel="test-key")
+    assert ki["gesamt_m3"] == 142.0
+
+
+def test_gesamt_m3_teilmengen_als_text_werden_summiert(monkeypatch):
+    """Schreibt das Modell die Teilmengen in EINEN String, wird ebenfalls
+    addiert — und die \"3\" aus \"m3\" rutscht nicht in die Zahl."""
+    antwort = '{"wasser":null,"schmutz":null,"niederschlag":null,' \
+              '"gesamt_m3":"102 m³ + 40 m3"}'
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
+    ki = kiauslese.lies_wasser("text", schluessel="test-key")
+    assert ki["gesamt_m3"] == 142.0
+
+
+def test_gesamt_m3_fehlt_bleibt_none(monkeypatch):
+    """Fehlt die Menge auf dem Beleg (null, gar nicht genannt, 0 oder Unfug),
+    ist das Feld None — nie ein erfundener Wert."""
+    for roh in ('"gesamt_m3":null', '"gesamt_m3":0', '"gesamt_m3":"cbm"', ""):
+        antwort = ('{"wasser":298.05,"schmutz":362.56,"niederschlag":186.91'
+                   + (("," + roh) if roh else "") + "}")
+        monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
+        ki = kiauslese.lies_wasser("text", schluessel="test-key")
+        assert ki["gesamt_m3"] is None, roh
+        # Die drei Beträge bleiben in jedem Fall erhalten.
+        assert ki["wasser"] == 298.05
+
+
+def test_wasser_prompt_nennt_die_fundstellen():
+    """Der Prompt muss die Menge anfordern und sagen, wo sie steht — sonst
+    liefert das Modell nur die drei Beträge."""
+    p = kiauslese.WASSER_SYSTEM_PROMPT
+    assert '"gesamt_m3"' in p
+    assert "Wasserbezug" in p
+    assert "SCHMUTZWASSER" in p
+    assert "cbm" in p
 
 
 # --------------------------------------------------------------------------

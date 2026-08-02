@@ -224,6 +224,40 @@ def _betrag(wert) -> float | None:
     return None
 
 
+# Die Mengeneinheit fliegt VOR dem Zahlenlesen raus: die „3" aus „m3" ist keine
+# Ziffer der Menge (sonst wird aus „40 m3" 403 oder 43).
+_EINHEIT = re.compile(r"(?i)m\s*(?:³|3|\^3)|cbm|kubikmeter")
+# Eine Zahl samt Tausenderpunkt/Dezimalkomma.
+_ZAHL = re.compile(r"\d[\d.,\s]*")
+
+
+def _menge(wert) -> float | None:
+    """Eine Verbrauchsmenge in m³ als Zahl — N102b.
+
+    Wie `_betrag`, aber für Kubikmeter: die Einheit („m³", „m3", „cbm") wird
+    abgeschnitten, das deutsche Komma zum Punkt („122,00 cbm" → 122.0). Liefert
+    das Modell statt einer Summe die Teilmengen (Zählerwechsel) — als Liste
+    oder als „102 m³ + 40 m³" —, werden sie addiert. Null oder negativ heißt
+    „nicht gefunden" → None; eine Menge von 0 m³ ist keine belastbare Angabe."""
+    if isinstance(wert, list):
+        return _summe(_menge(teil) for teil in wert)
+    if isinstance(wert, str):
+        ohne_einheit = _EINHEIT.sub(" ", wert)
+        teile = [_betrag(t) for t in _ZAHL.findall(ohne_einheit)]
+        if "+" in wert:
+            return _summe(teile)
+        return next((t for t in teile if t), None)
+    menge = _betrag(wert)
+    return menge if menge else None
+
+
+def _summe(mengen) -> float | None:
+    """Die Summe vorhandener Teilmengen — None, wenn nichts Brauchbares übrig
+    bleibt."""
+    summe = sum(m for m in mengen if m)
+    return round(summe, 2) if summe > 0 else None
+
+
 def _jahr(wert) -> int | None:
     """Ein plausibles Abrechnungsjahr als int (1990..heute+1) — N14. Alles andere
     (Unfug, weit daneben) fliegt raus; lieber kein Jahr als ein falsches."""
@@ -421,12 +455,18 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
 # gehintet (die Wasser-Sammelposition ist das Ziel), fragt dieser Prompt gezielt
 # die drei Bereichs-Gebühren ab — die drei Kostenpositionen lassen sich dann in
 # einem Schritt setzen. Reiner Zusatz: `lies_beleg` bleibt unberührt.
+#
+# N102b: dazu der Gesamtwasserverbrauch der Periode in m³ (`gesamt_m3`) — der
+# Nutzer gleicht damit ab, ob der Bescheid zur Differenz seiner Zählerstände
+# passt. Er steht im Schmutzwasser-Block als Bemessungsgrundlage „Wasserbezug";
+# nach einem Zählerwechsel führt der Wasser-Block ihn in Teilmengen.
 # --------------------------------------------------------------------------
 WASSER_SYSTEM_PROMPT = (
     "Du liest einen deutschen Wasser-/Abwasser-Gebührenbescheid (von einem "
     "Zweckverband, Wasserversorger oder einer Gemeinde). Gib NUR JSON zurück, "
     "kein weiterer Text:\n"
-    '{"wasser":<Zahl|null>,"schmutz":<Zahl|null>,"niederschlag":<Zahl|null>}\n'
+    '{"wasser":<Zahl|null>,"schmutz":<Zahl|null>,"niederschlag":<Zahl|null>,'
+    '"gesamt_m3":<Zahl|null>}\n'
     "Der Bescheid rechnet oft drei getrennte Abrechnungsbereiche ab. Gesucht ist "
     "je die GESAMT-GEBÜHR/SUMME des Bereichs (Grund-/Bereitstellungsgebühr plus "
     "Verbrauchs-/Mengengebühr des Bereichs zusammen) für den abgerechneten "
@@ -442,7 +482,20 @@ WASSER_SYSTEM_PROMPT = (
     "(\"Niederschlagswasser\", \"Regenwassergebühr\", \"Oberflächenwasser\").\n"
     "Beträge in Euro als Zahl (Punkt als Dezimaltrenner, ohne Währungszeichen), "
     "immer positiv. Fehlt ein Bereich auf dem Beleg, den Wert null setzen. Ist es "
-    "überhaupt kein Wasser-/Abwasserbescheid, alle drei auf null."
+    "überhaupt kein Wasser-/Abwasserbescheid, alle drei auf null.\n"
+    "gesamt_m3 = der GESAMTE Wasserverbrauch der abgerechneten Periode in "
+    "Kubikmetern als Zahl (kein Geldbetrag!). Die Einheit heißt \"m³\", \"m3\" "
+    "oder \"cbm\". So findest du ihn:\n"
+    "1. BEVORZUGT im Abrechnungsbereich SCHMUTZWASSER: dort ist die "
+    "Bemessungsgrundlage der \"Wasserbezug\" (auch \"Frischwasserbezug\", "
+    "\"bezogene Wassermenge\") — diese eine m³-Zahl ist der Gesamtverbrauch. "
+    "Beispiel: \"Wasserbezug 30.09.24 … 122,00 cbm\" → gesamt_m3 = 122.\n"
+    "2. SONST im Abrechnungsbereich WASSER: stehen dort wegen eines "
+    "Zählerwechsels mehrere Teilmengen, ADDIERE sie zu einer Summe "
+    "(z. B. 102 m³ + 40 m³ → gesamt_m3 = 142).\n"
+    "Nimm NICHT die versiegelte Fläche des Niederschlagswassers (die ist in m²), "
+    "nicht einen Zählerstand und keinen Euro-Betrag. Steht keine Verbrauchsmenge "
+    "auf dem Beleg, gesamt_m3 = null."
 )
 WASSER_TOKENS = 200
 
@@ -462,11 +515,14 @@ def ist_wasser_kontext(hinweis: str) -> bool:
 
 def lies_wasser(text: str, dateiname: str = "", schluessel: str = "",
                 modell: str = "") -> dict | None:
-    """Liest die drei Bereichs-Gebühren eines Wasserbescheids (N78).
+    """Liest die drei Bereichs-Gebühren eines Wasserbescheids (N78) samt
+    Gesamtverbrauch (N102b).
 
     Gibt bei Erfolg `{"wasser": float|None, "schmutz": float|None,
-    "niederschlag": float|None}` zurück (jeder Wert die Gesamt-Gebühr des
-    Bereichs in Euro, oder None, wenn der Bereich fehlt). Bei jedem Fehler —
+    "niederschlag": float|None, "gesamt_m3": float|None}` zurück (die ersten
+    drei je die Gesamt-Gebühr des Bereichs in Euro, `gesamt_m3` der
+    Gesamtwasserverbrauch der Periode in Kubikmetern) — None, wo der Beleg die
+    Angabe nicht hergibt. Bei jedem Fehler —
     kein Key, kein httpx, Netzwerk, Timeout, ungültige Antwort, kein Wasser-
     beleg — `None`, nie eine Exception. Derselbe Key-/Modell-Vorrang wie
     `lies_beleg`."""
@@ -519,10 +575,16 @@ def lies_wasser(text: str, dateiname: str = "", schluessel: str = "",
         "wasser": _betrag(block.get("wasser")),
         "schmutz": _betrag(block.get("schmutz")),
         "niederschlag": _betrag(block.get("niederschlag")),
+        # N102b — der Gesamtwasserverbrauch der Periode in m³, zum Abgleich mit
+        # der Differenz der eigenen Zählerstände.
+        "gesamt_m3": _menge(block.get("gesamt_m3")),
     }
-    # Dezent loggen — OHNE Beträge (Datenschutz): nur, wie viele Bereiche kamen.
-    log.info("KI-Wasserauslese gelesen (%d Bereiche)",
-             sum(1 for v in ergebnis.values() if v is not None))
+    # Dezent loggen — OHNE Beträge/Mengen (Datenschutz): nur, wie viele Bereiche
+    # kamen und ob eine Verbrauchsmenge dabei war.
+    log.info("KI-Wasserauslese gelesen (%d Bereiche, Menge %s)",
+             sum(1 for k, v in ergebnis.items()
+                 if k != "gesamt_m3" and v is not None),
+             "vorhanden" if ergebnis["gesamt_m3"] is not None else "keine")
     return ergebnis
 
 
