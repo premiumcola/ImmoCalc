@@ -1271,6 +1271,17 @@ function istWasserSammel(k) {
   return n === 'wasser' || n === 'frischwasser' || n === 'trinkwasser';
 }
 
+/* N89 — die Strom-Position: der Strombetrag je Einheit entsteht in der
+   PV-/Strom-Rechnung (eigene Seite, je Objekt und Jahr) und fließt hier in die
+   Nebenkostenabrechnung zurück. Beim Aufklappen zeigt sie die Positionen je
+   Einheit; verteilt wird also nicht über einen Schlüssel, sondern über die
+   dortige Zähler-/Quellen-Rechnung. */
+function istStromPos(k) {
+  const n = normUml(k.kostenart);
+  if (n.includes('zaehler')) return false;
+  return n === 'strom' || n === 'allgemeinstrom' || n.includes('beleucht');
+}
+
 /* N101 — die Gesamtsumme der drei Wasser-Bestandteile (Frisch-, Schmutz-,
    Niederschlagswasser). Sie stehen als eigene Kostenpositionen in der Liste,
    sichtbar ist aber nur die Sammelzeile — sie muss die ganze Rechnung zeigen. */
@@ -1682,7 +1693,7 @@ function vkeyChip(k) {
   // N101 — Wasser wird über die ZÄHLER verteilt (gemessener Verbrauch je
   // Einheit, Rest per Person·Mietdauer), nicht nach dem Positions-Schlüssel.
   // „nach Fläche" wäre dort schlicht falsch.
-  if (istWasserSammel(k)) {
+  if (istWasserSammel(k) || istStromPos(k)) {
     return `<span class="vkey">${VKEY_IKON.verbrauch || VKEY_IKON.punkt}<span>nach Zählern</span></span>`;
   }
   const wort = schluesselWort(k);
@@ -1994,6 +2005,14 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
           >${ANH_ICON} Beleg anhängen</button>` : '';
     koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
         <div class="wd-lade">Detailübersicht wird geladen …</div></div>
+      <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+  } else if (auf && istStromPos(k)) {
+    // N89 — die Strom-Aufteilung je Einheit kommt aus der PV-/Strom-Rechnung.
+    const anbau = bearbeitbar
+      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
+          >${ANH_ICON} Stromrechnung anhängen</button>` : '';
+    koerper = `<div class="ho-inline" data-strom-inline="${daten.jahr || ''}">
+        <div class="wd-lade">Strom-Aufteilung wird geladen …</div></div>
       <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
   } else if (auf && heizModus) {
     // N79/N91 — je nach Stufe: Öl-Lieferungen+FIFO, Warmwasser-Split (§9) oder
@@ -2387,6 +2406,9 @@ async function zeichnen() {
     // N79 — die aufgeklappte Heizöl-Position lädt ihren Öl-Manager inline.
     const hInline = inhalt.querySelector('[data-heizoel-inline]');
     if (hInline) fuelleHeizoelInline(hInline);
+    // N89 — die Strom-Position lädt ihre Aufteilung je Einheit.
+    const sInline = inhalt.querySelector('[data-strom-inline]');
+    if (sInline) fuelleStromInline(sInline);
   }
 }
 
@@ -2525,6 +2547,42 @@ function belegWegDialog(dok) {
     dlg.querySelector('[data-nein]').onclick = () => dlg.close();
     dlg.showModal();
   });
+}
+
+/* N89 — die Strom-Aufteilung je Einheit in die NK-Abrechnung holen. Gerechnet
+   wird sie auf der PV-/Strom-Seite (je Objekt und Jahr); hier steht das
+   Ergebnis: Betrag und kWh je Einheit, dazu die Summe. Sind noch keine Werte
+   erfasst, sagt die Zeile, wo sie gepflegt werden. */
+async function fuelleStromInline(el) {
+  const jahr = el.dataset.stromInline
+    || String(new Date(daten.ende || Date.now()).getFullYear());
+  try {
+    const r = await api(`/objekte/${encodeURIComponent(daten.objekt)}`
+      + `/strom/${jahr}/nk-positionen`);
+    const pos = r?.positionen || [];
+    if (!pos.length) {
+      el.innerHTML = `<div class="ho-warn">Für ${esc(jahr)} ist noch keine
+        Strom-Aufteilung erfasst. Auf der Seite <b>PV &amp; Amortisation</b>
+        Zählerstände, Bezugsquellen und die Einheiten je Gruppe eintragen —
+        das Ergebnis erscheint dann hier.</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="ho-sekt">
+        <div class="ho-st">Strom je Einheit
+          <span class="ho-sh">aus der PV-/Strom-Rechnung ${esc(jahr)}</span></div>
+        <div class="ho-liste">${pos.map(p => `
+          <div class="ho-zeile">
+            <span class="ho-dt">${esc(p.einheit)}</span>
+            <span class="ho-lit">${zahl(p.kwh)} kWh</span>
+            <span class="ho-wert">${eur(p.betrag)}</span>
+          </div>`).join('')}</div>
+        <div class="ho-summe">Summe: <b>${eur(r.gesamt)}</b> · ${zahl(r.kwh_gesamt)} kWh</div>
+        ${(r.warnungen || []).map(w => `<div class="ho-warn">▲ ${esc(w)}</div>`).join('')}
+      </div>`;
+  } catch (fehler) {
+    el.innerHTML = `<div class="wd-lade">Strom-Aufteilung nicht ladbar: ${
+      esc(String(fehler.message || fehler))}</div>`;
+  }
 }
 
 /* N94 — Gartenwasser ohne Zähler: der eingetragene m³-Wert wird als Zähler mit
