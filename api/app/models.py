@@ -781,3 +781,27 @@ class Heizoellieferung(SQLModel, table=True):
     wert: float = 0.0                 # Gesamtpreis der Lieferung in €
     ist_anfangsbestand: bool = False
     notiz: str = ""
+
+
+class Heizverteiler(SQLModel, table=True):
+    """N81 — ein Heizkostenverteiler (HKV) an einem Heizkörper des Objekts.
+
+    Die Heizungswärme wird — wie beim Abrechnungsdienst — über die abgelesenen
+    HKV-Einheiten je Einheit verteilt: pro Heizkörper `faktor × einheiten_stand`
+    = gewichtete Einheiten, Summe je `einheit` → Kostenanteil
+    (`waerme.verteile_heizung`).
+
+    `faktor` ist der einmalige Bewertungsfaktor des Geräts (Größe/Leistung des
+    Heizkörpers), `einheiten_stand` die jährliche Ablesung (abgelesene Einheiten
+    der Periode). Der Einfachheit halber steht der Ablesewert direkt am Gerät —
+    er wird je Abrechnungsperiode überschrieben; wer Historie braucht, hält sie
+    in `notiz`. Additiv, ganz neue Tabelle (von `create_all` angelegt) — jeder
+    Bestand bleibt unverändert."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    einheit: str = ""                 # Bezeichnung der Einheit (Zieleinheit)
+    nummer: str = ""                  # HKV-Gerätenummer
+    raum: str = ""                    # Raum/Heizkörper
+    faktor: float = 1.0               # Bewertungsfaktor (einmalig)
+    einheiten_stand: float = 0.0      # abgelesene Einheiten der Periode
+    notiz: str = ""

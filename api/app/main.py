@@ -13,7 +13,7 @@ from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, heizoel, ki, mail,
-                      objekte, stammdaten, versand, zaehler)
+                      objekte, stammdaten, versand, waerme, zaehler)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -66,6 +66,8 @@ app.include_router(besitz.router)
 app.include_router(zaehler.router)  # /objekte/{slug}/zaehler VOR dem Stammdaten-Fänger
 # /objekte/{slug}/heizoel ebenfalls VOR dem Stammdaten-Fänger (N79).
 app.include_router(heizoel.router)
+# /objekte/{slug}/heizverteiler|waerme|heizung ebenfalls VOR dem Fänger (N80/N81).
+app.include_router(waerme.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 app.include_router(cloud.router)
