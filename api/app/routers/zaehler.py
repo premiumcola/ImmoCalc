@@ -671,6 +671,10 @@ def wasser_detail(zid: int, schluessel: str = "personen",
     # verschluckt: es erzeugt keine Spalte, aber einen sichtbaren Hinweis.
     warnungen = [f"„{name}“ gehört zu keiner Einheit dieses Objekts — die"
                  " Zuordnung bitte am Zähler nachtragen." for name in unbekannt]
+    # Was die Verrechnung selbst bemängelt (Unterzähler über dem Hauptzähler,
+    # Gartenwasser größer als der Rest, Rest ohne Ziel-Einheit), gehört ebenso
+    # in die Ansicht — sonst bleibt es in der Engine stehen.
+    warnungen += list(getattr(e, "warnungen", []) or [])
 
     return {
         "bereit": True,
