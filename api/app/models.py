@@ -245,6 +245,14 @@ class Zeitraum(SQLModel, table=True):
     ende: date
     typ: str = "regulär"          # 'regulär' | 'Rumpf' | 'Zwischen'
     status: str = "in Arbeit"     # 'in Arbeit' | 'abgeschlossen'
+    # N116b — die vom Versorger ABGERECHNETE Wassermenge laut Bescheid. Der
+    # eigene Zähler weist oft mehr aus (Zählerwechsel, Stichtagsversatz,
+    # Leitungsverlust); verteilt wird dann auf die abgerechnete Menge, und die
+    # Differenz bläht nicht den Anteil Haupthaus auf. Beide Werte bleiben
+    # stehen: der Zählerstand am Zähler, die Rechnungsmenge hier — die
+    # Abweichung wird ausgewiesen, nicht stillschweigend eingeebnet.
+    # Additiv, Default 0 = keine Angabe, es gilt weiterhin der Zähler.
+    wasser_rechnung_m3: float = 0.0
 
 
 class Kostenposition(SQLModel, table=True):

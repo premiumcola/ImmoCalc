@@ -541,6 +541,9 @@ def wasser_detail(zid: int, schluessel: str = "personen",
     # aus dem Rest heraus, die Kosten verteilen sich dafuer auf die kleinere,
     # tatsaechlich berechnete Menge.
     abgelesen_m3 = gesamt_m3
+    # N116b — ohne mitgeschickten Wert gilt der am Zeitraum gespeicherte.
+    if rechnung_m3 is None:
+        rechnung_m3 = z.wasser_rechnung_m3 or None
     if rechnung_m3 and rechnung_m3 > 0:
         gesamt_m3 = float(rechnung_m3)
 
@@ -687,6 +690,10 @@ def wasser_detail(zid: int, schluessel: str = "personen",
         "schluessel": schl,
         "abgelesen_m3": round(abgelesen_m3, 3) if abgelesen_m3 else None,
         "rechnung_m3": round(float(rechnung_m3), 3) if rechnung_m3 else None,
+        # Beide Werte bleiben stehen; die Abweichung wird benannt, damit sie in
+        # den Folgejahren geklaert werden kann, statt zu verschwinden.
+        "abweichung_m3": (round(abgelesen_m3 - float(rechnung_m3), 3)
+                          if rechnung_m3 and abgelesen_m3 else None),
         "kosten": {**komponenten, "gesamt": e.gesamt_kosten,
                    "preis_m3": round(e.preis_m3, 2)},
         "gesamt_m3": round(e.gesamt_m3, 2),
@@ -696,3 +703,21 @@ def wasser_detail(zid: int, schluessel: str = "personen",
         "rest_kosten": e.rest_kosten,
         "kontrolle": e.kontrolle,
     }
+
+
+@router.put("/zeitraeume/{zid}/wasser/rechnungsmenge")
+def rechnungsmenge_setzen(zid: int, data: dict,
+                          session: Session = Depends(get_session)) -> dict:
+    """N116b — die abgerechnete Wassermenge des Bescheids festhalten.
+
+    Sie ersetzt den Zaehlerwert NICHT: der Stand bleibt am Zaehler stehen. Hier
+    steht nur, was der Versorger tatsaechlich berechnet hat; die Differenz wird
+    als Abweichung ausgewiesen."""
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    wert = data.get("rechnung_m3")
+    z.wasser_rechnung_m3 = float(wert) if wert not in (None, "") else 0.0
+    session.add(z)
+    session.commit()
+    return {"ok": True, "rechnung_m3": z.wasser_rechnung_m3}

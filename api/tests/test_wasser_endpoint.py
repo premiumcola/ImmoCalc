@@ -21,7 +21,8 @@ from sqlmodel import Session  # noqa: E402
 from app import db  # noqa: E402
 from app.models import (Ablesung, Einheit, Kostenposition, Miete, Objekt,  # noqa: E402
                         Zaehler, Zeitraum)
-from app.routers.zaehler import ANFANGSSTAND, wasser_detail  # noqa: E402
+from app.routers.zaehler import (ANFANGSSTAND, rechnungsmenge_setzen,  # noqa: E402
+                                 wasser_detail)
 
 START = date(2024, 1, 1)
 ENDE = date(2024, 12, 31)
@@ -45,9 +46,9 @@ def _ablesungen(s, zaehler_id, zeitraum_id, m3):
     s.commit()
 
 
-def _aufbau():
+def _aufbau(slug: str = "laufer-str-5"):
     with Session(db.engine) as s:
-        o = Objekt(slug="laufer-str-5", name="Laufer Str. 5", start_monat=1)
+        o = Objekt(slug=slug, name="Laufer Str. 5", start_monat=1)
         s.add(o)
         s.commit()
         s.refresh(o)
@@ -328,3 +329,30 @@ def test_wasser_endpoint_nicht_bereit_ohne_betraege():
         res = wasser_detail(z.id, session=s)
     assert res["bereit"] is False
     assert "fehlt" in res["hinweis"].lower()
+
+
+def test_rechnungsmenge_bleibt_stehen_und_weist_die_abweichung_aus():
+    """N116b — die abgerechnete Menge ueberlebt das Neuladen, der Zaehlerwert
+    bleibt daneben stehen und die Differenz wird benannt."""
+    zid = _aufbau("laufer-str-5-rechnungsmenge")
+    with Session(db.engine) as s:
+        vorher = wasser_detail(zid, session=s)
+    abgelesen = vorher["abgelesen_m3"]
+    assert abgelesen and abgelesen > 0
+
+    gesetzt = round(abgelesen - 10.0, 3)
+    with Session(db.engine) as s:
+        rechnungsmenge_setzen(zid, {"rechnung_m3": gesetzt}, session=s)
+        d = wasser_detail(zid, session=s)
+
+    assert d["rechnung_m3"] == gesetzt
+    assert d["abgelesen_m3"] == abgelesen        # der Zaehler bleibt unangetastet
+    assert abs(d["abweichung_m3"] - 10.0) < 1e-6
+    assert abs(d["gesamt_m3"] - gesetzt) < 0.01  # verteilt wird auf die Rechnung
+
+    # Leeren loest die Angabe wieder auf.
+    with Session(db.engine) as s:
+        rechnungsmenge_setzen(zid, {"rechnung_m3": None}, session=s)
+        zurueck = wasser_detail(zid, session=s)
+    assert zurueck["rechnung_m3"] is None
+    assert abs(zurueck["gesamt_m3"] - abgelesen) < 0.01
