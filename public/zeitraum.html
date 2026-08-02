@@ -4371,8 +4371,19 @@ async function anfangstandSpeichern(input) {
    Gespeichert wird erst auf Klick, über denselben Stand-Flow wie sonst. */
 function datumGeaendert(el) {
   el.classList.add('geaendert');
-  const knopf = el.closest('.zu-zeile')?.querySelector('[data-datum-uebernehmen]');
-  if (knopf) knopf.hidden = false;
+  // N96c — ein vollständig geändertes Datum wird sofort mit dem Stand DIESER
+  // Zeile gespeichert; danach rechnet die Interpolation neu. `change` feuert
+  // beim Datumsfeld erst bei einem gültigen, vollständigen Datum — es gibt also
+  // kein Zwischenspeichern beim Tippen (und nie ein Anfassen anderer Zeilen).
+  const zeile = el.closest('.zu-zeile');
+  const ende = el.matches('[data-enddatum]');
+  const standEl = zeile?.querySelector(ende ? '[data-endstand]' : '[data-anfangstand]');
+  if (el.value && standEl && standAusFeld(standEl) != null
+      && !Number.isNaN(standAusFeld(standEl))) {
+    return ende ? endstandSpeichern(standEl) : anfangstandSpeichern(standEl);
+  }
+  const knopf = zeile?.querySelector('[data-datum-uebernehmen]');
+  if (knopf) knopf.hidden = false;   // ohne Stand: erst den Stand eintragen
 }
 
 /* N88 — das geänderte Datum zusammen mit dem bereits erfassten Stand dieser
