@@ -696,10 +696,12 @@ def test_verlauf_prognose_jenseits_des_horizonts_bleibt_leer(client):
     assert any("noch nicht abbezahlt" in w for w in v["warnungen"])
 
 
-def test_verlauf_vorlauf_zaehlt_einmalig_aufs_erste_jahr(client):
-    """Der Vorlauf ist, was die Anlage vor der ersten Abrechnung schon
-    abgetragen hat: einmalig auf die erste Zeile, nie wiederholt — und er hebt
-    den Prognose-Schnitt nicht an."""
+def test_verlauf_vorlauf_steht_vor_dem_ersten_abrechnungsjahr(client):
+    """N153b — der Vorlauf ist, was die Anlage VOR der ersten Abrechnung schon
+    abgetragen hat. Er bekommt deshalb eine eigene Zeile im Jahr davor und
+    vermischt sich nicht mit den echten Erträgen des ersten Abrechnungsjahres.
+    In Summe und Amortisation zählt er unverändert voll mit; den
+    Prognose-Schnitt hebt er nicht an (er wiederholt sich nicht)."""
     slug = _pv_objekt(client, "PV-Vorlauf")
     client.put(f"/api/objekte/{slug}/strom/2024",
                json={"anschaffung_eur": 10000, "vorlauf_ertrag_eur": 1500})
@@ -712,10 +714,14 @@ def test_verlauf_vorlauf_zaehlt_einmalig_aufs_erste_jahr(client):
 
     v = _verlauf(client, slug)
     assert v["vorlauf"] == 1500.0
-    erstes = v["jahre"][0]
-    assert erstes["jahr"] == 2024
-    assert erstes["vorlauf"] == 1500.0
-    assert erstes["summe"] == 2500.0         # 1500 Vorlauf + 1000 Einspeisung
+    assert v["vorlauf_jahr"] == 2023          # das Jahr vor der ersten Abrechnung
+    vorlaufzeile = v["jahre"][0]
+    assert vorlaufzeile["jahr"] == 2023
+    assert vorlaufzeile["vorlauf"] == 1500.0
+    assert vorlaufzeile["summe"] == 1500.0    # nur der Vorlauf, sonst nichts
+    # Das erste Abrechnungsjahr zeigt allein seinen eigenen Ertrag.
+    assert _jahr(v, 2024)["vorlauf"] == 0.0
+    assert _jahr(v, 2024)["summe"] == 1000.0
     assert all(z["vorlauf"] == 0.0 for z in v["jahre"][1:])
     assert v["kumuliert"] == 3500.0
     # Der Schnitt rechnet ohne den einmaligen Vorlauf: 2 × 1000 € / 2 Jahre.
@@ -733,7 +739,10 @@ def test_verlauf_liest_die_anschaffung_aus_den_stammdaten(client):
     v = _verlauf(client, slug)
     assert v["anschaffung"] == 12000.0
     assert v["vorlauf"] == 2000.0
-    assert v["jahre"][0]["summe"] == 3000.0        # 2000 Vorlauf + 1000
+    # N153b — der Vorlauf steht im Jahr vor der ersten Abrechnung, das
+    # Abrechnungsjahr zeigt nur seinen eigenen Ertrag.
+    assert v["jahre"][0]["summe"] == 2000.0
+    assert _jahr(v, 2024)["summe"] == 1000.0
     assert v["rest"] == 9000.0
 
 
@@ -909,3 +918,181 @@ def test_teil_put_setzt_die_uebrigen_felder_nicht_auf_null(client):
     assert e["anschaffung_eur"] == 35700.0
     assert e["gesamt_kwh"] == 10800.0
     assert e["netz_kwh"] == 2592.0
+
+
+# ---------------------------------------------------------------------------
+# N153 — den Startbetrag der Amortisation aufschlüsseln.
+#
+# Die Jahre NACH der ersten Abrechnung zeigen im Verlauf schon, woher der Ertrag
+# kam (Direktnutzung / Einspeisevergütung / E-Tanken). Beim Vorlauf stand bisher
+# nur eine Gesamtzahl — der Anfang des Verlaufs war damit die einzige Stelle
+# ohne Herkunft.
+#
+# Die Vorrang-Regel: ist die Aufschlüsselung gepflegt (mindestens eines der drei
+# Felder ≠ 0), gilt IHRE SUMME als Vorlauf; sonst weiterhin
+# `vorlauf_ertrag_eur`. So bleibt der bestehende Wert gültig, bis die Aufteilung
+# eingetragen wird — und es gibt keine zwei Wahrheiten.
+# ---------------------------------------------------------------------------
+
+def test_vorlauf_aufschluesselung_speichern_und_lesen(client):
+    """Die drei Felder überdauern das Speichern und kommen mit Summe und
+    Herkunft zurück."""
+    slug = _neues_objekt(client)
+    gespeichert = client.put(f"/api/objekte/{slug}/pv/stammdaten", json={
+        "anschaffung_eur": 35800, "vorlauf_pv_strom_eur": 1400.0,
+        "vorlauf_einspeisung_eur": 955.0, "vorlauf_tanken_eur": 0.0}).json()
+    assert gespeichert["vorlauf_pv_strom_eur"] == 1400.0
+    assert gespeichert["vorlauf_einspeisung_eur"] == 955.0
+    assert gespeichert["vorlauf_tanken_eur"] == 0.0
+
+    gelesen = _stammdaten(client, slug)
+    assert gelesen["vorlauf_summe"] == 2355.0
+    assert gelesen["vorlauf_aufgeschluesselt"] is True
+    assert gelesen["vorlauf_teile"] == {"pv_strom": 1400.0,
+                                        "einspeisung": 955.0, "tanken": 0.0}
+
+
+def test_vorlauf_summe_schlaegt_den_gesamtwert(client):
+    """Ist die Aufschlüsselung gepflegt, gilt IHRE Summe — der alte Gesamtwert
+    bleibt stehen (nie überschreiben), zählt aber nicht mehr."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"vorlauf_ertrag_eur": 9999.0})
+    assert _stammdaten(client, slug)["vorlauf_summe"] == 9999.0
+
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"vorlauf_pv_strom_eur": 1400.0,
+                     "vorlauf_einspeisung_eur": 955.0})
+    danach = _stammdaten(client, slug)
+    assert danach["vorlauf_summe"] == 2355.0
+    assert danach["vorlauf_ertrag_eur"] == 9999.0      # steht unangetastet da
+
+
+def test_vorlauf_ohne_aufschluesselung_gilt_der_gesamtwert(client):
+    """Solange keines der drei Felder gepflegt ist, bleibt es beim bisherigen
+    Gesamtwert — der Bestand des Nutzers bleibt gültig."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"vorlauf_ertrag_eur": 2355.0, "vorlauf_pv_strom_eur": 0.0,
+                     "vorlauf_einspeisung_eur": 0.0, "vorlauf_tanken_eur": 0.0})
+    d = _stammdaten(client, slug)
+    assert d["vorlauf_summe"] == 2355.0
+    assert d["vorlauf_aufgeschluesselt"] is False
+    assert d["vorlauf_teile"] is None
+
+
+def test_vorlauf_teil_speichern_setzt_die_uebrigen_nicht_auf_null(client):
+    """N150 — jedes Feld hat `None`-Default: wer nur den PV-Strom nachträgt,
+    darf die Einspeisung nicht auf 0 setzen."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/pv/stammdaten", json={
+        "vorlauf_pv_strom_eur": 1400.0, "vorlauf_einspeisung_eur": 955.0,
+        "vorlauf_tanken_eur": 120.0})
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"vorlauf_pv_strom_eur": 1500.0})
+
+    d = _stammdaten(client, slug)
+    assert d["vorlauf_pv_strom_eur"] == 1500.0
+    assert d["vorlauf_einspeisung_eur"] == 955.0
+    assert d["vorlauf_tanken_eur"] == 120.0
+    assert d["vorlauf_summe"] == 2575.0
+
+
+def test_vorlauf_bis_kommt_aus_dem_ersten_zeitraum(client):
+    """Welcher Zeitraum gemeint ist, leitet sich aus den Daten ab: alles vor dem
+    Beginn des ersten Abrechnungszeitraums. Kein Datum steht im Code."""
+    slug = _pv_objekt(client, "PV-Vorlaufgrenze")
+    _zeitraum_id(client, slug, 2025)
+    start = _stammdaten(client, slug)["vorlauf_bis"]
+    assert start is not None
+    erster = min(z["start"] for z in
+                 client.get(f"/api/objekte/{slug}").json()["zeitraeume"])
+    assert start == erster
+
+
+def test_verlauf_rechnet_mit_der_summe_der_aufschluesselung(client):
+    """Der Verlauf nimmt die Summe der Aufschlüsselung als Vorlauf und hängt
+    ihre Herkunft an die erste Zeile — die Jahre danach bleiben unberührt."""
+    slug = _pv_objekt(client, "PV-Vorlaufteile")
+    client.put(f"/api/objekte/{slug}/pv/stammdaten", json={
+        "anschaffung_eur": 35800.0, "vorlauf_ertrag_eur": 9999.0,
+        "vorlauf_pv_strom_eur": 1400.0, "vorlauf_einspeisung_eur": 955.0})
+    for jahr in (2024, 2025):
+        _position(client, _zeitraum_id(client, slug, jahr), _EINSPEISUNG, 1000.0)
+
+    v = _verlauf(client, slug)
+    assert v["vorlauf"] == 2355.0                 # die Summe, nicht die 9999
+    assert v["vorlauf_aufgeschluesselt"] is True
+    assert v["vorlauf_teile"] == {"pv_strom": 1400.0, "einspeisung": 955.0,
+                                  "tanken": 0.0}
+    # Eigene Zeile vor dem ersten Abrechnungsjahr (N153b).
+    erstes = v["jahre"][0]
+    assert erstes["jahr"] == v["vorlauf_jahr"] == 2023
+    assert erstes["vorlauf"] == 2355.0
+    assert erstes["vorlauf_teile"] == v["vorlauf_teile"]
+    # Die Herkunft ist ein Zusatz, keine zweite Buchung.
+    assert erstes["summe"] == 2355.0
+    assert v["kumuliert"] == 4355.0
+    assert all(z["vorlauf_teile"] is None for z in v["jahre"][1:])
+    # Ohne Aufschlüsselung bleibt es beim Gesamtwert — ein Block, keine Herkunft.
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"vorlauf_pv_strom_eur": 0.0, "vorlauf_einspeisung_eur": 0.0})
+    ohne = _verlauf(client, slug)
+    assert ohne["vorlauf"] == 9999.0
+    assert ohne["vorlauf_aufgeschluesselt"] is False
+    assert ohne["jahre"][0]["vorlauf_teile"] is None
+
+
+def test_vorlauf_jahr_kommt_aus_dem_ersten_abrechnungsjahr(client):
+    """Beim Nutzer beginnt die erste Abrechnung am 01.10.2024 und läuft als
+    Jahr 2025 — der Vorlauf gehört auf 2024. Abgeleitet, nicht gesetzt."""
+    slug = client.post("/api/objekte", json={
+        "name": "PV-Oktober", "ort": "Teststadt", "turnus": "abweichend",
+        "start_monat": 10, "kostenarten": ["Strom"],
+        "einheiten": [{"bezeichnung": "EG", "flaeche": 70.0,
+                       "partei": "Müller"}]}).json()["slug"]
+    client.post(f"/api/objekte/{slug}/zeitraeume",
+                json={"start": "2024-10-01", "ende": "2025-09-30"})
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"anschaffung_eur": 35800.0,
+                     "vorlauf_pv_strom_eur": 1798.50,
+                     "vorlauf_einspeisung_eur": 556.86})
+
+    v = _verlauf(client, slug)
+    assert v["vorlauf"] == 2355.36
+    assert v["vorlauf_jahr"] == 2024
+    zeile = _jahr(v, 2024)
+    assert zeile["vorlauf"] == 2355.36 and zeile["summe"] == 2355.36
+    # Das erste Abrechnungsjahr trägt den Vorlauf nicht mehr mit.
+    assert _jahr(v, 2025)["vorlauf"] == 0.0
+    assert v["kumuliert"] == 2355.36
+
+
+def test_autarkie_nimmt_die_verbraucherseite(client):
+    """N154/N160 — die Quote beantwortet „wie viel meines Verbrauchs decke ich
+    selbst": (Solar + Akku) / (Netz + Solar + Akku) = 8.208 / 10.800 = 76 %.
+    Die Erzeugerseite (Produktion − Einspeisung = 8.375 kWh) geht ausdrücklich
+    NICHT ein — mit ihr käme 77,5 % heraus, eine geschönte Antwort auf eine
+    andere Frage."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/strom/2025", json={
+        "netz_kwh": 2592.0, "solar_kwh": 5400.0, "akku_kwh": 2808.0,
+        "pv_produktion_kwh": 12500.0, "einspeisung_kwh": 4125.0})
+
+    a = client.get(f"/api/objekte/{slug}/strom/2025/rechnung").json()["autarkie"]
+    assert a["eigen_kwh"] == 8208.0
+    assert (a["solar_kwh"], a["akku_kwh"], a["netz_kwh"]) \
+        == (5400.0, 2808.0, 2592.0)
+    assert a["verbrauch_kwh"] == 10800.0
+    assert a["prozent"] == 76.0
+    # Die Erzeugerseite steht nicht in der Kennzahl — nur in der Vergütung.
+    assert "erzeugung_selbst_genutzt_kwh" not in a
+
+
+def test_autarkie_ohne_mengen_bleibt_leer(client):
+    """Ohne erfasste Mengen gibt es keine Quote — lieber nichts als eine Zahl
+    ohne Grundlage."""
+    slug = _neues_objekt(client)
+    a = client.get(f"/api/objekte/{slug}/strom/2025/rechnung").json()["autarkie"]
+    assert a["prozent"] is None
+    assert a["verbrauch_kwh"] == 0.0

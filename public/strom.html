@@ -31,6 +31,7 @@
             color:var(--ink)}
   .karte .hh{display:flex;align-items:baseline;justify-content:space-between;
              gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .karte .hint b{font-weight:600;color:var(--ink)}
   .karte .hint{font:400 12px var(--body);color:var(--soft);line-height:1.5;
                margin:0 0 14px;max-width:600px}
 
@@ -49,6 +50,28 @@
   .field.breit input{width:100%;box-sizing:border-box}
   .field .einheit{font-weight:400;text-transform:none;letter-spacing:0;
                   color:var(--soft)}
+
+  /* N153 — der Startbetrag der Amortisation: ein eigener ruhiger Block mit drei
+     Beträgen nach denselben Quellen wie die Jahre danach und der geltenden
+     Summe daneben. Die drei stehen auch auf 390 px nebeneinander — nebeneinander
+     liest man sie als eine Aufteilung, untereinander als drei Angaben. */
+  .vorlauf{background:var(--paper);border-radius:14px;padding:14px 15px;
+           margin:2px 0 16px}
+  .vorlauf .vk{display:flex;align-items:baseline;justify-content:space-between;
+               gap:8px 12px;flex-wrap:wrap}
+  .vorlauf .vt{font:600 13px var(--disp);letter-spacing:-.01em;color:var(--ink)}
+  .vorlauf .vs{font:700 17px var(--disp);letter-spacing:-.02em;
+               color:var(--teal-d);white-space:nowrap}
+  .vorlauf .vz,.vorlauf .vf{font:400 11.5px var(--body);color:var(--soft);
+                            line-height:1.55;max-width:600px}
+  .vorlauf .vz{margin:7px 0 13px}
+  .vorlauf .vf{margin:11px 0 0}
+  .vraster{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .vraster .field{margin:0;display:flex;flex-direction:column}
+  /* Bricht ein Label um, bleiben die Felder trotzdem auf einer Linie. */
+  .vraster .field label{flex:1 0 auto;font-size:9.5px;letter-spacing:.04em;
+                        margin-bottom:6px}
+  .vraster .inp{padding-left:10px;padding-right:10px;background:var(--sheet)}
 
   /* Quellen-Zeile: Menge + Preis nebeneinander, Kosten als Chip rechts. */
   .quelle{display:grid;grid-template-columns:1fr 1fr auto;gap:12px 14px;
@@ -120,16 +143,62 @@
   .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;
              padding:22px 8px}
 
+  /* N160 — Verbrauchsseite und Erzeugerseite als eigene Blöcke: getrennt
+     beschriftet liest niemand mehr die eine Zahl als die andere. */
+  .fgruppe{margin:0 0 18px}
+  .fgruppe .fgt{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 9px;
+                font:600 12.5px var(--disp);letter-spacing:-.01em;
+                color:var(--ink)}
+  .fgruppe .fgt em{font:500 9px var(--mono);letter-spacing:.07em;
+                   font-style:normal;text-transform:uppercase;
+                   color:var(--teal-d);background:var(--teal-l);
+                   border-radius:999px;padding:4px 9px}
+  .fgruppe .fgs{margin:6px 0 12px;font:400 11.5px var(--body);color:var(--soft);
+                line-height:1.55;max-width:620px}
+
+  /* N154 — die Hinweise aus den eigenen Zahlen. Ruhig, keine Signalfarbe: das
+     ist kein Alarm, sondern ein Hebel. */
+  .tipps{background:var(--paper);border-radius:14px;padding:15px;
+         margin:14px 0 16px;max-width:640px}
+  .tipps .tt{display:block;font:600 13px var(--disp);letter-spacing:-.01em;
+             color:var(--ink);margin-bottom:11px}
+  .tipps .tz{display:flex;gap:11px;align-items:flex-start;padding:11px 0;
+             border-top:1px solid rgba(22,38,44,.08);
+             font:400 12px var(--body);color:var(--soft);line-height:1.65}
+  .tipps .tz:first-of-type{border-top:none;padding-top:0}
+  .tipps .tz b{display:block;font:600 12.5px var(--disp);letter-spacing:-.01em;
+               color:var(--ink);margin-bottom:2px}
+  .tipps .ti{flex:none;margin-top:1px;color:var(--teal)}
+
   /* ---- N131 SolarEdge-Screenshot lesen ---------------------------------- */
-  /* Der Anstoß: ein ruhiger Knopf neben einem Satz, was gelesen wird. Der Satz
-     darf umbrechen, der Knopf nicht — deshalb `flex:none` am Knopf. */
-  .se{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 16px}
+  /* N153b — die Ablagefläche: der Screenshot lässt sich hineinziehen, der Knopf
+     bleibt der Weg auf dem Handy. Knopf und Satz stehen in einem Flex-Fluss und
+     können sich damit auf keiner Breite überlagern: der Knopf gibt nie nach
+     (`flex:none`), der Satz bricht um und rutscht ab 500 px in eine eigene
+     Zeile. Beide haben rundum Luft, nichts sitzt absolut. */
+  .se{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;
+      box-sizing:border-box;margin:0 0 16px;padding:14px 15px;
+      border:1.5px dashed rgba(22,38,44,.16);border-radius:14px;
+      background:var(--paper);transition:background .15s,border-color .15s}
+  .se.dran{background:var(--teal-l);border-color:var(--teal);border-style:solid}
   .se .btn{flex:none;width:auto;min-height:44px;padding:11px 16px;font-size:13px;
-           display:inline-flex;align-items:center;gap:9px}
+           display:inline-flex;align-items:center;gap:9px;background:var(--sheet)}
   .se .btn svg{flex:none}
   .se .btn[disabled]{opacity:.55;cursor:default}
-  .se-note{flex:1 1 200px;min-width:0;font:400 11.5px var(--body);
+  .se-note{flex:1 1 260px;min-width:0;margin:0;font:400 11.5px var(--body);
            color:var(--soft);line-height:1.55}
+  .se-note b{display:block;font:600 12.5px var(--disp);letter-spacing:-.01em;
+             color:var(--ink);margin-bottom:3px}
+
+  /* N155 — das gelesene Bild bleibt als Beleg stehen. */
+  .sebild{display:flex;gap:13px;align-items:flex-start;background:var(--paper);
+          border-radius:14px;padding:12px;margin:0 0 16px;max-width:620px}
+  .sebild img{flex:none;width:86px;height:86px;object-fit:cover;
+              border-radius:11px;background:var(--sheet)}
+  .sebt{min-width:0;font:400 11.5px var(--body);color:var(--soft);
+        line-height:1.55}
+  .sebt b{display:block;font:600 12.5px var(--disp);letter-spacing:-.01em;
+          color:var(--ink);margin-bottom:4px;overflow-wrap:anywhere}
 
   /* Die Prüfansicht — nichts wird übernommen, bevor sie bestätigt ist. */
   /* Auf breiten Schirmen bleibt die Gegenüberstellung ein Block, statt sich
@@ -235,6 +304,9 @@
     #916212 0 2px, #FFF 2px 4px)}
   .legende i.prognose{background:rgba(178,66,41,.22);
                       box-shadow:inset 0 0 0 1.5px rgba(178,66,41,.55)}
+  /* N153 — der Satz zum aufgeteilten Vorlauf, direkt unter der Legende. */
+  .legendennote{margin:-6px 0 16px;font:400 11.5px var(--body);
+                color:var(--soft);line-height:1.55;max-width:600px}
 
   /* Sieben Geldspalten passen auf dem iPhone nicht nebeneinander — die Tabelle
      scrollt in ihrem eigenen Rahmen, die Seite selbst nie. */
@@ -251,6 +323,10 @@
   .jt td:first-child{text-align:left;font:600 13px var(--disp);
                      letter-spacing:-.01em}
   .jt td.leise{color:var(--soft)}
+  /* N153b — die Zeile vor der ersten Abrechnung: das Jahr allein sagt nicht,
+     warum dort ein Betrag steht, für den es keine Abrechnung gibt. */
+  .jt .vorab{display:block;font:500 9px var(--mono);letter-spacing:.05em;
+             text-transform:uppercase;color:var(--soft);margin-top:3px}
   .jt td.summe{font-weight:700;color:var(--teal-d)}
   .jt .plus{color:var(--pos);font-weight:600}
   /* Der Hinweis erscheint nur, wenn die Tabelle wirklich nicht ganz passt —
@@ -314,23 +390,39 @@ const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) 
    Anlage wurde einmal gekauft, nicht jedes Jahr neu. */
 const F_STAMM = [
   ['anschaffung_eur', 'Anschaffung', '€', 1],
-  ['vorlauf_ertrag_eur', 'Bereits abgetragen', '€', 1],
   ['kwp', 'Anlagenleistung', 'kWp', 0.01],
 ];
-const F_JAHR = [
-  ['pv_produktion_kwh', 'PV-Produktion', 'kWh', 1],
-  ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
-  ['verguetung_eur', 'Vergütung', '€', 0.01],
-  // N131 — woher der im Haus verbrauchte Strom kam. Dieselben drei Mengen, aus
-  // denen die Stromkette im Nebenkostenzeitraum ihre Anteile zieht; hier stehen
-  // sie da, wo der SolarEdge-Screenshot sie füllt.
+/* N153 — „bereits abgetragen" war ein einziges Feld. Der Startbetrag wird jetzt
+   nach denselben Quellen eingetragen wie die Jahre danach; damit hat der
+   Verlauf auch am Anfang eine Herkunft. Reihenfolge und Bezeichnungen wie in
+   der Grafik und der Jahrestabelle. */
+const F_VORLAUF = [
+  // Ohne Einheit am Label: die drei stehen nebeneinander, die Währung sagt die
+  // Summe daneben einmal — dreimal „(€)" wäre dieselbe Information dreifach.
+  ['vorlauf_pv_strom_eur', 'PV-Strom', '', 1],
+  ['vorlauf_einspeisung_eur', 'Einspeisung', '', 1],
+  ['vorlauf_tanken_eur', 'E-Tanken', '', 1],
+];
+/* N131/N160 — zwei Seiten, zwei Aufgaben, deshalb zwei Blöcke statt eines
+   Rasters: die VERBRAUCHSSEITE ist maßgeblich (Verteilung, Kosten, Autarkie),
+   die ERZEUGERSEITE trägt allein die Einspeisevergütung. Beides in einem Raster
+   war genau der Grund, warum die Erzeugerzahl für die Verbrauchszahl gehalten
+   wurde. */
+const F_JAHR_VERBRAUCH = [
   ['netz_kwh', 'Verbrauch Netz', 'kWh', 1],
   ['solar_kwh', 'Verbrauch PV', 'kWh', 1],
   ['akku_kwh', 'Verbrauch Akku', 'kWh', 1],
 ];
+const F_JAHR_ERZEUGUNG = [
+  ['pv_produktion_kwh', 'PV-Produktion', 'kWh', 1],
+  ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
+  ['verguetung_eur', 'Vergütung', '€', 0.01],
+];
 function feldHtml(name, label, einheit, step, art = 'feld') {
+  const zusatz = einheit
+    ? ` <span class="einheit">(${esc(einheit)})</span>` : '';
   return `<div class="field">
-    <label for="f_${name}">${esc(label)} <span class="einheit">(${esc(einheit)})</span></label>
+    <label for="f_${name}">${esc(label)}${zusatz}</label>
     <input class="inp" type="number" inputmode="decimal" step="${step}" min="0"
            id="f_${name}" data-${art}="${name}">
   </div>`;
@@ -358,9 +450,10 @@ function skelett() {
       <div class="hh"><h3>Verlauf</h3></div>
       <p class="hint">Die Anschaffung steht als negativer Betrag da und wird
         Jahr für Jahr aufgefressen: von der Direktnutzung (PV-Strom, den die
-        Mieter bezahlt haben), der Einspeisevergütung und dem E-Tanken. Alle
-        Werte kommen live aus den Nebenkostenjahren. Durchstößt der Balken die
-        Nulllinie, ist die Anlage amortisiert.</p>
+        Mieter bezahlt haben), der Einspeisevergütung und dem E-Tanken. Diese
+        Werte kommen live aus den Nebenkostenjahren; der Balken davor ist der
+        Vorlauf aus den Stammdaten — die Zeit vor der ersten Abrechnung.
+        Durchstößt der Balken die Nulllinie, ist die Anlage amortisiert.</p>
       <div class="kpi" id="vKpi"></div>
       <div id="vGrafik"></div>
       <div id="vTabelle"></div>
@@ -372,26 +465,36 @@ function skelett() {
     <div class="karte eng">
       <div class="hh"><h3>Stammdaten der Anlage</h3></div>
       <p class="hint">Gelten für alle Jahre — die Jahresauswahl oben ändert
-        hier nichts. „Bereits abgetragen" ist, was die Anlage eingebracht hat,
-        bevor der erste Abrechnungszeitraum begann: ein einmaliger Betrag, der
-        im Verlauf auf die erste Zeile zählt und nicht in die Prognose eingeht.</p>
+        hier nichts.</p>
       <div class="raster">
         ${F_STAMM.map(f => feldHtml(...f, 'stamm')).join('')}
         ${datumHtml('inbetriebnahme', 'Inbetriebnahme')}
+      </div>
+
+      <!-- N153 — der Startbetrag der Amortisation, aufgeschlüsselt nach
+           denselben Quellen wie die Jahre danach. -->
+      <div class="vorlauf">
+        <div class="vk">
+          <span class="vt">Bereits abgetragen</span>
+          <span class="vs" id="vorlaufSumme">—</span>
+        </div>
+        <p class="vz" id="vorlaufZeit"></p>
+        <div class="vraster">
+          ${F_VORLAUF.map(f => feldHtml(...f, 'stamm')).join('')}
+        </div>
+        <p class="vf" id="vorlaufFuss"></p>
       </div>
     </div>
 
     <div class="karte">
       <div class="hh"><h3>PV im Jahr</h3><span class="jahrchip">${jahr}</span></div>
-      <p class="hint">Diese Werte gehören zum oben gewählten Jahr ${jahr}.
-        Eigenverbrauch = Produktion − Einspeisung. Ohne eigenen Betrag folgt die
-        Vergütung den EEG-Stufen (0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) auf Basis
-        der Anlagenleistung aus den Stammdaten. Die drei Verbrauchsmengen sagen,
-        woher der im Haus verbrauchte Strom kam — aus ihnen zieht die Stromkette
-        im Nebenkostenzeitraum ihre Anteile.</p>
+      <!-- N160 — zwei Seiten, zwei Aufgaben. Maßgeblich für Verbrauch, Kosten
+           und Autarkie ist die Verbrauchsseite; die Produktionsseite trägt
+           allein die Einspeisevergütung. -->
+      <p class="hint">Diese Werte gehören zum oben gewählten Jahr ${jahr}.</p>
       <!-- N131 — statt abzutippen den SolarEdge-Screenshot lesen lassen. Die
            Handeingabe darunter bleibt immer der Weg, der sicher funktioniert. -->
-      <div class="se">
+      <div class="se" data-se-zone>
         <button type="button" class="btn leise" data-se-waehlen>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
                stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
@@ -401,15 +504,37 @@ function skelett() {
             <path d="M4 17.2l4.6-4.6 3 3L15 12l5 5.2"/>
           </svg>Screenshot lesen</button>
         <input type="file" accept="image/*" data-se-datei hidden>
-        <span class="se-note">Die SolarEdge-Ansicht mit den Balken „Produktion"
-          und „Verbrauch". Die erkannten Zahlen werden erst gezeigt und
-          eingetragen, nachdem du sie bestätigt hast.</span>
+        <p class="se-note"><b>Bild hierher ziehen oder auswählen</b>Die
+          SolarEdge-Ansicht mit den Balken „Produktion" und „Verbrauch". Die
+          erkannten Zahlen werden erst gezeigt und eingetragen, nachdem du sie
+          bestätigt hast.</p>
       </div>
+      <div id="seBild"></div>
       <div id="seBox"></div>
-      <div class="raster">
-        ${F_JAHR.map(f => feldHtml(...f)).join('')}
+      <div class="fgruppe">
+        <span class="fgt">Verbrauchsseite <em>maßgeblich</em></span>
+        <p class="fgs">Woher der im Haus verbrauchte Strom kam. Aus diesen drei
+          Mengen zieht die Stromkette im Nebenkostenzeitraum ihre Anteile, und
+          aus ihnen kommt die Autarkiequote.</p>
+        <div class="raster">
+          ${F_JAHR_VERBRAUCH.map(f => feldHtml(...f)).join('')}
+        </div>
+      </div>
+      <div class="fgruppe">
+        <span class="fgt">Erzeugerseite <em>Einspeisevergütung</em></span>
+        <p class="fgs">Was die Anlage produziert hat und wie viel davon
+          wirklich ins Netz ging — dafür zahlt der Netzbetreiber. In Verbrauch
+          und Autarkie geht diese Seite nicht ein. Ohne eigenen Betrag folgt die
+          Vergütung den EEG-Stufen (0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) auf Basis
+          der Anlagenleistung aus den Stammdaten.</p>
+        <div class="raster">
+          ${F_JAHR_ERZEUGUNG.map(f => feldHtml(...f)).join('')}
+        </div>
       </div>
       <div class="kpi" id="pv"></div>
+      <!-- N154 — was sich aus den eigenen Zahlen an Hebeln ablesen lässt.
+           Steht nichts drin, wofür es Daten gibt, bleibt der Block leer. -->
+      <div id="tipps"></div>
     </div>
 
     <!-- N132/N139 — Nutzer und Abrechnungen der Tankstelle haben eine eigene
@@ -488,6 +613,100 @@ function stammFuellen(s) {
   });
   const d = inhalt.querySelector('[data-stammdatum]');
   if (d) d.value = s.inbetriebnahme || '';
+}
+
+/* ---------------------------------------------------------------------------
+   N153 — der Startbetrag der Amortisation.
+
+   Die Jahre nach der ersten Abrechnung zeigen im Verlauf schon, woher der
+   Ertrag kam. Beim Startbetrag stand bisher nur eine Gesamtzahl — der Anfang
+   des Verlaufs war damit die einzige Stelle ohne Herkunft.
+   --------------------------------------------------------------------------- */
+
+/* Der zuletzt gelesene Stammdatensatz — für den alten Gesamtwert und die
+   Grenze, bis zu der der Vorlauf zählt. */
+let stammStand = {};
+
+const datumDe = d => d.toLocaleDateString('de-DE',
+  { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+function tag(iso) {
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/* „2023 und 2024" / „2023, 2024 und 2025" — höchstens eine Handvoll, sonst
+   wird aus dem Hinweis eine Aufzählung. */
+function jahreText(von, bis) {
+  if (bis - von > 6) return '';
+  const jahre = [];
+  for (let j = von; j <= bis; j++) jahre.push(j);
+  if (!jahre.length) return '';
+  return jahre.length === 1 ? String(jahre[0])
+    : `${jahre.slice(0, -1).join(', ')} und ${jahre[jahre.length - 1]}`;
+}
+
+/* Welcher Zeitraum gemeint ist, steht nirgends im Code: `vorlauf_bis` ist der
+   Beginn des ersten Abrechnungszeitraums, die Inbetriebnahme der Anfang. */
+function vorlaufZeitraum() {
+  const bis = tag(stammStand.vorlauf_bis);
+  if (!bis) return 'Gemeint ist alles, was die Anlage eingebracht hat, bevor '
+    + 'die erste Nebenkostenabrechnung begann.';
+  const vortag = new Date(bis);
+  vortag.setDate(bis.getDate() - 1);
+  const feld = inhalt.querySelector('[data-stammdatum]');
+  const start = tag((feld && feld.value) || stammStand.inbetriebnahme);
+  const jahre = start && start <= vortag
+    ? jahreText(start.getFullYear(), vortag.getFullYear()) : '';
+  return 'Gemeint ist die Zeit vor dem ersten Abrechnungszeitraum: '
+    + (start ? `von der Inbetriebnahme am ${datumDe(start)} ` : 'alles ')
+    + `bis zum ${datumDe(vortag)}${jahre ? ` — also ${jahre}` : ''}.`;
+}
+
+/* „Es passiert nichts" darf es hier nicht geben: kam der Startbetrag nicht so
+   an, wie er abgeschickt wurde, wird das gesagt — ein stumm verschluckter
+   Fehler ist schlimmer als ein sichtbarer. */
+function vorlaufPruefen(gesendet, antwort) {
+  const summe = F_VORLAUF.reduce((s, [name]) => s + (gesendet[name] || 0), 0);
+  if (!summe) return;
+  if (antwort.vorlauf_summe == null
+      || Math.abs(antwort.vorlauf_summe - summe) > 0.005) {
+    melde('Der Startbetrag kam nicht an — bitte die Seite neu laden', 'neg');
+  }
+}
+
+function vorlaufWerte() {
+  return F_VORLAUF.map(([name]) => {
+    const el = inhalt.querySelector(`input[data-stamm="${name}"]`);
+    const v = parseFloat(el ? el.value : '');
+    return Number.isFinite(v) ? v : 0;
+  });
+}
+
+/* Die Vorrang-Regel — dieselbe wie im Backend (`_vorlauf`): steht in einem der
+   drei Felder etwas, gilt IHRE Summe als Vorlauf. Sonst gilt weiterhin der
+   früher eingetragene Gesamtwert. So bleibt der bestehende Wert gültig, bis
+   die Aufteilung dasteht — und es entstehen keine zwei Wahrheiten. */
+function vorlaufZeigen() {
+  const summeZiel = document.getElementById('vorlaufSumme');
+  if (!summeZiel) return;
+  const werte = vorlaufWerte();
+  const aufgeteilt = werte.some(w => w !== 0);
+  const gesamt = stammStand.vorlauf_ertrag_eur || 0;
+  const gilt = aufgeteilt ? werte.reduce((s, w) => s + w, 0) : gesamt;
+  summeZiel.textContent = gilt ? eur(gilt) : '—';
+  document.getElementById('vorlaufZeit').textContent = vorlaufZeitraum();
+  document.getElementById('vorlaufFuss').textContent = aufgeteilt
+    ? 'Diese Summe steht im Verlauf als eigener Balken VOR dem ersten '
+      + 'Abrechnungsjahr — nach denselben Quellen aufgeteilt wie die Jahre '
+      + 'danach, und voll in der Amortisation.'
+    : (gesamt
+      ? `Bisher steht hier nur der Gesamtwert ${eur(gesamt)}. Er gilt weiter, `
+        + 'solange die Aufteilung leer ist — im Verlauf dann als ein Balken '
+        + 'ohne Herkunft.'
+      : 'Leer lassen, wenn die Anlage vor der ersten Abrechnung noch nichts '
+        + 'eingebracht hat.');
 }
 
 /* ---------------------------------------------------------------------------
@@ -618,6 +837,9 @@ async function seLesen(datei) {
   const box = document.getElementById('seBox');
   const knopf = inhalt.querySelector('[data-se-waehlen]');
   if (!box) return;
+  // Das Bild bleibt stehen, egal wie das Lesen ausgeht: klappt es nicht, trägt
+  // der Nutzer von Hand ein — der Beleg gehört dann erst recht dazu.
+  seBildMerken(datei);
   box.innerHTML = '<div class="se-pruef"><span class="set">Der Screenshot '
     + 'wird gelesen …</span><p class="seh">Das dauert ein paar Sekunden.</p></div>';
   if (knopf) knopf.disabled = true;
@@ -681,17 +903,136 @@ inhalt.addEventListener('change', e => {
   seLesen(datei);
 });
 
+/* ---------------------------------------------------------------------------
+   N155 — das gelesene Bild bleibt stehen.
+
+   Der Screenshot ist der Beleg der eingetragenen Zahlen; verschwindet er nach
+   dem Auslesen, steht später niemand mehr die Herkunft. Er bleibt deshalb als
+   Vorschau sichtbar, ein neues Bild ersetzt ihn.
+
+   Wichtig und hier ausdrücklich gesagt: das Bild liegt nur in dieser Sitzung im
+   Browser. Dauerhaft abgelegt (Nextcloud) ist es noch nicht — dafür braucht es
+   den Dokumenten-Weg (`routers/dokumente.py`), der nicht zu dieser Seite
+   gehört. Die Vorschau sagt das, statt eine Ablage vorzutäuschen.
+   --------------------------------------------------------------------------- */
+const seBilder = new Map();            // `${slug}|${jahr}` → {url, name}
+
+const seSchluessel = () => `${objektSlug}|${jahrWahl.wert()}`;
+
+function seBildMerken(datei) {
+  const schluessel = seSchluessel();
+  const alt = seBilder.get(schluessel);
+  if (alt) URL.revokeObjectURL(alt.url);     // das ersetzte Bild freigeben
+  seBilder.set(schluessel, { url: URL.createObjectURL(datei),
+                             name: datei.name || 'Screenshot' });
+  seBildZeigen();
+}
+
+function seBildZeigen() {
+  const ziel = document.getElementById('seBild');
+  if (!ziel) return;
+  const bild = seBilder.get(seSchluessel());
+  ziel.innerHTML = !bild ? '' : `<div class="sebild">
+    <img src="${bild.url}" alt="Gelesener Screenshot: ${esc(bild.name)}">
+    <div class="sebt"><b>${esc(bild.name)}</b>
+      <span>Beleg der eingetragenen Zahlen. Ein neues Bild auf die Fläche
+        darüber ersetzt dieses. Sichtbar in dieser Sitzung — dauerhaft abgelegt
+        wird es noch nicht.</span></div>
+  </div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   N153b — den Screenshot hineinziehen.
+
+   Der Knopf bleibt (auf dem Handy führt kein anderer Weg zum Ziel); am Rechner
+   ist Ziehen der kürzere. Am Ablauf ändert das nichts: hochladen → erkannte
+   Werte ZUR PRÜFUNG zeigen → erst „Übernehmen" schreibt. Diese Bestätigung ist
+   das Einzige, was ein vertauschtes Netz/Speicher-Paar abfängt.
+
+   Ohne `preventDefault` im `dragover` öffnet der Browser das fallengelassene
+   Bild einfach im Tab — die Seite wäre samt getippter Eingaben weg. Deshalb
+   wird auch NEBEN der Fläche abgefangen und dort schlicht nichts getan.
+   --------------------------------------------------------------------------- */
+const seZielTreffer = e => e.target instanceof Element
+  && !!e.target.closest('[data-se-zone]');
+
+function seZielAn(an) {
+  const zone = inhalt.querySelector('[data-se-zone]');
+  if (zone) zone.classList.toggle('dran', an);
+}
+
+/* Angenommen wird genau ein Bild. Alles andere wird gesagt, nicht geschluckt. */
+function seAusAblage(dt) {
+  const dateien = Array.from((dt && dt.files) || []);
+  if (!dateien.length) return melde('Da war keine Datei dabei', 'neg');
+  if (dateien.length > 1) return melde('Bitte nur ein Bild auf einmal', 'neg');
+  if (!/^image\//.test(dateien[0].type || '')) {
+    return melde('Nur Bilder — ein Screenshot der SolarEdge-Ansicht', 'neg');
+  }
+  seLesen(dateien[0]);
+}
+
+['dragenter', 'dragover'].forEach(art => document.addEventListener(art, e => {
+  e.preventDefault();
+  const treffer = seZielTreffer(e);
+  if (e.dataTransfer) e.dataTransfer.dropEffect = treffer ? 'copy' : 'none';
+  seZielAn(treffer);
+}));
+
+// Beim Wechsel zwischen Kindelementen feuert `dragleave` ständig — die Fläche
+// darf erst dunkeln, wenn der Zeiger sie wirklich verlassen hat.
+document.addEventListener('dragleave', e => {
+  const bleibt = e.relatedTarget instanceof Element
+    && !!e.relatedTarget.closest('[data-se-zone]');
+  if (!bleibt) seZielAn(false);
+});
+
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const treffer = seZielTreffer(e);
+  seZielAn(false);
+  if (treffer) seAusAblage(e.dataTransfer);
+});
+
+
+const prozent = n => n == null ? '—'
+  : n.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' %';
+
+/* N154/N160 — maßgeblich ist die VERBRAUCHSSEITE: 10.800 kWh, davon 24 % Netz,
+   50 % PV, 26 % Speicher. Daraus kommt die Autarkie (8.208 von 10.800 = 76 %).
+
+   Die frühere Kachel „Eigenverbrauch" (Produktion − Einspeisung, 8.375 kWh) ist
+   ersatzlos weg: sie misst die Erzeugerseite, stand aber neben Verbrauchszahlen
+   und wurde genau deshalb verwechselt. Die Produktionsseite hat auf dieser
+   Seite nur eine Aufgabe — sie sagt, wie viel wirklich ins Netz ging, und trägt
+   damit die Einspeisevergütung. Jetzt gibt es nur noch EINE Zahl für „selbst
+   gedeckt", und sie kommt aus der Quelle, die der Nutzer als maßgeblich
+   benannt hat. */
+function autarkieKacheln(a) {
+  if (!a) return '';
+  return `
+    <div class="k"><span class="kl">Autarkie <span class="kh">Anteil des
+      Verbrauchs aus eigener Anlage</span></span>
+      <span class="kv pos">${prozent(a.prozent)}</span>
+      <span class="knote">${kwh(a.eigen_kwh)} von ${kwh(a.verbrauch_kwh)}</span></div>
+    <div class="k"><span class="kl">Selbst gedeckt <span class="kh">PV +
+      Speicher</span></span><span class="kv">${kwh(a.eigen_kwh)}</span>
+      <span class="knote">${kwh(a.solar_kwh)} PV · ${kwh(a.akku_kwh)} Speicher</span></div>
+    <div class="k"><span class="kl">Zugekauft <span class="kh">vom Netz</span></span>
+      <span class="kv">${kwh(a.netz_kwh)}</span></div>`;
+}
 
 /* Das Engine-Ergebnis in die Karten schreiben (Inputs bleiben unberührt). */
 function ergebnisZeigen(r) {
   const pv = r.pv;
   document.getElementById('pv').innerHTML = `
-    <div class="k"><span class="kl">Eigenverbrauch</span><span class="kv">${kwh(pv.eigenverbrauch_kwh)}</span></div>
+    ${autarkieKacheln(r.autarkie)}
     <div class="k"><span class="kl">Satz</span><span class="kv">${(pv.satz_ct ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ct</span></div>
     <div class="k"><span class="kl">Einspeisevergütung</span><span class="kv">${eur(pv.einspeiseverguetung)}</span></div>
     <div class="k"><span class="kl">Ersparnis Zukauf <span class="kh">rechnerisch,
       kein Ertrag</span></span><span class="kv">${eur(pv.eigenverbrauch_ersparnis)}</span></div>`;
 
+  tippsZeigen(r);
   tankZeigen();
 
   document.getElementById('eig').innerHTML = r.eigentuemer.map(e => `
@@ -705,6 +1046,85 @@ function ergebnisZeigen(r) {
   const w = document.getElementById('warnungen');
   w.innerHTML = (r.warnungen || []).map(t =>
     `<div class="warnung"><span class="wi" aria-hidden="true">⚠</span><span>${esc(t)}</span></div>`).join('');
+}
+
+/* ---------------------------------------------------------------------------
+   N154 — wo noch etwas zu holen ist.
+
+   Jeder Hinweis steht auf ERFASSTEN Zahlen dieses Jahres und nennt sie. Fehlt
+   die Grundlage, fällt der Hinweis weg — ein Tipp auf einer erfundenen Annahme
+   ist schlechter als kein Tipp. Deshalb keine Ratgeberprosa: rechnen, beziffern,
+   sonst schweigen.
+   --------------------------------------------------------------------------- */
+const ct = n => n.toLocaleString('de-DE', { minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2 }) + ' ct';
+const round1 = n => Math.round(n * 10) / 10;
+
+function tippIcon(pfad) {
+  return `<svg class="ti" viewBox="0 0 24 24" width="19" height="19" fill="none"
+    stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+    stroke-linejoin="round" aria-hidden="true">${pfad}</svg>`;
+}
+
+const I_BLITZ = '<path d="M13 3 5.5 13.5H11l-.5 7.5L18.5 10.5H12.5L13 3Z"/>';
+const I_STECKER = '<path d="M9 3v5M15 3v5"/><path d="M6 8h12v2.5a6 6 0 0 1-12 0V8Z"/><path d="M12 16.5V21"/>';
+const I_AKKU = '<rect x="3" y="7.5" width="15.5" height="9" rx="2.5"/><path d="M21 11v2"/><path d="M8 12h5.5"/>';
+
+function tippListe(r) {
+  const q = r.quellen || {};
+  const netzPreis = (q.netz || {}).preis || 0;
+  const solarPreis = (q.solar || {}).preis || 0;
+  const akku = (q.akku || {}).kwh || 0;
+  const a = r.autarkie || {};
+  const pv = r.pv || {};
+  const tipps = [];
+
+  // 1) Der stärkste Hebel: eine selbst verbrauchte kWh ist mehr wert als eine
+  //    eingespeiste. Nur mit beiden Preisen und tatsächlicher Einspeisung.
+  const satz = pv.satz_ct || 0;
+  if (pv.einspeisung_kwh > 0 && satz > 0 && netzPreis > 0
+      && netzPreis * 100 > satz) {
+    const unterschied = netzPreis * 100 - satz;
+    tipps.push([I_BLITZ,
+      `<b>Selbst verbrauchen schlägt einspeisen.</b> Eingespeist bringt
+       ${ct(satz)} je kWh, zugekauft kostet ${ct(netzPreis * 100)} — jede kWh,
+       die im Haus bleibt, ist ${ct(unterschied)} mehr wert. Bei
+       ${kwh(pv.einspeisung_kwh)} Einspeisung sind das rechnerisch bis zu
+       ${eur(pv.einspeisung_kwh * unterschied / 100)} im Jahr.`]);
+  }
+
+  // 2) Was das E-Auto aus dem Netz gezogen hat — die Zahl trägt der Nutzer
+  //    selbst ein (`eauto_extern_kwh`), sie steht nicht in der Wallbox-Wolke.
+  const extern = jahresSatz.eauto_extern_kwh || 0;
+  if (extern > 0 && netzPreis > solarPreis && solarPreis > 0) {
+    tipps.push([I_STECKER,
+      `<b>Das E-Auto lud ${kwh(extern)} aus dem Netz.</b> Zum Satz des eigenen
+       Stroms (${ct(solarPreis * 100)} statt ${ct(netzPreis * 100)}) wären das
+       ${eur(extern * (netzPreis - solarPreis))} weniger — tagsüber laden
+       verschiebt genau diese Menge.`]);
+  }
+
+  // 3) Was der Speicher in die Nacht rettet. Ohne ihn käme dieselbe Menge aus
+  //    dem Netz — deshalb steht die Quote ohne Speicher daneben.
+  if (akku > 0 && a.verbrauch_kwh > 0) {
+    const ohne = round1((a.eigen_kwh - akku) / a.verbrauch_kwh * 100);
+    tipps.push([I_AKKU,
+      `<b>Der Speicher rettet ${kwh(akku)} in die Nacht.</b> Ohne ihn läge die
+       Autarkie bei ${prozent(ohne)} statt ${prozent(a.prozent)} — je mehr
+       Verbrauch in die Sonnenstunden wandert, desto weniger muss er leisten.`]);
+  }
+  return tipps;
+}
+
+function tippsZeigen(r) {
+  const ziel = document.getElementById('tipps');
+  if (!ziel) return;
+  const tipps = tippListe(r);
+  ziel.innerHTML = !tipps.length ? '' : `<div class="tipps">
+    <span class="tt">Wo noch etwas zu holen ist</span>
+    ${tipps.map(([icon, text]) =>
+      `<div class="tz">${tippIcon(icon)}<span>${text}</span></div>`).join('')}
+  </div>`;
 }
 
 /* ---------------------------------------------------------------------------
@@ -725,13 +1145,25 @@ function ergebnisZeigen(r) {
 const C_DIREKT = '#0F6E5C', C_EINSP = '#916212', C_TANK = '#7A9E94',
       C_VOR = '#5C6B70', C_OFFEN = '#B24229', C_PLUS = '#2E7D4F';
 
-/* Die Ertragsanteile einer Säule, von unten nach oben gestapelt. */
-const V_TEILE = [
-  ['vorlauf', C_VOR],
+/* Die Ertragsquellen einer Säule, von unten nach oben gestapelt. */
+const V_QUELLEN = [
   ['pv_strom', C_DIREKT],
   ['einspeisung', 'url(#pvSchraffur)'],
   ['tanken', C_TANK],
 ];
+
+/* Die Blöcke einer Säule: erst der Vorlauf, dann das Jahr selbst.
+   N153 — ist die Herkunft des Vorlaufs gepflegt (`vorlauf_teile`), wird er nach
+   DENSELBEN Quellen aufgeteilt wie die Jahre danach, in denselben Farben und
+   derselben Schraffur. Sonst bleibt er ein Block in seinem eigenen Ton. */
+function saeulenBloecke(z) {
+  const t = z.vorlauf_teile;
+  const quellen = daten => V_QUELLEN.map(([feld, fuellung]) =>
+    [daten[feld] || 0, fuellung]);
+  return [t ? quellen(t) : [[z.vorlauf || 0, C_VOR]], quellen(z)];
+}
+
+const bloeckeSumme = liste => liste.reduce((s, [wert]) => s + wert, 0);
 
 const eur0 = n => Math.round(n || 0).toLocaleString('de-DE') + ' €';
 const negativ = t => t.replace('-', '−');
@@ -792,14 +1224,27 @@ function verlaufGrafik(v) {
           fill="${C_PLUS}" fill-opacity=".16" stroke="${C_OFFEN}"
           stroke-opacity=".5" stroke-width="1.2" stroke-dasharray="3 2.5"/>`;
       } else {
+        const [vorBloecke, jahrBloecke] = saeulenBloecke(z);
         let boden = yV;
-        V_TEILE.forEach(([feld, fuellung]) => {
-          const h = z.summe > 0 ? block * ((z[feld] || 0) / z.summe) : 0;
+        const stapeln = ([wert, fuellung]) => {
+          const h = z.summe > 0 ? block * (wert / z.summe) : 0;
           if (h < 0.3) return;
           boden -= h;
           inhalt += `<rect x="${x}" y="${boden.toFixed(1)}" width="${bw}"
             height="${h.toFixed(1)}" fill="${fuellung}"/>`;
-        });
+        };
+        vorBloecke.forEach(stapeln);
+        const vorlaufKante = boden;       // Oberkante des Vorlaufs
+        jahrBloecke.forEach(stapeln);
+        // Ist der Vorlauf nach denselben Quellen aufgeteilt, hätten seine
+        // Blöcke dieselbe Farbe wie die des Jahres — ein Haarstrich sagt, wo
+        // der Vorsprung endet und das erste Abrechnungsjahr anfängt.
+        if (z.vorlauf_teile && bloeckeSumme(vorBloecke) > 0
+            && bloeckeSumme(jahrBloecke) > 0 && yV - vorlaufKante > 1.5) {
+          inhalt += `<line x1="${x}" y1="${vorlaufKante.toFixed(1)}"
+            x2="${(x + bw).toFixed(1)}" y2="${vorlaufKante.toFixed(1)}" stroke="#FFF"
+            stroke-opacity=".85" stroke-width="1.2"/>`;
+        }
       }
     }
     clips += `<clipPath id="pvc${i}"><rect x="${x}" y="${oben.toFixed(1)}"
@@ -853,18 +1298,31 @@ function verlaufGrafik(v) {
 /* Nur zeigen, was in der Zeichnung auch vorkommt — eine Legende mit Farben
    ohne Balken wäre eine Behauptung. */
 function verlaufLegende(v) {
-  const hat = feld => v.jahre.some(z => (z[feld] || 0) > 0);
+  // N153 — der aufgeschlüsselte Vorlauf zählt für die Legende wie ein Jahr: er
+  // erscheint in denselben Farben und braucht deshalb dieselben Einträge.
+  const teile = v.vorlauf_teile || {};
+  const hat = feld => v.jahre.some(z => (z[feld] || 0) > 0)
+    || (teile[feld] || 0) > 0;
   const eintraege = [
     [hat('pv_strom'), `style="background:${C_DIREKT}"`, 'Direktnutzung'],
     [hat('einspeisung'), 'class="schraffur"', 'Einspeisevergütung'],
     [hat('tanken'), `style="background:${C_TANK}"`, 'E-Tanken'],
-    [hat('vorlauf'), `style="background:${C_VOR}"`, 'Vorlauf'],
+    [(v.vorlauf || 0) > 0 && !v.vorlauf_aufgeschluesselt,
+     `style="background:${C_VOR}"`, 'Vorlauf — Herkunft nicht aufgeschlüsselt'],
     [hat('offen'), `style="background:${C_OFFEN}"`, 'noch offen'],
     [hat('ueberschuss'), `style="background:${C_PLUS}"`, 'amortisiert'],
     [!!v.prognose, 'class="prognose"', 'Prognose'],
   ].filter(([zeigen]) => zeigen);
+  // Der Vorlaufbalken steht in denselben Farben da wie die Abrechnungsjahre —
+  // ohne einen Satz dazu wäre nicht zu sehen, dass er aus der Zeit davor kommt.
+  const note = (v.vorlauf || 0) > 0 && v.vorlauf_jahr != null
+    ? `<p class="legendennote">Der Balken ${v.vorlauf_jahr} ist der Vorlauf
+       (${eur(v.vorlauf)}): die Zeit vor der ersten Abrechnung${
+        v.vorlauf_aufgeschluesselt
+          ? ', nach denselben Quellen aufgeteilt wie die Jahre danach'
+          : ' — die Herkunft ist dort nicht aufgeschlüsselt'}.</p>` : '';
   return `<div class="legende">${eintraege.map(([, attr, text]) =>
-    `<span><i ${attr}></i>${text}</span>`).join('')}</div>`;
+    `<span><i ${attr}></i>${text}</span>`).join('')}</div>${note}`;
 }
 
 function verlaufTabelle(v) {
@@ -872,7 +1330,8 @@ function verlaufTabelle(v) {
   const kopf = ['Jahr', ...(mitVorlauf ? ['Vorlauf'] : []), 'PV-Strom',
                 'Einspeisung', 'E-Tanken', 'Summe', 'kumuliert', 'noch offen'];
   const zeilen = v.jahre.map(z => `<tr>
-      <td>${z.jahr}</td>
+      <td>${z.jahr}${z.jahr === v.vorlauf_jahr
+        ? '<span class="vorab">vor der Abrechnung</span>' : ''}</td>
       ${mitVorlauf ? `<td class="leise">${z.vorlauf ? eur(z.vorlauf) : '—'}</td>` : ''}
       <td class="leise">${z.pv_strom ? eur(z.pv_strom) : '—'}</td>
       <td class="leise">${z.einspeisung ? eur(z.einspeisung) : '—'}</td>
@@ -1215,6 +1674,8 @@ function angestossen() {
 /* N139 — dasselbe für die STAMMDATEN, nur ohne Jahr: sie gehören der Anlage.
    Der Jahreswechsel oben rührt sie nicht an. */
 function stammAngestossen() {
+  vorlaufZeigen();              // die Summe steht sofort da, nicht erst nach dem
+                                // Speichern
   const werte = stammAusForm();
   const stempel = JSON.stringify(werte);
   if (stempel === letzteStamm) return;
@@ -1225,10 +1686,14 @@ function stammAngestossen() {
     if (slug !== objektSlug) return;
     letzteStamm = stempel;
     try {
-      await api(`/objekte/${encodeURIComponent(slug)}/pv/stammdaten`,
-                { method: 'PUT', body: werte });
+      const antwort = await api(`/objekte/${encodeURIComponent(slug)}/pv/stammdaten`,
+                                { method: 'PUT', body: werte });
       if (slug !== objektSlug) return;
-      await rechnen();            // Anschaffung und Anteile gehen mit ein
+      stammStand = antwort;       // der Server ist die Wahrheit, nicht die Maske
+      vorlaufPruefen(werte, antwort);
+      // Anschaffung, Anteile UND der Vorlauf gehen mit ein: `rechnen` holt den
+      // Verlauf neu, damit Grafik und Tabelle oben sofort mitgehen.
+      await rechnen();
     } catch (fehler) {
       melde(String(fehler.message || fehler), 'neg');
     }
@@ -1269,8 +1734,11 @@ async function laden() {
     return;
   }
   jahresSatz = werte;
+  stammStand = stamm;
   formFuellen(werte);
   stammFuellen(stamm);
+  vorlaufZeigen();
+  seBildZeigen();               // ein schon gelesener Beleg bleibt sichtbar
   await pvAnteileLaden();
   letzteWerte = JSON.stringify(werteAusForm());
   letzteStamm = JSON.stringify(stammAusForm());

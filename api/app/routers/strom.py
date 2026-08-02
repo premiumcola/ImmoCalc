@@ -158,10 +158,47 @@ class StammdatenIn(BaseModel):
     Angaben."""
     anschaffung_eur: float | None = None
     vorlauf_ertrag_eur: float | None = None
+    # N153 — der Vorlauf aufgeschlüsselt nach denselben Quellen wie die Jahre
+    # danach. Ebenfalls `None`-Default: wer nur PV-Strom tippt, darf damit die
+    # Einspeisung nicht auf 0 setzen (genau dieser Fehler kostete in N150 Daten).
+    vorlauf_pv_strom_eur: float | None = None
+    vorlauf_einspeisung_eur: float | None = None
+    vorlauf_tanken_eur: float | None = None
     kwp: float | None = None
     inbetriebnahme: date | None = None
     anteile: str | None = None        # JSON {Name: ‰}
     notiz: str | None = None
+
+
+# Quelle im Verlauf → Feld an der Anlage. Dieselben drei Namen wie in
+# `_QUELLEN_LEER`, damit Vorlauf und Jahre dieselbe Sprache sprechen.
+_VORLAUF_QUELLEN = {"pv_strom": "vorlauf_pv_strom_eur",
+                    "einspeisung": "vorlauf_einspeisung_eur",
+                    "tanken": "vorlauf_tanken_eur"}
+
+
+def _vorlauf(a: PVAnlage) -> tuple[float, dict[str, float] | None]:
+    """N153 — was die Anlage vor der ersten Abrechnung abgetragen hat: der
+    Betrag und, wenn gepflegt, seine Herkunft.
+
+    Die Vorrang-Regel: ist die Aufschlüsselung gepflegt (mindestens eines der
+    drei Felder ≠ 0), gilt IHRE SUMME als Vorlauf. Sonst gilt weiterhin der
+    Gesamtwert `vorlauf_ertrag_eur`. So bleibt der bestehende Wert des Nutzers
+    gültig, bis er die Aufteilung einträgt — und es entstehen keine zwei
+    Wahrheiten. `vorlauf_ertrag_eur` bleibt dabei unangetastet stehen."""
+    teile = {quelle: round(float(getattr(a, feld, 0.0) or 0.0), 2)
+             for quelle, feld in _VORLAUF_QUELLEN.items()}
+    if any(teile.values()):
+        return round(sum(teile.values()), 2), teile
+    return round(a.vorlauf_ertrag_eur or 0.0, 2), None
+
+
+def _erster_abrechnungsstart(session: Session, objekt_id: int) -> date | None:
+    """Der Beginn des ersten Abrechnungszeitraums — die Grenze, bis zu der der
+    Vorlauf zählt. Kommt aus den Daten; kein Datum steht im Code."""
+    return session.exec(select(Zeitraum.start)
+                        .where(Zeitraum.objekt_id == objekt_id)
+                        .order_by(Zeitraum.start)).first()
 
 
 def _anteile_dict(roh: str | None) -> dict[str, float]:
@@ -240,14 +277,26 @@ def _anteile_hinweise(anteile: dict[str, float], summe: float) -> list[str]:
             f"statt 1000 ‰ — {fehlt}."]
 
 
-def _zeige_stammdaten(a: PVAnlage) -> dict:
+def _zeige_stammdaten(a: PVAnlage, vorlauf_bis: date | None = None) -> dict:
     """Die Stammdaten als JSON, inklusive der aufgelösten Anteile und der
-    Hinweise zur Anteilssumme."""
+    Hinweise zur Anteilssumme.
+
+    N153 — dazu der Vorlauf in drei Formen: die drei Einzelfelder (die Maske),
+    der geltende Betrag `vorlauf_summe` (die Vorrang-Regel, siehe `_vorlauf`)
+    und `vorlauf_bis`, der Beginn des ersten Abrechnungszeitraums — daraus sagt
+    die Maske, welcher Zeitraum überhaupt gemeint ist."""
     anteile = _anteile_dict(a.anteile)
     summe = round(sum(anteile.values()), 3)
+    vorlauf_summe, vorlauf_teile = _vorlauf(a)
     return {
         "anschaffung_eur": a.anschaffung_eur,
         "vorlauf_ertrag_eur": a.vorlauf_ertrag_eur,
+        **{feld: getattr(a, feld, 0.0) or 0.0
+           for feld in _VORLAUF_QUELLEN.values()},
+        "vorlauf_summe": vorlauf_summe,
+        "vorlauf_teile": vorlauf_teile,
+        "vorlauf_aufgeschluesselt": vorlauf_teile is not None,
+        "vorlauf_bis": vorlauf_bis.isoformat() if vorlauf_bis else None,
         "kwp": a.kwp,
         "inbetriebnahme": a.inbetriebnahme.isoformat() if a.inbetriebnahme else None,
         "anteile": a.anteile or "",
@@ -262,7 +311,8 @@ def _zeige_stammdaten(a: PVAnlage) -> dict:
 def stammdaten_lesen(slug: str, session: Session = Depends(get_session),
                      o: Objekt = Depends(objekt_holen)) -> dict:
     """N139 — die Stammdaten der PV-Anlage lesen (jahresunabhängig)."""
-    return _zeige_stammdaten(_stammdaten(session, o.id))
+    return _zeige_stammdaten(_stammdaten(session, o.id),
+                             _erster_abrechnungsstart(session, o.id))
 
 
 @router.put("/objekte/{slug}/pv/stammdaten")
@@ -277,7 +327,7 @@ def stammdaten_speichern(slug: str, data: StammdatenIn,
     session.add(anlage)
     session.commit()
     session.refresh(anlage)
-    return _zeige_stammdaten(anlage)
+    return _zeige_stammdaten(anlage, _erster_abrechnungsstart(session, o.id))
 
 
 def _gespeicherte_zuordnung(sj: Stromjahr) -> dict[str, str]:
@@ -374,6 +424,32 @@ def speichern(slug: str, jahr: int, data: StromIn,
     return _zeige(sj)
 
 
+def _autarkie(ergebnis: dict) -> dict:
+    """N154 — wie viel des VERBRAUCHTEN Stroms aus der eigenen Anlage kam.
+
+    Bewusst die Verbraucherseite: (Solar + Akku) / (Netz + Solar + Akku). Das
+    sind dieselben drei Mengen, aus denen die Engine auch die Kosten verteilt —
+    eine einzige Quelle, keine zweite Rechnung daneben.
+
+    N160 — die Erzeugerseite (Produktion − Einspeisung) wird hier bewusst NICHT
+    gezeigt. Sie beantwortet keine Frage, die auf dieser Seite gestellt wird,
+    und wurde genau deshalb für die Verbraucherseite gehalten: 8.375 gegen
+    8.208 kWh, beides richtig, beides verwechselbar. Die Produktionsseite hat
+    genau eine Aufgabe — sie sagt, wie viel wirklich ins Netz ging, und trägt
+    damit die Einspeisevergütung. Eine Zahl weniger, die man verwechseln kann."""
+    q = ergebnis["quellen"]
+    eigen = round(q["solar"]["kwh"] + q["akku"]["kwh"], 3)
+    verbrauch = round(eigen + q["netz"]["kwh"], 3)
+    return {
+        "eigen_kwh": eigen,
+        "solar_kwh": q["solar"]["kwh"],
+        "akku_kwh": q["akku"]["kwh"],
+        "netz_kwh": q["netz"]["kwh"],
+        "verbrauch_kwh": verbrauch,
+        "prozent": round(eigen / verbrauch * 100, 1) if verbrauch > 0 else None,
+    }
+
+
 _WG_PARAM = Query(None, description="Einheiten der Gruppe WG, komma-separiert")
 _BUERO_PARAM = Query(None, description="Einheiten der Gruppe Büro/Studio")
 
@@ -388,9 +464,14 @@ def rechnung(slug: str, jahr: int, wg: str | None = _WG_PARAM,
     Verteilung auf die Eigentümer (`strom.rechne`).
 
     `?wg=EG,1.OG&buero=Studio` ordnet die Einheiten den Gruppen zu; ohne die
-    Angabe bleibt der Block `einheiten` leer."""
-    return strom.rechne(_eingaben(_hole_oder_neu(session, o.id, jahr), wg, buero,
-                                  _stammdaten(session, o.id)))
+    Angabe bleibt der Block `einheiten` leer.
+
+    N154 — dazu die Autarkiequote (`autarkie`), die Frage, um die es auf der
+    PV-Seite geht: wie viel des verbrauchten Stroms aus der eigenen Anlage kam."""
+    ergebnis = strom.rechne(_eingaben(_hole_oder_neu(session, o.id, jahr),
+                                      wg, buero, _stammdaten(session, o.id)))
+    ergebnis["autarkie"] = _autarkie(ergebnis)
+    return ergebnis
 
 
 @router.get("/objekte/{slug}/strom/{jahr}/nk-positionen")
@@ -494,15 +575,39 @@ def _ertraege_je_jahr(session: Session, objekt_id: int) -> dict[int, dict]:
     return werte
 
 
-def _anlage(session: Session, objekt_id: int) -> tuple[float, float, tuple]:
-    """Anschaffung, Vorlauf-Ertrag und PV-Anteile der Anlage.
+def _abrechnungsjahre(session: Session, objekt_id: int) -> list[int]:
+    """Die Label-Jahre der Abrechnungszeiträume — dieselben Jahre, unter denen
+    die Abrechnung überall sonst geführt wird."""
+    return [zeitraum_label_jahr(z.start, z.ende) for z in session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == objekt_id)).all()]
 
-    N139 — alle drei kommen aus den Stammdaten (`PVAnlage`), nicht mehr aus dem
+
+def _vorlauf_jahr(session: Session, objekt_id: int,
+                  quellen: dict[int, dict]) -> int | None:
+    """N153b — das Jahr, unter dem der Vorlauf steht: das Jahr VOR dem ersten
+    Abrechnungsjahr.
+
+    Beim Nutzer beginnt die erste Abrechnung am 01.10.2024 und läuft als Jahr
+    2025 — der Vorlauf gehört damit auf 2024. Abgeleitet aus den Daten, nie
+    gesetzt. Gibt es noch keinen Zeitraum, tut es das erste Jahr mit Erträgen;
+    gibt es gar nichts, gibt es auch keine Zeile."""
+    jahre = _abrechnungsjahre(session, objekt_id) or list(quellen)
+    return min(jahre) - 1 if jahre else None
+
+
+def _anlage(session: Session,
+            objekt_id: int) -> tuple[float, float, dict | None, tuple]:
+    """Anschaffung, Vorlauf-Ertrag, dessen Herkunft und die PV-Anteile.
+
+    N139 — alle kommen aus den Stammdaten (`PVAnlage`), nicht mehr aus dem
     Strom-Jahr: die Anlage wurde einmal gekauft, nicht jedes Jahr neu. Der
     Vorlauf ist, was die Anlage VOR der ersten Nebenkostenabrechnung schon
-    abgetragen hat (N127): ein einmaliger Betrag, kein jährlicher."""
+    abgetragen hat (N127): ein einmaliger Betrag, kein jährlicher. Woher er kam,
+    steht in `teile` — oder in `None`, wenn nur der Gesamtwert gepflegt ist
+    (N153, Vorrang-Regel in `_vorlauf`)."""
     a = _stammdaten(session, objekt_id)
-    return a.anschaffung_eur or 0.0, a.vorlauf_ertrag_eur or 0.0, _anteile_tupel(a)
+    vorlauf, teile = _vorlauf(a)
+    return a.anschaffung_eur or 0.0, vorlauf, teile, _anteile_tupel(a)
 
 
 # Wie weit die Prognose höchstens rechnet. Trägt eine Anlage nur ein paar Euro
@@ -560,19 +665,28 @@ def pv_verlauf(slug: str, session: Session = Depends(get_session),
     jedem Aufruf frisch aus den Kostenpositionen gezogen — ändert sich die
     Nebenkostenabrechnung, ändert sich der Verlauf mit.
 
-    Rückgabe: `anschaffung`, `vorlauf`, `jahre` ([{jahr, vorlauf, pv_strom,
-    einspeisung, tanken, summe, kumuliert, offen, ueberschuss}]), `kumuliert`,
-    `rest`, `amortisiert_prozent`, `break_even_jahr` (erreicht oder
+    Rückgabe: `anschaffung`, `vorlauf`, `vorlauf_teile` (dessen Herkunft oder
+    `None`, N153), `vorlauf_jahr`, `jahre` ([{jahr, vorlauf, vorlauf_teile,
+    pv_strom, einspeisung, tanken, summe, kumuliert, offen, ueberschuss}]),
+    `kumuliert`, `rest`, `amortisiert_prozent`, `break_even_jahr` (erreicht oder
     prognostiziert), `break_even_geschaetzt`, `break_even_in_jahren`,
     `prognose`, `eigentuemer` und `warnungen`."""
     quellen = _ertraege_je_jahr(session, o.id)
+    anschaffung, vorlauf, vorlauf_teile, anteile = _anlage(session, o.id)
+    # N153b — der Vorlauf steht VOR der ersten Abrechnung, nicht darin: eine
+    # eigene Zeile im Jahr davor. Vorher zählte er auf das erste erfasste Jahr
+    # und vermischte sich dort mit dessen echten Erträgen — beim Nutzer stand
+    # der Vorsprung aus 2023/24 im ersten Abrechnungsjahr 2025. In Summe und
+    # Amortisation zählt er unverändert voll mit, er sitzt nur richtig.
+    vorlauf_jahr = _vorlauf_jahr(session, o.id, quellen) if vorlauf else None
+    if vorlauf_jahr is not None:
+        quellen.setdefault(vorlauf_jahr, dict(_QUELLEN_LEER))
     spanne = range(min(quellen), max(quellen) + 1) if quellen else range(0)
     roh = [{"jahr": j, **quellen.get(j, _QUELLEN_LEER)} for j in spanne]
-    anschaffung, vorlauf, anteile = _anlage(session, o.id)
-    # Der Vorlauf zählt einmalig auf das erste erfasste Jahr — er ist schon
-    # abgetragen, bevor die erste Abrechnung überhaupt beginnt.
-    for i, z in enumerate(roh):
-        z["vorlauf"] = round(vorlauf, 2) if i == 0 else 0.0
+    for z in roh:
+        eigenes = z["jahr"] == vorlauf_jahr
+        z["vorlauf"] = round(vorlauf, 2) if eigenes else 0.0
+        z["vorlauf_teile"] = vorlauf_teile if eigenes else None
 
     a = strom.amortisation(
         [{"jahr": z["jahr"],
@@ -608,6 +722,9 @@ def pv_verlauf(slug: str, session: Session = Depends(get_session),
             "Eine Prognose gibt es ab dem zweiten Abrechnungsjahr mit Ertrag — "
             "aus einem einzigen Jahr wäre sie geraten.")
     return {"anschaffung": a["anschaffung"], "vorlauf": round(vorlauf, 2),
+            "vorlauf_teile": vorlauf_teile,
+            "vorlauf_aufgeschluesselt": vorlauf_teile is not None,
+            "vorlauf_jahr": vorlauf_jahr,
             "jahre": jahre,
             "kumuliert": a["kumuliert"], "rest": a["rest"],
             "amortisiert_prozent": a["amortisiert_prozent"],
