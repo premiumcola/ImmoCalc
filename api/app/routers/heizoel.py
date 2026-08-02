@@ -144,8 +144,41 @@ def bewertung(slug: str, verbrauch_liter: float | None = None,
     wenn nur `zeitraum_id` gesetzt ist — aus dem Öl-Zähler-Verbrauch des
     Zeitraums. Ohne beide Angaben wird ein Nullverbrauch bewertet (Rest =
     Gesamtbestand). Gibt das Bewertungs-dict der Engine zurück."""
-    if verbrauch_liter is None and zeitraum_id is not None:
+    if zeitraum_id is None:
+        verbrauch_liter = verbrauch_liter or 0.0
+        return heizoel.verbrauch_bewerten(_lieferungen(session, o.id),
+                                          verbrauch_liter)
+    # N100 — periodenbezogen: der Anfangsbestand einer Periode ist der REST der
+    # Vorperioden. Dafür erst alle früheren Verbräuche vom Bestand abziehen,
+    # dann den Verbrauch dieser Periode. Sonst tauchten Anfangsbestand und
+    # Lieferungen des Vorjahres in jeder weiteren Abrechnung erneut auf.
+    z = session.get(Zeitraum, zeitraum_id)
+    if not z or z.objekt_id != o.id:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    if verbrauch_liter is None:
         verbrauch_liter = _verbrauch_aus_zeitraum(session, o, zeitraum_id)
     verbrauch_liter = verbrauch_liter or 0.0
-    lieferungen = _lieferungen(session, o.id)
-    return heizoel.verbrauch_bewerten(lieferungen, verbrauch_liter)
+
+    alle = _lieferungen(session, o.id)
+    frueher = [p for p in session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
+        if p.id != z.id and p.ende < z.start]
+    vorher = round(sum(_verbrauch_aus_zeitraum(session, o, p.id)
+                       for p in frueher), 3)
+    # Bestand zu Periodenbeginn: alle Lieferungen bis zum Periodenstart minus
+    # das, was in den Vorperioden verbraucht wurde.
+    bis_start = [l for l in alle if l.datum <= z.start]
+    anfang = heizoel.verbrauch_bewerten(bis_start, vorher)
+    # In der Periode: Restbestand + die Lieferungen dieser Periode, davon den
+    # Perioden-Verbrauch FIFO abziehen.
+    in_periode = [l for l in alle if z.start < l.datum <= z.ende]
+    e = heizoel.verbrauch_bewerten(bis_start + in_periode,
+                                   vorher + verbrauch_liter)
+    e["verbrauch_liter"] = round(max(0.0, e["verbrauch_liter"] - vorher), 3)
+    e["verbrauch_kosten"] = round(
+        e["verbrauch_kosten"] - anfang["verbrauch_kosten"], 2)
+    e["anfang_liter"] = anfang["rest_liter"]
+    e["anfang_wert"] = anfang["rest_wert"]
+    e["lieferungen_periode"] = [l.id for l in in_periode]
+    e["vorher_verbraucht_liter"] = vorher
+    return e

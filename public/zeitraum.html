@@ -2549,16 +2549,25 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
   const liefer = (best?.lieferungen || []);
   const kopf = bew && bew.verbrauch_liter != null
     ? `<div class="ho-kpi">
+        ${bew.anfang_liter != null ? `<div class="ho-kbox">
+          <span class="ho-kl">Bestand zu Periodenbeginn</span>
+          <span class="ho-kv">${zahl(bew.anfang_liter)} L · ${eur(bew.anfang_wert)}</span></div>` : ''}
         <div class="ho-kbox"><span class="ho-kl">Verbrauch Periode</span>
           <span class="ho-kv">${zahl(bew.verbrauch_liter)} L</span></div>
         <div class="ho-kbox teal"><span class="ho-kl">Heizkosten (FIFO)</span>
           <span class="ho-kv">${eur(bew.verbrauch_kosten)}</span></div>
-        <div class="ho-kbox"><span class="ho-kl">Restbestand</span>
+        <div class="ho-kbox"><span class="ho-kl">Restbestand am Ende</span>
           <span class="ho-kv">${zahl(bew.rest_liter)} L · ${eur(bew.rest_wert)}</span></div>
       </div>${bew.warnung ? `<div class="ho-warn">▲ ${esc(bew.warnung)}</div>` : ''}`
     : `<div class="ho-warn">Noch keine Öl-Lieferung erfasst — unten anlegen. Der
         Perioden-Verbrauch kommt aus dem Öl-Zähler.</div>`;
-  const zeilen = liefer.length ? liefer.map(l => `
+  // N100 — nur die Lieferungen DIESER Periode listen; der Bestand aus früheren
+  // Jahren steckt im „Bestand zu Periodenbeginn" (FIFO-bewertet), nicht noch
+  // einmal als Zeile. Ohne Periodenangabe (alter Stand) alle zeigen.
+  const inPeriode = bew?.lieferungen_periode;
+  const sichtbar = Array.isArray(inPeriode)
+    ? liefer.filter(l => inPeriode.includes(l.id)) : liefer;
+  const zeilen = sichtbar.length ? sichtbar.map(l => `
     <div class="ho-zeile">
       <span class="ho-dt">${_isoKurz(l.datum)}${l.ist_anfangsbestand
         ? ' <span class="ho-anf">Anfangsbestand</span>' : ''}</span>
@@ -2568,9 +2577,12 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
       ${bearbeitbar ? `<button class="ho-x" data-heizoel-weg="${l.id}"
         aria-label="Lieferung entfernen">×</button>` : ''}
     </div>`).join('') : '';
-  const bestZeile = liefer.length
-    ? `<div class="ho-summe">Bestand gesamt: <b>${zahl(best.bestand_liter)} L</b>
-        · <b>${eur(best.bestand_wert)}</b> (Ø ${eur(best.preis_schnitt)}/L)</div>` : '';
+  const bestZeile = sichtbar.length
+    ? `<div class="ho-summe">In dieser Periode getankt: <b>${
+        zahl(sichtbar.reduce((s, l) => s + (l.liter || 0), 0))} L</b> · <b>${
+        eur(sichtbar.reduce((s, l) => s + (l.wert || 0), 0))}</b>${
+        liefer.length > sichtbar.length
+          ? ` · insgesamt erfasst: ${zahl(best.bestand_liter)} L` : ''}</div>` : '';
   const form = bearbeitbar ? `
     <div class="ho-neu">
       <input type="date" data-ho-datum aria-label="Datum" value="${daten.start || ''}">

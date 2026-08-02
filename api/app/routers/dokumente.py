@@ -3366,7 +3366,8 @@ def duplikat_entfernen(dokument_id: int, data: DuplikatEntfernenIn,
             belegposten.loese(session, weg)
             weg.zeitraum_id = None
             session.add(weg)
-            _beleg_umziehen(session, client, weg, _duplikat_ziel(o))
+            _beleg_umziehen(session, client, weg, _duplikat_ziel(o),
+                            weg.dateiname)
         except NextcloudFehler as f2:
             raise HTTPException(400, str(f2)) from f2
         session.commit()
