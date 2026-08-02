@@ -29,6 +29,9 @@ _FELDER = (
     "netz_kwh", "netz_preis", "solar_kwh", "solar_preis", "akku_kwh",
     "akku_preis", "pv_produktion_kwh", "einspeisung_kwh", "pv_kwp",
     "verguetung_eur", "anschaffung_eur",
+    # N87/N89 — PV als Add-on-Investment: eigene Eigentümer-‰ und die
+    # E-Tankstelle (Satz + wem sie berechnet wird).
+    "pv_anteile", "tanken_preis", "tanken_person",
 )
 
 
@@ -51,6 +54,9 @@ class StromIn(BaseModel):
     pv_kwp: float = 0.0
     verguetung_eur: float = 0.0
     anschaffung_eur: float = 0.0
+    pv_anteile: str = ""              # JSON {Name: ‰}; leer = Vorgabe 5/6+1/6
+    tanken_preis: float = 0.0
+    tanken_person: str = ""
     notiz: str = ""
 
 
@@ -98,3 +104,28 @@ def rechnung(slug: str, jahr: int, session: Session = Depends(get_session),
     """Das Engine-Ergebnis: Kosten je Verbrauchsgruppe (WG / Büro-Studio),
     PV-Ertrag und dessen Verteilung auf die Eigentümer (`strom.rechne`)."""
     return strom.rechne(_hole_oder_neu(session, o.id, jahr))
+
+
+@router.get("/objekte/{slug}/pv/amortisation")
+def pv_amortisation(slug: str, session: Session = Depends(get_session),
+                    o: Objekt = Depends(objekt_holen)) -> dict:
+    """N87 — Amortisierung der PV-Anlage über ALLE erfassten Jahre.
+
+    Je Jahr wird der Investitions-Ertrag gerechnet (was Mieter für PV-Strom
+    zahlen + Einspeisevergütung + Tank-Erlös) und kumuliert gegen die
+    Anschaffung gestellt. Die Anschaffung ist die zuletzt erfasste (sie ändert
+    sich nicht jährlich). Zusätzlich die Verteilung des kumulierten Ertrags auf
+    die PV-Eigentümer nach ihren eigenen Tausendsteln."""
+    jahre = session.exec(
+        select(Stromjahr).where(Stromjahr.objekt_id == o.id)
+        .order_by(Stromjahr.jahr)).all()
+    reihe, anschaffung, anteile = [], 0.0, strom.EIGENTUEMER_ANTEILE
+    for sj in jahre:
+        r = strom.rechne(sj)
+        reihe.append({"jahr": sj.jahr, "ertrag": r["pv"]["investitions_ertrag"]})
+        if sj.anschaffung_eur:
+            anschaffung = sj.anschaffung_eur
+        anteile = strom._pv_anteile(sj)
+    a = strom.amortisation(reihe, anschaffung)
+    a["eigentuemer"] = strom.verteile_eigentuemer(a["kumuliert"], anteile)
+    return a

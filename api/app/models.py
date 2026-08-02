@@ -844,4 +844,11 @@ class Stromjahr(SQLModel, table=True):
     pv_kwp: float = 0.0               # installierte Leistung (Vergütungssatz)
     verguetung_eur: float = 0.0       # 0 = aus Einspeisung × Satz(kwp) rechnen
     anschaffung_eur: float = 0.0      # Investment der PV-Anlage
+    # N87 — die PV-Anlage ist ein eigenes Add-on-Investment je Immobilie:
+    # eigene Eigentümer-Tausendstel (JSON {Name: ‰}, leer = Vorgabe 5/6 + 1/6),
+    # unabhängig von den Objekt-Anteilen. Der Tank-Preis (€/kWh) ist der Satz,
+    # den die ladende Person für den E-Auto-Strom an die PV-Anlage zahlt (N89).
+    pv_anteile: str = ""
+    tanken_preis: float = 0.0
+    tanken_person: str = ""           # wem die Tankstelle berechnet wird
     notiz: str = ""

@@ -41,6 +41,7 @@ stimmen über `engine.verteile_nach_wert`.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -152,6 +153,58 @@ def verteile_eigentuemer(betrag: float,
             for label, _ in anteile]
 
 
+def _pv_anteile(daten: Any) -> tuple[tuple[str, float], ...]:
+    """Die Eigentümer-Anteile der PV-Anlage (N87): eigene Tausendstel, unabhängig
+    von den Objekt-Anteilen. Aus dem Feld `pv_anteile` (JSON {Name: ‰}); ist es
+    leer/unlesbar, gilt die Vorgabe 5/6 + 1/6."""
+    roh = daten.get("pv_anteile", "") if isinstance(daten, dict) \
+        else getattr(daten, "pv_anteile", "")
+    if roh:
+        try:
+            d = json.loads(roh) if isinstance(roh, str) else dict(roh)
+            paare = tuple((str(k), float(v)) for k, v in d.items() if float(v) > 0)
+            if paare:
+                return paare
+        except (ValueError, TypeError, AttributeError):
+            log.warning("pv_anteile unlesbar — Vorgabe 5/6+1/6")
+    return EIGENTUEMER_ANTEILE
+
+
+def pv_investitions_ertrag(rechnung: dict) -> float:
+    """N87 — der jährliche Ertrag, der der PV-ANLAGE als Investment zufließt:
+    was die Mieter für PV-Strom (**Solar + Akku**, NICHT Netzzukauf) an die
+    Immobilie zahlen, PLUS die Einspeisevergütung. Der Eigenverbrauchs-
+    „Ersparnis"-Posten ist kein Zahlungsfluss und zählt hier bewusst NICHT."""
+    q = rechnung.get("quellen", {})
+    intern = round(q.get("solar", {}).get("kosten", 0.0)
+                   + q.get("akku", {}).get("kosten", 0.0), 2)
+    extern = rechnung.get("pv", {}).get("einspeiseverguetung", 0.0)
+    return round(intern + extern, 2)
+
+
+def amortisation(jahre: list[dict], anschaffung: float) -> dict:
+    """N87 — Amortisierung der PV-Anlage: der kumulierte Investitions-Ertrag über
+    die Jahre gegen die Anschaffung. `jahre` = [{"jahr", "ertrag"}].
+
+    Rückgabe: `reihe` (je Jahr {jahr, ertrag, kumuliert}), `anschaffung`,
+    `kumuliert`, `rest` (noch nicht amortisiert), `amortisiert_prozent`,
+    `break_even_jahr` (das Jahr, in dem der kumulierte Ertrag die Anschaffung
+    erreicht, sonst None)."""
+    anschaffung = round(float(anschaffung or 0), 2)
+    reihe, kum, break_even = [], 0.0, None
+    for j in sorted(jahre, key=lambda x: x.get("jahr", 0)):
+        ertrag = round(float(j.get("ertrag", 0) or 0), 2)
+        kum = round(kum + ertrag, 2)
+        if break_even is None and anschaffung > 0 and kum >= anschaffung:
+            break_even = j.get("jahr")
+        reihe.append({"jahr": j.get("jahr"), "ertrag": ertrag, "kumuliert": kum})
+    rest = round(max(0.0, anschaffung - kum), 2)
+    prozent = round(min(100.0, kum / anschaffung * 100), 1) if anschaffung > 0 else None
+    return {"anschaffung": anschaffung, "kumuliert": kum, "rest": rest,
+            "amortisiert_prozent": prozent, "break_even_jahr": break_even,
+            "reihe": reihe}
+
+
 def rechne(daten: Any) -> dict:
     """Das vollständige Strom-/PV-Ergebnis eines Objekt-Jahres.
 
@@ -197,6 +250,15 @@ def rechne(daten: Any) -> dict:
         quellen[q] = {"kwh": round(kwh, 3), "preis": round(preis, 4),
                       "kosten": round(kwh * preis, 2)}
     quellen_kosten_gesamt = round(sum(q["kosten"] for q in quellen.values()), 2)
+    # Plausibilität: was aus Netz/Solar/Akku kommt, muss ungefähr dem entsprechen,
+    # was der Gesamtzähler ausweist (inkl. E-Auto-Ladung). Weicht es stark ab,
+    # stimmt eine Eingabe nicht — lieber sagen als still falsch verteilen.
+    quellen_kwh = round(sum(q["kwh"] for q in quellen.values()), 3)
+    if gesamt > 0 and abs(quellen_kwh - gesamt) > max(50.0, gesamt * 0.05):
+        warnungen.append(
+            f"Netz+Solar+Akku ergeben {quellen_kwh:.0f} kWh, der Gesamtzähler "
+            f"{gesamt:.0f} kWh — bitte die Mengen prüfen (Differenz "
+            f"{quellen_kwh - gesamt:+.0f} kWh).")
 
     # Jede Quelle cent-genau auf die beiden Gruppen aufteilen; die Gruppensumme
     # ist die Summe ihrer Quellenanteile — so stimmt die Gesamtsumme exakt.
@@ -243,14 +305,39 @@ def rechne(daten: Any) -> dict:
         "anschaffung": anschaffung,
     }
 
-    # Ertrag und Anschaffung je Eigentümer (cent-genau, 5/6 + 1/6).
+    # N89 — die E-Tankstelle hängt an der PV-Anlage: der geladene Strom wird der
+    # ladenden Person zum vereinbarten Satz berechnet und fließt der Anlage zu
+    # (nicht in die Gruppen-Verteilung, deshalb ist `tanken_kwh` dort heraus).
+    tank_preis = _feld(daten, "tanken_preis")
+    tankstelle = {
+        "kwh": round(tanken, 3),
+        "preis": round(tank_preis, 4),
+        "betrag": round(tanken * tank_preis, 2),
+        "person": (daten.get("tanken_person", "") if isinstance(daten, dict)
+                   else getattr(daten, "tanken_person", "")) or "",
+    }
+    pv["tanken_ertrag"] = tankstelle["betrag"]
+
+    # N87 — der Ertrag des PV-INVESTMENTS: was Mieter für PV-Strom zahlen
+    # (Solar + Akku), die Einspeisevergütung und der Tank-Erlös. Das ist die
+    # Grundlage der Amortisation — anders als `pv.ertrag`, der die kalkulatorische
+    # Eigenverbrauchs-Ersparnis enthält (kein Zahlungsfluss).
+    invest_ertrag = round(
+        quellen["solar"]["kosten"] + quellen["akku"]["kosten"]
+        + verguetung + tankstelle["betrag"], 2)
+    pv["investitions_ertrag"] = invest_ertrag
+
+    # Ertrag und Anschaffung je PV-Eigentümer (cent-genau, eigene ‰ oder 5/6+1/6).
+    anteile = _pv_anteile(daten)
     eigentuemer = [
         {"anteil": e_ertrag["anteil"],
          "ertrag": e_ertrag["betrag"],
+         "investitions_ertrag": e_inv["betrag"],
          "anschaffung": e_invest["betrag"]}
-        for e_ertrag, e_invest in zip(
-            verteile_eigentuemer(ertrag),
-            verteile_eigentuemer(anschaffung))
+        for e_ertrag, e_inv, e_invest in zip(
+            verteile_eigentuemer(ertrag, anteile),
+            verteile_eigentuemer(invest_ertrag, anteile),
+            verteile_eigentuemer(anschaffung, anteile))
     ]
 
     return {
@@ -267,6 +354,7 @@ def rechne(daten: Any) -> dict:
         "quellen_kosten_gesamt": quellen_kosten_gesamt,
         "gruppen": gruppen,
         "pv": pv,
+        "tankstelle": tankstelle,
         "eigentuemer": eigentuemer,
         "warnungen": warnungen,
     }

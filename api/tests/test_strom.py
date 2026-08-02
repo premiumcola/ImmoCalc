@@ -138,9 +138,10 @@ def test_rechne_kernbeispiel():
     assert e["pv"]["anschaffung"] == 35700.0
 
     # Eigentümer 5/6 + 1/6, cent-genau.
-    assert e["eigentuemer"] == [
-        {"anteil": "5/6", "ertrag": 1950.42, "anschaffung": 29750.0},
-        {"anteil": "1/6", "ertrag": 390.08, "anschaffung": 5950.0}]
+    # N87 — das Ergebnis trägt zusätzlich `investitions_ertrag` je Eigentümer
+    # (additiv). Deshalb Feld für Feld prüfen statt das ganze dict zu vergleichen.
+    assert [(x["anteil"], x["ertrag"], x["anschaffung"]) for x in e["eigentuemer"]] == [
+        ("5/6", 1950.42, 29750.0), ("1/6", 390.08, 5950.0)]
     assert round(sum(x["ertrag"] for x in e["eigentuemer"]), 2) == 2340.50
     assert not e["warnungen"]
 
@@ -235,8 +236,9 @@ def test_endpunkt_leer_dann_speichern_und_rechnen(client):
     assert r["gruppen"]["WG"]["kosten"] == 1272.0
     assert r["gruppen"]["Büro/Studio"]["kosten"] == 848.0
     assert r["pv"]["ertrag"] == 2340.50
-    assert r["eigentuemer"][0] == {
-        "anteil": "5/6", "ertrag": 1950.42, "anschaffung": 29750.0}
+    e0 = r["eigentuemer"][0]
+    assert (e0["anteil"], e0["ertrag"], e0["anschaffung"]) \
+        == ("5/6", 1950.42, 29750.0)
 
 
 def test_endpunkt_put_aktualisiert_bestehenden(client):
@@ -245,3 +247,62 @@ def test_endpunkt_put_aktualisiert_bestehenden(client):
     client.put(f"/api/objekte/{slug}/strom/2025", json={"gesamt_kwh": 8000})
     gelesen = client.get(f"/api/objekte/{slug}/strom/2025").json()
     assert gelesen["gesamt_kwh"] == 8000
+
+
+# ---------------------------------------------------------------------------
+# N87 — PV als Add-on-Investment: eigene Tausendstel, Tank-Erlös, Amortisation.
+# ---------------------------------------------------------------------------
+
+def test_pv_investitions_ertrag_ohne_kalkulatorische_ersparnis():
+    """Der Investitions-Ertrag ist ein ZAHLUNGSFLUSS: was Mieter für PV-Strom
+    (Solar+Akku) zahlen, plus Einspeisevergütung und Tank-Erlös. Die
+    Eigenverbrauchs-Ersparnis (kalkulatorisch) gehört NICHT dazu."""
+    e = strom.rechne(dict(
+        gesamt_kwh=10000, wg_kwh=6000, garage_kwh=0,
+        netz_kwh=4000, netz_preis=0.30,
+        solar_kwh=4000, solar_preis=0.20, akku_kwh=2000, akku_preis=0.20,
+        pv_produktion_kwh=9000, einspeisung_kwh=3000, pv_kwp=10,
+        tanken_kwh=1000, tanken_preis=0.30, tanken_person="Alicia"))
+    # Solar 800 € + Akku 400 € + Einspeisung 3000×8,2ct = 246 € + Tanken 300 €.
+    assert e["quellen"]["solar"]["kosten"] == 800.0
+    assert e["quellen"]["akku"]["kosten"] == 400.0
+    assert e["pv"]["einspeiseverguetung"] == 246.0
+    assert e["tankstelle"] == {"kwh": 1000.0, "preis": 0.3, "betrag": 300.0,
+                               "person": "Alicia"}
+    assert e["pv"]["investitions_ertrag"] == 1746.0
+    # Der kalkulatorische pv.ertrag ist eine ANDERE Zahl (mit Ersparnis).
+    assert e["pv"]["ertrag"] != e["pv"]["investitions_ertrag"]
+
+
+def test_eigene_pv_anteile_gehen_cent_genau_auf():
+    """Die PV-Anlage hat eigene Tausendstel, unabhängig vom Objekt."""
+    e = strom.rechne(dict(
+        solar_kwh=1000, solar_preis=1.0, netz_preis=0.3,
+        pv_anteile='{"Roland": 833.3, "Marvin": 166.7}'))
+    namen = [x["anteil"] for x in e["eigentuemer"]]
+    assert set(namen) == {"Roland", "Marvin"}
+    summe = round(sum(x["investitions_ertrag"] for x in e["eigentuemer"]), 2)
+    assert summe == e["pv"]["investitions_ertrag"] == 1000.0
+
+
+def test_amortisation_kumuliert_und_break_even():
+    a = strom.amortisation(
+        [{"jahr": 2024, "ertrag": 4000.0}, {"jahr": 2025, "ertrag": 4000.0},
+         {"jahr": 2026, "ertrag": 4000.0}], 10000.0)
+    assert a["kumuliert"] == 12000.0
+    assert a["rest"] == 0.0
+    assert a["break_even_jahr"] == 2026        # im dritten Jahr erreicht
+    assert a["amortisiert_prozent"] == 100.0
+    assert [z["kumuliert"] for z in a["reihe"]] == [4000.0, 8000.0, 12000.0]
+
+
+def test_amortisation_ohne_anschaffung_bleibt_stumm():
+    a = strom.amortisation([{"jahr": 2024, "ertrag": 500.0}], 0.0)
+    assert a["amortisiert_prozent"] is None and a["break_even_jahr"] is None
+    assert a["kumuliert"] == 500.0
+
+
+def test_warnung_wenn_quellen_nicht_zum_gesamtzaehler_passen():
+    e = strom.rechne(dict(gesamt_kwh=10000, wg_kwh=5000,
+                          netz_kwh=9000, solar_kwh=9000))
+    assert any("Gesamtzähler" in w for w in e["warnungen"])
