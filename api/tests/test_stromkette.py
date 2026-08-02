@@ -287,9 +287,25 @@ def test_schritt2_zieht_die_ladungen_der_periode_aus_der_wallbox(monkeypatch):
     assert "person" not in str(s2).lower()
 
 
+def _ohne_eauto_stand(zid):
+    """N166 — die vom Aufbau angelegte „Elektroauto"-Ablesung entfernen, damit
+    der Zaehler-Stand nicht greift und der jeweils getestete Rueckfall
+    (Handeingabe bzw. leer) zum Zug kommt."""
+    with Session(db.engine) as s:
+        z = s.get(Zeitraum, zid)
+        for zae in s.exec(select(Zaehler).where(
+                Zaehler.objekt_id == z.objekt_id)).all():
+            if "Elektroauto" in zae.name or (zae.art or "") == "E-Tankstelle":
+                for a in s.exec(select(Ablesung).where(
+                        Ablesung.zaehler_id == zae.id)).all():
+                    s.delete(a)
+        s.commit()
+
+
 def test_wallbox_aus_dann_greift_die_handeingabe(monkeypatch):
     """Ist die Box weg, tragen die von Hand gepflegten Mengen die Kette weiter."""
     zid = _objekt("kette-hand", hand=(522.34, 828.19))
+    _ohne_eauto_stand(zid)                 # kein Zaehler-Stand -> Hand greift
     d = _kette(zid, monkeypatch)          # ohne Wallbox-Antwort
     s2 = d["schritt2"]
 
@@ -305,6 +321,7 @@ def test_wallbox_aus_dann_greift_die_handeingabe(monkeypatch):
 
 def test_ohne_ladungen_bleibt_schritt2_leer(monkeypatch):
     zid = _objekt("kette-ohne-auto")
+    _ohne_eauto_stand(zid)                 # kein Zaehler-Stand, keine Ladungen
     d = _kette(zid, monkeypatch)
     assert d["schritt2"]["quelle"] == "keine"
     assert d["schritt2"]["eauto_kwh"] == 0.0
@@ -366,3 +383,31 @@ def test_unbekannter_zeitraum_ergibt_404():
         with pytest.raises(HTTPException) as fehler:
             modul.stromkette(999999, s)
     assert fehler.value.status_code == 404
+
+
+def test_wallbox_aus_dann_zaehlt_der_eauto_zaehlerstand(monkeypatch):
+    """N166 — ist die Box stumm, nimmt die Kette den Stand des E-Tankstellen-
+    Zählers (dieselbe Zahl wie die Zählermaske), nicht die erfassten Ladungen
+    oder die Handeingabe. Sonst zeigten Maske und Kette zwei Mengen."""
+    zid = _objekt("kette-eauto-zaehler", hand=(999.0, 999.0))  # Hand absichtlich anders
+    with Session(db.engine) as s:
+        z = s.get(Zeitraum, zid)
+        zae = Zaehler(objekt_id=z.objekt_id, name="Stromverbrauch E-Tankstelle",
+                      kostenart="Strom", messeinheit="kWh", typ="direkt",
+                      art="E-Tankstelle")
+        s.add(zae)
+        s.commit()
+        s.refresh(zae)
+        # Der aus der Box gezogene Stand, als Ablesung des Zeitraums abgelegt.
+        s.add(Ablesung(zaehler_id=zae.id, datum=ENDE, stand=1373.84,
+                       zeitraum_id=zid))
+        s.commit()
+
+    d = _kette(zid, monkeypatch)          # ohne Wallbox-Antwort
+    s2 = d["schritt2"]
+    assert s2["quelle"] == "zaehler"
+    assert s2["gemessen_kwh"] == 1373.84
+    # Aufgeteilt nach den SolarEdge-Anteilen (Netz 24 %, PV 50 %, Akku 26 %).
+    assert s2["netz_kwh"] == round(1373.84 * 24.0 / 100.0, 3)
+    # Die Handeingabe (999/999) darf NICHT gewonnen haben.
+    assert s2["netz_kwh"] != 999.0

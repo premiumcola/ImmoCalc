@@ -38,8 +38,8 @@ from ..models import (Ablesung, Dokument, Einheit, Kostenposition, Miete,
 from .objekte import zeitraum_label_jahr
 from .openwb import ladungen as openwb_ladungen
 from .tankstelle import erfasste_ladungen
-from .zaehler import (_echte_einheiten, _einheiten_karte, _kostenblock,
-                      _mit_vorlauf, _parse_einheiten)
+from .zaehler import (_echte_einheiten, _einheiten_karte, _eauto_zaehler,
+                      _kostenblock, _mit_vorlauf, _parse_einheiten)
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["stromkette"])
@@ -399,6 +399,27 @@ def _aus_ladungen(session: Session, z: Zeitraum) -> float:
         session, z.objekt_id, z.start, z.ende)), 3)
 
 
+def _eauto_aus_zaehler(session: Session, z: Zeitraum) -> float:
+    """N166 — die geladene Menge aus dem Stand des E-Tankstellen-Zählers (kWh).
+
+    Seit N157 zieht die Zählermaske die Wallbox-Menge und legt sie als Ablesung
+    dieses Zählers ab. Der Stand ist damit die eine, sichtbare Wahrheit — und er
+    bleibt stehen, wenn die Box gerade stumm ist. Deshalb liest die Stromkette
+    hier den Zähler, statt die Box ein zweites Mal zu fragen; sonst könnten die
+    Zählermaske und die Kette bei stummer Box zwei verschiedene Mengen zeigen.
+    0.0, wenn kein Zähler oder kein Stand für den Zeitraum da ist."""
+    zae = _eauto_zaehler(session, z.objekt_id)
+    if not zae:
+        return 0.0
+    abls = session.exec(select(Ablesung).where(Ablesung.zaehler_id == zae.id)
+                        .order_by(Ablesung.datum)).all()
+    zeitraeume = session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
+    zeitraeume_i, _ = _mit_vorlauf(zeitraeume, [(zae, abls)])
+    verb = ablesung_modul.verbrauch_je_zaehler([(zae, abls)], zeitraeume_i, z.id)
+    return round(verb.get(zae.id) or 0.0, 3)
+
+
 def _eauto(session: Session, z: Zeitraum, sj: Stromjahr, netz_p: float,
            pv_p: float, akku_p: float) -> dict:
     """Wie viel im Zeitraum geladen wurde und woraus — in dieser Reihenfolge:
@@ -409,10 +430,14 @@ def _eauto(session: Session, z: Zeitraum, sj: Stromjahr, netz_p: float,
                 "quelle_text": f"openWB · {box['anzahl']} Ladungen im Zeitraum"}
     hinweis = (box or {}).get("hinweis", "")
 
-    # Ersatzweise die im Tankstellen-Bereich erfassten Ladungen: sie tragen nur
-    # die Menge, aufgeteilt wird sie nach den Anteilen aus Schritt 1.
-    menge = _aus_ladungen(session, z)
-    quelle, text = "ladungen", "erfasste Ladungen der E-Tankstelle im Zeitraum"
+    # N166 — zuerst der Zählerstand (dieselbe Zahl wie in der Zählermaske,
+    # zuletzt aus der Box gezogen); erst danach die erfassten Ladungen und die
+    # Handeingabe. So zeigen Maske und Kette bei stummer Box nicht zwei Mengen.
+    menge = _eauto_aus_zaehler(session, z)
+    quelle, text = "zaehler", "Stand des E-Tankstellen-Zählers (Wallbox-Menge)"
+    if menge <= 0:
+        menge = _aus_ladungen(session, z)
+        quelle, text = "ladungen", "erfasste Ladungen der E-Tankstelle im Zeitraum"
     if menge <= 0:
         menge = round((sj.eauto_extern_kwh or 0.0) + (sj.eauto_eigen_kwh or 0.0), 3)
         quelle, text = "hand", "von Hand am Strom-Jahr eingetragen"
