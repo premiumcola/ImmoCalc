@@ -858,6 +858,12 @@ class Stromjahr(SQLModel, table=True):
     pv_kwp: float = 0.0               # installierte Leistung (Vergütungssatz)
     verguetung_eur: float = 0.0       # 0 = aus Einspeisung × Satz(kwp) rechnen
     anschaffung_eur: float = 0.0      # Investment der PV-Anlage
+    # N128 — was die Anlage VOR der ersten Nebenkostenabrechnung schon abgetragen
+    # hat. Die erste Abrechnung beginnt am 01.10.2024, die Anlage lief davor
+    # bereits. Ohne diesen einmaligen Vorbetrag stünde die Amortisation zu weit
+    # zurück. Er wird dem ersten erfassten Jahr zugerechnet, nicht verteilt.
+    # Additiv, Default 0 — jeder Bestand rechnet unverändert weiter.
+    vorlauf_ertrag_eur: float = 0.0
     # N87 — die PV-Anlage ist ein eigenes Add-on-Investment je Immobilie:
     # eigene Eigentümer-Tausendstel (JSON {Name: ‰}, leer = Vorgabe 5/6 + 1/6),
     # unabhängig von den Objekt-Anteilen. Der Tank-Preis (€/kWh) ist der Satz,
