@@ -41,6 +41,30 @@ export const KATEGORIEN = [
 export const BEGRIFFE = [
   // ---------------------------------------------------------------- Finanzierung
   {
+    id: 'darlehen',
+    begriff: 'Darlehen & Kreditsumme',
+    kategorie: 'finanzierung',
+    synonyme: ['Immobilienkredit', 'Kreditsumme', 'Darlehenssumme', 'Baufinanzierung', 'Finanzierung', 'Nettodarlehensbetrag'],
+    kurz: 'Das Bankdarlehen, mit dem du den Kaufpreis finanzierst. Die Kreditsumme ist der geliehene Betrag, den du über Jahre mit Zins und Tilgung zurückzahlst.',
+    lang:
+      'Ein Darlehen ist geliehenes Geld der Bank, mit dem du den Kaufpreis (und oft einen Teil der [[kaufnebenkosten]]) bezahlst. Die Kreditsumme — der Nettodarlehensbetrag — ist der Betrag, den die Bank auszahlt; zusammen mit deinem [[eigenkapital]] muss er Kaufpreis und Nebenkosten decken. Zurück zahlst du ihn über die [[annuitaet|monatliche Rate]] aus Zins und [[tilgung]].\n\n' +
+      'Es gibt das Darlehen, weil kaum jemand eine Immobilie aus eigenem Geld bezahlen kann — die Bank streckt den Großteil vor und lässt sich das über den [[sollzins|Zins]] vergüten. Damit sie dem hohen Betrag vertraut, sichert sie ihn über eine [[grundschuld]] am Objekt ab.\n\n' +
+      'Für dich als Eigentümer: Die Kreditsumme bestimmt zusammen mit dem Objektwert deinen [[beleihung|Beleihungsauslauf]] und damit den Zins. Wie lange der Zins fest ist, regelt die [[zinsbindung]]; wie schnell du entschuldest, die [[tilgung]]. Den verbindlichen Rahmen dafür setzt der [[kreditvertrag]]. In ImmoCalc hinterlegst du die Darlehen je Objekt — daraus ergeben sich [[restschuld]], [[kapitaldienst]] und der [[cashflow]].',
+    verwandt: ['kreditvertrag', 'annuitaet', 'zinsbindung', 'eigenkapital', 'beleihung', 'grundschuld'],
+  },
+  {
+    id: 'kreditvertrag',
+    begriff: 'Kreditvertrag & Finanzierungszusage',
+    kategorie: 'finanzierung',
+    synonyme: ['Darlehensvertrag', 'Finanzierungszusage', 'Kreditzusage', 'Darlehenszusage'],
+    kurz: 'Der Vertrag mit der Bank über dein Darlehen. Die Finanzierungszusage davor bestätigt, dass die Bank finanziert — Voraussetzung, um sicher zum Notar zu gehen.',
+    lang:
+      'Der Kreditvertrag (Darlehensvertrag) hält alle Bedingungen deines [[darlehen]]s fest: Kreditsumme, [[sollzins]] und Effektivzins, [[zinsbindung]], [[tilgung|Tilgungssatz]], [[sondertilgung|Sondertilgungsrechte]] und die vereinbarten Sicherheiten. Vorgeschaltet ist die Finanzierungszusage — die verbindliche Erklärung der Bank, dass sie zu bestimmten Konditionen finanziert.\n\n' +
+      'Die Zusage gibt es, weil du den [[notar|Kaufvertrag]] nicht unterschreiben solltest, bevor die Finanzierung steht: Ohne gesicherten Kredit könntest du den Kaufpreis nicht zahlen und müsstest den Vertrag mühsam rückabwickeln. Erst die Zusage macht den Kauf sicher.\n\n' +
+      'Für dich als Eigentümer: Vergleiche Angebote über den Effektivzins, nicht nur den Sollzins. Achte auf kostenlose [[sondertilgung|Sondertilgungen]], eine ausreichend lange bereitstellungszinsfreie Zeit ([[bereitstellungszins]]) und Spielraum beim Tilgungssatz. Zur Auszahlung verlangt die Bank die Bestellung der [[grundschuld]] als Sicherheit.',
+    verwandt: ['darlehen', 'zinsbindung', 'sollzins', 'grundschuld', 'notar', 'bereitstellungszins'],
+  },
+  {
     id: 'grundschuld',
     begriff: 'Grundschuld',
     kategorie: 'finanzierung',
@@ -300,7 +324,7 @@ export const BEGRIFFE = [
     synonyme: ['Erwerbsnebenkosten', 'Nebenkosten Kauf', 'Anschaffungsnebenkosten'],
     kurz: 'Die Kosten rund um den Kauf zusätzlich zum Kaufpreis: Grunderwerbsteuer, Notar, Grundbuch und ggf. Makler — grob 9 bis 12 % des Kaufpreises.',
     lang:
-      'Kaufnebenkosten sind alle Ausgaben, die neben dem eigentlichen Kaufpreis anfallen: die [[grunderwerbsteuer]], die Kosten für [[notar]] und Grundbuchamt (zusammen rund 1,5–2 %) und, falls beauftragt, die Maklercourtage (regional bis 3,57 % für den Käufer). In Summe kommen je nach Bundesland etwa 9–12 % des Kaufpreises zusammen.\n\n' +
+      'Kaufnebenkosten sind alle Ausgaben, die neben dem eigentlichen Kaufpreis anfallen: die [[grunderwerbsteuer]], die Kosten für [[notar]] und Grundbuchamt (zusammen rund 1,5–2 %) und, falls beauftragt, die Maklercourtage (regional bis 3,57 % für den Käufer). In Summe kommen je nach Bundesland etwa 9–12 % des Kaufpreises zusammen — in Bayern (Grunderwerbsteuer 3,5 %) ohne Makler sind es rund 5–6 %.\n\n' +
       'Sie existieren, weil ein rechtssicherer Eigentumsübergang Beurkundung, Register und Steuer erfordert — Aufwand, der bezahlt werden muss. Für die Finanzierung sind sie heikel, weil Banken sie selten mitfinanzieren: Sie müssen meist aus [[eigenkapital]] kommen.\n\n' +
       'Für dich doppelt wichtig: Erstens beim Budget — plane die Nebenkosten von Anfang an als Eigenkapitalbedarf ein. Zweitens steuerlich — der auf das Gebäude entfallende Anteil gehört zu den [[anschaffungskosten]] und wird über die [[afa]] abgeschrieben; reine Finanzierungsnebenkosten dagegen sind sofort als [[werbungskosten]] absetzbar.',
     verwandt: ['grunderwerbsteuer', 'notar', 'eigenkapital', 'anschaffungskosten', 'afa'],
@@ -424,6 +448,30 @@ export const BEGRIFFE = [
       'Es gibt sie als Kontrollpunkt: Der Staat will sicherstellen, dass die Grunderwerbsteuer nicht ausfällt, bevor der Eigentumswechsel vollzogen ist. Sie ist damit die letzte Weiche vor der Eigentumsumschreibung.\n\n' +
       'Für dich bedeutet sie schlicht: Nach dem Kauf dauert es, bis du wirklich im Grundbuch stehst — erst Steuerbescheid, dann Zahlung, dann Bescheinigung, dann Umschreibung. In der Zwischenzeit schützt dich die [[auflassung|Auflassungsvormerkung]].',
     verwandt: ['grunderwerbsteuer', 'grundbuch', 'auflassung', 'notar'],
+  },
+  {
+    id: 'lasten-nutzen',
+    begriff: 'Übergang von Nutzen und Lasten',
+    kategorie: 'grundbuch',
+    synonyme: ['Nutzen-Lasten-Wechsel', 'Besitzübergang', 'Lastenwechsel', 'wirtschaftlicher Übergang', 'Gefahrübergang'],
+    kurz: 'Der Stichtag, ab dem dir die Erträge (Mieten) zufließen und du die laufenden Kosten trägst. Er liegt meist vor der Eigentumsumschreibung im Grundbuch.',
+    lang:
+      'Der Übergang von Nutzen und Lasten ist der im Kaufvertrag festgelegte Stichtag des wirtschaftlichen Übergangs: Ab ihm stehen dir die Nutzungen zu (vor allem die [[kaltmiete|Mieten]]) und du trägst die Lasten ([[grundsteuer]], die [[nebenkosten|Betriebskosten]], Versicherung). Meist ist er an die vollständige Kaufpreiszahlung geknüpft; zugleich geht die Gefahr (etwa für zufällige Beschädigung) auf dich über.\n\n' +
+      'Diesen eigenen Stichtag gibt es, weil die [[eigentumsumschreibung]] im [[grundbuch]] Wochen bis Monate dauert — es wäre unbillig, wenn der Verkäufer in dieser Zwischenzeit noch die Mieten bekäme, obwohl du längst bezahlt hast. Der Nutzen-Lasten-Wechsel schiebt die wirtschaftliche Verantwortung schon vor die formale Eintragung.\n\n' +
+      'Für dich als Eigentümer wichtig: Rechtlich Eigentümer bist du erst mit der [[eigentumsumschreibung]] — wirtschaftlich aber schon ab diesem Stichtag. Er ist der richtige Zeitpunkt für die Abgrenzung der [[nebenkosten]] gegenüber dem Verkäufer, für den Beginn deiner Mietzurechnung und regelmäßig auch für den Start der [[afa]]. Halte das Datum fest und übernimm die Zählerstände.',
+    verwandt: ['eigentumsumschreibung', 'auflassung', 'grundsteuer', 'nebenkosten', 'afa'],
+  },
+  {
+    id: 'eigentumsumschreibung',
+    begriff: 'Eigentumsumschreibung',
+    kategorie: 'grundbuch',
+    synonyme: ['Umschreibung', 'Eigentumseintragung', 'Eigentümerwechsel im Grundbuch'],
+    kurz: 'Der abschließende Eintrag in Abteilung I des Grundbuchs, mit dem du rechtlich Eigentümer wirst — erst nach Kaufpreiszahlung und Unbedenklichkeitsbescheinigung.',
+    lang:
+      'Die Eigentumsumschreibung ist der letzte Schritt des Kaufs: Das Grundbuchamt trägt dich in Abteilung I des [[grundbuch]]s als neuen Eigentümer ein und löscht den alten. Erst damit — nicht schon mit dem Kaufvertrag — geht das Eigentum rechtlich auf dich über (§ 873 BGB).\n\n' +
+      'Diese späte, förmliche Eintragung gibt es, weil das Grundbuch erst berichtigt wird, wenn alle Voraussetzungen erfüllt sind: die [[auflassung]] ist erklärt, der Kaufpreis gezahlt und die [[unbedenklichkeitsbescheinigung]] des Finanzamts (also die gezahlte [[grunderwerbsteuer]]) liegt vor. So wird niemand Eigentümer, ohne Steuer und Kaufpreis geleistet zu haben.\n\n' +
+      'Für dich als Eigentümer: Zwischen Notartermin und Umschreibung vergehen oft Wochen bis Monate — in dieser Schwebezeit schützt dich die [[auflassung|Auflassungsvormerkung]]. Nicht verwechseln mit dem [[lasten-nutzen|Übergang von Nutzen und Lasten]]: Wirtschaftlich (Mieten, Kosten) bist du meist schon vorher dran, rechtlich erst mit der Umschreibung. Danach erhältst du einen aktualisierten Grundbuchauszug.',
+    verwandt: ['grundbuch', 'auflassung', 'unbedenklichkeitsbescheinigung', 'lasten-nutzen', 'notar'],
   },
   // -------------------------------------------------------------------- Steuer
   {
@@ -936,9 +984,9 @@ export const ABLAUF = [
     id: 'finanzierung',
     phase: 2,
     titel: 'Finanzierung klären',
-    kurz: 'Darlehen vergleichen, Zinsbindung und Tilgung festlegen, Finanzierungszusage einholen.',
+    kurz: 'Darlehen vergleichen, Zinsbindung und Tilgung festlegen, Finanzierungszusage einholen und den Kreditvertrag schließen.',
     dauer: 'Wochen',
-    begriffe: ['zinsbindung', 'annuitaet', 'tilgung', 'sollzins', 'anschlusszins', 'bausparvertrag'],
+    begriffe: ['darlehen', 'kreditvertrag', 'zinsbindung', 'annuitaet', 'tilgung', 'sollzins', 'anschlusszins'],
   },
   {
     id: 'kaufvertrag',
@@ -960,9 +1008,9 @@ export const ABLAUF = [
     id: 'grunderwerbsteuer',
     phase: 5,
     titel: 'Grunderwerbsteuer',
-    kurz: 'Das Finanzamt setzt die Grunderwerbsteuer fest. Erst nach Zahlung kommt die Unbedenklichkeitsbescheinigung.',
+    kurz: 'Das Finanzamt setzt die Grunderwerbsteuer fest (in Bayern 3,5 % des Kaufpreises). Erst nach Zahlung kommt die Unbedenklichkeitsbescheinigung.',
     dauer: 'Wochen',
-    begriffe: ['grunderwerbsteuer', 'kaufnebenkosten'],
+    begriffe: ['grunderwerbsteuer', 'unbedenklichkeitsbescheinigung', 'kaufnebenkosten'],
   },
   {
     id: 'grundschuld-bestellen',
@@ -997,16 +1045,24 @@ export const ABLAUF = [
     begriffe: ['abnahme', 'gewaehrleistung'],
   },
   {
-    id: 'eigentumsumschreibung',
+    id: 'nutzen-lasten',
     phase: 10,
+    titel: 'Übergang von Nutzen und Lasten',
+    kurz: 'Mit vollständiger Kaufpreiszahlung gehen Besitz, Mieterträge und laufende Kosten auf dich über — meist schon vor der Eigentumsumschreibung.',
+    dauer: 'Stichtag',
+    begriffe: ['lasten-nutzen', 'grundsteuer', 'nebenkosten'],
+  },
+  {
+    id: 'eigentumsumschreibung',
+    phase: 11,
     titel: 'Eigentumsumschreibung',
-    kurz: 'Nach Zahlung und Unbedenklichkeitsbescheinigung wirst du als Eigentümer ins Grundbuch eingetragen.',
+    kurz: 'Nach Zahlung und Unbedenklichkeitsbescheinigung wirst du als Eigentümer in Abteilung I des Grundbuchs eingetragen — der Abschluss des Kaufs.',
     dauer: 'Wochen',
-    begriffe: ['auflassung', 'grundbuch'],
+    begriffe: ['eigentumsumschreibung', 'auflassung', 'grundbuch'],
   },
   {
     id: 'uebergabe',
-    phase: 11,
+    phase: 12,
     titel: 'Übergabe & Vermietung',
     kurz: 'Übergabe mit Protokoll und Zählerständen, dann Vermietung: Mietvertrag, Kaution, laufende Miete.',
     dauer: 'Tage',
@@ -1014,7 +1070,7 @@ export const ABLAUF = [
   },
   {
     id: 'laufend',
-    phase: 12,
+    phase: 13,
     titel: 'Laufender Betrieb',
     kurz: 'Ab jetzt: Nebenkosten abrechnen, Rücklage bilden, Steuer über die Anlage V (AfA, Schuldzinsen, Werbungskosten).',
     dauer: 'jährlich',
