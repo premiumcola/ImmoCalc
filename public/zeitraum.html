@@ -1662,6 +1662,12 @@ function schluesselWort(k) {
    ohne „nach". Baut auf schluesselWort auf, damit die Wortlogik nur
    einmal existiert. */
 function vkeyChip(k) {
+  // N101 — Wasser wird über die ZÄHLER verteilt (gemessener Verbrauch je
+  // Einheit, Rest per Person·Mietdauer), nicht nach dem Positions-Schlüssel.
+  // „nach Fläche" wäre dort schlicht falsch.
+  if (istWasserSammel(k)) {
+    return `<span class="vkey">${VKEY_IKON.verbrauch || VKEY_IKON.punkt}<span>nach Zählern</span></span>`;
+  }
   const wort = schluesselWort(k);
   if (!wort) return '';
   const key = k.nur_einheit ? 'einheiten' : (k.schluessel || '');
