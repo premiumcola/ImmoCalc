@@ -2,8 +2,8 @@
 
 Deckt ab: Zähler-Interpolation auf den Soll-Stichtag, berechnete (virtuelle)
 Zähler als Rest, Verteilung nach Wert/Gewicht (Verbrauch, Fläche, Personen,
-Bewohnermonate, Einheiten, Prozent, individuell), Zeitanteiligkeit sowie die
-Abrechnung je Partei inkl. §35a-Summe und Gesamtübersicht.
+Bewohnermonate, Einheiten, Prozent, prozentual, individuell), Zeitanteiligkeit
+sowie die Abrechnung je Partei inkl. §35a-Summe und Gesamtübersicht.
 """
 from __future__ import annotations
 from dataclasses import dataclass

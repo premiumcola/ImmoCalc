@@ -47,6 +47,14 @@ SCHLUESSEL: dict[str, dict] = {
         "hinweis": "Alle Einheiten zu gleichen Teilen; bei einem Wechsel "
                    "teilen sich Vor- und Nachmieter den Anteil ihrer Einheit.",
     },
+    "prozentual": {
+        "titel": "Prozentual", "einheit": "%", "ableitbar": True,
+        "hinweis": "Ein Prozentsatz je Einheit, Summe 100 %. Ohne eigene "
+                   "Angabe gleichmäßig auf alle Einheiten verteilt; die Sätze "
+                   "lassen sich je Einheit von Hand setzen. Verteilt wird "
+                   "proportional zu den Gewichten — die Summe muss nicht exakt "
+                   "100 sein, 30/30/40 geht genauso sauber auf wie 50/50.",
+    },
     "bewohnermonate": {
         "titel": "Bewohnermonate", "einheit": "Pers.-Mon.", "ableitbar": True,
         "hinweis": "Personen × Monate im Zeitraum, taggenau — deckt den "
@@ -264,7 +272,10 @@ def _gewicht(schluessel: str, b: Bezug, start: date, ende: date) -> float | None
         basis = b.flaeche or 0.0
     elif schluessel == "personen":
         basis = float(b.personen or 0)
-    elif schluessel == "einheiten":
+    elif schluessel in ("einheiten", "prozentual"):
+        # „prozentual" ohne gesetzte Anteile: jede Einheit zählt gleich, wie
+        # bei „einheiten". `gewichte` skaliert das Ergebnis danach auf Summe
+        # 100, sodass ein sinnvoller Vorgabe-Prozentsatz je Einheit entsteht.
         basis = 1.0
     else:
         return None
@@ -289,7 +300,15 @@ def gewichte(schluessel: str, bezuege_: list[Bezug],
         # Zwei Mietverhältnisse derselben Partei (Wohnung und Garage) zählen
         # zusammen, statt sich gegenseitig zu überschreiben.
         out[b.partei] = round(out.get(b.partei, 0.0) + w, 4)
-    return out if sum(out.values()) > 0 else {}
+    gesamt = sum(out.values())
+    if gesamt <= 0:
+        return {}
+    # Vorgabe für „prozentual": die gleichmäßigen Gewichte auf Summe 100
+    # bringen, damit je Einheit ein echter Prozentsatz (100/n) gespeichert
+    # wird — den der Nutzer anschließend von Hand anpassen kann.
+    if schluessel == "prozentual":
+        out = {k: round(v / gesamt * 100, 4) for k, v in out.items()}
+    return out
 
 
 def nur_einheit_gewichte(bezuege_: list[Bezug], einheit: str,
