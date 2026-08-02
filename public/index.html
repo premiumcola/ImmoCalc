@@ -118,19 +118,28 @@
   /* In der breiten Bubble-Karte sitzt der Fuss (Chips) rechts — dort ruecken
      wir die Pille etwas hoeher, damit sie nicht auf die Chips trifft. */
   .mitbubbles > .tile .cf{top:10px; right:14px}
-  /* N87 — PV-Zeichen an Objekten mit PV-Anlage (Add-on-Investment). Sitzt unter
-     dem Cashflow-Indikator, damit sich beide nie überlagern. */
-  .tile .pv-badge{
-    position:absolute; top:12px; left:12px;
-    display:inline-flex; align-items:center; gap:4px;
-    padding:4px 9px 4px 7px; border-radius:999px;
-    background:var(--amber-bg); color:var(--amber);
-    font:600 11px var(--mono); line-height:1;
-    box-shadow:0 1px 2px rgba(22,38,44,.06);
+  /* N110 — die PV-Anlage ist ein EIGENES Investment an der Immobilie, kein
+     Statuszeichen: sie steht deshalb als freischwebendes Modul NEBEN dem
+     Hauslogo (kein Kasten, kein Hintergrund) und führt angetippt direkt in
+     „PV & Amortisation", wo Investment, Eigentümer-‰ und Amortisation gepflegt
+     werden. Vorher war es eine kleine Pille, die niemand als Weg erkannt hat. */
+  .tile .pv-invest{
+    position:absolute; top:10px; right:10px;
+    display:inline-flex; flex-direction:column; align-items:center; gap:2px;
+    background:none; border:none; padding:4px; cursor:pointer;
+    color:var(--soft); text-decoration:none; z-index:2;
   }
-  .tile .pv-badge svg{width:14px; height:14px; flex:none}
-  .mitbubbles > .tile .pv-badge{top:10px; left:14px}
-  @media(max-width:439px){ .tile .pv-badge .pvt{display:none} }
+  .tile .pv-invest svg{width:46px; height:46px; display:block;
+    filter:drop-shadow(0 2px 4px rgba(22,38,44,.18))}
+  .tile .pv-invest .pvt{font:600 8.5px var(--mono); letter-spacing:.1em;
+    text-transform:uppercase; color:var(--amber)}
+  .tile .pv-invest:hover svg{filter:drop-shadow(0 3px 7px rgba(22,38,44,.28))}
+  .tile .pv-invest:focus-visible{outline:2px solid var(--teal); outline-offset:3px;
+    border-radius:10px}
+  .tile.hat-cf .pv-invest{top:46px}
+  .mitbubbles > .tile .pv-invest{top:12px; right:16px}
+  .mitbubbles > .tile .pv-invest svg{width:54px; height:54px}
+  @media(min-width:680px){ .tile .pv-invest svg{width:52px; height:52px} }
 
   /* Grundform der Blasen steht geteilt in immo.css (CCCLXXVIII c). Hier bleiben
      nur die startseiten-eigenen Zustände und Zusätze. */
@@ -203,11 +212,22 @@ const sub = document.getElementById('sub');
 
 /* N87 — Zeichen für ein PV-Add-on an der Immobilie: Sonne über Modul, flach im
    Bestandsstil (kein Icon-Paket). */
-const PV_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-  stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"
-  aria-hidden="true"><circle cx="12" cy="7" r="3"/>
-  <path d="M12 1.5v1.4M12 11.1v1.4M17.5 7h-1.4M7.9 7H6.5M15.9 3.1l-1 1M9.1 9.9l-1 1M15.9 10.9l-1-1M9.1 4.1l-1-1"/>
-  <path d="M5 21h14M7.2 16.5h9.6M6 21l1.6-6.5h8.8L18 21"/></svg>`;
+const PV_ICON = `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+  <!-- N110 - Black-Edition-Solarmodul: dunkle Zellen mit feinem Raster, leicht
+       angeschraegt wie ein Dachmodul, dazu ein Sonnenbogen. Flaechig statt
+       Strichzeichnung, damit es neben der Objektkachel als eigenes Investment
+       auftritt und nicht wie ein Statuszeichen wirkt. -->
+  <path d="M12.5 6.5h27l6 24h-27z" fill="#16262C"/>
+  <path d="M12.5 6.5h27l6 24h-27z" stroke="#0B1A20" stroke-width="1.2"/>
+  <g stroke="#3C4E55" stroke-width="1" opacity=".85">
+    <path d="M21.5 6.5l6 24M30.5 6.5l6 24M14.6 14.5h27.4M16.5 22.5h27"/>
+  </g>
+  <path d="M18.5 30.5l-3 11M39.5 30.5l3 11M13 41.5h32" stroke="#16262C"
+    stroke-width="2.4" stroke-linecap="round"/>
+  <g stroke="#916212" stroke-width="2.1" stroke-linecap="round">
+    <path d="M8 12.5a9 9 0 0 1 9-9"/><path d="M3.5 17.5h2.4M6 8.6l1.7 1.7"/>
+  </g>
+</svg>`;
 
 /* ---- Ort → Strasse → Einheit -------------------------------------------
    Spiegelt api/app/bezeichnung.py:hierarchie(). Die Felder sind gewachsen:
@@ -353,8 +373,10 @@ function kachel(o, feinste = false) {
         <span class="name">${esc(gross)}</span>
         ${unten}
       </span>
-      ${o.hat_pv ? `<span class="pv-badge" title="PV-Anlage · eigenes Investment"
-        aria-label="PV-Anlage">${PV_ICON}<span class="pvt">PV</span></span>` : ''}
+      ${o.hat_pv ? `<a class="pv-invest" href="strom.html?objekt=${esc(o.slug)}"
+        title="PV-Anlage — Investment, Eigentümer-Anteile und Amortisation"
+        aria-label="PV-Anlage konfigurieren"
+        onclick="event.stopPropagation()">${PV_ICON}<span class="pvt">PV</span></a>` : ''}
       ${grundstueck ? '' : chips(o.frist_tage, o.offene_positionen)}
     </button>`;
   return bub ? `<section class="mitbubbles">${knopf}${bub}</section>` : knopf;

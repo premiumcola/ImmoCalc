@@ -522,7 +522,10 @@ const mitPv = objekte.filter(o => o.hat_pv);
 const wahl = mitPv.length ? mitPv : objekte;
 
 if (wahl.length) {
-  objektSlug = wahl[0].slug;
+  // N110 - von der Objektkachel aus (?objekt=slug) direkt bei der richtigen
+  // Anlage landen, statt erst wieder waehlen zu muessen.
+  const ausUrl = new URLSearchParams(location.search).get('objekt');
+  objektSlug = (ausUrl && wahl.some(o => o.slug === ausUrl)) ? ausUrl : wahl[0].slug;
   objektWahl.fuelle(wahl.map(o => ({ wert: o.slug, text: o.titel || o.name })),
                     objektSlug);
   sub.textContent = mitPv.length
