@@ -792,6 +792,23 @@
   .zu-abzug{margin:2px 0 6px 10px;padding-left:11px;
     border-left:2px solid var(--line)}
   .zu-zeile.unplausibel .zu-verb{color:var(--neg)}
+  /* ---- N122: Verbrauch & Herkunft an der Strom-Kostenposition ------------ */
+  .strompos{margin:0 0 14px}
+  .strompos>label{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft);margin-bottom:7px}
+  .sp-zeile{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .sp-zeile input{width:120px;border:1.5px solid var(--line);border-radius:10px;
+    padding:9px 11px;min-height:44px;background:var(--sheet);text-align:right;
+    font:600 12px var(--mono);color:var(--ink)}
+  .sp-zeile input:focus{outline:none;border-color:var(--teal)}
+  .sp-eh{font:600 11px var(--mono);color:var(--soft);margin-right:4px}
+  .sp-fest{font:600 12px var(--mono);color:var(--ink)}
+  .sp-hint{display:block;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.5;margin-top:7px}
+  /* Extern ist Zukauf, kein Fehler — gedeckt statt rot. Intern kommt aus der
+     eigenen Anlage und ist grün. */
+  .mchip.extern{color:var(--soft);background:#EDF1F0}
+  .mchip.intern{color:var(--pos);background:var(--pos-bg)}
   .st-neu input[type=text]{flex:1 1 190px;width:auto;min-width:0}
   .st-neu select{flex:1 1 190px;min-width:0}
 
@@ -1284,9 +1301,99 @@ const chipEinheit = e => (e === 'Liter' ? 'l' : e);
    Nachkommastellen leben in der Ablese-Maske. */
 const chipZahl = n => Math.round(n || 0).toLocaleString('de-DE');
 
+/* N122 — die Mengen der Strom-Positionen: extern zugekauft (Netzbezug laut
+   Rechnung des Versorgers) und intern aus der eigenen Anlage. Beides zusammen
+   ist der Verbrauch; die Einspeisevergütung gehört NICHT hierher — sie geht am
+   Mietverhältnis vorbei an den Eigentümer der Anlage. */
+function stromMengen() {
+  let extern = 0;
+  let eigen = 0;
+  for (const k of (daten.checkliste || [])) {
+    if (!istStromPos(k) || !(k.menge > 0)) continue;
+    if (k.herkunft === 'extern') extern += k.menge;
+    else if (k.herkunft === 'eigen') eigen += k.menge;
+  }
+  const gesamt = extern + eigen;
+  return { extern, eigen, gesamt, quote: gesamt > 0 ? eigen / gesamt : null };
+}
+
+/* Die Chips der Strom-Zeile: an der obersten Strom-Position der ganze Verbrauch
+   (gesamt · extern · intern · Eigenverbrauchsquote), an den weiteren nur ihre
+   eigene Menge. Extern bleibt gedeckt — es ist Zukauf, kein Fehler; intern ist
+   grün, weil es aus der eigenen Anlage kommt. */
+function stromChipsHtml(k) {
+  const m = stromMengen();
+  // Die Übersicht hängt an der obersten Strom-Position, die auch eine Rechnung
+  // trägt — nicht an einer leeren Katalogzeile.
+  const erste = (daten.checkliste || [])
+    .find(p => istStromPos(p) && p.position_id) === k;
+  // Die eigene Menge trägt jede Zeile selbst — extern gedeckt, intern grün.
+  const eigen = k.herkunft === 'eigen';
+  const eigenChip = k.menge > 0
+    ? `<span class="mchip ${eigen ? 'intern' : 'extern'}">${chipZahl(k.menge)}
+        kWh ${eigen ? 'intern' : 'extern'}</span>` : '';
+  // Gesamt und Quote nur, wenn es beides gibt — sonst stünde dieselbe Zahl
+  // zweimal in derselben Zeile.
+  const beides = m.extern > 0 && m.eigen > 0;
+  if (erste && beides) {
+    return `<span class="mchip" title="Verbrauch gesamt — extern bezogen plus
+        eigene Anlage">${chipZahl(m.gesamt)}&nbsp;kWh</span>${eigenChip}
+      <span class="mchip intern" title="Anteil aus der eigenen Anlage">${
+        Math.round(m.quote * 100)}&nbsp;% eigen</span>`;
+  }
+  return eigenChip;
+}
+
+/* N122 — die Erfassung an einer Strom-Position: wie viele kWh der Betrag deckt
+   und woher der Strom kam. Zwei Positionen ergeben zusammen die Stromkosten —
+   der Netzbezug laut Rechnung und der Eigenverbrauch aus der eigenen Anlage
+   (ob direkt oder aus dem Akku, spielt keine Rolle). */
+function stromPosFeldHtml(k) {
+  if (!istStromPos(k) || !k.position_id) return '';
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const wert = k.menge > 0 ? zahl(k.menge) : '';
+  const knopf = (h, text) => `<button type="button"
+      class="wd-sb${k.herkunft === h ? ' an' : ''}" data-herkunft="${h}"
+      data-herkunft-pid="${k.position_id}"
+      aria-pressed="${k.herkunft === h}">${text}</button>`;
+  const preis = k.preis_je_menge
+    ? `<span class="sp-hint">Das sind ${(k.preis_je_menge * 100)
+        .toLocaleString('de-DE', { maximumFractionDigits: 2 })} ct/kWh.</span>` : '';
+  // Plausibilität gegen die Zähler: was die Anlage laut Zählern hergab, minus
+  // dem Netzbezug, sollte der Eigenverbrauch sein. Nur ein Hinweis, keine Sperre.
+  let abgleich = '';
+  const gesamtZaehler = stromStruktur().gesamt?.verbrauch;
+  if (k.herkunft === 'eigen' && k.menge > 0 && gesamtZaehler != null) {
+    const erwartet = gesamtZaehler - stromMengen().extern;
+    if (Math.abs(erwartet - k.menge) > Math.max(1, Math.abs(erwartet) * 0.05)) {
+      abgleich = `<span class="sp-hint">Die Zähler weisen ${zahl(gesamtZaehler)} kWh
+        aus; abzüglich des Netzbezugs wären ${zahl(Math.round(erwartet * 100) / 100)}
+        kWh aus der eigenen Anlage zu erwarten.</span>`;
+    }
+  }
+  const felder = bearbeitbar
+    ? `<div class="sp-zeile">
+        <input type="text" inputmode="decimal" data-strom-menge="${k.position_id}"
+          value="${wert}" placeholder="kWh" aria-label="Verbrauch in kWh">
+        <span class="sp-eh">kWh</span>
+        ${knopf('extern', 'Netzbezug')}${knopf('eigen', 'eigene Anlage')}
+      </div>`
+    : `<div class="sp-zeile"><span class="sp-fest">${wert ? `${wert} kWh` : '—'}
+        ${k.herkunft === 'eigen' ? '· eigene Anlage'
+          : (k.herkunft === 'extern' ? '· Netzbezug' : '')}</span></div>`;
+  return `<div class="strompos"><label>Verbrauch &amp; Herkunft</label>
+    ${felder}${preis}${abgleich}</div>`;
+}
+
 /* Der runde Zähler-Chip vor dem Namen. Der Tooltip stellt klar, dass hier der
    abgelesene Verbrauch steht — nicht die Verteilungsgewichte der Position. */
 function chipHtml(k) {
+  // N122 — an den Strom-Positionen steht die erfasste Menge (extern/intern),
+  // sobald eine gepflegt ist; sonst wie überall der abgelesene Verbrauch.
+  if (istStromPos(k)) {
+    const strom = stromChipsHtml(k);
+    if (strom) return strom;
+  }
   const c = chipMap.get(k.kostenart);
   if (!c) return '';
   return `<span class="mchip" title="Zählerstand · abgelesener Verbrauch im ` +
@@ -1334,7 +1441,10 @@ function istWasserSammel(k) {
 function istStromPos(k) {
   const n = normUml(k.kostenart);
   if (n.includes('zaehler')) return false;
-  return n === 'strom' || n === 'allgemeinstrom' || n.includes('beleucht');
+  // N122 — es gibt jetzt zwei Strom-Positionen (Netzbezug und Eigenverbrauch);
+  // wie der Nutzer sie nennt, bestimmt er selbst. Darum jede Kostenart mit
+  // „Strom" im Namen, nicht nur die beiden alten Schreibweisen.
+  return n.includes('strom') || n.includes('beleucht');
 }
 
 /* N101 — die Gesamtsumme der drei Wasser-Bestandteile (Frisch-, Schmutz-,
@@ -2145,7 +2255,10 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
     // CDII — logische Reihenfolge: erst die allgemeinen Infos (Kostenart,
     // Anbieter) oben, dann die Verteilung + Aufteilung (beide in verteilungHtml),
     // dann die Belege, zuletzt der Fuß.
-    koerper = `${kostenartFeld}${anbieterFeld}${verteilungHtml(k)}${belege}
+    // N122 — an einer Strom-Position steht dazwischen, wie viele kWh der Betrag
+    // deckt und woher der Strom kam (Netzbezug oder eigene Anlage).
+    koerper = `${kostenartFeld}${anbieterFeld}${stromPosFeldHtml(k)}
+      ${verteilungHtml(k)}${belege}
       <div class="kartenfuss">${fuss}</div>`;
   } else if (auf) {
     // Katalog-Kostenart ohne Position: hier entsteht sie (nicht bei Wasser —
@@ -2782,6 +2895,33 @@ function stromBlockHtml(liste) {
     ${hinweise.map(h => `<div class="zu-kein">${h}</div>`).join('')}
     ${warnungen.map(w => `<div class="ho-warn">▲ ${w}</div>`).join('')}
     ${form}`;
+}
+
+/* N122 — die Menge einer Strom-Position speichern (PATCH /positionen/{id}).
+   Die Einheit fährt mit, damit die Zahl nicht ohne Maß in der Datenbank steht. */
+async function stromMengeSpeichern(input) {
+  const menge = standAusFeld(input);
+  if (menge === null) return;
+  if (Number.isNaN(menge)) { melde('Ungültige Menge', 'neg'); return; }
+  try {
+    await api(`/positionen/${input.dataset.stromMenge}`, { method: 'PATCH',
+      body: { menge, menge_einheit: 'kWh' } });
+    melde('Verbrauch gespeichert', 'pos');
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* N122 — woher der Strom dieser Position kam. Ein zweiter Tipp auf dieselbe
+   Herkunft nimmt sie wieder zurück. */
+async function stromHerkunftSetzen(btn) {
+  const k = (daten.checkliste || []).find(p =>
+    String(p.position_id) === btn.dataset.herkunftPid);
+  const neu = k?.herkunft === btn.dataset.herkunft ? '' : btn.dataset.herkunft;
+  try {
+    await api(`/positionen/${btn.dataset.herkunftPid}`, { method: 'PATCH',
+      body: { herkunft: neu } });
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
 /* Nach jeder Änderung an den Zählern: Maske neu holen, Chips neu rechnen,
@@ -3845,6 +3985,8 @@ inhalt.addEventListener('change', e => {
   // die eine Zeile im Strom-Block einnimmt.
   if (e.target.matches('[data-strom-jahr]')) stromJahreswertSpeichern(e.target);
   if (e.target.matches('[data-strom-rolle-set]')) stromRolleSetzen(e.target);
+  // N122 — die kWh-Menge hinter dem Betrag einer Strom-Position.
+  if (e.target.matches('[data-strom-menge]')) stromMengeSpeichern(e.target);
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
   // N116 - abgerechnete Menge aus dem Bescheid: nur Anzeige-Basis, nichts wird
@@ -3966,6 +4108,9 @@ inhalt.addEventListener('click', async e => {
   // N95 — einen Beleg aus seiner Kostenposition herausnehmen (Datei bleibt).
   const belegWeg = e.target.closest('[data-beleg-loesen]');
   if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
+  // N122 — Herkunft einer Strom-Position: Netzbezug oder eigene Anlage.
+  const herk = e.target.closest('[data-herkunft]');
+  if (herk) return stromHerkunftSetzen(herk);
   // N120 — Strom-Zähler anlegen / entfernen.
   const stAdd = e.target.closest('[data-strom-add]');
   if (stAdd) return stromZaehlerAnlegen(stAdd);

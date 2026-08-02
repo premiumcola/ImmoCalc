@@ -117,7 +117,7 @@ export const NAV = [
   ['Nebenkosten', 'nebenkosten.html', '≡'],
   // N83/N87 — Strom/PV-Subsystem als eigene Unterseite (je Objekt/Jahr),
   // samt Amortisation des PV-Investments.
-  ['PV & Amortisation', 'strom.html', '⚡'],
+  ['PV Amortisation', 'strom.html', '⚡'],
   ['Eigentümer', 'eigentuemer.html', '☗'],
   // CCXL — das Immobilien-Lexikon. Steht bewusst vor „Einstellungen", damit die
   // Einstellungen der letzte Eintrag bleiben; auf dem Handy wandert es dadurch

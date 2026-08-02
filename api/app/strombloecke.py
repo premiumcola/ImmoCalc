@@ -126,3 +126,33 @@ def einspeiseverguetung(kwh_bis10: float, kwh_ab10: float,
     """
     return round(max(0.0, kwh_bis10) * satz_bis10
                  + max(0.0, kwh_ab10) * satz_ab10, 2)
+
+
+# --------------------------------------------------------------------------
+# N126 — die Verbrauchsaufteilung aus der SolarEdge-Oberfläche
+# --------------------------------------------------------------------------
+
+def aus_solaredge(verbrauch_kwh: float, netz_prozent: float,
+                  pv_prozent: float, speicher_prozent: float,
+                  extern_betrag: float = 0.0,
+                  eigen_betrag: float = 0.0) -> tuple[Block, Block, list[str]]:
+    """Die zwei Kostenblöcke aus der SolarEdge-Verbrauchsleiste.
+
+    SolarEdge weist den Verbrauch in drei Anteilen aus — „Vom Netz",
+    „Aus PV-Energie" und „Vom Speicher". Für die Abrechnung zählen davon nur
+    zwei Töpfe: zugekauft (Netz) und selbst erzeugt (PV + Speicher). Ob der
+    eigene Strom direkt vom Dach oder aus dem Akku kam, ändert am Preis nichts.
+
+    Beispiel des Nutzers (01.10.24–30.09.25): 10,8 MWh Verbrauch, 24 % Netz,
+    50 % PV, 26 % Speicher → 2592 kWh zugekauft, 8208 kWh eigen (76 %).
+    """
+    warnungen: list[str] = []
+    summe = netz_prozent + pv_prozent + speicher_prozent
+    if abs(summe - 100.0) > 0.5:
+        warnungen.append(
+            f"Die Anteile ergeben {summe:.0f} % statt 100 % — bitte die "
+            "SolarEdge-Werte prüfen.")
+    extern_kwh = round(verbrauch_kwh * netz_prozent / 100.0, 3)
+    eigen_kwh = round(verbrauch_kwh * (pv_prozent + speicher_prozent) / 100.0, 3)
+    return (Block(kwh=extern_kwh, betrag=extern_betrag),
+            Block(kwh=eigen_kwh, betrag=eigen_betrag), warnungen)

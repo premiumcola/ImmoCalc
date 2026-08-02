@@ -122,3 +122,42 @@ def test_einspeiseverguetung_nur_eine_stufe():
     from app.strombloecke import einspeiseverguetung
     assert einspeiseverguetung(1000, 0) == 82.00
     assert einspeiseverguetung(0, 1000) == 71.00
+
+
+# --------------------------------------------------------------------------
+# N126 — SolarEdge-Verbrauchsaufteilung
+# --------------------------------------------------------------------------
+
+def test_solaredge_anteile_werden_zu_zwei_bloecken():
+    """Screenshot des Nutzers: 10,8 MWh · 24 % Netz · 50 % PV · 26 % Speicher.
+    PV und Speicher sind derselbe Topf — beides ist eigener Strom."""
+    from app.strombloecke import aus_solaredge
+    extern, eigen, warnungen = aus_solaredge(10800.0, 24.0, 50.0, 26.0)
+    assert not warnungen
+    assert extern.kwh == 2592.0
+    assert eigen.kwh == 8208.0
+    assert extern.kwh + eigen.kwh == 10800.0
+
+
+def test_solaredge_anteile_die_nicht_aufgehen_werden_gemeldet():
+    from app.strombloecke import aus_solaredge
+    _, _, warnungen = aus_solaredge(10800.0, 24.0, 50.0, 20.0)
+    assert warnungen and "94 %" in warnungen[0]
+
+
+def test_solaredge_bloecke_lassen_sich_direkt_verteilen():
+    """Aus dem Screenshot heraus bis zur Verteilung, mit dem E-Auto vorab."""
+    from app.strombloecke import aus_solaredge
+    extern, eigen, _ = aus_solaredge(10800.0, 24.0, 50.0, 26.0,
+                                     extern_betrag=862.51, eigen_betrag=2708.64)
+    e = verteile(extern, eigen,
+                 {"Wohnug 1.OG": 3000.0, "Wohung EG": 2000.0,
+                  "Büro EG": 1500.0, "Studio 1.OG": 2926.14, "E-Auto": 1373.86},
+                 eauto_einheit="E-Auto",
+                 eauto_extern_kwh=300.0, eauto_eigen_kwh=1073.86)
+    assert e.gesamt == round(862.51 + 2708.64, 2)
+    assert round(sum(e.kosten.values()), 2) == e.gesamt
+    # Das E-Auto laedt ueberwiegend solar und faehrt damit guenstiger als der
+    # Schnitt — genau der Vorteil, den der Nutzer beschreibt.
+    schnitt = e.gesamt / 10800.0
+    assert e.kosten["E-Auto"] / 1373.86 < schnitt

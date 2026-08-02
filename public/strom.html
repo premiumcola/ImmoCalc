@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>PV &amp; Amortisation · ImmoCalc</title>
+<title>PV Amortisation · ImmoCalc</title>
 <link rel="icon" href="icons/icon.svg">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -116,7 +116,7 @@
   <div class="bar">
     <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
     <div class="barwrap">
-      <h1>PV &amp; Amortisation</h1>
+      <h1>PV Amortisation</h1>
       <div class="sub" id="sub">wird geladen …</div>
     </div>
   </div>
@@ -151,11 +151,6 @@ const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) 
 
 /* Die Eingabefelder — dieselbe Liste, aus der die Maske gebaut und die Werte
    ausgelesen werden. `s` = Nachkommastellen im Eingabefeld (step). */
-const F_QUELLEN = [
-  ['netz', 'Netz (Zukauf)'],
-  ['solar', 'Solar (Direkt)'],
-  ['akku', 'Akku'],
-];
 const F_PV = [
   ['pv_produktion_kwh', 'PV-Produktion', 'kWh', 1],
   ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
@@ -183,41 +178,6 @@ function skelett() {
          Nebenkostenbereich gezogen (Zeitraum → Zählerstände). Diese Seite
          beantwortet nur noch eine Frage: was trägt die Anlage ab, und wann hat
          sie sich bezahlt gemacht. -->
-    <div class="karte">
-      <div class="hh"><h3>Verbrauch &amp; Verteilung</h3></div>
-      <p class="hint">Die Stromzähler und die Verteilung auf die Einheiten
-        werden in der Nebenkostenabrechnung gepflegt — dort, wo auch die Wasser-
-        und Heizungszähler stehen. Von hier fließt nur zurück, was je Jahr
-        tatsächlich verrechnet wurde.</p>
-      <a class="btn-fl" id="zurNk" href="index.html">Zu den Zählerständen</a>
-    </div>
-
-    <div class="karte eng">
-      <div class="hh"><h3>Bezugsquellen</h3></div>
-      <p class="hint">Menge und Preis je Quelle. Kosten = Menge × €/kWh.</p>
-      ${F_QUELLEN.map(([q, name]) => `
-        <div class="quelle">
-          <div class="qname">${esc(name)}</div>
-          <div class="field">
-            <label for="f_${q}_kwh">Menge <span class="einheit">(kWh)</span></label>
-            <input class="inp" type="number" inputmode="decimal" step="1" min="0"
-                   id="f_${q}_kwh" data-feld="${q}_kwh">
-          </div>
-          <div class="field">
-            <label for="f_${q}_preis">Preis <span class="einheit">(€/kWh)</span></label>
-            <input class="inp" type="number" inputmode="decimal" step="0.01" min="0"
-                   id="f_${q}_preis" data-feld="${q}_preis">
-          </div>
-          <div class="qkosten"><span class="kl">Kosten</span>
-            <span class="kv" id="k_${q}">–</span></div>
-        </div>`).join('')}
-    </div>
-
-    <div class="karte">
-      <div class="hh"><h3>Kosten je Verbrauchsgruppe</h3></div>
-      <div class="gruppen" id="gruppen"></div>
-    </div>
-
     <div class="karte">
       <div class="hh"><h3>PV-Anlage</h3></div>
       <p class="hint">Eigenverbrauch = Produktion − Einspeisung. Ertrag =
@@ -308,29 +268,6 @@ function anteileLesbar(roh) {
 
 /* Das Engine-Ergebnis in die Karten schreiben (Inputs bleiben unberührt). */
 function ergebnisZeigen(r) {
-  for (const q of ['netz', 'solar', 'akku']) {
-    document.getElementById('k_' + q).textContent = eur(r.quellen[q].kosten);
-  }
-
-  const gr = (name, key, cls) => {
-    const g = r.gruppen[key];
-    const zeile = (label, q) => `<div class="zeile"><span>${label}</span>
-      <span><b>${eur(g[q + '_kosten'])}</b>
-        <span class="kwhx">${kwh(g[q + '_kwh'])}</span></span></div>`;
-    return `<div class="gr">
-      <div class="gt"><span class="gn">${esc(name)}</span>
-        <span class="gs" style="color:${cls}">${eur(g.kosten)}</span></div>
-      ${zeile('Netz', 'netz')}
-      ${zeile('Solar', 'solar')}
-      ${zeile('Akku', 'akku')}
-      <div class="zeile" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px">
-        <span>Summe</span><span><b>${kwh(g.kwh)}</b></span></div>
-    </div>`;
-  };
-  document.getElementById('gruppen').innerHTML =
-    gr('WG (Wohnungen)', 'WG', 'var(--teal-d)')
-    + gr('Büro / Studio', 'Büro/Studio', 'var(--amber)');
-
   const pv = r.pv;
   document.getElementById('pv').innerHTML = `
     <div class="k"><span class="kl">Eigenverbrauch</span><span class="kv">${kwh(pv.eigenverbrauch_kwh)}</span></div>
