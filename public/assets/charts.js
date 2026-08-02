@@ -235,6 +235,15 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     return name.length > max ? name.slice(0, max - 1) + '…' : name;
   };
 
+  // N82 — die rechte Spalte (Einheiten) trägt Grau-Abstufungen statt der
+  // Kostenart-Farben: gleiche Farbe links/rechts würde sonst eine Beziehung
+  // suggerieren („Heizung" ↔ „Wohnung 1.OG"), die es nicht gibt. Die Bänder
+  // behalten die Kostenart-Farbe (Quelle), so bleibt die Herkunft ablesbar.
+  const GRAU = ['#4A575C', '#5C6B70', '#728287', '#8A989D', '#A2AEB2', '#BAC4C7'];
+  const rechteIds = [...lage.entries()]
+    .filter(([, l]) => l.spalte === spalten[spalten.length - 1]).map(([i]) => i);
+  const grauFuer = i => GRAU[Math.max(0, rechteIds.indexOf(i)) % GRAU.length];
+
   const kaesten = [...lage.entries()].map(([i, l]) => {
     const rechts = l.spalte === spalten[spalten.length - 1];
     const mittig = !rechts && l.spalte !== spalten[0];
@@ -258,7 +267,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     const anker = rechts ? 'end' : 'start';
     const ly = l.mitte;
     return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
-                  rx="3" fill="${knotenFarbe(i)}"/>
+                  rx="3" fill="${rechts ? grauFuer(i) : knotenFarbe(i)}"/>
       <text x="${tx}" y="${ly - 3}" class="kn" text-anchor="${anker}">${
         kuerze(knoten[i].name, rechts)}<title>${knoten[i].name}</title></text>
       <text x="${tx}" y="${ly + 10}" class="kw" text-anchor="${anker}">${
