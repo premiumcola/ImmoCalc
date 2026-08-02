@@ -8,6 +8,9 @@ from app.wasser import Zaehlerposten, verrechne  # noqa: E402
 
 
 def test_kostensplit_2024_kontrollsumme():
+    # N107 - bewusste Fachlogik-Aenderung: Gartenwasser traegt nur den
+    # FRISCHWASSER-Anteil (es laeuft nicht in die Kanalisation), die
+    # Differenz zum Mischpreis geht auf den Rest. Kontrollsumme unveraendert.
     # Die drei Bestandteile der Wasserrechnung 2024.
     komponenten = {"wasser": 298.05, "schmutz": 362.56, "niederschlag": 186.91}
     gesamt_m3 = 142.5775425531915           # Hauptzähler-Differenz (J4)
@@ -33,8 +36,8 @@ def test_kostensplit_2024_kontrollsumme():
     assert kosten["Studio Warmwasser"] == 33.79
     # Rest = Gesamt − Zähler − Garten (J14) → ~79,14 m³ → ~470,41 €
     assert round(e.rest_m3, 1) == 79.1
-    assert e.rest_kosten == 470.41
-    assert e.garten_kosten == 89.16
+    assert e.rest_kosten == 528.21
+    assert e.garten_kosten == 31.36
     # Kontrollsumme aller verteilten € (inkl. Garten/Eigentümer) = Gesamtkosten
     # (± 1 Cent Rundung beim Summieren gerundeter Einzelposten).
     assert abs(e.kontrolle - 847.52) <= 0.01

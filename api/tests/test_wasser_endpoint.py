@@ -110,12 +110,12 @@ def test_wasser_endpoint_kostensplit_2024():
     assert abs(summe["Studio 1.OG"] - 263.34) <= 0.01
 
     # Gartenwasser: Menge heraus, Kosten beim Eigentümer.
-    assert res["garten"]["kosten"] == 89.16
+    assert res["garten"]["kosten"] == 31.36
     assert res["garten"]["einheit"] == "Studio 1.OG"
 
     # Rest (Haupthaus) und Kontrollsumme.
     assert abs(res["rest_m3"] - 79.14) <= 0.02
-    assert res["rest_kosten"] == 470.41
+    assert res["rest_kosten"] == 528.21
     assert abs(res["kontrolle"] - 847.52) <= 0.02
 
     # Büro trägt genau seine gemessene Kaltwasser-Zeile.

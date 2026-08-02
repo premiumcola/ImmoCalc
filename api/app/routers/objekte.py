@@ -1146,8 +1146,13 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
                        "vorauszahlungen": len(vzs)},
         "checkliste": checkliste,
         "sankey": {"knoten": knoten, "fluss": fluss},
+        # N108 (Fund 12) — Betrag, Kostenart und Groesse gehoeren mit: ohne sie
+        # verglich die Duplikat-Pruefung im Beleg-Dialog `undefined` mit
+        # `undefined` und hielt jeden beliebigen Beleg fuer das Doppel.
         "dokumente": [{"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
-                       "kategorie": d.kategorie} for d in dokumente],
+                       "kategorie": d.kategorie, "betrag": d.betrag,
+                       "kostenart": d.kostenart, "groesse": d.groesse}
+                      for d in dokumente],
         "belege_je_art": belege,
         "vorauszahlungen": [{"partei": v.partei, "betrag": v.betrag} for v in vzs],
     }

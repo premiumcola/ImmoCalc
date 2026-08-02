@@ -1228,6 +1228,10 @@ function baueChipMap() {
     if (z.verbrauch == null) continue;
     const ziel = z.kostenart || zaehlerNameZuKostenart(z.name);
     if (!ziel) continue;
+    // N107 - Gartenwasser ist ein TEIL des Gesamtverbrauchs (es laeuft ueber den
+    // Hauptzaehler), kein zusaetzlicher Bezug. Ohne diesen Ausschluss zeigte der
+    // Chip 203 m3 statt der abgelesenen 188,1 m3.
+    if (wasserArt(z) === 'Gartenwasser') continue;
     if (hat.has(ziel) ? !!z.hauptzaehler_id : z.typ === 'rest') continue;
     const cur = map.get(ziel) || { verbrauch: 0, messeinheit: z.messeinheit };
     cur.verbrauch += z.verbrauch;
@@ -2392,7 +2396,7 @@ async function zeichnen() {
     // die Zählerstände werden jetzt inline je Kategorie (Wasser/Heizung/Strom)
     // im aufklappbaren Panel erfasst.
     rumpf = wegDirektHtml() + flussKarte + sortWahl +
-      zeilen + abschlussHtml() + zeitraumFussHtml();
+      zeilen + ablesenKnopfHtml() + abschlussHtml() + zeitraumFussHtml();
   } else if (ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
@@ -2416,14 +2420,14 @@ async function zeichnen() {
   } else if (ansicht === 'pruef') {
     montiereSchluessel();
     // N74 — eine aufgeklappte Wasser-Position lädt ihre Detailübersicht inline.
-    const wInline = inhalt.querySelector('[data-wasser-inline]');
-    if (wInline) fuelleWasserInline(wInline);
+    // N108 (Fund 11) — es koennen mehrere Positionen gleichzeitig offen sein
+    // (die drei Heizstufen!). querySelector fuellte nur die erste, die uebrigen
+    // blieben dauerhaft auf „Wird geladen …".
+    inhalt.querySelectorAll('[data-wasser-inline]').forEach(fuelleWasserInline);
     // N79 — die aufgeklappte Heizöl-Position lädt ihren Öl-Manager inline.
-    const hInline = inhalt.querySelector('[data-heizoel-inline]');
-    if (hInline) fuelleHeizoelInline(hInline);
+    inhalt.querySelectorAll('[data-heizoel-inline]').forEach(fuelleHeizoelInline);
     // N89 — die Strom-Position lädt ihre Aufteilung je Einheit.
-    const sInline = inhalt.querySelector('[data-strom-inline]');
-    if (sInline) fuelleStromInline(sInline);
+    inhalt.querySelectorAll('[data-strom-inline]').forEach(fuelleStromInline);
   }
 }
 
@@ -2739,7 +2743,7 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
           ? ` · insgesamt erfasst: ${zahl(best.bestand_liter)} L` : ''}</div>` : '';
   const form = bearbeitbar ? `
     <div class="ho-neu">
-      <input type="date" data-ho-datum aria-label="Datum" value="${daten.start || ''}">
+      <input type="date" data-ho-datum aria-label="Datum" value="${daten.ende || ''}">
       <input type="number" step="0.1" data-ho-liter placeholder="Liter" aria-label="Liter">
       <input type="number" step="0.01" data-ho-wert placeholder="€ gesamt" aria-label="Wert €">
       <label class="ho-anfw"><input type="checkbox" data-ho-anf> Anfangsbestand</label>
@@ -4671,12 +4675,17 @@ function wasserDetailInhalt(d) {
       { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`, ' preis')}
   </div>`;
 
+  // N108 (Fund 7) — die Warnungen der Rechnung MUESSEN sichtbar sein: ein
+  // Zaehler ohne aufloesbare Einheit wird uebersprungen, sein Verbrauch faellt
+  // in den Rest. Ohne Hinweis merkt das niemand.
+  const warn = (d.warnungen || []).map(t =>
+    `<div class="ho-warn">▲ ${esc(t)}</div>`).join('');
   const einheiten = d.einheiten || [];
   if (!einheiten.length) {
     return (d.bereit === false
       ? `<div class="wd-hinweis">${esc(d.hinweis
           || 'Für die Verrechnung fehlen noch Angaben.')}</div>` : '')
-      + kosten;
+      + kosten + warn;
   }
 
   // Zellinhalt einer Verbrauchszeile: m³ + € + Quelle (gemessen/berechnet).
@@ -4740,17 +4749,22 @@ function wasserDetailInhalt(d) {
       <tbody>${artZeilen}${gartenZeile}${summeZeile}</tbody>
     </table></div>`;
 
+  // N108 (Fund 4/9) — die Kontrollsumme MUSS den Gesamtkosten entsprechen.
+  // Weicht sie ab, fehlt Geld in der Verteilung (etwa weil kein Ziel fuer den
+  // Rest gefunden wurde) — das darf nicht als blosse Zahl durchgehen.
+  const stimmt = Math.abs((d.kontrolle ?? 0) - (k.gesamt ?? 0)) < 0.02;
   const fuss = `<div class="wd-fuss">
       <span>Gesamtverbrauch <b>${m3(d.gesamt_m3)}</b></span>
       ${d.rest_m3 != null ? `<span>Rest Haupthaus <b>${m3(d.rest_m3)}</b> ·
         ${eur(d.rest_kosten)}</span>` : ''}
-      <span class="wd-kontroll">Kontrolle ${eur(d.kontrolle ?? k.gesamt)}</span>
+      <span class="wd-kontroll${stimmt ? '' : ' neg'}">Kontrolle ${
+        eur(d.kontrolle ?? k.gesamt)}${stimmt ? '' : ` ≠ ${eur(k.gesamt)}`}</span>
     </div>`;
 
   return (d.bereit === false
     ? `<div class="wd-hinweis">${esc(d.hinweis
         || 'Für die Verrechnung fehlen noch Angaben.')}</div>` : '')
-    + kosten + tabelle + fuss;
+    + kosten + warn + tabelle + fuss;
 }
 
 /* ---- Zähler-Konfiguration (CCCLXXX) --------------------------------------

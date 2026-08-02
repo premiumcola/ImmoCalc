@@ -69,11 +69,14 @@ class StromIn(BaseModel):
     pv_anteile: str = ""              # JSON {Name: ‰}; leer = Vorgabe 5/6+1/6
     tanken_preis: float = 0.0
     tanken_person: str = ""
-    notiz: str = ""
+    # N108 (Fund 2) — diese drei Felder schickt die Maske nicht mit. Als
+    # Pflichtfeld mit Default "" loeschte jedes Speichern die gespeicherte
+    # Zuordnung und die Notiz. `None` heisst jetzt „nicht mitgeschickt".
+    notiz: str | None = None
     # N89 — Zuordnung der Immobilien-Einheiten zu den beiden Verbrauchsgruppen,
     # je eine komma-separierte Liste von Bezeichnungen ("EG, 1.OG").
-    wg_einheiten: str = ""
-    buero_einheiten: str = ""
+    wg_einheiten: str | None = None
+    buero_einheiten: str | None = None
 
 
 def _hole_oder_neu(session: Session, objekt_id: int, jahr: int) -> Stromjahr:
@@ -154,11 +157,15 @@ def speichern(slug: str, jahr: int, data: StromIn,
     """Die Strom-Eingaben eines Objekt-Jahres speichern (anlegen oder
     aktualisieren) — ein Datensatz je Objekt und Jahr."""
     sj = _hole_oder_neu(session, o.id, jahr)
-    werte = data.model_dump()
-    zuordnung = (werte.pop("wg_einheiten", ""), werte.pop("buero_einheiten", ""))
+    werte = data.model_dump(exclude_none=True)
+    wg = werte.pop("wg_einheiten", None)
+    buero = werte.pop("buero_einheiten", None)
     for feld, wert in werte.items():
         setattr(sj, feld, wert)
-    _merke_zuordnung(sj, *zuordnung)
+    # Nur anfassen, wenn wirklich etwas mitkam - sonst bleibt die gespeicherte
+    # Zuordnung stehen.
+    if wg is not None or buero is not None:
+        _merke_zuordnung(sj, wg or "", buero or "")
     session.add(sj)
     session.commit()
     session.refresh(sj)

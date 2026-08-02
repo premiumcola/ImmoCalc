@@ -83,8 +83,18 @@ def verrechne(komponenten: dict[str, float], gesamt_m3: float,
 
     zaehler_m3 = sum(max(0.0, z.m3) for z in zaehler)
     rest_m3 = gesamt_m3 - zaehler_m3 - max(0.0, garten_m3)
-    rest_kosten = preis * rest_m3
-    garten_kosten = preis * max(0.0, garten_m3)
+    # N107 - Gartenwasser wird NUR mit dem Frischwasser-Anteil belastet: es
+    # versickert im Beet und laeuft weder in die Kanalisation (Schmutzwasser)
+    # noch ueber die versiegelte Flaeche (Niederschlagswasser). Der volle
+    # Mischpreis waere hier zu teuer. Ohne Frischwasser-Angabe (Altbestand)
+    # bleibt es beim Mischpreis, damit die Kontrollsumme aufgeht.
+    frisch = float(komponenten.get("wasser") or 0.0)
+    preis_frisch = (frisch / gesamt_m3) if frisch > 0 else preis
+    garten_kosten = preis_frisch * max(0.0, garten_m3)
+    # Was das Gartenwasser weniger traegt, tragen die uebrigen Verbraeuche mit -
+    # die Rechnung des Versorgers ist ja trotzdem zu zahlen. Der Aufschlag geht
+    # auf den Rest (Haupthaus), der ohnehin die Ausgleichsgroesse ist.
+    rest_kosten = preis * rest_m3 + (preis - preis_frisch) * max(0.0, garten_m3)
 
     einheiten: dict[str, dict] = {}
 
