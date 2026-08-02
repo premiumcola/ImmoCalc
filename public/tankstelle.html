@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>E-Tankstelle · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* ------------------------------------------------------------------
+     Nur tankstelle.html (N132). immo.css wird nicht angefasst; was sich
+     spaeter als seitenuebergreifend erweist, wandert dann dorthin.
+     ------------------------------------------------------------------ */
+  .filter{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .filter > div{flex:1 1 130px;min-width:0}
+
+  .karte{background:var(--sheet);border-radius:16px;padding:16px;
+         margin-bottom:14px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .karte h3{font:600 13px var(--disp);letter-spacing:-.01em;margin:0;
+            color:var(--ink)}
+  .karte .hh{display:flex;align-items:baseline;justify-content:space-between;
+             gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .karte .hint{display:block;font:400 12px var(--body);color:var(--soft);
+               line-height:1.55;margin:0 0 16px;max-width:620px}
+
+  /* ---- Kennzahlen ------------------------------------------------------ */
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));
+       gap:10px}
+  .kpi .k{background:var(--paper);border-radius:14px;padding:12px 13px}
+  .kpi .kl{display:block;font:600 9px var(--mono);letter-spacing:.07em;
+           text-transform:uppercase;color:var(--soft)}
+  .kpi .kv{display:block;font:700 16px var(--disp);letter-spacing:-.02em;
+           margin-top:6px;color:var(--ink)}
+  .kpi .kv.teal{color:var(--teal-d)}
+  .kpi .kv.amber{color:var(--amber)}
+
+  /* ---- Nutzerliste ----------------------------------------------------- */
+  .nliste{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+  .nz{display:flex;align-items:center;gap:12px;background:var(--paper);
+      border-radius:14px;padding:10px 10px 10px 14px;min-height:44px}
+  .nz .nk{width:34px;height:34px;border-radius:11px;background:var(--teal-l);
+          color:var(--teal-d);flex:none;display:flex;align-items:center;
+          justify-content:center;font:600 14px var(--disp)}
+  .nz .nt{flex:1;min-width:0}
+  .nz .nn{display:block;font:600 13.5px var(--disp);letter-spacing:-.01em;
+          color:var(--ink);overflow-wrap:anywhere}
+  .nz .nm{display:block;font:400 11.5px var(--body);color:var(--soft);
+          margin-top:2px;overflow-wrap:anywhere}
+  .nz .nx{flex:none;width:44px;height:44px;border:none;background:none;
+          color:var(--soft);font:400 20px var(--body);border-radius:12px;
+          cursor:pointer}
+  .nz .nx:hover{background:var(--neg-bg);color:var(--neg)}
+
+  /* Anlegen: auf dem iPhone untereinander, ab iPad nebeneinander. `auto-fit`
+     statt fester Spalten — die Masken haben zwei bzw. drei Felder, und eine
+     feste Spaltenzahl liesse den Knopf in der zweiten Reihe allein stehen. */
+  .neu{display:grid;grid-template-columns:1fr;gap:10px;background:var(--paper);
+       border-radius:14px;padding:14px}
+  .neu .field{margin:0}
+  .neu .fl{display:block;font:600 10.5px var(--mono);letter-spacing:.06em;
+           text-transform:uppercase;color:var(--soft);margin-bottom:7px}
+  @media(min-width:520px){
+    .neu{grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+         align-items:end}
+  }
+
+  /* ---- Verlauf: Grafik, Legende, Tabelle ------------------------------- */
+  .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible;
+         margin:4px auto 12px}
+  .legende{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 16px;
+           font:500 11.5px var(--body);color:var(--soft)}
+  .legende .le{display:inline-flex;align-items:center;gap:7px}
+  .legende i{width:11px;height:11px;border-radius:4px;flex:none}
+
+  .tabrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
+             border-radius:12px;background:var(--paper)}
+  .mt{border-collapse:collapse;width:100%;min-width:322px}
+  .mt th{font:600 9px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+         color:var(--soft);text-align:right;padding:11px 8px 8px;
+         white-space:nowrap}
+  .mt th:first-child{text-align:left;padding-left:14px}
+  .mt th:last-child{padding-right:14px}
+  .mt td{font:500 12px var(--mono);color:var(--ink);text-align:right;
+         padding:9px 8px;white-space:nowrap;
+         border-top:1px solid rgba(22,38,44,.07)}
+  .mt td:first-child{text-align:left;padding-left:14px;font:600 12.5px var(--disp);
+                     letter-spacing:-.01em}
+  .mt td:last-child{padding-right:14px}
+  .mt td.leise{color:var(--soft)}
+  .mt td .pz{display:block;font:400 9.5px var(--mono);color:var(--soft);
+             margin-top:2px}
+  .mt tfoot td{font-weight:700;border-top:1.5px solid var(--line)}
+
+  /* ---- Abrechnung ------------------------------------------------------ */
+  .quartale{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
+  .quartale button{min-height:38px;padding:8px 14px;border:none;cursor:pointer;
+                   border-radius:999px;background:var(--paper);color:var(--soft);
+                   font:600 11.5px var(--mono);letter-spacing:.03em}
+  .quartale button[aria-pressed="true"]{background:var(--teal-l);
+                                        color:var(--teal-d)}
+
+  .az{background:var(--paper);border-radius:14px;padding:14px;
+      margin-bottom:10px}
+  .az .ak{display:flex;align-items:baseline;justify-content:space-between;
+          gap:10px;flex-wrap:wrap}
+  .az .an{font:600 14px var(--disp);letter-spacing:-.01em;color:var(--ink);
+          overflow-wrap:anywhere}
+  .az .ab{font:700 17px var(--disp);letter-spacing:-.02em;color:var(--teal-d)}
+  .az .ad{display:block;font:400 11.5px var(--body);color:var(--soft);
+          margin-top:6px;line-height:1.5;overflow-wrap:anywhere}
+  /* Vorschau und Versand stehen nebeneinander — zwei volle Balken
+     untereinander wirkten wie zwei Hauptwege, dabei ist einer der Vorlauf
+     des anderen. */
+  .az .aw{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .az .aw .btn{flex:1 1 132px;width:auto;min-height:44px;padding:11px 12px;
+               font-size:14px}
+  .az .fehlt{margin-top:10px}
+
+  .mailtext{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--sheet);
+            border-radius:12px;padding:14px;margin:12px 0 0;
+            font:400 11.5px var(--mono);color:var(--ink);line-height:1.65}
+  .mailkopf{display:block;font:600 9px var(--mono);letter-spacing:.07em;
+            text-transform:uppercase;color:var(--soft);margin:12px 0 0}
+
+  /* ---- Ladungen -------------------------------------------------------- */
+  .lliste{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .lz{display:flex;align-items:center;gap:10px;background:var(--paper);
+      border-radius:12px;padding:8px 8px 8px 14px;min-height:44px;
+      font:500 12.5px var(--body);color:var(--ink)}
+  .lz .ld{flex:1;min-width:0;overflow-wrap:anywhere}
+  .lz .ldt{display:block;font:400 11px var(--mono);color:var(--soft);
+           margin-top:2px}
+  .lz .lk{font:600 12px var(--mono);color:var(--soft);white-space:nowrap}
+  .lz .lx{flex:none;width:40px;height:40px;border:none;background:none;
+          color:var(--soft);font:400 19px var(--body);border-radius:11px;
+          cursor:pointer}
+  .lz .lx:hover{background:var(--neg-bg);color:var(--neg)}
+
+  /* ---- Hinweise und Leerzustände --------------------------------------- */
+  .notiz{display:flex;gap:10px;align-items:flex-start;background:var(--amber-bg);
+         color:var(--amber);border-radius:12px;padding:12px 14px;
+         margin:0 0 16px;font:500 12px var(--body);line-height:1.55}
+  .notiz .wi{font-size:15px;line-height:1.3;flex:none}
+  .leer{background:var(--paper);border-radius:14px;padding:20px 16px;
+        text-align:center;font:400 12.5px var(--body);color:var(--soft);
+        line-height:1.6;margin:0 0 4px}
+  .leer b{display:block;font:600 14px var(--disp);color:var(--ink);
+          margin-bottom:6px;letter-spacing:-.01em}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
+    <div class="barwrap">
+      <h1>E-Tankstelle</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <div class="filter">
+      <div id="objekt"></div>
+      <div id="jahr"></div>
+    </div>
+    <div id="inhalt"></div>
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+/* N132 — die E-Tankstelle als eigener Bereich.
+   An der Ladestation der PV-Anlage laden auch andere. Das ist eine eigene
+   Fachlichkeit und keine Karte auf der PV-Seite: hier werden die Nutzer
+   gepflegt (Name + E-Mail, beliebig viele, nicht zwangslaeufig Eigentuemer),
+   hier steht der monatliche Verlauf mit der Aufteilung Netz/eigener Strom,
+   und hier entsteht die Abrechnung, die quartalsweise verschickt wird.
+   Gerechnet wird im Backend (api/app/routers/tankstelle.py). */
+import { api, eur, esc, melde, frage, installNav } from './assets/immo.js';
+installNav();
+import { auswahlfeld } from './assets/auswahl.js';
+import { legende } from './assets/charts.js';
+
+const sub = document.getElementById('sub');
+const inhalt = document.getElementById('inhalt');
+
+const NETZ = '#916212';        /* --amber: zugekaufter Strom */
+const EIGEN = '#0F6E5C';       /* --teal: Speicher + PV */
+const OFFEN = '#B7C2C4';       /* Herkunft unbekannt — nie als 0 zeigen */
+
+const kwh = (n, stellen = 2) => (n ?? 0).toLocaleString('de-DE',
+  { minimumFractionDigits: stellen, maximumFractionDigits: stellen }) + ' kWh';
+const proz = n => n == null ? '—'
+  : n.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' %';
+const zahl = (n, stellen = 2) => n == null ? '—'
+  : n.toLocaleString('de-DE', { minimumFractionDigits: stellen,
+                                maximumFractionDigits: stellen });
+/* Zweistellig — „18.01.2026" steht in einer Spalte ruhiger als „18.1.2026"
+   und deckt sich mit der Schreibweise in der Mail. */
+const datum = iso => new Date(iso).toLocaleDateString('de-DE',
+  { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+let objektSlug = '';
+let quartal = 0;               /* 0 = ganzes Jahr */
+let offeneVorschau = 0;        /* Nutzer, dessen Mail gerade aufgeklappt ist */
+
+/* =======================================================================
+   Grafik: je Monat ein Balken, unten der eigene Strom, darueber der Netzbezug.
+   Ein Monat ohne Ladung bleibt als leere Stelle stehen — eine Luecke im
+   Verlauf waere kein Verlauf.
+   ======================================================================= */
+function grafik(monate) {
+  const max = Math.max(1, ...monate.map(m => m.kwh || 0));
+  const breite = 340, hoehe = 168, padO = 10, padU = 26;
+  const nutz = hoehe - padO - padU;
+  const proMonat = breite / monate.length;
+  const bw = Math.min(20, proMonat * 0.62);
+  const grund = padO + nutz;
+
+  // Gestapelt von unten: eigener Strom, darüber der Netzbezug, ganz oben das,
+  // was die Wallbox keinem der beiden zuordnet. Letzteres dem Netz zuzuschlagen
+  // hätte den Juli 2026 zu 73 % amber gefärbt, obwohl 0,3 % aus dem Netz kamen.
+  const saeulen = monate.map((m, i) => {
+    const mitte = i * proMonat + proMonat / 2;
+    const h = (m.kwh || 0) / max * nutz;
+    const x = mitte - bw / 2;
+    const titel = `${m.label}: ${kwh(m.kwh)}` + (m.aufteilung
+      ? ` · Netz ${proz(m.extern_prozent)} · eigen ${proz(m.eigen_prozent)}`
+        + (m.rest_kwh > 0.05 ? ` · nicht zugeordnet ${proz(m.rest_prozent)}` : '')
+      : '');
+    if (h <= 0) return `<text x="${mitte}" y="${hoehe - 8}" class="ax">${esc(m.kurz)}</text>`;
+    const block = (menge, farbe, unten) => {
+      const hh = (menge || 0) / max * nutz;
+      return hh <= 0 ? ''
+        : `<rect x="${x}" y="${grund - unten - hh}" width="${bw}" height="${hh}"
+                 rx="4" fill="${farbe}"/>`;
+    };
+    const eigen = m.aufteilung ? (m.eigen_kwh || 0) : 0;
+    const extern = m.aufteilung ? (m.extern_kwh || 0) : 0;
+    const rest = m.aufteilung ? Math.max(0, m.rest_kwh || 0) : (m.kwh || 0);
+    const eH = eigen / max * nutz, xH = extern / max * nutz;
+    return `<rect x="${x}" y="${grund - h}" width="${bw}" height="${h}" rx="4"
+                  fill="${OFFEN}"><title>${esc(titel)}</title></rect>
+      ${block(rest, OFFEN, eH + xH)}
+      ${block(extern, NETZ, eH)}
+      ${block(eigen, EIGEN, 0)}
+      <text x="${mitte}" y="${hoehe - 8}" class="ax">${esc(m.kurz)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img"
+               aria-label="Geladene Energie je Monat">
+      <style>.ax{font:500 9.5px var(--body);fill:var(--soft);text-anchor:middle}
+             .my{font:500 9px var(--mono);fill:var(--soft)}</style>
+      <text x="0" y="${padO - 1}" class="my">${zahl(max, 0)} kWh</text>
+      <line x1="0" y1="${grund}" x2="${breite}" y2="${grund}"
+            stroke="#D6DCDD" stroke-width="1"/>
+      ${saeulen}
+    </svg>`;
+}
+
+function verlaufTabelle(monate, summe) {
+  // Ein Monat ohne Ladung bekommt einen Strich, keine 0,00 mit leerer
+  // Prozentzeile darunter — es gibt schlicht nichts aufzuteilen.
+  const zelle = (menge, prozent) => menge == null || prozent == null
+    ? '<td class="leise">—</td>'
+    : `<td>${zahl(menge)}<span class="pz">${proz(prozent)}</span></td>`;
+  return `<div class="tabrahmen"><table class="mt">
+      <thead><tr><th>Monat</th><th>Geladen</th><th>Netz</th><th>Eigen</th></tr></thead>
+      <tbody>${monate.map(m => `<tr>
+        <td>${esc(m.label)}</td>
+        <td class="${m.kwh ? '' : 'leise'}">${zahl(m.kwh)}</td>
+        ${zelle(m.extern_kwh, m.extern_prozent)}
+        ${zelle(m.eigen_kwh, m.eigen_prozent)}</tr>`).join('')}</tbody>
+      <tfoot><tr><td>Summe</td><td>${zahl(summe.kwh)}</td>
+        ${zelle(summe.extern_kwh, summe.extern_prozent)}
+        ${zelle(summe.eigen_kwh, summe.eigen_prozent)}</tr></tfoot>
+    </table></div>`;
+}
+
+async function verlaufZeigen() {
+  const ziel = document.getElementById('verlauf');
+  if (!ziel) return;
+  let d;
+  try {
+    d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/verlauf?jahr=${jahrWahl.wert()}`);
+  } catch (fehler) {
+    ziel.innerHTML = `<div class="leer"><b>Verlauf nicht verfügbar</b>
+      ${esc(String(fehler.message || fehler))}</div>`;
+    return;
+  }
+  const s = d.summe || {};
+  const nichts = !(s.kwh > 0);
+  ziel.innerHTML = `
+    ${d.hinweis ? `<div class="notiz"><span class="wi">◔</span>
+       <span>${esc(d.hinweis)}</span></div>` : ''}
+    <div class="kpi">
+      <div class="k"><span class="kl">Geladen</span>
+        <span class="kv">${kwh(s.kwh, 0)}</span></div>
+      <div class="k"><span class="kl">Aus dem Netz</span>
+        <span class="kv amber">${s.extern_prozent == null ? '—' : proz(s.extern_prozent)}</span></div>
+      <div class="k"><span class="kl">Eigener Strom</span>
+        <span class="kv teal">${s.eigen_prozent == null ? '—' : proz(s.eigen_prozent)}</span></div>
+      <div class="k"><span class="kl">Ladungen</span>
+        <span class="kv">${(s.anzahl ?? 0).toLocaleString('de-DE')}</span></div>
+    </div>
+    ${nichts ? `<div class="leer" style="margin-top:14px"><b>Noch nichts geladen</b>
+        In ${esc(String(jahrWahl.wert()))} ist an dieser Station keine Ladung
+        angekommen. Sobald die Wallbox Daten liefert — oder unten eine Ladung
+        erfasst wird — steht hier der Verlauf.</div>`
+      : `${grafik(d.monate || [])}
+         ${legende([{ name: 'Netz', farbe: NETZ },
+                    { name: 'Eigener Strom (Speicher + PV)', farbe: EIGEN },
+                    // Der graue Block erscheint nur, wenn es ihn gibt — eine
+                    // Legende fuer eine Farbe ohne Flaeche verwirrt nur.
+                    ...(s.rest_kwh > 0.05
+                        ? [{ name: 'Nicht zugeordnet', farbe: OFFEN }] : [])])}
+         ${verlaufTabelle(d.monate || [], s)}`}`;
+}
+
+/* =======================================================================
+   Nutzer — dynamisch, beliebig viele, nicht zwangslaeufig Eigentuemer.
+   ======================================================================= */
+let nutzerListe = [];
+
+async function nutzerZeigen() {
+  const ziel = document.getElementById('nutzer');
+  if (!ziel) return;
+  try {
+    nutzerListe = (await api(`/tankstelle/${encodeURIComponent(objektSlug)}/nutzer`)).nutzer || [];
+  } catch { nutzerListe = []; }
+
+  const zeilen = nutzerListe.map(n => `
+    <div class="nz">
+      <span class="nk" aria-hidden="true">${esc((n.name || '?').trim()[0] || '?')}</span>
+      <span class="nt">
+        <span class="nn">${esc(n.name)}</span>
+        <span class="nm">${esc(n.email || 'keine E-Mail hinterlegt')}</span>
+      </span>
+      <button class="nx" data-nutzer-weg="${n.id}" data-name="${esc(n.name)}"
+              aria-label="${esc(n.name)} entfernen">×</button>
+    </div>`).join('');
+
+  ziel.innerHTML = `
+    ${zeilen ? `<div class="nliste">${zeilen}</div>`
+      : `<div class="leer" style="margin-bottom:14px"><b>Noch niemand angelegt</b>
+          Trag ein, wer hier lädt — Name und E-Mail genügen. Das muss kein
+          Eigentümer sein.</div>`}
+    <div class="neu">
+      <div class="field">
+        <label for="nName">Name</label>
+        <input class="inp" id="nName" type="text" autocomplete="name"
+               placeholder="z. B. Marvin">
+      </div>
+      <div class="field">
+        <label for="nMail">E-Mail</label>
+        <input class="inp" id="nMail" type="email" autocomplete="email"
+               placeholder="für die Quartalsabrechnung">
+      </div>
+      <button class="btn" data-nutzer-neu>Hinzufügen</button>
+    </div>`;
+}
+
+async function nutzerAnlegen() {
+  const name = document.getElementById('nName');
+  const mail = document.getElementById('nMail');
+  if (!name?.value.trim()) { melde('Bitte einen Namen angeben', 'neg'); return; }
+  try {
+    await api(`/tankstelle/${encodeURIComponent(objektSlug)}/nutzer`, {
+      method: 'POST', body: { name: name.value, email: mail?.value || '' } });
+    melde('Nutzer angelegt', 'pos');
+    await nutzerZeigen();
+    await abrechnungZeigen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function nutzerEntfernen(id, name) {
+  const ja = await frage('Nutzer entfernen?',
+    `„${name}“ verschwindet aus der Liste. Erfasste Ladungen bleiben erhalten `
+    + 'und tauchen in der Abrechnung weiter auf.',
+    { knopf: 'Entfernen', gefahr: true });
+  if (!ja) return;
+  try {
+    await api(`/tankstelle/${encodeURIComponent(objektSlug)}/nutzer/${id}`,
+              { method: 'DELETE' });
+    await nutzerZeigen();
+    await abrechnungZeigen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* =======================================================================
+   Abrechnung je Nutzer — quartalsweise, mit Vorschau vor dem Versand.
+   ======================================================================= */
+function quartalsWahl() {
+  const knopf = (wert, text) => `<button type="button" data-quartal="${wert}"
+      aria-pressed="${quartal === wert}">${text}</button>`;
+  return `<div class="quartale">${knopf(1, 'Q1')}${knopf(2, 'Q2')}${knopf(3, 'Q3')}
+    ${knopf(4, 'Q4')}${knopf(0, 'Ganzes Jahr')}</div>`;
+}
+
+async function abrechnungZeigen() {
+  const ziel = document.getElementById('abrechnung');
+  if (!ziel) return;
+  let d;
+  try {
+    d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/abrechnung`
+                  + `?jahr=${jahrWahl.wert()}&quartal=${quartal}`);
+  } catch (fehler) {
+    ziel.innerHTML = `<div class="leer"><b>Abrechnung nicht verfügbar</b>
+      ${esc(String(fehler.message || fehler))}</div>`;
+    return;
+  }
+
+  const zeilen = (d.nutzer || []).map(n => `
+    <div class="az" data-nutzer="${n.nutzer_id || 0}">
+      <div class="ak">
+        <span class="an">${esc(n.name)}${n.angelegt ? ''
+          : '<span class="chip amber" style="margin-left:8px">nicht angelegt</span>'}</span>
+        <span class="ab">${eur(n.betrag)}</span>
+      </div>
+      <span class="ad">${kwh(n.kwh)} · ${eur(n.satz)} je kWh
+        ${n.anzahl ? ` · ${n.anzahl} ${n.anzahl === 1 ? 'Ladung' : 'Ladungen'}` : ''}
+        ${n.email ? ` · ${esc(n.email)}` : ''}</span>
+      ${n.email ? '' : `<div class="notiz fehlt"><span class="wi">✉</span>
+        <span>Ohne E-Mail-Adresse lässt sich nichts verschicken.</span></div>`}
+      ${n.kwh > 0 && n.nutzer_id ? `<div class="aw">
+        <button class="btn leise" data-vorschau="${n.nutzer_id}">Vorschau</button>
+        ${n.email ? `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>` : ''}
+      </div>` : ''}
+      <div data-mail="${n.nutzer_id || 0}"></div>
+    </div>`).join('');
+
+  // Ohne gepflegten Satz steht ueberall 0,00 € — das sieht aus wie ein Fehler
+  // und ist doch nur eine fehlende Angabe. Also sagen, wo sie hingehoert.
+  const ohneSatz = !d.satz && d.kwh_gesamt > 0;
+
+  ziel.innerHTML = `${quartalsWahl()}
+    ${ohneSatz ? `<div class="notiz"><span class="wi">◔</span><span>Für
+       ${esc(String(jahrWahl.wert()))} ist noch kein Preis je kWh gepflegt —
+       er steht unter „PV Amortisation“ bei der Anlage.</span></div>` : ''}
+    ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
+        Für ${esc(d.label)} gibt es weder Nutzer noch Ladungen.</div>`}
+    ${d.nutzer?.length ? `<div class="kpi" style="margin-top:14px">
+      <div class="k"><span class="kl">${esc(d.label)}</span>
+        <span class="kv">${kwh(d.kwh_gesamt)}</span></div>
+      <div class="k"><span class="kl">Summe</span>
+        <span class="kv teal">${eur(d.betrag_gesamt)}</span></div>
+    </div>` : ''}`;
+  offeneVorschau = 0;
+  await ladungenZeigen();
+}
+
+async function vorschauZeigen(nid) {
+  const feld = document.querySelector(`[data-mail="${nid}"]`);
+  if (!feld) return;
+  if (offeneVorschau === Number(nid)) {       // zweiter Klick schliesst wieder
+    feld.innerHTML = '';
+    offeneVorschau = 0;
+    return;
+  }
+  document.querySelectorAll('[data-mail]').forEach(f => { f.innerHTML = ''; });
+  try {
+    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/vorschau`
+                        + `?jahr=${jahrWahl.wert()}&quartal=${quartal}&nutzer_id=${nid}`);
+    feld.innerHTML = `<span class="mailkopf">An ${esc(d.an || '— keine Adresse —')}
+      · ${esc(d.betreff)}</span><pre class="mailtext">${esc(d.text)}</pre>`;
+    offeneVorschau = Number(nid);
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function versenden(nid) {
+  const nutzer = nutzerListe.find(n => n.id === Number(nid));
+  const ja = await frage('Abrechnung verschicken?',
+    `Die Abrechnung geht als Mail an ${nutzer?.email || 'die hinterlegte Adresse'}.`,
+    { knopf: 'Senden' });
+  if (!ja) return;
+  try {
+    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/versand`, {
+      method: 'POST',
+      body: { nutzer_id: Number(nid), jahr: Number(jahrWahl.wert()), quartal } });
+    melde(`Abrechnung an ${d.an} verschickt`, 'pos');
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* =======================================================================
+   Ladungen: was die Wallbox nicht weiss, ist WER geladen hat. Deshalb hier
+   die Zuordnung — sie ist die Grundlage jeder Abrechnung.
+   ======================================================================= */
+let buchungsWahl = null;
+
+async function ladungenZeigen() {
+  const ziel = document.getElementById('ladungen');
+  if (!ziel) return;
+  let d;
+  try {
+    d = await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWahl.wert()}`);
+  } catch {
+    ziel.innerHTML = '<div class="leer">Die erfassten Ladungen konnten nicht geladen werden.</div>';
+    return;
+  }
+  const zeilen = (d.ladungen || []).map(l => `
+    <div class="lz">
+      <span class="ld">${esc(l.person || '—')}
+        <span class="ldt">${l.datum ? datum(l.datum) : 'ohne Datum'}</span></span>
+      <span class="lk">${kwh(l.kwh)}</span>
+      <span class="lk">${eur(l.betrag)}</span>
+      <button class="lx" data-ladung-weg="${l.id}" aria-label="Ladung entfernen">×</button>
+    </div>`).join('');
+
+  ziel.innerHTML = `
+    ${zeilen ? `<div class="lliste">${zeilen}</div>`
+      : `<div class="leer" style="margin-bottom:14px"><b>Keine Ladung erfasst</b>
+          In ${esc(String(jahrWahl.wert()))} ist noch keine Ladung einer Person
+          zugeordnet.</div>`}
+    <div class="neu">
+      <div class="field"><span class="fl">Wer hat geladen</span>
+        <div id="bPerson"></div></div>
+      <div class="field"><label for="bKwh">Menge (kWh)</label>
+        <input class="inp" id="bKwh" type="number" inputmode="decimal" step="0.1" min="0"></div>
+      <div class="field"><label for="bDatum">Datum</label>
+        <input class="inp" id="bDatum" type="date"></div>
+      <button class="btn" data-ladung-neu>Ladung buchen</button>
+    </div>`;
+
+  buchungsWahl = auswahlfeld(document.getElementById('bPerson'), {
+    label: 'Wer hat geladen',
+    optionen: nutzerListe.length
+      ? nutzerListe.map(n => ({ wert: String(n.id), text: n.name }))
+      : [{ wert: '', text: 'Nutzer anlegen' }],
+    wert: nutzerListe.length ? String(nutzerListe[0].id) : '',
+  });
+}
+
+async function ladungBuchen() {
+  const nid = buchungsWahl?.wert();
+  const nutzer = nutzerListe.find(n => String(n.id) === String(nid));
+  const menge = parseFloat(String(document.getElementById('bKwh')?.value || '')
+    .replace(',', '.'));
+  if (!nutzer) { melde('Erst einen Nutzer anlegen', 'neg'); return; }
+  if (!(menge > 0)) { melde('Bitte die geladene Menge angeben', 'neg'); return; }
+  try {
+    await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWahl.wert()}`, {
+      method: 'POST',
+      body: { name: nutzer.name, email: nutzer.email || '', kwh: menge,
+              datum: document.getElementById('bDatum')?.value || null } });
+    melde('Ladung gebucht', 'pos');
+    await abrechnungZeigen();
+    await verlaufZeigen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function ladungEntfernen(id) {
+  try {
+    await api(`/tankladungen/${id}`, { method: 'DELETE' });
+    await abrechnungZeigen();
+    await verlaufZeigen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* =======================================================================
+   Seitengeruest und Verdrahtung
+   ======================================================================= */
+function skelett() {
+  return `
+    <div class="karte">
+      <div class="hh"><h3>Nutzer</h3></div>
+      <span class="hint">Wer an dieser Ladestation lädt. Beliebig viele,
+        jederzeit ergänzbar — und nicht zwangsläufig Eigentümer der Immobilie.
+        Die E-Mail-Adresse braucht es für die Quartalsabrechnung.</span>
+      <div id="nutzer"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>Verlauf</h3></div>
+      <span class="hint">Wie viel je Monat geladen wurde — und woher der Strom
+        kam: zugekaufter Netzstrom gegen eigenen Strom aus Speicher und PV.
+        Die Zahlen holt die Wallbox selbst; fehlt sie, treten die erfassten
+        Ladungen an ihre Stelle.</span>
+      <div id="verlauf"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>Abrechnung</h3></div>
+      <span class="hint">Was jeder Nutzer geladen hat, zu welchem Satz und was
+        er zahlt. Der Satz je kWh wird bei der PV-Anlage gepflegt. Vor dem
+        Versand zeigt die Vorschau, was ankommt.</span>
+      <div id="abrechnung"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>Ladungen zuordnen</h3></div>
+      <span class="hint">Die Wallbox weiß, wie viel geladen wurde — aber nicht,
+        von wem. Diese Zuordnung ist die Grundlage der Abrechnung.</span>
+      <div id="ladungen"></div>
+    </div>`;
+}
+
+document.addEventListener('click', e => {
+  const neu = e.target.closest('[data-nutzer-neu]');
+  if (neu) return nutzerAnlegen();
+  const weg = e.target.closest('[data-nutzer-weg]');
+  if (weg) return nutzerEntfernen(weg.dataset.nutzerWeg, weg.dataset.name);
+  const q = e.target.closest('[data-quartal]');
+  if (q) { quartal = Number(q.dataset.quartal); return abrechnungZeigen(); }
+  const v = e.target.closest('[data-vorschau]');
+  if (v) return vorschauZeigen(v.dataset.vorschau);
+  const s = e.target.closest('[data-senden]');
+  if (s) return versenden(s.dataset.senden);
+  const lb = e.target.closest('[data-ladung-neu]');
+  if (lb) return ladungBuchen();
+  const lw = e.target.closest('[data-ladung-weg]');
+  if (lw) return ladungEntfernen(lw.dataset.ladungWeg);
+});
+
+async function laden() {
+  if (!objektSlug) {
+    inhalt.innerHTML = `<div class="empty"><div class="big">Kein Objekt vorhanden</div>
+      <p>Lege zuerst ein Objekt an — die E-Tankstelle gehört zu einer
+      PV-Anlage.</p></div>`;
+    sub.textContent = 'kein Objekt';
+    return;
+  }
+  inhalt.innerHTML = skelett();
+  await nutzerZeigen();
+  await Promise.all([verlaufZeigen(), abrechnungZeigen()]);
+}
+
+/* ---- Kopf: Objekt- und Jahr-Auswahl ---- */
+const jetzt = new Date().getFullYear();
+const jahrWahl = auswahlfeld(document.getElementById('jahr'), {
+  label: 'Jahr',
+  optionen: Array.from({ length: 6 }, (_, i) => jetzt - i)
+    .map(j => ({ wert: String(j), text: String(j) })),
+  wert: String(jetzt),
+  aenderung: () => laden(),
+});
+
+const objektWahl = auswahlfeld(document.getElementById('objekt'), {
+  label: 'Objekt',
+  optionen: [{ wert: '', text: '—' }],
+  wert: '',
+  aenderung: (wert) => { objektSlug = wert; laden(); },
+});
+
+let objekte = [];
+try {
+  objekte = await api('/objekte');
+} catch {
+  sub.textContent = 'API nicht erreichbar';
+}
+
+// Die Ladestation haengt an der PV-Anlage: zur Wahl stehen die Objekte mit
+// Anlage. Ist noch keines markiert, bleiben alle waehlbar — sonst liesse sich
+// die erste Station nirgends einrichten.
+const mitPv = objekte.filter(o => o.hat_pv);
+const wahl = mitPv.length ? mitPv : objekte;
+
+if (wahl.length) {
+  const ausUrl = new URLSearchParams(location.search).get('objekt');
+  objektSlug = (ausUrl && wahl.some(o => o.slug === ausUrl)) ? ausUrl : wahl[0].slug;
+  objektWahl.fuelle(wahl.map(o => ({ wert: o.slug, text: o.titel || o.name })),
+                    objektSlug);
+  sub.textContent = mitPv.length
+    ? `${mitPv.length} ${mitPv.length === 1 ? 'Station' : 'Stationen'}`
+    : 'Noch keine PV-Anlage erfasst';
+}
+await laden();
+</script>
+</body>
+</html>

@@ -14,7 +14,7 @@ from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, heizoel, ki, kidb,
                       mail, objekte, openwb, solaredge, stammdaten, strom,
-                      versand, waerme, zaehler)
+                      tankstelle, versand, waerme, zaehler)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -80,6 +80,9 @@ app.include_router(solaredge.router)
 # N130 — eigener Prefix /api/openwb (Ladeprotokoll der Wallbox, rein lesend),
 # ebenfalls vor dem Stammdaten-Fänger eingehängt.
 app.include_router(openwb.router)
+# N132 — eigener Prefix /api/tankstelle (E-Tankstelle: Nutzer, Verlauf,
+# Abrechnung, Versand), ebenfalls vor dem Stammdaten-Fänger eingehängt.
+app.include_router(tankstelle.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 app.include_router(cloud.router)
