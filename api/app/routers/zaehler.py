@@ -416,6 +416,71 @@ def _wasser_art(zae: Zaehler) -> str:
 _KOMPONENTEN_ART = {"wasser": "Wasser", "schmutz": "Abwasser",
                     "niederschlag": "Niederschlagswasser"}
 
+# N101/6 — Alt-Label der früheren Wohngemeinschaft. Es steht für keine Einheit
+# mehr, sondern für den gemeinsam genutzten Haupthaus-Teil.
+_ALT_WG = "wg"
+
+
+def _label_schluessel(name: str) -> str:
+    """Vergleichsform eines Einheiten-/Partei-Labels: Leerraum vereinheitlicht,
+    Groß-/Kleinschreibung egal. Nur zum Nachschlagen — ausgegeben wird immer die
+    echte, unveränderte Bezeichnung der Einheit."""
+    return " ".join((name or "").split()).casefold()
+
+
+def _einheiten_karte(einheiten: list[Einheit],
+                     bezuege: list[verteilung.Bezug]) -> dict[str, str]:
+    """Abbildung „Label → echte Einheiten-Bezeichnung".
+
+    Zwei Quellen, in dieser Reihenfolge: die Bezeichnung einer Einheit zeigt auf
+    sich selbst; ein Partei-Name zeigt auf die Einheit, in der diese Partei im
+    Zeitraum wohnt (`verteilung.bezuege`). So landen Alt-Labels wie
+    „Roman & Alicia" in der Spalte ihrer Einheit statt als eigene Spalte.
+    """
+    karte = {_label_schluessel(e.bezeichnung): e.bezeichnung for e in einheiten}
+    karte.pop("", None)
+    for b in bezuege:
+        partei = _label_schluessel(b.partei)
+        ziel = karte.get(_label_schluessel(b.einheit))
+        if partei and ziel and partei not in karte:
+            karte[partei] = ziel
+    return karte
+
+
+def _echte_einheiten(namen: list[str], karte: dict[str, str],
+                     haupthaus: list[str],
+                     unbekannt: dict[str, None] | None = None) -> list[str]:
+    """Normalisiert eine Liste von Ziel-Labels auf echte Objekt-Einheiten.
+
+    Exakter Treffer → die Einheit selbst; Partei-Label → ihre Einheit; das
+    überholte „WG" → die Haupthaus-Einheiten (die ohne eigenen Kaltwasser-
+    Unterzähler). Alles andere wird weggelassen — eine Phantom-Spalte wäre
+    schlimmer als eine fehlende Zuordnung — und in `unbekannt` vermerkt.
+    Reihenfolge bleibt erhalten, Dopplungen fallen weg.
+
+    Hat das Objekt gar keine Einheiten hinterlegt, gibt es nichts zu
+    normalisieren — dann bleiben die Namen unangetastet (sonst verlöre eine
+    reine Partei-Abrechnung ihre Spalten und die Kontrollsumme).
+    """
+    if not karte:
+        return [n for i, n in enumerate(namen) if n and n not in namen[:i]]
+    out: list[str] = []
+    for name in namen:
+        s = _label_schluessel(name)
+        treffer = karte.get(s)
+        if treffer:
+            ziele = [treffer]
+        elif s == _ALT_WG and haupthaus:
+            ziele = list(haupthaus)
+        else:
+            ziele = []
+            if unbekannt is not None and name:
+                unbekannt.setdefault(name, None)
+        for ziel in ziele:
+            if ziel not in out:
+                out.append(ziel)
+    return out
+
 
 @router.get("/zeitraeume/{zid}/wasser")
 def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
@@ -458,26 +523,56 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
     haupt = next((zae for zae in zaehler if _ist_wasser_haupt(zae)), None)
     gesamt_m3 = verb.get(haupt.id) if haupt else None
 
+    # N101/6 — die Spalten sind Einheiten, keine Parteien. Alte Zähler tragen
+    # noch Partei-/Altlabels („Roman & Alicia", „WG", „Büro"); sie werden hier
+    # einmal zentral auf die echten Objekt-Einheiten abgebildet, bevor irgend
+    # etwas gerechnet wird. Dafür müssen Einheiten und Bezüge früh stehen.
+    einheiten = list(session.exec(
+        select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
+    mieten = list(session.exec(
+        select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
+    parteien = list(session.exec(
+        select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
+    bez = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
+    karte = _einheiten_karte(einheiten, bez)
+    unbekannt: dict[str, None] = {}
+
+    # CD — Einheiten mit eigenem Kaltwasser-Vollzähler; sie fallen aus dem
+    # Haupthaus-Rest heraus. Ohne „WG"-Auflösung, denn die braucht das Ergebnis.
+    kalt_einheiten: set[str] = set()
+    for zae in zaehler:
+        if (_wasser_art(zae) == "Kaltwasser" and zae.typ == "gemessen"
+                and zae.hauptzaehler_id):
+            kalt_einheiten.update(_echte_einheiten(_parse_einheiten(zae), karte, []))
+    haupthaus = [e.bezeichnung for e in einheiten
+                 if e.nk_abrechnung and e.bezeichnung not in kalt_einheiten]
+
+    def _ziele(zae: Zaehler | None) -> list[str]:
+        """Ziel-Einheiten eines Zählers, auf echte Einheiten normalisiert."""
+        if zae is None:
+            return []
+        return _echte_einheiten(_parse_einheiten(zae), karte, haupthaus, unbekannt)
+
     # Unterzähler → Zaehlerposten. Verbrauchsscharf einer Einheit zugeordnet,
-    # oder (CD) über mehrere Einheiten aufgeteilt (Person·Mietdauer). Die Ziele
-    # kommen aus `einheiten` (mit `einheit_bezug` als Fallback).
+    # oder (CD) über mehrere Einheiten aufgeteilt (Person·Mietdauer).
     posten = []
     for zae in zaehler:
         art = _wasser_art(zae)
         if not (zae.typ == "gemessen" and zae.hauptzaehler_id
                 and art in _UNTER_ARTEN and verb.get(zae.id) is not None):
             continue
-        ziele = _parse_einheiten(zae)
+        ziele = _ziele(zae)
         if not ziele:
             continue
         posten.append(wasser.Zaehlerposten(
-            name=zae.name, einheit=zae.einheit_bezug, m3=verb[zae.id],
+            name=zae.name, einheit=ziele[0], m3=verb[zae.id],
             art=art, einheiten=ziele))
 
     # Gartenwasser — Menge aus dem Rest heraus, Kosten trägt der Eigentümer.
     garten_z = next((zae for zae in zaehler if _wasser_art(zae) == "Gartenwasser"), None)
     garten_m3 = (verb.get(garten_z.id) or 0.0) if garten_z else 0.0
-    garten_einheit = garten_z.einheit_bezug if garten_z else ""
+    garten_ziele = _ziele(garten_z)
+    garten_einheit = garten_ziele[0] if garten_ziele else ""
 
     # Kostenbestandteile aus den Kostenpositionen des Zeitraums (fehlende = 0).
     betrag_je_art = {p.kostenart: (p.betrag or 0.0) for p in session.exec(
@@ -500,31 +595,22 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
     # KEINEN eigenen Kaltwasser-Unterzähler hat. `gewichte("personen", …)`
     # liefert {Partei: Gewicht}; über die Bezüge wird Partei→Einheit abgebildet
     # und je Haupthaus-Einheit summiert.
-    einheiten = list(session.exec(
-        select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
-    mieten = list(session.exec(
-        select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
-    parteien = list(session.exec(
-        select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
-    # CD — auch die Einheiten eines mehrfach zugeordneten Kaltwasser-Zählers
-    # haben einen eigenen Vollzähler und fallen aus dem Haupthaus-Rest heraus.
-    kalt_einheiten: set[str] = set()
-    for zae in zaehler:
-        if (_wasser_art(zae) == "Kaltwasser" and zae.typ == "gemessen"
-                and zae.hauptzaehler_id):
-            kalt_einheiten.update(_parse_einheiten(zae))
+    #
     # N69 — der Rest ist zuteilbar: hat der Rest-Zähler (typ='rest' im Wasser-
     # Block) explizit Einheiten gesetzt, tragen NUR diese den Rest (weiterhin
     # nach Person·Mietdauer gewichtet); ohne Auswahl gilt der Default (alle
     # Haupthaus-Einheiten ohne eigenen Kaltwasser-Zähler).
     rest_z = next((zae for zae in zaehler if zae.typ == "rest"
                    and _kostenblock(zae.kostenart) == "Wasser"), None)
-    rest_wahl = set(_parse_einheiten(rest_z)) if rest_z else set()
-    bez = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
+    rest_wahl = set(_ziele(rest_z))
     partei_einheit = {b.partei: b.einheit for b in bez}
     rest_gewichte: dict[str, float] = {}
     for partei, gew in verteilung.gewichte("personen", bez, z.start, z.ende).items():
-        einheit = partei_einheit.get(partei, "")
+        # Auch hier zählt die echte Einheit — ein Bezug auf ein Altlabel darf
+        # keine eigene Rest-Spalte aufmachen.
+        ziel = _echte_einheiten([partei_einheit.get(partei, "")], karte,
+                                haupthaus, unbekannt)
+        einheit = ziel[0] if ziel else ""
         erlaubt = einheit not in kalt_einheiten and (not rest_wahl
                                                      or einheit in rest_wahl)
         if einheit and erlaubt:
@@ -555,9 +641,15 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
         garten = {"einheit": garten_einheit or None, "m3": round(e.garten_m3, 2),
                   "kosten": e.garten_kosten}
 
+    # N101/6 — was sich keiner Einheit zuordnen ließ, wird nicht stillschweigend
+    # verschluckt: es erzeugt keine Spalte, aber einen sichtbaren Hinweis.
+    warnungen = [f"„{name}“ gehört zu keiner Einheit dieses Objekts — die"
+                 " Zuordnung bitte am Zähler nachtragen." for name in unbekannt]
+
     return {
         "bereit": True,
         "hinweis": "",
+        "warnungen": warnungen,
         "kosten": {**komponenten, "gesamt": e.gesamt_kosten,
                    "preis_m3": round(e.preis_m3, 2)},
         "gesamt_m3": round(e.gesamt_m3, 2),

@@ -193,6 +193,127 @@ def test_wasser_endpoint_mehrfach_einheiten_split():
     assert abs(res["kontrolle"] - 120.0) <= 0.01
 
 
+def _aufbau_altlabels():
+    """N101/6 — die Spalten sind Einheiten, keine Parteien.
+
+    Ein Zähler trägt nur das Alt-Label „Roman & Alicia" (der Partei-Name), ein
+    zweiter ein Label, das zu gar nichts gehört. Erwartet: der erste landet in
+    der Spalte „Studio 1.OG", der zweite erzeugt KEINE Spalte, sondern eine
+    Warnung — sein Verbrauch fällt in den Haupthaus-Rest.
+    """
+    with Session(db.engine) as s:
+        o = Objekt(slug="altlabel-haus", name="Altlabel", start_monat=1)
+        s.add(o)
+        s.commit()
+        s.refresh(o)
+        oid = o.id
+        for bez in ("Studio 1.OG", "Wohung EG", "Wohnug 1.OG"):
+            s.add(Einheit(objekt_id=oid, bezeichnung=bez))
+        for einheit, partei, pers in (("Studio 1.OG", "Roman & Alicia", 1),
+                                      ("Wohung EG", "EG-Mieter", 2),
+                                      ("Wohnug 1.OG", "OG-Mieter", 1)):
+            s.add(Miete(objekt_id=oid, einheit=einheit, partei=partei,
+                        personen=pers, ab_datum=START))
+        z = Zeitraum(objekt_id=oid, start=START, ende=ENDE, status="in Arbeit")
+        s.add(z)
+        s.commit()
+        s.refresh(z)
+        zid = z.id
+        s.add(Kostenposition(zeitraum_id=zid, kostenart="Wasser", betrag=100.0))
+        s.commit()
+
+        haupt = _zaehler(s, oid, "Gesamt Wasser", "Kaltwasser")
+        alt = Zaehler(objekt_id=oid, name="Bad Studio", art="Kaltwasser",
+                      typ="gemessen", hauptzaehler_id=haupt, kostenart="Wasser",
+                      einheiten="Roman & Alicia")
+        fremd = Zaehler(objekt_id=oid, name="Kammer", art="Waschmaschine",
+                        typ="gemessen", hauptzaehler_id=haupt, kostenart="Wasser",
+                        einheiten="Hausmeister-Kammer")
+        s.add(alt)
+        s.add(fremd)
+        s.commit()
+        s.refresh(alt)
+        s.refresh(fremd)
+        _ablesungen(s, haupt, zid, 100.0)
+        _ablesungen(s, alt.id, zid, 20.0)
+        _ablesungen(s, fremd.id, zid, 5.0)
+        return zid
+
+
+def test_wasser_endpoint_altlabel_wird_zur_einheit():
+    zid = _aufbau_altlabels()
+    with Session(db.engine) as s:
+        res = wasser_detail(zid, session=s)
+
+    assert res["bereit"] is True, res
+    namen = {e["name"] for e in res["einheiten"]}
+    # Keine Partei-Spalte, keine Phantom-Spalte.
+    assert namen == {"Studio 1.OG", "Wohung EG", "Wohnug 1.OG"}, namen
+    # Das Alt-Label trägt seinen vollen Verbrauch in die Einheit.
+    studio = next(e for e in res["einheiten"] if e["name"] == "Studio 1.OG")
+    assert studio["zeilen"] == [
+        {"art": "Kaltwasser", "m3": 20.0, "kosten": 20.0, "quelle": "gemessen"}]
+    # Das unbekannte Label wird benannt, nicht verschluckt.
+    assert any("Hausmeister-Kammer" in w for w in res["warnungen"]), res["warnungen"]
+    # Sein Verbrauch fällt in den Rest: 100 − 20 = 80 m³ auf EG:1.OG = 2:1.
+    summe = {e["name"]: e["summe"] for e in res["einheiten"]}
+    assert abs(summe["Wohung EG"] - 53.33) <= 0.01
+    assert abs(summe["Wohnug 1.OG"] - 26.67) <= 0.01
+    # Harte Invariante: Σ Einheiten + Garten == Gesamtkosten.
+    assert abs(res["kontrolle"] - 100.0) <= 0.01
+
+
+def _aufbau_wg():
+    """N101/6 — das überholte Sammel-Label „WG" bekommt keine eigene Spalte,
+    sondern verteilt sich auf die Haupthaus-Einheiten (Person·Mietdauer)."""
+    with Session(db.engine) as s:
+        o = Objekt(slug="wg-haus", name="WG-Haus", start_monat=1)
+        s.add(o)
+        s.commit()
+        s.refresh(o)
+        oid = o.id
+        for bez in ("Wohung EG", "Wohnug 1.OG"):
+            s.add(Einheit(objekt_id=oid, bezeichnung=bez))
+        for einheit, partei, pers in (("Wohung EG", "EG-Mieter", 2),
+                                      ("Wohnug 1.OG", "OG-Mieter", 1)):
+            s.add(Miete(objekt_id=oid, einheit=einheit, partei=partei,
+                        personen=pers, ab_datum=START))
+        z = Zeitraum(objekt_id=oid, start=START, ende=ENDE, status="in Arbeit")
+        s.add(z)
+        s.commit()
+        s.refresh(z)
+        zid = z.id
+        s.add(Kostenposition(zeitraum_id=zid, kostenart="Wasser", betrag=60.0))
+        s.commit()
+
+        haupt = _zaehler(s, oid, "Gesamt Wasser", "Kaltwasser")
+        wm = Zaehler(objekt_id=oid, name="Waschmaschine WG", art="Waschmaschine",
+                     typ="gemessen", hauptzaehler_id=haupt, kostenart="Wasser",
+                     einheiten="WG")
+        s.add(wm)
+        s.commit()
+        s.refresh(wm)
+        _ablesungen(s, haupt, zid, 60.0)
+        _ablesungen(s, wm.id, zid, 30.0)
+        return zid
+
+
+def test_wasser_endpoint_wg_geht_aufs_haupthaus():
+    zid = _aufbau_wg()
+    with Session(db.engine) as s:
+        res = wasser_detail(zid, session=s)
+
+    assert res["bereit"] is True, res
+    namen = {e["name"] for e in res["einheiten"]}
+    assert namen == {"Wohung EG", "Wohnug 1.OG"}, namen
+    assert res["warnungen"] == []
+    # 60 € / 60 m³ = 1 €/m³. Zähler 30 m³ und Rest 30 m³, beide 2:1 → 40 / 20.
+    summe = {e["name"]: e["summe"] for e in res["einheiten"]}
+    assert abs(summe["Wohung EG"] - 40.0) <= 0.01
+    assert abs(summe["Wohnug 1.OG"] - 20.0) <= 0.01
+    assert abs(res["kontrolle"] - 60.0) <= 0.01
+
+
 def test_wasser_endpoint_nicht_bereit_ohne_betraege():
     """Ohne Wasserbeträge ist der Endpunkt nicht bereit und sagt, was fehlt."""
     with Session(db.engine) as s:
