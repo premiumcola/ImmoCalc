@@ -86,6 +86,8 @@
   .kpi .kv{display:block;font:700 16px var(--disp);letter-spacing:-.02em;
            margin-top:6px;color:var(--ink)}
   .kpi .kv.pos{color:var(--pos)}
+  .kpi .knote{display:block;font:400 10.5px var(--body);color:var(--soft);
+              margin-top:4px;line-height:1.35}
 
   /* Eigentuemer-Verteilung. */
   .eig{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
@@ -139,6 +141,12 @@
                      letter-spacing:-.01em}
   .jt td.leise{color:var(--soft)}
   .jt td.summe{font-weight:700;color:var(--teal-d)}
+  .jt .plus{color:var(--pos);font-weight:600}
+  /* Der Hinweis erscheint nur, wenn die Tabelle wirklich nicht ganz passt —
+     gemessen, nicht geraten (siehe `verlaufZeigen`). */
+  .scrollhinweis{display:none;font:400 11.5px var(--body);color:var(--soft);
+                 margin:-8px 0 14px}
+  .scrollhinweis.zeigen{display:block}
   .jt tfoot td{font-weight:700;color:var(--ink);
                border-top:1.5px solid var(--line)}
 
@@ -395,7 +403,11 @@ function verlaufGrafik(v) {
   if (!reihe.length || !ansch) return '';
 
   const B = 380, H = 238;
-  const achse = 44, xl = achse, xr = B - 6, yo = 16, yu = H - 44;
+  // Die Achsenspalte wächst mit der Beschriftung: „−36.000 €" braucht mehr
+  // Platz als „−900 €" — sonst hängt die Zahl links aus der Zeichnung heraus.
+  const bodenText = negativ(eur0(-ansch));
+  const achse = Math.max(46, Math.round(12 + bodenText.length * 5.8));
+  const xl = achse, xr = B - 6, yo = 16, yu = H - 44;
   // Der „Stand" ist kumulierter Ertrag minus Anschaffung: er startet bei
   // −Anschaffung und wandert nach oben durch die Null.
   const stand = z => (z.kumuliert || 0) - ansch;
@@ -404,10 +416,12 @@ function verlaufGrafik(v) {
   const y = w => yu - ((w + ansch) / spanne) * (yu - yo);
   const yNull = y(0);
   const slot = (xr - xl) / reihe.length;
-  const bw = Math.max(3, Math.min(30, slot * 0.62));
+  const bw = Math.max(3, Math.min(42, slot * 0.62));
+  const rx = Math.min(4, bw / 3).toFixed(1);
   const jederNte = Math.ceil(reihe.length / 9);
 
   let clips = '', saeulen = '', jahrLabels = '', vorher = -ansch;
+  let letztesLabel = -Infinity;
   reihe.forEach((z, i) => {
     const x = xl + slot * i + (slot - bw) / 2;
     const nachher = stand(z);
@@ -446,9 +460,13 @@ function verlaufGrafik(v) {
     }
     clips += `<clipPath id="pvc${i}"><rect x="${x}" y="${oben.toFixed(1)}"
       width="${bw}" height="${Math.max(.5, unten - oben).toFixed(1)}"
-      rx="4"/></clipPath>`;
+      rx="${rx}"/></clipPath>`;
     saeulen += `<g clip-path="url(#pvc${i})">${inhalt}</g>`;
-    if (i % jederNte === 0 || i === reihe.length - 1) {
+    // Jede n-te Jahreszahl, dazu die letzte — aber nur, wenn sie der vorigen
+    // nicht auf die Pelle rückt.
+    const letzte = i === reihe.length - 1;
+    if ((i % jederNte === 0 || letzte) && i - letztesLabel >= jederNte) {
+      letztesLabel = i;
       jahrLabels += `<text x="${(x + bw / 2).toFixed(1)}" y="${yu + 17}"
         class="ax${z.geschaetzt ? ' blass' : ''}">${z.jahr}</text>`;
     }
@@ -480,25 +498,29 @@ function verlaufGrafik(v) {
           stroke-opacity=".35" stroke-width="1" stroke-dasharray="4 3"/>
     ${grenze}
     ${saeulen}
+    ${jahrLabels}
     <line x1="${achse - 4}" y1="${yNull.toFixed(1)}" x2="${xr}"
           y2="${yNull.toFixed(1)}" stroke="#16262C" stroke-width="1.2"/>
     <text x="${achse - 8}" y="${(yNull - 4).toFixed(1)}" class="ay">0 €</text>
-    <text x="${achse - 8}" y="${yu + 4}" class="ay">${negativ(eur0(-ansch))}</text>
+    <text x="${achse - 8}" y="${yu + 4}" class="ay">${bodenText}</text>
   </svg>`;
 }
 
+/* Nur zeigen, was in der Zeichnung auch vorkommt — eine Legende mit Farben
+   ohne Balken wäre eine Behauptung. */
 function verlaufLegende(v) {
-  const mitVorlauf = (v.vorlauf || 0) > 0;
-  const mitPlus = v.jahre.some(z => (z.ueberschuss || 0) > 0);
-  return `<div class="legende">
-    <span><i style="background:${C_DIREKT}"></i>Direktnutzung</span>
-    <span><i class="schraffur"></i>Einspeisevergütung</span>
-    <span><i style="background:${C_TANK}"></i>E-Tanken</span>
-    ${mitVorlauf ? `<span><i style="background:${C_VOR}"></i>Vorlauf</span>` : ''}
-    <span><i style="background:${C_OFFEN}"></i>noch offen</span>
-    ${mitPlus ? `<span><i style="background:${C_PLUS}"></i>amortisiert</span>` : ''}
-    ${v.prognose ? '<span><i class="prognose"></i>Prognose</span>' : ''}
-  </div>`;
+  const hat = feld => v.jahre.some(z => (z[feld] || 0) > 0);
+  const eintraege = [
+    [hat('pv_strom'), `style="background:${C_DIREKT}"`, 'Direktnutzung'],
+    [hat('einspeisung'), 'class="schraffur"', 'Einspeisevergütung'],
+    [hat('tanken'), `style="background:${C_TANK}"`, 'E-Tanken'],
+    [hat('vorlauf'), `style="background:${C_VOR}"`, 'Vorlauf'],
+    [hat('offen'), `style="background:${C_OFFEN}"`, 'noch offen'],
+    [hat('ueberschuss'), `style="background:${C_PLUS}"`, 'amortisiert'],
+    [!!v.prognose, 'class="prognose"', 'Prognose'],
+  ].filter(([zeigen]) => zeigen);
+  return `<div class="legende">${eintraege.map(([, attr, text]) =>
+    `<span><i ${attr}></i>${text}</span>`).join('')}</div>`;
 }
 
 function verlaufTabelle(v) {
@@ -513,7 +535,9 @@ function verlaufTabelle(v) {
       <td class="leise">${z.tanken ? eur(z.tanken) : '—'}</td>
       <td class="summe">${eur(z.summe)}</td>
       <td>${eur(z.kumuliert)}</td>
-      <td>${z.offen ? eur(z.offen) : (z.ueberschuss ? '+ ' + eur(z.ueberschuss) : '—')}</td>
+      <td>${z.offen ? eur(z.offen)
+        : (z.ueberschuss ? `<span class="plus">+ ${eur(z.ueberschuss)}</span>`
+          : eur(0))}</td>
     </tr>`).join('');
   return `<div class="tabrahmen"><table class="jt">
     <thead><tr>${kopf.map(t => `<th>${t}</th>`).join('')}</tr></thead>
@@ -527,14 +551,17 @@ function verlaufTabelle(v) {
       <td>${eur(v.kumuliert)}</td>
       <td>${eur(v.rest)}</td>
     </tr></tfoot>
-  </table></div>`;
+  </table></div>
+  <p class="scrollhinweis">Seitlich wischen für alle Spalten.</p>`;
 }
 
 function verlaufKpi(v) {
-  const fertig = v.break_even_jahr
-    ? `${v.break_even_jahr}${v.break_even_geschaetzt
-        ? ` <span class="einheit">(${v.break_even_in_jahren} J. geschätzt)</span>` : ''}`
-    : '—';
+  // Die Jahreszahl bleibt der große Wert; „geschätzt, noch 25 Jahre" steht als
+  // eigene Zeile darunter — sonst sprengt der Zusatz die Kachel.
+  const zusatz = v.break_even_geschaetzt
+    ? `<span class="knote">geschätzt · noch ${v.break_even_in_jahren} Jahre</span>`
+    : `<span class="knote">${v.break_even_jahr ? 'erreicht'
+        : 'Prognose ab dem zweiten Ertragsjahr'}</span>`;
   return `
     <div class="k"><span class="kl">Anschaffung</span><span class="kv">${eur(v.anschaffung)}</span></div>
     <div class="k"><span class="kl">Bisher abgetragen</span><span class="kv pos">${eur(v.kumuliert)}</span></div>
@@ -542,7 +569,8 @@ function verlaufKpi(v) {
     <div class="k"><span class="kl">Amortisiert</span><span class="kv">${
       v.amortisiert_prozent == null ? '—'
         : v.amortisiert_prozent.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' %'}</span></div>
-    <div class="k"><span class="kl">Bezahlt gemacht</span><span class="kv">${fertig}</span></div>`;
+    <div class="k"><span class="kl">Break-even</span><span class="kv">${
+      v.break_even_jahr || '—'}</span>${zusatz}</div>`;
 }
 
 async function verlaufZeigen() {
@@ -573,6 +601,12 @@ async function verlaufZeigen() {
   grafik.innerHTML = verlaufGrafik(v) + verlaufLegende(v)
     + (hinweise ? `<div class="verlaufleer">${hinweise}</div>` : '');
   tabelle.innerHTML = verlaufTabelle(v);
+  const rahmen = tabelle.querySelector('.tabrahmen');
+  const hinweis = tabelle.querySelector('.scrollhinweis');
+  if (rahmen && hinweis) {
+    hinweis.classList.toggle('zeigen',
+      rahmen.scrollWidth - rahmen.clientWidth > 2);
+  }
   eig.innerHTML = (v.eigentuemer || []).map(e => `
     <div class="ez"><span class="eanteil">${esc(e.anteil)}</span>
       <div class="ezeile"><span>Bisher zugeflossen</span><b>${eur(e.betrag)}</b></div>
