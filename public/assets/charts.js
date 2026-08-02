@@ -14,16 +14,28 @@ const runden = n => Math.round(n * 100) / 100;
  *  stand „Niederschlagswa…" neben einer halb leeren Spalte. Der volle Name
  *  bleibt als <title> am Balken. */
 export function balken(daten, { hoehe = 30, luecke = 10, breite = 380,
-                                labelBreite = Math.round(breite * 0.28) } = {}) {
+                                labelBreite } = {}) {
   const eintraege = daten.filter(d => d.wert > 0);
   if (!eintraege.length) return leer('Keine Werte für diesen Zeitraum');
 
   const max = Math.max(...eintraege.map(d => d.wert));
-  const bahn = breite - labelBreite - 74;
+  // 7 viewBox-Einheiten je Zeichen bei 12 px Inter 500 — bewusst grosszuegig,
+  // damit breite Zeichen (W, M) die Spalte nicht in den Balken schieben.
+  const zeichenBreite = 7;
+  const luft = 12;                       // Luft zwischen Beschriftung und Balken
+  // Die Beschriftungsspalte waechst mit dem laengsten Namen, aber gedeckelt:
+  // breit genug, dass ein Name wie „Wohnung 1.OG · 2023" seinen unterscheidenden
+  // Teil (das Jahr) behaelt, schmal genug, dass die Balken Platz haben (<=52 %).
+  // Vorher stand die Spalte fest auf 28 % — auf dem iPhone verlor „Wohnung
+  // 1.OG …" so genau das Jahr, an dem die Zeilen sich unterscheiden. Eine
+  // ausdruecklich uebergebene labelBreite hat weiterhin Vorrang.
+  const noetig = Math.max(...eintraege.map(d => (d.name || '').length))
+                 * zeichenBreite + luft;
+  const spalte = labelBreite != null ? labelBreite
+    : Math.round(Math.min(breite * 0.52, Math.max(breite * 0.28, noetig)));
+  const bahn = breite - spalte - 74;
   const h = eintraege.length * (hoehe + luecke);
-  // 6.6 viewBox-Einheiten je Zeichen bei 12 px Inter — reicht als Faustmass,
-  // die Spalte hat noch 8 Einheiten Luft bis zum Balken.
-  const maxZeichen = Math.max(8, Math.floor((labelBreite - 8) / 6.6));
+  const maxZeichen = Math.max(6, Math.floor((spalte - luft) / zeichenBreite));
   const kurz = n => n.length > maxZeichen ? n.slice(0, maxZeichen - 1) + '…' : n;
 
   const zeilen = eintraege.map((d, i) => {
@@ -32,9 +44,9 @@ export function balken(daten, { hoehe = 30, luecke = 10, breite = 380,
     return `
       <text x="0" y="${y + hoehe / 2 + 4}" class="lbl">${kurz(d.name)}<title>${
         d.name}</title></text>
-      <rect x="${labelBreite}" y="${y}" width="${w}" height="${hoehe}"
+      <rect x="${spalte}" y="${y}" width="${w}" height="${hoehe}"
             rx="7" fill="${d.farbe || farbe(i)}"/>
-      <text x="${labelBreite + w + 8}" y="${y + hoehe / 2 + 4}" class="val">${d.text}</text>`;
+      <text x="${spalte + w + 8}" y="${y + hoehe / 2 + 4}" class="val">${d.text}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${breite} ${h}" class="chart" role="img">
@@ -45,6 +57,17 @@ export function balken(daten, { hoehe = 30, luecke = 10, breite = 380,
     </svg>`;
 }
 
+/** Ein langer kanonischer Titel wie „(Lauf am Holz) Klausner Winkel 12" passt
+ *  nicht unter eine schmale Saeule. Statt ihn hart abzuschneiden — wobei genau
+ *  der unterscheidende Strassenteil verlorenging und nur „(Lauf am Ho…" blieb —
+ *  wird er in zwei Zeilen geteilt: Ortsteil (Klammer) oben, Strasse unten, jede
+ *  fuer sich gekuerzt. Namen ohne Klammer bleiben einzeilig. */
+function saeulenLabel(name, maxZeichen) {
+  const kurz = t => t.length > maxZeichen ? t.slice(0, maxZeichen - 1) + '…' : t;
+  const m = /^\(([^)]+)\)\s*(.+)$/.exec((name || '').trim());
+  return m ? [kurz(m[1]), kurz(m[2])] : [kurz((name || '').trim())];
+}
+
 /** Gruppierte Saeulen je Objekt: Einnahmen gegen Ausgaben. */
 export function saeulen(gruppen, { breite = 380, hoehe = 170 } = {}) {
   if (!gruppen.length) return leer('Keine Objekte');
@@ -53,21 +76,32 @@ export function saeulen(gruppen, { breite = 380, hoehe = 170 } = {}) {
     return leer('Noch keine Einnahmen oder Ausgaben erfasst');
 
   const max = Math.max(1, ...gruppen.flatMap(g => [g.a, g.b]));
-  const padUnten = 34, padOben = 6;
-  const nutz = hoehe - padUnten - padOben;
   const proGruppe = breite / gruppen.length;
   const bw = Math.min(26, proGruppe / 3.2);
+  // Wie viele Zeichen je Zeile in eine Spalte passen (10.5 px Inter, ~6 Einheiten
+  // je Zeichen mit Sicherheitsabstand, damit Nachbarlabels sich nicht beruehren).
+  const maxZeichen = Math.max(5, Math.floor(proGruppe / 6));
+  const labels = gruppen.map(g => saeulenLabel(g.name, maxZeichen));
+  const zweizeilig = labels.some(l => l.length > 1);
+  // Zweizeilige Labels brauchen unten mehr Platz — sonst schneidet der
+  // viewBox-Rand die zweite Zeile ab.
+  const padUnten = zweizeilig ? 48 : 34, padOben = 6;
+  const nutz = hoehe - padUnten - padOben;
 
   const inhalt = gruppen.map((g, i) => {
     const mitte = i * proGruppe + proGruppe / 2;
     const ha = (g.a / max) * nutz, hb = (g.b / max) * nutz;
-    const kurz = g.name.length > 12 ? g.name.slice(0, 11) + '…' : g.name;
+    const [z1, z2] = labels[i];
+    const beschriftung = z2
+      ? `<text x="${mitte}" y="${hoehe - 21}" class="ax">${z1}<title>${g.name}</title></text>
+         <text x="${mitte}" y="${hoehe - 8}" class="ax">${z2}</text>`
+      : `<text x="${mitte}" y="${hoehe - 16}" class="ax">${z1}<title>${g.name}</title></text>`;
     return `
       <rect x="${mitte - bw - 3}" y="${padOben + nutz - ha}" width="${bw}" height="${ha}"
             rx="5" fill="#2E7D4F"/>
       <rect x="${mitte + 3}" y="${padOben + nutz - hb}" width="${bw}" height="${hb}"
             rx="5" fill="#B24229"/>
-      <text x="${mitte}" y="${hoehe - 16}" class="ax">${kurz}</text>`;
+      ${beschriftung}`;
   }).join('');
 
   return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img">
