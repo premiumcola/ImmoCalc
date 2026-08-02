@@ -315,6 +315,57 @@ def test_zweiter_anteil_derselben_einheit_aendert_statt_zu_doppeln():
         assert zeilen[0]["promille"] == 1000.0
 
 
+def test_anteil_aendern_laesst_die_notiz_stehen():
+    """Fund N118: das Zuweisen-Fenster sendet nur Eigner und Promille — der
+    Upsert schrieb `notiz` trotzdem bedingungslos und löschte damit still eine
+    gepflegte Notiz („Erbteil nach Onkel Karl, Vertrag 12/2019")."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Notizweg 45")
+        e = c.post("/api/eigentuemer", json={"name": "Eigner"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile", json={
+            "eigentuemer_id": e, "promille": 400,
+            "notiz": "Erbteil nach Onkel Karl, Vertrag 12/2019"})
+
+        # Zweiter Aufruf wie aus dem Zuweisen-Fenster: ohne `notiz`.
+        antwort = c.post(f"/api/objekte/{slug}/anteile",
+                         json={"eigentuemer_id": e, "promille": 600,
+                               "einheit": ""})
+        assert antwort.status_code == 201, antwort.text
+
+        zeilen = c.get(f"/api/objekte/{slug}/anteile").json()["anteile"]
+        assert len(zeilen) == 1
+        assert zeilen[0]["promille"] == 600.0
+        assert zeilen[0]["notiz"] == "Erbteil nach Onkel Karl, Vertrag 12/2019"
+
+        # Ausdrücklich geleert werden darf sie sehr wohl.
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 600, "notiz": ""})
+        zeilen = c.get(f"/api/objekte/{slug}/anteile").json()["anteile"]
+        assert zeilen[0]["notiz"] == ""
+
+
+def test_einheit_anteil_wird_ohne_notiz_nicht_zum_objektanteil():
+    """Fund N118: ein Einheiten-Anteil derselben Person darf beim Nachschärfen
+    des Promille-Werts nicht als zweiter Objekt-Anteil danebengestellt werden —
+    dann stünde am Objekt mehr als das Ganze."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Zuvielweg 46")
+        _einheit(c, slug, "Wohnung 1")
+        e = c.post("/api/eigentuemer", json={"name": "Eigner"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile", json={
+            "eigentuemer_id": e, "promille": 1000, "einheit": "Wohnung 1",
+            "notiz": "gehört mir allein"})
+        # Derselbe Anteil, nur der Wert korrigiert — Einheit mitgesendet.
+        c.post(f"/api/objekte/{slug}/anteile", json={
+            "eigentuemer_id": e, "promille": 900, "einheit": "Wohnung 1"})
+
+        zeilen = c.get(f"/api/objekte/{slug}/anteile").json()["anteile"]
+        assert len(zeilen) == 1
+        assert zeilen[0]["einheit"] == "Wohnung 1"
+        assert zeilen[0]["promille"] == 900.0
+        assert zeilen[0]["notiz"] == "gehört mir allein"
+
+
 def test_anteil_auf_unbekannte_einheit_wird_abgelehnt():
     with TestClient(app) as c:
         slug = _objekt(c, "Unbekannt 43")

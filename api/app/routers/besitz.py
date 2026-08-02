@@ -156,9 +156,12 @@ class AnteilIn(BaseModel):
     promille: float | None = None
     # CLXI: leer = ganzes Objekt (der gewachsene Fall), sonst die Bezeichnung
     # einer Einheit dieses Objekts. „Mir gehört Wohnung 2" statt nur „mir
-    # gehören 200 ‰ des Hauses".
-    einheit: str = ""
-    notiz: str = ""
+    # gehören 200 ‰ des Hauses". Nicht mitgesendet (None) = ganzes Objekt.
+    einheit: str | None = None
+    # Nicht mitgesendet (None) heisst „lass sie, wie sie ist" — der Endpunkt ist
+    # ein Upsert, und ein Aufrufer, der nur den Anteil setzt, darf eine
+    # gepflegte Notiz nicht mitlöschen (Fund N118).
+    notiz: str | None = None
 
 
 def _ist_objektanteil(a: Anteil) -> bool:
@@ -325,7 +328,11 @@ def anteil_setzen(slug: str, data: AnteilIn,
     # weiterhin eine sinnvolle Zahl sehen.
     eintrag.tausendstel = int(round(wert))
     eintrag.rolle = rolle_von(wert)
-    eintrag.notiz = data.notiz
+    # Nur schreiben, was mitgeschickt wurde: das Zuweisen-Fenster auf der
+    # Eigentümerseite sendet bloß Eigner und Promille — es darf eine gepflegte
+    # Notiz nicht stillschweigend leeren (Fund N118).
+    if data.notiz is not None:
+        eintrag.notiz = data.notiz
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)

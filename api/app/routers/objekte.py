@@ -509,6 +509,21 @@ def kostenarten(slug: str, session: Session = Depends(get_session)) -> list[Kost
     return session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
 
 
+def _positionen_mit_art(session: Session, objekt_id: int,
+                        name: str) -> list[Kostenposition]:
+    """Alle Kostenpositionen dieser Immobilie, die auf diesen Namen lauten —
+    über alle Abrechnungszeiträume. `Kostenposition.kostenart` ist Freitext und
+    kein Fremdschlüssel: eine Position kann diesen Namen tragen, ohne dass es im
+    Katalog eine gleichnamige Kostenart gibt (aus einem Beleg entstanden)."""
+    zids = [z.id for z in session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == objekt_id)).all()]
+    if not zids:
+        return []
+    return list(session.exec(select(Kostenposition).where(
+        Kostenposition.zeitraum_id.in_(zids),
+        Kostenposition.kostenart == name)).all())
+
+
 @router.patch("/kostenarten/{kid}")
 def kostenart_aendern(kid: int, data: dict,
                       session: Session = Depends(get_session)) -> dict:
@@ -547,6 +562,24 @@ def kostenart_aendern(kid: int, data: dict,
         if any(a.id != k.id for a in doppelt):
             raise HTTPException(
                 409, f"„{neu}“ gibt es an dieser Immobilie schon")
+        # Nicht nur der Katalog zählt: eine Position entsteht auch aus einem
+        # Beleg, ohne dass es dafür einen Katalog-Eintrag gibt. Zöge der neue
+        # Name in die Positionen nach, stünden zwei Zeilen gleichen Namens im
+        # selben Zeitraum — die Checkliste (ein Eintrag je Art) zeigte eine
+        # davon, die Abrechnung summierte beide, und der Betrag stünde doppelt
+        # in der Endsumme. Die verdeckte Zeile wäre über die Oberfläche nicht
+        # mehr erreichbar. Deshalb: derselbe Konflikt, dieselbe Antwort wie beim
+        # Umhängen einer Position (Fund N118).
+        if neu != alt:
+            belegt = _positionen_mit_art(session, k.objekt_id, neu)
+            if belegt:
+                raise HTTPException(409, (
+                    f"„{neu}“ steht in {len(belegt)} "
+                    + ("Abrechnung" if len(belegt) == 1 else "Abrechnungen")
+                    + " dieser Immobilie schon als eigene Position. Der Name "
+                    "würde doppelt vorkommen und der Betrag doppelt zählen — "
+                    "hänge diese Position zuerst um oder wähle einen anderen "
+                    "Namen."))
         felder["name"] = neu
 
     geprueft = Kostenart.model_validate({**k.model_dump(), **felder})
@@ -556,15 +589,10 @@ def kostenart_aendern(kid: int, data: dict,
 
     nachgezogen = 0
     if k.name != alt:
-        zids = [z.id for z in session.exec(
-            select(Zeitraum).where(Zeitraum.objekt_id == k.objekt_id)).all()]
-        if zids:
-            for p in session.exec(select(Kostenposition).where(
-                    Kostenposition.zeitraum_id.in_(zids),
-                    Kostenposition.kostenart == alt)).all():
-                p.kostenart = k.name
-                session.add(p)
-                nachgezogen += 1
+        for p in _positionen_mit_art(session, k.objekt_id, alt):
+            p.kostenart = k.name
+            session.add(p)
+            nachgezogen += 1
         for d in session.exec(select(Dokument).where(
                 Dokument.objekt_id == k.objekt_id,
                 Dokument.kostenart == alt)).all():

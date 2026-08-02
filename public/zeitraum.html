@@ -645,6 +645,9 @@
     border-radius:999px;padding:8px 14px;min-height:38px;font:600 11.5px var(--disp);
     cursor:pointer}
   .wd-sb.an{border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)}
+  .wd-rm{width:92px;border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;
+    min-height:38px;font:600 12px var(--mono);background:var(--sheet);text-align:right}
+  .wd-rm:focus{outline:none;border-color:var(--teal)}
   .wd-lade{color:var(--soft);font:500 13px var(--body);padding:8px 2px}
   /* N79 — Heizöl-Manager (Lieferungen + FIFO) inline in der Heizkosten-Position. */
   .ho-inline{margin-bottom:14px}
@@ -1970,7 +1973,10 @@ function zeileHtml(k, i) {
   // (Frisch- + Schmutz- + Niederschlagswasser). Ihr eigener Betrag ist nur der
   // Frischwasser-Anteil; die anderen beiden sind eigene, ausgeblendete
   // Positionen — die Zeile stünde sonst mit einem Drittel der Rechnung da.
-  const oelBetrag = istHeizoelSammel(k) && !k.betrag ? heizoelKosten : 0;
+  const oelBetrag = istHeizoelSammel(k) && !k.betrag ? heizoelKosten
+    : (istWarmwasserPos(k) && !k.betrag ? wwKosten
+    : (istHeizwaermePos(k) && !k.betrag
+       ? Math.round((heizoelKosten - wwKosten) * 100) / 100 : 0));
   const wert = eur(istWasserSammel(k) ? wasserGesamtBetrag()
     : (oelBetrag || k.betrag));
   const aufgeklappt = offen.has(i);
@@ -2019,7 +2025,10 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   // N114 — die Heizkosten kommen aus der FIFO-Bewertung, nicht als Positions-
   // betrag. `zeileHtml` rechnet dasselbe fuer die Anzeige; hier wird es fuer
   // Haken und „Datei waehlen" gebraucht.
-  const oelBetrag = heizoelSammel && !k.betrag ? heizoelKosten : 0;
+  const oelBetrag = heizoelSammel && !k.betrag ? heizoelKosten
+    : (istWarmwasserPos(k) && !k.betrag ? wwKosten
+    : (istHeizwaermePos(k) && !k.betrag
+       ? Math.round((heizoelKosten - wwKosten) * 100) / 100 : 0));
   // N91 — die drei Heizungs-Stufen: Öl (Einkauf) · Warmwassererzeugung · Heiz-
   // körper-Wärmemenge. Jede Position zeigt genau ihren Teil.
   const heizModus = heizoelSammel ? 'oel'
@@ -2451,6 +2460,8 @@ async function zeichnen() {
    Wird beim Laden geholt; null heißt „noch nicht bekannt". */
 let deckungAbschlaege = null;
 let heizoelKosten = 0;   // N114 - FIFO-Kosten des Oelverbrauchs
+let wwKosten = 0;        // N118 - §9-Anteil des Oels fuer die Warmwassererzeugung
+let wasserDetailCache = null;  // N118 - dieselbe Aufteilung wie in der Wassertabelle
 let deckungUmgelegt = null;   // was tatsächlich verteilt ist (Abrechnung)
 
 /* Kurzes deutsches Datum aus ISO (für die Öl-Lieferungsliste). */
@@ -2705,6 +2716,12 @@ async function fuelleHeizoelInline(el) {
       split = await api(`/objekte/${slug}/waerme/split?oel_kosten=${bew.verbrauch_kosten}`
         + `&oel_liter=${bew.verbrauch_liter}&ww_volumen_m3=${wwVol}`).catch(() => null);
     }
+    // N118 — für die Verteilungstabelle dieselben Mengen wie in der Wasser-
+    // tabelle verwenden, statt sie ein zweites Mal (und anders) zu rechnen.
+    if ((el.dataset.heizModus || 'oel') === 'warmwasser' && !wasserDetailCache) {
+      wasserDetailCache = await api(`/zeitraeume/${zid}/wasser`
+        + `?schluessel=${wasserSchluessel}`).catch(() => null);
+    }
     let verteilung = null;
     if (split && split.heizung_kosten > 0) {
       verteilung = await api(`/objekte/${slug}/heizung/verteilung?kosten=${split.heizung_kosten}`)
@@ -2716,6 +2733,49 @@ async function fuelleHeizoelInline(el) {
     el.innerHTML = `<div class="wd-lade">Heizöl nicht ladbar: ${
       esc(String(fehler.message || fehler))}</div>`;
   }
+}
+
+/* N118 — die Warmwassermenge je Einheit aus den Warmwasser-Unterzählern.
+   Dieselbe Zuordnung wie in der Wassertabelle (`zaehlerEinheiten`); teilt sich
+   ein Zähler mehrere Einheiten, wird sein Verbrauch gleichmäßig geteilt. */
+function wwJeEinheit(wasserDetail) {
+  const karte = {};
+  // Bevorzugt die Zahlen der Wassertabelle: dort ist die Zuordnung bereits
+  // sauber aufgelöst (Mehrfach-Zähler, Alt-Labels). Fällt die Antwort aus,
+  // wird ersatzweise aus den Zählern gerechnet.
+  for (const e of (wasserDetail?.einheiten || [])) {
+    const m3 = (e.zeilen || []).filter(z => z.art === 'Warmwasser')
+      .reduce((su, z) => su + (z.m3 || 0), 0);
+    if (m3 > 0) karte[e.name] = m3;
+  }
+  if (Object.keys(karte).length) return karte;
+  for (const z of (ablesungMaske?.zaehler || [])) {
+    if (wasserArt(z) !== 'Warmwasser' || !z.hauptzaehler_id) continue;
+    const v = z.verbrauch || 0;
+    if (!v) continue;
+    const ein = zaehlerEinheiten(z).filter(e => alleEinheiten().includes(e));
+    if (!ein.length) continue;
+    for (const e of ein) karte[e] = (karte[e] || 0) + v / ein.length;
+  }
+  return karte;
+}
+
+/* Die Warmwasser-Kosten (§9-Anteil des Öls) nach eben diesen Mengen verteilen —
+   cent-genau: der letzte Anteil trägt die Rundungsdifferenz. */
+function wwVerteilung(kosten, wasserDetail) {
+  const mengen = wwJeEinheit(wasserDetail);
+  const namen = Object.keys(mengen);
+  const summe = namen.reduce((s, e) => s + mengen[e], 0);
+  if (!summe || !kosten) return { mengen, anteile: {}, summe };
+  const anteile = {};
+  let rest = Math.round(kosten * 100);
+  namen.forEach((e, i) => {
+    const c = i === namen.length - 1 ? rest
+      : Math.round(kosten * 100 * mengen[e] / summe);
+    anteile[e] = c / 100;
+    rest -= c;
+  });
+  return { mengen, anteile, summe };
 }
 
 /* Der Öl-Manager als HTML: FIFO oben, Lieferungen, Erfassung; darunter der
@@ -2741,22 +2801,28 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
   // Jahren steckt im „Bestand zu Periodenbeginn" (FIFO-bewertet), nicht noch
   // einmal als Zeile. Ohne Periodenangabe (alter Stand) alle zeigen.
   const inPeriode = bew?.lieferungen_periode;
+  // N117 — der Anfangsbestand bleibt IMMER sichtbar, auch wenn er vor dem
+  // Periodenstart liegt: er geht voll in den Bestand ein und muss korrigierbar
+  // sein. Vorher war er nur als Zahl in der Kachel zu sehen, nicht zu ändern.
   const sichtbar = Array.isArray(inPeriode)
-    ? liefer.filter(l => inPeriode.includes(l.id)) : liefer;
+    ? liefer.filter(l => inPeriode.includes(l.id) || l.ist_anfangsbestand) : liefer;
   const zeilen = sichtbar.length ? sichtbar.map(l => `
     <div class="ho-zeile">
       <span class="ho-dt">${_isoKurz(l.datum)}${l.ist_anfangsbestand
-        ? ' <span class="ho-anf">Anfangsbestand</span>' : ''}</span>
+        ? ' <span class="ho-anf">Anfangsbestand — zählt vor der Periode</span>'
+        : ''}</span>
       <span class="ho-lit">${zahl(l.liter)} L</span>
       <span class="ho-wert">${eur(l.wert)}</span>
       <span class="ho-pl">${eur(l.preis_liter ?? (l.liter ? l.wert / l.liter : 0))}/L</span>
       ${bearbeitbar ? `<button class="ho-x" data-heizoel-weg="${l.id}"
         aria-label="Lieferung entfernen">×</button>` : ''}
     </div>`).join('') : '';
+  const nurPeriode = sichtbar.filter(l => !l.ist_anfangsbestand
+    || !Array.isArray(inPeriode) || inPeriode.includes(l.id));
   const bestZeile = sichtbar.length
     ? `<div class="ho-summe">In dieser Periode getankt: <b>${
-        zahl(sichtbar.reduce((s, l) => s + (l.liter || 0), 0))} L</b> · <b>${
-        eur(sichtbar.reduce((s, l) => s + (l.wert || 0), 0))}</b>${
+        zahl(nurPeriode.reduce((s, l) => s + (l.liter || 0), 0))} L</b> · <b>${
+        eur(nurPeriode.reduce((s, l) => s + (l.wert || 0), 0))}</b>${
         liefer.length > sichtbar.length
           ? ` · insgesamt erfasst: ${zahl(best.bestand_liter)} L` : ''}</div>` : '';
   const form = bearbeitbar ? `
@@ -2813,8 +2879,27 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
   //   warmwasser der §9-Anteil des Öls für die Warmwassererzeugung
   //   waerme     die Heizkörper-Wärmemenge über die Heizkostenverteiler
   if (modus === 'warmwasser') {
+    // N118 — die Verteilung der Warmwasser-Kosten auf die Einheiten, als
+    // kleine Tabelle wie beim Wasser: oben die Menge, darunter die Kosten.
+    const wv = wwVerteilung(split?.ww_kosten || 0, wasserDetailCache);
+    const sp = Object.keys(wv.mengen);
+    const wwTab = sp.length ? `<div class="ho-sekt">
+        <div class="ho-st">Verteilung auf die Einheiten
+          <span class="ho-sh">nach Warmwasser-Zähler</span></div>
+        <div class="wd-scroll"><table class="wd-tab"><thead><tr>
+          <th>Warmwasser</th>${sp.map(e => `<th>${esc(e)}</th>`).join('')}</tr></thead>
+          <tbody>
+            <tr><td class="wd-rowh">Menge<small>nach Zähler</small></td>
+              ${sp.map(e => `<td>${zahl(wv.mengen[e])} m³</td>`).join('')}</tr>
+            <tr><td class="wd-rowh">Kosten<small>anteilig</small></td>
+              ${sp.map(e => `<td><b>${eur(wv.anteile[e] || 0)}</b></td>`).join('')}</tr>
+          </tbody>
+          <tfoot><tr><td class="wd-rowh">Summe</td>
+            <td colspan="${sp.length}">${zahl(wv.summe)} m³ · <b>${
+              eur(split?.ww_kosten || 0)}</b></td></tr></tfoot>
+        </table></div></div>` : '';
     return `<div class="ho-box">${splitHtml
-      || '<div class="ho-warn">Noch keine Öl-Kosten erfasst — erst Lieferungen und den Zähler-Endstand bei „Heizöl & Lieferungen" eintragen.</div>'}</div>`;
+      || '<div class="ho-warn">Noch keine Öl-Kosten erfasst — erst Lieferungen und den Zähler-Endstand bei „Heizöl & Lieferungen" eintragen.</div>'}${wwTab}</div>`;
   }
   if (modus === 'waerme') {
     const kopfW = split ? `<div class="ho-kpi"><div class="ho-kbox teal">
@@ -2832,11 +2917,16 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
 // N113 - nach welchem Schluessel der Haupthaus-Rest verteilt wird. Der Nutzer
 // schaltet oben in der Detailansicht um; die Wahl gilt fuer die Anzeige.
 let wasserSchluessel = 'personen';
+// N116 - die vom Versorger abgerechnete Menge (aus dem Bescheid). Ist sie
+// gesetzt, rechnet die Verteilung damit statt mit dem eigenen Zaehlerstand.
+let wasserRechnungM3 = '';
 
 async function fuelleWasserInline(el) {
   try {
     const d = await api(`/zeitraeume/${el.dataset.wasserInline}/wasser`
-      + `?schluessel=${wasserSchluessel}`);
+      + `?schluessel=${wasserSchluessel}`
+      + (wasserRechnungM3 ? `&rechnung_m3=${wasserRechnungM3}` : ''));
+    wasserDetailCache = d;
     el.innerHTML = wasserDetailInhalt(d);
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Detailübersicht nicht ladbar: ${
@@ -3427,7 +3517,19 @@ async function laden() {
     const b = await api(`/objekte/${encodeURIComponent(daten.objekt)}`
       + `/heizoel/bewertung?zeitraum_id=${zid}`);
     heizoelKosten = b?.verbrauch_kosten || 0;
-  } catch { heizoelKosten = 0; }
+    // N118 — den §9-Split gleich mitziehen, damit die Zeile „Warmwasser-
+    // erzeugung" ihre Gesamtkosten oben rechts ausweisen kann.
+    const zl = ablesungMaske?.zaehler || [];
+    const wwH = zl.find(z => wasserArt(z) === 'Warmwasser' && !z.hauptzaehler_id);
+    const vol = wwH?.verbrauch != null ? wwH.verbrauch
+      : zl.filter(z => wasserArt(z) === 'Warmwasser' && z.hauptzaehler_id)
+          .reduce((su, z) => su + (z.verbrauch || 0), 0);
+    const sp = heizoelKosten > 0 ? await api(
+      `/objekte/${encodeURIComponent(daten.objekt)}/waerme/split`
+      + `?oel_kosten=${heizoelKosten}&oel_liter=${b?.verbrauch_liter || 0}`
+      + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
+    wwKosten = sp?.ww_kosten || 0;
+  } catch { heizoelKosten = 0; wwKosten = 0; }
   // N82b — die NK-Vorauszahlungen des Zeitraums für die Deckungs-Anzeige.
   try {
     const ab = await api(`/zeitraeume/${zid}/abrechnung`);
@@ -3507,6 +3609,13 @@ inhalt.addEventListener('change', e => {
   if (e.target.matches('[data-anfangdatum],[data-enddatum]')) datumGeaendert(e.target);
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
+  // N116 - abgerechnete Menge aus dem Bescheid: nur Anzeige-Basis, nichts wird
+  // gespeichert; die Verteilung rechnet sofort damit.
+  if (e.target.matches('[data-wasser-rechnung]')) {
+    wasserRechnungM3 = e.target.value || '';
+    const box = e.target.closest('[data-wasser-inline]');
+    if (box) fuelleWasserInline(box);
+  }
   // CCCLXII — Kostenart der Position wechseln (Wähler + Freitext für eine neue).
   if (e.target.matches('[data-kostenart-pos]')) kostenartWechseln(e.target);
   if (e.target.matches('[data-kostenart-neu]')) kostenartNeu(e.target);
@@ -4714,7 +4823,16 @@ function wasserDetailInhalt(d) {
         data-wasser-schluessel="personen">Personen</button>
       <button type="button" class="wd-sb${schl === 'flaeche' ? ' an' : ''}"
         data-wasser-schluessel="flaeche">Fläche</button>
-    </div>`;
+      <span class="wd-schl-l" style="margin-left:auto">Laut Rechnung</span>
+      <input class="wd-rm" type="number" step="0.1" data-wasser-rechnung
+        value="${d.rechnung_m3 ?? ''}" placeholder="m³"
+        aria-label="Abgerechnete Menge laut Bescheid in m³">
+    </div>${(d.rechnung_m3 && d.abgelesen_m3
+        && Math.abs(d.abgelesen_m3 - d.rechnung_m3) > 0.05)
+      ? `<div class="ho-warn">Der Zähler weist ${m3(d.abgelesen_m3)} aus, der
+          Versorger rechnet ${m3(d.rechnung_m3)} ab. Die Differenz von
+          ${m3(d.abgelesen_m3 - d.rechnung_m3)} wird <b>nicht</b> verteilt —
+          sie fällt aus dem Anteil Haupthaus heraus.</div>` : ''}`;
   const kosten = umschalter + `<div class="wd-kosten">
     ${wdKostenBox('Frischwasser', 'wasser', k.wasser)}
     ${wdKostenBox('Schmutzwasser', 'schmutz', k.schmutz)}

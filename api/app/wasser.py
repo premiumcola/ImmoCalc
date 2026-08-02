@@ -72,7 +72,14 @@ def _r2(x: float) -> float:
 def verrechne(komponenten: dict[str, float], gesamt_m3: float,
               zaehler: list[Zaehlerposten], garten_m3: float,
               rest_gewichte: dict[str, float]) -> WasserErgebnis:
-    """Rechnet die Wasserverrechnung.
+    """Rechnet die Wasserverrechnung — cent-genau.
+
+    Invariante: `Σ einheiten[*]["kosten"] + garten_kosten == gesamt_kosten`
+    (exakt, nicht „± 1 Cent“). Dafür wird jeder Teilbetrag über
+    `engine.verteile_nach_wert` (Größte-Reste) vergeben und der Rest als
+    Differenz zur Rechnungssumme gebildet. Einzige Ausnahme: unplausible
+    Ablesungen (negativer Rest) oder ein Rest ohne Ziel-Einheit — beides
+    erzeugt eine `warnung`, kein stiller Minusbetrag.
 
     `komponenten`  z. B. {"wasser": 298.05, "schmutz": 362.56, "niederschlag": 186.91}
     `gesamt_m3`    Hauptzähler-Differenz (Gesamtverbrauch).
@@ -143,7 +150,7 @@ def verrechne(komponenten: dict[str, float], gesamt_m3: float,
     # (N107: Garten zahlt nur Frischwasser, die Rechnung ist trotzdem fällig).
     rest_kosten = _r2(gesamt_kosten - garten_kosten - verteilt)
 
-    if rest_m3 < 0 or rest_kosten < 0:
+    if rest_m3 < -1e-9 or rest_kosten < 0:
         # Unterzähler über dem Hauptzähler oder Garten größer als der Rest: die
         # Ablesungen passen nicht zusammen. Früher bekam eine Einheit dafür
         # stillschweigend einen Minusbetrag — das ist keine Abrechnung, sondern

@@ -490,6 +490,7 @@ def _echte_einheiten(namen: list[str], karte: dict[str, str],
 
 @router.get("/zeitraeume/{zid}/wasser")
 def wasser_detail(zid: int, schluessel: str = "personen",
+                  rechnung_m3: float | None = None,
                   session: Session = Depends(get_session)) -> dict:
     """Wasser-Verrechnung dieses Zeitraums, aufgeschlüsselt je Einheit.
 
@@ -529,6 +530,15 @@ def wasser_detail(zid: int, schluessel: str = "personen",
 
     haupt = next((zae for zae in zaehler if _ist_wasser_haupt(zae)), None)
     gesamt_m3 = verb.get(haupt.id) if haupt else None
+    # N116 — massgeblich ist die ABGERECHNETE Menge des Versorgers, wenn sie
+    # bekannt ist (`rechnung_m3`, aus dem Bescheid: „Wasserbezug"). Der eigene
+    # Zaehler weist oft mehr aus (Zaehlerwechsel, Stichtagsversatz, Leitungs-
+    # verlust). Die Differenz gehoert NICHT dem Haupthaus angelastet: sie faellt
+    # aus dem Rest heraus, die Kosten verteilen sich dafuer auf die kleinere,
+    # tatsaechlich berechnete Menge.
+    abgelesen_m3 = gesamt_m3
+    if rechnung_m3 and rechnung_m3 > 0:
+        gesamt_m3 = float(rechnung_m3)
 
     # N101/6 — die Spalten sind Einheiten, keine Parteien. Alte Zähler tragen
     # noch Partei-/Altlabels („Roman & Alicia", „WG", „Büro"); sie werden hier
@@ -667,6 +677,8 @@ def wasser_detail(zid: int, schluessel: str = "personen",
         "hinweis": "",
         "warnungen": warnungen,
         "schluessel": schl,
+        "abgelesen_m3": round(abgelesen_m3, 3) if abgelesen_m3 else None,
+        "rechnung_m3": round(float(rechnung_m3), 3) if rechnung_m3 else None,
         "kosten": {**komponenten, "gesamt": e.gesamt_kosten,
                    "preis_m3": round(e.preis_m3, 2)},
         "gesamt_m3": round(e.gesamt_m3, 2),

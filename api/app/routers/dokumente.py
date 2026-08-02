@@ -1404,20 +1404,50 @@ _UMKLASS_ZIEL = {
 
 def _eintrag_kern(eintrag) -> dict:
     """Die übertragbaren Felder eines Eintrags — modellübergreifend. Das Jahr
-    kommt aus `jahr` (Zahlung) oder dem Beurkundungsdatum (Notarvertrag)."""
+    kommt aus `jahr` (Zahlung) oder dem Beurkundungsdatum (Notarvertrag).
+
+    Alles, was der Quelltyp mitbringt, wandert mit: der alte Eintrag wird nach
+    der Überführung gelöscht, also ist jedes hier vergessene Feld endgültig weg.
+    `datum`, `notar` und `urnr` gibt es nur am Notarvertrag — sie werden
+    durchgereicht, damit ein Hin und Her (Notarvertrag → Zahlung → Notarvertrag)
+    aus einem tagesgenauen Beurkundungsdatum nicht den 1. Januar macht und die
+    Urkundenrollennummer nicht verliert."""
     jahr = getattr(eintrag, "jahr", None)
+    datum = getattr(eintrag, "datum", None)
     if not jahr:
-        d = getattr(eintrag, "datum", None)
-        jahr = d.year if d else None
+        jahr = datum.year if datum else None
     return {
         "art": (getattr(eintrag, "art", None)
                 or getattr(eintrag, "bezeichnung", None) or "Sonstiges"),
         "betrag": getattr(eintrag, "betrag", 0.0) or 0.0,
         "jahr": jahr,
+        "datum": datum,
+        "notar": getattr(eintrag, "notar", "") or "",
+        "urnr": getattr(eintrag, "urnr", "") or "",
         "notiz": getattr(eintrag, "notiz", "") or "",
         "beteiligte": getattr(eintrag, "beteiligte", "") or "",
         "quelle_dokument_id": getattr(eintrag, "quelle_dokument_id", None),
     }
+
+
+def _bewahrt(kern: dict) -> str:
+    """Die Notiz für ein Ziel, das Notar, Urkundenrolle, Beurkundungsdatum und
+    Parteien gar nicht kennt (eine `Zahlung` hat diese Felder nicht).
+
+    Ohne diese Zeile wären sie nach dem Löschen des alten Eintrags weg — die
+    Urkundenrollennummer steht dann nur noch auf dem Papier. Angehängt wird
+    additiv, die vorhandene Notiz bleibt vorn stehen."""
+    teile = [t for t in (
+        f"Notar: {kern['notar']}" if kern["notar"] else "",
+        f"URNr: {kern['urnr']}" if kern["urnr"] else "",
+        (f"beurkundet {kern['datum'].strftime('%d.%m.%Y')}"
+         if kern["datum"] else ""),
+        f"Parteien: {kern['beteiligte']}" if kern["beteiligte"] else "",
+    ) if t]
+    if not teile:
+        return kern["notiz"]
+    zusatz = "Aus dem Notarvertrag übernommen — " + " · ".join(teile)
+    return f"{kern['notiz']}\n{zusatz}".strip() if kern["notiz"] else zusatz
 
 
 class UmklassifizierenIn(BaseModel):
@@ -1468,12 +1498,15 @@ def umklassifizieren(typ: str, eid: int, data: UmklassifizierenIn,
         neu = Zahlung(objekt_id=o.id, jahr=kern["jahr"] or date.today().year,
                       art=kern["art"], kategorie=cfg["kategorie"],
                       turnus=cfg["turnus"], absetzbar=cfg["absetzbar"],
-                      betrag=kern["betrag"], notiz=kern["notiz"],
+                      betrag=kern["betrag"], notiz=_bewahrt(kern),
                       quelle_dokument_id=kern["quelle_dokument_id"])
     elif ziel_typ == "notarvertrag":
-        datum = date(kern["jahr"], 1, 1) if kern["jahr"] else None
+        # Das tagesgenaue Beurkundungsdatum hat Vorrang. Nur wenn die Quelle gar
+        # keines hat (eine Zahlung kennt bloß das Jahr), bleibt der 1. Januar.
+        datum = kern["datum"] or (date(kern["jahr"], 1, 1) if kern["jahr"] else None)
         neu = Notarvertrag(objekt_id=o.id, art=kern["art"], betrag=kern["betrag"],
                            datum=datum, beteiligte=kern["beteiligte"],
+                           notar=kern["notar"], urnr=kern["urnr"],
                            notiz=kern["notiz"],
                            quelle_dokument_id=kern["quelle_dokument_id"])
     else:                                               # pragma: no cover

@@ -764,8 +764,11 @@ zform.addEventListener('submit', async e => {
   zSpeichern.textContent = 'Weise zu …';
   zFehlerWeg();
   try {
+    // `einheit: ''` ist hier die Aussage, nicht die Auslassung: dieses Fenster
+    // weist immer am ganzen Objekt zu. Ohne das Feld entschied der Server, und
+    // ein bestehender Einheiten-Anteil desselben Eigners wurde nicht gefunden.
     await api(`/objekte/${encodeURIComponent(zSlug)}/anteile`,
-      { method: 'POST', body: { eigentuemer_id: eid, promille: zWert } });
+      { method: 'POST', body: { eigentuemer_id: eid, promille: zWert, einheit: '' } });
     const name = eigner.find(p => p.id === eid)?.name ?? 'Eigentümer';
     zdlg.close();
     melde(`${promille(zWert)} an ${name} zugewiesen`, 'pos');

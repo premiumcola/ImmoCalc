@@ -431,6 +431,62 @@ def test_umklassifizieren_notarvertrag_zu_erwerbsnebenkosten():
             assert d.info_zu_id == z.id
 
 
+def test_umklassifizieren_bewahrt_notar_urnr_und_tag():
+    """Fund N118: beim Umklassifizieren wurde der alte Eintrag gelöscht, ohne
+    `notar`, `urnr` und das tagesgenaue Datum mitzunehmen — unwiederbringlich.
+    Beim Rückweg entstand aus dem 14.04.2022 der 01.01.2022."""
+    from app.models import Notarvertrag, Zahlung
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Urkundenweg 9"}).json()["slug"]
+        oid = _objekt_id(slug)
+        with Session(engine) as s:
+            nv = Notarvertrag(objekt_id=oid, art="Kaufvertrag", betrag=156.25,
+                              datum=date(2022, 4, 14), notar="Dr. Meier, Fürth",
+                              urnr="URNr 412/2022", beteiligte="Käufer/Verkäufer",
+                              notiz="vom Notariat geschickt")
+            s.add(nv)
+            s.commit()
+            s.refresh(nv)
+            nid = nv.id
+
+        # Hinweg: Notarvertrag → Erwerbsnebenkosten-Zahlung.
+        hin = c.post(f"/api/dokumente/eintrag/notarvertrag/{nid}/umklassifizieren",
+                     json={"ziel": "erwerbskosten"})
+        assert hin.status_code == 200, hin.text
+        zid = hin.json()["neu"]["id"]
+        with Session(engine) as s:
+            z = s.get(Zahlung, zid)
+            # Die Zahlung kennt keine Urkundenfelder — sie stehen in der Notiz,
+            # statt beim Löschen des Notarvertrags verloren zu gehen.
+            assert "vom Notariat geschickt" in z.notiz
+            assert "Dr. Meier, Fürth" in z.notiz
+            assert "URNr 412/2022" in z.notiz
+            assert "14.04.2022" in z.notiz
+
+        # Rückweg: die Zahlung wieder als Notarvertrag führen.
+        zurueck = c.post(f"/api/dokumente/eintrag/zahlung/{zid}/umklassifizieren",
+                         json={"ziel": "notarvertraege"})
+        assert zurueck.status_code == 200, zurueck.text
+        with Session(engine) as s:
+            nv2 = s.get(Notarvertrag, zurueck.json()["neu"]["id"])
+            assert nv2.art == "Kaufvertrag"
+            assert nv2.betrag == 156.25
+
+
+def test_umklassifizieren_notarvertrag_behaelt_tagesgenaues_datum():
+    """Notarvertrag → Notarvertrag (über den Kern) darf aus dem Beurkundungstag
+    keinen 1. Januar machen."""
+    from app.models import Notarvertrag
+    from app.routers.dokumente import _eintrag_kern
+    nv = Notarvertrag(objekt_id=1, art="Auflassung", datum=date(2022, 4, 14),
+                      notar="Dr. Meier", urnr="412/2022")
+    kern = _eintrag_kern(nv)
+    assert kern["datum"] == date(2022, 4, 14)
+    assert kern["jahr"] == 2022
+    assert kern["notar"] == "Dr. Meier"
+    assert kern["urnr"] == "412/2022"
+
+
 def test_umklassifizieren_zahlung_bleibt_in_der_tabelle():
     """CCCXXIV: Zahlung → Zahlung stellt nur die Kategorie um, die id bleibt."""
     from app.models import Zahlung

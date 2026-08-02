@@ -562,17 +562,28 @@ async function rechnen() {
 }
 
 /* Nach jeder Eingabe: kurz warten, dann speichern und neu rechnen. Das
-   Sammeln vermeidet einen Schreibvorgang je Tastendruck. */
+   Sammeln vermeidet einen Schreibvorgang je Tastendruck.
+
+   Objekt und Jahr werden zusammen mit den Werten eingefroren und NICHT erst
+   beim Feuern gelesen: wer innerhalb der 550 ms das Objekt wechselt, hätte
+   sonst die Zahlen der einen Anlage in den Datensatz der anderen geschrieben.
+   Passt der eingefrorene Stand beim Feuern nicht mehr zur Auswahl, wird gar
+   nicht geschrieben — `laden()` räumt den offenen Lauf ohnehin ab. */
 function angestossen() {
   const werte = werteAusForm();
   const stempel = JSON.stringify(werte);
   if (stempel === letzteWerte) return;
+  const slug = objektSlug;
+  const jahr = jahrWahl.wert();
   clearTimeout(speicherZeit);
   speicherZeit = setTimeout(async () => {
+    speicherZeit = null;
+    if (slug !== objektSlug || jahr !== jahrWahl.wert()) return;
     letzteWerte = stempel;
     try {
-      await api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}`,
+      await api(`/objekte/${encodeURIComponent(slug)}/strom/${jahr}`,
                 { method: 'PUT', body: werte });
+      if (slug !== objektSlug || jahr !== jahrWahl.wert()) return;
       await rechnen();
     } catch (fehler) {
       melde(String(fehler.message || fehler), 'neg');
@@ -581,6 +592,11 @@ function angestossen() {
 }
 
 async function laden() {
+  // Ein noch offener Speicherlauf gehört zum alten Objekt/Jahr — abräumen,
+  // bevor die Maske neu gefüllt wird. Sonst schriebe er die eben verlassenen
+  // Werte in den gerade gewählten Datensatz.
+  clearTimeout(speicherZeit);
+  speicherZeit = null;
   if (!objektSlug) {
     inhalt.innerHTML = `<div class="karte"><div class="chartleer">
       Kein Objekt vorhanden. Lege zuerst ein Objekt an.</div></div>`;

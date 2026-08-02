@@ -158,3 +158,47 @@ def test_kostenart_umlagefaehig_und_umbenennen():
                        json={"name": "Kaltwasser"}).status_code == 409
         assert c.patch(f"/api/kostenarten/{kamin['id']}",
                        json={"name": "  "}).status_code == 400
+
+
+def test_umbenennen_kollidiert_mit_position_ohne_katalogeintrag():
+    """Fund N118: die 409-Prüfung sah nur in den Katalog. Eine Position kann
+    aber auch ohne Katalog-Eintrag entstehen (aus einem Beleg). Beim Umbenennen
+    zog der neue Name in die Positionen nach — danach stand derselbe Name
+    zweimal im Zeitraum: die Checkliste zeigte eine Zeile, die Abrechnung
+    summierte beide, und der Betrag zählte doppelt."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte",
+                      json={"name": "Doppelweg 3",
+                            "kostenarten": ["Kamin"]}).json()["slug"]
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        c.post(f"/api/zeitraeume/{zid}/positionen",
+               json={"kostenart": "Kamin", "betrag": 100.0,
+                     "schluessel": "einheiten"})
+        # Position ohne Katalog-Eintrag — so entsteht sie aus einem Beleg.
+        c.post(f"/api/zeitraeume/{zid}/positionen",
+               json={"kostenart": "Sperrmüll", "betrag": 40.0,
+                     "schluessel": "einheiten"})
+        arten = [a["name"] for a in
+                 c.get(f"/api/objekte/{slug}/kostenarten").json()]
+        assert "Sperrmüll" not in arten
+
+        vorher = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()["gesamt"]
+        kamin = next(a for a in c.get(f"/api/objekte/{slug}/kostenarten").json()
+                     if a["name"] == "Kamin")
+        antwort = c.patch(f"/api/kostenarten/{kamin['id']}",
+                          json={"name": "Sperrmüll"})
+        assert antwort.status_code == 409, antwort.text
+        assert "Sperrmüll" in antwort.json()["detail"]
+
+        # Nichts wurde angefasst: beide Zeilen stehen unverändert nebeneinander.
+        namen = [p["kostenart"] for p in
+                 c.get(f"/api/zeitraeume/{zid}").json()["checkliste"]]
+        assert namen.count("Sperrmüll") == 1
+        assert "Kamin" in namen
+        assert c.get(f"/api/zeitraeume/{zid}/abrechnung").json()["gesamt"] == vorher
+
+        # Ein freier Name geht weiterhin durch — die Prüfung sperrt nicht alles.
+        ok = c.patch(f"/api/kostenarten/{kamin['id']}",
+                     json={"name": "Schornsteinfeger"})
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["positionen_nachgezogen"] == 1
