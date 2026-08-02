@@ -34,12 +34,30 @@
   /* max-width: die SVGs haben eine viewBox und wuerden auf breiten Schirmen
      samt Schrift und Balken ins Riesenhafte skalieren. */
   .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible}
+  /* N72 — der Kostenfluss darf die volle Kartenbreite nutzen (wie in
+     nebenkosten.html): so wird er auf breiten Schirmen gross und lesbar,
+     statt bei 560 px stehenzubleiben. */
+  .chart.sankey{max-width:100%}
   @media(min-width:1000px){
     .kpi{max-width:560px}
     .tabelle{max-width:720px}
   }
+
+  /* N72 — Objekt-Bubbles als Filter über dem Kostenfluss (und der ganzen
+     Seite). Im Stil der Startseiten-Blasen (assets/immo.css .bubble), das
+     aktive Objekt teal hervorgehoben. Touch ≥44px, Umbruch statt Overflow. */
+  .objektbar{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px}
+  .objektbar .bubble{font:600 13px var(--body); padding:9px 15px; color:var(--ink)}
+  .objektbar .bubble.aktiv{background:var(--teal); color:#fff;
+    box-shadow:0 2px 10px -3px rgba(15,110,92,.55)}
+  .objektbar .bubble.aktiv:hover{box-shadow:0 4px 14px -4px rgba(15,110,92,.6)}
+  .kfhinweis{font:400 12px var(--body); color:var(--soft); margin:-8px 0 14px;
+    line-height:1.45}
   .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;padding:22px 8px}
-  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  /* minmax(0,1fr) statt 1fr: sonst zwingt die min-content-Breite eines langen
+     Labels („GESAMTRENDITE P. A.") die drei Spalten breiter als das iPhone und
+     die Seite scrollt waagerecht. */
+  .kpi{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
   .kpi .k{background:var(--sheet);border-radius:14px;padding:13px 12px;
           box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .kpi .kl{display:block;font:600 9.5px var(--mono);letter-spacing:.08em;
@@ -103,8 +121,8 @@
   <div class="scroll">
     <div class="filter">
       <div id="jahr"></div>
-      <div id="objekt"></div>
     </div>
+    <div id="objektbar" class="objektbar"></div>
     <div id="inhalt"></div>
   </div>
 
@@ -118,7 +136,7 @@
    Was auf die Mieter umgelegt wird, steht auf nebenkosten.html.
    Jede Zahl nur einmal. */
 import { api, eur, eurKurz, eurVoll, esc, installNav } from './assets/immo.js';
-import { balken, saeulen, linie, legende, farbe } from './assets/charts.js';
+import { balken, saeulen, linie, sankey, legende, farbe } from './assets/charts.js';
 import { auswahlfeld } from './assets/auswahl.js';
 installNav();
 
@@ -134,18 +152,34 @@ const jahrWahl = auswahlfeld(document.getElementById('jahr'), {
   aenderung: () => zeichnen(),
 });
 
-const objektWahl = auswahlfeld(document.getElementById('objekt'), {
-  label: 'Objekt',
-  optionen: [{ wert: '', text: 'Alle Objekte' }],
-  wert: '',
-  aenderung: () => zeichnen(),
+/* N72 — Objektwahl als Bubble-Reihe statt Auswahlmenü. Der Klick auf ein
+   Objekt filtert die ganze Seite (Vermögen, Kosten, Cashflow) und zoomt den
+   Kostenfluss von „je Objekt" auf „je Einheit". „Alle" zeigt den Gesamtfluss.
+   Dynamisch aus den geladenen Objekten, nichts hartcodiert. */
+const objektbar = document.getElementById('objektbar');
+let aktivObjekt = '';
+
+function objektbarZeichnen() {
+  if (!objekte.length) { objektbar.innerHTML = ''; return; }
+  const knopf = (slug, text) => `<button class="bubble${
+    aktivObjekt === slug ? ' aktiv' : ''}" data-slug="${esc(slug)}"
+    aria-pressed="${aktivObjekt === slug}">${esc(text)}</button>`;
+  objektbar.innerHTML = knopf('', 'Alle Objekte')
+    + objekte.map(o => knopf(o.slug, o.titel || o.name)).join('');
+}
+
+objektbar.addEventListener('click', e => {
+  const b = e.target.closest('[data-slug]');
+  if (!b || b.dataset.slug === aktivObjekt) return;
+  aktivObjekt = b.dataset.slug;
+  objektbarZeichnen();
+  zeichnen();
 });
 
 let objekte = [];
 try {
   objekte = await api('/objekte');
-  objektWahl.fuelle([{ wert: '', text: 'Alle Objekte' },
-                     ...objekte.map(o => ({ wert: o.slug, text: o.titel || o.name }))], '');
+  objektbarZeichnen();
 } catch {
   sub.textContent = 'API nicht erreichbar';
 }
@@ -374,21 +408,53 @@ function verlaufTitel(reihen) {
   return woerter.has('Pacht') ? 'Pachtverlauf' : 'Mietverlauf';
 }
 
+/* N72 — der Haupt-Kostenfluss. Gross und lesbar: die Karte lässt den Sankey
+   voll breit werden (.chart.sankey max-width:100%), die interne Breite wächst
+   mit dem Schirm, und `mindestHoehe` hebt die Zeichenfläche an, damit Bänder
+   und Beschriftung auch auf dem iPhone lesbar bleiben. Ohne Objektfilter je
+   Objekt, mit Filter je Einheit — die Objekt-Bubbles oben schalten um. */
+function kostenflussHtml(fluss, jahr, objekt, gesamt) {
+  const titel = `Kostenfluss ${jahr}${objekt ? ' · je Einheit' : ' · je Objekt'}`;
+  const hinweis = objekt
+    ? 'Einnahmen gegen die vom Eigentümer getragenen Kosten je Einheit.'
+    : 'Einnahmen gegen die vom Eigentümer getragenen Kosten je Objekt — '
+      + 'tippe oben ein Objekt an, um auf seine Einheiten zu zoomen.';
+  const breit = window.innerWidth;
+  const inhalt = fluss && fluss.fluss && fluss.fluss.length && gesamt.ausgaben
+    ? sankey(fluss.knoten, fluss.fluss, {
+        format: eurKurz,
+        breite: breit < 520 ? 300 : breit < 900 ? 700 : 960,
+        zeilenhoehe: breit < 520 ? 32 : 36,
+        mindestHoehe: breit < 520 ? 230 : 300,
+      })
+    : `<div class="chartleer">Für ${jahr} gibt es noch keinen Kostenfluss —
+       ohne erfasste Einnahmen oder Kosten bleibt nichts zu verteilen.</div>`;
+  return `<div class="karte">
+      <h3>${titel}</h3>
+      <div class="kfhinweis">${hinweis}</div>
+      ${inhalt}
+    </div>`;
+}
+
 async function zeichnen() {
   const jahr = jahrWahl.wert();
-  const objekt = objektWahl.wert();
+  const objekt = aktivObjekt;
   // sicht=eigentuemer: Ausgaben ohne die umlagefähigen Nebenkosten
   const frage = new URLSearchParams({ jahr, sicht: 'eigentuemer' });
   if (objekt) frage.set('objekt', objekt);
 
-  let daten, verlauf, besitz;
+  let daten, verlauf, besitz, fluss;
   try {
-    [daten, verlauf, besitz] = await Promise.all([
+    [daten, verlauf, besitz, fluss] = await Promise.all([
       api('/auswertung?' + frage),
       api('/auswertung/mietverlauf' + (objekt ? '?objekt=' + encodeURIComponent(objekt) : '')),
       // Die Vermögenslage ist ein Bestand, kein Jahreswert — sie folgt dem
       // Objektfilter, nicht dem Jahr.
       api('/vermoegen').catch(() => null),
+      // N72 — der Kostenfluss der Eigentümersicht: Einnahmen gegen die vom
+      // Eigentümer getragenen Kosten. Über alle Objekte je Objekt, gefiltert
+      // je Einheit.
+      api('/auswertung/sankey?' + frage).catch(() => null),
     ]);
   } catch {
     inhalt.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
@@ -422,6 +488,8 @@ async function zeichnen() {
       ${kpiFeld('Ausgaben', eurKurz(g.ausgaben), 'neg')}
       ${kpiFeld('Saldo', eurKurz(g.saldo), g.saldo >= 0 ? 'pos' : 'neg')}
     </div>
+
+    ${kostenflussHtml(fluss, jahr, objekt, g)}
 
     ${vermoegenHtml(besitz, objekt)}
 

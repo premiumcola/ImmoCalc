@@ -110,9 +110,14 @@ export function linie(jahre, reihen, { breite = 380, hoehe = 165 } = {}) {
 
 /** Sankey: Bandbreite entspricht dem Betrag. Knoten tragen eine Spaltennummer,
  *  Flüsse verbinden sie. Bewusst ohne Bibliothek — die Ebenen sind vorgegeben,
- *  also genügt eine Höhenaufteilung je Spalte statt eines Layout-Algorithmus. */
+ *  also genügt eine Höhenaufteilung je Spalte statt eines Layout-Algorithmus.
+ *
+ *  `mindestHoehe` (Standard 190) ist der Boden der Zeichenfläche: wer den
+ *  Fluss grösser und lesbarer haben will, hebt ihn an — die Bänder wachsen
+ *  massstabsgetreu mit. Additiv, bestehende Aufrufer bleiben bei 190. */
 export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
-                                        luecke = 12, format = v => String(v) } = {}) {
+                                        luecke = 12, format = v => String(v),
+                                        mindestHoehe = 190 } = {}) {
   const aktiv = fluss.filter(f => f.wert > 0);
   if (!aktiv.length) return leer('Noch keine Zahlen für diesen Zeitraum');
 
@@ -147,7 +152,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
   const spaltenKnoten = s => knoten.map((k, i) => ({ k, i }))
     .filter(({ k, i }) => k.spalte === s && benutzt.has(i));
   const proSpalte = Math.max(...spalten.map(s => spaltenKnoten(s).length));
-  const bandHoehe = Math.max(190, proSpalte * (zeilenhoehe + luecke));
+  const bandHoehe = Math.max(mindestHoehe, proSpalte * (zeilenhoehe + luecke));
   const skala = (bandHoehe - luecke * (proSpalte - 1)) / gesamt;
 
   // Jeder Knoten bekommt einen sichtbaren Marker — auch bei Winzbetraegen —
@@ -165,7 +170,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
   // im Eng-Fall mit, statt die untersten Labels aus dem Bild zu draengen.
   const stapelHoehe = s =>
     spaltenKnoten(s).reduce((sum, { i }) => sum + abstand(i), 0) - luecke;
-  const hoehe = Math.max(190, ...spalten.map(stapelHoehe));
+  const hoehe = Math.max(mindestHoehe, ...spalten.map(stapelHoehe));
 
   // Knoten je Spalte mittig stapeln — jeder in seinem Abstands-Slot zentriert,
   // damit Marker (l.h) und Label (l.mitte) gleichmaessig Luft haben. Das Band
