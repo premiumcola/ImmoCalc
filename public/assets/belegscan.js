@@ -66,11 +66,15 @@ function dateiJahr(dateien) {
     über `/api/dokumente/erkennen` (speichert nichts). Schlägt sie fehl (kein
     Schlüssel, kein Guthaben, offline), gibt sie `null` und der Scan läuft ganz
     normal mit dem Kontext weiter — die KI darf nie einen Beleg aufhalten. */
-async function kiErkennen(datei) {
+async function kiErkennen(datei, kostenart = '') {
   if (!datei) return null;
   try {
     const paket = new FormData();
     paket.append('datei', datei, datei.name || 'seite.jpg');
+    // N78 — optionaler Kontext-Hinweis: bei einem Wasser-Beleg liest die KI
+    // zusätzlich die drei Bereichsbeträge (Feld `wasser`). Additiv; ohne den
+    // Hinweis bleibt der Aufruf wie zuvor.
+    if (kostenart) paket.append('kostenart', kostenart);
     const antwort = await fetch('/api/dokumente/erkennen',
                                 { method: 'POST', body: paket });
     return antwort.ok ? await antwort.json() : null;
@@ -150,7 +154,8 @@ export async function belegScannen(dateien, ziel = {}) {
   // schneidet gerade zu) und liefert Betrag/Datum/Art für Benennung + Ablage.
   const liste = Array.from(dateien || []);
   const erstes = liste.find(istBildDatei) || liste[0];
-  const kiVersprechen = kiErkennen(erstes);
+  // N78 — die Kostenart als Kontext mitgeben (Wasser-Beleg ⇒ drei Beträge).
+  const kiVersprechen = kiErkennen(erstes, ziel.kostenart || '');
 
   const aufnahme = await aufnahmeVorbereiten(dateien, ziel.titel);
   if (!aufnahme) return null;                       // Zuschnitt abgebrochen

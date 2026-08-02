@@ -1524,18 +1524,40 @@ def _regeln(session: Session) -> list[Erkennungsregel]:
 
 @router.post("/erkennen")
 async def erkennen(datei: UploadFile = File(...),
+                   kostenart: str = Form(""),
                    session: Session = Depends(get_session)) -> dict:
     """Liest Betrag, Datum und Art aus einer Aufnahme oder einem PDF.
 
     Die Erkennungsregeln des Nutzers haben Vorrang: trifft ein Muster, gilt
-    dessen Richtung. Nichts wird gespeichert."""
+    dessen Richtung. Nichts wird gespeichert.
+
+    N78 — optionaler Kontext-Hinweis `kostenart`: additiv, bestehende Aufrufer
+    ohne das Feld laufen unverändert. Deutet er auf einen Wasser-Beleg (die
+    Wasser-Sammelposition ist das Ziel), liest die KI zusätzlich die drei
+    Bereichs-Gebühren (Frisch-/Schmutz-/Niederschlagswasser) und gibt sie als
+    Feld `wasser: {wasser, schmutz, niederschlag}` zurück. Fällt die KI aus oder
+    ist es kein Wasserbeleg, bleibt `wasser` weg — der Rest der Antwort ist
+    unverändert."""
     rohdaten = await datei.read()
     if not rohdaten:
         raise HTTPException(400, "Leere Datei")
     # Der Dateiname als zusätzlicher Kontext für die KI-Auslese (CCLXVIII):
     # „2025-10-oel-2729,91€.pdf" nennt Datum und Betrag schon mit.
-    return ocr.erkenne(rohdaten, _regeln(session), datei.filename or "",
-                       ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+    ergebnis = ocr.erkenne(rohdaten, _regeln(session), datei.filename or "",
+                           ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+    # N78 — nur beim Wasser-Hinweis und nur mit eingerichteter KI ein zweiter,
+    # gezielter Aufruf für die drei Bereichsbeträge. Rein additiv; scheitert er,
+    # bleibt die Antwort wie bisher.
+    ki_key = _ki_key(session)
+    if kiauslese.ist_wasser_kontext(kostenart) and kiauslese.verfuegbar(ki_key):
+        text = ocr.text_aus_beleg(rohdaten)
+        if text and text.strip():
+            wasser = kiauslese.lies_wasser(text, datei.filename or "",
+                                           schluessel=ki_key,
+                                           modell=_ki_modell(session))
+            if wasser:
+                ergebnis["wasser"] = wasser
+    return ergebnis
 
 
 # --------------------------------------------------------------------------

@@ -413,6 +413,120 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
 
 
 # --------------------------------------------------------------------------
+# N78 — der wasser-spezifische Auslese-Zweig.
+#
+# Ein Wasser-/Abwasserbescheid rechnet meist drei getrennte Bereiche ab:
+# Frischwasser, Schmutzwasser (Abwasser) und Niederschlagswasser. Der generische
+# Ein-Betrag-Prompt liefert dafür nur eine Summe. Wird der Beleg als Wasser
+# gehintet (die Wasser-Sammelposition ist das Ziel), fragt dieser Prompt gezielt
+# die drei Bereichs-Gebühren ab — die drei Kostenpositionen lassen sich dann in
+# einem Schritt setzen. Reiner Zusatz: `lies_beleg` bleibt unberührt.
+# --------------------------------------------------------------------------
+WASSER_SYSTEM_PROMPT = (
+    "Du liest einen deutschen Wasser-/Abwasser-Gebührenbescheid (von einem "
+    "Zweckverband, Wasserversorger oder einer Gemeinde). Gib NUR JSON zurück, "
+    "kein weiterer Text:\n"
+    '{"wasser":<Zahl|null>,"schmutz":<Zahl|null>,"niederschlag":<Zahl|null>}\n'
+    "Der Bescheid rechnet oft drei getrennte Abrechnungsbereiche ab. Gesucht ist "
+    "je die GESAMT-GEBÜHR/SUMME des Bereichs (Grund-/Bereitstellungsgebühr plus "
+    "Verbrauchs-/Mengengebühr des Bereichs zusammen) für den abgerechneten "
+    "Zeitraum — NICHT die monatlichen Abschläge/Vorauszahlungen und NICHT die "
+    "Nachzahlung/den Saldo/das Zahlungsziel.\n"
+    "wasser = Bereich Frischwasser/Trinkwasser/Wasserversorgung "
+    "(\"Abrechnungsbereich Wasser\", \"Frischwasser\", \"Trinkwasser\", "
+    "\"Wasserverbrauch\"). "
+    "schmutz = Bereich Schmutzwasser/Abwasser/Kanal "
+    "(\"Schmutzwasser\", \"Abwasser\", \"Kanalbenutzungsgebühr\", "
+    "\"Entwässerung\"). "
+    "niederschlag = Bereich Niederschlagswasser/Regenwasser/versiegelte Fläche "
+    "(\"Niederschlagswasser\", \"Regenwassergebühr\", \"Oberflächenwasser\").\n"
+    "Beträge in Euro als Zahl (Punkt als Dezimaltrenner, ohne Währungszeichen), "
+    "immer positiv. Fehlt ein Bereich auf dem Beleg, den Wert null setzen. Ist es "
+    "überhaupt kein Wasser-/Abwasserbescheid, alle drei auf null."
+)
+WASSER_TOKENS = 200
+
+
+def ist_wasser_kontext(hinweis: str) -> bool:
+    """Deutet der Kontext (Kostenart/Kategorie) auf einen Wasser-Beleg?
+
+    Genügt für den Auslese-Zweig: die Wasser-Sammelposition heißt „Wasser",
+    ihre Bestandteile „Abwasser"/„Niederschlagswasser" — alle tragen das Wort.
+    Absichtlich tolerant (Umlaute, Groß/Klein), damit der Hinweis vom Frontend
+    zuverlässig greift; der Zweig kostet nur dann einen zusätzlichen KI-Aufruf."""
+    n = (hinweis or "").lower()
+    n = (n.replace("ä", "ae").replace("ö", "oe")
+          .replace("ü", "ue").replace("ß", "ss"))
+    return "wasser" in n or "niederschlag" in n or "entwaesser" in n
+
+
+def lies_wasser(text: str, dateiname: str = "", schluessel: str = "",
+                modell: str = "") -> dict | None:
+    """Liest die drei Bereichs-Gebühren eines Wasserbescheids (N78).
+
+    Gibt bei Erfolg `{"wasser": float|None, "schmutz": float|None,
+    "niederschlag": float|None}` zurück (jeder Wert die Gesamt-Gebühr des
+    Bereichs in Euro, oder None, wenn der Bereich fehlt). Bei jedem Fehler —
+    kein Key, kein httpx, Netzwerk, Timeout, ungültige Antwort, kein Wasser-
+    beleg — `None`, nie eine Exception. Derselbe Key-/Modell-Vorrang wie
+    `lies_beleg`."""
+    if httpx is None:
+        return None
+    schluessel = _schluessel(schluessel)
+    if not schluessel:
+        return None
+    inhalt = (text or "").strip()
+    if not inhalt:
+        return None
+
+    gekuerzt = inhalt[:MAX_ZEICHEN]
+    nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
+    rumpf = {
+        "model": _modell(modell),
+        "max_tokens": WASSER_TOKENS,
+        "system": WASSER_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": nutzer}],
+    }
+    kopf = {
+        "x-api-key": schluessel,
+        "anthropic-version": API_VERSION,
+        "content-type": "application/json",
+    }
+
+    try:
+        antwort = httpx.post(API_URL, headers=kopf, json=rumpf, timeout=ZEITLIMIT)
+    except Exception as fehler:                            # noqa: BLE001
+        log.info("KI-Wasserauslese nicht erreichbar: %s", type(fehler).__name__)
+        return None
+    if antwort.status_code != 200:
+        log.info("KI-Wasserauslese meldete HTTP %s", antwort.status_code)
+        return None
+
+    try:
+        daten = antwort.json()
+        bloecke = daten.get("content") or []
+        roh = "".join(b.get("text", "") for b in bloecke
+                      if isinstance(b, dict) and b.get("type") == "text")
+    except Exception:                                      # noqa: BLE001
+        return None
+
+    block = _json_block(roh)
+    if block is None:
+        log.info("KI-Wasserauslese lieferte kein verwertbares JSON")
+        return None
+
+    ergebnis = {
+        "wasser": _betrag(block.get("wasser")),
+        "schmutz": _betrag(block.get("schmutz")),
+        "niederschlag": _betrag(block.get("niederschlag")),
+    }
+    # Dezent loggen — OHNE Beträge (Datenschutz): nur, wie viele Bereiche kamen.
+    log.info("KI-Wasserauslese gelesen (%d Bereiche)",
+             sum(1 for v in ergebnis.values() if v is not None))
+    return ergebnis
+
+
+# --------------------------------------------------------------------------
 # Orientierung eines gescannten Blattes über das Vision-Modell.
 #
 # Tesseract-OSD verfehlt bei zerknitterten Foto-Scans die Drehrichtung (ein

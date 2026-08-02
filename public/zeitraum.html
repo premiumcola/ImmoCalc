@@ -194,6 +194,12 @@
   .bdd-ki{font-style:italic;color:var(--soft)}
   .field.zwei{display:flex;gap:10px}
   .field.zwei > div{flex:1}
+  /* N78 — die drei Wasser-Bereichsbeträge nebeneinander; auf schmalen Spalten
+     dürfen sie umbrechen, damit nichts aus der Karte läuft. */
+  .field.drei{display:flex;gap:10px;flex-wrap:wrap}
+  .field.drei > div{flex:1 1 92px;min-width:0}
+  .bdd-wasser-hint{font:400 12px var(--body);color:var(--soft);line-height:1.5;
+    margin:0 0 12px}
   /* KI-neu-Knopf: dezent, animiert, während die KI liest. */
   .bdd-kibtn{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;
     border:1.5px solid #C7B8E0;background:#F1ECF9;color:#5B3E8F;border-radius:10px;
@@ -3123,6 +3129,165 @@ function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbi
   });
 }
 
+/* N78 — der wasser-spezifische Drop-Dialog: wie `belegDropDialog`, aber mit DREI
+   Betragsfeldern (Frisch-/Schmutz-/Niederschlagswasser) statt eines einzigen.
+   Die KI liest sie voraus (`vorschlag.wasser`); „KI neu lesen" füllt sie neu.
+   Liefert `{ aktion, beschreibung, firma, jahr, betrag, wasser:{…} }` oder null.
+   `betrag` ist der Frischwasser-Betrag — er landet an der Wasser-Sammelposition,
+   an die der Beleg gehängt wird; Schmutz/Niederschlag setzt `belegPerDrop`
+   danach auf ihre eigenen Positionen. */
+function belegWasserDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbieter }) {
+  return new Promise(fertig => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'immo-dlg beleg-drop-dlg';
+    document.body.appendChild(dlg);
+    let entschieden = false;
+    const blobUrl = datei ? URL.createObjectURL(datei) : '';
+    dlg.addEventListener('close', () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      dlg.remove();
+      if (!entschieden) fertig(null);
+    }, { once: true });
+    const kiZeile = v => {
+      const t = [];
+      if (v?.sache) t.push(esc(v.sache));
+      if (v?.absender) t.push(esc(v.absender));
+      if (v?.datum) t.push(new Date(v.datum).toLocaleDateString('de-DE'));
+      const w = v?.wasser;
+      if (w && (w.wasser || w.schmutz || w.niederschlag)) {
+        const s = w.wasser + (w.schmutz || 0) + (w.niederschlag || 0);
+        t.push(eur(s) + ' gesamt');
+      } else if (v?.betrag) {
+        t.push(eur(Math.abs(v.betrag)));
+      }
+      return t.length ? `erkannt: ${t.join(' · ')}` : 'keine automatische Erkennung';
+    };
+    const dupHtml = dup?.gefunden ? `<div class="dup-hinweis">
+        <strong>Diese Datei liegt schon in der Ablage.</strong>
+        ${dup.im_ziel_ordner ? 'Im richtigen Ordner ✓' : 'Aber in einem anderen Ordner.'}
+        ${dup.pfad ? `<span class="pfad">${esc(dup.pfad)}</span>` : ''}
+        Statt sie erneut hochzuladen, wird der vorhandene Beleg verknüpft.</div>` : '';
+    const istPdf = (datei?.type || '') === 'application/pdf' || /\.pdf$/i.test(datei?.name || '');
+    const vorschau = !blobUrl ? '<div class="bdd-leer">Keine Vorschau</div>'
+      : istPdf ? `<embed class="bdd-embed" src="${blobUrl}#toolbar=0&navpanes=0&view=Fit" type="application/pdf">`
+      : `<img class="bdd-img" src="${blobUrl}" alt="Beleg-Vorschau">`;
+    const eyebrow = [daten.objekt_name, 'Nebenkosten'].filter(Boolean).map(esc).join(' · ');
+    // Betrag eines Bereichs als Feldwert (positiv, ohne Nachkomma-Rauschen).
+    const wv = v => (v != null && v !== '') ? Math.abs(v) : '';
+    const w0 = vorschlag?.wasser || {};
+    dlg.innerHTML = `
+      <button class="immo-dlg-zu" data-nein aria-label="Schließen">×</button>
+      ${eyebrow ? `<span class="bdd-eyebrow">${eyebrow}</span>` : ''}
+      <div class="dt">Wasser-Beleg zuordnen</div>
+      <div class="bdd-body">
+        <div class="bdd-links">
+          <p class="zinfo">→ <strong>${esc(kostenart)}</strong> · ${lesbareGroesse(groesse)}
+            <br><span class="bdd-ki" data-ki-zeile>${kiZeile(vorschlag)}</span></p>
+          <button class="bdd-kibtn" data-ki-neu type="button"
+            title="Beleg noch einmal von der KI lesen lassen">
+            <span class="funke">✦</span><span class="lbl">KI neu lesen</span></button>
+          <div class="bdd-zus" data-zus${vorschlag?.zusammenfassung ? '' : ' hidden'}
+            >${esc(vorschlag?.zusammenfassung || '')}</div>
+          ${dupHtml}
+          <p class="bdd-wasser-hint">Die drei Bereichs-Gebühren des Bescheids —
+            von der KI vorausgelesen, bitte prüfen. Sie werden auf die Positionen
+            Wasser, Abwasser und Niederschlagswasser gebucht.</p>
+          <div class="field"><label>Bezeichnung</label>
+            <input class="inp" data-f="beschreibung" value="${esc(vorschlag?.sache || kostenart)}"></div>
+          <div class="field"><label>Firma / Gemeinde / Zweckverband</label>
+            <input class="inp" data-f="firma" value="${esc(vorschlag?.absender || anbieter || '')}"
+              placeholder="z. B. Zweckverband, Versicherer …"></div>
+          <div class="field drei">
+            <div><label>Frischwasser (€)</label>
+              <input class="inp" type="number" step="0.01" data-f="w_wasser"
+                value="${wv(w0.wasser)}" placeholder="0,00"></div>
+            <div><label>Schmutzwasser (€)</label>
+              <input class="inp" type="number" step="0.01" data-f="w_schmutz"
+                value="${wv(w0.schmutz)}" placeholder="0,00"></div>
+            <div><label>Niederschlag (€)</label>
+              <input class="inp" type="number" step="0.01" data-f="w_niederschlag"
+                value="${wv(w0.niederschlag)}" placeholder="0,00"></div>
+          </div>
+          <div class="field"><label>Jahr</label>
+            <input class="inp" type="number" data-f="jahr" value="${jahr}"></div>
+          <div class="bdd-err" data-err hidden></div>
+          <div class="bdd-fuss">
+            <button class="btn" data-ok>${dup?.gefunden ? 'Verknüpfen' : 'Ablegen'}</button>
+          </div>
+        </div>
+        <div class="bdd-rechts">${vorschau}</div>
+      </div>`;
+    const kibtn = dlg.querySelector('[data-ki-neu]');
+    async function neuErkennen() {
+      if (!datei || kibtn.classList.contains('laedt')) return;
+      kibtn.classList.add('laedt'); kibtn.disabled = true;
+      kibtn.querySelector('.lbl').textContent = 'KI liest …';
+      try {
+        const v = await erkennen(datei, kostenart);
+        if (!v) throw new Error('keine Antwort');
+        const setF = (s, val) => {
+          const el = dlg.querySelector(`[data-f="${s}"]`);
+          if (el && val != null && val !== '') el.value = val;
+        };
+        if (v.sache) setF('beschreibung', v.sache);
+        if (v.absender) setF('firma', v.absender);
+        if (v.jahr) setF('jahr', v.jahr);
+        const w = v.wasser || {};
+        if (w.wasser != null) setF('w_wasser', Math.abs(w.wasser));
+        if (w.schmutz != null) setF('w_schmutz', Math.abs(w.schmutz));
+        if (w.niederschlag != null) setF('w_niederschlag', Math.abs(w.niederschlag));
+        dlg.querySelector('[data-ki-zeile]').textContent = kiZeile(v);
+        const zus = dlg.querySelector('[data-zus]');
+        if (v.zusammenfassung) { zus.textContent = v.zusammenfassung; zus.hidden = false; }
+        if (!v.ki) {
+          melde('KI nicht aktiv (kein Schlüssel/Guthaben) — es gilt die einfache '
+            + 'Erkennung. In den Einstellungen den Anthropic-Schlüssel hinterlegen.', 'neg');
+        } else if (!w.wasser && !w.schmutz && !w.niederschlag) {
+          melde('✦ KI gelesen — aber keine Wasser-Bereiche erkannt; bitte von Hand '
+            + 'eintragen.', 'neg');
+        } else {
+          melde('✦ KI-Erkennung aktualisiert', 'pos');
+        }
+      } catch (fehler) {
+        melde('KI-Erkennung nicht möglich: ' + String(fehler.message || fehler), 'neg');
+      } finally {
+        kibtn.classList.remove('laedt'); kibtn.disabled = false;
+        kibtn.querySelector('.lbl').textContent = 'KI neu lesen';
+      }
+    }
+    kibtn.onclick = neuErkennen;
+    dlg.querySelector('[data-nein]').onclick = () => dlg.close();
+    dlg.querySelector('[data-ok]').onclick = () => {
+      const f = s => dlg.querySelector(`[data-f="${s}"]`).value;
+      const zahl = s => parseFloat(String(f(s)).replace(',', '.')) || 0;
+      const wasser = zahl('w_wasser'), schmutz = zahl('w_schmutz'),
+            niederschlag = zahl('w_niederschlag');
+      // Ohne einen einzigen Bereichsbetrag bliebe die Zeile leer — klar sagen,
+      // statt scheinbar „abzulegen" (vgl. N54 im generischen Dialog).
+      if (!(wasser > 0 || schmutz > 0 || niederschlag > 0)) {
+        const err = dlg.querySelector('[data-err]');
+        err.textContent = 'Bitte mindestens einen Bereichsbetrag eintragen — '
+          + 'sonst bleibt die Zeile leer.';
+        err.hidden = false;
+        const bf = dlg.querySelector('[data-f="w_wasser"]');
+        bf.focus(); bf.select?.();
+        return;
+      }
+      entschieden = true;
+      fertig({
+        aktion: dup?.gefunden ? 'verknuepfen' : 'ablegen',
+        beschreibung: f('beschreibung').trim(),
+        firma: f('firma').trim(),
+        jahr: Number(f('jahr')) || jahr,
+        betrag: wasser,
+        wasser: { wasser, schmutz, niederschlag },
+      });
+      dlg.close();
+    };
+    dlg.showModal();
+  });
+}
+
 /* CCCXCVI — NK-Positionen ein-/ausblenden. Jede Kostenart des Objekts als
    Schalter; „aus" setzt `Kostenart.aktiv=false` (die Checkliste blendet sie dann
    aus, die Daten bleiben). Beim Schließen wird neu geladen. Nützlich für
@@ -3199,6 +3364,9 @@ async function belegPerDrop(kostenart, dateien) {
   }
   const jahr = Number((daten.ende || '').slice(0, 4)) || new Date().getFullYear();
   const erste = pdfs[0] || bilder[0];
+  // N78 — Ziel ist die Wasser-Sammelposition? Dann der wasser-spezifische Dialog
+  // (drei Beträge), und die KI-Erkennung bekommt den Wasser-Kontext mit.
+  const istWasser = istWasserSammel({ kostenart });
 
   // CD — sofort einen Ladeschleier zeigen: Prüfsumme + KI-Erkennung brauchen
   // einen Moment, in dem sonst gefühlt „nichts passiert", bis der Dialog kommt.
@@ -3214,7 +3382,7 @@ async function belegPerDrop(kostenart, dateien) {
     // PDF, das nie ein Duplikat sein kann. KI-Erkennung läuft immer.
     const [sha1, vorschlag] = await Promise.all([
       (pdfs.length === 1 && !bilder.length) ? sha1Hex(erste).catch(() => null) : Promise.resolve(null),
-      erkennen(erste),
+      erkennen(erste, istWasser ? kostenart : ''),
     ]);
     if (sha1) {
       try {
@@ -3225,8 +3393,10 @@ async function belegPerDrop(kostenart, dateien) {
 
     const groesse = dateien.reduce((s, d) => s + (d.size || 0), 0);
     schleier.remove();      // Dialog übernimmt jetzt sichtbar
-    wahl = await belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse,
-      datei: erste, anbieter: zeile?.anbieter || '' });
+    const dialogArgs = { kostenart, vorschlag, dup, jahr, groesse,
+      datei: erste, anbieter: zeile?.anbieter || '' };
+    wahl = istWasser ? await belegWasserDialog(dialogArgs)
+                     : await belegDropDialog(dialogArgs);
   } finally {
     schleier.remove();      // auch bei Fehler nie hängenbleiben
   }
@@ -3289,6 +3459,14 @@ async function belegPerDrop(kostenart, dateien) {
     for (const id of dokIds) {
       await api(`/dokumente/${id}/position`, { method: 'POST' });
     }
+    // N78 — der Beleg hängt jetzt an der Wasser-Sammelposition (Betrag =
+    // Frischwasser). Schmutz- und Niederschlagswasser zusätzlich auf ihre
+    // eigenen Positionen buchen, damit die Detail-Tabelle die drei Werte zeigt.
+    if (istWasser && wahl.wasser) {
+      zeileVerarbeitet(kostenart, 'Bereiche werden gebucht …');
+      await wasserPosBetragSchreiben('schmutz', wahl.wasser.schmutz);
+      await wasserPosBetragSchreiben('niederschlag', wahl.wasser.niederschlag);
+    }
     melde(`✓ Beleg „${kostenart}“ zugeordnet`, 'pos');
     await laden();
   } catch (fehler) {
@@ -3338,13 +3516,16 @@ if (KEINE_KAMERA) {
   });
 }
 
-/** Texterkennung — schlägt fehl sie, gibt es eben keinen Vorschlag. */
-async function erkennen(bild) {
+/** Texterkennung — schlägt fehl sie, gibt es eben keinen Vorschlag.
+    N78 — mit `kostenart` als Kontext liefert die KI beim Wasser-Beleg
+    zusätzlich die drei Bereichsbeträge (Feld `wasser`). */
+async function erkennen(bild, kostenart = '') {
   if (!bild) return null;
   try {
     const paket = new FormData();
     // Der Dateiname sagt dem Server, womit er es zu tun hat (Bild oder PDF).
     paket.append('datei', bild, bild.name || 'seite.jpg');
+    if (kostenart) paket.append('kostenart', kostenart);
     const antwort = await fetch('/api/dokumente/erkennen',
                                 { method: 'POST', body: paket });
     return antwort.ok ? await antwort.json() : null;
@@ -3705,6 +3886,23 @@ function wasserPosFuer(art) {
     niederschlag: k => normUml(k.kostenart).includes('niederschlag'),
   }[art];
   return (daten.checkliste || []).find(treffer) || null;
+}
+
+/* N78 — einen Bereichsbetrag auf seine Wasser-Position schreiben. Gleicher Weg
+   wie `wasserBetragSpeichern`: PATCH auf die bestehende Position, sonst legt der
+   POST sie beim ersten Betrag an. Fehlt die Position ganz (Kostenart nicht im
+   Objekt) oder ist der Betrag ≤ 0, passiert nichts — der Fehler wird nach oben
+   gereicht, damit `belegPerDrop` ihn ehrlich meldet. */
+async function wasserPosBetragSchreiben(art, betrag) {
+  if (!(betrag > 0)) return;
+  const pos = wasserPosFuer(art);
+  if (!pos) return;
+  if (pos.position_id) {
+    await api(`/positionen/${pos.position_id}`, { method: 'PATCH', body: { betrag } });
+  } else {
+    await api(`/zeitraeume/${daten.id}/positionen`,
+      { method: 'POST', body: { kostenart: pos.kostenart, betrag } });
+  }
 }
 
 /* N57 — eine Kostenbox im Popup: als Eingabefeld, wenn der Zeitraum bearbeitbar
