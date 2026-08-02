@@ -221,11 +221,10 @@
   /* N54 — Ladeanzeige DIREKT in der NK-Zeile, während ein abgelegter Beleg
      hochgeladen und verbucht wird: der Nutzer sieht am richtigen Ort „ich
      verarbeite das gerade", statt nur einen Toast. Solange sie läuft, treten
-     „Datei wählen", Haken, Betragsfeld und Detail-Knopf zurück. */
+     „Datei wählen", Haken und Betragsfeld zurück. */
   .pruef.verarbeitet .scanmini,
   .pruef.verarbeitet .haken,
-  .pruef.verarbeitet .kopf-betrag-box,
-  .pruef.verarbeitet .wdetail{display:none}
+  .pruef.verarbeitet .kopf-betrag-box{display:none}
   .zeile-lade{display:inline-flex;align-items:center;gap:8px;flex:none;
     padding:6px 12px;border-radius:999px;background:var(--teal-l);color:var(--teal-d);
     font:600 12px var(--disp);letter-spacing:-.01em;white-space:nowrap}
@@ -610,19 +609,13 @@
     .zu-feld input[type=text],.zu-feld input.zu-datum{width:100%}
     .zu-verb{min-width:0;flex:1 1 100%;text-align:right;margin-top:2px}
   }
-  /* Detail-Knopf an der Wasser-Sammelposition (teal, wie „Aus Ablage"). */
-  .wdetail{display:flex;align-items:center;justify-content:center;gap:7px;flex:none;
-    border:1.5px solid #BFD9D1;background:var(--teal-l);color:var(--teal-d);
-    border-radius:11px;padding:8px 11px;min-height:44px;cursor:pointer;
-    font:600 11.5px var(--disp)}
-  .wdetail:hover{background:#D8EAE4}
-  .wdetail svg{width:20px;height:20px;display:block;flex:none}
-  @media(max-width:560px){ .wdetail .st{display:none} }
 
-  /* ---- N47: Wasser-Detail-Popup ----------------------------------------- */
-  dialog.immo-dlg.wasser-dlg{max-width:min(880px,calc(100% - 24px));
-    width:calc(100% - 24px);background:var(--sheet)}
-  .wasser-dlg .dt{margin-bottom:14px}
+  /* ---- N47/N74: Wasser-Detail — inline in der aufgeklappten Position ----- */
+  /* N74 — Detail nicht mehr im Popup, sondern inline beim Aufklappen. Die
+     .wd-*-Bausteine (Kostenboxen + Tabelle) sind bewusst global (nicht an ein
+     Dialog gebunden), damit sie hier greifen. */
+  .wd-inline{margin-bottom:14px}
+  .wd-lade{color:var(--soft);font:500 13px var(--body);padding:8px 2px}
   .wd-hinweis{background:var(--amber-bg);color:var(--amber);border-radius:11px;
     padding:11px 13px;margin:0 0 14px;font:500 12.5px var(--body);line-height:1.5}
   .wd-laedt,.wd-leer{font:500 13px var(--body);color:var(--soft);padding:16px 2px;
@@ -1001,11 +994,6 @@ const ANH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   2.8Z"/><circle cx="7.8" cy="7.8" r="1.4"/></svg>`;
 
 /* N47 — Tropfen für den Detail-Knopf der Wasser-Sammelposition. */
-const DROP_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-  stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-  aria-hidden="true"><path d="M12 2.7S5.5 9.9 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5
-  9.9 12 2.7 12 2.7Z"/><path d="M9 15a3 3 0 0 0 3 3"/></svg>`;
-
 /* Chevron für den Zählerstände-Einklapper (N60). */
 const CHEV_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
@@ -1182,6 +1170,13 @@ function istWasserSammel(k) {
       || n.includes('niederschlag') || n.includes('entwaesser')
       || n.includes('kaltwasser') || n.includes('warmwasser')) return false;
   return n === 'wasser' || n === 'frischwasser' || n === 'trinkwasser';
+}
+
+/* N74 — die Wasser-Sammelposition trägt erst eine Rechnung, wenn ein Beleg mit
+   Betrag hochgeladen wurde. Vorher gibt es nichts aufzuklappen (keine Detail-
+   ebene), nur „Datei wählen". `erledigt` heißt: Betrag liegt vor (aus dem PDF). */
+function wasserHatRechnung(k) {
+  return !!(k.erledigt || (k.belege && k.belege.length));
 }
 
 /* Wasser als m³ (deutsch, bis 2 Nachkommastellen). */
@@ -1730,8 +1725,22 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   const zustandKlasse = k.vorlaeufig ? ' entwurf' : (k.erledigt ? ' gefuellt' : '');
   const bearbeitbar = daten.status === 'in Arbeit';
 
+  // N74 — die Wasser-Sammelposition: erst mit Rechnung aufklappbar, dann zeigt
+  // das Aufklappen die Detailübersicht INLINE (kein Popup); nie ein Handbetrag.
+  const wasserSammel = istWasserSammel(k);
+  const wasserBill = wasserSammel && wasserHatRechnung(k);
+  const kannAuf = !wasserSammel || wasserBill;
+  const auf = aufgeklappt && kannAuf;
+
   let koerper = '';
-  if (aufgeklappt && k.position_id) {
+  if (auf && wasserSammel) {
+    const anbau = bearbeitbar
+      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
+          >${ANH_ICON} Beleg anhängen</button>` : '';
+    koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
+        <div class="wd-lade">Detailübersicht wird geladen …</div></div>
+      <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+  } else if (auf && k.position_id) {
     // Der Betrag steht jetzt oben im Kopf (kopf-betrag) — kein zweites Feld hier.
     // „Beleg anhängen" sitzt neben den Belegen in derselben Zeile.
     const anbau = bearbeitbar
@@ -1767,8 +1776,9 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
     // dann die Belege, zuletzt der Fuß.
     koerper = `${kostenartFeld}${anbieterFeld}${verteilungHtml(k)}${belege}
       <div class="kartenfuss">${fuss}</div>`;
-  } else if (aufgeklappt) {
-    // Katalog-Kostenart ohne Position: hier entsteht sie.
+  } else if (auf) {
+    // Katalog-Kostenart ohne Position: hier entsteht sie (nicht bei Wasser —
+    // die kann nur per PDF-Upload entstehen, N74).
     koerper = `<div class="betragfeld">
         <input type="number" step="0.01" placeholder="Betrag (optional)"
                data-neubetrag="${i}" aria-label="Betrag für ${esc(k.kostenart)}"></div>
@@ -1780,7 +1790,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
 
   // Der Betrag im Kopf: aufgeklappt ein schlankes Eingabefeld (speichert beim
   // Verlassen), sonst der lesbare Wert — so steht er nur einmal in der Karte.
-  const betragEl = (aufgeklappt && k.position_id && bearbeitbar)
+  const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel)
     ? `<span class="kopf-betrag-box"><input class="kopf-betrag" type="number" step="0.01"
          inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
@@ -1808,7 +1818,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
 
   return `<div class="pruef${zustandKlasse}" data-kostenart="${esc(k.kostenart)}">
       <div class="kopf">
-        <button class="zeile" data-auf="${i}" aria-expanded="${aufgeklappt}">
+        <button class="zeile" data-auf="${i}"${kannAuf ? '' : ' data-noexpand'} aria-expanded="${auf}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
           <span class="name">${chipHtml(k)}${esc(kostenartAnzeige(k.kostenart))}${vkeyChip(k)}${
@@ -1819,15 +1829,11 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
             infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
         </button>
         ${betragEl}
-        ${istWasserSammel(k) ? `<button class="wdetail" data-wasser-detail
-          title="Wasser-Verrechnung im Detail ansehen"
-          aria-label="Wasser-Detailübersicht öffnen">${DROP_ICON}<span
-          class="st">Detail</span></button>` : ''}
         ${quickScan}
         ${k.zustand !== 'fehlt'
           ? `<span class="haken ${farbe}">${zeichen}</span>` : ''}
       </div>
-      ${aufgeklappt ? `<div class="auf">${koerper}</div>` : ''}
+      ${auf ? `<div class="auf">${koerper}</div>` : ''}
     </div>`;
 }
 
@@ -2097,6 +2103,21 @@ async function zeichnen() {
     inhalt.innerHTML = kopf + await ergebnisHtml();
   } else if (ansicht === 'pruef') {
     montiereSchluessel();
+    // N74 — eine aufgeklappte Wasser-Position lädt ihre Detailübersicht inline.
+    const wInline = inhalt.querySelector('[data-wasser-inline]');
+    if (wInline) fuelleWasserInline(wInline);
+  }
+}
+
+/* N74 — die Wasser-Detailübersicht als Tabelle IN die aufgeklappte Position
+   laden (kein Popup mehr). Nutzt dieselbe Aufbereitung wie früher das Popup. */
+async function fuelleWasserInline(el) {
+  try {
+    const d = await api(`/zeitraeume/${el.dataset.wasserInline}/wasser`);
+    el.innerHTML = wasserDetailInhalt(d);
+  } catch (fehler) {
+    el.innerHTML = `<div class="wd-lade">Detailübersicht nicht ladbar: ${
+      esc(String(fehler.message || fehler))}</div>`;
   }
 }
 
@@ -2736,6 +2757,8 @@ inhalt.addEventListener('change', e => {
   // N47/N60 — Anfang/Ende (Stand oder Datum) eines Zählers speichern.
   if (e.target.matches('[data-endstand],[data-enddatum]')) endstandSpeichern(e.target);
   if (e.target.matches('[data-anfangstand],[data-anfangdatum]')) anfangstandSpeichern(e.target);
+  // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
+  if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
   // CCCLXII — Kostenart der Position wechseln (Wähler + Freitext für eine neue).
   if (e.target.matches('[data-kostenart-pos]')) kostenartWechseln(e.target);
   if (e.target.matches('[data-kostenart-neu]')) kostenartNeu(e.target);
@@ -2753,8 +2776,6 @@ inhalt.addEventListener('click', async e => {
   const sort = e.target.closest('[data-sort]');
   if (sort) { sortierung = sort.dataset.sort; return zeichnen(); }
   if (e.target.closest('[data-pos-konfig]')) return positionenKonfig();
-  // N47 — Wasser-Detailübersicht an der Sammelposition öffnen.
-  if (e.target.closest('[data-wasser-detail]')) return wasserDetailPopup();
 
   // N60 — Zählerstände-Einklapper auf/zu (ohne Neuaufbau; Zustand gemerkt).
   const zt = e.target.closest('[data-zu-toggle]');
@@ -2817,6 +2838,9 @@ inhalt.addEventListener('click', async e => {
 
   const auf = e.target.closest('[data-auf]');
   if (auf) {
+    // N74 — Wasser ohne Rechnung hat nichts aufzuklappen; der Klick tut nichts
+    // (der Weg zur Position ist „Datei wählen"/Drop).
+    if (auf.hasAttribute('data-noexpand')) return;
     const i = Number(auf.dataset.auf);
     offen.has(i) ? offen.delete(i) : offen.add(i);
     return zeichnen();
@@ -3604,36 +3628,6 @@ async function einheitToggle(btn) {
   }
 }
 
-/* N47 — Detail-Popup der Wasser-Verrechnung. Lädt `GET /zeitraeume/{zid}/wasser`
-   und zeigt oben die drei Kostenbestandteile + Gesamt + Preis/m³, darunter eine
-   Tabelle mit je einer Spalte pro Einheit und je einer Zeile pro Verbrauchsart
-   (m³ + € + gemessen/berechnet), dazu Gartenwasser-, Summen- und Kontrollzeile. */
-async function wasserDetailPopup() {
-  const dlg = document.createElement('dialog');
-  dlg.className = 'immo-dlg wasser-dlg';
-  dlg.innerHTML = `
-    <button class="immo-dlg-zu" data-nein aria-label="Schließen">×</button>
-    <div class="dt">Wasser im Detail</div>
-    <div class="wd-body"><div class="wd-laedt">Wird geladen …</div></div>`;
-  document.body.appendChild(dlg);
-  dlg.addEventListener('close', () => dlg.remove());
-  dlg.querySelectorAll('[data-nein]').forEach(b => (b.onclick = () => dlg.close()));
-  // N57 — die drei Bestandteil-Beträge speichern sich beim Verlassen des Feldes.
-  dlg.addEventListener('change', e => {
-    if (e.target.matches('[data-wasser-pid],[data-wasser-ka]'))
-      wasserBetragSpeichern(e.target, dlg);
-  });
-  dlg.showModal();
-  try {
-    const d = await api(`/zeitraeume/${zid}/wasser`);
-    dlg.querySelector('.wd-body').innerHTML = wasserDetailInhalt(d);
-  } catch (fehler) {
-    dlg.querySelector('.wd-body').innerHTML =
-      `<div class="wd-leer">Die Wasser-Übersicht ist noch nicht verfügbar.<br>
-        ${esc(fehler.message || 'Bitte später erneut versuchen.')}</div>`;
-  }
-}
-
 /* N57 — die Checklisten-Position hinter einem der drei Bestandteile. `wasser` =
    die reine „Wasser"-Sammelposition, `schmutz` = Abwasser, `niederschlag` =
    Niederschlagswasser. Nur mit position_id lässt sich der Betrag speichern. */
@@ -3671,7 +3665,7 @@ function wdKostenBox(label, art, kostenWert) {
 /* N57 — einen der drei Bestandteil-Beträge speichern: gleicher Weg wie jeder
    Positionsbetrag (PATCH /positionen/{id} {betrag}); fehlt die Position noch,
    wird sie beim ersten Betrag angelegt. Danach Popup + Untergrund auffrischen. */
-async function wasserBetragSpeichern(input, dlg) {
+async function wasserBetragSpeichern(input) {
   const roh = String(input.value).trim().replace(',', '.');
   if (roh === '') return;
   const betrag = Number(roh);
@@ -3687,11 +3681,9 @@ async function wasserBetragSpeichern(input, dlg) {
         { method: 'POST', body: { kostenart: input.dataset.wasserKa, betrag } });
     }
     melde('✓ Betrag gespeichert', 'pos');
-    daten = await api(`/zeitraeume/${zid}`);
-    const d = await api(`/zeitraeume/${zid}/wasser`);
-    const body = dlg.querySelector('.wd-body');
-    if (body) body.innerHTML = wasserDetailInhalt(d);
-    await zeichnen();
+    // N74 — die Detailübersicht liegt inline in der aufgeklappten Position:
+    // neu laden zeichnet die Liste und holt die Tabelle frisch.
+    await laden();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
