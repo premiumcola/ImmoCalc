@@ -105,3 +105,24 @@ def verteile(extern: Block, eigen: Block, verbrauch: dict[str, float],
     gesamt_kwh = extern.kwh + eigen.kwh
     e.eigenverbrauchsquote = round(eigen.kwh / gesamt_kwh, 4) if gesamt_kwh else 0.0
     return e
+
+
+# --------------------------------------------------------------------------
+# N125 — Einspeisevergütung
+# --------------------------------------------------------------------------
+
+def einspeiseverguetung(kwh_bis10: float, kwh_ab10: float,
+                        satz_bis10: float = 0.082,
+                        satz_ab10: float = 0.071) -> float:
+    """Die Vergütung aus den beiden EEG-Stufen der Rechnung.
+
+    Excel „Gesamtstrom" D18 = D19 × 0,082 + D20 × 0,071
+    → 2595 × 0,082 + 2013 × 0,071 = 355,71 €.
+
+    Die Vergütung gehört dem Eigentümer der Anlage: sie wird in der Nebenkosten-
+    abrechnung geführt, damit sie zeitlich richtig zugeordnet ist, aber **nicht**
+    auf die Mieter verteilt. Von dort fließt sie in den Jahresertrag der Anlage
+    und damit in die Amortisation.
+    """
+    return round(max(0.0, kwh_bis10) * satz_bis10
+                 + max(0.0, kwh_ab10) * satz_ab10, 2)

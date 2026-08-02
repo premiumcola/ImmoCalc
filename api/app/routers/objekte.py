@@ -1843,8 +1843,18 @@ def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> di
     z = _zeitraum(session, zid)
     pos = session.exec(select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
+    # N125 — nicht umlagefähige Kostenarten gehören dem Eigentümer und werden
+    # dem Mieter nicht berechnet. Bisher fiel das nicht auf, weil es keine gab;
+    # mit der Einspeisevergütung gibt es die erste: sie steht im Zeitraum, damit
+    # sie zeitlich richtig zugeordnet ist und in die Amortisation der Anlage
+    # fließt — in der Mieterrechnung hat sie nichts verloren.
+    nicht_umlegen = {k.name.strip().lower() for k in session.exec(
+        select(Kostenart).where(Kostenart.objekt_id == z.objekt_id)).all()
+        if not k.umlagefaehig}
+    umlegbar = [p for p in pos
+                if p.kostenart.strip().lower() not in nicht_umlegen]
     # offene Positionen (Betrag noch nicht da) fließen nicht in die Rechnung ein
-    positionen = [ep for p in pos if p.status == "erledigt"
+    positionen = [ep for p in umlegbar if p.status == "erledigt"
                   for ep in _engine_positionen(session, z, p)]
     # CCCLXIV — Vorauszahlungen aus der Miete ableiten (monatliche NK × belegte
     # Monate); separat erfasste Vorauszahlungs-Datensätze haben Vorrang.
@@ -1853,7 +1863,7 @@ def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> di
     res = abrechnung(positionen, vorausz)
     # Erledigte Positionen ohne Gewichte gehören zu den offenen: ihr Betrag
     # verschwindet sonst lautlos, und der Abschluss übergeht sie.
-    res.update(fehlende_angaben(list(pos)))
+    res.update(fehlende_angaben(list(umlegbar)))
     return res
 
 

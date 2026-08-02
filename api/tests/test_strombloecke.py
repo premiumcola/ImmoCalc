@@ -106,3 +106,19 @@ def test_eigenverbrauchsquote():
     e = verteile(Block(kwh=2416.0, betrag=862.51),
                  Block(kwh=4618.045, betrag=1523.95), {"EG": 100.0})
     assert e.eigenverbrauchsquote == round(4618.045 / (2416.0 + 4618.045), 4)
+
+
+# --------------------------------------------------------------------------
+# N125 — Einspeisevergütung (Blatt „Gesamtstrom", Zeilen 13–20)
+# --------------------------------------------------------------------------
+
+def test_einspeiseverguetung_aus_den_eeg_stufen():
+    """D18 = D19 × 0,082 + D20 × 0,071 = 2595 × 0,082 + 2013 × 0,071."""
+    from app.strombloecke import einspeiseverguetung
+    assert einspeiseverguetung(2595, 2013) == 355.71
+
+
+def test_einspeiseverguetung_nur_eine_stufe():
+    from app.strombloecke import einspeiseverguetung
+    assert einspeiseverguetung(1000, 0) == 82.00
+    assert einspeiseverguetung(0, 1000) == 71.00
