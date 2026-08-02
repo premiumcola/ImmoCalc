@@ -123,23 +123,22 @@
      Hauslogo (kein Kasten, kein Hintergrund) und führt angetippt direkt in
      „PV & Amortisation", wo Investment, Eigentümer-‰ und Amortisation gepflegt
      werden. Vorher war es eine kleine Pille, die niemand als Weg erkannt hat. */
+  /* N112 — das PV-Modul steht NEBEN dem Hauslogo in der Kachel (nicht absolut
+     in einer Ecke, wo es mit Cashflow-Pille und Frist-Chip kollidierte).
+     Freischwebend ohne Kasten, angetippt fuehrt es in die PV-Konfiguration. */
   .tile .pv-invest{
-    position:absolute; top:10px; right:10px;
-    display:inline-flex; flex-direction:column; align-items:center; gap:2px;
-    background:none; border:none; padding:4px; cursor:pointer;
-    color:var(--soft); text-decoration:none; z-index:2;
+    flex:none; display:inline-flex; flex-direction:column; align-items:center;
+    gap:2px; background:none; border:none; padding:0; margin:0 0 0 -6px;
+    cursor:pointer; text-decoration:none; align-self:center;
   }
-  .tile .pv-invest svg{width:46px; height:46px; display:block;
+  .tile .pv-invest svg{width:44px; height:44px; display:block;
     filter:drop-shadow(0 2px 4px rgba(22,38,44,.18))}
   .tile .pv-invest .pvt{font:600 8.5px var(--mono); letter-spacing:.1em;
     text-transform:uppercase; color:var(--amber)}
   .tile .pv-invest:hover svg{filter:drop-shadow(0 3px 7px rgba(22,38,44,.28))}
   .tile .pv-invest:focus-visible{outline:2px solid var(--teal); outline-offset:3px;
     border-radius:10px}
-  .tile.hat-cf .pv-invest{top:46px}
-  .mitbubbles > .tile .pv-invest{top:12px; right:16px}
   .mitbubbles > .tile .pv-invest svg{width:54px; height:54px}
-  @media(min-width:680px){ .tile .pv-invest svg{width:52px; height:52px} }
 
   /* Grundform der Blasen steht geteilt in immo.css (CCCLXXVIII c). Hier bleiben
      nur die startseiten-eigenen Zustände und Zusätze. */
@@ -368,15 +367,15 @@ function kachel(o, feinste = false) {
   const knopf = `<button class="tile${cf ? ' hat-cf' : ''}" data-slug="${esc(o.slug)}">
       ${cf}
       <span class="ico">${logoSvg(o.typ)}</span>
+      ${o.hat_pv ? `<a class="pv-invest" href="strom.html?objekt=${esc(o.slug)}"
+        title="PV-Anlage — Investment, Eigentümer-Anteile und Amortisation"
+        aria-label="PV-Anlage konfigurieren"
+        onclick="event.stopPropagation()">${PV_ICON}<span class="pvt">PV</span></a>` : ''}
       <span class="txt">
         ${oben}
         <span class="name">${esc(gross)}</span>
         ${unten}
       </span>
-      ${o.hat_pv ? `<a class="pv-invest" href="strom.html?objekt=${esc(o.slug)}"
-        title="PV-Anlage — Investment, Eigentümer-Anteile und Amortisation"
-        aria-label="PV-Anlage konfigurieren"
-        onclick="event.stopPropagation()">${PV_ICON}<span class="pvt">PV</span></a>` : ''}
       ${grundstueck ? '' : chips(o.frist_tage, o.offene_positionen)}
     </button>`;
   return bub ? `<section class="mitbubbles">${knopf}${bub}</section>` : knopf;

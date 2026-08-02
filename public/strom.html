@@ -39,6 +39,10 @@
   .raster{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
           gap:12px 14px}
   .raster .field{margin-bottom:2px}
+  /* N112 - ein Feld ueber die volle Breite (Eigentuemer-Anteile). Ohne eigene
+     Zeile schob es sich vorher ueber die Kacheln darunter. */
+  .field.breit{display:block;width:100%;margin:0 0 16px}
+  .field.breit input{width:100%;box-sizing:border-box}
   .field .einheit{font-weight:400;text-transform:none;letter-spacing:0;
                   color:var(--soft)}
 
@@ -249,8 +253,11 @@ function skelett() {
         geladene Menge steht oben unter „davon E-Auto Tanken".</p>
       <div class="raster">
         ${F_TANKEN.map(f => feldHtml(...f)).join('')}
-        <label class="feld"><span class="fl">Wird berechnet an</span>
-          <input type="text" data-text="tanken_person" placeholder="Name"></label>
+        <div class="field">
+          <label for="f_tanken_person">Wird berechnet an</label>
+          <input class="inp" type="text" id="f_tanken_person"
+                 data-text="tanken_person" placeholder="Name der ladenden Person">
+        </div>
       </div>
       <div class="kpi" id="tank"></div>
     </div>
@@ -260,8 +267,11 @@ function skelett() {
       <p class="hint">Die PV-Anlage ist ein eigenes Investment mit eigenen
         Anteilen — unabhängig von den Objekt-Tausendsteln. Leer = Vorgabe
         5/6 + 1/6.</p>
-      <label class="feld breit"><span class="fl">Eigene Anteile (Name : ‰, mit Komma getrennt)</span>
-        <input type="text" data-text="pv_anteile_roh" placeholder="z. B. Roland: 833,3 · Marvin: 166,7"></label>
+      <div class="field breit">
+        <label for="f_pv_anteile">Eigene Anteile — Name : ‰</label>
+        <input class="inp" type="text" id="f_pv_anteile" data-text="pv_anteile_roh"
+               placeholder="z. B. Roland: 833,3 · Marvin: 166,7">
+      </div>
       <div class="eig" id="eig"></div>
     </div>
 
