@@ -118,6 +118,19 @@
   /* In der breiten Bubble-Karte sitzt der Fuss (Chips) rechts — dort ruecken
      wir die Pille etwas hoeher, damit sie nicht auf die Chips trifft. */
   .mitbubbles > .tile .cf{top:10px; right:14px}
+  /* N87 — PV-Zeichen an Objekten mit PV-Anlage (Add-on-Investment). Sitzt unter
+     dem Cashflow-Indikator, damit sich beide nie überlagern. */
+  .tile .pv-badge{
+    position:absolute; top:12px; left:12px;
+    display:inline-flex; align-items:center; gap:4px;
+    padding:4px 9px 4px 7px; border-radius:999px;
+    background:var(--amber-bg); color:var(--amber);
+    font:600 11px var(--mono); line-height:1;
+    box-shadow:0 1px 2px rgba(22,38,44,.06);
+  }
+  .tile .pv-badge svg{width:14px; height:14px; flex:none}
+  .mitbubbles > .tile .pv-badge{top:10px; left:14px}
+  @media(max-width:439px){ .tile .pv-badge .pvt{display:none} }
 
   /* Grundform der Blasen steht geteilt in immo.css (CCCLXXVIII c). Hier bleiben
      nur die startseiten-eigenen Zustände und Zusätze. */
@@ -187,6 +200,14 @@ installLogos();
 
 const ziel = document.getElementById('objekte');
 const sub = document.getElementById('sub');
+
+/* N87 — Zeichen für ein PV-Add-on an der Immobilie: Sonne über Modul, flach im
+   Bestandsstil (kein Icon-Paket). */
+const PV_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true"><circle cx="12" cy="7" r="3"/>
+  <path d="M12 1.5v1.4M12 11.1v1.4M17.5 7h-1.4M7.9 7H6.5M15.9 3.1l-1 1M9.1 9.9l-1 1M15.9 10.9l-1-1M9.1 4.1l-1-1"/>
+  <path d="M5 21h14M7.2 16.5h9.6M6 21l1.6-6.5h8.8L18 21"/></svg>`;
 
 /* ---- Ort → Strasse → Einheit -------------------------------------------
    Spiegelt api/app/bezeichnung.py:hierarchie(). Die Felder sind gewachsen:
@@ -332,6 +353,8 @@ function kachel(o, feinste = false) {
         <span class="name">${esc(gross)}</span>
         ${unten}
       </span>
+      ${o.hat_pv ? `<span class="pv-badge" title="PV-Anlage · eigenes Investment"
+        aria-label="PV-Anlage">${PV_ICON}<span class="pvt">PV</span></span>` : ''}
       ${grundstueck ? '' : chips(o.frist_tage, o.offene_positionen)}
     </button>`;
   return bub ? `<section class="mitbubbles">${knopf}${bub}</section>` : knopf;

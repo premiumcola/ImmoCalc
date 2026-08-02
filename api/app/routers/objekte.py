@@ -23,8 +23,8 @@ from ..frist import frist_tage
 from ..nachpflege import hinweise, zusammenfassung
 from ..models import (GRUNDSTUECK, Bewohner, Dokument, Einheit, Kostenart,
                       Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
-                      Partei, Versicherung, Vorauszahlung, Zahlung, Zeitraum,
-                      ist_grundstueck)
+                      Partei, Stromjahr, Versicherung, Vorauszahlung, Zahlung,
+                      Zeitraum, ist_grundstueck)
 from ..turnus import jahresbetrag
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, anteil_details, bezuege,
@@ -193,6 +193,12 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
             if p.status == "offen":
                 offene[p.zeitraum_id] = offene.get(p.zeitraum_id, 0) + 1
 
+    # N87 — welche Objekte eine PV-Anlage tragen (ein Strom-Jahr mit Produktion
+    # oder Anschaffung). Eine Abfrage für alle, kein N+1.
+    pv_objekte = {sj.objekt_id for sj in session.exec(
+        select(Stromjahr).where(Stromjahr.objekt_id.in_(ids))).all()
+        if (sj.pv_produktion_kwh or 0) > 0 or (sj.anschaffung_eur or 0) > 0}
+
     out = []
     heute = date.today()
     for o in alle:
@@ -232,6 +238,10 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
             # CCCV — beim Grundstück trägt die Kachel die Flurnummer statt
             # einer Nebenkostenfrist, die es dort nicht gibt.
             "flurstueck": o.flurstueck, "gemarkung": o.gemarkung,
+            # N87 — trägt das Objekt eine PV-Anlage (Add-on-Investment)? Die
+            # Kachel zeigt dafür ein kleines Zeichen. Wahr, sobald für ein Jahr
+            # Produktion oder eine Anschaffung erfasst ist.
+            "hat_pv": o.id in pv_objekte,
         })
     return out
 
