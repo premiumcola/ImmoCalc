@@ -514,11 +514,20 @@ try {
   sub.textContent = 'API nicht erreichbar';
 }
 
-if (objekte.length) {
-  objektSlug = objekte[0].slug;
-  objektWahl.fuelle(objekte.map(o => ({ wert: o.slug, text: o.titel || o.name })),
+// N106 - PV ist ein Add-on einzelner Immobilien, keine Eigenschaft aller.
+// Zur Wahl stehen deshalb nur Objekte MIT PV-Anlage (`hat_pv` aus dem
+// Objekt-Endpunkt). Ist noch keines markiert, bleiben alle waehlbar - sonst
+// koennte man die erste Anlage nirgends anlegen.
+const mitPv = objekte.filter(o => o.hat_pv);
+const wahl = mitPv.length ? mitPv : objekte;
+
+if (wahl.length) {
+  objektSlug = wahl[0].slug;
+  objektWahl.fuelle(wahl.map(o => ({ wert: o.slug, text: o.titel || o.name })),
                     objektSlug);
-  sub.textContent = `${objekte.length} ${objekte.length === 1 ? 'Objekt' : 'Objekte'}`;
+  sub.textContent = mitPv.length
+    ? `${mitPv.length} ${mitPv.length === 1 ? 'Anlage' : 'Anlagen'}`
+    : 'Noch keine PV-Anlage erfasst';
   await laden();
 } else {
   await laden();
