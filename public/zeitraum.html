@@ -758,6 +758,11 @@
     font:500 11.5px var(--body);min-height:36px}
   .belege a:hover{background:var(--teal-l);color:var(--teal-d)}
   .belege .kein{font:400 12px var(--body);color:var(--soft);line-height:1.45}
+  /* N95 — Beleg + „herausnehmen" gehören zusammen (ein Chip mit ×). */
+  .beleg-zeile{display:inline-flex;align-items:center;gap:2px}
+  .beleg-weg{border:none;background:#F1F4F4;color:var(--neg);cursor:pointer;
+    width:36px;height:36px;border-radius:9px;font:700 16px var(--body);flex:none}
+  .beleg-weg:hover{background:#F6E7E2}
   /* N8 — genaues Belegdatum an der Beleg-Zeile: dezentes Mono-Etikett in
      gedeckter Farbe, damit man sieht, in welche (vermietete) Zeit die Position
      fiel — rein informativ, ändert nichts an der anteiligen Verteilung. */
@@ -1030,12 +1035,19 @@ const belegDatumText = iso => {
 
 /* `data-name` statt der Beschriftung: seit der Betrag mit im Text steht,
    hiesse der Beleg im Dialog sonst „…pdf · 1.284,50 €". */
-const belegLinks = (liste, extra = '') => `<div class="belege">${liste.map(d => {
+const belegLinks = (liste, extra = '', loesbar = false) => `<div class="belege">${liste.map(d => {
   const datum = belegDatumText(d.belegdatum);
-  return `<a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
+  // N95 — ein verbuchter Beleg muss sich auch wieder herausnehmen lassen: der
+  // Betrag der Position schrumpft dann um seinen Anteil, die Datei bleibt in
+  // der Ablage (DELETE /dokumente/{id}/position).
+  const weg = loesbar
+    ? `<button class="beleg-weg" data-beleg-loesen="${d.id}"
+        title="Beleg aus dieser Position herausnehmen (Datei bleibt)"
+        aria-label="Beleg herausnehmen">×</button>` : '';
+  return `<span class="beleg-zeile"><a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
       title="${esc(d.pfad)}">PDF · ${esc(d.dateiname)}${
     d.betrag ? ` · ${eur(d.betrag)}` : ''}${
-    datum ? `<span class="beleg-datum">${datum}</span>` : ''}</a>`;
+    datum ? `<span class="beleg-datum">${datum}</span>` : ''}</a>${weg}</span>`;
 }).join('')}${extra}</div>`;
 
 /* Woraus der Betrag besteht. Vier Abschlagsrechnungen ergeben eine Position
@@ -1056,7 +1068,8 @@ function belegeHtml(k, extra = '') {
     return `<div class="belege"><span class="kein">Kein Beleg hinterlegt —
       im Eingang lässt sich einer übernehmen.</span>${extra}</div>`;
   }
-  return zusammensetzungHtml(k) + belegLinks(alle, extra);
+  // N95 — in einer bearbeitbaren Abrechnung lässt sich jeder Beleg wieder lösen.
+  return zusammensetzungHtml(k) + belegLinks(alle, extra, daten.status === 'in Arbeit');
 }
 
 /* CCLV — der kleine Anhänger („Kleideranhänger"): ein flaches Etikett-Symbol
@@ -1527,7 +1540,7 @@ function kaltwasserBlockHtml(s) {
   const sortiert = [...s.subs].sort((a, b) =>
     (wasserArt(a) === 'Waschmaschine' ? 1 : 0) - (wasserArt(b) === 'Waschmaschine' ? 1 : 0));
   const subZeilen = sortiert.map(z => meterZeileHtml(z, { minus: true })).join('');
-  const restZeile = s.rest ? meterZeileHtml(s.rest, { rest: true, label: 'Rest (WG)' }) : '';
+  const restZeile = s.rest ? meterZeileHtml(s.rest, { rest: true, label: 'Rest Haupthaus' }) : '';
   return `<div class="zu-art zu-kalt"><div class="zu-at">Kaltwasser</div>
     ${meterZeileHtml(s.haupt, { keinChooser: true })}
     <div class="zu-kalt-abzug">${subZeilen || `<div class="zu-kein">Noch keine
@@ -2368,6 +2381,17 @@ async function heizoelEntfernen(id) {
     await api(`/heizoel/${id}`, { method: 'DELETE' });
     melde('Lieferung entfernt', 'pos');
     await zeichnen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* N95 — einen Beleg aus seiner Kostenposition herausnehmen. Die Position bleibt
+   und rechnet sich neu (ohne diesen Beleg); die Datei bleibt in der Ablage und
+   lässt sich jederzeit wieder zuordnen. */
+async function belegLoesen(id) {
+  try {
+    await api(`/dokumente/${id}/position`, { method: 'DELETE' });
+    melde('Beleg herausgenommen — die Datei bleibt in der Ablage', 'pos');
+    await laden();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
@@ -3296,6 +3320,9 @@ inhalt.addEventListener('click', async e => {
   if (hoAdd) return heizoelHinzufuegen(hoAdd);
   const hoWeg = e.target.closest('[data-heizoel-weg]');
   if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg);
+  // N95 — einen Beleg aus seiner Kostenposition herausnehmen (Datei bleibt).
+  const belegWeg = e.target.closest('[data-beleg-loesen]');
+  if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
   // N81 — Heizkörper (HKV) hinzufügen / entfernen.
   const hkvAdd = e.target.closest('[data-hkv-add]');
   if (hkvAdd) return hkvHinzufuegen(hkvAdd);
