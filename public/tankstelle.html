@@ -24,10 +24,6 @@
   .filter{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;
           align-items:center}
   .filter > div{flex:1 1 130px;min-width:0}
-  /* Gibt es kein Jahr mit Verbrauch, steht dort eine Aussage statt eines
-     Auswahlfelds, das nichts zur Wahl stellt. */
-  .jahrleer{display:block;font:500 11.5px var(--body);color:var(--soft);
-            line-height:1.4;padding:12px 2px}
 
   .karte{background:var(--sheet);border-radius:16px;padding:16px;
          margin-bottom:14px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -94,6 +90,12 @@
   /* Ruhiger Vermerk an der Zahl — kein Warnbalken. */
   .vermerk{display:block;font:400 11.5px var(--body);color:var(--soft);
            line-height:1.55;margin:0 0 16px}
+  /* Die automatische Zuordnung ist eine Erleichterung, keine Störung — ein
+     ruhiger Teal-Hinweis statt des amberfarbenen Warnbalkens. */
+  .notiz.auto{background:var(--teal-l);color:var(--teal-d)}
+  /* Inline-Bearbeitung der Stammdaten unter der Nutzerzeile. */
+  .nedit:empty{display:none}
+  .nedit-form{margin:2px 0 10px}
 
   .tabrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
              border-radius:12px;background:var(--paper)}
@@ -130,6 +132,10 @@
                    letter-spacing:.03em}
   .quartale button[aria-pressed="true"]{background:var(--teal-l);
                                         color:var(--teal-d)}
+  /* Die Jahresreihe steht ueber den Quartalen — enger Abstand, damit beide als
+     ein Zeitraum-Wahlblock lesbar sind. */
+  .quartale.jahre{margin-bottom:8px}
+  .quartale.jahre button{font-weight:700}
   /* Welcher Zeitraum gerade gerechnet wird — sonst sieht ein Klick, der nur
      Nullen umsortiert, wie „nichts passiert" aus. */
   .zrzeile{display:block;font:500 11px var(--mono);color:var(--soft);
@@ -209,7 +215,6 @@
   <div class="scroll">
     <div class="filter">
       <div id="objekt"></div>
-      <div id="jahr"></div>
     </div>
     <div id="inhalt"></div>
   </div>
@@ -260,35 +265,25 @@ const datum = iso => new Date(iso).toLocaleDateString('de-DE',
 let objektSlug = '';
 let quartal = 0;               /* 0 = ganzes Jahr */
 let offeneVorschau = 0;        /* Nutzer, dessen Mail gerade aufgeklappt ist */
+let offeneBearbeitung = 0;     /* Nutzer, dessen Stammdaten gerade offen sind */
 
-/* Die Jahresauswahl entsteht aus den Jahren, in denen wirklich geladen wurde
-   — nicht aus einer festen Spanne. Sie kann deshalb auch leer sein; dann gibt
-   es kein Auswahlfeld, sondern eine ruhige Aussage. */
-let jahrWahl = null;
-let jahreListe = null;         /* null = noch nie gesetzt, [] = keine Jahre */
-const jahrWert = () => Number(jahrWahl?.wert() || new Date().getFullYear());
+/* Der Zeitraum sitzt an der Abrechnung, nicht ueber dem Verlauf: abgerechnet
+   wird je Jahr und Quartal, und die Wahl steht sichtbar neben dem, was sie
+   betrifft. So kann nicht mehr „2025" oben stehen, waehrend der Verlauf bis
+   2026 reicht — der Verlauf ist bewusst der GESAMTe Verlauf, die Abrechnung
+   der gewaehlte Ausschnitt. Die Jahresliste kommt aus den Jahren mit
+   Verbrauch; ist keins dabei, gilt das laufende Jahr. */
+let jahrGewaehlt = 0;          /* 0 = noch nicht gesetzt → laufendes Jahr */
+let jahreListe = [];           /* Jahre mit Verbrauch (aus dem Verlauf) */
+const jahrWert = () => jahrGewaehlt || new Date().getFullYear();
 
 function jahreUebernehmen(jahre) {
-  // `null` heisst „noch nie gesetzt" — sonst haelte die leere Liste den
-  // Platzhalter fest und die Auswahl bliebe fuer immer beim Ladetext stehen.
-  if (jahreListe && jahre.join() === jahreListe.join()) return;
-  jahreListe = jahre;
-  const feld = document.getElementById('jahr');
-  if (!feld) return;
-  if (!jahre.length) {
-    jahrWahl?.zerstoere();
-    jahrWahl = null;
-    feld.innerHTML = '<span class="jahrleer">Noch kein Verbrauch erfasst</span>';
-    return;
+  jahreListe = jahre || [];
+  // Ist das gewaehlte Jahr nicht (mehr) dabei, auf das juengste springen —
+  // sonst zeigte die Abrechnung ein Jahr ohne jede Ladung.
+  if (!jahreListe.includes(jahrGewaehlt)) {
+    jahrGewaehlt = jahreListe.length ? jahreListe[jahreListe.length - 1] : 0;
   }
-  const vorher = jahrWert();
-  const optionen = [...jahre].reverse()
-    .map(j => ({ wert: String(j), text: String(j) }));
-  jahrWahl = auswahlfeld(feld, {
-    label: 'Jahr', optionen,
-    wert: jahre.includes(vorher) ? String(vorher) : optionen[0].wert,
-    aenderung: () => abrechnungZeigen(),
-  });
 }
 
 /* =======================================================================
@@ -487,16 +482,27 @@ async function nutzerZeigen() {
     return;
   }
 
+  const anschrift = n => [n.plz, n.ort].filter(Boolean).join(' ');
+  const zusatz = n => {
+    const teile = [];
+    if (n.strasse || anschrift(n)) teile.push([n.strasse, anschrift(n)].filter(Boolean).join(', '));
+    if (n.iban) teile.push('IBAN hinterlegt');
+    return teile.join(' · ');
+  };
   const zeilen = nutzerListe.map(n => `
     <div class="nz">
       <span class="nk" aria-hidden="true">${esc((n.name || '?').trim()[0] || '?')}</span>
       <span class="nt">
         <span class="nn">${esc(n.name)}</span>
         <span class="nm">${esc(n.email || 'keine E-Mail hinterlegt')}</span>
+        ${zusatz(n) ? `<span class="nm">${esc(zusatz(n))}</span>` : ''}
       </span>
+      <button class="nx" data-nutzer-edit="${n.id}"
+              aria-label="${esc(n.name)} bearbeiten">✎</button>
       <button class="nx" data-nutzer-weg="${n.id}" data-name="${esc(n.name)}"
               aria-label="${esc(n.name)} entfernen">×</button>
-    </div>`).join('');
+    </div>
+    <div class="nedit" data-edit="${n.id}"></div>`).join('');
 
   ziel.innerHTML = `
     ${zeilen ? `<div class="nliste">${zeilen}</div>`
@@ -516,6 +522,56 @@ async function nutzerZeigen() {
       </div>
       <button class="btn" data-nutzer-neu>Hinzufügen</button>
     </div>`;
+  if (offeneBearbeitung) nutzerBearbeiten(offeneBearbeitung, true);
+}
+
+/* Die Versand-Stammdaten (Anschrift, Bankverbindung) werden inline gepflegt —
+   ein Klick auf ✎ klappt das Formular unter der Zeile auf. Zweiter Klick
+   schliesst wieder. `bleiben` haelt es nach einem Neu-Rendern offen. */
+function nutzerBearbeiten(id, bleiben = false) {
+  const feld = document.querySelector(`[data-edit="${id}"]`);
+  if (!feld) return;
+  if (!bleiben && offeneBearbeitung === Number(id)) {
+    feld.innerHTML = '';
+    offeneBearbeitung = 0;
+    return;
+  }
+  document.querySelectorAll('[data-edit]').forEach(f => { f.innerHTML = ''; });
+  offeneBearbeitung = Number(id);
+  const n = nutzerListe.find(x => x.id === Number(id)) || {};
+  const feldChen = (schl, beschr, wert, typ = 'text') => `
+    <div class="field"><span class="fl">${beschr}</span>
+      <input class="inp" id="e-${schl}-${id}" type="${typ}"
+             value="${esc(wert || '')}"></div>`;
+  feld.innerHTML = `<div class="neu nedit-form">
+    ${feldChen('name', 'Name', n.name)}
+    ${feldChen('email', 'E-Mail', n.email, 'email')}
+    ${feldChen('strasse', 'Straße', n.strasse)}
+    ${feldChen('plz', 'PLZ', n.plz)}
+    ${feldChen('ort', 'Ort', n.ort)}
+    ${feldChen('kontoinhaber', 'Kontoinhaber', n.kontoinhaber)}
+    ${feldChen('iban', 'IBAN', n.iban)}
+    ${feldChen('bic', 'BIC', n.bic)}
+    <button class="btn" data-nutzer-save="${id}">Speichern</button>
+  </div>`;
+}
+
+async function nutzerSpeichern(id) {
+  const holen = schl => document.getElementById(`e-${schl}-${id}`)?.value ?? '';
+  const koerper = {};
+  for (const schl of ['name', 'email', 'strasse', 'plz', 'ort',
+                      'kontoinhaber', 'iban', 'bic']) {
+    koerper[schl] = holen(schl).trim();
+  }
+  if (!koerper.name) { melde('Bitte einen Namen angeben', 'neg'); return; }
+  try {
+    await api(`/tankstelle/${encodeURIComponent(objektSlug)}/nutzer/${id}`, {
+      method: 'PUT', body: koerper });
+    melde('Stammdaten gespeichert', 'pos');
+    offeneBearbeitung = 0;
+    await nutzerZeigen();
+    await abrechnungZeigen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
 async function nutzerAnlegen() {
@@ -548,11 +604,15 @@ async function nutzerEntfernen(id, name) {
 /* =======================================================================
    Abrechnung je Nutzer — quartalsweise, mit Vorschau vor dem Versand.
    ======================================================================= */
-function quartalsWahl() {
-  const knopf = (wert, text) => `<button type="button" data-quartal="${wert}"
+function zeitraumWahl() {
+  const jahre = jahreListe.length ? jahreListe : [jahrWert()];
+  const jknopf = j => `<button type="button" data-jahr="${j}"
+      aria-pressed="${jahrWert() === j}">${j}</button>`;
+  const qknopf = (wert, text) => `<button type="button" data-quartal="${wert}"
       aria-pressed="${quartal === wert}">${text}</button>`;
-  return `<div class="quartale">${knopf(1, 'Q1')}${knopf(2, 'Q2')}${knopf(3, 'Q3')}
-    ${knopf(4, 'Q4')}${knopf(0, 'Ganzes Jahr')}</div>`;
+  return `<div class="quartale jahre">${jahre.map(jknopf).join('')}</div>
+    <div class="quartale">${qknopf(1, 'Q1')}${qknopf(2, 'Q2')}${qknopf(3, 'Q3')}
+      ${qknopf(4, 'Q4')}${qknopf(0, 'Ganzes Jahr')}</div>`;
 }
 
 async function abrechnungZeigen() {
@@ -570,7 +630,9 @@ async function abrechnungZeigen() {
   const zeilen = (d.nutzer || []).map(n => `
     <div class="az" data-nutzer="${n.nutzer_id || 0}">
       <div class="ak">
-        <span class="an">${esc(n.name)}${n.angelegt ? ''
+        <span class="an">${esc(n.name)}${n.automatisch
+          ? '<span class="chip teal" style="margin-left:8px">automatisch</span>' : ''}${
+          n.angelegt ? ''
           : '<span class="chip amber" style="margin-left:8px">nicht angelegt</span>'}</span>
         <span class="ab">${n.betrag == null ? '—' : eur(n.betrag)}</span>
       </div>
@@ -582,16 +644,18 @@ async function abrechnungZeigen() {
         <span>Ohne E-Mail-Adresse lässt sich nichts verschicken.</span></div>`}
       ${n.kwh > 0 && n.nutzer_id ? `<div class="aw">
         <button class="btn leise" data-vorschau="${n.nutzer_id}">Vorschau</button>
+        ${n.betrag != null
+          ? `<button class="btn leise" data-pdf="${n.nutzer_id}">Test-PDF</button>` : ''}
         ${n.email && n.betrag != null
           ? `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>` : ''}
       </div>` : ''}
       <div data-mail="${n.nutzer_id || 0}"></div>
     </div>`).join('');
 
-  ziel.innerHTML = `${quartalsWahl()}
+  ziel.innerHTML = `${zeitraumWahl()}
     <span class="zrzeile">${esc(d.label)} · ${datum(d.von)} – ${datum(d.bis)}</span>
     ${satzBlock(d)}
-    ${offeneNotiz(d)}
+    ${d.automatisch ? autoNotiz() : offeneNotiz(d)}
     ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
         Für ${esc(d.label)} gibt es weder Nutzer noch Ladungen.</div>`}
     ${d.nutzer?.length ? `<div class="kpi" style="margin-top:14px">
@@ -642,6 +706,35 @@ function offeneNotiz(d) {
     ${nichts ? 'keine einzige' : `nur ${zahl(d.kwh_gesamt)} kWh`} einer Person
     zugeordnet. Abgerechnet wird nur, was zugeordnet ist — die Wallbox weiß
     nicht, wer geladen hat. Das geht unten unter „Ladungen zuordnen“.</span></div>`;
+}
+
+/* N165 — ist nur eine Person angelegt, gehoeren ihr automatisch alle Ladungen
+   des Zeitraums. Das ist eine Erleichterung, keine Stoerung: ein ruhiger
+   Hinweis, kein Warnbalken — und die Zeile traegt zusaetzlich den Chip
+   „automatisch", damit die Zuordnung nicht wie eine Handeingabe aussieht. */
+function autoNotiz() {
+  return `<div class="notiz auto"><span class="wi">⤳</span><span>Automatisch
+    zugeordnet: An dieser Station ist bisher nur eine Person angelegt — alle
+    Ladungen des Zeitraums gehen auf sie. Sobald eine zweite dazukommt, ordnest
+    du unten je Ladung zu.</span></div>`;
+}
+
+/* Das Test-PDF: die Abrechnung, wie sie als Anhang ausssaehe — geoeffnet in
+   einem neuen Tab, ohne dass etwas verschickt wird. Ueber `fetch`, damit ein
+   „kein Betrag"-Fall als Meldung ankommt statt als roher JSON-Fehler im Tab. */
+async function testPdf(nid) {
+  const url = `/api/tankstelle/${encodeURIComponent(objektSlug)}/abrechnung.pdf`
+    + `?jahr=${jahrWert()}&quartal=${quartal}&nutzer_id=${nid}`;
+  try {
+    const antwort = await fetch(url);
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      throw new Error(grund || 'Test-PDF nicht verfügbar');
+    }
+    const adr = URL.createObjectURL(await antwort.blob());
+    window.open(adr, '_blank');
+    setTimeout(() => URL.revokeObjectURL(adr), 60000);
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
 async function vorschauZeigen(nid) {
@@ -809,12 +902,20 @@ function skelett() {
 document.addEventListener('click', e => {
   const neu = e.target.closest('[data-nutzer-neu]');
   if (neu) return nutzerAnlegen();
+  const edit = e.target.closest('[data-nutzer-edit]');
+  if (edit) return nutzerBearbeiten(edit.dataset.nutzerEdit);
+  const save = e.target.closest('[data-nutzer-save]');
+  if (save) return nutzerSpeichern(save.dataset.nutzerSave);
   const weg = e.target.closest('[data-nutzer-weg]');
   if (weg) return nutzerEntfernen(weg.dataset.nutzerWeg, weg.dataset.name);
+  const j = e.target.closest('[data-jahr]');
+  if (j) { jahrGewaehlt = Number(j.dataset.jahr); return abrechnungZeigen(); }
   const q = e.target.closest('[data-quartal]');
   if (q) { quartal = Number(q.dataset.quartal); return abrechnungZeigen(); }
   const v = e.target.closest('[data-vorschau]');
   if (v) return vorschauZeigen(v.dataset.vorschau);
+  const p = e.target.closest('[data-pdf]');
+  if (p) return testPdf(p.dataset.pdf);
   const s = e.target.closest('[data-senden]');
   if (s) return versenden(s.dataset.senden);
   const lb = e.target.closest('[data-ladung-neu]');
@@ -839,13 +940,9 @@ async function laden() {
   await abrechnungZeigen();
 }
 
-/* ---- Kopf: Objekt- und Jahr-Auswahl ----
-   Das Jahrfeld entsteht erst, wenn der Verlauf weiss, in welchen Jahren
-   ueberhaupt geladen wurde. Bis dahin steht dort ein ruhiger Platzhalter —
-   eine Auswahl mit sechs leeren Jahren waere eine Einladung ins Nichts. */
-document.getElementById('jahr').innerHTML =
-  '<span class="jahrleer">Jahre werden geholt …</span>';
-
+/* ---- Kopf: nur die Objekt-Auswahl ----
+   Jahr und Quartal sitzen an der Abrechnung selbst (siehe `zeitraumWahl`),
+   nicht ueber dem Verlauf — so passt die Auswahl stets zum Angezeigten. */
 const objektWahl = auswahlfeld(document.getElementById('objekt'), {
   label: 'Objekt',
   optionen: [{ wert: '', text: '—' }],

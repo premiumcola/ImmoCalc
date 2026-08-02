@@ -43,8 +43,8 @@ from sqlmodel import Session, select  # noqa: E402
 
 from app import db as db_modul  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import (Kostenposition, Objekt, Stromjahr,  # noqa: E402
-                        Tankladung, Zeitraum)
+from app.models import (Einstellung, Kostenposition, Objekt,  # noqa: E402
+                        Stromjahr, Tankladung, Tanknutzer, Zeitraum)
 from app.routers import tankstelle as t  # noqa: E402
 
 
@@ -338,6 +338,25 @@ def test_abrechne_zeigt_nutzer_ohne_ladung_und_ladung_ohne_nutzer():
     assert namen["Gast"]["email"] == "g@example.invalid"
     # Wer geladen hat, steht oben.
     assert zeilen[0]["name"] == "Gast"
+
+
+def test_posten_als_buchungen_ordnet_bei_einem_nutzer_alles_zu():
+    """N165 — genau ein Nutzer: alle Ladungen des Zeitraums gehören ihm,
+    unabhängig davon, welchen Namen die Rohdaten tragen. Erkennbar automatisch."""
+    posten = [t.Posten(date(2025, 7, 4), 30.0),
+              t.Posten(date(2025, 8, 9), 20.0),
+              t.Posten(date(2025, 9, 1), 0.0)]        # 0-kWh zählt nicht mit
+    einer = [{"id": 7, "name": "Alicia", "email": "a@example.invalid"}]
+    buchungen, automatisch = t.posten_als_buchungen(posten, einer)
+    assert automatisch is True
+    assert [b.person for b in buchungen] == ["Alicia", "Alicia"]
+    assert sum(b.kwh for b in buchungen) == 50.0
+    assert all(b.email == "a@example.invalid" for b in buchungen)
+
+    # Mehrere (oder kein) Nutzer: keine automatische Zuordnung.
+    assert t.posten_als_buchungen(posten, [])[1] is False
+    assert t.posten_als_buchungen(
+        posten, [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}])[1] is False
 
 
 def test_abrechnungstext_nennt_menge_betrag_und_eigenanteil():
@@ -873,6 +892,173 @@ def test_versand_ohne_ladung_und_ohne_adresse_wird_abgelehnt(client,
                              "quartal": 3})
     assert leer.status_code == 400 and "nichts geladen" in leer.json()["detail"]
     assert postfach.gesendet == []
+
+
+# --------------------------------------------------------------------------
+# 5) N165 — automatische Zuordnung, Übernahme, Quartals-PDF
+# --------------------------------------------------------------------------
+
+def test_ein_nutzer_bekommt_automatisch_alle_ladungen(client):
+    """Der Kern von N165: ist genau ein Nutzer angelegt, gehören ihm alle
+    Ladungen des Zeitraums — auch die, die unter einem anderen Namen erfasst
+    wurden. Keine leere Abrechnung mehr trotz geladener kWh."""
+    slug = _neues_objekt(client, "Autohaus")
+    _stromkosten(slug, 2025, betrag=1600.0)         # 0,32 € je kWh
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    # Bewusst unter fremden Namen erfasst — trotzdem Alicias Ladungen.
+    _ladung(client, slug, 2025, name="Unbekannt", kwh=30.0, datum="2025-07-04")
+    _ladung(client, slug, 2025, name="Gast", kwh=20.0, datum="2025-08-09")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["automatisch"] is True
+    assert [z["name"] for z in d["nutzer"]] == ["Alicia"]
+    alicia = d["nutzer"][0]
+    assert alicia["kwh"] == 50.0 and alicia["betrag"] == 16.0
+    assert alicia["automatisch"] is True
+    assert d["betrag_gesamt"] == 16.0
+    # Keine „nicht angelegt"-Zeile, keine offene Lücke mehr.
+    assert all(z["angelegt"] for z in d["nutzer"])
+    assert d["offen_kwh"] in (None, 0.0)
+
+
+def test_zwei_nutzer_bleiben_bei_der_zuordnung_ueber_den_namen(client):
+    """Bei mehreren Nutzern greift die Automatik nicht — es bleibt bei der
+    Zuordnung über den Namen (die feinere Regel kommt in Teil 2)."""
+    slug = _neues_objekt(client, "Zweihaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=40.0, datum="2025-07-04")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["automatisch"] is False
+    marvin = next(z for z in d["nutzer"] if z["name"] == "Marvin")
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    assert marvin["kwh"] == 40.0 and alicia["kwh"] == 0.0
+
+
+def test_alte_json_nutzerliste_wird_uebernommen(client):
+    """Der Bestand lag als JSON in einer Einstellung (Name + E-Mail). Er wird
+    einmalig in die Tabelle übernommen; der alte Schlüssel bleibt stehen."""
+    import json as _json
+    slug = _neues_objekt(client, "Altbestandhaus")
+    with Session(db_modul.engine) as session:
+        session.add(Einstellung(
+            schluessel=f"tankstelle_nutzer:{slug}",
+            wert=_json.dumps([{"id": 1, "name": "Alicia",
+                               "email": "alicia@example.invalid",
+                               "notiz": "Bestand"}])))
+        session.commit()
+
+    liste = client.get(f"/api/tankstelle/{slug}/nutzer").json()["nutzer"]
+    assert [n["name"] for n in liste] == ["Alicia"]
+    assert liste[0]["email"] == "alicia@example.invalid"
+
+    with Session(db_modul.engine) as session:
+        o = session.exec(select(Objekt).where(Objekt.slug == slug)).one()
+        tabelle = session.exec(select(Tanknutzer).where(
+            Tanknutzer.objekt_id == o.id)).all()
+        assert [tn.name for tn in tabelle] == ["Alicia"]
+        # Der alte Schlüssel bleibt unangetastet stehen.
+        alt = session.get(Einstellung, f"tankstelle_nutzer:{slug}")
+        assert alt is not None and "Alicia" in alt.wert
+
+    # Genau einmal: ein danach gelöschter Nutzer taucht nicht wieder auf.
+    client.delete(f"/api/tankstelle/{slug}/nutzer/{liste[0]['id']}")
+    assert client.get(f"/api/tankstelle/{slug}/nutzer").json()["nutzer"] == []
+
+
+def test_nutzer_traegt_anschrift_und_bankverbindung(client):
+    """N164/N165 — die Versand-Stammdaten (Anschrift, Bankverbindung) lassen
+    sich pflegen. Ein nicht mitgeschicktes Feld bleibt bei der Änderung stehen."""
+    slug = _neues_objekt(client, "Stammdatenhaus")
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid",
+        "strasse": "Musterweg 3", "plz": "90000", "ort": "Nürnberg",
+        "iban": "DE00 0000", "bic": "TESTDEFF", "kontoinhaber": "Alicia M."})
+    assert n.status_code == 201, n.text
+    d = n.json()
+    assert d["strasse"] == "Musterweg 3" and d["ort"] == "Nürnberg"
+    assert d["iban"] == "DE00 0000" and d["bic"] == "TESTDEFF"
+    assert d["kontoinhaber"] == "Alicia M."
+
+    g = client.put(f"/api/tankstelle/{slug}/nutzer/{d['id']}",
+                   json={"ort": "Fürth"})
+    assert g.status_code == 200
+    assert g.json()["ort"] == "Fürth"
+    assert g.json()["strasse"] == "Musterweg 3"     # unberührt
+    assert g.json()["name"] == "Alicia"
+
+
+def test_quartalsabrechnung_ueber_die_jahresgrenze(client):
+    """Ein Zeitraum über 2025/2026, quartalsweise abgerechnet: Q4 2025 und
+    Q1 2026 tragen je ihre eigenen Ladungen — sauber am Jahreswechsel getrennt."""
+    slug = _neues_objekt(client, "Jahreswechselhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _stromkosten(slug, 2026, betrag=1600.0)
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _ladung(client, slug, 2025, name="Alicia", kwh=40.0, datum="2025-12-20")
+    _ladung(client, slug, 2026, name="Alicia", kwh=60.0, datum="2026-01-15")
+
+    q4 = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                    params={"jahr": 2025, "quartal": 4}).json()
+    assert q4["label"] == "Q4 2025"
+    assert (q4["von"], q4["bis"]) == ("2025-10-01", "2025-12-31")
+    assert q4["kwh_gesamt"] == 40.0
+
+    q1 = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                    params={"jahr": 2026, "quartal": 1}).json()
+    assert q1["label"] == "Q1 2026"
+    assert (q1["von"], q1["bis"]) == ("2026-01-01", "2026-03-31")
+    assert q1["kwh_gesamt"] == 60.0
+
+
+def test_test_pdf_entsteht_und_nennt_die_zahlen(client):
+    """Das Test-PDF ohne Versand: es entsteht, ist ein PDF und trägt die Zahlen,
+    die den Nutzer angehen — Anschrift, Menge, Satz, Rechnungsbetrag."""
+    slug = _neues_objekt(client, "PDFhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid",
+        "strasse": "Musterweg 3", "plz": "90000", "ort": "Nürnberg"}).json()
+    _ladung(client, slug, 2025, name="Alicia", kwh=50.0, datum="2025-07-04")
+
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartal": 3,
+                                 "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    assert antwort.headers["content-type"] == "application/pdf"
+    roh = antwort.content
+    assert roh[:4] == b"%PDF"
+    assert b"Alicia" in roh
+    assert b"Musterweg 3" in roh
+    assert "Nürnberg".encode("cp1252") in roh
+    assert b"Q3 2025" in roh
+    assert b"50,00 kWh" in roh              # geladene Menge
+    assert b"0,3200 EUR je kWh" in roh      # der abgeleitete Satz
+    assert b"16,00 EUR" in roh              # der Rechnungsbetrag
+
+
+def test_kein_pdf_ohne_rechnungsbetrag(client):
+    """Kein PDF über 0 €: wer nichts geladen hat oder ohne abgeleiteten Satz
+    dasteht, bekommt eine Begründung statt eines leeren Blattes."""
+    slug = _neues_objekt(client, "NullPDFhaus")
+    n = _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    ohne = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                      params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
+    assert ohne.status_code == 400
+    assert "nichts geladen" in ohne.json()["detail"]
+
+    # Geladen, aber ohne Stromkosten → kein Satz → kein PDF.
+    slug2 = _neues_objekt(client, "NullPDFhaus2")
+    n2 = _nutzer(client, slug2, "Alicia", "alicia@example.invalid")
+    _ladung(client, slug2, 2025, name="Alicia", kwh=10.0, datum="2025-07-04")
+    ohne2 = client.get(f"/api/tankstelle/{slug2}/abrechnung.pdf",
+                       params={"jahr": 2025, "quartal": 3, "nutzer_id": n2["id"]})
+    assert ohne2.status_code == 400
 
 
 def test_unbekanntes_objekt_meldet_404(client):

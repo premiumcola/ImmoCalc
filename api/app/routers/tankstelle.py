@@ -51,8 +51,9 @@ import logging
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -61,7 +62,8 @@ from ..db import get_session
 from ..deps import objekt_holen
 from ..mailversand import MailFehler
 from ..models import (Eigentuemer, Einstellung, Objekt, Stromjahr, Tankladung,
-                      Zeitraum)
+                      Tanknutzer, Zeitraum)
+from ..tankabrechnung_pdf import tankabrechnung_pdf, tank_pdf_dateiname
 from .mail import zugang
 
 # Die Wallbox-Anbindung entsteht parallel (N130). Fehlt sie, arbeitet dieser
@@ -403,6 +405,29 @@ def abrechne(buchungen: list[Buchung], nutzer: list[dict],
     return fertig
 
 
+def posten_als_buchungen(posten: list[Posten],
+                         nutzer: list[dict]) -> tuple[list[Buchung], bool]:
+    """N165 — die automatische Zuordnung bei **genau einem** Nutzer.
+
+    Solange nur eine Person an der Station lädt, gibt es nichts zu entscheiden:
+    ihr gehören alle Ladungen des Zeitraums, ohne dass jede von Hand zugebucht
+    werden müsste. Grundlage sind die tatsächlich geladenen Mengen (`posten` —
+    aus der Wallbox oder den erfassten Ladungen), nicht die per Namen erfassten
+    `Tankladung`-Sätze: sonst bliebe die Abrechnung leer, obwohl kWh geflossen
+    sind.
+
+    Rückgabe ``(buchungen, automatisch)``. `automatisch` ist ``True``, wenn die
+    Zuordnung so entstanden ist — damit die Oberfläche sie als das ausweisen
+    kann, was sie ist, statt sie wie eine Handeingabe aussehen zu lassen. Bei
+    mehreren (oder keinem) Nutzer bleibt es bei der Zuordnung über den Namen;
+    die feinere Mehrnutzer-Regel kommt in einem zweiten Schritt."""
+    if len(nutzer) != 1:
+        return [], False
+    n = nutzer[0]
+    return ([Buchung(tag=p.tag, person=n["name"], email=n.get("email", ""),
+                     kwh=p.kwh) for p in posten if p.kwh], True)
+
+
 def deutsch(wert: float, stellen: int = 2) -> str:
     """Eine Zahl in deutscher Schreibweise: „1.234,56".
 
@@ -468,16 +493,26 @@ def abrechnungstext(objekt_name: str, zeile: dict, von: date, bis: date,
 
 
 # ==========================================================================
-# Nutzerliste — als JSON in der vorhandenen Schlüssel/Wert-Ablage
+# Nutzerliste — in der Tabelle `Tanknutzer` (N164)
+#
+# Bis N164 lagen die Nutzer als JSON in einer `Einstellung` — das trug nur
+# Name und E-Mail. Für die Quartalsabrechnung braucht es Anschrift und
+# Bankverbindung; die gehören in eine eigene Tabelle. Der alte JSON-Schlüssel
+# bleibt unangetastet stehen (CLAUDE.md: nie löschen); sein Inhalt wird einmalig
+# in die Tabelle übernommen (`_migriere_json_nutzer`).
 # ==========================================================================
 
 def _nutzer_schluessel(slug: str) -> str:
     return f"{S_NUTZER}:{slug}"
 
 
-def nutzer_lesen(session: Session, slug: str) -> list[dict]:
-    """Die Nutzer eines Objekts. Unlesbares JSON ergibt eine leere Liste —
-    und einen Eintrag im Log; es wird nichts überschrieben."""
+def _migriert_schluessel(slug: str) -> str:
+    return f"{S_NUTZER}_migriert:{slug}"
+
+
+def _json_nutzer_lesen(session: Session, slug: str) -> list[dict]:
+    """Der alte JSON-Bestand (nur Name + E-Mail + Notiz). Unlesbares JSON ergibt
+    eine leere Liste und einen Log-Eintrag; es wird nichts überschrieben."""
     roh = _lies(session, _nutzer_schluessel(slug))
     if not roh:
         return []
@@ -493,24 +528,61 @@ def nutzer_lesen(session: Session, slug: str) -> list[dict]:
     for eintrag in daten:
         if not isinstance(eintrag, dict) or not str(eintrag.get("name", "")).strip():
             continue
-        liste.append({"id": int(eintrag.get("id") or 0),
-                      "name": str(eintrag["name"]).strip(),
+        liste.append({"name": str(eintrag["name"]).strip(),
                       "email": str(eintrag.get("email", "")).strip(),
                       "notiz": str(eintrag.get("notiz", "")).strip()})
     return liste
 
 
-def _nutzer_schreiben(session: Session, slug: str, liste: list[dict]) -> None:
-    """Die Nutzerliste ablegen — additiv, ohne einen anderen Schlüssel zu
-    berühren."""
-    wert = json.dumps(liste, ensure_ascii=False)
-    eintrag = session.get(Einstellung, _nutzer_schluessel(slug))
-    if eintrag:
-        eintrag.wert = wert
-    else:
-        eintrag = Einstellung(schluessel=_nutzer_schluessel(slug), wert=wert)
-    session.add(eintrag)
+def _migriere_json_nutzer(session: Session, o: Objekt) -> None:
+    """Den alten JSON-Bestand einmalig in die Tabelle übernehmen.
+
+    Läuft genau einmal je Objekt (ein Marker in der Einstellungs-Ablage sperrt
+    weitere Läufe). So wird ein gelöschter Nutzer nicht bei der nächsten Lesung
+    aus dem alten JSON wieder auferstehen. Der JSON-Schlüssel selbst bleibt
+    unangetastet stehen — er wird nur gelesen, nie überschrieben."""
+    if _lies(session, _migriert_schluessel(o.slug)):
+        return
+    schon_da = session.exec(select(Tanknutzer).where(
+        Tanknutzer.objekt_id == o.id)).first()
+    if schon_da is None:
+        for e in _json_nutzer_lesen(session, o.slug):
+            session.add(Tanknutzer(objekt_id=o.id, name=e["name"],
+                                   email=e["email"], notiz=e["notiz"]))
+        log.info("E-Tankstelle %s: alte Nutzerliste in die Tabelle übernommen",
+                 o.slug)
+    session.add(Einstellung(schluessel=_migriert_schluessel(o.slug), wert="1"))
     session.commit()
+
+
+def _nutzer_dict(n: Tanknutzer) -> dict:
+    """Ein Tanknutzer als das dict, mit dem die Rechen- und Anzeigelogik
+    arbeitet — dieselben Schlüssel wie früher der JSON-Eintrag, plus die
+    Stammdaten für den Versand."""
+    return {"id": n.id, "name": n.name, "email": n.email or "",
+            "person_id": n.person_id,
+            "strasse": n.strasse or "", "plz": n.plz or "", "ort": n.ort or "",
+            "iban": n.iban or "", "bic": n.bic or "",
+            "kontoinhaber": n.kontoinhaber or "", "notiz": n.notiz or ""}
+
+
+def nutzer_lesen(session: Session, objekt: Objekt | str) -> list[dict]:
+    """Die Nutzer eines Objekts aus der Tabelle — vor dem ersten Lesen wird der
+    alte JSON-Bestand einmalig übernommen.
+
+    Nimmt ein :class:`Objekt` **oder** einen Slug: die eigenen Endpunkte reichen
+    das aufgelöste Objekt herein, fremde Aufrufer (``routers/zaehler``) nur den
+    Slug. Ein unbekannter Slug ergibt eine leere Liste statt eines Fehlers."""
+    o = objekt
+    if isinstance(o, str):
+        o = session.exec(select(Objekt).where(Objekt.slug == o)).first()
+        if o is None:
+            return []
+    _migriere_json_nutzer(session, o)
+    liste = session.exec(select(Tanknutzer).where(
+        Tanknutzer.objekt_id == o.id, Tanknutzer.aktiv == True)  # noqa: E712
+        .order_by(Tanknutzer.id)).all()
+    return [_nutzer_dict(n) for n in liste]
 
 
 def _pruefe_name(name: str, liste: list[dict], eigene_id: int = 0) -> str:
@@ -536,9 +608,19 @@ def _pruefe_email(email: str) -> str:
 
 
 class NutzerIn(BaseModel):
-    name: str = ""
-    email: str = ""
-    notiz: str = ""
+    """Die Stammdaten eines Tanknutzers. Alle Felder ``Optional`` und ``None``,
+    damit ein PUT nur ändert, was wirklich mitgeschickt wird — ein leerer
+    String (``""``) löscht bewusst, ``None`` lässt stehen."""
+    name: Optional[str] = None
+    email: Optional[str] = None
+    person_id: Optional[int] = None
+    strasse: Optional[str] = None
+    plz: Optional[str] = None
+    ort: Optional[str] = None
+    iban: Optional[str] = None
+    bic: Optional[str] = None
+    kontoinhaber: Optional[str] = None
+    notiz: Optional[str] = None
 
 
 @router.get("/{slug}/nutzer")
@@ -546,7 +628,7 @@ def nutzer(slug: str, session: Session = Depends(get_session),
            o: Objekt = Depends(objekt_holen)) -> dict:
     """Wer an dieser Ladestation lädt. Nicht zwangsläufig Eigentümer — es kann
     jeder sein."""
-    return {"objekt": o.name, "nutzer": nutzer_lesen(session, slug)}
+    return {"objekt": o.name, "nutzer": nutzer_lesen(session, o)}
 
 
 @router.post("/{slug}/nutzer", status_code=201)
@@ -554,35 +636,46 @@ def nutzer_anlegen(slug: str, data: NutzerIn,
                    session: Session = Depends(get_session),
                    o: Objekt = Depends(objekt_holen)) -> dict:
     """Einen Nutzer ergänzen. Beliebig viele, jederzeit."""
-    liste = nutzer_lesen(session, slug)
-    eintrag = {"id": max((n["id"] for n in liste), default=0) + 1,
-               "name": _pruefe_name(data.name, liste),
-               "email": _pruefe_email(data.email),
-               "notiz": (data.notiz or "").strip()}
-    liste.append(eintrag)
-    _nutzer_schreiben(session, slug, liste)
-    log.info("E-Tankstelle %s: Nutzer „%s“ angelegt", o.slug, eintrag["name"])
-    return eintrag
+    liste = nutzer_lesen(session, o)
+    n = Tanknutzer(
+        objekt_id=o.id, name=_pruefe_name(data.name or "", liste),
+        email=_pruefe_email(data.email or ""), person_id=data.person_id,
+        strasse=(data.strasse or "").strip(), plz=(data.plz or "").strip(),
+        ort=(data.ort or "").strip(), iban=(data.iban or "").strip(),
+        bic=(data.bic or "").strip(),
+        kontoinhaber=(data.kontoinhaber or "").strip(),
+        notiz=(data.notiz or "").strip())
+    session.add(n)
+    session.commit()
+    session.refresh(n)
+    log.info("E-Tankstelle %s: Nutzer „%s“ angelegt", o.slug, n.name)
+    return _nutzer_dict(n)
 
 
 @router.put("/{slug}/nutzer/{nid}")
 def nutzer_aendern(slug: str, nid: int, data: NutzerIn,
                    session: Session = Depends(get_session),
                    o: Objekt = Depends(objekt_holen)) -> dict:
-    """Name oder Adresse berichtigen. Leere Felder lassen den Wert stehen —
-    ein nicht mitgeschicktes Feld darf nichts löschen."""
-    liste = nutzer_lesen(session, slug)
-    eintrag = next((n for n in liste if n["id"] == nid), None)
-    if eintrag is None:
+    """Stammdaten berichtigen. Ein nicht mitgeschicktes Feld (``None``) lässt
+    den Wert stehen; ein leerer String löscht ihn bewusst."""
+    n = session.get(Tanknutzer, nid)
+    if n is None or n.objekt_id != o.id or not n.aktiv:
         raise HTTPException(404, "Nutzer nicht gefunden")
-    if (data.name or "").strip():
-        eintrag["name"] = _pruefe_name(data.name, liste, eigene_id=nid)
-    if (data.email or "").strip():
-        eintrag["email"] = _pruefe_email(data.email)
-    if (data.notiz or "").strip():
-        eintrag["notiz"] = data.notiz.strip()
-    _nutzer_schreiben(session, slug, liste)
-    return eintrag
+    if data.name is not None and data.name.strip():
+        n.name = _pruefe_name(data.name, nutzer_lesen(session, o), eigene_id=nid)
+    if data.email is not None:
+        n.email = _pruefe_email(data.email)
+    for feld in ("strasse", "plz", "ort", "iban", "bic", "kontoinhaber",
+                 "notiz"):
+        wert = getattr(data, feld)
+        if wert is not None:
+            setattr(n, feld, wert.strip())
+    if data.person_id is not None:
+        n.person_id = data.person_id or None
+    session.add(n)
+    session.commit()
+    session.refresh(n)
+    return _nutzer_dict(n)
 
 
 @router.delete("/{slug}/nutzer/{nid}")
@@ -593,10 +686,11 @@ def nutzer_entfernen(slug: str, nid: int,
 
     Erfasste Ladungen bleiben **unangetastet**; sie erscheinen in der
     Abrechnung dann als „nicht angelegt". Es geht nichts verloren."""
-    liste = nutzer_lesen(session, slug)
-    if not any(n["id"] == nid for n in liste):
+    n = session.get(Tanknutzer, nid)
+    if n is None or n.objekt_id != o.id or not n.aktiv:
         raise HTTPException(404, "Nutzer nicht gefunden")
-    _nutzer_schreiben(session, slug, [n for n in liste if n["id"] != nid])
+    session.delete(n)
+    session.commit()
     log.info("E-Tankstelle %s: Nutzer %d entfernt", o.slug, nid)
     return {"ok": True}
 
@@ -962,16 +1056,25 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     Der Satz kommt aus der Stromkette (N148); die Mengen des Zeitraums sagen,
     wie stark Netz und eigener Strom darin gewichtet sind."""
     von, bis = _zeitraum(jahr, quartal, None, None)
-    liste = nutzer_lesen(session, slug)
+    liste = nutzer_lesen(session, o)
     posten, quelle, _ = _posten_holen(session, o, von, bis)
     summe = verlauf_summe(verlauf(posten, von, bis)) if posten else {}
     satz = satz_ableiten(session, o.id, von, bis,
                          summe.get("extern_kwh"), summe.get("eigen_kwh"))
-    zeilen = abrechne(buchungen(session, o.id, von, bis), liste, satz.misch)
+    # N165 — mit genau einem Nutzer gehören ihm automatisch alle Ladungen des
+    # Zeitraums (aus den geladenen Mengen, nicht nur aus den namentlich
+    # erfassten Sätzen). Bei mehreren bleibt es bei der Zuordnung über den Namen.
+    auto_buch, automatisch = posten_als_buchungen(posten, liste)
+    quelle_buch = auto_buch if automatisch else buchungen(session, o.id, von, bis)
+    zeilen = abrechne(quelle_buch, liste, satz.misch)
+    if automatisch:
+        for z in zeilen:
+            z["automatisch"] = z["kwh"] > 0
     zugeordnet = round(sum(z["kwh"] for z in zeilen), 3)
     return {"objekt": o.name, "jahr": jahr, "quartal": quartal,
             "label": zeitraum_label(jahr, quartal),
             "von": von.isoformat(), "bis": bis.isoformat(),
+            "automatisch": automatisch,
             "satz": satz.misch, "satz_netz": satz.netz,
             "satz_eigen": satz.eigen, "satz_rabatt": EIGEN_RABATT,
             "satz_herkunft": satz.herkunft, "satz_grund": satz.grund,
@@ -1024,6 +1127,63 @@ def vorschau(slug: str, jahr: int = Query(default=0),
             "betrag": zeile["betrag"], "kwh": zeile["kwh"],
             "satz": zeile["satz"], "satz_grund": daten["satz_grund"],
             "label": daten["label"]}
+
+
+def _empfaenger(session: Session, zeile: dict) -> dict:
+    """Anschrift und Name des Empfängers für das PDF — aus dem Tanknutzer,
+    soweit vorhanden. Eine noch nicht angelegte Person hat keine Anschrift; dann
+    steht nur ihr Name."""
+    empf = {"name": zeile["name"], "email": zeile.get("email", ""),
+            "strasse": "", "plz": "", "ort": ""}
+    n = session.get(Tanknutzer, zeile["nutzer_id"]) if zeile.get("nutzer_id") else None
+    if n is not None:
+        empf.update(strasse=n.strasse or "", plz=n.plz or "", ort=n.ort or "",
+                    kontoinhaber=n.kontoinhaber or "", iban=n.iban or "")
+    return empf
+
+
+def _quartal_verlauf(session: Session, o: Objekt, von: date,
+                     bis: date) -> tuple[list[dict], dict]:
+    """Die Monatszeilen des Quartals plus ihre Summe — die Grundlage von
+    Diagramm und Tabelle im PDF."""
+    posten, _, _ = _posten_holen(session, o, von, bis)
+    monate = verlauf(posten, von, bis)
+    return monate, verlauf_summe(monate)
+
+
+@router.get("/{slug}/abrechnung.pdf")
+def abrechnung_pdf_zeigen(slug: str, jahr: int = Query(default=0),
+                          quartal: int = Query(default=0),
+                          nutzer_id: int = Query(default=0),
+                          name: str = Query(default=""),
+                          session: Session = Depends(get_session),
+                          o: Objekt = Depends(objekt_holen)) -> Response:
+    """Die Quartalsabrechnung eines Nutzers als PDF — zum Ansehen und Prüfen,
+    **ohne** dass etwas verschickt wird (N165).
+
+    Kein PDF über 0 €: eine Rechnung ohne Betrag ist keine Rechnung. Fehlt der
+    Satz oder hat der Nutzer nichts geladen, sagt die Antwort, woran es liegt,
+    statt ein leeres Blatt zu erzeugen."""
+    daten = _abrechnung(session, o, slug, jahr or date.today().year, quartal)
+    zeile = _zeile_holen(daten, nutzer_id, name)
+    if zeile["kwh"] <= 0:
+        raise HTTPException(400, f"{zeile['name']} hat im Zeitraum "
+                                 f"{daten['label']} nichts geladen — kein PDF.")
+    if zeile["satz"] is None or not (zeile["betrag"] and zeile["betrag"] > 0):
+        raise HTTPException(400, "Ohne Rechnungsbetrag gibt es kein PDF. "
+                                 + (daten["satz_grund"] or ""))
+    von = date.fromisoformat(daten["von"])
+    bis = date.fromisoformat(daten["bis"])
+    monate, summe = _quartal_verlauf(session, o, von, bis)
+    satz = {"netz": daten["satz_netz"], "eigen": daten["satz_eigen"],
+            "misch": daten["satz"], "herkunft": daten["satz_herkunft"],
+            "grund": daten["satz_grund"], "rabatt": daten["satz_rabatt"]}
+    inhalt = tankabrechnung_pdf(o.name, _empfaenger(session, zeile),
+                                daten["label"], von, bis, monate, summe, satz,
+                                zeile["kwh"], zeile["betrag"])
+    dateiname = tank_pdf_dateiname(o.name, daten["label"], zeile["name"])
+    return Response(content=inhalt, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{dateiname}"'})
 
 
 class VersandIn(BaseModel):
