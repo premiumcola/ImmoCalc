@@ -253,13 +253,12 @@ function skelett() {
         geladene Menge steht oben unter „davon E-Auto Tanken".</p>
       <div class="raster">
         ${F_TANKEN.map(f => feldHtml(...f)).join('')}
-        <div class="field">
-          <label for="f_tanken_person">Wird berechnet an</label>
-          <input class="inp" type="text" id="f_tanken_person"
-                 data-text="tanken_person" placeholder="Name der ladenden Person">
-        </div>
+
       </div>
       <div class="kpi" id="tank"></div>
+      <!-- N112b — jede Ladung wird auf eine Person gebucht; daraus entsteht die
+           Abrechnung an den Fahrer und der Ertrag der Anlage. -->
+      <div id="ladungen" class="ladungen"></div>
     </div>
 
     <div class="karte">
@@ -267,11 +266,9 @@ function skelett() {
       <p class="hint">Die PV-Anlage ist ein eigenes Investment mit eigenen
         Anteilen — unabhängig von den Objekt-Tausendsteln. Leer = Vorgabe
         5/6 + 1/6.</p>
-      <div class="field breit">
-        <label for="f_pv_anteile">Eigene Anteile — Name : ‰</label>
-        <input class="inp" type="text" id="f_pv_anteile" data-text="pv_anteile_roh"
-               placeholder="z. B. Roland: 833,3 · Marvin: 166,7">
-      </div>
+      <!-- N112c — die Anteile werden je Person vergeben, nicht als Freitext:
+           gewaehlt wird aus derselben Personenliste wie ueberall. -->
+      <div id="pvAnteile" class="pv-anteile"></div>
       <div class="eig" id="eig"></div>
     </div>
 
@@ -441,6 +438,113 @@ async function amortisationZeigen() {
       + '<span class="kv">nach dem nächsten Deploy verfügbar</span></div>';
   }
 }
+
+/* N112c — die PV-Anteile je Person: gewaehlt wird aus der Eigentuemer-Liste,
+   der Prozentsatz (Tausendstel) steht daneben. Gespeichert wird wie bisher als
+   JSON {Name: Promille} im Strom-Jahr — nur eben nicht mehr als Freitext. */
+async function pvAnteileZeigen() {
+  const ziel = document.getElementById('pvAnteile');
+  if (!ziel || !objektSlug) return;
+  try {
+    const d = await api(`/objekte/${encodeURIComponent(objektSlug)}/pv/eigentuemer`
+      + `?jahr=${jahrWahl.wert()}`);
+    const gesetzt = d.pv_anteile || {};
+    ziel.innerHTML = (d.personen || []).map(p => {
+      const wert = gesetzt[p.name];
+      return `<label class="pa-zeile">
+        <input type="checkbox" data-pv-person="${esc(p.name)}"${wert ? ' checked' : ''}>
+        <span class="pa-name">${esc(p.name)}${p.am_objekt != null
+          ? `<span class="pa-obj">am Objekt ${p.am_objekt.toLocaleString('de-DE',
+              { maximumFractionDigits: 1 })} ‰</span>` : ''}</span>
+        <input class="inp pa-wert" type="number" step="0.1" min="0" max="1000"
+          data-pv-wert="${esc(p.name)}" value="${wert ?? ''}" placeholder="‰"
+          aria-label="Anteil ${esc(p.name)} in Promille">
+      </label>`;
+    }).join('') || '<p class="hint">Noch keine Personen angelegt.</p>';
+  } catch {
+    ziel.innerHTML = '<p class="hint">Personen nicht ladbar.</p>';
+  }
+}
+
+/* Die gesetzten Anteile aus der Auswahl einsammeln (nur angehakte mit Wert). */
+function pvAnteileAusForm() {
+  const paare = {};
+  document.querySelectorAll('[data-pv-person]').forEach(cb => {
+    if (!cb.checked) return;
+    const feld = document.querySelector(`[data-pv-wert="${CSS.escape(cb.dataset.pvPerson)}"]`);
+    const v = parseFloat(String(feld?.value || '').replace(',', '.'));
+    if (Number.isFinite(v) && v > 0) paare[cb.dataset.pvPerson] = v;
+  });
+  return Object.keys(paare).length ? JSON.stringify(paare) : '';
+}
+
+/* N112b — die Ladungen der E-Tankstelle: je Ladung eine Person, kWh und Satz;
+   daraus entsteht die Abrechnung an den Fahrer. */
+async function ladungenZeigen() {
+  const ziel = document.getElementById('ladungen');
+  if (!ziel || !objektSlug) return;
+  const jahr = jahrWahl.wert();
+  try {
+    const [d, pers] = await Promise.all([
+      api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahr}`),
+      api(`/objekte/${encodeURIComponent(objektSlug)}/pv/eigentuemer`),
+    ]);
+    const opt = (pers.personen || []).map(p =>
+      `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    const zeilen = (d.ladungen || []).map(l => `
+      <div class="la-zeile">
+        <span class="la-p">${esc(l.person || '—')}${l.datum
+          ? `<span class="la-d">${new Date(l.datum).toLocaleDateString('de-DE')}</span>` : ''}</span>
+        <span class="la-k">${(l.kwh ?? 0).toLocaleString('de-DE')} kWh</span>
+        <span class="la-b">${eur(l.betrag)}</span>
+        <button class="la-x" data-ladung-weg="${l.id}" aria-label="Ladung entfernen">×</button>
+      </div>`).join('');
+    ziel.innerHTML = `${zeilen ? `<div class="la-liste">${zeilen}</div>` : ''}
+      ${(d.je_person || []).map(p => `<div class="la-summe">Rechnung an
+        <b>${esc(p.person)}</b>${p.email ? ` · ${esc(p.email)}` : ''}:
+        <b>${eur(p.betrag)}</b> (${(p.kwh ?? 0).toLocaleString('de-DE')} kWh)</div>`).join('')}
+      <div class="la-neu">
+        <select data-la-person aria-label="Person"><option value="">Person …</option>${opt}</select>
+        <input type="number" step="0.1" data-la-kwh placeholder="kWh" aria-label="kWh">
+        <input type="date" data-la-datum aria-label="Datum">
+        <button class="btn" data-ladung-add>Ladung erfassen</button>
+      </div>`;
+  } catch {
+    ziel.innerHTML = '<p class="hint">Ladungen nach dem naechsten Deploy verfuegbar.</p>';
+  }
+}
+
+async function ladungAnlegen(btn) {
+  const box = btn.closest('.la-neu');
+  const pid = box?.querySelector('[data-la-person]')?.value;
+  const kwh = parseFloat(String(box?.querySelector('[data-la-kwh]')?.value || '').replace(',', '.'));
+  if (!pid || !(kwh > 0)) { melde('Person und kWh angeben', 'neg'); return; }
+  try {
+    await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWahl.wert()}`, {
+      method: 'POST',
+      body: { person_id: Number(pid), kwh,
+              datum: box.querySelector('[data-la-datum]')?.value || null },
+    });
+    melde('Ladung erfasst', 'pos');
+    await ladungenZeigen();
+    await rechnen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function ladungEntfernen(id) {
+  try {
+    await api(`/tankladungen/${id}`, { method: 'DELETE' });
+    await ladungenZeigen();
+    await rechnen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+document.addEventListener('click', e => {
+  const add = e.target.closest('[data-ladung-add]');
+  if (add) return ladungAnlegen(add);
+  const weg = e.target.closest('[data-ladung-weg]');
+  if (weg) return ladungEntfernen(weg.dataset.ladungWeg);
+});
 
 let objektSlug = '';
 let speicherZeit = null;

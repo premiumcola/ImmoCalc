@@ -16,14 +16,16 @@ Parameter hat Vorrang. Fehlt beides, bleibt die Rechnung bei den zwei Gruppen.
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from .. import strom
 from ..db import get_session
 from ..deps import objekt_holen
-from ..models import Objekt, Stromjahr
+from ..models import Anteil, Eigentuemer, Objekt, Stromjahr, Tankladung
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["strom"])
@@ -228,3 +230,111 @@ def pv_amortisation(slug: str, session: Session = Depends(get_session),
     a = strom.amortisation(reihe, anschaffung)
     a["eigentuemer"] = strom.verteile_eigentuemer(a["kumuliert"], anteile)
     return a
+
+
+# --------------------------------------------------------------------------
+# N112 — E-Tankstelle: wer geladen hat, wie viel, und was ihm berechnet wird.
+# Die Ladungen haengen am Objekt-Jahr; die Person kommt aus der vorhandenen
+# Eigentuemer-Liste (dieselben Personen wie ueberall) oder als freier Name.
+# --------------------------------------------------------------------------
+
+class LadungIn(BaseModel):
+    """Eine Ladung an der E-Tankstelle."""
+    person_id: int | None = None
+    name: str = ""
+    email: str = ""
+    kwh: float = 0.0
+    preis: float = 0.0
+    datum: date | None = None
+    notiz: str = ""
+
+
+def _zeige_ladung(l: Tankladung, namen: dict[int, str]) -> dict:
+    """Eine Ladung als JSON — mit aufgeloestem Personennamen und Betrag."""
+    return {"id": l.id, "jahr": l.jahr, "person_id": l.person_id,
+            "person": namen.get(l.person_id or 0, l.name or ""),
+            "email": l.email, "kwh": l.kwh, "preis": l.preis,
+            "betrag": round(l.kwh * l.preis, 2),
+            "datum": l.datum.isoformat() if l.datum else None, "notiz": l.notiz}
+
+
+def _namen(session: Session) -> dict[int, str]:
+    return {e.id: e.name for e in session.exec(select(Eigentuemer)).all()}
+
+
+@router.get("/objekte/{slug}/tankstelle/{jahr}")
+def ladungen(slug: str, jahr: int, session: Session = Depends(get_session),
+             o: Objekt = Depends(objekt_holen)) -> dict:
+    """Die Ladungen eines Objekt-Jahres samt Summen je Person."""
+    liste = session.exec(
+        select(Tankladung).where(Tankladung.objekt_id == o.id,
+                                 Tankladung.jahr == jahr)
+        .order_by(Tankladung.datum, Tankladung.id)).all()
+    namen = _namen(session)
+    zeilen = [_zeige_ladung(l, namen) for l in liste]
+    je_person: dict[str, dict] = {}
+    for z in zeilen:
+        p = je_person.setdefault(z["person"] or "—",
+                                 {"person": z["person"] or "—",
+                                  "email": z["email"], "kwh": 0.0, "betrag": 0.0})
+        p["kwh"] = round(p["kwh"] + z["kwh"], 3)
+        p["betrag"] = round(p["betrag"] + z["betrag"], 2)
+        if not p["email"] and z["email"]:
+            p["email"] = z["email"]
+    return {"ladungen": zeilen, "je_person": list(je_person.values()),
+            "kwh_gesamt": round(sum(z["kwh"] for z in zeilen), 3),
+            "betrag_gesamt": round(sum(z["betrag"] for z in zeilen), 2)}
+
+
+@router.post("/objekte/{slug}/tankstelle/{jahr}", status_code=201)
+def ladung_anlegen(slug: str, jahr: int, data: LadungIn,
+                   session: Session = Depends(get_session),
+                   o: Objekt = Depends(objekt_holen)) -> dict:
+    """Eine Ladung erfassen. Ohne eigenen Preis gilt der Satz des Strom-Jahres."""
+    werte = data.model_dump()
+    if not werte.get("preis"):
+        sj = _hole_oder_neu(session, o.id, jahr)
+        werte["preis"] = sj.tanken_preis or 0.0
+    l = Tankladung(objekt_id=o.id, jahr=jahr, **werte)
+    session.add(l)
+    session.commit()
+    session.refresh(l)
+    return _zeige_ladung(l, _namen(session))
+
+
+@router.delete("/tankladungen/{lid}")
+def ladung_loeschen(lid: int, session: Session = Depends(get_session)) -> dict:
+    """Eine Ladung entfernen — bewusste Korrektur einer Fehleingabe."""
+    l = session.get(Tankladung, lid)
+    if not l:
+        raise HTTPException(404, "Ladung nicht gefunden")
+    session.delete(l)
+    session.commit()
+    return {"ok": True}
+
+
+@router.get("/objekte/{slug}/pv/eigentuemer")
+def pv_eigentuemer(slug: str, jahr: int | None = None,
+                   session: Session = Depends(get_session),
+                   o: Objekt = Depends(objekt_holen)) -> dict:
+    """N112 — die Personen zur Auswahl für die PV-Anteile.
+
+    Die PV-Anlage ist ein eigenes Investment mit eigenen Tausendsteln; gewählt
+    wird aber aus derselben Personenliste wie überall (`Eigentuemer`). Geliefert
+    werden alle Personen, die am Objekt beteiligten zuerst und mit ihrem
+    Objekt-Anteil als Vorschlag — plus die aktuell gesetzten PV-Anteile."""
+    alle = session.exec(select(Eigentuemer).order_by(Eigentuemer.name)).all()
+    am_objekt = {a.eigentuemer_id: a.promille for a in session.exec(
+        select(Anteil).where(Anteil.objekt_id == o.id)).all()}
+    personen = sorted(
+        ({"id": e.id, "name": e.name, "email": e.email,
+          "am_objekt": am_objekt.get(e.id)} for e in alle),
+        key=lambda p: (p["am_objekt"] is None, p["name"]))
+    gesetzt: dict[str, float] = {}
+    if jahr is not None:
+        sj = _hole_oder_neu(session, o.id, jahr)
+        try:
+            gesetzt = json.loads(sj.pv_anteile) if sj.pv_anteile else {}
+        except (ValueError, TypeError):
+            gesetzt = {}
+    return {"personen": personen, "pv_anteile": gesetzt}

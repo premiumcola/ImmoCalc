@@ -893,3 +893,23 @@ class Belegdaten(SQLModel, table=True):
     dateiname: str = ""
     quelle: str = ""                  # 'ki' | 'regel' | 'hand'
     erfasst_am: Optional[date] = None
+
+class Tankladung(SQLModel, table=True):
+    """N112 — eine Ladung an der E-Tankstelle der PV-Anlage.
+
+    Der E-Auto-Strom gehoert der Anlage, nicht der Immobilie: er wird der
+    ladenden Person berechnet und zahlt auf die Amortisation ein. Die Person
+    ist ein `Eigentuemer`-Datensatz (dieselbe Personenliste wie sonst) oder,
+    wenn sie dort nicht steht, ein freier Name mit E-Mail.
+
+    Additiv, ganz neue Tabelle; jeder Bestand bleibt unveraendert."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    jahr: int = Field(index=True)
+    person_id: Optional[int] = Field(default=None, foreign_key="eigentuemer.id")
+    name: str = ""                 # falls die Person nicht in der Liste steht
+    email: str = ""
+    kwh: float = 0.0
+    preis: float = 0.0             # EUR je kWh (0 = Satz des Strom-Jahres)
+    datum: Optional[date] = None
+    notiz: str = ""

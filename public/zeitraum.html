@@ -4741,9 +4741,7 @@ function wasserDetailInhalt(d) {
   const zelle = z => z
     ? `<td><span class="wd-m3">${m3(z.m3)}</span>
         <span class="wd-eur">${eur(z.kosten)}</span>
-        ${z.quelle ? `<span class="wd-q ${z.quelle === 'gemessen'
-          ? 'gemessen' : 'berechnet'}">${z.quelle === 'gemessen'
-            ? '📟 gemessen' : 'berechnet'}</span>` : ''}</td>`
+        </td>`
     : '<td class="wd-leerz">–</td>';
 
   // Alle vorkommenden Verbrauchsarten in Reihenfolge des ersten Auftretens.

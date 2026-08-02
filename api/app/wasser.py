@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .engine import verteile_nach_wert
+
 
 @dataclass
 class Zaehlerposten:
@@ -56,7 +58,11 @@ class WasserErgebnis:
     rest_kosten: float            # gemeinsamer Haupthaus-Verbrauch
     zaehler: list[dict] = field(default_factory=list)   # je Unterzähler
     einheiten: dict[str, dict] = field(default_factory=dict)  # je Einheit die Summe
-    kontrolle: float = 0.0        # Summe aller verteilten € (muss ≈ gesamt_kosten)
+    kontrolle: float = 0.0        # Summe aller verteilten € (== gesamt_kosten)
+    # N118 — was der Nutzer wissen muss, bevor er die Zahlen verschickt:
+    # unplausible Zählerstände (Unterzähler über dem Hauptzähler, Garten größer
+    # als der Rest) oder ein Rest, den keine Einheit trägt. Leer = alles glatt.
+    warnungen: list[str] = field(default_factory=list)
 
 
 def _r2(x: float) -> float:
@@ -90,25 +96,27 @@ def verrechne(komponenten: dict[str, float], gesamt_m3: float,
     # bleibt es beim Mischpreis, damit die Kontrollsumme aufgeht.
     frisch = float(komponenten.get("wasser") or 0.0)
     preis_frisch = (frisch / gesamt_m3) if frisch > 0 else preis
-    garten_kosten = preis_frisch * max(0.0, garten_m3)
-    # Was das Gartenwasser weniger traegt, tragen die uebrigen Verbraeuche mit -
-    # die Rechnung des Versorgers ist ja trotzdem zu zahlen. Der Aufschlag geht
-    # auf den Rest (Haupthaus), der ohnehin die Ausgleichsgroesse ist.
-    rest_kosten = preis * rest_m3 + (preis - preis_frisch) * max(0.0, garten_m3)
+    garten_kosten = _r2(preis_frisch * max(0.0, garten_m3))
 
+    warnungen: list[str] = []
     einheiten: dict[str, dict] = {}
 
     def zu_einheit(name: str, betrag: float, quelle: str, m3: float) -> None:
+        """Einen bereits auf Cent gerundeten Betrag einer Einheit gutschreiben.
+        Nur gerundete Beträge summieren — dann stimmt die Summe der angezeigten
+        Zeilen mit der angezeigten Einheitensumme überein."""
         e = einheiten.setdefault(name, {"kosten": 0.0, "posten": []})
-        e["kosten"] += betrag
+        e["kosten"] = _r2(e["kosten"] + betrag)
         e["posten"].append({"quelle": quelle, "m3": round(m3, 3),
-                             "kosten": _r2(betrag)})
+                            "kosten": betrag})
 
     zaehler_zeige = []
+    verteilt = 0.0            # Summe aller schon vergebenen Zähler-Cent
     for z in zaehler:
-        betrag = preis * max(0.0, z.m3)
+        betrag = _r2(preis * max(0.0, z.m3))
+        verteilt = _r2(verteilt + betrag)
         zaehler_zeige.append({"name": z.name, "einheit": z.einheit,
-                              "m3": round(z.m3, 3), "kosten": _r2(betrag)})
+                              "m3": round(z.m3, 3), "kosten": betrag})
         ziele = z.ziele()
         if len(ziele) <= 1:
             # Einzelzuordnung (oder gar keine Einheit) — alles auf eine Einheit.
@@ -119,30 +127,52 @@ def verrechne(komponenten: dict[str, float], gesamt_m3: float,
         # nach Person·Mietdauer (dieselben `rest_gewichte`, beschränkt auf genau
         # diese Einheiten). Haben sie keine Gewichte, zu gleichen Teilen.
         gew = {name: max(0.0, rest_gewichte.get(name, 0.0)) for name in ziele}
-        summe_gew = sum(gew.values())
-        if summe_gew <= 0:
+        if sum(gew.values()) <= 0:
             gew = {name: 1.0 for name in ziele}
-            summe_gew = float(len(ziele))
-        for name in ziele:
-            anteil = gew[name] / summe_gew
-            zu_einheit(name, betrag * anteil, f"Zähler {z.name}", z.m3 * anteil)
+        summe_gew = sum(gew.values())
+        # Cent-genau (Größte-Reste) statt je Einheit einzeln gerundet: sonst
+        # fehlt oder entsteht bei jedem Zähler bis zu ein Cent.
+        for name, teil in verteile_nach_wert(betrag, gew).items():
+            zu_einheit(name, teil, f"Zähler {z.name}",
+                       z.m3 * gew[name] / summe_gew)
 
-    # Rest per Gewicht auf die Haupthaus-Einheiten.
-    gew_summe = sum(max(0.0, g) for g in rest_gewichte.values())
-    if gew_summe > 0:
-        for name, gew in rest_gewichte.items():
-            anteil = max(0.0, gew) / gew_summe
-            betrag = rest_kosten * anteil
-            zu_einheit(name, betrag, "Anteil Haupthaus (Personen·Mietdauer)",
-                       rest_m3 * anteil)
+    # Der Rest ist die Ausgleichsgröße: was nach Zählern und Garten von der
+    # Rechnung übrig ist. Als Differenz gerechnet — nicht aus preis × m³ —,
+    # damit Σ Einheiten + Garten auf den Cent genau die Gesamtkosten ergibt.
+    # Darin steckt auch der Aufschlag, den das Gartenwasser weniger trägt
+    # (N107: Garten zahlt nur Frischwasser, die Rechnung ist trotzdem fällig).
+    rest_kosten = _r2(gesamt_kosten - garten_kosten - verteilt)
 
-    for e in einheiten.values():
-        e["kosten"] = _r2(e["kosten"])
+    if rest_m3 < 0 or rest_kosten < 0:
+        # Unterzähler über dem Hauptzähler oder Garten größer als der Rest: die
+        # Ablesungen passen nicht zusammen. Früher bekam eine Einheit dafür
+        # stillschweigend einen Minusbetrag — das ist keine Abrechnung, sondern
+        # ein Datenfehler, und er wird benannt statt verteilt.
+        warnungen.append(
+            f"Die Unterzähler und das Gartenwasser übersteigen den Hauptzähler "
+            f"um {abs(round(rest_m3, 2)):g} m³ ({abs(rest_kosten):.2f} €). "
+            "Bitte die Ablesungen prüfen — es wird kein negativer Anteil "
+            "verteilt, deshalb geht die Kontrollsumme hier nicht auf.")
+        rest_kosten = 0.0
+        rest_m3 = 0.0
+
+    # Rest per Gewicht auf die Haupthaus-Einheiten — ebenfalls cent-genau.
+    gewichte = {name: max(0.0, g) for name, g in rest_gewichte.items()}
+    gew_summe = sum(gewichte.values())
+    if gew_summe > 0 and rest_kosten:
+        for name, teil in verteile_nach_wert(rest_kosten, gewichte).items():
+            zu_einheit(name, teil, "Anteil Haupthaus (Personen·Mietdauer)",
+                       rest_m3 * gewichte[name] / gew_summe)
+    elif rest_kosten:
+        warnungen.append(
+            f"{rest_kosten:.2f} € Restverbrauch lassen sich keiner Einheit "
+            "zuordnen — es ist keine Einheit für den Rest hinterlegt.")
+
     kontrolle = _r2(sum(e["kosten"] for e in einheiten.values()) + garten_kosten)
 
     return WasserErgebnis(
         gesamt_kosten=gesamt_kosten, gesamt_m3=round(gesamt_m3, 3),
         preis_m3=round(preis, 4), garten_m3=round(max(0.0, garten_m3), 3),
-        garten_kosten=_r2(garten_kosten), rest_m3=round(rest_m3, 3),
-        rest_kosten=_r2(rest_kosten), zaehler=zaehler_zeige,
-        einheiten=einheiten, kontrolle=kontrolle)
+        garten_kosten=garten_kosten, rest_m3=round(rest_m3, 3),
+        rest_kosten=rest_kosten, zaehler=zaehler_zeige,
+        einheiten=einheiten, kontrolle=kontrolle, warnungen=warnungen)
