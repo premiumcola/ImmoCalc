@@ -1580,9 +1580,17 @@ function wasserBlockHtml(liste) {
 function zaehlerPanelHtml(block, zaehler, blockVon) {
   const teil = zaehler.filter(z => blockVon.get(z.id) === block);
   if (!teil.length) return '';
+  // N96 — in Wasser und Heizung sind Zähler ohne eigenen Hauptzähler die BASIS
+  // (Gesamt Kaltwasser, Boiler-Zulauf, Liter Öl): ihr Verbrauch wird über die
+  // Unterzähler bzw. die §9-/HKV-Rechnung verteilt, nicht direkt einer Einheit
+  // zugeschlagen. Sie bekommen deshalb keinen Einheiten-Chooser. Im Strom-Block
+  // sind eigenständige Zähler dagegen sehr wohl einer Einheit zuzuordnen.
+  const basisOhneChooser = block === 'Heizung';
   const inner = block === 'Wasser'
     ? wasserBlockHtml(teil)
-    : teil.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('');
+    : teil.map(z => meterZeileHtml(z, {
+        rest: z.typ === 'rest',
+        keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');
   const offen = zaehlerOffen.has(block);
   // N88 — das gemeinsame Kategorie-Datum ist entfallen: das Ablesedatum steht
   // wieder an der Zeile, zu der es gehört. Ein zweiter Ort für dieselbe Angabe
@@ -4277,8 +4285,9 @@ async function anfangstandSpeichern(input) {
   const datumEl = input.closest('.zu-zeile')?.querySelector('[data-anfangdatum]');
   const datum = datumEl?.value || ablesungMaske?.zeitraum?.start || daten.start;
   try {
-    await api(`/zaehler/${id}/anfangsstand`,
-      { method: 'POST', body: { stand, datum, zeitraum_id: Number(zid) } });
+    // N96 — der Anfangsstand hängt an KEINEM Zeitraum (sonst wird er als
+    // Endstand dieser Periode gelesen und überschreibt ihn sichtbar).
+    await api(`/zaehler/${id}/anfangsstand`, { method: 'POST', body: { stand, datum } });
     ablesungMaske = await api(`/zeitraeume/${zid}/ablesung`);
     chipMap = baueChipMap();
     melde('Anfangsstand gespeichert', 'pos');

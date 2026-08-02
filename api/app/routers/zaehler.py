@@ -227,7 +227,11 @@ def anfangsstand_setzen(zid: int, data: AnfangsstandIn,
         or next((a for a in abls if a.zeitraum_id is None), None)
     a = vorhanden or Ablesung(zaehler_id=zid, datum=data.datum, stand=data.stand)
     a.datum, a.stand = data.datum, data.stand
-    a.zeitraum_id = data.zeitraum_id
+    # N96 — der Anfangsstand hängt an KEINEM Zeitraum. Wurde hier die mitge-
+    # schickte `zeitraum_id` gesetzt, trug er dieselbe Markierung wie der
+    # Endstand dieser Periode — und wurde als dieser gelesen: die Eingabe des
+    # Anfangs überschrieb sichtbar das Ende. Deshalb immer None.
+    a.zeitraum_id = None
     a.notiz = ANFANGSSTAND
     session.add(a)
     session.commit()
