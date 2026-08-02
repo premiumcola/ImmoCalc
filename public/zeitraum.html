@@ -1341,7 +1341,7 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
       ${startFeld}${endFeld}
       <span class="zu-verb">${rest ? '<small>berechnet</small> ' : ''}${verb}</span>
     </div>
-    ${rest || keinChooser ? '' : einheitChooserHtml(z)}
+    ${keinChooser ? '' : einheitChooserHtml(z)}
   </div>`;
 }
 
