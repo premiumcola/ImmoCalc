@@ -3997,8 +3997,28 @@ def _hole_beleg_bytes(session: Session, dokument_id: int) -> tuple[Dokument, byt
     return d, rohdaten
 
 
+def _ki_aus_db(d: Dokument) -> dict | None:
+    """N98 — die schon gespeicherte KI-Auslese eines Belegs, wenn sie taugt.
+
+    Ein KI-Aufruf kostet Geld und Zeit; das Ergebnis steht bereits am Beleg
+    (`ki_einordnung`/`ki_felder`/`ki_immobilie`, dazu Betrag und Belegdatum).
+    Wer denselben Beleg erneut ansieht, soll die gespeicherte Einschätzung
+    bekommen statt eines neuen Aufrufs — neu gelesen wird nur ausdrücklich über
+    `/neu-analysieren`. `None`, solange noch nichts gespeichert ist."""
+    if not (d.ki_einordnung or d.ki_felder):
+        return None
+    return {
+        "betrag": d.betrag, "datum": d.belegdatum.isoformat() if d.belegdatum else None,
+        "jahr": d.jahr, "kategorie": d.kategorie, "kostenart": d.kostenart,
+        "sache": d.beschreibung or "", "zusammenfassung": d.ki_einordnung,
+        "einordnung": d.ki_einordnung, "immobilie": d.ki_immobilie,
+        "einheit": getattr(d, "ki_einheit", "") or "",
+        "felder": d.ki_felder or {}, "ki": True, "aus_db": True,
+    }
+
+
 @router.get("/{dokument_id}/erkennen")
-def erkennen_aus_ablage(dokument_id: int,
+def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
                         session: Session = Depends(get_session)) -> dict:
     """Liest Betrag, Datum und Art aus einem Beleg, der schon in der Cloud liegt.
 
@@ -4017,6 +4037,13 @@ def erkennen_aus_ablage(dokument_id: int,
     Einschätzung später wieder sehen, ohne den Beleg neu lesen zu lassen. Sonst
     rein lesend — die Datei wird nicht verschoben.
     """
+    # N98 — zuerst die gespeicherte Auslese: derselbe Beleg wird beim Blättern
+    # im Eingang immer wieder angesehen, und jeder Aufruf hier kostete bisher
+    # einen KI-Call. `?neu=true` (bzw. `/neu-analysieren`) liest bewusst neu.
+    if not neu:
+        gespeichert = _ki_aus_db(session.get(Dokument, dokument_id) or Dokument())
+        if gespeichert:
+            return gespeichert
     d, rohdaten = _hole_beleg_bytes(session, dokument_id)
     # Dateiname als Kontext mitgeben — dieselbe KI-gestützte Auslese wie beim
     # frisch abfotografierten Beleg (CCLXVIII). CCLXIX: auch die Erkennungs-
