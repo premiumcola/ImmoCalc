@@ -397,7 +397,7 @@ export const BEGRIFFE = [
     kurz: 'Das umfassende Recht, eine Immobilie zu nutzen und ihre Erträge (Mieten) zu ziehen, obwohl sie einem anderen gehört. Häufig bei Übertragung zu Lebzeiten.',
     lang:
       'Der Nießbrauch gibt einer Person das Recht, eine fremde Immobilie vollständig zu nutzen und alle Erträge — vor allem die Mieten — zu behalten, obwohl das Eigentum bei jemand anderem liegt. Er wird in Abteilung II des [[grundbuch]]s eingetragen. Sehr häufig ist der Vorbehaltsnießbrauch: Eltern übertragen die Immobilie zu Lebzeiten an die Kinder, behalten sich aber den Nießbrauch vor und beziehen weiter die Mieten.\n\n' +
-      'Diese Gestaltung gibt es vor allem zur vorweggenommenen Erbfolge: Vermögen wird früh übertragen (das spart später Erbschaftsteuer, weil der Nießbrauch den Wert der Schenkung mindert), während die Altentleration abgesichert bleibt.\n\n' +
+      'Diese Gestaltung gibt es vor allem zur vorweggenommenen Erbfolge: Vermögen wird früh übertragen (das spart später Erbschaftsteuer, weil der Nießbrauch den Wert der Schenkung mindert), während die Altersversorgung des Übertragenden abgesichert bleibt.\n\n' +
       'Für dich als Eigentümer entscheidend: Solange der Nießbrauch besteht, bezieht *nicht du*, sondern der Nießbraucher die Einkünfte — er versteuert sie und macht die [[afa]] geltend (sofern er die Anschaffung getragen hat). Erst mit Erlöschen des Nießbrauchs (meist Tod) fließen dir Mieten und steuerliche Rechte zu. Prüfe bei einer [[erwerbsart|unentgeltlichen Übertragung]] genau, wem die Einkünfte zuzurechnen sind.',
     verwandt: ['grundbuch', 'dienstbarkeit', 'erwerbsart', 'afa'],
   },
