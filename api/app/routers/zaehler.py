@@ -464,13 +464,19 @@ def _echte_einheiten(namen: list[str], karte: dict[str, str],
     """
     if not karte:
         return [n for i, n in enumerate(namen) if n and n not in namen[:i]]
+    # N111 - hat der Nutzer am Zaehler eine ECHTE Einheit gewaehlt, gilt nur die.
+    # Alte Sammel-Labels wie „WG" werden dann NICHT zusaetzlich auf beide
+    # Haupthaus-Wohnungen aufgeloest: der Zaehler „Waschmaschine 1.OG" trug noch
+    # `["WG", "Wohung EG"]` und landete dadurch zur Haelfte in der falschen
+    # Wohnung (1,86 m3, obwohl der Zaehler ihr gar nicht zugeordnet ist).
+    hat_echte = any(karte.get(_label_schluessel(n)) for n in namen)
     out: list[str] = []
     for name in namen:
         s = _label_schluessel(name)
         treffer = karte.get(s)
         if treffer:
             ziele = [treffer]
-        elif s == _ALT_WG and haupthaus:
+        elif s == _ALT_WG and haupthaus and not hat_echte:
             ziele = list(haupthaus)
         else:
             ziele = []
