@@ -661,6 +661,17 @@
   .ho-neu input[type=number]{width:110px}
   .ho-neu input:focus{outline:none;border-color:var(--teal)}
   .ho-anfw{display:inline-flex;align-items:center;gap:6px;font:500 12px var(--body);color:var(--ink)}
+  /* N82b — Deckung (Kosten vs. Abschläge) unter dem Kostenfluss. */
+  .deckung{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;
+    border-top:1px solid var(--line)}
+  .deckung .dstat{flex:1 1 120px;background:var(--paper);border-radius:11px;padding:9px 12px}
+  .deckung.neg .dstat:last-child{background:#F6E7E2}
+  .deckung.pos .dstat:last-child{background:var(--teal-l)}
+  .deckung .dl{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft)}
+  .deckung .dv{display:block;font:700 15px var(--disp);color:var(--ink);margin-top:4px}
+  .deckung .dv.neg{color:var(--neg)} .deckung .dv.pos{color:var(--pos)}
+  .deckung .dhinweis{flex:1 1 100%;font:400 11.5px var(--body);color:var(--soft);align-self:center}
   .wd-hinweis{background:var(--amber-bg);color:var(--amber);border-radius:11px;
     padding:11px 13px;margin:0 0 14px;font:500 12.5px var(--body);line-height:1.5}
   .wd-laedt,.wd-leer{font:500 13px var(--body);color:var(--soft);padding:16px 2px;
@@ -2117,6 +2128,7 @@ async function zeichnen() {
       ? `<div class="karte"><h3>Kostenfluss · erfasste Positionen</h3>
           ${sankey(fluss.knoten, fluss.fluss,
                    { format: eurKurz, breite: window.innerWidth < 520 ? 260 : 540 })}
+          ${deckungHtml()}
          </div>`
       : '';
 
@@ -2198,6 +2210,31 @@ async function zeichnen() {
 
 /* Kurzes deutsches Datum aus ISO (für die Öl-Lieferungsliste). */
 const _isoKurz = iso => iso ? new Date(iso).toLocaleDateString('de-DE') : '';
+
+/* N82b — Deckung am Kostenfluss: wie viel der erfassten Kosten durch die
+   NK-Abschläge (Vorauszahlungen) gedeckt ist. Positiver Saldo = Guthaben für den
+   Mieter, negativer = Nachzahlung (Deckungslücke). Ohne erfasste Abschläge ein
+   ruhiger Hinweis statt einer Scheingenauigkeit. */
+function deckungHtml() {
+  const kosten = (daten.checkliste || []).reduce((s, k) => s + (k.betrag || 0), 0);
+  const abschlaege = (daten.vorauszahlungen || []).reduce((s, v) => s + (v.betrag || 0), 0);
+  if (kosten <= 0) return '';
+  if (abschlaege <= 0) {
+    return `<div class="deckung"><div class="dstat"><span class="dl">Kosten erfasst</span>
+        <span class="dv">${eur(kosten)}</span></div>
+      <div class="dhinweis">Noch keine Abschläge erfasst — Deckung nicht bezifferbar.</div></div>`;
+  }
+  const saldo = abschlaege - kosten;                 // + Guthaben · − Nachzahlung
+  const quote = Math.round(kosten / abschlaege * 100);
+  const nach = saldo < 0;
+  return `<div class="deckung ${nach ? 'neg' : 'pos'}">
+    <div class="dstat"><span class="dl">Abschläge</span><span class="dv">${eur(abschlaege)}</span></div>
+    <div class="dstat"><span class="dl">Kosten · Deckung</span>
+      <span class="dv">${eur(kosten)} · ${quote}%</span></div>
+    <div class="dstat"><span class="dl">${nach ? 'Nicht gedeckt · Nachzahlung' : 'Überdeckt · Guthaben'}</span>
+      <span class="dv ${nach ? 'neg' : 'pos'}">${eur(Math.abs(saldo))}</span></div>
+  </div>`;
+}
 
 /* N79 — eine Öl-Lieferung erfassen (Liter + Wert + Datum, optional Anfangs-
    bestand). Danach neu zeichnen → der Öl-Manager lädt frisch (FIFO aktualisiert). */
