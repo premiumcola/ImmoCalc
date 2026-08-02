@@ -1591,6 +1591,23 @@ function wasserBlockHtml(liste) {
     ['Gartenwasser', 'Gartenwasser']];
   for (const [art, titel] of nachArt) {
     const grp = rest.filter(z => wasserArt(z) === art);
+    // N94 — Gartenwasser hat oft KEINEN Zähler: dann eine manuelle Zeile, in
+    // die der Nutzer die m³ direkt einträgt. Technisch entsteht dabei ein Zähler
+    // mit Anfangsstand 0 — der eingetragene Wert IST damit der Verbrauch; die
+    // Einheit, die ihn trägt, wählt er über den vorhandenen Chooser.
+    if (art === 'Gartenwasser' && !grp.length) {
+      if (daten.status !== 'in Arbeit') continue;
+      teile.push(`<div class="zu-art"><div class="zu-at">Gartenwasser</div>
+        <div class="zu-kein">Ohne Zähler — die verbrauchten m³ hier eintragen.
+          Sie werden vom Rest Haupthaus abgezogen und nur mit dem
+          Frischwasser-Anteil berechnet.</div>
+        <div class="ho-neu">
+          <input type="number" step="0.1" data-garten-m3 placeholder="m³"
+            aria-label="Gartenwasser in m³">
+          <button class="btn" data-garten-anlegen>Gartenwasser eintragen</button>
+        </div></div>`);
+      continue;
+    }
     if (grp.length) teile.push(`<div class="zu-art"><div class="zu-at">${esc(titel)}</div>
       ${grp.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('')}</div>`);
   }
@@ -2508,6 +2525,33 @@ function belegWegDialog(dok) {
     dlg.querySelector('[data-nein]').onclick = () => dlg.close();
     dlg.showModal();
   });
+}
+
+/* N94 — Gartenwasser ohne Zähler: der eingetragene m³-Wert wird als Zähler mit
+   Anfangsstand 0 und Endstand = Wert abgelegt. Damit ist er ein ganz normaler
+   Verbrauch (die Wasser-Rechnung zieht ihn vom Rest ab und belastet ihn nur mit
+   dem Frischwasser-Anteil), und die tragende Einheit lässt sich danach über den
+   Chooser wählen. */
+async function gartenAnlegen(btn) {
+  const feld = btn.closest('.ho-neu')?.querySelector('[data-garten-m3]');
+  const m3wert = parseFloat(String(feld?.value || '').replace(',', '.'));
+  if (!(m3wert > 0)) { melde('m³ eintragen', 'neg'); return; }
+  try {
+    const neu = await api(`/objekte/${encodeURIComponent(daten.objekt)}/zaehler`, {
+      method: 'POST',
+      body: { name: 'Gartenwasser', art: 'Gartenwasser', kostenart: 'Wasser',
+              messeinheit: 'm³', typ: 'gemessen' },
+    });
+    const id = neu?.id;
+    if (id) {
+      await api(`/zaehler/${id}/anfangsstand`,
+        { method: 'POST', body: { stand: 0, datum: daten.start } });
+      await api(`/zaehler/${id}/ablesungen`, { method: 'POST',
+        body: { stand: m3wert, datum: daten.ende, zeitraum_id: Number(zid) } });
+    }
+    melde('Gartenwasser erfasst — jetzt die Einheit wählen', 'pos');
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
 /* N81 — einen Heizkörper (HKV) erfassen: Einheit, Nummer, Raum, Faktor und die
@@ -3459,6 +3503,9 @@ inhalt.addEventListener('click', async e => {
   // N95 — einen Beleg aus seiner Kostenposition herausnehmen (Datei bleibt).
   const belegWeg = e.target.closest('[data-beleg-loesen]');
   if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
+  // N94 — Gartenwasser ohne Zähler eintragen.
+  const gAdd = e.target.closest('[data-garten-anlegen]');
+  if (gAdd) return gartenAnlegen(gAdd);
   // N81 — Heizkörper (HKV) hinzufügen / entfernen.
   const hkvAdd = e.target.closest('[data-hkv-add]');
   if (hkvAdd) return hkvHinzufuegen(hkvAdd);
