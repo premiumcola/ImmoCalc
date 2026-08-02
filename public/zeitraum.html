@@ -1271,17 +1271,13 @@ function zaehlerEinheiten(z) {
   return z.einheit_bezug ? [z.einheit_bezug] : [];
 }
 
-/* Alle realen Einheiten-Bezeichnungen des Objekts (Schlüssel-Vorschau + Objekt-
-   Fallback) — dynamisch, nichts hartcodiert. */
+/* N77b — im Chooser NUR die echten, an der NK teilnehmenden Immobilien-Einheiten
+   (aus dem Objekt-Endpunkt, Garage/nk_abrechnung=false bereits herausgefiltert).
+   Bewusst NICHT die Partei-Namen oder veralteten Zähler-Labels („Büro", „WG",
+   „Roman & Alicia") — die stifteten nur Verwirrung; veraltete Zuordnungen
+   korrigiert der Nutzer, indem er die richtige Einheit wählt. */
 function alleEinheiten() {
-  const set = new Set();
-  for (const p of (schluessel?.parteien || [])) if (p.einheit) set.add(p.einheit);
-  for (const e of (objektEinheiten || [])) if (e) set.add(e);
-  // Bereits gesetzte (evtl. veraltete) Zuordnungen mitnehmen, damit die aktuelle
-  // Zuordnung eines Zählers immer sichtbar ist und sich abwählen lässt.
-  for (const z of (ablesungMaske?.zaehler || []))
-    for (const e of zaehlerEinheiten(z)) if (e) set.add(e);
-  return [...set];
+  return [...new Set((objektEinheiten || []).filter(Boolean))];
 }
 
 /* N58 — kompakter Mehrfach-Auswähler aller Einheiten für einen Zähler. Gewählte
@@ -1368,7 +1364,11 @@ function kaltwasserStruktur(liste) {
    Unterzähler als laufende Subtraktion (− Büro − Roman Bad − …), am Ende der
    Rest (WG), der per Person·Mietdauer auf die Haupthaus-Einheiten geht. */
 function kaltwasserBlockHtml(s) {
-  const subZeilen = s.subs.map(z => meterZeileHtml(z, { minus: true })).join('');
+  // N77a — alle Waschmaschinen zusammen ans Ende der Abzugskette (stabile Sortierung
+  // hält Kaltwasserzähler und die WM-Reihenfolge sonst unverändert).
+  const sortiert = [...s.subs].sort((a, b) =>
+    (wasserArt(a) === 'Waschmaschine' ? 1 : 0) - (wasserArt(b) === 'Waschmaschine' ? 1 : 0));
+  const subZeilen = sortiert.map(z => meterZeileHtml(z, { minus: true })).join('');
   const restZeile = s.rest ? meterZeileHtml(s.rest, { rest: true, label: 'Rest (WG)' }) : '';
   return `<div class="zu-art zu-kalt"><div class="zu-at">Kaltwasser</div>
     ${meterZeileHtml(s.haupt, { keinChooser: true })}
@@ -2717,8 +2717,11 @@ async function laden() {
   // Beiwerk: fehlt der Endpunkt, genügt die Schlüssel-Vorschau.
   try {
     const o = await api(`/objekte/${daten.objekt}`);
-    objektEinheiten = (o.einheiten || []).map(e => typeof e === 'string'
-      ? e : (e.bezeichnung || e.name || e.einheit || '')).filter(Boolean);
+    // N77c — nur Einheiten, die an der NK teilnehmen (Garage: nk_abrechnung=false → raus).
+    objektEinheiten = (o.einheiten || [])
+      .filter(e => typeof e === 'string' || e.nk_abrechnung !== false)
+      .map(e => typeof e === 'string'
+        ? e : (e.bezeichnung || e.name || e.einheit || '')).filter(Boolean);
   } catch {
     objektEinheiten = [];
   }
