@@ -153,9 +153,84 @@ try {
 const qm = n => n == null ? '—'
   : n.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' m²';
 
+/* N75 — Prozent mit Vorzeichen und ein € mit Vorzeichen. Positiv bekommt ein
+   „+", damit Wertzuwachs auf einen Blick als Zuwachs lesbar ist. */
+const proz = n => n == null ? '—'
+  : (n > 0 ? '+' : '') + n.toLocaleString('de-DE',
+      { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+const eurVz = n => n == null ? '—' : (n > 0 ? '+' : '') + eurKurz(n);
+const posneg = n => n == null ? '' : (n >= 0 ? 'pos' : 'neg');
+
 function kpiFeld(label, wert, klasse = '') {
   return `<div class="k"><span class="kl">${label}</span>
           <span class="kv ${klasse}">${wert}</span></div>`;
+}
+
+/* N75 — Gesamtrendite auf das gebundene Eigenkapital, inkl. Wertsteigerung:
+   (Wertzuwachs Ø/Jahr + Jahres-Cashflow) ÷ Eigenkapital. Der Wertzuwachs
+   kommt aus /vermoegen, der Jahres-Cashflow aus der Auswertung (Eigentümer-
+   sicht). Liefert das Backend die Zahl schon fertig, gilt sie; sonst wird sie
+   hier aus den Bausteinen zusammengesetzt. */
+function gesamtrendite(z, saldoJahr) {
+  if (z.gesamtrendite_pa != null) return z.gesamtrendite_pa;
+  if (z.wertzuwachs_pa == null || !z.eigenkapital || z.eigenkapital <= 0
+      || saldoJahr == null) return null;
+  return Math.round((z.wertzuwachs_pa + saldoJahr) / z.eigenkapital * 1000) / 10;
+}
+
+/* N75 — Wertzuwachs & Gesamtrendite je Objekt. Ruhig, drei Kennzahlen:
+   Wertzuwachs Ø/Jahr, Wertsteigerung % p. a. (CAGR) und die Gesamtrendite.
+   Bei gewähltem Objekt als KPI-Kacheln, sonst als Tabelle über alle Objekte,
+   die einen Kaufpreis und einen Verkehrswert haben. */
+function wertentwicklungHtml(besitz, daten, objekt) {
+  if (!besitz) return '';
+  const saldo = new Map((daten.objekte || []).map(o => [o.slug, o.saldo]));
+  const alle = besitz.objekte.filter(z => z.wertzuwachs != null
+                                          && z.haltedauer_jahre != null);
+  const zeilen = objekt ? alle.filter(z => z.slug === objekt) : alle;
+  if (!zeilen.length) return '';
+
+  const sub = `<div class="kartesub">Wertsteigerung = durchschnittliche
+    jährliche Wertsteigerung (CAGR). Gesamtrendite = Wertzuwachs Ø/Jahr plus
+    Jahres-Cashflow, bezogen auf das gebundene Eigenkapital.</div>`;
+
+  if (objekt) {
+    const z = zeilen[0];
+    const gr = gesamtrendite(z, saldo.get(z.slug));
+    const seit = z.haltedauer_jahre.toLocaleString('de-DE',
+      { maximumFractionDigits: 1 });
+    return `<div class="karte">
+      <h3>Wertentwicklung</h3>
+      ${sub}
+      <div class="kpi" style="margin-bottom:0">
+        ${kpiFeld('Wertzuwachs/Jahr', eurVz(z.wertzuwachs_pa), posneg(z.wertzuwachs_pa))}
+        ${kpiFeld('Wertsteigerung p. a.', proz(z.wertsteigerung_pa), posneg(z.wertsteigerung_pa))}
+        ${kpiFeld('Gesamtrendite p. a.', proz(gr), posneg(gr))}
+      </div>
+      <div class="chartleer" style="padding:12px 0 0">
+        Insgesamt ${eurVz(z.wertzuwachs)} seit dem Kauf vor ${seit} Jahren${
+          gr == null ? ' — Gesamtrendite braucht ein Eigenkapital > 0.' : '.'}</div>
+    </div>`;
+  }
+
+  const tab = zeilen.map(z => {
+    const gr = gesamtrendite(z, saldo.get(z.slug));
+    return `<tr>
+      <td>${esc(z.titel || z.name)}</td>
+      <td class="${posneg(z.wertzuwachs_pa)}">${eurVz(z.wertzuwachs_pa)}</td>
+      <td class="${posneg(z.wertsteigerung_pa)}">${proz(z.wertsteigerung_pa)}</td>
+      <td class="${posneg(gr)}">${proz(gr)}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="karte">
+      <h3>Wertentwicklung je Objekt</h3>
+      ${sub}
+      <table class="tabelle">
+        <thead><tr><th>Objekt</th><th>+ €/Jahr</th><th>% p. a.</th>
+          <th>Gesamt</th></tr></thead>
+        <tbody>${tab}</tbody>
+      </table>
+    </div>`;
 }
 
 /* CCIX — das Rücklagenkonto als eigene Zeile: zurückgelegtes Eigentümergeld,
@@ -349,6 +424,8 @@ async function zeichnen() {
     </div>
 
     ${vermoegenHtml(besitz, objekt)}
+
+    ${wertentwicklungHtml(besitz, daten, objekt)}
 
     ${eigenkostenHtml(daten, jahr, besitz, objekt)}
 

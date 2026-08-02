@@ -45,6 +45,89 @@ def _wert(objekt) -> float | None:
 
 
 # --------------------------------------------------------------------------
+# N75 — Wertzuwachs & Gesamtrendite je Objekt
+#
+# Fachbegriffe (bestätigt über Homeday/Immo-Rechner):
+#   • Wertsteigerung % p. a. = CAGR (Compound Annual Growth Rate) des
+#     Objektwerts — die durchschnittliche jährliche Wertsteigerung.
+#   • Gesamtrendite auf das Eigenkapital = (Wertzuwachs Ø/Jahr + Jahres-
+#     Cashflow) ÷ eingesetztes Eigenkapital. Die reine Cashflow-Rendite
+#     berücksichtigt nur die Miete; erst mit der Wertsteigerung ergibt sich
+#     die „Gesamtrendite auf Eigenkapital" — die Kernzahl, was das Objekt
+#     netto p. a. eingebracht hat.
+#
+# Gewählte Eigenkapital-Basis: das in dieser Datei bereits berechnete
+# `eigenkapital` (= Wert − Restschuld + Bausparguthaben), also das **aktuell
+# gebundene Eigenkapital**. Bewusst nicht das ursprünglich eingesetzte Kapital:
+# das liegt nicht vor (die ursprüngliche Darlehenssumme ist nicht erfasst).
+# Die Zahl beantwortet damit „was verzinst sich mein heute gebundenes
+# Eigenkapital p. a., inklusive Wertsteigerung".
+#
+# Jede Kennzahl ist None, sobald ihre Grundlage fehlt — nichts wird erfunden.
+# Annualisierte Kennzahlen (Ø/Jahr, CAGR, Gesamtrendite) erst ab einer halben
+# Haltedauer-Jahr, sonst hochgerechnete Scheingenauigkeit aus wenigen Wochen.
+# --------------------------------------------------------------------------
+
+_MIN_HALTEDAUER = 0.5   # Jahre — darunter keine annualisierten Kennzahlen
+
+
+def wertzuwachs_kennzahlen(kaufpreis: float | None,
+                           verkehrswert: float | None,
+                           kaufdatum: date | None,
+                           eigenkapital: float | None = None,
+                           cashflow_jahr: float | None = None,
+                           stichtag: date | None = None) -> dict:
+    """Wertzuwachs- und Renditekennzahlen eines Objekts (N75).
+
+    Alle Werte sind `None`, solange ihre Grundlage fehlt. `cashflow_jahr` ist
+    der Jahres-Cashflow des Eigentümers (i. d. R. negativ) — fehlt er, bleibt
+    die Gesamtrendite offen, die übrigen Kennzahlen stehen trotzdem."""
+    heute = stichtag or date.today()
+    kp = float(kaufpreis) if kaufpreis else None
+    vw = float(verkehrswert) if verkehrswert else None
+
+    leer = {
+        "wertzuwachs": None,
+        "haltedauer_jahre": None,
+        "wertzuwachs_pa": None,
+        "wertzuwachs_pm": None,
+        "wertsteigerung_pa": None,
+        "gesamtrendite_pa": None,
+        "gesamtrendite_basis": None,
+    }
+
+    # Wertzuwachs absolut — braucht beides: aktuellen Wert und Kaufpreis.
+    if kp is None or kp <= 0 or vw is None:
+        return leer
+    zuwachs = round(vw - kp, 2)
+
+    # Haltedauer — nur mit Kaufdatum, und nur wenn es in der Vergangenheit liegt.
+    if kaufdatum is None:
+        return {**leer, "wertzuwachs": zuwachs}
+    haltedauer = (heute - kaufdatum).days / 365.25
+    if haltedauer <= 0:
+        return {**leer, "wertzuwachs": zuwachs}
+    out = {**leer, "wertzuwachs": zuwachs,
+           "haltedauer_jahre": round(haltedauer, 2)}
+
+    # Annualisierte Kennzahlen erst ab einer halben Haltedauer-Jahr.
+    if haltedauer < _MIN_HALTEDAUER:
+        return out
+    pa = zuwachs / haltedauer
+    out["wertzuwachs_pa"] = round(pa, 2)
+    out["wertzuwachs_pm"] = round(pa / 12, 2)
+    # CAGR — durchschnittliche jährliche Wertsteigerung in Prozent.
+    out["wertsteigerung_pa"] = round(((vw / kp) ** (1 / haltedauer) - 1) * 100, 2)
+
+    # Gesamtrendite auf das (gebundene) Eigenkapital, inkl. Wertsteigerung.
+    if eigenkapital and eigenkapital > 0:
+        ertrag = pa + float(cashflow_jahr or 0)
+        out["gesamtrendite_pa"] = round(ertrag / eigenkapital * 100, 2)
+        out["gesamtrendite_basis"] = round(float(eigenkapital), 2)
+    return out
+
+
+# --------------------------------------------------------------------------
 # Eigentum je Einheit (CLXI/CLXII/CLXXXVI)
 #
 # Ein Anteil hängt entweder am ganzen Objekt (`einheit` leer) oder an einer
@@ -415,7 +498,8 @@ def sparrate_jahr(kredite: list) -> float:
 
 def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
                      staende: dict[int, list] | None = None,
-                     stichtag: date | None = None) -> dict:
+                     stichtag: date | None = None,
+                     cashflow_jahr: float | None = None) -> dict:
     """Vermögenslage eines Objekts. `anteile` sind Tausendstel je Eigentümer.
 
     `staende` sind die Jahresstände je Kredit-id. Ohne sie zählt weiter das
@@ -459,6 +543,14 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
     hausgeld_jahr = (round(hausgeld_monatlich * 12, 2)
                      if hausgeld_monatlich else 0.0)
 
+    # N75 — Wertzuwachs & Gesamtrendite. Rein additiv; jede Kennzahl None,
+    # solange ihre Grundlage fehlt. `gesamtrendite_pa` braucht den Jahres-
+    # Cashflow (`cashflow_jahr`); wird er nicht mitgegeben, bleibt sie offen
+    # und der Aufrufer (Frontend) setzt sie aus Vermögen und Cashflow zusammen.
+    kennzahlen = wertzuwachs_kennzahlen(
+        objekt.kaufpreis, objekt.verkehrswert, objekt.kaufdatum,
+        eigenkapital=eigen, cashflow_jahr=cashflow_jahr, stichtag=stichtag)
+
     return {
         "slug": objekt.slug,
         "name": objekt.name,
@@ -494,6 +586,10 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
         "weg": bool(objekt.weg),
         "hausgeld_monatlich": hausgeld_monatlich,
         "hausgeld_jahr": hausgeld_jahr,
+        # N75 — Wertzuwachs & Gesamtrendite (siehe wertzuwachs_kennzahlen).
+        "kaufdatum": objekt.kaufdatum.isoformat() if objekt.kaufdatum else None,
+        "erwerbsart": objekt.erwerbsart,
+        **kennzahlen,
     }
 
 
@@ -526,5 +622,10 @@ def gesamt(zeilen: list[dict]) -> dict:
         "ruecklage_saldo": summe("ruecklage_saldo"),
         "ruecklage_monatlich": summe("ruecklage_monatlich"),
         "hausgeld_jahr": summe("hausgeld_jahr"),
+        # N75 — additive Kennzahlen über alle Objekte. Quoten (CAGR,
+        # Gesamtrendite) sind nicht additiv und werden bewusst nicht summiert;
+        # eine Gesamtsicht darauf setzt der Aufrufer aus den Summen zusammen.
+        "wertzuwachs": summe("wertzuwachs"),
+        "wertzuwachs_pa": summe("wertzuwachs_pa"),
         "ohne_wert": sum(1 for z in zeilen if z["wert"] is None),
     }

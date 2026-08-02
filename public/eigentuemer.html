@@ -95,6 +95,10 @@
   /* CCCLXXVII — Objektwert/Beleihung je Beteiligung + Investitionsspielraum. */
   .bo-wrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
   .bvz{font:500 11px var(--mono);color:var(--soft)}
+  /* N75 — dezente Renditezeile je Beteiligung; Zahlen grün/rot hervorgehoben. */
+  .brend{font:500 10.5px var(--mono);color:var(--soft);overflow-wrap:anywhere}
+  .brend b{font-weight:600}
+  .brend b.pos{color:var(--pos)} .brend b.neg{color:var(--neg)}
   .invest{border-top:1px solid var(--line);padding:12px 14px;background:var(--paper)}
   .invest .il{font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;
     color:var(--teal-d)}
@@ -370,6 +374,54 @@ async function uebersichtLaden() {
   }
 }
 
+/* N75 — Wertsteigerung & Gesamtrendite je Objekt, per slug. Beide Kennzahlen
+   sind Quoten und damit anteilsunabhängig: die Rendite auf den Bruchteil einer
+   Beteiligung ist dieselbe wie die auf das ganze Objekt. Deshalb genügt der
+   Objektwert aus /vermoegen; der Jahres-Cashflow kommt aus der Auswertung in
+   Eigentümersicht. Best effort — hängt der Abruf, bleibt die Zeile schlicht. */
+let rendite = new Map();
+async function renditeLaden() {
+  try {
+    const jahr = new Date().getFullYear();
+    const [besitz, ausw] = await Promise.all([
+      api('/vermoegen'),
+      api('/auswertung?jahr=' + jahr + '&sicht=eigentuemer').catch(() => null),
+    ]);
+    const saldo = new Map((ausw?.objekte || []).map(o => [o.slug, o.saldo]));
+    rendite = new Map((besitz.objekte || []).map(z => {
+      const gr = (z.gesamtrendite_pa != null) ? z.gesamtrendite_pa
+        : (z.wertzuwachs_pa != null && z.eigenkapital > 0
+           && saldo.get(z.slug) != null)
+          ? Math.round((z.wertzuwachs_pa + saldo.get(z.slug))
+                       / z.eigenkapital * 1000) / 10
+          : null;
+      return [z.slug, { cagr: z.wertsteigerung_pa, gesamt: gr }];
+    }));
+  } catch {
+    rendite = new Map();
+  }
+}
+
+/* Ein Prozentwert mit Vorzeichen; positiv grün, negativ rot. */
+const prozVz = n => n == null ? '—'
+  : (n > 0 ? '+' : '') + n.toLocaleString('de-DE',
+      { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+
+/* Die dezente Renditezeile unter einer Beteiligung. Nichts, solange keine
+   Kennzahl vorliegt (kein Kaufpreis/Verkehrswert/Kaufdatum). */
+function renditeHtml(slug) {
+  const r = rendite.get(slug);
+  if (!r || (r.cagr == null && r.gesamt == null)) return '';
+  const teile = [];
+  if (r.cagr != null)
+    teile.push(`Wertsteig. <b class="${r.cagr >= 0 ? 'pos' : 'neg'}">${
+      prozVz(r.cagr)}</b> p. a.`);
+  if (r.gesamt != null)
+    teile.push(`Gesamtrendite <b class="${r.gesamt >= 0 ? 'pos' : 'neg'}">${
+      prozVz(r.gesamt)}</b> p. a.`);
+  return `<span class="brend">${teile.join(' · ')}</span>`;
+}
+
 /* Die drei Kennzahlen einer Person: nur das, was ihr zugerechnet wird. */
 function eigwertHtml(id) {
   const u = uebersicht.get(id);
@@ -438,7 +490,8 @@ function betObjekt(o) {
 
 async function eignerLaden() {
   try {
-    [eigner] = await Promise.all([api('/eigentuemer'), uebersichtLaden()]);
+    [eigner] = await Promise.all([api('/eigentuemer'), uebersichtLaden(),
+                                  renditeLaden()]);
   } catch {
     liste.innerHTML = '';
     sub.textContent = 'API nicht erreichbar';
@@ -476,7 +529,7 @@ async function eignerLaden() {
     };
     const bet = e.objekte.length
       ? e.objekte.map(o => `<div class="bet">
-            <span class="bo-wrap">${betObjekt(o)}${objWert(o)}</span>
+            <span class="bo-wrap">${betObjekt(o)}${objWert(o)}${renditeHtml(o.slug)}</span>
             <span class="bw">${promille(o.promille)}</span>
             <span class="chip ${o.rolle === 'Alleineigentümer'
               ? 'teal' : ''}">${esc(o.rolle)}</span>
