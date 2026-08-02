@@ -555,6 +555,16 @@
   .zu-panel.offen .zu-chev{transform:rotate(180deg)}
   .zu-inhalt{display:none;padding:0 15px 12px}
   .zu-panel.offen .zu-inhalt{display:block}
+  /* N77d — gemeinsames Ablesedatum je Kategorie, oben im Panel. */
+  .zu-katdatum{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;
+    padding:12px 13px;margin:0 0 6px;background:var(--paper);border-radius:12px}
+  .zu-kdl{font:600 8.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;
+    color:var(--soft)}
+  .zu-katdatum label{display:inline-flex;align-items:center;gap:7px;
+    font:600 11px var(--body);color:var(--ink)}
+  .zu-katdatum input[type=date]{border:1.5px solid var(--line);border-radius:10px;
+    padding:9px 11px;min-height:44px;font:500 12px var(--body);background:var(--sheet)}
+  .zu-katdatum input[type=date]:focus{outline:none;border-color:var(--teal)}
   .zu-block{margin-top:14px}
   .zu-bt{display:flex;align-items:center;gap:8px;font:700 12.5px var(--disp);
     color:var(--ink);margin-bottom:8px}
@@ -579,10 +589,8 @@
     border-radius:9px;padding:9px 10px;font:600 12px var(--mono);
     background:var(--sheet);color:var(--ink)}
   .zu-feld input[type=text]{width:100px;min-height:44px;text-align:right}
-  .zu-feld input.zu-datum{width:138px;font-size:11px;min-height:40px}
   .zu-feld input:focus{outline:none;border-color:var(--teal)}
   .zu-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap;padding:6px 0 0}
-  .zu-dt{font:500 10.5px var(--mono);color:var(--soft)}
   .zu-verb{flex:none;min-width:78px;align-self:center;text-align:right;
     font:700 12.5px var(--mono);color:var(--soft);white-space:nowrap}
   .zu-verb small{font:600 8.5px var(--mono);color:var(--soft);text-transform:uppercase}
@@ -606,7 +614,7 @@
   @media(max-width:520px){
     .zu-name{min-width:100%}
     .zu-feld{flex:1 1 calc(50% - 6px);min-width:0}
-    .zu-feld input[type=text],.zu-feld input.zu-datum{width:100%}
+    .zu-feld input[type=text]{width:100%}
     .zu-verb{min-width:0;flex:1 1 100%;text-align:right;margin-top:2px}
   }
 
@@ -1202,12 +1210,6 @@ function generischeLabels(zaehler) {
 /* Wasser als m³ (deutsch, bis 2 Nachkommastellen). */
 const m3 = n => `${(n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 2 })} m³`;
 
-/* ISO-Datum (yyyy-mm-dd) kurz als dd.mm.yyyy — für die Ablese-Daten (N60b). */
-const datumKurz = iso => {
-  const m = /(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
-  return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso || '');
-};
-
 /* N57 — diese Wasser-Bestandteile leben nur noch im Detail-Popup und werden aus
    der Checkliste herausgefiltert: Abwasser/Schmutzwasser, Niederschlagswasser
    und der Kaltwasserzähler. Die reine „Wasser"-Sammelposition bleibt sichtbar. */
@@ -1305,25 +1307,19 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
   const fertig = z.verbrauch != null
     && (rest || (z.vorwert != null && z.ablesung != null));
   const startStand = z.vorwert ? zahl(z.vorwert.stand) : '';
-  const startDatum = z.vorwert?.datum || ablesungMaske?.zeitraum?.start || daten.start || '';
   const endStand = z.ablesung ? zahl(z.ablesung.stand) : '';
-  const endDatum = z.ablesung?.datum || ablesungMaske?.zeitraum?.ende || daten.ende || '';
 
-  const standFeld = (kind, wert, datum, standAttr, datumAttr) => bearbeitbar
+  // N77d — je Zeile NUR noch die Stände; das Ablesedatum steht einmal oben je
+  // Kategorie (alle Zähler werden am selben Tag abgelesen).
+  const standFeld = (kind, wert, standAttr) => bearbeitbar
     ? `<div class="zu-feld"><label>${kind}</label>
         <input type="text" inputmode="decimal" ${standAttr}="${z.id}"
-          value="${wert}" placeholder="Stand" aria-label="${kind}sstand ${esc(z.name)}">
-        <input type="date" class="zu-datum" ${datumAttr}="${z.id}"
-          value="${datum}" aria-label="Datum ${kind}">
-      </div>`
+          value="${wert}" placeholder="Stand" aria-label="${kind}sstand ${esc(z.name)}"></div>`
     : `<div class="zu-feld"><label>${kind}</label>
-        <span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span>
-        ${datum && wert ? `<span class="zu-dt">${datumKurz(datum)}</span>` : ''}</div>`;
+        <span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span></div>`;
 
-  const startFeld = rest ? ''
-    : standFeld('Anfang', startStand, startDatum, 'data-anfangstand', 'data-anfangdatum');
-  const endFeld = rest ? ''
-    : standFeld('Ende', endStand, endDatum, 'data-endstand', 'data-enddatum');
+  const startFeld = rest ? '' : standFeld('Anfang', startStand, 'data-anfangstand');
+  const endFeld = rest ? '' : standFeld('Ende', endStand, 'data-endstand');
 
   const verb = z.verbrauch != null ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—';
   return `<div class="zu-zeile${fertig ? ' fertig' : ''}${minus ? ' minus' : ''}${
@@ -1413,14 +1409,28 @@ function zaehlerPanelHtml(block, zaehler, blockVon) {
     ? wasserBlockHtml(teil)
     : teil.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('');
   const offen = zaehlerOffen.has(block);
+  // N77d — ein gemeinsames Anfangs-/Enddatum je Kategorie (alle Zähler am selben
+  // Tag abgelesen). Vorbelegt aus einem vorhandenen Stand, sonst den Perioden-
+  // grenzen. Ändern schreibt das Datum auf alle erfassten Stände des Blocks.
+  const anfDatum = teil.map(z => z.vorwert?.datum).find(Boolean)
+    || ablesungMaske?.zeitraum?.start || daten.start || '';
+  const endDatum = teil.map(z => z.ablesung?.datum).find(Boolean)
+    || ablesungMaske?.zeitraum?.ende || daten.ende || '';
+  const datumKopf = daten.status === 'in Arbeit'
+    ? `<div class="zu-katdatum">
+        <span class="zu-kdl">Abgelesen am</span>
+        <label>Anfang <input type="date" data-kat-anfangdatum value="${anfDatum}"
+          aria-label="Anfangsdatum ${esc(block)}"></label>
+        <label>Ende <input type="date" data-kat-enddatum value="${endDatum}"
+          aria-label="Enddatum ${esc(block)}"></label>
+      </div>` : '';
   return `<div class="zu-panel${offen ? ' offen' : ''}" data-zu-block="${esc(block)}">
     <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${offen}">
       <span class="zu-st">Zählerstände</span>
-      <span class="zu-meta">${teil.length} Zähler · Anfang + Ende ergeben den
-        Verbrauch</span>
+      <span class="zu-meta">${teil.length} Zähler · am selben Tag abgelesen</span>
       <span class="zu-chev">${CHEV_ICON}</span>
     </button>
-    <div class="zu-inhalt">${inner}</div>
+    <div class="zu-inhalt">${datumKopf}${inner}</div>
   </div>`;
 }
 
@@ -2774,8 +2784,10 @@ inhalt.addEventListener('change', e => {
   // CCCLXIII — Anbieter/Gewerk der Kostenart speichert sich genauso.
   if (e.target.matches('[data-anbieter]')) anbieterSpeichern(e.target);
   // N47/N60 — Anfang/Ende (Stand oder Datum) eines Zählers speichern.
-  if (e.target.matches('[data-endstand],[data-enddatum]')) endstandSpeichern(e.target);
-  if (e.target.matches('[data-anfangstand],[data-anfangdatum]')) anfangstandSpeichern(e.target);
+  if (e.target.matches('[data-endstand]')) endstandSpeichern(e.target);
+  if (e.target.matches('[data-anfangstand]')) anfangstandSpeichern(e.target);
+  // N77d — das gemeinsame Kategorie-Datum auf alle erfassten Stände schreiben.
+  if (e.target.matches('[data-kat-anfangdatum],[data-kat-enddatum]')) katDatumSpeichern(e.target);
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
   // CCCLXII — Kostenart der Position wechseln (Wähler + Freitext für eine neue).
@@ -3588,11 +3600,12 @@ function standAusFeld(el) {
    kommt aus dem begleitenden Datumsfeld (N60b), sonst aus dem Zeitraum-Ende.
    Danach die Ablese-Maske neu laden — erst dann trägt der Zähler `verbrauch`. */
 async function endstandSpeichern(input) {
-  const id = input.dataset.endstand || input.dataset.enddatum;
+  const id = input.dataset.endstand;
   const stand = standAusFeld(inhalt.querySelector(`[data-endstand="${id}"]`));
   if (stand === null) return;                          // kein Stand → nichts speichern
   if (Number.isNaN(stand)) { melde('Ungültiger Zählerstand', 'neg'); return; }
-  const datumEl = inhalt.querySelector(`[data-enddatum="${id}"]`);
+  // N77d — das Enddatum steht gemeinsam oben je Kategorie.
+  const datumEl = input.closest('.zu-panel')?.querySelector('[data-kat-enddatum]');
   const datum = datumEl?.value || ablesungMaske?.zeitraum?.ende || daten.ende;
   try {
     await api(`/zaehler/${id}/ablesungen`,
@@ -3609,11 +3622,12 @@ async function endstandSpeichern(input) {
 /* N60 — Anfangsstand eines Zählers aus der Übersicht speichern (idempotent, mit
    Datum). POST /zaehler/{id}/anfangsstand; danach die Ablese-Maske neu laden. */
 async function anfangstandSpeichern(input) {
-  const id = input.dataset.anfangstand || input.dataset.anfangdatum;
+  const id = input.dataset.anfangstand;
   const stand = standAusFeld(inhalt.querySelector(`[data-anfangstand="${id}"]`));
   if (stand === null) return;
   if (Number.isNaN(stand)) { melde('Ungültiger Anfangsstand', 'neg'); return; }
-  const datumEl = inhalt.querySelector(`[data-anfangdatum="${id}"]`);
+  // N77d — das Anfangsdatum steht gemeinsam oben je Kategorie.
+  const datumEl = input.closest('.zu-panel')?.querySelector('[data-kat-anfangdatum]');
   const datum = datumEl?.value || ablesungMaske?.zeitraum?.start || daten.start;
   try {
     await api(`/zaehler/${id}/anfangsstand`,
@@ -3624,6 +3638,35 @@ async function anfangstandSpeichern(input) {
     await zeichnen();
   } catch (fehler) {
     melde(fehler.message || 'Speichern fehlgeschlagen', 'neg');
+  }
+}
+
+/* N77d — das gemeinsame Anfangs-/Enddatum einer Kategorie auf ALLE bereits
+   erfassten Stände des Blocks schreiben. Die Endpunkte sind je Zeitraum bzw. je
+   Zähler idempotent → kein Dubletten-Risiko beim Neu-Schreiben. */
+async function katDatumSpeichern(input) {
+  const panel = input.closest('.zu-panel');
+  const datum = input.value;
+  if (!panel || !datum) return;
+  const istEnde = input.hasAttribute('data-kat-enddatum');
+  const felder = [...panel.querySelectorAll(
+    istEnde ? '[data-endstand]' : '[data-anfangstand]')];
+  try {
+    let n = 0;
+    for (const f of felder) {
+      const stand = standAusFeld(f);
+      if (stand === null || Number.isNaN(stand)) continue;   // ohne Stand kein Datum
+      const id = f.dataset.endstand || f.dataset.anfangstand;
+      const ep = istEnde ? `/zaehler/${id}/ablesungen` : `/zaehler/${id}/anfangsstand`;
+      await api(ep, { method: 'POST', body: { stand, datum, zeitraum_id: Number(zid) } });
+      n++;
+    }
+    ablesungMaske = await api(`/zeitraeume/${zid}/ablesung`);
+    chipMap = baueChipMap();
+    melde(n ? 'Ablesedatum übernommen' : 'Datum gemerkt', 'pos');
+    await zeichnen();
+  } catch (fehler) {
+    melde(fehler.message || 'Datum konnte nicht gesetzt werden', 'neg');
   }
 }
 
