@@ -1204,10 +1204,18 @@ function zaehlerNameZuKostenart(name) {
    Messung, nicht die Aufteilung. */
 function baueChipMap() {
   const map = new Map();
-  for (const z of (ablesungMaske?.zaehler || [])) {
+  const alle = ablesungMaske?.zaehler || [];
+  // N101 — nur die GESAMT-Zähler zählen (die ohne eigenen Hauptzähler). Vorher
+  // wurden Haupt-, Rest- und Unterzähler derselben Kostenart addiert: aus 188 m³
+  // Gesamtverbrauch wurden so 376 m³. Gibt es zu einer Kostenart keinen
+  // Gesamtzähler, gelten ersatzweise ihre gemessenen Zähler.
+  const hat = new Set(alle.filter(z => !z.hauptzaehler_id && z.verbrauch != null)
+    .map(z => z.kostenart || zaehlerNameZuKostenart(z.name)).filter(Boolean));
+  for (const z of alle) {
     if (z.verbrauch == null) continue;
     const ziel = z.kostenart || zaehlerNameZuKostenart(z.name);
     if (!ziel) continue;
+    if (hat.has(ziel) ? !!z.hauptzaehler_id : z.typ === 'rest') continue;
     const cur = map.get(ziel) || { verbrauch: 0, messeinheit: z.messeinheit };
     cur.verbrauch += z.verbrauch;
     map.set(ziel, cur);
@@ -1263,6 +1271,18 @@ function istWasserSammel(k) {
   return n === 'wasser' || n === 'frischwasser' || n === 'trinkwasser';
 }
 
+/* N101 — die Gesamtsumme der drei Wasser-Bestandteile (Frisch-, Schmutz-,
+   Niederschlagswasser). Sie stehen als eigene Kostenpositionen in der Liste,
+   sichtbar ist aber nur die Sammelzeile — sie muss die ganze Rechnung zeigen. */
+function wasserGesamtBetrag() {
+  return (daten.checkliste || []).reduce((s, k) => {
+    const n = normUml(k.kostenart);
+    const dazu = istWasserSammel(k) || n.includes('abwasser')
+      || n.includes('schmutzwasser') || n.includes('niederschlag');
+    return dazu ? s + (k.betrag || 0) : s;
+  }, 0);
+}
+
 /* N74 — die Wasser-Sammelposition trägt erst eine Rechnung, wenn ein Beleg mit
    Betrag hochgeladen wurde. Vorher gibt es nichts aufzuklappen (keine Detail-
    ebene), nur „Datei wählen". `erledigt` heißt: Betrag liegt vor (aus dem PDF). */
@@ -1305,6 +1325,13 @@ function istHeizwaermePos(k) {
 let zLabels = new Map();
 function generischeLabels(zaehler) {
   const map = new Map();
+  // N101 — „WG" ist überholt: das Haupthaus sind zwei Wohnungen. Alte
+  // Zählernamen werden in der Anzeige entsprechend gelesen.
+  for (const z of zaehler) {
+    if (/\bWG\b/.test(z.name || '')) {
+      map.set(z.id, (z.name || '').replace(/\bWG\b/g, 'Haupthaus'));
+    }
+  }
   let wm = 0;
   for (const z of zaehler) {
     if (!z.hauptzaehler_id || z.typ === 'rest') continue;
@@ -1533,7 +1560,7 @@ function kaltwasserStruktur(liste) {
 
 /* N59 — der Kaltwasser-Block: „Gesamt Kaltwasser" oben, darunter eingerückt alle
    Unterzähler als laufende Subtraktion (− Büro − Roman Bad − …), am Ende der
-   Rest (WG), der per Person·Mietdauer auf die Haupthaus-Einheiten geht. */
+   Rest Haupthaus, der per Person·Mietdauer auf die Haupthaus-Einheiten geht. */
 function kaltwasserBlockHtml(s) {
   // N77a — alle Waschmaschinen zusammen ans Ende der Abzugskette (stabile Sortierung
   // hält Kaltwasserzähler und die WM-Reihenfolge sonst unverändert).
@@ -1881,7 +1908,11 @@ function verteilungHtml(k) {
 
 function zeileHtml(k, i) {
   const [farbe, zeichen] = HAKEN[k.zustand] || HAKEN.fehlt;
-  const wert = eur(k.betrag);
+  // N101 — die Wasser-Sammelzeile trägt die SUMME ihrer drei Bestandteile
+  // (Frisch- + Schmutz- + Niederschlagswasser). Ihr eigener Betrag ist nur der
+  // Frischwasser-Anteil; die anderen beiden sind eigene, ausgeblendete
+  // Positionen — die Zeile stünde sonst mit einem Drittel der Rechnung da.
+  const wert = eur(istWasserSammel(k) ? wasserGesamtBetrag() : k.betrag);
   const aufgeklappt = offen.has(i);
 
   // Nur ein kurzer Zustandshinweis, wo wirklich etwas fehlt — kein Sermon.
@@ -4566,7 +4597,7 @@ function wasserDetailInhalt(d) {
 
   const fuss = `<div class="wd-fuss">
       <span>Gesamtverbrauch <b>${m3(d.gesamt_m3)}</b></span>
-      ${d.rest_m3 != null ? `<span>Rest (WG) <b>${m3(d.rest_m3)}</b> ·
+      ${d.rest_m3 != null ? `<span>Rest Haupthaus <b>${m3(d.rest_m3)}</b> ·
         ${eur(d.rest_kosten)}</span>` : ''}
       <span class="wd-kontroll">Kontrolle ${eur(d.kontrolle ?? k.gesamt)}</span>
     </div>`;
