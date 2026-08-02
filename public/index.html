@@ -127,18 +127,32 @@
      in einer Ecke, wo es mit Cashflow-Pille und Frist-Chip kollidierte).
      Freischwebend ohne Kasten, angetippt fuehrt es in die PV-Konfiguration. */
   .tile .pv-invest{
-    flex:none; display:inline-flex; flex-direction:column; align-items:center;
-    gap:2px; background:none; border:none; padding:0; margin:0 0 0 -6px;
+    flex:none; display:inline-flex; align-items:center; justify-content:center;
+    background:none; border:none; padding:0; margin:0 auto 0 10px;
     cursor:pointer; text-decoration:none; align-self:center;
   }
-  .tile .pv-invest svg{width:44px; height:44px; display:block;
+  /* N123 — das Modul steht direkt rechts NEBEN dem Titel, nicht am Kartenrand:
+     dort saehe es zwischen Frist- und Cashflow-Chip wie ein Statuszeichen aus.
+     Dafuer darf der Textblock den Platz nicht mehr aufbrauchen; der Rest der
+     Zeile geht ueber `margin-right:auto` an die Chips. */
+  .tile:has(.pv-invest) .txt,
+  .mitbubbles > .tile:has(.pv-invest) .txt{flex:0 1 auto}
+  /* Der 96-px-Platzhalter fuer den Cashflow-Chip haelt hier nur das Modul auf
+     Abstand: der Chip sitzt oben rechts, der Titel steht mittig links. Ohne ihn
+     ruecken Titel und Modul zusammen — und auf dem iPhone passt beides in eine
+     Zeile, statt dass das Modul umbricht. */
+  .tile.hat-cf:has(.pv-invest) .txt{padding-right:0}
+  .tile .pv-invest svg{width:38px; height:38px; display:block;
     filter:drop-shadow(0 2px 4px rgba(22,38,44,.18))}
-  .tile .pv-invest .pvt{font:600 8.5px var(--mono); letter-spacing:.1em;
-    text-transform:uppercase; color:var(--amber)}
   .tile .pv-invest:hover svg{filter:drop-shadow(0 3px 7px rgba(22,38,44,.28))}
   .tile .pv-invest:focus-visible{outline:2px solid var(--teal); outline-offset:3px;
     border-radius:10px}
-  .mitbubbles > .tile .pv-invest svg{width:54px; height:54px}
+  .mitbubbles > .tile .pv-invest svg{width:44px; height:44px}
+  @media (max-width:430px){
+    .tile .pv-invest{margin-left:8px}
+    .tile .pv-invest svg,
+    .mitbubbles > .tile .pv-invest svg{width:30px; height:30px}
+  }
 
   /* Grundform der Blasen steht geteilt in immo.css (CCCLXXVIII c). Hier bleiben
      nur die startseiten-eigenen Zustände und Zusätze. */
@@ -223,9 +237,6 @@ const PV_ICON = `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
   </g>
   <path d="M18.5 30.5l-3 11M39.5 30.5l3 11M13 41.5h32" stroke="#16262C"
     stroke-width="2.4" stroke-linecap="round"/>
-  <g stroke="#916212" stroke-width="2.1" stroke-linecap="round">
-    <path d="M8 12.5a9 9 0 0 1 9-9"/><path d="M3.5 17.5h2.4M6 8.6l1.7 1.7"/>
-  </g>
 </svg>`;
 
 /* ---- Ort → Strasse → Einheit -------------------------------------------
@@ -367,15 +378,15 @@ function kachel(o, feinste = false) {
   const knopf = `<button class="tile${cf ? ' hat-cf' : ''}" data-slug="${esc(o.slug)}">
       ${cf}
       <span class="ico">${logoSvg(o.typ)}</span>
-      ${o.hat_pv ? `<a class="pv-invest" href="strom.html?objekt=${esc(o.slug)}"
-        title="PV-Anlage — Investment, Eigentümer-Anteile und Amortisation"
-        aria-label="PV-Anlage konfigurieren"
-        onclick="event.stopPropagation()">${PV_ICON}<span class="pvt">PV</span></a>` : ''}
       <span class="txt">
         ${oben}
         <span class="name">${esc(gross)}</span>
         ${unten}
       </span>
+      ${o.hat_pv ? `<a class="pv-invest" href="strom.html?objekt=${esc(o.slug)}#amortisation"
+        title="PV-Anlage — Amortisation und Eigentümer-Anteile"
+        aria-label="PV-Anlage: Amortisation"
+        onclick="event.stopPropagation()">${PV_ICON}</a>` : ''}
       ${grundstueck ? '' : chips(o.frist_tage, o.offene_positionen)}
     </button>`;
   return bub ? `<section class="mitbubbles">${knopf}${bub}</section>` : knopf;

@@ -1081,6 +1081,9 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "erledigt": p.status == "erledigt", "betrag": p.betrag,
             "schluessel": p.schluessel, "nur_einheit": p.nur_einheit,
             "wertquelle": p.wertquelle,
+            # N122 — Menge und Herkunft der Position (kWh extern/eigen).
+            "menge": p.menge, "menge_einheit": p.menge_einheit,
+            "herkunft": p.herkunft,
             **_verteilung(p),
             **_zusammensetzung(p),
             "position_id": p.id,
@@ -1676,6 +1679,11 @@ class PositionIn(BaseModel):
     schluessel: Optional[str] = None
     nur_einheit: Optional[str] = None
     wertquelle: Optional[str] = None
+    # N122 — Menge hinter dem Betrag („2.400 kWh für 862,51 €") und woher der
+    # Strom kam: 'extern' (Netzbezug) oder 'eigen' (eigene PV-Anlage).
+    menge: Optional[float] = None
+    menge_einheit: Optional[str] = None
+    herkunft: Optional[str] = None
     anteile: Optional[dict[str, float]] = None
     # N5 — Herkunft der mitgesendeten Gewichte: true = aus den Stammdaten
     # abgeleitet („Aus Stammdaten ableiten"-Knopf), false = Handeingabe. Fehlt
@@ -1742,6 +1750,7 @@ def position_aendern(pid: int, data: PositionIn,
     neue_einheit = (data.nur_einheit is not None
                     and data.nur_einheit != p.nur_einheit)
     for feld in ("status", "schluessel", "nur_einheit", "wertquelle", "s35",
+                 "menge", "menge_einheit", "herkunft",
                  "vorab_betrag", "vorab_einheit", "vorab_s35", "vorab_netto"):
         wert = getattr(data, feld)
         if wert is not None:

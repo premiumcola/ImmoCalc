@@ -766,6 +766,48 @@
     margin-top:14px;font:500 12px var(--body);color:var(--soft)}
   .wd-fuss b{color:var(--ink);font-weight:700}
   .wd-kontroll{font:700 13px var(--disp);color:var(--teal-d)}
+  /* N118 — die Warmwasser-Verteilungstabelle nutzt .wd-scroll als Rahmen; ohne
+     eigene Regel lief sie auf schmalen Geräten aus der Karte heraus. */
+  .wd-scroll{overflow-x:auto;max-width:100%;border-radius:12px;
+    border:1px solid var(--line);-webkit-overflow-scrolling:touch}
+
+  /* ---- N120: Strom — Zählermaske in der Strom-Kostenposition -------------
+     Gleicher Schnitt wie die Wasser-Detailtabelle (.wd-tabelle/.wd-tab), nur
+     mit Eingabefeldern in der Zeile. Unter jeder Zählerzeile liegt eine
+     Zusatzzeile (Einheiten-Auswähler + Hinweis); ihr Inhalt beginnt hinter der
+     festen ersten Spalte, damit beim Querscrollen nichts unter ihr liegt. */
+  .st-tab td.st-verb{font:700 13px var(--mono);color:var(--ink);white-space:nowrap}
+  .st-tab td.st-kein{color:var(--soft);font:500 12px var(--body)}
+  .st-tab tr.st-z td{border-bottom:none}
+  .st-tab tr.st-sub td{text-align:left;border-bottom:1px solid var(--line);
+    padding:0 10px 12px 134px}
+  .st-tab tr.st-gesamt td{background:#F1F4F4}
+  .st-tab tr.st-gesamt td.wd-rowh{background:#EDF1F0}
+  .st-tab tr.st-rest td,.st-tab tr.st-rest td.wd-rowh{background:var(--teal-l)}
+  .st-tab tr.st-rest td.wd-rowh,.st-tab tr.st-rest .st-verb{color:var(--teal-d)}
+  .st-feld{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  .st-feld input{border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;
+    min-height:44px;font:500 12px var(--body);background:var(--sheet);color:var(--ink)}
+  .st-feld input[type=text]{width:106px;text-align:right;font-family:var(--mono);
+    font-weight:600}
+  .st-feld input[type=date]{width:152px}
+  .st-feld input:focus{outline:none;border-color:var(--teal)}
+  .st-l{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft);margin-bottom:2px}
+  .st-formel{display:block;min-width:160px;font:600 11px var(--mono);
+    color:var(--soft);line-height:1.55;white-space:normal}
+  .st-note{font:400 11.5px var(--body);color:var(--soft);line-height:1.55;
+    margin:2px 0 0;white-space:normal}
+  .st-note b,.st-note strong{color:var(--ink);font-weight:700}
+  .st-note+.zu-ehwahl{margin-top:7px}
+  .st-neg{color:var(--neg);font-weight:700}
+  .st-weg{border:none;background:transparent;color:var(--neg);cursor:pointer;
+    font:600 11.5px var(--disp);text-decoration:underline;text-underline-offset:3px;
+    padding:11px 2px;min-height:44px;margin-left:auto}
+  .st-subzeile{display:flex;flex-wrap:wrap;align-items:flex-end;gap:4px 14px}
+  .st-subzeile .zu-ehwahl{flex:1 1 220px;margin-top:0}
+  .st-neu input[type=text]{flex:1 1 190px;width:auto;min-width:0}
+  .st-neu select{flex:1 1 190px;min-width:0}
 
   .pdflink{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
     background:#F1F4F4;color:var(--ink);border-radius:10px;padding:9px 12px;
@@ -1506,13 +1548,18 @@ function interpolationsHinweise(z, eh) {
    der Einheiten-Auswähler (N58). Das Datumsfeld speichert für sich allein
    NICHTS — es wird nur mitgeschickt, wenn der Stand gespeichert wird.
    `rest` = berechneter Rest (keine Eingabe), `minus` = im Kaltwasser-Block
-   eingerückt als Abzug (N59), `label` überschreibt den Namen. */
+   eingerückt als Abzug (N59), `label` überschreibt den Namen, `extra` hängt
+   eigene Bedienelemente unter die Zeile (N120: Rolle + Entfernen). */
 function meterZeileHtml(z, { rest = false, minus = false, label = null,
-                            keinChooser = false } = {}) {
+                            keinChooser = false, extra = '' } = {}) {
   const bearbeitbar = daten.status === 'in Arbeit';
   const eh = esc(z.messeinheit || 'm³');
+  // N120 — `direkt`: für diesen Verbrauch gibt es keine Zählerstände, sondern
+  // den fertigen Wert der Periode (Gesamtverbrauch der Anlage, Ladestrom eines
+  // Autos). Eine Eingabe, keine Interpolation.
+  const direkt = !rest && z.typ === 'direkt';
   const fertig = z.verbrauch != null
-    && (rest || (z.vorwert != null && z.ablesung != null));
+    && (rest || direkt || (z.vorwert != null && z.ablesung != null));
   const startStand = z.vorwert ? zahl(z.vorwert.stand) : '';
   const endStand = z.ablesung ? zahl(z.ablesung.stand) : '';
   const anfangDatum = z.vorwert?.datum
@@ -1543,20 +1590,34 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
         <span class="zu-uebernommen" title="Endstand der Vorperiode, abgelesen am ${
           _isoKurz(datum)}">${note}</span></div></div>`;
 
-  const startFeld = rest ? ''
+  // N120 — der Jahreswert: ein Feld, kein Datum. Der eingetragene Wert IST der
+  // Verbrauch der Periode.
+  const jahresFeld = bearbeitbar
+    ? `<div class="zu-feld"><label>Jahreswert</label>
+        <div class="zu-paar">
+          <input type="text" inputmode="decimal" data-strom-jahr="${z.id}"
+            value="${endStand}" placeholder="${eh}"
+            aria-label="Jahresverbrauch ${esc(z.name)} in ${eh}">
+          <span class="zu-dat">kein Zählerstand</span>
+        </div></div>`
+    : `<div class="zu-feld"><label>Jahreswert</label>
+        <div class="zu-paar"><span class="zu-anf">${endStand
+          ? `${endStand}&nbsp;${eh}` : '—'}</span></div></div>`;
+
+  const startFeld = (rest || direkt) ? ''
     : (ausVorperiode
       ? nurAnzeige('Anfang', startStand, anfangDatum, 'aus Vorperiode')
       : feld('Anfang', startStand, 'data-anfangstand', 'data-anfangdatum', anfangDatum));
-  const endFeld = rest ? ''
-    : feld('Ende', endStand, 'data-endstand', 'data-enddatum', endeDatum);
+  const endFeld = rest ? '' : (direkt ? jahresFeld
+    : feld('Ende', endStand, 'data-endstand', 'data-enddatum', endeDatum));
 
-  const hinweise = rest ? [] : interpolationsHinweise(z, eh);
+  const hinweise = (rest || direkt) ? [] : interpolationsHinweise(z, eh);
   const rechnung = hinweise.length
     ? `<div class="zu-rechnung">${hinweise.map(s => `<span class="zu-rz">${s}</span>`)
         .join('')}</div>` : '';
   // Der Knopf erscheint erst, wenn ein Datum von Hand geändert wurde (siehe
   // `datumGeaendert`) — ein Datum allein löst nie ein Speichern aus.
-  const datumKnopf = bearbeitbar && !rest
+  const datumKnopf = bearbeitbar && !rest && !direkt
     ? `<button type="button" class="zu-dok" data-datum-uebernehmen="${z.id}"
         hidden>Geändertes Datum mit dem Stand speichern</button>` : '';
 
@@ -1570,7 +1631,7 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
       <span class="zu-verb">${rest ? '<small>berechnet</small> ' : ''}${verb}</span>
     </div>
     ${rechnung}${datumKnopf}
-    ${keinChooser ? '' : einheitChooserHtml(z)}
+    ${keinChooser ? '' : einheitChooserHtml(z)}${extra}
   </div>`;
 }
 
@@ -1661,15 +1722,19 @@ function wasserBlockHtml(liste) {
    struktur (Gesamt Kaltwasser − Unterzähler = Rest), Heizung/Strom als Liste. */
 function zaehlerPanelHtml(block, zaehler, blockVon) {
   const teil = zaehler.filter(z => blockVon.get(z.id) === block);
-  if (!teil.length) return '';
+  // N120 — der Strom-Bereich steht auch dann da, wenn noch kein Zähler erfasst
+  // ist: hier entstehen sie (Leerzustand + Anlegen), solange der Zeitraum offen
+  // ist. Wasser und Heizung bleiben wie bisher stumm, wenn nichts da ist.
+  const stromLeer = block === 'Strom' && daten.status === 'in Arbeit';
+  if (!teil.length && !stromLeer) return '';
   // N96 — in Wasser und Heizung sind Zähler ohne eigenen Hauptzähler die BASIS
   // (Gesamt Kaltwasser, Boiler-Zulauf, Liter Öl): ihr Verbrauch wird über die
   // Unterzähler bzw. die §9-/HKV-Rechnung verteilt, nicht direkt einer Einheit
   // zugeschlagen. Sie bekommen deshalb keinen Einheiten-Chooser. Im Strom-Block
   // sind eigenständige Zähler dagegen sehr wohl einer Einheit zuzuordnen.
   const basisOhneChooser = block === 'Heizung';
-  const inner = block === 'Wasser'
-    ? wasserBlockHtml(teil)
+  const inner = block === 'Wasser' ? wasserBlockHtml(teil)
+    : block === 'Strom' ? stromBlockHtml(teil)
     : teil.map(z => meterZeileHtml(z, {
         rest: z.typ === 'rest',
         keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');
@@ -2044,14 +2109,6 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
           >${ANH_ICON} Beleg anhängen</button>` : '';
     koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
         <div class="wd-lade">Detailübersicht wird geladen …</div></div>
-      <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
-  } else if (auf && istStromPos(k)) {
-    // N89 — die Strom-Aufteilung je Einheit kommt aus der PV-/Strom-Rechnung.
-    const anbau = bearbeitbar
-      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
-          >${ANH_ICON} Stromrechnung anhängen</button>` : '';
-    koerper = `<div class="ho-inline" data-strom-inline="${daten.jahr || ''}">
-        <div class="wd-lade">Strom-Aufteilung wird geladen …</div></div>
       <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
   } else if (auf && heizModus) {
     // N79/N91 — je nach Stufe: Öl-Lieferungen+FIFO, Warmwasser-Split (§9) oder
@@ -2451,8 +2508,6 @@ async function zeichnen() {
     inhalt.querySelectorAll('[data-wasser-inline]').forEach(fuelleWasserInline);
     // N79 — die aufgeklappte Heizöl-Position lädt ihren Öl-Manager inline.
     inhalt.querySelectorAll('[data-heizoel-inline]').forEach(fuelleHeizoelInline);
-    // N89 — die Strom-Position lädt ihre Aufteilung je Einheit.
-    inhalt.querySelectorAll('[data-strom-inline]').forEach(fuelleStromInline);
   }
 }
 
@@ -2597,40 +2652,223 @@ function belegWegDialog(dok) {
   });
 }
 
-/* N89 — die Strom-Aufteilung je Einheit in die NK-Abrechnung holen. Gerechnet
-   wird sie auf der PV-/Strom-Seite (je Objekt und Jahr); hier steht das
-   Ergebnis: Betrag und kWh je Einheit, dazu die Summe. Sind noch keine Werte
-   erfasst, sagt die Zeile, wo sie gepflegt werden. */
-async function fuelleStromInline(el) {
-  const jahr = el.dataset.stromInline
-    || String(new Date(daten.ende || Date.now()).getFullYear());
-  try {
-    const r = await api(`/objekte/${encodeURIComponent(daten.objekt)}`
-      + `/strom/${jahr}/nk-positionen`);
-    const pos = r?.positionen || [];
-    if (!pos.length) {
-      el.innerHTML = `<div class="ho-warn">Für ${esc(jahr)} ist noch keine
-        Strom-Aufteilung erfasst. Auf der Seite <b>PV &amp; Amortisation</b>
-        Zählerstände, Bezugsquellen und die Einheiten je Gruppe eintragen —
-        das Ergebnis erscheint dann hier.</div>`;
-      return;
-    }
-    el.innerHTML = `<div class="ho-sekt">
-        <div class="ho-st">Strom je Einheit
-          <span class="ho-sh">aus der PV-/Strom-Rechnung ${esc(jahr)}</span></div>
-        <div class="ho-liste">${pos.map(p => `
-          <div class="ho-zeile">
-            <span class="ho-dt">${esc(p.einheit)}</span>
-            <span class="ho-lit">${zahl(p.kwh)} kWh</span>
-            <span class="ho-wert">${eur(p.betrag)}</span>
-          </div>`).join('')}</div>
-        <div class="ho-summe">Summe: <b>${eur(r.gesamt)}</b> · ${zahl(r.kwh_gesamt)} kWh</div>
-        ${(r.warnungen || []).map(w => `<div class="ho-warn">▲ ${esc(w)}</div>`).join('')}
-      </div>`;
-  } catch (fehler) {
-    el.innerHTML = `<div class="wd-lade">Strom-Aufteilung nicht ladbar: ${
-      esc(String(fehler.message || fehler))}</div>`;
+/* ---- N120: Strom — Zähler im Zählerstände-Bereich ------------------------
+   Der Strom wird nicht mehr nach einem festen Schlüssel geteilt, sondern
+   abgelesen: der Gesamtverbrauch der Periode (Absolutwert der Anlage), darunter
+   die Zwischenzähler als Abzug und zuletzt der errechnete Verbrauch Haus.
+   Gerechnet wird im Backend (`ablesung.verbrauch_je_zaehler`) — hier steht nur
+   die Erfassung, in derselben Zeilenform wie die Wasser- und Öl-Zähler. */
+
+/* Die Strom-Zähler (alles in kWh) in fachlicher Ordnung. `gesamt` ist der
+   Zähler, auf den die anderen zeigen (sonst der erste ohne eigenen Haupt-
+   zähler), `unter` alle übrigen messenden, `rest` die errechnete Zeile. */
+function stromStruktur(zaehler = null) {
+  const liste = (zaehler || ablesungMaske?.zaehler || [])
+    .filter(z => (z.messeinheit || '') === 'kWh');
+  const hauptIds = new Set(liste.filter(z => z.hauptzaehler_id)
+    .map(z => z.hauptzaehler_id));
+  const gesamt = liste.find(z => z.typ !== 'rest' && hauptIds.has(z.id))
+    || liste.find(z => z.typ !== 'rest' && !z.hauptzaehler_id) || null;
+  const unter = liste.filter(z => z.typ !== 'rest' && z.id !== gesamt?.id);
+  const rest = liste.find(z => z.typ === 'rest') || null;
+  return { liste, gesamt, unter, rest };
+}
+
+const stromLabel = z => zLabels.get(z.id) || z.name;
+
+/* Die vier Rollen einer Strom-Zeile — sie bestimmen Zählertyp, Bezug zum
+   Gesamtzähler und die feste Reihenfolge (groß nach klein, wie in der Excel:
+   Gesamt · Zwischenzähler · Jahreswerte · Haus). */
+const STROM_ROLLEN = {
+  gesamt: { titel: 'Gesamtverbrauch · Absolutwert', typ: 'direkt',
+            haupt: false, reihenfolge: 1 },
+  gemessen: { titel: 'Zwischenzähler · zwei Stände', typ: 'gemessen',
+              haupt: true, reihenfolge: 5 },
+  direkt: { titel: 'ohne Zähler · Jahreswert', typ: 'direkt',
+            haupt: true, reihenfolge: 6 },
+  rest: { titel: 'Verbrauch Haus · errechnet', typ: 'rest',
+          haupt: true, reihenfolge: 9 },
+};
+
+const stromRolle = (z, s) => z.typ === 'rest' ? 'rest'
+  : (s.gesamt?.id === z.id ? 'gesamt'
+    : (z.typ === 'direkt' ? 'direkt' : 'gemessen'));
+
+/* Was unter einer Strom-Zeile zusätzlich steht: ihre Rolle (umstellbar) und der
+   Weg, den Zähler wieder zu entfernen. Nur im laufenden Zeitraum. */
+function stromExtra(z, s) {
+  if (daten.status !== 'in Arbeit') return '';
+  const jetzt = stromRolle(z, s);
+  const optionen = Object.entries(STROM_ROLLEN).map(([wert, r]) =>
+    `<option value="${wert}"${wert === jetzt ? ' selected' : ''}>${r.titel}</option>`)
+    .join('');
+  return `<div class="zu-rolle"><span class="zu-ehl">Rolle</span>
+      <select data-strom-rolle-set="${z.id}"
+        aria-label="Rolle von ${esc(z.name)}">${optionen}</select>
+      <button type="button" class="zu-weg" data-strom-weg="${z.id}"
+        data-strom-titel="${esc(stromLabel(z))}">Entfernen</button></div>`;
+}
+
+/* Unter welcher Kostenart ein neuer Strom-Zähler hängt: die Strom-Position
+   dieses Zeitraums, sonst schlicht „Strom". So zählt sein Verbrauch auf
+   dieselbe Zeile wie die Kosten. */
+const stromKostenart = () =>
+  (daten.checkliste || []).find(istStromPos)?.kostenart || 'Strom';
+
+/* Ein neuer Zähler: Name und Rolle. Der Gesamtverbrauch zuerst — die übrigen
+   hängen sich an ihn. Bereits vergebene Einzelrollen fallen aus der Auswahl. */
+function stromNeuForm(s) {
+  const rollen = Object.entries(STROM_ROLLEN)
+    .filter(([w]) => !(w === 'gesamt' && s.gesamt) && !(w === 'rest' && s.rest));
+  return `<div class="ho-neu st-neu">
+      <input type="text" data-strom-name placeholder="Name des Zählers"
+        aria-label="Name des neuen Zählers">
+      <select data-strom-rolle aria-label="Rolle des neuen Zählers">${rollen
+        .map(([w, r]) => `<option value="${w}">${r.titel}</option>`).join('')}</select>
+      <button class="btn" data-strom-add>Zähler anlegen</button>
+    </div>`;
+}
+
+/* Der Strom-Block im Zählerstände-Bereich: oben der Gesamtverbrauch, darunter
+   eingerückt die Zwischenzähler als Abzug und der errechnete Verbrauch Haus —
+   derselbe Aufbau wie beim Kaltwasser. */
+function stromBlockHtml(liste) {
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const s = stromStruktur(liste);
+  const form = bearbeitbar ? stromNeuForm(s) : '';
+  if (!s.liste.length) {
+    return `<div class="zu-kein">Noch kein Stromzähler erfasst. Erwartet werden
+      der <b>Gesamtverbrauch</b> der Periode als Absolutwert, darunter die
+      <b>Zwischenzähler</b> mit ihren Ständen, Verbräuche <b>ohne Zähler</b> als
+      Jahreswert (etwa das Elektroauto) und zuletzt der <b>Verbrauch Haus</b>,
+      der sich daraus errechnet.</div>${form}`;
   }
+
+  const zeile = (z, o) => meterZeileHtml(z, { ...o, extra: stromExtra(z, s) });
+  const subZeilen = s.unter.map(z => zeile(z, { minus: true })).join('');
+  const restZeile = s.rest ? zeile(s.rest, { rest: true }) : '';
+  const summeUnter = s.unter.reduce((sum, z) => sum + (z.verbrauch || 0), 0);
+  const gesamtV = s.gesamt?.verbrauch ?? null;
+
+  // Eine Zeile, die die Rechnung ausschreibt — dieselbe Sprache wie beim Öl.
+  const rechnung = s.gesamt ? `<div class="ho-summe">Gesamt <b>${gesamtV != null
+      ? `${zahl(gesamtV)} kWh` : '—'}</b> − Zwischenzähler <b>${
+      zahl(summeUnter)} kWh</b> = Haus <b>${gesamtV != null
+      ? `${zahl(Math.round((gesamtV - summeUnter) * 1000) / 1000)} kWh` : '—'}</b></div>` : '';
+
+  // Nur, was wirklich hakt — und als ruhiger Hinweis, wo es nicht dringend ist.
+  const warnungen = [];
+  if (s.rest && s.rest.verbrauch != null && s.rest.verbrauch < 0) {
+    warnungen.push(`Die Zwischenzähler ergeben zusammen <b>${zahl(summeUnter)} kWh</b>
+      und damit mehr, als der Gesamtverbrauch mit <b>${zahl(gesamtV)} kWh</b>
+      hergibt. Für das Haus bliebe nichts übrig — bitte die Stände prüfen.`);
+  }
+  const fremd = s.unter.filter(z => s.gesamt && z.hauptzaehler_id !== s.gesamt.id);
+  if (fremd.length) {
+    warnungen.push(`${fremd.map(z => `<b>${esc(stromLabel(z))}</b>`).join(', ')}
+      ${fremd.length === 1 ? 'gehört' : 'gehören'} noch zu keinem Gesamtverbrauch und
+      ${fremd.length === 1 ? 'wird' : 'werden'} beim Verbrauch Haus nicht abgezogen —
+      die Rolle unten an der Zeile setzen.`);
+  }
+  const hinweise = [];
+  if (!s.rest) {
+    hinweise.push('Für den Verbrauch Haus fehlt noch die errechnete Zeile.');
+  }
+  if (s.gesamt && gesamtV == null) {
+    hinweise.push(`Für „${esc(stromLabel(s.gesamt))}“ ist in dieser Periode noch
+      kein Wert erfasst.`);
+  }
+
+  return `${s.gesamt ? zeile(s.gesamt, {}) : ''}
+    <div class="zu-abzug">${subZeilen || `<div class="zu-kein">Noch keine
+      Zwischenzähler.</div>`}${restZeile}</div>
+    ${rechnung}
+    ${hinweise.map(h => `<div class="zu-kein">${h}</div>`).join('')}
+    ${warnungen.map(w => `<div class="ho-warn">▲ ${w}</div>`).join('')}
+    ${form}`;
+}
+
+/* Nach jeder Änderung an den Zählern: Maske neu holen, Chips neu rechnen,
+   Ansicht neu zeichnen — die Strom-Position bleibt dabei aufgeklappt. */
+async function stromFrisch(text) {
+  ablesungMaske = await api(`/zeitraeume/${zid}/ablesung`);
+  chipMap = baueChipMap();
+  melde(text, 'pos');
+  await zeichnen();
+}
+
+/* Ein Jahreswert (`typ: direkt`) wird als ganz normale Ablesung dieses
+   Zeitraums abgelegt — der Wert IST der Verbrauch, das Datum ist die
+   Periodengrenze. */
+async function stromJahreswertSpeichern(input) {
+  const wert = standAusFeld(input);
+  if (wert === null) return;
+  if (Number.isNaN(wert)) { melde('Ungültiger Wert', 'neg'); return; }
+  try {
+    await api(`/zaehler/${input.dataset.stromJahr}/ablesungen`, {
+      method: 'POST',
+      body: { stand: wert, zeitraum_id: Number(zid),
+              datum: ablesungMaske?.zeitraum?.ende || daten.ende },
+    });
+    await stromFrisch('Jahreswert gespeichert');
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function stromZaehlerAnlegen(btn) {
+  const box = btn.closest('.ho-neu');
+  const feld = box?.querySelector('[data-strom-name]');
+  const name = (feld?.value || '').trim();
+  const rolle = box?.querySelector('[data-strom-rolle]')?.value || 'gemessen';
+  const r = STROM_ROLLEN[rolle];
+  if (!name) { melde('Name des Zählers eintragen', 'neg'); feld?.focus(); return; }
+  const s = stromStruktur();
+  if (r.haupt && !s.gesamt) {
+    melde('Erst den Gesamtverbrauch anlegen — die übrigen hängen daran', 'neg');
+    return;
+  }
+  try {
+    await api(`/objekte/${encodeURIComponent(daten.objekt)}/zaehler`, {
+      method: 'POST',
+      body: { name, kostenart: stromKostenart(), art: 'Strom',
+              messeinheit: 'kWh', typ: r.typ, reihenfolge: r.reihenfolge,
+              hauptzaehler_id: r.haupt ? s.gesamt.id : null },
+    });
+    await stromFrisch('Zähler angelegt');
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* Die Rolle einer bestehenden Zeile umstellen (PATCH /zaehler/{id}). Damit
+   lassen sich vorhandene Zähler in die Ordnung bringen, ohne sie neu anzulegen
+   und ihre Ablesungen zu verlieren. */
+async function stromRolleSetzen(sel) {
+  const id = Number(sel.dataset.stromRolleSet);
+  const r = STROM_ROLLEN[sel.value];
+  if (!r) return;
+  const s = stromStruktur();
+  const gesamt = s.gesamt && s.gesamt.id !== id ? s.gesamt : null;
+  if (r.haupt && !gesamt) {
+    melde('Erst einen anderen Zähler zum Gesamtverbrauch machen', 'neg');
+    return zeichnen();
+  }
+  try {
+    await api(`/zaehler/${id}`, { method: 'PATCH',
+      body: { typ: r.typ, reihenfolge: r.reihenfolge,
+              hauptzaehler_id: r.haupt ? gesamt.id : null } });
+    await stromFrisch('Rolle geändert');
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function stromZaehlerEntfernen(btn) {
+  const name = btn.dataset.stromTitel || 'Zähler';
+  const ja = await frage(`„${name}“ entfernen?`,
+    'Der Zähler und seine Ablesungen werden gelöscht. Kostenposition und Belege '
+    + 'bleiben unangetastet. Hängen Unterzähler an ihm, verlieren sie ihren Bezug.',
+    { knopf: 'Entfernen', gefahr: true });
+  if (!ja) return;
+  try {
+    await api(`/zaehler/${btn.dataset.stromWeg}`, { method: 'DELETE' });
+    await stromFrisch('Zähler entfernt');
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
 /* N94 — Gartenwasser ohne Zähler: der eingetragene m³-Wert wird als Zähler mit
@@ -3607,6 +3845,8 @@ inhalt.addEventListener('change', e => {
   // überschrieben. Das Datum fährt beim Speichern eines Stands mit; wurde es
   // allein geändert, blendet dieser Handler nur den ausdrücklichen Knopf ein.
   if (e.target.matches('[data-anfangdatum],[data-enddatum]')) datumGeaendert(e.target);
+  // N120 — der Jahreswert eines direkt erfassten Strom-Zählers.
+  if (e.target.matches('[data-strom-jahr]')) stromJahreswertSpeichern(e.target);
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
   // N116 - abgerechnete Menge aus dem Bescheid: nur Anzeige-Basis, nichts wird
@@ -3728,6 +3968,11 @@ inhalt.addEventListener('click', async e => {
   // N95 — einen Beleg aus seiner Kostenposition herausnehmen (Datei bleibt).
   const belegWeg = e.target.closest('[data-beleg-loesen]');
   if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
+  // N120 — Strom-Zähler anlegen / entfernen.
+  const stAdd = e.target.closest('[data-strom-add]');
+  if (stAdd) return stromZaehlerAnlegen(stAdd);
+  const stWeg = e.target.closest('[data-strom-weg]');
+  if (stWeg) return stromZaehlerEntfernen(stWeg);
   // N94 — Gartenwasser ohne Zähler eintragen.
   const gAdd = e.target.closest('[data-garten-anlegen]');
   if (gAdd) return gartenAnlegen(gAdd);
@@ -4621,6 +4866,10 @@ async function ablesungWizard() {
 
 /* Deutsche Zahleneingabe → Number: Punkt = Tausender, Komma = Dezimal
    (Umkehr des zahl()-Formats). '' bei leerer/ungültiger Eingabe. */
+/* Die Zeile, zu der ein Eingabefeld gehört: die Karten-Zeile der Zählerstände
+   (`.zu-zeile`) oder — in der Strommaske (N120) — die Tabellenzeile. */
+const zeilenBox = el => el?.closest('.zu-zeile, tr');
+
 function standAusFeld(el) {
   const roh = (el?.value || '').trim().replace(/\./g, '').replace(',', '.');
   if (roh === '') return null;
@@ -4633,12 +4882,15 @@ function standAusFeld(el) {
    Danach die Ablese-Maske neu laden — erst dann trägt der Zähler `verbrauch`. */
 async function endstandSpeichern(input) {
   const id = input.dataset.endstand;
-  const stand = standAusFeld(inhalt.querySelector(`[data-endstand="${id}"]`));
+  // N120 — der Wert kommt aus DEM Feld, das gespeichert wird. Eine Suche über
+  // das Attribut träfe den falschen Zähler, sobald derselbe Zähler zweimal auf
+  // der Seite steht (Zählerstände-Panel + Strommaske in der Position).
+  const stand = standAusFeld(input);
   if (stand === null) return;                          // kein Stand → nichts speichern
   if (Number.isNaN(stand)) { melde('Ungültiger Zählerstand', 'neg'); return; }
   // N88 — das Ablesedatum dieser Zeile fährt im selben Aufruf mit; ohne Eingabe
-  // bleibt es die Periodengrenze.
-  const datumEl = input.closest('.zu-zeile')?.querySelector('[data-enddatum]');
+  // bleibt es die Periodengrenze. N120 — in der Strommaske ist die Zeile ein <tr>.
+  const datumEl = zeilenBox(input)?.querySelector('[data-enddatum]');
   const datum = datumEl?.value || ablesungMaske?.zeitraum?.ende || daten.ende;
   try {
     await api(`/zaehler/${id}/ablesungen`,
@@ -4656,11 +4908,11 @@ async function endstandSpeichern(input) {
    Datum). POST /zaehler/{id}/anfangsstand; danach die Ablese-Maske neu laden. */
 async function anfangstandSpeichern(input) {
   const id = input.dataset.anfangstand;
-  const stand = standAusFeld(inhalt.querySelector(`[data-anfangstand="${id}"]`));
+  const stand = standAusFeld(input);
   if (stand === null) return;
   if (Number.isNaN(stand)) { melde('Ungültiger Anfangsstand', 'neg'); return; }
   // N88 — dasselbe für den Anfang: Stand und Datum dieser Zeile, ein Aufruf.
-  const datumEl = input.closest('.zu-zeile')?.querySelector('[data-anfangdatum]');
+  const datumEl = zeilenBox(input)?.querySelector('[data-anfangdatum]');
   const datum = datumEl?.value || ablesungMaske?.zeitraum?.start || daten.start;
   try {
     // N96 — der Anfangsstand hängt an KEINEM Zeitraum (sonst wird er als
@@ -4684,7 +4936,7 @@ function datumGeaendert(el) {
   // Zeile gespeichert; danach rechnet die Interpolation neu. `change` feuert
   // beim Datumsfeld erst bei einem gültigen, vollständigen Datum — es gibt also
   // kein Zwischenspeichern beim Tippen (und nie ein Anfassen anderer Zeilen).
-  const zeile = el.closest('.zu-zeile');
+  const zeile = zeilenBox(el);
   const ende = el.matches('[data-enddatum]');
   const standEl = zeile?.querySelector(ende ? '[data-endstand]' : '[data-anfangstand]');
   if (el.value && standEl && standAusFeld(standEl) != null
@@ -4699,7 +4951,7 @@ function datumGeaendert(el) {
    Zeile speichern. Ohne Stand gibt es nichts zu speichern; das sagt die Meldung.
    Nach dem Speichern baut sich die Maske neu auf — deshalb genau ein Feld. */
 async function datumUebernehmen(knopf) {
-  const zeile = knopf.closest('.zu-zeile');
+  const zeile = zeilenBox(knopf);
   const datumEl = zeile?.querySelector('input[type=date].geaendert');
   const ende = datumEl?.matches('[data-enddatum]');
   const standEl = zeile?.querySelector(ende ? '[data-endstand]' : '[data-anfangstand]');

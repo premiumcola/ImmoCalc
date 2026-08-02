@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Strom &amp; PV · ImmoCalc</title>
+<title>PV &amp; Amortisation · ImmoCalc</title>
 <link rel="icon" href="icons/icon.svg">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -116,7 +116,7 @@
   <div class="bar">
     <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
     <div class="barwrap">
-      <h1>Strom &amp; PV</h1>
+      <h1>PV &amp; Amortisation</h1>
       <div class="sub" id="sub">wird geladen …</div>
     </div>
   </div>
@@ -146,20 +146,11 @@ import { auswahlfeld } from './assets/auswahl.js';
 
 const sub = document.getElementById('sub');
 const inhalt = document.getElementById('inhalt');
-const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' kWh';
 const proz = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' %';
+const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' kWh';
 
 /* Die Eingabefelder — dieselbe Liste, aus der die Maske gebaut und die Werte
    ausgelesen werden. `s` = Nachkommastellen im Eingabefeld (step). */
-const F_ZAEHLER = [
-  ['gesamt_kwh', 'Gesamt (Zähler 666)', 'kWh', 1],
-  ['wg_kwh', 'WG / Haus (2 Wohnungen)', 'kWh', 1],
-  ['garage_kwh', 'Garage', 'kWh', 1],
-];
-const F_AUFTEILUNG = [
-  ['wg_anteil_prozent', 'WG-Anteil (0 = aus kWh)', '%', 1],
-  ['tanken_kwh', 'davon E-Auto „Tanken"', 'kWh', 1],
-];
 const F_QUELLEN = [
   ['netz', 'Netz (Zukauf)'],
   ['solar', 'Solar (Direkt)'],
@@ -188,25 +179,17 @@ function feldHtml(name, label, einheit, step) {
 
 function skelett() {
   return `
+    <!-- N121 — Zählerstände und die Aufteilung auf die Einheiten sind in den
+         Nebenkostenbereich gezogen (Zeitraum → Zählerstände). Diese Seite
+         beantwortet nur noch eine Frage: was trägt die Anlage ab, und wann hat
+         sie sich bezahlt gemacht. -->
     <div class="karte">
-      <div class="hh"><h3>Zählerstände</h3></div>
-      <p class="hint">Drei Stände je Abrechnungsjahr. Büro + Studio ergibt sich
-        als Rest: Gesamt − WG/Haus − Garage.</p>
-      <div class="raster">
-        ${F_ZAEHLER.map(f => feldHtml(...f)).join('')}
-      </div>
-      <div class="abgeleitet" id="rest"></div>
-    </div>
-
-    <div class="karte">
-      <div class="hh"><h3>Aufteilung WG / Büro-Studio</h3></div>
-      <p class="hint">Netz, Solar und Akku werden im Verhältnis der beiden
-        Gruppen aufgeteilt. Ein fester Anteil (z. B. 60) hat Vorrang; sonst wird
-        er aus den kWh abgeleitet, abzüglich des E-Auto-Ladestroms.</p>
-      <div class="raster">
-        ${F_AUFTEILUNG.map(f => feldHtml(...f)).join('')}
-      </div>
-      <div class="abgeleitet" id="split"></div>
+      <div class="hh"><h3>Verbrauch &amp; Verteilung</h3></div>
+      <p class="hint">Die Stromzähler und die Verteilung auf die Einheiten
+        werden in der Nebenkostenabrechnung gepflegt — dort, wo auch die Wasser-
+        und Heizungszähler stehen. Von hier fließt nur zurück, was je Jahr
+        tatsächlich verrechnet wurde.</p>
+      <a class="btn-fl" id="zurNk" href="index.html">Zu den Zählerständen</a>
     </div>
 
     <div class="karte eng">
@@ -272,7 +255,7 @@ function skelett() {
       <div class="eig" id="eig"></div>
     </div>
 
-    <div class="karte">
+    <div class="karte" id="amortisation">
       <div class="hh"><h3>Amortisation des PV-Investments</h3></div>
       <p class="hint">Was die Anlage einbringt (PV-Strom der Mieter +
         Einspeisevergütung + E-Tanken) gegen die Anschaffung — über alle
@@ -291,11 +274,9 @@ function werteAusForm() {
     const v = parseFloat(el.value);
     werte[el.dataset.feld] = Number.isFinite(v) ? v : 0;
   });
-  // N87 — Textfelder: ladende Person + eigene PV-Anteile (lesbar → JSON).
-  werte.tanken_person =
-    inhalt.querySelector('[data-text="tanken_person"]')?.value.trim() || '';
-  werte.pv_anteile = anteileJson(
-    inhalt.querySelector('[data-text="pv_anteile_roh"]')?.value);
+  // N112c — die PV-Anteile kommen aus der Eigentuemer-Auswahl, nicht mehr aus
+  // einem Freitextfeld; die ladende Person haengt an der jeweiligen Ladung.
+  werte.pv_anteile = pvAnteileAusForm();
   return werte;
 }
 
@@ -324,31 +305,9 @@ function anteileLesbar(roh) {
   } catch { return roh; }
 }
 
-/* „Name: 833,3 · Name: 166,7" → JSON {Name: ‰}. Unlesbares gibt '' (Vorgabe
-   5/6 + 1/6 greift dann), damit eine Tippfehler-Eingabe nichts kaputt macht. */
-function anteileJson(text) {
-  const s = (text || '').trim();
-  if (!s) return '';
-  const paare = {};
-  for (const teil of s.split(/[·,;\n]/)) {
-    const m = /^\s*([^:]+):\s*([\d.,]+)\s*$/.exec(teil);
-    if (!m) continue;
-    const wert = parseFloat(m[2].replace(/\./g, '').replace(',', '.'));
-    if (Number.isFinite(wert) && wert > 0) paare[m[1].trim()] = wert;
-  }
-  return Object.keys(paare).length ? JSON.stringify(paare) : '';
-}
 
 /* Das Engine-Ergebnis in die Karten schreiben (Inputs bleiben unberührt). */
 function ergebnisZeigen(r) {
-  const rest = document.getElementById('rest');
-  rest.innerHTML = `<span class="chip teal">Büro / Studio: ${kwh(r.verbrauch.buero_kwh)}</span>`;
-
-  const split = document.getElementById('split');
-  split.innerHTML =
-    `<span class="chip teal">WG ${proz(r.wg_anteil * 100)}</span>`
-    + `<span class="chip amber">Büro/Studio ${proz(r.buero_anteil * 100)}</span>`;
-
   for (const q of ['netz', 'solar', 'akku']) {
     document.getElementById('k_' + q).textContent = eur(r.quellen[q].kosten);
   }

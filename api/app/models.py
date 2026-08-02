@@ -260,6 +260,15 @@ class Kostenposition(SQLModel, table=True):
     nur_einheit: str = ""
     wertquelle: str = "manuell"   # 'Scan'|'Zähler'|'extern'|'manuell'
     status: str = "erledigt"      # 'erledigt' | 'offen'
+    # N122 — die Menge hinter dem Betrag: „2.400 kWh für 862,51 €". Erlaubt es,
+    # extern bezogenen von selbst erzeugtem Strom zu unterscheiden und daraus
+    # die Eigenverbrauchsquote zu zeigen. Additiv, Default 0/"" — jede
+    # bestehende Position rechnet unverändert weiter.
+    menge: float = 0.0
+    menge_einheit: str = ""       # 'kWh' | 'm³' | 'Liter' | ''
+    # Woher der Strom kam: 'extern' (Netzbezug laut Rechnung) oder 'eigen'
+    # (aus der eigenen PV-Anlage, gleich ob Direktverbrauch oder Akku).
+    herkunft: str = ""
     s35: bool = False
     # CCCLIX — ein Teilbetrag kann vorab direkt auf EINE Einheit gehen (z.B.
     # 35 € einer 147-€-Rechnung), mit eigenem §35a-Status; der Rest (Betrag −
