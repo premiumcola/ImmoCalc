@@ -839,13 +839,14 @@ def test_vorschau_zeigt_die_mail_ohne_sie_zu_verschicken(client):
 
 
 class _Postfach:
-    """Ein Postfach-Doppel: sammelt ein, was verschickt worden wäre."""
+    """Ein Postfach-Doppel: sammelt ein, was verschickt worden wäre — samt
+    Anhang, damit sich das Quartals-PDF am Versand prüfen lässt."""
 
     def __init__(self):
         self.gesendet = []
 
     def sende(self, an, betreff, text, anhang=None):
-        self.gesendet.append((an, betreff, text))
+        self.gesendet.append((an, betreff, text, anhang))
 
 
 def test_versand_quartalsweise_geht_an_die_hinterlegte_adresse(client,
@@ -865,10 +866,17 @@ def test_versand_quartalsweise_geht_an_die_hinterlegte_adresse(client,
     assert antwort.json()["an"] == "marvin@example.invalid"
     assert antwort.json()["betrag"] == 16.0
     assert len(postfach.gesendet) == 1
-    an, betreff, text = postfach.gesendet[0]
+    an, betreff, text, anhang = postfach.gesendet[0]
     assert an == "marvin@example.invalid"
     assert "Q3 2025" in betreff
     assert "16,00 €" in text
+    # N165/2 — das Quartals-PDF hängt als Anhang mit.
+    assert anhang is not None
+    name, inhalt, subtyp = anhang
+    assert subtyp == "pdf" and inhalt[:4] == b"%PDF"
+    assert name.lower().endswith(".pdf")
+    # Das PDF trägt die Zahlen, die der kurze Mailtext nicht mehr aufzählt.
+    assert b"16,00 EUR" in inhalt and b"Q3 2025" in inhalt
 
 
 def test_versand_ohne_ladung_und_ohne_adresse_wird_abgelehnt(client,
@@ -1064,3 +1072,214 @@ def test_kein_pdf_ohne_rechnungsbetrag(client):
 def test_unbekanntes_objekt_meldet_404(client):
     assert client.get("/api/tankstelle/gibtsnicht/nutzer").status_code == 404
     assert client.get("/api/tankstelle/gibtsnicht/verlauf").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# 6) N165 Teil 2 — Autoversand, doppelter Versand, Mehrnutzer-Zuordnung
+# --------------------------------------------------------------------------
+
+def test_faelliges_quartal_einen_tag_nach_quartalsende():
+    """Ausgelöst wird einen Tag nach Quartalsende; danach nur noch im
+    Nachhol-Fenster, nie mitten im Quartal."""
+    assert t.faelliges_quartal(date(2025, 4, 1)) == (2025, 1)
+    assert t.faelliges_quartal(date(2025, 7, 1)) == (2025, 2)
+    assert t.faelliges_quartal(date(2025, 10, 1)) == (2025, 3)
+    # Der Jahreswechsel: am 01.01. steht das Q4 des Vorjahres an.
+    assert t.faelliges_quartal(date(2026, 1, 1)) == (2025, 4)
+    # Im Nachhol-Fenster noch fällig …
+    assert t.faelliges_quartal(date(2025, 7, 15)) == (2025, 2)
+    # … danach nicht mehr, und mitten im Quartal ohnehin nicht.
+    assert t.faelliges_quartal(date(2025, 7, 25)) is None
+    assert t.faelliges_quartal(date(2025, 8, 15)) is None
+
+
+def test_zuordnen_ueber_zeitraum_ohne_jede_ladung_anzuklicken():
+    """Die reine Logik: eine Zeitraum-Regel je Nutzer verteilt alle Ladungen —
+    keine Pflicht, jede einzeln zuzubuchen. Bei Überlappung gewinnt der spätere
+    Beginn."""
+    nutzer = [{"id": 1, "name": "Alicia", "email": "a@example.invalid"},
+              {"id": 2, "name": "Marvin", "email": "m@example.invalid"}]
+    rohe = [t.RohLadung(10, date(2025, 7, 10), "Unbekannt", "", 30.0),
+            t.RohLadung(11, date(2025, 8, 20), "Unbekannt", "", 20.0),
+            t.RohLadung(12, date(2025, 9, 25), "Unbekannt", "", 40.0)]
+    regeln = [{"nutzer_id": 1, "von": date(2025, 7, 1), "bis": date(2025, 8, 31)},
+              {"nutzer_id": 2, "von": date(2025, 9, 1), "bis": date(2025, 9, 30)}]
+    buch = t.zuordnen(rohe, nutzer, regeln, set())
+    je = {}
+    for b in buch:
+        je[b.person] = je.get(b.person, 0.0) + b.kwh
+    assert je == {"Alicia": 50.0, "Marvin": 40.0}
+
+    # Überlappung: die Regel mit dem späteren Beginn gewinnt.
+    ueberlappend = [
+        {"nutzer_id": 1, "von": date(2025, 7, 1), "bis": date(2025, 9, 30)},
+        {"nutzer_id": 2, "von": date(2025, 8, 1), "bis": date(2025, 9, 30)}]
+    buch2 = t.zuordnen([t.RohLadung(20, date(2025, 8, 15), "x", "", 5.0)],
+                       nutzer, ueberlappend, set())
+    assert buch2[0].person == "Marvin"
+
+    # Ohne passende Regel bleibt es bei der Zuordnung über den Namen.
+    buch3 = t.zuordnen([t.RohLadung(30, date(2025, 12, 1), "Alicia", "", 7.0)],
+                       nutzer, regeln, set())
+    assert buch3[0].person == "Alicia"
+
+
+def test_zuordnen_schliesst_einzelne_ladung_aus():
+    nutzer = [{"id": 1, "name": "Alicia", "email": "a@example.invalid"}]
+    rohe = [t.RohLadung(10, date(2025, 7, 10), "Alicia", "", 30.0),
+            t.RohLadung(11, date(2025, 8, 20), "Alicia", "", 20.0)]
+    buch = t.zuordnen(rohe, nutzer, [], {11})
+    assert len(buch) == 1 and buch[0].kwh == 30.0
+
+
+def test_autoversand_schalter_ist_standardmaessig_aus(client):
+    slug = _neues_objekt(client, "Schalterhaus")
+    d = client.get(f"/api/tankstelle/{slug}/einstellungen").json()
+    assert d["autoversand"] is False
+    assert d["regeln"] == [] and d["ausschluss"] == []
+
+    r = client.put(f"/api/tankstelle/{slug}/autoversand", json={"aktiv": True})
+    assert r.status_code == 200 and r.json()["autoversand"] is True
+    assert client.get(f"/api/tankstelle/{slug}/einstellungen"
+                      ).json()["autoversand"] is True
+
+    client.put(f"/api/tankstelle/{slug}/autoversand", json={"aktiv": False})
+    assert client.get(f"/api/tankstelle/{slug}/einstellungen"
+                      ).json()["autoversand"] is False
+
+
+def test_autoversand_schickt_einmal_und_nie_erneut(client, monkeypatch):
+    """Die wichtigste Zusicherung: der 15-Minuten-Wachdienst schickt ein
+    bereits verschicktes Quartal beim zweiten Lauf nicht erneut."""
+    slug = _neues_objekt(client, "Autoversandhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)                 # 0,32 € je kWh
+    _nutzer(client, slug, "Marvin", "auto-marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-08-11")
+    assert client.put(f"/api/tankstelle/{slug}/autoversand",
+                      json={"aktiv": True}).json()["autoversand"] is True
+
+    postfach = _Postfach()
+    monkeypatch.setattr(t, "zugang", lambda session: postfach)
+
+    def _mails():
+        return [g for g in postfach.gesendet
+                if g[0] == "auto-marvin@example.invalid"]
+
+    # Tag nach Q3-Ende (30.09.) → Q3 2025 ist fällig.
+    with Session(db_modul.engine) as s:
+        erg1 = t.versand_faellig_pruefen(s, heute=date(2025, 10, 1))
+    assert erg1["faellig"] is True and (erg1["jahr"], erg1["quartal"]) == (2025, 3)
+    assert len(_mails()) == 1
+    an, betreff, text, anhang = _mails()[0]
+    assert "Q3 2025" in betreff
+    name, inhalt, subtyp = anhang
+    assert subtyp == "pdf" and inhalt[:4] == b"%PDF"
+
+    # Zweiter Wachdienst-Lauf im selben Fenster: kein erneuter Versand.
+    with Session(db_modul.engine) as s:
+        erg2 = t.versand_faellig_pruefen(s, heute=date(2025, 10, 1))
+    assert erg2["versendet"] == 0
+    assert len(_mails()) == 1
+
+
+def test_autoversand_bleibt_bei_ausgeschaltetem_schalter_stumm(client,
+                                                               monkeypatch):
+    slug = _neues_objekt(client, "AutoStummhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Marvin", "stumm@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-08-11")
+    # Schalter NICHT eingeschaltet (Default aus).
+    postfach = _Postfach()
+    monkeypatch.setattr(t, "zugang", lambda session: postfach)
+    with Session(db_modul.engine) as s:
+        t.versand_faellig_pruefen(s, heute=date(2025, 10, 1))
+    assert [g for g in postfach.gesendet if g[0] == "stumm@example.invalid"] == []
+
+
+def test_autoversand_schickt_nichts_bei_null_euro_oder_ohne_satz(client,
+                                                                 monkeypatch):
+    """Lieber nichts als eine Rechnung über nichts: kein Satz (keine
+    Stromkosten) und keine Ladung führen beide zu keinem Versand."""
+    # a) Geladen, aber ohne Stromkosten → kein Satz → kein Versand.
+    slug = _neues_objekt(client, "AutoOhnesatzhaus")
+    _nutzer(client, slug, "Marvin", "ohnesatz@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-08-11")
+    client.put(f"/api/tankstelle/{slug}/autoversand", json={"aktiv": True})
+
+    # b) Satz vorhanden, aber der Nutzer hat nichts geladen → 0 € → kein Versand.
+    slug2 = _neues_objekt(client, "AutoNullhaus")
+    _stromkosten(slug2, 2025, betrag=1600.0)
+    _nutzer(client, slug2, "Leer", "leer@example.invalid")
+    client.put(f"/api/tankstelle/{slug2}/autoversand", json={"aktiv": True})
+
+    postfach = _Postfach()
+    monkeypatch.setattr(t, "zugang", lambda session: postfach)
+    with Session(db_modul.engine) as s:
+        t.versand_faellig_pruefen(s, heute=date(2025, 10, 1))
+    adressen = [g[0] for g in postfach.gesendet]
+    assert "ohnesatz@example.invalid" not in adressen
+    assert "leer@example.invalid" not in adressen
+
+
+def test_mehrnutzer_zuordnung_ueber_zeitraum_in_der_abrechnung(client):
+    """Bei mehreren Nutzern verteilt eine Zeitraum-Regel je Nutzer alle
+    Ladungen — auch die unter fremdem Namen erfassten."""
+    slug = _neues_objekt(client, "Zeitraumhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    a = _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    m = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Unbekannt", kwh=30.0, datum="2025-07-10")
+    _ladung(client, slug, 2025, name="Unbekannt", kwh=20.0, datum="2025-08-20")
+    _ladung(client, slug, 2025, name="Unbekannt", kwh=40.0, datum="2025-09-25")
+
+    r = client.put(f"/api/tankstelle/{slug}/zuordnung", json={"regeln": [
+        {"nutzer_id": a["id"], "von": "2025-07-01", "bis": "2025-08-31"},
+        {"nutzer_id": m["id"], "von": "2025-09-01", "bis": "2025-09-30"}]})
+    assert r.status_code == 200, r.text
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    marvin = next(z for z in d["nutzer"] if z["name"] == "Marvin")
+    assert alicia["kwh"] == 50.0          # 30 + 20, ohne Einzelbuchung
+    assert marvin["kwh"] == 40.0
+    assert d["offen_kwh"] in (None, 0.0)  # nichts bleibt offen
+
+
+def test_zuordnung_ladung_ausschliessen_in_der_abrechnung(client):
+    slug = _neues_objekt(client, "Ausschlusshaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    a = _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")   # zweiter Nutzer
+    _ladung(client, slug, 2025, name="Unbekannt", kwh=30.0, datum="2025-07-10")
+    l2 = _ladung(client, slug, 2025, name="Unbekannt", kwh=20.0,
+                 datum="2025-08-20")
+
+    r = client.put(f"/api/tankstelle/{slug}/zuordnung", json={
+        "regeln": [{"nutzer_id": a["id"], "von": "2025-07-01",
+                    "bis": "2025-09-30"}],
+        "ausschluss": [l2["id"]]})
+    assert r.status_code == 200, r.text
+    assert client.get(f"/api/tankstelle/{slug}/einstellungen"
+                      ).json()["ausschluss"] == [l2["id"]]
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    assert alicia["kwh"] == 30.0          # die ausgeschlossene Ladung fehlt
+    assert d["geladen_kwh"] == 50.0
+    assert d["offen_kwh"] == 20.0         # sie steht als offen da
+
+
+def test_zuordnung_lehnt_kaputten_zeitraum_und_fremden_nutzer_ab(client):
+    slug = _neues_objekt(client, "Regelpruefhaus")
+    a = _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    # Ende vor Beginn.
+    schlecht = client.put(f"/api/tankstelle/{slug}/zuordnung", json={"regeln": [
+        {"nutzer_id": a["id"], "von": "2025-09-30", "bis": "2025-07-01"}]})
+    assert schlecht.status_code == 400
+    # Unbekannter Nutzer.
+    fremd = client.put(f"/api/tankstelle/{slug}/zuordnung", json={"regeln": [
+        {"nutzer_id": 99999, "von": "2025-07-01", "bis": "2025-09-30"}]})
+    assert fremd.status_code == 400

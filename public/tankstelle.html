@@ -170,6 +170,45 @@
                font-size:14px}
   .az .fehlt{margin-top:10px}
 
+  /* ---- Autoversand-Schalter (N165/2) ----------------------------------- */
+  .toggle{display:flex;align-items:center;gap:12px;background:var(--paper);
+          border-radius:14px;padding:12px 14px;margin:0 0 14px;cursor:pointer}
+  .toggle input{position:absolute;opacity:0;width:0;height:0}
+  .toggle .ts{flex:none;width:46px;height:28px;border-radius:999px;
+              background:var(--line);position:relative;transition:background .15s}
+  .toggle .ts::after{content:"";position:absolute;top:3px;left:3px;width:22px;
+                     height:22px;border-radius:50%;background:#fff;
+                     transition:transform .15s;
+                     box-shadow:0 1px 2px rgba(22,38,44,.25)}
+  .toggle input:checked + .ts{background:var(--teal)}
+  .toggle input:checked + .ts::after{transform:translateX(18px)}
+  .toggle input:focus-visible + .ts{outline:2px solid var(--teal-d);
+                                    outline-offset:2px}
+  .toggle .tl{flex:1;min-width:0;font:600 13px var(--disp);color:var(--ink);
+              display:flex;flex-direction:column;gap:3px}
+  .toggle .tl small{font:400 11.5px var(--body);color:var(--soft);
+                    line-height:1.5;letter-spacing:0}
+
+  /* ---- Mehrnutzer-Zuordnung nach Zeitraum (N165/2) --------------------- */
+  .zregel{background:var(--paper);border-radius:14px;padding:12px 14px;
+          margin-bottom:8px}
+  .zregel .zn{display:block;font:600 13px var(--disp);color:var(--ink);
+              margin-bottom:9px;overflow-wrap:anywhere}
+  /* Zwei Datumsfelder nebeneinander — auf dem iPhone aber untereinander, sonst
+     schneidet das native Datumsfeld die Jahreszahl ab. */
+  .zregel .zf{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  @media(max-width:479px){ .zregel .zf{grid-template-columns:1fr} }
+  .zregel .zf .field{min-width:0;margin:0}
+  .zregel .zf .fl{display:block;font:600 10px var(--mono);letter-spacing:.05em;
+                  text-transform:uppercase;color:var(--soft);margin-bottom:5px}
+  .lz .lex{flex:none;border:none;background:var(--sheet);color:var(--soft);
+           font:600 10.5px var(--mono);letter-spacing:.03em;cursor:pointer;
+           min-height:36px;padding:0 11px;border-radius:10px;white-space:nowrap}
+  .lz .lex:hover{background:var(--teal-l);color:var(--teal-d)}
+  .lz.aus{opacity:.55}
+  .lz.aus .ld{text-decoration:line-through}
+  .lz.aus .lex{background:var(--teal-l);color:var(--teal-d)}
+
   .mailtext{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--sheet);
             border-radius:12px;padding:14px;margin:12px 0 0;
             font:400 11.5px var(--mono);color:var(--ink);line-height:1.65}
@@ -275,6 +314,8 @@ let offeneBearbeitung = 0;     /* Nutzer, dessen Stammdaten gerade offen sind */
    Verbrauch; ist keins dabei, gilt das laufende Jahr. */
 let jahrGewaehlt = 0;          /* 0 = noch nicht gesetzt → laufendes Jahr */
 let jahreListe = [];           /* Jahre mit Verbrauch (aus dem Verlauf) */
+/* N165/2 — Autoversand-Schalter und Mehrnutzer-Zuordnung des Objekts. */
+let einst = { autoversand: false, regeln: [], ausschluss: [] };
 const jahrWert = () => jahrGewaehlt || new Date().getFullYear();
 
 function jahreUebernehmen(jahre) {
@@ -652,7 +693,8 @@ async function abrechnungZeigen() {
       <div data-mail="${n.nutzer_id || 0}"></div>
     </div>`).join('');
 
-  ziel.innerHTML = `${zeitraumWahl()}
+  ziel.innerHTML = `${autoversandSchalter()}
+    ${zeitraumWahl()}
     <span class="zrzeile">${esc(d.label)} · ${datum(d.von)} – ${datum(d.bis)}</span>
     ${satzBlock(d)}
     ${d.automatisch ? autoNotiz() : offeneNotiz(d)}
@@ -667,6 +709,80 @@ async function abrechnungZeigen() {
     </div>` : ''}`;
   offeneVorschau = 0;
   await ladungenZeigen();
+}
+
+/* N165/2 — der Autoversand-Schalter. Standardmaessig aus; eingeschaltet geht
+   die Abrechnung einen Tag nach Quartalsende automatisch an jeden Nutzer mit
+   Adresse, Ladung und Satz — als Mail mit PDF. Ein ruhiger Schalter, kein
+   Warnton: es ist eine Erleichterung. */
+function autoversandSchalter() {
+  return `<label class="toggle">
+    <input type="checkbox" data-autoversand ${einst.autoversand ? 'checked' : ''}>
+    <span class="ts" aria-hidden="true"></span>
+    <span class="tl">Automatisch verschicken
+      <small>Einen Tag nach Quartalsende geht die Abrechnung automatisch an
+        jeden Nutzer mit Adresse, Ladung und Satz — als Mail mit PDF im
+        Anhang.</small></span>
+  </label>`;
+}
+
+async function einstellungenLaden() {
+  try {
+    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/einstellungen`);
+    einst = { autoversand: !!d.autoversand, regeln: d.regeln || [],
+              ausschluss: d.ausschluss || [] };
+  } catch { einst = { autoversand: false, regeln: [], ausschluss: [] }; }
+}
+
+async function autoversandUmschalten(aktiv) {
+  try {
+    await api(`/tankstelle/${encodeURIComponent(objektSlug)}/autoversand`,
+              { method: 'PUT', body: { aktiv } });
+    einst.autoversand = aktiv;
+    melde(aktiv ? 'Automatischer Versand eingeschaltet'
+                : 'Automatischer Versand ausgeschaltet', 'pos');
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    await abrechnungZeigen();               // Schalter zuruecksetzen
+  }
+}
+
+/* N165/2 — die Mehrnutzer-Zuordnung: ganz ersetzend gespeichert. Regeln auf
+   inzwischen geloeschte Nutzer werden vorher aussortiert, damit ein PUT nicht
+   an einer verwaisten Regel scheitert. */
+async function speichereZuordnung(regeln, ausschluss) {
+  const gueltig = (regeln || []).filter(
+    r => nutzerListe.some(n => n.id === r.nutzer_id));
+  try {
+    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/zuordnung`,
+                        { method: 'PUT',
+                          body: { regeln: gueltig, ausschluss: ausschluss || [] } });
+    einst.regeln = d.regeln || [];
+    einst.ausschluss = d.ausschluss || [];
+    melde('Zuordnung gespeichert', 'pos');
+    await abrechnungZeigen();               // rechnet neu und zeichnet Ladungen
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function zuordnungSpeichern() {
+  const regeln = [];
+  for (const n of nutzerListe) {
+    const von = document.querySelector(`[data-regel-von="${n.id}"]`)?.value || '';
+    const bis = document.querySelector(`[data-regel-bis="${n.id}"]`)?.value || '';
+    if (von && bis) regeln.push({ nutzer_id: n.id, von, bis });
+    else if (von || bis) {
+      melde(`Bei ${n.name} fehlt ein Datum des Zeitraums`, 'neg');
+      return;
+    }
+  }
+  await speichereZuordnung(regeln, einst.ausschluss);
+}
+
+async function ausschlussUmschalten(id) {
+  id = Number(id);
+  const menge = new Set(einst.ausschluss || []);
+  menge.has(id) ? menge.delete(id) : menge.add(id);
+  await speichereZuordnung(einst.regeln, [...menge]);
 }
 
 /* Der Satz je kWh wird abgeleitet, nicht eingegeben (N148). An der Stelle, an
@@ -775,6 +891,36 @@ async function versenden(nid) {
    ======================================================================= */
 let buchungsWahl = null;
 
+/* N165/2 — die Mehrnutzer-Zuordnung ueber einen Zeitraum. Statt jede Ladung
+   einzeln anzuklicken (der ausdrueckliche Kritikpunkt): je Nutzer ein „laedt
+   vom … bis …". Jede Ladung geht an den, dessen Zeitraum ihren Tag enthaelt.
+   Einzelne Ladungen schliesst man in der Liste darunter aus — der
+   Korrekturweg. */
+function zuordnungBlock() {
+  const regel = id => (einst.regeln || []).find(r => r.nutzer_id === id) || {};
+  const zeilen = nutzerListe.map(n => {
+    const r = regel(n.id);
+    return `<div class="zregel">
+      <span class="zn">${esc(n.name)}</span>
+      <div class="zf">
+        <div class="field"><span class="fl">Lädt ab</span>
+          <input class="inp" type="date" data-regel-von="${n.id}"
+                 value="${esc(r.von || '')}"></div>
+        <div class="field"><span class="fl">Lädt bis</span>
+          <input class="inp" type="date" data-regel-bis="${n.id}"
+                 value="${esc(r.bis || '')}"></div>
+      </div>
+    </div>`;
+  }).join('');
+  return `<span class="vermerk">Mehrere Nutzer: leg je Person einen Zeitraum
+      fest, statt jede Ladung einzeln zuzuordnen. Jede Ladung geht an den, in
+      dessen Zeitraum ihr Datum fällt. Einzelne Ladungen schließt du unten
+      aus.</span>
+    ${zeilen}
+    <button class="btn" data-zuordnung-speichern
+            style="margin:0 0 16px">Zuordnung speichern</button>`;
+}
+
 async function ladungenZeigen() {
   const ziel = document.getElementById('ladungen');
   if (!ziel) return;
@@ -790,21 +936,26 @@ async function ladungenZeigen() {
      „0,00 €" und widersprach dem abgeleiteten Satz eine Karte weiter oben.
      Was eine Ladung kostet, sagt die Abrechnung; hier geht es allein um die
      Zuordnung: wer, wann, wie viel. */
+  // Solange nur eine Person angelegt ist, gibt es nichts zu entscheiden —
+  // jede Ladung geht auf sie. Sobald es zwei sind, wird zugeordnet.
+  const einer = nutzerListe.length === 1 ? nutzerListe[0] : null;
+  const mehr = nutzerListe.length > 1;
+  const ausg = new Set(einst.ausschluss || []);
+
   const zeilen = (d.ladungen || []).map(l => `
-    <div class="lz">
+    <div class="lz ${mehr && ausg.has(l.id) ? 'aus' : ''}">
       <span class="ld">${esc(l.person || '—')}
         <span class="ldt">${l.datum ? datum(l.datum) : 'ohne Datum'}</span></span>
       <span class="lk">${kwh(l.kwh)}</span>
+      ${mehr ? `<button class="lex" data-ausschluss="${l.id}">${
+        ausg.has(l.id) ? 'einbeziehen' : 'ausschließen'}</button>` : ''}
       <button class="lx" data-ladung-weg="${l.id}" aria-label="Ladung entfernen">×</button>
     </div>`).join('');
-
-  // Solange nur eine Person angelegt ist, gibt es nichts zu entscheiden —
-  // jede Ladung geht auf sie. Sobald es zwei sind, verschwindet der Satz.
-  const einer = nutzerListe.length === 1 ? nutzerListe[0] : null;
 
   ziel.innerHTML = `
     ${einer ? `<span class="vermerk">Angelegt ist bisher nur
         <b>${esc(einer.name)}</b> — jede Ladung geht damit auf ihn.</span>` : ''}
+    ${mehr ? zuordnungBlock() : ''}
     ${zeilen ? `<div class="lliste">${zeilen}</div>`
       : `<div class="leer" style="margin-bottom:14px"><b>Keine Ladung erfasst</b>
           In ${esc(String(jahrWert()))} ist noch keine Ladung einer Person
@@ -922,6 +1073,17 @@ document.addEventListener('click', e => {
   if (lb) return ladungBuchen();
   const lw = e.target.closest('[data-ladung-weg]');
   if (lw) return ladungEntfernen(lw.dataset.ladungWeg);
+  const zs = e.target.closest('[data-zuordnung-speichern]');
+  if (zs) return zuordnungSpeichern();
+  const ax = e.target.closest('[data-ausschluss]');
+  if (ax) return ausschlussUmschalten(ax.dataset.ausschluss);
+});
+
+/* Der Autoversand-Schalter ist eine Checkbox — sie meldet sich ueber `change`,
+   nicht ueber den globalen Klick-Faenger. */
+document.addEventListener('change', e => {
+  const a = e.target.closest('[data-autoversand]');
+  if (a) return autoversandUmschalten(a.checked);
 });
 
 async function laden() {
@@ -934,9 +1096,12 @@ async function laden() {
   }
   inhalt.innerHTML = skelett();
   // Der Verlauf laeuft ueber alles und liefert dabei die Jahre mit Verbrauch —
-  // er muss vor der Abrechnung stehen, die genau diese Jahre braucht.
+  // er muss vor der Abrechnung stehen, die genau diese Jahre braucht. Die
+  // Einstellungen (Autoversand, Zuordnung) vor der Abrechnung laden, damit
+  // Schalter und Regeln beim ersten Zeichnen stimmen.
   await verlaufZeigen();
   await nutzerZeigen();
+  await einstellungenLaden();
   await abrechnungZeigen();
 }
 

@@ -88,6 +88,24 @@ S_NUTZER = "tankstelle_nutzer"
 # Adresse der Wallbox, gesetzt in `routers/openwb.py`. Hier nur gelesen.
 S_OPENWB_URL = "openwb_url"
 
+# N165 Teil 2 — der Schalter „automatische Abrechnung" je Objekt. Standardmässig
+# aus: verschickt wird nur, was der Nutzer bewusst freigegeben hat.
+S_AUTOVERSAND = "tankstelle_autoversand"
+# Die Mehrnutzer-Zuordnung je Objekt: Zeitraum-Regeln und ausgeschlossene
+# Ladungen, als JSON in einer Einstellung.
+S_ZUORDNUNG = "tankstelle_zuordnung"
+# Der Versendet-Marker je Objekt+Quartal+Nutzer. Er ist die eine Zusicherung
+# gegen doppelten Versand: der 15-Minuten-Wachdienst schickt ein bereits
+# verschicktes Quartal nie ein zweites Mal.
+S_VERSENDET = "tankstelle_versendet"
+
+# Wie viele Tage nach Quartalsende der automatische Versand noch nachholt. Der
+# Auslöser ist „einen Tag nach dem Quartal" — dieses Fenster fängt ab, dass die
+# App am Stichtag gerade aus war, ohne beim späteren Einschalten alte Quartale
+# nachzublasen. Der Versendet-Marker verhindert Dopplungen innerhalb des
+# Fensters.
+GRACE_TAGE = 20
+
 # Die Box steht im Heimnetz und ist mal aus. Kurz genug, dass die Seite nicht
 # hängt.
 TIMEOUT = 8.0
@@ -428,6 +446,81 @@ def posten_als_buchungen(posten: list[Posten],
                      kwh=p.kwh) for p in posten if p.kwh], True)
 
 
+@dataclass
+class RohLadung:
+    """Eine erfasste Ladung, auf das reduziert, was die Zuordnung braucht.
+
+    `id` ist der stabile Griff für den Ausschluss einzelner Ladungen; `name`
+    ist die bisherige Zuordnung über den Namen, die greift, wenn keine
+    Zeitraum-Regel passt."""
+    id: int | None
+    tag: date | None
+    name: str
+    email: str
+    kwh: float
+
+
+def _regel_treffer(regeln: list[dict], tag: date | None) -> dict | None:
+    """Die Zeitraum-Regel, die einen Ladetag enthält (beide Ränder zählen).
+
+    Ohne Datum lässt sich keine Regel anwenden — dann ``None``. Treffen mehrere
+    Regeln denselben Tag (überlappende Zeiträume), gewinnt die mit dem
+    **späteren Beginn**: die jüngere, engere Zuordnung überschreibt die ältere,
+    breite. Bei gleichem Beginn entscheidet das spätere Ende. So ist die
+    Auswahl deterministisch und für den Nutzer nachvollziehbar."""
+    if tag is None:
+        return None
+    passend = [r for r in regeln if r["von"] <= tag <= r["bis"]]
+    if not passend:
+        return None
+    return max(passend, key=lambda r: (r["von"], r["bis"]))
+
+
+def zuordnen(rohe: list[RohLadung], nutzer: list[dict], regeln: list[dict],
+             ausschluss: set[int]) -> list[Buchung]:
+    """Erfasste Ladungen einer Person zuschlagen — über einen Zeitraum, nicht
+    Ladung für Ladung (N165 Teil 2).
+
+    Für jede Ladung: liegt ihr Tag in einer Zeitraum-Regel, gehört sie dem
+    Nutzer dieser Regel; sonst bleibt es bei der bisherigen Zuordnung über den
+    Namen (`RohLadung.name`) — so geht keine Ladung verloren, nur weil (noch)
+    keine Regel sie trägt. Ausgeschlossene Ladungen (`ausschluss`, Menge von
+    Ladungs-Ids) fallen ganz heraus; das ist der Korrekturweg für eine falsch
+    zugeordnete Ladung. `regeln` trägt bereits geprüfte Regeln mit
+    ``date``-Rändern und einer `nutzer_id`, die in `nutzer` steht."""
+    nach_id = {n["id"]: n for n in nutzer}
+    gueltig = [r for r in regeln if r.get("nutzer_id") in nach_id]
+    ergebnis: list[Buchung] = []
+    for l in rohe:
+        if l.id is not None and l.id in ausschluss:
+            continue
+        treffer = _regel_treffer(gueltig, l.tag) if gueltig else None
+        if treffer is not None:
+            n = nach_id[treffer["nutzer_id"]]
+            ergebnis.append(Buchung(tag=l.tag, person=n["name"],
+                                    email=n.get("email", ""), kwh=l.kwh))
+        else:
+            ergebnis.append(Buchung(tag=l.tag, person=l.name, email=l.email,
+                                    kwh=l.kwh))
+    return ergebnis
+
+
+def faelliges_quartal(heute: date | None = None) -> tuple[int, int] | None:
+    """Das Quartal, dessen Abrechnung jetzt automatisch fällig ist — oder
+    ``None``.
+
+    Ausgelöst wird **einen Tag nach Quartalsende**: am 01.07. steht Q2 an, am
+    01.01. das Q4 des Vorjahres. Fällig bleibt es :data:`GRACE_TAGE` Tage lang,
+    damit ein am Stichtag ausgeschalteter Rechner es nachholen kann; danach
+    nicht mehr, damit ein spät eingeschalteter Autoversand nicht rückwirkend
+    alte Quartale verschickt."""
+    heute = heute or date.today()
+    q = (heute.month - 1) // 3 + 1
+    jahr, quartal = (heute.year - 1, 4) if q == 1 else (heute.year, q - 1)
+    ende = quartal_zeitraum(jahr, quartal)[1]
+    return (jahr, quartal) if 1 <= (heute - ende).days <= GRACE_TAGE else None
+
+
 def deutsch(wert: float, stellen: int = 2) -> str:
     """Eine Zahl in deutscher Schreibweise: „1.234,56".
 
@@ -696,6 +789,94 @@ def nutzer_entfernen(slug: str, nid: int,
 
 
 # ==========================================================================
+# Einstellungen je Objekt — Autoversand, Zuordnung, Versendet-Marker (N165/2)
+#
+# Alles in der vorhandenen Schlüssel/Wert-Ablage `Einstellung`; kein neues
+# Modellfeld, keine Migration. Eigener Namensraum, es wird kein bestehender
+# Schlüssel angefasst.
+# ==========================================================================
+
+def _setze(session: Session, schluessel: str, wert: str) -> None:
+    """Eine Einstellung setzen (anlegen oder überschreiben) — ohne commit."""
+    e = session.get(Einstellung, schluessel)
+    if e is None:
+        e = Einstellung(schluessel=schluessel, wert=wert)
+    else:
+        e.wert = wert
+    session.add(e)
+
+
+def autoversand_aktiv(session: Session, slug: str) -> bool:
+    """Ist der automatische Versand für dieses Objekt eingeschaltet? Default aus."""
+    return _lies(session, f"{S_AUTOVERSAND}:{slug}") == "1"
+
+
+def _regel_pruefen(regel: dict, nach_id: dict[int, dict]) -> dict | None:
+    """Eine rohe Regel aus der Einstellung in ``{nutzer_id, von, bis}`` mit
+    ``date``-Rändern übersetzen — unbrauchbare Regeln fallen still weg.
+
+    Eine kaputte gespeicherte Regel darf die Abrechnung nicht zum Absturz
+    bringen: fehlt ein Feld oder liegt das Ende vor dem Beginn, wird sie
+    übergangen (und beim nächsten Speichern von der Oberfläche berichtigt)."""
+    try:
+        nid = int(regel.get("nutzer_id"))
+        von = date.fromisoformat(regel["von"])
+        bis = date.fromisoformat(regel["bis"])
+    except (TypeError, ValueError, KeyError):
+        return None
+    if nid not in nach_id or bis < von:
+        return None
+    return {"nutzer_id": nid, "von": von, "bis": bis}
+
+
+def zuordnung_lesen(session: Session, slug: str,
+                    nutzer: list[dict]) -> tuple[list[dict], set[int]]:
+    """Die Mehrnutzer-Zuordnung eines Objekts: geprüfte Zeitraum-Regeln und die
+    Menge ausgeschlossener Ladungs-Ids.
+
+    Unlesbares JSON ergibt eine leere Zuordnung und einen Log-Eintrag — nie
+    einen Fehler, der die Abrechnung anhält. Regeln auf gelöschte Nutzer fallen
+    weg (`nutzer` ist die aktuelle Liste)."""
+    roh = _lies(session, f"{S_ZUORDNUNG}:{slug}")
+    if not roh:
+        return [], set()
+    try:
+        daten = json.loads(roh)
+    except ValueError:
+        log.warning("Zuordnung der E-Tankstelle (%s) unlesbar — übergangen", slug)
+        return [], set()
+    if not isinstance(daten, dict):
+        return [], set()
+    nach_id = {n["id"]: n for n in nutzer}
+    regeln = [g for g in (_regel_pruefen(r, nach_id)
+                          for r in daten.get("regeln", []) if isinstance(r, dict))
+              if g is not None]
+    ausschluss = {int(x) for x in daten.get("ausschluss", [])
+                  if isinstance(x, (int, str)) and str(x).lstrip("-").isdigit()}
+    return regeln, ausschluss
+
+
+def _versendet_schluessel(slug: str, jahr: int, quartal: int,
+                          nutzer_id: int) -> str:
+    return f"{S_VERSENDET}:{slug}:{jahr}:Q{quartal}:{nutzer_id}"
+
+
+def ist_versendet(session: Session, slug: str, jahr: int, quartal: int,
+                  nutzer_id: int) -> bool:
+    """Wurde dieses Quartal an diesen Nutzer schon automatisch verschickt?"""
+    return bool(_lies(session, _versendet_schluessel(slug, jahr, quartal,
+                                                     nutzer_id)))
+
+
+def _versendet_merken(session: Session, slug: str, jahr: int, quartal: int,
+                      nutzer_id: int) -> None:
+    """Den Versand festhalten — die eine Zusicherung gegen Dopplung. Ohne commit;
+    der Aufrufer committet nach jedem erfolgreichen Versand einzeln."""
+    _setze(session, _versendet_schluessel(slug, jahr, quartal, nutzer_id),
+           date.today().isoformat())
+
+
+# ==========================================================================
 # Datenquellen — erst die Wallbox, dann die erfassten Ladungen
 # ==========================================================================
 
@@ -815,16 +996,24 @@ def _person(l: Tankladung, namen: dict[int, str]) -> str:
     return namen.get(l.person_id or 0, "") or l.name or "—"
 
 
-def buchungen(session: Session, objekt_id: int, von: date,
-              bis: date) -> list[Buchung]:
+def buchungen(session: Session, objekt_id: int, von: date, bis: date,
+              nutzer: list[dict] | None = None,
+              regeln: list[dict] | None = None,
+              ausschluss: set[int] | None = None) -> list[Buchung]:
     """Die erfassten Ladungen als Abrechnungszeilen.
 
     `Tankladung.preis` wird bewusst **nicht** übernommen (N148): der Satz ist
-    abgeleitet und für alle Ladungen des Zeitraums derselbe."""
+    abgeleitet und für alle Ladungen des Zeitraums derselbe.
+
+    Ohne Zeitraum-Regeln bleibt es bei der Zuordnung über den Namen (der alte
+    Weg). Mit Regeln greift die Mehrnutzer-Zuordnung über den Zeitraum
+    (N165/2): jede Ladung geht an den Nutzer, dessen Zeitraum ihren Tag enthält;
+    ausgeschlossene Ladungen fallen heraus."""
     namen = {e.id: e.name for e in session.exec(select(Eigentuemer)).all()}
-    return [Buchung(tag=l.datum, person=_person(l, namen), email=l.email or "",
-                    kwh=l.kwh or 0.0)
+    rohe = [RohLadung(id=l.id, tag=l.datum, name=_person(l, namen),
+                      email=l.email or "", kwh=l.kwh or 0.0)
             for l in erfasste_ladungen(session, objekt_id, von, bis)]
+    return zuordnen(rohe, nutzer or [], regeln or [], ausschluss or set())
 
 
 # ==========================================================================
@@ -1065,7 +1254,15 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     # Zeitraums (aus den geladenen Mengen, nicht nur aus den namentlich
     # erfassten Sätzen). Bei mehreren bleibt es bei der Zuordnung über den Namen.
     auto_buch, automatisch = posten_als_buchungen(posten, liste)
-    quelle_buch = auto_buch if automatisch else buchungen(session, o.id, von, bis)
+    if automatisch:
+        quelle_buch = auto_buch
+    else:
+        # Mehrere Nutzer: Zuordnung über den Zeitraum, wenn Regeln hinterlegt
+        # sind; sonst wie bisher über den Namen. Ausgeschlossene Ladungen fallen
+        # in beiden Fällen heraus (N165/2).
+        regeln, ausschluss = zuordnung_lesen(session, o.slug, liste)
+        quelle_buch = buchungen(session, o.id, von, bis, liste, regeln,
+                                ausschluss)
     zeilen = abrechne(quelle_buch, liste, satz.misch)
     if automatisch:
         for z in zeilen:
@@ -1117,13 +1314,9 @@ def vorschau(slug: str, jahr: int = Query(default=0),
     """Die Mail, wie sie beim Nutzer ankäme — verschickt wird hier nichts."""
     daten = _abrechnung(session, o, slug, jahr or date.today().year, quartal)
     zeile = _zeile_holen(daten, nutzer_id, name)
-    von = date.fromisoformat(daten["von"])
-    bis = date.fromisoformat(daten["bis"])
+    betreff, text = _mailtext(o, daten, zeile)
     return {"an": zeile["email"], "name": zeile["name"],
-            "betreff": f"E-Tankstelle {o.name} — Abrechnung {daten['label']}",
-            "text": abrechnungstext(o.name, zeile, von, bis, daten["label"],
-                                    daten["eigen_prozent"],
-                                    daten["satz_herkunft"]),
+            "betreff": betreff, "text": text,
             "betrag": zeile["betrag"], "kwh": zeile["kwh"],
             "satz": zeile["satz"], "satz_grund": daten["satz_grund"],
             "label": daten["label"]}
@@ -1151,6 +1344,49 @@ def _quartal_verlauf(session: Session, o: Objekt, von: date,
     return monate, verlauf_summe(monate)
 
 
+def _mailtext(o: Objekt, daten: dict, zeile: dict) -> tuple[str, str]:
+    """Betreff und Text der Abrechnungsmail — von Vorschau, Versand und
+    Autoversand gemeinsam benutzt, damit alle drei dasselbe sagen."""
+    von = date.fromisoformat(daten["von"])
+    bis = date.fromisoformat(daten["bis"])
+    betreff = f"E-Tankstelle {o.name} — Abrechnung {daten['label']}"
+    text = abrechnungstext(o.name, zeile, von, bis, daten["label"],
+                           daten["eigen_prozent"], daten["satz_herkunft"])
+    return betreff, text
+
+
+def _pdf_und_name(session: Session, o: Objekt, daten: dict,
+                  zeile: dict) -> tuple[bytes, str]:
+    """Das Quartals-PDF eines Nutzers und sein Dateiname — die eine Stelle, die
+    das PDF baut. Ansehen (`abrechnung.pdf`) und Versand-Anhang teilen sie sich.
+
+    Setzt einen ermittelten Satz und einen Betrag voraus; die Aufrufer prüfen
+    das vorher (kein PDF über 0 €)."""
+    von = date.fromisoformat(daten["von"])
+    bis = date.fromisoformat(daten["bis"])
+    monate, summe = _quartal_verlauf(session, o, von, bis)
+    satz = {"netz": daten["satz_netz"], "eigen": daten["satz_eigen"],
+            "misch": daten["satz"], "herkunft": daten["satz_herkunft"],
+            "grund": daten["satz_grund"], "rabatt": daten["satz_rabatt"]}
+    inhalt = tankabrechnung_pdf(o.name, _empfaenger(session, zeile),
+                                daten["label"], von, bis, monate, summe, satz,
+                                zeile["kwh"], zeile["betrag"])
+    return inhalt, tank_pdf_dateiname(o.name, daten["label"], zeile["name"])
+
+
+def _sende_abrechnung(session: Session, o: Objekt, daten: dict, zeile: dict,
+                      adresse: str) -> None:
+    """Eine Abrechnung als Mail **mit dem Quartals-PDF im Anhang** verschicken.
+
+    Der Mailtext bleibt kurz (N165 Teil 1); die Zahlen trägt das PDF. Der Anhang
+    läuft über denselben Weg wie sonst in ImmoCalc (`Zugang.sende` mit
+    ``anhang=(name, inhalt, subtyp)``)."""
+    betreff, text = _mailtext(o, daten, zeile)
+    pdf, dateiname = _pdf_und_name(session, o, daten, zeile)
+    zugang(session).sende(adresse, betreff, text,
+                          anhang=(dateiname, pdf, "pdf"))
+
+
 @router.get("/{slug}/abrechnung.pdf")
 def abrechnung_pdf_zeigen(slug: str, jahr: int = Query(default=0),
                           quartal: int = Query(default=0),
@@ -1172,16 +1408,7 @@ def abrechnung_pdf_zeigen(slug: str, jahr: int = Query(default=0),
     if zeile["satz"] is None or not (zeile["betrag"] and zeile["betrag"] > 0):
         raise HTTPException(400, "Ohne Rechnungsbetrag gibt es kein PDF. "
                                  + (daten["satz_grund"] or ""))
-    von = date.fromisoformat(daten["von"])
-    bis = date.fromisoformat(daten["bis"])
-    monate, summe = _quartal_verlauf(session, o, von, bis)
-    satz = {"netz": daten["satz_netz"], "eigen": daten["satz_eigen"],
-            "misch": daten["satz"], "herkunft": daten["satz_herkunft"],
-            "grund": daten["satz_grund"], "rabatt": daten["satz_rabatt"]}
-    inhalt = tankabrechnung_pdf(o.name, _empfaenger(session, zeile),
-                                daten["label"], von, bis, monate, summe, satz,
-                                zeile["kwh"], zeile["betrag"])
-    dateiname = tank_pdf_dateiname(o.name, daten["label"], zeile["name"])
+    inhalt, dateiname = _pdf_und_name(session, o, daten, zeile)
     return Response(content=inhalt, media_type="application/pdf", headers={
         "Content-Disposition": f'inline; filename="{dateiname}"'})
 
@@ -1219,16 +1446,183 @@ def versenden(slug: str, data: VersandIn,
         raise HTTPException(400, "Für diesen Zeitraum steht noch kein Preis je "
                                  "kWh fest. " + daten["satz_grund"])
 
-    von = date.fromisoformat(daten["von"])
-    bis = date.fromisoformat(daten["bis"])
-    betreff = f"E-Tankstelle {o.name} — Abrechnung {daten['label']}"
-    text = abrechnungstext(o.name, zeile, von, bis, daten["label"],
-                           daten["eigen_prozent"], daten["satz_herkunft"])
     try:
-        zugang(session).sende(adresse, betreff, text)
+        _sende_abrechnung(session, o, daten, zeile, adresse)
     except MailFehler as fehler:
         raise HTTPException(400, str(fehler)) from fehler
-    log.info("E-Tankstelle %s: Abrechnung %s an %s versendet", o.slug,
+    log.info("E-Tankstelle %s: Abrechnung %s an %s versendet (mit PDF)", o.slug,
              daten["label"], adresse)
     return {"ok": True, "an": adresse, "label": daten["label"],
             "betrag": zeile["betrag"]}
+
+
+# ==========================================================================
+# N165 Teil 2 — Autoversand-Schalter und Mehrnutzer-Zuordnung (Endpunkte)
+# ==========================================================================
+
+class AutoversandIn(BaseModel):
+    aktiv: bool = False
+
+
+class RegelIn(BaseModel):
+    """Eine Zeitraum-Regel: „vom … bis … lädt dieser Nutzer"."""
+    nutzer_id: int
+    von: date
+    bis: date
+
+
+class ZuordnungIn(BaseModel):
+    """Die Mehrnutzer-Zuordnung eines Objekts: Zeitraum-Regeln je Nutzer und
+    einzeln ausgeschlossene Ladungen (der Korrekturweg)."""
+    regeln: list[RegelIn] = []
+    ausschluss: list[int] = []
+
+
+@router.get("/{slug}/einstellungen")
+def einstellungen(slug: str, session: Session = Depends(get_session),
+                  o: Objekt = Depends(objekt_holen)) -> dict:
+    """Autoversand-Schalter und Mehrnutzer-Zuordnung eines Objekts."""
+    liste = nutzer_lesen(session, o)
+    regeln, ausschluss = zuordnung_lesen(session, o.slug, liste)
+    return {"autoversand": autoversand_aktiv(session, o.slug),
+            "regeln": [{"nutzer_id": r["nutzer_id"], "von": r["von"].isoformat(),
+                        "bis": r["bis"].isoformat()} for r in regeln],
+            "ausschluss": sorted(ausschluss)}
+
+
+@router.put("/{slug}/autoversand")
+def autoversand_setzen(slug: str, data: AutoversandIn,
+                       session: Session = Depends(get_session),
+                       o: Objekt = Depends(objekt_holen)) -> dict:
+    """Den automatischen Versand ein- oder ausschalten. Default aus — verschickt
+    wird nur, was der Nutzer bewusst freigibt."""
+    _setze(session, f"{S_AUTOVERSAND}:{o.slug}", "1" if data.aktiv else "0")
+    session.commit()
+    log.info("E-Tankstelle %s: Autoversand %s", o.slug,
+             "eingeschaltet" if data.aktiv else "ausgeschaltet")
+    return {"autoversand": data.aktiv}
+
+
+@router.put("/{slug}/zuordnung")
+def zuordnung_setzen(slug: str, data: ZuordnungIn,
+                     session: Session = Depends(get_session),
+                     o: Objekt = Depends(objekt_holen)) -> dict:
+    """Die Mehrnutzer-Zuordnung setzen: je Nutzer ein Zeitraum, dazu die
+    einzeln ausgeschlossenen Ladungen. Ganz ersetzend — die Oberfläche schickt
+    stets den vollständigen Stand."""
+    bekannt = {n["id"] for n in nutzer_lesen(session, o)}
+    for r in data.regeln:
+        if r.bis < r.von:
+            raise HTTPException(400, "Das Ende eines Zeitraums liegt vor "
+                                     "seinem Beginn.")
+        if r.nutzer_id not in bekannt:
+            raise HTTPException(400, "Eine Regel verweist auf einen Nutzer, "
+                                     "der nicht (mehr) in der Liste steht.")
+    daten = {"regeln": [{"nutzer_id": r.nutzer_id, "von": r.von.isoformat(),
+                         "bis": r.bis.isoformat()} for r in data.regeln],
+             "ausschluss": sorted(set(data.ausschluss))}
+    _setze(session, f"{S_ZUORDNUNG}:{o.slug}", json.dumps(daten))
+    session.commit()
+    log.info("E-Tankstelle %s: Zuordnung gesetzt — %d Regel(n), %d "
+             "ausgeschlossen", o.slug, len(daten["regeln"]),
+             len(daten["ausschluss"]))
+    return {"ok": True, "regeln": daten["regeln"],
+            "ausschluss": daten["ausschluss"]}
+
+
+# ==========================================================================
+# N165 Teil 2 — der automatische Versand, einen Tag nach Quartalsende
+#
+# Kein zweiter Zeitgeber: der Wachdienst (`wachdienst.py`, alle 15 Minuten) ruft
+# `versand_faellig_pruefen(session)` auf. Die Funktion ist idempotent — der
+# Versendet-Marker sorgt dafür, dass ein Quartal nie zweimal hinausgeht.
+# ==========================================================================
+
+def _autoversand_objekt(session: Session, o: Objekt, jahr: int,
+                        quartal: int) -> int:
+    """Ein Objekt automatisch abrechnen: an jeden angelegten Nutzer mit Adresse,
+    Ladung und ermitteltem Satz die Abrechnung schicken — sofern das Quartal ihm
+    noch nicht geschickt wurde.
+
+    Kein Versand bei 0 € oder ohne Satz (lieber nichts als eine Rechnung über
+    nichts). Nach jedem erfolgreichen Versand wird der Marker gesetzt und einzeln
+    committet — so verliert ein Abbruch mitten im Lauf höchstens die noch nicht
+    verschickten Nutzer, nie den schon erledigten Marker."""
+    daten = _abrechnung(session, o, o.slug, jahr, quartal)
+    if daten["satz"] is None:
+        return 0
+    gesendet = 0
+    for zeile in daten["nutzer"]:
+        nid = zeile.get("nutzer_id")
+        betrag = zeile.get("betrag")
+        if not nid or not zeile.get("email"):
+            continue
+        if not (zeile["kwh"] > 0) or not (betrag and betrag > 0):
+            continue
+        if ist_versendet(session, o.slug, jahr, quartal, nid):
+            continue
+        try:
+            _sende_abrechnung(session, o, daten, zeile, zeile["email"])
+        except (MailFehler, HTTPException) as fehler:
+            log.warning("E-Tankstelle %s: Autoversand an %s fehlgeschlagen — %s",
+                        o.slug, zeile["email"], fehler)
+            continue
+        _versendet_merken(session, o.slug, jahr, quartal, nid)
+        session.commit()
+        gesendet += 1
+        log.info("E-Tankstelle %s: Autoversand %s an %s (mit PDF)", o.slug,
+                 daten["label"], zeile["email"])
+    return gesendet
+
+
+def versand_faellig_pruefen(session: Session,
+                            heute: date | None = None) -> dict:
+    """Vom Wachdienst gerufen: verschickt fällige Quartalsabrechnungen für alle
+    Objekte mit eingeschaltetem Autoversand.
+
+    Idempotent: ausgelöst wird einen Tag nach Quartalsende (Fenster
+    :data:`GRACE_TAGE`), und jeder Versand wird per Marker festgehalten — ein
+    zweiter Lauf im selben Fenster schickt nichts erneut. Ist gerade kein
+    Quartal fällig, tut die Funktion nichts."""
+    heute = heute or date.today()
+    fq = faelliges_quartal(heute)
+    if fq is None:
+        return {"faellig": False, "geprueft": 0, "versendet": 0}
+    jahr, quartal = fq
+    geprueft = versendet = 0
+    for o in session.exec(select(Objekt)).all():
+        if not autoversand_aktiv(session, o.slug):
+            continue
+        geprueft += 1
+        try:
+            versendet += _autoversand_objekt(session, o, jahr, quartal)
+        except Exception as fehler:            # noqa: BLE001 - nie den Lauf killen
+            log.warning("E-Tankstelle %s: Autoversand-Lauf fehlgeschlagen — %s",
+                        o.slug, fehler)
+    if versendet:
+        log.info("E-Tankstelle: Autoversand Q%d %d — %d Abrechnung(en) an %d "
+                 "Objekt(en) geprüft", quartal, jahr, versendet, geprueft)
+    return {"faellig": True, "jahr": jahr, "quartal": quartal,
+            "geprueft": geprueft, "versendet": versendet}
+
+
+def autoversand_lauf() -> dict:
+    """Der Einhängepunkt für den Wachdienst: öffnet eine eigene Session und
+    prüft den fälligen Autoversand — parameterlos, wie die übrigen Läufe des
+    Wachdienstes (`einmal_scannen`, `_ocr_lauf`).
+
+    Damit ist die eine Zeile in `wachdienst.schleife` (im ``try``-Block, neben
+    den anderen ``to_thread``-Aufrufen)::
+
+        await asyncio.to_thread(autoversand_lauf)
+
+    mit dem Import ``from .routers.tankstelle import autoversand_lauf``. Wirft
+    nie — der Wächter darf daran nicht sterben."""
+    from ..db import engine
+    try:
+        with Session(engine) as session:
+            return versand_faellig_pruefen(session)
+    except Exception as fehler:                # noqa: BLE001 - Wächter darf nie sterben
+        log.warning("E-Tankstelle: Autoversand-Lauf fehlgeschlagen — %s", fehler)
+        return {"faellig": False, "geprueft": 0, "versendet": 0,
+                "fehler": str(fehler)}

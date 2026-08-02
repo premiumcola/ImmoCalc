@@ -133,6 +133,12 @@ async def schleife() -> None:
                 _zustand["immocalc_aufgeraeumt_gesamt"] = \
                     int(_zustand["immocalc_aufgeraeumt_gesamt"]) + weg
                 log.info("Verwaiste .immocalc entfernt: %d", weg)
+            # N165 — einen Tag nach Quartalsende die E-Tankstellen-Abrechnungen
+            # der Objekte mit eingeschaltetem Autoversand verschicken. Prueft
+            # selbst auf Faelligkeit und doppelten Versand; laeuft ins Leere,
+            # wo nichts ansteht.
+            from .routers.tankstelle import autoversand_lauf
+            await asyncio.to_thread(autoversand_lauf)
         except asyncio.CancelledError:
             _zustand["laeuft"] = False
             raise
