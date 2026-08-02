@@ -630,6 +630,37 @@
      Dialog gebunden), damit sie hier greifen. */
   .wd-inline{margin-bottom:14px}
   .wd-lade{color:var(--soft);font:500 13px var(--body);padding:8px 2px}
+  /* N79 — Heizöl-Manager (Lieferungen + FIFO) inline in der Heizkosten-Position. */
+  .ho-inline{margin-bottom:14px}
+  .ho-kpi{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .ho-kbox{flex:1 1 120px;background:var(--paper);border-radius:12px;padding:10px 12px}
+  .ho-kbox.teal{background:var(--teal-l)}
+  .ho-kbox.teal .ho-kv{color:var(--teal-d)}
+  .ho-kl{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft)}
+  .ho-kv{display:block;font:700 15px var(--disp);letter-spacing:-.02em;margin-top:5px;color:var(--ink)}
+  .ho-warn{background:var(--amber-bg);color:var(--amber);border-radius:11px;
+    padding:10px 12px;margin-bottom:10px;font:500 12px var(--body);line-height:1.45}
+  .ho-liste{display:flex;flex-direction:column;gap:6px}
+  .ho-zeile{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
+    background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+  .ho-dt{flex:1 1 130px;font:600 12px var(--body);color:var(--ink)}
+  .ho-anf{font:600 9px var(--mono);color:var(--teal-d);background:var(--teal-l);
+    border-radius:6px;padding:1px 6px}
+  .ho-lit,.ho-wert{font:600 12px var(--mono);color:var(--ink)}
+  .ho-pl{font:500 11px var(--mono);color:var(--soft)}
+  .ho-x{border:none;background:var(--paper);width:30px;height:30px;border-radius:50%;
+    color:var(--neg);font:700 15px var(--body);cursor:pointer;flex:none}
+  .ho-summe{margin-top:8px;font:500 12px var(--body);color:var(--soft)}
+  .ho-summe b{color:var(--ink);font-weight:700}
+  .ho-neu{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;
+    padding-top:12px;border-top:1px solid var(--line)}
+  .ho-neu input[type=date],.ho-neu input[type=number]{border:1.5px solid var(--line);
+    border-radius:10px;padding:9px 11px;min-height:44px;font:500 12px var(--body);
+    background:var(--sheet)}
+  .ho-neu input[type=number]{width:110px}
+  .ho-neu input:focus{outline:none;border-color:var(--teal)}
+  .ho-anfw{display:inline-flex;align-items:center;gap:6px;font:500 12px var(--body);color:var(--ink)}
   .wd-hinweis{background:var(--amber-bg);color:var(--amber);border-radius:11px;
     padding:11px 13px;margin:0 0 14px;font:500 12.5px var(--body);line-height:1.5}
   .wd-laedt,.wd-leer{font:500 13px var(--body);color:var(--soft);padding:16px 2px;
@@ -1191,6 +1222,17 @@ function istWasserSammel(k) {
    ebene), nur „Datei wählen". `erledigt` heißt: Betrag liegt vor (aus dem PDF). */
 function wasserHatRechnung(k) {
   return !!(k.erledigt || (k.belege && k.belege.length));
+}
+
+/* N79 — die Heizöl-/Heizkosten-Sammelposition: beim Aufklappen erscheint der
+   Öl-Manager (Lieferungen erfassen, FIFO-Bewertung), statt eines Handbetrags.
+   Bewusst eng: nur die reine Heizung/Heizkosten-Position, nicht Warmwasser,
+   nicht „Wartung Heizung". */
+function istHeizoelSammel(k) {
+  const n = normUml(k.kostenart);
+  if (n.includes('wartung') || n.includes('warmwasser')) return false;
+  return n === 'heizung' || n === 'heizkosten' || n.includes('heizoel')
+    || n.includes('heizol');
 }
 
 /* N68 — generische Anzeigenamen je Zähler-id: die spezifischen Namen treten in
@@ -1756,6 +1798,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   // das Aufklappen die Detailübersicht INLINE (kein Popup); nie ein Handbetrag.
   const wasserSammel = istWasserSammel(k);
   const wasserBill = wasserSammel && wasserHatRechnung(k);
+  const heizoelSammel = istHeizoelSammel(k);
   const kannAuf = !wasserSammel || wasserBill;
   const auf = aufgeklappt && kannAuf;
 
@@ -1766,6 +1809,15 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
           >${ANH_ICON} Beleg anhängen</button>` : '';
     koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
         <div class="wd-lade">Detailübersicht wird geladen …</div></div>
+      <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+  } else if (auf && heizoelSammel) {
+    // N79 — Öl-Manager: Lieferungen + FIFO-Bewertung inline; darunter die Belege
+    // (die Öl-Rechnungen selbst).
+    const anbau = bearbeitbar
+      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
+          >${ANH_ICON} Öl-Rechnung anhängen</button>` : '';
+    koerper = `<div class="ho-inline" data-heizoel-inline="${zid}">
+        <div class="wd-lade">Heizöl wird geladen …</div></div>
       <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
   } else if (auf && k.position_id) {
     // Der Betrag steht jetzt oben im Kopf (kopf-betrag) — kein zweites Feld hier.
@@ -1817,7 +1869,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
 
   // Der Betrag im Kopf: aufgeklappt ein schlankes Eingabefeld (speichert beim
   // Verlassen), sonst der lesbare Wert — so steht er nur einmal in der Karte.
-  const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel)
+  const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel && !heizoelSammel)
     ? `<span class="kopf-betrag-box"><input class="kopf-betrag" type="number" step="0.01"
          inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
@@ -2138,7 +2190,101 @@ async function zeichnen() {
     // N74 — eine aufgeklappte Wasser-Position lädt ihre Detailübersicht inline.
     const wInline = inhalt.querySelector('[data-wasser-inline]');
     if (wInline) fuelleWasserInline(wInline);
+    // N79 — die aufgeklappte Heizöl-Position lädt ihren Öl-Manager inline.
+    const hInline = inhalt.querySelector('[data-heizoel-inline]');
+    if (hInline) fuelleHeizoelInline(hInline);
   }
+}
+
+/* Kurzes deutsches Datum aus ISO (für die Öl-Lieferungsliste). */
+const _isoKurz = iso => iso ? new Date(iso).toLocaleDateString('de-DE') : '';
+
+/* N79 — eine Öl-Lieferung erfassen (Liter + Wert + Datum, optional Anfangs-
+   bestand). Danach neu zeichnen → der Öl-Manager lädt frisch (FIFO aktualisiert). */
+async function heizoelHinzufuegen(btn) {
+  const box = btn.closest('.ho-neu');
+  const datum = box?.querySelector('[data-ho-datum]')?.value;
+  const liter = parseFloat(String(box?.querySelector('[data-ho-liter]')?.value || '').replace(',', '.'));
+  const wert = parseFloat(String(box?.querySelector('[data-ho-wert]')?.value || '').replace(',', '.'));
+  const anf = !!box?.querySelector('[data-ho-anf]')?.checked;
+  if (!datum || !(liter > 0)) { melde('Datum und Liter angeben', 'neg'); return; }
+  try {
+    await api(`/objekte/${encodeURIComponent(daten.objekt)}/heizoel`, {
+      method: 'POST',
+      body: { datum, liter, wert: Number.isFinite(wert) ? wert : 0, ist_anfangsbestand: anf },
+    });
+    melde('Öl-Lieferung erfasst', 'pos');
+    await zeichnen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* N79 — eine Öl-Lieferung wieder entfernen (Fehleingabe korrigieren). */
+async function heizoelEntfernen(id) {
+  try {
+    await api(`/heizoel/${id}`, { method: 'DELETE' });
+    melde('Lieferung entfernt', 'pos');
+    await zeichnen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* N79 — Öl-Manager inline in der aufgeklappten Heizkosten-Position: die
+   Lieferungen (Anfangsbestand + Nachtankungen), ein Erfassungsformular und die
+   FIFO-Bewertung (Verbrauch der Periode zum Einstandspreis des ältesten Öls,
+   Restbestand + Restwert). Daten aus GET /objekte/{slug}/heizoel und
+   GET .../heizoel/bewertung?zeitraum_id=. */
+async function fuelleHeizoelInline(el) {
+  try {
+    const [best, bew] = await Promise.all([
+      api(`/objekte/${encodeURIComponent(daten.objekt)}/heizoel`),
+      api(`/objekte/${encodeURIComponent(daten.objekt)}/heizoel/bewertung?zeitraum_id=${zid}`)
+        .catch(() => null),
+    ]);
+    el.innerHTML = heizoelInhalt(best, bew);
+  } catch (fehler) {
+    el.innerHTML = `<div class="wd-lade">Heizöl nicht ladbar: ${
+      esc(String(fehler.message || fehler))}</div>`;
+  }
+}
+
+/* Der Öl-Manager als HTML: FIFO-Kennzahlen oben, Lieferungsliste, Erfassung. */
+function heizoelInhalt(best, bew) {
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const liefer = (best?.lieferungen || []);
+  const kopf = bew && bew.verbrauch_liter != null
+    ? `<div class="ho-kpi">
+        <div class="ho-kbox"><span class="ho-kl">Verbrauch Periode</span>
+          <span class="ho-kv">${zahl(bew.verbrauch_liter)} L</span></div>
+        <div class="ho-kbox teal"><span class="ho-kl">Heizkosten (FIFO)</span>
+          <span class="ho-kv">${eur(bew.verbrauch_kosten)}</span></div>
+        <div class="ho-kbox"><span class="ho-kl">Restbestand</span>
+          <span class="ho-kv">${zahl(bew.rest_liter)} L · ${eur(bew.rest_wert)}</span></div>
+      </div>${bew.warnung ? `<div class="ho-warn">▲ ${esc(bew.warnung)}</div>` : ''}`
+    : `<div class="ho-warn">Noch keine Öl-Lieferung erfasst — unten anlegen. Der
+        Perioden-Verbrauch kommt aus dem Öl-Zähler.</div>`;
+  const zeilen = liefer.length ? liefer.map(l => `
+    <div class="ho-zeile">
+      <span class="ho-dt">${_isoKurz(l.datum)}${l.ist_anfangsbestand
+        ? ' <span class="ho-anf">Anfangsbestand</span>' : ''}</span>
+      <span class="ho-lit">${zahl(l.liter)} L</span>
+      <span class="ho-wert">${eur(l.wert)}</span>
+      <span class="ho-pl">${eur(l.preis_liter ?? (l.liter ? l.wert / l.liter : 0))}/L</span>
+      ${bearbeitbar ? `<button class="ho-x" data-heizoel-weg="${l.id}"
+        aria-label="Lieferung entfernen">×</button>` : ''}
+    </div>`).join('') : '';
+  const bestZeile = liefer.length
+    ? `<div class="ho-summe">Bestand gesamt: <b>${zahl(best.bestand_liter)} L</b>
+        · <b>${eur(best.bestand_wert)}</b> (Ø ${eur(best.preis_schnitt)}/L)</div>` : '';
+  const form = bearbeitbar ? `
+    <div class="ho-neu">
+      <input type="date" data-ho-datum aria-label="Datum" value="${daten.start || ''}">
+      <input type="number" step="0.1" data-ho-liter placeholder="Liter" aria-label="Liter">
+      <input type="number" step="0.01" data-ho-wert placeholder="€ gesamt" aria-label="Wert €">
+      <label class="ho-anfw"><input type="checkbox" data-ho-anf> Anfangsbestand</label>
+      <button class="btn" data-heizoel-add>Lieferung hinzufügen</button>
+    </div>` : '';
+  return `<div class="ho-box">${kopf}
+    ${zeilen ? `<div class="ho-liste">${zeilen}</div>${bestZeile}` : ''}
+    ${form}</div>`;
 }
 
 /* N74 — die Wasser-Detailübersicht als Tabelle IN die aufgeklappte Position
@@ -2887,6 +3033,12 @@ inhalt.addEventListener('click', async e => {
 
   const anhaengenKnopf = e.target.closest('[data-anhaengen]');
   if (anhaengenKnopf) return anhaengen(anhaengenKnopf.dataset.anhaengen);
+
+  // N79 — Heizöl-Lieferung hinzufügen / entfernen.
+  const hoAdd = e.target.closest('[data-heizoel-add]');
+  if (hoAdd) return heizoelHinzufuegen(hoAdd);
+  const hoWeg = e.target.closest('[data-heizoel-weg]');
+  if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg);
 
   const beleg = e.target.closest('[data-beleg]');
   if (beleg) {
