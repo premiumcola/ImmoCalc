@@ -4776,13 +4776,19 @@ function wasserDetailInhalt(d) {
   const kopf = `<tr><th class="wd-rowh">Verbrauch</th>${
     einheiten.map(e => `<th>${esc(e.name)}</th>`).join('')}</tr>`;
 
-  const artZeilen = arten.map(art => zeileMit(esc(art), '',
+  // N115 — unter jeder Zeile steht, WOHER die Zahl kommt: gemessen (Zähler),
+  // errechnet (Anteil am Rest) oder von Hand eingetragen. Ohne das ist nicht zu
+  // sehen, welche Werte belegt und welche verteilt sind.
+  const herkunft = a => /waschmaschine|kaltwasser|warmwasser/i.test(a)
+    ? 'nach Zähler' : /haupthaus|anteil/i.test(a) ? 'errechnet' : '';
+  const artZeilen = arten.map(art => zeileMit(
+    `${esc(art)}${herkunft(art) ? `<small>${herkunft(art)}</small>` : ''}`, '',
     einheiten.map(e => zelle(zusammen(e, art))))).join('');
 
   // Gartenwasser: volle Rate, geht an den Eigentümer — in der Spalte seiner
   // Einheit, sonst „–".
   const g = d.garten;
-  const gartenZeile = g ? zeileMit('Gartenwasser <small>Eigentümer</small>',
+  const gartenZeile = g ? zeileMit('Gartenwasser <small>manuell · Eigentümer</small>',
     'wd-garten', einheiten.map(e => e.name === g.einheit
       ? `<td><span class="wd-m3">${m3(g.m3)}</span>
           <span class="wd-eur">${eur(g.kosten)}</span></td>`
