@@ -1,6 +1,7 @@
 """Eigentümer, Tausendstel-Anteile, die Vermögensübersicht — und was am
 Vermögen hängt: die Jahresstände eines Kredits und die Bewohner eines
 Mietverhältnisses."""
+import json
 import os
 import sys
 import tempfile
@@ -505,6 +506,180 @@ def test_objektanteil_deckt_die_einheiten_ohne_eigene_zuordnung():
         assert zb["objekte"][0]["wert"] == 80000.0    # der Rest: Wohnung 2
         assert za["gesamt"]["miete_jahr"] == round(700 * 12, 2)
         assert zb["gesamt"]["miete_jahr"] == round(500 * 12, 2)
+
+
+# --------------------------------------------------------------------------
+# N146 — die PV-Anlage als untergeordnete Zeile unter ihrer Immobilie
+#
+# Die Anlage ist ein eigenes Investment mit eigenen Anteilen. Ihr Wert zählt auf
+# den Immobilienwert der Person, aber NICHT in Beleihung und Spielraum.
+# --------------------------------------------------------------------------
+
+def _pv(c, slug, anteile=None, anschaffung=36000.0, kwp=19.44):
+    """Die PV-Stammdaten setzen — über den Endpunkt, wie die Oberfläche."""
+    daten = {"anschaffung_eur": anschaffung, "kwp": kwp}
+    if anteile is not None:
+        daten["anteile"] = json.dumps(anteile)
+    return c.put(f"/api/objekte/{slug}/pv/stammdaten", json=daten)
+
+
+def _zeile(ueber, eid, slug):
+    person = next(z for z in ueber if z["id"] == eid)
+    return next(o for o in person["objekte"] if o["slug"] == slug)
+
+
+def test_pv_anlage_haengt_unter_ihrer_immobilie():
+    """Der Fall des Nutzers: die Anlage an der Laufer Str. 5 gehört 5/6 zu 1/6,
+    und dem Sechstel-Eigner gehört am Gebäude selbst nichts."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "PV-Hof 60", verkehrswert=500000.0)
+        haus = c.post("/api/eigentuemer",
+                      json={"name": "Katja & Roland 60"}).json()["id"]
+        pv = c.post("/api/eigentuemer", json={"name": "Roman 60"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": haus, "promille": 1000})
+        _pv(c, slug, {"Katja & Roland 60": 833.3333, "Roman 60": 166.6666})
+
+        ueber = c.get("/api/eigentuemer/uebersicht").json()["eigentuemer"]
+        zh, zp = _zeile(ueber, haus, slug), _zeile(ueber, pv, slug)
+
+        # Die Anlage steht unter der Immobilie, nicht als eigenes Objekt.
+        assert zh["pv"]["titel"] == "Investment PV"
+        assert zh["pv"]["promille"] == 833.3
+        assert zh["pv"]["wert"] == 30000.0
+        assert zh["pv"]["wertquelle"] == "Anschaffungswert"
+        assert zh["pv"]["kwp"] == 19.44
+        # Der Sechstel-Eigner hält am Gebäude nichts — nur an der Anlage.
+        assert zp["fraktion"] == 0.0
+        assert zp["wert"] == 0.0
+        assert zp["pv"]["promille"] == 166.7
+        assert zp["pv"]["wert"] == 6000.0
+
+
+def test_pv_anteil_zaehlt_auf_den_objektwert_der_person():
+    """„Auf den Gesamtwert der jeweiligen Immobilie für die Person" — der
+    Immobilienwert selbst bleibt daneben unverändert stehen."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "PV-Hof 61", verkehrswert=300000.0)
+        e = c.post("/api/eigentuemer", json={"name": "Alleineigner PV"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 1000})
+        _pv(c, slug, {"Alleineigner PV": 1000.0}, anschaffung=36000.0)
+
+        person = next(z for z in c.get("/api/eigentuemer/uebersicht").json()
+                      ["eigentuemer"] if z["id"] == e)
+        zeile = person["objekte"][0]
+        assert zeile["wert"] == 300000.0              # die Immobilie allein
+        assert zeile["pv_wert"] == 36000.0
+        assert zeile["wert_gesamt"] == 336000.0       # mit der Anlage
+        assert person["gesamt"]["wert"] == 300000.0
+        assert person["gesamt"]["wert_gesamt"] == 336000.0
+        assert person["gesamt"]["eigenkapital_gesamt"] == 336000.0
+
+
+def test_pv_summe_ueber_alle_personen_trifft_den_anlagenwert():
+    """Wird der Anteil auf die Personen addiert, muss die Summe weiterhin dem
+    Gesamtwert der Anlage entsprechen — kein Cent mehr, keiner weniger."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "PV-Hof 62", verkehrswert=200000.0)
+        ids = [c.post("/api/eigentuemer", json={"name": f"Drittel {n}"})
+               .json()["id"] for n in range(3)]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": ids[0], "promille": 1000})
+        _pv(c, slug, {f"Drittel {n}": 333.3 for n in range(3)},
+            anschaffung=10000.0)
+
+        # Nur die Zeilen dieses Objekts — die Testdatenbank trägt auch die
+        # Objekte der übrigen Tests.
+        zeilen = [o for z in c.get("/api/eigentuemer/uebersicht").json()
+                  ["eigentuemer"] for o in z["objekte"] if o["slug"] == slug]
+        assert round(sum(o["pv_wert"] for o in zeilen), 2) == 10000.0
+        # Und die Objektwerte gehen weiterhin auf: Immobilie + Anlage
+        assert round(sum(o["wert_gesamt"] for o in zeilen), 2) == 210000.0
+
+
+def test_objekt_ohne_pv_anlage_bleibt_zahlengleich():
+    """Die wichtigste Zusicherung: ein Objekt ohne Anlage ändert sich in
+    keiner Zahl. `wert_gesamt` ist dort exakt `wert`."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Ohne PV 63", verkehrswert=250000.0)
+        e = c.post("/api/eigentuemer", json={"name": "Ohne Anlage"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 1000})
+
+        person = next(z for z in c.get("/api/eigentuemer/uebersicht").json()
+                      ["eigentuemer"] if z["id"] == e)
+        zeile = next(o for o in person["objekte"] if o["slug"] == slug)
+        assert zeile["pv"] is None
+        assert zeile["pv_wert"] == 0.0
+        assert zeile["wert"] == zeile["wert_gesamt"] == 250000.0
+        assert zeile["eigenkapital"] == zeile["eigenkapital_gesamt"] == 250000.0
+        assert person["gesamt"]["pv_wert"] == 0.0
+        assert person["gesamt"]["wert"] == person["gesamt"]["wert_gesamt"]
+
+
+def test_pv_anteile_ungleich_tausend_werden_proportional_gerechnet():
+    """Von Hand gepflegt, deshalb möglich: 900 ‰. Proportional rechnen und
+    hinweisen — nichts sperren."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "PV-Hof 64", verkehrswert=100000.0)
+        a = c.post("/api/eigentuemer", json={"name": "Krumm A"}).json()["id"]
+        b = c.post("/api/eigentuemer", json={"name": "Krumm B"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": a, "promille": 1000})
+        _pv(c, slug, {"Krumm A": 600, "Krumm B": 300}, anschaffung=9000.0)
+
+        ueber = c.get("/api/eigentuemer/uebersicht").json()["eigentuemer"]
+        za, zb = _zeile(ueber, a, slug), _zeile(ueber, b, slug)
+        assert za["pv"]["wert"] == 6000.0
+        assert zb["pv"]["wert"] == 3000.0
+        assert za["pv"]["anteile_summe"] == 900.0
+        assert any("900 ‰ statt 1000 ‰" in h for h in za["pv"]["hinweise"])
+
+
+def test_pv_name_ohne_person_wird_benannt_statt_verschwiegen():
+    with TestClient(app) as c:
+        slug = _objekt(c, "PV-Hof 65", verkehrswert=100000.0)
+        e = c.post("/api/eigentuemer", json={"name": "Bekannt 65"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 1000})
+        _pv(c, slug, {"Bekannt 65": 500, "Wer ist das": 500},
+            anschaffung=10000.0)
+
+        zeile = _zeile(c.get("/api/eigentuemer/uebersicht").json()["eigentuemer"],
+                       e, slug)
+        assert zeile["pv"]["wert"] == 5000.0          # nur die eigenen 500 ‰
+        assert any("Wer ist das" in h for h in zeile["pv"]["hinweise"])
+
+
+def test_pv_bleibt_aus_beleihung_und_wertsteigerung_heraus():
+    """Ausdrücklich gewollt: die Anlage ist kein beleihbares Grundpfandobjekt.
+    Beleihungsquote und freier Spielraum rechnen ohne sie."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "PV-Hof 66", kaufpreis=400000.0, verkehrswert=500000.0)
+        e = c.post("/api/eigentuemer", json={"name": "Beleiht 66"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 1000})
+        c.post(f"/api/objekte/{slug}/kredite", json={
+            "bezeichnung": "Hauskredit", "restschuld": 250000.0,
+            "rate_monatlich": 1000.0, "zinssatz": 2.0})
+        _pv(c, slug, {"Beleiht 66": 1000.0}, anschaffung=36000.0)
+
+        # /vermoegen (Basis für Quote und Wertentwicklung) kennt die Anlage nicht
+        v = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                 if z["slug"] == slug)
+        assert v["wert"] == 500000.0
+        assert v["beleihung"] == 50.0
+        assert v["wertzuwachs"] == 100000.0           # 500.000 − 400.000, ohne PV
+
+        # Und in der Eigentümersicht trägt `wert` weiter die Quote:
+        # 250.000 / 500.000, nicht 250.000 / 536.000.
+        person = next(z for z in c.get("/api/eigentuemer/uebersicht").json()
+                      ["eigentuemer"] if z["id"] == e)
+        g = person["gesamt"]
+        assert g["wert"] == 500000.0
+        assert round(g["restschuld"] / g["wert"] * 100, 1) == 50.0
+        assert g["wert_gesamt"] == 536000.0
 
 
 # --------------------------------------------------------------------------

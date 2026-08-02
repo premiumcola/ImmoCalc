@@ -98,6 +98,29 @@
   .eigwert .ewv{display:block;font:700 15px var(--disp);letter-spacing:-.02em;
                 margin-top:5px;overflow-wrap:anywhere}
   .eigwert .ewv.pos{color:var(--pos)} .eigwert .ewv.neg{color:var(--neg)}
+  /* ---- N146: die PV-Anlage als untergeordnete Zeile unter ihrer Immobilie ----
+     Kein eigenes Objekt: eingerückt, ohne Trennlinie nach oben (sie gehört zur
+     Zeile darüber) und schlanker gesetzt als eine Immobilie. */
+  .bet.pv{border-top:none;margin-left:8px;padding:6px 0 9px 10px;
+          border-left:2px solid var(--teal-l);gap:6px 8px}
+  .bet.pv .bo-art{font:600 12.5px var(--disp);color:var(--teal-d)}
+  .bet.pv .bo-eh{font-style:normal}
+  .bet.pv .bw{font-size:11.5px;color:var(--soft)}
+  .bet.pv .bvz{font-size:10.5px}
+  /* Warum die Anlage im Wert steht, aber nicht in der Beleihung. */
+  .pvnote{display:block;font:400 10px var(--body);color:var(--soft);
+          margin-top:1px;line-height:1.4}
+  .pvhinweis{display:block;font:500 10.5px var(--body);color:var(--amber);
+             margin-top:4px;line-height:1.45;overflow-wrap:anywhere}
+  /* Objekt, an dem jemand nur die Anlage hält — das Gebäude gehört ihm nicht. */
+  .bet .bkein{font:500 11px var(--mono);color:var(--soft)}
+  /* Ein Satz unter den Kacheln: warum „Mein Wert" und „Beleihung" nicht
+     dieselbe Grundlage haben. */
+  .pvsum{border-top:1px solid var(--line);background:var(--sheet);
+         padding:11px 14px;font:400 11px var(--body);color:var(--soft);
+         line-height:1.45}
+  .pvsum b{color:var(--teal-d);font-weight:600}
+
   /* CCCLXXVII — Objektwert/Beleihung je Beteiligung + Investitionsspielraum. */
   .bo-wrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
   .bvz{font:500 11px var(--mono);color:var(--soft)}
@@ -290,7 +313,7 @@
 </dialog>
 
 <script type="module">
-import { api, esc, frage, melde, eurKurz, promille, installNav } from './assets/immo.js';
+import { api, esc, frage, melde, eurKurz, eurVoll, promille, installNav } from './assets/immo.js';
 installNav();
 
 const liste = document.getElementById('liste');
@@ -438,7 +461,7 @@ function eigwertHtml(id) {
   const u = uebersicht.get(id);
   if (!u) return '';
   const g = u.gesamt;
-  if (!g.wert && !g.eigenkapital && !g.miete_jahr) return '';
+  if (!g.wert && !g.eigenkapital && !g.miete_jahr && !g.pv_wert) return '';
   const zelle = (l, v, k = '') => `<div class="ew"><span class="ewl">${l}</span>
     <span class="ewv ${k}">${v}</span></div>`;
   // CCCLXXVII/N6 — Beleihungsquote (Restschuld/Wert) und ein grober Spielraum
@@ -471,17 +494,26 @@ function eigwertHtml(id) {
         selbst — du bringst nur die Kaufnebenkosten (Grunderwerbsteuer, Notar,
         Grundbuch) ein.</div>
     </div>` : '';
+  // N146 — „Mein Wert" und „Mein Eigenkapital" zeigen die Immobilien *samt*
+  // ihrer PV-Anlagen (`wert_gesamt`), Beleihung und Spielraum oben dagegen
+  // rechnen weiter mit `g.wert`: eine PV-Anlage ist kein beleihbares
+  // Grundpfandobjekt. Der Satz darunter sagt genau das.
+  const wertGesamt = g.wert_gesamt ?? g.wert;
+  const ekGesamt = g.eigenkapital_gesamt ?? g.eigenkapital;
+  const pvsum = g.pv_wert > 0 ? `<div class="pvsum">Darin enthalten:
+      <b>Investment PV ${eurVoll(g.pv_wert)}</b> — zählt zum Wert, bleibt aber
+      aus Beleihung und Spielraum heraus.</div>` : '';
   return `<div class="eigwert">
-    ${zelle('Mein Wert', g.wert == null ? '—' : eurKurz(g.wert))}
+    ${zelle('Mein Wert', wertGesamt == null ? '—' : eurKurz(wertGesamt))}
     ${zelle('Restschuld', eurKurz(g.restschuld), g.restschuld > 0 ? 'neg' : '')}
     ${zelle('Beleihung', quote == null ? '—' : quote + ' %',
             quote == null ? '' : (quote <= 60 ? 'pos' : (quote >= 90 ? 'neg' : '')))}
-    ${zelle('Mein Eigenkapital', g.eigenkapital == null ? '—' : eurKurz(g.eigenkapital),
-            (g.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg')}
+    ${zelle('Mein Eigenkapital', ekGesamt == null ? '—' : eurKurz(ekGesamt),
+            (ekGesamt ?? 0) >= 0 ? 'pos' : 'neg')}
     ${zelle('Miete / Jahr', eurKurz(g.miete_jahr), 'pos')}
     ${zelle('Freie Beleihung', frei == null ? '—' : eurKurz(frei),
             frei && frei > 0 ? 'pos' : '')}
-  </div>${invest}`;
+  </div>${pvsum}${invest}`;
 }
 
 /* CCCXXXIV — die linke Objektbezeichnung, dreigeteilt: Objektart (fett) ·
@@ -501,6 +533,36 @@ function betObjekt(o) {
         ? `<span class="bo-eh"> · ${esc(einheit)}</span>` : ''}</span>
       ${adr ? `<span class="bo-adr">${esc(adr)}</span>` : ''}
     </span>`;
+}
+
+/* N146 — die PV-Anlage als untergeordnete Zeile unter ihrer Immobilie.
+   Kein eigenes Objekt: sie hat eigene Tausendstel, ihr Wert ist die
+   Anschaffung (keine Wertentwicklung), und sie zählt bewusst nicht in die
+   Beleihung. Genau das steht auch dran. */
+function pvZeile(pv) {
+  const kwp = pv.kwp
+    ? ` · ${pv.kwp.toLocaleString('de-DE', { maximumFractionDigits: 2 })} kWp` : '';
+  const hinweise = (pv.hinweise || [])
+    .map(h => `<span class="pvhinweis">${esc(h)}</span>`).join('');
+  return `<div class="bet pv">
+      <span class="bo-wrap">
+        <span class="bo-art">${esc(pv.titel)}<span class="bo-eh">${kwp}</span></span>
+        ${pv.wert == null ? ''
+          : `<span class="bvz">${eurVoll(pv.wert)} · ${esc(pv.wertquelle)}</span>`}
+        <span class="pvnote">zählt zum Wert der Immobilie, nicht zur Beleihung</span>
+        ${hinweise}
+      </span>
+      <span class="bw">${promille(pv.promille)}</span>
+    </div>`;
+}
+
+/* Eine Immobilie, an der jemand nur die Anlage hält — das Gebäude gehört ihm
+   nicht. Ohne diese Zeile hinge sein Anteil an der Anlage im Nichts. */
+function nurAnlageZeile(z) {
+  return `<div class="bet">
+      <span class="bo-wrap">${betObjekt(z)}
+        <span class="bkein">kein Anteil am Gebäude</span></span>
+    </div>`;
 }
 
 async function eignerLaden() {
@@ -542,14 +604,29 @@ async function eignerLaden() {
       return `<span class="bvz">${eurKurz(w.wert)}${
         q == null ? '' : ` · Beleihung ${q} %`}</span>`;
     };
-    const bet = e.objekte.length
-      ? e.objekte.map(o => `<div class="bet">
+    // N146 — die Anlage folgt direkt auf die Beteiligung an ihrer Immobilie.
+    // `gezeigt` verhindert, dass sie zweimal erscheint, wenn jemand am selben
+    // Objekt mehrere Anteile hält (Objekt und einzelne Einheiten).
+    const gezeigt = new Set();
+    const pvUnter = slug => {
+      const z = uv.get(slug);
+      if (!z?.pv || gezeigt.has(slug)) return '';
+      gezeigt.add(slug);
+      return pvZeile(z.pv);
+    };
+    const zeilen = e.objekte.map(o => `<div class="bet">
             <span class="bo-wrap">${betObjekt(o)}${objWert(o)}${renditeHtml(o.slug)}</span>
             <span class="bw">${promille(o.promille)}</span>
             <span class="chip ${o.rolle === 'Alleineigentümer'
               ? 'teal' : ''}">${esc(o.rolle)}</span>
-          </div>`).join('')
-      : '<div class="leer">Noch keinem Objekt zugeordnet</div>';
+          </div>${pvUnter(o.slug)}`);
+    // Objekte, an denen nur die Anlage gehalten wird — sie stehen in der
+    // Anteilsliste nicht, weil es dort keinen Gebäudeanteil gibt.
+    const nurAnlage = [...uv.values()]
+      .filter(z => z.pv && !gezeigt.has(z.slug))
+      .map(z => nurAnlageZeile(z) + pvUnter(z.slug));
+    const bet = zeilen.concat(nurAnlage).join('')
+      || '<div class="leer">Noch keinem Objekt zugeordnet</div>';
     return `<div class="person">
         <div class="pkopf">
           <span class="ic">☗</span>

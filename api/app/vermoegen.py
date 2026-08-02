@@ -344,6 +344,9 @@ def pv_zurechnung(anlage, personen: dict[int, str]) -> dict | None:
         return None
     anteile = pv_anteile(roh)
 
+    # Heissen zwei Personen gleich, gewinnt die zuerst angelegte (`setdefault`):
+    # ein Name ist dann nicht eindeutig, und raten waere schlimmer als eine
+    # nachvollziehbare, gleichbleibende Regel.
     nach_name: dict[str, int] = {}
     for eid, name in personen.items():
         nach_name.setdefault(_namensschluessel(name), eid)
