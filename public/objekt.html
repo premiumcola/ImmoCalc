@@ -159,6 +159,109 @@
   .zd-ab{background:var(--paper);color:var(--ink)}
   .zd-ok{background:var(--teal);color:#fff}
 
+  /* N141 — Anfangszählerstände: eine Übersicht, in der auch erfasst wird.
+     Der Kopf steht fest, die Liste scrollt (14 Zeilen passen sonst auf kein
+     Telefon), der Fuß bleibt sichtbar. `overscroll-behavior:contain` hält die
+     Seite dahinter still, wenn die Liste am Ende ist. */
+  /* Durchweg mit `dialog.` davor: `dialog.immo-dlg` in immo.css setzt Papier-
+     Hintergrund, 22 px Innenrand und 400 px Breite — eine reine Klasse verliert
+     dagegen und der Dialog käme grau, eng und zu schmal heraus. */
+  dialog.az-dlg{border:none;border-radius:20px;padding:0;max-width:560px;
+    width:calc(100vw - 24px);max-height:min(88dvh,900px);background:var(--sheet);
+    color:var(--ink);display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:0 18px 50px rgba(22,38,44,.25)}
+  dialog.az-dlg::backdrop{background:rgba(22,38,44,.5)}
+  dialog.az-dlg .zd-kopf{flex:none;border-bottom:1px solid var(--line);
+    padding:12px 14px 12px 18px}
+  /* Fingergerecht: das gemeinsame 32-px-Kreuz ist für einen Dialog, in dem
+     lange gescrollt und getippt wird, zu klein. */
+  dialog.az-dlg .zd-x{width:44px;height:44px;font-size:20px}
+  dialog.az-dlg .zd-fuss{flex:none;border-top:1px solid var(--line);
+    padding:12px 18px;gap:10px;align-items:center}
+  dialog.az-dlg .az-body{flex:1;min-height:0;overflow:auto;
+    overscroll-behavior:contain;padding:14px 18px 6px;-webkit-overflow-scrolling:touch}
+  dialog.az-dlg .az-intro{margin:0 0 14px;font:500 12.5px var(--body);
+    color:var(--soft);line-height:1.55}
+  dialog.az-dlg .az-fort{display:flex;align-items:center;gap:11px;
+    background:var(--paper);border-radius:13px;padding:11px 13px;margin-bottom:18px}
+  dialog.az-dlg .az-balken{flex:1;height:7px;border-radius:99px;background:#DDE5E3;
+    overflow:hidden}
+  dialog.az-dlg .az-balken i{display:block;height:100%;background:var(--teal);
+    border-radius:99px}
+  dialog.az-dlg .az-fz{flex:none;font:600 11.5px var(--mono);color:var(--teal-d);
+    white-space:nowrap}
+  dialog.az-dlg .az-abschnitt{margin-bottom:20px}
+  dialog.az-dlg .az-at{display:block;font:600 11px var(--mono);
+    text-transform:uppercase;letter-spacing:.04em;color:var(--soft);margin-bottom:10px}
+  dialog.az-dlg .az-at.offen{color:var(--amber)}
+  dialog.az-dlg .az-gruppe{margin-bottom:14px}
+  dialog.az-dlg .az-gt{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+  dialog.az-dlg .az-gt .zi{display:inline-flex;color:var(--soft);flex:none}
+  dialog.az-dlg .az-gt .zi svg{width:15px;height:15px;display:block}
+  dialog.az-dlg .az-gt .az-gn{font:600 12px var(--disp);letter-spacing:-.01em}
+  dialog.az-dlg .az-gt .az-me{font:500 10.5px var(--mono);color:var(--soft)}
+  dialog.az-dlg .az-zeile{background:var(--paper);border-radius:13px;
+    padding:11px 12px;margin-bottom:7px}
+  dialog.az-dlg .az-zeile.offen{background:var(--amber-bg)}
+  dialog.az-dlg .az-zeile.aend{background:var(--teal-l)}
+  dialog.az-dlg .az-kopfz{display:flex;align-items:center;gap:9px;min-width:0}
+  dialog.az-dlg .az-hak{flex:none;width:20px;height:20px;border-radius:50%;
+    background:var(--pos);color:#fff;display:flex;align-items:center;
+    justify-content:center}
+  dialog.az-dlg .az-hak svg{width:12px;height:12px;display:block}
+  dialog.az-dlg .az-punkt{flex:none;width:20px;height:20px;border-radius:50%;
+    border:1.5px dashed var(--amber-li)}
+  dialog.az-dlg .az-n{flex:1;min-width:0;font:600 13px var(--body);color:var(--ink);
+    line-height:1.4;overflow-wrap:anywhere}
+  dialog.az-dlg .az-stand{display:block;margin:4px 0 0 29px;
+    font:600 11.5px var(--mono);color:var(--soft);overflow-wrap:anywhere}
+  dialog.az-dlg .az-aend{flex:none;border:none;background:none;color:var(--teal-d);
+    cursor:pointer;font:600 11.5px var(--disp);text-decoration:underline;
+    padding:11px 2px;min-height:44px;white-space:nowrap}
+  dialog.az-dlg .az-aend:hover{color:var(--teal)}
+  dialog.az-dlg .az-hinw{display:block;margin:8px 0 0;font:500 11.5px var(--body);
+    color:var(--amber);line-height:1.5}
+  dialog.az-dlg .az-hinw.leise{color:var(--soft)}
+  dialog.az-dlg .az-felder{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+  dialog.az-dlg .az-f{display:flex;align-items:center;gap:6px;flex:1 1 160px;
+    min-width:0;background:var(--sheet);border:1.5px solid var(--line);
+    border-radius:11px;padding:0 10px;min-height:46px}
+  /* Das Datumsfeld bringt seine eigene Anzeige mit (tt.mm.jjjj plus Kalender-
+     Knopf) und wird sonst mitten im Jahr abgeschnitten. */
+  dialog.az-dlg .az-f.dat{flex:1 1 175px}
+  /* Die Knöpfe stehen immer auf einer eigenen Zeile — sonst rutscht bei vier
+     Elementen einer allein um und steht verloren unter den Feldern. */
+  dialog.az-dlg .az-knoepfe{display:flex;gap:7px;flex:1 1 100%}
+  dialog.az-dlg .az-f:focus-within{border-color:var(--teal)}
+  dialog.az-dlg .az-f label{flex:none;font:600 10px var(--mono);
+    text-transform:uppercase;letter-spacing:.04em;color:var(--soft)}
+  dialog.az-dlg .az-f input{flex:1;min-width:0;width:100%;border:none;
+    background:none;color:var(--ink);font:600 13px var(--body);padding:11px 0;
+    min-height:44px}
+  dialog.az-dlg .az-f input:focus{outline:none}
+  dialog.az-dlg .az-f .az-eh{flex:none;font:500 11px var(--mono);color:var(--soft)}
+  dialog.az-dlg .az-sp{flex:1 1 120px;border:none;background:var(--teal);color:#fff;
+    border-radius:11px;padding:0 16px;min-height:46px;font:600 12.5px var(--disp);
+    cursor:pointer}
+  dialog.az-dlg .az-sp:hover{background:var(--teal-d)}
+  dialog.az-dlg .az-sp[disabled]{opacity:.55;cursor:default}
+  dialog.az-dlg .az-ab{flex:1 1 100px;border:1px solid var(--line);
+    background:var(--sheet);color:var(--soft);border-radius:11px;padding:0 14px;
+    min-height:46px;font:600 12.5px var(--disp);cursor:pointer}
+  dialog.az-dlg .az-fuss-note{margin:2px 0 10px;font:500 11.5px var(--body);
+    color:var(--soft);line-height:1.55}
+  dialog.az-dlg .az-meld{margin:10px 18px 0;padding:10px 12px;border-radius:11px;
+    font:600 12.5px var(--body)}
+  dialog.az-dlg .az-meld.ok{background:var(--pos-bg);color:var(--pos)}
+  dialog.az-dlg .az-meld.fehler{background:var(--neg);color:#fff}
+  dialog.az-dlg .az-leer{background:var(--pos-bg);color:var(--pos);
+    border-radius:13px;padding:13px 14px;font:600 12.5px var(--body);
+    line-height:1.5;margin-bottom:18px}
+  dialog.az-dlg .az-konfig{flex:none;border:none;background:none;
+    color:var(--teal-d);cursor:pointer;font:600 12.5px var(--disp);padding:12px 2px;
+    min-height:46px;text-decoration:underline;white-space:nowrap}
+  dialog.az-dlg .zd-fuss .zd-ok{flex:0 1 240px;margin-left:auto}
+
   /* N35 — Zeiträume-umstellen-Werkzeug */
   .sekopf-akt{display:flex;gap:16px;align-items:center}
   .zw-intro{margin:0 18px 12px;font:500 12.5px var(--body);color:var(--soft);
@@ -968,17 +1071,19 @@ function erststandHtml(zielId) {
   // Zähler vorhanden, aber keiner misst (nur Rest/inaktiv) — kein Anfangsstand nötig.
   if (zaehlerListe.length && mess.length === 0) return '';
 
-  // Alles hinterlegt — ruhige Bestätigung, kein Weg, kein Pfeil.
+  // Alles hinterlegt — ruhige Bestätigung. N141: trotzdem anklickbar, damit die
+  // Übersicht (und ein Ändern) erreichbar bleibt, statt in einer Sackgasse zu
+  // enden. Kein Pfeil, kein Drängen — nur ein leiser Weg hinein.
   if (mess.length && !ohne.length) {
-    return `<div class="erststand fertig">
+    return `<button class="erststand fertig" data-erststand="1">
         <span class="es-ik ok">${HAKEN_ICON}</span>
         <span class="es-tx">
           <span class="es-t">Anfangszählerstände hinterlegt</span>
           <span class="es-d">${mess.length === 1
             ? 'Für den Zähler ist ein Erststand'
             : `Für alle ${mess.length} Zähler ist ein Erststand`} vor der ersten
-            Abrechnung erfasst.</span>
-        </span></div>`;
+            Abrechnung erfasst — Übersicht ansehen.</span>
+        </span></button>`;
   }
 
   const text = !zaehlerListe.length
@@ -1001,6 +1106,263 @@ function erststandHtml(zielId) {
       </span>
       <span class="es-arr" aria-hidden="true">›</span>
     </button>`;
+}
+
+/* ---- N141 — Anfangszählerstände in einer Übersicht erfassen ---------------
+   Bis hierher führte die Rubrik in den neuesten Abrechnungszeitraum: dort steckt
+   die Zähler-Konfig, dort steht das Feld — nur sucht man es zwischen allem
+   anderen und sieht nie, welche Zähler noch offen sind. Dieser Dialog zeigt
+   stattdessen alle Zähler des Objekts auf einmal: oben die ohne Anfangsstand,
+   darunter die erledigten mit Stand und Datum. Erfasst wird gleich hier.
+
+   Fachlich hängt der Anfangsstand an KEINEM Zeitraum — er ist der Stand vor der
+   ersten Abrechnung. Deshalb geht nur `{datum, stand}` an
+   POST /zaehler/{id}/anfangsstand; eine mitgeschickte `zeitraum_id` würde ihn
+   als Endstand jener Periode lesen lassen und Werte zerstören (N96).
+
+   Rest-Zähler ergeben sich rechnerisch (Gesamt − Unterzähler) und brauchen
+   keinen; sie stehen als Fußnote da, damit die Übersicht vollständig bleibt. */
+
+/* Der Zeitraum, über den die Zähler-Konfig erreichbar ist — für den Weg dorthin
+   („Zähler verwalten") und für den Fall, dass es noch gar keine Zähler gibt. */
+let erststandZiel = null;
+
+/* Die Anfangsstand-Rubrik an Ort und Stelle neu zeichnen: nach dem Speichern
+   soll der Zähler oben stimmen, ohne die ganze Seite neu zu laden. */
+function erststandAuffrischen() {
+  const alt = document.querySelector('.erststand');
+  if (!alt) return;
+  const html = erststandHtml(erststandZiel);
+  if (!html) return alt.remove();
+  const halter = document.createElement('div');
+  halter.innerHTML = html;
+  const neu = halter.firstElementChild;
+  if (neu) alt.replaceWith(neu);
+}
+
+const azZahl = (n, einheit) =>
+  `${(n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 3 })}`
+  + (einheit ? ` ${einheit}` : '');
+
+/* Zähler nach Kostenart bündeln — Wasser, Warmwasser, Strom und Heizöl stehen
+   sonst bunt durcheinander. Die Messeinheit steht am Gruppentitel, nicht an
+   jeder Zeile: sie ist innerhalb einer Kostenart ohnehin dieselbe. */
+function azGruppen(liste) {
+  const map = new Map();
+  for (const z of liste) {
+    const art = z.kostenart || 'Ohne Kostenart';
+    const schluessel = `${art}|${z.messeinheit || ''}`;
+    if (!map.has(schluessel)) {
+      map.set(schluessel, { art, einheit: z.messeinheit || '', zaehler: [] });
+    }
+    map.get(schluessel).zaehler.push(z);
+  }
+  return [...map.values()];
+}
+
+async function anfangsstaendeDialog() {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'immo-dlg az-dlg';
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+
+  // Frisch holen: der Stand kann inzwischen in der Zähler-Konfig geändert
+  // worden sein. Scheitert es, wird mit dem geladenen Stand gearbeitet.
+  try {
+    const frisch = await api(`/objekte/${encodeURIComponent(slug)}/zaehler`);
+    if (Array.isArray(frisch)) zaehlerListe = frisch;
+  } catch { /* Beiwerk — der geladene Stand tut es auch */ }
+
+  // Der Anfangsstand gehört vor die erste Abrechnung: frühester Periodenbeginn.
+  const starts = ((daten && daten.zeitraeume) || [])
+    .map(z => z.start).filter(Boolean).sort();
+  const vorgabeDatum = starts[0] || new Date().toISOString().slice(0, 10);
+
+  const inArbeit = new Set();   // Zähler, deren vorhandener Stand ersetzt wird
+  let meldung = null;           // { text, art } — im Dialog, nie als Toast
+
+  const zeileHtml = z => {
+    const anf = z.anfangsstand;
+    const ersetzen = inArbeit.has(z.id);
+    // Erledigt und nicht in Bearbeitung: nur zeigen. Ein Ändern ist möglich,
+    // aber nie beiläufig — es braucht den bewussten Griff zu „Ändern".
+    if (anf && !ersetzen) {
+      return `<div class="az-zeile" data-az-zeile="${z.id}">
+          <div class="az-kopfz">
+            <span class="az-hak">${HAKEN_ICON}</span>
+            <span class="az-n">${esc(z.name)}</span>
+            <button class="az-aend" data-az-aend="${z.id}">Ändern</button>
+          </div>
+          <span class="az-stand">${esc(azZahl(anf.stand, z.messeinheit))}
+            · am ${esc(datum(anf.datum))}</span>
+        </div>`;
+    }
+    // N120 — `direkt` heisst: der eingetragene Wert IST der Jahresverbrauch,
+    // es gibt keine Zählerstände. Ein Anfangsstand bleibt dort rechnerisch
+    // wirkungslos; das steht dran, statt den Nutzer suchen zu lassen.
+    const hinweis = ersetzen
+      ? `<span class="az-hinw">Ersetzt den bisherigen Anfangsstand
+           ${esc(azZahl(anf.stand, z.messeinheit))} vom ${esc(datum(anf.datum))}.</span>`
+      : z.typ === 'direkt'
+        ? `<span class="az-hinw leise">Hier wird der fertige Verbrauch je
+             Abrechnung eingetragen, kein Zählerstand — ein Anfangsstand ist
+             deshalb nicht nötig.</span>`
+        : '';
+    return `<div class="az-zeile ${ersetzen ? 'aend' : 'offen'}" data-az-zeile="${z.id}">
+        <div class="az-kopfz">
+          <span class="${ersetzen ? 'az-hak' : 'az-punkt'}">${ersetzen ? HAKEN_ICON : ''}</span>
+          <span class="az-n">${esc(z.name)}</span>
+        </div>
+        ${hinweis}
+        <div class="az-felder">
+          <div class="az-f"><label for="azs${z.id}">Stand</label>
+            <input id="azs${z.id}" type="number" step="0.001" inputmode="decimal"
+              value="${anf ? anf.stand : ''}"
+              data-az-stand="${z.id}" aria-label="Anfangsstand ${esc(z.name)}">
+            ${z.messeinheit ? `<span class="az-eh">${esc(z.messeinheit)}</span>` : ''}
+          </div>
+          <div class="az-f dat"><label for="azd${z.id}">am</label>
+            <input id="azd${z.id}" type="date" value="${esc(anf ? anf.datum : vorgabeDatum)}"
+              data-az-datum="${z.id}" aria-label="Datum des Anfangsstands">
+          </div>
+          <div class="az-knoepfe">
+            ${ersetzen ? `<button class="az-ab" data-az-ab="${z.id}">Abbrechen</button>` : ''}
+            <button class="az-sp" data-az-save="${z.id}">${ersetzen ? 'Ersetzen' : 'Speichern'}</button>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  const abschnittHtml = (titel, liste, klasse = '') => {
+    if (!liste.length) return '';
+    return `<div class="az-abschnitt">
+        <span class="az-at ${klasse}">${esc(titel)} (${liste.length})</span>
+        ${azGruppen(liste).map(g => `<div class="az-gruppe">
+          <div class="az-gt"><span class="zi">${kostenIcon(g.art)}</span>
+            <span class="az-gn">${esc(g.art)}</span>
+            ${g.einheit ? `<span class="az-me">${esc(g.einheit)}</span>` : ''}</div>
+          ${g.zaehler.map(zeileHtml).join('')}</div>`).join('')}
+      </div>`;
+  };
+
+  const male = () => {
+    const halter = dlg.querySelector('.az-body');
+    const scroll = halter ? halter.scrollTop : 0;
+    const aktiv = zaehlerListe.filter(z => z.aktiv !== false);
+    const mess = aktiv.filter(z => z.typ !== 'rest');
+    const rest = aktiv.filter(z => z.typ === 'rest');
+    // Ein Zähler, dessen Stand gerade ersetzt wird, bleibt unter „bereits
+    // erfasst" — er fehlt ja nicht, er wird nur geändert.
+    const offen = mess.filter(z => !z.anfangsstand);
+    const fertig = mess.filter(z => z.anfangsstand);
+    const anteil = mess.length ? Math.round(fertig.length / mess.length * 100) : 0;
+
+    dlg.innerHTML = `
+      <div class="zd-kopf"><span class="zd-t">Anfangszählerstände</span>
+        <button class="zd-x" data-nein aria-label="Schließen">×</button></div>
+      <div class="az-body">
+        <p class="az-intro">Der Anfangsstand ist der Zählerstand <b>vor der
+          ersten Abrechnung</b>. Er gehört zu keinem Abrechnungszeitraum — von
+          ihm aus rechnet jede spätere Periode ihren Verbrauch.</p>
+        <div class="az-fort">
+          <div class="az-balken"><i style="width:${anteil}%"></i></div>
+          <span class="az-fz">${fertig.length} von ${mess.length} erfasst</span>
+        </div>
+        ${!mess.length ? `<div class="az-leer">Für dieses Objekt ist noch kein
+          messender Zähler angelegt.</div>` : ''}
+        ${(mess.length && !offen.length) ? `<div class="az-leer">Alle
+          ${mess.length} Zähler haben einen Anfangsstand — hier steht, welcher.</div>` : ''}
+        ${abschnittHtml('Fehlt noch', offen, 'offen')}
+        ${abschnittHtml('Bereits erfasst', fertig)}
+        ${rest.length ? `<p class="az-fuss-note">${rest.length === 1
+            ? 'Ein Rest-Zähler'
+            : `${rest.length} Rest-Zähler`} (${rest.map(z => esc(z.name)).join(', ')})
+          ${rest.length === 1 ? 'braucht' : 'brauchen'} keinen Anfangsstand —
+          ${rest.length === 1 ? 'sein' : 'ihr'} Stand ergibt sich rechnerisch aus
+          Gesamtzähler minus Unterzähler.</p>` : ''}
+      </div>
+      ${meldung ? `<div class="az-meld ${meldung.art}">${esc(meldung.text)}</div>` : ''}
+      <div class="zd-fuss">
+        ${erststandZiel != null
+          ? '<button class="az-konfig" data-az-konfig>Zähler verwalten</button>' : ''}
+        <button class="zd-ok" data-nein>Fertig</button>
+      </div>`;
+    const neu = dlg.querySelector('.az-body');
+    if (neu) neu.scrollTop = scroll;
+  };
+
+  async function speichern(id) {
+    const zid = Number(id);
+    const zeile = dlg.querySelector(`[data-az-zeile="${zid}"]`);
+    if (!zeile) return;
+    const standEl = zeile.querySelector('[data-az-stand]');
+    const datumEl = zeile.querySelector('[data-az-datum]');
+    const roh = String(standEl.value ?? '').trim().replace(',', '.');
+    const stand = Number(roh);
+    if (roh === '' || !Number.isFinite(stand)) {
+      meldung = { text: 'Bitte einen Zählerstand eintragen.', art: 'fehler' };
+      return male();
+    }
+    if (!datumEl.value) {
+      meldung = { text: 'Bitte das Datum des Anfangsstands angeben.', art: 'fehler' };
+      return male();
+    }
+    const knopf = zeile.querySelector('[data-az-save]');
+    if (knopf) { knopf.disabled = true; knopf.textContent = 'Speichere …'; }
+    let neu;
+    try {
+      // N96 — bewusst OHNE `zeitraum_id`: der Anfangsstand hängt an keiner Periode.
+      neu = await api(`/zaehler/${zid}/anfangsstand`,
+                      { method: 'POST', body: { stand, datum: datumEl.value } });
+    } catch (fehler) {
+      meldung = { text: String(fehler?.message || 'Speichern ging nicht.'), art: 'fehler' };
+      return male();
+    }
+    const i = zaehlerListe.findIndex(z => Number(z.id) === zid);
+    if (i >= 0) {
+      zaehlerListe[i] = (neu && neu.id != null)
+        ? neu
+        : { ...zaehlerListe[i], anfangsstand: { stand, datum: datumEl.value } };
+    }
+    inArbeit.delete(zid);
+    meldung = { text: `✓ Anfangsstand gespeichert: ${azZahl(stand,
+      (i >= 0 ? zaehlerListe[i].messeinheit : ''))}.`, art: 'ok' };
+    male();
+    erststandAuffrischen();
+  }
+
+  dlg.addEventListener('click', e => {
+    if (e.target.closest('[data-nein]')) return dlg.close();
+    const aend = e.target.closest('[data-az-aend]');
+    if (aend) {
+      inArbeit.add(Number(aend.dataset.azAend));
+      meldung = null;
+      male();
+      dlg.querySelector(`#azs${aend.dataset.azAend}`)?.focus();
+      return;
+    }
+    const ab = e.target.closest('[data-az-ab]');
+    if (ab) { inArbeit.delete(Number(ab.dataset.azAb)); meldung = null; return male(); }
+    const sp = e.target.closest('[data-az-save]');
+    if (sp) return speichern(sp.dataset.azSave);
+    if (e.target.closest('[data-az-konfig]') && erststandZiel != null) {
+      dlg.close();
+      location.href = `zeitraum.html?z=${encodeURIComponent(erststandZiel)}`;
+    }
+  });
+
+  // Enter im Feld speichert die Zeile — sonst müsste man für 14 Zähler
+  // vierzehnmal zum Knopf greifen.
+  dlg.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const feld = e.target.closest('[data-az-stand],[data-az-datum]');
+    if (!feld) return;
+    e.preventDefault();
+    speichern(feld.dataset.azStand || feld.dataset.azDatum);
+  });
+
+  male();
+  dlg.showModal();
 }
 
 function kennzahlenHtml(v, jahresmiete, restschuld, guthaben) {
@@ -2332,6 +2694,9 @@ async function laden() {
   // ist über einen Abrechnungszeitraum erreichbar — bevorzugt der laufende.
   const erststandZielId = (laufend && laufend.id != null) ? laufend.id
     : (det.zeitraeume[0] && det.zeitraeume[0].id != null ? det.zeitraeume[0].id : null);
+  // N141 — der Dialog braucht das Ziel auch später noch (Weg in die
+  // Zähler-Konfig, Auffrischen der Rubrik nach dem Speichern).
+  erststandZiel = erststandZielId;
   const zeitraumBlock = istGrundstueck() ? '' : `
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
       ${fokus ? '' : `<span class="sekopf-akt">
@@ -4316,11 +4681,13 @@ inhalt.addEventListener('click', async e => {
     return;
   }
 
-  // CCCLXXX (a) — die Anfangszählerstand-Rubrik führt zur Zähler-Konfig im
-  // Abrechnungszeitraum (dort wird der Erststand erfasst). Ohne Zeitraum ist
-  // die Konfig nicht erreichbar — dann zuerst einen Zeitraum anlegen.
+  // N141 — die Anfangszählerstand-Rubrik öffnet die Übersicht: alle Zähler des
+  // Objekts mit ihrem Erststand, die fehlenden oben, erfasst wird gleich dort.
+  // Nur wenn es überhaupt noch keine Zähler gibt, führt der Weg weiterhin in
+  // die Zähler-Konfig des Zeitraums — angelegt werden Zähler dort (CCCLXXX (a)).
   const erststand = e.target.closest('[data-erststand]');
   if (erststand) {
+    if (zaehlerListe.length) return anfangsstaendeDialog();
     if (erststand.dataset.z) {
       location.href = `zeitraum.html?z=${encodeURIComponent(erststand.dataset.z)}`;
     } else {
