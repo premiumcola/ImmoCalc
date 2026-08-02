@@ -864,6 +864,14 @@ class Stromjahr(SQLModel, table=True):
     # zurück. Er wird dem ersten erfassten Jahr zugerechnet, nicht verteilt.
     # Additiv, Default 0 — jeder Bestand rechnet unverändert weiter.
     vorlauf_ertrag_eur: float = 0.0
+    # N124 — die Aufteilung der E-Auto-Ladungen auf Netzbezug und eigenen Strom.
+    # Von Hand gepflegt (eine Schnittstelle zur Wallbox kann spaeter dazukommen);
+    # diese Mengen werden VOR der anteiligen Verteilung aus beiden Kostenbloecken
+    # herausgenommen und exakt bepreist (`strombloecke.verteile`). Additiv,
+    # Default 0/"" — ohne Angabe verteilt sich alles wie bisher.
+    eauto_einheit: str = ""            # welche Einheit die Ladungen traegt
+    eauto_extern_kwh: float = 0.0      # davon aus dem Netz
+    eauto_eigen_kwh: float = 0.0       # davon aus der eigenen Anlage
     # N87 — die PV-Anlage ist ein eigenes Add-on-Investment je Immobilie:
     # eigene Eigentümer-Tausendstel (JSON {Name: ‰}, leer = Vorgabe 5/6 + 1/6),
     # unabhängig von den Objekt-Anteilen. Der Tank-Preis (€/kWh) ist der Satz,

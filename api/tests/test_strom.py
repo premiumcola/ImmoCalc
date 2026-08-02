@@ -8,7 +8,6 @@ Das Kernbeispiel (dokumentiert in `test_rechne_kernbeispiel`) bildet die
 Logik der Excel `NK-ALL-Strom-Verbrauch` nach: WG 60 % / Büro 40 % „ohne
 Tanken", Quellen Netz/Solar/Akku, PV auf Eigentümer 5/6 + 1/6.
 """
-import math
 import os
 import sys
 import tempfile
@@ -612,14 +611,17 @@ def test_verlauf_break_even_erreicht(client):
     v = _verlauf(client, slug)
     assert v["break_even_jahr"] == 2025
     assert v["break_even_geschaetzt"] is False
+    assert v["prognose"] is None            # erreicht — nichts mehr zu raten
     assert v["rest"] == 0.0
     assert v["amortisiert_prozent"] == 100.0
     assert _jahr(v, 2025)["offen"] == 0.0
+    # Ab dem Break-even läuft die Anlage ins Plus.
+    assert _jahr(v, 2025)["ueberschuss"] == 200.0
 
 
 def test_verlauf_break_even_nicht_erreicht_wird_fortgeschrieben(client):
-    """Noch nicht gedeckt: aus dem bisherigen Schnitt linear fortgeschrieben —
-    als Schätzung gekennzeichnet."""
+    """Noch nicht gedeckt: aus dem Schnitt der Ertragsjahre fortgeschrieben —
+    als Schätzung gekennzeichnet, mit den einzelnen Prognosejahren."""
     slug = _pv_objekt(client, "PV-Laeuft")
     client.put(f"/api/objekte/{slug}/strom/2023", json={"anschaffung_eur": 10000})
     for jahr in (2023, 2024):
@@ -627,14 +629,58 @@ def test_verlauf_break_even_nicht_erreicht_wird_fortgeschrieben(client):
 
     v = _verlauf(client, slug)
     letztes = v["jahre"][-1]["jahr"]
-    # 2000 € in zwei Jahren = 1000 €/Jahr; 8000 € offen → acht weitere Jahre.
-    # Die leeren Jahre nach 2024 (Zeitraum des laufenden Jahres) senken den
-    # Schnitt entsprechend — geprüft wird die Rechenregel, nicht eine feste Zahl.
-    schnitt = v["kumuliert"] / (letztes - 2023 + 1)
+    p = v["prognose"]
+    # 2000 € in zwei Ertragsjahren = 1000 €/Jahr; 8000 € offen → acht Jahre.
+    assert p["schnitt"] == 1000.0
+    assert p["in_jahren"] == 8
+    assert [z["jahr"] for z in p["jahre"]] == list(range(letztes + 1,
+                                                         letztes + 9))
+    assert p["jahre"][-1]["offen"] == 0.0
     assert v["break_even_geschaetzt"] is True
-    assert v["break_even_jahr"] == letztes + math.ceil(v["rest"] / schnitt)
-    assert v["break_even_jahr"] > letztes
+    assert v["break_even_jahr"] == p["break_even_jahr"] == letztes + 8
+    assert v["break_even_in_jahren"] == 8
     assert 0 < v["amortisiert_prozent"] < 100
+
+
+def test_verlauf_prognose_erst_ab_zwei_ertragsjahren(client):
+    """Aus einem einzigen Jahr wird nicht hochgerechnet — lieber ein Satz als
+    eine Zahl, die auf einem Wert beruht."""
+    slug = _pv_objekt(client, "PV-Erstjahr")
+    client.put(f"/api/objekte/{slug}/strom/2024", json={"anschaffung_eur": 10000})
+    _position(client, _zeitraum_id(client, slug, 2024), _EINSPEISUNG, 1000.0)
+
+    v = _verlauf(client, slug)
+    assert v["prognose"] is None
+    assert v["break_even_jahr"] is None
+    assert v["break_even_geschaetzt"] is False
+    assert v["break_even_in_jahren"] is None
+    assert any("zweiten Abrechnungsjahr" in w for w in v["warnungen"])
+
+
+def test_verlauf_vorlauf_zaehlt_einmalig_aufs_erste_jahr(client):
+    """Der Vorlauf ist, was die Anlage vor der ersten Abrechnung schon
+    abgetragen hat: einmalig auf die erste Zeile, nie wiederholt — und er hebt
+    den Prognose-Schnitt nicht an."""
+    slug = _pv_objekt(client, "PV-Vorlauf")
+    client.put(f"/api/objekte/{slug}/strom/2024",
+               json={"anschaffung_eur": 10000, "vorlauf_ertrag_eur": 1500})
+    # Das Feld überdauert das Speichern (additive Spalte).
+    assert client.get(f"/api/objekte/{slug}/strom/2024").json()[
+        "vorlauf_ertrag_eur"] == 1500.0
+
+    for jahr in (2024, 2025):
+        _position(client, _zeitraum_id(client, slug, jahr), _EINSPEISUNG, 1000.0)
+
+    v = _verlauf(client, slug)
+    assert v["vorlauf"] == 1500.0
+    erstes = v["jahre"][0]
+    assert erstes["jahr"] == 2024
+    assert erstes["vorlauf"] == 1500.0
+    assert erstes["summe"] == 2500.0         # 1500 Vorlauf + 1000 Einspeisung
+    assert all(z["vorlauf"] == 0.0 for z in v["jahre"][1:])
+    assert v["kumuliert"] == 3500.0
+    # Der Schnitt rechnet ohne den einmaligen Vorlauf: 2 × 1000 € / 2 Jahre.
+    assert v["prognose"]["schnitt"] == 1000.0
 
 
 def test_verlauf_offene_position_zaehlt_noch_nicht(client):

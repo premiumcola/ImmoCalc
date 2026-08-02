@@ -109,6 +109,44 @@
 
   .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;
              padding:22px 8px}
+
+  /* ---- N127 Verlauf: Grafik, Legende, Jahrestabelle ---------------------- */
+  .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible;
+         margin:2px auto 10px}
+
+  .legende{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 16px;
+           font:500 11.5px var(--body);color:var(--soft)}
+  .legende span{display:inline-flex;align-items:center;gap:7px}
+  .legende i{width:11px;height:11px;border-radius:4px;flex:none}
+  .legende i.schraffur{background:repeating-linear-gradient(45deg,
+    #916212 0 2px, #FFF 2px 4px)}
+  .legende i.prognose{background:rgba(178,66,41,.22);
+                      box-shadow:inset 0 0 0 1.5px rgba(178,66,41,.55)}
+
+  /* Sieben Geldspalten passen auf dem iPhone nicht nebeneinander — die Tabelle
+     scrollt in ihrem eigenen Rahmen, die Seite selbst nie. */
+  .tabrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
+             border-radius:12px;background:var(--paper);margin:0 0 14px}
+  .jt{border-collapse:collapse;width:100%;min-width:520px}
+  .jt th{font:600 9px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+         color:var(--soft);text-align:right;padding:11px 12px 9px;
+         white-space:nowrap}
+  .jt th:first-child{text-align:left}
+  .jt td{font:500 12.5px var(--mono);color:var(--ink);text-align:right;
+         padding:10px 12px;white-space:nowrap;
+         border-top:1px solid rgba(22,38,44,.07)}
+  .jt td:first-child{text-align:left;font:600 13px var(--disp);
+                     letter-spacing:-.01em}
+  .jt td.leise{color:var(--soft)}
+  .jt td.summe{font-weight:700;color:var(--teal-d)}
+  .jt tfoot td{font-weight:700;color:var(--ink);
+               border-top:1.5px solid var(--line)}
+
+  .verlaufleer{background:var(--paper);border-radius:14px;padding:18px 16px;
+               margin-bottom:14px;font:400 13px var(--body);color:var(--soft);
+               line-height:1.6}
+  .verlaufleer p{margin:0 0 8px}
+  .verlaufleer p:last-child{margin:0}
 </style>
 </head>
 <body>
@@ -146,7 +184,6 @@ import { auswahlfeld } from './assets/auswahl.js';
 
 const sub = document.getElementById('sub');
 const inhalt = document.getElementById('inhalt');
-const proz = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' %';
 const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' kWh';
 
 /* Die Eingabefelder — dieselbe Liste, aus der die Maske gebaut und die Werte
@@ -162,6 +199,10 @@ const F_PV = [
 // ladenden Person berechnet und fließt der Anlage zu (Amortisation).
 const F_TANKEN = [
   ['tanken_preis', 'Preis je kWh (E-Auto)', '€', 0.01],
+];
+// N127 — der Vorlauf vor der ersten Nebenkostenabrechnung (einmalig).
+const F_VORLAUF = [
+  ['vorlauf_ertrag_eur', 'Bereits abgetragen', '€', 1],
 ];
 
 function feldHtml(name, label, einheit, step) {
@@ -215,13 +256,30 @@ function skelett() {
       <div class="eig" id="eig"></div>
     </div>
 
-    <div class="karte" id="amortisation">
-      <div class="hh"><h3>Amortisation des PV-Investments</h3></div>
-      <p class="hint">Was die Anlage einbringt (PV-Strom der Mieter +
-        Einspeisevergütung + E-Tanken) gegen die Anschaffung — über alle
-        erfassten Jahre.</p>
-      <div class="kpi" id="amort"></div>
-      <div class="eig" id="amortEig"></div>
+    <!-- N127 — die Anlage lief schon, bevor die erste Nebenkostenabrechnung
+         begann. Ein einmaliger Betrag, kein jährlicher. -->
+    <div class="karte eng">
+      <div class="hh"><h3>Vor der ersten Abrechnung</h3></div>
+      <p class="hint">Was die Anlage abgetragen hat, bevor der erste
+        Abrechnungszeitraum begann. Der Betrag zählt einmalig auf das erste
+        Jahr im Verlauf — er wiederholt sich nicht und geht nicht in die
+        Prognose ein.</p>
+      <div class="raster">
+        ${F_VORLAUF.map(f => feldHtml(...f)).join('')}
+      </div>
+    </div>
+
+    <div class="karte" id="verlauf">
+      <div class="hh"><h3>Verlauf</h3></div>
+      <p class="hint">Die Anschaffung steht als negativer Betrag da und wird
+        Jahr für Jahr aufgefressen: von der Direktnutzung (PV-Strom, den die
+        Mieter bezahlt haben), der Einspeisevergütung und dem E-Tanken. Alle
+        Werte kommen live aus den Nebenkostenjahren. Durchstößt der Balken die
+        Nulllinie, ist die Anlage amortisiert.</p>
+      <div class="kpi" id="vKpi"></div>
+      <div id="vGrafik"></div>
+      <div id="vTabelle"></div>
+      <div class="eig" id="vEig"></div>
     </div>
 
     <div id="warnungen"></div>`;
@@ -297,42 +355,228 @@ function ergebnisZeigen(r) {
     `<div class="warnung"><span class="wi" aria-hidden="true">⚠</span><span>${esc(t)}</span></div>`).join('');
 }
 
-/* N87 — die Amortisation des PV-Investments über ALLE erfassten Jahre:
-   kumulierter Investitions-Ertrag gegen die Anschaffung, plus der Anteil je
-   PV-Eigentümer. Fehlt die Anschaffung, bleibt die Karte ruhig. */
-async function amortisationZeigen() {
-  const ziel = document.getElementById('amort');
-  const zielEig = document.getElementById('amortEig');
-  if (!ziel) return;
-  try {
-    const a = await api(`/objekte/${encodeURIComponent(objektSlug)}/pv/amortisation`);
-    if (!a.anschaffung) {
-      ziel.innerHTML = '<div class="k"><span class="kl">Anschaffung</span>'
-        + '<span class="kv">— erst eintragen</span></div>';
-      zielEig.innerHTML = '';
-      return;
+/* ---------------------------------------------------------------------------
+   N127 — der Amortisationsverlauf.
+
+   Die Grafik zeigt nicht die Erträge nach oben, sondern die Anschaffung als
+   negativen Betrag, der Jahr für Jahr aufgefressen wird. Je Jahr eine Säule:
+   der noch offene Rest hängt in Rot unter der Nulllinie, und was ihn in diesem
+   Jahr kleiner gemacht hat, sitzt als Ertragsblock darunter — Direktnutzung
+   voll, Einspeisevergütung schraffiert (bleibt auch ohne Farbe lesbar),
+   E-Tanken und der einmalige Vorlauf in eigenen Tönen. Durchstößt die Säule
+   die Nulllinie, ist die Anlage amortisiert und der Überschuss steht in Grün
+   darüber. Prognosejahre sind blass und gestrichelt umrandet, damit auf einen
+   Blick klar ist, was gemessen und was gerechnet ist.
+
+   Alles Inline-SVG von Hand — es gibt in diesem Projekt keine Chart-Bibliothek.
+   --------------------------------------------------------------------------- */
+const C_DIREKT = '#0F6E5C', C_EINSP = '#916212', C_TANK = '#7A9E94',
+      C_VOR = '#5C6B70', C_OFFEN = '#B24229', C_PLUS = '#2E7D4F';
+
+/* Die Ertragsanteile einer Säule, von unten nach oben gestapelt. */
+const V_TEILE = [
+  ['vorlauf', C_VOR],
+  ['pv_strom', C_DIREKT],
+  ['einspeisung', 'url(#pvSchraffur)'],
+  ['tanken', C_TANK],
+];
+
+const eur0 = n => Math.round(n || 0).toLocaleString('de-DE') + ' €';
+const negativ = t => t.replace('-', '−');
+
+function verlaufGrafik(v) {
+  const prog = (v.prognose && v.prognose.jahre) || [];
+  const reihe = [
+    ...v.jahre.map(z => ({ ...z, geschaetzt: false })),
+    ...prog.map(z => ({ ...z, vorlauf: 0, pv_strom: 0, einspeisung: 0,
+                        tanken: 0, geschaetzt: true })),
+  ];
+  const ansch = v.anschaffung;
+  if (!reihe.length || !ansch) return '';
+
+  const B = 380, H = 238;
+  const achse = 44, xl = achse, xr = B - 6, yo = 16, yu = H - 44;
+  // Der „Stand" ist kumulierter Ertrag minus Anschaffung: er startet bei
+  // −Anschaffung und wandert nach oben durch die Null.
+  const stand = z => (z.kumuliert || 0) - ansch;
+  const maxPlus = Math.max(...reihe.map(stand), ansch * 0.09);
+  const spanne = ansch + maxPlus;
+  const y = w => yu - ((w + ansch) / spanne) * (yu - yo);
+  const yNull = y(0);
+  const slot = (xr - xl) / reihe.length;
+  const bw = Math.max(3, Math.min(30, slot * 0.62));
+  const jederNte = Math.ceil(reihe.length / 9);
+
+  let clips = '', saeulen = '', jahrLabels = '', vorher = -ansch;
+  reihe.forEach((z, i) => {
+    const x = xl + slot * i + (slot - bw) / 2;
+    const nachher = stand(z);
+    const yV = y(vorher), yN = y(nachher);        // yV liegt tiefer als yN
+    const oben = Math.min(yN, yNull), unten = Math.max(yV, yNull);
+    const blass = z.geschaetzt ? ' opacity=".24"' : '';
+    let inhalt = '';
+    // Noch offener Rest — hängt unter der Nulllinie.
+    if (nachher < 0 && yN - yNull > 0.3) {
+      inhalt += `<rect x="${x}" y="${yNull.toFixed(1)}" width="${bw}"
+        height="${(yN - yNull).toFixed(1)}" fill="${C_OFFEN}"${blass}/>`;
     }
-    const jahre = (a.reihe || []).map(z =>
-      `<span class="chip">${z.jahr}: ${eur(z.ertrag)}</span>`).join('');
-    ziel.innerHTML = `
-      <div class="k"><span class="kl">Anschaffung</span><span class="kv">${eur(a.anschaffung)}</span></div>
-      <div class="k"><span class="kl">Bisher eingebracht</span><span class="kv pos">${eur(a.kumuliert)}</span></div>
-      <div class="k"><span class="kl">Amortisiert</span><span class="kv">${
-        a.amortisiert_prozent == null ? '—' : proz(a.amortisiert_prozent)}</span></div>
-      <div class="k"><span class="kl">Noch offen</span><span class="kv">${eur(a.rest)}</span></div>
-      <div class="k"><span class="kl">Break-even</span><span class="kv">${
-        a.break_even_jahr || 'noch nicht erreicht'}</span></div>`;
-    zielEig.innerHTML = `<div class="ez" style="flex:1 1 100%">
-        <span class="eanteil">Je Jahr</span>
-        <div class="ezeile" style="flex-wrap:wrap;gap:6px">${jahre || '—'}</div>
-      </div>` + (a.eigentuemer || []).map(e => `
-      <div class="ez"><span class="eanteil">${esc(e.anteil)}</span>
-        <div class="ezeile"><span>Bisher zugeflossen</span><b>${eur(e.betrag)}</b></div>
-      </div>`).join('');
+    // Überschuss aus den Vorjahren — steht über der Nulllinie.
+    if (vorher > 0 && yNull - yV > 0.3) {
+      inhalt += `<rect x="${x}" y="${yV.toFixed(1)}" width="${bw}"
+        height="${(yNull - yV).toFixed(1)}" fill="${C_PLUS}"${blass}/>`;
+    }
+    // Was dieses Jahr eingebracht hat — der Bissen aus dem Balken.
+    const block = yV - yN;
+    if (block > 0.3) {
+      if (z.geschaetzt) {
+        inhalt += `<rect x="${x + .75}" y="${(yN + .75).toFixed(1)}"
+          width="${Math.max(1, bw - 1.5)}" height="${Math.max(1, block - 1.5).toFixed(1)}"
+          fill="${C_PLUS}" fill-opacity=".16" stroke="${C_OFFEN}"
+          stroke-opacity=".5" stroke-width="1.2" stroke-dasharray="3 2.5"/>`;
+      } else {
+        let boden = yV;
+        V_TEILE.forEach(([feld, fuellung]) => {
+          const h = z.summe > 0 ? block * ((z[feld] || 0) / z.summe) : 0;
+          if (h < 0.3) return;
+          boden -= h;
+          inhalt += `<rect x="${x}" y="${boden.toFixed(1)}" width="${bw}"
+            height="${h.toFixed(1)}" fill="${fuellung}"/>`;
+        });
+      }
+    }
+    clips += `<clipPath id="pvc${i}"><rect x="${x}" y="${oben.toFixed(1)}"
+      width="${bw}" height="${Math.max(.5, unten - oben).toFixed(1)}"
+      rx="4"/></clipPath>`;
+    saeulen += `<g clip-path="url(#pvc${i})">${inhalt}</g>`;
+    if (i % jederNte === 0 || i === reihe.length - 1) {
+      jahrLabels += `<text x="${(x + bw / 2).toFixed(1)}" y="${yu + 17}"
+        class="ax${z.geschaetzt ? ' blass' : ''}">${z.jahr}</text>`;
+    }
+    vorher = nachher;
+  });
+
+  // Trennstrich zwischen Erfasstem und Prognose.
+  const grenze = prog.length ? `<line x1="${(xl + slot * v.jahre.length).toFixed(1)}"
+    y1="${yo}" x2="${(xl + slot * v.jahre.length).toFixed(1)}" y2="${yu + 4}"
+    stroke="#5C6B70" stroke-opacity=".35" stroke-width="1" stroke-dasharray="3 3"/>` : '';
+
+  return `<svg viewBox="0 0 ${B} ${H}" class="chart" role="img"
+      aria-label="Amortisationsverlauf der PV-Anlage">
+    <defs>
+      <pattern id="pvSchraffur" width="6" height="6" patternUnits="userSpaceOnUse"
+               patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="${C_EINSP}"/>
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#FFF" stroke-width="2.4"
+              stroke-opacity=".8"/>
+      </pattern>
+      ${clips}
+    </defs>
+    <style>
+      .ax{font:500 10px var(--body);fill:var(--soft);text-anchor:middle}
+      .ax.blass{fill-opacity:.6}
+      .ay{font:500 9.5px var(--mono);fill:var(--soft);text-anchor:end}
+    </style>
+    <line x1="${xl}" y1="${yu}" x2="${xr}" y2="${yu}" stroke="${C_OFFEN}"
+          stroke-opacity=".35" stroke-width="1" stroke-dasharray="4 3"/>
+    ${grenze}
+    ${saeulen}
+    <line x1="${achse - 4}" y1="${yNull.toFixed(1)}" x2="${xr}"
+          y2="${yNull.toFixed(1)}" stroke="#16262C" stroke-width="1.2"/>
+    <text x="${achse - 8}" y="${(yNull - 4).toFixed(1)}" class="ay">0 €</text>
+    <text x="${achse - 8}" y="${yu + 4}" class="ay">${negativ(eur0(-ansch))}</text>
+  </svg>`;
+}
+
+function verlaufLegende(v) {
+  const mitVorlauf = (v.vorlauf || 0) > 0;
+  const mitPlus = v.jahre.some(z => (z.ueberschuss || 0) > 0);
+  return `<div class="legende">
+    <span><i style="background:${C_DIREKT}"></i>Direktnutzung</span>
+    <span><i class="schraffur"></i>Einspeisevergütung</span>
+    <span><i style="background:${C_TANK}"></i>E-Tanken</span>
+    ${mitVorlauf ? `<span><i style="background:${C_VOR}"></i>Vorlauf</span>` : ''}
+    <span><i style="background:${C_OFFEN}"></i>noch offen</span>
+    ${mitPlus ? `<span><i style="background:${C_PLUS}"></i>amortisiert</span>` : ''}
+    ${v.prognose ? '<span><i class="prognose"></i>Prognose</span>' : ''}
+  </div>`;
+}
+
+function verlaufTabelle(v) {
+  const mitVorlauf = (v.vorlauf || 0) > 0;
+  const kopf = ['Jahr', ...(mitVorlauf ? ['Vorlauf'] : []), 'PV-Strom',
+                'Einspeisung', 'E-Tanken', 'Summe', 'kumuliert', 'noch offen'];
+  const zeilen = v.jahre.map(z => `<tr>
+      <td>${z.jahr}</td>
+      ${mitVorlauf ? `<td class="leise">${z.vorlauf ? eur(z.vorlauf) : '—'}</td>` : ''}
+      <td class="leise">${z.pv_strom ? eur(z.pv_strom) : '—'}</td>
+      <td class="leise">${z.einspeisung ? eur(z.einspeisung) : '—'}</td>
+      <td class="leise">${z.tanken ? eur(z.tanken) : '—'}</td>
+      <td class="summe">${eur(z.summe)}</td>
+      <td>${eur(z.kumuliert)}</td>
+      <td>${z.offen ? eur(z.offen) : (z.ueberschuss ? '+ ' + eur(z.ueberschuss) : '—')}</td>
+    </tr>`).join('');
+  return `<div class="tabrahmen"><table class="jt">
+    <thead><tr>${kopf.map(t => `<th>${t}</th>`).join('')}</tr></thead>
+    <tbody>${zeilen}</tbody>
+    <tfoot><tr>
+      <td>Σ</td>${mitVorlauf ? `<td>${eur(v.vorlauf)}</td>` : ''}
+      <td>${eur(v.jahre.reduce((s, z) => s + z.pv_strom, 0))}</td>
+      <td>${eur(v.jahre.reduce((s, z) => s + z.einspeisung, 0))}</td>
+      <td>${eur(v.jahre.reduce((s, z) => s + z.tanken, 0))}</td>
+      <td class="summe">${eur(v.kumuliert)}</td>
+      <td>${eur(v.kumuliert)}</td>
+      <td>${eur(v.rest)}</td>
+    </tr></tfoot>
+  </table></div>`;
+}
+
+function verlaufKpi(v) {
+  const fertig = v.break_even_jahr
+    ? `${v.break_even_jahr}${v.break_even_geschaetzt
+        ? ` <span class="einheit">(${v.break_even_in_jahren} J. geschätzt)</span>` : ''}`
+    : '—';
+  return `
+    <div class="k"><span class="kl">Anschaffung</span><span class="kv">${eur(v.anschaffung)}</span></div>
+    <div class="k"><span class="kl">Bisher abgetragen</span><span class="kv pos">${eur(v.kumuliert)}</span></div>
+    <div class="k"><span class="kl">Noch offen</span><span class="kv">${eur(v.rest)}</span></div>
+    <div class="k"><span class="kl">Amortisiert</span><span class="kv">${
+      v.amortisiert_prozent == null ? '—'
+        : v.amortisiert_prozent.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' %'}</span></div>
+    <div class="k"><span class="kl">Bezahlt gemacht</span><span class="kv">${fertig}</span></div>`;
+}
+
+async function verlaufZeigen() {
+  const kpi = document.getElementById('vKpi');
+  if (!kpi || !objektSlug) return;
+  const grafik = document.getElementById('vGrafik');
+  const tabelle = document.getElementById('vTabelle');
+  const eig = document.getElementById('vEig');
+  let v;
+  try {
+    v = await api(`/objekte/${encodeURIComponent(objektSlug)}/pv/verlauf`);
   } catch {
-    ziel.innerHTML = '<div class="k"><span class="kl">Amortisation</span>'
-      + '<span class="kv">nach dem nächsten Deploy verfügbar</span></div>';
+    kpi.innerHTML = '';
+    grafik.innerHTML = '<div class="verlaufleer"><p>Der Verlauf ist nach dem '
+      + 'nächsten Deploy verfügbar.</p></div>';
+    tabelle.innerHTML = eig.innerHTML = '';
+    return;
   }
+  const hinweise = (v.warnungen || []).map(t => `<p>${esc(t)}</p>`).join('');
+  kpi.innerHTML = v.anschaffung ? verlaufKpi(v) : '';
+  if (!v.anschaffung || !v.kumuliert) {
+    // Ruhige Aussage statt einer leeren Fläche.
+    grafik.innerHTML = `<div class="verlaufleer">${hinweise
+      || '<p>Für diese Anlage ist noch nichts zu zeigen.</p>'}</div>`;
+    tabelle.innerHTML = eig.innerHTML = '';
+    return;
+  }
+  grafik.innerHTML = verlaufGrafik(v) + verlaufLegende(v)
+    + (hinweise ? `<div class="verlaufleer">${hinweise}</div>` : '');
+  tabelle.innerHTML = verlaufTabelle(v);
+  eig.innerHTML = (v.eigentuemer || []).map(e => `
+    <div class="ez"><span class="eanteil">${esc(e.anteil)}</span>
+      <div class="ezeile"><span>Bisher zugeflossen</span><b>${eur(e.betrag)}</b></div>
+    </div>`).join('');
 }
 
 /* N112c — die PV-Anteile je Person: gewaehlt wird aus der Eigentuemer-Liste,
@@ -451,7 +695,7 @@ async function rechnen() {
   try {
     const r = await api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}/rechnung`);
     ergebnisZeigen(r);
-    amortisationZeigen();      // N87 — läuft über alle Jahre, nebenher
+    verlaufZeigen();           // N127 — läuft über alle Jahre, nebenher
   } catch (fehler) {
     melde(String(fehler.message || fehler), 'neg');
   }

@@ -15,7 +15,6 @@ Parameter hat Vorrang. Fehlt beides, bleibt die Rechnung bei den zwei Gruppen.
 """
 import json
 import logging
-import math
 
 from datetime import date
 
@@ -43,6 +42,10 @@ _FELDER = (
     # N87/N89 — PV als Add-on-Investment: eigene Eigentümer-‰ und die
     # E-Tankstelle (Satz + wem sie berechnet wird).
     "pv_anteile", "tanken_preis", "tanken_person",
+    # N127 — was die Anlage VOR der ersten Nebenkostenabrechnung schon
+    # abgetragen hat: ein einmaliger Betrag, der auf das erste erfasste Jahr
+    # zählt und nicht über die Jahre verteilt wird.
+    "vorlauf_ertrag_eur",
 )
 
 # N89 — Spalte für die Zuordnung Gruppe → Einheiten. Sie ist im Datenmodell noch
@@ -74,6 +77,8 @@ class StromIn(BaseModel):
     pv_anteile: str = ""              # JSON {Name: ‰}; leer = Vorgabe 5/6+1/6
     tanken_preis: float = 0.0
     tanken_person: str = ""
+    # N127 — Vorlauf vor der ersten Abrechnung (einmalig, s. `_FELDER`).
+    vorlauf_ertrag_eur: float = 0.0
     # N108 (Fund 2) — diese drei Felder schickt die Maske nicht mit. Als
     # Pflichtfeld mit Default "" loeschte jedes Speichern die gespeicherte
     # Zuordnung und die Notiz. `None` heisst jetzt „nicht mitgeschickt".
@@ -299,67 +304,107 @@ def _ertraege_je_jahr(session: Session, objekt_id: int) -> dict[int, dict]:
     return werte
 
 
-def _anlage(session: Session, objekt_id: int) -> tuple[float, tuple]:
-    """Anschaffung und PV-Anteile der Anlage: die zuletzt erfassten gelten (die
-    Anschaffung ändert sich nicht jährlich, die Anteile selten)."""
-    anschaffung, anteile = 0.0, strom.EIGENTUEMER_ANTEILE
+def _anlage(session: Session, objekt_id: int) -> tuple[float, float, tuple]:
+    """Anschaffung, Vorlauf-Ertrag und PV-Anteile der Anlage.
+
+    Alle drei stehen am Strom-Jahr, ändern sich aber nicht jährlich — es gilt
+    der zuletzt erfasste Wert. Der Vorlauf ist, was die Anlage VOR der ersten
+    Nebenkostenabrechnung schon abgetragen hat (N127): ein einmaliger Betrag,
+    kein jährlicher."""
+    anschaffung, vorlauf = 0.0, 0.0
+    anteile = strom.EIGENTUEMER_ANTEILE
     for sj in session.exec(select(Stromjahr)
                            .where(Stromjahr.objekt_id == objekt_id)
                            .order_by(Stromjahr.jahr)).all():
         if sj.anschaffung_eur:
             anschaffung = sj.anschaffung_eur
+        if getattr(sj, "vorlauf_ertrag_eur", 0.0):
+            vorlauf = sj.vorlauf_ertrag_eur
         anteile = strom._pv_anteile(sj)
-    return anschaffung, anteile
+    return anschaffung, vorlauf, anteile
 
 
-def _break_even_prognose(jahre: list[dict], anschaffung: float) -> int | None:
-    """Das Jahr, in dem die Anlage sich bezahlt macht — linear aus den bisher
-    erfassten Erträgen fortgeschrieben.
+# Wie weit die Prognose höchstens rechnet. Trägt eine Anlage nur ein paar Euro
+# im Jahr ab, liefe die Schleife sonst über Jahrhunderte.
+_PROGNOSE_MAX_JAHRE = 60
 
-    Gerechnet wird mit dem Durchschnitt ab dem ersten Jahr MIT Ertrag: Jahre
-    davor gehören noch nicht zur Anlage. Ist noch gar kein Ertrag erfasst oder
-    fehlt die Anschaffung, gibt es keine Prognose — dann `None` statt einer
-    erfundenen Jahreszahl."""
-    mit_ertrag = [z for z in jahre if z["summe"] > 0]
-    if anschaffung <= 0 or not mit_ertrag:
+
+def _prognose(jahre: list[dict], anschaffung: float) -> dict | None:
+    """Wie es voraussichtlich weitergeht — linear aus dem bisherigen Schnitt.
+
+    Erst ab **zwei** Jahren mit laufendem Ertrag: eine Prognose aus einem
+    einzigen Wert wäre geraten, nicht gerechnet. Der einmalige Vorlauf zählt
+    dabei nicht in den Schnitt (er wiederholt sich nicht), wohl aber im schon
+    erreichten Stand.
+
+    Rückgabe: `schnitt` (Ertrag je Jahr), `jahre` (die fortgeschriebenen Zeilen
+    {jahr, summe, kumuliert, offen, ueberschuss}), `break_even_jahr` und
+    `in_jahren`. `None`, wenn es (noch) nichts fortzuschreiben gibt."""
+    if anschaffung <= 0 or not jahre:
         return None
     letztes = jahre[-1]
-    laufzeit = max(1, letztes["jahr"] - mit_ertrag[0]["jahr"] + 1)
-    schnitt = letztes["kumuliert"] / laufzeit
+    if letztes["offen"] <= 0:
+        return None                       # schon amortisiert, nichts zu raten
+    laufend = [z for z in jahre if round(z["summe"] - z["vorlauf"], 2) > 0]
+    if len(laufend) < 2:
+        return None
+    spanne = max(1, laufend[-1]["jahr"] - laufend[0]["jahr"] + 1)
+    schnitt = round(sum(z["summe"] - z["vorlauf"] for z in laufend) / spanne, 2)
     if schnitt <= 0:
         return None
-    return letztes["jahr"] + math.ceil(letztes["offen"] / schnitt)
+
+    reihe, kum = [], letztes["kumuliert"]
+    for i in range(1, _PROGNOSE_MAX_JAHRE + 1):
+        kum = round(kum + schnitt, 2)
+        reihe.append({"jahr": letztes["jahr"] + i, "summe": schnitt,
+                      "kumuliert": kum,
+                      "offen": round(max(0.0, anschaffung - kum), 2),
+                      "ueberschuss": round(max(0.0, kum - anschaffung), 2)})
+        if kum >= anschaffung:
+            break
+    if reihe[-1]["offen"] > 0:
+        return None                       # jenseits des Horizonts — lieber nichts
+    return {"schnitt": schnitt, "jahre": reihe,
+            "break_even_jahr": reihe[-1]["jahr"], "in_jahren": len(reihe)}
 
 
 @router.get("/objekte/{slug}/pv/verlauf")
 def pv_verlauf(slug: str, session: Session = Depends(get_session),
                o: Objekt = Depends(objekt_holen)) -> dict:
-    """N127 — was die Anlage je Jahr abträgt und wann sie sich bezahlt macht.
+    """N127 — wie die Erträge die Anschaffung Jahr für Jahr auffressen.
 
     Die Jahre kommen aus den vorhandenen Zeiträumen des Objekts (plus Jahren
     mit Ladungen), lückenlos von der ersten bis zur letzten Zeile: ein Jahr
-    ohne Erträge ist eine Zeile mit 0, keine Lücke.
+    ohne Erträge ist eine Zeile mit 0, keine Lücke. Die Beträge werden bei
+    jedem Aufruf frisch aus den Kostenpositionen gezogen — ändert sich die
+    Nebenkostenabrechnung, ändert sich der Verlauf mit.
 
-    Rückgabe: `anschaffung`, `jahre` ([{jahr, pv_strom, einspeisung, tanken,
-    summe, kumuliert, offen}]), `kumuliert`, `rest`, `amortisiert_prozent`,
-    `break_even_jahr` (erreicht oder prognostiziert, sonst None),
-    `break_even_geschaetzt`, `eigentuemer` und `warnungen`."""
+    Rückgabe: `anschaffung`, `vorlauf`, `jahre` ([{jahr, vorlauf, pv_strom,
+    einspeisung, tanken, summe, kumuliert, offen, ueberschuss}]), `kumuliert`,
+    `rest`, `amortisiert_prozent`, `break_even_jahr` (erreicht oder
+    prognostiziert), `break_even_geschaetzt`, `break_even_in_jahren`,
+    `prognose`, `eigentuemer` und `warnungen`."""
     quellen = _ertraege_je_jahr(session, o.id)
     spanne = range(min(quellen), max(quellen) + 1) if quellen else range(0)
     roh = [{"jahr": j, **quellen.get(j, _QUELLEN_LEER)} for j in spanne]
-    anschaffung, anteile = _anlage(session, o.id)
+    anschaffung, vorlauf, anteile = _anlage(session, o.id)
+    # Der Vorlauf zählt einmalig auf das erste erfasste Jahr — er ist schon
+    # abgetragen, bevor die erste Abrechnung überhaupt beginnt.
+    for i, z in enumerate(roh):
+        z["vorlauf"] = round(vorlauf, 2) if i == 0 else 0.0
 
     a = strom.amortisation(
         [{"jahr": z["jahr"],
-          "ertrag": round(z["pv_strom"] + z["einspeisung"] + z["tanken"], 2)}
+          "ertrag": round(z["vorlauf"] + z["pv_strom"] + z["einspeisung"]
+                          + z["tanken"], 2)}
          for z in roh], anschaffung)
     jahre = [{**z, "summe": k["ertrag"], "kumuliert": k["kumuliert"],
-              "offen": round(max(0.0, a["anschaffung"] - k["kumuliert"]), 2)}
+              "offen": round(max(0.0, a["anschaffung"] - k["kumuliert"]), 2),
+              "ueberschuss": round(max(0.0, k["kumuliert"] - a["anschaffung"]), 2)}
              for z, k in zip(roh, a["reihe"])]
 
     erreicht = a["break_even_jahr"]
-    geschaetzt = None if erreicht else _break_even_prognose(jahre,
-                                                            a["anschaffung"])
+    prognose = None if erreicht else _prognose(jahre, a["anschaffung"])
     warnungen: list[str] = []
     if not a["anschaffung"]:
         warnungen.append("Anschaffungskosten der Anlage sind noch nicht "
@@ -372,11 +417,18 @@ def pv_verlauf(slug: str, session: Session = Depends(get_session),
                          "Kostenpositionen mit Herkunft „eigen“, die "
                          "Einspeisevergütung aus einer nicht umlagefähigen "
                          "Kostenart, das E-Tanken aus den Ladungen.")
-    return {"anschaffung": a["anschaffung"], "jahre": jahre,
+    elif not erreicht and not prognose and a["anschaffung"]:
+        warnungen.append("Eine Prognose gibt es ab dem zweiten Abrechnungsjahr "
+                         "mit Ertrag — aus einem einzigen Jahr wäre sie "
+                         "geraten.")
+    return {"anschaffung": a["anschaffung"], "vorlauf": round(vorlauf, 2),
+            "jahre": jahre,
             "kumuliert": a["kumuliert"], "rest": a["rest"],
             "amortisiert_prozent": a["amortisiert_prozent"],
-            "break_even_jahr": erreicht or geschaetzt,
-            "break_even_geschaetzt": geschaetzt is not None,
+            "break_even_jahr": erreicht or (prognose or {}).get("break_even_jahr"),
+            "break_even_geschaetzt": prognose is not None,
+            "break_even_in_jahren": (prognose or {}).get("in_jahren"),
+            "prognose": prognose,
             "eigentuemer": strom.verteile_eigentuemer(a["kumuliert"], anteile),
             "warnungen": warnungen}
 

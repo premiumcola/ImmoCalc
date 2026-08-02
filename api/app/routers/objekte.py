@@ -1055,6 +1055,17 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "schluessel": p.schluessel if p else None,
             "nur_einheit": p.nur_einheit if p else "",
             "wertquelle": p.wertquelle if p else None,
+            # N122 — dieselben Felder wie im Waisen-Zweig weiter unten. Fehlten
+            # sie hier, blieb die Strom-Maske jeder Kostenart leer, die im
+            # Katalog der Immobilie steht: PATCH speicherte, die Anzeige zeigte
+            # nichts.
+            "menge": p.menge if p else None,
+            "menge_einheit": p.menge_einheit if p else None,
+            "herkunft": p.herkunft if p else None,
+            "arbeitspreis": p.arbeitspreis if p else None,
+            "grundpreis_monat": p.grundpreis_monat if p else None,
+            "preis_je_menge": (round(p.betrag / p.menge, 4)
+                               if p and p.menge else None),
             **_verteilung(p),
             **_zusammensetzung(p),
             "position_id": p.id if p else None,
