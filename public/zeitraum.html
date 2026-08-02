@@ -2411,11 +2411,61 @@ async function heizoelEntfernen(id) {
    und rechnet sich neu (ohne diesen Beleg); die Datei bleibt in der Ablage und
    lässt sich jederzeit wieder zuordnen. */
 async function belegLoesen(id) {
+  const dok = (daten.dokumente || []).find(d => String(d.id) === String(id));
+  const wahl = await belegWegDialog(dok);
+  if (!wahl) return;
   try {
-    await api(`/dokumente/${id}/position`, { method: 'DELETE' });
-    melde('Beleg herausgenommen — die Datei bleibt in der Ablage', 'pos');
+    // Verbuchung lösen — ein nicht verbuchter Beleg ist kein Fehler (N96b).
+    await api(`/dokumente/${id}/position`, { method: 'DELETE' }).catch(() => {});
+    // Aus dem Zeitraum nehmen: erst dadurch verschwindet er aus der Abrechnung.
+    await api(`/dokumente/${id}`, { method: 'PATCH', body: { zeitraum_id: null } });
+    if (wahl === 'ablage') {
+      // Nur mit Byte-Beweis: der Endpunkt löscht ausschließlich eine Datei, zu
+      // der es eine identische zweite gibt — nie die einzige Kopie.
+      const zwilling = (daten.dokumente || []).find(d =>
+        String(d.id) !== String(id) && d.groesse === dok?.groesse
+        && (d.betrag ?? null) === (dok?.betrag ?? null));
+      if (!zwilling) {
+        melde('Herausgenommen. In der Ablage gelöscht wird nur mit identischer '
+          + 'Zweitdatei — hier keine gefunden, die Datei bleibt.', 'neg');
+      } else {
+        await api(`/dokumente/${id}/duplikat-entfernen`,
+          { method: 'POST', body: { behalten_id: zwilling.id } });
+        melde('Doppelter Beleg entfernt — auch aus der Ablage', 'pos');
+      }
+    } else {
+      melde('Beleg herausgenommen — die Datei bleibt in der Ablage', 'pos');
+    }
     await laden();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* N96b — was mit dem Beleg geschehen soll: nur aus der Abrechnung nehmen (die
+   Datei bleibt) oder — bei einem verifizierten Doppel — auch aus der Ablage
+   löschen. Die Löschung ist rot und braucht den zweiten, bewussten Klick. */
+function belegWegDialog(dok) {
+  return new Promise(fertig => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'immo-dlg';
+    document.body.appendChild(dlg);
+    let wahl = null;
+    dlg.addEventListener('close', () => { dlg.remove(); fertig(wahl); }, { once: true });
+    dlg.innerHTML = `
+      <button class="immo-dlg-zu" data-nein aria-label="Schließen">×</button>
+      <div class="dt">Beleg herausnehmen</div>
+      <p style="font:400 13px var(--body);color:var(--soft);line-height:1.5">
+        <b style="color:var(--ink)">${esc(dok?.dateiname || 'Beleg')}</b><br>
+        Er wird aus dieser Abrechnung genommen; sein Betrag zählt nicht mehr mit.</p>
+      <div class="kartenfuss" style="display:flex;flex-direction:column;gap:9px">
+        <button class="hauptaktion" data-wahl="raus">Nur herausnehmen — Datei bleibt</button>
+        <button class="minilink gefahr" data-wahl="ablage">Doppelt: auch aus der Ablage löschen</button>
+      </div>`;
+    dlg.querySelectorAll('[data-wahl]').forEach(b => (b.onclick = () => {
+      wahl = b.dataset.wahl; dlg.close();
+    }));
+    dlg.querySelector('[data-nein]').onclick = () => dlg.close();
+    dlg.showModal();
+  });
 }
 
 /* N81 — einen Heizkörper (HKV) erfassen: Einheit, Nummer, Raum, Faktor und die
