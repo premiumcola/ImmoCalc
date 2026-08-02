@@ -561,16 +561,6 @@
   .zu-panel.offen .zu-chev{transform:rotate(180deg)}
   .zu-inhalt{display:none;padding:0 15px 12px}
   .zu-panel.offen .zu-inhalt{display:block}
-  /* N77d — gemeinsames Ablesedatum je Kategorie, oben im Panel. */
-  .zu-katdatum{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;
-    padding:12px 13px;margin:0 0 6px;background:var(--paper);border-radius:12px}
-  .zu-kdl{font:600 8.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;
-    color:var(--soft)}
-  .zu-katdatum label{display:inline-flex;align-items:center;gap:7px;
-    font:600 11px var(--body);color:var(--ink)}
-  .zu-katdatum input[type=date]{border:1.5px solid var(--line);border-radius:10px;
-    padding:9px 11px;min-height:44px;font:500 12px var(--body);background:var(--sheet)}
-  .zu-katdatum input[type=date]:focus{outline:none;border-color:var(--teal)}
   .zu-block{margin-top:14px}
   .zu-bt{display:flex;align-items:center;gap:8px;font:700 12.5px var(--disp);
     color:var(--ink);margin-bottom:8px}
@@ -596,7 +586,24 @@
     background:var(--sheet);color:var(--ink)}
   .zu-feld input[type=text]{width:100px;min-height:44px;text-align:right}
   .zu-feld input:focus{outline:none;border-color:var(--teal)}
-  .zu-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap;padding:6px 0 0}
+  .zu-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
+  /* N88 — Stand und Ablesedatum stehen wieder je Zähler nebeneinander; darunter
+     die sichtbare Umrechnung auf die Periodengrenze. Die Paar-Zeile ist so hoch
+     wie ein Eingabefeld, damit Anfang und Ende auf einer Linie sitzen. */
+  .zu-paar{display:flex;align-items:center;gap:8px;min-height:44px}
+  .zu-feld input[type=date]{width:134px;min-height:44px;font:500 11.5px var(--body)}
+  .zu-dat,.zu-uebernommen{font:500 10.5px var(--body);color:var(--soft);
+    white-space:nowrap}
+  .zu-rechnung{display:flex;flex-direction:column;gap:3px;margin-top:8px;
+    padding-top:7px;border-top:1px dashed var(--line)}
+  .zu-rz{font:400 10.5px var(--body);color:var(--soft);line-height:1.5;
+    overflow-wrap:anywhere}
+  .zu-rz b{font:600 8.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;
+    color:var(--soft);margin-right:5px}
+  .zu-rz strong{font:700 11px var(--mono);color:var(--ink)}
+  .zu-dok{margin-top:8px;min-height:44px;padding:9px 15px;border-radius:10px;
+    border:1.5px solid var(--teal);background:var(--teal-l);color:var(--teal-d);
+    font:600 11.5px var(--body);cursor:pointer}
   .zu-verb{flex:none;min-width:78px;align-self:center;text-align:right;
     font:700 12.5px var(--mono);color:var(--soft);white-space:nowrap}
   .zu-verb small{font:600 8.5px var(--mono);color:var(--soft);text-transform:uppercase}
@@ -619,8 +626,10 @@
   .zu-zeile.rest .zu-verb{color:var(--teal-d)}
   @media(max-width:520px){
     .zu-name{min-width:100%}
-    .zu-feld{flex:1 1 calc(50% - 6px);min-width:0}
-    .zu-feld input[type=text]{width:100%}
+    /* N88 — je Zeile eine volle Reihe: Stand schmal, Datum füllt den Rest. */
+    .zu-feld{flex:1 1 100%;min-width:0}
+    .zu-feld input[type=text]{flex:none;width:96px}
+    .zu-feld input[type=date]{flex:1 1 auto;width:auto;min-width:0}
     .zu-verb{min-width:0;flex:1 1 100%;text-align:right;margin-top:2px}
   }
 
@@ -1365,9 +1374,41 @@ function einheitChooserHtml(z) {
     <div class="zu-ehchips">${chips}</div></div>`;
 }
 
-/* Eine Zähler-Zeile: Anfang + Ende editierbar (mit Datum, N60) und der Einheiten-
-   Auswähler (N58). `rest` = berechneter Rest (keine Eingabe), `minus` = im
-   Kaltwasser-Block eingerückt als Abzug (N59), `label` überschreibt den Namen. */
+/* N88 — die Umrechnung eines Zählers sichtbar machen: der Ablesewert gilt zu
+   SEINEM Datum, die Abrechnung braucht ihn zur Periodengrenze. Der Randwert zur
+   Grenze ist genau `vorwert.stand + verbrauch` (so bildet ihn `ablesung.py`:
+   randwert_neu = randwert_alt + interpolierter Verbrauch). Liegt das Ablesedatum
+   auf der Grenze, sind beide Werte identisch — dann gibt es nichts zu zeigen.
+   Gibt eine Liste fertiger Sätze zurück (leer = kein Hinweis). */
+function interpolationsHinweise(z, eh) {
+  const start = ablesungMaske?.zeitraum?.start || daten.start || '';
+  const ende = ablesungMaske?.zeitraum?.ende || daten.ende || '';
+  // Der Anfangs-Randwert gehört zum Ende der Vorperiode; bei lückenlosen
+  // Perioden ist das der Tag vor dem Start — beide zählen als „auf der Grenze".
+  const grenzenAnfang = [ablesungMaske?.vorheriges_ende, start].filter(Boolean);
+  const saetze = [];
+  if (z.vorwert?.datum && !grenzenAnfang.includes(z.vorwert.datum)) {
+    saetze.push(`<b>Anfang</b> abgelesen am ${_isoKurz(z.vorwert.datum)} ·
+      auf ${_isoKurz(start)} gerechnet
+      <strong>${zahl(z.vorwert.stand)}&nbsp;${eh}</strong>`);
+  }
+  if (z.ablesung?.datum && z.ablesung.datum !== ende) {
+    const gerechnet = (z.vorwert && z.verbrauch != null)
+      ? z.vorwert.stand + z.verbrauch : null;
+    saetze.push(`<b>Ende</b> abgelesen ${zahl(z.ablesung.stand)}&nbsp;${eh} am
+      ${_isoKurz(z.ablesung.datum)}` + (gerechnet == null
+        ? ` · Startablesung, noch keine Umrechnung`
+        : ` · auf ${_isoKurz(ende)} gerechnet
+            <strong>${zahl(Math.round(gerechnet * 1000) / 1000)}&nbsp;${eh}</strong>`));
+  }
+  return saetze;
+}
+
+/* Eine Zähler-Zeile: Anfang + Ende mit Stand UND eigenem Ablesedatum (N88) und
+   der Einheiten-Auswähler (N58). Das Datumsfeld speichert für sich allein
+   NICHTS — es wird nur mitgeschickt, wenn der Stand gespeichert wird.
+   `rest` = berechneter Rest (keine Eingabe), `minus` = im Kaltwasser-Block
+   eingerückt als Abzug (N59), `label` überschreibt den Namen. */
 function meterZeileHtml(z, { rest = false, minus = false, label = null,
                             keinChooser = false } = {}) {
   const bearbeitbar = daten.status === 'in Arbeit';
@@ -1376,18 +1417,50 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
     && (rest || (z.vorwert != null && z.ablesung != null));
   const startStand = z.vorwert ? zahl(z.vorwert.stand) : '';
   const endStand = z.ablesung ? zahl(z.ablesung.stand) : '';
+  const anfangDatum = z.vorwert?.datum
+    || ablesungMaske?.zeitraum?.start || daten.start || '';
+  const endeDatum = z.ablesung?.datum
+    || ablesungMaske?.zeitraum?.ende || daten.ende || '';
+  // N88 — gibt es eine Vorperiode, ist der Anfang deren Endrandwert: abgeleitet,
+  // nicht eingegeben. Er wird angezeigt statt zur Eingabe angeboten — ein Tippen
+  // hier würde sonst den allerersten Stand des Zählers umschreiben.
+  const ausVorperiode = !!(z.vorwert && ablesungMaske?.vorheriges_ende);
 
-  // N77d — je Zeile NUR noch die Stände; das Ablesedatum steht einmal oben je
-  // Kategorie (alle Zähler werden am selben Tag abgelesen).
-  const standFeld = (kind, wert, standAttr) => bearbeitbar
+  const feld = (kind, wert, standAttr, datumAttr, datum) => bearbeitbar
     ? `<div class="zu-feld"><label>${kind}</label>
-        <input type="text" inputmode="decimal" ${standAttr}="${z.id}"
-          value="${wert}" placeholder="Stand" aria-label="${kind}sstand ${esc(z.name)}"></div>`
+        <div class="zu-paar">
+          <input type="text" inputmode="decimal" ${standAttr}="${z.id}"
+            value="${wert}" placeholder="Stand" aria-label="${kind}sstand ${esc(z.name)}">
+          <input type="date" ${datumAttr}="${z.id}" value="${datum}"
+            aria-label="Ablesedatum ${kind} ${esc(z.name)}">
+        </div></div>`
     : `<div class="zu-feld"><label>${kind}</label>
-        <span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span></div>`;
+        <div class="zu-paar"><span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span>
+          <span class="zu-dat">${_isoKurz(datum)}</span></div></div>`;
 
-  const startFeld = rest ? '' : standFeld('Anfang', startStand, 'data-anfangstand');
-  const endFeld = rest ? '' : standFeld('Ende', endStand, 'data-endstand');
+  const nurAnzeige = (kind, wert, datum, note) => `<div class="zu-feld">
+      <label>${kind}</label>
+      <div class="zu-paar">
+        <span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span>
+        <span class="zu-uebernommen" title="Endstand der Vorperiode, abgelesen am ${
+          _isoKurz(datum)}">${note}</span></div></div>`;
+
+  const startFeld = rest ? ''
+    : (ausVorperiode
+      ? nurAnzeige('Anfang', startStand, anfangDatum, 'aus Vorperiode')
+      : feld('Anfang', startStand, 'data-anfangstand', 'data-anfangdatum', anfangDatum));
+  const endFeld = rest ? ''
+    : feld('Ende', endStand, 'data-endstand', 'data-enddatum', endeDatum);
+
+  const hinweise = rest ? [] : interpolationsHinweise(z, eh);
+  const rechnung = hinweise.length
+    ? `<div class="zu-rechnung">${hinweise.map(s => `<span class="zu-rz">${s}</span>`)
+        .join('')}</div>` : '';
+  // Der Knopf erscheint erst, wenn ein Datum von Hand geändert wurde (siehe
+  // `datumGeaendert`) — ein Datum allein löst nie ein Speichern aus.
+  const datumKnopf = bearbeitbar && !rest
+    ? `<button type="button" class="zu-dok" data-datum-uebernehmen="${z.id}"
+        hidden>Geändertes Datum mit dem Stand speichern</button>` : '';
 
   const verb = z.verbrauch != null ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—';
   return `<div class="zu-zeile${fertig ? ' fertig' : ''}${minus ? ' minus' : ''}${
@@ -1398,6 +1471,7 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
       ${startFeld}${endFeld}
       <span class="zu-verb">${rest ? '<small>berechnet</small> ' : ''}${verb}</span>
     </div>
+    ${rechnung}${datumKnopf}
     ${keinChooser ? '' : einheitChooserHtml(z)}
   </div>`;
 }
@@ -1477,28 +1551,19 @@ function zaehlerPanelHtml(block, zaehler, blockVon) {
     ? wasserBlockHtml(teil)
     : teil.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('');
   const offen = zaehlerOffen.has(block);
-  // N77d — ein gemeinsames Anfangs-/Enddatum je Kategorie (alle Zähler am selben
-  // Tag abgelesen). Vorbelegt aus einem vorhandenen Stand, sonst den Perioden-
-  // grenzen. Ändern schreibt das Datum auf alle erfassten Stände des Blocks.
-  const anfDatum = teil.map(z => z.vorwert?.datum).find(Boolean)
-    || ablesungMaske?.zeitraum?.start || daten.start || '';
-  const endDatum = teil.map(z => z.ablesung?.datum).find(Boolean)
-    || ablesungMaske?.zeitraum?.ende || daten.ende || '';
-  const datumKopf = daten.status === 'in Arbeit'
-    ? `<div class="zu-katdatum">
-        <span class="zu-kdl">Abgelesen am</span>
-        <label>Anfang <input type="date" data-kat-anfangdatum value="${anfDatum}"
-          aria-label="Anfangsdatum ${esc(block)}"></label>
-        <label>Ende <input type="date" data-kat-enddatum value="${endDatum}"
-          aria-label="Enddatum ${esc(block)}"></label>
-      </div>` : '';
+  // N88 — das gemeinsame Kategorie-Datum ist entfallen: das Ablesedatum steht
+  // wieder an der Zeile, zu der es gehört. Ein zweiter Ort für dieselbe Angabe
+  // wäre ohne eigenen Speicherweg ein totes Bedienelement — und genau diese
+  // Kopplung hatte zuvor beim Tippen fremde Stände überschrieben.
+  const abweichend = teil.filter(z => interpolationsHinweise(z, '').length).length;
   return `<div class="zu-panel${offen ? ' offen' : ''}" data-zu-block="${esc(block)}">
     <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${offen}">
       <span class="zu-st">Zählerstände</span>
-      <span class="zu-meta">${teil.length} Zähler · am selben Tag abgelesen</span>
+      <span class="zu-meta">${teil.length} Zähler${abweichend
+        ? ` · ${abweichend} umgerechnet` : ''}</span>
       <span class="zu-chev">${CHEV_ICON}</span>
     </button>
-    <div class="zu-inhalt">${datumKopf}${inner}</div>
+    <div class="zu-inhalt">${inner}</div>
   </div>`;
 }
 
@@ -3075,9 +3140,11 @@ inhalt.addEventListener('change', e => {
   // N47/N60 — Anfang/Ende (Stand oder Datum) eines Zählers speichern.
   if (e.target.matches('[data-endstand]')) endstandSpeichern(e.target);
   if (e.target.matches('[data-anfangstand]')) anfangstandSpeichern(e.target);
-  // N88 — das gemeinsame Kategorie-Datum wird NUR als Default für neue Stand-
-  // Eingaben genutzt (kein destruktives Auto-Neuspeichern mehr, das die Stände
-  // beim Datum-Tippen zerschoss). Beim Speichern eines Stands wird es gelesen.
+  // N88 — ein geändertes Ablesedatum speichert NICHTS von selbst. Genau eine
+  // solche Automatik hatte beim Tippen (Tag→Monat→Jahr) fremde Stände
+  // überschrieben. Das Datum fährt beim Speichern eines Stands mit; wurde es
+  // allein geändert, blendet dieser Handler nur den ausdrücklichen Knopf ein.
+  if (e.target.matches('[data-anfangdatum],[data-enddatum]')) datumGeaendert(e.target);
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
   // CCCLXII — Kostenart der Position wechseln (Wähler + Freitext für eine neue).
@@ -3112,6 +3179,10 @@ inhalt.addEventListener('click', async e => {
   // N58 — eine Einheit-Zuordnung eines Zählers umschalten.
   const eToggle = e.target.closest('[data-einheit-toggle]');
   if (eToggle) return einheitToggle(eToggle);
+
+  // N88 — ein allein geändertes Ablesedatum ausdrücklich übernehmen.
+  const dUeb = e.target.closest('[data-datum-uebernehmen]');
+  if (dUeb) return datumUebernehmen(dUeb);
 
   const abschluss = e.target.closest('[data-abschluss]');
   if (abschluss) return abschliessen(abschluss);
@@ -4080,8 +4151,9 @@ async function endstandSpeichern(input) {
   const stand = standAusFeld(inhalt.querySelector(`[data-endstand="${id}"]`));
   if (stand === null) return;                          // kein Stand → nichts speichern
   if (Number.isNaN(stand)) { melde('Ungültiger Zählerstand', 'neg'); return; }
-  // N77d — das Enddatum steht gemeinsam oben je Kategorie.
-  const datumEl = input.closest('.zu-panel')?.querySelector('[data-kat-enddatum]');
+  // N88 — das Ablesedatum dieser Zeile fährt im selben Aufruf mit; ohne Eingabe
+  // bleibt es die Periodengrenze.
+  const datumEl = input.closest('.zu-zeile')?.querySelector('[data-enddatum]');
   const datum = datumEl?.value || ablesungMaske?.zeitraum?.ende || daten.ende;
   try {
     await api(`/zaehler/${id}/ablesungen`,
@@ -4102,8 +4174,8 @@ async function anfangstandSpeichern(input) {
   const stand = standAusFeld(inhalt.querySelector(`[data-anfangstand="${id}"]`));
   if (stand === null) return;
   if (Number.isNaN(stand)) { melde('Ungültiger Anfangsstand', 'neg'); return; }
-  // N77d — das Anfangsdatum steht gemeinsam oben je Kategorie.
-  const datumEl = input.closest('.zu-panel')?.querySelector('[data-kat-anfangdatum]');
+  // N88 — dasselbe für den Anfang: Stand und Datum dieser Zeile, ein Aufruf.
+  const datumEl = input.closest('.zu-zeile')?.querySelector('[data-anfangdatum]');
   const datum = datumEl?.value || ablesungMaske?.zeitraum?.start || daten.start;
   try {
     await api(`/zaehler/${id}/anfangsstand`,
@@ -4115,6 +4187,30 @@ async function anfangstandSpeichern(input) {
   } catch (fehler) {
     melde(fehler.message || 'Speichern fehlgeschlagen', 'neg');
   }
+}
+
+/* N88 — ein von Hand geändertes Ablesedatum vormerken. Schreibt bewusst nichts:
+   es markiert nur das Feld und zeigt den Übernehmen-Knopf dieser einen Zeile.
+   Gespeichert wird erst auf Klick, über denselben Stand-Flow wie sonst. */
+function datumGeaendert(el) {
+  el.classList.add('geaendert');
+  const knopf = el.closest('.zu-zeile')?.querySelector('[data-datum-uebernehmen]');
+  if (knopf) knopf.hidden = false;
+}
+
+/* N88 — das geänderte Datum zusammen mit dem bereits erfassten Stand dieser
+   Zeile speichern. Ohne Stand gibt es nichts zu speichern; das sagt die Meldung.
+   Nach dem Speichern baut sich die Maske neu auf — deshalb genau ein Feld. */
+async function datumUebernehmen(knopf) {
+  const zeile = knopf.closest('.zu-zeile');
+  const datumEl = zeile?.querySelector('input[type=date].geaendert');
+  const ende = datumEl?.matches('[data-enddatum]');
+  const standEl = zeile?.querySelector(ende ? '[data-endstand]' : '[data-anfangstand]');
+  if (!standEl || standAusFeld(standEl) === null) {
+    melde('Erst den Zählerstand eintragen — das Datum gehört zu einem Stand', 'neg');
+    return;
+  }
+  return ende ? endstandSpeichern(standEl) : anfangstandSpeichern(standEl);
 }
 
 /* N58 — die Einheiten-Zuordnung eines Zählers umschalten und sofort speichern
