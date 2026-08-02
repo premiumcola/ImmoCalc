@@ -185,9 +185,14 @@ def test_fehlender_rechnungsbetrag_ist_null_nicht_null_euro(monkeypatch):
     assert d["kontrolle"]["stimmt"] is True
 
 
-def test_fehlender_eigenpreis_ist_null_nicht_null_euro(monkeypatch):
-    """Auch der eigene Strom ist nicht umsonst — ohne gepflegten Satz bleiben
-    PV und Akku ohne Betrag statt bei 0 €."""
+def test_ohne_gepflegten_satz_gilt_zehn_prozent_unter_dem_netzpreis(monkeypatch):
+    """N158 — feste Vorgabe des Betreibers: der eigene Strom wird 10 % unter dem
+    Durchschnittspreis des Netzbezugs (inkl. Grundgebühr) verkauft.
+
+    Das loest die frühere Regel ab, nach der PV und Akku ohne gepflegten Satz
+    ganz ohne Betrag blieben. Bewusste Fachlogik-Aenderung: der Preis ist jetzt
+    ableitbar, also gibt es keinen Grund mehr fuer eine Luecke — und es ist
+    derselbe Satz, den auch die E-Tankstelle abrechnet."""
     zid = _objekt("kette-ohne-eigenpreis")
     with Session(db.engine) as s:
         sj = s.exec(select(Stromjahr).where(Stromjahr.jahr == 2025)).all()[-1]
@@ -195,13 +200,36 @@ def test_fehlender_eigenpreis_ist_null_nicht_null_euro(monkeypatch):
         s.add(sj)
         s.commit()
     d = _kette(zid, monkeypatch, WALLBOX)
+    netz = d["schritt1"]["netz"]
+    pv = d["schritt1"]["pv"]
+    assert netz["betrag"] == 862.51
+    # 10 % unter dem Netzpreis — und zwar fuer PV wie Akku gleichermassen.
+    erwartet = round(netz["preis"] * 0.9, 5)
+    assert abs(pv["preis"] - erwartet) < 1e-5, (pv["preis"], erwartet)
+    assert abs(d["schritt1"]["akku"]["preis"] - erwartet) < 1e-5
+    assert pv["betrag"] == round(pv["kwh"] * erwartet, 2)
+    assert d["schritt1"]["vollstaendig"] is True
+    assert not any("kein Preis" in w for w in d["warnungen"])
+
+
+def test_ohne_netzpreis_bleibt_der_eigene_strom_ohne_betrag(monkeypatch):
+    """Die 10-%-Regel braucht einen Bezugspunkt: steht der Netzpreis nicht fest,
+    laesst sich auch der eigene Strom nicht bepreisen. Dann `null` statt 0 €."""
+    zid = _objekt("kette-ohne-netzpreis")
+    with Session(db.engine) as s:
+        sj = s.exec(select(Stromjahr).where(Stromjahr.jahr == 2025)).all()[-1]
+        sj.solar_preis, sj.akku_preis = 0.0, 0.0
+        s.add(sj)
+        s.commit()
+        for p in s.exec(select(Kostenposition)
+                        .where(Kostenposition.zeitraum_id == zid)).all():
+            p.betrag = 0.0
+            s.add(p)
+        s.commit()
+    d = _kette(zid, monkeypatch, WALLBOX)
     assert d["schritt1"]["pv"]["betrag"] is None
     assert d["schritt1"]["akku"]["betrag"] is None
-    assert d["schritt1"]["pv"]["preis"] is None
     assert d["schritt1"]["vollstaendig"] is False
-    # Das Netz hat seine Rechnung und rechnet weiter.
-    assert d["schritt1"]["netz"]["betrag"] == 862.51
-    assert any("kein Preis hinterlegt" in w for w in d["warnungen"])
 
 
 def test_jeder_block_nennt_seine_herkunft(monkeypatch):

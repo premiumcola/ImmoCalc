@@ -287,8 +287,15 @@ def _netz_betrag(session: Session, zid: int,
     ], _herkunft(arten, namen, text)
 
 
+# N158 — der eigene Strom wird 10 % unter dem Netzpreis verkauft. Feste Vorgabe
+# des Betreibers, gilt je Abrechnungszeitraum und fuer PV wie Akku gleichermassen.
+# Bezugsgroesse ist der Durchschnittspreis des Netzbezugs INKLUSIVE Grundgebuehr
+# (Betrag je Menge) — nicht der reine Arbeitspreis.
+EIGEN_RABATT = 0.10
+
+
 def _eigen_betraege(session: Session, sj: Stromjahr, pv_kwh: float,
-                    akku_kwh: float,
+                    akku_kwh: float, netz_preis: float | None,
                     positionen: list[Kostenposition]) -> tuple[float | None,
                                                                float | None, str,
                                                                list[str], dict,
@@ -341,10 +348,19 @@ def _eigen_betraege(session: Session, sj: Stromjahr, pv_kwh: float,
                     "Sätze am Strom-Jahr pflegen."],
                 _herkunft(namen, beleg, teil_text(pv_teil)),
                 _herkunft(namen, beleg, teil_text(akku_teil)))
+    # N158 — ohne gepflegten Satz gilt die feste Regel: 10 % unter dem
+    # Durchschnittspreis des Netzbezugs. Damit steht hier ein Betrag statt einer
+    # Luecke, und zwar derselbe, den auch die E-Tankstelle abrechnet.
+    if netz_preis and netz_preis > 0:
+        satz = round(netz_preis * (1 - EIGEN_RABATT), 5)
+        text = (f"{_ct(satz)} ct/kWh — 10 % unter dem Netzpreis "
+                f"({_ct(netz_preis)} ct/kWh, inkl. Grundgebühr)")
+        return (round(pv_kwh * satz, 2), round(akku_kwh * satz, 2),
+                text, [], _herkunft("Regel", "", text), _herkunft("Regel", "", text))
     return None, None, "", [
-        "Für den eigenen Strom ist noch kein Preis hinterlegt (Solar- und "
-        "Akku-Satz am Strom-Jahr) — PV und Akku bleiben ohne Betrag, bis er "
-        "gepflegt ist."], _herkunft(), _herkunft()
+        "Für den eigenen Strom lässt sich noch kein Preis bilden: er folgt mit "
+        "10 % Abschlag dem Netzpreis, und der steht noch nicht fest."
+    ], _herkunft(), _herkunft()
 
 
 # --------------------------------------------------------------------------
@@ -508,7 +524,9 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     warnungen += hinweise
     (pv_betrag, akku_betrag, quelle_eigen,
      hinweise, h_pv, h_akku) = _eigen_betraege(
-        session, sj, bloecke.pv.kwh, bloecke.akku.kwh, positionen)
+        session, sj, bloecke.pv.kwh, bloecke.akku.kwh,
+        (netz_betrag / bloecke.netz.kwh) if (netz_betrag and bloecke.netz.kwh) else None,
+        positionen)
     warnungen += hinweise
     # Gerechnet wird mit 0 €, wo noch kein Betrag da ist — die Kette soll nicht
     # abreißen. Nach außen bleibt der fehlende Betrag `null` (siehe `_block`).
