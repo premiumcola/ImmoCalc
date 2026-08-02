@@ -48,6 +48,54 @@ def anzeigename(name: str, ort: str = "", strasse: str = "", plz: str = "") -> s
     return " · ".join(teile)
 
 
+def objekt_titel(objekt: object) -> str:
+    """Der kanonische Immobilientitel — überall gleich, unabhängig von der Einheit.
+
+    Der gespeicherte `name` trägt im Bestand mal den offiziellen Titel
+    („(Eschenau) Laufer Str. 5"), mal versehentlich nur den Namen einer Einheit
+    („Wohnung 1.OG"). Damit ein Objekt an jeder Stelle — Kachel, Kopf, Vermögen,
+    Eigentümer, Vermietung — denselben Titel zeigt, wird er hier aus den
+    Stammdaten abgeleitet statt aus dem `name` gelesen:
+
+    * Gebäude (hat eine Straße): „(Ort) Straße", der Ort in Klammern voran, ohne
+      PLZ — genau die Schreibweise des korrekt gepflegten Laufer-Objekts.
+    * Grundstück (keine Straße / Typ Grundstück): „Ort · Grundstück" plus, wenn
+      vorhanden, Nutzungsart und die Lage aus Gemarkung/Flurstück — „Eckenhaid ·
+      Grundstück · Flurstück 619".
+    * Fallback: der gespeicherte `name`, wenn keine Adresse vorliegt.
+
+    Der `name` wird nirgends überschrieben — dies ist ein rein abgeleiteter Wert.
+    """
+    ort = _sauber(getattr(objekt, "ort", ""))
+    strasse = _sauber(getattr(objekt, "strasse", ""))
+    name = _sauber(getattr(objekt, "name", ""))
+    typ = _sauber(getattr(objekt, "typ", "")).lower()
+    gemarkung = _sauber(getattr(objekt, "gemarkung", ""))
+    flurstueck = _sauber(getattr(objekt, "flurstueck", ""))
+    nutzungsart = _sauber(getattr(objekt, "grundstueck_nutzungsart", ""))
+
+    # Ein Grundstück hat keine Hausnummer; erkannt am Typ oder daran, dass eine
+    # Straße fehlt, aber Grundstücksangaben vorliegen.
+    ist_grundstueck = "grundstueck" in typ or (
+        not strasse and (gemarkung or flurstueck or nutzungsart))
+
+    if ist_grundstueck:
+        teile = [ort] if ort else []
+        teile.append("Grundstück")
+        if nutzungsart:
+            teile.append(nutzungsart)
+        lage = lagebezeichnung("", gemarkung, flurstueck)
+        if lage:
+            teile.append(lage)
+        return " · ".join(t for t in teile if t) or name or "Grundstück"
+
+    if strasse:
+        return f"({ort}) {strasse}" if ort else strasse
+
+    # Keine Adresse hinterlegt — der gespeicherte Name muss reichen.
+    return name or "Immobilie"
+
+
 # Im Feld "ort" steht im Bestand vereinzelt die Nutzung statt einer Ortschaft
 # ("Mixed-Use · 7 Einheiten"). Solche Stücke dürfen nie als Ort erscheinen.
 _KEIN_ORT = re.compile(

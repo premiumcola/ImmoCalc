@@ -347,7 +347,7 @@ async function standLaden() {
     return `<button class="merker offen" type="button" data-zuweisen="${esc(o.slug)}">
         <span class="hi">‰</span>
         <span class="ht">
-          <span class="t">${esc(o.name)}</span>
+          <span class="t">${esc(o.titel || o.name)}</span>
           <span class="d">${esc(text)}</span>
         </span>
         <span class="go" aria-hidden="true">›</span>
@@ -422,7 +422,7 @@ function eigwertHtml(id) {
    Flurnummer die Adresse. Defensiv: fehlt die Objektart (alter API-Stand),
    fällt sie auf den Objektnamen zurück. */
 function betObjekt(o) {
-  const art = esc(o.objektart || o.name || 'Immobilie');
+  const art = esc(o.objektart || o.titel || o.name || 'Immobilie');
   const einheit = (o.einheit || '').trim();
   const grundstueck = o.typ === 'lg-grundstueck' || o.objektart === 'Grundstück';
   const adr = grundstueck
@@ -631,7 +631,7 @@ function oeffneZuweisen(slug) {
   zFreiWert = runde1(s.frei);
   zWert = null;
   zFehlerWeg();
-  zTitel.textContent = s.name;
+  zTitel.textContent = s.titel || s.name;
   zFuelleEigner();
   zPromille.value = '';
   zGewaehlt.textContent = 'Noch nichts gewählt';

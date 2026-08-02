@@ -27,8 +27,9 @@ from sqlmodel import Session, select
 from .. import belegposten, kiauslese, ocr, pdftext
 from ..belegposten import BelegFehler
 from ..bezeichnung import (_jahr_plausibel, betrag_aus_namen, betragsteil,
-                           datum_aus_namen, datumsteil, ohne_betrag, ohne_datum,
-                           ohne_ordnerwort, unterordner_finden, vergleichsname)
+                           datum_aus_namen, datumsteil, objekt_titel, ohne_betrag,
+                           ohne_datum, ohne_ordnerwort, unterordner_finden,
+                           vergleichsname)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
                         unterordner_fuer, verbindung)
 from ..kostenarten import _fold as _fold_kostenart
@@ -887,7 +888,7 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
         "kategorien": [a for a in DOKUMENTARTEN if a in genutzt],
         "kostenarten": kostenarten,
         "jahre": jahre,
-        "objekte": [{"slug": o.slug, "name": o.name,
+        "objekte": [{"slug": o.slug, "name": o.name, "titel": objekt_titel(o),
                      "anzahl": je_objekt.get(o.id, 0),
                      "cloud": bool(o.nc_ordner)}
                     for o in objekte.values()],
@@ -1343,7 +1344,7 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
 
     reihe = sorted(aeste.values(), key=lambda a: (a["ordner"] or "￿"))
     return {
-        "objekt": o.slug, "name": o.name,
+        "objekt": o.slug, "name": o.name, "titel": objekt_titel(o),
         "gesamt": len(dokumente),
         "offen": sum(a["offen"] for a in reihe),
         "aeste": reihe,

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from ..bezeichnung import objekt_titel
 from ..db import get_session
 from ..deps import objekt_holen
 from ..models import (Anteil, Einheit, Eigentuemer, Grundschuld,
@@ -89,6 +90,7 @@ def liste(session: Session = Depends(get_session)) -> list:
             **e.model_dump(),
             "objekte": [{"anteil_id": a.id, "slug": objekte[a.objekt_id].slug,
                          "name": objekte[a.objekt_id].name,
+                         "titel": objekt_titel(objekte[a.objekt_id]),
                          "tausendstel": a.tausendstel,
                          "promille": runde(promille_von(a)),
                          # CLXI: die Rolle beschreibt das Eigentum am Bezugspunkt
@@ -260,7 +262,8 @@ def anteilsstand(session: Session = Depends(get_session)) -> list:
         if not o.aktiv:
             continue
         zeilen = [a for a in alle if a.objekt_id == o.id]
-        out.append({"slug": o.slug, "name": o.name, "beteiligte": len(zeilen),
+        out.append({"slug": o.slug, "name": o.name, "titel": objekt_titel(o),
+                    "beteiligte": len(zeilen),
                     **_stand(zeilen, alle_einheiten.get(o.id, []))})
     out.sort(key=lambda z: (z["stimmig"], z["name"]))
     return out
@@ -437,7 +440,7 @@ def _objekt_je_eigentuemer(o: Objekt, einheiten: list[Einheit],
     out: dict[int, dict] = {}
     for eid, f in fraktion.items():
         out.setdefault(eid, {
-            "slug": o.slug, "name": o.name, "typ": o.typ,
+            "slug": o.slug, "name": o.name, "titel": objekt_titel(o), "typ": o.typ,
             "fraktion": round(f, 4),
             "wert": round((wert or 0) * f, 2) if wert is not None else None,
             "restschuld": round(restschuld * f, 2),

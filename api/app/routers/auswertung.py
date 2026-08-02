@@ -22,6 +22,7 @@ from ..cashflow import EinheitZahlen, cashflow, monate_im_jahr, sankey
 from ..turnus import jahresbetrag
 from ..vermoegen import kapitaldienst_jahr
 from ..db import get_session
+from ..bezeichnung import objekt_titel
 from ..models import (Einheit, Kostenart, Kostenposition, Kredit, Miete, Objekt,
                       Versicherung, Zahlung, Zeitraum, ist_grundstueck)
 
@@ -340,7 +341,7 @@ def auswertung(jahr: int = Query(default=None),
         vz = sum(q["einnahmen_jahr"] for q in _vz_quellen(session, o, jahr))
 
         zeilen.append({
-            "slug": o.slug, "name": o.name, "typ": o.typ,
+            "slug": o.slug, "name": o.name, "titel": objekt_titel(o), "typ": o.typ,
             "mietwort": _mietwort(o),
             "einnahmen": round(einnahmen, 2),
             "ausgaben": round(ausgaben, 2),
@@ -395,7 +396,8 @@ def cashflow_endpoint(objekt: str = Query(...), jahr: int = Query(default=None),
     bloecke = _gefiltert(_bloecke(session, o, jahr, sicht), kategorien)
     ergebnis = cashflow(einheiten, bloecke)
     return {
-        "jahr": jahr, "objekt": o.slug, "name": o.name, "typ": o.typ,
+        "jahr": jahr, "objekt": o.slug, "name": o.name, "titel": objekt_titel(o),
+        "typ": o.typ,
         "mietwort": _mietwort(o),
         "kategorien": BLOCK_NAMEN,
         "sicht": _sichtname(sicht),
@@ -427,14 +429,14 @@ def sankey_endpoint(jahr: int = Query(default=None), objekt: str = Query(default
         if mietersicht:
             einzeln = _vz_quellen(session, o, jahr)
             if not objekt:  # über alle Objekte zählt das Objekt, nicht die Einheit
-                einzeln = [{"bezeichnung": o.name,
+                einzeln = [{"bezeichnung": objekt_titel(o),
                             "einnahmen_jahr": round(sum(q["einnahmen_jahr"]
                                                         for q in einzeln), 2)}]
         elif objekt:    # ein Objekt -> je Einheit aufschlüsseln (CCCXLI: nie Partei)
             einzeln = _einheiten_quellen(session, o, jahr)
         else:           # alle Objekte -> je Objekt
             mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
-            einzeln = [{"bezeichnung": o.name,
+            einzeln = [{"bezeichnung": objekt_titel(o),
                         "einnahmen_jahr": round(sum(_miete_im_jahr(m, jahr)
                                                     for m in mieten), 2)}]
         quellen.extend(einzeln)
@@ -470,6 +472,6 @@ def mietverlauf(objekt: str = Query(default=None),
                            * _monate_im_jahr(m, j) / 12 for m in mieten), 2)
                  for j in jahre]
         if any(werte):
-            reihen.append({"slug": o.slug, "name": o.name,
+            reihen.append({"slug": o.slug, "name": o.name, "titel": objekt_titel(o),
                            "mietwort": _mietwort(o), "werte": werte})
     return {"jahre": jahre, "reihen": reihen}

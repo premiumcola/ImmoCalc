@@ -180,7 +180,7 @@ let objekte = [];
 try {
   objekte = await api('/objekte');
   objektWahl.fuelle([{ wert: '', text: 'Alle Objekte' },
-                     ...objekte.map(o => ({ wert: o.slug, text: o.name }))], '');
+                     ...objekte.map(o => ({ wert: o.slug, text: o.titel || o.name }))], '');
 } catch {
   sub.textContent = 'API nicht erreichbar';
 }
@@ -420,7 +420,7 @@ async function zeichnen() {
       api(pfad + '/kostenarten').catch(() => []),
     ]);
     return detail && {
-      name: o.name, offene_positionen: o.offene_positionen,
+      name: o.titel || o.name, offene_positionen: o.offene_positionen,
       zeitraeume: detail.zeitraeume || [],
       arten: (arten || []).filter(k => k.aktiv)
         .sort((a, b) => a.name.localeCompare(b.name, 'de')),

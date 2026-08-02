@@ -14,7 +14,7 @@ from ..belegposten import (BelegFehler, belege_je_position, handanteil, kurz,
                            anlegen as position_bauen)
 from ..db import get_session
 from ..deps import objekt_holen
-from ..bezeichnung import anzeigename
+from ..bezeichnung import anzeigename, objekt_titel
 from ..export import als_datei, dateiname, exportiere, importiere, loesche
 from ..felder import bereinige
 from ..engine import Position, abrechnung
@@ -164,8 +164,25 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
     # fällige* (kleinste § 556-Restfrist), nicht die erste in der Datenbank —
     # sonst stünde oben eine Frist von 800 Tagen, während eine andere längst
     # drängt. `frist_tage` ist die Zahl der Tage bis zur Frist (klein = eilig).
+    #
+    # N71 — ein leerer, automatisch angelegter Zeitraum (0 Kostenpositionen)
+    # ist keine echte laufende Abrechnung und darf die Kachel-Frist nicht
+    # bestimmen; sonst meldet die Kachel „5420 T über Frist" aus dem ältesten
+    # Rumpfjahr. Deshalb zählen nur „in Arbeit"-Zeiträume mit mindestens einer
+    # Kostenposition. Bleibt keiner übrig, trägt die Kachel keine Frist.
+    alle_in_arbeit = [z.id for zs in zeitraeume.values()
+                      for z in zs if z.status == "in Arbeit"]
+    mit_positionen: set[int] = set()
+    if alle_in_arbeit:
+        for zid in session.exec(
+                select(Kostenposition.zeitraum_id)
+                .where(Kostenposition.zeitraum_id.in_(alle_in_arbeit))
+                .distinct()).all():
+            mit_positionen.add(zid)
+
     def _naechste(zs: list) -> Zeitraum | None:
-        offen = [z for z in zs if z.status == "in Arbeit"]
+        offen = [z for z in zs
+                 if z.status == "in Arbeit" and z.id in mit_positionen]
         return min(offen, key=frist_tage) if offen else None
     aktive = {oid: _naechste(zs) for oid, zs in zeitraeume.items()}
     zids = [z.id for z in aktive.values() if z is not None]
@@ -193,6 +210,8 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
         out.append({
             "id": o.id, "slug": o.slug, "name": o.name, "ort": o.ort,
             "anzeigename": anzeigename(o.name, o.ort, o.strasse, o.plz),
+            # N70 — kanonischer Immobilientitel für die Anzeige, überall gleich.
+            "titel": objekt_titel(o),
             "strasse": o.strasse, "plz": o.plz,
             "typ": o.typ, "turnus": o.turnus, "aktiv": o.aktiv,
             "einheiten": len(einheiten[o.id]),
@@ -296,7 +315,9 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
                 .group_by(Vorauszahlung.zeitraum_id)).all():
             abschlag_summe[zid] = round(s or 0.0, 2)
     return {
-        "objekt": o, "einheiten": einheiten, "parteien": parteien,
+        # N70 — kanonischer Titel additiv im Objekt; `name` bleibt unangetastet.
+        "objekt": {**o.model_dump(), "titel": objekt_titel(o)},
+        "einheiten": einheiten, "parteien": parteien,
         # Aus den Einheiten summiert — die maßgebliche Wohnfläche und die
         # Stellplätze des Objekts. Single Source of Truth fürs Frontend: die
         # manuelle Objektfläche (o.flaeche) wird nur noch als mögliche
@@ -320,7 +341,9 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
                         # Stand + über-/unterlaufen sieht.
                         "kosten_summe": kosten_summe.get(z.id, 0.0),
                         "abschlag_summe": abschlag_summe.get(z.id, 0.0),
-                        "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None}
+                        # N71 — leere Zeiträume (0 Positionen) tragen keine Frist.
+                        "frist_tage": (frist_tage(z) if z.status == "in Arbeit"
+                                       and pos_zahl.get(z.id, 0) else None)}
                        for z in zeitraeume],
     }
 
@@ -1102,7 +1125,9 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         "jahr": zeitraum_label_jahr(z.start, z.ende),
         "start": z.start.isoformat(), "ende": z.ende.isoformat(),
         "typ": z.typ, "status": z.status,
-        "frist_tage": frist_tage(z) if z.status == "in Arbeit" else None,
+        # N71 — ein leerer Zeitraum (0 Kostenpositionen) trägt keine Frist.
+        "frist_tage": (frist_tage(z) if z.status == "in Arbeit"
+                       and positionen else None),
         "fortschritt": {"fertig": fertig, "gesamt": len(checkliste),
                         "summe": round(summe_erledigt, 2)},
         # Was an diesem Zeitraum wirklich hängt. Ist alles null, gilt er als

@@ -1192,8 +1192,8 @@ function stammHtml(o) {
   }
 
   return `<div class="sekopf"><span class="seikon">${kostenIcon('Haus')}</span>
-      <h2 class="sec">Stammdaten${objekt?.name
-        ? ` <span class="secsub">· ${esc(objekt.name)}</span>` : ''}</h2>
+      <h2 class="sec">Stammdaten${(objekt?.titel || objekt?.name)
+        ? ` <span class="secsub">· ${esc(objekt.titel || objekt.name)}</span>` : ''}</h2>
       <button data-stamm="1">Bearbeiten</button></div>
     <div class="paare">${zeilen.join('')}</div>
     ${flaecheWarnung(o.flaeche, s)}`;
@@ -2216,7 +2216,10 @@ async function laden() {
     melde('Diese Einheit gibt es nicht mehr — hier steht das ganze Haus.', '');
   }
 
-  titel.textContent = fokus ? fokus.bezeichnung : objekt.name;
+  // N70 — im Kopf steht der kanonische Immobilientitel „(Ort) Straße", nie ein
+  // versehentlich als `name` gespeicherter Einheitenname („Wohnung 1.OG").
+  // Im Einheiten-Fokus zeigt der Kopf weiterhin die Einheit.
+  titel.textContent = fokus ? fokus.bezeichnung : (objekt.titel || objekt.name);
   document.getElementById('barlogo').innerHTML = logoSvg(objekt.typ);
   // Der Ort enthaelt oft schon die Einheitenzahl ("Mixed-Use · 7 Einheiten") —
   // dann nicht zusaetzlich zaehlen, sonst steht es doppelt und die Zeile bricht um.
@@ -4407,7 +4410,7 @@ inhalt.addEventListener('click', async e => {
   if (weg) {
     // Schieben statt klicken: Löschen ist nicht rückgängig zu machen, und ein
     // zweiter Klick an derselben Stelle passiert zu leicht aus Versehen.
-    const ja = await schiebeFrage(`„${objekt.name}“ löschen`,
+    const ja = await schiebeFrage(`„${objekt.titel || objekt.name}“ löschen`,
       'Alle Eingaben zu dieser Immobilie werden entfernt. Die Unterlagen in '
       + 'der Nextcloud bleiben bestehen; eine Sicherung wird vorher dort '
       + 'abgelegt.', 'Zum Löschen schieben');

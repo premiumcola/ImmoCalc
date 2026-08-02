@@ -59,7 +59,9 @@
   .tabelle th + th, .tabelle td + td{padding-left:12px}
   .tabelle td{font:500 13px var(--body);padding:9px 0;border-top:1px solid var(--line);
               text-align:right;white-space:nowrap}
-  .tabelle td:first-child{white-space:normal}
+  /* Der Titel „(Unterschöllenbach) Hauptstr. 6a" ist ein langes Wort — ohne
+     Umbruch im Wort verbreitert es die Tabelle über die 390-px-Spalte hinaus. */
+  .tabelle td:first-child{white-space:normal;overflow-wrap:anywhere}
   .tabelle td:first-child{text-align:left;font-weight:600}
   .tabelle td.pos{color:var(--pos)} .tabelle td.neg{color:var(--neg)}
 
@@ -143,7 +145,7 @@ let objekte = [];
 try {
   objekte = await api('/objekte');
   objektWahl.fuelle([{ wert: '', text: 'Alle Objekte' },
-                     ...objekte.map(o => ({ wert: o.slug, text: o.name }))], '');
+                     ...objekte.map(o => ({ wert: o.slug, text: o.titel || o.name }))], '');
 } catch {
   sub.textContent = 'API nicht erreichbar';
 }
@@ -183,7 +185,7 @@ function vermoegenHtml(besitz, objekt) {
              && !z.ruecklage_monatlich && !z.hausgeld_jahr)) return '';
 
   const zeilen = besitz.objekte.map(o => `<tr>
-      <td>${esc(o.name)}</td>
+      <td>${esc(o.titel || o.name)}</td>
       <td>${o.wert == null ? '—' : eurVoll(o.wert)}</td>
       <td>${o.restschuld ? eurVoll(o.restschuld) : '—'}</td>
       <td class="${(o.eigenkapital ?? 0) >= 0 ? 'pos' : 'neg'}">${
@@ -275,7 +277,7 @@ function cashflowHtml(satz, einzeln) {
     </div>`).join('');
 
   return `<div class="karte">
-      <h3>Cashflow${pacht ? '' : ' je Einheit'}${einzeln ? '' : ' · ' + esc(satz.name)}</h3>
+      <h3>Cashflow${pacht ? '' : ' je Einheit'}${einzeln ? '' : ' · ' + esc(satz.titel || satz.name)}</h3>
       <div class="kartesub">${pacht
         ? `Saldo = Jahrespacht abzüglich der Eigentümerkosten.`
         : `Eigentümerkosten sind nach Fläche auf die Einheiten verteilt.
@@ -354,7 +356,7 @@ async function zeichnen() {
 
     <div class="karte">
       <h3>Einnahmen und Ausgaben je Objekt</h3>
-      ${saeulen(saeulenObjekte.map(o => ({ name: o.name, a: o.einnahmen, b: o.ausgaben })))}
+      ${saeulen(saeulenObjekte.map(o => ({ name: o.titel || o.name, a: o.einnahmen, b: o.ausgaben })))}
       ${legende([{ name: 'Einnahmen', farbe: '#2E7D4F' }, { name: 'Ausgaben', farbe: '#B24229' }])}
       ${weitere ? `<div class="chartleer" style="padding:10px 0 0">
         ${weitere} weitere${weitere === 1 ? 's' : ''} Objekt${weitere === 1 ? '' : 'e'}
@@ -364,7 +366,7 @@ async function zeichnen() {
     <div class="karte">
       <h3>${verlaufTitel(verlauf.reihen)}</h3>
       ${linie(verlauf.jahre, verlauf.reihen)}
-      ${verlauf.reihen.length ? legende(verlauf.reihen.map((r, i) => ({ name: r.name, farbe: farbe(i) }))) : ''}
+      ${verlauf.reihen.length ? legende(verlauf.reihen.map((r, i) => ({ name: r.titel || r.name, farbe: farbe(i) }))) : ''}
     </div>`;
 }
 

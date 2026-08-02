@@ -41,10 +41,14 @@ def test_objekt_anlegen_und_auswerten():
         objekte = c.get("/api/objekte").json()
         assert len(objekte) == vorher + 1
 
-        # Das neue Objekt hat sofort einen laufenden Zeitraum und eine Frist.
+        # Das neue Objekt hat sofort einen laufenden Zeitraum. Er ist aber noch
+        # leer (0 Kostenpositionen) und trägt darum bewusst KEINE Frist — sonst
+        # meldete die Kachel eine „über Frist"-Warnung aus einem Zeitraum, in dem
+        # noch nichts abzurechnen ist (N71). Die Frist erscheint erst mit der
+        # ersten Kostenposition (siehe test_titel_und_frist).
         det = c.get(f"/api/objekte/{slug}").json()
         assert len(det["zeitraeume"]) == 1
-        assert det["zeitraeume"][0]["frist_tage"] is not None
+        assert det["zeitraeume"][0]["frist_tage"] is None
         assert len(det["einheiten"]) == 1
         assert [k["name"] for k in c.get(f"/api/objekte/{slug}/kostenarten").json()] \
             == ["Wasser", "Müll"]

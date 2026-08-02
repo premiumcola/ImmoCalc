@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from .bezeichnung import objekt_titel
 from .models import ist_bausparer, ist_grundstueck
 from .turnus import jahresbetrag
 
@@ -461,6 +462,8 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
     return {
         "slug": objekt.slug,
         "name": objekt.name,
+        # N70 — kanonischer Immobilientitel für die Anzeige.
+        "titel": objekt_titel(objekt),
         "wert": wert,
         # Beim Grundstueck ist derselbe Wert der Grundstueckswert — das Wort
         # „Verkehrswert" passt dort nicht zu dem, was der Nutzer eingetragen
