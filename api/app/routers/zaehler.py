@@ -490,12 +490,21 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
         if (zae.art == "Kaltwasser" and zae.typ == "gemessen"
                 and zae.hauptzaehler_id):
             kalt_einheiten.update(_parse_einheiten(zae))
+    # N69 — der Rest ist zuteilbar: hat der Rest-Zähler (typ='rest' im Wasser-
+    # Block) explizit Einheiten gesetzt, tragen NUR diese den Rest (weiterhin
+    # nach Person·Mietdauer gewichtet); ohne Auswahl gilt der Default (alle
+    # Haupthaus-Einheiten ohne eigenen Kaltwasser-Zähler).
+    rest_z = next((zae for zae in zaehler if zae.typ == "rest"
+                   and _kostenblock(zae.kostenart) == "Wasser"), None)
+    rest_wahl = set(_parse_einheiten(rest_z)) if rest_z else set()
     bez = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
     partei_einheit = {b.partei: b.einheit for b in bez}
     rest_gewichte: dict[str, float] = {}
     for partei, gew in verteilung.gewichte("personen", bez, z.start, z.ende).items():
         einheit = partei_einheit.get(partei, "")
-        if einheit and einheit not in kalt_einheiten:
+        erlaubt = einheit not in kalt_einheiten and (not rest_wahl
+                                                     or einheit in rest_wahl)
+        if einheit and erlaubt:
             rest_gewichte[einheit] = round(rest_gewichte.get(einheit, 0.0) + gew, 4)
 
     e = wasser.verrechne(komponenten, gesamt_m3, posten, garten_m3, rest_gewichte)

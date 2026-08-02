@@ -889,7 +889,7 @@ let chipMap = new Map();
 let objektEinheiten = [];
 /* N60 — Auf-/Zu-Zustand des Zählerstände-Einklappers, damit er einen Neuaufbau
    der Ansicht (z. B. nach dem Umschalten einer Einheit-Zuordnung) übersteht. */
-let zaehlerOffen = false;
+let zaehlerOffen = new Set();   // N67 — welche Kategorie-Zählerpanels offen sind (Block-Namen)
 
 /* Geräte ohne Kamera (Schreibtisch, Maus): dort genügt EIN neutraler Knopf, der
    den lokalen Datei-Dialog öffnet — die „Beleg erfassen"-Kamera hätte hier
@@ -1227,9 +1227,6 @@ function istImDetailPopup(k) {
    Datum) und ein Mehrfach-Auswähler aller Einheiten des Objekts. */
 
 const KOSTENBLOCK_ORDER = ['Wasser', 'Heizung', 'Strom', 'Sonstige'];
-/* Stichwort je Block für kostenIcon() — parallel zu BEREICH_IKON. */
-const KOSTENBLOCK_IKON = { Wasser: 'Wasser', Heizung: 'Heizung', Strom: 'Strom',
-  Sonstige: 'Hausverwaltung' };
 
 /* Der Kostenblock eines Zählers aus Kostenart/Name — ohne Kontext. Serverfeld
    `kostenblock` hat Vorrang (Backend-Vertrag). '' = aus dem Namen nicht ableitbar
@@ -1406,30 +1403,24 @@ function wasserBlockHtml(liste) {
   return teile.join('');
 }
 
-/* N60/N61 — das Zählerstände-Panel: nach Kostenblock gegliedert, im Einklapper. */
-function wasserZaehlerHtml() {
-  const zaehler = ablesungMaske?.zaehler || [];
-  if (!zaehler.length) return '';
-  zLabels = generischeLabels(zaehler);           // N68 — generische Namen je Zähler
-  const blockVon = zaehlerBloecke(zaehler);
-  const bloecke = KOSTENBLOCK_ORDER.map(block => {
-    const teil = zaehler.filter(z => blockVon.get(z.id) === block);
-    if (!teil.length) return '';
-    const inner = block === 'Wasser'
-      ? wasserBlockHtml(teil)
-      : teil.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('');
-    return `<div class="zu-block"><div class="zu-bt"><span class="zu-bi">${
-        kostenIcon(KOSTENBLOCK_IKON[block])}</span>${esc(block)}</div>${inner}</div>`;
-  }).join('');
-  if (!bloecke) return '';
-  return `<div class="zu-panel${zaehlerOffen ? ' offen' : ''}">
-    <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${zaehlerOffen}">
+/* N67 — das Zählerstände-Panel EINER Kategorie (Wasser/Heizung/Strom), als
+   eigener Einklapper unter dem jeweiligen Kapitel. Wasser mit voller Abzugs-
+   struktur (Gesamt Kaltwasser − Unterzähler = Rest), Heizung/Strom als Liste. */
+function zaehlerPanelHtml(block, zaehler, blockVon) {
+  const teil = zaehler.filter(z => blockVon.get(z.id) === block);
+  if (!teil.length) return '';
+  const inner = block === 'Wasser'
+    ? wasserBlockHtml(teil)
+    : teil.map(z => meterZeileHtml(z, { rest: z.typ === 'rest' })).join('');
+  const offen = zaehlerOffen.has(block);
+  return `<div class="zu-panel${offen ? ' offen' : ''}" data-zu-block="${esc(block)}">
+    <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${offen}">
       <span class="zu-st">Zählerstände</span>
-      <span class="zu-meta">${zaehler.length} Zähler · Anfang + Ende ergeben den
+      <span class="zu-meta">${teil.length} Zähler · Anfang + Ende ergeben den
         Verbrauch</span>
       <span class="zu-chev">${CHEV_ICON}</span>
     </button>
-    <div class="zu-inhalt">${bloecke}</div>
+    <div class="zu-inhalt">${inner}</div>
   </div>`;
 }
 
@@ -2086,9 +2077,14 @@ async function zeichnen() {
     for (const eintrag of sortiert) {
       bereiche[bereichIndex(eintrag.k.kostenart)].push(eintrag);
     }
-    // N47 — die Wasser-Zählererfassung sitzt am Fuß der Wasser-Gruppe (bi 0).
+    // N67 — Zählerstände je Kapitel: Wasser-Zähler unter Wasser (bi 0), Heizung
+    // unter Heizung (bi 1), Strom unter Strom (bi 2) — jeweils eigenes Panel.
+    const zListe = ablesungMaske?.zaehler || [];
+    if (zListe.length) zLabels = generischeLabels(zListe);   // N68 — einmal für alle
+    const zBlock = zListe.length ? zaehlerBloecke(zListe) : new Map();
     const zeilen = bereiche.map((liste, bi) => {
-      const wz = bi === 0 ? wasserZaehlerHtml() : '';
+      const wz = (bi < 3 && zListe.length)
+        ? zaehlerPanelHtml(BEREICH_IKON[bi], zListe, zBlock) : '';
       if (!liste.length && !wz) return '';
       return `<div class="kat-kopf"><span class="kat-ikon">${
           kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
@@ -2801,9 +2797,11 @@ inhalt.addEventListener('click', async e => {
   const zt = e.target.closest('[data-zu-toggle]');
   if (zt) {
     const panel = zt.closest('.zu-panel');
-    zaehlerOffen = !panel.classList.contains('offen');
-    panel.classList.toggle('offen', zaehlerOffen);
-    zt.setAttribute('aria-expanded', String(zaehlerOffen));
+    const block = panel?.dataset.zuBlock || '';
+    const jetztOffen = !panel.classList.contains('offen');
+    if (jetztOffen) zaehlerOffen.add(block); else zaehlerOffen.delete(block);
+    panel.classList.toggle('offen', jetztOffen);
+    zt.setAttribute('aria-expanded', String(jetztOffen));
     return;
   }
   // N58 — eine Einheit-Zuordnung eines Zählers umschalten.
