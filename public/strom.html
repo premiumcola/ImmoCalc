@@ -328,13 +328,6 @@ const F_JAHR = [
   ['solar_kwh', 'Verbrauch PV', 'kWh', 1],
   ['akku_kwh', 'Verbrauch Akku', 'kWh', 1],
 ];
-// N87/N89 — die E-Tankstelle gehört zur PV-Anlage: der geladene Strom wird der
-// ladenden Person berechnet und fließt der Anlage zu (Amortisation). Der Satz
-// kann sich von Jahr zu Jahr ändern und hängt deshalb am Jahr.
-const F_TANKEN = [
-  ['tanken_preis', 'Preis je kWh', '€', 0.01],
-];
-
 function feldHtml(name, label, einheit, step, art = 'feld') {
   return `<div class="field">
     <label for="f_${name}">${esc(label)} <span class="einheit">(${esc(einheit)})</span></label>
@@ -424,10 +417,13 @@ function skelett() {
     <div class="karte">
       <div class="hh"><h3>E-Tankstelle</h3><span class="jahrchip">${jahr}</span></div>
       <p class="hint">Der E-Auto-Strom gehört der PV-Anlage: er wird der
-        ladenden Person berechnet und zahlt auf die Amortisation ein.</p>
-      <div class="raster">
-        ${F_TANKEN.map(f => feldHtml(...f)).join('')}
-      </div>
+        ladenden Person berechnet und zahlt auf die Amortisation ein.
+        <!-- N148 — der Satz wird nicht mehr eingegeben, sondern aus den
+             Stromkosten abgeleitet: Netzstrom zum Durchschnittspreis des
+             Netzbezugs, eigener Strom 10 % darunter. -->
+        Der Satz je kWh wird aus den Stromkosten des Abrechnungszeitraums
+        abgeleitet — Netzstrom zum Durchschnittspreis des Netzbezugs, eigener
+        Strom 10 % darunter. Er steht bei der E-Tankstelle.</p>
       <div class="kpi" id="tank"></div>
       <a class="verweis" id="tankLink" href="tankstelle.html">
         Nutzer und Abrechnungen verwalten →</a>
