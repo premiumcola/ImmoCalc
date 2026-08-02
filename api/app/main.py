@@ -13,8 +13,8 @@ from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, heizoel, ki, kidb,
-                      mail, objekte, stammdaten, strom, versand, waerme,
-                      zaehler)
+                      mail, objekte, solaredge, stammdaten, strom, versand,
+                      waerme, zaehler)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -74,6 +74,9 @@ app.include_router(strom.router)
 # N84 — eigener Prefix /api/kidb (Belegdaten-Wissensdatenbank), trotzdem vor
 # dem Stammdaten-Fänger eingehängt.
 app.include_router(kidb.router)
+# N126 — eigener Prefix /api/solaredge (Screenshot lesen, rein lesend),
+# ebenfalls vor dem Stammdaten-Fänger eingehängt.
+app.include_router(solaredge.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 app.include_router(cloud.router)

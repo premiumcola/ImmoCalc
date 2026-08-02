@@ -677,6 +677,126 @@ def orientierung(png_bytes: bytes, schluessel: str = "") -> int:
     return _winkel(roh)
 
 
+# --------------------------------------------------------------------------
+# N126 — der SolarEdge-Screenshot.
+#
+# Der Nutzer liest seine Stromdaten in der SolarEdge-Oberfläche ab. Statt die
+# vier Zahlen abzutippen, lädt er das Bild hoch: zwei waagerechte Balken mit je
+# einer Gesamtmenge und drei Prozentangaben. Das Vision-Modell liest sie ab —
+# derselbe Weg wie bei `orientierung`, nur mit strukturierter Antwort.
+#
+# Die Zahlen stehen als Text im Bild; zu lesen ist also nichts Verstecktes.
+# Trotzdem gilt hier wie überall: schlägt irgendetwas fehl, kommt ein LEERES
+# Ergebnis zurück — der Nutzer trägt die vier Werte dann von Hand ein. Das ist
+# der ausdrücklich gewünschte Rückfallweg, keine Notlösung.
+#
+# Umgerechnet und geprüft wird nichts hier, sondern in `solaredge.py`.
+# --------------------------------------------------------------------------
+SOLAREDGE_PROMPT = (
+    "Das Bild ist ein Screenshot aus der SolarEdge-Oberfläche mit zwei "
+    "waagerechten Balken: „Produktion\" und „Verbrauch\". Jeder Balken trägt "
+    "links seine Gesamtmenge (z. B. „12.5 MWh\") und im Balken drei "
+    "Prozentangaben.\n"
+    "Gib NUR JSON zurück, kein weiterer Text:\n"
+    '{"produktion_wert":<Zahl|null>,"produktion_einheit":"MWh|kWh|null",'
+    '"produktion_netz_prozent":<Zahl|null>,'
+    '"produktion_gebaeude_prozent":<Zahl|null>,'
+    '"produktion_speicher_prozent":<Zahl|null>,'
+    '"verbrauch_wert":<Zahl|null>,"verbrauch_einheit":"MWh|kWh|null",'
+    '"verbrauch_netz_prozent":<Zahl|null>,'
+    '"verbrauch_pv_prozent":<Zahl|null>,'
+    '"verbrauch_speicher_prozent":<Zahl|null>}\n'
+    "Die drei Prozentzahlen im Produktionsbalken stehen in dieser Reihenfolge: "
+    "„Ins Netz\", „Ins Gebäude\", „Zum Speicher\". Die drei im Verbrauchsbalken: "
+    "„Vom Netz\", „Aus PV-Energie\", „Vom Speicher\". Die Legende rechts nennt "
+    "dieselbe Reihenfolge — richte dich nach der Beschriftung, nicht nach der "
+    "Farbe.\n"
+    "wert = die Gesamtmenge des Balkens als Zahl, OHNE Einheit (Punkt als "
+    "Dezimaltrenner). einheit = die Einheit, die daneben steht, genau so wie "
+    "sie dort steht („MWh\" oder „kWh\") — rechne NICHT um und rate sie NICHT. "
+    "Die Prozentangaben als Zahl ohne Prozentzeichen (33, nicht \"33 %\").\n"
+    "Steht ein Wert nicht auf dem Bild oder ist er unleserlich, setze ihn auf "
+    "null. Rate nichts und fülle nichts mit 0 auf. Ist das überhaupt kein "
+    "SolarEdge-Screenshot, setze alle Felder auf null."
+)
+SOLAREDGE_TOKENS = 300
+SOLAREDGE_ZEITLIMIT = 30.0
+# Was die Bilderkennung annimmt. Ein anderer Typ kommt gar nicht erst weg.
+SOLAREDGE_TYPEN = ("image/png", "image/jpeg", "image/gif", "image/webp")
+
+
+def lies_solaredge(bild: bytes, media_type: str = "image/png",
+                   schluessel: str = "", modell: str = "") -> dict:
+    """Liest die Zahlen eines SolarEdge-Screenshots (N126).
+
+    Gibt bei Erfolg das rohe Feld-dict des Modells zurück (Mengen samt
+    Einheit, Prozentangaben) — die Prüfung und die Umrechnung auf kWh macht
+    `solaredge.aufbereiten`.
+
+    Bei JEDEM Fehler — kein httpx, kein Schlüssel, kein Bild, unbekanntes
+    Bildformat, Netzwerk, Timeout, unbrauchbare Antwort — ein **leeres dict**,
+    nie eine Exception: der Nutzer trägt die vier Werte dann von Hand ein.
+    Derselbe Schlüssel-Vorrang wie `lies_beleg` (übergebener Schlüssel vor
+    Env)."""
+    if httpx is None or not bild:
+        return {}
+    schluessel = _schluessel(schluessel)
+    if not schluessel:
+        return {}
+    if media_type not in SOLAREDGE_TYPEN:
+        log.info("KI-SolarEdge: Bildformat wird nicht gelesen")
+        return {}
+
+    try:
+        b64 = base64.b64encode(bild).decode("ascii")
+    except Exception:                                      # noqa: BLE001
+        return {}
+    rumpf = {
+        "model": _modell(modell),
+        "max_tokens": SOLAREDGE_TOKENS,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": media_type, "data": b64}},
+                {"type": "text", "text": SOLAREDGE_PROMPT},
+            ],
+        }],
+    }
+    kopf = {
+        "x-api-key": schluessel,
+        "anthropic-version": API_VERSION,
+        "content-type": "application/json",
+    }
+
+    try:
+        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
+                             timeout=SOLAREDGE_ZEITLIMIT)
+    except Exception as fehler:                            # noqa: BLE001
+        log.info("KI-SolarEdge nicht erreichbar: %s", type(fehler).__name__)
+        return {}
+    if antwort.status_code != 200:
+        log.info("KI-SolarEdge meldete HTTP %s", antwort.status_code)
+        return {}
+
+    try:
+        daten = antwort.json()
+        bloecke = daten.get("content") or []
+        roh = "".join(b.get("text", "") for b in bloecke
+                      if isinstance(b, dict) and b.get("type") == "text")
+    except Exception:                                      # noqa: BLE001
+        return {}
+
+    block = _json_block(roh)
+    if block is None:
+        log.info("KI-SolarEdge lieferte kein verwertbares JSON")
+        return {}
+    # Dezent loggen — ohne die abgelesenen Zahlen: nur, wie viele Felder kamen.
+    log.info("KI-SolarEdge gelesen (%d Felder)",
+             sum(1 for wert in block.values() if wert is not None))
+    return block
+
+
 # Ein winziger, günstiger Ping: ein Zeichen Prompt, eine Antwort-Token, kurzer
 # Timeout. Genug, um zu wissen, ob Schlüssel und Netz stehen — ohne echte Kosten.
 PRUEF_TOKENS = 1

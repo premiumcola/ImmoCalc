@@ -15,6 +15,7 @@ Parameter hat Vorrang. Fehlt beides, bleibt die Rechnung bei den zwei Gruppen.
 """
 import json
 import logging
+import math
 
 from datetime import date
 
@@ -25,7 +26,9 @@ from sqlmodel import Session, select
 from .. import strom
 from ..db import get_session
 from ..deps import objekt_holen
-from ..models import Anteil, Eigentuemer, Objekt, Stromjahr, Tankladung
+from ..models import (Anteil, Eigentuemer, Kostenart, Kostenposition, Objekt,
+                      Stromjahr, Tankladung, Zeitraum)
+from .objekte import zeitraum_label_jahr
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["strom"])
@@ -230,6 +233,152 @@ def pv_amortisation(slug: str, session: Session = Depends(get_session),
     a = strom.amortisation(reihe, anschaffung)
     a["eigentuemer"] = strom.verteile_eigentuemer(a["kumuliert"], anteile)
     return a
+
+
+# --------------------------------------------------------------------------
+# N127 — der Amortisationsverlauf über die Jahre.
+#
+# Anders als `/pv/amortisation` (rechnet aus den Strom-Eingaben) zieht der
+# Verlauf sein Geld aus der NEBENKOSTENABRECHNUNG des Objekts. Drei Quellen,
+# und ausdrücklich nur echte Zahlungsflüsse — eine kalkulatorische „Ersparnis
+# Zukauf" ist kein Ertrag:
+#
+#   1. PV-Strom, den die Mieter bezahlt haben — Kostenpositionen mit
+#      `herkunft == "eigen"`.
+#   2. Einspeisevergütung — Positionen einer NICHT umlagefähigen Kostenart.
+#      Sie steht im Zeitraum, damit sie zeitlich richtig sitzt, wird aber nicht
+#      auf die Mieter verteilt (siehe `objekte.abrechnung_endpoint`, N125).
+#   3. E-Tanken — die erfassten `Tankladung`-Datensätze des Jahres.
+# --------------------------------------------------------------------------
+
+_HERKUNFT_EIGEN = "eigen"
+_QUELLEN_LEER = {"pv_strom": 0.0, "einspeisung": 0.0, "tanken": 0.0}
+
+
+def _nicht_umlagefaehig(session: Session, objekt_id: int) -> set[str]:
+    """Die Namen der nicht umlagefähigen Kostenarten eines Objekts, klein
+    geschrieben — der Vergleichsschlüssel für die Positionen."""
+    return {k.name.strip().lower() for k in session.exec(
+        select(Kostenart).where(Kostenart.objekt_id == objekt_id)).all()
+        if not k.umlagefaehig}
+
+
+def _ertraege_je_jahr(session: Session, objekt_id: int) -> dict[int, dict]:
+    """Die drei Ertragsquellen je Kalenderjahr einsammeln.
+
+    Das Jahr eines Zeitraums ist sein Label-Jahr (`zeitraum_label_jahr`) —
+    dasselbe Jahr, unter dem die Abrechnung überall sonst geführt wird. Offene
+    Positionen (Betrag noch nicht da) bleiben außen vor, genau wie in der
+    Abrechnung selbst. Eine Position zählt nur einmal: ist sie „eigen", ist sie
+    PV-Strom, sonst gegebenenfalls Einspeisevergütung."""
+    nicht_umlegen = _nicht_umlagefaehig(session, objekt_id)
+    jahr_von_zeitraum = {
+        z.id: zeitraum_label_jahr(z.start, z.ende) for z in session.exec(
+            select(Zeitraum).where(Zeitraum.objekt_id == objekt_id)).all()}
+    werte: dict[int, dict] = {j: dict(_QUELLEN_LEER)
+                              for j in jahr_von_zeitraum.values()}
+    if jahr_von_zeitraum:
+        positionen = session.exec(select(Kostenposition).where(
+            Kostenposition.zeitraum_id.in_(list(jahr_von_zeitraum)))).all()
+        for p in positionen:
+            if p.status != "erledigt":
+                continue
+            eintrag = werte[jahr_von_zeitraum[p.zeitraum_id]]
+            betrag = round(float(p.betrag or 0), 2)
+            if (p.herkunft or "").strip().lower() == _HERKUNFT_EIGEN:
+                eintrag["pv_strom"] = round(eintrag["pv_strom"] + betrag, 2)
+            elif (p.kostenart or "").strip().lower() in nicht_umlegen:
+                eintrag["einspeisung"] = round(eintrag["einspeisung"] + betrag, 2)
+    # Ladungen hängen am Jahr, nicht am Zeitraum — ein Jahr ohne Zeitraum darf
+    # deshalb trotzdem eine Zeile bekommen, sonst ginge der Erlös verloren.
+    for l in session.exec(select(Tankladung).where(
+            Tankladung.objekt_id == objekt_id)).all():
+        eintrag = werte.setdefault(l.jahr, dict(_QUELLEN_LEER))
+        eintrag["tanken"] = round(
+            eintrag["tanken"] + round((l.kwh or 0) * (l.preis or 0), 2), 2)
+    return werte
+
+
+def _anlage(session: Session, objekt_id: int) -> tuple[float, tuple]:
+    """Anschaffung und PV-Anteile der Anlage: die zuletzt erfassten gelten (die
+    Anschaffung ändert sich nicht jährlich, die Anteile selten)."""
+    anschaffung, anteile = 0.0, strom.EIGENTUEMER_ANTEILE
+    for sj in session.exec(select(Stromjahr)
+                           .where(Stromjahr.objekt_id == objekt_id)
+                           .order_by(Stromjahr.jahr)).all():
+        if sj.anschaffung_eur:
+            anschaffung = sj.anschaffung_eur
+        anteile = strom._pv_anteile(sj)
+    return anschaffung, anteile
+
+
+def _break_even_prognose(jahre: list[dict], anschaffung: float) -> int | None:
+    """Das Jahr, in dem die Anlage sich bezahlt macht — linear aus den bisher
+    erfassten Erträgen fortgeschrieben.
+
+    Gerechnet wird mit dem Durchschnitt ab dem ersten Jahr MIT Ertrag: Jahre
+    davor gehören noch nicht zur Anlage. Ist noch gar kein Ertrag erfasst oder
+    fehlt die Anschaffung, gibt es keine Prognose — dann `None` statt einer
+    erfundenen Jahreszahl."""
+    mit_ertrag = [z for z in jahre if z["summe"] > 0]
+    if anschaffung <= 0 or not mit_ertrag:
+        return None
+    letztes = jahre[-1]
+    laufzeit = max(1, letztes["jahr"] - mit_ertrag[0]["jahr"] + 1)
+    schnitt = letztes["kumuliert"] / laufzeit
+    if schnitt <= 0:
+        return None
+    return letztes["jahr"] + math.ceil(letztes["offen"] / schnitt)
+
+
+@router.get("/objekte/{slug}/pv/verlauf")
+def pv_verlauf(slug: str, session: Session = Depends(get_session),
+               o: Objekt = Depends(objekt_holen)) -> dict:
+    """N127 — was die Anlage je Jahr abträgt und wann sie sich bezahlt macht.
+
+    Die Jahre kommen aus den vorhandenen Zeiträumen des Objekts (plus Jahren
+    mit Ladungen), lückenlos von der ersten bis zur letzten Zeile: ein Jahr
+    ohne Erträge ist eine Zeile mit 0, keine Lücke.
+
+    Rückgabe: `anschaffung`, `jahre` ([{jahr, pv_strom, einspeisung, tanken,
+    summe, kumuliert, offen}]), `kumuliert`, `rest`, `amortisiert_prozent`,
+    `break_even_jahr` (erreicht oder prognostiziert, sonst None),
+    `break_even_geschaetzt`, `eigentuemer` und `warnungen`."""
+    quellen = _ertraege_je_jahr(session, o.id)
+    spanne = range(min(quellen), max(quellen) + 1) if quellen else range(0)
+    roh = [{"jahr": j, **quellen.get(j, _QUELLEN_LEER)} for j in spanne]
+    anschaffung, anteile = _anlage(session, o.id)
+
+    a = strom.amortisation(
+        [{"jahr": z["jahr"],
+          "ertrag": round(z["pv_strom"] + z["einspeisung"] + z["tanken"], 2)}
+         for z in roh], anschaffung)
+    jahre = [{**z, "summe": k["ertrag"], "kumuliert": k["kumuliert"],
+              "offen": round(max(0.0, a["anschaffung"] - k["kumuliert"]), 2)}
+             for z, k in zip(roh, a["reihe"])]
+
+    erreicht = a["break_even_jahr"]
+    geschaetzt = None if erreicht else _break_even_prognose(jahre,
+                                                            a["anschaffung"])
+    warnungen: list[str] = []
+    if not a["anschaffung"]:
+        warnungen.append("Anschaffungskosten der Anlage sind noch nicht "
+                         "erfasst — ohne sie gibt es keinen Break-even.")
+    if not jahre:
+        warnungen.append("Für dieses Objekt ist noch kein Abrechnungszeitraum "
+                         "angelegt.")
+    elif not a["kumuliert"]:
+        warnungen.append("Noch keine Erträge erfasst: PV-Strom kommt aus den "
+                         "Kostenpositionen mit Herkunft „eigen“, die "
+                         "Einspeisevergütung aus einer nicht umlagefähigen "
+                         "Kostenart, das E-Tanken aus den Ladungen.")
+    return {"anschaffung": a["anschaffung"], "jahre": jahre,
+            "kumuliert": a["kumuliert"], "rest": a["rest"],
+            "amortisiert_prozent": a["amortisiert_prozent"],
+            "break_even_jahr": erreicht or geschaetzt,
+            "break_even_geschaetzt": geschaetzt is not None,
+            "eigentuemer": strom.verteile_eigentuemer(a["kumuliert"], anteile),
+            "warnungen": warnungen}
 
 
 # --------------------------------------------------------------------------

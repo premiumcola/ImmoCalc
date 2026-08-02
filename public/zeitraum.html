@@ -2787,6 +2787,10 @@ const stromLabel = z => zLabels.get(z.id) || z.name;
 const STROM_ROLLEN = {
   gesamt: { titel: 'Gesamtverbrauch (absolut)', typ: 'direkt',
             haupt: false, reihenfolge: 1 },
+  // Ein echter Hauptzähler mit zwei Ständen — für Anlagen, die keinen fertigen
+  // Jahreswert ausweisen. Sonst dieselbe Rolle wie „Gesamtverbrauch".
+  gesamt_stand: { titel: 'Gesamtverbrauch (2 Stände)', typ: 'gemessen',
+                  haupt: false, reihenfolge: 1 },
   gemessen: { titel: 'Zwischenzähler (2 Stände)', typ: 'gemessen',
               haupt: true, reihenfolge: 5 },
   direkt: { titel: 'Jahreswert ohne Zähler', typ: 'direkt',
@@ -2796,7 +2800,7 @@ const STROM_ROLLEN = {
 };
 
 const stromRolle = (z, s) => z.typ === 'rest' ? 'rest'
-  : (s.gesamt?.id === z.id ? 'gesamt'
+  : (s.gesamt?.id === z.id ? (z.typ === 'direkt' ? 'gesamt' : 'gesamt_stand')
     : (z.typ === 'direkt' ? 'direkt' : 'gemessen'));
 
 /* Was unter einer Strom-Zeile zusätzlich steht: ihre Rolle (umstellbar) und der
@@ -2824,7 +2828,8 @@ const stromKostenart = () =>
    hängen sich an ihn. Bereits vergebene Einzelrollen fallen aus der Auswahl. */
 function stromNeuForm(s) {
   const rollen = Object.entries(STROM_ROLLEN)
-    .filter(([w]) => !(w === 'gesamt' && s.gesamt) && !(w === 'rest' && s.rest));
+    .filter(([w]) => !(w.startsWith('gesamt') && s.gesamt)
+      && !(w === 'rest' && s.rest));
   return `<div class="ho-neu st-neu">
       <input type="text" data-strom-name placeholder="Name des Zählers"
         aria-label="Name des neuen Zählers">

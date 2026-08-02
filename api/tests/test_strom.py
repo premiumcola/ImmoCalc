@@ -8,6 +8,7 @@ Das Kernbeispiel (dokumentiert in `test_rechne_kernbeispiel`) bildet die
 Logik der Excel `NK-ALL-Strom-Verbrauch` nach: WG 60 % / Büro 40 % „ohne
 Tanken", Quellen Netz/Solar/Akku, PV auf Eigentümer 5/6 + 1/6.
 """
+import math
 import os
 import sys
 import tempfile
@@ -462,3 +463,188 @@ def test_warnung_wenn_quellen_nicht_zum_gesamtzaehler_passen():
     e = strom.rechne(dict(gesamt_kwh=10000, wg_kwh=5000,
                           netz_kwh=9000, solar_kwh=9000))
     assert any("Gesamtzähler" in w for w in e["warnungen"])
+
+
+# ---------------------------------------------------------------------------
+# N127 — der Amortisationsverlauf über die Jahre.
+#
+# Die Erträge kommen aus der Nebenkostenabrechnung: PV-Strom, den die Mieter
+# bezahlt haben (`herkunft == "eigen"`), die Einspeisevergütung (eine NICHT
+# umlagefähige Kostenart) und die Ladungen der E-Tankstelle. Eine
+# kalkulatorische „Ersparnis Zukauf" ist bewusst kein Ertrag.
+# ---------------------------------------------------------------------------
+
+_EINSPEISUNG = "Einspeisevergütung"
+
+
+def _pv_objekt(c, name: str = "PV-Haus") -> str:
+    """Ein Objekt mit einer NICHT umlagefähigen Kostenart — daran erkennt der
+    Verlauf die Einspeisevergütung. Kalenderjahr, damit Label-Jahr = Jahr."""
+    slug = c.post("/api/objekte", json={
+        "name": name, "ort": "Teststadt", "turnus": "kalender",
+        "start_monat": 1, "kostenarten": ["Strom", _EINSPEISUNG],
+        "einheiten": [{"bezeichnung": "EG", "flaeche": 70.0,
+                       "partei": "Müller"}],
+    }).json()["slug"]
+    for k in c.get(f"/api/objekte/{slug}/kostenarten").json():
+        if k["name"] == _EINSPEISUNG:
+            c.patch(f"/api/kostenarten/{k['id']}", json={"umlagefaehig": False})
+    return slug
+
+
+def _zeitraum_id(c, slug: str, jahr: int) -> int:
+    """Den Zeitraum eines Jahres holen — oder anlegen. Beim Anlegen entsteht
+    automatisch schon einer fürs laufende Jahr; den nimmt der Test mit."""
+    for z in c.get(f"/api/objekte/{slug}").json()["zeitraeume"]:
+        if z["jahr"] == jahr:
+            return z["id"]
+    return c.post(f"/api/objekte/{slug}/zeitraeume",
+                  json={"jahr": jahr}).json()["id"]
+
+
+def _position(c, zid: int, kostenart: str, betrag: float,
+              herkunft: str = "") -> int:
+    pid = c.post(f"/api/zeitraeume/{zid}/positionen",
+                 json={"kostenart": kostenart, "betrag": betrag,
+                       "status": "erledigt"}).json()["id"]
+    if herkunft:
+        c.patch(f"/api/positionen/{pid}", json={"herkunft": herkunft})
+    return pid
+
+
+def _verlauf(c, slug: str) -> dict:
+    antwort = c.get(f"/api/objekte/{slug}/pv/verlauf")
+    assert antwort.status_code == 200, antwort.text
+    return antwort.json()
+
+
+def _jahr(v: dict, jahr: int) -> dict:
+    return next(z for z in v["jahre"] if z["jahr"] == jahr)
+
+
+def test_verlauf_drei_quellen_ueber_mehrere_jahre(client):
+    """Der Kern von N127: PV-Strom der Mieter, Einspeisevergütung und E-Tanken
+    je Jahr, kumuliert gegen die Anschaffung."""
+    slug = _pv_objekt(client, "PV-Verlauf")
+    client.put(f"/api/objekte/{slug}/strom/2024",
+               json={"anschaffung_eur": 36000, "tanken_preis": 0.30})
+
+    z24 = _zeitraum_id(client, slug, 2024)
+    # Netzbezug: umlagefähig und nicht „eigen" — zählt der Anlage NICHT zu.
+    _position(client, z24, "Strom", 862.51, herkunft="extern")
+    _position(client, z24, _EINSPEISUNG, 355.71)
+    client.post(f"/api/objekte/{slug}/tankstelle/2024",
+                json={"name": "Alicia", "kwh": 3048.1, "preis": 0.30})
+
+    z25 = _zeitraum_id(client, slug, 2025)
+    _position(client, z25, "PV-Strom", 620.00, herkunft="eigen")
+    _position(client, z25, _EINSPEISUNG, 400.00)
+
+    v = _verlauf(client, slug)
+    assert v["anschaffung"] == 36000.0
+
+    a = _jahr(v, 2024)
+    assert a["pv_strom"] == 0.0            # „Strom" ist Netzbezug, kein Ertrag
+    assert a["einspeisung"] == 355.71
+    assert a["tanken"] == 914.43           # 3048,1 kWh × 0,30 €
+    assert a["summe"] == 1270.14
+    assert a["kumuliert"] == 1270.14
+    assert a["offen"] == 34729.86
+
+    b = _jahr(v, 2025)
+    assert (b["pv_strom"], b["einspeisung"], b["tanken"]) == (620.0, 400.0, 0.0)
+    assert b["summe"] == 1020.0
+    assert b["kumuliert"] == 2290.14
+
+    # Kumuliert ist die Summe aller Jahressummen — keine verlorenen Cents.
+    assert round(sum(z["summe"] for z in v["jahre"]), 2) == v["kumuliert"]
+    assert v["rest"] == round(36000.0 - v["kumuliert"], 2)
+
+
+def test_verlauf_jahr_ohne_ertraege_ist_eine_zeile_mit_null(client):
+    """Ein Jahr ohne Daten ist eine Zeile mit 0, keine Lücke — sonst sähe der
+    Verlauf aus, als hätte es das Jahr nie gegeben."""
+    slug = _pv_objekt(client, "PV-Luecke")
+    client.put(f"/api/objekte/{slug}/strom/2022", json={"anschaffung_eur": 20000})
+    z22 = _zeitraum_id(client, slug, 2022)
+    _position(client, z22, _EINSPEISUNG, 500.0)
+    _zeitraum_id(client, slug, 2023)          # angelegt, aber ohne Positionen
+    z24 = _zeitraum_id(client, slug, 2024)
+    _position(client, z24, _EINSPEISUNG, 700.0)
+
+    v = _verlauf(client, slug)
+    jahre = [z["jahr"] for z in v["jahre"]]
+    assert jahre == sorted(jahre) and 2023 in jahre
+    # lückenlos von der ersten bis zur letzten Zeile
+    assert jahre == list(range(jahre[0], jahre[-1] + 1))
+    leer = _jahr(v, 2023)
+    assert (leer["pv_strom"], leer["einspeisung"], leer["tanken"],
+            leer["summe"]) == (0.0, 0.0, 0.0, 0.0)
+    # Der kumulierte Stand bleibt im leeren Jahr stehen und fällt nicht zurück.
+    assert leer["kumuliert"] == _jahr(v, 2022)["kumuliert"] == 500.0
+    assert _jahr(v, 2024)["kumuliert"] == 1200.0
+
+
+def test_verlauf_objekt_ohne_pv_bleibt_ruhig(client):
+    """Kein PV-Ertrag, keine Anschaffung: keine erfundene Jahreszahl, sondern
+    None — und ein Hinweis, was fehlt."""
+    slug = _neues_objekt(client)
+    v = _verlauf(client, slug)
+    assert v["anschaffung"] == 0.0
+    assert v["kumuliert"] == 0.0
+    assert v["break_even_jahr"] is None
+    assert v["break_even_geschaetzt"] is False
+    assert v["amortisiert_prozent"] is None
+    assert any("Anschaffung" in w for w in v["warnungen"])
+    assert any("Noch keine Erträge" in w for w in v["warnungen"])
+    # Die Zeilen selbst sind sauber (das Anlegen erzeugt einen Zeitraum).
+    assert all(z["summe"] == 0.0 for z in v["jahre"])
+
+
+def test_verlauf_break_even_erreicht(client):
+    """Deckt der kumulierte Ertrag die Anschaffung, ist das Jahr echt erreicht
+    — nicht geschätzt."""
+    slug = _pv_objekt(client, "PV-Fertig")
+    client.put(f"/api/objekte/{slug}/strom/2023", json={"anschaffung_eur": 1000})
+    for jahr, betrag in ((2023, 400.0), (2024, 400.0), (2025, 400.0)):
+        _position(client, _zeitraum_id(client, slug, jahr), _EINSPEISUNG, betrag)
+
+    v = _verlauf(client, slug)
+    assert v["break_even_jahr"] == 2025
+    assert v["break_even_geschaetzt"] is False
+    assert v["rest"] == 0.0
+    assert v["amortisiert_prozent"] == 100.0
+    assert _jahr(v, 2025)["offen"] == 0.0
+
+
+def test_verlauf_break_even_nicht_erreicht_wird_fortgeschrieben(client):
+    """Noch nicht gedeckt: aus dem bisherigen Schnitt linear fortgeschrieben —
+    als Schätzung gekennzeichnet."""
+    slug = _pv_objekt(client, "PV-Laeuft")
+    client.put(f"/api/objekte/{slug}/strom/2023", json={"anschaffung_eur": 10000})
+    for jahr in (2023, 2024):
+        _position(client, _zeitraum_id(client, slug, jahr), _EINSPEISUNG, 1000.0)
+
+    v = _verlauf(client, slug)
+    letztes = v["jahre"][-1]["jahr"]
+    # 2000 € in zwei Jahren = 1000 €/Jahr; 8000 € offen → acht weitere Jahre.
+    # Die leeren Jahre nach 2024 (Zeitraum des laufenden Jahres) senken den
+    # Schnitt entsprechend — geprüft wird die Rechenregel, nicht eine feste Zahl.
+    schnitt = v["kumuliert"] / (letztes - 2023 + 1)
+    assert v["break_even_geschaetzt"] is True
+    assert v["break_even_jahr"] == letztes + math.ceil(v["rest"] / schnitt)
+    assert v["break_even_jahr"] > letztes
+    assert 0 < v["amortisiert_prozent"] < 100
+
+
+def test_verlauf_offene_position_zaehlt_noch_nicht(client):
+    """Eine Position ohne Betrag (Status „offen") ist noch kein Geldfluss —
+    genau wie in der Abrechnung selbst."""
+    slug = _pv_objekt(client, "PV-Offen")
+    zid = _zeitraum_id(client, slug, 2024)
+    pid = client.post(f"/api/zeitraeume/{zid}/positionen",
+                      json={"kostenart": _EINSPEISUNG, "betrag": 300.0,
+                            "status": "offen"}).json()["id"]
+    assert _jahr(_verlauf(client, slug), 2024)["einspeisung"] == 0.0
+    client.patch(f"/api/positionen/{pid}", json={"status": "erledigt"})
+    assert _jahr(_verlauf(client, slug), 2024)["einspeisung"] == 300.0
