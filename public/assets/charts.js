@@ -236,10 +236,14 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     const mitte = (x0 + x1) / 2;
     const d = `M${x0},${y0} C${mitte},${y0} ${mitte},${y1} ${x1},${y1}
                L${x1},${y1 + hb} C${mitte},${y1 + hb} ${mitte},${y0 + ha} ${x0},${y0 + ha} Z`;
-    // Das Band trägt die Farbe seiner Quelle, nur blasser — so gehört sichtbar
-    // zusammen, was zusammengehört, statt bunt durcheinanderzulaufen.
-    const quelle = lage.get(f.von).spalte === spalten[0] ? f.von : f.nach;
-    return `<path d="${d}" fill="${knotenFarbe(quelle)}" fill-opacity=".3"><title>${
+    // N82 — Farbe nur LINKS (Kostenart → Sammelknoten): dort sagt sie, welche
+    // Kostenart fließt. Bänder in die rechte Spalte (Sammelknoten → Einheit)
+    // bleiben neutral grau: sonst sähe es aus, als ginge „Heizung" gezielt in
+    // eine bestimmte Wohnung — verteilt wird aber die ganze Abrechnung.
+    const nachRechts = lage.get(f.nach).spalte === spalten[spalten.length - 1];
+    const bandFarbe = nachRechts ? '#8A989D'
+      : knotenFarbe(lage.get(f.von).spalte === spalten[0] ? f.von : f.nach);
+    return `<path d="${d}" fill="${bandFarbe}" fill-opacity="${nachRechts ? '.26' : '.3'}"><title>${
       knoten[f.von].name} → ${knoten[f.nach].name}: ${format(f.wert)}</title></path>`;
   }).join('');
 
@@ -286,8 +290,10 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     // Schrift in die Beschriftung der Nachbarspalte laufen.
     if (mittig) {
       const ly = einzelneMitte.has(l.spalte) ? -obenPlatz + 15 : l.y - 14;
+      // N82 — der Sammelknoten in der Mitte ist neutral (dunkel), nicht teal:
+      // er ist die Summe, keine eigene Kostenart.
       return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
-                    rx="3" fill="${knotenFarbe(i)}"/>
+                    rx="3" fill="${ROLLENFARBE[knoten[i].rolle] || '#16262C'}"/>
         <text x="${l.x + knotenBreite / 2}" y="${ly}" class="kn"
               text-anchor="middle">${knoten[i].name}</text>
         <text x="${l.x + knotenBreite / 2}" y="${ly + 11}" class="kw"

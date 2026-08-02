@@ -2328,6 +2328,11 @@ async function zeichnen() {
   }
 }
 
+/* N82b — die Summe der NK-Vorauszahlungen des Zeitraums (aus der Abrechnung).
+   Wird beim Laden geholt; null heißt „noch nicht bekannt". */
+let deckungAbschlaege = null;
+let deckungUmgelegt = null;   // was tatsächlich verteilt ist (Abrechnung)
+
 /* Kurzes deutsches Datum aus ISO (für die Öl-Lieferungsliste). */
 const _isoKurz = iso => iso ? new Date(iso).toLocaleDateString('de-DE') : '';
 
@@ -2337,22 +2342,32 @@ const _isoKurz = iso => iso ? new Date(iso).toLocaleDateString('de-DE') : '';
    ruhiger Hinweis statt einer Scheingenauigkeit. */
 function deckungHtml() {
   const kosten = (daten.checkliste || []).reduce((s, k) => s + (k.betrag || 0), 0);
-  const abschlaege = (daten.vorauszahlungen || []).reduce((s, v) => s + (v.betrag || 0), 0);
+  // N82b — die Abschläge kommen aus der Abrechnung (die NK-Vorauszahlungen der
+  // Mietverhältnisse im Zeitraum), nicht nur aus einzeln erfassten Zahlungen.
+  const abschlaege = deckungAbschlaege != null ? deckungAbschlaege
+    : (daten.vorauszahlungen || []).reduce((s, v) => s + (v.betrag || 0), 0);
   if (kosten <= 0) return '';
   if (abschlaege <= 0) {
     return `<div class="deckung"><div class="dstat"><span class="dl">Kosten erfasst</span>
         <span class="dv">${eur(kosten)}</span></div>
       <div class="dhinweis">Noch keine Abschläge erfasst — Deckung nicht bezifferbar.</div></div>`;
   }
-  const saldo = abschlaege - kosten;                 // + Guthaben · − Nachzahlung
-  const quote = Math.round(kosten / abschlaege * 100);
+  // Umgelegt wird nur, was auch verteilt ist — das ist die Zahl, gegen die die
+  // Abschläge stehen. Die Sankey-Summe darüber zeigt ALLE erfassten Positionen
+  // (auch nicht umlagefähige), deshalb beide getrennt beschriften.
+  const umgelegt = deckungUmgelegt != null ? deckungUmgelegt : kosten;
+  const saldo = abschlaege - umgelegt;               // + Guthaben · − Nachzahlung
+  const quote = Math.round(umgelegt / abschlaege * 100);
   const nach = saldo < 0;
+  const rest = Math.round((kosten - umgelegt) * 100) / 100;
   return `<div class="deckung ${nach ? 'neg' : 'pos'}">
-    <div class="dstat"><span class="dl">Abschläge</span><span class="dv">${eur(abschlaege)}</span></div>
-    <div class="dstat"><span class="dl">Kosten · Deckung</span>
-      <span class="dv">${eur(kosten)} · ${quote}%</span></div>
+    <div class="dstat"><span class="dl">Abschläge der Mieter</span><span class="dv">${eur(abschlaege)}</span></div>
+    <div class="dstat"><span class="dl">Umgelegt · Deckung</span>
+      <span class="dv">${eur(umgelegt)} · ${quote}%</span></div>
     <div class="dstat"><span class="dl">${nach ? 'Nicht gedeckt · Nachzahlung' : 'Überdeckt · Guthaben'}</span>
       <span class="dv ${nach ? 'neg' : 'pos'}">${eur(Math.abs(saldo))}</span></div>
+    ${rest > 0.01 ? `<div class="dhinweis">Von ${eur(kosten)} erfassten Kosten sind
+      ${eur(rest)} noch nicht verteilt (fehlender Schlüssel oder nicht umlagefähig).</div>` : ''}
   </div>`;
 }
 
@@ -3148,6 +3163,15 @@ async function laden() {
     ablesungMaske = await api(`/zeitraeume/${zid}/ablesung`);
   } catch {
     ablesungMaske = null;
+  }
+  // N82b — die NK-Vorauszahlungen des Zeitraums für die Deckungs-Anzeige.
+  try {
+    const ab = await api(`/zeitraeume/${zid}/abrechnung`);
+    deckungAbschlaege = ab?.gesamt?.abschlaege ?? null;
+    deckungUmgelegt = ab?.gesamt?.auslagen ?? null;
+  } catch {
+    deckungAbschlaege = null;
+    deckungUmgelegt = null;
   }
   // N58 — die realen Einheiten des Objekts als Fallback für den Auswähler.
   // Beiwerk: fehlt der Endpunkt, genügt die Schlüssel-Vorschau.
