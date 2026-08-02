@@ -923,6 +923,10 @@ class Stromjahr(SQLModel, table=True):
     # als JSON {Gruppe: "A,B"}. Erst damit wird aus zwei Gruppen ein Betrag je
     # Einheit, der in die Nebenkostenabrechnung zurueckfliesst.
     gruppen_einheiten: str = ""
+    # N161 - der SolarEdge-Screenshot dieses Jahres als Beleg. Verweist auf ein
+    # `Dokument` in der Nextcloud; leer = noch keiner abgelegt. Additiv.
+    screenshot_dokument_id: Optional[int] = Field(default=None,
+                                                  foreign_key="dokument.id")
     notiz: str = ""
 
 
