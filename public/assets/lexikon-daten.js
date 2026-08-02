@@ -727,6 +727,175 @@ export const BEGRIFFE = [
       'Für dich als Vermieter der Prüfmaßstab jeder Position deiner [[nebenkosten|Abrechnung]]: Nur laufend anfallende Kosten aus dem Katalog gehören hinein. „Sonstige Betriebskosten" (Pos. 17, z. B. Wartung Rauchmelder) müssen im Mietvertrag ausdrücklich benannt sein. Einmalige Reparaturen bleiben immer bei dir und sind deine [[werbungskosten]].',
     verwandt: ['nebenkosten', 'umlagefaehigkeit', 'grundsteuer', 'werbungskosten'],
   },
+  // --- Die Betriebskostenarten des § 2 BetrKV im Einzelnen (Pos. 1 = Grundsteuer, siehe oben) ---
+  {
+    id: 'wasserversorgung',
+    begriff: 'Wasserversorgung (Kaltwasser)',
+    kategorie: 'nebenkosten',
+    synonyme: ['Frischwasser', 'Kaltwasser', 'Wassergeld', 'Wassergrundgebühr', 'Wasserkosten'],
+    kurz: 'Position 2 des Betriebskostenkatalogs: die laufenden Kosten der Kaltwasserversorgung — Verbrauch, Grundgebühr, Zählermiete und Eichung. Umlagefähig.',
+    lang:
+      'Zur Wasserversorgung gehören alle laufenden Kosten, die das Frischwasser ins Haus bringen: der verbrauchte Kubikmeter, die Grund- oder Zählergebühr des Versorgers, die Miete und regelmäßige Eichung der [[zaehler|Wasserzähler]] sowie der Betrieb einer eigenen Hebeanlage oder Wasseraufbereitung. Es ist Position 2 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Diese Kosten gibt es, weil jede bewohnte Einheit Trinkwasser verbraucht — eine der verbrauchsnächsten Betriebskostenarten überhaupt. Deshalb verteilt man sie, wo möglich, nach gemessenem Verbrauch, sonst nach Personen oder Fläche.\n\n' +
+      'Für dich als Vermieter: Der laufende Wasserbezug ist [[umlagefaehigkeit|umlagefähig]] und wird über den passenden [[verteilerschluessel]] — Verbrauch nach [[zaehler|Zähler]], sonst [[personen-im-haushalt|Personen]] oder Fläche — verteilt. Nicht umlagefähig ist die *Reparatur* oder *Erneuerung* der Leitungen und Zähler: Das ist Instandhaltung und damit deine [[werbungskosten|Werbungskosten]]. Die Abwasserkosten rechnest du getrennt als [[entwaesserung]] ab.',
+    verwandt: ['entwaesserung', 'betriebskostenverordnung', 'umlagefaehigkeit', 'zaehler', 'verteilerschluessel'],
+  },
+  {
+    id: 'entwaesserung',
+    begriff: 'Entwässerung (Abwasser & Niederschlagswasser)',
+    kategorie: 'nebenkosten',
+    synonyme: ['Abwasser', 'Kanalgebühr', 'Schmutzwasser', 'Niederschlagswasser', 'Oberflächenwasser', 'Abwassergebühr'],
+    kurz: 'Position 3 des Betriebskostenkatalogs: die Gebühren für Schmutz- und Niederschlagswasser — meist Kanalgebühren der Gemeinde. Umlagefähig.',
+    lang:
+      'Die Entwässerung umfasst die Kosten, das Abwasser wieder aus dem Haus zu bringen: die kommunale Kanal-/Schmutzwassergebühr, die Gebühr für Niederschlags-(Oberflächen-)wasser und den Betrieb einer eigenen Entwässerungspumpe oder Grube samt regelmäßiger Leerung. Es ist Position 3 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Getrennt von der [[wasserversorgung]] gibt es sie, weil viele Gemeinden Frisch- und Abwasser gesondert abrechnen — das Schmutzwasser oft mengengekoppelt an den Frischwasserverbrauch, das Niederschlagswasser nach versiegelter Fläche.\n\n' +
+      'Für dich als Vermieter: Die laufenden Gebühren sind [[umlagefaehigkeit|umlagefähig]]. Das Schmutzwasser verteilst du sinnvollerweise nach demselben [[verteilerschluessel]] wie das Frischwasser (Verbrauch), das Niederschlagswasser nach Fläche. Nicht umlagefähig ist die Reparatur oder Neuverlegung des Kanals — das ist Instandhaltung und deine [[werbungskosten|Werbungskosten]].',
+    verwandt: ['wasserversorgung', 'betriebskostenverordnung', 'umlagefaehigkeit', 'verteilerschluessel'],
+  },
+  {
+    id: 'heizkosten',
+    begriff: 'Heiz- und Warmwasserkosten (Betrieb der Anlage)',
+    kategorie: 'nebenkosten',
+    synonyme: ['Heizung', 'Heizkosten', 'Warmwasser', 'Brennstoffkosten', 'Betriebsstrom Heizung', 'verbundene Anlage'],
+    kurz: 'Positionen 4–6 des Betriebskostenkatalogs: die laufenden Kosten, eine zentrale Heizungs- und Warmwasseranlage zu betreiben — Brennstoff, Strom, Wartung, Messung. Umlagefähig, aber nur nach Verbrauch.',
+    lang:
+      'Zu den Heiz- und Warmwasserkosten zählt alles, was der *Betrieb* der zentralen Anlage kostet: der Brennstoff (Gas, Öl, Fernwärme, Pellets), der Betriebsstrom der Pumpen und Brenner, die regelmäßige Wartung und Reinigung, die Abgasmessung des Schornsteinfegers, die Miete und Ablesung der [[zaehler|Messgeräte]] und der [[co2-kostenaufteilung|CO₂-Preis]]. Der Katalog der [[betriebskostenverordnung]] führt Heizung (Pos. 4), Warmwasser (Pos. 5) und verbundene Heizungs-/Warmwasseranlagen (Pos. 6) getrennt, in der Praxis rechnet man sie zusammen ab.\n\n' +
+      'Diese Kosten stehen bewusst neben den „kalten" [[nebenkosten|Betriebskosten]], weil für sie strengere Regeln gelten: Die [[heizkostenverordnung]] schreibt vor, dass sie überwiegend nach gemessenem Verbrauch verteilt werden (meist 70 % Verbrauch, 30 % Fläche) — ein reiner Flächenschlüssel ist unzulässig.\n\n' +
+      'Für dich als Vermieter die wichtigste Grenze: Umlagefähig ist nur der laufende *Betrieb*. Die Reparatur, Erneuerung oder Neuanschaffung des Kessels ist Instandhaltung und bleibt als deine [[werbungskosten|Werbungskosten]] bei dir — sie darf nie in die Heizkostenabrechnung. Bei verbundenen Anlagen muss der auf das Warmwasser entfallende Brennstoffanteil rechnerisch abgetrennt werden.',
+    verwandt: ['heizkostenverordnung', 'co2-kostenaufteilung', 'zaehler', 'betriebskostenverordnung', 'umlagefaehigkeit', 'schornsteinreinigung'],
+  },
+  {
+    id: 'aufzug',
+    begriff: 'Aufzug (Betriebskosten)',
+    kategorie: 'nebenkosten',
+    synonyme: ['Fahrstuhl', 'Aufzugskosten', 'Aufzugswartung', 'Lift'],
+    kurz: 'Position 7 des Betriebskostenkatalogs: die laufenden Kosten des Personen- oder Lastenaufzugs — Betriebsstrom, Wartung, Prüfung, Notrufaufschaltung. Umlagefähig.',
+    lang:
+      'Zu den Aufzugskosten gehören der Betriebsstrom, der Wartungsvertrag, die regelmäßige Sicherheitsprüfung (TÜV/ZÜS), die Notrufaufschaltung und die Reinigung der Kabine. Es ist Position 7 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie als eigene Position, weil ein Aufzug fortlaufend Strom zieht und aus Sicherheitsgründen gewartet und geprüft werden muss — unabhängig davon, wie oft er benutzt wird.\n\n' +
+      'Für dich als Vermieter: Der laufende Betrieb ist [[umlagefaehigkeit|umlagefähig]], die *Reparatur* und der Austausch von Anlagenteilen dagegen nicht — das ist Instandhaltung und deine [[werbungskosten|Werbungskosten]]. Verteilt wird meist nach [[wohnflaeche|Fläche]] oder Einheiten. Nach der Rechtsprechung tragen grundsätzlich auch Erdgeschossmieter die Aufzugskosten mit, sofern der Mietvertrag nichts anderes regelt.',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'verteilerschluessel', 'werbungskosten'],
+  },
+  {
+    id: 'muellbeseitigung',
+    begriff: 'Müllbeseitigung & Straßenreinigung',
+    kategorie: 'nebenkosten',
+    synonyme: ['Müllabfuhr', 'Müllgebühr', 'Restmüll', 'Straßenreinigung', 'Winterdienst', 'Sperrmüll'],
+    kurz: 'Position 8 des Betriebskostenkatalogs: Müllabfuhr- und Straßenreinigungsgebühren, oft auch der Winterdienst. Umlagefähig.',
+    lang:
+      'Diese Position fasst zwei kommunale Leistungen zusammen: die Müllbeseitigung (Gebühren für Rest-, Bio- und Sperrmüll, Betrieb gemeinschaftlicher Müllanlagen) und die Straßenreinigung samt Winterdienst (Schneeräumen, Streuen). Es ist Position 8 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie, weil beide Leistungen regelmäßig für das ganze Grundstück anfallen und meist von der Gemeinde oder einem beauftragten Dienst erbracht werden.\n\n' +
+      'Für dich als Vermieter: Die laufenden Gebühren sind [[umlagefaehigkeit|umlagefähig]] und werden häufig nach [[personen-im-haushalt|Personen]] (Müll) oder [[wohnflaeche|Fläche]] verteilt. Nicht umlagefähig ist die einmalige Beseitigung von Sondermüll oder wild abgeladenem Unrat, den der Mieter nicht verursacht hat — das ist keine laufende Betriebskostenart, sondern deine [[werbungskosten|Werbungskosten]].',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'verteilerschluessel', 'personen-im-haushalt', 'werbungskosten'],
+  },
+  {
+    id: 'gebaeudereinigung',
+    begriff: 'Gebäudereinigung & Ungezieferbekämpfung',
+    kategorie: 'nebenkosten',
+    synonyme: ['Treppenhausreinigung', 'Hausreinigung', 'Ungezieferbekämpfung', 'Schädlingsbekämpfung'],
+    kurz: 'Position 9 des Betriebskostenkatalogs: die regelmäßige Reinigung gemeinschaftlich genutzter Gebäudeteile und die laufende Ungezieferbekämpfung. Umlagefähig.',
+    lang:
+      'Hierunter fallen die regelmäßige Reinigung der gemeinschaftlich genutzten Flächen — Treppenhaus, Flure, Keller, Waschküche, Fenster im Treppenhaus — sowie die vorbeugende, wiederkehrende Ungezieferbekämpfung. Es ist Position 9 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie, weil gemeinschaftliche Bereiche jemandem zur Pflege obliegen müssen; ob eine Reinigungsfirma putzt oder der [[hauswart]], ist gleich — nur die Kosten müssen laufend anfallen.\n\n' +
+      'Für dich als Vermieter: Die regelmäßige Reinigung ist [[umlagefaehigkeit|umlagefähig]], meist nach [[wohnflaeche|Fläche]]. Die *einmalige* Schädlingsbekämpfung wegen eines Baumangels (z. B. Hausschwamm, Ratten aus defektem Kanal) ist dagegen Instandsetzung und damit deine [[werbungskosten|Werbungskosten]], nicht umlagefähig. Beauftragst du eine Firma, sind die Arbeitskosten für den Mieter über [[paragraf-35a]] begünstigt.',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'hauswart', 'paragraf-35a', 'werbungskosten'],
+  },
+  {
+    id: 'gartenpflege',
+    begriff: 'Gartenpflege',
+    kategorie: 'nebenkosten',
+    synonyme: ['Grünflächenpflege', 'Gartenarbeit', 'Rasenpflege', 'Außenanlagen'],
+    kurz: 'Position 10 des Betriebskostenkatalogs: die Pflege gemeinschaftlicher Grün- und Außenanlagen — Rasen mähen, Hecken schneiden, Beete pflegen. Umlagefähig.',
+    lang:
+      'Zur Gartenpflege zählt die laufende Pflege der gemeinschaftlich genutzten Außenanlagen: Rasen mähen, Hecken und Bäume schneiden, Beete pflegen, Wege freihalten und auch das Ersetzen abgestorbener Pflanzen. Es ist Position 10 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie, weil Grünanlagen ohne regelmäßige Pflege verwahrlosen — ein wiederkehrender Aufwand, der dem Wohnwert aller dient.\n\n' +
+      'Für dich als Vermieter: Die laufende Pflege ist [[umlagefaehigkeit|umlagefähig]] (meist nach [[wohnflaeche|Fläche]]), ebenso das Nachpflanzen einzelner Gewächse. Nicht umlagefähig ist die *erstmalige* Anlage eines Gartens oder eine grundlegende Neugestaltung — das ist eine wertsteigernde Investition und deine [[werbungskosten|Werbungskosten]]. Arbeitskosten einer Gartenfirma sind für den Mieter über [[paragraf-35a]] begünstigt.',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'hauswart', 'paragraf-35a', 'werbungskosten'],
+  },
+  {
+    id: 'allgemeinstrom',
+    begriff: 'Beleuchtung (Allgemeinstrom)',
+    kategorie: 'nebenkosten',
+    synonyme: ['Allgemeinstrom', 'Hausstrom', 'Beleuchtung', 'Treppenhausbeleuchtung', 'Außenbeleuchtung'],
+    kurz: 'Position 11 des Betriebskostenkatalogs: der Strom für die Beleuchtung gemeinschaftlich genutzter Bereiche — Treppenhaus, Keller, Hof, Außenanlagen. Umlagefähig.',
+    lang:
+      'Die Beleuchtungskosten umfassen den Stromverbrauch für die gemeinschaftlich genutzten Gebäudeteile: Treppenhaus, Flure, Keller, Waschküche, Hof- und Außenbeleuchtung — der sogenannte Allgemein- oder Hausstrom. Es ist Position 11 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie, weil diese Bereiche keinem einzelnen Mieterzähler zugeordnet sind, aber allen zugutekommen und deshalb gemeinschaftlich getragen werden.\n\n' +
+      'Für dich als Vermieter: Der laufende Stromverbrauch ist [[umlagefaehigkeit|umlagefähig]], meist nach [[wohnflaeche|Fläche]]. Nicht umlagefähig ist die Reparatur oder Erneuerung der Leuchten und der Elektroinstallation — das ist Instandhaltung und deine [[werbungskosten|Werbungskosten]]. Den Betriebsstrom von Heizung und [[aufzug]] rechnest du dort ab, nicht hier.',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'verteilerschluessel', 'aufzug', 'werbungskosten'],
+  },
+  {
+    id: 'schornsteinreinigung',
+    begriff: 'Schornsteinreinigung',
+    kategorie: 'nebenkosten',
+    synonyme: ['Schornsteinfeger', 'Kaminkehrer', 'Kehrgebühr', 'Feuerstättenschau'],
+    kurz: 'Position 12 des Betriebskostenkatalogs: die Kehrgebühren des Schornsteinfegers, soweit sie nicht schon in den Heizkosten stecken. Umlagefähig.',
+    lang:
+      'Hierunter fallen die wiederkehrenden Gebühren des Schornsteinfegers für das Kehren und die Überprüfung der Abgasanlage. Es ist Position 12 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie als eigene Position vor allem für Fälle, in denen die Abgasmessung nicht bereits Teil der [[heizkosten|Heizkostenabrechnung]] ist — dort ist die Immissions-/Abgasmessung nämlich schon enthalten und darf nicht doppelt umgelegt werden.\n\n' +
+      'Für dich als Vermieter: Die laufenden Kehr- und Prüfgebühren sind [[umlagefaehigkeit|umlagefähig]] (meist nach [[wohnflaeche|Fläche]]). Achte darauf, sie *entweder* hier *oder* in den [[heizkosten|Heizkosten]] anzusetzen, nie in beiden. Eine mängelbedingte Nachbesserung an Kamin oder Abgasweg ist dagegen Instandhaltung und deine [[werbungskosten|Werbungskosten]].',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'heizkosten', 'werbungskosten'],
+  },
+  {
+    id: 'gebaeudeversicherung',
+    begriff: 'Sach- & Haftpflichtversicherung',
+    kategorie: 'nebenkosten',
+    synonyme: ['Gebäudeversicherung', 'Wohngebäudeversicherung', 'Haus- und Grundbesitzerhaftpflicht', 'Elementarversicherung', 'Feuerversicherung'],
+    kurz: 'Position 13 des Betriebskostenkatalogs: die Beiträge zur Sachversicherung des Gebäudes (Feuer, Sturm, Wasser) und zur Haus- und Grundbesitzerhaftpflicht. Umlagefähig.',
+    lang:
+      'Umlagefähig sind die Beiträge zur Sachversicherung des Gebäudes — Feuer, Leitungswasser, Sturm/Hagel und, falls vereinbart, Elementarschäden — sowie zur Haus- und Grundbesitzerhaftpflicht. Es ist Position 13 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie, weil diese Versicherungen das vermietete Gebäude und die daraus entstehenden Haftungsrisiken laufend absichern — ein Schutz, der dem Wohnen dient.\n\n' +
+      'Für dich als Vermieter die wichtige Abgrenzung: Umlagefähig sind nur die *gebäudebezogenen* Sach- und Haftpflichtpolicen (Verteilung meist nach [[wohnflaeche|Fläche]]). *Nicht* umlagefähig sind Versicherungen, die dein eigenes wirtschaftliches Risiko decken — Rechtsschutz-, Mietausfall- und Mietnomadenversicherung — sowie deine private Hausratversicherung. Solche Policen bleiben deine [[werbungskosten|Werbungskosten]].',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'verteilerschluessel', 'werbungskosten'],
+  },
+  {
+    id: 'hauswart',
+    begriff: 'Hauswart (Hausmeister)',
+    kategorie: 'nebenkosten',
+    synonyme: ['Hausmeister', 'Hauswartkosten', 'Hausmeisterdienst', 'Objektbetreuer'],
+    kurz: 'Position 14 des Betriebskostenkatalogs: die Vergütung für die laufende Hauswarttätigkeit — Kontrolle, kleine Pflege, Betreuung. Umlagefähig, aber nur der Betriebskostenanteil.',
+    lang:
+      'Umlagefähig ist die Vergütung des Hauswarts für die laufende Betreuung des Objekts: Kontrollgänge, Bedienung und Überwachung der technischen Anlagen, kleine Pflegearbeiten, Ansprechpartner für Mieter. Es ist Position 14 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt die Position, weil ein Hauswart viele der übrigen Betriebskostenarten in einer Person bündelt — er reinigt, pflegt den Garten, streut im Winter.\n\n' +
+      'Für dich als Vermieter die zentrale Aufgabe: Der Hauswartlohn muss aufgeteilt werden. Umlagefähig ist nur der Anteil für Betriebstätigkeiten; die Anteile für *Verwaltung* (Buchhaltung, Vermietung) und *Instandhaltung* (Reparaturen) sind herauszurechnen und bleiben als deine [[werbungskosten|Werbungskosten]] bei dir. Doppelabrechnung vermeiden: Reinigt der Hauswart das Treppenhaus, darf dieselbe Leistung nicht zusätzlich als [[gebaeudereinigung]] auftauchen. Die Arbeitskosten sind für den Mieter über [[paragraf-35a]] begünstigt.',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'gebaeudereinigung', 'gartenpflege', 'paragraf-35a', 'werbungskosten'],
+  },
+  {
+    id: 'gemeinschaftsantenne',
+    begriff: 'Gemeinschaftsantenne & Breitbandnetz',
+    kategorie: 'nebenkosten',
+    synonyme: ['Kabelanschluss', 'Kabelfernsehen', 'Breitbandanschluss', 'Antennenanlage', 'Nebenkostenprivileg'],
+    kurz: 'Position 15 des Betriebskostenkatalogs: Betrieb einer gemeinschaftlichen Antennen- oder Breitbandanlage. Seit Juli 2024 ist die Umlage von Kabel-TV stark eingeschränkt.',
+    lang:
+      'Diese Position umfasst den Betrieb einer Gemeinschaftsantenne (Betriebsstrom, laufende Prüfung) oder den Anschluss an ein Breitbandkabelnetz. Es ist Position 15 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Sie war lange das Vehikel des „Nebenkostenprivilegs": Vermieter konnten die Kosten eines Sammel-Kabelvertrags pauschal auf alle Mieter umlegen. Dieses Privileg ist zum 1. Juli 2024 entfallen — laufende Entgelte für einen Kabel-TV-Anschluss sind seither grundsätzlich nicht mehr über die [[nebenkosten]] umlagefähig; der Mieter schließt seinen Fernsehanschluss selbst ab.\n\n' +
+      'Für dich als Vermieter heißt das heute: Prüfe genau, was noch umlagefähig ist — der Betriebsstrom und die Wartung einer *gebäudeeigenen* Antennen-/Verteilanlage bleiben es, der pauschale Kabel-TV-Sammelvertrag in aller Regel nicht mehr. Die Errichtung oder Erneuerung der Anlage war ohnehin nie [[umlagefaehigkeit|umlagefähig]], sondern deine [[werbungskosten|Werbungskosten]].',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'nebenkosten', 'werbungskosten'],
+  },
+  {
+    id: 'waeschepflege',
+    begriff: 'Einrichtungen der Wäschepflege',
+    kategorie: 'nebenkosten',
+    synonyme: ['Waschküche', 'Gemeinschaftswaschmaschine', 'Wäschetrockner', 'Waschmaschine gemeinschaftlich'],
+    kurz: 'Position 16 des Betriebskostenkatalogs: die Betriebskosten gemeinschaftlicher Wascheinrichtungen — Strom, Wasser, Wartung der Maschinen. Umlagefähig.',
+    lang:
+      'Hierunter fallen die laufenden Kosten gemeinschaftlicher Einrichtungen zur Wäschepflege: Betriebsstrom und Wasser der Waschküche, Wartung und Pflege gemeinschaftlicher Waschmaschinen und Trockner. Es ist Position 16 des Katalogs der [[betriebskostenverordnung]].\n\n' +
+      'Es gibt sie, weil eine gemeinschaftliche Waschküche fortlaufend Energie und Wasser verbraucht und die Geräte gewartet werden müssen — sofern das Haus solche Einrichtungen überhaupt bereitstellt.\n\n' +
+      'Für dich als Vermieter: Die laufenden Betriebskosten sind [[umlagefaehigkeit|umlagefähig]]. Nicht umlagefähig sind die Anschaffung und die Reparatur der Maschinen — das ist Instandhaltung und deine [[werbungskosten|Werbungskosten]]. Werden die Geräte gegen Münzeinwurf oder Chip einzeln bezahlt, entfällt die Umlage, weil der Nutzer direkt zahlt.',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'werbungskosten'],
+  },
+  {
+    id: 'sonstige-betriebskosten',
+    begriff: 'Sonstige Betriebskosten (§ 2 Nr. 17 BetrKV)',
+    kategorie: 'nebenkosten',
+    synonyme: ['sonstige Betriebskosten', 'Position 17', 'Wartung Rauchmelder', 'Dachrinnenreinigung'],
+    kurz: 'Die Auffangposition 17 des Katalogs: laufende Betriebskosten, die in den Positionen 1–16 nicht genannt sind — nur umlagefähig, wenn im Mietvertrag ausdrücklich benannt.',
+    lang:
+      'Position 17 ist der Auffangtatbestand des Katalogs der [[betriebskostenverordnung]]: laufende Betriebskosten, die keine der Positionen 1–16 erfasst. Typische Beispiele sind die Wartung von Rauchmeldern, die regelmäßige Dachrinnenreinigung, die Wartung von Feuerlöschern, Lüftungs- oder Klimaanlagen oder die Pflege eines gemeinschaftlichen Schwimmbads.\n\n' +
+      'Diese offene Position gibt es, weil der Gesetzgeber nicht jede denkbare laufende Kostenart einzeln aufzählen kann — Gebäude sind zu unterschiedlich.\n\n' +
+      'Für dich als Vermieter die entscheidende Hürde: Anders als die Positionen 1–16 sind sonstige Betriebskosten *nur dann* [[umlagefaehigkeit|umlagefähig]], wenn sie im Mietvertrag konkret und einzeln benannt sind — eine pauschale Klausel „sonstige Betriebskosten" genügt nicht. Und es muss sich um *laufende* Kosten handeln: Eine einmalige Reparatur fällt nie darunter, sondern bleibt deine [[werbungskosten|Werbungskosten]].',
+    verwandt: ['betriebskostenverordnung', 'umlagefaehigkeit', 'nebenkosten', 'werbungskosten'],
+  },
   {
     id: 'co2-kostenaufteilung',
     begriff: 'CO₂-Kostenaufteilung',
