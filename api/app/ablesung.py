@@ -69,6 +69,15 @@ def verbrauch_je_zaehler(zaehler_mit_ablesungen: list, zeitraeume: list,
     verb: dict[int, Optional[float]] = {}
     reihen: dict[int, dict] = {}
     for zaehler, ablesungen in zaehler_mit_ablesungen:
+        # N120 — `direkt`: für manche Verbräuche gibt es keine Zählerstände,
+        # sondern nur den fertigen Jahreswert (E-Auto-Ladestrom, Jahres-
+        # abrechnung des Versorgers). Der eingetragene Wert IST der Verbrauch;
+        # interpoliert wird nichts. Erkennbar an der Ablesung, die auf diesen
+        # Zeitraum getaggt ist.
+        if getattr(zaehler, "typ", "") == "direkt":
+            treffer = [a for a in ablesungen if a.zeitraum_id == zid]
+            verb[zaehler.id] = treffer[-1].stand if treffer else None
+            continue
         reihe = verbrauchsreihe(ablesungen, zeitraeume)
         reihen[zaehler.id] = reihe
         eintrag = reihe.get(zid)
@@ -81,8 +90,11 @@ def verbrauch_je_zaehler(zaehler_mit_ablesungen: list, zeitraeume: list,
         gesamt = verb.get(zaehler.hauptzaehler_id)
         if gesamt is None:
             continue
+        # Direkt erfasste Geschwister zaehlen genauso ab wie gemessene — sonst
+        # bliebe der E-Auto-Strom im Rest des Hauses haengen.
         gemessen = [verb[z.id] for z, _ in zaehler_mit_ablesungen
                     if z.hauptzaehler_id == zaehler.hauptzaehler_id
-                    and z.typ == "gemessen" and verb.get(z.id) is not None]
+                    and z.typ in ("gemessen", "direkt")
+                    and verb.get(z.id) is not None]
         verb[zaehler.id] = engine.rest_verbrauch(gesamt, gemessen)
     return verb

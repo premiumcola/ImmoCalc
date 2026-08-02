@@ -283,6 +283,10 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
             "einheiten": _parse_einheiten(zae),
             "kostenblock": _kostenblock(zae.kostenart),
             "typ": zae.typ, "hauptzaehler_id": zae.hauptzaehler_id,
+            # N120 — `art` unterscheidet die Zeilen der Strom-Maske (Gesamt,
+            # Anbau, E-Auto, Scheune, Haus) genauso wie beim Wasser; `notiz`
+            # traegt die Erlaeuterung, die der Nutzer selbst hinterlegt.
+            "art": zae.art, "notiz": zae.notiz,
             "vorwert": None if not vorwert else {
                 "stand": round(vorwert["randwert"], 3),
                 "datum": vorwert["datum"].isoformat()},
