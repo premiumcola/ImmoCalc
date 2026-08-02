@@ -143,6 +143,71 @@
              line-height:1.55;word-break:break-word}
   .rluruhig{background:var(--sheet);border-radius:12px;padding:12px 13px;
             margin-top:8px}
+
+  /* ---- Live-Verknüpfungen (N133) -------------------------------------
+     Ganz oben: womit die Anwendung verbunden ist und ob die Verbindung
+     steht. Die Einstellfelder selbst bleiben, wo sie sind — jede Kachel
+     führt nur dorthin. */
+  .vkopf{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+  .vkopf h2{flex:1;margin:0}
+  .vpruef{flex:none;border:none;background:var(--sheet);color:var(--teal-d);
+          border-radius:12px;min-height:44px;padding:0 14px;cursor:pointer;
+          font:600 11px var(--mono);letter-spacing:.04em;
+          display:inline-flex;align-items:center;gap:7px;
+          box-shadow:0 1px 2px rgba(22,38,44,.06)}
+  .vpruef:hover{background:var(--teal-l)}
+  .vpruef:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .vpruef svg{width:15px;height:15px;flex:none}
+  .vpruef.laeuft svg{animation:vdreh 1.1s linear infinite}
+  @keyframes vdreh{to{transform:rotate(360deg)}}
+  .vsub{font:400 12.5px var(--body);color:var(--soft);line-height:1.45;
+        margin:0 0 13px}
+  .vgitter{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
+           margin-bottom:6px}
+  /* Ungerade Anzahl: die letzte Kachel nimmt die volle Breite — sonst
+     bliebe rechts ein Loch stehen. */
+  .vgitter > :last-child:nth-child(odd){grid-column:1/-1}
+  .vk{display:flex;flex-direction:column;gap:8px;text-align:left;
+      background:var(--sheet);border:none;border-radius:16px;padding:14px;
+      font-family:var(--body);color:inherit;text-decoration:none;
+      cursor:pointer;min-height:44px;box-shadow:0 1px 2px rgba(22,38,44,.06);
+      transition:transform .12s,box-shadow .15s}
+  .vk:hover{box-shadow:0 6px 18px -8px rgba(22,38,44,.28)}
+  .vk:active{transform:scale(.985)}
+  .vk:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .vk-kopf{display:flex;align-items:flex-start;gap:8px}
+  .vk-ic{width:38px;height:38px;border-radius:11px;background:var(--teal-l);
+         color:var(--teal-d);flex:none;display:flex;align-items:center;
+         justify-content:center}
+  .vk-ic svg{width:22px;height:22px;display:block}
+  .vk-punkt{width:10px;height:10px;border-radius:50%;background:#C2CCCE;
+            flex:none;margin:5px 0 0 auto}
+  .vk-name{display:block;font:600 14px var(--disp);letter-spacing:-.01em;
+           line-height:1.3}
+  .vk-was{display:block;font:400 11.5px var(--body);color:var(--soft);
+          line-height:1.45}
+  /* Der Stand steht unten und trägt dieselbe Farbe wie der Punkt — zweimal
+     dasselbe Signal, damit Farbe allein nicht die einzige Auskunft ist. */
+  .vk-stand{display:block;margin-top:auto;padding-top:2px;
+            font:600 10.5px var(--mono);letter-spacing:.02em;color:var(--soft);
+            line-height:1.45;overflow-wrap:anywhere}
+  .vk.gut .vk-ic{background:var(--pos-bg);color:var(--pos)}
+  .vk.gut .vk-punkt{background:var(--pos);animation:atmen 3.2s ease-in-out infinite}
+  .vk.gut .vk-stand{color:var(--pos)}
+  .vk.weg .vk-ic{background:var(--neg-bg);color:var(--neg)}
+  .vk.weg .vk-punkt{background:var(--neg)}
+  .vk.weg .vk-stand{color:var(--neg)}
+  /* „nicht eingerichtet" ist kein Fehler: gedeckt, ohne Signalfarbe. */
+  .vk.aus .vk-ic{background:#F1F4F4;color:var(--soft)}
+  .vk.laedt .vk-punkt{animation:vpuls 1.2s ease-in-out infinite}
+  @keyframes vpuls{0%,100%{opacity:.3}50%{opacity:1}}
+  /* Kurzer Hinweis auf die Zeile, zu der eine Kachel geführt hat. */
+  @keyframes vzeig{
+    0%  {box-shadow:0 0 0 0 rgba(15,110,92,.35)}
+    35% {box-shadow:0 0 0 4px rgba(15,110,92,.3)}
+    100%{box-shadow:0 0 0 0 rgba(15,110,92,0)}
+  }
+  .row.gezeigt{animation:vzeig 1.5s ease-out 2}
 </style>
 </head>
 <body>
@@ -157,6 +222,21 @@
   </div>
 
   <div class="scroll">
+    <div class="vkopf">
+      <h2 class="sec">Live-Verknüpfungen</h2>
+      <button class="vpruef" id="vPruef">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke="currentColor" stroke-width="1.7" fill="none"
+                stroke-linecap="round" stroke-linejoin="round"
+                d="M19.5 12a7.5 7.5 0 1 1-2.6-5.7"/>
+          <path stroke="currentColor" stroke-width="1.7" fill="none"
+                stroke-linecap="round" stroke-linejoin="round"
+                d="M19.5 3.5V7h-3.5"/>
+        </svg>Erneut prüfen</button>
+    </div>
+    <p class="vsub">Womit ImmoCalc arbeitet — und ob die Verbindung gerade steht.</p>
+    <div class="vgitter" id="vGitter"></div>
+
     <h2 class="sec">Dokumente</h2>
     <button class="row" id="ncRow">
       <span class="ic" id="ncIkon">⬡</span>
@@ -631,6 +711,193 @@
 import { api, esc, frage, installNav } from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
 installNav();
+
+/* ---- Live-Verknüpfungen (N133) -----------------------------------------
+   Eine Kachel je angebundenem System: was es tut und ob die Verbindung
+   steht. Drei Zustände — verbunden (grün), noch nicht eingerichtet (ruhig
+   grau, ausdrücklich kein Fehler) und gestört (rot).
+
+   Jede Kachel fragt für sich und nebenläufig; eine tote Verbindung hält die
+   anderen nicht auf. Antwortet ein Endpunkt mit 404, ist der Dienst in
+   dieser Version schlicht noch nicht da — auch das ist „nicht eingerichtet",
+   kein Fehler. */
+const VZEITGRENZE = 6000;
+
+const VSTRICH = 'stroke="currentColor" stroke-width="1.7" fill="none" '
+  + 'stroke-linecap="round" stroke-linejoin="round"';
+
+const VSYMBOLE = {
+  wolke: `<path ${VSTRICH} d="M7.6 18.5h9a3.9 3.9 0 0 0 .5-7.8 5.4 5.4 0 0
+          0-10.4 1.1 3.5 3.5 0 0 0 .9 6.7Z"/>`,
+  wallbox: `<rect ${VSTRICH} x="4.5" y="3.5" width="10.5" height="17" rx="2.5"/>
+            <path ${VSTRICH} d="M10.8 7.5 8.5 11.6h3.1l-2.3 4.4"/>
+            <path ${VSTRICH} d="M15 9.5h2.6a1.9 1.9 0 0 1 1.9 1.9V16a1.75 1.75
+            0 0 1-3.5 0v-2.2"/>`,
+  solar: `<path ${VSTRICH} d="M4 17.5h16l-2.4-7.5H6.4L4 17.5Z"/>
+          <path ${VSTRICH} d="M12 10v7.5M5.7 13.7h12.6"/>
+          <path ${VSTRICH} d="M12 3v2.4M7.4 4.6l1.2 1.8M16.6 4.6l-1.2 1.8"/>`,
+  funke: `<path ${VSTRICH} d="M11 3.5c.9 3.6 2.1 4.8 5.7 5.7-3.6.9-4.8
+          2.1-5.7 5.7-.9-3.6-2.1-4.8-5.7-5.7 3.6-.9 4.8-2.1 5.7-5.7Z"/>
+          <path ${VSTRICH} d="M17.2 14.4c.45 1.8 1.05 2.35 2.8 2.8-1.75.45-2.35
+          1-2.8 2.8-.45-1.8-1.05-2.35-2.8-2.8 1.75-.45 2.35-1 2.8-2.8Z"/>`,
+  brief: `<rect ${VSTRICH} x="3.5" y="5.5" width="17" height="13" rx="2"/>
+          <path ${VSTRICH} d="m4.6 7.2 7.4 5.4 7.4-5.4"/>`,
+};
+
+/* Ein Abruf mit knapper Frist. Nie werfend — der Aufrufer bekommt immer
+   einen Zustand zurück:
+     { da:false }            der Endpunkt gibt es (noch) nicht
+     { fehler:'…' }          keine oder eine kaputte Antwort
+     { da:true, daten:{…} }  alles gut */
+async function vHole(pfad, frist = VZEITGRENZE) {
+  const abbruch = new AbortController();
+  const uhr = setTimeout(() => abbruch.abort(), frist);
+  try {
+    const antwort = await fetch('/api' + pfad,
+      { signal: abbruch.signal, cache: 'no-store' });
+    if (antwort.status === 404) return { da: false };
+    if (!antwort.ok) return { fehler: `Antwort ${antwort.status}` };
+    return { da: true, daten: await antwort.json() };
+  } catch {
+    return { fehler: abbruch.signal.aborted ? 'keine Antwort in 6 s'
+                                            : 'nicht erreichbar' };
+  } finally {
+    clearTimeout(uhr);
+  }
+}
+
+/* Zwei Kacheln hängen am selben Schlüssel (Belegerkennung und SolarEdge).
+   Der Statusabruf pingt echt bei Anthropic — also je Durchlauf nur einmal. */
+let vGeteilt = new Map();
+function vHoleGeteilt(pfad) {
+  if (!vGeteilt.has(pfad)) vGeteilt.set(pfad, vHole(pfad));
+  return vGeteilt.get(pfad);
+}
+
+const vKurz = (adresse) => String(adresse || '')
+  .replace(/^https?:\/\//, '').replace(/\/+$/, '');
+// Modellnamen tragen ein Datum am Ende — in der Kachel nur Ballast.
+const vModell = (name) => String(name || '').replace(/-\d{8}$/, '');
+
+async function vNextcloud() {
+  const a = await vHole('/nextcloud/status');
+  if (a.fehler) return { stand: 'weg', text: a.fehler };
+  if (!a.da || !a.daten.eingerichtet)
+    return { stand: 'aus', text: 'noch nicht eingerichtet' };
+  if (!a.daten.home) return { stand: 'aus', text: 'Home-Ordner fehlt noch' };
+  return { stand: 'gut', text: `${a.daten.benutzer} · ${vKurz(a.daten.url)}` };
+}
+
+async function vWallbox() {
+  const a = await vHole('/openwb/status');
+  if (a.fehler) return { stand: 'weg', text: a.fehler };
+  if (!a.da || !a.daten.eingerichtet)
+    return { stand: 'aus', text: 'noch nicht eingerichtet' };
+  if (!a.daten.erreichbar) return { stand: 'weg', text: 'Box antwortet nicht' };
+  return { stand: 'gut', text: vKurz(a.daten.url) };
+}
+
+async function vSolaredge() {
+  const a = await vHoleGeteilt('/ki/status');
+  if (a.fehler) return { stand: 'weg', text: a.fehler };
+  if (!a.da || !a.daten.eingerichtet)
+    return { stand: 'aus', text: 'braucht den KI-Schlüssel' };
+  if (a.daten.erreichbar === false)
+    return { stand: 'weg', text: 'Bildauslese nicht erreichbar' };
+  return { stand: 'gut', text: 'Screenshot-Auslese bereit' };
+}
+
+async function vKi() {
+  const a = await vHoleGeteilt('/ki/status');
+  if (a.fehler) return { stand: 'weg', text: a.fehler };
+  if (!a.da || !a.daten.eingerichtet)
+    return { stand: 'aus', text: 'kein Schlüssel hinterlegt' };
+  if (a.daten.erreichbar === false)
+    return { stand: 'weg', text: a.daten.fehler || 'nicht erreichbar' };
+  return { stand: 'gut', text: vModell(a.daten.modell) || 'erreichbar' };
+}
+
+async function vMail() {
+  const a = await vHole('/mail/status');
+  if (a.fehler) return { stand: 'weg', text: a.fehler };
+  if (!a.da || !a.daten.verbunden)
+    return { stand: 'aus', text: 'noch kein Postfach' };
+  return { stand: 'gut', text: a.daten.absender || vKurz(a.daten.server) };
+}
+
+/* `zeile` führt zu den Feldern weiter unten auf dieser Seite, `seite` zu der
+   Seite, auf der die Verknüpfung eingerichtet und genutzt wird. */
+const VERKNUEPFUNGEN = [
+  { id: 'nextcloud', name: 'Nextcloud', ikon: 'wolke', zeile: 'ncRow',
+    was: 'Belege und Unterlagen liegen in deiner eigenen Cloud.',
+    pruefe: vNextcloud },
+  { id: 'wallbox', name: 'openWB-Wallbox', ikon: 'wallbox',
+    seite: 'tankstelle.html',
+    was: 'Ladeprotokoll des E-Autos — je Ladung Netz, Speicher und PV.',
+    pruefe: vWallbox },
+  { id: 'solaredge', name: 'SolarEdge', ikon: 'solar', zeile: 'kiRow',
+    was: 'Liest die Verbrauchsaufteilung aus dem Screenshot ab.',
+    pruefe: vSolaredge },
+  { id: 'ki', name: 'Belegerkennung', ikon: 'funke', zeile: 'kiRow',
+    was: 'Holt Datum, Betrag und Kostenart aus hochgeladenen Belegen.',
+    pruefe: vKi },
+  { id: 'mail', name: 'Mailversand', ikon: 'brief', zeile: 'mailRow',
+    was: 'Verschickt Abrechnungen über dein eigenes Postfach.',
+    pruefe: vMail },
+];
+
+const vGitter = document.getElementById('vGitter');
+const vPruef = document.getElementById('vPruef');
+
+vGitter.innerHTML = VERKNUEPFUNGEN.map(v => {
+  const inhalt = `<span class="vk-kopf">
+        <span class="vk-ic"><svg viewBox="0 0 24 24" aria-hidden="true">${
+          VSYMBOLE[v.ikon]}</svg></span>
+        <span class="vk-punkt" aria-hidden="true"></span>
+      </span>
+      <span class="vk-name">${esc(v.name)}</span>
+      <span class="vk-was">${esc(v.was)}</span>
+      <span class="vk-stand" id="vs-${v.id}">wird geprüft …</span>`;
+  return v.seite
+    ? `<a class="vk laedt" id="vk-${v.id}" href="${v.seite}">${inhalt}</a>`
+    : `<button class="vk laedt" id="vk-${v.id}"
+               data-zeile="${v.zeile}">${inhalt}</button>`;
+}).join('');
+
+function vZeige(id, ergebnis) {
+  document.getElementById(`vk-${id}`).className = 'vk ' + ergebnis.stand;
+  document.getElementById(`vs-${id}`).textContent = ergebnis.text;
+}
+
+function vAlleLaden() {
+  vGeteilt = new Map();
+  vPruef.classList.add('laeuft');
+  const laeufe = VERKNUEPFUNGEN.map(v => {
+    document.getElementById(`vk-${v.id}`).className = 'vk laedt';
+    document.getElementById(`vs-${v.id}`).textContent = 'wird geprüft …';
+    // Jede Kachel für sich: eine langsame Verbindung hält keine andere auf.
+    return v.pruefe().then(e => vZeige(v.id, e));
+  });
+  Promise.allSettled(laeufe).then(() => vPruef.classList.remove('laeuft'));
+}
+
+vPruef.addEventListener('click', vAlleLaden);
+
+/* Von der Kachel zu den Feldern: hinrollen und die Zeile kurz aufblinken
+   lassen, damit klar ist, welche gemeint war. */
+vGitter.addEventListener('click', e => {
+  const kachel = e.target.closest('[data-zeile]');
+  if (!kachel) return;
+  const zeile = document.getElementById(kachel.dataset.zeile);
+  if (!zeile) return;
+  zeile.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  zeile.classList.remove('gezeigt');
+  void zeile.offsetWidth;          // erzwingt den Neustart der Animation
+  zeile.classList.add('gezeigt');
+  setTimeout(() => zeile.classList.remove('gezeigt'), 3200);
+});
+
+vAlleLaden();
 
 const build = document.getElementById('build');
 const rnotes = document.getElementById('rnotes');
