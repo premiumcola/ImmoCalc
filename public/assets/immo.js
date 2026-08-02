@@ -118,6 +118,9 @@ export const NAV = [
   // N83/N87 — Strom/PV-Subsystem als eigene Unterseite (je Objekt/Jahr),
   // samt Amortisation des PV-Investments.
   ['PV Amortisation', 'strom.html', '⚡'],
+  // N132 — die E-Tankstelle ist ein eigener Bereich, keine Karte auf der
+  // PV-Seite: eigene Nutzer, eigener Verlauf, eigene Abrechnung.
+  ['E-Tankstelle', 'tankstelle.html', '⏻'],
   ['Eigentümer', 'eigentuemer.html', '☗'],
   // CCXL — das Immobilien-Lexikon. Steht bewusst vor „Einstellungen", damit die
   // Einstellungen der letzte Eintrag bleiben; auf dem Handy wandert es dadurch
@@ -158,7 +161,11 @@ export function installNav() {
    einzigen Stelle gepflegt wird. */
 
 const SICHTBAR = 4;                    // so viele Einträge bleiben stehen
-const ENG = window.matchMedia('(max-width: 700px)');
+// N137 - bis 999 px ist die Leiste waagerecht; ab 1000 px wird sie zur
+// Seitenleiste (immo.css). Die Grenze muss dieselbe sein: stand sie bei 700 px,
+// quetschten sich zwischen 701 und 999 px alle Eintraege nebeneinander und die
+// Beschriftungen wurden abgeschnitten ("ermietunge", "Jebenkoste").
+const ENG = window.matchMedia('(max-width: 999px)');
 
 function navAufraeumen() {
   const nav = document.querySelector('nav.nav');

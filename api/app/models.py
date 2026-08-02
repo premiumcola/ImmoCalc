@@ -821,6 +821,30 @@ class Heizverteiler(SQLModel, table=True):
     notiz: str = ""
 
 
+class PVAnlage(SQLModel, table=True):
+    """N139 — die Stammdaten der PV-Anlage, unabhängig vom Abrechnungsjahr.
+
+    Anschaffung und bereits Abgetragenes hingen bisher am `Stromjahr` und
+    änderten sich damit mit der Jahresauswahl — die Anlage wurde aber einmal
+    gekauft, nicht jedes Jahr neu. Hier stehen die Angaben, die für alle Jahre
+    gelten; `Stromjahr` behält nur, was wirklich jahresbezogen ist.
+
+    Eine Anlage je Objekt. Additive neue Tabelle (von `create_all` angelegt);
+    die alten Felder am `Stromjahr` bleiben stehen und werden ignoriert, damit
+    kein Bestand bricht."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True, unique=True)
+    anschaffung_eur: float = 0.0       # Investment der Anlage
+    # Was die Anlage abgetragen hat, bevor die erste Abrechnung begann.
+    vorlauf_ertrag_eur: float = 0.0
+    kwp: float = 0.0                   # installierte Leistung (Vergütungsstufe)
+    inbetriebnahme: Optional[date] = None
+    # Eigentümer-Anteile der Anlage als JSON {Name: Promille} — unabhängig von
+    # den Objekt-Tausendsteln, die Anlage kann anderen gehören als das Haus.
+    anteile: str = ""
+    notiz: str = ""
+
+
 class Stromjahr(SQLModel, table=True):
     """N83 — Strom/PV-Eingaben eines Objekts für ein Jahr.
 

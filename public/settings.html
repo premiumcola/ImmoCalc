@@ -788,6 +788,26 @@ async function vNextcloud() {
   return { stand: 'gut', text: `${a.daten.benutzer} · ${vKurz(a.daten.url)}` };
 }
 
+/* N138 — die Adresse der Wallbox im Heimnetz. Nur Hostname oder IP (der Server
+   ergaenzt Schema und Pfad selbst). Leer eingeben loest die Verbindung wieder. */
+async function wallboxEinrichten() {
+  let jetzt = '';
+  try {
+    const a = await vHole('/openwb/status');
+    jetzt = a.daten?.url || '';
+  } catch { /* noch nicht eingerichtet */ }
+  const eingabe = prompt(
+    'Adresse der openWB im Heimnetz (Hostname oder IP, z. B. 192.168.178.61).\n'
+    + 'Leer lassen entfernt die Verbindung.', jetzt);
+  if (eingabe === null) return;
+  try {
+    await api('/openwb/adresse', { method: 'POST', body: { url: eingabe.trim() } });
+    vAlleLaden();
+  } catch (fehler) {
+    alert('Konnte nicht gespeichert werden: ' + (fehler.message || fehler));
+  }
+}
+
 async function vWallbox() {
   const a = await vHole('/openwb/status');
   if (a.fehler) return { stand: 'weg', text: a.fehler };
@@ -831,8 +851,11 @@ const VERKNUEPFUNGEN = [
   { id: 'nextcloud', name: 'Nextcloud', ikon: 'wolke', zeile: 'ncRow',
     was: 'Belege und Unterlagen liegen in deiner eigenen Cloud.',
     pruefe: vNextcloud },
+  // N138 — die Wallbox wird HIER eingerichtet. Der Verweis auf die Tankstellen-
+  // seite lief ins Leere: dort gibt es (noch) kein Adressfeld, die Kachel war
+  // damit nicht einzurichten.
   { id: 'wallbox', name: 'openWB-Wallbox', ikon: 'wallbox',
-    seite: 'tankstelle.html',
+    tun: wallboxEinrichten,
     was: 'Ladeprotokoll des E-Autos — je Ladung Netz, Speicher und PV.',
     pruefe: vWallbox },
   { id: 'solaredge', name: 'SolarEdge', ikon: 'solar', zeile: 'kiRow',
@@ -858,10 +881,12 @@ vGitter.innerHTML = VERKNUEPFUNGEN.map(v => {
       <span class="vk-name">${esc(v.name)}</span>
       <span class="vk-was">${esc(v.was)}</span>
       <span class="vk-stand" id="vs-${v.id}">wird geprüft …</span>`;
-  return v.seite
-    ? `<a class="vk laedt" id="vk-${v.id}" href="${v.seite}">${inhalt}</a>`
-    : `<button class="vk laedt" id="vk-${v.id}"
-               data-zeile="${v.zeile}">${inhalt}</button>`;
+  if (v.seite)
+    return `<a class="vk laedt" id="vk-${v.id}" href="${v.seite}">${inhalt}</a>`;
+  // N138 — `tun` richtet die Verknuepfung an Ort und Stelle ein, statt auf eine
+  // Seite zu verweisen, die das Feld gar nicht hat.
+  return `<button class="vk laedt" id="vk-${v.id}"${v.tun
+    ? ` data-tun="${v.id}"` : ` data-zeile="${v.zeile}"`}>${inhalt}</button>`;
 }).join('');
 
 function vZeige(id, ergebnis) {
@@ -886,6 +911,11 @@ vPruef.addEventListener('click', vAlleLaden);
 /* Von der Kachel zu den Feldern: hinrollen und die Zeile kurz aufblinken
    lassen, damit klar ist, welche gemeint war. */
 vGitter.addEventListener('click', e => {
+  const tun = e.target.closest('[data-tun]');
+  if (tun) {
+    const v = VERKNUEPFUNGEN.find(x => x.id === tun.dataset.tun);
+    if (v?.tun) { e.preventDefault(); return v.tun(); }
+  }
   const kachel = e.target.closest('[data-zeile]');
   if (!kachel) return;
   const zeile = document.getElementById(kachel.dataset.zeile);
