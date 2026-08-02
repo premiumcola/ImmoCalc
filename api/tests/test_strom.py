@@ -697,6 +697,21 @@ def test_verlauf_vorlauf_zaehlt_einmalig_aufs_erste_jahr(client):
     assert v["prognose"]["schnitt"] == 1000.0
 
 
+def test_verlauf_liest_die_anschaffung_aus_den_stammdaten(client):
+    """N139 — der Verlauf zieht Anschaffung und Vorlauf aus den Stammdaten,
+    nicht mehr aus dem Strom-Jahr."""
+    slug = _pv_objekt(client, "PV-Stammverlauf")
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"anschaffung_eur": 12000, "vorlauf_ertrag_eur": 2000})
+    _position(client, _zeitraum_id(client, slug, 2024), _EINSPEISUNG, 1000.0)
+
+    v = _verlauf(client, slug)
+    assert v["anschaffung"] == 12000.0
+    assert v["vorlauf"] == 2000.0
+    assert v["jahre"][0]["summe"] == 3000.0        # 2000 Vorlauf + 1000
+    assert v["rest"] == 9000.0
+
+
 def test_verlauf_offene_position_zaehlt_noch_nicht(client):
     """Eine Position ohne Betrag (Status „offen") ist noch kein Geldfluss —
     genau wie in der Abrechnung selbst."""
@@ -708,3 +723,144 @@ def test_verlauf_offene_position_zaehlt_noch_nicht(client):
     assert _jahr(_verlauf(client, slug), 2024)["einspeisung"] == 0.0
     client.patch(f"/api/positionen/{pid}", json={"status": "erledigt"})
     assert _jahr(_verlauf(client, slug), 2024)["einspeisung"] == 300.0
+
+
+# ---------------------------------------------------------------------------
+# N139 — Stammdaten der PV-Anlage: was einmal gilt, nicht jedes Jahr neu.
+#
+# Anschaffung, bereits Abgetragenes, Leistung und die Eigentümer-Tausendstel
+# hingen am `Stromjahr` und wechselten mit der Jahresauswahl. Sie stehen jetzt
+# in `PVAnlage`; die alten Spalten bleiben stehen und werden einmalig
+# übernommen, damit kein Bestand verloren geht.
+# ---------------------------------------------------------------------------
+
+def _stammdaten(c, slug: str) -> dict:
+    antwort = c.get(f"/api/objekte/{slug}/pv/stammdaten")
+    assert antwort.status_code == 200, antwort.text
+    return antwort.json()
+
+
+def test_stammdaten_anlegen_lesen_aendern(client):
+    """Leer, dann gefüllt, dann geändert — ein Satz je Objekt."""
+    slug = _neues_objekt(client)
+
+    leer = _stammdaten(client, slug)
+    assert leer["anschaffung_eur"] == 0.0
+    assert leer["kwp"] == 0.0
+    assert leer["inbetriebnahme"] is None
+    assert leer["anteile_promille"] == {} and leer["hinweise"] == []
+
+    gespeichert = client.put(f"/api/objekte/{slug}/pv/stammdaten", json={
+        "anschaffung_eur": 36000, "vorlauf_ertrag_eur": 1500,
+        "kwp": 19.44, "inbetriebnahme": "2021-06-01",
+        "notiz": "Aufdach Süd"}).json()
+    assert gespeichert["anschaffung_eur"] == 36000.0
+    assert gespeichert["kwp"] == 19.44
+    assert gespeichert["inbetriebnahme"] == "2021-06-01"
+
+    # Erneut lesen: alles da.
+    gelesen = _stammdaten(client, slug)
+    assert gelesen["vorlauf_ertrag_eur"] == 1500.0
+    assert gelesen["notiz"] == "Aufdach Süd"
+
+    # Ändern, ohne die übrigen Felder mitzuschicken — sie bleiben stehen.
+    client.put(f"/api/objekte/{slug}/pv/stammdaten", json={"kwp": 20.0})
+    danach = _stammdaten(client, slug)
+    assert danach["kwp"] == 20.0
+    assert danach["anschaffung_eur"] == 36000.0
+    assert danach["notiz"] == "Aufdach Süd"
+
+
+def test_stammdaten_uebernehmen_bestand_aus_dem_strom_jahr_einmalig(client):
+    """Der Bestand des Nutzers steht am Strom-Jahr (36.000 € und 19,44 kWp).
+    Er wird EINMALIG übernommen — danach gilt nur noch, was in den Stammdaten
+    steht, auch wenn ein Jahr etwas anderes trägt."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/strom/2023", json={
+        "anschaffung_eur": 36000, "pv_kwp": 19.44, "vorlauf_ertrag_eur": 2500,
+        "pv_anteile": '{"Roland": 833.3, "Marvin": 166.7}'})
+
+    uebernommen = _stammdaten(client, slug)
+    assert uebernommen["anschaffung_eur"] == 36000.0
+    assert uebernommen["kwp"] == 19.44
+    assert uebernommen["vorlauf_ertrag_eur"] == 2500.0
+    assert uebernommen["anteile_promille"] == {"Roland": 833.3, "Marvin": 166.7}
+
+    # Ab jetzt sind die Stammdaten die Wahrheit: eine Korrektur überlebt, und
+    # ein Jahr mit abweichender Anschaffung überschreibt sie nicht mehr.
+    client.put(f"/api/objekte/{slug}/pv/stammdaten", json={"anschaffung_eur": 34000})
+    client.put(f"/api/objekte/{slug}/strom/2024", json={"anschaffung_eur": 99999,
+                                                       "pv_kwp": 5.0})
+    danach = _stammdaten(client, slug)
+    assert danach["anschaffung_eur"] == 34000.0
+    assert danach["kwp"] == 19.44
+
+    # Das alte Feld am Jahr bleibt unangetastet stehen (nie löschen).
+    assert client.get(f"/api/objekte/{slug}/strom/2023").json()[
+        "anschaffung_eur"] == 36000.0
+
+
+def test_jahreswechsel_aendert_die_stammdaten_nicht(client):
+    """Der Fehler, den N139 behebt: oben ein anderes Jahr wählen ließ die
+    Anschaffung verschwinden. Die Stammdaten kennen kein Jahr."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"anschaffung_eur": 36000, "kwp": 19.44})
+    vorher = _stammdaten(client, slug)
+
+    # Durch die Jahre blättern, wie es die Maske tut (GET legt leere Sätze an).
+    for jahr in (2021, 2022, 2023, 2024, 2025):
+        client.get(f"/api/objekte/{slug}/strom/{jahr}")
+        client.put(f"/api/objekte/{slug}/strom/{jahr}",
+                   json={"pv_produktion_kwh": 1000 * (jahr - 2020)})
+        assert _stammdaten(client, slug) == vorher
+
+    # Und die Rechnung eines beliebigen Jahres kennt die Anschaffung trotzdem.
+    r = client.get(f"/api/objekte/{slug}/strom/2022/rechnung").json()
+    assert r["pv"]["anschaffung"] == 36000.0
+
+
+def test_stammdaten_anteile_als_promille_mit_hinweis(client):
+    """Die Anteile werden in Tausendsteln vergeben. Ergeben sie nicht 1000 ‰,
+    gibt es einen ruhigen Hinweis — gespeichert wird trotzdem."""
+    slug = _neues_objekt(client)
+
+    krumm = client.put(f"/api/objekte/{slug}/pv/stammdaten", json={
+        "anteile": '{"Roland": 800, "Marvin": 100}'}).json()
+    assert krumm["anteile_summe"] == 900.0
+    assert krumm["anteile_promille"] == {"Roland": 800.0, "Marvin": 100.0}
+    assert len(krumm["hinweise"]) == 1
+    assert "1000" in krumm["hinweise"][0] and "100" in krumm["hinweise"][0]
+    # Ein Hinweis, keine Sperre: der Wert steht wirklich in der Datenbank.
+    assert _stammdaten(client, slug)["anteile_summe"] == 900.0
+
+    # 833,3 + 166,7 = 1000,0 — geht auf, kein Hinweis.
+    rund = client.put(f"/api/objekte/{slug}/pv/stammdaten", json={
+        "anteile": '{"Roland": 833.3, "Marvin": 166.7}'}).json()
+    assert rund["anteile_summe"] == 1000.0
+    assert rund["hinweise"] == []
+
+    # Und die Verteilung des Ertrags folgt genau diesen Tausendsteln.
+    client.put(f"/api/objekte/{slug}/strom/2025",
+               json={"solar_kwh": 1000, "solar_preis": 1.0})
+    r = client.get(f"/api/objekte/{slug}/strom/2025/rechnung").json()
+    assert {x["anteil"] for x in r["eigentuemer"]} == {"Roland", "Marvin"}
+
+
+def test_pv_eigentuemer_bietet_die_vorhandenen_personen_an(client):
+    """Zugeordnet wird aus derselben Personenliste wie überall; der
+    Objekt-Anteil steht als Vorschlag daneben, die gesetzten PV-Anteile kommen
+    aus den Stammdaten."""
+    slug = _neues_objekt(client)
+    eid = client.post("/api/eigentuemer",
+                      json={"name": "Roland", "email": "r@example.org"}).json()["id"]
+    client.post(f"/api/objekte/{slug}/anteile",
+                json={"eigentuemer_id": eid, "promille": 1000})
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"anteile": '{"Roland": 1000}'})
+
+    d = client.get(f"/api/objekte/{slug}/pv/eigentuemer").json()
+    roland = next(p for p in d["personen"] if p["name"] == "Roland")
+    assert roland["am_objekt"] == 1000.0
+    assert d["pv_anteile"] == {"Roland": 1000.0}
+    assert d["anteile_summe"] == 1000.0 and d["hinweise"] == []

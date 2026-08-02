@@ -8,6 +8,12 @@ Routen-Reihenfolge: `/objekte/{slug}/strom/…` steht vor dem Stammdaten-Fänger
 `/objekte/{slug}/{bereich}` — der Router wird in `main.py` entsprechend früh
 eingehängt (analog zu `zaehler`/`heizoel`/`waerme`).
 
+N139 — was zur Anlage gehört und nicht zum Jahr (Anschaffung, bereits
+Abgetragenes, Leistung, Eigentümer-Anteile), steht in `PVAnlage` und wird über
+`…/pv/stammdaten` gepflegt. Die gleichnamigen Felder am `Stromjahr` bleiben
+stehen (nie umbenennen, nie entfernen), werden aber nur noch für die einmalige
+Übernahme des Bestands gelesen.
+
 N89 — welche Einheiten zu welcher Verbrauchsgruppe gehören, kommt entweder als
 Abfrageparameter (`?wg=EG,1.OG&buero=Studio`) oder aus dem gespeicherten Feld
 `Stromjahr.gruppen_einheiten` (JSON {Gruppe: "A,B"}), sobald es das gibt; der
@@ -26,7 +32,7 @@ from .. import strom
 from ..db import get_session
 from ..deps import objekt_holen
 from ..models import (Anteil, Eigentuemer, Kostenart, Kostenposition, Objekt,
-                      Stromjahr, Tankladung, Zeitraum)
+                      PVAnlage, Stromjahr, Tankladung, Zeitraum)
 from .objekte import zeitraum_label_jahr
 
 log = logging.getLogger("immocalc")
@@ -46,7 +52,17 @@ _FELDER = (
     # abgetragen hat: ein einmaliger Betrag, der auf das erste erfasste Jahr
     # zählt und nicht über die Jahre verteilt wird.
     "vorlauf_ertrag_eur",
+    # N124 — die E-Auto-Ladungen aus dem Gesamtverbrauch herausrechnen: welche
+    # Einheit sie trägt und wie viel davon Netz bzw. eigene Anlage war
+    # (`strombloecke.verteile`). Von Hand eingetragen, solange die Wallbox
+    # nichts liefert.
+    "eauto_einheit", "eauto_extern_kwh", "eauto_eigen_kwh",
 )
+# N139 — `anschaffung_eur`, `pv_kwp`, `pv_anteile` und `vorlauf_ertrag_eur`
+# gehören zur Anlage, nicht zum Jahr. Sie stehen weiter in der Liste (die
+# Spalten bleiben, der PUT nimmt sie noch an), gepflegt werden sie aber über
+# `…/pv/stammdaten` — von dort kommen auch die Werte für die Rechnung
+# (siehe `_STAMM_AUS_JAHR` und `_eingaben`).
 
 # N89 — Spalte für die Zuordnung Gruppe → Einheiten. Sie ist im Datenmodell noch
 # nicht angelegt; solange sie fehlt, arbeitet der Endpunkt rein parameterbasiert
@@ -98,6 +114,161 @@ def _hole_oder_neu(session: Session, objekt_id: int, jahr: int) -> Stromjahr:
     return sj or Stromjahr(objekt_id=objekt_id, jahr=jahr)
 
 
+# --------------------------------------------------------------------------
+# N139 — Stammdaten der PV-Anlage: was einmal gilt, nicht jedes Jahr neu.
+#
+# Anschaffung, bereits Abgetragenes, Leistung und die Eigentümer-Anteile hingen
+# bisher am `Stromjahr` und wechselten damit mit der Jahresauswahl — die Anlage
+# wurde aber einmal gekauft, nicht jedes Jahr neu. Sie stehen jetzt in
+# `PVAnlage` (ein Satz je Objekt). Die alten Spalten am `Stromjahr` bleiben
+# stehen und werden ignoriert; ihre Werte werden einmalig übernommen, damit
+# kein Bestand verloren geht.
+# --------------------------------------------------------------------------
+
+# Stammdatenfeld → altes Feld am `Stromjahr`. Nur für die einmalige Übernahme.
+_STAMM_AUS_JAHR = {
+    "anschaffung_eur": "anschaffung_eur",
+    "vorlauf_ertrag_eur": "vorlauf_ertrag_eur",
+    "kwp": "pv_kwp",
+    "anteile": "pv_anteile",
+}
+
+_VOLLE_PROMILLE = 1000.0
+# Rundungsluft: 833,3 + 166,7 = 1000,0 soll als „geht auf" gelten.
+_PROMILLE_TOLERANZ = 0.5
+
+
+class StammdatenIn(BaseModel):
+    """Die Stammdaten der PV-Anlage.
+
+    Alle Felder optional: `None` heißt „nicht mitgeschickt" und lässt den
+    gespeicherten Wert stehen. Das ist die Lehre aus N108 (Fund 2) — ein
+    Pflichtfeld mit Default löscht bei jedem Teil-Speichern die übrigen
+    Angaben."""
+    anschaffung_eur: float | None = None
+    vorlauf_ertrag_eur: float | None = None
+    kwp: float | None = None
+    inbetriebnahme: date | None = None
+    anteile: str | None = None        # JSON {Name: ‰}
+    notiz: str | None = None
+
+
+def _anteile_dict(roh: str | None) -> dict[str, float]:
+    """Die Anteile als {Name: ‰}. Unlesbares oder Leeres ergibt {} — die
+    Vorgabe 5/6 + 1/6 greift dann weiter unten."""
+    if not roh:
+        return {}
+    try:
+        d = json.loads(roh) if isinstance(roh, str) else dict(roh)
+        return {str(k): float(v) for k, v in d.items() if float(v) > 0}
+    except (ValueError, TypeError, AttributeError):
+        log.warning("PV-Anteile unlesbar — Vorgabe 5/6+1/6")
+        return {}
+
+
+def _anteile_tupel(anlage: PVAnlage) -> tuple[tuple[str, float], ...]:
+    """Die Anteile in der Form, die `strom.verteile_eigentuemer` erwartet."""
+    anteile = _anteile_dict(anlage.anteile)
+    return tuple(anteile.items()) if anteile else strom.EIGENTUEMER_ANTEILE
+
+
+def _uebernahme_aus_jahren(session: Session, objekt_id: int) -> dict:
+    """Die Bestandswerte aus den Strom-Jahren einsammeln — je Feld der zuletzt
+    erfasste gefüllte Wert (die Angaben wanderten nicht jedes Jahr mit, oft
+    steht die Anschaffung nur an einem einzigen Jahr)."""
+    werte: dict[str, object] = {}
+    for sj in session.exec(select(Stromjahr)
+                           .where(Stromjahr.objekt_id == objekt_id)
+                           .order_by(Stromjahr.jahr)).all():
+        for stamm, alt in _STAMM_AUS_JAHR.items():
+            wert = getattr(sj, alt, None)
+            if wert:
+                werte[stamm] = wert
+    return werte
+
+
+def _stammdaten(session: Session, objekt_id: int) -> PVAnlage:
+    """Die Stammdaten eines Objekts — bei Bedarf angelegt.
+
+    Gibt es noch keinen Satz, werden die Bestandswerte **einmalig** aus den
+    Strom-Jahren übernommen und festgeschrieben. Danach gilt nur noch, was hier
+    steht: ein Jahreswechsel ändert die Stammdaten nicht mehr. Ist nichts zu
+    übernehmen, kommt ein leerer, ungespeicherter Satz zurück — erst der PUT
+    legt ihn wirklich an."""
+    anlage = session.exec(select(PVAnlage)
+                          .where(PVAnlage.objekt_id == objekt_id)).first()
+    if anlage:
+        return anlage
+    anlage = PVAnlage(objekt_id=objekt_id)
+    uebernommen = _uebernahme_aus_jahren(session, objekt_id)
+    for feld, wert in uebernommen.items():
+        setattr(anlage, feld, wert)
+    if uebernommen:
+        session.add(anlage)
+        session.commit()
+        session.refresh(anlage)
+        log.info("PV-Stammdaten aus den Strom-Jahren übernommen (Objekt %s): %s",
+                 objekt_id, ", ".join(sorted(uebernommen)))
+    return anlage
+
+
+def _promille_text(wert: float) -> str:
+    """Eine ‰-Zahl deutsch und ohne überflüssige Nullen."""
+    return f"{wert:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _anteile_hinweise(anteile: dict[str, float], summe: float) -> list[str]:
+    """Ein ruhiger Hinweis, wenn die vergebenen Anteile nicht 1000 ‰ ergeben.
+    Ein Hinweis, keine Sperre — gespeichert wird trotzdem."""
+    if not anteile or abs(summe - _VOLLE_PROMILLE) <= _PROMILLE_TOLERANZ:
+        return []
+    rest = round(_VOLLE_PROMILLE - summe, 1)
+    fehlt = (f"{_promille_text(abs(rest))} ‰ "
+             + ("fehlen noch" if rest > 0 else "zu viel"))
+    return [f"Die vergebenen Anteile ergeben {_promille_text(summe)} ‰ "
+            f"statt 1000 ‰ — {fehlt}."]
+
+
+def _zeige_stammdaten(a: PVAnlage) -> dict:
+    """Die Stammdaten als JSON, inklusive der aufgelösten Anteile und der
+    Hinweise zur Anteilssumme."""
+    anteile = _anteile_dict(a.anteile)
+    summe = round(sum(anteile.values()), 3)
+    return {
+        "anschaffung_eur": a.anschaffung_eur,
+        "vorlauf_ertrag_eur": a.vorlauf_ertrag_eur,
+        "kwp": a.kwp,
+        "inbetriebnahme": a.inbetriebnahme.isoformat() if a.inbetriebnahme else None,
+        "anteile": a.anteile or "",
+        "anteile_promille": anteile,
+        "anteile_summe": summe,
+        "notiz": a.notiz,
+        "hinweise": _anteile_hinweise(anteile, summe),
+    }
+
+
+@router.get("/objekte/{slug}/pv/stammdaten")
+def stammdaten_lesen(slug: str, session: Session = Depends(get_session),
+                     o: Objekt = Depends(objekt_holen)) -> dict:
+    """N139 — die Stammdaten der PV-Anlage lesen (jahresunabhängig)."""
+    return _zeige_stammdaten(_stammdaten(session, o.id))
+
+
+@router.put("/objekte/{slug}/pv/stammdaten")
+def stammdaten_speichern(slug: str, data: StammdatenIn,
+                         session: Session = Depends(get_session),
+                         o: Objekt = Depends(objekt_holen)) -> dict:
+    """N139 — die Stammdaten der PV-Anlage speichern (anlegen oder ändern).
+    Nicht mitgeschickte Felder bleiben unverändert."""
+    anlage = _stammdaten(session, o.id)
+    for feld, wert in data.model_dump(exclude_none=True).items():
+        setattr(anlage, feld, wert)
+    session.add(anlage)
+    session.commit()
+    session.refresh(anlage)
+    return _zeige_stammdaten(anlage)
+
+
 def _gespeicherte_zuordnung(sj: Stromjahr) -> dict[str, str]:
     """Die gespeicherte Zuordnung Gruppe → Einheiten als {Gruppe: "A,B"}.
 
@@ -130,16 +301,26 @@ def _merke_zuordnung(sj: Stromjahr, wg: str, buero: str) -> None:
 
 
 def _eingaben(sj: Stromjahr, wg: str | None = None,
-              buero: str | None = None) -> dict:
+              buero: str | None = None,
+              anlage: PVAnlage | None = None) -> dict:
     """Die Engine-Eingaben eines Strom-Jahres als dict — Spaltenwerte plus die
     Einheiten-Zuordnung. Ein gesetzter Abfrageparameter hat Vorrang vor der
-    gespeicherten Zuordnung."""
+    gespeicherten Zuordnung.
+
+    N139 — was zur Anlage gehört (Anschaffung, Leistung, Anteile), kommt aus den
+    Stammdaten und überschreibt die alten Jahresfelder; ist dort nichts
+    hinterlegt, gilt weiterhin der Jahreswert."""
     gespeichert = _gespeicherte_zuordnung(sj)
     daten = {f: getattr(sj, f) for f in _FELDER}
     daten["wg_einheiten"] = wg if wg is not None \
         else gespeichert.get(strom.GRUPPE_WG, "")
     daten["buero_einheiten"] = buero if buero is not None \
         else gespeichert.get(strom.GRUPPE_BUERO, "")
+    if anlage is not None:
+        for stamm, jahresfeld in _STAMM_AUS_JAHR.items():
+            wert = getattr(anlage, stamm)
+            if wert:
+                daten[jahresfeld] = wert
     return daten
 
 
@@ -197,7 +378,8 @@ def rechnung(slug: str, jahr: int, wg: str | None = _WG_PARAM,
 
     `?wg=EG,1.OG&buero=Studio` ordnet die Einheiten den Gruppen zu; ohne die
     Angabe bleibt der Block `einheiten` leer."""
-    return strom.rechne(_eingaben(_hole_oder_neu(session, o.id, jahr), wg, buero))
+    return strom.rechne(_eingaben(_hole_oder_neu(session, o.id, jahr), wg, buero,
+                                  _stammdaten(session, o.id)))
 
 
 @router.get("/objekte/{slug}/strom/{jahr}/nk-positionen")
@@ -222,20 +404,17 @@ def pv_amortisation(slug: str, session: Session = Depends(get_session),
 
     Je Jahr wird der Investitions-Ertrag gerechnet (was Mieter für PV-Strom
     zahlen + Einspeisevergütung + Tank-Erlös) und kumuliert gegen die
-    Anschaffung gestellt. Die Anschaffung ist die zuletzt erfasste (sie ändert
-    sich nicht jährlich). Zusätzlich die Verteilung des kumulierten Ertrags auf
-    die PV-Eigentümer nach ihren eigenen Tausendsteln."""
-    jahre = session.exec(
-        select(Stromjahr).where(Stromjahr.objekt_id == o.id)
-        .order_by(Stromjahr.jahr)).all()
-    reihe, anschaffung, anteile = [], 0.0, strom.EIGENTUEMER_ANTEILE
-    for sj in jahre:
-        r = strom.rechne(sj)
-        reihe.append({"jahr": sj.jahr, "ertrag": r["pv"]["investitions_ertrag"]})
-        if sj.anschaffung_eur:
-            anschaffung = sj.anschaffung_eur
-        anteile = strom._pv_anteile(sj)
-    a = strom.amortisation(reihe, anschaffung)
+    Anschaffung gestellt. Anschaffung und Anteile kommen aus den Stammdaten der
+    Anlage (N139) — sie hängen nicht am Jahr. Zusätzlich die Verteilung des
+    kumulierten Ertrags auf die PV-Eigentümer nach ihren eigenen Tausendsteln."""
+    anlage = _stammdaten(session, o.id)
+    reihe = [{"jahr": sj.jahr,
+              "ertrag": strom.rechne(sj)["pv"]["investitions_ertrag"]}
+             for sj in session.exec(
+                 select(Stromjahr).where(Stromjahr.objekt_id == o.id)
+                 .order_by(Stromjahr.jahr)).all()]
+    anteile = _anteile_tupel(anlage)
+    a = strom.amortisation(reihe, anlage.anschaffung_eur)
     a["eigentuemer"] = strom.verteile_eigentuemer(a["kumuliert"], anteile)
     return a
 
@@ -307,21 +486,12 @@ def _ertraege_je_jahr(session: Session, objekt_id: int) -> dict[int, dict]:
 def _anlage(session: Session, objekt_id: int) -> tuple[float, float, tuple]:
     """Anschaffung, Vorlauf-Ertrag und PV-Anteile der Anlage.
 
-    Alle drei stehen am Strom-Jahr, ändern sich aber nicht jährlich — es gilt
-    der zuletzt erfasste Wert. Der Vorlauf ist, was die Anlage VOR der ersten
-    Nebenkostenabrechnung schon abgetragen hat (N127): ein einmaliger Betrag,
-    kein jährlicher."""
-    anschaffung, vorlauf = 0.0, 0.0
-    anteile = strom.EIGENTUEMER_ANTEILE
-    for sj in session.exec(select(Stromjahr)
-                           .where(Stromjahr.objekt_id == objekt_id)
-                           .order_by(Stromjahr.jahr)).all():
-        if sj.anschaffung_eur:
-            anschaffung = sj.anschaffung_eur
-        if getattr(sj, "vorlauf_ertrag_eur", 0.0):
-            vorlauf = sj.vorlauf_ertrag_eur
-        anteile = strom._pv_anteile(sj)
-    return anschaffung, vorlauf, anteile
+    N139 — alle drei kommen aus den Stammdaten (`PVAnlage`), nicht mehr aus dem
+    Strom-Jahr: die Anlage wurde einmal gekauft, nicht jedes Jahr neu. Der
+    Vorlauf ist, was die Anlage VOR der ersten Nebenkostenabrechnung schon
+    abgetragen hat (N127): ein einmaliger Betrag, kein jährlicher."""
+    a = _stammdaten(session, objekt_id)
+    return a.anschaffung_eur or 0.0, a.vorlauf_ertrag_eur or 0.0, _anteile_tupel(a)
 
 
 # Wie weit die Prognose höchstens rechnet. Trägt eine Anlage nur ein paar Euro
@@ -520,15 +690,18 @@ def ladung_loeschen(lid: int, session: Session = Depends(get_session)) -> dict:
 
 
 @router.get("/objekte/{slug}/pv/eigentuemer")
-def pv_eigentuemer(slug: str, jahr: int | None = None,
-                   session: Session = Depends(get_session),
+def pv_eigentuemer(slug: str, session: Session = Depends(get_session),
                    o: Objekt = Depends(objekt_holen)) -> dict:
     """N112 — die Personen zur Auswahl für die PV-Anteile.
 
     Die PV-Anlage ist ein eigenes Investment mit eigenen Tausendsteln; gewählt
     wird aber aus derselben Personenliste wie überall (`Eigentuemer`). Geliefert
     werden alle Personen, die am Objekt beteiligten zuerst und mit ihrem
-    Objekt-Anteil als Vorschlag — plus die aktuell gesetzten PV-Anteile."""
+    Objekt-Anteil als Vorschlag.
+
+    N139 — die gesetzten Anteile kommen aus den Stammdaten der Anlage, nicht
+    mehr aus einem Jahr; dazu ihre Summe und der Hinweis, wenn sie nicht
+    1000 ‰ ergibt."""
     alle = session.exec(select(Eigentuemer).order_by(Eigentuemer.name)).all()
     am_objekt = {a.eigentuemer_id: a.promille for a in session.exec(
         select(Anteil).where(Anteil.objekt_id == o.id)).all()}
@@ -536,11 +709,8 @@ def pv_eigentuemer(slug: str, jahr: int | None = None,
         ({"id": e.id, "name": e.name, "email": e.email,
           "am_objekt": am_objekt.get(e.id)} for e in alle),
         key=lambda p: (p["am_objekt"] is None, p["name"]))
-    gesetzt: dict[str, float] = {}
-    if jahr is not None:
-        sj = _hole_oder_neu(session, o.id, jahr)
-        try:
-            gesetzt = json.loads(sj.pv_anteile) if sj.pv_anteile else {}
-        except (ValueError, TypeError):
-            gesetzt = {}
-    return {"personen": personen, "pv_anteile": gesetzt}
+    gesetzt = _anteile_dict(_stammdaten(session, o.id).anteile)
+    summe = round(sum(gesetzt.values()), 3)
+    return {"personen": personen, "pv_anteile": gesetzt,
+            "anteile_summe": summe,
+            "hinweise": _anteile_hinweise(gesetzt, summe)}

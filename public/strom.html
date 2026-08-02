@@ -112,6 +112,40 @@
   .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;
              padding:22px 8px}
 
+  /* N139 — die Karte, die sich auf das oben gewählte Jahr bezieht, sagt das
+     auch: ein ruhiger Chip neben der Überschrift statt eines Satzes. */
+  .jahrchip{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+            color:var(--teal-d);background:var(--teal-l);border-radius:999px;
+            padding:4px 10px;white-space:nowrap}
+
+  /* Verweis auf eine andere Seite (E-Tankstelle verwalten). */
+  .verweis{display:inline-flex;align-items:center;gap:8px;box-sizing:border-box;
+           min-height:44px;padding:11px 14px;margin:2px 0 14px;
+           background:var(--paper);border-radius:12px;text-decoration:none;
+           font:600 12.5px var(--body);color:var(--teal-d)}
+  .verweis:hover{background:var(--teal-l)}
+
+  /* N139 — PV-Eigentümer: je Person eine Zeile, Haken links, Tausendstel
+     rechts. Die Zeile ist 44 px hoch, damit sie sich am iPhone treffen lässt. */
+  .pa-zeile{display:flex;align-items:center;gap:12px;min-height:44px;
+            padding:9px 12px;margin-bottom:8px;background:var(--paper);
+            border-radius:12px}
+  .pa-zeile input[type=checkbox]{width:20px;height:20px;flex:none;margin:0;
+            accent-color:var(--teal)}
+  .pa-name{flex:1;min-width:0;font:600 13px var(--disp);letter-spacing:-.01em;
+           color:var(--ink);cursor:pointer}
+  .pa-obj{display:block;font:400 11px var(--body);color:var(--soft);
+          letter-spacing:0;margin-top:3px}
+  .pa-wert{width:92px;flex:none;text-align:right}
+  .pa-summe{display:flex;align-items:baseline;justify-content:space-between;
+            gap:12px;padding:4px 12px 0;font:500 12.5px var(--body);
+            color:var(--soft)}
+  .pa-summe b{font:700 15px var(--disp);letter-spacing:-.02em;color:var(--ink)}
+  /* Ein Hinweis, keine Sperre: gespeichert wird trotzdem. */
+  .pa-hinweis{background:var(--amber-bg);color:var(--amber);border-radius:12px;
+              padding:10px 13px;margin:10px 0 2px;line-height:1.5;
+              font:500 12.5px var(--body)}
+
   /* ---- N127 Verlauf: Grafik, Legende, Jahrestabelle ---------------------- */
   .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible;
          margin:2px auto 10px}
@@ -186,7 +220,7 @@
    (5/6 + 1/6). Gerechnet wird im Backend (app/strom.py); diese Seite pflegt die
    Eingaben und zeigt das Ergebnis live. Externe Stromlieferanten-Belege laufen
    weiter normal über die Belegeingabe — die sind hier nicht gemeint. */
-import { api, eur, esc, melde, installNav } from './assets/immo.js';
+import { api, eur, esc, melde, promille, installNav } from './assets/immo.js';
 installNav();
 import { auswahlfeld } from './assets/auswahl.js';
 
@@ -195,89 +229,55 @@ const inhalt = document.getElementById('inhalt');
 const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' kWh';
 
 /* Die Eingabefelder — dieselbe Liste, aus der die Maske gebaut und die Werte
-   ausgelesen werden. `s` = Nachkommastellen im Eingabefeld (step). */
-const F_PV = [
+   ausgelesen werden. Der dritte Eintrag ist die Einheit, der vierte der `step`.
+
+   N139 trennt zwei Welten: STAMMDATEN gehören der Anlage (`data-stamm`,
+   gespeichert unter /pv/stammdaten, jahresunabhängig), JAHRESWERTE gehören dem
+   oben gewählten Jahr (`data-feld`, gespeichert unter /strom/{jahr}). Die
+   Anlage wurde einmal gekauft, nicht jedes Jahr neu. */
+const F_STAMM = [
+  ['anschaffung_eur', 'Anschaffung (Investment)', '€', 1],
+  ['vorlauf_ertrag_eur', 'Bereits abgetragen', '€', 1],
+  ['kwp', 'Anlagenleistung', 'kWp', 0.01],
+];
+const F_JAHR = [
   ['pv_produktion_kwh', 'PV-Produktion', 'kWh', 1],
   ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
-  ['pv_kwp', 'Anlagenleistung', 'kWp', 0.1],
   ['verguetung_eur', 'Vergütung (0 = rechnen)', '€', 0.01],
-  ['anschaffung_eur', 'Anschaffung (Investment)', '€', 1],
 ];
 // N87/N89 — die E-Tankstelle gehört zur PV-Anlage: der geladene Strom wird der
-// ladenden Person berechnet und fließt der Anlage zu (Amortisation).
+// ladenden Person berechnet und fließt der Anlage zu (Amortisation). Der Satz
+// kann sich von Jahr zu Jahr ändern und hängt deshalb am Jahr.
 const F_TANKEN = [
   ['tanken_preis', 'Preis je kWh (E-Auto)', '€', 0.01],
 ];
-// N127 — der Vorlauf vor der ersten Nebenkostenabrechnung (einmalig).
-const F_VORLAUF = [
-  ['vorlauf_ertrag_eur', 'Bereits abgetragen', '€', 1],
-];
 
-function feldHtml(name, label, einheit, step) {
+function feldHtml(name, label, einheit, step, art = 'feld') {
   return `<div class="field">
     <label for="f_${name}">${esc(label)} <span class="einheit">(${esc(einheit)})</span></label>
     <input class="inp" type="number" inputmode="decimal" step="${step}" min="0"
-           id="f_${name}" data-feld="${name}">
+           id="f_${name}" data-${art}="${name}">
   </div>`;
 }
 
+/* Ein Datumsfeld — dasselbe Aussehen, nur ohne Einheit und ohne step. */
+function datumHtml(name, label) {
+  return `<div class="field">
+    <label for="f_${name}">${esc(label)}</label>
+    <input class="inp" type="date" id="f_${name}" data-stammdatum="${name}">
+  </div>`;
+}
+
+/* Der Seitenaufbau (N139): erst der Verlauf — die eine Frage, um die es geht —,
+   dann die Stammdaten der Anlage, danach das gewählte Jahr, die E-Tankstelle
+   und zuletzt, wem die Anlage gehört.
+
+   N121 — Zählerstände und die Aufteilung auf die Einheiten sind in den
+   Nebenkostenbereich gezogen (Zeitraum → Zählerstände) und stehen deshalb
+   nicht mehr hier. */
 function skelett() {
+  const jahr = jahrWahl.wert();
   return `
-    <!-- N121 — Zählerstände und die Aufteilung auf die Einheiten sind in den
-         Nebenkostenbereich gezogen (Zeitraum → Zählerstände). Diese Seite
-         beantwortet nur noch eine Frage: was trägt die Anlage ab, und wann hat
-         sie sich bezahlt gemacht. -->
-    <div class="karte">
-      <div class="hh"><h3>PV-Anlage</h3></div>
-      <p class="hint">Eigenverbrauch = Produktion − Einspeisung. Die
-        Einspeisevergütung folgt den EEG-Stufen (0–10 kWp 8,2 ct, 10–40 kWp
-        7,1 ct). Was die Anlage wirklich abträgt, steht unten im Verlauf —
-        dort zählt nur geflossenes Geld.</p>
-      <div class="raster">
-        ${F_PV.map(f => feldHtml(...f)).join('')}
-      </div>
-      <div class="kpi" id="pv"></div>
-    </div>
-
-    <div class="karte">
-      <div class="hh"><h3>E-Tankstelle</h3></div>
-      <p class="hint">Der E-Auto-Strom gehört der PV-Anlage: er wird der
-        ladenden Person berechnet und zahlt auf die Amortisation ein. Die
-        geladene Menge steht oben unter „davon E-Auto Tanken".</p>
-      <div class="raster">
-        ${F_TANKEN.map(f => feldHtml(...f)).join('')}
-
-      </div>
-      <div class="kpi" id="tank"></div>
-      <!-- N112b — jede Ladung wird auf eine Person gebucht; daraus entsteht die
-           Abrechnung an den Fahrer und der Ertrag der Anlage. -->
-      <div id="ladungen" class="ladungen"></div>
-    </div>
-
-    <div class="karte">
-      <div class="hh"><h3>PV auf Eigentümer</h3></div>
-      <p class="hint">Die PV-Anlage ist ein eigenes Investment mit eigenen
-        Anteilen — unabhängig von den Objekt-Tausendsteln. Leer = Vorgabe
-        5/6 + 1/6.</p>
-      <!-- N112c — die Anteile werden je Person vergeben, nicht als Freitext:
-           gewaehlt wird aus derselben Personenliste wie ueberall. -->
-      <div id="pvAnteile" class="pv-anteile"></div>
-      <div class="eig" id="eig"></div>
-    </div>
-
-    <!-- N127 — die Anlage lief schon, bevor die erste Nebenkostenabrechnung
-         begann. Ein einmaliger Betrag, kein jährlicher. -->
-    <div class="karte eng">
-      <div class="hh"><h3>Vor der ersten Abrechnung</h3></div>
-      <p class="hint">Was die Anlage abgetragen hat, bevor der erste
-        Abrechnungszeitraum begann. Der Betrag zählt einmalig auf das erste
-        Jahr im Verlauf — er wiederholt sich nicht und geht nicht in die
-        Prognose ein.</p>
-      <div class="raster">
-        ${F_VORLAUF.map(f => feldHtml(...f)).join('')}
-      </div>
-    </div>
-
     <div class="karte" id="verlauf">
       <div class="hh"><h3>Verlauf</h3></div>
       <p class="hint">Die Anschaffung steht als negativer Betrag da und wird
@@ -291,19 +291,83 @@ function skelett() {
       <div class="eig" id="vEig"></div>
     </div>
 
+    <!-- N139 — die Anlage wurde einmal gekauft, nicht jedes Jahr neu. Diese
+         Angaben gelten für alle Jahre und ändern sich oben nicht mit. -->
+    <div class="karte eng">
+      <div class="hh"><h3>Stammdaten der Anlage</h3></div>
+      <p class="hint">Gelten für alle Jahre — die Jahresauswahl oben ändert
+        hier nichts. „Bereits abgetragen" ist, was die Anlage eingebracht hat,
+        bevor der erste Abrechnungszeitraum begann: ein einmaliger Betrag, der
+        im Verlauf auf die erste Zeile zählt und nicht in die Prognose eingeht.</p>
+      <div class="raster">
+        ${F_STAMM.map(f => feldHtml(...f, 'stamm')).join('')}
+        ${datumHtml('inbetriebnahme', 'Inbetriebnahme')}
+      </div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>PV im Jahr</h3><span class="jahrchip">${jahr}</span></div>
+      <p class="hint">Diese Werte gehören zum oben gewählten Jahr ${jahr}.
+        Eigenverbrauch = Produktion − Einspeisung. Ohne eigenen Betrag folgt die
+        Vergütung den EEG-Stufen (0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) auf Basis
+        der Anlagenleistung aus den Stammdaten.</p>
+      <div class="raster">
+        ${F_JAHR.map(f => feldHtml(...f)).join('')}
+      </div>
+      <div class="kpi" id="pv"></div>
+    </div>
+
+    <!-- N132/N139 — Nutzer und Abrechnungen der Tankstelle haben eine eigene
+         Seite; hier steht nur, was zur Anlage gehört: der Satz und was zufließt. -->
+    <div class="karte">
+      <div class="hh"><h3>E-Tankstelle</h3><span class="jahrchip">${jahr}</span></div>
+      <p class="hint">Der E-Auto-Strom gehört der PV-Anlage: er wird der
+        ladenden Person berechnet und zahlt auf die Amortisation ein.</p>
+      <div class="raster">
+        ${F_TANKEN.map(f => feldHtml(...f)).join('')}
+      </div>
+      <div class="kpi" id="tank"></div>
+      <a class="verweis" id="tankLink" href="tankstelle.html">
+        Nutzer und Abrechnungen verwalten →</a>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>PV-Eigentümer</h3></div>
+      <p class="hint">Die PV-Anlage ist ein eigenes Investment: sie kann anderen
+        gehören als das Haus. Zugeordnet wird aus den vorhandenen Eigentümern,
+        die Anteile werden in Tausendsteln (‰) vergeben. Niemand angehakt =
+        Vorgabe 5/6 + 1/6.</p>
+      <!-- N112c/N139 — je Person eine Zeile; gespeichert wird in den
+           Stammdaten der Anlage, nicht mehr am Jahr. -->
+      <div id="pvAnteile"></div>
+      <div class="eig" id="eig"></div>
+    </div>
+
     <div id="warnungen"></div>`;
 }
 
-/* Werte aus allen Eingabefeldern als Objekt (leeres Feld = 0). */
+/* Werte der JAHRESfelder als Objekt (leeres Feld = 0). */
 function werteAusForm() {
   const werte = {};
   inhalt.querySelectorAll('input[data-feld]').forEach(el => {
     const v = parseFloat(el.value);
     werte[el.dataset.feld] = Number.isFinite(v) ? v : 0;
   });
-  // N112c — die PV-Anteile kommen aus der Eigentuemer-Auswahl, nicht mehr aus
-  // einem Freitextfeld; die ladende Person haengt an der jeweiligen Ladung.
-  werte.pv_anteile = pvAnteileAusForm();
+  return werte;
+}
+
+/* N139 — die STAMMDATEN der Anlage: Zahlen, Datum und die Eigentümer-Anteile.
+   Ein leeres Datum wird nicht mitgeschickt (nicht mitgeschickt = unverändert),
+   damit ein Tippfehler im Zahlenfeld nicht nebenbei das Datum löscht. */
+function stammAusForm() {
+  const werte = {};
+  inhalt.querySelectorAll('input[data-stamm]').forEach(el => {
+    const v = parseFloat(el.value);
+    werte[el.dataset.stamm] = Number.isFinite(v) ? v : 0;
+  });
+  const d = inhalt.querySelector('[data-stammdatum]');
+  if (d && d.value) werte.inbetriebnahme = d.value;
+  werte.anteile = pvAnteileAusForm();
   return werte;
 }
 
@@ -314,22 +378,15 @@ function formFuellen(werte) {
     const v = werte[el.dataset.feld];
     el.value = (v == null || v === 0) ? '' : v;
   });
-  // N87 — Textfelder: die ladende Person und die eigenen PV-Anteile. Letztere
-  // stehen als JSON in der Datenbank, in der Maske aber lesbar als
-  // „Name: ‰ · Name: ‰".
-  const p = inhalt.querySelector('[data-text="tanken_person"]');
-  if (p) p.value = werte.tanken_person || '';
-  const a = inhalt.querySelector('[data-text="pv_anteile_roh"]');
-  if (a) a.value = anteileLesbar(werte.pv_anteile || '');
 }
 
-/* JSON {Name: ‰} → „Name: 833,3 · Name: 166,7" (leer bleibt leer). */
-function anteileLesbar(roh) {
-  if (!roh) return '';
-  try {
-    return Object.entries(JSON.parse(roh))
-      .map(([n, v]) => `${n}: ${String(v).replace('.', ',')}`).join(' · ');
-  } catch { return roh; }
+function stammFuellen(s) {
+  inhalt.querySelectorAll('input[data-stamm]').forEach(el => {
+    const v = s[el.dataset.stamm];
+    el.value = (v == null || v === 0) ? '' : v;
+  });
+  const d = inhalt.querySelector('[data-stammdatum]');
+  if (d) d.value = s.inbetriebnahme || '';
 }
 
 
@@ -343,13 +400,7 @@ function ergebnisZeigen(r) {
     <div class="k"><span class="kl">Ersparnis Zukauf <span class="kh">rechnerisch,
       kein Ertrag</span></span><span class="kv">${eur(pv.eigenverbrauch_ersparnis)}</span></div>`;
 
-  // N89 — die E-Tankstelle: was der ladenden Person berechnet wird.
-  const t = r.tankstelle || {};
-  document.getElementById('tank').innerHTML = `
-    <div class="k"><span class="kl">Geladen</span><span class="kv">${kwh(t.kwh || 0)}</span></div>
-    <div class="k"><span class="kl">Satz</span><span class="kv">${eur(t.preis || 0)}/kWh</span></div>
-    <div class="k"><span class="kl">Rechnung an ${esc(t.person || '—')}</span>
-      <span class="kv pos">${eur(t.betrag || 0)}</span></div>`;
+  tankZeigen((r.tankstelle || {}).preis || 0);
 
   document.getElementById('eig').innerHTML = r.eigentuemer.map(e => `
     <div class="ez">
@@ -614,116 +665,123 @@ async function verlaufZeigen() {
     </div>`).join('');
 }
 
-/* N112c — die PV-Anteile je Person: gewaehlt wird aus der Eigentuemer-Liste,
-   der Prozentsatz (Tausendstel) steht daneben. Gespeichert wird wie bisher als
-   JSON {Name: Promille} im Strom-Jahr — nur eben nicht mehr als Freitext. */
+/* Was der Anlage aus der E-Tankstelle zufließt: die erfassten Ladungen des
+   gewählten Jahres. Nutzer und Abrechnungen werden auf `tankstelle.html`
+   verwaltet — hier steht nur die Summe (N132/N139). */
+async function tankZeigen(satz) {
+  const ziel = document.getElementById('tank');
+  if (!ziel || !objektSlug) return;
+  let d = {};
+  try {
+    d = await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWahl.wert()}`);
+  } catch {
+    d = {};                       // keine Ladungen erfasst — dann eben Null
+  }
+  ziel.innerHTML = `
+    <div class="k"><span class="kl">Satz</span><span class="kv">${eur(satz)}/kWh</span></div>
+    <div class="k"><span class="kl">Geladen</span><span class="kv">${kwh(d.kwh_gesamt || 0)}</span></div>
+    <div class="k"><span class="kl">Ladungen</span><span class="kv">${(d.ladungen || []).length}</span></div>
+    <div class="k"><span class="kl">Zufluss</span><span class="kv pos">${eur(d.betrag_gesamt || 0)}</span></div>`;
+}
+
+/* N112c/N139 — die PV-Anteile je Person: zugeordnet wird aus derselben
+   Eigentümer-Liste wie überall, die Tausendstel stehen daneben. Gespeichert
+   wird in den Stammdaten der Anlage ({Name: ‰}), nicht mehr am Jahr — die
+   Anlage kann anderen gehören als das Haus. */
 async function pvAnteileZeigen() {
   const ziel = document.getElementById('pvAnteile');
   if (!ziel || !objektSlug) return;
+  let d;
   try {
-    const d = await api(`/objekte/${encodeURIComponent(objektSlug)}/pv/eigentuemer`
-      + `?jahr=${jahrWahl.wert()}`);
-    const gesetzt = d.pv_anteile || {};
-    ziel.innerHTML = (d.personen || []).map(p => {
-      const wert = gesetzt[p.name];
-      return `<label class="pa-zeile">
-        <input type="checkbox" data-pv-person="${esc(p.name)}"${wert ? ' checked' : ''}>
-        <span class="pa-name">${esc(p.name)}${p.am_objekt != null
-          ? `<span class="pa-obj">am Objekt ${p.am_objekt.toLocaleString('de-DE',
-              { maximumFractionDigits: 1 })} ‰</span>` : ''}</span>
-        <input class="inp pa-wert" type="number" step="0.1" min="0" max="1000"
-          data-pv-wert="${esc(p.name)}" value="${wert ?? ''}" placeholder="‰"
-          aria-label="Anteil ${esc(p.name)} in Promille">
-      </label>`;
-    }).join('') || '<p class="hint">Noch keine Personen angelegt.</p>';
+    d = await api(`/objekte/${encodeURIComponent(objektSlug)}/pv/eigentuemer`);
   } catch {
     ziel.innerHTML = '<p class="hint">Personen nicht ladbar.</p>';
+    return;
   }
+  const gesetzt = d.pv_anteile || {};
+  const zeilen = (d.personen || []).map((p, i) => {
+    const wert = gesetzt[p.name];
+    return `<div class="pa-zeile">
+      <input type="checkbox" id="pa${i}" data-pv-person="${esc(p.name)}"${
+        wert ? ' checked' : ''}>
+      <label class="pa-name" for="pa${i}">${esc(p.name)}${p.am_objekt != null
+        ? `<span class="pa-obj">am Objekt ${promille(p.am_objekt)}</span>` : ''}</label>
+      <input class="inp pa-wert" type="number" step="0.1" min="0" max="1000"
+        data-pv-wert="${esc(p.name)}" value="${wert ?? ''}" placeholder="‰"
+        data-vorschlag="${p.am_objekt ?? ''}"
+        aria-label="Anteil ${esc(p.name)} in Tausendsteln">
+    </div>`;
+  }).join('');
+  ziel.innerHTML = zeilen
+    ? `${zeilen}<div class="pa-summe"><span>Vergeben</span>
+        <b id="paSumme">${promille(d.anteile_summe || 0)}</b></div>
+       <div id="paHinweis"></div>`
+    : '<p class="hint">Noch keine Personen angelegt — lege sie unter '
+      + 'Eigentümer an, dann lassen sie sich hier zuordnen.</p>';
+  anteileSummeZeigen();
+  // Beides: `change` fängt den Haken, `input` jede getippte Ziffer — sonst
+  // ginge ein Wert verloren, wenn das Feld nie den Fokus verliert.
+  ziel.querySelectorAll('[data-pv-person],[data-pv-wert]').forEach(el => {
+    el.addEventListener('change', anteilGeaendert);
+    el.addEventListener('input', anteilGeaendert);
+  });
+}
+
+/* Haken gesetzt und noch kein Wert: den Objekt-Anteil als Vorschlag eintragen —
+   meist stimmt er, und wenn nicht, ist er schnell überschrieben. */
+function anteilGeaendert(e) {
+  const cb = e.target.closest('[data-pv-person]');
+  if (cb && cb.checked) {
+    const feld = document.querySelector(
+      `[data-pv-wert="${CSS.escape(cb.dataset.pvPerson)}"]`);
+    if (feld && !feld.value && feld.dataset.vorschlag) {
+      feld.value = feld.dataset.vorschlag;
+    }
+  }
+  anteileSummeZeigen();
+  stammAngestossen();
+}
+
+/* Die Summe der vergebenen Tausendstel — und ein ruhiger Hinweis, wenn sie
+   nicht 1000 ‰ ergibt. Ein Hinweis, keine Sperre: gespeichert wird trotzdem. */
+function anteileSummeZeigen() {
+  const anzeige = document.getElementById('paSumme');
+  if (!anzeige) return;
+  const paare = pvAnteilePaare();
+  const summe = Object.values(paare).reduce((s, v) => s + v, 0);
+  anzeige.textContent = promille(summe);
+  const hinweis = document.getElementById('paHinweis');
+  if (!hinweis) return;
+  const offen = Math.round((1000 - summe) * 10) / 10;
+  hinweis.innerHTML = (!summe || Math.abs(offen) <= 0.5) ? '' :
+    `<div class="pa-hinweis">Vergeben sind ${promille(summe)} statt 1000 ‰ —
+      ${offen > 0 ? `${promille(offen)} fehlen noch`
+        : `${promille(-offen)} zu viel`}.</div>`;
 }
 
 /* Die gesetzten Anteile aus der Auswahl einsammeln (nur angehakte mit Wert). */
-function pvAnteileAusForm() {
+function pvAnteilePaare() {
   const paare = {};
   document.querySelectorAll('[data-pv-person]').forEach(cb => {
     if (!cb.checked) return;
-    const feld = document.querySelector(`[data-pv-wert="${CSS.escape(cb.dataset.pvPerson)}"]`);
+    const feld = document.querySelector(
+      `[data-pv-wert="${CSS.escape(cb.dataset.pvPerson)}"]`);
     const v = parseFloat(String(feld?.value || '').replace(',', '.'));
     if (Number.isFinite(v) && v > 0) paare[cb.dataset.pvPerson] = v;
   });
+  return paare;
+}
+
+function pvAnteileAusForm() {
+  const paare = pvAnteilePaare();
   return Object.keys(paare).length ? JSON.stringify(paare) : '';
 }
-
-/* N112b — die Ladungen der E-Tankstelle: je Ladung eine Person, kWh und Satz;
-   daraus entsteht die Abrechnung an den Fahrer. */
-async function ladungenZeigen() {
-  const ziel = document.getElementById('ladungen');
-  if (!ziel || !objektSlug) return;
-  const jahr = jahrWahl.wert();
-  try {
-    const [d, pers] = await Promise.all([
-      api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahr}`),
-      api(`/objekte/${encodeURIComponent(objektSlug)}/pv/eigentuemer`),
-    ]);
-    const opt = (pers.personen || []).map(p =>
-      `<option value="${p.id}">${esc(p.name)}</option>`).join('');
-    const zeilen = (d.ladungen || []).map(l => `
-      <div class="la-zeile">
-        <span class="la-p">${esc(l.person || '—')}${l.datum
-          ? `<span class="la-d">${new Date(l.datum).toLocaleDateString('de-DE')}</span>` : ''}</span>
-        <span class="la-k">${(l.kwh ?? 0).toLocaleString('de-DE')} kWh</span>
-        <span class="la-b">${eur(l.betrag)}</span>
-        <button class="la-x" data-ladung-weg="${l.id}" aria-label="Ladung entfernen">×</button>
-      </div>`).join('');
-    ziel.innerHTML = `${zeilen ? `<div class="la-liste">${zeilen}</div>` : ''}
-      ${(d.je_person || []).map(p => `<div class="la-summe">Rechnung an
-        <b>${esc(p.person)}</b>${p.email ? ` · ${esc(p.email)}` : ''}:
-        <b>${eur(p.betrag)}</b> (${(p.kwh ?? 0).toLocaleString('de-DE')} kWh)</div>`).join('')}
-      <div class="la-neu">
-        <select data-la-person aria-label="Person"><option value="">Person …</option>${opt}</select>
-        <input type="number" step="0.1" data-la-kwh placeholder="kWh" aria-label="kWh">
-        <input type="date" data-la-datum aria-label="Datum">
-        <button class="btn" data-ladung-add>Ladung erfassen</button>
-      </div>`;
-  } catch {
-    ziel.innerHTML = '<p class="hint">Ladungen nach dem naechsten Deploy verfuegbar.</p>';
-  }
-}
-
-async function ladungAnlegen(btn) {
-  const box = btn.closest('.la-neu');
-  const pid = box?.querySelector('[data-la-person]')?.value;
-  const kwh = parseFloat(String(box?.querySelector('[data-la-kwh]')?.value || '').replace(',', '.'));
-  if (!pid || !(kwh > 0)) { melde('Person und kWh angeben', 'neg'); return; }
-  try {
-    await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWahl.wert()}`, {
-      method: 'POST',
-      body: { person_id: Number(pid), kwh,
-              datum: box.querySelector('[data-la-datum]')?.value || null },
-    });
-    melde('Ladung erfasst', 'pos');
-    await ladungenZeigen();
-    await rechnen();
-  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
-}
-
-async function ladungEntfernen(id) {
-  try {
-    await api(`/tankladungen/${id}`, { method: 'DELETE' });
-    await ladungenZeigen();
-    await rechnen();
-  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
-}
-
-document.addEventListener('click', e => {
-  const add = e.target.closest('[data-ladung-add]');
-  if (add) return ladungAnlegen(add);
-  const weg = e.target.closest('[data-ladung-weg]');
-  if (weg) return ladungEntfernen(weg.dataset.ladungWeg);
-});
 
 let objektSlug = '';
 let speicherZeit = null;
 let letzteWerte = '';
+let stammZeit = null;
+let letzteStamm = '';
 
 async function rechnen() {
   if (!objektSlug) return;
@@ -766,12 +824,36 @@ function angestossen() {
   }, 550);
 }
 
+/* N139 — dasselbe für die STAMMDATEN, nur ohne Jahr: sie gehören der Anlage.
+   Der Jahreswechsel oben rührt sie nicht an. */
+function stammAngestossen() {
+  const werte = stammAusForm();
+  const stempel = JSON.stringify(werte);
+  if (stempel === letzteStamm) return;
+  const slug = objektSlug;
+  clearTimeout(stammZeit);
+  stammZeit = setTimeout(async () => {
+    stammZeit = null;
+    if (slug !== objektSlug) return;
+    letzteStamm = stempel;
+    try {
+      await api(`/objekte/${encodeURIComponent(slug)}/pv/stammdaten`,
+                { method: 'PUT', body: werte });
+      if (slug !== objektSlug) return;
+      await rechnen();            // Anschaffung und Anteile gehen mit ein
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+    }
+  }, 550);
+}
+
 async function laden() {
   // Ein noch offener Speicherlauf gehört zum alten Objekt/Jahr — abräumen,
   // bevor die Maske neu gefüllt wird. Sonst schriebe er die eben verlassenen
   // Werte in den gerade gewählten Datensatz.
   clearTimeout(speicherZeit);
-  speicherZeit = null;
+  clearTimeout(stammZeit);
+  speicherZeit = stammZeit = null;
   if (!objektSlug) {
     inhalt.innerHTML = `<div class="karte"><div class="chartleer">
       Kein Objekt vorhanden. Lege zuerst ein Objekt an.</div></div>`;
@@ -781,17 +863,27 @@ async function laden() {
   inhalt.innerHTML = skelett();
   inhalt.querySelectorAll('input[data-feld]').forEach(el =>
     el.addEventListener('input', angestossen));
+  inhalt.querySelectorAll('input[data-stamm],input[data-stammdatum]').forEach(el =>
+    el.addEventListener('input', stammAngestossen));
+  const link = document.getElementById('tankLink');
+  if (link) link.href = `tankstelle.html?objekt=${encodeURIComponent(objektSlug)}`;
 
-  let werte;
+  let werte, stamm;
   try {
-    werte = await api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}`);
+    [werte, stamm] = await Promise.all([
+      api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}`),
+      api(`/objekte/${encodeURIComponent(objektSlug)}/pv/stammdaten`),
+    ]);
   } catch (fehler) {
     inhalt.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
       <p>Die Stromdaten konnten nicht geladen werden.</p></div>`;
     return;
   }
   formFuellen(werte);
+  stammFuellen(stamm);
+  await pvAnteileZeigen();
   letzteWerte = JSON.stringify(werteAusForm());
+  letzteStamm = JSON.stringify(stammAusForm());
   await rechnen();
 }
 

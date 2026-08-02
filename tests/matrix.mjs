@@ -24,6 +24,8 @@ const SEITEN = [
   { datei: 'wertentwicklung.html', name: 'wertentwicklung' },
   { datei: 'nebenkosten.html', name: 'nebenkosten' },
   { datei: 'eigentuemer.html', name: 'eigentuemer' },
+  { datei: 'strom.html', name: 'pv-amortisation' },
+  { datei: 'tankstelle.html', name: 'tankstelle' },
   { datei: 'settings.html', name: 'einstellungen' },
   { datei: 'onboarding.html', name: 'wizard' },
 ];

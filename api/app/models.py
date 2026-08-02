@@ -965,3 +965,8 @@ class Tankladung(SQLModel, table=True):
     preis: float = 0.0             # EUR je kWh (0 = Satz des Strom-Jahres)
     datum: Optional[date] = None
     notiz: str = ""
+    # N132b — die feste Zuordnung zum Nutzer der Ladestation. Bisher lief sie
+    # ueber den Namen; wurde ein Nutzer umbenannt, verloren seine alten Ladungen
+    # den Anschluss und standen als „nicht angelegt" da. Additiv, Default None —
+    # ohne Angabe gilt weiterhin der Name.
+    tanknutzer_id: Optional[int] = None
