@@ -3318,6 +3318,11 @@ def _dedup_nach_scan(session: Session, client, d: Dokument,
 class DuplikatEntfernenIn(BaseModel):
     """N16b — welches byte-gleiche Dokument erhalten bleibt."""
     behalten_id: int
+    # N97 — zwei Scans DERSELBEN Unterlage sind nie byte-gleich. Hat der Nutzer
+    # sie verglichen und als Doppel bestätigt, darf er das Duplikat trotzdem
+    # entfernen: die Datei wird dann nicht gelöscht, sondern nach „99_Duplikate"
+    # verschoben (nie Daten verlieren) und aus der Abrechnung genommen.
+    bestaetigt: bool = False
 
 
 @router.post("/{dokument_id}/duplikat-entfernen")
@@ -3348,9 +3353,27 @@ def duplikat_entfernen(dokument_id: int, data: DuplikatEntfernenIn,
     except NextcloudFehler as fehler:
         raise HTTPException(400, str(fehler)) from fehler
     except _NichtByteGleich as fehler:
-        raise HTTPException(
-            409, "Die Dateien sind NICHT byte-gleich — es wird nichts gelöscht."
-        ) from fehler
+        # N97 — der Nutzer hat die beiden Scans verglichen und als dasselbe
+        # Dokument bestätigt: dann wandert die Datei in „99_Duplikate" statt
+        # gelöscht zu werden, und der Beleg verlässt die Abrechnung.
+        if not data.bestaetigt:
+            raise HTTPException(
+                409, "Die Dateien sind NICHT byte-gleich — es wird nichts "
+                     "gelöscht. Als Doppel bestätigen, um sie nach "
+                     "„99_Duplikate\" zu verschieben."
+            ) from fehler
+        try:
+            belegposten.loese(session, weg)
+            weg.zeitraum_id = None
+            session.add(weg)
+            _beleg_umziehen(session, client, weg, _duplikat_ziel(o))
+        except NextcloudFehler as f2:
+            raise HTTPException(400, str(f2)) from f2
+        session.commit()
+        log.info("Bestätigtes Doppel verschoben: %s → %s", weg_pfad,
+                 DUPLIKAT_ORDNER)
+        return {"ok": True, "geloescht": False, "verschoben": True,
+                "behalten_pfad": behalten_pfad}
     session.commit()
     log.info("Duplikat entfernt: %s (behalten: %s)", weg_pfad, behalten_pfad)
     return {"ok": True, "geloescht": geloescht, "behalten_pfad": behalten_pfad}

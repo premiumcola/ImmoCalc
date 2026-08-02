@@ -2420,18 +2420,23 @@ async function belegLoesen(id) {
     // Aus dem Zeitraum nehmen: erst dadurch verschwindet er aus der Abrechnung.
     await api(`/dokumente/${id}`, { method: 'PATCH', body: { zeitraum_id: null } });
     if (wahl === 'ablage') {
-      // Nur mit Byte-Beweis: der Endpunkt löscht ausschließlich eine Datei, zu
-      // der es eine identische zweite gibt — nie die einzige Kopie.
-      const zwilling = (daten.dokumente || []).find(d =>
-        String(d.id) !== String(id) && d.groesse === dok?.groesse
-        && (d.betrag ?? null) === (dok?.betrag ?? null));
+      // N97 — das Gegenstück suchen: byte-gleich (gleiche Größe) ODER inhaltlich
+      // dasselbe Dokument (gleicher Betrag + Kostenart). Zwei Scans derselben
+      // Unterlage sind nie byte-gleich — dafür bestätigt der Nutzer.
+      const gleich = d => String(d.id) !== String(id)
+        && (d.betrag ?? null) === (dok?.betrag ?? null)
+        && (d.kostenart || '') === (dok?.kostenart || '');
+      const zwilling = (daten.dokumente || []).find(d => gleich(d) && d.groesse === dok?.groesse)
+        || (daten.dokumente || []).find(gleich);
       if (!zwilling) {
-        melde('Herausgenommen. In der Ablage gelöscht wird nur mit identischer '
-          + 'Zweitdatei — hier keine gefunden, die Datei bleibt.', 'neg');
+        melde('Herausgenommen. Kein zweiter Beleg mit gleichem Betrag und '
+          + 'gleicher Kostenart gefunden — die Datei bleibt in der Ablage.', 'neg');
       } else {
-        await api(`/dokumente/${id}/duplikat-entfernen`,
-          { method: 'POST', body: { behalten_id: zwilling.id } });
-        melde('Doppelter Beleg entfernt — auch aus der Ablage', 'pos');
+        const a = await api(`/dokumente/${id}/duplikat-entfernen`,
+          { method: 'POST', body: { behalten_id: zwilling.id, bestaetigt: true } });
+        melde(a?.verschoben
+          ? 'Doppel bestätigt — Datei nach „99_Duplikate" verschoben'
+          : 'Doppelter Beleg entfernt — auch aus der Ablage', 'pos');
       }
     } else {
       melde('Beleg herausgenommen — die Datei bleibt in der Ablage', 'pos');
