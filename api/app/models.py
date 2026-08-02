@@ -844,7 +844,15 @@ class PVAnlage(SQLModel, table=True):
     objekt_id: int = Field(foreign_key="objekt.id", index=True, unique=True)
     anschaffung_eur: float = 0.0       # Investment der Anlage
     # Was die Anlage abgetragen hat, bevor die erste Abrechnung begann.
+    # N153 — aufgeschluesselt wie die spaeteren Jahre, damit der Verlauf auch am
+    # Anfang zeigt, WOHER der Vorsprung kam. Beim Nutzer betrifft das 2023/2024;
+    # die Anlage lief lange nicht, praktisch also nur 2024, E-Tanken war 0.
+    # `vorlauf_ertrag_eur` bleibt als Gesamtwert stehen (nie entfernen): ist die
+    # Aufschluesselung gepflegt, gilt ihre Summe, sonst weiterhin dieses Feld.
     vorlauf_ertrag_eur: float = 0.0
+    vorlauf_pv_strom_eur: float = 0.0     # den Mietern berechneter PV-Strom
+    vorlauf_einspeisung_eur: float = 0.0  # Einspeiseverguetung
+    vorlauf_tanken_eur: float = 0.0       # E-Tanken
     kwp: float = 0.0                   # installierte Leistung (Vergütungsstufe)
     inbetriebnahme: Optional[date] = None
     # Eigentümer-Anteile der Anlage als JSON {Name: Promille} — unabhängig von
