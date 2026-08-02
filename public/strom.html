@@ -120,6 +120,48 @@
   .chartleer{font:400 13px var(--body);color:var(--soft);text-align:center;
              padding:22px 8px}
 
+  /* ---- N131 SolarEdge-Screenshot lesen ---------------------------------- */
+  /* Der Anstoß: ein ruhiger Knopf neben einem Satz, was gelesen wird. Der Satz
+     darf umbrechen, der Knopf nicht — deshalb `flex:none` am Knopf. */
+  .se{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 16px}
+  .se .btn{flex:none;width:auto;min-height:44px;padding:11px 16px;font-size:13px;
+           display:inline-flex;align-items:center;gap:9px}
+  .se .btn svg{flex:none}
+  .se .btn[disabled]{opacity:.55;cursor:default}
+  .se-note{flex:1 1 200px;min-width:0;font:400 11.5px var(--body);
+           color:var(--soft);line-height:1.55}
+
+  /* Die Prüfansicht — nichts wird übernommen, bevor sie bestätigt ist. */
+  /* Auf breiten Schirmen bleibt die Gegenüberstellung ein Block, statt sich
+     über die ganze Kartenbreite zu spannen — sonst steht der erkannte Wert
+     einen halben Meter neben seiner Bezeichnung. */
+  .se-pruef{background:var(--paper);border-radius:14px;padding:15px;margin:0 0 16px;
+            max-width:620px}
+  .se-pruef .set{display:block;font:600 13px var(--disp);letter-spacing:-.01em;
+                 color:var(--ink);margin:0 0 7px}
+  .se-pruef .seh{font:400 12px var(--body);color:var(--soft);line-height:1.6;
+                 margin:0 0 14px}
+  .se-pruef .warnung{margin:0 0 10px}
+  /* Zwei Spalten: links die Bezeichnung (darf umbrechen), rechts alt → neu
+     (bricht nie). So bleibt die Gegenüberstellung auch auf 390 px lesbar. */
+  .se-zeile{display:grid;grid-template-columns:1fr auto;gap:3px 12px;
+            align-items:baseline;padding:10px 0;
+            border-top:1px solid rgba(22,38,44,.08)}
+  .se-zeile:first-of-type{border-top:none;padding-top:0}
+  .se-n{font:600 12.5px var(--disp);letter-spacing:-.01em;color:var(--ink);
+        min-width:0;overflow-wrap:anywhere}
+  .se-w{justify-self:end;text-align:right;white-space:nowrap;
+        font:500 12.5px var(--mono)}
+  .se-w .alt{color:var(--soft)}
+  .se-w .pf{color:var(--soft);margin:0 6px}
+  .se-w .neu{font-weight:600;color:var(--teal-d)}
+  .se-w .neu.leer{font-weight:500;color:var(--soft)}
+  .se-sub{grid-column:1/-1;font:400 10.5px var(--mono);color:var(--soft)}
+  .se-fuss{margin:12px 0 0;font:400 11.5px var(--body);color:var(--soft);
+           line-height:1.55}
+  .se-knoepfe{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .se-knoepfe .btn{flex:1 1 150px;width:auto;min-height:44px}
+
   /* N139 — die Karte, die sich auf das oben gewählte Jahr bezieht, sagt das
      auch: ein ruhiger Chip neben der Überschrift statt eines Satzes. */
   .jahrchip{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;
@@ -279,6 +321,12 @@ const F_JAHR = [
   ['pv_produktion_kwh', 'PV-Produktion', 'kWh', 1],
   ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
   ['verguetung_eur', 'Vergütung', '€', 0.01],
+  // N131 — woher der im Haus verbrauchte Strom kam. Dieselben drei Mengen, aus
+  // denen die Stromkette im Nebenkostenzeitraum ihre Anteile zieht; hier stehen
+  // sie da, wo der SolarEdge-Screenshot sie füllt.
+  ['netz_kwh', 'Verbrauch Netz', 'kWh', 1],
+  ['solar_kwh', 'Verbrauch PV', 'kWh', 1],
+  ['akku_kwh', 'Verbrauch Akku', 'kWh', 1],
 ];
 // N87/N89 — die E-Tankstelle gehört zur PV-Anlage: der geladene Strom wird der
 // ladenden Person berechnet und fließt der Anlage zu (Amortisation). Der Satz
@@ -345,7 +393,26 @@ function skelett() {
       <p class="hint">Diese Werte gehören zum oben gewählten Jahr ${jahr}.
         Eigenverbrauch = Produktion − Einspeisung. Ohne eigenen Betrag folgt die
         Vergütung den EEG-Stufen (0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) auf Basis
-        der Anlagenleistung aus den Stammdaten.</p>
+        der Anlagenleistung aus den Stammdaten. Die drei Verbrauchsmengen sagen,
+        woher der im Haus verbrauchte Strom kam — aus ihnen zieht die Stromkette
+        im Nebenkostenzeitraum ihre Anteile.</p>
+      <!-- N131 — statt abzutippen den SolarEdge-Screenshot lesen lassen. Die
+           Handeingabe darunter bleibt immer der Weg, der sicher funktioniert. -->
+      <div class="se">
+        <button type="button" class="btn leise" data-se-waehlen>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="3.5"/>
+            <circle cx="8.6" cy="10.2" r="1.5"/>
+            <path d="M4 17.2l4.6-4.6 3 3L15 12l5 5.2"/>
+          </svg>Screenshot lesen</button>
+        <input type="file" accept="image/*" data-se-datei hidden>
+        <span class="se-note">Die SolarEdge-Ansicht mit den Balken „Produktion"
+          und „Verbrauch". Die erkannten Zahlen werden erst gezeigt und
+          eingetragen, nachdem du sie bestätigt hast.</span>
+      </div>
+      <div id="seBox"></div>
       <div class="raster">
         ${F_JAHR.map(f => feldHtml(...f)).join('')}
       </div>
@@ -426,6 +493,197 @@ function stammFuellen(s) {
   const d = inhalt.querySelector('[data-stammdatum]');
   if (d) d.value = s.inbetriebnahme || '';
 }
+
+/* ---------------------------------------------------------------------------
+   N131 — den SolarEdge-Screenshot lesen lassen.
+
+   Der Nutzer liest seine Zahlen in der SolarEdge-Oberfläche ab. Statt sie
+   abzutippen, lädt er den Screenshot hoch: `POST /api/solaredge/lesen` gibt die
+   erkannten Werte zurück und speichert nichts.
+
+   Übernommen wird trotzdem nichts von allein. Die 100-%-Prüfung im Backend
+   fängt einen einzelnen falsch gelesenen Anteil ab — ein VERTAUSCHTES Paar
+   (24/50/26 statt 26/50/24) ergibt aber weiterhin 100 % und fällt nicht auf.
+   Beim Nutzer wären das über 200 kWh Unterschied im zugekauften Strom. Deshalb
+   steht zwischen Lesen und Eintragen die Prüfansicht: erkannt neben gespeichert,
+   mit dem Hinweis, worauf zu schauen ist.
+
+   Was das Bild nicht hergibt, kommt als `null` (nicht als 0) und wird nicht
+   geschrieben — das Feld behält, was drinsteht. Die Umrechnung MWh → kWh und
+   Prozent → kWh macht das Backend; hier wird nur auf ganze kWh gerundet, weil
+   die Felder in ganzen kWh geführt werden.
+   --------------------------------------------------------------------------- */
+
+/* Feld · Bezeichnung · Herkunft im Bild · Menge · Anteil. Aus derselben Liste
+   entsteht die Prüfansicht und die Übernahme. */
+const SE_ZEILEN = [
+  ['pv_produktion_kwh', 'PV-Produktion', 'Balken „Produktion"',
+   d => d.produktion_kwh, () => null],
+  ['einspeisung_kwh', 'Einspeisung', '„Ins Netz"',
+   d => (d.produktion_kwh_je_anteil || {}).netz, d => d.produktion_netz_prozent],
+  ['netz_kwh', 'Verbrauch Netz', '„Vom Netz"',
+   d => (d.verbrauch_kwh_je_anteil || {}).netz, d => d.verbrauch_netz_prozent],
+  ['solar_kwh', 'Verbrauch PV', '„Aus PV-Energie"',
+   d => (d.verbrauch_kwh_je_anteil || {}).pv, d => d.verbrauch_pv_prozent],
+  ['akku_kwh', 'Verbrauch Akku', '„Vom Speicher"',
+   d => (d.verbrauch_kwh_je_anteil || {}).speicher,
+   d => d.verbrauch_speicher_prozent],
+];
+
+const SE_HINWEIS = 'Bitte die Reihenfolge Netz · PV · Speicher mit dem Bild '
+  + 'vergleichen: zwei vertauschte Anteile ergeben zusammen weiterhin 100 % '
+  + 'und fallen keiner Prüfung auf. Erst mit „Übernehmen" wandern die Zahlen '
+  + 'in die Felder.';
+
+// Was die letzte Erkennung an übernehmbaren Werten hergab ({Feld: kWh}).
+let seWerte = {};
+
+const seProzent = p => p == null ? ''
+  : p.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' %';
+
+/* Der aktuelle Stand eines Feldes — das, wogegen der erkannte Wert steht. */
+function seJetzt(feld) {
+  const el = inhalt.querySelector(`input[data-feld="${feld}"]`);
+  const v = parseFloat(el ? el.value : '');
+  return Number.isFinite(v) ? v : 0;
+}
+
+function seZeile(feld, name, herkunft, wert, anteil) {
+  const erkannt = wert != null;
+  const rechts = erkannt
+    ? `<span class="alt">${kwh(seJetzt(feld))}</span><span class="pf"
+       aria-hidden="true">→</span><span class="neu">${kwh(wert)}</span>`
+    : `<span class="neu leer">nicht erkannt</span>`;
+  const sub = [herkunft, seProzent(anteil)].filter(Boolean).join(' · ');
+  return `<div class="se-zeile">
+    <span class="se-n">${esc(name)}</span>
+    <span class="se-w">${rechts}</span>
+    <span class="se-sub">${esc(sub)}</span>
+  </div>`;
+}
+
+/* Die Prüfansicht bauen — und dabei merken, was übernommen werden darf. */
+function sePruefung(d) {
+  seWerte = {};
+  const zeilen = SE_ZEILEN.map(([feld, name, herkunft, menge, anteil]) => {
+    const roh = menge(d);
+    const wert = roh == null ? null : Math.round(roh);
+    if (wert != null) seWerte[feld] = wert;
+    return seZeile(feld, name, herkunft, wert, anteil(d));
+  }).join('');
+
+  const etwas = Object.keys(seWerte).length > 0;
+  // Kam gar nichts durch, sagen Hinweis und Warnungen alle dasselbe — dann
+  // steht der Satz genau einmal da. Erst wenn etwas erkannt wurde, tragen die
+  // Warnungen eigene Information (Anteile ≠ 100 %, fehlende Einheit).
+  const erklaerung = etwas ? esc(SE_HINWEIS)
+    : esc(d.hinweis || 'Aus dem Bild kam nichts Übernehmbares — bitte die Werte '
+          + 'unten von Hand eintragen.');
+  const warnungen = etwas ? (d.warnungen || []).map(t =>
+    `<div class="warnung"><span class="wi" aria-hidden="true">⚠</span>
+      <span>${esc(t)}</span></div>`).join('') : '';
+  const zusatz = (etwas && d.hinweis) ? `<p class="seh">${esc(d.hinweis)}</p>` : '';
+  const gesamt = d.verbrauch_kwh != null
+    ? `<p class="se-fuss">Verbrauch laut Screenshot: <b>${kwh(d.verbrauch_kwh)}</b>
+       — daraus kommen die drei Anteile.</p>` : '';
+
+  return `<div class="se-pruef">
+    <span class="set">${etwas ? 'Erkannte Werte prüfen' : 'Nichts erkannt'}</span>
+    ${zusatz}
+    <p class="seh">${erklaerung}</p>
+    ${warnungen}
+    ${zeilen}
+    ${gesamt}
+    <div class="se-knoepfe">
+      ${etwas ? '<button type="button" class="btn" data-se-ok>Übernehmen</button>'
+        : ''}
+      <button type="button" class="btn leise" data-se-weg>${
+        etwas ? 'Verwerfen' : 'Schließen'}</button>
+    </div>
+  </div>`;
+}
+
+/* Eine ruhige Aussage, wenn das Lesen gar nicht erst zustande kam. Die
+   Handeingabe darunter bleibt unberührt — sie ist der Weg, der immer geht. */
+function seFehler(text) {
+  seWerte = {};
+  return `<div class="se-pruef">
+    <span class="set">Screenshot nicht gelesen</span>
+    <p class="seh">${esc(text)} Die Werte lassen sich unten von Hand eintragen.</p>
+    <div class="se-knoepfe">
+      <button type="button" class="btn leise" data-se-weg>Schließen</button>
+    </div>
+  </div>`;
+}
+
+/* Das Bild hochladen. `api()` schickt JSON — hier geht ein multipart-Paket
+   direkt an `fetch`, wie überall, wo eine Datei hochgeladen wird. */
+async function seLesen(datei) {
+  const box = document.getElementById('seBox');
+  const knopf = inhalt.querySelector('[data-se-waehlen]');
+  if (!box) return;
+  box.innerHTML = '<div class="se-pruef"><span class="set">Der Screenshot '
+    + 'wird gelesen …</span><p class="seh">Das dauert ein paar Sekunden.</p></div>';
+  if (knopf) knopf.disabled = true;
+  try {
+    const paket = new FormData();
+    paket.append('datei', datei, datei.name || 'solaredge.png');
+    const antwort = await fetch('/api/solaredge/lesen',
+                                { method: 'POST', body: paket });
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      box.innerHTML = seFehler(grund || `Fehler ${antwort.status}.`);
+      return;
+    }
+    box.innerHTML = sePruefung(await antwort.json());
+  } catch (fehler) {
+    box.innerHTML = seFehler(String(fehler.message || fehler));
+  } finally {
+    if (knopf) knopf.disabled = false;
+  }
+}
+
+/* Bestätigt: die erkannten Werte in die Felder schreiben und speichern lassen.
+   Nur, was erkannt wurde — ein nicht gelesener Wert behält seinen Stand. */
+function seUebernehmen() {
+  const felder = Object.keys(seWerte);
+  if (!felder.length) return;
+  felder.forEach(feld => {
+    const el = inhalt.querySelector(`input[data-feld="${feld}"]`);
+    if (el) el.value = seWerte[feld] === 0 ? '' : seWerte[feld];
+  });
+  seSchliessen();
+  angestossen();
+  melde(`${felder.length} ${felder.length === 1 ? 'Wert' : 'Werte'} übernommen`,
+        'pos');
+}
+
+function seSchliessen() {
+  seWerte = {};
+  const box = document.getElementById('seBox');
+  if (box) box.innerHTML = '';
+}
+
+/* Ein Lauscher am Behälter: die Karte wird bei jedem Jahreswechsel neu
+   gezeichnet, ein Lauscher je Knopf ginge dabei verloren. */
+inhalt.addEventListener('click', e => {
+  if (e.target.closest('[data-se-waehlen]')) {
+    const datei = inhalt.querySelector('[data-se-datei]');
+    if (datei) datei.click();
+  } else if (e.target.closest('[data-se-ok]')) {
+    seUebernehmen();
+  } else if (e.target.closest('[data-se-weg]')) {
+    seSchliessen();
+  }
+});
+
+inhalt.addEventListener('change', e => {
+  const feld = e.target.closest('[data-se-datei]');
+  if (!feld || !feld.files || !feld.files.length) return;
+  const datei = feld.files[0];
+  feld.value = '';            // damit dasselbe Bild erneut gewählt werden kann
+  seLesen(datei);
+});
 
 
 /* Das Engine-Ergebnis in die Karten schreiben (Inputs bleiben unberührt). */
@@ -896,6 +1154,9 @@ inhalt.addEventListener('click', e => {
 let objektSlug = '';
 let speicherZeit = null;
 let letzteWerte = '';
+/* Der zuletzt gelesene Strom-Satz des gewählten Jahres — vollständig, nicht nur
+   die Felder dieser Maske. */
+let jahresSatz = {};
 let stammZeit = null;
 let letzteStamm = '';
 
@@ -918,6 +1179,20 @@ async function rechnen() {
    sonst die Zahlen der einen Anlage in den Datensatz der anderen geschrieben.
    Passt der eingefrorene Stand beim Feuern nicht mehr zur Auswahl, wird gar
    nicht geschrieben — `laden()` räumt den offenen Lauf ohnehin ab. */
+/* Der PUT nimmt IMMER den ganzen Satz: seine Felder haben den Vorgabewert 0,
+   ein Teil-PUT setzte alles, was diese Maske nicht zeigt (Zählerstände, Preise,
+   E-Auto-Aufteilung), still auf 0. Deshalb liegt der zuletzt gelesene Satz
+   darunter und nur die Felder der Maske werden darübergelegt. `jahr` steht im
+   Pfad; die Einheiten-Zuordnung wird gar nicht erst mitgeschickt — nicht
+   mitgeschickt heißt beim Server unverändert. */
+function basisSatz() {
+  const satz = { ...jahresSatz };
+  delete satz.jahr;
+  delete satz.wg_einheiten;
+  delete satz.buero_einheiten;
+  return satz;
+}
+
 function angestossen() {
   const werte = werteAusForm();
   const stempel = JSON.stringify(werte);
@@ -930,9 +1205,10 @@ function angestossen() {
     if (slug !== objektSlug || jahr !== jahrWahl.wert()) return;
     letzteWerte = stempel;
     try {
-      await api(`/objekte/${encodeURIComponent(slug)}/strom/${jahr}`,
-                { method: 'PUT', body: werte });
+      const satz = await api(`/objekte/${encodeURIComponent(slug)}/strom/${jahr}`,
+                             { method: 'PUT', body: { ...basisSatz(), ...werte } });
       if (slug !== objektSlug || jahr !== jahrWahl.wert()) return;
+      jahresSatz = satz;
       await rechnen();
     } catch (fehler) {
       melde(String(fehler.message || fehler), 'neg');
@@ -977,6 +1253,7 @@ async function laden() {
     return;
   }
   inhalt.innerHTML = skelett();
+  seWerte = {};       // eine offene Prüfansicht gehört zum verlassenen Jahr
   inhalt.querySelectorAll('input[data-feld]').forEach(el =>
     el.addEventListener('input', angestossen));
   inhalt.querySelectorAll('input[data-stamm],input[data-stammdatum]').forEach(el =>
@@ -995,6 +1272,7 @@ async function laden() {
       <p>Die Stromdaten konnten nicht geladen werden.</p></div>`;
     return;
   }
+  jahresSatz = werte;
   formFuellen(werte);
   stammFuellen(stamm);
   await pvAnteileLaden();
