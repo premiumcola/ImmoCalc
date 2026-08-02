@@ -575,6 +575,11 @@
   .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos)}
   .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:9px 12px}
   .zu-op{flex:none;align-self:center;font:700 16px var(--mono);color:var(--neg)}
+  .zu-um{background:none;border:none;padding:4px;margin-left:6px;cursor:pointer;
+    color:var(--muted);border-radius:6px;line-height:0;vertical-align:middle;
+    min-width:26px;min-height:26px}
+  .zu-um:hover{color:var(--teal);background:var(--paper)}
+  .zu-um:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
   .zu-name{flex:1;min-width:110px;align-self:center;font:600 12.5px var(--body);
     color:var(--ink);overflow-wrap:anywhere}
   .zu-sub{display:block;font:400 10.5px var(--body);color:var(--soft);margin-top:1px}
@@ -1646,6 +1651,28 @@ function interpolationsHinweise(z, eh) {
    `rest` = berechneter Rest (keine Eingabe), `minus` = im Kaltwasser-Block
    eingerückt als Abzug (N59), `label` überschreibt den Namen, `extra` hängt
    eigene Bedienelemente unter die Zeile (N120: Rolle + Entfernen). */
+/* N135 — Umbenennen statt Loeschen-und-neu-Anlegen. Ein neuer Zaehler haette
+   keine Vorwerte und keine Historie; bei mehreren Abrechnungsjahren waere das
+   ein echter Datenverlust. Gilt fuer alle Zaehler, nicht nur Strom. */
+const STIFT_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true" width="13" height="13">
+  <path d="M11.2 1.8a1.4 1.4 0 0 1 2 2l-.8.8-2-2 .8-.8Z" fill="currentColor"/>
+  <path d="M9.7 3.3l2 2-6.3 6.3-2.6.6.6-2.6 6.3-6.3Z" fill="currentColor"/>
+</svg>`;
+
+async function zaehlerUmbenennen(zid) {
+  const z = (ablesungMaske?.zaehler || []).find(x => String(x.id) === String(zid));
+  const neu = prompt('Neuer Name für den Zähler:', z?.name || '');
+  if (neu === null) return;                       // abgebrochen
+  const name = neu.trim();
+  if (!name || name === z?.name) return;
+  try {
+    await api(`/zaehler/${zid}`, { method: 'PATCH', body: { name } });
+    if (z) z.name = name;                         // lokal nachziehen
+    melde('Zähler umbenannt', 'pos');
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
 function meterZeileHtml(z, { rest = false, minus = false, label = null,
                             keinChooser = false, extra = '', verbText = '' } = {}) {
   const bearbeitbar = daten.status === 'in Arbeit';
@@ -1726,7 +1753,10 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
       verbText ? ' unplausibel' : ''}" data-zid="${z.id}">
     <div class="zu-haupt">
       ${minus ? '<span class="zu-op" aria-hidden="true">−</span>' : ''}
-      <span class="zu-name">${esc(label || zLabels.get(z.id) || z.name)}</span>
+      <span class="zu-name">${esc(label || zLabels.get(z.id) || z.name)}${
+        bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
+          title="Zähler umbenennen" aria-label="Zähler „${esc(z.name)}“ umbenennen"
+          >${STIFT_ICON}</button>` : ''}</span>
       ${startFeld}${endFeld}
       <span class="zu-verb">${rest ? '<small>berechnet</small> ' : ''}${verb}</span>
     </div>
@@ -4129,6 +4159,10 @@ inhalt.addEventListener('click', async e => {
   if (hkvAdd) return hkvHinzufuegen(hkvAdd);
   const hkvWeg = e.target.closest('[data-hkv-weg]');
   if (hkvWeg) return hkvEntfernen(hkvWeg.dataset.hkvWeg);
+  // N135 — Zähler umbenennen (alle Zähler, nicht nur Strom).
+  const umb = e.target.closest('[data-zaehler-umbenennen]');
+  if (umb) { e.preventDefault(); e.stopPropagation();
+    return zaehlerUmbenennen(umb.dataset.zaehlerUmbenennen); }
 
   const beleg = e.target.closest('[data-beleg]');
   if (beleg) {

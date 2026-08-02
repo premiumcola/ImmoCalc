@@ -229,9 +229,10 @@ function skelett() {
          sie sich bezahlt gemacht. -->
     <div class="karte">
       <div class="hh"><h3>PV-Anlage</h3></div>
-      <p class="hint">Eigenverbrauch = Produktion − Einspeisung. Ertrag =
-        Einspeisevergütung (EEG-Stufen 0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) +
-        ersparter Zukauf (Eigenverbrauch × Netzpreis).</p>
+      <p class="hint">Eigenverbrauch = Produktion − Einspeisung. Die
+        Einspeisevergütung folgt den EEG-Stufen (0–10 kWp 8,2 ct, 10–40 kWp
+        7,1 ct). Was die Anlage wirklich abträgt, steht unten im Verlauf —
+        dort zählt nur geflossenes Geld.</p>
       <div class="raster">
         ${F_PV.map(f => feldHtml(...f)).join('')}
       </div>
@@ -339,8 +340,8 @@ function ergebnisZeigen(r) {
     <div class="k"><span class="kl">Eigenverbrauch</span><span class="kv">${kwh(pv.eigenverbrauch_kwh)}</span></div>
     <div class="k"><span class="kl">Satz</span><span class="kv">${(pv.satz_ct ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ct</span></div>
     <div class="k"><span class="kl">Einspeisevergütung</span><span class="kv">${eur(pv.einspeiseverguetung)}</span></div>
-    <div class="k"><span class="kl">Ersparnis Zukauf</span><span class="kv">${eur(pv.eigenverbrauch_ersparnis)}</span></div>
-    <div class="k"><span class="kl">PV-Ertrag</span><span class="kv pos">${eur(pv.ertrag)}</span></div>`;
+    <div class="k"><span class="kl">Ersparnis Zukauf <span class="kh">rechnerisch,
+      kein Ertrag</span></span><span class="kv">${eur(pv.eigenverbrauch_ersparnis)}</span></div>`;
 
   // N89 — die E-Tankstelle: was der ladenden Person berechnet wird.
   const t = r.tankstelle || {};
