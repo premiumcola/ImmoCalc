@@ -418,9 +418,14 @@ def pv_verlauf(slug: str, session: Session = Depends(get_session),
                          "Einspeisevergütung aus einer nicht umlagefähigen "
                          "Kostenart, das E-Tanken aus den Ladungen.")
     elif not erreicht and not prognose and a["anschaffung"]:
-        warnungen.append("Eine Prognose gibt es ab dem zweiten Abrechnungsjahr "
-                         "mit Ertrag — aus einem einzigen Jahr wäre sie "
-                         "geraten.")
+        ertragsjahre = sum(1 for z in jahre
+                           if round(z["summe"] - z["vorlauf"], 2) > 0)
+        warnungen.append(
+            f"Bei diesem Ertrag ist die Anlage in {_PROGNOSE_MAX_JAHRE} Jahren "
+            f"noch nicht abbezahlt — eine Jahreszahl wäre hier ohne Aussage."
+            if ertragsjahre >= 2 else
+            "Eine Prognose gibt es ab dem zweiten Abrechnungsjahr mit Ertrag — "
+            "aus einem einzigen Jahr wäre sie geraten.")
     return {"anschaffung": a["anschaffung"], "vorlauf": round(vorlauf, 2),
             "jahre": jahre,
             "kumuliert": a["kumuliert"], "rest": a["rest"],

@@ -657,6 +657,20 @@ def test_verlauf_prognose_erst_ab_zwei_ertragsjahren(client):
     assert any("zweiten Abrechnungsjahr" in w for w in v["warnungen"])
 
 
+def test_verlauf_prognose_jenseits_des_horizonts_bleibt_leer(client):
+    """Trägt die Anlage nur Kleinbeträge ab, wäre eine Jahreszahl in ferner
+    Zukunft ohne Aussage — dann lieber keine."""
+    slug = _pv_objekt(client, "PV-Schnecke")
+    client.put(f"/api/objekte/{slug}/strom/2024", json={"anschaffung_eur": 100000})
+    for jahr in (2024, 2025):
+        _position(client, _zeitraum_id(client, slug, jahr), _EINSPEISUNG, 100.0)
+
+    v = _verlauf(client, slug)
+    assert v["prognose"] is None
+    assert v["break_even_jahr"] is None
+    assert any("noch nicht abbezahlt" in w for w in v["warnungen"])
+
+
 def test_verlauf_vorlauf_zaehlt_einmalig_aufs_erste_jahr(client):
     """Der Vorlauf ist, was die Anlage vor der ersten Abrechnung schon
     abgetragen hat: einmalig auf die erste Zeile, nie wiederholt — und er hebt
