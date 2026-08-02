@@ -2141,8 +2141,8 @@ async function fuelleWasserInline(el) {
    Knopf und Liste und lassen sich nicht als Zeichenkette einfügen. */
 function montiereSchluessel() {
   if (!schluessel) return;
-  // Nur noch vier Schlüssel zur Wahl: Fläche · Personen · Einheiten · Verbrauch.
-  const WAHL = ['flaeche', 'personen', 'einheiten', 'verbrauch'];
+  // Fläche · Personen · Einheiten · Prozentual · Verbrauch (N73).
+  const WAHL = ['flaeche', 'personen', 'einheiten', 'prozentual', 'verbrauch'];
   const titel = new Map(schluessel.schluessel.map(s => [s.wert, s.titel]));
   const basis = WAHL.filter(w => titel.has(w))
     .map(w => ({ wert: w, text: titel.get(w) }));
