@@ -3075,8 +3075,9 @@ inhalt.addEventListener('change', e => {
   // N47/N60 — Anfang/Ende (Stand oder Datum) eines Zählers speichern.
   if (e.target.matches('[data-endstand]')) endstandSpeichern(e.target);
   if (e.target.matches('[data-anfangstand]')) anfangstandSpeichern(e.target);
-  // N77d — das gemeinsame Kategorie-Datum auf alle erfassten Stände schreiben.
-  if (e.target.matches('[data-kat-anfangdatum],[data-kat-enddatum]')) katDatumSpeichern(e.target);
+  // N88 — das gemeinsame Kategorie-Datum wird NUR als Default für neue Stand-
+  // Eingaben genutzt (kein destruktives Auto-Neuspeichern mehr, das die Stände
+  // beim Datum-Tippen zerschoss). Beim Speichern eines Stands wird es gelesen.
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
   // CCCLXII — Kostenart der Position wechseln (Wähler + Freitext für eine neue).
@@ -4113,35 +4114,6 @@ async function anfangstandSpeichern(input) {
     await zeichnen();
   } catch (fehler) {
     melde(fehler.message || 'Speichern fehlgeschlagen', 'neg');
-  }
-}
-
-/* N77d — das gemeinsame Anfangs-/Enddatum einer Kategorie auf ALLE bereits
-   erfassten Stände des Blocks schreiben. Die Endpunkte sind je Zeitraum bzw. je
-   Zähler idempotent → kein Dubletten-Risiko beim Neu-Schreiben. */
-async function katDatumSpeichern(input) {
-  const panel = input.closest('.zu-panel');
-  const datum = input.value;
-  if (!panel || !datum) return;
-  const istEnde = input.hasAttribute('data-kat-enddatum');
-  const felder = [...panel.querySelectorAll(
-    istEnde ? '[data-endstand]' : '[data-anfangstand]')];
-  try {
-    let n = 0;
-    for (const f of felder) {
-      const stand = standAusFeld(f);
-      if (stand === null || Number.isNaN(stand)) continue;   // ohne Stand kein Datum
-      const id = f.dataset.endstand || f.dataset.anfangstand;
-      const ep = istEnde ? `/zaehler/${id}/ablesungen` : `/zaehler/${id}/anfangsstand`;
-      await api(ep, { method: 'POST', body: { stand, datum, zeitraum_id: Number(zid) } });
-      n++;
-    }
-    ablesungMaske = await api(`/zeitraeume/${zid}/ablesung`);
-    chipMap = baueChipMap();
-    melde(n ? 'Ablesedatum übernommen' : 'Datum gemerkt', 'pos');
-    await zeichnen();
-  } catch (fehler) {
-    melde(fehler.message || 'Datum konnte nicht gesetzt werden', 'neg');
   }
 }
 
