@@ -1751,7 +1751,18 @@ const KI_LABELS = {
   steuernummer: 'Steuernummer', aktenzeichen: 'Aktenzeichen',
   flaeche: 'Fläche', wohnflaeche: 'Wohnfläche', einheit: 'Einheit',
   sache: 'Sache', datum: 'Datum', zeitraum: 'Zeitraum',
+  // N162 — Strombeleg. Auf einer Jahresabrechnung stehen drei Beträge
+  // nebeneinander; sie brauchen Namen, sonst rechnet man mit dem falschen.
+  verbrauch_kwh: 'Verbrauch', verbrauch: 'Verbrauch',
+  betrag_art: 'Betrag ist', nachzahlung: 'Nachzahlung',
+  abschlag_monat: 'Abschlag je Monat', preis_kwh: 'Preis je kWh',
+  bruttobetrag: 'Bruttobetrag', zeitraum_von: 'Zeitraum von',
+  zeitraum_bis: 'Zeitraum bis',
 };
+
+/** Welche Rasterfelder eine Einheit tragen — sonst stünde „2416" da, und
+    niemand wüsste, ob das Kilowattstunden oder Euro sind (N162). */
+const KI_EINHEITEN = { verbrauch_kwh: 'kWh', verbrauch: 'kWh' };
 
 /** Für diese Arten steht der Datensatz-Weg noch aus — die Vorbelegung dient
     dann dem händischen Übertragen der Werte. */
@@ -1762,11 +1773,20 @@ const kiLabel = schluessel => KI_LABELS[schluessel]
   || String(schluessel).charAt(0).toUpperCase()
      + String(schluessel).slice(1).replace(/_/g, ' ');
 
-/** Wie ein KI-Wert dasteht: Geldbeträge hübsch, sonst roh. */
+/** Wie ein KI-Wert dasteht: Geldbeträge hübsch, Mengen mit Einheit, sonst roh. */
 function kiWert(schluessel, wert) {
   if (typeof wert === 'number') {
-    const geld = /miete|beitrag|schuld|kaution|betrag|rate|kosten|messbetrag/
-      .test(String(schluessel).toLowerCase());
+    const name = String(schluessel).toLowerCase();
+    // N162 — der Preis je kWh hat drei Nachkommastellen (0,357 €/kWh); mit
+    // zwei stünde dort 0,36 € und der Abgleich mit der Rechnung ginge nicht auf.
+    if (name === 'preis_kwh') {
+      return wert.toLocaleString('de-DE', { minimumFractionDigits: 3,
+                                            maximumFractionDigits: 3 }) + ' €/kWh';
+    }
+    const einheit = KI_EINHEITEN[name];
+    if (einheit) return wert.toLocaleString('de-DE') + ' ' + einheit;
+    const geld = /miete|beitrag|schuld|kaution|betrag|rate|kosten|messbetrag|zahlung|abschlag/
+      .test(name);
     return geld ? eur(wert) : String(wert);
   }
   return String(wert);

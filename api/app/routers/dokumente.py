@@ -1555,6 +1555,108 @@ def _regeln(session: Session) -> list[Erkennungsregel]:
                              .where(Erkennungsregel.aktiv == True)).all())  # noqa: E712
 
 
+# --------------------------------------------------------------------------
+# N162 — Strombelege: Menge und Bruttobetrag der Lieferung
+#
+# Der einzige Strombeleg in der Hochlage ist der externe Zukauf. Gebraucht
+# werden daraus die wirklich verbrauchten Kilowattstunden und der Bruttopreis
+# dafür (Grundpreis enthalten, er wird nicht getrennt umgelegt). Betrag je Menge
+# ist der Netzpreis; die Stromkette leitet PV und Akku mit 10 % Abschlag daraus
+# ab — das passiert dort, nicht hier.
+#
+# Der allgemeine Auslese-Zweig greift auf einer Jahresabrechnung leicht daneben:
+# neben dem Bruttobetrag der Lieferung stehen dort die Nachzahlung nach Abzug
+# der Abschläge und der monatliche Abschlag. Deshalb ein zweiter, gezielter
+# Aufruf, der die drei getrennt liest und benennt.
+# --------------------------------------------------------------------------
+
+def _strom_hinweis(kostenart: str, ergebnis: dict) -> str:
+    """Alles, was auf einen Strombeleg deuten kann, in einem Satz.
+
+    Nicht nur der Kontext-Hinweis der Oberfläche (den gibt es nur beim Ablegen
+    an einer Position), sondern auch, was die allgemeine Auslese schon erkannt
+    hat: Sache, Belegart, Absender und die Kostenart aus dem Raster. So greift
+    der Zweig auch im Dokumenteneingang, wo niemand eine Kostenart mitschickt."""
+    felder = ergebnis.get("felder")
+    felder = felder if isinstance(felder, dict) else {}
+    teile = (kostenart, ergebnis.get("sache"), ergebnis.get("dokumenttyp"),
+             ergebnis.get("absender"), felder.get("kostenart"))
+    return " ".join(str(t) for t in teile if t)
+
+
+def _zeitraum_text(von: str | None, bis: str | None) -> str:
+    """Der abgerechnete Zeitraum lesbar — „15.06.2024 – 14.06.2025"."""
+    def tag(iso: str | None) -> str:
+        try:
+            return date.fromisoformat(iso).strftime("%d.%m.%Y") if iso else ""
+        except (ValueError, TypeError):
+            return ""
+    beide = [t for t in (tag(von), tag(bis)) if t]
+    return " – ".join(beide)
+
+
+def _strom_in_felder(ergebnis: dict, strom: dict) -> None:
+    """Menge und Betrag der Stromauslese in die Antwortfelder ziehen.
+
+    Der gezielte Zweig ist die genauere Quelle — er hält Lieferung, Nachzahlung
+    und Abschlag auseinander. Sein Betrag hat deshalb Vorrang, auch im Raster
+    (`felder`), aus dem das Prüfblatt seine Eingaben vorbelegt: sonst stünde
+    dort weiter die Nachzahlung, ein Zwanzigstel der Rechnung."""
+    menge, betrag = strom.get("menge_kwh"), strom.get("betrag")
+    if betrag:
+        ergebnis["betrag"] = betrag
+    felder = ergebnis.get("felder")
+    if not isinstance(felder, dict):
+        felder = ergebnis["felder"] = {}
+    if betrag:
+        felder["betrag"] = betrag
+        felder["betrag_art"] = strom.get("betrag_label") or ""
+    if menge:
+        felder["verbrauch_kwh"] = menge
+    if strom.get("preis_kwh"):
+        felder["preis_kwh"] = strom["preis_kwh"]
+    for schluessel in ("nachzahlung", "abschlag_monat"):
+        if strom.get(schluessel):
+            felder[schluessel] = strom[schluessel]
+    zeitraum = _zeitraum_text(strom.get("von"), strom.get("bis"))
+    if zeitraum:
+        felder["zeitraum"] = zeitraum
+        if not (ergebnis.get("zeitraum_hinweis") or "").strip():
+            ergebnis["zeitraum_hinweis"] = zeitraum
+    # Eine Verbrauchsabrechnung mit Menge UND Bruttobetrag ist zweifelsfrei ein
+    # Kostenbeleg. Hatte eine Erkennungsregel sie zuvor auf „keine Kosten"
+    # gestellt — ein Muster wie „N-ERGIE Netz" trifft auch die Fußzeile einer
+    # Stromrechnung —, wäre der Betrag sonst verloren: genau das leere
+    # Betragsfeld, das gemeldet wurde.
+    if menge and strom.get("brutto"):
+        ergebnis["ist_kosten"] = True
+        if ergebnis.get("kosten_relevant") is False:
+            ergebnis["kosten_relevant"] = True
+
+
+def _strom_ergaenzen(session: Session, rohdaten: bytes, ergebnis: dict,
+                     dateiname: str = "", kostenart: str = "") -> None:
+    """Ergänzt einen Strombeleg um Menge und Bruttobetrag (N162).
+
+    Rein additiv: ohne Strom-Kontext, ohne eingerichtete KI oder bei jedem
+    Fehler bleibt `ergebnis` unverändert — es kostet dann auch keinen Aufruf."""
+    ki_key = _ki_key(session)
+    if not kiauslese.verfuegbar(ki_key):
+        return
+    if not kiauslese.ist_strom_kontext(_strom_hinweis(kostenart, ergebnis)):
+        return
+    text = ocr.text_aus_beleg(rohdaten)
+    if not (text or "").strip():
+        return
+    strom = kiauslese.lies_strom(text, dateiname, schluessel=ki_key,
+                                 modell=_ki_modell(session))
+    if not strom:
+        return
+    ergebnis["strom"] = strom
+    ergebnis["ki"] = True
+    _strom_in_felder(ergebnis, strom)
+
+
 @router.post("/erkennen")
 async def erkennen(datei: UploadFile = File(...),
                    kostenart: str = Form(""),
@@ -1590,6 +1692,10 @@ async def erkennen(datei: UploadFile = File(...),
                                            modell=_ki_modell(session))
             if wasser:
                 ergebnis["wasser"] = wasser
+    # N162 — dasselbe für Strom: Menge (kWh) und Bruttobetrag der Lieferung,
+    # sauber getrennt von Nachzahlung und Abschlag. Greift auch ohne Hinweis,
+    # wenn die allgemeine Auslese einen Strombeleg erkannt hat.
+    _strom_ergaenzen(session, rohdaten, ergebnis, datei.filename or "", kostenart)
     return ergebnis
 
 
@@ -4114,6 +4220,10 @@ def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
     # greifen wie beim Foto-Upload.
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
                            ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+    # N162 — Strombeleg: Menge und Bruttobetrag der Lieferung nachziehen, bevor
+    # das Raster am Beleg festgehalten wird. Sonst bliebe dort die Nachzahlung
+    # stehen und belegte später das Betragsfeld falsch vor.
+    _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "")
     _ki_am_beleg_festhalten(session, d, ergebnis)
     return ergebnis
 
@@ -4135,6 +4245,7 @@ def neu_analysieren(dokument_id: int,
     eingerichtet = kiauslese.verfuegbar(ki_key)
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
                            ki_key=ki_key, ki_modell=_ki_modell(session))
+    _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "")   # N162
     _ki_am_beleg_festhalten(session, d, ergebnis)
     gelaufen = bool(ergebnis.get("ki"))
     if not eingerichtet:

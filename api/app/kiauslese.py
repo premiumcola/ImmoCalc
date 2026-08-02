@@ -96,6 +96,15 @@ SYSTEM_PROMPT = (
     "Saldo- oder Gutschriftzeile ändert daran nichts. Zahlen aus Geräte-"
     "Kennungen, Serien-/Zählernummern oder Datumsangaben (z. B. …,2003,03/2004 "
     "auf einer Typenplakette) sind KEIN Betrag — dann null. "
+    # N162 — auf einer Energie-Jahresabrechnung stehen mehrere Beträge
+    # nebeneinander. Abgerechnet wird die LIEFERUNG, nicht der Restsaldo.
+    "Bei einer Jahres-/Verbrauchsabrechnung eines Energieversorgers (Strom, Gas, "
+    "Fernwärme) ist der Betrag der BRUTTOBETRAG DER LIEFERUNG für den "
+    "abgerechneten Zeitraum (\"Summe Bruttobetrag\", \"Rechnungsbetrag brutto\") "
+    "— NICHT die Nachzahlung/Restforderung nach Abzug der geleisteten Abschläge "
+    "und NICHT der monatliche Abschlag. Beispiel: \"Stromlieferung … 862,51 — "
+    "abzüglich geleisteter Zahlungen -807,00 — Nachzahlung 55,51 — monatliche "
+    "Abschlagszahlung 72,00\" → betrag = 862.51. "
     "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand, "
     "Ableseprotokoll), sonst true. "
     "kosten_relevant = true NUR, wenn auf dem Beleg echte, bezifferte Kosten "
@@ -145,6 +154,16 @@ SYSTEM_PROMPT = (
     "NEBENKOSTEN-RECHNUNG: kostenart, betrag, zeitraum, s35a (true bei "
     "haushaltsnaher Dienstleistung: Schornsteinfeger, Wartung, Hausmeister, "
     "Winterdienst, Gartenpflege), verbrauch.\n"
+    # N162 — der Strombeleg trägt zwei Zahlen, mit denen gerechnet wird: die
+    # verbrauchte Menge und der Bruttobetrag der Lieferung. Beide gehören ins
+    # Raster, damit sie nicht nur im Fließtext der Zusammenfassung stehen.
+    "STROM-/ENERGIE-RECHNUNG (Stromversorger, Gas, Fernwärme): verbrauch_kwh "
+    "(der Gesamtverbrauch des abgerechneten Zeitraums in kWh, kein Euro-Betrag "
+    "und kein Zählerstand), bruttobetrag (Bruttobetrag der Lieferung, "
+    "Grundpreis und MwSt. enthalten), nachzahlung (Restbetrag nach Abzug der "
+    "Abschläge — NICHT bruttobetrag), abschlag_monat (monatliche "
+    "Abschlagszahlung), zeitraum_von, zeitraum_bis (Anfang/Ende des "
+    "abgerechneten Zeitraums als YYYY-MM-DD).\n"
     "INFO-BELEG (Zählerstand/Ableseprotokoll/SEPA-Mandat): keine felder, "
     "ist_kosten=false.\n"
     "Nimm KEINE Felder wie Zahlstatus/\"bezahlt\", KEINE fremde IBAN, KEINE "
@@ -256,6 +275,67 @@ def _summe(mengen) -> float | None:
     bleibt."""
     summe = sum(m for m in mengen if m)
     return round(summe, 2) if summe > 0 else None
+
+
+# N162 — Strommengen. Die Einheit fliegt vor dem Zahlenlesen raus; „MWh" wird
+# vorher gemerkt, weil daraus der Faktor 1000 folgt.
+_STROM_EINHEIT = re.compile(r"(?i)\b(?:k|m)?\s*wh\b|kilowattstunden?|"
+                            r"megawattstunden?")
+_MEGA = re.compile(r"(?i)\bm\s*wh\b|megawattstunde")
+# Eine deutsche Tausendergliederung: 2.416 · 1.234.567 — aber nicht 12.5.
+_TAUSENDER = re.compile(r"\d{1,3}(?:\.\d{3})+")
+
+
+def _zahl_de(wert) -> float | None:
+    """Eine Zahl in deutscher Schreibweise — und nur in dieser.
+
+    `_betrag` reicht dafür nicht: dort gilt der letzte Punkt als Dezimaltrenner,
+    was bei einem Geldbetrag stimmt („1.234.56" → 1234.56), bei einer Menge ohne
+    Nachkommastellen aber falsch ist — aus „2.416 kWh" würde 2,416 kWh, also ein
+    Tausendstel des Verbrauchs. Hier entscheidet die Form:
+
+    * Komma vorhanden → Komma ist der Dezimaltrenner, Punkte sind Tausender
+      („2.416,0" → 2416.0)
+    * nur Punkte, und sie gliedern in Dreiergruppen → Tausendertrenner
+      („2.416" → 2416.0)
+    * sonst ist der Punkt der Dezimaltrenner („12.5" → 12.5)
+    """
+    roh = re.sub(r"[^\d,.]", "", str(wert or ""))
+    if not roh:
+        return None
+    if "," in roh:
+        roh = roh.replace(".", "").replace(",", ".")
+    elif _TAUSENDER.fullmatch(roh):
+        roh = roh.replace(".", "")
+    try:
+        return float(roh)
+    except ValueError:
+        return None
+
+
+def _kwh(wert) -> float | None:
+    """Eine Strommenge in Kilowattstunden als Zahl — N162.
+
+    Die Einheit („kWh", „MWh", „Kilowattstunden") wird abgeschnitten, MWh dabei
+    auf kWh hochgerechnet. Führt die Rechnung wegen eines Preis- oder
+    Zählerwechsels Teilmengen — als Liste oder als „1256 + 1160" —, werden sie
+    addiert. Null, negativ oder unlesbar heißt „nicht gefunden" → None; eine
+    Menge von 0 kWh ist keine belastbare Angabe."""
+    if isinstance(wert, list):
+        return _summe(_kwh(teil) for teil in wert)
+    if isinstance(wert, bool):
+        return None
+    if isinstance(wert, (int, float)):
+        return round(abs(float(wert)), 3) or None
+    if not isinstance(wert, str):
+        return None
+    faktor = 1000.0 if _MEGA.search(wert) else 1.0
+    teile = [_zahl_de(t) for t in _ZAHL.findall(_STROM_EINHEIT.sub(" ", wert))]
+    teile = [abs(t) for t in teile if t]
+    if not teile:
+        return None
+    menge = sum(teile) if "+" in wert else teile[0]
+    return round(menge * faktor, 3) or None
 
 
 def _jahr(wert) -> int | None:
@@ -585,6 +665,208 @@ def lies_wasser(text: str, dateiname: str = "", schluessel: str = "",
              sum(1 for k, v in ergebnis.items()
                  if k != "gesamt_m3" and v is not None),
              "vorhanden" if ergebnis["gesamt_m3"] is not None else "keine")
+    return ergebnis
+
+
+# --------------------------------------------------------------------------
+# N162 — der strom-spezifische Auslese-Zweig.
+#
+# Beim Strom ist der einzige Beleg in der Hochlage der externe Zukauf. Gebraucht
+# werden daraus genau zwei Zahlen: die wirklich verbrauchten Kilowattstunden und
+# der Bruttopreis dafür (der Grundpreis steckt darin und wird NICHT getrennt
+# umgelegt). Betrag durch Menge ergibt den Netzpreis; die Stromkette leitet
+# daraus PV und Akku mit 10 % Abschlag ab.
+#
+# Die Schwierigkeit ist nicht das Finden, sondern das Auseinanderhalten: eine
+# Jahresabrechnung nennt nebeneinander den Bruttobetrag der Lieferung (862,51 €),
+# die Nachzahlung nach Abzug der Abschläge (55,51 €) und den monatlichen
+# Abschlag (72,00 €). Der generische Ein-Betrag-Prompt greift dabei leicht
+# daneben — oder liefert gar nichts, weil ihm keiner der Beträge sicher genug
+# ist. Hier werden alle drei getrennt abgefragt und getrennt zurückgegeben, mit
+# einer klaren Empfehlung, welcher gemeint ist.
+# --------------------------------------------------------------------------
+STROM_SYSTEM_PROMPT = (
+    "Du liest eine deutsche Strom-/Energierechnung (Jahres- oder "
+    "Verbrauchsabrechnung eines Versorgers). Gib NUR JSON zurück, kein weiterer "
+    "Text:\n"
+    '{"menge_kwh":<Zahl|null>,"brutto":<Zahl|null>,"netto":<Zahl|null>,'
+    '"nachzahlung":<Zahl|null>,"guthaben":<Zahl|null>,'
+    '"abschlag_monat":<Zahl|null>,"von":"YYYY-MM-DD|null",'
+    '"bis":"YYYY-MM-DD|null"}\n'
+    "Auf so einer Rechnung stehen MEHRERE Euro-Beträge nebeneinander. Halte sie "
+    "streng auseinander — sie zu verwechseln verfälscht die Abrechnung um ein "
+    "Vielfaches:\n"
+    "brutto = der BRUTTOBETRAG DER LIEFERUNG für den abgerechneten Zeitraum, "
+    "inklusive Mehrwertsteuer UND inklusive Grundpreis (\"Summe Bruttobetrag\", "
+    "\"Stromlieferung … Bruttobetrag\", \"Rechnungsbetrag brutto\"). Das ist der "
+    "Betrag VOR Abzug der geleisteten Abschlagszahlungen.\n"
+    "netto = derselbe Betrag ohne Mehrwertsteuer (\"Nettobetrag\").\n"
+    "nachzahlung = was nach Abzug der geleisteten Abschläge noch offen ist "
+    "(\"Nachzahlung\", \"Restbetrag\", \"noch zu zahlen\"). Das ist NIE brutto.\n"
+    "guthaben = eine Erstattung, wenn die Abschläge höher waren als der "
+    "Verbrauch.\n"
+    "abschlag_monat = die monatliche Abschlags-/Vorauszahlung. Das ist NIE "
+    "brutto.\n"
+    "Beispiel: \"Stromlieferung 724,80 / 137,71 / 862,51 — abzüglich "
+    "geleisteter Zahlungen -807,00 — Nachzahlung 55,51 — monatliche "
+    "Abschlagszahlung 72,00 EUR\" → brutto = 862.51, netto = 724.80, "
+    "nachzahlung = 55.51, abschlag_monat = 72.00.\n"
+    "menge_kwh = der GESAMTE abgerechnete Verbrauch des Zeitraums in "
+    "Kilowattstunden als Zahl (kein Geldbetrag!). Fundstellen: "
+    "\"Gesamtverbrauch\", \"Jahresverbrauch\", Spalte \"Verbrauch kWh\", "
+    "\"Ihr Stromverbrauch … beträgt\". Führt die Rechnung wegen eines Preis- "
+    "oder Zählerwechsels mehrere Teilmengen, nimm die GESAMTSUMME (z. B. "
+    "1256 + 1160 → 2416), nie eine einzelne Teilmenge. Nimm NICHT einen "
+    "Zählerstand (Anfangs-/Endzählerstand) und keinen Euro-Betrag.\n"
+    "von/bis = Anfang und Ende des ABGERECHNETEN Zeitraums als ISO-Datum "
+    "(\"Abrechnung für den Zeitraum vom 15.06.2024 bis 14.06.2025\" → "
+    "von = \"2024-06-15\", bis = \"2025-06-14\"). NICHT das Rechnungsdatum, "
+    "NICHT den Zeitraum künftiger Abschläge.\n"
+    "Beträge in Euro als Zahl (Punkt als Dezimaltrenner, ohne Währungszeichen), "
+    "immer positiv. Was auf dem Beleg nicht steht, auf null setzen — nie raten. "
+    "Ist es überhaupt keine Strom-/Energierechnung, alle Felder auf null."
+)
+STROM_TOKENS = 260
+
+# Wie ein Betrag heißt, damit am Feld steht, WELCHER Betrag dort liegt. Der
+# Nutzer soll nie raten müssen, ob er die Lieferung oder den Restsaldo sieht.
+STROM_BETRAGSARTEN = {
+    "lieferung": "Bruttobetrag der Lieferung (Grundpreis enthalten)",
+    "nachzahlung": "Nachzahlung nach Abzug der Abschläge",
+    "abschlag": "Monatlicher Abschlag",
+}
+
+
+def ist_strom_kontext(hinweis: str) -> bool:
+    """Deutet der Kontext (Kostenart/Absender/Belegart) auf einen Strombeleg?
+
+    Absichtlich tolerant (Umlaute, Groß/Klein, Wortteile), damit „Allgemein­
+    strom", „Hausstrom", „Stromkosten" und ein Absender wie
+    „Elektrizitätsversorgung" gleichermaßen greifen. Der Zweig kostet nur dann
+    einen zusätzlichen KI-Aufruf."""
+    n = (hinweis or "").lower()
+    n = (n.replace("ä", "ae").replace("ö", "oe")
+          .replace("ü", "ue").replace("ß", "ss"))
+    return any(wort in n for wort in ("strom", "elektrizitaet", "elektrizitat",
+                                      "kwh", "kilowattstunde"))
+
+
+def _strom_kandidaten(block: dict) -> list[dict]:
+    """Die belegten Beträge, benannt und geordnet — der beste zuerst.
+
+    Nicht raten und nicht schweigen: sind mehrere Beträge plausibel, kommen alle
+    mit, damit die Oberfläche sie zur Wahl stellen kann. Die Reihenfolge ist die
+    fachliche Rangfolge — abgerechnet wird die Lieferung."""
+    roh = [("lieferung", _betrag(block.get("brutto"))),
+           ("nachzahlung", _betrag(block.get("nachzahlung"))),
+           ("abschlag", _betrag(block.get("abschlag_monat")))]
+    return [{"art": art, "label": STROM_BETRAGSARTEN[art], "betrag": wert}
+            for art, wert in roh if wert]
+
+
+def lies_strom(text: str, dateiname: str = "", schluessel: str = "",
+               modell: str = "") -> dict | None:
+    """Liest Menge und Bruttobetrag einer Stromrechnung (N162).
+
+    Gibt bei Erfolg ein dict zurück:
+
+    * `menge_kwh` — der abgerechnete Verbrauch in kWh (`einheit` sagt „kWh")
+    * `betrag` / `betrag_art` / `betrag_label` — der Betrag, mit dem gerechnet
+      wird, und WELCHER es ist. Erste Wahl ist der Bruttobetrag der Lieferung;
+      steht nur eine Nachzahlung (oder nur ein Abschlag) auf dem Beleg, kommt
+      der Betrag trotzdem — dann aber ausdrücklich als solcher benannt, statt
+      das Feld leer zu lassen.
+    * `kandidaten` — alle belegten Beträge samt Bezeichnung, zur Wahl
+    * `brutto`, `netto`, `nachzahlung`, `guthaben`, `abschlag_monat` — einzeln
+    * `von`, `bis` — der abgerechnete Zeitraum der RECHNUNG (er deckt sich nicht
+      zwingend mit dem Nebenkostenzeitraum; das Umrechnen ist eine Entscheidung
+      des Nutzers und passiert hier nicht)
+    * `preis_kwh` — Betrag je Menge, nur zur Anzeige; gerechnet wird in der
+      Stromkette
+
+    `None`, wenn der Beleg nichts Brauchbares hergibt (weder Menge noch Betrag)
+    oder bei jedem Fehler — kein Key, kein httpx, Netzwerk, Timeout, ungültige
+    Antwort. Nie eine Exception. Derselbe Key-/Modell-Vorrang wie `lies_beleg`."""
+    if httpx is None:
+        return None
+    schluessel = _schluessel(schluessel)
+    if not schluessel:
+        return None
+    inhalt = (text or "").strip()
+    if not inhalt:
+        return None
+
+    gekuerzt = inhalt[:MAX_ZEICHEN]
+    nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
+    rumpf = {
+        "model": _modell(modell),
+        "max_tokens": STROM_TOKENS,
+        "system": STROM_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": nutzer}],
+    }
+    kopf = {
+        "x-api-key": schluessel,
+        "anthropic-version": API_VERSION,
+        "content-type": "application/json",
+    }
+
+    try:
+        antwort = httpx.post(API_URL, headers=kopf, json=rumpf, timeout=ZEITLIMIT)
+    except Exception as fehler:                            # noqa: BLE001
+        log.info("KI-Stromauslese nicht erreichbar: %s", type(fehler).__name__)
+        return None
+    if antwort.status_code != 200:
+        log.info("KI-Stromauslese meldete HTTP %s", antwort.status_code)
+        return None
+
+    try:
+        daten = antwort.json()
+        bloecke = daten.get("content") or []
+        roh = "".join(b.get("text", "") for b in bloecke
+                      if isinstance(b, dict) and b.get("type") == "text")
+    except Exception:                                      # noqa: BLE001
+        return None
+
+    block = _json_block(roh)
+    if block is None:
+        log.info("KI-Stromauslese lieferte kein verwertbares JSON")
+        return None
+    return _strom_ergebnis(block)
+
+
+def _strom_ergebnis(block: dict) -> dict | None:
+    """Die Modellantwort zu einem geprüften Ergebnis — getrennt geführt, damit
+    das Auseinanderhalten der Beträge für sich prüfbar bleibt."""
+    menge = _kwh(block.get("menge_kwh"))
+    kandidaten = _strom_kandidaten(block)
+    if menge is None and not kandidaten:
+        return None                       # kein Strombeleg — nichts erfinden
+    beste = kandidaten[0] if kandidaten else None
+    betrag = beste["betrag"] if beste else None
+    ergebnis = {
+        "menge_kwh": menge,
+        "einheit": "kWh",
+        "betrag": betrag,
+        "betrag_art": beste["art"] if beste else "",
+        "betrag_label": beste["label"] if beste else "",
+        "kandidaten": kandidaten,
+        "brutto": _betrag(block.get("brutto")),
+        "netto": _betrag(block.get("netto")),
+        "nachzahlung": _betrag(block.get("nachzahlung")),
+        "guthaben": _betrag(block.get("guthaben")),
+        "abschlag_monat": _betrag(block.get("abschlag_monat")),
+        "von": _datum(block.get("von")),
+        "bis": _datum(block.get("bis")),
+        # Nur zur Anzeige („trifft das den erwarteten Preis?"). Die Stromkette
+        # bildet den Netzpreis selbst aus Betrag und Menge der Kostenposition.
+        "preis_kwh": (round(betrag / menge, 4)
+                      if betrag and menge else None),
+    }
+    # Dezent loggen — OHNE Beträge und Mengen (Datenschutz): nur, ob Menge und
+    # Betrag gefunden wurden und welcher Betrag es geworden ist.
+    log.info("KI-Stromauslese gelesen (Menge %s, Betrag %s)",
+             "vorhanden" if menge else "keine",
+             ergebnis["betrag_art"] or "keiner")
     return ergebnis
 
 
