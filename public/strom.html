@@ -166,7 +166,12 @@ const F_PV = [
   ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
   ['pv_kwp', 'Anlagenleistung', 'kWp', 0.1],
   ['verguetung_eur', 'Vergütung (0 = rechnen)', '€', 0.01],
-  ['anschaffung_eur', 'Anschaffung', '€', 1],
+  ['anschaffung_eur', 'Anschaffung (Investment)', '€', 1],
+];
+// N87/N89 — die E-Tankstelle gehört zur PV-Anlage: der geladene Strom wird der
+// ladenden Person berechnet und fließt der Anlage zu (Amortisation).
+const F_TANKEN = [
+  ['tanken_preis', 'Preis je kWh (E-Auto)', '€', 0.01],
 ];
 
 function feldHtml(name, label, einheit, step) {
@@ -238,10 +243,35 @@ function skelett() {
     </div>
 
     <div class="karte">
+      <div class="hh"><h3>E-Tankstelle</h3></div>
+      <p class="hint">Der E-Auto-Strom gehört der PV-Anlage: er wird der
+        ladenden Person berechnet und zahlt auf die Amortisation ein. Die
+        geladene Menge steht oben unter „davon E-Auto Tanken".</p>
+      <div class="raster">
+        ${F_TANKEN.map(f => feldHtml(...f)).join('')}
+        <label class="feld"><span class="fl">Wird berechnet an</span>
+          <input type="text" data-text="tanken_person" placeholder="Name"></label>
+      </div>
+      <div class="kpi" id="tank"></div>
+    </div>
+
+    <div class="karte">
       <div class="hh"><h3>PV auf Eigentümer</h3></div>
-      <p class="hint">Ertrag und Anschaffung der Anlage, verteilt auf die
-        Eigentümer (5/6 + 1/6), cent-genau.</p>
+      <p class="hint">Die PV-Anlage ist ein eigenes Investment mit eigenen
+        Anteilen — unabhängig von den Objekt-Tausendsteln. Leer = Vorgabe
+        5/6 + 1/6.</p>
+      <label class="feld breit"><span class="fl">Eigene Anteile (Name : ‰, mit Komma getrennt)</span>
+        <input type="text" data-text="pv_anteile_roh" placeholder="z. B. Roland: 833,3 · Marvin: 166,7"></label>
       <div class="eig" id="eig"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>Amortisation des PV-Investments</h3></div>
+      <p class="hint">Was die Anlage einbringt (PV-Strom der Mieter +
+        Einspeisevergütung + E-Tanken) gegen die Anschaffung — über alle
+        erfassten Jahre.</p>
+      <div class="kpi" id="amort"></div>
+      <div class="eig" id="amortEig"></div>
     </div>
 
     <div id="warnungen"></div>`;
@@ -254,6 +284,11 @@ function werteAusForm() {
     const v = parseFloat(el.value);
     werte[el.dataset.feld] = Number.isFinite(v) ? v : 0;
   });
+  // N87 — Textfelder: ladende Person + eigene PV-Anteile (lesbar → JSON).
+  werte.tanken_person =
+    inhalt.querySelector('[data-text="tanken_person"]')?.value.trim() || '';
+  werte.pv_anteile = anteileJson(
+    inhalt.querySelector('[data-text="pv_anteile_roh"]')?.value);
   return werte;
 }
 
@@ -264,6 +299,37 @@ function formFuellen(werte) {
     const v = werte[el.dataset.feld];
     el.value = (v == null || v === 0) ? '' : v;
   });
+  // N87 — Textfelder: die ladende Person und die eigenen PV-Anteile. Letztere
+  // stehen als JSON in der Datenbank, in der Maske aber lesbar als
+  // „Name: ‰ · Name: ‰".
+  const p = inhalt.querySelector('[data-text="tanken_person"]');
+  if (p) p.value = werte.tanken_person || '';
+  const a = inhalt.querySelector('[data-text="pv_anteile_roh"]');
+  if (a) a.value = anteileLesbar(werte.pv_anteile || '');
+}
+
+/* JSON {Name: ‰} → „Name: 833,3 · Name: 166,7" (leer bleibt leer). */
+function anteileLesbar(roh) {
+  if (!roh) return '';
+  try {
+    return Object.entries(JSON.parse(roh))
+      .map(([n, v]) => `${n}: ${String(v).replace('.', ',')}`).join(' · ');
+  } catch { return roh; }
+}
+
+/* „Name: 833,3 · Name: 166,7" → JSON {Name: ‰}. Unlesbares gibt '' (Vorgabe
+   5/6 + 1/6 greift dann), damit eine Tippfehler-Eingabe nichts kaputt macht. */
+function anteileJson(text) {
+  const s = (text || '').trim();
+  if (!s) return '';
+  const paare = {};
+  for (const teil of s.split(/[·,;\n]/)) {
+    const m = /^\s*([^:]+):\s*([\d.,]+)\s*$/.exec(teil);
+    if (!m) continue;
+    const wert = parseFloat(m[2].replace(/\./g, '').replace(',', '.'));
+    if (Number.isFinite(wert) && wert > 0) paare[m[1].trim()] = wert;
+  }
+  return Object.keys(paare).length ? JSON.stringify(paare) : '';
 }
 
 /* Das Engine-Ergebnis in die Karten schreiben (Inputs bleiben unberührt). */
@@ -307,16 +373,63 @@ function ergebnisZeigen(r) {
     <div class="k"><span class="kl">Ersparnis Zukauf</span><span class="kv">${eur(pv.eigenverbrauch_ersparnis)}</span></div>
     <div class="k"><span class="kl">PV-Ertrag</span><span class="kv pos">${eur(pv.ertrag)}</span></div>`;
 
+  // N89 — die E-Tankstelle: was der ladenden Person berechnet wird.
+  const t = r.tankstelle || {};
+  document.getElementById('tank').innerHTML = `
+    <div class="k"><span class="kl">Geladen</span><span class="kv">${kwh(t.kwh || 0)}</span></div>
+    <div class="k"><span class="kl">Satz</span><span class="kv">${eur(t.preis || 0)}/kWh</span></div>
+    <div class="k"><span class="kl">Rechnung an ${esc(t.person || '—')}</span>
+      <span class="kv pos">${eur(t.betrag || 0)}</span></div>`;
+
   document.getElementById('eig').innerHTML = r.eigentuemer.map(e => `
     <div class="ez">
       <span class="eanteil">${esc(e.anteil)}</span>
-      <div class="ezeile"><span>PV-Ertrag</span><b>${eur(e.ertrag)}</b></div>
+      <div class="ezeile"><span>Investitions-Ertrag</span><b>${eur(e.investitions_ertrag ?? 0)}</b></div>
+      <div class="ezeile"><span>PV-Ertrag (kalkul.)</span><b>${eur(e.ertrag)}</b></div>
       <div class="ezeile"><span>Anschaffung</span><b>${eur(e.anschaffung)}</b></div>
     </div>`).join('');
 
   const w = document.getElementById('warnungen');
   w.innerHTML = (r.warnungen || []).map(t =>
     `<div class="warnung"><span class="wi" aria-hidden="true">⚠</span><span>${esc(t)}</span></div>`).join('');
+}
+
+/* N87 — die Amortisation des PV-Investments über ALLE erfassten Jahre:
+   kumulierter Investitions-Ertrag gegen die Anschaffung, plus der Anteil je
+   PV-Eigentümer. Fehlt die Anschaffung, bleibt die Karte ruhig. */
+async function amortisationZeigen() {
+  const ziel = document.getElementById('amort');
+  const zielEig = document.getElementById('amortEig');
+  if (!ziel) return;
+  try {
+    const a = await api(`/objekte/${encodeURIComponent(objektSlug)}/pv/amortisation`);
+    if (!a.anschaffung) {
+      ziel.innerHTML = '<div class="k"><span class="kl">Anschaffung</span>'
+        + '<span class="kv">— erst eintragen</span></div>';
+      zielEig.innerHTML = '';
+      return;
+    }
+    const jahre = (a.reihe || []).map(z =>
+      `<span class="chip">${z.jahr}: ${eur(z.ertrag)}</span>`).join('');
+    ziel.innerHTML = `
+      <div class="k"><span class="kl">Anschaffung</span><span class="kv">${eur(a.anschaffung)}</span></div>
+      <div class="k"><span class="kl">Bisher eingebracht</span><span class="kv pos">${eur(a.kumuliert)}</span></div>
+      <div class="k"><span class="kl">Amortisiert</span><span class="kv">${
+        a.amortisiert_prozent == null ? '—' : proz(a.amortisiert_prozent)}</span></div>
+      <div class="k"><span class="kl">Noch offen</span><span class="kv">${eur(a.rest)}</span></div>
+      <div class="k"><span class="kl">Break-even</span><span class="kv">${
+        a.break_even_jahr || 'noch nicht erreicht'}</span></div>`;
+    zielEig.innerHTML = `<div class="ez" style="flex:1 1 100%">
+        <span class="eanteil">Je Jahr</span>
+        <div class="ezeile" style="flex-wrap:wrap;gap:6px">${jahre || '—'}</div>
+      </div>` + (a.eigentuemer || []).map(e => `
+      <div class="ez"><span class="eanteil">${esc(e.anteil)}</span>
+        <div class="ezeile"><span>Bisher zugeflossen</span><b>${eur(e.betrag)}</b></div>
+      </div>`).join('');
+  } catch {
+    ziel.innerHTML = '<div class="k"><span class="kl">Amortisation</span>'
+      + '<span class="kv">nach dem nächsten Deploy verfügbar</span></div>';
+  }
 }
 
 let objektSlug = '';
@@ -328,6 +441,7 @@ async function rechnen() {
   try {
     const r = await api(`/objekte/${encodeURIComponent(objektSlug)}/strom/${jahrWahl.wert()}/rechnung`);
     ergebnisZeigen(r);
+    amortisationZeigen();      // N87 — läuft über alle Jahre, nebenher
   } catch (fehler) {
     melde(String(fehler.message || fehler), 'neg');
   }
