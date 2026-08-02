@@ -1179,6 +1179,26 @@ function wasserHatRechnung(k) {
   return !!(k.erledigt || (k.belege && k.belege.length));
 }
 
+/* N68 — generische Anzeigenamen je Zähler-id: die spezifischen Namen treten in
+   der Übersicht zurück, die Zugehörigkeit setzt der Nutzer über den Chooser.
+   Nur Unterzähler (kein Hauptzähler, kein Rest) bekommen ein generisches Label
+   nach Art; Waschmaschinen werden durchnummeriert. Hauptzähler/Rest behalten
+   ihren Namen. Wird je Neuzeichnung aus der Zählerliste gefüllt. */
+let zLabels = new Map();
+function generischeLabels(zaehler) {
+  const map = new Map();
+  let wm = 0;
+  for (const z of zaehler) {
+    if (!z.hauptzaehler_id || z.typ === 'rest') continue;
+    const art = wasserArt(z);
+    if (art === 'Waschmaschine') map.set(z.id, `Waschmaschine ${++wm}`);
+    else if (art === 'Kaltwasser') map.set(z.id, 'Kaltwasserzähler');
+    else if (art === 'Warmwasser') map.set(z.id, 'Warmwasserzähler');
+    else if (art === 'Gartenwasser') map.set(z.id, 'Gartenwasser');
+  }
+  return map;
+}
+
 /* Wasser als m³ (deutsch, bis 2 Nachkommastellen). */
 const m3 = n => `${(n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 2 })} m³`;
 
@@ -1317,8 +1337,7 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
       rest ? ' rest' : ''}" data-zid="${z.id}">
     <div class="zu-haupt">
       ${minus ? '<span class="zu-op" aria-hidden="true">−</span>' : ''}
-      <span class="zu-name">${esc(label || z.name)}${z.einheit_bezug
-        ? `<span class="zu-sub">${esc(z.einheit_bezug)}</span>` : ''}</span>
+      <span class="zu-name">${esc(label || zLabels.get(z.id) || z.name)}</span>
       ${startFeld}${endFeld}
       <span class="zu-verb">${rest ? '<small>berechnet</small> ' : ''}${verb}</span>
     </div>
@@ -1391,6 +1410,7 @@ function wasserBlockHtml(liste) {
 function wasserZaehlerHtml() {
   const zaehler = ablesungMaske?.zaehler || [];
   if (!zaehler.length) return '';
+  zLabels = generischeLabels(zaehler);           // N68 — generische Namen je Zähler
   const blockVon = zaehlerBloecke(zaehler);
   const bloecke = KOSTENBLOCK_ORDER.map(block => {
     const teil = zaehler.filter(z => blockVon.get(z.id) === block);
