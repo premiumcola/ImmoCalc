@@ -224,47 +224,89 @@ def _strompositionen(session: Session, zid: int) -> list[Kostenposition]:
             if _kostenblock(p.kostenart) == "Strom"]
 
 
+def _herkunft(kostenart: str = "", beleg: str = "", text: str = "") -> dict:
+    """Woher der Betrag eines Blocks stammt — die Kostenart, der angehängte
+    Beleg und ein lesbarer Satz dazu.
+
+    Der Nutzer will die Herkunft jeder Zahl sehen: welche Kostenposition welchen
+    Zeitraums den Betrag getragen hat und welcher Beleg daran hängt."""
+    return {"kostenart": kostenart, "beleg": beleg, "text": text}
+
+
+def _angehaengte_belege(session: Session,
+                        positionen: list[Kostenposition]) -> str:
+    """Die Dateinamen der Belege, die an diesen Positionen hängen."""
+    ids = [p.id for p in positionen if p.id]
+    if not ids:
+        return ""
+    belege = session.exec(select(Dokument)
+                          .where(Dokument.position_id.in_(ids))).all()
+    return " · ".join(sorted({d.dateiname for d in belege if d.dateiname}))
+
+
 def _netz_betrag(session: Session, zid: int,
-                 positionen: list[Kostenposition]) -> tuple[float, str, list[str]]:
+                 positionen: list[Kostenposition]) -> tuple[float | None, str,
+                                                            list[str], dict]:
     """Was der zugekaufte Strom laut Rechnung gekostet hat.
 
     Erste Wahl ist die Kostenposition mit Herkunft „Netzbezug" — dort hat der
     Nutzer die Rechnung bestätigt. Gibt es sie noch nicht, greifen ersatzweise
     die Strom-Belege des Zeitraums mit einem erkannten Betrag; das steht dann
-    sichtbar als Herkunft dabei, damit niemand es für gesetzt hält."""
+    sichtbar als Herkunft dabei, damit niemand es für gesetzt hält.
+
+    Fehlt der Betrag ganz, kommt ``None`` zurück — **nicht** 0,00 €. Eine Null
+    läse sich wie „der Netzstrom kostet nichts"; dass die Rechnung noch fehlt,
+    ist etwas anderes und steht als Warnung dabei."""
     aus_position = [p for p in positionen
                     if (p.herkunft or "").strip().lower() == H_EXTERN
                     and p.betrag]
     if aus_position:
         betrag = round(sum(p.betrag for p in aus_position), 2)
         namen = " · ".join(sorted({p.kostenart for p in aus_position}))
-        return betrag, f"Rechnung {_zahl(betrag)} € (Position „{namen}“)", []
+        beleg = _angehaengte_belege(session, aus_position)
+        text = f"Rechnung {_zahl(betrag)} € (Position „{namen}“)"
+        return betrag, text, [], _herkunft(namen, beleg, text)
 
     belege = [d for d in session.exec(select(Dokument)
                                       .where(Dokument.zeitraum_id == zid)).all()
               if d.betrag and _kostenblock(d.kostenart) == "Strom"]
     if not belege:
-        return 0.0, "", [
+        return None, "", [
             "Für den Netzbezug liegt noch keine Rechnung vor — bitte den Beleg "
             "an der Strom-Position anhängen und die Herkunft „Netzbezug“ "
-            "setzen. Ohne sie lassen sich die kWh nicht in Euro umrechnen."]
+            "setzen. Ohne sie lassen sich die kWh nicht in Euro umrechnen."
+        ], _herkunft()
     betrag = round(sum(d.betrag for d in belege), 2)
     namen = " · ".join(d.dateiname for d in belege)
-    return betrag, f"Beleg {_zahl(betrag)} € ({namen})", [
+    arten = " · ".join(sorted({d.kostenart for d in belege if d.kostenart}))
+    text = f"Beleg {_zahl(betrag)} € ({namen})"
+    return betrag, text, [
         f"Der Netzbetrag stammt aus {len(belege)} angehängten Beleg(en), nicht "
         "aus einer bestätigten Position. Bitte an der Strom-Position die Menge "
-        "und die Herkunft „Netzbezug“ setzen, damit die Zuordnung eindeutig ist."]
+        "und die Herkunft „Netzbezug“ setzen, damit die Zuordnung eindeutig ist."
+    ], _herkunft(arten, namen, text)
 
 
-def _eigen_betraege(sj: Stromjahr, pv_kwh: float, akku_kwh: float,
-                    positionen: list[Kostenposition]) -> tuple[float, float,
-                                                               str, list[str]]:
+def _eigen_betraege(session: Session, sj: Stromjahr, pv_kwh: float,
+                    akku_kwh: float,
+                    positionen: list[Kostenposition]) -> tuple[float | None,
+                                                               float | None, str,
+                                                               list[str], dict,
+                                                               dict]:
     """Was PV-Direktverbrauch und Akku-Entnahme kosten.
 
     Beide haben einen eigenen Satz (`solar_preis`, `akku_preis` am Strom-Jahr) —
     der Akku ist teurer, er will bezahlt und ersetzt werden. Fehlen die Sätze,
     greift ersatzweise eine Kostenposition mit Herkunft „eigene Anlage"; ihr
-    Betrag wird dann mengenanteilig auf beide Töpfe gelegt."""
+    Betrag wird dann mengenanteilig auf beide Töpfe gelegt.
+
+    Ist weder ein Satz noch eine Position da, kommt ``None`` zurück — nicht
+    0,00 €. Der eigene Strom ist nicht umsonst, sein Preis ist nur noch nicht
+    gepflegt; das ist eine Lücke und keine Zahl.
+
+    PV und Akku bekommen **je eigene** Herkunft: an der PV-Zeile steht der
+    PV-Satz, an der Akku-Zeile der Akku-Satz. Beide Sätze an beiden Zeilen
+    stünden zweimal da und ließen offen, welcher für welche gilt."""
     solar, akku = sj.solar_preis or 0.0, sj.akku_preis or 0.0
     if solar > 0 or akku > 0:
         # Ist nur ein Satz gepflegt, gilt er für beide — besser als ein Topf
@@ -273,7 +315,11 @@ def _eigen_betraege(sj: Stromjahr, pv_kwh: float, akku_kwh: float,
         akku = akku or solar
         return (round(pv_kwh * solar, 2), round(akku_kwh * akku, 2),
                 f"Sätze am Strom-Jahr: PV {_ct(solar)} ct/kWh · "
-                f"Akku {_ct(akku)} ct/kWh", [])
+                f"Akku {_ct(akku)} ct/kWh", [],
+                _herkunft("Strom-Jahr", "",
+                          f"Satz am Strom-Jahr: {_ct(solar)} ct/kWh"),
+                _herkunft("Strom-Jahr", "",
+                          f"Satz am Strom-Jahr: {_ct(akku)} ct/kWh"))
 
     aus_position = [p for p in positionen
                     if (p.herkunft or "").strip().lower() == H_EIGEN and p.betrag]
@@ -281,15 +327,24 @@ def _eigen_betraege(sj: Stromjahr, pv_kwh: float, akku_kwh: float,
         betrag = round(sum(p.betrag for p in aus_position), 2)
         summe = pv_kwh + akku_kwh
         pv_teil = round(betrag * pv_kwh / summe, 2) if summe > 0 else 0.0
-        return (pv_teil, round(betrag - pv_teil, 2),
-                f"Position „eigene Anlage“ {_zahl(betrag)} €", [
+        akku_teil = round(betrag - pv_teil, 2)
+        namen = " · ".join(sorted({p.kostenart for p in aus_position}))
+        beleg = _angehaengte_belege(session, aus_position)
+        # Je Zeile ihr eigener Anteil an derselben Position — so trägt jede
+        # Zahl ihre Herkunft, ohne dass dieselbe Summe zweimal dasteht.
+        def teil_text(teil: float) -> str:
+            return (f"Position „{namen}“ · {_zahl(teil)} € von "
+                    f"{_zahl(betrag)} € (mengenanteilig)")
+        return (pv_teil, akku_teil, f"Position „{namen}“ {_zahl(betrag)} €", [
                     "Der eigene Strom hat nur einen Gesamtbetrag — PV und Akku "
                     "wurden mengenanteilig getrennt. Für getrennte Preise die "
-                    "Sätze am Strom-Jahr pflegen."])
-    return 0.0, 0.0, "", [
+                    "Sätze am Strom-Jahr pflegen."],
+                _herkunft(namen, beleg, teil_text(pv_teil)),
+                _herkunft(namen, beleg, teil_text(akku_teil)))
+    return None, None, "", [
         "Für den eigenen Strom ist noch kein Preis hinterlegt (Solar- und "
-        "Akku-Satz am Strom-Jahr) — PV und Akku gehen mit 0 € in die "
-        "Verteilung ein."]
+        "Akku-Satz am Strom-Jahr) — PV und Akku bleiben ohne Betrag, bis er "
+        "gepflegt ist."], _herkunft(), _herkunft()
 
 
 # --------------------------------------------------------------------------
@@ -377,9 +432,19 @@ def _eauto(session: Session, z: Zeitraum, sj: Stromjahr, netz_p: float,
 # Der Endpunkt
 # --------------------------------------------------------------------------
 
-def _block(b: strombloecke.Block) -> dict:
-    return {"kwh": round(b.kwh, 3), "betrag": round(b.betrag, 2),
-            "preis": round(b.preis, 5)}
+def _block(b: strombloecke.Block, betrag: float | None,
+           herkunft: dict) -> dict:
+    """Ein Block für die Antwort: Menge, Betrag, Preis und die Herkunft.
+
+    Fehlt der Betrag noch, stehen `betrag` und `preis` auf ``null`` statt auf
+    0.0 — eine Null läse sich wie „dieser Strom kostet nichts". Gerechnet wird
+    intern trotzdem weiter (mit 0 €), damit die Kette nicht abreißt; dass etwas
+    fehlt, sagen die Warnungen."""
+    kein_preis = betrag is None or b.kwh <= 0
+    return {"kwh": round(b.kwh, 3),
+            "betrag": None if betrag is None else round(betrag, 2),
+            "preis": None if kein_preis else round(b.preis, 5),
+            "herkunft": herkunft}
 
 
 def _stromjahr(session: Session, objekt_id: int, jahr: int) -> Stromjahr:
@@ -438,13 +503,18 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
         gesamt_kwh, netz_p, pv_p, akku_p)
     warnungen += hinweise
     positionen = _strompositionen(session, zid)
-    bloecke.netz.betrag, quelle_betrag, hinweise = _netz_betrag(
+    netz_betrag, quelle_betrag, hinweise, h_netz = _netz_betrag(
         session, zid, positionen)
     warnungen += hinweise
-    (bloecke.pv.betrag, bloecke.akku.betrag,
-     quelle_eigen, hinweise) = _eigen_betraege(
-        sj, bloecke.pv.kwh, bloecke.akku.kwh, positionen)
+    (pv_betrag, akku_betrag, quelle_eigen,
+     hinweise, h_pv, h_akku) = _eigen_betraege(
+        session, sj, bloecke.pv.kwh, bloecke.akku.kwh, positionen)
     warnungen += hinweise
+    # Gerechnet wird mit 0 €, wo noch kein Betrag da ist — die Kette soll nicht
+    # abreißen. Nach außen bleibt der fehlende Betrag `null` (siehe `_block`).
+    bloecke.netz.betrag = netz_betrag or 0.0
+    bloecke.pv.betrag = pv_betrag or 0.0
+    bloecke.akku.betrag = akku_betrag or 0.0
 
     # ---- Schritt 2: die E-Tankstelle vorab -------------------------------
     eauto = _eauto(session, z, sj, netz_p, pv_p, akku_p)
@@ -497,9 +567,13 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
             "speicher_erfasst": erfasst[2],
             "erfasst_summe": round(sum(erfasst), 2),
             "quelle_anteile": quelle_anteile,
-            "netz": _block(bloecke.netz), "pv": _block(bloecke.pv),
-            "akku": _block(bloecke.akku),
+            "netz": _block(bloecke.netz, netz_betrag, h_netz),
+            "pv": _block(bloecke.pv, pv_betrag, h_pv),
+            "akku": _block(bloecke.akku, akku_betrag, h_akku),
             "betrag": bloecke.betrag,
+            # Trägt jeder der drei Blöcke einen Betrag? Sonst ist die Summe nur
+            # das, was bisher bekannt ist — und nicht der ganze Stromaufwand.
+            "vollstaendig": None not in (netz_betrag, pv_betrag, akku_betrag),
             "quelle_betrag": quelle_betrag, "quelle_eigen": quelle_eigen,
         },
         "schritt2": {

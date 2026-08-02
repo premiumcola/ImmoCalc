@@ -843,6 +843,18 @@
   .sk-quelle{display:block;font:400 11.5px var(--body);color:var(--soft);
     line-height:1.5;margin:8px 0 0}
   .sk-quelle b{color:var(--ink);font-weight:600}
+  /* N142 — die Herkunft je Block: aus welcher Position der Betrag kommt und
+     welcher Beleg daran hängt. Untereinander, damit auch lange Dateinamen auf
+     dem iPhone lesbar bleiben statt in eine Zeile gequetscht zu werden. */
+  .sk-herk{list-style:none;margin:9px 0 0;padding:0;display:flex;
+    flex-direction:column;gap:4px}
+  .sk-herk li{font:400 11.5px var(--body);color:var(--soft);line-height:1.45;
+    padding-left:11px;position:relative;overflow-wrap:anywhere}
+  .sk-herk li::before{content:'';position:absolute;left:0;top:.55em;width:4px;
+    height:4px;border-radius:50%;background:var(--teal-l)}
+  .sk-herk b{color:var(--ink);font-weight:600}
+  /* Ein noch fehlender Betrag — ein Strich statt einer Null, in Bernstein. */
+  .sk-offen{color:var(--amber)}
   .sk-felder{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
   .sk-feld{flex:1 1 74px;min-width:0;display:flex;flex-direction:column;gap:4px}
   .sk-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
@@ -3476,15 +3488,34 @@ function skSchritt1(d) {
         <span>${wert ? `${skProz(wert)} %` : '—'}</span></div>`;
   // Drei Spalten, damit die Kosten auch auf dem iPhone ohne Scrollen dastehen:
   // der Preis je kWh steht als Unterzeile bei den Kosten, aus denen er kommt.
-  const zeilen = SK_BLOECKE.map(([k, titel, sub]) => `<tr>
+  // Fehlt ein Betrag noch, steht dort ein Strich statt 0,00 € — eine Null läse
+  // sich wie „dieser Strom kostet nichts", und das ist etwas anderes.
+  const zeilen = SK_BLOECKE.map(([k, titel, sub]) => {
+    const b = s[k] || {};
+    // Kurz halten: „Betrag fehlt" macht die Kosten-Spalte so breit, dass die
+    // Tabelle auf dem iPhone seitwaerts scrollen muss.
+    const kosten = b.betrag == null
+      ? `<span class="wd-m3 sk-offen">—</span>
+         <span class="wd-eur sk-offen">fehlt</span>`
+      : `<span class="wd-m3">${eur(b.betrag)}</span>
+         <span class="wd-eur">${b.preis == null ? '—' : `${skCt(b.preis)}/kWh`}</span>`;
+    return `<tr>
       <td class="wd-rowh">${titel}<small>${sub}</small></td>
-      <td><span class="wd-m3">${skKwh(s[k].kwh)}</span>
+      <td><span class="wd-m3">${skKwh(b.kwh)}</span>
         <span class="wd-eur">${skProz(s[`${k === 'akku' ? 'speicher' : k}_prozent`])} %</span></td>
-      <td><span class="wd-m3">${eur(s[k].betrag)}</span>
-        <span class="wd-eur">${skCt(s[k].preis)}/kWh</span></td></tr>`).join('');
+      <td>${kosten}</td></tr>`;
+  }).join('');
+  // Die Herkunft jeder Zahl: aus welcher Kostenposition der Betrag stammt und
+  // welcher Beleg daran hängt. Der Nutzer will das je Block sehen, nicht als
+  // einen Satz für alle drei.
+  const herkunft = SK_BLOECKE.map(([k, titel]) => {
+    const h = (s[k] || {}).herkunft || {};
+    if (!h.text) return '';
+    return `<li><b>${esc(titel)}</b> ${esc(h.text)}${
+      h.beleg ? ` · Beleg <b>${esc(h.beleg)}</b>` : ''}</li>`;
+  }).filter(Boolean).join('');
   const quelle = [s.quelle_menge && `Menge: <b>${esc(s.quelle_menge)}</b>`,
-    s.quelle_betrag && `Netz: <b>${esc(s.quelle_betrag)}</b>`,
-    s.quelle_eigen && `Eigener Strom: <b>${esc(s.quelle_eigen)}</b>`]
+    s.quelle_anteile && `Anteile: <b>${esc(s.quelle_anteile)}</b>`]
     .filter(Boolean).join(' · ');
   return `<div class="sk-schritt">
       <div class="sk-kopf"><span class="sk-nr">1</span><span class="sk-t">Aus kWh
@@ -3497,8 +3528,13 @@ function skSchritt1(d) {
       </tr></thead><tbody>${zeilen}</tbody>
       <tfoot><tr class="wd-summe"><td class="wd-rowh">Summe</td>
         <td><span class="wd-m3">${skKwh(s.gesamt_kwh)}</span></td>
-        <td><span class="wd-m3">${eur(s.betrag)}</span></td></tr></tfoot>
+        <td><span class="wd-m3">${eur(s.betrag)}</span></td>
+      </tr></tfoot>
       </table></div>
+      ${s.vollstaendig === false ? `<span class="sk-quelle sk-offen">Das ist
+        nur, was bisher bekannt ist — für die mit „fehlt“ gezeichneten Blöcke
+        liegt noch kein Betrag vor.</span>` : ''}
+      ${herkunft ? `<ul class="sk-herk">${herkunft}</ul>` : ''}
       ${quelle ? `<span class="sk-quelle">${quelle}</span>` : ''}</div>`;
 }
 
@@ -3511,8 +3547,8 @@ function skSchritt2(d) {
     return `<div class="sk-schritt">
       <div class="sk-kopf"><span class="sk-nr">2</span><span class="sk-t">Abzug
         E-Tankstelle</span></div>
-      <div class="zu-kein">Im Zeitraum wurde nichts geladen${
-        s.quelle_text ? ` — ${esc(s.quelle_text)}` : ''}. Es geht nichts ab.</div>
+      <div class="zu-kein">Im Zeitraum wurde nichts geladen — es geht nichts ab.${
+        s.quelle_text ? ` ${esc(s.quelle_text.replace(/\.$/, ''))}.` : ''}</div>
     </div>`;
   }
   // Dieselbe Form wie Schritt 1: die Blöcke als Zeilen. So bleibt die Tabelle

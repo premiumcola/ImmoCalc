@@ -60,9 +60,18 @@ def _objekt(slug: str, *, mit_zaehler: bool = True,
                         solar_preis=0.10, akku_preis=0.20,
                         eauto_extern_kwh=hand[0], eauto_eigen_kwh=hand[1]))
         if rechnung is not None:
-            s.add(Kostenposition(zeitraum_id=z.id, kostenart="Strom",
-                                 betrag=rechnung, menge=2592.0,
-                                 menge_einheit="kWh", herkunft="extern"))
+            kp = Kostenposition(zeitraum_id=z.id, kostenart="Strom",
+                                betrag=rechnung, menge=2592.0,
+                                menge_einheit="kWh", herkunft="extern")
+            s.add(kp)
+            s.commit()
+            s.refresh(kp)
+            # Der Beleg hängt an der Position — die Herkunft des Netzbetrags
+            # soll ihn mit ausweisen.
+            s.add(Dokument(pfad=f"/{slug}/netzrechnung.pdf",
+                           dateiname="netzrechnung.pdf", objekt_id=o.id,
+                           zeitraum_id=z.id, position_id=kp.id,
+                           kategorie="Nebenkosten", kostenart="Strom"))
         if beleg is not None:
             s.add(Dokument(pfad=f"/{slug}/strom.pdf", dateiname="strom.pdf",
                            objekt_id=o.id, zeitraum_id=z.id,
@@ -158,15 +167,60 @@ def test_ohne_erfasste_anteile_sagt_die_kette_was_fehlt(monkeypatch):
     assert leer["schritt1"]["netz"]["kwh"] == 0.0
 
 
-def test_fehlender_rechnungsbetrag_wird_benannt(monkeypatch):
-    """Ohne Rechnung gibt es keinen Netz-Preis — und einen klaren Hinweis."""
+def test_fehlender_rechnungsbetrag_ist_null_nicht_null_euro(monkeypatch):
+    """Ohne Rechnung gibt es keinen Netz-Preis — und einen klaren Hinweis.
+
+    Der Betrag ist ausdrücklich ``None``, nicht 0.0: eine Null läse sich wie
+    „der Netzstrom kostet nichts". Dass die Rechnung fehlt, ist etwas anderes."""
     zid = _objekt("kette-ohne-rechnung", rechnung=None)
     d = _kette(zid, monkeypatch, WALLBOX)
-    assert d["schritt1"]["netz"]["betrag"] == 0.0
+    assert d["schritt1"]["netz"]["betrag"] is None
+    assert d["schritt1"]["netz"]["preis"] is None
+    assert d["schritt1"]["netz"]["herkunft"]["kostenart"] == ""
     assert d["schritt1"]["quelle_betrag"] == ""
+    assert d["schritt1"]["vollstaendig"] is False
     assert any("keine Rechnung" in w for w in d["warnungen"])
-    # Die übrigen Blöcke rechnen trotzdem weiter.
+    # Die übrigen Blöcke rechnen trotzdem weiter — die Kette reißt nicht ab.
     assert d["schritt1"]["pv"]["betrag"] == 540.00
+    assert d["kontrolle"]["stimmt"] is True
+
+
+def test_fehlender_eigenpreis_ist_null_nicht_null_euro(monkeypatch):
+    """Auch der eigene Strom ist nicht umsonst — ohne gepflegten Satz bleiben
+    PV und Akku ohne Betrag statt bei 0 €."""
+    zid = _objekt("kette-ohne-eigenpreis")
+    with Session(db.engine) as s:
+        sj = s.exec(select(Stromjahr).where(Stromjahr.jahr == 2025)).all()[-1]
+        sj.solar_preis, sj.akku_preis = 0.0, 0.0
+        s.add(sj)
+        s.commit()
+    d = _kette(zid, monkeypatch, WALLBOX)
+    assert d["schritt1"]["pv"]["betrag"] is None
+    assert d["schritt1"]["akku"]["betrag"] is None
+    assert d["schritt1"]["pv"]["preis"] is None
+    assert d["schritt1"]["vollstaendig"] is False
+    # Das Netz hat seine Rechnung und rechnet weiter.
+    assert d["schritt1"]["netz"]["betrag"] == 862.51
+    assert any("kein Preis hinterlegt" in w for w in d["warnungen"])
+
+
+def test_jeder_block_nennt_seine_herkunft(monkeypatch):
+    """Der Nutzer will die Herkunft jeder Zahl sehen: aus welcher Kostenposition
+    der Betrag stammt und welcher Beleg daran hängt."""
+    zid = _objekt("kette-herkunft")
+    d = _kette(zid, monkeypatch, WALLBOX)
+    s1 = d["schritt1"]
+
+    assert s1["netz"]["herkunft"]["kostenart"] == "Strom"
+    assert s1["netz"]["herkunft"]["beleg"] == "netzrechnung.pdf"
+    assert "862,51" in s1["netz"]["herkunft"]["text"]
+    # PV und Akku kommen aus den Sätzen am Strom-Jahr — jede Zeile nennt ihren
+    # EIGENEN Satz, nicht beide. Sonst stünde dieselbe Angabe zweimal da.
+    assert s1["pv"]["herkunft"]["kostenart"] == "Strom-Jahr"
+    assert s1["pv"]["herkunft"]["text"] == "Satz am Strom-Jahr: 10,00 ct/kWh"
+    assert s1["akku"]["herkunft"]["text"] == "Satz am Strom-Jahr: 20,00 ct/kWh"
+    assert s1["pv"]["herkunft"]["text"] != s1["akku"]["herkunft"]["text"]
+    assert s1["vollstaendig"] is True
 
 
 def test_beleg_traegt_den_betrag_wenn_die_position_fehlt(monkeypatch):
@@ -176,6 +230,7 @@ def test_beleg_traegt_den_betrag_wenn_die_position_fehlt(monkeypatch):
     d = _kette(zid, monkeypatch, WALLBOX)
     assert d["schritt1"]["netz"]["betrag"] == 862.51
     assert "strom.pdf" in d["schritt1"]["quelle_betrag"]
+    assert d["schritt1"]["netz"]["herkunft"]["beleg"] == "strom.pdf"
     assert any("angehängten Beleg" in w for w in d["warnungen"])
 
 
