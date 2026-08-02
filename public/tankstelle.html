@@ -135,6 +135,18 @@
   .zrzeile{display:block;font:500 11px var(--mono);color:var(--soft);
            margin:0 0 14px;letter-spacing:.02em}
 
+  /* Der abgeleitete Satz (N148): die Zahl gross, darunter die Regel und
+     ganz unten die Herkunft. Kein Eingabefeld — hier gibt es nichts zu
+     tippen, nur etwas nachzulesen. */
+  .satz{background:var(--paper);border-radius:14px;padding:14px;
+        margin:0 0 14px}
+  .satz .sw{display:block;font:700 20px var(--disp);letter-spacing:-.02em;
+            color:var(--teal-d)}
+  .satz .sd{display:block;font:400 12px var(--body);color:var(--ink);
+            line-height:1.55;margin-top:7px}
+  .satz .sq{display:block;font:400 10.5px var(--mono);color:var(--soft);
+            line-height:1.6;margin-top:9px;overflow-wrap:anywhere}
+
   .az{background:var(--paper);border-radius:14px;padding:14px;
       margin-bottom:10px}
   .az .ak{display:flex;align-items:baseline;justify-content:space-between;
@@ -237,6 +249,9 @@ const proz = n => n == null ? '—'
 const zahl = (n, stellen = 2) => n == null ? '—'
   : n.toLocaleString('de-DE', { minimumFractionDigits: stellen,
                                 maximumFractionDigits: stellen });
+/* Vier Nachkommastellen wie in der Mail: bei einem Preis je kWh macht das
+   vierte Zehntel-Cent den Unterschied zwischen „gerechnet" und „gerundet". */
+const satzText = s => s == null ? '—' : zahl(s, 4) + ' € je kWh';
 /* Zweistellig — „18.01.2026" steht in einer Spalte ruhiger als „18.1.2026"
    und deckt sich mit der Schreibweise in der Mail. */
 const datum = iso => new Date(iso).toLocaleDateString('de-DE',
@@ -557,29 +572,25 @@ async function abrechnungZeigen() {
       <div class="ak">
         <span class="an">${esc(n.name)}${n.angelegt ? ''
           : '<span class="chip amber" style="margin-left:8px">nicht angelegt</span>'}</span>
-        <span class="ab">${eur(n.betrag)}</span>
+        <span class="ab">${n.betrag == null ? '—' : eur(n.betrag)}</span>
       </div>
-      <span class="ad">${kwh(n.kwh)} · ${eur(n.satz)} je kWh
+      <span class="ad">${kwh(n.kwh)} · ${n.satz == null
+          ? 'Satz steht noch nicht fest' : satzText(n.satz)}
         ${n.anzahl ? ` · ${n.anzahl} ${n.anzahl === 1 ? 'Ladung' : 'Ladungen'}` : ''}
         ${n.email ? ` · ${esc(n.email)}` : ''}</span>
       ${n.email ? '' : `<div class="notiz fehlt"><span class="wi">✉</span>
         <span>Ohne E-Mail-Adresse lässt sich nichts verschicken.</span></div>`}
       ${n.kwh > 0 && n.nutzer_id ? `<div class="aw">
         <button class="btn leise" data-vorschau="${n.nutzer_id}">Vorschau</button>
-        ${n.email ? `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>` : ''}
+        ${n.email && n.betrag != null
+          ? `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>` : ''}
       </div>` : ''}
       <div data-mail="${n.nutzer_id || 0}"></div>
     </div>`).join('');
 
-  // Ohne gepflegten Satz steht ueberall 0,00 € — das sieht aus wie ein Fehler
-  // und ist doch nur eine fehlende Angabe. Also sagen, wo sie hingehoert.
-  const ohneSatz = !d.satz && d.kwh_gesamt > 0;
-
   ziel.innerHTML = `${quartalsWahl()}
     <span class="zrzeile">${esc(d.label)} · ${datum(d.von)} – ${datum(d.bis)}</span>
-    ${ohneSatz ? `<div class="notiz"><span class="wi">◔</span><span>Für
-       ${esc(String(jahrWert()))} ist noch kein Preis je kWh gepflegt —
-       er steht unter „PV Amortisation“ bei der Anlage.</span></div>` : ''}
+    ${satzBlock(d)}
     ${offeneNotiz(d)}
     ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
         Für ${esc(d.label)} gibt es weder Nutzer noch Ladungen.</div>`}
@@ -587,10 +598,35 @@ async function abrechnungZeigen() {
       <div class="k"><span class="kl">${esc(d.label)}</span>
         <span class="kv">${kwh(d.kwh_gesamt)}</span></div>
       <div class="k"><span class="kl">Summe</span>
-        <span class="kv teal">${eur(d.betrag_gesamt)}</span></div>
+        <span class="kv teal">${d.betrag_gesamt == null ? '—'
+          : eur(d.betrag_gesamt)}</span></div>
     </div>` : ''}`;
   offeneVorschau = 0;
   await ladungenZeigen();
+}
+
+/* Der Satz je kWh wird abgeleitet, nicht eingegeben (N148). An der Stelle, an
+   der frueher ein Eingabefeld stand, steht jetzt die Zahl mit ihrer Herkunft:
+   welcher Betrag, welche Menge, aus welcher Position welchen Zeitraums.
+   Steht kein Satz fest, gibt es keine 0,00 € — sondern die Aussage, wodurch
+   er entsteht. */
+function satzBlock(d) {
+  if (d.satz == null) {
+    return `<div class="notiz"><span class="wi">◔</span><span>${esc(
+      d.satz_grund || 'Der Satz je kWh lässt sich noch nicht ermitteln.')}
+      </span></div>`;
+  }
+  // Jede Ergaenzung einzeln geprueft: fehlt eine, bleibt sie weg. Ein „NaN %"
+  // oder ein „undefined" waere schlimmer als eine Zeile weniger.
+  const rabatt = d.satz_rabatt == null ? '' : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
+  const regel = d.satz_netz == null || d.satz_eigen == null ? ''
+    : `<span class="sd">Netz ${satzText(d.satz_netz)} · eigener Strom
+        ${satzText(d.satz_eigen)}${rabatt}. Der Satz einer Ladung mischt beide
+        nach den Mengen des Zeitraums.</span>`;
+  const quelle = d.satz_herkunft
+    ? `<span class="sq">${esc(d.satz_herkunft)}</span>` : '';
+  return `<div class="satz"><span class="sw">${satzText(d.satz)}</span>
+    ${regel}${quelle}</div>`;
 }
 
 /* Der Kern des Fehlers „ich druecke und nichts passiert": abgerechnet wird
@@ -656,12 +692,16 @@ async function ladungenZeigen() {
     zeigeFehler(ziel, 'Erfasste Ladungen nicht verfügbar', fehler);
     return;
   }
+  /* Bewusst ohne Geldspalte (N148): der Betrag je Ladung kaeme aus
+     `Tankladung.preis` — dem stillgelegten Handwert. Er stand hier als
+     „0,00 €" und widersprach dem abgeleiteten Satz eine Karte weiter oben.
+     Was eine Ladung kostet, sagt die Abrechnung; hier geht es allein um die
+     Zuordnung: wer, wann, wie viel. */
   const zeilen = (d.ladungen || []).map(l => `
     <div class="lz">
       <span class="ld">${esc(l.person || '—')}
         <span class="ldt">${l.datum ? datum(l.datum) : 'ohne Datum'}</span></span>
       <span class="lk">${kwh(l.kwh)}</span>
-      <span class="lk">${eur(l.betrag)}</span>
       <button class="lx" data-ladung-weg="${l.id}" aria-label="Ladung entfernen">×</button>
     </div>`).join('');
 
@@ -742,8 +782,11 @@ function skelett() {
     <div class="karte">
       <div class="hh"><h3>Abrechnung</h3></div>
       <span class="hint">Was jeder Nutzer geladen hat, zu welchem Satz und was
-        er zahlt. Der Satz je kWh wird bei der PV-Anlage gepflegt. Vor dem
-        Versand zeigt die Vorschau, was ankommt.</span>
+        er zahlt. Der Satz wird nicht eingegeben, sondern aus den Stromkosten
+        des Zeitraums gerechnet: Netzstrom zu seinem Durchschnittspreis —
+        Rechnungsbetrag geteilt durch die bezogenen kWh, Grundgebühr
+        inbegriffen — und eigener Strom aus PV und Akku etwas darunter. Vor
+        dem Versand zeigt die Vorschau, was ankommt.</span>
       <div id="abrechnung"></div>
     </div>
 

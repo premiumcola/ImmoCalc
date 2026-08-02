@@ -24,14 +24,19 @@ Was hier passiert — und was ausdrücklich nicht:
   Verbrauch; leere Jahre gehören in keine Auswahl.
 * **Die Abrechnung je Nutzer** kommt immer aus den erfassten `Tankladung`-Sätzen:
   die Wallbox weiß, wie viel geladen wurde, aber nicht von wem.
-* **Der Satz je kWh wird abgeleitet, nicht eingegeben** (N143). Netzstrom
+* **Der Satz je kWh wird abgeleitet, nicht eingegeben** (N148). Netzstrom
   kostet, was er laut Rechnung gekostet hat — Gesamtbetrag der Strom-Positionen
   geteilt durch die bezogenen kWh, Grundpreis inbegriffen; eigener Strom kostet
   :data:`EIGEN_RABATT` weniger. Grundlage ist die Stromkette des passenden
-  Abrechnungszeitraums (`GET /api/zeitraeume/{zid}/stromkette`). Das alte
-  Eingabefeld `Stromjahr.tanken_preis` bleibt im Modell stehen und wird
-  **nicht mehr gelesen**. Fehlen die Kosten, gibt es **keinen** Satz und einen
-  Grund dazu — nie eine stille 0,00-€-Rechnung.
+  Abrechnungszeitraums (`GET /api/zeitraeume/{zid}/stromkette`). Weil eine
+  Ladung aus beidem gespeist wird, zahlt der Nutzer den **Mischsatz** aus den
+  Mengen des Zeitraums; woher er kommt, steht als Herkunft daneben.
+
+  Die beiden Handeingaben sind damit stillgelegt: `Stromjahr.tanken_preis`
+  **und** `Tankladung.preis`. Beide Spalten bleiben im Modell stehen (nie
+  entfernen, CLAUDE.md) und werden zur Preisbildung **nicht mehr gelesen** —
+  ein alter Wert darf die Rechnung nicht mehr bewegen. Fehlen die Kosten, gibt
+  es **keinen** Satz und einen Grund dazu — nie eine stille 0,00-€-Rechnung.
 * **Versand** läuft über das bestehende Postfach des Nutzers
   (`app.mailversand` über `routers.mail.zugang`). Es gibt eine Vorschau, die
   nichts verschickt — erst der ausdrückliche POST sendet.
@@ -58,13 +63,6 @@ from ..mailversand import MailFehler
 from ..models import (Eigentuemer, Einstellung, Objekt, Stromjahr, Tankladung,
                       Zeitraum)
 from .mail import zugang
-
-# Die Stromkosten-Kette entsteht parallel. Fehlt sie, gibt es keinen
-# abgeleiteten Satz — und die Seite sagt das, statt einen zu erfinden.
-try:                                        # pragma: no cover - Importzweig
-    from .stromkette import stromkette
-except ImportError:                         # pragma: no cover - Importzweig
-    stromkette = None                       # type: ignore[assignment]
 
 # Die Wallbox-Anbindung entsteht parallel (N130). Fehlt sie, arbeitet dieser
 # Bereich auf den erfassten Ladungen weiter — eine harte Abhängigkeit auf
@@ -144,12 +142,56 @@ class Posten:
 
 @dataclass
 class Buchung:
-    """Eine Ladung, die einer Person zugeordnet ist — die Abrechnungszeile."""
+    """Eine Ladung, die einer Person zugeordnet ist — die Abrechnungszeile.
+
+    Ohne Preis: der Satz wird abgeleitet und gilt für alle Ladungen des
+    Zeitraums gleichermaßen (N148). `Tankladung.preis` bleibt als Spalte
+    stehen, wird aber nicht mehr hereingereicht — ein alter Handwert soll die
+    Rechnung nicht mehr bewegen."""
     tag: date | None
     person: str
     email: str
     kwh: float
-    preis: float
+
+
+@dataclass
+class Satz:
+    """Der abgeleitete Preis je kWh — mit seiner Herkunft (N148).
+
+    `netz` ist der Durchschnittspreis des Netzbezugs, `eigen` liegt
+    :data:`EIGEN_RABATT` darunter, `misch` ist der, den der Nutzer zahlt: eine
+    Ladung speist sich aus beidem, gewichtet nach den Mengen des Zeitraums.
+
+    Steht kein Satz fest, sind alle drei ``None`` und `grund` sagt, was dafür
+    fehlt. **Keine 0,00 € als Notnagel** — eine Rechnung über null ohne
+    erkennbaren Grund war hier schon einmal ein Problem."""
+    netz: float | None = None
+    eigen: float | None = None
+    misch: float | None = None
+    herkunft: str = ""
+    grund: str = ""
+
+
+def eigen_satz(netz_preis: float) -> float:
+    """Was eigener Strom (PV und Akku) an der Ladestation kostet."""
+    return round(netz_preis * (1.0 - EIGEN_RABATT), 5)
+
+
+def mischsatz(netz_preis: float, eigen_preis: float, extern_kwh: float | None,
+              eigen_kwh: float | None) -> float:
+    """Der Satz einer Ladung: Netz und eigener Strom nach ihren Mengen.
+
+    Ist die Aufteilung des Zeitraums nicht bekannt (`extern_kwh`/`eigen_kwh`
+    sind dann ``None``), gilt der **Netzpreis**. Den günstigeren eigenen Satz
+    zu unterstellen, ohne zu wissen, ob eigener Strom geflossen ist, wäre ein
+    Rabatt auf Verdacht."""
+    if extern_kwh is None or eigen_kwh is None:
+        return netz_preis
+    ganz = max(0.0, extern_kwh) + max(0.0, eigen_kwh)
+    if ganz <= 0:
+        return netz_preis
+    return round((max(0.0, extern_kwh) * netz_preis
+                  + max(0.0, eigen_kwh) * eigen_preis) / ganz, 5)
 
 
 def quartal_zeitraum(jahr: int, quartal: int) -> tuple[date, date]:
@@ -309,15 +351,19 @@ def schluessel(name: str) -> str:
 
 
 def abrechne(buchungen: list[Buchung], nutzer: list[dict],
-             satz: float) -> list[dict]:
+             satz: float | None) -> list[dict]:
     """Je Nutzer: geladene Menge, Satz und Betrag.
 
-    Jede Buchung ohne eigenen Preis wird mit dem gepflegten Satz bewertet
-    (`Stromjahr.tanken_preis`). Angelegte Nutzer ohne Ladung erscheinen mit 0 —
-    sonst verschwände jemand aus der Liste, nur weil er ein Quartal lang nicht
-    geladen hat. Ladungen auf Namen, die (noch) nicht in der Liste stehen,
-    stehen am Ende mit ``angelegt: false``: übergehen wäre stilles Verschlucken
-    von Geld."""
+    Der Satz ist abgeleitet (N148) und gilt für alle Ladungen des Zeitraums
+    gleichermaßen — es gibt keinen Preis je Ladung mehr. Ist er ``None``,
+    bleiben `betrag` und `satz` ebenfalls ``None``: die Mengen stehen da, aber
+    kein Geldbetrag, den niemand belegen kann. **Eine 0,00 € wäre hier eine
+    Behauptung**, keine Rechnung.
+
+    Angelegte Nutzer ohne Ladung erscheinen mit 0 — sonst verschwände jemand
+    aus der Liste, nur weil er ein Quartal lang nicht geladen hat. Ladungen auf
+    Namen, die (noch) nicht in der Liste stehen, stehen am Ende mit
+    ``angelegt: false``: übergehen wäre stilles Verschlucken von Geld."""
     zeilen: dict[str, dict] = {}
     for n in nutzer:
         zeilen[schluessel(n["name"])] = {
@@ -333,24 +379,24 @@ def abrechne(buchungen: list[Buchung], nutzer: list[dict],
                 "nutzer_id": None, "name": b.person or "—", "email": b.email,
                 "angelegt": False, "anzahl": 0, "kwh": 0.0, "betrag": 0.0,
                 "ladungen": []}
-        preis = b.preis if b.preis else satz
-        betrag = b.kwh * preis
         zeile["anzahl"] += 1
         zeile["kwh"] += b.kwh
-        zeile["betrag"] += betrag
+        if satz is not None:
+            zeile["betrag"] += b.kwh * satz
         if not zeile["email"] and b.email:
             zeile["email"] = b.email
         zeile["ladungen"].append({
             "datum": b.tag.isoformat() if b.tag else None,
-            "kwh": round(b.kwh, 3), "preis": round(preis, 4),
-            "betrag": round(betrag, 2)})
+            "kwh": round(b.kwh, 3),
+            "preis": None if satz is None else round(satz, 4),
+            "betrag": None if satz is None else round(b.kwh * satz, 2)})
 
     fertig = []
     for zeile in zeilen.values():
-        kwh = round(zeile["kwh"], 3)
-        betrag = round(zeile["betrag"], 2)
-        fertig.append({**zeile, "kwh": kwh, "betrag": betrag,
-                       "satz": round(betrag / kwh, 4) if kwh > 0 else round(satz, 4)})
+        fertig.append({**zeile, "kwh": round(zeile["kwh"], 3),
+                       "betrag": None if satz is None
+                                 else round(zeile["betrag"], 2),
+                       "satz": None if satz is None else round(satz, 4)})
     # Wer geladen hat, steht oben; danach alphabetisch — eine Reihenfolge, die
     # sich zwischen zwei Aufrufen nicht von selbst ändert.
     fertig.sort(key=lambda z: (-z["kwh"], schluessel(z["name"])))
@@ -367,15 +413,21 @@ def deutsch(wert: float, stellen: int = 2) -> str:
 
 
 def abrechnungstext(objekt_name: str, zeile: dict, von: date, bis: date,
-                    label: str, eigen_prozent: float | None) -> str:
+                    label: str, eigen_prozent: float | None,
+                    herkunft: str = "") -> str:
     """Die Abrechnung als Text für die Mail — dieselbe Grundlage wie die
     Vorschau auf der Seite, damit niemand etwas anderes verschickt, als er
-    gesehen hat."""
+    gesehen hat.
+
+    `herkunft` sagt, woraus der Satz entstanden ist. Sie steht in der Mail,
+    weil der Empfänger sonst eine Zahl bekäme, die er nicht nachprüfen kann.
+    Ohne Satz nennt der Text die Menge und sagt offen, dass der Preis noch
+    aussteht — statt eine 0,00-€-Forderung zu stellen."""
     def tag(d: date) -> str:
         return d.strftime("%d.%m.%Y")
 
-    def geld(wert: float) -> str:
-        return f"{deutsch(wert)} €"
+    def geld(wert: float | None) -> str:
+        return "—" if wert is None else f"{deutsch(wert)} €"
 
     def menge(wert: float) -> str:
         return f"{deutsch(wert)} kWh"
@@ -383,9 +435,13 @@ def abrechnungstext(objekt_name: str, zeile: dict, von: date, bis: date,
     zeilen = [f"Hallo {zeile['name']},", "",
               f"hier die Abrechnung deiner Ladungen an der E-Tankstelle "
               f"{objekt_name} für {label} ({tag(von)} – {tag(bis)}).", "",
-              f"Geladen    {menge(zeile['kwh'])}",
-              f"Satz       {deutsch(zeile['satz'], 4)} € je kWh",
-              f"Zu zahlen  {geld(zeile['betrag'])}", ""]
+              f"Geladen    {menge(zeile['kwh'])}"]
+    if zeile["satz"] is None:
+        zeilen += ["Satz       steht noch nicht fest",
+                   "Zu zahlen  —", ""]
+    else:
+        zeilen += [f"Satz       {deutsch(zeile['satz'], 4)} € je kWh",
+                   f"Zu zahlen  {geld(zeile['betrag'])}", ""]
 
     if zeile["ladungen"]:
         zeilen.append("Einzelne Ladungen:")
@@ -398,6 +454,13 @@ def abrechnungstext(objekt_name: str, zeile: dict, von: date, bis: date,
     if eigen_prozent is not None:
         zeilen.append(f"{deutsch(eigen_prozent, 1)} % des Stroms kamen im "
                       "Zeitraum aus der eigenen Photovoltaik-Anlage.")
+        zeilen.append("")
+
+    if herkunft:
+        zeilen.append(f"Der Satz ist nicht gesetzt, sondern gerechnet: "
+                      f"{herkunft}. Eigener Strom aus PV und Akku kostet "
+                      f"{deutsch(EIGEN_RABATT * 100, 0)} % weniger als "
+                      "zugekaufter.")
         zeilen.append("")
 
     zeilen.append("Viele Grüße")
@@ -660,18 +723,115 @@ def _person(l: Tankladung, namen: dict[int, str]) -> str:
 
 def buchungen(session: Session, objekt_id: int, von: date,
               bis: date) -> list[Buchung]:
-    """Die erfassten Ladungen als Abrechnungszeilen."""
+    """Die erfassten Ladungen als Abrechnungszeilen.
+
+    `Tankladung.preis` wird bewusst **nicht** übernommen (N148): der Satz ist
+    abgeleitet und für alle Ladungen des Zeitraums derselbe."""
     namen = {e.id: e.name for e in session.exec(select(Eigentuemer)).all()}
     return [Buchung(tag=l.datum, person=_person(l, namen), email=l.email or "",
-                    kwh=l.kwh or 0.0, preis=l.preis or 0.0)
+                    kwh=l.kwh or 0.0)
             for l in erfasste_ladungen(session, objekt_id, von, bis)]
 
 
-def satz_fuer(session: Session, objekt_id: int, jahr: int) -> float:
-    """Der gepflegte Satz je kWh (`Stromjahr.tanken_preis`) — nur gelesen."""
-    sj = session.exec(select(Stromjahr).where(
-        Stromjahr.objekt_id == objekt_id, Stromjahr.jahr == jahr)).first()
-    return (sj.tanken_preis if sj else 0.0) or 0.0
+# ==========================================================================
+# Der Satz je kWh — abgeleitet aus der Stromkette (N148)
+# ==========================================================================
+
+def _stromkette_holen(session: Session, zid: int) -> dict:
+    """Die Stromkette eines Zeitraums — erst beim Aufruf importiert.
+
+    **Bewusst hier drin und nicht oben:** `routers/stromkette` importiert
+    seinerseits `erfasste_ladungen` aus diesem Modul. Ein Import auf Modulebene
+    liefe deshalb im Kreis und schlüge — je nach Ladereihenfolge — mit einem
+    `ImportError` fehl, den ein `try/except` still zu „die Stromkette gibt es
+    nicht" verharmlosen würde. Zur Aufrufzeit sind beide Module fertig
+    geladen, und der Kreis löst sich auf."""
+    from .stromkette import stromkette
+    return stromkette(zid, session)
+
+
+def _ueberlappung(a_von: date, a_bis: date, b_von: date, b_bis: date) -> int:
+    """Wie viele Tage zwei Zeitspannen gemeinsam haben (beide Ränder zählen)."""
+    return max(0, (min(a_bis, b_bis) - max(a_von, b_von)).days + 1)
+
+
+def passender_zeitraum(zeitraeume: list[Zeitraum], von: date,
+                       bis: date) -> Zeitraum | None:
+    """Der Abrechnungszeitraum, der ein Quartal am weitesten trägt.
+
+    Die Nebenkostenperiode läuft z. B. vom 01.10.2024 bis 30.09.2025, ein
+    Quartal aber am Kalender entlang. Gewählt wird der Zeitraum mit der
+    größten Überschneidung; bei Gleichstand der spätere — die jüngere Rechnung
+    beschreibt den Preis besser. Ohne jede Überschneidung: ``None``."""
+    treffer = [(_ueberlappung(z.start, z.ende, von, bis), z.start, z)
+               for z in zeitraeume]
+    treffer = [t for t in treffer if t[0] > 0]
+    if not treffer:
+        return None
+    return max(treffer, key=lambda t: (t[0], t[1]))[2]
+
+
+def satz_ableiten(session: Session, objekt_id: int, von: date, bis: date,
+                  extern_kwh: float | None = None,
+                  eigen_kwh: float | None = None) -> Satz:
+    """Der Preis je kWh für einen Abrechnungszeitraum — aus der Stromkette.
+
+    Netzstrom kostet den Durchschnittspreis des Netzbezugs: den Gesamtbetrag
+    der Strom-Positionen geteilt durch die bezogenen kWh. Die Grundgebühr
+    steckt im Betrag und wird **nicht** getrennt umgelegt — genau deshalb ist
+    es ein Durchschnitt. Eigener Strom liegt :data:`EIGEN_RABATT` darunter.
+
+    Eingegeben wird nichts: `Stromjahr.tanken_preis` und `Tankladung.preis`
+    bleiben ungelesen. Fehlt die Rechnung, kommt ein leerer :class:`Satz` mit
+    `grund` zurück — nicht 0,00 €."""
+    zeitraeume = list(session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == objekt_id)).all())
+    z = passender_zeitraum(zeitraeume, von, bis)
+    if z is None:
+        return Satz(grund="Für diesen Zeitraum gibt es noch keine "
+                          "Abrechnungsperiode. Der Satz entsteht aus den "
+                          "Stromkosten einer Periode — ohne sie lässt er sich "
+                          "nicht ermitteln.")
+    try:
+        kette = _stromkette_holen(session, z.id)
+    except Exception as fehler:            # noqa: BLE001 - fremde Kette
+        log.info("E-Tankstelle: Stromkette %s nicht rechenbar — %s", z.id,
+                 fehler)
+        return Satz(grund=f"Die Stromkosten des Zeitraums "
+                          f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y} lassen sich "
+                          f"gerade nicht ermitteln ({fehler}).")
+
+    schritt1 = kette.get("schritt1") or {}
+    netz = schritt1.get("netz") or {}
+    betrag, menge = netz.get("betrag") or 0.0, netz.get("kwh") or 0.0
+    label = (kette.get("zeitraum") or {}).get("label", "")
+    quelle = schritt1.get("quelle_betrag") or ""
+    # Zwei Hälften, zwei verschiedene Lücken. Welche fehlt, gehört benannt —
+    # „die Stromkosten fehlen" wäre falsch, wenn nur die Menge fehlt.
+    if betrag <= 0:
+        return Satz(grund=(
+            f"Für den Zeitraum {label} ist noch kein Betrag für den Netzbezug "
+            "erfasst. Der Satz entsteht aus diesem Betrag geteilt durch die "
+            "bezogenen kWh — sobald die Stromkosten in den Nebenkosten "
+            "stehen, rechnet er sich von selbst."))
+    if menge <= 0:
+        # Die Quellenangabe bringt selbst schon Klammern mit (Belegname) —
+        # noch ein Klammerpaar drumherum liest sich wie ein Tippfehler.
+        return Satz(grund=(
+            f"Für den Zeitraum {label} steht der Betrag — "
+            f"{quelle or f'{deutsch(betrag)} €'} —, aber nicht die bezogene "
+            "Menge: ohne die kWh des Netzbezugs gibt es keinen "
+            "Durchschnittspreis. Die Menge ergibt sich aus dem "
+            "Gesamtverbrauch und den SolarEdge-Anteilen am Strom-Jahr."))
+
+    netz_preis = round(betrag / menge, 5)
+    eigen_preis = eigen_satz(netz_preis)
+    return Satz(
+        netz=netz_preis, eigen=eigen_preis,
+        misch=mischsatz(netz_preis, eigen_preis, extern_kwh, eigen_kwh),
+        herkunft=(f"{quelle or f'{deutsch(betrag)} € Netzbezug'} ÷ "
+                  f"{deutsch(menge)} kWh Netzbezug "
+                  f"aus der Stromkette des Zeitraums {label}"))
 
 
 # ==========================================================================
@@ -797,20 +957,28 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     Wallbox weiss, wie viel geladen wurde, aber nicht von wem. Damit eine
     Abrechnung über 0 € nicht rätselhaft bleibt, steht daneben, wie viel im
     Zeitraum überhaupt geladen wurde (`geladen_kwh`) — die Lücke zwischen
-    beiden Zahlen ist die Antwort auf „wieso passiert da nichts" (N143)."""
+    beiden Zahlen ist die Antwort auf „wieso passiert da nichts" (N143).
+
+    Der Satz kommt aus der Stromkette (N148); die Mengen des Zeitraums sagen,
+    wie stark Netz und eigener Strom darin gewichtet sind."""
     von, bis = _zeitraum(jahr, quartal, None, None)
     liste = nutzer_lesen(session, slug)
-    satz = satz_fuer(session, o.id, jahr)
-    zeilen = abrechne(buchungen(session, o.id, von, bis), liste, satz)
     posten, quelle, _ = _posten_holen(session, o, von, bis)
     summe = verlauf_summe(verlauf(posten, von, bis)) if posten else {}
+    satz = satz_ableiten(session, o.id, von, bis,
+                         summe.get("extern_kwh"), summe.get("eigen_kwh"))
+    zeilen = abrechne(buchungen(session, o.id, von, bis), liste, satz.misch)
     zugeordnet = round(sum(z["kwh"] for z in zeilen), 3)
     return {"objekt": o.name, "jahr": jahr, "quartal": quartal,
             "label": zeitraum_label(jahr, quartal),
-            "von": von.isoformat(), "bis": bis.isoformat(), "satz": satz,
+            "von": von.isoformat(), "bis": bis.isoformat(),
+            "satz": satz.misch, "satz_netz": satz.netz,
+            "satz_eigen": satz.eigen, "satz_rabatt": EIGEN_RABATT,
+            "satz_herkunft": satz.herkunft, "satz_grund": satz.grund,
             "nutzer": zeilen,
             "kwh_gesamt": zugeordnet,
-            "betrag_gesamt": round(sum(z["betrag"] for z in zeilen), 2),
+            "betrag_gesamt": (None if satz.misch is None
+                              else round(sum(z["betrag"] for z in zeilen), 2)),
             "geladen_kwh": summe.get("kwh"), "quelle": quelle,
             "offen_kwh": (None if not summe
                           else round(summe["kwh"] - zugeordnet, 2)),
@@ -851,8 +1019,10 @@ def vorschau(slug: str, jahr: int = Query(default=0),
     return {"an": zeile["email"], "name": zeile["name"],
             "betreff": f"E-Tankstelle {o.name} — Abrechnung {daten['label']}",
             "text": abrechnungstext(o.name, zeile, von, bis, daten["label"],
-                                    daten["eigen_prozent"]),
+                                    daten["eigen_prozent"],
+                                    daten["satz_herkunft"]),
             "betrag": zeile["betrag"], "kwh": zeile["kwh"],
+            "satz": zeile["satz"], "satz_grund": daten["satz_grund"],
             "label": daten["label"]}
 
 
@@ -873,7 +1043,8 @@ def versenden(slug: str, data: VersandIn,
     Vermieters (dieselbe Strecke wie die Nebenkostenabrechnung).
 
     Ohne Betrag wird nicht verschickt: eine Rechnung über 0 € ist kein Vorgang,
-    sondern eine Irritation."""
+    sondern eine Irritation. Dasselbe gilt für einen Zeitraum ohne
+    abgeleiteten Satz (N148) — dann fehlt der Preis, nicht die Menge."""
     daten = _abrechnung(session, o, slug, data.jahr or date.today().year,
                         data.quartal)
     zeile = _zeile_holen(daten, data.nutzer_id, data.name)
@@ -884,12 +1055,15 @@ def versenden(slug: str, data: VersandIn,
     if zeile["kwh"] <= 0:
         raise HTTPException(400, f"{zeile['name']} hat im Zeitraum "
                                  f"{daten['label']} nichts geladen.")
+    if zeile["satz"] is None:
+        raise HTTPException(400, "Für diesen Zeitraum steht noch kein Preis je "
+                                 "kWh fest. " + daten["satz_grund"])
 
     von = date.fromisoformat(daten["von"])
     bis = date.fromisoformat(daten["bis"])
     betreff = f"E-Tankstelle {o.name} — Abrechnung {daten['label']}"
     text = abrechnungstext(o.name, zeile, von, bis, daten["label"],
-                           daten["eigen_prozent"])
+                           daten["eigen_prozent"], daten["satz_herkunft"])
     try:
         zugang(session).sende(adresse, betreff, text)
     except MailFehler as fehler:

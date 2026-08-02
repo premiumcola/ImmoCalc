@@ -288,6 +288,40 @@ def test_die_drei_bloecke_ergeben_die_volle_energiemenge():
     assert d["rest_prozent"] == 35.0
 
 
+def test_kontrolljahr_2025_geht_ohne_rest_auf():
+    """Die Kontrollzahlen des Nutzers für 2025 — durch das CSV gerechnet.
+
+    Die vier Zeilen bilden die Jahressummen nach, eine davon mit den vier
+    Anteilen auf 0 % (die 23,31 kWh vom 26.09.2025). Sie landen im PV-Block,
+    und damit gilt wieder ``Netz + PV + Akku == 1991,03 kWh``: es bleibt keine
+    Menge zwischen den Töpfen liegen, für die es keinen Preis gäbe."""
+    datei = _datei(
+        _zeile("15.01.2025, 08:00:00", "300,00", "100,00", "0,00", "0,00",
+               "0,00", "1024,82"),                       # nur Netzbezug
+        _zeile("15.04.2025, 08:00:00", "0,00", "0,00", "0,00", "100,00",
+               "0,00", "450,09"),                        # nur Akku
+        _zeile("15.06.2025, 08:00:00", "0,00", "0,00", "0,00", "0,00",
+               "100,00", "492,81"),                      # nur PV direkt
+        _zeile("26.09.2025, 15:57:31", "0,00", "0,00", "0,00", "0,00",
+               "0,00", "23,31"),                         # nichts zugeordnet
+    )
+    s = openwb.summiere(openwb.lies(datei).ladungen,
+                        date(2025, 1, 1), date(2025, 12, 31))
+    assert s.kwh == 1991.03
+    assert s.extern_kwh == 1024.82
+    assert s.speicher_kwh == 450.09
+    assert s.pv_kwh == 516.12                    # 492,81 direkt + 23,31 Rest
+    assert s.rest_kwh == 23.31
+    assert s.eigen_kwh == 966.21
+    # Die tragende Zusage: die drei Blöcke ergeben die volle Energiemenge.
+    assert round(s.extern_kwh + s.pv_kwh + s.speicher_kwh, 2) == 1991.03
+    assert s.nicht_zugeordnet_kwh == 0.0
+    assert s.warnungen == []
+    d = s.als_dict()
+    assert d["extern_prozent"] == 51.5
+    assert d["speicher_prozent"] == 22.6 and d["pv_prozent"] == 25.9
+
+
 def test_negativer_pv_anteil_der_box_bleibt_stehen():
     """Am 11.04.2025 schrieb die Box 164 % Speicher gegen −115,81 % PV.
 

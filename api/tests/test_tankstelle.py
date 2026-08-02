@@ -17,6 +17,14 @@ Die Aufteilung wird hier an genau diesen Zahlen gemessen
 (`test_verlauf_trifft_die_kontrollzahlen`). Seit N143 zählt der von der
 Wallbox nicht zugeordnete Rest zum PV-Block; es bleibt nichts übrig.
 
+Seit N148 wird der **Satz je kWh abgeleitet, nicht eingegeben**: Netzstrom zum
+Durchschnittspreis des Netzbezugs (Betrag ÷ bezogene kWh, Grundgebühr
+inbegriffen), eigener Strom `EIGEN_RABATT` darunter. Die beiden alten
+Handeingaben — `Stromjahr.tanken_preis` und `Tankladung.preis` — bleiben als
+Spalten stehen und dürfen die Rechnung **nicht mehr bewegen**; genau das prüft
+`test_alter_handpreis_an_der_ladung_bewegt_nichts_mehr`. Fehlen die Kosten,
+gibt es keinen Satz und keine 0,00 € — sondern einen Grund.
+
 **Kein Test geht ins Netz und kein Test verschickt eine Mail.** Die Wallbox
 steht im Heimnetz; der Versand wird durch ein Postfach-Doppel ersetzt, das die
 Nachricht nur einsammelt.
@@ -35,7 +43,8 @@ from sqlmodel import Session, select  # noqa: E402
 
 from app import db as db_modul  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Objekt, Stromjahr  # noqa: E402
+from app.models import (Kostenposition, Objekt, Stromjahr,  # noqa: E402
+                        Tankladung, Zeitraum)
 from app.routers import tankstelle as t  # noqa: E402
 
 
@@ -242,11 +251,12 @@ NUTZER = [{"id": 1, "name": "Marvin", "email": "marvin@example.invalid"},
           {"id": 2, "name": "Alicia", "email": ""}]
 
 
-def test_abrechne_je_nutzer_mit_gepflegtem_satz():
+def test_abrechne_bewertet_jede_ladung_mit_dem_abgeleiteten_satz():
+    """N148 — ein Satz für alle. Es gibt keinen Preis je Ladung mehr."""
     zeilen = t.abrechne([
-        t.Buchung(date(2025, 7, 4), "Marvin", "", 30.0, 0.0),
-        t.Buchung(date(2025, 8, 9), "marvin", "", 20.0, 0.0),   # gleicher Mensch
-        t.Buchung(date(2025, 9, 1), "Alicia", "", 10.0, 0.45),  # eigener Satz
+        t.Buchung(date(2025, 7, 4), "Marvin", "", 30.0),
+        t.Buchung(date(2025, 8, 9), "marvin", "", 20.0),   # gleicher Mensch
+        t.Buchung(date(2025, 9, 1), "Alicia", "", 10.0),
     ], NUTZER, satz=0.32)
 
     marvin = next(z for z in zeilen if z["name"] == "Marvin")
@@ -257,13 +267,67 @@ def test_abrechne_je_nutzer_mit_gepflegtem_satz():
     assert marvin["email"] == "marvin@example.invalid"
 
     alicia = next(z for z in zeilen if z["name"] == "Alicia")
-    assert alicia["betrag"] == 4.5           # eigener Satz hat Vorrang
-    assert alicia["satz"] == 0.45
+    assert alicia["betrag"] == 3.2           # derselbe Satz, keine Ausnahme
+    assert alicia["satz"] == 0.32
+
+
+def test_abrechne_ohne_satz_zeigt_keine_null_sondern_nichts():
+    """Steht kein Satz fest, gibt es keinen Betrag — auch keine 0,00 €.
+
+    Eine Rechnung über null ohne erkennbaren Grund war hier schon einmal ein
+    Problem; die Menge bleibt sichtbar, der Preis fehlt sichtbar."""
+    zeilen = t.abrechne([t.Buchung(date(2025, 7, 4), "Marvin", "", 30.0)],
+                        NUTZER, satz=None)
+    marvin = next(z for z in zeilen if z["name"] == "Marvin")
+    assert marvin["kwh"] == 30.0
+    assert marvin["betrag"] is None and marvin["satz"] is None
+    assert marvin["ladungen"][0]["betrag"] is None
+    assert marvin["ladungen"][0]["kwh"] == 30.0
+
+
+# --------------------------------------------------------------------------
+# 3b) Der abgeleitete Satz: Netz · eigen · Mischung
+# --------------------------------------------------------------------------
+
+def test_eigener_strom_kostet_den_rabatt_weniger():
+    assert t.EIGEN_RABATT == 0.10
+    assert t.eigen_satz(0.32) == 0.288
+    # Der Rabatt steht an einer Stelle — nicht als nackte 0,9 im Code.
+    assert t.eigen_satz(0.5) == round(0.5 * (1 - t.EIGEN_RABATT), 5)
+
+
+def test_mischsatz_gewichtet_nach_den_mengen_des_zeitraums():
+    # Halb Netz, halb eigen: genau die Mitte zwischen 0,32 und 0,288.
+    assert t.mischsatz(0.32, 0.288, 100.0, 100.0) == 0.304
+    # Nur Netzbezug — kein Rabatt zu verteilen.
+    assert t.mischsatz(0.32, 0.288, 100.0, 0.0) == 0.32
+    assert t.mischsatz(0.32, 0.288, 0.0, 100.0) == 0.288
+    # Aufteilung unbekannt: der Netzpreis gilt. Ein Rabatt auf Verdacht wäre
+    # geschenktes Geld.
+    assert t.mischsatz(0.32, 0.288, None, None) == 0.32
+    assert t.mischsatz(0.32, 0.288, 0.0, 0.0) == 0.32
+
+
+def test_passender_zeitraum_nimmt_die_groesste_ueberschneidung():
+    """Die Nebenkostenperiode läuft nicht am Kalender entlang — gewählt wird
+    der Zeitraum, der das Quartal am weitesten trägt."""
+    alt = Zeitraum(objekt_id=1, start=date(2023, 10, 1), ende=date(2024, 9, 30))
+    neu = Zeitraum(objekt_id=1, start=date(2024, 10, 1), ende=date(2025, 9, 30))
+    # Q3 2025 (Jul–Sep) liegt ganz in der neuen Periode.
+    assert t.passender_zeitraum([alt, neu], date(2025, 7, 1),
+                                date(2025, 9, 30)) is neu
+    # Q3 2024 liegt ganz in der alten.
+    assert t.passender_zeitraum([alt, neu], date(2024, 7, 1),
+                                date(2024, 9, 30)) is alt
+    # Gar keine Überschneidung: lieber nichts als der falsche Preis.
+    assert t.passender_zeitraum([alt, neu], date(2026, 1, 1),
+                                date(2026, 3, 31)) is None
+    assert t.passender_zeitraum([], date(2025, 1, 1), date(2025, 3, 31)) is None
 
 
 def test_abrechne_zeigt_nutzer_ohne_ladung_und_ladung_ohne_nutzer():
     zeilen = t.abrechne([t.Buchung(date(2025, 7, 4), "Gast", "g@example.invalid",
-                                   12.0, 0.0)], NUTZER, satz=0.30)
+                                   12.0)], NUTZER, satz=0.30)
     namen = {z["name"]: z for z in zeilen}
     # Wer nichts geladen hat, verschwindet nicht aus der Liste.
     assert namen["Alicia"]["kwh"] == 0.0 and namen["Alicia"]["betrag"] == 0.0
@@ -277,25 +341,43 @@ def test_abrechne_zeigt_nutzer_ohne_ladung_und_ladung_ohne_nutzer():
 
 
 def test_abrechnungstext_nennt_menge_betrag_und_eigenanteil():
-    zeile = t.abrechne([t.Buchung(date(2025, 7, 4), "Marvin", "", 50.0, 0.0)],
+    zeile = t.abrechne([t.Buchung(date(2025, 7, 4), "Marvin", "", 50.0)],
                        NUTZER, satz=0.32)[0]
     text = t.abrechnungstext("Laufer Str. 5", zeile, date(2025, 7, 1),
-                             date(2025, 9, 30), "Q3 2025", 47.4)
+                             date(2025, 9, 30), "Q3 2025", 47.4,
+                             "Rechnung 1.600,00 € (Position „Strom“) ÷ "
+                             "5.000,00 kWh Netzbezug")
     assert "Hallo Marvin," in text
     assert "Q3 2025" in text and "01.07.2025 – 30.09.2025" in text
     assert "50,00 kWh" in text
     assert "16,00 €" in text
     assert "47,4 % des Stroms" in text
     assert "04.07.2025" in text
+    # Der Empfänger soll den Satz nachrechnen können, nicht glauben müssen.
+    assert "nicht gesetzt, sondern gerechnet" in text
+    assert "Rechnung 1.600,00 €" in text
+    assert "10 % weniger" in text
 
 
 def test_abrechnungstext_ohne_bekannten_eigenanteil_behauptet_nichts():
-    zeile = t.abrechne([t.Buchung(None, "Marvin", "", 10.0, 0.0)],
+    zeile = t.abrechne([t.Buchung(None, "Marvin", "", 10.0)],
                        NUTZER, satz=0.32)[0]
     text = t.abrechnungstext("Laufer Str. 5", zeile, date(2025, 7, 1),
                              date(2025, 9, 30), "Q3 2025", None)
     assert "Photovoltaik" not in text
     assert "ohne Datum" in text
+    # Ohne Herkunft kein Herkunftssatz — nichts wird dazugedichtet.
+    assert "gerechnet" not in text
+
+
+def test_abrechnungstext_ohne_satz_stellt_keine_forderung():
+    zeile = t.abrechne([t.Buchung(date(2025, 7, 4), "Marvin", "", 50.0)],
+                       NUTZER, satz=None)[0]
+    text = t.abrechnungstext("Laufer Str. 5", zeile, date(2025, 7, 1),
+                             date(2025, 9, 30), "Q3 2025", None)
+    assert "50,00 kWh" in text
+    assert "steht noch nicht fest" in text
+    assert "0,00 €" not in text
 
 
 def test_deutsche_zahlen():
@@ -354,6 +436,41 @@ def _ladung(c, slug: str, jahr: int, **werte) -> dict:
     antwort = c.post(f"/api/objekte/{slug}/tankstelle/{jahr}", json=werte)
     assert antwort.status_code == 201, antwort.text
     return antwort.json()
+
+
+def _stromkosten(slug: str, jahr: int, betrag: float,
+                 von: date | None = None, bis: date | None = None,
+                 gesamt_kwh: float = 10000.0, netz_kwh: float = 5000.0,
+                 solar_kwh: float = 3000.0, akku_kwh: float = 2000.0) -> None:
+    """Die Stromkosten einer Abrechnungsperiode setzen — die Grundlage des
+    abgeleiteten Satzes (N148).
+
+    Direkt am Datensatz, wie schon `_jahresaufteilung`: geprüft wird die
+    E-Tankstelle, nicht der Ausbaustand fremder Masken. Mit den Vorgaben
+    entfallen 50 % des Verbrauchs auf den Netzbezug — 5.000 kWh, die den
+    genannten Betrag gekostet haben."""
+    with Session(db_modul.engine) as session:
+        o = session.exec(select(Objekt).where(Objekt.slug == slug)).one()
+        start = von or date(jahr, 1, 1)
+        ende = bis or date(jahr, 12, 31)
+        z = session.exec(select(Zeitraum).where(
+            Zeitraum.objekt_id == o.id, Zeitraum.start == start)).first()
+        if z is None:
+            z = Zeitraum(objekt_id=o.id, start=start, ende=ende)
+            session.add(z)
+            session.commit()
+            session.refresh(z)
+        sj = session.exec(select(Stromjahr).where(
+            Stromjahr.objekt_id == o.id, Stromjahr.jahr == jahr)).first()
+        if sj is None:
+            sj = Stromjahr(objekt_id=o.id, jahr=jahr)
+        sj.gesamt_kwh = gesamt_kwh
+        sj.netz_kwh, sj.solar_kwh, sj.akku_kwh = netz_kwh, solar_kwh, akku_kwh
+        session.add(sj)
+        session.add(Kostenposition(zeitraum_id=z.id, kostenart="Strom",
+                                   betrag=betrag, herkunft="extern",
+                                   menge=netz_kwh, menge_einheit="kWh"))
+        session.commit()
 
 
 def test_nutzer_dynamisch_anlegen_aendern_entfernen(client):
@@ -417,7 +534,6 @@ def test_verlauf_aus_erfassten_ladungen_mit_jahresverhaeltnis(client):
     Netz/eigen kommt dann aus den Jahreswerten (N124) — als Übertragung
     gekennzeichnet, nicht als Messung."""
     slug = _neues_objekt(client, "Verlaufhaus")
-    client.put(f"/api/objekte/{slug}/strom/2025", json={"tanken_preis": 0.32})
     _jahresaufteilung(slug, 2025, extern=60.0, eigen=40.0)
     _nutzer(client, slug, "Marvin", "marvin@example.invalid")
     _ladung(client, slug, 2025, name="Marvin", kwh=100.0, datum="2025-03-05")
@@ -485,7 +601,8 @@ def test_verlauf_lehnt_rueckwaerts_laufenden_zeitraum_ab(client):
 
 def test_abrechnung_je_nutzer_und_quartalszuschnitt(client):
     slug = _neues_objekt(client, "Abrechnungshaus")
-    client.put(f"/api/objekte/{slug}/strom/2025", json={"tanken_preis": 0.32})
+    # 1.600 € für 5.000 kWh Netzbezug → 0,32 € je kWh (N148).
+    _stromkosten(slug, 2025, betrag=1600.0)
     _nutzer(client, slug, "Marvin", "marvin@example.invalid")
     _nutzer(client, slug, "Alicia", "alicia@example.invalid")
     _ladung(client, slug, 2025, name="Marvin", kwh=30.0, datum="2025-07-04")
@@ -512,11 +629,147 @@ def test_abrechnung_je_nutzer_und_quartalszuschnitt(client):
 
 def test_abrechnung_leer_liefert_die_angelegten_nutzer_mit_null(client):
     slug = _neues_objekt(client, "Nullhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
     _nutzer(client, slug, "Marvin")
     d = client.get(f"/api/tankstelle/{slug}/abrechnung",
                    params={"jahr": 2025, "quartal": 1}).json()
     assert [z["name"] for z in d["nutzer"]] == ["Marvin"]
     assert d["betrag_gesamt"] == 0.0
+    # Der Satz steht auch dann fest, wenn niemand geladen hat.
+    assert d["satz"] == 0.32
+
+
+def test_abrechnung_leitet_den_satz_aus_den_stromkosten_ab(client):
+    """N148 — 1.600 € für 5.000 kWh Netzbezug ergeben 0,32 € je kWh; eigener
+    Strom liegt 10 % darunter. Eingegeben wird nichts."""
+    slug = _neues_objekt(client, "Satzhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=100.0, datum="2025-08-11")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["satz_netz"] == 0.32
+    assert d["satz_eigen"] == 0.288
+    assert d["satz_rabatt"] == 0.10
+    # Ohne bekannte Aufteilung des Zeitraums gilt der Netzpreis.
+    assert d["satz"] == 0.32
+    assert d["satz_grund"] == ""
+    # Die Herkunft nennt Betrag, Menge, Position und Zeitraum.
+    assert "1.600,00 €" in d["satz_herkunft"]
+    assert "5.000,00 kWh" in d["satz_herkunft"]
+    assert "Strom" in d["satz_herkunft"]
+    assert "01.01.2025 – 31.12.2025" in d["satz_herkunft"]
+    assert next(z for z in d["nutzer"] if z["name"] == "Marvin")["betrag"] == 32.0
+
+
+def test_abrechnung_mischt_netz_und_eigenen_strom_nach_den_mengen(client):
+    """Eine Ladung speist sich aus beidem — der Satz folgt den Mengen.
+
+    60 % Netz zu 0,32 € und 40 % eigen zu 0,288 € ergeben 0,3072 € je kWh."""
+    slug = _neues_objekt(client, "Mischhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _jahresaufteilung(slug, 2025, extern=60.0, eigen=40.0)
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=100.0, datum="2025-08-11")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["satz"] == 0.3072
+    assert next(z for z in d["nutzer"] if z["name"] == "Marvin")["betrag"] == 30.72
+
+
+def test_alter_handpreis_an_der_ladung_bewegt_nichts_mehr(client):
+    """N148 — `Stromjahr.tanken_preis` und `Tankladung.preis` sind stillgelegt.
+
+    Beide Spalten bleiben stehen (CLAUDE.md: nie entfernen) und tragen hier
+    sogar einen Wert: 0,99 € je kWh, über den alten Weg erfasst. Gerechnet
+    wird trotzdem mit dem abgeleiteten Satz — ein alter Handwert darf die
+    Rechnung nicht mehr bewegen."""
+    slug = _neues_objekt(client, "Handpreishaus")
+    client.put(f"/api/objekte/{slug}/strom/2025", json={"tanken_preis": 0.99})
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=100.0, datum="2025-08-11")
+
+    # Der alte Wert steht wirklich an der Ladung — sonst prüfte der Test nichts.
+    with Session(db_modul.engine) as session:
+        o = session.exec(select(Objekt).where(Objekt.slug == slug)).one()
+        ladung = session.exec(select(Tankladung).where(
+            Tankladung.objekt_id == o.id)).one()
+        assert ladung.preis == 0.99
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["satz"] == 0.32
+    marvin = next(z for z in d["nutzer"] if z["name"] == "Marvin")
+    assert marvin["satz"] == 0.32 and marvin["betrag"] == 32.0
+    assert marvin["ladungen"][0]["preis"] == 0.32
+
+
+def test_abrechnung_ohne_stromkosten_nennt_den_grund_statt_null(client):
+    """Keine Kosten erfasst → kein Satz und keine 0,00 €, sondern die Aussage,
+    wodurch der Satz entsteht (N148)."""
+    slug = _neues_objekt(client, "Ohnekostenhaus")
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=40.0, datum="2025-08-11")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["satz"] is None and d["satz_netz"] is None
+    assert d["betrag_gesamt"] is None
+    marvin = next(z for z in d["nutzer"] if z["name"] == "Marvin")
+    assert marvin["kwh"] == 40.0             # die Menge steht da
+    assert marvin["betrag"] is None          # der Betrag nicht
+    assert d["satz_grund"]                   # und es steht dabei, warum
+
+    # Verschickt wird eine Rechnung ohne Preis nicht.
+    antwort = client.post(f"/api/tankstelle/{slug}/versand",
+                          json={"nutzer_id": n["id"], "jahr": 2025,
+                                "quartal": 3})
+    assert antwort.status_code == 400
+    assert "kein Preis" in antwort.json()["detail"]
+
+
+def test_ohne_bezogene_menge_nennt_die_luecke_beim_namen(client):
+    """Der echte Stand beim Nutzer: der Betrag liegt vor (ein Beleg über
+    543,00 €), die bezogene Menge nicht — die SolarEdge-Anteile sind noch
+    nicht erfasst.
+
+    Dann fehlt der Nenner, nicht der Zähler. „Die Stromkosten sind noch nicht
+    erfasst" wäre an dieser Stelle schlicht falsch, und wer danach sucht,
+    sucht am falschen Ort."""
+    slug = _neues_objekt(client, "Ohnemengehaus")
+    _stromkosten(slug, 2025, betrag=543.0, gesamt_kwh=0.0, netz_kwh=0.0,
+                 solar_kwh=0.0, akku_kwh=0.0)
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["satz"] is None
+    assert "nicht die bezogene Menge" in d["satz_grund"]
+    assert "543,00 €" in d["satz_grund"]        # der Betrag wird genannt
+    assert "SolarEdge" in d["satz_grund"]       # und wo die Menge herkommt
+
+
+def test_satz_kommt_aus_der_periode_mit_der_groessten_ueberschneidung(client):
+    """Die Nebenkostenperiode läuft vom 01.10. bis 30.09. — ein Quartal darin
+    bekommt den Preis genau dieser Periode, nicht den des Kalenderjahres."""
+    slug = _neues_objekt(client, "Periodenhaus")
+    _stromkosten(slug, 2024, betrag=1600.0,
+                 von=date(2023, 10, 1), bis=date(2024, 9, 30))
+    _stromkosten(slug, 2025, betrag=2400.0,
+                 von=date(2024, 10, 1), bis=date(2025, 9, 30))
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+
+    # Q3 2025 (Jul–Sep) liegt ganz in der jüngeren Periode: 2.400 € / 5.000 kWh.
+    neu = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                     params={"jahr": 2025, "quartal": 3}).json()
+    assert neu["satz_netz"] == 0.48
+    # Q3 2024 liegt ganz in der älteren.
+    alt = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                     params={"jahr": 2024, "quartal": 3}).json()
+    assert alt["satz_netz"] == 0.32
 
 
 def test_abrechnung_nennt_die_luecke_zwischen_geladen_und_zugeordnet(client):
@@ -545,7 +798,7 @@ def test_abrechnung_nennt_die_luecke_zwischen_geladen_und_zugeordnet(client):
 
 def test_vorschau_zeigt_die_mail_ohne_sie_zu_verschicken(client):
     slug = _neues_objekt(client, "Vorschauhaus")
-    client.put(f"/api/objekte/{slug}/strom/2025", json={"tanken_preis": 0.32})
+    _stromkosten(slug, 2025, betrag=1600.0)
     n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
     _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-07-04")
 
@@ -554,8 +807,11 @@ def test_vorschau_zeigt_die_mail_ohne_sie_zu_verschicken(client):
                            "nutzer_id": n["id"]}).json()
     assert d["an"] == "marvin@example.invalid"
     assert d["betrag"] == 16.0
+    assert d["satz"] == 0.32
     assert "Hallo Marvin," in d["text"]
     assert "Q3 2025" in d["betreff"]
+    # Die Vorschau nennt, woher der Satz kommt — nicht nur die Zahl.
+    assert "5.000,00 kWh Netzbezug" in d["text"]
 
     # Unbekannter Nutzer → 404 statt einer leeren Rechnung.
     assert client.get(f"/api/tankstelle/{slug}/vorschau",
@@ -576,7 +832,7 @@ class _Postfach:
 def test_versand_quartalsweise_geht_an_die_hinterlegte_adresse(client,
                                                                monkeypatch):
     slug = _neues_objekt(client, "Versandhaus")
-    client.put(f"/api/objekte/{slug}/strom/2025", json={"tanken_preis": 0.32})
+    _stromkosten(slug, 2025, betrag=1600.0)
     n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
     _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-07-04")
 
