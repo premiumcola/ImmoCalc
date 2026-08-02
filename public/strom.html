@@ -38,7 +38,11 @@
      Spalte. minmax verhindert, dass ein langes Label die Spalte sprengt. */
   .raster{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
           gap:12px 14px}
-  .raster .field{margin-bottom:2px}
+  /* Bricht eine Beschriftung um, darf das Eingabefeld darunter nicht
+     mitrutschen — sonst fluchten die Kanten einer Zeile nicht mehr. Das Label
+     wächst, das Feld sitzt bündig am unteren Rand. */
+  .raster .field{margin-bottom:2px;display:flex;flex-direction:column}
+  .raster .field label{flex:1 0 auto}
   /* N112 - ein Feld ueber die volle Breite (Eigentuemer-Anteile). Ohne eigene
      Zeile schob es sich vorher ueber die Kacheln darunter. */
   .field.breit{display:block;width:100%;margin:0 0 16px}
@@ -88,6 +92,10 @@
   .kpi .kv.pos{color:var(--pos)}
   .kpi .knote{display:block;font:400 10.5px var(--body);color:var(--soft);
               margin-top:4px;line-height:1.35}
+  /* Zusatz in der Kachel-Beschriftung („rechnerisch, kein Ertrag"). Als
+     inline-Element klebte er am Label und erbte dessen Versalien. */
+  .kpi .kh{display:block;font:400 10px var(--body);text-transform:none;
+           letter-spacing:0;color:var(--soft);margin-top:3px}
 
   /* Eigentuemer-Verteilung. */
   .eig{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
@@ -236,20 +244,20 @@ const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) 
    oben gewählten Jahr (`data-feld`, gespeichert unter /strom/{jahr}). Die
    Anlage wurde einmal gekauft, nicht jedes Jahr neu. */
 const F_STAMM = [
-  ['anschaffung_eur', 'Anschaffung (Investment)', '€', 1],
+  ['anschaffung_eur', 'Anschaffung', '€', 1],
   ['vorlauf_ertrag_eur', 'Bereits abgetragen', '€', 1],
   ['kwp', 'Anlagenleistung', 'kWp', 0.01],
 ];
 const F_JAHR = [
   ['pv_produktion_kwh', 'PV-Produktion', 'kWh', 1],
   ['einspeisung_kwh', 'Einspeisung', 'kWh', 1],
-  ['verguetung_eur', 'Vergütung (0 = rechnen)', '€', 0.01],
+  ['verguetung_eur', 'Vergütung', '€', 0.01],
 ];
 // N87/N89 — die E-Tankstelle gehört zur PV-Anlage: der geladene Strom wird der
 // ladenden Person berechnet und fließt der Anlage zu (Amortisation). Der Satz
 // kann sich von Jahr zu Jahr ändern und hängt deshalb am Jahr.
 const F_TANKEN = [
-  ['tanken_preis', 'Preis je kWh (E-Auto)', '€', 0.01],
+  ['tanken_preis', 'Preis je kWh', '€', 0.01],
 ];
 
 function feldHtml(name, label, einheit, step, art = 'feld') {
@@ -400,7 +408,7 @@ function ergebnisZeigen(r) {
     <div class="k"><span class="kl">Ersparnis Zukauf <span class="kh">rechnerisch,
       kein Ertrag</span></span><span class="kv">${eur(pv.eigenverbrauch_ersparnis)}</span></div>`;
 
-  tankZeigen((r.tankstelle || {}).preis || 0);
+  tankZeigen();
 
   document.getElementById('eig').innerHTML = r.eigentuemer.map(e => `
     <div class="ez">
@@ -668,7 +676,7 @@ async function verlaufZeigen() {
 /* Was der Anlage aus der E-Tankstelle zufließt: die erfassten Ladungen des
    gewählten Jahres. Nutzer und Abrechnungen werden auf `tankstelle.html`
    verwaltet — hier steht nur die Summe (N132/N139). */
-async function tankZeigen(satz) {
+async function tankZeigen() {
   const ziel = document.getElementById('tank');
   if (!ziel || !objektSlug) return;
   let d = {};
@@ -677,10 +685,10 @@ async function tankZeigen(satz) {
   } catch {
     d = {};                       // keine Ladungen erfasst — dann eben Null
   }
+  // Der Satz steht schon im Eingabefeld darüber und wird hier nicht wiederholt.
   ziel.innerHTML = `
-    <div class="k"><span class="kl">Satz</span><span class="kv">${eur(satz)}/kWh</span></div>
-    <div class="k"><span class="kl">Geladen</span><span class="kv">${kwh(d.kwh_gesamt || 0)}</span></div>
     <div class="k"><span class="kl">Ladungen</span><span class="kv">${(d.ladungen || []).length}</span></div>
+    <div class="k"><span class="kl">Geladen</span><span class="kv">${kwh(d.kwh_gesamt || 0)}</span></div>
     <div class="k"><span class="kl">Zufluss</span><span class="kv pos">${eur(d.betrag_gesamt || 0)}</span></div>`;
 }
 
@@ -753,10 +761,11 @@ function anteileSummeZeigen() {
   const hinweis = document.getElementById('paHinweis');
   if (!hinweis) return;
   const offen = Math.round((1000 - summe) * 10) / 10;
-  hinweis.innerHTML = (!summe || Math.abs(offen) <= 0.5) ? '' :
-    `<div class="pa-hinweis">Vergeben sind ${promille(summe)} statt 1000 ‰ —
-      ${offen > 0 ? `${promille(offen)} fehlen noch`
-        : `${promille(-offen)} zu viel`}.</div>`;
+  const fehlt = offen > 0 ? `${promille(offen)} fehlen noch`
+    : `${promille(-offen)} zu viel`;
+  hinweis.innerHTML = (!summe || Math.abs(offen) <= 0.5) ? ''
+    : `<div class="pa-hinweis">Vergeben sind ${promille(summe)} statt 1000 ‰`
+      + ` — ${fehlt}.</div>`;
 }
 
 /* Die gesetzten Anteile aus der Auswahl einsammeln (nur angehakte mit Wert). */

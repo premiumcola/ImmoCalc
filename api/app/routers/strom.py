@@ -99,6 +99,11 @@ class StromIn(BaseModel):
     # Pflichtfeld mit Default "" loeschte jedes Speichern die gespeicherte
     # Zuordnung und die Notiz. `None` heisst jetzt „nicht mitgeschickt".
     notiz: str | None = None
+    # N124 — die von Hand eingetragene E-Auto-Aufteilung. Ebenfalls optional:
+    # ein Speichern der Strom-Maske darf sie nicht auf 0 zurücksetzen.
+    eauto_einheit: str | None = None
+    eauto_extern_kwh: float | None = None
+    eauto_eigen_kwh: float | None = None
     # N89 — Zuordnung der Immobilien-Einheiten zu den beiden Verbrauchsgruppen,
     # je eine komma-separierte Liste von Bezeichnungen ("EG, 1.OG").
     wg_einheiten: str | None = None

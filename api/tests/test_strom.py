@@ -397,6 +397,31 @@ def test_endpunkt_put_nimmt_einheiten_zuordnung_an(client):
         == erwartet
 
 
+def test_endpunkt_speichert_die_eauto_aufteilung(client):
+    """N124 — welche Einheit die Ladungen trägt und wie viel davon Netz bzw.
+    eigene Anlage war. Von Hand eingetragen (`strombloecke.verteile` rechnet
+    damit), solange die Wallbox nichts liefert.
+
+    Die Felder sind optional: ein Speichern der übrigen Strom-Maske darf sie
+    nicht auf 0 zurücksetzen — genau der Fehler aus N108."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/strom/2025", json={
+        "eauto_einheit": "Studio", "eauto_extern_kwh": 522.34,
+        "eauto_eigen_kwh": 828.19})
+
+    gelesen = client.get(f"/api/objekte/{slug}/strom/2025").json()
+    assert gelesen["eauto_einheit"] == "Studio"
+    assert gelesen["eauto_extern_kwh"] == 522.34
+    assert gelesen["eauto_eigen_kwh"] == 828.19
+
+    # Speichern ohne die drei Felder lässt sie stehen.
+    client.put(f"/api/objekte/{slug}/strom/2025", json={"gesamt_kwh": 12000})
+    danach = client.get(f"/api/objekte/{slug}/strom/2025").json()
+    assert danach["gesamt_kwh"] == 12000
+    assert (danach["eauto_einheit"], danach["eauto_extern_kwh"],
+            danach["eauto_eigen_kwh"]) == ("Studio", 522.34, 828.19)
+
+
 def test_endpunkt_put_aktualisiert_bestehenden(client):
     slug = _neues_objekt(client)
     client.put(f"/api/objekte/{slug}/strom/2025", json={"gesamt_kwh": 5000})
