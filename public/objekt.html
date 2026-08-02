@@ -166,8 +166,14 @@
   /* Durchweg mit `dialog.` davor: `dialog.immo-dlg` in immo.css setzt Papier-
      Hintergrund, 22 px Innenrand und 400 px Breite — eine reine Klasse verliert
      dagegen und der Dialog käme grau, eng und zu schmal heraus. */
+  /* N141c — der Dialog fiel auf dem iPhone zusammen: Kopf und Fuss standen,
+     die Liste dazwischen bekam keine Hoehe. `flex:1` mit `min-height:0` in
+     einem Container OHNE feste Hoehe laesst den Bereich auf null schrumpfen.
+     Deshalb bekommt der Dialog jetzt eine Hoehe (nicht nur eine Obergrenze),
+     und `vh` steht als Rueckfall vor `dvh` fuer aeltere iOS-Fassungen. */
   dialog.az-dlg{border:none;border-radius:20px;padding:0;max-width:560px;
-    width:calc(100vw - 24px);max-height:min(88dvh,900px);background:var(--sheet);
+    width:calc(100vw - 24px);background:var(--sheet);
+    height:86vh; height:min(86dvh,900px); max-height:none;
     color:var(--ink);display:flex;flex-direction:column;overflow:hidden;
     box-shadow:0 18px 50px rgba(22,38,44,.25)}
   dialog.az-dlg::backdrop{background:rgba(22,38,44,.5)}
@@ -178,7 +184,7 @@
   dialog.az-dlg .zd-x{width:44px;height:44px;font-size:20px}
   dialog.az-dlg .zd-fuss{flex:none;border-top:1px solid var(--line);
     padding:12px 18px;gap:10px;align-items:center}
-  dialog.az-dlg .az-body{flex:1;min-height:0;overflow:auto;
+  dialog.az-dlg .az-body{flex:1 1 auto;min-height:140px;overflow:auto;
     overscroll-behavior:contain;padding:14px 18px 6px;-webkit-overflow-scrolling:touch}
   dialog.az-dlg .az-intro{margin:0 0 14px;font:500 12.5px var(--body);
     color:var(--soft);line-height:1.55}

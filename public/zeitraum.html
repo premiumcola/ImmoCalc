@@ -844,7 +844,7 @@
     line-height:1.5;margin:8px 0 0}
   .sk-quelle b{color:var(--ink);font-weight:600}
   .sk-felder{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-  .sk-feld{flex:1 1 92px;min-width:0;display:flex;flex-direction:column;gap:4px}
+  .sk-feld{flex:1 1 74px;min-width:0;display:flex;flex-direction:column;gap:4px}
   .sk-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
     text-transform:uppercase;color:var(--soft)}
   .sk-feld input{width:100%;min-width:0;border:1.5px solid var(--line);
@@ -854,8 +854,12 @@
   .sk-feld.fest span{display:block;padding:9px 10px;min-height:44px;
     border-radius:10px;background:var(--paper);text-align:right;
     font:600 12px var(--mono);color:var(--ink)}
-  .sk-tab td.sk-q{font:600 8.5px var(--mono);letter-spacing:.04em;
-    text-transform:uppercase;color:var(--soft);text-align:left}
+  /* Die Kettentabellen tragen kurze Zeilenköpfe („Netz", „Akku") — mit der
+     schmaleren ersten Spalte passen Menge UND Kosten auf den iPhone-Schirm,
+     ohne dass die wichtigste Zahl hinter dem Rand verschwindet. */
+  .sk-tab th,.sk-tab td{padding-left:8px;padding-right:8px}
+  .sk-tab th.wd-rowh,.sk-tab td.wd-rowh{width:96px;min-width:96px;max-width:96px}
+  .sk-tab thead th{min-width:72px}
   .sk-kontrolle{display:flex;flex-wrap:wrap;justify-content:space-between;
     gap:6px 16px;margin-top:12px;padding-top:10px;border-top:2px solid var(--line);
     font:500 12px var(--body);color:var(--soft)}
@@ -3435,6 +3439,10 @@ const skProz = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 1 
 /* Ein Preis als ct/kWh — die Einheit, in der Stromrechnungen gelesen werden. */
 const skCt = n => `${((n ?? 0) * 100).toLocaleString('de-DE',
   { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ct`;
+/* Mengen in kWh: eine Nachkommastelle genügt — die dritte Stelle einer
+   interpolierten Zahl liest niemand, sie macht die Spalten nur breit. */
+const skKwh = n => `${(n ?? 0).toLocaleString('de-DE',
+  { maximumFractionDigits: 1 })} kWh`;
 
 /* Die drei Blöcke in fester Reihenfolge — teuer nach günstig, wie im Backend. */
 const SK_BLOECKE = [['netz', 'Netz', 'zugekauft'], ['pv', 'PV direkt', 'vom Dach'],
@@ -3466,13 +3474,14 @@ function skSchritt1(d) {
           aria-label="${label} in Prozent"></div>`
     : `<div class="sk-feld fest"><label>${label}</label>
         <span>${wert ? `${skProz(wert)} %` : '—'}</span></div>`;
+  // Drei Spalten, damit die Kosten auch auf dem iPhone ohne Scrollen dastehen:
+  // der Preis je kWh steht als Unterzeile bei den Kosten, aus denen er kommt.
   const zeilen = SK_BLOECKE.map(([k, titel, sub]) => `<tr>
       <td class="wd-rowh">${titel}<small>${sub}</small></td>
-      <td><span class="wd-m3">${zahl(s[k].kwh)} kWh</span>
+      <td><span class="wd-m3">${skKwh(s[k].kwh)}</span>
         <span class="wd-eur">${skProz(s[`${k === 'akku' ? 'speicher' : k}_prozent`])} %</span></td>
-      <td><span class="wd-m3">${skCt(s[k].preis)}</span>
-        <span class="wd-eur">je kWh</span></td>
-      <td><span class="wd-m3">${eur(s[k].betrag)}</span></td></tr>`).join('');
+      <td><span class="wd-m3">${eur(s[k].betrag)}</span>
+        <span class="wd-eur">${skCt(s[k].preis)}/kWh</span></td></tr>`).join('');
   const quelle = [s.quelle_menge && `Menge: <b>${esc(s.quelle_menge)}</b>`,
     s.quelle_betrag && `Netz: <b>${esc(s.quelle_betrag)}</b>`,
     s.quelle_eigen && `Eigener Strom: <b>${esc(s.quelle_eigen)}</b>`]
@@ -3480,14 +3489,14 @@ function skSchritt1(d) {
   return `<div class="sk-schritt">
       <div class="sk-kopf"><span class="sk-nr">1</span><span class="sk-t">Aus kWh
         werden Euro</span><span class="sk-h">${zahl(s.gesamt_kwh)} kWh im Zeitraum</span></div>
-      <div class="sk-felder">${feld('netz', 'Netz', s.netz_prozent)}${
-        feld('pv', 'PV direkt', s.pv_prozent)}${
-        feld('akku', 'Speicher', s.speicher_prozent)}</div>
+      <div class="sk-felder">${feld('netz', 'Netz', s.netz_erfasst)}${
+        feld('pv', 'PV direkt', s.pv_erfasst)}${
+        feld('akku', 'Speicher', s.speicher_erfasst)}</div>
       <div class="wd-scroll"><table class="wd-tab sk-tab"><thead><tr>
-        <th class="wd-rowh">Quelle</th><th>Menge</th><th>Preis</th><th>Kosten</th>
+        <th class="wd-rowh">Quelle</th><th>Menge</th><th>Kosten</th>
       </tr></thead><tbody>${zeilen}</tbody>
       <tfoot><tr class="wd-summe"><td class="wd-rowh">Summe</td>
-        <td><span class="wd-m3">${zahl(s.gesamt_kwh)} kWh</span></td><td></td>
+        <td><span class="wd-m3">${skKwh(s.gesamt_kwh)}</span></td>
         <td><span class="wd-m3">${eur(s.betrag)}</span></td></tr></tfoot>
       </table></div>
       ${quelle ? `<span class="sk-quelle">${quelle}</span>` : ''}</div>`;
@@ -3506,25 +3515,28 @@ function skSchritt2(d) {
         s.quelle_text ? ` — ${esc(s.quelle_text)}` : ''}. Es geht nichts ab.</div>
     </div>`;
   }
-  const spalten = SK_BLOECKE.map(([, titel]) => `<th>${titel}</th>`).join('');
-  const mengen = SK_BLOECKE.map(([k]) =>
-    `<td><span class="wd-m3">${zahl(s[`${k}_kwh`])} kWh</span></td>`).join('');
+  // Dieselbe Form wie Schritt 1: die Blöcke als Zeilen. So bleibt die Tabelle
+  // auch auf dem iPhone zweispaltig und ohne Scrollen lesbar.
+  const zeilen = SK_BLOECKE.map(([k, titel, sub]) => `<tr>
+      <td class="wd-rowh">${titel}<small>${sub}</small></td>
+      <td><span class="wd-m3">${skKwh(s[`${k}_kwh`])}</span></td></tr>`).join('');
+  const gegen = s.zaehler
+    ? ` Der Zähler „${esc(s.zaehler)}“ weist dieselbe Menge aus (${
+        skKwh(s.zaehler_kwh)}) — er braucht deshalb keine Einheit.` : '';
   return `<div class="sk-schritt">
       <div class="sk-kopf"><span class="sk-nr">2</span><span class="sk-t">Abzug
-        E-Tankstelle</span><span class="sk-h">${esc(s.quelle_text)}</span></div>
+        ${esc(s.einheit)}</span><span class="sk-h">${esc(s.quelle_text)}</span></div>
       <div class="wd-scroll"><table class="wd-tab sk-tab"><thead><tr>
-        <th class="wd-rowh">${esc(s.einheit)}</th>${spalten}<th>Summe</th>
-      </tr></thead><tbody>
-        <tr><td class="wd-rowh">Menge<small>geladen</small></td>${mengen}
-          <td><span class="wd-m3">${zahl(s.eauto_kwh)} kWh</span></td></tr>
-        <tr class="wd-summe"><td class="wd-rowh">Kosten</td>
-          <td colspan="3">exakt zu den Preisen der drei Blöcke</td>
-          <td><span class="wd-m3">${eur(s.betrag)}</span></td></tr>
-      </tbody></table></div>
+        <th class="wd-rowh">Quelle</th><th>Geladen</th>
+      </tr></thead><tbody>${zeilen}</tbody>
+      <tfoot><tr class="wd-summe"><td class="wd-rowh">Summe</td>
+        <td><span class="wd-m3">${skKwh(s.eauto_kwh)}</span>
+          <span class="wd-eur">${eur(s.betrag)}</span></td></tr></tfoot>
+      </table></div>
       <span class="sk-quelle">Diese Menge geht <b>vorab</b> ab und wird
         <b>nicht</b> auf die Bewohner der Einheiten verteilt — das Auto lädt für
         sich. Wer geladen hat, spielt hier keine Rolle; das steht im Bereich
-        E-Tankstelle.</span></div>`;
+        E-Tankstelle.${gegen}</span></div>`;
 }
 
 /* Schritt 3 — der Rest nach den Zählerwerten, jede Einheit mit demselben
@@ -3542,7 +3554,7 @@ function skSchritt3(d) {
   const zeile = (titel, sub, zellen) => `<tr>
     <td class="wd-rowh">${titel}${sub ? `<small>${sub}</small>` : ''}</td>${zellen}</tr>`;
   const menge = k => namen.map(n =>
-    `<td><span class="wd-m3">${zahl(s.je_einheit[n][k])} kWh</span></td>`).join('');
+    `<td><span class="wd-m3">${skKwh(s.je_einheit[n][k])}</span></td>`).join('');
   return `<div class="sk-schritt">
       <div class="sk-kopf"><span class="sk-nr">3</span><span class="sk-t">Verteilung
         auf die Einheiten</span><span class="sk-h">nach Zählerwerten</span></div>
@@ -3557,9 +3569,9 @@ function skSchritt3(d) {
         <tr class="wd-summe"><td class="wd-rowh">Kosten</td>${namen.map(n =>
           `<td><span class="wd-m3">${eur(s.je_einheit[n].betrag)}</span></td>`).join('')}</tr>
       </tbody></table></div>
-      ${(s.ohne_einheit || []).length ? `<span class="sk-quelle">Ohne Einheit:
-        ${s.ohne_einheit.map(o => `<b>${esc(o.zaehler)}</b> ${zahl(o.kwh)} kWh`)
-          .join(' · ')}</span>` : ''}</div>`;
+      ${(s.ohne_einheit || []).length ? `<span class="sk-quelle">Noch keiner
+        Einheit zugeordnet: ${s.ohne_einheit.map(o =>
+          `<b>${esc(o.zaehler)}</b> ${skKwh(o.kwh)}`).join(' · ')}</span>` : ''}</div>`;
 }
 
 function stromketteInhalt(d) {
@@ -3579,7 +3591,11 @@ function stromketteInhalt(d) {
 
 /* Einen der drei SolarEdge-Anteile speichern. Ein eigenes Prozentfeld gibt es
    im Datenmodell nicht — gespeichert werden die Mengen (Anteil × Gesamt), aus
-   denen die Prozente wieder hervorgehen. */
+   denen die Prozente wieder hervorgehen.
+
+   Der PUT des Strom-Jahres nimmt IMMER den ganzen Satz: seine Felder haben
+   den Vorgabewert 0, ein Teil-PUT würde die übrigen Angaben auf 0 setzen.
+   Darum erst lesen, den einen Wert ersetzen, alles zurückschreiben. */
 async function stromAnteilSpeichern(feld) {
   const wert = parseFloat(String(feld.value || '').replace(',', '.'));
   const box = feld.closest('[data-strom-kette]');
@@ -3589,12 +3605,21 @@ async function stromAnteilSpeichern(feld) {
     return melde('Ohne Gesamtverbrauch lässt sich der Anteil nicht umrechnen — '
       + 'bitte zuerst den Stromzähler ablesen.', 'neg');
   }
-  const spalte = { netz: 'netz_kwh', pv: 'solar_kwh', akku: 'akku_kwh' }[
-    feld.dataset.skAnteil];
+  // Alle drei Felder zusammen schreiben: die Prozente ergeben sich wieder aus
+  // dem Verhältnis der Mengen, also muss auch das Verhältnis stimmen, das der
+  // Nutzer gerade sieht — sonst käme eine andere Zahl zurück, als er eintippt.
+  const SPALTE = { netz: 'netz_kwh', pv: 'solar_kwh', akku: 'akku_kwh' };
+  const mengen = {};
+  box.querySelectorAll('[data-sk-anteil]').forEach(f => {
+    const p = parseFloat(String(f.value || '').replace(',', '.'));
+    mengen[SPALTE[f.dataset.skAnteil]] = Number.isNaN(p) || p < 0 ? 0
+      : Math.round(gesamt * p / 100 * 1000) / 1000;
+  });
+  const pfad = `/objekte/${encodeURIComponent(daten.objekt)}/strom/${daten.jahr}`;
   try {
-    await api(`/objekte/${encodeURIComponent(daten.objekt)}/strom/${
-      daten.jahr}`, { method: 'PUT',
-      body: { [spalte]: Math.round(gesamt * wert / 100 * 1000) / 1000 } });
+    const jetzt = await api(pfad);
+    delete jetzt.jahr;
+    await api(pfad, { method: 'PUT', body: { ...jetzt, ...mengen } });
     await fuelleStromketteInline(box);
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }

@@ -119,6 +119,9 @@ def test_schritt1_macht_aus_kwh_drei_kostenbloecke(monkeypatch):
     assert s1["quelle_menge"].startswith("Zähler")
     assert (s1["netz_prozent"], s1["pv_prozent"], s1["speicher_prozent"]) \
         == (24.0, 50.0, 26.0)
+    # Gehen die Anteile auf, sind Eingabe und Rechnung dieselben Zahlen.
+    assert (s1["netz_erfasst"], s1["pv_erfasst"], s1["speicher_erfasst"]) \
+        == (24.0, 50.0, 26.0)
     assert s1["netz"]["kwh"] == 2592.0
     assert s1["pv"]["kwh"] == 5400.0
     assert s1["akku"]["kwh"] == 2808.0
@@ -131,15 +134,24 @@ def test_schritt1_macht_aus_kwh_drei_kostenbloecke(monkeypatch):
 
 
 def test_prozente_die_nicht_hundert_ergeben_werden_gemeldet(monkeypatch):
-    """Ein schiefer Screenshot darf nicht still durchlaufen."""
+    """Ein schiefer Screenshot darf nicht still durchlaufen. 2400+5000+2000 sind
+    nur 9400 der 10.800 kWh — das sind 87 %, nicht 100 %."""
     zid = _objekt("kette-schief", anteile=(2400.0, 5000.0, 2000.0))
     d = _kette(zid, monkeypatch, WALLBOX)
-    # Die Anteile werden aus den Mengen normiert — sie ergeben also 100 %,
-    # aber die erfasste Summe deckt den Gesamtverbrauch nicht.
+    assert any("87 %" in w for w in d["warnungen"]), d["warnungen"]
+    # Die Eingabefelder zeigen unverändert, was eingetragen wurde …
+    assert d["schritt1"]["netz_erfasst"] == round(2400 / 10800 * 100, 2)
+    assert d["schritt1"]["erfasst_summe"] == round(9400 / 10800 * 100, 2)
+    # … verteilt wird trotzdem auf den vollen Verbrauch, sonst fehlte Geld.
     assert round(sum((d["schritt1"]["netz_prozent"],
                       d["schritt1"]["pv_prozent"],
                       d["schritt1"]["speicher_prozent"])), 1) == 100.0
-    # Ohne erfasste Anteile sagt die Kette das ausdrücklich.
+    assert d["schritt1"]["netz"]["kwh"] + d["schritt1"]["pv"]["kwh"] \
+        + d["schritt1"]["akku"]["kwh"] == 10800.0
+    assert d["kontrolle"]["stimmt"] is True
+
+
+def test_ohne_erfasste_anteile_sagt_die_kette_was_fehlt(monkeypatch):
     leer = _kette(_objekt("kette-ohne-anteile", anteile=(0.0, 0.0, 0.0)),
                   monkeypatch, WALLBOX)
     assert any("SolarEdge-Anteile" in w for w in leer["warnungen"])

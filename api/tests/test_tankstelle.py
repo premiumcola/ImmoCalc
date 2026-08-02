@@ -132,56 +132,106 @@ def test_verlauf_trifft_die_kontrollzahlen():
     """Die echten Jahreszahlen der Box (2025) — auf zwölf Monate verteilt.
 
     Geprüft wird, dass die Aufteilung über die Monate hinweg genau die
-    Kontrollwerte ergibt: 1991,03 kWh, davon 1024,82 Netz (51,5 %) und
-    942,90 eigen (47,4 %). Die Differenz zu 100 % ist der nicht zugeordnete
-    Rest der Wallbox — er wird nicht heimlich verteilt."""
+    Kontrollwerte ergibt: 1991,03 kWh, davon 1024,82 Netz, 450,09 Akku und
+    516,13 PV (492,82 direkt + 23,31 Rest). Die drei Blöcke ergeben zusammen
+    wieder die volle Menge — es bleibt nichts liegen."""
     monatlich = [
-        (1, 180.11, 92.70, 85.30), (2, 210.42, 108.30, 99.60),
-        (3, 165.00, 84.90, 78.10), (4, 140.55, 72.30, 66.60),
-        (5, 155.20, 79.90, 73.50), (6, 148.30, 76.30, 70.20),
-        (7, 172.40, 88.70, 81.60), (8, 168.90, 86.90, 80.00),
-        (9, 159.75, 82.20, 75.70), (10, 175.60, 90.40, 83.10),
-        (11, 158.40, 81.50, 74.90), (12, 156.40, 80.72, 74.30),
+        (1, 180.11, 92.70, 40.72, 46.69), (2, 210.42, 108.30, 47.57, 54.55),
+        (3, 165.00, 84.90, 37.30, 42.80), (4, 140.55, 72.30, 31.77, 36.48),
+        (5, 155.20, 79.90, 35.09, 40.21), (6, 148.30, 76.30, 33.51, 38.49),
+        (7, 172.40, 88.70, 38.96, 44.74), (8, 168.90, 86.90, 38.17, 43.83),
+        (9, 159.75, 82.20, 36.11, 41.44), (10, 175.60, 90.40, 39.69, 45.51),
+        (11, 158.40, 81.50, 35.79, 41.11), (12, 156.40, 80.72, 35.41, 40.27),
     ]
     posten = [t.Posten(date(2025, m, 15), kwh, extern_kwh=extern,
-                       eigen_kwh=eigen)
-              for m, kwh, extern, eigen in monatlich]
+                       speicher_kwh=speicher, pv_kwh=pv)
+              for m, kwh, extern, speicher, pv in monatlich]
     summe = t.verlauf_summe(t.verlauf(posten, date(2025, 1, 1),
                                       date(2025, 12, 31)))
     assert summe["kwh"] == 1991.03
     assert summe["extern_kwh"] == 1024.82
-    assert summe["eigen_kwh"] == 942.90
+    assert summe["speicher_kwh"] == 450.09
+    assert summe["pv_kwh"] == 516.12
+    assert summe["eigen_kwh"] == 966.21
     assert summe["extern_prozent"] == 51.5
-    assert summe["eigen_prozent"] == 47.4
-    # 51,5 + 47,4 ergibt keine 100: der Rest wird benannt, nicht verteilt.
-    assert summe["rest_kwh"] == 23.31
-    assert summe["rest_prozent"] == 1.2
+    # Netz + PV + Akku ergeben wieder die volle Energiemenge.
+    assert round(summe["extern_kwh"] + summe["pv_kwh"]
+                 + summe["speicher_kwh"], 2) == 1991.03
 
 
-def test_verlauf_schlaegt_den_nicht_zugeordneten_rest_nicht_dem_netz_zu():
+def test_verlauf_schlaegt_den_nicht_zugeordneten_rest_dem_eigenen_strom_zu():
     """Am 12.07.2026 schrieb die Wallbox in alle vier Anteile 0 %.
 
-    Die 49,88 kWh dieses Monats gehören weder zum Netzbezug noch zum eigenen
-    Strom. Landeten sie beim Netz, sähe ein Monat mit 0,3 % Netzbezug in der
-    Grafik zu drei Vierteln nach Zukauf aus."""
+    Die 49,88 kWh dieses Monats zählen seit N143 zum PV-Block und damit zum
+    eigenen Strom — so hat der Nutzer entschieden. Landeten sie beim Netz,
+    sähe ein Monat mit 0,3 % Netzbezug zu drei Vierteln nach Zukauf aus; als
+    eigener grauer Topf verwirrten sie nur. Nachvollziehbar bleiben sie über
+    `rest_kwh`."""
     posten = [
-        t.Posten(date(2026, 7, 3), 18.31, extern_kwh=0.20, eigen_kwh=18.11),
-        t.Posten(date(2026, 7, 12), 49.88, extern_kwh=0.0, eigen_kwh=0.0),
+        t.Posten(date(2026, 7, 3), 18.31, extern_kwh=0.20, pv_kwh=12.11,
+                 speicher_kwh=6.0),
+        t.Posten(date(2026, 7, 12), 49.88, extern_kwh=0.0, pv_kwh=49.88,
+                 speicher_kwh=0.0, rest_kwh=49.88),
     ]
     juli = t.verlauf(posten, date(2026, 7, 1), date(2026, 7, 31))[0]
     assert juli["kwh"] == 68.19
     assert juli["extern_kwh"] == 0.20 and juli["extern_prozent"] == 0.3
-    assert juli["eigen_kwh"] == 18.11 and juli["eigen_prozent"] == 26.6
+    assert juli["eigen_kwh"] == 67.99 and juli["eigen_prozent"] == 99.7
+    assert juli["pv_kwh"] == 61.99 and juli["speicher_kwh"] == 6.0
+    # Netz + eigen ergeben wieder die geladene Menge — kein Rest daneben.
+    assert round(juli["extern_kwh"] + juli["eigen_kwh"], 2) == juli["kwh"]
+    # Wie viel auf diesem Weg dazukam, bleibt einzeln nachvollziehbar.
     assert juli["rest_kwh"] == 49.88
     assert juli["rest_prozent"] == 73.1
+    assert t.verlauf_summe([juli])["rest_kwh"] == 49.88
 
 
 def test_verlauf_ohne_rest_meldet_keinen():
     zeilen = t.verlauf([t.Posten(date(2025, 5, 3), 10.0, extern_kwh=6.0,
-                                 eigen_kwh=4.0)],
+                                 pv_kwh=3.0, speicher_kwh=1.0)],
                        date(2025, 5, 1), date(2025, 5, 31))
     assert zeilen[0]["rest_kwh"] == 0.0
+    assert zeilen[0]["eigen_kwh"] == 4.0
     assert t.verlauf_summe(zeilen)["rest_kwh"] == 0.0
+
+
+def test_verlauf_ohne_pv_akku_trennung_erfindet_keine():
+    """Die aus Jahreswerten übertragene Schätzung kennt nur Netz und eigen.
+
+    Dann steht `dreiteilig` auf ``false`` und PV/Akku bleiben leer — eine 0
+    sähe aus wie „nichts vom Dach"."""
+    zeilen = t.verlauf([t.Posten(date(2025, 5, 3), 10.0, extern_kwh=6.0,
+                                 eigen_kwh=4.0)],
+                       date(2025, 5, 1), date(2025, 5, 31))
+    assert zeilen[0]["aufteilung"] is True
+    assert zeilen[0]["dreiteilig"] is False
+    assert zeilen[0]["eigen_kwh"] == 4.0
+    assert zeilen[0]["pv_kwh"] is None and zeilen[0]["speicher_kwh"] is None
+    summe = t.verlauf_summe(zeilen)
+    assert summe["dreiteilig"] is False and summe["pv_kwh"] is None
+
+
+def test_belegte_spanne_und_jahre_mit_verbrauch():
+    """Der Verlauf läuft über alles, die Jahresauswahl nur über Jahre mit
+    Verbrauch (N143)."""
+    posten = [t.Posten(date(2025, 3, 17), 12.0),
+              t.Posten(date(2026, 8, 2), 30.0),
+              t.Posten(date(2024, 6, 1), 0.0)]      # angesteckt, nichts geflossen
+    ersatz = (date(2030, 1, 1), date(2030, 12, 31))
+    assert t.belegte_spanne(posten, ersatz) == (date(2025, 3, 1),
+                                                date(2026, 8, 31))
+    # 2024 hat keine Kilowattstunde gesehen und gehört in keine Auswahl.
+    assert t.jahre_mit_verbrauch(posten) == [2025, 2026]
+    # Ohne jede Ladung bleibt der Ersatzzeitraum stehen.
+    assert t.belegte_spanne([], ersatz) == ersatz
+    assert t.jahre_mit_verbrauch([]) == []
+
+
+def test_suchfenster_ist_grosszuegig_aber_endlich():
+    von, bis = t.suchfenster(date(2026, 8, 2))
+    assert (von, bis) == (date(2017, 1, 1), date(2026, 12, 31))
+    # Es muss in den Verlauf passen, sonst wäre der Rückblick nutzlos.
+    assert len(t.monatsfolge(von, bis)) <= t.MAX_MONATE
 
 
 # --------------------------------------------------------------------------
@@ -395,6 +445,37 @@ def test_verlauf_ueber_freien_zeitraum_geht_ueber_die_jahresgrenze(client):
     assert d["summe"]["kwh"] == 50.0
 
 
+def test_verlauf_ueber_alles_geht_ueber_die_jahre_und_nennt_sie(client):
+    """N143 — ohne Zeitraum läuft der Verlauf vom ersten bis zum letzten Monat
+    mit Verbrauch, und `jahre` nennt nur Jahre, in denen geladen wurde."""
+    slug = _neues_objekt(client, "Gesamthaus")
+    _ladung(client, slug, 2025, name="Marvin", kwh=20.0, datum="2025-03-14")
+    _ladung(client, slug, 2026, name="Marvin", kwh=30.0, datum="2026-05-09")
+
+    d = client.get(f"/api/tankstelle/{slug}/verlauf",
+                   params={"alles": 1}).json()
+    assert d["von"] == "2025-03-01" and d["bis"] == "2026-05-31"
+    assert [(m["jahr"], m["monat"]) for m in d["monate"]][0] == (2025, 3)
+    assert [(m["jahr"], m["monat"]) for m in d["monate"]][-1] == (2026, 5)
+    assert len(d["monate"]) == 15               # März 2025 bis Mai 2026
+    assert d["summe"]["kwh"] == 50.0
+    # Die Jahresauswahl kennt nur Jahre mit Verbrauch.
+    assert d["jahre"] == [2025, 2026]
+
+
+def test_verlauf_ueber_alles_ohne_eine_einzige_ladung(client):
+    """Kein Verbrauch, keine erfundene Spanne: das laufende Jahr und eine
+    leere Jahresliste — die Oberfläche sagt dann etwas Ruhiges statt einer
+    leeren Auswahl."""
+    slug = _neues_objekt(client, "Gesamtleerhaus")
+    d = client.get(f"/api/tankstelle/{slug}/verlauf",
+                   params={"alles": 1}).json()
+    assert d["jahre"] == []
+    assert d["quelle"] == "leer"
+    assert len(d["monate"]) == 12
+    assert d["summe"]["kwh"] == 0.0
+
+
 def test_verlauf_lehnt_rueckwaerts_laufenden_zeitraum_ab(client):
     slug = _neues_objekt(client, "Ruecklaufhaus")
     antwort = client.get(f"/api/tankstelle/{slug}/verlauf",
@@ -436,6 +517,30 @@ def test_abrechnung_leer_liefert_die_angelegten_nutzer_mit_null(client):
                    params={"jahr": 2025, "quartal": 1}).json()
     assert [z["name"] for z in d["nutzer"]] == ["Marvin"]
     assert d["betrag_gesamt"] == 0.0
+
+
+def test_abrechnung_nennt_die_luecke_zwischen_geladen_und_zugeordnet(client):
+    """N143 — die Abrechnung rechnet nur ab, was einer Person zugeordnet ist.
+
+    Wer nichts zugeordnet hat, sieht sonst überall 0,00 € und weiss nicht,
+    wieso: darum steht daneben, wie viel im Zeitraum überhaupt geladen wurde.
+    Diese Lücke ist die Antwort auf „wieso passiert da nichts"."""
+    slug = _neues_objekt(client, "Rueckfragehaus")
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=40.0, datum="2025-08-11")
+
+    # Q3: die Ladung ist zugeordnet — keine Lücke.
+    q3 = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                    params={"jahr": 2025, "quartal": 3}).json()
+    assert q3["geladen_kwh"] == 40.0
+    assert q3["kwh_gesamt"] == 40.0
+    assert q3["offen_kwh"] == 0.0
+
+    # Q1: nichts geladen, nichts zugeordnet — auch keine Lücke.
+    q1 = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                    params={"jahr": 2025, "quartal": 1}).json()
+    assert q1["kwh_gesamt"] == 0.0
+    assert q1["offen_kwh"] in (None, 0.0)
 
 
 def test_vorschau_zeigt_die_mail_ohne_sie_zu_verschicken(client):

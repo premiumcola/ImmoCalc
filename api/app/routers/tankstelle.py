@@ -23,8 +23,15 @@ Was hier passiert — und was ausdrücklich nicht:
   ein Kalenderjahr. Aus denselben Daten kommt die Liste der Jahre **mit**
   Verbrauch; leere Jahre gehören in keine Auswahl.
 * **Die Abrechnung je Nutzer** kommt immer aus den erfassten `Tankladung`-Sätzen:
-  die Wallbox weiß, wie viel geladen wurde, aber nicht von wem. Der Satz je kWh
-  steht in `Stromjahr.tanken_preis` und wird hier **nur gelesen**.
+  die Wallbox weiß, wie viel geladen wurde, aber nicht von wem.
+* **Der Satz je kWh wird abgeleitet, nicht eingegeben** (N143). Netzstrom
+  kostet, was er laut Rechnung gekostet hat — Gesamtbetrag der Strom-Positionen
+  geteilt durch die bezogenen kWh, Grundpreis inbegriffen; eigener Strom kostet
+  :data:`EIGEN_RABATT` weniger. Grundlage ist die Stromkette des passenden
+  Abrechnungszeitraums (`GET /api/zeitraeume/{zid}/stromkette`). Das alte
+  Eingabefeld `Stromjahr.tanken_preis` bleibt im Modell stehen und wird
+  **nicht mehr gelesen**. Fehlen die Kosten, gibt es **keinen** Satz und einen
+  Grund dazu — nie eine stille 0,00-€-Rechnung.
 * **Versand** läuft über das bestehende Postfach des Nutzers
   (`app.mailversand` über `routers.mail.zugang`). Es gibt eine Vorschau, die
   nichts verschickt — erst der ausdrückliche POST sendet.
@@ -48,8 +55,16 @@ from ..cloudkern import _lies
 from ..db import get_session
 from ..deps import objekt_holen
 from ..mailversand import MailFehler
-from ..models import Eigentuemer, Einstellung, Objekt, Stromjahr, Tankladung
+from ..models import (Eigentuemer, Einstellung, Objekt, Stromjahr, Tankladung,
+                      Zeitraum)
 from .mail import zugang
+
+# Die Stromkosten-Kette entsteht parallel. Fehlt sie, gibt es keinen
+# abgeleiteten Satz — und die Seite sagt das, statt einen zu erfinden.
+try:                                        # pragma: no cover - Importzweig
+    from .stromkette import stromkette
+except ImportError:                         # pragma: no cover - Importzweig
+    stromkette = None                       # type: ignore[assignment]
 
 # Die Wallbox-Anbindung entsteht parallel (N130). Fehlt sie, arbeitet dieser
 # Bereich auf den erfassten Ladungen weiter — eine harte Abhängigkeit auf
@@ -84,6 +99,11 @@ MAX_MONATE = 120
 # nennt. Ein Jahr ohne Ladungen beantwortet die Box mit der blossen Kopfzeile —
 # der Blick zurück kostet im Heimnetz Millisekunden.
 RUECKBLICK_JAHRE = 9
+
+# Eigener Strom (PV und Akku) kostet an der Ladestation 10 % weniger als
+# zugekaufter. Feste Vorgabe des Betreibers — keine gerechnete Größe, deshalb
+# hier einmal benannt statt als nackte 0,9 im Code verstreut.
+EIGEN_RABATT = 0.10
 
 MONATSKURZ = ("Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
               "Jul", "Aug", "Sep", "Okt", "Nov", "Dez")
@@ -173,8 +193,11 @@ def monatsfolge(von: date, bis: date) -> list[tuple[int, int]]:
 
 
 def _prozent(teil: float, ganz: float) -> float | None:
-    """Prozentanteil — ``None``, wenn es nichts zu teilen gibt."""
-    return round(teil / ganz * 100.0, 1) if ganz > 0 else None
+    """Prozentanteil — ``None``, wenn es nichts zu teilen gibt.
+
+    ``or 0.0`` fängt die negative Null ab: sie käme als „−0,0 %" auf die
+    Seite und sähe aus wie ein Vorzeichenfehler."""
+    return (round(teil / ganz * 100.0, 1) or 0.0) if ganz > 0 else None
 
 
 def verlauf(posten: list[Posten], von: date, bis: date) -> list[dict]:
@@ -233,7 +256,9 @@ def _monatszeile(m: dict) -> dict:
     grob = not m["dreiteilig"]
 
     def menge(name: str, unbekannt: bool) -> float | None:
-        return None if unbekannt else round(m[name], 2)
+        # `or 0.0` macht aus der negativen Null eine glatte 0 — „−0,00 kWh"
+        # wäre eine Irritation ohne Aussage.
+        return None if unbekannt else (round(m[name], 2) or 0.0)
 
     werte = {"extern_kwh": menge("extern_kwh", offen),
              "eigen_kwh": menge("eigen_kwh", offen),
@@ -259,7 +284,7 @@ def verlauf_summe(zeilen: list[dict]) -> dict:
 
     def summe(name: str, unbekannt: bool) -> float | None:
         return (None if unbekannt
-                else round(sum(z[name] or 0.0 for z in zeilen), 2))
+                else (round(sum(z[name] or 0.0 for z in zeilen), 2) or 0.0))
 
     werte = {"extern_kwh": summe("extern_kwh", not vollstaendig),
              "eigen_kwh": summe("eigen_kwh", not vollstaendig),
@@ -553,8 +578,11 @@ def wallbox_posten(session: Session, von: date,
         return [], ("Für die Wallbox ist noch keine Adresse hinterlegt "
                     "(Einstellungen → openWB).")
     try:
+        # Auch das Folgejahr holen: openWB legt eine Ladung nach ihrem **Ende**
+        # ab. Die Ladung vom 31.12.2025 steht in der Datei 2026 — wer nur 2025
+        # holt, verliert sie lautlos. Ein leeres Jahr kostet die Box nichts.
         alle: list = []
-        for jahr in openwb.jahre(von, bis):
+        for jahr in [*openwb.jahre(von, bis), bis.year + 1]:
             alle = openwb.zusammenfuehren(alle,
                                           openwb.lies(_protokoll(basis, jahr)).ladungen)
     except openwb.OpenwbFehler as fehler:

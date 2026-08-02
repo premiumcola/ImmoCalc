@@ -21,8 +21,13 @@
      Nur tankstelle.html (N132). immo.css wird nicht angefasst; was sich
      spaeter als seitenuebergreifend erweist, wandert dann dorthin.
      ------------------------------------------------------------------ */
-  .filter{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .filter{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;
+          align-items:center}
   .filter > div{flex:1 1 130px;min-width:0}
+  /* Gibt es kein Jahr mit Verbrauch, steht dort eine Aussage statt eines
+     Auswahlfelds, das nichts zur Wahl stellt. */
+  .jahrleer{display:block;font:500 11.5px var(--body);color:var(--soft);
+            line-height:1.4;padding:12px 2px}
 
   .karte{background:var(--sheet);border-radius:16px;padding:16px;
          margin-bottom:14px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -74,13 +79,21 @@
          align-items:end}
   }
 
-  /* ---- Verlauf: Grafik, Legende, Tabelle ------------------------------- */
-  .chart{width:100%;max-width:560px;height:auto;display:block;overflow:visible;
-         margin:4px auto 12px}
+  /* ---- Verlauf: Grafik, Legende, Tabelle -------------------------------
+     Der Verlauf geht ueber alle Monate, nicht ueber ein Jahr. Damit ein
+     Balken nicht zum Strich schrumpft, bekommt jeder Monat eine feste
+     Breite; wird die Grafik dadurch breiter als die Karte, scrollt sie in
+     ihrem eigenen Rahmen. Die Seite selbst scrollt nie waagerecht. */
+  .chartrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
+               margin:4px 0 12px}
+  .chart{display:block;margin:0 auto}
   .legende{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 16px;
            font:500 11.5px var(--body);color:var(--soft)}
   .legende .le{display:inline-flex;align-items:center;gap:7px}
   .legende i{width:11px;height:11px;border-radius:4px;flex:none}
+  /* Ruhiger Vermerk an der Zahl — kein Warnbalken. */
+  .vermerk{display:block;font:400 11.5px var(--body);color:var(--soft);
+           line-height:1.55;margin:0 0 16px}
 
   .tabrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
              border-radius:12px;background:var(--paper)}
@@ -100,14 +113,27 @@
   .mt td .pz{display:block;font:400 9.5px var(--mono);color:var(--soft);
              margin-top:2px}
   .mt tfoot td{font-weight:700;border-top:1.5px solid var(--line)}
+  /* Fuenf Spalten (Monat · Geladen · Netz · PV · Akku) passen auf dem iPhone
+     nur mit knapperen Zellenabstaenden — sonst waere der Akku-Kopf
+     angeschnitten und der Rahmen muesste geschoben werden. */
+  @media(max-width:479px){
+    .mt th,.mt td{padding-left:5px;padding-right:5px}
+    .mt th:first-child,.mt td:first-child{padding-left:11px}
+    .mt th:last-child,.mt td:last-child{padding-right:11px}
+  }
 
   /* ---- Abrechnung ------------------------------------------------------ */
-  .quartale{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
-  .quartale button{min-height:38px;padding:8px 14px;border:none;cursor:pointer;
-                   border-radius:999px;background:var(--paper);color:var(--soft);
-                   font:600 11.5px var(--mono);letter-spacing:.03em}
+  .quartale{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
+  .quartale button{min-height:44px;min-width:44px;padding:8px 16px;border:none;
+                   cursor:pointer;border-radius:999px;background:var(--paper);
+                   color:var(--soft);font:600 11.5px var(--mono);
+                   letter-spacing:.03em}
   .quartale button[aria-pressed="true"]{background:var(--teal-l);
                                         color:var(--teal-d)}
+  /* Welcher Zeitraum gerade gerechnet wird — sonst sieht ein Klick, der nur
+     Nullen umsortiert, wie „nichts passiert" aus. */
+  .zrzeile{display:block;font:500 11px var(--mono);color:var(--soft);
+           margin:0 0 14px;letter-spacing:.02em}
 
   .az{background:var(--paper);border-radius:14px;padding:14px;
       margin-bottom:10px}
@@ -195,8 +221,13 @@ import { legende } from './assets/charts.js';
 const sub = document.getElementById('sub');
 const inhalt = document.getElementById('inhalt');
 
+/* Drei Kostenbloecke, drei Farben — der Nutzer rechnet Strom ueber genau
+   diese drei (N143). PV und Akku sind Geschwister im Ton, weil beide eigener
+   Strom sind; Netz steht dagegen. */
 const NETZ = '#916212';        /* --amber: zugekaufter Strom */
-const EIGEN = '#0F6E5C';       /* --teal: Speicher + PV */
+const PV = '#0F6E5C';          /* --teal: direkt vom Dach */
+const AKKU = '#6BA697';        /* heller Teal-Ton: aus dem Speicher */
+const EIGEN = '#0F6E5C';       /* PV + Akku, wenn beide nicht trennbar sind */
 const OFFEN = '#B7C2C4';       /* Herkunft unbekannt — nie als 0 zeigen */
 
 const kwh = (n, stellen = 2) => (n ?? 0).toLocaleString('de-DE',
@@ -215,58 +246,126 @@ let objektSlug = '';
 let quartal = 0;               /* 0 = ganzes Jahr */
 let offeneVorschau = 0;        /* Nutzer, dessen Mail gerade aufgeklappt ist */
 
+/* Die Jahresauswahl entsteht aus den Jahren, in denen wirklich geladen wurde
+   — nicht aus einer festen Spanne. Sie kann deshalb auch leer sein; dann gibt
+   es kein Auswahlfeld, sondern eine ruhige Aussage. */
+let jahrWahl = null;
+let jahreListe = null;         /* null = noch nie gesetzt, [] = keine Jahre */
+const jahrWert = () => Number(jahrWahl?.wert() || new Date().getFullYear());
+
+function jahreUebernehmen(jahre) {
+  // `null` heisst „noch nie gesetzt" — sonst haelte die leere Liste den
+  // Platzhalter fest und die Auswahl bliebe fuer immer beim Ladetext stehen.
+  if (jahreListe && jahre.join() === jahreListe.join()) return;
+  jahreListe = jahre;
+  const feld = document.getElementById('jahr');
+  if (!feld) return;
+  if (!jahre.length) {
+    jahrWahl?.zerstoere();
+    jahrWahl = null;
+    feld.innerHTML = '<span class="jahrleer">Noch kein Verbrauch erfasst</span>';
+    return;
+  }
+  const vorher = jahrWert();
+  const optionen = [...jahre].reverse()
+    .map(j => ({ wert: String(j), text: String(j) }));
+  jahrWahl = auswahlfeld(feld, {
+    label: 'Jahr', optionen,
+    wert: jahre.includes(vorher) ? String(vorher) : optionen[0].wert,
+    aenderung: () => abrechnungZeigen(),
+  });
+}
+
 /* =======================================================================
-   Grafik: je Monat ein Balken, unten der eigene Strom, darueber der Netzbezug.
-   Ein Monat ohne Ladung bleibt als leere Stelle stehen — eine Luecke im
-   Verlauf waere kein Verlauf.
+   Grafik: je Monat ein Balken, gestapelt aus den drei Kostenbloecken —
+   unten der Akku, darueber PV, oben der Netzbezug. Ein Monat ohne Ladung
+   bleibt als leere Stelle stehen; eine Luecke im Verlauf waere kein Verlauf.
+
+   Der Verlauf laeuft ueber alle Monate, ueber Jahresgrenzen hinweg. Deshalb
+   drei Vorkehrungen, damit er auch mit vielen Monaten lesbar bleibt:
+   feste Breite je Monat (der Balken schrumpft nie zum Strich, notfalls
+   scrollt die Grafik), Monatsbeschriftung ausgeduennt statt uebereinander,
+   und jeder Jahreswechsel als Trennstrich mit Jahreszahl.
    ======================================================================= */
+/* Schmalster zulaessiger Monat. Darunter wuerde der Balken zum Strich —
+   dann waechst die Grafik lieber ueber die Karte hinaus und scrollt in ihrem
+   eigenen Rahmen. Ist Platz da, wird er genutzt: auf dem Desktop fuellt der
+   Verlauf die Karte, auf dem iPhone bleibt er lesbar. */
+const MIN_PRO_MONAT = 16.5;
+const LABEL_BREITE = 26;       /* Platzbedarf eines Monatskuerzels in px */
+
 function grafik(monate) {
   const max = Math.max(1, ...monate.map(m => m.kwh || 0));
-  const breite = 340, hoehe = 168, padO = 10, padU = 26;
+  const platz = Math.max(280, document.getElementById('verlauf')?.clientWidth || 320);
+  const proMonat = Math.max(MIN_PRO_MONAT, platz / monate.length);
+  const breite = Math.round(proMonat * monate.length);
+  const hoehe = 190, padO = 12, padU = 40;
   const nutz = hoehe - padO - padU;
-  const proMonat = breite / monate.length;
-  const bw = Math.min(20, proMonat * 0.62);
+  const bw = Math.min(22, Math.max(6, proMonat * 0.6));
   const grund = padO + nutz;
+  // Beschriftung ausduennen statt uebereinanderlegen — je enger die Monate,
+  // desto groesser der Schritt.
+  const schritt = Math.max(1, Math.ceil(LABEL_BREITE / proMonat));
 
-  // Gestapelt von unten: eigener Strom, darüber der Netzbezug, ganz oben das,
-  // was die Wallbox keinem der beiden zuordnet. Letzteres dem Netz zuzuschlagen
-  // hätte den Juli 2026 zu 73 % amber gefärbt, obwohl 0,3 % aus dem Netz kamen.
   const saeulen = monate.map((m, i) => {
     const mitte = i * proMonat + proMonat / 2;
     const h = (m.kwh || 0) / max * nutz;
     const x = mitte - bw / 2;
+    const beschriftet = i % schritt === 0;
+    const kuerzel = beschriftet
+      ? `<text x="${mitte}" y="${hoehe - 20}" class="ax">${esc(m.kurz)}</text>` : '';
     const titel = `${m.label}: ${kwh(m.kwh)}` + (m.aufteilung
-      ? ` · Netz ${proz(m.extern_prozent)} · eigen ${proz(m.eigen_prozent)}`
-        + (m.rest_kwh > 0.05 ? ` · nicht zugeordnet ${proz(m.rest_prozent)}` : '')
+      ? ` · Netz ${proz(m.extern_prozent)}`
+        + (m.dreiteilig
+            ? ` · PV ${proz(m.pv_prozent)} · Akku ${proz(m.speicher_prozent)}`
+            : ` · eigen ${proz(m.eigen_prozent)}`)
       : '');
-    if (h <= 0) return `<text x="${mitte}" y="${hoehe - 8}" class="ax">${esc(m.kurz)}</text>`;
+    if (h <= 0) return kuerzel;
+
     const block = (menge, farbe, unten) => {
-      const hh = (menge || 0) / max * nutz;
+      const hh = Math.max(0, menge || 0) / max * nutz;
       return hh <= 0 ? ''
         : `<rect x="${x}" y="${grund - unten - hh}" width="${bw}" height="${hh}"
-                 rx="4" fill="${farbe}"/>`;
+                 rx="3" fill="${farbe}"/>`;
     };
-    const eigen = m.aufteilung ? (m.eigen_kwh || 0) : 0;
-    const extern = m.aufteilung ? (m.extern_kwh || 0) : 0;
-    const rest = m.aufteilung ? Math.max(0, m.rest_kwh || 0) : (m.kwh || 0);
-    const eH = eigen / max * nutz, xH = extern / max * nutz;
-    return `<rect x="${x}" y="${grund - h}" width="${bw}" height="${h}" rx="4"
+    // Negative Bloecke gibt es: die Box schreibt selten einen negativen
+    // PV-Anteil. Gestapelt wird deshalb ueber die sichtbaren Anteile.
+    const teile = !m.aufteilung ? [[m.kwh, OFFEN]]
+      : m.dreiteilig
+        ? [[m.speicher_kwh, AKKU], [m.pv_kwh, PV], [m.extern_kwh, NETZ]]
+        : [[m.eigen_kwh, EIGEN], [m.extern_kwh, NETZ]];
+    let unten = 0;
+    const stapel = teile.map(([menge, farbe]) => {
+      const stueck = block(menge, farbe, unten);
+      unten += Math.max(0, menge || 0) / max * nutz;
+      return stueck;
+    }).join('');
+
+    return `<rect x="${x}" y="${grund - h}" width="${bw}" height="${h}" rx="3"
                   fill="${OFFEN}"><title>${esc(titel)}</title></rect>
-      ${block(rest, OFFEN, eH + xH)}
-      ${block(extern, NETZ, eH)}
-      ${block(eigen, EIGEN, 0)}
-      <text x="${mitte}" y="${hoehe - 8}" class="ax">${esc(m.kurz)}</text>`;
+      ${stapel}${kuerzel}`;
   }).join('');
 
-  return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img"
+  // Jahreswechsel: ein feiner Strich vor dem Januar, die Jahreszahl darunter.
+  const jahre = monate.map((m, i) => {
+    if (i > 0 && m.monat !== 1) return '';
+    const x = i * proMonat;
+    return `${i > 0 ? `<line x1="${x}" y1="${padO}" x2="${x}" y2="${grund + 4}"
+                             stroke="#D6DCDD" stroke-width="1"/>` : ''}
+      <text x="${x + 3}" y="${hoehe - 6}" class="jz">${m.jahr}</text>`;
+  }).join('');
+
+  return `<div class="chartrahmen"><svg width="${breite}" height="${hoehe}"
+               viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img"
                aria-label="Geladene Energie je Monat">
       <style>.ax{font:500 9.5px var(--body);fill:var(--soft);text-anchor:middle}
+             .jz{font:600 9px var(--mono);fill:var(--soft)}
              .my{font:500 9px var(--mono);fill:var(--soft)}</style>
-      <text x="0" y="${padO - 1}" class="my">${zahl(max, 0)} kWh</text>
+      <text x="0" y="${padO - 2}" class="my">${zahl(max, 0)} kWh</text>
       <line x1="0" y1="${grund}" x2="${breite}" y2="${grund}"
             stroke="#D6DCDD" stroke-width="1"/>
-      ${saeulen}
-    </svg>`;
+      ${jahre}${saeulen}
+    </svg></div>`;
 }
 
 function verlaufTabelle(monate, summe) {
@@ -275,32 +374,37 @@ function verlaufTabelle(monate, summe) {
   const zelle = (menge, prozent) => menge == null || prozent == null
     ? '<td class="leise">—</td>'
     : `<td>${zahl(menge)}<span class="pz">${proz(prozent)}</span></td>`;
+  const drei = summe.dreiteilig;
+  const zeile = m => `<tr>
+    <td>${esc(m.label)}</td>
+    <td class="${m.kwh ? '' : 'leise'}">${zahl(m.kwh)}</td>
+    ${zelle(m.extern_kwh, m.extern_prozent)}
+    ${drei ? zelle(m.pv_kwh, m.pv_prozent) + zelle(m.speicher_kwh, m.speicher_prozent)
+           : zelle(m.eigen_kwh, m.eigen_prozent)}</tr>`;
   return `<div class="tabrahmen"><table class="mt">
-      <thead><tr><th>Monat</th><th>Geladen</th><th>Netz</th><th>Eigen</th></tr></thead>
-      <tbody>${monate.map(m => `<tr>
-        <td>${esc(m.label)}</td>
-        <td class="${m.kwh ? '' : 'leise'}">${zahl(m.kwh)}</td>
-        ${zelle(m.extern_kwh, m.extern_prozent)}
-        ${zelle(m.eigen_kwh, m.eigen_prozent)}</tr>`).join('')}</tbody>
-      <tfoot><tr><td>Summe</td><td>${zahl(summe.kwh)}</td>
-        ${zelle(summe.extern_kwh, summe.extern_prozent)}
-        ${zelle(summe.eigen_kwh, summe.eigen_prozent)}</tr></tfoot>
+      <thead><tr><th>Monat</th><th>Geladen</th><th>Netz</th>
+        ${drei ? '<th>PV</th><th>Akku</th>' : '<th>Eigen</th>'}</tr></thead>
+      <tbody>${monate.map(zeile).join('')}</tbody>
+      <tfoot>${zeile({ ...summe, label: 'Summe' })}</tfoot>
     </table></div>`;
 }
 
 async function verlaufZeigen() {
   const ziel = document.getElementById('verlauf');
   if (!ziel) return;
+  ziel.innerHTML = '<div class="leer">Verlauf wird geholt …</div>';
   let d;
   try {
-    d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/verlauf?jahr=${jahrWahl.wert()}`);
+    d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/verlauf?alles=1`);
   } catch (fehler) {
-    ziel.innerHTML = `<div class="leer"><b>Verlauf nicht verfügbar</b>
-      ${esc(String(fehler.message || fehler))}</div>`;
+    zeigeFehler(ziel, 'Verlauf nicht verfügbar', fehler);
     return;
   }
+  jahreUebernehmen(d.jahre || []);
+
   const s = d.summe || {};
   const nichts = !(s.kwh > 0);
+  const drei = s.dreiteilig;
   ziel.innerHTML = `
     ${d.hinweis ? `<div class="notiz"><span class="wi">◔</span>
        <span>${esc(d.hinweis)}</span></div>` : ''}
@@ -315,17 +419,38 @@ async function verlaufZeigen() {
         <span class="kv">${(s.anzahl ?? 0).toLocaleString('de-DE')}</span></div>
     </div>
     ${nichts ? `<div class="leer" style="margin-top:14px"><b>Noch nichts geladen</b>
-        In ${esc(String(jahrWahl.wert()))} ist an dieser Station keine Ladung
-        angekommen. Sobald die Wallbox Daten liefert — oder unten eine Ladung
-        erfasst wird — steht hier der Verlauf.</div>`
-      : `${grafik(d.monate || [])}
-         ${legende([{ name: 'Netz', farbe: NETZ },
-                    { name: 'Eigener Strom (Speicher + PV)', farbe: EIGEN },
-                    // Der graue Block erscheint nur, wenn es ihn gibt — eine
-                    // Legende fuer eine Farbe ohne Flaeche verwirrt nur.
-                    ...(s.rest_kwh > 0.05
-                        ? [{ name: 'Nicht zugeordnet', farbe: OFFEN }] : [])])}
+        An dieser Station ist bisher keine Ladung angekommen. Sobald die
+        Wallbox Daten liefert — oder unten eine Ladung erfasst wird — steht
+        hier der Verlauf.</div>`
+      : `<span class="zrzeile" style="margin-top:14px">${datum(d.von)} –
+           ${datum(d.bis)} · ${(d.monate || []).length} Monate</span>
+         ${grafik(d.monate || [])}
+         ${legende(drei
+            ? [{ name: 'Netz', farbe: NETZ },
+               { name: 'PV direkt', farbe: PV },
+               { name: 'Akku', farbe: AKKU }]
+            : [{ name: 'Netz', farbe: NETZ },
+               { name: 'Eigener Strom (PV + Akku)', farbe: EIGEN }])}
+         ${restVermerk(s)}
          ${verlaufTabelle(d.monate || [], s)}`}`;
+}
+
+/* Ein ruhiger Vermerk statt eines Warnbalkens: kWh, die die Wallbox keinem
+   Anteil zuordnet, zaehlen zum eigenen Strom (PV). Das ist eine Festlegung,
+   keine Stoerung — sie gehoert an die Zahl, nicht in einen gelben Kasten. */
+function restVermerk(s) {
+  if (!(s.rest_kwh > 0.05)) return '';
+  return `<span class="vermerk">Davon ordnet die Wallbox
+    ${zahl(s.rest_kwh)} kWh (${proz(s.rest_prozent)}) keinem Anteil zu; diese
+    Menge zählt zum eigenen Strom aus der PV.</span>`;
+}
+
+/* Jede gescheiterte Abfrage wird sichtbar — an Ort und Stelle und als kurze
+   Meldung. „Nichts passiert" ist nie eine zulaessige Antwort. */
+function zeigeFehler(ziel, titel, fehler) {
+  const text = String(fehler?.message || fehler || 'Unbekannter Fehler');
+  ziel.innerHTML = `<div class="leer"><b>${esc(titel)}</b>${esc(text)}</div>`;
+  melde(`${titel}: ${text}`, 'neg');
 }
 
 /* =======================================================================
@@ -336,9 +461,16 @@ let nutzerListe = [];
 async function nutzerZeigen() {
   const ziel = document.getElementById('nutzer');
   if (!ziel) return;
+  // Fruehere Fassung schluckte den Fehler stumm: die Liste blieb leer, und
+  // die Abrechnung darunter zeigte 0,00 € ohne einen Hinweis darauf, dass
+  // ueberhaupt etwas schiefgegangen war.
   try {
     nutzerListe = (await api(`/tankstelle/${encodeURIComponent(objektSlug)}/nutzer`)).nutzer || [];
-  } catch { nutzerListe = []; }
+  } catch (fehler) {
+    nutzerListe = [];
+    zeigeFehler(ziel, 'Nutzerliste nicht verfügbar', fehler);
+    return;
+  }
 
   const zeilen = nutzerListe.map(n => `
     <div class="nz">
@@ -414,10 +546,9 @@ async function abrechnungZeigen() {
   let d;
   try {
     d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/abrechnung`
-                  + `?jahr=${jahrWahl.wert()}&quartal=${quartal}`);
+                  + `?jahr=${jahrWert()}&quartal=${quartal}`);
   } catch (fehler) {
-    ziel.innerHTML = `<div class="leer"><b>Abrechnung nicht verfügbar</b>
-      ${esc(String(fehler.message || fehler))}</div>`;
+    zeigeFehler(ziel, 'Abrechnung nicht verfügbar', fehler);
     return;
   }
 
@@ -445,9 +576,11 @@ async function abrechnungZeigen() {
   const ohneSatz = !d.satz && d.kwh_gesamt > 0;
 
   ziel.innerHTML = `${quartalsWahl()}
+    <span class="zrzeile">${esc(d.label)} · ${datum(d.von)} – ${datum(d.bis)}</span>
     ${ohneSatz ? `<div class="notiz"><span class="wi">◔</span><span>Für
-       ${esc(String(jahrWahl.wert()))} ist noch kein Preis je kWh gepflegt —
+       ${esc(String(jahrWert()))} ist noch kein Preis je kWh gepflegt —
        er steht unter „PV Amortisation“ bei der Anlage.</span></div>` : ''}
+    ${offeneNotiz(d)}
     ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
         Für ${esc(d.label)} gibt es weder Nutzer noch Ladungen.</div>`}
     ${d.nutzer?.length ? `<div class="kpi" style="margin-top:14px">
@@ -458,6 +591,21 @@ async function abrechnungZeigen() {
     </div>` : ''}`;
   offeneVorschau = 0;
   await ladungenZeigen();
+}
+
+/* Der Kern des Fehlers „ich druecke und nichts passiert": abgerechnet wird
+   nur, was einer Person zugeordnet ist. Die Wallbox weiss, WIE VIEL geladen
+   wurde, aber nicht von WEM. Ohne eine einzige Zuordnung zeigt jedes Quartal
+   dieselben 0,00 € — und bisher stand nirgends, warum. Also: die Luecke
+   zwischen geladen und zugeordnet benennen, statt sie stumm zu rendern. */
+function offeneNotiz(d) {
+  if (!(d.offen_kwh > 0.05)) return '';
+  const nichts = !(d.kwh_gesamt > 0);
+  return `<div class="notiz"><span class="wi">◔</span><span>Im Zeitraum
+    ${esc(d.label)} wurden ${zahl(d.geladen_kwh)} kWh geladen, davon
+    ${nichts ? 'keine einzige' : `nur ${zahl(d.kwh_gesamt)} kWh`} einer Person
+    zugeordnet. Abgerechnet wird nur, was zugeordnet ist — die Wallbox weiß
+    nicht, wer geladen hat. Das geht unten unter „Ladungen zuordnen“.</span></div>`;
 }
 
 async function vorschauZeigen(nid) {
@@ -471,7 +619,7 @@ async function vorschauZeigen(nid) {
   document.querySelectorAll('[data-mail]').forEach(f => { f.innerHTML = ''; });
   try {
     const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/vorschau`
-                        + `?jahr=${jahrWahl.wert()}&quartal=${quartal}&nutzer_id=${nid}`);
+                        + `?jahr=${jahrWert()}&quartal=${quartal}&nutzer_id=${nid}`);
     feld.innerHTML = `<span class="mailkopf">An ${esc(d.an || '— keine Adresse —')}
       · ${esc(d.betreff)}</span><pre class="mailtext">${esc(d.text)}</pre>`;
     offeneVorschau = Number(nid);
@@ -487,7 +635,7 @@ async function versenden(nid) {
   try {
     const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/versand`, {
       method: 'POST',
-      body: { nutzer_id: Number(nid), jahr: Number(jahrWahl.wert()), quartal } });
+      body: { nutzer_id: Number(nid), jahr: jahrWert(), quartal } });
     melde(`Abrechnung an ${d.an} verschickt`, 'pos');
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
@@ -503,9 +651,9 @@ async function ladungenZeigen() {
   if (!ziel) return;
   let d;
   try {
-    d = await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWahl.wert()}`);
-  } catch {
-    ziel.innerHTML = '<div class="leer">Die erfassten Ladungen konnten nicht geladen werden.</div>';
+    d = await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWert()}`);
+  } catch (fehler) {
+    zeigeFehler(ziel, 'Erfasste Ladungen nicht verfügbar', fehler);
     return;
   }
   const zeilen = (d.ladungen || []).map(l => `
@@ -517,10 +665,16 @@ async function ladungenZeigen() {
       <button class="lx" data-ladung-weg="${l.id}" aria-label="Ladung entfernen">×</button>
     </div>`).join('');
 
+  // Solange nur eine Person angelegt ist, gibt es nichts zu entscheiden —
+  // jede Ladung geht auf sie. Sobald es zwei sind, verschwindet der Satz.
+  const einer = nutzerListe.length === 1 ? nutzerListe[0] : null;
+
   ziel.innerHTML = `
+    ${einer ? `<span class="vermerk">Angelegt ist bisher nur
+        <b>${esc(einer.name)}</b> — jede Ladung geht damit auf ihn.</span>` : ''}
     ${zeilen ? `<div class="lliste">${zeilen}</div>`
       : `<div class="leer" style="margin-bottom:14px"><b>Keine Ladung erfasst</b>
-          In ${esc(String(jahrWahl.wert()))} ist noch keine Ladung einer Person
+          In ${esc(String(jahrWert()))} ist noch keine Ladung einer Person
           zugeordnet.</div>`}
     <div class="neu">
       <div class="field"><span class="fl">Wer hat geladen</span>
@@ -549,7 +703,7 @@ async function ladungBuchen() {
   if (!nutzer) { melde('Erst einen Nutzer anlegen', 'neg'); return; }
   if (!(menge > 0)) { melde('Bitte die geladene Menge angeben', 'neg'); return; }
   try {
-    await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWahl.wert()}`, {
+    await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWert()}`, {
       method: 'POST',
       body: { name: nutzer.name, email: nutzer.email || '', kwh: menge,
               datum: document.getElementById('bDatum')?.value || null } });
@@ -570,22 +724,18 @@ async function ladungEntfernen(id) {
 /* =======================================================================
    Seitengeruest und Verdrahtung
    ======================================================================= */
+/* Reihenfolge nach Gebrauch: den Verlauf sieht man staendig, die Abrechnung
+   quartalsweise, zugeordnet wird gelegentlich — und Nutzer legt man einmal
+   an. Deshalb steht die Nutzerverwaltung ganz unten (N143). */
 function skelett() {
   return `
     <div class="karte">
-      <div class="hh"><h3>Nutzer</h3></div>
-      <span class="hint">Wer an dieser Ladestation lädt. Beliebig viele,
-        jederzeit ergänzbar — und nicht zwangsläufig Eigentümer der Immobilie.
-        Die E-Mail-Adresse braucht es für die Quartalsabrechnung.</span>
-      <div id="nutzer"></div>
-    </div>
-
-    <div class="karte">
       <div class="hh"><h3>Verlauf</h3></div>
       <span class="hint">Wie viel je Monat geladen wurde — und woher der Strom
-        kam: zugekaufter Netzstrom gegen eigenen Strom aus Speicher und PV.
-        Die Zahlen holt die Wallbox selbst; fehlt sie, treten die erfassten
-        Ladungen an ihre Stelle.</span>
+        kam: zugekaufter Netzstrom, eigener Strom direkt vom Dach und aus dem
+        Akku. Über alle Monate hinweg, nicht nur über ein Jahr. Die Zahlen
+        holt die Wallbox selbst; fehlt sie, treten die erfassten Ladungen an
+        ihre Stelle.</span>
       <div id="verlauf"></div>
     </div>
 
@@ -602,6 +752,14 @@ function skelett() {
       <span class="hint">Die Wallbox weiß, wie viel geladen wurde — aber nicht,
         von wem. Diese Zuordnung ist die Grundlage der Abrechnung.</span>
       <div id="ladungen"></div>
+    </div>
+
+    <div class="karte">
+      <div class="hh"><h3>Nutzer</h3></div>
+      <span class="hint">Wer an dieser Ladestation lädt. Beliebig viele,
+        jederzeit ergänzbar — und nicht zwangsläufig Eigentümer der Immobilie.
+        Die E-Mail-Adresse braucht es für die Quartalsabrechnung.</span>
+      <div id="nutzer"></div>
     </div>`;
 }
 
@@ -631,19 +789,19 @@ async function laden() {
     return;
   }
   inhalt.innerHTML = skelett();
+  // Der Verlauf laeuft ueber alles und liefert dabei die Jahre mit Verbrauch —
+  // er muss vor der Abrechnung stehen, die genau diese Jahre braucht.
+  await verlaufZeigen();
   await nutzerZeigen();
-  await Promise.all([verlaufZeigen(), abrechnungZeigen()]);
+  await abrechnungZeigen();
 }
 
-/* ---- Kopf: Objekt- und Jahr-Auswahl ---- */
-const jetzt = new Date().getFullYear();
-const jahrWahl = auswahlfeld(document.getElementById('jahr'), {
-  label: 'Jahr',
-  optionen: Array.from({ length: 6 }, (_, i) => jetzt - i)
-    .map(j => ({ wert: String(j), text: String(j) })),
-  wert: String(jetzt),
-  aenderung: () => laden(),
-});
+/* ---- Kopf: Objekt- und Jahr-Auswahl ----
+   Das Jahrfeld entsteht erst, wenn der Verlauf weiss, in welchen Jahren
+   ueberhaupt geladen wurde. Bis dahin steht dort ein ruhiger Platzhalter —
+   eine Auswahl mit sechs leeren Jahren waere eine Einladung ins Nichts. */
+document.getElementById('jahr').innerHTML =
+  '<span class="jahrleer">Jahre werden geholt …</span>';
 
 const objektWahl = auswahlfeld(document.getElementById('objekt'), {
   label: 'Objekt',

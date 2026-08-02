@@ -57,6 +57,17 @@ EAUTO_TOLERANZ = 0.05
 H_EXTERN, H_EIGEN = "extern", "eigen"
 
 
+def _zahl(wert: float) -> str:
+    """Eine Zahl deutsch geschrieben — die Quellenangaben in den Antworten
+    werden gelesen, nicht weitergerechnet."""
+    return f"{wert:,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+
+
+def _ct(preis: float) -> str:
+    """Ein Preis je kWh in Cent, deutsch geschrieben."""
+    return f"{preis * 100:.2f}".replace(".", ",")
+
+
 # --------------------------------------------------------------------------
 # Zähler: Gesamtmenge und Verbrauch je Einheit
 # --------------------------------------------------------------------------
@@ -150,13 +161,22 @@ def _je_einheit(kwh_zaehler: list[Zaehler], verb: dict[int, float | None],
 # Schritt 1 — aus kWh werden Euro
 # --------------------------------------------------------------------------
 
+def _mengen(sj: Stromjahr) -> tuple[float, float, float]:
+    """Die drei erfassten SolarEdge-Mengen (Netz · PV · Speicher)."""
+    return (sj.netz_kwh or 0.0, sj.solar_kwh or 0.0, sj.akku_kwh or 0.0)
+
+
 def _anteile(sj: Stromjahr) -> tuple[float, float, float, str]:
-    """Die drei SolarEdge-Anteile in Prozent.
+    """Die drei SolarEdge-Anteile in Prozent — die, mit denen gerechnet wird.
 
     Ein eigenes Prozentfeld gibt es im Datenmodell nicht — wohl aber die drei
     Mengen `netz_kwh`, `solar_kwh` und `akku_kwh`. Genau sie sind die Anteile;
-    die Prozente ergeben sich daraus."""
-    mengen = (sj.netz_kwh or 0.0, sj.solar_kwh or 0.0, sj.akku_kwh or 0.0)
+    die Prozente ergeben sich daraus.
+
+    Bezugsgröße ist ihre Summe, nicht der Gesamtverbrauch: nur so decken die
+    drei Blöcke die ganze Menge ab und es bleibt kein Strom ohne Preis. Decken
+    sich beide nicht, sagt das :func:`_anteile_pruefen`."""
+    mengen = _mengen(sj)
     summe = sum(mengen)
     if summe <= 0:
         return 0.0, 0.0, 0.0, ""
@@ -164,6 +184,37 @@ def _anteile(sj: Stromjahr) -> tuple[float, float, float, str]:
     return netz, pv, akku, (f"aus den erfassten Mengen "
                             f"({mengen[0]:.0f} · {mengen[1]:.0f} · "
                             f"{mengen[2]:.0f} kWh)")
+
+
+def _erfasste_anteile(sj: Stromjahr,
+                      gesamt_kwh: float) -> tuple[float, float, float]:
+    """Die Anteile, wie der Nutzer sie eingetragen hat — Menge am Gesamt-
+    verbrauch. Sie stehen in den Eingabefeldern und gehen deshalb unverändert
+    wieder hinein; die gerechneten Anteile (`_anteile`) können davon abweichen,
+    wenn die drei zusammen nicht 100 % ergeben."""
+    if gesamt_kwh <= 0:
+        return 0.0, 0.0, 0.0
+    netz, pv, akku = (round(m / gesamt_kwh * 100.0, 2) for m in _mengen(sj))
+    return netz, pv, akku
+
+
+def _anteile_pruefen(sj: Stromjahr, gesamt_kwh: float) -> list[str]:
+    """Decken die drei erfassten Mengen den Gesamtverbrauch?
+
+    Ein eigenes Prozentfeld gibt es nicht — ob die SolarEdge-Anteile 100 %
+    ergeben, zeigt sich daran, ob ihre Mengen zusammen den Gesamtverbrauch
+    treffen. Verteilt wird trotzdem auf 100 %, sonst fehlte Geld."""
+    erfasst = ((sj.netz_kwh or 0.0) + (sj.solar_kwh or 0.0)
+               + (sj.akku_kwh or 0.0))
+    if erfasst <= 0 or gesamt_kwh <= 0:
+        return []
+    prozent = erfasst / gesamt_kwh * 100.0
+    if abs(prozent - 100.0) <= 0.5:
+        return []
+    return [f"Die erfassten Anteile ergeben zusammen {prozent:.0f} % des "
+            f"Gesamtverbrauchs ({_zahl(erfasst)} von {_zahl(gesamt_kwh)} kWh) — "
+            "bitte die SolarEdge-Werte prüfen. Verteilt wird trotzdem auf "
+            "den vollen Verbrauch."]
 
 
 def _strompositionen(session: Session, zid: int) -> list[Kostenposition]:
@@ -187,7 +238,7 @@ def _netz_betrag(session: Session, zid: int,
     if aus_position:
         betrag = round(sum(p.betrag for p in aus_position), 2)
         namen = " · ".join(sorted({p.kostenart for p in aus_position}))
-        return betrag, f"Rechnung {betrag:.2f} € (Position „{namen}“)", []
+        return betrag, f"Rechnung {_zahl(betrag)} € (Position „{namen}“)", []
 
     belege = [d for d in session.exec(select(Dokument)
                                       .where(Dokument.zeitraum_id == zid)).all()
@@ -199,7 +250,7 @@ def _netz_betrag(session: Session, zid: int,
             "setzen. Ohne sie lassen sich die kWh nicht in Euro umrechnen."]
     betrag = round(sum(d.betrag for d in belege), 2)
     namen = " · ".join(d.dateiname for d in belege)
-    return betrag, f"Beleg {betrag:.2f} € ({namen})", [
+    return betrag, f"Beleg {_zahl(betrag)} € ({namen})", [
         f"Der Netzbetrag stammt aus {len(belege)} angehängten Beleg(en), nicht "
         "aus einer bestätigten Position. Bitte an der Strom-Position die Menge "
         "und die Herkunft „Netzbezug“ setzen, damit die Zuordnung eindeutig ist."]
@@ -221,8 +272,8 @@ def _eigen_betraege(sj: Stromjahr, pv_kwh: float, akku_kwh: float,
         solar = solar or akku
         akku = akku or solar
         return (round(pv_kwh * solar, 2), round(akku_kwh * akku, 2),
-                f"Sätze am Strom-Jahr: PV {solar * 100:.2f} ct/kWh · "
-                f"Akku {akku * 100:.2f} ct/kWh", [])
+                f"Sätze am Strom-Jahr: PV {_ct(solar)} ct/kWh · "
+                f"Akku {_ct(akku)} ct/kWh", [])
 
     aus_position = [p for p in positionen
                     if (p.herkunft or "").strip().lower() == H_EIGEN and p.betrag]
@@ -231,7 +282,7 @@ def _eigen_betraege(sj: Stromjahr, pv_kwh: float, akku_kwh: float,
         summe = pv_kwh + akku_kwh
         pv_teil = round(betrag * pv_kwh / summe, 2) if summe > 0 else 0.0
         return (pv_teil, round(betrag - pv_teil, 2),
-                f"Position „eigene Anlage“ {betrag:.2f} €", [
+                f"Position „eigene Anlage“ {_zahl(betrag)} €", [
                     "Der eigene Strom hat nur einen Gesamtbetrag — PV und Akku "
                     "wurden mengenanteilig getrennt. Für getrennte Preise die "
                     "Sätze am Strom-Jahr pflegen."])
@@ -379,18 +430,21 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
             "Die SolarEdge-Anteile sind noch nicht erfasst — bitte Netz, PV "
             "und Speicher am Strom-Jahr eintragen. Ohne sie lassen sich die "
             "kWh keinem Preis zuordnen.")
-    positionen = _strompositionen(session, zid)
-    netz_betrag, quelle_betrag, hinweise = _netz_betrag(session, zid, positionen)
-    warnungen += hinweise
-    roh, hinweise = strombloecke.bloecke_aus_solaredge(
+    erfasst = _erfasste_anteile(sj, gesamt_kwh)
+    warnungen += _anteile_pruefen(sj, gesamt_kwh)
+    # Erst die Mengen (die Anteile am Gesamtverbrauch), dann das Geld: der Preis
+    # des eigenen Stroms hängt an eben diesen Mengen.
+    bloecke, hinweise = strombloecke.bloecke_aus_solaredge(
         gesamt_kwh, netz_p, pv_p, akku_p)
     warnungen += hinweise
-    pv_betrag, akku_betrag, quelle_eigen, hinweise = _eigen_betraege(
-        sj, roh.pv.kwh, roh.akku.kwh, positionen)
+    positionen = _strompositionen(session, zid)
+    bloecke.netz.betrag, quelle_betrag, hinweise = _netz_betrag(
+        session, zid, positionen)
     warnungen += hinweise
-    bloecke, _ = strombloecke.bloecke_aus_solaredge(
-        gesamt_kwh, netz_p, pv_p, akku_p, netz_betrag=netz_betrag,
-        pv_betrag=pv_betrag, akku_betrag=akku_betrag)
+    (bloecke.pv.betrag, bloecke.akku.betrag,
+     quelle_eigen, hinweise) = _eigen_betraege(
+        sj, bloecke.pv.kwh, bloecke.akku.kwh, positionen)
+    warnungen += hinweise
 
     # ---- Schritt 2: die E-Tankstelle vorab -------------------------------
     eauto = _eauto(session, z, sj, netz_p, pv_p, akku_p)
@@ -403,9 +457,13 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     verbrauch, ohne = _je_einheit(kwh_zaehler, verb, gesamt_z.id if gesamt_z
                                   else None, karte, haupthaus, gewichte)
     # Ein zuordnungsloser Zähler in der Größenordnung der Ladungen IST die
-    # Ladestation — sie steht in Schritt 2 und braucht keine Einheit.
+    # Ladestation — sie steht in Schritt 2 und braucht keine Einheit. Er zählt
+    # deshalb weder als offener Fund noch als fehlende Zuordnung.
     grenze = max(1.0, eauto_kwh * EAUTO_TOLERANZ)
-    offen = [o for o in ohne if abs(o["kwh"] - eauto_kwh) > grenze]
+    ladezaehler = next((o for o in ohne
+                        if abs(o["kwh"] - eauto_kwh) <= grenze), None) \
+        if eauto_kwh > 0 else None
+    offen = [o for o in ohne if o is not ladezaehler]
     warnungen += [f"„{o['zaehler']}“ gehört zu keiner Einheit dieses Objekts — "
                   "die Zuordnung bitte am Zähler nachtragen." for o in offen]
 
@@ -432,7 +490,12 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
             "gesamt_kwh": gesamt_kwh, "quelle_menge": quelle_menge,
             "netz_prozent": netz_p, "pv_prozent": pv_p,
             "speicher_prozent": akku_p,
-            "prozent_summe": round(netz_p + pv_p + akku_p, 2),
+            # Was eingetragen wurde (Menge am Gesamtverbrauch) — die Zahlen der
+            # Eingabefelder. Ergeben sie 100 %, sind sie mit den gerechneten
+            # Anteilen identisch.
+            "netz_erfasst": erfasst[0], "pv_erfasst": erfasst[1],
+            "speicher_erfasst": erfasst[2],
+            "erfasst_summe": round(sum(erfasst), 2),
             "quelle_anteile": quelle_anteile,
             "netz": _block(bloecke.netz), "pv": _block(bloecke.pv),
             "akku": _block(bloecke.akku),
@@ -445,12 +508,16 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
             "akku_kwh": eauto["akku_kwh"], "betrag": eauto_betrag,
             "quelle": eauto["quelle"], "quelle_text": eauto["quelle_text"],
             "einheit": eauto_einheit, "anzahl": eauto["anzahl"],
+            # Der Zähler, der dieselbe Menge ausweist — der Gegenbeleg zur
+            # Ladeprotokoll-Zahl, ohne eigene Einheit.
+            "zaehler": (ladezaehler or {}).get("zaehler", ""),
+            "zaehler_kwh": (ladezaehler or {}).get("kwh"),
             "beruecksichtigt": bool(eauto_kwh > 0 and e.eauto),
         },
         "schritt3": {
             "je_einheit": je_einheit, "summe": summe,
             "rest_kwh": round(bloecke.kwh - eauto_kwh, 3),
-            "ohne_einheit": ohne,
+            "ohne_einheit": offen,
         },
         "kontrolle": {
             "gesamt": e.gesamt, "schritt1_betrag": bloecke.betrag,
