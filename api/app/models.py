@@ -269,6 +269,11 @@ class Kostenposition(SQLModel, table=True):
     # Woher der Strom kam: 'extern' (Netzbezug laut Rechnung) oder 'eigen'
     # (aus der eigenen PV-Anlage, gleich ob Direktverbrauch oder Akku).
     herkunft: str = ""
+    # N124 — was auf der Versorgerrechnung steht, damit der Scan es ablegen und
+    # der Betrag gegengeprueft werden kann. Der Durchschnittspreis wird NICHT
+    # gespeichert: er ist `betrag / menge` und waere sonst eine zweite Wahrheit.
+    arbeitspreis: float = 0.0      # ct/kWh laut Rechnung
+    grundpreis_monat: float = 0.0  # Grundpreis in € je Monat
     s35: bool = False
     # CCCLIX — ein Teilbetrag kann vorab direkt auf EINE Einheit gehen (z.B.
     # 35 € einer 147-€-Rechnung), mit eigenem §35a-Status; der Rest (Betrag −

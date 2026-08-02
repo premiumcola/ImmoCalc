@@ -771,41 +771,24 @@
   .wd-scroll{overflow-x:auto;max-width:100%;border-radius:12px;
     border:1px solid var(--line);-webkit-overflow-scrolling:touch}
 
-  /* ---- N120: Strom — Zählermaske in der Strom-Kostenposition -------------
-     Gleicher Schnitt wie die Wasser-Detailtabelle (.wd-tabelle/.wd-tab), nur
-     mit Eingabefeldern in der Zeile. Unter jeder Zählerzeile liegt eine
-     Zusatzzeile (Einheiten-Auswähler + Hinweis); ihr Inhalt beginnt hinter der
-     festen ersten Spalte, damit beim Querscrollen nichts unter ihr liegt. */
-  .st-tab td.st-verb{font:700 13px var(--mono);color:var(--ink);white-space:nowrap}
-  .st-tab td.st-kein{color:var(--soft);font:500 12px var(--body)}
-  .st-tab tr.st-z td{border-bottom:none}
-  .st-tab tr.st-sub td{text-align:left;border-bottom:1px solid var(--line);
-    padding:0 10px 12px 134px}
-  .st-tab tr.st-gesamt td{background:#F1F4F4}
-  .st-tab tr.st-gesamt td.wd-rowh{background:#EDF1F0}
-  .st-tab tr.st-rest td,.st-tab tr.st-rest td.wd-rowh{background:var(--teal-l)}
-  .st-tab tr.st-rest td.wd-rowh,.st-tab tr.st-rest .st-verb{color:var(--teal-d)}
-  .st-feld{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-  .st-feld input{border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;
-    min-height:44px;font:500 12px var(--body);background:var(--sheet);color:var(--ink)}
-  .st-feld input[type=text]{width:106px;text-align:right;font-family:var(--mono);
-    font-weight:600}
-  .st-feld input[type=date]{width:152px}
-  .st-feld input:focus{outline:none;border-color:var(--teal)}
-  .st-l{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
-    text-transform:uppercase;color:var(--soft);margin-bottom:2px}
-  .st-formel{display:block;min-width:160px;font:600 11px var(--mono);
-    color:var(--soft);line-height:1.55;white-space:normal}
-  .st-note{font:400 11.5px var(--body);color:var(--soft);line-height:1.55;
-    margin:2px 0 0;white-space:normal}
-  .st-note b,.st-note strong{color:var(--ink);font-weight:700}
-  .st-note+.zu-ehwahl{margin-top:7px}
-  .st-neg{color:var(--neg);font-weight:700}
-  .st-weg{border:none;background:transparent;color:var(--neg);cursor:pointer;
-    font:600 11.5px var(--disp);text-decoration:underline;text-underline-offset:3px;
-    padding:11px 2px;min-height:44px;margin-left:auto}
-  .st-subzeile{display:flex;flex-wrap:wrap;align-items:flex-end;gap:4px 14px}
-  .st-subzeile .zu-ehwahl{flex:1 1 220px;margin-top:0}
+  /* ---- N120: Strom im Zählerstände-Bereich -------------------------------
+     Dieselbe Zeilenform wie bei Wasser und Öl (.zu-zeile). Dazu kommt je Zeile
+     nur eine leise Fußleiste: welche Rolle sie spielt und der Weg, sie wieder
+     zu entfernen. */
+  .zu-rolle{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;
+    margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+  .zu-rolle select{flex:1 1 180px;min-width:0;border:1.5px solid var(--line);
+    border-radius:10px;padding:8px 10px;min-height:40px;background:var(--sheet);
+    font:500 11.5px var(--body);color:var(--ink)}
+  .zu-rolle select:focus{outline:none;border-color:var(--teal)}
+  .zu-weg{flex:none;margin-left:auto;border:none;background:transparent;
+    color:var(--neg);cursor:pointer;font:600 11.5px var(--disp);
+    text-decoration:underline;text-underline-offset:3px;padding:10px 4px;
+    min-height:44px}
+  /* Der Abzugsblock unter dem Gesamtverbrauch — wie beim Kaltwasser. */
+  .zu-abzug{margin:2px 0 6px 10px;padding-left:11px;
+    border-left:2px solid var(--line)}
+  .zu-zeile.unplausibel .zu-verb{color:var(--neg)}
   .st-neu input[type=text]{flex:1 1 190px;width:auto;min-width:0}
   .st-neu select{flex:1 1 190px;min-width:0}
 
@@ -1551,7 +1534,7 @@ function interpolationsHinweise(z, eh) {
    eingerückt als Abzug (N59), `label` überschreibt den Namen, `extra` hängt
    eigene Bedienelemente unter die Zeile (N120: Rolle + Entfernen). */
 function meterZeileHtml(z, { rest = false, minus = false, label = null,
-                            keinChooser = false, extra = '' } = {}) {
+                            keinChooser = false, extra = '', verbText = '' } = {}) {
   const bearbeitbar = daten.status === 'in Arbeit';
   const eh = esc(z.messeinheit || 'm³');
   // N120 — `direkt`: für diesen Verbrauch gibt es keine Zählerstände, sondern
@@ -1621,9 +1604,13 @@ function meterZeileHtml(z, { rest = false, minus = false, label = null,
     ? `<button type="button" class="zu-dok" data-datum-uebernehmen="${z.id}"
         hidden>Geändertes Datum mit dem Stand speichern</button>` : '';
 
-  const verb = z.verbrauch != null ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—';
-  return `<div class="zu-zeile${fertig ? ' fertig' : ''}${minus ? ' minus' : ''}${
-      rest ? ' rest' : ''}" data-zid="${z.id}">
+  // `verbText` ersetzt die Zahl, wo sie nicht stimmen kann (N120: ein negativer
+  // Rest ist keine Menge, sondern ein Fehler in den Ständen).
+  const verb = verbText
+    || (z.verbrauch != null ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—');
+  return `<div class="zu-zeile${fertig && !verbText ? ' fertig' : ''}${
+      minus ? ' minus' : ''}${rest ? ' rest' : ''}${
+      verbText ? ' unplausibel' : ''}" data-zid="${z.id}">
     <div class="zu-haupt">
       ${minus ? '<span class="zu-op" aria-hidden="true">−</span>' : ''}
       <span class="zu-name">${esc(label || zLabels.get(z.id) || z.name)}</span>
@@ -1747,8 +1734,9 @@ function zaehlerPanelHtml(block, zaehler, blockVon) {
   return `<div class="zu-panel${offen ? ' offen' : ''}" data-zu-block="${esc(block)}">
     <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${offen}">
       <span class="zu-st">Zählerstände</span>
-      <span class="zu-meta">${teil.length} Zähler${abweichend
-        ? ` · ${abweichend} umgerechnet` : ''}</span>
+      <span class="zu-meta">${teil.length
+        ? `${teil.length} Zähler${abweichend ? ` · ${abweichend} umgerechnet` : ''}`
+        : 'noch keine'}</span>
       <span class="zu-chev">${CHEV_ICON}</span>
     </button>
     <div class="zu-inhalt">${inner}</div>
@@ -2465,8 +2453,9 @@ async function zeichnen() {
     if (zListe.length) zLabels = generischeLabels(zListe);   // N68 — einmal für alle
     const zBlock = zListe.length ? zaehlerBloecke(zListe) : new Map();
     const zeilen = bereiche.map((liste, bi) => {
-      const wz = (bi < 3 && zListe.length)
-        ? zaehlerPanelHtml(BEREICH_IKON[bi], zListe, zBlock) : '';
+      // N120 — der Strom-Bereich erscheint auch ohne Zähler (Leerzustand +
+      // Anlegen); die Panels entscheiden das selbst.
+      const wz = bi < 3 ? zaehlerPanelHtml(BEREICH_IKON[bi], zListe, zBlock) : '';
       if (!liste.length && !wz) return '';
       return `<div class="kat-kopf"><span class="kat-ikon">${
           kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
@@ -2746,9 +2735,13 @@ function stromBlockHtml(liste) {
 
   const zeile = (z, o) => meterZeileHtml(z, { ...o, extra: stromExtra(z, s) });
   const subZeilen = s.unter.map(z => zeile(z, { minus: true })).join('');
-  const restZeile = s.rest ? zeile(s.rest, { rest: true }) : '';
   const summeUnter = s.unter.reduce((sum, z) => sum + (z.verbrauch || 0), 0);
   const gesamtV = s.gesamt?.verbrauch ?? null;
+  // Ein negativer Rest ist keine Menge — dort steht die Warnung statt der Zahl.
+  const restNegativ = !!(s.rest && s.rest.verbrauch != null && s.rest.verbrauch < 0);
+  const restZeile = s.rest
+    ? zeile(s.rest, { rest: true, verbText: restNegativ ? 'nicht plausibel' : '' })
+    : '';
 
   // Eine Zeile, die die Rechnung ausschreibt — dieselbe Sprache wie beim Öl.
   const rechnung = s.gesamt ? `<div class="ho-summe">Gesamt <b>${gesamtV != null
@@ -2758,7 +2751,7 @@ function stromBlockHtml(liste) {
 
   // Nur, was wirklich hakt — und als ruhiger Hinweis, wo es nicht dringend ist.
   const warnungen = [];
-  if (s.rest && s.rest.verbrauch != null && s.rest.verbrauch < 0) {
+  if (restNegativ) {
     warnungen.push(`Die Zwischenzähler ergeben zusammen <b>${zahl(summeUnter)} kWh</b>
       und damit mehr, als der Gesamtverbrauch mit <b>${zahl(gesamtV)} kWh</b>
       hergibt. Für das Haus bliebe nichts übrig — bitte die Stände prüfen.`);
@@ -3845,8 +3838,10 @@ inhalt.addEventListener('change', e => {
   // überschrieben. Das Datum fährt beim Speichern eines Stands mit; wurde es
   // allein geändert, blendet dieser Handler nur den ausdrücklichen Knopf ein.
   if (e.target.matches('[data-anfangdatum],[data-enddatum]')) datumGeaendert(e.target);
-  // N120 — der Jahreswert eines direkt erfassten Strom-Zählers.
+  // N120 — der Jahreswert eines direkt erfassten Strom-Zählers und die Rolle,
+  // die eine Zeile im Strom-Block einnimmt.
   if (e.target.matches('[data-strom-jahr]')) stromJahreswertSpeichern(e.target);
+  if (e.target.matches('[data-strom-rolle-set]')) stromRolleSetzen(e.target);
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
   // N116 - abgerechnete Menge aus dem Bescheid: nur Anzeige-Basis, nichts wird
