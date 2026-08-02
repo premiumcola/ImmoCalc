@@ -289,7 +289,7 @@ function baueDialog(inhalt) {
  * und kommt nicht mehr heraus. Deshalb bleibt der Beleg jetzt im Dialog, mit
  * drei Wegen zurueck: Kreuz, Escape und Tippen neben das Blatt.
  */
-export function belegAnsehen(url, titel = 'Beleg') {
+export function belegAnsehen(url, titel = 'Beleg', pfad = '') {
   // Die GANZE Seite als serverseitig gerendertes Bild, breitenfüllend statt
   // beschnitten — das ist die alleinige große Ansicht. Kein zusätzliches ↗ in
   // einen zweiten Tab: auf dem iPhone lässt sich der native PDF-Betrachter dort
@@ -302,7 +302,8 @@ export function belegAnsehen(url, titel = 'Beleg') {
   const basis = url.replace('/inhalt', '');
   const dlg = baueDialog(
     `<div class="beleg-kopf">
-       <span class="bt">${sicher(titel)}</span>
+       <span class="bt">${sicher(titel)}${pfad
+         ? `<span class="bpfad" title="Ablageort in der Nextcloud">${sicher(pfad)}</span>` : ''}</span>
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
      <div class="beleg-flaeche"><div class="beleg-blatt lade">Beleg wird geholt …</div></div>`);

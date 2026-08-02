@@ -381,6 +381,10 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
 .beleg-kopf{display:flex; align-items:center; gap:8px; flex:none}
 .beleg-kopf .bt{flex:1; min-width:0; font:600 14px var(--body); color:var(--ink);
                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* N99 - der Ablageort in der Nextcloud, damit die Datei auffindbar ist. */
+.beleg-kopf .bpfad{display:block; font:500 10.5px var(--mono); color:var(--soft);
+                   margin-top:3px; overflow:hidden; text-overflow:ellipsis;
+                   white-space:nowrap; direction:rtl; text-align:left}
 .beleg-kopf .bx{flex:none; width:44px; height:44px; border:none; cursor:pointer;
                 border-radius:12px; background:var(--paper); color:var(--ink);
                 font:400 17px var(--body); line-height:44px; text-align:center;

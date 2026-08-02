@@ -1937,7 +1937,8 @@ async function vorschauLaden(d) {
 
 const grossAnsehen = () => {
   const d = gewaehlt !== null ? dok(gewaehlt) : null;
-  if (d && d.abgelegt) belegAnsehen(`/api/dokumente/${d.id}/inhalt`, d.dateiname);
+  // N99 — Ablageort mitgeben, damit die Datei in der Cloud auffindbar ist.
+  if (d && d.abgelegt) belegAnsehen(`/api/dokumente/${d.id}/inhalt`, d.dateiname, d.pfad || '');
 };
 bSchau.addEventListener('click', grossAnsehen);
 bSchau.addEventListener('keydown', e => {

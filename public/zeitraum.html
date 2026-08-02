@@ -3422,9 +3422,11 @@ inhalt.addEventListener('click', async e => {
     // Der Beleg wird durch die API gereicht — Nextcloud verlangt sonst eine
     // eigene Anmeldung. Angezeigt wird er im Dialog, nicht in einem neuen
     // Fenster: aus dem kommt man auf dem Telefon nicht mehr zurueck.
+    // N99 - den Ablageort mitgeben (er steht schon als title am Link).
     belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`,
                  beleg.dataset.name
-                 || beleg.textContent.replace(/^PDF · /, '').trim());
+                 || beleg.textContent.replace(/^PDF · /, '').trim(),
+                 beleg.getAttribute('title') || '');
     return;
   }
 
