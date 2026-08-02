@@ -11,10 +11,16 @@ Produktion 12,5 MWh — 33 % ins Netz, 44 % ins Gebäude, 23 % zum Speicher.
 Verbrauch  10,8 MWh — 24 % vom Netz, 50 % aus PV, 26 % aus dem Speicher.
 """
 import json
+from datetime import date
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlmodel import Session, select
 
 from app import kiauslese, solaredge, strombloecke
+from app.db import engine
+from app.main import app
+from app.models import Dokument, Objekt, Stromjahr
 
 # Die Antwort, wie sie das Modell für den Screenshot des Nutzers liefern soll.
 ANTWORT = {
@@ -423,3 +429,182 @@ def test_endpunkt_lehnt_zu_grosse_bilder_ab(monkeypatch):
         _lesen(_Upload(riesig), monkeypatch)
     assert fehler.value.status_code == 400
     assert "5 MB" in fehler.value.detail
+
+
+# --------------------------------------------------------------------------
+# N161 — den Screenshot als Beleg in der Nextcloud ablegen.
+#
+# Die Cloud wird NIE angefasst: ein Doppel schreibt jeden Zugriff mit und kennt
+# keinen zerstörerischen (keine `loesche`/`verschiebe`). Ein Löschversuch beim
+# Ersetzen fällt so sofort als AttributeError auf.
+# --------------------------------------------------------------------------
+
+class _Wolke:
+    """Nextcloud-Ersatz für die Ablage — schreibt mit, löscht nie."""
+
+    def __init__(self):
+        self.angelegt = []
+        self.abgelegt = []          # (pfad, typ)
+
+    def liste(self, pfad):
+        return []
+
+    def ordner_anlegen(self, pfad):
+        self.angelegt.append(pfad)
+        return True
+
+    def existiert(self, pfad):
+        return False
+
+    def lege_ab(self, pfad, inhalt, typ="application/pdf"):
+        self.abgelegt.append((pfad, typ))
+
+
+def _objekt_mit_cloud(c, name, ordner="Home/Immobilien/SE"):
+    slug = c.post("/api/objekte", json={"name": name}).json()["slug"]
+    with Session(engine) as s:
+        o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+        o.nc_ordner = ordner
+        s.add(o)
+        s.commit()
+        return slug, o.id
+
+
+def _stromjahr(objekt_id, jahr):
+    with Session(engine) as s:
+        return s.exec(select(Stromjahr).where(
+            Stromjahr.objekt_id == objekt_id, Stromjahr.jahr == jahr)).first()
+
+
+def _screenshot(c, slug, jahr=2025, inhalt=PNG, name="solaredge.png",
+                typ="image/png"):
+    return c.post(f"/api/solaredge/objekte/{slug}/{jahr}/screenshot",
+                  files={"datei": (name, inhalt, typ)})
+
+
+def test_ablage_setzt_screenshot_dokument_id(monkeypatch):
+    """Der Screenshot landet als Dokument im Jahresordner unter 60_Nebenkosten,
+    und `Stromjahr.screenshot_dokument_id` zeigt darauf."""
+    import app.routers.solaredge as modul
+
+    with TestClient(app) as c:
+        slug, oid = _objekt_mit_cloud(c, "Screenshot 1")
+        wolke = _Wolke()
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        antwort = _screenshot(c, slug, 2025)
+        assert antwort.status_code == 200, antwort.text
+        d = antwort.json()
+        assert d["abgelegt"] is True
+        assert d["dokument_id"]
+        # Genau einmal abgelegt, im Jahresordner unter 60_Nebenkosten.
+        assert len(wolke.abgelegt) == 1
+        pfad, typ = wolke.abgelegt[0]
+        assert "60_Nebenkosten/2025" in pfad
+        assert pfad.endswith(".png")
+        assert typ == "image/png"
+
+        # Die Verknüpfung steht am Strom-Jahr.
+        sj = _stromjahr(oid, 2025)
+        assert sj is not None
+        assert sj.screenshot_dokument_id == d["dokument_id"]
+        # Das Dokument trägt Kategorie und Jahr.
+        with Session(engine) as s:
+            dok = s.get(Dokument, d["dokument_id"])
+            assert dok.kategorie == "Nebenkosten"
+            assert dok.jahr == 2025
+            assert dok.pfad.endswith(d["dateiname"])
+
+
+def test_ohne_verknuepften_ordner_bleiben_die_werte_erhalten(monkeypatch):
+    """Ohne verknüpften Nextcloud-Ordner entfällt nur die Ablage — die zuvor
+    gespeicherten Strom-Werte bleiben unangetastet, die Cloud wird nie berührt."""
+    import app.routers.solaredge as modul
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Screenshot 2"}).json()["slug"]
+        with Session(engine) as s:
+            oid = s.exec(select(Objekt).where(Objekt.slug == slug)).first().id
+
+        # Werte wie beim „Übernehmen" gespeichert (eigener Strom-PUT).
+        c.put(f"/api/objekte/{slug}/strom/2025", json={"netz_kwh": 2592})
+
+        # Ein Zugriff auf die Cloud wäre hier ein Fehler.
+        def _nie(session):
+            raise AssertionError("verbindung() darf ohne Ordner nicht laufen")
+        monkeypatch.setattr(modul, "verbindung", _nie)
+
+        antwort = _screenshot(c, slug, 2025)
+        assert antwort.status_code == 200, antwort.text
+        d = antwort.json()
+        assert d["abgelegt"] is False
+        assert d["grund"]
+
+        # Die Werte stehen unverändert, keine Verknüpfung gesetzt.
+        werte = c.get(f"/api/objekte/{slug}/strom/2025").json()
+        assert werte["netz_kwh"] == 2592
+        sj = _stromjahr(oid, 2025)
+        assert sj.screenshot_dokument_id is None
+
+
+def test_ohne_eingerichtete_cloud_kein_fehler(monkeypatch):
+    """Ist ein Ordner verknüpft, aber keine Nextcloud eingerichtet, meldet der
+    Verbindungsaufbau 400 — die Ablage entfällt ruhig statt zu krachen."""
+    import app.routers.solaredge as modul
+    from fastapi import HTTPException
+
+    with TestClient(app) as c:
+        slug, oid = _objekt_mit_cloud(c, "Screenshot 3")
+
+        def _keine(session):
+            raise HTTPException(400, "Nextcloud ist noch nicht eingerichtet")
+        monkeypatch.setattr(modul, "verbindung", _keine)
+
+        antwort = _screenshot(c, slug, 2025)
+        assert antwort.status_code == 200
+        d = antwort.json()
+        assert d["abgelegt"] is False
+        assert "eingerichtet" in d["grund"]
+        assert _stromjahr(oid, 2025) is None or \
+            _stromjahr(oid, 2025).screenshot_dokument_id is None
+
+
+def test_zweiter_screenshot_ersetzt_die_verknuepfung_ohne_zu_loeschen(monkeypatch):
+    """Ein zweiter Screenshot bekommt einen eigenen (freien) Namen, die
+    Verknüpfung zeigt auf den neuen — der alte Eintrag und die alte Datei
+    bleiben. Gelöscht wird nichts (die Cloud kennt kein `loesche`)."""
+    import app.routers.solaredge as modul
+
+    with TestClient(app) as c:
+        slug, oid = _objekt_mit_cloud(c, "Screenshot 4")
+        wolke = _Wolke()
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        erste = _screenshot(c, slug, 2025).json()
+        zweite = _screenshot(c, slug, 2025, name="neu.png").json()
+
+        assert erste["abgelegt"] and zweite["abgelegt"]
+        # Zwei verschiedene Dokumente, zwei verschiedene Ablagen (freier Name).
+        assert erste["dokument_id"] != zweite["dokument_id"]
+        assert erste["pfad"] != zweite["pfad"]
+        assert len(wolke.abgelegt) == 2
+
+        # Der alte Eintrag steht noch (nichts gelöscht) …
+        with Session(engine) as s:
+            assert s.get(Dokument, erste["dokument_id"]) is not None
+            assert s.get(Dokument, zweite["dokument_id"]) is not None
+        # … die Verknüpfung zeigt jetzt auf den neuen.
+        assert _stromjahr(oid, 2025).screenshot_dokument_id == zweite["dokument_id"]
+
+
+def test_ablage_lehnt_nicht_bilder_ab(monkeypatch):
+    """Was kein Bild ist, wird nicht abgelegt (400) — wie beim Lesen."""
+    import app.routers.solaredge as modul
+
+    with TestClient(app) as c:
+        slug, _ = _objekt_mit_cloud(c, "Screenshot 5")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Wolke())
+
+        antwort = _screenshot(c, slug, 2025, inhalt=b"%PDF-1.4 kein Bild",
+                              name="x.pdf", typ="application/pdf")
+        assert antwort.status_code == 400
