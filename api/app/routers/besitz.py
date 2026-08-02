@@ -10,10 +10,10 @@ from ..db import get_session
 from ..deps import objekt_holen
 from ..models import (Anteil, Einheit, Eigentuemer, Grundschuld,
                       GrundschuldKredit, Kredit, Kreditstand, Miete,
-                      Objekt, ist_grundstueck)
+                      Objekt, PVAnlage, ist_grundstueck)
 from ..turnus import jahresbetrag
 from ..vermoegen import (attributionswert, eigentuemer_fraktion, gesamt,
-                         kreditstand, objekt_vermoegen)
+                         kreditstand, objekt_vermoegen, pv_zurechnung)
 
 router = APIRouter(prefix="/api", tags=["besitz"])
 
@@ -402,16 +402,34 @@ def _einheit_von(m: Miete, einheiten: list[Einheit]) -> str:
     return einheiten[0].bezeichnung.strip() if len(einheiten) == 1 else ""
 
 
+def _objektkopf(o: Objekt) -> dict:
+    """Die Angaben, mit denen die Oberfläche eine Objektzeile beschriftet.
+
+    Dieselben Felder wie in `/eigentuemer` — damit eine Zeile, die es dort nicht
+    gibt (Objekt ohne Gebäudeanteil, aber mit Anteil an der PV-Anlage, N146),
+    genauso dargestellt werden kann wie jede andere."""
+    return {"slug": o.slug, "name": o.name, "titel": objekt_titel(o),
+            "typ": o.typ, "objektart": objektart_von(o),
+            "strasse": o.strasse, "plz": o.plz, "ort": o.ort,
+            "flurstueck": o.flurstueck, "gemarkung": o.gemarkung}
+
+
 def _objekt_je_eigentuemer(o: Objekt, einheiten: list[Einheit],
                            anteile: list[Anteil], kredite: list[Kredit],
                            mieten: list[Miete],
                            staende: dict[int, list[Kreditstand]],
-                           heute: date) -> dict[int, dict]:
+                           heute: date,
+                           anlage: PVAnlage | None = None,
+                           personen: dict[int, str] | None = None) -> dict[int, dict]:
     """Zurechnung eines Objekts je Eigentümer-id.
 
     Wert und Restschuld folgen dem wertgewichteten Anteil; die Miete wird je
     Einheit zugeordnet und mit dem Anteil des Eigentümers an genau dieser
-    Einheit gewichtet."""
+    Einheit gewichtet.
+
+    N146: hängt am Objekt eine PV-Anlage, kommt sie als untergeordnete Zeile
+    dazu — mit ihren eigenen Anteilen. Ohne Anlage (`anlage=None`) ändert sich
+    an keiner Zahl etwas."""
     fraktion = eigentuemer_fraktion(o, einheiten, anteile)
     wert = attributionswert(o, einheiten)
     lagen = [kreditstand(k, staende.get(getattr(k, "id", None)), heute)
@@ -444,17 +462,27 @@ def _objekt_je_eigentuemer(o: Objekt, einheiten: list[Einheit],
     lose = [m for m in mieten if _einheit_von(m, einheiten) not in zugeordnet]
     miete_ohne_einheit = _laufende_miete_jahr(lose, heute)
 
+    def zeile(f: float) -> dict:
+        """Eine Objektzeile zum Bruchteil `f`. Die PV-Felder stehen von Anfang
+        an drin — ohne Anlage bleiben sie leer, und `wert_gesamt` ist dann
+        exakt der Immobilienwert."""
+        w = round((wert or 0) * f, 2) if wert is not None else None
+        ek = round(eigenkapital * f, 2) if eigenkapital is not None else None
+        return {**_objektkopf(o),
+                "fraktion": round(f, 4),
+                "wert": w,
+                "restschuld": round(restschuld * f, 2),
+                "guthaben": round(guthaben * f, 2),
+                "eigenkapital": ek,
+                # N146 — die PV-Anlage steht neben dem Immobilienwert, nicht
+                # darin: `wert`/`eigenkapital` tragen weiter die Beleihung.
+                "pv": None, "pv_wert": 0.0,
+                "wert_gesamt": w, "eigenkapital_gesamt": ek,
+                "miete_jahr": 0.0, "einheiten": []}
+
     out: dict[int, dict] = {}
     for eid, f in fraktion.items():
-        out.setdefault(eid, {
-            "slug": o.slug, "name": o.name, "titel": objekt_titel(o), "typ": o.typ,
-            "fraktion": round(f, 4),
-            "wert": round((wert or 0) * f, 2) if wert is not None else None,
-            "restschuld": round(restschuld * f, 2),
-            "guthaben": round(guthaben * f, 2),
-            "eigenkapital": round(eigenkapital * f, 2)
-            if eigenkapital is not None else None,
-            "miete_jahr": 0.0, "einheiten": []})
+        out.setdefault(eid, zeile(f))
 
     def miete_zuweisen(betrag: float, zeilen: list[Anteil],
                        einheit_name: str | None) -> None:
@@ -476,7 +504,42 @@ def _objekt_je_eigentuemer(o: Objekt, einheiten: list[Einheit],
     if miete_ohne_einheit:
         miete_zuweisen(miete_ohne_einheit, objektanteile, None)
 
+    _pv_anhaengen(o, out, anlage, personen or {})
     return out
+
+
+def _pv_anhaengen(o: Objekt, out: dict[int, dict], anlage: PVAnlage | None,
+                  personen: dict[int, str]) -> None:
+    """N146 — die PV-Anlage unter ihre Immobilie hängen.
+
+    Der auf eine Person entfallende Anlagenwert erhöht `wert_gesamt` und
+    `eigenkapital_gesamt` dieser Objektzeile — **nicht** `wert`: der bleibt der
+    reine Immobilienwert und damit die Basis für Beleihung und Spielraum.
+
+    Wem die Anlage gehört, muss nicht das Haus gehören. Für eine solche Person
+    entsteht die Objektzeile hier — mit Bruchteil 0, denn am Gebäude hält sie
+    nichts. Ohne diese Zeile verschwände ihr Anteil an der Anlage."""
+    pv = pv_zurechnung(anlage, personen)
+    if not pv:
+        return
+    for eid, teil in pv["je_person"].items():
+        if eid not in out:
+            out[eid] = {**_objektkopf(o), "fraktion": 0.0, "wert": 0.0,
+                        "restschuld": 0.0, "guthaben": 0.0, "eigenkapital": 0.0,
+                        "pv": None, "pv_wert": 0.0,
+                        "wert_gesamt": 0.0, "eigenkapital_gesamt": 0.0,
+                        "miete_jahr": 0.0, "einheiten": []}
+        z = out[eid]
+        z["pv"] = {"titel": pv["titel"], "promille": teil["promille"],
+                   "wert": teil["wert"], "wert_gesamt": pv["wert"],
+                   "wertquelle": pv["wertquelle"], "kwp": pv["kwp"],
+                   "anteile_summe": pv["anteile_summe"],
+                   "hinweise": pv["hinweise"]}
+        z["pv_wert"] = teil["wert"]
+        z["wert_gesamt"] = round((z["wert"] or 0) + teil["wert"], 2)
+        z["eigenkapital_gesamt"] = (
+            round(z["eigenkapital"] + teil["wert"], 2)
+            if z["eigenkapital"] is not None else teil["wert"])
 
 
 @router.get("/eigentuemer/uebersicht", response_model=None)
@@ -498,6 +561,9 @@ def eigentuemer_uebersicht(session: Session = Depends(get_session)) -> dict:
     staende: dict[int, list[Kreditstand]] = {}
     for s in session.exec(select(Kreditstand)).all():
         staende.setdefault(s.kredit_id, []).append(s)
+    # N146 — die PV-Anlagen je Objekt (höchstens eine). Nur gelesen.
+    anlagen = {a.objekt_id: a for a in session.exec(select(PVAnlage)).all()}
+    personen = {eid: e.name for eid, e in eigner.items()}
 
     # eid -> Liste der Objektzeilen
     je_eigner: dict[int, list[dict]] = {eid: [] for eid in eigner}
@@ -507,7 +573,7 @@ def eigentuemer_uebersicht(session: Session = Depends(get_session)) -> dict:
             [a for a in anteile_alle if a.objekt_id == oid],
             [k for k in kredite if k.objekt_id == oid],
             [m for m in mieten_alle if m.objekt_id == oid],
-            staende, heute)
+            staende, heute, anlagen.get(oid), personen)
         for eid, zeile in zurechnung.items():
             if eid in je_eigner:
                 je_eigner[eid].append(zeile)
@@ -517,18 +583,30 @@ def eigentuemer_uebersicht(session: Session = Depends(get_session)) -> dict:
 
     out = []
     for eid, e in eigner.items():
-        zeilen = sorted(je_eigner[eid], key=lambda z: -(z["wert"] or 0))
+        zeilen = sorted(je_eigner[eid], key=lambda z: -(z["wert_gesamt"] or 0))
         wert_bekannt = any(z["wert"] is not None for z in zeilen)
+        wert = summe(zeilen, "wert") if wert_bekannt else None
+        eigenkapital = summe(zeilen, "eigenkapital") if wert_bekannt else None
+        # N146 — der Anlagenanteil summiert sich neben dem Immobilienwert.
+        # `wert`/`eigenkapital` bleiben die Immobilie allein: an ihnen hängen
+        # Beleihungsquote und Investitionsspielraum, und eine PV-Anlage ist
+        # nichts, was eine Bank beleiht.
+        pv_wert = summe(zeilen, "pv_wert")
         out.append({
             "id": eid, "name": e.name,
             "objekte": zeilen,
             "gesamt": {
                 "objekte": len(zeilen),
-                "wert": summe(zeilen, "wert") if wert_bekannt else None,
+                "wert": wert,
                 "restschuld": summe(zeilen, "restschuld"),
                 "guthaben": summe(zeilen, "guthaben"),
-                "eigenkapital": summe(zeilen, "eigenkapital") if wert_bekannt else None,
+                "eigenkapital": eigenkapital,
                 "miete_jahr": summe(zeilen, "miete_jahr"),
+                "pv_wert": pv_wert,
+                "wert_gesamt": (round((wert or 0) + pv_wert, 2)
+                                if wert_bekannt or pv_wert else None),
+                "eigenkapital_gesamt": (round((eigenkapital or 0) + pv_wert, 2)
+                                        if wert_bekannt or pv_wert else None),
             },
         })
     return {"eigentuemer": out}

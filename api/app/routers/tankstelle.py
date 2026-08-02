@@ -12,11 +12,16 @@ Was hier passiert — und was ausdrücklich nicht:
   bleibt das Datenmodell unangetastet: keine neue Tabelle, keine neue Spalte,
   kein Migrationsschritt. Gelöscht wird nur, was der Nutzer selbst löscht.
 * **Der Monatsverlauf** kommt aus der openWB-Wallbox (`app.openwb`, N130): je
-  Ladung Datum, Energie und die Anteile Netz/Speicher/PV. „extern" ist der
-  Netzbezug, „eigen" sind Speicher + PV zusammen. Ist die Box weg oder das
-  Modul (noch) nicht da, fällt die Auswertung auf die **erfassten**
+  Ladung Datum, Energie und die drei Blöcke **Netz · PV · Akku** (N143). Sie
+  bleiben einzeln stehen, weil der Nutzer seine Stromkosten über genau diese
+  drei rechnet; „eigen" (PV + Akku) ist nur die bequeme Summe. Ist die Box weg
+  oder das Modul (noch) nicht da, fällt die Auswertung auf die **erfassten**
   `Tankladung`-Datensätze zurück — mit ehrlichem Hinweis, welche Quelle gerade
   spricht. Nie eine stille Null.
+* **Der Verlauf läuft über alles** (N143): ohne Zeitraumangabe reicht er vom
+  ersten bis zum letzten Monat, in dem überhaupt geladen wurde — nicht über
+  ein Kalenderjahr. Aus denselben Daten kommt die Liste der Jahre **mit**
+  Verbrauch; leere Jahre gehören in keine Auswahl.
 * **Die Abrechnung je Nutzer** kommt immer aus den erfassten `Tankladung`-Sätzen:
   die Wallbox weiß, wie viel geladen wurde, aber nicht von wem. Der Satz je kWh
   steht in `Stromjahr.tanken_preis` und wird hier **nur gelesen**.
@@ -75,6 +80,11 @@ TIMEOUT = 8.0
 # Ein Verlauf über mehr als zehn Jahre ist eine Fehleingabe, kein Wunsch.
 MAX_MONATE = 120
 
+# Wie weit zurück nach Ladungen gesucht wird, wenn niemand einen Zeitraum
+# nennt. Ein Jahr ohne Ladungen beantwortet die Box mit der blossen Kopfzeile —
+# der Blick zurück kostet im Heimnetz Millisekunden.
+RUECKBLICK_JAHRE = 9
+
 MONATSKURZ = ("Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
               "Jul", "Aug", "Sep", "Okt", "Nov", "Dez")
 
@@ -89,11 +99,27 @@ class Posten:
 
     `extern_kwh`/`eigen_kwh` sind ``None``, solange niemand weiß, woher der
     Strom kam — dann zeigt die Oberfläche die Menge ohne Aufteilung statt
-    einer erfundenen 0."""
+    einer erfundenen 0.
+
+    `pv_kwh` und `speicher_kwh` teilen den eigenen Strom in die beiden Blöcke
+    auf, über die der Nutzer abrechnet (N143). Nur die Wallbox kennt sie; die
+    aus Jahreswerten übertragene Schätzung kennt bloß „eigen" und lässt sie
+    ``None``. `rest_kwh` sagt, wie viel davon über die Rest-Regel in den
+    PV-Block kam — die Menge wird nicht verwischt, nur nicht mehr als eigener
+    Topf gezeigt."""
     tag: date
     kwh: float
     extern_kwh: float | None = None
     eigen_kwh: float | None = None
+    pv_kwh: float | None = None
+    speicher_kwh: float | None = None
+    rest_kwh: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Wer die beiden Blöcke nennt, muss „eigen" nicht auch noch nennen."""
+        if self.eigen_kwh is None and None not in (self.pv_kwh,
+                                                   self.speicher_kwh):
+            self.eigen_kwh = self.pv_kwh + self.speicher_kwh
 
 
 @dataclass
@@ -152,21 +178,27 @@ def _prozent(teil: float, ganz: float) -> float | None:
 
 
 def verlauf(posten: list[Posten], von: date, bis: date) -> list[dict]:
-    """Je Monat: wie viel geladen wurde und in welchen Anteilen.
+    """Je Monat: wie viel geladen wurde und in welchen Blöcken.
 
     Gefiltert wird über den Tag der Ladung (beide Ränder zählen). Kennt auch
     nur eine Ladung des Monats ihre Herkunft nicht, gilt die Aufteilung des
     Monats als unvollständig (`aufteilung: false`) — dann steht die Menge da,
-    aber keine Prozentzahl, die niemand belegen kann.
+    aber keine Prozentzahl, die niemand belegen kann. Kennt der Monat zwar
+    Netz und eigen, aber nicht die Trennung PV/Akku, steht `dreiteilig` auf
+    ``false``; das ist der Fall bei der aus Jahreswerten übertragenen
+    Schätzung.
 
-    Was weder Netz noch eigener Strom trägt, steht als `rest_kwh` **getrennt**
-    da. Die Wallbox schreibt gelegentlich 0 % in alle vier Anteile (gesehen am
-    12.07.2026, 49,88 kWh); diese Menge dem Netz zuzuschlagen wäre eine
-    Behauptung, sie zu unterschlagen ein Loch in der Summe."""
+    kWh, die die Wallbox keinem Anteil zuordnet, zählen zum **PV-Block** und
+    damit zum eigenen Strom (N143, Entscheidung des Nutzers). Sie stecken
+    bereits in `pv_kwh`/`eigen_kwh`; `rest_kwh` sagt, wie viel auf diesem Weg
+    dazukam. Ein eigener Topf „nicht zugeordnet" entsteht daraus nicht mehr —
+    dafür gilt wieder ``Netz + eigen == geladen``."""
     eimer: dict[tuple[int, int], dict] = {
         (j, m): {"jahr": j, "monat": m, "kurz": MONATSKURZ[m - 1],
                  "label": f"{MONATSKURZ[m - 1]} {j}", "anzahl": 0, "kwh": 0.0,
-                 "extern_kwh": 0.0, "eigen_kwh": 0.0, "aufteilung": True}
+                 "extern_kwh": 0.0, "eigen_kwh": 0.0, "pv_kwh": 0.0,
+                 "speicher_kwh": 0.0, "rest_kwh": 0.0,
+                 "aufteilung": True, "dreiteilig": True}
         for j, m in monatsfolge(von, bis)}
 
     for p in posten:
@@ -180,25 +212,38 @@ def verlauf(posten: list[Posten], von: date, bis: date) -> list[dict]:
             eimer_monat["anzahl"] += 1
         if p.extern_kwh is None or p.eigen_kwh is None:
             eimer_monat["aufteilung"] = False
+            eimer_monat["dreiteilig"] = False
+            continue
+        eimer_monat["extern_kwh"] += p.extern_kwh
+        eimer_monat["eigen_kwh"] += p.eigen_kwh
+        eimer_monat["rest_kwh"] += p.rest_kwh
+        if p.pv_kwh is None or p.speicher_kwh is None:
+            eimer_monat["dreiteilig"] = False
         else:
-            eimer_monat["extern_kwh"] += p.extern_kwh
-            eimer_monat["eigen_kwh"] += p.eigen_kwh
+            eimer_monat["pv_kwh"] += p.pv_kwh
+            eimer_monat["speicher_kwh"] += p.speicher_kwh
 
-    zeilen: list[dict] = []
-    for schluessel in monatsfolge(von, bis):
-        m = eimer[schluessel]
-        kwh = round(m["kwh"], 2)
-        offen = not m["aufteilung"]
-        extern = None if offen else round(m["extern_kwh"], 2)
-        eigen = None if offen else round(m["eigen_kwh"], 2)
-        rest = None if offen else round(kwh - extern - eigen, 2)
-        zeilen.append({
-            **m, "kwh": kwh, "extern_kwh": extern, "eigen_kwh": eigen,
-            "rest_kwh": rest,
-            "extern_prozent": None if offen else _prozent(extern or 0.0, kwh),
-            "eigen_prozent": None if offen else _prozent(eigen or 0.0, kwh),
-            "rest_prozent": None if offen else _prozent(rest or 0.0, kwh)})
-    return zeilen
+    return [_monatszeile(eimer[s]) for s in monatsfolge(von, bis)]
+
+
+def _monatszeile(m: dict) -> dict:
+    """Ein gefüllter Eimer als Ausgabezeile — gerundet, mit Prozenten."""
+    kwh = round(m["kwh"], 2)
+    offen = not m["aufteilung"]
+    grob = not m["dreiteilig"]
+
+    def menge(name: str, unbekannt: bool) -> float | None:
+        return None if unbekannt else round(m[name], 2)
+
+    werte = {"extern_kwh": menge("extern_kwh", offen),
+             "eigen_kwh": menge("eigen_kwh", offen),
+             "rest_kwh": menge("rest_kwh", offen),
+             "pv_kwh": menge("pv_kwh", grob),
+             "speicher_kwh": menge("speicher_kwh", grob)}
+    prozente = {name.replace("_kwh", "_prozent"):
+                None if wert is None else _prozent(wert, kwh)
+                for name, wert in werte.items()}
+    return {**m, "kwh": kwh, **werte, **prozente}
 
 
 def verlauf_summe(zeilen: list[dict]) -> dict:
@@ -210,17 +255,23 @@ def verlauf_summe(zeilen: list[dict]) -> dict:
     Hundertstel-kWh abweichen."""
     kwh = round(sum(z["kwh"] for z in zeilen), 2)
     vollstaendig = all(z["aufteilung"] for z in zeilen)
-    extern = (round(sum(z["extern_kwh"] or 0.0 for z in zeilen), 2)
-              if vollstaendig else None)
-    eigen = (round(sum(z["eigen_kwh"] or 0.0 for z in zeilen), 2)
-             if vollstaendig else None)
-    rest = None if extern is None else round(kwh - extern - eigen, 2)
+    dreiteilig = all(z["dreiteilig"] for z in zeilen)
+
+    def summe(name: str, unbekannt: bool) -> float | None:
+        return (None if unbekannt
+                else round(sum(z[name] or 0.0 for z in zeilen), 2))
+
+    werte = {"extern_kwh": summe("extern_kwh", not vollstaendig),
+             "eigen_kwh": summe("eigen_kwh", not vollstaendig),
+             "rest_kwh": summe("rest_kwh", not vollstaendig),
+             "pv_kwh": summe("pv_kwh", not dreiteilig),
+             "speicher_kwh": summe("speicher_kwh", not dreiteilig)}
+    prozente = {name.replace("_kwh", "_prozent"):
+                None if wert is None else _prozent(wert, kwh)
+                for name, wert in werte.items()}
     return {"anzahl": sum(z["anzahl"] for z in zeilen), "kwh": kwh,
-            "extern_kwh": extern, "eigen_kwh": eigen, "rest_kwh": rest,
-            "extern_prozent": None if extern is None else _prozent(extern, kwh),
-            "eigen_prozent": None if eigen is None else _prozent(eigen, kwh),
-            "rest_prozent": None if rest is None else _prozent(rest, kwh),
-            "aufteilung": vollstaendig}
+            **werte, **prozente,
+            "aufteilung": vollstaendig, "dreiteilig": dreiteilig}
 
 
 def schluessel(name: str) -> str:
@@ -510,7 +561,8 @@ def wallbox_posten(session: Session, von: date,
         log.info("E-Tankstelle: Wallbox nicht auswertbar — %s", fehler)
         return [], str(fehler)
     return [Posten(tag=l.tag, kwh=l.kwh, extern_kwh=l.extern_kwh,
-                   eigen_kwh=l.eigen_kwh)
+                   pv_kwh=l.pv_kwh, speicher_kwh=l.speicher_kwh,
+                   rest_kwh=l.rest_kwh)
             for l in alle if von <= l.tag <= bis], ""
 
 
@@ -613,67 +665,128 @@ def _zeitraum(jahr: int, quartal: int, von: date | None,
         raise HTTPException(400, str(fehler)) from fehler
 
 
+def suchfenster(heute: date | None = None) -> tuple[date, date]:
+    """Das Fenster, in dem nach Ladungen gesucht wird, wenn niemand einen
+    Zeitraum nennt.
+
+    Bewusst grosszügig und trotzdem endlich: `RUECKBLICK_JAHRE` zurück bis zum
+    Ende des laufenden Jahres. Die Wallbox beantwortet ein Jahr ohne Ladungen
+    mit der blossen Kopfzeile — der Rückblick kostet fast nichts."""
+    jetzt = heute or date.today()
+    return date(jetzt.year - RUECKBLICK_JAHRE, 1, 1), date(jetzt.year, 12, 31)
+
+
+def belegte_spanne(posten: list[Posten],
+                   ersatz: tuple[date, date]) -> tuple[date, date]:
+    """Vom ersten bis zum letzten Monat mit einer Ladung — volle Monate.
+
+    Ohne eine einzige Ladung bleibt `ersatz` stehen: eine leere Grafik über
+    zehn Jahre wäre keine Auskunft, das laufende Jahr schon."""
+    tage = [p.tag for p in posten if p.tag and p.kwh > 0]
+    if not tage:
+        return ersatz
+    erster, letzter = min(tage), max(tage)
+    return (date(erster.year, erster.month, 1),
+            date(letzter.year, letzter.month,
+                 monthrange(letzter.year, letzter.month)[1]))
+
+
+def jahre_mit_verbrauch(posten: list[Posten]) -> list[int]:
+    """Die Jahre, in denen wirklich geladen wurde — aufsteigend.
+
+    Grundlage der Jahresauswahl: ein Jahr ohne eine einzige Kilowattstunde
+    gehört in keine Liste (N143)."""
+    return sorted({p.tag.year for p in posten if p.tag and p.kwh > 0})
+
+
+def _posten_holen(session: Session, o: Objekt, von: date,
+                  bis: date) -> tuple[list[Posten], str, str]:
+    """Die Ladungen eines Zeitraums — Wallbox zuerst, sonst die erfassten.
+
+    Liefert ``(posten, quelle, hinweis)``. `quelle` ist „wallbox", „erfasst"
+    oder „leer"; der Hinweis sagt, warum die Box nicht sprach. Nie eine stille
+    Null."""
+    posten, grund = wallbox_posten(session, von, bis)
+    if posten:
+        return posten, "wallbox", ""
+    ersatz, geschaetzt = erfasste_posten(session, o.id, von, bis)
+    hinweis = ""
+    if grund:
+        hinweis = (f"{grund} Gezeigt werden die erfassten Ladungen."
+                   if ersatz else grund)
+    if geschaetzt:
+        hinweis = (hinweis + " Die Aufteilung Netz/eigen ist aus den "
+                   "Jahreswerten übertragen; PV und Akku lassen sich daraus "
+                   "nicht trennen.").strip()
+    return ersatz, ("erfasst" if ersatz else "leer"), hinweis
+
+
 @router.get("/{slug}/verlauf")
 def verlauf_zeigen(slug: str, jahr: int = Query(default=0),
                    quartal: int = Query(default=0),
                    von: date | None = None, bis: date | None = None,
+                   alles: bool = Query(default=False),
                    session: Session = Depends(get_session),
                    o: Objekt = Depends(objekt_holen)) -> dict:
-    """Der monatliche Verlauf: kWh je Monat, aufgeteilt in Netzbezug und
-    eigenen Strom (Speicher + PV), jeweils mit Prozentangabe.
+    """Der monatliche Verlauf: kWh je Monat in den drei Blöcken Netz, PV und
+    Akku, jeweils mit Prozentangabe.
+
+    Mit ``alles=1`` läuft er über **alle** Monate mit Verbrauch statt über ein
+    Kalenderjahr (N143); `jahre` nennt dann die Jahre, in denen überhaupt
+    geladen wurde — die Vorlage für die Jahresauswahl.
 
     Zuerst wird die Wallbox gefragt; meldet sie sich nicht, treten die
     erfassten Ladungen an ihre Stelle. Welche Quelle gesprochen hat, steht in
     `quelle` — die Zahlen sollen nie unerklärt springen."""
-    von, bis = _zeitraum(jahr or date.today().year, quartal, von, bis)
-    posten, grund = wallbox_posten(session, von, bis)
-    quelle, hinweis = "wallbox", ""
-    if not posten:
-        ersatz, geschaetzt = erfasste_posten(session, o.id, von, bis)
-        if grund:
-            hinweis = (f"{grund} Gezeigt werden die erfassten Ladungen."
-                       if ersatz else grund)
-        quelle = "erfasst" if ersatz else "leer"
-        posten = ersatz
-        if geschaetzt:
-            hinweis = (hinweis + " Die Aufteilung Netz/eigen ist aus den "
-                       "Jahreswerten übertragen.").strip()
+    if alles:
+        fenster = suchfenster()
+        posten, quelle, hinweis = _posten_holen(session, o, *fenster)
+        heute = date.today()
+        von, bis = belegte_spanne(posten,
+                                  (date(heute.year, 1, 1),
+                                   date(heute.year, 12, 31)))
+    else:
+        von, bis = _zeitraum(jahr or date.today().year, quartal, von, bis)
+        posten, quelle, hinweis = _posten_holen(session, o, von, bis)
 
     try:
         zeilen = verlauf(posten, von, bis)
     except ValueError as fehler:
         raise HTTPException(400, str(fehler)) from fehler
-    summe = verlauf_summe(zeilen)
-
-    # Die Wallbox schreibt gelegentlich 0 % in alle vier Anteile (gesehen am
-    # 12.07.2026). Diese Menge gehört weder in den einen noch in den anderen
-    # Topf — sie wird benannt, nicht verteilt.
-    if (summe["rest_kwh"] or 0) > 0.05:
-        hinweis = (f"{hinweis} {deutsch(summe['rest_kwh'])} kWh "
-                   f"({deutsch(summe['rest_prozent'] or 0.0, 1)} %) ordnet die "
-                   "Wallbox weder dem Netz noch der eigenen Anlage zu — die "
-                   "Energieanteile im Ladeprotokoll ergeben dort keine "
-                   "100 %.").strip()
 
     return {"objekt": o.name, "von": von.isoformat(), "bis": bis.isoformat(),
             "quelle": quelle, "hinweis": hinweis, "monate": zeilen,
-            "summe": summe}
+            "summe": verlauf_summe(zeilen),
+            "jahre": jahre_mit_verbrauch(posten)}
 
 
 def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
                 quartal: int) -> dict:
     """Die Abrechnung eines Zeitraums — von Vorschau, Liste und Versand
-    gemeinsam benutzt, damit alle drei dasselbe sagen."""
+    gemeinsam benutzt, damit alle drei dasselbe sagen.
+
+    Abgerechnet wird ausschliesslich, was einer Person zugeordnet ist: die
+    Wallbox weiss, wie viel geladen wurde, aber nicht von wem. Damit eine
+    Abrechnung über 0 € nicht rätselhaft bleibt, steht daneben, wie viel im
+    Zeitraum überhaupt geladen wurde (`geladen_kwh`) — die Lücke zwischen
+    beiden Zahlen ist die Antwort auf „wieso passiert da nichts" (N143)."""
     von, bis = _zeitraum(jahr, quartal, None, None)
     liste = nutzer_lesen(session, slug)
     satz = satz_fuer(session, o.id, jahr)
     zeilen = abrechne(buchungen(session, o.id, von, bis), liste, satz)
+    posten, quelle, _ = _posten_holen(session, o, von, bis)
+    summe = verlauf_summe(verlauf(posten, von, bis)) if posten else {}
+    zugeordnet = round(sum(z["kwh"] for z in zeilen), 3)
     return {"objekt": o.name, "jahr": jahr, "quartal": quartal,
             "label": zeitraum_label(jahr, quartal),
             "von": von.isoformat(), "bis": bis.isoformat(), "satz": satz,
             "nutzer": zeilen,
-            "kwh_gesamt": round(sum(z["kwh"] for z in zeilen), 3),
-            "betrag_gesamt": round(sum(z["betrag"] for z in zeilen), 2)}
+            "kwh_gesamt": zugeordnet,
+            "betrag_gesamt": round(sum(z["betrag"] for z in zeilen), 2),
+            "geladen_kwh": summe.get("kwh"), "quelle": quelle,
+            "offen_kwh": (None if not summe
+                          else round(summe["kwh"] - zugeordnet, 2)),
+            "eigen_prozent": summe.get("eigen_prozent")}
 
 
 @router.get("/{slug}/abrechnung")
@@ -696,21 +809,6 @@ def _zeile_holen(daten: dict, nutzer_id: int, name: str) -> dict:
     raise HTTPException(404, "Für diesen Nutzer gibt es keine Abrechnung.")
 
 
-def _eigen_prozent(session: Session, o: Objekt, von: date,
-                   bis: date) -> float | None:
-    """Wie viel des Ladestroms im Zeitraum aus der eigenen Anlage kam — für den
-    Satz in der Mail. Ist es unbekannt, steht der Satz einfach nicht da."""
-    posten, _ = wallbox_posten(session, von, bis)
-    if not posten:
-        posten, _ = erfasste_posten(session, o.id, von, bis)
-    if not posten:
-        return None
-    try:
-        return verlauf_summe(verlauf(posten, von, bis))["eigen_prozent"]
-    except ValueError:
-        return None
-
-
 @router.get("/{slug}/vorschau")
 def vorschau(slug: str, jahr: int = Query(default=0),
              quartal: int = Query(default=0), nutzer_id: int = Query(default=0),
@@ -725,7 +823,7 @@ def vorschau(slug: str, jahr: int = Query(default=0),
     return {"an": zeile["email"], "name": zeile["name"],
             "betreff": f"E-Tankstelle {o.name} — Abrechnung {daten['label']}",
             "text": abrechnungstext(o.name, zeile, von, bis, daten["label"],
-                                    _eigen_prozent(session, o, von, bis)),
+                                    daten["eigen_prozent"]),
             "betrag": zeile["betrag"], "kwh": zeile["kwh"],
             "label": daten["label"]}
 
@@ -763,7 +861,7 @@ def versenden(slug: str, data: VersandIn,
     bis = date.fromisoformat(daten["bis"])
     betreff = f"E-Tankstelle {o.name} — Abrechnung {daten['label']}"
     text = abrechnungstext(o.name, zeile, von, bis, daten["label"],
-                           _eigen_prozent(session, o, von, bis))
+                           daten["eigen_prozent"])
     try:
         zugang(session).sende(adresse, betreff, text)
     except MailFehler as fehler:

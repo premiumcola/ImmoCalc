@@ -549,11 +549,18 @@
     font:500 11.5px var(--body);line-height:1.45}
   .warnung b{font-weight:700}
 
-  /* ---- N58–N61: Zählerstände-Übersicht (Einklapper) --------------------- */
-  .zu-panel{background:var(--sheet);border-radius:14px;margin:2px 0 12px;
-    box-shadow:0 1px 2px rgba(22,38,44,.05);overflow:hidden}
+  /* ---- N58–N61: Zählerstände-Übersicht (Einklapper) ---------------------
+     N143 — die Zähler sind der Kostenposition darüber UNTERGEORDNET. Das zeigen
+     drei Dinge zusammen: die Einrückung, die Linie an der linken Kante und das
+     Zähler-Icon im Kopf. Auf schmalen Schirmen fällt die Einrückung kleiner aus
+     (Eingabefelder brauchen die Breite) — Linie und Icon tragen sie dort. */
+  .zu-panel{background:var(--sheet);border-radius:14px;margin:2px 0 12px 22px;
+    box-shadow:0 1px 2px rgba(22,38,44,.05),inset 3px 0 0 var(--teal-l);
+    overflow:hidden}
   .zu-sum{width:100%;display:flex;align-items:center;gap:10px;padding:14px 15px;
     background:none;border:none;cursor:pointer;text-align:left;min-height:52px}
+  .zu-ikon{flex:none;display:flex;width:19px;height:19px;color:var(--teal)}
+  .zu-ikon svg{width:19px;height:19px}
   .zu-st{font:700 13.5px var(--disp);letter-spacing:-.01em;color:var(--ink);flex:none}
   .zu-meta{flex:1;min-width:0;font:400 11px var(--body);color:var(--soft)}
   .zu-chev{flex:none;display:flex;color:var(--soft);transition:transform .18s}
@@ -561,6 +568,8 @@
   .zu-panel.offen .zu-chev{transform:rotate(180deg)}
   .zu-inhalt{display:none;padding:0 15px 12px}
   .zu-panel.offen .zu-inhalt{display:block}
+  @media(max-width:520px){ .zu-panel{margin-left:10px} .zu-sum{padding:13px 12px}
+    .zu-inhalt{padding:0 12px 12px} }
   .zu-block{margin-top:14px}
   .zu-bt{display:flex;align-items:center;gap:8px;font:700 12.5px var(--disp);
     color:var(--ink);margin-bottom:8px}
@@ -816,6 +825,43 @@
   .mchip.intern{color:var(--pos);background:var(--pos-bg)}
   .st-neu input[type=text]{flex:1 1 190px;width:auto;min-width:0}
   .st-neu select{flex:1 1 190px;min-width:0}
+
+  /* ---- N142: die Stromkette an der Strom-Kostenposition ------------------
+     Drei Schritte untereinander, jeder mit einer kleinen Tabelle: was
+     hineingeht und was herauskommt. Rahmen und Scroll-Mechanik wie in der
+     Wasser-Detailtabelle (.wd-scroll/.wd-tab), damit beide gleich lesen. */
+  .sk-box{margin:0 0 14px}
+  .sk-schritt{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  .sk-schritt:first-child{margin-top:0;padding-top:0;border-top:none}
+  .sk-kopf{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;
+    margin-bottom:8px}
+  .sk-nr{flex:none;display:inline-flex;align-items:center;justify-content:center;
+    width:20px;height:20px;border-radius:50%;background:var(--teal-l);
+    color:var(--teal-d);font:700 10.5px var(--mono);align-self:center}
+  .sk-t{font:700 12.5px var(--disp);color:var(--ink)}
+  .sk-h{font:500 10.5px var(--mono);color:var(--soft)}
+  .sk-quelle{display:block;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.5;margin:8px 0 0}
+  .sk-quelle b{color:var(--ink);font-weight:600}
+  .sk-felder{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .sk-feld{flex:1 1 92px;min-width:0;display:flex;flex-direction:column;gap:4px}
+  .sk-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft)}
+  .sk-feld input{width:100%;min-width:0;border:1.5px solid var(--line);
+    border-radius:10px;padding:9px 10px;min-height:44px;background:var(--sheet);
+    text-align:right;font:600 12px var(--mono);color:var(--ink)}
+  .sk-feld input:focus{outline:none;border-color:var(--teal)}
+  .sk-feld.fest span{display:block;padding:9px 10px;min-height:44px;
+    border-radius:10px;background:var(--paper);text-align:right;
+    font:600 12px var(--mono);color:var(--ink)}
+  .sk-tab td.sk-q{font:600 8.5px var(--mono);letter-spacing:.04em;
+    text-transform:uppercase;color:var(--soft);text-align:left}
+  .sk-kontrolle{display:flex;flex-wrap:wrap;justify-content:space-between;
+    gap:6px 16px;margin-top:12px;padding-top:10px;border-top:2px solid var(--line);
+    font:500 12px var(--body);color:var(--soft)}
+  .sk-kontrolle b{color:var(--ink);font-weight:700}
+  .sk-kontrolle .ok{color:var(--pos)}
+  .sk-kontrolle .fehl{color:var(--neg)}
 
   .pdflink{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
     background:#F1F4F4;color:var(--ink);border-radius:10px;padding:9px 12px;
@@ -1159,6 +1205,14 @@ const CHEV_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
   aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
 
+/* N143 — Zählerscheibe mit Zeiger: das Erkennungszeichen der Zählerstände-
+   Blöcke (Wasser, Heizung, Strom). Flacher Strich-Stil wie die übrigen Icons. */
+const ZAEHLER_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true"><rect x="3.2" y="4.2" width="17.6" height="15.6" rx="3.2"/>
+  <circle cx="12" cy="12" r="4.3"/><path d="M12 12 14.4 9.9"/>
+  <path d="M7.2 12h-.9"/><path d="M17.7 12h-.9"/></svg>`;
+
 /* Kleine Symbole für den Verteilungsschlüssel-Chip an der Zeile — flacher
    Strich-Stil wie kostenicons.js, aber winzig (12 px), damit „nach Fläche"
    auf einen Blick als Aufteilung lesbar wird. */
@@ -1437,6 +1491,18 @@ function istWasserSammel(k) {
       || n.includes('kaltwasser') || n.includes('warmwasser')) return false;
   return n === 'wasser' || n === 'frischwasser' || n === 'trinkwasser';
 }
+
+/* N142 — die Stromkette hängt an genau EINER Zeile: der obersten Strom-Position
+   der Checkliste. Sonst stünde dieselbe Kette mehrfach da (Netzbezug und
+   Eigenverbrauch sind zwei Positionen derselben Rechnung). */
+function istStromKettePos(k) {
+  return istStromPos(k) && (daten.checkliste || []).find(istStromPos) === k;
+}
+
+/* Das Panel, in das `fuelleStromketteInline` die drei Schritte lädt. */
+const stromKetteHtml = k => istStromKettePos(k)
+  ? `<div class="sk-inline" data-strom-kette="${zid}">
+      <div class="wd-lade">Stromkette wird geladen …</div></div>` : '';
 
 /* N89 — die Strom-Position: der Strombetrag je Einheit entsteht in der
    PV-/Strom-Rechnung (eigene Seite, je Objekt und Jahr) und fließt hier in die
@@ -1876,6 +1942,7 @@ function zaehlerPanelHtml(block, zaehler, blockVon) {
   const abweichend = teil.filter(z => interpolationsHinweise(z, '').length).length;
   return `<div class="zu-panel${offen ? ' offen' : ''}" data-zu-block="${esc(block)}">
     <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${offen}">
+      <span class="zu-ikon">${ZAEHLER_ICON}</span>
       <span class="zu-st">Zählerstände</span>
       <span class="zu-meta">${teil.length
         ? `${teil.length} Zähler${abweichend ? ` · ${abweichend} umgerechnet` : ''}`
@@ -2287,13 +2354,16 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
     // dann die Belege, zuletzt der Fuß.
     // N122 — an einer Strom-Position steht dazwischen, wie viele kWh der Betrag
     // deckt und woher der Strom kam (Netzbezug oder eigene Anlage).
+    // N142 — an der obersten Strom-Position steht darunter die ganze Kette:
+    // kWh → Euro → Abzug E-Tankstelle → Verteilung auf die Einheiten.
     koerper = `${kostenartFeld}${anbieterFeld}${stromPosFeldHtml(k)}
-      ${verteilungHtml(k)}${belege}
+      ${stromKetteHtml(k)}${verteilungHtml(k)}${belege}
       <div class="kartenfuss">${fuss}</div>`;
   } else if (auf) {
     // Katalog-Kostenart ohne Position: hier entsteht sie (nicht bei Wasser —
-    // die kann nur per PDF-Upload entstehen, N74).
-    koerper = `<div class="betragfeld">
+    // die kann nur per PDF-Upload entstehen, N74). Beim Strom zeigt die Kette
+    // schon hier, was noch fehlt, damit die Rechnung nicht blind entsteht.
+    koerper = `${stromKetteHtml(k)}<div class="betragfeld">
         <input type="number" step="0.01" placeholder="Betrag (optional)"
                data-neubetrag="${i}" aria-label="Betrag für ${esc(k.kostenart)}"></div>
       <div class="kartenfuss">
@@ -2643,6 +2713,8 @@ async function zeichnen() {
     inhalt.querySelectorAll('[data-wasser-inline]').forEach(fuelleWasserInline);
     // N79 — die aufgeklappte Heizöl-Position lädt ihren Öl-Manager inline.
     inhalt.querySelectorAll('[data-heizoel-inline]').forEach(fuelleHeizoelInline);
+    // N142 — die aufgeklappte Strom-Position lädt ihre Verrechnungskette.
+    inhalt.querySelectorAll('[data-strom-kette]').forEach(fuelleStromketteInline);
   }
 }
 
@@ -3326,21 +3398,205 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
 // N113 - nach welchem Schluessel der Haupthaus-Rest verteilt wird. Der Nutzer
 // schaltet oben in der Detailansicht um; die Wahl gilt fuer die Anzeige.
 let wasserSchluessel = 'personen';
-// N116 - die vom Versorger abgerechnete Menge (aus dem Bescheid). Ist sie
-// gesetzt, rechnet die Verteilung damit statt mit dem eigenen Zaehlerstand.
-let wasserRechnungM3 = '';
+
+/* N116/N144 — die vom Versorger abgerechnete Menge (aus dem Bescheid) steht
+   jetzt AM ZEITRAUM und wird serverseitig gehalten. Sie hielt vorher nur im
+   Speicher der Seite und war nach jedem Neuladen wieder weg. Ein leerer Wert
+   löscht die Angabe. */
+async function wasserRechnungsmengeSpeichern(feld) {
+  const wert = (feld.value || '').trim();
+  try {
+    await api(`/zeitraeume/${zid}/wasser/rechnungsmenge`,
+      { method: 'PUT', body: { rechnung_m3: wert === '' ? null : Number(wert) } });
+    const box = feld.closest('[data-wasser-inline]');
+    if (box) await fuelleWasserInline(box);
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
 
 async function fuelleWasserInline(el) {
   try {
     const d = await api(`/zeitraeume/${el.dataset.wasserInline}/wasser`
-      + `?schluessel=${wasserSchluessel}`
-      + (wasserRechnungM3 ? `&rechnung_m3=${wasserRechnungM3}` : ''));
+      + `?schluessel=${wasserSchluessel}`);
     wasserDetailCache = d;
     el.innerHTML = wasserDetailInhalt(d);
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Detailübersicht nicht ladbar: ${
       esc(String(fehler.message || fehler))}</div>`;
   }
+}
+
+/* ---- N142: die Stromkette — kWh → Euro → E-Tankstelle → Einheiten --------
+   Drei Schritte untereinander, jeder mit dem, was hineingeht und was heraus-
+   kommt. Gerechnet wird im Backend (GET /zeitraeume/{zid}/stromkette); hier
+   steht nur die Darstellung und die Eingabe der drei SolarEdge-Anteile. */
+
+/* Prozent mit einer Nachkommastelle, ohne überflüssige Null. */
+const skProz = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+/* Ein Preis als ct/kWh — die Einheit, in der Stromrechnungen gelesen werden. */
+const skCt = n => `${((n ?? 0) * 100).toLocaleString('de-DE',
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ct`;
+
+/* Die drei Blöcke in fester Reihenfolge — teuer nach günstig, wie im Backend. */
+const SK_BLOECKE = [['netz', 'Netz', 'zugekauft'], ['pv', 'PV direkt', 'vom Dach'],
+  ['akku', 'Akku', 'aus dem Speicher']];
+
+async function fuelleStromketteInline(el) {
+  try {
+    const d = await api(`/zeitraeume/${zid}/stromkette`);
+    // Der Gesamtverbrauch bleibt am Panel: aus ihm rechnet das Speichern die
+    // eingetippten Prozente wieder in Mengen zurück.
+    el.dataset.gesamtKwh = d.schritt1.gesamt_kwh || 0;
+    el.innerHTML = stromketteInhalt(d);
+  } catch (fehler) {
+    el.innerHTML = `<div class="wd-lade">Stromkette nicht ladbar: ${
+      esc(String(fehler.message || fehler))}</div>`;
+  }
+}
+
+/* Schritt 1 — aus den drei Anteilen und der Rechnung werden Euro. Die Prozente
+   sind hier eingebbar: gespeichert werden sie als die drei Mengen am Strom-Jahr
+   (netz_kwh/solar_kwh/akku_kwh), aus denen sie sich wieder ergeben. */
+function skSchritt1(d) {
+  const s = d.schritt1;
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const feld = (schluessel, label, wert) => bearbeitbar
+    ? `<div class="sk-feld"><label>${label}</label>
+        <input type="text" inputmode="decimal" data-sk-anteil="${schluessel}"
+          value="${wert ? skProz(wert) : ''}" placeholder="%"
+          aria-label="${label} in Prozent"></div>`
+    : `<div class="sk-feld fest"><label>${label}</label>
+        <span>${wert ? `${skProz(wert)} %` : '—'}</span></div>`;
+  const zeilen = SK_BLOECKE.map(([k, titel, sub]) => `<tr>
+      <td class="wd-rowh">${titel}<small>${sub}</small></td>
+      <td><span class="wd-m3">${zahl(s[k].kwh)} kWh</span>
+        <span class="wd-eur">${skProz(s[`${k === 'akku' ? 'speicher' : k}_prozent`])} %</span></td>
+      <td><span class="wd-m3">${skCt(s[k].preis)}</span>
+        <span class="wd-eur">je kWh</span></td>
+      <td><span class="wd-m3">${eur(s[k].betrag)}</span></td></tr>`).join('');
+  const quelle = [s.quelle_menge && `Menge: <b>${esc(s.quelle_menge)}</b>`,
+    s.quelle_betrag && `Netz: <b>${esc(s.quelle_betrag)}</b>`,
+    s.quelle_eigen && `Eigener Strom: <b>${esc(s.quelle_eigen)}</b>`]
+    .filter(Boolean).join(' · ');
+  return `<div class="sk-schritt">
+      <div class="sk-kopf"><span class="sk-nr">1</span><span class="sk-t">Aus kWh
+        werden Euro</span><span class="sk-h">${zahl(s.gesamt_kwh)} kWh im Zeitraum</span></div>
+      <div class="sk-felder">${feld('netz', 'Netz', s.netz_prozent)}${
+        feld('pv', 'PV direkt', s.pv_prozent)}${
+        feld('akku', 'Speicher', s.speicher_prozent)}</div>
+      <div class="wd-scroll"><table class="wd-tab sk-tab"><thead><tr>
+        <th class="wd-rowh">Quelle</th><th>Menge</th><th>Preis</th><th>Kosten</th>
+      </tr></thead><tbody>${zeilen}</tbody>
+      <tfoot><tr class="wd-summe"><td class="wd-rowh">Summe</td>
+        <td><span class="wd-m3">${zahl(s.gesamt_kwh)} kWh</span></td><td></td>
+        <td><span class="wd-m3">${eur(s.betrag)}</span></td></tr></tfoot>
+      </table></div>
+      ${quelle ? `<span class="sk-quelle">${quelle}</span>` : ''}</div>`;
+}
+
+/* Schritt 2 — die Ladungen der Periode gehen vorab ab. Sie werden aus dem
+   Bereich E-Tankstelle gezogen (Wallbox-Protokoll, sonst erfasste Ladungen)
+   und dürfen NICHT auf die Bewohner der Einheiten verteilt werden. */
+function skSchritt2(d) {
+  const s = d.schritt2;
+  if (!s.eauto_kwh) {
+    return `<div class="sk-schritt">
+      <div class="sk-kopf"><span class="sk-nr">2</span><span class="sk-t">Abzug
+        E-Tankstelle</span></div>
+      <div class="zu-kein">Im Zeitraum wurde nichts geladen${
+        s.quelle_text ? ` — ${esc(s.quelle_text)}` : ''}. Es geht nichts ab.</div>
+    </div>`;
+  }
+  const spalten = SK_BLOECKE.map(([, titel]) => `<th>${titel}</th>`).join('');
+  const mengen = SK_BLOECKE.map(([k]) =>
+    `<td><span class="wd-m3">${zahl(s[`${k}_kwh`])} kWh</span></td>`).join('');
+  return `<div class="sk-schritt">
+      <div class="sk-kopf"><span class="sk-nr">2</span><span class="sk-t">Abzug
+        E-Tankstelle</span><span class="sk-h">${esc(s.quelle_text)}</span></div>
+      <div class="wd-scroll"><table class="wd-tab sk-tab"><thead><tr>
+        <th class="wd-rowh">${esc(s.einheit)}</th>${spalten}<th>Summe</th>
+      </tr></thead><tbody>
+        <tr><td class="wd-rowh">Menge<small>geladen</small></td>${mengen}
+          <td><span class="wd-m3">${zahl(s.eauto_kwh)} kWh</span></td></tr>
+        <tr class="wd-summe"><td class="wd-rowh">Kosten</td>
+          <td colspan="3">exakt zu den Preisen der drei Blöcke</td>
+          <td><span class="wd-m3">${eur(s.betrag)}</span></td></tr>
+      </tbody></table></div>
+      <span class="sk-quelle">Diese Menge geht <b>vorab</b> ab und wird
+        <b>nicht</b> auf die Bewohner der Einheiten verteilt — das Auto lädt für
+        sich. Wer geladen hat, spielt hier keine Rolle; das steht im Bereich
+        E-Tankstelle.</span></div>`;
+}
+
+/* Schritt 3 — der Rest nach den Zählerwerten, jede Einheit mit demselben
+   Mischpreis aus allen drei Blöcken. */
+function skSchritt3(d) {
+  const s = d.schritt3;
+  const namen = Object.keys(s.je_einheit);
+  if (!namen.length) {
+    return `<div class="sk-schritt">
+      <div class="sk-kopf"><span class="sk-nr">3</span><span class="sk-t">Verteilung
+        auf die Einheiten</span></div>
+      <div class="zu-kein">Noch keine Einheit mit Zählerwert — die Zuordnung
+        bitte an den Stromzählern nachtragen.</div></div>`;
+  }
+  const zeile = (titel, sub, zellen) => `<tr>
+    <td class="wd-rowh">${titel}${sub ? `<small>${sub}</small>` : ''}</td>${zellen}</tr>`;
+  const menge = k => namen.map(n =>
+    `<td><span class="wd-m3">${zahl(s.je_einheit[n][k])} kWh</span></td>`).join('');
+  return `<div class="sk-schritt">
+      <div class="sk-kopf"><span class="sk-nr">3</span><span class="sk-t">Verteilung
+        auf die Einheiten</span><span class="sk-h">nach Zählerwerten</span></div>
+      <div class="wd-scroll"><table class="wd-tab sk-tab"><thead><tr>
+        <th class="wd-rowh">Verbrauch</th>${namen.map(n =>
+          `<th>${esc(n)}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${zeile('Menge', 'nach Zähler', menge('kwh'))}
+        ${zeile('davon Netz', '', menge('netz_kwh'))}
+        ${zeile('davon PV', '', menge('pv_kwh'))}
+        ${zeile('davon Akku', '', menge('akku_kwh'))}
+        <tr class="wd-summe"><td class="wd-rowh">Kosten</td>${namen.map(n =>
+          `<td><span class="wd-m3">${eur(s.je_einheit[n].betrag)}</span></td>`).join('')}</tr>
+      </tbody></table></div>
+      ${(s.ohne_einheit || []).length ? `<span class="sk-quelle">Ohne Einheit:
+        ${s.ohne_einheit.map(o => `<b>${esc(o.zaehler)}</b> ${zahl(o.kwh)} kWh`)
+          .join(' · ')}</span>` : ''}</div>`;
+}
+
+function stromketteInhalt(d) {
+  const k = d.kontrolle || {};
+  const warn = (d.warnungen || []).map(t =>
+    `<div class="ho-warn">▲ ${esc(t)}</div>`).join('');
+  const quote = d.eigenverbrauchsquote
+    ? ` · eigener Strom <b>${Math.round(d.eigenverbrauchsquote * 100)} %</b>` : '';
+  return `<div class="sk-box">${skSchritt1(d)}${skSchritt2(d)}${skSchritt3(d)}
+    <div class="sk-kontrolle">
+      <span>Verteilt <b>${eur(k.verteilt)}</b> von <b>${eur(k.schritt1_betrag)}</b>${quote}</span>
+      <span class="${k.stimmt ? 'ok' : 'fehl'}">${k.stimmt
+        ? '✓ Kontrollsumme stimmt'
+        : `▲ Abweichung ${eur(k.differenz)}`}</span>
+    </div>${warn}</div>`;
+}
+
+/* Einen der drei SolarEdge-Anteile speichern. Ein eigenes Prozentfeld gibt es
+   im Datenmodell nicht — gespeichert werden die Mengen (Anteil × Gesamt), aus
+   denen die Prozente wieder hervorgehen. */
+async function stromAnteilSpeichern(feld) {
+  const wert = parseFloat(String(feld.value || '').replace(',', '.'));
+  const box = feld.closest('[data-strom-kette]');
+  if (!box || Number.isNaN(wert) || wert < 0) return;
+  const gesamt = Number(box.dataset.gesamtKwh) || 0;
+  if (!gesamt) {
+    return melde('Ohne Gesamtverbrauch lässt sich der Anteil nicht umrechnen — '
+      + 'bitte zuerst den Stromzähler ablesen.', 'neg');
+  }
+  const spalte = { netz: 'netz_kwh', pv: 'solar_kwh', akku: 'akku_kwh' }[
+    feld.dataset.skAnteil];
+  try {
+    await api(`/objekte/${encodeURIComponent(daten.objekt)}/strom/${
+      daten.jahr}`, { method: 'PUT',
+      body: { [spalte]: Math.round(gesamt * wert / 100 * 1000) / 1000 } });
+    await fuelleStromketteInline(box);
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
 /* Die Auswahlfelder werden nach dem Zeichnen gesetzt: sie bestehen aus
@@ -4022,14 +4278,14 @@ inhalt.addEventListener('change', e => {
   if (e.target.matches('[data-strom-rolle-set]')) stromRolleSetzen(e.target);
   // N122 — die kWh-Menge hinter dem Betrag einer Strom-Position.
   if (e.target.matches('[data-strom-menge]')) stromMengeSpeichern(e.target);
+  // N142 — einer der drei SolarEdge-Anteile in der Stromkette.
+  if (e.target.matches('[data-sk-anteil]')) stromAnteilSpeichern(e.target);
   // N74 — die drei Wasser-Bestandteil-Beträge in der Inline-Detailtabelle.
   if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
-  // N116 - abgerechnete Menge aus dem Bescheid: nur Anzeige-Basis, nichts wird
-  // gespeichert; die Verteilung rechnet sofort damit.
+  // N116/N144 - abgerechnete Menge aus dem Bescheid: wird am Zeitraum
+  // gespeichert und bleibt damit stehen; die Verteilung rechnet sofort damit.
   if (e.target.matches('[data-wasser-rechnung]')) {
-    wasserRechnungM3 = e.target.value || '';
-    const box = e.target.closest('[data-wasser-inline]');
-    if (box) fuelleWasserInline(box);
+    wasserRechnungsmengeSpeichern(e.target);
   }
   // CCCLXII — Kostenart der Position wechseln (Wähler + Freitext für eine neue).
   if (e.target.matches('[data-kostenart-pos]')) kostenartWechseln(e.target);
@@ -5261,12 +5517,14 @@ function wasserDetailInhalt(d) {
       <input class="wd-rm" type="number" step="0.1" data-wasser-rechnung
         value="${d.rechnung_m3 ?? ''}" placeholder="m³"
         aria-label="Abgerechnete Menge laut Bescheid in m³">
-    </div>${(d.rechnung_m3 && d.abgelesen_m3
-        && Math.abs(d.abgelesen_m3 - d.rechnung_m3) > 0.05)
-      ? `<div class="ho-warn">Der Zähler weist ${m3(d.abgelesen_m3)} aus, der
-          Versorger rechnet ${m3(d.rechnung_m3)} ab. Die Differenz von
-          ${m3(d.abgelesen_m3 - d.rechnung_m3)} wird <b>nicht</b> verteilt —
-          sie fällt aus dem Anteil Haupthaus heraus.</div>` : ''}`;
+    </div>${(d.abweichung_m3 != null && Math.abs(d.abweichung_m3) > 0.05)
+      ? `<div class="ho-warn">Zwei Zahlen, beide bleiben stehen: der
+          <b>Zählerwert</b> ${m3(d.abgelesen_m3)} (eigener Hauptzähler) und die
+          <b>abgerechnete Menge</b> ${m3(d.rechnung_m3)} (Bescheid des
+          Versorgers). Verteilt wird auf die abgerechnete Menge. Die Abweichung
+          von ${m3(d.abweichung_m3)} bleibt damit unverteilt — sie ist ein
+          offener Punkt zwischen Ablesung und Abrechnung, den die nächsten
+          Jahre klären.</div>` : ''}`;
   const kosten = umschalter + `<div class="wd-kosten">
     ${wdKostenBox('Frischwasser', 'wasser', k.wasser)}
     ${wdKostenBox('Schmutzwasser', 'schmutz', k.schmutz)}

@@ -1066,7 +1066,12 @@ const GAUGE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 function erststandHtml(zielId) {
   if (istGrundstueck()) return '';
   // Nur gemessene, aktive Zähler brauchen einen Anfangsstand.
-  const mess = (zaehlerListe || []).filter(z => z.aktiv !== false && z.typ !== 'rest');
+  // N141b — `rest` errechnet sich, `direkt` traegt den fertigen Periodenverbrauch
+  // statt eines Zaehlerstands (N120): beide brauchen keinen Anfangsstand. Vorher
+  // mahnte die Zeile dauerhaft zwei Zaehler an, bei denen nie etwas zu tun ist.
+  const OHNE_ANFANG = new Set(['rest', 'direkt']);
+  const mess = (zaehlerListe || []).filter(
+    z => z.aktiv !== false && !OHNE_ANFANG.has(z.typ));
   const ohne = mess.filter(z => !z.anfangsstand);
   // Zähler vorhanden, aber keiner misst (nur Rest/inaktiv) — kein Anfangsstand nötig.
   if (zaehlerListe.length && mess.length === 0) return '';
@@ -1249,7 +1254,7 @@ async function anfangsstaendeDialog() {
     const halter = dlg.querySelector('.az-body');
     const scroll = halter ? halter.scrollTop : 0;
     const aktiv = zaehlerListe.filter(z => z.aktiv !== false);
-    const mess = aktiv.filter(z => z.typ !== 'rest');
+    const mess = aktiv.filter(z => !['rest', 'direkt'].includes(z.typ));
     const rest = aktiv.filter(z => z.typ === 'rest');
     // Ein Zähler, dessen Stand gerade ersetzt wird, bleibt unter „bereits
     // erfasst" — er fehlt ja nicht, er wird nur geändert.

@@ -28,11 +28,17 @@ daneben, nicht darin.
 """
 from __future__ import annotations
 
+import json
+import logging
+import re
 from datetime import date
 
 from .bezeichnung import objekt_titel
+from .engine import verteile_nach_wert
 from .models import ist_bausparer, ist_grundstueck
 from .turnus import jahresbetrag
+
+log = logging.getLogger(__name__)
 
 
 def _wert(objekt) -> float | None:
@@ -212,6 +218,169 @@ def eigentuemer_fraktion(objekt, einheiten: list | None,
         for a in zeilen:
             add(a.eigentuemer_id, anteil_gewicht * _pm(a) / 1000)
     return out
+
+
+# --------------------------------------------------------------------------
+# N146 — die PV-Anlage als Investment unter ihrer Immobilie
+#
+# Die Anlage ist ein eigenes Investment mit eigenen Anteilen: sie kann anderen
+# gehören als das Haus (bei Laufer Str. 5 gehört sie zu einem Sechstel jemandem,
+# dem am Gebäude selbst nichts gehört). In der Eigentümerübersicht steht sie
+# deshalb **nicht als eigenes Objekt**, sondern als untergeordnete Zeile unter
+# ihrer Immobilie — mit ihren eigenen Tausendsteln. Der auf eine Person
+# entfallende Anlagenwert zählt auf ihren Wert an genau dieser Immobilie.
+#
+# Bewusst ausgenommen — ausdrücklicher Wunsch des Nutzers, nicht „reparieren":
+#   • **Beleihung und freier Beleihungsspielraum.** Eine PV-Anlage ist kein
+#     beleihbares Grundpfandobjekt. Basis der Quote bleibt darum allein der
+#     Immobilienwert (`wert`); der Anlagenanteil steht daneben in `pv_wert`,
+#     die Summe in `wert_gesamt`. Wer die Quote rechnet, nimmt `wert`.
+#   • **Wertsteigerung.** Für die Anlage wird keine Wertentwicklung gerechnet.
+#     Angesetzt wird die Anschaffung — und genau das steht auch dran
+#     (`wertquelle`), statt eine Kurve zu erfinden.
+# --------------------------------------------------------------------------
+
+PV_TITEL = "Investment PV"
+PV_WERTQUELLE = "Anschaffungswert"
+# Die gewachsene Vorgabe aus `strom.EIGENTUEMER_ANTEILE` (5/6 zu 1/6), hier in
+# Promille. Sie greift nur, solange am Objekt keine Anteile gepflegt sind — und
+# ihre Bezeichnungen sind keine Personennamen, also bleibt sie unzugeordnet.
+PV_VORGABE_ANTEILE: dict[str, float] = {"5/6": 833.3, "1/6": 166.7}
+_PV_VOLL = 1000.0
+_PV_TOLERANZ = 0.1
+
+
+def pv_anteile_gepflegt(roh: str | None) -> dict[str, float]:
+    """Die am Objekt **gepflegten** Anteile als {Name: ‰} — leer, wenn keine.
+
+    Unlesbares zählt als nicht gepflegt (und wird protokolliert, nicht
+    verschwiegen). Nur positive Anteile: 0 ‰ ist keine Beteiligung."""
+    if not roh:
+        return {}
+    try:
+        d = json.loads(roh) if isinstance(roh, str) else dict(roh)
+        return {str(k): float(v) for k, v in d.items() if float(v) > 0}
+    except (ValueError, TypeError, AttributeError):
+        log.warning("PV-Anteile unlesbar — Vorgabe 5/6 zu 1/6")
+        return {}
+
+
+def pv_anteile(roh: str | None) -> dict[str, float]:
+    """Die Anteile einer PV-Anlage als {Name: ‰}.
+
+    Leeres oder unlesbares Feld ergibt die Vorgabe 5/6 zu 1/6 — dieselbe, mit
+    der `strom.verteile_eigentuemer` den Ertrag verteilt."""
+    return pv_anteile_gepflegt(roh) or dict(PV_VORGABE_ANTEILE)
+
+
+def pv_wert(anlage) -> float | None:
+    """Der angesetzte Wert der Anlage: ihre Anschaffung.
+
+    Einen Zeitwert gibt es nicht — weder ein Gutachten noch eine gepflegte
+    Wertreihe. Die Anschaffung ist die ehrlichste Angabe; dass es sie ist,
+    sagt `PV_WERTQUELLE` dazu."""
+    betrag = float(getattr(anlage, "anschaffung_eur", 0) or 0)
+    return round(betrag, 2) if betrag > 0 else None
+
+
+def _namensschluessel(name: str) -> str:
+    """Namen vergleichbar machen: Groß-/Kleinschreibung und Leerraum egal."""
+    return re.sub(r"\s+", " ", str(name or "")).strip().casefold()
+
+
+def _promille_text(wert: float) -> str:
+    """Eine ‰-Zahl deutsch und ohne überflüssige Nullen — wie in `strom`."""
+    return f"{wert:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _pv_hinweise(vorgabe: bool, summe: float,
+                 ohne_person: list[dict]) -> list[str]:
+    """Was der Nutzer über diese Anlage wissen muss. Hinweise, keine Sperre.
+
+    Ein Anteil, zu dem sich keine Person findet, wird **nicht** stillschweigend
+    auf die übrigen verteilt — er bleibt unzugeordnet und wird benannt. Sonst
+    verschwände er lautlos und die Summe stimmte scheinbar."""
+    hinweise: list[str] = []
+    if vorgabe:
+        hinweise.append(
+            "Für die Anlage sind noch keine Anteile gepflegt — angesetzt ist "
+            "die Vorgabe 5/6 zu 1/6, die keiner Person zugeordnet ist.")
+    # 1e-9 wie in `besitz._stand`: 333,3 dreimal ergibt 999,9 ‰ und soll als
+    # vollständig gelten — die Binärdarstellung liegt sonst knapp daneben.
+    if abs(summe - _PV_VOLL) > _PV_TOLERANZ + 1e-9:
+        hinweise.append(
+            f"Die Anteile der Anlage ergeben {_promille_text(summe)} ‰ statt "
+            "1000 ‰ — gerechnet wird proportional.")
+    if not vorgabe:
+        hinweise += [
+            f"Zu „{o['name']}“ ({_promille_text(o['promille'])} ‰) gibt es "
+            "keinen Eigentümer — dieser Anteil bleibt unzugeordnet."
+            for o in ohne_person]
+    return hinweise
+
+
+def pv_zurechnung(anlage, personen: dict[int, str]) -> dict | None:
+    """Die PV-Anlage eines Objekts, aufgeteilt auf die Eigentümer-ids.
+
+    `personen` ist {Eigentümer-id: Name}; die Namen in `PVAnlage.anteile` werden
+    darauf abgebildet. `None`, wenn es keine Anlage gibt — dann ändert sich an
+    dem Objekt nichts, und genau das ist die wichtigste Zusicherung.
+
+    Verteilt wird über `verteile_nach_wert`, also nach dem Größte-Reste-
+    Verfahren: die Summe der zugeteilten Beträge trifft den Anlagenwert auf den
+    Cent. Anteile ohne Person bleiben als eigenes Gewicht in der Verteilung —
+    ihr Betrag fällt niemandem zu, statt die übrigen zu vergrößern."""
+    if anlage is None:
+        return None
+    wert = pv_wert(anlage)
+    roh = getattr(anlage, "anteile", "") or ""
+    # „Vorgabe" heisst: am Objekt steht nichts Lesbares — nicht, dass jemand
+    # zufaellig dieselben Zahlen gepflegt hat.
+    vorgabe = not pv_anteile_gepflegt(roh)
+    kwp = round(float(getattr(anlage, "kwp", 0) or 0), 2) or None
+    # Ein leerer Stammdatensatz (angelegt, aber nie gefüllt) ist keine Anlage.
+    # Ihn zu zeigen hiesse, eine Beteiligung zu behaupten, die es nicht gibt.
+    if wert is None and vorgabe and kwp is None:
+        return None
+    anteile = pv_anteile(roh)
+
+    nach_name: dict[str, int] = {}
+    for eid, name in personen.items():
+        nach_name.setdefault(_namensschluessel(name), eid)
+
+    gewichte: dict[str, float] = {}
+    zuordnung: dict[str, int] = {}
+    ohne_person: list[dict] = []
+    for nr, (name, promille) in enumerate(anteile.items()):
+        schluessel = f"{nr}:{name}"          # eindeutig, auch bei gleichem Namen
+        gewichte[schluessel] = promille
+        eid = nach_name.get(_namensschluessel(name))
+        if eid is None:
+            ohne_person.append({"name": name, "promille": round(promille, 1)})
+        else:
+            zuordnung[schluessel] = eid
+
+    summe = round(sum(gewichte.values()), 3)
+    verteilt = (verteile_nach_wert(wert, gewichte)
+                if wert and gewichte else {})
+
+    je_person: dict[int, dict] = {}
+    for schluessel, eid in zuordnung.items():
+        teil = je_person.setdefault(eid, {"promille": 0.0, "wert": 0.0})
+        teil["promille"] = round(teil["promille"] + gewichte[schluessel], 1)
+        teil["wert"] = round(teil["wert"] + verteilt.get(schluessel, 0.0), 2)
+
+    return {
+        "titel": PV_TITEL,
+        "wert": wert,
+        "wertquelle": PV_WERTQUELLE,
+        "kwp": kwp,
+        "anteile_summe": summe,
+        "vorgabe": vorgabe,
+        "je_person": je_person,
+        "ohne_person": ohne_person,
+        "hinweise": _pv_hinweise(vorgabe, summe, ohne_person),
+    }
 
 
 # --------------------------------------------------------------------------

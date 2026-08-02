@@ -11,8 +11,13 @@ nachgerechnet, hier im Ausschnitt nachgebildet):
     111 Ladungen · 1991,03 kWh · 580,70 €
       Netz (extern)  1024,82 kWh  51,5 %
       Speicher        450,09 kWh  22,6 %
-      PV direkt       492,82 kWh  24,8 %
-      => eigen        942,90 kWh  47,4 %
+      PV direkt       492,82 kWh  24,8 %  + 23,31 Rest = 516,13 kWh
+      => Netz + PV + Speicher == 1991,03 kWh
+
+Seit N143 sind **Netz, PV und Speicher drei eigene Blöcke** — der Nutzer
+rechnet seine Stromkosten über genau diese drei. Und was die Wallbox keinem
+Anteil zuordnet, zählt zum PV-Block: die drei Blöcke ergeben wieder die volle
+Energiemenge, und `rest_kwh` sagt, wie viel auf diesem Weg dazukam.
 
 Wichtig ist der Zuschnitt nach **Abrechnungszeitraum** (z. B. 01.10.2024 bis
 30.09.2025), nicht nach Kalenderjahr — deshalb der Filter über das Datum.
@@ -226,20 +231,78 @@ def test_ohne_ladepunkte_keine_warnung():
     assert s.warnungen == []
 
 
-def test_anteile_die_nicht_hundert_ergeben_werden_gemeldet():
+def test_nicht_zugeordnete_energie_zaehlt_zum_pv_block():
     """Im echten Protokoll steht eine Ladung mit 23,31 kWh und vier Anteilen
-    von 0 % — die Energie gehört dann nirgendwohin und darf nicht still in
-    einem Topf verschwinden."""
+    von 0 % (26.09.2025).
+
+    Seit N143 zählt diese Energie zum PV-Block — eine Entscheidung des
+    Nutzers. Nachvollziehbar bleibt sie über `rest_kwh`; ein eigener Topf
+    „nicht zugeordnet" entsteht nicht mehr, und es wird auch nicht gewarnt:
+    die Menge ist zugeordnet, nur eben per Regel."""
     datei = _datei(_zeile("26.09.2025, 15:57:31", "0,00",
                           "0,00", "0,00", "0,00", "0,00", "23,31"))
     p = openwb.lies(datei)
-    assert any("100 %" in w for w in p.warnungen)
+    ladung = p.ladungen[0]
+    assert ladung.pv_kwh == 23.31
+    assert ladung.rest_kwh == 23.31
+    assert ladung.speicher_kwh == 0.0 and ladung.extern_kwh == 0.0
+
     s = openwb.summiere(p.ladungen, date(2025, 1, 1), date(2025, 12, 31),
                         p.warnungen)
     assert s.kwh == 23.31
-    assert s.extern_kwh == 0.0 and s.eigen_kwh == 0.0
-    assert s.nicht_zugeordnet_kwh == 23.31
-    assert any("zuordnen" in w for w in s.warnungen)
+    assert s.pv_kwh == 23.31 and s.rest_kwh == 23.31
+    assert s.extern_kwh == 0.0 and s.speicher_kwh == 0.0
+    assert s.eigen_kwh == 23.31
+    # Die drei Blöcke ergeben wieder die volle Menge.
+    assert round(s.extern_kwh + s.pv_kwh + s.speicher_kwh, 2) == s.kwh
+    assert s.nicht_zugeordnet_kwh == 0.0
+    assert s.warnungen == []
+
+
+def test_die_drei_bloecke_ergeben_die_volle_energiemenge():
+    """Netz · PV · Akku sind drei eigene Töpfe (N143) und lassen nichts übrig.
+
+    Gemischt: eine saubere Ladung, eine mit 0 % in allen Anteilen und eine, in
+    der nur ein Teil zugeordnet ist."""
+    datei = _datei(
+        _zeile("02.03.2025, 08:00:00", "1,00", "50,00", "0,00", "30,00",
+               "20,00", "40,00"),
+        _zeile("03.03.2025, 08:00:00", "0,00", "0,00", "0,00", "0,00",
+               "0,00", "10,00"),
+        _zeile("04.03.2025, 08:00:00", "1,00", "40,00", "0,00", "10,00",
+               "0,00", "50,00"),
+    )
+    s = openwb.summiere(openwb.lies(datei).ladungen,
+                        date(2025, 1, 1), date(2025, 12, 31))
+    assert s.kwh == 100.0
+    assert s.extern_kwh == 40.0                 # 20 + 0 + 20
+    assert s.speicher_kwh == 17.0               # 12 + 0 + 5
+    # PV: 8 direkt + 10 Rest + 25 Rest = 43
+    assert s.pv_kwh == 43.0
+    assert s.rest_kwh == 35.0
+    assert s.eigen_kwh == 60.0                  # PV + Speicher
+    assert round(s.extern_kwh + s.pv_kwh + s.speicher_kwh, 2) == s.kwh
+    assert s.nicht_zugeordnet_kwh == 0.0
+    d = s.als_dict()
+    assert d["pv_prozent"] == 43.0 and d["speicher_prozent"] == 17.0
+    assert d["rest_prozent"] == 35.0
+
+
+def test_negativer_pv_anteil_der_box_bleibt_stehen():
+    """Am 11.04.2025 schrieb die Box 164 % Speicher gegen −115,81 % PV.
+
+    In der Summe ergibt das genau 100 %. Den negativen PV-Wert auf 0 zu heben
+    würde `Netz + PV + Speicher` über die geladene Menge treiben — die
+    Aufteilung der Box bleibt deshalb stehen."""
+    datei = _datei(_zeile("11.04.2025, 14:46:32", "1,94", "51,81", "0,00",
+                          "164,00", "-115,81", "6,68"))
+    s = openwb.summiere(openwb.lies(datei).ladungen,
+                        date(2025, 1, 1), date(2025, 12, 31))
+    assert s.kwh == 6.68
+    assert s.pv_kwh < 0                          # so steht es im Protokoll
+    assert s.rest_kwh == 0.0                     # es fehlt nichts
+    assert round(s.extern_kwh + s.pv_kwh + s.speicher_kwh, 2) == s.kwh
+    assert s.warnungen == []
 
 
 def test_ladung_ohne_energie_zaehlt_nicht_als_ladung():

@@ -8,11 +8,25 @@ Je Ladung stehen die Energiemenge (``Energie``, kWh), die Kosten und vier
 Anteile in Prozent, die zusammen 100 ergeben:
 
 * ``Energieanteil Netz`` — zugekaufter Strom,
-* ``Energieanteil PV`` und ``Energieanteil Speicher`` — eigener Strom (ob
-  direkt vom Dach oder aus dem Akku, ändert am Preis nichts),
+* ``Energieanteil PV`` — eigener Strom direkt vom Dach,
+* ``Energieanteil Speicher`` — eigener Strom aus dem Akku,
 * ``Energieanteil Ladepunkte`` — bisher immer 0. Er wird **getrennt geführt**
   und gemeldet, wenn er einmal nicht 0 ist: eine stille Fehlzuordnung wäre
   schlimmer als ein sichtbarer Hinweis.
+
+**Netz, PV und Speicher sind drei eigene Töpfe** (N143). Der Nutzer rechnet
+seine Stromkosten über genau diese drei Blöcke ab; PV und Akku zu „eigenem
+Strom" zu verschmelzen würde einen davon unsichtbar machen. :attr:`Ladung.eigen_kwh`
+bleibt als bequeme Summe bestehen, tragend sind die drei Einzelwerte.
+
+**Der nicht zugeordnete Rest zählt zum PV-Anteil** (N143). Gelegentlich
+schreibt die Wallbox in alle vier Anteile 0 % (gesehen am 12.07.2026 mit
+49,88 kWh, am 26.09.2025 mit 23,31 kWh). Diese Menge lag früher zwischen den
+Töpfen und musste überall mitgeschleppt werden. Der Nutzer hat entschieden,
+sie dem eigenen Strom zuzuschlagen — konkret dem PV-Anteil. Damit gilt wieder
+``Netz + PV + Speicher + Ladepunkte == Energie``. Wie viel auf diesem Weg
+hinzukam, steht als ``rest_kwh`` weiterhin einzeln da; es wird nichts
+verwischt.
 
 Gerechnet wird nach **Datum**, nicht nach der Jahres-URL: die Nebenkosten­
 periode läuft z. B. vom 01.10.2024 bis 30.09.2025. :func:`jahre` sagt, welche
@@ -58,8 +72,9 @@ S_PV = "Energieanteil PV"
 PFLICHT: tuple[str, ...] = (S_BEGINN, S_KOSTEN, S_ENERGIE, S_NETZ,
                             S_LADEPUNKTE, S_SPEICHER, S_PV)
 
-# Die vier Anteile ergeben zusammen 100 %. openWB rundet auf zwei
-# Nachkommastellen — eine halbe Prozentspanne ist reichlich Luft.
+# Was nach der Rest-Regel noch offen bleiben darf, in kWh. openWB rundet die
+# Anteile auf zwei Nachkommastellen — eine halbe Kilowattstunde ist reichlich
+# Luft für Rundung; alles darüber ist eine Aussage und wird gemeldet.
 TOLERANZ = 0.5
 
 # "03.09.2025, 18:14:02" — so schreibt openWB Beginn und Ende.
@@ -169,16 +184,21 @@ def zeitpunkt(text: str, stempel: str = "") -> datetime | None:
 class Ladung:
     """Eine abgeschlossene Ladung — Mengen bereits in kWh aufgeteilt.
 
-    Die Anteile sind aus den Prozentwerten des Protokolls gerechnet, damit die
-    Abrechnung nur noch summieren muss."""
+    Die drei tragenden Mengen sind `extern_kwh` (Netz), `pv_kwh` (Dach) und
+    `speicher_kwh` (Akku); sie sind aus den Prozentwerten des Protokolls
+    gerechnet, damit die Abrechnung nur noch summieren muss.
+
+    `pv_kwh` enthält bereits den nicht zugeordneten Rest (siehe Modulkopf);
+    `rest_kwh` sagt, wie viel davon auf diesem Weg hinzukam."""
     beginn: datetime
     ende: datetime | None
     kwh: float
     kosten: float
     extern_kwh: float          # „Energieanteil Netz" — zugekauft
     speicher_kwh: float        # eigener Strom aus dem Akku
-    pv_kwh: float              # eigener Strom direkt vom Dach
+    pv_kwh: float              # eigener Strom vom Dach, inkl. Rest
     ladepunkte_kwh: float      # getrennt geführt, siehe Modulkopf
+    rest_kwh: float = 0.0      # davon über die Rest-Regel in `pv_kwh` gelandet
 
     @property
     def tag(self) -> date:
@@ -187,12 +207,17 @@ class Ladung:
 
     @property
     def eigen_kwh(self) -> float:
-        """Eigener Strom: Speicher und PV zusammen."""
+        """Eigener Strom: Speicher und PV zusammen — die bequeme Summe.
+
+        Für die Abrechnung zählen die beiden Einzelwerte, nicht diese Zahl."""
         return self.speicher_kwh + self.pv_kwh
 
     @property
     def nicht_zugeordnet_kwh(self) -> float:
-        """Was keiner der vier Anteile trägt — bei gesunden Daten 0."""
+        """Was nach der Rest-Regel *immer noch* keiner der Töpfe trägt.
+
+        Seit N143 normalerweise 0 — die Größe bleibt als Wächter stehen: wird
+        sie einmal wieder ungleich 0, stimmt an der Aufteilung etwas nicht."""
         return (self.kwh - self.extern_kwh - self.speicher_kwh
                 - self.pv_kwh - self.ladepunkte_kwh)
 
@@ -249,6 +274,26 @@ def lies(text: str) -> Protokoll:
     return ergebnis
 
 
+def _rest_in_pv(kwh: float, extern: float, speicher: float, pv: float,
+                ladepunkte: float) -> tuple[float, float]:
+    """Den nicht zugeordneten Rest dem PV-Anteil zuschlagen (N143).
+
+    Liefert ``(pv_kwh, rest_kwh)``: den erhöhten PV-Anteil und die Menge, die
+    dabei hinzukam. Ergeben die vier Prozentwerte weniger als 100 %, fehlt
+    Energie in den Töpfen — sie zählt zum eigenen Strom vom Dach. Das ist eine
+    bewusste Festlegung des Nutzers, keine Schätzung: die Menge bleibt als
+    `rest_kwh` einzeln nachvollziehbar.
+
+    Der Rest wird **ohne Untergrenze** aufgeschlagen. Die Box schreibt in
+    seltenen Fällen selbst einen negativen PV-Anteil (11.04.2025: 164 %
+    Speicher gegen −115,81 % PV, in der Summe genau 100 %). Diese Zahl auf 0
+    hochzuziehen würde die Gesamtmenge sprengen — ``Netz + PV + Speicher``
+    ergäbe dann mehr, als überhaupt geladen wurde. Die Aufteilung der Box
+    bleibt stehen; sie stimmt in der Summe."""
+    rest = kwh - extern - speicher - pv - ladepunkte
+    return pv + rest, rest
+
+
 def _zeile_lesen(nummer: int, zeile: dict, warnungen: list[str]) -> Ladung | None:
     """Eine Protokollzeile — ``None``, wenn sie nicht zu gebrauchen ist."""
     beginn = zeitpunkt(zeile.get(S_BEGINN, ""), zeile.get(S_STEMPEL_BEGINN, ""))
@@ -275,20 +320,18 @@ def _zeile_lesen(nummer: int, zeile: dict, warnungen: list[str]) -> Ladung | Non
                          "Energiemenge — die Ladung wurde übergangen.")
         return None
 
-    summe = werte[S_NETZ] + werte[S_LADEPUNKTE] + werte[S_SPEICHER] + werte[S_PV]
-    if kwh > 0 and abs(summe - 100.0) > TOLERANZ:
-        warnungen.append(
-            f"Ladung am {beginn:%d.%m.%Y}: die Energieanteile ergeben "
-            f"{summe:.1f} % statt 100 % — bitte in der openWB nachsehen.")
+    extern = kwh * werte[S_NETZ] / 100.0
+    speicher = kwh * werte[S_SPEICHER] / 100.0
+    ladepunkte = kwh * werte[S_LADEPUNKTE] / 100.0
+    pv, rest = _rest_in_pv(kwh, extern, speicher, kwh * werte[S_PV] / 100.0,
+                           ladepunkte)
 
     return Ladung(
         beginn=beginn,
         ende=zeitpunkt(zeile.get(S_ENDE, ""), zeile.get(S_STEMPEL_ENDE, "")),
         kwh=kwh, kosten=werte[S_KOSTEN],
-        extern_kwh=kwh * werte[S_NETZ] / 100.0,
-        speicher_kwh=kwh * werte[S_SPEICHER] / 100.0,
-        pv_kwh=kwh * werte[S_PV] / 100.0,
-        ladepunkte_kwh=kwh * werte[S_LADEPUNKTE] / 100.0)
+        extern_kwh=extern, speicher_kwh=speicher, pv_kwh=pv,
+        ladepunkte_kwh=ladepunkte, rest_kwh=rest)
 
 
 def zusammenfuehren(*teile: list[Ladung]) -> list[Ladung]:
@@ -323,6 +366,11 @@ def _anteil(teil: float, ganz: float) -> float | None:
 class Summe:
     """Was im Zeitraum geladen wurde — die Zahlen für die Abrechnung.
 
+    Die drei Blöcke `extern_kwh` (Netz), `pv_kwh` (Dach) und `speicher_kwh`
+    (Akku) ergeben zusammen mit `ladepunkte_kwh` wieder `kwh`; `eigen_kwh` ist
+    nur die Summe der beiden eigenen. `rest_kwh` sagt, wie viel davon über die
+    Rest-Regel in den PV-Anteil kam.
+
     `anzahl` zählt die Ladungen, bei denen wirklich Strom geflossen ist.
     Angesteckt-und-nichts-passiert steht getrennt in `ohne_energie`, damit die
     Zahl der Ladungen nicht von Fehlversuchen aufgebläht wird."""
@@ -338,6 +386,7 @@ class Summe:
     eigen_kwh: float
     ladepunkte_kwh: float
     nicht_zugeordnet_kwh: float
+    rest_kwh: float = 0.0
     warnungen: list[str] = field(default_factory=list)
 
     def als_dict(self) -> dict:
@@ -351,10 +400,12 @@ class Summe:
             "eigen_kwh": self.eigen_kwh,
             "ladepunkte_kwh": self.ladepunkte_kwh,
             "nicht_zugeordnet_kwh": self.nicht_zugeordnet_kwh,
+            "rest_kwh": self.rest_kwh,
             "extern_prozent": _anteil(self.extern_kwh, self.kwh),
             "eigen_prozent": _anteil(self.eigen_kwh, self.kwh),
             "speicher_prozent": _anteil(self.speicher_kwh, self.kwh),
             "pv_prozent": _anteil(self.pv_kwh, self.kwh),
+            "rest_prozent": _anteil(self.rest_kwh, self.kwh),
             "warnungen": list(self.warnungen),
         }
 
@@ -371,9 +422,14 @@ def summiere(ladungen: list[Ladung], von: date, bis: date,
     """Die Summen eines Abrechnungszeitraums.
 
     Gefiltert wird über das Datum des Ladebeginns — nicht über das Kalender­
-    jahr der Datei, aus der die Zeile stammt. Ist ``Energieanteil Ladepunkte``
-    einmal nicht 0, steht das als Warnung dabei: der Anteil wird **keinem** der
-    beiden Töpfe zugeschlagen."""
+    jahr der Datei, aus der die Zeile stammt.
+
+    Die drei Blöcke Netz, PV und Speicher bleiben getrennt (N143); der nicht
+    zugeordnete Rest steckt bereits im PV-Anteil und steht zusätzlich als
+    `rest_kwh` da. Ist ``Energieanteil Ladepunkte`` einmal nicht 0, steht das
+    als Warnung dabei: dieser Anteil wird **keinem** Topf zugeschlagen.
+    Bleibt nach der Rest-Regel trotzdem etwas offen (die Prozentwerte ergeben
+    dann mehr als 100 %), wird auch das gesagt statt still gerundet."""
     gewaehlt = im_zeitraum(ladungen, von, bis)
     hinweise = list(warnungen or [])
 
@@ -381,6 +437,7 @@ def summiere(ladungen: list[Ladung], von: date, bis: date,
     speicher = sum(l.speicher_kwh for l in gewaehlt)
     pv = sum(l.pv_kwh for l in gewaehlt)
     ladepunkte = sum(l.ladepunkte_kwh for l in gewaehlt)
+    rest = sum(l.rest_kwh for l in gewaehlt)
     offen = sum(l.nicht_zugeordnet_kwh for l in gewaehlt)
 
     if round(ladepunkte, 2) != 0.0:
@@ -388,10 +445,10 @@ def summiere(ladungen: list[Ladung], von: date, bis: date,
             f"„{S_LADEPUNKTE}“ ist mit {ladepunkte:.2f} kWh belegt. Dieser "
             "Anteil zählt weder als zugekaufter noch als eigener Strom — "
             "bitte entscheiden, wohin er gehört.")
-    if abs(offen) > 0.5:
+    if abs(offen) > TOLERANZ:
         hinweise.append(
-            f"{offen:.2f} kWh lassen sich keinem Anteil zuordnen — die "
-            "Prozentwerte im Ladeprotokoll ergeben nicht 100 %.")
+            f"{offen:.2f} kWh bleiben auch nach der Aufteilung offen — die "
+            "Energieanteile im Ladeprotokoll ergeben mehr als 100 %.")
 
     return Summe(
         von=von, bis=bis,
@@ -402,4 +459,5 @@ def summiere(ladungen: list[Ladung], von: date, bis: date,
         extern_kwh=round(extern, 2), speicher_kwh=round(speicher, 2),
         pv_kwh=round(pv, 2), eigen_kwh=round(speicher + pv, 2),
         ladepunkte_kwh=round(ladepunkte, 2),
-        nicht_zugeordnet_kwh=round(offen, 2), warnungen=hinweise)
+        nicht_zugeordnet_kwh=round(offen, 2), rest_kwh=round(rest, 2),
+        warnungen=hinweise)

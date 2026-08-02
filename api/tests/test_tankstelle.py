@@ -9,10 +9,13 @@ Kontrollzahlen des Nutzers aus der echten Wallbox für 2025:
 
     111 Ladungen · 1991,03 kWh
       Netz (extern)   1024,82 kWh   51,5 %
-      eigen (Speicher + PV)  942,90 kWh   47,4 %
+      Akku (Speicher)  450,09 kWh   22,6 %
+      PV (inkl. 23,31 kWh Rest)  516,13 kWh   25,9 %
+      => Netz + PV + Akku == 1991,03 kWh
 
 Die Aufteilung wird hier an genau diesen Zahlen gemessen
-(`test_verlauf_trifft_die_kontrollzahlen`).
+(`test_verlauf_trifft_die_kontrollzahlen`). Seit N143 zählt der von der
+Wallbox nicht zugeordnete Rest zum PV-Block; es bleibt nichts übrig.
 
 **Kein Test geht ins Netz und kein Test verschickt eine Mail.** Die Wallbox
 steht im Heimnetz; der Versand wird durch ein Postfach-Doppel ersetzt, das die
