@@ -638,6 +638,13 @@
      .wd-*-Bausteine (Kostenboxen + Tabelle) sind bewusst global (nicht an ein
      Dialog gebunden), damit sie hier greifen. */
   .wd-inline{margin-bottom:14px}
+  .wd-schl{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+  .wd-schl-l{font:600 8.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;
+    color:var(--soft)}
+  .wd-sb{border:1.5px solid var(--line);background:var(--sheet);color:var(--soft);
+    border-radius:999px;padding:8px 14px;min-height:38px;font:600 11.5px var(--disp);
+    cursor:pointer}
+  .wd-sb.an{border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)}
   .wd-lade{color:var(--soft);font:500 13px var(--body);padding:8px 2px}
   /* N79 — Heizöl-Manager (Lieferungen + FIFO) inline in der Heizkosten-Position. */
   .ho-inline{margin-bottom:14px}
@@ -2811,9 +2818,14 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
 
 /* N74 — die Wasser-Detailübersicht als Tabelle IN die aufgeklappte Position
    laden (kein Popup mehr). Nutzt dieselbe Aufbereitung wie früher das Popup. */
+// N113 - nach welchem Schluessel der Haupthaus-Rest verteilt wird. Der Nutzer
+// schaltet oben in der Detailansicht um; die Wahl gilt fuer die Anzeige.
+let wasserSchluessel = 'personen';
+
 async function fuelleWasserInline(el) {
   try {
-    const d = await api(`/zeitraeume/${el.dataset.wasserInline}/wasser`);
+    const d = await api(`/zeitraeume/${el.dataset.wasserInline}/wasser`
+      + `?schluessel=${wasserSchluessel}`);
     el.innerHTML = wasserDetailInhalt(d);
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Detailübersicht nicht ladbar: ${
@@ -3577,6 +3589,14 @@ inhalt.addEventListener('click', async e => {
   if (hoAdd) return heizoelHinzufuegen(hoAdd);
   const hoWeg = e.target.closest('[data-heizoel-weg]');
   if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg);
+  // N113 - Verteilungsschluessel des Wasser-Rests umschalten.
+  const wsch = e.target.closest('[data-wasser-schluessel]');
+  if (wsch) {
+    wasserSchluessel = wsch.dataset.wasserSchluessel;
+    const box = wsch.closest('[data-wasser-inline]');
+    if (box) return fuelleWasserInline(box);
+    return zeichnen();
+  }
   // N95 — einen Beleg aus seiner Kostenposition herausnehmen (Datei bleibt).
   const belegWeg = e.target.closest('[data-beleg-loesen]');
   if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
@@ -4666,7 +4686,17 @@ function wasserDetailInhalt(d) {
   const kbox = (label, wert, extra = '') =>
     `<div class="wd-kbox${extra}"><span class="wd-kl">${label}</span>
       <span class="wd-kv">${wert}</span></div>`;
-  const kosten = `<div class="wd-kosten">
+  // N113 - Umschalter: der Rest (Haupthaus) wird nach Personen oder nach
+  // Flaeche verteilt. Die gemessenen Zaehler bleiben davon unberuehrt.
+  const schl = d.schluessel || 'personen';
+  const umschalter = `<div class="wd-schl">
+      <span class="wd-schl-l">Rest verteilen nach</span>
+      <button type="button" class="wd-sb${schl === 'personen' ? ' an' : ''}"
+        data-wasser-schluessel="personen">Personen</button>
+      <button type="button" class="wd-sb${schl === 'flaeche' ? ' an' : ''}"
+        data-wasser-schluessel="flaeche">Fläche</button>
+    </div>`;
+  const kosten = umschalter + `<div class="wd-kosten">
     ${wdKostenBox('Frischwasser', 'wasser', k.wasser)}
     ${wdKostenBox('Schmutzwasser', 'schmutz', k.schmutz)}
     ${wdKostenBox('Niederschlag', 'niederschlag', k.niederschlag)}

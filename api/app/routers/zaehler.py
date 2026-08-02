@@ -489,7 +489,8 @@ def _echte_einheiten(namen: list[str], karte: dict[str, str],
 
 
 @router.get("/zeitraeume/{zid}/wasser")
-def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
+def wasser_detail(zid: int, schluessel: str = "personen",
+                  session: Session = Depends(get_session)) -> dict:
     """Wasser-Verrechnung dieses Zeitraums, aufgeschlüsselt je Einheit.
 
     Nicht bereit (`bereit=False`), solange der Hauptzähler-Verbrauch oder die
@@ -564,7 +565,13 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
     posten = []
     for zae in zaehler:
         art = _wasser_art(zae)
-        if not (zae.typ == "gemessen" and zae.hauptzaehler_id
+        # N113 - auch der WARMWASSER-REST zaehlt hier mit: Warmwasser ist
+        # Kaltwasser, das erhitzt wurde. Die Heizung berechnet nur die Waerme
+        # zum Erhitzen - die MENGE gehoert in die Wasserabrechnung. Ohne diese
+        # Zeile fehlte den beiden Wohnungen ihr Warmwasseranteil.
+        ww_rest = (zae.typ == "rest" and art == "Warmwasser"
+                   and verb.get(zae.id) is not None and (verb.get(zae.id) or 0) > 0)
+        if not ww_rest and not (zae.typ == "gemessen" and zae.hauptzaehler_id
                 and art in _UNTER_ARTEN and verb.get(zae.id) is not None):
             continue
         ziele = _ziele(zae)
@@ -611,7 +618,10 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
     rest_wahl = set(_ziele(rest_z))
     partei_einheit = {b.partei: b.einheit for b in bez}
     rest_gewichte: dict[str, float] = {}
-    for partei, gew in verteilung.gewichte("personen", bez, z.start, z.ende).items():
+    # N113 - der Rest kann nach Personen ODER nach Flaeche verteilt werden;
+    # der Nutzer waehlt es oben in der Detailansicht (`?schluessel=`).
+    schl = schluessel if schluessel in ("personen", "flaeche") else "personen"
+    for partei, gew in verteilung.gewichte(schl, bez, z.start, z.ende).items():
         # Auch hier zählt die echte Einheit — ein Bezug auf ein Altlabel darf
         # keine eigene Rest-Spalte aufmachen.
         ziel = _echte_einheiten([partei_einheit.get(partei, "")], karte,
@@ -656,6 +666,7 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
         "bereit": True,
         "hinweis": "",
         "warnungen": warnungen,
+        "schluessel": schl,
         "kosten": {**komponenten, "gesamt": e.gesamt_kosten,
                    "preis_m3": round(e.preis_m3, 2)},
         "gesamt_m3": round(e.gesamt_m3, 2),
