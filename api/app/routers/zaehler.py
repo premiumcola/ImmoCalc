@@ -390,6 +390,24 @@ def _zeige(session: Session, z: Zaehler) -> dict:
 
 # Zeilenarten eines Unterzählers im Wasser-Popup.
 _UNTER_ARTEN = frozenset({"Kaltwasser", "Warmwasser", "Waschmaschine"})
+
+
+def _wasser_art(zae: Zaehler) -> str:
+    """Wasser-Art eines Zählers — bevorzugt aus `art`, sonst aus dem NAMEN.
+    Die realen Zähler tragen oft kein `art`; dann muss der Name entscheiden
+    (Spiegel der Frontend-Logik `wasserArt`). Spezifisches vor Generischem."""
+    for feld in ((zae.art or "").lower(), (zae.name or "").lower()):
+        if not feld:
+            continue
+        if "waschmaschine" in feld:
+            return "Waschmaschine"
+        if "garten" in feld:
+            return "Gartenwasser"
+        if "warmwasser" in feld:
+            return "Warmwasser"
+        if "kaltwasser" in feld:
+            return "Kaltwasser"
+    return ""
 # Kostenart je Wasser-Bestandteil.
 _KOMPONENTEN_ART = {"wasser": "Wasser", "schmutz": "Abwasser",
                     "niederschlag": "Niederschlagswasser"}
@@ -441,18 +459,19 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
     # kommen aus `einheiten` (mit `einheit_bezug` als Fallback).
     posten = []
     for zae in zaehler:
+        art = _wasser_art(zae)
         if not (zae.typ == "gemessen" and zae.hauptzaehler_id
-                and zae.art in _UNTER_ARTEN and verb.get(zae.id) is not None):
+                and art in _UNTER_ARTEN and verb.get(zae.id) is not None):
             continue
         ziele = _parse_einheiten(zae)
         if not ziele:
             continue
         posten.append(wasser.Zaehlerposten(
             name=zae.name, einheit=zae.einheit_bezug, m3=verb[zae.id],
-            art=zae.art, einheiten=ziele))
+            art=art, einheiten=ziele))
 
     # Gartenwasser — Menge aus dem Rest heraus, Kosten trägt der Eigentümer.
-    garten_z = next((zae for zae in zaehler if zae.art == "Gartenwasser"), None)
+    garten_z = next((zae for zae in zaehler if _wasser_art(zae) == "Gartenwasser"), None)
     garten_m3 = (verb.get(garten_z.id) or 0.0) if garten_z else 0.0
     garten_einheit = garten_z.einheit_bezug if garten_z else ""
 
@@ -487,7 +506,7 @@ def wasser_detail(zid: int, session: Session = Depends(get_session)) -> dict:
     # haben einen eigenen Vollzähler und fallen aus dem Haupthaus-Rest heraus.
     kalt_einheiten: set[str] = set()
     for zae in zaehler:
-        if (zae.art == "Kaltwasser" and zae.typ == "gemessen"
+        if (_wasser_art(zae) == "Kaltwasser" and zae.typ == "gemessen"
                 and zae.hauptzaehler_id):
             kalt_einheiten.update(_parse_einheiten(zae))
     # N69 — der Rest ist zuteilbar: hat der Rest-Zähler (typ='rest' im Wasser-
