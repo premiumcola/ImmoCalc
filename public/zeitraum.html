@@ -584,6 +584,10 @@
   .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos)}
   .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:9px 12px}
   .zu-op{flex:none;align-self:center;font:700 16px var(--mono);color:var(--neg)}
+  .zu-name-inp{width:100%;min-width:120px;box-sizing:border-box;
+    border:1.5px solid var(--teal);border-radius:8px;padding:6px 8px;
+    font:600 13px var(--disp);color:var(--ink);background:var(--sheet)}
+  .zu-name-inp:focus{outline:none;box-shadow:0 0 0 3px var(--teal-l)}
   .zu-um{background:none;border:none;padding:4px;margin-left:6px;cursor:pointer;
     color:var(--muted);border-radius:6px;line-height:0;vertical-align:middle;
     min-width:26px;min-height:26px}
@@ -1741,18 +1745,50 @@ const STIFT_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true" width="13" heigh
   <path d="M9.7 3.3l2 2-6.3 6.3-2.6.6.6-2.6 6.3-6.3Z" fill="currentColor"/>
 </svg>`;
 
-async function zaehlerUmbenennen(zid) {
+/* N156 — umbenannt wird an Ort und Stelle in der Zeile, nicht in einem
+   Browser-Popup. Enter oder das Verlassen des Feldes speichert, Escape bricht
+   ab. Ein `prompt()` reisst den Nutzer aus der Seite und sieht ueberall anders
+   aus als der Rest der Oberflaeche. */
+function zaehlerUmbenennen(zid) {
+  const feld = document.querySelector(`[data-zaehler-umbenennen="${zid}"]`);
+  const halter = feld?.closest('.zu-name');
+  if (!halter || halter.querySelector('.zu-name-inp')) return;   // schon offen
   const z = (ablesungMaske?.zaehler || []).find(x => String(x.id) === String(zid));
-  const neu = prompt('Neuer Name für den Zähler:', z?.name || '');
-  if (neu === null) return;                       // abgebrochen
-  const name = neu.trim();
-  if (!name || name === z?.name) return;
-  try {
-    await api(`/zaehler/${zid}`, { method: 'PATCH', body: { name } });
-    if (z) z.name = name;                         // lokal nachziehen
-    melde('Zähler umbenannt', 'pos');
-    await laden();
-  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+  const alt = z?.name || halter.textContent.trim();
+  const vorher = halter.innerHTML;
+
+  halter.innerHTML = `<input class="zu-name-inp" type="text" value="${esc(alt)}"
+    aria-label="Name des Zählers" maxlength="80">`;
+  const inp = halter.querySelector('.zu-name-inp');
+  inp.focus();
+  inp.select();
+
+  let fertig = false;
+  const zurueck = () => { if (!fertig) { fertig = true; halter.innerHTML = vorher; } };
+
+  const speichern = async () => {
+    if (fertig) return;
+    const name = inp.value.trim();
+    if (!name || name === alt) return zurueck();
+    fertig = true;
+    try {
+      await api(`/zaehler/${zid}`, { method: 'PATCH', body: { name } });
+      if (z) z.name = name;
+      melde('Zähler umbenannt', 'pos');
+      await laden();
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+      halter.innerHTML = vorher;
+    }
+  };
+
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); speichern(); }
+    if (e.key === 'Escape') { e.preventDefault(); zurueck(); }
+  });
+  inp.addEventListener('blur', speichern);
+  // Der Klick im Feld darf die Zeile nicht auf- oder zuklappen.
+  inp.addEventListener('click', e => e.stopPropagation());
 }
 
 function meterZeileHtml(z, { rest = false, minus = false, label = null,
