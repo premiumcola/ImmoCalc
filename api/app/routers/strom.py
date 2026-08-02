@@ -72,29 +72,35 @@ _HAT_SPALTE = hasattr(Stromjahr, _ZUORDNUNG_SPALTE)
 
 
 class StromIn(BaseModel):
-    """Eingaben eines Strom-Jahres. Alle optional (Default 0/„") — der Nutzer
+    """Eingaben eines Strom-Jahres.
+
+    N150 — ALLE Felder sind `None`-Default, nicht 0.0/"". Vorher nahm der PUT
+    immer den ganzen Satz: wer nur einen Teil der Maske schickte, setzte alle
+    uebrigen Felder still auf 0. Das hat real Daten gekostet (`pv_kwp` 12,0
+    und `anschaffung_eur` 35.700 fielen so auf 0). `None` heisst jetzt
+    „nicht mitgeschickt" und laesst den gespeicherten Wert stehen. Alle optional (Default 0/„") — der Nutzer
     füllt die Maske Schritt für Schritt, ein leeres Feld bleibt 0."""
-    gesamt_kwh: float = 0.0
-    wg_kwh: float = 0.0
-    garage_kwh: float = 0.0
-    wg_anteil_prozent: float = 0.0
-    tanken_kwh: float = 0.0
-    netz_kwh: float = 0.0
-    netz_preis: float = 0.0
-    solar_kwh: float = 0.0
-    solar_preis: float = 0.0
-    akku_kwh: float = 0.0
-    akku_preis: float = 0.0
-    pv_produktion_kwh: float = 0.0
-    einspeisung_kwh: float = 0.0
-    pv_kwp: float = 0.0
-    verguetung_eur: float = 0.0
-    anschaffung_eur: float = 0.0
-    pv_anteile: str = ""              # JSON {Name: ‰}; leer = Vorgabe 5/6+1/6
-    tanken_preis: float = 0.0
-    tanken_person: str = ""
+    gesamt_kwh: float | None = None
+    wg_kwh: float | None = None
+    garage_kwh: float | None = None
+    wg_anteil_prozent: float | None = None
+    tanken_kwh: float | None = None
+    netz_kwh: float | None = None
+    netz_preis: float | None = None
+    solar_kwh: float | None = None
+    solar_preis: float | None = None
+    akku_kwh: float | None = None
+    akku_preis: float | None = None
+    pv_produktion_kwh: float | None = None
+    einspeisung_kwh: float | None = None
+    pv_kwp: float | None = None
+    verguetung_eur: float | None = None
+    anschaffung_eur: float | None = None
+    pv_anteile: str | None = None              # JSON {Name: ‰}; leer = Vorgabe 5/6+1/6
+    tanken_preis: float | None = None
+    tanken_person: str | None = None
     # N127 — Vorlauf vor der ersten Abrechnung (einmalig, s. `_FELDER`).
-    vorlauf_ertrag_eur: float = 0.0
+    vorlauf_ertrag_eur: float | None = None
     # N108 (Fund 2) — diese drei Felder schickt die Maske nicht mit. Als
     # Pflichtfeld mit Default "" loeschte jedes Speichern die gespeicherte
     # Zuordnung und die Notiz. `None` heisst jetzt „nicht mitgeschickt".

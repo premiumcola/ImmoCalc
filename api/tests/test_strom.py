@@ -889,3 +889,23 @@ def test_pv_eigentuemer_bietet_die_vorhandenen_personen_an(client):
     assert roland["am_objekt"] == 1000.0
     assert d["pv_anteile"] == {"Roland": 1000.0}
     assert d["anteile_summe"] == 1000.0 and d["hinweise"] == []
+
+
+def test_teil_put_setzt_die_uebrigen_felder_nicht_auf_null(client):
+    """N150 — der PUT nahm frueher immer den ganzen Satz: wer nur einen Teil der
+    Maske schickte, setzte alle uebrigen Felder still auf 0. Das hat real Daten
+    gekostet (`pv_kwp` 12,0 und `anschaffung_eur` 35.700 fielen so auf 0)."""
+    slug = _neues_objekt(client)
+    client.put(f"/api/objekte/{slug}/strom/2025",
+               json={"pv_kwp": 19.44, "anschaffung_eur": 35700.0,
+                     "gesamt_kwh": 10800.0})
+    # Ein zweiter Aufruf mit NUR den Mengen darf die Anlagenwerte stehen lassen.
+    client.put(f"/api/objekte/{slug}/strom/2025",
+               json={"netz_kwh": 2592.0, "solar_kwh": 5400.0, "akku_kwh": 2808.0})
+
+    antwort = client.get(f"/api/objekte/{slug}/strom/2025").json()
+    e = antwort.get("eingaben", antwort)
+    assert e["pv_kwp"] == 19.44
+    assert e["anschaffung_eur"] == 35700.0
+    assert e["gesamt_kwh"] == 10800.0
+    assert e["netz_kwh"] == 2592.0
