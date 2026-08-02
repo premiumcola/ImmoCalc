@@ -3998,7 +3998,30 @@ def _hole_beleg_bytes(session: Session, dokument_id: int) -> tuple[Dokument, byt
     return d, rohdaten
 
 
-def _ki_aus_db(d: Dokument) -> dict | None:
+def _rechnungssumme(session: Session, d: Dokument) -> float | None:
+    """N103 — die Summe der ganzen Rechnung, wenn ein Beleg auf mehrere
+    Positionen aufgeteilt ist.
+
+    Ein Wasser-Bescheid trägt drei Gebühren (Frisch-, Schmutz-, Niederschlags-
+    wasser). Verbucht wird der Beleg auf der Frischwasser-Position, sein
+    `betrag` ist deshalb nur ein Drittel der Rechnung — im Beleg-Fenster wirkt
+    das wie ein Lesefehler. Hier kommt die Summe der zusammengehörigen
+    Positionen desselben Zeitraums dazu. `None`, wenn es nichts zu summieren
+    gibt (dann zeigt die Oberfläche nur den Betrag)."""
+    if not d.zeitraum_id or not (d.kostenart or "").strip():
+        return None
+    geschwister = ("Wasser", "Abwasser", "Niederschlagswasser")
+    if kostenart_normalisieren(d.kostenart) not in geschwister:
+        return None
+    summe = sum(p.betrag or 0.0 for p in session.exec(
+        select(Kostenposition).where(
+            Kostenposition.zeitraum_id == d.zeitraum_id)).all()
+        if kostenart_normalisieren(p.kostenart) in geschwister)
+    summe = round(summe, 2)
+    return summe if summe > 0 and summe != round(d.betrag or 0.0, 2) else None
+
+
+def _ki_aus_db(d: Dokument, session: Session | None = None) -> dict | None:
     """N98 — die schon gespeicherte KI-Auslese eines Belegs, wenn sie taugt.
 
     Ein KI-Aufruf kostet Geld und Zeit; das Ergebnis steht bereits am Beleg
@@ -4018,6 +4041,9 @@ def _ki_aus_db(d: Dokument) -> dict | None:
         "einordnung": d.ki_einordnung, "immobilie": d.ki_immobilie,
         "einheit": getattr(d, "ki_einheit", "") or "",
         "felder": d.ki_felder or {}, "ki": True, "aus_db": True,
+        # N103 — bei aufgeteilten Rechnungen (Wasser: drei Gebühren) die
+        # Summe der ganzen Rechnung mitgeben, nicht nur den Buchungsanteil.
+        "rechnungssumme": _rechnungssumme(session, d) if session else None,
     }
 
 
@@ -4045,7 +4071,7 @@ def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
     # im Eingang immer wieder angesehen, und jeder Aufruf hier kostete bisher
     # einen KI-Call. `?neu=true` (bzw. `/neu-analysieren`) liest bewusst neu.
     if not neu:
-        gespeichert = _ki_aus_db(session.get(Dokument, dokument_id) or Dokument())
+        gespeichert = _ki_aus_db(session.get(Dokument, dokument_id) or Dokument(), session)
         if gespeichert:
             return gespeichert
     d, rohdaten = _hole_beleg_bytes(session, dokument_id)

@@ -413,20 +413,20 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
    Sitzt zwischen Kopf und Blatt, ruhig auf Papierton statt als Kasten mit
    Rahmen. Die Höhe ist gedeckelt, damit eine lange Einordnung dem Beleg nicht
    die Fläche nimmt; der Block scrollt dann in sich. */
-.beleg-ki{flex:none; max-height:42dvh; overflow:auto; border-radius:12px;
-  background:var(--paper); padding:12px 14px; -webkit-overflow-scrolling:touch;
-  /* weicher unterer Rand: was folgt, ist erreichbar, wirkt aber nicht
-     abgeschnitten. Bei kurzem Inhalt liegt der Verlauf über der Polsterung
-     und faellt nicht auf. */
-  -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 16px),transparent);
-  mask-image:linear-gradient(to bottom,#000 calc(100% - 16px),transparent)}
+/* N103 - der Block gehoert dem Beleg und darf auffallen: teal getoent mit
+   Akzentkante. KEINE Maske und kein harter Hoehendeckel mehr - der Satz wurde
+   dadurch mitten im Wort abgeschnitten; er darf jetzt zu Ende gelesen werden
+   und scrollt im eigenen Kasten, wenn er wirklich lang ist. */
+.beleg-ki{flex:none; max-height:50dvh; overflow:auto; border-radius:12px;
+  background:var(--teal-l); box-shadow:inset 3px 0 0 var(--teal);
+  padding:13px 15px; -webkit-overflow-scrolling:touch}
 .beleg-ki[hidden]{display:none}
 .beleg-ki .ki-kopf{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
   margin-bottom:7px}
 .beleg-ki .kt{font:600 10.5px var(--mono); letter-spacing:.09em;
   text-transform:uppercase; color:var(--teal-d)}
 .beleg-ki .kq{font:500 10.5px var(--mono); color:var(--soft)}
-.beleg-ki .ki-satz{font:400 13px var(--body); color:var(--ink); line-height:1.5;
+.beleg-ki .ki-satz{font:400 13px var(--body); color:var(--ink); line-height:1.55;
   margin:0 0 11px; overflow-wrap:anywhere}
 .beleg-ki .ki-satz:last-child{margin-bottom:0}
 .beleg-ki .ki-chips{display:flex; flex-wrap:wrap; gap:7px}

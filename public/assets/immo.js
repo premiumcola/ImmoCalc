@@ -389,8 +389,10 @@ function kiAusleseHtml(w) {
   const satz = String(w.zusammenfassung || w.einordnung || '').trim();
   const zeilen = kiZeilen(w);
   if (!satz && !zeilen.length) return '';
-  return `<div class="ki-kopf"><span class="kt">KI-Auslese</span>${
-      w.aus_db ? '<span class="kq">gespeicherte Auslese</span>' : ''}</div>`
+  // N103 - „Dokumentenerkennung" statt „KI-Auslese": der Nutzer soll die
+  // ausgelesenen Angaben sehen, nicht die Technik dahinter.
+  return `<div class="ki-kopf"><span class="kt">Dokumentenerkennung</span>${
+      w.aus_db ? '<span class="kq">gespeichert</span>' : ''}</div>`
     + (satz ? `<p class="ki-satz">${sicher(satz)}</p>` : '')
     + (zeilen.length
         ? `<div class="ki-chips">${zeilen.map(([l, v]) =>
