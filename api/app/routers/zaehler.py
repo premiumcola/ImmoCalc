@@ -21,6 +21,8 @@ from ..db import get_session
 from ..deps import objekt_holen
 from ..models import (Ablesung, Einheit, Kostenposition, Miete, Objekt, Partei,
                       Zaehler, Zeitraum)
+from .openwb import ladungen as openwb_ladungen
+from .tankstelle import nutzer_lesen
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["zaehler"])
@@ -79,6 +81,49 @@ def _mit_vorlauf(zeitraeume: list, zma: list) -> tuple[list, object | None]:
         return list(zeitraeume), None
     vorlauf = SimpleNamespace(id=_VORLAUF_ID, start=erste_start, ende=erste_start)
     return [vorlauf, *zeitraeume], vorlauf
+
+
+# --------------------------------------------------------------------------
+# N157 — die E-Tankstelle: ihr Jahreswert wird gezogen, nicht getippt
+# --------------------------------------------------------------------------
+
+#: Kennzeichen der Ladestation in der BESTEHENDEN Spalte `art` — additiv, keine
+#: Schemaänderung. Ältere Zähler tragen dort nichts; für die greift der Name.
+EAUTO_ART = "E-Tankstelle"
+
+#: Wortmarken, an denen eine Ladestation zu erkennen ist (nach `_ohne_trenner`,
+#: also ohne Bindestriche und Leerzeichen: „E-Tankstelle" → „etankstelle").
+_EAUTO_WORTE = ("etankstelle", "eauto", "elektroauto", "ladestation",
+                "ladesaeule", "wallbox")
+
+#: Woher der gezogene Wert stammt — steht als Notiz an der Ablesung, damit an
+#: der Zahl selbst hängt, dass sie nicht von Hand kam.
+EAUTO_NOTIZ = "aus dem Ladeprotokoll der Wallbox gezogen"
+
+
+def _ohne_trenner(text: str) -> str:
+    """Vergleichsschlüssel ohne Umlaute, Bindestriche und Leerzeichen."""
+    return "".join(c for c in kostenarten._fold(text) if c.isalnum())
+
+
+def ist_eauto_zaehler(z: Zaehler) -> bool:
+    """Ist das die Ladestation des Objekts?
+
+    Nur Strom-Zähler (kWh) kommen in Frage. Erkannt wird zuerst am Merkmal in
+    `art`, sonst am Namen — so überlebt die Erkennung ein Umbenennen, sobald
+    das Merkmal einmal gesetzt ist."""
+    if (z.messeinheit or "") != "kWh":
+        return False
+    return any(w in _ohne_trenner(z.art) or w in _ohne_trenner(z.name)
+               for w in _EAUTO_WORTE)
+
+
+def _eauto_zaehler(session: Session, objekt_id: int) -> Zaehler | None:
+    """Der Ladestations-Zähler eines Objekts — ``None``, wenn keiner erfasst ist."""
+    zaehler = session.exec(
+        select(Zaehler).where(Zaehler.objekt_id == objekt_id, Zaehler.aktiv)
+        .order_by(Zaehler.reihenfolge, Zaehler.id)).all()
+    return next((z for z in zaehler if ist_eauto_zaehler(z)), None)
 
 
 class ZaehlerIn(BaseModel):
@@ -287,6 +332,10 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
             # Anbau, E-Auto, Scheune, Haus) genauso wie beim Wasser; `notiz`
             # traegt die Erlaeuterung, die der Nutzer selbst hinterlegt.
             "art": zae.art, "notiz": zae.notiz,
+            # N157 — die Ladestation ist die einzige Zeile, deren Jahreswert
+            # gezogen und nicht getippt wird. Welche das ist, entscheidet EINE
+            # Regel hier im Backend; die Oberfläche liest nur das Merkmal.
+            "eauto": ist_eauto_zaehler(zae),
             "vorwert": None if not vorwert else {
                 "stand": round(vorwert["randwert"], 3),
                 "datum": vorwert["datum"].isoformat()},
@@ -306,6 +355,76 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
             {"wert": k, "titel": v["titel"], "ableitbar": v["ableitbar"]}
             for k, v in verteilung.SCHLUESSEL.items()],
     }
+
+
+@router.post("/zeitraeume/{zid}/eauto")
+def eauto_ziehen(zid: int, session: Session = Depends(get_session)) -> dict:
+    """N157 — den Jahreswert der E-Tankstelle aus dem Ladeprotokoll ziehen.
+
+    Der Wert wird **als Ablesung dieses Zählers** abgelegt. Damit gibt es genau
+    eine Menge: alles, was schon rechnet (Verbrauch Haus als Rest, der Abgleich
+    in der Stromkette), liest weiter den Zähler — nur getippt wird sie nicht
+    mehr. Gezogen wird nach den Monaten des Abrechnungszeitraums, nicht nach
+    Kalenderjahr.
+
+    Antwortet die Wallbox nicht, bleibt der zuletzt gezogene Stand **stehen**
+    und der Grund steht in `hinweis`. Eine 0 wäre hier eine Falschaussage.
+    Ein abgeschlossener Zeitraum wird nie mehr überschrieben."""
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    objekt = session.get(Objekt, z.objekt_id)
+    antwort: dict = {
+        "zeitraum_id": z.id, "von": z.start.isoformat(), "bis": z.ende.isoformat(),
+        "zaehler_id": None, "name": "", "ok": False, "hinweis": "",
+        "kwh": None, "anzahl": None, "stand": None, "gespeichert": False,
+        "nutzer": [n["name"] for n in nutzer_lesen(session, objekt.slug)]
+        if objekt else [],
+    }
+    zae = _eauto_zaehler(session, z.objekt_id)
+    if not zae:
+        antwort["hinweis"] = ("Für dieses Objekt ist keine Ladestation als "
+                              "Zähler erfasst.")
+        return antwort
+    # Das Merkmal einmal festschreiben (leeres Feld → additiv gefüllt), damit
+    # ein späteres Umbenennen die Erkennung nicht verliert.
+    if not (zae.art or "").strip():
+        zae.art = EAUTO_ART
+        session.add(zae)
+        session.commit()
+    erfasst = session.exec(select(Ablesung).where(
+        Ablesung.zaehler_id == zae.id, Ablesung.zeitraum_id == zid)).first()
+    antwort.update({"zaehler_id": zae.id, "name": zae.name,
+                    "stand": erfasst.stand if erfasst else None})
+
+    try:
+        daten = openwb_ladungen(von=z.start, bis=z.ende, session=session)
+    except Exception as fehler:            # noqa: BLE001 — Box im Heimnetz
+        log.info("E-Tankstelle: Wallbox nicht abrufbar — %s", fehler)
+        antwort["hinweis"] = ("Die Wallbox antwortet gerade nicht — der zuletzt "
+                              "gezogene Wert bleibt stehen.")
+        return antwort
+    if not daten.get("ok") or daten.get("kwh") is None:
+        antwort["hinweis"] = daten.get("hinweis") or (
+            "Die Wallbox liefert für diesen Zeitraum nichts Auswertbares — der "
+            "zuletzt gezogene Wert bleibt stehen.")
+        return antwort
+
+    kwh = round(daten["kwh"], 3)
+    antwort.update({"ok": True, "kwh": kwh, "anzahl": daten.get("anzahl") or 0,
+                    "quelle": daten.get("quelle", "")})
+    if z.status != "in Arbeit":
+        antwort["hinweis"] = ("Der Zeitraum ist abgeschlossen — der gezogene "
+                              "Wert wird nicht mehr eingetragen.")
+        return antwort
+    if erfasst is None or abs((erfasst.stand or 0.0) - kwh) > 0.0005 \
+            or erfasst.datum != z.ende:
+        ablesung_speichern(zae.id, AblesungIn(
+            datum=z.ende, stand=kwh, zeitraum_id=zid, notiz=EAUTO_NOTIZ), session)
+        antwort["gespeichert"] = True
+        log.info("E-Tankstelle: %s kWh am Zähler %s eingetragen", kwh, zae.id)
+    antwort["stand"] = kwh
+    return antwort
 
 
 @router.post("/zeitraeume/{zid}/ablesung/uebernehmen")
