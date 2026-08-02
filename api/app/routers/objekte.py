@@ -24,7 +24,7 @@ from ..nachpflege import hinweise, zusammenfassung
 from ..models import (GRUNDSTUECK, Bewohner, Dokument, Einheit, Kostenart,
                       Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
                       Partei, Stromjahr, Versicherung, Vorauszahlung, Zahlung,
-                      Zeitraum, ist_grundstueck)
+                      Zeitraum, ist_grundstueck, PVAnlage)
 from ..turnus import jahresbetrag
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, anteil_details, bezuege,
@@ -198,6 +198,13 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
     pv_objekte = {sj.objekt_id for sj in session.exec(
         select(Stromjahr).where(Stromjahr.objekt_id.in_(ids))).all()
         if (sj.pv_produktion_kwh or 0) > 0 or (sj.anschaffung_eur or 0) > 0}
+    # N139 — seit die Anschaffung in den Stammdaten der Anlage steht, darf die
+    # Erkennung nicht mehr allein am Strom-Jahr haengen: eine Anlage, deren
+    # Anschaffung nur dort gepflegt ist, waere sonst kein PV-Objekt mehr und
+    # verschwaende von der Startseite wie aus der Auswahl der PV-Seite.
+    pv_objekte |= {a.objekt_id for a in session.exec(
+        select(PVAnlage).where(PVAnlage.objekt_id.in_(ids))).all()
+        if (a.anschaffung_eur or 0) > 0 or (a.kwp or 0) > 0}
 
     out = []
     heute = date.today()
