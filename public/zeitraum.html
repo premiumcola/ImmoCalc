@@ -1157,7 +1157,11 @@ const BEREICH_PRUEF = [1, 0, 2, 3, 4];
 /* N62 — Anzeige-Alias je Kostenart: in der Oberfläche der offizielle Begriff,
    der Datei-/Speichername bleibt die Kurzform. Nur für die Beschriftung — die
    Kostenart selbst (Matching, data-Attribute, Dateiname) bleibt unverändert. */
-const KOSTENART_ALIAS = { 'Müll': 'Abfallwirtschaft' };
+const KOSTENART_ALIAS = { 'Müll': 'Abfallwirtschaft',
+  // N91 — die drei Heizungs-Stufen tragen sprechende Namen: oben das Öl (was
+  // gekauft wurde), darunter die beiden Verbraucher, die es aufteilen.
+  'Heizkosten': 'Heizöl & Lieferungen', 'Warmwasser': 'Warmwassererzeugung',
+  'Heizung': 'Heizkörper Wärmemenge' };
 const kostenartAnzeige = k => KOSTENART_ALIAS[k] || k;
 
 function bereichIndex(kostenart) {
@@ -1260,8 +1264,24 @@ function wasserHatRechnung(k) {
 function istHeizoelSammel(k) {
   const n = normUml(k.kostenart);
   if (n.includes('wartung') || n.includes('warmwasser')) return false;
-  return n === 'heizung' || n === 'heizkosten' || n.includes('heizoel')
-    || n.includes('heizol');
+  // N91 — nur die ÖL-Position (Einkauf): Lieferungen + FIFO. „Heizung" trägt
+  // jetzt die Heizkörper-Wärmemenge, nicht mehr den Öl-Manager.
+  return n === 'heizkosten' || n.includes('heizoel') || n.includes('heizol');
+}
+
+/* N91 — die Warmwasser-Position: hier steht der §9-Split (wie viel des Öls in
+   die Warmwassererzeugung geht) samt seiner Verteilung. */
+function istWarmwasserPos(k) {
+  const n = normUml(k.kostenart);
+  return n === 'warmwasser' || n.includes('warmwassererzeug');
+}
+
+/* N91 — die Heizungs-Position: Heizkörper-Wärmemenge über die
+   Heizkostenverteiler (Faktor × Einheiten). Nicht „Wartung Heizung". */
+function istHeizwaermePos(k) {
+  const n = normUml(k.kostenart);
+  if (n.includes('wartung') || n.includes('warmwasser')) return false;
+  return n === 'heizung' || n.includes('heizkoerper') || n.includes('waermemenge');
 }
 
 /* N68 — generische Anzeigenamen je Zähler-id: die spezifischen Namen treten in
@@ -1884,6 +1904,11 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   const wasserSammel = istWasserSammel(k);
   const wasserBill = wasserSammel && wasserHatRechnung(k);
   const heizoelSammel = istHeizoelSammel(k);
+  // N91 — die drei Heizungs-Stufen: Öl (Einkauf) · Warmwassererzeugung · Heiz-
+  // körper-Wärmemenge. Jede Position zeigt genau ihren Teil.
+  const heizModus = heizoelSammel ? 'oel'
+    : istWarmwasserPos(k) ? 'warmwasser'
+    : istHeizwaermePos(k) ? 'waerme' : '';
   const kannAuf = !wasserSammel || wasserBill;
   const auf = aufgeklappt && kannAuf;
 
@@ -1895,14 +1920,15 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
     koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
         <div class="wd-lade">Detailübersicht wird geladen …</div></div>
       <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
-  } else if (auf && heizoelSammel) {
-    // N79 — Öl-Manager: Lieferungen + FIFO-Bewertung inline; darunter die Belege
-    // (die Öl-Rechnungen selbst).
+  } else if (auf && heizModus) {
+    // N79/N91 — je nach Stufe: Öl-Lieferungen+FIFO, Warmwasser-Split (§9) oder
+    // Heizkörper-Wärmemenge (HKV); darunter die Belege der Position.
     const anbau = bearbeitbar
       ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
-          >${ANH_ICON} Öl-Rechnung anhängen</button>` : '';
-    koerper = `<div class="ho-inline" data-heizoel-inline="${zid}">
-        <div class="wd-lade">Heizöl wird geladen …</div></div>
+          >${ANH_ICON} ${heizModus === 'oel' ? 'Öl-Rechnung' : 'Beleg'} anhängen</button>` : '';
+    koerper = `<div class="ho-inline" data-heizoel-inline="${zid}"
+        data-heiz-modus="${heizModus}">
+        <div class="wd-lade">Wird geladen …</div></div>
       <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
   } else if (auf && k.position_id) {
     // Der Betrag steht jetzt oben im Kopf (kopf-betrag) — kein zweites Feld hier.
@@ -2231,6 +2257,13 @@ async function zeichnen() {
     for (const eintrag of sortiert) {
       bereiche[bereichIndex(eintrag.k.kostenart)].push(eintrag);
     }
+    // N91 — im Heizungs-Kapitel zählt die fachliche Reihenfolge, nicht die
+    // gewählte Sortierung: erst das Öl (Einkauf), dann die beiden Verbraucher,
+    // die es aufteilen, zuletzt die Wartung.
+    const heizRang = k => istHeizoelSammel(k) ? 0
+      : istWarmwasserPos(k) ? 1 : istHeizwaermePos(k) ? 2
+      : normUml(k.kostenart).includes('wartung') ? 4 : 3;
+    bereiche[1].sort((a, b) => heizRang(a.k) - heizRang(b.k));
     // N67 — Zählerstände je Kapitel: Wasser-Zähler unter Wasser (bi 0), Heizung
     // unter Heizung (bi 1), Strom unter Strom (bi 2) — jeweils eigenes Panel.
     const zListe = ablesungMaske?.zaehler || [];
@@ -2399,7 +2432,8 @@ async function fuelleHeizoelInline(el) {
       verteilung = await api(`/objekte/${slug}/heizung/verteilung?kosten=${split.heizung_kosten}`)
         .catch(() => null);
     }
-    el.innerHTML = heizoelInhalt(best, bew, hkv, wwVol, split, verteilung);
+    el.innerHTML = heizoelInhalt(best, bew, hkv, wwVol, split, verteilung,
+                                 el.dataset.heizModus || 'oel');
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Heizöl nicht ladbar: ${
       esc(String(fehler.message || fehler))}</div>`;
@@ -2408,7 +2442,7 @@ async function fuelleHeizoelInline(el) {
 
 /* Der Öl-Manager als HTML: FIFO oben, Lieferungen, Erfassung; darunter der
    §9-Split (Warmwasser/Heizung, N80) und die HKV-Verteilung (N81). */
-function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung) {
+function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') {
   const bearbeitbar = daten.status === 'in Arbeit';
   const liefer = (best?.lieferungen || []);
   const kopf = bew && bew.verbrauch_liter != null
@@ -2484,9 +2518,23 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung) {
       ${hkvZeilen ? `<div class="ho-liste">${hkvZeilen}</div>${vtZeilen}`
         : '<div class="ho-warn">Noch keine Heizkörper erfasst — je Heizkörper Nummer, Raum, Faktor und die abgelesenen Einheiten anlegen.</div>'}
       ${hkvForm}</div>`;
+  // N91 — jede Stufe zeigt nur ihren Teil:
+  //   oel        Lieferungen + FIFO (was gekauft und verbraucht wurde)
+  //   warmwasser der §9-Anteil des Öls für die Warmwassererzeugung
+  //   waerme     die Heizkörper-Wärmemenge über die Heizkostenverteiler
+  if (modus === 'warmwasser') {
+    return `<div class="ho-box">${splitHtml
+      || '<div class="ho-warn">Noch keine Öl-Kosten erfasst — erst Lieferungen und den Zähler-Endstand bei „Heizöl & Lieferungen" eintragen.</div>'}</div>`;
+  }
+  if (modus === 'waerme') {
+    const kopfW = split ? `<div class="ho-kpi"><div class="ho-kbox teal">
+        <span class="ho-kl">Heizungs-Kosten (nach Warmwasser-Abzug)</span>
+        <span class="ho-kv">${eur(split.heizung_kosten)}</span></div></div>` : '';
+    return `<div class="ho-box">${kopfW}${hkvHtml}</div>`;
+  }
   return `<div class="ho-box">${kopf}
     ${zeilen ? `<div class="ho-liste">${zeilen}</div>${bestZeile}` : ''}
-    ${form}${splitHtml}${hkvHtml}</div>`;
+    ${form}</div>`;
 }
 
 /* N74 — die Wasser-Detailübersicht als Tabelle IN die aufgeklappte Position
