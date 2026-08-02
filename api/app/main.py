@@ -12,8 +12,8 @@ from . import wachdienst
 from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
-from .routers import (auswertung, besitz, cloud, dokumente, ki, mail, objekte,
-                      stammdaten, versand, zaehler)
+from .routers import (auswertung, besitz, cloud, dokumente, heizoel, ki, mail,
+                      objekte, stammdaten, versand, zaehler)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -64,6 +64,8 @@ app.include_router(objekte.router)
 # zweisegmentigen Pfade mehr (siehe stammdaten.py:_altpfad).
 app.include_router(besitz.router)
 app.include_router(zaehler.router)  # /objekte/{slug}/zaehler VOR dem Stammdaten-Fänger
+# /objekte/{slug}/heizoel ebenfalls VOR dem Stammdaten-Fänger (N79).
+app.include_router(heizoel.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 app.include_router(cloud.router)

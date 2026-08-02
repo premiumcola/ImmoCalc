@@ -758,3 +758,26 @@ class Dokument(SQLModel, table=True):
     # die Spalten für den Bestand an, ein Beleg ohne Info bleibt unverändert.
     info_zu_typ: str = ""
     info_zu_id: Optional[int] = None
+
+
+class Heizoellieferung(SQLModel, table=True):
+    """N79 — eine Heizöl-Lieferung (oder der Anfangsbestand) an einem Objekt.
+
+    Heizöl wird nicht abgelesen, sondern getankt: der Nutzer erfasst mehrere
+    Lieferungen (Liter + Gesamtpreis + Datum) und einen Anfangsbestand (der
+    Bestand zu Beginn, mit dem frühesten Datum). Der Verbrauch einer
+    Abrechnungsperiode wird dann FIFO bewertet — das älteste Öl zuerst
+    (`heizoel.verbrauch_bewerten`).
+
+    `wert` ist der Gesamtpreis der Lieferung in €; der Preis je Liter ergibt
+    sich als `wert / liter` und wird nicht gespeichert. `ist_anfangsbestand`
+    markiert den Startbestand (üblicherweise das früheste Datum), damit die
+    Oberfläche ihn getrennt führen kann; für die FIFO-Bewertung zählt allein
+    das Datum. Additiv, hängt am Objekt — jeder Bestand bleibt unverändert."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    datum: date
+    liter: float = 0.0
+    wert: float = 0.0                 # Gesamtpreis der Lieferung in €
+    ist_anfangsbestand: bool = False
+    notiz: str = ""
