@@ -1970,7 +1970,9 @@ function zeileHtml(k, i) {
   // (Frisch- + Schmutz- + Niederschlagswasser). Ihr eigener Betrag ist nur der
   // Frischwasser-Anteil; die anderen beiden sind eigene, ausgeblendete
   // Positionen — die Zeile stünde sonst mit einem Drittel der Rechnung da.
-  const wert = eur(istWasserSammel(k) ? wasserGesamtBetrag() : k.betrag);
+  const oelBetrag = istHeizoelSammel(k) && !k.betrag ? heizoelKosten : 0;
+  const wert = eur(istWasserSammel(k) ? wasserGesamtBetrag()
+    : (oelBetrag || k.betrag));
   const aufgeklappt = offen.has(i);
 
   // Nur ein kurzer Zustandshinweis, wo wirklich etwas fehlt — kein Sermon.
@@ -2014,6 +2016,10 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   const wasserSammel = istWasserSammel(k);
   const wasserBill = wasserSammel && wasserHatRechnung(k);
   const heizoelSammel = istHeizoelSammel(k);
+  // N114 — die Heizkosten kommen aus der FIFO-Bewertung, nicht als Positions-
+  // betrag. `zeileHtml` rechnet dasselbe fuer die Anzeige; hier wird es fuer
+  // Haken und „Datei waehlen" gebraucht.
+  const oelBetrag = heizoelSammel && !k.betrag ? heizoelKosten : 0;
   // N91 — die drei Heizungs-Stufen: Öl (Einkauf) · Warmwassererzeugung · Heiz-
   // körper-Wärmemenge. Jede Position zeigt genau ihren Teil.
   const heizModus = heizoelSammel ? 'oel'
@@ -2103,13 +2109,16 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
          inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
          aria-label="Betrag für ${esc(k.kostenart)}"><span class="kbe">€</span></span>`
-    : (k.erledigt ? `<span class="wert">${wert}</span>` : '');
+    : ((k.erledigt || oelBetrag) ? `<span class="wert">${wert}</span>` : '');
   // Quick-Capture nur an der geschlossenen, offenen Zeile — aufgeklappt macht
   // der Betrag im Kopf Platz, Belege kommen dann über „Beleg anhängen".
   // Ohne Kamera (Schreibtisch) genügt EIN neutraler Knopf — er öffnet über
   // data-scan das lokale #scanFeld (nimmt PDFs an), navigiert also NICHT bloß in
   // den Eingang. Mit Kamera bleiben beide Wege: erfassen (teal) und aus Ablage.
-  const quickScan = (!k.erledigt && !aufgeklappt)
+  // N114 — hat die Heizöl-Position ihre Kosten aus der FIFO-Bewertung, ist sie
+  // nicht „leer": dann kein „Datei wählen"-Knopf, sondern der Betrag. Weitere
+  // Lieferungen lassen sich jederzeit im aufgeklappten Öl-Manager erfassen.
+  const quickScan = (!k.erledigt && !aufgeklappt && !oelBetrag)
     ? (KEINE_KAMERA
       ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
             title="Beleg-PDF von diesem Rechner wählen" aria-label="Beleg-Datei wählen">
@@ -2441,6 +2450,7 @@ async function zeichnen() {
 /* N82b — die Summe der NK-Vorauszahlungen des Zeitraums (aus der Abrechnung).
    Wird beim Laden geholt; null heißt „noch nicht bekannt". */
 let deckungAbschlaege = null;
+let heizoelKosten = 0;   // N114 - FIFO-Kosten des Oelverbrauchs
 let deckungUmgelegt = null;   // was tatsächlich verteilt ist (Abrechnung)
 
 /* Kurzes deutsches Datum aus ISO (für die Öl-Lieferungsliste). */
@@ -2471,9 +2481,10 @@ function deckungHtml() {
   const nach = saldo < 0;
   const rest = Math.round((kosten - umgelegt) * 100) / 100;
   return `<div class="deckung ${nach ? 'neg' : 'pos'}">
-    <div class="dstat"><span class="dl">Abschläge der Mieter</span><span class="dv">${eur(abschlaege)}</span></div>
+    <div class="dstat"><span class="dl">Abschläge der Mieter</span>
+      <span class="dv pos">${eur(abschlaege)}</span></div>
     <div class="dstat"><span class="dl">Umgelegt · Deckung</span>
-      <span class="dv">${eur(umgelegt)} · ${quote}%</span></div>
+      <span class="dv neg">${eur(umgelegt)} · ${quote}%</span></div>
     <div class="dstat"><span class="dl">${nach ? 'Nicht gedeckt · Nachzahlung' : 'Überdeckt · Guthaben'}</span>
       <span class="dv ${nach ? 'neg' : 'pos'}">${eur(Math.abs(saldo))}</span></div>
     ${rest > 0.01 ? `<div class="dhinweis">Von ${eur(kosten)} erfassten Kosten sind
@@ -3409,6 +3420,14 @@ async function laden() {
   } catch {
     ablesungMaske = null;
   }
+  // N114 — die Heizkosten stehen nicht als Positionsbetrag, sondern entstehen
+  // aus der FIFO-Bewertung des Öl-Verbrauchs. Die Zeile soll sie trotzdem
+  // ausweisen statt „Datei wählen" anzubieten, als waere nichts erfasst.
+  try {
+    const b = await api(`/objekte/${encodeURIComponent(daten.objekt)}`
+      + `/heizoel/bewertung?zeitraum_id=${zid}`);
+    heizoelKosten = b?.verbrauch_kosten || 0;
+  } catch { heizoelKosten = 0; }
   // N82b — die NK-Vorauszahlungen des Zeitraums für die Deckungs-Anzeige.
   try {
     const ab = await api(`/zeitraeume/${zid}/abrechnung`);
