@@ -856,3 +856,40 @@ class Stromjahr(SQLModel, table=True):
     # Einheit, der in die Nebenkostenabrechnung zurueckfliesst.
     gruppen_einheiten: str = ""
     notiz: str = ""
+
+
+class Belegdaten(SQLModel, table=True):
+    """N84 — die interne Wissens-Datenbank der ausgelesenen Belegdaten.
+
+    Bisher lagen die KI-Auslesen verstreut am Dokument (`ki_einordnung`,
+    `ki_felder`, `ki_immobilie`, `ki_einheit`) und mussten bei jedem Ansehen
+    neu zusammengesucht werden. Hier steht je Beleg ein Datensatz mit dem,
+    was der Beleg aussagt — und mit `pfad` als **Link auf die Datei** in der
+    Cloud statt einer lokalen Kopie. Über Jahre hinweg durchsuchbar
+    (`app.kidb.suche`).
+
+    Ein Eintrag je Beleg: `dokument_id` ist der Schlüssel, unter dem die
+    Übernahme wiederfindet, was sie schon angelegt hat (idempotent). Bewusst
+    ohne `unique=True` in der Tabelle — der Bestand soll auch dann laufen,
+    wenn irgendwann zwei Einträge auf denselben Beleg zeigen; der Fachcode
+    führt sie über `zusammenfuehren` additiv zusammen.
+
+    Ganz neue Tabelle, alle Felder mit Default: `create_all` legt sie an,
+    kein bestehender Datensatz ändert sich."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    dokument_id: Optional[int] = Field(default=None,
+                                       foreign_key="dokument.id", index=True)
+    objekt_id: Optional[int] = Field(default=None,
+                                     foreign_key="objekt.id", index=True)
+    jahr: Optional[int] = Field(default=None, index=True)
+    kategorie: str = ""               # Dokumentart, z. B. „Nebenkosten"
+    kostenart: str = ""               # Zeile der Abrechnung, z. B. „Wasser"
+    betrag: Optional[float] = None
+    belegdatum: Optional[date] = None
+    anbieter: str = ""                # Aussteller (KI: `anbieter`/`absender`)
+    zusammenfassung: str = ""         # Freitext — die KI-Einordnung
+    felder: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    pfad: str = ""                    # WebDAV-Pfad = der Link zur Datei
+    dateiname: str = ""
+    quelle: str = ""                  # 'ki' | 'regel' | 'hand'
+    erfasst_am: Optional[date] = None

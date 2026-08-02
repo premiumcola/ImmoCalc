@@ -2118,7 +2118,9 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
         <button class="zeile" data-auf="${i}"${kannAuf ? '' : ' data-noexpand'} aria-expanded="${auf}">
           <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
-          <span class="name">${chipHtml(k)}${esc(kostenartAnzeige(k.kostenart))}${vkeyChip(k)}${
+          <!-- N104c - der Verbrauchs-Chip steht HINTER dem Titel: davor
+               drängte er sich vor den Namen, obwohl er Beiwerk ist. -->
+          <span class="name">${esc(kostenartAnzeige(k.kostenart))}${chipHtml(k)}${vkeyChip(k)}${
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}${
             (k.anbieter && !aufgeklappt && k.zustand !== 'fehlt')
               ? `<span class="anbieter-tag" title="Anbieter / Gewerk">${esc(k.anbieter)}</span>`

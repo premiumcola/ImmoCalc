@@ -129,7 +129,13 @@ def _verbrauch_aus_zeitraum(session: Session, o: Objekt, zeitraum_id: int) -> fl
            for zae in oel]
     zeitraeume = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
-    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume, zeitraum_id)
+    # N105 - ohne die synthetische Vorlauf-Periode gilt die erste Ablesung als
+    # Startablesung und der Verbrauch der ersten Abrechnung ist 0: der
+    # Oelzaehler zeigte unten 3.431 L, oben stand 0 L. `_mit_vorlauf` macht
+    # aus dem Anfangsstand den Randwert - genau wie in der Ablese-Maske.
+    from .zaehler import _mit_vorlauf
+    zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
+    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zeitraum_id)
     return round(sum(v for v in verb.values() if v), 3)
 
 

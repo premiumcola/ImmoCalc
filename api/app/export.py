@@ -18,9 +18,10 @@ from typing import Type
 
 from sqlmodel import Session, SQLModel, select
 
-from .models import (Anteil, Bewohner, Dokument, Eigentuemer, Einheit,
-                     Kostenart, Kostenposition, Kredit, Kreditstand, Miete,
-                     Objekt, Partei, Versicherung, Vorauszahlung, Zahlung,
+from .models import (Anteil, Belegdaten, Bewohner, Dokument, Eigentuemer,
+                     Einheit, Heizoellieferung, Heizverteiler, Kostenart,
+                     Kostenposition, Kredit, Kreditstand, Miete, Objekt,
+                     Partei, Stromjahr, Versicherung, Vorauszahlung, Zahlung,
                      Zeitraum)
 
 log = logging.getLogger("immocalc")
@@ -37,6 +38,13 @@ ANHAENGSEL: dict[str, Type[SQLModel]] = {
     "kredite": Kredit,
     "zahlungen": Zahlung,
     "anteile": Anteil,
+    # N105 - die spaeter dazugekommenen objektgebundenen Tabellen. Ohne sie
+    # blieben ihre Saetze beim Loeschen eines Objekts als Waisen stehen und
+    # fehlten in der Sicherung.
+    "heizoellieferungen": Heizoellieferung,
+    "heizverteiler": Heizverteiler,
+    "stromjahre": Stromjahr,
+    "belegdaten": Belegdaten,
 }
 
 # Was nicht am Objekt hängt, sondern an einem seiner Sätze: die Jahresstände am
