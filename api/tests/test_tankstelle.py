@@ -1550,3 +1550,130 @@ def test_pdf_ohne_verbrauch_bleibt_bei_der_energieaufteilung(client):
                          params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
     assert antwort.status_code == 200, antwort.text
     assert b"Benzin" not in antwort.content
+
+
+# --------------------------------------------------------------------------
+# N177 — Überweisungskonto, Kosten-Spalte, Benzin-Kostenvergleich
+# --------------------------------------------------------------------------
+
+def _objekt_konto(slug: str, bank: str = "", iban: str = "",
+                  inhaber: str = "") -> None:
+    """Die Bankverbindung des Objekts (der Betreiber der Station) setzen —
+    direkt am Datensatz, wie `_stromkosten`."""
+    with Session(db_modul.engine) as session:
+        o = session.exec(select(Objekt).where(Objekt.slug == slug)).one()
+        o.bank, o.iban, o.kontoinhaber = bank, iban, inhaber
+        session.add(o)
+        session.commit()
+
+
+def test_pdf_nennt_das_ueberweisungskonto_des_objekts(client):
+    """Unten steht, wohin der Ladende überweist: die Bankverbindung des Objekts
+    (Betreiber), nicht die des Nutzers (N177)."""
+    slug = _neues_objekt(client, "Kontohaus")
+    _objekt_konto(slug, bank="Sparkasse Test", iban="DE12 3456 7890",
+                  inhaber="Max Betreiber")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid",
+        "strasse": "Musterweg 3", "plz": "90000", "ort": "Nürnberg"}).json()
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    roh = antwort.content
+    assert b"Betrag auf:" in roh                  # die Zahlungsangabe
+    assert b"Max Betreiber" in roh                # Kontoinhaber
+    assert b"IBAN DE12 3456 7890" in roh          # IBAN
+    assert b"Sparkasse Test" in roh               # Bank
+
+
+def test_pdf_ohne_objektkonto_ohne_zahlungsblock(client):
+    """Fehlt die Objekt-Bankverbindung, entfällt der Block — kein leerer
+    Platzhalter."""
+    slug = _neues_objekt(client, "Ohnekontohaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid"}).json()
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    assert b"Betrag auf:" not in antwort.content
+
+
+def test_pdf_kosten_spalte_summiert_zum_rechnungsbetrag():
+    """Die neue Kosten-Spalte zeigt die absoluten Monatskosten; ihre Summe ist
+    der Rechnungsbetrag (N177). Direkt am PDF geprüft."""
+    from datetime import date as _date
+
+    from app.tankabrechnung_pdf import tankabrechnung_pdf
+
+    def monat(kurz, label, kwh):
+        return {"kurz": kurz, "label": label, "kwh": kwh, "aufteilung": True,
+                "dreiteilig": False, "extern_kwh": kwh / 2, "eigen_kwh": kwh / 2,
+                "pv_kwh": None, "speicher_kwh": None}
+
+    satz_kwh = 0.30
+    monate = [monat("Jul", "Jul 2025", 100.0), monat("Aug", "Aug 2025", 50.0)]
+    kwh = 150.0
+    summe = {"kwh": kwh, "aufteilung": True, "dreiteilig": False,
+             "extern_kwh": 75.0, "eigen_kwh": 75.0,
+             "pv_kwh": None, "speicher_kwh": None}
+    betrag = round(kwh * satz_kwh, 2)             # 45,00 €
+    satz = {"netz": 0.33, "eigen": 0.30, "misch": satz_kwh, "rabatt": 0.10,
+            "herkunft": "Testherkunft"}
+    ea = {"modell": "VW ID.3", "verbrauch": 16.0, "satz": satz_kwh}
+    pdf = tankabrechnung_pdf("Testhaus", {"name": "Alicia"}, "Q3 2025",
+                             _date(2025, 7, 1), _date(2025, 9, 30), monate,
+                             summe, satz, kwh, betrag, eauto=ea)
+    assert b"Kosten" in pdf                        # die Spaltenüberschrift
+    assert b"30,00 EUR" in pdf                     # 100 kWh × 0,30
+    assert b"15,00 EUR" in pdf                     # 50 kWh × 0,30
+    assert b"45,00 EUR" in pdf                     # Summe = Rechnungsbetrag
+
+
+def test_pdf_weist_benzin_kostenvergleich_und_ersparnis_aus(client, monkeypatch):
+    """Mit ermitteltem Benziner-Verbrauch trägt das PDF den Kostenvergleich und
+    die Ersparnis Elektro gegenüber Benzin (N177)."""
+    from app import eauto as eauto_mod
+    monkeypatch.setattr(eauto_mod, "verbrauch_benzin_ermitteln",
+                        lambda *a, **k: (6.5, ""))
+    slug = _neues_objekt(client, "Benzinhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)       # → 0,32 € je kWh
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid"}).json()
+    client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                json={"modell": "Cupra Born", "verbrauch_kwh_100km": 16.0})
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    roh = antwort.content
+    assert b"Kostenvergleich mit Benzin" in roh
+    assert b"11,70 EUR" in roh                     # 6,5 l × 1,80 € je 100 km
+    assert b"Ersparnis" in roh
+    # E-Auto 0,32 × 16 = 5,12 €/100 km → Ersparnis 11,70 − 5,12 = 6,58 €/100 km.
+    assert b"6,58 EUR" in roh
+
+
+def test_pdf_ohne_benzinwert_kein_kostenvergleich(client, monkeypatch):
+    """Scheitert die Benziner-Ermittlung, entfällt der Kostenvergleich — kein
+    Absturz, keine erfundene Zahl."""
+    from app import eauto as eauto_mod
+    monkeypatch.setattr(eauto_mod, "verbrauch_benzin_ermitteln",
+                        lambda *a, **k: (None, eauto_mod.HINWEIS_BENZIN))
+    slug = _neues_objekt(client, "Keinbenzinhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid"}).json()
+    # Ein Modell, das der modellweite Cache noch nicht kennt — so greift wirklich
+    # der Fehlerpfad und nicht ein zwischengespeicherter Wert.
+    client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                json={"modell": "Renault Zoe", "verbrauch_kwh_100km": 16.0})
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    # Das energetische Äquivalent (N170) bleibt, der Kostenvergleich fehlt.
+    assert b"Kostenvergleich mit Benzin" not in antwort.content

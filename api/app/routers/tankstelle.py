@@ -100,6 +100,11 @@ S_ZUORDNUNG = "tankstelle_zuordnung"
 # gegen doppelten Versand: der 15-Minuten-Wachdienst schickt ein bereits
 # verschicktes Quartal nie ein zweites Mal.
 S_VERSENDET = "tankstelle_versendet"
+# N177 — Cache des von der KI ermittelten Benzinverbrauchs je E-Auto-Modell.
+# Der Kostenvergleich im PDF braucht ihn; ein Cache spart wiederholte
+# Netz-Aufrufe beim erneuten Ansehen desselben Quartals. Additiv, eigener
+# Namensraum — kein bestehender Schlüssel wird angefasst.
+S_BENZIN = "tankstelle_benzin"
 
 # Wie viele Tage nach Quartalsende der automatische Versand noch nachholt. Der
 # Auslöser ist „einen Tag nach dem Quartal" — dieses Fenster fängt ab, dass die
@@ -1560,6 +1565,32 @@ def _mailtext(o: Objekt, daten: dict, zeile: dict) -> tuple[str, str]:
     return betreff, text
 
 
+def _benzin_verbrauch(session: Session, modell: str) -> float | None:
+    """N177 — der Verbrauch eines vergleichbaren Benziners (l/100km) zum
+    E-Auto-Modell, für den Kostenvergleich im PDF.
+
+    Erst im Cache nachsehen (je Modell einer), sonst die KI fragen und einen
+    plausiblen Wert merken. Scheitert die Ermittlung, gibt es **keinen**
+    Vergleich (``None``) statt einer erfundenen Zahl — der einzige Netz-Aufruf
+    liegt in :func:`eauto.verbrauch_benzin_ermitteln` und wirft nie."""
+    name = " ".join((modell or "").split())
+    if not name:
+        return None
+    key = f"{S_BENZIN}:{name.casefold()}"
+    roh = _lies(session, key)
+    if roh:
+        try:
+            return float(roh)
+        except ValueError:
+            pass
+    verbrauch, _hinweis = eauto.verbrauch_benzin_ermitteln(
+        name, schluessel=ki_key(session), ki_modell=ki_modell(session))
+    if verbrauch is not None:
+        _setze(session, key, str(verbrauch))
+        session.commit()
+    return verbrauch
+
+
 def _pdf_und_name(session: Session, o: Objekt, daten: dict,
                   zeile: dict) -> tuple[bytes, str]:
     """Das Quartals-PDF eines Nutzers und sein Dateiname — die eine Stelle, die
@@ -1577,11 +1608,21 @@ def _pdf_und_name(session: Session, o: Objekt, daten: dict,
     # N170 — hat der Nutzer ein E-Auto mit Verbrauch, trägt das PDF km und
     # Preis/100 km statt der Netz/PV/Akku-Spalten; ohne bleibt es beim Alten.
     verbrauch = zeile.get("verbrauch_kwh_100km") or 0.0
-    ea = ({"modell": zeile.get("e_auto_modell", ""), "verbrauch": verbrauch,
-           "satz": daten["satz"]} if verbrauch > 0 else None)
+    ea = None
+    if verbrauch > 0:
+        modell = zeile.get("e_auto_modell", "")
+        ea = {"modell": modell, "verbrauch": verbrauch, "satz": daten["satz"]}
+        # N177 — der Kosten-Benzinvergleich: realer Verbrauch eines
+        # vergleichbaren Benziners (KI) gegen den echten E-Auto-Preis je 100 km.
+        # Ohne belastbaren Benzinwert entfällt der Vergleich (None).
+        ea["benzin"] = eauto.benzin_vergleich(
+            _benzin_verbrauch(session, modell),
+            zeile.get("preis_100km"), zeile.get("km"))
+    konto = {"bank": o.bank, "iban": o.iban, "kontoinhaber": o.kontoinhaber}
     inhalt = tankabrechnung_pdf(o.name, _empfaenger(session, zeile),
                                 daten["label"], von, bis, monate, summe, satz,
-                                zeile["kwh"], zeile["betrag"], eauto=ea)
+                                zeile["kwh"], zeile["betrag"], eauto=ea,
+                                konto=konto)
     return inhalt, tank_pdf_dateiname(o.name, daten["label"], zeile["name"])
 
 

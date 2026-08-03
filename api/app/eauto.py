@@ -49,10 +49,29 @@ VERBRAUCH_MAX = 30.0
 # des energetischen Benzin-Äquivalents — kein Kostenvergleich (siehe Modul-Kopf).
 BENZIN_KWH_PRO_LITER = 9.7
 
+# N177 — der **Kosten**vergleich mit Benzin (nicht zu verwechseln mit dem
+# energetischen Äquivalent darüber). Zwei Größen tragen ihn:
+#
+# * Der reale Verbrauch eines *vergleichbaren Benziners* (ähnliche Klasse und
+#   Leistung wie das E-Modell) kommt über die KI — plausibel ist grob 4–12
+#   l/100km (Kleinwagen bis großer Kombi/SUV). Alles darunter/darüber ist keine
+#   belastbare Angabe und wird verworfen, genau wie beim Stromverbrauch.
+# * Der Benzinpreis ist eine **dokumentierte Annahme** (wie „9,7 kWh je Liter"):
+#   sie steht sichtbar im PDF, damit die Zahl nicht wie eine Behauptung wirkt.
+BENZIN_PREIS_JE_LITER = 1.80
+BENZIN_VERBRAUCH_MIN = 4.0
+BENZIN_VERBRAUCH_MAX = 12.0
+
 # Der ehrliche Rückfall-Hinweis, wenn sich der Verbrauch nicht ermitteln lässt.
 # Wortgleich für alle Fehlerfälle: der Handeintrag ist immer der Ausweg.
 HINWEIS_HAND = ("Verbrauch nicht automatisch ermittelbar — bitte kWh/100km "
                 "von Hand eintragen.")
+
+# Scheitert die Benziner-Ermittlung, entfällt der Kostenvergleich — ohne
+# erfundene Zahl. Dieser Hinweis sagt das ehrlich (er erscheint nicht im PDF,
+# das den Block schlicht weglässt, sondern begleitet den Aufruf und die Logs).
+HINWEIS_BENZIN = ("Vergleichbarer Benzinverbrauch nicht automatisch "
+                  "ermittelbar — kein Kostenvergleich.")
 
 # Der KI-Aufruf ist knapp: eine Modellbezeichnung rein, eine Zahl raus.
 MAX_TOKENS = 24
@@ -68,6 +87,20 @@ SYSTEM_PROMPT = (
     "Antworte mit NUR EINER ZAHL — dem Verbrauch in kWh/100km, Punkt als "
     "Dezimaltrenner, ohne Einheit, ohne Erklärung, ohne weiteren Text. Kennst "
     "du das Modell nicht sicher, antworte 0."
+)
+
+# N177 — der Prompt für den vergleichbaren Benziner. Eingabe ist dieselbe
+# E-Auto-Modellbezeichnung; die KI wählt selbst einen ähnlichen Verbrenner und
+# nennt dessen realen Verbrauch.
+SYSTEM_PROMPT_BENZIN = (
+    "Du bist Fachmann für Autos. Zu einer angegebenen ELEKTROAUTO-"
+    "Modellbezeichnung nennst du den realistischen durchschnittlichen "
+    "Kraftstoffverbrauch eines VERGLEICHBAREN BENZINERS (ähnliche Fahrzeug"
+    "klasse, Größe und Motorleistung) im Alltag in Litern je 100 Kilometer "
+    "(l/100km). Ein Wert zwischen etwa 4 und 12 l/100km ist plausibel. "
+    "Antworte mit NUR EINER ZAHL — dem Verbrauch in l/100km, Punkt als "
+    "Dezimaltrenner, ohne Einheit, ohne Erklärung, ohne weiteren Text. Fällt "
+    "dir kein vergleichbares Modell ein, antworte 0."
 )
 
 
@@ -118,6 +151,68 @@ def benzin_aequivalent(verbrauch_kwh_100km: float | None) -> float | None:
     return round(verbrauch_kwh_100km / BENZIN_KWH_PRO_LITER, 1)
 
 
+def plausibel_benzin(wert) -> bool:
+    """Liegt ein Benzinverbrauch im realen Bereich (~4–12 l/100km)?
+
+    Wie :func:`plausibel`, nur für den vergleichbaren Verbrenner: darunter
+    (unter 4 l) oder darüber (über 12 l) ist keine belastbare Angabe. Ein
+    ``bool`` ist zwar eine Zahl, hier aber nie ein Verbrauch."""
+    if isinstance(wert, bool) or not isinstance(wert, (int, float)):
+        return False
+    return BENZIN_VERBRAUCH_MIN <= float(wert) <= BENZIN_VERBRAUCH_MAX
+
+
+def benzinkosten_je_100km(verbrauch_l_100km: float | None,
+                          preis_je_liter: float | None) -> float | None:
+    """Was ein Benziner je 100 km an Sprit kostet: ``Verbrauch × Literpreis``.
+
+    Ohne Verbrauch oder ohne Preis: ``None`` — keine erfundene 0."""
+    if not verbrauch_l_100km or verbrauch_l_100km <= 0 \
+            or not preis_je_liter or preis_je_liter <= 0:
+        return None
+    return round(verbrauch_l_100km * preis_je_liter, 2)
+
+
+def ersparnis_je_100km(benzinkosten_100km: float | None,
+                       e_preis_100km: float | None) -> float | None:
+    """Die Kostenersparnis Elektro gegenüber Benzin je 100 km:
+    ``Benzinkosten − E-Auto-Kosten``.
+
+    Beide Größen müssen vorliegen; sonst ``None``. Das Vorzeichen bleibt
+    ehrlich — wäre der Strom teurer, käme ein negativer Wert heraus, keine
+    geschönte 0."""
+    if benzinkosten_100km is None or e_preis_100km is None:
+        return None
+    return round(benzinkosten_100km - e_preis_100km, 2)
+
+
+def benzin_vergleich(benzin_verbrauch_l: float | None,
+                     e_preis_100km: float | None, km: float | None,
+                     preis_je_liter: float = BENZIN_PREIS_JE_LITER) -> dict | None:
+    """Der ganze Kostenvergleich in einem Rutsch — die reine, getestete Logik.
+
+    Braucht einen **plausiblen** Benzinverbrauch (sonst ``None``: kein Vergleich
+    statt einer erfundenen Zahl) und den echten E-Auto-Preis je 100 km, den das
+    PDF ohnehin ausweist. Gibt Benzinkosten und Ersparnis je 100 km zurück und —
+    wenn die im Zeitraum gefahrene Strecke bekannt ist — die Gesamtersparnis.
+
+    Der Literpreis ist die dokumentierte Annahme und wandert als `preis_liter`
+    mit heraus, damit das PDF sie sichtbar mitnennen kann."""
+    if not plausibel_benzin(benzin_verbrauch_l) or e_preis_100km is None:
+        return None
+    benzin_100km = benzinkosten_je_100km(benzin_verbrauch_l, preis_je_liter)
+    ersparnis_100km = ersparnis_je_100km(benzin_100km, e_preis_100km)
+    ersparnis_gesamt = (None if ersparnis_100km is None or not km or km <= 0
+                        else round(ersparnis_100km * km / 100.0, 2))
+    return {"verbrauch_l": round(float(benzin_verbrauch_l), 1),
+            "preis_liter": preis_je_liter,
+            "benzin_100km": benzin_100km,
+            "e_100km": e_preis_100km,
+            "ersparnis_100km": ersparnis_100km,
+            "km": km,
+            "ersparnis_gesamt": ersparnis_gesamt}
+
+
 def kennzahlen(kwh: float | None, betrag: float | None,
                verbrauch_kwh_100km: float | None) -> dict:
     """Die drei E-Auto-Größen eines Zeitraums in einem Rutsch.
@@ -152,31 +247,29 @@ def _erste_zahl(text: str) -> float | None:
 # Der einzige Netz-Aufruf — die KI nennt den Durchschnittsverbrauch.
 # ==========================================================================
 
-def verbrauch_ermitteln(modell: str, schluessel: str = "",
-                        ki_modell: str = "") -> tuple[float | None, str]:
-    """Zum E-Auto-Modell den Durchschnittsverbrauch (kWh/100km) ermitteln.
+def _ki_verbrauch(modell: str, system: str, pruefer, leer_hinweis: str,
+                  fehl_hinweis: str, schluessel: str,
+                  ki_modell: str) -> tuple[float | None, str]:
+    """Der gemeinsame Netz-Aufruf: ein Modellname rein, eine geprüfte Zahl raus.
 
-    Rückgabe ``(verbrauch, hinweis)``: bei Erfolg ``(Zahl, "")``, sonst
-    ``(None, Hinweis)``. **Nie eine Exception** — kein Schlüssel, kein httpx,
-    Netzwerk, Timeout, ungültige oder unplausible Antwort führen alle zum
-    ehrlichen Hinweis, dass der Wert von Hand einzutragen ist. Der Handeintrag
-    ist der ausdrücklich gewünschte Rückfallweg.
-
-    `schluessel`/`ki_modell` (aus den Einstellungen) haben Vorrang vor der
-    Umgebung — derselbe Vorrang und dieselbe Fehlerhaltung wie in `kiauslese`."""
+    Trägt beide Ermittlungen — Strom- wie Benzinverbrauch —, die sich nur im
+    `system`-Prompt und im `pruefer` (der Plausibilitätsgrenze) unterscheiden.
+    **Nie eine Exception**: kein Schlüssel, kein httpx, Netz-, Timeout-, HTTP-,
+    Parse- oder Plausibilitätsfehler führen alle zu ``(None, fehl_hinweis)``.
+    Ein leerer Modellname ergibt ``(None, leer_hinweis)``."""
     name = " ".join((modell or "").split())
     if not name:
-        return None, "Bitte zuerst ein E-Auto-Modell eintragen."
+        return None, leer_hinweis
     if httpx is None:
-        return None, HINWEIS_HAND
+        return None, fehl_hinweis
     schluessel = kiauslese._schluessel(schluessel)
     if not schluessel:
-        return None, HINWEIS_HAND
+        return None, fehl_hinweis
 
     rumpf = {
         "model": kiauslese._modell(ki_modell),
         "max_tokens": MAX_TOKENS,
-        "system": SYSTEM_PROMPT,
+        "system": system,
         "messages": [{"role": "user", "content": name}],
     }
     kopf = {
@@ -190,10 +283,10 @@ def verbrauch_ermitteln(modell: str, schluessel: str = "",
                              timeout=ZEITLIMIT)
     except Exception as fehler:                            # noqa: BLE001
         log.info("KI-Verbrauch nicht erreichbar: %s", type(fehler).__name__)
-        return None, HINWEIS_HAND
+        return None, fehl_hinweis
     if antwort.status_code != 200:
         log.info("KI-Verbrauch meldete HTTP %s", antwort.status_code)
-        return None, HINWEIS_HAND
+        return None, fehl_hinweis
 
     try:
         daten = antwort.json()
@@ -201,12 +294,44 @@ def verbrauch_ermitteln(modell: str, schluessel: str = "",
         roh = "".join(b.get("text", "") for b in bloecke
                       if isinstance(b, dict) and b.get("type") == "text")
     except Exception:                                      # noqa: BLE001
-        return None, HINWEIS_HAND
+        return None, fehl_hinweis
 
     wert = _erste_zahl(roh)
-    if not plausibel(wert):
-        # Eine 0 (Modell unbekannt) oder ein Ausreißer außerhalb 12–30: nicht
-        # speichern, sondern zum Handeintrag raten.
-        log.info("KI-Verbrauch unplausibel oder unbekannt — Handeintrag nötig")
-        return None, HINWEIS_HAND
+    if not pruefer(wert):
+        # Eine 0 (Modell unbekannt) oder ein Ausreißer außerhalb der Grenze:
+        # nicht speichern, sondern ehrlich zurückmelden.
+        log.info("KI-Verbrauch unplausibel oder unbekannt — kein Wert")
+        return None, fehl_hinweis
     return round(float(wert), 1), ""
+
+
+def verbrauch_ermitteln(modell: str, schluessel: str = "",
+                        ki_modell: str = "") -> tuple[float | None, str]:
+    """Zum E-Auto-Modell den Durchschnittsverbrauch (kWh/100km) ermitteln.
+
+    Rückgabe ``(verbrauch, hinweis)``: bei Erfolg ``(Zahl, "")``, sonst
+    ``(None, Hinweis)``. **Nie eine Exception** — kein Schlüssel, kein httpx,
+    Netzwerk, Timeout, ungültige oder unplausible Antwort führen alle zum
+    ehrlichen Hinweis, dass der Wert von Hand einzutragen ist. Der Handeintrag
+    ist der ausdrücklich gewünschte Rückfallweg.
+
+    `schluessel`/`ki_modell` (aus den Einstellungen) haben Vorrang vor der
+    Umgebung — derselbe Vorrang und dieselbe Fehlerhaltung wie in `kiauslese`."""
+    return _ki_verbrauch(modell, SYSTEM_PROMPT, plausibel,
+                         "Bitte zuerst ein E-Auto-Modell eintragen.",
+                         HINWEIS_HAND, schluessel, ki_modell)
+
+
+def verbrauch_benzin_ermitteln(modell: str, schluessel: str = "",
+                               ki_modell: str = "") -> tuple[float | None, str]:
+    """N177 — zum E-Auto-Modell den Verbrauch eines vergleichbaren Benziners
+    (l/100km) ermitteln.
+
+    Gleicher Schlüssel-Vorrang, gleiche Fehlerhaltung und derselbe eine
+    Netz-Aufruf wie :func:`verbrauch_ermitteln` — nur Prompt und
+    Plausibilitätsgrenze (4–12 l/100km) unterscheiden sich. Scheitert die
+    Ermittlung, entfällt der Kostenvergleich (``None``) statt einer erfundenen
+    Zahl; der Hinweis sagt das."""
+    return _ki_verbrauch(modell, SYSTEM_PROMPT_BENZIN, plausibel_benzin,
+                         "Bitte zuerst ein E-Auto-Modell eintragen.",
+                         HINWEIS_BENZIN, schluessel, ki_modell)

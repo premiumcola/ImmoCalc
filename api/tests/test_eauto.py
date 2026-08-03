@@ -217,3 +217,151 @@ def test_handeintrag_ist_der_rueckfallweg():
     assert kz["km"] == round(50.0 / 17.4 * 100.0, 1)
     assert kz["liter_100km"] == round(17.4 / 9.7, 1)
     assert kz["preis_100km"] is not None
+
+
+# --------------------------------------------------------------------------
+# 4) N177 — der Kostenvergleich mit Benzin (KEIN Energie-Äquivalent)
+# --------------------------------------------------------------------------
+
+def test_plausibel_benzin_haelt_reale_werte():
+    assert eauto.plausibel_benzin(4.0) is True
+    assert eauto.plausibel_benzin(6.5) is True
+    assert eauto.plausibel_benzin(12.0) is True
+    # Außerhalb 4–12: kein belastbarer Benzinverbrauch.
+    assert eauto.plausibel_benzin(3.9) is False
+    assert eauto.plausibel_benzin(12.1) is False
+    assert eauto.plausibel_benzin(0.0) is False        # „kein Vergleichsmodell"
+    assert eauto.plausibel_benzin(True) is False       # bool ist kein Verbrauch
+    assert eauto.plausibel_benzin(None) is False
+    assert eauto.plausibel_benzin("6") is False
+
+
+def test_benzinkosten_je_100km():
+    # 6,5 l/100km bei 1,80 € je Liter → 11,70 € je 100 km.
+    assert eauto.benzinkosten_je_100km(6.5, 1.80) == 11.7
+    # Ohne Verbrauch oder ohne Preis: None (keine erfundene 0).
+    assert eauto.benzinkosten_je_100km(None, 1.80) is None
+    assert eauto.benzinkosten_je_100km(6.5, 0.0) is None
+    assert eauto.benzinkosten_je_100km(0.0, 1.80) is None
+
+
+def test_ersparnis_je_100km():
+    # Benzin 11,70 € − E-Auto 5,52 € = 6,18 € Ersparnis je 100 km.
+    assert eauto.ersparnis_je_100km(11.70, 5.52) == 6.18
+    # Wäre der Strom teurer, bleibt das Vorzeichen ehrlich negativ.
+    assert eauto.ersparnis_je_100km(4.0, 6.0) == -2.0
+    # Fehlt eine Größe: None.
+    assert eauto.ersparnis_je_100km(None, 5.52) is None
+    assert eauto.ersparnis_je_100km(11.70, None) is None
+
+
+def test_benzin_vergleich_alicia_szenario():
+    """Alicias echte Zahlen: vergleichbarer Benziner 6,5 l/100km, E-Auto-Preis
+    5,52 €/100km, 1.463 km im Quartal — Ersparnis 6,18 €/100km bzw. 90,41 €."""
+    v = eauto.benzin_vergleich(6.5, 5.52, 1463.0)
+    assert v["verbrauch_l"] == 6.5
+    assert v["preis_liter"] == eauto.BENZIN_PREIS_JE_LITER == 1.80
+    assert v["benzin_100km"] == 11.7
+    assert v["e_100km"] == 5.52
+    assert v["ersparnis_100km"] == 6.18
+    assert v["km"] == 1463.0
+    # 6,18 € × 1.463 km / 100 ≈ 90,41 €.
+    assert v["ersparnis_gesamt"] == 90.41
+
+
+def test_benzin_vergleich_ohne_belastbaren_wert_ist_none():
+    """Kein Vergleich statt einer erfundenen Zahl: bei unplausiblem Benzin-
+    verbrauch oder fehlendem E-Auto-Preis gibt es None."""
+    # Unplausibler Benzinverbrauch (0 = kein Vergleichsmodell, 20 = Ausreißer).
+    assert eauto.benzin_vergleich(0.0, 5.52, 1463.0) is None
+    assert eauto.benzin_vergleich(20.0, 5.52, 1463.0) is None
+    assert eauto.benzin_vergleich(None, 5.52, 1463.0) is None
+    # Ohne E-Auto-Preis kein Vergleich.
+    assert eauto.benzin_vergleich(6.5, None, 1463.0) is None
+    # Ohne Strecke: Vergleich je 100 km ja, Gesamtersparnis None.
+    ohne_km = eauto.benzin_vergleich(6.5, 5.52, None)
+    assert ohne_km["ersparnis_100km"] == 6.18
+    assert ohne_km["ersparnis_gesamt"] is None
+
+
+def test_benzin_vergleich_eigener_literpreis():
+    """Der Literpreis lässt sich übersteuern und wandert sichtbar mit heraus."""
+    v = eauto.benzin_vergleich(6.0, 5.0, 100.0, preis_je_liter=2.0)
+    assert v["preis_liter"] == 2.0
+    assert v["benzin_100km"] == 12.0
+    assert v["ersparnis_100km"] == 7.0
+    assert v["ersparnis_gesamt"] == 7.0
+
+
+# --------------------------------------------------------------------------
+# 5) N177 — die KI-Ermittlung des Benziners: dieselbe Fehlerhaltung wie beim
+#    Stromverbrauch, andere Plausibilitätsgrenze und ein eigener Hinweis.
+# --------------------------------------------------------------------------
+
+def test_benzin_ermittelt_plausiblen_verbrauch(monkeypatch):
+    monkeypatch.setattr(eauto.httpx, "post",
+                        _fake_post(_Antwort(200, _ki_antwort("6.5"))))
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("Cupra Born",
+                                                          schluessel="k")
+    assert verbrauch == 6.5 and hinweis == ""
+
+
+def test_benzin_unplausibler_wert_wird_verworfen(monkeypatch):
+    """Ein Ausreißer (99) oder die 0 (kein Vergleichsmodell): kein Vergleich,
+    ehrlicher Hinweis — nie eine erfundene Zahl."""
+    monkeypatch.setattr(eauto.httpx, "post",
+                        _fake_post(_Antwort(200, _ki_antwort("99"))))
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("Cupra Born",
+                                                          schluessel="k")
+    assert verbrauch is None and hinweis == eauto.HINWEIS_BENZIN
+
+    monkeypatch.setattr(eauto.httpx, "post",
+                        _fake_post(_Antwort(200, _ki_antwort("0"))))
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("Unbekannt XYZ",
+                                                          schluessel="k")
+    assert verbrauch is None and hinweis == eauto.HINWEIS_BENZIN
+
+
+def test_benzin_ohne_schluessel_und_netzfehler_stuerzen_nicht_ab(monkeypatch):
+    # Ohne Schlüssel wird gar nicht gefragt.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("Cupra Born",
+                                                          schluessel="")
+    assert verbrauch is None and hinweis == eauto.HINWEIS_BENZIN
+
+    # Ein geworfener Aufruf (Timeout, DNS) kommt als Hinweis, nie als Exception.
+    def post(*a, **k):
+        raise RuntimeError("Netzwerk weg")
+    monkeypatch.setattr(eauto.httpx, "post", post)
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("Cupra Born",
+                                                          schluessel="k")
+    assert verbrauch is None and hinweis == eauto.HINWEIS_BENZIN
+
+
+def test_benzin_http_und_kaputte_antwort_stuerzen_nicht_ab(monkeypatch):
+    monkeypatch.setattr(eauto.httpx, "post", _fake_post(_Antwort(429, {})))
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("Cupra Born",
+                                                          schluessel="k")
+    assert verbrauch is None and hinweis == eauto.HINWEIS_BENZIN
+
+    monkeypatch.setattr(eauto.httpx, "post",
+                        _fake_post(_Antwort(200, _ki_antwort("weiß nicht"))))
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("Cupra Born",
+                                                          schluessel="k")
+    assert verbrauch is None and hinweis == eauto.HINWEIS_BENZIN
+
+
+def test_benzin_leeres_modell_verlangt_eine_eingabe():
+    verbrauch, hinweis = eauto.verbrauch_benzin_ermitteln("   ", schluessel="k")
+    assert verbrauch is None and "Modell" in hinweis
+
+
+def test_strom_und_benzin_teilen_denselben_netzaufruf(monkeypatch):
+    """Beide Ermittlungen laufen über denselben `httpx.post` — nur Prompt und
+    Plausibilitätsgrenze unterscheiden sich. Dieselbe Antwortform trägt beide."""
+    monkeypatch.setattr(eauto.httpx, "post",
+                        _fake_post(_Antwort(200, _ki_antwort("16.5"))))
+    # 16,5 ist ein plausibler Stromverbrauch, aber KEIN plausibler Benzinwert.
+    assert eauto.verbrauch_ermitteln("X", schluessel="k") == (16.5, "")
+    assert eauto.verbrauch_benzin_ermitteln("X", schluessel="k") == (
+        None, eauto.HINWEIS_BENZIN)

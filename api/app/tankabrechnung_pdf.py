@@ -34,6 +34,7 @@ PV = (0.059, 0.431, 0.361)               # --teal  #0F6E5C
 AKKU = (0.420, 0.651, 0.592)             # heller Teal-Ton #6BA697
 EIGEN = PV                               # PV + Akku, wenn nicht trennbar
 INK = (0.086, 0.149, 0.173)              # --ink   #16262C
+POS = (0.180, 0.490, 0.310)              # --pos   #2E7D4F (Ersparnis, N177)
 SOFT = (0.42, 0.47, 0.49)               # gedeckter Grauton für Beiwerk
 PAPER = (0.910, 0.925, 0.925)            # --paper #E8ECEC
 TEAL_L = (0.847, 0.918, 0.898)           # heller Teal-Grund für die Betragskarte
@@ -212,21 +213,26 @@ def _legende(blatt: Blatt, oben: float, dreiteilig: bool) -> float:
 
 def _tabelle_eauto(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
                    verbrauch: float, satz: float | None) -> float:
-    """N170 — die reduzierte Monatstabelle mit E-Auto: Monat · Geladen · km ·
-    Preis/100 km.
+    """N170/N177 — die Monatstabelle mit E-Auto: Monat · Geladen · km ·
+    Preis/100 km · Kosten.
 
     Die Aufteilung Netz/PV/Akku steht im Diagramm darüber; hier geht es um die
-    gefahrene Strecke. Je Monat: geladene kWh, daraus die gefahrenen Kilometer
-    (kWh ÷ Verbrauch × 100) und der Preis je 100 km (Betrag des Monats ÷ km ×
-    100). Ohne ermittelten Satz bleibt die Preisspalte leer statt 0."""
-    spalten = [("Geladen", "kwh"), ("km", "km"), ("Preis/100 km", "preis")]
+    gefahrene Strecke und die Kosten. Je Monat: geladene kWh, daraus die
+    gefahrenen Kilometer (kWh ÷ Verbrauch × 100), der Preis je 100 km und
+    (N177) die **absoluten Kosten** des Monats (kWh × Satz). Die Summe der
+    Kosten-Spalte ist der Rechnungsbetrag. Ohne ermittelten Satz bleiben Preis-
+    und Kosten-Spalte leer statt 0."""
+    spalten = [("Geladen", "kwh"), ("km", "km"),
+               ("Preis/100 km", "preis"), ("Kosten", "kosten")]
     n = len(spalten)
-    rechte = [RAND_R - (n - 1 - k) * ((RAND_R - (RAND_L + 130)) / max(1, n - 1))
+    # Mit fünf Spalten wird es enger — die Wertspalten beginnen weiter links,
+    # damit „Preis/100 km" und die Beträge nebeneinander Platz haben.
+    rechte = [RAND_R - (n - 1 - k) * ((RAND_R - (RAND_L + 92)) / max(1, n - 1))
               for k in range(n)]
     kopf_y = oben
-    blatt.text(RAND_L, kopf_y, "Monat", 8.5, True, SOFT)
+    blatt.text(RAND_L, kopf_y, "Monat", 8, True, SOFT)
     for k, (name, _) in enumerate(spalten):
-        blatt.rechts(rechte[k], kopf_y, name, 8.5, True, SOFT)
+        blatt.rechts(rechte[k], kopf_y, name, 8, True, SOFT)
     y = kopf_y + 6
     blatt.linie(RAND_L, y, RAND_R, LINIE, 0.8)
     y += 14
@@ -237,46 +243,86 @@ def _tabelle_eauto(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
         betrag = (kwh * satz) if satz is not None else None
         return {"kwh": _zahl(kwh), "km": _km(km),
                 "preis": _eur(preis_je_100km(betrag, km))
-                         if preis_je_100km(betrag, km) is not None else "-"}
+                         if preis_je_100km(betrag, km) is not None else "-",
+                "kosten": _eur(betrag) if betrag is not None else "-"}
 
     def zeile(bez: str, m: dict, fett: bool) -> None:
         w = werte(m)
-        blatt.text(RAND_L, y, bez, 10, fett, INK)
+        blatt.text(RAND_L, y, bez, 9.5, fett, INK)
         for k, (_, feld) in enumerate(spalten):
-            blatt.rechts(rechte[k], y, w[feld], 10, fett,
-                         INK if fett or feld == "kwh" else SOFT)
+            blatt.rechts(rechte[k], y, w[feld], 9.5, fett,
+                         INK if fett or feld in ("kwh", "kosten") else SOFT)
 
     for m in monate:
         zeile(m.get("label", ""), m, False)
         y += 15
-    blatt.linie(RAND_L, y - 4, RAND_R, LINIE, 1.0)
+    # Die Trennlinie sitzt mit klarem Abstand ÜBER der Summe-Zeile — bei y − 4
+    # lief sie früher quer durch deren Zahlen (N177).
+    blatt.linie(RAND_L, y - 11, RAND_R, LINIE, 1.0)
     zeile("Summe", {**summe, "label": "Summe"}, True)
     return y + 16
 
 
 def _eauto_hinweis(blatt: Blatt, oben: float, eauto: dict) -> float:
-    """N170 — Modell und das energetische Benzin-Äquivalent, mit sichtbarer
-    Annahme. Ein Energievergleich, kein Kostenvergleich — das steht dabei."""
+    """N170/N177 — das E-Auto in klaren, kurzen Sätzen: Modell, Verbrauch und
+    das energetische Benzin-Äquivalent mit sichtbarer Annahme.
+
+    Ein reiner Energievergleich — was ein Benziner wirklich kostet, steht im
+    Kostenvergleich darunter (N177). Die Sätze sind bewusst kurz und
+    abgeschlossen statt eines verschachtelten Fließtexts."""
     verbrauch = eauto.get("verbrauch") or 0.0
     liter = benzin_aequivalent(verbrauch)
     modell = (eauto.get("modell") or "").strip()
     kopf = "E-Auto" + (f": {modell}" if modell else "")
     blatt.text(RAND_L, oben, kopf, 11, True, INK)
-    oben += 14
+    oben += 15
     blatt.text(RAND_L, oben,
-               f"Durchschnittsverbrauch {_zahl(verbrauch, 1)} kWh/100 km "
-               "(defensive Fahrweise, inkl. Ladeverluste)", 9.5, False, INK)
-    oben += 13
+               f"Verbrauch {_zahl(verbrauch, 1)} kWh/100 km. Defensive "
+               "Fahrweise, Ladeverluste eingerechnet.", 9.5, False, INK)
+    oben += 14
     if liter is not None:
-        for zeile_txt in _umbrechen(
-                f"Energie-Äquivalent: {_zahl(verbrauch, 1)} kWh/100 km "
-                f"entsprechen rund {_zahl(liter, 1)} l Benzin/100 km "
-                f"(Annahme {_zahl(BENZIN_KWH_PRO_LITER, 1)} kWh je Liter). "
-                "Rein energetischer Vergleich, kein Kostenvergleich — das "
-                "E-Auto fährt real deutlich günstiger.", 96):
-            blatt.text(RAND_L, oben, zeile_txt, 8.5, False, SOFT)
-            oben += 11
+        blatt.text(RAND_L, oben,
+                   f"Energie-Äquivalent: {_zahl(verbrauch, 1)} kWh entsprechen "
+                   f"rund {_zahl(liter, 1)} l Benzin (Annahme "
+                   f"{_zahl(BENZIN_KWH_PRO_LITER, 1)} kWh je Liter).",
+                   8.5, False, SOFT)
+        oben += 11
+        blatt.text(RAND_L, oben,
+                   "Das vergleicht nur die Energie, nicht die Kosten.",
+                   8.5, False, SOFT)
+        oben += 11
     return oben + 8
+
+
+def _benzin_block(blatt: Blatt, oben: float, benzin: dict) -> float:
+    """N177 — der Kostenvergleich mit einem vergleichbaren Benziner samt
+    ausgewiesener Ersparnis. Hier zählt Geld, nicht Energie.
+
+    `benzin` ist das Ergebnis von :func:`eauto.benzin_vergleich`; ist es
+    ``None``, wird dieser Block gar nicht erst aufgerufen. Der Benzinverbrauch
+    stammt aus der KI (vergleichbares Modell), der Literpreis ist die sichtbar
+    genannte Annahme."""
+    blatt.text(RAND_L, oben, "Kostenvergleich mit Benzin", 11, True, INK)
+    oben += 15
+    blatt.text(RAND_L, oben,
+               f"Ein vergleichbarer Benziner braucht rund "
+               f"{_zahl(benzin['verbrauch_l'], 1)} l/100 km (Annahme "
+               f"{_eur(benzin['preis_liter'])} je Liter).", 9.5, False, INK)
+    oben += 13
+    blatt.text(RAND_L, oben,
+               f"Benzin {_eur(benzin['benzin_100km'])} je 100 km · "
+               f"Ihr E-Auto {_eur(benzin['e_100km'])} je 100 km.",
+               9.5, False, INK)
+    oben += 15
+    ersparnis = benzin.get("ersparnis_100km")
+    if ersparnis is not None:
+        txt = f"Ersparnis Elektro: {_eur(ersparnis)} je 100 km"
+        if benzin.get("ersparnis_gesamt") is not None:
+            txt += (f" — für {_km(benzin['km'])} im Quartal rund "
+                    f"{_eur(benzin['ersparnis_gesamt'])}")
+        blatt.text(RAND_L, oben, txt, 10.5, True, POS)
+        oben += 15
+    return oben + 6
 
 
 def _tabelle(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
@@ -308,15 +354,44 @@ def _tabelle(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
     for m in monate:
         zeile(m.get("label", ""), m, False)
         y += 15
-    blatt.linie(RAND_L, y - 4, RAND_R, LINIE, 1.0)
+    # Trennlinie mit Abstand über der Summe-Zeile (nicht quer durch sie, N177).
+    blatt.linie(RAND_L, y - 11, RAND_R, LINIE, 1.0)
     zeile("Summe", {**summe, "label": "Summe"}, True)
     return y + 16
+
+
+def _konto_block(blatt: Blatt, oben: float, konto: dict | None) -> float:
+    """N177 — wohin überwiesen wird: die Bankverbindung des **Objekts** (der
+    Betreiber der Station), an den der Ladende zahlt.
+
+    Nicht die Bankverbindung des Nutzers — die stünde nur, wenn abgebucht würde.
+    Fehlt die Objekt-Bankverbindung ganz, entfällt der Block: kein leerer
+    Platzhalter."""
+    konto = konto or {}
+    inhaber = (konto.get("kontoinhaber") or "").strip()
+    iban = (konto.get("iban") or "").strip()
+    bank = (konto.get("bank") or "").strip()
+    if not (inhaber or iban or bank):
+        return oben
+    blatt.text(RAND_L, oben, "Bitte überweisen Sie den Betrag auf:",
+               9.5, True, INK)
+    oben += 14
+    teile = []
+    if inhaber:
+        teile.append(inhaber)
+    if iban:
+        teile.append(f"IBAN {iban}")
+    if bank:
+        teile.append(bank)
+    blatt.text(RAND_L, oben, " · ".join(teile), 9.5, False, INK)
+    return oben + 20
 
 
 def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
                        von: date, bis: date, monate: list[dict], summe: dict,
                        satz: dict, kwh: float, betrag: float,
-                       absender: str = "", eauto: dict | None = None) -> bytes:
+                       absender: str = "", eauto: dict | None = None,
+                       konto: dict | None = None) -> bytes:
     """Die Quartalsabrechnung eines Nutzers als einseitiges PDF.
 
     `empfaenger` trägt Name und Anschrift, `monate` die Verlaufszeilen des
@@ -362,6 +437,10 @@ def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
                               eauto["verbrauch"], eauto.get("satz"))
         oben += 10
         oben = _eauto_hinweis(b, oben, eauto)
+        benzin = eauto.get("benzin")
+        if benzin:
+            oben += 4
+            oben = _benzin_block(b, oben, benzin)
     else:
         oben = _tabelle(b, oben, monate, summe, dreiteilig)
     oben += 8
@@ -394,7 +473,10 @@ def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
     b.text(RAND_L + 14, oben + 34, _kwh(kwh) + " geladen", 9, False, SOFT)
     b.rechts(RAND_R - 14, oben + 30,
              _eur(betrag) if betrag is not None else "-", 20, True, PV)
-    oben += kh + 26
+    oben += kh + 24
+
+    # N177 — auf welches Konto überwiesen wird (Bankverbindung des Objekts).
+    oben = _konto_block(b, oben, konto)
 
     if absender.strip():
         for zeile_txt in absender.splitlines():
