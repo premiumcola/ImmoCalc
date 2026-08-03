@@ -1453,8 +1453,6 @@ function abrechnungBlatt(nid, fallbackText) {
         row.preis_100km != null ? ` · ${eur(row.preis_100km)} / 100 km` : ''}${
         row.liter_100km != null
           ? ` · energetisch ≈ ${zahl(row.liter_100km, 1)} l Benzin/100 km` : ''}</span>`;
-  const pdfUrl = `/api/tankstelle/${encodeURIComponent(objektSlug)}`
-    + `/abrechnung.pdf?${zeitraumParams()}&nutzer_id=${nid}`;
   return `<div class="blatt">
     <div class="bl-kopf">
       <span class="bl-titel">Abrechnung E-Tankstelle</span>
@@ -1472,8 +1470,7 @@ function abrechnungBlatt(nid, fallbackText) {
         <span class="bl-bkwh">${kwh(row.kwh)} geladen</span></span>
       <span class="bl-bb">${row.betrag == null ? '—' : eur(row.betrag)}</span></div>
     <span class="bl-hint">Der vollständige Beleg — Monatsverlauf, Kostenvergleich
-      und Bankverbindung — hängt der Mail als PDF an.
-      <a href="${pdfUrl}" target="_blank" rel="noopener">PDF öffnen</a></span>
+      und Bankverbindung — hängt der Mail als PDF an.</span>
   </div>`;
 }
 
