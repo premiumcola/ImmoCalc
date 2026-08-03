@@ -16,13 +16,13 @@ from datetime import date
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test_wasser_endpoint.db")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from sqlmodel import Session  # noqa: E402
+from sqlmodel import Session, select  # noqa: E402
 
 from app import db  # noqa: E402
-from app.models import (Ablesung, Einheit, Kostenposition, Miete, Objekt,  # noqa: E402
-                        Zaehler, Zeitraum)
+from app.models import (Ablesung, Dokument, Einheit, Kostenposition,  # noqa: E402
+                        Miete, Objekt, Zaehler, Zeitraum)
 from app.routers.zaehler import (ANFANGSSTAND, rechnungsmenge_setzen,  # noqa: E402
-                                 wasser_detail)
+                                 wasser_detail, wasser_leeren)
 
 START = date(2024, 1, 1)
 ENDE = date(2024, 12, 31)
@@ -356,3 +356,71 @@ def test_rechnungsmenge_bleibt_stehen_und_weist_die_abweichung_aus():
         zurueck = wasser_detail(zid, session=s)
     assert zurueck["rechnung_m3"] is None
     assert abs(zurueck["gesamt_m3"] - abgelesen) < 0.01
+
+
+def _wasser_positionen_der(session, zid):
+    return [p for p in session.exec(
+        select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
+        if p.kostenart in ("Wasser", "Abwasser", "Niederschlagswasser")]
+
+
+def test_wasser_leeren_force_nullt_betraege_und_menge_zaehler_bleiben():
+    """N185 — `force=true` (manueller „Position leeren"-Knopf) setzt alle drei
+    Bestandteile auf 0 + `status='offen'` und loest die geeichte Menge, laesst
+    aber die ZAEHLER und ihre Ablesungen unangetastet."""
+    zid = _aufbau("leeren-force")
+    with Session(db.engine) as s:
+        rechnungsmenge_setzen(zid, {"rechnung_m3": 130.0}, session=s)
+        assert wasser_detail(zid, session=s)["bereit"] is True
+        zaehler_vorher = len(s.exec(select(Zaehler)).all())
+        ablesungen_vorher = len(s.exec(select(Ablesung)).all())
+
+    with Session(db.engine) as s:
+        res = wasser_leeren(zid, force=True, session=s)
+    assert res["geleert"] is True
+    assert res["positionen"] == 3
+
+    with Session(db.engine) as s:
+        pos = _wasser_positionen_der(s, zid)
+        assert pos and all(p.betrag == 0.0 for p in pos)
+        assert all((p.beleg_summe or 0.0) == 0.0 for p in pos)
+        assert all(p.status == "offen" for p in pos)
+        z = s.get(Zeitraum, zid)
+        assert (z.wasser_rechnung_m3 or 0.0) == 0.0
+        # Zähler + Ablesungen unangetastet — sie messen Verbrauch, nicht den Bescheid.
+        assert len(s.exec(select(Zaehler)).all()) == zaehler_vorher
+        assert len(s.exec(select(Ablesung)).all()) == ablesungen_vorher
+        # Ohne Beträge ist die Detailübersicht nicht mehr „bereit" → klappt leer ein.
+        assert wasser_detail(zid, session=s)["bereit"] is False
+
+
+def test_wasser_leeren_ohne_force_raeumt_ab_wenn_kein_beleg_mehr_haengt():
+    """N185 — der letzte Beleg ist schon geloest (position_id=None): dann leert
+    `force=false` die ganze Sammelposition (das ist der Auto-Fall nach dem
+    Beleg-Entfernen)."""
+    zid = _aufbau("leeren-auto")
+    with Session(db.engine) as s:
+        res = wasser_leeren(zid, force=False, session=s)
+    assert res["geleert"] is True
+    with Session(db.engine) as s:
+        assert all(p.betrag == 0.0 for p in _wasser_positionen_der(s, zid))
+
+
+def test_wasser_leeren_ohne_force_haelt_position_wenn_noch_ein_beleg_haengt():
+    """N185 — hängt noch ein Beleg an einer der drei Positionen, bleibt ohne
+    `force` alles stehen (ein bloss entfernter Zwischenbeleg räumt nicht ab)."""
+    zid = _aufbau("leeren-behalt")
+    with Session(db.engine) as s:
+        wasserpos = next(p for p in _wasser_positionen_der(s, zid)
+                         if p.kostenart == "Wasser")
+        s.add(Dokument(pfad="/Belege/wasser-2024.pdf", dateiname="wasser-2024.pdf",
+                       zeitraum_id=zid, kostenart="Wasser", betrag=298.05,
+                       position_id=wasserpos.id))
+        s.commit()
+        res = wasser_leeren(zid, force=False, session=s)
+    assert res["geleert"] is False
+    with Session(db.engine) as s:
+        betraege = {p.kostenart: p.betrag for p in _wasser_positionen_der(s, zid)}
+        # Die von Hand/Beleg getragenen Beträge stehen unverändert.
+        assert betraege["Abwasser"] == 362.56
+        assert betraege["Niederschlagswasser"] == 186.91

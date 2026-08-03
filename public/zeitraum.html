@@ -1639,7 +1639,22 @@ function wasserGesamtBetrag() {
    Betrag hochgeladen wurde. Vorher gibt es nichts aufzuklappen (keine Detail-
    ebene), nur „Datei wählen". `erledigt` heißt: Betrag liegt vor (aus dem PDF). */
 function wasserHatRechnung(k) {
-  return !!(k.erledigt || (k.belege && k.belege.length));
+  // N185 — „hat eine Rechnung" bemisst sich am tatsaechlichen Gruppenbetrag
+  // (Frisch- + Schmutz- + Niederschlagswasser) und den Belegen, NICHT am
+  // Status: eine einmal per Beleg angelegte Position bleibt sonst dauerhaft
+  // `erledigt` und liesse sich nach dem Leeren nie wieder einklappen.
+  return !!(wasserGesamtBetrag() > 0.005 || (k.belege && k.belege.length));
+}
+
+/* N185 — ob eine Kostenart zu den drei Wasser-Bestandteilen gehoert (Frisch-/
+   Schmutz-/Niederschlagswasser). Spiegel der Backend-Auswahl in
+   `zaehler._wasser_positionen`; Warmwasser und Zaehler zaehlen NICHT dazu. */
+function istWasserKostenart(name) {
+  const n = normUml(name);
+  if (n.includes('zaehler') || n.includes('warmwasser')) return false;
+  return n.includes('wasser') || n.includes('abwasser')
+    || n.includes('schmutz') || n.includes('niederschlag')
+    || n.includes('entwaess');
 }
 
 /* N79 — die Heizöl-/Heizkosten-Sammelposition: beim Aufklappen erscheint der
@@ -2519,9 +2534,15 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
     const anbau = bearbeitbar
       ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
           >${ANH_ICON} Beleg anhängen</button>` : '';
+    // N185 — die ganze Sammelposition bewusst leeren (für einen neuen Bescheid).
+    // Die Zähler darunter bleiben; nur die drei Beträge + geeichte Menge fallen.
+    const leeren = bearbeitbar
+      ? `<div class="kartenfuss"><button class="minilink gefahr"
+          data-wasser-leeren="1">Position leeren — für neuen Beleg</button></div>`
+      : '';
     koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
         <div class="wd-lade">Detailübersicht wird geladen …</div></div>
-      <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+      <div class="zk">Belege</div>${belegeHtml(k, anbau)}${leeren}`;
   } else if (auf && heizModus) {
     // N79/N91 — je nach Stufe: Öl-Lieferungen+FIFO, Warmwasser-Split (§9) oder
     // Heizkörper-Wärmemenge (HKV); darunter die Belege der Position.
@@ -3051,6 +3072,39 @@ async function belegLoesen(id) {
     } else {
       melde('Beleg herausgenommen — die Datei bleibt in der Ablage', 'pos');
     }
+    // N185 — war es ein Wasser-Beleg und haengt danach kein Beleg mehr an der
+    // Sammelposition, raeumt das Backend die drei Bestandteile (Frisch-/Schmutz-/
+    // Niederschlagswasser) + die geeichte Menge ab; die Position klappt dann
+    // leer ein und zeigt oben nur noch „neuen Beleg fotografieren". Die Zaehler
+    // bleiben. Ohne `force`: nur, wenn wirklich der letzte Beleg ging.
+    if (dok && istWasserKostenart(dok.kostenart)) {
+      const r = await api(`/zeitraeume/${zid}/wasser/leeren`, { method: 'POST' })
+        .catch(() => null);
+      if (r?.geleert) {
+        melde('Wasser-Position geleert — die Zähler bleiben. Neuen Beleg '
+          + 'fotografieren, dann liest die Erkennung sie wieder ein.', 'pos');
+      }
+    }
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* N185 — die Wasser-Sammelposition bewusst zurücksetzen: alle drei Beträge
+   (Frisch-/Schmutz-/Niederschlagswasser) und die geeichte Rechnungsmenge auf 0,
+   damit ein neuer Bescheid sauber einliest. Die Zähler darunter bleiben — sie
+   messen den Verbrauch, nicht den Bescheid. `force=true`, weil es die bewusste
+   Nutzeraktion ist. Danach klappt die Position leer ein (kein Betrag, kein
+   Beleg → nicht mehr aufklappbar). */
+async function wasserPositionLeeren() {
+  const ok = await frage('Wasser-Position leeren?',
+    'Die drei Wasser-Beträge (Frisch-, Schmutz-, Niederschlagswasser) und die '
+    + 'abgerechnete Rechnungsmenge werden auf 0 gesetzt — die Zähler darunter '
+    + 'bleiben. Danach kannst du einen neuen Beleg fotografieren.',
+    { knopf: 'Leeren', gefahr: true });
+  if (!ok) return;
+  try {
+    await api(`/zeitraeume/${zid}/wasser/leeren?force=true`, { method: 'POST' });
+    melde('Wasser-Position geleert — die Zähler bleiben.', 'pos');
     await laden();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
@@ -4721,6 +4775,9 @@ inhalt.addEventListener('click', async e => {
   // N95 — einen Beleg aus seiner Kostenposition herausnehmen (Datei bleibt).
   const belegWeg = e.target.closest('[data-beleg-loesen]');
   if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
+  // N185 — die Wasser-Sammelposition bewusst leeren (für einen neuen Beleg).
+  const wLeer = e.target.closest('[data-wasser-leeren]');
+  if (wLeer) { e.preventDefault(); return wasserPositionLeeren(); }
   // N122 — Herkunft einer Strom-Position: Netzbezug oder eigene Anlage.
   const herk = e.target.closest('[data-herkunft]');
   if (herk) return stromHerkunftSetzen(herk);

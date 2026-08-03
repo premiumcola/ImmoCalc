@@ -840,3 +840,72 @@ def rechnungsmenge_setzen(zid: int, data: dict,
     session.add(z)
     session.commit()
     return {"ok": True, "rechnung_m3": z.wasser_rechnung_m3}
+
+
+# N185 — die drei Wasser-Bestandteile eines Bescheids (Frisch-/Schmutz-/
+# Niederschlagswasser) stehen als eigene Kostenpositionen; der Beleg haengt
+# aber nur an der Frischwasser-Position. Wird er geloescht, laeuft
+# `belegposten.nachrechnen` nur dort — die zwei Geschwister blieben als
+# Handanteil stehen, die Sammelposition zeigt weiter ihre Summe und klappte
+# nicht ein. Dieser Endpunkt leert die ganze Sammelposition in einem Zug.
+_WASSER_GESCHWISTER = ("Wasser", "Abwasser", "Niederschlagswasser")
+
+
+def _wasser_positionen(session: Session, zid: int) -> list[Kostenposition]:
+    """Die drei Wasser-Bestandteile eines Zeitraums — kanonisch gematcht wie in
+    `dokumente._rechnungssumme`, damit dieselben Positionen getroffen werden,
+    auf die ein Wasser-Beleg gebucht wird."""
+    return [p for p in session.exec(
+        select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
+        if kostenarten.normalisieren(p.kostenart) in _WASSER_GESCHWISTER]
+
+
+@router.post("/zeitraeume/{zid}/wasser/leeren")
+def wasser_leeren(zid: int, force: bool = False,
+                  session: Session = Depends(get_session)) -> dict:
+    """N185 — leert die Wasser-Sammelposition, damit ein neuer Bescheid sauber
+    einliest: die drei Bestandteile (Frisch-/Schmutz-/Niederschlagswasser)
+    werden auf 0 gesetzt und auf `status='offen'` gestellt, noch haengende
+    Belege werden geloest (die Datei bleibt in der Cloud), und die geeichte
+    Rechnungsmenge wird zurueckgesetzt.
+
+    Die ZAEHLER darunter bleiben unangetastet — sie messen den Verbrauch, nicht
+    den Bescheid. Das Nullsetzen ist hier erlaubt, weil es eine bewusste
+    Nutzeraktion ist (letzten Beleg entfernt oder „Position leeren").
+
+    Ohne `force` wird nur geleert, wenn KEIN Beleg mehr an einer der drei
+    Positionen haengt — so raeumt das Entfernen des letzten Belegs die ganze
+    Position ab, ein bloss entfernter Zwischenbeleg (weitere bleiben) aber
+    nicht. Mit `force=true` (manueller „Position leeren"-Knopf) wird immer
+    geleert."""
+    positionen = _wasser_positionen(session, zid)
+    if not positionen:
+        return {"geleert": False, "grund": "keine Wasser-Positionen"}
+
+    if not force:
+        noch_belege = any(belegposten.belege_der_position(session, p.id)
+                          for p in positionen if p.id is not None)
+        if noch_belege:
+            # Es haengen noch Belege — nichts leeren, aber die Summen ehrlich
+            # halten (der eben geloeste Beleg ist schon abgezogen).
+            for p in positionen:
+                belegposten.nachrechnen(session, p)
+            session.commit()
+            return {"geleert": False, "grund": "es haengen noch Belege"}
+
+    for p in positionen:
+        for d in belegposten.belege_der_position(session, p.id):
+            d.position_id = None
+            session.add(d)
+        p.betrag = 0.0
+        p.beleg_summe = 0.0
+        p.status = "offen"
+        session.add(p)
+
+    z = session.get(Zeitraum, zid)
+    if z is not None:
+        z.wasser_rechnung_m3 = 0.0
+        session.add(z)
+
+    session.commit()
+    return {"geleert": True, "positionen": len(positionen)}
