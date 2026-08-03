@@ -187,28 +187,49 @@
   .tabpager .tpz{font:600 11px var(--mono);letter-spacing:.03em;
                  color:var(--soft);min-width:82px;text-align:center}
 
-  /* ---- Abrechnung ------------------------------------------------------ */
-  .quartale{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
-  .quartale button{min-height:44px;min-width:44px;padding:8px 16px;border:none;
-                   cursor:pointer;border-radius:999px;background:var(--paper);
-                   color:var(--soft);font:600 11.5px var(--mono);
-                   letter-spacing:.03em}
-  .quartale button[aria-pressed="true"]{background:var(--teal-l);
-                                        color:var(--teal-d)}
-  /* Die Jahresreihe steht ueber den Quartalen — enger Abstand, damit beide als
-     ein Zeitraum-Wahlblock lesbar sind. */
-  .quartale.jahre{margin-bottom:8px}
-  .quartale.jahre button{font-weight:700}
-  /* N169/N187 — die Monatsauswahl unter den Quartalen: kleine Pillen,
-     abgewaehlte durchgestrichen, abgerechnete mit ✓. Der Zeitraum-Text wandert
-     zum Ø-Satz (N187), die separate „Einzelne Monate"-Zeile entfällt.
-     Touch-Ziele bleiben bei 44 px. */
-  .monate{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 14px}
-  .monate .mchip{min-height:44px;min-width:44px;padding:8px 14px;border:none;
-                 cursor:pointer;border-radius:999px;background:var(--paper);
-                 color:var(--soft);font:600 11px var(--mono);letter-spacing:.03em}
-  .monate .mchip[aria-pressed="true"]{background:var(--teal-l);color:var(--teal-d)}
-  .monate .mchip.aus{text-decoration:line-through;opacity:.6}
+  /* ---- Abrechnung (N193) ----------------------------------------------- */
+  /* Kopfzeile: „E-Tankstelle Abrechnung" + ein Info-i, rechts der kompakte
+     Automatik-Schalter. Auf schmalen Breiten bricht der Schalter um. */
+  .abkopf{display:flex;align-items:center;justify-content:space-between;gap:12px;
+          flex-wrap:wrap;margin:0 0 14px}
+  .abkopf-t{display:flex;align-items:center;gap:5px;min-width:0}
+  .abkopf-t h3{font:600 13px var(--disp);letter-spacing:-.01em;margin:0}
+  /* Auswahl (Matrix) + Ø-Satz nebeneinander auf dem Desktop, den freien Platz
+     rechts nutzend; auf dem iPhone gestapelt (Matrix zuerst). */
+  .absel{display:grid;gap:14px}
+  @media(min-width:720px){
+    .absel{grid-template-columns:1fr minmax(268px,340px);align-items:start}
+    .absel .satz{order:1;margin:0}.absel .filter-matrix{order:2}
+  }
+  /* Der Chooser: Jahr-Pills, darunter eine Quartal×Monat-Matrix (4 Spalten
+     Q1–Q4, 3 Monatszeilen), darunter die klare Aktion. Statt drei gestapelter
+     Bubble-Reihen ein kompakter Block, der die Breite füllt. */
+  .filter-matrix{background:var(--paper);border-radius:14px;padding:12px}
+  .fm-jahre{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px}
+  .fm-jahre button{min-height:38px;padding:7px 14px;border:none;cursor:pointer;
+                   border-radius:999px;background:var(--sheet);color:var(--soft);
+                   font:700 11.5px var(--mono);letter-spacing:.03em}
+  .fm-jahre button[aria-pressed="true"]{background:var(--teal-l);color:var(--teal-d)}
+  .fm-jahre .fm-alle{margin-left:auto;font-weight:600;background:transparent;
+                     color:var(--teal-d);text-transform:uppercase;font-size:10px;
+                     letter-spacing:.05em;min-height:38px;padding:7px 8px}
+  .fm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .fm-grid button{border:none;cursor:pointer;border-radius:10px;
+                  display:inline-flex;align-items:center;justify-content:center;
+                  gap:3px;font:600 11px var(--mono)}
+  .fm-q{min-height:32px;background:transparent;color:var(--soft);font-weight:700;
+        text-transform:uppercase;letter-spacing:.05em;font-size:10px}
+  .fm-q.an{color:var(--teal-d)}
+  .fm-m{min-height:44px;background:var(--sheet);color:var(--soft)}
+  .fm-m.an{background:var(--teal-l);color:var(--teal-d)}
+  .fm-grid .hk{font-size:9px;color:var(--pos)}
+  .fm-q.fertig .hk{color:var(--teal-d)}
+  .fm-m.fertig{color:var(--teal-d)}.fm-m.fertig .hk{color:var(--teal-d)}
+  .fm-abbtn{margin-top:11px;width:100%;min-height:44px;border:none;cursor:pointer;
+            border-radius:999px;background:var(--sheet);color:var(--teal-d);
+            font:600 11.5px var(--mono);letter-spacing:.03em}
+  .fm-abbtn.an{background:var(--teal);color:#fff}
+  .fm-abbtn:hover:not(.an){background:var(--teal-l)}
 
   /* Die eingebettete PDF-Vorschau (N169/N178) — sie zeigt genau das Blatt, das
      als Anhang ausginge, und laedt sich bei jeder Auswahländerung neu. Ein
@@ -335,7 +356,6 @@
   /* ---- Autoversand-Schalter (N165/2, kompakt seit N187) ---------------- */
   /* Ein schlanker Schalter ganz oben, ohne Kasten — „Automatik" plus das i
      direkt dahinter. Kein breiter Balken mehr, der wie eine eigene Karte wirkt. */
-  .autozeile{display:flex;align-items:center;gap:6px;margin:0 0 14px}
   .switch{display:inline-flex;align-items:center;gap:9px;cursor:pointer;
           min-height:44px}
   .switch input{position:absolute;opacity:0;width:0;height:0}
@@ -442,22 +462,9 @@
   .zrzeile{display:block;font:500 11px var(--mono);color:var(--soft);
            margin:0 0 14px;letter-spacing:.02em}
 
-  /* ---- N182/N187: Haken an abgerechneten Perioden + Inline-Schalter ----- */
-  /* Der ✓ an Jahr, Quartal und Monat, sobald die Periode abgerechnet ist. */
-  .quartale button .hk,.monate .mchip .hk{margin-left:5px;font-size:11px;
-                       color:var(--pos);font-weight:700}
-  .quartale button[aria-pressed="true"] .hk,
-  .monate .mchip.fertig .hk{color:var(--teal-d)}
-  /* Ein abgerechneter Monat: der ✓ genügt; abgewählt bleibt durchgestrichen. */
-  .monate .mchip.fertig{color:var(--teal-d)}
-  /* Der „abgerechnet"-Schalter sitzt inline am Ende der Monatszeile (N187) und
-     wirkt auf die gewählten Monate — rechtsbündig, klar vom Raster abgesetzt. */
-  .monate .abbtn{margin-left:auto;min-height:44px;padding:8px 15px;border:none;
-                 cursor:pointer;border-radius:999px;background:var(--paper);
-                 color:var(--soft);font:600 11px var(--mono);letter-spacing:.03em;
-                 display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
-  .monate .abbtn.an{background:var(--teal-l);color:var(--teal-d)}
-  .monate .abbtn:hover{background:var(--teal-l);color:var(--teal-d)}
+  /* Der ✓ an Jahr-Pill & Matrix, sobald die Periode abgerechnet ist (N182/N193). */
+  .fm-jahre button .hk{margin-left:4px;font-size:10px;color:var(--pos);font-weight:700}
+  .fm-jahre button[aria-pressed="true"] .hk{color:var(--teal-d)}
   /* Der gesperrte Versand-Knopf: sichtbar ausgegraut, die Vorschau bleibt. */
   .az .aw .btn.gesperrt{opacity:.55;cursor:default;background:var(--paper);
                         color:var(--soft)}
@@ -1131,77 +1138,106 @@ async function nutzerEntfernen(id, name) {
 /* =======================================================================
    Abrechnung je Nutzer — quartalsweise, mit Vorschau vor dem Versand.
    ======================================================================= */
+/* N193 — der Zeitraum-Chooser als kompakte Quartal×Monat-Matrix: Jahr-Pills
+   oben, darunter vier Spalten Q1–Q4 mit je drei Monaten, darunter die klare
+   Aktion. Ein Klick auf einen Monat nimmt ihn in die Abrechnung oder heraus, ein
+   Klick auf den Quartalskopf das ganze Quartal. ✓ zeigt Abgerechnetes. */
 function zeitraumWahl() {
   const jahre = jahreListe.length ? jahreListe : [jahrWert()];
-  // N187 — auch das NICHT gewählte Jahr zeigt seinen ✓, wenn es abgerechnet ist.
-  const jknopf = j => {
+  const jahrPill = j => {
     const ab = jahrAbgerechnet(j);
     return `<button type="button" data-jahr="${j}" aria-pressed="${jahrWert() === j}"
       ${ab ? 'title="Jahr abgerechnet"' : ''}>${j}${
+      ab ? ' <span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
+  };
+  const qKopf = q => {
+    const an = quartalAktiv(q), ab = quartalAbgerechnet(q);
+    return `<button type="button" class="fm-q${an ? ' an' : ''}${ab ? ' fertig' : ''}"
+      data-quartal="${q}" aria-pressed="${an}"
+      title="ganzes Quartal Q${q}${ab ? ' — abgerechnet' : ''}">Q${q}${
       ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
   };
-  // Quartale sind mehrfach waehlbar (N169). „Jahr" ist der eigene Zustand [0];
-  // ein einzelnes Quartal schaltet ihn ab.
-  const ganz = quartaleGewaehlt.includes(0);
-  const qknopf = (wert, text) => {
-    const an = wert === 0 ? ganz : (!ganz && quartaleGewaehlt.includes(wert));
-    const ab = quartalAbgerechnet(wert);      // N182 — Haken an abgerechneten
-    return `<button type="button" data-quartal="${wert}" aria-pressed="${an}"
-      ${ab ? 'title="bereits abgerechnet"' : ''}>${text}${
-      ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
-  };
-  // Die Monate des gewaehlten Zeitraums — abgewaehlte durchgestrichen (zaehlen
-  // nicht in Menge/Betrag), abgerechnete tragen einen ✓ (N187).
-  const monate = monateDerQuartale();
-  const mchip = m => {
-    const ab = monatAbgerechnet(jahrWert(), m);
-    return `<button type="button" class="mchip${ausMonate.has(m) ? ' aus' : ''}${
-        ab ? ' fertig' : ''}" data-monat="${m}" aria-pressed="${!ausMonate.has(m)}"
+  const mZelle = m => {
+    const an = monatAktiv(m), ab = monatAbgerechnet(jahrWert(), m);
+    return `<button type="button" class="fm-m${an ? ' an' : ''}${ab ? ' fertig' : ''}"
+      data-monat="${m}" aria-pressed="${an}"
       ${ab ? 'title="bereits abgerechnet"' : ''}>${MONKURZ[m - 1]}${
       ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
   };
-  // N187 — der „abgerechnet"-Schalter sitzt jetzt INLINE am Ende der
-  // Monatszeile und wirkt auf die GEWÄHLTEN Monate (Quartale minus abgewählte).
-  // So lassen sich auch einzelne Monate eines Quartals markieren.
+  // Zeilenweise (row-major) füllen: erst die vier Quartalsköpfe, dann je
+  // Monatszeile die vier Quartalsspalten — so steht Jan/Feb/Mär unter Q1 usw.
+  const gitter = [1, 2, 3, 4].map(qKopf).join('')
+    + [0, 1, 2].map(i => [1, 2, 3, 4].map(q => mZelle(QMON[q][i])).join('')).join('');
   const ab = periodeAbgerechnet();
-  const abBtn = `<button type="button" class="abbtn${ab ? ' an' : ''}"
-      data-abger-toggle aria-pressed="${ab}" title="${ab
-        ? 'Markierung „abgerechnet" für die gewählten Monate entfernen'
-        : 'Die gewählten Monate als abgerechnet markieren'}">${
-      ab ? '✓ abgerechnet' : 'abgerechnet?'}</button>`;
-  return `<div class="quartale jahre">${jahre.map(jknopf).join('')}</div>
-    <div class="quartale">${qknopf(1, 'Q1')}${qknopf(2, 'Q2')}${qknopf(3, 'Q3')}
-      ${qknopf(4, 'Q4')}${qknopf(0, 'Jahr')}</div>
-    <div class="monate">${monate.map(mchip).join('')}${abBtn}</div>`;
+  const abBtn = `<button type="button" class="fm-abbtn${ab ? ' an' : ''}"
+      data-abger-toggle aria-pressed="${ab}">${
+      ab ? 'abgerechnet-Status entfernen' : 'als abgerechnet setzen'}</button>`;
+  return `<div class="filter-matrix">
+    <div class="fm-jahre">${jahre.map(jahrPill).join('')}
+      <button type="button" class="fm-alle" data-quartal="0">ganzes Jahr</button></div>
+    <div class="fm-grid">${gitter}</div>
+    ${abBtn}</div>`;
 }
 
-/* Ein Quartal an- oder abwaehlen (N169). „Ganzes Jahr" ist der Zustand [0];
-   ein einzelnes Quartal schaltet ihn ab. Nie leer — das letzte abgewaehlte
-   Quartal faellt auf „ganzes Jahr" zurueck. Abgewaehlte Monate ausserhalb der
-   neuen Auswahl werden verworfen. */
-function quartalUmschalten(wert) {
-  if (wert === 0) {
-    quartaleGewaehlt = [0];
-  } else {
-    const menge = new Set(quartaleGewaehlt.filter(x => x !== 0));
-    menge.has(wert) ? menge.delete(wert) : menge.add(wert);
-    quartaleGewaehlt = menge.size ? [...menge].sort((a, b) => a - b) : [0];
-  }
+/* Ist ein Monat aktuell in der Abrechnung (im Zeitraum & nicht abgewählt)? */
+const monatAktiv = m => aktiveMonate().includes(m);
+const quartalAktiv = q => (QMON[q] || []).every(monatAktiv);
+
+/* Nach jeder Änderung die interne Darstellung (quartaleGewaehlt + ausMonate)
+   glattziehen: abgewählte Monate müssen im Zeitraum liegen, ein leergeräumtes
+   Quartal fällt aus der Liste, und nie ist alles leer — dann zurück aufs Jahr. */
+function normalisiereAuswahl() {
   const gueltig = new Set(monateDerQuartale());
   ausMonate = new Set([...ausMonate].filter(m => gueltig.has(m)));
+  if (!quartaleGewaehlt.includes(0)) {
+    quartaleGewaehlt = quartaleGewaehlt.filter(
+      q => (QMON[q] || []).some(m => !ausMonate.has(m)));
+  }
+  if (!aktiveMonate().length) { quartaleGewaehlt = [0]; ausMonate = new Set(); }
+}
+
+/* N193 — ein ganzes Quartal an- oder abwaehlen (Matrix-Kopf). `wert===0` ist die
+   „ganzes Jahr"-Abkürzung. Nie alles abwaehlen — mindestens ein Monat bleibt. */
+function quartalUmschalten(wert) {
+  if (wert === 0) {
+    quartaleGewaehlt = [0]; ausMonate = new Set(); return abrechnungZeigen();
+  }
+  if (quartalAktiv(wert)) {
+    if (!aktiveMonate().some(m => QUARTAL_VON(m) !== wert)) {
+      return melde('Mindestens ein Monat muss gewählt bleiben', 'neg');
+    }
+    for (const m of QMON[wert]) ausMonate.add(m);
+  } else {
+    if (!quartaleGewaehlt.includes(0) && !quartaleGewaehlt.includes(wert)) {
+      quartaleGewaehlt = [...new Set([...quartaleGewaehlt.filter(x => x !== 0), wert])]
+        .sort((a, b) => a - b);
+    }
+    for (const m of QMON[wert]) ausMonate.delete(m);
+  }
+  normalisiereAuswahl();
   abrechnungZeigen();
 }
 
-/* Einen Monat aus dem gewaehlten Zeitraum aus- oder wieder einschliessen. Der
-   letzte verbleibende Monat laesst sich nicht auch noch abwaehlen — sonst gaebe
-   es nichts abzurechnen. */
+/* N193 — einen einzelnen Monat in die Abrechnung nehmen oder heraus (Matrix-
+   Zelle). Der letzte verbleibende Monat laesst sich nicht auch noch abwaehlen. */
 function monatUmschalten(monat) {
-  if (!ausMonate.has(monat)
-      && ausMonate.size + 1 >= monateDerQuartale().length) {
-    melde('Mindestens ein Monat muss ausgewählt bleiben', 'neg');
-    return;
+  const q = QUARTAL_VON(monat);
+  if (monatAktiv(monat)) {
+    if (aktiveMonate().length <= 1) {
+      return melde('Mindestens ein Monat muss gewählt bleiben', 'neg');
+    }
+    ausMonate.add(monat);
+  } else if (quartaleGewaehlt.includes(0) || quartaleGewaehlt.includes(q)) {
+    ausMonate.delete(monat);
+  } else {
+    // Das Quartal war nicht gewählt: dazunehmen, aber nur diesen Monat aktiv
+    // lassen (die beiden Geschwistermonate bleiben zunächst abgewählt).
+    quartaleGewaehlt = [...new Set([...quartaleGewaehlt.filter(x => x !== 0), q])]
+      .sort((a, b) => a - b);
+    for (const mm of QMON[q]) if (mm !== monat) ausMonate.add(mm);
+    ausMonate.delete(monat);
   }
-  ausMonate.has(monat) ? ausMonate.delete(monat) : ausMonate.add(monat);
+  normalisiereAuswahl();
   abrechnungZeigen();
 }
 
@@ -1261,9 +1297,8 @@ async function abrechnungZeigen() {
       <div data-mail="${n.nutzer_id || 0}"></div>
     </div>`).join('');
 
-  ziel.innerHTML = `${autoversandSchalter()}
-    ${zeitraumWahl()}
-    ${satzBlock(d)}
+  ziel.innerHTML = `${abrechnungKopf()}
+    <div class="absel">${zeitraumWahl()}${satzBlock(d)}</div>
     ${d.automatisch ? autoNotiz() : offeneNotiz(d)}
     ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
         Für ${esc(d.label)} gibt es weder Nutzer noch Ladungen.</div>`}
@@ -1289,18 +1324,20 @@ async function abrechnungZeigen() {
    die Abrechnung einen Tag nach Quartalsende automatisch an jeden Nutzer mit
    Adresse, Ladung und Satz — als Mail mit PDF. Ein ruhiger Schalter, kein
    Warnton: es ist eine Erleichterung. */
-function autoversandSchalter() {
-  // N187 — kompakt ganz oben: ein schlanker Schalter „Automatik", das i direkt
-  // dahinter (der Erklärtext steckt im Popup, N181). Kein Kasten mehr. Der
-  // Info-Knopf steht NEBEN dem <label>, nicht darin — sonst schaltete ein Klick
-  // darauf die Checkbox mit.
-  return `<div class="autozeile">
+function abrechnungKopf() {
+  // N193 — eine Kopfzeile statt Titel + separatem Schalter: „E-Tankstelle
+  // Abrechnung" mit EINEM Info-i (die zwei früheren Erklärtexte zusammengeführt),
+  // rechts der kompakte Automatik-Schalter. Das i steht neben dem <h3>, nicht im
+  // <label> — sonst schaltete ein Klick darauf die Checkbox mit.
+  const info = infoKnopfText('E-Tankstelle Abrechnung',
+    INFOS.abrechnung.text + '\n\n' + INFOS.autoversand.text);
+  return `<div class="abkopf">
+    <span class="abkopf-t"><h3>E-Tankstelle Abrechnung</h3>${info}</span>
     <label class="switch">
+      <span class="sw-label">Automatische Abrechnung</span>
       <input type="checkbox" data-autoversand ${einst.autoversand ? 'checked' : ''}>
       <span class="sw-track" aria-hidden="true"></span>
-      <span class="sw-label">Automatik</span>
     </label>
-    ${infoKnopf('autoversand')}
   </div>`;
 }
 
@@ -1380,14 +1417,19 @@ async function abgerechnetUmschalten() {
     melde('Erst einen Nutzer anlegen', 'neg');
     return;
   }
+  const monate = aktiveMonate();
+  if (!monate.length) { melde('Kein Monat gewählt', 'neg'); return; }
   const setzen = !periodeAbgerechnet();
   try {
+    // N193 — GENAU die wirksamen Monate markieren (nicht ganze Quartale): so
+    // bleibt Nicht-Angewähltes unberührt. Das Backend setzt bei nicht-leerem
+    // `monate` monatsgenaue Marker; `quartale` ist nur der Fallback (altes Backend).
     await api(`/tankstelle/${encodeURIComponent(objektSlug)}/abgerechnet`, {
       method: 'PUT',
-      body: { jahr: jahrWert(), quartale: quartaleGewaehlt, nutzer_id: 0,
-              abgerechnet: setzen } });
-    melde(setzen ? 'Periode als abgerechnet markiert' : 'Markierung entfernt',
-          'pos');
+      body: { jahr: jahrWert(), quartale: quartaleGewaehlt, monate,
+              nutzer_id: 0, abgerechnet: setzen } });
+    melde(setzen ? `${monate.length} Monat${monate.length === 1 ? '' : 'e'} als `
+            + 'abgerechnet markiert' : 'Markierung entfernt', 'pos');
     await abrechnungZeigen();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
@@ -1923,8 +1965,6 @@ function skelett() {
     </div>
 
     <div class="karte">
-      <div class="hh"><span class="titelinfo"><h3>Abrechnung</h3>
-        ${infoKnopf('abrechnung')}</span></div>
       <div id="abrechnung"></div>
     </div>
 
@@ -1963,7 +2003,11 @@ document.addEventListener('click', e => {
   const weg = e.target.closest('[data-nutzer-weg]');
   if (weg) return nutzerEntfernen(weg.dataset.nutzerWeg, weg.dataset.name);
   const j = e.target.closest('[data-jahr]');
-  if (j) { jahrGewaehlt = Number(j.dataset.jahr); return abrechnungZeigen(); }
+  if (j) {                                   // Jahr wechseln → zurück aufs ganze Jahr
+    jahrGewaehlt = Number(j.dataset.jahr);
+    quartaleGewaehlt = [0]; ausMonate = new Set();
+    return abrechnungZeigen();
+  }
   const q = e.target.closest('[data-quartal]');
   if (q) return quartalUmschalten(Number(q.dataset.quartal));
   const m = e.target.closest('[data-monat]');
