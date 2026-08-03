@@ -161,7 +161,7 @@ def _diagramm(blatt: Blatt, oben: float, monate: list[dict],
     (y_oben) zurück, damit der Text darunter weitergesetzt werden kann."""
     if not monate:
         return oben
-    hoehe = 130.0
+    hoehe = 96.0
     padU = 16.0                            # Platz für die Monatsbeschriftung
     nutz = hoehe - padU
     grund = oben + nutz                    # y_oben der Grundlinie
@@ -255,7 +255,7 @@ def _tabelle_eauto(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
 
     for m in monate:
         zeile(m.get("label", ""), m, False)
-        y += 15
+        y += 13
     # Die Trennlinie sitzt mit klarem Abstand ÜBER der Summe-Zeile — bei y − 4
     # lief sie früher quer durch deren Zahlen (N177).
     blatt.linie(RAND_L, y - 11, RAND_R, LINIE, 1.0)
@@ -353,7 +353,7 @@ def _tabelle(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
 
     for m in monate:
         zeile(m.get("label", ""), m, False)
-        y += 15
+        y += 13
     # Trennlinie mit Abstand über der Summe-Zeile (nicht quer durch sie, N177).
     blatt.linie(RAND_L, y - 11, RAND_R, LINIE, 1.0)
     zeile("Summe", {**summe, "label": "Summe"}, True)
@@ -413,7 +413,7 @@ def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
     oben += 14
     b.text(RAND_L, oben,
            f"Ladezeitraum {von:%d.%m.%Y} – {bis:%d.%m.%Y}", 10, False, SOFT)
-    oben += 30
+    oben += 20
 
     # Empfänger
     b.text(RAND_L, oben, empfaenger.get("name", ""), 12, True, INK)
@@ -424,18 +424,18 @@ def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
         if zeile_txt.strip():
             b.text(RAND_L, oben, zeile_txt, 10, False, INK)
             oben += 14
-    oben += 18
+    oben += 12
 
     # Diagramm + Legende + Tabelle
     b.text(RAND_L, oben, "Geladene Energie je Monat", 11, True, INK)
-    oben += 12
+    oben += 8
     oben = _diagramm(b, oben, monate, dreiteilig)
     oben = _legende(b, oben, dreiteilig)
-    oben += 12
+    oben += 6
     if eauto and (eauto.get("verbrauch") or 0.0) > 0:
         oben = _tabelle_eauto(b, oben, monate, summe,
                               eauto["verbrauch"], eauto.get("satz"))
-        oben += 10
+        oben += 6
         oben = _eauto_hinweis(b, oben, eauto)
         benzin = eauto.get("benzin")
         if benzin:
@@ -443,7 +443,7 @@ def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
             oben = _benzin_block(b, oben, benzin)
     else:
         oben = _tabelle(b, oben, monate, summe, dreiteilig)
-    oben += 8
+    oben += 6
 
     # Satz je kWh mit Herkunft
     b.text(RAND_L, oben, "Satz je kWh", 11, True, INK)
@@ -473,7 +473,7 @@ def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
     b.text(RAND_L + 14, oben + 34, _kwh(kwh) + " geladen", 9, False, SOFT)
     b.rechts(RAND_R - 14, oben + 30,
              _eur(betrag) if betrag is not None else "-", 20, True, PV)
-    oben += kh + 24
+    oben += kh + 16
 
     # N177 — auf welches Konto überwiesen wird (Bankverbindung des Objekts).
     oben = _konto_block(b, oben, konto)

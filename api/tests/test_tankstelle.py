@@ -1677,3 +1677,65 @@ def test_pdf_ohne_benzinwert_kein_kostenvergleich(client, monkeypatch):
     assert antwort.status_code == 200, antwort.text
     # Das energetische Äquivalent (N170) bleibt, der Kostenvergleich fehlt.
     assert b"Kostenvergleich mit Benzin" not in antwort.content
+
+
+def test_pdf_bleibt_auf_einer_a4_seite_auch_im_vollen_fall():
+    """N179 — das Abrechnungs-PDF passt garantiert auf EINE A4-Seite: auch der
+    volle Fall (zwölf Monate, E-Auto mit Benzin-Kostenvergleich, Objektkonto,
+    langer Herkunftssatz) läuft nicht über den unteren Rand hinaus.
+
+    Geprüft wird strukturell — genau ein Seitenobjekt (`/Count 1`) — und
+    inhaltlich: keine gesetzte Zeichenkette, kein Rechteck, keine Linie rutscht
+    unter den unteren Rand (y > 0). Kein Rasterer nötig; die Koordinaten stehen
+    unkomprimiert im Inhaltsstrom. Der Rechnungsbetrag und die Kernzahlen dürfen
+    nie abgeschnitten werden."""
+    import re as _re
+    from datetime import date as _date
+
+    from app.tankabrechnung_pdf import SEITE_H, tankabrechnung_pdf
+
+    monate = [{"kurz": t.MONATSKURZ[m - 1], "label": f"{t.MONATSKURZ[m - 1]} 2025",
+               "monat": m, "jahr": 2025, "kwh": 180.0 + m, "aufteilung": True,
+               "dreiteilig": True, "extern_kwh": 90.0, "eigen_kwh": 90.0 + m,
+               "pv_kwh": 50.0, "speicher_kwh": 40.0 + m}
+              for m in range(1, 13)]
+    summe = {"kwh": sum(x["kwh"] for x in monate), "aufteilung": True,
+             "dreiteilig": True, "extern_kwh": 1080.0, "eigen_kwh": 1158.0,
+             "pv_kwh": 600.0, "speicher_kwh": 558.0}
+    satz = {"netz": 0.3200, "eigen": 0.2880, "misch": 0.3072, "rabatt": 0.10,
+            "herkunft": ("Rechnung 1.600,00 EUR (Position Strom) / 5.000,00 kWh "
+                         "Netzbezug (geeichte Rechnungsmenge, Jahr 2025) — der "
+                         "volle, lange Herkunftssatz über mehrere Zeilen")}
+    ea = {"modell": "Volkswagen ID.3 Pro Performance", "verbrauch": 16.5,
+          "satz": 0.3072,
+          "benzin": {"verbrauch_l": 6.5, "preis_liter": 1.80,
+                     "benzin_100km": 11.70, "e_100km": 5.12,
+                     "ersparnis_100km": 6.58, "ersparnis_gesamt": 128.0,
+                     "km": 1950.0}}
+    konto = {"bank": "Sparkasse Musterstadt", "iban": "DE00 1234 5678 9012 3456 78",
+             "kontoinhaber": "Max Mustermann"}
+    empf = {"name": "Alicia Musterfrau", "email": "alicia@example.invalid",
+            "strasse": "Musterstraße 5", "plz": "90000", "ort": "Musterstadt"}
+    pdf = tankabrechnung_pdf("Musterstraße 5", empf, "Jahr 2025",
+                             _date(2025, 1, 1), _date(2025, 12, 31), monate,
+                             summe, satz, summe["kwh"], 686.42, eauto=ea,
+                             konto=konto)
+
+    # Genau eine Seite.
+    assert b"/Count 1" in pdf
+    assert pdf.count(b"/Type /Page ") == 1
+
+    strom = _re.search(rb"stream\n(.*?)\nendstream", pdf, _re.DOTALL).group(1)
+    ys: list[float] = []
+    ys += [float(x) for x in _re.findall(rb"1 0 0 1 -?\d+\.\d+ (-?\d+\.\d+) Tm",
+                                         strom)]
+    ys += [float(y) for _x, y in _re.findall(
+        rb"(-?\d+\.\d+) (-?\d+\.\d+) -?\d+\.\d+ -?\d+\.\d+ re", strom)]
+    ys += [float(y) for _x, y in _re.findall(
+        rb"(-?\d+\.\d+) (-?\d+\.\d+) [ml] ", strom)]
+    assert ys, "Der Inhaltsstrom trägt keine auswertbaren Koordinaten."
+    # Nichts rutscht unter den unteren Rand; ein Sicherheitssaum bleibt.
+    assert min(ys) > 24, f"Inhalt läuft zu weit nach unten (y={min(ys):.1f})."
+    assert max(ys) < SEITE_H
+    # Der Rechnungsbetrag steht auf dem Blatt.
+    assert b"686,42 EUR" in pdf and b"Rechnungsbetrag" in pdf

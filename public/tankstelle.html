@@ -37,11 +37,25 @@
   /* ---- Kennzahlen ------------------------------------------------------ */
   .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));
        gap:10px}
-  .kpi .k{background:var(--paper);border-radius:14px;padding:12px 13px}
+  .kpi .k{background:var(--paper);border-radius:14px;padding:12px 13px;
+          min-width:0}
   .kpi .kl{display:block;font:600 9px var(--mono);letter-spacing:.07em;
            text-transform:uppercase;color:var(--soft)}
   .kpi .kv{display:block;font:700 16px var(--disp);letter-spacing:-.02em;
            margin-top:6px;color:var(--ink)}
+  /* N180 — die vier Verlauf-Kennzahlen (Geladen · Netz · Eigen · Ladungen)
+     stehen immer in EINER Reihe, auch auf dem iPhone: vier gleich breite
+     Spalten, auf schmalen Schirmen mit knapperem Innenabstand und kleinerer
+     Schrift, damit nichts ueberlaeuft. Die zweispaltige Abrechnungs-KPI bleibt
+     unberuehrt (nur `.kpi`, ohne `.vier`). */
+  .kpi.vier{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .kpi.vier .k{padding:11px 9px}
+  @media(max-width:479px){
+    .kpi.vier{gap:6px}
+    .kpi.vier .k{padding:9px 6px}
+    .kpi.vier .kl{font-size:8px;letter-spacing:.02em}
+    .kpi.vier .kv{font-size:12.5px;margin-top:3px}
+  }
   .kpi .kv.teal{color:var(--teal-d)}
   .kpi .kv.amber{color:var(--amber)}
 
@@ -212,8 +226,40 @@
   .vorschau-x::after{content:"";position:absolute;inset:-4px}
   .vorschau-x:hover{background:var(--neg-bg);color:var(--neg)}
   .vorschau .mailtext{margin:0}
-  .pdfvorschau{display:block;width:100%;height:min(70dvh,560px);border:none;
-               border-radius:10px;background:var(--sheet);margin:0}
+  /* N179 — die Vorschau als responsiver HTML-Nachbau der PDF-Abrechnung statt
+     eines eingebetteten A4-PDFs. Das native iframe-PDF skaliert auf iOS/Safari
+     nicht auf die Rahmenbreite: es blieb waagerecht scrollbar und rechts
+     abgeschnitten. Der HTML-Nachbau nimmt dieselben Daten (aus der Abrechnung),
+     passt sich jeder Breite an und scrollt nie seitwaerts. Das vollstaendige
+     PDF bleibt fuer Download und Versand. */
+  .blatt{background:var(--sheet);border-radius:12px;padding:16px 16px 14px;
+         display:flex;flex-direction:column;gap:14px}
+  .bl-kopf{display:flex;flex-direction:column;gap:3px}
+  .bl-titel{font:700 17px var(--disp);letter-spacing:-.02em;color:var(--ink)}
+  .bl-meta{font:400 11.5px var(--body);color:var(--soft);overflow-wrap:anywhere}
+  .bl-empf{display:flex;flex-direction:column;gap:2px}
+  .bl-name{font:600 14px var(--disp);letter-spacing:-.01em;color:var(--ink);
+           overflow-wrap:anywhere}
+  .bl-mail{font:400 11.5px var(--mono);color:var(--soft);overflow-wrap:anywhere}
+  .bl-satz{background:var(--paper);border-radius:12px;padding:12px 14px;
+           display:flex;flex-direction:column;gap:7px}
+  .bl-sw{font:700 19px var(--disp);letter-spacing:-.02em;color:var(--teal-d)}
+  .bl-sd{font:400 12px var(--body);color:var(--ink);line-height:1.55;
+         overflow-wrap:anywhere}
+  .bl-sq{font:400 10.5px var(--mono);color:var(--soft);line-height:1.6;
+         overflow-wrap:anywhere}
+  .bl-eco{font:500 12px var(--body);color:var(--teal-d);line-height:1.55;
+          overflow-wrap:anywhere}
+  .bl-betrag{background:var(--teal-l);border-radius:12px;padding:14px 16px;
+             display:flex;align-items:center;justify-content:space-between;
+             gap:12px;flex-wrap:wrap}
+  .bl-bl{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .bl-bk{font:600 12px var(--disp);color:var(--ink)}
+  .bl-bkwh{font:400 11px var(--mono);color:var(--soft)}
+  .bl-bb{font:700 24px var(--disp);letter-spacing:-.02em;color:var(--teal-d);
+         white-space:nowrap}
+  .bl-hint{font:400 11px var(--body);color:var(--soft);line-height:1.55}
+  .bl-hint a{color:var(--teal-d);font-weight:600}
 
   /* Der abgeleitete Satz (N148): die Zahl gross, darunter die Regel und
      ganz unten die Herkunft. Kein Eingabefeld — hier gibt es nichts zu
@@ -389,6 +435,9 @@ let objektSlug = '';
 let quartaleGewaehlt = [0];
 let ausMonate = new Set();
 let offeneVorschau = 0;        /* Nutzer, dessen Vorschau gerade aufgeklappt ist */
+let letzteAbrechnung = null;   /* N179 — die zuletzt geholte Abrechnung; die
+                                  HTML-Vorschau liest Satz, Herkunft und die
+                                  Nutzerzeile daraus, statt ein A4-PDF zu laden */
 let vorschauTimer = 0;         /* entprellt das Neuladen der PDF-Vorschau */
 let offeneBearbeitung = 0;     /* Nutzer, dessen Stammdaten gerade offen sind */
 let addOffen = false;          /* ist die „Nutzer anlegen"-Eingabe aufgeklappt? */
@@ -525,9 +574,7 @@ function grafik(monate) {
                viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img"
                aria-label="Geladene Energie je Monat">
       <style>.ax{font:500 9.5px var(--body);fill:var(--soft);text-anchor:middle}
-             .jz{font:600 9px var(--mono);fill:var(--soft)}
-             .my{font:500 9px var(--mono);fill:var(--soft)}</style>
-      <text x="0" y="${padO - 2}" class="my">${zahl(max, 0)} kWh</text>
+             .jz{font:600 9px var(--mono);fill:var(--soft)}</style>
       <line x1="0" y1="${grund}" x2="${breite}" y2="${grund}"
             stroke="#D6DCDD" stroke-width="1"/>
       ${jahre}${saeulen}
@@ -612,7 +659,7 @@ async function verlaufZeigen() {
   ziel.innerHTML = `
     ${d.hinweis ? `<div class="notiz"><span class="wi">◔</span>
        <span>${esc(d.hinweis)}</span></div>` : ''}
-    <div class="kpi">
+    <div class="kpi vier">
       <div class="k"><span class="kl">Geladen</span>
         <span class="kv">${kwh(s.kwh, 0)}</span></div>
       <div class="k"><span class="kl">Aus dem Netz</span>
@@ -912,6 +959,7 @@ async function abrechnungZeigen() {
     zeigeFehler(ziel, 'Abrechnung nicht verfügbar', fehler);
     return;
   }
+  letzteAbrechnung = d;                   // die HTML-Vorschau liest daraus (N179)
 
   const zeilen = (d.nutzer || []).map(n => `
     <div class="az" data-nutzer="${n.nutzer_id || 0}">
@@ -1119,25 +1167,71 @@ async function vorschauRendern(nid) {
   const feld = document.querySelector(`[data-mail="${nid}"]`);
   if (!feld || offeneVorschau !== Number(nid)) return;
   const slug = encodeURIComponent(objektSlug);
-  let d;
+  let v;
   try {
-    d = await api(`/tankstelle/${slug}/vorschau?${zeitraumParams()}&nutzer_id=${nid}`);
+    v = await api(`/tankstelle/${slug}/vorschau?${zeitraumParams()}&nutzer_id=${nid}`);
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); return; }
-  // Der Kopf traegt An/Betreff und ein klares × (N178): die Vorschau wird nur
-  // noch inline gezeigt, und der Schliessen-Weg sitzt direkt am Blatt, nicht
-  // irgendwo darueber. Das × ist derselbe Vorschau-Umschalter — bei offener
-  // Vorschau schliesst ein Klick sie wieder.
+  // Der Kopf traegt An/Betreff und ein klares × (N178): die Vorschau bleibt
+  // inline, der Schliessen-Weg sitzt direkt am Blatt. Das × ist derselbe
+  // Vorschau-Umschalter — bei offener Vorschau schliesst ein Klick sie wieder.
   const kopf = `<div class="vorschau-kopf">
-      <span class="mailkopf">An ${esc(d.an || '— keine Adresse —')}
-        · ${esc(d.betreff)}</span>
+      <span class="mailkopf">An ${esc(v.an || '— keine Adresse —')}
+        · ${esc(v.betreff)}</span>
       <button class="vorschau-x" data-vorschau="${nid}"
               aria-label="Vorschau schließen" title="Vorschau schließen">×</button>
     </div>`;
-  const koerper = d.betrag == null              // ohne Betrag kein PDF — Mailtext
-    ? `<pre class="mailtext">${esc(d.text)}</pre>`
-    : `<iframe class="pdfvorschau" title="PDF-Vorschau"
-         src="/api/tankstelle/${slug}/abrechnung.pdf?${zeitraumParams()}&nutzer_id=${nid}"></iframe>`;
+  // N179 — statt des eingebetteten A4-PDFs (skaliert auf iOS nicht auf die
+  // Rahmenbreite: waagerechtes Scrollen, rechts abgeschnitten) ein responsiver
+  // HTML-Nachbau derselben Abrechnung. Ohne Betrag bleibt es beim Mailtext.
+  const koerper = v.betrag == null
+    ? `<pre class="mailtext">${esc(v.text)}</pre>`
+    : abrechnungBlatt(nid, v.text);
   feld.innerHTML = `<div class="vorschau">${kopf}${koerper}</div>`;
+}
+
+/* N179 — die Abrechnung als HTML-Blatt: dieselben Daten wie im PDF (Objekt,
+   Zeitraum, Empfaenger, Satz mit Herkunft, Rechnungsbetrag, E-Auto-Kennzahlen),
+   nur responsiv. Grundlage ist die zuletzt geholte Abrechnung (`letzteAbrechnung`)
+   und die Nutzerzeile daraus; das vollstaendige PDF mit Monatsverlauf und
+   Kostenvergleich haengt der Mail an und ist ueber „PDF oeffnen" erreichbar.
+   Fehlt die Zeile wider Erwarten, faellt es auf den Mailtext zurueck. */
+function abrechnungBlatt(nid, fallbackText) {
+  const d = letzteAbrechnung;
+  const row = d && (d.nutzer || []).find(n => Number(n.nutzer_id) === Number(nid));
+  if (!d || !row) return `<pre class="mailtext">${esc(fallbackText || '')}</pre>`;
+  const rabatt = d.satz_rabatt == null ? ''
+    : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
+  const regel = d.satz_netz == null || d.satz_eigen == null ? ''
+    : `<span class="bl-sd">Netz ${satzText(d.satz_netz)} · eigener Strom
+        ${satzText(d.satz_eigen)}${rabatt}. Der Satz einer Ladung mischt beide
+        nach den Mengen des Zeitraums.</span>`;
+  const eco = row.km == null ? ''
+    : `<span class="bl-eco">🚗 rund ${zahl(row.km, 0)} km gefahren${
+        row.preis_100km != null ? ` · ${eur(row.preis_100km)} / 100 km` : ''}${
+        row.liter_100km != null
+          ? ` · energetisch ≈ ${zahl(row.liter_100km, 1)} l Benzin/100 km` : ''}</span>`;
+  const pdfUrl = `/api/tankstelle/${encodeURIComponent(objektSlug)}`
+    + `/abrechnung.pdf?${zeitraumParams()}&nutzer_id=${nid}`;
+  return `<div class="blatt">
+    <div class="bl-kopf">
+      <span class="bl-titel">Abrechnung E-Tankstelle</span>
+      <span class="bl-meta">${esc(d.objekt)} · ${esc(d.label)}</span>
+      <span class="bl-meta">Ladezeitraum ${datum(d.von)} – ${datum(d.bis)}</span>
+    </div>
+    <div class="bl-empf"><span class="bl-name">${esc(row.name)}</span>
+      ${row.email ? `<span class="bl-mail">${esc(row.email)}</span>` : ''}</div>
+    <div class="bl-satz"><span class="bl-sw">${satzText(row.satz)}</span>
+      ${regel}
+      ${d.satz_herkunft ? `<span class="bl-sq">${esc(d.satz_herkunft)}</span>` : ''}</div>
+    ${eco}
+    <div class="bl-betrag">
+      <span class="bl-bl"><span class="bl-bk">Rechnungsbetrag</span>
+        <span class="bl-bkwh">${kwh(row.kwh)} geladen</span></span>
+      <span class="bl-bb">${row.betrag == null ? '—' : eur(row.betrag)}</span></div>
+    <span class="bl-hint">Der vollständige Beleg — Monatsverlauf, Kostenvergleich
+      und Bankverbindung — hängt der Mail als PDF an.
+      <a href="${pdfUrl}" target="_blank" rel="noopener">PDF öffnen</a></span>
+  </div>`;
 }
 
 async function versenden(nid) {
@@ -1291,11 +1385,6 @@ function skelett() {
   return `
     <div class="karte">
       <div class="hh"><h3>Verlauf</h3></div>
-      <span class="hint">Wie viel je Monat geladen wurde — und woher der Strom
-        kam: zugekaufter Netzstrom, eigener Strom direkt vom Dach und aus dem
-        Akku. Über alle Monate hinweg, nicht nur über ein Jahr. Die Zahlen
-        holt die Wallbox selbst; fehlt sie, treten die erfassten Ladungen an
-        ihre Stelle.</span>
       <div id="verlauf"></div>
     </div>
 
