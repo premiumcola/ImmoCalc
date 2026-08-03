@@ -161,8 +161,9 @@ def _diagramm(blatt: Blatt, oben: float, monate: list[dict],
     feld = (RAND_R - RAND_L) / len(monate)
     bw = min(46.0, feld * 0.5)
 
-    # Achse mit dem Höchstwert
-    blatt.text(RAND_L, oben - 2, _zahl(max_kwh, 0) + " kWh", 8, False, SOFT)
+    # Grundlinie. Den nackten Höchstwert („246 kWh") trägt die Grafik nicht mehr
+    # als Beschriftung neben der Überschrift (N169) — er wirkte dort wie ein
+    # deplatzierter Untertitel; die genauen Monatswerte stehen in der Tabelle.
     blatt.linie(RAND_L, grund, RAND_R, LINIE, 0.8)
 
     for i, m in enumerate(monate):

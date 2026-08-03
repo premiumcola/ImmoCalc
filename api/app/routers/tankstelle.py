@@ -228,9 +228,53 @@ def quartal_zeitraum(jahr: int, quartal: int) -> tuple[date, date]:
                                        monthrange(jahr, letzter)[1])
 
 
-def zeitraum_label(jahr: int, quartal: int) -> str:
-    """„Q3 2025" bzw. „Jahr 2025" — die Überschrift der Abrechnung."""
-    return f"Q{quartal} {jahr}" if quartal else f"Jahr {jahr}"
+def quartale_monate(quartale: list[int]) -> list[int]:
+    """Die Monatsnummern (1–12) einer Quartalsauswahl — aufsteigend, ohne
+    Dopplung.
+
+    Mehrere Quartale lassen sich zusammen abrechnen (N169): Q2 + Q3 ergeben die
+    Monate April bis September. Ist ``0`` (ganzes Jahr) dabei, sind es alle
+    zwölf."""
+    monate: set[int] = set()
+    for q in quartale:
+        if q == 0:
+            return list(range(1, 13))
+        if q not in (1, 2, 3, 4):
+            raise ValueError("Ein Quartal ist 1, 2, 3 oder 4 (0 = ganzes Jahr).")
+        erster = 3 * (q - 1) + 1
+        monate.update({erster, erster + 1, erster + 2})
+    return sorted(monate)
+
+
+def aktive_monate(quartale: list[int], aus) -> list[int]:
+    """Die Monate der gewählten Quartale ohne die einzeln abgewählten (N169).
+
+    Der Umstieg von der 4-Monats- auf die Quartalsabrechnung lässt einen Monat
+    doppelt erscheinen (der April war schon in der alten Weise abgerechnet):
+    darum lassen sich einzelne Monate eines Quartals ausschließen. `aus` ist die
+    Menge der Monatsnummern, die draußen bleiben."""
+    aus = set(aus or ())
+    return [m for m in quartale_monate(quartale) if m not in aus]
+
+
+def abrechnungs_label(jahr: int, quartale: list[int], aus) -> str:
+    """Die Überschrift der Abrechnung — trägt die Quartalsauswahl und die
+    abgewählten Monate (N169).
+
+    „Q3 2025" wie bisher; „Q2/Q3 2025" für mehrere; „Jahr 2025" für das ganze
+    Jahr. Abgewählte Monate stehen als „(ohne Apr)" dahinter, damit die
+    Ausnahme sichtbar bleibt."""
+    gewaehlt = sorted(set(quartale))
+    aus = sorted(set(aus or ()))
+    if gewaehlt == [0] or {1, 2, 3, 4}.issubset(set(gewaehlt)):
+        basis = f"Jahr {jahr}"
+    elif len(gewaehlt) == 1:
+        basis = f"Q{gewaehlt[0]} {jahr}"
+    else:
+        basis = "/".join(f"Q{q}" for q in gewaehlt if q) + f" {jahr}"
+    if aus:
+        basis += " (ohne " + ", ".join(MONATSKURZ[m - 1] for m in aus) + ")"
+    return basis
 
 
 def monatsfolge(von: date, bis: date) -> list[tuple[int, int]]:
@@ -999,7 +1043,8 @@ def _person(l: Tankladung, namen: dict[int, str]) -> str:
 def buchungen(session: Session, objekt_id: int, von: date, bis: date,
               nutzer: list[dict] | None = None,
               regeln: list[dict] | None = None,
-              ausschluss: set[int] | None = None) -> list[Buchung]:
+              ausschluss: set[int] | None = None,
+              aktive_monate: set[int] | None = None) -> list[Buchung]:
     """Die erfassten Ladungen als Abrechnungszeilen.
 
     `Tankladung.preis` wird bewusst **nicht** übernommen (N148): der Satz ist
@@ -1008,11 +1053,18 @@ def buchungen(session: Session, objekt_id: int, von: date, bis: date,
     Ohne Zeitraum-Regeln bleibt es bei der Zuordnung über den Namen (der alte
     Weg). Mit Regeln greift die Mehrnutzer-Zuordnung über den Zeitraum
     (N165/2): jede Ladung geht an den Nutzer, dessen Zeitraum ihren Tag enthält;
-    ausgeschlossene Ladungen fallen heraus."""
+    ausgeschlossene Ladungen fallen heraus.
+
+    `aktive_monate` grenzt zusätzlich auf einzelne Monate der Spanne ein (N169):
+    ein aus dem Quartal abgewählter Monat fällt aus Menge und Betrag heraus.
+    Ladungen ohne Datum bleiben, weil sie keinem Monat zugeordnet werden
+    können."""
     namen = {e.id: e.name for e in session.exec(select(Eigentuemer)).all()}
     rohe = [RohLadung(id=l.id, tag=l.datum, name=_person(l, namen),
                       email=l.email or "", kwh=l.kwh or 0.0)
-            for l in erfasste_ladungen(session, objekt_id, von, bis)]
+            for l in erfasste_ladungen(session, objekt_id, von, bis)
+            if aktive_monate is None or l.datum is None
+            or l.datum.month in aktive_monate]
     return zuordnen(rohe, nutzer or [], regeln or [], ausschluss or set())
 
 
@@ -1113,8 +1165,7 @@ def satz_ableiten(session: Session, objekt_id: int, von: date, bis: date,
         netz=netz_preis, eigen=eigen_preis,
         misch=mischsatz(netz_preis, eigen_preis, extern_kwh, eigen_kwh),
         herkunft=(f"{quelle or f'{deutsch(betrag)} € Netzbezug'} ÷ "
-                  f"{deutsch(menge)} kWh Netzbezug "
-                  f"aus der Stromkette des Zeitraums {label}"))
+                  f"{deutsch(menge)} kWh Netzbezug ({label})"))
 
 
 # ==========================================================================
@@ -1232,7 +1283,8 @@ def verlauf_zeigen(slug: str, jahr: int = Query(default=0),
 
 
 def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
-                quartal: int) -> dict:
+                quartal: int, quartale: list[int] | None = None,
+                aus: set[int] | None = None) -> dict:
     """Die Abrechnung eines Zeitraums — von Vorschau, Liste und Versand
     gemeinsam benutzt, damit alle drei dasselbe sagen.
 
@@ -1243,11 +1295,32 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     beiden Zahlen ist die Antwort auf „wieso passiert da nichts" (N143).
 
     Der Satz kommt aus der Stromkette (N148); die Mengen des Zeitraums sagen,
-    wie stark Netz und eigener Strom darin gewichtet sind."""
-    von, bis = _zeitraum(jahr, quartal, None, None)
+    wie stark Netz und eigener Strom darin gewichtet sind.
+
+    `quartale` (mehrere zusammen) und `aus` (einzeln abgewählte Monate) sind der
+    Quartals-Feinschliff aus N169. Ohne sie bleibt es beim einzelnen `quartal`
+    — der bisherige Weg (auch der Autoversand ruft so)."""
+    quartale = list(quartale) if quartale is not None else [quartal]
+    aus = set(aus or ())
+    try:
+        monate = aktive_monate(quartale, aus)
+    except ValueError as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+    if not monate:
+        raise HTTPException(400, "Für die Abrechnung ist kein Monat ausgewählt "
+                                 "— mindestens ein Monat muss bleiben.")
+    aktiv = set(monate)
+    von = date(jahr, monate[0], 1)
+    bis = date(jahr, monate[-1], monthrange(jahr, monate[-1])[1])
+    label = abrechnungs_label(jahr, quartale, aus)
     liste = nutzer_lesen(session, o)
-    posten, quelle, _ = _posten_holen(session, o, von, bis)
-    summe = verlauf_summe(verlauf(posten, von, bis)) if posten else {}
+    posten_roh, quelle, _ = _posten_holen(session, o, von, bis)
+    # Ein aus dem Quartal abgewählter Monat fällt aus Menge und Betrag heraus
+    # (N169) — nicht nur aus der Anzeige. Darum hier an der Quelle filtern.
+    posten = [p for p in posten_roh
+              if p.tag is None or p.tag.month in aktiv]
+    zeilen_verlauf = [z for z in verlauf(posten, von, bis) if z["monat"] in aktiv]
+    summe = verlauf_summe(zeilen_verlauf) if posten else {}
     satz = satz_ableiten(session, o.id, von, bis,
                          summe.get("extern_kwh"), summe.get("eigen_kwh"))
     # N165 — mit genau einem Nutzer gehören ihm automatisch alle Ladungen des
@@ -1259,17 +1332,19 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     else:
         # Mehrere Nutzer: Zuordnung über den Zeitraum, wenn Regeln hinterlegt
         # sind; sonst wie bisher über den Namen. Ausgeschlossene Ladungen fallen
-        # in beiden Fällen heraus (N165/2).
+        # in beiden Fällen heraus (N165/2), abgewählte Monate ebenso (N169).
         regeln, ausschluss = zuordnung_lesen(session, o.slug, liste)
         quelle_buch = buchungen(session, o.id, von, bis, liste, regeln,
-                                ausschluss)
+                                ausschluss, aktiv)
     zeilen = abrechne(quelle_buch, liste, satz.misch)
     if automatisch:
         for z in zeilen:
             z["automatisch"] = z["kwh"] > 0
     zugeordnet = round(sum(z["kwh"] for z in zeilen), 3)
     return {"objekt": o.name, "jahr": jahr, "quartal": quartal,
-            "label": zeitraum_label(jahr, quartal),
+            "quartale": sorted(set(quartale)), "aus_monate": sorted(aus),
+            "monate_aktiv": monate,
+            "label": label,
             "von": von.isoformat(), "bis": bis.isoformat(),
             "automatisch": automatisch,
             "satz": satz.misch, "satz_netz": satz.netz,
@@ -1285,15 +1360,37 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
             "eigen_prozent": summe.get("eigen_prozent")}
 
 
+def _quartale_aus(quartal: int, quartale: str, aus: str) -> tuple[list[int],
+                                                                  set[int]]:
+    """Die Zeitraumauswahl aus den Query-Parametern (N169).
+
+    `quartale` ist eine kommagetrennte Liste („2,3"), `aus` die kommagetrennte
+    Liste abgewählter Monatsnummern. Fehlt `quartale`, gilt das einzelne
+    `quartal` — so bleibt der bisherige Aufruf unverändert gültig."""
+    def zahlen(roh: str) -> list[int]:
+        try:
+            return [int(x) for x in roh.replace(" ", "").split(",") if x]
+        except ValueError as fehler:
+            raise HTTPException(400, "Ungültige Zeitraumauswahl.") from fehler
+
+    ql = zahlen(quartale) or [quartal]
+    return ql, set(zahlen(aus))
+
+
 @router.get("/{slug}/abrechnung")
 def abrechnung_zeigen(slug: str, jahr: int = Query(default=0),
                       quartal: int = Query(default=0),
+                      quartale: str = Query(default=""),
+                      aus: str = Query(default=""),
                       session: Session = Depends(get_session),
                       o: Objekt = Depends(objekt_holen)) -> dict:
     """Was jeder Nutzer geladen hat, zu welchem Satz, und was er zahlt.
 
-    `quartal=0` rechnet das ganze Jahr ab."""
-    return _abrechnung(session, o, slug, jahr or date.today().year, quartal)
+    `quartal=0` rechnet das ganze Jahr ab. Mehrere Quartale zusammen (`quartale`)
+    und einzeln abgewählte Monate (`aus`) sind der Feinschliff aus N169."""
+    ql, aus_set = _quartale_aus(quartal, quartale, aus)
+    return _abrechnung(session, o, slug, jahr or date.today().year, quartal,
+                       quartale=ql, aus=aus_set)
 
 
 def _zeile_holen(daten: dict, nutzer_id: int, name: str) -> dict:
@@ -1309,10 +1406,13 @@ def _zeile_holen(daten: dict, nutzer_id: int, name: str) -> dict:
 def vorschau(slug: str, jahr: int = Query(default=0),
              quartal: int = Query(default=0), nutzer_id: int = Query(default=0),
              name: str = Query(default=""),
+             quartale: str = Query(default=""), aus: str = Query(default=""),
              session: Session = Depends(get_session),
              o: Objekt = Depends(objekt_holen)) -> dict:
     """Die Mail, wie sie beim Nutzer ankäme — verschickt wird hier nichts."""
-    daten = _abrechnung(session, o, slug, jahr or date.today().year, quartal)
+    ql, aus_set = _quartale_aus(quartal, quartale, aus)
+    daten = _abrechnung(session, o, slug, jahr or date.today().year, quartal,
+                        quartale=ql, aus=aus_set)
     zeile = _zeile_holen(daten, nutzer_id, name)
     betreff, text = _mailtext(o, daten, zeile)
     return {"an": zeile["email"], "name": zeile["name"],
@@ -1335,12 +1435,19 @@ def _empfaenger(session: Session, zeile: dict) -> dict:
     return empf
 
 
-def _quartal_verlauf(session: Session, o: Objekt, von: date,
-                     bis: date) -> tuple[list[dict], dict]:
+def _quartal_verlauf(session: Session, o: Objekt, von: date, bis: date,
+                     aktiv: set[int] | None = None) -> tuple[list[dict], dict]:
     """Die Monatszeilen des Quartals plus ihre Summe — die Grundlage von
-    Diagramm und Tabelle im PDF."""
+    Diagramm und Tabelle im PDF.
+
+    `aktiv` grenzt auf die nicht abgewählten Monate ein (N169), damit ein
+    ausgeschlossener Monat auch aus Diagramm, Tabelle und Summe des PDF
+    verschwindet — nicht nur aus dem Rechnungsbetrag."""
     posten, _, _ = _posten_holen(session, o, von, bis)
-    monate = verlauf(posten, von, bis)
+    if aktiv is not None:
+        posten = [p for p in posten if p.tag is None or p.tag.month in aktiv]
+    monate = [z for z in verlauf(posten, von, bis)
+              if aktiv is None or z["monat"] in aktiv]
     return monate, verlauf_summe(monate)
 
 
@@ -1364,7 +1471,8 @@ def _pdf_und_name(session: Session, o: Objekt, daten: dict,
     das vorher (kein PDF über 0 €)."""
     von = date.fromisoformat(daten["von"])
     bis = date.fromisoformat(daten["bis"])
-    monate, summe = _quartal_verlauf(session, o, von, bis)
+    monate, summe = _quartal_verlauf(session, o, von, bis,
+                                     set(daten.get("monate_aktiv") or []) or None)
     satz = {"netz": daten["satz_netz"], "eigen": daten["satz_eigen"],
             "misch": daten["satz"], "herkunft": daten["satz_herkunft"],
             "grund": daten["satz_grund"], "rabatt": daten["satz_rabatt"]}
@@ -1392,6 +1500,8 @@ def abrechnung_pdf_zeigen(slug: str, jahr: int = Query(default=0),
                           quartal: int = Query(default=0),
                           nutzer_id: int = Query(default=0),
                           name: str = Query(default=""),
+                          quartale: str = Query(default=""),
+                          aus: str = Query(default=""),
                           session: Session = Depends(get_session),
                           o: Objekt = Depends(objekt_holen)) -> Response:
     """Die Quartalsabrechnung eines Nutzers als PDF — zum Ansehen und Prüfen,
@@ -1400,7 +1510,9 @@ def abrechnung_pdf_zeigen(slug: str, jahr: int = Query(default=0),
     Kein PDF über 0 €: eine Rechnung ohne Betrag ist keine Rechnung. Fehlt der
     Satz oder hat der Nutzer nichts geladen, sagt die Antwort, woran es liegt,
     statt ein leeres Blatt zu erzeugen."""
-    daten = _abrechnung(session, o, slug, jahr or date.today().year, quartal)
+    ql, aus_set = _quartale_aus(quartal, quartale, aus)
+    daten = _abrechnung(session, o, slug, jahr or date.today().year, quartal,
+                        quartale=ql, aus=aus_set)
     zeile = _zeile_holen(daten, nutzer_id, name)
     if zeile["kwh"] <= 0:
         raise HTTPException(400, f"{zeile['name']} hat im Zeitraum "
@@ -1414,11 +1526,16 @@ def abrechnung_pdf_zeigen(slug: str, jahr: int = Query(default=0),
 
 
 class VersandIn(BaseModel):
-    """Wer bekommt für welches Quartal seine Abrechnung."""
+    """Wer bekommt für welches Quartal seine Abrechnung.
+
+    `quartale` (mehrere zusammen) und `aus` (abgewählte Monate) sind der
+    Feinschliff aus N169; fehlen sie, gilt das einzelne `quartal`."""
     nutzer_id: int = 0
     name: str = ""
     jahr: int = 0
     quartal: int = 0
+    quartale: list[int] = []
+    aus: list[int] = []
     an: str = ""                  # abweichende Adresse, sonst die hinterlegte
 
 
@@ -1433,7 +1550,8 @@ def versenden(slug: str, data: VersandIn,
     sondern eine Irritation. Dasselbe gilt für einen Zeitraum ohne
     abgeleiteten Satz (N148) — dann fehlt der Preis, nicht die Menge."""
     daten = _abrechnung(session, o, slug, data.jahr or date.today().year,
-                        data.quartal)
+                        data.quartal, quartale=data.quartale or [data.quartal],
+                        aus=set(data.aus))
     zeile = _zeile_holen(daten, data.nutzer_id, data.name)
     adresse = _pruefe_email(data.an) or zeile["email"]
     if not adresse:

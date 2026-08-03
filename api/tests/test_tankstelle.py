@@ -68,9 +68,9 @@ def test_quartal_zeitraum_schaltjahr_und_fehleingabe():
         t.quartal_zeitraum(2025, 5)
 
 
-def test_zeitraum_label():
-    assert t.zeitraum_label(2025, 3) == "Q3 2025"
-    assert t.zeitraum_label(2025, 0) == "Jahr 2025"
+# Die Überschrift der Abrechnung baut jetzt `abrechnungs_label` (mehrere
+# Quartale, abgewählte Monate); der Einzelquartals-Fall wird dort mitgeprüft
+# (`test_abrechnungs_label_traegt_auswahl_und_ausschluss`).
 
 
 # --------------------------------------------------------------------------
@@ -1283,3 +1283,101 @@ def test_zuordnung_lehnt_kaputten_zeitraum_und_fremden_nutzer_ab(client):
     fremd = client.put(f"/api/tankstelle/{slug}/zuordnung", json={"regeln": [
         {"nutzer_id": 99999, "von": "2025-07-01", "bis": "2025-09-30"}]})
     assert fremd.status_code == 400
+
+
+# --------------------------------------------------------------------------
+# 7) N169 — mehrere Quartale zusammen, einzelne Monate abwählen
+# --------------------------------------------------------------------------
+
+def test_quartale_monate_und_aktive_monate():
+    assert t.quartale_monate([2]) == [4, 5, 6]
+    assert t.quartale_monate([2, 3]) == [4, 5, 6, 7, 8, 9]
+    assert t.quartale_monate([0]) == list(range(1, 13))
+    # Ein abgewählter Monat fällt aus der Auswahl.
+    assert t.aktive_monate([2, 3], {4}) == [5, 6, 7, 8, 9]
+    assert t.aktive_monate([2], set()) == [4, 5, 6]
+    with pytest.raises(ValueError):
+        t.quartale_monate([5])
+
+
+def test_abrechnungs_label_traegt_auswahl_und_ausschluss():
+    assert t.abrechnungs_label(2025, [3], set()) == "Q3 2025"
+    assert t.abrechnungs_label(2025, [0], set()) == "Jahr 2025"
+    assert t.abrechnungs_label(2025, [2, 3], set()) == "Q2/Q3 2025"
+    assert t.abrechnungs_label(2025, [2, 3], {4}) == "Q2/Q3 2025 (ohne Apr)"
+    # Alle vier Quartale sind das ganze Jahr.
+    assert t.abrechnungs_label(2025, [1, 2, 3, 4], set()) == "Jahr 2025"
+
+
+def test_mehrere_quartale_zusammen_und_monat_ausschliessen(client):
+    """N169 — der Umstieg von 4-Monats- auf Quartalsabrechnung: Q2 und Q3
+    zusammen, aber ohne den schon abgerechneten April. Der abgewählte Monat
+    fällt aus Menge UND Betrag."""
+    slug = _neues_objekt(client, "Q169haus")
+    _stromkosten(slug, 2025, betrag=1600.0)                 # 0,32 € je kWh
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=10.0, datum="2025-04-15")
+    _ladung(client, slug, 2025, name="Marvin", kwh=20.0, datum="2025-05-15")
+    _ladung(client, slug, 2025, name="Marvin", kwh=30.0, datum="2025-08-15")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartale": "2,3", "aus": "4"}).json()
+    assert d["label"] == "Q2/Q3 2025 (ohne Apr)"
+    marvin = next(z for z in d["nutzer"] if z["name"] == "Marvin")
+    assert marvin["kwh"] == 50.0            # Mai (20) + Aug (30), April draußen
+    assert marvin["betrag"] == 16.0         # 50 × 0,32
+    assert d["geladen_kwh"] == 50.0         # der April zählt nicht mit
+
+    # Zum Vergleich: Q2 allein trägt den April mit.
+    q2 = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                    params={"jahr": 2025, "quartal": 2}).json()
+    m2 = next(z for z in q2["nutzer"] if z["name"] == "Marvin")
+    assert m2["kwh"] == 30.0                # April (10) + Mai (20)
+
+
+def test_monat_ausschliessen_bei_mehreren_nutzern(client):
+    """Auch über die namensbasierte Zuordnung (mehrere Nutzer) fällt ein
+    abgewählter Monat heraus (N169)."""
+    slug = _neues_objekt(client, "Mehr169haus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")   # zweiter Nutzer
+    _ladung(client, slug, 2025, name="Alicia", kwh=10.0, datum="2025-04-15")
+    _ladung(client, slug, 2025, name="Alicia", kwh=20.0, datum="2025-05-15")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartale": "2", "aus": "4"}).json()
+    assert d["automatisch"] is False
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    assert alicia["kwh"] == 20.0            # nur Mai, der April ist abgewählt
+
+
+def test_ausgeschlossener_monat_fehlt_im_pdf(client):
+    """Der abgewählte Monat verschwindet auch aus dem PDF — Tabelle und
+    Betrag (N169)."""
+    slug = _neues_objekt(client, "PDF169haus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid",
+        "strasse": "Musterweg 3", "plz": "90000", "ort": "Nürnberg"}).json()
+    _ladung(client, slug, 2025, name="Alicia", kwh=10.0, datum="2025-04-15")
+    _ladung(client, slug, 2025, name="Alicia", kwh=20.0, datum="2025-05-15")
+
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartale": "2", "aus": "4",
+                                 "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    roh = antwort.content
+    assert roh[:4] == b"%PDF"
+    assert b"Mai 2025" in roh
+    assert b"Apr 2025" not in roh           # der abgewählte Monat fehlt
+    assert b"6,40 EUR" in roh               # 20 kWh × 0,32
+
+
+def test_alle_monate_abgewaehlt_wird_abgelehnt(client):
+    """Mindestens ein Monat muss bleiben — sonst gäbe es nichts abzurechnen."""
+    slug = _neues_objekt(client, "Leer169haus")
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    r = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartale": "2", "aus": "4,5,6"})
+    assert r.status_code == 400

@@ -141,6 +141,23 @@
   .zrzeile{display:block;font:500 11px var(--mono);color:var(--soft);
            margin:0 0 14px;letter-spacing:.02em}
 
+  /* N169 — die Monatsauswahl unter den Quartalen: kleine Pillen, abgewaehlte
+     durchgestrichen. Touch-Ziele bleiben bei 44 px. */
+  .zrhint{display:block;font:600 9.5px var(--mono);letter-spacing:.06em;
+          text-transform:uppercase;color:var(--soft);margin:0 0 7px}
+  .monate{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+  .monate .mchip{min-height:44px;min-width:44px;padding:8px 14px;border:none;
+                 cursor:pointer;border-radius:999px;background:var(--paper);
+                 color:var(--soft);font:600 11px var(--mono);letter-spacing:.03em}
+  .monate .mchip[aria-pressed="true"]{background:var(--teal-l);color:var(--teal-d)}
+  .monate .mchip.aus{text-decoration:line-through;opacity:.6}
+
+  /* Die eingebettete PDF-Vorschau (N169) — sie zeigt genau das Blatt, das als
+     Anhang ausginge, und laedt sich bei jeder Auswahländerung neu. */
+  .pdfvorschau{display:block;width:100%;height:520px;border:none;
+               border-radius:12px;background:var(--sheet);margin:10px 0 0}
+  .vorschau-fuss{margin-top:8px}
+
   /* Der abgeleitete Satz (N148): die Zahl gross, darunter die Regel und
      ganz unten die Herkunft. Kein Eingabefeld — hier gibt es nichts zu
      tippen, nur etwas nachzulesen. */
@@ -302,9 +319,36 @@ const datum = iso => new Date(iso).toLocaleDateString('de-DE',
   { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 let objektSlug = '';
-let quartal = 0;               /* 0 = ganzes Jahr */
-let offeneVorschau = 0;        /* Nutzer, dessen Mail gerade aufgeklappt ist */
+/* N169 — mehrere Quartale zusammen wählbar und einzelne Monate abwählbar.
+   `quartaleGewaehlt` ist [0] fuer das ganze Jahr, sonst eine Teilmenge aus
+   1..4; `ausMonate` haelt die abgewaehlten Monatsnummern (1..12). Standard
+   bleibt: ganzes Jahr, alle Monate an — das Abwaehlen ist der Ausnahmefall. */
+let quartaleGewaehlt = [0];
+let ausMonate = new Set();
+let offeneVorschau = 0;        /* Nutzer, dessen Vorschau gerade aufgeklappt ist */
+let vorschauTimer = 0;         /* entprellt das Neuladen der PDF-Vorschau */
 let offeneBearbeitung = 0;     /* Nutzer, dessen Stammdaten gerade offen sind */
+
+const MONKURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
+                 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const QMON = { 1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12] };
+
+/* Die Monate der aktuell gewaehlten Quartale (ganzes Jahr = alle zwoelf). */
+function monateDerQuartale() {
+  if (quartaleGewaehlt.includes(0)) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const s = new Set();
+  for (const q of quartaleGewaehlt) (QMON[q] || []).forEach(m => s.add(m));
+  return [...s].sort((a, b) => a - b);
+}
+
+/* Die Zeitraum-Parameter fuer jede Abfrage — Jahr, Quartalsauswahl und die
+   abgewaehlten Monate. So sehen Liste, Vorschau, PDF und Versand denselben
+   Ausschnitt. */
+function zeitraumParams() {
+  const q = quartaleGewaehlt.includes(0) ? '0' : quartaleGewaehlt.join(',');
+  const aus = [...ausMonate].sort((a, b) => a - b).join(',');
+  return `jahr=${jahrWert()}&quartale=${q}&aus=${aus}`;
+}
 
 /* Der Zeitraum sitzt an der Abrechnung, nicht ueber dem Verlauf: abgerechnet
    wird je Jahr und Quartal, und die Wahl steht sichtbar neben dem, was sie
@@ -649,20 +693,65 @@ function zeitraumWahl() {
   const jahre = jahreListe.length ? jahreListe : [jahrWert()];
   const jknopf = j => `<button type="button" data-jahr="${j}"
       aria-pressed="${jahrWert() === j}">${j}</button>`;
-  const qknopf = (wert, text) => `<button type="button" data-quartal="${wert}"
-      aria-pressed="${quartal === wert}">${text}</button>`;
+  // Quartale sind mehrfach waehlbar (N169). „Ganzes Jahr" ist der eigene
+  // Zustand [0]; ein einzelnes Quartal schaltet ihn ab.
+  const ganz = quartaleGewaehlt.includes(0);
+  const qknopf = (wert, text) => {
+    const an = wert === 0 ? ganz : (!ganz && quartaleGewaehlt.includes(wert));
+    return `<button type="button" data-quartal="${wert}"
+      aria-pressed="${an}">${text}</button>`;
+  };
+  // Die Monate des gewaehlten Zeitraums — abgewaehlte sind durchgestrichen und
+  // zaehlen nicht in Menge und Betrag.
+  const monate = monateDerQuartale();
+  const mchip = m => `<button type="button" class="mchip${
+      ausMonate.has(m) ? ' aus' : ''}" data-monat="${m}"
+      aria-pressed="${!ausMonate.has(m)}">${MONKURZ[m - 1]}</button>`;
   return `<div class="quartale jahre">${jahre.map(jknopf).join('')}</div>
     <div class="quartale">${qknopf(1, 'Q1')}${qknopf(2, 'Q2')}${qknopf(3, 'Q3')}
-      ${qknopf(4, 'Q4')}${qknopf(0, 'Ganzes Jahr')}</div>`;
+      ${qknopf(4, 'Q4')}${qknopf(0, 'Ganzes Jahr')}</div>
+    <span class="zrhint">Einzelne Monate abwählen</span>
+    <div class="monate">${monate.map(mchip).join('')}</div>`;
+}
+
+/* Ein Quartal an- oder abwaehlen (N169). „Ganzes Jahr" ist der Zustand [0];
+   ein einzelnes Quartal schaltet ihn ab. Nie leer — das letzte abgewaehlte
+   Quartal faellt auf „ganzes Jahr" zurueck. Abgewaehlte Monate ausserhalb der
+   neuen Auswahl werden verworfen. */
+function quartalUmschalten(wert) {
+  if (wert === 0) {
+    quartaleGewaehlt = [0];
+  } else {
+    const menge = new Set(quartaleGewaehlt.filter(x => x !== 0));
+    menge.has(wert) ? menge.delete(wert) : menge.add(wert);
+    quartaleGewaehlt = menge.size ? [...menge].sort((a, b) => a - b) : [0];
+  }
+  const gueltig = new Set(monateDerQuartale());
+  ausMonate = new Set([...ausMonate].filter(m => gueltig.has(m)));
+  abrechnungZeigen();
+}
+
+/* Einen Monat aus dem gewaehlten Zeitraum aus- oder wieder einschliessen. Der
+   letzte verbleibende Monat laesst sich nicht auch noch abwaehlen — sonst gaebe
+   es nichts abzurechnen. */
+function monatUmschalten(monat) {
+  if (!ausMonate.has(monat)
+      && ausMonate.size + 1 >= monateDerQuartale().length) {
+    melde('Mindestens ein Monat muss ausgewählt bleiben', 'neg');
+    return;
+  }
+  ausMonate.has(monat) ? ausMonate.delete(monat) : ausMonate.add(monat);
+  abrechnungZeigen();
 }
 
 async function abrechnungZeigen() {
   const ziel = document.getElementById('abrechnung');
   if (!ziel) return;
+  const vorher = offeneVorschau;         // eine offene Vorschau ueberlebt das Neuzeichnen
   let d;
   try {
     d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/abrechnung`
-                  + `?jahr=${jahrWert()}&quartal=${quartal}`);
+                  + `?${zeitraumParams()}`);
   } catch (fehler) {
     zeigeFehler(ziel, 'Abrechnung nicht verfügbar', fehler);
     return;
@@ -685,8 +774,6 @@ async function abrechnungZeigen() {
         <span>Ohne E-Mail-Adresse lässt sich nichts verschicken.</span></div>`}
       ${n.kwh > 0 && n.nutzer_id ? `<div class="aw">
         <button class="btn leise" data-vorschau="${n.nutzer_id}">Vorschau</button>
-        ${n.betrag != null
-          ? `<button class="btn leise" data-pdf="${n.nutzer_id}">Test-PDF</button>` : ''}
         ${n.email && n.betrag != null
           ? `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>` : ''}
       </div>` : ''}
@@ -707,7 +794,14 @@ async function abrechnungZeigen() {
         <span class="kv teal">${d.betrag_gesamt == null ? '—'
           : eur(d.betrag_gesamt)}</span></div>
     </div>` : ''}`;
+  // War eine Vorschau offen und gibt es den Nutzer noch, wird sie mit dem
+  // neuen Ausschnitt neu geladen — entprellt, damit rasche Klicks (Monat an/aus)
+  // nicht bei jedem Schritt ein PDF nachladen.
   offeneVorschau = 0;
+  if (vorher && document.querySelector(`[data-mail="${vorher}"]`)) {
+    offeneVorschau = vorher;
+    vorschauEntprellt(vorher);
+  }
   await ladungenZeigen();
 }
 
@@ -835,40 +929,52 @@ function autoNotiz() {
     du unten je Ladung zu.</span></div>`;
 }
 
-/* Das Test-PDF: die Abrechnung, wie sie als Anhang ausssaehe — geoeffnet in
-   einem neuen Tab, ohne dass etwas verschickt wird. Ueber `fetch`, damit ein
-   „kein Betrag"-Fall als Meldung ankommt statt als roher JSON-Fehler im Tab. */
-async function testPdf(nid) {
-  const url = `/api/tankstelle/${encodeURIComponent(objektSlug)}/abrechnung.pdf`
-    + `?jahr=${jahrWert()}&quartal=${quartal}&nutzer_id=${nid}`;
-  try {
-    const antwort = await fetch(url);
-    if (!antwort.ok) {
-      const grund = await antwort.json().then(k => k.detail).catch(() => null);
-      throw new Error(grund || 'Test-PDF nicht verfügbar');
-    }
-    const adr = URL.createObjectURL(await antwort.blob());
-    window.open(adr, '_blank');
-    setTimeout(() => URL.revokeObjectURL(adr), 60000);
-  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
-}
-
+/* Die Vorschau: das Abrechnungs-PDF, wie es als Anhang ausssaehe — eingebettet
+   auf der Seite (N169), nicht in einem neuen Tab. Sie aktualisiert sich, sobald
+   sich die Auswahl aendert (Jahr, Quartale, Monate): `abrechnungZeigen` merkt
+   sich die offene Vorschau und laedt sie mit dem neuen Ausschnitt entprellt neu.
+   Verschickt wird dabei nichts. */
 async function vorschauZeigen(nid) {
+  nid = Number(nid);
   const feld = document.querySelector(`[data-mail="${nid}"]`);
   if (!feld) return;
-  if (offeneVorschau === Number(nid)) {       // zweiter Klick schliesst wieder
+  if (offeneVorschau === nid) {                // zweiter Klick schliesst wieder
     feld.innerHTML = '';
     offeneVorschau = 0;
+    clearTimeout(vorschauTimer);
     return;
   }
   document.querySelectorAll('[data-mail]').forEach(f => { f.innerHTML = ''; });
+  offeneVorschau = nid;
+  await vorschauRendern(nid);
+}
+
+function vorschauEntprellt(nid) {
+  clearTimeout(vorschauTimer);
+  vorschauTimer = setTimeout(() => vorschauRendern(nid), 350);
+}
+
+async function vorschauRendern(nid) {
+  const feld = document.querySelector(`[data-mail="${nid}"]`);
+  if (!feld || offeneVorschau !== Number(nid)) return;
+  const slug = encodeURIComponent(objektSlug);
+  let d;
   try {
-    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/vorschau`
-                        + `?jahr=${jahrWert()}&quartal=${quartal}&nutzer_id=${nid}`);
-    feld.innerHTML = `<span class="mailkopf">An ${esc(d.an || '— keine Adresse —')}
-      · ${esc(d.betreff)}</span><pre class="mailtext">${esc(d.text)}</pre>`;
-    offeneVorschau = Number(nid);
-  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+    d = await api(`/tankstelle/${slug}/vorschau?${zeitraumParams()}&nutzer_id=${nid}`);
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); return; }
+  const kopf = `<span class="mailkopf">An ${esc(d.an || '— keine Adresse —')}
+      · ${esc(d.betreff)}</span>`;
+  if (d.betrag == null) {                       // ohne Betrag kein PDF — Mailtext
+    feld.innerHTML = `${kopf}<pre class="mailtext">${esc(d.text)}</pre>`;
+    return;
+  }
+  const pdf = `/api/tankstelle/${slug}/abrechnung.pdf?${zeitraumParams()}`
+    + `&nutzer_id=${nid}`;
+  feld.innerHTML = `${kopf}
+    <iframe class="pdfvorschau" src="${pdf}" title="PDF-Vorschau"></iframe>
+    <div class="vorschau-fuss">
+      <a class="btn leise" href="${pdf}" target="_blank" rel="noopener">Im neuen Tab öffnen</a>
+    </div>`;
 }
 
 async function versenden(nid) {
@@ -880,7 +986,8 @@ async function versenden(nid) {
   try {
     const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/versand`, {
       method: 'POST',
-      body: { nutzer_id: Number(nid), jahr: jahrWert(), quartal } });
+      body: { nutzer_id: Number(nid), jahr: jahrWert(),
+              quartale: quartaleGewaehlt, aus: [...ausMonate] } });
     melde(`Abrechnung an ${d.an} verschickt`, 'pos');
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
@@ -924,6 +1031,12 @@ function zuordnungBlock() {
 async function ladungenZeigen() {
   const ziel = document.getElementById('ladungen');
   if (!ziel) return;
+  // N169 — bei genau einem (oder keinem) Nutzer gehoeren ihm ohnehin alle
+  // Ladungen automatisch; die Zuordnung waere leer und verwirrend. Erst ab zwei
+  // Nutzern gibt es etwas zuzuordnen, dann erscheint der Bereich.
+  const karte = document.getElementById('kartezuordnen');
+  if (karte) karte.hidden = nutzerListe.length < 2;
+  if (nutzerListe.length < 2) return;
   let d;
   try {
     d = await api(`/objekte/${encodeURIComponent(objektSlug)}/tankstelle/${jahrWert()}`);
@@ -1034,7 +1147,7 @@ function skelett() {
       <div id="abrechnung"></div>
     </div>
 
-    <div class="karte">
+    <div class="karte" id="kartezuordnen" hidden>
       <div class="hh"><h3>Ladungen zuordnen</h3></div>
       <span class="hint">Die Wallbox weiß, wie viel geladen wurde — aber nicht,
         von wem. Diese Zuordnung ist die Grundlage der Abrechnung.</span>
@@ -1062,11 +1175,11 @@ document.addEventListener('click', e => {
   const j = e.target.closest('[data-jahr]');
   if (j) { jahrGewaehlt = Number(j.dataset.jahr); return abrechnungZeigen(); }
   const q = e.target.closest('[data-quartal]');
-  if (q) { quartal = Number(q.dataset.quartal); return abrechnungZeigen(); }
+  if (q) return quartalUmschalten(Number(q.dataset.quartal));
+  const m = e.target.closest('[data-monat]');
+  if (m) return monatUmschalten(Number(m.dataset.monat));
   const v = e.target.closest('[data-vorschau]');
   if (v) return vorschauZeigen(v.dataset.vorschau);
-  const p = e.target.closest('[data-pdf]');
-  if (p) return testPdf(p.dataset.pdf);
   const s = e.target.closest('[data-senden]');
   if (s) return versenden(s.dataset.senden);
   const lb = e.target.closest('[data-ladung-neu]');
