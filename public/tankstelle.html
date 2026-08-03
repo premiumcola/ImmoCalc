@@ -278,17 +278,24 @@
   .blatt .tabrahmen{background:var(--paper)}
   .bl-mt{min-width:288px}
 
-  /* Der abgeleitete Satz (N148): die Zahl gross, darunter die Regel und
-     ganz unten die Herkunft. Kein Eingabefeld — hier gibt es nichts zu
-     tippen, nur etwas nachzulesen. */
+  /* N148/N186 — der abgeleitete Satz: die Hero-Zahl gross, daneben ein i mit
+     Mischregel und Herkunft (dynamisch, kein Dauertext). Darunter zwei Chips
+     fuer Netz- und Eigen-Satz — grafisch statt Fliesstext. Kein Eingabefeld. */
   .satz{background:var(--paper);border-radius:14px;padding:14px;
         margin:0 0 14px}
-  .satz .sw{display:block;font:700 20px var(--disp);letter-spacing:-.02em;
-            color:var(--teal-d)}
-  .satz .sd{display:block;font:400 12px var(--body);color:var(--ink);
-            line-height:1.55;margin-top:7px}
-  .satz .sq{display:block;font:400 10.5px var(--mono);color:var(--soft);
-            line-height:1.6;margin-top:9px;overflow-wrap:anywhere}
+  .satz-hero{display:flex;align-items:center;gap:2px}
+  .satz .sw{font:700 22px var(--disp);letter-spacing:-.02em;color:var(--teal-d)}
+  .satz-hero .tinfo{color:var(--soft);margin:-13px -8px -13px -4px}
+  .satz-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .satz-chip{display:inline-flex;align-items:center;gap:9px;background:var(--sheet);
+             border-radius:11px;padding:8px 13px;min-width:0}
+  .satz-chip i{width:9px;height:9px;border-radius:3px;flex:none}
+  .satz-chip .scl{font:600 9px var(--mono);letter-spacing:.06em;
+                  text-transform:uppercase;color:var(--soft);white-space:nowrap}
+  .satz-chip .scv{font:700 13px var(--disp);letter-spacing:-.01em;
+                  color:var(--ink);white-space:nowrap}
+  .satz-chip.netz i{background:var(--amber)}
+  .satz-chip.eigen i{background:var(--teal)}
 
   .az{background:var(--paper);border-radius:14px;padding:14px;
       margin-bottom:10px}
@@ -299,12 +306,19 @@
   .az .ab{font:700 17px var(--disp);letter-spacing:-.02em;color:var(--teal-d)}
   .az .ad{display:block;font:400 11.5px var(--body);color:var(--soft);
           margin-top:6px;line-height:1.5;overflow-wrap:anywhere}
-  /* N170 — die E-Auto-Kennzahlen: km, Preis/100 km, Benzin-Aequivalent. Ein
-     ruhiger Teal-Ton hebt sie von der grauen Detailzeile ab, ohne zu schreien. */
-  .az .eco{display:block;font:500 11.5px var(--body);color:var(--teal-d);
-           margin-top:6px;line-height:1.55;overflow-wrap:anywhere}
-  .az .eco .annahme{display:block;font:400 10.5px var(--body);color:var(--soft);
-                    margin-top:2px;letter-spacing:0}
+  /* N170/N186 — die E-Auto-Kennzahlen als grafische Stat-Chips: km, Preis/100 km,
+     Benzin-Aequivalent. Die Annahme steckt im i daneben (N186), nicht mehr als
+     Dauertext. Ruhiger Teal-Ton, hebt sie von der grauen Detailzeile ab. */
+  .az .eco{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:10px}
+  .az .eco .ecar{font-size:15px;line-height:1;flex:none}
+  .az .ecochip{display:inline-flex;align-items:baseline;gap:5px;
+               background:var(--teal-l);border-radius:10px;padding:6px 10px;
+               min-width:0}
+  .az .ecochip .ev{font:700 12.5px var(--disp);letter-spacing:-.01em;
+                   color:var(--teal-d);white-space:nowrap}
+  .az .ecochip .eu{font:500 10px var(--mono);letter-spacing:.02em;
+                   color:var(--teal-d);opacity:.72;white-space:nowrap}
+  .az .eco .tinfo{color:var(--teal-d);margin:-11px -7px}
   /* Vorschau und Versand stehen nebeneinander — zwei volle Balken
      untereinander wirkten wie zwei Hauptwege, dabei ist einer der Vorlauf
      des anderen. */
@@ -402,7 +416,8 @@
               padding:16px 18px;width:320px;max-width:calc(100vw - 24px);
               color:var(--ink)}
   .tinfo-titel{font:700 15px var(--disp);letter-spacing:-.01em;margin-bottom:7px}
-  .tinfo-text{font:400 13px/1.6 var(--body);color:var(--ink);margin:0 0 13px}
+  .tinfo-text{font:400 13px/1.6 var(--body);color:var(--ink);margin:0 0 13px;
+              white-space:pre-line}
   .tinfo-ok{min-height:40px;padding:0 16px;border:none;border-radius:10px;
             background:var(--teal-l);color:var(--teal-d);cursor:pointer;
             font:600 12.5px var(--disp)}
@@ -556,6 +571,17 @@ function infoKnopf(key) {
     title="Erklärung anzeigen">${INFO_ICON}</button>`;
 }
 
+/* N186 — ein Info-Knopf mit dynamischem Text (Satz-Herkunft, Benzin-Annahme):
+   dieselbe Popup-Mechanik, der Inhalt kommt aber aus den Daten des Zeitraums,
+   nicht aus dem statischen INFOS-Verzeichnis. Kein neuer Text — nur ein Ort. */
+function infoKnopfText(titel, text) {
+  if (!text) return '';
+  return `<button type="button" class="tinfo" data-info=""
+    data-info-titel="${esc(titel)}" data-info-text="${esc(text)}"
+    aria-label="${esc(titel)}: Erklärung anzeigen"
+    title="Erklärung anzeigen">${INFO_ICON}</button>`;
+}
+
 let infoOffen = null;
 function infoEsc(e) {
   if (e.key !== 'Escape' || !infoOffen) return;
@@ -570,7 +596,11 @@ function infoSchliessen() {
   infoOffen = null;
 }
 function infoOeffnen(anker, key) {
-  const eintrag = INFOS[key];
+  // N186 — ein dynamischer Knopf traegt seinen Text am Element (data-info-text);
+  // sonst kommt er aus dem statischen INFOS-Verzeichnis.
+  const eintrag = anker.dataset.infoText != null
+    ? { titel: anker.dataset.infoTitel || '', text: anker.dataset.infoText }
+    : INFOS[key];
   if (!eintrag) return;
   infoSchliessen();
   const sheet = window.matchMedia('(max-width:700px)').matches;
@@ -1172,11 +1202,18 @@ async function abrechnungZeigen() {
           ? 'Satz steht noch nicht fest' : satzText(n.satz)}
         ${n.anzahl ? ` · ${n.anzahl} ${n.anzahl === 1 ? 'Ladung' : 'Ladungen'}` : ''}
         ${n.email ? ` · ${esc(n.email)}` : ''}</span>
-      ${n.km != null ? `<span class="eco">🚗 rund ${zahl(n.km, 0)} km gefahren${
-        n.preis_100km != null ? ` · ${eur(n.preis_100km)} / 100 km` : ''}${
-        n.liter_100km != null ? ` · energetisch ≈ ${zahl(n.liter_100km, 1)} l Benzin/100 km`
-          + `<span class="annahme">Annahme ${zahl(d.benzin_kwh_pro_liter, 1)} kWh je Liter · `
-          + `reiner Energievergleich, kein Kostenvergleich</span>` : ''}</span>` : ''}
+      ${n.km != null ? `<div class="eco"><span class="ecar">🚗</span>
+        <span class="ecochip"><span class="ev">${zahl(n.km, 0)}</span>
+          <span class="eu">km</span></span>${
+        n.preis_100km != null ? `<span class="ecochip">
+          <span class="ev">${eur(n.preis_100km)}</span>
+          <span class="eu">/ 100 km</span></span>` : ''}${
+        n.liter_100km != null ? `<span class="ecochip">
+            <span class="ev">≈ ${zahl(n.liter_100km, 1)} l</span>
+            <span class="eu">/ 100 km</span></span>`
+          + infoKnopfText('Benzin-Vergleich',
+              `Annahme ${zahl(d.benzin_kwh_pro_liter, 1)} kWh je Liter · `
+              + `reiner Energievergleich, kein Kostenvergleich`) : ''}</div>` : ''}
       ${n.email ? '' : `<div class="notiz fehlt"><span class="wi">✉</span>
         <span>Ohne E-Mail-Adresse lässt sich nichts verschicken.</span></div>`}
       ${n.kwh > 0 && n.nutzer_id ? `<div class="aw">
@@ -1364,15 +1401,28 @@ function satzBlock(d) {
   }
   // Jede Ergaenzung einzeln geprueft: fehlt eine, bleibt sie weg. Ein „NaN %"
   // oder ein „undefined" waere schlimmer als eine Zeile weniger.
-  const rabatt = d.satz_rabatt == null ? '' : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
-  const regel = d.satz_netz == null || d.satz_eigen == null ? ''
-    : `<span class="sd">Netz ${satzText(d.satz_netz)} · eigener Strom
-        ${satzText(d.satz_eigen)}${rabatt}. Der Satz einer Ladung mischt beide
-        nach den Mengen des Zeitraums.</span>`;
-  const quelle = d.satz_herkunft
-    ? `<span class="sq">${esc(d.satz_herkunft)}</span>` : '';
-  return `<div class="satz"><span class="sw">${satzText(d.satz)}</span>
-    ${regel}${quelle}</div>`;
+  const rabatt = d.satz_rabatt == null ? ''
+    : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
+  const hatTeile = d.satz_netz != null && d.satz_eigen != null;
+  // Netz und eigener Strom als zwei Chips statt Fliesstext (N186).
+  const chips = !hatTeile ? '' : `<div class="satz-chips">
+      <span class="satz-chip netz"><i></i>
+        <span class="scl">Netz</span>
+        <span class="scv">${zahl(d.satz_netz, 4)} €</span></span>
+      <span class="satz-chip eigen"><i></i>
+        <span class="scl">Eigen${rabatt ? ' · −10 %' : ''}</span>
+        <span class="scv">${zahl(d.satz_eigen, 4)} €</span></span>
+    </div>`;
+  // Mischregel und Herkunft wandern ins i neben die Hero-Zahl (N186) — beide
+  // bestehende Texte, nur an einem Ort statt als graue Textwand.
+  const regel = !hatTeile ? ''
+    : `Netz ${satzText(d.satz_netz)} · eigener Strom ${satzText(d.satz_eigen)}`
+      + `${rabatt}. Der Satz einer Ladung mischt beide nach den Mengen des Zeitraums.`;
+  const infoText = [regel, d.satz_herkunft || ''].filter(Boolean).join('\n\n');
+  return `<div class="satz">
+    <div class="satz-hero"><span class="sw">${satzText(d.satz)}</span>
+      ${infoKnopfText('Satz je kWh', infoText)}</div>
+    ${chips}</div>`;
 }
 
 /* Der Kern des Fehlers „ich druecke und nichts passiert": abgerechnet wird
@@ -1396,9 +1446,7 @@ function offeneNotiz(d) {
    „automatisch", damit die Zuordnung nicht wie eine Handeingabe aussieht. */
 function autoNotiz() {
   return `<div class="notiz auto"><span class="wi">⤳</span><span>Automatisch
-    zugeordnet: An dieser Station ist bisher nur eine Person angelegt — alle
-    Ladungen des Zeitraums gehen auf sie. Sobald eine zweite dazukommt, ordnest
-    du unten je Ladung zu.</span></div>`;
+    zugeordnet — nur eine Person angelegt, alle Ladungen gehen auf sie.</span></div>`;
 }
 
 /* Die Vorschau: das Abrechnungs-PDF, wie es als Anhang ausssaehe — eingebettet
