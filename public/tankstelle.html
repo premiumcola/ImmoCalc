@@ -198,7 +198,7 @@
      rechts nutzend; auf dem iPhone gestapelt (Matrix zuerst). */
   .absel{display:grid;gap:14px}
   @media(min-width:720px){
-    .absel{grid-template-columns:1fr minmax(214px,262px);align-items:stretch}
+    .absel{grid-template-columns:1fr minmax(214px,262px);align-items:start}
     .absel .satz{order:1;margin:0}.absel .filter-matrix{order:2}
   }
   /* Der Chooser: Jahr-Pills, darunter eine Quartal×Monat-Matrix (4 Spalten
@@ -1322,7 +1322,7 @@ async function abrechnungZeigen() {
     ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
         Für ${esc(d.label)} gibt es weder Nutzer noch Ladungen.</div>`}
     ${d.automatisch && d.nutzer?.length ? autoNotiz() : ''}
-    ${d.nutzer?.length ? `<div class="kpi" style="margin-top:14px">
+    ${(d.nutzer?.length > 1 || d.offen_kwh > 0.05) ? `<div class="kpi" style="margin-top:14px">
       <div class="k"><span class="kl">${esc(d.label)}</span>
         <span class="kv">${kwh(d.kwh_gesamt)}</span></div>
       <div class="k"><span class="kl">Summe</span>
