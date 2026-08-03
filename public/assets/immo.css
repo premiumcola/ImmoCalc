@@ -180,6 +180,9 @@ button.chip:hover{filter:brightness(.96)}
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .nav a .ni{font:400 23px var(--mono); line-height:1}
+/* Der Aufklapp-Chevron ist ein reiner Desktop-Belang: in der unteren
+   Handy-Leiste stehen alle Ziele ohnehin flach nebeneinander. */
+.nav .kappe{display:none}
 
 /* „Mehr" sieht aus wie die übrigen Einträge — es ist einer. Eingehängt wird
    es von immo.js (navAufraeumen), damit die Leiste nur an einer Stelle
@@ -563,6 +566,36 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
   .nav a .ni{font-size:17px}
   .nav a:hover{background:rgba(255,255,255,.55); color:var(--ink)}
   .nav a[aria-current=page]{background:var(--sheet); color:var(--teal-d)}
+
+  /* ---- N203: gestaffelte Objektgruppe ----
+     Der Gruppenkopf bleibt ein normaler Eintrag; der Chevron sitzt rechts und
+     ist die einzige Toggle-Flaeche (der Rest des Kopfes fuehrt zur Objektliste).
+     Die Kinder sind eingerueckt und teilen sich eine durchgehende Leitschiene. */
+  .nav .gruppenkopf{position:relative}
+  .nav .kappe{
+    display:flex; align-items:center; justify-content:center; margin-left:auto;
+    width:24px; height:24px; border-radius:7px; color:var(--soft); cursor:pointer;
+  }
+  .nav .kappe:hover{background:rgba(255,255,255,.7); color:var(--ink)}
+  .nav .kappe:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+  .nav .kappe svg{transition:transform .18s ease}
+  .nav.objekte-zu .kappe svg{transform:rotate(-90deg)}
+
+  .nav a.kind{
+    padding-left:38px; font-size:13px; color:var(--soft); position:relative;
+  }
+  .nav a.kind .ni{font-size:15px}
+  /* Leitschiene: die Segmente ueberlappen den 4px-Abstand und ergeben so eine
+     durchgehende Linke unter „Objekte". */
+  .nav a.kind::before{
+    content:''; position:absolute; left:22px; top:-2px; bottom:-2px; width:2px;
+    background:rgba(15,110,92,.22); border-radius:2px;
+  }
+  .nav a.kind:hover{color:var(--ink)}
+  .nav a.kind[aria-current=page]{background:var(--sheet); color:var(--teal-d)}
+  .nav a.kind[aria-current=page]::before{background:var(--teal)}
+  /* Eingeklappt: die Kinder verschwinden, der Kopf bleibt. */
+  .nav.objekte-zu a.kind{display:none}
 
   /* Kacheln duerfen auf breiten Schirmen nicht ins Riesenhafte wachsen */
   .grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}

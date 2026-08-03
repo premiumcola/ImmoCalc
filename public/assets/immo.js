@@ -106,18 +106,22 @@ export const fristKlasse = tage =>
    `installNav()` baut sie aus `NAV` und haengt sie anstelle eines
    Platzhalter-Elements `[data-nav]` ein. */
 
+// N203 — die Leiste ist gestaffelt: die objektbezogenen Wege stehen als
+// eingerueckte Untergruppe unter „Objekte" (auf dem Desktop aufklappbar), der
+// Rest bleibt oberste Ebene. Ein Eintrag mit viertem Feld (Kinder) ist ein
+// Gruppenkopf; er ist selbst ein Link auf die Objektliste.
 export const NAV = [
-  ['Objekte', 'index.html', '▤'],
-  // N23 — Vermietungsstatistik: Miete + Nebenkosten, Durchschnitte,
-  // Mieterhöhungen über die eigenen Objekte und Einheiten. Steht direkt
-  // hinter „Objekte", weil es dieselben Daten aus einem anderen Blick zeigt.
-  ['Vermietungen', 'vermietungen.html', '▦'],
-  ['Dokumente', 'eingang.html', '▣'],
-  ['Wert', 'wertentwicklung.html', '◔'],
-  ['Nebenkosten', 'nebenkosten.html', '≡'],
-  // N83/N87 — Strom/PV-Subsystem als eigene Unterseite (je Objekt/Jahr),
-  // samt Amortisation des PV-Investments.
-  ['PV Amortisation', 'strom.html', '⚡'],
+  ['Objekte', 'index.html', '▤', [
+    // N23 — Vermietungsstatistik: Miete + Nebenkosten, Durchschnitte,
+    // Mieterhöhungen über die eigenen Objekte und Einheiten.
+    ['Vermietung', 'vermietungen.html', '▦'],
+    ['Nebenkosten', 'nebenkosten.html', '≡'],
+    ['Dokumente', 'eingang.html', '▣'],
+    ['Wertentwicklung', 'wertentwicklung.html', '◔'],
+    // N83/N87 — Strom/PV-Subsystem je Objekt/Jahr, samt Amortisation des
+    // PV-Investments (die Amortisation ist Inhalt der PV-Seite, kein Menuepunkt).
+    ['PV Anlagen', 'strom.html', '⚡'],
+  ]],
   // N132 — die E-Tankstelle ist ein eigener Bereich, keine Karte auf der
   // PV-Seite: eigene Nutzer, eigener Verlauf, eigene Abrechnung.
   ['E-Tankstelle', 'tankstelle.html', '⏻'],
@@ -128,6 +132,14 @@ export const NAV = [
   ['Lexikon', 'lexikon.html', '?'],
   ['Einstellungen', 'settings.html', '⚙'],
 ];
+
+// Kleiner Chevron im flachen Stil der App — dreht sich beim Einklappen.
+const CARET_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" '
+  + 'aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" '
+  + 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// Merkt sich, ob die Objektgruppe eingeklappt ist (nur Desktop-Belang).
+const GRUPPE_ZU = 'immocalc-objekte-zu';
 
 // objekt.html und zeitraum.html stehen selbst nicht in der Leiste — sie
 // sind Detailansichten der Objektliste und zaehlen fuer die Markierung als
@@ -140,14 +152,64 @@ export function installNav() {
   if (!platz) return;
   const datei = location.pathname.split('/').pop() || 'index.html';
   const aktiv = NAV_ALIAS[datei] || datei;
+
+  // Ein Eintrag wird zum flachen Link. `extra` haengt hinter das Label (Chevron
+  // beim Gruppenkopf); `klasse` markiert Gruppenkopf bzw. Kind.
+  const link = (label, href, icon, extra = '', klasse = '') =>
+    `<a${klasse ? ` class="${klasse}"` : ''} href="${href}"${
+      href === aktiv ? ' aria-current="page"' : ''
+    }><span class="ni">${icon}</span>${label}${extra}</a>`;
+
+  let html = `<a class="brand" href="index.html">ImmoCalc</a>`;
+  let kindAktiv = false;
+  for (const [label, href, icon, kinder] of NAV) {
+    if (kinder) {
+      // Alle Ziele bleiben flache <a> in der Leiste (die Handy-Logik in
+      // navAufraeumen zaehlt sie einzeln); die Staffelung ist reine Optik.
+      kindAktiv = kinder.some(([, khref]) => khref === aktiv);
+      const caret = `<span class="kappe" role="button" tabindex="0"`
+        + ` aria-label="Objektmenü ein- oder ausklappen" aria-expanded="true">`
+        + `${CARET_SVG}</span>`;
+      html += link(label, href, icon, caret, 'gruppenkopf');
+      html += kinder.map(([kl, kh, ki]) => link(kl, kh, ki, '', 'kind')).join('');
+    } else {
+      html += link(label, href, icon);
+    }
+  }
+
   const nav = document.createElement('nav');
   nav.className = 'nav';
-  nav.innerHTML = `<a class="brand" href="index.html">ImmoCalc</a>`
-    + NAV.map(([label, href, icon]) => `<a href="${href}"${
-        href === aktiv ? ' aria-current="page"' : ''
-      }><span class="ni">${icon}</span>${label}</a>`).join('');
+  nav.innerHTML = html;
   platz.replaceWith(nav);
+  gruppeVerdrahten(nav, kindAktiv);
   navAufraeumen();
+}
+
+/* Klappt die Objektgruppe auf dem Desktop auf/zu. Standard: aufgeklappt, damit
+   die Staffelung sichtbar ist. Ist ein Kind die aktive Seite, wird immer
+   aufgeklappt, sonst waere der aktive Eintrag verborgen. Der Chevron toggelt,
+   der Rest des Kopfes bleibt ein Link auf die Objektliste. */
+function gruppeVerdrahten(nav, kindAktiv) {
+  const kappe = nav.querySelector('.gruppenkopf .kappe');
+  if (!kappe) return;
+  let zu = localStorage.getItem(GRUPPE_ZU) === '1';
+  if (kindAktiv) zu = false;
+  const anwenden = () => {
+    nav.classList.toggle('objekte-zu', zu);
+    kappe.setAttribute('aria-expanded', String(!zu));
+  };
+  anwenden();
+  const um = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    zu = !zu;
+    localStorage.setItem(GRUPPE_ZU, zu ? '1' : '0');
+    anwenden();
+  };
+  kappe.addEventListener('click', um);
+  kappe.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') um(e);
+  });
 }
 
 /* ---- Navigation auf dem Handy ------------------------------------------
