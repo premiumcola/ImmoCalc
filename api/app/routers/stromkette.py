@@ -502,6 +502,13 @@ def _gesamtmenge(gesamt: Zaehler | None, verb: dict[int, float | None],
         return round(verb[gesamt.id], 3), f"Zähler „{gesamt.name}“"
     if sj.gesamt_kwh:
         return round(sj.gesamt_kwh, 3), "Jahreswert am Strom-Jahr"
+    # N167 — kein Gesamtwert, aber die drei SolarEdge-Mengen sind erfasst: ihre
+    # Summe IST der Gesamtverbrauch. Sonst blieben alle Blöcke bei 0 kWh und die
+    # Kette meldete „kein Durchschnittspreis", obwohl Menge und Betrag längst da
+    # sind — der Gesamtverbrauch ist einfach die Summe von Netz, PV und Speicher.
+    summe = sum(_mengen(sj))
+    if summe > 0:
+        return round(summe, 3), "Summe der erfassten Netz-/PV-/Speicher-Mengen"
     return 0.0, ""
 
 

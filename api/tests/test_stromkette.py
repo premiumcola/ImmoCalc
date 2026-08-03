@@ -367,7 +367,7 @@ def test_geladene_kwh_landen_nicht_bei_den_bewohnern(monkeypatch):
 def test_ohne_zaehler_sagt_die_kette_was_fehlt(monkeypatch):
     """Keine Zähler: kein Gesamtverbrauch, keine Verteilung — aber eine Ansage
     statt eines Fehlers."""
-    zid = _objekt("kette-ohne-zaehler", mit_zaehler=False)
+    zid = _objekt("kette-ohne-zaehler", mit_zaehler=False, anteile=(0.0, 0.0, 0.0))
     d = _kette(zid, monkeypatch, WALLBOX)
 
     assert d["schritt1"]["gesamt_kwh"] == 0.0
@@ -411,3 +411,28 @@ def test_wallbox_aus_dann_zaehlt_der_eauto_zaehlerstand(monkeypatch):
     assert s2["netz_kwh"] == round(1373.84 * 24.0 / 100.0, 3)
     # Die Handeingabe (999/999) darf NICHT gewonnen haben.
     assert s2["netz_kwh"] != 999.0
+
+
+def test_ohne_gesamtwert_zaehlt_die_summe_der_drei_mengen(monkeypatch):
+    """N167 — sind nur die drei SolarEdge-Mengen erfasst (kein Gesamtzähler,
+    kein Jahreswert), ist ihre Summe der Gesamtverbrauch. Sonst blieben die
+    Blöcke bei 0 kWh und die Kette meldete „kein Durchschnittspreis", obwohl
+    Menge und Betrag da sind."""
+    zid = _objekt("kette-ohne-gesamt", mit_zaehler=False,
+                  anteile=(2910.0, 3595.0, 2054.0))
+    with Session(db.engine) as s:
+        sj = s.exec(select(Stromjahr).where(Stromjahr.jahr == 2025)).all()[-1]
+        sj.gesamt_kwh = 0.0
+        s.add(sj)
+        s.commit()
+    d = _kette(zid, monkeypatch)
+    s1 = d["schritt1"]
+    # Die Prozent-Umrechnung driftet um Bruchteile — die Summe bleibt exakt.
+    assert abs(s1["netz"]["kwh"] - 2910.0) < 0.5
+    assert abs(s1["pv"]["kwh"] - 3595.0) < 0.5
+    assert abs(s1["akku"]["kwh"] - 2054.0) < 0.5
+    assert abs((s1["netz"]["kwh"] + s1["pv"]["kwh"] + s1["akku"]["kwh"])
+               - 8559.0) < 0.01
+    # Der Netzpreis lässt sich jetzt bilden — kein „kein Preis"-Hinweis mehr.
+    assert s1["netz"]["preis"] is not None
+    assert not any("Gesamtverbrauch der Periode fehlt" in w for w in d["warnungen"])
