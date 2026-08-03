@@ -407,6 +407,7 @@
   .haken.gruen{background:var(--pos-bg);color:var(--pos)}
   .haken.rot{background:var(--neg-bg);color:var(--neg)}
   .haken.grau{background:#EDF1F0;color:var(--soft)}
+  .haken.amber{background:var(--amber-bg);color:var(--amber)}
   /* overflow-wrap: lange Begriffe wie "Gebäudeversicherung" schieben sonst
      den Betrag an sich heran, bis beides zusammenklebt. */
   /* hyphens vor overflow-wrap: so wird aus "Gebäudeversicherung" ein
@@ -1313,6 +1314,8 @@ const HAKEN = {
   erledigt: ['gruen', '✓'],
   offen: ['rot', '!'],
   fehlt: ['grau', '–'],
+  // N198a — bernsteinfarbene Warnung: berechnet, aber noch nicht verteilt.
+  warnung: ['amber', '▲'],
 };
 
 /* N36b — die Frist steht kompakt als Chip oben rechts in der Kopfzeile, nicht
@@ -1869,10 +1872,25 @@ function positionsBetrag(k) {
   return 0;
 }
 
+/* N198a — die Heizkörper-Wärmemenge ist eine reine VERTEILUNGS-Position: ihre
+   Kosten (Öl minus Warmwasser) stehen zwar rechnerisch fest, sind aber erst
+   dann wirklich abgerechnet, wenn sie über die Heizkostenverteiler (HKV) auf
+   die Einheiten verteilt sind. Sicheres Minimum: verteilt gilt erst, sobald
+   mindestens ein Heizkörper erfasst ist — ohne HKV wird nichts zugeteilt. */
+function heizwaermeVerteilt() {
+  return (heizverteiler || []).length > 0;
+}
+
 /* N190 — erledigt heißt: ein Betrag liegt vor, gleich ob aus einem Beleg oder
    aus einer Berechnung. Eine per §9/FIFO berechnete Position (Warmwasser-
-   erzeugung, Heizöl) ist damit ebenso fertig wie eine belegte. */
+   erzeugung, Heizöl) ist damit ebenso fertig wie eine belegte.
+   N198a — Ausnahme: die Heizkörper-Wärmemenge zählt erst als erledigt, wenn ihr
+   Betrag auch verteilt ist. Ein bloß berechneter Betrag (oder ein vom Backend
+   gesetztes erledigt-Flag ohne HKV) genügt hier bewusst NICHT. */
 function effektivErledigt(k) {
+  if (istHeizwaermePos(k)) {
+    return positionsBetrag(k) > 0.005 && heizwaermeVerteilt();
+  }
   return !!k.erledigt || positionsBetrag(k) > 0.005;
 }
 
@@ -2605,9 +2623,14 @@ function zeileHtml(k, i) {
   // Betrag → neutral (kein Haken). Der frühere Weg über `k.zustand` mahnte nur,
   // wo schon eine leere Position lag, und ließ nie berührte Pflichten grau.
   const erl = effektivErledigt(k);
+  // N198a — die Heizkörper-Wärmemenge, deren Kosten feststehen, aber noch nicht
+  // über die Heizkostenverteiler verteilt sind: keine grüne Erledigung und kein
+  // rotes „fehlt", sondern eine bernsteinfarbene Warnung „noch nicht verteilt".
+  const heizWarn = !erl && istHeizwaermePos(k) && positionsBetrag(k) > 0.005;
   const [farbe, zeichen] = erl ? HAKEN.erledigt
+    : heizWarn ? HAKEN.warnung
     : (k.optional ? HAKEN.fehlt : HAKEN.offen);
-  const zeigeHaken = erl || !k.optional;
+  const zeigeHaken = erl || heizWarn || !k.optional;
   // N101 — die Wasser-Sammelzeile trägt die SUMME ihrer drei Bestandteile
   // (Frisch- + Schmutz- + Niederschlagswasser). Ihr eigener Betrag ist nur der
   // Frischwasser-Anteil; die anderen beiden sind eigene, ausgeblendete
@@ -2627,6 +2650,9 @@ function zeileHtml(k, i) {
     // N47 — Hinweis: die Wasser-Position fasst die drei Bestandteile zusammen.
     istWasserSammel(k)
       ? 'Fasst Frisch-, Schmutz- & Niederschlagswasser zusammen' : null,
+    // N198a — Heizkörper-Wärmemenge: Betrag steht, aber noch kein Heizkörper
+    // erfasst → die Kosten sind noch nicht auf die Einheiten verteilt.
+    heizWarn ? 'Heizkosten noch nicht auf Einheiten verteilt' : null,
   ].filter(Boolean).join(' · ');
 
   return zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken);
@@ -2681,6 +2707,11 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
   // N190 — eine berechnete Position (Warmwasser, Heizöl) gilt als erledigt und
   // bekommt dasselbe grüne Schema wie eine belegte.
   const erl = effektivErledigt(k);
+  // N198a — die Heizkörper-Wärmemenge mit feststehendem, aber noch nicht
+  // verteiltem Betrag: sie zeigt ihren Wert (statt „Datei wählen"), denn ein
+  // Beleg-Scan ergibt für eine reine Verteilungsposition keinen Sinn — die
+  // Zeile wird über die Heizkostenverteiler fertig, nicht über eine Rechnung.
+  const heizWaermeBerechnet = istHeizwaermePos(k) && positionsBetrag(k) > 0.005;
   // Eine vorläufige (orange) Position bleibt orange, bis sie bestätigt ist.
   const zustandKlasse = k.vorlaeufig ? ' entwurf' : (erl ? ' gefuellt' : '');
   const bearbeitbar = daten.status === 'in Arbeit';
@@ -2790,7 +2821,9 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
          inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
          aria-label="Betrag für ${esc(k.kostenart)}"><span class="kbe">€</span></span>`
-    : (erl ? `<span class="wert">${wert}</span>` : '');
+    // N198a — die Heizkörper-Wärmemenge zeigt ihren (noch nicht verteilten)
+    // Betrag trotz Warnung an, damit die Größenordnung sichtbar bleibt.
+    : ((erl || heizWaermeBerechnet) ? `<span class="wert">${wert}</span>` : '');
   // Quick-Capture nur an der geschlossenen, offenen Zeile — aufgeklappt macht
   // der Betrag im Kopf Platz, Belege kommen dann über „Beleg anhängen".
   // Ohne Kamera (Schreibtisch) genügt EIN neutraler Knopf — er öffnet über
@@ -2799,7 +2832,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
   // N114 — hat die Heizöl-Position ihre Kosten aus der FIFO-Bewertung, ist sie
   // nicht „leer": dann kein „Datei wählen"-Knopf, sondern der Betrag. Weitere
   // Lieferungen lassen sich jederzeit im aufgeklappten Öl-Manager erfassen.
-  const quickScan = (!erl && !aufgeklappt)
+  const quickScan = (!erl && !aufgeklappt && !heizWaermeBerechnet)
     ? (KEINE_KAMERA
       ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
             title="Beleg-PDF von diesem Rechner wählen" aria-label="Beleg-Datei wählen">
@@ -3097,10 +3130,18 @@ async function zeichnen() {
       // Anlegen); die Panels entscheiden das selbst.
       const wz = bi < 3 ? zaehlerPanelHtml(BEREICH_IKON[bi], zListe, zBlock) : '';
       if (!liste.length && !wz) return '';
-      return `<div class="kat-kopf"><span class="kat-ikon">${
+      const kopf = `<div class="kat-kopf"><span class="kat-ikon">${
           kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
-          esc(BEREICHE[bi].titel)}</span></div>`
-        + liste.map(({ k, i }) => zeileHtml(k, i)).join('') + wz;
+          esc(BEREICHE[bi].titel)}</span></div>`;
+      // N199 — im Heizungs-Kapitel gehören die Heizöl-/Wärmemengenzähler UNTER
+      // die Position „Heizöl & Lieferungen" (wie beim Wasser die Zähler unter
+      // Wasser), weil Wärmeerzeugung und Heizkörper-Wärmemenge aus eben diesen
+      // Zählern abgeleitet werden — nicht als separates Panel am Kapitelende.
+      if (bi === 1 && wz && liste.some(({ k }) => istHeizoelSammel(k))) {
+        return kopf + liste.map(({ k, i }) =>
+          zeileHtml(k, i) + (istHeizoelSammel(k) ? wz : '')).join('');
+      }
+      return kopf + liste.map(({ k, i }) => zeileHtml(k, i)).join('') + wz;
     }).join('');
 
     // N66 — der globale „Ablesewerte eingeben"-Knopf + das Zahnrad sind raus:
@@ -3150,6 +3191,10 @@ async function zeichnen() {
 let deckungAbschlaege = null;
 let heizoelKosten = 0;   // N114 - FIFO-Kosten des Oelverbrauchs
 let wwKosten = 0;        // N118 - §9-Anteil des Oels fuer die Warmwassererzeugung
+// N198a - die erfassten Heizkostenverteiler des Objekts. Die Heizkoerper-
+// Waermemenge ist erst dann erledigt, wenn ihre Kosten hierueber auf die
+// Einheiten verteilt sind; ohne HKV bleibt die Position offen (Warnung).
+let heizverteiler = [];
 let wasserDetailCache = null;  // N118 - dieselbe Aufteilung wie in der Wassertabelle
 let deckungUmgelegt = null;   // was tatsächlich verteilt ist (Abrechnung)
 
@@ -4890,6 +4935,14 @@ async function laden() {
       + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
     wwKosten = sp?.ww_kosten || 0;
   } catch { heizoelKosten = 0; wwKosten = 0; }
+  // N198a — die Heizkostenverteiler des Objekts einmal mitziehen, damit die
+  // Checkliste synchron entscheiden kann, ob die Heizkörper-Wärmemenge schon
+  // auf die Einheiten verteilt ist. Beiwerk: fehlt der Endpunkt, bleibt die
+  // Liste leer und die Position gilt (korrekt) als noch nicht verteilt.
+  try {
+    const hv = await api(`/objekte/${encodeURIComponent(daten.objekt)}/heizverteiler`);
+    heizverteiler = hv?.heizverteiler || [];
+  } catch { heizverteiler = []; }
   // N82b — die NK-Vorauszahlungen des Zeitraums für die Deckungs-Anzeige.
   try {
     const ab = await api(`/zeitraeume/${zid}/abrechnung`);
