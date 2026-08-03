@@ -316,7 +316,7 @@
      scrollt in ihrem eigenen Rahmen, die Seite selbst nie. */
   .tabrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
              border-radius:12px;background:var(--paper);margin:0 0 14px}
-  .jt{border-collapse:collapse;width:100%;min-width:520px}
+  .jt{border-collapse:collapse;width:100%;min-width:460px}
   .jt th{font:600 9px var(--mono);letter-spacing:.07em;text-transform:uppercase;
          color:var(--soft);text-align:right;padding:11px 12px 9px;
          white-space:nowrap}
@@ -331,6 +331,10 @@
      warum dort ein Betrag steht, für den es keine Abrechnung gibt. */
   .jt .vorab{display:block;font:500 9px var(--mono);letter-spacing:.05em;
              text-transform:uppercase;color:var(--soft);margin-top:3px}
+  /* N174 — der Vorlauf ohne Aufschlüsselung steht in der PV-Strom-Spalte; der
+     Hinweis sagt leise, dass die Herkunft dort nicht getrennt ist. */
+  .jt .unauf{display:block;font:500 8.5px var(--mono);letter-spacing:.04em;
+             text-transform:uppercase;color:var(--soft);margin-top:2px}
   .jt td.summe{font-weight:700;color:var(--teal-d)}
   .jt .plus{color:var(--pos);font-weight:600}
   /* Der Hinweis erscheint nur, wenn die Tabelle wirklich nicht ganz passt —
@@ -1387,16 +1391,37 @@ function verlaufLegende(v) {
 }
 
 function verlaufTabelle(v) {
-  const mitVorlauf = (v.vorlauf || 0) > 0;
-  const kopf = ['Jahr', ...(mitVorlauf ? ['Vorlauf'] : []), 'PV-Strom',
-                'Einspeisung', 'E-Tanken', 'Summe', 'kumuliert', 'noch offen'];
+  // N174 — keine eigene Vorlauf-Spalte mehr. Der Vorlauf des ersten Jahres wird
+  // in dieselben Quellenspalten aufgeschlüsselt wie die Jahre danach: sein
+  // PV-Strom-Anteil in die PV-Strom-Spalte, seine Einspeisung in die
+  // Einspeisung-Spalte, sein E-Tanken in die E-Tanken-Spalte. Ist er nur als
+  // Gesamtbetrag gepflegt, steht er in PV-Strom mit dem Hinweis, dass er nicht
+  // aufgeschlüsselt ist — statt eine Spalte wieder einzuführen.
+  const kopf = ['Jahr', 'PV-Strom', 'Einspeisung', 'E-Tanken',
+                'Summe', 'kumuliert', 'noch offen'];
+  const roherVorlauf = z => z.jahr === v.vorlauf_jahr && (z.vorlauf || 0) > 0
+    && !z.vorlauf_teile;
+  const zelle = (z, feld) => {
+    let wert = z[feld] || 0;
+    if (z.jahr === v.vorlauf_jahr) {
+      if (z.vorlauf_teile) wert += z.vorlauf_teile[feld] || 0;
+      else if (feld === 'pv_strom') wert += z.vorlauf || 0;
+    }
+    return wert;
+  };
+  const geld = (z, feld) => {
+    const w = zelle(z, feld);
+    const hinweis = feld === 'pv_strom' && roherVorlauf(z)
+      ? '<span class="unauf">nicht aufgeschlüsselt</span>' : '';
+    return (w ? eur(w) : '—') + hinweis;
+  };
+  const summe = feld => v.jahre.reduce((s, z) => s + zelle(z, feld), 0);
   const zeilen = v.jahre.map(z => `<tr>
       <td>${z.jahr}${z.jahr === v.vorlauf_jahr
         ? '<span class="vorab">vor der Abrechnung</span>' : ''}</td>
-      ${mitVorlauf ? `<td class="leise">${z.vorlauf ? eur(z.vorlauf) : '—'}</td>` : ''}
-      <td class="leise">${z.pv_strom ? eur(z.pv_strom) : '—'}</td>
-      <td class="leise">${z.einspeisung ? eur(z.einspeisung) : '—'}</td>
-      <td class="leise">${z.tanken ? eur(z.tanken) : '—'}</td>
+      <td class="leise">${geld(z, 'pv_strom')}</td>
+      <td class="leise">${geld(z, 'einspeisung')}</td>
+      <td class="leise">${geld(z, 'tanken')}</td>
       <td class="summe">${eur(z.summe)}</td>
       <td>${eur(z.kumuliert)}</td>
       <td>${z.offen ? eur(z.offen)
@@ -1407,10 +1432,10 @@ function verlaufTabelle(v) {
     <thead><tr>${kopf.map(t => `<th>${t}</th>`).join('')}</tr></thead>
     <tbody>${zeilen}</tbody>
     <tfoot><tr>
-      <td>Σ</td>${mitVorlauf ? `<td>${eur(v.vorlauf)}</td>` : ''}
-      <td>${eur(v.jahre.reduce((s, z) => s + z.pv_strom, 0))}</td>
-      <td>${eur(v.jahre.reduce((s, z) => s + z.einspeisung, 0))}</td>
-      <td>${eur(v.jahre.reduce((s, z) => s + z.tanken, 0))}</td>
+      <td>Σ</td>
+      <td>${eur(summe('pv_strom'))}</td>
+      <td>${eur(summe('einspeisung'))}</td>
+      <td>${eur(summe('tanken'))}</td>
       <td class="summe">${eur(v.kumuliert)}</td>
       <td>${eur(v.kumuliert)}</td>
       <td>${eur(v.rest)}</td>

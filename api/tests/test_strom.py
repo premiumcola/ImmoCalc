@@ -1096,3 +1096,121 @@ def test_autarkie_ohne_mengen_bleibt_leer(client):
     a = client.get(f"/api/objekte/{slug}/strom/2025/rechnung").json()["autarkie"]
     assert a["prozent"] is None
     assert a["verbrauch_kwh"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# N174 — der Vorlauf des ersten Jahres wird in dieselben Quellenspalten
+# aufgeschlüsselt wie die Jahre danach; es gibt keine eigene Vorlauf-Spalte
+# mehr. Die Tabelle (Frontend) faltet dazu `vorlauf_teile` in die
+# Quellenspalten. Diese Tests sichern den Backend-Kontrakt, auf dem das beruht:
+# die drei aufgeschlüsselten Beträge summieren sich exakt auf die Jahressumme,
+# und über alle Jahre gehen die gefalteten Spalten auf `kumuliert` auf.
+# ---------------------------------------------------------------------------
+
+_QUELLEN = ("pv_strom", "einspeisung", "tanken")
+
+
+def _gefaltete_spalte(z: dict, feld: str, vorlauf_jahr) -> float:
+    """So faltet die Tabelle (N174) eine Quellenspalte einer Zeile: der eigene
+    Jahreswert plus — im Vorlaufjahr — der aufgeschlüsselte Vorlauf-Anteil. Ist
+    der Vorlauf nicht aufgeschlüsselt, steht sein Gesamtbetrag in PV-Strom."""
+    wert = z.get(feld) or 0.0
+    if z["jahr"] == vorlauf_jahr:
+        if z.get("vorlauf_teile"):
+            wert += z["vorlauf_teile"].get(feld) or 0.0
+        elif feld == "pv_strom":
+            wert += z.get("vorlauf") or 0.0
+    return round(wert, 2)
+
+
+def _okt_objekt(c, name: str):
+    """Ein Objekt mit abweichendem Wirtschaftsjahr ab Oktober — wie beim echten
+    Objekt (erste Abrechnung 01.10.2024–30.09.2025, Label-Jahr 2025)."""
+    return c.post("/api/objekte", json={
+        "name": name, "ort": "Teststadt", "turnus": "abweichend",
+        "start_monat": 10, "kostenarten": ["Strom"],
+        "einheiten": [{"bezeichnung": "EG", "flaeche": 70.0,
+                       "partei": "Müller"}]}).json()["slug"]
+
+
+def test_verlauf_vorlauf_faellt_in_die_quellenspalten(client):
+    """Das echte Objekt: erste Abrechnung 01.10.2024–30.09.2025 (Label 2025),
+    Vorlauf PV-Strom 1.798,50 € + Einspeisung 556,86 € = 2.355,36 €. Der Vorlauf
+    landet in den Quellenspalten des Jahres 2024, nicht in einer eigenen
+    Spalte."""
+    slug = _okt_objekt(client, "PV-N174")
+    client.post(f"/api/objekte/{slug}/zeitraeume",
+                json={"start": "2024-10-01", "ende": "2025-09-30"})
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"anschaffung_eur": 35800.0,
+                     "vorlauf_pv_strom_eur": 1798.50,
+                     "vorlauf_einspeisung_eur": 556.86})
+
+    v = _verlauf(client, slug)
+    assert v["vorlauf_jahr"] == 2024
+
+    zeile = _jahr(v, 2024)
+    # Die Vorlaufzeile trägt die drei aufgeschlüsselten Quellen, nicht eine Summe.
+    assert zeile["vorlauf_teile"] == {"pv_strom": 1798.50,
+                                      "einspeisung": 556.86, "tanken": 0.0}
+    # Gefaltet ergeben die drei Spalten der Zeile genau ihre Summe.
+    gefaltet = {q: _gefaltete_spalte(zeile, q, v["vorlauf_jahr"])
+                for q in _QUELLEN}
+    assert gefaltet == {"pv_strom": 1798.50, "einspeisung": 556.86,
+                        "tanken": 0.0}
+    assert round(sum(gefaltet.values()), 2) == zeile["summe"] == 2355.36
+
+    # Über alle Jahre gehen die gefalteten Quellenspalten auf `kumuliert` auf —
+    # ganz ohne eigene Vorlauf-Spalte.
+    spalten = {q: round(sum(_gefaltete_spalte(z, q, v["vorlauf_jahr"])
+                            for z in v["jahre"]), 2) for q in _QUELLEN}
+    assert spalten == {"pv_strom": 1798.50, "einspeisung": 556.86,
+                       "tanken": 0.0}
+    assert round(sum(spalten.values()), 2) == v["kumuliert"] == 2355.36
+
+
+def test_verlauf_folgejahr_ohne_ertraege_bleibt_ehrlich_null(client):
+    """Ein Abrechnungsjahr nach dem Vorlauf ohne PV-Ertrag zeigt in allen
+    Quellenspalten ehrlich 0 — der kumulierte Stand bleibt stehen. So sieht der
+    Verlauf des echten Objekts aus: 2024 Vorlauf, 2025/2026 (noch) ohne
+    Erträge, weil dort keine „eigen"-Position, keine nicht umlagefähige
+    Kostenart und keine Ladung erfasst ist (N174)."""
+    slug = _okt_objekt(client, "PV-N174-Null")
+    client.post(f"/api/objekte/{slug}/zeitraeume",
+                json={"start": "2024-10-01", "ende": "2025-09-30"})
+    client.post(f"/api/objekte/{slug}/zeitraeume",
+                json={"start": "2025-10-01", "ende": "2026-09-30"})
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"anschaffung_eur": 35800.0,
+                     "vorlauf_pv_strom_eur": 1798.50,
+                     "vorlauf_einspeisung_eur": 556.86})
+
+    v = _verlauf(client, slug)
+    assert v["vorlauf_jahr"] == 2024
+    for jahr in (2025, 2026):
+        z = _jahr(v, jahr)
+        assert (z["pv_strom"], z["einspeisung"], z["tanken"], z["summe"]) \
+            == (0.0, 0.0, 0.0, 0.0)
+        assert z["kumuliert"] == 2355.36      # der Vorlauf bleibt stehen
+
+
+def test_verlauf_unaufgeschluesselter_vorlauf_geht_in_pv_strom(client):
+    """Ist nur der Gesamt-Vorlauf gepflegt (keine Aufschlüsselung), zeigt die
+    Tabelle ihn in der PV-Strom-Spalte mit dem Hinweis „nicht aufgeschlüsselt" —
+    statt eine Spalte wieder einzuführen. Der Backend-Kontrakt dafür:
+    `vorlauf_teile` ist None, `vorlauf` trägt den Gesamtbetrag (N174)."""
+    slug = _okt_objekt(client, "PV-N174-Roh")
+    client.post(f"/api/objekte/{slug}/zeitraeume",
+                json={"start": "2024-10-01", "ende": "2025-09-30"})
+    client.put(f"/api/objekte/{slug}/pv/stammdaten",
+               json={"anschaffung_eur": 35800.0, "vorlauf_ertrag_eur": 2355.36})
+
+    v = _verlauf(client, slug)
+    assert v["vorlauf_aufgeschluesselt"] is False
+    zeile = _jahr(v, v["vorlauf_jahr"])
+    assert zeile["vorlauf_teile"] is None
+    # Der Gesamtbetrag fällt in die PV-Strom-Spalte, die übrigen bleiben 0.
+    assert _gefaltete_spalte(zeile, "pv_strom", v["vorlauf_jahr"]) == 2355.36
+    assert _gefaltete_spalte(zeile, "einspeisung", v["vorlauf_jahr"]) == 0.0
+    assert _gefaltete_spalte(zeile, "tanken", v["vorlauf_jahr"]) == 0.0
+    assert zeile["summe"] == 2355.36
