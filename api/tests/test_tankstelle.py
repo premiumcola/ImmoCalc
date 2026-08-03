@@ -791,6 +791,44 @@ def test_satz_kommt_aus_der_periode_mit_der_groessten_ueberschneidung(client):
     assert alt["satz_netz"] == 0.32
 
 
+def test_n173_fahrer_zahlen_den_geeichten_satz_nicht_die_verteilung(client):
+    """N173 — der Fahrer zahlt Betrag ÷ geeichte Rechnungsmenge, nicht Betrag ÷
+    SolarEdge-Netzmenge (den Verteilungssatz der Mieter).
+
+    1.499,34 € / 4.021 kWh = 0,3729 €/kWh (geeicht). Auf die SolarEdge-Menge
+    (2.910 kWh) wären es 0,5152 € — der Fahrer zahlt bewusst den geeichten,
+    günstigeren Satz."""
+    slug = _neues_objekt(client, "Geeichthaus")
+    _stromkosten(slug, 2025, betrag=1499.34, gesamt_kwh=10800.0,
+                 netz_kwh=2910.0, solar_kwh=5400.0, akku_kwh=2490.0)
+    # Die geeichte Rechnungsmenge weicht von der SolarEdge-Netzmenge ab — das
+    # ist der Sinn der zwei Sätze (N173).
+    with Session(db_modul.engine) as session:
+        o = session.exec(select(Objekt).where(Objekt.slug == slug)).one()
+        kp = session.exec(select(Kostenposition).where(
+            Kostenposition.zeitraum_id.in_(
+                select(Zeitraum.id).where(Zeitraum.objekt_id == o.id)),
+            Kostenposition.herkunft == "extern")).first()
+        kp.menge = 4021.0
+        session.add(kp)
+        session.commit()
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-11")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    # Der geeichte Satz, nicht der Verteilungssatz 0,5152.
+    assert round(d["satz_netz"], 4) == 0.3729
+    assert round(d["satz_netz"], 4) != round(1499.34 / 2910.0, 4)
+    assert "geeichte Rechnungsmenge" in d["satz_herkunft"]
+    assert "4.021" in d["satz_herkunft"]
+    # Ohne bekannte Aufteilung gilt der Netzpreis: 100 kWh × 0,37288 = 37,29 €.
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    assert alicia["betrag"] == 37.29
+    # Deutlich unter dem, was der Verteilungssatz (51,52 €) verlangte.
+    assert alicia["betrag"] < 51.0
+
+
 def test_abrechnung_nennt_die_luecke_zwischen_geladen_und_zugeordnet(client):
     """N143 — die Abrechnung rechnet nur ab, was einer Person zugeordnet ist.
 

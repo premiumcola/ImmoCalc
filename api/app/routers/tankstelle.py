@@ -1209,6 +1209,12 @@ def satz_ableiten(session: Session, objekt_id: int, von: date, bis: date,
     schritt1 = kette.get("schritt1") or {}
     netz = schritt1.get("netz") or {}
     betrag, menge = netz.get("betrag") or 0.0, netz.get("kwh") or 0.0
+    # N173 — der Fahrer zahlt den GEEICHTEN Netzsatz (Betrag ÷ geeichte
+    # Rechnungsmenge), nicht den Verteilungssatz der Mieter (Betrag ÷
+    # SolarEdge-Menge). Fehlt die geeichte Menge, hat die Kette bereits auf den
+    # Verteilungssatz zurückgestellt — dann ist `netz_preis_geeicht` == diesem.
+    netz_preis = schritt1.get("netz_preis_geeicht")
+    geeichte_menge = schritt1.get("geeichte_menge") or 0.0
     label = (kette.get("zeitraum") or {}).get("label", "")
     quelle = schritt1.get("quelle_betrag") or ""
     # Zwei Hälften, zwei verschiedene Lücken. Welche fehlt, gehört benannt —
@@ -1219,7 +1225,9 @@ def satz_ableiten(session: Session, objekt_id: int, von: date, bis: date,
             "erfasst. Der Satz entsteht aus diesem Betrag geteilt durch die "
             "bezogenen kWh — sobald die Stromkosten in den Nebenkosten "
             "stehen, rechnet er sich von selbst."))
-    if menge <= 0:
+    if netz_preis is None:
+        # Weder die geeichte Rechnungsmenge noch die SolarEdge-Menge ist da —
+        # ohne Nenner kein Durchschnittspreis.
         # Die Quellenangabe bringt selbst schon Klammern mit (Belegname) —
         # noch ein Klammerpaar drumherum liest sich wie ein Tippfehler.
         return Satz(grund=(
@@ -1229,13 +1237,19 @@ def satz_ableiten(session: Session, objekt_id: int, von: date, bis: date,
             "Durchschnittspreis. Die Menge ergibt sich aus dem "
             "Gesamtverbrauch und den SolarEdge-Anteilen am Strom-Jahr."))
 
-    netz_preis = round(betrag / menge, 5)
+    # Die Menge, die den Satz trägt: die geeichte Rechnungsmenge, sonst
+    # (Rückfall) die SolarEdge-Netzmenge — dieselbe, auf die die Kette dann auch
+    # zurückgestellt hat.
+    satz_menge = geeichte_menge if geeichte_menge > 0 else menge
+    geeicht_hinweis = ("geeichte Rechnungsmenge" if geeichte_menge > 0
+                       else "SolarEdge-Menge, geeichte Menge fehlt")
     eigen_preis = eigen_satz(netz_preis)
     return Satz(
         netz=netz_preis, eigen=eigen_preis,
         misch=mischsatz(netz_preis, eigen_preis, extern_kwh, eigen_kwh),
         herkunft=(f"{quelle or f'{deutsch(betrag)} € Netzbezug'} ÷ "
-                  f"{deutsch(menge)} kWh Netzbezug ({label})"))
+                  f"{deutsch(satz_menge)} kWh Netzbezug "
+                  f"({geeicht_hinweis}, {label})"))
 
 
 # ==========================================================================

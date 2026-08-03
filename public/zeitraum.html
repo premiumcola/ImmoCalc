@@ -896,6 +896,16 @@
   .sk-herk b{color:var(--ink);font-weight:600}
   /* Ein noch fehlender Betrag — ein Strich statt einer Null, in Bernstein. */
   .sk-offen{color:var(--amber)}
+  /* N173 — die zwei Netzsätze nebeneinander: Verteilung (Mieter) und geeicht
+     (E-Auto). Zwei ruhige Kärtchen, darunter ein Satz, warum sie sich
+     unterscheiden. Auf dem iPhone brechen sie untereinander um. */
+  .sk-saetze{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}
+  .sk-satz{flex:1 1 130px;min-width:0;display:flex;flex-direction:column;
+    gap:2px;padding:8px 11px;border-radius:10px;background:var(--paper)}
+  .sk-satz b{font:600 14px var(--mono);color:var(--ink)}
+  .sk-satz small{font:400 11px var(--body);color:var(--soft);line-height:1.4}
+  .sk-satz-hinweis{flex:1 1 100%;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.5;margin-top:2px}
   .sk-felder{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
   .sk-feld{flex:1 1 74px;min-width:0;display:flex;flex-direction:column;gap:4px}
   .sk-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
@@ -3734,11 +3744,39 @@ function skSchritt1(d) {
         <td><span class="wd-m3">${eur(s.betrag)}</span></td>
       </tr></tfoot>
       </table></div>
+      ${skNetzsaetze(s)}
       ${s.vollstaendig === false ? `<span class="sk-quelle sk-offen">Das ist
         nur, was bisher bekannt ist — für die mit „fehlt“ gezeichneten Blöcke
         liegt noch kein Betrag vor.</span>` : ''}
       ${herkunft ? `<ul class="sk-herk">${herkunft}</ul>` : ''}
       ${quelle ? `<span class="sk-quelle">${quelle}</span>` : ''}</div>`;
+}
+
+/* N173 — der Netzstrom trägt zwei ct/kWh-Werte: den Verteilungssatz, den die
+   Mieter tragen (voller Netzbetrag ÷ SolarEdge-gemessene Netzmenge), und den
+   geeichten Satz, mit dem das E-Auto abgerechnet wird (÷ geeichte
+   Rechnungsmenge). Beide sichtbar machen, damit der Unterschied nicht wie ein
+   Rechenfehler aussieht. */
+function skNetzsaetze(s) {
+  const vert = s.netz_preis, geeicht = s.netz_preis_geeicht;
+  if (vert == null || geeicht == null) return '';
+  // Fallen beide zusammen (keine abweichende Rechnungsmenge), ist nichts zu
+  // erklären — eine Zeile, kein Vergleich.
+  if (Math.abs(vert - geeicht) < 1e-6) {
+    return `<div class="sk-saetze"><span class="sk-satz"><b>Netz ${
+      skCt(vert)}/kWh</b><small>Verteilung &amp; E-Auto</small></span></div>`;
+  }
+  const menge = s.geeichte_menge
+    ? ` (${zahl(s.geeichte_menge)} kWh laut Rechnung)` : '';
+  return `<div class="sk-saetze">
+      <span class="sk-satz"><b>${skCt(vert)}/kWh</b>
+        <small>Mieter · Verteilung (SolarEdge-Menge)</small></span>
+      <span class="sk-satz"><b>${skCt(geeicht)}/kWh</b>
+        <small>E-Auto · geeicht${menge}</small></span>
+      <span class="sk-satz-hinweis">Zwei Sätze, ein Netzbetrag: die Mieter tragen
+        ihn auf die SolarEdge-gemessene Menge, das E-Auto auf die geeichte
+        Rechnungsmenge. Die Differenz wird mit dem Versorger geklärt.</span>
+    </div>`;
 }
 
 /* Schritt 2 — die Ladungen der Periode gehen vorab ab. Sie werden aus dem

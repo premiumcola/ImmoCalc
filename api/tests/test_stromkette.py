@@ -278,11 +278,19 @@ def test_schritt2_zieht_die_ladungen_der_periode_aus_der_wallbox(monkeypatch):
         == (522.34, 444.94, 383.25)
     assert s2["eauto_kwh"] == round(522.34 + 444.94 + 383.25, 3)
     assert s2["beruecksichtigt"] is True
-    # Exakt bepreist aus den drei Blöcken.
-    preise = (862.51 / 2592.0, 0.10, 0.20)
-    erwartet = round(522.34 * preise[0] + 444.94 * preise[1]
-                     + 383.25 * preise[2], 2)
-    assert s2["betrag"] == erwartet
+    # N173 — das E-Auto wird zum GEEICHTEN Satz bepreist, nicht zum
+    # Durchschnittspreis der drei Blöcke. Bewusste Fachlogik-Änderung: so rechnet
+    # auch die Tankstelle die Fahrer ab (Netz zum geeichten Satz, eigener Strom
+    # 10 % darunter) — Kette und Fahrer-Abrechnung ergeben dieselbe Summe. Die
+    # geeichte Menge (Kostenposition.menge = 2592) fällt hier mit der
+    # SolarEdge-Netzmenge zusammen, der geeichte Netzsatz also mit dem
+    # Verteilungssatz; der Unterschied liegt allein im eigenen Strom (10 % statt
+    # der Blockpreise 0,10/0,20).
+    netz_g = round(862.51 / 2592.0, 5)
+    eigen_g = round(netz_g * 0.9, 5)
+    erwartet = (round(522.34 * netz_g, 2) + round(444.94 * eigen_g, 2)
+                + round(383.25 * eigen_g, 2))
+    assert s2["betrag"] == round(erwartet, 2)
     # Und in keiner Zeile taucht ein Name auf.
     assert "person" not in str(s2).lower()
 
@@ -411,6 +419,86 @@ def test_wallbox_aus_dann_zaehlt_der_eauto_zaehlerstand(monkeypatch):
     assert s2["netz_kwh"] == round(1373.84 * 24.0 / 100.0, 3)
     # Die Handeingabe (999/999) darf NICHT gewonnen haben.
     assert s2["netz_kwh"] != 999.0
+
+
+def _geeichte_menge_setzen(zid: int, menge: float) -> None:
+    """Die geeichte Rechnungsmenge an der externen Strom-Position setzen (N173).
+
+    Der Aufbau (`_objekt`) legt sie mit menge == SolarEdge-Netzmenge an, sodass
+    beide Sätze zusammenfallen. Für die N173-Fälle muss sie abweichen — das
+    ist der Sinn der zwei Sätze."""
+    with Session(db.engine) as s:
+        kp = s.exec(select(Kostenposition).where(
+            Kostenposition.zeitraum_id == zid,
+            Kostenposition.herkunft == "extern")).first()
+        kp.menge = menge
+        s.add(kp)
+        s.commit()
+
+
+def test_n173_zwei_netzsaetze_verteilung_und_geeicht(monkeypatch):
+    """N173 — der Netzstrom trägt zwei ct/kWh-Werte für zwei Zwecke:
+
+    - Verteilung (Mieter): voller Netzbetrag ÷ SolarEdge-Netzmenge (2.910 kWh).
+    - geeicht (E-Auto):     voller Netzbetrag ÷ geeichte Rechnungsmenge (4.021).
+
+    1.499,34 € / 4.021 kWh = 0,3729 €/kWh — der geeichte Satz (exakter
+    Referenztest). Er ist günstiger als der Verteilungssatz, weil die geeichte
+    Menge größer ist als die am Wechselrichter gemessene."""
+    zid = _objekt("kette-n173", anteile=(2910.0, 5400.0, 2490.0),
+                  rechnung=1499.34)
+    _geeichte_menge_setzen(zid, 4021.0)
+    # Wie im echten Objekt: keine gepflegten PV/Akku-Sätze, also folgt der eigene
+    # Strom der 10-%-Regel unter dem Verteilungssatz (N158) — nicht künstlich
+    # billige Blockpreise wie im Aufbau-Standard.
+    with Session(db.engine) as s:
+        sj = s.exec(select(Stromjahr).where(Stromjahr.jahr == 2025)).all()[-1]
+        sj.solar_preis, sj.akku_preis = 0.0, 0.0
+        s.add(sj)
+        s.commit()
+    d = _kette(zid, monkeypatch, WALLBOX)
+    s1 = d["schritt1"]
+
+    # SolarEdge-Netzmenge: ~2910 kWh (die Prozent-Rundung driftet um Bruchteile).
+    assert abs(s1["netz"]["kwh"] - 2910.0) < 1.0
+    assert s1["geeichte_menge"] == 4021.0
+    # Verteilungssatz auf die SolarEdge-Menge (~0,5152) …
+    assert s1["netz_preis"] == round(1499.34 / s1["netz"]["kwh"], 5)
+    assert abs(s1["netz_preis"] - 0.5152) < 0.001
+    # … geeichter Satz auf die Rechnungsmenge (exakt 0,3729).
+    assert round(s1["netz_preis_geeicht"], 4) == 0.3729
+    assert s1["netz_preis_geeicht"] < s1["netz_preis"]
+
+    # Cent-genau: E-Auto + Einheiten == der volle Strombetrag, kein Cent
+    # entsteht oder verschwindet durch die zwei Sätze.
+    assert d["kontrolle"]["stimmt"] is True
+    assert d["kontrolle"]["differenz"] == 0.0
+    assert d["kontrolle"]["verteilt"] == s1["betrag"]
+
+    # Das E-Auto ist günstiger als der Mieter-Mischpreis — genau der Effekt, den
+    # der geeichte (kleinere) Netzsatz erzeugt.
+    s2, s3 = d["schritt2"], d["schritt3"]
+    eauto_preis = s2["betrag"] / s2["eauto_kwh"]
+    eg = s3["je_einheit"]["EG"]
+    mieter_preis = eg["betrag"] / eg["kwh"]
+    assert eauto_preis < mieter_preis
+
+
+def test_n173_ohne_geeichte_menge_faellt_auf_die_verteilung(monkeypatch):
+    """N173 — fehlt die geeichte Rechnungsmenge, nutzt der E-Auto-Satz
+    ersatzweise den Verteilungssatz (auf SolarEdge-Menge), mit Hinweis und ohne
+    Absturz. Nie eine Null."""
+    zid = _objekt("kette-n173-ohne", anteile=(2910.0, 5400.0, 2490.0),
+                  rechnung=1499.34)
+    _geeichte_menge_setzen(zid, 0.0)
+    d = _kette(zid, monkeypatch, WALLBOX)
+    s1 = d["schritt1"]
+
+    assert s1["geeichte_menge"] == 0.0
+    assert s1["netz_preis_geeicht"] == s1["netz_preis"]
+    assert s1["netz_preis_geeicht"] is not None
+    assert any("geeichte Rechnungsmenge" in w for w in d["warnungen"])
+    assert d["kontrolle"]["stimmt"] is True
 
 
 def test_ohne_gesamtwert_zaehlt_die_summe_der_drei_mengen(monkeypatch):

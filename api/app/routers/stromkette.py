@@ -512,6 +512,103 @@ def _gesamtmenge(gesamt: Zaehler | None, verb: dict[int, float | None],
     return 0.0, ""
 
 
+# --------------------------------------------------------------------------
+# N173 — zwei Netzsätze: Verteilung (Mieter) und geeicht (E-Auto)
+# --------------------------------------------------------------------------
+
+def _geeichte_menge(positionen: list[Kostenposition]) -> float:
+    """Die geeichte Rechnungsmenge des Netzbezugs — die `menge`, die der Nutzer
+    an der externen Strom-Position im Feld „Verbrauch & Herkunft" einträgt.
+
+    Sie kommt vom Zähler des Versorgers und weicht bewusst von der
+    SolarEdge-gemessenen Netzmenge ab: SolarEdge misst am Wechselrichter, die
+    Rechnung am geeichten Zähler. Der Unterschied wird mit dem Versorger
+    geklärt; für den E-Auto-Satz zählt die geeichte Menge (N173). 0.0, wenn
+    keine gepflegt ist — dann fällt der geeichte Satz auf den Verteilungssatz."""
+    return round(sum((p.menge or 0.0) for p in positionen
+                     if (p.herkunft or "").strip().lower() == H_EXTERN
+                     and p.menge), 3)
+
+
+def _quote_setzen(e: strombloecke.Ergebnis, bloecke: strombloecke.Bloecke) -> None:
+    """Die Eigenverbrauchsquote aus den VOLLEN Blöcken — nicht aus dem um das
+    E-Auto verkleinerten Rest, sonst zählte das Auto aus der Quote heraus."""
+    gesamt_kwh = bloecke.kwh
+    e.eigenverbrauchsquote = (round(bloecke.eigen_kwh / gesamt_kwh, 4)
+                              if gesamt_kwh else 0.0)
+
+
+def _verteile(bloecke: strombloecke.Bloecke, verbrauch: dict[str, float],
+              eauto_einheit: str, eauto_netz_kwh: float, eauto_pv_kwh: float,
+              eauto_akku_kwh: float,
+              netz_preis_geeicht: float | None) -> strombloecke.Ergebnis:
+    """Die drei Blöcke auf die Einheiten verteilen — das E-Auto vorab zum
+    GEEICHTEN Satz (N173).
+
+    `strombloecke.verteile` bepreist die E-Auto-Menge mit dem Durchschnitts-
+    preis des Blocks (dem Verteilungssatz der Mieter, auf SolarEdge-Menge). Der
+    Nutzer will das E-Auto aber mit dem geeichten Netzpreis abrechnen — genau so
+    rechnet auch `tankstelle.py` die Fahrer ab, damit Kette und Fahrer-Abrechnung
+    dieselbe Summe ergeben: Netz-Anteil × `netz_preis_geeicht`, PV/Akku 10 %
+    darunter.
+
+    Deshalb wird das E-Auto hier vorab bepreist und mit seinen kWh **und** seinen
+    geeichten Kosten aus jedem Block herausgenommen; der Rest — voller Blockbetrag
+    minus E-Auto-Kosten, über die restlichen kWh — geht über
+    `strombloecke.verteile` an die Einheiten und trägt weiter den
+    Verteilungssatz auf SolarEdge-Basis. Cent-genau: E-Auto-Kosten +
+    verteilte Rest-Kosten == der volle Strombetrag, weil der Rest schlicht die
+    Differenz ist.
+
+    Fehlt eine E-Auto-Menge oder der geeichte Satz, verteilt es ganz normal
+    (ohne Vorab-Abzug)."""
+    vorab = {"netz": max(0.0, eauto_netz_kwh), "pv": max(0.0, eauto_pv_kwh),
+             "akku": max(0.0, eauto_akku_kwh)}
+    eauto_gesamt = round(sum(vorab.values()), 3)
+    macht_abzug = (bool(eauto_einheit) and eauto_gesamt > 0
+                   and netz_preis_geeicht is not None)
+    zu_viel = macht_abzug and any(vorab[name] > b.kwh + 1e-9
+                                  for name, b in bloecke.paare())
+    if not macht_abzug or zu_viel:
+        e = strombloecke.verteile(bloecke, verbrauch)
+        if zu_viel:
+            e.warnungen.append(
+                f"Die Ladungen von „{eauto_einheit}“ übersteigen die erfasste "
+                "Strommenge — die Vorab-Verrechnung wurde ausgelassen.")
+        _quote_setzen(e, bloecke)
+        return e
+
+    # Der geeichte Satz für Netz, 10 % darunter für den eigenen Strom — dieselbe
+    # Regel wie in tankstelle.eigen_satz, damit die Zahlen zusammenpassen.
+    eigen_geeicht = round(netz_preis_geeicht * (1.0 - EIGEN_RABATT), 5)
+    preis = {"netz": netz_preis_geeicht, "pv": eigen_geeicht, "akku": eigen_geeicht}
+    eauto_kosten = {name: round(vorab[name] * preis[name], 2) for name in vorab}
+    eauto_betrag = round(sum(eauto_kosten.values()), 2)
+
+    # Der Rest je Block: kWh und Kosten des E-Autos abgezogen. Über diesen Rest
+    # verteilt der bewährte Verteiler die Mieter-Anteile — auf SolarEdge-Basis.
+    def rest(name: str, b: strombloecke.Block) -> strombloecke.Block:
+        return strombloecke.Block(kwh=round(b.kwh - vorab[name], 6),
+                                  betrag=round(b.betrag - eauto_kosten[name], 2))
+
+    reduziert = strombloecke.Bloecke(
+        netz=rest("netz", bloecke.netz), pv=rest("pv", bloecke.pv),
+        akku=rest("akku", bloecke.akku))
+    e = strombloecke.verteile(reduziert, verbrauch)
+
+    # Die E-Auto-Zeile in das Ergebnis zurücklegen — Kosten und Mengen je Block,
+    # damit die Antwort sie wie bisher ausweisen kann.
+    e.kosten[eauto_einheit] = eauto_betrag
+    for name, _ in bloecke.paare():
+        e.mengen[name][eauto_einheit] = round(vorab[name], 3)
+    e.eauto = {"einheit": eauto_einheit, "betrag": eauto_betrag,
+               "kwh": eauto_gesamt,
+               **{f"{name}_kwh": round(vorab[name], 3) for name in vorab}}
+    e.gesamt = round(sum(e.kosten.values()), 2)
+    _quote_setzen(e, bloecke)
+    return e
+
+
 @router.get("/zeitraeume/{zid}/stromkette")
 def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     """Die drei Schritte der Stromverrechnung für einen Abrechnungszeitraum.
@@ -566,6 +663,26 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     bloecke.pv.betrag = pv_betrag or 0.0
     bloecke.akku.betrag = akku_betrag or 0.0
 
+    # N173 — zwei Netzsätze. Der Verteilungssatz (Mieter) bezieht den vollen
+    # Netzbetrag auf die SolarEdge-gemessene Netzmenge; der geeichte Satz
+    # (E-Auto) auf die geeichte Rechnungsmenge am externen Posten. Weichen sie
+    # ab, wird der Gap mit dem Versorger geklärt.
+    netz_preis = (round(netz_betrag / bloecke.netz.kwh, 5)
+                  if netz_betrag and bloecke.netz.kwh else None)
+    geeichte_menge = _geeichte_menge(positionen)
+    if netz_betrag and geeichte_menge > 0:
+        netz_preis_geeicht = round(netz_betrag / geeichte_menge, 5)
+    else:
+        # Ohne geeichte Menge fällt der E-Auto-Satz auf den Verteilungssatz
+        # zurück — nie eine Null, nie ein Absturz.
+        netz_preis_geeicht = netz_preis
+        if netz_preis is not None:
+            warnungen.append(
+                "Für den Netzbezug ist keine geeichte Rechnungsmenge hinterlegt "
+                "— der E-Auto-Satz nutzt ersatzweise den Verteilungssatz auf "
+                "SolarEdge-Menge. Für den geeichten Satz die abgerechnete Menge "
+                "an der Strom-Position („Verbrauch & Herkunft“) eintragen.")
+
     # ---- Schritt 2: die E-Tankstelle vorab -------------------------------
     eauto = _eauto(session, z, sj, netz_p, pv_p, akku_p)
     warnungen += eauto.pop("warnungen", [])
@@ -587,10 +704,10 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     warnungen += [f"„{o['zaehler']}“ gehört zu keiner Einheit dieses Objekts — "
                   "die Zuordnung bitte am Zähler nachtragen." for o in offen]
 
-    e = strombloecke.verteile(
+    e = _verteile(
         bloecke, verbrauch, eauto_einheit=eauto_einheit if eauto_kwh > 0 else "",
         eauto_netz_kwh=eauto["netz_kwh"], eauto_pv_kwh=eauto["pv_kwh"],
-        eauto_akku_kwh=eauto["akku_kwh"])
+        eauto_akku_kwh=eauto["akku_kwh"], netz_preis_geeicht=netz_preis_geeicht)
     warnungen += e.warnungen
 
     je_einheit = {name: {"kwh": e.kwh(name), "netz_kwh": e.netz_kwh.get(name, 0.0),
@@ -621,6 +738,11 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
             "pv": _block(bloecke.pv, pv_betrag, h_pv),
             "akku": _block(bloecke.akku, akku_betrag, h_akku),
             "betrag": bloecke.betrag,
+            # N173 — die zwei Netzsätze getrennt: Verteilung (Mieter, auf
+            # SolarEdge-Menge) und geeicht (E-Auto, auf die Rechnungsmenge).
+            "netz_preis": netz_preis,
+            "netz_preis_geeicht": netz_preis_geeicht,
+            "geeichte_menge": geeichte_menge,
             # Trägt jeder der drei Blöcke einen Betrag? Sonst ist die Summe nur
             # das, was bisher bekannt ist — und nicht der ganze Stromaufwand.
             "vollstaendig": None not in (netz_betrag, pv_betrag, akku_betrag),
