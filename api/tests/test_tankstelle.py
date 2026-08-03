@@ -1381,3 +1381,134 @@ def test_alle_monate_abgewaehlt_wird_abgelehnt(client):
     r = client.get(f"/api/tankstelle/{slug}/abrechnung",
                    params={"jahr": 2025, "quartale": "2", "aus": "4,5,6"})
     assert r.status_code == 400
+
+
+# --------------------------------------------------------------------------
+# 8) N170 — E-Auto je Nutzer: gefahrene km, Preis/100 km, Benzin-Äquivalent
+# --------------------------------------------------------------------------
+
+def test_eauto_handeintrag_wird_gespeichert_ohne_ki(client):
+    """Ein von Hand gesetzter Verbrauch hat Vorrang und wird direkt übernommen
+    — die KI wird gar nicht erst gefragt."""
+    slug = _neues_objekt(client, "Handverbrauchhaus")
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    d = client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                    json={"modell": "VW ID.3", "verbrauch_kwh_100km": 17.4})
+    assert d.status_code == 200, d.text
+    j = d.json()
+    assert j["e_auto_modell"] == "VW ID.3"
+    assert j["verbrauch_kwh_100km"] == 17.4
+    assert j["quelle"] == "hand" and j["hinweis"] == ""
+    # Persistiert: die Nutzerliste trägt Modell und Verbrauch.
+    liste = client.get(f"/api/tankstelle/{slug}/nutzer").json()["nutzer"]
+    assert liste[0]["e_auto_modell"] == "VW ID.3"
+    assert liste[0]["verbrauch_kwh_100km"] == 17.4
+
+
+def test_eauto_ohne_schluessel_nennt_den_handweg(client):
+    """Ohne KI-Schlüssel (Testumgebung) scheitert die Ermittlung sauber:
+    Modell gespeichert, Verbrauch bleibt 0, ehrlicher Hinweis — kein Absturz."""
+    slug = _neues_objekt(client, "Ohneschluesselhaus")
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    d = client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                    json={"modell": "VW ID.3"}).json()
+    assert d["e_auto_modell"] == "VW ID.3"
+    assert d["verbrauch_kwh_100km"] == 0.0
+    assert d["quelle"] == "keine"
+    assert "von Hand" in d["hinweis"]
+
+
+def test_eauto_ki_wert_wird_uebernommen(client, monkeypatch):
+    """Liefert die KI einen plausiblen Wert, wird er gespeichert."""
+    from app import eauto as eauto_mod
+    monkeypatch.setattr(eauto_mod, "verbrauch_ermitteln",
+                        lambda *a, **k: (16.5, ""))
+    slug = _neues_objekt(client, "KIverbrauchhaus")
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    d = client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                    json={"modell": "VW ID.3"}).json()
+    assert d["verbrauch_kwh_100km"] == 16.5
+    assert d["quelle"] == "ki" and d["hinweis"] == ""
+
+
+def test_eauto_leeres_modell_wird_abgelehnt(client):
+    slug = _neues_objekt(client, "Leermodellhaus")
+    n = _nutzer(client, slug, "Marvin")
+    r = client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                    json={"modell": "  "})
+    assert r.status_code == 400
+
+
+def test_abrechnung_weist_km_preis_und_benzin_aus(client):
+    """Aus geladenen kWh und Verbrauch: gefahrene km, Preis je 100 km und das
+    energetische Benzin-Äquivalent, samt Annahme."""
+    slug = _neues_objekt(client, "Kmhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)               # 0,32 € je kWh
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                json={"modell": "VW ID.3", "verbrauch_kwh_100km": 16.0})
+    _ladung(client, slug, 2025, name="Marvin", kwh=100.0, datum="2025-08-11")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    marvin = next(z for z in d["nutzer"] if z["name"] == "Marvin")
+    # 100 kWh bei 16 kWh/100km → 625 km.
+    assert marvin["km"] == 625.0
+    # 32 € / 625 km × 100 = 5,12 € je 100 km (= 0,32 × 16).
+    assert marvin["preis_100km"] == 5.12
+    # 16 / 9,7 ≈ 1,6 l/100km.
+    assert marvin["liter_100km"] == 1.6
+    assert marvin["e_auto_modell"] == "VW ID.3"
+    assert d["benzin_kwh_pro_liter"] == 9.7
+
+
+def test_abrechnung_ohne_verbrauch_erfindet_keine_km(client):
+    """Ohne hinterlegten Verbrauch bleiben km/Preis/Benzin leer — keine 0."""
+    slug = _neues_objekt(client, "Ohnekmhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=100.0, datum="2025-08-11")
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    marvin = next(z for z in d["nutzer"] if z["name"] == "Marvin")
+    assert marvin["km"] is None
+    assert marvin["preis_100km"] is None and marvin["liter_100km"] is None
+
+
+def test_pdf_zeigt_km_und_benzin_bei_hinterlegtem_verbrauch(client):
+    """Mit Verbrauch trägt das PDF km und Preis/100 km statt Netz/PV/Akku, dazu
+    das Benzin-Äquivalent mit sichtbarer Annahme."""
+    slug = _neues_objekt(client, "PDFkmhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid",
+        "strasse": "Musterweg 3", "plz": "90000", "ort": "Nürnberg"}).json()
+    client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                json={"modell": "VW ID.3", "verbrauch_kwh_100km": 16.0})
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    roh = antwort.content
+    assert roh[:4] == b"%PDF"
+    assert b"VW ID.3" in roh                # das Modell
+    assert b"625 km" in roh                 # die gefahrenen Kilometer
+    assert b"Benzin" in roh                 # das Energie-Äquivalent
+    assert b"9,7 kWh" in roh                # die Annahme steht sichtbar dran
+    assert b"32,00 EUR" in roh              # der Rechnungsbetrag (100 × 0,32)
+
+
+def test_pdf_ohne_verbrauch_bleibt_bei_der_energieaufteilung(client):
+    """Ohne Verbrauch keine km-Spalte — das PDF zeigt weiter die
+    Netz/Eigen-Aufteilung, keine erfundene 0."""
+    slug = _neues_objekt(client, "PDFohnekmhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid",
+        "strasse": "Musterweg 3", "plz": "90000", "ort": "Nürnberg"}).json()
+    _ladung(client, slug, 2025, name="Alicia", kwh=50.0, datum="2025-08-04")
+    antwort = client.get(f"/api/tankstelle/{slug}/abrechnung.pdf",
+                         params={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"]})
+    assert antwort.status_code == 200, antwort.text
+    assert b"Benzin" not in antwort.content

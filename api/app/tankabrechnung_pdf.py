@@ -20,6 +20,9 @@ from __future__ import annotations
 
 from datetime import date
 
+from .eauto import (BENZIN_KWH_PRO_LITER, benzin_aequivalent, gefahrene_km,
+                    preis_je_100km)
+
 SEITE_B, SEITE_H = 595.28, 841.89        # A4 in Punkt
 RAND_L = 56.0
 RAND_R = SEITE_B - 56.0
@@ -56,6 +59,10 @@ def _zahl(wert: float | None, stellen: int = 2) -> str:
 
 def _kwh(wert: float | None, stellen: int = 2) -> str:
     return "-" if wert is None else _zahl(wert, stellen) + " kWh"
+
+
+def _km(wert: float | None) -> str:
+    return "-" if wert is None else _zahl(wert, 0) + " km"
 
 
 def _proz(wert: float | None) -> str:
@@ -203,6 +210,75 @@ def _legende(blatt: Blatt, oben: float, dreiteilig: bool) -> float:
     return oben + 8
 
 
+def _tabelle_eauto(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
+                   verbrauch: float, satz: float | None) -> float:
+    """N170 — die reduzierte Monatstabelle mit E-Auto: Monat · Geladen · km ·
+    Preis/100 km.
+
+    Die Aufteilung Netz/PV/Akku steht im Diagramm darüber; hier geht es um die
+    gefahrene Strecke. Je Monat: geladene kWh, daraus die gefahrenen Kilometer
+    (kWh ÷ Verbrauch × 100) und der Preis je 100 km (Betrag des Monats ÷ km ×
+    100). Ohne ermittelten Satz bleibt die Preisspalte leer statt 0."""
+    spalten = [("Geladen", "kwh"), ("km", "km"), ("Preis/100 km", "preis")]
+    n = len(spalten)
+    rechte = [RAND_R - (n - 1 - k) * ((RAND_R - (RAND_L + 130)) / max(1, n - 1))
+              for k in range(n)]
+    kopf_y = oben
+    blatt.text(RAND_L, kopf_y, "Monat", 8.5, True, SOFT)
+    for k, (name, _) in enumerate(spalten):
+        blatt.rechts(rechte[k], kopf_y, name, 8.5, True, SOFT)
+    y = kopf_y + 6
+    blatt.linie(RAND_L, y, RAND_R, LINIE, 0.8)
+    y += 14
+
+    def werte(m: dict) -> dict:
+        kwh = m.get("kwh") or 0.0
+        km = gefahrene_km(kwh, verbrauch)
+        betrag = (kwh * satz) if satz is not None else None
+        return {"kwh": _zahl(kwh), "km": _km(km),
+                "preis": _eur(preis_je_100km(betrag, km))
+                         if preis_je_100km(betrag, km) is not None else "-"}
+
+    def zeile(bez: str, m: dict, fett: bool) -> None:
+        w = werte(m)
+        blatt.text(RAND_L, y, bez, 10, fett, INK)
+        for k, (_, feld) in enumerate(spalten):
+            blatt.rechts(rechte[k], y, w[feld], 10, fett,
+                         INK if fett or feld == "kwh" else SOFT)
+
+    for m in monate:
+        zeile(m.get("label", ""), m, False)
+        y += 15
+    blatt.linie(RAND_L, y - 4, RAND_R, LINIE, 1.0)
+    zeile("Summe", {**summe, "label": "Summe"}, True)
+    return y + 16
+
+
+def _eauto_hinweis(blatt: Blatt, oben: float, eauto: dict) -> float:
+    """N170 — Modell und das energetische Benzin-Äquivalent, mit sichtbarer
+    Annahme. Ein Energievergleich, kein Kostenvergleich — das steht dabei."""
+    verbrauch = eauto.get("verbrauch") or 0.0
+    liter = benzin_aequivalent(verbrauch)
+    modell = (eauto.get("modell") or "").strip()
+    kopf = "E-Auto" + (f": {modell}" if modell else "")
+    blatt.text(RAND_L, oben, kopf, 11, True, INK)
+    oben += 14
+    blatt.text(RAND_L, oben,
+               f"Durchschnittsverbrauch {_zahl(verbrauch, 1)} kWh/100 km "
+               "(defensive Fahrweise, inkl. Ladeverluste)", 9.5, False, INK)
+    oben += 13
+    if liter is not None:
+        for zeile_txt in _umbrechen(
+                f"Energie-Äquivalent: {_zahl(verbrauch, 1)} kWh/100 km "
+                f"entsprechen rund {_zahl(liter, 1)} l Benzin/100 km "
+                f"(Annahme {_zahl(BENZIN_KWH_PRO_LITER, 1)} kWh je Liter). "
+                "Rein energetischer Vergleich, kein Kostenvergleich — das "
+                "E-Auto fährt real deutlich günstiger.", 96):
+            blatt.text(RAND_L, oben, zeile_txt, 8.5, False, SOFT)
+            oben += 11
+    return oben + 8
+
+
 def _tabelle(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
              dreiteilig: bool) -> float:
     """Die Monatstabelle: Monat · Geladen · Netz · (PV · Akku | Eigen)."""
@@ -240,12 +316,18 @@ def _tabelle(blatt: Blatt, oben: float, monate: list[dict], summe: dict,
 def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
                        von: date, bis: date, monate: list[dict], summe: dict,
                        satz: dict, kwh: float, betrag: float,
-                       absender: str = "") -> bytes:
+                       absender: str = "", eauto: dict | None = None) -> bytes:
     """Die Quartalsabrechnung eines Nutzers als einseitiges PDF.
 
     `empfaenger` trägt Name und Anschrift, `monate` die Verlaufszeilen des
     Quartals (aus :func:`tankstelle.verlauf`), `satz` den abgeleiteten Preis je
-    kWh mit Herkunft, `betrag` den Rechnungsbetrag."""
+    kWh mit Herkunft, `betrag` den Rechnungsbetrag.
+
+    `eauto` (N170) trägt `modell`, `verbrauch` (kWh/100km) und den `satz`
+    (Mischsatz je kWh). Ist er gesetzt, zeigt die Monatstabelle statt der
+    Netz/PV/Akku-Aufteilung die gefahrenen Kilometer und den Preis je 100 km,
+    und darunter steht das energetische Benzin-Äquivalent. Ohne ihn bleibt die
+    Tabelle wie bisher — keine erfundenen Spalten."""
     dreiteilig = bool(summe.get("dreiteilig"))
     b = Blatt()
     oben = 60.0
@@ -275,7 +357,13 @@ def tankabrechnung_pdf(objekt_name: str, empfaenger: dict, label: str,
     oben = _diagramm(b, oben, monate, dreiteilig)
     oben = _legende(b, oben, dreiteilig)
     oben += 12
-    oben = _tabelle(b, oben, monate, summe, dreiteilig)
+    if eauto and (eauto.get("verbrauch") or 0.0) > 0:
+        oben = _tabelle_eauto(b, oben, monate, summe,
+                              eauto["verbrauch"], eauto.get("satz"))
+        oben += 10
+        oben = _eauto_hinweis(b, oben, eauto)
+    else:
+        oben = _tabelle(b, oben, monate, summe, dreiteilig)
     oben += 8
 
     # Satz je kWh mit Herkunft

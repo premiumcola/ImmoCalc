@@ -57,6 +57,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .. import eauto
 from ..cloudkern import _lies
 from ..db import get_session
 from ..deps import objekt_holen
@@ -64,6 +65,7 @@ from ..mailversand import MailFehler
 from ..models import (Eigentuemer, Einstellung, Objekt, Stromjahr, Tankladung,
                       Tanknutzer, Zeitraum)
 from ..tankabrechnung_pdf import tankabrechnung_pdf, tank_pdf_dateiname
+from .ki import ki_key, ki_modell
 from .mail import zugang
 
 # Die Wallbox-Anbindung entsteht parallel (N130). Fehlt sie, arbeitet dieser
@@ -700,7 +702,10 @@ def _nutzer_dict(n: Tanknutzer) -> dict:
             "person_id": n.person_id,
             "strasse": n.strasse or "", "plz": n.plz or "", "ort": n.ort or "",
             "iban": n.iban or "", "bic": n.bic or "",
-            "kontoinhaber": n.kontoinhaber or "", "notiz": n.notiz or ""}
+            "kontoinhaber": n.kontoinhaber or "", "notiz": n.notiz or "",
+            # N170 — das E-Auto und sein Verbrauch (0 = noch nicht gesetzt).
+            "e_auto_modell": getattr(n, "e_auto_modell", "") or "",
+            "verbrauch_kwh_100km": getattr(n, "verbrauch_kwh_100km", 0.0) or 0.0}
 
 
 def nutzer_lesen(session: Session, objekt: Objekt | str) -> list[dict]:
@@ -758,6 +763,10 @@ class NutzerIn(BaseModel):
     bic: Optional[str] = None
     kontoinhaber: Optional[str] = None
     notiz: Optional[str] = None
+    # N170 — das E-Auto. `verbrauch_kwh_100km` wird meist über die KI ermittelt
+    # (eigener Endpunkt), lässt sich hier aber auch von Hand setzen.
+    e_auto_modell: Optional[str] = None
+    verbrauch_kwh_100km: Optional[float] = None
 
 
 @router.get("/{slug}/nutzer")
@@ -781,7 +790,11 @@ def nutzer_anlegen(slug: str, data: NutzerIn,
         ort=(data.ort or "").strip(), iban=(data.iban or "").strip(),
         bic=(data.bic or "").strip(),
         kontoinhaber=(data.kontoinhaber or "").strip(),
-        notiz=(data.notiz or "").strip())
+        notiz=(data.notiz or "").strip(),
+        e_auto_modell=(data.e_auto_modell or "").strip(),
+        verbrauch_kwh_100km=(data.verbrauch_kwh_100km
+                             if data.verbrauch_kwh_100km and
+                             data.verbrauch_kwh_100km > 0 else 0.0))
     session.add(n)
     session.commit()
     session.refresh(n)
@@ -803,10 +816,14 @@ def nutzer_aendern(slug: str, nid: int, data: NutzerIn,
     if data.email is not None:
         n.email = _pruefe_email(data.email)
     for feld in ("strasse", "plz", "ort", "iban", "bic", "kontoinhaber",
-                 "notiz"):
+                 "notiz", "e_auto_modell"):
         wert = getattr(data, feld)
         if wert is not None:
             setattr(n, feld, wert.strip())
+    # N170 — der Verbrauch von Hand: 0 oder None lässt den Wert stehen, ein
+    # positiver überschreibt (der Handeintrag ist der Rückfallweg zur KI).
+    if data.verbrauch_kwh_100km is not None and data.verbrauch_kwh_100km > 0:
+        n.verbrauch_kwh_100km = round(data.verbrauch_kwh_100km, 1)
     if data.person_id is not None:
         n.person_id = data.person_id or None
     session.add(n)
@@ -830,6 +847,59 @@ def nutzer_entfernen(slug: str, nid: int,
     session.commit()
     log.info("E-Tankstelle %s: Nutzer %d entfernt", o.slug, nid)
     return {"ok": True}
+
+
+# ==========================================================================
+# N170 — das E-Auto je Nutzer und die einmalige Verbrauchsermittlung
+# ==========================================================================
+
+class EautoIn(BaseModel):
+    """Das E-Auto eines Nutzers. `verbrauch_kwh_100km` optional: ist er gesetzt
+    (Handeintrag), gilt er; sonst wird er über die KI zum Modell ermittelt."""
+    modell: str = ""
+    verbrauch_kwh_100km: Optional[float] = None
+
+
+@router.post("/{slug}/nutzer/{nid}/eauto")
+def eauto_setzen(slug: str, nid: int, data: EautoIn,
+                 session: Session = Depends(get_session),
+                 o: Objekt = Depends(objekt_holen)) -> dict:
+    """Das E-Auto-Modell speichern und seinen Durchschnittsverbrauch bestimmen.
+
+    Ein von Hand mitgeschickter `verbrauch_kwh_100km` hat Vorrang und wird direkt
+    übernommen — der Rückfallweg, wenn die KI nichts liefert. Sonst zieht die KI
+    einmalig den realistischen Verbrauch bei defensiver Fahrweise (netzfrei
+    gerechnet wird in :mod:`app.eauto`, der KI-Aufruf ist die einzige
+    Netz-Stelle). Schlägt das fehl, bleibt der Verbrauch unverändert und die
+    Antwort trägt einen ehrlichen `hinweis` — nie ein Absturz, nie eine erfundene
+    Zahl."""
+    n = session.get(Tanknutzer, nid)
+    if n is None or n.objekt_id != o.id or not n.aktiv:
+        raise HTTPException(404, "Nutzer nicht gefunden")
+    modell = " ".join((data.modell or "").split())
+    if not modell:
+        raise HTTPException(400, "Bitte ein E-Auto-Modell angeben.")
+    n.e_auto_modell = modell
+
+    hinweis, quelle = "", "ki"
+    hand = data.verbrauch_kwh_100km
+    if hand is not None and hand > 0:
+        # Handeintrag: übernehmen, ohne die KI zu fragen.
+        n.verbrauch_kwh_100km = round(hand, 1)
+        quelle = "hand"
+    else:
+        verbrauch, hinweis = eauto.verbrauch_ermitteln(
+            modell, schluessel=ki_key(session), ki_modell=ki_modell(session))
+        if verbrauch is not None:
+            n.verbrauch_kwh_100km = verbrauch
+        else:
+            quelle = "keine"
+    session.add(n)
+    session.commit()
+    session.refresh(n)
+    log.info("E-Tankstelle %s: E-Auto für Nutzer %d gesetzt (Quelle %s)",
+             o.slug, nid, quelle)
+    return {**_nutzer_dict(n), "hinweis": hinweis, "quelle": quelle}
 
 
 # ==========================================================================
@@ -1340,6 +1410,18 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     if automatisch:
         for z in zeilen:
             z["automatisch"] = z["kwh"] > 0
+    # N170 — je Nutzer aus geladenen kWh und seinem Verbrauch die gefahrenen km,
+    # den Preis je 100 km und das energetische Benzin-Äquivalent. Ohne
+    # hinterlegten Verbrauch bleiben die Größen None (keine erfundene Zahl).
+    e_auto_von = {n["id"]: (n.get("e_auto_modell", ""),
+                            n.get("verbrauch_kwh_100km", 0.0)) for n in liste}
+    for z in zeilen:
+        modell, verbrauch = e_auto_von.get(z.get("nutzer_id"), ("", 0.0))
+        kz = eauto.kennzahlen(z["kwh"], z["betrag"], verbrauch or None)
+        z["e_auto_modell"] = modell
+        z["verbrauch_kwh_100km"] = verbrauch or 0.0
+        z["km"], z["preis_100km"], z["liter_100km"] = (
+            kz["km"], kz["preis_100km"], kz["liter_100km"])
     zugeordnet = round(sum(z["kwh"] for z in zeilen), 3)
     return {"objekt": o.name, "jahr": jahr, "quartal": quartal,
             "quartale": sorted(set(quartale)), "aus_monate": sorted(aus),
@@ -1357,7 +1439,9 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
             "geladen_kwh": summe.get("kwh"), "quelle": quelle,
             "offen_kwh": (None if not summe
                           else round(summe["kwh"] - zugeordnet, 2)),
-            "eigen_prozent": summe.get("eigen_prozent")}
+            "eigen_prozent": summe.get("eigen_prozent"),
+            # N170 — die Annahme des Benzin-Äquivalents, sichtbar mitgeführt.
+            "benzin_kwh_pro_liter": eauto.BENZIN_KWH_PRO_LITER}
 
 
 def _quartale_aus(quartal: int, quartale: str, aus: str) -> tuple[list[int],
@@ -1476,9 +1560,14 @@ def _pdf_und_name(session: Session, o: Objekt, daten: dict,
     satz = {"netz": daten["satz_netz"], "eigen": daten["satz_eigen"],
             "misch": daten["satz"], "herkunft": daten["satz_herkunft"],
             "grund": daten["satz_grund"], "rabatt": daten["satz_rabatt"]}
+    # N170 — hat der Nutzer ein E-Auto mit Verbrauch, trägt das PDF km und
+    # Preis/100 km statt der Netz/PV/Akku-Spalten; ohne bleibt es beim Alten.
+    verbrauch = zeile.get("verbrauch_kwh_100km") or 0.0
+    ea = ({"modell": zeile.get("e_auto_modell", ""), "verbrauch": verbrauch,
+           "satz": daten["satz"]} if verbrauch > 0 else None)
     inhalt = tankabrechnung_pdf(o.name, _empfaenger(session, zeile),
                                 daten["label"], von, bis, monate, summe, satz,
-                                zeile["kwh"], zeile["betrag"])
+                                zeile["kwh"], zeile["betrag"], eauto=ea)
     return inhalt, tank_pdf_dateiname(o.name, daten["label"], zeile["name"])
 
 

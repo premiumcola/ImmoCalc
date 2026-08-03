@@ -97,6 +97,38 @@
   .nedit:empty{display:none}
   .nedit-form{margin:2px 0 10px}
 
+  /* „＋" oben rechts an der Nutzerüberschrift — derselbe ruhige Teal-Chip wie
+     das Nutzerkürzel, 34 px sichtbar, 44 px tippbar (iOS) über ::after. */
+  .karte .hh .plus{flex:none;border:none;background:var(--teal-l);
+    color:var(--teal-d);width:34px;height:34px;border-radius:11px;cursor:pointer;
+    font:600 21px var(--body);line-height:1;display:inline-flex;
+    align-items:center;justify-content:center;position:relative}
+  .karte .hh .plus::after{content:"";position:absolute;inset:-5px}
+  .karte .hh .plus:hover{background:var(--teal);color:#fff}
+
+  /* Bearbeiten/Anlegen als aufgeräumtes Raster: zwei Spalten auf breiten
+     Geräten, eine auf dem iPhone. E-Mail, IBAN und Anschrift bekommen die volle
+     Breite (`.span`) — sonst würde die Adresse abgeschnitten. */
+  .efgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px 12px;
+          background:var(--paper);border-radius:14px;padding:14px;margin:2px 0 10px}
+  .efgrid .field{margin:0;min-width:0}
+  .efgrid .field.span{grid-column:1/-1}
+  .efgrid .fl{display:block;font:600 10.5px var(--mono);letter-spacing:.06em;
+              text-transform:uppercase;color:var(--soft);margin-bottom:7px}
+  .efgrid .inp{width:100%}
+  @media(max-width:479px){ .efgrid{grid-template-columns:1fr} }
+  /* Das Verbrauchsfeld trägt seinen KI-Knopf gleich rechts daneben — die
+     Ermittlung sitzt am Feld, nicht als zweiter großer Knopf neben „Speichern". */
+  .verbrauchzeile{display:flex;gap:8px;align-items:stretch}
+  .verbrauchzeile .inp{flex:1;min-width:0}
+  .btn-ki{flex:none;border:none;background:var(--teal-l);color:var(--teal-d);
+          font:600 11px var(--mono);letter-spacing:.02em;cursor:pointer;
+          border-radius:10px;padding:0 14px;min-height:44px;white-space:nowrap}
+  .btn-ki:hover{background:var(--teal);color:#fff}
+  .btn-ki:disabled{opacity:.55;cursor:default}
+  .ef-save{display:flex;justify-content:flex-end}
+  .ef-save .btn{width:auto;min-width:150px}
+
   .tabrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
              border-radius:12px;background:var(--paper)}
   .mt{border-collapse:collapse;width:100%;min-width:322px}
@@ -179,6 +211,12 @@
   .az .ab{font:700 17px var(--disp);letter-spacing:-.02em;color:var(--teal-d)}
   .az .ad{display:block;font:400 11.5px var(--body);color:var(--soft);
           margin-top:6px;line-height:1.5;overflow-wrap:anywhere}
+  /* N170 — die E-Auto-Kennzahlen: km, Preis/100 km, Benzin-Aequivalent. Ein
+     ruhiger Teal-Ton hebt sie von der grauen Detailzeile ab, ohne zu schreien. */
+  .az .eco{display:block;font:500 11.5px var(--body);color:var(--teal-d);
+           margin-top:6px;line-height:1.55;overflow-wrap:anywhere}
+  .az .eco .annahme{display:block;font:400 10.5px var(--body);color:var(--soft);
+                    margin-top:2px;letter-spacing:0}
   /* Vorschau und Versand stehen nebeneinander — zwei volle Balken
      untereinander wirkten wie zwei Hauptwege, dabei ist einer der Vorlauf
      des anderen. */
@@ -328,6 +366,7 @@ let ausMonate = new Set();
 let offeneVorschau = 0;        /* Nutzer, dessen Vorschau gerade aufgeklappt ist */
 let vorschauTimer = 0;         /* entprellt das Neuladen der PDF-Vorschau */
 let offeneBearbeitung = 0;     /* Nutzer, dessen Stammdaten gerade offen sind */
+let addOffen = false;          /* ist die „Nutzer anlegen"-Eingabe aufgeklappt? */
 
 const MONKURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
                  'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -572,6 +611,8 @@ async function nutzerZeigen() {
     const teile = [];
     if (n.strasse || anschrift(n)) teile.push([n.strasse, anschrift(n)].filter(Boolean).join(', '));
     if (n.iban) teile.push('IBAN hinterlegt');
+    if (n.e_auto_modell) teile.push('🚗 ' + n.e_auto_modell
+      + (n.verbrauch_kwh_100km ? ` · ${zahl(n.verbrauch_kwh_100km, 1)} kWh/100 km` : ''));
     return teile.join(' · ');
   };
   const zeilen = nutzerListe.map(n => `
@@ -589,24 +630,26 @@ async function nutzerZeigen() {
     </div>
     <div class="nedit" data-edit="${n.id}"></div>`).join('');
 
-  ziel.innerHTML = `
-    ${zeilen ? `<div class="nliste">${zeilen}</div>`
-      : `<div class="leer" style="margin-bottom:14px"><b>Noch niemand angelegt</b>
-          Trag ein, wer hier lädt — Name und E-Mail genügen. Das muss kein
-          Eigentümer sein.</div>`}
-    <div class="neu">
-      <div class="field">
-        <label for="nName">Name</label>
+  // Anlegen läuft über den „＋" oben (data-nutzer-add) — eine aufklappbare
+  // Eingabe statt einer dauerhaft sichtbaren Spalte unten.
+  const addForm = `
+    <div class="efgrid nedit-form" style="margin-bottom:12px">
+      <div class="field span"><label class="fl" for="nName">Name</label>
         <input class="inp" id="nName" type="text" autocomplete="name"
-               placeholder="z. B. Marvin">
-      </div>
-      <div class="field">
-        <label for="nMail">E-Mail</label>
+               placeholder="Name des Nutzers"></div>
+      <div class="field span"><label class="fl" for="nMail">E-Mail</label>
         <input class="inp" id="nMail" type="email" autocomplete="email"
-               placeholder="für die Quartalsabrechnung">
-      </div>
-      <button class="btn" data-nutzer-neu>Hinzufügen</button>
+               placeholder="für die Quartalsabrechnung"></div>
+      <div class="ef-save span"><button class="btn" data-nutzer-neu>Anlegen</button></div>
     </div>`;
+  ziel.innerHTML = `
+    ${addOffen ? addForm : ''}
+    ${zeilen ? `<div class="nliste">${zeilen}</div>`
+      : (addOffen ? '' : `<div class="leer" style="margin-bottom:4px">
+          <b>Noch niemand angelegt</b>
+          Tipp oben rechts auf ＋, um den ersten Nutzer anzulegen — Name und
+          E-Mail genügen. Das muss kein Eigentümer sein.</div>`)}`;
+  if (addOffen) document.getElementById('nName')?.focus();
   if (offeneBearbeitung) nutzerBearbeiten(offeneBearbeitung, true);
 }
 
@@ -624,30 +667,47 @@ function nutzerBearbeiten(id, bleiben = false) {
   document.querySelectorAll('[data-edit]').forEach(f => { f.innerHTML = ''; });
   offeneBearbeitung = Number(id);
   const n = nutzerListe.find(x => x.id === Number(id)) || {};
-  const feldChen = (schl, beschr, wert, typ = 'text') => `
-    <div class="field"><span class="fl">${beschr}</span>
+  // `span` gibt einem Feld die volle Breite — E-Mail, Anschrift und IBAN sind
+  // sonst zu schmal und schneiden die Adresse ab (BIC entfällt, N170-Wunsch).
+  const feldChen = (schl, beschr, wert, typ = 'text', span = false) => `
+    <div class="field${span ? ' span' : ''}"><span class="fl">${beschr}</span>
       <input class="inp" id="e-${schl}-${id}" type="${typ}"
              value="${esc(wert || '')}"></div>`;
-  feld.innerHTML = `<div class="neu nedit-form">
-    ${feldChen('name', 'Name', n.name)}
-    ${feldChen('email', 'E-Mail', n.email, 'email')}
-    ${feldChen('strasse', 'Straße', n.strasse)}
+  feld.innerHTML = `<div class="efgrid">
+    ${feldChen('name', 'Name', n.name, 'text', true)}
+    ${feldChen('email', 'E-Mail', n.email, 'email', true)}
+    ${feldChen('strasse', 'Straße', n.strasse, 'text', true)}
     ${feldChen('plz', 'PLZ', n.plz)}
     ${feldChen('ort', 'Ort', n.ort)}
-    ${feldChen('kontoinhaber', 'Kontoinhaber', n.kontoinhaber)}
-    ${feldChen('iban', 'IBAN', n.iban)}
-    ${feldChen('bic', 'BIC', n.bic)}
-    <button class="btn" data-nutzer-save="${id}">Speichern</button>
+    ${feldChen('kontoinhaber', 'Kontoinhaber', n.kontoinhaber, 'text', true)}
+    ${feldChen('iban', 'IBAN', n.iban, 'text', true)}
+    ${feldChen('e_auto_modell', 'E-Auto-Modell', n.e_auto_modell, 'text', true)}
+    <div class="field span"><span class="fl">Verbrauch (kWh/100 km)</span>
+      <div class="verbrauchzeile">
+        <input class="inp" id="e-verbrauch_kwh_100km-${id}" type="number"
+               inputmode="decimal" step="0.1" min="0"
+               value="${n.verbrauch_kwh_100km ? n.verbrauch_kwh_100km : ''}"
+               placeholder="z. B. 16,5">
+        <button class="btn-ki" data-eauto-ermitteln="${id}">per KI ermitteln</button>
+      </div></div>
+    <div class="ef-save span"><button class="btn"
+      data-nutzer-save="${id}">Speichern</button></div>
   </div>`;
 }
 
 async function nutzerSpeichern(id) {
   const holen = schl => document.getElementById(`e-${schl}-${id}`)?.value ?? '';
   const koerper = {};
+  // BIC wird nicht mehr angezeigt (N170) und darum auch NICHT mitgeschickt —
+  // sonst würde der gespeicherte Wert (Modellfeld bleibt, CLAUDE.md) geleert.
   for (const schl of ['name', 'email', 'strasse', 'plz', 'ort',
-                      'kontoinhaber', 'iban', 'bic']) {
+                      'kontoinhaber', 'iban', 'e_auto_modell']) {
     koerper[schl] = holen(schl).trim();
   }
+  // Der Verbrauch von Hand: nur ein positiver Wert wird gesetzt, 0/leer laesst
+  // den gespeicherten (KI-ermittelten) Wert stehen.
+  const verb = parseFloat(String(holen('verbrauch_kwh_100km')).replace(',', '.'));
+  if (verb > 0) koerper.verbrauch_kwh_100km = verb;
   if (!koerper.name) { melde('Bitte einen Namen angeben', 'neg'); return; }
   try {
     await api(`/tankstelle/${encodeURIComponent(objektSlug)}/nutzer/${id}`, {
@@ -659,6 +719,31 @@ async function nutzerSpeichern(id) {
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
+/* N170 — den Durchschnittsverbrauch des eingegebenen E-Auto-Modells einmalig
+   ueber die KI ziehen (defensive Fahrweise) und ins Verbrauchsfeld schreiben.
+   Klappt es nicht, kommt ein ehrlicher Hinweis — der Handeintrag bleibt der
+   Rueckfallweg. */
+async function eautoErmitteln(id) {
+  const modell = (document.getElementById(`e-e_auto_modell-${id}`)?.value || '').trim();
+  if (!modell) { melde('Bitte zuerst das E-Auto-Modell eintragen', 'neg'); return; }
+  const btn = document.querySelector(`[data-eauto-ermitteln="${id}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'wird ermittelt …'; }
+  try {
+    const d = await api(
+      `/tankstelle/${encodeURIComponent(objektSlug)}/nutzer/${id}/eauto`,
+      { method: 'POST', body: { modell } });
+    const feld = document.getElementById(`e-verbrauch_kwh_100km-${id}`);
+    if (d.verbrauch_kwh_100km > 0 && feld) feld.value = d.verbrauch_kwh_100km;
+    if (d.hinweis) melde(d.hinweis, 'neg');
+    else melde(`Verbrauch: ${zahl(d.verbrauch_kwh_100km, 1)} kWh/100 km`, 'pos');
+    nutzerListe = nutzerListe.map(x => x.id === Number(id) ? { ...x, ...d } : x);
+    await abrechnungZeigen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+  finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'per KI ermitteln'; }
+  }
+}
+
 async function nutzerAnlegen() {
   const name = document.getElementById('nName');
   const mail = document.getElementById('nMail');
@@ -667,6 +752,7 @@ async function nutzerAnlegen() {
     await api(`/tankstelle/${encodeURIComponent(objektSlug)}/nutzer`, {
       method: 'POST', body: { name: name.value, email: mail?.value || '' } });
     melde('Nutzer angelegt', 'pos');
+    addOffen = false;
     await nutzerZeigen();
     await abrechnungZeigen();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
@@ -770,6 +856,11 @@ async function abrechnungZeigen() {
           ? 'Satz steht noch nicht fest' : satzText(n.satz)}
         ${n.anzahl ? ` · ${n.anzahl} ${n.anzahl === 1 ? 'Ladung' : 'Ladungen'}` : ''}
         ${n.email ? ` · ${esc(n.email)}` : ''}</span>
+      ${n.km != null ? `<span class="eco">🚗 rund ${zahl(n.km, 0)} km gefahren${
+        n.preis_100km != null ? ` · ${eur(n.preis_100km)} / 100 km` : ''}${
+        n.liter_100km != null ? ` · energetisch ≈ ${zahl(n.liter_100km, 1)} l Benzin/100 km`
+          + `<span class="annahme">Annahme ${zahl(d.benzin_kwh_pro_liter, 1)} kWh je Liter · `
+          + `reiner Energievergleich, kein Kostenvergleich</span>` : ''}</span>` : ''}
       ${n.email ? '' : `<div class="notiz fehlt"><span class="wi">✉</span>
         <span>Ohne E-Mail-Adresse lässt sich nichts verschicken.</span></div>`}
       ${n.kwh > 0 && n.nutzer_id ? `<div class="aw">
@@ -1155,7 +1246,9 @@ function skelett() {
     </div>
 
     <div class="karte">
-      <div class="hh"><h3>Nutzer</h3></div>
+      <div class="hh"><h3>Nutzer</h3>
+        <button class="plus" data-nutzer-add aria-label="Nutzer hinzufügen"
+                title="Nutzer hinzufügen">＋</button></div>
       <span class="hint">Wer an dieser Ladestation lädt. Beliebig viele,
         jederzeit ergänzbar — und nicht zwangsläufig Eigentümer der Immobilie.
         Die E-Mail-Adresse braucht es für die Quartalsabrechnung.</span>
@@ -1164,12 +1257,16 @@ function skelett() {
 }
 
 document.addEventListener('click', e => {
+  const add = e.target.closest('[data-nutzer-add]');
+  if (add) { addOffen = !addOffen; return nutzerZeigen(); }
   const neu = e.target.closest('[data-nutzer-neu]');
   if (neu) return nutzerAnlegen();
   const edit = e.target.closest('[data-nutzer-edit]');
   if (edit) return nutzerBearbeiten(edit.dataset.nutzerEdit);
   const save = e.target.closest('[data-nutzer-save]');
   if (save) return nutzerSpeichern(save.dataset.nutzerSave);
+  const ea = e.target.closest('[data-eauto-ermitteln]');
+  if (ea) return eautoErmitteln(ea.dataset.eautoErmitteln);
   const weg = e.target.closest('[data-nutzer-weg]');
   if (weg) return nutzerEntfernen(weg.dataset.nutzerWeg, weg.dataset.name);
   const j = e.target.closest('[data-jahr]');
