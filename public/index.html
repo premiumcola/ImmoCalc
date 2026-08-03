@@ -129,7 +129,7 @@
   .tile .pv-invest{
     flex:none; display:inline-flex; align-items:center; justify-content:center;
     background:none; border:none; padding:0; margin:0 auto 0 10px;
-    cursor:pointer; text-decoration:none; align-self:center;
+    cursor:pointer; text-decoration:none; align-self:flex-end;
   }
   /* N123 — das Modul steht direkt rechts NEBEN dem Titel, nicht am Kartenrand:
      dort saehe es zwischen Frist- und Cashflow-Chip wie ein Statuszeichen aus.
@@ -142,16 +142,38 @@
      ruecken Titel und Modul zusammen — und auf dem iPhone passt beides in eine
      Zeile, statt dass das Modul umbricht. */
   .tile.hat-cf:has(.pv-invest) .txt{padding-right:0}
-  .tile .pv-invest svg{width:38px; height:38px; display:block;
+  .tile .pv-invest svg{width:44px; height:44px; display:block; overflow:visible;
     filter:drop-shadow(0 2px 4px rgba(22,38,44,.18))}
   .tile .pv-invest:hover svg{filter:drop-shadow(0 3px 7px rgba(22,38,44,.28))}
   .tile .pv-invest:focus-visible{outline:2px solid var(--teal); outline-offset:3px;
     border-radius:10px}
-  .mitbubbles > .tile .pv-invest svg{width:44px; height:44px}
+  .mitbubbles > .tile .pv-invest svg{width:52px; height:52px}
+  /* N197 — die Sonne taucht bei Hover/Fokus auf (auftauchen: einblenden +
+     hochskalieren), ihre Strahlen drehen sich sanft, und ein Strahlenbuendel
+     pulst von der Sonne aufs Modul. Reines SVG/CSS, kein JS. */
+  .pv-invest .pv-sonne{opacity:0; transform:scale(.4); transform-box:fill-box;
+    transform-origin:center; transition:opacity .3s ease,
+    transform .5s cubic-bezier(.34,1.56,.64,1)}
+  .pv-invest:hover .pv-sonne,.pv-invest:focus-visible .pv-sonne{
+    opacity:1; transform:scale(1)}
+  .pv-invest .pv-strahlen{transform-box:fill-box; transform-origin:center}
+  .pv-invest:hover .pv-strahlen,.pv-invest:focus-visible .pv-strahlen{
+    animation:pv-dreh 9s linear infinite}
+  .pv-invest .pv-beam{opacity:0}
+  .pv-invest:hover .pv-beam,.pv-invest:focus-visible .pv-beam{
+    animation:pv-glanz 1.6s ease-in-out infinite}
+  @keyframes pv-dreh{to{transform:rotate(360deg)}}
+  @keyframes pv-glanz{0%,100%{opacity:.12} 50%{opacity:.85}}
+  @media (prefers-reduced-motion:reduce){
+    .pv-invest:hover .pv-strahlen,.pv-invest:focus-visible .pv-strahlen,
+    .pv-invest:hover .pv-beam,.pv-invest:focus-visible .pv-beam{animation:none}
+    .pv-invest .pv-beam{opacity:.5}
+    .pv-invest .pv-sonne{transition:opacity .2s}
+  }
   @media (max-width:430px){
     .tile .pv-invest{margin-left:8px}
     .tile .pv-invest svg,
-    .mitbubbles > .tile .pv-invest svg{width:30px; height:30px}
+    .mitbubbles > .tile .pv-invest svg{width:36px; height:36px}
   }
 
   /* Grundform der Blasen steht geteilt in immo.css (CCCLXXVIII c). Hier bleiben
@@ -226,10 +248,10 @@ const sub = document.getElementById('sub');
 /* N87 — Zeichen für ein PV-Add-on an der Immobilie: Sonne über Modul, flach im
    Bestandsstil (kein Icon-Paket). */
 const PV_ICON = `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <!-- N110 - Black-Edition-Solarmodul: dunkle Zellen mit feinem Raster, leicht
-       angeschraegt wie ein Dachmodul, dazu ein Sonnenbogen. Flaechig statt
-       Strichzeichnung, damit es neben der Objektkachel als eigenes Investment
-       auftritt und nicht wie ein Statuszeichen wirkt. -->
+  <!-- N110/N197 - Black-Edition-Solarmodul: dunkle Zellen mit feinem Raster,
+       leicht angeschraegt wie ein Dachmodul. Bei Hover taucht oben rechts eine
+       Sonne auf (pv-sonne) und wirft ein Strahlenbuendel (pv-beam) aufs Modul -
+       alles reines SVG/CSS, animiert, keine Bilddatei. -->
   <path d="M12.5 6.5h27l6 24h-27z" fill="#16262C"/>
   <path d="M12.5 6.5h27l6 24h-27z" stroke="#0B1A20" stroke-width="1.2"/>
   <g stroke="#3C4E55" stroke-width="1" opacity=".85">
@@ -237,6 +259,18 @@ const PV_ICON = `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
   </g>
   <path d="M18.5 30.5l-3 11M39.5 30.5l3 11M13 41.5h32" stroke="#16262C"
     stroke-width="2.4" stroke-linecap="round"/>
+  <!-- Das Strahlenbuendel von der Sonne aufs Modul -->
+  <g class="pv-beam" stroke="#F7C948" stroke-width="1.5" stroke-linecap="round">
+    <path d="M37 10.5 L26 18.5M38.5 12 L31.5 21.5M34.5 11.5 L21.5 17.5"/>
+  </g>
+  <!-- Die Sonne oben rechts -->
+  <g class="pv-sonne">
+    <g class="pv-strahlen" stroke="#F2B705" stroke-width="1.6" stroke-linecap="round">
+      <path d="M45.6 8h2.2M43.96 11.96l1.55 1.55M40 13.6v2.2M36.04 11.96l-1.55 1.55M34.4 8h-2.2M36.04 4.04l-1.55-1.55M40 2.4v-2.2M43.96 4.04l1.55-1.55"/>
+    </g>
+    <circle cx="40" cy="8" r="4.4" fill="#F7C948"/>
+    <circle cx="40" cy="8" r="4.4" fill="none" stroke="#F2B705" stroke-width="1"/>
+  </g>
 </svg>`;
 
 /* ---- Ort → Strasse → Einheit -------------------------------------------
