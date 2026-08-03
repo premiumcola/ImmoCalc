@@ -155,6 +155,19 @@
     .mt th:first-child,.mt td:first-child{padding-left:11px}
     .mt th:last-child,.mt td:last-child{padding-right:11px}
   }
+  /* N178 — durch die Monatstabelle blaettern: nur ~10 Zeilen je Seite, die
+     neuesten voran (die Grafik oben bleibt der Gesamtueberblick). Die
+     Summe steht als tfoot immer darunter, unabhaengig von der Seite. */
+  .tabpager{display:flex;align-items:center;justify-content:center;gap:12px;
+            margin:0 0 8px}
+  .tabpager .tp{min-width:44px;min-height:44px;border:none;cursor:pointer;
+                border-radius:12px;background:var(--paper);color:var(--teal-d);
+                font:600 16px var(--body);line-height:1;display:inline-flex;
+                align-items:center;justify-content:center}
+  .tabpager .tp:hover:not(:disabled){background:var(--teal-l)}
+  .tabpager .tp:disabled{color:var(--soft);opacity:.45;cursor:default}
+  .tabpager .tpz{font:600 11px var(--mono);letter-spacing:.03em;
+                 color:var(--soft);min-width:82px;text-align:center}
 
   /* ---- Abrechnung ------------------------------------------------------ */
   .quartale{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
@@ -184,11 +197,23 @@
   .monate .mchip[aria-pressed="true"]{background:var(--teal-l);color:var(--teal-d)}
   .monate .mchip.aus{text-decoration:line-through;opacity:.6}
 
-  /* Die eingebettete PDF-Vorschau (N169) — sie zeigt genau das Blatt, das als
-     Anhang ausginge, und laedt sich bei jeder Auswahländerung neu. */
-  .pdfvorschau{display:block;width:100%;height:520px;border:none;
-               border-radius:12px;background:var(--sheet);margin:10px 0 0}
-  .vorschau-fuss{margin-top:8px}
+  /* Die eingebettete PDF-Vorschau (N169/N178) — sie zeigt genau das Blatt, das
+     als Anhang ausginge, und laedt sich bei jeder Auswahländerung neu. Ein
+     gerahmter Block: oben der Mail-Kopf mit einem klaren ×, darunter das Blatt.
+     Kein „neuer Tab" mehr (N178) — die Vorschau bleibt auf der Seite. */
+  .vorschau{margin-top:12px;background:var(--paper);border-radius:14px;
+            padding:10px;display:flex;flex-direction:column;gap:10px}
+  .vorschau-kopf{display:flex;align-items:center;gap:10px}
+  .vorschau-kopf .mailkopf{flex:1;min-width:0;margin:0;overflow-wrap:anywhere}
+  .vorschau-x{flex:none;width:36px;height:36px;border:none;background:var(--sheet);
+              color:var(--soft);font:400 22px var(--body);line-height:1;
+              border-radius:11px;cursor:pointer;display:inline-flex;
+              align-items:center;justify-content:center;position:relative}
+  .vorschau-x::after{content:"";position:absolute;inset:-4px}
+  .vorschau-x:hover{background:var(--neg-bg);color:var(--neg)}
+  .vorschau .mailtext{margin:0}
+  .pdfvorschau{display:block;width:100%;height:min(70dvh,560px);border:none;
+               border-radius:10px;background:var(--sheet);margin:0}
 
   /* Der abgeleitete Satz (N148): die Zahl gross, darunter die Regel und
      ganz unten die Herkunft. Kein Eingabefeld — hier gibt es nichts zu
@@ -367,6 +392,13 @@ let offeneVorschau = 0;        /* Nutzer, dessen Vorschau gerade aufgeklappt ist
 let vorschauTimer = 0;         /* entprellt das Neuladen der PDF-Vorschau */
 let offeneBearbeitung = 0;     /* Nutzer, dessen Stammdaten gerade offen sind */
 let addOffen = false;          /* ist die „Nutzer anlegen"-Eingabe aufgeklappt? */
+/* N178 — die Monatstabelle wird paginiert: die geholten Monate liegen in einer
+   Modulvariable, das Blaettern zeichnet nur den Tabellen-Container neu (kein
+   erneuter API-Aufruf). Die Grafik oben bleibt der Gesamtueberblick. */
+let verlaufMonate = [];        /* alle Monate, chronologisch — wie vom Backend */
+let verlaufSumme = {};         /* die Summe ueber ALLE Monate (bleibt sichtbar) */
+let verlaufSeite = 0;          /* aktuelle Tabellenseite, 0 = neueste Monate */
+const TAB_PRO_SEITE = 10;      /* ~10 Zeilen je Seite */
 
 const MONKURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
                  'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -502,7 +534,14 @@ function grafik(monate) {
     </svg></div>`;
 }
 
-function verlaufTabelle(monate, summe) {
+/* Die Monatstabelle — paginiert (N178). Sie liest die geholten Monate aus der
+   Modulvariable, zeigt ~10 je Seite mit den NEUESTEN zuerst und laesst sich mit
+   ◀ / ▶ durchblaettern; die Summe ueber alle Monate steht als tfoot immer
+   sichtbar darunter. Kein Argument, kein API-Aufruf — `tabelleNeu` zeichnet nur
+   diesen Container neu. */
+function verlaufTabelle() {
+  const monate = verlaufMonate;
+  const summe = verlaufSumme;
   // Ein Monat ohne Ladung bekommt einen Strich, keine 0,00 mit leerer
   // Prozentzeile darunter — es gibt schlicht nichts aufzuteilen.
   const zelle = (menge, prozent) => menge == null || prozent == null
@@ -515,12 +554,38 @@ function verlaufTabelle(monate, summe) {
     ${zelle(m.extern_kwh, m.extern_prozent)}
     ${drei ? zelle(m.pv_kwh, m.pv_prozent) + zelle(m.speicher_kwh, m.speicher_prozent)
            : zelle(m.eigen_kwh, m.eigen_prozent)}</tr>`;
-  return `<div class="tabrahmen"><table class="mt">
+
+  // Neueste voran: die Grafik oben laeuft chronologisch, die Tabelle blaettert
+  // das Juengste zuerst — bei einer Abrechnung ist das das Interessante.
+  const umgekehrt = [...monate].reverse();
+  const seiten = Math.max(1, Math.ceil(umgekehrt.length / TAB_PRO_SEITE));
+  verlaufSeite = Math.min(Math.max(0, verlaufSeite), seiten - 1);
+  const start = verlaufSeite * TAB_PRO_SEITE;
+  const teil = umgekehrt.slice(start, start + TAB_PRO_SEITE);
+
+  const pager = seiten > 1 ? `<div class="tabpager">
+      <button class="tp" data-tabseite="${verlaufSeite - 1}"
+        ${verlaufSeite === 0 ? 'disabled' : ''}
+        aria-label="Neuere Monate">◀</button>
+      <span class="tpz">Seite ${verlaufSeite + 1}/${seiten}</span>
+      <button class="tp" data-tabseite="${verlaufSeite + 1}"
+        ${verlaufSeite >= seiten - 1 ? 'disabled' : ''}
+        aria-label="Ältere Monate">▶</button>
+    </div>` : '';
+
+  return `${pager}<div class="tabrahmen"><table class="mt">
       <thead><tr><th>Monat</th><th>Geladen</th><th>Netz</th>
         ${drei ? '<th>PV</th><th>Akku</th>' : '<th>Eigen</th>'}</tr></thead>
-      <tbody>${monate.map(zeile).join('')}</tbody>
+      <tbody>${teil.map(zeile).join('')}</tbody>
       <tfoot>${zeile({ ...summe, label: 'Summe' })}</tfoot>
     </table></div>`;
+}
+
+/* Blaettern zeichnet nur den Tabellen-Container neu — kein API-Aufruf, keine
+   neu geholten Daten, die Grafik bleibt stehen. */
+function tabelleNeu() {
+  const box = document.getElementById('verlauftabelle');
+  if (box) box.innerHTML = verlaufTabelle();
 }
 
 async function verlaufZeigen() {
@@ -537,6 +602,11 @@ async function verlaufZeigen() {
   jahreUebernehmen(d.jahre || []);
 
   const s = d.summe || {};
+  // N178 — die Monate fuer die paginierte Tabelle festhalten; frische Daten
+  // starten wieder auf der ersten Seite (die neuesten Monate).
+  verlaufMonate = d.monate || [];
+  verlaufSumme = s;
+  verlaufSeite = 0;
   const nichts = !(s.kwh > 0);
   const drei = s.dreiteilig;
   ziel.innerHTML = `
@@ -566,7 +636,7 @@ async function verlaufZeigen() {
             : [{ name: 'Netz', farbe: NETZ },
                { name: 'Eigener Strom (PV + Akku)', farbe: EIGEN }])}
          ${restVermerk(s)}
-         ${verlaufTabelle(d.monate || [], s)}`}`;
+         <div id="verlauftabelle">${verlaufTabelle()}</div>`}`;
 }
 
 /* Ein ruhiger Vermerk statt eines Warnbalkens: kWh, die die Wallbox keinem
@@ -1053,19 +1123,21 @@ async function vorschauRendern(nid) {
   try {
     d = await api(`/tankstelle/${slug}/vorschau?${zeitraumParams()}&nutzer_id=${nid}`);
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); return; }
-  const kopf = `<span class="mailkopf">An ${esc(d.an || '— keine Adresse —')}
-      · ${esc(d.betreff)}</span>`;
-  if (d.betrag == null) {                       // ohne Betrag kein PDF — Mailtext
-    feld.innerHTML = `${kopf}<pre class="mailtext">${esc(d.text)}</pre>`;
-    return;
-  }
-  const pdf = `/api/tankstelle/${slug}/abrechnung.pdf?${zeitraumParams()}`
-    + `&nutzer_id=${nid}`;
-  feld.innerHTML = `${kopf}
-    <iframe class="pdfvorschau" src="${pdf}" title="PDF-Vorschau"></iframe>
-    <div class="vorschau-fuss">
-      <a class="btn leise" href="${pdf}" target="_blank" rel="noopener">Im neuen Tab öffnen</a>
+  // Der Kopf traegt An/Betreff und ein klares × (N178): die Vorschau wird nur
+  // noch inline gezeigt, und der Schliessen-Weg sitzt direkt am Blatt, nicht
+  // irgendwo darueber. Das × ist derselbe Vorschau-Umschalter — bei offener
+  // Vorschau schliesst ein Klick sie wieder.
+  const kopf = `<div class="vorschau-kopf">
+      <span class="mailkopf">An ${esc(d.an || '— keine Adresse —')}
+        · ${esc(d.betreff)}</span>
+      <button class="vorschau-x" data-vorschau="${nid}"
+              aria-label="Vorschau schließen" title="Vorschau schließen">×</button>
     </div>`;
+  const koerper = d.betrag == null              // ohne Betrag kein PDF — Mailtext
+    ? `<pre class="mailtext">${esc(d.text)}</pre>`
+    : `<iframe class="pdfvorschau" title="PDF-Vorschau"
+         src="/api/tankstelle/${slug}/abrechnung.pdf?${zeitraumParams()}&nutzer_id=${nid}"></iframe>`;
+  feld.innerHTML = `<div class="vorschau">${kopf}${koerper}</div>`;
 }
 
 async function versenden(nid) {
@@ -1275,6 +1347,8 @@ document.addEventListener('click', e => {
   if (q) return quartalUmschalten(Number(q.dataset.quartal));
   const m = e.target.closest('[data-monat]');
   if (m) return monatUmschalten(Number(m.dataset.monat));
+  const tp = e.target.closest('[data-tabseite]');
+  if (tp) { verlaufSeite = Number(tp.dataset.tabseite); return tabelleNeu(); }
   const v = e.target.closest('[data-vorschau]');
   if (v) return vorschauZeigen(v.dataset.vorschau);
   const s = e.target.closest('[data-senden]');
