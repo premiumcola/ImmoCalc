@@ -31,6 +31,18 @@
             color:var(--ink)}
   .karte .hh{display:flex;align-items:baseline;justify-content:space-between;
              gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  /* „＋" oben rechts (N204) — derselbe ruhige Teal-Chip wie in tankstelle.html,
+     34 px sichtbar, 44 px tippbar (iOS) über ::after. Ausgegraut, sobald alle
+     1000 ‰ vergeben sind. */
+  .karte .hh .plus{flex:none;align-self:center;border:none;background:var(--teal-l);
+    color:var(--teal-d);width:34px;height:34px;border-radius:11px;cursor:pointer;
+    font:600 21px var(--body);line-height:1;display:inline-flex;
+    align-items:center;justify-content:center;position:relative}
+  .karte .hh .plus::after{content:"";position:absolute;inset:-5px}
+  .karte .hh .plus:hover{background:var(--teal);color:#fff}
+  .karte .hh .plus:disabled{background:var(--paper);color:var(--soft);
+    cursor:not-allowed}
+  .karte .hh .plus:disabled:hover{background:var(--paper);color:var(--soft)}
   .karte .hint b{font-weight:600;color:var(--ink)}
   .karte .hint{font:400 12px var(--body);color:var(--soft);line-height:1.5;
                margin:0 0 14px;max-width:600px}
@@ -119,17 +131,6 @@
      inline-Element klebte er am Label und erbte dessen Versalien. */
   .kpi .kh{display:block;font:400 10px var(--body);text-transform:none;
            letter-spacing:0;color:var(--soft);margin-top:3px}
-
-  /* Eigentuemer-Verteilung. */
-  .eig{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-       gap:12px}
-  .eig .ez{background:var(--paper);border-radius:14px;padding:14px}
-  .eig .eanteil{display:inline-block;font:600 11px var(--mono);color:var(--teal-d);
-                background:var(--teal-l);border-radius:999px;padding:3px 10px;
-                margin-bottom:10px}
-  .eig .ezeile{display:flex;align-items:baseline;justify-content:space-between;
-               gap:10px;padding:5px 0;font:500 12.5px var(--body);color:var(--soft)}
-  .eig .ezeile b{font:700 14px var(--disp);color:var(--ink);letter-spacing:-.01em}
 
   /* Rest-Chip / abgeleitete Werte an einer Karte. */
   .abgeleitet{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
@@ -257,6 +258,10 @@
            color:var(--ink);overflow-wrap:anywhere}
   .pa-obj{display:block;font:400 11px var(--body);color:var(--soft);
           letter-spacing:0;margin-top:3px}
+  /* Der investierte Betrag dieses Anteils (N204): ‰ × Gesamt-Anschaffung.
+     Ruhige Zahl vor dem ‰-Chip, rechtsbündig, damit die Beträge fluchten. */
+  .pa-invest{flex:none;font:700 13px var(--disp);color:var(--ink);
+             letter-spacing:-.01em;white-space:nowrap;text-align:right}
   /* Der Anteil als Chip — dieselbe Auszeichnung wie in der Verteilung darunter. */
   .pa-wert{flex:none;font:600 11px var(--mono);color:var(--teal-d);
            background:var(--teal-l);border-radius:999px;padding:5px 11px;
@@ -669,7 +674,6 @@ function skelett() {
       <div class="kpi" id="vKpi"></div>
       <div id="vGrafik"></div>
       <div id="vTabelle"></div>
-      <div class="eig" id="vEig"></div>
     </div>
 
     <!-- N139 — die Anlage wurde einmal gekauft, nicht jedes Jahr neu. Diese
@@ -755,12 +759,13 @@ function skelett() {
 
     <div class="karte">
       <div class="hh"><span class="titelinfo"><h3>PV-Eigentümer</h3>
-        ${infoKnopf('eigentuemer')}</span></div>
-      <!-- N149 — hier steht nur, wer wirklich einen Anteil hält; hinzugefügt
-           wird über die Auswahl darunter. Gespeichert wird in den Stammdaten
-           der Anlage, nicht am Jahr. -->
+        ${infoKnopf('eigentuemer')}</span>
+        <button class="plus" id="pvPlus" type="button" data-pv-add
+                aria-label="Anteil zuordnen" title="Anteil zuordnen">＋</button></div>
+      <!-- N204 — jede Zeile trägt Investitions-€ und ‰; hinzugefügt wird über
+           das „＋" oben rechts, das ausgraut, sobald alle 1000 ‰ vergeben sind.
+           Gespeichert wird in den Stammdaten der Anlage, nicht am Jahr. -->
       <div id="pvAnteile"></div>
-      <div class="eig" id="eig"></div>
     </div>
 
     <div id="warnungen"></div>`;
@@ -1288,14 +1293,6 @@ function ergebnisZeigen(r) {
   tippsZeigen(r);
   tankZeigen();
 
-  document.getElementById('eig').innerHTML = r.eigentuemer.map(e => `
-    <div class="ez">
-      <span class="eanteil">${esc(e.anteil)}</span>
-      <div class="ezeile"><span>Investitions-Ertrag</span><b>${eur(e.investitions_ertrag ?? 0)}</b></div>
-      <div class="ezeile"><span>PV-Ertrag (kalkul.)</span><b>${eur(e.ertrag)}</b></div>
-      <div class="ezeile"><span>Anschaffung</span><b>${eur(e.anschaffung)}</b></div>
-    </div>`).join('');
-
   const w = document.getElementById('warnungen');
   w.innerHTML = (r.warnungen || []).map(t =>
     `<div class="warnung"><span class="wi" aria-hidden="true">⚠</span><span>${esc(t)}</span></div>`).join('');
@@ -1784,7 +1781,6 @@ async function verlaufZeigen() {
   if (!kpi || !objektSlug) return;
   const grafik = document.getElementById('vGrafik');
   const tabelle = document.getElementById('vTabelle');
-  const eig = document.getElementById('vEig');
   let v;
   try {
     v = await api(`/objekte/${encodeURIComponent(objektSlug)}/pv/verlauf`);
@@ -1792,16 +1788,19 @@ async function verlaufZeigen() {
     kpi.innerHTML = '';
     grafik.innerHTML = '<div class="verlaufleer"><p>Der Verlauf ist nach dem '
       + 'nächsten Deploy verfügbar.</p></div>';
-    tabelle.innerHTML = eig.innerHTML = '';
+    tabelle.innerHTML = '';
+    pvAnschaffungSetzen(0);
     return;
   }
+  // N204 — die Gesamt-Anschaffung speist die Investitions-€ je Eigentümerzeile.
+  pvAnschaffungSetzen(v.anschaffung || 0);
   const hinweise = (v.warnungen || []).map(t => `<p>${esc(t)}</p>`).join('');
   kpi.innerHTML = v.anschaffung ? verlaufKpi(v) : '';
   if (!v.anschaffung || !v.kumuliert) {
     // Ruhige Aussage statt einer leeren Fläche.
     grafik.innerHTML = `<div class="verlaufleer">${hinweise
       || '<p>Für diese Anlage ist noch nichts zu zeigen.</p>'}</div>`;
-    tabelle.innerHTML = eig.innerHTML = '';
+    tabelle.innerHTML = '';
     return;
   }
   // N200 — Kurve und Ringdiagramm nebeneinander, darunter die Prozent-
@@ -1821,10 +1820,6 @@ async function verlaufZeigen() {
     hinweis.classList.toggle('zeigen',
       rahmen.scrollWidth - rahmen.clientWidth > 2);
   }
-  eig.innerHTML = (v.eigentuemer || []).map(e => `
-    <div class="ez"><span class="eanteil">${esc(e.anteil)}</span>
-      <div class="ezeile"><span>Bisher zugeflossen</span><b>${eur(e.betrag)}</b></div>
-    </div>`).join('');
 }
 
 /* Was der Anlage aus der E-Tankstelle zufließt: die erfassten Ladungen des
@@ -1862,6 +1857,19 @@ let pvAnteile = {};
    weil jemand nebenan eine Zahl getippt hat. */
 let pvGeladen = false;
 let pvNeuWahl = null;
+/* N204 — die Gesamt-Anschaffung der Anlage (aus dem Verlauf) und ob das
+   „＋"-Formular gerade offen ist. Die Investitions-€ je Zeile leiten sich
+   daraus ab; fehlt der Wert (z. B. vor dem nächsten Deploy), steht nur das ‰. */
+let pvAnschaffung = 0;
+let pvAddOffen = false;
+
+/* Die Gesamt-Anschaffung aktualisieren und die Karte nachziehen. */
+function pvAnschaffungSetzen(betrag) {
+  const neu = Number.isFinite(betrag) ? betrag : 0;
+  if (neu === pvAnschaffung) return;
+  pvAnschaffung = neu;
+  if (pvGeladen) pvAnteileZeichnen();
+}
 
 const runde3 = w => Math.round(w * 1000) / 1000;
 const pvSumme = () => runde3(Object.values(pvAnteile).reduce((s, v) => s + v, 0));
@@ -1886,14 +1894,41 @@ async function pvAnteileLaden() {
   pvAnteileZeichnen();
 }
 
+/* N204 — die Investitions-€ dieses Anteils: ‰/1000 × Gesamt-Anschaffung.
+   Ist die Gesamt-Anschaffung nicht bekannt (z. B. vor dem nächsten Deploy),
+   steht nur das ‰ — nie eine erfundene Zahl. */
+function pvInvestChip(promilleWert) {
+  if (!(pvAnschaffung > 0) || !(promilleWert > 0)) return '';
+  return `<span class="pa-invest">${eur(promilleWert / 1000 * pvAnschaffung)}</span>`;
+}
+
+/* Das „＋" oben rechts: aktiv, solange noch etwas zu vergeben ist; sonst
+   ausgegraut mit sprechendem Hinweis. Schließt ein offenes Formular, wenn
+   nichts mehr hinzuzufügen ist. */
+function pvPlusStand() {
+  const plus = document.getElementById('pvPlus');
+  if (!plus) return;
+  const frei = pvPersonen.filter(p => !(pvAnteile[p.name] > 0));
+  const voll = pvSumme() >= 999.95;
+  const gesperrt = !pvPersonen.length || voll || !frei.length;
+  plus.disabled = gesperrt;
+  plus.title = !pvPersonen.length ? 'Erst Personen als Eigentümer anlegen'
+    : voll ? 'Alle 1000 ‰ vergeben'
+    : !frei.length ? 'Alle Personen zugeordnet'
+    : 'Anteil zuordnen';
+  plus.setAttribute('aria-expanded', String(pvAddOffen && !gesperrt));
+  if (gesperrt) pvAddOffen = false;
+}
+
 /* Die Karte neu zeichnen: zugeordnete Personen als Zeilen, darunter die Summe
-   und — solange noch jemand übrig ist — der Weg zum Hinzufügen. */
+   und — sobald das „＋" gedrückt ist — der Weg zum Hinzufügen. */
 function pvAnteileZeichnen() {
   const ziel = document.getElementById('pvAnteile');
   if (!ziel) return;
   if (!pvPersonen.length) {
     ziel.innerHTML = '<p class="hint">Noch keine Personen angelegt — lege sie '
       + 'unter Eigentümer an, dann lassen sie sich hier zuordnen.</p>';
+    pvPlusStand();
     return;
   }
   const amObjekt = new Map(pvPersonen.map(p => [p.name, p.am_objekt]));
@@ -1902,6 +1937,7 @@ function pvAnteileZeichnen() {
     <div class="pa-zeile">
       <span class="pa-name">${esc(p.name)}${p.am_objekt != null
         ? `<span class="pa-obj">am Objekt ${promille(p.am_objekt)}</span>` : ''}</span>
+      ${pvInvestChip(pvAnteile[p.name])}
       <span class="pa-wert">${promille(pvAnteile[p.name])}</span>
       <button type="button" class="pa-weg" data-pv-weg="${esc(p.name)}"
               aria-label="${esc(p.name)} entfernen">×</button>
@@ -1915,6 +1951,7 @@ function pvAnteileZeichnen() {
     <div class="pa-zeile">
       <span class="pa-name">${esc(n)}<span class="pa-obj">nicht mehr als
         Eigentümer angelegt</span></span>
+      ${pvInvestChip(pvAnteile[n])}
       <span class="pa-wert">${promille(pvAnteile[n])}</span>
       <button type="button" class="pa-weg" data-pv-weg="${esc(n)}"
               aria-label="${esc(n)} entfernen">×</button>
@@ -1922,13 +1959,14 @@ function pvAnteileZeichnen() {
 
   const liste = zeilen + verwaist;
   const frei = pvPersonen.filter(p => !(pvAnteile[p.name] > 0));
+  const formOffen = pvAddOffen && frei.length && pvSumme() < 999.95;
   ziel.innerHTML = (liste
       ? `${liste}<div class="pa-summe"><span>Vergeben</span>
           <b>${promille(pvSumme())}</b></div>`
       : `<div class="pa-leer">Noch niemandem zugeordnet — solange hier nichts
           steht, gilt die Vorgabe 5/6 + 1/6.</div>`)
     + '<div id="paHinweis"></div>'
-    + (frei.length
+    + (formOffen
       ? `<div class="pa-neu">
            <div class="pa-person" id="paPerson"></div>
            <!-- Bewusst kein type=number: die deutsche Zifferntastatur liefert
@@ -1941,7 +1979,8 @@ function pvAnteileZeichnen() {
          </div>` : '');
 
   pvHinweisZeigen();
-  if (!frei.length) { pvNeuWahl = null; return; }
+  pvPlusStand();
+  if (!formOffen) { pvNeuWahl = null; return; }
   pvNeuWahl = auswahlfeld(document.getElementById('paPerson'), {
     label: 'Person zuordnen',
     optionen: frei.map(p => ({ wert: p.name, text: p.name })),
@@ -1976,6 +2015,9 @@ function pvZuordnen() {
   // Bewusst ungerundet: die Anzeige rundet auf eine Nachkommastelle, gespeichert
   // wird, was dasteht — sonst würde 833,3333 bei jedem Öffnen kürzer.
   pvAnteile[name] = v;
+  // Nach dem Zuordnen das Formular wieder einklappen — die Karte bleibt kompakt,
+  // ein weiterer Anteil geht erneut über das „＋".
+  pvAddOffen = false;
   pvAnteileZeichnen();
   melde(`${promille(pvAnteile[name])} an ${name} zugeordnet`, 'pos');
   stammAngestossen();
@@ -2014,7 +2056,13 @@ function pvAnteileJson() {
 // gezeichnet, ein Lauscher je Knopf ginge dabei jedes Mal verloren.
 inhalt.addEventListener('click', e => {
   const weg = e.target.closest('[data-pv-weg]');
-  if (weg) pvEntfernen(weg.dataset.pvWeg);
+  if (weg) return pvEntfernen(weg.dataset.pvWeg);
+  const add = e.target.closest('[data-pv-add]');
+  if (add) {
+    if (add.disabled) return;             // ausgegraut: alle 1000 ‰ vergeben
+    pvAddOffen = !pvAddOffen;
+    pvAnteileZeichnen();
+  }
 });
 
 let objektSlug = '';
