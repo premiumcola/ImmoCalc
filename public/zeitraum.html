@@ -1033,22 +1033,53 @@
     border-radius:999px;padding:8px 13px;font:600 11.5px var(--disp);cursor:pointer;
     min-height:38px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .sortleiste button[aria-pressed=true]{background:var(--teal-l);color:var(--teal-d)}
-  /* CCCXCVI — Settings-Knopf rechts: NK-Positionen ein-/ausblenden. */
+  /* N189 — Knopf rechts in der Sortierleiste öffnet den Konfig-Modus inline. */
   .sortleiste .pos-konfig{margin-left:auto;display:inline-flex;align-items:center;gap:5px;
     color:var(--teal-d);background:var(--teal-l)}
   .sortleiste .pos-konfig svg{width:15px;height:15px}
-  .pk-liste{display:flex;flex-direction:column;max-height:52dvh;overflow:auto;margin-bottom:16px}
-  .pk-zeile{display:flex;align-items:center;gap:12px;padding:10px 2px;cursor:pointer;
-    border-bottom:1px solid var(--line);min-height:46px;position:relative}
-  .pk-zeile:last-child{border-bottom:none}
-  .pk-name{flex:1;font:500 14px var(--body);color:var(--ink)}
-  .pk-zeile input{position:absolute;opacity:0;pointer-events:none}
+
+  /* ---- N189: Konfig-Modus (inline) ---------------------------------------- */
+  .konf-leiste{display:flex;margin-bottom:12px}
+  .konf-fertig{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    border:none;background:var(--teal);color:#fff;border-radius:13px;padding:13px 16px;
+    font:600 13px var(--disp);letter-spacing:-.01em;cursor:pointer;min-height:48px;
+    box-shadow:0 2px 6px rgba(15,110,92,.18)}
+  .konf-fertig:hover{background:var(--teal-d)}
+  .konf-hinweis{font:400 12.5px var(--body);color:var(--soft);line-height:1.55;
+    background:var(--teal-l);border-radius:12px;padding:12px 14px;margin-bottom:18px}
+  .konf-hinweis b{color:var(--teal-d);font-weight:600}
+  .konf-zeile{margin-bottom:8px}
+  .konf-zeile .kopf{padding:11px 14px;gap:10px;flex-wrap:wrap}
+  .konf-zeile.verborgen{opacity:.62}
+  .konf-zeile.fest{background:linear-gradient(100deg,#EEF2F1 0%,var(--sheet) 60%)}
+  .konf-fest-tag{flex:none;font:600 10px var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;color:var(--soft);background:#EDF1F0;border-radius:999px;
+    padding:6px 11px;white-space:nowrap}
+  .konf-steuer{display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}
+  /* Anzeige-Schalter */
+  .konf-sw{display:inline-flex;align-items:center;gap:8px;cursor:pointer;position:relative;
+    min-height:44px}
+  .konf-sw input{position:absolute;opacity:0;pointer-events:none;width:0;height:0}
+  .konf-swl{font:600 11px var(--mono);letter-spacing:.04em;color:var(--soft);
+    min-width:62px}
   .pk-sw{flex:none;width:42px;height:24px;border-radius:999px;background:var(--line);
     position:relative;transition:background .15s}
   .pk-sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;
     border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
-  .pk-zeile input:checked ~ .pk-sw{background:var(--teal)}
-  .pk-zeile input:checked ~ .pk-sw::after{transform:translateX(18px)}
+  .konf-sw input:checked ~ .pk-sw{background:var(--teal)}
+  .konf-sw input:checked ~ .pk-sw::after{transform:translateX(18px)}
+  .konf-sw input:checked ~ .konf-swl{color:var(--teal-d)}
+  /* Pflicht/optional — segmentierter Umschalter */
+  .konf-seg{flex:none;display:inline-flex;background:#EDF1F0;border-radius:11px;padding:3px}
+  .konf-opt{border:none;background:transparent;color:var(--soft);border-radius:9px;
+    padding:9px 14px;font:600 11.5px var(--disp);cursor:pointer;min-height:40px;white-space:nowrap}
+  .konf-opt.an{background:var(--sheet);color:var(--ink);box-shadow:0 1px 3px rgba(22,38,44,.12)}
+  .konf-opt[data-optional="0"].an{color:var(--neg)}
+  .konf-opt[data-optional="1"].an{color:var(--teal-d)}
+  .konf-opt:disabled{opacity:.4;cursor:not-allowed}
+  @media(max-width:520px){
+    .konf-steuer{width:100%;margin-left:34px;justify-content:space-between}
+  }
 
   .abschluss{border-radius:16px;padding:18px;margin:16px 0 4px}
   .abschluss .at{font:700 16px var(--disp);letter-spacing:-.015em;margin-bottom:6px}
@@ -1131,6 +1162,12 @@ let leerstaende = new Set();
 let ansicht = 'pruef';
 let sortierung = 'status';
 const offen = new Set();
+/* N189 — der Konfig-Modus (Positionen ein-/ausblenden + Pflicht/optional) läuft
+   INLINE in der Checkliste statt in einem Overlay. `konfigModus` schaltet die
+   ganze Checkliste um; `konfigArten` hält den Katalog (alle Kostenarten samt
+   `aktiv`/`optional`), aus dem der Modus seine Zeilen baut. */
+let konfigModus = false;
+let konfigArten = null;
 /* „Nur eine Einheit/Person" ist Teil der Verteilungs-Auswahl geworden. Diese
    Variable merkt sich, für welche Position der Einheit-Auswähler offen ist,
    solange noch keine Einheit gesetzt wurde. */
@@ -1724,6 +1761,42 @@ function istImDetailPopup(k) {
   if (n.includes('niederschlag') || n.includes('entwaesser')) return true;
   if (n.includes('kaltwasser') && n.includes('zaehler')) return true;
   return false;
+}
+
+/* N114/N118/N190 — der WIRKSAME Betrag einer Position: der eigene Betrag, sonst
+   der berechnete (Wasser-Summe der drei Bestandteile, Heizöl aus der FIFO-
+   Bewertung, Warmwassererzeugung/Heizkörper-Wärmemenge aus dem §9-Split). So
+   zählt eine berechnete Position genauso wie eine mit Beleg. */
+function positionsBetrag(k) {
+  if (istWasserSammel(k)) return wasserGesamtBetrag();
+  if (k.betrag) return k.betrag;
+  if (istHeizoelSammel(k)) return heizoelKosten;
+  if (istWarmwasserPos(k)) return wwKosten;
+  if (istHeizwaermePos(k)) return Math.round((heizoelKosten - wwKosten) * 100) / 100;
+  return 0;
+}
+
+/* N190 — erledigt heißt: ein Betrag liegt vor, gleich ob aus einem Beleg oder
+   aus einer Berechnung. Eine per §9/FIFO berechnete Position (Warmwasser-
+   erzeugung, Heizöl) ist damit ebenso fertig wie eine belegte. */
+function effektivErledigt(k) {
+  return !!k.erledigt || positionsBetrag(k) > 0.005;
+}
+
+/* N189 — der Fortschritt zählt, was die Checkliste WIRKLICH zeigt: berechnete
+   Positionen gelten als erledigt (N190), im Detail-Popup gebündelte Wasser-
+   Bestandteile zählen nicht doppelt, und eine optionale Position ohne Betrag
+   mahnt nicht — sie bleibt aus dem Nenner heraus, damit 100 % erreichbar sind. */
+function fortschrittRechnen() {
+  let gesamt = 0, fertig = 0;
+  for (const k of (daten?.checkliste || [])) {
+    if (istImDetailPopup(k)) continue;
+    const erl = effektivErledigt(k);
+    if (k.optional && !erl) continue;
+    gesamt++;
+    if (erl) fertig++;
+  }
+  return { fertig, gesamt, summe: daten?.fortschritt?.summe || 0 };
 }
 
 /* ---- N58–N61: Zählerstände-Übersicht ------------------------------------
@@ -2434,7 +2507,14 @@ function verteilungHtml(k) {
 }
 
 function zeileHtml(k, i) {
-  const [farbe, zeichen] = HAKEN[k.zustand] || HAKEN.fehlt;
+  // N189 — das rote Pflicht-Signal KONSISTENT: erledigt (Beleg ODER berechnet)
+  // → grün; eine Pflicht-Position ohne Betrag → rot „!"; eine optionale ohne
+  // Betrag → neutral (kein Haken). Der frühere Weg über `k.zustand` mahnte nur,
+  // wo schon eine leere Position lag, und ließ nie berührte Pflichten grau.
+  const erl = effektivErledigt(k);
+  const [farbe, zeichen] = erl ? HAKEN.erledigt
+    : (k.optional ? HAKEN.fehlt : HAKEN.offen);
+  const zeigeHaken = erl || !k.optional;
   // N101 — die Wasser-Sammelzeile trägt die SUMME ihrer drei Bestandteile
   // (Frisch- + Schmutz- + Niederschlagswasser). Ihr eigener Betrag ist nur der
   // Frischwasser-Anteil; die anderen beiden sind eigene, ausgeblendete
@@ -2456,7 +2536,7 @@ function zeileHtml(k, i) {
       ? 'Fasst Frisch-, Schmutz- & Niederschlagswasser zusammen' : null,
   ].filter(Boolean).join(' · ');
 
-  return zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen);
+  return zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken);
 }
 
 // Fußzeile des Zeitraums: was hängt dran — und der ruhige Hinweis, dass ein
@@ -2504,9 +2584,12 @@ function belegAblageHtml(k, bearbeitbar) {
     </div>`;
 }
 
-function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
+function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken = true) {
+  // N190 — eine berechnete Position (Warmwasser, Heizöl) gilt als erledigt und
+  // bekommt dasselbe grüne Schema wie eine belegte.
+  const erl = effektivErledigt(k);
   // Eine vorläufige (orange) Position bleibt orange, bis sie bestätigt ist.
-  const zustandKlasse = k.vorlaeufig ? ' entwurf' : (k.erledigt ? ' gefuellt' : '');
+  const zustandKlasse = k.vorlaeufig ? ' entwurf' : (erl ? ' gefuellt' : '');
   const bearbeitbar = daten.status === 'in Arbeit';
 
   // N74 — die Wasser-Sammelposition: erst mit Rechnung aufklappbar, dann zeigt
@@ -2514,13 +2597,6 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   const wasserSammel = istWasserSammel(k);
   const wasserBill = wasserSammel && wasserHatRechnung(k);
   const heizoelSammel = istHeizoelSammel(k);
-  // N114 — die Heizkosten kommen aus der FIFO-Bewertung, nicht als Positions-
-  // betrag. `zeileHtml` rechnet dasselbe fuer die Anzeige; hier wird es fuer
-  // Haken und „Datei waehlen" gebraucht.
-  const oelBetrag = heizoelSammel && !k.betrag ? heizoelKosten
-    : (istWarmwasserPos(k) && !k.betrag ? wwKosten
-    : (istHeizwaermePos(k) && !k.betrag
-       ? Math.round((heizoelKosten - wwKosten) * 100) / 100 : 0));
   // N91 — die drei Heizungs-Stufen: Öl (Einkauf) · Warmwassererzeugung · Heiz-
   // körper-Wärmemenge. Jede Position zeigt genau ihren Teil.
   const heizModus = heizoelSammel ? 'oel'
@@ -2621,7 +2697,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
          inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
          aria-label="Betrag für ${esc(k.kostenart)}"><span class="kbe">€</span></span>`
-    : ((k.erledigt || oelBetrag) ? `<span class="wert">${wert}</span>` : '');
+    : (erl ? `<span class="wert">${wert}</span>` : '');
   // Quick-Capture nur an der geschlossenen, offenen Zeile — aufgeklappt macht
   // der Betrag im Kopf Platz, Belege kommen dann über „Beleg anhängen".
   // Ohne Kamera (Schreibtisch) genügt EIN neutraler Knopf — er öffnet über
@@ -2630,7 +2706,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   // N114 — hat die Heizöl-Position ihre Kosten aus der FIFO-Bewertung, ist sie
   // nicht „leer": dann kein „Datei wählen"-Knopf, sondern der Betrag. Weitere
   // Lieferungen lassen sich jederzeit im aufgeklappten Öl-Manager erfassen.
-  const quickScan = (!k.erledigt && !aufgeklappt && !oelBetrag)
+  const quickScan = (!erl && !aufgeklappt)
     ? (KEINE_KAMERA
       ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
             title="Beleg-PDF von diesem Rechner wählen" aria-label="Beleg-Datei wählen">
@@ -2648,7 +2724,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
   return `<div class="pruef${zustandKlasse}" data-kostenart="${esc(k.kostenart)}">
       <div class="kopf">
         <button class="zeile" data-auf="${i}"${kannAuf ? '' : ' data-noexpand'} aria-expanded="${auf}">
-          <span class="ikon ${k.erledigt ? 'fertig' : 'warte'}">${
+          <span class="ikon ${erl ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
           <!-- N104c - der Verbrauchs-Chip steht HINTER dem Titel: davor
                drängte er sich vor den Namen, obwohl er Beiwerk ist. -->
@@ -2661,7 +2737,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen) {
         </button>
         ${betragEl}
         ${quickScan}
-        ${k.zustand !== 'fehlt'
+        ${zeigeHaken
           ? `<span class="haken ${farbe}">${zeichen}</span>` : ''}
       </div>
       ${auf ? `<div class="auf">${koerper}</div>` : ''}
@@ -2845,7 +2921,9 @@ function wegDirektHtml() {
 }
 
 async function zeichnen() {
-  const f = daten.fortschritt;
+  // N189/N190 — der Fortschritt zählt berechnete Positionen mit und lässt
+  // optionale Leerstellen aus dem Nenner (siehe `fortschrittRechnen`).
+  const f = fortschrittRechnen();
   const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
 
   const kopf = `
@@ -2864,6 +2942,20 @@ async function zeichnen() {
 
   let rumpf = '';
   if (ansicht === 'pruef') {
+    // N67 — die Zählerliste einmal je Zeichnung; Konfig- wie Normalansicht
+    // stellen die Zähler unter dieselben Kategorien (Wasser/Heizung/Strom).
+    const zListe = ablesungMaske?.zaehler || [];
+    if (zListe.length) zLabels = generischeLabels(zListe);   // N68 — einmal für alle
+    const zBlock = zListe.length ? zaehlerBloecke(zListe) : new Map();
+
+    // N189 — der Konfig-Modus ersetzt die Overlay-Variante: dieselbe Checkliste,
+    // inline umgeschaltet auf Anzeige- und Pflicht/optional-Schalter je Zeile.
+    if (konfigModus) {
+      rumpf = konfigAnsichtHtml(zListe, zBlock);
+      inhalt.innerHTML = kopf + rumpf;
+      return;
+    }
+
     const fluss = daten.sankey || { knoten: [], fluss: [] };
     const flussKarte = fluss.fluss.length
       ? `<div class="karte"><h3>Kostenfluss · erfasste Positionen</h3>
@@ -2879,8 +2971,8 @@ async function zeichnen() {
           .map(([k, l]) => `<button data-sort="${k}"
             aria-pressed="${sortierung === k}">${l}</button>`).join('')}
         <button class="pos-konfig" data-pos-konfig
-          title="Positionen ein- oder ausblenden"
-          aria-label="Positionen ein- oder ausblenden">${GEAR_ICON} Positionen</button>
+          title="Positionen konfigurieren"
+          aria-label="Positionen konfigurieren">${GEAR_ICON} Positionen konfigurieren</button>
       </div>`;
 
     // Jede Kostenart bleibt als Zeile — auch eine, die „Zähler" heißt (etwa die
@@ -2907,9 +2999,6 @@ async function zeichnen() {
     bereiche[1].sort((a, b) => heizRang(a.k) - heizRang(b.k));
     // N67 — Zählerstände je Kapitel: Wasser-Zähler unter Wasser (bi 0), Heizung
     // unter Heizung (bi 1), Strom unter Strom (bi 2) — jeweils eigenes Panel.
-    const zListe = ablesungMaske?.zaehler || [];
-    if (zListe.length) zLabels = generischeLabels(zListe);   // N68 — einmal für alle
-    const zBlock = zListe.length ? zaehlerBloecke(zListe) : new Map();
     const zeilen = bereiche.map((liste, bi) => {
       // N120 — der Strom-Bereich erscheint auch ohne Zähler (Leerzustand +
       // Anlegen); die Panels entscheiden das selbst.
@@ -3105,6 +3194,13 @@ async function wasserPositionLeeren() {
   try {
     await api(`/zeitraeume/${zid}/wasser/leeren?force=true`, { method: 'POST' });
     melde('Wasser-Position geleert — die Zähler bleiben.', 'pos');
+    // N185 — die Sammelzeile war beim Leeren aufgeklappt (der Knopf sitzt in
+    // ihrem Panel). Ohne Rechnung gibt es nichts mehr aufzuklappen: bliebe sie
+    // in `offen`, unterdrückte `aufgeklappt` den „Datei wählen"-Knopf und die
+    // Zeile zeigte nur noch das rote „!" — der leere Zustand erschien erst nach
+    // einem harten Reload. Deshalb die Zeile vor dem Neuladen einklappen.
+    const wi = (daten.checkliste || []).findIndex(istWasserSammel);
+    if (wi >= 0) offen.delete(wi);
     await laden();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
@@ -4636,6 +4732,8 @@ inhalt.addEventListener('change', e => {
     if (knopf) knopf.disabled = !e.target.checked;
     return;
   }
+  // N189 — Anzeige (sichtbar/verborgen) einer Kostenart im Konfig-Modus.
+  if (e.target.matches('[data-konf-sicht]')) return konfSichtSetzen(e.target);
   // Der Betrag speichert sich beim Verlassen des Feldes.
   if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
   // CCCLXIII — Anbieter/Gewerk der Kostenart speichert sich genauso.
@@ -4679,7 +4777,11 @@ inhalt.addEventListener('click', async e => {
 
   const sort = e.target.closest('[data-sort]');
   if (sort) { sortierung = sort.dataset.sort; return zeichnen(); }
-  if (e.target.closest('[data-pos-konfig]')) return positionenKonfig();
+  if (e.target.closest('[data-pos-konfig]')) return konfigModusUmschalten();
+  // N189 — im Konfig-Modus: Pflicht/optional wählen (die Anzeige-Umschaltung
+  // ist ein Checkbox-`change`, siehe unten).
+  const kOpt = e.target.closest('[data-konf-opt]');
+  if (kOpt) return konfOptSetzen(kOpt);
 
   // N60 — Zählerstände-Einklapper auf/zu (ohne Neuaufbau; Zustand gemerkt).
   const zt = e.target.closest('[data-zu-toggle]');
@@ -5201,47 +5303,164 @@ function belegWasserDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, an
   });
 }
 
-/* CCCXCVI — NK-Positionen ein-/ausblenden. Jede Kostenart des Objekts als
-   Schalter; „aus" setzt `Kostenart.aktiv=false` (die Checkliste blendet sie dann
-   aus, die Daten bleiben). Beim Schließen wird neu geladen. Nützlich für
-   Positionen ohne laufende Kosten (z. B. Rauchwarnmelder, einmalig angeschafft). */
-async function positionenKonfig() {
-  let arten;
+/* N189 — den Konfig-Modus betreten/verlassen. Statt eines Overlays schaltet die
+   ganze Checkliste inline um: jede Zeile zeigt dann Anzeige- und Pflicht/optional-
+   Schalter. Beim Betreten wird der Katalog (alle Kostenarten samt `aktiv`/
+   `optional`) geholt; beim Verlassen frisch geladen, damit Sichtbarkeit und
+   Pflicht-Signal in der normalen Ansicht sofort greifen. */
+async function konfigModusUmschalten() {
+  if (konfigModus) {
+    konfigModus = false;
+    return laden();
+  }
   try {
-    arten = await api(`/objekte/${encodeURIComponent(daten.objekt)}/kostenarten`);
+    konfigArten = await api(`/objekte/${encodeURIComponent(daten.objekt)}/kostenarten`);
   } catch (fehler) {
     return melde('Kostenarten nicht ladbar', 'neg');
   }
-  arten = (arten || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  const dlg = document.createElement('dialog');
-  dlg.className = 'immo-dlg';
-  document.body.appendChild(dlg);
-  dlg.addEventListener('close', () => { dlg.remove(); laden(); });
-  const zeile = a => `<label class="pk-zeile">
-      <span class="pk-name">${esc(a.name)}</span>
-      <input type="checkbox" data-pk="${a.id}"${a.aktiv !== false ? ' checked' : ''}>
-      <span class="pk-sw" aria-hidden="true"></span>
-    </label>`;
-  dlg.innerHTML = `
-    <button class="immo-dlg-zu" data-nein aria-label="Schließen">×</button>
-    <div class="dt">Positionen ein- oder ausblenden</div>
-    <p>Ausgeblendete Positionen verschwinden aus der Checkliste — die Daten
-       bleiben erhalten und lassen sich hier jederzeit wieder einblenden.</p>
-    <div class="pk-liste">${arten.map(zeile).join('')
-      || '<div class="leerzeile">Keine Kostenarten</div>'}</div>
-    <button class="btn" data-nein>Fertig</button>`;
-  dlg.addEventListener('change', async e => {
-    const cb = e.target.closest('[data-pk]');
-    if (!cb) return;
-    try {
-      await api(`/kostenarten/${cb.dataset.pk}`, { method: 'PATCH', body: { aktiv: cb.checked } });
-    } catch (fehler) {
-      melde(String(fehler.message || fehler), 'neg');
-      cb.checked = !cb.checked;
-    }
-  });
-  dlg.querySelectorAll('[data-nein]').forEach(b => (b.onclick = () => dlg.close()));
-  dlg.showModal();
+  konfigModus = true;
+  return zeichnen();
+}
+
+/* Die Konfig-Ansicht: dieselben Kategorien, Titel und Reihenfolge wie die
+   Live-Checkliste — nur zeigt jede Zeile Schalter statt Betrag/Beleg, und die
+   ausgeblendeten Positionen sind mit dabei (zum Wiedereinblenden). Die Zähler
+   hängen als feste Pflicht-Zeilen unter ihrer Kategorie. */
+function konfigAnsichtHtml(zListe, zBlock) {
+  const arten = konfigArten || [];
+  const katalog = new Set(arten.map(a => a.name));
+  // Aus dem Katalog: jede Kostenart als konfigurierbare Zeile.
+  const rows = arten.map(a => ({
+    kostenart: a.name, kostenart_id: a.id,
+    optional: !!a.optional, sichtbar: a.aktiv !== false, fest: false,
+  }));
+  // Waisen (aus einem Beleg entstanden, ohne Katalog-Eintrag) bleiben sichtbar,
+  // lassen sich aber nicht konfigurieren — sie erscheinen als feste Zeile.
+  const waise = (daten.checkliste || [])
+    .filter(k => !katalog.has(k.kostenart))
+    .map(k => ({ kostenart: k.kostenart, kostenart_id: null,
+                 optional: false, sichtbar: true, fest: true }));
+  const alle = [...rows, ...waise].filter(k => !istImDetailPopup(k));
+
+  const bereiche = BEREICHE.map(() => []);
+  for (const k of alle) bereiche[bereichIndex(k.kostenart)].push(k);
+  // N91 — im Heizungs-Kapitel dieselbe fachliche Reihenfolge wie live.
+  const heizRang = k => istHeizoelSammel(k) ? 0
+    : istWarmwasserPos(k) ? 1 : istHeizwaermePos(k) ? 2
+    : normUml(k.kostenart).includes('wartung') ? 4 : 3;
+  bereiche[1].sort((a, b) => heizRang(a) - heizRang(b));
+
+  const blockName = ['Wasser', 'Heizung', 'Strom'];
+  const abschnitte = bereiche.map((liste, bi) => {
+    const meter = bi < 3 ? konfigZaehlerHtml(zListe, zBlock, blockName[bi]) : '';
+    if (!liste.length && !meter) return '';
+    return `<div class="kat-kopf"><span class="kat-ikon">${
+        kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
+        esc(BEREICHE[bi].titel)}</span></div>`
+      + liste.map(konfigZeileHtml).join('') + meter;
+  }).join('');
+
+  return `<div class="konf-leiste">
+      <button class="konf-fertig" data-pos-konfig><svg viewBox="0 0 24 24" width="16"
+        height="16" fill="none" stroke="currentColor" stroke-width="2.4"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
+        d="m5 12 5 5 9-11"/></svg> Konfiguration verlassen</button>
+    </div>
+    <div class="konf-hinweis">Lege fest, welche Positionen in der Checkliste
+      erscheinen — und ob eine fehlende Zahl als <b>Pflicht</b> rot mahnt.
+      <b>Optionale</b> Positionen (z.&nbsp;B. eine Heizungswartung, die nicht
+      jedes Jahr anfällt) bleiben sichtbar, ohne rot zu mahnen. Diese Einstellung
+      gilt objektweit über alle Jahre.</div>
+    ${abschnitte || '<div class="empty"><div class="big">Keine Positionen</div></div>'}`;
+}
+
+/* Eine konfigurierbare Zeile: Anzeige-Schalter + Pflicht/optional-Wahl. Der
+   Pflicht/optional-Wähler ist nur bei sichtbarer Position aktiv — eine
+   verborgene Position mahnt ohnehin nicht. Waisen sind fest (nicht schaltbar). */
+function konfigZeileHtml(k) {
+  if (k.fest) {
+    return `<div class="pruef konf-zeile fest">
+      <div class="kopf">
+        <span class="ikon warte">${kostenIcon(k.kostenart)}</span>
+        <span class="name">${esc(kostenartAnzeige(k.kostenart))}
+          <span class="unter">Aus einem Beleg entstanden — bleibt sichtbar</span></span>
+        <span class="konf-fest-tag">fest</span>
+      </div></div>`;
+  }
+  const an = k.sichtbar;
+  return `<div class="pruef konf-zeile${an ? '' : ' verborgen'}"
+      data-kostenart="${esc(k.kostenart)}">
+    <div class="kopf">
+      <span class="ikon ${an ? 'fertig' : 'warte'}">${kostenIcon(k.kostenart)}</span>
+      <span class="name">${esc(kostenartAnzeige(k.kostenart))}</span>
+      <div class="konf-steuer">
+        <label class="konf-sw" title="In der Checkliste anzeigen">
+          <input type="checkbox" data-konf-sicht="${k.kostenart_id}"${an ? ' checked' : ''}
+            aria-label="Position anzeigen">
+          <span class="pk-sw" aria-hidden="true"></span>
+          <span class="konf-swl">${an ? 'Sichtbar' : 'Verborgen'}</span>
+        </label>
+        <div class="konf-seg" role="group" aria-label="Pflicht oder optional">
+          <button type="button" class="konf-opt${!k.optional ? ' an' : ''}"
+            data-konf-opt="${k.kostenart_id}" data-optional="0"
+            ${an ? '' : 'disabled'}>Pflicht</button>
+          <button type="button" class="konf-opt${k.optional ? ' an' : ''}"
+            data-konf-opt="${k.kostenart_id}" data-optional="1"
+            ${an ? '' : 'disabled'}>Optional</button>
+        </div>
+      </div>
+    </div></div>`;
+}
+
+/* Die Zähler einer Kategorie als feste Pflicht-Zeilen: sie lassen sich nicht
+   ausblenden und nicht optional stellen (ein Zählerstand wird immer gebraucht). */
+function konfigZaehlerHtml(zListe, zBlock, block) {
+  const meter = zListe.filter(z => (zBlock.get(z.id) || '') === block);
+  if (!meter.length) return '';
+  return meter.map(z => `<div class="pruef konf-zeile fest">
+    <div class="kopf">
+      <span class="ikon warte">${ZAEHLER_ICON}</span>
+      <span class="name">${esc(zLabels.get(z.id) || z.name || 'Zähler')}
+        <span class="unter">Zählerstand — immer Pflicht</span></span>
+      <span class="konf-fest-tag">fest · Pflicht</span>
+    </div></div>`).join('');
+}
+
+/* N189 — die Anzeige (sichtbar/verborgen) einer Kostenart setzen. Speichert
+   `aktiv` und zeichnet neu, damit der Pflicht/optional-Wähler mit-/ausgraut. */
+async function konfSichtSetzen(cb) {
+  const id = Number(cb.dataset.konfSicht);
+  const an = cb.checked;
+  try {
+    await api(`/kostenarten/${id}`, { method: 'PATCH', body: { aktiv: an } });
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    cb.checked = !an;
+    return;
+  }
+  const a = (konfigArten || []).find(x => x.id === id);
+  if (a) a.aktiv = an;
+  return zeichnen();
+}
+
+/* N189 — eine Kostenart auf Pflicht oder optional stellen. Speichert `optional`
+   und hält Katalog wie Checkliste im Speicher nach, damit die Auswahl sofort
+   sitzt und das rote Signal beim Verlassen konsistent greift. */
+async function konfOptSetzen(btn) {
+  if (btn.disabled) return;
+  const id = Number(btn.dataset.konfOpt);
+  const optional = btn.dataset.optional === '1';
+  try {
+    await api(`/kostenarten/${id}`, { method: 'PATCH', body: { optional } });
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    return;
+  }
+  const a = (konfigArten || []).find(x => x.id === id);
+  if (a) a.optional = optional;
+  const k = (daten.checkliste || []).find(x => x.kostenart_id === id);
+  if (k) k.optional = optional;
+  return zeichnen();
 }
 
 /* CCCLXXXVI — eine oder mehrere Dateien einer NK-Zeile zuordnen (Drag&Drop aus

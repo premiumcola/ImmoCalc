@@ -554,7 +554,7 @@ def kostenart_aendern(kid: int, data: dict,
     k = session.get(Kostenart, kid)
     if not k:
         raise HTTPException(404, "Kostenart nicht gefunden")
-    erlaubt = {"name", "aktiv", "umlagefaehig", "s35", "beleg_monat",
+    erlaubt = {"name", "aktiv", "optional", "umlagefaehig", "s35", "beleg_monat",
                "erinnerung_tage", "lieferant", "kundennummer", "turnus",
                "schluessel", "notiz"}
     felder = bereinige(Kostenart, {a: b for a, b in data.items() if a in erlaubt})
@@ -1084,6 +1084,9 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             # für den Tag in der Zeitraum-Zeile. Feld `lieferant` gibt es schon.
             # Die Kostenart-ID, damit sich der Anbieter dort setzen lässt.
             "anbieter": k.lieferant or "", "kostenart_id": k.id,
+            # N189 — Pflicht/optional der Kostenart: steuert im Frontend das rote
+            # Pflicht-Signal. Optionale Positionen ohne Betrag mahnen nicht.
+            "optional": bool(k.optional),
             "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
         })
     # Positionen zu Kostenarten, die nicht im Katalog stehen, gehen sonst verloren.
@@ -1113,6 +1116,9 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "vorlaeufig": bool(p.vorlaeufig),
             "quelle_dokument_id": p.quelle_dokument_id,
             "beleg_monat": None,
+            # Waisen-Positionen (aus einem Beleg, ohne Katalog-Eintrag) tragen
+            # kein Pflicht/optional-Flag — sie gelten als Pflicht (Default).
+            "optional": False,
             "zustand": "erledigt" if p.status == "erledigt" else "offen",
         })
 

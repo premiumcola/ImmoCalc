@@ -231,6 +231,13 @@ class Kostenart(SQLModel, table=True):
     umlagefaehig: bool = True
     s35: bool = False
     aktiv: bool = True
+    # N189 — Pflicht/optional je Kostenart, objektweit über alle Zeiträume.
+    # `optional=False` (Vorgabe) heißt Pflicht: eine sichtbare Position ohne
+    # Betrag wird rot als fehlend markiert. `optional=True` nimmt diese Mahnung
+    # zurück — für Positionen, die nicht jedes Jahr anfallen (z. B. Heizungs-
+    # wartung), aber sichtbar bleiben sollen. Additiv, Default = bisheriges
+    # Verhalten (alles Pflicht), damit der Bestand unverändert weiterrechnet.
+    optional: bool = False
     turnus_start_monat: int = 1        # 1 = Januar; eigener Zeitraum der Kostenart
     beleg_monat: Optional[int] = None  # Monat, in dem die Abrechnung vorliegt
     erinnerung_tage: int = 7           # so viele Tage danach erinnern
