@@ -204,28 +204,30 @@
   /* Der Chooser: Jahr-Pills, darunter eine Quartal×Monat-Matrix (4 Spalten
      Q1–Q4, 3 Monatszeilen), darunter die klare Aktion. Statt drei gestapelter
      Bubble-Reihen ein kompakter Block, der die Breite füllt. */
-  .filter-matrix{background:var(--paper);border-radius:14px;padding:12px}
-  .fm-jahre{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px}
-  .fm-jahre button{min-height:38px;padding:7px 14px;border:none;cursor:pointer;
+  /* N202 — gleicher Innenabstand wie der Satz-Block (14px) und kompakter, damit
+     die Matrix auf die Höhe des linken Blocks kommt. */
+  .filter-matrix{background:var(--paper);border-radius:14px;padding:14px}
+  .fm-jahre{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px}
+  .fm-jahre button{min-height:32px;padding:6px 13px;border:none;cursor:pointer;
                    border-radius:999px;background:var(--sheet);color:var(--soft);
                    font:700 11.5px var(--mono);letter-spacing:.03em}
   .fm-jahre button[aria-pressed="true"]{background:var(--teal-l);color:var(--teal-d)}
   .fm-jahre .fm-alle{margin-left:auto;font-weight:600;background:transparent;
                      color:var(--teal-d);text-transform:uppercase;font-size:10px;
-                     letter-spacing:.05em;min-height:38px;padding:7px 8px}
-  .fm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+                     letter-spacing:.05em;min-height:32px;padding:6px 8px}
+  .fm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
   .fm-grid button{border:none;cursor:pointer;border-radius:10px;
                   display:inline-flex;align-items:center;justify-content:center;
                   gap:3px;font:600 11px var(--mono)}
-  .fm-q{min-height:32px;background:transparent;color:var(--soft);font-weight:700;
+  .fm-q{min-height:24px;background:transparent;color:var(--soft);font-weight:700;
         text-transform:uppercase;letter-spacing:.05em;font-size:10px}
   .fm-q.an{color:var(--teal-d)}
-  .fm-m{min-height:44px;background:var(--sheet);color:var(--soft)}
+  .fm-m{min-height:38px;background:var(--sheet);color:var(--soft)}
   .fm-m.an{background:var(--teal-l);color:var(--teal-d)}
   .fm-grid .hk{font-size:9px;color:var(--pos)}
   .fm-q.fertig .hk{color:var(--teal-d)}
   .fm-m.fertig{color:var(--teal-d)}.fm-m.fertig .hk{color:var(--teal-d)}
-  .fm-abbtn{margin-top:11px;width:100%;min-height:44px;border:none;cursor:pointer;
+  .fm-abbtn{margin-top:8px;width:100%;min-height:40px;border:none;cursor:pointer;
             border-radius:999px;background:var(--sheet);color:var(--teal-d);
             font:600 11.5px var(--mono);letter-spacing:.03em}
   .fm-abbtn.an{background:var(--teal);color:#fff}
@@ -367,9 +369,18 @@
   /* Vorschau und Versand stehen nebeneinander — zwei volle Balken
      untereinander wirkten wie zwei Hauptwege, dabei ist einer der Vorlauf
      des anderen. */
-  .az .aw{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-  .az .aw .btn{flex:1 1 132px;width:auto;min-height:44px;padding:11px 12px;
+  /* N202 — die Aktionszeile mit Doppelstrich abgesetzt (finale Abrechnung), der
+     Sende-Button trägt Zeitraum + Betrag; kein Leerraum mehr rechts. */
+  .az .aw{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:13px;
+          border-top:3px double var(--line)}
+  .az .aw .btn{flex:1 1 132px;width:auto;min-height:48px;padding:9px 14px;
                font-size:14px}
+  .az .aw .btn.leise{flex:0 1 auto}
+  .az .aw .btn-send,.az .aw .btn.gesperrt{flex:1 1 200px;display:flex;
+      flex-direction:column;align-items:center;justify-content:center;gap:1px;
+      line-height:1.15}
+  .az .aw .bs-t{font:600 11px var(--mono);letter-spacing:.02em;opacity:.9}
+  .az .aw .bs-e{font:800 15px var(--disp);letter-spacing:-.02em}
   .az .fehlt{margin-top:10px}
 
   /* ---- Autoversand-Schalter (N165/2, kompakt seit N187) ---------------- */
@@ -1309,8 +1320,12 @@ async function abrechnungZeigen() {
         ${n.email && n.betrag != null
           ? (nutzerPeriodeAbgerechnet(n.nutzer_id)
             ? `<button class="btn gesperrt" disabled aria-disabled="true"
-                 title="Diese Periode ist bereits abgerechnet">bereits abgerechnet</button>`
-            : `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>`)
+                 title="Diese Periode ist bereits abgerechnet">
+                 <span class="bs-t">${periodeKurz()} · bereits abgerechnet</span>
+                 <span class="bs-e">${eur(n.betrag)}</span></button>`
+            : `<button class="btn btn-send" data-senden="${n.nutzer_id}">
+                 <span class="bs-t">${periodeKurz()} · per Mail senden</span>
+                 <span class="bs-e">${eur(n.betrag)}</span></button>`)
           : ''}
       </div>` : ''}
       <div data-mail="${n.nutzer_id || 0}"></div>
@@ -1398,6 +1413,14 @@ function jahrAbgerechnet(j) {
 /* Die aktuell WIRKSAMEN Monate: die Monate der gewählten Quartale ohne die von
    Hand abgewählten. Sie sind der Bezug für „abgerechnet" (N187). */
 const aktiveMonate = () => monateDerQuartale().filter(m => !ausMonate.has(m));
+
+/* N202 — ein kompaktes Label der gewählten Periode für den Sende-Button
+   („Mai, Jun 2026" bzw. „2026" fürs ganze Jahr). */
+function periodeKurz() {
+  const mo = aktiveMonate();
+  if (mo.length === 12) return `${jahrWert()}`;
+  return `${mo.map(m => MONKURZ[m - 1]).join(', ')} ${jahrWert()}`;
+}
 
 /* Ist ein Quartal (des gewählten Jahres) abgerechnet? Für den Chip-Haken: ein
    Quartal gilt als abgerechnet, sobald mindestens ein Nutzer es ist; „Ganzes
