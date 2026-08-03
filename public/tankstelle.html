@@ -248,8 +248,6 @@
          overflow-wrap:anywhere}
   .bl-sq{font:400 10.5px var(--mono);color:var(--soft);line-height:1.6;
          overflow-wrap:anywhere}
-  .bl-eco{font:500 12px var(--body);color:var(--teal-d);line-height:1.55;
-          overflow-wrap:anywhere}
   .bl-betrag{background:var(--teal-l);border-radius:12px;padding:14px 16px;
              display:flex;align-items:center;justify-content:space-between;
              gap:12px;flex-wrap:wrap}
@@ -260,6 +258,16 @@
          white-space:nowrap}
   .bl-hint{font:400 11px var(--body);color:var(--soft);line-height:1.55}
   .bl-hint a{color:var(--teal-d);font-weight:600}
+  /* N184 — die Vorschau zeigt jetzt die VOLLSTÄNDIGE Abrechnung inline: dieselben
+     Blöcke wie das PDF (Diagramm, Monatstabelle mit Kosten, E-Auto, Satz, Betrag).
+     Jeder Abschnitt ein ruhiger Titel, darunter sein Inhalt. */
+  .bl-block{display:flex;flex-direction:column;gap:9px}
+  .bl-abschnitt{font:700 12.5px var(--disp);letter-spacing:-.01em;color:var(--ink)}
+  /* Die Monatstabelle im Blatt: derselbe .mt-Stil wie der Verlauf, nur ohne
+     Pager. Fünf Spalten scrollen auf dem iPhone in ihrem eigenen Rahmen — die
+     Seite selbst nie waagerecht. */
+  .blatt .tabrahmen{background:var(--paper)}
+  .bl-mt{min-width:288px}
 
   /* Der abgeleitete Satz (N148): die Zahl gross, darunter die Regel und
      ganz unten die Herkunft. Kein Eingabefeld — hier gibt es nichts zu
@@ -671,9 +679,12 @@ function jahreUebernehmen(jahre) {
 const MIN_PRO_MONAT = 16.5;
 const LABEL_BREITE = 26;       /* Platzbedarf eines Monatskuerzels in px */
 
-function grafik(monate) {
+function grafik(monate, platzHint) {
   const max = Math.max(1, ...monate.map(m => m.kwh || 0));
-  const platz = Math.max(280, document.getElementById('verlauf')?.clientWidth || 320);
+  // `platzHint` erlaubt es der Abrechnungs-Vorschau (N184), die Grafik auf die
+  // schmalere Blattbreite zu setzen, statt die breitere Verlauf-Karte zu messen.
+  const platz = Math.max(240,
+    platzHint || document.getElementById('verlauf')?.clientWidth || 320);
   const proMonat = Math.max(MIN_PRO_MONAT, platz / monate.length);
   const breite = Math.round(proMonat * monate.length);
   const hoehe = 190, padO = 12, padU = 40;
@@ -1423,36 +1434,156 @@ async function vorschauRendern(nid) {
       <button class="vorschau-x" data-vorschau="${nid}"
               aria-label="Vorschau schließen" title="Vorschau schließen">×</button>
     </div>`;
-  // N179 — statt des eingebetteten A4-PDFs (skaliert auf iOS nicht auf die
+  // N179/N184 — statt des eingebetteten A4-PDFs (skaliert auf iOS nicht auf die
   // Rahmenbreite: waagerechtes Scrollen, rechts abgeschnitten) ein responsiver
-  // HTML-Nachbau derselben Abrechnung. Ohne Betrag bleibt es beim Mailtext.
+  // HTML-Nachbau der VOLLSTÄNDIGEN Abrechnung. Ohne Betrag bleibt es beim
+  // Mailtext. Die Blattbreite wird an die Grafik gereicht (abzüglich der
+  // Innenabstände von Vorschau- und Blattrahmen).
+  const breite = Math.max(240, (feld.clientWidth || 300) - 56);
   const koerper = v.betrag == null
     ? `<pre class="mailtext">${esc(v.text)}</pre>`
-    : abrechnungBlatt(nid, v.text);
+    : abrechnungBlatt(nid, v.text, breite);
   feld.innerHTML = `<div class="vorschau">${kopf}${koerper}</div>`;
 }
 
-/* N179 — die Abrechnung als HTML-Blatt: dieselben Daten wie im PDF (Objekt,
-   Zeitraum, Empfaenger, Satz mit Herkunft, Rechnungsbetrag, E-Auto-Kennzahlen),
-   nur responsiv. Grundlage ist die zuletzt geholte Abrechnung (`letzteAbrechnung`)
-   und die Nutzerzeile daraus; das vollstaendige PDF mit Monatsverlauf und
-   Kostenvergleich haengt der Mail an und ist ueber „PDF oeffnen" erreichbar.
-   Fehlt die Zeile wider Erwarten, faellt es auf den Mailtext zurueck. */
-function abrechnungBlatt(nid, fallbackText) {
+/* N184 — die Monate des Abrechnungszeitraums, aus dem bereits geholten Verlauf
+   (`verlaufMonate`) gefiltert auf Jahr und die aktiven Monate der Abrechnung.
+   `/abrechnung` liefert die Monatsaufteilung nicht selbst mit; sie steht aber
+   identisch im Verlauf, der beim Seitenaufbau schon geladen wurde — dieselben
+   Zahlen, keine erfundenen. Ein Monat ohne Ladung bleibt als leere Stelle
+   stehen (Diagramm) bzw. mit Strich (Tabelle). */
+function periodeMonate(d) {
+  const aktiv = new Set(d.monate_aktiv || []);
+  return (verlaufMonate || []).filter(
+    m => m.jahr === d.jahr && aktiv.has(m.monat));
+}
+
+/* Die Summenzeile des Zeitraums — dieselben Regeln wie im Backend
+   (`verlauf_summe`): unbekannte Aufteilung bleibt ``null`` statt einer 0, und
+   die Prozentwerte kommen aus den summierten Mengen. */
+function periodeSumme(monate) {
+  const r2 = n => Math.round(n * 100) / 100;
+  const summe = k => r2(monate.reduce((s, m) => s + (m[k] || 0), 0));
+  const kwh = summe('kwh');
+  const voll = monate.length > 0 && monate.every(m => m.aufteilung);
+  const drei = monate.length > 0 && monate.every(m => m.dreiteilig);
+  const wert = (k, unbekannt) => unbekannt ? null : summe(k);
+  const s = { kwh, aufteilung: voll, dreiteilig: drei,
+    extern_kwh: wert('extern_kwh', !voll), eigen_kwh: wert('eigen_kwh', !voll),
+    pv_kwh: wert('pv_kwh', !drei), speicher_kwh: wert('speicher_kwh', !drei) };
+  for (const feld of ['extern', 'eigen', 'pv', 'speicher']) {
+    const v = s[feld + '_kwh'];
+    s[feld + '_prozent'] = (v == null || !(kwh > 0)) ? null
+      : Math.round(v / kwh * 1000) / 10;
+  }
+  return s;
+}
+
+/* Die Monatstabelle mit E-Auto (Monat · Geladen · km · Preis/100 km · Kosten) —
+   wie im PDF, wenn ein Verbrauch hinterlegt ist. km = kWh ÷ Verbrauch × 100,
+   Kosten = kWh × Satz, Preis = Kosten ÷ km × 100. Ohne Satz bleiben Preis und
+   Kosten leer statt 0. */
+function blattTabelleEauto(monate, summe, verbrauch, satz) {
+  const km = k => (k > 0 && verbrauch > 0) ? k / verbrauch * 100 : null;
+  const kosten = k => satz == null ? null : k * satz;
+  const zeile = (label, k) => {
+    const kmv = km(k), ko = kosten(k);
+    const pr = (ko != null && kmv) ? ko / kmv * 100 : null;
+    return `<tr>
+      <td>${esc(label)}</td>
+      <td class="${k ? '' : 'leise'}">${zahl(k)}</td>
+      <td class="${kmv == null ? 'leise' : ''}">${kmv == null ? '—' : zahl(kmv, 0)}</td>
+      <td class="${pr == null ? 'leise' : ''}">${pr == null ? '—' : eur(pr)}</td>
+      <td class="${ko == null ? 'leise' : ''}">${ko == null ? '—' : eur(ko)}</td></tr>`;
+  };
+  return `<div class="tabrahmen"><table class="mt bl-mt">
+    <thead><tr><th>Monat</th><th>Geladen</th><th>km</th>
+      <th>Preis/100 km</th><th>Kosten</th></tr></thead>
+    <tbody>${monate.map(m => zeile(m.label, m.kwh || 0)).join('')}</tbody>
+    <tfoot>${zeile('Summe', summe.kwh || 0)}</tfoot>
+  </table></div>`;
+}
+
+/* Die Monatstabelle ohne E-Auto: Monat · Geladen · Netz · (PV · Akku | Eigen) —
+   wie der Verlauf, nur für den Zeitraum und ohne Pager. */
+function blattTabelleStrom(monate, summe) {
+  const drei = summe.dreiteilig;
+  const zelle = v => v == null ? '<td class="leise">—</td>' : `<td>${zahl(v)}</td>`;
+  const zeile = (label, m) => `<tr>
+    <td>${esc(label)}</td>
+    <td class="${m.kwh ? '' : 'leise'}">${zahl(m.kwh)}</td>
+    ${zelle(m.extern_kwh)}
+    ${drei ? zelle(m.pv_kwh) + zelle(m.speicher_kwh) : zelle(m.eigen_kwh)}</tr>`;
+  return `<div class="tabrahmen"><table class="mt bl-mt">
+    <thead><tr><th>Monat</th><th>Geladen</th><th>Netz</th>
+      ${drei ? '<th>PV</th><th>Akku</th>' : '<th>Eigen</th>'}</tr></thead>
+    <tbody>${monate.map(m => zeile(m.label, m)).join('')}</tbody>
+    <tfoot>${zeile('Summe', summe)}</tfoot>
+  </table></div>`;
+}
+
+/* N179/N184 — die Abrechnung als vollständiges HTML-Blatt: dieselben Blöcke und
+   Zahlen wie das PDF, in derselben Reihenfolge, nur responsiv. Kopf, Empfänger,
+   Diagramm je Monat mit Legende, Monatstabelle mit Kosten, E-Auto, Satz mit
+   Herkunft und der Rechnungsbetrag. Grundlage ist die zuletzt geholte Abrechnung
+   (`letzteAbrechnung`) und die Nutzerzeile daraus, ergänzt um die Monate aus dem
+   Verlauf. Fehlt die Zeile wider Erwarten, fällt es auf den Mailtext zurück.
+
+   Zwei Blöcke des PDFs fehlen inline, weil `/abrechnung` ihre Daten nicht
+   mitliefert: der Benzin-Kostenvergleich (Verbrauch/Preis des Vergleichs­benziners
+   aus der KI) und die Bankverbindung des Objekts. Sie werden — wie im PDF bei
+   fehlenden Daten — schlicht weggelassen; ein Hinweis nennt, dass beide im
+   angehängten PDF stehen. Erfunden wird nichts. */
+function abrechnungBlatt(nid, fallbackText, breite) {
   const d = letzteAbrechnung;
   const row = d && (d.nutzer || []).find(n => Number(n.nutzer_id) === Number(nid));
   if (!d || !row) return `<pre class="mailtext">${esc(fallbackText || '')}</pre>`;
+
+  // Diagramm + Legende + Monatstabelle aus den Monaten des Zeitraums.
+  const monate = periodeMonate(d);
+  const summe = periodeSumme(monate);
+  const verbrauch = row.verbrauch_kwh_100km || 0;
+  let verlaufBlock = '';
+  if (monate.length) {
+    const drei = summe.dreiteilig;
+    const leg = legende(drei
+      ? [{ name: 'Netz', farbe: NETZ }, { name: 'PV direkt', farbe: PV },
+         { name: 'Akku', farbe: AKKU }]
+      : [{ name: 'Netz', farbe: NETZ },
+         { name: 'Eigener Strom (PV + Akku)', farbe: EIGEN }]);
+    const tabelle = verbrauch > 0
+      ? blattTabelleEauto(monate, summe, verbrauch, d.satz)
+      : blattTabelleStrom(monate, summe);
+    verlaufBlock = `<div class="bl-block">
+      <span class="bl-abschnitt">Geladene Energie je Monat</span>
+      ${grafik(monate, breite)}${leg}${tabelle}</div>`;
+  }
+
+  // E-Auto: Modell, Verbrauch, energetisches Benzin-Äquivalent (kein Kosten-
+  // vergleich — der bräuchte den Vergleichsbenziner, den `/abrechnung` nicht
+  // liefert).
+  let eautoBlock = '';
+  if (verbrauch > 0) {
+    const liter = d.benzin_kwh_pro_liter ? verbrauch / d.benzin_kwh_pro_liter : null;
+    eautoBlock = `<div class="bl-block">
+      <span class="bl-abschnitt">E-Auto${row.e_auto_modell
+        ? ' · ' + esc(row.e_auto_modell) : ''}</span>
+      <span class="bl-sd">Verbrauch ${zahl(verbrauch, 1)} kWh/100 km. Defensive
+        Fahrweise, Ladeverluste eingerechnet.</span>
+      ${liter != null ? `<span class="bl-sq">Energie-Äquivalent:
+        ${zahl(verbrauch, 1)} kWh entsprechen rund ${zahl(liter, 1)} l Benzin
+        (Annahme ${zahl(d.benzin_kwh_pro_liter, 1)} kWh je Liter). Das vergleicht
+        nur die Energie, nicht die Kosten.</span>` : ''}</div>`;
+  }
+
+  // Satz je kWh mit Herkunft.
   const rabatt = d.satz_rabatt == null ? ''
     : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
   const regel = d.satz_netz == null || d.satz_eigen == null ? ''
     : `<span class="bl-sd">Netz ${satzText(d.satz_netz)} · eigener Strom
         ${satzText(d.satz_eigen)}${rabatt}. Der Satz einer Ladung mischt beide
         nach den Mengen des Zeitraums.</span>`;
-  const eco = row.km == null ? ''
-    : `<span class="bl-eco">🚗 rund ${zahl(row.km, 0)} km gefahren${
-        row.preis_100km != null ? ` · ${eur(row.preis_100km)} / 100 km` : ''}${
-        row.liter_100km != null
-          ? ` · energetisch ≈ ${zahl(row.liter_100km, 1)} l Benzin/100 km` : ''}</span>`;
+
   return `<div class="blatt">
     <div class="bl-kopf">
       <span class="bl-titel">Abrechnung E-Tankstelle</span>
@@ -1461,16 +1592,20 @@ function abrechnungBlatt(nid, fallbackText) {
     </div>
     <div class="bl-empf"><span class="bl-name">${esc(row.name)}</span>
       ${row.email ? `<span class="bl-mail">${esc(row.email)}</span>` : ''}</div>
-    <div class="bl-satz"><span class="bl-sw">${satzText(row.satz)}</span>
-      ${regel}
-      ${d.satz_herkunft ? `<span class="bl-sq">${esc(d.satz_herkunft)}</span>` : ''}</div>
-    ${eco}
+    ${verlaufBlock}
+    ${eautoBlock}
+    <div class="bl-block">
+      <span class="bl-abschnitt">Satz je kWh</span>
+      <div class="bl-satz"><span class="bl-sw">${satzText(row.satz)}</span>
+        ${regel}
+        ${d.satz_herkunft ? `<span class="bl-sq">${esc(d.satz_herkunft)}</span>` : ''}</div>
+    </div>
     <div class="bl-betrag">
       <span class="bl-bl"><span class="bl-bk">Rechnungsbetrag</span>
         <span class="bl-bkwh">${kwh(row.kwh)} geladen</span></span>
       <span class="bl-bb">${row.betrag == null ? '—' : eur(row.betrag)}</span></div>
-    <span class="bl-hint">Der vollständige Beleg — Monatsverlauf, Kostenvergleich
-      und Bankverbindung — hängt der Mail als PDF an.</span>
+    <span class="bl-hint">Der Benzin-Kostenvergleich und die Bankverbindung
+      stehen im PDF, das der Mail anhängt.</span>
   </div>`;
 }
 
