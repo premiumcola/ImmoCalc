@@ -153,8 +153,6 @@
                    font-style:normal;text-transform:uppercase;
                    color:var(--teal-d);background:var(--teal-l);
                    border-radius:999px;padding:4px 9px}
-  .fgruppe .fgs{margin:6px 0 12px;font:400 11.5px var(--body);color:var(--soft);
-                line-height:1.55;max-width:620px}
 
   /* N154 — die Hinweise aus den eigenen Zahlen. Ruhig, keine Signalfarbe: das
      ist kein Alarm, sondern ein Hebel. */
@@ -350,6 +348,45 @@
                line-height:1.6}
   .verlaufleer p{margin:0 0 8px}
   .verlaufleer p:last-child{margin:0}
+
+  /* ---- N183: Erklärtexte in Info-Popups -------------------------------
+     Dieselbe Mechanik und Optik wie auf der E-Tankstelle (tankstelle.html,
+     N181): statt einer Textwand am Kartenanfang steht ein kleines i hinter dem
+     Titel. Eine Karte unter dem Icon auf dem Desktop, ein Blatt von unten auf
+     dem iPhone, Escape/Klick daneben/„Verstanden" schließt. Kein neuer Text —
+     nur ein anderer Ort. */
+  .titelinfo{display:flex;align-items:center;gap:1px;min-width:0}
+  .tinfo{display:inline-flex;align-items:center;justify-content:center;
+         width:44px;height:44px;margin:-13px -10px -13px -4px;padding:0;border:none;
+         background:none;color:var(--soft);cursor:pointer;border-radius:50%;
+         flex:none;-webkit-tap-highlight-color:transparent}
+  .tinfo svg{width:17px;height:17px;display:block}
+  .tinfo:hover{color:var(--teal-d)}
+  .tinfo:focus-visible{outline:2px solid var(--teal-d);outline-offset:2px}
+  /* Die zwei Blöcke „Verbrauchsseite" / „Erzeugerseite" tragen ihr i in der
+     Untertitel-Zeile (.fgt, auf der Grundlinie ausgerichtet) — dort sitzt das
+     Icon mittig zur Textzeile statt auf der Grundlinie. */
+  .fgt .tinfo{margin:-13px -8px -13px 1px;align-self:center}
+  .tinfo-overlay{position:fixed;inset:0;z-index:1200;background:transparent}
+  .tinfo-card{position:fixed;z-index:1201;background:var(--sheet);
+              border-radius:14px;box-shadow:0 22px 55px -14px rgba(22,38,44,.45);
+              padding:16px 18px;width:320px;max-width:calc(100vw - 24px);
+              color:var(--ink)}
+  .tinfo-titel{font:700 15px var(--disp);letter-spacing:-.01em;margin-bottom:7px}
+  .tinfo-text{font:400 13px/1.6 var(--body);color:var(--ink);margin:0 0 13px}
+  .tinfo-ok{min-height:40px;padding:0 16px;border:none;border-radius:10px;
+            background:var(--teal-l);color:var(--teal-d);cursor:pointer;
+            font:600 12.5px var(--disp)}
+  .tinfo-ok:hover{background:var(--teal);color:#fff}
+  @media(max-width:700px){
+    .tinfo-overlay.sheet{background:rgba(22,38,44,.35)}
+    .tinfo-card.sheet{left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;
+      border-radius:18px 18px 0 0;
+      padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+      animation:tinfo-auf .18s ease-out}
+    .tinfo-ok{min-height:44px;width:100%}
+  }
+  @keyframes tinfo-auf{from{transform:translateY(100%)}to{transform:translateY(0)}}
 </style>
 </head>
 <body>
@@ -388,6 +425,115 @@ import { auswahlfeld } from './assets/auswahl.js';
 const sub = document.getElementById('sub');
 const inhalt = document.getElementById('inhalt');
 const kwh = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' kWh';
+
+/* =======================================================================
+   N183 — Erklärtexte in Info-Popups. Die längeren Fließtexte am Anfang der
+   Karten wandern hinter ein kleines i am jeweiligen Titel; ein Tap zeigt den
+   Text als Popover. Dieselbe Mechanik und Optik wie auf der E-Tankstelle
+   (tankstelle.html, N181): Karte unter dem Icon auf dem Desktop, Blatt von
+   unten auf dem iPhone, Escape/Klick daneben schließt. Die Texte sind
+   unverändert — nur ihr Ort ändert sich; die Ansicht bleibt ruhig ohne die
+   Wand. Kurze Feld-Hinweise und dynamische Status-Texte bleiben, wo sie sind.
+   ======================================================================= */
+const INFO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    aria-hidden="true"><circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+
+const INFOS = {
+  verlauf: { titel: 'Verlauf', text:
+    'Die Anschaffung steht als negativer Betrag da und wird Jahr für Jahr '
+    + 'aufgefressen: von der Direktnutzung (PV-Strom, den die Mieter bezahlt '
+    + 'haben), der Einspeisevergütung und dem E-Tanken. Diese Werte kommen live '
+    + 'aus den Nebenkostenjahren; der Balken davor ist der Vorlauf aus den '
+    + 'Stammdaten — die Zeit vor der ersten Abrechnung. Durchstößt der Balken '
+    + 'die Nulllinie, ist die Anlage amortisiert.' },
+  verbrauchsseite: { titel: 'Verbrauchsseite', text:
+    'Woher der im Haus verbrauchte Strom kam. Aus diesen drei Mengen zieht die '
+    + 'Stromkette im Nebenkostenzeitraum ihre Anteile, und aus ihnen kommt die '
+    + 'Autarkiequote.' },
+  erzeugerseite: { titel: 'Erzeugerseite', text:
+    'Was die Anlage produziert hat und wie viel davon wirklich ins Netz ging — '
+    + 'dafür zahlt der Netzbetreiber. In Verbrauch und Autarkie geht diese Seite '
+    + 'nicht ein. Ohne eigenen Betrag folgt die Vergütung den EEG-Stufen '
+    + '(0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) auf Basis der Anlagenleistung aus '
+    + 'den Stammdaten.' },
+  tankstelle: { titel: 'E-Tankstelle', text:
+    'Der E-Auto-Strom gehört der PV-Anlage: er wird der ladenden Person '
+    + 'berechnet und zahlt auf die Amortisation ein. Der Satz je kWh wird aus '
+    + 'den Stromkosten des Abrechnungszeitraums abgeleitet — Netzstrom zum '
+    + 'Durchschnittspreis des Netzbezugs, eigener Strom 10 % darunter. Er steht '
+    + 'bei der E-Tankstelle.' },
+  eigentuemer: { titel: 'PV-Eigentümer', text:
+    'Die PV-Anlage ist ein eigenes Investment: sie kann anderen gehören als das '
+    + 'Haus. Zugeordnet wird aus den vorhandenen Eigentümern, die Anteile werden '
+    + 'in Tausendsteln (‰) vergeben. Ohne Zuordnung gilt die Vorgabe 5/6 + 1/6.' },
+};
+
+/* Das i-Icon als String — ein echter <button> mit aria-label, 44 px Touch-Ziel,
+   per Tastatur bedienbar. */
+function infoKnopf(key) {
+  const i = INFOS[key];
+  if (!i) return '';
+  return `<button type="button" class="tinfo" data-info="${key}"
+    aria-label="${esc(i.titel)}: Erklärung anzeigen"
+    title="Erklärung anzeigen">${INFO_ICON}</button>`;
+}
+
+let infoOffen = null;
+function infoEsc(e) {
+  if (e.key !== 'Escape' || !infoOffen) return;
+  e.preventDefault();
+  e.stopPropagation();
+  infoSchliessen();
+}
+function infoSchliessen() {
+  if (!infoOffen) return;
+  document.removeEventListener('keydown', infoEsc, true);
+  infoOffen.remove();
+  infoOffen = null;
+}
+function infoOeffnen(anker, key) {
+  const eintrag = INFOS[key];
+  if (!eintrag) return;
+  infoSchliessen();
+  const sheet = window.matchMedia('(max-width:700px)').matches;
+  const overlay = document.createElement('div');
+  overlay.className = 'tinfo-overlay' + (sheet ? ' sheet' : '');
+  const card = document.createElement('div');
+  card.className = 'tinfo-card' + (sheet ? ' sheet' : '');
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', eintrag.titel);
+  card.innerHTML = `<div class="tinfo-titel">${esc(eintrag.titel)}</div>
+    <p class="tinfo-text">${esc(eintrag.text)}</p>
+    <button type="button" class="tinfo-ok" data-info-zu>Verstanden</button>`;
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  // Auf dem Desktop dockt die Karte unter dem Icon an — und klappt darüber, wenn
+  // unten kein Platz ist; am Rand wird sie ins Fenster gezogen (wie tankstelle).
+  if (!sheet) {
+    const r = anker.getBoundingClientRect();
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12));
+    let top = r.bottom + 8;
+    if (top + ch > window.innerHeight - 12) top = Math.max(12, r.top - ch - 8);
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+  }
+  overlay.addEventListener('click', e => { if (e.target === overlay) infoSchliessen(); });
+  document.addEventListener('keydown', infoEsc, true);
+  infoOffen = overlay;
+  card.querySelector('.tinfo-ok').focus();
+}
+
+/* Ein Fänger am Dokument — das i sitzt in den Titeln, die bei jedem Neuzeichnen
+   ersetzt werden; ein Lauscher je Knopf ginge dabei verloren. */
+document.addEventListener('click', e => {
+  const inf = e.target.closest('[data-info]');
+  if (inf) { e.preventDefault(); e.stopPropagation(); return infoOeffnen(inf, inf.dataset.info); }
+  const infZu = e.target.closest('[data-info-zu]');
+  if (infZu) return infoSchliessen();
+});
 
 /* Die Eingabefelder — dieselbe Liste, aus der die Maske gebaut und die Werte
    ausgelesen werden. Der dritte Eintrag ist die Einheit, der vierte der `step`.
@@ -455,13 +601,8 @@ function skelett() {
   const jahr = jahrWahl.wert();
   return `
     <div class="karte" id="verlauf">
-      <div class="hh"><h3>Verlauf</h3></div>
-      <p class="hint">Die Anschaffung steht als negativer Betrag da und wird
-        Jahr für Jahr aufgefressen: von der Direktnutzung (PV-Strom, den die
-        Mieter bezahlt haben), der Einspeisevergütung und dem E-Tanken. Diese
-        Werte kommen live aus den Nebenkostenjahren; der Balken davor ist der
-        Vorlauf aus den Stammdaten — die Zeit vor der ersten Abrechnung.
-        Durchstößt der Balken die Nulllinie, ist die Anlage amortisiert.</p>
+      <div class="hh"><span class="titelinfo"><h3>Verlauf</h3>
+        ${infoKnopf('verlauf')}</span></div>
       <div class="kpi" id="vKpi"></div>
       <div id="vGrafik"></div>
       <div id="vTabelle"></div>
@@ -520,21 +661,15 @@ function skelett() {
       <div id="seBild"></div>
       <div id="seBox"></div>
       <div class="fgruppe">
-        <span class="fgt">Verbrauchsseite <em>maßgeblich</em></span>
-        <p class="fgs">Woher der im Haus verbrauchte Strom kam. Aus diesen drei
-          Mengen zieht die Stromkette im Nebenkostenzeitraum ihre Anteile, und
-          aus ihnen kommt die Autarkiequote.</p>
+        <span class="fgt">Verbrauchsseite <em>maßgeblich</em>${
+          infoKnopf('verbrauchsseite')}</span>
         <div class="raster">
           ${F_JAHR_VERBRAUCH.map(f => feldHtml(...f)).join('')}
         </div>
       </div>
       <div class="fgruppe">
-        <span class="fgt">Erzeugerseite <em>Einspeisevergütung</em></span>
-        <p class="fgs">Was die Anlage produziert hat und wie viel davon
-          wirklich ins Netz ging — dafür zahlt der Netzbetreiber. In Verbrauch
-          und Autarkie geht diese Seite nicht ein. Ohne eigenen Betrag folgt die
-          Vergütung den EEG-Stufen (0–10 kWp 8,2 ct, 10–40 kWp 7,1 ct) auf Basis
-          der Anlagenleistung aus den Stammdaten.</p>
+        <span class="fgt">Erzeugerseite <em>Einspeisevergütung</em>${
+          infoKnopf('erzeugerseite')}</span>
         <div class="raster">
           ${F_JAHR_ERZEUGUNG.map(f => feldHtml(...f)).join('')}
         </div>
@@ -548,26 +683,16 @@ function skelett() {
     <!-- N132/N139 — Nutzer und Abrechnungen der Tankstelle haben eine eigene
          Seite; hier steht nur, was zur Anlage gehört: der Satz und was zufließt. -->
     <div class="karte">
-      <div class="hh"><h3>E-Tankstelle</h3><span class="jahrchip">${jahr}</span></div>
-      <p class="hint">Der E-Auto-Strom gehört der PV-Anlage: er wird der
-        ladenden Person berechnet und zahlt auf die Amortisation ein.
-        <!-- N148 — der Satz wird nicht mehr eingegeben, sondern aus den
-             Stromkosten abgeleitet: Netzstrom zum Durchschnittspreis des
-             Netzbezugs, eigener Strom 10 % darunter. -->
-        Der Satz je kWh wird aus den Stromkosten des Abrechnungszeitraums
-        abgeleitet — Netzstrom zum Durchschnittspreis des Netzbezugs, eigener
-        Strom 10 % darunter. Er steht bei der E-Tankstelle.</p>
+      <div class="hh"><span class="titelinfo"><h3>E-Tankstelle</h3>
+        ${infoKnopf('tankstelle')}</span><span class="jahrchip">${jahr}</span></div>
       <div class="kpi" id="tank"></div>
       <a class="verweis" id="tankLink" href="tankstelle.html">
         Nutzer und Abrechnungen verwalten →</a>
     </div>
 
     <div class="karte">
-      <div class="hh"><h3>PV-Eigentümer</h3></div>
-      <p class="hint">Die PV-Anlage ist ein eigenes Investment: sie kann anderen
-        gehören als das Haus. Zugeordnet wird aus den vorhandenen Eigentümern,
-        die Anteile werden in Tausendsteln (‰) vergeben. Ohne Zuordnung gilt
-        die Vorgabe 5/6 + 1/6.</p>
+      <div class="hh"><span class="titelinfo"><h3>PV-Eigentümer</h3>
+        ${infoKnopf('eigentuemer')}</span></div>
       <!-- N149 — hier steht nur, wer wirklich einen Anteil hält; hinzugefügt
            wird über die Auswahl darunter. Gespeichert wird in den Stammdaten
            der Anlage, nicht am Jahr. -->
