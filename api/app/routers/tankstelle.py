@@ -995,6 +995,61 @@ def _versendet_merken(session: Session, slug: str, jahr: int, quartal: int,
            date.today().isoformat())
 
 
+def _expand_quartale(roh) -> list[int]:
+    """Eine Quartalsauswahl auf die einzelnen Quartale 1–4 auflösen.
+
+    ``0`` (ganzes Jahr) wird zu allen vier Quartalen; eine leere Auswahl bleibt
+    leer. Unbrauchbare Werte fallen still weg — die Marker sind grob (je
+    Quartal), der Feinschliff über abgewählte Monate spielt hier keine Rolle."""
+    qs: set[int] = set()
+    for q in roh or ():
+        if q == 0:
+            qs.update({1, 2, 3, 4})
+        elif q in (1, 2, 3, 4):
+            qs.add(q)
+    return sorted(qs)
+
+
+def _versand_quartale(data: "VersandIn") -> list[int]:
+    """Die Quartale, die ein Versand betrifft — als Marker-Granularität (N182).
+
+    Die abgewählten Monate (`aus`) bleiben unberücksichtigt: der Marker merkt
+    sich das Quartal, nicht den einzelnen Monat."""
+    return _expand_quartale(data.quartale or [data.quartal])
+
+
+def abgerechnet_marker(session: Session, slug: str,
+                       jahr: int = 0) -> list[dict]:
+    """Die abgerechnet-Marker eines Objekts: welche (jahr, quartal, nutzer) sind
+    als abgerechnet/verschickt festgehalten (N182).
+
+    Grundlage ist derselbe Schlüssel wie beim Autoversand
+    (``tankstelle_versendet:<slug>:<jahr>:Q<quartal>:<nutzer_id>``) — automatisch
+    und von Hand gesetzte Marker stehen damit im selben Namensraum. Mit `jahr`
+    lässt sich auf ein Jahr einschränken."""
+    prefix = f"{S_VERSENDET}:{slug}:"
+    ergebnis: list[dict] = []
+    for e in session.exec(select(Einstellung).where(
+            Einstellung.schluessel.like(prefix + "%"))).all():
+        if not e.wert:                       # geleerter Marker zählt nicht
+            continue
+        teile = e.schluessel[len(prefix):].split(":")
+        if len(teile) != 3:
+            continue
+        try:
+            j = int(teile[0])
+            q = int(teile[1].lstrip("Q"))
+            nid = int(teile[2])
+        except ValueError:
+            continue
+        if jahr and j != jahr:
+            continue
+        ergebnis.append({"jahr": j, "quartal": q, "nutzer_id": nid,
+                         "am": e.wert})
+    return sorted(ergebnis, key=lambda m: (m["jahr"], m["quartal"],
+                                           m["nutzer_id"]))
+
+
 # ==========================================================================
 # Datenquellen — erst die Wallbox, dann die erfassten Ladungen
 # ==========================================================================
@@ -1693,7 +1748,8 @@ def versenden(slug: str, data: VersandIn,
     Ohne Betrag wird nicht verschickt: eine Rechnung über 0 € ist kein Vorgang,
     sondern eine Irritation. Dasselbe gilt für einen Zeitraum ohne
     abgeleiteten Satz (N148) — dann fehlt der Preis, nicht die Menge."""
-    daten = _abrechnung(session, o, slug, data.jahr or date.today().year,
+    jahr = data.jahr or date.today().year
+    daten = _abrechnung(session, o, slug, jahr,
                         data.quartal, quartale=data.quartale or [data.quartal],
                         aus=set(data.aus))
     zeile = _zeile_holen(daten, data.nutzer_id, data.name)
@@ -1708,10 +1764,26 @@ def versenden(slug: str, data: VersandIn,
         raise HTTPException(400, "Für diesen Zeitraum steht noch kein Preis je "
                                  "kWh fest. " + daten["satz_grund"])
 
+    # N182 — ein bereits abgerechnetes (jahr, quartal, nutzer) wird nicht erneut
+    # verschickt. Derselbe Riegel wie im Autoversand (N165): der Marker sperrt
+    # den Versand, ganz gleich, ob er automatisch oder von Hand gesetzt wurde.
+    quartale_sel = _versand_quartale(data)
+    if data.nutzer_id and any(
+            ist_versendet(session, o.slug, jahr, q, data.nutzer_id)
+            for q in quartale_sel):
+        raise HTTPException(400, f"{zeile['name']} ist für diese Periode "
+                                 "bereits abgerechnet — kein erneuter Versand.")
+
     try:
         _sende_abrechnung(session, o, daten, zeile, adresse)
     except MailFehler as fehler:
         raise HTTPException(400, str(fehler)) from fehler
+    # N182 — den Versand festhalten, damit die Periode als abgerechnet erscheint
+    # (Haken) und ein zweiter Versand gesperrt ist.
+    if data.nutzer_id:
+        for q in quartale_sel:
+            _versendet_merken(session, o.slug, jahr, q, data.nutzer_id)
+        session.commit()
     log.info("E-Tankstelle %s: Abrechnung %s an %s versendet (mit PDF)", o.slug,
              daten["label"], adresse)
     return {"ok": True, "an": adresse, "label": daten["label"],
@@ -1790,6 +1862,78 @@ def zuordnung_setzen(slug: str, data: ZuordnungIn,
              len(daten["ausschluss"]))
     return {"ok": True, "regeln": daten["regeln"],
             "ausschluss": daten["ausschluss"]}
+
+
+# ==========================================================================
+# N182 — abgerechnete Perioden merken, kennzeichnen, Versand sperren
+#
+# Ein abgerechnet-Marker ist derselbe Versendet-Marker wie beim Autoversand
+# (N165). Wer eine Periode von Hand als abgerechnet setzt (etwa den alten
+# 4-Monats-Initialstand), sperrt damit den erneuten Versand genauso, wie es der
+# automatische Versand nach dem Verschicken tut.
+# ==========================================================================
+
+class AbgerechnetIn(BaseModel):
+    """Eine Periode als abgerechnet setzen oder die Markierung entfernen.
+
+    `quartale` (oder das einzelne `quartal`, ``0`` = ganzes Jahr) nennt die
+    betroffenen Quartale; `nutzer_id` ``0`` meint alle aktuell gelisteten
+    Nutzer (der Initialstand wird für die ganze Station gesetzt)."""
+    jahr: int
+    quartale: list[int] = []
+    quartal: int = 0
+    nutzer_id: int = 0
+    abgerechnet: bool = True
+
+
+@router.get("/{slug}/abgerechnet")
+def abgerechnet_zeigen(slug: str, jahr: int = Query(default=0),
+                       session: Session = Depends(get_session),
+                       o: Objekt = Depends(objekt_holen)) -> dict:
+    """Welche Perioden (jahr, quartal, nutzer) sind als abgerechnet festgehalten
+    (N182). Mit `jahr` auf ein Jahr eingeschränkt."""
+    return {"abgerechnet": abgerechnet_marker(session, o.slug, jahr)}
+
+
+@router.put("/{slug}/abgerechnet")
+def abgerechnet_setzen(slug: str, data: AbgerechnetIn,
+                       session: Session = Depends(get_session),
+                       o: Objekt = Depends(objekt_holen)) -> dict:
+    """Eine Periode von Hand als abgerechnet markieren oder die Markierung
+    entfernen (N182).
+
+    Setzen schreibt denselben Marker wie der Versand — damit sperrt ein manuell
+    gesetzter Marker den Versand genauso. Entfernen nimmt den Marker der
+    genannten Perioden/Nutzer wieder heraus (der Korrekturweg)."""
+    if not data.jahr:
+        raise HTTPException(400, "Zu welchem Jahr soll die Periode als "
+                                 "abgerechnet gelten?")
+    quartale = _expand_quartale(data.quartale or [data.quartal])
+    if not quartale:
+        raise HTTPException(400, "Kein Quartal ausgewählt.")
+    liste = nutzer_lesen(session, o)
+    if data.nutzer_id:
+        if not any(n["id"] == data.nutzer_id for n in liste):
+            raise HTTPException(404, "Nutzer nicht gefunden")
+        nutzer_ids = [data.nutzer_id]
+    else:
+        nutzer_ids = [n["id"] for n in liste]
+    for q in quartale:
+        for nid in nutzer_ids:
+            key = _versendet_schluessel(o.slug, data.jahr, q, nid)
+            if data.abgerechnet:
+                _setze(session, key, date.today().isoformat())
+            else:
+                vorhanden = session.get(Einstellung, key)
+                if vorhanden is not None:
+                    session.delete(vorhanden)
+    session.commit()
+    log.info("E-Tankstelle %s: %d Periode(n) je %d Nutzer %s", o.slug,
+             len(quartale), len(nutzer_ids),
+             "als abgerechnet markiert" if data.abgerechnet
+             else "aus der Abrechnung genommen")
+    return {"ok": True,
+            "abgerechnet": abgerechnet_marker(session, o.slug, data.jahr)}
 
 
 # ==========================================================================

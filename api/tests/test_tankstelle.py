@@ -1739,3 +1739,135 @@ def test_pdf_bleibt_auf_einer_a4_seite_auch_im_vollen_fall():
     assert max(ys) < SEITE_H
     # Der Rechnungsbetrag steht auf dem Blatt.
     assert b"686,42 EUR" in pdf and b"Rechnungsbetrag" in pdf
+
+
+# --------------------------------------------------------------------------
+# 9) N182 — abgerechnete Perioden merken, kennzeichnen, Versand sperren
+# --------------------------------------------------------------------------
+
+def test_abgerechnet_marker_lesen_setzen_entfernen(client):
+    """Ein Quartal von Hand als abgerechnet setzen (für den Initialstand), es
+    wieder lesen und entfernen. `nutzer_id=0` markiert alle gelisteten Nutzer."""
+    slug = _neues_objekt(client, "Markerhaus")
+    a = _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    b = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+
+    # Anfangs leer.
+    assert client.get(f"/api/tankstelle/{slug}/abgerechnet").json()[
+        "abgerechnet"] == []
+
+    # Q3 2025 für alle Nutzer als abgerechnet markieren.
+    r = client.put(f"/api/tankstelle/{slug}/abgerechnet",
+                   json={"jahr": 2025, "quartal": 3, "nutzer_id": 0,
+                         "abgerechnet": True})
+    assert r.status_code == 200, r.text
+    marker = r.json()["abgerechnet"]
+    assert {(m["jahr"], m["quartal"], m["nutzer_id"]) for m in marker} == \
+        {(2025, 3, a["id"]), (2025, 3, b["id"])}
+
+    # Über die GET-Route mit Jahresfilter genauso.
+    d = client.get(f"/api/tankstelle/{slug}/abgerechnet",
+                   params={"jahr": 2025}).json()["abgerechnet"]
+    assert len(d) == 2
+    # Ein anderes Jahr trägt nichts.
+    assert client.get(f"/api/tankstelle/{slug}/abgerechnet",
+                      params={"jahr": 2024}).json()["abgerechnet"] == []
+
+    # Nur für Alicia wieder entfernen.
+    client.put(f"/api/tankstelle/{slug}/abgerechnet",
+               json={"jahr": 2025, "quartal": 3, "nutzer_id": a["id"],
+                     "abgerechnet": False})
+    rest = client.get(f"/api/tankstelle/{slug}/abgerechnet").json()["abgerechnet"]
+    assert {(m["quartal"], m["nutzer_id"]) for m in rest} == {(3, b["id"])}
+
+
+def test_abgerechnet_ganzes_jahr_trifft_alle_vier_quartale(client):
+    """`quartal=0` (ganzes Jahr) markiert alle vier Quartale."""
+    slug = _neues_objekt(client, "Jahrmarkerhaus")
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    client.put(f"/api/tankstelle/{slug}/abgerechnet",
+               json={"jahr": 2025, "quartal": 0, "nutzer_id": n["id"],
+                     "abgerechnet": True})
+    marker = client.get(f"/api/tankstelle/{slug}/abgerechnet").json()[
+        "abgerechnet"]
+    assert sorted(m["quartal"] for m in marker) == [1, 2, 3, 4]
+
+
+def test_versand_fuer_abgerechnete_periode_wird_geblockt(client, monkeypatch):
+    """Der erste Versand geht durch und merkt sich die Periode; ein zweiter
+    Versand derselben Periode an denselben Nutzer wird gesperrt."""
+    slug = _neues_objekt(client, "Sperrhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-07-04")
+
+    postfach = _Postfach()
+    monkeypatch.setattr(t, "zugang", lambda session: postfach)
+
+    erste = client.post(f"/api/tankstelle/{slug}/versand",
+                        json={"nutzer_id": n["id"], "jahr": 2025, "quartal": 3})
+    assert erste.status_code == 200, erste.text
+    assert len(postfach.gesendet) == 1
+    # Der Versand hat die Periode als abgerechnet festgehalten.
+    marker = client.get(f"/api/tankstelle/{slug}/abgerechnet").json()[
+        "abgerechnet"]
+    assert (2025, 3, n["id"]) in {
+        (m["jahr"], m["quartal"], m["nutzer_id"]) for m in marker}
+
+    # Zweiter Versand: gesperrt, kein weiterer Mailversand.
+    zweite = client.post(f"/api/tankstelle/{slug}/versand",
+                         json={"nutzer_id": n["id"], "jahr": 2025, "quartal": 3})
+    assert zweite.status_code == 400
+    assert "bereits abgerechnet" in zweite.json()["detail"]
+    assert len(postfach.gesendet) == 1
+
+
+def test_manueller_marker_sperrt_den_versand_genauso(client, monkeypatch):
+    """Ein von Hand gesetzter Marker (ohne je verschickt zu haben) löst denselben
+    Riegel aus wie ein automatischer — der erneute Versand wird blockiert."""
+    slug = _neues_objekt(client, "Handsperrhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-07-04")
+
+    # Nie verschickt, nur von Hand als abgerechnet gesetzt.
+    client.put(f"/api/tankstelle/{slug}/abgerechnet",
+               json={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"],
+                     "abgerechnet": True})
+
+    postfach = _Postfach()
+    monkeypatch.setattr(t, "zugang", lambda session: postfach)
+    r = client.post(f"/api/tankstelle/{slug}/versand",
+                    json={"nutzer_id": n["id"], "jahr": 2025, "quartal": 3})
+    assert r.status_code == 400
+    assert "bereits abgerechnet" in r.json()["detail"]
+    assert postfach.gesendet == []
+
+    # Marker entfernen → Versand ist wieder möglich.
+    client.put(f"/api/tankstelle/{slug}/abgerechnet",
+               json={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"],
+                     "abgerechnet": False})
+    r2 = client.post(f"/api/tankstelle/{slug}/versand",
+                     json={"nutzer_id": n["id"], "jahr": 2025, "quartal": 3})
+    assert r2.status_code == 200, r2.text
+    assert len(postfach.gesendet) == 1
+
+
+def test_manueller_marker_blockt_auch_den_autoversand(client, monkeypatch):
+    """Der manuelle Marker greift auch im Autoversand: eine als abgerechnet
+    markierte Periode geht nicht automatisch hinaus."""
+    slug = _neues_objekt(client, "Handautohaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = _nutzer(client, slug, "Marvin", "handauto@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=50.0, datum="2025-08-11")
+    client.put(f"/api/tankstelle/{slug}/autoversand", json={"aktiv": True})
+    client.put(f"/api/tankstelle/{slug}/abgerechnet",
+               json={"jahr": 2025, "quartal": 3, "nutzer_id": n["id"],
+                     "abgerechnet": True})
+
+    postfach = _Postfach()
+    monkeypatch.setattr(t, "zugang", lambda session: postfach)
+    with Session(db_modul.engine) as s:
+        t.versand_faellig_pruefen(s, heute=date(2025, 10, 1))
+    assert [g for g in postfach.gesendet
+            if g[0] == "handauto@example.invalid"] == []

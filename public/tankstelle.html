@@ -365,6 +365,66 @@
         line-height:1.6;margin:0 0 4px}
   .leer b{display:block;font:600 14px var(--disp);color:var(--ink);
           margin-bottom:6px;letter-spacing:-.01em}
+
+  /* ---- N181: Erklärtexte in Info-Popups -------------------------------
+     Statt einer Textwand am Kartenanfang steht ein kleines i hinter dem Titel.
+     Dieselbe Mechanik wie die Lexikon-Hilfe (immo.js, nur lesen): eine Karte
+     unter dem Icon auf dem Desktop, ein Blatt von unten auf dem iPhone,
+     Escape/Klick daneben schließt. Kein neuer Text — nur ein anderer Ort. */
+  .titelinfo{display:flex;align-items:center;gap:1px;min-width:0}
+  .tinfo{display:inline-flex;align-items:center;justify-content:center;
+         width:44px;height:44px;margin:-13px -10px -13px -4px;padding:0;border:none;
+         background:none;color:var(--soft);cursor:pointer;border-radius:50%;
+         flex:none;-webkit-tap-highlight-color:transparent}
+  .tinfo svg{width:17px;height:17px;display:block}
+  .tinfo:hover{color:var(--teal-d)}
+  .tinfo:focus-visible{outline:2px solid var(--teal-d);outline-offset:2px}
+  .tinfo-overlay{position:fixed;inset:0;z-index:1200;background:transparent}
+  .tinfo-card{position:fixed;z-index:1201;background:var(--sheet);
+              border-radius:14px;box-shadow:0 22px 55px -14px rgba(22,38,44,.45);
+              padding:16px 18px;width:320px;max-width:calc(100vw - 24px);
+              color:var(--ink)}
+  .tinfo-titel{font:700 15px var(--disp);letter-spacing:-.01em;margin-bottom:7px}
+  .tinfo-text{font:400 13px/1.6 var(--body);color:var(--ink);margin:0 0 13px}
+  .tinfo-ok{min-height:40px;padding:0 16px;border:none;border-radius:10px;
+            background:var(--teal-l);color:var(--teal-d);cursor:pointer;
+            font:600 12.5px var(--disp)}
+  .tinfo-ok:hover{background:var(--teal);color:#fff}
+  @media(max-width:700px){
+    .tinfo-overlay.sheet{background:rgba(22,38,44,.35)}
+    .tinfo-card.sheet{left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;
+      border-radius:18px 18px 0 0;
+      padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+      animation:tinfo-auf .18s ease-out}
+    .tinfo-ok{min-height:44px;width:100%}
+  }
+  @keyframes tinfo-auf{from{transform:translateY(100%)}to{transform:translateY(0)}}
+
+  /* Der Info-Knopf am Autoversand-Schalter sitzt neben dem Label, nicht in ihm
+     (ein Button im <label> würde sonst die Checkbox mitschalten). */
+  .toggle-wrap{display:flex;align-items:center;gap:2px;margin:0 0 14px}
+  .toggle-wrap .toggle{flex:1;margin:0}
+
+  /* ---- N182: Haken an abgerechneten Perioden + Steuerung --------------- */
+  .quartale button .hk{margin-left:5px;font-size:11px;color:var(--pos);
+                       font-weight:700}
+  .quartale button[aria-pressed="true"] .hk{color:var(--teal-d)}
+  .abger-steuer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+                margin:0 0 14px}
+  .abger-steuer .as-t{font:600 9.5px var(--mono);letter-spacing:.06em;
+                      text-transform:uppercase;color:var(--soft)}
+  .abger-steuer .as-btn{min-height:44px;padding:8px 15px;border:none;
+                        cursor:pointer;border-radius:999px;background:var(--paper);
+                        color:var(--soft);font:600 11px var(--mono);
+                        letter-spacing:.03em;display:inline-flex;align-items:center;
+                        gap:6px}
+  .abger-steuer .as-btn[aria-pressed="true"]{background:var(--teal-l);
+                                             color:var(--teal-d)}
+  .abger-steuer .as-btn:hover{background:var(--teal-l);color:var(--teal-d)}
+  /* Der gesperrte Versand-Knopf: sichtbar ausgegraut, die Vorschau bleibt. */
+  .az .aw .btn.gesperrt{opacity:.55;cursor:default;background:var(--paper);
+                        color:var(--soft)}
+  .az .aw .btn.gesperrt:hover{background:var(--paper);color:var(--soft)}
 </style>
 </head>
 <body>
@@ -427,6 +487,104 @@ const satzText = s => s == null ? '—' : zahl(s, 4) + ' € je kWh';
 const datum = iso => new Date(iso).toLocaleDateString('de-DE',
   { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+/* =======================================================================
+   N181 — Erklärtexte in Info-Popups. Die langen Fließtexte am Kartenanfang
+   wandern hinter ein kleines i am jeweiligen Titel; ein Tap zeigt den Text als
+   Popover. Dieselbe Mechanik und Optik wie die Lexikon-Hilfe in immo.js (nur
+   gelesen): Karte unter dem Icon auf dem Desktop, Blatt von unten auf dem
+   iPhone, Escape/Klick daneben schließt. Die Texte sind unverändert — nur ihr
+   Ort ändert sich; die Ansicht bleibt ruhig ohne die Wand.
+   ======================================================================= */
+const INFO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    aria-hidden="true"><circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+
+const INFOS = {
+  verlauf: { titel: 'Verlauf', text:
+    'Wie viel je Monat geladen wurde — und woher der Strom kam: zugekaufter '
+    + 'Netzstrom, eigener Strom direkt vom Dach und aus dem Akku. Über alle '
+    + 'Monate hinweg, nicht nur über ein Jahr. Die Zahlen holt die Wallbox '
+    + 'selbst; fehlt sie, treten die erfassten Ladungen an ihre Stelle.' },
+  abrechnung: { titel: 'Abrechnung', text:
+    'Was jeder Nutzer geladen hat, zu welchem Satz und was er zahlt. Der Satz '
+    + 'wird nicht eingegeben, sondern aus den Stromkosten des Zeitraums '
+    + 'gerechnet: Netzstrom zu seinem Durchschnittspreis — Rechnungsbetrag '
+    + 'geteilt durch die bezogenen kWh, Grundgebühr inbegriffen — und eigener '
+    + 'Strom aus PV und Akku etwas darunter. Vor dem Versand zeigt die Vorschau, '
+    + 'was ankommt.' },
+  zuordnen: { titel: 'Ladungen zuordnen', text:
+    'Die Wallbox weiß, wie viel geladen wurde — aber nicht, von wem. Diese '
+    + 'Zuordnung ist die Grundlage der Abrechnung. Bei mehreren Nutzern: leg je '
+    + 'Person einen Zeitraum fest, statt jede Ladung einzeln zuzuordnen. Jede '
+    + 'Ladung geht an den, in dessen Zeitraum ihr Datum fällt. Einzelne Ladungen '
+    + 'schließt du unten aus.' },
+  nutzer: { titel: 'Nutzer', text:
+    'Wer an dieser Ladestation lädt. Beliebig viele, jederzeit ergänzbar — und '
+    + 'nicht zwangsläufig Eigentümer der Immobilie. Die E-Mail-Adresse braucht '
+    + 'es für die Quartalsabrechnung.' },
+  autoversand: { titel: 'Automatisch verschicken', text:
+    'Einen Tag nach Quartalsende geht die Abrechnung automatisch an jeden '
+    + 'Nutzer mit Adresse, Ladung und Satz — als Mail mit PDF im Anhang.' },
+};
+
+/* Das i-Icon als String — für die statischen Titel (Skelett) wie für die im JS
+   gebauten (Autoversand-Schalter). Ein echter <button> mit aria-label, 44 px
+   Touch-Ziel, per Tastatur bedienbar. */
+function infoKnopf(key) {
+  const i = INFOS[key];
+  if (!i) return '';
+  return `<button type="button" class="tinfo" data-info="${key}"
+    aria-label="${esc(i.titel)}: Erklärung anzeigen"
+    title="Erklärung anzeigen">${INFO_ICON}</button>`;
+}
+
+let infoOffen = null;
+function infoEsc(e) {
+  if (e.key !== 'Escape' || !infoOffen) return;
+  e.preventDefault();
+  e.stopPropagation();
+  infoSchliessen();
+}
+function infoSchliessen() {
+  if (!infoOffen) return;
+  document.removeEventListener('keydown', infoEsc, true);
+  infoOffen.remove();
+  infoOffen = null;
+}
+function infoOeffnen(anker, key) {
+  const eintrag = INFOS[key];
+  if (!eintrag) return;
+  infoSchliessen();
+  const sheet = window.matchMedia('(max-width:700px)').matches;
+  const overlay = document.createElement('div');
+  overlay.className = 'tinfo-overlay' + (sheet ? ' sheet' : '');
+  const card = document.createElement('div');
+  card.className = 'tinfo-card' + (sheet ? ' sheet' : '');
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', eintrag.titel);
+  card.innerHTML = `<div class="tinfo-titel">${esc(eintrag.titel)}</div>
+    <p class="tinfo-text">${esc(eintrag.text)}</p>
+    <button type="button" class="tinfo-ok" data-info-zu>Verstanden</button>`;
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  // Auf dem Desktop dockt die Karte unter dem Icon an — und klappt darüber, wenn
+  // unten kein Platz ist; am Rand wird sie ins Fenster gezogen (wie immo.js).
+  if (!sheet) {
+    const r = anker.getBoundingClientRect();
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12));
+    let top = r.bottom + 8;
+    if (top + ch > window.innerHeight - 12) top = Math.max(12, r.top - ch - 8);
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+  }
+  overlay.addEventListener('click', e => { if (e.target === overlay) infoSchliessen(); });
+  document.addEventListener('keydown', infoEsc, true);
+  infoOffen = overlay;
+  card.querySelector('.tinfo-ok').focus();
+}
+
 let objektSlug = '';
 /* N169 — mehrere Quartale zusammen wählbar und einzelne Monate abwählbar.
    `quartaleGewaehlt` ist [0] fuer das ganze Jahr, sonst eine Teilmenge aus
@@ -480,6 +638,10 @@ let jahrGewaehlt = 0;          /* 0 = noch nicht gesetzt → laufendes Jahr */
 let jahreListe = [];           /* Jahre mit Verbrauch (aus dem Verlauf) */
 /* N165/2 — Autoversand-Schalter und Mehrnutzer-Zuordnung des Objekts. */
 let einst = { autoversand: false, regeln: [], ausschluss: [] };
+/* N182 — die abgerechnet-Marker des gewählten Jahres: [{jahr, quartal,
+   nutzer_id}]. Sie tragen den Haken an den Quartals-Chips und sperren den
+   Versand bereits abgerechneter Perioden. */
+let abgerechnet = [];
 const jahrWert = () => jahrGewaehlt || new Date().getFullYear();
 
 function jahreUebernehmen(jahre) {
@@ -901,8 +1063,11 @@ function zeitraumWahl() {
   const ganz = quartaleGewaehlt.includes(0);
   const qknopf = (wert, text) => {
     const an = wert === 0 ? ganz : (!ganz && quartaleGewaehlt.includes(wert));
-    return `<button type="button" data-quartal="${wert}"
-      aria-pressed="${an}">${text}</button>`;
+    // N182 — ein Haken an abgerechneten Perioden.
+    const ab = quartalAbgerechnet(wert);
+    return `<button type="button" data-quartal="${wert}" aria-pressed="${an}"
+      ${ab ? 'title="bereits abgerechnet"' : ''}>${text}${
+      ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
   };
   // Die Monate des gewaehlten Zeitraums — abgewaehlte sind durchgestrichen und
   // zaehlen nicht in Menge und Betrag.
@@ -910,11 +1075,21 @@ function zeitraumWahl() {
   const mchip = m => `<button type="button" class="mchip${
       ausMonate.has(m) ? ' aus' : ''}" data-monat="${m}"
       aria-pressed="${!ausMonate.has(m)}">${MONKURZ[m - 1]}</button>`;
+  // N182 — die kleine Steuerung an den Auswahl-Chips: die gewählte Periode als
+  // abgerechnet markieren (Initialstand) oder die Markierung wieder entfernen.
+  const ab = periodeAbgerechnet();
+  const steuer = `<div class="abger-steuer">
+      <span class="as-t">Bereits abgerechnet</span>
+      <button type="button" class="as-btn" data-abger-toggle
+        aria-pressed="${ab}">${ab
+          ? '✓ markiert – entfernen' : 'Als abgerechnet markieren'}</button>
+    </div>`;
   return `<div class="quartale jahre">${jahre.map(jknopf).join('')}</div>
     <div class="quartale">${qknopf(1, 'Q1')}${qknopf(2, 'Q2')}${qknopf(3, 'Q3')}
       ${qknopf(4, 'Q4')}${qknopf(0, 'Ganzes Jahr')}</div>
     <span class="zrhint">Einzelne Monate abwählen</span>
-    <div class="monate">${monate.map(mchip).join('')}</div>`;
+    <div class="monate">${monate.map(mchip).join('')}</div>
+    ${steuer}`;
 }
 
 /* Ein Quartal an- oder abwaehlen (N169). „Ganzes Jahr" ist der Zustand [0];
@@ -960,6 +1135,7 @@ async function abrechnungZeigen() {
     return;
   }
   letzteAbrechnung = d;                   // die HTML-Vorschau liest daraus (N179)
+  await abgerechnetLaden();                // N182 — Marker fürs gewählte Jahr
 
   const zeilen = (d.nutzer || []).map(n => `
     <div class="az" data-nutzer="${n.nutzer_id || 0}">
@@ -967,7 +1143,9 @@ async function abrechnungZeigen() {
         <span class="an">${esc(n.name)}${n.automatisch
           ? '<span class="chip teal" style="margin-left:8px">automatisch</span>' : ''}${
           n.angelegt ? ''
-          : '<span class="chip amber" style="margin-left:8px">nicht angelegt</span>'}</span>
+          : '<span class="chip amber" style="margin-left:8px">nicht angelegt</span>'}${
+          nutzerPeriodeAbgerechnet(n.nutzer_id)
+          ? '<span class="chip teal" style="margin-left:8px">✓ abgerechnet</span>' : ''}</span>
         <span class="ab">${n.betrag == null ? '—' : eur(n.betrag)}</span>
       </div>
       <span class="ad">${kwh(n.kwh)} · ${n.satz == null
@@ -984,7 +1162,11 @@ async function abrechnungZeigen() {
       ${n.kwh > 0 && n.nutzer_id ? `<div class="aw">
         <button class="btn leise" data-vorschau="${n.nutzer_id}">Vorschau</button>
         ${n.email && n.betrag != null
-          ? `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>` : ''}
+          ? (nutzerPeriodeAbgerechnet(n.nutzer_id)
+            ? `<button class="btn gesperrt" disabled aria-disabled="true"
+                 title="Diese Periode ist bereits abgerechnet">bereits abgerechnet</button>`
+            : `<button class="btn" data-senden="${n.nutzer_id}">Per Mail senden</button>`)
+          : ''}
       </div>` : ''}
       <div data-mail="${n.nutzer_id || 0}"></div>
     </div>`).join('');
@@ -1019,14 +1201,17 @@ async function abrechnungZeigen() {
    Adresse, Ladung und Satz — als Mail mit PDF. Ein ruhiger Schalter, kein
    Warnton: es ist eine Erleichterung. */
 function autoversandSchalter() {
-  return `<label class="toggle">
-    <input type="checkbox" data-autoversand ${einst.autoversand ? 'checked' : ''}>
-    <span class="ts" aria-hidden="true"></span>
-    <span class="tl">Automatisch verschicken
-      <small>Einen Tag nach Quartalsende geht die Abrechnung automatisch an
-        jeden Nutzer mit Adresse, Ladung und Satz — als Mail mit PDF im
-        Anhang.</small></span>
-  </label>`;
+  // Der Erklärtext steckt jetzt im i-Popup daneben (N181); der Schalter selbst
+  // bleibt ruhig. Der Info-Knopf steht neben dem <label>, nicht darin — sonst
+  // schaltete ein Klick darauf die Checkbox mit.
+  return `<div class="toggle-wrap">
+    <label class="toggle">
+      <input type="checkbox" data-autoversand ${einst.autoversand ? 'checked' : ''}>
+      <span class="ts" aria-hidden="true"></span>
+      <span class="tl">Automatisch verschicken</span>
+    </label>
+    ${infoKnopf('autoversand')}
+  </div>`;
 }
 
 async function einstellungenLaden() {
@@ -1035,6 +1220,64 @@ async function einstellungenLaden() {
     einst = { autoversand: !!d.autoversand, regeln: d.regeln || [],
               ausschluss: d.ausschluss || [] };
   } catch { einst = { autoversand: false, regeln: [], ausschluss: [] }; }
+}
+
+/* N182 — die abgerechnet-Marker des gewählten Jahres holen. Wird zu Beginn von
+   `abrechnungZeigen` gerufen, damit Chips und Versand-Knöpfe zum Jahr passen. */
+async function abgerechnetLaden() {
+  try {
+    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}`
+                        + `/abgerechnet?jahr=${jahrWert()}`);
+    abgerechnet = d.abgerechnet || [];
+  } catch { abgerechnet = []; }
+}
+
+/* Ist ein Quartal (des gewählten Jahres) abgerechnet? Für den Chip-Haken: ein
+   Quartal gilt als abgerechnet, sobald mindestens ein Nutzer es ist; „Ganzes
+   Jahr" (0) nur, wenn alle vier Quartale abgerechnet sind. */
+function quartalAbgerechnet(q) {
+  const j = jahrWert();
+  const qs = q === 0 ? [1, 2, 3, 4] : [q];
+  return qs.every(x => abgerechnet.some(m => m.jahr === j && m.quartal === x));
+}
+
+/* Ist die aktuell gewählte Periode für diesen Nutzer bereits abgerechnet? Sperrt
+   dann seinen Versand-Knopf — derselbe Riegel wie im Backend (jedes gewählte
+   Quartal zählt; „Ganzes Jahr" prüft alle vier). */
+function nutzerPeriodeAbgerechnet(nid) {
+  if (!nid) return false;
+  const j = jahrWert();
+  const qs = quartaleGewaehlt.includes(0) ? [1, 2, 3, 4] : quartaleGewaehlt;
+  return qs.some(q => abgerechnet.some(
+    m => m.jahr === j && m.quartal === q && m.nutzer_id === nid));
+}
+
+/* Gilt die ganze gewählte Periode als abgerechnet (für die Steuerung: dann bietet
+   sie „entfernen" statt „markieren")? */
+function periodeAbgerechnet() {
+  return quartaleGewaehlt.includes(0)
+    ? quartalAbgerechnet(0)
+    : quartaleGewaehlt.every(q => quartalAbgerechnet(q));
+}
+
+/* N182 — die gewählte Periode von Hand als abgerechnet setzen oder die Markierung
+   entfernen (für den Initialstand der alten 4-Monats-Abrechnungen und für
+   Korrekturen). Gilt für alle gelisteten Nutzer. */
+async function abgerechnetUmschalten() {
+  if (!nutzerListe.length) {
+    melde('Erst einen Nutzer anlegen', 'neg');
+    return;
+  }
+  const setzen = !periodeAbgerechnet();
+  try {
+    await api(`/tankstelle/${encodeURIComponent(objektSlug)}/abgerechnet`, {
+      method: 'PUT',
+      body: { jahr: jahrWert(), quartale: quartaleGewaehlt, nutzer_id: 0,
+              abgerechnet: setzen } });
+    melde(setzen ? 'Periode als abgerechnet markiert' : 'Markierung entfernt',
+          'pos');
+    await abrechnungZeigen();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
 async function autoversandUmschalten(aktiv) {
@@ -1276,11 +1519,9 @@ function zuordnungBlock() {
       </div>
     </div>`;
   }).join('');
-  return `<span class="vermerk">Mehrere Nutzer: leg je Person einen Zeitraum
-      fest, statt jede Ladung einzeln zuzuordnen. Jede Ladung geht an den, in
-      dessen Zeitraum ihr Datum fällt. Einzelne Ladungen schließt du unten
-      aus.</span>
-    ${zeilen}
+  // Der frühere Erklär-Absatz steht jetzt im i-Popup am Karten-Titel „Ladungen
+  // zuordnen" (N181) — hier bleiben nur die Regel-Felder selbst.
+  return `${zeilen}
     <button class="btn" data-zuordnung-speichern
             style="margin:0 0 16px">Zuordnung speichern</button>`;
 }
@@ -1384,40 +1625,39 @@ async function ladungEntfernen(id) {
 function skelett() {
   return `
     <div class="karte">
-      <div class="hh"><h3>Verlauf</h3></div>
+      <div class="hh"><span class="titelinfo"><h3>Verlauf</h3>
+        ${infoKnopf('verlauf')}</span></div>
       <div id="verlauf"></div>
     </div>
 
     <div class="karte">
-      <div class="hh"><h3>Abrechnung</h3></div>
-      <span class="hint">Was jeder Nutzer geladen hat, zu welchem Satz und was
-        er zahlt. Der Satz wird nicht eingegeben, sondern aus den Stromkosten
-        des Zeitraums gerechnet: Netzstrom zu seinem Durchschnittspreis —
-        Rechnungsbetrag geteilt durch die bezogenen kWh, Grundgebühr
-        inbegriffen — und eigener Strom aus PV und Akku etwas darunter. Vor
-        dem Versand zeigt die Vorschau, was ankommt.</span>
+      <div class="hh"><span class="titelinfo"><h3>Abrechnung</h3>
+        ${infoKnopf('abrechnung')}</span></div>
       <div id="abrechnung"></div>
     </div>
 
     <div class="karte" id="kartezuordnen" hidden>
-      <div class="hh"><h3>Ladungen zuordnen</h3></div>
-      <span class="hint">Die Wallbox weiß, wie viel geladen wurde — aber nicht,
-        von wem. Diese Zuordnung ist die Grundlage der Abrechnung.</span>
+      <div class="hh"><span class="titelinfo"><h3>Ladungen zuordnen</h3>
+        ${infoKnopf('zuordnen')}</span></div>
       <div id="ladungen"></div>
     </div>
 
     <div class="karte">
-      <div class="hh"><h3>Nutzer</h3>
+      <div class="hh"><span class="titelinfo"><h3>Nutzer</h3>
+        ${infoKnopf('nutzer')}</span>
         <button class="plus" data-nutzer-add aria-label="Nutzer hinzufügen"
                 title="Nutzer hinzufügen">＋</button></div>
-      <span class="hint">Wer an dieser Ladestation lädt. Beliebig viele,
-        jederzeit ergänzbar — und nicht zwangsläufig Eigentümer der Immobilie.
-        Die E-Mail-Adresse braucht es für die Quartalsabrechnung.</span>
       <div id="nutzer"></div>
     </div>`;
 }
 
 document.addEventListener('click', e => {
+  // N181 — das i-Popup zuerst: es sitzt in den Titeln und am Schalter und darf
+  // keinen anderen Faenger mitauslösen.
+  const inf = e.target.closest('[data-info]');
+  if (inf) { e.preventDefault(); e.stopPropagation(); return infoOeffnen(inf, inf.dataset.info); }
+  const infZu = e.target.closest('[data-info-zu]');
+  if (infZu) return infoSchliessen();
   const add = e.target.closest('[data-nutzer-add]');
   if (add) { addOffen = !addOffen; return nutzerZeigen(); }
   const neu = e.target.closest('[data-nutzer-neu]');
@@ -1450,6 +1690,8 @@ document.addEventListener('click', e => {
   if (zs) return zuordnungSpeichern();
   const ax = e.target.closest('[data-ausschluss]');
   if (ax) return ausschlussUmschalten(ax.dataset.ausschluss);
+  const at = e.target.closest('[data-abger-toggle]');
+  if (at) return abgerechnetUmschalten();
 });
 
 /* Der Autoversand-Schalter ist eine Checkbox — sie meldet sich ueber `change`,
