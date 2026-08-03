@@ -220,6 +220,55 @@ gedeckte Farben, ein Akzent.
 - Mobil zuerst: 440 px Spalte, muss auf dem iPhone gut aussehen.
   Touch-Targets min. 44×44 px, kein hover-only Verhalten, `dvh` statt `vh`
 
+## Der rote Faden — bei JEDER sichtbaren Änderung mitdenken
+
+Verdichtetes, wiederkehrendes Nutzer-Feedback. Diese Punkte gehören von selbst
+in jede Gestaltungsentscheidung — nicht erst, wenn der Nutzer sie erneut nennt.
+Er sagt nichts gern zweimal.
+
+1. **Visuell statt Text.** Zahlen grafisch fassen, nicht als Fließtext: Balken
+   (Höhe ∝ Wert), Donut/Kreis, Heatmap, Chips/Stat-Karten, `Menge × Satz = €`,
+   Icons, kleine Animationen. Überall im Produkt ein visuelles Element streuen,
+   das man lieber ansieht als liest. Text radikal kürzen.
+2. **Erklärtexte ins i-Popup**, nie als Dauer-Textwand. Info-Knöpfe sparsam,
+   gleiche Info-i zusammenführen (nicht je Zeile eins).
+3. **Jede Information genau einmal.** Doubletten (derselbe Wert/Text an zwei
+   Stellen, redundante Summenblöcke, Herleitungszeilen doppelt) sind ein Fehler.
+4. **Kein Leerraum, keine „Luft".** Große leere Flächen füllen (mit sinnvollem
+   Inhalt) oder wegstauchen; benachbarte Blöcke auf gleiche Höhe bringen; die
+   freie Breite (Desktop) nutzen. „Zu groß / leer / dämlich" ist ein Bug.
+5. **Kompakt & zusammengefasst.** Weniger Bubbles/Zeilen; Bedienelemente
+   zusammenführen (Matrix statt drei gestapelter Bubble-Reihen); dichtere
+   Chooser (Dropdown/Matrix/Grid) statt endloser Pillen.
+6. **Konsistente Abstände.** Innenabstände, Ränder, Radien überall gleich,
+   Kanten fluchten.
+7. **Keine Dauer-Warnbanner.** Hinweise/Fehler bedienbar machen (Weg zum
+   Beheben, Beleg löschen/wählen, Wert eintragen) oder auflösen — nicht
+   dauerhaft stehen lassen.
+8. **Kontext in die Aktion.** Betrag + Zeitraum in den Button
+   („Mai, Jun 2026 · 80,75 € senden"); finale Summe deutlich (Doppelstrich).
+   Das „+"-Muster oben rechts fürs Hinzufügen; ausgegraut + Hinweis, wenn
+   nichts hinzuzufügen ist (z. B. alle 1000 ‰ vergeben) statt Inline-Formular.
+9. **Klare Namen, gestaffelte Hierarchie.** Singular; Fachjargon raus aus
+   Menüs (kein „Amortisation" → „PV Anlagen"); sprechende Namen. Unterpunkte
+   unter ihr Elternelement einrücken/aufklappen.
+10. **Dynamisch & live.** Was ableitbar ist, nicht manuell eintragen lassen;
+    live/tagesgenau mitrechnen (automatische Prozesse laufen ohnehin).
+11. **„Erledigt/grün" nur wenn wirklich fertig.** Ein bloßer Betrag genügt
+    nicht — eine Verteilposition ist erst erledigt, wenn verteilt. Pflicht-
+    aber-leer bekommt ein konsistentes rotes Signal, Optionales nicht.
+
+**Verifizierung & Deploy — auch das ist der rote Faden:**
+
+- Jede sichtbare Änderung: Screenshot in iPhone/iPad/Desktop **ansehen**
+  (Read-Tool), Konsole 0 Fehler, betroffene Flows durchklicken (siehe
+  „Visuelle Abnahme").
+- **Deploy-Lücke aktiv nennen.** `public/` ist live gemountet (sofort);
+  API-Änderungen brauchen `./deploy.sh`. Greift ein neuer Backend-Wert live
+  noch nicht, dem Nutzer klar sagen — und vorab per Harness oder
+  Response-Injection prüfen, damit „funktioniert nicht" nie am fehlenden
+  Deploy hängt.
+
 ## Daten schützen
 
 Echte Mieter- und Objektdaten. Die SQLite liegt außerhalb des Repos unter
