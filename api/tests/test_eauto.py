@@ -257,16 +257,17 @@ def test_ersparnis_je_100km():
 
 def test_benzin_vergleich_alicia_szenario():
     """Alicias echte Zahlen: vergleichbarer Benziner 6,5 l/100km, E-Auto-Preis
-    5,52 €/100km, 1.463 km im Quartal — Ersparnis 6,18 €/100km bzw. 90,41 €."""
+    5,52 €/100km, 1.463 km im Quartal — bei 2,00 € je Liter Ersparnis
+    7,48 €/100km bzw. 109,43 €."""
     v = eauto.benzin_vergleich(6.5, 5.52, 1463.0)
     assert v["verbrauch_l"] == 6.5
-    assert v["preis_liter"] == eauto.BENZIN_PREIS_JE_LITER == 1.80
-    assert v["benzin_100km"] == 11.7
+    assert v["preis_liter"] == eauto.BENZIN_PREIS_JE_LITER == 2.00
+    assert v["benzin_100km"] == 13.0
     assert v["e_100km"] == 5.52
-    assert v["ersparnis_100km"] == 6.18
+    assert v["ersparnis_100km"] == 7.48
     assert v["km"] == 1463.0
-    # 6,18 € × 1.463 km / 100 ≈ 90,41 €.
-    assert v["ersparnis_gesamt"] == 90.41
+    # 7,48 € × 1.463 km / 100 ≈ 109,43 €.
+    assert v["ersparnis_gesamt"] == 109.43
 
 
 def test_benzin_vergleich_ohne_belastbaren_wert_ist_none():
@@ -280,7 +281,7 @@ def test_benzin_vergleich_ohne_belastbaren_wert_ist_none():
     assert eauto.benzin_vergleich(6.5, None, 1463.0) is None
     # Ohne Strecke: Vergleich je 100 km ja, Gesamtersparnis None.
     ohne_km = eauto.benzin_vergleich(6.5, 5.52, None)
-    assert ohne_km["ersparnis_100km"] == 6.18
+    assert ohne_km["ersparnis_100km"] == 7.48
     assert ohne_km["ersparnis_gesamt"] is None
 
 

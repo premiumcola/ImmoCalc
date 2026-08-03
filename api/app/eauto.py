@@ -58,7 +58,7 @@ BENZIN_KWH_PRO_LITER = 9.7
 #   belastbare Angabe und wird verworfen, genau wie beim Stromverbrauch.
 # * Der Benzinpreis ist eine **dokumentierte Annahme** (wie „9,7 kWh je Liter"):
 #   sie steht sichtbar im PDF, damit die Zahl nicht wie eine Behauptung wirkt.
-BENZIN_PREIS_JE_LITER = 1.80
+BENZIN_PREIS_JE_LITER = 2.00
 BENZIN_VERBRAUCH_MIN = 4.0
 BENZIN_VERBRAUCH_MAX = 12.0
 

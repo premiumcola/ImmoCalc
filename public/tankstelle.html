@@ -198,7 +198,7 @@
      rechts nutzend; auf dem iPhone gestapelt (Matrix zuerst). */
   .absel{display:grid;gap:14px}
   @media(min-width:720px){
-    .absel{grid-template-columns:1fr minmax(268px,340px);align-items:start}
+    .absel{grid-template-columns:1fr minmax(214px,262px);align-items:stretch}
     .absel .satz{order:1;margin:0}.absel .filter-matrix{order:2}
   }
   /* Der Chooser: Jahr-Pills, darunter eine Quartal×Monat-Matrix (4 Spalten
@@ -292,6 +292,17 @@
      Jeder Abschnitt ein ruhiger Titel, darunter sein Inhalt. */
   .bl-block{display:flex;flex-direction:column;gap:9px}
   .bl-abschnitt{font:700 12.5px var(--disp);letter-spacing:-.01em;color:var(--ink)}
+  /* N194 — die Fakten-Bubbles unter dem Satz: Menge Netz/Eigen, Ersparnis,
+     Ø/Monat mit Trend. Ein responsives Raster, das die Zahlen grafisch fasst. */
+  .bl-fakten{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+             gap:8px}
+  .bl-fakt{background:var(--paper);border-radius:12px;padding:11px 13px;
+           display:flex;flex-direction:column;gap:3px}
+  .bl-fl{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+         color:var(--soft)}
+  .bl-fv{font:700 15px var(--disp);letter-spacing:-.01em;color:var(--teal-d)}
+  .bl-trend{font:600 10px var(--mono);letter-spacing:.02em;color:var(--soft)}
+  .bl-trend.pos{color:var(--pos)}.bl-trend.neg{color:var(--neg)}
   /* Die Monatstabelle im Blatt: derselbe .mt-Stil wie der Verlauf, nur ohne
      Pager. Fünf Spalten scrollen auf dem iPhone in ihrem eigenen Rahmen — die
      Seite selbst nie waagerecht. */
@@ -306,16 +317,24 @@
   .satz-hero{display:flex;align-items:center;gap:2px}
   .satz .sw{font:700 22px var(--disp);letter-spacing:-.02em;color:var(--teal-d)}
   .satz-hero .tinfo{color:var(--soft);margin:-13px -8px -13px -4px}
-  .satz-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-  .satz-chip{display:inline-flex;align-items:center;gap:9px;background:var(--sheet);
-             border-radius:11px;padding:8px 13px;min-width:0}
-  .satz-chip i{width:9px;height:9px;border-radius:3px;flex:none}
-  .satz-chip .scl{font:600 9px var(--mono);letter-spacing:.06em;
-                  text-transform:uppercase;color:var(--soft);white-space:nowrap}
-  .satz-chip .scv{font:700 13px var(--disp);letter-spacing:-.01em;
-                  color:var(--ink);white-space:nowrap}
-  .satz-chip.netz i{background:var(--amber)}
-  .satz-chip.eigen i{background:var(--teal)}
+  /* N195 — je Quelle eine Karte: Menge des Zeitraums × Satz = Betrag. Füllt den
+     linken Block und zeigt, woraus sich der Mischsatz zusammensetzt. */
+  .satz-teile{display:grid;gap:9px;margin-top:14px}
+  .satz-teil{background:var(--sheet);border-radius:12px;padding:11px 13px;
+             position:relative;padding-left:26px}
+  .satz-teil i{position:absolute;left:13px;top:15px;width:8px;height:8px;
+               border-radius:3px}
+  .satz-teil.netz i{background:var(--amber)}
+  .satz-teil.eigen i{background:var(--teal)}
+  .st-kopf{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .st-l{font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+        color:var(--soft)}
+  .st-s{font:600 10.5px var(--mono);color:var(--soft);white-space:nowrap}
+  .st-rechnung{display:flex;align-items:baseline;gap:8px;margin-top:5px}
+  .st-m{font:600 13px var(--mono);color:var(--ink);white-space:nowrap}
+  .st-eq{color:var(--soft);font-size:13px}
+  .st-v{font:700 15px var(--disp);letter-spacing:-.01em;color:var(--teal-d);
+        margin-left:auto;white-space:nowrap}
   /* N187 — der Zeitraum, für den der Ø-Satz gilt: als ruhige Fußzeile im
      Satz-Feld (bzw. solo, wenn noch kein Satz feststeht). */
   .satz-zr{display:block;font:500 11px var(--mono);color:var(--soft);
@@ -1299,9 +1318,10 @@ async function abrechnungZeigen() {
 
   ziel.innerHTML = `${abrechnungKopf()}
     <div class="absel">${zeitraumWahl()}${satzBlock(d)}</div>
-    ${d.automatisch ? autoNotiz() : offeneNotiz(d)}
+    ${d.automatisch ? '' : offeneNotiz(d)}
     ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
         Für ${esc(d.label)} gibt es weder Nutzer noch Ladungen.</div>`}
+    ${d.automatisch && d.nutzer?.length ? autoNotiz() : ''}
     ${d.nutzer?.length ? `<div class="kpi" style="margin-top:14px">
       <div class="k"><span class="kl">${esc(d.label)}</span>
         <span class="kv">${kwh(d.kwh_gesamt)}</span></div>
@@ -1505,14 +1525,23 @@ function satzBlock(d) {
   const rabatt = d.satz_rabatt == null ? ''
     : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
   const hatTeile = d.satz_netz != null && d.satz_eigen != null;
-  // Netz und eigener Strom als zwei Chips statt Fliesstext (N186).
-  const chips = !hatTeile ? '' : `<div class="satz-chips">
-      <span class="satz-chip netz"><i></i>
-        <span class="scl">Netz</span>
-        <span class="scv">${zahl(d.satz_netz, 4)} €</span></span>
-      <span class="satz-chip eigen"><i></i>
-        <span class="scl">Eigen${rabatt ? ' · −10 %' : ''}</span>
-        <span class="scv">${zahl(d.satz_eigen, 4)} €</span></span>
+  // N195 — statt nur der zwei Sätze zeigen die Karten die MENGEN und BETRÄGE des
+  // gewählten Zeitraums: Netz-kWh × Netzsatz = Netz-€, Eigen-kWh × Eigensatz =
+  // Eigen-€. So füllt der linke Block sinnvoll und die Herkunft des Mischsatzes
+  // ist ablesbar. Fehlt die Aufteilung (unbekannt), bleibt die Menge „—".
+  const s = periodeSumme(periodeMonate(d));
+  const teil = (klasse, label, menge, satzc) => {
+    const betrag = (menge != null && satzc != null) ? menge * satzc : null;
+    return `<div class="satz-teil ${klasse}"><i></i>
+      <div class="st-kopf"><span class="st-l">${label}</span>
+        <span class="st-s">${satzText(satzc)}</span></div>
+      <div class="st-rechnung"><span class="st-m">${menge == null ? '—' : kwh(menge)}</span>
+        <span class="st-eq">→</span>
+        <span class="st-v">${betrag == null ? '—' : eur(betrag)}</span></div></div>`;
+  };
+  const teile = !hatTeile ? '' : `<div class="satz-teile">
+      ${teil('netz', 'Netz', s.extern_kwh, d.satz_netz)}
+      ${teil('eigen', 'Eigen' + (rabatt ? ' · −10 %' : ''), s.eigen_kwh, d.satz_eigen)}
     </div>`;
   // Mischregel und Herkunft wandern ins i neben die Hero-Zahl (N186) — beide
   // bestehende Texte, nur an einem Ort statt als graue Textwand.
@@ -1523,7 +1552,7 @@ function satzBlock(d) {
   return `<div class="satz">
     <div class="satz-hero"><span class="sw">${satzText(d.satz)}</span>
       ${infoKnopfText('Satz je kWh', infoText)}</div>
-    ${chips}
+    ${teile}
     <span class="satz-zr">${zr}</span></div>`;
 }
 
@@ -1638,26 +1667,41 @@ function periodeSumme(monate) {
   return s;
 }
 
-/* Die Monatstabelle mit E-Auto (Monat · Geladen · km · Preis/100 km · Kosten) —
-   wie im PDF, wenn ein Verbrauch hinterlegt ist. km = kWh ÷ Verbrauch × 100,
-   Kosten = kWh × Satz, Preis = Kosten ÷ km × 100. Ohne Satz bleiben Preis und
-   Kosten leer statt 0. */
+/* N194 — der Ø-Verbrauch je Monat im Vergleich zur Vorperiode: die gleich lange
+   Spanne unmittelbar VOR dem gewählten Zeitraum (aus dem Gesamtverlauf). So sieht
+   man, ob im Schnitt mehr oder weniger geladen wurde. Ohne Vorperiode → null. */
+function verbrauchsTrend(periodMonate) {
+  if (!periodMonate.length || !(verlaufMonate || []).length) return null;
+  const key = m => m.jahr * 12 + m.monat;
+  const chrono = [...verlaufMonate].sort((a, b) => key(a) - key(b));
+  const ersterKey = Math.min(...periodMonate.map(key));
+  const startIdx = chrono.findIndex(m => key(m) === ersterKey);
+  if (startIdx <= 0) return null;                        // keine Vorperiode
+  const vorher = chrono.slice(Math.max(0, startIdx - periodMonate.length), startIdx);
+  if (!vorher.length) return null;
+  const schnitt = arr => arr.reduce((sum, m) => sum + (m.kwh || 0), 0) / arr.length;
+  const jetzt = schnitt(periodMonate), vor = schnitt(vorher);
+  if (!(vor > 0)) return null;
+  return { jetzt, vor, delta: (jetzt - vor) / vor };
+}
+
+/* Die Monatstabelle mit E-Auto (Monat · Geladen · km · Kosten) — wie im PDF,
+   wenn ein Verbrauch hinterlegt ist. km = kWh ÷ Verbrauch × 100, Kosten =
+   kWh × Satz. Die frühere Spalte „Preis/100 km" ist raus (N194): sie war über
+   die Periode konstant (Ø-Satz × Verbrauch) und monatlich ohne Aussage. */
 function blattTabelleEauto(monate, summe, verbrauch, satz) {
   const km = k => (k > 0 && verbrauch > 0) ? k / verbrauch * 100 : null;
   const kosten = k => satz == null ? null : k * satz;
   const zeile = (label, k) => {
     const kmv = km(k), ko = kosten(k);
-    const pr = (ko != null && kmv) ? ko / kmv * 100 : null;
     return `<tr>
       <td>${esc(label)}</td>
       <td class="${k ? '' : 'leise'}">${zahl(k)}</td>
       <td class="${kmv == null ? 'leise' : ''}">${kmv == null ? '—' : zahl(kmv, 0)}</td>
-      <td class="${pr == null ? 'leise' : ''}">${pr == null ? '—' : eur(pr)}</td>
       <td class="${ko == null ? 'leise' : ''}">${ko == null ? '—' : eur(ko)}</td></tr>`;
   };
   return `<div class="tabrahmen"><table class="mt bl-mt">
-    <thead><tr><th>Monat</th><th>Geladen</th><th>km</th>
-      <th>Preis/100 km</th><th>Kosten</th></tr></thead>
+    <thead><tr><th>Monat</th><th>Geladen</th><th>km</th><th>Kosten</th></tr></thead>
     <tbody>${monate.map(m => zeile(m.label, m.kwh || 0)).join('')}</tbody>
     <tfoot>${zeile('Summe', summe.kwh || 0)}</tfoot>
   </table></div>`;
@@ -1732,8 +1776,7 @@ function abrechnungBlatt(nid, fallbackText, breite) {
         Fahrweise, Ladeverluste eingerechnet.</span>
       ${liter != null ? `<span class="bl-sq">Energie-Äquivalent:
         ${zahl(verbrauch, 1)} kWh entsprechen rund ${zahl(liter, 1)} l Benzin
-        (Annahme ${zahl(d.benzin_kwh_pro_liter, 1)} kWh je Liter). Das vergleicht
-        nur die Energie, nicht die Kosten.</span>` : ''}</div>`;
+        (Annahme ${zahl(d.benzin_kwh_pro_liter, 1)} kWh je Liter).</span>` : ''}</div>`;
   }
 
   // N184b — der Kosten-Benzinvergleich mit der grün hervorgehobenen Ersparnis,
@@ -1777,13 +1820,36 @@ function abrechnungBlatt(nid, fallbackText, breite) {
     .filter(s => (s || '').trim())
     .map(s => `<span class="bl-adr">${esc(s)}</span>`).join('');
 
-  // Satz je kWh mit Herkunft.
+  // Satz je kWh mit Herkunft (der lange „Rechnung … ÷ … Netzbezug"-Satz ist
+  // raus, N194 — er wiederholte die Herleitung; die Aufteilung steht in den
+  // Fakten unten).
   const rabatt = d.satz_rabatt == null ? ''
     : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
   const regel = d.satz_netz == null || d.satz_eigen == null ? ''
     : `<span class="bl-sd">Netz ${satzText(d.satz_netz)} · eigener Strom
         ${satzText(d.satz_eigen)}${rabatt}. Der Satz einer Ladung mischt beide
         nach den Mengen des Zeitraums.</span>`;
+
+  // N194 — die Fakten des Zeitraums als Bubbles: Menge Netz/Eigen, die Ersparnis
+  // gegenüber Benzin und der Ø-Verbrauch je Monat mit dem Trend zur Vorperiode.
+  const oMonat = monate.length ? summe.kwh / monate.length : null;
+  const tr = verbrauchsTrend(monate);
+  const trChip = !tr ? '' : `<span class="bl-trend ${
+      tr.delta < -0.005 ? 'pos' : (tr.delta > 0.005 ? 'neg' : '')}">${
+      tr.delta < -0.005 ? '↓' : (tr.delta > 0.005 ? '↑' : '±')} ${
+      Math.abs(Math.round(tr.delta * 100))} % ggü. Vorperiode</span>`;
+  const bubble = (label, wert, extra = '') => `<div class="bl-fakt">
+      <span class="bl-fl">${label}</span>
+      <span class="bl-fv">${wert}</span>${extra}</div>`;
+  const fakten = [];
+  if (summe.extern_kwh != null) fakten.push(bubble('Netz', kwh(summe.extern_kwh)));
+  if (summe.eigen_kwh != null) fakten.push(bubble('Eigen', kwh(summe.eigen_kwh)));
+  if (row.benzin && row.benzin.ersparnis_gesamt != null) {
+    fakten.push(bubble('Ersparnis ggü. Benzin', eur(row.benzin.ersparnis_gesamt)));
+  }
+  if (oMonat != null) fakten.push(bubble('Ø / Monat', kwh(oMonat), trChip));
+  const faktenBlock = fakten.length
+    ? `<div class="bl-block"><div class="bl-fakten">${fakten.join('')}</div></div>` : '';
 
   return `<div class="blatt">
     <div class="bl-kopf">
@@ -1800,9 +1866,9 @@ function abrechnungBlatt(nid, fallbackText, breite) {
     <div class="bl-block">
       <span class="bl-abschnitt">Satz je kWh</span>
       <div class="bl-satz"><span class="bl-sw">${satzText(row.satz)}</span>
-        ${regel}
-        ${d.satz_herkunft ? `<span class="bl-sq">${esc(d.satz_herkunft)}</span>` : ''}</div>
+        ${regel}</div>
     </div>
+    ${faktenBlock}
     <div class="bl-betrag">
       <span class="bl-bl"><span class="bl-bk">Rechnungsbetrag</span>
         <span class="bl-bkwh">${kwh(row.kwh)} geladen</span></span>

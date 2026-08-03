@@ -1651,10 +1651,10 @@ def test_pdf_weist_benzin_kostenvergleich_und_ersparnis_aus(client, monkeypatch)
     assert antwort.status_code == 200, antwort.text
     roh = antwort.content
     assert b"Kostenvergleich mit Benzin" in roh
-    assert b"11,70 EUR" in roh                     # 6,5 l × 1,80 € je 100 km
+    assert b"13,00 EUR" in roh                     # 6,5 l × 2,00 € je 100 km
     assert b"Ersparnis" in roh
-    # E-Auto 0,32 × 16 = 5,12 €/100 km → Ersparnis 11,70 − 5,12 = 6,58 €/100 km.
-    assert b"6,58 EUR" in roh
+    # E-Auto 0,32 × 16 = 5,12 €/100 km → Ersparnis 13,00 − 5,12 = 7,88 €/100 km.
+    assert b"7,88 EUR" in roh
 
 
 def test_pdf_ohne_benzinwert_kein_kostenvergleich(client, monkeypatch):
@@ -1703,13 +1703,13 @@ def test_abrechnung_liefert_benzin_kostenvergleich_je_nutzer(client, monkeypatch
     bz = alicia["benzin"]
     assert bz is not None
     assert bz["verbrauch_l"] == 6.5
-    assert bz["preis_liter"] == 1.80
-    assert bz["benzin_100km"] == 11.70            # 6,5 l × 1,80 €
+    assert bz["preis_liter"] == 2.00
+    assert bz["benzin_100km"] == 13.00            # 6,5 l × 2,00 €
     assert bz["e_100km"] == 5.12                  # 0,32 × 16
-    assert bz["ersparnis_100km"] == 6.58          # 11,70 − 5,12
-    # 100 kWh bei 16 kWh/100km → 625 km; Ersparnis 6,58 × 625/100 = 41,125 €.
+    assert bz["ersparnis_100km"] == 7.88          # 13,00 − 5,12
+    # 100 kWh bei 16 kWh/100km → 625 km; Ersparnis 7,88 × 625/100 = 49,25 €.
     assert bz["km"] == 625.0
-    assert bz["ersparnis_gesamt"] == 41.12
+    assert bz["ersparnis_gesamt"] == 49.25
 
 
 def test_abrechnung_ohne_benzinwert_liefert_benzin_null(client, monkeypatch):
