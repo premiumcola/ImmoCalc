@@ -260,6 +260,14 @@ class Zeitraum(SQLModel, table=True):
     # Abweichung wird ausgewiesen, nicht stillschweigend eingeebnet.
     # Additiv, Default 0 = keine Angabe, es gilt weiterhin der Zähler.
     wasser_rechnung_m3: float = 0.0
+    # N192 — die geeichte Rechnungsmenge des Netzbezugs (kWh), wie sie auf der
+    # Stromrechnung des Versorgers steht. SolarEdge misst am Wechselrichter, die
+    # Rechnung am geeichten Zähler; für den E-Auto-Satz zählt diese Menge (N173).
+    # Bisher ging sie nur über die `menge` einer externen Strom-Position; wo es
+    # (noch) keine solche Position gibt, hält der Nutzer sie hier fest — direkt
+    # aus dem Stromketten-Hinweis. Additiv, Default 0 = keine Angabe, dann fällt
+    # der geeichte Satz auf den Verteilungssatz zurück.
+    strom_rechnung_kwh: float = 0.0
 
 
 class Kostenposition(SQLModel, table=True):

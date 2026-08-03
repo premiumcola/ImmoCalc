@@ -930,6 +930,99 @@
   .sk-kontrolle .ok{color:var(--pos)}
   .sk-kontrolle .fehl{color:var(--neg)}
 
+  /* ---- N191/N192: grafisch strukturierte Stromkette ---------------------- */
+  /* Der ct/kWh-Wert als kleiner Chip oben rechts im Kopf statt als volle Zeile. */
+  .sk-satzchip{margin-left:auto;flex:none;font:600 10px var(--mono);
+    color:var(--ink);background:var(--paper);border-radius:999px;padding:5px 10px;
+    white-space:nowrap}
+  /* Balken (Höhe ∝ Prozent) links, Tabelle rechts — auf dem iPhone bricht die
+     Tabelle unter die Balken um. */
+  .sk-split{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+  .sk-splittab{flex:1 1 230px;min-width:0}
+  .sk-bars{flex:0 0 auto;display:flex;align-items:flex-end;gap:9px;
+    padding:10px 12px 9px;background:var(--paper);border-radius:12px;
+    position:relative}
+  .sk-saeule{display:flex;flex-direction:column;align-items:center;
+    justify-content:flex-end;gap:3px}
+  .sk-saeule-wert{font:600 9.5px var(--mono);color:var(--soft)}
+  .sk-saeule-bar{width:18px;border-radius:5px 5px 0 0;min-height:8px}
+  .sk-saeule-name{font:600 8px var(--mono);letter-spacing:.04em;
+    text-transform:uppercase;color:var(--soft)}
+  .sk-bars-pfeil{align-self:center;font-size:17px;color:var(--teal);
+    line-height:1;padding-left:1px}
+  /* Die Zeilenköpfe tragen die Balkenfarbe — so liest sich, welcher Balken zu
+     welcher Zeile gehört. */
+  .sk-rh-netz{box-shadow:inset 3px 0 0 var(--amber)}
+  .sk-rh-pv{box-shadow:inset 3px 0 0 var(--teal)}
+  .sk-rh-akku{box-shadow:inset 3px 0 0 var(--pos)}
+  /* Drei Bubbles statt eines grauen Textblocks. */
+  .sk-bubbles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:8px;margin-top:12px}
+  .sk-bubble{background:var(--paper);border-radius:12px;padding:10px 12px;
+    font:400 11.5px var(--body);color:var(--ink);line-height:1.5}
+  .sk-bubble b{font-weight:600}
+  .sk-bubble-k{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft);margin-bottom:4px}
+  .sk-bubble-warn{display:block;color:var(--amber);margin-top:6px;
+    font:500 11px var(--body);line-height:1.45}
+  /* Aufklappbare Info-Box (Datenherkunft & €-Herleitung) — wie bei der
+     E-Tankstelle, kein Framework. */
+  .sk-info{margin-top:8px}
+  .sk-info>summary{list-style:none;cursor:pointer;font:600 10px var(--mono);
+    color:var(--teal-d);display:inline-flex;align-items:center;gap:5px;
+    min-height:32px}
+  .sk-info>summary::-webkit-details-marker{display:none}
+  .sk-info>summary::before{content:'i';display:inline-flex;align-items:center;
+    justify-content:center;width:15px;height:15px;border-radius:50%;
+    background:var(--teal-l);color:var(--teal-d);font:700 9px var(--mono)}
+  .sk-info[open]>summary{margin-bottom:2px}
+  .sk-info .sk-herk{margin-top:6px}
+  /* N192 — die Netz-Belege ansehen/herausnehmen. */
+  .sk-belege{margin-top:12px;background:var(--paper);border-radius:12px;
+    padding:11px 12px}
+  .sk-belege-k{display:block;font:600 8.5px var(--mono);letter-spacing:.05em;
+    text-transform:uppercase;color:var(--soft)}
+  .sk-belege-txt{display:block;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.5;margin:3px 0 9px}
+  .sk-belege .belege{margin-top:0}
+  /* N192 — die geeichte Rechnungsmenge: ruhige Info-Box mit Eingabe, kein
+     Dauerbanner. */
+  .sk-geeicht{margin-top:10px;background:var(--paper);border-radius:12px;
+    padding:11px 12px;border-left:3px solid var(--amber-li)}
+  .sk-geeicht>summary{list-style:none;cursor:pointer;display:flex;
+    align-items:center;font:600 11.5px var(--body);color:var(--ink);
+    line-height:1.4;min-height:28px}
+  .sk-geeicht>summary::-webkit-details-marker{display:none}
+  .sk-geeicht-i{flex:none;display:inline-flex;align-items:center;
+    justify-content:center;width:16px;height:16px;border-radius:50%;
+    background:var(--amber-li);color:var(--amber);font:700 10px var(--mono);
+    margin-right:8px}
+  .sk-geeicht p{font:400 11.5px var(--body);color:var(--soft);line-height:1.55;
+    margin:9px 0 0}
+  .sk-geeicht p b{color:var(--ink);font-weight:600}
+  .sk-geeicht-eingabe{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .sk-geeicht-eingabe input{flex:1 1 130px;min-width:0;border:1.5px solid var(--line);
+    border-radius:10px;padding:10px 11px;min-height:44px;background:var(--sheet);
+    font:600 12px var(--mono);color:var(--ink)}
+  .sk-geeicht-eingabe input:focus{outline:none;border-color:var(--teal)}
+  .sk-geeicht-eingabe button{flex:none;min-height:44px;padding:0 16px;border:none;
+    border-radius:10px;background:var(--teal);color:#fff;cursor:pointer;
+    font:600 12px var(--disp)}
+  .sk-geeicht-eingabe button:hover{background:var(--teal-d)}
+  /* N191 — „was übrig ist" vor der Verteilungstabelle: gekipptes Etikett + Zahl. */
+  .sk-rest{display:flex;align-items:stretch;gap:11px;margin:2px 0 11px;
+    background:var(--teal-l);border-radius:12px;padding:10px 13px}
+  .sk-rest-label{flex:none;writing-mode:vertical-rl;transform:rotate(180deg);
+    font:600 8.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--teal-d);text-align:center}
+  .sk-rest-zahl{flex:1;min-width:0;display:flex;flex-direction:column;
+    justify-content:center}
+  .sk-rest-zahl b{font:600 20px var(--disp);color:var(--ink);line-height:1.1}
+  .sk-rest-zahl small{display:block;font:400 11px var(--body);color:var(--soft);
+    line-height:1.4;margin-top:3px}
+  @media(max-width:560px){ .sk-bars-pfeil{transform:rotate(90deg);
+    align-self:center} }
+
   .pdflink{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
     background:#F1F4F4;color:var(--ink);border-radius:10px;padding:9px 12px;
     font:600 11.5px var(--body);min-height:40px;margin-top:10px}
@@ -3392,6 +3485,41 @@ async function stromMengeSpeichern(input) {
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
+/* N192 — einen Netz-Beleg aus der Stromkette herausnehmen: die Zuordnung zum
+   Zeitraum wird gelöst (und, falls verbucht, aus der Position), die Datei bleibt
+   in der Cloud. Danach rechnet sich der Netzbetrag neu. */
+async function stromBelegLoesen(id, name) {
+  const ok = await frage(`Beleg „${name || 'Beleg'}“ aus dem Netzbetrag `
+    + 'herausnehmen? Die Datei bleibt in der Cloud — nur die Zuordnung zu diesem '
+    + 'Zeitraum wird gelöst.');
+  if (!ok) return;
+  try {
+    // Verbuchung lösen (falls vorhanden) und aus dem Zeitraum nehmen — erst
+    // dadurch fällt der Beleg aus dem Strombetrag.
+    await api(`/dokumente/${id}/position`, { method: 'DELETE' }).catch(() => {});
+    await api(`/dokumente/${id}`, { method: 'PATCH', body: { zeitraum_id: null } });
+    melde('Beleg herausgenommen — die Datei bleibt in der Cloud', 'pos');
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* N192 — die geeichte Rechnungsmenge des Netzbezugs am Zeitraum festhalten. Ist
+   sie gesetzt, rechnet der E-Auto-Satz auf die geeichte Menge und der Hinweis
+   verschwindet. */
+async function geeichteMengeSpeichern(btn) {
+  const input = btn.closest('.sk-geeicht-eingabe')?.querySelector('[data-geeichte-menge]');
+  const wert = parseFloat(String(input?.value || '').replace(/\./g, '').replace(',', '.'));
+  if (Number.isNaN(wert) || wert <= 0) {
+    return melde('Bitte eine Menge in kWh eintragen', 'neg');
+  }
+  try {
+    await api(`/zeitraeume/${zid}/strom/rechnungsmenge`, { method: 'PUT',
+      body: { rechnung_kwh: wert } });
+    melde('Geeichte Rechnungsmenge gespeichert', 'pos');
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
 /* N122 — woher der Strom dieser Position kam. Ein zweiter Tipp auf dieselbe
    Herkunft nimmt sie wieder zurück. */
 async function stromHerkunftSetzen(btn) {
@@ -3836,6 +3964,66 @@ async function fuelleStromketteInline(el, frisch = false) {
   }
 }
 
+/* N191 — die drei SolarEdge-Anteile als Balken: Höhe ∝ Prozent, farbgleich mit
+   den Tabellenzeilen, ein Pfeil deutet den Fluss in die Quelle/Menge/Kosten-
+   Tabelle an. Ersetzt die nackte „24 % 50 % 26 %"-Kopfzeile. */
+const SK_FARBE = { netz: 'var(--amber)', pv: 'var(--teal)', akku: 'var(--pos)' };
+const skProzent = (s, k) => s[`${k === 'akku' ? 'speicher' : k}_prozent`] || 0;
+function skBalken(s) {
+  const werte = SK_BLOECKE.map(([k]) => skProzent(s, k));
+  const max = Math.max(1, ...werte);
+  const saeulen = SK_BLOECKE.map(([k, titel], i) => {
+    const p = werte[i];
+    // Höhe in Pixeln, proportional zum Prozentsatz (Netz≈Speicher, PV höher).
+    const px = Math.max(8, Math.round(p / max * 62));
+    return `<div class="sk-saeule">
+        <span class="sk-saeule-wert">${skProz(p)}%</span>
+        <span class="sk-saeule-bar" style="height:${px}px;background:${
+          SK_FARBE[k]}"></span>
+        <span class="sk-saeule-name">${esc(titel.split(' ')[0])}</span>
+      </div>`;
+  }).join('');
+  return `<div class="sk-bars" role="img" aria-label="Aufteilung Netz ${
+      skProz(werte[0])} Prozent, PV ${skProz(werte[1])} Prozent, Speicher ${
+      skProz(werte[2])} Prozent">${saeulen}
+    <span class="sk-bars-pfeil" aria-hidden="true">→</span></div>`;
+}
+
+/* N191 — der graue Erklärblock als drei knappe Bubbles: die Fakten der Tabelle,
+   was daraus wird, und was unten weitergeht. Die Datenherkunft und die
+   €-Herleitung stecken in einer aufklappbaren Info-Box (wie bei der
+   E-Tankstelle), damit die Bubbles kurz bleiben. */
+function skBubbles(s) {
+  const anteile = SK_BLOECKE.map(([k, titel]) =>
+    `${esc(titel.split(' ')[0])} ${skProz(skProzent(s, k))}%`).join(' · ');
+  // Herkunft je Block, kondensiert — in der Info-Box, nicht als eigene Liste.
+  // Die Belege stehen jetzt in ihrer eigenen Sektion (skNetzBelege) — hier nur
+  // die kurze Herleitung je Block, ohne die Dateinamen ein zweites Mal.
+  const herkunft = SK_BLOECKE.map(([k, titel]) => {
+    const h = (s[k] || {}).herkunft || {};
+    if (!h.text) return '';
+    return `<li><b>${esc(titel.split(' ')[0])}</b> ${esc(h.text)}</li>`;
+  }).filter(Boolean).join('');
+  const menge = s.quelle_menge
+    ? `<li><b>Menge</b> ${esc(s.quelle_menge)}</li>` : '';
+  const fehlt = s.vollstaendig === false
+    ? `<span class="sk-bubble-warn">Für die mit „fehlt“ gezeichneten Blöcke
+        liegt noch kein Betrag vor — die Summe ist nur das bisher Bekannte.</span>`
+    : '';
+  return `<div class="sk-bubbles">
+      <div class="sk-bubble"><span class="sk-bubble-k">Aus der Tabelle</span>
+        <b>${zahl(s.gesamt_kwh)} kWh</b> — ${anteile}.</div>
+      <div class="sk-bubble"><span class="sk-bubble-k">Daraus wird</span>
+        <b>${eur(s.betrag)}</b> Stromkosten. Netz nach Rechnung, PV &amp; Akku
+        10 % unter dem Netzpreis.${fehlt}
+        <details class="sk-info"><summary>Woher die Zahlen &amp; Euro kommen</summary>
+          <ul class="sk-herk">${menge}${herkunft}</ul></details></div>
+      <div class="sk-bubble"><span class="sk-bubble-k">Weiter unten</span>
+        Davon geht die E-Tankstelle vorab ab (Schritt 2); der Rest verteilt sich
+        nach Zählerwerten auf die Einheiten (Schritt 3).</div>
+    </div>`;
+}
+
 /* Schritt 1 — aus den drei Anteilen und der Rechnung werden Euro. Die Prozente
    sind hier eingebbar: gespeichert werden sie als die drei Mengen am Strom-Jahr
    (netz_kwh/solar_kwh/akku_kwh), aus denen sie sich wieder ergeben. */
@@ -3851,55 +4039,45 @@ function skSchritt1(d) {
         <span>${wert ? `${skProz(wert)} %` : '—'}</span></div>`;
   // Drei Spalten, damit die Kosten auch auf dem iPhone ohne Scrollen dastehen:
   // der Preis je kWh steht als Unterzeile bei den Kosten, aus denen er kommt.
-  // Fehlt ein Betrag noch, steht dort ein Strich statt 0,00 € — eine Null läse
-  // sich wie „dieser Strom kostet nichts", und das ist etwas anderes.
+  // Der Prozentsatz steht jetzt als Balken links (skBalken), nicht mehr als
+  // Text in der Menge-Spalte — das war doppelt.
   const zeilen = SK_BLOECKE.map(([k, titel, sub]) => {
     const b = s[k] || {};
-    // Kurz halten: „Betrag fehlt" macht die Kosten-Spalte so breit, dass die
-    // Tabelle auf dem iPhone seitwaerts scrollen muss.
     const kosten = b.betrag == null
       ? `<span class="wd-m3 sk-offen">—</span>
          <span class="wd-eur sk-offen">fehlt</span>`
       : `<span class="wd-m3">${eur(b.betrag)}</span>
          <span class="wd-eur">${b.preis == null ? '—' : `${skCt(b.preis)}/kWh`}</span>`;
     return `<tr>
-      <td class="wd-rowh">${titel}<small>${sub}</small></td>
-      <td><span class="wd-m3">${skKwh(b.kwh)}</span>
-        <span class="wd-eur">${skProz(s[`${k === 'akku' ? 'speicher' : k}_prozent`])} %</span></td>
+      <td class="wd-rowh sk-rh-${k}">${titel}<small>${sub}</small></td>
+      <td><span class="wd-m3">${skKwh(b.kwh)}</span></td>
       <td>${kosten}</td></tr>`;
   }).join('');
-  // Die Herkunft jeder Zahl: aus welcher Kostenposition der Betrag stammt und
-  // welcher Beleg daran hängt. Der Nutzer will das je Block sehen, nicht als
-  // einen Satz für alle drei.
-  const herkunft = SK_BLOECKE.map(([k, titel]) => {
-    const h = (s[k] || {}).herkunft || {};
-    if (!h.text) return '';
-    return `<li><b>${esc(titel)}</b> ${esc(h.text)}${
-      h.beleg ? ` · Beleg <b>${esc(h.beleg)}</b>` : ''}</li>`;
-  }).filter(Boolean).join('');
-  const quelle = [s.quelle_menge && `Menge: <b>${esc(s.quelle_menge)}</b>`,
-    s.quelle_anteile && `Anteile: <b>${esc(s.quelle_anteile)}</b>`]
-    .filter(Boolean).join(' · ');
+  // N191/N192 — der ct/kWh-Wert nicht mehr als volle Zeile, sondern als kleiner
+  // Chip oben rechts. Weichen Verteilungs- und geeichter Satz ab, bleibt es bei
+  // den zwei erklärenden Kärtchen (skNetzsaetze) darunter.
+  const chip = (s.netz_preis != null && s.netz_preis_geeicht != null
+    && Math.abs(s.netz_preis - s.netz_preis_geeicht) < 1e-6)
+    ? `<span class="sk-satzchip" title="Durchschnittspreis Netzbezug inkl. Grundgebühr">Netz ${skCt(s.netz_preis)}/kWh</span>` : '';
   return `<div class="sk-schritt">
-      <div class="sk-kopf"><span class="sk-nr">1</span><span class="sk-t">Aus kWh
-        werden Euro</span><span class="sk-h">${zahl(s.gesamt_kwh)} kWh im Zeitraum</span></div>
+      <div class="sk-kopf"><span class="sk-nr">1</span><span class="sk-t">Gesamtverbrauch
+        im Zeitraum</span><span class="sk-h">${esc(d.zeitraum?.label || '')}</span>${chip}</div>
       <div class="sk-felder">${feld('netz', 'Netz', s.netz_erfasst)}${
         feld('pv', 'PV direkt', s.pv_erfasst)}${
         feld('akku', 'Speicher', s.speicher_erfasst)}</div>
-      <div class="wd-scroll"><table class="wd-tab sk-tab"><thead><tr>
-        <th class="wd-rowh">Quelle</th><th>Menge</th><th>Kosten</th>
-      </tr></thead><tbody>${zeilen}</tbody>
-      <tfoot><tr class="wd-summe"><td class="wd-rowh">Summe</td>
-        <td><span class="wd-m3">${skKwh(s.gesamt_kwh)}</span></td>
-        <td><span class="wd-m3">${eur(s.betrag)}</span></td>
-      </tr></tfoot>
-      </table></div>
+      <div class="sk-split">${skBalken(s)}
+        <div class="wd-scroll sk-splittab"><table class="wd-tab sk-tab"><thead><tr>
+          <th class="wd-rowh">Quelle</th><th>Menge</th><th>Kosten</th>
+        </tr></thead><tbody>${zeilen}</tbody>
+        <tfoot><tr class="wd-summe"><td class="wd-rowh">Summe</td>
+          <td><span class="wd-m3">${skKwh(s.gesamt_kwh)}</span></td>
+          <td><span class="wd-m3">${eur(s.betrag)}</span></td>
+        </tr></tfoot>
+        </table></div></div>
       ${skNetzsaetze(s)}
-      ${s.vollstaendig === false ? `<span class="sk-quelle sk-offen">Das ist
-        nur, was bisher bekannt ist — für die mit „fehlt“ gezeichneten Blöcke
-        liegt noch kein Betrag vor.</span>` : ''}
-      ${herkunft ? `<ul class="sk-herk">${herkunft}</ul>` : ''}
-      ${quelle ? `<span class="sk-quelle">${quelle}</span>` : ''}</div>`;
+      ${skBubbles(s)}
+      ${skNetzBelege(s)}
+      ${skGeeichteMenge(s, bearbeitbar)}</div>`;
 }
 
 /* N173 — der Netzstrom trägt zwei ct/kWh-Werte: den Verteilungssatz, den die
@@ -3910,12 +4088,9 @@ function skSchritt1(d) {
 function skNetzsaetze(s) {
   const vert = s.netz_preis, geeicht = s.netz_preis_geeicht;
   if (vert == null || geeicht == null) return '';
-  // Fallen beide zusammen (keine abweichende Rechnungsmenge), ist nichts zu
-  // erklären — eine Zeile, kein Vergleich.
-  if (Math.abs(vert - geeicht) < 1e-6) {
-    return `<div class="sk-saetze"><span class="sk-satz"><b>Netz ${
-      skCt(vert)}/kWh</b><small>Verteilung &amp; E-Auto</small></span></div>`;
-  }
+  // Fallen beide zusammen (keine abweichende Rechnungsmenge), steht der eine
+  // Satz als kleiner Chip oben im Kopf (N191) — hier nichts.
+  if (Math.abs(vert - geeicht) < 1e-6) return '';
   const menge = s.geeichte_menge
     ? ` (${zahl(s.geeichte_menge)} kWh laut Rechnung)` : '';
   return `<div class="sk-saetze">
@@ -3927,6 +4102,60 @@ function skNetzsaetze(s) {
         ihn auf die SolarEdge-gemessene Menge, das E-Auto auf die geeichte
         Rechnungsmenge. Die Differenz wird mit dem Versorger geklärt.</span>
     </div>`;
+}
+
+/* N192 — die Belege hinter dem Netzbetrag: ansehen und, wenn einer doppelt oder
+   irrelevant ist (z. B. reine Abschläge), herausnehmen. Ersetzt den toten
+   Hinweis „stammt aus 2 angehängten Belegen". Die Datei bleibt in der Cloud. */
+function skNetzBelege(s) {
+  const belege = s.netz_belege || [];
+  if (!belege.length) return '';
+  const bearbeitbar = daten.status === 'in Arbeit';
+  const zeilen = belege.map(b => {
+    const datum = belegDatumText(b.belegdatum);
+    const weg = bearbeitbar
+      ? `<button class="beleg-weg" data-strom-beleg-weg="${b.id}"
+          data-strom-beleg-name="${esc(b.dateiname)}"
+          title="Beleg herausnehmen (Datei bleibt in der Cloud)"
+          aria-label="Beleg „${esc(b.dateiname)}“ herausnehmen">×</button>` : '';
+    return `<span class="beleg-zeile"><a href="#" data-beleg="${b.id}"
+        data-name="${esc(b.dateiname)}" title="${esc(b.pfad)}">PDF · ${
+        esc(b.dateiname)}${b.betrag ? ` · ${eur(b.betrag)}` : ''}${
+        datum ? `<span class="beleg-datum">${datum}</span>` : ''}</a>${weg}</span>`;
+  }).join('');
+  const mehr = belege.length > 1
+    ? ` Trägt einer davon nur Abschläge oder ist doppelt, nimm ihn heraus —
+        der Netzbetrag rechnet sich dann neu.` : '';
+  return `<div class="sk-belege"><span class="sk-belege-k">Netz-Beleg${
+      belege.length === 1 ? '' : `e (${belege.length})`}</span>
+      <span class="sk-belege-txt">Der Netzbetrag stammt aus ${
+        belege.length === 1 ? 'diesem Beleg' : 'diesen Belegen'}.${mehr}</span>
+      <div class="belege">${zeilen}</div></div>`;
+}
+
+/* N192 — die geeichte Rechnungsmenge: erklären und eintragbar machen, statt sie
+   als Dauerwarnung stehen zu lassen. Ist sie gesetzt (geeichte_menge > 0),
+   erklären die zwei Satz-Kärtchen alles — hier nichts. Fehlt sie, eine ruhige
+   Info-Box mit Eingabe: sobald ein Wert steht, verschwindet der Hinweis und der
+   E-Auto-Satz rechnet auf die geeichte Menge. */
+function skGeeichteMenge(s, bearbeitbar) {
+  // Nur relevant, wenn es überhaupt einen Netzpreis gibt und noch keine
+  // geeichte Menge hinterlegt ist.
+  if (s.netz_preis == null || s.geeichte_menge > 0) return '';
+  const eingabe = bearbeitbar
+    ? `<div class="sk-geeicht-eingabe">
+        <input type="text" inputmode="decimal" data-geeichte-menge
+          placeholder="kWh laut Rechnung" aria-label="Geeichte Rechnungsmenge in kWh">
+        <button type="button" data-geeichte-menge-speichern>Eintragen</button>
+      </div>` : '';
+  return `<details class="sk-geeicht">
+      <summary><span class="sk-geeicht-i">i</span>Geeichte Rechnungsmenge fehlt
+        — E-Auto rechnet ersatzweise auf die SolarEdge-Menge</summary>
+      <p>Der Netzbezug wird auf der Versorgerrechnung nach dem <b>geeichten
+        Zähler</b> abgerechnet; SolarEdge misst am Wechselrichter und weicht davon
+        ab. Für den E-Auto-Satz zählt die geeichte Menge. Trag sie ein, dann
+        rechnet das E-Auto genau auf die abgerechneten kWh und dieser Hinweis
+        verschwindet.</p>${eingabe}</details>`;
 }
 
 /* Schritt 2 — die Ladungen der Periode gehen vorab ab. Sie werden aus dem
@@ -3982,9 +4211,18 @@ function skSchritt3(d) {
     <td class="wd-rowh">${titel}${sub ? `<small>${sub}</small>` : ''}</td>${zellen}</tr>`;
   const menge = k => namen.map(n =>
     `<td><span class="wd-m3">${skKwh(s.je_einheit[n][k])}</span></td>`).join('');
+  // N191 — zuerst sagen, wie viel nach dem E-Auto-Abzug übrig ist; das ist die
+  // Energie, die hier verteilt wird. Ein gekipptes „was übrig?"-Etikett links,
+  // die Zahl groß daneben.
+  const rest = `<div class="sk-rest">
+      <span class="sk-rest-label">was übrig ist</span>
+      <span class="sk-rest-zahl"><b>${zahl(s.rest_kwh)}</b> kWh<small>nach Abzug
+        der E-Tankstelle — diese verteilen sich nach Zählerwerten</small></span>
+    </div>`;
   return `<div class="sk-schritt">
       <div class="sk-kopf"><span class="sk-nr">3</span><span class="sk-t">Verteilung
         auf die Einheiten</span><span class="sk-h">nach Zählerwerten</span></div>
+      ${rest}
       <div class="wd-scroll"><table class="wd-tab sk-tab"><thead><tr>
         <th class="wd-rowh">Verbrauch</th>${namen.map(n =>
           `<th>${esc(n)}</th>`).join('')}</tr></thead>
@@ -4003,7 +4241,12 @@ function skSchritt3(d) {
 
 function stromketteInhalt(d) {
   const k = d.kontrolle || {};
-  const warn = (d.warnungen || []).map(t =>
+  // N192 — die zwei Hinweise, die jetzt eine eigene, handhabbare Stelle in
+  // Schritt 1 haben (Belege ansehen/herausnehmen · geeichte Menge eintragen),
+  // nicht mehr als Dauerbanner zeigen. Der Rest bleibt als Warnung.
+  const erledigt = t => t.includes('angehängten Beleg')
+    || t.includes('geeichte Rechnungsmenge');
+  const warn = (d.warnungen || []).filter(t => !erledigt(t)).map(t =>
     `<div class="ho-warn">▲ ${esc(t)}</div>`).join('');
   // N157 — die Autarkiequote steht jetzt im KOPF der Position (stromKopfHtml).
   // Hier stünde dieselbe Zahl ein zweites Mal.
@@ -4877,6 +5120,15 @@ inhalt.addEventListener('click', async e => {
   // N95 — einen Beleg aus seiner Kostenposition herausnehmen (Datei bleibt).
   const belegWeg = e.target.closest('[data-beleg-loesen]');
   if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
+  // N192 — einen Netz-Beleg der Stromkette herausnehmen (Datei bleibt in der
+  // Cloud, nur die Zuordnung zum Zeitraum wird gelöst).
+  const stBelegWeg = e.target.closest('[data-strom-beleg-weg]');
+  if (stBelegWeg) { e.preventDefault();
+    return stromBelegLoesen(stBelegWeg.dataset.stromBelegWeg,
+                            stBelegWeg.dataset.stromBelegName); }
+  // N192 — die geeichte Rechnungsmenge des Netzbezugs eintragen.
+  const gmSpeichern = e.target.closest('[data-geeichte-menge-speichern]');
+  if (gmSpeichern) { e.preventDefault(); return geeichteMengeSpeichern(gmSpeichern); }
   // N185 — die Wasser-Sammelposition bewusst leeren (für einen neuen Beleg).
   const wLeer = e.target.closest('[data-wasser-leeren]');
   if (wLeer) { e.preventDefault(); return wasserPositionLeeren(); }

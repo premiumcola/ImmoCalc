@@ -244,6 +244,40 @@ def _angehaengte_belege(session: Session,
     return " · ".join(sorted({d.dateiname for d in belege if d.dateiname}))
 
 
+def _beleg_karte(d: Dokument) -> dict:
+    """Das Wenige, das die Stromkette zu einem Netz-Beleg zeigt: genug, um ihn
+    anzusehen und — wenn er doppelt oder irrelevant ist — herauszunehmen (N192).
+    Die Datei bleibt in der Cloud; entfernt wird nur die App-Zuordnung."""
+    return {"id": d.id, "dateiname": d.dateiname or "",
+            "betrag": d.betrag, "pfad": d.pfad or "",
+            "belegdatum": d.belegdatum.isoformat() if d.belegdatum else "",
+            "position_id": d.position_id,
+            "aus_position": d.position_id is not None}
+
+
+def _netz_belege(session: Session, zid: int,
+                 positionen: list[Kostenposition]) -> list[dict]:
+    """Die Belege, aus denen der Netzbetrag gebildet ist — als Karten (N192).
+
+    Dieselbe Vorrangfolge wie :func:`_netz_betrag`: erst die Belege an einer
+    bestätigten externen Strom-Position, sonst die Strom-Belege des Zeitraums
+    mit erkanntem Betrag. So zeigt der Hinweis genau die Belege, die gerade in
+    die Summe eingehen — und lässt einen doppelten (z. B. reine Abschläge)
+    herausnehmen."""
+    aus_position = [p for p in positionen
+                    if (p.herkunft or "").strip().lower() == H_EXTERN
+                    and p.betrag]
+    if aus_position:
+        ids = [p.id for p in aus_position if p.id]
+        belege = list(session.exec(select(Dokument)
+                                   .where(Dokument.position_id.in_(ids))).all())
+    else:
+        belege = [d for d in session.exec(select(Dokument)
+                                          .where(Dokument.zeitraum_id == zid)).all()
+                  if d.betrag and _kostenblock(d.kostenart) == "Strom"]
+    return [_beleg_karte(d) for d in belege if d.id]
+
+
 def _netz_betrag(session: Session, zid: int,
                  positionen: list[Kostenposition]) -> tuple[float | None, str,
                                                             list[str], dict]:
@@ -669,7 +703,11 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     # ab, wird der Gap mit dem Versorger geklärt.
     netz_preis = (round(netz_betrag / bloecke.netz.kwh, 5)
                   if netz_betrag and bloecke.netz.kwh else None)
-    geeichte_menge = _geeichte_menge(positionen)
+    # N192 — die geeichte Menge zuerst aus einer externen Strom-Position (N173);
+    # wo es keine gibt, aus dem am Zeitraum festgehaltenen Wert (direkt aus dem
+    # Stromketten-Hinweis eingetragen). So löst sich der Dauerhinweis auf.
+    geeichte_menge = _geeichte_menge(positionen) or round(z.strom_rechnung_kwh
+                                                          or 0.0, 3)
     if netz_betrag and geeichte_menge > 0:
         netz_preis_geeicht = round(netz_betrag / geeichte_menge, 5)
     else:
@@ -747,6 +785,9 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
             # das, was bisher bekannt ist — und nicht der ganze Stromaufwand.
             "vollstaendig": None not in (netz_betrag, pv_betrag, akku_betrag),
             "quelle_betrag": quelle_betrag, "quelle_eigen": quelle_eigen,
+            # N192 — die Belege hinter dem Netzbetrag, damit der Hinweis sie
+            # ansehen und einen doppelten herausnehmen lassen kann.
+            "netz_belege": _netz_belege(session, zid, positionen),
         },
         "schritt2": {
             "eauto_kwh": eauto_kwh, "gemessen_kwh": eauto["gemessen_kwh"],
@@ -774,3 +815,25 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
         "eigenverbrauchsquote": e.eigenverbrauchsquote,
         "warnungen": warnungen,
     }
+
+
+@router.put("/zeitraeume/{zid}/strom/rechnungsmenge")
+def strom_rechnungsmenge_setzen(zid: int, data: dict,
+                                session: Session = Depends(get_session)) -> dict:
+    """N192 — die geeichte Rechnungsmenge des Netzbezugs festhalten (kWh).
+
+    Der Nutzer trägt sie direkt aus dem Stromketten-Hinweis ein; danach rechnet
+    der E-Auto-Satz auf die geeichte Menge statt ersatzweise auf die
+    SolarEdge-Menge, und der Dauerhinweis verschwindet. Der SolarEdge-Wert bleibt
+    unberührt — die beiden Sätze weichen bewusst voneinander ab (N173).
+
+    Additiv und zurücknehmbar: 0 (oder leer) setzt sie wieder zurück, dann gilt
+    wieder der Verteilungssatz."""
+    z = session.get(Zeitraum, zid)
+    if not z:
+        raise HTTPException(404, "Zeitraum nicht gefunden")
+    wert = data.get("rechnung_kwh")
+    z.strom_rechnung_kwh = float(wert) if wert not in (None, "") else 0.0
+    session.add(z)
+    session.commit()
+    return {"ok": True, "rechnung_kwh": z.strom_rechnung_kwh}
