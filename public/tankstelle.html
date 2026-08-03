@@ -258,6 +258,15 @@
          white-space:nowrap}
   .bl-hint{font:400 11px var(--body);color:var(--soft);line-height:1.55}
   .bl-hint a{color:var(--teal-d);font-weight:600}
+  /* N184b — die Empfänger-Anschrift unter dem Namen, wie im PDF. */
+  .bl-adr{font:400 11.5px var(--body);color:var(--ink);overflow-wrap:anywhere}
+  /* N184b — die ausgewiesene Ersparnis des Benzin-Kostenvergleichs: grün
+     hervorgehoben wie im PDF (--pos), ruhig, aber deutlich. */
+  .bl-spar{font:600 12.5px var(--body);color:var(--pos);line-height:1.5;
+           overflow-wrap:anywhere}
+  /* N184b — der Konto-Block: die Bankverbindung auf ruhigem Paper-Grund. */
+  .bl-konto{background:var(--paper);border-radius:12px;padding:12px 14px}
+  .bl-konto .bl-sd{font-family:var(--mono);font-size:11.5px}
   /* N184 — die Vorschau zeigt jetzt die VOLLSTÄNDIGE Abrechnung inline: dieselben
      Blöcke wie das PDF (Diagramm, Monatstabelle mit Kosten, E-Auto, Satz, Betrag).
      Jeder Abschnitt ein ruhiger Titel, darunter sein Inhalt. */
@@ -1529,11 +1538,12 @@ function blattTabelleStrom(monate, summe) {
    (`letzteAbrechnung`) und die Nutzerzeile daraus, ergänzt um die Monate aus dem
    Verlauf. Fehlt die Zeile wider Erwarten, fällt es auf den Mailtext zurück.
 
-   Zwei Blöcke des PDFs fehlen inline, weil `/abrechnung` ihre Daten nicht
-   mitliefert: der Benzin-Kostenvergleich (Verbrauch/Preis des Vergleichs­benziners
-   aus der KI) und die Bankverbindung des Objekts. Sie werden — wie im PDF bei
-   fehlenden Daten — schlicht weggelassen; ein Hinweis nennt, dass beide im
-   angehängten PDF stehen. Erfunden wird nichts. */
+   N184b — die Vorschau spiegelt das PDF jetzt vollständig: Empfänger-Anschrift
+   unter dem Namen, der Benzin-Kostenvergleich (mit grün hervorgehobener
+   Ersparnis) nach dem E-Auto-Block und die Objekt-Bankverbindung unter dem
+   Rechnungsbetrag. Fehlt ein Datum (kein KI-Benzinwert, kein Konto, keine
+   Anschrift), entfällt der jeweilige Block ersatzlos — wie im PDF, nie ein
+   Platzhalter, nie eine erfundene Zahl. */
 function abrechnungBlatt(nid, fallbackText, breite) {
   const d = letzteAbrechnung;
   const row = d && (d.nutzer || []).find(n => Number(n.nutzer_id) === Number(nid));
@@ -1576,6 +1586,47 @@ function abrechnungBlatt(nid, fallbackText, breite) {
         nur die Energie, nicht die Kosten.</span>` : ''}</div>`;
   }
 
+  // N184b — der Kosten-Benzinvergleich mit der grün hervorgehobenen Ersparnis,
+  // wie im PDF. `row.benzin` kommt aus `eauto.benzin_vergleich`; fehlt der
+  // Vergleich (kein KI-Benzinwert), ist es null und der Block entfällt.
+  let benzinBlock = '';
+  const bz = row.benzin;
+  if (bz) {
+    const spar = bz.ersparnis_100km == null ? '' : `<span class="bl-spar">
+      Ersparnis Elektro: ${eur(bz.ersparnis_100km)} je 100 km${
+        bz.ersparnis_gesamt != null && bz.km != null
+          ? ` — für rund ${zahl(bz.km, 0)} km im Quartal rund ${eur(bz.ersparnis_gesamt)}`
+          : ''}</span>`;
+    benzinBlock = `<div class="bl-block">
+      <span class="bl-abschnitt">Kostenvergleich mit Benzin</span>
+      <span class="bl-sd">Ein vergleichbarer Benziner braucht rund
+        ${zahl(bz.verbrauch_l, 1)} l/100 km (Annahme ${eur(bz.preis_liter)} je
+        Liter). Benzin ${eur(bz.benzin_100km)} je 100 km · Ihr E-Auto
+        ${eur(bz.e_100km)} je 100 km.</span>
+      ${spar}</div>`;
+  }
+
+  // N184b — die Objekt-Bankverbindung (der Betreiber, an den überwiesen wird).
+  // `d.konto` ist null, solange keine der drei Angaben gepflegt ist — dann
+  // entfällt der Block ersatzlos, kein leerer Platzhalter.
+  let kontoBlock = '';
+  if (d.konto) {
+    const teile = [];
+    if ((d.konto.kontoinhaber || '').trim()) teile.push(esc(d.konto.kontoinhaber));
+    if ((d.konto.iban || '').trim()) teile.push('IBAN ' + esc(d.konto.iban));
+    if ((d.konto.bank || '').trim()) teile.push(esc(d.konto.bank));
+    if (teile.length) kontoBlock = `<div class="bl-block bl-konto">
+      <span class="bl-abschnitt">Bitte überweisen Sie den Betrag auf:</span>
+      <span class="bl-sd">${teile.join(' · ')}</span></div>`;
+  }
+
+  // N184b — die Empfänger-Anschrift unter dem Namen (Straße, dann PLZ + Ort).
+  // Fehlt sie (noch nicht angelegte Person), bleibt es beim Namen.
+  const anschrift = [row.strasse,
+    [row.plz, row.ort].filter(s => (s || '').trim()).join(' ')]
+    .filter(s => (s || '').trim())
+    .map(s => `<span class="bl-adr">${esc(s)}</span>`).join('');
+
   // Satz je kWh mit Herkunft.
   const rabatt = d.satz_rabatt == null ? ''
     : ` (${Math.round(d.satz_rabatt * 100)} % darunter)`;
@@ -1591,9 +1642,11 @@ function abrechnungBlatt(nid, fallbackText, breite) {
       <span class="bl-meta">Ladezeitraum ${datum(d.von)} – ${datum(d.bis)}</span>
     </div>
     <div class="bl-empf"><span class="bl-name">${esc(row.name)}</span>
+      ${anschrift}
       ${row.email ? `<span class="bl-mail">${esc(row.email)}</span>` : ''}</div>
     ${verlaufBlock}
     ${eautoBlock}
+    ${benzinBlock}
     <div class="bl-block">
       <span class="bl-abschnitt">Satz je kWh</span>
       <div class="bl-satz"><span class="bl-sw">${satzText(row.satz)}</span>
@@ -1604,8 +1657,7 @@ function abrechnungBlatt(nid, fallbackText, breite) {
       <span class="bl-bl"><span class="bl-bk">Rechnungsbetrag</span>
         <span class="bl-bkwh">${kwh(row.kwh)} geladen</span></span>
       <span class="bl-bb">${row.betrag == null ? '—' : eur(row.betrag)}</span></div>
-    <span class="bl-hint">Der Benzin-Kostenvergleich und die Bankverbindung
-      stehen im PDF, das der Mail anhängt.</span>
+    ${kontoBlock}
   </div>`;
 }
 

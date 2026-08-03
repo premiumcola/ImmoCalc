@@ -1679,6 +1679,104 @@ def test_pdf_ohne_benzinwert_kein_kostenvergleich(client, monkeypatch):
     assert b"Kostenvergleich mit Benzin" not in antwort.content
 
 
+# --------------------------------------------------------------------------
+# N184b — /abrechnung liefert Benzin-Vergleich, Konto und Anschrift inline,
+# damit die HTML-Vorschau das PDF vollständig spiegelt.
+# --------------------------------------------------------------------------
+
+def test_abrechnung_liefert_benzin_kostenvergleich_je_nutzer(client, monkeypatch):
+    """Mit Verbrauch und ermitteltem Benziner-Wert trägt `/abrechnung` den
+    Kostenvergleich je Nutzer — dieselbe Logik wie das PDF, nicht dupliziert."""
+    from app import eauto as eauto_mod
+    monkeypatch.setattr(eauto_mod, "verbrauch_benzin_ermitteln",
+                        lambda *a, **k: (6.5, ""))
+    slug = _neues_objekt(client, "InlineBenzinhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)           # → 0,32 € je kWh
+    n = _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                json={"modell": "Cupra Born", "verbrauch_kwh_100km": 16.0})
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    bz = alicia["benzin"]
+    assert bz is not None
+    assert bz["verbrauch_l"] == 6.5
+    assert bz["preis_liter"] == 1.80
+    assert bz["benzin_100km"] == 11.70            # 6,5 l × 1,80 €
+    assert bz["e_100km"] == 5.12                  # 0,32 × 16
+    assert bz["ersparnis_100km"] == 6.58          # 11,70 − 5,12
+    # 100 kWh bei 16 kWh/100km → 625 km; Ersparnis 6,58 × 625/100 = 41,125 €.
+    assert bz["km"] == 625.0
+    assert bz["ersparnis_gesamt"] == 41.12
+
+
+def test_abrechnung_ohne_benzinwert_liefert_benzin_null(client, monkeypatch):
+    """Scheitert die Benziner-Ermittlung, ist `benzin` null — kein Vergleich,
+    keine erfundene Zahl."""
+    from app import eauto as eauto_mod
+    monkeypatch.setattr(eauto_mod, "verbrauch_benzin_ermitteln",
+                        lambda *a, **k: (None, eauto_mod.HINWEIS_BENZIN))
+    slug = _neues_objekt(client, "InlineKeinbenzinhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    # Ein Modell, das der modellweite Cache noch nicht kennt.
+    client.post(f"/api/tankstelle/{slug}/nutzer/{n['id']}/eauto",
+                json={"modell": "Peugeot e-208", "verbrauch_kwh_100km": 16.0})
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    assert alicia["benzin"] is None
+
+
+def test_abrechnung_ohne_verbrauch_liefert_benzin_null(client):
+    """Ohne hinterlegten E-Auto-Verbrauch gibt es keinen Kostenvergleich —
+    `benzin` bleibt null, und keine KI wird bemüht."""
+    slug = _neues_objekt(client, "InlineOhneVerbrauchhaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    assert alicia["benzin"] is None
+
+
+def test_abrechnung_liefert_objektkonto_und_anschrift(client):
+    """`/abrechnung` reicht die Objekt-Bankverbindung und die Empfänger-Anschrift
+    mit — beides zeigt die Inline-Vorschau, wie es das PDF tut."""
+    slug = _neues_objekt(client, "InlineKontohaus")
+    _objekt_konto(slug, bank="Sparkasse Test", iban="DE12 3456 7890",
+                  inhaber="Max Betreiber")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    n = client.post(f"/api/tankstelle/{slug}/nutzer", json={
+        "name": "Alicia", "email": "alicia@example.invalid",
+        "strasse": "Musterweg 3", "plz": "90000", "ort": "Nürnberg"}).json()
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["konto"] == {"kontoinhaber": "Max Betreiber",
+                          "iban": "DE12 3456 7890", "bank": "Sparkasse Test"}
+    alicia = next(z for z in d["nutzer"] if z["name"] == "Alicia")
+    assert alicia["strasse"] == "Musterweg 3"
+    assert alicia["plz"] == "90000"
+    assert alicia["ort"] == "Nürnberg"
+
+
+def test_abrechnung_ohne_objektkonto_liefert_konto_null(client):
+    """Fehlt die Objekt-Bankverbindung, ist `konto` null — der Block entfällt in
+    der Vorschau ersatzlos, kein leerer Platzhalter."""
+    slug = _neues_objekt(client, "InlineOhnekontohaus")
+    _stromkosten(slug, 2025, betrag=1600.0)
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _ladung(client, slug, 2025, name="Alicia", kwh=100.0, datum="2025-08-04")
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["konto"] is None
+
+
 def test_pdf_bleibt_auf_einer_a4_seite_auch_im_vollen_fall():
     """N179 — das Abrechnungs-PDF passt garantiert auf EINE A4-Seite: auch der
     volle Fall (zwölf Monate, E-Auto mit Benzin-Kostenvergleich, Objektkonto,

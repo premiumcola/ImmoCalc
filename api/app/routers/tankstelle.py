@@ -1487,15 +1487,34 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     # N170 — je Nutzer aus geladenen kWh und seinem Verbrauch die gefahrenen km,
     # den Preis je 100 km und das energetische Benzin-Äquivalent. Ohne
     # hinterlegten Verbrauch bleiben die Größen None (keine erfundene Zahl).
-    e_auto_von = {n["id"]: (n.get("e_auto_modell", ""),
-                            n.get("verbrauch_kwh_100km", 0.0)) for n in liste}
+    nach_id = {n["id"]: n for n in liste}
     for z in zeilen:
-        modell, verbrauch = e_auto_von.get(z.get("nutzer_id"), ("", 0.0))
+        n = nach_id.get(z.get("nutzer_id")) or {}
+        modell = n.get("e_auto_modell", "")
+        verbrauch = n.get("verbrauch_kwh_100km", 0.0)
         kz = eauto.kennzahlen(z["kwh"], z["betrag"], verbrauch or None)
         z["e_auto_modell"] = modell
         z["verbrauch_kwh_100km"] = verbrauch or 0.0
         z["km"], z["preis_100km"], z["liter_100km"] = (
             kz["km"], kz["preis_100km"], kz["liter_100km"])
+        # N184b — die Empfänger-Anschrift, damit die Inline-Vorschau sie unter
+        # dem Namen zeigen kann (wie das PDF). Eine noch nicht angelegte Person
+        # (nutzer_id None) hat keine.
+        z["strasse"] = n.get("strasse", "")
+        z["plz"] = n.get("plz", "")
+        z["ort"] = n.get("ort", "")
+        # N184b — der Benzin-Kostenvergleich je Nutzer, exakt wie ihn das PDF
+        # baut (`_pdf_und_name`): realer Verbrauch eines vergleichbaren Benziners
+        # aus der KI (gecacht über `_benzin_verbrauch`) gegen den echten
+        # E-Auto-Preis je 100 km. Ohne Verbrauch oder ohne belastbaren
+        # Benzinwert bleibt er None — kein Vergleich, keine erfundene Zahl.
+        z["benzin"] = (eauto.benzin_vergleich(
+            _benzin_verbrauch(session, modell), kz["preis_100km"], kz["km"])
+            if verbrauch and verbrauch > 0 else None)
+    # N184b — die Objekt-Bankverbindung (der Betreiber, an den überwiesen wird);
+    # None, wenn ungepflegt. Dieselbe Quelle wie das PDF (`_pdf_und_name`).
+    konto = {"kontoinhaber": o.kontoinhaber or "", "iban": o.iban or "",
+             "bank": o.bank or ""}
     zugeordnet = round(sum(z["kwh"] for z in zeilen), 3)
     return {"objekt": o.name, "jahr": jahr, "quartal": quartal,
             "quartale": sorted(set(quartale)), "aus_monate": sorted(aus),
@@ -1515,7 +1534,10 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
                           else round(summe["kwh"] - zugeordnet, 2)),
             "eigen_prozent": summe.get("eigen_prozent"),
             # N170 — die Annahme des Benzin-Äquivalents, sichtbar mitgeführt.
-            "benzin_kwh_pro_liter": eauto.BENZIN_KWH_PRO_LITER}
+            "benzin_kwh_pro_liter": eauto.BENZIN_KWH_PRO_LITER,
+            # N184b — die Objekt-Bankverbindung für den Konto-Block der
+            # Inline-Vorschau; None, wenn keine der drei Angaben gepflegt ist.
+            "konto": (konto if any(konto.values()) else None)}
 
 
 def _quartale_aus(quartal: int, quartale: str, aus: str) -> tuple[list[int],
