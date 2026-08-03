@@ -146,6 +146,10 @@
   .tabrahmen{overflow-x:auto;-webkit-overflow-scrolling:touch;
              border-radius:12px;background:var(--paper)}
   .mt{border-collapse:collapse;width:100%;min-width:322px}
+  /* N188 — die Kosten-Spalte trägt die Heatmap (amber je nach gefahrener Menge)
+     und den Betrag etwas kräftiger; die Tönung sitzt als Inline-Style dahinter. */
+  .mt td.kbtr{font-weight:700;color:var(--ink)}
+  .mt tfoot td.kbtr{color:var(--teal-d)}
   .mt th{font:600 9px var(--mono);letter-spacing:.06em;text-transform:uppercase;
          color:var(--soft);text-align:right;padding:11px 8px 8px;
          white-space:nowrap}
@@ -161,9 +165,9 @@
   .mt td .pz{display:block;font:400 9.5px var(--mono);color:var(--soft);
              margin-top:2px}
   .mt tfoot td{font-weight:700;border-top:1.5px solid var(--line)}
-  /* Fuenf Spalten (Monat · Geladen · Netz · PV · Akku) passen auf dem iPhone
-     nur mit knapperen Zellenabstaenden — sonst waere der Akku-Kopf
-     angeschnitten und der Rahmen muesste geschoben werden. */
+  /* Sieben Spalten (Monat · Geladen · Netz · PV · Akku · Reichw. · Kosten, N188)
+     passen auf dem iPhone nur mit knapperen Zellenabstaenden; darüber hinaus
+     scrollt der Rahmen (`.tabrahmen{overflow-x:auto}`) waagerecht in sich. */
   @media(max-width:479px){
     .mt th,.mt td{padding-left:5px;padding-right:5px}
     .mt th:first-child,.mt td:first-child{padding-left:11px}
@@ -195,16 +199,11 @@
      ein Zeitraum-Wahlblock lesbar sind. */
   .quartale.jahre{margin-bottom:8px}
   .quartale.jahre button{font-weight:700}
-  /* Welcher Zeitraum gerade gerechnet wird — sonst sieht ein Klick, der nur
-     Nullen umsortiert, wie „nichts passiert" aus. */
-  .zrzeile{display:block;font:500 11px var(--mono);color:var(--soft);
-           margin:0 0 14px;letter-spacing:.02em}
-
-  /* N169 — die Monatsauswahl unter den Quartalen: kleine Pillen, abgewaehlte
-     durchgestrichen. Touch-Ziele bleiben bei 44 px. */
-  .zrhint{display:block;font:600 9.5px var(--mono);letter-spacing:.06em;
-          text-transform:uppercase;color:var(--soft);margin:0 0 7px}
-  .monate{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+  /* N169/N187 — die Monatsauswahl unter den Quartalen: kleine Pillen,
+     abgewaehlte durchgestrichen, abgerechnete mit ✓. Der Zeitraum-Text wandert
+     zum Ø-Satz (N187), die separate „Einzelne Monate"-Zeile entfällt.
+     Touch-Ziele bleiben bei 44 px. */
+  .monate{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 14px}
   .monate .mchip{min-height:44px;min-width:44px;padding:8px 14px;border:none;
                  cursor:pointer;border-radius:999px;background:var(--paper);
                  color:var(--soft);font:600 11px var(--mono);letter-spacing:.03em}
@@ -296,6 +295,12 @@
                   color:var(--ink);white-space:nowrap}
   .satz-chip.netz i{background:var(--amber)}
   .satz-chip.eigen i{background:var(--teal)}
+  /* N187 — der Zeitraum, für den der Ø-Satz gilt: als ruhige Fußzeile im
+     Satz-Feld (bzw. solo, wenn noch kein Satz feststeht). */
+  .satz-zr{display:block;font:500 11px var(--mono);color:var(--soft);
+           letter-spacing:.02em}
+  .satz .satz-zr{margin-top:12px}
+  .satz-zr.solo{margin:0 0 14px}
 
   .az{background:var(--paper);border-radius:14px;padding:14px;
       margin-bottom:10px}
@@ -327,24 +332,24 @@
                font-size:14px}
   .az .fehlt{margin-top:10px}
 
-  /* ---- Autoversand-Schalter (N165/2) ----------------------------------- */
-  .toggle{display:flex;align-items:center;gap:12px;background:var(--paper);
-          border-radius:14px;padding:12px 14px;margin:0 0 14px;cursor:pointer}
-  .toggle input{position:absolute;opacity:0;width:0;height:0}
-  .toggle .ts{flex:none;width:46px;height:28px;border-radius:999px;
-              background:var(--line);position:relative;transition:background .15s}
-  .toggle .ts::after{content:"";position:absolute;top:3px;left:3px;width:22px;
-                     height:22px;border-radius:50%;background:#fff;
-                     transition:transform .15s;
-                     box-shadow:0 1px 2px rgba(22,38,44,.25)}
-  .toggle input:checked + .ts{background:var(--teal)}
-  .toggle input:checked + .ts::after{transform:translateX(18px)}
-  .toggle input:focus-visible + .ts{outline:2px solid var(--teal-d);
-                                    outline-offset:2px}
-  .toggle .tl{flex:1;min-width:0;font:600 13px var(--disp);color:var(--ink);
-              display:flex;flex-direction:column;gap:3px}
-  .toggle .tl small{font:400 11.5px var(--body);color:var(--soft);
-                    line-height:1.5;letter-spacing:0}
+  /* ---- Autoversand-Schalter (N165/2, kompakt seit N187) ---------------- */
+  /* Ein schlanker Schalter ganz oben, ohne Kasten — „Automatik" plus das i
+     direkt dahinter. Kein breiter Balken mehr, der wie eine eigene Karte wirkt. */
+  .autozeile{display:flex;align-items:center;gap:6px;margin:0 0 14px}
+  .switch{display:inline-flex;align-items:center;gap:9px;cursor:pointer;
+          min-height:44px}
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .switch .sw-track{flex:none;width:42px;height:25px;border-radius:999px;
+                    background:var(--line);position:relative;transition:background .15s}
+  .switch .sw-track::after{content:"";position:absolute;top:3px;left:3px;width:19px;
+                           height:19px;border-radius:50%;background:#fff;
+                           transition:transform .15s;
+                           box-shadow:0 1px 2px rgba(22,38,44,.25)}
+  .switch input:checked + .sw-track{background:var(--teal)}
+  .switch input:checked + .sw-track::after{transform:translateX(17px)}
+  .switch input:focus-visible + .sw-track{outline:2px solid var(--teal-d);
+                                          outline-offset:2px}
+  .switch .sw-label{font:600 13px var(--disp);color:var(--ink)}
 
   /* ---- Mehrnutzer-Zuordnung nach Zeitraum (N165/2) --------------------- */
   .zregel{background:var(--paper);border-radius:14px;padding:12px 14px;
@@ -432,27 +437,27 @@
   }
   @keyframes tinfo-auf{from{transform:translateY(100%)}to{transform:translateY(0)}}
 
-  /* Der Info-Knopf am Autoversand-Schalter sitzt neben dem Label, nicht in ihm
-     (ein Button im <label> würde sonst die Checkbox mitschalten). */
-  .toggle-wrap{display:flex;align-items:center;gap:2px;margin:0 0 14px}
-  .toggle-wrap .toggle{flex:1;margin:0}
+  /* Die Zeitraum-Zeile über dem Verlauf (Von–Bis · N Monate). Am Ø-Satz gibt es
+     dafür jetzt `.satz-zr` (N187); hier bleibt sie als Überschrift des Verlaufs. */
+  .zrzeile{display:block;font:500 11px var(--mono);color:var(--soft);
+           margin:0 0 14px;letter-spacing:.02em}
 
-  /* ---- N182: Haken an abgerechneten Perioden + Steuerung --------------- */
-  .quartale button .hk{margin-left:5px;font-size:11px;color:var(--pos);
-                       font-weight:700}
-  .quartale button[aria-pressed="true"] .hk{color:var(--teal-d)}
-  .abger-steuer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-                margin:0 0 14px}
-  .abger-steuer .as-t{font:600 9.5px var(--mono);letter-spacing:.06em;
-                      text-transform:uppercase;color:var(--soft)}
-  .abger-steuer .as-btn{min-height:44px;padding:8px 15px;border:none;
-                        cursor:pointer;border-radius:999px;background:var(--paper);
-                        color:var(--soft);font:600 11px var(--mono);
-                        letter-spacing:.03em;display:inline-flex;align-items:center;
-                        gap:6px}
-  .abger-steuer .as-btn[aria-pressed="true"]{background:var(--teal-l);
-                                             color:var(--teal-d)}
-  .abger-steuer .as-btn:hover{background:var(--teal-l);color:var(--teal-d)}
+  /* ---- N182/N187: Haken an abgerechneten Perioden + Inline-Schalter ----- */
+  /* Der ✓ an Jahr, Quartal und Monat, sobald die Periode abgerechnet ist. */
+  .quartale button .hk,.monate .mchip .hk{margin-left:5px;font-size:11px;
+                       color:var(--pos);font-weight:700}
+  .quartale button[aria-pressed="true"] .hk,
+  .monate .mchip.fertig .hk{color:var(--teal-d)}
+  /* Ein abgerechneter Monat: der ✓ genügt; abgewählt bleibt durchgestrichen. */
+  .monate .mchip.fertig{color:var(--teal-d)}
+  /* Der „abgerechnet"-Schalter sitzt inline am Ende der Monatszeile (N187) und
+     wirkt auf die gewählten Monate — rechtsbündig, klar vom Raster abgesetzt. */
+  .monate .abbtn{margin-left:auto;min-height:44px;padding:8px 15px;border:none;
+                 cursor:pointer;border-radius:999px;background:var(--paper);
+                 color:var(--soft);font:600 11px var(--mono);letter-spacing:.03em;
+                 display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .monate .abbtn.an{background:var(--teal-l);color:var(--teal-d)}
+  .monate .abbtn:hover{background:var(--teal-l);color:var(--teal-d)}
   /* Der gesperrte Versand-Knopf: sichtbar ausgegraut, die Vorschau bleibt. */
   .az .aw .btn.gesperrt{opacity:.55;cursor:default;background:var(--paper);
                         color:var(--soft)}
@@ -652,7 +657,8 @@ let addOffen = false;          /* ist die „Nutzer anlegen"-Eingabe aufgeklappt
 let verlaufMonate = [];        /* alle Monate, chronologisch — wie vom Backend */
 let verlaufSumme = {};         /* die Summe ueber ALLE Monate (bleibt sichtbar) */
 let verlaufSeite = 0;          /* aktuelle Tabellenseite, 0 = neueste Monate */
-const TAB_PRO_SEITE = 10;      /* ~10 Zeilen je Seite */
+const TAB_PRO_SEITE = 5;       /* ~5 Zeilen je Seite (N188) — lieber mehr Seiten
+                                  als eine lange Tabelle mit vielen Spalten */
 
 const MONKURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
                  'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -807,12 +813,32 @@ function verlaufTabelle() {
     ? '<td class="leise">—</td>'
     : `<td>${zahl(menge)}<span class="pz">${proz(prozent)}</span></td>`;
   const drei = summe.dreiteilig;
-  const zeile = m => `<tr>
+  // N188 — Reichweite (km, wie weit die geladene Menge trägt) und Gesamtbetrag
+  // (€) je Monat. Beide kommen aus dem Backend; fehlt die Grundlage (kein
+  // Verbrauch bzw. kein Satz), bleibt die Zelle leer statt eine 0 zu behaupten.
+  const kmZelle = m => m.km == null
+    ? '<td class="leise">—</td>'
+    : `<td>${zahl(m.km, 0)}<span class="pz">km</span></td>`;
+  // Die Heatmap der Gesamtbeträge: je mehr in einem Monat geladen — und damit
+  // gefahren — wurde, desto kräftiger die amberfarbene Tönung der €-Zelle.
+  // Bezug ist die geladene Menge über ALLE Monate (nicht nur die Seite), damit
+  // die Seiten untereinander vergleichbar bleiben. Die Summenzeile bleibt neutral.
+  const maxKwh = Math.max(1, ...monate.map(m => m.kwh || 0));
+  const heat = w => {
+    const i = Math.min(1, (w || 0) / maxKwh);
+    return i > 0.001 ? `background:rgba(145,98,18,${(0.05 + 0.30 * i).toFixed(3)})` : '';
+  };
+  const eurZelle = (m, summeRow) => m.kosten == null
+    ? '<td class="leise">—</td>'
+    : `<td class="kbtr" style="${summeRow ? '' : heat(m.kwh)}">${eur(m.kosten)}</td>`;
+  const zeile = (m, summeRow = false) => `<tr>
     <td>${esc(m.label)}</td>
     <td class="${m.kwh ? '' : 'leise'}">${zahl(m.kwh)}</td>
     ${zelle(m.extern_kwh, m.extern_prozent)}
     ${drei ? zelle(m.pv_kwh, m.pv_prozent) + zelle(m.speicher_kwh, m.speicher_prozent)
-           : zelle(m.eigen_kwh, m.eigen_prozent)}</tr>`;
+           : zelle(m.eigen_kwh, m.eigen_prozent)}
+    ${kmZelle(m)}
+    ${eurZelle(m, summeRow)}</tr>`;
 
   // Neueste voran: die Grafik oben laeuft chronologisch, die Tabelle blaettert
   // das Juengste zuerst — bei einer Abrechnung ist das das Interessante.
@@ -834,9 +860,10 @@ function verlaufTabelle() {
 
   return `${pager}<div class="tabrahmen"><table class="mt">
       <thead><tr><th>Monat</th><th>Geladen</th><th>Netz</th>
-        ${drei ? '<th>PV</th><th>Akku</th>' : '<th>Eigen</th>'}</tr></thead>
-      <tbody>${teil.map(zeile).join('')}</tbody>
-      <tfoot>${zeile({ ...summe, label: 'Summe' })}</tfoot>
+        ${drei ? '<th>PV</th><th>Akku</th>' : '<th>Eigen</th>'}
+        <th title="Reichweite des E-Autos">Reichw.</th><th>Kosten</th></tr></thead>
+      <tbody>${teil.map(m => zeile(m)).join('')}</tbody>
+      <tfoot>${zeile({ ...summe, label: 'Summe' }, true)}</tfoot>
     </table></div>`;
 }
 
@@ -1106,40 +1133,46 @@ async function nutzerEntfernen(id, name) {
    ======================================================================= */
 function zeitraumWahl() {
   const jahre = jahreListe.length ? jahreListe : [jahrWert()];
-  const jknopf = j => `<button type="button" data-jahr="${j}"
-      aria-pressed="${jahrWert() === j}">${j}</button>`;
-  // Quartale sind mehrfach waehlbar (N169). „Ganzes Jahr" ist der eigene
-  // Zustand [0]; ein einzelnes Quartal schaltet ihn ab.
+  // N187 — auch das NICHT gewählte Jahr zeigt seinen ✓, wenn es abgerechnet ist.
+  const jknopf = j => {
+    const ab = jahrAbgerechnet(j);
+    return `<button type="button" data-jahr="${j}" aria-pressed="${jahrWert() === j}"
+      ${ab ? 'title="Jahr abgerechnet"' : ''}>${j}${
+      ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
+  };
+  // Quartale sind mehrfach waehlbar (N169). „Jahr" ist der eigene Zustand [0];
+  // ein einzelnes Quartal schaltet ihn ab.
   const ganz = quartaleGewaehlt.includes(0);
   const qknopf = (wert, text) => {
     const an = wert === 0 ? ganz : (!ganz && quartaleGewaehlt.includes(wert));
-    // N182 — ein Haken an abgerechneten Perioden.
-    const ab = quartalAbgerechnet(wert);
+    const ab = quartalAbgerechnet(wert);      // N182 — Haken an abgerechneten
     return `<button type="button" data-quartal="${wert}" aria-pressed="${an}"
       ${ab ? 'title="bereits abgerechnet"' : ''}>${text}${
       ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
   };
-  // Die Monate des gewaehlten Zeitraums — abgewaehlte sind durchgestrichen und
-  // zaehlen nicht in Menge und Betrag.
+  // Die Monate des gewaehlten Zeitraums — abgewaehlte durchgestrichen (zaehlen
+  // nicht in Menge/Betrag), abgerechnete tragen einen ✓ (N187).
   const monate = monateDerQuartale();
-  const mchip = m => `<button type="button" class="mchip${
-      ausMonate.has(m) ? ' aus' : ''}" data-monat="${m}"
-      aria-pressed="${!ausMonate.has(m)}">${MONKURZ[m - 1]}</button>`;
-  // N182 — die kleine Steuerung an den Auswahl-Chips: die gewählte Periode als
-  // abgerechnet markieren (Initialstand) oder die Markierung wieder entfernen.
+  const mchip = m => {
+    const ab = monatAbgerechnet(jahrWert(), m);
+    return `<button type="button" class="mchip${ausMonate.has(m) ? ' aus' : ''}${
+        ab ? ' fertig' : ''}" data-monat="${m}" aria-pressed="${!ausMonate.has(m)}"
+      ${ab ? 'title="bereits abgerechnet"' : ''}>${MONKURZ[m - 1]}${
+      ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
+  };
+  // N187 — der „abgerechnet"-Schalter sitzt jetzt INLINE am Ende der
+  // Monatszeile und wirkt auf die GEWÄHLTEN Monate (Quartale minus abgewählte).
+  // So lassen sich auch einzelne Monate eines Quartals markieren.
   const ab = periodeAbgerechnet();
-  const steuer = `<div class="abger-steuer">
-      <span class="as-t">Bereits abgerechnet</span>
-      <button type="button" class="as-btn" data-abger-toggle
-        aria-pressed="${ab}">${ab
-          ? '✓ markiert – entfernen' : 'Als abgerechnet markieren'}</button>
-    </div>`;
+  const abBtn = `<button type="button" class="abbtn${ab ? ' an' : ''}"
+      data-abger-toggle aria-pressed="${ab}" title="${ab
+        ? 'Markierung „abgerechnet" für die gewählten Monate entfernen'
+        : 'Die gewählten Monate als abgerechnet markieren'}">${
+      ab ? '✓ abgerechnet' : 'abgerechnet?'}</button>`;
   return `<div class="quartale jahre">${jahre.map(jknopf).join('')}</div>
     <div class="quartale">${qknopf(1, 'Q1')}${qknopf(2, 'Q2')}${qknopf(3, 'Q3')}
-      ${qknopf(4, 'Q4')}${qknopf(0, 'Ganzes Jahr')}</div>
-    <span class="zrhint">Einzelne Monate abwählen</span>
-    <div class="monate">${monate.map(mchip).join('')}</div>
-    ${steuer}`;
+      ${qknopf(4, 'Q4')}${qknopf(0, 'Jahr')}</div>
+    <div class="monate">${monate.map(mchip).join('')}${abBtn}</div>`;
 }
 
 /* Ein Quartal an- oder abwaehlen (N169). „Ganzes Jahr" ist der Zustand [0];
@@ -1230,7 +1263,6 @@ async function abrechnungZeigen() {
 
   ziel.innerHTML = `${autoversandSchalter()}
     ${zeitraumWahl()}
-    <span class="zrzeile">${esc(d.label)} · ${datum(d.von)} – ${datum(d.bis)}</span>
     ${satzBlock(d)}
     ${d.automatisch ? autoNotiz() : offeneNotiz(d)}
     ${zeilen || `<div class="leer"><b>Noch nichts abzurechnen</b>
@@ -1258,14 +1290,15 @@ async function abrechnungZeigen() {
    Adresse, Ladung und Satz — als Mail mit PDF. Ein ruhiger Schalter, kein
    Warnton: es ist eine Erleichterung. */
 function autoversandSchalter() {
-  // Der Erklärtext steckt jetzt im i-Popup daneben (N181); der Schalter selbst
-  // bleibt ruhig. Der Info-Knopf steht neben dem <label>, nicht darin — sonst
-  // schaltete ein Klick darauf die Checkbox mit.
-  return `<div class="toggle-wrap">
-    <label class="toggle">
+  // N187 — kompakt ganz oben: ein schlanker Schalter „Automatik", das i direkt
+  // dahinter (der Erklärtext steckt im Popup, N181). Kein Kasten mehr. Der
+  // Info-Knopf steht NEBEN dem <label>, nicht darin — sonst schaltete ein Klick
+  // darauf die Checkbox mit.
+  return `<div class="autozeile">
+    <label class="switch">
       <input type="checkbox" data-autoversand ${einst.autoversand ? 'checked' : ''}>
-      <span class="ts" aria-hidden="true"></span>
-      <span class="tl">Automatisch verschicken</span>
+      <span class="sw-track" aria-hidden="true"></span>
+      <span class="sw-label">Automatik</span>
     </label>
     ${infoKnopf('autoversand')}
   </div>`;
@@ -1282,20 +1315,40 @@ async function einstellungenLaden() {
 /* N182 — die abgerechnet-Marker des gewählten Jahres holen. Wird zu Beginn von
    `abrechnungZeigen` gerufen, damit Chips und Versand-Knöpfe zum Jahr passen. */
 async function abgerechnetLaden() {
+  // N187 — ALLE Jahre holen (ohne `?jahr`), damit auch ein nicht gewähltes Jahr
+  // seinen ✓ tragen kann. Ein Marker kann quartals- (monat==null) oder
+  // monatsgenau (monat gesetzt) sein.
   try {
-    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}`
-                        + `/abgerechnet?jahr=${jahrWert()}`);
+    const d = await api(`/tankstelle/${encodeURIComponent(objektSlug)}/abgerechnet`);
     abgerechnet = d.abgerechnet || [];
   } catch { abgerechnet = []; }
 }
+
+/* N187 — ein Marker „deckt" einen Monat, wenn er entweder monatsgenau auf ihn
+   zeigt oder als Quartalsmarker das Quartal dieses Monats trägt. */
+const QUARTAL_VON = m => Math.floor((m - 1) / 3) + 1;
+const markerDeckt = (mk, j, m) => mk.jahr === j
+  && (mk.monat === m || (mk.monat == null && mk.quartal === QUARTAL_VON(m)));
+const monatAbgerechnet = (j, m) => abgerechnet.some(mk => markerDeckt(mk, j, m));
+
+/* Ein Jahr gilt als abgerechnet, wenn alle zwölf Monate abgerechnet sind
+   (je Monat genügt irgendein Nutzer — es ist nur das Signal am Jahres-Chip). */
+function jahrAbgerechnet(j) {
+  for (let m = 1; m <= 12; m++) if (!monatAbgerechnet(j, m)) return false;
+  return true;
+}
+
+/* Die aktuell WIRKSAMEN Monate: die Monate der gewählten Quartale ohne die von
+   Hand abgewählten. Sie sind der Bezug für „abgerechnet" (N187). */
+const aktiveMonate = () => monateDerQuartale().filter(m => !ausMonate.has(m));
 
 /* Ist ein Quartal (des gewählten Jahres) abgerechnet? Für den Chip-Haken: ein
    Quartal gilt als abgerechnet, sobald mindestens ein Nutzer es ist; „Ganzes
    Jahr" (0) nur, wenn alle vier Quartale abgerechnet sind. */
 function quartalAbgerechnet(q) {
   const j = jahrWert();
-  const qs = q === 0 ? [1, 2, 3, 4] : [q];
-  return qs.every(x => abgerechnet.some(m => m.jahr === j && m.quartal === x));
+  const monate = q === 0 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : (QMON[q] || []);
+  return monate.length > 0 && monate.every(m => monatAbgerechnet(j, m));
 }
 
 /* Ist die aktuell gewählte Periode für diesen Nutzer bereits abgerechnet? Sperrt
@@ -1304,17 +1357,19 @@ function quartalAbgerechnet(q) {
 function nutzerPeriodeAbgerechnet(nid) {
   if (!nid) return false;
   const j = jahrWert();
-  const qs = quartaleGewaehlt.includes(0) ? [1, 2, 3, 4] : quartaleGewaehlt;
-  return qs.some(q => abgerechnet.some(
-    m => m.jahr === j && m.quartal === q && m.nutzer_id === nid));
+  const mo = aktiveMonate();
+  // Gesperrt wird erst, wenn JEDER wirksame Monat für diesen Nutzer abgerechnet
+  // ist — sonst gäbe es noch Neues zu verschicken (N187, feiner als quartalsweit).
+  return mo.length > 0 && mo.every(m => abgerechnet.some(
+    mk => mk.nutzer_id === nid && markerDeckt(mk, j, m)));
 }
 
 /* Gilt die ganze gewählte Periode als abgerechnet (für die Steuerung: dann bietet
    sie „entfernen" statt „markieren")? */
 function periodeAbgerechnet() {
-  return quartaleGewaehlt.includes(0)
-    ? quartalAbgerechnet(0)
-    : quartaleGewaehlt.every(q => quartalAbgerechnet(q));
+  const mo = aktiveMonate();
+  const j = jahrWert();
+  return mo.length > 0 && mo.every(m => monatAbgerechnet(j, m));
 }
 
 /* N182 — die gewählte Periode von Hand als abgerechnet setzen oder die Markierung
@@ -1394,10 +1449,14 @@ async function ausschlussUmschalten(id) {
    Steht kein Satz fest, gibt es keine 0,00 € — sondern die Aussage, wodurch
    er entsteht. */
 function satzBlock(d) {
+  // N187 — der Zeitraum, für den der Durchschnittssatz gilt, steht jetzt AM
+  // Satz statt in einer eigenen Zeile darüber („dieser Ø-Wert gilt für …").
+  const zr = `gilt für ${esc(d.label)} · ${datum(d.von)} – ${datum(d.bis)}`;
   if (d.satz == null) {
     return `<div class="notiz"><span class="wi">◔</span><span>${esc(
       d.satz_grund || 'Der Satz je kWh lässt sich noch nicht ermitteln.')}
-      </span></div>`;
+      </span></div>
+      <span class="satz-zr solo">${zr}</span>`;
   }
   // Jede Ergaenzung einzeln geprueft: fehlt eine, bleibt sie weg. Ein „NaN %"
   // oder ein „undefined" waere schlimmer als eine Zeile weniger.
@@ -1422,7 +1481,8 @@ function satzBlock(d) {
   return `<div class="satz">
     <div class="satz-hero"><span class="sw">${satzText(d.satz)}</span>
       ${infoKnopfText('Satz je kWh', infoText)}</div>
-    ${chips}</div>`;
+    ${chips}
+    <span class="satz-zr">${zr}</span></div>`;
 }
 
 /* Der Kern des Fehlers „ich druecke und nichts passiert": abgerechnet wird

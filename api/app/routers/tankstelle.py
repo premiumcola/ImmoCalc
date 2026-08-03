@@ -980,6 +980,14 @@ def _versendet_schluessel(slug: str, jahr: int, quartal: int,
     return f"{S_VERSENDET}:{slug}:{jahr}:Q{quartal}:{nutzer_id}"
 
 
+def _monat_schluessel(slug: str, jahr: int, monat: int, nutzer_id: int) -> str:
+    """Der Marker-Schlüssel für einen **einzelnen Monat** (N187).
+
+    Gleicher Namensraum wie der Quartalsmarker, nur mit ``M<monat>`` statt
+    ``Q<quartal>`` — additiv, kein Quartalsmarker wird davon berührt."""
+    return f"{S_VERSENDET}:{slug}:{jahr}:M{monat}:{nutzer_id}"
+
+
 def ist_versendet(session: Session, slug: str, jahr: int, quartal: int,
                   nutzer_id: int) -> bool:
     """Wurde dieses Quartal an diesen Nutzer schon automatisch verschickt?"""
@@ -1026,7 +1034,13 @@ def abgerechnet_marker(session: Session, slug: str,
     Grundlage ist derselbe Schlüssel wie beim Autoversand
     (``tankstelle_versendet:<slug>:<jahr>:Q<quartal>:<nutzer_id>``) — automatisch
     und von Hand gesetzte Marker stehen damit im selben Namensraum. Mit `jahr`
-    lässt sich auf ein Jahr einschränken."""
+    lässt sich auf ein Jahr einschränken.
+
+    Seit N187 gibt es zusätzlich monatsgenaue Marker mit ``M<monat>`` statt
+    ``Q<quartal>``. Jeder Eintrag trägt beide Felder: `quartal` (bei einem
+    Monatsmarker das Quartal, in dem der Monat liegt) und `monat` (``None`` bei
+    einem Quartalsmarker) — so kann die Oberfläche Monate weiterhin zu ihrem
+    Quartal zusammenrollen."""
     prefix = f"{S_VERSENDET}:{slug}:"
     ergebnis: list[dict] = []
     for e in session.exec(select(Einstellung).where(
@@ -1036,18 +1050,32 @@ def abgerechnet_marker(session: Session, slug: str,
         teile = e.schluessel[len(prefix):].split(":")
         if len(teile) != 3:
             continue
+        jahr_roh, periode, nid_roh = teile
         try:
-            j = int(teile[0])
-            q = int(teile[1].lstrip("Q"))
-            nid = int(teile[2])
+            j = int(jahr_roh)
+            nid = int(nid_roh)
         except ValueError:
             continue
         if jahr and j != jahr:
             continue
-        ergebnis.append({"jahr": j, "quartal": q, "nutzer_id": nid,
-                         "am": e.wert})
+        if periode.startswith("M"):          # Monatsmarker (N187)
+            try:
+                m = int(periode[1:])
+            except ValueError:
+                continue
+            if not 1 <= m <= 12:
+                continue
+            q, monat = (m - 1) // 3 + 1, m
+        else:                                # Quartalsmarker (wie bisher)
+            try:
+                q = int(periode.lstrip("Q"))
+            except ValueError:
+                continue
+            monat = None
+        ergebnis.append({"jahr": j, "quartal": q, "monat": monat,
+                         "nutzer_id": nid, "am": e.wert})
     return sorted(ergebnis, key=lambda m: (m["jahr"], m["quartal"],
-                                           m["nutzer_id"]))
+                                           m["monat"] or 0, m["nutzer_id"]))
 
 
 # ==========================================================================
@@ -1387,6 +1415,72 @@ def _posten_holen(session: Session, o: Objekt, von: date,
     return ersatz, ("erfasst" if ersatz else "leer"), hinweis
 
 
+def _stations_verbrauch(nutzer: list[dict]) -> float | None:
+    """Der mittlere Verbrauch (kWh/100km) über alle Nutzer der Station, die
+    einen Wert gepflegt haben (N188).
+
+    Für die Reichweite eines Monats braucht es einen typischen Verbrauch der
+    Station — der Durchschnitt der Nutzer mit einem Wert > 0. Hat niemand einen
+    Verbrauch hinterlegt, kommt ``None`` zurück: dann bleibt die Reichweite
+    leer, statt sie aus dem Nichts zu erfinden."""
+    werte = [n.get("verbrauch_kwh_100km") or 0.0 for n in nutzer]
+    werte = [w for w in werte if w > 0]
+    return sum(werte) / len(werte) if werte else None
+
+
+def _verlauf_kosten_km(session: Session, o: Objekt, zeilen: list[dict],
+                       summe: dict) -> tuple[list[dict], dict]:
+    """Je Monatszeile (und in der Summe) die Ladekosten (€) und die Reichweite
+    (km) ergänzen — beide additiv (N188).
+
+    `kosten` = Netz-kWh × Netzsatz + Eigen-kWh × Eigensatz. Der Satz stammt aus
+    der Abrechnungsperiode, in der der Monat liegt (`satz_ableiten`, N148), und
+    wird je Monatsspanne gemerkt — Monate derselben Periode rechnen ihn nicht
+    doppelt. Fehlt der Netzsatz (kein ableitbarer Satz) oder ist die Aufteilung
+    des Monats unbekannt, bleibt `kosten` leer: **keine 0,00 € als Notnagel.**
+
+    `km` sagt, wie weit die geladenen kWh ein typisches Fahrzeug der Station
+    tragen. Ohne einen einzigen gepflegten Verbrauch bleibt sie leer. Der
+    Stationsverbrauch wird einmal je Abfrage bestimmt.
+
+    Die Summe addiert nur die belegten Monate; sie ist nur dann leer, wenn
+    **jeder** Monat leer ist."""
+    verbrauch = _stations_verbrauch(nutzer_lesen(session, o))
+    cache: dict[tuple[date, date], Satz] = {}
+
+    def _satz(von: date, bis: date) -> Satz:
+        if (von, bis) not in cache:
+            cache[(von, bis)] = satz_ableiten(session, o.id, von, bis)
+        return cache[(von, bis)]
+
+    def _monatskosten(z: dict) -> float | None:
+        extern, eigen = z.get("extern_kwh"), z.get("eigen_kwh")
+        if extern is None or eigen is None:
+            return None
+        von = date(z["jahr"], z["monat"], 1)
+        bis = date(z["jahr"], z["monat"], monthrange(z["jahr"], z["monat"])[1])
+        satz = _satz(von, bis)
+        if satz.netz is None or satz.grund:
+            return None
+        return round(extern * satz.netz + eigen * satz.eigen, 2)
+
+    def _monatskm(z: dict) -> int | None:
+        if verbrauch is None:
+            return None
+        km = eauto.gefahrene_km(z["kwh"], verbrauch)
+        return None if km is None else round(km)
+
+    for z in zeilen:
+        z["kosten"] = _monatskosten(z)
+        z["km"] = _monatskm(z)
+
+    kosten = [z["kosten"] for z in zeilen if z["kosten"] is not None]
+    km = [z["km"] for z in zeilen if z["km"] is not None]
+    summe["kosten"] = round(sum(kosten), 2) if kosten else None
+    summe["km"] = round(sum(km)) if km else None
+    return zeilen, summe
+
+
 @router.get("/{slug}/verlauf")
 def verlauf_zeigen(slug: str, jahr: int = Query(default=0),
                    quartal: int = Query(default=0),
@@ -1420,9 +1514,15 @@ def verlauf_zeigen(slug: str, jahr: int = Query(default=0),
     except ValueError as fehler:
         raise HTTPException(400, str(fehler)) from fehler
 
+    # N188 — Kosten (€) und Reichweite (km) additiv anreichern. `verlauf` und
+    # `verlauf_summe` bleiben rein (ohne Session); die Anreicherung braucht die
+    # Stromkette und die Nutzer und sitzt darum hier.
+    summe = verlauf_summe(zeilen)
+    zeilen, summe = _verlauf_kosten_km(session, o, zeilen, summe)
+
     return {"objekt": o.name, "von": von.isoformat(), "bis": bis.isoformat(),
             "quelle": quelle, "hinweis": hinweis, "monate": zeilen,
-            "summe": verlauf_summe(zeilen),
+            "summe": summe,
             "jahre": jahre_mit_verbrauch(posten)}
 
 
@@ -1900,10 +2000,15 @@ class AbgerechnetIn(BaseModel):
 
     `quartale` (oder das einzelne `quartal`, ``0`` = ganzes Jahr) nennt die
     betroffenen Quartale; `nutzer_id` ``0`` meint alle aktuell gelisteten
-    Nutzer (der Initialstand wird für die ganze Station gesetzt)."""
+    Nutzer (der Initialstand wird für die ganze Station gesetzt).
+
+    `monate` (1–12) markiert stattdessen **einzelne Monate** (N187). Ist die
+    Liste nicht leer, gilt sie und die Quartale bleiben unberührt; ist sie leer,
+    verhält sich alles wie bisher (quartalsweise)."""
     jahr: int
     quartale: list[int] = []
     quartal: int = 0
+    monate: list[int] = []
     nutzer_id: int = 0
     abgerechnet: bool = True
 
@@ -1930,9 +2035,6 @@ def abgerechnet_setzen(slug: str, data: AbgerechnetIn,
     if not data.jahr:
         raise HTTPException(400, "Zu welchem Jahr soll die Periode als "
                                  "abgerechnet gelten?")
-    quartale = _expand_quartale(data.quartale or [data.quartal])
-    if not quartale:
-        raise HTTPException(400, "Kein Quartal ausgewählt.")
     liste = nutzer_lesen(session, o)
     if data.nutzer_id:
         if not any(n["id"] == data.nutzer_id for n in liste):
@@ -1940,18 +2042,36 @@ def abgerechnet_setzen(slug: str, data: AbgerechnetIn,
         nutzer_ids = [data.nutzer_id]
     else:
         nutzer_ids = [n["id"] for n in liste]
-    for q in quartale:
-        for nid in nutzer_ids:
-            key = _versendet_schluessel(o.slug, data.jahr, q, nid)
-            if data.abgerechnet:
-                _setze(session, key, date.today().isoformat())
-            else:
-                vorhanden = session.get(Einstellung, key)
-                if vorhanden is not None:
-                    session.delete(vorhanden)
+
+    # N187 — sind Monate genannt, greift die feine Granularität: je Monat ein
+    # M-Marker, gesetzt oder geleert. Der leere Wert ("") zählt in
+    # `abgerechnet_marker` nicht mehr — das ist der Weg zum Entfernen. Ohne
+    # Monate bleibt es beim bisherigen Quartalsweg.
+    monate = [m for m in data.monate if 1 <= m <= 12]
+    if monate:
+        wert = date.today().isoformat() if data.abgerechnet else ""
+        for m in monate:
+            for nid in nutzer_ids:
+                _setze(session, _monat_schluessel(o.slug, data.jahr, m, nid),
+                       wert)
+        anzahl, was = len(monate), "Monat(e)"
+    else:
+        quartale = _expand_quartale(data.quartale or [data.quartal])
+        if not quartale:
+            raise HTTPException(400, "Kein Quartal ausgewählt.")
+        for q in quartale:
+            for nid in nutzer_ids:
+                key = _versendet_schluessel(o.slug, data.jahr, q, nid)
+                if data.abgerechnet:
+                    _setze(session, key, date.today().isoformat())
+                else:
+                    vorhanden = session.get(Einstellung, key)
+                    if vorhanden is not None:
+                        session.delete(vorhanden)
+        anzahl, was = len(quartale), "Periode(n)"
     session.commit()
-    log.info("E-Tankstelle %s: %d Periode(n) je %d Nutzer %s", o.slug,
-             len(quartale), len(nutzer_ids),
+    log.info("E-Tankstelle %s: %d %s je %d Nutzer %s", o.slug, anzahl, was,
+             len(nutzer_ids),
              "als abgerechnet markiert" if data.abgerechnet
              else "aus der Abrechnung genommen")
     return {"ok": True,
