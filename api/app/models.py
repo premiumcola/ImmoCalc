@@ -990,6 +990,12 @@ class Tanknutzer(SQLModel, table=True):
     iban: str = ""
     bic: str = ""
     kontoinhaber: str = ""
+    # N170 - das E-Auto des Nutzers, um aus geladenen kWh gefahrene km zu
+    # schaetzen. `verbrauch_kwh_100km` wird einmalig ueber die KI zum Modell
+    # ermittelt (defensive Fahrweise -> guenstiger Wert) und dann gespeichert;
+    # von Hand ueberschreibbar. Additiv, Default leer/0.
+    e_auto_modell: str = ""
+    verbrauch_kwh_100km: float = 0.0
     aktiv: bool = True
     notiz: str = ""
 
