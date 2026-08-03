@@ -530,6 +530,151 @@ def pv_amortisation(slug: str, session: Session = Depends(get_session),
 _HERKUNFT_EIGEN = "eigen"
 _QUELLEN_LEER = {"pv_strom": 0.0, "einspeisung": 0.0, "tanken": 0.0}
 
+# N200 — die Kategorien der Amortisation, unter denen Grafik, Prozent-Aufteilung
+# und Ringdiagramm dasselbe benennen. Dieselben drei Quellen wie `_QUELLEN_LEER`.
+_KAT_LABEL = {"pv_strom": "PV-Eigenverbrauch",
+              "einspeisung": "Netz-Einspeisung",
+              "tanken": "E-Tanken"}
+
+
+# --------------------------------------------------------------------------
+# N200 — die E-Tankstelle zahlt live auf die Amortisation ein.
+#
+# Bis N200 kam der E-Tanken-Ertrag aus `Tankladung.kwh × Tankladung.preis`. Der
+# Handpreis ist aber seit N148 stillgelegt (die Preisbildung ist abgeleitet):
+# in den echten Daten steht dort 0, und die Ladungen liegen ohnehin in der
+# Wallbox, nicht als `Tankladung`-Sätze. Der Verlauf zeigte für 2025/2026
+# deshalb 0, obwohl an der Station längst geladen wird.
+#
+# Was der PV-ANLAGE aus dem Laden zufließt, ist der **eigene** Strom (PV + Akku),
+# den die Fahrer zum abgeleiteten Eigen-Satz zahlen: dieser Strom hat die Anlage
+# nichts gekostet, jede Kilowattstunde davon trägt die Anschaffung ab. Der
+# Netzanteil ist ein Durchlaufposten (er deckt den Zukauf) und zählt hier NICHT.
+# Menge und Satz kommen aus derselben Quelle wie die Abrechnung der E-Tankstelle
+# (`routers.tankstelle`): die Wallbox, ersatzweise die erfassten Ladungen.
+# --------------------------------------------------------------------------
+
+def tanken_beitrag_eur(eigen_kwh: float | None,
+                       eigen_satz: float | None) -> float:
+    """Was der geladene Eigenstrom (PV + Akku) zur Amortisation beiträgt: Menge
+    mal abgeleitetem Eigen-Satz.
+
+    Fehlt die Menge (die Aufteilung Netz/eigen ist unbekannt) oder der Satz
+    (keine ableitbaren Stromkosten), ist der Beitrag 0 — nie eine erfundene
+    Zahl. Genau dieselbe Zurückhaltung wie beim Satz selbst (N148)."""
+    if not eigen_kwh or not eigen_satz:
+        return 0.0
+    return round(float(eigen_kwh) * float(eigen_satz), 2)
+
+
+def _tanken_je_jahr(session: Session, o: Objekt) -> dict[int, dict]:
+    """Der E-Tanken-Beitrag je Kalenderjahr — aus den tatsächlich geladenen
+    Mengen, nicht aus einem Handpreis (N200).
+
+    Je Jahr mit Ladung: die eigene Lademenge (PV + Akku) aus dem Verlauf der
+    E-Tankstelle und der für dieses Jahr abgeleitete Eigen-Satz. Wallbox zuerst,
+    ersatzweise die erfassten Ladungen — dieselbe Quelle wie die Abrechnung, mit
+    denselben ehrlichen Lücken: ist die Aufteilung eines Jahres unbekannt oder
+    fehlt der Satz, bleibt `eur` 0 und die Menge sagt, warum.
+
+    Rückgabe: {Jahr: {eigen_kwh, extern_kwh, geladen_kwh, satz_eigen, satz_netz,
+    eur, quelle, satz_grund}}. Leer, wenn nie geladen wurde."""
+    from . import tankstelle as tk
+
+    von, bis = tk.suchfenster()
+    posten, quelle, _hinweis = tk._posten_holen(session, o, von, bis)
+    out: dict[int, dict] = {}
+    for jahr in tk.jahre_mit_verbrauch(posten):
+        jvon, jbis = date(jahr, 1, 1), date(jahr, 12, 31)
+        monate = tk.verlauf([p for p in posten
+                             if p.tag and jvon <= p.tag <= jbis], jvon, jbis)
+        summe = tk.verlauf_summe(monate)
+        eigen_kwh = summe.get("eigen_kwh")
+        extern_kwh = summe.get("extern_kwh")
+        satz = tk.satz_ableiten(session, o.id, jvon, jbis, extern_kwh, eigen_kwh)
+        out[jahr] = {
+            "eigen_kwh": eigen_kwh,
+            "extern_kwh": extern_kwh,
+            "geladen_kwh": summe.get("kwh"),
+            "satz_eigen": satz.eigen,
+            "satz_netz": satz.netz,
+            "eur": tanken_beitrag_eur(eigen_kwh, satz.eigen),
+            "quelle": quelle,
+            "satz_grund": satz.grund,
+        }
+    return out
+
+
+def _kategorie_kwh(session: Session, objekt_id: int,
+                   tanken: dict[int, dict]) -> dict[str, float | None]:
+    """Die physische Energiemenge je Kategorie über alle Jahre — die Grundlage
+    des Ringdiagramms (N200).
+
+    PV-Eigenverbrauch ist der im Haus direkt genutzte Solar-/Akku-Strom
+    (`solar_kwh + akku_kwh`), Netz-Einspeisung die ins Netz gegebene Menge
+    (`einspeisung_kwh`), E-Tanken die eigene Lademenge (PV + Akku) aus der
+    Station. So wird sichtbar, was der Nutzer sehen will: die Einspeisung bringt
+    viele kWh, aber wenig € — Direktnutzung und E-Tanken weniger kWh, aber mehr €
+    je kWh. Eine Kategorie ohne Menge ergibt `None`, keine erfundene 0."""
+    solar = akku = einspeisung = 0.0
+    for sj in session.exec(select(Stromjahr).where(
+            Stromjahr.objekt_id == objekt_id)).all():
+        solar += float(getattr(sj, "solar_kwh", 0.0) or 0.0)
+        akku += float(getattr(sj, "akku_kwh", 0.0) or 0.0)
+        einspeisung += float(getattr(sj, "einspeisung_kwh", 0.0) or 0.0)
+    tank = round(sum(t["eigen_kwh"] for t in tanken.values()
+                     if t.get("eigen_kwh")), 2)
+    return {"pv_strom": round(solar + akku, 2) or None,
+            "einspeisung": round(einspeisung, 2) or None,
+            "tanken": tank or None}
+
+
+def _kat_eur(jahre: list[dict], feld: str, vorlauf_jahr: int | None) -> float:
+    """Der Amortisations-Beitrag EINER Kategorie über alle Jahre — inklusive des
+    einmaligen Vorlaufs, nach genau derselben Regel wie die Tabelle (N174): ist
+    der Vorlauf aufgeschlüsselt, zählt sein Anteil zur jeweiligen Kategorie;
+    sonst fällt der ganze Vorlauf der PV-Strom-Spalte zu.
+
+    So ist die Summe der drei Kategorien exakt der kumulierte Ertrag — kein
+    Cent liegt neben der Kurve."""
+    total = 0.0
+    for z in jahre:
+        w = float(z.get(feld) or 0.0)
+        if z["jahr"] == vorlauf_jahr:
+            teile = z.get("vorlauf_teile")
+            if teile:
+                w += float(teile.get(feld) or 0.0)
+            elif feld == "pv_strom":
+                w += float(z.get("vorlauf") or 0.0)
+        total += w
+    return round(total, 2)
+
+
+def _kategorien(jahre: list[dict], vorlauf_jahr: int | None,
+                kwh: dict[str, float | None]) -> dict:
+    """N200 — die Aufteilung der Amortisation auf ihre drei Kategorien: je
+    Kategorie der Beitrag in €, sein Anteil in % (woraus die Amortisation
+    besteht) und die physische Energiemenge in kWh dahinter.
+
+    `eur_pro_kwh` macht den Kern sichtbar: die Einspeisung bringt viele kWh zu
+    wenigen Cent, Direktnutzung und E-Tanken weniger kWh zu einem Vielfachen je
+    kWh. Der Prozentsatz ist der €-Anteil an der Amortisation, das Ringdiagramm
+    zeigt die kWh — zwei Blicke auf dieselben drei Kategorien."""
+    eur = {f: _kat_eur(jahre, f, vorlauf_jahr)
+           for f in ("pv_strom", "einspeisung", "tanken")}
+    gesamt_eur = round(sum(eur.values()), 2)
+    posten = []
+    for feld in ("pv_strom", "einspeisung", "tanken"):
+        e, k = eur[feld], kwh.get(feld)
+        posten.append({
+            "feld": feld, "label": _KAT_LABEL[feld],
+            "eur": e, "kwh": k,
+            "prozent": round(e / gesamt_eur * 100, 1) if gesamt_eur > 0 else None,
+            "eur_pro_kwh": round(e / k, 4) if k else None,
+        })
+    gesamt_kwh = round(sum(p["kwh"] for p in posten if p["kwh"]), 2) or None
+    return {"gesamt_eur": gesamt_eur, "gesamt_kwh": gesamt_kwh, "posten": posten}
+
 
 def _nicht_umlagefaehig(session: Session, objekt_id: int) -> set[str]:
     """Die Namen der nicht umlagefähigen Kostenarten eines Objekts, klein
@@ -539,14 +684,20 @@ def _nicht_umlagefaehig(session: Session, objekt_id: int) -> set[str]:
         if not k.umlagefaehig}
 
 
-def _ertraege_je_jahr(session: Session, objekt_id: int) -> dict[int, dict]:
+def _ertraege_je_jahr(session: Session, objekt_id: int,
+                      tanken: dict[int, dict]) -> dict[int, dict]:
     """Die drei Ertragsquellen je Kalenderjahr einsammeln.
 
     Das Jahr eines Zeitraums ist sein Label-Jahr (`zeitraum_label_jahr`) —
     dasselbe Jahr, unter dem die Abrechnung überall sonst geführt wird. Offene
     Positionen (Betrag noch nicht da) bleiben außen vor, genau wie in der
     Abrechnung selbst. Eine Position zählt nur einmal: ist sie „eigen", ist sie
-    PV-Strom, sonst gegebenenfalls Einspeisevergütung."""
+    PV-Strom, sonst gegebenenfalls Einspeisevergütung.
+
+    N200 — der E-Tanken-Beitrag kommt nicht mehr aus `Tankladung.preis` (seit
+    N148 stillgelegt), sondern live aus der eigenen Lademenge zum abgeleiteten
+    Satz (`tanken`, vorberechnet in `_tanken_je_jahr`). Ein Jahr, in dem nur
+    geladen wurde, bekommt trotzdem seine Zeile."""
     nicht_umlegen = _nicht_umlagefaehig(session, objekt_id)
     jahr_von_zeitraum = {
         z.id: zeitraum_label_jahr(z.start, z.ende) for z in session.exec(
@@ -565,13 +716,12 @@ def _ertraege_je_jahr(session: Session, objekt_id: int) -> dict[int, dict]:
                 eintrag["pv_strom"] = round(eintrag["pv_strom"] + betrag, 2)
             elif (p.kostenart or "").strip().lower() in nicht_umlegen:
                 eintrag["einspeisung"] = round(eintrag["einspeisung"] + betrag, 2)
-    # Ladungen hängen am Jahr, nicht am Zeitraum — ein Jahr ohne Zeitraum darf
-    # deshalb trotzdem eine Zeile bekommen, sonst ginge der Erlös verloren.
-    for l in session.exec(select(Tankladung).where(
-            Tankladung.objekt_id == objekt_id)).all():
-        eintrag = werte.setdefault(l.jahr, dict(_QUELLEN_LEER))
-        eintrag["tanken"] = round(
-            eintrag["tanken"] + round((l.kwh or 0) * (l.preis or 0), 2), 2)
+    # N200 — der live abgeleitete E-Tanken-Beitrag. Ladungen hängen am Jahr,
+    # nicht am Zeitraum — ein Jahr, in dem nur geladen wurde, bekommt trotzdem
+    # eine Zeile, sonst ginge der Erlös verloren.
+    for jahr, t in tanken.items():
+        eintrag = werte.setdefault(jahr, dict(_QUELLEN_LEER))
+        eintrag["tanken"] = round(eintrag["tanken"] + float(t.get("eur") or 0.0), 2)
     return werte
 
 
@@ -671,7 +821,8 @@ def pv_verlauf(slug: str, session: Session = Depends(get_session),
     `kumuliert`, `rest`, `amortisiert_prozent`, `break_even_jahr` (erreicht oder
     prognostiziert), `break_even_geschaetzt`, `break_even_in_jahren`,
     `prognose`, `eigentuemer` und `warnungen`."""
-    quellen = _ertraege_je_jahr(session, o.id)
+    tanken = _tanken_je_jahr(session, o)
+    quellen = _ertraege_je_jahr(session, o.id, tanken)
     anschaffung, vorlauf, vorlauf_teile, anteile = _anlage(session, o.id)
     # N153b — der Vorlauf steht VOR der ersten Abrechnung, nicht darin: eine
     # eigene Zeile im Jahr davor. Vorher zählte er auf das erste erfasste Jahr
@@ -721,11 +872,17 @@ def pv_verlauf(slug: str, session: Session = Depends(get_session),
             if ertragsjahre >= 2 else
             "Eine Prognose gibt es ab dem zweiten Abrechnungsjahr mit Ertrag — "
             "aus einem einzigen Jahr wäre sie geraten.")
+    # N200 — die Aufteilung der Amortisation auf ihre drei Kategorien: € (Anteil
+    # an der Amortisation) und kWh (physische Menge) je Kategorie, für die
+    # Prozentzeile und das Ringdiagramm unter der Kurve.
+    kategorien = _kategorien(jahre, vorlauf_jahr,
+                             _kategorie_kwh(session, o.id, tanken))
     return {"anschaffung": a["anschaffung"], "vorlauf": round(vorlauf, 2),
             "vorlauf_teile": vorlauf_teile,
             "vorlauf_aufgeschluesselt": vorlauf_teile is not None,
             "vorlauf_jahr": vorlauf_jahr,
             "jahre": jahre,
+            "kategorien": kategorien,
             "kumuliert": a["kumuliert"], "rest": a["rest"],
             "amortisiert_prozent": a["amortisiert_prozent"],
             "break_even_jahr": erreicht or (prognose or {}).get("break_even_jahr"),

@@ -546,19 +546,33 @@ def _jahr(v: dict, jahr: int) -> dict:
     return next(z for z in v["jahre"] if z["jahr"] == jahr)
 
 
-def test_verlauf_drei_quellen_ueber_mehrere_jahre(client):
-    """Der Kern von N127: PV-Strom der Mieter, Einspeisevergütung und E-Tanken
-    je Jahr, kumuliert gegen die Anschaffung."""
+def test_verlauf_drei_quellen_ueber_mehrere_jahre(client, monkeypatch):
+    """Der Kern von N127/N200: PV-Strom der Mieter, Einspeisevergütung und
+    E-Tanken je Jahr, kumuliert gegen die Anschaffung.
+
+    N200 — der E-Tanken-Beitrag kommt nicht mehr aus `Tankladung.preis` (seit
+    N148 stillgelegt), sondern aus der eigenen Lademenge (PV + Akku) zum
+    abgeleiteten Eigen-Satz. Die Aufteilung Netz/eigen der Ladung kommt hier aus
+    dem Jahresverhältnis (`eauto_extern_kwh`/`eauto_eigen_kwh`), der Satz wird
+    fest gesetzt — seine Ableitung prüft `test_tankstelle`/`test_stromkette`."""
+    from app.routers import tankstelle
+    # Fester Eigen-Satz 0,30 €/kWh — die Ableitung selbst ist anderswo geprüft.
+    monkeypatch.setattr(tankstelle, "satz_ableiten",
+                        lambda *a, **k: tankstelle.Satz(netz=0.3333, eigen=0.30,
+                                                        misch=0.30))
     slug = _pv_objekt(client, "PV-Verlauf")
+    # Aufteilung der Ladungen 2024: halb Netz, halb eigen — 3000 kWh Ladung
+    # ergeben so 1500 kWh Eigenstrom (PV + Akku).
     client.put(f"/api/objekte/{slug}/strom/2024",
-               json={"anschaffung_eur": 36000, "tanken_preis": 0.30})
+               json={"anschaffung_eur": 36000,
+                     "eauto_extern_kwh": 1000, "eauto_eigen_kwh": 1000})
 
     z24 = _zeitraum_id(client, slug, 2024)
     # Netzbezug: umlagefähig und nicht „eigen" — zählt der Anlage NICHT zu.
     _position(client, z24, "Strom", 862.51, herkunft="extern")
     _position(client, z24, _EINSPEISUNG, 355.71)
     client.post(f"/api/objekte/{slug}/tankstelle/2024",
-                json={"name": "Alicia", "kwh": 3048.1, "preis": 0.30})
+                json={"name": "Alicia", "kwh": 3000.0, "datum": "2024-06-15"})
 
     z25 = _zeitraum_id(client, slug, 2025)
     _position(client, z25, "PV-Strom", 620.00, herkunft="eigen")
@@ -570,19 +584,30 @@ def test_verlauf_drei_quellen_ueber_mehrere_jahre(client):
     a = _jahr(v, 2024)
     assert a["pv_strom"] == 0.0            # „Strom" ist Netzbezug, kein Ertrag
     assert a["einspeisung"] == 355.71
-    assert a["tanken"] == 914.43           # 3048,1 kWh × 0,30 €
-    assert a["summe"] == 1270.14
-    assert a["kumuliert"] == 1270.14
-    assert a["offen"] == 34729.86
+    assert a["tanken"] == 450.0            # 1500 kWh eigen × 0,30 €
+    assert a["summe"] == 805.71
+    assert a["kumuliert"] == 805.71
+    assert a["offen"] == 35194.29
 
     b = _jahr(v, 2025)
     assert (b["pv_strom"], b["einspeisung"], b["tanken"]) == (620.0, 400.0, 0.0)
     assert b["summe"] == 1020.0
-    assert b["kumuliert"] == 2290.14
+    assert b["kumuliert"] == 1825.71
 
     # Kumuliert ist die Summe aller Jahressummen — keine verlorenen Cents.
     assert round(sum(z["summe"] for z in v["jahre"]), 2) == v["kumuliert"]
     assert v["rest"] == round(36000.0 - v["kumuliert"], 2)
+
+    # N200 — die Kategorien-Aufteilung summiert sich exakt auf den kumulierten
+    # Ertrag, und der €-Anteil steht neben der kWh-Menge.
+    kat = {p["feld"]: p for p in v["kategorien"]["posten"]}
+    assert kat["einspeisung"]["eur"] == 755.71     # 355,71 + 400,00
+    assert kat["tanken"]["eur"] == 450.0
+    assert kat["pv_strom"]["eur"] == 620.0
+    assert v["kategorien"]["gesamt_eur"] == v["kumuliert"]
+    assert kat["tanken"]["kwh"] == 1500.0          # eigene Lademenge
+    # E-Tanken bringt viel € je kWh, die Einspeisung viele kWh zu wenig €.
+    assert kat["tanken"]["eur_pro_kwh"] == 0.30
 
 
 def test_verlauf_jahr_ohne_ertraege_ist_eine_zeile_mit_null(client):
