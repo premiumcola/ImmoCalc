@@ -943,6 +943,14 @@
   .sk-bars{flex:0 0 auto;display:flex;align-items:flex-end;gap:9px;
     padding:10px 12px 9px;background:var(--paper);border-radius:12px;
     position:relative}
+  /* N208 — sind alle drei Anteile gesetzt, spannt der Balken über die volle
+     Breite (statt schmaler Kasten links mit Leerfläche daneben); die Tabelle
+     steht dann darunter. Die Säulen verteilen sich gleichmäßig, der Fluss-Pfeil
+     entfällt (der Fluss läuft nun sichtbar nach unten in die Tabelle). */
+  .sk-bars.breit{flex:1 1 100%;margin-bottom:10px;justify-content:space-around;
+    align-items:flex-end;padding:9px 16px 8px}
+  .sk-bars.breit .sk-bars-pfeil{display:none}
+  .sk-bars.breit .sk-saeule-bar{width:26px}
   .sk-saeule{display:flex;flex-direction:column;align-items:center;
     justify-content:flex-end;gap:3px}
   .sk-saeule-wert{font:600 9.5px var(--mono);color:var(--soft)}
@@ -1870,7 +1878,27 @@ function positionsBetrag(k) {
   if (istHeizoelSammel(k)) return heizoelKosten;
   if (istWarmwasserPos(k)) return wwKosten;
   if (istHeizwaermePos(k)) return Math.round((heizoelKosten - wwKosten) * 100) / 100;
+  // N208 — die Strom-Kette-Position trägt den in der Kette berechneten
+  // Gesamtbetrag, sobald die Kette vollständig ist UND auf die Einheiten
+  // verteilt wurde (Kontrollsumme stimmt). Der Betrag entsteht aus der
+  // Rechnung, nicht aus einem Handbeleg.
+  if (istStromKettePos(k) && stromKetteVerteilt())
+    return stromketteDaten.kontrolle.schritt1_betrag || 0;
   return 0;
+}
+
+/* N208 — die Strom-Kette-Position gilt als FERTIG, sobald die Kette VOLLSTÄNDIG
+   berechnet UND VERTEILT ist: die Kontrollsumme stimmt (verteilt == Schritt-1-
+   Betrag auf den Cent, `kontrolle.stimmt`), es liegt überhaupt ein Betrag vor
+   und kein Block fehlt (`schritt1.vollstaendig`). Dann entsteht die Erledigung
+   aus der Rechnung — analog Wasser/Warmwasser (N190), hier am Kontroll-„stimmt"
+   festgemacht. Betrifft nur die oberste Strom-Position, die die Kette trägt. */
+function stromKetteVerteilt() {
+  const d = stromketteDaten;
+  if (!d) return false;
+  const kon = d.kontrolle || {};
+  return kon.stimmt === true && (kon.schritt1_betrag || 0) > 0.005
+    && d.schritt1?.vollstaendig !== false;
 }
 
 /* N198a — die Heizkörper-Wärmemenge ist eine reine VERTEILUNGS-Position: ihre
@@ -2641,7 +2669,10 @@ function zeileHtml(k, i) {
     : (istHeizwaermePos(k) && !k.betrag
        ? Math.round((heizoelKosten - wwKosten) * 100) / 100 : 0));
   const wert = eur(istWasserSammel(k) ? wasserGesamtBetrag()
-    : (oelBetrag || k.betrag));
+    // N208 — die verteilte Strom-Kette zeigt ihren berechneten Gesamtbetrag
+    // (aus der Kette), nicht den leeren Positionsbetrag.
+    : (istStromKettePos(k) ? positionsBetrag(k)
+    : (oelBetrag || k.betrag)));
   const aufgeklappt = offen.has(i);
 
   // Nur ein kurzer Zustandshinweis, wo wirklich etwas fehlt — kein Sermon.
@@ -2812,7 +2843,11 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
         </div>` : '';
     const zu = bearbeitbar ? '' : `<div class="zu-kein">Für diese Kostenart wurde
       in diesem Zeitraum nichts erfasst — und er ist abgeschlossen.</div>`;
-    koerper = `${stromKetteHtml(k)}${zu}${belegAblageHtml(k, bearbeitbar)}${handbetrag}`;
+    // N208 — ist die Strom-Kette vollständig & verteilt, entsteht der Betrag aus
+    // der Rechnung: dann keine „Beleg erfassen"-Box mehr (die Position ist fertig).
+    const ablage = (istStromKettePos(k) && stromKetteVerteilt())
+      ? '' : belegAblageHtml(k, bearbeitbar);
+    koerper = `${stromKetteHtml(k)}${zu}${ablage}${handbetrag}`;
   }
 
   // Der Betrag im Kopf: aufgeklappt ein schlankes Eingabefeld (speichert beim
@@ -4015,13 +4050,17 @@ async function fuelleStromketteInline(el, frisch = false) {
    Tabelle an. Ersetzt die nackte „24 % 50 % 26 %"-Kopfzeile. */
 const SK_FARBE = { netz: 'var(--amber)', pv: 'var(--teal)', akku: 'var(--pos)' };
 const skProzent = (s, k) => s[`${k === 'akku' ? 'speicher' : k}_prozent`] || 0;
-function skBalken(s) {
+function skBalken(s, breit = false) {
   const werte = SK_BLOECKE.map(([k]) => skProzent(s, k));
   const max = Math.max(1, ...werte);
+  // N208 — sind alle drei Anteile gesetzt, ersetzt der Balken die Eingabefelder
+  // und spannt sich über die volle Breite: dann etwas flacher, damit er nicht
+  // wuchtet.
+  const hoch = breit ? 44 : 62;
   const saeulen = SK_BLOECKE.map(([k, titel], i) => {
     const p = werte[i];
     // Höhe in Pixeln, proportional zum Prozentsatz (Netz≈Speicher, PV höher).
-    const px = Math.max(8, Math.round(p / max * 62));
+    const px = Math.max(8, Math.round(p / max * hoch));
     return `<div class="sk-saeule">
         <span class="sk-saeule-wert">${skProz(p)}%</span>
         <span class="sk-saeule-bar" style="height:${px}px;background:${
@@ -4029,7 +4068,7 @@ function skBalken(s) {
         <span class="sk-saeule-name">${esc(titel.split(' ')[0])}</span>
       </div>`;
   }).join('');
-  return `<div class="sk-bars" role="img" aria-label="Aufteilung Netz ${
+  return `<div class="sk-bars${breit ? ' breit' : ''}" role="img" aria-label="Aufteilung Netz ${
       skProz(werte[0])} Prozent, PV ${skProz(werte[1])} Prozent, Speicher ${
       skProz(werte[2])} Prozent">${saeulen}
     <span class="sk-bars-pfeil" aria-hidden="true">→</span></div>`;
@@ -4105,21 +4144,33 @@ function skSchritt1(d) {
   const chip = (s.netz_preis != null && s.netz_preis_geeicht != null
     && Math.abs(s.netz_preis - s.netz_preis_geeicht) < 1e-6)
     ? `<span class="sk-satzchip" title="Durchschnittspreis Netzbezug inkl. Grundgebühr">Netz ${skCt(s.netz_preis)}/kWh</span>` : '';
-  return `<div class="sk-schritt">
-      <div class="sk-kopf"><span class="sk-nr">1</span><span class="sk-t">Gesamtverbrauch
-        im Zeitraum</span><span class="sk-h">${esc(d.zeitraum?.label || '')}</span>${chip}</div>
-      <div class="sk-felder">${feld('netz', 'Netz', s.netz_erfasst)}${
-        feld('pv', 'PV direkt', s.pv_erfasst)}${
-        feld('akku', 'Speicher', s.speicher_erfasst)}</div>
-      <div class="sk-split">${skBalken(s)}
-        <div class="wd-scroll sk-splittab"><table class="wd-tab sk-tab"><thead><tr>
+  // N208 — sind alle drei Anteile gesetzt (Summe ≈ 100 %), verschwinden die
+  // Eingabefelder und der Balken übernimmt: er zeigt die Aufteilung ohnehin,
+  // die Felder wären dann eine Doublette. Fehlt noch ein Anteil, bleiben die
+  // Felder stehen, damit sie gefüllt werden können.
+  const anteileKomplett = Math.abs((s.erfasst_summe ?? 0) - 100) < 1.5;
+  const tabelle = `<div class="wd-scroll sk-splittab"><table class="wd-tab sk-tab"><thead><tr>
           <th class="wd-rowh">Quelle</th><th>Menge</th><th>Kosten</th>
         </tr></thead><tbody>${zeilen}</tbody>
         <tfoot><tr class="wd-summe"><td class="wd-rowh">Summe</td>
           <td><span class="wd-m3">${skKwh(s.gesamt_kwh)}</span></td>
           <td><span class="wd-m3">${eur(s.betrag)}</span></td>
         </tr></tfoot>
-        </table></div></div>
+        </table></div>`;
+  // Komplett: Balken über die volle Breite, darunter die Tabelle. Sonst die
+  // Felder oben und Balken links neben der Tabelle (wie bisher).
+  const felderHtml = anteileKomplett ? ''
+    : `<div class="sk-felder">${feld('netz', 'Netz', s.netz_erfasst)}${
+        feld('pv', 'PV direkt', s.pv_erfasst)}${
+        feld('akku', 'Speicher', s.speicher_erfasst)}</div>`;
+  const splitHtml = anteileKomplett
+    ? `${skBalken(s, true)}${tabelle}`
+    : `<div class="sk-split">${skBalken(s)}${tabelle}</div>`;
+  return `<div class="sk-schritt">
+      <div class="sk-kopf"><span class="sk-nr">1</span><span class="sk-t">Gesamtverbrauch
+        im Zeitraum</span><span class="sk-h">${esc(d.zeitraum?.label || '')}</span>${chip}</div>
+      ${felderHtml}
+      ${splitHtml}
       ${skNetzsaetze(s)}
       ${skBubbles(s)}
       ${skNetzBelege(s)}
