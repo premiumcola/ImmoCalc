@@ -104,6 +104,77 @@ def test_kategorien_summieren_sich_und_zeigen_den_kwh_kontrast():
     assert posten["tanken"]["eur_pro_kwh"] > 0.25        # Eigen-Satz
 
 
+def test_kategorie_kwh_verwaessert_nicht_mit_unabgerechneten_jahren(client):
+    """N204 — die kWh-Basis folgt der €-Basis: eine spätere Eigenverbrauchsmenge
+    ohne abgerechnete Kosten darf den €/kWh-Wert NICHT verwässern.
+
+    Szenario wie beim Nutzer (Eschenau): der einzige abgerechnete PV-Strom-/
+    Einspeisungs-€ ist der Vorlauf 2024; die Jahre 2025/2026 haben zwar echten
+    Eigenverbrauch (solar/akku) und Einspeisung, sind aber (noch) nicht über die
+    Nebenkostenabrechnung verrechnet — ihre kWh gehören also NICHT in die Basis.
+    Vorher teilte der Verlauf 1.798,50 € eines Jahres durch 13.857 kWh dreier
+    Jahre und zeigte 0,13 €/kWh; richtig ist hier: keine sauber zuordenbare Menge
+    → None statt einer erfundenen Zahl."""
+    from sqlmodel import Session, select
+    from app import db
+    from app.models import Objekt
+
+    slug = _pv_objekt(client, "KWH-Basis-unabgerechnet")
+    client.put(f"/api/objekte/{slug}/strom/2025",
+               json={"solar_kwh": 5400, "akku_kwh": 2808, "einspeisung_kwh": 4125})
+    client.put(f"/api/objekte/{slug}/strom/2026",
+               json={"solar_kwh": 3595, "akku_kwh": 2054, "einspeisung_kwh": 3904})
+
+    jahre = [
+        {"jahr": 2024, "pv_strom": 0.0, "einspeisung": 0.0, "tanken": 0.0,
+         "vorlauf": 2355.36,
+         "vorlauf_teile": {"pv_strom": 1798.5, "einspeisung": 556.86,
+                           "tanken": 0.0}},
+        {"jahr": 2025, "pv_strom": 0.0, "einspeisung": 0.0, "tanken": 300.6,
+         "vorlauf": 0.0, "vorlauf_teile": None},
+        {"jahr": 2026, "pv_strom": 0.0, "einspeisung": 0.0, "tanken": 142.18,
+         "vorlauf": 0.0, "vorlauf_teile": None},
+    ]
+    with Session(db.engine) as s:
+        oid = s.exec(select(Objekt).where(Objekt.slug == slug)).first().id
+        kwh = rs._kategorie_kwh(s, oid, jahre, 2024, {})
+
+    # Der einzige abgerechnete €-Jahr ist der Vorlauf 2024 — dort ist keine kWh
+    # erfasst; 2025/2026 sind (noch) nicht verrechnet und dürfen nicht einfließen.
+    assert kwh["pv_strom"] is None
+    assert kwh["einspeisung"] is None
+
+
+def test_kategorie_kwh_nimmt_abgerechnetes_jahr_aber_nicht_das_spaetere(client):
+    """N204 — das positive Gegenstück: ein abgerechnetes Jahr X (PV-Strom-€ und
+    kWh) zählt seine kWh, ein späteres Jahr Y mit Eigenverbrauch, aber ohne
+    abgerechnete Kosten, bleibt außen vor. €/kWh spiegelt so nur Jahr X."""
+    from sqlmodel import Session, select
+    from app import db
+    from app.models import Objekt
+
+    slug = _pv_objekt(client, "KWH-Basis-abgerechnet")
+    client.put(f"/api/objekte/{slug}/strom/2025",
+               json={"solar_kwh": 5400, "akku_kwh": 2808, "einspeisung_kwh": 4125})
+    client.put(f"/api/objekte/{slug}/strom/2026",
+               json={"solar_kwh": 3595, "akku_kwh": 2054, "einspeisung_kwh": 3904})
+
+    # 2025 IST abgerechnet (PV-Strom 900 €, Einspeisung 300 €), 2026 nicht.
+    jahre = [
+        {"jahr": 2025, "pv_strom": 900.0, "einspeisung": 300.0, "tanken": 0.0,
+         "vorlauf": 0.0, "vorlauf_teile": None},
+        {"jahr": 2026, "pv_strom": 0.0, "einspeisung": 0.0, "tanken": 0.0,
+         "vorlauf": 0.0, "vorlauf_teile": None},
+    ]
+    with Session(db.engine) as s:
+        oid = s.exec(select(Objekt).where(Objekt.slug == slug)).first().id
+        kwh = rs._kategorie_kwh(s, oid, jahre, None, {})
+
+    # Nur 2025 fließt ein: 5400 + 2808 = 8208 kWh PV-Strom, 4125 kWh Einspeisung.
+    assert kwh["pv_strom"] == 8208.0
+    assert kwh["einspeisung"] == 4125.0
+
+
 def test_kategorien_ohne_ertrag_erfinden_keine_prozente():
     jahre = [{"jahr": 2024, "pv_strom": 0.0, "einspeisung": 0.0, "tanken": 0.0,
               "vorlauf": 0.0, "vorlauf_teile": None}]

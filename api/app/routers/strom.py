@@ -605,49 +605,77 @@ def _tanken_je_jahr(session: Session, o: Objekt) -> dict[int, dict]:
     return out
 
 
-def _kategorie_kwh(session: Session, objekt_id: int,
+def _kat_beitrag(z: dict, feld: str, vorlauf_jahr: int | None) -> float:
+    """Der €-Beitrag EINES Jahres zu einer Kategorie: der Jahreswert und, im
+    Vorlaufjahr, der Vorlaufanteil — aufgeschlüsselt zur jeweiligen Kategorie,
+    sonst ganz auf PV-Strom (N174).
+
+    Eine einzige Quelle für Tabelle/Summe (`_kat_eur`) UND kWh-Basis
+    (`_kategorie_kwh`), damit € und kWh exakt dieselben Jahre zählen (N204)."""
+    w = float(z.get(feld) or 0.0)
+    if z["jahr"] == vorlauf_jahr:
+        teile = z.get("vorlauf_teile")
+        if teile:
+            w += float(teile.get(feld) or 0.0)
+        elif feld == "pv_strom":
+            w += float(z.get("vorlauf") or 0.0)
+    return round(w, 2)
+
+
+def _kategorie_kwh(session: Session, objekt_id: int, jahre: list[dict],
+                   vorlauf_jahr: int | None,
                    tanken: dict[int, dict]) -> dict[str, float | None]:
-    """Die physische Energiemenge je Kategorie über alle Jahre — die Grundlage
-    des Ringdiagramms (N200).
+    """Die physische Energiemenge je Kategorie — die Grundlage des Ringdiagramms
+    und von `eur_pro_kwh` (N200/N204).
+
+    Entscheidend (N204): die kWh zählen NUR die Jahre, deren Kosten auch
+    verrechnet wurden — also die Jahre, die zu derselben Kategorie einen
+    abgerechneten € beitragen (`_kat_beitrag`), samt Vorlaufjahr für seinen
+    Vorlaufanteil. Sonst verwässerte die Eigenverbrauchsmenge noch nicht
+    abgerechneter Jahre (z. B. 2025/2026) den €/kWh-Wert: ein abgerechnetes Jahr
+    an € geteilt durch mehrere Jahre an kWh ergab einen viel zu niedrigen Satz.
+    Die kWh-Basis folgt damit exakt der €-Basis aus `_ertraege_je_jahr`/`_kat_eur`.
 
     PV-Eigenverbrauch ist der im Haus direkt genutzte Solar-/Akku-Strom
     (`solar_kwh + akku_kwh`), Netz-Einspeisung die ins Netz gegebene Menge
-    (`einspeisung_kwh`), E-Tanken die eigene Lademenge (PV + Akku) aus der
-    Station. So wird sichtbar, was der Nutzer sehen will: die Einspeisung bringt
-    viele kWh, aber wenig € — Direktnutzung und E-Tanken weniger kWh, aber mehr €
-    je kWh. Eine Kategorie ohne Menge ergibt `None`, keine erfundene 0."""
-    solar = akku = einspeisung = 0.0
+    (`einspeisung_kwh`) — beide je Jahr aus dem `Stromjahr`, gekeyt mit demselben
+    Label-Jahr wie die Erträge. E-Tanken ist die eigene Lademenge (PV + Akku) aus
+    der Station, die ohnehin schon je abgerechnetem Jahr vorliegt.
+
+    Eine Kategorie, deren abgerechnete Jahre keine Menge hergeben (z. B. ein
+    Vorlauf-€ ohne erfasste kWh), ergibt `None` — nie eine erfundene 0 und nie
+    eine aus unabgerechneten Jahren zusammengeliehene Zahl."""
+    kwh_jahr: dict[int, dict[str, float]] = {}
     for sj in session.exec(select(Stromjahr).where(
             Stromjahr.objekt_id == objekt_id)).all():
-        solar += float(getattr(sj, "solar_kwh", 0.0) or 0.0)
-        akku += float(getattr(sj, "akku_kwh", 0.0) or 0.0)
-        einspeisung += float(getattr(sj, "einspeisung_kwh", 0.0) or 0.0)
+        kwh_jahr[sj.jahr] = {
+            "pv_strom": float(getattr(sj, "solar_kwh", 0.0) or 0.0)
+                        + float(getattr(sj, "akku_kwh", 0.0) or 0.0),
+            "einspeisung": float(getattr(sj, "einspeisung_kwh", 0.0) or 0.0),
+        }
+
+    def menge(feld: str) -> float | None:
+        total = sum(kwh_jahr.get(z["jahr"], {}).get(feld, 0.0)
+                    for z in jahre if _kat_beitrag(z, feld, vorlauf_jahr) > 0)
+        return round(total, 2) or None
+
+    # E-Tanken liegt bereits je abgerechnetem Jahr vor (Lademenge + abgeleiteter
+    # Satz aus `_tanken_je_jahr`); die eigene kWh bleibt sichtbar, auch wenn ein
+    # Jahr keinen ableitbaren Satz hat (dann € 0 auf echte kWh, nichts erfunden).
     tank = round(sum(t["eigen_kwh"] for t in tanken.values()
                      if t.get("eigen_kwh")), 2)
-    return {"pv_strom": round(solar + akku, 2) or None,
-            "einspeisung": round(einspeisung, 2) or None,
+    return {"pv_strom": menge("pv_strom"),
+            "einspeisung": menge("einspeisung"),
             "tanken": tank or None}
 
 
 def _kat_eur(jahre: list[dict], feld: str, vorlauf_jahr: int | None) -> float:
-    """Der Amortisations-Beitrag EINER Kategorie über alle Jahre — inklusive des
-    einmaligen Vorlaufs, nach genau derselben Regel wie die Tabelle (N174): ist
-    der Vorlauf aufgeschlüsselt, zählt sein Anteil zur jeweiligen Kategorie;
-    sonst fällt der ganze Vorlauf der PV-Strom-Spalte zu.
+    """Der Amortisations-Beitrag EINER Kategorie über alle Jahre — die Summe der
+    Jahresbeiträge (`_kat_beitrag`) inklusive des einmaligen Vorlaufs.
 
     So ist die Summe der drei Kategorien exakt der kumulierte Ertrag — kein
     Cent liegt neben der Kurve."""
-    total = 0.0
-    for z in jahre:
-        w = float(z.get(feld) or 0.0)
-        if z["jahr"] == vorlauf_jahr:
-            teile = z.get("vorlauf_teile")
-            if teile:
-                w += float(teile.get(feld) or 0.0)
-            elif feld == "pv_strom":
-                w += float(z.get("vorlauf") or 0.0)
-        total += w
-    return round(total, 2)
+    return round(sum(_kat_beitrag(z, feld, vorlauf_jahr) for z in jahre), 2)
 
 
 def _kategorien(jahre: list[dict], vorlauf_jahr: int | None,
@@ -876,7 +904,8 @@ def pv_verlauf(slug: str, session: Session = Depends(get_session),
     # an der Amortisation) und kWh (physische Menge) je Kategorie, für die
     # Prozentzeile und das Ringdiagramm unter der Kurve.
     kategorien = _kategorien(jahre, vorlauf_jahr,
-                             _kategorie_kwh(session, o.id, tanken))
+                             _kategorie_kwh(session, o.id, jahre, vorlauf_jahr,
+                                            tanken))
     return {"anschaffung": a["anschaffung"], "vorlauf": round(vorlauf, 2),
             "vorlauf_teile": vorlauf_teile,
             "vorlauf_aufgeschluesselt": vorlauf_teile is not None,
