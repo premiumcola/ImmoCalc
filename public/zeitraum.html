@@ -116,9 +116,14 @@
      stehen nebeneinander in einer Leiste. */
   .ablese-leiste{display:flex;gap:8px;margin-bottom:14px}
   .ablese-leiste .ablesebtn{flex:1;margin-bottom:0}
+  /* N211 — nur noch der Konfig-Knopf, dezent rechts (kein prominenter Balken). */
+  .ablese-leiste.nur-konfig{justify-content:flex-end;margin-bottom:12px}
   .zk-gear{flex:none;width:48px;min-height:48px;display:flex;align-items:center;
     justify-content:center;border:1.5px solid #BFD9D1;background:var(--teal-l);
     color:var(--teal-d);border-radius:13px;cursor:pointer}
+  .zk-gear.breit{width:auto;gap:7px;padding:0 16px;min-height:44px;
+    font:600 12.5px var(--disp)}
+  .zk-gear.breit span{white-space:nowrap}
   .zk-gear:hover{background:#DCEDE7}
   .zk-gear svg{width:22px;height:22px;display:block}
 
@@ -1128,17 +1133,21 @@
   .summe.gesamt{font-weight:700;border-top:2px solid var(--line)}
   .summe .pos{color:var(--pos)} .summe .neg{color:var(--neg)}
 
-  .sortleiste{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-  .sortleiste span{font:600 10px var(--mono);letter-spacing:.08em;
-                   text-transform:uppercase;color:var(--soft);margin-right:2px}
+  /* N210 — eine Zeile auf iOS: nowrap + kompakte Pillen; der Konfig-Knopf rechts
+     ist icon-only (⚙), sonst sprang „Positionen konfigurieren" in die 2. Zeile. */
+  .sortleiste{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;margin-bottom:10px}
+  .sortleiste span{font:600 10px var(--mono);letter-spacing:.06em;
+                   text-transform:uppercase;color:var(--soft);margin-right:1px;
+                   white-space:nowrap;flex:none}
   .sortleiste button{border:none;background:var(--sheet);color:var(--soft);
-    border-radius:999px;padding:8px 13px;font:600 11.5px var(--disp);cursor:pointer;
-    min-height:38px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+    border-radius:999px;padding:8px 12px;font:600 11.5px var(--disp);cursor:pointer;
+    min-height:38px;white-space:nowrap;flex:none;box-shadow:0 1px 2px rgba(22,38,44,.05)}
   .sortleiste button[aria-pressed=true]{background:var(--teal-l);color:var(--teal-d)}
   /* N189 — Knopf rechts in der Sortierleiste öffnet den Konfig-Modus inline. */
-  .sortleiste .pos-konfig{margin-left:auto;display:inline-flex;align-items:center;gap:5px;
+  .sortleiste .pos-konfig{margin-left:auto;display:inline-flex;align-items:center;
+    justify-content:center;padding:8px;min-width:40px;flex:none;
     color:var(--teal-d);background:var(--teal-l)}
-  .sortleiste .pos-konfig svg{width:15px;height:15px}
+  .sortleiste .pos-konfig svg{width:17px;height:17px}
 
   /* ---- N189: Konfig-Modus (inline) ---------------------------------------- */
   .konf-leiste{display:flex;margin-bottom:12px}
@@ -2694,10 +2703,11 @@ function zeileHtml(k, i) {
 // leerer Zeitraum von selbst verschwindet (statt eines Löschknopfs).
 function zeitraumFussHtml() {
   const v = daten.verknuepft || {};
+  // N212 — „Vorauszahlungen" hier entfernt: die NK-Vorauszahlungen laufen über
+  // die Vermietungen, nicht am Zeitraum — die 0 hier war irreführend.
   const chips = [
     ['Positionen', v.positionen || 0],
     ['Belege', v.belege || 0],
-    ['Vorauszahlungen', v.vorauszahlungen || 0],
   ];
   const leer = chips.every(([, n]) => n === 0);
   return `<div class="zr-fuss">
@@ -3129,12 +3139,12 @@ async function zeichnen() {
 
     const sortWahl = `<div class="sortleiste">
         <span>Sortieren</span>
-        ${Object.entries({ status: 'Offene zuerst', betrag: 'Größe', name: 'Name' })
+        ${Object.entries({ status: 'Offen', betrag: 'Größe', name: 'Name' })
           .map(([k, l]) => `<button data-sort="${k}"
             aria-pressed="${sortierung === k}">${l}</button>`).join('')}
         <button class="pos-konfig" data-pos-konfig
           title="Positionen konfigurieren"
-          aria-label="Positionen konfigurieren">${GEAR_ICON} Positionen konfigurieren</button>
+          aria-label="Positionen konfigurieren">${GEAR_ICON}</button>
       </div>`;
 
     // Jede Kostenart bleibt als Zeile — auch eine, die „Zähler" heißt (etwa die
@@ -6144,19 +6154,20 @@ const WOLKE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 /* CCCLXXX — der Zahnrad-Knopf neben „Ablesewerte eingeben" öffnet die
    Zähler-Konfiguration dieser Immobilie. */
 function ablesenKnopfHtml() {
-  return `<div class="ablese-leiste">
-    <button class="ablesebtn" id="ableseWizard" type="button">
-      <span class="si">▦</span> Ablesewerte eingeben</button>
-    <button class="zk-gear" id="zaehlerKonfig" type="button"
-      aria-label="Zähler konfigurieren" title="Zähler konfigurieren">${GEAR_ICON}</button>
+  // N211 — die Ablesewerte werden jetzt inline je Gruppe (Wasser/Strom/Heizung)
+  // im Zählerstände-Panel erfasst; der globale „Ablesewerte eingeben"-Wizard war
+  // damit redundant und ist raus. Der ⚙ bleibt als Weg zur Zähler-KONFIGURATION
+  // (Anfangsstände, Haupt-/Unterzähler, anlegen) — die es je Gruppe so nicht gibt.
+  return `<div class="ablese-leiste nur-konfig">
+    <button class="zk-gear breit" id="zaehlerKonfig" type="button"
+      aria-label="Zähler konfigurieren">${GEAR_ICON}<span>Zähler konfigurieren</span></button>
   </div>`;
 }
 
 const zahl = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 3 });
 
 inhalt.addEventListener('click', e => {
-  if (e.target.closest('#ableseWizard')) ablesungWizard();
-  else if (e.target.closest('#zaehlerKonfig')) zaehlerKonfig();
+  if (e.target.closest('#zaehlerKonfig')) zaehlerKonfig();
 });
 
 async function ablesungWizard() {
