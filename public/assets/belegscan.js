@@ -12,7 +12,7 @@
  * danach nebenher angestossen: sie dauert Sekunden, und der Beleg ist auch
  * ohne sie schon sicher abgelegt.
  */
-import { kamerascanStarten, istBildDatei } from './kamerascan.js';
+import { kamerascanStarten, istBildDatei, fotoAlsJpeg } from './kamerascan.js';
 
 // Ein mehrseitiger Scan wandert als PDF über die Leitung; auf dem Telefon ist
 // das gerne mal eine schmale Mobilfunkverbindung. Lieber grosszügig warten
@@ -69,8 +69,11 @@ function dateiJahr(dateien) {
 async function kiErkennen(datei, kostenart = '') {
   if (!datei) return null;
   try {
+    // N207 — iOS-Kamerafotos (HEIC/leerer type) erst in ein vom Server lesbares
+    // JPEG wandeln; sonst liest die OCR nichts und es käme kein Vorschlag.
+    const lesbar = await fotoAlsJpeg(datei);
     const paket = new FormData();
-    paket.append('datei', datei, datei.name || 'seite.jpg');
+    paket.append('datei', lesbar, lesbar.name || 'seite.jpg');
     // N78 — optionaler Kontext-Hinweis: bei einem Wasser-Beleg liest die KI
     // zusätzlich die drei Bereichsbeträge (Feld `wasser`). Additiv; ohne den
     // Hinweis bleibt der Aufruf wie zuvor.

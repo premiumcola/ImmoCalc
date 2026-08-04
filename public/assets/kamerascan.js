@@ -30,9 +30,10 @@
 import { bauePdf } from './scan.js';
 
 // ---- Stellschrauben — benannt, damit sie sich leicht nachjustieren lassen ----
-const DET_KANTE = 520;            // Kante für die Randerkennung (Downscale)
+const DET_KANTE = 640;            // Kante für die Randerkennung (Downscale)
 const VORSCHAU_KANTE = 1000;      // Kante für die Bildschirm-Vorschau
 const MAX_KANTE = 1700;           // Kante des fertigen, entzerrten Bildes
+const ERKENN_KANTE = 2200;        // Kante des JPEG für die Text-/KI-Auslese (N207)
 const JPEG_GUETE = 0.72;
 const MIN_HELL_ANTEIL = 0.04;     // zu wenig Kontrast -> Erkennung verworfen
 const RUECKFALL_RAND = 0.04;      // eingerückter Standardrahmen
@@ -601,6 +602,42 @@ export function istBildDatei(datei) {
   if (typ === 'application/pdf') return false;
   if (typ.startsWith('image/')) return true;
   return !/\.pdf$/i.test((datei && datei.name) || '');
+}
+
+/* N207 — ein Kamerafoto in ein Format bringen, das der Server auch LESEN kann.
+ *
+ * iOS liefert für Kamerafotos oft HEIC oder einen leeren `type`. Die
+ * serverseitige Texterkennung (tesseract/leptonica) kann HEIC nicht dekodieren,
+ * und die KI-Auslese arbeitet auf diesem OCR-Text — also blieb bei einem HEIC
+ * beides stumm: kein Text, kein Betrag, und die Erkennungs-/Bestätigungs-Maske
+ * ging gar nicht erst auf. Das Overlay dekodiert dasselbe Foto längst iOS-fest
+ * (`zuBitmap`, inkl. <img>-Rückfall für HEIC); die Erkennung umging das bisher
+ * und schickte die Rohdatei.
+ *
+ * Deshalb hier: über denselben iOS-festen Weg dekodieren, auf ein Canvas zeichnen
+ * (auf `ERKENN_KANTE` begrenzt, damit der Upload schlank bleibt und die OCR noch
+ * genug Auflösung hat) und als JPEG neu kodieren. Ein PDF und alles, was kein
+ * Bild ist, bleibt unangetastet — dort gibt es nichts umzuwandeln. Schlägt die
+ * Umwandlung fehl, kommt die Originaldatei zurück: die Erkennung darf nie einen
+ * Beleg aufhalten. */
+export async function fotoAlsJpeg(datei) {
+  if (!datei || !istBildDatei(datei)) return datei;      // PDF/kein Bild: unverändert
+  try {
+    const bitmap = await zuBitmap(datei);
+    const faktor = Math.min(1, ERKENN_KANTE / Math.max(bitmap.width, bitmap.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bitmap.width * faktor));
+    c.height = Math.max(1, Math.round(bitmap.height * faktor));
+    c.getContext('2d').drawImage(bitmap, 0, 0, c.width, c.height);
+    bitmap.close?.();
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+    if (!blob) return datei;
+    const stamm = (datei.name || 'foto').replace(/\.[^.]*$/, '') || 'foto';
+    return new File([blob], `${stamm}.jpg`, {
+      type: 'image/jpeg', lastModified: datei.lastModified || Date.now() });
+  } catch {
+    return datei;                                        // lieber das Original als nichts
+  }
 }
 
 /**

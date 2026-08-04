@@ -1235,6 +1235,7 @@ import { sankey } from './assets/charts.js';
 import { kostenIcon } from './assets/kostenicons.js';
 import { scanZuPdf, lesbareGroesse } from './assets/scan.js';
 import { belegScannen } from './assets/belegscan.js';
+import { fotoAlsJpeg } from './assets/kamerascan.js';
 installNav();
 
 const zid = new URLSearchParams(location.search).get('z');
@@ -5282,7 +5283,9 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
         kostenart: ziel.kostenart, jahr, zeitraumId: daten.id,
         titel: ziel.kostenart,
       }),
-      erkennen(erstes).catch(() => null),
+      // N78/N207 — die Kostenart als Kontext mitgeben, damit die KI beim
+      // Wasser-Beleg die drei Bereichsbeträge liest (nicht nur eine Summe).
+      erkennen(erstes, ziel.kostenart).catch(() => null),
     ]);
     if (!ergebnis) {                                   // Zuschnitt abgebrochen
       knopf.disabled = false;
@@ -5294,7 +5297,15 @@ document.getElementById('scanFeld').addEventListener('change', async e => {
       beschriftung.textContent = `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''}`
         + (ergebnis.groesse ? ` · ${lesbareGroesse(ergebnis.groesse)}` : '');
     }
-    if (vorschlag) await betragVorschlagen(ziel.kostenart, vorschlag);
+    // N207 — der Beleg ist abgelegt; jetzt die erkannten Werte anbieten. Wurde
+    // nichts erkannt (kein Betrag, keine Wasser-Bereiche), bleibt die Maske aus,
+    // aber der Nutzer erfährt es — statt ratlos vor einer stummen Position.
+    const uebernommen = vorschlag
+      ? await betragVorschlagen(ziel.kostenart, vorschlag) : false;
+    if (!uebernommen && !erkennungHatWert(vorschlag)) {
+      melde('Beleg gespeichert — kein Betrag automatisch erkannt. '
+        + 'Bitte den Betrag von Hand eintragen.', '');
+    }
     await laden();
   } catch (fehler) {
     if (beschriftung) beschriftung.textContent = 'Fehlgeschlagen';
@@ -5959,9 +5970,12 @@ if (KEINE_KAMERA) {
 async function erkennen(bild, kostenart = '') {
   if (!bild) return null;
   try {
+    // N207 — iOS-Kamerafotos (HEIC/leerer type) erst in ein serverlesbares JPEG
+    // wandeln, sonst liest die OCR nichts und die Werte-Maske ginge nie auf.
+    const lesbar = await fotoAlsJpeg(bild);
     const paket = new FormData();
     // Der Dateiname sagt dem Server, womit er es zu tun hat (Bild oder PDF).
-    paket.append('datei', bild, bild.name || 'seite.jpg');
+    paket.append('datei', lesbar, lesbar.name || 'seite.jpg');
     if (kostenart) paket.append('kostenart', kostenart);
     const antwort = await fetch('/api/dokumente/erkennen',
                                 { method: 'POST', body: paket });
@@ -5971,10 +5985,62 @@ async function erkennen(bild, kostenart = '') {
   }
 }
 
+/* Hat die Erkennung überhaupt einen Wert geliefert (einen Betrag oder — beim
+   Wasserbeleg — mindestens einen der drei Bereichsbeträge)? Danach entscheidet
+   sich, ob die Werte-Maske aufgeht oder ein Hinweis „bitte eintragen" kommt. */
+function erkennungHatWert(vorschlag) {
+  if (!vorschlag) return false;
+  const w = vorschlag.wasser;
+  if (w && (w.wasser > 0 || w.schmutz > 0 || w.niederschlag > 0)) return true;
+  return vorschlag.betrag > 0;
+}
+
+/* Einen erkannten Betrag an eine Position schreiben — legt sie beim ersten Wert
+   an, sonst PATCH. Geteilt vom einfachen und vom Wasser-Fall, damit es die
+   Schreiblogik nur einmal gibt. */
+async function positionBetragSchreiben(zeile, kostenart, betrag) {
+  if (!(betrag > 0)) return;
+  if (zeile?.position_id) {
+    await api(`/positionen/${zeile.position_id}`,
+      { method: 'PATCH', body: { betrag, wertquelle: 'Scan' } });
+  } else {
+    await api(`/zeitraeume/${zid}/positionen`,
+      { method: 'POST', body: { kostenart, betrag, wertquelle: 'Scan' } });
+  }
+}
+
+/* Bietet die erkannten Werte zur Übernahme an und trägt sie nach Bestätigung
+   ein. Gibt `true` zurück, wenn wirklich etwas eingetragen wurde (der Aufrufer
+   unterscheidet „übernommen" von „abgelehnt/nichts erkannt"). */
 async function betragVorschlagen(kostenart, vorschlag) {
-  if (!vorschlag?.betrag) return;
   const zeile = daten.checkliste.find(k => k.kostenart === kostenart);
-  if (!zeile) return;
+  if (!zeile) return false;
+
+  // N78/N207 — Wasser-Beleg: die KI liest drei Bereichsbeträge (Frisch-,
+  // Schmutz-, Niederschlagswasser). Frischwasser gehört an die Sammelposition
+  // (an der der Beleg hängt), die beiden anderen an ihre eigenen Positionen —
+  // derselbe Weg wie im Drop-Dialog (`belegWasserDialog`), nur hier als Kamera-
+  // Bestätigung. Ohne diesen Zweig käme beim Wasserbeleg nur eine Summe an.
+  const w = vorschlag?.wasser;
+  if (istWasserSammel({ kostenart })
+      && w && (w.wasser > 0 || w.schmutz > 0 || w.niederschlag > 0)) {
+    const teile = [];
+    if (w.wasser)       teile.push(`Frischwasser ${eur(w.wasser)}`);
+    if (w.schmutz)      teile.push(`Schmutzwasser ${eur(w.schmutz)}`);
+    if (w.niederschlag) teile.push(`Niederschlag ${eur(w.niederschlag)}`);
+    const summe = (w.wasser || 0) + (w.schmutz || 0) + (w.niederschlag || 0);
+    const ja = await frage('Wasser-Beträge aus dem Beleg übernehmen?',
+      `Erkannt: ${teile.join(' · ')} — zusammen ${eur(summe)}. `
+      + 'Auf die Positionen Wasser, Abwasser und Niederschlag eintragen?',
+      { knopf: 'Übernehmen' });
+    if (!ja) return false;
+    await positionBetragSchreiben(zeile, kostenart, w.wasser);   // Frischwasser
+    await wasserPosBetragSchreiben('schmutz', w.schmutz);
+    await wasserPosBetragSchreiben('niederschlag', w.niederschlag);
+    return true;
+  }
+
+  if (!vorschlag?.betrag) return false;
   const ja = await frage('Betrag aus dem Beleg übernehmen?',
     `Erkannt wurden ${eur(vorschlag.betrag)}`
     + (vorschlag.datum
@@ -5982,18 +6048,11 @@ async function betragVorschlagen(kostenart, vorschlag) {
       : '')
     + `. Als Betrag für „${kostenart}“ eintragen?`,
     { knopf: 'Übernehmen' });
-  if (!ja) return;
+  if (!ja) return false;
   // Gibt es die Position noch nicht, entsteht sie hier — sonst versickerte
   // der erkannte Betrag an genau den Zeilen, die noch nichts haben.
-  if (zeile.position_id) {
-    await api(`/positionen/${zeile.position_id}`,
-              { method: 'PATCH', body: { betrag: vorschlag.betrag,
-                                         wertquelle: 'Scan' } });
-  } else {
-    await api(`/zeitraeume/${zid}/positionen`,
-              { method: 'POST', body: { kostenart, betrag: vorschlag.betrag,
-                                        wertquelle: 'Scan' } });
-  }
+  await positionBetragSchreiben(zeile, kostenart, vorschlag.betrag);
+  return true;
 }
 
 /* ---- Ablese-Wizard (CCXCIII) — Zählerstände durchscrollend eingeben --------
