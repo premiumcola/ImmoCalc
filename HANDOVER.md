@@ -41,9 +41,34 @@ Neu abgeschlossen (Commit-Hashes):
 - Zusätzlich: **`CLAUDE.md`** um „## Der rote Faden" (11-Punkte-Checkliste
   aus wiederkehrendem Feedback) ergänzt — `9810369`.
 
-## In Arbeit — Agent läuft (WICHTIG)
+## N213 — FERTIG (`8b78e00`)
 
-**N213 — Abrechnungs-Modell splitten: „Standard" + „Laufer-Spezial"**
+- Additives `Objekt.modell` (Default `"standard"`); Laufer via
+  idempotentem `laufer_modell_setzen(engine)` in `migrate.py` einmalig auf
+  `"laufer_spezial"` gesetzt. Berührt nur den bekannten Slug, nur wenn Feld
+  noch Default; überschreibt nie eine bewusste Nutzerwahl.
+- Frontend-Gate: `istLaufer() === (daten?.modell || 'laufer_spezial')
+  === 'laufer_spezial'`. Der **Fallback auf Laufer** ist bewusst — solange die
+  API das Feld noch nicht liefert (Deploy-Lücke), sieht Laufer aus wie heute;
+  nur ein explizites `"standard"` aus dem Backend flippt den Schalter.
+- Standard-Modell: keine Öl-/§9-/HKV-UI, keine Stromkette, keine PV/E-Tanken
+  (Empty-State „Für diese Immobilie nicht relevant" auf strom.html/
+  tankstelle.html); Heizung nutzt den generischen Kostenposition- +
+  Zähler-Pfad je Kategorie „Heizung" (ein Heizkosten- und ein Wärmemengen-
+  Wert je Einheit) — kein neues Storage-Feld nötig.
+- Laufer visuell verifiziert unverändert (15 Screenshots iPhone/iPad/Desktop,
+  0 Konsolenfehler).
+- pytest: 1083 passed + 1 skipped (baseline 1075 + 8 neue in
+  `api/tests/test_modell.py`). Migration-Guardian grün.
+- Deploy-Note: `./deploy.sh` bringt das `modell`-Feld + den Laufer-Setter
+  live. Bis dahin greift der Frontend-Fallback (Laufer wie heute; die vier
+  anderen Objekte visuell wie heute).
+
+## (vorheriger In-Arbeit-Block — obsolet)
+
+<details><summary>Historie</summary>
+
+**N213 lief bis zum Sessionende:**
 - Agent-ID: `a5a5f0993f9cec441` (SendMessage `to:` diese ID zum Fortsetzen).
 - Output-Transcript: `/tmp/claude-1001/-home-roman-projects-ImmoCalc/f21352ab-1435-4809-b96f-56f92e5bf3e0/tasks/a5a5f0993f9cec441.output`.
 - Registriert in AUFGABEN.md als N213 (offen).
@@ -79,6 +104,8 @@ Neu abgeschlossen (Commit-Hashes):
 5. Danach ein `! ./deploy.sh` — die Migration + N213 + alle noch offenen
    Backend-Teile (siehe unten) werden zusammen live.
 
+</details>
+
 ## Offene Themen des Nutzers
 
 - **N198(b)** — die volle Heizmengenverteilungs-Rechenlogik (HKV × Faktor →
@@ -102,7 +129,7 @@ Session (Migration von N213 mit, wenn der Agent fertig ist):
 - N194 2 €-Benzin,
 - N200 E-Tanken-Live-Werte in der Amortisation,
 - N206 PV-Eigenverbrauch €/kWh nur auf verrechnete Menge,
-- N213 Migration `Objekt.modell` + Laufer-Setter (sobald Agent durch).
+- **N213 Migration `Objekt.modell` + Laufer-Setter (jetzt committet `8b78e00`).**
 
 Alle Frontend-Änderungen sind live-gemountet und schon aktiv.
 
