@@ -184,6 +184,46 @@ def eindeutigkeit_sichern(conn, tabellen: set[str] | None = None) -> list[str]:
     return gesetzt
 
 
+# N213 — genau ein Objekt behält die vollständige, historisch gewachsene
+# Laufer-Sicht (Stromkette, HKV, Wärmemengenverteilung, PV-/E-Tankstellen-
+# Kette): die Laufer Str. 5 selbst. Alle anderen fallen auf `standard`. Der
+# Setter läuft beim Start und ist idempotent — er stellt nur um, wenn das
+# Feld noch auf dem Default `standard` steht. Ein Nutzer, der Laufer bewusst
+# auf `standard` gesetzt hat, wird nicht überschrieben (er hat es einmal
+# gewollt); ein anderes Objekt wird nie automatisch umgestellt.
+LAUFER_SLUG: str = "eschenau-laufer-str-5"
+LAUFER_MODELL: str = "laufer_spezial"
+
+
+def laufer_modell_setzen(engine: Engine) -> bool:
+    """Setzt Laufers Modell auf `laufer_spezial`, sofern noch Default.
+
+    Nur der eine bekannte Slug wird angefasst, nur wenn `modell == 'standard'`
+    (der Default). Rückgabe: True, wenn eine Änderung gemacht wurde. Robust
+    gegen fehlende Spalte (frisches Schema ohne Migration) oder fehlendes
+    Objekt (frische DB ohne Bestand). Additiv, idempotent.
+    """
+    from .models import Objekt
+
+    try:
+        with Session(engine) as session:
+            objekt = session.exec(
+                select(Objekt).where(Objekt.slug == LAUFER_SLUG)).first()
+            if not objekt:
+                return False
+            if (objekt.modell or "").strip() != "standard":
+                return False
+            objekt.modell = LAUFER_MODELL
+            session.add(objekt)
+            session.commit()
+            log.info("Objekt-Modell auf %s gesetzt: %s",
+                     LAUFER_MODELL, LAUFER_SLUG)
+            return True
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Laufer-Modell nicht gesetzt: %s", fehler)
+        return False
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -226,6 +266,14 @@ def migriere(engine: Engine) -> list[str]:
         geaendert += pflicht_kostenarten_sichern(engine)
     except Exception as fehler:                       # noqa: BLE001
         log.warning("Pflicht-Kostenarten nicht gesetzt: %s", fehler)
+
+    # N213 — Laufers Objekt-Modell auf `laufer_spezial` heben, falls noch Default.
+    # Rein additiv, idempotent; keine anderen Slugs werden angefasst.
+    try:
+        if laufer_modell_setzen(engine):
+            geaendert.append(f"objekt.modell[{LAUFER_SLUG}]={LAUFER_MODELL}")
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Laufer-Modell nicht gesetzt: %s", fehler)
 
     if geaendert:
         log.info("Schema ergänzt: %s", ", ".join(geaendert))

@@ -1531,7 +1531,14 @@ const KOSTENART_ALIAS = { 'Müll': 'Abfallwirtschaft',
   // N157 — an dieser Zeile hängen Verbrauch UND Kosten (Zähler, Quellen,
   // Verteilung). „Strom" allein sagte das nicht.
   'Strom': 'Stromverbrauch und Kosten' };
-const kostenartAnzeige = k => KOSTENART_ALIAS[k] || k;
+// N213 — die Aliasse für Heiz-/Strom-Zeilen erklären die Laufer-spezifischen
+// Stufen (Öl, §9-Split, HKV, Kette). Im Standard-Modell gelten diese Stufen
+// nicht; die Kostenart trägt dort ihren normalen Namen (z. B. „Heizkosten"),
+// damit die Zeile nicht mehr verspricht, als sie zeigt.
+const LAUFER_ALIAS_KEYS = new Set(['Heizkosten', 'Warmwasser',
+                                   'Heizung', 'Strom']);
+const kostenartAnzeige = k => (LAUFER_ALIAS_KEYS.has(k) && !istLaufer())
+  ? k : (KOSTENART_ALIAS[k] || k);
 
 function bereichIndex(kostenart) {
   const n = normUml(kostenart);
@@ -1748,10 +1755,30 @@ function istWasserSammel(k) {
   return n === 'wasser' || n === 'frischwasser' || n === 'trinkwasser';
 }
 
+/* N213 — Objektmodell: gibt es hier nur zwei Werte, `standard` und
+   `laufer_spezial`. Die Laufer-spezifische Maschinerie (Stromkette, HKV,
+   Wärmemengen-/Ölverteilung, PV-/E-Tankstellen-Kette) wird für standard
+   AUSGEBLENDET, nicht entfernt — jede Berechnung, jeder Endpunkt bleibt.
+
+   Deploy-Lücke: die Datei `public/` ist live-gemountet, die API mit dem neuen
+   `modell`-Feld braucht dagegen einen Deploy. Zwischen Frontend-Live und
+   Backend-Deploy fehlt `daten.modell` — bekommt es hier den Fallback
+   `standard`, verliert die Laufer Str. 5 in diesem Fenster ihre gewachsene
+   UI (Öl-Manager, HKV, Stromkette). Das wäre eine echte Regression. Deshalb
+   ist der Fallback bei fehlendem Feld bewusst `laufer_spezial` — vor dem
+   Deploy verhält sich also alles wie bisher (alle Objekte in Laufer-Sicht,
+   wie heute), nach dem Deploy schaltet ausschließlich die Laufer selbst in
+   die Laufer-Sicht und der Rest fällt sauber auf das schlanke Standard-
+   Modell zurück. Erst ein explizites `"standard"` aktiviert das Ausblenden. */
+const istLaufer = () => (daten?.modell || 'laufer_spezial') === 'laufer_spezial';
+
 /* N142 — die Stromkette hängt an genau EINER Zeile: der obersten Strom-Position
    der Checkliste. Sonst stünde dieselbe Kette mehrfach da (Netzbezug und
-   Eigenverbrauch sind zwei Positionen derselben Rechnung). */
+   Eigenverbrauch sind zwei Positionen derselben Rechnung).
+   N213 — nur im Laufer-Modell; im Standard-Modell trägt die Strom-Position
+   keine Kette (Kosten laufen direkt auf die Einheit). */
 function istStromKettePos(k) {
+  if (!istLaufer()) return false;
   return istStromPos(k) && (daten.checkliste || []).find(istStromPos) === k;
 }
 
@@ -1811,8 +1838,12 @@ function istWasserKostenart(name) {
 /* N79 — die Heizöl-/Heizkosten-Sammelposition: beim Aufklappen erscheint der
    Öl-Manager (Lieferungen erfassen, FIFO-Bewertung), statt eines Handbetrags.
    Bewusst eng: nur die reine Heizung/Heizkosten-Position, nicht Warmwasser,
-   nicht „Wartung Heizung". */
+   nicht „Wartung Heizung".
+   N213 — nur im Laufer-Modell. Der übrige Bestand erfasst Heizkosten und
+   Wärmemenge einfach je Einheit; der Öl-Manager (FIFO-Bewertung, §9-Split,
+   HKV-Verteilung) bleibt Laufer vorbehalten. */
 function istHeizoelSammel(k) {
+  if (!istLaufer()) return false;
   const n = normUml(k.kostenart);
   if (n.includes('wartung') || n.includes('warmwasser')) return false;
   // N91 — nur die ÖL-Position (Einkauf): Lieferungen + FIFO. „Heizung" trägt
@@ -1821,15 +1852,19 @@ function istHeizoelSammel(k) {
 }
 
 /* N91 — die Warmwasser-Position: hier steht der §9-Split (wie viel des Öls in
-   die Warmwassererzeugung geht) samt seiner Verteilung. */
+   die Warmwassererzeugung geht) samt seiner Verteilung.
+   N213 — nur im Laufer-Modell (siehe `istHeizoelSammel`). */
 function istWarmwasserPos(k) {
+  if (!istLaufer()) return false;
   const n = normUml(k.kostenart);
   return n === 'warmwasser' || n.includes('warmwassererzeug');
 }
 
 /* N91 — die Heizungs-Position: Heizkörper-Wärmemenge über die
-   Heizkostenverteiler (Faktor × Einheiten). Nicht „Wartung Heizung". */
+   Heizkostenverteiler (Faktor × Einheiten). Nicht „Wartung Heizung".
+   N213 — nur im Laufer-Modell (siehe `istHeizoelSammel`). */
 function istHeizwaermePos(k) {
+  if (!istLaufer()) return false;
   const n = normUml(k.kostenart);
   if (n.includes('wartung') || n.includes('warmwasser')) return false;
   return n === 'heizung' || n.includes('heizkoerper') || n.includes('waermemenge');
@@ -4980,31 +5015,42 @@ async function laden() {
   // N114 — die Heizkosten stehen nicht als Positionsbetrag, sondern entstehen
   // aus der FIFO-Bewertung des Öl-Verbrauchs. Die Zeile soll sie trotzdem
   // ausweisen statt „Datei wählen" anzubieten, als waere nichts erfasst.
-  try {
-    const b = await api(`/objekte/${encodeURIComponent(daten.objekt)}`
-      + `/heizoel/bewertung?zeitraum_id=${zid}`);
-    heizoelKosten = b?.verbrauch_kosten || 0;
-    // N118 — den §9-Split gleich mitziehen, damit die Zeile „Warmwasser-
-    // erzeugung" ihre Gesamtkosten oben rechts ausweisen kann.
-    const zl = ablesungMaske?.zaehler || [];
-    const wwH = zl.find(z => wasserArt(z) === 'Warmwasser' && !z.hauptzaehler_id);
-    const vol = wwH?.verbrauch != null ? wwH.verbrauch
-      : zl.filter(z => wasserArt(z) === 'Warmwasser' && z.hauptzaehler_id)
-          .reduce((su, z) => su + (z.verbrauch || 0), 0);
-    const sp = heizoelKosten > 0 ? await api(
-      `/objekte/${encodeURIComponent(daten.objekt)}/waerme/split`
-      + `?oel_kosten=${heizoelKosten}&oel_liter=${b?.verbrauch_liter || 0}`
-      + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
-    wwKosten = sp?.ww_kosten || 0;
-  } catch { heizoelKosten = 0; wwKosten = 0; }
+  // N213 — die FIFO-Bewertung des Öls und der §9-Split sind Laufer-Sache; im
+  // Standard-Modell entstehen Heizkosten pro Einheit direkt aus dem Zähler/
+  // Betrag, ohne Öl-Manager.
+  heizoelKosten = 0;
+  wwKosten = 0;
+  if (istLaufer()) {
+    try {
+      const b = await api(`/objekte/${encodeURIComponent(daten.objekt)}`
+        + `/heizoel/bewertung?zeitraum_id=${zid}`);
+      heizoelKosten = b?.verbrauch_kosten || 0;
+      // N118 — den §9-Split gleich mitziehen, damit die Zeile „Warmwasser-
+      // erzeugung" ihre Gesamtkosten oben rechts ausweisen kann.
+      const zl = ablesungMaske?.zaehler || [];
+      const wwH = zl.find(z => wasserArt(z) === 'Warmwasser' && !z.hauptzaehler_id);
+      const vol = wwH?.verbrauch != null ? wwH.verbrauch
+        : zl.filter(z => wasserArt(z) === 'Warmwasser' && z.hauptzaehler_id)
+            .reduce((su, z) => su + (z.verbrauch || 0), 0);
+      const sp = heizoelKosten > 0 ? await api(
+        `/objekte/${encodeURIComponent(daten.objekt)}/waerme/split`
+        + `?oel_kosten=${heizoelKosten}&oel_liter=${b?.verbrauch_liter || 0}`
+        + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
+      wwKosten = sp?.ww_kosten || 0;
+    } catch { heizoelKosten = 0; wwKosten = 0; }
+  }
   // N198a — die Heizkostenverteiler des Objekts einmal mitziehen, damit die
   // Checkliste synchron entscheiden kann, ob die Heizkörper-Wärmemenge schon
   // auf die Einheiten verteilt ist. Beiwerk: fehlt der Endpunkt, bleibt die
   // Liste leer und die Position gilt (korrekt) als noch nicht verteilt.
-  try {
-    const hv = await api(`/objekte/${encodeURIComponent(daten.objekt)}/heizverteiler`);
-    heizverteiler = hv?.heizverteiler || [];
-  } catch { heizverteiler = []; }
+  // N213 — HKV nur im Laufer-Modell.
+  heizverteiler = [];
+  if (istLaufer()) {
+    try {
+      const hv = await api(`/objekte/${encodeURIComponent(daten.objekt)}/heizverteiler`);
+      heizverteiler = hv?.heizverteiler || [];
+    } catch { heizverteiler = []; }
+  }
   // N82b — die NK-Vorauszahlungen des Zeitraums für die Deckungs-Anzeige.
   try {
     const ab = await api(`/zeitraeume/${zid}/abrechnung`);
@@ -5044,7 +5090,8 @@ async function laden() {
   }
   // N142/N157 — die Stromkette einmal holen; Kopf und Tabelle lesen dieselben
   // Zahlen. Beiwerk: fehlt sie, bleibt die Seite ohne Aufschlüsselung bedienbar.
-  stromketteDaten = (daten.checkliste || []).some(istStromPos)
+  // N213 — nur im Laufer-Modell; im Standard-Modell hat die Kette keine Rolle.
+  stromketteDaten = (istLaufer() && (daten.checkliste || []).some(istStromPos))
     ? await api(`/zeitraeume/${zid}/stromkette`).catch(() => null) : null;
   chipMap = baueChipMap();
   // N34 — Titel: „Abrechnungszeitraum <Jahr> · von – bis" (Jahr = Jahr mit den

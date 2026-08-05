@@ -249,6 +249,9 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
             # Kachel zeigt dafür ein kleines Zeichen. Wahr, sobald für ein Jahr
             # Produktion oder eine Anschaffung erfasst ist.
             "hat_pv": o.id in pv_objekte,
+            # N213 — Objektmodell (`standard` | `laufer_spezial`). Steuert im
+            # Frontend, welche Laufer-spezifischen UI-Blöcke sichtbar sind.
+            "modell": o.modell or "standard",
         })
     return out
 
@@ -392,7 +395,9 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
                "weg_verwalter",
                # CCXXXV — Erwerbsart und Nießbrauch
                "erwerbsart", "afa_basis_uebernommen",
-               "niessbrauch_aktiv", "niessbrauch_berechtigt", "niessbrauch_bis"}
+               "niessbrauch_aktiv", "niessbrauch_berechtigt", "niessbrauch_bis",
+               # N213 — Objektmodell (`standard` | `laufer_spezial`)
+               "modell"}
     felder = bereinige(Objekt, {k: v for k, v in data.items() if k in erlaubt})
     if not felder.get("name", "x"):
         raise HTTPException(400, "Der Name darf nicht leer sein")
@@ -1188,6 +1193,10 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         # die Abrechnungsseite bietet dann den Mieter-Direkteintrag an, statt
         # selbst über einen Schlüssel zu verteilen.
         "weg": bool(o.weg),
+        # N213 — Objektmodell (`standard` | `laufer_spezial`); die
+        # Zeitraumseite blendet Laufer-spezifische Blöcke (Stromkette, HKV,
+        # Wärmemengenverteilung) für andere Objekte aus.
+        "modell": o.modell or "standard",
         "label": f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}",
         # N34 — das Jahr des Zeitraums (Jahr mit den meisten Tagen), für Titel
         # „Abrechnungszeitraum <Jahr> · von–bis" und die jahr-basierte Zuordnung.

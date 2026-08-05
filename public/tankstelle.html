@@ -2168,16 +2168,33 @@ try {
 const mitPv = objekte.filter(o => o.hat_pv);
 const wahl = mitPv.length ? mitPv : objekte;
 
-if (wahl.length) {
-  const ausUrl = new URLSearchParams(location.search).get('objekt');
+// N213 — kommt der Nutzer über ?objekt=<slug> auf ein Objekt ohne PV, zeigt die
+// Seite einen klaren Leerzustand, statt still die erste PV-Immobilie zu laden.
+const ausUrl = new URLSearchParams(location.search).get('objekt');
+const nichtPvUrl = ausUrl && objekte.some(o => o.slug === ausUrl)
+                            && !wahl.some(o => o.slug === ausUrl);
+if (nichtPvUrl) {
+  const gemeint = objekte.find(o => o.slug === ausUrl);
+  sub.textContent = gemeint ? (gemeint.titel || gemeint.name) : '';
+  inhalt.innerHTML = `<div class="empty">
+      <div class="big">Für diese Immobilie nicht relevant</div>
+      <p>Die E-Tankstelle gehört zur PV-Anlage — sie erscheint nur bei Objekten
+      mit Anlage. „${esc((gemeint && (gemeint.titel || gemeint.name)) || '')}" ist
+      ohne PV geführt.</p></div>`;
+  if (wahl.length) {
+    objektWahl.fuelle(wahl.map(o => ({ wert: o.slug, text: o.titel || o.name })), '');
+  }
+} else if (wahl.length) {
   objektSlug = (ausUrl && wahl.some(o => o.slug === ausUrl)) ? ausUrl : wahl[0].slug;
   objektWahl.fuelle(wahl.map(o => ({ wert: o.slug, text: o.titel || o.name })),
                     objektSlug);
   sub.textContent = mitPv.length
     ? `${mitPv.length} ${mitPv.length === 1 ? 'Station' : 'Stationen'}`
     : 'Noch keine PV-Anlage erfasst';
+  await laden();
+} else {
+  await laden();
 }
-await laden();
 </script>
 </body>
 </html>

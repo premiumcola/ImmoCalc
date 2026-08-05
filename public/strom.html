@@ -2235,10 +2235,28 @@ try {
 const mitPv = objekte.filter(o => o.hat_pv);
 const wahl = mitPv.length ? mitPv : objekte;
 
-if (wahl.length) {
+// N213 — landet der Nutzer über ?objekt=<slug> auf einem Objekt, das keine
+// PV-Anlage hat (Standard-Modell, kein `hat_pv`), zeigt die Seite einen klaren
+// Leerzustand statt still die erste PV-Anlage einzublenden — sonst stünde plötzlich
+// „Laufer Str. 5", obwohl der Nutzer eine andere Immobilie aufgerufen hat.
+const ausUrl = new URLSearchParams(location.search).get('objekt');
+const nichtPvUrl = ausUrl && objekte.some(o => o.slug === ausUrl)
+                            && !wahl.some(o => o.slug === ausUrl);
+if (nichtPvUrl) {
+  const gemeint = objekte.find(o => o.slug === ausUrl);
+  sub.textContent = gemeint ? (gemeint.titel || gemeint.name) : '';
+  inhalt.innerHTML = `<div class="empty">
+      <div class="big">Für diese Immobilie nicht relevant</div>
+      <p>Diese Seite gehört zur PV-Anlage — sie erscheint nur bei Objekten,
+      die eine PV-Anlage tragen. „${esc((gemeint && (gemeint.titel || gemeint.name)) || '')}"
+      ist ohne PV geführt. Wähle oben eine Immobilie mit Anlage oder lege am
+      Objekt eine PV-Anlage an.</p></div>`;
+  if (wahl.length) {
+    objektWahl.fuelle(wahl.map(o => ({ wert: o.slug, text: o.titel || o.name })), '');
+  }
+} else if (wahl.length) {
   // N110 - von der Objektkachel aus (?objekt=slug) direkt bei der richtigen
   // Anlage landen, statt erst wieder waehlen zu muessen.
-  const ausUrl = new URLSearchParams(location.search).get('objekt');
   objektSlug = (ausUrl && wahl.some(o => o.slug === ausUrl)) ? ausUrl : wahl[0].slug;
   objektWahl.fuelle(wahl.map(o => ({ wert: o.slug, text: o.titel || o.name })),
                     objektSlug);

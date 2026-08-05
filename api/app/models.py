@@ -115,6 +115,28 @@ class Objekt(SQLModel, table=True):
     weg_ruecklage_zufuehrung: Optional[float] = None  # Sparanteil im Hausgeld, mtl.
     weg_verwalter: str = ""                        # Hausverwaltung/Abrechnungsfirma
     # ----------------------------------------------------------------------
+    # N213 — Objektmodell. Legt fest, welche Nebenkosten-Maschinerie an einem
+    # Objekt sichtbar ist. Bisher war die gesamte App auf die Laufer Str. 5
+    # zugeschnitten (Stromkette, HKV, Wärmemengenverteilung, PV-/E-Tankstellen-
+    # Kette). Für den übrigen Bestand ist das zu viel — dort genügen je
+    # Einheit ein Stromzähler und einfache Heizkosten/Wärmemengen-Eingaben.
+    #
+    # Zwei Ausprägungen:
+    #  * `standard` — die einfache Sicht (Bestand außer Laufer). Alle
+    #    Laufer-spezifischen UI-Blöcke bleiben im Code, werden aber nicht
+    #    gezeigt.
+    #  * `laufer_spezial` — die vollständige, historisch gewachsene Sicht
+    #    für die Laufer Str. 5.
+    #
+    # Additiv, Default = `standard`; die Migration zieht die Spalte am Bestand
+    # nach. Ein separater One-Off-Setter (siehe `migrate.laufer_modell_setzen`)
+    # setzt genau den einen Slug `eschenau-laufer-str-5` einmalig auf
+    # `laufer_spezial`, sofern das Feld noch der Default ist. Damit bleibt
+    # Laufer unverändert; alle anderen Objekte fallen sofort auf die einfache
+    # Sicht. Ein anderer Slug wird nie automatisch umgestellt.
+    # ----------------------------------------------------------------------
+    modell: str = "standard"        # 'standard' | 'laufer_spezial' (N213)
+    # ----------------------------------------------------------------------
     # CCXXXV — Erwerbsart. Nicht jedes Objekt wurde gekauft: geerbt, geschenkt
     # oder überlassen kommt vor. Das ändert die Abschreibung — die AfA wird vom
     # Rechtsvorgänger fortgeführt („Fußstapfenprinzip", `afa_basis_uebernommen`)
