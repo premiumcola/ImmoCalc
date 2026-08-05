@@ -227,6 +227,9 @@
   .fm-grid .hk{font-size:9px;color:var(--pos)}
   .fm-q.fertig .hk{color:var(--teal-d)}
   .fm-m.fertig{color:var(--teal-d)}.fm-m.fertig .hk{color:var(--teal-d)}
+  /* N214 — noch nicht abgeschlossene Monate: sichtbar dezent + nicht klickbar. */
+  .fm-m.offen{opacity:.42;cursor:not-allowed}
+  .fm-m.offen:hover{background:var(--sheet)}
   .fm-abbtn{margin-top:8px;width:100%;min-height:40px;border:none;cursor:pointer;
             border-radius:999px;background:var(--sheet);color:var(--teal-d);
             font:600 11.5px var(--mono);letter-spacing:.03em}
@@ -1189,10 +1192,16 @@ function zeitraumWahl() {
   };
   const mZelle = m => {
     const an = monatAktiv(m), ab = monatAbgerechnet(jahrWert(), m);
-    return `<button type="button" class="fm-m${an ? ' an' : ''}${ab ? ' fertig' : ''}"
-      data-monat="${m}" aria-pressed="${an}"
-      ${ab ? 'title="bereits abgerechnet"' : ''}>${MONKURZ[m - 1]}${
-      ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
+    // N214 — noch nicht abgeschlossene Monate (Ende in der Zukunft) sind für die
+    // „abgerechnet"-Markierung tabu; bereits abgerechnete bleiben klickbar,
+    // damit man sie zur Korrektur wieder entfernen kann.
+    const offen = !ab && monatIstOffen(jahrWert(), m);
+    return `<button type="button" class="fm-m${an ? ' an' : ''}${ab ? ' fertig' : ''}${
+        offen ? ' offen' : ''}" data-monat="${m}" aria-pressed="${an}"
+      ${offen ? 'disabled' : ''}
+      title="${ab ? 'bereits abgerechnet — anklicken, wählen, dann unten „abgerechnet-Status entfernen"'
+              : (offen ? 'Noch nicht abgeschlossen — kann nicht abgerechnet werden' : '')}"
+      >${MONKURZ[m - 1]}${ab ? '<span class="hk" aria-hidden="true">✓</span>' : ''}</button>`;
   };
   // Zeilenweise (row-major) füllen: erst die vier Quartalsköpfe, dann je
   // Monatszeile die vier Quartalsspalten — so steht Jan/Feb/Mär unter Q1 usw.
@@ -1401,6 +1410,14 @@ async function abgerechnetLaden() {
 const QUARTAL_VON = m => Math.floor((m - 1) / 3) + 1;
 const markerDeckt = (mk, j, m) => mk.jahr === j
   && (mk.monat === m || (mk.monat == null && mk.quartal === QUARTAL_VON(m)));
+
+/* N214 — ein Monat gilt als „noch offen", wenn sein Ende in der Zukunft liegt.
+   Solche Monate dürfen nicht als abgerechnet markiert werden. */
+function monatIstOffen(jahr, monat) {
+  const heute = new Date();
+  const monatsEnde = new Date(jahr, monat, 0);   // Tag 0 des Folgemonats
+  return monatsEnde >= new Date(heute.getFullYear(), heute.getMonth(), heute.getDate());
+}
 const monatAbgerechnet = (j, m) => abgerechnet.some(mk => markerDeckt(mk, j, m));
 
 /* Ein Jahr gilt als abgerechnet, wenn alle zwölf Monate abgerechnet sind

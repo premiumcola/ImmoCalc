@@ -235,6 +235,11 @@ def quartal_zeitraum(jahr: int, quartal: int) -> tuple[date, date]:
                                        monthrange(jahr, letzter)[1])
 
 
+def _monatsende(jahr: int, monat: int) -> date:
+    """Der letzte Tag eines Monats — N214 (Zukunfts-Guard)."""
+    return date(jahr, monat, monthrange(jahr, monat)[1])
+
+
 def quartale_monate(quartale: list[int]) -> list[int]:
     """Die Monatsnummern (1–12) einer Quartalsauswahl — aufsteigend, ohne
     Dopplung.
@@ -1900,9 +1905,17 @@ def versenden(slug: str, data: VersandIn,
         _sende_abrechnung(session, o, daten, zeile, adresse)
     except MailFehler as fehler:
         raise HTTPException(400, str(fehler)) from fehler
-    # N182 — den Versand festhalten, damit die Periode als abgerechnet erscheint
-    # (Haken) und ein zweiter Versand gesperrt ist.
+    # N182/N214 — den Versand festhalten, damit die Periode als abgerechnet
+    # erscheint (Haken) und ein zweiter Versand gesperrt ist. GENAU die
+    # versendeten Monate werden monatsgenau gemerkt (nicht das ganze Quartal —
+    # sonst wären auch nicht versendete Monate stumm markiert). Der Marker fürs
+    # ganze Quartal bleibt zusätzlich als Fallback für die alte Sperr-Logik.
     if data.nutzer_id:
+        heute_iso = date.today().isoformat()
+        monate_sel = aktive_monate(quartale_sel, set(data.aus))
+        for m in monate_sel:
+            _setze(session, _monat_schluessel(o.slug, jahr, m, data.nutzer_id),
+                   heute_iso)
         for q in quartale_sel:
             _versendet_merken(session, o.slug, jahr, q, data.nutzer_id)
         session.commit()
@@ -2049,6 +2062,18 @@ def abgerechnet_setzen(slug: str, data: AbgerechnetIn,
     # Monate bleibt es beim bisherigen Quartalsweg.
     monate = [m for m in data.monate if 1 <= m <= 12]
     if monate:
+        # N214 — noch nicht abgeschlossene Monate (Ende in der Zukunft) DÜRFEN
+        # nicht als abgerechnet markiert werden: eine offene Abrechnung ist
+        # keine Abrechnung. Beim Entfernen greift der Guard nicht — Korrekturen
+        # müssen möglich bleiben.
+        if data.abgerechnet:
+            heute = date.today()
+            offen = [m for m in monate if _monatsende(data.jahr, m) >= heute]
+            if offen:
+                raise HTTPException(400,
+                    "Diese Monate sind noch nicht abgeschlossen und können "
+                    "nicht als abgerechnet gesetzt werden: "
+                    + ", ".join(f"{MONATSKURZ[m - 1]} {data.jahr}" for m in offen))
         wert = date.today().isoformat() if data.abgerechnet else ""
         for m in monate:
             for nid in nutzer_ids:
