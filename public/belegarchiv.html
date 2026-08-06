@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Belegarchiv · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* N84 — Belegarchiv: Suche + zwei Filter, dann die Trefferliste. Dieselben
+     Bausteine wie auf den anderen Listenseiten (eingang.html, vermietungen.html),
+     hier zusammengeführt statt neu erfunden. */
+  .werkzeuge{display:flex;gap:8px;margin-bottom:12px}
+  .werkzeuge .suche{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:12px;
+    padding:11px 13px;font:500 13.5px var(--body);background:var(--sheet);
+    min-height:44px;color:var(--ink)}
+  .werkzeuge .suche:focus{outline:none;border-color:var(--teal)}
+  @media(pointer:coarse){.werkzeuge .suche{font-size:16px}}
+
+  .filter{display:flex;gap:8px;margin-bottom:12px}
+  .filter > div{flex:1;min-width:0}
+
+  .zahlzeile{display:flex;align-items:center;gap:8px;margin:0 2px 12px}
+  .zahlzeile .zahl{font:600 12px var(--mono);color:var(--soft)}
+
+  /* ---- Beleg-Karte ---- */
+  .bk{background:var(--sheet);border-radius:14px;padding:14px 16px;margin-bottom:10px;
+      box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .bk-kopf{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .bk-betrag{margin-left:auto;font:700 16px var(--disp);color:var(--teal-d);
+             letter-spacing:-.01em;white-space:nowrap}
+  .bk-mitte{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px;margin-top:9px}
+  .bk-kostenart{font:600 11px var(--mono);letter-spacing:.03em;color:var(--soft);
+                text-transform:uppercase}
+  .bk-anbieter{font:600 13.5px var(--body);color:var(--ink)}
+  .bk-zsm{font:400 13px var(--body);color:var(--soft);line-height:1.5;margin:7px 0 0;
+          display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+          overflow:hidden}
+  .bk-fuss{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:11px;
+           border-top:1px solid var(--line)}
+  .bk-datei{flex:1;min-width:0;font:500 10.5px var(--mono);color:var(--soft);
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bk-ansehen{flex:none;border:none;background:var(--teal-l);color:var(--teal-d);
+              font:600 12.5px var(--disp);border-radius:10px;padding:0 14px;
+              min-height:44px;cursor:pointer}
+  .bk-ansehen:hover{background:var(--teal);color:#fff}
+  .bk-loeschen{flex:none;width:44px;height:44px;border:none;background:#F1F4F4;
+               color:var(--soft);border-radius:10px;cursor:pointer;
+               font:400 17px var(--body);display:flex;align-items:center;
+               justify-content:center;line-height:1}
+  .bk-loeschen:hover{background:var(--neg-bg);color:var(--neg)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
+    <div class="barwrap">
+      <h1>Belegarchiv</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <div class="werkzeuge">
+      <input class="suche" id="suche" type="search" placeholder="Belege durchsuchen"
+             aria-label="Belege durchsuchen">
+    </div>
+    <div class="filter">
+      <div id="fObjekt"></div>
+      <div id="fJahr"></div>
+    </div>
+    <div class="zahlzeile"><span class="zahl" id="zahl"></span></div>
+    <div id="liste"></div>
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+/* N84 — Belegarchiv: die Oberfläche zur bereits bestehenden Wissens-Datenbank
+   `Belegdaten` (Backend: api/app/routers/kidb.py). Zeigt, was aus den
+   Nebenkosten-Belegen schon per KI ausgelesen wurde — durchsuchbar über
+   Objekt, Jahr und Volltext. `pfad` ist der Link auf die Datei in der Cloud,
+   hier über dieselbe `belegAnsehen`-Vorschau geöffnet wie überall sonst in
+   der App (kein Duplikat, kein zweiter Weg). */
+import { api, eur, esc, melde, frage, belegAnsehen, installNav } from './assets/immo.js';
+import { auswahlfeld } from './assets/auswahl.js';
+
+installNav();
+
+const sub = document.getElementById('sub');
+const zahl = document.getElementById('zahl');
+const liste = document.getElementById('liste');
+const sucheFeld = document.getElementById('suche');
+
+let objekte = [];
+try {
+  objekte = await api('/objekte');
+} catch {
+  sub.textContent = 'API nicht erreichbar';
+}
+
+const filter = { objekt: '', jahr: '', q: '' };
+let tippuhr = null;
+let eintraege = [];
+
+const objektWahl = auswahlfeld(document.getElementById('fObjekt'), {
+  label: 'Objekt',
+  optionen: [{ wert: '', text: 'Alle Objekte' },
+             ...objekte.map(o => ({ wert: o.slug, text: o.name }))],
+  wert: '',
+  aenderung: async wert => { filter.objekt = wert; await jahreFuellen(); laden(); },
+});
+
+const jahrWahl = auswahlfeld(document.getElementById('fJahr'), {
+  label: 'Jahr',
+  optionen: [{ wert: '', text: 'Alle Jahre' }],
+  wert: '',
+  aenderung: wert => { filter.jahr = wert; laden(); },
+});
+
+sucheFeld.addEventListener('input', e => {
+  clearTimeout(tippuhr);
+  filter.q = e.target.value.trim();
+  tippuhr = setTimeout(laden, 250);
+});
+
+/* Die Jahresliste hängt vom gewählten Objekt ab — ungefiltert nach Jahr
+   abgefragt, sonst würde ein gesetzter Jahresfilter die eigene Auswahlliste
+   auf sich selbst zusammenschrumpfen. */
+async function jahreFuellen() {
+  try {
+    const d = await api('/kidb?objekt=' + encodeURIComponent(filter.objekt));
+    const behalten = d.jahre.map(String).includes(filter.jahr) ? filter.jahr : '';
+    filter.jahr = behalten;
+    jahrWahl.fuelle([{ wert: '', text: 'Alle Jahre' },
+                     ...d.jahre.map(j => ({ wert: String(j), text: String(j) }))],
+                    behalten);
+  } catch { /* best effort — Filter bleibt nutzbar */ }
+}
+
+function objektName(e) {
+  return e.objekt_name || objekte.find(o => o.slug === e.objekt)?.name
+    || 'Unbekanntes Objekt';
+}
+
+function karte(e) {
+  const kostenart = [e.kategorie, e.kostenart].filter(Boolean).join(' · ') || 'Ohne Kostenart';
+  const betrag = e.betrag != null ? eur(e.betrag) : '—';
+  const zsm = e.zusammenfassung
+    ? esc(e.zusammenfassung)
+    : 'Noch keine KI-Zusammenfassung — Beleg wartet auf Auslese.';
+  return `<div class="bk">
+      <div class="bk-kopf">
+        <span class="chip teal">${esc(objektName(e))}</span>
+        ${e.jahr ? `<span class="chip">${e.jahr}</span>` : ''}
+        <span class="bk-betrag">${betrag}</span>
+      </div>
+      <div class="bk-mitte">
+        <span class="bk-kostenart">${esc(kostenart)}</span>
+        ${e.anbieter ? `<span class="bk-anbieter">${esc(e.anbieter)}</span>` : ''}
+      </div>
+      <p class="bk-zsm">${zsm}</p>
+      <div class="bk-fuss">
+        <span class="bk-datei" title="${esc(e.dateiname || '')}">${esc(e.dateiname || 'Datei')}</span>
+        <button class="bk-ansehen" type="button" data-ansehen="${e.id}">Beleg ansehen</button>
+        <button class="bk-loeschen" type="button" data-loeschen="${e.id}"
+                aria-label="Eintrag entfernen" title="Eintrag entfernen">✕</button>
+      </div>
+    </div>`;
+}
+
+liste.addEventListener('click', async e => {
+  const ansehen = e.target.closest('[data-ansehen]');
+  if (ansehen) {
+    const eintrag = eintraege.find(x => x.id === Number(ansehen.dataset.ansehen));
+    if (!eintrag) return;
+    if (eintrag.dokument_id) {
+      belegAnsehen(`/api/dokumente/${eintrag.dokument_id}/inhalt`,
+        eintrag.dateiname || 'Beleg', eintrag.pfad || '', eintrag.dokument_id);
+    } else {
+      melde('Zu diesem Eintrag ist keine Beleg-Vorschau hinterlegt', 'neg');
+    }
+    return;
+  }
+  const loeschen = e.target.closest('[data-loeschen]');
+  if (!loeschen) return;
+  const id = Number(loeschen.dataset.loeschen);
+  // N84 — die Erklärung, dass nur der Datenbankeintrag verschwindet, gehört an
+  // genau diese Stelle: im Moment der Aktion, nicht als Dauertext auf der Seite.
+  const ok = await frage('Eintrag entfernen',
+    'Nur der Datenbankeintrag wird entfernt — die Datei bleibt unangetastet in '
+    + 'der Nextcloud und lässt sich jederzeit über „Übernehmen" neu einlesen.',
+    { knopf: 'Entfernen', gefahr: true });
+  if (!ok) return;
+  try {
+    await api(`/kidb/${id}`, { method: 'DELETE' });
+    melde('Eintrag entfernt');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+});
+
+async function laden() {
+  const params = new URLSearchParams();
+  if (filter.objekt) params.set('objekt', filter.objekt);
+  if (filter.jahr) params.set('jahr', filter.jahr);
+  if (filter.q) params.set('q', filter.q);
+  const suffix = params.toString() ? '?' + params.toString() : '';
+
+  let d;
+  try {
+    d = await api('/kidb' + suffix);
+  } catch {
+    sub.textContent = 'API nicht erreichbar';
+    liste.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
+      <p>Das Belegarchiv konnte nicht geladen werden.</p></div>`;
+    return;
+  }
+
+  eintraege = d.eintraege;
+  zahl.textContent = d.anzahl === d.gesamt
+    ? `${d.gesamt} ${d.gesamt === 1 ? 'Beleg' : 'Belege'}`
+    : `${d.anzahl} von ${d.gesamt} Belegen`;
+  sub.textContent = !objekte.length ? 'Noch keine Immobilie'
+    : `${objekte.length} ${objekte.length === 1 ? 'Objekt' : 'Objekte'} · `
+      + `${d.gesamt} ${d.gesamt === 1 ? 'Beleg' : 'Belege'} erfasst`;
+
+  if (!d.gesamt) {
+    liste.innerHTML = `<div class="empty">
+        <div class="big">Noch keine Belege erfasst</div>
+        <p>Sobald Nebenkosten-Belege von der KI ausgelesen und übernommen sind,
+           stehen sie hier durchsuchbar — mit Betrag, Anbieter und einem Link
+           zur Datei in der Cloud.</p>
+      </div>`;
+    return;
+  }
+  if (!d.anzahl) {
+    liste.innerHTML = `<div class="empty">
+        <div class="big">Keine Treffer</div>
+        <p>Für diese Auswahl gibt es keine Einträge. Filter anpassen oder die
+           Suche leeren.</p>
+      </div>`;
+    return;
+  }
+  liste.innerHTML = eintraege.map(karte).join('');
+}
+
+await jahreFuellen();
+await laden();
+</script>
+</body>
+</html>

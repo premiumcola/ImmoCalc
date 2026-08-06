@@ -126,6 +126,11 @@ export const NAV = [
   // PV-Seite: eigene Nutzer, eigener Verlauf, eigene Abrechnung.
   ['E-Tankstelle', 'tankstelle.html', '⏻'],
   ['Eigentümer', 'eigentuemer.html', '☗'],
+  // N84 — die interne Wissens-Datenbank der KI-ausgelesenen Belege, objekt-
+  // übergreifend durchsuchbar. Eigener Bereich statt einer Karte in
+  // „Dokumente": dort geht es um die Ablage, hier um das, was aus ihr bereits
+  // bekannt ist.
+  ['Belegarchiv', 'belegarchiv.html', '▥'],
   // CCXL — das Immobilien-Lexikon. Steht bewusst vor „Einstellungen", damit die
   // Einstellungen der letzte Eintrag bleiben; auf dem Handy wandert es dadurch
   // von selbst hinter „Mehr" (Index ≥ SICHTBAR).
