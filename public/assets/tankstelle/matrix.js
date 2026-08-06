@@ -11,7 +11,6 @@
    `jahrWert`) — sie gehoeren logisch zur Matrix und werden von ihr wie von
    der Abrechnung gelesen. */
 import { S, MONKURZ, QMON } from './state.js';
-import { melde } from '../immo.js';
 import { abrechnungZeigen } from './abrechnung.js';
 
 export const jahrWert = () => S.jahrGewaehlt || new Date().getFullYear();
@@ -61,6 +60,9 @@ export function periodeKurz() {
 /* N187 — ein Marker „deckt" einen Monat, wenn er entweder monatsgenau auf ihn
    zeigt oder als Quartalsmarker das Quartal dieses Monats trägt. */
 export const QUARTAL_VON = m => Math.floor((m - 1) / 3) + 1;
+/* N220 — das Quartal, in dem heute liegt: der Notanker, auf den die Auswahl
+   zurückfaellt, wenn der Nutzer alles abwaehlt. */
+export const aktuellesQuartal = () => QUARTAL_VON(new Date().getMonth() + 1);
 export const markerDeckt = (mk, j, m) => mk.jahr === j
   && (mk.monat === m || (mk.monat == null && mk.quartal === QUARTAL_VON(m)));
 
@@ -151,15 +153,16 @@ export function zeitraumWahl() {
       data-abger-toggle aria-pressed="${ab}">${
       ab ? 'abgerechnet-Status entfernen' : 'als abgerechnet setzen'}</button>`;
   return `<div class="filter-matrix">
-    <div class="fm-jahre">${jahre.map(jahrPill).join('')}
-      <button type="button" class="fm-alle" data-quartal="0">ganzes Jahr</button></div>
+    <div class="fm-jahre">${jahre.map(jahrPill).join('')}</div>
     <div class="fm-grid">${gitter}</div>
     ${abBtn}</div>`;
 }
 
 /* Nach jeder Änderung die interne Darstellung (S.quartaleGewaehlt + S.ausMonate)
    glattziehen: abgewählte Monate müssen im Zeitraum liegen, ein leergeräumtes
-   Quartal fällt aus der Liste, und nie ist alles leer — dann zurück aufs Jahr. */
+   Quartal fällt aus der Liste. Waehlt der Nutzer alles ab, springt die Auswahl
+   ohne Rückfrage aufs aktuelle Quartal zurück (N220) — nie bleibt nichts
+   gewählt, aber auch keine Fehlermeldung dafür. */
 export function normalisiereAuswahl() {
   const gueltig = new Set(monateDerQuartale());
   S.ausMonate = new Set([...S.ausMonate].filter(m => gueltig.has(m)));
@@ -167,19 +170,20 @@ export function normalisiereAuswahl() {
     S.quartaleGewaehlt = S.quartaleGewaehlt.filter(
       q => (QMON[q] || []).some(m => !S.ausMonate.has(m)));
   }
-  if (!aktiveMonate().length) { S.quartaleGewaehlt = [0]; S.ausMonate = new Set(); }
+  if (!aktiveMonate().length) {
+    S.quartaleGewaehlt = [aktuellesQuartal()];
+    S.ausMonate = new Set();
+  }
 }
 
 /* N193 — ein ganzes Quartal an- oder abwaehlen (Matrix-Kopf). `wert===0` ist die
-   „ganzes Jahr"-Abkürzung. Nie alles abwaehlen — mindestens ein Monat bleibt. */
+   „ganzes Jahr"-Abkürzung. Waehlt der Nutzer das letzte verbleibende Quartal ab,
+   springt `normalisiereAuswahl` automatisch aufs aktuelle Quartal (N220). */
 export function quartalUmschalten(wert) {
   if (wert === 0) {
     S.quartaleGewaehlt = [0]; S.ausMonate = new Set(); return abrechnungZeigen();
   }
   if (quartalAktiv(wert)) {
-    if (!aktiveMonate().some(m => QUARTAL_VON(m) !== wert)) {
-      return melde('Mindestens ein Monat muss gewählt bleiben', 'neg');
-    }
     for (const m of QMON[wert]) S.ausMonate.add(m);
   } else {
     if (!S.quartaleGewaehlt.includes(0) && !S.quartaleGewaehlt.includes(wert)) {
@@ -193,13 +197,11 @@ export function quartalUmschalten(wert) {
 }
 
 /* N193 — einen einzelnen Monat in die Abrechnung nehmen oder heraus (Matrix-
-   Zelle). Der letzte verbleibende Monat laesst sich nicht auch noch abwaehlen. */
+   Zelle). Waehlt der Nutzer den letzten verbleibenden Monat ab, springt
+   `normalisiereAuswahl` automatisch aufs aktuelle Quartal (N220). */
 export function monatUmschalten(monat) {
   const q = QUARTAL_VON(monat);
   if (monatAktiv(monat)) {
-    if (aktiveMonate().length <= 1) {
-      return melde('Mindestens ein Monat muss gewählt bleiben', 'neg');
-    }
     S.ausMonate.add(monat);
   } else if (S.quartaleGewaehlt.includes(0) || S.quartaleGewaehlt.includes(q)) {
     S.ausMonate.delete(monat);

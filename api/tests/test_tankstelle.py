@@ -1969,3 +1969,42 @@ def test_manueller_marker_blockt_auch_den_autoversand(client, monkeypatch):
         t.versand_faellig_pruefen(s, heute=date(2025, 10, 1))
     assert [g for g in postfach.gesendet
             if g[0] == "handauto@example.invalid"] == []
+
+
+def test_versand_markiert_keine_kuenftigen_monate(client, monkeypatch):
+    """N220 — ein Versand für „ganzes Jahr" mitten im laufenden Jahr darf nur
+    die bereits abgeschlossenen Monate als abgerechnet festhalten. Vorher
+    markierte `versenden` blind alle Monate der Auswahl — auch künftige, noch
+    ungeladene — als abgerechnet (derselbe Zukunfts-Guard wie in
+    `abgerechnet_setzen` fehlte hier)."""
+    heute = date.today()
+    if heute.month == 1:
+        pytest.skip("Testet den Mix aus vergangenen und künftigen Monaten "
+                   "im selben Jahr — im Januar gibt es noch keinen.")
+    jahr = heute.year
+    slug = _neues_objekt(client, "Zukunftshaus")
+    _stromkosten(slug, jahr, betrag=1600.0)
+    n = _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, jahr, name="Marvin", kwh=50.0,
+            datum=f"{jahr}-01-15")
+
+    postfach = _Postfach()
+    monkeypatch.setattr(t, "zugang", lambda session: postfach)
+
+    antwort = client.post(f"/api/tankstelle/{slug}/versand",
+                          json={"nutzer_id": n["id"], "jahr": jahr, "quartal": 0})
+    assert antwort.status_code == 200, antwort.text
+
+    marker = client.get(f"/api/tankstelle/{slug}/abgerechnet").json()["abgerechnet"]
+    monatsmarker = {m["monat"] for m in marker
+                    if m["jahr"] == jahr and m["nutzer_id"] == n["id"]
+                    and m["monat"] is not None}
+    # Kein Marker für den laufenden Monat oder später.
+    assert not any(m >= heute.month for m in monatsmarker)
+    # Kein Quartals-Marker für ein Quartal, das den laufenden Monat enthält
+    # oder später liegt (noch nicht abgeschlossen).
+    quartalsmarker = {m["quartal"] for m in marker
+                      if m["jahr"] == jahr and m["nutzer_id"] == n["id"]
+                      and m["monat"] is None}
+    laufendes_quartal = (heute.month - 1) // 3 + 1
+    assert not any(q >= laufendes_quartal for q in quartalsmarker)

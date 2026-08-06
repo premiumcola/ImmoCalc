@@ -224,6 +224,59 @@ def laufer_modell_setzen(engine: Engine) -> bool:
         return False
 
 
+def tankstelle_zukunftsmarker_bereinigen(engine: Engine) -> int:
+    """N220 — Altlast vor dem Zukunfts-Guard räumen: Marker für Monate/Quartale,
+    die bei diesem Start noch nicht abgeschlossen sind, werden geleert.
+
+    `versenden` markierte vor dem Fix jeden Monat der gewählten Periode als
+    abgerechnet — auch künftige, noch ungeladene (derselbe Guard fehlte dort,
+    den `abgerechnet_setzen` schon hatte). Diese bereits geschriebenen Marker
+    bleiben sonst für immer stehen. Kein Schema, keine Zeile wird gelöscht —
+    nur der Wert geleert (derselbe Weg wie eine bewusste Entfernung über die
+    Oberfläche, siehe `abgerechnet_setzen`); ein leerer Wert zählt in
+    `abgerechnet_marker` ohnehin nicht mehr. Idempotent: läuft „heute" ein
+    Zeitraum ab, wird er beim nächsten Start nicht mehr angefasst."""
+    from datetime import date
+
+    from .models import Einstellung
+    from .tanken.marker import S_VERSENDET
+    from .tanken.perioden import _monatsende, quartal_zeitraum
+
+    heute = date.today()
+    bereinigt = 0
+    try:
+        with Session(engine) as session:
+            zeilen = session.exec(select(Einstellung).where(
+                Einstellung.schluessel.like(f"{S_VERSENDET}:%"))).all()
+            for e in zeilen:
+                if not e.wert:
+                    continue
+                teile = e.schluessel.split(":")
+                if len(teile) != 5:
+                    continue
+                _, _slug, jahr_roh, periode, _nid = teile
+                try:
+                    jahr = int(jahr_roh)
+                    if periode.startswith("M"):
+                        ende = _monatsende(jahr, int(periode[1:]))
+                    elif periode.startswith("Q"):
+                        ende = quartal_zeitraum(jahr, int(periode[1:]))[1]
+                    else:
+                        continue
+                except ValueError:
+                    continue
+                if ende >= heute:
+                    e.wert = ""
+                    session.add(e)
+                    bereinigt += 1
+            if bereinigt:
+                session.commit()
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Zukunfts-Marker nicht bereinigt: %s", fehler)
+        return 0
+    return bereinigt
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -274,6 +327,14 @@ def migriere(engine: Engine) -> list[str]:
             geaendert.append(f"objekt.modell[{LAUFER_SLUG}]={LAUFER_MODELL}")
     except Exception as fehler:                       # noqa: BLE001
         log.warning("Laufer-Modell nicht gesetzt: %s", fehler)
+
+    # N220 — Zukunfts-Marker der E-Tankstelle räumen (Altlast vor dem Guard).
+    try:
+        n = tankstelle_zukunftsmarker_bereinigen(engine)
+        if n:
+            geaendert.append(f"tankstelle_versendet[{n} geleert]")
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Zukunfts-Marker nicht bereinigt: %s", fehler)
 
     if geaendert:
         log.info("Schema ergänzt: %s", ", ".join(geaendert))

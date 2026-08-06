@@ -196,7 +196,8 @@
   .abkopf-t h3{font:600 13px var(--disp);letter-spacing:-.01em;margin:0}
   /* Auswahl (Matrix) + Ø-Satz nebeneinander auf dem Desktop, den freien Platz
      rechts nutzend; auf dem iPhone gestapelt (Matrix zuerst). */
-  .absel{display:grid;gap:14px}
+  /* N220 — ohne Rand hing die Matrix-Box direkt an der ersten Nutzerkarte. */
+  .absel{display:grid;gap:14px;margin-bottom:14px}
   @media(min-width:720px){
     .absel{grid-template-columns:1fr minmax(214px,262px);align-items:start}
     .absel .satz{order:1;margin:0}.absel .filter-matrix{order:2}
@@ -205,16 +206,15 @@
      Q1–Q4, 3 Monatszeilen), darunter die klare Aktion. Statt drei gestapelter
      Bubble-Reihen ein kompakter Block, der die Breite füllt. */
   /* N202 — gleicher Innenabstand wie der Satz-Block (14px) und kompakter, damit
-     die Matrix auf die Höhe des linken Blocks kommt. */
+     die Matrix auf die Höhe des linken Blocks kommt.
+     N220 — der „ganzes Jahr"-Knopf ist weg (Q1–Q4 zusammen klicken deckt
+     denselben Fall ab), die Jahre-Zeile darum enger gefasst. */
   .filter-matrix{background:var(--paper);border-radius:14px;padding:14px}
-  .fm-jahre{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px}
+  .fm-jahre{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 6px}
   .fm-jahre button{min-height:32px;padding:6px 13px;border:none;cursor:pointer;
                    border-radius:999px;background:var(--sheet);color:var(--soft);
                    font:700 11.5px var(--mono);letter-spacing:.03em}
   .fm-jahre button[aria-pressed="true"]{background:var(--teal-l);color:var(--teal-d)}
-  .fm-jahre .fm-alle{margin-left:auto;font-weight:600;background:transparent;
-                     color:var(--teal-d);text-transform:uppercase;font-size:10px;
-                     letter-spacing:.05em;min-height:32px;padding:6px 8px}
   .fm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
   .fm-grid button{border:none;cursor:pointer;border-radius:10px;
                   display:inline-flex;align-items:center;justify-content:center;
@@ -230,7 +230,7 @@
   /* N214 — noch nicht abgeschlossene Monate: sichtbar dezent + nicht klickbar. */
   .fm-m.offen{opacity:.42;cursor:not-allowed}
   .fm-m.offen:hover{background:var(--sheet)}
-  .fm-abbtn{margin-top:8px;width:100%;min-height:40px;border:none;cursor:pointer;
+  .fm-abbtn{margin-top:6px;width:100%;min-height:40px;border:none;cursor:pointer;
             border-radius:999px;background:var(--sheet);color:var(--teal-d);
             font:600 11.5px var(--mono);letter-spacing:.03em}
   .fm-abbtn.an{background:var(--teal);color:#fff}

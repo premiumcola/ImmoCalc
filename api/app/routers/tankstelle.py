@@ -489,14 +489,23 @@ def versenden(slug: str, data: VersandIn,
     # versendeten Monate werden monatsgenau gemerkt (nicht das ganze Quartal —
     # sonst wären auch nicht versendete Monate stumm markiert). Der Marker fürs
     # ganze Quartal bleibt zusätzlich als Fallback für die alte Sperr-Logik.
+    #
+    # N220 — derselbe Zukunfts-Guard wie in `abgerechnet_setzen`: eine Auswahl
+    # kann ein noch nicht abgeschlossenes Quartal enthalten (z. B. „ganzes
+    # Jahr" mitten im laufenden Jahr) — dann darf nur der bereits
+    # abgeschlossene Teil als abgerechnet gelten. Ohne diesen Filter erschienen
+    # künftige, noch ungeladene Monate fälschlich als „✓ abgerechnet".
     if data.nutzer_id:
-        heute_iso = date.today().isoformat()
-        monate_sel = aktive_monate(quartale_sel, set(data.aus))
+        heute = date.today()
+        heute_iso = heute.isoformat()
+        monate_sel = [m for m in aktive_monate(quartale_sel, set(data.aus))
+                     if _monatsende(jahr, m) < heute]
         for m in monate_sel:
             _setze(session, _monat_schluessel(o.slug, jahr, m, data.nutzer_id),
                    heute_iso)
         for q in quartale_sel:
-            _versendet_merken(session, o.slug, jahr, q, data.nutzer_id)
+            if quartal_zeitraum(jahr, q)[1] < heute:
+                _versendet_merken(session, o.slug, jahr, q, data.nutzer_id)
         session.commit()
     log.info("E-Tankstelle %s: Abrechnung %s an %s versendet (mit PDF)", o.slug,
              daten["label"], adresse)

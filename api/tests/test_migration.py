@@ -142,3 +142,41 @@ def test_orm_zugriff_auf_alter_datenbank(alte_db):
         objekte = s.exec(select(Objekt)).all()
     assert [o.name for o in objekte] == ["Altbestand 3"]
     assert objekte[0].aktiv is True
+
+
+def test_tankstelle_zukunftsmarker_werden_bereinigt(tmp_path):
+    """N220 — vor dem Zukunfts-Guard gesetzte Marker für noch nicht
+    abgeschlossene Monate/Quartale werden beim Start geleert; ein bereits
+    abgeschlossener Marker bleibt unangetastet."""
+    from sqlmodel import Session, SQLModel, select
+
+    from app.migrate import tankstelle_zukunftsmarker_bereinigen
+    from app.models import Einstellung
+    from app.tanken.marker import S_VERSENDET
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'zm.db'}")
+    SQLModel.metadata.create_all(engine)
+    heute = date.today()
+    kuenftiges_jahr = heute.year + 1
+    with Session(engine) as s:
+        s.add(Einstellung(schluessel=f"{S_VERSENDET}:haus:2020:Q1:5",
+                          wert="2020-04-01"))          # laengst abgeschlossen
+        s.add(Einstellung(
+            schluessel=f"{S_VERSENDET}:haus:{kuenftiges_jahr}:Q1:5",
+            wert="2024-01-01"))                        # Quartal noch offen
+        s.add(Einstellung(
+            schluessel=f"{S_VERSENDET}:haus:{kuenftiges_jahr}:M6:5",
+            wert="2024-01-01"))                        # Monat noch offen
+        s.commit()
+
+    n = tankstelle_zukunftsmarker_bereinigen(engine)
+    assert n == 2
+
+    with Session(engine) as s:
+        werte = {e.schluessel: e.wert for e in s.exec(select(Einstellung)).all()}
+    assert werte[f"{S_VERSENDET}:haus:2020:Q1:5"] == "2020-04-01"
+    assert werte[f"{S_VERSENDET}:haus:{kuenftiges_jahr}:Q1:5"] == ""
+    assert werte[f"{S_VERSENDET}:haus:{kuenftiges_jahr}:M6:5"] == ""
+
+    # Idempotent: ein zweiter Lauf findet nichts mehr zu bereinigen.
+    assert tankstelle_zukunftsmarker_bereinigen(engine) == 0
