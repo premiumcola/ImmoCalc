@@ -8,7 +8,12 @@
 import { api, eur, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { SK_BLOECKE, SK_FARBE } from './state.js';
-import { zahl, belegDatumText } from './helpers.js';
+import { zahl, belegDatumText, stromKetteVerteilt } from './helpers.js';
+import { istStromPos } from './modell.js';
+// Zirkulär mit checkliste.js (die importiert `fuelleStromketteInline` von
+// hier) — unproblematisch, weil `deckungAktualisieren` erst innerhalb einer
+// async Funktion aufgerufen wird, nie während der Modul-Auswertung selbst.
+import { deckungAktualisieren } from './checkliste.js';
 
 /* Prozent mit einer Nachkommastelle, ohne überflüssige Null. */
 const skProz = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 1 });
@@ -27,12 +32,46 @@ export async function fuelleStromketteInline(el, frisch = false) {
     const d = (!frisch && state.stromketteDaten)
       || await api(`/zeitraeume/${state.zid}/stromkette`);
     state.setStromketteDaten(d);
+    await stromBetragSichern();
     el.dataset.gesamtKwh = d.schritt1.gesamt_kwh || 0;
     el.innerHTML = stromketteInhalt(d);
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Stromkette nicht ladbar: ${
       esc(String(fehler.message || fehler))}</div>`;
   }
+}
+
+/* N222 — sobald die Kette vollständig berechnet UND verteilt ist, den
+   Betrag auf die zugehörige Kostenposition schreiben. Ohne das zählt die
+   tatsächliche Abrechnung ("Umgelegt") diesen Betrag nie mit: die
+   Checkliste zeigte ihn grün, aber die echte Abrechnung sah ihn nie, weil
+   sie nur persistierte, als "erledigt" markierte Positionen zählt (N222). */
+async function stromBetragSichern() {
+  if (!stromKetteVerteilt()) return;
+  const pos = (state.daten?.checkliste || []).find(istStromPos);
+  if (!pos) return;
+  const betrag = Math.round((state.stromketteDaten.kontrolle.schritt1_betrag || 0) * 100) / 100;
+  if (betrag <= 0.005) return;
+  if (pos.erledigt && Math.abs((pos.betrag || 0) - betrag) < 0.005) return;
+  try {
+    // Ohne eigene Kostenposition (Strom entsteht rein aus der Stromkette,
+    // nie aus einem Beleg) muss sie hier erst angelegt werden — derselbe Weg
+    // wie bei einer Wasser-Position ohne `position_id` (`wasserPosBetragSchreiben`).
+    if (pos.position_id) {
+      await api(`/positionen/${pos.position_id}`, { method: 'PATCH', body: { betrag } });
+    } else {
+      const neu = await api(`/zeitraeume/${state.daten.id}/positionen`,
+        { method: 'POST', body: { kostenart: pos.kostenart, betrag } });
+      pos.position_id = neu.id;
+    }
+    // Lokal sofort konsistent — ohne auf den nächsten vollen `laden()` zu warten.
+    pos.betrag = betrag;
+    pos.erledigt = true;
+    // Die „Umgelegt"-Karte hat ihren Stand schon VOR diesem Schreiben
+    // geholt (Stromkette lädt erst beim Aufklappen/beim Nachrender) — ohne
+    // diesen Refresh bliebe sie bis zum nächsten vollen Laden veraltet.
+    await deckungAktualisieren();
+  } catch { /* nächster Aufruf versucht es erneut — kein Fehlerbanner nötig */ }
 }
 
 /* N191 — die drei SolarEdge-Anteile als Balken. */

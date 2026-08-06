@@ -426,10 +426,22 @@ export function positionsBetrag(k) {
 }
 
 /* N190 — erledigt heißt: ein Betrag liegt vor (Beleg ODER Berechnung).
-   Ausnahme (N198a): Heizkörper-Wärmemenge nur, wenn auch verteilt. */
+   Zwei Ausnahmen, weil ein angezeigter Betrag hier NICHT automatisch heißt,
+   dass er auch in der echten Abrechnung zählt (N222 — die Abrechnung zählt
+   nur, was als `Kostenposition.status=='erledigt'` persistiert ist):
+   - Heizöl & Lieferungen + Heizkörper-Wärmemenge (N198a) sind erst fertig,
+     wenn die Wärmemenge wirklich auf Einheiten verteilt ist (HKV erfasst) —
+     vorher ist ihr Geld noch nicht auf Einheiten umgelegt, nur als Topf da.
+   - Stromkette + Warmwasser werden vollautomatisch berechnet, aber erst beim
+     Berechnen auf die Kostenposition zurückgeschrieben (`stromBetragSichern`/
+     `warmwasserBetragSichern`) — bis das passiert ist, zeigt `k.erledigt`
+     ehrlich „noch nicht wirklich umgelegt" statt eines nur angezeigten Werts. */
 export function effektivErledigt(k) {
-  if (istHeizwaermePos(k)) {
+  if (istHeizwaermePos(k) || istHeizoelSammel(k)) {
     return positionsBetrag(k) > 0.005 && heizwaermeVerteilt();
+  }
+  if (istStromKettePos(k) || istWarmwasserPos(k)) {
+    return !!k.erledigt;
   }
   return !!k.erledigt || positionsBetrag(k) > 0.005;
 }

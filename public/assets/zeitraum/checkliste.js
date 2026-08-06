@@ -269,13 +269,21 @@ function verteilungHtml(k) {
 
 /* Eine Kostenzeile der Checkliste. */
 function zeileHtml(k, i) {
-  // N189/N198a — Signal je nach Zustand.
+  // N189/N198a/N222 — Signal je nach Zustand. Zwei Warn-Fälle, beide „Betrag
+  // ist da, zählt aber noch nicht wirklich in der Abrechnung mit":
+  // Heizöl/Heizkörper-Wärmemenge (noch nicht auf Einheiten verteilt, HKV
+  // fehlt) und Strom/Warmwasser (automatisch berechnet, aber noch nicht auf
+  // die Kostenposition zurückgeschrieben — siehe `stromBetragSichern`).
   const erl = effektivErledigt(k);
-  const heizWarn = !erl && istHeizwaermePos(k) && positionsBetrag(k) > 0.005;
+  const heizWarn = !erl && (istHeizwaermePos(k) || istHeizoelSammel(k))
+    && positionsBetrag(k) > 0.005;
+  const umlageWarn = !erl && (istStromKettePos(k) || istWarmwasserPos(k))
+    && positionsBetrag(k) > 0.005;
+  const nichtUmgelegt = heizWarn || umlageWarn;
   const [farbe, zeichen] = erl ? HAKEN.erledigt
-    : heizWarn ? HAKEN.warnung
+    : nichtUmgelegt ? HAKEN.warnung
     : (k.optional ? HAKEN.fehlt : HAKEN.offen);
-  const zeigeHaken = erl || heizWarn || !k.optional;
+  const zeigeHaken = erl || nichtUmgelegt || !k.optional;
   // N101 — die Wasser-Sammelzeile trägt die Summe ihrer drei Bestandteile.
   const oelBetrag = istHeizoelSammel(k) && !k.betrag ? state.heizoelKosten
     : (istWarmwasserPos(k) && !k.betrag ? state.wwKosten
@@ -292,6 +300,7 @@ function zeileHtml(k, i) {
     istWasserSammel(k)
       ? 'Fasst Frisch-, Schmutz- & Niederschlagswasser zusammen' : null,
     heizWarn ? 'Heizkosten noch nicht auf Einheiten verteilt' : null,
+    umlageWarn ? 'Betrag berechnet, wird gerade in die Abrechnung übernommen' : null,
   ].filter(Boolean).join(' · ');
 
   return zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken);
@@ -315,7 +324,10 @@ function zeitraumFussHtml() {
 
 function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken = true) {
   const erl = effektivErledigt(k);
-  const heizWaermeBerechnet = istHeizwaermePos(k) && positionsBetrag(k) > 0.005;
+  // N222 — dieselben vier Positionen wie in `zeileHtml`: ein berechneter Wert
+  // soll sichtbar bleiben, auch solange er (noch) nicht als „erledigt" zählt.
+  const heizWaermeBerechnet = (istHeizwaermePos(k) || istHeizoelSammel(k)
+    || istStromKettePos(k) || istWarmwasserPos(k)) && positionsBetrag(k) > 0.005;
   const zustandKlasse = k.vorlaeufig ? ' entwurf' : (erl ? ' gefuellt' : '');
   const bearbeitbar = state.daten.status === 'in Arbeit';
 
@@ -573,6 +585,53 @@ function wegDirektHtml() {
         verteilt nichts, sondern rechnet sie gegen die Vorauszahlung und erstellt
         Saldo, PDF und Versand wie gewohnt.</span>
       ${koerper}</div>`;
+}
+
+/* N222 — sobald der §9-Split einen Warmwasser-Anteil errechnet, den Betrag
+   auf die Warmwasser-Kostenposition schreiben. Dieselbe Lücke wie bei der
+   Stromkette (siehe `stromkette.js` `stromBetragSichern`): ohne das zählt
+   die tatsächliche Abrechnung diesen berechneten Betrag nie mit. */
+async function warmwasserBetragSichern() {
+  const betrag = Math.round((state.wwKosten || 0) * 100) / 100;
+  if (betrag <= 0.005) return;
+  const pos = (state.daten?.checkliste || []).find(istWarmwasserPos);
+  if (!pos) return;
+  if (pos.erledigt && Math.abs((pos.betrag || 0) - betrag) < 0.005) return;
+  try {
+    // Ohne eigene Kostenposition (Warmwasser entsteht rein aus dem §9-Split,
+    // nie aus einem Beleg) muss sie hier erst angelegt werden.
+    if (pos.position_id) {
+      await api(`/positionen/${pos.position_id}`, { method: 'PATCH', body: { betrag } });
+    } else {
+      const neu = await api(`/zeitraeume/${state.daten.id}/positionen`,
+        { method: 'POST', body: { kostenart: pos.kostenart, betrag } });
+      pos.position_id = neu.id;
+    }
+    pos.betrag = betrag;
+    pos.erledigt = true;
+  } catch { /* nächster Aufruf versucht es erneut — kein Fehlerbanner nötig */ }
+}
+
+/* Die Deckung (Umgelegt/Abschläge) frisch vom Server holen und im Zustand
+   ablegen — ohne den Rest der Seite neu zu laden. */
+async function deckungLaden() {
+  try {
+    const ab = await api(`/zeitraeume/${zid}/abrechnung`);
+    state.setDeckungAbschlaege(ab?.gesamt?.abschlaege ?? null);
+    state.setDeckungUmgelegt(ab?.gesamt?.auslagen ?? null);
+  } catch {
+    state.setDeckungAbschlaege(null);
+    state.setDeckungUmgelegt(null);
+  }
+}
+
+/* N222 — nachdem Strom/Warmwasser ihren Betrag nachträglich in eine
+   Kostenposition geschrieben haben (siehe `stromkette.js`), zeigt die
+   „Umgelegt"-Karte sonst bis zum nächsten vollen Laden einen veralteten
+   Wert — obwohl die echte Abrechnung längst den neuen Betrag zählt. */
+export async function deckungAktualisieren() {
+  await deckungLaden();
+  if (state.ansicht === 'pruef') zeichnen();
 }
 
 /* Deckung am Kostenfluss. */
@@ -1162,6 +1221,7 @@ export async function laden() {
         + `?oel_kosten=${state.heizoelKosten}&oel_liter=${b?.verbrauch_liter || 0}`
         + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
       state.setWwKosten(sp?.ww_kosten || 0);
+      await warmwasserBetragSichern();
     } catch { state.setHeizoelKosten(0); state.setWwKosten(0); }
   }
   // N213 — HKV nur im Laufer-Modell.
@@ -1172,14 +1232,7 @@ export async function laden() {
       state.setHeizverteiler(hv?.heizverteiler || []);
     } catch { state.setHeizverteiler([]); }
   }
-  try {
-    const ab = await api(`/zeitraeume/${zid}/abrechnung`);
-    state.setDeckungAbschlaege(ab?.gesamt?.abschlaege ?? null);
-    state.setDeckungUmgelegt(ab?.gesamt?.auslagen ?? null);
-  } catch {
-    state.setDeckungAbschlaege(null);
-    state.setDeckungUmgelegt(null);
-  }
+  await deckungLaden();
   try {
     const o = await api(`/objekte/${state.daten.objekt}`);
     state.setObjektEinheiten((o.einheiten || [])
