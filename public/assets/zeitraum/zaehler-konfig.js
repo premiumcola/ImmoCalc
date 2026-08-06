@@ -195,7 +195,9 @@ export async function zaehlerKonfig() {
         { method: 'POST', body: { stand, datum, notiz: 'Anfangsstand' } });
       const z = meters.find(m => m.id === id);
       if (z) z.anfangsstand = { stand, datum };
-      melde('✓ Anfangsstand gespeichert', 'pos');
+      // N230 — still speichern: bei zügiger Eingabe mehrerer Zähler
+      // hintereinander störte die Erfolgsmeldung bei jedem einzelnen Feld.
+      // Ein Fehler bleibt weiterhin sichtbar (siehe catch).
     } catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
   }
 
