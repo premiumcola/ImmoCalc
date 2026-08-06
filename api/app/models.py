@@ -707,6 +707,9 @@ class Eigentuemer(SQLModel, table=True):
     anschrift: str = ""
     steuernummer: str = ""
     notiz: str = ""
+    # N218 — Profilbild als Data-URI (z. B. "data:image/jpeg;base64,...").
+    # Additiv, leer = kein Bild (Initialen-Icon bleibt der Normalfall).
+    bild: str = ""
 
 
 class Anteil(SQLModel, table=True):

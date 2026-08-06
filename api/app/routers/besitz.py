@@ -76,6 +76,20 @@ class EigentuemerIn(BaseModel):
     anschrift: str = ""
     steuernummer: str = ""
     notiz: str = ""
+    # N218 — Profilbild als Data-URI, vom Vanilla-Cropper auf 320×320 JPEG
+    # gerendert. Leer = kein Bild (Initialen-Icon bleibt der Normalfall).
+    bild: str = ""
+
+
+# N218 — grobes Größenlimit: der Cropper liefert ein 320×320-JPEG (typischerweise
+# wenige Dutzend KB als Data-URI). Kein Overengineering, nur ein Riegel gegen
+# eine unbegrenzte Blob-Explosion in der SQLite bei Fehlbedienung/Missbrauch.
+BILD_MAX_ZEICHEN = 2_000_000
+
+
+def _bild_pruefen(bild: str) -> None:
+    if len(bild or "") > BILD_MAX_ZEICHEN:
+        raise HTTPException(400, "Profilbild ist zu groß")
 
 
 @router.get("/eigentuemer", response_model=None)
@@ -115,6 +129,7 @@ def liste(session: Session = Depends(get_session)) -> list:
 
 @router.post("/eigentuemer", status_code=201)
 def anlegen(data: EigentuemerIn, session: Session = Depends(get_session)) -> dict:
+    _bild_pruefen(data.bild)
     e = Eigentuemer.model_validate(data.model_dump())
     session.add(e)
     session.commit()
@@ -127,6 +142,8 @@ def aendern(eid: int, data: dict, session: Session = Depends(get_session)) -> di
     e = session.get(Eigentuemer, eid)
     if not e:
         raise HTTPException(404, "Eigentümer nicht gefunden")
+    if "bild" in data:
+        _bild_pruefen(data.get("bild") or "")
     for k, v in data.items():
         if k not in ("id",) and hasattr(e, k):
             setattr(e, k, v)

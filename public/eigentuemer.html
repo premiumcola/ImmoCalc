@@ -56,6 +56,21 @@
   .pkopf .ic{width:42px;height:42px;border-radius:11px;background:var(--teal-l);
              color:var(--teal-d);flex:none;display:flex;align-items:center;
              justify-content:center;font:600 17px var(--mono)}
+  /* N218 — rundes Profilfoto statt Initialen-Icon, NUR im Kopf der
+     Eigentümer-Karte. Zielgröße knapp doppelt so hoch wie der Name-Text
+     (.t ist 15px), minimal höher gesetzt als die Textzeile, kaum sichtbarer
+     Rand, ~10 % weich ausgeblendet über eine Masken-Maske (Kopf scharf, Rand
+     weich) statt eines harten Kreisausschnitts. */
+  .pkopf .ic.foto{width:32px;height:32px;border-radius:50%;background:none;
+                  background-size:cover;background-position:center;
+                  margin-top:-3px;align-self:flex-start;
+                  box-shadow:0 0 0 1px rgba(22,38,44,.07);
+                  /* `closest-side` verankert die Prozentangaben am sichtbaren
+                     Kreisradius — ohne das läge der Verlauf (Default:
+                     farthest-corner) grösstenteils ausserhalb des per
+                     border-radius geclippten Kreises und der Rand bliebe hart. */
+                  -webkit-mask-image:radial-gradient(circle closest-side,#000 76%,transparent 100%);
+                  mask-image:radial-gradient(circle closest-side,#000 76%,transparent 100%)}
   .pkopf .txt{flex:1;min-width:0}
   /* Firmennamen sind lang. Umbrechen statt abschneiden — abgeschnitten waere
      „Grundbesitz Musterstadt GmbH & Co. …" nicht mehr zu unterscheiden. */
@@ -186,6 +201,71 @@
   details.detail[open] summary::before{transform:rotate(90deg)}
   .mini{font:400 11.5px var(--body);color:var(--soft);margin:8px 0 0;
         line-height:1.45}
+
+  /* ---- N218: Profilbild-Chip im Bearbeiten-Dialog + Vanilla-Cropper ---- */
+  .pfoto-row{display:flex;align-items:center;gap:12px;margin:0 0 16px}
+  .pfoto-chip{width:60px;height:60px;border-radius:50%;flex:none;padding:0;
+              border:1.5px dashed var(--line);background:var(--teal-l);
+              color:var(--teal-d);cursor:pointer;overflow:hidden;position:relative;
+              display:flex;align-items:center;justify-content:center;
+              font:600 22px var(--mono);transition:border-color .12s}
+  .pfoto-chip:hover{border-color:var(--teal)}
+  .pfoto-chip:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .pfoto-chip img{width:100%;height:100%;object-fit:cover;display:block}
+  .pfoto-label{display:flex;align-items:center;gap:0;font:600 10.5px var(--mono);
+               letter-spacing:.06em;text-transform:uppercase;color:var(--soft)}
+  /* Kompakter i-Knopf: 44px Treffziel, optisch klein gehalten (wie die
+     bestehende .tinfo-Mechanik in strom/tankstelle — hier bewusst schlank
+     nachgebaut, weil nur ein einzelner Erklärtext auf der Seite steht). */
+  .tinfo{display:inline-flex;align-items:center;justify-content:center;
+         width:44px;height:44px;margin:-14px -12px -14px -2px;padding:0;
+         border:none;background:none;color:var(--soft);cursor:pointer;
+         border-radius:50%;flex:none;-webkit-tap-highlight-color:transparent}
+  .tinfo svg{width:16px;height:16px;display:block}
+  .tinfo:hover{color:var(--teal-d)}
+  .tinfo:focus-visible{outline:2px solid var(--teal-d);outline-offset:2px}
+  .tinfo-overlay{position:fixed;inset:0;z-index:1200;background:rgba(22,38,44,.4)}
+  .tinfo-card{position:fixed;z-index:1201;left:50%;top:50%;
+              transform:translate(-50%,-50%);background:var(--sheet);
+              border-radius:14px;box-shadow:0 22px 55px -14px rgba(22,38,44,.45);
+              padding:16px 18px;width:300px;max-width:calc(100vw - 32px);
+              color:var(--ink)}
+  .tinfo-titel{font:700 15px var(--disp);letter-spacing:-.01em;margin-bottom:7px}
+  .tinfo-text{font:400 13px/1.6 var(--body);color:var(--ink);margin:0 0 13px}
+  .tinfo-ok{min-height:40px;padding:0 16px;border:none;border-radius:10px;
+            background:var(--teal-l);color:var(--teal-d);cursor:pointer;
+            font:600 12.5px var(--disp)}
+  .tinfo-ok:hover{background:var(--teal);color:#fff}
+
+  .cropzone{position:relative;width:100%;max-width:280px;aspect-ratio:1;
+            margin:0 auto 14px;border-radius:16px;overflow:hidden;
+            background:var(--paper);border:1.5px dashed var(--line)}
+  .cropzone.ueber{border-color:var(--teal);background:var(--teal-l)}
+  .cropzone canvas{width:100%;height:100%;display:block;touch-action:none;
+                   cursor:grab}
+  .cropzone canvas:active{cursor:grabbing}
+  .cropLeer{position:absolute;inset:0;display:flex;flex-direction:column;
+            align-items:center;justify-content:center;gap:3px;color:var(--soft);
+            pointer-events:none;text-align:center;padding:14px}
+  .cropLeer .cl-ic{font-size:24px;color:var(--teal-d)}
+  .cropLeer .cl-t{font:600 13px var(--body);color:var(--ink)}
+  .cropLeer .cl-d{font:400 11.5px var(--body);color:var(--soft)}
+  .cropRow{display:flex;align-items:center;justify-content:space-between;
+           gap:10px;margin-bottom:2px}
+  .cropBtn{min-height:44px;padding:0 16px;border-radius:11px;
+           border:1.5px solid var(--line);background:var(--sheet);color:var(--ink);
+           font:600 12.5px var(--body);cursor:pointer}
+  .cropBtn:hover{border-color:var(--teal);color:var(--teal-d)}
+  .cropZoom{display:flex;gap:8px}
+  .zbtn{width:44px;height:44px;border-radius:11px;border:1.5px solid var(--line);
+        background:var(--sheet);color:var(--ink);font:600 20px var(--body);
+        cursor:pointer;display:flex;align-items:center;justify-content:center;
+        line-height:1}
+  .zbtn:hover:not(:disabled){border-color:var(--teal);color:var(--teal-d)}
+  .zbtn:disabled{opacity:.4;cursor:not-allowed}
+  .cropEntfernen{margin-top:12px;width:100%;min-height:40px;border:none;
+                 background:none;color:var(--neg);font:600 12.5px var(--body);
+                 cursor:pointer}
 </style>
 </head>
 <body>
@@ -240,6 +320,25 @@
     </p>
     <div class="meldung" id="dlgMeldung"></div>
     <form id="form">
+      <div class="pfoto-row">
+        <button type="button" class="pfoto-chip" id="pfotoBtn"
+                aria-label="Profilbild ändern">
+          <span id="pfotoPh">☗</span>
+          <img id="pfotoImg" alt="" hidden>
+        </button>
+        <span class="pfoto-label">Profilbild
+          <button type="button" class="tinfo" id="pfotoInfo"
+                  aria-label="Profilbild: Erklärung anzeigen"
+                  title="Erklärung anzeigen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true"><circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="16" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </button>
+        </span>
+      </div>
+      <input type="hidden" id="fBild">
       <div class="field">
         <label for="fName">Name</label>
         <input class="inp" id="fName" required autocomplete="name">
@@ -312,6 +411,38 @@
   </div>
 </dialog>
 
+<!-- N218: Vanilla-Cropper fürs Profilbild — Upload/Drop, Zoom +/-, Pan per
+     Pointer-Drag, "Übernehmen" schneidet quadratisch auf 320×320 zu. -->
+<dialog id="cropDlg">
+  <div class="dh">
+    <h2>Profilbild zuschneiden</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <div class="cropzone" id="cropZone">
+      <canvas id="cropCanvas" width="320" height="320"></canvas>
+      <div class="cropLeer" id="cropLeer">
+        <span class="cl-ic">⇪</span>
+        <span class="cl-t">Bild hierher ziehen</span>
+        <span class="cl-d">oder auswählen</span>
+      </div>
+    </div>
+    <input type="file" id="cropFile" accept="image/*" hidden>
+    <div class="cropRow">
+      <button type="button" class="cropBtn" id="cropWahl">Bild wählen</button>
+      <div class="cropZoom">
+        <button type="button" class="zbtn" id="zoomMinus" aria-label="Verkleinern">−</button>
+        <button type="button" class="zbtn" id="zoomPlus" aria-label="Vergrößern">+</button>
+      </div>
+    </div>
+    <button type="button" class="cropEntfernen" id="cropEntfernen" hidden>
+      Profilbild entfernen</button>
+  </div>
+  <div class="dfuss">
+    <button class="btn" type="button" id="cropUebernehmen" disabled>Übernehmen</button>
+  </div>
+</dialog>
+
 <script type="module">
 import { api, esc, frage, melde, eurKurz, eurVoll, promille, installNav } from './assets/immo.js';
 installNav();
@@ -332,6 +463,7 @@ const felder = {
   anschrift: document.getElementById('fAnschrift'),
   steuernummer: document.getElementById('fSteuer'),
   notiz: document.getElementById('fNotiz'),
+  bild: document.getElementById('fBild'),
 };
 
 /** Welcher Eigentümer gerade bearbeitet wird — null heißt: neu anlegen. */
@@ -627,9 +759,14 @@ async function eignerLaden() {
       .map(z => nurAnlageZeile(z) + pvUnter(z.slug));
     const bet = zeilen.concat(nurAnlage).join('')
       || '<div class="leer">Noch keinem Objekt zugeordnet</div>';
+    // N218 — rundes Profilfoto statt Initialen-Icon, ausschließlich hier im
+    // Kartenkopf. Ohne `e.bild` bleibt alles wie zuvor.
+    const foto = e.bild
+      ? `<span class="ic foto" style="background-image:url('${esc(e.bild)}')"></span>`
+      : `<span class="ic">☗</span>`;
     return `<div class="person">
         <div class="pkopf">
-          <span class="ic">☗</span>
+          ${foto}
           <span class="txt">
             <span class="t">${esc(e.name)}</span>
             <span class="d">${esc(kontakt)}</span>
@@ -653,11 +790,194 @@ function oeffne(person) {
   for (const [schluessel, feld] of Object.entries(felder)) {
     feld.value = person ? (person[schluessel] ?? '') : '';
   }
+  pfotoAktualisieren();
   speichern.disabled = false;
   speichern.textContent = 'Speichern';
   dlg.showModal();
   felder.name.focus();
 }
+
+/* ---- N218: Profilbild-Chip + Info-Popup ---- */
+const pfotoBtn = document.getElementById('pfotoBtn');
+const pfotoPh = document.getElementById('pfotoPh');
+const pfotoImg = document.getElementById('pfotoImg');
+const pfotoInfo = document.getElementById('pfotoInfo');
+
+/** Chip im Dialog nach dem aktuellen `felder.bild.value` ausrichten. */
+function pfotoAktualisieren() {
+  const bild = felder.bild.value;
+  pfotoImg.hidden = !bild;
+  pfotoPh.hidden = !!bild;
+  if (bild) pfotoImg.src = bild;
+}
+
+const INFO_PROFILBILD = {
+  titel: 'Profilbild',
+  text: 'Optional — hilft, Personen auf einen Blick zu erkennen. Erscheint nur '
+    + 'hier, im Kopf der Eigentümer-Karte. Klick auf den Kreis öffnet Upload '
+    + 'oder Drag & Drop, danach lässt sich der Ausschnitt zoomen und '
+    + 'verschieben.',
+};
+let infoOffen = null;
+function infoSchliessen() {
+  if (!infoOffen) return;
+  infoOffen.remove();
+  infoOffen = null;
+}
+pfotoInfo.addEventListener('click', () => {
+  infoSchliessen();
+  const overlay = document.createElement('div');
+  overlay.className = 'tinfo-overlay';
+  const card = document.createElement('div');
+  card.className = 'tinfo-card';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', INFO_PROFILBILD.titel);
+  card.innerHTML = `<div class="tinfo-titel">${esc(INFO_PROFILBILD.titel)}</div>
+    <p class="tinfo-text">${esc(INFO_PROFILBILD.text)}</p>
+    <button type="button" class="tinfo-ok">Verstanden</button>`;
+  overlay.appendChild(card);
+  // Der Info-Knopf steckt im offenen <dialog>, das der Browser in einer
+  // eigenen Top-Layer-Ebene über dem restlichen Dokument rendert. Ein an
+  // `document.body` gehängtes Overlay läge deshalb SICHTBAR HINTER dem
+  // Dialog — es muss als Kind desselben Dialogs eingehängt werden, damit es
+  // in derselben Ebene über dessen Inhalt liegt.
+  (pfotoInfo.closest('dialog') || document.body).appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) infoSchliessen(); });
+  card.querySelector('.tinfo-ok').addEventListener('click', infoSchliessen);
+  infoOffen = overlay;
+  card.querySelector('.tinfo-ok').focus();
+});
+
+/* ---- N218: einfacher Vanilla-Cropper — Canvas + Pointer-Events ---- */
+const cropDlg = document.getElementById('cropDlg');
+const cropZone = document.getElementById('cropZone');
+const cropCanvas = document.getElementById('cropCanvas');
+const cropLeer = document.getElementById('cropLeer');
+const cropFile = document.getElementById('cropFile');
+const cropWahl = document.getElementById('cropWahl');
+const zoomMinus = document.getElementById('zoomMinus');
+const zoomPlus = document.getElementById('zoomPlus');
+const cropUebernehmen = document.getElementById('cropUebernehmen');
+const cropEntfernen = document.getElementById('cropEntfernen');
+const cropCtx = cropCanvas.getContext('2d');
+const ZIEL = cropCanvas.width; // 320 — quadratische Zielgröße
+
+let cropImg = null;        // geladenes <img>, null = noch nichts gewählt
+let cropBase = 1;          // Skalierung, bei der das Bild das Quadrat gerade deckt
+let cropZoom = 1;          // Zusatzfaktor über die Deckskalierung (>= 1)
+let cropOffset = { x: 0, y: 0 };
+let ziehen = null;         // {x,y,ox,oy} während eines Pointer-Drags
+
+function cropClamp() {
+  const scale = cropBase * cropZoom;
+  const iw = cropImg.width * scale, ih = cropImg.height * scale;
+  const maxX = Math.max(0, (iw - ZIEL) / 2), maxY = Math.max(0, (ih - ZIEL) / 2);
+  cropOffset.x = Math.min(maxX, Math.max(-maxX, cropOffset.x));
+  cropOffset.y = Math.min(maxY, Math.max(-maxY, cropOffset.y));
+}
+
+function cropRender() {
+  cropCtx.clearRect(0, 0, ZIEL, ZIEL);
+  if (!cropImg) return;
+  const scale = cropBase * cropZoom;
+  const iw = cropImg.width * scale, ih = cropImg.height * scale;
+  const x = ZIEL / 2 - iw / 2 + cropOffset.x;
+  const y = ZIEL / 2 - ih / 2 + cropOffset.y;
+  cropCtx.drawImage(cropImg, x, y, iw, ih);
+}
+
+function cropBildLaden(quelle) {
+  const bild = new Image();
+  bild.onload = () => {
+    cropImg = bild;
+    cropBase = Math.max(ZIEL / bild.width, ZIEL / bild.height);
+    cropZoom = 1;
+    cropOffset = { x: 0, y: 0 };
+    cropLeer.hidden = true;
+    cropUebernehmen.disabled = false;
+    cropRender();
+  };
+  bild.src = quelle;
+}
+
+function cropDateiLaden(datei) {
+  if (!datei || !datei.type.startsWith('image/')) return;
+  const leser = new FileReader();
+  leser.onload = () => cropBildLaden(leser.result);
+  leser.readAsDataURL(datei);
+}
+
+pfotoBtn.addEventListener('click', () => {
+  cropImg = null;
+  cropZoom = 1;
+  cropOffset = { x: 0, y: 0 };
+  cropLeer.hidden = false;
+  cropUebernehmen.disabled = true;
+  cropCtx.clearRect(0, 0, ZIEL, ZIEL);
+  cropEntfernen.hidden = !felder.bild.value;
+  // Ein bestehendes Foto lässt sich direkt weiter zuschneiden, ohne es
+  // erneut hochzuladen.
+  if (felder.bild.value) cropBildLaden(felder.bild.value);
+  cropDlg.showModal();
+});
+
+cropWahl.addEventListener('click', () => cropFile.click());
+cropFile.addEventListener('change', () => cropDateiLaden(cropFile.files[0]));
+
+cropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  cropZone.classList.add('ueber');
+});
+cropZone.addEventListener('dragleave', () => cropZone.classList.remove('ueber'));
+cropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  cropZone.classList.remove('ueber');
+  cropDateiLaden(e.dataTransfer.files[0]);
+});
+
+function cropSkalieren(faktor) {
+  if (!cropImg) return;
+  cropZoom = Math.min(4, Math.max(1, cropZoom * faktor));
+  cropClamp();
+  cropRender();
+}
+zoomPlus.addEventListener('click', () => cropSkalieren(1.2));
+zoomMinus.addEventListener('click', () => cropSkalieren(1 / 1.2));
+
+/** Bildschirm- in Canvas-Koordinaten: Canvas wird per CSS verkleinert
+    dargestellt, die Zeichenfläche bleibt aber 320×320. */
+function cropSkalierung() {
+  return ZIEL / cropCanvas.getBoundingClientRect().width;
+}
+cropCanvas.addEventListener('pointerdown', e => {
+  if (!cropImg) return;
+  cropCanvas.setPointerCapture(e.pointerId);
+  ziehen = { x: e.clientX, y: e.clientY, ox: cropOffset.x, oy: cropOffset.y };
+});
+cropCanvas.addEventListener('pointermove', e => {
+  if (!ziehen) return;
+  const s = cropSkalierung();
+  cropOffset.x = ziehen.ox + (e.clientX - ziehen.x) * s;
+  cropOffset.y = ziehen.oy + (e.clientY - ziehen.y) * s;
+  cropClamp();
+  cropRender();
+});
+const cropZiehenEnde = () => { ziehen = null; };
+cropCanvas.addEventListener('pointerup', cropZiehenEnde);
+cropCanvas.addEventListener('pointercancel', cropZiehenEnde);
+
+cropUebernehmen.addEventListener('click', () => {
+  if (!cropImg) return;
+  felder.bild.value = cropCanvas.toDataURL('image/jpeg', 0.85);
+  pfotoAktualisieren();
+  cropDlg.close();
+});
+
+cropEntfernen.addEventListener('click', () => {
+  felder.bild.value = '';
+  pfotoAktualisieren();
+  cropDlg.close();
+});
 
 document.getElementById('neu').addEventListener('click', () => oeffne(null));
 
