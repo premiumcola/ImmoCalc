@@ -121,8 +121,9 @@ export async function laden() {
   if (fokusWert) {
     // Im Fokus beschreibt die Unterzeile die Einheit. Das Haus steht in der
     // Karte darunter — hier stünde es ein zweites Mal.
+    const fokusFlaeche = effektiveFlaeche(fokusWert);
     sub.textContent = [fokusWert.nutzungsart,
-                       fokusWert.flaeche ? flaecheText(fokusWert.flaeche) : '',
+                       fokusFlaeche ? flaecheText(fokusFlaeche) : '',
                        fokusWert.mieter].filter(Boolean).join(' · ') || 'Einheit';
   } else if (istGrundstueck()) {
     // CCCXXXVI — der Objektname allein sagt beim Grundstück wenig. Die Unterzeile

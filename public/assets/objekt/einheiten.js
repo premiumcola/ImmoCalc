@@ -15,8 +15,9 @@ import { mietModell, mietTimelineHtml } from './miete.js';
 import { lageplanHtml } from './lageplan.js';
 
 export function einheitDetail(e) {
+  const flaeche = effektiveFlaeche(e);
   return [e.nutzungsart,
-          e.flaeche ? flaecheText(e.flaeche) : '',
+          flaeche ? flaecheText(flaeche) : '',
           e.stellplaetze ? (e.stellplaetze > 1 ? `${e.stellplaetze} Stellplätze`
                                                : '1 Stellplatz') : '',
           e.mieter].filter(Boolean).join(' · ');

@@ -16,6 +16,7 @@ import { einheiten,
          setDialogFelder, setDialogUmbau, dialogUmbau,
          ZINSTEXT } from './state.js';
 import { turnusOptionen } from './turnus.js';
+import { effektiveFlaeche } from './helpers.js';
 
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
    Bewusst dynamisch geladen: fehlt die Datei, bleiben es schlichte Felder —
@@ -70,11 +71,12 @@ async function feldHtml(f, bereich, wert) {
       ? einheiten[0].bezeichnung : '');
     const blasen = einheiten.map(e => {
       const an = e.bezeichnung === gewaehlt;
+      const flaeche = effektiveFlaeche(e);
       return `<button type="button" class="bubble${an ? ' gewaehlt' : ''}${
           e.vermietet ? '' : ' frei'}" data-wahl="${esc(e.bezeichnung)}"
           aria-pressed="${an}">
         <span class="bt">${esc(e.bezeichnung)}</span>
-        ${e.flaeche ? `<span class="bf">${flaecheText(e.flaeche)}</span>` : ''}
+        ${flaeche ? `<span class="bf">${flaecheText(flaeche)}</span>` : ''}
         ${e.vermietet ? '' : '<span class="bfrei">frei</span>'}
       </button>`;
     }).join('');
@@ -98,8 +100,11 @@ async function feldHtml(f, bereich, wert) {
         <span class="bt">${esc(text)}</span>${extra || ''}</button>`;
     };
     const blasen = blase('', 'Ganzes Haus')
-      + einheiten.map(e => blase(e.bezeichnung, e.bezeichnung,
-          e.flaeche ? `<span class="bf">${flaecheText(e.flaeche)}</span>` : '')).join('');
+      + einheiten.map(e => {
+          const flaeche = effektiveFlaeche(e);
+          return blase(e.bezeichnung, e.bezeichnung,
+            flaeche ? `<span class="bf">${flaecheText(flaeche)}</span>` : '');
+        }).join('');
     return `<div class="field"><label>${esc(f.l)}</label>
       <input type="hidden" id="${id}" name="${f.k}" value="${esc(gewaehlt)}">
       <div class="bubbles" data-wahlfeld="${esc(f.k)}" role="group"
