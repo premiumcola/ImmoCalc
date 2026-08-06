@@ -239,8 +239,12 @@ export function initHandlers() {
         if (id) {
           await api(`/stammdaten/${ep}/${id}`, { method: 'PATCH', body: werte });
         } else {
+          // N228 — eine geplante Mieterhöhung verknüpft den neuen Mietstand mit
+          // dem, den sie ablöst — nur so gelten dessen Dokumente auch hier.
+          const anlegeWerte = (bereich === 'mieten' && form.dataset.vorgaenger)
+            ? { ...werte, vorgaenger_id: Number(form.dataset.vorgaenger) } : werte;
           const neu = await api(`/objekte/${encodeURIComponent(slug)}/${ep}`,
-                                { method: 'POST', body: werte });
+                                { method: 'POST', body: anlegeWerte });
           miete_id = neu.id;
         }
         if (bereich === 'mieten') {

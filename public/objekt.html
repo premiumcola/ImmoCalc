@@ -394,6 +394,11 @@
   .dd-ci.ok{background:var(--pos);color:#fff}
   .dd-ci.ok svg{width:13px;height:13px}
   .dd-check.fehlt .dd-ci{border:1.5px dashed #B4C4C1}
+  /* N224 — Kaution-Zeile: zwei Aktionen passen nicht mehr neben den Namen,
+     ohne ihn abzuschneiden — Name oben, Aktionen darunter, umbrechend. */
+  .dd-check.kaution-zeile{align-items:flex-start}
+  .dd-kaution{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding:2px 0}
+  .dd-kaution-aktionen{display:flex;flex-wrap:wrap;gap:8px}
   .dd-cn{flex:1;min-width:0;text-align:left;border:none;background:none;cursor:pointer;
     font:600 13.5px var(--disp);color:var(--ink);padding:0;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}

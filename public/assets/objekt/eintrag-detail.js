@@ -120,8 +120,21 @@ export async function eintragDetail(bereich, id, laden) {
     // Unerkanntes (z. B. Alt-„Miete") gilt als Mietvertrag (das Hauptdokument).
     const typVon = d =>
       (typen.find(([voll, , auch]) => passt(d, voll, auch)) || [])[0] || 'Mietvertrag';
+    // N224 — die Kaution hat zwei Wege: ein eigenes Kautionskonto (Dokument-
+    // Nachweis, wie jede andere Zeile) ODER eine Überweisung auf das normale
+    // Objektkonto (kein Dokument — dafür dieser Vermerk am Mietverhältnis).
+    const istKaution = voll => voll === 'Mietkautionskonto';
     return `<div class="dd-checkliste">${typen.map(([voll, kurz]) => {
       const da = alle.find(d => typVon(d) === voll);
+      if (!da && istKaution(voll) && eintrag.kaution_objektkonto) {
+        return `<div class="dd-check da">
+             <span class="dd-ci ok">${HAKEN_ICON}</span>
+             <span class="dd-cn" style="cursor:default">Kaution auf Objektkonto</span>
+             <button class="dd-cx" data-kaution-objektkonto="0"
+               title="Doch ein eigenes Kautionskonto?"
+               aria-label="Doch ein eigenes Kautionskonto?">Ändern</button>
+           </div>`;
+      }
       return da
         ? `<div class="dd-check da">
              <span class="dd-ci ok">${HAKEN_ICON}</span>
@@ -130,7 +143,24 @@ export async function eintragDetail(bereich, id, laden) {
              <button class="dd-cx" data-scan data-wort="${esc(voll)}"
                title="${esc(kurz)} ersetzen" aria-label="${esc(kurz)} ersetzen">Ersetzen</button>
            </div>`
-        : `<div class="dd-check fehlt">
+        : istKaution(voll)
+          // N224 — zwei Aktionen (Auf Objektkonto / aufnehmen) passen nicht
+          // mehr in eine Zeile neben dem Namen, ohne ihn abzuschneiden —
+          // eigenes zweizeiliges Layout: Name oben, Aktionen darunter.
+          ? `<div class="dd-check fehlt kaution-zeile">
+               <span class="dd-ci"></span>
+               <div class="dd-kaution">
+                 <span class="dd-cn leer">${esc(kurz)}</span>
+                 <div class="dd-kaution-aktionen">
+                   <button class="dd-cx" data-kaution-objektkonto="1"
+                     title="Auf das normale Objektkonto überwiesen — kein Dokument nötig"
+                     aria-label="Kaution auf Objektkonto vermerken">Auf Objektkonto</button>
+                   <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
+                     aria-label="${esc(kurz)} aufnehmen">${KAMERA_ICON}<span>aufnehmen</span></button>
+                 </div>
+               </div>
+             </div>`
+          : `<div class="dd-check fehlt">
              <span class="dd-ci"></span>
              <span class="dd-cn leer">${esc(kurz)}</span>
              <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
@@ -238,6 +268,24 @@ export async function eintragDetail(bereich, id, laden) {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
     const scanBtn = e.target.closest('[data-scan]');
     if (scanBtn) { gewaehltWort = scanBtn.dataset.wort || gewaehltWort; scanFeld.click(); return; }
+    // N224 — Kaution auf das normale Objektkonto vermerken (oder zurücknehmen),
+    // ohne dass dafür ein Dokument nötig ist.
+    const kontoBtn = e.target.closest('[data-kaution-objektkonto]');
+    if (kontoBtn) {
+      const auf = kontoBtn.dataset.kautionObjektkonto === '1';
+      (async () => {
+        try {
+          await api(`/stammdaten/mieten/${id}`,
+            { method: 'PATCH', body: { kaution_objektkonto: auf } });
+        } catch (fehler) {
+          return melde(String(fehler.message || 'Konnte nicht gespeichert werden.'), 'neg');
+        }
+        dlg.close();
+        await laden();
+        return eintragDetail(bereich, id, laden);
+      })();
+      return;
+    }
     const b = e.target.closest('[data-doc]');
     if (b) { zeigeDoc(b.dataset.doc, b.dataset.name); return; }
     if (e.target.closest('[data-bearbeiten]')) {

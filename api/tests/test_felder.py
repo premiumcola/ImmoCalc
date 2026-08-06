@@ -94,6 +94,29 @@ def test_kaution_eingang_ist_additiv_und_optional():
         assert eintrag["kaution"] == 1400.0          # unberuehrt
 
 
+def test_kaution_objektkonto_ist_additiv_und_umschaltbar():
+    """N224 — Kaution ohne eigenes Kautionskonto: Vermerk statt Dokument,
+    lässt sich wieder zurücknehmen."""
+    with TestClient(app) as c:
+        slug = _objekt(c)
+        mid = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Mieter C", "kaltmiete": 650.0, "kaution": 1300.0,
+            "ab_datum": "2024-01-01"}).json()["id"]
+
+        eintrag = c.get(f"/api/objekte/{slug}/mieten").json()[0]
+        assert eintrag["kaution_objektkonto"] is False   # additiv, Default aus
+
+        antwort = c.patch(f"/api/mieten/{mid}", json={"kaution_objektkonto": True})
+        assert antwort.status_code == 200
+        eintrag = c.get(f"/api/objekte/{slug}/mieten").json()[0]
+        assert eintrag["kaution_objektkonto"] is True
+
+        c.patch(f"/api/mieten/{mid}", json={"kaution_objektkonto": False})
+        eintrag = c.get(f"/api/objekte/{slug}/mieten").json()[0]
+        assert eintrag["kaution_objektkonto"] is False
+        assert eintrag["kaution"] == 1300.0               # unberuehrt
+
+
 def test_objekt_stammdaten_lassen_sich_leeren():
     with TestClient(app) as c:
         slug = _objekt(c)

@@ -37,6 +37,7 @@ from .bezeichnung import objekt_titel
 from .engine import verteile_nach_wert
 from .models import ist_bausparer, ist_grundstueck
 from .turnus import jahresbetrag
+from .verteilung import _gesamtflaeche
 
 log = logging.getLogger(__name__)
 
@@ -161,11 +162,14 @@ def _pm(anteil) -> float:
 
 def _einheit_gewicht(einheit) -> float:
     """Womit eine Einheit in die Wertzurechnung eingeht: ihr Verkehrswert
-    (CLXXXVI), ersatzweise ihre Fläche, sonst zu gleichen Teilen (1)."""
+    (CLXXXVI), ersatzweise ihre massgebliche Fläche — dieselbe wie bei der
+    Nebenkosten-Verteilung (N227: Terrasse zählt mit ihrem eingestellten
+    Anteil) —, sonst zu gleichen Teilen (1)."""
     if einheit.verkehrswert:
         return float(einheit.verkehrswert)
-    if einheit.flaeche:
-        return float(einheit.flaeche)
+    flaeche = _gesamtflaeche(einheit)
+    if flaeche:
+        return flaeche
     return 1.0
 
 

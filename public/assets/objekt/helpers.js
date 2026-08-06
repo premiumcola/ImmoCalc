@@ -44,12 +44,17 @@ export function dauerText(vonIso, bisIso) {
 
 /* ---- Flächen einer Einheit (CCCXXVII/CCCXXVIII) -------------------------- */
 
-// CCCXXVII/CCCXXVIII — die für Miete und Verteilung maßgebliche Fläche einer
-// Einheit: die Wohn-/Nutzfläche plus anteilig mitgenutzte Gemeinschaftsflächen
-// (Fläche ÷ Zahl der Nutzer). Solange keine Gemeinschaftsflächen erfasst sind,
-// ist es schlicht die Wohnfläche — der Bestand bleibt damit unverändert.
+// CCCXXVII/CCCXXVIII/N227 — die für Miete und Verteilung maßgebliche Fläche
+// einer Einheit: die Wohn-/Nutzfläche, Terrasse/Balkon zu ihrem eingestellten
+// Anteil (`terrasse_anteil_pct`, Vorgabe 50 %), Nebenfläche zur Hälfte, plus
+// anteilig mitgenutzte Gemeinschaftsflächen (Fläche ÷ Zahl der Nutzer) und
+// volle Zusatz-Nutzflächen. Dieselbe Formel wie `verteilung._gesamtflaeche`
+// im Backend — sonst wichen Anzeige und echte Abrechnung voneinander ab.
 export function effektiveFlaeche(e) {
   const wohn = Number(e.flaeche) || 0;
+  const terrassePct = e.terrasse_anteil_pct != null ? Number(e.terrasse_anteil_pct) : 50;
+  const terrasse = (Number(e.terrasse) || 0) * terrassePct / 100;
+  const neben = (Number(e.nebenflaeche) || 0) * 0.5;
   // CCCXXIX — benannte Zusatz-Nutzflächen zählen voll (ungeteilt) mit.
   const nutz = (e.nutzflaechen || []).reduce((s, n) =>
     s + (Number(n.flaeche) || 0), 0);
@@ -58,7 +63,7 @@ export function effektiveFlaeche(e) {
     const p = Number(g.personen) || 0;
     return s + (p > 0 ? f / p : 0);
   }, 0);
-  return wohn + nutz + gemein;
+  return wohn + terrasse + neben + nutz + gemein;
 }
 
 // Kaltmiete je m² (monatlich) — null, wenn Fläche oder Miete fehlen (CCCXXVIII).

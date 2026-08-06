@@ -31,10 +31,12 @@ START, ENDE = date(JAHR, 1, 1), date(JAHR, 12, 31)
 # ---------------------------------------------------------------- Ableitung
 
 def _einheit(bezeichnung: str, flaeche=None, terrasse=None, nebenflaeche=None,
-             nk_abrechnung: bool = True):
+             nk_abrechnung: bool = True, terrasse_anteil_pct=None):
+    kwargs = {} if terrasse_anteil_pct is None else {
+        "terrasse_anteil_pct": terrasse_anteil_pct}
     return Einheit(objekt_id=1, bezeichnung=bezeichnung, flaeche=flaeche,
                    terrasse=terrasse, nebenflaeche=nebenflaeche,
-                   nk_abrechnung=nk_abrechnung)
+                   nk_abrechnung=nk_abrechnung, **kwargs)
 
 
 def _miete(einheit: str, partei: str, personen: int = 1,
@@ -51,10 +53,26 @@ def test_flaeche_kommt_aus_den_einheiten():
 
 
 def test_terrasse_und_nebenflaeche_zaehlen_zur_haelfte():
-    """Wie in cashflow.py — sonst zahlte eine Wohnung mit Balkon zu viel."""
+    """Wie in cashflow.py — sonst zahlte eine Wohnung mit Balkon zu viel.
+    50 % ist die Vorgabe von `Einheit.terrasse_anteil_pct` (N227) — der
+    Bestand ohne gesetzten Wert rechnet dadurch unverändert weiter."""
     b = verteilung.bezuege([_einheit("EG", 60, terrasse=10, nebenflaeche=20)],
                            [], [], START, ENDE)
     assert verteilung.gewichte("flaeche", b, START, ENDE) == {"EG": 75.0}
+
+
+def test_terrasse_anteil_ist_einstellbar():
+    """N227 — der Anteil, zu dem Terrasse/Balkon zur Wohnfläche zählt, ist
+    keine feste Zahl mehr, sondern je Einheit einstellbar."""
+    voll = verteilung.bezuege(
+        [_einheit("EG", 60, terrasse=10, terrasse_anteil_pct=100)],
+        [], [], START, ENDE)
+    assert verteilung.gewichte("flaeche", voll, START, ENDE) == {"EG": 70.0}
+
+    keine = verteilung.bezuege(
+        [_einheit("EG", 60, terrasse=10, terrasse_anteil_pct=0)],
+        [], [], START, ENDE)
+    assert verteilung.gewichte("flaeche", keine, START, ENDE) == {"EG": 60.0}
 
 
 def test_partei_ohne_flaeche_faellt_aus_der_flaechenverteilung():

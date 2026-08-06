@@ -108,10 +108,11 @@ class Bezug:
 
 
 def _gesamtflaeche(e: Einheit) -> float | None:
-    """Wie in `cashflow.EinheitZahlen.gesamtflaeche`: Terrasse und Nebenfläche
-    zählen üblicherweise zur Hälfte. Ohne jede Angabe bleibt es None — eine 0
-    wäre gelogen und würde die Partei aus der Verteilung werfen, ohne dass es
-    auffällt."""
+    """Die EINE massgebliche Fläche für alle Geld-Berechnungen (Nebenkosten
+    „nach Fläche", Cashflow-Verteilung, Miete je m²) — Terrasse zählt zu ihrem
+    einstellbaren Anteil (`Einheit.terrasse_anteil_pct`, N227), Nebenfläche
+    weiter zur Hälfte. Ohne jede Angabe bleibt es None — eine 0 wäre gelogen
+    und würde die Partei aus der Verteilung werfen, ohne dass es auffällt."""
     teile = [e.flaeche, e.terrasse, e.nebenflaeche]
     # CCCXXVII — anteilige Gemeinschaftsflächen zählen mit. Ohne erfasste
     # Gemeinschaftsflächen ist der Beitrag 0 und der Bestand bleibt unverändert.
@@ -121,7 +122,8 @@ def _gesamtflaeche(e: Einheit) -> float | None:
     nutz = e.nutz_flaeche()
     if all(t is None for t in teile) and gemein == 0 and nutz == 0:
         return None
-    return round((e.flaeche or 0) + (e.terrasse or 0) * 0.5
+    terrasse_pct = e.terrasse_anteil_pct if e.terrasse_anteil_pct is not None else 50.0
+    return round((e.flaeche or 0) + (e.terrasse or 0) * terrasse_pct / 100
                  + (e.nebenflaeche or 0) * 0.5 + gemein + nutz, 2)
 
 

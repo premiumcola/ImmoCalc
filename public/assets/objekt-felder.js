@@ -460,6 +460,11 @@ const EINHEITFELDER = [
     einheit: 'm²', lex: 'wohnflaeche' },
   { k: 'terrasse', l: 'Terrasse / Balkon', typ: 'number', schritt: '0.01',
     einheit: 'm²', lex: 'terrassenflaeche' },
+  // N227 — wie viel Prozent der Terrasse/Balkon-Fläche zur Wohn-/Nutzfläche
+  // zählt (Wohnflächenverordnung: üblich 25–50 %). Vorgabe 50, wie der
+  // bisherige feste Wert in der Verteilung.
+  { k: 'terrasse_anteil_pct', l: 'davon zur Wohnfläche', typ: 'number',
+    schritt: '1', einheit: '%', vorgabe: 50 },
   { k: 'nebenflaeche', l: 'Nebenfläche', typ: 'number', schritt: '0.01',
     einheit: 'm²', lex: 'nebenflaeche' },
   { k: 'stellplaetze', l: 'Stellplätze', typ: 'number', schritt: '1',

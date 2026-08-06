@@ -17,6 +17,12 @@ class EinheitZahlen:
     flaeche: float | None
     terrasse: float | None
     nebenflaeche: float | None
+    # N227 — wie viel Prozent der Terrasse/Balkon-Fläche zur Wohn-/Nutzfläche
+    # zählt (Vorgabe 50, wie der bisherige feste Wert — unverändert, solange
+    # niemand die Einheit bewusst anders einstellt). Bewusst NACH den drei
+    # bestehenden Positionsargumenten eingefügt, damit `EinheitZahlen(a, b, c,
+    # d, e)`-Aufrufe (siehe Tests) ihre Bedeutung nicht verschieben.
+    terrasse_anteil_pct: float = 50.0
     # CCCXXVII — anteilige Gemeinschaftsfläche (Fläche ÷ Nutzer). 0, wo keine
     # erfasst ist; dann bleibt die Gesamtfläche wie bisher.
     gemein: float = 0.0
@@ -42,26 +48,34 @@ class EinheitZahlen:
 
     @property
     def miete_pro_qm(self) -> float | None:
-        """Kaltmiete je m² Wohnfläche — die übliche Vergleichsgröße."""
-        if not self.flaeche:
+        """Kaltmiete je m² — dieselbe massgebliche Fläche wie überall sonst
+        (N227: Terrasse zählt mit ihrem eingestellten Anteil), damit diese
+        Vergleichsgröße nicht von der Nebenkosten-Verteilung abweicht."""
+        if not self.gesamtflaeche:
             return None
-        return round(self.kaltmiete / self.flaeche, 2)
+        return round(self.kaltmiete / self.gesamtflaeche, 2)
 
     @property
     def gesamtflaeche(self) -> float:
-        """Terrasse und Nebenfläche zählen anteilig (zur Hälfte), erfasste
+        """Terrasse zählt zu ihrem eingestellten Anteil (N227,
+        `terrasse_anteil_pct`), Nebenfläche weiter zur Hälfte, erfasste
         Gemeinschaftsflächen anteilig nach Nutzerzahl (CCCXXVII), zusätzliche
         Nutzflächen voll (CCCXXIX)."""
-        return round((self.flaeche or 0) + (self.terrasse or 0) * 0.5
+        return round((self.flaeche or 0) + (self.terrasse or 0)
+                     * self.terrasse_anteil_pct / 100
                      + (self.nebenflaeche or 0) * 0.5 + self.gemein
                      + self.nutz, 2)
 
 
 def verteile(betrag: float, einheiten: list[EinheitZahlen]) -> list[float]:
-    """Verteilt einen Objektbetrag nach Fläche, sonst zu gleichen Teilen."""
+    """Verteilt einen Objektbetrag nach Fläche, sonst zu gleichen Teilen.
+
+    N227 — dieselbe massgebliche Fläche wie die Nebenkosten-Verteilung
+    (`verteilung._gesamtflaeche`), nicht nur die reine Wohnfläche: sonst
+    verteilte der Cashflow anders als die echte Abrechnung."""
     if not einheiten:
         return []
-    flaechen = [e.flaeche or 0 for e in einheiten]
+    flaechen = [e.gesamtflaeche for e in einheiten]
     summe = sum(flaechen)
     if summe <= 0:
         gleich = betrag / len(einheiten)

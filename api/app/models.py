@@ -160,6 +160,12 @@ class Einheit(SQLModel, table=True):
     nutzungsart: str = "Wohnen"
     flaeche: Optional[float] = None          # Wohn-/Nutzfläche in m²
     terrasse: Optional[float] = None         # Terrasse/Balkon in m²
+    # N227 — additiv: wie viel Prozent der Terrasse/Balkon-Fläche zur Wohn-/
+    # Nutzfläche zählt (Wohnflächenverordnung: üblicherweise 25–50 %). 50 als
+    # Vorgabe, weil das schon der bisherige feste Wert in der Verteilung war
+    # (`verteilung._gesamtflaeche`) — der Bestand rechnet dadurch unverändert
+    # weiter, bis jemand die Einheit bewusst anders einstellt.
+    terrasse_anteil_pct: float = 50.0
     nebenflaeche: Optional[float] = None     # Keller, Abstellraum in m²
     stellplaetze: int = 0
     # CXCIII: eine Einheit ganz aus der Nebenkostenabrechnung nehmen —
@@ -486,11 +492,22 @@ class Miete(SQLModel, table=True):
     # darüber, ob das Geld auch wirklich auf dem Konto eingegangen ist. Leer =
     # noch nicht eingegangen.
     kaution_eingang: Optional[date] = None
+    # N224 — additiv: statt eines eigenen Kautionskontos (Dokumentnachweis in
+    # der Checkliste) überweist der Mieter manchmal einfach auf das normale
+    # Objektkonto — dann gibt es kein Dokument, nur diesen Vermerk.
+    kaution_objektkonto: bool = False
     notiz: str = ""
     # CCLXXVIII — Orange-Entwurf (siehe Kostenposition).
     vorlaeufig: bool = False
     quelle_dokument_id: Optional[int] = Field(
         default=None, foreign_key="dokument.id")
+    # N228 — additiv: eine geplante Mieterhöhung legt einen neuen Mietstand
+    # an, der den bisherigen ablöst. Der Vorgänger bleibt hier verknüpft,
+    # damit seine Dokumente (Mietvertrag, Übergabeprotokolle, Kaution,
+    # Selbstauskunft, Rauchwarnmelder …) auch am neuen Stand als hinterlegt
+    # gelten — ohne Kopie, dieselbe Datei zählt für beide.
+    vorgaenger_id: Optional[int] = Field(
+        default=None, foreign_key="miete.id")
 
 
 # Vertragsarten unter „Kredite". Ein Bausparvertrag steht dort mit, weil er

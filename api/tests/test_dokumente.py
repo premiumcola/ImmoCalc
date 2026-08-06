@@ -359,6 +359,57 @@ def test_belege_zum_eintrag_haupt_und_unter():
                      ).status_code == 404
 
 
+def test_belege_einer_mieterhoehung_zeigen_auch_die_des_vorgaengers():
+    """N228 — eine Mieterhöhung verknüpft sich über `vorgaenger_id` mit dem
+    abgelösten Mietstand; dessen Dokumente gelten am neuen Stand als
+    hinterlegt (keine Kopie), Reihenfolge chronologisch Einzug → Auszug."""
+    from app.models import Miete
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Erhoehungsweg 1"}).json()["slug"]
+        oid = _objekt_id(slug)
+        vertrag = _lege_dokument_an(oid, "2020_Mietvertrag.pdf", jahr=2020)
+        with Session(engine) as s:
+            alt = Miete(objekt_id=oid, partei="Familie Muster", einheit="EG",
+                       kaltmiete=800.0, ab_datum=date(2020, 1, 1),
+                       bis_datum=date(2023, 12, 31), quelle_dokument_id=vertrag)
+            s.add(alt)
+            s.commit()
+            s.refresh(alt)
+            alt_id = alt.id
+        _lege_dokument_an(oid, "2020_Uebergabe-Einzug.pdf", jahr=2020,
+                          info_zu_typ="miete", info_zu_id=alt_id)
+        _lege_dokument_an(oid, "2022_Selbstauskunft.pdf", jahr=2022,
+                          info_zu_typ="miete", info_zu_id=alt_id)
+
+        with Session(engine) as s:
+            neu = Miete(objekt_id=oid, partei="Familie Muster", einheit="EG",
+                       kaltmiete=880.0, ab_datum=date(2024, 1, 1),
+                       vorgaenger_id=alt_id)
+            s.add(neu)
+            s.commit()
+            s.refresh(neu)
+            neu_id = neu.id
+        # Ein eigenes, neues Dokument nur am neuen Stand (z. B. eine aktuelle
+        # Lohnsteuerbescheinigung zur laufenden Selbstauskunft).
+        _lege_dokument_an(oid, "2024_Lohnsteuerbescheinigung.pdf", jahr=2024,
+                          info_zu_typ="miete", info_zu_id=neu_id)
+
+        antwort = c.get(f"/api/dokumente/objekt/{slug}/eintrag/miete/{neu_id}/belege")
+        assert antwort.status_code == 200
+        daten = antwort.json()
+        # Der Mietvertrag des Vorgängers zählt als Beleg (kein eigener `haupt`
+        # am neuen Stand — wandert in `unter`).
+        namen = [u["dateiname"] for u in daten["unter"]]
+        assert namen == ["2020_Mietvertrag.pdf", "2020_Uebergabe-Einzug.pdf",
+                         "2022_Selbstauskunft.pdf", "2024_Lohnsteuerbescheinigung.pdf"]
+
+        # Der ABGELÖSTE (alte) Mietstand sieht weiterhin nur seine EIGENEN
+        # Belege — die Kette wirkt nur vorwärts (Vorgänger → Nachfolger).
+        alt_antwort = c.get(f"/api/dokumente/objekt/{slug}/eintrag/miete/{alt_id}/belege")
+        alt_namen = [u["dateiname"] for u in alt_antwort.json()["unter"]]
+        assert "2024_Lohnsteuerbescheinigung.pdf" not in alt_namen
+
+
 def test_zuordnen_als_erwerbsnebenkosten_baut_einmalige_zahlung():
     """CCCXIX: ziel=erwerbskosten legt eine vorläufige Zahlung fester Kategorie
     „Erwerbsnebenkosten" mit Turnus „einmalig" an."""

@@ -1079,6 +1079,26 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
     }
 
 
+def _miete_kette(session: Session, eid: int) -> list[int]:
+    """N228 — ein Mietstand und alle Vorgänger (Mieterhöhungen), über
+    `vorgaenger_id` verkettet. Ihre Dokumente gelten auch am neuen Stand —
+    kein Kopieren, dieselbe Datei zählt für die ganze Kette. Gegen einen
+    versehentlichen Ring (Vorgänger zeigt zurück auf sich selbst) bricht die
+    Kette am ersten Wiederholungsfund ab, statt endlos zu laufen."""
+    kette = [eid]
+    gesehen = {eid}
+    aktuell = eid
+    while True:
+        m = session.get(Miete, aktuell)
+        vorgaenger = getattr(m, "vorgaenger_id", None) if m else None
+        if not vorgaenger or vorgaenger in gesehen:
+            break
+        kette.append(vorgaenger)
+        gesehen.add(vorgaenger)
+        aktuell = vorgaenger
+    return kette
+
+
 @router.get("/objekt/{slug}/eintrag/{typ}/{eid}/belege")
 def belege_zum_eintrag(slug: str, typ: str, eid: int,
                        session: Session = Depends(get_session)) -> dict:
@@ -1086,7 +1106,12 @@ def belege_zum_eintrag(slug: str, typ: str, eid: int,
 
     `haupt` ist der Beleg, aus dem der Eintrag entstand (`quelle_dokument_id`).
     `unter` sind die Info-Belege, die als Nachweis an ihm hängen
-    (`info_zu_typ`/`info_zu_id`) — im Baum stehen sie eingerückt darunter."""
+    (`info_zu_typ`/`info_zu_id`) — im Baum stehen sie eingerückt darunter.
+
+    N228 — bei einem Mietverhältnis (`typ == "miete"`) zählen zusätzlich die
+    Belege aller Vorgänger-Mietstände (Mieterhöhungen derselben Partei) als
+    hinterlegt, und die Reihenfolge wird chronologisch (Einzug → Auszug) statt
+    „neueste zuerst" — anders als bei den übrigen Eintragstypen."""
     o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
@@ -1105,10 +1130,23 @@ def belege_zum_eintrag(slug: str, typ: str, eid: int,
         if d and not _ist_sidecar(d.dateiname):
             haupt = _beleg_karte(d)
 
+    kette = _miete_kette(session, eid) if typ == "miete" else [eid]
     unter = [_beleg_karte(d) for d in session.exec(select(Dokument).where(
-        Dokument.info_zu_typ == typ, Dokument.info_zu_id == eid)).all()
+        Dokument.info_zu_typ == typ, Dokument.info_zu_id.in_(kette))).all()
         if not _ist_sidecar(d.dateiname) and d.id != quelle]
-    unter.sort(key=lambda x: (-(x["jahr"] or 0), x["dateiname"].lower()))
+    # Der Hauptbeleg jedes Vorgängers hat keinen eigenen `haupt`-Platz mehr
+    # (der gehört dem aktuellen Stand) — er zählt hier als weiterer Beleg.
+    for vid in kette[1:]:
+        vm = session.get(Miete, vid)
+        vquelle = getattr(vm, "quelle_dokument_id", None) if vm else None
+        if vquelle and vquelle != quelle:
+            d = session.get(Dokument, vquelle)
+            if d and not _ist_sidecar(d.dateiname):
+                unter.append(_beleg_karte(d))
+    if typ == "miete":
+        unter.sort(key=lambda x: (x["jahr"] or 0, x["dateiname"].lower()))
+    else:
+        unter.sort(key=lambda x: (-(x["jahr"] or 0), x["dateiname"].lower()))
     return {"haupt": haupt, "unter": unter}
 
 
