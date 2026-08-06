@@ -536,7 +536,7 @@ export function initHandlers() {
     const lageplan = e.target.closest('[data-lageplan]');
     if (lageplan) {
       e.stopPropagation();
-      lageplanAnsehen(lageplan.dataset.lageplan);
+      lageplanAnsehen(lageplan.dataset.lageplan, lageplan.dataset.name, lageplan.dataset.pfad);
       return;
     }
 
@@ -544,7 +544,8 @@ export function initHandlers() {
     const beleg = e.target.closest('[data-beleg]');
     if (beleg) {
       e.stopPropagation();
-      belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`, 'Beleg');
+      belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`,
+                   beleg.dataset.name || 'Beleg', beleg.dataset.pfad || '');
       return;
     }
 

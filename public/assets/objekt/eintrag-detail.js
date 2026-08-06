@@ -72,7 +72,7 @@ export async function eintragDetail(bereich, id, laden) {
   }).join('');
 
   const belegItem = (d, unter) => `<button class="dd-beleg${unter ? ' unter' : ''}"
-      data-doc="${d.id}" data-name="${esc(d.dateiname)}">
+      data-doc="${d.id}" data-name="${esc(d.dateiname)}" data-pfad="${esc(d.pfad || '')}">
       <span class="dd-bi">${unter ? BELEG_ICON : HAKEN_ICON}</span>
       <span class="dd-bn">${esc(d.dateiname)}</span>
       ${d.jahr ? `<span class="dd-bj">${d.jahr}</span>` : ''}</button>`;
@@ -139,6 +139,7 @@ export async function eintragDetail(bereich, id, laden) {
         ? `<div class="dd-check da">
              <span class="dd-ci ok">${HAKEN_ICON}</span>
              <button class="dd-cn" data-doc="${da.id}" data-name="${esc(da.dateiname)}"
+               data-pfad="${esc(da.pfad || '')}"
                >${esc(kurz)}${da.jahr ? `<span class="dd-cj">${da.jahr}</span>` : ''}</button>
              <button class="dd-cx" data-scan data-wort="${esc(voll)}"
                title="${esc(kurz)} ersetzen" aria-label="${esc(kurz)} ersetzen">Ersetzen</button>
@@ -206,6 +207,7 @@ export async function eintragDetail(bereich, id, laden) {
         <div class="dd-belege"><span class="dd-sub">${esc(dokLabel)}</span>${belegeHtml}</div>
       </div>
       <div class="dd-rechts">
+        <div class="dd-vorschau-kopf" hidden></div>
         <div class="beleg-flaeche"><div class="beleg-blatt leer">${alle.length
           ? 'Tippe ein Dokument an, um es anzusehen.'
           : 'Kein Dokument zum Anzeigen.'}</div></div>
@@ -215,12 +217,18 @@ export async function eintragDetail(bereich, id, laden) {
   installHilfe(dlg);
 
   const flaeche = dlg.querySelector('.beleg-flaeche');
+  const vorschauKopf = dlg.querySelector('.dd-vorschau-kopf');
   // Der gerade gezeigte Beleg — er wandert beim „Bearbeiten" mit in die Maske.
   let aktuellerBeleg = null;
-  const zeigeDoc = (docId, name) => {
+  const zeigeDoc = (docId, name, pfad) => {
     aktuellerBeleg = { id: Number(docId), dateiname: name };
     dlg.querySelectorAll('.dd-beleg').forEach(b =>
       b.classList.toggle('an', b.dataset.doc === String(docId)));
+    if (vorschauKopf) {
+      vorschauKopf.innerHTML = `<span class="dd-vn">${esc(name || 'Beleg')}</span>${pfad
+        ? `<span class="dd-vp" title="Ablageort in der Nextcloud">${esc(pfad)}</span>` : ''}`;
+      vorschauKopf.hidden = false;
+    }
     adressListen.push(belegSeitenLaden(`/api/dokumente/${docId}`, flaeche,
       name || 'Beleg', `/api/dokumente/${docId}/inhalt`));
   };
@@ -287,7 +295,7 @@ export async function eintragDetail(bereich, id, laden) {
       return;
     }
     const b = e.target.closest('[data-doc]');
-    if (b) { zeigeDoc(b.dataset.doc, b.dataset.name); return; }
+    if (b) { zeigeDoc(b.dataset.doc, b.dataset.name, b.dataset.pfad); return; }
     if (e.target.closest('[data-bearbeiten]')) {
       dlg.close();
       oeffneEintragFormular(bereich, eintrag, aktuellerBeleg);

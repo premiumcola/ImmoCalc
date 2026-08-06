@@ -419,10 +419,17 @@
     color:var(--teal-d);border-radius:12px;padding:11px 16px;min-height:44px;
     font:600 13px var(--disp);cursor:pointer}
   .dd-edit:hover{background:var(--teal);color:#fff;border-color:var(--teal)}
-  .dd-rechts{flex:1;min-height:340px;padding:0 18px 18px;display:flex}
+  .dd-rechts{flex:1;min-height:340px;padding:0 18px 18px;display:flex;flex-direction:column}
   .dd-rechts .beleg-flaeche{flex:1;min-height:0;overflow:auto;border-radius:14px;
     background:var(--paper);display:flex;flex-direction:column;gap:10px;
     align-items:center;padding:10px;-webkit-overflow-scrolling:touch}
+  /* N232 - Ablagepfad + Dateiname ueber der Vorschau, egal welches Dokument. */
+  .dd-vorschau-kopf{flex:none;padding:0 2px 8px;min-width:0}
+  .dd-vorschau-kopf .dd-vn{display:block;font:600 13px var(--body);color:var(--ink);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dd-vorschau-kopf .dd-vp{display:block;font:500 10.5px var(--mono);color:var(--soft);
+    margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    direction:rtl;text-align:left}
   @media (min-width:760px){
     .dd-body{flex-direction:row}
     .dd-links{width:340px;overflow:auto;border-right:1px solid var(--line)}

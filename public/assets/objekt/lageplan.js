@@ -29,6 +29,7 @@ export function lageplanKarte(p, e) {
   const label = planLabel(p);
   return `<div class="lp-karte" data-lp-karte="${p.id}">
       <button class="lp-vorschau klick" data-lageplan="${p.id}"
+        data-name="${esc(p.dateiname || label)}" data-pfad="${esc(p.pfad || '')}"
         aria-label="Lageplan „${esc(label)}“ ansehen">
         <img data-lp-bild="${p.id}" alt="">
         <span class="lp-name">${esc(label)}</span>
@@ -242,6 +243,6 @@ export async function lageplanEntfernen(einheitId, planId, laden) {
 
 /* Einen hinterlegten Lageplan als Bild-Vorschau öffnen (dieselbe Ansicht wie
    ein Beleg, über den Dokument-Inhalt). */
-export function lageplanAnsehen(planId) {
-  belegAnsehen(`/api/dokumente/${planId}/inhalt`, 'Lageplan');
+export function lageplanAnsehen(planId, dateiname = 'Lageplan', pfad = '') {
+  belegAnsehen(`/api/dokumente/${planId}/inhalt`, dateiname, pfad);
 }

@@ -1060,7 +1060,7 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
             if d.info_zu_typ and d.info_zu_id:
                 unter = quelle_von.get((d.info_zu_typ, d.info_zu_id))
         ast["dokumente"].append({
-            "id": d.id, "dateiname": d.dateiname, "jahr": d.jahr,
+            "id": d.id, "dateiname": d.dateiname, "pfad": d.pfad, "jahr": d.jahr,
             "betrag": d.betrag, "kostenart": d.kostenart, "kategorie": d.kategorie,
             "status": d.status, "zugeordnet": bool(rubrik), "rubrik": rubrik,
             "info": info, "unter": unter,
@@ -1879,7 +1879,7 @@ def _einheit_holen(session: Session, einheit_id: int) -> Einheit:
 
 
 def lageplaene_der_einheit(session: Session, einheit_id: int) -> list[dict]:
-    """Die Lagepläne einer Einheit als [{id, dateiname}] (CCCXXVI).
+    """Die Lagepläne einer Einheit als [{id, dateiname, pfad}] (CCCXXVI).
 
     Eine Wahrheit für den Listen-Endpunkt und für `_einheit_zeile` in
     `objekte.py`. Defensiv: leere Liste, wenn keine da sind."""
@@ -1888,7 +1888,7 @@ def lageplaene_der_einheit(session: Session, einheit_id: int) -> list[dict]:
             Dokument.info_zu_typ == "einheit",
             Dokument.info_zu_id == einheit_id,
             Dokument.kategorie == LAGEPLAN)).all()
-    return [{"id": d.id, "dateiname": d.dateiname} for d in treffer]
+    return [{"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad} for d in treffer]
 
 
 @lageplan_router.post("/{einheit_id}/lageplan", status_code=201)

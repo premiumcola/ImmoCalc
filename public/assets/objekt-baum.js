@@ -95,7 +95,7 @@ function baumMalen() {
         <span class="fp" style="background:${d.zugeordnet ? farbe : 'transparent'};
               border-color:${farbe}"></span>
         <span class="fn" data-beleg="${d.id}"
-              data-name="${esc(d.dateiname)}">${esc(d.dateiname)}</span>
+              data-name="${esc(d.dateiname)}" data-pfad="${esc(d.pfad || '')}">${esc(d.dateiname)}</span>
         ${d.zugeordnet
           ? `<button class="fstatus${d.info ? ' info' : ' pos'}"
                data-umhaengen="${d.id}" data-rubrik="${esc(ORDNER_RUBRIK[a_ordner] || '')}"

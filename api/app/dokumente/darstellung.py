@@ -30,7 +30,7 @@ def _kurz(d, o) -> dict:
 
 def _beleg_karte(d) -> dict:
     """Das Wenige, das die Detailansicht zu einem Beleg braucht."""
-    return {"id": d.id, "dateiname": d.dateiname, "jahr": d.jahr,
+    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad, "jahr": d.jahr,
             "status": d.status, "info": bool(d.info_zu_typ)}
 
 
