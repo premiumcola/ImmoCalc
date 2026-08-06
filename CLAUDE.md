@@ -313,6 +313,28 @@ Ein Tool-Call = ein Befehl. Keine Inline-Heredocs (erst Datei schreiben, dann
 ausführen, dann aufräumen — Skripte nach `scratch/`, steht in `.gitignore`).
 Kein `cd <pfad> && <befehl>`, kein `eval`, kein `curl … | bash`, keine Backticks.
 
+## Arbeitsweise: Token-effizient & parallel
+
+Ziel: Ergebnisqualität hoch halten, Token-Verbrauch niedrig.
+
+- **Goal-first:** Zuerst das Ziel nennen, in kurze Checkliste zerlegen,
+  Punkt für Punkt abarbeiten und nach jedem Schritt prüfen.
+- **Delegieren:** Umfangreiche, wenig anspruchsvolle Arbeit (Dateien lesen,
+  Code durchsuchen, Logs parsen, Boilerplate, Tests laufen lassen) an
+  Subagenten via Task-Tool. Der Haupt-Kontext bleibt schlank — nur
+  Entscheidungen und Ergebnisse landen in der Hauptschleife.
+- **Parallelisieren:** Unabhängige Teilaufgaben in EINER Nachricht mit
+  mehreren Task-Aufrufen starten (nicht nacheinander).
+- **Modell-Sparsamkeit:** Das stärkste Modell (Opus) für Architektur,
+  Planung, schwierige Entscheidungen; mechanische Ausführung an Sonnet oder
+  Haiku. Standard: `opusplan` (Opus plant, Sonnet führt aus).
+- **Kein Verschwenden:** Keine schon gelesenen Dateien erneut lesen, keine
+  redundanten Tool-Aufrufe, keine Kontext-Wiederholungen. Antworten knapp.
+- **Große Umbauten in Häppchen:** Bei Refactorings/Modularisierung
+  modulweise vorgehen, nach jedem Modul committen, dann weiter.
+- **Ultracode NICHT einschalten**, außer maximale Gründlichkeit ist
+  wichtiger als Kosten (verbraucht bewusst mehr Tokens, >25 Agenten möglich).
+
 ## Nächste Schritte
 
 Siehe `ROADMAP.md`.
