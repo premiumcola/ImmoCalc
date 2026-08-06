@@ -1,0 +1,1498 @@
+/* zeitraum/checkliste.js — Haupt-Rendering des Zeitraum-Bildschirms.
+
+   Hier laufen die drei zentralen Kettengriffe zusammen:
+   - `laden()`  holt Zeitraum + Beiwerk (Schlüssel, Ablesungen, Öl, HKV,
+                Stromkette, Deckung, E-Auto) und ruft danach `zeichnen()`.
+   - `zeichnen()` baut das ganze HTML: Fortschritt, Tabs, Sortierleiste,
+                Bereiche (Wasser/Heizung/Strom/Reinigung/…), Ergebnis,
+                Belege — sowie die inline geladenen Detailblöcke (Wasser,
+                Öl, Stromkette).
+   - `initHandlers()` hängt die zentrale Click-/Change-/Input-Delegation
+                sowie das drag&drop und den Scan-Feld-Handler an. Wird
+                einmal beim App-Start aus dem HTML-Rumpf gerufen.
+
+   Zeilen-HTML (`zeileHtml` / `zeileInner`) baut jede Kostenzeile —
+   aufgeklappte Karte enthält je Modus (Wasser/Öl/Warmwasser/Wärme/Strom/
+   Standard) den passenden Detailblock. */
+
+import { api, eur, eurKurz, esc, melde, frage, belegAnsehen, installNav } from '../immo.js';
+import { auswahlfeld } from '../auswahl.js';
+import { sankey } from '../charts.js';
+import { kostenIcon } from '../kostenicons.js';
+import { scanZuPdf, lesbareGroesse } from '../scan.js';
+import { belegScannen } from '../belegscan.js';
+import { fotoAlsJpeg } from '../kamerascan.js';
+
+import * as state from './state.js';
+import {
+  BEREICHE, BEREICH_IKON, SORTIERUNG, HAKEN, ABGELEITET,
+  NUR_EINHEIT_WAHL, WEG_ART,
+} from './state.js';
+import { ANH_ICON, FOTO_ICON, UPLOAD_ICON, WOLKE_ICON } from './icons.js';
+import {
+  normUml, bereichIndex, kostenartAnzeige,
+  istImDetailPopup, istHeizoelSammel, istWarmwasserPos, istHeizwaermePos,
+  istWasserSammel, istStromPos, istStromKettePos,
+  wasserArt,
+} from './modell.js';
+import {
+  zahl, chipHtml, vkeyChip, schluesselWort, schluesselMeta,
+  prozentText, monatText, m3, kurzBeleg, belegDatumText,
+  belegeHtml, belegLinks, zusammensetzungHtml,
+  sonderEinheiten, alleEinheiten, artOptionen,
+  wasserGesamtBetrag, wasserHatRechnung,
+  positionsBetrag, effektivErledigt, fortschrittRechnen,
+  stromKetteVerteilt, heizwaermeVerteilt,
+  stromMengen, stromAufteilung, stromChipsHtml, stromKopfHtml,
+  stromPosFeldHtml, stromKetteHtml,
+  vorabAktiv, vorabBrutto, bruttoAnzeige,
+  baueChipMap, generischeLabels, zaehlerBloecke,
+  fristChipSetzen, rolleUnterDieKopfzeile,
+} from './helpers.js';
+import {
+  zaehlerPanelHtml, endstandSpeichern, anfangstandSpeichern,
+  datumGeaendert, datumUebernehmen, einheitToggle, zaehlerUmbenennen,
+} from './zaehler.js';
+import {
+  fuelleWasserInline, wasserBetragSpeichern, wasserRechnungsmengeSpeichern,
+  wasserPositionLeeren,
+} from './wasser.js';
+import {
+  fuelleHeizoelInline, heizoelHinzufuegen, heizoelEntfernen,
+  hkvHinzufuegen, hkvEntfernen,
+} from './heizoel.js';
+import {
+  stromMengeSpeichern, stromHerkunftSetzen, stromJahreswertSpeichern,
+  stromZaehlerAnlegen, stromRolleSetzen, stromZaehlerEntfernen,
+  gartenAnlegen,
+} from './strom.js';
+import {
+  fuelleStromketteInline, stromAnteilSpeichern, stromBelegLoesen,
+  geeichteMengeSpeichern,
+} from './stromkette.js';
+import {
+  belegAblageHtml, belegLoesen, betragVorschlagen, erkennungHatWert,
+  anhaengen, initBelegDrop,
+} from './belege.js';
+import {
+  konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
+} from './konfigmodus.js';
+import { zaehlerKonfig, ablesenKnopfHtml } from './zaehler-konfig.js';
+
+const { inhalt, zid, titel, sub, KEINE_KAMERA } = state;
+
+/* ---------- Verteilung ------------------------------------------------- */
+
+function doppelteEinheit(namen) {
+  const einheit = new Map(
+    (state.schluessel?.parteien || []).map(p => [p.partei, p.einheit]));
+  const doppelt = namen.filter(n => state.leerstaende.has(n) && einheit.get(n)
+    && namen.some(m => m !== n && einheit.get(m) === einheit.get(n)));
+  if (!doppelt.length) return '';
+  return `<div class="hinweis">${doppelt.map(esc).join(', ')}: vermietete Zeit
+    und Leerstand getrennt.</div>`;
+}
+
+function einheitChips(pid, aktuell) {
+  if (state.daten.status !== 'in Arbeit') return '';
+  return sonderEinheiten().map(e => `
+    <button type="button" class="ewahl${e.einheit === aktuell ? ' an' : ''}"
+        data-einzel-pid="${pid}" data-einzel-einheit="${esc(e.einheit)}"
+        aria-pressed="${e.einheit === aktuell}">
+      <span class="ename">${esc(e.einheit)}</span>
+      ${e.parteien.length
+        ? `<span class="epartei">${esc(e.parteien.join(' · '))}</span>` : ''}
+    </button>`).join('');
+}
+
+function vorabZeileHtml(k) {
+  if (!vorabAktiv(k)) return '';
+  return `<div class="rz vorab-zeile">
+      <span>→ ${esc(k.vorab_einheit)}${k.vorab_s35
+        ? '<span class="rzp"> · §35a</span>' : ''}</span>
+      <span>− ${eur(k.vorab_betrag)}</span>
+    </div>`;
+}
+
+function vorabHtml(k) {
+  if (state.daten.status !== 'in Arbeit') return '';
+  const offenJetzt = (k.vorab_betrag || 0) > 0 || (k.vorab_netto || 0) > 0
+    || state.vorabOffen.has(k.position_id);
+  if (!offenJetzt) {
+    return `<button class="vorab-link" data-vorab-oeffnen="${k.position_id}"
+      >＋ Teilbetrag direkt auf eine Einheit</button>`;
+  }
+  const chips = sonderEinheiten().map(e => `
+    <button type="button" class="ewahl${e.einheit === k.vorab_einheit ? ' an' : ''}"
+        data-vorab-einheit-pid="${k.position_id}" data-vorab-einheit="${esc(e.einheit)}"
+        aria-pressed="${e.einheit === k.vorab_einheit}">
+      <span class="ename">${esc(e.einheit)}</span>
+      ${e.parteien.length
+        ? `<span class="epartei">${esc(e.parteien.join(' · '))}</span>` : ''}
+    </button>`).join('');
+  const netto = k.vorab_netto || 0;
+  const brutto = k.vorab_betrag || 0;
+  const hat = netto > 0 || brutto > 0;
+  return `<div class="vorab">
+      <div class="vorab-kopf">
+        <span class="vorab-t">Teilbetrag direkt auf eine Einheit</span>
+        <button class="vorab-x" data-vorab-entfernen="${k.position_id}"
+          data-hat="${hat ? '1' : ''}" aria-label="Teilbetrag entfernen">×</button>
+      </div>
+      <div class="vorab-betrag">
+        <input type="number" step="0.01" min="0" inputmode="decimal"
+               placeholder="Netto" value="${netto > 0 ? netto : ''}"
+               data-vorab-netto="${k.position_id}"
+               aria-label="Teilbetrag netto in Euro">
+        <span class="vorab-eur">€ netto</span>
+      </div>
+      <div class="vorab-brutto" data-vorab-brutto="${k.position_id}"
+        >${bruttoAnzeige(netto)}</div>
+      <div class="einzel-wahl">${chips}</div>
+      <label class="vorab-s35">
+        <input type="checkbox" data-vorab-s35="${k.position_id}"
+               ${k.vorab_s35 ? 'checked' : ''}>
+        <span>§35a absetzbar</span>
+      </label>
+    </div>`;
+}
+
+/* Verteilung einer Position: Schlüssel + Aufteilung. */
+function verteilungHtml(k) {
+  if (!k.position_id) return '';
+  const bearbeitbar = state.daten.status === 'in Arbeit';
+  const einzelOffen = k.nur_einheit || state.einzelWahl === k.position_id;
+  const wahlWert = einzelOffen ? NUR_EINHEIT_WAHL : (k.schluessel || '');
+  const wahl = bearbeitbar
+    ? `<div class="wahl" data-schluesselwahl="${k.position_id}"
+         data-wert="${esc(wahlWert)}"></div>` : '';
+
+  if (einzelOffen) {
+    const traeger = Object.keys(k.anteile || {});
+    return `<div class="vt" data-pid="${k.position_id}">
+        <div class="zk">Verteilen nach</div>
+        ${wahl}
+        <div class="einzel-wahl">${einheitChips(k.position_id, k.nur_einheit)}</div>
+        ${k.nur_einheit ? `<div class="zsumme">Zu 100 % auf ${esc(k.nur_einheit)}${
+          traeger.length ? ` · ${traeger.map(esc).join(' · ')}` : ''}</div>` : ''}
+        ${k.nur_einheit && !traeger.length ? `<div class="warnung"><span>▲</span>
+          <span><b>Keine Partei für ${esc(k.nur_einheit)}.</b></span></div>` : ''}
+      </div>`;
+  }
+
+  const meta = schluesselMeta(k.schluessel);
+  const eintraege = Object.entries(k.anteile || {});
+  const summe = eintraege.reduce((s, [, w]) => s + Number(w || 0), 0);
+  const einheit = k.anteile_einheit || meta?.einheit || '';
+  const einheitTag = einheit ? `<span class="mini-einheit">${esc(einheit)}</span>` : '';
+  const ganzzahl = k.schluessel === 'personen';
+  const schritt = ganzzahl ? '1' : '0.0001';
+  const imode = ganzzahl ? 'numeric' : 'decimal';
+  const wZahl = w => ganzzahl ? Math.round(Number(w) || 0) : (Number(w) || 0);
+  const abzuleiten = meta?.moeglich ? Object.entries(meta.gewichte) : [];
+  const gleich = abzuleiten.length === eintraege.length &&
+    abzuleiten.every(([p, w]) => Number(k.anteile?.[p] ?? NaN) === Number(w));
+  const felder = eintraege.length || !bearbeitbar ? eintraege
+    : (state.schluessel?.parteien || []).map(p => [p.partei, 0]);
+  const rest = (k.betrag || 0) - (vorabAktiv(k) ? k.vorab_betrag : 0);
+
+  const anteilSub = p => {
+    const d = (k.anteil_details || []).find(x => x.partei === p);
+    const teile = [];
+    if (d) {
+      if (d.leerstand) teile.push('Leerstand · Eigentümer');
+      else if (d.einheit) teile.push(esc(d.einheit));
+      if (d.zeitraum_monate && d.monate < d.zeitraum_monate - 0.05)
+        teile.push(`${monatText(d.monate)} von ${monatText(d.zeitraum_monate)} Monaten`);
+    } else if (state.leerstaende.has(p)) {
+      teile.push('Leerstand · Eigentümer');
+    }
+    return teile.length ? `<span class="gsub">${teile.join(' · ')}</span>` : '';
+  };
+
+  const gwRows = felder.map(([p, w]) => `
+    <div class="gw">
+      <span class="gn">${esc(p)}${anteilSub(p)}</span>
+      <span class="mini-wrap">${bearbeitbar
+        ? `<input type="number" step="${schritt}" min="0" inputmode="${imode}"
+                 value="${wZahl(w)}" data-gewicht="${esc(p)}"
+                 aria-label="Gewicht ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">`
+        : `<span class="gv">${wZahl(w).toLocaleString('de-DE')}</span>`}${einheitTag}</span>
+      <span class="gp" data-anteil>${prozentText(w, summe)}</span>
+    </div>`).join('');
+
+  const ableiten = bearbeitbar && abzuleiten.length && !gleich
+    ? `<button class="minilink" data-ableiten="${k.position_id}"
+        data-fuer="${esc(k.schluessel || '')}">${eintraege.length
+          ? 'Aus Stammdaten neu ableiten' : 'Aus Stammdaten ableiten'}</button>` : '';
+
+  const abgeleitet = ABGELEITET.has(k.schluessel);
+  let aufteilung;
+  if (abgeleitet && eintraege.length) {
+    const euroRows = felder.map(([p, w]) => {
+      const euro = summe > 0 ? rest * (Number(w) || 0) / summe : 0;
+      return `<div class="rz vt-abg"><span class="gn">${esc(p)}${anteilSub(p)}</span>
+        <span class="vt-euro"><span class="euro-z" data-euro>${eur(euro)}</span>
+          <span class="rzp" data-anteil>${prozentText(w, summe)}</span></span>
+        ${bearbeitbar
+          ? `<span class="mini-wrap"><input class="anteil-mini" type="number" step="${schritt}" min="0"
+                    inputmode="${imode}" value="${wZahl(w)}" data-gewicht="${esc(p)}"
+                    aria-label="Anteil ${esc(p)}${einheit ? ` in ${esc(einheit)}` : ''}">${einheitTag}</span>`
+          : `<span class="mini-wrap"><span class="gv">${wZahl(w).toLocaleString('de-DE')}</span>${einheitTag}</span>`}
+      </div>`;
+    }).join('');
+    aufteilung = `<div class="vt-ergebnis">${euroRows}</div>${
+      bearbeitbar ? ableiten : ''}`;
+  } else {
+    aufteilung = `<div class="vt-gewichte">${gwRows}${ableiten}</div>`;
+  }
+
+  const basis = esc(JSON.stringify(Object.fromEntries(
+    felder.map(([p, w]) => [p, Number(w) || 0]))));
+
+  return `<div class="vt" data-pid="${k.position_id}" data-basis="${basis}"
+      data-rest="${rest}">
+      <div class="zk">Verteilen nach</div>
+      ${wahl}
+      ${k.ohne_verteilung ? `<div class="warnung"><span>▲</span>
+        <span><b>Ohne Gewichte fließen die ${eur(k.betrag)} mit 0,00 € ein.</b>
+        </span></div>` : ''}
+      <div class="vt-aufteilung">
+        <div class="zk">Aufteilung</div>
+        ${vorabZeileHtml(k)}
+        ${aufteilung}
+        ${doppelteEinheit(felder.map(([p]) => p))}
+      </div>
+      ${vorabHtml(k)}
+    </div>`;
+}
+
+/* Eine Kostenzeile der Checkliste. */
+function zeileHtml(k, i) {
+  // N189/N198a — Signal je nach Zustand.
+  const erl = effektivErledigt(k);
+  const heizWarn = !erl && istHeizwaermePos(k) && positionsBetrag(k) > 0.005;
+  const [farbe, zeichen] = erl ? HAKEN.erledigt
+    : heizWarn ? HAKEN.warnung
+    : (k.optional ? HAKEN.fehlt : HAKEN.offen);
+  const zeigeHaken = erl || heizWarn || !k.optional;
+  // N101 — die Wasser-Sammelzeile trägt die Summe ihrer drei Bestandteile.
+  const oelBetrag = istHeizoelSammel(k) && !k.betrag ? state.heizoelKosten
+    : (istWarmwasserPos(k) && !k.betrag ? state.wwKosten
+    : (istHeizwaermePos(k) && !k.betrag
+       ? Math.round((state.heizoelKosten - state.wwKosten) * 100) / 100 : 0));
+  const wert = eur(istWasserSammel(k) ? wasserGesamtBetrag()
+    : (istStromKettePos(k) ? positionsBetrag(k)
+    : (oelBetrag || k.betrag)));
+  const aufgeklappt = state.offen.has(i);
+
+  const infos = [
+    k.zustand === 'offen' ? 'Betrag fehlt' : null,
+    k.ohne_verteilung ? 'Verteilung fehlt' : null,
+    istWasserSammel(k)
+      ? 'Fasst Frisch-, Schmutz- & Niederschlagswasser zusammen' : null,
+    heizWarn ? 'Heizkosten noch nicht auf Einheiten verteilt' : null,
+  ].filter(Boolean).join(' · ');
+
+  return zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken);
+}
+
+function zeitraumFussHtml() {
+  const v = state.daten.verknuepft || {};
+  const chips = [
+    ['Positionen', v.positionen || 0],
+    ['Belege', v.belege || 0],
+  ];
+  const leer = chips.every(([, n]) => n === 0);
+  return `<div class="zr-fuss">
+    <div class="zeilen">${chips.map(([l, n]) =>
+      `<span class="chip${n > 0 ? ' hat' : ''}">${n}&nbsp;${l}</span>`).join('')}</div>
+    <div class="hinweis">${leer
+      ? 'An diesem Zeitraum hängt nichts mehr — beim nächsten Aufräumen verschwindet er automatisch.'
+      : 'Nimmst du die letzte Position und den letzten Beleg heraus, wird der dann leere Zeitraum von selbst entfernt. Einen Löschknopf gibt es bewusst nicht.'}</div>
+  </div>`;
+}
+
+function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken = true) {
+  const erl = effektivErledigt(k);
+  const heizWaermeBerechnet = istHeizwaermePos(k) && positionsBetrag(k) > 0.005;
+  const zustandKlasse = k.vorlaeufig ? ' entwurf' : (erl ? ' gefuellt' : '');
+  const bearbeitbar = state.daten.status === 'in Arbeit';
+
+  const wasserSammel = istWasserSammel(k);
+  const wasserBill = wasserSammel && wasserHatRechnung(k);
+  const heizoelSammel = istHeizoelSammel(k);
+  const heizModus = heizoelSammel ? 'oel'
+    : istWarmwasserPos(k) ? 'warmwasser'
+    : istHeizwaermePos(k) ? 'waerme' : '';
+  const kannAuf = !wasserSammel || wasserBill;
+  const auf = aufgeklappt && kannAuf;
+
+  let koerper = '';
+  if (auf && wasserSammel) {
+    const anbau = bearbeitbar
+      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
+          >${ANH_ICON} Beleg anhängen</button>` : '';
+    const leeren = bearbeitbar
+      ? `<div class="kartenfuss"><button class="minilink gefahr"
+          data-wasser-leeren="1">Position leeren — für neuen Beleg</button></div>`
+      : '';
+    koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
+        <div class="wd-lade">Detailübersicht wird geladen …</div></div>
+      <div class="zk">Belege</div>${belegeHtml(k, anbau)}${leeren}`;
+  } else if (auf && heizModus) {
+    const anbau = bearbeitbar
+      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
+          >${ANH_ICON} ${heizModus === 'oel' ? 'Öl-Rechnung' : 'Beleg'} anhängen</button>` : '';
+    koerper = `<div class="ho-inline" data-heizoel-inline="${zid}"
+        data-heiz-modus="${heizModus}">
+        <div class="wd-lade">Wird geladen …</div></div>
+      <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+  } else if (auf && k.position_id) {
+    const anbau = bearbeitbar
+      ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
+          >${ANH_ICON} Beleg anhängen</button>` : '';
+    const belege = `<div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+    const fuss = k.vorlaeufig
+      ? `<button class="hauptaktion ja" data-entwurf-ja="${k.position_id}"
+          >✓ Bestätigen</button>
+         <button class="minilink" data-entwurf-nein="${k.position_id}"
+          data-art="${esc(k.kostenart)}">Zurück zum Prüfen</button>`
+      : `<button class="hauptaktion" data-fertig="${i}">Fertig</button>
+         ${bearbeitbar ? `<button class="minilink gefahr"
+          data-entfernen="${k.position_id}"
+          data-art="${esc(k.kostenart)}">Entfernen</button>` : ''}`;
+    const anbieterFeld = (bearbeitbar && k.kostenart_id)
+      ? `<div class="anbieterzeile"><label>Anbieter / Gewerk</label>
+          <input type="text" data-anbieter="${k.kostenart_id}"
+            value="${esc(k.anbieter || '')}" data-wert="${esc(k.anbieter || '')}"
+            placeholder="z. B. WWK, Zweckverband, Firma …"></div>` : '';
+    const kostenartFeld = bearbeitbar
+      ? `<div class="kostenartzeile"><label>Kostenart</label>
+          <select data-kostenart-pos="${k.position_id}" data-wert="${esc(k.kostenart)}"
+            aria-label="Kostenart dieser Position">${artOptionen(k.kostenart)}</select>
+          <input class="ka-neu" data-kostenart-neu="${k.position_id}" hidden
+            placeholder="Neue Kostenart …" aria-label="Neue Kostenart"></div>` : '';
+    koerper = `${kostenartFeld}${anbieterFeld}${stromPosFeldHtml(k)}
+      ${stromKetteHtml(k)}${verteilungHtml(k)}${belege}
+      <div class="kartenfuss">${fuss}</div>`;
+  } else if (auf) {
+    const handbetrag = (bearbeitbar && !istStromPos(k))
+      ? `<div class="betragfeld">
+          <input type="number" step="0.01" placeholder="Betrag (optional)"
+                 data-neubetrag="${i}" aria-label="Betrag für ${esc(k.kostenart)}"></div>
+        <div class="kartenfuss">
+          <button class="hauptaktion" data-anlegen="${esc(k.kostenart)}"
+                  data-index="${i}">Anlegen</button>
+        </div>` : '';
+    const zu = bearbeitbar ? '' : `<div class="zu-kein">Für diese Kostenart wurde
+      in diesem Zeitraum nichts erfasst — und er ist abgeschlossen.</div>`;
+    const ablage = (istStromKettePos(k) && stromKetteVerteilt())
+      ? '' : belegAblageHtml(k, bearbeitbar);
+    koerper = `${stromKetteHtml(k)}${zu}${ablage}${handbetrag}`;
+  }
+
+  const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel && !heizoelSammel)
+    ? `<span class="kopf-betrag-box"><input class="kopf-betrag" type="number" step="0.01"
+         inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
+         data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
+         aria-label="Betrag für ${esc(k.kostenart)}"><span class="kbe">€</span></span>`
+    : ((erl || heizWaermeBerechnet) ? `<span class="wert">${wert}</span>` : '');
+  const quickScan = (!erl && !aufgeklappt && !heizWaermeBerechnet)
+    ? (KEINE_KAMERA
+      ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
+            title="Beleg-PDF von diesem Rechner wählen" aria-label="Beleg-Datei wählen">
+            ${UPLOAD_ICON}<span class="st">Datei wählen</span>
+          </button>`
+      : `<button class="scanmini" data-scan="${esc(k.kostenart)}"
+            title="Beleg für ${esc(k.kostenart)} abfotografieren" aria-label="Beleg abfotografieren">
+            ${FOTO_ICON}<span class="st">Foto</span>
+          </button>
+          <button class="scanmini ablage" data-ablage="${esc(k.kostenart)}"
+            title="Beleg aus der Ablage / Nextcloud wählen" aria-label="Beleg aus der Ablage wählen">
+            ${WOLKE_ICON}<span class="st">Aus Ablage</span>
+          </button>`) : '';
+
+  return `<div class="pruef${zustandKlasse}" data-kostenart="${esc(k.kostenart)}">
+      <div class="kopf">
+        <button class="zeile" data-auf="${i}"${kannAuf ? '' : ' data-noexpand'} aria-expanded="${auf}">
+          <span class="ikon ${erl ? 'fertig' : 'warte'}">${
+            kostenIcon(k.kostenart)}</span>
+          <span class="name">${esc(kostenartAnzeige(k.kostenart))}${chipHtml(k)}${vkeyChip(k)}${
+            k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}${
+            (k.anbieter && !aufgeklappt && k.zustand !== 'fehlt')
+              ? `<span class="anbieter-tag" title="Anbieter / Gewerk">${esc(k.anbieter)}</span>`
+              : ''}${stromKopfHtml(k)}${
+            infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
+        </button>
+        ${betragEl}
+        ${quickScan}
+        ${zeigeHaken
+          ? `<span class="haken ${farbe}">${zeichen}</span>` : ''}
+      </div>
+      ${auf ? `<div class="auf">${koerper}</div>` : ''}
+    </div>`;
+}
+
+/* ---------- Ergebnis + Abschluss --------------------------------------- */
+
+function empfaengerHtml(p) {
+  if (!p) return '';
+  if (p.leerstand) {
+    return '<div class="wemgeht">Bleibt beim Eigentümer — kein Versand.</div>';
+  }
+  if (p.adressen?.length) {
+    return `<div class="wemgeht">Geht an ${p.adressen.map(esc).join(' · ')}</div>`;
+  }
+  return `<div class="wemgeht fehlt">Keine Mailadresse hinterlegt —
+    ausdrucken und mit der Post schicken.</div>`;
+}
+
+async function ergebnisHtml() {
+  const [rechnung, versand] = await Promise.allSettled([
+    api(`/zeitraeume/${zid}/abrechnung`),
+    api(`/zeitraeume/${zid}/versand`),
+  ]);
+  if (rechnung.status !== 'fulfilled') {
+    return '<div class="empty"><div class="big">Ergebnis nicht verfügbar</div></div>';
+  }
+  const a = rechnung.value;
+  const wer = new Map((versand.value?.parteien || []).map(p => [p.partei, p]));
+
+  const zeilen = Object.entries(a.parteien || {}).map(([partei, w]) => `
+    <div class="karte">
+      <h3>${esc(partei)}${wer.get(partei)?.leerstand || state.leerstaende.has(partei)
+        ? '<span class="marke">Leerstand</span>' : ''}</h3>
+      ${empfaengerHtml(wer.get(partei))}
+      <div class="summe"><span>Umlagefähige Kosten</span><b>${eur(w.kosten)}</b></div>
+      <div class="summe"><span>Vorauszahlungen</span><b>${eur(w.vorauszahlungen)}</b></div>
+      ${w.s35 ? `<div class="summe"><span>davon § 35a</span><b>${eur(w.s35)}</b></div>`
+        : ''}
+      <div class="summe gesamt"><span>Saldo</span>
+        <b class="${(w.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(w.saldo)}</b></div>
+      <a class="pdflink" target="_blank" rel="noopener"
+         href="/api/zeitraeume/${zid}/abrechnung.pdf?partei=${
+           encodeURIComponent(partei)}">▤ Abrechnung als PDF ansehen</a>
+    </div>`).join('');
+
+  const g = a.gesamt || {};
+  return `<div class="karte">
+      <h3>Gesamt</h3>
+      <div class="summe"><span>Auslagen</span><b>${eur(g.auslagen)}</b></div>
+      <div class="summe"><span>Abschläge</span><b>${eur(g.abschlaege)}</b></div>
+      <div class="summe gesamt"><span>Saldo</span>
+        <b class="${(g.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(g.saldo)}</b></div>
+    </div>${zeilen}
+    ${a.offen?.length ? `<div class="karte"><h3>Noch offen</h3>
+      ${a.ohne_betrag?.length ? `<div class="summe">
+        <span>Ohne Betrag</span><b>${a.ohne_betrag.map(esc).join(', ')}</b></div>` : ''}
+      ${a.ohne_verteilung?.length ? `<div class="summe">
+        <span>Ohne Verteilung</span>
+        <b class="neg">${a.ohne_verteilung.map(esc).join(', ')}</b></div>` : ''}
+      </div>` : ''}`;
+}
+
+function abschlussHtml() {
+  if (state.daten.status !== 'in Arbeit') {
+    return `<div class="abschluss fertig">
+        <div class="at">Abgeschlossen</div>
+        <p>Dieser Zeitraum ist abgerechnet und versendet.</p>
+        <button class="wiederauf" data-oeffnen="1">Wieder öffnen</button>
+      </div>`;
+  }
+  const f = state.daten.fortschritt;
+  const rest = f.gesamt - f.fertig;
+  const ohne = state.daten.checkliste.filter(k => k.ohne_verteilung)
+    .map(k => k.kostenart);
+
+  if (rest === 0 && !ohne.length) {
+    return `<div class="abschluss bereit">
+        <div class="at">✓ Alles erfasst</div>
+        <p>${f.gesamt} Positionen vollständig · ${eur(f.summe)} umlagefähig.
+           Die Abrechnungen können erstellt und verschickt werden.</p>
+        <button class="losbutton" data-abschluss="1">Abrechnungen erstellen und versenden</button>
+      </div>`;
+  }
+  const teile = [
+    rest ? `${rest} ${rest === 1 ? 'Position' : 'Positionen'} ohne Betrag` : null,
+    ohne.length ? `${ohne.length} ohne Verteilung` : null,
+  ].filter(Boolean).join(' · ');
+
+  return `<div class="abschluss offen">
+      <div class="at">Noch nicht vollständig</div>
+      <p>${teile}. Trage die fehlenden Angaben ein — oder bestätige, dass die
+         restlichen Posten für diesen Zeitraum nicht anfallen.</p>
+      ${ohne.length ? `<div class="warnung"><span>▲</span>
+        <span><b>${esc(ohne.join(', '))}</b> ${ohne.length === 1 ? 'hat' : 'haben'}
+        einen Betrag, aber keine Verteilungsgewichte — ${ohne.length === 1
+          ? 'er zählt' : 'sie zählen'} in der Abrechnung mit 0,00 €.</span>
+        </div>` : ''}
+      <label class="uebergehen">
+        <input type="checkbox" id="uebergehen">
+        <span>Restliche Positionen fallen nicht an</span>
+      </label>
+      <button class="losbutton" data-abschluss="1" disabled
+              id="abschlussKnopf">Abrechnungen erstellen und versenden</button>
+    </div>`;
+}
+
+/* CCVIII — Mieter-Direkteintrag für ein WEG-Objekt. */
+function wegDirektHtml() {
+  if (!state.daten.weg) return '';
+  const einheiten = sonderEinheiten();
+  const bereit = state.daten.status === 'in Arbeit';
+  const bestehende = new Map((state.daten.checkliste || []).map(k => [k.kostenart, k]));
+
+  const zeilen = einheiten.map(e => {
+    const vorhanden = bestehende.get(WEG_ART(e.einheit));
+    const betrag = vorhanden && vorhanden.betrag != null ? vorhanden.betrag : '';
+    return `<div class="gw">
+        <span class="gn">${esc(e.einheit)}${e.parteien.length
+          ? `<span class="gsub">${esc(e.parteien.join(' · '))}</span>` : ''}</span>
+        ${bereit
+          ? `<input type="number" step="0.01" min="0" value="${betrag}"
+                   data-weg-betrag="${esc(e.einheit)}" placeholder="NK-Summe"
+                   aria-label="Umlagefähige NK-Summe ${esc(e.einheit)}">`
+          : `<span class="gv">${betrag !== '' ? eur(betrag) : '—'}</span>`}
+      </div>`;
+  }).join('');
+
+  const koerper = einheiten.length
+    ? zeilen + (bereit ? `<div class="nachtrag" style="margin-top:12px">
+        <button data-weg-speichern="1">Werte je Mieter übernehmen</button>
+      </div>` : '')
+    : `<div class="belege"><span class="kein">Noch keine vermietete Einheit —
+        lege auf der Objektseite Einheiten und Mieter an, dann steht hier je
+        Mieter ein Feld für die NK-Summe.</span></div>`;
+
+  return `<div class="karte sonder">
+      <h3>Nebenkosten laut Hausverwaltung <span class="marke post">WEG</span></h3>
+      <span class="erklaer">Diese Wohnung gehört zu einer WEG — die
+        Hausverwaltung verteilt die Nebenkosten. Trage je Mieter die
+        umlagefähige NK-Summe vom Abrechnungszettel direkt ein. ImmoCalc
+        verteilt nichts, sondern rechnet sie gegen die Vorauszahlung und erstellt
+        Saldo, PDF und Versand wie gewohnt.</span>
+      ${koerper}</div>`;
+}
+
+/* Deckung am Kostenfluss. */
+function deckungHtml() {
+  const kosten = (state.daten.checkliste || []).reduce((s, k) => s + (k.betrag || 0), 0);
+  const abschlaege = state.deckungAbschlaege != null ? state.deckungAbschlaege
+    : (state.daten.vorauszahlungen || []).reduce((s, v) => s + (v.betrag || 0), 0);
+  if (kosten <= 0) return '';
+  if (abschlaege <= 0) {
+    return `<div class="deckung"><div class="dstat"><span class="dl">Kosten erfasst</span>
+        <span class="dv">${eur(kosten)}</span></div>
+      <div class="dhinweis">Noch keine Abschläge erfasst — Deckung nicht bezifferbar.</div></div>`;
+  }
+  const umgelegt = state.deckungUmgelegt != null ? state.deckungUmgelegt : kosten;
+  const saldo = abschlaege - umgelegt;
+  const quote = Math.round(umgelegt / abschlaege * 100);
+  const nach = saldo < 0;
+  const rest = Math.round((kosten - umgelegt) * 100) / 100;
+  return `<div class="deckung ${nach ? 'neg' : 'pos'}">
+    <div class="dstat"><span class="dl">Abschläge der Mieter</span>
+      <span class="dv pos">${eur(abschlaege)}</span></div>
+    <div class="dstat"><span class="dl">Umgelegt · Deckung</span>
+      <span class="dv neg">${eur(umgelegt)} · ${quote}%</span></div>
+    <div class="dstat"><span class="dl">${nach ? 'Nicht gedeckt · Nachzahlung' : 'Überdeckt · Guthaben'}</span>
+      <span class="dv ${nach ? 'neg' : 'pos'}">${eur(Math.abs(saldo))}</span></div>
+    ${rest > 0.01 ? `<div class="dhinweis">Von ${eur(kosten)} erfassten Kosten sind
+      ${eur(rest)} noch nicht verteilt (fehlender Schlüssel oder nicht umlagefähig).</div>` : ''}
+  </div>`;
+}
+
+/* ---------- Haupt-Rendering ------------------------------------------- */
+
+const GEAR_SVG = `<svg viewBox="-2 -2 28 28" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2
+  2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0
+  0 1-4 0v-.09A1.65 1.65 0 0 0 8.6 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1
+  1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0
+  1 0-4h.09A1.65 1.65 0 0 0 3.6 8.6a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1
+  2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1
+  4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83
+  2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.2.63.77 1.06 1.43 1.09H22a2 2 0 0 1 0
+  4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>`;
+
+export async function zeichnen() {
+  const f = fortschrittRechnen();
+  const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
+
+  const kopf = `
+    <div class="fortschritt">
+      <div class="kopf">
+        <span class="gross">${f.fertig} von ${f.gesamt}</span>
+        <span class="klein">Positionen vollständig</span>
+      </div>
+      <div class="bahn"><i style="width:${anteil}%"></i></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button data-tab="pruef" aria-selected="${state.ansicht === 'pruef'}">Checkliste</button>
+      <button data-tab="ergebnis" aria-selected="${state.ansicht === 'ergebnis'}">Ergebnis</button>
+      <button data-tab="belege" aria-selected="${state.ansicht === 'belege'}">Belege</button>
+    </div>`;
+
+  let rumpf = '';
+  if (state.ansicht === 'pruef') {
+    const zListe = state.ablesungMaske?.zaehler || [];
+    if (zListe.length) state.setZLabels(generischeLabels(zListe));
+    const zBlock = zListe.length ? zaehlerBloecke(zListe) : new Map();
+
+    if (state.konfigModus) {
+      rumpf = konfigAnsichtHtml(zListe, zBlock);
+      inhalt.innerHTML = kopf + rumpf;
+      return;
+    }
+
+    const fluss = state.daten.sankey || { knoten: [], fluss: [] };
+    const flussKarte = fluss.fluss.length
+      ? `<div class="karte"><h3>Kostenfluss · erfasste Positionen</h3>
+          ${sankey(fluss.knoten, fluss.fluss,
+                   { format: eurKurz, breite: window.innerWidth < 520 ? 260 : 540 })}
+          ${deckungHtml()}
+         </div>`
+      : '';
+
+    const sortWahl = `<div class="sortleiste">
+        <span>Sortieren</span>
+        ${Object.entries({ status: 'Offen', betrag: 'Größe', name: 'Name' })
+          .map(([k, l]) => `<button data-sort="${k}"
+            aria-pressed="${state.sortierung === k}">${l}</button>`).join('')}
+        <button class="pos-konfig" data-pos-konfig
+          title="Positionen konfigurieren"
+          aria-label="Positionen konfigurieren">${GEAR_SVG}</button>
+      </div>`;
+
+    const sortiert = state.daten.checkliste
+      .map((k, i) => ({ k, i }))
+      .filter(({ k }) => !istImDetailPopup(k))
+      .sort((a, b) => SORTIERUNG[state.sortierung](a.k, b.k));
+    const bereiche = BEREICHE.map(() => []);
+    for (const eintrag of sortiert) {
+      bereiche[bereichIndex(eintrag.k.kostenart)].push(eintrag);
+    }
+    // N91 — im Heizungs-Kapitel fachliche Reihenfolge.
+    const heizRang = k => istHeizoelSammel(k) ? 0
+      : istWarmwasserPos(k) ? 1 : istHeizwaermePos(k) ? 2
+      : normUml(k.kostenart).includes('wartung') ? 4 : 3;
+    bereiche[1].sort((a, b) => heizRang(a.k) - heizRang(b.k));
+    const zeilen = bereiche.map((liste, bi) => {
+      const wz = bi < 3 ? zaehlerPanelHtml(BEREICH_IKON[bi], zListe, zBlock) : '';
+      if (!liste.length && !wz) return '';
+      const kopfKat = `<div class="kat-kopf"><span class="kat-ikon">${
+          kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
+          esc(BEREICHE[bi].titel)}</span></div>`;
+      // N199 — im Heizungs-Kapitel unter „Heizöl & Lieferungen" das Panel einbetten.
+      if (bi === 1 && wz && liste.some(({ k }) => istHeizoelSammel(k))) {
+        return kopfKat + liste.map(({ k, i }) =>
+          zeileHtml(k, i) + (istHeizoelSammel(k) ? wz : '')).join('');
+      }
+      return kopfKat + liste.map(({ k, i }) => zeileHtml(k, i)).join('') + wz;
+    }).join('');
+
+    rumpf = wegDirektHtml() + flussKarte + sortWahl +
+      zeilen + ablesenKnopfHtml() + abschlussHtml() + zeitraumFussHtml();
+  } else if (state.ansicht === 'ergebnis') {
+    rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
+  } else {
+    const gruppen = Object.entries(state.daten.belege_je_art || {})
+      .filter(([, liste]) => liste.length)
+      .sort(([a], [b]) => a.localeCompare(b, 'de'));
+    rumpf = state.daten.dokumente.length
+      ? gruppen.map(([art, liste]) => `<div class="karte">
+          <h3>${esc(art || 'Ohne Art')} · ${liste.length}</h3>
+          ${belegLinks(liste)}</div>`).join('')
+      : `<div class="empty"><div class="big">Noch keine Belege</div>
+          <p>Fotografiere in der Checkliste einen Beleg zu einer Position ab —
+             er wird in der Cloud abgelegt und erscheint dann hier.</p></div>`;
+  }
+
+  inhalt.innerHTML = kopf + rumpf;
+
+  if (state.ansicht === 'ergebnis') {
+    inhalt.innerHTML = kopf + await ergebnisHtml();
+  } else if (state.ansicht === 'pruef') {
+    montiereSchluessel();
+    // N108 (Fund 11) — mehrere Positionen können offen sein.
+    inhalt.querySelectorAll('[data-wasser-inline]').forEach(fuelleWasserInline);
+    inhalt.querySelectorAll('[data-heizoel-inline]').forEach(fuelleHeizoelInline);
+    inhalt.querySelectorAll('[data-strom-kette]')
+      .forEach(el => fuelleStromketteInline(el));
+  }
+}
+
+/* Die Auswahlfelder werden nach dem Zeichnen gesetzt. */
+function montiereSchluessel() {
+  if (!state.schluessel) return;
+  const WAHL = ['flaeche', 'personen', 'einheiten', 'prozentual', 'verbrauch'];
+  const titelMap = new Map(state.schluessel.schluessel.map(s => [s.wert, s.titel]));
+  const basis = WAHL.filter(w => titelMap.has(w))
+    .map(w => ({ wert: w, text: titelMap.get(w) }));
+  inhalt.querySelectorAll('[data-schluesselwahl]').forEach(ziel => {
+    const pid = ziel.dataset.schluesselwahl;
+    const jetzt = ziel.dataset.wert || '';
+    const optionen = basis.slice();
+    if (jetzt === NUR_EINHEIT_WAHL) {
+      optionen.push({ wert: NUR_EINHEIT_WAHL, text: '1 Einheit' });
+    } else if (jetzt && !WAHL.includes(jetzt)) {
+      optionen.push({ wert: jetzt, text: titelMap.get(jetzt) || jetzt });
+    }
+    auswahlfeld(ziel, {
+      optionen, wert: jetzt, label: 'Verteilen nach',
+      aenderung: async neu => {
+        if (neu === NUR_EINHEIT_WAHL) {
+          state.setEinzelWahl(Number(pid));
+          return zeichnen();
+        }
+        try {
+          await api(`/positionen/${pid}`,
+                    { method: 'PATCH', body: { schluessel: neu, nur_einheit: '' } });
+          state.setEinzelWahl(null);
+          await laden();
+        } catch (fehler) {
+          melde(String(fehler.message || fehler), 'neg');
+        }
+      },
+    });
+  });
+}
+
+/* Verteilung auto-speichern. */
+async function verteilungAutoSpeichern(vt) {
+  const felder = [...vt.querySelectorAll('[data-gewicht]')];
+  if (!felder.length) return;
+  const anteile = {};
+  felder.forEach(f => { anteile[f.dataset.gewicht] = Number(f.value) || 0; });
+
+  let basis = {};
+  try { basis = JSON.parse(vt.dataset.basis || '{}'); } catch { basis = {}; }
+  const unveraendert = Object.keys(anteile).length === Object.keys(basis).length
+    && Object.entries(anteile).every(([p, w]) => Number(basis[p]) === w);
+  if (unveraendert) return;
+  if (!Object.values(anteile).some(w => w > 0)) return;
+
+  vt.dataset.basis = JSON.stringify(anteile);
+  try {
+    await api(`/positionen/${vt.dataset.pid}`,
+              { method: 'PATCH', body: { anteile, abgeleitet: false } });
+    melde('✓ Verteilung gespeichert', 'pos');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function verteilungAbleiten(knopf) {
+  const meta = schluesselMeta(knopf.dataset.fuer);
+  if (!meta?.moeglich) return;
+  knopf.disabled = true;
+  try {
+    await api(`/positionen/${knopf.dataset.ableiten}`,
+              { method: 'PATCH', body: { anteile: meta.gewichte, abgeleitet: true } });
+    melde(`Gewichte aus den Stammdaten übernommen · ${meta.titel}`, 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function positionAnlegen(knopf) {
+  const kostenart = knopf.dataset.anlegen;
+  const i = Number(knopf.dataset.index);
+  const feld = inhalt.querySelector(`[data-neubetrag="${i}"]`);
+  const betrag = Number(feld?.value) || 0;
+  knopf.disabled = true;
+  knopf.textContent = 'Lege an …';
+  try {
+    await api(`/zeitraeume/${zid}/positionen`,
+              { method: 'POST', body: { kostenart, betrag } });
+    melde(betrag ? `„${kostenart}“ erfasst · ${eur(betrag)}`
+                 : `„${kostenart}“ angelegt — jetzt den Betrag eintragen`, 'pos');
+    state.offen.add(i);
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Anlegen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function einzelSetzen(pid, einheit) {
+  try {
+    await api(`/positionen/${pid}`,
+              { method: 'PATCH', body: { nur_einheit: einheit } });
+    state.setEinzelWahl(null);
+    melde(`Zu 100 % auf ${einheit}`, 'pos');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function betragSpeichern(feld) {
+  const pid = feld.dataset.betrag;
+  const roh = String(feld.value).trim().replace(',', '.');
+  if (roh === '') return;
+  const betrag = Number(roh);
+  if (!Number.isFinite(betrag)) return;
+  if (String(feld.dataset.wert) === String(betrag)) return;
+  feld.dataset.wert = String(betrag);
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body: { betrag } });
+    melde('✓ Betrag gespeichert', 'pos');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function anbieterSpeichern(feld) {
+  const kid = feld.dataset.anbieter;
+  if (!kid) return;
+  const wert = feld.value.trim();
+  if (String(feld.dataset.wert || '') === wert) return;
+  feld.dataset.wert = wert;
+  try {
+    await api(`/kostenarten/${kid}`, { method: 'PATCH', body: { lieferant: wert } });
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function kostenartWechseln(sel) {
+  const pid = sel.dataset.kostenartPos;
+  const neuFeld = sel.parentElement.querySelector('.ka-neu');
+  if (sel.value === '__neu__') {
+    if (neuFeld) { neuFeld.hidden = false; neuFeld.value = ''; neuFeld.focus(); }
+    return;
+  }
+  if (neuFeld) neuFeld.hidden = true;
+  if (sel.value === String(sel.dataset.wert || '')) return;
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body: { kostenart: sel.value } });
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    sel.value = sel.dataset.wert || sel.value;
+  }
+}
+
+async function kostenartNeu(feld) {
+  const pid = feld.dataset.kostenartNeu;
+  const neu = feld.value.trim();
+  if (!neu) return;
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body: { kostenart: neu } });
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+async function vorabPatch(pid, body) {
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body });
+    melde('✓ Teilbetrag gespeichert', 'pos');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function vorabNettoSpeichern(feld) {
+  const pid = feld.dataset.vorabNetto;
+  const roh = String(feld.value).trim().replace(',', '.');
+  const netto = roh === '' ? 0 : Number(roh);
+  if (!Number.isFinite(netto) || netto < 0) return;
+  if (netto === 0) {
+    state.vorabOffen.delete(Number(pid));
+    return vorabPatch(pid, { vorab_netto: 0, vorab_betrag: 0, vorab_einheit: '' });
+  }
+  return vorabPatch(pid, { vorab_netto: netto, vorab_betrag: vorabBrutto(netto) });
+}
+
+async function vorabEntfernen(knopf) {
+  const pid = Number(knopf.dataset.vorabEntfernen);
+  state.vorabOffen.delete(pid);
+  if (knopf.dataset.hat === '1') {
+    return vorabPatch(pid, { vorab_netto: 0, vorab_betrag: 0, vorab_einheit: '' });
+  }
+  return zeichnen();
+}
+
+async function wegDirektSpeichern(knopf) {
+  const eingaben = [...inhalt.querySelectorAll('[data-weg-betrag]')]
+    .map(f => ({ einheit: f.dataset.wegBetrag, betrag: Number(f.value) }))
+    .filter(x => x.betrag > 0);
+  if (!eingaben.length) {
+    return melde('Trage mindestens eine NK-Summe ein', 'neg');
+  }
+  knopf.disabled = true;
+  knopf.textContent = 'Übernehme …';
+  const bestehende = new Map((state.daten.checkliste || []).map(k => [k.kostenart, k]));
+  try {
+    for (const { einheit, betrag } of eingaben) {
+      const art = WEG_ART(einheit);
+      const vorhanden = bestehende.get(art);
+      if (vorhanden && vorhanden.position_id) {
+        await api(`/positionen/${vorhanden.position_id}`,
+                  { method: 'PATCH', body: { betrag } });
+      } else {
+        await api(`/zeitraeume/${zid}/positionen`, {
+          method: 'POST',
+          body: { kostenart: art, betrag, nur_einheit: einheit },
+        });
+      }
+    }
+    melde(`NK-Summe je Mieter übernommen · ${eingaben.length} ${
+      eingaben.length === 1 ? 'Mieter' : 'Mieter'}`, 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Werte je Mieter übernehmen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function positionEntfernen(knopf) {
+  const art = knopf.dataset.art;
+  const ja = await frage(`„${art}“ entfernen?`,
+    'Betrag und Verteilung dieser Position werden gelöscht. Die Kostenart '
+    + 'bleibt im Katalog der Immobilie stehen und lässt sich jederzeit neu '
+    + 'erfassen. Hinterlegte Belege bleiben unangetastet.',
+    { knopf: 'Entfernen', gefahr: true });
+  if (!ja) return;
+  knopf.disabled = true;
+  try {
+    await api(`/positionen/${knopf.dataset.entfernen}`, { method: 'DELETE' });
+    melde(`„${art}“ entfernt`, '');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function entwurfBestaetigen(pid, knopf) {
+  knopf.disabled = true;
+  knopf.textContent = 'Bestätige …';
+  try {
+    await api(`/entwuerfe/kostenposition/${pid}/bestaetigen`, { method: 'POST' });
+    melde('Position bestätigt', 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = '✓ Bestätigen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function entwurfVerwerfen(pid, art, knopf) {
+  knopf.disabled = true;
+  knopf.textContent = 'Setze zurück …';
+  try {
+    await api(`/entwuerfe/kostenposition/${pid}/verwerfen`, { method: 'POST' });
+    melde(`„${art}“ zurück im Prüfmodus — der Beleg bleibt erhalten`, '');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = '↩ Zurück zum Prüfen';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function wiederOeffnen(knopf) {
+  const ja = await frage('Zeitraum wieder öffnen?',
+    'Der Zeitraum wird wieder bearbeitbar und taucht in Fristen und '
+    + 'Erinnerungen erneut auf. Wer die Abrechnung schon bekommen hat, '
+    + 'bekommt sie dadurch nicht noch einmal.', { knopf: 'Wieder öffnen' });
+  if (!ja) return;
+  knopf.disabled = true;
+  try {
+    const antwort = await api(`/zeitraeume/${zid}/oeffnen`, { method: 'POST' });
+    const schon = antwort.bereits_versendet.length;
+    melde(schon
+      ? `Wieder geöffnet · ${schon} Partei(en) haben ihre Abrechnung bereits`
+      : 'Wieder geöffnet', 'pos');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+function versandWahl(plan) {
+  const zeile = (p, marke, klasse, unter) => `
+    <div class="vz">
+      <span class="vn">${esc(p.partei)}
+        <span class="vs">${esc(unter)}</span></span>
+      <span class="marke vm ${klasse}">${marke}</span>
+    </div>`;
+
+  const bereit = plan.parteien.filter(p => p.versandbereit);
+  const ohne = plan.parteien.filter(p => !p.versandbereit && !p.leerstand);
+  const leer = plan.parteien.filter(p => p.leerstand);
+  const mieter = bereit.length + ohne.length;
+
+  const liste = [
+    ...bereit.map(p => zeile(p, 'Mail', 'gut', p.adressen.join(' · '))),
+    ...ohne.map(p => zeile(p, 'Post', 'post',
+      'Keine Mailadresse — ausdrucken und schicken')),
+    ...leer.map(p => zeile(p, 'Leerstand', '', 'Bleibt beim Eigentümer')),
+  ].join('');
+
+  const satz = mieter
+    ? `${bereit.length} von ${mieter} ${mieter === 1 ? 'Mietpartei bekommt'
+        : 'Mietparteien bekommen'} die Abrechnung als PDF per Mail.`
+    : 'Es gibt keine Mietpartei zu beliefern — der Zeitraum lässt sich '
+      + 'trotzdem abschließen.';
+
+  return new Promise(fertig => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'immo-dlg vdlg';
+    dlg.innerHTML = `
+      <div class="dt">Abrechnung abschließen</div>
+      <p>${esc(plan.zeitraum)} · ${esc(satz)}</p>
+      <div class="vliste">${liste}</div>
+      ${bereit.length ? `<button class="btn"
+        data-wahl="senden">Abschließen und verschicken</button>` : ''}
+      <button class="btn leise" data-wahl="nur">Nur abschließen, nicht
+        verschicken</button>
+      <button class="btn leise" data-nein>Abbrechen</button>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.addEventListener('cancel', () => fertig(null));
+    dlg.addEventListener('click', e => {
+      const knopf = e.target.closest('[data-wahl]');
+      if (knopf) { fertig(knopf.dataset.wahl); dlg.close(); }
+      else if (e.target.closest('[data-nein]')) { fertig(null); dlg.close(); }
+    });
+    dlg.showModal();
+  });
+}
+
+async function abschliessen(knopf) {
+  const uebergehen = document.getElementById('uebergehen')?.checked || false;
+  knopf.disabled = true;
+  knopf.textContent = 'Prüfe Empfänger …';
+
+  let plan;
+  try {
+    plan = await api(`/zeitraeume/${zid}/versand`);
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Abrechnungen erstellen und versenden';
+    melde(String(fehler.message || fehler), 'neg');
+    return;
+  }
+
+  const weg = await versandWahl(plan);
+
+  if (!weg) {
+    knopf.disabled = false;
+    knopf.textContent = 'Abrechnungen erstellen und versenden';
+    return;
+  }
+
+  knopf.textContent = weg === 'senden' ? 'Verschicke …' : 'Schließe ab …';
+  try {
+    const antwort = await api(`/zeitraeume/${zid}/abschliessen`, {
+      method: 'POST', body: { versenden: weg === 'senden',
+                              offene_uebergehen: uebergehen },
+    });
+    melde(antwort.versendet.length
+      ? `${antwort.versendet.length} Abrechnung(en) verschickt an ${antwort.versendet.join(', ')}`
+      : 'Zeitraum abgeschlossen — versendet wurde nichts.',
+      antwort.versendet.length ? 'pos' : '');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    knopf.textContent = 'Abrechnungen erstellen und versenden';
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+/* ---------- Laden ------------------------------------------------------ */
+
+export async function laden() {
+  if (!zid) {
+    inhalt.innerHTML = '<div class="empty"><div class="big">Kein Zeitraum gewählt</div></div>';
+    return;
+  }
+  try {
+    state.setDaten(await api(`/zeitraeume/${zid}`));
+  } catch {
+    inhalt.innerHTML = `<div class="empty"><div class="big">Zeitraum nicht gefunden</div></div>`;
+    return;
+  }
+  try {
+    state.setSchluessel(await api(`/zeitraeume/${zid}/schluessel`));
+  } catch {
+    state.setSchluessel(null);
+  }
+  state.setLeerstaende(new Set(
+    (state.schluessel?.schluessel || []).flatMap(s => s.leerstand || [])));
+  try {
+    state.setAnhaenger(await api(`/dokumente/anhaenger/${zid}`));
+  } catch {
+    state.setAnhaenger(null);
+  }
+  try {
+    state.setAblesungMaske(await api(`/zeitraeume/${zid}/ablesung`));
+  } catch {
+    state.setAblesungMaske(null);
+  }
+  // N213 — Öl/Warmwasser nur im Laufer-Modell.
+  state.setHeizoelKosten(0);
+  state.setWwKosten(0);
+  const { istLaufer } = await import('./modell.js');
+  if (istLaufer()) {
+    try {
+      const b = await api(`/objekte/${encodeURIComponent(state.daten.objekt)}`
+        + `/heizoel/bewertung?zeitraum_id=${zid}`);
+      state.setHeizoelKosten(b?.verbrauch_kosten || 0);
+      const zl = state.ablesungMaske?.zaehler || [];
+      const wwH = zl.find(z => wasserArt(z) === 'Warmwasser' && !z.hauptzaehler_id);
+      const vol = wwH?.verbrauch != null ? wwH.verbrauch
+        : zl.filter(z => wasserArt(z) === 'Warmwasser' && z.hauptzaehler_id)
+            .reduce((su, z) => su + (z.verbrauch || 0), 0);
+      const sp = state.heizoelKosten > 0 ? await api(
+        `/objekte/${encodeURIComponent(state.daten.objekt)}/waerme/split`
+        + `?oel_kosten=${state.heizoelKosten}&oel_liter=${b?.verbrauch_liter || 0}`
+        + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
+      state.setWwKosten(sp?.ww_kosten || 0);
+    } catch { state.setHeizoelKosten(0); state.setWwKosten(0); }
+  }
+  // N213 — HKV nur im Laufer-Modell.
+  state.setHeizverteiler([]);
+  if (istLaufer()) {
+    try {
+      const hv = await api(`/objekte/${encodeURIComponent(state.daten.objekt)}/heizverteiler`);
+      state.setHeizverteiler(hv?.heizverteiler || []);
+    } catch { state.setHeizverteiler([]); }
+  }
+  try {
+    const ab = await api(`/zeitraeume/${zid}/abrechnung`);
+    state.setDeckungAbschlaege(ab?.gesamt?.abschlaege ?? null);
+    state.setDeckungUmgelegt(ab?.gesamt?.auslagen ?? null);
+  } catch {
+    state.setDeckungAbschlaege(null);
+    state.setDeckungUmgelegt(null);
+  }
+  try {
+    const o = await api(`/objekte/${state.daten.objekt}`);
+    state.setObjektEinheiten((o.einheiten || [])
+      .filter(e => typeof e === 'string' || e.nk_abrechnung !== false)
+      .map(e => typeof e === 'string'
+        ? e : (e.bezeichnung || e.name || e.einheit || '')).filter(Boolean));
+  } catch {
+    state.setObjektEinheiten([]);
+  }
+  state.setEautoZug(null);
+  if ((state.ablesungMaske?.zaehler || []).some(z => z.eauto)) {
+    try {
+      state.setEautoZug(await api(`/zeitraeume/${zid}/eauto`, { method: 'POST' }));
+      if (state.eautoZug?.gespeichert) {
+        state.setAblesungMaske(await api(`/zeitraeume/${zid}/ablesung`));
+      }
+    } catch (fehler) {
+      state.setEautoZug({ ok: false, hinweis: String(fehler.message || fehler),
+                          nutzer: [] });
+    }
+  }
+  state.setStromketteDaten(
+    (istLaufer() && (state.daten.checkliste || []).some(istStromPos))
+      ? await api(`/zeitraeume/${zid}/stromkette`).catch(() => null) : null);
+  state.setChipMap(baueChipMap());
+  const jahrLabel = state.daten.jahr || Number((state.daten.ende || '').slice(0, 4)) || '';
+  titel.textContent = `Abrechnungszeitraum ${jahrLabel}`.trim();
+  sub.textContent = `${state.daten.label} · ${state.daten.objekt_name}`;
+  fristChipSetzen();
+  await zeichnen();
+}
+
+/* ---------- Event-Delegation ------------------------------------------ */
+
+export function initHandlers() {
+  document.getElementById('back').addEventListener('click', () => history.length > 1
+    ? history.back() : location.href = 'index.html');
+
+  // Rollen: sieben Einträge sind hoch — Feld hochscrollen, wenn Platz fehlt.
+  inhalt.addEventListener('click', e => {
+    const knopf = e.target.closest('.vt .auswahl-knopf');
+    if (!knopf || knopf.getAttribute('aria-expanded') === 'true') return;
+    const noetig = (state.schluessel?.schluessel.length || 7) * 44 + 120;
+    if (window.innerHeight - knopf.getBoundingClientRect().bottom < noetig) {
+      rolleUnterDieKopfzeile(knopf, 150);
+    }
+  }, true);
+
+  // Gewichts-focusout speichert die Verteilung.
+  inhalt.addEventListener('focusout', e => {
+    const feld = e.target.closest?.('[data-gewicht]');
+    if (!feld) return;
+    const vt = feld.closest('.vt');
+    if (!vt || vt.contains(e.relatedTarget)) return;
+    verteilungAutoSpeichern(vt);
+  });
+
+  // Prozente beim Tippen mitrechnen.
+  inhalt.addEventListener('input', e => {
+    if (e.target.matches('[data-vorab-netto]')) {
+      const netto = Number(String(e.target.value).replace(',', '.')) || 0;
+      const ziel = e.target.closest('.vorab')?.querySelector('[data-vorab-brutto]');
+      if (ziel) ziel.textContent = bruttoAnzeige(netto);
+      return;
+    }
+    if (!e.target.matches('[data-gewicht]')) return;
+    const vt = e.target.closest('.vt');
+    const felder = [...vt.querySelectorAll('[data-gewicht]')];
+    const summe = felder.reduce((s, f) => s + (Number(f.value) || 0), 0);
+    const rest = Number(vt.dataset.rest || 0);
+    felder.forEach(f => {
+      const ziel = f.parentElement.querySelector('[data-anteil]');
+      if (ziel) ziel.textContent = prozentText(f.value, summe);
+      const euroZiel = f.parentElement.querySelector('[data-euro]');
+      if (euroZiel) euroZiel.textContent = eur(summe > 0
+        ? rest * (Number(f.value) || 0) / summe : 0);
+    });
+  });
+
+  // change: die vielen Feld-Speicherwege.
+  inhalt.addEventListener('change', e => {
+    if (e.target.id === 'uebergehen') {
+      const knopf = document.getElementById('abschlussKnopf');
+      if (knopf) knopf.disabled = !e.target.checked;
+      return;
+    }
+    if (e.target.matches('[data-konf-sicht]')) return konfSichtSetzen(e.target);
+    if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
+    if (e.target.matches('[data-anbieter]')) anbieterSpeichern(e.target);
+    if (e.target.matches('[data-endstand]')) endstandSpeichern(e.target);
+    if (e.target.matches('[data-anfangstand]')) anfangstandSpeichern(e.target);
+    if (e.target.matches('[data-anfangdatum],[data-enddatum]')) datumGeaendert(e.target);
+    if (e.target.matches('[data-strom-jahr]')) stromJahreswertSpeichern(e.target);
+    if (e.target.matches('[data-strom-rolle-set]')) stromRolleSetzen(e.target);
+    if (e.target.matches('[data-strom-menge]')) stromMengeSpeichern(e.target);
+    if (e.target.matches('[data-sk-anteil]')) stromAnteilSpeichern(e.target);
+    if (e.target.matches('[data-wasser-pid],[data-wasser-ka]')) wasserBetragSpeichern(e.target);
+    if (e.target.matches('[data-wasser-rechnung]')) {
+      wasserRechnungsmengeSpeichern(e.target);
+    }
+    if (e.target.matches('[data-kostenart-pos]')) kostenartWechseln(e.target);
+    if (e.target.matches('[data-kostenart-neu]')) kostenartNeu(e.target);
+    if (e.target.matches('[data-vorab-netto]')) vorabNettoSpeichern(e.target);
+    if (e.target.matches('[data-vorab-s35]')) {
+      vorabPatch(e.target.dataset.vorabS35, { vorab_s35: e.target.checked });
+    }
+  });
+
+  // click: die zentrale Dispatch-Zeile.
+  inhalt.addEventListener('click', async e => {
+    const tab = e.target.closest('[data-tab]');
+    if (tab) { state.setAnsicht(tab.dataset.tab); return zeichnen(); }
+
+    const sort = e.target.closest('[data-sort]');
+    if (sort) { state.setSortierung(sort.dataset.sort); return zeichnen(); }
+    if (e.target.closest('[data-pos-konfig]')) return konfigModusUmschalten();
+    const kOpt = e.target.closest('[data-konf-opt]');
+    if (kOpt) return konfOptSetzen(kOpt);
+
+    const zt = e.target.closest('[data-zu-toggle]');
+    if (zt) {
+      const panel = zt.closest('.zu-panel');
+      const block = panel?.dataset.zuBlock || '';
+      const jetztOffen = !panel.classList.contains('offen');
+      if (jetztOffen) state.zaehlerOffen.add(block); else state.zaehlerOffen.delete(block);
+      panel.classList.toggle('offen', jetztOffen);
+      zt.setAttribute('aria-expanded', String(jetztOffen));
+      return;
+    }
+    const eToggle = e.target.closest('[data-einheit-toggle]');
+    if (eToggle) return einheitToggle(eToggle);
+
+    const dUeb = e.target.closest('[data-datum-uebernehmen]');
+    if (dUeb) return datumUebernehmen(dUeb);
+
+    const abschluss = e.target.closest('[data-abschluss]');
+    if (abschluss) return abschliessen(abschluss);
+
+    const oeffnen = e.target.closest('[data-oeffnen]');
+    if (oeffnen) return wiederOeffnen(oeffnen);
+
+    const ableiten = e.target.closest('[data-ableiten]');
+    if (ableiten) return verteilungAbleiten(ableiten);
+
+    const anlegen = e.target.closest('[data-anlegen]');
+    if (anlegen) return positionAnlegen(anlegen);
+
+    const einzel = e.target.closest('[data-einzel-einheit]');
+    if (einzel) return einzelSetzen(einzel.dataset.einzelPid,
+                                    einzel.dataset.einzelEinheit);
+
+    const vorabAuf = e.target.closest('[data-vorab-oeffnen]');
+    if (vorabAuf) {
+      state.vorabOffen.add(Number(vorabAuf.dataset.vorabOeffnen));
+      return zeichnen();
+    }
+    const vorabE = e.target.closest('[data-vorab-einheit-pid]');
+    if (vorabE) return vorabPatch(vorabE.dataset.vorabEinheitPid,
+                                  { vorab_einheit: vorabE.dataset.vorabEinheit });
+    const vorabWeg = e.target.closest('[data-vorab-entfernen]');
+    if (vorabWeg) return vorabEntfernen(vorabWeg);
+
+    const fertig = e.target.closest('[data-fertig]');
+    if (fertig) { state.offen.delete(Number(fertig.dataset.fertig)); return zeichnen(); }
+
+    const wegSpeichern = e.target.closest('[data-weg-speichern]');
+    if (wegSpeichern) return wegDirektSpeichern(wegSpeichern);
+
+    const entwJa = e.target.closest('[data-entwurf-ja]');
+    if (entwJa) return entwurfBestaetigen(entwJa.dataset.entwurfJa, entwJa);
+
+    const entwNein = e.target.closest('[data-entwurf-nein]');
+    if (entwNein) return entwurfVerwerfen(entwNein.dataset.entwurfNein,
+                                          entwNein.dataset.art, entwNein);
+
+    const entfernen = e.target.closest('[data-entfernen]');
+    if (entfernen) return positionEntfernen(entfernen);
+
+    const auf = e.target.closest('[data-auf]');
+    if (auf) {
+      if (auf.hasAttribute('data-noexpand')) return;
+      const i = Number(auf.dataset.auf);
+      state.offen.has(i) ? state.offen.delete(i) : state.offen.add(i);
+      return zeichnen();
+    }
+
+    const anhaengenKnopf = e.target.closest('[data-anhaengen]');
+    if (anhaengenKnopf) return anhaengen(anhaengenKnopf.dataset.anhaengen);
+
+    const hoAdd = e.target.closest('[data-heizoel-add]');
+    if (hoAdd) return heizoelHinzufuegen(hoAdd);
+    const hoWeg = e.target.closest('[data-heizoel-weg]');
+    if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg);
+    const wsch = e.target.closest('[data-wasser-schluessel]');
+    if (wsch) {
+      state.setWasserSchluessel(wsch.dataset.wasserSchluessel);
+      const box = wsch.closest('[data-wasser-inline]');
+      if (box) return fuelleWasserInline(box);
+      return zeichnen();
+    }
+    const belegWeg = e.target.closest('[data-beleg-loesen]');
+    if (belegWeg) { e.preventDefault(); return belegLoesen(belegWeg.dataset.belegLoesen); }
+    const stBelegWeg = e.target.closest('[data-strom-beleg-weg]');
+    if (stBelegWeg) { e.preventDefault();
+      return stromBelegLoesen(stBelegWeg.dataset.stromBelegWeg,
+                              stBelegWeg.dataset.stromBelegName); }
+    const gmSpeichern = e.target.closest('[data-geeichte-menge-speichern]');
+    if (gmSpeichern) { e.preventDefault(); return geeichteMengeSpeichern(gmSpeichern); }
+    const wLeer = e.target.closest('[data-wasser-leeren]');
+    if (wLeer) { e.preventDefault(); return wasserPositionLeeren(); }
+    const herk = e.target.closest('[data-herkunft]');
+    if (herk) return stromHerkunftSetzen(herk);
+    const stAdd = e.target.closest('[data-strom-add]');
+    if (stAdd) return stromZaehlerAnlegen(stAdd);
+    const stWeg = e.target.closest('[data-strom-weg]');
+    if (stWeg) return stromZaehlerEntfernen(stWeg);
+    const gAdd = e.target.closest('[data-garten-anlegen]');
+    if (gAdd) return gartenAnlegen(gAdd);
+    const hkvAdd = e.target.closest('[data-hkv-add]');
+    if (hkvAdd) return hkvHinzufuegen(hkvAdd);
+    const hkvWeg = e.target.closest('[data-hkv-weg]');
+    if (hkvWeg) return hkvEntfernen(hkvWeg.dataset.hkvWeg);
+    const umb = e.target.closest('[data-zaehler-umbenennen]');
+    if (umb) { e.preventDefault(); e.stopPropagation();
+      return zaehlerUmbenennen(umb.dataset.zaehlerUmbenennen); }
+
+    const beleg = e.target.closest('[data-beleg]');
+    if (beleg) {
+      e.preventDefault();
+      belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`,
+                   beleg.dataset.name
+                   || beleg.textContent.replace(/^PDF · /, '').trim(),
+                   beleg.getAttribute('title') || '');
+      return;
+    }
+
+    const scan = e.target.closest('[data-scan]');
+    if (scan) {
+      state.setScanZiel({ kostenart: scan.dataset.scan, knopf: scan });
+      document.getElementById('scanFeld').click();
+      return;
+    }
+
+    const ablage = e.target.closest('[data-ablage]');
+    if (ablage) {
+      const jahr = Number((state.daten.ende || '').slice(0, 4)) || new Date().getFullYear();
+      const p = new URLSearchParams({
+        objekt: state.daten.objekt, kostenart: ablage.dataset.ablage,
+        zuordnenZeitraum: String(state.daten.id), jahr: String(jahr),
+        zurueck: location.pathname + location.search,
+      });
+      location.href = 'eingang.html?' + p.toString();
+      return;
+    }
+  });
+
+  // Zahnrad-Konfig-Knopf
+  inhalt.addEventListener('click', e => {
+    if (e.target.closest('#zaehlerKonfig')) zaehlerKonfig();
+  });
+
+  // Scan-Feld: nach Aufnahme Beleg direkt an der Position ablegen.
+  document.getElementById('scanFeld').addEventListener('change', async e => {
+    const feld = e.target;
+    const dateien = [...feld.files];
+    feld.value = '';
+    const ziel = state.scanZiel;
+    state.setScanZiel(null);
+    if (!dateien.length || !ziel) return;
+
+    const knopf = ziel.knopf;
+    const beschriftung = knopf.querySelector('.st');
+    const urText = beschriftung ? beschriftung.textContent : '';
+    knopf.disabled = true;
+    if (beschriftung) beschriftung.textContent = 'Verarbeite …';
+
+    const istPdf = d => d.type === 'application/pdf' || /\.pdf$/i.test(d.name || '');
+    const erstes = dateien.find(d => !istPdf(d)) || dateien[0];
+    const jahr = Number((state.daten.ende || '').slice(0, 4)) || new Date().getFullYear();
+
+    try {
+      const [ergebnis, vorschlag] = await Promise.all([
+        belegScannen(dateien, {
+          objekt: state.daten.objekt, kategorie: 'Nebenkosten',
+          kostenart: ziel.kostenart, jahr, zeitraumId: state.daten.id,
+          titel: ziel.kostenart,
+        }),
+        (await import('./belege.js')).erkennen(erstes, ziel.kostenart).catch(() => null),
+      ]);
+      if (!ergebnis) {
+        knopf.disabled = false;
+        if (beschriftung) beschriftung.textContent = urText;
+        return;
+      }
+      const seiten = ergebnis.seiten || 1;
+      if (beschriftung) {
+        beschriftung.textContent = `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''}`
+          + (ergebnis.groesse ? ` · ${lesbareGroesse(ergebnis.groesse)}` : '');
+      }
+      const uebernommen = vorschlag
+        ? await betragVorschlagen(ziel.kostenart, vorschlag) : false;
+      if (!uebernommen && !erkennungHatWert(vorschlag)) {
+        melde('Beleg gespeichert — kein Betrag automatisch erkannt. '
+          + 'Bitte den Betrag von Hand eintragen.', '');
+      }
+      await laden();
+    } catch (fehler) {
+      if (beschriftung) beschriftung.textContent = 'Fehlgeschlagen';
+      knopf.disabled = false;
+      melde(String(fehler.message || fehler), 'neg');
+    }
+  });
+
+  // Drag&Drop-Overlay pro Zeile initialisieren.
+  initBelegDrop();
+}
