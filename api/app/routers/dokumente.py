@@ -60,8 +60,15 @@ from ..dokumente.ki_werte import _ki_datum, _ki_text, _ki_zahl
 from ..dokumente.datum import _aus_datum, _jahr_mit_fallback, _zum_datum
 from ..dokumente.strom_hilfen import (_strom_hinweis, _strom_in_felder,
                                       _zeitraum_text)
-from ..dokumente.darstellung import (_anh_zeige, _beleg_anbieter, _beleg_karte,
-                                     _feld_wert, _ist_kostenfrei, _kurz)
+from ..dokumente.darstellung import (VERMISST, _anh_zeige, _beleg_anbieter,
+                                     _beleg_karte, _feld_wert,
+                                     _ist_kostenfrei, _kurz, _vorschlag, _zeige)
+from ..dokumente.eintraege import (_UMKLASS_ZIEL, _bewahrt, _eintrag_kern,
+                                   _eintrag_wo)
+from ..dokumente.dedup import (DUPLIKAT_ORDNER, _dedup_rang, _duplikat_rang,
+                               _duplikat_ziel, _keeper_erbt_luecken)
+from ..dokumente.immocalc_steckbrief import _FELD_TITEL, _immocalc_text
+from ..dokumente.filter import _dokument_passt
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/dokumente", tags=["dokumente"])
@@ -77,93 +84,6 @@ def _ki_key(session: Session) -> str:
 def _ki_modell(session: Session) -> str:
     """Das hinterlegte KI-Modell — leer heißt: Vorgabe aus `kiauslese`."""
     return _lies(session, S_KI_MODELL)
-
-# Status eines Eintrags, dessen Datei beim Abgleich nicht mehr auffindbar war
-# (CXXVII). Ein vierter Wert neben "neu" und "zugeordnet" — additiv, das
-# Datenmodell bleibt unverändert. Kommt die Datei zurück, fällt er wieder weg.
-VERMISST = "vermisst"
-
-
-# --------------------------------------------------------------------------
-# Vermutung und Darstellung
-# --------------------------------------------------------------------------
-
-def _vorschlag(d: Dokument) -> dict:
-    """Was die Ablage vermutet: Art, Jahr — und wie sicher sie sich ist.
-
-    Die Worterkennung kommt aus `ocr` — dieselbe Liste, die auch den
-    abfotografierten Beleg einordnet. Zwei Listen wären zwei Wahrheiten. Beim
-    Dateinamen wird sie streng gelesen (`kategorie_aus_dateiname`): ein Name
-    ist kurz, ein Zufallstreffer mittelt sich dort nicht weg, und an dieser
-    Vermutung hängt die Automatik. Ein Kamerascan heißt „scan.pdf"; dort
-    liefert die Texterkennung den Vorschlag schon beim Hochladen mit.
-
-    `sicher` sagt, ob die Vermutung gut genug für eine Ablage ohne Rückfrage
-    ist. Alles andere wird angezeigt, aber nicht ausgeführt.
-    """
-    lesbar = d.dateiname.lower().replace("_", " ").replace("-", " ")
-    genannt = _art_im_namen(lesbar)
-    erkannt, punkte = ocr.kategorie_aus_dateiname(lesbar)
-    kategorie = d.kategorie or genannt or erkannt
-    jahr, monat = datum_aus_namen(d.dateiname)
-    return {
-        "kategorie": kategorie,
-        "jahr": d.jahr or jahr,
-        # Monat und Betrag stehen oft schon im Namen, den der Nutzer selbst
-        # vergeben hat („2025-10-oel-2729,91€.pdf"). Beim Einsortieren sollen
-        # sie nicht verlorengehen, nur weil kein Beleg gelesen wurde (CXXIII).
-        "monat": monat,
-        # CLXXXI: der gespeicherte Betrag hat Vorrang. Der Name bleibt die
-        # Anzeige im Ordner, aber er wird bei jeder Korrektur zerlegt und neu
-        # gesetzt — als Grundlage einer Kostenposition ist das zu wackelig.
-        "betrag": d.betrag if d.betrag is not None
-        else betrag_aus_namen(d.dateiname),
-        # Worum es geht — feiner als die Art, für den Dateinamen.
-        "sache": ocr.sache_aus_dateiname(lesbar),
-        "sicher": bool(d.kategorie or genannt
-                       or (erkannt and punkte >= ocr.MINDESTPUNKTE)),
-    }
-
-
-def _zeige(d: Dokument, objekte: dict[int, Objekt]) -> dict:
-    o = objekte.get(d.objekt_id) if d.objekt_id else None
-    return {
-        "id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
-        "groesse": d.groesse, "status": d.status,
-        "kategorie": d.kategorie, "jahr": d.jahr,
-        # CLXXI: auf welche Zeile der Abrechnung der Beleg zeigt.
-        "kostenart": d.kostenart,
-        # CLXXXI/CLXXXIII: der Rechnungsbetrag und die Kostenposition, in die
-        # er eingerechnet ist. `position_id` leer heisst: noch nicht übernommen.
-        "betrag": d.betrag,
-        "position_id": d.position_id,
-        # CLXXII: das Rechnungsdatum tagesgenau — daran entscheidet sich, in
-        # welchen Abrechnungszeitraum der Beleg fällt.
-        "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
-        "erkannt_am": d.erkannt_am.isoformat() if d.erkannt_am else None,
-        # CCLXXIII: die KI-Einordnung — ein bis zwei kurze Sätze zum Beleg.
-        # Leer, solange die KI noch nichts geliefert hat; das Frontend zeigt
-        # den Bereich dann einfach nicht.
-        "ki_einordnung": d.ki_einordnung or "",
-        # CCLXXIV: das Raster der KI-Auslese — erkannte Liegenschaft, Einheit
-        # und die typspezifischen Felder (Mieter, Jahresbeitrag, Restschuld …).
-        # Additiv; das Prüfblatt belegt daraus die Eingaben vor. Leer, solange
-        # die KI nichts geliefert hat.
-        "ki_immobilie": d.ki_immobilie or "",
-        "ki_einheit": d.ki_einheit or "",
-        "ki_felder": d.ki_felder or {},
-        "zeitraum_id": d.zeitraum_id,
-        "objekt": o.slug if o else None,
-        "objekt_name": o.name if o else None,
-        # Ein Eintrag ohne Datei in der Cloud — nur noch zu entfernen oder
-        # neu einzuscannen. Ehrlich anzeigen statt so tun, als läge er dort.
-        "abgelegt": d.pfad.startswith("/") and d.status != VERMISST,
-        # CXXVII: der Abgleich hat die Datei in der Cloud nicht mehr gefunden.
-        # Der Eintrag bleibt stehen — gelöscht wird nichts —, aber er tut nicht
-        # so, als läge die Datei noch da.
-        "vermisst": d.status == VERMISST,
-        "vorschlag": _vorschlag(d),
-    }
 
 
 # --------------------------------------------------------------------------
@@ -663,22 +583,6 @@ def abgleich(session: Session = Depends(get_session)) -> dict:
 # --------------------------------------------------------------------------
 # Liste mit Filtern — eine Ansicht für Eingang und Ablage
 # --------------------------------------------------------------------------
-
-def _dokument_passt(d: Dokument, *, ziel_id, kategorie, kostenart, jahr,
-                    status, zeitraum, begriff) -> bool:
-    """Ob ein Beleg in einen Filter passt — die eine Wahrheit für Liste,
-    Facette und die Sammelaktion (`warte_archiv`). `.immocalc`-Steckbriefe
-    fallen immer heraus; `kostenart=""` zählt über alle Kostenarten."""
-    return (not _ist_sidecar(d.dateiname)
-            and (not ziel_id or d.objekt_id == ziel_id)
-            and (not kategorie or d.kategorie == kategorie)
-            and (not kostenart
-                 or kostenart_normalisieren(d.kostenart) == kostenart)
-            and (jahr is None or d.jahr == jahr)
-            and (not status or d.status == status)
-            and (zeitraum is None or d.zeitraum_id == zeitraum)
-            and (not begriff or begriff in d.dateiname.lower()))
-
 
 @router.get("")
 def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
@@ -1206,66 +1110,6 @@ def belege_zum_eintrag(slug: str, typ: str, eid: int,
         if not _ist_sidecar(d.dateiname) and d.id != quelle]
     unter.sort(key=lambda x: (-(x["jahr"] or 0), x["dateiname"].lower()))
     return {"haupt": haupt, "unter": unter}
-
-
-# CCCXXIV — einen Eintrag in eine andere Rubrik überführen. Wohin: Kurzname →
-# Zieltyp und (bei Zahlungen) die feste Kategorie/Turnus. Bewusst auf den
-# „Erwerb/Steuer"-Cluster beschränkt, wo eine Umklassifizierung fachlich vorkommt.
-_UMKLASS_ZIEL = {
-    "erwerbskosten": {"typ": "zahlung", "kategorie": "Erwerbsnebenkosten",
-                      "turnus": "einmalig", "absetzbar": False},
-    "zahlungen": {"typ": "zahlung", "kategorie": "Steuer",
-                  "turnus": "jaehrlich", "absetzbar": True},
-    "notarvertraege": {"typ": "notarvertrag"},
-}
-
-
-def _eintrag_kern(eintrag) -> dict:
-    """Die übertragbaren Felder eines Eintrags — modellübergreifend. Das Jahr
-    kommt aus `jahr` (Zahlung) oder dem Beurkundungsdatum (Notarvertrag).
-
-    Alles, was der Quelltyp mitbringt, wandert mit: der alte Eintrag wird nach
-    der Überführung gelöscht, also ist jedes hier vergessene Feld endgültig weg.
-    `datum`, `notar` und `urnr` gibt es nur am Notarvertrag — sie werden
-    durchgereicht, damit ein Hin und Her (Notarvertrag → Zahlung → Notarvertrag)
-    aus einem tagesgenauen Beurkundungsdatum nicht den 1. Januar macht und die
-    Urkundenrollennummer nicht verliert."""
-    jahr = getattr(eintrag, "jahr", None)
-    datum = getattr(eintrag, "datum", None)
-    if not jahr:
-        jahr = datum.year if datum else None
-    return {
-        "art": (getattr(eintrag, "art", None)
-                or getattr(eintrag, "bezeichnung", None) or "Sonstiges"),
-        "betrag": getattr(eintrag, "betrag", 0.0) or 0.0,
-        "jahr": jahr,
-        "datum": datum,
-        "notar": getattr(eintrag, "notar", "") or "",
-        "urnr": getattr(eintrag, "urnr", "") or "",
-        "notiz": getattr(eintrag, "notiz", "") or "",
-        "beteiligte": getattr(eintrag, "beteiligte", "") or "",
-        "quelle_dokument_id": getattr(eintrag, "quelle_dokument_id", None),
-    }
-
-
-def _bewahrt(kern: dict) -> str:
-    """Die Notiz für ein Ziel, das Notar, Urkundenrolle, Beurkundungsdatum und
-    Parteien gar nicht kennt (eine `Zahlung` hat diese Felder nicht).
-
-    Ohne diese Zeile wären sie nach dem Löschen des alten Eintrags weg — die
-    Urkundenrollennummer steht dann nur noch auf dem Papier. Angehängt wird
-    additiv, die vorhandene Notiz bleibt vorn stehen."""
-    teile = [t for t in (
-        f"Notar: {kern['notar']}" if kern["notar"] else "",
-        f"URNr: {kern['urnr']}" if kern["urnr"] else "",
-        (f"beurkundet {kern['datum'].strftime('%d.%m.%Y')}"
-         if kern["datum"] else ""),
-        f"Parteien: {kern['beteiligte']}" if kern["beteiligte"] else "",
-    ) if t]
-    if not teile:
-        return kern["notiz"]
-    zusatz = "Aus dem Notarvertrag übernommen — " + " · ".join(teile)
-    return f"{kern['notiz']}\n{zusatz}".strip() if kern["notiz"] else zusatz
 
 
 class UmklassifizierenIn(BaseModel):
@@ -2754,24 +2598,6 @@ def _gehoert_zum_objekt(session: Session, eintrag, o: Objekt) -> bool:
     return getattr(eintrag, "objekt_id", None) == o.id
 
 
-def _eintrag_wo(eintrag) -> str:
-    """Wie ein bestehender Eintrag in der Antwort heisst — dieselbe knappe
-    Benennung wie in den `_entwurf_*`-Bauplänen."""
-    if isinstance(eintrag, Notarvertrag):
-        return eintrag.art or "Notarvertrag"
-    if isinstance(eintrag, Zahlung):
-        return f"{eintrag.art} {eintrag.jahr}".strip()
-    if isinstance(eintrag, Kredit):
-        return eintrag.bezeichnung or "Kredit"
-    if isinstance(eintrag, Versicherung):
-        return eintrag.art or "Versicherung"
-    if isinstance(eintrag, Miete):
-        return eintrag.partei or eintrag.einheit or "Mietverhältnis"
-    if isinstance(eintrag, Kostenposition):
-        return eintrag.kostenart or "Kostenposition"
-    return type(eintrag).__name__
-
-
 def _eintrag_holen(session: Session, an_typ: str, an_id: Optional[int],
                    o: Objekt):
     """Der bestehende Eintrag, an den der Beleg gehängt werden soll (CCCXI).
@@ -2974,18 +2800,6 @@ def _duplikat_weg(session: Session, client, weg: Dokument,
     return geloescht
 
 
-def _dedup_rang(d: Dokument) -> tuple[int, int, int, int]:
-    """Keeper-Wahl beim Scan-Dedup — der kleinste Schlüssel bleibt (CD).
-
-    Vorrang: verbucht (`position_id`) vor unverbucht, dann ein Beleg mit Betrag
-    vor einem ohne, dann der detailliertere (längere) Name, zuletzt der neuere
-    (grössere `id`). Also: verbucht > hat Betrag > detaillierterer Name > neuer."""
-    return (0 if d.position_id else 1,
-            0 if d.betrag else 1,
-            -len(d.dateiname or ""),
-            -(d.id or 0))
-
-
 def _byte_gleiche_geschwister(session: Session, client, d: Dokument,
                               inhalt: bytes) -> list[Dokument]:
     """Andere Belege desselben Objekts, die byte-gleich zu `d` sind (CD).
@@ -3013,34 +2827,6 @@ def _byte_gleiche_geschwister(session: Session, client, d: Dokument,
         if hashlib.sha1(roh).hexdigest() == ziel_sha1:
             gleiche.append(k)
     return gleiche
-
-
-def _keeper_erbt_luecken(keeper: Dokument, quellen: list[Dokument]) -> bool:
-    """Füllt fehlende Angaben des Keepers additiv aus den weichenden byte-
-    gleichen Kopien (N54). Nur Lücken werden gefüllt, nie ein vorhandener Wert
-    überschrieben; die Quellen stehen in Vorzugsreihenfolge (der frisch
-    abgelegte Beleg zuerst). Gibt zurück, ob sich etwas geändert hat."""
-    geaendert = False
-    for q in quellen:
-        if keeper.zeitraum_id is None and q.zeitraum_id is not None:
-            keeper.zeitraum_id = q.zeitraum_id
-            geaendert = True
-        if not keeper.kostenart and q.kostenart:
-            keeper.kostenart = q.kostenart
-            geaendert = True
-        if keeper.betrag is None and q.betrag is not None:
-            keeper.betrag = q.betrag
-            geaendert = True
-        if not keeper.jahr and q.jahr:
-            keeper.jahr = q.jahr
-            geaendert = True
-        if keeper.belegdatum is None and q.belegdatum is not None:
-            keeper.belegdatum = q.belegdatum
-            geaendert = True
-        if not keeper.kategorie and q.kategorie:
-            keeper.kategorie = q.kategorie
-            geaendert = True
-    return geaendert
 
 
 def _dedup_nach_scan(session: Session, client, d: Dokument,
@@ -3237,81 +3023,6 @@ def verwaiste_immocalc_aufraeumen(session: Session) -> dict:
                 except NextcloudFehler as fehler:
                     log.info("Verwaiste .immocalc nicht löschbar: %s", fehler)
     return {"geloescht": geloescht, "geprueft": geprueft}
-
-
-# Wie die Rasterfelder im Steckbrief heissen — technischer Schlüssel → Klartext.
-# Was nicht in der Karte steht, wird mit seinem Schlüssel gezeigt (nichts geht
-# verloren), damit ein neues Feld nicht stumm bleibt.
-_FELD_TITEL = {
-    "mieter": "Mieter", "kaltmiete": "Kaltmiete",
-    "nebenkosten_vz": "Nebenkosten-Vorauszahlung",
-    "stellplatzmiete": "Stellplatzmiete",
-    "sonstige_einnahmen": "Sonstige Einnahmen", "mietbeginn": "Mietbeginn",
-    "kaution": "Kaution", "personen": "Personen",
-    "mieter_email": "E-Mail Mieter", "mieter_telefon": "Telefon Mieter",
-    "art": "Art", "anbieter": "Anbieter", "police_nr": "Police-Nr.",
-    "jahresbeitrag": "Jahresbeitrag", "turnus": "Turnus",
-    "versicherungssumme": "Versicherungssumme", "beginn": "Beginn",
-    "ende": "Ende", "umlagefaehig": "Umlagefähig",
-    "bezeichnung": "Bezeichnung", "bank": "Bank",
-    "darlehensnummer": "Darlehensnummer", "darlehenssumme": "Darlehenssumme",
-    "bausparsumme": "Bausparsumme", "angespart": "Angespart",
-    "restschuld": "Restschuld", "zinssatz": "Zinssatz",
-    "rate_monatlich": "Rate monatlich", "zinsbindung_bis": "Zinsbindung bis",
-    "schuldzinsen_jahr": "Schuldzinsen im Jahr", "jahr": "Jahr",
-    "grundsteuerwert": "Grundsteuerwert",
-    "grundsteuer_messbetrag": "Grundsteuer-Messbetrag",
-    "grundsteuer_hebesatz": "Hebesatz", "jahresbetrag": "Jahresbetrag",
-    "kaufpreis": "Kaufpreis", "kaufdatum": "Kaufdatum",
-    "gemarkung": "Gemarkung", "flurstueck": "Flurstück",
-    "grundbuch_blatt": "Grundbuchblatt", "glaeubiger": "Gläubiger",
-    "grundschuld_betrag": "Grundschuld-Betrag", "rang": "Rang",
-    "verwalter": "Verwalter", "hausgeld_monatlich": "Hausgeld monatlich",
-    "ruecklage_zufuehrung": "Rücklagenzuführung",
-    "zeitraum": "Zeitraum", "s35a": "Haushaltsnahe Dienstleistung (§ 35a)",
-    "verbrauch": "Verbrauch",
-}
-
-
-def _immocalc_text(d: Dokument, body: ImmoCalcIn) -> str:
-    """Der menschenlesbare Steckbrief, der neben dem PDF landet.
-
-    Zeigt Datei, Dokumenttyp/Kategorie samt Zielordner, Liegenschaft, Einheit,
-    Belegdatum, Betrag, Umlagefähigkeit und die erkannten Rasterangaben — knapp
-    und ohne technische Wortwahl, damit der Steckbrief auch in der Cloud gelesen
-    werden kann, ohne ImmoCalc zu öffnen."""
-    zeilen: list[str] = ["ImmoCalc — Steckbrief zum Beleg", ""]
-    zeilen.append(f"Datei: {d.dateiname}")
-    kategorie = body.kategorie or d.kategorie
-    if kategorie:
-        ordner = ZIELORDNER.get(kategorie, "99_Sonstiges")
-        zeilen.append(f"Kategorie: {kategorie} → {ordner}")
-    if body.immobilie:
-        zeilen.append(f"Immobilie: {body.immobilie}")
-    if body.einheit:
-        zeilen.append(f"Einheit: {body.einheit}")
-    belegdatum = _zum_datum(body.datum or "") or d.belegdatum
-    if belegdatum:
-        zeilen.append(f"Belegdatum: {belegdatum.isoformat()}")
-    betrag = body.betrag if body.betrag is not None else d.betrag
-    if betrag is not None:
-        zeilen.append(f"Betrag: {betrag:.2f} €".replace(".", ","))
-    umlage = (body.felder or {}).get("umlagefaehig")
-    if isinstance(umlage, bool):
-        zeilen.append(f"Umlagefähig: {'Ja' if umlage else 'Nein'}")
-
-    weitere = {k: v for k, v in (body.felder or {}).items()
-               if k != "umlagefaehig"}
-    if weitere:
-        zeilen += ["", "Erkannte Angaben:"]
-        for schluessel, wert in weitere.items():
-            titel = _FELD_TITEL.get(schluessel, schluessel)
-            zeilen.append(f"  - {titel}: {_feld_wert(wert)}")
-
-    einordnung = (body.einordnung or d.ki_einordnung or "").strip()
-    if einordnung:
-        zeilen += ["", "Einordnung:", f"  {einordnung}"]
-    return "\n".join(zeilen) + "\n"
 
 
 def _objekt_aus_immobilie(session: Session, immobilie: str) -> Objekt | None:
@@ -4227,23 +3938,6 @@ def lageplaene_einsortieren(trocken: bool = True,
 # verschieben. So findet ein zweiter Lauf keine Duplikate mehr und nichts wandert
 # ein zweites Mal (keine Endlosverschiebung).
 # --------------------------------------------------------------------------
-
-DUPLIKAT_ORDNER = "99_Duplikate"
-
-
-def _duplikat_ziel(o: Objekt) -> str:
-    """Der Sammelordner für verschobene Duplikate: „<Objektordner>/99_Duplikate"."""
-    return f"{o.nc_ordner.strip('/')}/{DUPLIKAT_ORDNER}"
-
-
-def _duplikat_rang(d: Dokument) -> tuple[int, int, int]:
-    """Sortierschlüssel für die „behalten"-Wahl — der kleinste bleibt.
-
-    Vorrang: verbucht (`position_id` gesetzt) vor unverbucht, dann ein Beleg mit
-    `zeitraum_id` vor einem ohne, zuletzt die kleinste `id`. So bleibt die
-    „beste" Kopie am Platz und verschoben werden bevorzugt die nicht verbuchten."""
-    return (0 if d.position_id else 1, 0 if d.zeitraum_id else 1, d.id or 0)
-
 
 def _duplikat_gruppen(session: Session, client, o: Objekt
                       ) -> tuple[list[tuple[str, Dokument, list[Dokument]]],
