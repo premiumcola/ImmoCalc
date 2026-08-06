@@ -59,6 +59,14 @@ export async function zaehlerKonfig() {
   const opt = (wert, text, sel) =>
     `<option value="${esc(String(wert))}"${sel ? ' selected' : ''}>${esc(text)}</option>`;
 
+  // N231 — „fertig eingerichtet" heißt: Messeinheit und Kostenart sind gesetzt,
+  // und (falls nötig) ein Anfangsstand liegt vor. Ein Rest-Zähler braucht
+  // keinen eigenen Anfangsstand — sein Stand ergibt sich rechnerisch.
+  function vollstaendig(z) {
+    if (!z.messeinheit || !z.kostenart) return false;
+    return z.typ === 'rest' || !!z.anfangsstand;
+  }
+
   function karte(z, i) {
     const rest = z.typ === 'rest';
     const messSel = MESSEINHEITEN.map(m => opt(m, m, m === z.messeinheit)).join('')
@@ -75,10 +83,13 @@ export async function zaehlerKonfig() {
     const verrSel = opt('frei', 'Eigenständig / Gesamt', modus === 'frei')
       + opt('unter', 'Unterzähler von …', modus === 'unter')
       + opt('rest', 'Rest von …', modus === 'rest');
-    const andere = meters.filter(m => m.id !== z.id);
-    const hauptSel = andere.length
-      ? andere.map(m => opt(m.id, m.name, m.id === z.hauptzaehler_id)).join('')
-      : opt('', 'kein anderer Zähler', true);
+    // N231 — nur Zähler derselben Messeinheit lassen sich gegeneinander
+    // verrechnen (Rest = Hauptzähler − Unterzähler ergibt zwischen kWh und m³
+    // keinen Sinn).
+    const gleicheEinheit = meters.filter(m => m.id !== z.id && m.messeinheit === z.messeinheit);
+    const hauptSel = gleicheEinheit.length
+      ? gleicheEinheit.map(m => opt(m.id, m.name, m.id === z.hauptzaehler_id)).join('')
+      : opt('', `kein anderer ${z.messeinheit}-Zähler`, true);
     let restInfo = '';
     if (rest && z.hauptzaehler_id) {
       const haupt = meters.find(m => m.id === z.hauptzaehler_id);
@@ -99,8 +110,12 @@ export async function zaehlerKonfig() {
             data-zk-anf-datum="${z.id}" aria-label="Datum Anfangsstand"></div>
       </div>`;
 
+    const fertig = vollstaendig(z);
     return `<div class="zk-karte" data-zid="${z.id}">
       <div class="zk-kopf">
+        <span class="zk-status ${fertig ? 'ok' : 'warn'}"
+          title="${fertig ? 'Vollständig eingerichtet' : 'Noch nicht vollständig eingerichtet'}"
+          aria-hidden="true">${fertig ? '✓' : '!'}</span>
         <input class="zk-name" value="${esc(z.name)}" data-zk-f="name" data-zid="${z.id}"
           aria-label="Zählername">
         <div class="zk-tools">
@@ -130,6 +145,11 @@ export async function zaehlerKonfig() {
   }
 
   function render() {
+    // N231 — jedes `render()` ersetzt das komplette innerHTML; ohne das hier
+    // sprang die lange Liste bei jeder Änderung (Verrechnung, Zähler
+    // hinzufügen/entfernen/verschieben) zurück an den Anfang.
+    const vorherigerBody = dlg.querySelector('.zk-body');
+    const scrollY = vorherigerBody?.scrollTop || 0;
     const liste = meters.length
       ? meters.map((z, i) => karte(z, i)).join('')
       : `<div class="zk-leer">Noch keine Zähler für diese Immobilie. Lege den
@@ -144,12 +164,20 @@ export async function zaehlerKonfig() {
         <p class="zk-intro">Zähler dieser Immobilie: Messeinheit, Bezug und
           Kostenart einstellen, die Verrechnung festlegen (Rest = Hauptzähler −
           Unterzähler) und den Anfangsstand vor der ersten Abrechnung setzen.</p>
+        ${meters.length ? `<div class="zk-fort">
+            <div class="zk-balken"><i style="width:${
+              Math.round(meters.filter(vollstaendig).length / meters.length * 100)}%"></i></div>
+            <span class="zk-fz">${meters.filter(vollstaendig).length} von
+              ${meters.length} eingerichtet</span>
+          </div>` : ''}
         <div class="zk-liste">${liste}</div>
         <button class="zk-add" data-zk-add>＋ Zähler hinzufügen</button>
       </div>
       <div class="aw-fuss">
         <button class="aw-weiter" data-zk-schliessen style="flex:1">Fertig</button>
       </div>`;
+    const neuerBody = dlg.querySelector('.zk-body');
+    if (neuerBody) neuerBody.scrollTop = scrollY;
   }
 
   dlg.addEventListener('change', async e => {
@@ -173,8 +201,11 @@ export async function zaehlerKonfig() {
 
   async function verrechnungSetzen(id, modus) {
     const z = meters.find(m => m.id === id);
-    const andere = meters.filter(m => m.id !== id);
-    const haupt = z?.hauptzaehler_id || (andere[0] && andere[0].id) || null;
+    // N231 — nur ein Zähler derselben Messeinheit taugt als Hauptzähler; ein
+    // vorhandener, aber nicht mehr passender hauptzaehler_id-Wert wird verworfen.
+    const gleiche = meters.filter(m => m.id !== id && m.messeinheit === z?.messeinheit);
+    const haupt = (z?.hauptzaehler_id && gleiche.some(m => m.id === z.hauptzaehler_id))
+      ? z.hauptzaehler_id : (gleiche[0]?.id || null);
     const body = modus === 'frei'
       ? { typ: 'gemessen', hauptzaehler_id: null }
       : { typ: modus === 'rest' ? 'rest' : 'gemessen', hauptzaehler_id: haupt };
