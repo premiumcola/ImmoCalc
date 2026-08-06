@@ -104,11 +104,18 @@ export const SCAN_WORT = { mieten: 'Mietvertrag', notarvertraege: 'Notarvertrag'
 // CCCLXXXII — am Mietverhältnis mehr als nur der Vertrag: Übergabeprotokolle
 // und Kautionsunterlagen. Der Typ steckt in Bezeichnung/Dateiname; abgelegt
 // wird wie der Mietvertrag (SCAN_KATEGORIE.mieten).
+// Jeder Eintrag ist [voll, kurz] oder [voll, kurz, auchErkennenAls] — `voll`
+// ist der Name, unter dem neu abfotografiert wird; `auchErkennenAls` (N223)
+// erkennt zusätzlich schon vorhandene Dokumente mit anderem Namen als
+// dieselbe Zeile — z. B. eine bereits hochgeladene Lohnsteuerbescheinigung
+// zählt als Mieterselbstauskunft, statt als eigene Zeile zu fehlen.
 export const SCAN_TYPEN = { mieten: [
   ['Mietvertrag', 'Mietvertrag'],
   ['Übergabeprotokoll Einzug', 'Übergabe Einzug'],
   ['Übergabeprotokoll Auszug', 'Übergabe Auszug'],
   ['Mietkautionskonto', 'Kautionsunterlagen'],
+  ['Mieterselbstauskunft', 'Selbstauskunft', ['Lohnsteuerbescheinigung']],
+  ['Abnahmeprotokoll Rauchwarnmelder', 'Rauchwarnmelder'],
 ] };
 
 export const KAMERA_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"

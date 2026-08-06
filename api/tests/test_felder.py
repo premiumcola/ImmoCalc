@@ -73,6 +73,27 @@ def test_stellplatzmiete_laesst_sich_wieder_entfernen():
         assert eintrag["kaltmiete"] == 800.0     # unberuehrt
 
 
+def test_kaution_eingang_ist_additiv_und_optional():
+    """N224 — additives Feld, getrennt von der Kautionshöhe: wann das Geld
+    wirklich auf dem Konto einging."""
+    with TestClient(app) as c:
+        slug = _objekt(c)
+        mid = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Mieter B", "kaltmiete": 700.0, "kaution": 1400.0,
+            "ab_datum": "2024-01-01"}).json()["id"]
+
+        eintrag = c.get(f"/api/objekte/{slug}/mieten").json()[0]
+        assert eintrag["kaution_eingang"] is None    # additiv, kein Zwang
+
+        antwort = c.patch(f"/api/mieten/{mid}",
+                          json={"kaution_eingang": "2024-01-15"})
+        assert antwort.status_code == 200
+
+        eintrag = c.get(f"/api/objekte/{slug}/mieten").json()[0]
+        assert eintrag["kaution_eingang"] == "2024-01-15"
+        assert eintrag["kaution"] == 1400.0          # unberuehrt
+
+
 def test_objekt_stammdaten_lassen_sich_leeren():
     with TestClient(app) as c:
         slug = _objekt(c)

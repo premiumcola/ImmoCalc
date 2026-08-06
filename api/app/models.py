@@ -482,6 +482,10 @@ class Miete(SQLModel, table=True):
     anschrift: str = ""
     personen: int = 1
     kaution: Optional[float] = None
+    # N224 — additiv: die Kautionsunterlagen (Dokument-Checkliste) sagen nichts
+    # darüber, ob das Geld auch wirklich auf dem Konto eingegangen ist. Leer =
+    # noch nicht eingegangen.
+    kaution_eingang: Optional[date] = None
     notiz: str = ""
     # CCLXXVIII — Orange-Entwurf (siehe Kostenposition).
     vorlaeufig: bool = False

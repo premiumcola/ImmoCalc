@@ -110,16 +110,23 @@ export async function eintragDetail(bereich, id, laden) {
     // aller Nicht-Buchstaben fiele jedes Übergabeprotokoll auf „Mietvertrag"
     // zurück und verschwände aus seiner Zeile.
     const norm = s => (s || '').toLowerCase().replace(/[^0-9a-zäöüß]+/g, '');
+    // N223 — eine Zeile erkennt zusätzlich zu ihrem eigenen Namen auch die in
+    // `auchErkennenAs` genannten Alternativnamen (z. B. Lohnsteuerbescheinigung
+    // zählt als Mieterselbstauskunft) — EIN Dokument, EINE Zeile, kein Doppel.
+    const passt = (d, voll, auch) => {
+      const n = norm(d.dateiname);
+      return n.includes(norm(voll)) || (auch || []).some(a => n.includes(norm(a)));
+    };
     // Unerkanntes (z. B. Alt-„Miete") gilt als Mietvertrag (das Hauptdokument).
     const typVon = d =>
-      (typen.find(([voll]) => norm(d.dateiname).includes(norm(voll))) || [])[0] || 'Mietvertrag';
+      (typen.find(([voll, , auch]) => passt(d, voll, auch)) || [])[0] || 'Mietvertrag';
     return `<div class="dd-checkliste">${typen.map(([voll, kurz]) => {
       const da = alle.find(d => typVon(d) === voll);
       return da
         ? `<div class="dd-check da">
              <span class="dd-ci ok">${HAKEN_ICON}</span>
              <button class="dd-cn" data-doc="${da.id}" data-name="${esc(da.dateiname)}"
-               >${esc(kurz)}</button>
+               >${esc(kurz)}${da.jahr ? `<span class="dd-cj">${da.jahr}</span>` : ''}</button>
              <button class="dd-cx" data-scan data-wort="${esc(voll)}"
                title="${esc(kurz)} ersetzen" aria-label="${esc(kurz)} ersetzen">Ersetzen</button>
            </div>`

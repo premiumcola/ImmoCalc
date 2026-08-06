@@ -9,6 +9,7 @@
 
 import { esc, api, installHilfe, belegSeitenLaden } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
+import { datumwahl } from '../datumwahl.js';
 import { felderFuer, uebernahmeAnbieten } from '../objekt-felder.js?v=2';
 import { flaecheText } from '../objekt-format.js?v=2';
 import { einheiten,
@@ -126,6 +127,17 @@ async function feldHtml(f, bereich, wert) {
            data-optionen="${esc(JSON.stringify(f.werte))}"></div>
       ${f.note ? `<span class="feldnote">${esc(f.note)}</span>` : ''}</div>`;
   }
+  if (f.typ === 'date') {
+    // N226 — kein natives <input type="date">: der aufklappende Kalender
+    // zeichnet sonst das Betriebssystem (blau, fremd) — genau wie beim
+    // Auswahlfeld. Derselbe Aufbau: verstecktes Feld trägt den echten (ISO-)
+    // Wert, `datumwahlSetzen` baut den eigenen Chooser hinein.
+    const gesetzt = wert ?? f.vorgabe ?? '';
+    return `<div class="field"><label>${feldLabel(f)}</label>
+      <input type="hidden" id="${id}" name="${f.k}" value="${esc(gesetzt)}">
+      <div data-datumwahl="${esc(f.k)}" data-label="${esc(f.l)}"></div>
+      ${f.note ? `<span class="feldnote" id="n_${f.k}">${esc(f.note)}</span>` : ''}</div>`;
+  }
   if (f.typ === 'ja_nein') {
     const ja = wert === undefined ? true : Boolean(wert);
     return `<div class="field"><label for="${id}">${esc(f.l)}</label>
@@ -224,6 +236,37 @@ function auswahlSetzen(form) {
         // Formular neu — aber erst im nächsten Anlauf: sonst zöge sich das
         // Auswahlfeld sein eigenes DOM unter den Füssen weg.
         if (halter.dataset.umbau && dialogUmbau) setTimeout(dialogUmbau, 0);
+      },
+    }));
+  }
+}
+
+/* N226 — Datumsfelder im eigenen Design, wie `auswahlSetzen` für die
+   Auswahlfelder. Eigene Liste zum Abräumen, damit ein neu gebautes Formular
+   keine toten Chooser vom vorigen mitschleppt. */
+let datumfelder = [];
+
+export function datumwahlLoesen() {
+  for (const d of datumfelder) {
+    try { d.zerstoere(); } catch { /* schon weg */ }
+  }
+  datumfelder = [];
+}
+
+function datumwahlSetzen(form) {
+  datumwahlLoesen();
+  for (const halter of form.querySelectorAll('[data-datumwahl]')) {
+    const feld = form.elements[halter.dataset.datumwahl];
+    if (!feld) continue;
+    datumfelder.push(datumwahl(halter, {
+      wert: feld.value, label: halter.dataset.label,
+      aenderung: neu => {
+        feld.value = neu;
+        // Bestehende Lauscher (Kappungsgrenze, Zins-Kopplung, …) hören auf
+        // 'input'/'change' am Feld selbst — die müssen weiter feuern, auch
+        // wenn der Wert jetzt vom eigenen Chooser statt vom Browser kommt.
+        feld.dispatchEvent(new Event('input', { bubbles: true }));
+        feld.dispatchEvent(new Event('change', { bubbles: true }));
       },
     }));
   }
@@ -405,6 +448,7 @@ export async function formular(einst) {
   });
   formateSetzen(form, felder);
   auswahlSetzen(form);
+  datumwahlSetzen(form);
   zinsKopplung(form);
   installHilfe(form);
   // Ein zweiter showModal-Aufruf auf einem offenen Dialog wirft — der Wechsel

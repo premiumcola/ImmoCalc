@@ -25,7 +25,7 @@ import { ZEITRAUMFELDER, GRUNDSCHULDFELDER,
          dialogFelder, dialogUmbau, ANTEILFELDER,
          pushBewohnerWeg, setDialogUmbau } from './state.js';
 import { laden } from './laden.js';
-import { formular, formateLoesen, auswahlLoesen, ausFormular } from './formular.js';
+import { formular, formateLoesen, auswahlLoesen, datumwahlLoesen, ausFormular } from './formular.js';
 import { anfangsstaendeDialog } from './anfangsstaende.js';
 import { eintragDetail, oeffneEintragFormular } from './eintrag-detail.js';
 import { zuordnenDialog } from './zuordnen.js';
@@ -60,6 +60,7 @@ export function initHandlers() {
   dlg.addEventListener('close', () => {
     formateLoesen();
     auswahlLoesen();
+    datumwahlLoesen();
     setDialogUmbau(null);   // sonst baut ein später Klick einen toten Dialog um
   });
 

@@ -120,6 +120,9 @@ const BEREICHE = {
         lex: 'personen-im-haushalt' },
       { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true,
         lex: 'kaution' },
+      // N224 — vom Dokument (Kautionsunterlagen, Checkliste) getrennt: das ist
+      // der tatsächliche Geldeingang auf dem Konto.
+      { k: 'kaution_eingang', l: 'Kaution eingegangen am', typ: 'date' },
       { k: 'notiz', l: 'Notiz', typ: 'text' },
     ],
     name: e => e.partei || e.einheit || 'Mietverhältnis',

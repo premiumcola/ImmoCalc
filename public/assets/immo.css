@@ -293,6 +293,65 @@ input[type=date].inp::-webkit-calendar-picker-indicator{
   font-size:13px;
 }
 
+/* ---- Datumsfeld im eigenen Design (assets/datumwahl.js) ----
+   Wie beim Auswahlfeld: der native Kalender eines <input type=date> zeichnet
+   das Betriebssystem (blau, systemfremd) — deshalb ein eigener Chooser im
+   Design der Seite. Struktur bewusst parallel zu .auswahl/.auswahl-liste. ---- */
+.datumwahl{position:relative; min-width:0}
+.datumwahl-knopf{
+  display:flex; align-items:center; gap:10px; width:100%; min-height:44px;
+  border:1.5px solid var(--line); border-radius:11px; background:var(--sheet);
+  padding:12px 13px; cursor:pointer; font:500 15px var(--body); color:var(--ink);
+  text-align:left;
+}
+.datumwahl-knopf:hover{border-color:#BFCBCA}
+.datumwahl-knopf:focus-visible{outline:none; border-color:var(--teal);
+  box-shadow:0 0 0 3px rgba(15,110,92,.15)}
+.datumwahl-knopf[aria-expanded=true]{border-color:var(--teal)}
+.datumwahl-text{flex:1; min-width:0; font-variant-numeric:tabular-nums}
+.datumwahl-text.leer{color:#8B9A98}
+.datumwahl-ikon{flex:none; display:inline-flex; color:var(--soft)}
+
+.datumwahl-pop{
+  position:absolute; z-index:40; top:calc(100% + 6px); left:0;
+  width:280px; max-width:calc(100vw - 32px); padding:14px;
+  background:var(--sheet); border-radius:16px;
+  box-shadow:0 18px 40px -14px rgba(22,38,44,.4), 0 0 0 1px rgba(22,38,44,.06);
+}
+.datumwahl.nach-oben .datumwahl-pop{top:auto; bottom:calc(100% + 6px)}
+.dw-kopf{display:flex; align-items:center; gap:4px; margin-bottom:10px}
+.dw-titel{flex:1; text-align:center; font:600 14.5px var(--disp);
+  letter-spacing:-.01em; color:var(--ink)}
+.dw-nav{flex:none; width:30px; height:30px; border:none; border-radius:9px;
+  background:none; color:var(--soft); cursor:pointer; font:600 14px var(--body);
+  display:flex; align-items:center; justify-content:center}
+.dw-nav:hover{background:var(--paper); color:var(--teal-d)}
+.dw-wochentage{display:grid; grid-template-columns:repeat(7,1fr); gap:2px;
+  margin-bottom:4px}
+.dw-wochentage span{text-align:center; font:600 10px var(--mono);
+  letter-spacing:.04em; color:var(--soft)}
+.dw-tage{display:grid; grid-template-columns:repeat(7,1fr); gap:2px}
+.dw-leer{visibility:hidden}
+.dw-tag{aspect-ratio:1; min-height:34px; border:none; border-radius:9px;
+  background:none; color:var(--ink); cursor:pointer; font:500 13px var(--body);
+  display:flex; align-items:center; justify-content:center}
+.dw-tag:hover{background:var(--paper)}
+.dw-tag.heute{color:var(--teal-d); font-weight:700}
+.dw-tag.gewaehlt{background:var(--teal); color:#fff; font-weight:600}
+.dw-tag:focus-visible{outline:2px solid var(--teal); outline-offset:1px}
+.dw-fuss{display:flex; align-items:center; justify-content:space-between;
+  gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid var(--line)}
+.dw-fussknopf{border:none; background:none; color:var(--teal-d); cursor:pointer;
+  font:600 12.5px var(--disp); padding:8px 4px; min-height:36px}
+.dw-fussknopf:hover{color:var(--teal)}
+.dw-fussknopf.leer{color:var(--neg)}
+.dw-fussknopf.leer:hover{color:#8B2E1E}
+/* Auf schmalen Geraeten (< 440px) den Chooser nicht ueber den rechten Rand
+   hinaus verankern — sonst laueft er auf dem iPhone aus dem Bildschirm. */
+@media(max-width:439px){
+  .datumwahl-pop{left:auto; right:0}
+}
+
 .btn{
   width:100%; border:none; border-radius:12px; padding:15px; cursor:pointer;
   font:600 15px var(--disp); letter-spacing:-.01em; background:var(--teal);

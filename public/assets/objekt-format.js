@@ -33,6 +33,11 @@ const tagDavor = iso => {
   d.setDate(d.getDate() - 1);
   return isoDatum(d);
 };
+const tagDanach = iso => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  return isoDatum(d);
+};
 const ersterNaechsterMonat = () => {
   const d = new Date();
   d.setDate(1);
@@ -153,4 +158,4 @@ function feldWertText(f, wert) {
   return String(wert);
 }
 
-export { proTurnus, kuerzel, proJahr, istBausparer, kreditStandText, datum, isoDatum, tagDavor, ersterNaechsterMonat, prozent, kontaktText, restText, ibanSchoen, stammwert, feldLeer, flaecheText, paarLabel, paarZeile, zelleInner, cellZeile, sekopfHtml, feldWertText };
+export { proTurnus, kuerzel, proJahr, istBausparer, kreditStandText, datum, isoDatum, tagDavor, tagDanach, ersterNaechsterMonat, prozent, kontaktText, restText, ibanSchoen, stammwert, feldLeer, flaecheText, paarLabel, paarZeile, zelleInner, cellZeile, sekopfHtml, feldWertText };

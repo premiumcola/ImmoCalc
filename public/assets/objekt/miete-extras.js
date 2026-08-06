@@ -6,7 +6,7 @@
 
 import { esc, eur, api, melde } from '../immo.js';
 import { cfgFuer } from '../objekt-felder.js?v=2';
-import { ersterNaechsterMonat } from '../objekt-format.js?v=2';
+import { ersterNaechsterMonat, tagDanach } from '../objekt-format.js?v=2';
 import { slug, istGrundstueck } from '../objekt-state.js?v=2';
 import { einheiten, fokus } from './state.js';
 import { hergeleiteteKaltmiete } from './helpers.js';
@@ -125,13 +125,18 @@ export async function erhoehungFormular(mid) {
   if (!alt) return;
   const pacht = istGrundstueck();
   const bewohner = (alt.bewohner || []).map(b => ({ ...b, id: null }));
+  // N225 — plant man eine weitere Erhöhung auf einem bereits (befristet)
+  // geplanten Stand, muss das Anfangsdatum an dessen Ende anschließen, nicht
+  // an „nächster Monat ab heute" — sonst läge der neue Stand vor dem, den er
+  // fortsetzen soll, sobald `alt` selbst schon in der Zukunft liegt.
+  const abNeu = alt.bis_datum ? tagDanach(alt.bis_datum) : ersterNaechsterMonat();
   await formular({
     titel: pacht ? 'Pachterhöhung planen' : 'Mieterhöhung planen',
     hinweis: `Trage ${pacht ? 'den neuen Pachtzins' : 'die neue Miete'} und `
       + 'den Tag ein, ab dem er gilt. Der bisherige Stand läuft bis zum Tag '
       + 'davor weiter und bleibt als Historie erhalten.',
     felder: cfgFuer('mieten').felder, bereich: 'mieten', absicht: 'eintrag',
-    werte: { ...alt, id: '', ab_datum: ersterNaechsterMonat(), bis_datum: null },
+    werte: { ...alt, id: '', ab_datum: abNeu, bis_datum: null },
     extra: pacht ? '' : bewohnerBlock(bewohner), knopf: 'Erhöhung planen',
   });
   document.getElementById('dlgForm').dataset.vorgaenger = mid;
