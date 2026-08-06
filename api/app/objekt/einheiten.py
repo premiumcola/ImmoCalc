@@ -106,7 +106,7 @@ def _lageplaene_je_einheit(session: Session, einheit_ids: list[int]) -> dict:
     eimer: dict[int, list] = {}
     for d in treffer:
         eimer.setdefault(d.info_zu_id, []).append(
-            {"id": d.id, "dateiname": d.dateiname})
+            {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad})
     return eimer
 
 

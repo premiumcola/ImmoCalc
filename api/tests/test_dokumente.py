@@ -1987,6 +1987,10 @@ def test_lageplan_wird_abgelegt_und_gelistet(monkeypatch):
         zeilen = c.get(f"/api/objekte/{slug}/einheiten").json()
         meine = next(z for z in zeilen if z["id"] == eid)
         assert [p["id"] for p in meine["lageplaene"]] == [body["id"]]
+        # N236 — der Ablagepfad muss mitkommen, sonst zeigt der Beleg-Dialog
+        # keinen Ordner an (die Einheit-Zeile hat eine eigene, separate
+        # Bündelung `_lageplaene_je_einheit`, die das `pfad`-Feld vergessen hatte).
+        assert meine["lageplaene"][0]["pfad"] == body["pfad"]
 
         # Der Eintrag ist als Lageplan an der Einheit markiert.
         with Session(engine) as s:

@@ -277,6 +277,50 @@ def tankstelle_zukunftsmarker_bereinigen(engine: Engine) -> int:
     return bereinigt
 
 
+def miete_vorgaenger_backfuellen(engine: Engine) -> int:
+    """N235 — Vorgänger-Verknüpfung für vor N228 angelegte Mieterhöhungen.
+
+    `Miete.vorgaenger_id` wird seit N228 beim Anlegen einer Mieterhöhung
+    gesetzt (`erhoehungFormular()`/`handlers.js`) — Alt-Fälle, die VOR diesem
+    Fix als zwei getrennte Mietstände angelegt wurden, blieben unverknüpft
+    und zeigten deshalb die Dokumente des Vorgängers nicht (die Checkliste
+    hängt an derselben Kette wie `belege_zum_eintrag`).
+
+    Additiv, idempotent: nur Zeilen mit `vorgaenger_id IS NULL` werden
+    angefasst, und nur wenn GENAU EIN eindeutiger Kandidat gefunden wird
+    (gleiches Objekt, gleiche Einheit, gleiche nicht-leere Partei, Beginn
+    == Vorgänger-Ende + 1 Tag) — mehrdeutige Fälle bleiben lieber
+    unverknüpft als falsch verknüpft."""
+    from datetime import timedelta
+
+    from .models import Miete
+
+    aktualisiert = 0
+    try:
+        with Session(engine) as session:
+            alle = session.exec(select(Miete)).all()
+            for m in alle:
+                if m.vorgaenger_id or not m.partei or not m.ab_datum:
+                    continue
+                kandidaten = [
+                    v for v in alle
+                    if v.id != m.id and v.objekt_id == m.objekt_id
+                    and (v.einheit or "") == (m.einheit or "")
+                    and (v.partei or "").strip() == m.partei.strip()
+                    and v.bis_datum and v.bis_datum + timedelta(days=1) == m.ab_datum
+                ]
+                if len(kandidaten) == 1:
+                    m.vorgaenger_id = kandidaten[0].id
+                    session.add(m)
+                    aktualisiert += 1
+            if aktualisiert:
+                session.commit()
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Vorgänger-Verknüpfung nicht ergänzt: %s", fehler)
+        return 0
+    return aktualisiert
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -335,6 +379,14 @@ def migriere(engine: Engine) -> list[str]:
             geaendert.append(f"tankstelle_versendet[{n} geleert]")
     except Exception as fehler:                       # noqa: BLE001
         log.warning("Zukunfts-Marker nicht bereinigt: %s", fehler)
+
+    # N235 — Vorgänger-Verknüpfung für Alt-Mieterhöhungen (vor N228) ergänzen.
+    try:
+        n = miete_vorgaenger_backfuellen(engine)
+        if n:
+            geaendert.append(f"miete.vorgaenger_id[{n} verknüpft]")
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Vorgänger-Verknüpfung nicht ergänzt: %s", fehler)
 
     if geaendert:
         log.info("Schema ergänzt: %s", ", ".join(geaendert))

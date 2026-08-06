@@ -180,3 +180,45 @@ def test_tankstelle_zukunftsmarker_werden_bereinigt(tmp_path):
 
     # Idempotent: ein zweiter Lauf findet nichts mehr zu bereinigen.
     assert tankstelle_zukunftsmarker_bereinigen(engine) == 0
+
+
+def test_miete_vorgaenger_wird_fuer_altfaelle_verknuepft(tmp_path):
+    """N235 — vor N228 angelegte Mieterhöhungen (zwei getrennte Mietstände
+    ohne `vorgaenger_id`) werden nachträglich verkettet, wenn Einheit und
+    Partei übereinstimmen und der neue Stand nahtlos (Tag danach) beginnt.
+    Mehrdeutige/unpassende Fälle bleiben unverknüpft."""
+    from sqlmodel import Session, SQLModel, select
+
+    from app.migrate import miete_vorgaenger_backfuellen
+    from app.models import Miete, Objekt
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'mv.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        o = Objekt(slug="test-obj", name="Testobjekt")
+        s.add(o)
+        s.commit()
+        s.refresh(o)
+        # Altfall: nahtlose Mieterhöhung derselben Partei, kein vorgaenger_id.
+        alt = Miete(objekt_id=o.id, einheit="1.OG", partei="Julia Buckenleib",
+                    ab_datum=date(2026, 7, 1), bis_datum=date(2028, 2, 29))
+        neu = Miete(objekt_id=o.id, einheit="1.OG", partei="Julia Buckenleib",
+                    ab_datum=date(2028, 3, 1), bis_datum=date(2030, 5, 31))
+        # Andere Einheit, andere Partei — darf nicht mit hineingezogen werden.
+        fremd = Miete(objekt_id=o.id, einheit="EG", partei="Anderer Mieter",
+                       ab_datum=date(2028, 4, 1), bis_datum=None)
+        s.add_all([alt, neu, fremd])
+        s.commit()
+        alt_id = alt.id
+
+    n = miete_vorgaenger_backfuellen(engine)
+    assert n == 1
+
+    with Session(engine) as s:
+        nach_datum = {m.ab_datum: m for m in s.exec(select(Miete)).all()}
+    assert nach_datum[date(2026, 7, 1)].vorgaenger_id is None  # der ALTE bleibt unverknüpft
+    assert nach_datum[date(2028, 3, 1)].vorgaenger_id == alt_id
+    assert nach_datum[date(2028, 3, 1)].partei == "Julia Buckenleib"
+
+    # Idempotent: ein zweiter Lauf findet nichts mehr zu verknüpfen.
+    assert miete_vorgaenger_backfuellen(engine) == 0
