@@ -12,11 +12,8 @@ mit. `DELETE` entfernt nur den Eintrag; die Datei in der Nextcloud bleibt
 liegen, gelöscht wird dort grundsätzlich nichts.
 """
 import logging
-import re
-import unicodedata
 from datetime import date
 from typing import Optional
-from urllib.parse import quote
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      Response, UploadFile)
@@ -26,10 +23,8 @@ from sqlmodel import Session, select
 
 from .. import belegposten, kiauslese, ocr, pdftext
 from ..belegposten import BelegFehler
-from ..bezeichnung import (_jahr_plausibel, betrag_aus_namen, betragsteil,
-                           datum_aus_namen, datumsteil, objekt_titel, ohne_betrag,
-                           ohne_datum, ohne_ordnerwort, unterordner_finden,
-                           vergleichsname)
+from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
+                           ohne_betrag, ohne_datum, unterordner_finden)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
                         unterordner_fuer, verbindung)
 from ..kostenarten import _fold as _fold_kostenart
@@ -45,10 +40,31 @@ from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
 from ..wachdienst import zustand as wachdienst_zustand
 
+# --------------------------------------------------------------------------
+# Re-Exports aus dem `app.dokumente`-Paket (N216)
+#
+# Die reinen Textbausteine (Namensbildung, KI-Wertparser, Datumsrechnung,
+# Strom-Auslese-Formatter, Anzeigehelfer) wohnen in eigenen Modulen. Sie
+# werden hier gezogen und am Router-Namensraum bereitgestellt — so bleibt
+# jeder bestehende `from app.routers.dokumente import …`-Zugriff (aus anderen
+# Routern und Tests) unverändert lesbar. Zirkelfrei: die Bausteine kennen den
+# Router nicht.
+# --------------------------------------------------------------------------
+from ..dokumente.namen import (DOKUMENTARTEN, _NICHTSSAGEND, _adr_norm,
+                               _art_im_namen, _bezeichnung, _dateiname_kopfzeile,
+                               _dateistamm, _einziger, _elternordner, _elternteil,
+                               _endung, _ist_sidecar, _kern, _norm, _ohne_dopplung,
+                               _ordner_aus_pfad, _ordner_titel, _sagt_nichts,
+                               _saubere_datei, _sidecar_pfad, dateiname)
+from ..dokumente.ki_werte import _ki_datum, _ki_text, _ki_zahl
+from ..dokumente.datum import _aus_datum, _jahr_mit_fallback, _zum_datum
+from ..dokumente.strom_hilfen import (_strom_hinweis, _strom_in_felder,
+                                      _zeitraum_text)
+from ..dokumente.darstellung import (_anh_zeige, _beleg_anbieter, _beleg_karte,
+                                     _feld_wert, _ist_kostenfrei, _kurz)
+
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/dokumente", tags=["dokumente"])
-
-DOKUMENTARTEN = list(ZIELORDNER.keys())
 
 
 def _ki_key(session: Session) -> str:
@@ -68,134 +84,9 @@ def _ki_modell(session: Session) -> str:
 VERMISST = "vermisst"
 
 
-def _saubere_datei(text_: str) -> str:
-    """Ein Stück Dateiname: keine Pfadtrenner, keine Trennzeichen am Rand.
-
-    Unerlaubte Zeichen werden zum Bindestrich, nicht gelöscht — sonst klebte
-    aus „231€+10€+180€" ein „23110180" zusammen und aus „Fitness&Büro" ein
-    „FitnessBüro"."""
-    text_ = re.sub(r"[^\wäöüÄÖÜß.\- ]+", "-", text_ or "").strip()
-    text_ = re.sub(r"\s+", "-", text_)
-    # Wo etwas herausgeschnitten wurde — Datum, Betrag, Ordnerwort —, blieben
-    # sonst "--", "_-" oder ".-" stehen.
-    return re.sub(r"[-_.]{2,}", "-", text_).strip("-_.")
-
-
-def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
-              endung: str, monat: int | None = None,
-              betrag: float | None = None, kostenart: str = "") -> str:
-    """JJJJ-MM_Sache_1234,56€.pdf — drei Stücke, jedes genau einmal.
-
-    * **Datum vorn.** Nur so sortiert sich der Ordner von selbst; der Monat
-      kommt mit, sobald er bekannt ist.
-    * **Die Sache in der Mitte** — und nur, was der Ordner *nicht* schon sagt
-      (CXXII): im Ordner 60_Nebenkosten heisst nichts „…_Nebenkosten_…".
-      Was der Nutzer selbst benannt hat, bleibt dabei stehen (XCVII); erkannt
-      wird nur, was sonst niemand beisteuert.
-    * **Der Betrag hinten** (CXXIII), damit man ihn im Ordner sofort sieht.
-
-    Die Funktion ist absichtlich idempotent: ein Name, der schon so aussieht,
-    kommt unverändert wieder heraus. Beim Korrigieren wird der bestehende Name
-    zerlegt und neu gesetzt — ohne das ginge bei jeder Änderung des Jahres die
-    Bezeichnung samt Betrag verloren.
-    """
-    roh = ohne_datum(ohne_betrag(beschreibung or ""))
-    sache = _saubere_datei(ohne_ordnerwort(roh, kategorie))
-    # Der Name bleibt idempotent: steht das Kürzel schon vorn — weil dieser
-    # Name schon einmal durch diese Funktion lief —, wird es nicht doppelt
-    # gesetzt („NK-NK-Kaminkehrer").
-    vorn = ARTKUERZEL.get(kategorie, "")
-    if vorn and _kern(sache).startswith(_kern(vorn)):
-        sache = sache[len(vorn):].lstrip("-_ ") or sache
-    # Die Kostenposition sagt genauer, worum es geht, als eine Bezeichnung wie
-    # „Rechnung": aus 2026-02_Rechnung wird 2026-02_NK-Schornsteinfeger.
-    # Heisst die Position wie die Art („Nebenkosten" unter Nebenkosten), sagt
-    # sie nichts Neues — das Kürzel steht ohnehin schon vorn.
-    if kostenart and _kern(kostenart) != _kern(kategorie):
-        genau = _saubere_datei(kostenart)
-        if not sache or _sagt_nichts(sache):
-            sache = genau
-        # Steht die Kostenart schon vorn (weil dieser Name schon einmal durch
-        # diese Funktion lief), NICHT doppeln — „Hausmeister-Polster" bleibt,
-        # wird nicht zu „Hausmeister-Hausmeister-Polster" (Idempotenz).
-        elif _kern(sache).startswith(_kern(genau)):
-            pass
-        # „Wasser" unter der Position „Wasser" braucht nicht zweimal dazustehen
-        elif _kern(sache) in _kern(genau):
-            sache = genau
-        else:
-            sache = f"{genau}-{sache}"
-    sache = _ohne_dopplung(sache)
-    kuerzel = ARTKUERZEL.get(kategorie, "")
-    mitte = f"{kuerzel}-{sache}" if kuerzel and sache else (sache or kuerzel)
-    # N24 — ein Lageplan trägt KEIN Belegjahr: „ohne-Jahr_" wäre nur Rauschen.
-    # Der Name sagt selbst „Lageplan …" (wie der Upload-Weg, N9) — daher kein
-    # Datumsteil und ein vorangestelltes „Lageplan", falls es noch fehlt.
-    if kategorie == "Lageplan":
-        if not _kern(mitte).startswith(_kern("Lageplan")):
-            mitte = f"Lageplan-{mitte}" if mitte else "Lageplan"
-        teile = [mitte, betragsteil(betrag)]
-    else:
-        # N44 — KEIN „ohne-Jahr"-Vorsatz mehr: fehlt das Jahr, entfällt der
-        # Datumsteil ganz. Ein Beleg ohne Jahr sortiert nach seinem Namen, nicht
-        # unter einem sinnlosen Präfix, das der Nutzer wieder wegräumen müsste.
-        datum = datumsteil(jahr, monat) if jahr else ""
-        teile = [datum, mitte or "Beleg", betragsteil(betrag)]
-    return "_".join(t for t in teile if t) + endung
-
-
-# Wörter, die jeder Beleg trägt und die niemandem beim Wiederfinden helfen.
-# Steht nur so etwas da, tritt die Kostenposition an ihre Stelle.
-_NICHTSSAGEND = {"rechnung", "beleg", "scan", "dokument", "schreiben",
-                 "abrechnung", "jahresabrechnung", "kopie", "pdf"}
-
-
-def _kern(text: str) -> str:
-    """Vergleichsform für Kürzel/Kostenart/Sache (CCXXII).
-
-    Dasselbe wie `bezeichnung.vergleichsname` — dort für Ordnernamen gedacht,
-    hier für die Bausteine des Dateinamens wiederverwendet, damit es nicht
-    zweimal dieselbe Regel gibt. Ziffern bleiben absichtlich erhalten (wie
-    dort): ein `§35a` in einer Kostenart soll nicht mit einem beliebigen
-    zufällig anderen Textfetzen verwechselt werden, nur weil beide nach dem
-    Entfernen der Ziffern gleich aussehen."""
-    return vergleichsname(text)
-
-
-def _sagt_nichts(text: str) -> bool:
-    """Ist das nur ein Allerweltswort wie „Rechnung"?"""
-    return _kern(text) in _NICHTSSAGEND
-
-
-def _ohne_dopplung(sache: str) -> str:
-    """Aufeinanderfolgende gleiche Bausteine zusammenfassen — das Idempotenz-
-    Netz: „Hausmeister-Hausmeister-Polster" → „Hausmeister-Polster". Heilt
-    auch Namen, die ein früherer, noch nicht idempotenter Lauf verdoppelt hat."""
-    raus: list[str] = []
-    for t in (t for t in sache.split("-") if t):
-        if not raus or _kern(raus[-1]) != _kern(t):
-            raus.append(t)
-    return "-".join(raus)
-
-
-def _endung(name: str) -> str:
-    return ("." + name.rsplit(".", 1)[-1]) if "." in name else ""
-
-
 # --------------------------------------------------------------------------
 # Vermutung und Darstellung
 # --------------------------------------------------------------------------
-
-def _art_im_namen(lesbar: str) -> str:
-    """Steht die Art wörtlich im Namen („2024_Steuer_…"), gilt sie.
-
-    Ab Wortanfang gesucht — sonst macht „Steuerberater" jede Post zur
-    Steuerakte und „Nebenkostenwiderspruch" bliebe zufällig richtig."""
-    for art in DOKUMENTARTEN:
-        if re.search(r"\b" + re.escape(art.lower()), lesbar):
-            return art
-    return ""
-
 
 def _vorschlag(d: Dokument) -> dict:
     """Was die Ablage vermutet: Art, Jahr — und wie sicher sie sich ist.
@@ -395,14 +286,6 @@ def _eindeutigkeit_sichern(session: Session) -> None:
         log.warning("Eindeutigkeit der Ablage nicht gesetzt: %s", fehler)
 
 
-# CCLXXVIII: `.immocalc`-Steckbriefe (CCLXXIV) liegen als Sidecar neben dem
-# Beleg. Sie sind keine eigenständigen Belege und dürfen nie als Dokument in den
-# Eingang wandern — sonst stünde neben jedem PDF eine zweite, sinnlose Zeile.
-def _ist_sidecar(name: str) -> bool:
-    """Ist das ein `.immocalc`-Steckbrief statt eines echten Belegs?"""
-    return (name or "").lower().endswith(".immocalc")
-
-
 def _aufnehmen(session: Session, o: Objekt, eintrag) -> Dokument | None:
     """Legt einen Eingangseintrag an. `None`, wenn es ihn schon gibt oder wenn
     es ein `.immocalc`-Steckbrief ist (der gehört zum Beleg, nicht daneben)."""
@@ -423,20 +306,6 @@ def _aufnehmen(session: Session, o: Objekt, eintrag) -> Dokument | None:
         return None
     session.refresh(d)
     return d
-
-
-def _bezeichnung(name: str) -> str:
-    """Der ursprüngliche Name als Bezeichnung — ohne Endung, Datum und Betrag.
-
-    Ohne sie hießen alle Belege eines Jahres gleich: aus
-    „Grundsteuerbescheid 2024.pdf" wurde „2024_Steuer.pdf" und aus dem
-    zweiten Bescheid „2024_Steuer-2.pdf". Was der Nutzer selbst benannt hat,
-    bleibt erhalten (XCVII).
-
-    Datum und Betrag fallen hier heraus, weil `dateiname` sie an ihrem festen
-    Platz neu setzt — vorn und hinten. Sonst stünden sie zweimal da."""
-    stamm = name.rsplit(".", 1)[0] if "." in name else name
-    return ohne_datum(ohne_betrag(stamm))
 
 
 def _automatisch(session: Session, d: Dokument, o: Objekt, client) -> bool:
@@ -550,15 +419,6 @@ def _scanne(session: Session) -> dict:
 ABGLEICH_TIEFE = 4
 
 
-def _norm(pfad: str) -> str:
-    """Vergleichsform eines Cloud-Pfades: führender Trenner, keiner am Ende."""
-    return "/" + "/".join(t for t in (pfad or "").split("/") if t)
-
-
-def _elternteil(pfad: str) -> str:
-    return _norm(pfad).rsplit("/", 1)[0] or "/"
-
-
 def _baum(client, wurzel: str, tiefe: int = ABGLEICH_TIEFE) -> dict:
     """Alle Dateien unterhalb eines Ordners, nach Pfad. Rein lesend.
 
@@ -589,13 +449,6 @@ def _baum(client, wurzel: str, tiefe: int = ABGLEICH_TIEFE) -> dict:
             else:
                 gefunden[_norm(e.pfad)] = e
     return gefunden
-
-
-def _einziger(kandidaten: list[str]) -> str:
-    """Genau ein Treffer zählt. Bei mehreren wird nicht geraten — zwei gleich
-    heissende Dateien lassen sich nicht auseinanderhalten, und ein falsch
-    umgehängter Eintrag ist schlimmer als ein gemeldeter."""
-    return kandidaten[0] if len(kandidaten) == 1 else ""
 
 
 def _wiedergefunden(d: Dokument, frei: dict, vergeben: set[str]) -> tuple[str, str]:
@@ -670,12 +523,6 @@ def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
 
     ergebnis["unveraendert"] = unveraendert
     return ergebnis
-
-
-def _kurz(d: Dokument, o: Objekt) -> dict:
-    """Ein Eintrag, so knapp wie die Rückmeldung ihn braucht."""
-    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
-            "objekt": o.slug, "objekt_name": o.name}
 
 
 def _abgleiche(session: Session, trocken: bool) -> dict:
@@ -1267,29 +1114,6 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
             "proben": proben}
 
 
-def _ordner_aus_pfad(pfad: str, wurzel: str) -> str:
-    """Der echte Unterordner, in dem eine Datei liegt (CCCXVI).
-
-    Aus `pfad` wird der Teil unter dem Objektordner genommen; der erste
-    Abschnitt davon ist der Ordner. Liegt die Datei direkt im Hauptordner,
-    ist das Ergebnis leer ("") — sie ist frisch hereingekommen."""
-    p = (pfad or "").strip("/")
-    w = (wurzel or "").strip("/")
-    if w and p.startswith(w):
-        p = p[len(w):].strip("/")
-    teile = p.split("/")
-    return teile[0] if len(teile) > 1 else ""
-
-
-def _ordner_titel(ordner: str) -> str:
-    """Der Ordnername lesbar: „40_Kauf_Eigentum_Finanzierung" → „Kauf Eigentum
-    Finanzierung". Leer heißt Hauptordner (frisch hereingekommen)."""
-    if not ordner:
-        return "Neu / Hauptordner"
-    ohne_nr = ordner.split("_", 1)[-1] if ordner[:2].isdigit() else ordner
-    return ohne_nr.replace("_", " ").strip() or ordner
-
-
 @router.get("/objekt/{slug}/baum")
 def baum(slug: str, session: Session = Depends(get_session)) -> dict:
     """Dokumentenbaum nach dem ECHTEN Ordner (CCCXVI): jeder Ast ist ein
@@ -1349,12 +1173,6 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
         "offen": sum(a["offen"] for a in reihe),
         "aeste": reihe,
     }
-
-
-def _beleg_karte(d: Dokument) -> dict:
-    """Das Wenige, das die Detailansicht zu einem Beleg braucht."""
-    return {"id": d.id, "dateiname": d.dateiname, "jahr": d.jahr,
-            "status": d.status, "info": bool(d.info_zu_typ)}
 
 
 @router.get("/objekt/{slug}/eintrag/{typ}/{eid}/belege")
@@ -1569,70 +1387,6 @@ def _regeln(session: Session) -> list[Erkennungsregel]:
 # der Abschläge und der monatliche Abschlag. Deshalb ein zweiter, gezielter
 # Aufruf, der die drei getrennt liest und benennt.
 # --------------------------------------------------------------------------
-
-def _strom_hinweis(kostenart: str, ergebnis: dict) -> str:
-    """Alles, was auf einen Strombeleg deuten kann, in einem Satz.
-
-    Nicht nur der Kontext-Hinweis der Oberfläche (den gibt es nur beim Ablegen
-    an einer Position), sondern auch, was die allgemeine Auslese schon erkannt
-    hat: Sache, Belegart, Absender und die Kostenart aus dem Raster. So greift
-    der Zweig auch im Dokumenteneingang, wo niemand eine Kostenart mitschickt."""
-    felder = ergebnis.get("felder")
-    felder = felder if isinstance(felder, dict) else {}
-    teile = (kostenart, ergebnis.get("sache"), ergebnis.get("dokumenttyp"),
-             ergebnis.get("absender"), felder.get("kostenart"))
-    return " ".join(str(t) for t in teile if t)
-
-
-def _zeitraum_text(von: str | None, bis: str | None) -> str:
-    """Der abgerechnete Zeitraum lesbar — „15.06.2024 – 14.06.2025"."""
-    def tag(iso: str | None) -> str:
-        try:
-            return date.fromisoformat(iso).strftime("%d.%m.%Y") if iso else ""
-        except (ValueError, TypeError):
-            return ""
-    beide = [t for t in (tag(von), tag(bis)) if t]
-    return " – ".join(beide)
-
-
-def _strom_in_felder(ergebnis: dict, strom: dict) -> None:
-    """Menge und Betrag der Stromauslese in die Antwortfelder ziehen.
-
-    Der gezielte Zweig ist die genauere Quelle — er hält Lieferung, Nachzahlung
-    und Abschlag auseinander. Sein Betrag hat deshalb Vorrang, auch im Raster
-    (`felder`), aus dem das Prüfblatt seine Eingaben vorbelegt: sonst stünde
-    dort weiter die Nachzahlung, ein Zwanzigstel der Rechnung."""
-    menge, betrag = strom.get("menge_kwh"), strom.get("betrag")
-    if betrag:
-        ergebnis["betrag"] = betrag
-    felder = ergebnis.get("felder")
-    if not isinstance(felder, dict):
-        felder = ergebnis["felder"] = {}
-    if betrag:
-        felder["betrag"] = betrag
-        felder["betrag_art"] = strom.get("betrag_label") or ""
-    if menge:
-        felder["verbrauch_kwh"] = menge
-    if strom.get("preis_kwh"):
-        felder["preis_kwh"] = strom["preis_kwh"]
-    for schluessel in ("nachzahlung", "abschlag_monat"):
-        if strom.get(schluessel):
-            felder[schluessel] = strom[schluessel]
-    zeitraum = _zeitraum_text(strom.get("von"), strom.get("bis"))
-    if zeitraum:
-        felder["zeitraum"] = zeitraum
-        if not (ergebnis.get("zeitraum_hinweis") or "").strip():
-            ergebnis["zeitraum_hinweis"] = zeitraum
-    # Eine Verbrauchsabrechnung mit Menge UND Bruttobetrag ist zweifelsfrei ein
-    # Kostenbeleg. Hatte eine Erkennungsregel sie zuvor auf „keine Kosten"
-    # gestellt — ein Muster wie „N-ERGIE Netz" trifft auch die Fußzeile einer
-    # Stromrechnung —, wäre der Betrag sonst verloren: genau das leere
-    # Betragsfeld, das gemeldet wurde.
-    if menge and strom.get("brutto"):
-        ergebnis["ist_kosten"] = True
-        if ergebnis.get("kosten_relevant") is False:
-            ergebnis["kosten_relevant"] = True
-
 
 def _strom_ergaenzen(session: Session, rohdaten: bytes, ergebnis: dict,
                      dateiname: str = "", kostenart: str = "") -> None:
@@ -1948,56 +1702,6 @@ def _pfad_konflikt(session: Session, pfad: str) -> HTTPException:
     return HTTPException(409, "Zu diesem Ablageort gibt es schon einen "
                               "Eintrag. Bitte den vorhandenen Eintrag prüfen "
                               "und gegebenenfalls entfernen.")
-
-
-def _aus_datum(datum: str) -> tuple[int | None, int | None]:
-    """Jahr und Monat aus einem ISO-Datum, wie `/erkennen` es liefert.
-
-    Unvollständiges oder Unsinniges wird still verworfen — der Beleg ist
-    wichtiger als sein Datum."""
-    teile = (datum or "").split("-")
-    try:
-        jahr = int(teile[0]) if teile[0] else None
-        monat = int(teile[1]) if len(teile) > 1 and teile[1] else None
-    except ValueError:
-        return None, None
-    return jahr, (monat if monat and 1 <= monat <= 12 else None)
-
-
-def _zum_datum(datum: str) -> date | None:
-    """Ein vollständiges ISO-Datum, sonst nichts (CLXXII).
-
-    Ein halbes Datum („2025-11") ist kein Belegdatum: den Tag zu erfinden
-    hiesse, den Beleg in einen Zeitraum zu schieben, in den er vielleicht gar
-    nicht gehört."""
-    try:
-        return date.fromisoformat((datum or "").strip())
-    except ValueError:
-        return None
-
-
-def _jahr_mit_fallback(jahr: int | None, name: str,
-                       datei_jahr: int | None) -> int | None:
-    """Das Belegjahr — das Datei-Datum zählt nur als Rückfall (CCCLXXXIV).
-
-    Vorrang hat, was Name oder erkanntes Datum sagen, solange es plausibel ist
-    (1990 … heute+10). Erst wenn von dort kein Jahr kommt, tritt das
-    mitgeschickte Erstellungs-/Änderungsdatum der Datei ein. So wird aus einer
-    Artikelnummer wie „2045_204596-…" kein Unsinnsjahr 2045 — und ein Beleg
-    ohne Jahr im Namen bekommt wenigstens das Jahr seiner Datei statt gar keins.
-
-    `jahr` ist das, was vorher feststand (ausgewähltes Jahr oder das aus dem
-    erkannten Datum); `name` der Dateiname, aus dem ein Jahr gelesen werden darf
-    (`datum_aus_namen` liefert von sich aus nur plausible Jahre); `datei_jahr`
-    das Jahr des Datei-Datums."""
-    if jahr and _jahr_plausibel(jahr):
-        return jahr
-    aus_name, _ = datum_aus_namen(name or "")
-    if aus_name:
-        return aus_name
-    if datei_jahr and _jahr_plausibel(datei_jahr):
-        return datei_jahr
-    return jahr
 
 
 @router.post("/scannen", status_code=201)
@@ -2647,17 +2351,6 @@ def _beleg(session: Session, dokument_id: int) -> Dokument:
     return d
 
 
-def _beleg_anbieter(d: Dokument) -> str:
-    """Der Aussteller/Anbieter des Belegs aus dem KI-Raster (N37).
-
-    Für Versicherungsbelege liefert die KI-Auslese den `anbieter` im Raster
-    (`kiauslese`, Raster VERSICHERUNG); andere Belege tragen ihn als
-    `absender`. Leer, wenn keiner erkannt wurde."""
-    felder = d.ki_felder or {}
-    roh = felder.get("anbieter") or felder.get("absender") or ""
-    return roh.strip() if isinstance(roh, str) else ""
-
-
 def _an_anbieter_position_angleichen(session: Session, d: Dokument) -> None:
     """N37: Ein Beleg soll auf der spezifischen Kostenposition landen, die
     seinen Anbieter führt — nicht auf einer zweiten, generischen daneben.
@@ -2790,70 +2483,6 @@ def position_loesen(dokument_id: int,
 # überschrieben. Idempotent: existiert zum Beleg bereits ein vorläufiger
 # Datensatz desselben Typs, entsteht kein zweiter.
 # --------------------------------------------------------------------------
-
-def _ki_zahl(wert) -> Optional[float]:
-    """Ein Rasterwert als Zahl — deutsches Komma und Tausenderpunkt inklusive.
-
-    Das Modell soll Punkt-Dezimalzahlen liefern, aber ein „1.234,56 €" aus dem
-    Beleg darf nicht scheitern. `None`, wenn nichts Brauchbares dasteht."""
-    if isinstance(wert, bool):        # bool ist in Python eine Zahl — hier nicht
-        return None
-    if isinstance(wert, (int, float)):
-        return round(float(wert), 2)
-    if not isinstance(wert, str):
-        return None
-    roh = re.sub(r"[^\d,.-]", "", wert)
-    if not roh or roh in ("-", ".", ","):
-        return None
-    if "," in roh:
-        # Deutsches Format: Punkt ist Tausendertrenner, Komma das Dezimalzeichen.
-        roh = roh.replace(".", "").replace(",", ".")
-    elif roh.count(".") > 1:
-        # Nur Punkte, mehrere davon → alle sind Tausendertrenner (1.234.567).
-        roh = roh.replace(".", "")
-    else:
-        # Genau ein Punkt: eine dreistellige Endgruppe ist ein Tausendertrenner
-        # (1.234 → 1234), zwei Stellen sind Nachkommastellen (12.50 → 12,50).
-        ganz, _, rest = roh.rpartition(".")
-        if ganz and len(rest) == 3:
-            roh = ganz + rest
-    try:
-        return round(float(roh), 2)
-    except ValueError:
-        return None
-
-
-def _ki_datum(wert) -> date | None:
-    """Ein Rasterwert als Datum — ISO (YYYY-MM-DD) oder deutsch (TT.MM.JJJJ).
-
-    Ein blosses Jahr („2024") ergibt kein Datum: den Tag zu erfinden hiesse,
-    einen Zeitraum zu behaupten, den der Beleg nicht nennt."""
-    if isinstance(wert, date):
-        return wert
-    if not isinstance(wert, str):
-        return None
-    roh = wert.strip()
-    treffer = re.match(r"(\d{4})-(\d{2})-(\d{2})", roh)
-    if treffer:
-        try:
-            return date(int(treffer[1]), int(treffer[2]), int(treffer[3]))
-        except ValueError:
-            return None
-    treffer = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", roh)
-    if treffer:
-        try:
-            return date(int(treffer[3]), int(treffer[2]), int(treffer[1]))
-        except ValueError:
-            return None
-    return None
-
-
-def _ki_text(wert) -> str:
-    """Ein Rasterwert als knapper Klartext, ohne Umbrüche."""
-    if wert is None or isinstance(wert, (dict, list)):
-        return ""
-    return str(wert).strip().replace("\n", " ")[:120]
-
 
 def _schon_vorlaeufig(session: Session, modell, dokument_id: int):
     """Der bereits aus diesem Beleg entstandene vorläufige Datensatz — oder None.
@@ -3546,22 +3175,6 @@ class ImmoCalcIn(BaseModel):
     einordnung: str | None = None
 
 
-def _sidecar_pfad(pfad: str) -> str:
-    """Der Pfad der `.immocalc`-Datei neben dem Beleg: die Endung wird ersetzt,
-    ein Beleg ohne Endung bekommt sie angehängt."""
-    stamm, punkt, endung = pfad.rpartition(".")
-    if punkt and "/" not in endung:      # der Punkt gehört zur Dateiendung
-        return f"{stamm}.immocalc"
-    return f"{pfad}.immocalc"
-
-
-def _dateistamm(name: str) -> str:
-    """Der Name ohne Endung — „2025_NK-Müll.pdf" → „2025_NK-Müll". Die `.immocalc`
-    -Sidecar teilt sich den Stamm mit ihrem Beleg."""
-    stamm, punkt, endung = name.rpartition(".")
-    return stamm if (punkt and "/" not in endung) else name
-
-
 # N30 — Ordner nicht endlos tief absteigen: Belege liegen ein bis zwei Ebenen
 # unter dem Objektordner (60_Nebenkosten/2025/…). Fünf Ebenen decken alles ab
 # und begrenzen die WebDAV-Aufrufe je Lauf.
@@ -3660,13 +3273,6 @@ _FELD_TITEL = {
 }
 
 
-def _feld_wert(wert) -> str:
-    """Ein Rasterwert als Klartext — Ja/Nein für Wahrheitswerte."""
-    if isinstance(wert, bool):
-        return "Ja" if wert else "Nein"
-    return str(wert)
-
-
 def _immocalc_text(d: Dokument, body: ImmoCalcIn) -> str:
     """Der menschenlesbare Steckbrief, der neben dem PDF landet.
 
@@ -3706,15 +3312,6 @@ def _immocalc_text(d: Dokument, body: ImmoCalcIn) -> str:
     if einordnung:
         zeilen += ["", "Einordnung:", f"  {einordnung}"]
     return "\n".join(zeilen) + "\n"
-
-
-def _adr_norm(text: str) -> str:
-    """Vergleichsform einer Adresse für den Objekt-Abgleich: klein, ohne
-    Sonderzeichen, „Straße"/„Str."/„str" auf denselben Nenner gebracht."""
-    t = (text or "").lower().replace("ß", "ss")
-    t = t.replace("strasse", "str")
-    t = re.sub(r"[^0-9a-zäöü]+", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
 
 
 def _objekt_aus_immobilie(session: Session, immobilie: str) -> Objekt | None:
@@ -3805,18 +3402,6 @@ def immocalc(dokument_id: int, body: ImmoCalcIn,
 # `position_id` bleibt bewusst leer — es entsteht keine Kostenposition und es
 # wird kein Betrag verrechnet.
 # --------------------------------------------------------------------------
-
-def _ist_kostenfrei(d: Dokument) -> bool:
-    """Ein Beleg ohne eigenen Kostenanteil: in keine Kostenposition
-    eingerechnet (`position_id` leer) und ohne Betrag."""
-    return d.position_id is None and not d.betrag
-
-
-def _anh_zeige(d: Dokument) -> dict:
-    """Ein Anhänger, so knapp wie die Chip-Anzeige ihn braucht."""
-    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
-            "kategorie": d.kategorie, "kostenart": d.kostenart, "jahr": d.jahr}
-
 
 class AnhaengerIn(BaseModel):
     """Ein kostenfreier Beleg wird an ein Kostenart-Thema gehängt."""
@@ -3974,21 +3559,6 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
     return {"ok": True, "id": d.id, "pfad": d.pfad, "dateiname": name,
             "alt": alt,
             "hinweis": "Die vorherige Datei bleibt in der Nextcloud liegen."}
-
-
-def _dateiname_kopfzeile(name: str) -> str:
-    """Der Dateiname für `Content-Disposition` — auch mit € und Umlauten.
-
-    Ein HTTP-Kopf trägt kein €. Seit der Betrag hinten im Namen steht
-    (CXXIII), heisst fast jede Rechnung „…_1234,56€.pdf" — und jede Vorschau
-    darauf antwortete mit einem 500er, weil sich der Kopf nicht kodieren
-    liess. Also beides (RFC 6266): ein Name ohne Sonderzeichen als Rückfall
-    und daneben der vollständige, prozentkodiert. Jeder heutige Browser nimmt
-    den zweiten."""
-    ohne_zoll = unicodedata.normalize("NFKD", name.replace('"', ""))
-    schlicht = ohne_zoll.encode("ascii", "ignore").decode("ascii").strip()
-    return (f'filename="{schlicht or "beleg"}"; '
-            f"filename*=UTF-8''{quote(name)}")
 
 
 @router.get("/{dokument_id}/inhalt")
@@ -4394,13 +3964,6 @@ def durchsuchbar(dokument_id: int,
 # und der Bezeichnung aus dem Originalnamen (XCVII — die vom Nutzer gewählte
 # Benennung bleibt erhalten).
 # --------------------------------------------------------------------------
-
-def _elternordner(pfad: str) -> str:
-    """Der Elternordner eines Cloud-Pfades, ohne führenden Trenner —
-    passend für `_freier_name`/`client.verschiebe`. Leer, wenn die Datei im
-    Wurzelverzeichnis liegt."""
-    return pfad.strip("/").rpartition("/")[0]
-
 
 def _sidecar_mitnehmen(client, alt_pfad: str, neu_pfad: str) -> bool:
     """Benennt die `.immocalc`-Sidecar-Datei mit um, wenn es sie gibt.
