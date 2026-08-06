@@ -355,12 +355,21 @@ export function mietChart(punkte, { breite = 380, hoehe = 205,
   const maxQ = qmMax * 1.05;
   const fmtQm = v => (Math.round(v * 10) / 10).toLocaleString('de-DE');
 
-  const padL = 6, padR = hatQm ? 34 : 6, padOben = 16, padUnten = 30;
+  const padR = hatQm ? 34 : 6;
+  const n = punkte.length;
+  // N229 — lange kanonische Namen ("(Eschenau) Tauchersreuther Str. 5")
+  // passen nicht einzeilig unter eine schmale Säule und überlappten sich.
+  // Derselbe Zweizeiler wie bei `saeulen()`: Ortsteil oben, Strasse unten,
+  // je nach verfügbarer Spaltenbreite gekürzt.
+  const padL = 6;
   const nutzB = breite - padL - padR;
+  const step = nutzB / n;
+  const maxZeichen = Math.max(5, Math.floor(step / 6));
+  const labels = punkte.map(p => saeulenLabel(p.label, maxZeichen));
+  const zweizeilig = labels.some(l => l.length > 1);
+  const padOben = 16, padUnten = zweizeilig ? 44 : 30;
   const nutzH = hoehe - padOben - padUnten;
   const baseY = padOben + nutzH;
-  const n = punkte.length;
-  const step = nutzB / n;
   const bw = Math.min(30, step * 0.62);
   const eH = v => (v / maxE) * nutzH;
   const qY = v => baseY - (v / maxQ) * nutzH;
@@ -405,10 +414,19 @@ export function mietChart(punkte, { breite = 380, hoehe = 205,
       <text x="${breite - padR + 5}" y="${runden(top) + 16}" class="qax qu">€/m²</text>`;
   }
 
+  // Bei vielen Punkten wird jeder n-te ausgelassen — sonst drängen sich auch
+  // gekürzte Labels noch zusammen (Mietverlauf über viele Monate/Jahre).
   const schritt = Math.max(1, Math.ceil(n / 8));
-  const achse = punkte.map((p, i) => i % schritt === 0
-    ? `<text x="${runden(cx(i))}" y="${hoehe - 9}" class="ax">${p.label}</text>` : '')
-    .join('');
+  const achse = punkte.map((p, i) => {
+    if (i % schritt !== 0) return '';
+    const [z1, z2] = labels[i];
+    return z2
+      ? `<text x="${runden(cx(i))}" y="${hoehe - 17}" class="ax">${z1}<title>${
+          p.label}</title></text>
+         <text x="${runden(cx(i))}" y="${hoehe - 6}" class="ax">${z2}</text>`
+      : `<text x="${runden(cx(i))}" y="${hoehe - 9}" class="ax">${z1}<title>${
+          p.label}</title></text>`;
+  }).join('');
 
   return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img">
       <style>
