@@ -6,7 +6,7 @@
    PDF. Ein Beleg antippen tauscht die Vorschau, „Bearbeiten" führt ins
    bewährte Formular. Auf dem Telefon stapelt sich alles. */
 
-import { esc, api, installHilfe, melde, wahl, belegSeitenLaden } from '../immo.js';
+import { esc, api, installHilfe, melde, wahl, belegSeitenLaden, belegAnsehen } from '../immo.js';
 import { kostenIcon } from '../kostenicons.js';
 import { cfgFuer, felderFuer, endpunktBereich } from '../objekt-felder.js?v=2';
 import { feldWertText } from '../objekt-format.js?v=2';
@@ -62,6 +62,18 @@ export async function eintragDetail(bereich, id, laden) {
     }
   }
   const alle = [belege.haupt, ...(belege.unter || [])].filter(Boolean);
+
+  // N240 — welche Checklisten-Typen eine Vorlage im Vorlagenarchiv haben
+  // (Übergabeprotokoll, Selbstauskunft, Rauchwarnmelder-Abnahme …). Nur für
+  // Mietverhältnisse angefragt, ein Fehlschlag lässt die Checkliste einfach
+  // ohne Vorlagen-Links weiterlaufen.
+  let vorlagenNachTyp = new Map();
+  if (bereich === 'mieten') {
+    try {
+      const d = await api('/dokumentvorlagen?verwendungszweck=Vermietung');
+      vorlagenNachTyp = new Map((d.vorlagen || []).map(v => [v.typ, v]));
+    } catch { /* Vorlagenarchiv optional — Checkliste bleibt nutzbar */ }
+  }
 
   // Felder als ruhige Zusammenfassung — dieselbe Beschreibung wie das Formular.
   const felder = felderFuer(bereich, eintrag).filter(f => !f.hilfe && f.typ !== 'block');
@@ -161,12 +173,18 @@ export async function eintragDetail(bereich, id, laden) {
                  </div>
                </div>
              </div>`
-          : `<div class="dd-check fehlt">
+          : (() => {
+              const vorlage = vorlagenNachTyp.get(voll);
+              return `<div class="dd-check fehlt">
              <span class="dd-ci"></span>
              <span class="dd-cn leer">${esc(kurz)}</span>
+             ${vorlage ? `<button class="dd-vorlage" data-vorlage="${vorlage.id}"
+               data-vorlage-name="${esc(vorlage.name)}"
+               title="Leere Vorlage ansehen/herunterladen">Vorlage</button>` : ''}
              <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
                aria-label="${esc(kurz)} aufnehmen">${KAMERA_ICON}<span>aufnehmen</span></button>
            </div>`;
+            })();
     }).join('')}</div>${scanFeldHtml}`;
   };
   const belegeHtml = (bereich === 'mieten' && typen)
@@ -276,6 +294,14 @@ export async function eintragDetail(bereich, id, laden) {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
     const scanBtn = e.target.closest('[data-scan]');
     if (scanBtn) { gewaehltWort = scanBtn.dataset.wort || gewaehltWort; scanFeld.click(); return; }
+    // N240 — die leere Vorlage ansehen/herunterladen, ohne den „aufnehmen"-Weg
+    // zu berühren: reine Lesehilfe, kein Ersatz für den echten Beleg.
+    const vorlageBtn = e.target.closest('[data-vorlage]');
+    if (vorlageBtn) {
+      belegAnsehen(`/api/dokumentvorlagen/${vorlageBtn.dataset.vorlage}/inhalt`,
+        vorlageBtn.dataset.vorlageName || 'Vorlage', '', null);
+      return;
+    }
     // N224 — Kaution auf das normale Objektkonto vermerken (oder zurücknehmen),
     // ohne dass dafür ein Dokument nötig ist.
     const kontoBtn = e.target.closest('[data-kaution-objektkonto]');

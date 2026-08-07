@@ -131,6 +131,9 @@ export const NAV = [
   // „Dokumente": dort geht es um die Ablage, hier um das, was aus ihr bereits
   // bekannt ist.
   ['Belegarchiv', 'belegarchiv.html', '▥'],
+  // N240 — leere Formulare zum Ausfüllen (Übergabeprotokoll, Selbstauskunft,
+  // Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …), objektübergreifend.
+  ['Vorlagen', 'vorlagenarchiv.html', '▧'],
   // CCXL — das Immobilien-Lexikon. Steht bewusst vor „Einstellungen", damit die
   // Einstellungen der letzte Eintrag bleiben; auf dem Handy wandert es dadurch
   // von selbst hinter „Mehr" (Index ≥ SICHTBAR).

@@ -624,6 +624,36 @@ def regel_richtung(text: str, regeln) -> tuple[str, str, bool] | None:
     return None
 
 
+# N244 — Belegarten, die NEBEN dem eigentlichen Kostenbeleg herlaufen: sie
+# kündigen eine Zahlung an, erinnern an sie oder erteilen eine Vollmacht, sie
+# begründen die Kosten aber nicht. Entscheidend ist, dass sie AUCH DANN ihren
+# eigenen Namen bekommen, wenn ein Betrag darauf steht: eine Abbuchungsvor-
+# ankündigung nennt sehr wohl 174,00 € und ist trotzdem nicht der Bescheid.
+# Bewusst NUR die Nebenarten — „Grundsteuerbescheid", „Jahresabrechnung",
+# „Rechnung", „Gebührenbescheid" bleiben beim generischen Kostenart-Namen.
+_NEBENDOKUMENT = (
+    "abbuchungsvorankundigung", "abbuchungsankundigung",
+    "lastschriftankundigung", "lastschriftvorankundigung", "lastschriftmandat",
+    "zahlungsankundigung", "zahlungserinnerung", "zahlungsmitteilung",
+    "vorankundigung", "ankundigung",
+    "vorauszahlung", "abschlag", "abschlagsplan", "abschlagsrechnung",
+    "mahnung", "sepamandat", "sepalastschriftmandat",
+    "mitteilung", "information", "informationsschreiben", "bestatigung",
+)
+
+
+def _ist_nebendokument(dokumenttyp: str | None) -> bool:
+    """Nennt der Dokumenttyp eine Nebenart (Ankündigung, Mahnung, Mandat …)?
+
+    Verglichen wird über `regel_kompakt` — klein, ohne Umlaute und Sonder-
+    zeichen —, damit „Abbuchungs-Vorankündigung der Stadt Eckental" genauso
+    trifft wie „SEPA-Mandat". Teiltreffer genügt, weil der Typ oft einen Zusatz
+    trägt; die Liste enthält deshalb nur Wörter, die in einem echten Haupt-
+    beleg-Typ nicht vorkommen."""
+    k = regel_kompakt(dokumenttyp or "")
+    return bool(k) and any(wort in k for wort in _NEBENDOKUMENT)
+
+
 def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
                   ki_key: str = "", ki_modell: str = "") -> None:
     """Ergänzt den Heuristik-Vorschlag um die KI-Auslese (CCLXVIII).
@@ -674,12 +704,13 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
         ergebnis["kategorie"] = kanonisch
     elif ki_kat and not ergebnis.get("kategorie"):
         ergebnis["kategorie"] = ki_kat
-    # N237 — ist der Beleg NICHT der eigentliche Rechnungsbeleg (Info-Schreiben,
-    # SEPA-Mandat, Abbuchungsvorankündigung …), sagt der Dokumenttyp genauer,
-    # worum es geht, als die blosse Kostenart: „Abbuchungsvorankündigung" statt
-    # nur „Grundsteuer" — sonst verwechselbar mit dem echten Hauptbeleg.
+    # N237/N244 — ist der Beleg NICHT der eigentliche Rechnungsbeleg (Info-
+    # Schreiben, SEPA-Mandat, Abbuchungsvorankündigung …), sagt der Dokumenttyp
+    # genauer, worum es geht, als die blosse Kostenart: „Abbuchungsvorankündigung"
+    # statt nur „Grundsteuer" — sonst verwechselbar mit dem echten Hauptbeleg.
     ist_zusatzbeleg = (ki.get("kosten_relevant") is False
-                       or ki.get("ist_kosten") is False)
+                       or ki.get("ist_kosten") is False
+                       or _ist_nebendokument(ki.get("dokumenttyp")))
     if ist_zusatzbeleg and ki.get("dokumenttyp"):
         ergebnis["sache"] = ki["dokumenttyp"]
     elif ki.get("kostenart"):

@@ -90,32 +90,95 @@ def _ki_modell(session: Session) -> str:
 # Ablegen in der Cloud — eine Stelle für Zuordnen, Korrigieren und Automatik
 # --------------------------------------------------------------------------
 
-def _pfad_vergeben(session: Session, pfad: str) -> bool:
-    """Zeigt schon ein Eintrag dorthin? Der Unique-Index würde es später
-    ohnehin verhindern — nur dann läge die Datei bereits am neuen Platz und
-    die Datenbank am alten. Also vorher fragen."""
+def _eintraege_auf(session: Session, pfad: str) -> list[Dokument]:
+    """Welche Einträge zeigen auf diesen Pfad? (Mit und ohne führenden „/" —
+    beide Schreibweisen kommen im Bestand vor.)
+
+    Der Unique-Index verhindert ein Doppel später ohnehin — nur läge die Datei
+    dann bereits am neuen Platz und die Datenbank am alten. Also vorher
+    fragen."""
     ohne = pfad.strip("/")
-    return session.exec(
-        select(Dokument).where(Dokument.pfad.in_((f"/{ohne}", ohne)))).first() is not None
+    return list(session.exec(
+        select(Dokument).where(Dokument.pfad.in_((f"/{ohne}", ohne)))).all())
+
+
+# N242 — Vorsatz eines freigegebenen (extern gelöschten) Eintrags. Bewusst
+# ohne führenden „/": alles, was „liegt in der Cloud" an diesem Zeichen
+# erkennt, behandelt einen Grabstein dadurch von selbst richtig.
+GRABSTEIN = "entfernt:"
+
+
+def _ist_grabstein(pfad: str) -> bool:
+    """Hat dieser Eintrag seinen Pfad nach N242 abgegeben?"""
+    return (pfad or "").startswith(GRABSTEIN)
+
+
+def _verwaisten_eintrag_freigeben(session: Session, pfad: str) -> bool:
+    """N242 — gibt den Namen einer ausserhalb der App gelöschten Datei frei.
+
+    Wird nur gerufen, nachdem die Cloud diesen Pfad soeben live als **frei**
+    gemeldet hat. Ein Eintrag, der trotzdem noch dorthin zeigt, ist damit
+    nachweislich verwaist: der Nutzer hat die Datei direkt in der Nextcloud
+    gelöscht. Bis N242 blockierte so ein Eintrag „seinen" Namen für immer und
+    der nächste Beleg wich auf „…-2" aus, obwohl der Platz längst frei war.
+
+    Gelöscht wird der Eintrag **nicht** — er behält KI-Auslese, Betrag und alle
+    Verweise (Kostenposition, Mietstand, Belegdaten). Er gilt als `vermisst`
+    und legt nur seinen Pfad als Grabstein (`entfernt:…`) beiseite, damit der
+    Unique-Index den Namen wieder hergibt. Der Grabstein beginnt bewusst NICHT
+    mit „/": jede Stelle, die „liegt in der Cloud" an genau diesem Zeichen
+    erkennt (`darstellung._zeige`, Vorschau, Umbenennen), behandelt ihn dadurch
+    von selbst richtig, ohne eigene Sonderregel.
+
+    Der bewusst gewählte Preis (Nutzerentscheidung zu N242): kommt die Datei
+    später unter genau diesem Pfad zurück, erkennt der Abgleich sie nicht mehr
+    als „wiederda" (`_abgleiche_objekt` vergleicht auf `d.pfad`) — sie kommt
+    als neuer Eintrag herein."""
+    verwaist = _eintraege_auf(session, pfad)
+    if not verwaist:
+        return False
+    for d in verwaist:
+        grabstein = f"{GRABSTEIN}{d.pfad}"
+        # Derselbe Pfad kann über die Jahre mehrfach verwaisen — jeder
+        # Grabstein braucht seinen eigenen Platz im Unique-Index.
+        n = 2
+        while session.exec(select(Dokument)
+                           .where(Dokument.pfad == grabstein)).first():
+            grabstein = f"{GRABSTEIN}{d.pfad}#{n}"
+            n += 1
+        log.info("Verwaisten Eintrag freigegeben (Datei extern gelöscht): %s",
+                 d.pfad)
+        d.pfad = grabstein
+        d.status = VERMISST
+        session.add(d)
+    # Der neue Eintrag bekommt gleich denselben Pfad — der Grabstein muss vor
+    # ihm in der Datenbank stehen, sonst schlägt der Unique-Index zu.
+    session.flush()
+    return True
 
 
 def _freier_name(session: Session, client, ordner: str, name: str) -> str:
     """Haengt -2, -3 an, falls der Name schon vergeben ist — nie ueberschreiben.
 
-    Gefragt wird in der Cloud *und* in der Datenbank. Hat der Nutzer die Datei
-    dort gelöscht, ist der Platz in der Cloud frei, der Eintrag zeigt aber
-    weiter darauf — ohne diese zweite Frage verschöbe die Automatik die Datei
-    und scheiterte danach am Eintrag."""
+    Gefragt wird die Cloud, live per WebDAV. Nur eine Datei, die dort WIRKLICH
+    noch liegt, führt zu einem zweiten Namen.
+
+    N242: meldet die Cloud den Platz als frei, zeigt aber noch ein Eintrag
+    dorthin, hat der Nutzer die Datei ausserhalb der App gelöscht — dann gibt
+    `_verwaisten_eintrag_freigeben` den Namen wieder frei, statt auf „-2"
+    auszuweichen. Ohne dieses Aufräumen verschöbe die Automatik die Datei und
+    scheiterte danach am Unique-Index des alten Eintrags."""
     stamm, punkt, endung = name.rpartition(".")
     stamm = stamm or name
     endung = f".{endung}" if punkt else ""
     kandidat, n = name, 2
-    while (client.existiert(f"{ordner}/{kandidat}")
-           or _pfad_vergeben(session, f"{ordner}/{kandidat}")):
+    while client.existiert(f"{ordner}/{kandidat}"):
         kandidat = f"{stamm}-{n}{endung}"
         n += 1
         if n > 50:
-            break
+            # Notausgang: hier ist nichts nachweislich frei — nichts freigeben.
+            return kandidat
+    _verwaisten_eintrag_freigeben(session, f"{ordner}/{kandidat}")
     return kandidat
 
 
@@ -377,6 +440,11 @@ def _wiedergefunden(d: Dokument, frei: dict, vergeben: set[str]) -> tuple[str, s
     Zuerst nach dem Namen — verschieben ist der häufigere Fall und der
     sicherere Schluss. Danach nach Ordner und Grösse: dieselbe Datei, im
     selben Ordner, nur anders benannt."""
+    if _ist_grabstein(d.pfad):
+        # N242 — dieser Eintrag hat seinen Namen abgegeben, weil der Nutzer die
+        # Datei gelöscht hat. Eine gleichnamige Datei anderswo ist nicht „seine"
+        # zurückgekehrte Datei — er bleibt vermisst.
+        return "", ""
     name = d.dateiname.lower()
     gleicher_name = [p for p, e in frei.items()
                      if e.name.lower() == name and p not in vergeben]

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vorlagen · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* N240 — Vorlagenarchiv: dieselben Bausteine wie das Belegarchiv (N84),
+     hier nach Verwendungszweck statt Objekt/Jahr gruppiert. */
+  .zahlzeile{display:flex;align-items:center;gap:8px;margin:0 2px 14px}
+  .zahlzeile .zahl{font:600 12px var(--mono);color:var(--soft)}
+
+  .vz-gruppe{margin-bottom:22px}
+  .vz-titel{font:700 12px var(--mono);letter-spacing:.04em;color:var(--soft);
+            text-transform:uppercase;margin:0 2px 10px}
+
+  .vk{background:var(--sheet);border-radius:14px;padding:14px 16px;margin-bottom:10px;
+      box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .vk-kopf{display:flex;align-items:center;gap:8px}
+  .vk-name{font:600 14px var(--body);color:var(--ink);flex:1;min-width:0}
+  .vk-quelle{flex:none;width:26px;height:26px;border:none;background:#F1F4F4;
+             color:var(--soft);border-radius:8px;cursor:pointer;font:600 12px var(--mono);
+             display:flex;align-items:center;justify-content:center}
+  .vk-quelle:hover{background:var(--teal-l);color:var(--teal-d)}
+  .vk-hinweis{font:400 12.5px var(--body);color:var(--soft);line-height:1.5;margin:8px 0 0}
+  .vk-fuss{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:11px;
+           border-top:1px solid var(--line)}
+  .vk-datei{flex:1;min-width:0;font:500 10.5px var(--mono);color:var(--soft);
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vk-ansehen{flex:none;border:none;background:var(--teal-l);color:var(--teal-d);
+              font:600 12.5px var(--disp);border-radius:10px;padding:0 14px;
+              min-height:44px;cursor:pointer}
+  .vk-ansehen:hover{background:var(--teal);color:#fff}
+  .vk-loeschen{flex:none;width:44px;height:44px;border:none;background:#F1F4F4;
+               color:var(--soft);border-radius:10px;cursor:pointer;
+               font:400 17px var(--body);display:flex;align-items:center;
+               justify-content:center;line-height:1}
+  .vk-loeschen:hover{background:var(--neg-bg);color:var(--neg)}
+
+  .vz-laden{width:100%;border:1.5px dashed var(--line);border-radius:12px;
+            background:none;color:var(--soft);font:600 13px var(--body);
+            padding:16px;cursor:pointer;min-height:44px}
+  .vz-laden:hover{border-color:var(--teal);color:var(--teal-d)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <a href="index.html" aria-label="Zur Übersicht" class="applogo-link"><img src="icons/icon.svg" alt="" class="applogo"></a>
+    <div class="barwrap">
+      <h1>Vorlagen</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <div class="zahlzeile"><span class="zahl" id="zahl"></span></div>
+    <div id="liste"></div>
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+/* N240 — Vorlagenarchiv: leere Formulare (Übergabeprotokoll, Selbstauskunft,
+   Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …) für die Vermietung,
+   getrennt von den echten Belegen des Nutzers (Backend: dokumentvorlagen.py).
+   Vorschau über dieselbe `belegAnsehen`-Ansicht wie überall sonst — ohne
+   `/seiten`/`/vorschau`-Endpunkte fällt sie automatisch auf „Im neuen Tab
+   öffnen" zurück (kein Duplikat, kein zweiter Vorschau-Weg). */
+import { api, esc, melde, frage, belegAnsehen, installNav } from './assets/immo.js';
+
+installNav();
+
+const sub = document.getElementById('sub');
+const zahl = document.getElementById('zahl');
+const liste = document.getElementById('liste');
+
+let vorlagen = [];
+
+function karte(v) {
+  const quelle = v.quelle_url
+    ? `<button class="vk-quelle" type="button" data-quelle="${v.id}"
+         title="Herkunft ansehen" aria-label="Herkunft ansehen">i</button>` : '';
+  return `<div class="vk">
+      <div class="vk-kopf">
+        <span class="vk-name">${esc(v.name)}</span>
+        ${quelle}
+      </div>
+      ${v.hinweis ? `<p class="vk-hinweis">${esc(v.hinweis)}</p>` : ''}
+      <div class="vk-fuss">
+        <span class="vk-datei" title="${esc(v.dateiname || '')}">${esc(v.dateiname || 'Datei')}</span>
+        <button class="vk-ansehen" type="button" data-ansehen="${v.id}">Vorlage ansehen</button>
+        <button class="vk-loeschen" type="button" data-loeschen="${v.id}"
+                aria-label="Vorlage entfernen" title="Vorlage entfernen">✕</button>
+      </div>
+    </div>`;
+}
+
+function gruppenHtml() {
+  const gruppen = new Map();
+  vorlagen.forEach(v => {
+    const liste = gruppen.get(v.verwendungszweck) || [];
+    liste.push(v);
+    gruppen.set(v.verwendungszweck, liste);
+  });
+  return [...gruppen.entries()].map(([zweck, liste]) => `
+    <div class="vz-gruppe">
+      <div class="vz-titel">${esc(zweck)}</div>
+      ${liste.map(karte).join('')}
+    </div>`).join('');
+}
+
+liste.addEventListener('click', async e => {
+  const laden = e.target.closest('[data-laden]');
+  if (laden) {
+    laden.disabled = true;
+    laden.textContent = 'Wird geladen …';
+    try {
+      const d = await api('/dokumentvorlagen/startbestand', { method: 'POST' });
+      if (d.angelegt) melde(`${d.angelegt} ${d.angelegt === 1 ? 'Vorlage' : 'Vorlagen'} angelegt`);
+      else if (d.fehler?.length) melde('Keine Vorlage konnte geladen werden', 'neg');
+      else melde('Startbestand ist bereits vollständig');
+      await laden_();
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+      laden.disabled = false;
+      laden.textContent = 'Vermietungs-Startbestand laden';
+    }
+    return;
+  }
+  const ansehen = e.target.closest('[data-ansehen]');
+  if (ansehen) {
+    const v = vorlagen.find(x => x.id === Number(ansehen.dataset.ansehen));
+    if (!v) return;
+    belegAnsehen(`/api/dokumentvorlagen/${v.id}/inhalt`, v.name, v.pfad || '', null);
+    return;
+  }
+  const quelle = e.target.closest('[data-quelle]');
+  if (quelle) {
+    const v = vorlagen.find(x => x.id === Number(quelle.dataset.quelle));
+    if (!v) return;
+    melde(`Herkunft: ${v.quelle_url}`);
+    return;
+  }
+  const loeschen = e.target.closest('[data-loeschen]');
+  if (!loeschen) return;
+  const id = Number(loeschen.dataset.loeschen);
+  const ok = await frage('Vorlage entfernen',
+    'Nur der Eintrag hier verschwindet — die Datei bleibt unangetastet in der '
+    + 'Nextcloud und lässt sich bei Bedarf erneut hochladen.',
+    { knopf: 'Entfernen', gefahr: true });
+  if (!ok) return;
+  try {
+    await api(`/dokumentvorlagen/${id}`, { method: 'DELETE' });
+    melde('Vorlage entfernt');
+    await laden_();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+});
+
+async function laden_() {
+  let d;
+  try {
+    d = await api('/dokumentvorlagen');
+  } catch {
+    sub.textContent = 'API nicht erreichbar';
+    liste.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>
+      <p>Das Vorlagenarchiv konnte nicht geladen werden.</p></div>`;
+    return;
+  }
+
+  vorlagen = d.vorlagen;
+  zahl.textContent = `${d.anzahl} ${d.anzahl === 1 ? 'Vorlage' : 'Vorlagen'}`;
+  sub.textContent = d.anzahl
+    ? `${d.anzahl} ${d.anzahl === 1 ? 'Vorlage' : 'Vorlagen'} hinterlegt`
+    : 'Noch keine Vorlage hinterlegt';
+
+  if (!d.anzahl) {
+    liste.innerHTML = `<div class="empty">
+        <div class="big">Noch keine Vorlagen</div>
+        <p>Leere Formulare für die Vermietung — Übergabeprotokoll,
+           Mieterselbstauskunft, Rauchwarnmelder-Abnahme und
+           Wohnungsgeberbestätigung. Der Startbestand lädt seriöse,
+           kostenlose Muster von Haus &amp; Grund und den Behörden.</p>
+        <button class="vz-laden" type="button" data-laden style="margin-top:14px">
+          Vermietungs-Startbestand laden</button>
+      </div>`;
+    return;
+  }
+  liste.innerHTML = gruppenHtml();
+}
+
+await laden_();
+</script>
+</body>
+</html>

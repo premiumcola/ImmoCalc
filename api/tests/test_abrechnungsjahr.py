@@ -73,3 +73,47 @@ def test_echter_beleg_behaelt_die_kostenart_als_sache(monkeypatch):
     ocr._ki_ergaenzen(erg, "text", ki_key="x")
     assert erg["sache"] == "Grundsteuer"
     assert erg["betrag"] == 256.36
+
+
+def test_nebendokument_mit_betrag_nutzt_trotzdem_den_dokumenttyp(monkeypatch):
+    """N244 — der echte Fall aus der Praxis: eine Abbuchungsvorankündigung
+    nennt sehr wohl einen Betrag (2 × 87,00 €) und gilt der KI deshalb als
+    kostenrelevant. Sie ist trotzdem NICHT der Grundsteuerbescheid und darf
+    nicht wie er heissen — sonst hiessen beide „NK-Grundsteuer" und die
+    Ankündigung bekäme nur ein angehängtes „-2"/„-3"."""
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *a, **k: True)
+    monkeypatch.setattr(kiauslese, "lies_beleg", lambda *a, **k: {
+        "kostenart": "Grundsteuer", "dokumenttyp": "Abbuchungsvorankündigung",
+        "kosten_relevant": True, "ist_kosten": True, "betrag": 174.00})
+    erg = _leeres_ergebnis()
+    ocr._ki_ergaenzen(erg, "text", ki_key="x")
+    assert erg["sache"] == "Abbuchungsvorankündigung"
+    # Der Betrag bleibt erhalten — erkannt ist erkannt; nur der NAME ändert sich.
+    assert erg["betrag"] == 174.00
+
+
+def test_nebendokument_erkennt_auch_zusaetze_im_typ(monkeypatch):
+    """N244 — der Dokumenttyp trägt oft einen Zusatz („… der Stadt Eckental").
+    Der Teiltreffer über `regel_kompakt` muss ihn trotzdem erwischen."""
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *a, **k: True)
+    monkeypatch.setattr(kiauslese, "lies_beleg", lambda *a, **k: {
+        "kostenart": "Wasser",
+        "dokumenttyp": "Abbuchungs-Vorankündigung der Stadt Eckental",
+        "kosten_relevant": True, "ist_kosten": True, "betrag": 117.00})
+    erg = _leeres_ergebnis()
+    ocr._ki_ergaenzen(erg, "text", ki_key="x")
+    assert erg["sache"] == "Abbuchungs-Vorankündigung der Stadt Eckental"
+
+
+def test_hauptbelegarten_gelten_nicht_als_nebendokument():
+    """N244 — die Wortliste darf keinen echten Hauptbeleg einfangen: sonst
+    verlöre die ganze Ablage ihre einheitlichen Kostenart-Namen."""
+    for typ in ("Grundsteuerbescheid", "Jahresabrechnung", "Rechnung",
+                "Gebührenbescheid", "Betriebskostenabrechnung",
+                "Heizkostenabrechnung", "Schlussrechnung"):
+        assert not ocr._ist_nebendokument(typ), typ
+    for typ in ("Abbuchungsvorankündigung", "SEPA-Lastschriftmandat",
+                "Zahlungserinnerung", "Mahnung", "Abschlagsplan"):
+        assert ocr._ist_nebendokument(typ), typ
+    assert not ocr._ist_nebendokument("")
+    assert not ocr._ist_nebendokument(None)

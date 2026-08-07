@@ -333,7 +333,8 @@ function anhaengerChipsHtml(k, bearbeitbar) {
       <span class="anh-chip" title="Infobeleg — zählt nicht als Kosten">
         ${ANH_ICON}
         <button type="button" class="anh-chip-name" data-beleg="${d.id}"
-          data-name="${esc(d.dateiname)}">${esc(kurzBeleg(d.dateiname))}</button>
+          data-name="${esc(d.dateiname)}"
+          data-pfad="${esc(d.pfad || '')}">${esc(kurzBeleg(d.dateiname))}</button>
         ${bearbeitbar ? `<button type="button" class="anh-chip-x"
           data-anh-loesen="${d.id}" title="Anhänger lösen"
           aria-label="Anhänger lösen">×</button>` : ''}
@@ -1484,10 +1485,15 @@ export function initHandlers() {
     const beleg = e.target.closest('[data-beleg]');
     if (beleg) {
       e.preventDefault();
+      // N245 — der Ablagepfad kommt bevorzugt aus `data-pfad` (Muster aus N232,
+      // wie im Dokumente-Baum und in der Eintrags-Detailansicht). Der Rückfall
+      // auf `title` hält die Stromketten-Belege am Laufen, die ihn dort tragen;
+      // die Anhänger-Chips können das nicht, weil ihr `title` die Erklärung
+      // „Infobeleg — zählt nicht als Kosten" trägt.
       belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`,
                    beleg.dataset.name
                    || beleg.textContent.replace(/^PDF · /, '').trim(),
-                   beleg.getAttribute('title') || '');
+                   beleg.dataset.pfad || beleg.getAttribute('title') || '');
       return;
     }
 
@@ -1556,7 +1562,14 @@ export function initHandlers() {
       }
       const uebernommen = vorschlag
         ? await betragVorschlagen(ziel.kostenart, vorschlag) : false;
-      if (!uebernommen && !erkennungHatWert(vorschlag)) {
+      // N238/N243 — ein als nicht kostenrelevant erkannter Beleg (Info-
+      // Schreiben, SEPA-Mandat, Abbuchungsvorankündigung …) SOLL keinen Betrag
+      // tragen; der Hinweis „bitte von Hand eintragen" ist dort schlicht
+      // falsch — es gibt nichts einzutragen. Nur bei einer echten Rechnung, an
+      // der die Erkennung nur gescheitert ist, bleibt der Hinweis sinnvoll.
+      const nichtKostenrelevant = vorschlag?.ist_kosten === false
+        || vorschlag?.kosten_relevant === false;
+      if (!uebernommen && !erkennungHatWert(vorschlag) && !nichtKostenrelevant) {
         melde('Beleg gespeichert — kein Betrag automatisch erkannt. '
           + 'Bitte den Betrag von Hand eintragen.', '');
       }

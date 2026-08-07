@@ -1036,10 +1036,21 @@ def test_index_wird_nach_fehlschlag_erneut_versucht():
 # XCV: ein vergebener Pfad bricht nichts ab
 # --------------------------------------------------------------------------
 
-def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
-    """XCV: die Datei ist in der Cloud gelöscht, der Eintrag zeigt weiter
-    dorthin. Ohne die zweite Frage verschiebt die Automatik und scheitert
-    danach am Eintrag — 500, Datei am Ziel, Datenbank am Eingang."""
+def test_verwaister_eintrag_gibt_seinen_namen_frei(monkeypatch):
+    """N242: die Datei ist in der Cloud gelöscht, der Eintrag zeigt weiter
+    dorthin — der Name wird wieder frei, KEIN „-2".
+
+    **Bewusste Fachlogik-Änderung, vom Nutzer ausdrücklich so entschieden**
+    („Automatisch freigeben"). Vorher hiess dieser Test
+    `test_freier_name_fragt_auch_die_datenbank` und erwartete genau umgekehrt
+    ein „-2": ein einmal vergebener Pfad blieb für immer belegt, damit eine
+    zurückkehrende Datei als „wiederda" erkannt werden kann. Der Nutzer hat
+    diesen Preis abgewogen und die Freigabe vorgezogen — er löscht in der
+    Nextcloud absichtlich und will danach den sauberen Namen.
+
+    Der verwaiste Eintrag wird dabei NICHT gelöscht (Betrag, KI-Auslese und
+    Verweise bleiben) — er gilt als `vermisst` und legt nur seinen Pfad als
+    Grabstein beiseite, damit der Unique-Index den Namen hergibt."""
     import app.routers.dokumente as modul
 
     with TestClient(app) as c:
@@ -1051,7 +1062,8 @@ def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
                 "2024_Steuer-Grundsteuerbescheid.pdf")
         with Session(engine) as s:
             s.add(Dokument(pfad=ziel, dateiname="2024_Steuer-Grundsteuerbescheid.pdf",
-                           objekt_id=objekt_id, status="zugeordnet"))
+                           objekt_id=objekt_id, status="zugeordnet",
+                           betrag=317.76))
             s.commit()
 
         wolke = _Wolke(["Grundsteuerbescheid 2024.pdf"], ordner)
@@ -1059,8 +1071,55 @@ def test_freier_name_fragt_auch_die_datenbank(monkeypatch):
 
         ergebnis = c.post("/api/dokumente/scan").json()
         assert ergebnis["automatisch"] == 1
-        # ausgewichen statt kollidiert
+        # Der saubere Name — der verwaiste Eintrag blockiert ihn nicht mehr.
+        assert wolke.verschoben[-1][1].endswith("2024_Steuer-Grundsteuerbescheid.pdf")
+        assert not wolke.verschoben[-1][1].endswith("-2.pdf")
+
+        with Session(engine) as s:
+            alt = s.exec(select(Dokument)
+                         .where(Dokument.pfad.startswith("entfernt:"))).first()
+            assert alt is not None, "verwaister Eintrag muss erhalten bleiben"
+            assert alt.status == "vermisst"
+            assert alt.betrag == 317.76, "Verweise/Werte bleiben unangetastet"
+            # Genau ein Eintrag führt den freigegebenen Pfad — der neue.
+            neu = s.exec(select(Dokument)
+                         .where(Dokument.pfad == ziel)).all()
+            assert len(neu) == 1 and neu[0].id != alt.id
+
+
+def test_vorhandene_datei_bekommt_weiter_einen_zweiten_namen(monkeypatch):
+    """N242-Gegenprobe: liegt die Datei WIRKLICH noch in der Cloud, bleibt es
+    beim Ausweichnamen — nur der nachweislich verwaiste Eintrag gibt frei.
+
+    Ohne diesen Fall könnte die Freigabe eine echte Datei überschreiben."""
+    import app.routers.dokumente as modul
+
+    class _MitDatei(_Wolke):
+        """Der Zielname ist in der Cloud belegt — anders als bei `_Wolke`."""
+
+        def existiert(self, pfad):
+            return pfad.endswith("2024_Steuer-Grundsteuerbescheid.pdf")
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Belegtweg 5"
+        slug = _mit_cloud(c, "Belegtweg 5", ordner)
+        objekt_id = _objekt_id(slug)
+        ziel = ("/Home/Immobilien/Belegtweg 5/70_Steuer_Finanzamt/2024/"
+                "2024_Steuer-Grundsteuerbescheid.pdf")
+        with Session(engine) as s:
+            s.add(Dokument(pfad=ziel, dateiname="2024_Steuer-Grundsteuerbescheid.pdf",
+                           objekt_id=objekt_id, status="zugeordnet"))
+            s.commit()
+
+        wolke = _MitDatei(["Grundsteuerbescheid 2024.pdf"], ordner)
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        c.post("/api/dokumente/scan")
         assert wolke.verschoben[-1][1].endswith("2024_Steuer-Grundsteuerbescheid-2.pdf")
+        with Session(engine) as s:
+            unberuehrt = s.exec(select(Dokument)
+                                .where(Dokument.pfad == ziel)).first()
+            assert unberuehrt is not None and unberuehrt.status == "zugeordnet"
 
 
 def test_scanlauf_geht_nach_einem_fehler_weiter(monkeypatch):
@@ -1231,9 +1290,15 @@ def test_abgleich_meldet_eine_geloeschte_datei_als_vermisst(monkeypatch):
         assert _stand(doc).status == "vermisst"
         assert _stand(doc).kategorie == "Nebenkosten"
 
-        # und die Oberfläche kann es lesen
+        # und die Oberfläche kann es lesen.
+        # `vermisst` ist bewusst ein GLOBALER Zähler über alle Objekte (das
+        # Abzeichen im Eingang) — seit N242 legen auch freigegebene Alt-Pfade
+        # („Grabsteine") solche Einträge an, sodass ein festes `== 1` nur von
+        # der Reihenfolge der Tests in dieser Datei abhinge. Geprüft wird
+        # deshalb genauer: dass GENAU DIESER Eintrag als vermisst geführt wird.
         daten = c.get("/api/dokumente", params={"objekt": slug}).json()
-        assert daten["vermisst"] == 1
+        assert daten["vermisst"] >= 1
+        assert [d["id"] for d in daten["dokumente"] if d["vermisst"]] == [doc]
         gezeigt = daten["dokumente"][0]
         assert gezeigt["vermisst"] is True
         assert gezeigt["abgelegt"] is False

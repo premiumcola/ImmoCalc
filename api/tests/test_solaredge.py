@@ -454,7 +454,14 @@ class _Wolke:
         return True
 
     def existiert(self, pfad):
-        return False
+        # N242 — was hier schon abgelegt wurde, LIEGT auch da. Vorher gab diese
+        # Attrappe stur `False` zurück und log damit über den Cloud-Zustand:
+        # der echte Client macht ein PROPFIND und meldet eine soeben per PUT
+        # hochgeladene Datei sehr wohl als vorhanden. Seit `_freier_name` der
+        # Live-Auskunft der Cloud vertraut (statt zusätzlich die Datenbank zu
+        # fragen), fiele der zweite Screenshot durch die Unwahrheit auf den
+        # Namen des ersten zurück — in Wirklichkeit weicht er auf „-2" aus.
+        return any(p == pfad for p, _typ in self.abgelegt)
 
     def lege_ab(self, pfad, inhalt, typ="application/pdf"):
         self.abgelegt.append((pfad, typ))

@@ -1027,6 +1027,31 @@ class Belegdaten(SQLModel, table=True):
     quelle: str = ""                  # 'ki' | 'regel' | 'hand'
     erfasst_am: Optional[date] = None
 
+
+class Dokumentvorlage(SQLModel, table=True):
+    """N240 — das Vorlagenarchiv: leere Formulare zum Ausfüllen, nicht die
+    Belege des Nutzers. Liegt deshalb NICHT unter einem Objekt-Ordner, sondern
+    unter einem eigenen Home-Unterordner (`/Vorlagen/<verwendungszweck>/`).
+
+    `typ` ist bewusst dieselbe Zeichenkette wie der erste Eintrag eines
+    `SCAN_TYPEN`-Paars im Frontend (`public/assets/objekt/state.js`), z. B.
+    „Übergabeprotokoll Einzug" — so kann die Checkliste eine Vorlage rein per
+    Textvergleich zu ihrem Checklisten-Punkt finden, ohne eine zweite
+    Zuordnungstabelle zu brauchen.
+
+    Ganz neue Tabelle, alle Felder mit Default: `create_all` legt sie an, kein
+    bestehender Datensatz ändert sich."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = ""                    # Anzeigename, z. B. "Übergabeprotokoll"
+    verwendungszweck: str = "Vermietung"
+    typ: str = ""                     # Deckt sich mit SCAN_TYPEN-Schlüsseln
+    pfad: str = ""                    # WebDAV-Pfad = der Link zur Datei
+    dateiname: str = ""
+    quelle_url: str = ""              # Herkunft — fuer Nachvollziehbarkeit
+    hinweis: str = ""                 # kurzer Nutzungshinweis, optional
+    erstellt_am: Optional[date] = None
+
+
 class Tanknutzer(SQLModel, table=True):
     """N164 — wer an der Ladestation lädt, mit den Stammdaten für den Versand.
 

@@ -39,6 +39,12 @@ const MIN_HELL_ANTEIL = 0.04;     // zu wenig Kontrast -> Erkennung verworfen
 const RUECKFALL_RAND = 0.04;      // eingerückter Standardrahmen
 const SEITE_MIN_ANTEIL = 0.04;    // Seite ohne genug Hüllenlänge -> unsicher
 const KANTE_MAX_ABWEICHUNG = 32;  // Grad: Hüllenkante zählt noch zu der Seite
+const NACHZIEH_PUNKTE = 21;       // Abtastpunkte entlang jeder Seite
+const NACHZIEH_RAND = 0.08;       // Anteil je Seitenende, der ausgespart bleibt (Ecken)
+const NACHZIEH_SUCHE = 0.22;      // Suchradius für die Grobkorrektur, Anteil der langen Bildkante
+const NACHZIEH_FENSTER = 10;      // Feinsuche quer zur Kante (Detektions-Pixel)
+const NACHZIEH_SAUM = 4;          // Pixel je Seite für den „bleibt hell/dunkel"-Test
+const NACHZIEH_MIN_STUFE = 10;    // Mindest-Helligkeitsstufe innen gegen außen
 const QUAD_ANTEIL_MIN = 0.75;     // Viereck vs. erkannte Fläche — Plausibilität
 const QUAD_ANTEIL_MAX = 1.6;
 const MIN_FLAECHE_ANTEIL = 0.40;  // Wächter a) Abdeckung (N11): 51% bleibt grün, ruhiger Hinweis erst unter 40%
@@ -200,7 +206,7 @@ function hellMaske(bitmap) {
   const schwelle = otsuSchwelle(hist, dw * dh);
   const maske = new Uint8Array(dw * dh);
   for (let p = 0; p < maske.length; p++) maske[p] = grau[p] > schwelle ? 1 : 0;
-  return { maske, dw, dh };
+  return { maske, grau, dw, dh };
 }
 
 /** Dunkle Einschlüsse auffüllen: Text und Heftklammer liegen mitten im Blatt
@@ -343,6 +349,207 @@ function seitenGeraden(huelle, winkel) {
   });
 }
 
+/** Bilinear interpolierter Grauwert — Unterpixel-Abtastung fürs Gradientenprofil. */
+function grauWert(grau, dw, dh, x, y) {
+  const xi = Math.min(dw - 1, Math.max(0, x));
+  const yi = Math.min(dh - 1, Math.max(0, y));
+  const x0 = Math.floor(xi), y0 = Math.floor(yi);
+  const x1 = Math.min(dw - 1, x0 + 1), y1 = Math.min(dh - 1, y0 + 1);
+  const fx = xi - x0, fy = yi - y0;
+  const g00 = grau[y0 * dw + x0], g10 = grau[y0 * dw + x1];
+  const g01 = grau[y1 * dw + x0], g11 = grau[y1 * dw + x1];
+  return g00 * (1 - fx) * (1 - fy) + g10 * fx * (1 - fy)
+       + g01 * (1 - fx) * fy + g11 * fx * fy;
+}
+
+/** Schwerpunkt der Hülle — Bezug, um bei jeder Seite "nach außen" zu wissen. */
+function huellenMitte(huelle) {
+  let sx = 0, sy = 0;
+  for (const [x, y] of huelle) { sx += x; sy += y; }
+  return [sx / huelle.length, sy / huelle.length];
+}
+
+/** Median einer Zahlenliste (verändert die Liste). Leere Liste -> null. */
+function median(werte) {
+  if (!werte.length) return null;
+  werte.sort((a, b) => a - b);
+  return werte[werte.length >> 1];
+}
+
+/** N241 — die vier Seiten robust auf den echten Blattrand nachziehen.
+ *
+ * Warum überhaupt: die grobe Seitengerade stammt aus der konvexen Hülle über
+ * der binären Otsu-Maske. Beides ist ausreißer-empfindlich:
+ *
+ *  a) Liegt neben dem Blatt ein HELLERER Untergrundfleck (heller Holzstreifen,
+ *     Lichtreflex) und berührt er das Blatt auch nur in wenigen Zeilen, zählt
+ *     ihn Otsu als „hell" und `groessteFlaeche` schluckt ihn mit. Die konvexe
+ *     Hülle beult dann auf genau dieser Seite weit nach AUSSEN aus — gemessen
+ *     am echten Scan: linke Kante bis zu ~107 px zu weit außen, Ecke sogar
+ *     außerhalb des Bildes.
+ *  b) Läuft eine Kante im weichen Schatten aus, liegt die globale Schwelle
+ *     mitten in der Rampe und die Seite rutscht nach INNEN.
+ *
+ * Beides trifft typischerweise nur EINE Seite — genau das gemeldete Bild.
+ *
+ * Gegenmittel in zwei Stufen, beide Male über den MEDIAN vieler Abtastpunkte
+ * statt über Extremwerte (eine Handvoll verseuchter Zeilen kippt den Median
+ * nicht, die Hülle dagegen schon):
+ *
+ *  1. Grob: je Abtastpunkt quer zur Seite die äußerste Stelle suchen, die noch
+ *     zur erkannten Fläche gehört. Der Median dieser Randlagen ist die Kante,
+ *     die die MEHRHEIT der Abtastpunkte sieht — der helle Fleck aus (a) bleibt
+ *     Minderheit und fliegt raus.
+ *  2. Fein: im echten Grauwertverlauf (nicht der Maske) auf die Stelle
+ *     einrasten, an der es von innen nach außen HELL -> DUNKEL springt und
+ *     auch dabei bleibt (`NACHZIEH_SAUM` Pixel Mittelwert je Seite). Der
+ *     „bleibt dabei"-Teil ist entscheidend: eine dunkle Holzmaserung ist auf
+ *     BEIDEN Seiten dunkel und erzeugt so keine Stufe, während der alte
+ *     Ansatz (stärkster Einzelsprung, Betrag ohne Vorzeichen) genau darauf
+ *     hereinfiel und die Kante auf die Maserung zog.
+ *
+ * Ist eine Stufe zu schwach oder uneindeutig, bleibt es bei Stufe 1 bzw. bei
+ * der Original-Geraden — lieber grob und ehrlich als scharf und falsch.
+ */
+function seitenNachziehen(marke, besteMarke, grau, dw, dh, geraden, mitte, huelle) {
+  const inFlaeche = (x, y) => {
+    const xi = Math.round(x), yi = Math.round(y);
+    if (xi < 0 || yi < 0 || xi >= dw || yi >= dh) return false;
+    return marke[yi * dw + xi] === besteMarke;
+  };
+  const suchweite = Math.round(Math.max(dw, dh) * NACHZIEH_SUCHE);
+
+  return geraden.map(g => {
+    if (!g) return g;
+    let nx = -g.dy, ny = g.dx;
+    const norm = Math.hypot(nx, ny) || 1;
+    nx /= norm; ny /= norm;
+    // Normale nach außen drehen (weg vom Hüllenschwerpunkt) — sonst wäre
+    // „außen" je nach Seite zufällig die falsche Richtung.
+    if ((g.px - mitte[0]) * nx + (g.py - mitte[1]) * ny < 0) { nx = -nx; ny = -ny; }
+
+    // Abtastpunkte nur über die tatsächliche Ausdehnung der Fläche entlang
+    // dieser Seite legen — und die Enden aussparen, weil dort schon die
+    // Nachbarseite quert. (Vorher spannte das Raster starr über die lange
+    // Bildkante hinaus; die Hälfte der Punkte lag außerhalb des Bildes oder
+    // hinter den Ecken und wurde entweder verworfen oder maß die falsche Kante.)
+    let tMin = Infinity, tMax = -Infinity;
+    for (const [hx, hy] of huelle) {
+      const t = (hx - g.px) * g.dx + (hy - g.py) * g.dy;
+      if (t < tMin) tMin = t;
+      if (t > tMax) tMax = t;
+    }
+    if (!Number.isFinite(tMin) || tMax - tMin < 4) return g;
+    const saum = (tMax - tMin) * NACHZIEH_RAND;
+    tMin += saum; tMax -= saum;
+
+    const basis = [];
+    for (let i = 0; i < NACHZIEH_PUNKTE; i++) {
+      const t = tMin + (tMax - tMin) * (i / (NACHZIEH_PUNKTE - 1));
+      basis.push([g.px + g.dx * t, g.py + g.dy * t]);
+    }
+
+    // --- Stufe 1: je Abtastpunkt die stärkste GEHALTENE Hell/Dunkel-Stufe --
+    // Nicht die Maskengrenze: die zieht ein heller Untergrundfleck mit nach
+    // außen (gemessen: in ~40 % der Zeilen, damit ist auch ihr Median nicht
+    // mehr zu retten). Der Grauwertverlauf dagegen zeigt am ECHTEN Blattrand
+    // die mit Abstand kräftigste Stufe — Blatt gegen Tisch ist ein viel
+    // größerer Sprung als heller Tisch gegen dunklen Tisch. Gemittelt über
+    // `NACHZIEH_SAUM` Pixel je Seite, damit weder eine dünne Holzmaserung noch
+    // eine Textzeile im Blatt als Kante durchgeht.
+    const stufeBei = (bx, by, o) => {
+      let innen = 0, aussen = 0;
+      for (let s = 1; s <= NACHZIEH_SAUM; s++) {
+        innen += grauWert(grau, dw, dh, bx + nx * (o - s + 1), by + ny * (o - s + 1));
+        aussen += grauWert(grau, dw, dh, bx + nx * (o + s), by + ny * (o + s));
+      }
+      return (innen - aussen) / NACHZIEH_SAUM;
+    };
+    const grobe = [];
+    for (const [bx, by] of basis) {
+      let bester = null, beste = NACHZIEH_MIN_STUFE;
+      for (let o = -suchweite; o <= suchweite; o++) {
+        const s = stufeBei(bx, by, o);
+        if (s > beste) { beste = s; bester = o + 0.5; }
+      }
+      if (bester !== null) grobe.push({ o: bester, x: bx + nx * bester, y: by + ny * bester });
+    }
+    // Reißt der Grauwert nichts her (flaues Bild), lieber die Maskengrenze als
+    // gar nichts — sie ist grob, aber nie völlig aus der Luft gegriffen.
+    if (grobe.length < Math.ceil(NACHZIEH_PUNKTE / 3)) {
+      for (const [bx, by] of basis) {
+        for (let o = suchweite; o >= -suchweite; o--) {
+          if (inFlaeche(bx + nx * o, by + ny * o)) {
+            grobe.push({ o, x: bx + nx * o, y: by + ny * o });
+            break;
+          }
+        }
+      }
+    }
+    if (grobe.length < Math.ceil(NACHZIEH_PUNKTE / 3)) return g;
+    const grob = median(grobe.map(v => v.o));
+
+    // Auch die RICHTUNG neu bestimmen, nicht nur den Abstand: eine von einem
+    // hellen Fleck verbogene Hülle liefert eine schräge Seitengerade, die ein
+    // reines Parallelverschieben nicht geraderücken kann (gemessen: linke
+    // Kante lief 122 -> 36 px statt senkrecht bei ~107). Dafür die Randlagen,
+    // die weit vom Median abweichen, per MAD aussortieren und durch den Rest
+    // eine Ausgleichsgerade legen.
+    const mad = median(grobe.map(v => Math.abs(v.o - grob))) || 1;
+    const behalten = grobe.filter(v => Math.abs(v.o - grob) <= Math.max(3, mad * 3));
+    let rx = g.dx, ry = g.dy;
+    if (behalten.length >= Math.ceil(NACHZIEH_PUNKTE / 3)) {
+      let sx = 0, sy = 0;
+      for (const v of behalten) { sx += v.x; sy += v.y; }
+      const cx = sx / behalten.length, cy = sy / behalten.length;
+      let sxx = 0, syy = 0, sxy = 0;
+      for (const v of behalten) {
+        const ax = v.x - cx, ay = v.y - cy;
+        sxx += ax * ax; syy += ay * ay; sxy += ax * ay;
+      }
+      const richtung = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+      rx = Math.cos(richtung); ry = Math.sin(richtung);
+      // Laufrichtung der Seite beibehalten, sonst kippt die Seitenzuordnung.
+      if (rx * g.dx + ry * g.dy < 0) { rx = -rx; ry = -ry; }
+    }
+    // Normale zur neuen Richtung, wieder nach außen zeigend.
+    let mx = -ry, my = rx;
+    if (mx * nx + my * ny < 0) { mx = -mx; my = -my; }
+    nx = mx; ny = my;
+
+    // Basispunkte auf die nachgezogene Gerade umlegen.
+    const stuetze = behalten.length
+      ? [behalten.reduce((s, v) => s + v.x, 0) / behalten.length,
+         behalten.reduce((s, v) => s + v.y, 0) / behalten.length]
+      : [g.px + nx * grob, g.py + ny * grob];
+    const basis2 = basis.map(([bx, by]) => {
+      const t = (bx - stuetze[0]) * rx + (by - stuetze[1]) * ry;
+      return [stuetze[0] + rx * t, stuetze[1] + ry * t];
+    });
+
+    // --- Stufe 2: um die nachgezogene Gerade herum sauber einrasten --------
+    // Enges Fenster: die Lage stimmt jetzt, gesucht ist nur noch das
+    // Unterpixel-Feintuning entlang der bereits gefundenen Kante.
+    const feine = [];
+    for (const [px0, py0] of basis2) {
+      let besterVersatz = null, besteStufe = NACHZIEH_MIN_STUFE;
+      for (let o = -NACHZIEH_FENSTER; o <= NACHZIEH_FENSTER; o++) {
+        let innen = 0, aussen = 0;
+        for (let s = 1; s <= NACHZIEH_SAUM; s++) {
+          innen += grauWert(grau, dw, dh, px0 + nx * (o - s + 1), py0 + ny * (o - s + 1));
+          aussen += grauWert(grau, dw, dh, px0 + nx * (o + s), py0 + ny * (o + s));
+        }
+        const stufe = (innen - aussen) / NACHZIEH_SAUM;
+        if (stufe > besteStufe) { besteStufe = stufe; besterVersatz = o + 0.5; }
+      }
+      if (besterVersatz !== null) feine.push(besterVersatz);
+    }
+    const fein = feine.length >= Math.ceil(NACHZIEH_PUNKTE / 2) ? median(feine) : 0;
+
+    return { px: stuetze[0] + nx * fein, py: stuetze[1] + ny * fein, dx: rx, dy: ry };
+  });
+}
+
 /** Schnittpunkt zweier Geraden in Punkt-Richtungs-Form. */
 function geradenSchnitt(g1, g2) {
   if (!g1 || !g2) return null;
@@ -411,7 +618,7 @@ const RUECKFALL_ECKEN = [
  * die Ecken dann selbst auf die echten Kanten.
  */
 function eckenSchaetzen(bitmap) {
-  const { maske, dw, dh } = hellMaske(bitmap);
+  const { maske, grau, dw, dh } = hellMaske(bitmap);
   loecherFuellen(maske, dw, dh);
   const { marke, besteMarke, besteGroesse } = groessteFlaeche(maske, dw, dh);
   if (besteGroesse / (dw * dh) < MIN_HELL_ANTEIL) return RUECKFALL_ECKEN.map(e => ({ ...e }));
@@ -420,7 +627,12 @@ function eckenSchaetzen(bitmap) {
   if (huelle.length < 4) return RUECKFALL_ECKEN.map(e => ({ ...e }));
 
   const winkel = hauptwinkel(huelle);
-  const geraden = seitenGeraden(huelle, winkel);
+  const geradenRoh = seitenGeraden(huelle, winkel);
+  // N241 — Seiten robust nachziehen: die konvexe Hülle folgt jedem hellen
+  // Fleck neben dem Blatt, der Median vieler Abtastpunkte nicht (siehe
+  // Funktionskommentar oben).
+  const geraden = seitenNachziehen(marke, besteMarke, grau, dw, dh,
+                                   geradenRoh, huellenMitte(huelle), huelle);
   const geschnitten = [0, 1, 2, 3].map(k => geradenSchnitt(geraden[k], geraden[(k + 1) % 4]));
 
   let ecken = null;
