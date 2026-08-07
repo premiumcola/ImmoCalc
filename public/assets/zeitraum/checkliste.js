@@ -380,8 +380,8 @@ function anhaengerBadgeHtml(k, aufgeklappt) {
   // „Belege" blieb dem Positionsnamen so wenig Breite, dass er buchstabenweise
   // umbrach. Die volle Beschriftung steht im aria-label.
   return `<button type="button" class="anh-badge" data-anh-zeigen="${esc(k.kostenart)}"
-      title="Belege ohne Kostenzuordnung ansehen"
-      aria-label="${n} ${n === 1 ? 'Beleg' : 'Belege'} ohne Kostenzuordnung ansehen"
+      title="Belege dieser Position ansehen"
+      aria-label="${n} ${n === 1 ? 'Beleg' : 'Belege'} ansehen"
       >${ANH_ICON}<span class="anh-b-n">${n}</span
       ><span class="anh-b-w">&nbsp;${n === 1 ? 'Beleg' : 'Belege'}</span></button>`;
 }
