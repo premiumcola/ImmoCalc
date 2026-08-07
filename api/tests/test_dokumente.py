@@ -1016,7 +1016,7 @@ def test_index_wird_nach_fehlschlag_erneut_versucht():
     motor = _bestands_datenbank(["/x/gleich.pdf", "/x/gleich.pdf"])
     try:
         modul._index_geprueft = False
-        with Session(engine) as s:
+        with Session(motor) as s:
             _eindeutigkeit_sichern(s)
         assert modul._index_geprueft is False     # Doppel: noch nicht erledigt
 
@@ -1024,7 +1024,7 @@ def test_index_wird_nach_fehlschlag_erneut_versucht():
         with motor.begin() as conn:
             conn.execute(text("UPDATE dokument SET pfad = '/x/anders.pdf' "
                               "WHERE id = 2"))
-        with Session(engine) as s:
+        with Session(motor) as s:
             _eindeutigkeit_sichern(s)
         assert modul._index_geprueft is True
         assert "ux_dokument_pfad" in _indexnamen(motor)
