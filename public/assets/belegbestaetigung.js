@@ -66,6 +66,64 @@ export function analyseDecke(text = 'Der Beleg wird gelesen …') {
     setzt sie neu; die Endung würde dort aber als Teil der Sache hängenbleiben. */
 const ohneEndung = name => String(name || '').replace(/\.[^.\s]+$/, '');
 
+/* N267 — deutscher Betrag aus einem Textfeld. Auf dem Telefon tippt niemand
+   einen Punkt: „1.234,56", „87,00", „87" müssen alle ankommen. `null`, wenn
+   nichts Brauchbares drinsteht — dann bleibt der Beleg ohne Kostenposition. */
+function betragLesen(text) {
+  const roh = String(text || '').replace(/[^\d,.-]/g, '').trim();
+  if (!roh) return null;
+  // Der LETZTE Trenner ist das Komma; alles davor sind Tausenderpunkte.
+  const stelle = Math.max(roh.lastIndexOf(','), roh.lastIndexOf('.'));
+  const zahl = stelle < 0
+    ? Number(roh)
+    : Number(roh.slice(0, stelle).replace(/[.,]/g, '') + '.' + roh.slice(stelle + 1));
+  return Number.isFinite(zahl) && zahl > 0 ? Math.round(zahl * 100) / 100 : null;
+}
+
+const betragZeigen = zahl => Number(zahl).toFixed(2).replace('.', ',');
+
+/**
+ * N267 — der Kostenposition-Block der Maske.
+ *
+ * Zwei Fälle, ein Feld:
+ *   * Die Erkennung hat einen Betrag → er steht drin und ist änderbar.
+ *   * Sie hat keinen → das Feld ist erst zu, ein Knopf macht es auf. Der Nutzer
+ *     kann also widersprechen („doch, das ist eine Kostenposition"), ohne dass
+ *     ein leeres Pflichtfeld jeden Info-Beleg anmeckert.
+ *
+ * `teilbetrag`/`teilzahlungen` kommen aus der Auslese (N262): eine
+ * Abbuchungsvorankündigung nennt Raten, nicht die Jahressumme. Die Herleitung
+ * steht sichtbar daneben — der Nutzer soll sehen, dass 348 € gerechnet und
+ * nicht abgelesen sind.
+ */
+function geldBlock(ki) {
+  const betrag = typeof ki?.betrag === 'number' && ki.betrag > 0 ? ki.betrag : null;
+  const teil = typeof ki?.teilbetrag === 'number' && ki.teilbetrag > 0
+    ? ki.teilbetrag : null;
+  const anzahl = Number.isInteger(ki?.teilzahlungen) && ki.teilzahlungen > 1
+    ? ki.teilzahlungen : null;
+  const herleitung = betrag && teil && anzahl
+    ? `${betragZeigen(teil)} € × ${anzahl} = ${betragZeigen(betrag)} €` : '';
+  return `
+    <div class="sb-name sb-geld"${betrag ? '' : ' data-zu'}>
+      <label for="sbBetrag">Kostenposition</label>
+      <div class="sb-eur"${betrag ? '' : ' hidden'}>
+        <input id="sbBetrag" type="text" inputmode="decimal"
+               value="${betrag ? esc(betragZeigen(betrag)) : ''}"
+               placeholder="0,00" spellcheck="false" autocomplete="off">
+        <span class="sb-waehrung">€</span>
+      </div>
+      ${herleitung
+        ? `<p class="sb-herleitung"><span class="sb-rechnung">${esc(herleitung)}</span>
+             hochgerechnet aus den Teilbeträgen — bitte prüfen.</p>` : ''}
+      <button type="button" class="sb-doch" data-doch${betrag ? ' hidden' : ''}>
+        Betrag eintragen
+      </button>
+      <p class="sb-hinweis" data-ohne${betrag ? ' hidden' : ''}>Auf dem Beleg
+        wurde kein Betrag erkannt — er wird ohne Kostenposition abgelegt.</p>
+    </div>`;
+}
+
 /** Fragt den Server, wie der Beleg heissen würde. Bei jedem Fehler `''` —
     die Maske zeigt dann ein leeres Feld statt gar nicht zu erscheinen. */
 async function namenHolen(ziel, aufnahme, jahrHinweis) {
@@ -122,6 +180,7 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null) {
        <button class="bx" data-ab title="Abbrechen" aria-label="Abbrechen">✕</button>
      </div>
      <div class="beleg-ki"${kiHtml ? '' : ' hidden'}>${kiHtml}</div>
+     ${geldBlock(ki)}
      <div class="sb-name">
        <label for="sbName">Dateiname</label>
        <input id="sbName" type="text" value="${esc(startwert)}"
@@ -163,12 +222,31 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null) {
       erfuellen(wert);
     };
     const feld = dlg.querySelector('#sbName');
+    const geldFeld = dlg.querySelector('#sbBetrag');
+
+    // N267 — „doch, das ist eine Kostenposition": das Feld aufmachen und den
+    // Hinweis wegnehmen, der gerade das Gegenteil behauptet hat.
+    dlg.querySelector('[data-doch]')?.addEventListener('click', e => {
+      e.target.hidden = true;
+      dlg.querySelector('[data-ohne]').hidden = true;
+      const huelle = dlg.querySelector('.sb-eur');
+      huelle.hidden = false;
+      dlg.querySelector('.sb-geld').removeAttribute('data-zu');
+      geldFeld?.focus();
+    });
+
     const ablegen = () => {
       const neu = (feld?.value || '').trim();
       // Unverändert heisst: der Server benennt wie gewohnt. Nur eine echte
       // Änderung gegenüber dem, was im Feld stand, wird mitgeschickt.
-      schliessen({ beschreibung: (!neu || neu === startwert)
-        ? null : ohneEndung(neu) });
+      schliessen({
+        beschreibung: (!neu || neu === startwert) ? null : ohneEndung(neu),
+        // `null` heisst ausdrücklich „ohne Kostenposition" — auch dann, wenn
+        // die Erkennung einen Betrag vorgeschlagen hatte und der Nutzer ihn
+        // wieder herausgelöscht hat. Der Aufrufer soll beides unterscheiden
+        // können, deshalb steht der Schlüssel immer da.
+        betrag: betragLesen(geldFeld?.value),
+      });
     };
     dlg.querySelector('[data-ok]').addEventListener('click', ablegen);
     feld?.addEventListener('keydown', e => {

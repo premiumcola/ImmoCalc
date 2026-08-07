@@ -1686,7 +1686,10 @@ export function initHandlers() {
         if (beschriftung) beschriftung.textContent = urText;
         return;
       }
-      const ergebnis = await belegAblegen(vorbereitet, entscheidung.beschreibung);
+      // N267 — der Betrag aus der Maske schlägt die Erkennung: er steht im
+      // Dateinamen, am Beleg und gleich auch in der Kostenposition.
+      const ergebnis = await belegAblegen(vorbereitet, entscheidung.beschreibung,
+                                          entscheidung.betrag);
       if (!ergebnis) {
         knopf.disabled = false;
         if (beschriftung) beschriftung.textContent = urText;
@@ -1697,8 +1700,8 @@ export function initHandlers() {
         beschriftung.textContent = `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''}`
           + (ergebnis.groesse ? ` · ${lesbareGroesse(ergebnis.groesse)}` : '');
       }
-      const uebernommen = vorschlag
-        ? await betragVorschlagen(ziel.kostenart, vorschlag) : false;
+      const uebernommen = await betragVorschlagen(ziel.kostenart, vorschlag,
+                                                  entscheidung.betrag);
       // N238/N243 — ein als nicht kostenrelevant erkannter Beleg (Info-
       // Schreiben, SEPA-Mandat, Abbuchungsvorankündigung …) SOLL keinen Betrag
       // tragen; der Hinweis „bitte von Hand eintragen" ist dort schlicht

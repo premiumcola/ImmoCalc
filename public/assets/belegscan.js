@@ -207,10 +207,18 @@ export async function belegVorbereiten(dateien, ziel = {}, beimLesen = null) {
  * sind Vorbereiten und Ablegen überhaupt getrennt. `beschreibung` überschreibt
  * dabei die vorgeschlagene Bezeichnung; benannt wird weiterhin auf dem Server.
  */
-export async function belegAblegen(vorbereitet, beschreibung = null) {
+export async function belegAblegen(vorbereitet, beschreibung = null,
+                                   betrag = undefined) {
   const { aufnahme, jahrHinweis } = vorbereitet;
-  const ziel = beschreibung === null || beschreibung === undefined
+  let ziel = beschreibung === null || beschreibung === undefined
     ? vorbereitet.ziel : { ...vorbereitet.ziel, beschreibung };
+  // N267 — der Nutzer hat in der Bestätigungsmaske einen Betrag gesetzt oder
+  // gestrichen. `undefined` heisst „nicht gefragt" (alle bisherigen Aufrufer),
+  // ein Wert bzw. `null` ist eine Entscheidung und schlägt die Erkennung.
+  if (betrag !== undefined) {
+    ziel = { ...ziel, betrag: typeof betrag === 'number' && betrag > 0
+      ? betrag : null };
+  }
 
   const abbruch = new AbortController();
   const uhr = setTimeout(() => abbruch.abort(), ZEITLIMIT_MS);

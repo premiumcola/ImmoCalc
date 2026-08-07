@@ -348,8 +348,17 @@ async function positionBetragSchreiben(zeile, kostenart, betrag) {
   }
 }
 
-/* Bietet erkannte Werte zur Übernahme an. */
-export async function betragVorschlagen(kostenart, vorschlag) {
+/* Bietet erkannte Werte zur Übernahme an.
+ *
+ * N267 — `gesetzt` ist der Betrag, den der Nutzer in der Bestätigungsmaske
+ * selbst bestätigt oder eingetippt hat. Der wird OHNE weitere Rückfrage
+ * eingetragen: er hat ihn gerade gesehen und „Ablegen" gedrückt — ein zweites
+ * „Betrag übernehmen?" wäre dieselbe Frage zum zweiten Mal. Ohne `gesetzt`
+ * bleibt alles wie bisher (die Rückfrage zum erkannten Wert).
+ * Der Wasser-Zweig steht bewusst DAVOR: dort verteilt ein Beleg drei Beträge
+ * auf drei Positionen, das kann eine einzelne Zahl aus der Maske nicht.
+ */
+export async function betragVorschlagen(kostenart, vorschlag, gesetzt = null) {
   const zeile = state.daten.checkliste.find(k => k.kostenart === kostenart);
   if (!zeile) return false;
 
@@ -369,6 +378,11 @@ export async function betragVorschlagen(kostenart, vorschlag) {
     await positionBetragSchreiben(zeile, kostenart, w.wasser);   // Frischwasser
     await wasserPosBetragSchreiben('schmutz', w.schmutz);
     await wasserPosBetragSchreiben('niederschlag', w.niederschlag);
+    return true;
+  }
+
+  if (typeof gesetzt === 'number' && gesetzt > 0) {
+    await positionBetragSchreiben(zeile, kostenart, gesetzt);
     return true;
   }
 

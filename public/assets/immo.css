@@ -532,6 +532,26 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
   box-shadow:0 0 0 3px var(--teal-l)}
 .scanbest-dlg .sb-hinweis{margin:0; font:400 11.5px var(--body); color:var(--soft);
   line-height:1.45}
+/* N267: die Kostenposition — ein Feld, zwei Zustände. Erkannte Beträge stehen
+   drin; ohne Erkennung ist das Feld zu und nur der Knopf „Betrag eintragen"
+   steht da. So meckert kein leeres Pflichtfeld jeden Info-Beleg an, und der
+   Nutzer kann trotzdem widersprechen. Das €-Zeichen sitzt IM Feld statt als
+   eigene Zeile daneben — sonst wäre die Maske auf dem Telefon eine Zeile
+   länger für ein einzelnes Zeichen. */
+.scanbest-dlg .sb-eur{position:relative; display:flex; align-items:center}
+.scanbest-dlg .sb-eur input{padding-right:38px; text-align:right;
+  font:600 16px var(--mono)}
+.scanbest-dlg .sb-waehrung{position:absolute; right:13px; pointer-events:none;
+  font:600 14px var(--mono); color:var(--soft)}
+.scanbest-dlg .sb-doch{align-self:flex-start; min-height:44px; padding:0 16px;
+  border:1.5px solid var(--teal); border-radius:12px; background:transparent;
+  color:var(--teal); cursor:pointer; font:600 13px var(--body)}
+.scanbest-dlg .sb-doch:hover{background:var(--teal-l)}
+.scanbest-dlg .sb-herleitung{margin:0; font:400 11.5px var(--body);
+  color:var(--soft); line-height:1.45}
+.scanbest-dlg .sb-rechnung{display:inline-block; margin-right:5px;
+  padding:2px 7px; border-radius:7px; background:var(--teal-l);
+  font:600 11.5px var(--mono); color:var(--teal)}
 .scanbest-dlg .sb-fuss{flex:none; display:flex; gap:10px}
 .scanbest-dlg .sb-weiter{flex:1; min-height:52px; border:none; border-radius:12px;
   background:var(--teal); color:#fff; cursor:pointer;
