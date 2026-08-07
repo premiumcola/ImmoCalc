@@ -842,6 +842,22 @@
   .dlgnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
            margin:0 0 16px}
 
+  /* N263 — der Foto-Weg über den Feldern. Gedämpftes Blau wie die anderen
+     Beleg-Knöpfe (`.scanmini` in zeitraum.html), damit „hier kommt ein
+     Dokument herein" überall dieselbe Farbe hat und sich vom teal-Speichern
+     abhebt. Volle Breite, zwei Zeilen: der Untertitel sagt, was danach
+     passiert — sonst wäre es nur ein Knopf mit unklarer Folge. */
+  .scan-vorschlag{display:grid;grid-template-columns:auto 1fr;
+    column-gap:12px;row-gap:2px;align-items:center;width:100%;
+    border:1.5px solid #BBD4E5;background:#E8F1F7;color:#255676;
+    border-radius:14px;padding:12px 14px;cursor:pointer;text-align:left;
+    font-family:var(--body);margin:0 0 18px;min-height:44px}
+  .scan-vorschlag:hover{background:#D8E8F2}
+  .scan-vorschlag .sv-i{width:22px;height:22px;grid-row:1 / span 2}
+  .scan-vorschlag .sv-t{font:600 13.5px var(--disp);letter-spacing:-.01em}
+  .scan-vorschlag .sv-u{font:400 11.5px var(--body);color:#4A7391;
+    line-height:1.4}
+
   /* ---- CLXVIII: zwei Ebenen ------------------------------------------
      Der Weg zurück zum Haus steht ganz oben und sieht aus wie eine Karte,
      nicht wie ein Formularknopf — er führt eine Stufe hinauf, nicht weiter. */

@@ -148,6 +148,15 @@ SYSTEM_PROMPT = (
     "GRUNDSTEUER: grundsteuerwert, grundsteuer_messbetrag, "
     "grundsteuer_hebesatz, jahresbetrag.\n"
     "KAUFVERTRAG: kaufpreis, kaufdatum.\n"
+    # N263 — der Notarvertrag füllt eine eigene Eingabemaske (Art, Notar,
+    # URNr, Beurkundungsdatum, Kaufpreis, Beteiligte). Ohne dieses Raster kam
+    # von ihm nur ein Kaufpreis zurück und alles andere musste abgetippt werden.
+    "NOTARVERTRAG/BEURKUNDUNG: art (Kaufvertrag, Auflassung, Grundschuld-"
+    "bestellung, Übergabevertrag …), notar (Name des Notars oder des "
+    "Notariats), urnr (Urkundenrollennummer, steht als \"URNr\", \"UR-Nr.\", "
+    "\"Urkundenrolle Nr.\"), beurkundet_am (Datum der Beurkundung als "
+    "YYYY-MM-DD), kaufpreis, beteiligte (Verkäufer und Käufer als ein Text, "
+    "z. B. \"Meier → Schmidt\").\n"
     "GRUNDBUCH/GRUNDSCHULD: gemarkung, flurstueck, grundbuch_blatt, glaeubiger, "
     "grundschuld_betrag, rang.\n"
     "WEG: verwalter, hausgeld_monatlich, ruecklage_zufuehrung.\n"

@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import belegposten, kiauslese, ocr, pdftext
+from .. import belegposten, feldzuordnung, kiauslese, ocr, pdftext
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
                            ohne_betrag, ohne_datum, unterordner_finden)
@@ -1485,6 +1485,7 @@ def _strom_ergaenzen(session: Session, rohdaten: bytes, ergebnis: dict,
 @router.post("/erkennen")
 async def erkennen(datei: UploadFile = File(...),
                    kostenart: str = Form(""),
+                   bereich: str = Form(""),
                    session: Session = Depends(get_session)) -> dict:
     """Liest Betrag, Datum und Art aus einer Aufnahme oder einem PDF.
 
@@ -1497,7 +1498,13 @@ async def erkennen(datei: UploadFile = File(...),
     Bereichs-Gebühren (Frisch-/Schmutz-/Niederschlagswasser) und gibt sie als
     Feld `wasser: {wasser, schmutz, niederschlag}` zurück. Fällt die KI aus oder
     ist es kein Wasserbeleg, bleibt `wasser` weg — der Rest der Antwort ist
-    unverändert."""
+    unverändert.
+
+    N263 — optionaler Hinweis `bereich` (`notarvertraege`, `versicherungen`,
+    `kredite`, `mieten`, `zahlungen`): dann kommt zusätzlich `formwerte` zurück
+    — die Auslese schon auf die Feldnamen dieser Eingabemaske übersetzt, damit
+    das Formular vorausgefüllt aufgeht. Ebenfalls additiv: ohne den Hinweis
+    fehlt `formwerte` und für bestehende Aufrufer ändert sich nichts."""
     rohdaten = await datei.read()
     if not rohdaten:
         raise HTTPException(400, "Leere Datei")
@@ -1521,6 +1528,13 @@ async def erkennen(datei: UploadFile = File(...),
     # sauber getrennt von Nachzahlung und Abschlag. Greift auch ohne Hinweis,
     # wenn die allgemeine Auslese einen Strombeleg erkannt hat.
     _strom_ergaenzen(session, rohdaten, ergebnis, datei.filename or "", kostenart)
+    # N263 — die Auslese auf die Felder der gemeinten Eingabemaske übersetzen.
+    # Rein additiv: ohne `bereich` bleibt die Antwort exakt wie zuvor.
+    if bereich:
+        formwerte = feldzuordnung.werte_fuer(bereich, ergebnis)
+        if formwerte:
+            ergebnis["formwerte"] = formwerte
+            ergebnis["formname"] = feldzuordnung.namensvorschlag(bereich, formwerte)
     return ergebnis
 
 

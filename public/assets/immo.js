@@ -399,7 +399,8 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${sicher(titel)}${pfad
-         ? `<span class="bpfad" title="Ablageort in der Nextcloud">${sicher(pfad)}</span>` : ''}</span>
+         ? `<span class="bpfad" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
+             sicher(pfad)}</bdi></span>` : ''}</span>
        ${blaettern}
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>

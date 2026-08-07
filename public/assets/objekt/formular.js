@@ -18,6 +18,15 @@ import { einheiten,
 import { turnusOptionen } from './turnus.js';
 import { effektiveFlaeche } from './helpers.js';
 
+/* N263 — Kamera im flachen Haus-Stil (wie die Sprites), keine Icon-Bibliothek. */
+const KAMERA_SVG = `<svg class="sv-i" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.1-1.8A1 1 0 0 1 8.7 4.7h6.6
+           a1 1 0 0 1 .9.5L17.3 7h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1
+           19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
+  <circle cx="12" cy="13" r="3.4"/></svg>`;
+
 /* Lesbare Eingabe (Tausenderpunkte, IBAN in Vierergruppen, Steuernummer).
    Bewusst dynamisch geladen: fehlt die Datei, bleiben es schlichte Felder —
    die Seite muss deswegen nicht ausfallen. */
@@ -403,7 +412,8 @@ function pdfSchliessverdrahtung(dlg) {
 
 export async function formular(einst) {
   const { titel: dtitel, felder, bereich, werte = {}, absicht,
-          hinweis = '', extra = '', knopf = 'Speichern', beleg = null } = einst;
+          hinweis = '', extra = '', knopf = 'Speichern', beleg = null,
+          scan = null } = einst;
   const dlg = document.getElementById('dlg');
   const form = document.getElementById('dlgForm');
   pdfSchliessverdrahtung(dlg);
@@ -433,8 +443,17 @@ export async function formular(einst) {
   // Abbrechen ist bewusst type="button": als Submit-Knopf loeste es den
   // submit-Handler aus und speicherte. Die Abfrage darauf lief ins Leere,
   // weil returnValue am <dialog> haengt, nicht am <form>.
+  // N263 — der Weg übers Foto steht VOR den Feldern: er erspart im Regelfall
+  // das Ausfüllen, und danach steht dieselbe Maske gefüllt da. Wer lieber
+  // tippt, scrollt einfach daran vorbei — der bisherige Weg bleibt unberührt.
+  const scanHtml = scan
+    ? `<button type="button" class="scan-vorschlag" data-eintrag-scan="${esc(scan)}">
+         ${KAMERA_SVG}
+         <span class="sv-t">Abfotografieren statt tippen</span>
+         <span class="sv-u">Die Angaben werden erkannt und hier eingetragen.</span>
+       </button>` : '';
   form.innerHTML = (hinweis ? `<p class="dlgnote">${esc(hinweis)}</p>` : '')
-    + html.join('') + extra +
+    + scanHtml + html.join('') + extra +
     `<button class="btn" value="ok">${esc(knopf)}</button>
      <button class="btn leise" type="button" data-abbruch
              style="margin-top:8px">Abbrechen</button>`;

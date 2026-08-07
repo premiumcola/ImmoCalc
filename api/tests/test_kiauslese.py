@@ -331,3 +331,60 @@ def test_zeitraum_text():
     assert dokumente._zeitraum_text("2024-06-15", None) == "15.06.2024"
     assert dokumente._zeitraum_text(None, None) == ""
     assert dokumente._zeitraum_text("Unfug", "auch") == ""
+
+
+# --------------------------------------------------------------------------
+# N263 — die Auslese auf die Felder einer Eingabemaske übersetzt.
+#
+# Der Endpunkt bekommt zusätzlich `bereich`. Damit kommt `formwerte` zurück:
+# dieselbe Auslese, aber auf die Feldnamen des Formulars gebracht. Das ist der
+# Unterschied zwischen „die KI hat etwas erkannt" und „die Maske geht gefüllt
+# auf" — vorher stand das Raster nur zur Anzeige da.
+# --------------------------------------------------------------------------
+def _notar_erkennung(*_a, **_k):
+    """Was `ocr.erkenne` bei einem Notarvertrag zurückgäbe."""
+    return {
+        "moeglich": True, "betrag": 250000.0, "datum": "2024-05-17",
+        "jahr": 2024, "monat": 5, "kategorie": "Notarvertrag",
+        "sache": "Kaufvertrag", "ist_kosten": True, "zeichen": 900,
+        "kosten_relevant": True, "nebenkosten": False,
+        "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": "",
+        "absender": "Notariat Dr. Vogel", "dokumenttyp": "Kaufvertrag",
+        "felder": {"art": "Kaufvertrag", "notar": "Dr. Vogel, Nürnberg",
+                   "urnr": "123/2024", "beurkundet_am": "2024-05-17",
+                   "kaufpreis": 250000, "beteiligte": "Meier → Schmidt"},
+    }
+
+
+def _post_bereich(bereich):
+    with TestClient(app) as c:
+        return c.post("/api/dokumente/erkennen",
+                      data={"bereich": bereich},
+                      files={"datei": ("vertrag.pdf", b"%PDF-1.4 test",
+                                       "application/pdf")})
+
+
+def test_erkennen_uebersetzt_auf_die_felder_der_maske(monkeypatch):
+    monkeypatch.setattr(ocr, "erkenne", _notar_erkennung)
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *_a, **_k: False)
+    body = _post_bereich("notarvertraege").json()
+    werte = body["formwerte"]
+    # „Beurkundet am" heisst im Modell `datum`, der Kaufpreis `betrag` — genau
+    # diese Übersetzung fehlte.
+    assert werte["datum"] == "2024-05-17"
+    assert werte["betrag"] == 250000.0
+    assert werte["urnr"] == "123/2024"
+    assert werte["notar"] == "Dr. Vogel, Nürnberg"
+    # Der Namensvorschlag trägt Art und Nummer — die Urkundenrolle behält ihr
+    # Jahr (ein Datumsfilter hatte sie zwischenzeitlich gekürzt).
+    assert body["formname"] == "Notarvertrag Kaufvertrag URNr 123/2024"
+
+
+def test_erkennen_ohne_bereich_bleibt_wie_zuvor(monkeypatch):
+    """Additiv: bestehende Aufrufer schicken keinen Bereich und bekommen die
+    Antwort unverändert — kein `formwerte`, das sie nicht erwarten."""
+    monkeypatch.setattr(ocr, "erkenne", _notar_erkennung)
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *_a, **_k: False)
+    body = _post_bereich("").json()
+    assert "formwerte" not in body
+    assert "formname" not in body

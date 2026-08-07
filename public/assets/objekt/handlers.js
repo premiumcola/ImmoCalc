@@ -39,6 +39,8 @@ import { bewohnerZeile, bewohnerSpeichern, gemeinZeile, gemeinBlock,
          gemeinAusFormular, nutzZeile, nutzBlock, nutzAusFormular } from './bewohner.js';
 import { lageplanUmbenennen, lageplanEntfernen, lageplanAnsehen,
          lageplanHochladen } from './lageplan.js';
+import { eintragScannen, scanAnhaengen, scanVerwerfen,
+         scanWartet, SCANBAR } from './eintragscan.js';
 
 const hausUrl = () => `objekt.html?o=${encodeURIComponent(slug)}`;
 const einheitUrl = id => `${hausUrl()}&e=${id}`;
@@ -263,6 +265,10 @@ export function initHandlers() {
           const neu = await api(`/objekte/${encodeURIComponent(slug)}/${ep}`,
                                 { method: 'POST', body: anlegeWerte });
           miete_id = neu.id;
+          // N263 — jetzt erst hat der Eintrag eine id: der vorbereitete Scan
+          // wandert in die Cloud und hängt sich daran. Scheitert die Ablage,
+          // bleibt der Eintrag trotzdem stehen (siehe `scanAnhaengen`).
+          if (scanWartet()) await scanAnhaengen(bereich, neu.id);
         }
         if (bereich === 'mieten') {
           await bewohnerSpeichern(form, miete_id);
@@ -620,10 +626,27 @@ export function initHandlers() {
       // Im Fokus ist die Einheit schon entschieden — die Blase steht vorgewählt da.
       const werte = bereich === 'mieten' && ObjState.fokus
         ? { einheit: ObjState.fokus.bezeichnung } : {};
+      const extra = bereich === 'mieten' ? mietExtra(null) : '';
+      // N263 — ein alter Scan darf nicht an einem später von Hand angelegten
+      // Eintrag hängenbleiben.
+      scanVerwerfen();
       return formular({ titel: `${cfg.einzahl} hinzufügen`,
                         felder: felderFuer(bereich, werte), bereich, werte,
-                        absicht: 'eintrag',
-                        extra: bereich === 'mieten' ? mietExtra(null) : '' });
+                        absicht: 'eintrag', extra,
+                        // N263 — der Weg übers Foto, gleichwertig neben dem
+                        // Abtippen: die Maske kommt danach gefüllt zurück.
+                        scan: SCANBAR.has(bereich) ? bereich : null });
+    }
+
+    // N263 — „Abfotografieren" aus der Maske heraus: dieselbe Maske geht danach
+    // gefüllt wieder auf, die Datei wartet bis zum Speichern.
+    const scanKnopf = e.target.closest('[data-eintrag-scan]');
+    if (scanKnopf) {
+      const bereich = scanKnopf.dataset.eintragScan;
+      const werte = bereich === 'mieten' && ObjState.fokus
+        ? { einheit: ObjState.fokus.bezeichnung } : {};
+      return eintragScannen(bereich, werte,
+                            bereich === 'mieten' ? mietExtra(null) : '');
     }
 
     // CCCXIII — Klick auf einen Eintrag öffnet die Detailansicht (Daten links,

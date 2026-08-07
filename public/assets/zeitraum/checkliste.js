@@ -413,7 +413,7 @@ function anhaengerFenster(kostenart) {
         data-name="${esc(d.dateiname)}" data-pfad="${esc(d.pfad || '')}"
         title="${esc(d.dateiname)}">
         <span class="anh-z-dn">${esc(d.dateiname)}</span>
-        ${d.pfad ? `<span class="anh-z-pf">${esc(d.pfad)}</span>` : ''}
+        ${d.pfad ? `<span class="anh-z-pf"><bdi dir="ltr">${esc(d.pfad)}</bdi></span>` : ''}
       </button>
       ${d.betrag ? `<span class="anh-z-b">${eur(d.betrag)}</span>` : ''}
       ${loesbar && bearbeitbar ? `<button type="button" class="anh-z-x"

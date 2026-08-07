@@ -72,7 +72,7 @@ function dateiJahr(dateien) {
     über `/api/dokumente/erkennen` (speichert nichts). Schlägt sie fehl (kein
     Schlüssel, kein Guthaben, offline), gibt sie `null` und der Scan läuft ganz
     normal mit dem Kontext weiter — die KI darf nie einen Beleg aufhalten. */
-async function kiErkennen(datei, kostenart = '') {
+async function kiErkennen(datei, kostenart = '', bereich = '') {
   if (!datei) return null;
   try {
     // N207 — iOS-Kamerafotos (HEIC/leerer type) erst in ein vom Server lesbares
@@ -84,6 +84,10 @@ async function kiErkennen(datei, kostenart = '') {
     // zusätzlich die drei Bereichsbeträge (Feld `wasser`). Additiv; ohne den
     // Hinweis bleibt der Aufruf wie zuvor.
     if (kostenart) paket.append('kostenart', kostenart);
+    // N263 — die gemeinte Eingabemaske nennen: dann kommt die Auslese schon auf
+    // deren Feldnamen übersetzt zurück (`formwerte`), und das Formular geht
+    // vorausgefüllt auf. Ohne den Hinweis bleibt die Antwort wie zuvor.
+    if (bereich) paket.append('bereich', bereich);
     const antwort = await fetch('/api/dokumente/erkennen',
                                 { method: 'POST', body: paket });
     return antwort.ok ? await antwort.json() : null;
@@ -182,7 +186,8 @@ export async function belegVorbereiten(dateien, ziel = {}, beimLesen = null) {
   const liste = Array.from(dateien || []);
   const erstes = liste.find(istBildDatei) || liste[0];
   // N78 — die Kostenart als Kontext mitgeben (Wasser-Beleg ⇒ drei Beträge).
-  const kiVersprechen = kiErkennen(erstes, ziel.kostenart || '');
+  // N263 — dazu der Bereich, wenn der Scan eine Eingabemaske füllen soll.
+  const kiVersprechen = kiErkennen(erstes, ziel.kostenart || '', ziel.bereich || '');
 
   const aufnahme = await aufnahmeVorbereiten(dateien, ziel.titel);
   if (!aufnahme) return null;                       // Zuschnitt abgebrochen

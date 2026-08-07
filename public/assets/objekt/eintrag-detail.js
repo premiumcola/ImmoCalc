@@ -244,7 +244,8 @@ export async function eintragDetail(bereich, id, laden) {
       b.classList.toggle('an', b.dataset.doc === String(docId)));
     if (vorschauKopf) {
       vorschauKopf.innerHTML = `<span class="dd-vn">${esc(name || 'Beleg')}</span>${pfad
-        ? `<span class="dd-vp" title="Ablageort in der Nextcloud">${esc(pfad)}</span>` : ''}`;
+        ? `<span class="dd-vp" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
+            esc(pfad)}</bdi></span>` : ''}`;
       vorschauKopf.hidden = false;
     }
     adressListen.push(belegSeitenLaden(`/api/dokumente/${docId}`, flaeche,
