@@ -107,11 +107,31 @@ API-Code, Dockerfiles, nginx-Config oder Compose brauchen `./deploy.sh` (~30 s).
 ## Bauen / Testen — in dieser Reihenfolge
 
 ```bash
-make test              # Engine- + API-Tests (pytest) — MUSS grün sein
+make t F=dokumente     # gezielt, ~10 s — WÄHREND der Arbeit
+make test              # voll, parallel, ~2 min — vor JEDEM Commit, MUSS grün sein
 ./deploy.sh            # nur nötig bei API/Docker/nginx-Änderungen
 make check             # Browser gegen die laufende Instanz
 make check-app         # Prüfstand: alle Flows in drei Geräteklassen
+make test-seq          # voll, sequenziell, ~7 min — nur bei Reihenfolge-Verdacht
 ```
+
+**Die kleinste Stufe nehmen, die die Frage beantwortet.** Wer eine Funktion in
+`dokumente.py` ändert, prüft sie mit `make t F=dokumente` in zehn Sekunden —
+nicht mit sieben Minuten Vollauf. Der volle Lauf gehört vor den Commit, nicht
+zwischen zwei Zeilen. Gemessen: gezielt ~10 s · voll parallel 106 s ·
+voll sequenziell 434 s.
+
+Parallel ist gefahrlos, weil `api/tests/conftest.py` **jeder Testdatei eine
+eigene Datenbank** gibt und `--dist loadfile` eine Datei komplett in einem
+Prozess hält — es gilt genau die Isolation, auf die die Tests ohnehin gebaut
+sind. `make test-seq` bleibt für den Fall, dass eine Reihenfolge-Abhängigkeit
+im Verdacht steht; im Normalbetrieb ist es Verschwendung.
+
+**Klein schneiden, früh committen.** Nach jeder fertigen Teilfunktion prüfen
+(gezielt), committen, weitermachen — nicht fünf Themen sammeln und am Ende
+einmal groß testen. Sonst hängen fertige Änderungen unnötig lange
+unveröffentlicht herum und lassen sich bei einem Fehler nicht mehr einzeln
+zurücknehmen.
 
 `tests/harness.py` serviert API und `public/` unter einer Herkunft — damit
 lassen sich neue Endpunkte prüfen, ohne auf einen Deploy zu warten. Aus dem
