@@ -84,7 +84,15 @@ export async function scanAnhaengen(bereich, id) {
   }
 }
 
-/** Die Kamera/Dateiauswahl öffnen und auf die Wahl warten. */
+/** Die Kamera/Dateiauswahl öffnen und auf die Wahl warten.
+ *
+ * Das `feld.click()` ist der ganze Punkt dieser Funktion: ein Dateifeld öffnet
+ * sich NIE von selbst, nur weil es im DOM steht. Es fehlte — der Knopf legte
+ * das Feld an und wartete dann auf eine Kamera, die niemand aufgerufen hatte.
+ *
+ * Der Klick muss im selben Durchlauf wie die Nutzerberührung passieren, sonst
+ * verweigert Safari ihn. Deshalb steht hier vor `click()` kein `await` und
+ * darf auch keines dazwischen geraten. */
 function dateienWaehlen() {
   return new Promise(fertig => {
     const feld = document.createElement('input');
@@ -95,17 +103,28 @@ function dateienWaehlen() {
     feld.capture = 'environment';
     feld.hidden = true;
     document.body.appendChild(feld);
+
+    let erledigt = false;
+    const abschliessen = dateien => {
+      if (erledigt) return;
+      erledigt = true;
+      feld.remove();
+      fertig(dateien);
+    };
+
     feld.addEventListener('change', () => {
       const dateien = Array.from(feld.files || []);
-      feld.remove();
-      fertig(dateien.length ? dateien : null);
+      abschliessen(dateien.length ? dateien : null);
     }, { once: true });
-    // Bricht der Nutzer den Dateidialog ab, kommt gar kein `change` — das
-    // Feld bliebe für immer im DOM stehen. Beim nächsten Fokus aufräumen.
+
+    feld.click();
+
+    // Bricht der Nutzer die Auswahl ab, kommt gar kein `change` — das Feld
+    // bliebe für immer im DOM stehen. Beim nächsten Fokus aufräumen, aber mit
+    // reichlich Nachlauf: nach einer Aufnahme kann der Fokus VOR dem `change`
+    // eintreffen, und ein zu strammer Zeitgeber würfe das Foto weg.
     window.addEventListener('focus', () => {
-      setTimeout(() => { if (feld.isConnected && !feld.files?.length) {
-        feld.remove(); fertig(null);
-      } }, 800);
+      setTimeout(() => { if (!feld.files?.length) abschliessen(null); }, 2000);
     }, { once: true });
   });
 }
