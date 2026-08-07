@@ -479,10 +479,22 @@
      Umbruch, und der Schlüsseltext wurde hart abgeschnitten. Dort bleibt nur
      der Betrag stehen (die Beträge fluchten weiterhin) — der Verteilungs-
      schlüssel steht ohnehin in der geöffneten Karte. */
+  /* N260 — auf dem Telefon geht die Rechnung nicht auf: Badge (52) + Betrag
+     (78) + zwei Scan-Knöpfe (92) + Haken (28) + Abstände belegen ~290 der
+     ~360 nutzbaren Pixel. Dem Titel blieben ~70 px, und mit `hyphens:auto`
+     zerfiel „Abfallwirtschaft" in „Ab-fall-wirt-scha-ft". Statt den Namen zu
+     zerquetschen bekommt er die ganze erste Zeile; Badge, Betrag und Knöpfe
+     rücken darunter nach rechts. Die Beträge fluchten dort weiterhin. */
   @media (max-width:560px){
-    .pruef .kopf-belege{width:52px}
-    .pruef .kopf-rechts{width:auto;min-width:78px}
+    .pruef .kopf{flex-wrap:wrap;row-gap:4px;padding-right:12px;padding-bottom:10px}
+    .pruef .kopf > .zeile{flex:1 0 100%;padding-bottom:2px}
+    .pruef .kopf-belege{width:auto;margin-left:auto}
+    .pruef .kopf-rechts{width:auto;min-width:0;flex-direction:row;
+      align-items:center;gap:8px}
     .pruef .kopf-rechts .vkey{display:none}
+    /* Der Titel bricht auf Wortgrenzen, nie mitten im Wort — er hat jetzt
+       die volle Breite, eine Silbentrennung ist dafür nicht mehr nötig. */
+    .pruef .name{hyphens:none;overflow-wrap:normal;word-break:normal}
   }
   /* CCCLXXXVII — die zwei Beleg-Knöpfe: klare Icons (Kamera / Wolke bzw. Upload)
      in gedämpftem Blau statt Grün, damit sie sich vom teal-Rest abheben und
