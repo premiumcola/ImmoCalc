@@ -21,9 +21,11 @@ zum Ausdrucken taugt eine abfotografierte Seite nicht.
 import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import (APIRouter, Depends, File, HTTPException, Query,
+                     Response, UploadFile)
 from sqlmodel import Session, select
 
+from .. import ocr
 from ..cloudkern import verbindung
 from ..db import get_session
 from ..dokumente.namen import _dateiname_kopfzeile, _endung, _saubere_datei
@@ -213,6 +215,64 @@ def inhalt(vorlage_id: int, session: Session = Depends(get_session)):
         "Content-Disposition": f"inline; {_dateiname_kopfzeile(v.dateiname)}",
         "Cache-Control": "private, max-age=300",
     })
+
+
+def _vorlage_bytes(session: Session, vorlage_id: int) -> tuple[Dokumentvorlage, bytes, str]:
+    """Die Vorlage samt Datei — gemeinsame Vorstufe von Seitenzahl und Vorschau."""
+    v = _eintrag(session, vorlage_id)
+    if not v.pfad.startswith("/"):
+        raise HTTPException(409, "Diese Vorlage liegt noch nicht in der Cloud")
+    client = verbindung(session)
+    try:
+        rohdaten, typ = client.hole(v.pfad)
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    return v, rohdaten, typ
+
+
+# N265 — dieselben zwei Endpunkte, die auch ein Beleg hat. Der gemeinsame
+# Betrachter (`belegAnsehen`) fragt erst `/seiten` und holt dann je Seite ein
+# Bild; fehlten sie, fiel er auf „Im neuen Tab öffnen" zurück — die Vorlage
+# lag korrekt in der Cloud, sah aber aus wie kaputt.
+@router.get("/{vorlage_id}/seiten")
+def seiten(vorlage_id: int, session: Session = Depends(get_session)) -> dict:
+    """Wie viele Bildseiten die Vorschau dieser Vorlage hat. 0 heisst: nicht
+    als Bild darstellbar (z. B. docx) — dann bleibt der neue Tab der Weg."""
+    v, rohdaten, typ = _vorlage_bytes(session, vorlage_id)
+    name = (v.dateiname or "").lower()
+    if name.endswith(".pdf") or typ == "application/pdf":
+        return {"seiten": ocr.seiten_anzahl(rohdaten)}
+    if typ.startswith("image/") or name.endswith(
+            (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+        return {"seiten": 1}
+    return {"seiten": 0}
+
+
+@router.get("/{vorlage_id}/vorschau")
+def vorschau(vorlage_id: int, seite: int = Query(0, ge=0),
+             session: Session = Depends(get_session)) -> Response:
+    """Seite `seite` als Bild. 416, wenn es die Seite nicht gibt; 415, wenn
+    sich die Datei gar nicht rendern lässt — beides beantwortet die Oberfläche
+    mit dem Hinweis statt mit einem leeren Rahmen."""
+    v, rohdaten, typ = _vorlage_bytes(session, vorlage_id)
+    name = (v.dateiname or "").lower()
+    if name.endswith(".pdf") or typ == "application/pdf":
+        anzahl = ocr.seiten_anzahl(rohdaten)
+        if anzahl and seite >= anzahl:
+            raise HTTPException(416, f"Diese Vorlage hat nur {anzahl} Seite(n)")
+        png = ocr.seite_png(rohdaten, seite)
+        if png is None:
+            raise HTTPException(415, "Vorschau nicht möglich")
+        return Response(content=png, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=300"})
+    if typ.startswith("image/") or name.endswith(
+            (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+        if seite > 0:
+            raise HTTPException(416, "Diese Vorlage hat nur eine Seite")
+        return Response(content=rohdaten,
+                        media_type=typ if typ.startswith("image/") else "image/jpeg",
+                        headers={"Cache-Control": "private, max-age=300"})
+    raise HTTPException(415, "Für diese Datei gibt es keine Bildvorschau")
 
 
 @router.delete("/{vorlage_id}")

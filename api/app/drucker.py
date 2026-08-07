@@ -48,6 +48,7 @@ _TAG_URI = 0x45
 _TAG_CHARSET = 0x47
 _TAG_SPRACHE = 0x48
 _TAG_TEXT = 0x41
+_TAG_MIME = 0x49                                  # mimeMediaType
 
 
 def _attribut(tag: int, name: bytes, wert: bytes) -> bytes:
@@ -148,7 +149,10 @@ def drucken(server: str, drucker: str, daten: bytes, titel: str = "ImmoCalc",
              + _attribut(_TAG_URI, b"printer-uri", _drucker_uri(server, drucker))
              + _attribut(_TAG_NAME, b"requesting-user-name", b"immocalc")
              + _attribut(_TAG_TEXT, b"job-name", titel.encode()[:255])
-             + _attribut(_TAG_NAME, b"document-format", b"application/pdf")
+             # `document-format` ist laut IPP ein mimeMediaType (0x49). Mit dem
+             # falschen Typ nimmt CUPS den Auftrag zwar an, kann das Format aber
+             # nicht sicher zuordnen — der Auftrag bleibt dann leicht hängen.
+             + _attribut(_TAG_MIME, b"document-format", b"application/pdf")
              + bytes([_TAG_AUFTRAG])
              + _attribut(_TAG_KEYWORD, b"print-color-mode",
                          b"color" if farbe else b"monochrome")
