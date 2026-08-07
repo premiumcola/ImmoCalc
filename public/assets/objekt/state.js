@@ -112,10 +112,10 @@ export const SCAN_WORT = { mieten: 'Mietvertrag', notarvertraege: 'Notarvertrag'
 export const SCAN_TYPEN = { mieten: [
   ['Mietvertrag', 'Mietvertrag'],
   ['Übergabeprotokoll Einzug', 'Übergabe Einzug'],
-  ['Übergabeprotokoll Auszug', 'Übergabe Auszug'],
   ['Mietkautionskonto', 'Kautionsunterlagen'],
   ['Mieterselbstauskunft', 'Selbstauskunft', ['Lohnsteuerbescheinigung']],
   ['Abnahmeprotokoll Rauchwarnmelder', 'Rauchwarnmelder'],
+  ['Übergabeprotokoll Auszug', 'Übergabe Auszug'],
 ] };
 
 export const KAMERA_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"

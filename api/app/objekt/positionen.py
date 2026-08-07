@@ -193,9 +193,13 @@ def position_aendern(pid: int, data: PositionIn,
             p.kostenart = neu
     if data.betrag is not None:
         p.betrag = data.betrag
-        # Ein eingetragener Betrag heisst: der Beleg liegt vor.
-        if data.status is None and data.betrag > 0:
-            p.status = "erledigt"
+        # N238 — der Zustand folgt dem Betrag in BEIDE Richtungen: ein
+        # eingetragener Betrag heisst „erledigt", ein auf 0 korrigierter
+        # (z. B. weil sich ein Beleg als reiner Info-Beleg herausstellte)
+        # heisst wieder „offen" — sonst bliebe eine 0,00-€-Zeile fälschlich
+        # grün stehen.
+        if data.status is None:
+            p.status = "erledigt" if data.betrag > 0 else "offen"
     if data.schluessel is not None and data.schluessel not in SCHLUESSEL:
         raise HTTPException(400, f"Unbekannter Verteilungsschlüssel "
                                  f"'{data.schluessel}'")

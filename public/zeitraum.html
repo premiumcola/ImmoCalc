@@ -1085,6 +1085,22 @@
   .anh-anbau svg{width:15px;height:15px;flex:none}
   .anh-hint{display:block;font:400 11px var(--body);color:var(--soft);
             line-height:1.45;margin-top:8px}
+  /* N237 — bereits angehängte Zusatzbelege: kleine Chips in der Karte, kein
+     Betrag, kein Einfluss auf „erledigt" (nur ein Infobeleg). */
+  .anh-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .anh-chip{display:inline-flex;align-items:center;gap:6px;
+            background:var(--paper);border-radius:999px;padding:6px 6px 6px 10px;
+            font:600 11.5px var(--mono);color:var(--soft);min-height:32px}
+  .anh-chip svg{width:13px;height:13px;flex:none}
+  .anh-chip-name{border:none;background:none;color:var(--ink);cursor:pointer;
+                 font:inherit;padding:0;max-width:160px;overflow:hidden;
+                 text-overflow:ellipsis;white-space:nowrap}
+  .anh-chip-name:hover{color:var(--teal-d);text-decoration:underline}
+  .anh-chip-x{border:none;background:var(--line);color:var(--soft);
+              width:20px;height:20px;border-radius:50%;flex:none;cursor:pointer;
+              font:600 13px var(--body);line-height:1;display:flex;
+              align-items:center;justify-content:center}
+  .anh-chip-x:hover{background:var(--neg-bg);color:var(--neg)}
   /* Auswahl-Dialog der kostenfreien Belege aus dem Bestand. */
   .ahdlg .ahliste{max-height:min(50dvh,360px);overflow:auto;margin:6px 0 14px}
   .ahdlg .ahz{display:flex;align-items:center;gap:11px;width:100%;cursor:pointer;

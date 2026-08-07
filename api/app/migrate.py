@@ -321,6 +321,60 @@ def miete_vorgaenger_backfuellen(engine: Engine) -> int:
     return aktualisiert
 
 
+def miete_kaution_vorgaenger_uebernehmen(engine: Engine) -> int:
+    """N239 — Kaution-Objektkonto/-Eingang gilt für die ganze Mietbeziehung.
+
+    Die Kaution wird nicht bei jeder Mieterhöhung neu eingezahlt — ein
+    Vermerk „Kaution auf Objektkonto" bzw. das Eingangsdatum am alten
+    Mietstand muss deshalb auch am NEUEN (per Mieterhöhung angelegten)
+    Mietstand gelten, genau wie die Dokumente (N235). Additiv, idempotent:
+    läuft die `vorgaenger_id`-Kette rückwärts ab (mit Ringschutz, mehrstufige
+    Mieterhöhungen eingeschlossen) und übernimmt einen fehlenden Wert vom
+    nächsten Vorfahren, der ihn trägt. Ein Mietstand mit einem EIGENEN Wert
+    (kaution_objektkonto=True bzw. gesetztes kaution_eingang) wird nie
+    überschrieben — nur der leere/Default-Fall wird aufgefüllt."""
+    from .models import Miete
+
+    aktualisiert = 0
+    try:
+        with Session(engine) as session:
+            alle = {m.id: m for m in session.exec(select(Miete)).all()}
+            for m in alle.values():
+                if m.kaution_objektkonto and m.kaution_eingang:
+                    continue
+                gesehen = {m.id}
+                aktuell = m.vorgaenger_id
+                gefunden_konto = False
+                gefunden_eingang = None
+                while aktuell and aktuell not in gesehen:
+                    v = alle.get(aktuell)
+                    if not v:
+                        break
+                    gesehen.add(aktuell)
+                    gefunden_konto = gefunden_konto or v.kaution_objektkonto
+                    if gefunden_eingang is None and v.kaution_eingang:
+                        gefunden_eingang = v.kaution_eingang
+                    if gefunden_konto and gefunden_eingang:
+                        break
+                    aktuell = v.vorgaenger_id
+                geaendert_zeile = False
+                if gefunden_konto and not m.kaution_objektkonto:
+                    m.kaution_objektkonto = True
+                    geaendert_zeile = True
+                if gefunden_eingang and not m.kaution_eingang:
+                    m.kaution_eingang = gefunden_eingang
+                    geaendert_zeile = True
+                if geaendert_zeile:
+                    session.add(m)
+                    aktualisiert += 1
+            if aktualisiert:
+                session.commit()
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Kaution-Vorgänger-Übernahme nicht ergänzt: %s", fehler)
+        return 0
+    return aktualisiert
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -387,6 +441,16 @@ def migriere(engine: Engine) -> list[str]:
             geaendert.append(f"miete.vorgaenger_id[{n} verknüpft]")
     except Exception as fehler:                       # noqa: BLE001
         log.warning("Vorgänger-Verknüpfung nicht ergänzt: %s", fehler)
+
+    # N239 — Kaution-Objektkonto/-Eingang über die Vorgänger-Kette nachziehen.
+    # Nach der Verknüpfung oben, damit frisch verkettete Alt-Mietstände direkt
+    # mit erfasst werden.
+    try:
+        n = miete_kaution_vorgaenger_uebernehmen(engine)
+        if n:
+            geaendert.append(f"miete.kaution_objektkonto/-eingang[{n} übernommen]")
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Kaution-Vorgänger-Übernahme nicht ergänzt: %s", fehler)
 
     if geaendert:
         log.info("Schema ergänzt: %s", ", ".join(geaendert))

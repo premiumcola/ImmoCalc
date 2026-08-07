@@ -222,3 +222,66 @@ def test_miete_vorgaenger_wird_fuer_altfaelle_verknuepft(tmp_path):
 
     # Idempotent: ein zweiter Lauf findet nichts mehr zu verknüpfen.
     assert miete_vorgaenger_backfuellen(engine) == 0
+
+
+def test_kaution_objektkonto_wird_ueber_vorgaenger_kette_uebernommen(tmp_path):
+    """N239 — Kaution auf Objektkonto / Eingangsdatum gelten für die ganze
+    Mietbeziehung, nicht nur für den Mietstand, an dem sie eingetragen
+    wurden. Bei einer (auch mehrstufigen) Mieterhöhung erbt ein Mietstand
+    ohne eigenen Wert den seines nächsten Vorfahren, der einen trägt. Ein
+    Mietstand mit einem EIGENEN Wert wird nie überschrieben."""
+    from sqlmodel import Session, SQLModel, select
+
+    from app.migrate import miete_kaution_vorgaenger_uebernehmen
+    from app.models import Miete, Objekt
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'mk.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        o = Objekt(slug="test-obj", name="Testobjekt")
+        s.add(o)
+        s.commit()
+        s.refresh(o)
+        urspruenglich = Miete(objekt_id=o.id, einheit="1.OG", partei="Julia Buckenleib",
+                              ab_datum=date(2026, 7, 1), bis_datum=date(2028, 2, 29),
+                              kaution_objektkonto=True,
+                              kaution_eingang=date(2026, 6, 15))
+        s.add(urspruenglich)
+        s.commit()
+        s.refresh(urspruenglich)
+        # Erste Erhöhung: eigener Wert fehlt, muss vom Ursprung erben.
+        erhoehung_1 = Miete(objekt_id=o.id, einheit="1.OG", partei="Julia Buckenleib",
+                            ab_datum=date(2028, 3, 1), bis_datum=date(2030, 5, 31),
+                            vorgaenger_id=urspruenglich.id)
+        s.add(erhoehung_1)
+        s.commit()
+        s.refresh(erhoehung_1)
+        # Zweite Erhöhung: mehrstufige Kette — erbt über erhoehung_1 hinweg
+        # vom ursprünglichen Mietstand.
+        erhoehung_2 = Miete(objekt_id=o.id, einheit="1.OG", partei="Julia Buckenleib",
+                            ab_datum=date(2030, 6, 1), bis_datum=None,
+                            vorgaenger_id=erhoehung_1.id)
+        # Anderer Mietstand: hat selbst schon einen (abweichenden) Wert und
+        # darf nicht überschrieben werden.
+        eigener_wert = Miete(objekt_id=o.id, einheit="EG", partei="Anderer Mieter",
+                             ab_datum=date(2027, 1, 1), bis_datum=None,
+                             kaution_objektkonto=False,
+                             kaution_eingang=date(2027, 1, 10))
+        s.add_all([erhoehung_2, eigener_wert])
+        s.commit()
+
+    n = miete_kaution_vorgaenger_uebernehmen(engine)
+    assert n == 2  # erhoehung_1 und erhoehung_2, nicht eigener_wert
+
+    with Session(engine) as s:
+        nach_datum = {m.ab_datum: m for m in s.exec(select(Miete)).all()}
+    assert nach_datum[date(2028, 3, 1)].kaution_objektkonto is True
+    assert nach_datum[date(2028, 3, 1)].kaution_eingang == date(2026, 6, 15)
+    assert nach_datum[date(2030, 6, 1)].kaution_objektkonto is True
+    assert nach_datum[date(2030, 6, 1)].kaution_eingang == date(2026, 6, 15)
+    # Eigener, expliziter Wert bleibt unangetastet (kaution_eingang gesetzt).
+    assert nach_datum[date(2027, 1, 1)].kaution_objektkonto is False
+    assert nach_datum[date(2027, 1, 1)].kaution_eingang == date(2027, 1, 10)
+
+    # Idempotent: ein zweiter Lauf findet nichts mehr zu übernehmen.
+    assert miete_kaution_vorgaenger_uebernehmen(engine) == 0

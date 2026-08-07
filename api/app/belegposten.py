@@ -254,10 +254,11 @@ def _schreibe(session: Session, p: Kostenposition, b: Buchung) -> None:
     """Setzt Betrag und Belegsumme — und den Zustand, der dazu passt."""
     p.betrag = b.betrag
     p.beleg_summe = b.beleg_summe
-    if b.betrag:
-        # Ein Betrag heisst: der Beleg liegt vor. Genau wie beim Nachtragen
-        # von Hand (`position_aendern`).
-        p.status = "erledigt"
+    # N238 — Zustand folgt dem Betrag in beide Richtungen, genau wie beim
+    # Nachtragen von Hand (`position_aendern`): ein Betrag heisst „erledigt",
+    # keiner (mehr) heisst wieder „offen" — sonst bliebe eine 0,00-€-Zeile
+    # fälschlich grün, wenn ihr letzter Beleg sich als kostenfrei herausstellt.
+    p.status = "erledigt" if b.betrag else "offen"
     if p.wertquelle == "manuell":
         p.wertquelle = "Scan"
     session.add(p)
@@ -274,6 +275,10 @@ def nachrechnen(session: Session, p: Kostenposition) -> float:
                             for b in belege_der_position(session, p.id)))
     p.beleg_summe = beleg_summe
     p.betrag = _geld(hand + beleg_summe)
+    # N238 — löst sich der letzte Beleg und bleibt kein Handanteil übrig, fällt
+    # der Betrag auf 0: dann wieder „offen", sonst stünde eine 0,00-€-Zeile
+    # weiter fälschlich grün.
+    p.status = "erledigt" if p.betrag else "offen"
     session.add(p)
     return p.betrag
 

@@ -674,7 +674,15 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
         ergebnis["kategorie"] = kanonisch
     elif ki_kat and not ergebnis.get("kategorie"):
         ergebnis["kategorie"] = ki_kat
-    if ki.get("kostenart"):
+    # N237 — ist der Beleg NICHT der eigentliche Rechnungsbeleg (Info-Schreiben,
+    # SEPA-Mandat, Abbuchungsvorankündigung …), sagt der Dokumenttyp genauer,
+    # worum es geht, als die blosse Kostenart: „Abbuchungsvorankündigung" statt
+    # nur „Grundsteuer" — sonst verwechselbar mit dem echten Hauptbeleg.
+    ist_zusatzbeleg = (ki.get("kosten_relevant") is False
+                       or ki.get("ist_kosten") is False)
+    if ist_zusatzbeleg and ki.get("dokumenttyp"):
+        ergebnis["sache"] = ki["dokumenttyp"]
+    elif ki.get("kostenart"):
         ergebnis["sache"] = ki["kostenart"]
     ergebnis["ist_kosten"] = bool(ki.get("ist_kosten", ergebnis["ist_kosten"]))
     # CCCLXVII: die inhaltliche KI-Einschätzung — sind echte Kosten entstanden,

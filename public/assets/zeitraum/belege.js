@@ -158,6 +158,18 @@ export async function anhaengen(kostenart) {
   }
 }
 
+/* N237 — einen Zusatzbeleg wieder vom Thema lösen (Datei bleibt in der Ablage). */
+export async function anhaengerEntfernen(id) {
+  try {
+    await api(`/dokumente/${id}/anhaenger`, { method: 'DELETE' });
+    melde('Anhänger gelöst — die Datei bleibt in der Ablage', 'pos');
+    const { laden } = await import('./checkliste.js');
+    await laden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
 /* Ein erkannter Beleg-Vorschlag: was ist das, welcher Betrag. */
 function belegDropDialog({ kostenart, vorschlag, dup, jahr, groesse, datei, anbieter }) {
   return new Promise(fertig => {

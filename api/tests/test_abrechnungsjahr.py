@@ -47,3 +47,29 @@ def test_ohne_abrechnungsjahr_bleibt_das_rechnungsjahr(monkeypatch):
     erg = _leeres_ergebnis()
     ocr._ki_ergaenzen(erg, "text", ki_key="x")
     assert erg["jahr"] == 2025             # Fallback: Jahr aus dem Datum
+
+
+def test_zusatzbeleg_ohne_kosten_nutzt_dokumenttyp_als_sache(monkeypatch):
+    """N237 — eine Abbuchungsvorankündigung ist NICHT der Grundsteuerbescheid:
+    der Dateiname darf nicht wie der Hauptbeleg heissen."""
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *a, **k: True)
+    monkeypatch.setattr(kiauslese, "lies_beleg", lambda *a, **k: {
+        "kostenart": "Grundsteuer", "dokumenttyp": "Abbuchungsvorankündigung",
+        "kosten_relevant": False, "ist_kosten": False, "betrag": None})
+    erg = _leeres_ergebnis()
+    ocr._ki_ergaenzen(erg, "text", ki_key="x")
+    assert erg["sache"] == "Abbuchungsvorankündigung"
+    assert erg["betrag"] is None
+
+
+def test_echter_beleg_behaelt_die_kostenart_als_sache(monkeypatch):
+    """N237 — der normale Fall (echte Rechnung) ändert sich nicht: die Sache
+    bleibt die Kostenart, wie schon vor dem Fix."""
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *a, **k: True)
+    monkeypatch.setattr(kiauslese, "lies_beleg", lambda *a, **k: {
+        "kostenart": "Grundsteuer", "dokumenttyp": "Grundsteuerbescheid",
+        "kosten_relevant": True, "ist_kosten": True, "betrag": 256.36})
+    erg = _leeres_ergebnis()
+    ocr._ki_ergaenzen(erg, "text", ki_key="x")
+    assert erg["sache"] == "Grundsteuer"
+    assert erg["betrag"] == 256.36

@@ -72,7 +72,7 @@ import {
 } from './stromkette.js';
 import {
   belegAblageHtml, belegLoesen, betragVorschlagen, erkennungHatWert,
-  anhaengen, initBelegDrop,
+  anhaengen, anhaengerEntfernen, initBelegDrop,
 } from './belege.js';
 import {
   konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
@@ -322,6 +322,24 @@ function zeitraumFussHtml() {
   </div>`;
 }
 
+/* N237 — kostenfreie Zusatzbelege (Anhänger) dieser Kostenart: sichtbar direkt
+   in der aufgeklappten Karte, nicht nur im separaten „Belege"-Tab. Ein
+   Anhänger trägt keine Kostenposition und darf die Position nie erledigt
+   setzen (das bleibt allein der Betrag, siehe `effektivErledigt`/N238). */
+function anhaengerChipsHtml(k, bearbeitbar) {
+  const liste = state.anhaenger?.angehaengt?.[k.kostenart] || [];
+  if (!liste.length) return '';
+  return `<div class="anh-chips">${liste.map(d => `
+      <span class="anh-chip" title="Infobeleg — zählt nicht als Kosten">
+        ${ANH_ICON}
+        <button type="button" class="anh-chip-name" data-beleg="${d.id}"
+          data-name="${esc(d.dateiname)}">${esc(kurzBeleg(d.dateiname))}</button>
+        ${bearbeitbar ? `<button type="button" class="anh-chip-x"
+          data-anh-loesen="${d.id}" title="Anhänger lösen"
+          aria-label="Anhänger lösen">×</button>` : ''}
+      </span>`).join('')}</div>`;
+}
+
 function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken = true) {
   const erl = effektivErledigt(k);
   // N222 — dieselben vier Positionen wie in `zeileHtml`: ein berechneter Wert
@@ -387,6 +405,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
             placeholder="Neue Kostenart …" aria-label="Neue Kostenart"></div>` : '';
     koerper = `${kostenartFeld}${anbieterFeld}${stromPosFeldHtml(k)}
       ${stromKetteHtml(k)}${verteilungHtml(k)}${belege}
+      ${anhaengerChipsHtml(k, bearbeitbar)}
       <div class="kartenfuss">${fuss}</div>`;
   } else if (auf) {
     const handbetrag = (bearbeitbar && !istStromPos(k))
@@ -401,7 +420,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
       in diesem Zeitraum nichts erfasst — und er ist abgeschlossen.</div>`;
     const ablage = (istStromKettePos(k) && stromKetteVerteilt())
       ? '' : belegAblageHtml(k, bearbeitbar);
-    koerper = `${stromKetteHtml(k)}${zu}${ablage}${handbetrag}`;
+    koerper = `${stromKetteHtml(k)}${zu}${ablage}${anhaengerChipsHtml(k, bearbeitbar)}${handbetrag}`;
   }
 
   const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel && !heizoelSammel)
@@ -1421,6 +1440,9 @@ export function initHandlers() {
 
     const anhaengenKnopf = e.target.closest('[data-anhaengen]');
     if (anhaengenKnopf) return anhaengen(anhaengenKnopf.dataset.anhaengen);
+
+    const anhWeg = e.target.closest('[data-anh-loesen]');
+    if (anhWeg) { e.preventDefault(); return anhaengerEntfernen(anhWeg.dataset.anhLoesen); }
 
     const hoAdd = e.target.closest('[data-heizoel-add]');
     if (hoAdd) return heizoelHinzufuegen(hoAdd);

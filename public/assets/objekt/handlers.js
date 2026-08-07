@@ -241,8 +241,25 @@ export function initHandlers() {
         } else {
           // N228 — eine geplante Mieterhöhung verknüpft den neuen Mietstand mit
           // dem, den sie ablöst — nur so gelten dessen Dokumente auch hier.
-          const anlegeWerte = (bereich === 'mieten' && form.dataset.vorgaenger)
-            ? { ...werte, vorgaenger_id: Number(form.dataset.vorgaenger) } : werte;
+          // N239 — die Kaution wird nicht pro Mietstand neu eingezahlt: der
+          // Objektkonto-Vermerk (kein eigenes Formularfeld, nur der Knopf in
+          // der Checkliste) und das Eingangsdatum gelten weiter und werden
+          // hier vom Vorgänger übernommen, statt bei jeder Erhöhung wieder
+          // auf „nicht eingegangen" zurückzufallen.
+          let anlegeWerte = werte;
+          if (bereich === 'mieten' && form.dataset.vorgaenger) {
+            anlegeWerte = { ...werte, vorgaenger_id: Number(form.dataset.vorgaenger) };
+            try {
+              const voralt = (await api(`/objekte/${encodeURIComponent(slug)}/mieten`))
+                .find(x => String(x.id) === form.dataset.vorgaenger);
+              if (voralt?.kaution_objektkonto && !anlegeWerte.kaution_objektkonto) {
+                anlegeWerte.kaution_objektkonto = true;
+              }
+              if (voralt?.kaution_eingang && !anlegeWerte.kaution_eingang) {
+                anlegeWerte.kaution_eingang = voralt.kaution_eingang;
+              }
+            } catch { /* Vorgänger nicht lesbar — Kaution bleibt wie im Formular */ }
+          }
           const neu = await api(`/objekte/${encodeURIComponent(slug)}/${ep}`,
                                 { method: 'POST', body: anlegeWerte });
           miete_id = neu.id;
