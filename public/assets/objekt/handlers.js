@@ -69,6 +69,20 @@ export function initHandlers() {
   dlgForm.addEventListener('click', async e => {
     if (e.target.closest('[data-abbruch]')) return dlg.close('abbruch');
 
+    // N263 — „Abfotografieren statt tippen" aus der Eingabemaske heraus.
+    // Der Zweig sass zuerst am `inhalt`-Handler; der Knopf steht aber im
+    // <dialog>, und der ist ein GESCHWISTER von #inhalt (objekt.html: 993
+    // bzw. 998), nicht sein Kind — der Klick kam dort nie an. Hier ist er
+    // richtig: derselbe Handler, der auch die übrigen Dialog-Klicks nimmt.
+    const scanKnopf = e.target.closest('[data-eintrag-scan]');
+    if (scanKnopf) {
+      const bereich = scanKnopf.dataset.eintragScan;
+      const werte = bereich === 'mieten' && ObjState.fokus
+        ? { einheit: ObjState.fokus.bezeichnung } : {};
+      return eintragScannen(bereich, werte,
+                            bereich === 'mieten' ? mietExtra(null) : '');
+    }
+
     // CCXXIX — Mehrfachauswahl der gesicherten Kredite: jede Blase schaltet
     // nur sich selbst, im Unterschied zu den Einzelauswahl-Blasen unten.
     const gsKredit = e.target.closest('[data-gs-kredit]');
@@ -636,17 +650,6 @@ export function initHandlers() {
                         // N263 — der Weg übers Foto, gleichwertig neben dem
                         // Abtippen: die Maske kommt danach gefüllt zurück.
                         scan: SCANBAR.has(bereich) ? bereich : null });
-    }
-
-    // N263 — „Abfotografieren" aus der Maske heraus: dieselbe Maske geht danach
-    // gefüllt wieder auf, die Datei wartet bis zum Speichern.
-    const scanKnopf = e.target.closest('[data-eintrag-scan]');
-    if (scanKnopf) {
-      const bereich = scanKnopf.dataset.eintragScan;
-      const werte = bereich === 'mieten' && ObjState.fokus
-        ? { einheit: ObjState.fokus.bezeichnung } : {};
-      return eintragScannen(bereich, werte,
-                            bereich === 'mieten' ? mietExtra(null) : '');
     }
 
     // CCCXIII — Klick auf einen Eintrag öffnet die Detailansicht (Daten links,

@@ -19,12 +19,14 @@ zum Ausdrucken taugt eine abfotografierte Seite nicht.
 * `DELETE /api/dokumentvorlagen/{id}`         — nur den Datenbankeintrag
 """
 import logging
+import os
 from datetime import date
 
 from fastapi import (APIRouter, Depends, File, HTTPException, Query,
                      Response, UploadFile)
 from sqlmodel import Session, select
 
+from .. import drucker as druckdienst
 from .. import ocr
 from ..cloudkern import verbindung
 from ..db import get_session
@@ -33,6 +35,7 @@ from ..models import Dokumentvorlage
 from ..nextcloud import NextcloudFehler
 
 log = logging.getLogger("immocalc")
+drucker_router = APIRouter(prefix="/api/drucker", tags=["drucker"])
 router = APIRouter(prefix="/api/dokumentvorlagen", tags=["dokumentvorlagen"])
 
 # Unter dem Home-Ordner, nicht daneben (N247). Die „00_" hält den Ordner in der
@@ -273,6 +276,52 @@ def vorschau(vorlage_id: int, seite: int = Query(0, ge=0),
                         media_type=typ if typ.startswith("image/") else "image/jpeg",
                         headers={"Cache-Control": "private, max-age=300"})
     raise HTTPException(415, "Für diese Datei gibt es keine Bildvorschau")
+
+
+# --------------------------------------------------------------------------
+# N264 — Vorlage direkt auf einen Drucker im Haus
+#
+# Eine Vorlage ist ein leeres Formular; man will sie in der Hand haben, nicht
+# auf dem Schirm. Deshalb je Drucker ein Knopf statt Herunterladen-Öffnen-
+# Drucken. Gedruckt wird schwarz-weiss und einseitig: es sind Formulare zum
+# Ausfüllen, Farbe kostet nur Toner.
+#
+# Die Adresse des Druckdienstes kommt aus der Umgebung — sie gehört zur
+# Installation, nicht in den Code. Ohne sie bleibt die Liste leer und die
+# Oberfläche zeigt gar keine Druckknöpfe, statt welche anzubieten, die nicht
+# funktionieren.
+# --------------------------------------------------------------------------
+
+def _druckdienst() -> str:
+    return os.environ.get("DRUCKDIENST", "").strip()
+
+
+@drucker_router.get("")
+def drucker_liste() -> dict:
+    """Die Drucker des Hauses: `[{name, ort}]`. Leer, wenn kein Druckdienst
+    eingerichtet oder erreichbar ist — dann blendet die Oberfläche die Knöpfe
+    einfach aus."""
+    dienst = _druckdienst()
+    if not dienst:
+        return {"drucker": [], "dienst": ""}
+    return {"drucker": druckdienst.drucker_liste(dienst), "dienst": dienst}
+
+
+@router.post("/{vorlage_id}/drucken")
+def vorlage_drucken(vorlage_id: int, drucker: str,
+                    session: Session = Depends(get_session)) -> dict:
+    """Schickt die Vorlage an einen Drucker. Rein lesend, was die Ablage
+    angeht — die Datei wird geholt und weitergereicht, nichts verändert."""
+    dienst = _druckdienst()
+    if not dienst:
+        raise HTTPException(503, "Es ist kein Druckdienst eingerichtet")
+    v, rohdaten, _typ = _vorlage_bytes(session, vorlage_id)
+    geklappt, meldung = druckdienst.drucken(
+        dienst, drucker, rohdaten, titel=v.name or v.dateiname)
+    if not geklappt:
+        raise HTTPException(502, meldung)
+    log.info("Vorlage %s gedruckt auf %s", vorlage_id, drucker)
+    return {"ok": True, "meldung": meldung, "drucker": drucker}
 
 
 @router.delete("/{vorlage_id}")

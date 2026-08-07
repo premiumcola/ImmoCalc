@@ -78,6 +78,8 @@ app.include_router(kidb.router)
 # N240 — eigener Prefix /api/dokumentvorlagen (Vorlagenarchiv, objekt-
 # übergreifend), ebenfalls vor dem Stammdaten-Fänger eingehängt.
 app.include_router(dokumentvorlagen.router)
+# N264 — Drucker des Hauses (eigener Prefix /api/drucker).
+app.include_router(dokumentvorlagen.drucker_router)
 # N126 — eigener Prefix /api/solaredge (Screenshot lesen, rein lesend),
 # ebenfalls vor dem Stammdaten-Fänger eingehängt.
 app.include_router(solaredge.router)

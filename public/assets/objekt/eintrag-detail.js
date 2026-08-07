@@ -16,6 +16,14 @@ import { belegScannen } from '../belegscan.js';
 import { AN_TYP, RUBRIKFARBE, SCAN_KATEGORIE, SCAN_TYPEN, SCAN_WORT,
          UMKLASS_ZIELE, KAMERA_ICON, kannUmklassifizieren } from './state.js';
 import { scanJahr } from './helpers.js';
+
+/* N264 — Drucker-Sprite im flachen Stil der uebrigen Symbole. */
+const DRUCKER_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/>
+  <path d="M6 14h12v7H6z"/></svg>`;
+
 import { formular, feldLabel } from './formular.js';
 import { mietExtra } from './miete-extras.js';
 import { kreditExtra } from './kredit-extras.js';
@@ -68,10 +76,14 @@ export async function eintragDetail(bereich, id, laden) {
   // Mietverhältnisse angefragt, ein Fehlschlag lässt die Checkliste einfach
   // ohne Vorlagen-Links weiterlaufen.
   let vorlagenNachTyp = new Map();
+  let drucker = [];
   if (bereich === 'mieten') {
     try {
       const d = await api('/dokumentvorlagen?verwendungszweck=Vermietung');
       vorlagenNachTyp = new Map((d.vorlagen || []).map(v => [v.typ, v]));
+      // N264 — die Drucker des Hauses. Ohne Druckdienst bleibt die Liste leer
+      // und es erscheint kein Druckknopf, statt einer, der ins Leere laeuft.
+      try { drucker = (await api('/drucker')).drucker || []; } catch { drucker = []; }
     } catch { /* Vorlagenarchiv optional — Checkliste bleibt nutzbar */ }
   }
 
@@ -181,6 +193,11 @@ export async function eintragDetail(bereich, id, laden) {
              ${vorlage ? `<button class="dd-vorlage" data-vorlage="${vorlage.id}"
                data-vorlage-name="${esc(vorlage.name)}"
                title="Leere Vorlage ansehen/herunterladen">Vorlage</button>` : ''}
+             ${vorlage ? drucker.map(dr => `<button class="dd-vdruck"
+               data-vorlage-drucken="${vorlage.id}" data-drucker="${esc(dr.name)}"
+               title="Vorlage auf ${esc(dr.ort || dr.name)} drucken (s/w, einseitig)"
+               aria-label="Vorlage auf ${esc(dr.ort || dr.name)} drucken"
+               >${DRUCKER_ICON}</button>`).join('') : ''}
              <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
                aria-label="${esc(kurz)} aufnehmen">${KAMERA_ICON}<span>aufnehmen</span></button>
            </div>`;
@@ -291,12 +308,29 @@ export async function eintragDetail(bereich, id, laden) {
     return eintragDetail(bereich, id, laden);
   });
 
-  dlg.addEventListener('click', e => {
+  dlg.addEventListener('click', async e => {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
     const scanBtn = e.target.closest('[data-scan]');
     if (scanBtn) { gewaehltWort = scanBtn.dataset.wort || gewaehltWort; scanFeld.click(); return; }
     // N240 — die leere Vorlage ansehen/herunterladen, ohne den „aufnehmen"-Weg
     // zu berühren: reine Lesehilfe, kein Ersatz für den echten Beleg.
+    // N264 — dieselbe Vorlage direkt auf einen Drucker im Haus.
+    const vdruck = e.target.closest('[data-vorlage-drucken]');
+    if (vdruck) {
+      vdruck.disabled = true;
+      try {
+        const antwort = await api(
+          `/dokumentvorlagen/${vdruck.dataset.vorlageDrucken}/drucken`
+          + `?drucker=${encodeURIComponent(vdruck.dataset.drucker)}`,
+          { method: 'POST' });
+        melde(antwort.meldung || 'An den Drucker geschickt', 'pos');
+      } catch (fehler) {
+        melde(fehler?.message || 'Der Druckauftrag hat nicht geklappt', 'neg');
+      } finally {
+        vdruck.disabled = false;
+      }
+      return;
+    }
     const vorlageBtn = e.target.closest('[data-vorlage]');
     if (vorlageBtn) {
       belegAnsehen(`/api/dokumentvorlagen/${vorlageBtn.dataset.vorlage}/inhalt`,

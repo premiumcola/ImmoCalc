@@ -410,6 +410,13 @@
     font:600 11.5px var(--disp);text-decoration:underline;padding:8px 6px;min-height:44px}
   .dd-cx:hover{color:var(--teal)}
   /* N240 — Link zur leeren Vorlage neben „fehlt"-Zeilen mit Startbestand. */
+  /* N264 — Drucken der leeren Vorlage, direkt neben „Vorlage". Nur das
+     Symbol: der Zielort steht im Titel, die Zeile ist schon voll. */
+  .dd-vdruck{flex:none;display:inline-flex;align-items:center;justify-content:center;
+    border:1.5px solid #C3DAD2;background:var(--sheet);color:var(--teal-d);
+    border-radius:9px;cursor:pointer;padding:0;width:34px;min-height:34px}
+  .dd-vdruck:hover{background:var(--teal-l)}
+  .dd-vdruck[disabled]{opacity:.55;cursor:default}
   .dd-vorlage{flex:none;border:none;background:none;color:var(--soft);cursor:pointer;
     font:600 11.5px var(--disp);text-decoration:underline;padding:8px 4px;min-height:44px}
   .dd-vorlage:hover{color:var(--teal-d)}

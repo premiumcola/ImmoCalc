@@ -27,6 +27,8 @@ services:
       # KI-Beleg-Auslese (CCLXVIII) — optional. Ohne Key stumm.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      # N264 — Druckdienst (CUPS) im Haus. Leer = keine Druckknoepfe.
+      DRUCKDIENST: ${DRUCKDIENST:-192.168.178.10:631}
     volumes:
       - ${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}:/data
 

@@ -31,6 +31,15 @@
 
   .vk{background:var(--sheet);border-radius:14px;padding:14px 16px;margin-bottom:10px;
       box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  /* N264 — die Druckknoepfe sitzen rechts oben in der Titelzeile. Auf
+     schmalen Schirmen bleibt nur das Symbol: der Standort steht im Titel. */
+  .vk-druck{margin-left:auto;display:flex;gap:6px;flex:none}
+  .vk-dr{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #C3DAD2;
+    background:var(--sheet);color:var(--teal-d);border-radius:10px;cursor:pointer;
+    font:600 11.5px var(--disp);padding:7px 10px;min-height:36px}
+  .vk-dr:hover{background:var(--teal-l)}
+  .vk-dr[disabled]{opacity:.55;cursor:default}
+  @media (max-width:560px){ .vk-dr-t{display:none} .vk-dr{padding:7px 9px} }
   .vk-kopf{display:flex;align-items:center;gap:8px}
   .vk-name{font:600 14px var(--body);color:var(--ink);flex:1;min-width:0}
   .vk-quelle{flex:none;width:26px;height:26px;border:none;background:#F1F4F4;
@@ -118,7 +127,13 @@ const liste = document.getElementById('liste');
 const dateifeld = document.getElementById('datei');
 
 let vorlagen = [];
+const DRUCKER_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/>
+  <path d="M6 14h12v7H6z"/></svg>`;
 let typen = [];
+let drucker = [];
 
 /* Welche Art gerade eine Datei bekommt — gesetzt vom Knopf wie vom Ziehen. */
 let zielTyp = null;
@@ -130,9 +145,21 @@ function zeile(t) {
   const quelle = v?.quelle_url
     ? `<button class="vk-quelle" type="button" data-quelle="${v.id}"
          title="Herkunft ansehen" aria-label="Herkunft ansehen">i</button>` : '';
+  // N264 — je Drucker ein Knopf, rechts oben in der Titelzeile. Nur an
+  // gefuellten Zeilen: eine Vorlage, die es nicht gibt, kann man nicht drucken.
+  const druckKnoepfe = (v && drucker.length)
+    ? `<span class="vk-druck">${drucker.map(d => `
+        <button type="button" class="vk-dr" data-drucken="${v.id}"
+          data-drucker="${esc(d.name)}"
+          title="Auf ${esc(d.ort || d.name)} drucken (s/w, einseitig)"
+          aria-label="Auf ${esc(d.ort || d.name)} drucken">
+          ${DRUCKER_ICON}<span class="vk-dr-t">${esc(d.ort || d.name)}</span>
+        </button>`).join('')}</span>`
+    : '';
   const kopf = `<div class="vk-kopf">
         <span class="vk-name">${esc(t.name)}</span>
         ${quelle}
+        ${druckKnoepfe}
       </div>`;
   const hinweis = t.hinweis ? `<p class="vk-hinweis">${esc(t.hinweis)}</p>` : '';
   if (!v) {
@@ -266,6 +293,24 @@ liste.addEventListener('click', async e => {
     dateifeld.click();
     return;
   }
+  const drucken = e.target.closest('[data-drucken]');
+  if (drucken) {
+    e.preventDefault();
+    const wohin = drucken.dataset.drucker;
+    drucken.disabled = true;
+    try {
+      const antwort = await api(
+        `/dokumentvorlagen/${drucken.dataset.drucken}/drucken`
+        + `?drucker=${encodeURIComponent(wohin)}`, { method: 'POST' });
+      melde(antwort.meldung || 'An den Drucker geschickt', 'pos');
+    } catch (fehler) {
+      melde(fehler?.message || 'Der Druckauftrag hat nicht geklappt', 'neg');
+    } finally {
+      drucken.disabled = false;
+    }
+    return;
+  }
+
   const ansehen = e.target.closest('[data-ansehen]');
   if (ansehen) {
     const v = vorlagen.find(x => x.id === Number(ansehen.dataset.ansehen));
@@ -301,6 +346,11 @@ async function laden_() {
   let d;
   try {
     d = await api('/dokumentvorlagen');
+    // N264 — die Drucker des Hauses. Fehlt der Dienst, bleibt es bei
+    // einer leeren Liste: dann zeigt die Seite keine Druckknoepfe,
+    // statt welche anzubieten, die ins Leere laufen.
+    try { drucker = (await api('/drucker')).drucker || []; }
+    catch { drucker = []; }
   } catch {
     sub.textContent = 'API nicht erreichbar';
     liste.innerHTML = `<div class="empty"><div class="big">Keine Verbindung</div>

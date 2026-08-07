@@ -140,3 +140,50 @@ def test_pdf_kommt_bis_zur_cloud_und_scheitert_erst_dort():
                                           "application/pdf")})
     assert antwort.status_code == 400
     assert "eingerichtet" in antwort.json()["detail"]
+
+
+# --------------------------------------------------------------------------
+# N264 — Drucken
+# --------------------------------------------------------------------------
+
+def test_ohne_druckdienst_gibt_es_keine_drucker(monkeypatch):
+    """Ist kein Druckdienst eingerichtet, meldet die Liste ehrlich nichts —
+    die Oberflaeche blendet die Knoepfe dann aus, statt welche anzubieten,
+    die ins Leere laufen."""
+    monkeypatch.delenv("DRUCKDIENST", raising=False)
+    with TestClient(app) as c:
+        antwort = c.get("/api/drucker")
+    assert antwort.status_code == 200
+    assert antwort.json()["drucker"] == []
+
+
+def test_drucken_ohne_dienst_sagt_es_deutlich(monkeypatch):
+    """Ein Druckauftrag ohne eingerichteten Dienst darf nicht still
+    verpuffen — 503 mit Klartext statt eines stummen Fehlschlags."""
+    monkeypatch.delenv("DRUCKDIENST", raising=False)
+    with TestClient(app) as c:
+        antwort = c.post("/api/dokumentvorlagen/1/drucken",
+                         params={"drucker": "Egal"})
+    assert antwort.status_code == 503
+    assert "Druckdienst" in antwort.json()["detail"]
+
+
+def test_drucker_liste_reicht_namen_und_ort_durch(monkeypatch):
+    """Steht ein Dienst bereit, kommen Name UND Ort heraus — der Ort
+    beschriftet spaeter den Knopf ("2.OG / Archiv" statt "HP_LaserJet_...")."""
+    from app.routers import dokumentvorlagen as modul
+    monkeypatch.setenv("DRUCKDIENST", "beispiel:631")
+    monkeypatch.setattr(modul.druckdienst, "drucker_liste",
+                        lambda dienst: [{"name": "HP_X", "ort": "2.OG"}])
+    with TestClient(app) as c:
+        antwort = c.get("/api/drucker")
+    assert antwort.json()["drucker"] == [{"name": "HP_X", "ort": "2.OG"}]
+
+
+def test_unbekannter_druckername_wird_abgewiesen():
+    """Der Name kommt aus der Oberflaeche — nur, was CUPS selbst vergibt,
+    darf durch, damit daraus kein fremder Pfad wird."""
+    from app.drucker import drucken
+    geklappt, meldung = drucken("beispiel:631", "../../etc/passwd", b"%PDF-1.4")
+    assert geklappt is False
+    assert "Unbekannter Drucker" in meldung
