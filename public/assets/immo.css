@@ -452,6 +452,14 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
                 font:400 17px var(--body); line-height:44px; text-align:center;
                 text-decoration:none; display:block}
 .beleg-kopf .bx:hover{background:var(--teal-l); color:var(--teal-d)}
+/* N257(d) — zwischen den Belegen desselben Elements blättern. */
+.beleg-kopf .bnav{flex:none; display:flex; align-items:center; gap:2px}
+.beleg-kopf .bnb{width:38px; height:44px; border:none; cursor:pointer;
+  border-radius:11px; background:var(--paper); color:var(--ink);
+  font:400 19px var(--body); line-height:1}
+.beleg-kopf .bnb:hover{background:var(--teal-l); color:var(--teal-d)}
+.beleg-kopf .bnz{font:600 11px var(--mono); color:var(--soft); padding:0 3px;
+  white-space:nowrap}
 .beleg-blatt{flex:1; width:100%; border:none; border-radius:12px;
              background:var(--paper); min-height:0}
 /* Die Bildvorschau: ganze erste Seite, breitenfüllend, bei Bedarf scrollt die
@@ -507,6 +515,63 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
   .beleg-ki .ki-chip{flex-direction:row; align-items:baseline; gap:8px;
     padding:6px 10px}
   .beleg-ki .ki-chip .kl{flex:none}
+}
+
+/* ---- N250: Bestätigen und benennen, bevor abgelegt wird ----
+   Dieselbe Hülle wie das Beleg-Fenster (.beleg-dlg) — der Nutzer erkennt Kopf,
+   Erkennungsblock und Blattfläche wieder. Neu ist nur das Namensfeld und der
+   Fuss. Das Feld steht ÜBER der Vorschau: es ist der Grund, warum diese Maske
+   überhaupt erscheint, und soll auf dem Telefon ohne Scrollen erreichbar sein. */
+.scanbest-dlg .sb-name{flex:none; display:flex; flex-direction:column; gap:6px}
+.scanbest-dlg .sb-name label{font:600 10.5px var(--mono); letter-spacing:.09em;
+  text-transform:uppercase; color:var(--soft)}
+.scanbest-dlg .sb-name input{width:100%; box-sizing:border-box; min-height:48px;
+  border:1.5px solid #C3DAD2; border-radius:12px; background:var(--sheet);
+  padding:11px 13px; font:500 13.5px var(--mono); color:var(--ink)}
+.scanbest-dlg .sb-name input:focus{outline:none; border-color:var(--teal);
+  box-shadow:0 0 0 3px var(--teal-l)}
+.scanbest-dlg .sb-hinweis{margin:0; font:400 11.5px var(--body); color:var(--soft);
+  line-height:1.45}
+.scanbest-dlg .sb-fuss{flex:none; display:flex; gap:10px}
+.scanbest-dlg .sb-weiter{flex:1; min-height:52px; border:none; border-radius:12px;
+  background:var(--teal); color:#fff; cursor:pointer;
+  font:600 14px var(--body)}
+.scanbest-dlg .sb-weiter:hover{background:var(--teal-d)}
+.scanbest-dlg .sb-weiter:disabled{opacity:.6; cursor:default}
+
+/* ---- N254: die Decke zwischen Zuschnitt und Bestätigungsmaske ----
+   Sie sperrt die Seite darunter (ein `dialog` per `showModal` fängt Tippen und
+   Tastatur ab), damit ein weiterer Fingertipp nicht in den Bildschirm platzt,
+   der gerade aufgebaut wird. Ruhig gehalten: kein rotierender Kreisel, sondern
+   ein langsam atmendes Zeichen. */
+dialog.immo-dlg.lade-dlg{
+  max-width:min(340px, calc(100% - 48px)); width:calc(100% - 48px);
+  padding:30px 26px; text-align:center; background:var(--sheet);
+  border-radius:20px;
+}
+dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
+  backdrop-filter:blur(3px)}
+.ldn{display:flex; flex-direction:column; align-items:center; gap:4px}
+.ldn-hirn{width:74px; height:74px; color:var(--teal); flex:none;
+  animation:ldn-atmen 2.6s ease-in-out infinite}
+/* Die Verästelungen zeichnen sich nach und nach — als würde gerade gelesen. */
+.ldn-hirn .ldn-ast{stroke-dasharray:9; stroke-dashoffset:18;
+  animation:ldn-spur 2.6s ease-in-out infinite}
+.ldn-hirn .ldn-punkt{fill:var(--teal); stroke:none; opacity:.25;
+  animation:ldn-funke 2.6s ease-in-out infinite}
+.ldn-hirn .ldn-punkt:nth-of-type(2){animation-delay:.42s}
+.ldn-hirn .ldn-punkt:nth-of-type(3){animation-delay:.84s}
+@keyframes ldn-atmen{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+@keyframes ldn-spur{0%{stroke-dashoffset:18}55%,100%{stroke-dashoffset:0}}
+@keyframes ldn-funke{0%,100%{opacity:.2}45%{opacity:1}}
+.ldn-text{margin:14px 0 0; font:600 14.5px var(--disp); color:var(--ink)}
+.ldn-klein{margin:5px 0 0; font:400 12px var(--body); color:var(--soft);
+  line-height:1.5}
+/* Wer Bewegung nicht mag, bekommt ein ruhiges Bild statt gar keiner Rückmeldung. */
+@media (prefers-reduced-motion:reduce){
+  .ldn-hirn,.ldn-hirn .ldn-ast,.ldn-hirn .ldn-punkt{animation:none}
+  .ldn-hirn .ldn-ast{stroke-dashoffset:0}
+  .ldn-hirn .ldn-punkt{opacity:.7}
 }
 
 /* Schiebe-Regler: erst am rechten Anschlag wird gelöscht */

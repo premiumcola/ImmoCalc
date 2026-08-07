@@ -1287,7 +1287,13 @@ export function kamerascanStarten(dateien, optionen = {}) {
         const pdf = bauePdf(ausgabe, optionen);
         abgeschlossen = true;
         aufraeumen();
-        fertigMit({ pdf, seiten: ausgabe.length });
+        // N250 — die entzerrten Seiten zusätzlich als Bilder herausgeben. Die
+        // Bestätigungsmaske zeigt damit genau das, was gleich abgelegt wird,
+        // ohne das PDF im Browser rendern zu müssen (dafür gäbe es hier keine
+        // Bibliothek). Rein additiv: wer nur `pdf`/`seiten` liest, merkt nichts.
+        const bilder = ausgabe.map(a =>
+          new Blob([a.bytes], { type: 'image/jpeg' }));
+        fertigMit({ pdf, seiten: ausgabe.length, bilder });
       } catch {
         primaer.disabled = false;
         primaer.textContent = 'Erneut versuchen';

@@ -1,69 +1,71 @@
-"""N240 — das Vorlagenarchiv: leere Formulare (Übergabeprotokoll,
+"""N240/N247 — das Vorlagenarchiv: leere Formulare (Übergabeprotokoll,
 Mieterselbstauskunft, Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …),
 getrennt von den echten Belegen des Nutzers.
 
-Liegt in der Cloud unter einem eigenen Home-Unterordner
-`/Vorlagen/<verwendungszweck>/`, NICHT unter einem Objekt-Ordner — eine
-Vorlage gehört zu keiner bestimmten Immobilie. Fünf dünne Endpunkte, gerechnet
-wird nichts:
+Liegt in der Cloud unter `<Home>/00_Vorlagen/<verwendungszweck>/`, NICHT unter
+einem Objekt-Ordner — eine Vorlage gehört zu keiner bestimmten Immobilie.
+**Unterhalb des Home-Ordners** allerdings sehr wohl: N247 — die erste Fassung
+schrieb nach `/Vorlagen` und lief damit zu Recht in den Riegel aus
+`nextcloud.py::_pruefe_schreibrecht` („liegt ausserhalb von …"). Der Riegel
+bleibt, der Pfad zieht um.
 
-* `GET    /api/dokumentvorlagen`            — Liste, optional gefiltert
-* `POST   /api/dokumentvorlagen`            — eigene Vorlage hochladen
+Der Nutzer legt seine Vorlagen selbst ab (Roh-PDF per Drop/Dateiauswahl) —
+**kein Download aus dem Netz** und **kein Foto-Scan**: für ein leeres Formular
+zum Ausdrucken taugt eine abfotografierte Seite nicht.
+
+* `GET    /api/dokumentvorlagen`              — Liste + Typen-Katalog
+* `POST   /api/dokumentvorlagen`              — eigene Vorlage hochladen
 * `GET    /api/dokumentvorlagen/{id}/inhalt`  — die Datei zur Ansicht
-* `DELETE /api/dokumentvorlagen/{id}`       — nur den Datenbankeintrag
+* `DELETE /api/dokumentvorlagen/{id}`         — nur den Datenbankeintrag
 """
 import logging
 from datetime import date
 
-import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session, select
 
 from ..cloudkern import verbindung
 from ..db import get_session
-from ..dokumente.namen import _dateiname_kopfzeile, _saubere_datei
+from ..dokumente.namen import _dateiname_kopfzeile, _endung, _saubere_datei
 from ..models import Dokumentvorlage
 from ..nextcloud import NextcloudFehler
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/dokumentvorlagen", tags=["dokumentvorlagen"])
 
-VORLAGEN_ORDNER = "Vorlagen"
+# Unter dem Home-Ordner, nicht daneben (N247). Die „00_" hält den Ordner in der
+# Nextcloud oben — er gehört zu keiner Immobilie und soll nicht zwischen ihnen
+# untergehen.
+VORLAGEN_ORDNER = "00_Vorlagen"
 
-# N240 — der Startbestand für Vermietung. Jede Quelle ist ein bekannter,
-# seriöser Anbieter (Haus & Grund — Deutschlands größter privater
-# Eigentümerverband); `quelle_url` bleibt am Eintrag stehen, damit der Nutzer
-# nachvollziehen und die Vorlage bei Bedarf gegen eine eigene austauschen
-# kann. Bewusst OHNE Mietvertrag — der ist zu individuell für eine Vorlage.
-STARTBESTAND = [
-    {"name": "Übergabeprotokoll (Einzug)", "typ": "Übergabeprotokoll Einzug",
-     "dateiname": "Uebergabeprotokoll-Einzug.pdf",
-     "quelle_url": "https://www.hausundgrund.de/verband/thueringen/sites/"
-                   "default/files/lv/downloads/uebergabeprotokollwohnung.pdf",
-     "hinweis": "Haus & Grund Thüringen — Muster-Übergabeprotokoll für Wohnraum."},
-    {"name": "Übergabeprotokoll (Auszug)", "typ": "Übergabeprotokoll Auszug",
-     "dateiname": "Uebergabeprotokoll-Auszug.pdf",
-     "quelle_url": "https://www.hausundgrund.de/verband/thueringen/sites/"
-                   "default/files/lv/downloads/abnahmeprotokollwohnung.pdf",
-     "hinweis": "Haus & Grund Thüringen — Muster-Abnahmeprotokoll für Wohnraum."},
-    {"name": "Mieterselbstauskunft", "typ": "Mieterselbstauskunft",
-     "dateiname": "Mieterselbstauskunft.pdf",
-     "quelle_url": "https://www.hausundgrund-aachen.de/fileadmin/aachen/media/"
-                   "pdfs/2019/Mieterselbstauskunft_H_G_11_-_2019.pdf",
-     "hinweis": "Haus & Grund Aachen — Muster-Mieterselbstauskunft."},
-    {"name": "Abnahmeprotokoll Rauchwarnmelder",
-     "typ": "Abnahmeprotokoll Rauchwarnmelder",
-     "dateiname": "Installationsprotokoll-Rauchwarnmelder.pdf",
-     "quelle_url": "https://www.hausundgrund-aachen.de/fileadmin/aachen/media/"
-                   "pdfs/Installationsprotokoll_fuer_Rauchwarnmelder_09_-_2015.pdf",
-     "hinweis": "Haus & Grund Aachen — Installations-/Abnahmeprotokoll für "
-                "Rauchwarnmelder."},
-    {"name": "Wohnungsgeberbestätigung", "typ": "Wohnungsgeberbestätigung",
-     "dateiname": "Wohnungsgeberbestaetigung.pdf",
-     "quelle_url": "https://www.hausundgrund.de/verein/unna/sites/default/"
-                   "files/downloads/wohnungsgeberbescheinigung.pdf",
-     "hinweis": "Nach § 19 Bundesmeldegesetz (BMG) — wird für die Anmeldung "
-                "beim Bürgeramt gebraucht."},
+# N247 — nur diese Dateiarten. Ein leeres Formular wird ausgedruckt und
+# ausgefüllt; ein abfotografiertes JPEG taugt dafür nicht. Der Riegel steht
+# hier UND im Frontend (`accept`), damit auch ein direkter API-Aufruf ihn nicht
+# umgeht.
+ERLAUBTE_ENDUNGEN = (".pdf", ".doc", ".docx", ".odt")
+
+# N247 — der Katalog: welche Vorlagen für eine Vermietung sinnvoll sind. Die
+# Typen entsprechen den Zeilen der Mietverhältnis-Checkliste (`SCAN_TYPEN` in
+# `objekt/state.js`), damit die Vorlage dort neben der passenden Zeile auftaucht.
+# Bewusst OHNE Mietvertrag — der ist zu individuell für eine Vorlage.
+# Die Liste beschreibt nur, WELCHE Zeilen es gibt; gefüllt wird von Hand.
+TYPEN_KATALOG = [
+    {"verwendungszweck": "Vermietung", "typ": "Übergabeprotokoll Einzug",
+     "name": "Übergabeprotokoll (Einzug)",
+     "hinweis": "Zustand und Zählerstände bei Übergabe an den Mieter."},
+    {"verwendungszweck": "Vermietung", "typ": "Übergabeprotokoll Auszug",
+     "name": "Übergabeprotokoll (Auszug)",
+     "hinweis": "Zustand und Zählerstände bei Rückgabe der Wohnung."},
+    {"verwendungszweck": "Vermietung", "typ": "Mieterselbstauskunft",
+     "name": "Mieterselbstauskunft",
+     "hinweis": "Angaben des Bewerbers vor Abschluss des Mietvertrags."},
+    {"verwendungszweck": "Vermietung", "typ": "Abnahmeprotokoll Rauchwarnmelder",
+     "name": "Abnahmeprotokoll Rauchwarnmelder",
+     "hinweis": "Einbau und Abnahme der Rauchwarnmelder je Raum."},
+    {"verwendungszweck": "Vermietung", "typ": "Wohnungsgeberbestätigung",
+     "name": "Wohnungsgeberbestätigung",
+     "hinweis": "Nach § 19 Bundesmeldegesetz — der Mieter braucht sie für die "
+                "Anmeldung beim Bürgeramt."},
 ]
 
 
@@ -84,9 +86,19 @@ def _eintrag(session: Session, vorlage_id: int) -> Dokumentvorlage:
 
 
 def _ordner_sichern(client, verwendungszweck: str) -> str:
-    """Legt `Vorlagen/<Zweck>` an (405-sicher) und gibt den Pfad zurück."""
-    client.ordner_anlegen(VORLAGEN_ORDNER)
-    ordner = f"{VORLAGEN_ORDNER}/{verwendungszweck}"
+    """Legt `<Home>/00_Vorlagen/<Zweck>` an (405-sicher) und gibt ihn zurück.
+
+    N247 — der Home-Ordner kommt aus der Einstellung (`client.heimat`), nicht
+    aus einer festen Zeichenkette: er heisst bei jedem Nutzer anders. Ohne ihn
+    schriebe ImmoCalc nirgends, das sagt der Riegel selbst — hier aber vorher
+    im Klartext, statt den Nutzer an einer WebDAV-Meldung raten zu lassen."""
+    heim = (getattr(client, "heimat", "") or "").strip("/")
+    if not heim:
+        raise HTTPException(400, "Kein Home-Ordner in den Einstellungen "
+                                 "gewählt — ImmoCalc legt dort nichts ab.")
+    ordner = f"{heim}/{VORLAGEN_ORDNER}"
+    client.ordner_anlegen(ordner)
+    ordner = f"{ordner}/{_saubere_datei(verwendungszweck)}"
     client.ordner_anlegen(ordner)
     return ordner
 
@@ -108,15 +120,38 @@ def _freier_name(client, ordner: str, name: str) -> str:
 @router.get("")
 def liste(verwendungszweck: str = "", typ: str = "",
          session: Session = Depends(get_session)) -> dict:
-    """Die Vorlagen, optional nach Verwendungszweck/Typ gefiltert."""
+    """Die Vorlagen, optional nach Verwendungszweck/Typ gefiltert.
+
+    Dazu der `typen`-Katalog (N247): welche Vorlagen es überhaupt geben
+    sollte. Die Oberfläche zeigt dadurch für JEDE Art eine Zeile — auch für
+    die noch leeren — und braucht die Liste nicht selbst zu kennen."""
     frage = select(Dokumentvorlage)
+    katalog = TYPEN_KATALOG
     if verwendungszweck:
         frage = frage.where(Dokumentvorlage.verwendungszweck == verwendungszweck)
+        katalog = [t for t in katalog
+                   if t["verwendungszweck"] == verwendungszweck]
     if typ:
         frage = frage.where(Dokumentvorlage.typ == typ)
+        katalog = [t for t in katalog if t["typ"] == typ]
     alle = session.exec(frage).all()
     alle = sorted(alle, key=lambda v: (v.verwendungszweck, v.name.lower()))
-    return {"anzahl": len(alle), "vorlagen": [_zeige(v) for v in alle]}
+    return {"anzahl": len(alle), "vorlagen": [_zeige(v) for v in alle],
+            "typen": katalog}
+
+
+def _pruefe_dateiart(dateiname: str) -> None:
+    """N247 — nur ausdruckbare Formulare, keine Fotos.
+
+    Der Nutzer war ausdrücklich: hier gehören Roh-PDFs hin, keine Scans — ein
+    abfotografiertes Formular ist als Vordruck unbrauchbar. Das Frontend bietet
+    deshalb gar keine Kamera an; dieser Riegel hält auch einen direkten
+    API-Aufruf davon ab."""
+    if _endung(dateiname).lower() not in ERLAUBTE_ENDUNGEN:
+        raise HTTPException(
+            400, "Für Vorlagen sind nur PDF- oder Textdokumente vorgesehen "
+                 f"({', '.join(ERLAUBTE_ENDUNGEN)}) — ein abfotografiertes "
+                 "Formular taugt nicht als Vordruck.")
 
 
 @router.post("", status_code=201)
@@ -124,8 +159,14 @@ async def hochladen(name: str, verwendungszweck: str = "Vermietung",
                     typ: str = "", quelle_url: str = "", hinweis: str = "",
                     datei: UploadFile = File(...),
                     session: Session = Depends(get_session)) -> dict:
-    """Legt eine eigene Vorlage ab — dieselbe Ablage wie der Startbestand,
-    damit der Nutzer eigene Formulare nachtragen oder ersetzen kann."""
+    """Legt eine eigene Vorlage ab — der einzige Weg, wie eine Vorlage in das
+    Archiv kommt (N247: kein Download aus dem Netz mehr).
+
+    Gibt es zu diesem Typ schon eine Vorlage, ERSETZT die neue sie: der alte
+    Datenbankeintrag verschwindet, seine Datei bleibt unangetastet in der
+    Cloud liegen. So bleibt es bei einer Vorlage je Art, ohne je etwas zu
+    löschen, das dem Nutzer gehört."""
+    _pruefe_dateiart(datei.filename or "")
     client = verbindung(session)
     ordner = _ordner_sichern(client, verwendungszweck)
     inhalt = await datei.read()
@@ -136,6 +177,13 @@ async def hochladen(name: str, verwendungszweck: str = "Vermietung",
                        datei.content_type or "application/pdf")
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
+    if typ:
+        for alt in session.exec(select(Dokumentvorlage).where(
+                Dokumentvorlage.verwendungszweck == verwendungszweck,
+                Dokumentvorlage.typ == typ)).all():
+            log.info("Vorlage ersetzt: %s weicht %s (Datei bleibt)",
+                     alt.pfad, frei)
+            session.delete(alt)
     v = Dokumentvorlage(name=name, verwendungszweck=verwendungszweck, typ=typ,
                         pfad=f"/{ordner}/{frei}", dateiname=frei,
                         quelle_url=quelle_url, hinweis=hinweis,
@@ -165,54 +213,6 @@ def inhalt(vorlage_id: int, session: Session = Depends(get_session)):
         "Content-Disposition": f"inline; {_dateiname_kopfzeile(v.dateiname)}",
         "Cache-Control": "private, max-age=300",
     })
-
-
-def _startbestand_sichern(session: Session) -> dict:
-    """Legt den fehlenden Teil des Startbestands an (additiv, nie doppelt).
-
-    Bewusst NICHT automatisch beim Programmstart (anders als
-    `pflicht_kostenarten_sichern`) — das würde bei jedem Testlauf und jedem
-    Neustart Netzwerkzugriffe auf fremde Server auslösen. Stattdessen ein
-    expliziter Aufruf über `POST /api/dokumentvorlagen/startbestand`, genau
-    wie die Übernahme in `kidb.py`. Ein Netzwerkfehler bei einer Datei bricht
-    die anderen nicht ab."""
-    vorhandene_typen = {v.typ for v in session.exec(select(Dokumentvorlage)).all()}
-    fehlend = [e for e in STARTBESTAND if e["typ"] not in vorhandene_typen]
-    if not fehlend:
-        return {"angelegt": 0, "fehler": []}
-    client = verbindung(session)
-    ordner = None
-    angelegt = 0
-    fehlerliste: list[dict] = []
-    for eintrag in fehlend:
-        try:
-            antwort = httpx.get(eintrag["quelle_url"], timeout=20.0,
-                                follow_redirects=True)
-            antwort.raise_for_status()
-            if ordner is None:
-                ordner = _ordner_sichern(client, "Vermietung")
-            frei = _freier_name(client, ordner, eintrag["dateiname"])
-            client.lege_ab(f"{ordner}/{frei}", antwort.content, "application/pdf")
-        except Exception as fehler:                        # noqa: BLE001
-            log.warning("Vorlagen-Startbestand: '%s' nicht geladen (%s)",
-                       eintrag["name"], fehler)
-            fehlerliste.append({"name": eintrag["name"], "grund": str(fehler)})
-            continue
-        session.add(Dokumentvorlage(
-            name=eintrag["name"], verwendungszweck="Vermietung",
-            typ=eintrag["typ"], pfad=f"/{ordner}/{frei}", dateiname=frei,
-            quelle_url=eintrag["quelle_url"], hinweis=eintrag["hinweis"],
-            erstellt_am=date.today()))
-        angelegt += 1
-    if angelegt:
-        session.commit()
-    return {"angelegt": angelegt, "fehler": fehlerliste}
-
-
-@router.post("/startbestand")
-def startbestand(session: Session = Depends(get_session)) -> dict:
-    """Legt den Vermietungs-Startbestand an — nur was fehlt, wiederholbar."""
-    return _startbestand_sichern(session)
 
 
 @router.delete("/{vorlage_id}")

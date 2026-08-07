@@ -126,11 +126,10 @@ export const NAV = [
   // PV-Seite: eigene Nutzer, eigener Verlauf, eigene Abrechnung.
   ['E-Tankstelle', 'tankstelle.html', '⏻'],
   ['Eigentümer', 'eigentuemer.html', '☗'],
-  // N84 — die interne Wissens-Datenbank der KI-ausgelesenen Belege, objekt-
-  // übergreifend durchsuchbar. Eigener Bereich statt einer Karte in
-  // „Dokumente": dort geht es um die Ablage, hier um das, was aus ihr bereits
-  // bekannt ist.
-  ['Belegarchiv', 'belegarchiv.html', '▥'],
+  // N246 — das Belegarchiv (N84, die interne Wissens-Datenbank der KI-
+  // ausgelesenen Belege) hat KEINEN Menuepunkt mehr: es laeuft im Hintergrund
+  // mit und wird selten geoeffnet. Der Einstieg steht in den Einstellungen
+  // unter „Dokumente"; die Seite bleibt unter `belegarchiv.html` erreichbar.
   // N240 — leere Formulare zum Ausfüllen (Übergabeprotokoll, Selbstauskunft,
   // Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …), objektübergreifend.
   ['Vorlagen', 'vorlagenarchiv.html', '▧'],
@@ -347,7 +346,7 @@ if (typeof document !== 'undefined') {
   }
 }
 
-function baueDialog(inhalt) {
+export function baueDialog(inhalt) {
   const dlg = document.createElement('dialog');
   dlg.className = 'immo-dlg';
   dlg.innerHTML = inhalt;
@@ -366,7 +365,13 @@ function baueDialog(inhalt) {
  * und kommt nicht mehr heraus. Deshalb bleibt der Beleg jetzt im Dialog, mit
  * drei Wegen zurueck: Kreuz, Escape und Tippen neben das Blatt.
  */
-export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null) {
+/* N257(d) — mehrere Belege gehören oft zusammen (fünf an einer Kostenart).
+   `geschwister` ist die Liste, in der dieser Beleg steht: `[{id, dateiname,
+   pfad}]`. Steht mehr als einer darin, erscheinen ← und → im Kopf und man
+   blättert, ohne jedes Mal in die Liste zurückzumüssen. Freiwillig — alle
+   bisherigen Aufrufer übergeben nichts und sehen keinen Unterschied. */
+export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
+                             geschwister = null) {
   // Die GANZE Seite als serverseitig gerendertes Bild, breitenfüllend statt
   // beschnitten — das ist die alleinige große Ansicht. Kein zusätzliches ↗ in
   // einen zweiten Tab: auf dem iPhone lässt sich der native PDF-Betrachter dort
@@ -377,10 +382,25 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null)
   // (`/seiten` sagt wie viele, `/vorschau?seite=i` liefert Blatt i, 0-basiert).
   // Fällt der Seiten-Endpunkt aus (alter Stand), bleibt es bei einer Seite.
   const basis = url.replace('/inhalt', '');
+  // Wo stehen wir in der Reihe? Nur mit mindestens zwei Geschwistern blättern.
+  const reihe = Array.isArray(geschwister) && geschwister.length > 1
+    ? geschwister : null;
+  const platz = reihe
+    ? reihe.findIndex(d => String(d.id) === String(dokumentId ?? dokumentIdAus(url)))
+    : -1;
+  const blaettern = reihe && platz >= 0
+    ? `<span class="bnav">
+         <button class="bnb" data-vor title="Vorheriger Beleg"
+           aria-label="Vorheriger Beleg">‹</button>
+         <span class="bnz">${platz + 1}/${reihe.length}</span>
+         <button class="bnb" data-zurueck title="Nächster Beleg"
+           aria-label="Nächster Beleg">›</button>
+       </span>` : '';
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${sicher(titel)}${pfad
          ? `<span class="bpfad" title="Ablageort in der Nextcloud">${sicher(pfad)}</span>` : ''}</span>
+       ${blaettern}
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
      <div class="beleg-ki" hidden></div>
@@ -397,6 +417,23 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null)
   const adressen = belegSeitenLaden(basis, flaeche, titel, url);
 
   dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
+
+  // Blättern: dasselbe Fenster für den Nachbarn neu aufbauen. Die Reihe wandert
+  // mit, sodass man beliebig weiterblättern kann; am Rand wird umgebrochen.
+  if (reihe && platz >= 0) {
+    const springe = (schritt) => {
+      const n = reihe[(platz + schritt + reihe.length) % reihe.length];
+      dlg.close();
+      belegAnsehen(`/api/dokumente/${n.id}/inhalt`, n.dateiname || 'Beleg',
+                   n.pfad || '', n.id, reihe);
+    };
+    dlg.querySelector('[data-vor]').addEventListener('click', () => springe(-1));
+    dlg.querySelector('[data-zurueck]').addEventListener('click', () => springe(1));
+    dlg.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); springe(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); springe(1); }
+    });
+  }
   return dlg;
 }
 
@@ -462,7 +499,7 @@ function kiZeilen(w) {
 }
 
 /** Der ruhige Block über der Vorschau — leer, wenn nichts gespeichert ist. */
-function kiAusleseHtml(w) {
+export function kiAusleseHtml(w) {
   const satz = String(w.zusammenfassung || w.einordnung || '').trim();
   const zeilen = kiZeilen(w);
   if (!satz && !zeilen.length) return '';

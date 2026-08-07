@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from ..belegposten import belege_je_position, handanteil, kurz
 from ..db import get_session
+from ..dokumente.darstellung import VERMISST
 from ..frist import frist_tage
 from ..models import (Bewohner, Dokument, Einheit, Kostenart, Kostenposition,
                       Miete, Objekt, Partei, Vorauszahlung, Zeitraum)
@@ -35,8 +36,13 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     positionen = session.exec(
         select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
     arten = session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
+    # N248 — vermisste Belege gehören nicht in die Liste: die Datei liegt nicht
+    # mehr in der Cloud (vom Nutzer gelöscht), ein Klick darauf brächte nur
+    # „keine Bildvorschau". Der Datensatz bleibt bestehen, er wird hier nur
+    # nicht mehr als vorhandener Beleg angeboten.
     dokumente = session.exec(
-        select(Dokument).where(Dokument.zeitraum_id == zid)).all()
+        select(Dokument).where(Dokument.zeitraum_id == zid,
+                               Dokument.status != VERMISST)).all()
     vzs = session.exec(select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
     # CCCLVII — Einheiten, Mieten und Bewohner, um den Kostenfluss-Sankey rechts
     # strikt auf Einheiten zu aggregieren (nie Partei- oder Bewohnernamen, wie

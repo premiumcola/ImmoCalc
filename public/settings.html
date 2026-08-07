@@ -296,6 +296,16 @@
       </span>
       <span class="arr">›</span>
     </button>
+    <!-- N246 — das Belegarchiv laeuft im Hintergrund mit und braucht keinen
+         eigenen Menuepunkt; hier steht sein Einstieg. -->
+    <button class="row" id="belegarchivRow">
+      <span class="ic">▥</span>
+      <span class="txt">
+        <span class="t">Belegarchiv</span>
+        <span class="d" id="belegarchivStatus">wird geladen …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
 
     <h2 class="sec">Versand</h2>
     <button class="row" id="mailRow">
@@ -740,6 +750,22 @@ rechenlogikInit();
    zugehörig. Der Knopf trägt in jedem Dialog `data-schliessen`. */
 document.querySelectorAll('[data-schliessen]').forEach(knopf =>
   knopf.addEventListener('click', () => knopf.closest('dialog').close()));
+
+/* N246 — das Belegarchiv ist eine eigene Seite, kein Dialog: bloße
+   Verlinkung, deshalb hier statt in einem eigenen Modul. Die Statuszeile
+   sagt, wie viel schon drinsteht; scheitert sie, bleibt der Weg trotzdem
+   offen. */
+document.getElementById('belegarchivRow').addEventListener('click',
+  () => { location.href = 'belegarchiv.html'; });
+fetch('/api/kidb').then(a => a.ok ? a.json() : null).then(d => {
+  const zeile = document.getElementById('belegarchivStatus');
+  if (!d) return void (zeile.textContent = 'Belege durchsuchen');
+  zeile.textContent = d.gesamt
+    ? `${d.gesamt} ${d.gesamt === 1 ? 'Beleg' : 'Belege'} erfasst`
+    : 'Noch keine Belege übernommen';
+}).catch(() => {
+  document.getElementById('belegarchivStatus').textContent = 'Belege durchsuchen';
+});
 
 /* Version + Release-Notes gleich laden — läuft parallel zu allem übrigen. */
 versionZeigen();

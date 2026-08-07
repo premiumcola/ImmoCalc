@@ -19,8 +19,11 @@
 <style>
   /* N240 — Vorlagenarchiv: dieselben Bausteine wie das Belegarchiv (N84),
      hier nach Verwendungszweck statt Objekt/Jahr gruppiert. */
-  .zahlzeile{display:flex;align-items:center;gap:8px;margin:0 2px 14px}
+  .zahlzeile{display:flex;align-items:center;gap:8px;margin:0 2px 14px;flex-wrap:wrap}
   .zahlzeile .zahl{font:600 12px var(--mono);color:var(--soft)}
+  /* N247 — die Regel steht EINMAL hier, nicht in jeder der fuenf Zeilen. */
+  .vz-regel{font:500 11px var(--mono);color:var(--soft);background:#F1F4F4;
+            border-radius:99px;padding:4px 10px}
 
   .vz-gruppe{margin-bottom:22px}
   .vz-titel{font:700 12px var(--mono);letter-spacing:.04em;color:var(--soft);
@@ -49,10 +52,24 @@
                justify-content:center;line-height:1}
   .vk-loeschen:hover{background:var(--neg-bg);color:var(--neg)}
 
-  .vz-laden{width:100%;border:1.5px dashed var(--line);border-radius:12px;
-            background:none;color:var(--soft);font:600 13px var(--body);
-            padding:16px;cursor:pointer;min-height:44px}
-  .vz-laden:hover{border-color:var(--teal);color:var(--teal-d)}
+  /* N247 — je Vorlagenart eine Zeile; die leeren zeigen ein Ablagefeld.
+     Dieselben Bausteine wie „Beleg hier ablegen" in der Nebenkosten-
+     Checkliste (`.ablg` in zeitraum.html), nur je Zeile statt je Karte. */
+  .vk.leer{background:#F4F7F7;box-shadow:none}
+  .vk-ablg{display:flex;align-items:center;justify-content:space-between;gap:12px;
+           flex-wrap:wrap;border:1.5px dashed var(--line);border-radius:12px;
+           padding:10px 14px;margin-top:11px;transition:border-color .15s,background .15s}
+  .vk.dropziel .vk-ablg{border-color:var(--teal);background:var(--teal-l)}
+  .vk-ablg-t{font:600 12.5px var(--disp);letter-spacing:-.01em;color:var(--soft)}
+  .vk-waehlen{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+              border:none;background:#E8F0F6;color:#2C5C7A;border-radius:10px;
+              font:600 12.5px var(--disp);padding:0 15px;min-height:44px;
+              cursor:pointer}
+  .vk-waehlen:hover{background:#D8E8F2}
+  .vk-ersetzen{flex:none;border:none;background:#F1F4F4;color:var(--soft);
+               font:600 12.5px var(--disp);border-radius:10px;padding:0 13px;
+               min-height:44px;cursor:pointer}
+  .vk-ersetzen:hover{background:var(--teal-l);color:var(--teal-d)}
 </style>
 </head>
 <body>
@@ -66,17 +83,28 @@
   </div>
 
   <div class="scroll">
-    <div class="zahlzeile"><span class="zahl" id="zahl"></span></div>
+    <div class="zahlzeile"><span class="zahl" id="zahl"></span>
+      <span class="vz-regel">PDF zum Ausdrucken — keine Fotos</span></div>
     <div id="liste"></div>
+    <!-- N247 — bewusst OHNE `capture`: hier gehoeren Roh-PDFs hin, keine
+         abfotografierten Formulare. -->
+    <input type="file" id="datei" hidden
+           accept="application/pdf,.pdf,.doc,.docx,.odt">
   </div>
 
   <div data-nav></div>
 </div>
 
 <script type="module">
-/* N240 — Vorlagenarchiv: leere Formulare (Übergabeprotokoll, Selbstauskunft,
-   Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …) für die Vermietung,
+/* N240/N247 — Vorlagenarchiv: leere Formulare (Übergabeprotokoll,
+   Selbstauskunft, Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …),
    getrennt von den echten Belegen des Nutzers (Backend: dokumentvorlagen.py).
+
+   N247: eine Zeile je Vorlagenart — der Katalog kommt aus dem Backend
+   (`typen`), damit die Liste hier nicht doppelt gepflegt wird. Leere Zeilen
+   zeigen ein Ablagefeld, gefüllte die Datei mit Ansehen/Ersetzen/Entfernen.
+   Bewusst OHNE Kamera: für einen Vordruck taugt ein Foto nicht.
+
    Vorschau über dieselbe `belegAnsehen`-Ansicht wie überall sonst — ohne
    `/seiten`/`/vorschau`-Endpunkte fällt sie automatisch auf „Im neuen Tab
    öffnen" zurück (kein Duplikat, kein zweiter Vorschau-Weg). */
@@ -87,58 +115,155 @@ installNav();
 const sub = document.getElementById('sub');
 const zahl = document.getElementById('zahl');
 const liste = document.getElementById('liste');
+const dateifeld = document.getElementById('datei');
 
 let vorlagen = [];
+let typen = [];
 
-function karte(v) {
-  const quelle = v.quelle_url
+/* Welche Art gerade eine Datei bekommt — gesetzt vom Knopf wie vom Ziehen. */
+let zielTyp = null;
+
+const vorlageZu = typ => vorlagen.find(v => v.typ === typ) || null;
+
+function zeile(t) {
+  const v = vorlageZu(t.typ);
+  const quelle = v?.quelle_url
     ? `<button class="vk-quelle" type="button" data-quelle="${v.id}"
          title="Herkunft ansehen" aria-label="Herkunft ansehen">i</button>` : '';
-  return `<div class="vk">
-      <div class="vk-kopf">
-        <span class="vk-name">${esc(v.name)}</span>
+  const kopf = `<div class="vk-kopf">
+        <span class="vk-name">${esc(t.name)}</span>
         ${quelle}
-      </div>
-      ${v.hinweis ? `<p class="vk-hinweis">${esc(v.hinweis)}</p>` : ''}
+      </div>`;
+  const hinweis = t.hinweis ? `<p class="vk-hinweis">${esc(t.hinweis)}</p>` : '';
+  if (!v) {
+    // Der Zusatz „keine Fotos" steht EINMAL oben auf der Seite, nicht in
+    // jeder der fünf Zeilen — sonst liest man denselben Satz fünfmal.
+    return `<div class="vk leer" data-typ="${esc(t.typ)}">
+        ${kopf}
+        ${hinweis}
+        <div class="vk-ablg">
+          <span class="vk-ablg-t">PDF hier ablegen</span>
+          <button class="vk-waehlen" type="button" data-waehlen="${esc(t.typ)}"
+            >Datei wählen</button>
+        </div>
+      </div>`;
+  }
+  return `<div class="vk" data-typ="${esc(t.typ)}">
+      ${kopf}
+      ${hinweis}
       <div class="vk-fuss">
-        <span class="vk-datei" title="${esc(v.dateiname || '')}">${esc(v.dateiname || 'Datei')}</span>
-        <button class="vk-ansehen" type="button" data-ansehen="${v.id}">Vorlage ansehen</button>
+        <span class="vk-datei" title="${esc(v.pfad || v.dateiname || '')}"
+          >${esc(v.dateiname || 'Datei')}</span>
+        <button class="vk-ansehen" type="button" data-ansehen="${v.id}">Ansehen</button>
+        <button class="vk-ersetzen" type="button" data-waehlen="${esc(t.typ)}"
+          >Ersetzen</button>
         <button class="vk-loeschen" type="button" data-loeschen="${v.id}"
                 aria-label="Vorlage entfernen" title="Vorlage entfernen">✕</button>
       </div>
     </div>`;
 }
 
-function gruppenHtml() {
-  const gruppen = new Map();
-  vorlagen.forEach(v => {
-    const liste = gruppen.get(v.verwendungszweck) || [];
-    liste.push(v);
-    gruppen.set(v.verwendungszweck, liste);
-  });
-  return [...gruppen.entries()].map(([zweck, liste]) => `
-    <div class="vz-gruppe">
-      <div class="vz-titel">${esc(zweck)}</div>
-      ${liste.map(karte).join('')}
-    </div>`).join('');
+/* Eigene Vorlagen zu einer Art, die der Katalog nicht kennt, gehen nicht
+   verloren — sie bekommen ihre eigene Zeile am Ende ihrer Gruppe. */
+function zusatzTypen(zweck) {
+  const bekannt = new Set(typen.filter(t => t.verwendungszweck === zweck)
+                               .map(t => t.typ));
+  return vorlagen
+    .filter(v => v.verwendungszweck === zweck && !bekannt.has(v.typ))
+    .map(v => ({ verwendungszweck: zweck, typ: v.typ, name: v.name,
+                 hinweis: v.hinweis || '' }));
 }
 
-liste.addEventListener('click', async e => {
-  const laden = e.target.closest('[data-laden]');
-  if (laden) {
-    laden.disabled = true;
-    laden.textContent = 'Wird geladen …';
-    try {
-      const d = await api('/dokumentvorlagen/startbestand', { method: 'POST' });
-      if (d.angelegt) melde(`${d.angelegt} ${d.angelegt === 1 ? 'Vorlage' : 'Vorlagen'} angelegt`);
-      else if (d.fehler?.length) melde('Keine Vorlage konnte geladen werden', 'neg');
-      else melde('Startbestand ist bereits vollständig');
-      await laden_();
-    } catch (fehler) {
-      melde(String(fehler.message || fehler), 'neg');
-      laden.disabled = false;
-      laden.textContent = 'Vermietungs-Startbestand laden';
+function gruppenHtml() {
+  const zwecke = [...new Set([...typen.map(t => t.verwendungszweck),
+                              ...vorlagen.map(v => v.verwendungszweck)])];
+  return zwecke.map(zweck => {
+    const reihen = [...typen.filter(t => t.verwendungszweck === zweck),
+                    ...zusatzTypen(zweck)];
+    return `<div class="vz-gruppe">
+      <div class="vz-titel">${esc(zweck)}</div>
+      ${reihen.map(zeile).join('')}
+    </div>`;
+  }).join('');
+}
+
+/* ---- Hochladen: Knopf und Ziehen enden beide hier -------------------- */
+
+async function hochladen(typ, datei) {
+  const t = typen.find(x => x.typ === typ);
+  const name = t?.name || typ || datei.name;
+  const zweck = t?.verwendungszweck || 'Vermietung';
+  const frist = /\.(pdf|docx?|odt)$/i.test(datei.name);
+  if (!frist) {
+    return melde('Nur PDF- oder Textdokumente — ein Foto taugt nicht als '
+      + 'Vordruck.', 'neg');
+  }
+  const paket = new FormData();
+  paket.append('datei', datei, datei.name);
+  const frage_ = new URLSearchParams({ name, verwendungszweck: zweck, typ });
+  if (t?.hinweis) frage_.set('hinweis', t.hinweis);
+  melde('Vorlage wird abgelegt …');
+  try {
+    const antwort = await fetch(`/api/dokumentvorlagen?${frage_}`,
+                                { method: 'POST', body: paket });
+    if (!antwort.ok) {
+      const grund = await antwort.json().then(k => k.detail).catch(() => null);
+      throw new Error(grund || `${antwort.status}`);
     }
+  } catch (fehler) {
+    return melde(String(fehler.message || fehler), 'neg');
+  }
+  melde('Vorlage gespeichert.', 'pos');
+  await laden_();
+}
+
+dateifeld.addEventListener('change', async () => {
+  const datei = dateifeld.files?.[0];
+  const typ = zielTyp;
+  dateifeld.value = '';
+  zielTyp = null;
+  if (datei && typ) await hochladen(typ, datei);
+});
+
+/* Ziehen und Ablegen — auf die Zeile, zu der die Vorlage gehört. */
+const istDateiZug = e => [...(e.dataTransfer?.types || [])].includes('Files');
+let zielZeile = null;
+const markiere = z => {
+  if (z === zielZeile) return;
+  zielZeile?.classList.remove('dropziel');
+  zielZeile = z || null;
+  zielZeile?.classList.add('dropziel');
+};
+liste.addEventListener('dragover', e => {
+  if (!istDateiZug(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  markiere(e.target.closest('.vk[data-typ]'));
+});
+liste.addEventListener('dragleave', e => {
+  if (e.relatedTarget && liste.contains(e.relatedTarget)) return;
+  markiere(null);
+});
+liste.addEventListener('drop', async e => {
+  if (!istDateiZug(e)) return;
+  e.preventDefault();
+  const zeile_ = e.target.closest('.vk[data-typ]');
+  const datei = [...(e.dataTransfer.files || [])][0];
+  markiere(null);
+  if (zeile_ && datei) await hochladen(zeile_.dataset.typ, datei);
+});
+// Ausserhalb der Zeilen fallen gelassen: der Browser soll die Datei nicht
+// einfach anzeigen und die Seite verlassen.
+document.addEventListener('dragover', e => { if (istDateiZug(e)) e.preventDefault(); });
+document.addEventListener('drop', e => {
+  if (istDateiZug(e) && !e.target.closest('.vk[data-typ]')) e.preventDefault();
+});
+
+liste.addEventListener('click', async e => {
+  const waehlen = e.target.closest('[data-waehlen]');
+  if (waehlen) {
+    zielTyp = waehlen.dataset.waehlen;
+    dateifeld.click();
     return;
   }
   const ansehen = e.target.closest('[data-ansehen]');
@@ -183,24 +308,13 @@ async function laden_() {
     return;
   }
 
-  vorlagen = d.vorlagen;
-  zahl.textContent = `${d.anzahl} ${d.anzahl === 1 ? 'Vorlage' : 'Vorlagen'}`;
-  sub.textContent = d.anzahl
-    ? `${d.anzahl} ${d.anzahl === 1 ? 'Vorlage' : 'Vorlagen'} hinterlegt`
-    : 'Noch keine Vorlage hinterlegt';
-
-  if (!d.anzahl) {
-    liste.innerHTML = `<div class="empty">
-        <div class="big">Noch keine Vorlagen</div>
-        <p>Leere Formulare für die Vermietung — Übergabeprotokoll,
-           Mieterselbstauskunft, Rauchwarnmelder-Abnahme und
-           Wohnungsgeberbestätigung. Der Startbestand lädt seriöse,
-           kostenlose Muster von Haus &amp; Grund und den Behörden.</p>
-        <button class="vz-laden" type="button" data-laden style="margin-top:14px">
-          Vermietungs-Startbestand laden</button>
-      </div>`;
-    return;
-  }
+  vorlagen = d.vorlagen || [];
+  typen = d.typen || [];
+  const offen = typen.filter(t => !vorlageZu(t.typ)).length;
+  zahl.textContent = `${d.anzahl} von ${typen.length} hinterlegt`;
+  sub.textContent = offen
+    ? `${offen} ${offen === 1 ? 'Vorlage fehlt' : 'Vorlagen fehlen'} noch`
+    : 'Alle Vorlagen hinterlegt';
   liste.innerHTML = gruppenHtml();
 }
 

@@ -15,12 +15,13 @@
    aufgeklappte Karte enthält je Modus (Wasser/Öl/Warmwasser/Wärme/Strom/
    Standard) den passenden Detailblock. */
 
-import { api, eur, eurKurz, esc, melde, frage, belegAnsehen, installNav } from '../immo.js';
+import { api, eur, eurKurz, esc, melde, frage, belegAnsehen, baueDialog,
+         installNav } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { sankey } from '../charts.js';
 import { kostenIcon } from '../kostenicons.js';
 import { scanZuPdf, lesbareGroesse } from '../scan.js';
-import { belegScannen } from '../belegscan.js';
+import { belegVorbereiten, belegAblegen } from '../belegscan.js';
 import { fotoAlsJpeg } from '../kamerascan.js';
 
 import * as state from './state.js';
@@ -38,7 +39,7 @@ import {
 import {
   zahl, chipHtml, vkeyChip, schluesselWort, schluesselMeta,
   prozentText, monatText, m3, kurzBeleg, belegDatumText,
-  belegeHtml, belegLinks, zusammensetzungHtml,
+  belegeHtml, belegLinks, belegeZu, zusammensetzungHtml,
   sonderEinheiten, alleEinheiten, artOptionen,
   wasserGesamtBetrag, wasserHatRechnung,
   positionsBetrag, effektivErledigt, fortschrittRechnen,
@@ -326,19 +327,132 @@ function zeitraumFussHtml() {
    in der aufgeklappten Karte, nicht nur im separaten „Belege"-Tab. Ein
    Anhänger trägt keine Kostenposition und darf die Position nie erledigt
    setzen (das bleibt allein der Betrag, siehe `effektivErledigt`/N238). */
-function anhaengerChipsHtml(k, bearbeitbar) {
-  const liste = state.anhaenger?.angehaengt?.[k.kostenart] || [];
-  if (!liste.length) return '';
-  return `<div class="anh-chips">${liste.map(d => `
-      <span class="anh-chip" title="Infobeleg — zählt nicht als Kosten">
-        ${ANH_ICON}
-        <button type="button" class="anh-chip-name" data-beleg="${d.id}"
-          data-name="${esc(d.dateiname)}"
-          data-pfad="${esc(d.pfad || '')}">${esc(kurzBeleg(d.dateiname))}</button>
-        ${bearbeitbar ? `<button type="button" class="anh-chip-x"
-          data-anh-loesen="${d.id}" title="Anhänger lösen"
-          aria-label="Anhänger lösen">×</button>` : ''}
-      </span>`).join('')}</div>`;
+/* Die Anhänger dieser Kostenart — reine Info-Belege ohne Kostenposition. */
+function anhaengerListe(k) {
+  return state.anhaenger?.angehaengt?.[k.kostenart] || [];
+}
+
+/* N257 — alle Belege einer Kostenart, getrennt nach dem, was sie unterscheidet:
+   ob sie auf die Kostenposition zahlen oder nur danebenliegen. Beide Quellen
+   sind die schon vorhandenen — `belegeZu` (die Belege der Position, sie tragen
+   den Rechenweg) und die Anhänger. Nichts wird hier neu erraten. Nach `id`
+   entdoppelt, die Kostenzuordnung gewinnt. */
+function belegeGruppen(k) {
+  const mit = belegeZu(k) || [];
+  const gesehen = new Set(mit.map(d => d.id));
+  const ohne = anhaengerListe(k).filter(d => !gesehen.has(d.id));
+  return { mit, ohne, anzahl: mit.length + ohne.length };
+}
+
+/* N258(d) — in der geöffneten Karte stehen die Kostenbelege oben (sie tragen
+   den Rechenweg), die Zusatzbelege darunter und eingerückt: sie gehören dazu,
+   zahlen aber nicht auf den Betrag ein. Eingerückt wie die Unter-Belege in der
+   Eintrags-Detailansicht (`.dd-beleg.unter`), damit die Staffelung im ganzen
+   Produkt dieselbe Sprache spricht. */
+function zusatzBelegeHtml(k) {
+  const { ohne } = belegeGruppen(k);
+  if (!ohne.length) return '';
+  const loesbar = state.daten.status === 'in Arbeit';
+  return `<div class="zusatzbelege">
+      <span class="zb-t">Zusätzliche Belege ohne Kostenzuordnung</span>
+      ${ohne.map(d => `<span class="beleg-zeile">
+        <a href="#" data-beleg="${d.id}" data-name="${esc(d.dateiname)}"
+           data-pfad="${esc(d.pfad || '')}" title="${esc(d.dateiname)}"
+           >${ANH_ICON}${esc(kurzBeleg(d.dateiname))}</a>
+        ${loesbar ? `<button class="beleg-weg" data-anh-loesen="${d.id}"
+          title="Beleg herausnehmen (Datei bleibt)"
+          aria-label="Beleg herausnehmen">×</button>` : ''}
+      </span>`).join('')}
+    </div>`;
+}
+
+/* N252 — statt der Chips im aufgeklappten Bereich sitzt jetzt eine Badge am
+   Kopf der Karte: „2 Belege". Sie ist der einzige Hinweis darauf, dass zu
+   dieser Kostenart etwas hinterlegt ist, solange keine Kostenposition da ist
+   (die Karte klappt dann gar nicht mehr auf). Ein Tippen öffnet die Belege. */
+function anhaengerBadgeHtml(k, aufgeklappt) {
+  // N257(b) — nur an der ZUGEKLAPPTEN Karte. Ist sie offen, stehen die Belege
+  // ohnehin ausführlich darunter; die Badge wäre dieselbe Information zweimal.
+  if (aufgeklappt) return '';
+  const n = belegeGruppen(k).anzahl;
+  if (!n) return '';
+  // Auf schmalen Schirmen bleibt nur Symbol + Zahl sichtbar (CSS): mit dem Wort
+  // „Belege" blieb dem Positionsnamen so wenig Breite, dass er buchstabenweise
+  // umbrach. Die volle Beschriftung steht im aria-label.
+  return `<button type="button" class="anh-badge" data-anh-zeigen="${esc(k.kostenart)}"
+      title="Belege ohne Kostenzuordnung ansehen"
+      aria-label="${n} ${n === 1 ? 'Beleg' : 'Belege'} ohne Kostenzuordnung ansehen"
+      >${ANH_ICON}<span class="anh-b-n">${n}</span
+      ><span class="anh-b-w">&nbsp;${n === 1 ? 'Beleg' : 'Belege'}</span></button>`;
+}
+
+/* Das Fenster hinter der Badge: die Info-Belege dieser Kostenart mit ihrem
+   ECHTEN Dateinamen (N249c), zum Ansehen und Herausnehmen. Bewusst ein eigenes
+   Fenster statt eines Sprungs in den Belege-Tab: dort stehen ALLE Belege des
+   Zeitraums, der Bezug zur Kostenart ginge verloren — und der Nutzer bleibt
+   hier, wo er gerade war. */
+function anhaengerFenster(kostenart) {
+  const k = (state.daten.checkliste || []).find(x => x.kostenart === kostenart);
+  if (!k) return null;
+  const { mit, ohne, anzahl } = belegeGruppen(k);
+  const bearbeitbar = state.daten.status === 'in Arbeit';
+  // Ein Beleg der Position darf hier nicht „herausgenommen" werden — dafür ist
+  // die aufgeklappte Karte da, wo auch der Rechenweg steht. Nur Anhänger
+  // tragen das ×.
+  const zeile = (d, loesbar) => `
+    <div class="anh-zeile">
+      <button type="button" class="anh-z-name" data-beleg="${d.id}"
+        data-name="${esc(d.dateiname)}" data-pfad="${esc(d.pfad || '')}"
+        title="${esc(d.dateiname)}">
+        <span class="anh-z-dn">${esc(d.dateiname)}</span>
+        ${d.pfad ? `<span class="anh-z-pf">${esc(d.pfad)}</span>` : ''}
+      </button>
+      ${d.betrag ? `<span class="anh-z-b">${eur(d.betrag)}</span>` : ''}
+      ${loesbar && bearbeitbar ? `<button type="button" class="anh-z-x"
+        data-anh-loesen="${d.id}" title="Beleg herausnehmen"
+        aria-label="Beleg herausnehmen">×</button>` : ''}
+    </div>`;
+  const gruppe = (titel, liste, loesbar) => liste.length
+    ? `<div class="anh-gruppe"><span class="anh-g-t">${titel}</span>
+        ${liste.map(d => zeile(d, loesbar)).join('')}</div>` : '';
+  const dlg = baueDialog(
+    `<div class="beleg-kopf">
+       <span class="bt">${esc(kostenartAnzeige(kostenart))}<span class="bpfad"
+         >${anzahl} ${anzahl === 1 ? 'Beleg' : 'Belege'}</span></span>
+       <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
+     </div>
+     <div class="anh-liste">${
+       gruppe('Mit Kostenzuordnung', mit, false)
+       + gruppe('Ohne Kostenzuordnung', ohne, true)
+       || '<div class="anh-leer">Keine Belege hinterlegt.</div>'}</div>`);
+  dlg.classList.add('beleg-dlg', 'anh-dlg');
+  dlg.querySelector('[data-zu]').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  // Die Klick-Handler der Checkliste hängen an `inhalt`; dieses Fenster steht
+  // am `body` und wird davon nicht erreicht. Also hier direkt verdrahten —
+  // dieselben Funktionen, nur ohne den Umweg über die Delegation.
+  dlg.addEventListener('click', e => {
+    const ansehen = e.target.closest('[data-beleg]');
+    if (ansehen) {
+      e.preventDefault();
+      dlg.close();
+      // N257(d) — die ganze Reihe mitgeben: aus dem geöffneten Beleg heraus
+      // lässt sich dann zu den übrigen desselben Elements blättern.
+      const reihe = [...mit, ...ohne].map(d => ({
+        id: d.id, dateiname: d.dateiname, pfad: d.pfad || '' }));
+      belegAnsehen(`/api/dokumente/${ansehen.dataset.beleg}/inhalt`,
+                   ansehen.dataset.name || 'Beleg', ansehen.dataset.pfad || '',
+                   Number(ansehen.dataset.beleg), reihe);
+      return;
+    }
+    const weg = e.target.closest('[data-anh-loesen]');
+    if (weg) {
+      e.preventDefault();
+      dlg.close();
+      anhaengerEntfernen(weg.dataset.anhLoesen);
+    }
+  });
+  return dlg;
 }
 
 function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken = true) {
@@ -356,7 +470,22 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
   const heizModus = heizoelSammel ? 'oel'
     : istWarmwasserPos(k) ? 'warmwasser'
     : istHeizwaermePos(k) ? 'waerme' : '';
-  const kannAuf = !wasserSammel || wasserBill;
+  // N252 — eine Karte klappt nur auf, wenn dahinter auch etwas steckt: eine
+  // zugeordnete Kostenposition, eine der Sammel-/Rechenansichten (Wasser,
+  // Heizung) oder die Stromkette. Ohne Kostenposition bot die Karte früher nur
+  // eine Eingabemaske („Beleg hier ablegen" + „Betrag (optional)" + „Anlegen").
+  // Die ist überflüssig: zugeordnet wird über den Scan, nicht von Hand — und
+  // die Scan-Knöpfe sitzen ohnehin an der zugeklappten Karte. Als Kriterium
+  // dient dieselbe Kostenposition, an der auch `effektivErledigt` hängt (N238);
+  // keine zweite, abweichende Regel.
+  // N256 — es genügt NICHT, dass eine Kostenposition existiert: eine mit
+  // `betrag = 0` (nur ein Infobeleg wie ein SEPA-Mandat daran) ist keine echte
+  // Position. Aufgeklappt wird nur, was auch Kosten trägt — dieselbe Schwelle
+  // wie bei `effektivErledigt`/N238, damit es EINEN Begriff von „diese Position
+  // ist echt" gibt und nicht zwei.
+  const hatPosition = positionsBetrag(k) > 0.005 || !!heizModus
+    || istStromKettePos(k);
+  const kannAuf = wasserSammel ? wasserBill : hatPosition;
   const auf = aufgeklappt && kannAuf;
 
   let koerper = '';
@@ -405,23 +534,16 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
           <input class="ka-neu" data-kostenart-neu="${k.position_id}" hidden
             placeholder="Neue Kostenart …" aria-label="Neue Kostenart"></div>` : '';
     koerper = `${kostenartFeld}${anbieterFeld}${stromPosFeldHtml(k)}
-      ${stromKetteHtml(k)}${verteilungHtml(k)}${belege}
-      ${anhaengerChipsHtml(k, bearbeitbar)}
+      ${stromKetteHtml(k)}${verteilungHtml(k)}${belege}${zusatzBelegeHtml(k)}
       <div class="kartenfuss">${fuss}</div>`;
   } else if (auf) {
-    const handbetrag = (bearbeitbar && !istStromPos(k))
-      ? `<div class="betragfeld">
-          <input type="number" step="0.01" placeholder="Betrag (optional)"
-                 data-neubetrag="${i}" aria-label="Betrag für ${esc(k.kostenart)}"></div>
-        <div class="kartenfuss">
-          <button class="hauptaktion" data-anlegen="${esc(k.kostenart)}"
-                  data-index="${i}">Anlegen</button>
-        </div>` : '';
+    // N249 — das Feld „Betrag (optional)" samt „Anlegen" ist ersatzlos weg: der
+    // Betrag entsteht aus dem Beleg, nicht aus einer zweiten Eingabemaske.
     const zu = bearbeitbar ? '' : `<div class="zu-kein">Für diese Kostenart wurde
       in diesem Zeitraum nichts erfasst — und er ist abgeschlossen.</div>`;
     const ablage = (istStromKettePos(k) && stromKetteVerteilt())
       ? '' : belegAblageHtml(k, bearbeitbar);
-    koerper = `${stromKetteHtml(k)}${zu}${ablage}${anhaengerChipsHtml(k, bearbeitbar)}${handbetrag}`;
+    koerper = `${stromKetteHtml(k)}${zu}${ablage}`;
   }
 
   const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel && !heizoelSammel)
@@ -450,14 +572,15 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
         <button class="zeile" data-auf="${i}"${kannAuf ? '' : ' data-noexpand'} aria-expanded="${auf}">
           <span class="ikon ${erl ? 'fertig' : 'warte'}">${
             kostenIcon(k.kostenart)}</span>
-          <span class="name">${esc(kostenartAnzeige(k.kostenart))}${chipHtml(k)}${vkeyChip(k)}${
+          <span class="name">${esc(kostenartAnzeige(k.kostenart))}${chipHtml(k)}${
             k.vorlaeufig ? '<span class="entw-badge">Entwurf aus Beleg</span>' : ''}${
             (k.anbieter && !aufgeklappt && k.zustand !== 'fehlt')
               ? `<span class="anbieter-tag" title="Anbieter / Gewerk">${esc(k.anbieter)}</span>`
               : ''}${stromKopfHtml(k)}${
             infos ? `<span class="unter">${esc(infos)}</span>` : ''}</span>
         </button>
-        ${betragEl}
+        <span class="kopf-belege">${anhaengerBadgeHtml(k, auf)}</span>
+        <span class="kopf-rechts">${betragEl}${vkeyChip(k)}</span>
         ${quickScan}
         ${zeigeHaken
           ? `<span class="haken ${farbe}">${zeichen}</span>` : ''}
@@ -879,26 +1002,6 @@ async function verteilungAbleiten(knopf) {
   }
 }
 
-async function positionAnlegen(knopf) {
-  const kostenart = knopf.dataset.anlegen;
-  const i = Number(knopf.dataset.index);
-  const feld = inhalt.querySelector(`[data-neubetrag="${i}"]`);
-  const betrag = Number(feld?.value) || 0;
-  knopf.disabled = true;
-  knopf.textContent = 'Lege an …';
-  try {
-    await api(`/zeitraeume/${zid}/positionen`,
-              { method: 'POST', body: { kostenart, betrag } });
-    melde(betrag ? `„${kostenart}“ erfasst · ${eur(betrag)}`
-                 : `„${kostenart}“ angelegt — jetzt den Betrag eintragen`, 'pos');
-    state.offen.add(i);
-    await laden();
-  } catch (fehler) {
-    knopf.disabled = false;
-    knopf.textContent = 'Anlegen';
-    melde(String(fehler.message || fehler), 'neg');
-  }
-}
 
 async function einzelSetzen(pid, einheit) {
   try {
@@ -1397,8 +1500,6 @@ export function initHandlers() {
     const ableiten = e.target.closest('[data-ableiten]');
     if (ableiten) return verteilungAbleiten(ableiten);
 
-    const anlegen = e.target.closest('[data-anlegen]');
-    if (anlegen) return positionAnlegen(anlegen);
 
     const einzel = e.target.closest('[data-einzel-einheit]');
     if (einzel) return einzelSetzen(einzel.dataset.einzelPid,
@@ -1438,6 +1539,9 @@ export function initHandlers() {
       state.offen.has(i) ? state.offen.delete(i) : state.offen.add(i);
       return zeichnen();
     }
+
+    const anhZeigen = e.target.closest('[data-anh-zeigen]');
+    if (anhZeigen) { e.preventDefault(); return anhaengerFenster(anhZeigen.dataset.anhZeigen); }
 
     const anhaengenKnopf = e.target.closest('[data-anhaengen]');
     if (anhaengenKnopf) return anhaengen(anhaengenKnopf.dataset.anhaengen);
@@ -1537,19 +1641,44 @@ export function initHandlers() {
     knopf.disabled = true;
     if (beschriftung) beschriftung.textContent = 'Verarbeite …';
 
-    const istPdf = d => d.type === 'application/pdf' || /\.pdf$/i.test(d.name || '');
-    const erstes = dateien.find(d => !istPdf(d)) || dateien[0];
     const jahr = Number((state.daten.ende || '').slice(0, 4)) || new Date().getFullYear();
+    // N254 — Griff auf die Wartedecke; das `finally` unten nimmt sie in JEDEM
+    // Fall wieder weg, auch bei einem Fehler. Eine hängende Vollbild-Sperre
+    // wäre schlimmer als die Lücke, die sie schliesst.
+    let deckeWeg = null;
 
     try {
-      const [ergebnis, vorschlag] = await Promise.all([
-        belegScannen(dateien, {
-          objekt: state.daten.objekt, kategorie: 'Nebenkosten',
-          kostenart: ziel.kostenart, jahr, zeitraumId: state.daten.id,
-          titel: ziel.kostenart,
-        }),
-        (await import('./belege.js')).erkennen(erstes, ziel.kostenart).catch(() => null),
-      ]);
+      // N250 — zwei Schritte statt einem: erst aufnehmen und auslesen, dann
+      // dem Nutzer den vorgeschlagenen Dateinamen zeigen, dann ablegen. Auf
+      // dem Telefon ist das die einzige Gelegenheit, einen falsch erkannten
+      // Namen zu korrigieren — danach liegt die Datei benannt in der Cloud.
+      // N254 — die Decke über der Wartezeit. Sie wird erst NACH dem Zuschnitt
+      // gelegt (vorher liegt das Zuschnitt-Fenster oben) und im `finally`
+      // sicher wieder abgeräumt, auch wenn etwas schiefgeht.
+      const { analyseDecke } = await import('../belegbestaetigung.js');
+      const vorbereitet = await belegVorbereiten(dateien, {
+        objekt: state.daten.objekt, kategorie: 'Nebenkosten',
+        kostenart: ziel.kostenart, jahr, zeitraumId: state.daten.id,
+        titel: ziel.kostenart,
+      }, () => { deckeWeg = analyseDecke(); });
+      // N255 — dieselbe Auslese weiterverwenden, die `belegVorbereiten` schon
+      // geholt hat. Hier lief bis eben ein ZWEITER, identischer `/erkennen`-
+      // Aufruf (gleiche Datei, gleiche Kostenart) — jeder Scan kostete den
+      // Nutzer also doppelt Tokens, ohne einen einzigen neuen Wert zu liefern.
+      const vorschlag = vorbereitet?.ki || null;
+      if (!vorbereitet) {
+        knopf.disabled = false;
+        if (beschriftung) beschriftung.textContent = urText;
+        return;
+      }
+      const { belegBestaetigen } = await import('../belegbestaetigung.js');
+      const entscheidung = await belegBestaetigen(vorbereitet, deckeWeg);
+      if (!entscheidung) {                       // abgebrochen — nichts abgelegt
+        knopf.disabled = false;
+        if (beschriftung) beschriftung.textContent = urText;
+        return;
+      }
+      const ergebnis = await belegAblegen(vorbereitet, entscheidung.beschreibung);
       if (!ergebnis) {
         knopf.disabled = false;
         if (beschriftung) beschriftung.textContent = urText;
@@ -1578,6 +1707,8 @@ export function initHandlers() {
       if (beschriftung) beschriftung.textContent = 'Fehlgeschlagen';
       knopf.disabled = false;
       melde(String(fehler.message || fehler), 'neg');
+    } finally {
+      if (deckeWeg) deckeWeg();
     }
   });
 

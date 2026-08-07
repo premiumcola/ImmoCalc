@@ -1016,7 +1016,7 @@ def test_index_wird_nach_fehlschlag_erneut_versucht():
     motor = _bestands_datenbank(["/x/gleich.pdf", "/x/gleich.pdf"])
     try:
         modul._index_geprueft = False
-        with Session(motor) as s:
+        with Session(engine) as s:
             _eindeutigkeit_sichern(s)
         assert modul._index_geprueft is False     # Doppel: noch nicht erledigt
 
@@ -1024,7 +1024,7 @@ def test_index_wird_nach_fehlschlag_erneut_versucht():
         with motor.begin() as conn:
             conn.execute(text("UPDATE dokument SET pfad = '/x/anders.pdf' "
                               "WHERE id = 2"))
-        with Session(motor) as s:
+        with Session(engine) as s:
             _eindeutigkeit_sichern(s)
         assert modul._index_geprueft is True
         assert "ux_dokument_pfad" in _indexnamen(motor)
@@ -1271,7 +1271,12 @@ def _stand(doc_id: int) -> Dokument:
 def test_abgleich_meldet_eine_geloeschte_datei_als_vermisst(monkeypatch):
     """CXXVII: der Nutzer löscht in der Nextcloud selbst. Der Eintrag bleibt
     stehen — mit Zeitraum und Zuordnung —, tut aber nicht mehr so, als läge
-    die Datei noch da."""
+    die Datei noch da.
+
+    N248 — bewusste Fachlogik-Änderung auf Nutzerwunsch: der Ordner war lesbar
+    und die Datei fehlte, also gilt sie als gelöscht und wird gleich aus der
+    Ablage genommen (`entfernt`) statt nur gekennzeichnet zu werden. Was dieser
+    Test seit jeher schützt, bleibt: der Datensatz wird NICHT gelöscht."""
     import app.routers.dokumente as modul
 
     with TestClient(app) as c:
@@ -1282,7 +1287,7 @@ def test_abgleich_meldet_eine_geloeschte_datei_als_vermisst(monkeypatch):
         monkeypatch.setattr(modul, "verbindung", lambda session: baum)
 
         ergebnis = c.post("/api/dokumente/abgleich").json()
-        assert [v["id"] for v in ergebnis["vermisst"]] == [doc]
+        assert [v["id"] for v in ergebnis["entfernt"]] == [doc]
         assert ergebnis["geprueft"] == 1
 
         # Der Eintrag lebt weiter, nur gekennzeichnet — gelöscht wird nichts
@@ -1290,18 +1295,13 @@ def test_abgleich_meldet_eine_geloeschte_datei_als_vermisst(monkeypatch):
         assert _stand(doc).status == "vermisst"
         assert _stand(doc).kategorie == "Nebenkosten"
 
-        # und die Oberfläche kann es lesen.
-        # `vermisst` ist bewusst ein GLOBALER Zähler über alle Objekte (das
-        # Abzeichen im Eingang) — seit N242 legen auch freigegebene Alt-Pfade
-        # („Grabsteine") solche Einträge an, sodass ein festes `== 1` nur von
-        # der Reihenfolge der Tests in dieser Datei abhinge. Geprüft wird
-        # deshalb genauer: dass GENAU DIESER Eintrag als vermisst geführt wird.
+        # N253 — aus der Liste ist er raus: sein Pfad ist ein Grabstein, und
+        # ein Grabstein neben dem Beleg, der seinen Namen übernommen hat, sah
+        # für den Nutzer wie ein Doppel aus. Dass ein NUR vermisster Eintrag
+        # (Ordner unlesbar, umkehrbar) weiterhin mit Abzeichen im Eingang
+        # steht, prüft `test_vermisster_eintrag_bleibt_im_eingang_sichtbar`.
         daten = c.get("/api/dokumente", params={"objekt": slug}).json()
-        assert daten["vermisst"] >= 1
-        assert [d["id"] for d in daten["dokumente"] if d["vermisst"]] == [doc]
-        gezeigt = daten["dokumente"][0]
-        assert gezeigt["vermisst"] is True
-        assert gezeigt["abgelegt"] is False
+        assert doc not in [d["id"] for d in daten["dokumente"]]
 
         # Korrigieren ginge ins Leere und wird ehrlich abgelehnt
         antwort = c.patch(f"/api/dokumente/{doc}", json={"jahr": 2026})
@@ -1363,12 +1363,15 @@ def test_abgleich_trockenlauf_aendert_nichts(monkeypatch):
 
         plan = c.get("/api/dokumente/abgleich").json()
         assert plan["trockenlauf"] is True
-        assert [v["id"] for v in plan["vermisst"]] == [doc]
+        # N248 — der Ordner war lesbar, die Datei fehlte: der Trockenlauf
+        # kündigt das Aufräumen an, führt es aber nicht aus.
+        assert [v["id"] for v in plan["entfernt"]] == [doc]
         # eine Datei in der Cloud ohne Eintrag — gemeldet, nicht angefasst
         assert plan["ohne_eintrag"] == 1
         assert plan["neu"] == 0
 
         assert _stand(doc).status == "zugeordnet"
+        assert _stand(doc).pfad == f"/{ordner}/60_Nebenkosten/weg.pdf"
         assert baum.verschoben == []
 
 
@@ -1411,7 +1414,14 @@ def test_abgleich_ueberspringt_unlesbare_ordner(monkeypatch):
 
 
 def test_vermisster_eintrag_kommt_zurueck(monkeypatch):
-    """Der Nutzer legt die Datei wieder hin — dann ist der Eintrag wieder gut."""
+    """Der Nutzer legt die Datei wieder hin — dann ist der Eintrag wieder gut.
+
+    N248 — geprüft wird der Fall, in dem der Eintrag NUR gekennzeichnet wurde,
+    weil sein Ordner nicht lesbar war (die Cloud hat nie gesagt, die Datei sei
+    weg). Genau dieser Zustand ist reversibel und muss es bleiben. Ein Eintrag,
+    dessen Ordner gelesen wurde und der trotzdem fehlte, wird dagegen aus der
+    Ablage genommen — dort hat der Nutzer das Wiederauftauchen ausdrücklich
+    abgewählt ("Du musst nicht drauf achten, ob der dann wieder auftaucht")."""
     import app.routers.dokumente as modul
 
     with TestClient(app) as c:
@@ -1420,10 +1430,12 @@ def test_vermisster_eintrag_kommt_zurueck(monkeypatch):
         pfad = f"/{ordner}/60_Nebenkosten/2025_Strom.pdf"
         doc = _beleg(_objekt_id(slug), pfad)
 
-        leer = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": []})
-        monkeypatch.setattr(modul, "verbindung", lambda session: leer)
+        # Der Unterordner ist nicht lesbar -> keine Aussage über die Datei.
+        stumm = _Baum({ordner: []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: stumm)
         c.post("/api/dokumente/abgleich")
         assert _stand(doc).status == "vermisst"
+        assert _stand(doc).pfad == pfad          # Pfad bleibt — reversibel
 
         voll = _Baum({ordner: [],
                       f"{ordner}/60_Nebenkosten": [("2025_Strom.pdf", 4096)]})
@@ -1431,6 +1443,224 @@ def test_vermisster_eintrag_kommt_zurueck(monkeypatch):
         ergebnis = c.post("/api/dokumente/abgleich").json()
         assert [v["id"] for v in ergebnis["wiederda"]] == [doc]
         assert _stand(doc).status == "zugeordnet"
+
+
+# --------------------------------------------------------------------------
+# N248 — extern gelöschte Belege verschwinden von selbst aus der Ablage.
+#
+# Die eine Bedingung, auf der alles steht: entfernt wird NUR, was beweisbar
+# fehlt. Der Nutzer hat das doppelt betont — bei einer stummen Cloud darf
+# nichts angefasst werden. `test_..._ruehrt_nichts_an` ist deshalb der
+# wichtigste Test dieser Gruppe.
+# --------------------------------------------------------------------------
+
+def test_geloeschte_datei_wird_aus_der_ablage_genommen(monkeypatch):
+    """Ordner gelesen, Datei nicht darin -> der Nutzer hat sie gelöscht."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 1"
+        slug = _mit_cloud(c, "Aufraeumweg 1", ordner)
+        pfad = f"/{ordner}/60_Nebenkosten/2025_Fehlscan.pdf"
+        doc = _beleg(_objekt_id(slug), pfad, betrag=117.0)
+        # Der Ordner LIESS sich lesen und ist leer — das ist der Beweis.
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert [v["id"] for v in ergebnis["entfernt"]] == [doc]
+        assert ergebnis["vermisst"] == []
+
+        # Der Datensatz lebt weiter — nur der Pfad ist ein Grabstein.
+        stand = _stand(doc)
+        assert stand is not None
+        assert stand.status == "vermisst"
+        assert stand.betrag == 117.0            # Betrag bleibt erhalten
+        assert stand.kategorie == "Nebenkosten"
+        assert stand.pfad.startswith("entfernt:")
+        assert not stand.pfad.startswith("/")   # gilt nirgends mehr als Datei
+
+
+def test_stumme_cloud_ruehrt_nichts_an(monkeypatch):
+    """DER Sicherheitstest: antwortet die Cloud nicht, bleibt ALLES stehen.
+
+    Weder der Objektordner noch der Unterordner lassen sich lesen. Damit gibt
+    es keinerlei Aussage über die Dateien — kein Eintrag darf entfernt oder
+    auch nur gekennzeichnet werden."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 2"
+        slug = _mit_cloud(c, "Aufraeumweg 2", ordner)
+        pfad = f"/{ordner}/60_Nebenkosten/2025_Wichtig.pdf"
+        doc = _beleg(_objekt_id(slug), pfad, betrag=2500.0)
+        # Der Objektordner selbst fehlt: `_baum` bricht ab, `_abgleiche`
+        # überspringt die ganze Immobilie.
+        baum = _Baum({"Home/Immobilien": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert ergebnis["entfernt"] == []
+        assert ergebnis["vermisst"] == []
+        assert any("Aufraeumweg 2" in h for h in ergebnis["hinweise"])
+
+        stand = _stand(doc)
+        assert stand.pfad == pfad               # unverändert
+        assert stand.status == "zugeordnet"     # nicht einmal gekennzeichnet
+        assert stand.betrag == 2500.0
+
+
+def test_unlesbarer_unterordner_entfernt_nichts(monkeypatch):
+    """Die feinere Hälfte derselben Regel.
+
+    Der Objektordner antwortet, ein Unterordner nicht — `_baum` überspringt
+    ihn und protokolliert. Seine Dateien fehlen dann selbstverständlich in der
+    Liste; das ist KEIN Beweis, dass der Nutzer sie gelöscht hat."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 3"
+        slug = _mit_cloud(c, "Aufraeumweg 3", ordner)
+        pfad = f"/{ordner}/60_Nebenkosten/2025_Heizung.pdf"
+        doc = _beleg(_objekt_id(slug), pfad)
+        # `60_Nebenkosten` taucht als Ordner nie auf -> nie gelesen.
+        baum = _Baum({ordner: []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert ergebnis["entfernt"] == []
+        assert [v["id"] for v in ergebnis["vermisst"]] == [doc]
+
+        # Nur gekennzeichnet, Pfad unangetastet — der nächste Lauf kann ihn
+        # wiederfinden, sobald der Ordner wieder antwortet.
+        assert _stand(doc).pfad == pfad
+        assert _stand(doc).status == "vermisst"
+
+
+def test_vorhandene_datei_wird_nicht_entfernt(monkeypatch):
+    """Liegt die Datei noch da, passiert gar nichts."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 4"
+        slug = _mit_cloud(c, "Aufraeumweg 4", ordner)
+        pfad = f"/{ordner}/60_Nebenkosten/2025_Muell.pdf"
+        doc = _beleg(_objekt_id(slug), pfad)
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten":
+                      [("2025_Muell.pdf", 4096)]})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        ergebnis = c.post("/api/dokumente/abgleich").json()
+        assert ergebnis["entfernt"] == []
+        assert _stand(doc).pfad == pfad
+        assert _stand(doc).status == "zugeordnet"
+
+
+def test_aufraeumen_wiederholt_sich_nicht(monkeypatch):
+    """Zweimal laufen lassen darf nichts kaskadieren.
+
+    Nach dem ersten Lauf trägt der Eintrag einen Grabstein. Der zweite Lauf
+    darf ihn weder erneut melden noch einen Grabstein auf den Grabstein
+    setzen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 5"
+        slug = _mit_cloud(c, "Aufraeumweg 5", ordner)
+        doc = _beleg(_objekt_id(slug),
+                     f"/{ordner}/60_Nebenkosten/2025_Doppelt.pdf")
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+
+        erst = c.post("/api/dokumente/abgleich").json()
+        assert [v["id"] for v in erst["entfernt"]] == [doc]
+        nach_erstem = _stand(doc).pfad
+
+        zweit = c.post("/api/dokumente/abgleich").json()
+        assert zweit["entfernt"] == []
+        assert zweit["vermisst"] == []
+        assert _stand(doc).pfad == nach_erstem   # kein zweiter Grabstein
+
+
+def test_grabstein_taucht_in_keiner_liste_auf(monkeypatch):
+    """N253 — der Grabstein darf nirgends mehr als Beleg erscheinen.
+
+    Beim Nutzer sah es aus wie ein Doppel: neben dem Grabstein des gelöschten
+    Belegs stand der neue Scan, der dessen freigewordenen Namen übernommen
+    hatte. Gefiltert wird an der API, nicht in jeder Ansicht einzeln — sonst
+    zählen Abzeichen und Facetten weiter mit."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 7"
+        slug = _mit_cloud(c, "Aufraeumweg 7", ordner)
+        alt = _beleg(_objekt_id(slug),
+                     f"/{ordner}/60_Nebenkosten/2025_Wasser.pdf")
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+        c.post("/api/dokumente/abgleich")
+        assert _stand(alt).pfad.startswith("entfernt:")
+
+        # Die Liste zeigt ihn nicht mehr — auch nicht als „vermisst".
+        daten = c.get("/api/dokumente", params={"objekt": slug}).json()
+        assert alt not in [d["id"] for d in daten["dokumente"]]
+
+        # und der Dokumentenbaum ebenso wenig.
+        baum_daten = c.get(f"/api/dokumente/objekt/{slug}/baum").json()
+        gezeigt = [d["id"] for ast in baum_daten["aeste"]
+                   for d in ast["dokumente"]]
+        assert alt not in gezeigt
+
+
+def test_vermisster_eintrag_bleibt_im_eingang_sichtbar(monkeypatch):
+    """Die Gegenprobe zu N253: NUR Grabsteine verschwinden.
+
+    Ein Eintrag, dessen Ordner sich nicht lesen liess, ist bloss `vermisst` —
+    umkehrbar. Er bleibt mit Abzeichen sichtbar, damit der Nutzer handeln
+    kann."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 8"
+        slug = _mit_cloud(c, "Aufraeumweg 8", ordner)
+        doc = _beleg(_objekt_id(slug), f"/{ordner}/60_Nebenkosten/still.pdf")
+        baum = _Baum({ordner: []})       # Unterordner nicht lesbar
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+        c.post("/api/dokumente/abgleich")
+
+        daten = c.get("/api/dokumente", params={"objekt": slug}).json()
+        gezeigt = [d for d in daten["dokumente"] if d["id"] == doc]
+        assert gezeigt and gezeigt[0]["vermisst"] is True
+
+
+def test_entfernter_beleg_verschwindet_aus_der_zeitraumliste(monkeypatch):
+    """Der eigentliche Zweck: der Fehlscan ist aus der Beleg-Liste raus.
+
+    Genau das hatte der Nutzer gemeldet — gelöschte Dateien standen weiter in
+    der Belege-Ansicht des Zeitraums und boten beim Antippen nur „keine
+    Bildvorschau"."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Aufraeumweg 6"
+        slug = _mit_cloud(c, "Aufraeumweg 6", ordner)
+        zid = c.post(f"/api/objekte/{slug}/zeitraeume",
+                     json={"start": "2025-01-01", "ende": "2025-12-31"}).json()["id"]
+        doc = _beleg(_objekt_id(slug),
+                     f"/{ordner}/60_Nebenkosten/2025_Fehlscan.pdf",
+                     zeitraum_id=zid)
+
+        vorher = c.get(f"/api/zeitraeume/{zid}").json()
+        assert doc in [d["id"] for d in vorher["dokumente"]]
+
+        baum = _Baum({ordner: [], f"{ordner}/60_Nebenkosten": []})
+        monkeypatch.setattr(modul, "verbindung", lambda session: baum)
+        c.post("/api/dokumente/abgleich")
+
+        nachher = c.get(f"/api/zeitraeume/{zid}").json()
+        assert doc not in [d["id"] for d in nachher["dokumente"]]
+        assert all(not liste or doc not in [b["id"] for b in liste]
+                   for liste in nachher["belege_je_art"].values())
 
 
 def test_abgleich_raet_nicht_bei_zwei_gleichen_dateien(monkeypatch):
@@ -2121,3 +2351,83 @@ def test_jahreswechsel_zieht_kostenposition_ins_richtige_jahr(monkeypatch):
             assert dok.position_id == pos24.id
             # Die alte 2025-Position hat die Kosten verloren.
             assert round(s.get(Kostenposition, pos25_id).betrag or 0, 2) == 0.0
+
+
+def test_namensvorschlag_zeigt_den_namen_ohne_abzulegen():
+    """N250 — die Bestätigungsmaske fragt vorab, wie der Beleg heissen würde.
+
+    Wichtig ist genau das, was der Nutzer sehen will: die erkannte Sache
+    („Abbuchungsvorankündigung") steht neben der Kostenart im Namen, sodass der
+    Beleg nicht mit der echten Grundsteuer-Rechnung zu verwechseln ist. Der
+    Aufruf rechnet nur — er legt nichts ab und braucht deshalb keine Cloud."""
+    with TestClient(app) as c:
+        antwort = c.post("/api/dokumente/namensvorschlag", data={
+            "kategorie": "Nebenkosten", "kostenart": "Grundsteuer",
+            "jahr": 2025, "monat": 6, "betrag": 174.0,
+            "beschreibung": "Abbuchungsvorankündigung",
+            "dateiname_roh": "scan.pdf"})
+        assert antwort.status_code == 200
+        assert antwort.json()["name"] == \
+            "2025-06_NK-Grundsteuer-Abbuchungsvorankündigung_174,00€.pdf"
+
+
+def test_namensvorschlag_ohne_bezeichnung_nimmt_die_kostenart():
+    """Ohne erkannte Sache bleibt es beim schlichten Namen — wie bisher."""
+    with TestClient(app) as c:
+        antwort = c.post("/api/dokumente/namensvorschlag", data={
+            "kategorie": "Nebenkosten", "kostenart": "Wasser", "jahr": 2025,
+            "dateiname_roh": "scan.pdf"})
+        assert antwort.json()["name"] == "2025_NK-Wasser.pdf"
+
+
+def test_scan_haelt_die_ki_auslese_am_beleg_fest(monkeypatch):
+    """N255 — die Oberfläche hat vor dem Ablegen schon gelesen; das Ergebnis
+    muss am frischen Beleg landen.
+
+    Vorher lief `/erkennen` auf den nackten Bytes, wo es den Datensatz noch
+    gar nicht gab — `ki_einordnung`/`ki_felder` blieben für JEDEN gescannten
+    Beleg leer, das Beleg-Fenster zeigte keine Dokumentenerkennung, und ein
+    Nachholen hätte Tokens des Nutzers gekostet."""
+    import json as _json
+
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Merkweg 2"
+        slug = _mit_cloud(c, "Merkweg 2", ordner)
+        monkeypatch.setattr(modul, "verbindung",
+                            lambda session: _Wolke([], ordner))
+
+        ki = {"ki": True, "einordnung": "Abbuchungsvorankündigung der Stadt.",
+              "felder": {"faelligkeit": "15.08.2026"},
+              "immobilie": "Tauchersreuther Str. 7", "einheit": ""}
+        antwort = c.post("/api/dokumente/scannen", data={
+            "objekt": slug, "kategorie": "Nebenkosten", "jahr": 2026,
+            "kostenart": "Grundsteuer", "beschreibung": "Abbuchungsvorankündigung",
+            "ki_json": _json.dumps(ki)},
+            files={"datei": ("scan.pdf", b"%PDF-1.4 t", "application/pdf")})
+        assert antwort.status_code == 201
+
+        with Session(engine) as s:
+            d = s.get(Dokument, antwort.json()["id"])
+            assert d.ki_einordnung == "Abbuchungsvorankündigung der Stadt."
+            assert d.ki_felder == {"faelligkeit": "15.08.2026"}
+            assert d.ki_immobilie == "Tauchersreuther Str. 7"
+
+
+def test_scan_ohne_ki_json_laeuft_unveraendert(monkeypatch):
+    """Das Feld ist freiwillig — und kaputtes JSON darf einen fertigen Scan
+    niemals scheitern lassen."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Merkweg 3"
+        slug = _mit_cloud(c, "Merkweg 3", ordner)
+        monkeypatch.setattr(modul, "verbindung",
+                            lambda session: _Wolke([], ordner))
+        for wert in ("", "{kein json", "[1,2]"):
+            antwort = c.post("/api/dokumente/scannen", data={
+                "objekt": slug, "kategorie": "Nebenkosten", "jahr": 2026,
+                "beschreibung": f"Beleg {len(wert)}", "ki_json": wert},
+                files={"datei": ("s.pdf", b"%PDF-1.4 t", "application/pdf")})
+            assert antwort.status_code == 201

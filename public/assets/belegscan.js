@@ -39,11 +39,17 @@ async function aufnahmeVorbereiten(dateien, titel) {
   if (bilder.length) {
     const ergebnis = await kamerascanStarten(bilder, titel ? { titel } : {});
     if (!ergebnis) return null;                    // abgebrochen
-    return { datei: ergebnis.pdf, name: 'scan.pdf', seiten: ergebnis.seiten };
+    // `blaetter` (N250) sind die entzerrten Seiten als Bilder — die
+    // Bestätigungsmaske zeigt damit, was gleich abgelegt wird. Für ein fertig
+    // gewähltes PDF gibt es sie nicht; die Maske kommt dann ohne Vorschau aus.
+    return { datei: ergebnis.pdf, name: 'scan.pdf', seiten: ergebnis.seiten,
+             blaetter: ergebnis.bilder || [] };
   }
   // Ein schon fertiges PDF (aus der Dateiauswahl statt aus der Kamera) läuft
   // denselben Weg — nur ohne Zuschnitt, denn da gibt es nichts zu entzerren.
-  if (fertig.length) return { datei: fertig[0], name: fertig[0].name, seiten: 0 };
+  if (fertig.length) {
+    return { datei: fertig[0], name: fertig[0].name, seiten: 0, blaetter: [] };
+  }
   return null;
 }
 
@@ -96,7 +102,16 @@ function mitKi(ziel, ki) {
   const z = { ...ziel };
   if (ki.kategorie && (!z.kategorie || z.kategorie === 'Sonstiges')) z.kategorie = ki.kategorie;
   if (ki.kostenart && !z.kostenart) z.kostenart = ki.kostenart;
-  if (!z.kostenart && !z.beschreibung && ki.sache) z.beschreibung = ki.sache;
+  // N251 — die erkannte Sache IMMER übernehmen, wenn der Aufrufer keine eigene
+  // Bezeichnung mitbringt. Früher stand hier zusätzlich `!z.kostenart`: wer aus
+  // einer Kostenart-Karte heraus scannte (Grundsteuer, Wasser …), verlor damit
+  // genau die Angabe, die den Beleg unterscheidbar macht — die KI erkannte
+  // „Abbuchungsvorankündigung", der Name wurde trotzdem nur „NK-Grundsteuer".
+  // `dateiname()` fügt Kostenart und Sache serverseitig zusammen und lässt den
+  // Normalfall unberührt: ist die Sache die Kostenart selbst, bleibt es bei
+  // „NK-Grundsteuer"; ist sie genauer, wird daraus
+  // „NK-Grundsteuer-Abbuchungsvorankündigung".
+  if (!z.beschreibung && ki.sache) z.beschreibung = ki.sache;
   if (typeof ki.betrag === 'number' && ki.betrag > 0) z.betrag = ki.betrag;
   if (ki.datum) z.datum = ki.datum;
   if (!z.jahr && Number.isInteger(ki.jahr)) z.jahr = ki.jahr;
@@ -105,7 +120,7 @@ function mitKi(ziel, ki) {
 
 /** Nur belegte Felder wandern mit: ein leeres `jahr` würde sonst als „0"
     ankommen und den Beleg in einen Ordner ohne Jahr sortieren. */
-function paketBauen(datei, name, ziel, jahrHinweis) {
+function paketBauen(datei, name, ziel, jahrHinweis, ki = null) {
   const paket = new FormData();
   paket.append('objekt', ziel.objekt || '');
   paket.append('kategorie', ziel.kategorie || 'Sonstiges');
@@ -124,6 +139,14 @@ function paketBauen(datei, name, ziel, jahrHinweis) {
     paket.append('an_typ', ziel.anTyp);
     paket.append('an_id', String(ziel.anId));
   }
+  // N255 — die schon geholte Auslese mitgeben, damit sie am frischen Beleg
+  // festgehalten wird. `/erkennen` lief auf den nackten Bytes, da gab es den
+  // Datensatz noch nicht; ohne diesen Weg bliebe die Dokumentenerkennung für
+  // jeden gescannten Beleg dauerhaft leer und müsste — auf Kosten des Nutzers —
+  // noch einmal gelesen werden.
+  if (ki) {
+    try { paket.append('ki_json', JSON.stringify(ki)); } catch { /* egal */ }
+  }
   paket.append('datei', datei, name);
   return paket;
 }
@@ -136,18 +159,19 @@ async function fehlertext(antwort) {
 }
 
 /**
- * Nimmt Kamerafotos (oder ein fertiges PDF) entgegen und legt sie als einen
- * Beleg ab.
+ * N250 — Schritt 1: Kamerafotos (oder ein fertiges PDF) aufnehmen, zuschneiden
+ * und auslesen — aber NOCH NICHT ablegen.
  *
  * `ziel`: `{ objekt, kategorie, kostenart, jahr, beschreibung, zeitraumId,
  * anTyp, anId, titel }` — nur `objekt` und `kategorie` sind wirklich nötig.
  * `anTyp`/`anId` hängen den Beleg gleich an einen bestehenden Eintrag.
  *
- * Gibt `null` zurück, wenn der Nutzer abgebrochen hat (kein Fehler), sonst
- * `{ id, dateiname, seiten, groesse }`. Geht die Ablage schief, fliegt ein
- * `Error` mit einem Satz, den man anzeigen kann.
+ * Gibt `null` zurück, wenn der Nutzer den Zuschnitt abgebrochen hat, sonst
+ * `{ aufnahme, ziel, jahrHinweis, ki }` — das Paket für `belegAblegen`. `ki`
+ * ist die rohe Auslese (oder `null`), damit die Bestätigungsmaske zeigen kann,
+ * was erkannt wurde, ohne ein zweites Mal zu fragen.
  */
-export async function belegScannen(dateien, ziel = {}) {
+export async function belegVorbereiten(dateien, ziel = {}, beimLesen = null) {
   // Aus den Originaldateien lesen, nicht aus dem gebauten Scan-PDF: dessen
   // Zeitstempel wäre „jetzt". Das Foto bzw. die gewählte Datei trägt dagegen
   // ein Datum nahe am Beleg.
@@ -162,8 +186,26 @@ export async function belegScannen(dateien, ziel = {}) {
 
   const aufnahme = await aufnahmeVorbereiten(dateien, ziel.titel);
   if (!aufnahme) return null;                       // Zuschnitt abgebrochen
+  // N254 — genau hier klafft die Lücke: der Zuschnitt ist zu, die Auslese
+  // läuft noch. Der Aufrufer legt jetzt seine Decke über die Seite.
+  if (beimLesen) { try { beimLesen(); } catch { /* darf nie stören */ } }
+  const ki = await kiVersprechen;
   // Kontext hat Vorrang, KI füllt nur Lücken — nie etwas überschreiben.
-  ziel = mitKi(ziel, await kiVersprechen);
+  return { aufnahme, ziel: mitKi(ziel, ki), jahrHinweis, ki };
+}
+
+/**
+ * N250 — Schritt 2: den vorbereiteten Beleg wirklich ablegen.
+ *
+ * Nimmt das Ergebnis von `belegVorbereiten` entgegen. Dazwischen darf der
+ * Aufrufer den Nutzer fragen (Bestätigungsmaske mit Dateinamen) — deshalb
+ * sind Vorbereiten und Ablegen überhaupt getrennt. `beschreibung` überschreibt
+ * dabei die vorgeschlagene Bezeichnung; benannt wird weiterhin auf dem Server.
+ */
+export async function belegAblegen(vorbereitet, beschreibung = null) {
+  const { aufnahme, jahrHinweis } = vorbereitet;
+  const ziel = beschreibung === null || beschreibung === undefined
+    ? vorbereitet.ziel : { ...vorbereitet.ziel, beschreibung };
 
   const abbruch = new AbortController();
   const uhr = setTimeout(() => abbruch.abort(), ZEITLIMIT_MS);
@@ -171,7 +213,8 @@ export async function belegScannen(dateien, ziel = {}) {
   try {
     antwort = await fetch('/api/dokumente/scannen', {
       method: 'POST',
-      body: paketBauen(aufnahme.datei, aufnahme.name, ziel, jahrHinweis),
+      body: paketBauen(aufnahme.datei, aufnahme.name, ziel, jahrHinweis,
+                       vorbereitet.ki),
       signal: abbruch.signal,
     });
   } catch (fehler) {
@@ -191,4 +234,15 @@ export async function belegScannen(dateien, ziel = {}) {
 
   return { id: ergebnis.id, dateiname: ergebnis.dateiname,
            seiten: aufnahme.seiten, groesse: aufnahme.datei.size };
+}
+
+/**
+ * Der bisherige Ein-Schritt-Weg: vorbereiten und sofort ablegen, ohne
+ * Zwischenfrage. Bleibt für alle Aufrufer, die keine Bestätigungsmaske wollen —
+ * ihr Verhalten ändert sich dadurch kein Stück.
+ */
+export async function belegScannen(dateien, ziel = {}) {
+  const vorbereitet = await belegVorbereiten(dateien, ziel);
+  if (!vorbereitet) return null;                    // Zuschnitt abgebrochen
+  return belegAblegen(vorbereitet);
 }

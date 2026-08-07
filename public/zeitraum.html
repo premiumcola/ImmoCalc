@@ -340,11 +340,6 @@
     font:600 12.5px var(--body)}
   .ablg-knopf:hover{background:#D8E8F2}
   .ablg-knopf svg{width:18px;height:18px;flex:none}
-  .betragfeld{margin-top:2px}
-  .betragfeld input{width:100%;border:1.5px solid var(--line);border-radius:12px;
-    padding:13px 14px;font:600 17px var(--body);min-height:50px;
-    background:var(--sheet);color:var(--ink)}
-  .betragfeld input:focus{outline:none;border-color:var(--teal)}
   /* Aufteilung als €-Ergebnis je Partei; der Prozentanteil steht ruhig dahinter. */
   .rzp{color:var(--soft);font-weight:500;font-size:11px}
   .vt-gewichte{margin-top:4px}
@@ -464,6 +459,31 @@
      Zeilenknopf, nicht darin: Knöpfe lassen sich nicht schachteln. */
   .pruef .kopf{display:flex;align-items:center;gap:8px;padding-right:15px}
   .pruef .kopf > .zeile{flex:1;min-width:0;padding-right:2px}
+  /* N258(a)(b) — feste Spalten, damit die Kanten über alle Zeilen fluchten:
+     links der Titel (dehnt sich), in der Mitte die Beleg-Badge, rechts der
+     Betrag. Beide rechten Spalten haben eine feste Breite und bleiben auch
+     dann stehen, wenn eine Zeile nichts darin hat — sonst wanderte der Betrag
+     je nach Vorhandensein einer Badge hin und her. */
+  .pruef .kopf-belege{flex:none;width:104px;display:flex;justify-content:flex-end}
+  .pruef .kopf-rechts{flex:none;width:142px;display:flex;flex-direction:column;
+    align-items:flex-end;gap:3px}
+  .pruef .kopf-rechts:empty{display:none}
+  /* N258(f) — der Verteilungsschlüssel sitzt jetzt unter dem Betrag statt in
+     der Titelzeile: links drängten sich Symbol, Name und Anbieter, rechts war
+     Platz. Leise gesetzt, er ist Beiwerk. */
+  .pruef .kopf-rechts .vkey{font-size:10.5px;color:var(--soft);max-width:100%;
+    overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .pruef .kopf-rechts .wert{text-align:right}
+  /* Auf dem Telefon ist rechts KEIN Platz mehr: Betrag und Schlüssel
+     untereinander drückten den Positionsnamen in einen buchstabenweisen
+     Umbruch, und der Schlüsseltext wurde hart abgeschnitten. Dort bleibt nur
+     der Betrag stehen (die Beträge fluchten weiterhin) — der Verteilungs-
+     schlüssel steht ohnehin in der geöffneten Karte. */
+  @media (max-width:560px){
+    .pruef .kopf-belege{width:52px}
+    .pruef .kopf-rechts{width:auto;min-width:78px}
+    .pruef .kopf-rechts .vkey{display:none}
+  }
   /* CCCLXXXVII — die zwei Beleg-Knöpfe: klare Icons (Kamera / Wolke bzw. Upload)
      in gedämpftem Blau statt Grün, damit sie sich vom teal-Rest abheben und
      eindeutig als „Beleg holen" lesen. Etwas größer, das Symbol trägt allein. */
@@ -1085,22 +1105,61 @@
   .anh-anbau svg{width:15px;height:15px;flex:none}
   .anh-hint{display:block;font:400 11px var(--body);color:var(--soft);
             line-height:1.45;margin-top:8px}
-  /* N237 — bereits angehängte Zusatzbelege: kleine Chips in der Karte, kein
-     Betrag, kein Einfluss auf „erledigt" (nur ein Infobeleg). */
-  .anh-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-  .anh-chip{display:inline-flex;align-items:center;gap:6px;
-            background:var(--paper);border-radius:999px;padding:6px 6px 6px 10px;
-            font:600 11.5px var(--mono);color:var(--soft);min-height:32px}
-  .anh-chip svg{width:13px;height:13px;flex:none}
-  .anh-chip-name{border:none;background:none;color:var(--ink);cursor:pointer;
-                 font:inherit;padding:0;max-width:160px;overflow:hidden;
-                 text-overflow:ellipsis;white-space:nowrap}
-  .anh-chip-name:hover{color:var(--teal-d);text-decoration:underline}
-  .anh-chip-x{border:none;background:var(--line);color:var(--soft);
-              width:20px;height:20px;border-radius:50%;flex:none;cursor:pointer;
-              font:600 13px var(--body);line-height:1;display:flex;
-              align-items:center;justify-content:center}
-  .anh-chip-x:hover{background:var(--neg-bg);color:var(--neg)}
+  /* N258(d) — die Zusatzbelege in der geöffneten Karte: unter den Kostenbelegen
+     und eingerückt, mit ruhiger Schiene links — sie gehören dazu, zahlen aber
+     nicht auf den Betrag ein. Gleiche Staffelungs-Sprache wie `.dd-beleg.unter`
+     in der Eintrags-Detailansicht. */
+  .zusatzbelege{display:flex;flex-direction:column;gap:6px;margin:10px 0 0 14px;
+                padding-left:12px;border-left:2px solid var(--line)}
+  .zusatzbelege .zb-t{font:600 10px var(--mono);letter-spacing:.08em;
+                      text-transform:uppercase;color:var(--soft)}
+  .zusatzbelege .beleg-zeile a{color:var(--soft);display:inline-flex;
+                               align-items:center;gap:6px}
+  .zusatzbelege .beleg-zeile a:hover{color:var(--teal-d)}
+  .zusatzbelege svg{width:12px;height:12px;flex:none}
+  /* N252 — die Badge am Kopf der Karte: „2 Belege". Sie ersetzt die früheren
+     Chips im aufgeklappten Bereich; eine Karte ohne Kostenposition klappt gar
+     nicht mehr auf, die Badge ist dort der einzige Hinweis auf hinterlegte
+     Info-Belege. Ein Tippen öffnet die Liste. */
+  .anh-badge{display:inline-flex;align-items:center;gap:6px;flex:none;
+             border:1.5px solid var(--line);background:var(--sheet);
+             color:var(--soft);border-radius:999px;padding:0 12px;min-height:36px;
+             font:600 11.5px var(--mono);cursor:pointer;white-space:nowrap}
+  .anh-badge:hover{border-color:var(--teal);color:var(--teal-d);
+                   background:var(--teal-l)}
+  .anh-badge svg{width:13px;height:13px;flex:none}
+  /* Schmaler Schirm: nur Symbol + Zahl. Mit dem Wort „Belege" blieb dem
+     Positionsnamen so wenig Breite, dass er buchstabenweise umbrach. */
+  @media (max-width:560px){
+    .anh-badge{padding:0 9px}
+    .anh-badge .anh-b-w{display:none}
+  }
+  /* Das Fenster hinter der Badge: eine Zeile je Beleg mit vollem Dateinamen
+     und Ablageort. Lange Namen werden abgeschnitten, der volle steht im
+     Titel — dieselbe Regel wie im Dokumente-Baum. */
+  .anh-dlg .anh-liste{display:flex;flex-direction:column;gap:16px;
+                      overflow:auto;min-height:0}
+  /* N257 — zwei Gruppen: was auf die Position zahlt, und was nur danebenliegt. */
+  .anh-dlg .anh-gruppe{display:flex;flex-direction:column;gap:8px}
+  .anh-dlg .anh-g-t{font:600 10.5px var(--mono);letter-spacing:.09em;
+                    text-transform:uppercase;color:var(--soft)}
+  .anh-dlg .anh-z-b{flex:none;font:600 12.5px var(--mono);color:var(--teal-d);
+                    padding:0 4px;white-space:nowrap}
+  .anh-dlg .anh-zeile{display:flex;align-items:center;gap:8px;
+                      background:var(--paper);border-radius:12px;padding:4px}
+  .anh-dlg .anh-z-name{flex:1;min-width:0;border:none;background:none;
+                       cursor:pointer;text-align:left;padding:9px 10px}
+  .anh-dlg .anh-z-dn{display:block;font:600 12.5px var(--body);color:var(--ink);
+                     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .anh-dlg .anh-z-pf{display:block;font:500 10px var(--mono);color:var(--soft);
+                     margin-top:3px;overflow:hidden;text-overflow:ellipsis;
+                     white-space:nowrap;direction:rtl;text-align:left}
+  .anh-dlg .anh-z-name:hover .anh-z-dn{color:var(--teal-d)}
+  .anh-dlg .anh-z-x{flex:none;border:none;background:var(--line);color:var(--soft);
+                    width:36px;height:36px;border-radius:10px;cursor:pointer;
+                    font:600 15px var(--body);line-height:1}
+  .anh-dlg .anh-z-x:hover{background:var(--neg-bg);color:var(--neg)}
+  .anh-dlg .anh-leer{font:400 13px var(--body);color:var(--soft);padding:14px 2px}
   /* Auswahl-Dialog der kostenfreien Belege aus dem Bestand. */
   .ahdlg .ahliste{max-height:min(50dvh,360px);overflow:auto;margin:6px 0 14px}
   .ahdlg .ahz{display:flex;align-items:center;gap:11px;width:100%;cursor:pointer;

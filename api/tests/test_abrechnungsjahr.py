@@ -117,3 +117,44 @@ def test_hauptbelegarten_gelten_nicht_als_nebendokument():
         assert ocr._ist_nebendokument(typ), typ
     assert not ocr._ist_nebendokument("")
     assert not ocr._ist_nebendokument(None)
+
+
+# --------------------------------------------------------------------------
+# N250/N251 — der Name, den die Bestätigungsmaske zeigt, entsteht aus derselben
+# Funktion wie der beim Ablegen. Zwei Aufrufer, eine Wahrheit.
+# --------------------------------------------------------------------------
+
+def test_kostenart_und_dokumenttyp_ergeben_den_genauen_namen():
+    """N251 — der Kern des gemeldeten Fehlers: aus der Kostenart-Karte heraus
+    gescannt, trug der Beleg nur „NK-Grundsteuer" und war damit von der echten
+    Grundsteuer-Rechnung nicht zu unterscheiden. Mit der erkannten Sache als
+    Bezeichnung setzt `dateiname` beides zusammen."""
+    from app.dokumente.namen import dateiname
+    assert dateiname(2025, "Nebenkosten", "Abbuchungsvorankündigung", ".pdf",
+                     6, 174.0, "Grundsteuer") == \
+        "2025-06_NK-Grundsteuer-Abbuchungsvorankündigung_174,00€.pdf"
+    # Wasser genauso — die Regel gilt für jede Kostenart, nicht für einzelne.
+    assert dateiname(2025, "Nebenkosten", "Abbuchungsvorankündigung", ".pdf",
+                     6, None, "Wasser") == \
+        "2025-06_NK-Wasser-Abbuchungsvorankündigung.pdf"
+
+
+def test_hauptbeleg_behaelt_seinen_schlichten_namen():
+    """Gegenprobe: bei einer echten Rechnung ist die Sache die Kostenart selbst
+    — dann darf NICHTS doppelt im Namen stehen."""
+    from app.dokumente.namen import dateiname
+    assert dateiname(2025, "Nebenkosten", "Grundsteuer", ".pdf",
+                     6, 174.0, "Grundsteuer") == \
+        "2025-06_NK-Grundsteuer_174,00€.pdf"
+
+
+def test_geaenderter_name_bleibt_beim_zweiten_lauf_stabil():
+    """N250 — der Nutzer darf den Vorschlag in der Maske ändern; zurück kommt
+    der Stamm als Bezeichnung. `dateiname` muss ihn unverändert wieder
+    herausgeben, sonst wanderte der Name bei jeder Korrektur weiter."""
+    from app.dokumente.namen import dateiname, _bezeichnung
+    vorschlag = dateiname(2025, "Nebenkosten", "Abbuchungsvorankündigung",
+                          ".pdf", 6, 174.0, "Grundsteuer")
+    stamm = _bezeichnung(vorschlag)
+    assert dateiname(2025, "Nebenkosten", stamm, ".pdf",
+                     6, 174.0, "Grundsteuer") == vorschlag

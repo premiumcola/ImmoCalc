@@ -34,6 +34,8 @@ _zustand: dict[str, object] = {
     "ocr_ergaenzt_gesamt": 0,
     # N30: wie viele verwaiste `.immocalc`-Steckbriefe insgesamt aufgeräumt.
     "immocalc_aufgeraeumt_gesamt": 0,
+    # N248: wie viele extern gelöschte Belege aus der Ablage genommen wurden.
+    "entfernt_gesamt": 0,
     "laeuft": False,
 }
 
@@ -48,6 +50,7 @@ def zustand() -> dict:
         "gefunden_gesamt": _zustand["gefunden_gesamt"],
         "ocr_ergaenzt_gesamt": _zustand["ocr_ergaenzt_gesamt"],
         "immocalc_aufgeraeumt_gesamt": _zustand["immocalc_aufgeraeumt_gesamt"],
+        "entfernt_gesamt": _zustand["entfernt_gesamt"],
     }
 
 
@@ -84,6 +87,28 @@ def _ocr_lauf() -> dict:
     try:
         with Session(engine) as session:
             return nachtraeglich_ocren(session)
+    finally:
+        sperre.release()
+
+
+def _abgleich_lauf() -> dict:
+    """N248 — den Stand der Cloud nachziehen: umgezogene Einträge folgen ihrer
+    Datei, und was der Nutzer in der Nextcloud gelöscht hat, verschwindet auch
+    aus der Ablage. Früher lief das nur auf ausdrückliches Anstossen; der
+    Nutzer will es automatisch („ist die Datei halt weg, ist sie weg").
+
+    Die Sicherung steckt im Abgleich selbst: entfernt wird ausschliesslich,
+    was BEWEISBAR fehlt — der Ordner muss gelesen worden sein. Antwortet die
+    Cloud nicht, überspringt `_abgleiche` die Immobilie und rührt keinen
+    Eintrag an. Teilt sich die Sperre mit den anderen Läufen; prüft der Nutzer
+    gerade selbst, tritt der Wachdienst zurück."""
+    from .routers.dokumente import _abgleiche      # spät, wegen Zirkelbezug
+
+    if not sperre.acquire(blocking=False):
+        return {"entfernt": []}
+    try:
+        with Session(engine) as session:
+            return _abgleiche(session, trocken=False)
     finally:
         sperre.release()
 
@@ -126,6 +151,14 @@ async def schleife() -> None:
                 _zustand["ocr_ergaenzt_gesamt"] = \
                     int(_zustand["ocr_ergaenzt_gesamt"]) + ergaenzt
                 log.info("Textschicht ergänzt: %d Beleg(e)", ergaenzt)
+            # N248: den Stand der Cloud nachziehen — extern gelöschte Belege
+            # verschwinden dadurch von selbst aus der Ablage.
+            abgeglichen = await asyncio.to_thread(_abgleich_lauf)
+            entfernt = len(abgeglichen.get("entfernt", []))
+            if entfernt:
+                _zustand["entfernt_gesamt"] = \
+                    int(_zustand["entfernt_gesamt"]) + entfernt
+                log.info("Extern gelöschte Belege entfernt: %d", entfernt)
             # N30: verwaiste `.immocalc`-Steckbriefe im selben Takt aufräumen.
             aufgeraeumt = await asyncio.to_thread(_immocalc_lauf)
             weg = int(aufgeraeumt.get("geloescht", 0))

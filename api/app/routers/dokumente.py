@@ -11,6 +11,7 @@ Alles Weitere ist Korrektur und läuft über einen einzigen Endpunkt: `PATCH`
 mit. `DELETE` entfernt nur den Eintrag; die Datei in der Nextcloud bleibt
 liegen, gelöscht wird dort grundsätzlich nichts.
 """
+import json
 import logging
 from datetime import date
 from typing import Optional
@@ -113,6 +114,50 @@ def _ist_grabstein(pfad: str) -> bool:
     return (pfad or "").startswith(GRABSTEIN)
 
 
+def _ohne_grabsteine(dokumente) -> list[Dokument]:
+    """Nur Einträge, die noch eine Datei meinen — Grabsteine fliegen raus.
+
+    N248/N253 — ein Grabstein (N242) ist kein Beleg mehr, sondern nur noch die
+    Hülle eines gelöschten: er lebt allein deshalb weiter, damit Betrag,
+    KI-Auslese und die Verweise aus Kostenposition/Mietstand nicht ins Leere
+    zeigen. In einer Liste hat er nichts verloren — beim Nutzer sah es sonst
+    aus wie ein Doppel, weil neben dem Grabstein der neue Beleg steht, der
+    seinen freigewordenen Namen übernommen hat.
+
+    Bewusst NICHT gefiltert wird der blosse Status `vermisst` mit echtem Pfad:
+    der ist umkehrbar (die Datei kann zurückkommen) und wird im Eingang mit
+    Abzeichen angezeigt, damit der Nutzer etwas tun kann."""
+    return [d for d in dokumente if not _ist_grabstein(d.pfad)]
+
+
+def _grabstein_setzen(session: Session, d: Dokument) -> None:
+    """Legt den Pfad eines Eintrags als Grabstein beiseite (N242/N248).
+
+    Der Eintrag wird **nicht** gelöscht — er behält KI-Auslese, Betrag und alle
+    Verweise (Kostenposition, Mietstand, Belegdaten). Er gilt als `vermisst`,
+    nur sein Pfad wandert nach `entfernt:…`, damit der Unique-Index den Namen
+    wieder hergibt und die Oberfläche ihn nicht länger als vorhandene Datei
+    führt. Der Vorsatz beginnt bewusst NICHT mit „/": jede Stelle, die „liegt
+    in der Cloud" an genau diesem Zeichen erkennt (`darstellung._zeige`,
+    Vorschau, Umbenennen), behandelt ihn dadurch von selbst richtig.
+
+    Gemeinsame Mechanik zweier Wege: `_verwaisten_eintrag_freigeben` (N242,
+    beim Ablegen eines gleichnamigen Belegs) und `_abgleiche_objekt` (N248,
+    beim Abgleich mit der Cloud)."""
+    grabstein = f"{GRABSTEIN}{d.pfad}"
+    # Derselbe Pfad kann über die Jahre mehrfach verwaisen — jeder
+    # Grabstein braucht seinen eigenen Platz im Unique-Index.
+    n = 2
+    while session.exec(select(Dokument)
+                       .where(Dokument.pfad == grabstein)).first():
+        grabstein = f"{GRABSTEIN}{d.pfad}#{n}"
+        n += 1
+    log.info("Eintrag freigegeben (Datei extern gelöscht): %s", d.pfad)
+    d.pfad = grabstein
+    d.status = VERMISST
+    session.add(d)
+
+
 def _verwaisten_eintrag_freigeben(session: Session, pfad: str) -> bool:
     """N242 — gibt den Namen einer ausserhalb der App gelöschten Datei frei.
 
@@ -138,19 +183,7 @@ def _verwaisten_eintrag_freigeben(session: Session, pfad: str) -> bool:
     if not verwaist:
         return False
     for d in verwaist:
-        grabstein = f"{GRABSTEIN}{d.pfad}"
-        # Derselbe Pfad kann über die Jahre mehrfach verwaisen — jeder
-        # Grabstein braucht seinen eigenen Platz im Unique-Index.
-        n = 2
-        while session.exec(select(Dokument)
-                           .where(Dokument.pfad == grabstein)).first():
-            grabstein = f"{GRABSTEIN}{d.pfad}#{n}"
-            n += 1
-        log.info("Verwaisten Eintrag freigegeben (Datei extern gelöscht): %s",
-                 d.pfad)
-        d.pfad = grabstein
-        d.status = VERMISST
-        session.add(d)
+        _grabstein_setzen(session, d)
     # Der neue Eintrag bekommt gleich denselben Pfad — der Grabstein muss vor
     # ihm in der Datenbank stehen, sonst schlägt der Unique-Index zu.
     session.flush()
@@ -389,12 +422,20 @@ def _scanne(session: Session) -> dict:
 #   * Datei am selben Platz            -> nichts
 #   * Datei woanders, gleicher Name    -> der Eintrag zieht mit (nur Datenbank)
 #   * Datei umbenannt, gleiche Grösse  -> der Eintrag zieht mit (nur Datenbank)
-#   * Datei nirgends mehr              -> Status `vermisst`, sonst nichts
+#   * Datei nirgends mehr, Ordner gelesen   -> aus der Ablage genommen (N248)
+#   * Datei nirgends mehr, Ordner unlesbar  -> nur Status `vermisst`
 #
-# Gelöscht wird nichts, weder in der Cloud noch in der Datenbank: ein Eintrag
-# kann Zeitraum und Zuordnung tragen, die der Nutzer mühsam gesetzt hat. Er
-# wird gekennzeichnet und gemeldet, entfernen darf ihn nur der Nutzer.
-# Angestossen wird das ausdrücklich — der Wachdienst rührt es nie an.
+# N248 — der Nutzer löscht Fehlscans direkt in der Nextcloud und will sie
+# danach auch in ImmoCalc nicht mehr sehen. Das geschieht jetzt von selbst,
+# ohne Rückfrage. Die Bedingung dafür ist streng: es muss FESTSTEHEN, dass die
+# Datei weg ist — also der Ordner, in dem sie lag, tatsächlich gelesen worden
+# sein. Antwortet die Cloud nicht, bleibt jeder Eintrag unangetastet; lieber
+# eine Runde später aufräumen als auf Verdacht.
+#
+# Aus der Datenbank gelöscht wird auch dann nichts: der Eintrag behält
+# Zeitraum, Zuordnung, Betrag und KI-Auslese und legt nur seinen Pfad als
+# Grabstein beiseite (`_grabstein_setzen`). Der Wachdienst stösst den Abgleich
+# im 15-Minuten-Takt selbst an.
 # --------------------------------------------------------------------------
 
 # Wie tief unter dem Objektordner gesucht wird. ImmoCalc legt eine Ebene an;
@@ -402,15 +443,26 @@ def _scanne(session: Session) -> dict:
 ABGLEICH_TIEFE = 4
 
 
-def _baum(client, wurzel: str, tiefe: int = ABGLEICH_TIEFE) -> dict:
+def _baum(client, wurzel: str,
+          tiefe: int = ABGLEICH_TIEFE) -> tuple[dict, set[str]]:
     """Alle Dateien unterhalb eines Ordners, nach Pfad. Rein lesend.
+
+    Gibt zwei Dinge zurück: die gefundenen Dateien **und** die Menge der
+    Ordner, die sich wirklich lesen liessen (`gelesen`).
 
     Ein *Unterordner*, der sich nicht lesen lässt, hält den Abgleich nicht an;
     er wird protokolliert, der Rest wird trotzdem geprüft. Der Objektordner
     selbst dagegen schon: käme dort eine leere Liste zurück, weil die Cloud
     gerade nicht antwortet, gälten mit einem Schlag alle Belege als vermisst.
-    Deshalb reicht sein Fehler nach oben durch."""
+    Deshalb reicht sein Fehler nach oben durch.
+
+    N248 — genau deshalb ist `gelesen` nötig: „Datei nicht in der Liste" heisst
+    nur dann „gelöscht", wenn ihr Ordner auch tatsächlich gelesen wurde. Bei
+    einem übersprungenen Unterordner fehlen SEINE Dateien selbstverständlich —
+    ohne diese Unterscheidung würden sie beim Aufräumen fälschlich als vom
+    Nutzer gelöscht gelten."""
     gefunden: dict = {}
+    gelesen: set[str] = set()
     besucht: set[str] = set()
     offen = [(_norm(wurzel), 0)]
     while offen:
@@ -425,13 +477,14 @@ def _baum(client, wurzel: str, tiefe: int = ABGLEICH_TIEFE) -> dict:
                 raise
             log.warning("Ordner %s nicht lesbar: %s", ordner, fehler)
             continue
+        gelesen.add(ordner)
         for e in eintraege:
             if e.ordner:
                 if ebene < tiefe:
                     offen.append((_norm(e.pfad), ebene + 1))
             else:
                 gefunden[_norm(e.pfad)] = e
-    return gefunden
+    return gefunden, gelesen
 
 
 def _wiedergefunden(d: Dokument, frei: dict, vergeben: set[str]) -> tuple[str, str]:
@@ -463,12 +516,54 @@ def _wiedergefunden(d: Dokument, frei: dict, vergeben: set[str]) -> tuple[str, s
     return "", ""
 
 
+def _mehrdeutig(d: Dokument, frei: dict, vergeben: set[str]) -> bool:
+    """Gibt es mehrere Dateien, die diese hier sein KÖNNTEN?
+
+    `_wiedergefunden` hängt bewusst nicht um, wenn zwei gleich grosse Dateien
+    im selben Ordner liegen — es liesse sich nicht entscheiden, welche die
+    umbenannte ist. Genau dann ist die Datei aber sehr wahrscheinlich noch da,
+    nur anders benannt, und darf nicht als gelöscht aufgeräumt werden."""
+    if not d.groesse:
+        return False
+    ordner = _elternteil(d.pfad)
+    passende = [p for p, e in frei.items()
+                if e.groesse == d.groesse and _elternteil(p) == ordner
+                and p not in vergeben]
+    return len(passende) > 1
+
+
+def _nachweislich_geloescht(d: Dokument, gelesen: set[str], frei: dict,
+                            vergeben: set[str]) -> bool:
+    """N248 — ist diese Datei BEWEISBAR aus der Cloud verschwunden?
+
+    Der Nutzer war hier ausdrücklich: automatisch aufräumen ja, aber niemals
+    auf Verdacht. „Nicht in der Dateiliste" allein genügt deshalb nicht — es
+    muss feststehen, dass der Ordner, in dem sie lag, auch WIRKLICH gelesen
+    wurde. Genau daran unterscheiden sich die beiden Fälle:
+
+    * Ordner gelesen, Datei nicht darin  -> der Nutzer hat sie gelöscht.
+    * Ordner nicht lesbar (Verbindung, Zeitüberschreitung, Rechte)
+      -> gar keine Aussage; der Eintrag bleibt unangetastet.
+
+    Ein Objektordner, der sich nicht lesen liess, kommt hier nie an: sein
+    Fehler bricht `_baum` ab und `_abgleiche` überspringt die ganze Immobilie.
+    Diese Prüfung deckt die Ebene darunter ab — den Unterordner, den `_baum`
+    protokolliert und überspringt.
+
+    Dazu die zweite Bremse: liegen mehrere gleich grosse Kandidaten im Ordner,
+    wurde die Datei vermutlich nur umbenannt (`_mehrdeutig`). Dann bleibt es
+    beim reversiblen `vermisst`."""
+    return (_elternteil(d.pfad) in gelesen
+            and not _mehrdeutig(d, frei, vergeben))
+
+
 def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
-                      dateien: dict, vergeben: set[str],
+                      dateien: dict, gelesen: set[str], vergeben: set[str],
                       trocken: bool) -> dict:
     """Zieht die Einträge einer Immobilie an den Stand der Cloud nach."""
     ergebnis: dict[str, list] = {"verschoben": [], "umbenannt": [],
-                                 "vermisst": [], "wiederda": []}
+                                 "vermisst": [], "wiederda": [],
+                                 "entfernt": []}
     unveraendert = 0
 
     # Erst alle, die noch an ihrem Platz liegen — sie belegen ihre Datei,
@@ -491,6 +586,17 @@ def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
         ziel, art = _wiedergefunden(d, dateien, vergeben)
         if not ziel:
             eintrag = _kurz(d, o)
+            # N248 — steht fest, dass die Datei gelöscht wurde, nimmt der
+            # Eintrag seinen Pfad zurück und verschwindet aus der Oberfläche.
+            # Steht es NICHT fest (Ordner war nicht lesbar), bleibt es beim
+            # blossen Vermerk „vermisst" — reversibel und ohne Datenverlust.
+            if _ist_grabstein(d.pfad):
+                continue                       # längst freigegeben, nichts zu tun
+            if _nachweislich_geloescht(d, gelesen, dateien, vergeben):
+                ergebnis["entfernt"].append(eintrag)
+                if not trocken:
+                    _grabstein_setzen(session, d)
+                continue
             ergebnis["vermisst"].append(eintrag)
             if not trocken and d.status != VERMISST:
                 d.status = VERMISST
@@ -518,7 +624,7 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
     _eindeutigkeit_sichern(session)
     client = verbindung(session)
     zusammen: dict[str, list] = {"verschoben": [], "umbenannt": [],
-                                 "vermisst": [], "wiederda": []}
+                                 "vermisst": [], "wiederda": [], "entfernt": []}
     unveraendert = geprueft = ohne_eintrag = neu = automatisch = 0
     hinweise: list[str] = []
     # Über alle Immobilien hinweg: eine Datei gehört immer nur einem Eintrag.
@@ -528,7 +634,7 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
         if not o.nc_ordner:
             continue
         try:
-            dateien = _baum(client, o.nc_ordner)
+            dateien, gelesen = _baum(client, o.nc_ordner)
         except NextcloudFehler as fehler:
             # Nicht lesbar heisst nicht verschwunden. Lieber diese Immobilie
             # überspringen, als ihren ganzen Bestand als vermisst zu melden.
@@ -544,7 +650,8 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
         geprueft += len(eigene)
         vergeben -= {_norm(d.pfad) for d in eigene}
 
-        teil = _abgleiche_objekt(session, o, eigene, dateien, vergeben, trocken)
+        teil = _abgleiche_objekt(session, o, eigene, dateien, gelesen,
+                                 vergeben, trocken)
         for schluessel in zusammen:
             zusammen[schluessel] += teil[schluessel]
         unveraendert += teil["unveraendert"]
@@ -575,6 +682,10 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
         "umbenannt": zusammen["umbenannt"],
         "vermisst": zusammen["vermisst"],
         "wiederda": zusammen["wiederda"],
+        # N248 — vom Nutzer in der Cloud gelöscht und deshalb automatisch aus
+        # der Ablage genommen. Der Datensatz bleibt (Betrag, KI-Auslese,
+        # Verweise), nur sein Pfad ist ein Grabstein.
+        "entfernt": zusammen["entfernt"],
         "neu": neu,
         "automatisch": automatisch,
         "offen": neu - automatisch,
@@ -631,9 +742,11 @@ def abgleich_plan(session: Session = Depends(get_session)) -> dict:
 def abgleich(session: Session = Depends(get_session)) -> dict:
     """Liest die Objektordner vollständig neu ein (CXXVII).
 
-    Neue Dateien kommen herein, umgezogene Einträge ziehen mit, und was in der
-    Cloud nicht mehr auffindbar ist, wird als `vermisst` gekennzeichnet statt
-    stillschweigend weiterzuleben. Gelöscht wird nichts."""
+    Neue Dateien kommen herein, umgezogene Einträge ziehen mit, und was der
+    Nutzer in der Cloud gelöscht hat, nimmt die App von sich aus aus der
+    Ablage (N248) — aber nur, wo der Ordner auch wirklich gelesen werden
+    konnte. War er es nicht, bleibt es beim reversiblen Vermerk `vermisst`.
+    Der Datensatz selbst wird nie gelöscht."""
     if not sperre.acquire(blocking=False):
         raise HTTPException(409, "Der Eingang wird gerade geprüft — "
                                  "einen Moment, dann noch einmal versuchen.")
@@ -641,8 +754,10 @@ def abgleich(session: Session = Depends(get_session)) -> dict:
         ergebnis = _abgleiche(session, trocken=False)
     finally:
         sperre.release()
-    log.info("Abgleich: %d geprüft, %d vermisst, %d umgehängt, %d neu",
-             ergebnis["geprueft"], len(ergebnis["vermisst"]),
+    log.info("Abgleich: %d geprüft, %d entfernt, %d vermisst, %d umgehängt, "
+             "%d neu",
+             ergebnis["geprueft"], len(ergebnis["entfernt"]),
+             len(ergebnis["vermisst"]),
              len(ergebnis["verschoben"]) + len(ergebnis["umbenannt"]),
              ergebnis["neu"])
     return ergebnis
@@ -661,7 +776,9 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
     baut ihre Filter aus dem, was wirklich da ist."""
     objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
     nach_slug = {o.slug: o for o in objekte.values()}
-    alle = session.exec(select(Dokument)).all()
+    # N253 — Grabsteine gelöschter Belege gehören in keine Liste; auch die
+    # Facetten-Zahlen unten sollen sie nicht mitzählen.
+    alle = _ohne_grabsteine(session.exec(select(Dokument)).all())
 
     if objekt and objekt not in nach_slug:
         raise HTTPException(404, "Objekt nicht gefunden")
@@ -1108,8 +1225,10 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
             haengt_an.setdefault(e.quelle_dokument_id, rubrik)
             quelle_von[(typname[modell], e.id)] = e.quelle_dokument_id
 
-    dokumente = [d for d in session.exec(select(Dokument).where(
-        Dokument.objekt_id == o.id)).all() if not _ist_sidecar(d.dateiname)]
+    # N253 — Grabsteine gelöschter Belege stehen in keinem Ordner mehr und
+    # gehören deshalb auch in keinen Ast des Baums.
+    dokumente = [d for d in _ohne_grabsteine(session.exec(select(Dokument).where(
+        Dokument.objekt_id == o.id)).all()) if not _ist_sidecar(d.dateiname)]
 
     aeste: dict[str, dict] = {}
     for d in sorted(dokumente, key=lambda x: (-(x.jahr or 0), x.dateiname.lower())):
@@ -1195,12 +1314,14 @@ def belege_zum_eintrag(slug: str, typ: str, eid: int,
     quelle = getattr(eintrag, "quelle_dokument_id", None)
     if quelle:
         d = session.get(Dokument, quelle)
-        if d and not _ist_sidecar(d.dateiname):
+        # N253 — ein Grabstein ist kein vorzeigbarer Beleg mehr.
+        if d and not _ist_sidecar(d.dateiname) and not _ist_grabstein(d.pfad):
             haupt = _beleg_karte(d)
 
     kette = _miete_kette(session, eid) if typ == "miete" else [eid]
-    unter = [_beleg_karte(d) for d in session.exec(select(Dokument).where(
-        Dokument.info_zu_typ == typ, Dokument.info_zu_id.in_(kette))).all()
+    unter = [_beleg_karte(d) for d in _ohne_grabsteine(session.exec(
+        select(Dokument).where(
+            Dokument.info_zu_typ == typ, Dokument.info_zu_id.in_(kette))).all())
         if not _ist_sidecar(d.dateiname) and d.id != quelle]
     # Der Hauptbeleg jedes Vorgängers hat keinen eigenen `haupt`-Platz mehr
     # (der gehört dem aktuellen Stand) — er zählt hier als weiterer Beleg.
@@ -1665,6 +1786,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   datei_jahr: int | None = Form(None),
                   an_typ: str = Form(""),
                   an_id: int | None = Form(None),
+                  ki_json: str = Form(""),
                   datei: UploadFile = File(...),
                   session: Session = Depends(get_session)) -> dict:
     """Nimmt ein abfotografiertes Dokument entgegen, benennt es nach Schema
@@ -1682,6 +1804,14 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
     `kostenart` ist die genaue Position innerhalb der Art (CLXXI) —
     „Kaminkehrer" unter „Nebenkosten".
+
+    `ki_json` ist die Auslese, die die Oberfläche vor dem Ablegen schon geholt
+    hat (N255) — als JSON durchgereicht und hier am frischen Beleg festgehalten.
+    Ohne das ginge sie verloren: `/erkennen` läuft auf den nackten Bytes, da
+    gibt es den Datensatz noch nicht, an dem `ki_einordnung`/`ki_felder` hängen
+    könnten. Der Beleg stünde später ohne Dokumentenerkennung da, und ein
+    erneutes Lesen kostete Tokens des Nutzers. Freiwillig: fehlt das Feld oder
+    ist es unbrauchbar, läuft alles wie zuvor.
 
     `datei_jahr` ist ein freiwilliger Rückfall (CCCLXXXIV): das Jahr des
     Datei-Datums (`File.lastModified`), das die Oberfläche mitschickt. Es greift
@@ -1753,6 +1883,23 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     session.refresh(d)
     log.info("Scan abgelegt: %s", d.pfad)
 
+    # N255 — die Auslese, die die Oberfläche schon geholt hat, gleich am
+    # frischen Beleg festhalten. Sie lief auf den nackten Bytes, bevor es
+    # diesen Datensatz gab; ohne diesen Schritt bliebe `ki_einordnung`/
+    # `ki_felder` für JEDEN gescannten Beleg dauerhaft leer — die
+    # Dokumentenerkennung fehlte im Beleg-Fenster, und ein Nachholen kostete
+    # Tokens des Nutzers. Streng defensiv: unbrauchbares JSON wird verworfen,
+    # der Scan ist längst erfolgreich und darf daran nie scheitern.
+    if ki_json:
+        try:
+            gelesen = json.loads(ki_json)
+            if isinstance(gelesen, dict):
+                _ki_am_beleg_festhalten(session, d, gelesen)
+        except Exception as fehler:                   # noqa: BLE001
+            session.rollback()
+            d = session.get(Dokument, d.id) or d
+            log.warning("KI-Auslese nicht am Scan festgehalten: %s", fehler)
+
     # CD — byte-gleiche Zweitkopie desselben Objekts nicht stehen lassen: legt
     # der Nutzer denselben Beleg unter einem detaillierteren Namen erneut ab,
     # weicht die schlechtere Kopie (Keeper-Regel `_dedup_rang`). Best-effort und
@@ -1787,6 +1934,36 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
             "abgelegt": True, "objekt": o.slug, "zeitraum_id": d.zeitraum_id,
             "dublette_entfernt": dublette_entfernt,
             "an_typ": an_typ, "an_id": an_id if an_typ else None}
+
+
+@router.post("/namensvorschlag")
+def namensvorschlag(kategorie: str = Form("Sonstiges"),
+                    kostenart: str = Form(""),
+                    jahr: int | None = Form(None),
+                    beschreibung: str = Form(""),
+                    monat: int | None = Form(None),
+                    betrag: float | None = Form(None),
+                    datum: str = Form(""),
+                    datei_jahr: int | None = Form(None),
+                    dateiname_roh: str = Form("")) -> dict:
+    """N250 — wie hiesse dieser Beleg? Rechnet nur, legt nichts ab.
+
+    Die Bestätigungsmaske nach dem Scan zeigt den vorgeschlagenen Namen, bevor
+    gespeichert wird. Damit dort nicht eine zweite, langsam auseinanderlaufende
+    Namensregel im Browser entsteht, fragt sie dieselbe Funktion, die auch
+    `/scannen` benutzt (`dateiname`) — eine Wahrheit, zwei Aufrufer.
+
+    Bewusst ohne Datei und ohne Datenbank: der Aufruf ist rein rechnerisch,
+    kostet nichts und darf deshalb bei jeder Änderung im Feld erneut laufen.
+    Der Kollisions-Zusatz („-2") fehlt hier absichtlich — ob ein Name frei ist,
+    entscheidet erst die Ablage in `_freier_name`, live gegen die Cloud."""
+    erkannt_jahr, erkannt_monat = _aus_datum(datum)
+    jahr = jahr or erkannt_jahr
+    jahr = _jahr_mit_fallback(jahr, dateiname_roh or "", datei_jahr)
+    endung = _endung(dateiname_roh or "") or ".pdf"
+    name = dateiname(jahr, kategorie or "Sonstiges", beschreibung or "Scan",
+                     endung, monat or erkannt_monat, betrag, kostenart)
+    return {"name": name}
 
 
 # --------------------------------------------------------------------------
@@ -2195,6 +2372,13 @@ def aendern(dokument_id: int, data: AenderungIn,
     # Datenbank wechselt, wäre in der Cloud nicht mehr zu finden — und stünde
     # trotzdem als „zugeordnet" da.
     _cloud_pflicht(o)
+    if _ist_grabstein(d.pfad):
+        # N248 — hier wissen wir es genau: die Datei wurde in der Nextcloud
+        # gelöscht. Das gehört gesagt, statt es als „gibt es keine Datei"
+        # abzutun.
+        raise HTTPException(409, "Diese Datei liegt nicht mehr in der Nextcloud "
+                                 "— sie wurde dort gelöscht. Bitte den Beleg "
+                                 "neu einscannen.")
     if not d.pfad.startswith("/"):
         # Eintrag ohne Datei in der Cloud: Ehrlichkeit vor Erfolgsmeldung.
         raise HTTPException(409, "Zu diesem Eintrag gibt es keine Datei in der "

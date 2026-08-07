@@ -226,16 +226,11 @@ export function stromKopfHtml(k) {
   if (!istStromKettePos(k)) return '';
   const m = stromAufteilung();
   if (!(m.gesamt > 0)) return '';
+  // N258(e) — in der zugeklappten Übersicht nur noch Gesamtmenge und Autarkie.
+  // „extern" und „eigen" sind die Aufschlüsselung derselben Zahl; sie stehen
+  // eine Reihe tiefer in der Stromkette und machten die Zeile hier nur voll.
   const teile = [`<span class="mchip" title="Verbrauch der Periode">${
     chipZahl(m.gesamt)}&nbsp;kWh gesamt</span>`];
-  if (m.extern > 0) {
-    teile.push(`<span class="mchip extern" title="aus dem Netz zugekauft">${
-      chipZahl(m.extern)}&nbsp;extern</span>`);
-  }
-  if (m.eigen > 0) {
-    teile.push(`<span class="mchip intern" title="aus der eigenen Anlage
-      (PV und Speicher)">${chipZahl(m.eigen)}&nbsp;eigen</span>`);
-  }
   if (m.quote != null && m.extern > 0 && m.eigen > 0) {
     teile.push(`<span class="mchip intern" title="Anteil aus der eigenen Anlage
       am Gesamtverbrauch">${Math.round(m.quote * 100)}&nbsp;% autark</span>`);
@@ -443,7 +438,14 @@ export function effektivErledigt(k) {
   if (istStromKettePos(k) || istWarmwasserPos(k)) {
     return !!k.erledigt;
   }
-  return !!k.erledigt || positionsBetrag(k) > 0.005;
+  // N256 — allein der Betrag entscheidet, nicht das gespeicherte Kennzeichen.
+  // N238 leitet `Kostenposition.status` beim Schreiben aus dem Betrag ab
+  // („erledigt" bei > 0, sonst „offen"), doch Zeilen aus der Zeit davor tragen
+  // weiter `status='erledigt'` bei `betrag=0` — die Karte stand grün mit einem
+  // Haken und „0 €" da, obwohl nur ein Infobeleg (SEPA-Mandat) daranhing. Der
+  // gespeicherte Wert wird deshalb hier nicht mehr geglaubt; `positionsBetrag`
+  // deckt auch die berechneten Fälle ab (Wasser-Summe, Heizöl, Warmwasser …).
+  return positionsBetrag(k) > 0.005;
 }
 
 /* N189 — Fortschritt zählt, was die Checkliste WIRKLICH zeigt. */
