@@ -1643,7 +1643,11 @@ export function initHandlers() {
     state.setScanZiel(null);
     if (!dateien.length || !ziel) return;
 
-    const knopf = ziel.knopf;
+    // N268 — der Anhänger-Weg startet aus einem Dialog, der beim Scannen schon
+    // wieder zu ist: dort gibt es keinen Knopf zum Ausgrauen. Ein Blindobjekt
+    // statt eines `if` an fünf Stellen — der Ablauf bleibt genau einer.
+    const knopf = ziel.knopf
+      || { disabled: false, querySelector: () => null };
     const beschriftung = knopf.querySelector('.st');
     const urText = beschriftung ? beschriftung.textContent : '';
     knopf.disabled = true;
@@ -1702,6 +1706,18 @@ export function initHandlers() {
       }
       const uebernommen = await betragVorschlagen(ziel.kostenart, vorschlag,
                                                   entscheidung.betrag);
+      // N268 — aus dem „Beleg anhängen"-Dialog heraus gescannt: trägt der Beleg
+      // keinen Betrag, ist er ein Infobeleg und wird als Anhänger gesetzt —
+      // genau das, wofür der Nutzer den Dialog geöffnet hat. Mit Betrag bleibt
+      // es eine gewöhnliche Kostenposition; ein Anhänger daneben wäre dieselbe
+      // Datei zweimal am selben Thema.
+      if (ziel.anhaengerFuer && !uebernommen) {
+        await api(`/dokumente/${ergebnis.id}/anhaenger`, {
+          method: 'POST',
+          body: { zeitraum_id: Number(state.zid), kostenart: ziel.anhaengerFuer },
+        }).catch(() => {});
+        melde(`Infobeleg an „${ziel.anhaengerFuer}“ gehängt`, 'pos');
+      }
       // N238/N243 — ein als nicht kostenrelevant erkannter Beleg (Info-
       // Schreiben, SEPA-Mandat, Abbuchungsvorankündigung …) SOLL keinen Betrag
       // tragen; der Hinweis „bitte von Hand eintragen" ist dort schlicht

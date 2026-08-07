@@ -128,8 +128,13 @@ function anhaengerWaehlen(kostenart) {
     dlg.className = 'immo-dlg ahdlg';
     dlg.innerHTML = `
       <div class="dt">Beleg an „${esc(kostenart)}“ hängen</div>
-      <p>Ein Zusatzbeleg ohne Kostenanteil — er erscheint als kleiner Anhänger
-        am Thema, ohne Betrag.</p>
+      <p>Trägt der Beleg keinen Betrag, hängt er als Infobeleg am Thema — mit
+        Betrag wird er zur Kostenposition.</p>
+      <button type="button" class="ahscan" data-neu>
+        ${KEINE_KAMERA ? UPLOAD_ICON : FOTO_ICON}
+        <span class="ahn">${KEINE_KAMERA ? 'Datei wählen' : 'Abfotografieren'}</span>
+      </button>
+      <div class="ahtrenn">oder aus dem Bestand</div>
       <div class="ahliste">${liste}</div>
       <button class="btn leise" data-nein>Abbrechen</button>`;
     document.body.appendChild(dlg);
@@ -137,7 +142,10 @@ function anhaengerWaehlen(kostenart) {
     dlg.addEventListener('cancel', () => fertig(null));
     dlg.addEventListener('click', e => {
       const pick = e.target.closest('[data-pick]');
-      if (pick) { fertig(Number(pick.dataset.pick)); dlg.close(); }
+      // N268 — statt aus dem Bestand zu wählen, den Beleg gleich hier
+      // aufnehmen. Der Rückgabewert sagt dem Aufrufer, welcher Weg gemeint war.
+      if (e.target.closest('[data-neu]')) { fertig({ scan: true }); dlg.close(); }
+      else if (pick) { fertig(Number(pick.dataset.pick)); dlg.close(); }
       else if (e.target.closest('[data-nein]')) { fertig(null); dlg.close(); }
     });
     dlg.showModal();
@@ -145,8 +153,19 @@ function anhaengerWaehlen(kostenart) {
 }
 
 export async function anhaengen(kostenart) {
-  const id = await anhaengerWaehlen(kostenart);
-  if (!id) return;
+  const wahl = await anhaengerWaehlen(kostenart);
+  if (!wahl) return;
+  // N268 — der Foto-Weg läuft durch dieselbe Scan-Kette wie die Kostenart-Karte
+  // (Zuschnitt, Auslese, Bestätigungsmaske). Was danach passiert, entscheidet
+  // der Betrag: mit Betrag wird es eine Kostenposition, ohne ein Anhänger.
+  // `anhaengerFuer` ist das einzige Unterscheidungsmerkmal, das die Kette
+  // dafür braucht — siehe `checkliste.js`.
+  if (wahl.scan) {
+    state.setScanZiel({ kostenart, anhaengerFuer: kostenart });
+    document.getElementById('scanFeld').click();
+    return;
+  }
+  const id = wahl;
   try {
     await api(`/dokumente/${id}/anhaenger`,
       { method: 'POST', body: { zeitraum_id: Number(state.zid), kostenart } });
