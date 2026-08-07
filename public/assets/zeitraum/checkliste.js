@@ -334,13 +334,21 @@ function anhaengerListe(k) {
 
 /* N257 — alle Belege einer Kostenart, getrennt nach dem, was sie unterscheidet:
    ob sie auf die Kostenposition zahlen oder nur danebenliegen. Beide Quellen
-   sind die schon vorhandenen — `belegeZu` (die Belege der Position, sie tragen
-   den Rechenweg) und die Anhänger. Nichts wird hier neu erraten. Nach `id`
-   entdoppelt, die Kostenzuordnung gewinnt. */
+   sind die schon vorhandenen — `belegeZu` (die Belege der Position) und die
+   Anhänger. Nichts wird hier neu erraten. Nach `id` entdoppelt.
+
+   N259 — entscheidend ist der BETRAG, nicht die Verknüpfung: ein SEPA-Mandat
+   war an der Müll-Position angehängt und stand deshalb unter „mit
+   Kostenzuordnung", obwohl es keinen Euro trägt (die Erkennung sagt selbst
+   „ohne konkrete Kostenangaben"). Verknüpft-aber-betraglos ist ein Info-Beleg,
+   und genau das soll die Trennung zeigen. */
 function belegeGruppen(k) {
-  const mit = belegeZu(k) || [];
+  const alle = belegeZu(k) || [];
+  const mit = alle.filter(d => Number(d.betrag) > 0.005);
   const gesehen = new Set(mit.map(d => d.id));
-  const ohne = anhaengerListe(k).filter(d => !gesehen.has(d.id));
+  const ohne = [...alle.filter(d => !gesehen.has(d.id)),
+                ...anhaengerListe(k).filter(d => !gesehen.has(d.id))]
+    .filter((d, i, a) => a.findIndex(x => x.id === d.id) === i);
   return { mit, ohne, anzahl: mit.length + ohne.length };
 }
 
