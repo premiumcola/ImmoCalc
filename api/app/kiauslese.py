@@ -63,7 +63,8 @@ SYSTEM_PROMPT = (
     "Du liest einen deutschen Immobilien-Beleg (Rechnung/Bescheid/Vertrag). "
     "Gib NUR JSON zurück, kein weiterer Text:\n"
     '{"dokumenttyp":"…","kategorie":"…","absender":"…","immobilie":"…","einheit":"…",'
-    '"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,"ist_kosten":true|false,'
+    '"datum":"YYYY-MM-DD|null","betrag":<Zahl|null>,'
+    '"teilbetrag":<Zahl|null>,"teilzahlungen":<Zahl|null>,"ist_kosten":true|false,'
     '"kosten_relevant":true|false,"nebenkosten":true|false,'
     '"zeitraum_hinweis":"…","abrechnungsjahr":<Jahr|null>,'
     '"kostenart":"…","felder":{…},'
@@ -105,6 +106,22 @@ SYSTEM_PROMPT = (
     "und NICHT der monatliche Abschlag. Beispiel: \"Stromlieferung … 862,51 — "
     "abzüglich geleisteter Zahlungen -807,00 — Nachzahlung 55,51 — monatliche "
     "Abschlagszahlung 72,00\" → betrag = 862.51. "
+    # N262 — eine Abbuchungsvorankündigung nennt Raten, keine Jahressumme. Der
+    # Nutzer will den JAHRESWERT in der Nebenkostenabrechnung stehen haben; die
+    # Herleitung wird zusätzlich ausgewiesen, damit sie prüfbar bleibt.
+    "TEILBETRÄGE HOCHRECHNEN: Nennt der Beleg keine Gesamtsumme, sondern gleich "
+    "hohe Teilbeträge zu mehreren Fälligkeitsterminen (Abbuchungs-/Lastschrift"
+    "vorankündigung, Ratenplan, Quartals- oder Abschlagszahlung), dann setze "
+    "teilbetrag = der einzelne Fälligkeitsbetrag, teilzahlungen = die Anzahl "
+    "solcher Zahlungen im JAHR, und betrag = teilbetrag × teilzahlungen, also "
+    "den Jahresbetrag. Grundsteuer und kommunale Grundabgaben werden in "
+    "Deutschland zu den gesetzlichen Terminen 15.02., 15.05., 15.08. und 15.11. "
+    "fällig — das sind VIER Quartalszahlungen im Jahr, auch wenn das Schreiben "
+    "nur zwei davon aufführt. Beispiel: \"15.08.2026 … 87,00\" und \"15.11.2026 "
+    "… 87,00\" → teilbetrag = 87, teilzahlungen = 4, betrag = 348. Halbjährliche "
+    "Fälligkeit = 2, jährliche (01.07.) = 1, monatliche = 12. Steht dagegen eine "
+    "echte Jahres-/Gesamtsumme auf dem Beleg, gilt DIESE als betrag und "
+    "teilbetrag/teilzahlungen bleiben null. "
     "ist_kosten = false bei reinen Info-Belegen (SEPA-Mandat, Zählerstand, "
     "Ableseprotokoll), sonst true. "
     "kosten_relevant = true NUR, wenn auf dem Beleg echte, bezifferte Kosten "
@@ -112,6 +129,12 @@ SYSTEM_PROMPT = (
     "bloße Bescheinigung, ein Mess-/Prüfprotokoll (z. B. Schornsteinfeger-"
     "Messbescheinigung), ein Zählerstand oder ein Informationsschreiben OHNE "
     "geforderten Betrag = false. Ist kosten_relevant=false, setze betrag=null. "
+    # N262 — der Fehler, der das ausgelöst hat: eine Abbuchungsvorankündigung
+    # mit zweimal 87,00 € wurde als „ohne Kostenangabe" abgetan.
+    "ACHTUNG: Eine Abbuchungs-/Lastschriftvorankündigung MIT bezifferten "
+    "Fälligkeitsbeträgen ist kosten_relevant = true — sie nennt die Kosten, auch "
+    "wenn sie keine Rechnung ist. Nur ohne jeden Betrag (reines Mandat, blosse "
+    "Terminankündigung) bleibt sie false. "
     "nebenkosten = true, wenn diese Kosten in die Nebenkosten-/Betriebskosten-"
     "abrechnung des Mieters gehören (umlagefähig: Wasser, Abwasser, Müll, "
     "Heizung, Schornsteinfeger, Grundsteuer, Gebäudeversicherung, Hausmeister, "
@@ -229,6 +252,33 @@ def _datum(wert) -> str | None:
         return date.fromisoformat(roh).isoformat()
     except ValueError:
         return None
+
+
+def _hochrechnung(betrag: float | None, teilbetrag: float | None,
+                  anzahl) -> tuple[float | None, int | None, float | None]:
+    """N262 — Teilbetrag × Anzahl = Jahresbetrag, hier nachgerechnet.
+
+    Das Modell soll `betrag` bereits als Jahressumme liefern. Verlassen wird
+    sich darauf nicht: Rechnen ist die schwächste Seite eines Sprachmodells,
+    und ein falscher Jahreswert landete ungeprüft in der Abrechnung. Liegen
+    Teilbetrag und Anzahl vor, gilt deshalb **das Produkt**, nicht die vom
+    Modell genannte Summe.
+
+    Unplausibles wird verworfen statt geraten: eine Anzahl ausserhalb von 1…12
+    ist keine Zahlweise, die es gibt. Fehlt eines von beiden, bleibt alles wie
+    es war — dann gab es schlicht keine Teilzahlung zu erkennen.
+    """
+    stueck = None
+    try:
+        stueck = int(anzahl)
+    except (TypeError, ValueError):
+        stueck = None
+    if not teilbetrag or stueck is None or not 1 <= stueck <= 12:
+        return None, None, betrag
+    if stueck == 1:
+        # Eine einzige Zahlung ist keine Hochrechnung — sie IST der Betrag.
+        return None, None, betrag if betrag else teilbetrag
+    return teilbetrag, stueck, round(teilbetrag * stueck, 2)
 
 
 def _betrag(wert) -> float | None:
@@ -499,9 +549,18 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
     # der Einordnung. Ältere Antworten kennen nur „einordnung" — dann gilt die.
     zusammenfassung = _langtext(block.get("zusammenfassung")
                                 or block.get("einordnung"))
+    teilbetrag, teilzahlungen, betrag = _hochrechnung(
+        _betrag(block.get("betrag")),
+        _betrag(block.get("teilbetrag")),
+        block.get("teilzahlungen"))
     ergebnis = {
         "datum": _datum(block.get("datum")),
-        "betrag": _betrag(block.get("betrag")),
+        "betrag": betrag,
+        # N262 — die Herleitung bleibt sichtbar: die Bestätigungsmaske zeigt
+        # „87,00 € × 4 = 348,00 €", damit der Nutzer erkennt, dass der Wert
+        # gerechnet und nicht abgelesen ist, und ihn ggf. überschreibt.
+        "teilbetrag": teilbetrag,
+        "teilzahlungen": teilzahlungen,
         "kostenart": _text(block.get("kostenart")),
         "kategorie": _text(block.get("kategorie")),
         "ist_kosten": bool(block.get("ist_kosten", True)),

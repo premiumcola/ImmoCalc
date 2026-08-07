@@ -486,6 +486,12 @@ function kiZeilen(w) {
     zeilen.push([label, text]);
   };
   if (typeof w.betrag === 'number') dazu('Betrag', eur(w.betrag));
+  // N262 — steht der Betrag nicht auf dem Beleg, sondern ist aus Teilzahlungen
+  // gerechnet, gehört das dazu. Ein Jahreswert, den niemand herleiten kann,
+  // wäre in der Abrechnung nicht nachvollziehbar.
+  if (typeof w.teilbetrag === 'number' && w.teilzahlungen > 1) {
+    dazu('Hochgerechnet', `${eur(w.teilbetrag)} × ${w.teilzahlungen}`);
+  }
   if (w.datum) dazu('Datum', datumDe(w.datum));
   else if (w.jahr) dazu('Jahr', w.jahr);
   dazu('Kategorie', w.kategorie);

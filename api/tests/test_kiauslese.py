@@ -388,3 +388,76 @@ def test_erkennen_ohne_bereich_bleibt_wie_zuvor(monkeypatch):
     body = _post_bereich("").json()
     assert "formwerte" not in body
     assert "formname" not in body
+
+
+# --------------------------------------------------------------------------
+# N262 — Teilzahlungen auf den Jahresbetrag hochrechnen
+#
+# Der ausloesende Fall: eine Abbuchungsvorankuendigung der Stadt Eckental fuer
+# Grundsteuer B nennt zweimal 87,00 EUR (faellig 15.08. und 15.11.). Die
+# Auslese schrieb dazu „nennt aber keine konkreten Betraege" — obwohl die
+# Grundsteuer vierteljaehrlich faellig wird und damit 348,00 EUR im Jahr
+# kostet. Gerechnet wird bewusst SERVERSEITIG: das Produkt ist die schwaechste
+# Stelle einer Modellantwort, und ein falscher Jahreswert landete sonst
+# ungeprueft in der Nebenkostenabrechnung.
+# --------------------------------------------------------------------------
+GRUNDSTEUER = ('{"dokumenttyp":"Abbuchungsvorank\\u00fcndigung",'
+               '"kategorie":"Nebenkosten","kostenart":"Grundsteuer",'
+               '"datum":"2026-06-11","betrag":348,'
+               '"teilbetrag":87,"teilzahlungen":4,'
+               '"ist_kosten":true,"kosten_relevant":true,"nebenkosten":true,'
+               '"zusammenfassung":"Grundsteuer B, vierteljaehrlich."}')
+
+
+def _auslese(text, monkeypatch):
+    """Die Auslese mit einer gestellten Modellantwort — kein Netzaufruf."""
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(text))
+    return kiauslese.lies_beleg("Abbuchungsvorankündigung Grundsteuer B",
+                                "beleg.pdf", schluessel="test")
+
+
+def test_quartalszahlung_wird_auf_das_jahr_hochgerechnet(monkeypatch):
+    ergebnis = _auslese(GRUNDSTEUER, monkeypatch)
+    assert ergebnis is not None
+    assert ergebnis["betrag"] == 348.0
+    # Die Herleitung bleibt sichtbar — sonst stuende ein Jahreswert da, den
+    # niemand nachvollziehen kann.
+    assert ergebnis["teilbetrag"] == 87.0
+    assert ergebnis["teilzahlungen"] == 4
+    assert ergebnis["kosten_relevant"] is True
+
+
+def test_falsches_produkt_des_modells_wird_korrigiert(monkeypatch):
+    """Rechnen ist die schwaechste Seite eines Sprachmodells. Liegen Teilbetrag
+    und Anzahl vor, gilt das nachgerechnete Produkt — nicht die genannte Summe."""
+    ergebnis = _auslese(GRUNDSTEUER.replace('"betrag":348', '"betrag":174'),
+                        monkeypatch)
+    assert ergebnis["betrag"] == 348.0
+
+
+def test_einzelne_zahlung_ist_keine_hochrechnung(monkeypatch):
+    """Eine jaehrliche Faelligkeit ist der Betrag selbst — dann darf keine
+    Herleitung angezeigt werden, es gibt nichts herzuleiten."""
+    ergebnis = _auslese(GRUNDSTEUER.replace('"teilzahlungen":4',
+                                            '"teilzahlungen":1'), monkeypatch)
+    assert ergebnis["teilbetrag"] is None
+    assert ergebnis["teilzahlungen"] is None
+    assert ergebnis["betrag"] == 348.0
+
+
+def test_unplausible_anzahl_wird_verworfen(monkeypatch):
+    """36 Zahlungen im Jahr gibt es nicht — dann lieber ohne Hochrechnung als
+    mit einem erfundenen Vielfachen."""
+    ergebnis = _auslese(GRUNDSTEUER.replace('"teilzahlungen":4',
+                                            '"teilzahlungen":36'), monkeypatch)
+    assert ergebnis["teilbetrag"] is None
+    assert ergebnis["betrag"] == 348.0
+
+
+def test_beleg_ohne_teilzahlungen_bleibt_unveraendert(monkeypatch):
+    """Additiv: eine gewoehnliche Rechnung kennt die neuen Felder nicht und
+    behaelt ihren Betrag."""
+    ergebnis = _auslese(GRUNDSTEUER.replace('"teilbetrag":87,', '')
+                        .replace('"teilzahlungen":4,', ''), monkeypatch)
+    assert ergebnis["betrag"] == 348.0
+    assert ergebnis["teilbetrag"] is None

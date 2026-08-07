@@ -689,6 +689,12 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
         ergebnis["jahr"] = ki["abrechnungsjahr"]
     if ki.get("betrag") is not None:
         ergebnis["betrag"] = ki["betrag"]
+    # N262 — die Herleitung des Jahresbetrags aus Teilzahlungen mitreichen. Sie
+    # steht neben dem Betrag in der Bestätigungsmaske („87,00 € × 4 = 348,00 €"),
+    # damit erkennbar bleibt, dass der Wert gerechnet und nicht abgelesen ist.
+    if ki.get("teilbetrag") is not None and ki.get("teilzahlungen"):
+        ergebnis["teilbetrag"] = ki["teilbetrag"]
+        ergebnis["teilzahlungen"] = ki["teilzahlungen"]
     # CCLXXI: Die KI versteht den Beleg besser als die Wortlisten und soll die
     # ORDNERZUORDNUNG bestimmen. Ihre Kategorie überschreibt die Heuristik —
     # aber nur, wenn sie einen echten Zielordner benennt (sonst könnte ein
