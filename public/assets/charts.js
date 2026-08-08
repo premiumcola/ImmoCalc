@@ -551,7 +551,14 @@ const datumVoll = ms => { const d = new Date(ms);
  *  `von`/`bis`: 'YYYY-MM-DD', Zeitraum der Renovierung — fehlen sie, wird er
  *  aus den Punkten abgeleitet. */
 export function zeitstrahl(punkte, { breite = 380, hoehe = 190,
-                                     von = '', bis = '' } = {}) {
+                                     von = '', bis = '', spuren = null } = {}) {
+  // N279 — mit `spuren` bekommt jede Gruppe (Gewerk) ihre eigene Zeile in der
+  // Farbe der Legende. Das loest zwei Probleme auf einmal: die Punkte
+  // ueberlagern sich nicht mehr, und die Beschriftung am Punkt entfaellt —
+  // die Zeile sagt ja, worum es geht.
+  if (Array.isArray(spuren) && spuren.length) {
+    return spurenStrahl(punkte, { breite, von, bis, spuren });
+  }
   const eintraege = (punkte || []).filter(p => p.datum && p.wert > 0);
   if (!eintraege.length) return leer('Keine Rechnungen für diesen Zeitraum');
 
@@ -678,5 +685,116 @@ export function zeitstrahl(punkte, { breite = 380, hoehe = 190,
       <line x1="${padL}" y1="${achsenY}" x2="${breite - padR}" y2="${achsenY}"
             stroke="#D6DCDD" stroke-width="1"/>
       ${punkteHtml}${beschriftungHtml}${marken}
+    </svg>`;
+}
+
+/**
+ * N279 — Zeitstrahl mit einer Spur je Gewerk (Swimlanes).
+ *
+ * Bei einer Renovierung laufen die Gewerke nebeneinander her: der Sanitaer
+ * kommt dreimal, der Maler einmal, der Elektriker zieht sich ueber Monate.
+ * In EINER Zeile uebereinandergelegt ergibt das einen Klumpen, in dem sich
+ * die Punkte gegenseitig verdecken und die Beschriftungen kollidieren — genau
+ * das war der gemeldete Zustand. Je Gewerk eine eigene Zeile loest beides:
+ * die Zeile traegt den Namen (keine Punktbeschriftung mehr noetig) und die
+ * Farbe der Legende, und die Punkte koennen sich nicht mehr ueberlagern.
+ *
+ * `spuren`: [{ name, farbe }] — Reihenfolge und Farbe kommen vom Aufrufer,
+ * damit Ring, Legende und Zeitstrahl dieselbe Sprache sprechen.
+ */
+function spurenStrahl(punkte, { breite, von, bis, spuren }) {
+  const eintraege = (punkte || []).filter(p => p.datum && p.wert > 0);
+  if (!eintraege.length) return leer('Keine Rechnungen für diesen Zeitraum');
+
+  const zeiten = eintraege.map(p => datumMs(p.datum));
+  const vonMs = von ? datumMs(von) : Math.min(...zeiten);
+  const bisMs = bis ? datumMs(bis) : Math.max(...zeiten);
+  const spanne = Math.max(0, bisMs - vonMs);
+
+  // Nur Spuren zeichnen, in denen wirklich etwas liegt — eine leere Zeile
+  // waere genau die Leerflaeche, die der rote Faden verbietet.
+  const belegt = spuren.filter(s =>
+    eintraege.some(p => (p.name || '') === s.name));
+  if (!belegt.length) return leer('Keine Rechnungen für diesen Zeitraum');
+
+  const minR = 4, maxR = 11;
+  const werte = eintraege.map(p => p.wert);
+  const wertMin = Math.min(...werte), wertMax = Math.max(...werte);
+  // Flaeche, nicht Radius — sonst wirkt ein doppelt so teurer Posten vierfach.
+  const radiusVon = v => {
+    const a0 = Math.PI * minR * minR, a1 = Math.PI * maxR * maxR;
+    const a = wertMax === wertMin ? (a0 + a1) / 2
+      : a0 + (v - wertMin) / (wertMax - wertMin) * (a1 - a0);
+    return Math.sqrt(a / Math.PI);
+  };
+
+  // Beschriftungsspalte: waechst mit dem laengsten Namen, gedeckelt auf 38 %
+  // — darunter bliebe fuer die Zeitachse zu wenig uebrig.
+  const zeichenBreite = 6;
+  const maxZeichen = Math.max(4, Math.floor(
+    Math.min(breite * 0.38, 132) / zeichenBreite));
+  const kuerze = t => (t || '').length > maxZeichen
+    ? (t || '').slice(0, maxZeichen - 1) + '…' : (t || '');
+  const labelB = Math.min(breite * 0.38,
+    Math.max(...belegt.map(s => kuerze(s.name).length)) * zeichenBreite + 10);
+
+  const padL = labelB + 10 + maxR;
+  const padR = maxR + 8;
+  const padOben = 10;
+  const spurH = 30;
+  const nutzB = breite - padL - padR;
+  const achsenY = padOben + belegt.length * spurH + 8;
+  const hoehe = achsenY + 24;
+  const x = ms => spanne === 0 ? padL + nutzB / 2
+    : padL + ((ms - vonMs) / spanne) * nutzB;
+
+  const zeilen = belegt.map((s, i) => {
+    const y = padOben + i * spurH + spurH / 2;
+    const eigene = eintraege.filter(p => (p.name || '') === s.name);
+    const kreise = eigene.map(p =>
+      `<circle cx="${runden(x(datumMs(p.datum)))}" cy="${runden(y)}"
+               r="${runden(radiusVon(p.wert))}" fill="${s.farbe}"
+               fill-opacity=".85" stroke="var(--sheet)" stroke-width="1.4"
+               ><title>${datumVoll(datumMs(p.datum))} · ${p.firma || ''}${
+               p.firma ? ' · ' : ''}${s.name} · ${euroKurz(p.wert)}</title></circle>`
+    ).join('');
+    return `<g>
+        <line x1="${runden(padL - maxR)}" y1="${runden(y)}"
+              x2="${runden(breite - padR)}" y2="${runden(y)}"
+              stroke="#EDF1F1" stroke-width="1"/>
+        <rect x="${runden(labelB - 4)}" y="${runden(y - 4)}" width="8" height="8"
+              rx="2.5" fill="${s.farbe}"/>
+        <text x="${runden(labelB - 12)}" y="${runden(y + 3.5)}" class="sl"
+              text-anchor="end">${kuerze(s.name)}</text>
+        ${kreise}
+      </g>`;
+  }).join('');
+
+  // Achsenmarken wie beim einfachen Zeitstrahl: Anzahl aus der Breite, Format
+  // aus der Zeitspanne, Raender verankert statt zentriert.
+  const tageSpanne = spanne / 86400000;
+  const format = tageSpanne > 365
+    ? ms => { const d = new Date(ms); return `${MONATSKURZ[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`; }
+    : tageSpanne < 90
+    ? ms => { const d = new Date(ms); return `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.`; }
+    : ms => { const d = new Date(ms); return `${pad2(d.getUTCDate())}. ${MONATSKURZ[d.getUTCMonth()]}`; };
+  const anzahl = spanne === 0 ? 1 : nutzB < 240 ? 2 : nutzB < 520 ? 3 : 5;
+  const marken = Array.from({ length: anzahl }, (_, i) => {
+    const ms = anzahl === 1 ? vonMs : vonMs + (i / (anzahl - 1)) * spanne;
+    const mx = x(ms);
+    const anker = i === 0 ? 'start' : i === anzahl - 1 ? 'end' : 'middle';
+    return `<text x="${runden(mx)}" y="${hoehe - 8}" class="zt"
+                  text-anchor="${anker}">${format(ms)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img">
+      <style>
+        .sl{font:500 10.5px var(--body);fill:var(--ink)}
+        .zt{font:500 10px var(--mono);fill:var(--soft)}
+      </style>
+      ${zeilen}
+      <line x1="${runden(padL - maxR)}" y1="${achsenY}"
+            x2="${breite - padR}" y2="${achsenY}" stroke="#D6DCDD" stroke-width="1"/>
+      ${marken}
     </svg>`;
 }

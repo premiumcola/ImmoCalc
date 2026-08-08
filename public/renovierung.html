@@ -177,6 +177,12 @@
        font:400 20px var(--body); width:44px; height:44px; cursor:pointer;
        border-radius:11px; line-height:1}
   .del:hover{background:var(--neg-bg); color:var(--neg)}
+  /* N279 — der Beleg-Knopf sitzt zwischen Zeile und Loeschen; gleiche
+     Groesse wie das x, damit die Zeile ihre Hoehe behaelt. */
+  .pbeleg{flex:none; border:none; background:none; color:var(--teal-d);
+          width:44px; height:44px; cursor:pointer; border-radius:11px;
+          display:inline-flex; align-items:center; justify-content:center}
+  .pbeleg:hover{background:var(--teal-l)}
 
   .gefahr-block{margin:26px 0 4px}
 
@@ -219,7 +225,8 @@
    einzelne mit Budgetstand, Gewerk-Donut, Zeitstrahl und Rechnungen.
    Gewechselt wird über echte Navigation — so trägt der Zurück-Knopf des
    Browsers dieselbe Bedeutung wie der in der Kopfzeile. */
-import { esc, melde, installNav, frage, schiebeFrage } from './assets/immo.js';
+import { esc, melde, installNav, frage, schiebeFrage, api, belegAnsehen }
+  from './assets/immo.js';
 import * as Daten from './assets/renovierung/daten.js';
 import { listeHtml } from './assets/renovierung/liste.js';
 import { detailHtml, zeitstrahlZeichnen } from './assets/renovierung/detail.js';
@@ -352,6 +359,19 @@ inhalt.addEventListener('click', async e => {
       await Daten.postenAnlegen(aktuell.id, werte);
       await neuLaden();
     } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+    return;
+  }
+
+  // N279 — den gescannten Beleg ansehen. Über dasselbe Fenster wie überall
+  // sonst (`belegAnsehen`): es zeigt Name und Ablagepfad, blättert die Seiten
+  // und trägt den Umbenennen-Stift aus N261.
+  const beleg = e.target.closest('[data-posten-beleg]');
+  if (beleg) {
+    const id = beleg.dataset.postenBeleg;
+    let dok = null;
+    try { dok = await api(`/dokumente/${id}`); } catch { /* Name/Pfad optional */ }
+    belegAnsehen(`/api/dokumente/${id}/inhalt`,
+                 dok?.dateiname || 'Beleg', dok?.pfad || '');
     return;
   }
 

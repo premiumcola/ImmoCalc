@@ -8,6 +8,17 @@ import { esc, eur, eurVoll } from '../immo.js';
 import { donut, zeitstrahl, farbe } from '../charts.js';
 import { tag, zeitraumText, einheitenText } from './daten.js';
 
+/* N279 — der gescannte Beleg gehoert sichtbar an seine Rechnung. Ohne ihn
+   liegt die Datei zwar in der Cloud, ist von hier aus aber nicht auffindbar —
+   und der Nutzer will (wie ueberall) Name UND Ablagepfad sehen. Flaches
+   Blatt-Symbol im Stil der uebrigen Sprites, keine Icon-Bibliothek. */
+const BELEG_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true" width="17" height="17">
+  <path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0
+           0 1.5-1.5V7.5z"/><path d="M14 3v4.5h4.5"/>
+  <path d="M9 12.5h6M9 16h4"/></svg>`;
+
 /** Farbe je Gewerk — dieselbe Reihenfolge wie im Donut, damit Ring, Legende
  *  und die Punkte in der Rechnungsliste dieselbe Sprache sprechen. */
 export function gewerkFarben(gewerke) {
@@ -123,6 +134,9 @@ function postenZeileHtml(p, farben) {
         <span class="pw${p.betrag ? '' : ' ohne'}">${
           p.betrag ? eur(p.betrag) : 'ohne Kosten'}</span>
       </button>
+      ${p.quelle_dokument_id ? `<button class="pbeleg" type="button"
+              data-posten-beleg="${p.quelle_dokument_id}"
+              aria-label="Beleg ansehen" title="Beleg ansehen">${BELEG_ICON}</button>` : ''}
       <button class="del" type="button" data-posten-weg="${p.id}"
               aria-label="Rechnung löschen">×</button>
     </div>`;
@@ -146,13 +160,20 @@ function postenHtml(d, farben) {
 export function zeitstrahlZeichnen(feld, d) {
   if (!feld) return;
   const breite = Math.max(260, Math.round(feld.clientWidth || 320));
-  // Breit heisst nicht hoch: auf dem Desktop wuerde ein 220 px hoher Streifen
-  // ueber 1000 px Breite vor allem Leere zeigen.
-  const hoehe = breite < 420 ? 190 : breite < 760 ? 185 : 175;
+  // N279 — je Gewerk eine eigene Spur, in der Farbe der Legende. Die Hoehe
+  // ergibt sich aus der Zahl der Spuren und wird im Diagramm gerechnet; eine
+  // vorgegebene Hoehe waere hier falsch.
+  const farben = gewerkFarben(d.gewerke);
+  const spuren = d.gewerke
+    .filter(g => g.summe > 0)
+    .map(g => ({ name: g.gewerk, farbe: farben.get(g.gewerk) }));
   feld.innerHTML = zeitstrahl(
     d.posten.map(p => ({ datum: p.datum, wert: p.betrag,
-                         name: p.gewerk, firma: p.firma })),
-    { breite, hoehe, von: d.von || '', bis: d.bis || '' });
+                         // Ohne Gewerk laeuft der Posten in der „Sonstiges"-
+                         // Spur mit — dieselbe Regel wie in der Verteilung.
+                         name: (p.gewerk || '').trim() || 'Sonstiges',
+                         firma: p.firma })),
+    { breite, von: d.von || '', bis: d.bis || '', spuren });
 }
 
 /* ---- Ganze Ansicht ------------------------------------------------------ */

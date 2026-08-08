@@ -198,6 +198,19 @@ export function renovierungDialog(vorhanden, einheiten) {
  * @param {string[]}    gewerke    Gewerke-Liste aus der API
  * @param {string}      vorgabeDatum  Startdatum der Renovierung als Vorschlag
  */
+/* N279 — heute als ISO, für den Vergleich „liegt das Datum in der Zukunft?". */
+const heuteIso = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * N279 — ein Rechnungsdatum in der Zukunft ist immer ein Lesefehler.
+ *
+ * Die Auslese griff auf einer Handwerkerrechnung schon einmal das Fälligkeits-
+ * oder ein Angebotsdatum ab und trug den 21.08.2026 ein. Bewusst NUR hier und
+ * nicht in der Auslese selbst: eine Abbuchungsvorankündigung nennt sehr wohl
+ * künftige Termine (N262), dort wäre dieselbe Regel falsch.
+ */
+const inDerZukunft = iso => Boolean(iso) && iso > heuteIso();
+
 export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
                              objekt = '') {
   const p = vorhanden || {};
@@ -217,8 +230,7 @@ export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
   const felder = `${scanHtml}
     <div class="feldpaar">
       <div class="field"><label>Datum</label>
-        <input type="hidden" id="pdatum"
-               value="${esc(p.datum || (neu ? vorgabeDatum : ''))}">
+        <input type="hidden" id="pdatum" value="${esc(p.datum || '')}">
         <div data-datumwahl data-label="Datum"></div></div>
       <div class="field"><label for="pbetrag">Betrag (€)</label>
         <input class="inp" id="pbetrag" type="text" inputmode="decimal"
@@ -275,6 +287,13 @@ export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
         if (!paket) return;
         offen = paket.vorbereitet;
         const w = paket.werte;
+        // Ein gelesenes Datum in der Zukunft wird verworfen, nicht übernommen —
+        // dann bleibt das Feld leer und fällt auf, statt still falsch zu sein.
+        if (w.datum && inDerZukunft(w.datum)) {
+          delete w.datum;
+          melde('Das gelesene Rechnungsdatum lag in der Zukunft — bitte von '
+            + 'Hand eintragen.', '');
+        }
         if (w.datum) { datumFeld.value = w.datum; chooser[0].setze?.(w.datum); }
         if (w.betrag != null) {
           form.querySelector('#pbetrag').value =
@@ -299,6 +318,19 @@ export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
         gewerk: form.querySelector('#pgewerk').value,
         notiz: form.querySelector('#pnotiz').value.trim(),
       };
+      // N279 — eine Rechnung ohne jede Angabe ist keine Rechnung. Der Dialog
+      // bleibt offen (`null`), statt eine leere Zeile in die Liste zu legen,
+      // die niemand mehr zuordnen kann. Ein Beleg OHNE Betrag bleibt erlaubt —
+      // dafür genügt eine Firma, ein Datum oder eine Notiz.
+      if (!werte.datum && !werte.betrag && !werte.firma && !werte.gewerk
+          && !werte.notiz && !offen) {
+        melde('Bitte wenigstens eine Angabe machen — oder abbrechen.', 'neg');
+        return null;
+      }
+      if (inDerZukunft(werte.datum)) {
+        melde('Das Rechnungsdatum liegt in der Zukunft — bitte prüfen.', 'neg');
+        return null;
+      }
       // Erst jetzt wandert die Datei in die Cloud — und wenn das scheitert,
       // steht die Rechnung trotzdem. Der Beleg ist Beiwerk, die Zahl nicht.
       if (offen) {

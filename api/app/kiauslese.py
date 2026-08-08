@@ -117,6 +117,17 @@ SYSTEM_PROMPT = (
     "und NICHT der monatliche Abschlag. Beispiel: \"Stromlieferung … 862,51 — "
     "abzüglich geleisteter Zahlungen -807,00 — Nachzahlung 55,51 — monatliche "
     "Abschlagszahlung 72,00\" → betrag = 862.51. "
+    # N279 — der häufigste Lesefehler bei Handwerkerrechnungen: das Modell
+    # nimmt den ERSTEN Betrag, den es findet. Bei einer mehrseitigen Rechnung
+    # sind das die Positionszeilen der ersten Seite, nicht die Endsumme.
+    "MEHRSEITIGE RECHNUNGEN: Die Seiten bauen in der übergebenen Reihenfolge "
+    "aufeinander auf. Der zu zahlende Gesamtbetrag steht deshalb am ENDE des "
+    "Textes — auf der letzten Seite, in einer Zeile wie \"Gesamtbetrag\", "
+    "\"Rechnungsbetrag\", \"Endbetrag\", \"Summe brutto\", \"Bruttobetrag\", "
+    "\"Zu zahlen\" oder \"Zahlbetrag\". Nimm NICHT den ersten Betrag, der im "
+    "Text auftaucht: davor stehen Einzelpositionen, Mengen×Einheitspreise, "
+    "Zwischensummen und Netto-Beträge. Gibt es mehrere Kandidaten, gilt der "
+    "LETZTE Brutto-Gesamtbetrag im Dokument. "
     # N262 — eine Abbuchungsvorankündigung nennt Raten, keine Jahressumme. Der
     # Nutzer will den JAHRESWERT in der Nebenkostenabrechnung stehen haben; die
     # Herleitung wird zusätzlich ausgewiesen, damit sie prüfbar bleibt.
