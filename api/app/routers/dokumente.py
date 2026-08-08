@@ -23,8 +23,8 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import (belegposten, feldzuordnung, kiauslese, kicache, ocr, pdftext,
-                upload)
+from .. import (belegposten, dokumentlinks, feldzuordnung, kiauslese, kicache,
+                ocr, pdftext, upload)
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
                            ohne_betrag, ohne_datum, unterordner_finden)
@@ -3275,6 +3275,11 @@ def _duplikat_weg(session: Session, client, weg: Dokument,
     b_behalten, _ = client.hole(behalten.pfad)
     if hashlib.sha1(b_weg).hexdigest() != hashlib.sha1(b_behalten).hexdigest():
         raise _NichtByteGleich(weg.pfad)
+    # N300 — ZUERST jeden Verweis auf die erhaltene Kopie ziehen. Vorher fiel
+    # der Eintrag ersatzlos, und alles, was an ihm hing (Renovierungsrechnung,
+    # Versicherung, Kredit, Notarvertrag, Belegdaten …) zeigte danach auf eine
+    # tote Nummer. Das ist derselbe Weg wie in `/zusammenfuehren`.
+    dokumentlinks.haenge_um(session, weg.id, behalten.id)
     # Verbuchung lösen (die erhaltene Kopie trägt die Kosten weiter), dann Datei
     # und Sidecar entfernen — nur unterhalb des Home-Ordners (loesche-Riegel).
     belegposten.loese(session, weg)
@@ -4823,3 +4828,182 @@ def immocalc_entfernen(bestaetigt: bool = False,
              len(geloescht), len(fehlgeschlagen), eintraege_weg)
     return {"geloescht": len(geloescht), "eintraege_entfernt": eintraege_weg,
             "fehlgeschlagen": fehlgeschlagen, "hinweise": hinweise}
+
+
+# --------------------------------------------------------------------------
+# N298/N300/N301 — Duplikate finden und zusammenführen.
+#
+# Byte-gleiche Dateien entstehen im Alltag zwangsläufig: derselbe Beleg wird
+# zweimal fotografiert, liegt in zwei Objektordnern, oder kommt nach einem
+# Umsortieren erneut herein. Bisher liess sich dagegen nur „das eine löschen" —
+# und das riss jede Verknüpfung, die an ihm hing (N300).
+#
+# Hier steht das Gegenteil: erst wandert jeder Verweis auf den Beleg, der
+# bleibt, dann fällt der andere.
+# --------------------------------------------------------------------------
+
+_VERWEIS_TITEL = {
+    "kostenposition.quelle_dokument_id": "Kostenposition",
+    "miete.quelle_dokument_id": "Mietverhältnis",
+    "versicherung.quelle_dokument_id": "Versicherung",
+    "kredit.quelle_dokument_id": "Kredit",
+    "notarvertrag.quelle_dokument_id": "Notarvertrag",
+    "bewohner.quelle_dokument_id": "Bewohner",
+    "zahlung.quelle_dokument_id": "Zahlung",
+    "renovierungsposten.quelle_dokument_id": "Renovierungsrechnung",
+    "stromjahr.screenshot_dokument_id": "Stromjahr (Screenshot)",
+    "belegdaten.dokument_id": "Belegdaten",
+}
+
+
+def _verknuepfungen(session: Session, dokument_id: int) -> list[dict]:
+    """Woran dieser Beleg hängt — in Klartext für die Oberfläche.
+
+    Der Nutzer entscheidet anhand dieser Liste, welche Kopie bleibt: eine ohne
+    jeden Verweis ist der unverfänglichste Kandidat zum Wegwerfen."""
+    return [{"typ": schluessel,
+             "titel": _VERWEIS_TITEL.get(schluessel, schluessel),
+             "anzahl": anzahl}
+            for schluessel, anzahl in
+            sorted(dokumentlinks.zaehle(session, dokument_id).items())]
+
+
+def _kopie_zeigen(session: Session, d: Dokument, objekte: dict) -> dict:
+    o = objekte.get(d.objekt_id)
+    return {
+        "id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+        "objekt": o.slug if o else "", "objekt_name": objekt_titel(o) if o else "",
+        "kategorie": d.kategorie, "kostenart": d.kostenart,
+        "betrag": d.betrag, "jahr": d.jahr, "status": d.status,
+        "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
+        "verknuepfungen": _verknuepfungen(session, d.id),
+    }
+
+
+@router.get("/duplikate")
+def duplikate(session: Session = Depends(get_session)) -> dict:
+    """Alle Belege, die sich eine Prüfsumme teilen — nach Gruppen.
+
+    Grundlage ist `sha1` (N290). Belege ohne Prüfsumme bleiben aussen vor: der
+    Abgleich trägt sie im 2-Minuten-Takt nach, und eine Vermutung anhand von
+    Name oder Grösse wäre hier genau falsch — es geht ums Löschen.
+
+    Grabsteine (extern gelöschte Belege) zählen nicht mit; sie haben keine
+    Datei mehr, die doppelt liegen könnte."""
+    alle = [d for d in session.exec(select(Dokument)).all()
+            if (d.sha1 or "").strip() and not _ist_grabstein(d.pfad)
+            and not _ist_sidecar(d.dateiname or "")]
+    nach_sha1: dict[str, list[Dokument]] = {}
+    for d in alle:
+        nach_sha1.setdefault(d.sha1, []).append(d)
+
+    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    gruppen = []
+    for sha1, kopien in nach_sha1.items():
+        if len(kopien) < 2:
+            continue
+        # Vorn steht, wer die meisten Verknüpfungen trägt — das ist der
+        # natürliche Kandidat zum BEHALTEN, und die Oberfläche wählt ihn vor.
+        # Ein Beleg ganz ohne Verweise steht hinten; er ist der
+        # unverfänglichste zum Wegwerfen.
+        kopien.sort(key=lambda d: (-len(_verknuepfungen(session, d.id)), d.id))
+        gruppen.append({
+            "sha1": sha1, "groesse": kopien[0].groesse, "anzahl": len(kopien),
+            "kopien": [_kopie_zeigen(session, d, objekte) for d in kopien],
+        })
+    # Die dicksten Gruppen zuerst — dort ist am meisten aufzuräumen.
+    gruppen.sort(key=lambda g: (-g["anzahl"], g["kopien"][0]["dateiname"]))
+    return {"gruppen": gruppen, "belege_mit_pruefsumme": len(alle),
+            "belege_gesamt": len(session.exec(select(Dokument)).all())}
+
+
+class ZusammenfuehrenIn(BaseModel):
+    weg_ids: list[int] = []
+    # Die Zweitdatei in der Cloud mitentfernen. Vorgabe: ja — es ist eine
+    # nachweislich byte-gleiche Kopie, und genau die will der Nutzer los.
+    datei_loeschen: bool = True
+
+
+@router.post("/{behalten_id}/zusammenfuehren")
+def zusammenfuehren(behalten_id: int, data: ZusammenfuehrenIn,
+                    session: Session = Depends(get_session)) -> dict:
+    """Führt Duplikate auf `behalten_id` zusammen — **ohne Verknüpfungen zu
+    verlieren**.
+
+    Reihenfolge, und nur diese: jeder Verweis wandert auf den Beleg, der
+    bleibt; erst danach fällt der Eintrag des Duplikats. Umgekehrt entstünde
+    genau der Zustand, den N300 beseitigt — ein Verweis auf eine tote Nummer.
+
+    Geprüft wird vorher, dass die Prüfsummen übereinstimmen: zusammengeführt
+    wird nur, was nachweislich derselbe Inhalt ist. Ohne Prüfsumme an einem der
+    beiden bricht der Aufruf ab, statt zu raten.
+
+    Die Datei in der Cloud wird nur entfernt, wenn `datei_loeschen` gesetzt ist
+    — und auch dann erst, nachdem die Datenbank sauber ist."""
+    behalten = session.get(Dokument, behalten_id)
+    if behalten is None:
+        raise HTTPException(404, "Der Beleg, der bleiben soll, existiert nicht.")
+    weg_ids = [i for i in dict.fromkeys(data.weg_ids) if i != behalten_id]
+    if not weg_ids:
+        raise HTTPException(400, "Es ist kein zweiter Beleg angegeben.")
+    if not (behalten.sha1 or "").strip():
+        raise HTTPException(400, "Zu diesem Beleg gibt es noch keine Prüfsumme "
+                                 "— der Abgleich trägt sie in wenigen Minuten "
+                                 "nach.")
+
+    wegzu: list[Dokument] = []
+    for i in weg_ids:
+        d = session.get(Dokument, i)
+        if d is None:
+            raise HTTPException(404, f"Beleg {i} existiert nicht.")
+        if (d.sha1 or "") != behalten.sha1:
+            raise HTTPException(400, (
+                f'„{d.dateiname}“ hat eine andere Prüfsumme als der Beleg, '
+                'der bleiben soll — das sind nicht dieselben Dateien. Es wird '
+                'nichts zusammengeführt.'))
+        wegzu.append(d)
+
+    umgehaengt = 0
+    for d in wegzu:
+        umgehaengt += dokumentlinks.haenge_um(session, d.id, behalten_id)
+        # Eine Verbuchung des Duplikats darf nicht doppelt zählen — der
+        # bleibende Beleg trägt die Kosten weiter.
+        belegposten.loese(session, d)
+    session.flush()
+    # Probe vor dem Löschen: hängt wirklich nichts mehr?
+    haengt_noch = {d.id: dokumentlinks.zaehle(session, d.id) for d in wegzu}
+    offen = {i: s for i, s in haengt_noch.items() if s}
+    if offen:
+        session.rollback()
+        raise HTTPException(500, (
+            "Nach dem Umhängen zeigen noch Datensätze auf ein Duplikat "
+            f"({offen}) — es wurde nichts gelöscht."))
+
+    pfade = [d.pfad for d in wegzu]
+    for d in wegzu:
+        session.delete(d)
+    session.commit()
+
+    geloescht: list[str] = []
+    fehler: list[dict] = []
+    if data.datei_loeschen:
+        try:
+            client = verbindung(session)
+        except Exception as fehler_v:                      # noqa: BLE001
+            fehler.append({"pfad": "", "grund": str(fehler_v)})
+            client = None
+        for pfad in pfade if client else []:
+            if not (pfad or "").startswith("/"):
+                continue
+            try:
+                client.loesche(pfad)
+                geloescht.append(pfad)
+            except Exception as f:                         # noqa: BLE001
+                fehler.append({"pfad": pfad, "grund": str(f)})
+
+    log.info("N300: Belege %s auf %d zusammengeführt — %d Verweise umgehängt, "
+             "%d Dateien gelöscht", weg_ids, behalten_id, umgehaengt,
+             len(geloescht))
+    return {"behalten": behalten_id, "verweise_umgehaengt": umgehaengt,
+            "eintraege_entfernt": len(wegzu),
+            "dateien_geloescht": len(geloescht), "fehler": fehler}

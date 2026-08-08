@@ -139,5 +139,10 @@ def _zeige(d, objekte: dict) -> dict:
         # Der Eintrag bleibt stehen — gelöscht wird nichts —, aber er tut nicht
         # so, als läge die Datei noch da.
         "vermisst": d.status == VERMISST,
+        # N298 — die Prüfsumme des Inhalts (N290). Ohne sie kann die Oberfläche
+        # keine Duplikate gruppieren und nicht zeigen, welche Belege ihr
+        # Kennzeichen schon tragen. Leer heisst: der Abgleich hat sie noch
+        # nicht nachgetragen (er läuft alle zwei Minuten).
+        "sha1": d.sha1 or "",
         "vorschlag": _vorschlag(d),
     }
