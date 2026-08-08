@@ -1,49 +1,46 @@
-/* N216 — Beleg abfotografieren und ersetzen (CCCLXXI).
+/* N216/N280 — Beleg abfotografieren und ersetzen, auf der gemeinsamen Kette.
 
-   <input capture> oeffnet auf iOS direkt die Kamera. Die Aufnahmen werden im
-   Browser verkleinert und zu einem PDF zusammengesetzt; die Texterkennung
-   liest die erste Seite und schlaegt Sache, Datum und Betrag vor. Steht die
-   Immobilie fest und ist die Art erkannt, wird ohne Rueckfrage abgelegt —
-   sonst kommt der Ziel-Dialog. */
+   Der Dokumenteneingang ist der Ort, an dem Belege ankommen — er darf als
+   letzter einen eigenen Ablauf haben. Aufnehmen, Zuschneiden, Auslesen und
+   Ablegen kommen deshalb aus `belegscan.js`, die Bestätigungsmaske mit
+   Dateinamen und Betrag aus `belegbestaetigung.js`. Hier bleibt nur, was
+   diese Seite von den anderen unterscheidet: Immobilie, Art und Jahr stehen
+   beim Eingang oft noch nicht fest.
+
+   Deshalb die Zielwahl. Sie ERSETZT die Bestätigungsmaske nicht, sie geht ihr
+   voraus — und nur dann, wenn die Kette Immobilie oder Art nicht selbst
+   füllen konnte. Was Filter und Erkennung schon wissen, steht darin vorbelegt;
+   im Regelfall bleibt ein Tippen. Steht beides fest, entfällt sie ganz und der
+   Nutzer sieht direkt die Maske mit dem vorgeschlagenen Dateinamen. Korrigieren
+   lassen sich Immobilie und Art danach jederzeit an der Karte in der Liste. */
 
 import { S, els, jetzt, melde } from './state.js';
 import { auswahlfeld } from '../auswahl.js';
+import { api } from '../immo.js';
 import { lesbareGroesse } from '../scan.js';
-import { kamerascanStarten, istBildDatei } from '../kamerascan.js';
-import { datumText, betragText, jahresliste } from './helpers.js';
+import { belegVorbereiten, belegAblegen } from '../belegscan.js';
+import { belegBestaetigen, analyseDecke } from '../belegbestaetigung.js';
+import { jahresliste, dok, titelVon } from './helpers.js';
 import { laden } from './aktionen.js';
 
-/* Bilder gehen durch den Zuschnitt (Kanten erkennen, entzerren, PDF bauen); ein
-   schon fertiges PDF (aus der Dateiauswahl am PC statt aus der Kamera) laeuft
-   ohne Zuschnitt direkt durch — dieselbe Aufteilung wie in `belegscan.js`.
-   `null` = der Nutzer hat den Zuschnitt abgebrochen. */
-async function belegPdf(dateien) {
-  // N42 — dieselbe robuste Aufteilung wie in belegscan.js: iOS-Fotos mit leerem
-  // `type` gelten als Bild (sonst fielen sie durch und der Zuschnitt bliebe aus).
-  const bilder = dateien.filter(istBildDatei);
-  const pdf = dateien.find(d => (d.type || '') === 'application/pdf'
-                             || /\.pdf$/i.test(d.name || ''));
-  if (bilder.length) {
-    const s = await kamerascanStarten(bilder);
-    return s ? { pdf: s.pdf, name: 'scan.pdf', seiten: s.seiten, quelle: bilder[0] } : null;
-  }
-  if (pdf) return { pdf, name: pdf.name, seiten: 0, quelle: pdf };
-  return null;
-}
+/* N263/N280 — welche Eingabemaske zu einer Art gehört. Steht die Art schon
+   fest (Filter gesetzt oder Beleg vorhanden), kommt die Auslese gleich auf
+   deren Feldnamen übersetzt zurück. Rein additiv: kennt der Server den Bereich
+   nicht, bleibt die Antwort wie zuvor. Die Zuordnung steht bewusst hier und
+   nicht im Import aus `objekt/eintragscan.js` — die dortige Tabelle geht in
+   die andere Richtung und hinge die ganze Objektseite mit an diese hier. */
+const BEREICH_ZU_ART = {
+  Nebenkosten: 'nebenkosten',
+  Notarvertrag: 'notarvertraege',
+  Kaufvertrag: 'notarvertraege',
+  Versicherung: 'versicherungen',
+  Kredit: 'kredite',
+  Mietvertrag: 'mieten',
+  Steuer: 'zahlungen',
+  Renovierung: 'renovierungsposten',
+};
 
-async function erkenne(bild) {
-  if (!S.erkennungMoeglich || !bild) return null;
-  try {
-    const paket = new FormData();
-    // Mit echtem Namen — so erkennt der Server ein PDF an der Endung.
-    paket.append('datei', bild, bild.name || 'seite.jpg');
-    const antwort = await fetch('/api/dokumente/erkennen',
-                                { method: 'POST', body: paket });
-    return antwort.ok ? await antwort.json() : null;
-  } catch {
-    return null;
-  }
-}
+const bereichFuer = kategorie => BEREICH_ZU_ART[kategorie] || '';
 
 /* ---- Beleg abfotografieren --------------------------------------------- */
 els.kameraKnopf.addEventListener('click', () => els.kameraFeld.click());
@@ -59,51 +56,52 @@ els.kameraFeld.addEventListener('change', async () => {
   beschriftung.textContent = 'Verarbeite …';
   unterzeile.textContent = `${dateien.length} Aufnahme${dateien.length > 1 ? 'n' : ''}`;
 
+  // N254 — Griff auf die Wartedecke. Das `finally` nimmt sie in JEDEM Fall
+  // wieder weg; eine hängende Vollbild-Sperre wäre schlimmer als die Lücke.
+  let deckeWeg = null;
   try {
-    // Bilder werden zugeschnitten, ein gewaehltes PDF geht direkt durch.
-    const aufnahme = await belegPdf(dateien);
-    if (!aufnahme) throw new Error('abgebrochen');
-    const { pdf, seiten, name } = aufnahme;
-    const erkannt = await erkenne(aufnahme.quelle);
     // Eindeutig ist die Immobilie, wenn es nur eine gibt — oder wenn gerade
-    // nach einer gefiltert wird.
+    // nach einer gefiltert wird. Dasselbe gilt für die Art: wer den Filter auf
+    // „Versicherung" gestellt hat, scannt eine Versicherung.
     const einzige = S.daten.objekte.length === 1 ? S.daten.objekte[0].slug : '';
-    const objekt = S.filter.objekt || einzige;
-    const kategorie = erkannt?.kategorie || '';
-    const vorgabe = { objekt, kategorie, jahr: erkannt?.jahr || jetzt,
-                      beschreibung: erkannt?.sache || '' };
+    const kategorie = S.filter.kategorie || '';
+    const vorbereitet = await belegVorbereiten(dateien, {
+      objekt: S.filter.objekt || einzige,
+      kategorie,
+      bereich: bereichFuer(kategorie),
+      titel: kategorie || 'Beleg',
+    }, () => { deckeWeg = analyseDecke(); });
+    if (!vorbereitet) throw new Error('abgebrochen');
 
-    const auswahl = (objekt && kategorie) ? vorgabe
-      : await zielAbfragen(seiten, pdf.size, vorgabe, erkannt);
-    if (!auswahl) throw new Error('abgebrochen');
-
-    const paket = new FormData();
-    paket.append('objekt', auswahl.objekt);
-    paket.append('kategorie', auswahl.kategorie);
-    paket.append('jahr', String(auswahl.jahr));
-    paket.append('beschreibung', auswahl.beschreibung);
-    // Datum und Betrag der Texterkennung wandern mit — sie gehoeren an den
-    // Anfang und an das Ende des Dateinamens (CXXIII, CXXX).
-    if (erkannt?.datum) paket.append('datum', erkannt.datum);
-    if (erkannt?.monat) paket.append('monat', String(erkannt.monat));
-    if (erkannt?.betrag) paket.append('betrag', String(erkannt.betrag));
-    paket.append('datei', pdf, name);
-
-    const antwort = await fetch('/api/dokumente/scannen',
-      { method: 'POST', body: paket });
-    if (!antwort.ok) {
-      const grund = await antwort.json().then(k => k.detail).catch(() => null);
-      throw new Error(grund || `Fehler ${antwort.status}`);
+    // Konnte die Kette Immobilie oder Art nicht füllen, fragt die Zielwahl —
+    // vorbelegt mit dem, was die Erkennung gelesen hat.
+    if (!vorbereitet.ziel.objekt || !vorbereitet.ziel.kategorie) {
+      if (deckeWeg) { deckeWeg(); deckeWeg = null; }
+      const wahl = await zielAbfragen(vorbereitet);
+      if (!wahl) throw new Error('abgebrochen');
+      Object.assign(vorbereitet.ziel, wahl);
     }
-    const ergebnis = await antwort.json();
-    beschriftung.textContent = '✓ Abgelegt';
-    unterzeile.textContent = `${ergebnis.dateiname} · ${lesbareGroesse(pdf.size)}`;
+
+    // N250 — der Nutzer sieht, was erkannt wurde, und vor allem den
+    // vorgeschlagenen Dateinamen; N267 — dazu den Betrag.
+    const entscheidung = await belegBestaetigen(vorbereitet, deckeWeg);
+    if (!entscheidung) throw new Error('abgebrochen');
+
+    const ergebnis = await belegAblegen(vorbereitet, entscheidung.beschreibung,
+                                        entscheidung.betrag);
+    // Erst neu laden, dann melden: `laden()` setzt die Unterzeile des Knopfes
+    // selbst zurück und hätte den Namen sonst gleich wieder weggewischt — der
+    // Nutzer soll aber genau ihn sehen.
     await laden();
+    beschriftung.textContent = '✓ Abgelegt';
+    unterzeile.textContent =
+      `${ergebnis.dateiname} · ${lesbareGroesse(ergebnis.groesse)}`;
   } catch (fehler) {
     const text = String(fehler.message || fehler);
     beschriftung.textContent = text === 'abgebrochen' ? 'Abgebrochen' : 'Fehlgeschlagen';
     unterzeile.textContent = text === 'abgebrochen' ? 'Nichts hochgeladen' : text;
   } finally {
+    if (deckeWeg) { try { deckeWeg(); } catch { /* schon zu */ } }
     setTimeout(() => {
       els.kameraKnopf.disabled = false;
       beschriftung.textContent = 'Beleg abfotografieren';
@@ -112,7 +110,12 @@ els.kameraFeld.addEventListener('change', async () => {
   }
 });
 
-/* ---- Neu einscannen: ersetzt den Beleg eines vorhandenen Eintrags ------ */
+/* ---- Neu einscannen: ersetzt den Beleg eines vorhandenen Eintrags ------
+   Auch hier die gemeinsame Kette: der Nutzer sieht vorher, was ankommt, was
+   erkannt wurde und wie die Datei heissen wird. Abgelegt wird über
+   `POST /dokumente/{id}/neu` — der Endpunkt tauscht die Datei und behält den
+   Eintrag. Name und Betrag aus der Maske reicht danach ein PATCH nach; ohne
+   Änderung bleibt alles, wie es war. */
 els.bNeu.addEventListener('click', () => {
   if (S.gewaehlt === null) return;
   els.erneutFeld.click();
@@ -123,41 +126,75 @@ els.erneutFeld.addEventListener('change', async e => {
   e.target.value = '';
   const id = S.gewaehlt;
   if (!dateien.length || id === null) return;
+  const d = dok(id);
+
+  let deckeWeg = null;
   try {
-    // Bilder zuschneiden, ein gewaehltes PDF direkt uebernehmen.
-    const aufnahme = await belegPdf(dateien);
-    if (!aufnahme) { melde('Abgebrochen'); return; }
+    const kategorie = d?.kategorie || '';
+    const vorbereitet = await belegVorbereiten(dateien, {
+      objekt: d?.objekt || '',
+      kategorie,
+      kostenart: d?.kostenart || '',
+      jahr: d?.jahr || undefined,
+      bereich: bereichFuer(kategorie),
+      titel: d ? titelVon(d) : 'Beleg',
+    }, () => { deckeWeg = analyseDecke('Die neue Aufnahme wird gelesen …'); });
+    if (!vorbereitet) { melde('Abgebrochen'); return; }
+
+    const entscheidung = await belegBestaetigen(vorbereitet, deckeWeg);
+    if (!entscheidung) { melde('Abgebrochen'); return; }
+
     melde('Neue Aufnahme wird abgelegt …');
     const paket = new FormData();
-    paket.append('datei', aufnahme.pdf, aufnahme.name);
+    paket.append('datei', vorbereitet.aufnahme.datei, vorbereitet.aufnahme.name);
     const antwort = await fetch(`/api/dokumente/${id}/neu`,
                                 { method: 'POST', body: paket });
     if (!antwort.ok) {
       const grund = await antwort.json().then(k => k.detail).catch(() => null);
       throw new Error(grund || `Fehler ${antwort.status}`);
     }
-    const ergebnis = await antwort.json();
+    let name = (await antwort.json()).dateiname || d?.dateiname || '';
+
+    // Nur was der Nutzer wirklich geändert hat, wandert nach. `beschreibung`
+    // ist ohnehin `null`, solange der Vorschlag unangetastet blieb. Der Betrag
+    // steht dagegen vorbelegt in der Maske — er zählt als Entscheidung, wenn
+    // der Nutzer ihn angefasst hat, sonst füllt er nur eine Lücke. Ein
+    // bestehender Betrag wird nie überschrieben, bloss weil eine neue Aufnahme
+    // etwas anderes gelesen hat.
+    const kiBetrag = typeof vorbereitet.ki?.betrag === 'number'
+      ? vorbereitet.ki.betrag : null;
+    const nach = {};
+    if (entscheidung.beschreibung) nach.beschreibung = entscheidung.beschreibung;
+    if (typeof entscheidung.betrag === 'number'
+        && (entscheidung.betrag !== kiBetrag || !d?.betrag)) {
+      nach.betrag = entscheidung.betrag;
+    }
+    if (Object.keys(nach).length) {
+      const erg = await api(`/dokumente/${id}`, { method: 'PATCH', body: nach });
+      name = erg?.dateiname || name;
+    }
+
     await laden();
-    melde('✓ ' + ergebnis.hinweis, 'gut');
+    melde(`✓ ${name}`, 'gut');
   } catch (fehler) {
     melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+  } finally {
+    if (deckeWeg) { try { deckeWeg(); } catch { /* schon zu */ } }
   }
 });
 
-/** Ein Schritt, nicht drei: alles Noetige in einem Dialog, vorbelegt mit dem,
-    was die Texterkennung gelesen hat. */
-function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
+/** Wohin gehört der Beleg? Nur Immobilie, Art und Jahr — der Dateiname und der
+    Betrag stehen in der Bestätigungsmaske, die gleich danach kommt, und hätten
+    hier nur ein zweites Mal gestanden. */
+function zielAbfragen({ aufnahme, ziel }) {
   return new Promise(fertig => {
     const dlg = els.zielDlg;
-    const gelesen = erkannt?.kategorie || erkannt?.betrag
-      ? ` · erkannt: ${[erkannt.sache, datumText(erkannt.jahr, erkannt.monat),
-          betragText(erkannt.betrag)].filter(Boolean).join(' · ')}`
-      : S.erkennungMoeglich ? '' : ' · Texterkennung nicht eingerichtet';
-    // Ein direkt gewaehltes PDF traegt keine gezaehlten Seiten (seiten = 0) — dann
-    // steht schlicht „PDF" statt „0 Seite".
+    // Ein direkt gewaehltes PDF traegt keine gezaehlten Seiten (seiten = 0) —
+    // dann steht schlicht „PDF" statt „0 Seite".
+    const seiten = aufnahme.seiten;
     const mengeText = seiten > 0 ? `${seiten} Seite${seiten > 1 ? 'n' : ''}` : 'PDF';
-    els.zielInfo.textContent =
-      `${mengeText} · ${lesbareGroesse(groesse)}${gelesen}`;
+    els.zielInfo.textContent = `${mengeText} · ${lesbareGroesse(aufnahme.datei.size)}`
+      + (S.erkennungMoeglich ? '' : ' · Texterkennung nicht eingerichtet');
 
     if (!S.zielFelder) {
       S.zielFelder = {
@@ -168,12 +205,11 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
     }
     const { objekt: objektWahl, art: artWahl, jahr: jahrWahl } = S.zielFelder;
     objektWahl.fuelle(S.daten.objekte.map(o => ({ wert: o.slug, text: o.name })),
-                      vorgabe.objekt || S.daten.objekte[0]?.slug || '');
+                      ziel.objekt || S.daten.objekte[0]?.slug || '');
     artWahl.fuelle(S.daten.arten.map(a => ({ wert: a, text: a })),
-                   vorgabe.kategorie || 'Sonstiges');
+                   ziel.kategorie || 'Sonstiges');
     jahrWahl.fuelle(jahresliste().map(j => ({ wert: String(j), text: String(j) })),
-                    String(vorgabe.jahr));
-    els.zielText.value = vorgabe.beschreibung || '';
+                    String(ziel.jahr || jetzt));
 
     let entschieden = false;
     const abbruch = () => { if (!entschieden) fertig(null); };
@@ -185,7 +221,6 @@ function zielAbfragen(seiten, groesse, vorgabe, erkannt) {
         objekt: objektWahl.wert(),
         kategorie: artWahl.wert(),
         jahr: Number(jahrWahl.wert()),
-        beschreibung: els.zielText.value.trim(),
       });
     };
     dlg.showModal();

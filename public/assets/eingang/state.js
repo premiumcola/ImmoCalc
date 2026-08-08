@@ -77,7 +77,6 @@ export const els = {
   zielObjekt: document.getElementById('zielObjekt'),
   zielArt: document.getElementById('zielArt'),
   zielJahr: document.getElementById('zielJahr'),
-  zielText: document.getElementById('zielText'),
   zielOk: document.getElementById('zielOk'),
 };
 

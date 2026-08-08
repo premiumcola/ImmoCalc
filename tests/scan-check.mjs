@@ -27,7 +27,9 @@ const capture = await page.getAttribute('#kameraFeld', 'capture');
 const accept = await page.getAttribute('#kameraFeld', 'accept');
 const mehrfach = await page.getAttribute('#kameraFeld', 'multiple');
 pruefe(capture === 'environment', `capture ist "${capture}" statt "environment"`);
-pruefe(accept === 'image/*', `accept ist "${accept}"`);
+// Bilder MÜSSEN durchgehen; am PC (keine Kamera) ist zusätzlich ein fertiges
+// PDF erlaubt — deshalb Präfix statt Gleichheit.
+pruefe((accept || '').startsWith('image/*'), `accept ist "${accept}"`);
 pruefe(mehrfach !== null, 'multiple fehlt — mehrseitige Belege gingen nicht');
 
 // PDF-Bau im Browser prüfen: zwei erzeugte Seiten
@@ -132,7 +134,21 @@ if (dialog) {
   pruefe(arten > 0, 'keine Dokumentart zur Auswahl');
   await page.click('#zielOk');
 } else {
-  console.log('   Ohne Rückfrage abgelegt (Immobilie und Art eindeutig)');
+  console.log('   Ohne Zielwahl (Immobilie und Art stehen fest)');
+}
+
+// N280 — danach kommt IMMER die gemeinsame Bestätigungsmaske: erkannte Werte,
+// Betrag und der vorgeschlagene Dateiname. Erst ihr „Ablegen" lädt hoch.
+const bestaetigung = await page.waitForSelector('dialog.scanbest-dlg',
+                                                { timeout: 20000 }).catch(() => null);
+if (bestaetigung) {
+  await page.screenshot({ path: 'tests/screenshots/scan-bestaetigung.png' });
+  const vorschlag = await page.inputValue('dialog.scanbest-dlg #sbName');
+  pruefe(Boolean(vorschlag), 'kein Dateinamen-Vorschlag in der Bestätigungsmaske');
+  console.log('   Dateiname-Vorschlag: ' + vorschlag);
+  await page.click('dialog.scanbest-dlg [data-ok]');
+} else {
+  pruefe(false, 'Bestätigungsmaske kam nicht — der Eingang hängt neben der Kette');
 }
 
 // Der Knopf trägt genau drei Endzustände. Der Ruhetext ist keiner davon —

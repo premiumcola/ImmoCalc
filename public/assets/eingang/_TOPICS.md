@@ -17,7 +17,7 @@ allen Modulen geteilt (ES-Modul-Bindings, live).
 | `vorschau.js`  | Die Beleg-Vorschau (CXXIX/N99): `vorschauLeeren`, `vorschauText`, `vorschauLaden` (Server-gerendertes Bild), `grossAnsehen`. |
 | `ki.js`        | Texterkennung (CLXXVII), KI-Einschaetzung (CCLXXIII), KI-Vorbelegung (CCLXXIV) und Neustart der KI-Analyse (CCCLXVII): `erkennungZeigen`, `kiEinschaetzungZeigen`, `kiVorbelegungZeigen`, `kiFelderEinsetzen`, `kiWerteUebernehmen`, `erkennungHolen`, `vorschlagEinsetzen`. |
 | `position.js`  | Aus dem Beleg wird eine Kostenposition (CLXXX/CLXXXII): `posUngespeichert`, `posPlanZeichnen`, `posZeigen` sowie die Klick-Handler „Als Kostenposition uebernehmen" und „Loesen". |
-| `scan.js`      | Beleg abfotografieren (CCCLXXI) und ersetzen (`bNeu`): `belegPdf` (Bilder zuschneiden oder PDF durchreichen), `erkenne`, `zielAbfragen` (der Ablage-Dialog), Handler fuer `kameraKnopf`/`kameraFeld`/`erneutFeld`. |
+| `scan.js`      | Beleg abfotografieren und ersetzen (`bNeu`) auf der gemeinsamen Kette (N280): `belegVorbereiten`/`belegBestaetigen`/`belegAblegen` aus `belegscan.js`+`belegbestaetigung.js`. Eigen bleibt nur `zielAbfragen` (Immobilie/Art/Jahr, nur wenn die Kette sie nicht selbst fuellt) und `BEREICH_ZU_ART` (N263-Hinweis fuer die Auslese). Handler fuer `kameraKnopf`/`kameraFeld`/`erneutFeld`. |
 | `aktionen.js`  | Die Seiten-Orchestrierung: `laden` (Liste vom Server holen), `fussnoteZeigen` (Wachdienst + OCR-Hinweis), `nkKontextInit` (Sprung aus der NK-Abrechnung — CCLXXXIII/CCCLXXII), „Ordner einlesen" (CXXVII), „Uebernehmen" (bOk) und „Entfernen" (bWeg, mit „Wirklich?"-Rueckfrage). |
 
 Was in `eingang.html` bleibt: `installNav()`, die Start-Aufrufe
