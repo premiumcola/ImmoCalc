@@ -28,7 +28,6 @@ des Mieters, positiv = Guthaben**.
 """
 from __future__ import annotations
 
-import calendar
 import logging
 from datetime import date
 from typing import Optional
@@ -38,6 +37,7 @@ from sqlmodel import Session, select
 from .belegposten import anlegen as position_bauen
 from .models import Dokument, Kostenposition, WegVorauszahlung, Zeitraum
 from .verteilung import VORGABE, ableiten, ableiten_einheit
+from .zeit import zahlmonate
 
 log = logging.getLogger("immocalc")
 
@@ -205,26 +205,11 @@ def uebernehmen(session: Session, z: Zeitraum, gelesen: dict,
 # --------------------------------------------------------------------------
 # Vorauszahlung — monatsgenau aus Abschnitten
 # --------------------------------------------------------------------------
-def _monate(von: date, bis: date) -> float:
-    """Wie viele Monate zwischen zwei Tagen liegen — anteilig gerechnet.
-
-    Ein voller Kalendermonat zählt exakt 1,0 (auch der Februar mit 28 Tagen),
-    ein angebrochener nach seinem Tagesanteil. So ergeben 01.01.–30.06. genau
-    6,0 Monate, und ein Mietbeginn zur Monatsmitte kippt die Summe nicht."""
-    if bis < von:
-        return 0.0
-    summe = 0.0
-    jahr, monat = von.year, von.month
-    while (jahr, monat) <= (bis.year, bis.month):
-        tage = calendar.monthrange(jahr, monat)[1]
-        anfang = max(von, date(jahr, monat, 1))
-        ende = min(bis, date(jahr, monat, tage))
-        if ende >= anfang:
-            summe += ((ende - anfang).days + 1) / tage
-        monat += 1
-        if monat > 12:
-            jahr, monat = jahr + 1, 1
-    return summe
+# N291 — siehe `zeit.py`: hier wird ein MONATSbetrag vervielfacht, deshalb
+# zählt ein voller Kalendermonat exakt 1,0. Der Tagesanteil aus
+# `cashflow.monate_im_jahr` wäre hier ein Rechenfehler — wer im Februar wohnt,
+# überweist 244 €, nicht 224,60 €.
+_monate = zahlmonate
 
 
 def _spanne(v: WegVorauszahlung, z: Zeitraum) -> tuple[date, date]:

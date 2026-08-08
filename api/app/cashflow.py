@@ -7,7 +7,8 @@ die Einheiten verteilt; ohne Flächenangabe zu gleichen Teilen.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+
+from .zeit import jahresanteil_monate
 
 
 @dataclass
@@ -184,22 +185,10 @@ def sankey(einheiten: list[dict], bloecke: dict[str, float]) -> dict:
             "fehlbetrag": fehlbetrag}
 
 
-def monate_im_jahr(ab: date, bis: date | None, jahr: int) -> float:
-    """Wie viele Monate des Jahres deckt dieser Zeitraum ab — taggenau.
-
-    Bewusst keine ganzen Monate: gezählt wurden früher angebrochene Monate an
-    beiden Enden voll. Bei einem Mieterwechsel am 15. Juli ergab das für den
-    Vorgänger 7 und für den Nachfolger 6 Monate — zusammen 13 Monate Miete in
-    einem Jahr, also gut 8 % zu viel Einnahmen. Taggenau summieren sich zwei
-    lückenlos aufeinanderfolgende Mietverhältnisse wieder exakt auf 12.
-
-    Das Ende ist einschliesslich zu verstehen: wer am 31.12. auszieht, hat
-    diesen Tag noch gewohnt.
-    """
-    von = max(ab, date(jahr, 1, 1))
-    ende = min(bis or date(jahr, 12, 31), date(jahr, 12, 31))
-    if ende < von:
-        return 0.0
-    tage = (ende - von).days + 1
-    im_jahr = (date(jahr, 12, 31) - date(jahr, 1, 1)).days + 1   # 365 oder 366
-    return round(tage / im_jahr * 12, 6)
+# N291 — „ein Monat" wird im Projekt auf zwei Arten gezählt, und beide sind
+# richtig: hier der Jahresanteil (ein Jahresbetrag wird verteilt), in der
+# WEG-Vorauszahlung die Zahlmonate (ein Monatsbetrag wird vervielfacht). Für
+# den Februar 2025 sind das 0,9205 gegen 1,0000 — knapp 8 % Unterschied. Beide
+# stehen jetzt nebeneinander in `zeit.py`, wo der Unterschied erklärt ist;
+# hier bleibt nur der gewohnte Name.
+monate_im_jahr = jahresanteil_monate
