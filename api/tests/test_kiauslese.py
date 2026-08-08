@@ -17,6 +17,7 @@ auf einer Jahresabrechnung nebeneinander stehen — am echten Beleg des Nutzers
 Alles läuft ohne echten Netzaufruf: der Parser wird mit einer gestellten
 Modellantwort geprüft, der Endpunkt mit gemockten Bausteinen.
 """
+import json
 import os
 import sys
 
@@ -549,3 +550,116 @@ def test_ohne_gewerk_bleibt_das_feld_weg(monkeypatch):
     saehe in der Maske aus wie eine Angabe."""
     ergebnis = _mit_auslese(monkeypatch, {"absender": "Muster GmbH"})
     assert "gewerk" not in ergebnis
+
+
+# --------------------------------------------------------------------------
+# N273 — die fertige WEG-Einzelabrechnung lesen.
+#
+# Am echten Beleg (Delta-t Messdienst Wenzel GmbH, Unterschöllenbacher
+# Hauptstr. 6a, 01.01.–31.12.2025). Die eine Verwechslung, um die es hier geht:
+# „Ihre Kosten" ist die Spalte GANZ RECHTS (103,24), nicht die Gesamtkosten der
+# Liegenschaft (788,80).
+# --------------------------------------------------------------------------
+WEG_ANTWORT = """{
+ "firma":"Delta-t Messdienst Wenzel GmbH",
+ "liegenschaft":"Unterschöllenbacher Hauptstr. 6a","nutzer_nr":"0004-001",
+ "von":"2025-01-01","bis":"2025-12-31","datum":"2026-03-16",
+ "positionen":[
+  {"bezeichnung":"Wasserkosten","gesamtkosten":"788,80","ihre_kosten":"103,24",
+   "schluessel":"Wasser gesamt","umlagefaehig":true},
+  {"bezeichnung":"Müllgebühren","gesamtkosten":"690,78","ihre_kosten":"138,18",
+   "schluessel":"Personen","umlagefaehig":true},
+  {"bezeichnung":"Versicherungen","gesamtkosten":"1.824,55",
+   "ihre_kosten":"442,18","schluessel":"m2 Betriebsk.","umlagefaehig":true},
+  {"bezeichnung":"Verwalter","gesamtkosten":"1.028,16","ihre_kosten":"205,63",
+   "schluessel":"Anzahl WE","umlagefaehig":true},
+  {"bezeichnung":"Prüfung Rauchwarnmelder","gesamtkosten":"20,83",
+   "ihre_kosten":"4,17","schluessel":"Anzahl RWM","umlagefaehig":true},
+  {"bezeichnung":"Anschaffungen","gesamtkosten":"112,69","ihre_kosten":"22,54",
+   "schluessel":"","umlagefaehig":false},
+  {"bezeichnung":"Reparatur","gesamtkosten":"135,66","ihre_kosten":"27,13",
+   "schluessel":"","umlagefaehig":false},
+  {"bezeichnung":"Schädlingsbekämpfung","gesamtkosten":"821,10",
+   "ihre_kosten":"164,22","schluessel":"","umlagefaehig":false}],
+ "heizkosten":"730,60","warmwasserkosten":"205,67",
+ "betriebskosten":"893,40","rechnungsbetrag":"1.829,67",
+ "vorauszahlung":"2.928,00","nachzahlung":null}"""
+
+
+def test_lies_weg_abrechnung_am_echten_beleg(monkeypatch):
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(WEG_ANTWORT))
+    ki = kiauslese.lies_weg_abrechnung("OCR-Text", schluessel="test-key")
+    assert ki["firma"] == "Delta-t Messdienst Wenzel GmbH"
+    assert ki["nutzer_nr"] == "0004-001"
+    assert ki["von"] == "2025-01-01" and ki["bis"] == "2025-12-31"
+    assert ki["datum"] == "2026-03-16"
+    # Heiz- und Warmwasserkosten sind eigene Positionen, keine Betriebskosten.
+    assert ki["heizkosten"] == 730.60 and ki["warmwasserkosten"] == 205.67
+    assert all(p["bezeichnung"] not in ("Heizkosten", "Warmwasser")
+               for p in ki["positionen"])
+
+
+def test_weg_nimmt_die_spalte_ganz_rechts():
+    """788,80 sind die Kosten der ganzen Liegenschaft, 103,24 die des Nutzers.
+    Wer die Spalten vertauscht, rechnet dem Mieter das Vielfache auf."""
+    ki = kiauslese.weg_ergebnis(json.loads(WEG_ANTWORT))
+    wasser = next(p for p in ki["positionen"] if p["bezeichnung"] == "Wasserkosten")
+    assert wasser["ihre_kosten"] == 103.24
+    assert wasser["gesamtkosten"] == 788.80
+    assert wasser["schluessel"] == "Wasser gesamt"
+
+
+def test_weg_markiert_die_nicht_umlagefaehigen():
+    """Der Block „Nicht umlagefähig" wird gelesen, aber gekennzeichnet — er
+    darf später nie zur Kostenposition werden."""
+    ki = kiauslese.weg_ergebnis(json.loads(WEG_ANTWORT))
+    nicht = {p["bezeichnung"] for p in ki["positionen"] if not p["umlagefaehig"]}
+    assert nicht == {"Anschaffungen", "Reparatur", "Schädlingsbekämpfung"}
+    assert len([p for p in ki["positionen"] if p["umlagefaehig"]]) == 5
+    assert round(sum(p["ihre_kosten"] for p in ki["positionen"]
+                     if not p["umlagefaehig"]), 2) == 213.89
+
+
+def test_weg_deutsche_schreibweise_wird_aufgeraeumt():
+    """„1.824,55" ist tausendachthundert, nicht eins Komma acht — hier verliest
+    sich die reine Betragslogik, in der der letzte Punkt dezimal ist."""
+    ki = kiauslese.weg_ergebnis(json.loads(WEG_ANTWORT))
+    versicherung = next(p for p in ki["positionen"]
+                        if p["bezeichnung"] == "Versicherungen")
+    assert versicherung["gesamtkosten"] == 1824.55
+    assert ki["vorauszahlung"] == 2928.00
+    assert kiauslese._weg_betrag("2.008") == 2008.0     # Tausender, nicht 2,008
+
+
+def test_weg_warnt_wenn_die_summe_nicht_zum_deckblatt_passt():
+    """Serverseitig nachgerechnet: 103,24 + 138,18 + 442,18 + 205,63 + 4,17 =
+    893,40. Steht auf dem Deckblatt etwas anderes, wird das vermerkt — das
+    Ergebnis aber NICHT verworfen."""
+    block = json.loads(WEG_ANTWORT)
+    assert kiauslese.weg_ergebnis(block)["warnung"] == ""
+    block["betriebskosten"] = "2.008,28"
+    schief = kiauslese.weg_ergebnis(block)
+    assert schief["warnung"]
+    assert "893.40" in schief["warnung"] and "2008.28" in schief["warnung"]
+    assert len(schief["positionen"]) == 8         # trotzdem alles da
+
+
+def test_weg_ohne_abrechnung_ist_none(monkeypatch):
+    antwort = '{"positionen":[],"heizkosten":null,"warmwasserkosten":null}'
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
+    assert kiauslese.lies_weg_abrechnung("text", schluessel="test-key") is None
+
+
+def test_weg_ohne_key_ist_stumm(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert kiauslese.lies_weg_abrechnung("text") is None
+
+
+def test_weg_prompt_nennt_die_teure_verwechslung():
+    """Ohne die ausdrückliche Ansage greift das Modell zur Gesamtkostenspalte —
+    der Prompt ist hier die eigentliche Fachlogik."""
+    p = kiauslese.WEG_SYSTEM_PROMPT
+    assert "GANZ RECHTS" in p and "GANZ LINKS" in p
+    assert "103,24" in p and "788,80" in p          # das Beispiel steht drin
+    assert "Nicht umlagefähig" in p and "umlagefaehig = " in p
+    assert "kleineren" in p                          # die Notbremse bei Zweifel

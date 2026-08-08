@@ -997,6 +997,232 @@ def _strom_ergebnis(block: dict) -> dict | None:
 
 
 # --------------------------------------------------------------------------
+# N273 — die fertige WEG-Einzelabrechnung der Messfirma lesen.
+#
+# Anders als bei Wasser oder Strom geht es hier nicht um zwei Zahlen, sondern um
+# eine ganze Tabelle. Jede Zeile hat die Form
+#
+#     Gesamtkosten EUR : Gesamteinheit = Preis je Einheit × Ihre Einheiten
+#                                        = Ihre Kosten EUR
+#     Wasserkosten  788,80 : 381,151 Wasser gesamt = 2,069521 × 49,884 cbm
+#                                        = 103,24
+#
+# Die naheliegendste Verwechslung ist zugleich die teuerste: `ihre_kosten` ist
+# die Spalte GANZ RECHTS. Wer stattdessen die Gesamtkosten der Liegenschaft
+# nimmt, rechnet dem Mieter das Vielfache seines Anteils auf — bei fünf
+# Wohneinheiten das Fünffache. Der Prompt sagt das deshalb ausdrücklich und
+# mehrfach.
+#
+# Der zweite Fallstrick ist fachlich: unter der Überschrift „Nicht umlagefähig"
+# stehen Anschaffungen, Reparaturen und Schädlingsbekämpfung. Die trägt die
+# Eigentümergemeinschaft, nie der Mieter. Sie werden gelesen und markiert
+# (`umlagefaehig: false`), damit `weg.py` sie sichtbar machen, aber niemals
+# anlegen kann.
+#
+# Heiz- und Warmwasserkosten stehen auf einem eigenen Blatt und sind eigene
+# Positionen — sie gehören nicht in die Betriebskostentabelle.
+# --------------------------------------------------------------------------
+WEG_SYSTEM_PROMPT = (
+    "Du liest eine deutsche Betriebskosten-Einzelabrechnung, wie sie ein "
+    "Messdienst für EINE Wohnung einer Wohnungseigentümergemeinschaft "
+    "erstellt. Gib NUR JSON zurück, kein weiterer Text:\n"
+    '{"firma":"…","liegenschaft":"…","nutzer_nr":"…",'
+    '"von":"YYYY-MM-DD|null","bis":"YYYY-MM-DD|null","datum":"YYYY-MM-DD|null",'
+    '"positionen":[{"bezeichnung":"…","gesamtkosten":<Zahl|null>,'
+    '"ihre_kosten":<Zahl|null>,"schluessel":"…","umlagefaehig":true}],'
+    '"heizkosten":<Zahl|null>,"warmwasserkosten":<Zahl|null>,'
+    '"betriebskosten":<Zahl|null>,"rechnungsbetrag":<Zahl|null>,'
+    '"vorauszahlung":<Zahl|null>,"nachzahlung":<Zahl|null>}\n'
+    "Jede Zeile der Betriebskostentabelle hat die Form: Gesamtkosten EUR : "
+    "Gesamteinheit = Preis je Einheit × Ihre Einheiten = Ihre Kosten EUR. "
+    "Beispiel: \"Wasserkosten 788,80 : 381,151 Wasser gesamt = 2,069521 × "
+    "49,884 cbm = 103,24\".\n"
+    "ihre_kosten = die Spalte GANZ RECHTS (\"Ihre Kosten\"), also im Beispiel "
+    "103,24 — NICHT die 788,80. Das ist der häufigste Lesefehler und macht die "
+    "Abrechnung um den Faktor der Einheitenzahl falsch. Wenn du unsicher bist, "
+    "nimm IMMER den kleineren der beiden Beträge einer Zeile.\n"
+    "gesamtkosten = die Spalte GANZ LINKS (Kosten der ganzen Liegenschaft), im "
+    "Beispiel 788,80.\n"
+    "schluessel = der Verteilungsmaßstab hinter dem Doppelpunkt (\"Wasser "
+    "gesamt\", \"Personen\", \"m2 Betriebsk.\", \"Anzahl WE\", \"Anzahl "
+    "RWM\").\n"
+    "umlagefaehig = true für alle normalen Betriebskosten. Steht eine Position "
+    "unterhalb der Überschrift \"Nicht umlagefähig\" (Anschaffungen, "
+    "Reparatur, Schädlingsbekämpfung, Instandhaltung), dann umlagefaehig = "
+    "false. Lass solche Positionen NICHT weg — gib sie mit false zurück.\n"
+    "heizkosten und warmwasserkosten stehen auf dem Deckblatt bzw. auf der "
+    "Heiz- und Warmwasserkostenabrechnung. Sie sind EIGENE Positionen und "
+    "gehören NICHT in die Liste \"positionen\".\n"
+    "betriebskosten = die Summe \"Ihre Kosten\" der Betriebskostenabrechnung "
+    "laut Deckblatt.\n"
+    "rechnungsbetrag = Heizkosten + Warmwasserkosten + Betriebskosten laut "
+    "Deckblatt. vorauszahlung = die geleistete Vorauszahlung. nachzahlung = "
+    "was der Nutzer nachzahlen muss (bei einem Guthaben null).\n"
+    "von/bis = der Abrechnungszeitraum, datum = das Abrechnungsdatum.\n"
+    "Beträge in Euro als Zahl, immer positiv, Punkt als Dezimaltrenner. Was "
+    "nicht auf dem Beleg steht, auf null setzen — nie raten. Ist es überhaupt "
+    "keine solche Abrechnung, gib {\"positionen\":[]} zurück."
+)
+# Eine Abrechnung mit fünfzehn Zeilen — reichlich Luft, damit das JSON nicht
+# mitten in der Tabelle abbricht.
+WEG_TOKENS = 3000
+# Der Beleg hat drei Seiten; 6000 Zeichen schneiden das Heizkostenblatt ab.
+WEG_MAX_ZEICHEN = 20000
+# Ab wie viel Abweichung zwischen der Summe der Einzelpositionen und der auf dem
+# Deckblatt genannten Betriebskostensumme gewarnt wird. Ein Cent Rundung ist
+# normal, ein Prozent ist eine verlesene Zeile.
+WEG_TOLERANZ = 0.01
+
+
+def _weg_betrag(wert) -> float | None:
+    """Ein Betrag aus der Abrechnung, in deutscher Schreibweise gelesen.
+
+    `_betrag` allein reicht nicht: „2.008" ist auf diesem Beleg
+    zweitausendacht, nicht zwei Komma null null acht — dort ist der letzte
+    Punkt aber Dezimaltrenner. Für Zeichenketten entscheidet deshalb `_zahl_de`
+    über die Form (Komma → dezimal, Dreiergliederung → Tausender); Zahlen
+    kommen unverändert über `_betrag`."""
+    if isinstance(wert, str):
+        zahl = _zahl_de(wert)
+        return round(abs(zahl), 2) if zahl is not None else None
+    return _betrag(wert)
+
+
+def _weg_positionen(wert) -> list[dict]:
+    """Die Tabellenzeilen, normalisiert. Zeilen ohne Bezeichnung fliegen raus —
+    eine Kostenposition ohne Namen ist nicht zuzuordnen."""
+    if not isinstance(wert, list):
+        return []
+    zeilen: list[dict] = []
+    for roh in wert[:60]:                       # Deckel gegen ein Ausufern
+        if not isinstance(roh, dict):
+            continue
+        name = _text(roh.get("bezeichnung"))
+        if not name:
+            continue
+        zeilen.append({
+            "bezeichnung": name,
+            "gesamtkosten": _weg_betrag(roh.get("gesamtkosten")),
+            "ihre_kosten": _weg_betrag(roh.get("ihre_kosten")),
+            "schluessel": _text(roh.get("schluessel")),
+            # Im Zweifel umlagefähig? Nein — im Zweifel gilt, was dasteht.
+            # Fehlt die Angabe, ist es eine normale Betriebskostenzeile.
+            "umlagefaehig": roh.get("umlagefaehig") is not False,
+        })
+    return zeilen
+
+
+def _weg_pruefung(ergebnis: dict) -> str:
+    """Stimmt die Summe der Einzelpositionen mit dem Deckblatt überein?
+
+    Serverseitig gerechnet, nicht vom Modell erfragt: Addieren ist die
+    schwächste Seite eines Sprachmodells. Die Abweichung wird **vermerkt, nicht
+    verworfen** — der Nutzer hat das Papier vor sich und entscheidet."""
+    soll = ergebnis.get("betriebskosten")
+    ist = sum(p["ihre_kosten"] or 0.0 for p in ergebnis["positionen"]
+              if p["umlagefaehig"])
+    if not soll or not ist:
+        return ""
+    if abs(ist - soll) <= abs(soll) * WEG_TOLERANZ:
+        return ""
+    return (f"Die Summe der gelesenen Positionen ({ist:.2f} €) weicht von der "
+            f"Betriebskostensumme des Deckblatts ({soll:.2f} €) ab — bitte die "
+            f"Zeilen gegen den Beleg prüfen.")
+
+
+def lies_weg_abrechnung(text: str, dateiname: str = "", schluessel: str = "",
+                        modell: str = "") -> dict | None:
+    """Liest eine fertige WEG-Einzelabrechnung (N273).
+
+    Gibt bei Erfolg Kopfdaten, die Positionstabelle (jede Zeile mit
+    `umlagefaehig`) und die Beträge des Deckblatts zurück; passt die Summe der
+    Positionen nicht zum Deckblatt, steht das in `warnung` — das Ergebnis wird
+    deswegen nicht verworfen.
+
+    Bei jedem Fehler — kein Key, kein httpx, Netzwerk, Timeout, ungültige
+    Antwort, keine Abrechnung — `None`, nie eine Exception. Derselbe Key-/
+    Modell-Vorrang wie `lies_beleg`."""
+    if httpx is None:
+        return None
+    schluessel = _schluessel(schluessel)
+    if not schluessel:
+        return None
+    inhalt = (text or "").strip()
+    if not inhalt:
+        return None
+
+    gekuerzt = inhalt[:WEG_MAX_ZEICHEN]
+    nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
+    rumpf = {
+        "model": _modell(modell),
+        "max_tokens": WEG_TOKENS,
+        "system": WEG_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": nutzer}],
+    }
+    kopf = {
+        "x-api-key": schluessel,
+        "anthropic-version": API_VERSION,
+        "content-type": "application/json",
+    }
+
+    try:
+        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
+                             timeout=ZEITLIMIT * 4)
+    except Exception as fehler:                            # noqa: BLE001
+        log.info("KI-WEG-Auslese nicht erreichbar: %s", type(fehler).__name__)
+        return None
+    if antwort.status_code != 200:
+        log.info("KI-WEG-Auslese meldete HTTP %s", antwort.status_code)
+        return None
+
+    try:
+        daten = antwort.json()
+        bloecke = daten.get("content") or []
+        roh = "".join(b.get("text", "") for b in bloecke
+                      if isinstance(b, dict) and b.get("type") == "text")
+    except Exception:                                      # noqa: BLE001
+        return None
+
+    block = _json_block(roh)
+    if block is None:
+        log.info("KI-WEG-Auslese lieferte kein verwertbares JSON")
+        return None
+    return weg_ergebnis(block)
+
+
+def weg_ergebnis(block: dict) -> dict | None:
+    """Die Modellantwort zu einem geprüften Ergebnis — getrennt geführt, damit
+    das Normalisieren und die Plausibilitätsprüfung für sich prüfbar bleiben."""
+    positionen = _weg_positionen(block.get("positionen"))
+    heiz = _weg_betrag(block.get("heizkosten"))
+    warm = _weg_betrag(block.get("warmwasserkosten"))
+    if not positionen and not heiz and not warm:
+        return None                       # keine Abrechnung — nichts erfinden
+    ergebnis = {
+        "firma": _text(block.get("firma")),
+        "liegenschaft": _adresse(block.get("liegenschaft")),
+        "nutzer_nr": _text(block.get("nutzer_nr")),
+        "von": _datum(block.get("von")),
+        "bis": _datum(block.get("bis")),
+        "datum": _datum(block.get("datum")),
+        "positionen": positionen,
+        "heizkosten": heiz,
+        "warmwasserkosten": warm,
+        "betriebskosten": _weg_betrag(block.get("betriebskosten")),
+        "rechnungsbetrag": _weg_betrag(block.get("rechnungsbetrag")),
+        "vorauszahlung": _weg_betrag(block.get("vorauszahlung")),
+        "nachzahlung": _weg_betrag(block.get("nachzahlung")),
+    }
+    ergebnis["warnung"] = _weg_pruefung(ergebnis)
+    # Dezent loggen — OHNE Beträge (Datenschutz): nur Anzahl und ob gewarnt wird.
+    log.info("KI-WEG-Auslese gelesen (%d Positionen, davon %d nicht "
+             "umlagefähig, Warnung: %s)", len(positionen),
+             sum(1 for p in positionen if not p["umlagefaehig"]),
+             "ja" if ergebnis["warnung"] else "nein")
+    return ergebnis
+
+
+# --------------------------------------------------------------------------
 # Orientierung eines gescannten Blattes über das Vision-Modell.
 #
 # Tesseract-OSD verfehlt bei zerknitterten Foto-Scans die Drehrichtung (ein

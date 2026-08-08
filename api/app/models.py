@@ -296,6 +296,18 @@ class Zeitraum(SQLModel, table=True):
     # aus dem Stromketten-Hinweis. Additiv, Default 0 = keine Angabe, dann fällt
     # der geeichte Satz auf den Verteilungssatz zurück.
     strom_rechnung_kwh: float = 0.0
+    # N273 — WEG-Modus: die Einheit liegt in einer Wohnungseigentümergemeinschaft
+    # und der Vermieter bekommt von der Messfirma eine FERTIGE Einzelabrechnung.
+    # Dann gibt es keine eigenen Rechnungen, keine Zähler, keine Belegjagd — nur
+    # noch die Übernahme der fremden Abrechnung. Additiv, Default False = alles
+    # bleibt exakt wie bisher.
+    weg_modus: bool = False
+    # Der gelesene und vom Nutzer bestätigte Beleg, unverändert aufbewahrt.
+    # Er trägt auch die NICHT umlagefähigen Positionen — die dürfen nie als
+    # Kostenposition entstehen (sonst zahlt der Mieter die Instandhaltung der
+    # Gemeinschaft mit), sollen aber sichtbar bleiben, damit der Nutzer die
+    # Abrechnung gegen das Papier prüfen kann.
+    weg_beleg: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class Kostenposition(SQLModel, table=True):
@@ -368,6 +380,25 @@ class Vorauszahlung(SQLModel, table=True):
     zeitraum_id: int = Field(foreign_key="zeitraum.id", index=True)
     partei: str
     betrag: float
+
+
+class WegVorauszahlung(SQLModel, table=True):
+    """N273 — die Vorauszahlung des Mieters im WEG-Modus, in Abschnitten.
+
+    Bewusst NICHT ein einzelner Jahresbetrag: der Nutzer sagt ausdrücklich, dass
+    ein halbes Jahr höher oder niedriger gezahlt werden kann (Anpassung nach der
+    letzten Abrechnung). Ein Abschnitt hält deshalb den MONATSBETRAG samt
+    Geltungsspanne; gerechnet wird daraus monatsgenau (`weg.vorauszahlung`).
+
+    `von`/`bis` dürfen leer bleiben — dann gilt der Abschnitt für den ganzen
+    Abrechnungszeitraum. Ganz neue Tabelle: `create_all` legt sie an, kein
+    bestehender Datensatz ändert sich."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    zeitraum_id: int = Field(foreign_key="zeitraum.id", index=True)
+    einheit: str = ""
+    von: Optional[date] = None
+    bis: Optional[date] = None
+    betrag_monat: float = 0.0
 
 
 class Zaehler(SQLModel, table=True):

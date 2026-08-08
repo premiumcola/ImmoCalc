@@ -15,7 +15,7 @@ from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, dokumentvorlagen,
                       heizoel, ki, kidb, mail, objekte, openwb, renovierung,
                       solaredge, stammdaten, strom, stromkette, tankstelle,
-                      versand, waerme, zaehler)
+                      versand, waerme, weg, zaehler)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -93,6 +93,9 @@ app.include_router(tankstelle.router)
 app.include_router(stromkette.router)
 # N270 — /objekte/{slug}/renovierungen ebenfalls VOR dem Stammdaten-Fänger.
 app.include_router(renovierung.router)
+# N273 — /zeitraeume/{zid}/weg (WEG-Modus). Früh eingehängt, damit kein anderer
+# Router ein zweisegmentiges /zeitraeume/{zid}/… vorher abfängt.
+app.include_router(weg.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 app.include_router(cloud.router)
