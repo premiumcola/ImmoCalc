@@ -20,9 +20,8 @@ import { api, eur, eurKurz, esc, melde, frage, belegAnsehen, baueDialog,
 import { auswahlfeld } from '../auswahl.js';
 import { sankey } from '../charts.js';
 import { kostenIcon } from '../kostenicons.js';
-import { scanZuPdf, lesbareGroesse } from '../scan.js';
-import { belegVorbereiten, belegAblegen } from '../belegscan.js';
-import { fotoAlsJpeg } from '../kamerascan.js';
+import { lesbareGroesse } from '../scan.js';
+import { belegVorbereiten } from '../belegscan.js';
 
 import * as state from './state.js';
 import {
@@ -72,9 +71,13 @@ import {
   geeichteMengeSpeichern,
 } from './stromkette.js';
 import {
-  belegAblageHtml, belegLoesen, betragVorschlagen, erkennungHatWert,
+  belegAblageHtml, belegLoesen, belegAbschluss, erkennungHatWert,
   anhaengen, anhaengerEntfernen, initBelegDrop,
 } from './belege.js';
+import {
+  wegLaden, wegSchalterHtml, wegAnsichtHtml, wegSchalten, wegAufnehmen,
+  vorauszahlungNeu, vorauszahlungBearbeiten, vorauszahlungEntfernen,
+} from './weg.js';
 import {
   konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
 } from './konfigmodus.js';
@@ -663,6 +666,28 @@ function abschlussHtml() {
         <button class="wiederauf" data-oeffnen="1">Wieder öffnen</button>
       </div>`;
   }
+  // N280 — im WEG-Modus gibt es keine Positionen zu jagen: gezählt wird, was
+  // aus der Abrechnung übernommen wurde. Die Checkliste des Objekts stünde hier
+  // sonst als „12 Positionen ohne Betrag" — genau die Mahnung, die im
+  // WEG-Modus falsch ist.
+  if (state.wegDaten?.aktiv) {
+    const stand = state.wegDaten.stand || {};
+    const anzahl = (stand.positionen || []).length;
+    if (!anzahl) {
+      return `<div class="abschluss offen">
+          <div class="at">Noch keine Abrechnung übernommen</div>
+          <p>Nimm oben die Abrechnung der Abrechnungsfirma auf — daraus
+             entstehen die Positionen dieses Zeitraums.</p>
+        </div>`;
+    }
+    return `<div class="abschluss bereit">
+        <div class="at">✓ Abrechnung übernommen</div>
+        <p>${anzahl} ${anzahl === 1 ? 'Position' : 'Positionen'} ·
+           ${eur(stand.umlagefaehig_summe)} umlagefähig.
+           Die Abrechnung kann erstellt und verschickt werden.</p>
+        <button class="losbutton" data-abschluss="1">Abrechnungen erstellen und versenden</button>
+      </div>`;
+  }
   const f = state.daten.fortschritt;
   const rest = f.gesamt - f.fertig;
   const ohne = state.daten.checkliste.filter(k => k.ohne_verteilung)
@@ -830,15 +855,18 @@ const GEAR_SVG = `<svg viewBox="-2 -2 28 28" fill="none" stroke="currentColor"
 export async function zeichnen() {
   const f = fortschrittRechnen();
   const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
+  // N280 — im WEG-Modus gibt es keine Belegjagd: der Fortschrittsbalken würde
+  // Positionen anmahnen, die dieser Zeitraum gar nicht mehr selbst erfasst.
+  const wegAn = !!state.wegDaten?.aktiv;
 
   const kopf = `
-    <div class="fortschritt">
+    ${wegAn ? '' : `<div class="fortschritt">
       <div class="kopf">
         <span class="gross">${f.fertig} von ${f.gesamt}</span>
         <span class="klein">Positionen vollständig</span>
       </div>
       <div class="bahn"><i style="width:${anteil}%"></i></div>
-    </div>
+    </div>`}
     <div class="tabs" role="tablist">
       <button data-tab="pruef" aria-selected="${state.ansicht === 'pruef'}">Checkliste</button>
       <button data-tab="ergebnis" aria-selected="${state.ansicht === 'ergebnis'}">Ergebnis</button>
@@ -846,6 +874,13 @@ export async function zeichnen() {
     </div>`;
 
   let rumpf = '';
+  if (state.ansicht === 'pruef' && wegAn) {
+    // N280 — die Dateiübernahme tritt an die Stelle der ganzen Checkliste:
+    // keine Zeilen, keine Ausrufezeichen, keine Zählerkonfiguration.
+    inhalt.innerHTML = kopf + wegAnsichtHtml() + abschlussHtml()
+      + zeitraumFussHtml();
+    return;
+  }
   if (state.ansicht === 'pruef') {
     const zListe = state.ablesungMaske?.zaehler || [];
     if (zListe.length) state.setZLabels(generischeLabels(zListe));
@@ -903,7 +938,7 @@ export async function zeichnen() {
       return kopfKat + liste.map(({ k, i }) => zeileHtml(k, i)).join('') + wz;
     }).join('');
 
-    rumpf = wegDirektHtml() + flussKarte + sortWahl +
+    rumpf = wegSchalterHtml() + wegDirektHtml() + flussKarte + sortWahl +
       zeilen + ablesenKnopfHtml() + abschlussHtml() + zeitraumFussHtml();
   } else if (state.ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
@@ -1323,6 +1358,9 @@ export async function laden() {
   }
   state.setLeerstaende(new Set(
     (state.schluessel?.schluessel || []).flatMap(s => s.leerstand || [])));
+  // N280 — der WEG-Stand entscheidet, ob dieser Zeitraum die Checkliste zeigt
+  // oder die Dateiübernahme.
+  await wegLaden();
   try {
     state.setAnhaenger(await api(`/dokumente/anhaenger/${zid}`));
   } catch {
@@ -1609,6 +1647,26 @@ export function initHandlers() {
       return;
     }
 
+    // N280 — WEG-Abrechnung: Schalter, Aufnahme, Vorauszahlungs-Abschnitte.
+    const wSchalter = e.target.closest('[data-weg-schalter]');
+    if (wSchalter) { e.preventDefault();
+      return wegSchalten(wSchalter.dataset.wegSchalter === '1'); }
+    const wScan = e.target.closest('[data-weg-scan]');
+    if (wScan) {
+      e.preventDefault();
+      state.setScanZiel({ weg: true });
+      document.getElementById('scanFeld').click();
+      return;
+    }
+    if (e.target.closest('[data-weg-vz-neu]')) { e.preventDefault();
+      return vorauszahlungNeu(); }
+    const wVzB = e.target.closest('[data-weg-vz-bearbeiten]');
+    if (wVzB) { e.preventDefault();
+      return vorauszahlungBearbeiten(wVzB.dataset.wegVzBearbeiten); }
+    const wVzW = e.target.closest('[data-weg-vz-weg]');
+    if (wVzW) { e.preventDefault();
+      return vorauszahlungEntfernen(wVzW.dataset.wegVzWeg); }
+
     const scan = e.target.closest('[data-scan]');
     if (scan) {
       state.setScanZiel({ kostenart: scan.dataset.scan, knopf: scan });
@@ -1643,6 +1701,11 @@ export function initHandlers() {
     state.setScanZiel(null);
     if (!dateien.length || !ziel) return;
 
+    // N280 — die WEG-Abrechnung nimmt denselben Eingang (ein Dateifeld für die
+    // ganze Seite), läuft danach aber ihren eigenen Weg: sie wird gelesen und
+    // als Ganzes übernommen, nicht als einzelner Beleg verbucht.
+    if (ziel.weg) return wegAufnehmen(dateien);
+
     // N268 — der Anhänger-Weg startet aus einem Dialog, der beim Scannen schon
     // wieder zu ist: dort gibt es keinen Knopf zum Ausgrauen. Ein Blindobjekt
     // statt eines `if` an fünf Stellen — der Ablauf bleibt genau einer.
@@ -1672,6 +1735,10 @@ export function initHandlers() {
         objekt: state.daten.objekt, kategorie: 'Nebenkosten',
         kostenart: ziel.kostenart, jahr, zeitraumId: state.daten.id,
         titel: ziel.kostenart,
+        // N263/N280 — die gemeinte Eingabemaske nennen; gibt es für
+        // „nebenkosten" noch keine Feldzuordnung, kommt nichts zurück und alles
+        // bleibt wie zuvor. Rein additiv.
+        bereich: 'nebenkosten',
       }, () => { deckeWeg = analyseDecke(); });
       // N255 — dieselbe Auslese weiterverwenden, die `belegVorbereiten` schon
       // geholt hat. Hier lief bis eben ein ZWEITER, identischer `/erkennen`-
@@ -1690,10 +1757,12 @@ export function initHandlers() {
         if (beschriftung) beschriftung.textContent = urText;
         return;
       }
-      // N267 — der Betrag aus der Maske schlägt die Erkennung: er steht im
-      // Dateinamen, am Beleg und gleich auch in der Kostenposition.
-      const ergebnis = await belegAblegen(vorbereitet, entscheidung.beschreibung,
-                                          entscheidung.betrag);
+      // N280 — ab hier läuft der Knopf durch GENAU denselben Abschluss wie der
+      // Drop auf die Karte (`belege.js`): Wasser-Rückfrage, Ablage, gelernter
+      // Anbieter, Verbuchung. N267 — der Betrag aus der Maske schlägt die
+      // Erkennung; er steht im Dateinamen, am Beleg und in der Kostenposition.
+      const ergebnis = await belegAbschluss({
+        kostenart: ziel.kostenart, vorbereitet, entscheidung });
       if (!ergebnis) {
         knopf.disabled = false;
         if (beschriftung) beschriftung.textContent = urText;
@@ -1704,8 +1773,7 @@ export function initHandlers() {
         beschriftung.textContent = `✓ ${seiten} Seite${seiten > 1 ? 'n' : ''}`
           + (ergebnis.groesse ? ` · ${lesbareGroesse(ergebnis.groesse)}` : '');
       }
-      const uebernommen = await betragVorschlagen(ziel.kostenart, vorschlag,
-                                                  entscheidung.betrag);
+      const uebernommen = ergebnis.betrag != null;
       // N268 — aus dem „Beleg anhängen"-Dialog heraus gescannt: trägt der Beleg
       // keinen Betrag, ist er ein Infobeleg und wird als Anhänger gesetzt —
       // genau das, wofür der Nutzer den Dialog geöffnet hat. Mit Betrag bleibt

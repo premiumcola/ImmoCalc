@@ -193,56 +193,63 @@
     background:rgba(15,110,92,.14);border:2px dashed var(--teal);border-radius:14px;
     color:var(--teal-d);font:600 13px var(--disp);letter-spacing:-.01em;
     pointer-events:none;-webkit-backdrop-filter:blur(1px);backdrop-filter:blur(1px)}
-  /* CCCXCIV — großer Drop-Dialog am PC: Formular links, PDF-Vorschau rechts groß. */
-  dialog.immo-dlg.beleg-drop-dlg{max-width:min(1060px,calc(100% - 32px));
-    width:calc(100% - 32px)}
-  /* Eyebrow über dem Dialogtitel: welche Immobilie, welcher Bereich (CD). */
-  .bdd-eyebrow{display:block;font:600 11px var(--mono);letter-spacing:.06em;
-    text-transform:uppercase;color:var(--teal-d);margin:0 0 3px}
-  .bdd-body{display:flex;gap:18px;align-items:stretch}
-  .bdd-links{flex:1 1 340px;min-width:0;display:flex;flex-direction:column}
-  /* CD — die Vorschau bekommt A4-Hochformat, damit die erste Seite immer GANZ
-     ohne Scrollen sichtbar ist; das PDF wird per view=Fit eingepasst. */
-  .bdd-rechts{flex:1.5 1 460px;min-width:0;align-self:flex-start;
-    aspect-ratio:1 / 1.414;max-height:min(86dvh,960px);
-    background:var(--paper);border-radius:12px;
+  /* N280 — die Wasser-Rückfrage nach der Bestätigungsmaske: drei Felder links,
+     der Bescheid daneben. Auf dem Telefon rutscht das Blatt unter die Felder —
+     eingetragen wird oben, nachgesehen darunter. */
+  dialog.immo-dlg.wasser-dlg{max-width:min(820px,calc(100% - 32px));
+    width:calc(100% - 32px);max-height:92dvh;max-height:92vh;overflow:auto}
+  .wdlg-s{font:400 13px var(--body);color:var(--soft);line-height:1.55;
+    margin:0 0 14px}
+  .wdlg-s strong{color:var(--ink)}
+  .wdlg-body{display:flex;gap:18px;align-items:flex-start}
+  .wdlg-felder{flex:1 1 300px;min-width:0;display:flex;flex-direction:column}
+  /* Der Knopf sitzt unten: sonst bliebe neben dem Blatt eine leere Fläche. */
+  .wasser-dlg .sb-fuss{margin-top:auto;padding-top:4px}
+  .wdlg-summe{display:flex;justify-content:space-between;align-items:baseline;
+    gap:10px;background:var(--paper);border-radius:11px;padding:10px 13px;
+    margin:0 0 14px;font:500 12.5px var(--body);color:var(--soft)}
+  .wdlg-summe b{font:700 15px var(--mono);color:var(--ink)}
+  /* Die Vorschau bekommt A4-Hochformat, damit die erste Seite ganz sichtbar
+     ist; das PDF wird per view=Fit eingepasst. */
+  /* Gedeckelt, damit der Dialog nicht auf Blatthöhe wächst und neben den drei
+     Feldern eine leere Fläche stehen bleibt (roter Faden: kein Leerraum). */
+  .bdd-rechts{flex:1 1 300px;min-width:0;align-self:stretch;
+    aspect-ratio:1 / 1.414;max-height:min(56dvh,520px);min-height:240px;
+    background:var(--sheet);border-radius:12px;
     overflow:hidden;display:flex;align-items:stretch}
   .bdd-embed{width:100%;height:100%;border:none}
   .bdd-img{width:100%;height:100%;object-fit:contain}
-  .bdd-leer{margin:auto;color:var(--soft);font:500 13px var(--body)}
-  .bdd-ki{font-style:italic;color:var(--soft)}
   .field.zwei{display:flex;gap:10px}
-  .field.zwei > div{flex:1}
-  /* N78 — die drei Wasser-Bereichsbeträge nebeneinander; auf schmalen Spalten
-     dürfen sie umbrechen, damit nichts aus der Karte läuft. */
-  .field.drei{display:flex;gap:10px;flex-wrap:wrap}
-  .field.drei > div{flex:1 1 92px;min-width:0}
-  .bdd-wasser-hint{font:400 12px var(--body);color:var(--soft);line-height:1.5;
-    margin:0 0 12px}
+  .field.zwei > div{flex:1;min-width:0}
   /* KI-neu-Knopf: dezent, animiert, während die KI liest. */
   .bdd-kibtn{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;
     border:1.5px solid #C7B8E0;background:#F1ECF9;color:#5B3E8F;border-radius:10px;
-    padding:8px 12px;font:600 12px var(--disp);cursor:pointer;margin:2px 0 14px}
+    padding:8px 12px;font:600 12px var(--disp);cursor:pointer;margin:0 0 14px;
+    min-height:44px}
   .bdd-kibtn:hover{background:#E9E0F5}
   .bdd-kibtn[disabled]{cursor:default}
   .bdd-kibtn .funke{display:inline-block}
   .bdd-kibtn.laedt .funke{animation:bddspin .8s linear infinite}
   @keyframes bddspin{to{transform:rotate(360deg)}}
   .bdd-kibtn.laedt{background:#E9E0F5;color:#5B3E8F}
-  .bdd-zus{font:400 12px var(--body);color:var(--soft);line-height:1.5;
-    background:var(--paper);border-radius:10px;padding:9px 11px;margin:0 0 12px}
-  .bdd-fuss{margin-top:auto}
-  @media(max-width:720px){ .bdd-body{flex-direction:column-reverse}
-    .bdd-rechts{aspect-ratio:auto;min-height:44dvh;max-height:64dvh} }
-  /* CD — Ladeschleier zwischen Drop und Dialog: Prüfsumme + KI-Erkennung
-     dauern kurz; ein Kringel zeigt „ich arbeite", statt dass nichts passiert. */
-  .drop-lade{position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:15px;
-    background:rgba(22,38,44,.44);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
-  .drop-lade .kringel{width:46px;height:46px;border-radius:50%;
-    border:3px solid rgba(255,255,255,.32);border-top-color:#fff;
-    animation:bddspin .8s linear infinite}
-  .drop-lade .txt{color:#fff;font:600 13px var(--disp);letter-spacing:-.01em}
+  /* N54 — Inline-Fehler sichtbar direkt über dem Knopf statt als Toast hinter
+     dem Modal. */
+  .bdd-err{background:var(--neg);color:#fff;border-radius:11px;
+    padding:9px 12px;margin:0 0 11px;font:600 12px var(--body);line-height:1.45}
+  .wasser-dlg .sb-fuss,.weg-vz-dlg .sb-fuss,.weg-best-dlg .sb-fuss{
+    display:flex;gap:10px}
+  .wasser-dlg .sb-weiter,.weg-vz-dlg .sb-weiter,.weg-best-dlg .sb-weiter{
+    flex:1;min-height:52px;border:none;border-radius:12px;background:var(--teal);
+    color:#fff;cursor:pointer;font:600 14px var(--body);padding:0 14px}
+  .wasser-dlg .sb-weiter:hover,.weg-vz-dlg .sb-weiter:hover,
+  .weg-best-dlg .sb-weiter:hover{background:var(--teal-d)}
+  /* Schmal: Felder oben (dafür ist der Dialog da), das Blatt darunter zum
+     Nachsehen. Die Felder wachsen dann NICHT mit — sonst klaffte zwischen
+     Knopf und Blatt eine leere Fläche. */
+  @media(max-width:720px){ .wdlg-body{flex-direction:column}
+    .wdlg-felder{flex:none}
+    .wasser-dlg .sb-fuss{margin-top:2px;padding-top:0}
+    .bdd-rechts{width:100%;aspect-ratio:auto;min-height:34dvh;max-height:46dvh} }
   /* N54 — Ladeanzeige DIREKT in der NK-Zeile, während ein abgelegter Beleg
      hochgeladen und verbucht wird: der Nutzer sieht am richtigen Ort „ich
      verarbeite das gerade", statt nur einen Toast. Solange sie läuft, treten
@@ -256,18 +263,6 @@
   .zeile-lade .kringel{width:14px;height:14px;border-radius:50%;flex:none;
     border:2px solid rgba(15,110,92,.28);border-top-color:var(--teal);
     animation:bddspin .7s linear infinite}
-  /* Hinweis in der Drop-Maske, wenn die Datei schon in der Ablage liegt. */
-  .beleg-drop-dlg .dup-hinweis{background:var(--amber-bg);border-radius:12px;
-    padding:11px 13px;margin:0 0 15px;font:400 12.5px var(--body);color:var(--ink);
-    line-height:1.5}
-  .beleg-drop-dlg .dup-hinweis strong{display:block;color:var(--amber);font-weight:600;
-    margin-bottom:2px}
-  .beleg-drop-dlg .dup-hinweis .pfad{display:block;font:500 11px var(--mono);
-    color:var(--soft);margin:4px 0 3px;word-break:break-all}
-  /* N54 — Inline-Fehler im Drop-Dialog (fehlender Betrag), sichtbar direkt über
-     dem Knopf statt als Toast hinter dem Modal. */
-  .beleg-drop-dlg .bdd-err{background:var(--neg);color:#fff;border-radius:11px;
-    padding:9px 12px;margin:0 0 11px;font:600 12px var(--body);line-height:1.45}
   /* Gefüllte Zeile sanft grün herausheben: man sieht auf einen Blick, wo schon
      ein Betrag steht — und in welcher Höhe. Kein greller Block, sondern ein
      weicher Verlauf von links plus ein schmaler Akzent an der Kante. */
@@ -1335,6 +1330,195 @@
   .vdlg .vs{display:block;font:400 11px var(--body);color:var(--soft);
             margin-top:3px;line-height:1.45}
   .vdlg .vm{flex:none;margin-top:1px}
+
+  /* ================= N280 — WEG-Abrechnung ================================
+     Der Schalter steht auf jedem Zeitraum, schmal wie eine Zeile. Ist er an,
+     tritt die Dateiuebernahme an die Stelle der ganzen Checkliste. */
+  .weg-schalter{display:flex;align-items:center;gap:12px;background:var(--sheet);
+    border-radius:16px;padding:12px 14px;margin-bottom:12px;
+    box-shadow:0 1px 3px rgba(22,38,44,.07)}
+  .weg-schalter.an{background:var(--teal-l);
+    box-shadow:inset 3px 0 0 var(--teal),0 1px 3px rgba(22,38,44,.07)}
+  .weg-schalter .ws-ikon{flex:none;width:26px;height:26px;color:var(--teal-d);
+    display:inline-flex;align-items:center;justify-content:center}
+  .weg-schalter .ws-ikon svg{width:24px;height:24px;display:block}
+  .weg-schalter .ws-t{flex:1;min-width:0;font:600 13px var(--disp);
+    letter-spacing:-.01em;color:var(--ink)}
+  .weg-schalter .ws-s{display:block;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.4;margin-top:3px}
+  .ws-kipp{flex:none;width:52px;height:30px;border:none;border-radius:15px;
+    background:#C7D2D0;cursor:pointer;position:relative;padding:0;
+    transition:background .16s}
+  .ws-kipp[aria-checked="true"]{background:var(--teal)}
+  .ws-kipp[disabled]{opacity:.5;cursor:default}
+  .ws-kipp i{position:absolute;top:3px;left:3px;width:24px;height:24px;
+    border-radius:50%;background:#fff;transition:transform .16s;
+    box-shadow:0 1px 3px rgba(22,38,44,.35)}
+  .ws-kipp[aria-checked="true"] i{transform:translateX(22px)}
+
+  .weg-karte .weg-kopf{display:flex;align-items:baseline;gap:10px;
+    margin-bottom:4px}
+  .weg-karte .weg-kopf h3{margin:0;flex:1;min-width:0}
+  .weg-karte .weg-summe{flex:none;font:700 15px var(--mono);color:var(--ink)}
+  .weg-plus{flex:none;width:36px;height:36px;border:1.5px solid var(--teal);
+    border-radius:11px;background:transparent;color:var(--teal);cursor:pointer;
+    font:400 22px/1 var(--body);align-self:center}
+  .weg-plus:hover{background:var(--teal-l)}
+  .weg-karte .erklaer{display:block;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.45;margin:0 0 12px}
+  .weg-leer{font:400 12.5px var(--body);color:var(--soft);line-height:1.5;
+    background:var(--paper);border-radius:11px;padding:11px 13px}
+
+  .weg-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+  .weg-chip{font:500 11px var(--mono);color:var(--teal-d);background:var(--teal-l);
+    border-radius:8px;padding:4px 8px;max-width:100%;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+
+  .weg-datei{display:flex;flex-direction:column;gap:3px;background:var(--paper);
+    border-radius:11px;padding:10px 12px;margin:0 0 12px}
+  .weg-datei a{display:flex;align-items:center;gap:8px;color:var(--teal-d);
+    font:600 12.5px var(--body);text-decoration:none;min-height:24px}
+  .weg-datei a svg{flex:none;width:18px;height:18px}
+  .weg-datei a span{min-width:0;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .weg-datei .wd-ort{font:400 10.5px var(--mono);color:var(--soft);
+    word-break:break-all;line-height:1.4}
+
+  .weg-los{display:flex;align-items:center;justify-content:center;gap:9px;
+    width:100%;min-height:52px;border:none;border-radius:13px;background:var(--teal);
+    color:#fff;cursor:pointer;font:600 14px var(--body);margin:2px 0 8px;
+    padding:0 14px}
+  .weg-los:hover{background:var(--teal-d)}
+  .weg-los svg{flex:none;width:20px;height:20px}
+
+  /* Die Positionsliste als Balken: die Groesse der Zahl wird sichtbar. */
+  .weg-liste{display:flex;flex-direction:column;gap:7px}
+  .weg-zeile{display:flex;align-items:center;gap:10px}
+  .weg-zeile .wz-n{flex:1 1 40%;min-width:0;font:500 12.5px var(--body);
+    color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .weg-zeile .wz-bahn{flex:1 1 30%;min-width:34px;height:8px;border-radius:4px;
+    background:var(--paper);overflow:hidden}
+  .weg-zeile .wz-bahn i{display:block;height:100%;border-radius:4px;
+    background:var(--teal)}
+  .weg-zeile .wz-v{flex:none;font:600 12.5px var(--mono);color:var(--ink);
+    text-align:right;min-width:74px}
+  .weg-liste.aus .wz-bahn i{background:#A9B6B4}
+  .weg-liste.aus .wz-n,.weg-liste.aus .wz-v{color:var(--soft)}
+
+  .weg-nicht{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
+  .weg-nicht .wn-kopf{display:flex;align-items:baseline;gap:10px;
+    font:600 12px var(--disp);color:var(--soft)}
+  .weg-nicht .wn-kopf span:first-child{flex:1;min-width:0}
+  .weg-nicht .wn-v{flex:none;font:600 13px var(--mono)}
+  .weg-nicht .wn-s{margin:4px 0 10px;font:400 11.5px var(--body);color:var(--soft);
+    line-height:1.45}
+
+  .weg-warn{display:flex;gap:9px;background:var(--amber-bg);border-radius:11px;
+    padding:10px 12px;margin:0 0 12px;font:400 12px var(--body);color:var(--ink);
+    line-height:1.5}
+  .weg-warn .ww-z{flex:none;color:var(--amber);font-weight:700}
+  .weg-warn.leise{background:var(--paper);color:var(--soft)}
+  .weg-warn.leise .ww-z{color:var(--soft)}
+  .weg-warn b{color:var(--ink)}
+
+  /* Trennstrich zwischen den Abschnitten, nicht hinter dem letzten: `:last-of-type`
+     zählt Elementtypen, nicht Klassen — mit der Summenzeile darunter (auch ein
+     div) hätte es nie gegriffen und zwei Linien nebeneinander gezogen. */
+  .weg-vz{display:flex;align-items:center;gap:10px;padding:9px 0;flex-wrap:wrap}
+  .weg-vz + .weg-vz{border-top:1px solid var(--line)}
+  .weg-vz .wv-n{flex:1 1 40%;min-width:0;font:600 12.5px var(--body);color:var(--ink)}
+  .weg-vz .wv-s{display:block;font:400 10.5px var(--mono);color:var(--soft);
+    margin-top:2px}
+  .weg-vz .wv-r{flex:none;font:400 11.5px var(--mono);color:var(--soft)}
+  .weg-vz .wv-v{flex:none;min-width:82px;text-align:right;
+    font:600 13px var(--mono);color:var(--ink)}
+  .weg-vz .wv-k{flex:none;display:flex;gap:4px}
+  .wv-b{min-height:36px;padding:0 11px;border:1.5px solid var(--line);
+    border-radius:9px;background:transparent;color:var(--soft);cursor:pointer;
+    font:600 11.5px var(--body)}
+  .wv-b:hover{border-color:var(--teal);color:var(--teal)}
+  .wv-x{width:36px;height:36px;border:1.5px solid var(--line);border-radius:9px;
+    background:transparent;color:var(--soft);cursor:pointer;font:400 17px/1 var(--body)}
+  .wv-x:hover{border-color:var(--neg);color:var(--neg)}
+  .weg-vzsumme{display:flex;justify-content:space-between;align-items:baseline;
+    gap:10px;margin-top:12px;padding-top:11px;border-top:2px solid var(--line);
+    font:600 12.5px var(--body);color:var(--soft)}
+  .weg-vzsumme span:last-child{font:700 15px var(--mono);color:var(--ink)}
+
+  /* Der Saldo — deutlich abgesetzt, Doppelstrich vor der Endzeile. */
+  .weg-saldo{background:var(--sheet);border-radius:16px;padding:16px;
+    margin-bottom:12px;box-shadow:0 1px 3px rgba(22,38,44,.07)}
+  .weg-saldo .wsz{display:flex;justify-content:space-between;align-items:baseline;
+    gap:12px;padding:5px 0;font:500 12.5px var(--body);color:var(--soft)}
+  .weg-saldo .wsz span:last-child{font:600 13px var(--mono);color:var(--ink)}
+  .weg-saldo .wsz.gross{margin-top:9px;padding-top:12px;
+    border-top:3px double var(--ink);font:700 14px var(--disp);color:var(--ink)}
+  .weg-saldo .wsz.gross span:last-child{font:700 21px var(--mono)}
+  .weg-saldo.neg .wsz.gross span:last-child{color:var(--neg)}
+  .weg-saldo.pos .wsz.gross span:last-child{color:var(--pos)}
+
+  /* Die Bestaetigung der gelesenen Abrechnung: eine Tabelle, nicht editierbar. */
+  dialog.immo-dlg.weg-best-dlg{max-width:min(680px,calc(100% - 24px))}
+  .weg-best-dlg .wb-fuer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:var(--paper);border-radius:11px;padding:9px 12px;margin:0 0 10px;
+    font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--soft);flex:none}
+  .weg-best-dlg .wb-einheit{flex:1;min-width:140px;min-height:42px;
+    border:1.5px solid #C3DAD2;border-radius:10px;background:var(--sheet);
+    padding:0 10px;font:500 13px var(--body);color:var(--ink);
+    text-transform:none;letter-spacing:0}
+  .weg-best-dlg .wb-eintext{flex:1;min-width:0;font:600 13px var(--body);
+    color:var(--ink);text-transform:none;letter-spacing:0}
+  .weg-best-dlg .wb-eintext.warn{color:var(--neg)}
+  /* EIN Rollbereich für die ganze Abrechnung — Positionen und der nicht
+     umlagefähige Block gehören zusammen. Rollte nur die Positionsliste, blieb
+     auf dem Telefon Platz für zwei Zeilen, während der Block darunter stand. */
+  .weg-best-dlg .wb-rolle{flex:1 1 auto;min-height:0;overflow-y:auto;
+    display:flex;flex-direction:column;gap:12px}
+  .weg-best-dlg .wb-liste{display:flex;flex-direction:column;flex:none}
+  .weg-best-dlg .wb-kopfz,.weg-best-dlg .wb-z{display:flex;align-items:baseline;
+    gap:10px;padding:6px 2px;border-bottom:1px solid var(--line)}
+  .weg-best-dlg .wb-kopfz{font:600 10px var(--mono);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--soft);position:sticky;top:0;
+    background:var(--sheet);z-index:1}
+  .weg-best-dlg .wb-kopfz span:first-child{flex:1;min-width:0}
+  .weg-best-dlg .wb-n{flex:1;min-width:0;font:500 12.5px var(--body);color:var(--ink)}
+  .weg-best-dlg .wb-s{display:block;font:400 10px var(--mono);color:var(--soft);
+    margin-top:1px}
+  .weg-best-dlg .wb-g{flex:none;width:84px;text-align:right;
+    font:400 11.5px var(--mono);color:var(--soft)}
+  .weg-best-dlg .wb-v{flex:none;width:84px;text-align:right;
+    font:600 12.5px var(--mono);color:var(--ink)}
+  .weg-best-dlg .wb-z.summe{border-bottom:none;border-top:3px double var(--ink);
+    margin-top:2px;padding-top:9px}
+  .weg-best-dlg .wb-z.summe .wb-n{font-weight:700}
+  .weg-best-dlg .wb-z.summe .wb-v{font-size:14px}
+  .weg-best-dlg .wb-nicht{flex:none;background:var(--paper);
+    border-radius:12px;padding:11px 12px}
+  .weg-best-dlg .wb-nkopf{display:flex;gap:10px;align-items:baseline;
+    font:600 12px var(--disp);color:var(--soft)}
+  .weg-best-dlg .wb-nkopf span{flex:none;font:600 13px var(--mono)}
+  .weg-best-dlg .wb-ns{margin:4px 0 8px;font:400 11px var(--body);color:var(--soft);
+    line-height:1.45}
+  .weg-best-dlg .wb-liste.aus .wb-n,.weg-best-dlg .wb-liste.aus .wb-v{
+    color:var(--soft)}
+  .weg-best-dlg .weg-chips{flex:none}
+  .weg-best-dlg .weg-warn{flex:none}
+
+  @media(max-width:430px){
+    .weg-zeile{flex-wrap:wrap}
+    .weg-zeile .wz-n{flex:1 1 100%}
+    .weg-zeile .wz-bahn{flex:1 1 auto}
+    /* Zwei Zeilen statt vier: oben wer und wie viel, darunter die Herleitung
+       und die Knöpfe. Ohne die Reihenfolge sprängen die Knöpfe zwischen
+       Betrag und Herleitung. */
+    .weg-vz{align-items:flex-start;row-gap:8px}
+    .weg-vz .wv-n{flex:1 1 55%}
+    .weg-vz .wv-v{order:2}
+    .weg-vz .wv-r{order:3;align-self:center}
+    .weg-vz .wv-k{order:4;margin-left:auto}
+    .weg-best-dlg .wb-g{display:none}
+  }
 </style>
 </head>
 <body>

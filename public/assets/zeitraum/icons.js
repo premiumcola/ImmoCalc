@@ -79,3 +79,17 @@ export const WOLKE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentC
   stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M7 18a4 4 0 0 1-.4-7.98A5 5 0 0 1 16.3 9.2 3.9 3.9 0 0 1 17 18Z"/>
   <path d="M12 15.5V10m0 0-2 2m2-2 2 2"/></svg>`;
+
+/* N280 — die WEG: ein Haus mit mehreren Parteien, davor das Blatt der
+   Abrechnung, das die Verwaltung fertig herausgibt. */
+export const WEG_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M3.4 10.2 10 4.8l6.6 5.4"/><path d="M5.2 9.4V19h9.6V9.4"/>
+  <path d="M8 19v-3.4h3.6V19"/><path d="M8 12.2h3.6"/>
+  <path d="M16.2 12.6h4.4v7.6h-4.4z"/><path d="M17.5 15h1.8M17.5 17.4h1.8"/></svg>`;
+
+/* N280 — das Blatt mit Zeilen: „Abrechnung aufnehmen". */
+export const BLATT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M6.5 3.2h7.2L18.5 8v12.8h-12z"/><path d="M13.4 3.4V8h4.9"/>
+  <path d="M9 12h6M9 15.2h6M9 18h3.6"/></svg>`;

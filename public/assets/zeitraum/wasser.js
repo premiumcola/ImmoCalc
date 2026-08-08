@@ -1,5 +1,6 @@
 /* zeitraum/wasser.js — Wasser-Detail (inline), Betragsfelder,
-   Rechnungsmenge, wasser-spezifischer Beleg-Drop-Dialog, Position leeren.
+   Rechnungsmenge, die Rückfrage nach den drei Bereichsgebühren, Position
+   leeren.
 
    Die Wasser-Sammelposition ist eine Zusammenfassung dreier Bestandteile
    (Frisch-/Schmutz-/Niederschlagswasser). Beim Aufklappen lädt sie ihre
@@ -8,7 +9,7 @@
 import { api, eur, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { normUml, istWasserSammel } from './modell.js';
-import { m3, zahl } from './helpers.js';
+import { m3 } from './helpers.js';
 
 /* N57 — die Checklisten-Position hinter einem der drei Bestandteile. */
 export function wasserPosFuer(art) {
@@ -227,14 +228,26 @@ export function wasserDetailInhalt(d) {
     + kosten + warn + tabelle + fuss;
 }
 
-/* N78 — der wasser-spezifische Drop-Dialog: drei Betragsfelder. Wird von
-   belege.js aufgerufen; `erkennen` und `lesbareGroesse` werden dort
-   herausgereicht (kein Import über Kreuz zu belege.js). */
-export function belegWasserDialog({ kostenart, vorschlag, dup, jahr, groesse, datei,
-                                    anbieter, erkennen, lesbareGroesse }) {
+/* N78/N280 — die Wasser-Rückfrage: drei Bereichsgebühren statt einer Zahl.
+ *
+ * Ein Wasserbescheid rechnet Frisch-, Schmutz- und Niederschlagswasser
+ * getrennt ab; die drei Beträge gehören auf drei Kostenpositionen. Das kann
+ * die gemeinsame Bestätigungsmaske nicht — sie kennt genau ein Betragsfeld.
+ * Deshalb tritt dieser Dialog **nach** ihr auf: Dateiname, Vorschau und
+ * KI-Auslese hat der Nutzer dort schon gesehen, hier geht es nur noch um die
+ * Aufteilung.
+ *
+ * Aufgerufen aus `belege.js`; `erkennen` wird von dort hereingereicht, damit
+ * kein Import über Kreuz entsteht.
+ *
+ * Löst mit `{ wasser, schmutz, niederschlag }` auf — oder mit `null`, wenn der
+ * Nutzer abbricht (dann wird nichts abgelegt).
+ */
+export function wasserBetraegeDialog({ kostenart, vorschlag, datei, erkennen,
+                                       vorgabe = null }) {
   return new Promise(fertig => {
     const dlg = document.createElement('dialog');
-    dlg.className = 'immo-dlg beleg-drop-dlg';
+    dlg.className = 'immo-dlg wasser-dlg';
     document.body.appendChild(dlg);
     let entschieden = false;
     const blobUrl = datei ? URL.createObjectURL(datei) : '';
@@ -243,99 +256,80 @@ export function belegWasserDialog({ kostenart, vorschlag, dup, jahr, groesse, da
       dlg.remove();
       if (!entschieden) fertig(null);
     }, { once: true });
-    const kiZeile = v => {
-      const t = [];
-      if (v?.sache) t.push(esc(v.sache));
-      if (v?.absender) t.push(esc(v.absender));
-      if (v?.datum) t.push(new Date(v.datum).toLocaleDateString('de-DE'));
-      const w = v?.wasser;
-      if (w && (w.wasser || w.schmutz || w.niederschlag)) {
-        const s = w.wasser + (w.schmutz || 0) + (w.niederschlag || 0);
-        t.push(eur(s) + ' gesamt');
-      } else if (v?.betrag) {
-        t.push(eur(Math.abs(v.betrag)));
-      }
-      return t.length ? `erkannt: ${t.join(' · ')}` : 'keine automatische Erkennung';
-    };
-    const dupHtml = dup?.gefunden ? `<div class="dup-hinweis">
-        <strong>Diese Datei liegt schon in der Ablage.</strong>
-        ${dup.im_ziel_ordner ? 'Im richtigen Ordner ✓' : 'Aber in einem anderen Ordner.'}
-        ${dup.pfad ? `<span class="pfad">${esc(dup.pfad)}</span>` : ''}
-        Statt sie erneut hochzuladen, wird der vorhandene Beleg verknüpft.</div>` : '';
-    const istPdf = (datei?.type || '') === 'application/pdf' || /\.pdf$/i.test(datei?.name || '');
-    const vorschau = !blobUrl ? '<div class="bdd-leer">Keine Vorschau</div>'
-      : istPdf ? `<embed class="bdd-embed" src="${blobUrl}#toolbar=0&navpanes=0&view=Fit" type="application/pdf">`
-      : `<img class="bdd-img" src="${blobUrl}" alt="Beleg-Vorschau">`;
-    const eyebrow = [state.daten.objekt_name, 'Nebenkosten'].filter(Boolean).map(esc).join(' · ');
+
+    const istPdf = (datei?.type || '') === 'application/pdf'
+      || /\.pdf$/i.test(datei?.name || '');
+    const vorschau = !blobUrl ? ''
+      : istPdf
+        ? `<embed class="bdd-embed" src="${blobUrl}#toolbar=0&navpanes=0&view=Fit"
+             type="application/pdf">`
+        : `<img class="bdd-img" src="${blobUrl}" alt="Beleg-Vorschau">`;
     const wv = v => (v != null && v !== '') ? Math.abs(v) : '';
     const w0 = vorschlag?.wasser || {};
+    // Hat die Auslese nichts aufgeteilt, steht wenigstens der bestätigte Betrag
+    // aus der Maske im Frischwasser-Feld — besser als drei leere Felder.
+    const start = (w0.wasser || w0.schmutz || w0.niederschlag)
+      ? w0 : { wasser: vorgabe || '', schmutz: '', niederschlag: '' };
+
     dlg.innerHTML = `
       <button class="immo-dlg-zu" data-nein aria-label="Schließen">×</button>
-      ${eyebrow ? `<span class="bdd-eyebrow">${eyebrow}</span>` : ''}
-      <div class="dt">Wasser-Beleg zuordnen</div>
-      <div class="bdd-body">
-        <div class="bdd-links">
-          <p class="zinfo">→ <strong>${esc(kostenart)}</strong> · ${lesbareGroesse(groesse)}
-            <br><span class="bdd-ki" data-ki-zeile>${kiZeile(vorschlag)}</span></p>
+      <div class="dt">Wasser aufteilen</div>
+      <p class="wdlg-s">Der Bescheid rechnet drei Bereiche getrennt ab —
+        <strong>${esc(kostenart)}</strong>, Abwasser und Niederschlagswasser.
+        Von der Erkennung vorausgelesen, bitte prüfen.</p>
+      <div class="wdlg-body">
+        <div class="wdlg-felder">
           <button class="bdd-kibtn" data-ki-neu type="button"
             title="Beleg noch einmal von der KI lesen lassen">
             <span class="funke">✦</span><span class="lbl">KI neu lesen</span></button>
-          <div class="bdd-zus" data-zus${vorschlag?.zusammenfassung ? '' : ' hidden'}
-            >${esc(vorschlag?.zusammenfassung || '')}</div>
-          ${dupHtml}
-          <p class="bdd-wasser-hint">Die drei Bereichs-Gebühren des Bescheids —
-            von der KI vorausgelesen, bitte prüfen. Sie werden auf die Positionen
-            Wasser, Abwasser und Niederschlagswasser gebucht.</p>
-          <div class="field"><label>Bezeichnung</label>
-            <input class="inp" data-f="beschreibung" value="${esc(vorschlag?.sache || kostenart)}"></div>
-          <div class="field"><label>Firma / Gemeinde / Zweckverband</label>
-            <input class="inp" data-f="firma" value="${esc(vorschlag?.absender || anbieter || '')}"
-              placeholder="z. B. Zweckverband, Versicherer …"></div>
-          <div class="field drei">
-            <div><label>Frischwasser (€)</label>
-              <input class="inp" type="number" step="0.01" data-f="w_wasser"
-                value="${wv(w0.wasser)}" placeholder="0,00"></div>
-            <div><label>Schmutzwasser (€)</label>
-              <input class="inp" type="number" step="0.01" data-f="w_schmutz"
-                value="${wv(w0.schmutz)}" placeholder="0,00"></div>
-            <div><label>Niederschlag (€)</label>
-              <input class="inp" type="number" step="0.01" data-f="w_niederschlag"
-                value="${wv(w0.niederschlag)}" placeholder="0,00"></div>
-          </div>
-          <div class="field"><label>Jahr</label>
-            <input class="inp" type="number" data-f="jahr" value="${jahr}"></div>
+          <div class="field"><label>Frischwasser (€)</label>
+            <input class="inp" type="number" step="0.01" inputmode="decimal"
+              data-f="w_wasser" value="${wv(start.wasser)}" placeholder="0,00"></div>
+          <div class="field"><label>Schmutzwasser (€)</label>
+            <input class="inp" type="number" step="0.01" inputmode="decimal"
+              data-f="w_schmutz" value="${wv(start.schmutz)}" placeholder="0,00"></div>
+          <div class="field"><label>Niederschlagswasser (€)</label>
+            <input class="inp" type="number" step="0.01" inputmode="decimal"
+              data-f="w_niederschlag" value="${wv(start.niederschlag)}"
+              placeholder="0,00"></div>
+          <div class="wdlg-summe">Zusammen <b data-summe>—</b></div>
           <div class="bdd-err" data-err hidden></div>
-          <div class="bdd-fuss">
-            <button class="btn" data-ok>${dup?.gefunden ? 'Verknüpfen' : 'Ablegen'}</button>
+          <div class="sb-fuss">
+            <button type="button" class="sb-weiter" data-ok>Übernehmen</button>
           </div>
         </div>
-        <div class="bdd-rechts">${vorschau}</div>
+        ${vorschau ? `<div class="bdd-rechts">${vorschau}</div>` : ''}
       </div>`;
+
+    const feld = s => dlg.querySelector(`[data-f="${s}"]`);
+    const zahlAus = s => parseFloat(String(feld(s).value).replace(',', '.')) || 0;
+    const summeZeigen = () => {
+      const su = zahlAus('w_wasser') + zahlAus('w_schmutz') + zahlAus('w_niederschlag');
+      dlg.querySelector('[data-summe]').textContent = su > 0 ? eur(su) : '—';
+    };
+    dlg.addEventListener('input', summeZeigen);
+    summeZeigen();
+
     const kibtn = dlg.querySelector('[data-ki-neu]');
-    async function neuErkennen() {
-      if (!datei || kibtn.classList.contains('laedt')) return;
+    kibtn.onclick = async () => {
+      if (!datei || !erkennen || kibtn.classList.contains('laedt')) return;
       kibtn.classList.add('laedt'); kibtn.disabled = true;
       kibtn.querySelector('.lbl').textContent = 'KI liest …';
       try {
         const v = await erkennen(datei, kostenart);
         if (!v) throw new Error('keine Antwort');
-        const setF = (s, val) => {
-          const el = dlg.querySelector(`[data-f="${s}"]`);
-          if (el && val != null && val !== '') el.value = val;
-        };
-        if (v.sache) setF('beschreibung', v.sache);
-        if (v.absender) setF('firma', v.absender);
-        if (v.jahr) setF('jahr', v.jahr);
         const w = v.wasser || {};
-        if (w.wasser != null) setF('w_wasser', Math.abs(w.wasser));
-        if (w.schmutz != null) setF('w_schmutz', Math.abs(w.schmutz));
-        if (w.niederschlag != null) setF('w_niederschlag', Math.abs(w.niederschlag));
-        dlg.querySelector('[data-ki-zeile]').textContent = kiZeile(v);
-        const zus = dlg.querySelector('[data-zus]');
-        if (v.zusammenfassung) { zus.textContent = v.zusammenfassung; zus.hidden = false; }
+        const setF = (s, wert) => {
+          if (wert != null && wert !== '') feld(s).value = Math.abs(wert);
+        };
+        setF('w_wasser', w.wasser);
+        setF('w_schmutz', w.schmutz);
+        setF('w_niederschlag', w.niederschlag);
+        summeZeigen();
         if (!v.ki) {
           melde('KI nicht aktiv (kein Schlüssel/Guthaben) — es gilt die einfache '
-            + 'Erkennung. In den Einstellungen den Anthropic-Schlüssel hinterlegen.', 'neg');
+            + 'Erkennung. In den Einstellungen den Anthropic-Schlüssel hinterlegen.',
+            'neg');
         } else if (!w.wasser && !w.schmutz && !w.niederschlag) {
           melde('✦ KI gelesen — aber keine Wasser-Bereiche erkannt; bitte von Hand '
             + 'eintragen.', 'neg');
@@ -348,32 +342,22 @@ export function belegWasserDialog({ kostenart, vorschlag, dup, jahr, groesse, da
         kibtn.classList.remove('laedt'); kibtn.disabled = false;
         kibtn.querySelector('.lbl').textContent = 'KI neu lesen';
       }
-    }
-    kibtn.onclick = neuErkennen;
+    };
+
     dlg.querySelector('[data-nein]').onclick = () => dlg.close();
     dlg.querySelector('[data-ok]').onclick = () => {
-      const f = s => dlg.querySelector(`[data-f="${s}"]`).value;
-      const zn = s => parseFloat(String(f(s)).replace(',', '.')) || 0;
-      const wasser = zn('w_wasser'), schmutz = zn('w_schmutz'),
-            niederschlag = zn('w_niederschlag');
+      const wasser = zahlAus('w_wasser'), schmutz = zahlAus('w_schmutz'),
+            niederschlag = zahlAus('w_niederschlag');
       if (!(wasser > 0 || schmutz > 0 || niederschlag > 0)) {
         const err = dlg.querySelector('[data-err]');
         err.textContent = 'Bitte mindestens einen Bereichsbetrag eintragen — '
           + 'sonst bleibt die Zeile leer.';
         err.hidden = false;
-        const bf = dlg.querySelector('[data-f="w_wasser"]');
-        bf.focus(); bf.select?.();
+        feld('w_wasser').focus();
         return;
       }
       entschieden = true;
-      fertig({
-        aktion: dup?.gefunden ? 'verknuepfen' : 'ablegen',
-        beschreibung: f('beschreibung').trim(),
-        firma: f('firma').trim(),
-        jahr: Number(f('jahr')) || jahr,
-        betrag: wasser,
-        wasser: { wasser, schmutz, niederschlag },
-      });
+      fertig({ wasser, schmutz, niederschlag });
       dlg.close();
     };
     dlg.showModal();

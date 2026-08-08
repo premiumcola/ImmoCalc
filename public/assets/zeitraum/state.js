@@ -113,6 +113,20 @@ export function setDeckungUmgelegt(v) { deckungUmgelegt = v; }
 export let wasserSchluessel = 'personen';
 export function setWasserSchluessel(v) { wasserSchluessel = v; }
 
+/* N280 — der WEG-Stand dieses Zeitraums: `{aktiv, stand, vorauszahlungen}`
+   aus `GET /zeitraeume/{id}/weg`. Ist er `aktiv`, tritt die Dateiübernahme an
+   die Stelle der Belegjagd. `null`, solange nichts geladen wurde. */
+export let wegDaten = null;
+export function setWegDaten(v) { wegDaten = v; }
+
+/* N280 — was die letzte Übernahme gemeldet hat: `uebersprungen` (eine
+   Handeingabe gleichen Namens hat gewonnen) und `entfernt` (eine WEG-Zeile aus
+   einem früheren Lauf kommt im neuen Beleg nicht mehr vor). Beides steht NUR
+   in der Antwort von `/weg/uebernehmen`, nicht im gelesenen Stand — ohne diese
+   Merkstelle fehlte ein Betrag ohne sichtbaren Grund. */
+export let wegMeldung = null;
+export function setWegMeldung(v) { wegMeldung = v; }
+
 /* ---------- Konstanten (nie neu zugewiesen) ------------------------------ */
 
 /* Geräte ohne Kamera (Schreibtisch, Maus): dort genügt EIN neutraler Knopf,
