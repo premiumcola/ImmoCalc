@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Renovierungen · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* ------------------------------------------------------------------
+     N270 — nur die Regeln, die immo.css nicht hat. Karte, Abschnittskopf
+     mit „＋", Diagrammrahmen und Legende stehen so (wortgleich) auch in
+     nebenkosten.html/wertentwicklung.html/strom.html — sie gehören später
+     einmal nach immo.css; die darf hier nicht angefasst werden.
+     ------------------------------------------------------------------ */
+  .karte{background:var(--sheet); border-radius:16px; padding:16px;
+         margin-bottom:14px; box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .karte h3{font:600 13px var(--disp); letter-spacing:-.01em; margin:0 0 12px;
+            color:var(--ink)}
+  /* Kopfzeile einzeilig: der Objekttitel eines Grundstuecks ist lang
+     („Eckental · Grundstück · Ackerland · Eckenhaid Flst. 619") und brach
+     die Unterzeile sonst zweizeilig um. */
+  .bar .sub{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+  /* Abschnittskopf: Titel links, „＋" oben rechts (roter Faden 8). */
+  .hh{display:flex; align-items:center; justify-content:space-between;
+      gap:10px; margin:24px 0 12px}
+  .hh > h2.sec{margin:0; min-width:0}
+  .scroll > .hh:first-child{margin-top:2px}
+  .karte > .hh{margin:0 0 14px; align-items:flex-start}
+  .secsum{display:inline-block; margin-left:8px; font:600 12px var(--mono);
+          color:var(--soft); letter-spacing:0}
+  .plus{flex:none; border:none; background:var(--teal-l); color:var(--teal-d);
+        width:44px; height:44px; border-radius:13px; cursor:pointer;
+        font:600 21px var(--body); line-height:1; display:inline-flex;
+        align-items:center; justify-content:center}
+  .plus:hover{background:var(--teal); color:#fff}
+  .seakt{flex:none; border:none; background:none; color:var(--teal-d);
+         font:600 12.5px var(--body); cursor:pointer; padding:8px 2px;
+         min-height:44px}
+  .seakt:hover{color:var(--teal)}
+  .metatxt{flex:1; min-width:0; padding-top:6px}
+  /* Auf dem iPhone teilen sich Zeitraum-Zeile und „Bearbeiten" eine Zeile —
+     „01.02.2025 – 30.11.2025 · ganzes Objekt" passt dort nicht daneben, und
+     „Objekt" rutschte unter den Knopf. Schmal bekommt der Text die ganze
+     Breite und der Knopf seine eigene Zeile rechts.
+     `:has()` grenzt das auf DIESE Kopfzeile ein — derselbe `.hh` traegt sonst
+     das „＋" der Abschnitte, und das gehoert oben rechts stehen zu bleiben. */
+  @media(max-width:439px){
+    .hh:has(.metatxt){flex-wrap:wrap; align-items:flex-start}
+    .hh:has(.metatxt) .metatxt{flex:1 1 100%; padding-top:0}
+    .hh:has(.metatxt) .seakt{margin-left:auto}
+  }
+
+  /* Diagramme — max-width, sonst skalieren viewBox-SVGs samt Schrift ins
+     Riesenhafte. Der Zeitstrahl misst seine Breite selbst (siehe unten). */
+  .chart{width:100%; height:auto; display:block; overflow:visible}
+  .chartleer{font:400 13px var(--body); color:var(--soft); text-align:center;
+             padding:22px 8px}
+
+  /* ---- Liste aller Renovierungen ---------------------------------- */
+  .rkarten{display:grid; gap:10px}
+  @media(min-width:700px){
+    .rkarten{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  }
+  .rkarte{display:block; width:100%; text-align:left; background:var(--sheet);
+          border:none; border-radius:16px; padding:15px 16px; cursor:pointer;
+          box-shadow:0 1px 2px rgba(22,38,44,.05); font-family:var(--body);
+          color:var(--ink)}
+  .rkarte:hover{box-shadow:0 5px 16px -8px rgba(22,38,44,.32)}
+  .rkopf{display:flex; align-items:center; gap:8px; justify-content:space-between}
+  .rname{font:600 15px var(--disp); letter-spacing:-.01em; min-width:0;
+         overflow-wrap:anywhere}
+  /* display:block — als <span> wirkt margin sonst nicht (klebender Text). */
+  .rmeta{display:block; font:400 12px var(--body); color:var(--soft);
+         margin-top:5px; line-height:1.45; overflow-wrap:anywhere}
+  .rmeta .chip{margin-right:5px; vertical-align:1px}
+  .rnotiz{display:block; font:400 12px var(--body); color:var(--soft);
+          margin-top:4px; line-height:1.45; overflow-wrap:anywhere}
+  .rsumme{display:flex; align-items:baseline; gap:8px; margin-top:11px}
+  .rsumme b{font:700 19px var(--disp); letter-spacing:-.02em}
+  .rsumme span{font:500 11px var(--mono); color:var(--soft)}
+
+  /* ---- Budgetstand ------------------------------------------------ */
+  .bbar{height:8px; border-radius:999px; background:#E3E9E8; overflow:hidden;
+        margin-top:11px}
+  .bbar span{display:block; height:100%; border-radius:999px; background:var(--teal)}
+  .bbar.ueber span{background:var(--neg)}
+  .bfuss{display:flex; justify-content:space-between; gap:10px; margin-top:7px;
+         font:500 11px var(--mono); color:var(--soft); line-height:1.4}
+  .bfuss b.pos{color:var(--pos)} .bfuss b.neg{color:var(--neg)}
+
+  .kopfgrid{display:grid; gap:18px}
+  @media(min-width:700px){
+    /* Feste Ringspalte: der Donut hat eine Hoechstbreite (charts.js), eine
+       mitwachsende Spalte liesse links und rechts von ihm nur Luft. */
+    .kopfgrid{grid-template-columns:minmax(0,1fr) 220px;
+              align-items:center; gap:28px}
+  }
+  .bstand{min-width:0}
+  .bl{display:block; font:600 9.5px var(--mono); letter-spacing:.08em;
+      text-transform:uppercase; color:var(--soft)}
+  .bv{display:block; font:700 30px var(--disp); letter-spacing:-.03em;
+      margin-top:7px; overflow-wrap:anywhere}
+  .bv.pos{color:var(--pos)} .bv.neg{color:var(--neg)}
+  .bstand .bfuss{justify-content:flex-start}
+  .bhinweis{font:400 12.5px var(--body); color:var(--soft); margin:8px 0 12px;
+            line-height:1.45}
+  .bstand.ohne .btn{width:auto; padding:11px 16px; font-size:13.5px}
+
+  .ringfeld{min-width:0}
+  .gwliste{list-style:none; margin:18px 0 0; padding:0; display:grid; gap:8px}
+  /* Auf breiten Schirmen zweispaltig — sonst steht rechts neben einer
+     schmalen Liste die halbe Karte leer. */
+  @media(min-width:700px){
+    .gwliste{grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+             column-gap:28px; margin-top:20px}
+  }
+  .gwliste li{display:flex; align-items:center; gap:9px; font:500 12.5px var(--body)}
+  .gwliste i{width:10px; height:10px; border-radius:3px; flex:none}
+  .gwliste .gn{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
+               white-space:nowrap}
+  .gwliste .gp{font:500 11px var(--mono); color:var(--soft); flex:none}
+  .gwliste b{font:600 12.5px var(--mono); flex:none; min-width:74px;
+             text-align:right}
+
+  .leerfeld{text-align:center; padding:10px 4px 4px}
+  .leerfeld .big{font:700 16px var(--disp); letter-spacing:-.015em;
+                 margin-bottom:6px}
+  .leerfeld p{font:400 13px var(--body); color:var(--soft); margin:0 0 16px;
+              line-height:1.5}
+
+  /* ---- Rechnungsliste --------------------------------------------- */
+  .pliste{background:var(--sheet); border-radius:14px; overflow:hidden;
+          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .prow{display:flex; align-items:center}
+  .prow + .prow{border-top:1px solid var(--line)}
+  .pklick{flex:1; min-width:0; display:flex; align-items:center; gap:12px;
+          padding:11px 6px 11px 15px; min-height:52px; background:none;
+          border:none; cursor:pointer; text-align:left;
+          font-family:var(--body); color:var(--ink)}
+  .pklick:hover{background:#F5F8F7}
+  .pdot{width:10px; height:10px; border-radius:999px; flex:none}
+  .pt{flex:1; min-width:0}
+  .pn{display:block; font:600 14px var(--disp); letter-spacing:-.01em;
+      overflow-wrap:anywhere}
+  .pd{display:block; font:400 11.5px var(--body); color:var(--soft);
+      margin-top:3px; line-height:1.4; overflow-wrap:anywhere}
+  .pw{font:600 13px var(--mono); white-space:nowrap; flex:none}
+  .pw.ohne{font:500 10.5px var(--mono); color:var(--soft)}
+  .del{flex:none; border:none; background:none; color:var(--soft);
+       font:400 20px var(--body); width:44px; height:44px; cursor:pointer;
+       border-radius:11px; line-height:1}
+  .del:hover{background:var(--neg-bg); color:var(--neg)}
+
+  .gefahr-block{margin:26px 0 4px}
+
+  /* ---- Formulardialoge -------------------------------------------- */
+  /* Zwei kurze Felder nebeneinander: Beginn/Ende, Datum/Betrag. Auf dem
+     iPhone bleibt es einspaltig, sonst wird das Datumsfeld zu schmal. */
+  /* min-width:0 ist Pflicht: ein Datumsfeld hat eine grosse Mindestbreite,
+     und ein Grid-Kind ist per Vorgabe nie schmaler als sein Inhalt — sonst
+     laeuft „Ende" aus dem Dialog heraus. Zweispaltig erst ab 460 px: darunter
+     wird das Datumsfeld samt Kalendersymbol zu eng. */
+  .feldpaar{display:grid; gap:0 12px}
+  .feldpaar > .field{min-width:0}
+  .feldpaar .inp{min-width:0}
+  @media(min-width:460px){ .feldpaar{grid-template-columns:1fr 1fr} }
+  .feldnote{font:400 12px var(--body); color:var(--soft); margin:6px 0 0;
+            line-height:1.45}
+  /* Zustandsfarbe der Blasen ist bewusst seitenspezifisch (siehe immo.css). */
+  .bubble.gewaehlt{background:var(--teal-l); color:var(--teal-d);
+                   box-shadow:inset 0 0 0 1.5px var(--teal)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <button class="back" id="back" aria-label="Zurück" title="Zurück"></button>
+    <div class="barwrap">
+      <h1 id="titel">Renovierungen</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+  </div>
+
+  <div class="scroll" id="inhalt"></div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+/* N270 — Renovierungen je Immobilie. Zwei Ansichten in einer Seite:
+   `?o={slug}` zeigt alle Renovierungen des Objekts, `?o={slug}&r={id}` eine
+   einzelne mit Budgetstand, Gewerk-Donut, Zeitstrahl und Rechnungen.
+   Gewechselt wird über echte Navigation — so trägt der Zurück-Knopf des
+   Browsers dieselbe Bedeutung wie der in der Kopfzeile. */
+import { esc, melde, installNav, frage, schiebeFrage } from './assets/immo.js';
+import * as Daten from './assets/renovierung/daten.js';
+import { listeHtml } from './assets/renovierung/liste.js';
+import { detailHtml, zeitstrahlZeichnen } from './assets/renovierung/detail.js';
+import { renovierungDialog, postenDialog } from './assets/renovierung/formulare.js';
+
+installNav();
+// Wie objekt.html und zeitraum.html ist auch diese Seite eine Detailansicht
+// der Objektliste — in der Leiste bleibt deshalb „Objekte" markiert.
+document.querySelector('nav.nav a.gruppenkopf')
+        ?.setAttribute('aria-current', 'page');
+
+const anfrage = new URLSearchParams(location.search);
+const slug = anfrage.get('o') || '';
+const rid = anfrage.get('r') || '';
+
+const inhalt = document.getElementById('inhalt');
+const titel = document.getElementById('titel');
+const sub = document.getElementById('sub');
+
+const listenWeg = `renovierung.html?o=${encodeURIComponent(slug)}`;
+const detailWeg = id => `${listenWeg}&r=${id}`;
+
+document.getElementById('back').addEventListener('click', () => {
+  location.href = rid ? listenWeg : `objekt.html?o=${encodeURIComponent(slug)}`;
+});
+
+let gewerke = [];
+let einheiten = [];
+let aktuell = null;          // die geladene Renovierung (nur in der Detailsicht)
+let beobachter = null;       // ResizeObserver des Zeitstrahls
+
+function fehlerZeigen(gross, text) {
+  inhalt.innerHTML = `<div class="empty"><div class="big">${esc(gross)}</div>
+    <p>${esc(text)}</p></div>`;
+}
+
+if (!slug) {
+  sub.textContent = 'kein Objekt gewählt';
+  fehlerZeigen('Kein Objekt gewählt',
+    'Renovierungen gehören zu einer Immobilie — wähle sie in der Übersicht aus.');
+}
+
+/* ---- Zeitstrahl: Breite aus dem Behälter, neu bei Größenänderung -------- */
+function zeitstrahlAnhaengen() {
+  beobachter?.disconnect();
+  beobachter = null;
+  const feld = document.getElementById('zeitstrahl');
+  if (!feld || !aktuell) return;
+  zeitstrahlZeichnen(feld, aktuell);
+  // Eine viewBox skaliert zwar mit, aber Punktabstände und Achsenmarken
+  // richten sich nach der PIXEL-Breite — deshalb wirklich neu zeichnen.
+  // Nur bei geänderter BREITE: das Neuzeichnen ändert die Höhe des Feldes,
+  // und ein Beobachter, der auf die eigene Höhenänderung reagiert, zeichnet
+  // sich sonst im Kreis.
+  let letzteBreite = Math.round(feld.clientWidth);
+  beobachter = new ResizeObserver(() => {
+    const breit = Math.round(feld.clientWidth);
+    if (breit === letzteBreite) return;
+    letzteBreite = breit;
+    zeitstrahlZeichnen(feld, aktuell);
+  });
+  beobachter.observe(feld);
+}
+
+/* ---- Ansichten ---------------------------------------------------------- */
+async function listeZeigen() {
+  const liste = await Daten.listeHolen(slug);
+  titel.textContent = 'Renovierungen';
+  inhalt.innerHTML = listeHtml(liste);
+}
+
+async function detailZeigen() {
+  aktuell = await Daten.detailHolen(rid);
+  titel.textContent = aktuell.name;
+  inhalt.innerHTML = detailHtml(aktuell);
+  zeitstrahlAnhaengen();
+}
+
+async function neuLaden() {
+  try {
+    await (rid ? detailZeigen() : listeZeigen());
+  } catch (fehler) {
+    fehlerZeigen('Nicht gefunden', String(fehler.message || fehler));
+  }
+}
+
+/* ---- Bedienung ---------------------------------------------------------- */
+inhalt.addEventListener('click', async e => {
+  const karte = e.target.closest('[data-reno]');
+  if (karte) { location.href = detailWeg(karte.dataset.reno); return; }
+
+  if (e.target.closest('[data-neu]')) {
+    const werte = await renovierungDialog(null, einheiten);
+    if (!werte) return;
+    try {
+      const angelegt = await Daten.renovierungAnlegen(slug, werte);
+      location.href = detailWeg(angelegt.id);
+    } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+    return;
+  }
+
+  if (e.target.closest('[data-bearbeiten]') && aktuell) {
+    const werte = await renovierungDialog(aktuell, einheiten);
+    if (!werte) return;
+    try {
+      await Daten.renovierungAendern(aktuell.id, werte);
+      melde('Renovierung gespeichert', 'pos');
+      await neuLaden();
+    } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+    return;
+  }
+
+  if (e.target.closest('[data-reno-weg]') && aktuell) {
+    const anzahl = aktuell.posten.length;
+    const ok = await schiebeFrage('Renovierung löschen',
+      `„${aktuell.name}" wird mit ${anzahl} ${anzahl === 1 ? 'Rechnung' : 'Rechnungen'}
+       entfernt. Das lässt sich nicht rückgängig machen.`);
+    if (!ok) return;
+    try {
+      await Daten.renovierungLoeschen(aktuell.id);
+      location.href = listenWeg;
+    } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+    return;
+  }
+
+  if (e.target.closest('[data-posten-neu]') && aktuell) {
+    const werte = await postenDialog(null, gewerke, aktuell.von || '');
+    if (!werte) return;
+    try {
+      await Daten.postenAnlegen(aktuell.id, werte);
+      await neuLaden();
+    } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+    return;
+  }
+
+  const weg = e.target.closest('[data-posten-weg]');
+  if (weg && aktuell) {
+    const p = aktuell.posten.find(x => String(x.id) === weg.dataset.postenWeg);
+    const ok = await frage('Rechnung löschen',
+      `${p?.firma || 'Diese Rechnung'} wird entfernt.`,
+      { knopf: 'Löschen', gefahr: true });
+    if (!ok) return;
+    try {
+      await Daten.postenLoeschen(weg.dataset.postenWeg);
+      await neuLaden();
+    } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+    return;
+  }
+
+  const bearbeiten = e.target.closest('[data-posten]');
+  if (bearbeiten && aktuell) {
+    const p = aktuell.posten.find(x => String(x.id) === bearbeiten.dataset.posten);
+    if (!p) return;
+    const werte = await postenDialog(p, gewerke);
+    if (!werte) return;
+    try {
+      await Daten.postenAendern(p.id, werte);
+      await neuLaden();
+    } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+  }
+});
+
+/* ---- Start -------------------------------------------------------------- */
+if (slug) {
+  try {
+    const [objekt, ehListe, gwListe] = await Promise.all([
+      Daten.objektHolen(slug).catch(() => null),
+      Daten.einheitenHolen(slug).catch(() => []),
+      Daten.gewerkeHolen().catch(() => []),
+    ]);
+    einheiten = ehListe || [];
+    gewerke = gwListe || [];
+    sub.textContent = objekt ? (objekt.titel || objekt.name) : slug;
+    await neuLaden();
+  } catch (fehler) {
+    sub.textContent = 'API nicht erreichbar';
+    fehlerZeigen('Keine Verbindung', String(fehler.message || fehler));
+  }
+}
+</script>
+</body>
+</html>

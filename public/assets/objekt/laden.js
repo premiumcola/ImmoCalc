@@ -29,6 +29,9 @@ import { erststandHtml } from './anfangsstaende.js';
 import { eigentuemerHtml } from './eigentuemer.js';
 import { grundschuldenHtml } from './grundschulden.js';
 import { cloudZeigen } from './cloud.js';
+// N270 — die Rubrik „Renovierungen" liegt bei ihrer eigenen Seite, nicht hier.
+import { renovierungenHtml } from '../renovierung/objektkarte.js';
+import { listeHolen as renovierungenHolen } from '../renovierung/daten.js';
 import { lageplanVorschauAufraeumen, lageplanVorschauFuellen } from './lageplan.js';
 
 const anfrage = new URLSearchParams(location.search);
@@ -66,7 +69,7 @@ export async function laden() {
     catch (fehler) { luecken.push(`${was}: ${fehler.message || fehler}`); return ersatz; }
   };
   const [bereiche, anteile, vermoegen, einheitenRoh, grundschuldenRoh,
-         eigentuemerAlle, zaehlerRoh] = await Promise.all([
+         eigentuemerAlle, zaehlerRoh, renovierungenRoh] = await Promise.all([
     Promise.all(Object.keys(BEREICHE).map(async b =>
       [b, await zweig(BEREICHE[b].titel,
                       () => api(`/objekte/${encodeURIComponent(slug)}/${b}`), [])]))
@@ -84,6 +87,9 @@ export async function laden() {
     // CCCLXXX (a) — Zähler des Objekts für die Anfangszählerstand-Rubrik. Beiwerk:
     // scheitert der Abruf, bleibt die Rubrik einfach weg.
     zweig('Zähler', () => api(`/objekte/${encodeURIComponent(slug)}/zaehler`), []),
+    // N270 — Renovierungen: eigene Endpunkte und eigene Seite (wie die
+    // Grundschulden), deshalb ein eigener Zweig statt eines BEREICHE-Eintrags.
+    zweig('Renovierungen', () => renovierungenHolen(slug), []),
   ]);
   if (luecken.length) melde(`Nicht alles konnte geladen werden — ${luecken[0]}`, 'neg');
 
@@ -311,6 +317,9 @@ export async function laden() {
       <button class="btn leise" data-export="1">Sicherung herunterladen</button>
       <button class="btn gefahr" data-loeschen="1">Immobilie löschen</button>
     </div>`;
+  // N270 — steht in beiden Bauformen direkt bei den einmaligen
+  // Erwerbsnebenkosten: beides ist Geld, das einmalig ins Objekt fliesst.
+  const renovierungenBlock = renovierungenHtml(slug, renovierungenRoh);
 
   if (istGrundstueck()) {
     // CCCXXXVI — das Grundstück in drei logischen Blöcken, von grob nach fein:
@@ -327,6 +336,7 @@ export async function laden() {
       ${erwerbKopfHtml(objekt)}
       ${abschnitt('notarvertraege', bereiche.notarvertraege)}
       ${abschnitt('erwerbskosten', erwerbZahlungen)}
+      ${renovierungenBlock}
       ${grundsteuerHtml(objekt)}
       ${abschnitt('zahlungen', finanzZahlungen)}
       ${mietBlock}
@@ -361,6 +371,7 @@ export async function laden() {
     ${abschnitt('notarvertraege', bereiche.notarvertraege)}
     ${grundschuldenHtml()}
     ${abschnitt('erwerbskosten', erwerbZahlungen)}
+    ${renovierungenBlock}
     ${abschnitt('versicherungen', bereiche.versicherungen, {
       vorspann: `<p class="sehinweis">Gebäude- und Haftpflichtversicherung laufen
         als jährliche Kostenart über die <strong>Nebenkosten</strong> — hier stehen

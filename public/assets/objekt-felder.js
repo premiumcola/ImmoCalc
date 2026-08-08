@@ -297,6 +297,15 @@ const RUBRIK_FESTWERTE = {
 };
 const ERWERB_KATEGORIE = 'Erwerbsnebenkosten';
 
+/* N270 — Renovierungen sind KEIN Eintrag in BEREICHE: sie haben eigene
+   Endpunkte (`/objekte/{slug}/renovierungen`, `/renovierungen/{rid}`) und eine
+   eigene Seite, genau wie die Grundschulden. Beschrieben werden sie trotzdem
+   hier, damit Titel und Einzahl an EINER Stelle stehen — die Objektseite und
+   renovierung.html lesen beide von hier. */
+const RENOVIERUNG_RUBRIK = {
+  titel: 'Renovierungen', einzahl: 'Renovierung', seite: 'renovierung.html',
+};
+
 /** Die Beschreibung eines Bereichs — beim Grundstück in seiner Sprache.
     „Steuer & Zahlungen" heisst dort schlicht „Finanzamt" (CCCIV). */
 const cfgFuer = (bereich) => {
@@ -551,4 +560,4 @@ function stammfelder(aktiv = objekt?.niessbrauch_aktiv) {
   return felder;
 }
 
-export { VERTRAGSARTEN, kreditFelder, felderFuer, uebernahmeAnbieten, BEREICHE, PACHT, ERWERB_ARTEN, ERWERB, RUBRIK_ENDPUNKT, endpunktBereich, RUBRIK_FESTWERTE, ERWERB_KATEGORIE, cfgFuer, STAMMFELDER, WEGFELDER, GRUNDFELDER, EINHEITFELDER, OHNE_BEIM_GRUNDSTUECK, feldAus, GRUND_STAMMFELDER, stammfelder, istEinheitswert, VERKEHRSWERT_GESAMT, VERKEHRSWERT_EINHEIT };
+export { VERTRAGSARTEN, kreditFelder, felderFuer, uebernahmeAnbieten, BEREICHE, PACHT, ERWERB_ARTEN, ERWERB, RUBRIK_ENDPUNKT, endpunktBereich, RUBRIK_FESTWERTE, ERWERB_KATEGORIE, RENOVIERUNG_RUBRIK, cfgFuer, STAMMFELDER, WEGFELDER, GRUNDFELDER, EINHEITFELDER, OHNE_BEIM_GRUNDSTUECK, feldAus, GRUND_STAMMFELDER, stammfelder, istEinheitswert, VERKEHRSWERT_GESAMT, VERKEHRSWERT_EINHEIT };

@@ -75,6 +75,10 @@ export const RUBRIKFARBE = {
   mieten: 'var(--pos)', versicherungen: 'var(--soft)',
   kredite: 'var(--neg)', grundstueck: 'var(--teal-d)',
   erwerbskosten: 'var(--amber)',
+  // N270 — Renovierungen stehen bewusst neben den einmaligen
+  // Erwerbsnebenkosten und teilen deren Amber: beides ist Geld, das einmalig
+  // ins Objekt fliesst, nicht laufender Betrieb.
+  renovierungen: 'var(--amber)',
 };
 
 /* CCLXXVIII — welcher Bereich welchen Entwurfstyp am Backend hat. Nur diese
