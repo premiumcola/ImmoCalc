@@ -200,8 +200,11 @@ SYSTEM_PROMPT = (
     "Nebenkostenabrechnung gehört, und für welchen Abrechnungszeitraum.\n"
     "felder = NUR die zum Typ passenden Angaben, die WIRKLICH auf dem Beleg "
     "stehen (Fehlendes weglassen). Raster je Typ:\n"
+    # N280-D — `mietende` fehlte, obwohl die Maske ein Feld „Beendet am" hat und
+    # die Zuordnung es längst erwartete: das Feld blieb strukturell immer leer.
     "MIETVERTRAG: mieter, kaltmiete, nebenkosten_vz, stellplatzmiete, "
-    "sonstige_einnahmen, mietbeginn, kaution, personen, mieter_email, "
+    "sonstige_einnahmen, mietbeginn, mietende (nur bei befristetem oder "
+    "gekündigtem Vertrag), kaution, personen, mieter_email, "
     "mieter_telefon.\n"
     "VERSICHERUNG: art, anbieter, police_nr, jahresbeitrag, turnus, "
     "versicherungssumme, beginn, ende, umlagefaehig.\n"
@@ -252,6 +255,13 @@ SYSTEM_PROMPT = (
     "größten Position. Ist es keine Erwerbsnebenkosten-Rechnung, lass "
     "erwerbsart weg — rate nicht \"Sonstiges\".\n"
     "WEG: verwalter, hausgeld_monatlich, ruecklage_zufuehrung.\n"
+    # N280-D — die Renovierungsposten-Maske (N270) hatte kein eigenes Raster:
+    # die ausführende Firma kam nur über den allgemeinen `absender` durch, und
+    # der ist bei einer Rechnung über einen Zahlungsdienstleister der Falsche.
+    # Das Gewerk steht bewusst nicht hier — es ist ein eigenes Antwortfeld und
+    # wird gegen die feste Liste geprüft.
+    "HANDWERKERRECHNUNG (Bau-/Renovierungsleistung): firma (der ausführende "
+    "Handwerksbetrieb), leistung (was gemacht wurde, in wenigen Worten).\n"
     "NEBENKOSTEN-RECHNUNG: kostenart, betrag, zeitraum, s35a (true bei "
     "haushaltsnaher Dienstleistung: Schornsteinfeger, Wartung, Hausmeister, "
     "Winterdienst, Gartenpflege), verbrauch.\n"

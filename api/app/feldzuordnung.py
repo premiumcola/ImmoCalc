@@ -21,9 +21,16 @@ Die Formularfeldnamen sind die des Modells — dieselben, die
 `hasattr` durchlassen. Ändert sich dort ein Name, muss er hier mitwandern;
 `test_feldzuordnung.py` prüft die Namen gegen das Modell, damit ein
 Auseinanderlaufen auffällt statt still zu wirken.
+
+N280-D — dieselbe Gefahr gibt es auf der anderen Seite: nennt die Zuordnung
+eine Quelle, die im Prompt gar nicht abgefragt wird, bleibt das Formularfeld
+für immer leer, ohne dass irgendetwas rot wird. `test_prompt_raster.py` liest
+deshalb die Raster direkt aus `kiauslese.SYSTEM_PROMPT` und hält beide Seiten
+gegeneinander.
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 
 # Welche Quellen ein Formularfeld füttern, in dieser Reihenfolge. Ein Name wird
@@ -77,8 +84,14 @@ ZUORDNUNG: dict[str, dict[str, tuple[str, ...]]] = {
     "zahlungen": {
         "art": ("art", "kostenart", "dokumenttyp"),
         "jahr": ("jahr", "abrechnungsjahr"),
+        # N280-D — `betrag` ist hier IMMER der Jahreswert: das Raster liefert
+        # `jahresbetrag`, und `kiauslese._hochrechnung` macht aus vier Quartals-
+        # raten den Jahresbetrag (N262). Dazu passt genau ein Turnus, nämlich
+        # der Vorgabewert „jaehrlich" der Maske. Ein aus dem Beleg gelesener
+        # Turnus („vierteljährlich", weil vier Fälligkeiten daraufstehen) würde
+        # denselben Betrag ein zweites Mal mit vier multiplizieren — deshalb
+        # steht hier bewusst KEIN `turnus`.
         "betrag": ("jahresbetrag", "betrag"),
-        "turnus": ("turnus",),
     },
     # N276 — die Maske der einmaligen Erwerbsnebenkosten. `art` kommt aus
     # `erwerbsart`, das `kiauslese` schon gegen die feste Liste geprüft hat —
@@ -88,7 +101,10 @@ ZUORDNUNG: dict[str, dict[str, tuple[str, ...]]] = {
         "art": ("erwerbsart",),
         "jahr": ("jahr", "abrechnungsjahr"),
         "betrag": ("betrag",),
-        "notiz": ("notiz",),
+        # N280-D — „notiz" fragt der Prompt nirgends ab; allein damit blieb das
+        # Feld strukturell immer leer. Die knappe Kostenart („Beurkundung
+        # Kaufvertrag") sagt hier genau das Richtige und steht in jeder Antwort.
+        "notiz": ("notiz", "kostenart"),
     },
     # N270 — die Renovierungsposten-Maske: eine Rechnung eines Handwerkers,
     # bereits einem Gewerk zugeordnet (`kiauslese._gewerk`, gegen die feste
@@ -98,9 +114,56 @@ ZUORDNUNG: dict[str, dict[str, tuple[str, ...]]] = {
         "betrag": ("betrag",),
         "firma": ("firma", "absender"),
         "gewerk": ("gewerk",),
-        # Erst eine eigens genannte Notiz, sonst die knappe Kostenart, sonst
-        # notfalls die lange Zusammenfassung — lieber ein Fließtext als leer.
-        "notiz": ("notiz", "kostenart", "zusammenfassung"),
+        # Erst eine eigens genannte Notiz, dann die im Raster genannte Leistung
+        # („Zählerschrank erneuert"), sonst die knappe Kostenart, sonst notfalls
+        # die lange Zusammenfassung — lieber ein Fließtext als leer.
+        "notiz": ("notiz", "leistung", "kostenart", "zusammenfassung"),
+    },
+    # N280-D — die Nebenkosten-Kostenposition (`Kostenposition`): eine Rechnung,
+    # die als Position in einen Abrechnungszeitraum wandert. Der Zeitraum selbst
+    # steht bewusst NICHT hier — er ist keine Eigenschaft der Position, sondern
+    # wird beim Anlegen gewählt (`zeitraum_id`); wofür der Beleg zählt, sagt die
+    # Auslese ohnehin getrennt (`abrechnungsjahr`, `zeitraum_hinweis`).
+    "nebenkosten": {
+        "kostenart": ("kostenart", "art"),
+        # Bei einer Energieabrechnung ist der Bruttobetrag der Lieferung
+        # gemeint, nicht die Nachzahlung — `betrag` trägt ihn laut Prompt
+        # bereits, `bruttobetrag` ist der Rückfall aus dem Strom-Raster.
+        "betrag": ("betrag", "bruttobetrag"),
+        # § 35a: haushaltsnahe Dienstleistung (Schornsteinfeger, Wartung,
+        # Hausmeister). Im Modell heisst das Feld `s35`.
+        "s35": ("s35a", "s35"),
+        # Die Menge hinter dem Betrag (m³ Wasser, kWh Strom) — sie trägt die
+        # Verbrauchsanzeige und die Stromkette.
+        "menge": ("verbrauch_kwh", "verbrauch"),
+    },
+    # N280-D — die Stammdaten des Objekts. Vier Belegarten füllen dieselbe
+    # Maske, und sie stören sich nicht: `werte_fuer` gibt nur zurück, was der
+    # jeweilige Beleg hergibt. Kaufvertrag → Kaufpreis/Kaufdatum,
+    # Grundsteuerbescheid → die dreistufige Rechenkette, Grundbuchauszug →
+    # Gemarkung/Flurstück, WEG-Abrechnung → Hausgeld, Rücklage, Verwalter.
+    "stammdaten": {
+        "kaufpreis": ("kaufpreis",),
+        "kaufdatum": ("kaufdatum", "beurkundet_am"),
+        "gemarkung": ("gemarkung",),
+        "flurstueck": ("flurstueck",),
+        "grundsteuerwert": ("grundsteuerwert",),
+        "grundsteuer_messbetrag": ("grundsteuer_messbetrag",),
+        "grundsteuer_hebesatz": ("grundsteuer_hebesatz",),
+        "hausgeld_monatlich": ("hausgeld_monatlich",),
+        "weg_ruecklage_zufuehrung": ("ruecklage_zufuehrung",),
+        # Ohne Rückfall auf `absender`: der ist bei einem Kaufvertrag das
+        # Notariat, und das stünde dann als Hausverwaltung im Objekt.
+        "weg_verwalter": ("verwalter",),
+    },
+    # N280-D — die Grundschuld-Maske (`GRUNDSCHULDFELDER`). Aus demselben
+    # Raster wie Gemarkung/Flurstück, aber ein eigener Datensatz: die Belastung
+    # hängt am Objekt, nicht in seinen Stammdaten.
+    "grundschulden": {
+        "betrag": ("grundschuld_betrag", "betrag"),
+        "rang": ("rang",),
+        "grundbuch_blatt": ("grundbuch_blatt",),
+        "glaeubiger": ("glaeubiger",),
     },
 }
 
@@ -108,12 +171,21 @@ ZUORDNUNG: dict[str, dict[str, tuple[str, ...]]] = {
 # ins `type=date`-Feld (und bliebe leer) und ein Betrag als „87,00 €" ins
 # Zahlenfeld.
 DATUMSFELDER = {"datum", "beginn", "ende", "ab_datum", "bis_datum",
-                "zinsbindung_bis", "kaution_eingang"}
+                "zinsbindung_bis", "kaution_eingang", "kaufdatum"}
 ZAHLFELDER = {"betrag", "jahresbeitrag", "versicherungswert", "kaltmiete",
               "nebenkosten_vz", "stellplatz", "sonstige", "kaution",
               "personen", "jahr", "urspruenglich", "restschuld",
-              "bausparsumme", "angespart", "zinssatz", "rate_monatlich"}
-JANEIN_FELDER = {"umlagefaehig", "absetzbar"}
+              "bausparsumme", "angespart", "zinssatz", "rate_monatlich",
+              # N280-D — Stammdaten, Grundschuld und Kostenposition
+              "kaufpreis", "grundsteuerwert", "grundsteuer_messbetrag",
+              "grundsteuer_hebesatz", "hausgeld_monatlich",
+              "weg_ruecklage_zufuehrung", "menge"}
+JANEIN_FELDER = {"umlagefaehig", "absetzbar", "s35"}
+# N280-D — der Turnus ist kein Freitext, sondern einer von fünf Schlüsseln
+# (`turnus.TURNUS`). Die KI schreibt „jährlich" mit Umlaut; so kam der Wert bis
+# jetzt zwar an, passte aber zu keiner Option der Maske und fiel dort auf den
+# Vorgabewert zurück — sichtbar wirkungslos.
+TURNUSFELDER = {"turnus"}
 
 
 def _als_datum(wert) -> str | None:
@@ -142,6 +214,22 @@ def _als_datum(wert) -> str | None:
     return None
 
 
+# Eine Zahl am Anfang des Textes, samt Tausenderpunkt und Dezimalkomma.
+_FUEHRENDE_ZAHL = re.compile(r"[-+]?\d[\d.,]*")
+
+
+def _reine_zahl(text: str) -> float | None:
+    """Eine Zahl in deutscher oder englischer Schreibweise — sonst `None`.
+
+    Deutsches Format: Punkt trennt Tausender, Komma die Nachkommastellen."""
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def _als_zahl(wert) -> float | None:
     """Eine Zahl aus dem, was die KI schreibt — „1.234,56 €" ebenso wie 1234.56.
 
@@ -157,13 +245,41 @@ def _als_zahl(wert) -> float | None:
         return None
     text = (text.replace("€", "").replace("EUR", "").replace("%", "")
                 .replace(" ", "").replace(" ", "").strip())
-    # Deutsches Format: Punkt trennt Tausender, Komma die Nachkommastellen.
-    if "," in text:
-        text = text.replace(".", "").replace(",", ".")
-    try:
-        return float(text)
-    except ValueError:
+    zahl = _reine_zahl(text)
+    if zahl is not None:
+        return zahl
+    # N280-D — eine Menge trägt ihre Einheit mit („122,00 cbm", „2416 kWh").
+    # Ohne diesen Rückfall bliebe das Mengenfeld leer, obwohl die Zahl dasteht.
+    # Nur am Anfang gesucht: aus „Rechnung 2024" soll keine Zahl werden.
+    treffer = _FUEHRENDE_ZAHL.match(text)
+    return _reine_zahl(treffer.group()) if treffer else None
+
+
+# Welche Wörter auf welchen Turnus-Schlüssel führen. Die Schlüssel sind die von
+# `turnus.TURNUS` — `test_feldzuordnung` hält sie dagegen. Die Reihenfolge ist
+# Absicht: „vierteljährlich" enthält „jährlich" und wäre sonst jährlich.
+_TURNUS_WOERTER: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("einmalig", ("einmalig", "einmal")),
+    ("monatlich", ("monatlich", "monat", "mtl")),
+    ("vierteljaehrlich", ("viertel", "quartal")),
+    ("halbjaehrlich", ("halbjaehr", "halbjahr", "halb")),
+    ("jaehrlich", ("jaehrlich", "jahr", "p.a")),
+)
+
+
+def _als_turnus(wert) -> str | None:
+    """Ein Turnus-Schlüssel der App — oder `None`, wenn nichts passt.
+
+    Lieber kein Turnus als ein unbekannter: ein Freitext, den die Auswahl nicht
+    kennt, sähe im Formular wie eine leere Angabe aus und ginge beim Speichern
+    doch mit."""
+    text = " ".join(str(wert or "").split()).lower()
+    text = (text.replace("ä", "ae").replace("ö", "oe")
+                .replace("ü", "ue").replace("ß", "ss"))
+    if not text:
         return None
+    return next((schluessel for schluessel, woerter in _TURNUS_WOERTER
+                 if any(wort in text for wort in woerter)), None)
 
 
 def _als_wahrheit(wert):
@@ -209,6 +325,8 @@ def werte_fuer(bereich: str, ergebnis: dict) -> dict:
             wert = _als_zahl(roh)
         elif feld in JANEIN_FELDER:
             wert = _als_wahrheit(roh)
+        elif feld in TURNUSFELDER:
+            wert = _als_turnus(roh)
         else:
             wert = str(roh).strip() or None
         if wert is not None:
@@ -235,13 +353,19 @@ def namensvorschlag(bereich: str, werte: dict) -> str:
                         ("Renovierung", werte.get("gewerk"), werte.get("firma"))
                         if stueck).strip()
     stuecke: list[str] = []
+    # N280-D — „nebenkosten" und „stammdaten" stehen bewusst NICHT hier: eine
+    # Wasserrechnung heisst „Wasser", nicht „Nebenkosten Wasser", und ein
+    # Kaufvertrag, der die Stammdaten füllt, heisst nach seiner Art — das Wort
+    # „Stammdaten" sagt am Beleg nichts.
     einzahl = {"notarvertraege": "Notarvertrag", "versicherungen": "Versicherung",
                "kredite": "Vertrag", "mieten": "Mietvertrag",
-               "zahlungen": "Zahlung"}.get(bereich, "")
+               "zahlungen": "Zahlung",
+               "grundschulden": "Grundschuld"}.get(bereich, "")
     if einzahl:
         stuecke.append(einzahl)
     art = str(werte.get("art") or werte.get("bezeichnung")
-              or werte.get("partei") or "").strip()
+              or werte.get("partei") or werte.get("kostenart")
+              or werte.get("glaeubiger") or "").strip()
     # „Notarvertrag Notarvertrag" wäre albern — die Art nur, wenn sie etwas
     # Neues sagt.
     if art and art.lower() != einzahl.lower():
