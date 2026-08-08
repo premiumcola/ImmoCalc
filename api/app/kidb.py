@@ -230,3 +230,40 @@ def suche(eintraege: Iterable[Any], text: str) -> list:
         if all(b in heuhaufen for b in begriffe):
             treffer.append(eintrag)
     return treffer
+
+
+def pfad_nachziehen(session, dokument) -> bool:
+    """N299 — Pfad und Dateiname des Belegdaten-Satzes an den Beleg angleichen.
+
+    `Belegdaten` führt eine ZWEITE Kopie von Pfad und Dateiname („der Link auf
+    die Datei"). Kein Umzug hat sie je nachgezogen: benennt der Nutzer im
+    Explorer um, folgt der `Dokument`-Eintrag seit N290 über Dateinummer und
+    Prüfsumme — die Wissensdatenbank aber nicht, und dort stand danach eine
+    veraltete Wahrheit, auf die die Suche zeigte.
+
+    Gibt zurück, ob sich etwas geändert hat. Committet NICHT: der Aufrufer
+    bewegt gerade ohnehin Dateien und Datensätze und schliesst selbst ab.
+    Rein defensiv — ein hakender Abgleich der Wissensdatenbank darf nie einen
+    Dateiumzug scheitern lassen."""
+    from sqlmodel import select                       # noqa: PLC0415
+
+    from .models import Belegdaten                    # noqa: PLC0415
+
+    if dokument is None or dokument.id is None:
+        return False
+    try:
+        saetze = session.exec(select(Belegdaten).where(
+            Belegdaten.dokument_id == dokument.id)).all()
+    except Exception:                                  # noqa: BLE001
+        return False
+    geaendert = False
+    for satz in saetze:
+        if satz.pfad != dokument.pfad:
+            satz.pfad = dokument.pfad
+            geaendert = True
+        if satz.dateiname != dokument.dateiname:
+            satz.dateiname = dokument.dateiname
+            geaendert = True
+        if geaendert:
+            session.add(satz)
+    return geaendert

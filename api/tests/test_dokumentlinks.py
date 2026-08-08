@@ -244,3 +244,79 @@ def test_die_liste_traegt_die_pruefsumme():
         _welt(c, "Sichtweg 9")
         belege = c.get("/api/dokumente").json()["dokumente"]
         assert belege and all("sha1" in b for b in belege)
+
+
+# --------------------------------------------------------------------------
+# N299 — die Wissensdatenbank zieht beim Umzug mit
+# --------------------------------------------------------------------------
+
+def test_belegdaten_folgen_dem_umbenannten_beleg():
+    """`Belegdaten` führt eine ZWEITE Kopie von Pfad und Dateiname. Kein Umzug
+    hat sie je nachgezogen — benennt der Nutzer im Explorer um, folgte der
+    Beleg (N290), die Wissensdatenbank aber nicht, und die Suche zeigte auf
+    eine veraltete Wahrheit."""
+    from app import kidb
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Kidbweg 10", "einheiten": [
+            {"bezeichnung": "EG", "flaeche": 50}]}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            d = Dokument(pfad="/K/alt.pdf", dateiname="alt.pdf", objekt_id=o.id)
+            s.add(d); s.commit(); s.refresh(d)
+            s.add(Belegdaten(dokument_id=d.id, objekt_id=o.id,
+                             pfad="/K/alt.pdf", dateiname="alt.pdf"))
+            s.commit()
+            did = d.id
+
+        with Session(engine) as s:
+            d = s.get(Dokument, did)
+            d.pfad, d.dateiname = "/K/anders/neu.pdf", "neu.pdf"
+            assert kidb.pfad_nachziehen(s, d) is True
+            s.add(d); s.commit()
+
+        with Session(engine) as s:
+            satz = s.exec(select(Belegdaten).where(
+                Belegdaten.dokument_id == did)).first()
+            assert satz.pfad == "/K/anders/neu.pdf"
+            assert satz.dateiname == "neu.pdf"
+            # Zweiter Lauf ändert nichts mehr — sonst schriebe jeder Abgleich
+            # die ganze Wissensdatenbank neu.
+            assert kidb.pfad_nachziehen(s, s.get(Dokument, did)) is False
+
+
+def test_pfad_nachziehen_haelt_nichts_auf():
+    """Ein hakender Abgleich der Wissensdatenbank darf nie einen Dateiumzug
+    scheitern lassen."""
+    from app import kidb
+
+    with Session(engine) as s:
+        assert kidb.pfad_nachziehen(s, None) is False
+
+
+# --------------------------------------------------------------------------
+# N302 — die Arbeitsliste und der Text, beides ohne KI-Aufruf
+# --------------------------------------------------------------------------
+
+def test_ohne_auslese_listet_nur_belege_ohne_einschaetzung():
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Leseweg 11", "einheiten": [
+            {"bezeichnung": "EG", "flaeche": 50}]}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            leer = Dokument(pfad="/L/leer.pdf", dateiname="leer.pdf",
+                            objekt_id=o.id)
+            voll = Dokument(pfad="/L/voll.pdf", dateiname="voll.pdf",
+                            objekt_id=o.id, ki_einordnung="Ein Bescheid")
+            s.add(leer); s.add(voll); s.commit()
+            s.refresh(leer); s.refresh(voll)
+            leer_id, voll_id = leer.id, voll.id
+
+        ids = {b["id"] for b in c.get("/api/dokumente/ohne-auslese").json()["belege"]}
+        assert leer_id in ids
+        assert voll_id not in ids
+
+
+def test_text_endpunkt_meldet_unbekannten_beleg_sauber():
+    with TestClient(app) as c:
+        assert c.get("/api/dokumente/999999/text").status_code == 404

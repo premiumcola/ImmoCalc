@@ -101,13 +101,13 @@
   .dgkopf .dgm{min-width:0;font:500 11px var(--mono);color:var(--soft);
                overflow-wrap:anywhere}
 
-  /* Nebeneinander, sobald Platz da ist — sonst gestapelt. */
-  .dkopien{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
-  @media (min-width:760px){
-    .dkopien{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
-  }
+  /* Nebeneinander, sobald Platz da ist — sonst gestapelt. Bewusst Flex und
+     nicht Grid: bleibt in der letzten Zeile eine Karte allein (drei Kopien,
+     zwei Spalten), zieht sie sich über die volle Breite, statt ein Loch
+     neben sich stehen zu lassen. */
+  .dkopien{display:flex;flex-wrap:wrap;gap:10px}
 
-  .dkopie{display:block;min-width:0;background:var(--paper);
+  .dkopie{flex:1 1 250px;min-width:0;background:var(--paper);
     border:1.5px solid transparent;border-radius:13px;padding:12px;cursor:pointer}
   .dkopie:hover{border-color:var(--line)}
   .dkopie.an{border-color:var(--teal);background:var(--teal-l)}

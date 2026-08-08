@@ -24,7 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from .. import (belegposten, dokumentlinks, feldzuordnung, kiauslese, kicache,
-                ocr, pdftext, upload)
+                kidb, ocr, pdftext, upload)
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
                            ohne_betrag, ohne_datum, unterordner_finden)
@@ -713,6 +713,7 @@ def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
                 log.info("Steckbrief zu %s nicht mitgezogen: %s", d.pfad, fehler)
         d.pfad = ziel
         d.dateiname = dateien[ziel].name
+        kidb.pfad_nachziehen(session, d)   # N299
         _kennzeichen_nachtragen(d, dateien[ziel])
         if d.status == VERMISST:
             d.status = "zugeordnet" if d.kategorie else "neu"
@@ -1203,6 +1204,7 @@ def _pfad_heilen(session: Session, client, d: Dokument) -> str:
         return richtig
     alt = d.pfad
     d.pfad = richtig
+    kidb.pfad_nachziehen(session, d)   # N299
     if d.status == VERMISST:
         d.status = "zugeordnet"
     session.add(d)
@@ -1289,6 +1291,7 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
             proben.append(f"{d.dateiname}: {d.pfad} → {richtig}")
         if not vorschau:
             d.pfad = richtig
+            kidb.pfad_nachziehen(session, d)   # N299
             if d.status == VERMISST:
                 d.status = "zugeordnet"
             session.add(d)
@@ -2595,6 +2598,7 @@ def aendern(dokument_id: int, data: AenderungIn,
         raise HTTPException(400, str(e)) from e
     verschoben = neuer_pfad != d.pfad
     d.pfad = neuer_pfad
+    kidb.pfad_nachziehen(session, d)   # N299
 
     d.objekt_id = o.id
     d.kategorie = kategorie
@@ -3753,6 +3757,7 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
 
     d.pfad = f"/{ordner}/{name}"
     d.dateiname = name
+    kidb.pfad_nachziehen(session, d)   # N299
     d.kategorie = kategorie
     d.groesse = len(inhalt)
     d.status = "zugeordnet"
@@ -4274,6 +4279,7 @@ def _im_ordner_umbenennen(session: Session, d: Dokument,
 
     d.pfad = ziel
     d.dateiname = frei
+    kidb.pfad_nachziehen(session, d)   # N299
     session.add(d)
     try:
         session.commit()
@@ -4455,6 +4461,7 @@ def _beleg_umziehen(session: Session, client, d: Dokument, ziel_ordner: str,
     client.verschiebe(alt_pfad, ziel.lstrip("/"))
     d.pfad = ziel
     d.dateiname = frei
+    kidb.pfad_nachziehen(session, d)   # N299
     session.add(d)
     try:
         session.commit()
@@ -5007,3 +5014,57 @@ def zusammenfuehren(behalten_id: int, data: ZusammenfuehrenIn,
     return {"behalten": behalten_id, "verweise_umgehaengt": umgehaengt,
             "eintraege_entfernt": len(wegzu),
             "dateien_geloescht": len(geloescht), "fehler": fehler}
+
+
+@router.get("/{dokument_id}/text")
+def beleg_text(dokument_id: int, max_zeichen: int = Query(20000, ge=200, le=200000),
+               session: Session = Depends(get_session)) -> dict:
+    """N302 — der reine Text eines Belegs. Rein lesend, ohne KI, ohne Kosten.
+
+    Gebraucht, damit die Auslese der Belege OHNE gespeicherte Einschätzung
+    nachgetragen werden kann, ohne das API-Guthaben des Nutzers anzufassen —
+    ausdrücklich sein Wunsch: „bitte über den Code-Prozess machen und nicht
+    über die API."
+
+    Ohne Textschicht kommt `text: ""` und `hat_text: false` zurück; dann hilft
+    nur die Texterkennung (`/durchsuchbar`), und das sagt der Aufrufer selbst.
+    Der Rumpf wird bewusst gekürzt: ein 40-seitiger Vertrag soll nicht in einer
+    einzigen Antwort landen."""
+    d, rohdaten = _hole_beleg_bytes(session, dokument_id)
+    # Die Prüfsumme kostet hier nichts mehr — die Bytes liegen vor (N290/N296).
+    _pruefsumme_nachtragen(session, d, kicache.pruefsumme(rohdaten))
+    text_roh = ocr.text_aus_beleg(rohdaten) or ""
+    gekuerzt = len(text_roh) > max_zeichen
+    return {
+        "id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+        "kategorie": d.kategorie, "kostenart": d.kostenart,
+        "jahr": d.jahr, "betrag": d.betrag,
+        "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
+        "hat_ki": bool((d.ki_einordnung or "").strip() or d.ki_felder),
+        "hat_text": bool(text_roh.strip()),
+        "zeichen": len(text_roh),
+        "gekuerzt": gekuerzt,
+        "text": text_roh[:max_zeichen],
+    }
+
+
+@router.get("/ohne-auslese")
+def ohne_auslese(session: Session = Depends(get_session)) -> dict:
+    """N302 — welche Belege noch gar keine KI-Einschätzung tragen.
+
+    Die Arbeitsliste für das Nachtragen. Grabsteine und Steckbriefe bleiben
+    aussen vor; sie haben keine Datei mehr bzw. sind keine Belege."""
+    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    offen = []
+    for d in session.exec(select(Dokument)).all():
+        if _ist_grabstein(d.pfad) or _ist_sidecar(d.dateiname or ""):
+            continue
+        if (d.ki_einordnung or "").strip() or d.ki_felder:
+            continue
+        o = objekte.get(d.objekt_id)
+        offen.append({"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+                      "kategorie": d.kategorie, "jahr": d.jahr,
+                      "objekt": o.slug if o else "",
+                      "groesse": d.groesse})
+    offen.sort(key=lambda x: (x["objekt"], x["dateiname"]))
+    return {"anzahl": len(offen), "belege": offen}
