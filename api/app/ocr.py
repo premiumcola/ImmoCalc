@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 from datetime import date
 
-from . import pdftext
+from . import officetext, pdftext
 
 # Weicher Import: die KI-Auslese (CCLXVIII) ist optional. Fehlt das Modul oder
 # httpx, bleibt alles wie zuvor bei der Heuristik — genau wie ohne API-Key.
@@ -564,6 +564,14 @@ def text_aus_beleg(rohdaten: bytes) -> str:
         return text
     if pdftext.ist_pdf(rohdaten):
         return _text_aus_scan(rohdaten)
+    # N304 — vierte Stufe: Tabellen, Briefe und Präsentationen. Sie galten
+    # bisher als „kein Text", obwohl ihr Inhalt reiner Text ist — die modernen
+    # Office-Formate sind ZIP-Archive mit XML darin. Von 125 Belegen ohne
+    # Auslese waren 56 solche Dateien. Kostet keine Bibliothek und keinen
+    # KI-Aufruf.
+    aus_office = officetext.text_aus_office(rohdaten)
+    if aus_office.strip():
+        return aus_office
     return text_aus_bild(rohdaten)
 
 
