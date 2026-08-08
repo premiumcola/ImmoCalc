@@ -395,17 +395,27 @@ def _menge(wert) -> float | None:
     abgeschnitten, das deutsche Komma zum Punkt („122,00 cbm" → 122.0). Liefert
     das Modell statt einer Summe die Teilmengen (Zählerwechsel) — als Liste
     oder als „102 m³ + 40 m³" —, werden sie addiert. Null oder negativ heißt
-    „nicht gefunden" → None; eine Menge von 0 m³ ist keine belastbare Angabe."""
+    „nicht gefunden" → None; eine Menge von 0 m³ ist keine belastbare Angabe.
+
+    N287 — gelesen wird mit `_zahl_de`, NICHT mit `_betrag`. Der Unterschied
+    entscheidet über den Faktor 1000: `_betrag` nimmt den letzten Punkt als
+    Dezimaltrenner (bei Geld richtig), also würde aus „2.416 m³" ein Verbrauch
+    von 2,416 m³. `gesamt_m3` geht als `rechnung_m3` in `wasser.verrechne` und
+    bestimmt dort den Preis je m³ und die Verteilung auf alle Einheiten — der
+    Fehler landete also unbemerkt in der Abrechnung. `_kwh` löst dasselbe
+    Problem beim Strom seit N162 genau so."""
     if isinstance(wert, list):
         return _summe(_menge(teil) for teil in wert)
     if isinstance(wert, str):
         ohne_einheit = _EINHEIT.sub(" ", wert)
-        teile = [_betrag(t) for t in _ZAHL.findall(ohne_einheit)]
+        teile = [_zahl_de(t) for t in _ZAHL.findall(ohne_einheit)]
+        # Eine Menge ist ihr Betrag — ein Vorzeichen wäre ein Lesefehler.
+        teile = [abs(t) if t is not None else None for t in teile]
         if "+" in wert:
             return _summe(teile)
         return next((t for t in teile if t), None)
-    menge = _betrag(wert)
-    return menge if menge else None
+    menge = _zahl_de(wert)
+    return abs(menge) if menge else None
 
 
 def _summe(mengen) -> float | None:

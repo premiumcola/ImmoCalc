@@ -5,7 +5,7 @@
    Beide bauen auf `baueDialog()` aus immo.js auf und benutzen die vorhandenen
    Formularklassen `.field` / `.inp` / `.btn` — kein eigenes Formularsystem. */
 
-import { baueDialog, esc, melde } from '../immo.js';
+import { baueDialog, esc, melde, heuteIso, zahlAus } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { datumwahl } from '../datumwahl.js';
 import { belegVorbereiten, belegAblegen } from '../belegscan.js';
@@ -24,13 +24,10 @@ const KAMERA_SVG = `<svg class="sv-i" viewBox="0 0 24 24" fill="none"
            19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
   <circle cx="12" cy="13" r="3.4"/></svg>`;
 
-/** Zahl aus einem Eingabefeld: leer bleibt `null`, Komma zaehlt als Komma. */
-function zahl(el) {
-  const roh = String(el.value ?? '').trim().replace(',', '.');
-  if (roh === '') return null;
-  const n = Number(roh);
-  return Number.isFinite(n) ? n : null;
-}
+/* N287 — `zahl()` hiess frueher hier und rechnete `Number(text.replace(',','.'))`.
+   Damit wurde aus getippten „1.250" ein Betrag von 1,25 €. Jetzt gilt ueberall
+   dieselbe Regel aus `immo.js`. */
+const zahl = zahlAus;
 
 /** Gemeinsamer Rahmen: Titel, Felder, Speichern/Abbrechen. `fuellen` bekommt
  *  das <form> und darf Lauscher anhaengen; `lesen` liefert den Datensatz oder
@@ -198,8 +195,11 @@ export function renovierungDialog(vorhanden, einheiten) {
  * @param {string[]}    gewerke    Gewerke-Liste aus der API
  * @param {string}      vorgabeDatum  Startdatum der Renovierung als Vorschlag
  */
-/* N279 — heute als ISO, für den Vergleich „liegt das Datum in der Zukunft?". */
-const heuteIso = () => new Date().toISOString().slice(0, 10);
+/* N279 — heute als ISO, für den Vergleich „liegt das Datum in der Zukunft?".
+   N287: `heuteIso` kommt jetzt aus `immo.js` und rechnet in LOKALER Zeit. Die
+   Fassung hier nahm `toISOString()` — das rechnet nach UTC um und liefert
+   zwischen Mitternacht und 2 Uhr morgens den Vortag. Wer nachts eine Rechnung
+   von heute erfasste, bekam „liegt in der Zukunft" und das Datum flog raus. */
 
 /**
  * N279 — ein Rechnungsdatum in der Zukunft ist immer ein Lesefehler.

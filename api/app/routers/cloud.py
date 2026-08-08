@@ -378,26 +378,69 @@ def _jahr_aus_name(name: str) -> int | None:
     return int(treffer.group(0)) if treffer else None
 
 
+def _freies_ziel(client, ordner: str, name: str) -> str:
+    """Ein Zielpfad, der noch nicht belegt ist — „…-2.pdf", „…-3.pdf", …
+
+    Dieselbe Regel wie beim Ablegen eines Belegs (`dokumente._freier_name`):
+    lieber ein Suffix als eine überschriebene Datei. Nach 50 Versuchen wird
+    aufgegeben statt endlos zu zählen; dann ist etwas anderes im Argen.
+    """
+    stamm, punkt, endung = name.rpartition(".")
+    if not punkt:                       # Datei ohne Endung
+        stamm, endung = name, ""
+    kandidat = name
+    for n in range(2, 52):
+        if not client.existiert(f"{ordner}/{kandidat}"):
+            return f"{ordner}/{kandidat}"
+        kandidat = f"{stamm}-{n}{'.' + endung if endung else ''}"
+    raise NextcloudFehler(
+        f'Kein freier Name für „{name}" — 50 Varianten sind belegt.')
+
+
 @router.post("/objekte/{slug}/leeren")
-def objekt_leeren(slug: str, session: Session = Depends(get_session)) -> dict:
+def objekt_leeren(slug: str, bestaetigt: bool = False,
+                  session: Session = Depends(get_session)) -> dict:
     """Löscht ALLE Inhalte des Objektordners (Dateien und Unterordner) — für
     einen sauberen Neuaufbau. Der Objektordner selbst bleibt. Nur unterhalb des
-    Home-Ordners (Schreibschutz)."""
+    Home-Ordners (Schreibschutz).
+
+    N287 — **ohne `bestaetigt=true` wird nichts gelöscht**, sondern nur
+    aufgezählt, was fallen würde. Das ist der schärfste Endpunkt der ganzen
+    App: er räumt rekursiv den Ordner mit den echten Unterlagen des Nutzers,
+    und es gibt kein Zurück — die Dateien gehören ihm, nicht uns. Zum
+    Vergleich: das Löschen eines OBJEKTS schreibt vorher eine JSON-Sicherung
+    und rührt die Cloud gar nicht an; das Entfernen eines Duplikats weist
+    vorher Byte-Gleichheit nach. Hier fiel bisher alles, ohne Beweis und ohne
+    Rückfrage.
+    """
     objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
     if not objekt:
         raise HTTPException(404, "Objekt nicht gefunden")
     if not objekt.nc_ordner:
-        return {"geloescht": 0}
+        return {"geloescht": 0, "wuerde_loeschen": []}
     client = verbindung(session)
     wurzel = _pfad(objekt.nc_ordner).strip("/")
+    try:
+        eintraege = [e.name for e in client.liste(objekt.nc_ordner)]
+    except NextcloudFehler as e:
+        raise HTTPException(400, str(e)) from e
+    # Trockenlauf: erst zeigen, was verschwände. Der Aufrufer muss danach
+    # ausdrücklich `bestaetigt=true` schicken.
+    if not bestaetigt:
+        return {"ordner": objekt.nc_ordner, "geloescht": 0,
+                "wuerde_loeschen": eintraege,
+                "hinweis": f"{len(eintraege)} Einträge würden gelöscht. "
+                           "Zum Ausführen `bestaetigt=true` mitschicken."}
     geloescht = 0
     try:
-        for e in client.liste(objekt.nc_ordner):
-            client.loesche(f"{wurzel}/{e.name}")
+        for name in eintraege:
+            client.loesche(f"{wurzel}/{name}")
             geloescht += 1
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
-    return {"ordner": objekt.nc_ordner, "geloescht": geloescht}
+    log.warning("Objektordner geleert: %s (%s Einträge)", slug, geloescht)
+    return {"ordner": objekt.nc_ordner, "geloescht": geloescht,
+            "wuerde_loeschen": []}
 
 
 @router.post("/objekte/{slug}/spiegeln", status_code=201)
@@ -424,7 +467,13 @@ async def objekt_spiegeln(slug: str, subpfad: str = Form(...),
         for ordner in teile[:-1]:            # Ordnerkette anlegen (405 = existiert)
             pfad = f"{pfad}/{ordner}"
             client.ordner_anlegen(pfad)
-        ziel = f"{pfad}/{teile[-1]}"
+        # N287 — nie überschreiben. `nextcloud.lege_ab` ist ein nacktes
+        # WebDAV-PUT: sein Docstring sagt ausdrücklich „der Aufrufer sorgt für
+        # einen freien Namen", und dieser Aufrufer war der einzige, der das
+        # nicht tat. Eine gleichnamige Datei des Nutzers wurde dabei stumm
+        # ersetzt — und der anschliessende `except Exception` verschluckte
+        # auch noch den Hinweis darauf.
+        ziel = _freies_ziel(client, pfad, teile[-1])
         client.lege_ab(ziel, inhalt,
                        typ=datei.content_type or "application/octet-stream")
     except NextcloudFehler as e:

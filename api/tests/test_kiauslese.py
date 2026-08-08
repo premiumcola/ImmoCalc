@@ -663,3 +663,26 @@ def test_weg_prompt_nennt_die_teure_verwechslung():
     assert "103,24" in p and "788,80" in p          # das Beispiel steht drin
     assert "Nicht umlagefähig" in p and "umlagefaehig = " in p
     assert "kleineren" in p                          # die Notbremse bei Zweifel
+
+
+# --------------------------------------------------------------------------
+# N287 — Risiken aus der Modularisierungs-Analyse
+# --------------------------------------------------------------------------
+
+def test_menge_liest_deutsche_tausender_richtig():
+    """Der teuerste Lesefehler des Backends: `_menge` rief `_betrag`, und der
+    nimmt den letzten Punkt als Dezimaltrenner (bei Geld richtig). Aus einem
+    Wasserbescheid ueber „2.416 m3" wurden damit 2,416 m3 — der Wert geht als
+    `rechnung_m3` in `wasser.verrechne` und bestimmt dort den Preis je m3 und
+    die Verteilung auf ALLE Einheiten. Faktor 1000, unbemerkt."""
+    assert kiauslese._menge("2.416 m\u00b3") == 2416.0
+    assert kiauslese._menge("1.234,56 m3") == 1234.56
+    assert kiauslese._menge("122,00 cbm") == 122.0
+    # Ein Punkt mit ein bis zwei Stellen bleibt dezimal (12,5 m3).
+    assert kiauslese._menge("12.5") == 12.5
+    # Teilmengen bei Zaehlerwechsel werden weiter addiert.
+    assert kiauslese._menge("102 m\u00b3 + 40 m\u00b3") == 142.0
+    # Eine Menge ist ihr Betrag — ein Vorzeichen waere ein Lesefehler.
+    assert kiauslese._menge(-2416) == 2416.0
+    assert kiauslese._menge("") is None
+    assert kiauslese._menge(0) is None

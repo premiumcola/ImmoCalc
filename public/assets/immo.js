@@ -97,6 +97,65 @@ export const promille = n => (n ?? 0).toLocaleString('de-DE',
 export const esc = s => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/**
+ * N287 — eine deutsche Zahleneingabe zu einer Zahl. `null`, wenn nichts
+ * Brauchbares drinsteht.
+ *
+ * Es gab davon zwanzig Fassungen in fünf Ausbaustufen, und die häufigste war
+ * schlicht `Number(text.replace(',', '.'))`. Die verliert genau einen Fall,
+ * aber den teuersten: **`Number("1.250")` ist 1.25.** Wer im Ölbeleg, beim
+ * Zählerstand oder in einem Wasserbetrag „1.250" tippt — für einen deutschen
+ * Nutzer die naheliegende Schreibweise —, speicherte einen Tausendstel des
+ * gemeinten Werts, ohne Hinweis.
+ *
+ * Die Regel ist dieselbe, die `kiauslese._zahl_de` auf dem Server anwendet:
+ *
+ *   * Ein Komma ist IMMER der Dezimaltrenner; Punkte davor sind Tausender.
+ *     „1.234,56" → 1234.56
+ *   * Ohne Komma entscheidet die Gruppierung: stehen hinter jedem Punkt genau
+ *     drei Ziffern, sind es Tausenderpunkte. „1.250" → 1250, „1.234.567" →
+ *     1234567
+ *   * Sonst ist der Punkt dezimal. „12.5" → 12.5 — so kommen Werte aus der
+ *     API zurück, und „12,5 m³" schreibt niemand als „12.500".
+ *
+ * `el` darf ein Element oder ein String sein. Bei einem Element hat
+ * `data-wert` Vorrang: dort legt `eingabe.js` den rohen Wert ab, während im
+ * Feld die formatierte Fassung mit Tausenderpunkten steht.
+ */
+export function zahlAus(el) {
+  const roh = (el && typeof el === 'object')
+    ? (el.dataset?.wert != null && el.dataset.wert !== ''
+        ? el.dataset.wert : el.value)
+    : el;
+  const text = String(roh ?? '').replace(/[^\d,.-]/g, '').trim();
+  if (!text) return null;
+  let zahl;
+  if (text.includes(',')) {
+    zahl = Number(text.replace(/\./g, '').replace(',', '.'));
+  } else {
+    const teile = text.split('.');
+    // Dreiergruppen hinter jedem Punkt = Tausendergliederung, sonst dezimal.
+    const tausender = teile.length > 1
+      && teile.slice(1).every(t => t.length === 3);
+    zahl = Number(tausender ? teile.join('') : text);
+  }
+  return Number.isFinite(zahl) ? zahl : null;
+}
+
+/**
+ * N287 — heute als ISO-Datum, in LOKALER Zeit.
+ *
+ * `new Date().toISOString()` rechnet nach UTC um: zwischen Mitternacht und
+ * 2 Uhr morgens (Sommerzeit) liefert es in Mitteleuropa den Vortag. Genau
+ * darauf lief eine Zukunftsprüfung schon auf — und genau davor warnen zwei
+ * Kommentare im Projekt, während drei Stellen es trotzdem taten.
+ */
+export function heuteIso() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** Fristklasse fuer die Ampel-Chips: rot ab 30, gelb ab 90 Tagen. */
 export const fristKlasse = tage =>
   tage == null ? '' : tage < 0 ? 'neg' : tage <= 30 ? 'neg' : tage <= 90 ? 'amber' : 'pos';
