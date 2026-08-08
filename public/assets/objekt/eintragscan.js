@@ -21,38 +21,28 @@ import { belegVorbereiten, belegAblegen } from '../belegscan.js';
 import { analyseDecke } from '../belegbestaetigung.js';
 import { cfgFuer, felderFuer } from '../objekt-felder.js?v=2';
 import { slug } from '../objekt-state.js?v=2';
+import { SCAN_KATEGORIE, AN_TYP } from './state.js';
 import { formular } from './formular.js';
 
-/* Welche Ablage-Kategorie zu welcher Eintragsart gehört — dieselben Werte, die
-   `cloudkern.ZIELORDNER` kennt. Fehlt eine, landet der Beleg unter
-   „Sonstiges"; das ist richtig, nicht bloss ein Rückfall. */
-const KATEGORIE = {
-  notarvertraege: 'Notarvertrag',
-  versicherungen: 'Versicherung',
-  kredite: 'Kredit',
-  mieten: 'Mietvertrag',
-  zahlungen: 'Steuer',
-};
-
-/* Der Rubrikname ist PLURAL („notarvertraege"), `an_typ` am Beleg SINGULAR
-   („notarvertrag") — siehe `_AN_TYP_MODELLE` in `routers/dokumente.py`. Ohne
-   diese Übersetzung nähme der Server den Anhang nicht an und die Datei hinge
-   an nichts. */
-const AN_TYP = {
-  notarvertraege: 'notarvertrag',
-  versicherungen: 'versicherung',
-  kredite: 'kredit',
-  mieten: 'miete',
-  zahlungen: 'zahlung',
-};
+/* N280 — Ablageordner (`cloudkern.ZIELORDNER`) und `an_typ` standen hier ein
+   zweites Mal, Wort für Wort gleich wie in `state.js`. Zwei Tabellen für
+   dieselbe Frage laufen auseinander: die Detailansicht kannte
+   `erwerbskosten` längst, dieser Weg nicht — und deshalb erschien am
+   Erwerbsnebenkosten-Formular kein Scan-Knopf. Jetzt gilt überall dieselbe
+   Zuordnung: `SCAN_KATEGORIE` sagt, wohin der Beleg wandert, `AN_TYP`
+   übersetzt die Rubrik (Plural) in den Eintragstyp des Servers (Singular,
+   siehe `_AN_TYP_MODELLE` in `routers/dokumente.py`). */
 
 /* Bereiche, die die Server-Zuordnung kennt (`feldzuordnung.ZUORDNUNG`). Nur
    dort lohnt der Scan-Weg — anderswo käme eine leere Maske heraus, und der
    Knopf verspräche etwas, das er nicht hält. */
-export const SCANBAR = new Set(Object.keys(KATEGORIE));
+export const SCANBAR = new Set(['notarvertraege', 'versicherungen', 'kredite',
+                                'mieten', 'zahlungen', 'erwerbskosten']);
 
 /* Der vorbereitete, noch NICHT abgelegte Scan. Er wartet, bis der Eintrag
-   gespeichert ist — vorher gibt es keine id, an die er gehören könnte. */
+   gespeichert ist — vorher gibt es keine id, an die er gehören könnte.
+   `name` ist der Dateiname-Vorschlag; der Nutzer sieht und ändert ihn im
+   Formular (N280), bis dahin steht darin, was die Auslese vorschlägt. */
 let offen = null;
 
 /** Wartet ein Scan auf den gerade gespeicherten Eintrag? */
@@ -60,6 +50,13 @@ export const scanWartet = () => Boolean(offen);
 
 /** Vergisst den vorbereiteten Scan (Formular abgebrochen oder verworfen). */
 export function scanVerwerfen() { offen = null; vorschauAufraeumen(); }
+
+/** N280 — der im Formular getippte Dateiname. Er geht beim Speichern als
+    Bezeichnung an die Ablage (`belegAblegen`), die daraus mit Datum und Betrag
+    den endgültigen Namen baut — dieselbe Regel wie in der Bestätigungsmaske. */
+export function scanNameSetzen(name) {
+  if (offen) offen.name = String(name || '').trim() || null;
+}
 
 /* N269 — solange eine Aufnahme läuft (Kamera offen, Zuschnitt, KI-Auslese),
  * blockt jeder weitere Tastendruck. Ohne diesen Riegel öffnete ein zweiter,
@@ -86,20 +83,41 @@ function vorschauAufraeumen() {
  * mit „Erneut aufnehmen" einen kompletten Neuversuch möglich — mehrseitig
  * hinzufügen läuft weiterhin über das „+" im Kamerafenster selbst
  * (`kamerascanStarten`), das erlaubt beliebig viele Seiten in EINER Sitzung.
+ *
+ * N280 — dazu der **Dateiname**. Beim Anlegen aus einem Scan gibt es keine
+ * Bestätigungsmaske (das gefüllte Formular kommt ohnehin gleich danach — eine
+ * zweite Maske davor wäre ein Klick zu viel), also steht der Name hier: sicht-
+ * und änderbar, direkt neben den Seiten, zu denen er gehört. Er wird bei jedem
+ * Tastendruck nach `offen.name` durchgereicht (`scanNameSetzen`) und geht beim
+ * Speichern an die Ablage.
+ *
+ * Bewusst eine Funktion statt einer fertigen Zeichenkette: baut das Formular
+ * sich um (Vertragsart gewechselt), wird sie erneut gerufen und zeigt den
+ * Stand, den der Nutzer gerade getippt hat — nicht wieder den ersten Vorschlag.
  */
-function scanVorschauHtml(bereich, blaetter, seiten) {
+function scanBlockHtml(bereich) {
+  if (!offen) return '';
   vorschauAufraeumen();
-  const anzahl = seiten || (blaetter || []).length || 0;
-  if (!anzahl) return '';
-  const bilder = (blaetter || []).map(b => {
+  const blaetter = offen.aufnahme?.blaetter || [];
+  const anzahl = offen.aufnahme?.seiten || blaetter.length || 0;
+  const bilder = blaetter.map(b => {
     const url = URL.createObjectURL(b);
     vorschauUrls.push(url);
     return `<img class="sv-blatt" src="${url}" alt="">`;
   }).join('');
   return `<div class="sv-vorschau">
       ${bilder ? `<div class="sv-blaetter">${bilder}</div>` : ''}
+      <label class="sv-nlabel" for="svName">Dateiname</label>
+      <input class="sv-namefeld" id="svName" type="text" data-scanname
+             value="${esc(offen.name || '')}"
+             placeholder="Bezeichnung des Belegs"
+             spellcheck="false" autocapitalize="off" autocomplete="off">
+      <span class="sv-nhinweis">So wird die Datei in der Nextcloud abgelegt —
+        Datum und Betrag setzt die Ablage selbst davor und dahinter.</span>
       <div class="sv-vzeile">
-        <span class="sv-vanzahl">${anzahl} Seite${anzahl === 1 ? '' : 'n'} aufgenommen</span>
+        <span class="sv-vanzahl">${anzahl
+          ? `${anzahl} Seite${anzahl === 1 ? '' : 'n'} aufgenommen`
+          : 'Datei ausgewählt'}</span>
         <button type="button" class="sv-vneu" data-eintrag-scan="${esc(bereich)}"
           >Erneut aufnehmen</button>
       </div>
@@ -197,7 +215,7 @@ export async function eintragScannen(bereich, werte = {}, extra = '') {
     try {
       vorbereitet = await belegVorbereiten(dateien, {
         objekt: slug,
-        kategorie: KATEGORIE[bereich] || 'Sonstiges',
+        kategorie: SCAN_KATEGORIE[bereich] || 'Sonstiges',
         bereich,
         titel: `${cfg.einzahl} abfotografieren`,
       }, () => { deckeWeg = analyseDecke(`${cfg.einzahl} wird gelesen …`); });
@@ -218,8 +236,6 @@ export async function eintragScannen(bereich, werte = {}, extra = '') {
 
     // Der Scan wartet jetzt auf den gespeicherten Eintrag (siehe `scanAnhaengen`).
     offen = { ...vorbereitet, name: ki.formname || null };
-    const vorschau = scanVorschauHtml(bereich, vorbereitet.aufnahme.blaetter,
-                                     vorbereitet.aufnahme.seiten);
 
     await formular({
       titel: `${cfg.einzahl} aus Scan`,
@@ -232,7 +248,9 @@ export async function eintragScannen(bereich, werte = {}, extra = '') {
           + 'prüfen und ergänzen. Die Datei wird beim Speichern mit abgelegt.'
         : 'Aus dem Foto liess sich nichts Sicheres lesen — bitte von Hand '
           + 'ausfüllen. Die Datei wird beim Speichern mit abgelegt.',
-      extra: vorschau + extra,
+      // Als Funktion: ein Umbau des Formulars (Vertragsart) baut den Block neu
+      // und zeigt dabei den zuletzt getippten Dateinamen (siehe scanBlockHtml).
+      extra: () => scanBlockHtml(bereich) + extra,
     });
   } finally {
     inBearbeitung = false;

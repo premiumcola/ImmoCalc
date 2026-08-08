@@ -39,7 +39,7 @@ import { bewohnerZeile, bewohnerSpeichern, gemeinZeile, gemeinBlock,
          gemeinAusFormular, nutzZeile, nutzBlock, nutzAusFormular } from './bewohner.js';
 import { lageplanUmbenennen, lageplanEntfernen, lageplanAnsehen,
          lageplanHochladen } from './lageplan.js';
-import { eintragScannen, scanAnhaengen, scanVerwerfen,
+import { eintragScannen, scanAnhaengen, scanVerwerfen, scanNameSetzen,
          scanWartet, SCANBAR } from './eintragscan.js';
 
 const hausUrl = () => `objekt.html?o=${encodeURIComponent(slug)}`;
@@ -64,6 +64,22 @@ export function initHandlers() {
     auswahlLoesen();
     datumwahlLoesen();
     setDialogUmbau(null);   // sonst baut ein später Klick einen toten Dialog um
+  });
+
+  // N280 — der Dateiname des vorbereiteten Scans steht als Feld im Formular
+  // (siehe `scanBlockHtml`). Jeder Tastendruck wandert sofort in den
+  // vorbereiteten Scan; beim Speichern liegt dort der Stand, den der Nutzer
+  // sieht — auch wenn das Formular sich zwischendurch umbaut.
+  dlgForm.addEventListener('input', e => {
+    if (e.target.matches('[data-scanname]')) scanNameSetzen(e.target.value);
+  });
+  // Die Eingabetaste im Namensfeld würde sonst das Formular abschicken — der
+  // Eintrag wäre gespeichert, bevor der Nutzer die Felder geprüft hat.
+  dlgForm.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.matches('[data-scanname]')) {
+      e.preventDefault();
+      e.target.blur();
+    }
   });
 
   dlgForm.addEventListener('click', async e => {

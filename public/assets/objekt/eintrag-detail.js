@@ -12,7 +12,8 @@ import { cfgFuer, felderFuer, endpunktBereich } from '../objekt-felder.js?v=2';
 import { feldWertText } from '../objekt-format.js?v=2';
 import { HAKEN_ICON, BELEG_ICON } from '../objekt-baum.js?v=2';
 import { slug } from '../objekt-state.js?v=2';
-import { belegScannen } from '../belegscan.js';
+import { belegVorbereiten, belegAblegen } from '../belegscan.js';
+import { analyseDecke, belegBestaetigen } from '../belegbestaetigung.js';
 import { AN_TYP, RUBRIKFARBE, SCAN_KATEGORIE, SCAN_TYPEN, SCAN_WORT,
          UMKLASS_ZIELE, KAMERA_ICON, kannUmklassifizieren } from './state.js';
 import { scanJahr } from './helpers.js';
@@ -44,7 +45,14 @@ export function oeffneEintragFormular(bereich, eintrag, beleg = null) {
                     werte: eintrag, absicht: 'eintrag', extra, beleg: dok });
 }
 
-export async function eintragDetail(bereich, id, laden) {
+/**
+ * Die Detailansicht eines Eintrags.
+ *
+ * `zeigeDocId` (N280): welcher Beleg gleich in der Vorschau stehen soll. Nach
+ * einem frischen Scan ist das der eben abgelegte — der Nutzer sieht sofort,
+ * wie die Datei heisst und wo sie liegt, statt sie erst suchen zu müssen.
+ */
+export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
   const cfg = cfgFuer(bereich);
   const typ = AN_TYP[bereich];
   let eintrag;
@@ -127,6 +135,22 @@ export async function eintragDetail(bereich, id, laden) {
   // CCCLXXXIX — beim Mietverhältnis eine Checkliste je Dokumentart in logischer
   // Reihenfolge: grüner Haken + Name (antippen zeigt es, „Ersetzen" tauscht) wo
   // vorhanden, sonst „fehlt" mit Aufnehmen-Knopf. So bleibt es EIN Dokument je Art.
+  /* `knapp`: steht der Knopf neben Vorlage und Druckern, trägt er nur noch die
+     Kamera. Mit Beschriftung passten die vier Knöpfe nicht in eine Zeile und
+     die Reihe wuchs auf drei — das Symbol sagt hier dasselbe. */
+  const aufnehmenKnopf = (voll, kurz, knapp = false) => `<button
+       class="dd-cadd${knapp ? ' nurikon' : ''}" data-scan data-wort="${esc(voll)}"
+       title="${esc(kurz)} aufnehmen" aria-label="${esc(kurz)} aufnehmen"
+       >${KAMERA_ICON}${knapp ? '' : '<span>aufnehmen</span>'}</button>`;
+  /* Name oben, Aktionen darunter — für jede Zeile, in der mehr als ein Knopf
+     steht. Nebeneinander bliebe vom Namen nichts übrig (siehe objekt.html). */
+  const zweizeilig = (kurz, aktionen) => `<div class="dd-check fehlt zweizeilig">
+       <span class="dd-ci"></span>
+       <div class="dd-zspalte">
+         <span class="dd-cn leer">${esc(kurz)}</span>
+         <div class="dd-zaktionen">${aktionen}</div>
+       </div>
+     </div>`;
   const mietChecklistHtml = () => {
     // Trennzeichen-blind vergleichen: der Dateiname trägt „Übergabeprotokoll
     // Einzug" als „…Miete-Übergabeprotokoll-Einzug" (Leerzeichen → Bindestrich,
@@ -172,35 +196,31 @@ export async function eintragDetail(bereich, id, laden) {
           // N224 — zwei Aktionen (Auf Objektkonto / aufnehmen) passen nicht
           // mehr in eine Zeile neben dem Namen, ohne ihn abzuschneiden —
           // eigenes zweizeiliges Layout: Name oben, Aktionen darunter.
-          ? `<div class="dd-check fehlt kaution-zeile">
-               <span class="dd-ci"></span>
-               <div class="dd-kaution">
-                 <span class="dd-cn leer">${esc(kurz)}</span>
-                 <div class="dd-kaution-aktionen">
-                   <button class="dd-cx" data-kaution-objektkonto="1"
+          ? zweizeilig(kurz, `<button class="dd-cx" data-kaution-objektkonto="1"
                      title="Auf das normale Objektkonto überwiesen — kein Dokument nötig"
                      aria-label="Kaution auf Objektkonto vermerken">Auf Objektkonto</button>
-                   <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
-                     aria-label="${esc(kurz)} aufnehmen">${KAMERA_ICON}<span>aufnehmen</span></button>
-                 </div>
-               </div>
-             </div>`
+                   ${aufnehmenKnopf(voll, kurz)}`)
           : (() => {
               const vorlage = vorlagenNachTyp.get(voll);
-              return `<div class="dd-check fehlt">
+              // Ohne Vorlage bleibt es einzeilig: Name und ein Knopf passen
+              // nebeneinander. Mit Vorlage kommen Ansehen + je ein Drucker
+              // dazu — dann derselbe zweizeilige Aufbau wie bei der Kaution.
+              if (!vorlage) {
+                return `<div class="dd-check fehlt">
              <span class="dd-ci"></span>
              <span class="dd-cn leer">${esc(kurz)}</span>
-             ${vorlage ? `<button class="dd-vorlage" data-vorlage="${vorlage.id}"
+             ${aufnehmenKnopf(voll, kurz)}
+           </div>`;
+              }
+              return zweizeilig(kurz, `<button class="dd-vorlage" data-vorlage="${vorlage.id}"
                data-vorlage-name="${esc(vorlage.name)}"
-               title="Leere Vorlage ansehen/herunterladen">Vorlage</button>` : ''}
-             ${vorlage ? drucker.map(dr => `<button class="dd-vdruck"
+               title="Leere Vorlage ansehen/herunterladen">Vorlage</button>
+             ${drucker.map(dr => `<button class="dd-vdruck"
                data-vorlage-drucken="${vorlage.id}" data-drucker="${esc(dr.name)}"
                title="Vorlage an ${esc(dr.standort || dr.name)} schicken"
                aria-label="Vorlage an ${esc(dr.standort || dr.name)} schicken"
-               >${DRUCKER_ICON}</button>`).join('') : ''}
-             <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
-               aria-label="${esc(kurz)} aufnehmen">${KAMERA_ICON}<span>aufnehmen</span></button>
-           </div>`;
+               >${DRUCKER_ICON}</button>`).join('')}
+             ${aufnehmenKnopf(voll, kurz, true)}`);
             })();
     }).join('')}</div>${scanFeldHtml}`;
   };
@@ -260,17 +280,53 @@ export async function eintragDetail(bereich, id, laden) {
     dlg.querySelectorAll('.dd-beleg').forEach(b =>
       b.classList.toggle('an', b.dataset.doc === String(docId)));
     if (vorschauKopf) {
-      vorschauKopf.innerHTML = `<span class="dd-vn">${esc(name || 'Beleg')}</span>${pfad
-        ? `<span class="dd-vp" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
-            esc(pfad)}</bdi></span>` : ''}`;
+      // N280 — Name und Ablageort stehen wie bisher hier, aber sie sind jetzt
+      // der Griff zum GEMEINSAMEN Beleg-Fenster (`belegAnsehen`). Diese Ansicht
+      // baute Kopfzeile und Seitenanzeige selbst nach — und schnitt sich damit
+      // vom Umbenennen-Stift (N261), von der Auslese-Anzeige und vom Blättern
+      // ab. Die eingebettete Vorschau neben den Daten bleibt (sie ist der
+      // Grund, warum es diese Ansicht gibt); alles Weitere holt sie sich dort,
+      // wo es einmal steht.
+      vorschauKopf.innerHTML = `<button type="button" class="dd-vgross" data-gross>
+          <span class="dd-vn">${esc(name || 'Beleg')}</span>${pfad
+          ? `<span class="dd-vp" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
+              esc(pfad)}</bdi></span>` : ''}
+          <span class="dd-vlupe">Groß ansehen · umbenennen</span>
+        </button>`;
       vorschauKopf.hidden = false;
     }
+    flaeche.classList.add('klickbar');
     adressListen.push(belegSeitenLaden(`/api/dokumente/${docId}`, flaeche,
       name || 'Beleg', `/api/dokumente/${docId}/inhalt`));
   };
   // CCCLXXXIX — das PDF wird NICHT mehr automatisch geladen; es erscheint erst,
   // wenn man ein Dokument antippt (zeigeDoc). Das hielt die Ansicht ruhig, statt
   // gleich das ganze Blatt einzublenden.
+  // N280 — es sei denn, es ist gerade eines dazugekommen: dann steht genau das
+  // da, mit Namen und Ablageort.
+  const zeigeStart = zeigeDocId
+    ? alle.find(d => String(d.id) === String(zeigeDocId)) : null;
+  if (zeigeStart) zeigeDoc(zeigeStart.id, zeigeStart.dateiname, zeigeStart.pfad);
+
+  /* N280 — das gemeinsame Beleg-Fenster. Es liegt als eigener `showModal`-
+     Dialog über dieser Ansicht (beide in der obersten Browser-Ebene, das
+     zuletzt geöffnete gewinnt) — die Detailansicht muss dafür nicht zu.
+     Beim Schliessen wird sie neu aufgebaut: ein dort geänderter Name steht
+     dann auch hier. Wurde weitergeblättert, ist schon das nächste Fenster
+     offen — dann bleibt alles stehen, bis auch das zu ist. */
+  const grossAnsehen = () => {
+    if (!aktuellerBeleg) return;
+    const dok = alle.find(d => String(d.id) === String(aktuellerBeleg.id));
+    const fenster = belegAnsehen(`/api/dokumente/${aktuellerBeleg.id}/inhalt`,
+      dok?.dateiname || aktuellerBeleg.dateiname || 'Beleg', dok?.pfad || '',
+      aktuellerBeleg.id, alle);
+    const zurueck = aktuellerBeleg.id;
+    fenster.addEventListener('close', () => setTimeout(() => {
+      if (document.querySelector('dialog.beleg-dlg[open]')) return;
+      dlg.close();
+      eintragDetail(bereich, id, laden, zurueck);
+    }, 0));
+  };
 
   /* CCCLXVII — die Aufnahmen laufen durch die gemeinsame Choreografie
      (`belegscan.js`): zuschneiden, mehrseitig als PDF ablegen, Textschicht
@@ -281,35 +337,59 @@ export async function eintragDetail(bereich, id, laden) {
      dahinter und liesse sich nicht bedienen (kein z-index hilft dagegen).
      Danach wird sie mit dem frischen Beleg neu aufgebaut; der Nutzer landet
      wieder genau dort, wo er losgegangen ist. */
+  /* N280 — und zwar in ZWEI Schritten, wie überall sonst: aufnehmen und
+     auslesen, dann den vorgeschlagenen **Dateinamen zeigen** (änderbar), dann
+     ablegen. Hier gibt es kein Formular, das den Namen tragen könnte — also
+     gehört die Bestätigungsmaske genau hierher. Vorher lief das über den
+     Ein-Schritt-Weg: die Datei war benannt in der Cloud, bevor der Nutzer den
+     Namen auch nur gesehen hatte. */
   const scanFeld = dlg.querySelector('[data-scanfeld]');
   if (scanFeld) scanFeld.addEventListener('change', async () => {
     const dateien = [...scanFeld.files];
     scanFeld.value = '';
     if (!dateien.length) return;
     dlg.close();
+    // Die Decke über der Wartezeit zwischen Zuschnitt und Maske (N254). Sie
+    // geht IMMER wieder weg — `belegBestaetigen` nimmt sie, sonst das `finally`.
+    let deckeWeg = null;
     let ergebnis;
     try {
-      ergebnis = await belegScannen(dateien, {
+      const vorbereitet = await belegVorbereiten(dateien, {
         objekt: slug, kategorie: SCAN_KATEGORIE[bereich] || 'Sonstiges',
         jahr: scanJahr(eintrag), beschreibung: gewaehltWort,
         anTyp: typ, anId: id, titel: `${gewaehltWort} · ${cfg.name(eintrag)}`,
-      });
+      }, () => { deckeWeg = analyseDecke(`${gewaehltWort} wird gelesen …`); });
+      if (!vorbereitet) return eintragDetail(bereich, id, laden);  // abgebrochen
+      const entscheidung = await belegBestaetigen(vorbereitet, deckeWeg);
+      deckeWeg = null;
+      if (!entscheidung) return eintragDetail(bereich, id, laden);  // abgebrochen
+      ergebnis = await belegAblegen(vorbereitet, entscheidung.beschreibung,
+                                    entscheidung.betrag);
     } catch (fehler) {
       // Die Ansicht bleibt bewusst zu: der Melder sitzt unter einem modalen
       // Dialog (oberste Browser-Ebene schlägt jeden z-index) und wäre sonst
       // nicht zu lesen. Der Eintrag ist einen Tipp entfernt.
       return melde(String(fehler.message || 'Der Beleg wurde nicht abgelegt.'),
                    'neg');
+    } finally {
+      if (deckeWeg) { try { deckeWeg(); } catch { /* egal */ } }
     }
-    if (!ergebnis) return eintragDetail(bereich, id, laden);   // abgebrochen
     // Kein Erfolgs-Toast: der frische Beleg steht gleich in der Liste und
-    // sagt dasselbe — nur sichtbar und dauerhaft.
+    // sagt dasselbe — nur sichtbar und dauerhaft. Und er steht offen in der
+    // Vorschau, mit Namen und Ablageort (N280).
     await laden();
-    return eintragDetail(bereich, id, laden);
+    return eintragDetail(bereich, id, laden, ergebnis?.id || null);
   });
 
   dlg.addEventListener('click', async e => {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
+    // N280 — Kopfzeile ODER die Vorschau selbst antippen führt ins gemeinsame
+    // Beleg-Fenster: dort stehen Name, Ablageort, Auslese und der Stift.
+    if (e.target.closest('[data-gross]')
+        || (aktuellerBeleg && e.target.closest('.dd-rechts .beleg-flaeche'))) {
+      grossAnsehen();
+      return;
+    }
     const scanBtn = e.target.closest('[data-scan]');
     if (scanBtn) { gewaehltWort = scanBtn.dataset.wort || gewaehltWort; scanFeld.click(); return; }
     // N240 — die leere Vorlage ansehen/herunterladen, ohne den „aufnehmen"-Weg

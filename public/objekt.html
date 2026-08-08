@@ -394,11 +394,14 @@
   .dd-ci.ok{background:var(--pos);color:#fff}
   .dd-ci.ok svg{width:13px;height:13px}
   .dd-check.fehlt .dd-ci{border:1.5px dashed #B4C4C1}
-  /* N224 — Kaution-Zeile: zwei Aktionen passen nicht mehr neben den Namen,
-     ohne ihn abzuschneiden — Name oben, Aktionen darunter, umbrechend. */
-  .dd-check.kaution-zeile{align-items:flex-start}
-  .dd-kaution{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding:2px 0}
-  .dd-kaution-aktionen{display:flex;flex-wrap:wrap;gap:8px}
+  /* N224 — zwei und mehr Aktionen passen nicht neben den Namen, ohne ihn
+     abzuschneiden: Name oben, Aktionen darunter, umbrechend. Das galt zuerst
+     nur für die Kaution; die Zeilen mit Vorlage + Druckern (N240/N264) hatten
+     dasselbe Problem und quetschten ihren Namen auf null Breite — man sah nicht
+     mehr, welches Dokument dort fehlt. Ein Muster, ein Name, beide Fälle. */
+  .dd-check.zweizeilig{align-items:flex-start}
+  .dd-zspalte{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding:2px 0}
+  .dd-zaktionen{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
   .dd-cn{flex:1;min-width:0;text-align:left;border:none;background:none;cursor:pointer;
     font:600 13.5px var(--disp);color:var(--ink);padding:0;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
@@ -424,23 +427,39 @@
     background:var(--sheet);color:var(--teal-d);border-radius:10px;cursor:pointer;
     font:600 11.5px var(--disp);padding:8px 11px;min-height:44px}
   .dd-cadd svg{width:15px;height:15px}
+  /* Nur die Kamera, aber weiterhin ein volles Antippziel. */
+  .dd-cadd.nurikon{min-width:44px;justify-content:center;padding:8px}
   .dd-cadd:hover{background:var(--teal-l)}
   .dd-aktionen{display:flex;flex-wrap:wrap;gap:8px}
   .dd-edit{align-self:flex-start;border:1px solid var(--line);background:var(--paper);
     color:var(--teal-d);border-radius:12px;padding:11px 16px;min-height:44px;
     font:600 13px var(--disp);cursor:pointer}
   .dd-edit:hover{background:var(--teal);color:#fff;border-color:var(--teal)}
-  .dd-rechts{flex:1;min-height:340px;padding:0 18px 18px;display:flex;flex-direction:column}
+  /* min-width:0 ist Pflicht, nicht Kosmetik: als Flex-Element bekaeme diese
+     Spalte sonst die Mindestbreite ihres laengsten unumbrechbaren Inhalts —
+     der Ablagepfad ist genau das, und er schob die Vorschau aus dem Dialog. */
+  .dd-rechts{flex:1;min-width:0;min-height:340px;padding:0 18px 18px;
+    display:flex;flex-direction:column}
   .dd-rechts .beleg-flaeche{flex:1;min-height:0;overflow:auto;border-radius:14px;
     background:var(--paper);display:flex;flex-direction:column;gap:10px;
     align-items:center;padding:10px;-webkit-overflow-scrolling:touch}
-  /* N232 - Ablagepfad + Dateiname ueber der Vorschau, egal welches Dokument. */
-  .dd-vorschau-kopf{flex:none;padding:0 2px 8px;min-width:0}
+  /* N232 - Ablagepfad + Dateiname ueber der Vorschau, egal welches Dokument.
+     N280 - und zugleich der Weg ins gemeinsame Beleg-Fenster (umbenennen,
+     Auslese, blaettern): die ganze Kopfzeile ist der Knopf. */
+  .dd-vorschau-kopf{flex:none;padding:0 0 8px;min-width:0}
+  .dd-vgross{display:block;width:100%;min-width:0;overflow:hidden;text-align:left;
+    border:none;background:none;font-family:var(--body);cursor:pointer;
+    padding:6px 2px;border-radius:10px}
+  .dd-vgross:hover{background:var(--paper)}
   .dd-vorschau-kopf .dd-vn{display:block;font:600 13px var(--body);color:var(--ink);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dd-vorschau-kopf .dd-vp{display:block;font:500 10.5px var(--mono);color:var(--soft);
     margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     direction:rtl;text-align:left}
+  .dd-vlupe{display:block;margin-top:5px;font:600 11px var(--disp);
+    letter-spacing:-.01em;color:var(--teal-d)}
+  .dd-vlupe::before{content:"⤢";margin-right:5px}
+  .dd-rechts .beleg-flaeche.klickbar{cursor:zoom-in}
   @media (min-width:760px){
     .dd-body{flex-direction:row}
     .dd-links{width:340px;overflow:auto;border-right:1px solid var(--line)}
@@ -871,6 +890,19 @@
   .sv-blaetter{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
   .sv-blatt{width:56px;height:74px;object-fit:cover;border-radius:8px;
     border:1px solid #BBD4E5;flex:none;background:#fff}
+  /* N280 - der Dateiname gehoert zu den Seiten, die er benennt: sicht- und
+     aenderbar direkt unter der Vorschau. Beim Anlegen aus einem Scan ist das
+     die einzige Stelle dafuer - eine eigene Bestaetigungsmaske davor waere ein
+     Klick zu viel, weil das gefuellte Formular ohnehin gleich danach kommt. */
+  .sv-nlabel{display:block;margin-top:12px;font:600 10.5px var(--mono);
+    letter-spacing:.05em;text-transform:uppercase;color:#4A7391}
+  .sv-namefeld{display:block;width:100%;margin-top:6px;min-height:44px;
+    border:1.5px solid #BBD4E5;border-radius:10px;background:var(--sheet);
+    padding:11px 12px;font:500 13px var(--body);color:var(--ink)}
+  .sv-namefeld:focus{outline:none;border-color:var(--teal);
+    box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+  .sv-nhinweis{display:block;margin-top:6px;font:400 11px var(--body);
+    color:#4A7391;line-height:1.45}
   .sv-vzeile{display:flex;align-items:center;justify-content:space-between;
     gap:10px;margin-top:10px}
   .sv-vanzahl{font:600 12.5px var(--body);color:#255676}

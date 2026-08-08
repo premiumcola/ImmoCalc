@@ -458,8 +458,12 @@ export async function formular(einst) {
            nächste antippen, bevor „Seiten übernehmen" kommt. Die Angaben
            werden danach erkannt und hier eingetragen.</span>
        </button>` : '';
+  // N280 — `extra` darf eine Funktion sein. Ein Block, der einen Zustand zeigt
+  // (den getippten Dateinamen des Scans), muss beim Umbau des Formulars neu
+  // gebaut werden; eine feste Zeichenkette zeigte sonst wieder den Erststand.
+  const extraHtml = typeof extra === 'function' ? extra() : extra;
   form.innerHTML = (hinweis ? `<p class="dlgnote">${esc(hinweis)}</p>` : '')
-    + scanHtml + html.join('') + extra +
+    + scanHtml + html.join('') + extraHtml +
     `<button class="btn" value="ok">${esc(knopf)}</button>
      <button class="btn leise" type="button" data-abbruch
              style="margin-top:8px">Abbrechen</button>`;
