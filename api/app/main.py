@@ -13,7 +13,8 @@ from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, dokumentvorlagen,
-                      heizoel, ki, kidb, mail, objekte, openwb, renovierung,
+                      heizoel, ki, kidb, kontakte, mail, objekte, openwb,
+                      renovierung,
                       solaredge, stammdaten, strom, stromkette, tankstelle,
                       versand, waerme, weg, zaehler)
 from .seed import seed
@@ -100,6 +101,9 @@ app.include_router(tankstelle.router)
 app.include_router(stromkette.router)
 # N270 — /objekte/{slug}/renovierungen ebenfalls VOR dem Stammdaten-Fänger.
 app.include_router(renovierung.router)
+# N309 — das Kontaktbuch. Eigener Prefix `/api/kontakte`, kollidiert mit
+# keinem Fänger; die Reihenfolge INNERHALB des Routers ist dort erklärt.
+app.include_router(kontakte.router)
 # N273 — /zeitraeume/{zid}/weg (WEG-Modus). Früh eingehängt, damit kein anderer
 # Router ein zweisegmentiges /zeitraeume/{zid}/… vorher abfängt.
 app.include_router(weg.router)

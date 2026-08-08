@@ -91,25 +91,6 @@
           margin-bottom:12px}
   .uruhig .upfad{margin-bottom:3px}
 
-  /* Unterordner je Dokumentart: acht kleine Karten, jede mit Feld und
-     Vorschau. Der Dialog rollt, der Knopf bleibt unten stehen. */
-  #unterordnerDlg .dbody,
-  #einsortierenDlg .dbody{max-height:min(76dvh,760px);overflow:auto;padding-bottom:0}
-  .uokarte{background:var(--sheet);border-radius:12px;padding:12px 13px;
-           margin-bottom:8px}
-  .uokopf{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
-  .uoart{flex:none;font:600 13.5px var(--disp);letter-spacing:-.01em}
-  .uoordner{flex:1;min-width:0;font:500 11px var(--mono);color:var(--soft);
-            text-align:right;overflow:hidden;text-overflow:ellipsis;
-            white-space:nowrap}
-  .uokarte .inp{font:500 13px var(--mono)}
-  /* iOS zoomt bei Fokus auf Felder < 16px hinein und nicht zurueck (CCCLII). */
-  @media(pointer:coarse){.uokarte .inp{font-size:16px}}
-  /* display:block, sonst greift der Abstand am inline-Element nicht */
-  .uovorschau{display:block;margin-top:8px;font:500 11.5px var(--mono);
-              color:var(--teal-d);word-break:break-all;line-height:1.5}
-  .uovorschau.flach{color:var(--soft)}
-
   /* N275 — Drucker: je Gerät eine Karte. Name und Adresse stehen über den
      Knöpfen statt daneben — auf 390 px blieben sonst neben drei Touch-Zielen
      nur Wortfetzen übrig. Der Punkt links zeigt das Ergebnis der letzten
@@ -280,7 +261,11 @@
       </span>
       <span class="arr">›</span>
     </button>
-    <button class="row" id="ncHomeRow">
+    <!-- N310 — Home-Ordner und Ordner-Benennung sind Einrichtungsschritte, keine
+         Dauerschalter: sie erscheinen nur, solange der Wert fehlt. Der Home-Ordner
+         ist zugleich der Schreibriegel der Anwendung — ohne ihn kommt niemand
+         weiter, deshalb steht die Zeile dann sichtbar da. -->
+    <button class="row" id="ncHomeRow" hidden>
       <span class="ic">▣</span>
       <span class="txt">
         <span class="t">Home-Ordner</span>
@@ -288,28 +273,11 @@
       </span>
       <span class="arr">›</span>
     </button>
-
-    <button class="row" id="vorlageRow">
+    <button class="row" id="vorlageRow" hidden>
       <span class="ic">✎</span>
       <span class="txt">
         <span class="t">Ordner-Benennung</span>
         <span class="d" id="vorlageStatus">wird geladen …</span>
-      </span>
-      <span class="arr">›</span>
-    </button>
-    <button class="row" id="unterordnerRow">
-      <span class="ic">▤</span>
-      <span class="txt">
-        <span class="t">Unterordner je Art</span>
-        <span class="d" id="unterordnerStatus">wird geladen …</span>
-      </span>
-      <span class="arr">›</span>
-    </button>
-    <button class="row" id="einsortierenRow">
-      <span class="ic" id="einsortierenIkon">▤</span>
-      <span class="txt">
-        <span class="t">Belege in Jahresordner einsortieren</span>
-        <span class="d" id="einsortierenStatus">wird geprüft …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -327,16 +295,6 @@
       <span class="txt">
         <span class="t">KI-Beleg-Auslese</span>
         <span class="d" id="kiStatus">wird geprüft …</span>
-      </span>
-      <span class="arr">›</span>
-    </button>
-    <!-- N246 — das Belegarchiv laeuft im Hintergrund mit und braucht keinen
-         eigenen Menuepunkt; hier steht sein Einstieg. -->
-    <button class="row" id="belegarchivRow">
-      <span class="ic">▥</span>
-      <span class="txt">
-        <span class="t">Belegarchiv</span>
-        <span class="d" id="belegarchivStatus">wird geladen …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -460,6 +418,14 @@
     </form>
     <button class="btn leise" id="kiEntfernen"
             style="margin-top:8px;display:none">Schlüssel entfernen</button>
+    <!-- N310 — das Belegarchiv ist eine Ansicht, kein Schalter: es gehört nicht
+         in die Einstellungsliste. Es steht dort, wo es entsteht — bei der
+         Auslese, die es füllt. -->
+    <!-- display:block, sonst greift `width:100%` am inline-<a> nicht und der
+         Verweis schiebt sich über den Knopf darüber. -->
+    <a class="btn leise" id="belegarchivLink" href="belegarchiv.html"
+       style="display:block;margin-top:8px;text-align:center;
+              text-decoration:none">Belegarchiv ansehen</a>
   </div>
 </dialog>
 
@@ -484,26 +450,6 @@
   </div>
 </dialog>
 
-<dialog id="unterordnerDlg">
-  <div class="dh">
-    <h2>Unterordner je Art</h2>
-    <button class="close" data-schliessen aria-label="Schließen">×</button>
-  </div>
-  <div class="dbody">
-    <p class="hinweis">
-      Damit in „60_Nebenkosten“ nicht alles flach liegt. Platzhalter:
-      <b>{jahr}</b> <b>{einheit}</b> <b>{art}</b> — leer heißt: ohne
-      Unterordner. Ein Beleg ohne Jahr bleibt im Sachordner.
-      <span id="unterordnerVerboten"></span>
-    </p>
-    <div class="meldung" id="unterordnerMeldung"></div>
-    <div id="unterordnerFelder"></div>
-    <div class="uaktion">
-      <button class="btn" id="unterordnerSpeichern">Übernehmen</button>
-    </div>
-  </div>
-</dialog>
-
 <dialog id="umzugDlg">
   <div class="dh">
     <h2>Benennung nachziehen</h2>
@@ -520,28 +466,6 @@
          zugleich der untere Rand des rollenden Bereichs. -->
     <div class="uaktion">
       <button class="btn" id="umzugStart" style="display:none">Ordner nachziehen</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="einsortierenDlg">
-  <div class="dh">
-    <h2>In Jahresordner einsortieren</h2>
-    <button class="close" data-schliessen aria-label="Schließen">×</button>
-  </div>
-  <div class="dbody">
-    <p class="hinweis">
-      Ältere Belege liegen noch flach im Sachordner. Hier wandern sie in ihren
-      Jahresordner — <b>verschoben wird nur, gelöscht oder überschrieben wird
-      nichts</b>. Selbst angelegte Ordner und Belege ohne Jahr bleiben liegen.
-    </p>
-    <div class="meldung" id="einsortierenMeldung"></div>
-    <div id="einsortierenPlan"></div>
-    <!-- Der Fuss bleibt stehen, auch wenn nichts zu tun ist: sein Rand ist
-         zugleich der untere Rand des rollenden Bereichs. -->
-    <div class="uaktion">
-      <button class="btn" id="einsortierenStart"
-              style="display:none">Belege einsortieren</button>
     </div>
   </div>
 </dialog>
@@ -825,9 +749,7 @@ import { nextcloudInit, zustandLaden } from './assets/settings/nextcloud.js';
 import { kiInit, kiZustandLaden } from './assets/settings/ki.js';
 import { mailInit, mailZustand } from './assets/settings/mail.js';
 import { vorlageInit, vorlageLaden } from './assets/settings/vorlage.js';
-import { unterordnerInit, unterordnerLaden } from './assets/settings/unterordner.js';
 import { umzugInit, umzugLaden } from './assets/settings/umzug.js';
-import { einsortierenInit, einsortierenLaden } from './assets/settings/einsortieren.js';
 import { druckerInit, druckerLaden } from './assets/settings/drucker.js';
 import { importInit } from './assets/settings/import.js';
 import { rechenlogikInit } from './assets/settings/rechenlogik.js';
@@ -838,9 +760,7 @@ nextcloudInit();
 kiInit();
 mailInit();
 vorlageInit();
-unterordnerInit();
 umzugInit();
-einsortierenInit();
 druckerInit();
 importInit();
 rechenlogikInit();
@@ -850,21 +770,15 @@ rechenlogikInit();
 document.querySelectorAll('[data-schliessen]').forEach(knopf =>
   knopf.addEventListener('click', () => knopf.closest('dialog').close()));
 
-/* N246 — das Belegarchiv ist eine eigene Seite, kein Dialog: bloße
-   Verlinkung, deshalb hier statt in einem eigenen Modul. Die Statuszeile
-   sagt, wie viel schon drinsteht; scheitert sie, bleibt der Weg trotzdem
-   offen. */
-document.getElementById('belegarchivRow').addEventListener('click',
-  () => { location.href = 'belegarchiv.html'; });
+/* N310 — das Belegarchiv ist eine eigene Seite, kein Dialog und keine
+   Einstellung: es hängt als Verweis im Dialog der Auslese, die es füllt.
+   Der Umfang steht am Verweis, sobald er bekannt ist; scheitert der Abruf,
+   bleibt der Weg trotzdem offen. */
 fetch('/api/kidb').then(a => a.ok ? a.json() : null).then(d => {
-  const zeile = document.getElementById('belegarchivStatus');
-  if (!d) return void (zeile.textContent = 'Belege durchsuchen');
-  zeile.textContent = d.gesamt
-    ? `${d.gesamt} ${d.gesamt === 1 ? 'Beleg' : 'Belege'} erfasst`
-    : 'Noch keine Belege übernommen';
-}).catch(() => {
-  document.getElementById('belegarchivStatus').textContent = 'Belege durchsuchen';
-});
+  if (!d?.gesamt) return;
+  document.getElementById('belegarchivLink').textContent =
+    `Belegarchiv ansehen · ${d.gesamt} ${d.gesamt === 1 ? 'Beleg' : 'Belege'}`;
+}).catch(() => { /* der Verweis steht auch ohne Zahl */ });
 
 /* Version + Release-Notes gleich laden — läuft parallel zu allem übrigen. */
 versionZeigen();
@@ -877,9 +791,7 @@ await zustandLaden();
 await kiZustandLaden();
 await mailZustand();
 await vorlageLaden();
-await unterordnerLaden();
 await umzugLaden();
-await einsortierenLaden();
 await druckerLaden();
 </script>
 </body>

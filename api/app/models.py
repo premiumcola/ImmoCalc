@@ -1035,6 +1035,61 @@ class Stromjahr(SQLModel, table=True):
     notiz: str = ""
 
 
+class Kontakt(SQLModel, table=True):
+    """N309 — eine Firma im Kontaktbuch: Handwerker, Versicherer, Versorger.
+
+    Der Nutzer will „die Firmennamen aller Handwerker, Versicherer, unsere
+    Kundennummern und Kontaktdaten immobilienzugehörig" an einer Stelle haben.
+    Die Firma steht deshalb **einmal** hier — sie arbeitet oft für mehrere
+    Immobilien —, und was je Immobilie verschieden ist (die Kundennummer),
+    hängt in `Kundennummer` daran.
+
+    `gewerk` ist der Schwerpunkt aus der Renovierungsliste (`renovierung.GEWERKE`)
+    und darf leer sein: ein Versicherer hat keins. `quelle` sagt, woher der
+    Eintrag kam ('beleg' | 'renovierung' | 'versicherung' | 'kredit' | 'hand') —
+    wichtig, weil ein geernteter Eintrag beim nächsten Lauf ergänzt, ein von
+    Hand gepflegter aber **nie überschrieben** werden darf.
+
+    Ganz neue Tabelle, alle Felder mit Default: `create_all` legt sie an, kein
+    bestehender Datensatz ändert sich."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    # Kleingeschrieben und entrümpelt — daran wird wiedererkannt, damit
+    # „Elektro Müller GmbH" und „Elektro Müller  gmbh" nicht zweimal entstehen.
+    schluessel: str = Field(index=True, unique=True)
+    firma: str = ""
+    art: str = ""                      # Handwerker | Versicherung | Versorger …
+    gewerk: str = ""                   # Schwerpunkt, siehe renovierung.GEWERKE
+    telefon: str = ""
+    email: str = ""
+    web: str = ""
+    adresse: str = ""
+    notiz: str = ""
+    quelle: str = ""                   # woher der Eintrag stammt
+    # N309 — von Hand gepflegte Felder werden von der Ernte nie überschrieben.
+    # Hier stehen ihre Namen, damit ein späterer Lauf sie in Ruhe lässt.
+    handgepflegt: list = Field(default_factory=list, sa_column=Column(JSON))
+    erfasst_am: Optional[date] = None
+
+
+class Kundennummer(SQLModel, table=True):
+    """N309 — die Nummer, unter der eine Immobilie bei einer Firma geführt wird.
+
+    Bewusst eine eigene Tabelle: derselbe Versorger führt jede Immobilie unter
+    einer anderen Kundennummer, und dieselbe Immobilie hat bei einer Firma
+    manchmal mehrere (Kundennummer UND Vertragsnummer). Beides ginge in einem
+    Feld am Kontakt verloren."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    kontakt_id: Optional[int] = Field(default=None, foreign_key="kontakt.id",
+                                      index=True)
+    objekt_id: Optional[int] = Field(default=None, foreign_key="objekt.id",
+                                     index=True)
+    nummer: str = ""
+    art: str = ""                      # Kundennummer | Vertragsnummer | Police …
+    quelle: str = ""
+    quelle_dokument_id: Optional[int] = Field(default=None,
+                                              foreign_key="dokument.id")
+
+
 class KiAuslese(SQLModel, table=True):
     """N296 — die KI-Auslese, am INHALT der Datei festgemacht statt am Eintrag.
 

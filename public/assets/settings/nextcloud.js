@@ -37,6 +37,10 @@ export async function zustandLaden() {
   }
   ncHome.textContent = ncZustand.home || (ncZustand.eingerichtet
     ? 'noch nicht gewählt' : 'erst Verbindung einrichten');
+  // N310 — der Home-Ordner ist der Schreibriegel der Anwendung: einmal gewählt,
+  // nie wieder angefasst. Die Zeile steht deshalb nur da, solange er fehlt —
+  // ohne ihn liesse sich die Anwendung sonst gar nicht einrichten.
+  document.getElementById('ncHomeRow').hidden = Boolean(ncZustand.home);
   document.getElementById('strukturliste').innerHTML =
     (ncZustand.struktur || []).map(o => `<span>${esc(o)}</span>`).join('');
 }
@@ -130,6 +134,7 @@ export function nextcloudInit() {
       });
       ncZustand.home = antwort.home;
       ncHome.textContent = antwort.home;
+      document.getElementById('ncHomeRow').hidden = Boolean(antwort.home);
       ordnerDlg.close();
     } catch (fehler) {
       feldmeldung(ordnerMeldung, String(fehler.message || fehler));

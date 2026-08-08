@@ -1,7 +1,7 @@
 /* N216 — Modul-Zustand fuer die Einstellungen-Seite.
 
-   Die Fach-Module (verknuepfungen, nextcloud, ki, mail, vorlage, unterordner,
-   umzug, einsortieren, import, version, rechenlogik) teilen sich hier ihre
+   Die Fach-Module (verknuepfungen, nextcloud, ki, mail, vorlage, umzug,
+   import, version, rechenlogik) teilen sich hier ihre
    gemeinsamen Helfer: die Meldungen an Ort und Stelle (`feldmeldung`/`meldungWeg`),
    den knapp befristeten Statusabruf fuer die Live-Kacheln (`vHole`,
    `vHoleGeteilt`, `vGeteiltReset`) und die kleinen Formatierer (`vKurz`,
@@ -93,5 +93,5 @@ export function feldmeldung(feld, text, gut = false) {
 }
 export const meldungWeg = feld => { feld.className = 'meldung'; };
 
-/* Einheitliche Ein-/Mehrzahl fuer Belege — mehrfach benutzt in umzug/einsortieren. */
+/* Einheitliche Ein-/Mehrzahl fuer Belege — benutzt in umzug.js. */
 export const belegText = n => `${n} ${n === 1 ? 'Beleg' : 'Belege'}`;

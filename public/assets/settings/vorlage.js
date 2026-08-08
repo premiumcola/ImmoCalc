@@ -14,9 +14,14 @@ export async function vorlageLaden() {
   try {
     const v = await api('/nextcloud/vorlage');
     vorlageFeld.value = v.vorlage;
-    document.getElementById('vorlageStatus').textContent = v.vorlage;
+    document.getElementById('vorlageStatus').textContent =
+      v.vorlage || 'noch nicht festgelegt';
     document.getElementById('vorlageVerboten').textContent =
       `Nicht erlaubt: ${v.verboten}`;
+    // N310 — es gibt eine gute Vorgabe: die Zeile erscheint nur, wenn gar keine
+    // Vorlage da ist. Sonst bleibt sie weg — Einstellungen, die man nie anfasst,
+    // gehoeren nicht in die Liste. Der Dialog bleibt erreichbar, sobald sie da ist.
+    document.getElementById('vorlageRow').hidden = Boolean(v.vorlage);
     beispieleZeigen(v.beispiele);
   } catch {
     document.getElementById('vorlageStatus').textContent = 'Standard';

@@ -38,7 +38,7 @@ import {
 import {
   zahl, chipHtml, vkeyChip, schluesselWort, schluesselMeta,
   prozentText, monatText, m3, kurzBeleg, belegDatumText,
-  belegeHtml, belegLinks, belegeZu, belegGeschwister, zusammensetzungHtml,
+  belegLinks, belegeZu, belegGeschwister, zusammensetzungHtml,
   feldZahl,
   sonderEinheiten, alleEinheiten, artOptionen,
   wasserGesamtBetrag, wasserHatRechnung,
@@ -72,7 +72,7 @@ import {
   geeichteMengeSpeichern,
 } from './stromkette.js';
 import {
-  belegAblageHtml, belegLoesen, belegAbschluss, erkennungHatWert,
+  belegAblageHtml, belegLoesen, belegAbschluss,
   anhaengen, anhaengerEntfernen, initBelegDrop,
 } from './belege.js';
 import {
@@ -336,6 +336,57 @@ function anhaengerListe(k) {
   return state.anhaenger?.angehaengt?.[k.kostenart] || [];
 }
 
+/* N283(f) — welche Belege zu einer Zeile gehören: über die **Id**, nicht über
+   den Dateinamen.
+
+   Bisher lief das über `belegeZu` und endete dort im Rückfall
+   `dateiname.includes(<erstes Wort der Kostenart>)` — der einzige Weg, der
+   praktisch griff, sobald ein Beleg noch nicht in eine Kostenposition
+   eingerechnet war (`belege_je_art` ist nach Kategorie geschlüsselt, nicht nach
+   Kostenart, und trifft eine NK-Zeile nie). Wer in der Bestätigungsmaske frei
+   umbenennt — genau das, wofür sie da ist —, liess seinen Beleg damit aus der
+   Zeile fallen: „Abfallgebühren 2024.pdf" enthält kein „müllabfuhr".
+   Umgekehrt zog „Versicherung" jede Datei mit diesem Wort an sich.
+
+   Seit N290/N298 gibt es stabile Kennzeichen. Zwei davon reichen hier:
+     1. `k.belege` — die in die Kostenposition eingerechneten Belege. Der Server
+        hängt sie über `Dokument.position_id` an; nichts daran ist Text.
+     2. `d.kostenart` am Dokument selbst — ein gepflegtes Feld, das ein
+        Umbenennen der Datei nicht anfasst.
+
+   Der Dateiname bleibt der letzte Rückfall und greift nur, wenn KEIN Kennzeichen
+   etwas findet: für Altbestände, an denen nie eine Kostenart gepflegt wurde.
+   Eine falsch zugeordnete Zeile ist schlimmer als eine leere, deshalb steht er
+   zuletzt und nie neben den anderen. */
+function belegeStabil(k) {
+  const ausPosition = k.belege || [];
+  const ausKostenart = (state.daten?.dokumente || [])
+    .filter(d => (d.kostenart || '') === k.kostenart);
+  const zusammen = [...ausPosition, ...ausKostenart]
+    .filter((d, i, a) => d && a.findIndex(x => x.id === d.id) === i);
+  return zusammen.length ? zusammen : (belegeZu(k) || []);
+}
+
+/* Der Belege-Kasten der aufgeklappten Karte. Inhaltlich `helpers.belegeHtml`,
+   nur ohne den Dateinamen-Rückfall.
+
+   Hat die Kostenposition eigene Belege, stehen GENAU die darin und sonst
+   nichts: darüber sitzt die Zusammensetzung („Summe aus 2 Belegen · 300 €"),
+   und eine Liste mit fünf Zeilen unter dieser Überschrift wäre dieselbe Angabe
+   zweimal — einmal falsch. Die übrigen Belege derselben Kostenart erscheinen
+   an der Belege-Badge und im Zusatzbelege-Kasten (`belegeGruppen`), wo sie
+   hingehören. Nur wenn die Position gar keine Belege trägt, greift die
+   id-basierte Zuordnung. */
+function belegeKastenHtml(k, extra = '') {
+  const alle = k.belege?.length ? k.belege : belegeStabil(k);
+  if (!alle.length) {
+    return `<div class="belege"><span class="kein">Kein Beleg hinterlegt —
+      im Eingang lässt sich einer übernehmen.</span>${extra}</div>`;
+  }
+  return zusammensetzungHtml(k)
+    + belegLinks(alle, extra, state.daten?.status === 'in Arbeit');
+}
+
 /* N257 — alle Belege einer Kostenart, getrennt nach dem, was sie unterscheidet:
    ob sie auf die Kostenposition zahlen oder nur danebenliegen. Beide Quellen
    sind die schon vorhandenen — `belegeZu` (die Belege der Position) und die
@@ -347,7 +398,7 @@ function anhaengerListe(k) {
    „ohne konkrete Kostenangaben"). Verknüpft-aber-betraglos ist ein Info-Beleg,
    und genau das soll die Trennung zeigen. */
 function belegeGruppen(k) {
-  const alle = belegeZu(k) || [];
+  const alle = belegeStabil(k);
   const mit = alle.filter(d => Number(d.betrag) > 0.005);
   const gesehen = new Set(mit.map(d => d.id));
   const ohne = [...alle.filter(d => !gesehen.has(d.id)),
@@ -512,7 +563,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
       : '';
     koerper = `<div class="wd-inline" data-wasser-inline="${zid}">
         <div class="wd-lade">Detailübersicht wird geladen …</div></div>
-      <div class="zk">Belege</div>${belegeHtml(k, anbau)}${leeren}`;
+      <div class="zk">Belege</div>${belegeKastenHtml(k, anbau)}${leeren}`;
   } else if (auf && heizModus) {
     const anbau = bearbeitbar
       ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
@@ -520,12 +571,12 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
     koerper = `<div class="ho-inline" data-heizoel-inline="${zid}"
         data-heiz-modus="${heizModus}">
         <div class="wd-lade">Wird geladen …</div></div>
-      <div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+      <div class="zk">Belege</div>${belegeKastenHtml(k, anbau)}`;
   } else if (auf && k.position_id) {
     const anbau = bearbeitbar
       ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
           >${ANH_ICON} Beleg anhängen</button>` : '';
-    const belege = `<div class="zk">Belege</div>${belegeHtml(k, anbau)}`;
+    const belege = `<div class="zk">Belege</div>${belegeKastenHtml(k, anbau)}`;
     const fuss = k.vorlaeufig
       ? `<button class="hauptaktion ja" data-entwurf-ja="${k.position_id}"
           >✓ Bestätigen</button>
@@ -1755,19 +1806,30 @@ export function initHandlers() {
         // „nebenkosten" noch keine Feldzuordnung, kommt nichts zurück und alles
         // bleibt wie zuvor. Rein additiv.
         bereich: 'nebenkosten',
+        // N255 — die Auslese steckt in `vorbereitet.ki` und wird von dort
+        // weitergereicht. Kein zweiter `/erkennen`-Aufruf auf dieselbe Datei;
+        // der kostete den Nutzer früher doppelt Tokens für denselben Wert.
       }, () => { deckeWeg = analyseDecke(); });
-      // N255 — dieselbe Auslese weiterverwenden, die `belegVorbereiten` schon
-      // geholt hat. Hier lief bis eben ein ZWEITER, identischer `/erkennen`-
-      // Aufruf (gleiche Datei, gleiche Kostenart) — jeder Scan kostete den
-      // Nutzer also doppelt Tokens, ohne einen einzigen neuen Wert zu liefern.
-      const vorschlag = vorbereitet?.ki || null;
       if (!vorbereitet) {
         knopf.disabled = false;
         if (beschriftung) beschriftung.textContent = urText;
         return;
       }
       const { belegBestaetigen } = await import('../belegbestaetigung.js');
-      const entscheidung = await belegBestaetigen(vorbereitet, deckeWeg);
+      // N283(b) — was danach passiert, steht jetzt IN der Maske statt als Toast
+      // dahinter: dass ein betragloser Beleg als Infobeleg an seine Zeile geht
+      // (N268). Vor dem Bestätigen ist das bedienbar — das Betragsfeld steht
+      // direkt darüber —, hinterher ist es nur noch eine Mitteilung über eine
+      // Entscheidung, die niemand mehr treffen kann. Der Knopf sagt dazu, was
+      // er tut, statt überall „Ablegen" zu heissen.
+      const entscheidung = await belegBestaetigen(vorbereitet, deckeWeg, {
+        knopf: ziel.anhaengerFuer ? 'Anhängen' : 'Ablegen',
+        hinweis: ziel.anhaengerFuer
+          ? { text: `Ohne Betrag wird der Beleg als Infobeleg an `
+              + `„${ziel.anhaengerFuer}“ gehängt — mit Betrag zählt er als `
+              + `Kostenposition dieser Zeile.` }
+          : null,
+      });
       if (!entscheidung) {                       // abgebrochen — nichts abgelegt
         knopf.disabled = false;
         if (beschriftung) beschriftung.textContent = urText;
@@ -1800,19 +1862,12 @@ export function initHandlers() {
           method: 'POST',
           body: { zeitraum_id: Number(state.zid), kostenart: ziel.anhaengerFuer },
         }).catch(() => {});
-        melde(`Infobeleg an „${ziel.anhaengerFuer}“ gehängt`, 'pos');
       }
-      // N238/N243 — ein als nicht kostenrelevant erkannter Beleg (Info-
-      // Schreiben, SEPA-Mandat, Abbuchungsvorankündigung …) SOLL keinen Betrag
-      // tragen; der Hinweis „bitte von Hand eintragen" ist dort schlicht
-      // falsch — es gibt nichts einzutragen. Nur bei einer echten Rechnung, an
-      // der die Erkennung nur gescheitert ist, bleibt der Hinweis sinnvoll.
-      const nichtKostenrelevant = vorschlag?.ist_kosten === false
-        || vorschlag?.kosten_relevant === false;
-      if (!uebernommen && !erkennungHatWert(vorschlag) && !nichtKostenrelevant) {
-        melde('Beleg gespeichert — kein Betrag automatisch erkannt. '
-          + 'Bitte den Betrag von Hand eintragen.', '');
-      }
+      // N283(b) — der Toast „kein Betrag automatisch erkannt, bitte von Hand
+      // eintragen" stand hier bis eben ein zweites Mal: die Maske sagt genau
+      // das schon, und zwar an der Stelle, an der sich der Betrag auch
+      // eintragen lässt („Betrag eintragen"). Ein Hinweis hinterher, den
+      // niemand mehr befolgen kann, ist keiner.
       await laden();
     } catch (fehler) {
       if (beschriftung) beschriftung.textContent = 'Fehlgeschlagen';

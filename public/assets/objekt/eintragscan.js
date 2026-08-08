@@ -18,7 +18,7 @@
  */
 import { melde, esc } from '../immo.js';
 import { belegVorbereiten, belegAblegen } from '../belegscan.js';
-import { analyseDecke } from '../belegbestaetigung.js';
+import { analyseDecke, namenHolen, ohneEndung } from '../belegbestaetigung.js';
 import { cfgFuer, felderFuer } from '../objekt-felder.js?v=2';
 import { slug } from '../objekt-state.js?v=2';
 import { SCAN_KATEGORIE, AN_TYP } from './state.js';
@@ -113,7 +113,7 @@ function scanBlockHtml(bereich) {
              placeholder="Bezeichnung des Belegs"
              spellcheck="false" autocapitalize="off" autocomplete="off">
       <span class="sv-nhinweis">So wird die Datei in der Nextcloud abgelegt —
-        Datum und Betrag setzt die Ablage selbst davor und dahinter.</span>
+        Datum und Betrag stehen schon darin. Stimmt etwas nicht, hier ändern.</span>
       <div class="sv-vzeile">
         <span class="sv-vanzahl">${anzahl
           ? `${anzahl} Seite${anzahl === 1 ? '' : 'n'} aufgenommen`
@@ -140,7 +140,11 @@ export async function scanAnhaengen(bereich, id) {
     await belegAblegen({
       ...paket,
       ziel: { ...paket.ziel, anTyp: AN_TYP[bereich], anId: id },
-    }, paket.name || null);
+      // N283(c) — im Feld steht jetzt der volle Name samt Endung. Als
+      // Bezeichnung geht sie nicht mit: `dateiname()` hängt sie ohnehin selbst
+      // an und liesse sie sonst mitten im Namen stehen. Dieselbe Regel wie in
+      // der Bestätigungsmaske, deshalb dieselbe Funktion.
+    }, paket.name ? ohneEndung(paket.name) : null);
   } catch (fehler) {
     melde(`${cfgFuer(bereich).einzahl} gespeichert — die Datei konnte aber `
       + `nicht abgelegt werden: ${fehler.message || fehler}`, 'neg');
@@ -212,6 +216,11 @@ export async function eintragScannen(bereich, werte = {}, extra = '') {
 
     let deckeWeg = null;
     let vorbereitet = null;
+    // N283(c) — der endgültige Dateiname, wie ihn auch die Bestätigungsmaske
+    // zeigt. Er wird NOCH UNTER DER DECKE geholt: der Namensvorschlag ist eine
+    // kurze Wartezeit, und ein Formular, dessen Namensfeld eine Sekunde später
+    // von selbst umspringt, sieht nach einem Fehler aus.
+    let namensvorschlag = '';
     try {
       vorbereitet = await belegVorbereiten(dateien, {
         objekt: slug,
@@ -219,6 +228,13 @@ export async function eintragScannen(bereich, werte = {}, extra = '') {
         bereich,
         titel: `${cfg.einzahl} abfotografieren`,
       }, () => { deckeWeg = analyseDecke(`${cfg.einzahl} wird gelesen …`); });
+      if (vorbereitet) {
+        const formname = vorbereitet.ki?.formname || '';
+        namensvorschlag = await namenHolen(
+          formname ? { ...vorbereitet.ziel, beschreibung: formname }
+                   : vorbereitet.ziel,
+          vorbereitet.aufnahme, vorbereitet.jahrHinweis);
+      }
     } catch (fehler) {
       melde(String(fehler.message || 'Der Scan hat nicht geklappt.'), 'neg');
       return;
@@ -235,7 +251,10 @@ export async function eintragScannen(bereich, werte = {}, extra = '') {
     const erkannt = Object.keys(ki.formwerte || {}).length;
 
     // Der Scan wartet jetzt auf den gespeicherten Eintrag (siehe `scanAnhaengen`).
-    offen = { ...vorbereitet, name: ki.formname || null };
+    // N283(c) — im Feld steht der ENDGÜLTIGE Name (mit Datum und Betrag), nicht
+    // mehr nur die Bezeichnung aus der Auslese. Bleibt der Vorschlag aus
+    // (Server nicht erreichbar), ist die Bezeichnung weiterhin der Rückfall.
+    offen = { ...vorbereitet, name: namensvorschlag || ki.formname || null };
 
     await formular({
       titel: `${cfg.einzahl} aus Scan`,

@@ -76,6 +76,9 @@ SYSTEM_PROMPT = (
     '"kosten_relevant":true|false,"nebenkosten":true|false,'
     '"zeitraum_hinweis":"…","abrechnungsjahr":<Jahr|null>,'
     '"kostenart":"…","gewerk":"…","felder":{…},'
+    # N309 — fürs Kontaktbuch: unter welcher Nummer WIR bei diesem Absender
+    # geführt werden. Stand auf fast jedem Beleg und wurde nie gelesen.
+    '"kundennummer":"…","vertragsnummer":"…","aktenzeichen":"…",'
     '"zusammenfassung":"…"}\n'
     "dokumenttyp = kurze Bezeichnung der Belegart (Mietvertrag, Versicherung, "
     "Kredit, Grundsteuerbescheid, Kaufvertrag, Grundbuch, WEG-Abrechnung, "
@@ -107,6 +110,18 @@ SYSTEM_PROMPT = (
     "Wasserversorgung\", \"WWK Versicherung AG\", \"Stadt Eckental\", \"E.ON\"). "
     "Das ist der Rechnungssteller/Absender im Briefkopf, NICHT der Empfänger. "
     "Steht keiner erkennbar dabei, absender weglassen. "
+    # N309 — der Nutzer baut ein Kontaktbuch und will „unsere Kundennummern"
+    # je Firma darin sehen. Sie stehen auf fast jedem Beleg, meist im Kopf
+    # neben dem Absender, und wurden bisher gar nicht gelesen.
+    "kundennummer = die Nummer, unter der WIR bei diesem Absender geführt "
+    "werden — im Briefkopf oder Adressfeld, oft als \"Kundennummer\", "
+    "\"Kunden-Nr.\", \"Vertragskonto\", \"Geschäftspartner\", \"Zählpunkt\", "
+    "\"Mitgliedsnummer\". NICHT die Rechnungsnummer, NICHT die Belegnummer, "
+    "NICHT das Datum. Steht keine dabei, kundennummer weglassen. "
+    "vertragsnummer = eine davon getrennte Vertrags-, Policen- oder "
+    "Darlehensnummer, falls der Beleg beide führt. "
+    "aktenzeichen = bei Behördenschreiben das Aktenzeichen oder Kassenzeichen "
+    "(Finanzamt, Gemeinde, Grundbuchamt). "
     "betrag = NUR der tatsächlich geforderte Gesamt-/Rechnungsbetrag in Euro als "
     "Zahl (Punkt als Dezimaltrenner, ohne Währungszeichen). Der Betrag ist IMMER "
     "POSITIV — die Höhe der Forderung, nie negativ; ein Minus/Klammern auf einer "
@@ -654,6 +669,20 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         "einheit": _adresse(block.get("einheit")),
         "felder": _felder(block.get("felder")),
     }
+    # N309 — die Nummern, unter denen WIR bei diesem Absender geführt werden.
+    #
+    # Sie stehen an ZWEI Stellen, und das ist Absicht: oben, weil die Vorlage
+    # sie verspricht und ein versprochenes Feld auch ankommen muss (der Wächter
+    # `test_die_antwortfelder_kommen_auch_wirklich_zurueck` besteht darauf,
+    # nachdem CD genau diesen Fehler beim `absender` heilen musste) — und im
+    # Raster, weil NUR das am Beleg gespeichert wird (`_ki_am_beleg_festhalten`
+    # schreibt `felder` nach `ki_felder`). Ohne den zweiten Platz fände das
+    # Kontaktbuch später nichts mehr.
+    for feld in ("kundennummer", "vertragsnummer", "aktenzeichen"):
+        wert = _text(block.get(feld))
+        ergebnis[feld] = wert
+        if wert:
+            ergebnis["felder"].setdefault(feld, wert)
     # N276 — die Erwerbsart gegen die feste Liste halten. Eine erfundene Art
     # („Vermessungsgebühr") sähe im Formular aus wie eine erkannte und würde
     # ungeprüft übernommen; dann stünde ein Wert im Feld, den die Auswahl gar

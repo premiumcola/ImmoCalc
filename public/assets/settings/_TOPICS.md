@@ -14,10 +14,8 @@ Import aus HTML über `./assets/settings/…`.
 | `nextcloud.js`     | Nextcloud-Verbindung + Home-Ordner-Wähler: `nextcloudInit`, `zustandLaden` |
 | `ki.js`            | KI-Beleg-Auslese (Anthropic-Schlüssel): `kiInit`, `kiZustandLaden` |
 | `mail.js`          | Postfach (SMTP) + Testmail: `mailInit`, `mailZustand` |
-| `vorlage.js`       | Ordner-Benennung (Vorlage für Objektordner): `vorlageInit`, `vorlageLaden` — löst nach Speichern `umzugLaden` aus |
-| `unterordner.js`   | Unterordner je Dokumentart: `unterordnerInit`, `unterordnerLaden` |
+| `vorlage.js`       | Ordner-Benennung (Vorlage für Objektordner): `vorlageInit`, `vorlageLaden` — löst nach Speichern `umzugLaden` aus; die Zeile erscheint nur ohne gesetzte Vorlage (N310) |
 | `umzug.js`         | Benennung nachziehen (Trockenlauf + Rückfrage + Ergebnis): `umzugInit`, `umzugLaden` |
-| `einsortieren.js`  | Belege in Jahresordner einsortieren (dieselbe Mechanik, eine Ebene tiefer): `einsortierenInit`, `einsortierenLaden` |
 | `import.js`        | Sicherung einlesen (JSON → neues Objekt): `importInit` |
 | `rechenlogik.js`   | Rechenlogik-Übersicht (statischer Inhalt): `rechenlogikInit` — öffnet nur den Dialog |
 
@@ -43,9 +41,17 @@ teilt zwischen den Modulen keinen. Was gebraucht wird, sind Helfer:
 Bindings für Primitive unveränderlich sind; stattdessen kapseln
 `vHoleGeteilt` und `vGeteiltReset` den Zugriff.
 
-Der pro-Section-Zustand (`ncZustand`, `kiZustand`, `unterordnerStand`,
-`trockenlauf`, `einsortierenTrocken`, `anbieterListe`) bleibt in seinem
-jeweiligen Modul — er wird nirgends geteilt.
+Der pro-Section-Zustand (`ncZustand`, `kiZustand`, `trockenlauf`,
+`anbieterListe`) bleibt in seinem jeweiligen Modul — er wird nirgends geteilt.
+
+## N310 — was 2026-08 aus den Einstellungen verschwand
+
+`unterordner.js` und `einsortieren.js` sind gelöscht: „Unterordner je Art" war
+seit N285 gegenstandslos (Jahresordner gibt es nur noch bei den Nebenkosten),
+„Belege in Jahresordner einsortieren" ist eine Aufräumaktion und läuft im
+Wachdienst. Home-Ordner und Ordner-Benennung sind Einrichtungsschritte: ihre
+Zeilen stehen nur da, solange der Wert fehlt. Das Belegarchiv ist eine Ansicht
+und hängt als Verweis im Dialog der KI-Auslese, die es füllt.
 
 ## Was in settings.html bleibt
 

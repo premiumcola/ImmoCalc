@@ -11,6 +11,7 @@
  * Namensregeln nebeneinander und liefen mit der Zeit auseinander.
  */
 import { baueDialog, kiAusleseHtml, esc } from './immo.js';
+import { auswahlfeld } from './auswahl.js';
 
 /* N254 — die Wartezeit zwischen Zuschnitt und dieser Maske.
  *
@@ -63,8 +64,10 @@ export function analyseDecke(text = 'Der Beleg wird gelesen …') {
 
 /** Der Dateiname ohne Endung — was als Bezeichnung zurückgeschickt wird.
     `dateiname()` auf dem Server zieht Datum und Betrag ohnehin wieder ab und
-    setzt sie neu; die Endung würde dort aber als Teil der Sache hängenbleiben. */
-const ohneEndung = name => String(name || '').replace(/\.[^.\s]+$/, '');
+    setzt sie neu; die Endung würde dort aber als Teil der Sache hängenbleiben.
+    N283(c) — auch der Scan-Weg am Objekt-Formular gibt seinen Namen so ab;
+    deshalb exportiert statt ein zweites Mal geschrieben. */
+export const ohneEndung = name => String(name || '').replace(/\.[^.\s]+$/, '');
 
 /* N267 — deutscher Betrag aus einem Textfeld. Auf dem Telefon tippt niemand
    einen Punkt: „1.234,56", „87,00", „87" müssen alle ankommen. `null`, wenn
@@ -124,9 +127,18 @@ function geldBlock(ki) {
     </div>`;
 }
 
-/** Fragt den Server, wie der Beleg heissen würde. Bei jedem Fehler `''` —
-    die Maske zeigt dann ein leeres Feld statt gar nicht zu erscheinen. */
-async function namenHolen(ziel, aufnahme, jahrHinweis) {
+/**
+ * Fragt den Server, wie der Beleg heissen würde. Bei jedem Fehler `''` —
+ * die Maske zeigt dann ein leeres Feld statt gar nicht zu erscheinen.
+ *
+ * N283(c) — exportiert. Nicht jeder Weg endet in dieser Maske: der Scan am
+ * Objekt-Formular (`objekt/eintragscan.js`) zeigt sein Dateinamensfeld im
+ * Formular selbst und stand deshalb ohne den Vorschlag da — dort stand nur die
+ * Bezeichnung aus der Auslese, ohne Datum und Betrag, während die Datei nachher
+ * anders hiess. Eine zweite Namensregel im Frontend wäre die falsche Antwort;
+ * es ist dieselbe Frage an denselben Endpunkt.
+ */
+export async function namenHolen(ziel, aufnahme, jahrHinweis) {
   const paket = new FormData();
   paket.append('kategorie', ziel.kategorie || 'Sonstiges');
   if (ziel.kostenart) paket.append('kostenart', ziel.kostenart);
@@ -146,18 +158,87 @@ async function namenHolen(ziel, aufnahme, jahrHinweis) {
   }
 }
 
+/* N283(b) — der Steckplatz.
+ *
+ * Bis hierher klickte sich der Nutzer für EINEN Beleg durch bis zu drei
+ * Fenster: eine Zielwahl davor (Immobilie/Art/Jahr), diese Maske, und danach
+ * einen Toast, der noch etwas nachreichte. Das ist dreimal dieselbe Sache.
+ *
+ * Deshalb hat die Maske jetzt einen Platz, in den der Aufrufer eigene Felder
+ * hängt — sie stehen zwischen Auslese und Dateiname, in derselben Optik wie
+ * das Betrags- und das Namensfeld, und ihre Werte kommen in `zusatz` zurück.
+ *
+ * Ein Feld ist `{ name, label, typ, wert }`:
+ *   * `typ: 'wahl'`  — Auswahlfeld (`optionen: [{wert, text}]`), im Design der
+ *     App statt eines nativen `<select>`.
+ *   * sonst          — Textfeld (`platzhalter` optional).
+ *   * `imNamen: true` — die Angabe geht in den Dateinamen ein (Art, Jahr,
+ *     Kostenart). Ändert sie sich, holt die Maske den Vorschlag neu; das Feld
+ *     bleibt unangetastet, sobald der Nutzer selbst darin getippt hat.
+ *
+ * `name` ist bewusst der Schlüssel im `ziel` (`kategorie`, `jahr`, `objekt` …):
+ * so lässt sich der geänderte Stand ohne Übersetzungstabelle an den
+ * Namensvorschlag weiterreichen.
+ */
+function zusatzFelderHtml(felder) {
+  return felder.map((f, i) => `
+    <div class="sb-name">
+      <label${f.typ === 'wahl' ? '' : ` for="sbz${i}"`}>${esc(f.label)}</label>
+      ${f.typ === 'wahl'
+        ? `<div data-zwahl="${i}"></div>`
+        : `<input id="sbz${i}" type="text" value="${esc(f.wert ?? '')}"
+             data-zfeld="${i}" placeholder="${esc(f.platzhalter || '')}"
+             spellcheck="false" autocomplete="off">`}
+      ${f.hinweis ? `<p class="sb-hinweis">${esc(f.hinweis)}</p>` : ''}
+    </div>`).join('');
+}
+
+/* Ein Hinweis, der zur Entscheidung gehört (Duplikat, Anhänger) — im Fenster
+   statt als Toast hinterher. Ruhig gesetzt, farbig nur wenn er etwas ändert. */
+function hinweisHtml(h) {
+  if (!h?.text) return '';
+  const farbe = h.ton === 'warn' ? 'var(--amber)'
+    : h.ton === 'gut' ? 'var(--pos)' : 'var(--soft)';
+  return `<p class="sb-hinweis" style="color:${farbe}">${esc(h.text)}</p>`;
+}
+
+/* N283(b) — die Vorschau einer gezogenen PDF.
+ *
+ * Die Maske zeigte nur `blaetter` — die entzerrten Bilder aus dem Kamerascan.
+ * Wer am Rechner eine PDF auf die Zeile zieht (der Hauptweg dort), sah gar
+ * nichts und sollte trotzdem bestätigen, dass „der Beleg" richtig benannt ist.
+ * Die Datei liegt als Blob vor; der Browser zeichnet sie selbst. */
+const istPdf = datei => (datei?.type || '') === 'application/pdf'
+  || /\.pdf$/i.test(datei?.name || '');
+
 /**
  * Zeigt die Maske und wartet auf die Entscheidung.
  *
- * `vorbereitet` ist das Paket aus `belegVorbereiten`. Gibt zurück:
- *   * `{ beschreibung }` — ablegen; `beschreibung` ist `null`, wenn der Nutzer
- *     den Vorschlag unverändert gelassen hat (dann benennt der Server wie eh),
- *     sonst der geänderte Name.
+ * `vorbereitet` ist das Paket aus `belegVorbereiten`. `optionen` (N283 b):
+ *   * `titel`   — Überschrift, Vorgabe „Beleg prüfen und ablegen".
+ *   * `knopf`   — Beschriftung der Bestätigung, Vorgabe „Ablegen". Beim
+ *     Neueinscannen steht dort „Ersetzen", bei einer schon vorhandenen Datei
+ *     „Verknüpfen": der Knopf sagt, was passiert.
+ *   * `hinweis` — `{ text, ton }`, gehört zur Entscheidung (Duplikat …).
+ *   * `felder`  — der Steckplatz, siehe `zusatzFelderHtml`.
+ *
+ * Gibt zurück:
+ *   * `{ beschreibung, betrag, zusatz }` — ablegen; `beschreibung` ist `null`,
+ *     wenn der Nutzer den Vorschlag unverändert gelassen hat (dann benennt der
+ *     Server wie eh), sonst der geänderte Name. `zusatz` trägt die Werte der
+ *     eingehängten Felder.
  *   * `null` — abgebrochen, es wird nichts abgelegt.
  */
-export async function belegBestaetigen(vorbereitet, deckeWeg = null) {
+export async function belegBestaetigen(vorbereitet, deckeWeg = null,
+                                       optionen = {}) {
   const { aufnahme, ziel, jahrHinweis, ki } = vorbereitet;
-  const vorschlag = await namenHolen(ziel, aufnahme, jahrHinweis);
+  const felder = optionen.felder || [];
+  // Der Stand der eingehängten Felder — von Anfang an vollständig, damit der
+  // Aufrufer auch dann etwas zurückbekommt, wenn nichts angefasst wurde.
+  const zusatz = {};
+  for (const f of felder) zusatz[f.name] = f.wert ?? '';
+  const zielJetzt = () => ({ ...ziel, ...zusatz });
+  const vorschlag = await namenHolen(zielJetzt(), aufnahme, jahrHinweis);
   // N254 — die Decke bleibt bis hierhin liegen (auch der Namensvorschlag ist
   // eine kurze Wartezeit) und geht erst weg, wenn die Maske wirklich kommt.
   if (deckeWeg) { try { deckeWeg(); } catch { /* egal */ } }
@@ -173,13 +254,21 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null) {
   // Was hier steht, geht als Bezeichnung zurück; benannt wird auf dem Server.
   const startwert = vorschlag || ziel.beschreibung || ziel.kostenart || '';
 
+  // Etwas zu sehen gibt es immer, wenn eine Datei da ist: die Blätter aus dem
+  // Kamerascan — oder die gezogene PDF selbst (N283 b).
+  const pdfVorschau = !blaetter.length && istPdf(aufnahme?.datei);
+  const zeigeFlaeche = blaetter.length > 0 || pdfVorschau;
+
   const dlg = baueDialog(
     `<div class="beleg-kopf">
-       <span class="bt">Beleg prüfen und ablegen${ziel.kostenart
-         ? `<span class="bpfad">${esc(ziel.kostenart)}</span>` : ''}</span>
+       <span class="bt">${esc(optionen.titel || 'Beleg prüfen und ablegen')}${
+         ziel.kostenart
+           ? `<span class="bpfad">${esc(ziel.kostenart)}</span>` : ''}</span>
        <button class="bx" data-ab title="Abbrechen" aria-label="Abbrechen">✕</button>
      </div>
      <div class="beleg-ki"${kiHtml ? '' : ' hidden'}>${kiHtml}</div>
+     ${hinweisHtml(optionen.hinweis)}
+     ${zusatzFelderHtml(felder)}
      ${geldBlock(ki)}
      <div class="sb-name">
        <label for="sbName">Dateiname</label>
@@ -191,17 +280,66 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null) {
          : 'Die Erkennung hat nichts Genaues gefunden — hier lässt sich der Name '
            + 'ergänzen, damit der Beleg später wiederzufinden ist.'}</p>
      </div>
-     ${blaetter.length
-       ? '<div class="beleg-flaeche" data-blaetter></div>' : ''}
+     ${zeigeFlaeche ? '<div class="beleg-flaeche" data-blaetter></div>' : ''}
      <div class="sb-fuss">
-       <button type="button" class="sb-weiter" data-ok>Ablegen</button>
+       <button type="button" class="sb-weiter" data-ok>${
+         esc(optionen.knopf || 'Ablegen')}</button>
      </div>`);
   dlg.classList.add('beleg-dlg', 'scanbest-dlg');
+  // Mit eingehängten Feldern wird das Fenster länger als der Schirm. Ohne
+  // eigenen Überlauf klemmte der Knopf unten ausserhalb — auf dem Telefon
+  // wäre die Maske dann nicht mehr abschliessbar.
+  if (felder.length || optionen.hinweis) {
+    dlg.style.overflowY = 'auto';
+    // Scrollt das Fenster, muss die Entscheidung trotzdem in Reichweite
+    // bleiben — sonst sucht man auf dem Telefon den Knopf, den man drücken soll.
+    const fuss = dlg.querySelector('.sb-fuss');
+    if (fuss) {
+      fuss.style.position = 'sticky';
+      fuss.style.bottom = '0';
+      fuss.style.background = 'var(--sheet)';
+      fuss.style.paddingTop = '8px';
+      // Der Innenrand des Fensters gehört beim Scrollen zur Fläche: ohne diese
+      // Verlängerung schöbe sich der Beleg unter dem Knopf hindurch ins Bild.
+      fuss.style.paddingBottom = 'calc(12px + env(safe-area-inset-bottom))';
+      fuss.style.marginBottom = 'calc(-12px - env(safe-area-inset-bottom))';
+    }
+  }
 
   // Die Seiten als Bilder — genau das, was gleich hochgeladen wird.
   const adressen = [];
   const flaeche = dlg.querySelector('[data-blaetter]');
-  if (flaeche) {
+  if (flaeche && pdfVorschau) {
+    const adr = URL.createObjectURL(aufnahme.datei);
+    adressen.push(adr);
+    if (navigator.pdfViewerEnabled === false) {
+      // Ein Browser ohne eingebauten Betrachter zeichnete sonst eine grosse
+      // graue Leerfläche. Dann lieber der Weg zum Inhalt als das Loch.
+      const kasten = document.createElement('div');
+      kasten.className = 'beleg-blatt leer';
+      kasten.style.cssText = 'flex-direction:column; gap:10px; color:var(--soft)';
+      kasten.innerHTML = `${esc(aufnahme.name || 'PDF')}
+        <a class="beleg-tab" href="${adr}" target="_blank" rel="noopener"
+           >Im neuen Tab ansehen ↗</a>`;
+      flaeche.appendChild(kasten);
+    } else {
+      // Die Fläche gibt die Höhe vor und scrollt NICHT selbst: der Betrachter
+      // im Rahmen bringt seinen eigenen Balken mit, und zwei Balken nebeneinander
+      // sind einer zu viel.
+      flaeche.style.cssText = 'height:min(40dvh, 420px); min-height:170px; '
+        + 'overflow:hidden';
+      const rahmen = document.createElement('iframe');
+      rahmen.className = 'beleg-blatt';
+      rahmen.title = aufnahme.name || 'Beleg';
+      rahmen.style.cssText = 'flex:1 1 auto; width:100%; height:100%';
+      // Ohne die Anhänge zeichnet der Browser seine eigene schwarze Leiste mit
+      // Seitenvorschau, Zoom, Drucken und Herunterladen mitten in eine ruhige
+      // Maske — und nimmt der Seite die halbe Fläche. Hier soll nur der Beleg
+      // stehen; entschieden wird darunter.
+      rahmen.src = `${adr}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+      flaeche.appendChild(rahmen);
+    }
+  } else if (flaeche) {
     blaetter.forEach((blob, i) => {
       const adr = URL.createObjectURL(blob);
       adressen.push(adr);
@@ -224,6 +362,45 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null) {
     const feld = dlg.querySelector('#sbName');
     const geldFeld = dlg.querySelector('#sbBetrag');
 
+    /* N283(b) — die eingehängten Felder. Sie stehen im Fenster, nicht davor:
+       eine Zielwahl als eigener Dialog fragt dasselbe eine Ebene früher und
+       zwingt den Nutzer, dieselbe Datei zweimal einzuordnen.
+
+       Was in den Dateinamen eingeht (`imNamen`), holt den Vorschlag neu — die
+       Maske zeigt live, wie die Datei nach der Änderung heisst. Getippt der
+       Nutzer selbst im Namensfeld, bleibt seine Fassung stehen: eine Auswahl
+       darf eine Eingabe nie überschreiben. */
+    let letzterVorschlag = startwert;
+    const namenAuffrischen = async () => {
+      if (!felder.some(f => f.imNamen)) return;
+      if ((feld?.value || '') !== letzterVorschlag) return;   // selbst getippt
+      const neu = await namenHolen(
+        { ...zielJetzt(), betrag: betragLesen(geldFeld?.value) || ziel.betrag },
+        aufnahme, jahrHinweis);
+      if (!neu || !feld || feld.value !== letzterVorschlag) return;
+      feld.value = neu;
+      letzterVorschlag = neu;
+    };
+
+    felder.forEach((f, i) => {
+      if (f.typ === 'wahl') {
+        const halter = dlg.querySelector(`[data-zwahl="${i}"]`);
+        if (!halter) return;
+        auswahlfeld(halter, {
+          optionen: f.optionen || [], wert: String(f.wert ?? ''), label: f.label,
+          aenderung: wert => {
+            zusatz[f.name] = f.zahl ? Number(wert) : wert;
+            namenAuffrischen();
+          },
+        });
+        if (f.zahl) zusatz[f.name] = Number(zusatz[f.name]) || null;
+        return;
+      }
+      const eingabe = dlg.querySelector(`[data-zfeld="${i}"]`);
+      eingabe?.addEventListener('input', () => { zusatz[f.name] = eingabe.value; });
+      eingabe?.addEventListener('change', namenAuffrischen);
+    });
+
     // N267 — „doch, das ist eine Kostenposition": das Feld aufmachen und den
     // Hinweis wegnehmen, der gerade das Gegenteil behauptet hat.
     dlg.querySelector('[data-doch]')?.addEventListener('click', e => {
@@ -240,12 +417,15 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null) {
       // Unverändert heisst: der Server benennt wie gewohnt. Nur eine echte
       // Änderung gegenüber dem, was im Feld stand, wird mitgeschickt.
       schliessen({
-        beschreibung: (!neu || neu === startwert) ? null : ohneEndung(neu),
+        beschreibung: (!neu || neu === letzterVorschlag) ? null : ohneEndung(neu),
         // `null` heisst ausdrücklich „ohne Kostenposition" — auch dann, wenn
         // die Erkennung einen Betrag vorgeschlagen hatte und der Nutzer ihn
         // wieder herausgelöscht hat. Der Aufrufer soll beides unterscheiden
         // können, deshalb steht der Schlüssel immer da.
         betrag: betragLesen(geldFeld?.value),
+        // N283(b) — die Werte der eingehängten Felder. Ohne Steckplatz bleibt
+        // das Objekt leer; kein Aufrufer muss etwas daran ändern.
+        zusatz,
       });
     };
     dlg.querySelector('[data-ok]').addEventListener('click', ablegen);
