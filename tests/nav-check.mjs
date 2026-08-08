@@ -70,15 +70,23 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
   await ctx.close();
 }
 
-/* ---- Desktop: alle sieben stehen in der Seitenleiste ---- */
+/* ---- Desktop: ALLE stehen in der Seitenleiste ----
+   N313 — hier stand die feste Zahl 7. Die Leiste ist seitdem auf zwölf
+   Einträge gewachsen, und der Test war rot, ohne dass etwas kaputt war. Die
+   geprüfte Aussage ist ohnehin eine andere: auf dem Desktop darf NICHTS hinter
+   „Mehr" verschwinden. Gemessen wird deshalb gegen die tatsächliche Zahl der
+   Einträge — das bleibt richtig, egal wie viele es werden. */
 {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(base + '/index.html', { waitUntil: 'networkidle' });
   await page.waitForTimeout(300);
-  const sichtbar = await page.$$eval('nav.nav a:not(.brand)',
-    as => as.filter(a => a.offsetParent !== null).length);
-  pruefe(sichtbar === 7, `Desktop zeigt ${sichtbar} Einträge statt 7`);
+  const { sichtbar, gesamt } = await page.$$eval('nav.nav a:not(.brand)',
+    as => ({ sichtbar: as.filter(a => a.offsetParent !== null).length,
+             gesamt: as.length }));
+  pruefe(sichtbar === gesamt,
+         `Desktop zeigt nur ${sichtbar} von ${gesamt} Einträgen`);
+  pruefe(gesamt >= 7, `nur ${gesamt} Einträge — die Leiste ist geschrumpft`);
   const mehrDa = await page.$eval('nav.nav .mehr', el => el.offsetParent !== null)
     .catch(() => false);
   pruefe(!mehrDa, 'auf dem Desktop steht „Mehr" im Weg');

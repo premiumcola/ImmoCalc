@@ -22,8 +22,6 @@ const WEG_SVG = {
         <path ${STRICH} d="M3.6 12h16.8"/>
         <path ${STRICH} d="M12 3.6c2.4 2.6 3.6 5.4 3.6 8.4s-1.2 5.8-3.6 8.4
                            c-2.4-2.6-3.6-5.4-3.6-8.4S9.6 6.2 12 3.6Z"/>`,
-  adresse: `<path ${STRICH} d="M12 21c4-4.4 6-7.7 6-10a6 6 0 1 0-12 0c0 2.3 2 5.6 6 10Z"/>
-            <circle ${STRICH} cx="12" cy="11" r="2.3"/>`,
 };
 
 const wegIcon = (art, groesse = 15) =>
