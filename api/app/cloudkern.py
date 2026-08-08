@@ -93,6 +93,11 @@ ZIELORDNER = {
     "Hausverwaltung": "80_Hausverwaltung",
     # N9 — Lagepläne gehören zu Fotos & Lage, nicht in „Sonstiges".
     "Lageplan": "10_Fotos_Lage",
+    # N283d — die einmaligen Erwerbsnebenkosten (Notarrechnung, Grunderwerb-
+    # steuer, Grundbuchamt, Makler) sind KEINE laufende Steuersache. Sie landeten
+    # mangels eigener Art unter „70_Steuer_Finanzamt", gehören aber zum Erwerb
+    # selbst — dort liegt auch der Kaufvertrag, auf den sie sich beziehen.
+    "Erwerbsnebenkosten": "40_Kauf_Eigentum_Finanzierung",
     # N289 — Handwerkerrechnungen eines Bauvorhabens gehören zur Bauphase.
     # Ohne diesen Eintrag fiel die Kategorie „Renovierung" auf den Vorgabewert
     # „99_Sonstiges" zurück: die Rechnungen einer Generalsanierung lagen
@@ -117,6 +122,10 @@ ARTKUERZEL = {
     "Hausverwaltung": "HV",
     # N9 — kein Kürzel für Lagepläne: der Name trägt „Lageplan …" schon selbst.
     "Lageplan": "",
+    # N283d — „Erwerb" macht im Dateinamen sofort klar, worum es geht; ohne
+    # Kürzel hiesse eine Notarrechnung nur „2017-11_Notar…" und wäre von der
+    # laufenden Notarkorrespondenz nicht zu unterscheiden.
+    "Erwerbsnebenkosten": "Erwerb",
     # N289 — kein Kürzel: `feldzuordnung` baut den Namen einer Handwerker-
     # rechnung bereits sprechend („Renovierung Elektro Firma"), und der
     # Projektordner sagt ohnehin, zu welchem Vorhaben sie gehört.

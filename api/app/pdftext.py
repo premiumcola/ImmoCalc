@@ -142,6 +142,31 @@ def _seitentext(seite: Any) -> str:
         return ""
 
 
+# N305 — Adobe-LiveCycle-Formulare (XFA) tragen als PDF-Textschicht nur einen
+# Platzhalter: „Please wait… If this message is not eventually replaced by the
+# proper contents of the document, your PDF viewer may not be able to display
+# this type of document." Der eigentliche Inhalt steckt im XFA-XML im PDF.
+#
+# Das ist heimtückisch, weil `text.strip()` dann WAHR ist: die Kette hält den
+# Beleg für gelesen und springt gar nicht erst in die Rasterung. Drei
+# Kreditselbstauskünfte des Nutzers hingen genau daran.
+_XFA_MARKEN = ("if this message is not eventually replaced",
+               "your pdf viewer may not be able to display",
+               "adobe reader may not be able to display")
+
+
+def _nur_xfa_platzhalter(text: str) -> bool:
+    """Steht in der Textschicht nur der XFA-Hinweis?
+
+    Streng: der Platzhalter muss vorkommen UND der Rest muss kurz genug sein,
+    dass darin kein Beleginhalt stecken kann. Ein echtes Dokument, das den Satz
+    zufällig zitiert, soll nicht verworfen werden."""
+    klein = (text or "").lower()
+    if not any(marke in klein for marke in _XFA_MARKEN):
+        return False
+    return len(klein.strip()) < 900
+
+
 def text_aus_pdf(rohdaten: bytes) -> str:
     """Der eingebettete Text eines PDF.
 
@@ -159,7 +184,8 @@ def text_aus_pdf(rohdaten: bytes) -> str:
         log.warning("PDF nicht lesbar: %s", fehler)
         return ""
     roh = "\n".join(_seitentext(s) for s in seiten)
-    return "\n".join(_entspreizt(z) for z in roh.splitlines())
+    text = "\n".join(_entspreizt(z) for z in roh.splitlines())
+    return "" if _nur_xfa_platzhalter(text) else text
 
 
 def _als_ppm(bitmap: Any) -> bytes:

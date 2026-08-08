@@ -152,3 +152,33 @@ def test_pdf_und_office_gehen_ihren_eigenen_weg():
 def test_die_kette_nimmt_klartext_mit():
     assert "Schornsteinfeger" in ocr.text_aus_beleg(
         "Rechnung Schornsteinfeger 2025\n".encode())
+
+
+# --------------------------------------------------------------------------
+# N305 — XFA-Formulare tragen nur einen Platzhalter
+# --------------------------------------------------------------------------
+
+_XFA = ("Please wait...\nIf this message is not eventually replaced by the "
+        "proper contents of the document, your PDF viewer may not be able to "
+        "display this type of document.\nYou can upgrade to the latest version "
+        "of Adobe Reader.")
+
+
+def test_xfa_platzhalter_gilt_nicht_als_text():
+    """Der Platzhalter machte `text.strip()` wahr — die Kette hielt den Beleg
+    für gelesen und sprang gar nicht erst in die Rasterung."""
+    from app.pdftext import _nur_xfa_platzhalter
+    assert _nur_xfa_platzhalter(_XFA)
+
+
+def test_echter_beleg_wird_nicht_verworfen():
+    """Ein Dokument, das den Satz zufällig zitiert, muss durchkommen."""
+    from app.pdftext import _nur_xfa_platzhalter
+    echt = _XFA + "\n" + ("Rechnung Nr. 4711 über 1.250,98 EUR. " * 40)
+    assert not _nur_xfa_platzhalter(echt)
+
+
+def test_leerer_und_normaler_text_bleiben_unberuehrt():
+    from app.pdftext import _nur_xfa_platzhalter
+    assert not _nur_xfa_platzhalter("")
+    assert not _nur_xfa_platzhalter("Stadtwerke Eckental, Wasserabrechnung 2025")

@@ -82,7 +82,15 @@ SYSTEM_PROMPT = (
     "Nebenkosten-Rechnung, Zählerstand …). "
     "kategorie = bestimmt den Ablage-Ordner und MUSS EXAKT EINER dieser Werte "
     "sein: \"Nebenkosten\", \"Steuer\", \"Versicherung\", \"Kredit\", "
-    "\"Mietvertrag\", \"Hausverwaltung\", \"Korrespondenz\", \"Sonstiges\". "
+    "\"Mietvertrag\", \"Hausverwaltung\", \"Korrespondenz\", "
+    "\"Erwerbsnebenkosten\", \"Sonstiges\". "
+    # N283d — ohne diese Zeile ordnete die Auslese Notarrechnung und
+    # Grunderwerbsteuer der laufenden „Steuer" zu; sie landeten damit beim
+    # Finanzamt statt beim Erwerb, zu dem sie gehören.
+    "\"Erwerbsnebenkosten\" sind die EINMALIGEN Kosten rund um den Kauf: "
+    "Notarrechnung, Grunderwerbsteuer, Grundbuchamt, Maklercourtage, "
+    "Gutachten, Grundschuldbestellung. Die laufende Grundsteuer und die "
+    "Einkommensteuer gehören dagegen NICHT dazu. "
     "immobilie = Adresse der LIEGENSCHAFT/des Objekts, um die es geht "
     "(Straße + Nr, PLZ, Ort). Suche die Bezeichnungen \"Anwesen\", "
     "\"Liegenschaft\", \"Objekt\", \"Grundstück\", \"Verbrauchsstelle\", "

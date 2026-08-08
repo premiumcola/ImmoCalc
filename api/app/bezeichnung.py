@@ -307,6 +307,9 @@ STANDARD_UNTERORDNER = {
     # N9/N24 — ein Lageplan hat kein Belegjahr; er liegt unter 10_Fotos_Lage
     # in einem festen Sammelordner „00_Lagepläne" (kein Jahres-Unterordner).
     "Lageplan": "00_Lagepläne",
+    # N283d — kein Jahresordner: die Erwerbsnebenkosten fallen einmalig rund um
+    # den Kauf an, ein Jahr davon zu trennen hülfe beim Wiederfinden nicht.
+    "Erwerbsnebenkosten": "",
     # N289 — der Unterordner einer Renovierungsrechnung ist kein Jahres-, sondern
     # ein Projektordner („2025.01_Generalsanierung"). Er lässt sich aus Jahr und
     # Einheit nicht bilden, sondern kommt aus der Renovierung selbst und wird
