@@ -339,8 +339,14 @@ def test_pdf_mit_text_braucht_keine_bilderkennung():
 
 
 def test_ohne_lesbaren_text_bleibt_es_bei_einer_begruendung():
-    """Kein Vorschlag ist in Ordnung — kommentarlos nichts nicht."""
-    ergebnis = erkenne(b"weder PDF noch Bild")
+    """Kein Vorschlag ist in Ordnung — kommentarlos nichts nicht.
+
+    N306 — der Platzhalter war bis dahin `b"weder PDF noch Bild"`, also
+    ausgerechnet lesbarer Text. Seit die Kette auch Klartext liest (`.txt`,
+    `.csv`, `.eml`), wird er zu Recht ausgelesen und taugt nicht mehr als
+    Stellvertreter für „unlesbar". Die geprüfte Aussage ist unverändert; nur
+    der Rumpf ist jetzt wirklich binär."""
+    ergebnis = erkenne(bytes(range(256)) * 20)
     assert ergebnis["betrag"] is None
     assert ergebnis["hinweis"]
 
