@@ -19,7 +19,7 @@
    gemeinsamen Bestätigungsmaske ab (`wasserBetraegeDialog` in wasser.js), nicht
    an ihrer Stelle. */
 
-import { api, esc, eur, melde, wahl, belegAnsehen } from '../immo.js';
+import { api, esc, eur, melde, wahl, frage } from '../immo.js';
 import { fotoAlsJpeg } from '../kamerascan.js';
 import { belegVorbereiten, belegAblegen } from '../belegscan.js';
 import * as state from './state.js';
@@ -191,8 +191,15 @@ export async function anhaengen(kostenart) {
   }
 }
 
-/* N237 — einen Zusatzbeleg wieder vom Thema lösen (Datei bleibt in der Ablage). */
-export async function anhaengerEntfernen(id) {
+/* N237 — einen Zusatzbeleg wieder vom Thema lösen (Datei bleibt in der Ablage).
+   N288: mit Rückfrage, die den Beleg beim Namen nennt — das × sitzt dicht
+   neben dem Link, mit dem man ihn nur ansehen wollte. */
+export async function anhaengerEntfernen(id, name = '') {
+  const ok = await frage('Beleg herausnehmen?',
+    `${name ? `„${name}“ ` : 'Der Beleg '}wird von dieser Kostenart gelöst. `
+    + 'Die Datei bleibt in der Ablage und lässt sich erneut anhängen.',
+    { knopf: 'Herausnehmen', gefahr: true });
+  if (!ok) return;
   try {
     await api(`/dokumente/${id}/anhaenger`, { method: 'DELETE' });
     melde('Anhänger gelöst — die Datei bleibt in der Ablage', 'pos');
@@ -487,12 +494,4 @@ export function initBelegDrop() {
       markiere(null);
     }
   });
-}
-
-/* Ein Beleg-Link im Dialog ansehen (via /api/dokumente/{id}/inhalt). */
-export function belegLinkAnsehen(link) {
-  belegAnsehen(`/api/dokumente/${link.dataset.beleg}/inhalt`,
-               link.dataset.name
-               || link.textContent.replace(/^PDF · /, '').trim(),
-               link.getAttribute('title') || '');
 }

@@ -4,7 +4,7 @@
    Alles, was mehr als ein Topic braucht (Wasser, Strom, Heizöl, Checkliste
    greifen alle darauf zurück) und keine eigene größere Einheit ergibt. */
 
-import { eur, esc, fristKlasse } from '../immo.js';
+import { eur, esc, fristKlasse, zahlAus } from '../immo.js';
 import * as state from './state.js';
 import { VKEY_IKON } from './icons.js';
 import {
@@ -48,13 +48,45 @@ export const kurzBeleg = name => (name || '')
   .replace(/[_-]+/g, ' ')
   .trim() || (name || 'Beleg');
 
-/* Deutsche Zahleneingabe → Number: Punkt = Tausender, Komma = Dezimal
-   (Umkehr des zahl()-Formats). '' bei leerer/ungültiger Eingabe. */
-export function standAusFeld(el) {
-  const roh = (el?.value || '').trim().replace(/\./g, '').replace(',', '.');
+/* N288 — die EINE Weiche, durch die in diesem Ordner jede Zahl aus einem
+ * Eingabefeld gelesen wird. Die deutsche Regel selbst steht ausschliesslich in
+ * `zahlAus()` (immo.js) und wird hier nur durchgereicht.
+ *
+ * Zwei Arten von Feldern, zwei Leser — und beide Verwechslungen kosten den
+ * Faktor 1000 in einer echten Abrechnung:
+ *
+ *   `<input type="number">`  Der Browser normalisiert selbst: Punkt ist immer
+ *     das Dezimaltrennzeichen, Tausenderpunkte gibt es nie. Ein getipptes
+ *     „8,205" steht als `"8.205"` in `.value` — `zahlAus` läse daraus 8205.
+ *     Also liest hier `Number()`.
+ *   Alles andere (`type="text"` mit `inputmode="decimal"`, rohe Texte)
+ *     enthält, was der Nutzer wörtlich getippt hat: „1.250" sind 1250,
+ *     „1.250,50" sind 1250,5. Das kann nur `zahlAus`.
+ *
+ * Bewusst über `el.value`, nie über `el.dataset.wert`: in diesem Ordner trägt
+ * `data-wert` den ZULETZT GESPEICHERTEN Wert (Änderungsvergleich), nicht die
+ * rohe Eingabe wie bei den Feldern aus `eingabe.js`.
+ *
+ * Leeres Feld und Unsinn ergeben `null`.
+ */
+export function feldZahl(el) {
+  const roh = String((typeof el === 'string' ? el : el?.value) ?? '').trim();
   if (roh === '') return null;
-  const n = Number(roh);
-  return Number.isFinite(n) ? n : NaN;
+  if (el && typeof el === 'object' && el.type === 'number') {
+    const n = Number(roh);
+    return Number.isFinite(n) ? n : null;
+  }
+  return zahlAus(roh);
+}
+
+/* Der Zählerstand braucht eine Unterscheidung mehr: `null` heisst „nichts
+   eingetragen", `NaN` heisst „Unsinn eingetragen" — das eine wird still
+   übergangen, das andere abgelehnt. Sonst dieselbe Weiche.
+   (Die alte Fassung strich hier alle Punkte: aus dem Stand „12.5" wurde 125.) */
+export function standAusFeld(el) {
+  if (String(el?.value ?? '').trim() === '') return null;
+  const n = feldZahl(el);
+  return n == null ? NaN : n;
 }
 
 /* Die Zeile, zu der ein Eingabefeld gehört: die Karten-Zeile der
@@ -347,6 +379,22 @@ export const belegLinks = (liste, extra = '', loesbar = false) => `<div class="b
     d.betrag ? ` · ${eur(d.betrag)}` : ''}${
     datum ? `<span class="beleg-datum">${datum}</span>` : ''}</a>${weg}</span>`;
 }).join('')}${extra}</div>`;
+
+/* N288 — die Belege, die mit diesem im selben Kasten stehen. Das Beleg-Fenster
+   blättert damit zwischen ihnen (fünfter Parameter von `belegAnsehen`), statt
+   für jeden Beleg zurück in die Liste zu zwingen. Gesucht wird der Kasten, in
+   dem der Link sitzt; steht er dort allein, gibt es nichts zu blättern. */
+export function belegGeschwister(link) {
+  const kasten = link?.closest(
+    '.belege, .zusatzbelege, .sk-belege, .weg-datei, .anh-gruppe');
+  const links = [...(kasten?.querySelectorAll('[data-beleg]') || [])];
+  if (links.length < 2) return null;
+  return links.map(a => ({
+    id: Number(a.dataset.beleg),
+    dateiname: a.dataset.name || a.textContent.replace(/^PDF · /, '').trim(),
+    pfad: a.dataset.pfad || a.getAttribute('title') || '',
+  }));
+}
 
 /* Woraus der Betrag besteht. Vier Abschlagsrechnungen ergeben eine Position. */
 export function zusammensetzungHtml(k) {

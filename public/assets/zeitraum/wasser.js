@@ -9,7 +9,7 @@
 import { api, eur, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { normUml, istWasserSammel } from './modell.js';
-import { m3 } from './helpers.js';
+import { m3, feldZahl } from './helpers.js';
 
 /* N57 — die Checklisten-Position hinter einem der drei Bestandteile. */
 export function wasserPosFuer(art) {
@@ -56,10 +56,9 @@ export function wdKostenBox(label, art, kostenWert) {
 
 /* N57 — einen der drei Bestandteil-Beträge speichern. */
 export async function wasserBetragSpeichern(input) {
-  const roh = String(input.value).trim().replace(',', '.');
-  if (roh === '') return;
-  const betrag = Number(roh);
-  if (!Number.isFinite(betrag)) { melde('Ungültiger Betrag', 'neg'); return; }
+  if (String(input.value ?? '').trim() === '') return;
+  const betrag = feldZahl(input);
+  if (betrag == null) { melde('Ungültiger Betrag', 'neg'); return; }
   if (String(input.dataset.wert) === String(betrag)) return;
   input.dataset.wert = String(betrag);
   try {
@@ -302,9 +301,10 @@ export function wasserBetraegeDialog({ kostenart, vorschlag, datei, erkennen,
       </div>`;
 
     const feld = s => dlg.querySelector(`[data-f="${s}"]`);
-    const zahlAus = s => parseFloat(String(feld(s).value).replace(',', '.')) || 0;
+    const betragAus = s => feldZahl(feld(s)) ?? 0;
     const summeZeigen = () => {
-      const su = zahlAus('w_wasser') + zahlAus('w_schmutz') + zahlAus('w_niederschlag');
+      const su = betragAus('w_wasser') + betragAus('w_schmutz')
+        + betragAus('w_niederschlag');
       dlg.querySelector('[data-summe]').textContent = su > 0 ? eur(su) : '—';
     };
     dlg.addEventListener('input', summeZeigen);
@@ -346,8 +346,8 @@ export function wasserBetraegeDialog({ kostenart, vorschlag, datei, erkennen,
 
     dlg.querySelector('[data-nein]').onclick = () => dlg.close();
     dlg.querySelector('[data-ok]').onclick = () => {
-      const wasser = zahlAus('w_wasser'), schmutz = zahlAus('w_schmutz'),
-            niederschlag = zahlAus('w_niederschlag');
+      const wasser = betragAus('w_wasser'), schmutz = betragAus('w_schmutz'),
+            niederschlag = betragAus('w_niederschlag');
       if (!(wasser > 0 || schmutz > 0 || niederschlag > 0)) {
         const err = dlg.querySelector('[data-err]');
         err.textContent = 'Bitte mindestens einen Bereichsbetrag eintragen — '

@@ -8,7 +8,7 @@
 import { api, eur, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { SK_BLOECKE, SK_FARBE } from './state.js';
-import { zahl, belegDatumText, stromKetteVerteilt } from './helpers.js';
+import { zahl, belegDatumText, stromKetteVerteilt, feldZahl } from './helpers.js';
 import { istStromPos } from './modell.js';
 // Zirkulär mit checkliste.js (die importiert `fuelleStromketteInline` von
 // hier) — unproblematisch, weil `deckungAktualisieren` erst innerhalb einer
@@ -331,9 +331,9 @@ function stromketteInhalt(d) {
 
 /* Einen der drei SolarEdge-Anteile speichern. */
 export async function stromAnteilSpeichern(feld) {
-  const wert = parseFloat(String(feld.value || '').replace(',', '.'));
+  const wert = feldZahl(feld);
   const box = feld.closest('[data-strom-kette]');
-  if (!box || Number.isNaN(wert) || wert < 0) return;
+  if (!box || wert == null || wert < 0) return;
   const gesamt = Number(box.dataset.gesamtKwh) || 0;
   if (!gesamt) {
     return melde('Ohne Gesamtverbrauch lässt sich der Anteil nicht umrechnen — '
@@ -342,8 +342,8 @@ export async function stromAnteilSpeichern(feld) {
   const SPALTE = { netz: 'netz_kwh', pv: 'solar_kwh', akku: 'akku_kwh' };
   const mengen = {};
   box.querySelectorAll('[data-sk-anteil]').forEach(f => {
-    const p = parseFloat(String(f.value || '').replace(',', '.'));
-    mengen[SPALTE[f.dataset.skAnteil]] = Number.isNaN(p) || p < 0 ? 0
+    const p = feldZahl(f);
+    mengen[SPALTE[f.dataset.skAnteil]] = p == null || p < 0 ? 0
       : Math.round(gesamt * p / 100 * 1000) / 1000;
   });
   const pfad = `/objekte/${encodeURIComponent(state.daten.objekt)}/strom/${state.daten.jahr}`;
@@ -373,8 +373,8 @@ export async function stromBelegLoesen(id, name) {
 /* N192 — die geeichte Rechnungsmenge speichern. */
 export async function geeichteMengeSpeichern(btn) {
   const input = btn.closest('.sk-geeicht-eingabe')?.querySelector('[data-geeichte-menge]');
-  const wert = parseFloat(String(input?.value || '').replace(/\./g, '').replace(',', '.'));
-  if (Number.isNaN(wert) || wert <= 0) {
+  const wert = feldZahl(input);
+  if (wert == null || wert <= 0) {
     return melde('Bitte eine Menge in kWh eintragen', 'neg');
   }
   try {

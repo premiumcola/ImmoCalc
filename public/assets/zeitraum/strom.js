@@ -9,7 +9,7 @@ import { api, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { STROM_ROLLEN } from './state.js';
 import { istStromPos } from './modell.js';
-import { zahl, standAusFeld, baueChipMap } from './helpers.js';
+import { zahl, standAusFeld, baueChipMap, feldZahl } from './helpers.js';
 import { meterZeileHtml } from './zaehler.js';
 
 export const stromLabel = z => state.zLabels.get(z.id) || z.name;
@@ -240,7 +240,7 @@ export async function stromZaehlerEntfernen(btn) {
    Endstand = Wert ablegen. */
 export async function gartenAnlegen(btn) {
   const feld = btn.closest('.ho-neu')?.querySelector('[data-garten-m3]');
-  const m3wert = parseFloat(String(feld?.value || '').replace(',', '.'));
+  const m3wert = feldZahl(feld);
   if (!(m3wert > 0)) { melde('m³ eintragen', 'neg'); return; }
   try {
     const neu = await api(`/objekte/${encodeURIComponent(state.daten.objekt)}/zaehler`, {

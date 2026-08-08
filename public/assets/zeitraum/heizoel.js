@@ -4,19 +4,19 @@
    Wird beim Aufklappen der jeweiligen Position (Heizöl / Warmwasser /
    Heizkörper-Wärmemenge) inline geladen. */
 
-import { api, eur, esc, melde } from '../immo.js';
+import { api, eur, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { wasserArt } from './modell.js';
 import {
-  zahl, _isoKurz, alleEinheiten, zaehlerEinheiten,
+  zahl, _isoKurz, alleEinheiten, zaehlerEinheiten, feldZahl,
 } from './helpers.js';
 
 /* N79 — eine Öl-Lieferung erfassen. */
 export async function heizoelHinzufuegen(btn) {
   const box = btn.closest('.ho-neu');
   const datum = box?.querySelector('[data-ho-datum]')?.value;
-  const liter = parseFloat(String(box?.querySelector('[data-ho-liter]')?.value || '').replace(',', '.'));
-  const wert = parseFloat(String(box?.querySelector('[data-ho-wert]')?.value || '').replace(',', '.'));
+  const liter = feldZahl(box?.querySelector('[data-ho-liter]'));
+  const wert = feldZahl(box?.querySelector('[data-ho-wert]'));
   const anf = !!box?.querySelector('[data-ho-anf]')?.checked;
   if (!datum || !(liter > 0)) { melde('Datum und Liter angeben', 'neg'); return; }
   try {
@@ -30,8 +30,15 @@ export async function heizoelHinzufuegen(btn) {
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
-/* N79 — eine Öl-Lieferung wieder entfernen. */
-export async function heizoelEntfernen(id) {
+/* N79 — eine Öl-Lieferung wieder entfernen. N288: nicht mehr auf einen
+   Fingertipp hin. Die Rückfrage nennt Datum, Liter und Wert der Lieferung —
+   „Wirklich löschen?" allein sagt nicht, welche Zeile es trifft. */
+export async function heizoelEntfernen(id, beschreibung = '') {
+  const ok = await frage('Öl-Lieferung löschen?',
+    `${beschreibung ? `${beschreibung} — ` : ''}Die Lieferung wird aus der `
+    + 'Bestandsrechnung genommen; Verbrauch und Heizkosten rechnen sich neu.',
+    { knopf: 'Löschen', gefahr: true });
+  if (!ok) return;
   try {
     await api(`/heizoel/${id}`, { method: 'DELETE' });
     melde('Lieferung entfernt', 'pos');
@@ -44,8 +51,8 @@ export async function heizoelEntfernen(id) {
 export async function hkvHinzufuegen(btn) {
   const box = btn.closest('.ho-neu');
   const q = s => box?.querySelector(s);
-  const faktor = parseFloat(String(q('[data-hkv-faktor]')?.value || '').replace(',', '.'));
-  const stand = parseFloat(String(q('[data-hkv-stand]')?.value || '').replace(',', '.'));
+  const faktor = feldZahl(q('[data-hkv-faktor]'));
+  const stand = feldZahl(q('[data-hkv-stand]'));
   if (!(faktor > 0)) { melde('Faktor angeben', 'neg'); return; }
   try {
     await api(`/objekte/${encodeURIComponent(state.daten.objekt)}/heizverteiler`, {
@@ -63,7 +70,14 @@ export async function hkvHinzufuegen(btn) {
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
 
-export async function hkvEntfernen(id) {
+/* N288 — auch der Heizkörper verschwindet erst nach einer Rückfrage, die
+   Nummer, Raum und Faktor nennt: die Zeilen sehen einander sehr ähnlich. */
+export async function hkvEntfernen(id, beschreibung = '') {
+  const ok = await frage('Heizkörper löschen?',
+    `${beschreibung ? `${beschreibung} — ` : ''}Der Heizkostenverteiler fällt `
+    + 'aus der Verteilung der Heizungswärme heraus.',
+    { knopf: 'Löschen', gefahr: true });
+  if (!ok) return;
   try {
     await api(`/heizverteiler/${id}`, { method: 'DELETE' });
     melde('Heizkörper entfernt', 'pos');
@@ -177,6 +191,7 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
       <span class="ho-wert">${eur(l.wert)}</span>
       <span class="ho-pl">${eur(l.preis_liter ?? (l.liter ? l.wert / l.liter : 0))}/L</span>
       ${bearbeitbar ? `<button class="ho-x" data-heizoel-weg="${l.id}"
+        data-was="${esc(`${_isoKurz(l.datum)} · ${zahl(l.liter)} L · ${eur(l.wert)}`)}"
         aria-label="Lieferung entfernen">×</button>` : ''}
     </div>`).join('') : '';
   const nurPeriode = sichtbar.filter(l => !l.ist_anfangsbestand
@@ -217,6 +232,8 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
       <span class="ho-lit">Faktor ${zahl(h.faktor)}</span>
       <span class="ho-wert">${zahl(h.einheiten_stand)} Einh.</span>
       ${bearbeitbar ? `<button class="ho-x" data-hkv-weg="${h.id}"
+        data-was="${esc(`${h.nummer || 'ohne Nummer'}${h.raum ? ` · ${h.raum}` : ''}${
+          h.einheit ? ` · ${h.einheit}` : ''} · Faktor ${zahl(h.faktor)}`)}"
         aria-label="HKV entfernen">×</button>` : ''}
     </div>`).join('') : '';
   const vtZeilen = Object.keys(vt).length ? `<div class="ho-summe">Heizung je Einheit: ${

@@ -38,7 +38,8 @@ import {
 import {
   zahl, chipHtml, vkeyChip, schluesselWort, schluesselMeta,
   prozentText, monatText, m3, kurzBeleg, belegDatumText,
-  belegeHtml, belegLinks, belegeZu, zusammensetzungHtml,
+  belegeHtml, belegLinks, belegeZu, belegGeschwister, zusammensetzungHtml,
+  feldZahl,
   sonderEinheiten, alleEinheiten, artOptionen,
   wasserGesamtBetrag, wasserHatRechnung,
   positionsBetrag, effektivErledigt, fortschrittRechnen,
@@ -371,6 +372,7 @@ function zusatzBelegeHtml(k) {
            data-pfad="${esc(d.pfad || '')}" title="${esc(d.dateiname)}"
            >${ANH_ICON}${esc(kurzBeleg(d.dateiname))}</a>
         ${loesbar ? `<button class="beleg-weg" data-anh-loesen="${d.id}"
+          data-was="${esc(d.dateiname || '')}"
           title="Beleg herausnehmen (Datei bleibt)"
           aria-label="Beleg herausnehmen">×</button>` : ''}
       </span>`).join('')}
@@ -420,8 +422,8 @@ function anhaengerFenster(kostenart) {
       </button>
       ${d.betrag ? `<span class="anh-z-b">${eur(d.betrag)}</span>` : ''}
       ${loesbar && bearbeitbar ? `<button type="button" class="anh-z-x"
-        data-anh-loesen="${d.id}" title="Beleg herausnehmen"
-        aria-label="Beleg herausnehmen">×</button>` : ''}
+        data-anh-loesen="${d.id}" data-was="${esc(d.dateiname || '')}"
+        title="Beleg herausnehmen" aria-label="Beleg herausnehmen">×</button>` : ''}
     </div>`;
   const gruppe = (titel, liste, loesbar) => liste.length
     ? `<div class="anh-gruppe"><span class="anh-g-t">${titel}</span>
@@ -460,7 +462,7 @@ function anhaengerFenster(kostenart) {
     if (weg) {
       e.preventDefault();
       dlg.close();
-      anhaengerEntfernen(weg.dataset.anhLoesen);
+      anhaengerEntfernen(weg.dataset.anhLoesen, weg.dataset.was);
     }
   });
   return dlg;
@@ -1010,7 +1012,7 @@ async function verteilungAutoSpeichern(vt) {
   const felder = [...vt.querySelectorAll('[data-gewicht]')];
   if (!felder.length) return;
   const anteile = {};
-  felder.forEach(f => { anteile[f.dataset.gewicht] = Number(f.value) || 0; });
+  felder.forEach(f => { anteile[f.dataset.gewicht] = feldZahl(f) || 0; });
 
   let basis = {};
   try { basis = JSON.parse(vt.dataset.basis || '{}'); } catch { basis = {}; }
@@ -1060,10 +1062,9 @@ async function einzelSetzen(pid, einheit) {
 
 async function betragSpeichern(feld) {
   const pid = feld.dataset.betrag;
-  const roh = String(feld.value).trim().replace(',', '.');
-  if (roh === '') return;
-  const betrag = Number(roh);
-  if (!Number.isFinite(betrag)) return;
+  if (String(feld.value ?? '').trim() === '') return;
+  const betrag = feldZahl(feld);
+  if (betrag == null) return;
   if (String(feld.dataset.wert) === String(betrag)) return;
   feld.dataset.wert = String(betrag);
   try {
@@ -1127,9 +1128,8 @@ async function vorabPatch(pid, body) {
 
 async function vorabNettoSpeichern(feld) {
   const pid = feld.dataset.vorabNetto;
-  const roh = String(feld.value).trim().replace(',', '.');
-  const netto = roh === '' ? 0 : Number(roh);
-  if (!Number.isFinite(netto) || netto < 0) return;
+  const netto = String(feld.value ?? '').trim() === '' ? 0 : feldZahl(feld);
+  if (netto == null || netto < 0) return;
   if (netto === 0) {
     state.vorabOffen.delete(Number(pid));
     return vorabPatch(pid, { vorab_netto: 0, vorab_betrag: 0, vorab_einheit: '' });
@@ -1148,7 +1148,7 @@ async function vorabEntfernen(knopf) {
 
 async function wegDirektSpeichern(knopf) {
   const eingaben = [...inhalt.querySelectorAll('[data-weg-betrag]')]
-    .map(f => ({ einheit: f.dataset.wegBetrag, betrag: Number(f.value) }))
+    .map(f => ({ einheit: f.dataset.wegBetrag, betrag: feldZahl(f) ?? 0 }))
     .filter(x => x.betrag > 0);
   if (!eingaben.length) {
     return melde('Trage mindestens eine NK-Summe ein', 'neg');
@@ -1462,7 +1462,7 @@ export function initHandlers() {
   // Prozente beim Tippen mitrechnen.
   inhalt.addEventListener('input', e => {
     if (e.target.matches('[data-vorab-netto]')) {
-      const netto = Number(String(e.target.value).replace(',', '.')) || 0;
+      const netto = feldZahl(e.target) || 0;
       const ziel = e.target.closest('.vorab')?.querySelector('[data-vorab-brutto]');
       if (ziel) ziel.textContent = bruttoAnzeige(netto);
       return;
@@ -1470,14 +1470,14 @@ export function initHandlers() {
     if (!e.target.matches('[data-gewicht]')) return;
     const vt = e.target.closest('.vt');
     const felder = [...vt.querySelectorAll('[data-gewicht]')];
-    const summe = felder.reduce((s, f) => s + (Number(f.value) || 0), 0);
+    const summe = felder.reduce((s, f) => s + (feldZahl(f) || 0), 0);
     const rest = Number(vt.dataset.rest || 0);
     felder.forEach(f => {
+      const w = feldZahl(f) || 0;
       const ziel = f.parentElement.querySelector('[data-anteil]');
-      if (ziel) ziel.textContent = prozentText(f.value, summe);
+      if (ziel) ziel.textContent = prozentText(w, summe);
       const euroZiel = f.parentElement.querySelector('[data-euro]');
-      if (euroZiel) euroZiel.textContent = eur(summe > 0
-        ? rest * (Number(f.value) || 0) / summe : 0);
+      if (euroZiel) euroZiel.textContent = eur(summe > 0 ? rest * w / summe : 0);
     });
   });
 
@@ -1593,12 +1593,13 @@ export function initHandlers() {
     if (anhaengenKnopf) return anhaengen(anhaengenKnopf.dataset.anhaengen);
 
     const anhWeg = e.target.closest('[data-anh-loesen]');
-    if (anhWeg) { e.preventDefault(); return anhaengerEntfernen(anhWeg.dataset.anhLoesen); }
+    if (anhWeg) { e.preventDefault();
+      return anhaengerEntfernen(anhWeg.dataset.anhLoesen, anhWeg.dataset.was); }
 
     const hoAdd = e.target.closest('[data-heizoel-add]');
     if (hoAdd) return heizoelHinzufuegen(hoAdd);
     const hoWeg = e.target.closest('[data-heizoel-weg]');
-    if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg);
+    if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg, hoWeg.dataset.was);
     const wsch = e.target.closest('[data-wasser-schluessel]');
     if (wsch) {
       state.setWasserSchluessel(wsch.dataset.wasserSchluessel);
@@ -1627,7 +1628,7 @@ export function initHandlers() {
     const hkvAdd = e.target.closest('[data-hkv-add]');
     if (hkvAdd) return hkvHinzufuegen(hkvAdd);
     const hkvWeg = e.target.closest('[data-hkv-weg]');
-    if (hkvWeg) return hkvEntfernen(hkvWeg.dataset.hkvWeg);
+    if (hkvWeg) return hkvEntfernen(hkvWeg.dataset.hkvWeg, hkvWeg.dataset.was);
     const umb = e.target.closest('[data-zaehler-umbenennen]');
     if (umb) { e.preventDefault(); e.stopPropagation();
       return zaehlerUmbenennen(umb.dataset.zaehlerUmbenennen); }
@@ -1640,10 +1641,13 @@ export function initHandlers() {
       // auf `title` hält die Stromketten-Belege am Laufen, die ihn dort tragen;
       // die Anhänger-Chips können das nicht, weil ihr `title` die Erklärung
       // „Infobeleg — zählt nicht als Kosten" trägt.
+      // N288 — die übrigen Belege desselben Kastens gehen mit: im Fenster
+      // lässt sich dann blättern, statt für jeden Beleg zurückzumüssen.
       belegAnsehen(`/api/dokumente/${beleg.dataset.beleg}/inhalt`,
                    beleg.dataset.name
                    || beleg.textContent.replace(/^PDF · /, '').trim(),
-                   beleg.dataset.pfad || beleg.getAttribute('title') || '');
+                   beleg.dataset.pfad || beleg.getAttribute('title') || '',
+                   Number(beleg.dataset.beleg), belegGeschwister(beleg));
       return;
     }
 

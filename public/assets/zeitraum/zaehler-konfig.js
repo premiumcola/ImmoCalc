@@ -11,7 +11,7 @@ import { api, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { MESSEINHEITEN } from './state.js';
 import { GEAR_ICON, MUELL_ICON } from './icons.js';
-import { zahl } from './helpers.js';
+import { zahl, feldZahl } from './helpers.js';
 
 /* CCCLXXX — der Zahnrad-Knopf über der Checkliste. */
 export function ablesenKnopfHtml() {
@@ -216,10 +216,9 @@ export async function zaehlerKonfig() {
   async function anfangsstandSpeichern(id) {
     const s = dlg.querySelector(`[data-zk-anf-stand="${id}"]`);
     const d = dlg.querySelector(`[data-zk-anf-datum="${id}"]`);
-    const roh = (s?.value || '').trim().replace(',', '.');
-    if (roh === '') return;
-    const stand = Number(roh);
-    if (!Number.isFinite(stand)) return;
+    if (String(s?.value ?? '').trim() === '') return;
+    const stand = feldZahl(s);
+    if (stand == null) return;
     const datum = d?.value || startISO;
     try {
       await api(`/zaehler/${id}/ablesungen`,

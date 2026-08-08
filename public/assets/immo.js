@@ -118,13 +118,20 @@ export const esc = s => String(s ?? '')
  *   * Sonst ist der Punkt dezimal. „12.5" → 12.5 — so kommen Werte aus der
  *     API zurück, und „12,5 m³" schreibt niemand als „12.500".
  *
- * `el` darf ein Element oder ein String sein. Bei einem Element hat
- * `data-wert` Vorrang: dort legt `eingabe.js` den rohen Wert ab, während im
- * Feld die formatierte Fassung mit Tausenderpunkten steht.
+ * `el` darf ein Element oder ein String sein.
+ *
+ * N294 — `data-wert` gilt NUR an einem Feld von `eingabe.js` (erkennbar an
+ * `.eingabe-feld`). Dort steht der rohe Wert, während im Feld die formatierte
+ * Fassung mit Tausenderpunkten sichtbar ist. Überall sonst bedeutet dasselbe
+ * Attribut etwas anderes: in `zeitraum/` trägt es den ZULETZT GESPEICHERTEN
+ * Wert für den Änderungsvergleich. Ohne diese Unterscheidung hätte `zahlAus`
+ * dort den alten statt des getippten Werts gelesen und eine Eingabe stillschweigend
+ * verworfen — dieselbe Falle wie die gleichnamigen `melde()` (N288).
  */
 export function zahlAus(el) {
   const roh = (el && typeof el === 'object')
-    ? (el.dataset?.wert != null && el.dataset.wert !== ''
+    ? (el.classList?.contains('eingabe-feld')
+        && el.dataset?.wert != null && el.dataset.wert !== ''
         ? el.dataset.wert : el.value)
     : el;
   const text = String(roh ?? '').replace(/[^\d,.-]/g, '').trim();

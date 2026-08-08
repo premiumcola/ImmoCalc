@@ -29,7 +29,7 @@ import { kamerascanStarten, istBildDatei } from '../kamerascan.js';
 import { belegAblegen } from '../belegscan.js';
 import * as state from './state.js';
 import { WEG_ICON, BLATT_ICON } from './icons.js';
-import { alleEinheiten, sonderEinheiten, kurzBeleg } from './helpers.js';
+import { alleEinheiten, sonderEinheiten, kurzBeleg, feldZahl } from './helpers.js';
 
 /* Woran die abgelegte Abrechnungsdatei später wiederzuerkennen ist. Sie trägt
    diesen Baustein im Namen (der Server benennt aus der Bezeichnung) — mehr
@@ -482,8 +482,7 @@ function abschnittDialog(vorhanden, einheiten) {
       fertig(wert);
     };
     dlg.querySelector('[data-ok]').addEventListener('click', () => {
-      const betrag = parseFloat(String(dlg.querySelector('#wvBet').value)
-        .replace(',', '.'));
+      const betrag = feldZahl(dlg.querySelector('#wvBet'));
       if (!(betrag > 0)) {
         const err = dlg.querySelector('[data-err]');
         err.textContent = 'Bitte den Monatsbetrag eintragen.';
