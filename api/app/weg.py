@@ -52,6 +52,26 @@ QUELLE = "WEG"
 HEIZKOSTEN = "Heizkosten"
 WARMWASSER = "Warmwasser"
 
+# N283 — der frühere Direkteintrag „Nebenkosten laut Hausverwaltung" (CCVIII):
+# eine Kostenposition je Mieter, in die der Nutzer die umlagefähige NK-Summe
+# vom Abrechnungszettel von Hand geschrieben hat. Der Name kommt aus
+# `zeitraum/state.js` (`WEG_ART`) und ist die einzige Spur, an der sie zu
+# erkennen ist.
+#
+# Sie ist eine **Handeingabe** (`wertquelle != QUELLE`) und wird deshalb nie
+# angefasst — aber sie gehört in denselben Saldo wie eine übernommene Zeile.
+# Ohne sie zeigte der WEG-Modus die Vorauszahlung des Mieters ohne die Kosten,
+# die dagegenstehen: ein Guthaben in voller Höhe der Vorauszahlung, das es nie
+# gab. Die eigentliche Abrechnung rechnet die Position längst mit — der WEG-
+# Stand war die einzige Stelle, die sie übersah.
+DIREKT_PRAEFIX = "Nebenkosten (WEG) · "
+
+# Unter diesen Schlüsseln merkt sich `weg_beleg` (freies JSON), was bei der
+# letzten Übernahme übersprungen oder entfallen ist. Additiv und ohne neue
+# Spalte — der Hinweis überlebt damit ein Neuladen der Seite.
+_HINWEIS_UEBERSPRUNGEN = "_uebersprungen"
+_HINWEIS_ENTFERNT = "_entfernt"
+
 
 def _geld(wert) -> float:
     """Ein Betrag auf den Cent — und nie None, damit nichts weiterrechnet."""
@@ -118,9 +138,23 @@ def _gewichte(session: Session, z: Zeitraum, einheit: str) -> dict[str, float]:
     return ableiten(session, z, VORGABE)
 
 
+def _alle_positionen(session: Session, zid: int) -> list[Kostenposition]:
+    return sorted(session.exec(select(Kostenposition).where(
+        Kostenposition.zeitraum_id == zid)).all(), key=lambda p: p.id or 0)
+
+
 def _weg_positionen(session: Session, zid: int) -> list[Kostenposition]:
-    return [p for p in session.exec(select(Kostenposition).where(
-        Kostenposition.zeitraum_id == zid)).all() if p.wertquelle == QUELLE]
+    return [p for p in _alle_positionen(session, zid) if p.wertquelle == QUELLE]
+
+
+def direkt_positionen(session: Session, zid: int) -> list[Kostenposition]:
+    """Die von Hand eingetragenen NK-Summen aus dem CCVIII-Block.
+
+    Erkennbar allein am Namen (`DIREKT_PRAEFIX`); eine übernommene Zeile ist es
+    ausdrücklich nicht — sonst schriebe die nächste Übernahme sie fort."""
+    return [p for p in _alle_positionen(session, zid)
+            if p.wertquelle != QUELLE
+            and (p.kostenart or "").startswith(DIREKT_PRAEFIX)]
 
 
 def uebernehmen(session: Session, z: Zeitraum, gelesen: dict,
@@ -187,8 +221,14 @@ def uebernehmen(session: Session, z: Zeitraum, gelesen: dict,
         entfernt.append(name)
 
     # Den Beleg unverändert aufbewahren: er trägt die nicht umlagefähigen
-    # Positionen, die es als Kostenposition bewusst nie gibt.
-    z.weg_beleg = dict(gelesen or {})
+    # Positionen, die es als Kostenposition bewusst nie gibt. Was übersprungen
+    # oder entfallen ist, kommt daneben — sonst wäre der Hinweis nach dem
+    # nächsten Neuladen weg und der Nutzer sähe nie wieder, dass eine Position
+    # bewusst nicht übernommen wurde (N283 e).
+    beleg = dict(gelesen or {})
+    beleg[_HINWEIS_UEBERSPRUNGEN] = uebersprungen
+    beleg[_HINWEIS_ENTFERNT] = entfernt
+    z.weg_beleg = beleg
     z.weg_modus = True
     session.add(z)
     session.commit()
@@ -196,10 +236,7 @@ def uebernehmen(session: Session, z: Zeitraum, gelesen: dict,
     log.info("WEG-Abrechnung übernommen (Zeitraum %s): %d Positionen, "
              "%d übersprungen, %d entfallen",
              z.id, len(behalten), len(uebersprungen), len(entfernt))
-    ergebnis = stand(session, z)
-    ergebnis["uebersprungen"] = uebersprungen
-    ergebnis["entfernt"] = entfernt
-    return ergebnis
+    return stand(session, z)
 
 
 # --------------------------------------------------------------------------
@@ -261,15 +298,30 @@ def stand(session: Session, z: Zeitraum) -> dict:
 
     `saldo` folgt der Schreibweise des Belegs: **negativ = Nachzahlung des
     Mieters, positiv = Guthaben**. Er ergibt sich aus der Vorauszahlung minus
-    dem Rechnungsbetrag; der Rechnungsbetrag ist die Summe der übernommenen
-    (umlagefähigen) Positionen — nicht die Gesamtkosten der Liegenschaft."""
-    positionen = sorted(_weg_positionen(session, z.id), key=lambda p: p.id or 0)
-    umlagefaehig_summe = round(sum(p.betrag or 0.0 for p in positionen), 2)
+    dem, was auf den Mieter umgelegt wird.
+
+    Umgelegt wird zweierlei, und beides zählt (N283 a):
+
+    * `positionen` — die aus dem Beleg übernommenen Zeilen (`uebernommen_summe`),
+    * `direkt` — die von Hand eingetragenen NK-Summen aus dem früheren
+      CCVIII-Block (`direkt_summe`). Sie sind echte Kostenpositionen, die die
+      Abrechnung längst mitrechnet; sie hier zu übergehen ließe den Saldo als
+      Guthaben in voller Höhe der Vorauszahlung erscheinen.
+
+    `uebersprungen`/`entfernt` stammen aus der letzten Übernahme und stehen im
+    aufbewahrten Beleg — deshalb überleben sie ein Neuladen (N283 e)."""
+    positionen = _weg_positionen(session, z.id)
+    direkt = direkt_positionen(session, z.id)
+    uebernommen_summe = round(sum(p.betrag or 0.0 for p in positionen), 2)
+    direkt_summe = round(sum(p.betrag or 0.0 for p in direkt), 2)
+    umlagefaehig_summe = round(uebernommen_summe + direkt_summe, 2)
     nicht = nicht_umlagefaehige(z.weg_beleg or {})
     vz = vorauszahlung(session, z)
     beleg = z.weg_beleg or {}
     return {
         "umlagefaehig_summe": umlagefaehig_summe,
+        "uebernommen_summe": uebernommen_summe,
+        "direkt_summe": direkt_summe,
         "nicht_umlagefaehig_summe": round(sum(p["betrag"] for p in nicht), 2),
         "vorauszahlung_summe": vz,
         "saldo": round(vz - umlagefaehig_summe, 2),
@@ -277,7 +329,14 @@ def stand(session: Session, z: Zeitraum) -> dict:
                         "betrag": _geld(p.betrag), "wertquelle": p.wertquelle,
                         "nur_einheit": p.nur_einheit, "status": p.status}
                        for p in positionen],
+        "direkt": [{"id": p.id, "kostenart": p.kostenart,
+                    "einheit": p.nur_einheit
+                    or p.kostenart[len(DIREKT_PRAEFIX):],
+                    "betrag": _geld(p.betrag), "wertquelle": p.wertquelle,
+                    "status": p.status} for p in direkt],
         "nicht_umlagefaehig": nicht,
+        "uebersprungen": list(beleg.get(_HINWEIS_UEBERSPRUNGEN) or []),
+        "entfernt": list(beleg.get(_HINWEIS_ENTFERNT) or []),
         "warnung": str(beleg.get("warnung") or ""),
         "beleg": {k: beleg.get(k) for k in
                   ("firma", "liegenschaft", "nutzer_nr", "von", "bis", "datum")},

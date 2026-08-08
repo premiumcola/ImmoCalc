@@ -48,7 +48,13 @@ def _zeitraum(session: Session, zid: int) -> Zeitraum:
 # --------------------------------------------------------------------------
 @router.get("/zeitraeume/{zid}/weg")
 def weg_stand(zid: int, session: Session = Depends(get_session)) -> dict:
-    """Der WEG-Stand: Schalter, Summen, Positionen, Vorauszahlungsabschnitte."""
+    """Der WEG-Stand: Schalter, Summen, Positionen, Vorauszahlungsabschnitte.
+
+    `stand` trägt neben den übernommenen Zeilen auch `direkt` (die von Hand
+    eingetragenen NK-Summen des früheren Direkteintrags, N283 a) und die
+    Hinweise `uebersprungen`/`entfernt` der letzten Übernahme (N283 e) — sie
+    stehen hier und nicht nur in der Antwort auf `/uebernehmen`, damit sie ein
+    Neuladen überleben."""
     z = _zeitraum(session, zid)
     return {"aktiv": bool(z.weg_modus), "stand": weg.stand(session, z),
             "vorauszahlungen": weg.abschnitte(session, z)}

@@ -22,6 +22,13 @@
  *     Erkennbar an `wertquelle == "WEG"`.
  *   * **Die Einheit geht IMMER mit.** Ohne sie verteilt der Server nach Fläche —
  *     die WEG-Abrechnung gilt aber für genau die eine Wohnung.
+ *
+ * N283 a — der frühere Direkteintrag „Nebenkosten laut Hausverwaltung" (CCVIII)
+ * geht hier auf: seine von Hand eingetragenen NK-Summen stehen als eigener
+ * Block in derselben Karte, zählen in denselben Saldo und lassen sich hier
+ * ändern. Vorher waren sie im eingeschalteten Modus unsichtbar und zählten
+ * nirgends mit — der Saldo zeigte ein Guthaben in voller Höhe der
+ * Vorauszahlung, obwohl die Abrechnung die Position längst mitrechnete.
  */
 
 import { api, eur, esc, melde, frage, baueDialog } from '../immo.js';
@@ -149,6 +156,42 @@ function vorauszahlungHtml(liste, summe) {
     </div>`;
 }
 
+/* N283 a — die von Hand eingetragenen NK-Summen des früheren CCVIII-Blocks.
+   Sie sind echte Kostenpositionen, gehören dem Nutzer und werden hier weder
+   überschrieben noch entfernt: gezeigt, mitgezählt, änderbar. Die Zeilenform
+   ist die der Vorauszahlungsabschnitte — Name, Betrag, „Ändern" — damit im
+   WEG-Modus alles Änderbare gleich aussieht. */
+function direktHtml(direkt, summe, mitBeleg) {
+  if (!direkt.length) return '';
+  const bearbeitbar = state.daten?.status === 'in Arbeit';
+  const zeilen = direkt.map(d => `
+      <div class="weg-vz">
+        <span class="wv-n">${esc(d.einheit || d.kostenart)}</span>
+        <span class="wv-v">${geld(d.betrag)}</span>
+        ${bearbeitbar ? `<span class="wv-k">
+          <button type="button" class="wv-b" data-weg-direkt="${d.id}"
+            data-betrag="${d.betrag}" data-titel="${esc(d.einheit || d.kostenart)}"
+            aria-label="NK-Summe ändern">Ändern</button></span>` : ''}
+      </div>`).join('');
+
+  // Bei einer einzigen Zeile trüge die Blockzahl denselben Wert wie die Zeile
+  // darunter — dieselbe Zahl zweimal. Dann bleibt sie weg.
+  // Und ohne einen Block darüber gäbe die Trennlinie nichts zu trennen.
+  const abstand = mitBeleg ? ''
+    : ' style="margin-top:6px;padding-top:0;border-top:none"';
+  return `<div class="weg-nicht"${abstand}>
+      <div class="wn-kopf"><span>Von Hand eingetragen</span>
+        ${direkt.length > 1 ? `<span class="wn-v">${geld(summe)}</span>` : ''}</div>
+      <p class="wn-s">${mitBeleg
+        ? `Diese Summe stammt aus dem früheren Direkteintrag und zählt
+           <b>zusätzlich</b> zur übernommenen Abrechnung. Steht sie dort schon
+           drin, gehört sie hier auf den richtigen Wert.`
+        : `Vom Abrechnungszettel der Hausverwaltung abgeschrieben, statt die
+           Abrechnung aufzunehmen — sie zählt genauso in den Saldo.`}</p>
+      ${zeilen}
+    </div>`;
+}
+
 function saldoHtml(stand) {
   const saldo = Number(stand.saldo) || 0;
   const nach = saldo < 0;
@@ -167,6 +210,7 @@ export function wegAnsichtHtml() {
   const d = state.wegDaten || {};
   const stand = d.stand || {};
   const positionen = stand.positionen || [];
+  const direkt = stand.direkt || [];
   const nicht = stand.nicht_umlagefaehig || [];
   const beleg = stand.beleg || {};
   const bearbeitbar = state.daten?.status === 'in Arbeit';
@@ -195,29 +239,41 @@ export function wegAnsichtHtml() {
   const warnung = stand.warnung ? `<div class="weg-warn">
       <span class="ww-z">▲</span><span>${esc(stand.warnung)}</span></div>` : '';
 
-  const uebersprungen = (meldung.uebersprungen || []).length
+  // N283 e — die Hinweise stehen jetzt im Stand selbst und überleben damit ein
+  // Neuladen; `state.wegMeldung` bleibt nur der Notnagel für einen alten Stand.
+  const merker = (feld) => {
+    const aus = stand[feld];
+    return (aus && aus.length ? aus : meldung[feld]) || [];
+  };
+  const uebersprungenListe = merker('uebersprungen');
+  const entferntListe = merker('entfernt');
+  const uebersprungen = uebersprungenListe.length
     ? `<div class="weg-warn leise"><span class="ww-z">≠</span><span>
-        <b>${esc(meldung.uebersprungen.join(', '))}</b> ${
-        meldung.uebersprungen.length === 1 ? 'wurde' : 'wurden'} nicht
+        <b>${esc(uebersprungenListe.join(', '))}</b> ${
+        uebersprungenListe.length === 1 ? 'wurde' : 'wurden'} nicht
         übernommen — hier steht schon eine von Hand gepflegte Position gleichen
         Namens, und die gewinnt.</span></div>` : '';
-  const entfernt = (meldung.entfernt || []).length
+  const entfernt = entferntListe.length
     ? `<div class="weg-warn leise"><span class="ww-z">–</span><span>
-        <b>${esc(meldung.entfernt.join(', '))}</b> ${
-        meldung.entfernt.length === 1 ? 'stand' : 'standen'} in einer früheren
-        Übernahme und ${meldung.entfernt.length === 1 ? 'kommt' : 'kommen'} in
+        <b>${esc(entferntListe.join(', '))}</b> ${
+        entferntListe.length === 1 ? 'stand' : 'standen'} in einer früheren
+        Übernahme und ${entferntListe.length === 1 ? 'kommt' : 'kommen'} in
         dieser Abrechnung nicht mehr vor — die Zeile ist entfallen.</span></div>`
     : '';
 
-  const listen = positionen.length || nicht.length
+  // Die Gesamtsumme steht nur einmal, im Saldo darunter — hier trägt jeder
+  // Block seine eigene Zahl, sonst stünde dieselbe zweimal untereinander.
+  const listen = positionen.length || direkt.length || nicht.length
     ? `<div class="karte weg-karte">
-        <div class="weg-kopf"><h3>Übernommene Positionen</h3>
-          <span class="weg-summe">${geld(stand.umlagefaehig_summe)}</span></div>
-        <span class="erklaer">Kopie der vorgegebenen Abrechnung — die Beträge
-          sind hier bewusst nicht änderbar.</span>
+        <div class="weg-kopf"><h3>Was auf den Mieter umgelegt wird</h3></div>
         ${warnung}${uebersprungen}${entfernt}
-        ${positionen.length ? balkenListe(positionen)
+        ${positionen.length ? `<span class="erklaer">Aus der Abrechnung
+            übernommen · ${geld(stand.uebernommen_summe
+              ?? stand.umlagefaehig_summe)} — die Beträge sind hier bewusst
+            nicht änderbar.</span>${balkenListe(positionen)}`
+          : direkt.length ? ''
           : '<div class="weg-leer">Noch keine Position übernommen.</div>'}
+        ${direktHtml(direkt, stand.direkt_summe || 0, positionen.length > 0)}
         ${nicht.length ? `<div class="weg-nicht">
             <div class="wn-kopf"><span>Nicht umlagefähig</span>
               <span class="wn-v">${geld(stand.nicht_umlagefaehig_summe)}</span></div>
@@ -531,6 +587,72 @@ export async function vorauszahlungBearbeiten(vid) {
     await vzNachladen();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
 }
+
+/* ------------------------------------------------------------------ */
+/* Der Direkteintrag (N283 a) — ändern, ohne den Modus zu verlassen     */
+/* ------------------------------------------------------------------ */
+
+/* Ein Feld, ein Betrag. Der Nutzer soll die von Hand abgeschriebene NK-Summe
+   im WEG-Modus korrigieren können, statt dafür den Schalter umlegen zu müssen
+   — sonst gäbe es die Angabe an zwei Stellen. */
+function direktDialog(titel, betrag) {
+  return new Promise(fertig => {
+    let entschieden = false;
+    const dlg = baueDialog(`
+      <div class="dt">NK-Summe ändern</div>
+      <p class="weg-dp">Die umlagefähige Nebenkostensumme für
+        <b>${esc(titel)}</b>, wie sie auf dem Abrechnungszettel der
+        Hausverwaltung steht. Sie zählt in den Saldo dieses Zeitraums.</p>
+      <div class="field"><label for="wdBet">Umlagefähige NK-Summe (€)</label>
+        <input class="inp" id="wdBet" type="number" step="0.01" min="0"
+          inputmode="decimal" value="${betrag != null ? betrag : ''}"
+          placeholder="0,00"></div>
+      <div class="bdd-err" data-err hidden></div>
+      <div class="sb-fuss"><button type="button" class="sb-weiter" data-ok
+        >Übernehmen</button></div>`);
+    dlg.classList.add('weg-vz-dlg');
+    const schliessen = wert => {
+      if (entschieden) return;
+      entschieden = true;
+      dlg.close();
+      fertig(wert);
+    };
+    dlg.querySelector('[data-ok]').addEventListener('click', () => {
+      const wert = feldZahl(dlg.querySelector('#wdBet'));
+      if (!(wert > 0)) {
+        const err = dlg.querySelector('[data-err]');
+        err.textContent = 'Bitte die NK-Summe eintragen.';
+        err.hidden = false;
+        dlg.querySelector('#wdBet').focus();
+        return;
+      }
+      schliessen(Math.round(wert * 100) / 100);
+    });
+    dlg.addEventListener('click', e => { if (e.target === dlg) schliessen(null); });
+    dlg.addEventListener('close', () => schliessen(null));
+  });
+}
+
+async function direktBearbeiten(pid, titel, betrag) {
+  const neu = await direktDialog(titel, betrag);
+  if (neu == null) return;
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body: { betrag: neu } });
+    const { laden } = await import('./checkliste.js');
+    await laden();
+  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+}
+
+/* Eigener Zuhörer statt eines Eintrags in der Klick-Weiche der Checkliste:
+   der Block gehört diesem Modul, also verdrahtet er sich selbst. Delegiert am
+   Dokument, weil die Seite bei jedem Zeichnen neu geschrieben wird. */
+document.addEventListener('click', e => {
+  const knopf = e.target.closest?.('[data-weg-direkt]');
+  if (!knopf) return;
+  e.preventDefault();
+  direktBearbeiten(Number(knopf.dataset.wegDirekt), knopf.dataset.titel || '',
+                   Number(knopf.dataset.betrag) || 0);
+});
 
 export async function vorauszahlungEntfernen(vid) {
   const v = (state.wegDaten?.vorauszahlungen || [])
