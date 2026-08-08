@@ -145,3 +145,35 @@ def test_unterbrochenes_mietverhaeltnis_zaehlt_beide_stuecke():
     b = Bezug(partei="X", zeiten=[(date(2025, 1, 1), date(2025, 3, 31)),
                                   (date(2025, 7, 1), date(2025, 9, 30))])
     assert _zahlmonate(b, date(2025, 1, 1), date(2025, 12, 31)) == 6.0
+
+
+# --------------------------------------------------------------------------
+# N314 — der Turnus mit Umlaut war ein stiller Faktor 4
+# --------------------------------------------------------------------------
+
+def test_turnus_versteht_beide_schreibweisen():
+    """`TURNUS` kannte nur die ae-Form. Die Oberfläche zeigt und die KI-Auslese
+    speichert aber die Umlautform — „vierteljährlich" fiel damit still auf
+    jährlich zurück: 125 € wurden zu 125 €/Jahr statt 500 €/Jahr."""
+    from app.turnus import faktor, jahresbetrag
+
+    for schreibweise in ("vierteljaehrlich", "vierteljährlich",
+                         "Vierteljährlich", "  VIERTELJÄHRLICH  ",
+                         "viertelj.ährlich"):
+        assert faktor(schreibweise) == 4, schreibweise
+        assert jahresbetrag(125, schreibweise) == 500.00, schreibweise
+
+    assert faktor("halbjährlich") == 2
+    assert faktor("halbjaehrlich") == 2
+    assert faktor("monatlich") == 12
+    assert faktor("jährlich") == 1
+
+
+def test_wirklich_unbekannter_turnus_bleibt_jaehrlich():
+    """Der Rückfall bleibt — er darf nur nicht mehr eine bekannte Schreibweise
+    treffen."""
+    from app.turnus import faktor
+
+    assert faktor("alle Jubeljahre") == 1
+    assert faktor("") == 1
+    assert faktor(None) == 1

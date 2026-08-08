@@ -6,6 +6,10 @@ oder 40 € monatlich sind derselbe Jahreswert. Für Auswertung und Cashflow wir
 """
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger("immocalc")
+
 # Bezeichnung -> Zahlungen pro Jahr
 TURNUS = {
     "monatlich": 12,
@@ -44,9 +48,32 @@ VORGABE = {
 }
 
 
+def _schluessel(turnus: str | None) -> str:
+    """N314 — die Schreibweise vereinheitlichen, bevor nachgeschlagen wird.
+
+    `TURNUS` kennt nur die ae-Form (`vierteljaehrlich`). Die Oberfläche zeigt
+    aber die Umlautform (`BESCHRIFTUNG`), und die KI-Auslese schreibt genau
+    diese in den Datensatz — „vierteljährlich" fiel damit still auf den
+    Vorgabewert 1 zurück: `jahresbetrag(125, "vierteljährlich")` ergab
+    **125,00 € statt 500,00 €**, ein Faktor 4 mitten in der Auswertung.
+
+    Gefaltet wird wie überall im Projekt (ä→ae), zusätzlich fallen Punkte und
+    Bindestriche heraus — „viertelj." und „viertel-jährlich" meinen dasselbe."""
+    from .kostenarten import _fold                   # noqa: PLC0415 — Zirkel
+
+    return _fold(turnus or "").replace(".", "").replace("-", "").strip()
+
+
 def faktor(turnus: str | None) -> int:
     """Zahlungen pro Jahr; unbekannte Angaben gelten als jährlich."""
-    return TURNUS.get((turnus or "").strip().lower(), 1)
+    schluessel = _schluessel(turnus)
+    if schluessel in TURNUS:
+        return TURNUS[schluessel]
+    # Ein unbekannter Turnus ist meist ein Tippfehler oder eine ungewohnte
+    # Schreibweise — er soll auffallen, statt lautlos zu jährlich zu werden.
+    if (turnus or "").strip():
+        log.info('Unbekannter Turnus „%s“ — gilt als jährlich', turnus)
+    return 1
 
 
 def jahresbetrag(betrag: float | None, turnus: str | None) -> float:
