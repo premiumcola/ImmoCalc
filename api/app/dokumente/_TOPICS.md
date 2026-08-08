@@ -14,7 +14,6 @@ Frage an einer Stelle beantwortet wird.
 | `filter.py`        | `_dokument_passt` — das eine Filter-Prädikat für Liste, Kostenart-Facette und die Sammelaktion „zurück ins Warten". |
 | `eintraege.py`     | Modellübergreifende Eintrags-Bausteine: Umklassifizieren (`_UMKLASS_ZIEL`, `_eintrag_kern`, `_bewahrt`, CCCXXIV) und die knappe Anzeigebenennung eines Eintrags (`_eintrag_wo`). |
 | `dedup.py`         | Reine Rang- und Merge-Regeln für byte-gleiche Duplikate: Keeper-Wahl beim Scan-Dedup (`_dedup_rang`) und beim Bündeln (`_duplikat_rang`/`_duplikat_ziel`), additives Lücken-Erben (`_keeper_erbt_luecken`). |
-| `immocalc_steckbrief.py` | Der `.immocalc`-Steckbrief als reiner Text: Feldtitel-Übersetzung (`_FELD_TITEL`) und der Textaufbau (`_immocalc_text`, CCLXXIV). |
 
 `app/routers/dokumente.py` importiert die Bausteine gezielt und stellt sie am
 eigenen Namensraum bereit — Aufrufer aus anderen Routern und Tests, die

@@ -23,7 +23,8 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import belegposten, feldzuordnung, kiauslese, ocr, pdftext, upload
+from .. import (belegposten, feldzuordnung, kiauslese, kicache, ocr, pdftext,
+                upload)
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
                            ohne_betrag, ohne_datum, unterordner_finden)
@@ -71,7 +72,8 @@ from ..dokumente.eintraege import (_UMKLASS_ZIEL, _bewahrt, _eintrag_kern,
                                    _eintrag_wo)
 from ..dokumente.dedup import (DUPLIKAT_ORDNER, _dedup_rang, _duplikat_rang,
                                _duplikat_ziel, _keeper_erbt_luecken)
-from ..dokumente.immocalc_steckbrief import _FELD_TITEL, _immocalc_text
+# N297 — `dokumente/immocalc_steckbrief.py` ist entfallen: der `.immocalc`-
+# Steckbrief wird nicht mehr geschrieben, damit blieb das Modul ohne Aufrufer.
 from ..dokumente.filter import _dokument_passt
 
 log = logging.getLogger("immocalc")
@@ -1590,6 +1592,58 @@ def _strom_ergaenzen(session: Session, rohdaten: bytes, ergebnis: dict,
     _strom_in_felder(ergebnis, strom)
 
 
+# N296 — was am Ergebnis vom KONTEXT der Anfrage abhängt und deshalb nie
+# unbesehen aus dem Zwischenspeicher kommen darf. Der Inhalt einer Datei ist
+# immer derselbe; welche dieser Zusätze gefragt sind, entscheidet erst der
+# Aufruf: `wasser`/`strom` hängen an der Kostenart, `formwerte` an der Maske.
+_KONTEXTFELDER = ("wasser", "strom", "formwerte", "formname")
+
+
+def _aus_zwischenspeicher(session: Session, gemerkt: dict, kostenart: str,
+                          bereich: str, ergebnis_hinweis: dict | None = None) -> dict:
+    """N296 — eine gemerkte Auslese auf den aktuellen Kontext zuschneiden.
+
+    Der teure Teil — die Auslese der Bytes — ist erledigt und wird übernommen.
+    Die kontextabhängigen Zusätze werden NICHT unbesehen mitgegeben, sondern
+    nur, wenn dieser Aufruf sie auch verlangt hätte. Ohne diese Trennung bekäme
+    die Notarvertragsmaske die Felder einer Wasserrechnung, nur weil dieselbe
+    Datei einmal von dort gelesen wurde — genau das ist beim Bauen passiert und
+    hat fünf Tests umgeworfen.
+
+    Ein Aufruf kostet das trotzdem nicht: `wasser`/`strom` kommen ebenfalls aus
+    dem Zwischenspeicher, sie werden nur nach Kontext ein- oder ausgeblendet."""
+    basis = {k: v for k, v in gemerkt.items() if k not in _KONTEXTFELDER}
+    # Der Zwischenspeicher spart Budget — er verleiht keine Fähigkeit. Ist
+    # keine KI eingerichtet, könnte dieser Aufruf `wasser`/`strom` gar nicht
+    # erzeugen; dann darf er sie auch nicht aus dem Speicher bekommen. Dieselbe
+    # erste Prüfung wie in `_strom_ergaenzen`.
+    mit_ki = kiauslese.verfuegbar(_ki_key(session))
+    if mit_ki and "wasser" in gemerkt and kiauslese.ist_wasser_kontext(kostenart):
+        basis["wasser"] = gemerkt["wasser"]
+    if mit_ki and "strom" in gemerkt and kiauslese.ist_strom_kontext(
+            _strom_hinweis(kostenart, ergebnis_hinweis or basis)):
+        basis["strom"] = gemerkt["strom"]
+        _strom_in_felder(basis, gemerkt["strom"])
+    return _mit_formwerten(basis, bereich)
+
+
+def _mit_formwerten(ergebnis: dict, bereich: str) -> dict:
+    """N263/N296 — die Auslese auf die Felder der gemeinten Eingabemaske
+    übersetzen. Rein additiv: ohne `bereich` bleibt die Antwort unverändert.
+
+    Ausgelagert, weil es an ZWEI Stellen gebraucht wird — nach einem frischen
+    KI-Lauf und nach einem Treffer im Zwischenspeicher. Der Zwischenspeicher
+    hält bewusst nur das Bereichsunabhängige; alles andere entstünde sonst
+    einmal falsch und bliebe es."""
+    if not bereich:
+        return ergebnis
+    formwerte = feldzuordnung.werte_fuer(bereich, ergebnis)
+    if not formwerte:
+        return ergebnis
+    return {**ergebnis, "formwerte": formwerte,
+            "formname": feldzuordnung.namensvorschlag(bereich, formwerte)}
+
+
 @router.post("/erkennen")
 async def erkennen(datei: UploadFile = File(...),
                    kostenart: str = Form(""),
@@ -1617,10 +1671,23 @@ async def erkennen(datei: UploadFile = File(...),
     # gleich. Vorher las diese Stelle jede Datei ungeprüft und in voller
     # Länge in den Speicher.
     rohdaten = await upload.lies(datei, was="Der Beleg")
+    # N296 — fotografiert der Nutzer denselben Beleg ein zweites Mal (oder
+    # schickt dieselbe PDF erneut hoch), ist der Inhalt byte-gleich und die
+    # Auslese längst bezahlt. Der Zwischenspeicher antwortet dann sofort.
+    sha1 = kicache.pruefsumme(rohdaten)
+    gemerkt = kicache.hole(session, sha1)
+    if gemerkt is not None:
+        return {**_aus_zwischenspeicher(session, gemerkt, kostenart, bereich),
+                "aus_zwischenspeicher": True}
     # Der Dateiname als zusätzlicher Kontext für die KI-Auslese (CCLXVIII):
     # „2025-10-oel-2729,91€.pdf" nennt Datum und Betrag schon mit.
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), datei.filename or "",
                            ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+    # N296 — der Stand VOR jeder kontextabhängigen Anreicherung. `_strom_in_felder`
+    # schreibt den Lieferbetrag in `betrag` und `felder`; würde das mitgemerkt,
+    # trüge ein Aufruf ohne Strom-Kontext später einen Strombetrag, den er
+    # selbst nie erzeugt hätte.
+    kern = dict(ergebnis)
     # N78 — nur beim Wasser-Hinweis und nur mit eingerichteter KI ein zweiter,
     # gezielter Aufruf für die drei Bereichsbeträge. Rein additiv; scheitert er,
     # bleibt die Antwort wie bisher.
@@ -1637,14 +1704,15 @@ async def erkennen(datei: UploadFile = File(...),
     # sauber getrennt von Nachzahlung und Abschlag. Greift auch ohne Hinweis,
     # wenn die allgemeine Auslese einen Strombeleg erkannt hat.
     _strom_ergaenzen(session, rohdaten, ergebnis, datei.filename or "", kostenart)
-    # N263 — die Auslese auf die Felder der gemeinten Eingabemaske übersetzen.
-    # Rein additiv: ohne `bereich` bleibt die Antwort exakt wie zuvor.
-    if bereich:
-        formwerte = feldzuordnung.werte_fuer(bereich, ergebnis)
-        if formwerte:
-            ergebnis["formwerte"] = formwerte
-            ergebnis["formname"] = feldzuordnung.namensvorschlag(bereich, formwerte)
-    return ergebnis
+    # N296 — gemerkt wird der Kern plus die beiden teuren Zusatzauslesen als
+    # eigene Blöcke. Ob sie später gezeigt werden, entscheidet der Kontext des
+    # jeweiligen Aufrufs (`_aus_zwischenspeicher`), nicht dieser hier.
+    kicache.merke(session, sha1, {
+        **kern,
+        **({"wasser": ergebnis["wasser"]} if "wasser" in ergebnis else {}),
+        **({"strom": ergebnis["strom"]} if "strom" in ergebnis else {}),
+    }, _ki_modell(session))
+    return _mit_formwerten(ergebnis, bereich)
 
 
 # --------------------------------------------------------------------------
@@ -3502,17 +3570,20 @@ def immocalc(dokument_id: int, body: ImmoCalcIn,
         if o:
             d.objekt_id = o.id
 
-    # Der Steckbrief neben das PDF — scheitert das, bleibt die DB-Speicherung.
-    sidecar_pfad = _sidecar_pfad(d.pfad)
+    # N297 — der `.immocalc`-Steckbrief wird NICHT mehr geschrieben.
+    #
+    # Er lag als zusätzliche Datei neben jedem PDF und machte die Ordner des
+    # Nutzers unübersichtlich — sein ausdrücklicher Wunsch, sie loszuwerden.
+    # Fachlich kostet das nichts: der Steckbrief wurde aus den Feldern dieses
+    # Datensatzes ERZEUGT und an keiner Stelle je wieder eingelesen (jede
+    # Fundstelle im Code schrieb, verschob, löschte oder filterte ihn nur aus
+    # den Ansichten heraus). Die Auslese steht in der Datenbank —
+    # `ki_einordnung`, `ki_felder`, `ki_immobilie`, `ki_einheit` — und seit
+    # N296 zusätzlich am Dateiinhalt (`KiAuslese`), damit sie kein zweites Mal
+    # bezahlt werden muss.
+    #
+    # Das Aufräumen des Bestands macht `immocalc-entfernen`.
     sidecar_ok = False
-    if d.pfad.startswith("/"):
-        try:
-            client = verbindung(session)
-            client.lege_ab(sidecar_pfad, _immocalc_text(d, body).encode("utf-8"),
-                           typ="text/plain; charset=utf-8")
-            sidecar_ok = True
-        except Exception as fehler:                        # noqa: BLE001
-            log.warning("Sidecar nicht geschrieben (%s): %s", sidecar_pfad, fehler)
 
     session.add(d)
     session.commit()
@@ -3785,6 +3856,21 @@ def vorschau(dokument_id: int,
     raise HTTPException(415, "Für diese Datei gibt es keine Bildvorschau")
 
 
+def _pruefsumme_nachtragen(session: Session, d: Dokument, sha1: str) -> None:
+    """N296 — die Prüfsumme am Beleg festhalten, sobald sie ohnehin errechnet
+    ist. Der Abgleich trägt sie im 2-Minuten-Takt nach (N290), aber wer einen
+    Beleg ansieht, hat die Bytes gerade in der Hand — dann kostet es nichts."""
+    if not sha1 or d.sha1 == sha1:
+        return
+    d.sha1 = sha1
+    session.add(d)
+    try:
+        session.commit()
+    except Exception as fehler:                            # noqa: BLE001
+        session.rollback()
+        log.info("Prüfsumme an Beleg %s nicht gespeichert: %s", d.id, fehler)
+
+
 def _ki_am_beleg_festhalten(session: Session, d: Dokument, ergebnis: dict) -> bool:
     """Hält die frische KI-Auslese am Beleg fest — nur, wo die KI wirklich etwas
     geliefert hat (CCLXXIII/CCCLXVII).
@@ -3914,17 +4000,35 @@ def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
         if gespeichert:
             return gespeichert
     d, rohdaten = _hole_beleg_bytes(session, dokument_id)
+    # N296 — zweite Stufe vor der KI: dieselbe Datei kann als NEUER Eintrag
+    # hereinkommen (zweiter Scan, Duplikat im anderen Objektordner, nach einem
+    # Grabstein neu aufgenommen). Sie hat dann eine andere Nummer, aber
+    # denselben Inhalt — und der ist schon einmal bezahlt gelesen worden.
+    sha1 = kicache.pruefsumme(rohdaten)
+    _pruefsumme_nachtragen(session, d, sha1)
+    gemerkt = kicache.hole(session, sha1)
+    if gemerkt is not None:
+        _ki_am_beleg_festhalten(session, d, gemerkt)
+        # Hier gibt es keine Kostenart und keine Maske — der Beleg wird
+        # angesehen, nicht in ein Formular übersetzt. Die Zusätze bleiben
+        # trotzdem am Kontext ausgerichtet, damit dieselbe Regel gilt.
+        return {**_aus_zwischenspeicher(session, gemerkt, d.kostenart or "", ""),
+                "aus_zwischenspeicher": True}
     # Dateiname als Kontext mitgeben — dieselbe KI-gestützte Auslese wie beim
     # frisch abfotografierten Beleg (CCLXVIII). CCLXIX: auch die Erkennungs-
     # muster (CCXLIX) anwenden, damit Nutzerregeln beim Cloud-Beleg genauso
     # greifen wie beim Foto-Upload.
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
                            ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+    kern = dict(ergebnis)          # N296 — vor jeder Anreicherung, siehe /erkennen
     # N162 — Strombeleg: Menge und Bruttobetrag der Lieferung nachziehen, bevor
     # das Raster am Beleg festgehalten wird. Sonst bliebe dort die Nachzahlung
     # stehen und belegte später das Betragsfeld falsch vor.
     _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "")
     _ki_am_beleg_festhalten(session, d, ergebnis)
+    kicache.merke(session, sha1, {
+        **kern, **({"strom": ergebnis["strom"]} if "strom" in ergebnis else {}),
+    }, _ki_modell(session))
     return ergebnis
 
 
@@ -3945,8 +4049,18 @@ def neu_analysieren(dokument_id: int,
     eingerichtet = kiauslese.verfuegbar(ki_key)
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
                            ki_key=ki_key, ki_modell=_ki_modell(session))
+    kern = dict(ergebnis)          # N296 — vor jeder Anreicherung
     _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "")   # N162
     _ki_am_beleg_festhalten(session, d, ergebnis)
+    # N296 — „neu analysieren" ist der ausdrückliche Wunsch nach einer frischen
+    # Lesung: der Zwischenspeicher wird hier bewusst NICHT gefragt, sondern
+    # überschrieben. Sonst bliebe der Nutzer für immer an der ersten, mit einem
+    # älteren Modell erzeugten Auslese hängen.
+    sha1 = kicache.pruefsumme(rohdaten)
+    _pruefsumme_nachtragen(session, d, sha1)
+    kicache.merke(session, sha1, {
+        **kern, **({"strom": ergebnis["strom"]} if "strom" in ergebnis else {}),
+    }, _ki_modell(session))
     gelaufen = bool(ergebnis.get("ki"))
     if not eingerichtet:
         meldung = ("Für die KI-Analyse ist kein Anthropic-Schlüssel hinterlegt — "
@@ -4620,3 +4734,92 @@ def renovierung_einsortieren(rid: int, trocken: bool = True,
     log.info("Renovierung %d: %d Belege einsortiert, %d Fehler",
              rid, len(verschoben), len(fehler))
     return {"ziel": ablage, "verschoben": verschoben, "fehler": fehler}
+
+
+# --------------------------------------------------------------------------
+# N297 — die `.immocalc`-Steckbriefe aus der Ablage nehmen.
+#
+# Sie waren als menschenlesbare Beigabe neben jedem PDF gedacht (CCLXXIV), sind
+# in der Praxis aber nur Unordnung: der Nutzer sieht in jedem Ordner doppelt so
+# viele Dateien, und der Inhalt ist ein Abzug eines inzwischen deutlich
+# weiterentwickelten Erkennungsstands.
+#
+# Es geht dabei nichts verloren. Der Steckbrief wurde aus den Feldern des
+# Dokuments ERZEUGT (`_immocalc_text`) und im ganzen Code nie wieder
+# eingelesen — jede Fundstelle schrieb, verschob, löschte oder filterte ihn nur
+# aus den Ansichten. Die Auslese selbst steht in der Datenbank und seit N296
+# zusätzlich am Dateiinhalt.
+#
+# Trotzdem standardmässig trocken: gelöscht wird in der Cloud des Nutzers, und
+# er soll die Zahl vorher sehen. Erst `bestaetigt=true` vollzieht — dieselbe
+# Haltung wie beim Leeren eines Objektordners (N287).
+# --------------------------------------------------------------------------
+
+@router.post("/immocalc-entfernen")
+def immocalc_entfernen(bestaetigt: bool = False,
+                       session: Session = Depends(get_session)) -> dict:
+    """Nimmt alle `.immocalc`-Steckbriefe aus den Objektordnern.
+
+    Ohne `bestaetigt` wird nur gezählt und aufgelistet (Trockenlauf). Ein
+    Ordner, der sich nicht lesen lässt, hält den Lauf nicht an — er wird
+    gemeldet und übersprungen; nie wird auf Verdacht gelöscht."""
+    try:
+        client = verbindung(session)
+    except HTTPException:
+        raise
+    except Exception as fehler:                            # noqa: BLE001
+        raise HTTPException(400, f"Keine Cloud-Verbindung: {fehler}") from fehler
+
+    gefunden: list[str] = []
+    hinweise: list[str] = []
+    for o in session.exec(select(Objekt)).all():
+        wurzel = (o.nc_ordner or "").strip()
+        if not wurzel:
+            continue
+        offen: list[tuple[str, int]] = [(wurzel, 0)]
+        besucht: set[str] = set()
+        while offen:
+            ordner, tiefe = offen.pop()
+            if ordner in besucht:
+                continue
+            besucht.add(ordner)
+            try:
+                eintraege = client.liste(ordner)
+            except NextcloudFehler as fehler:
+                hinweise.append(f"{ordner}: nicht lesbar ({fehler})")
+                continue
+            for e in eintraege:
+                if e.ordner:
+                    if tiefe < _IMMOCALC_MAX_TIEFE:
+                        offen.append((e.pfad, tiefe + 1))
+                elif _ist_sidecar(e.name):
+                    gefunden.append(e.pfad)
+
+    if not bestaetigt:
+        return {"trocken": True, "anzahl": len(gefunden),
+                "wuerde_loeschen": sorted(gefunden)[:200],
+                "hinweise": hinweise}
+
+    geloescht: list[str] = []
+    fehlgeschlagen: list[dict] = []
+    for pfad in gefunden:
+        try:
+            client.loesche(pfad)
+            geloescht.append(pfad)
+        except Exception as fehler:                        # noqa: BLE001
+            fehlgeschlagen.append({"pfad": pfad, "grund": str(fehler)})
+
+    # Auch die Einträge, die für eine Sidecar angelegt wurden, verschwinden —
+    # sie zeigen jetzt ins Leere. Nur diese, nichts anderes.
+    eintraege_weg = 0
+    for d in list(session.exec(select(Dokument)).all()):
+        if _ist_sidecar(d.dateiname or ""):
+            session.delete(d)
+            eintraege_weg += 1
+    if eintraege_weg:
+        session.commit()
+
+    log.info("N297: %d Steckbriefe gelöscht, %d Fehler, %d Einträge entfernt",
+             len(geloescht), len(fehlgeschlagen), eintraege_weg)
+    return {"geloescht": len(geloescht), "eintraege_entfernt": eintraege_weg,
+            "fehlgeschlagen": fehlgeschlagen, "hinweise": hinweise}

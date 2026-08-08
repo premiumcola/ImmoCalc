@@ -170,7 +170,7 @@ def test_erkennen_mit_wasser_hinweis_liefert_wasser(monkeypatch):
     with TestClient(app) as c:
         r = c.post("/api/dokumente/erkennen",
                    data={"kostenart": "Wasser"},
-                   files={"datei": ("beleg.pdf", b"%PDF-1.4 test",
+                   files={"datei": ("beleg.pdf", b"%PDF-1.4 test_erkennen_mit_wasser_hinweis_liefert_wasser",
                                     "application/pdf")})
     assert r.status_code == 200
     body = r.json()
@@ -195,7 +195,7 @@ def test_erkennen_ohne_hinweis_hat_kein_wasser(monkeypatch):
     with TestClient(app) as c:
         r = c.post("/api/dokumente/erkennen",
                    data={"kostenart": "Grundsteuer"},
-                   files={"datei": ("beleg.pdf", b"%PDF-1.4 test",
+                   files={"datei": ("beleg.pdf", b"%PDF-1.4 test_erkennen_ohne_hinweis_hat_kein_wasser",
                                     "application/pdf")})
     assert r.status_code == 200
     assert "wasser" not in r.json()
@@ -209,7 +209,7 @@ def test_erkennen_ohne_ki_liefert_kein_wasser(monkeypatch):
     with TestClient(app) as c:
         r = c.post("/api/dokumente/erkennen",
                    data={"kostenart": "Wasser"},
-                   files={"datei": ("beleg.pdf", b"%PDF-1.4 test",
+                   files={"datei": ("beleg.pdf", b"%PDF-1.4 test_erkennen_ohne_ki_liefert_kein_wasser",
                                     "application/pdf")})
     assert r.status_code == 200
     assert "wasser" not in r.json()

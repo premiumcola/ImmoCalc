@@ -1035,6 +1035,38 @@ class Stromjahr(SQLModel, table=True):
     notiz: str = ""
 
 
+class KiAuslese(SQLModel, table=True):
+    """N296 — die KI-Auslese, am INHALT der Datei festgemacht statt am Eintrag.
+
+    Ein KI-Aufruf kostet Budget des Nutzers. Gespeichert war die Auslese bisher
+    nur am `Dokument` (N98) — also an der Eintragsnummer. Dieselbe Datei ein
+    zweites Mal in der App (erneut gescannt, als Duplikat in einem zweiten
+    Objektordner, oder nach einem Grabstein neu aufgenommen) bekam eine neue
+    Nummer und wurde deshalb noch einmal bezahlt gelesen.
+
+    Der Schlüssel ist hier der SHA1 des Dateiinhalts: byte-gleich heisst
+    wortgleich, und die Auslese darf übernommen werden. `unique=True` — je
+    Inhalt genau ein Eintrag.
+
+    Bewusst NICHT dasselbe wie `Belegdaten`: dort steht die durchsuchbare
+    Wissensdatenbank je BELEG (mit Objekt, Jahr, Betrag — fachlich gepflegt und
+    vom Nutzer korrigierbar). Hier steht die rohe Antwort der KI zu einem
+    Dateiinhalt, als reiner Zwischenspeicher. Wird sie gelöscht, geht keine
+    Information verloren — nur Budget beim nächsten Lesen.
+
+    Ganz neue Tabelle, alle Felder mit Default: `create_all` legt sie an, kein
+    bestehender Datensatz ändert sich."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sha1: str = Field(index=True, unique=True)
+    # Die vollständige Auslese, so wie `ocr.erkenne` sie zurückgibt.
+    ergebnis: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # Womit gelesen wurde — eine spätere, bessere Fassung soll erkennbar sein.
+    modell: str = ""
+    erfasst_am: Optional[date] = None
+    # Wie oft der Zwischenspeicher einen Aufruf erspart hat. Nur Auskunft.
+    treffer: int = 0
+
+
 class Belegdaten(SQLModel, table=True):
     """N84 — die interne Wissens-Datenbank der ausgelesenen Belegdaten.
 

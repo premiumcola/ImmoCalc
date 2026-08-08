@@ -242,11 +242,21 @@ def _strom_umgebung(monkeypatch):
     monkeypatch.setattr(kiauslese, "lies_strom", _strom_auslese)
 
 
-def _post(kostenart=""):
+def _post(kostenart="", inhalt=None):
+    """N296 — jeder Fall bekommt EIGENE Bytes.
+
+    Die Auslese wird seit N296 unter dem SHA1 des Dateiinhalts
+    zwischengespeichert. Alle Fälle hier schickten dieselben Dummy-Bytes und
+    erwarteten je Fall ein anderes Ergebnis (`ocr.erkenne` ist je Test anders
+    ersetzt) — das kann mit einem inhaltsbezogenen Zwischenspeicher nicht
+    zusammengehen und bildet die Wirklichkeit auch nicht ab: eine Stromrechnung
+    und ein Notarvertrag sind nie byte-gleich. Geprüft wird unverändert
+    dasselbe."""
     with TestClient(app) as c:
         return c.post("/api/dokumente/erkennen",
                       data={"kostenart": kostenart},
-                      files={"datei": ("beleg.pdf", b"%PDF-1.4 test",
+                      files={"datei": ("beleg.pdf",
+                                       inhalt or f"%PDF-1.4 {kostenart}".encode(),
                                        "application/pdf")})
 
 
@@ -358,10 +368,12 @@ def _notar_erkennung(*_a, **_k):
 
 
 def _post_bereich(bereich):
+    # N296 — eigene Bytes je Bereich, siehe `_post`.
     with TestClient(app) as c:
         return c.post("/api/dokumente/erkennen",
                       data={"bereich": bereich},
-                      files={"datei": ("vertrag.pdf", b"%PDF-1.4 test",
+                      files={"datei": ("vertrag.pdf",
+                                       f"%PDF-1.4 vertrag {bereich}".encode(),
                                        "application/pdf")})
 
 
