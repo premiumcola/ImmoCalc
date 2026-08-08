@@ -192,6 +192,14 @@ button.chip:hover{filter:brightness(.96)}
 }
 .empty .big{font:700 17px var(--disp); letter-spacing:-.015em; margin-bottom:6px}
 .empty p{font:400 13.5px var(--body); color:var(--soft); margin:0; line-height:1.5}
+/* N295 — ein leerer Zustand braucht einen Weg heraus (roter Faden 7). Als
+   `<a>` traegt der Knopf sonst die Link-Unterstreichung und die volle Breite
+   von `.btn` mit linksbuendigem Text — er soll wie ein Knopf aussehen, nicht
+   wie ein gestreckter Link. */
+.empty .btn{
+  width:auto; display:inline-flex; align-items:center; justify-content:center;
+  margin-top:16px; padding:13px 22px; text-decoration:none;
+}
 
 /* ---- untere Navigation ---- */
 .nav{

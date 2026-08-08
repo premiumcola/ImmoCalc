@@ -40,6 +40,29 @@ const anfrage = new URLSearchParams(location.search);
    Abrechnung ein zweites Mal zu pflegen und liefen mit der Zeit auseinander. */
 const fokusWunsch = anfrage.get('e');
 
+/* N295 — der leere Zustand dieser Seite: eine Aussage, nicht zwei, und immer
+   ein Weg heraus.
+
+   Bisher stand die Überschrift „Objekt nicht gefunden" und darunter noch
+   einmal derselbe Satz — der Server antwortet auf 404 wortgleich. Zwei Zeilen,
+   eine Auskunft (roter Faden 3), und keine Möglichkeit weiterzukommen ausser
+   dem Zurück-Pfeil (roter Faden 7). Der Zusatztext erscheint jetzt nur, wenn
+   er wirklich etwas Neues sagt. */
+function leerZeigen(inhalt, gross, dazu = '') {
+  const anders = dazu && dazu.trim().toLowerCase() !== gross.toLowerCase();
+  inhalt.innerHTML = `<div class="empty">
+      <div class="big">${esc(gross)}</div>
+      ${anders ? `<p>${esc(dazu)}</p>` : ''}
+      <a class="btn" href="index.html">Zur Übersicht</a>
+    </div>`;
+  // Die Kopfzeile stand sonst dauerhaft auf „wird geladen …", obwohl längst
+  // feststeht, dass nichts mehr kommt. Sie bleibt jetzt LEER statt die
+  // Meldung der Karte zu wiederholen — die Zeile trägt sonst die Adresse des
+  // Objekts, und die gibt es hier nun einmal nicht.
+  const sub = document.getElementById('sub');
+  if (sub) sub.textContent = '';
+}
+
 export async function laden() {
   const inhalt = document.getElementById('inhalt');
   const titel = document.getElementById('titel');
@@ -47,16 +70,15 @@ export async function laden() {
   // Beim Neuaufbau die Object-URLs der Lageplan-Vorschau freigeben.
   lageplanVorschauAufraeumen();
   if (!slug) {
-    inhalt.innerHTML = `<div class="empty"><div class="big">Kein Objekt gewählt</div>
-      <p>Zurück zur Übersicht und eine Immobilie antippen.</p></div>`;
+    leerZeigen(inhalt, 'Kein Objekt gewählt');
     return;
   }
   let det;
   try {
     det = await api(`/objekte/${encodeURIComponent(slug)}`);
   } catch (fehler) {
-    inhalt.innerHTML = `<div class="empty"><div class="big">Objekt nicht gefunden</div>
-      <p>${esc(String(fehler.message || 'Die Daten konnten nicht geladen werden.'))}</p></div>`;
+    leerZeigen(inhalt, 'Objekt nicht gefunden',
+               String(fehler.message || ''));
     return;
   }
 
