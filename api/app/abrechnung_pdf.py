@@ -1,13 +1,8 @@
 """Der Mieter-Onepager als PDF — ohne Fremdbibliothek.
 
-Ein PDF ist eine Folge nummerierter Objekte plus eine Querverweistabelle.
-Für eine Seite reichen Katalog, Seitenbaum, Seite, Inhaltsstrom und zwei der
-14 Standardschriften; die müssen nicht eingebettet werden.
-
-Umlaute laufen über WinAnsiEncoding — das ist cp1252, nicht UTF-8 und auch
-nicht latin-1: Gedankenstrich, Euro-Zeichen und typografische Anführungszeichen
-gibt es nur in cp1252, und die stehen in jedem Zeitraum
-("01.01.2025 – 31.12.2025").
+Das PDF-Gerüst (Objekte, Querverweistabelle, WinAnsiEncoding) und die exakte
+Helvetica-Breitenrechnung stehen in :mod:`pdfkern`, gemeinsam mit der
+Tankabrechnung. Hier steht nur, wie diese eine Seite aussieht.
 
 Gestalt: **genau eine Seite** ("Onepager"). Die Positionsliste bekommt einen
 Heatmap-Hintergrund — je größer der Posten, desto kräftiger die Einfärbung
@@ -22,9 +17,14 @@ import logging
 import re
 from datetime import date
 
+from .pdfkern import SEITE_B, SEITE_H, UMLAUTE  # noqa: F401  (SEITE_B: Layout)
+from .pdfkern import breite as _breite
+from .pdfkern import escape as _escape
+from .pdfkern import pdf as _pdf
+from .pdfkern import sauber
+
 log = logging.getLogger("immocalc")
 
-SEITE_B, SEITE_H = 595.28, 841.89        # A4 in Punkt
 RAND = 48.0
 UNTEN_MIN = 40.0                         # darunter darf nichts mehr stehen
 
@@ -44,55 +44,7 @@ HEAT_MAX = 0.55
 HEAT_MIN = 0.03                          # der kleinste Posten bleibt "fast weiß"
 
 
-# ---------------------------------------------------------------- Zeichenbreiten
-# Helvetica ist eine Standardschrift: ihre Breiten stehen fest und müssen nicht
-# aus einer Datei gelesen werden. Ohne sie ließe sich keine Spalte rechtsbündig
-# setzen — die alte Schätzung "Zeichenzahl × 0.5" ließ die Beträge ausfransen.
-_HELV = (
-    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278,
-    278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584,
-    584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556,
-    833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278,
-    278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222,
-    500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500,
-    500, 334, 260, 334, 584,
-)
-_HELV_FETT = (
-    278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278,
-    278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584,
-    584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611,
-    833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333,
-    278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278,
-    556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556,
-    500, 389, 280, 389, 584,
-)
-# Alles jenseits von ASCII, das in deutschen Abrechnungen wirklich vorkommt.
-_EXTRA = {
-    0x80: (556, 556), 0x85: (1000, 1000), 0x91: (222, 238), 0x92: (222, 238),
-    0x93: (333, 500), 0x94: (333, 500), 0x96: (556, 556), 0x97: (1000, 1000),
-    0xA0: (278, 278), 0xA7: (556, 556), 0xB0: (400, 400), 0xB7: (278, 278),
-    0xC4: (667, 722), 0xD6: (778, 778), 0xDC: (722, 722), 0xDF: (611, 611),
-    0xE0: (556, 556), 0xE4: (556, 556), 0xE9: (556, 556), 0xF6: (556, 611),
-    0xFC: (556, 611),
-}
-
-
-def _cp1252(text: str) -> bytes:
-    return (text or "").encode("cp1252", "replace")
-
-
-def _breite(text: str, groesse: float, fett: bool = False) -> float:
-    """Wie breit der Text gesetzt wird — in Punkt."""
-    tabelle = _HELV_FETT if fett else _HELV
-    summe = 0
-    for b in _cp1252(text):
-        if 32 <= b <= 126:
-            summe += tabelle[b - 32]
-        else:
-            summe += _EXTRA.get(b, (556, 556))[1 if fett else 0]
-    return summe * groesse / 1000.0
-
-
+# ---------------------------------------------------------------- Textmaße
 def _kuerzen(text: str, max_breite: float, groesse: float,
              fett: bool = False) -> str:
     """Lange Kostenarten (»Mieter Rauchwarnmelder/Prüfung Rauchwarnmelder«)
@@ -123,12 +75,6 @@ def _umbruch(text: str, max_breite: float, groesse: float,
 
 
 # ---------------------------------------------------------------- Zeichenfläche
-def _escape(text: str) -> bytes:
-    """Klammern und Rückstriche sind in PDF-Zeichenketten Steuerzeichen."""
-    roh = (text or "").replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
-    return _cp1252(roh)
-
-
 def _mische(a: tuple[float, float, float], b: tuple[float, float, float],
             anteil: float) -> tuple[float, float, float]:
     t = max(0.0, min(1.0, anteil))
@@ -189,39 +135,6 @@ class Blatt:
 
     def strom(self) -> bytes:
         return b"\n".join(self.ops)
-
-
-def _pdf(strom: bytes, titel: str) -> bytes:
-    objekte = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f] "
-        b"/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>"
-        % (SEITE_B, SEITE_H),
-        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(strom), strom),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
-        b"/Encoding /WinAnsiEncoding >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
-        b"/Encoding /WinAnsiEncoding >>",
-        b"<< /Title (%s) /Producer (ImmoCalc) >>" % _escape(titel),
-    ]
-
-    ausgabe = bytearray(b"%PDF-1.4\n")
-    # Zweite Zeile mit hohen Bytes: der Hinweis "diese Datei ist binaer"
-    ausgabe += bytes([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])
-    stellen = []
-    for nummer, koerper in enumerate(objekte, start=1):
-        stellen.append(len(ausgabe))
-        ausgabe += b"%d 0 obj\n" % nummer + koerper + b"\nendobj\n"
-
-    xref = len(ausgabe)
-    ausgabe += b"xref\n0 %d\n" % (len(objekte) + 1)
-    ausgabe += b"0000000000 65535 f \n"
-    for stelle in stellen:
-        ausgabe += b"%010d 00000 n \n" % stelle
-    ausgabe += (b"trailer\n<< /Size %d /Root 1 0 R /Info %d 0 R >>\nstartxref\n%d\n%%%%EOF\n"
-                % (len(objekte) + 1, len(objekte), xref))
-    return bytes(ausgabe)
 
 
 # ---------------------------------------------------------------- Zahlen & Text
@@ -487,16 +400,7 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
     return _pdf(strom, f"{kopf_titel} · {empfaenger}")
 
 
-UMLAUTE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
-                         "Ä": "Ae", "Ö": "Oe", "Ü": "Ue"})
-
-
 def pdf_dateiname(objekt_name: str, zeitraum: str, partei: str) -> str:
     """Anhangsname ohne Sonderzeichen — Mailprogramme verstümmeln sie sonst."""
-    def sauber(text: str) -> str:
-        umgeschrieben = (text or "").translate(UMLAUTE)
-        erlaubt = [c if (c.isascii() and c.isalnum()) or c == "_" else "-"
-                   for c in umgeschrieben]
-        return "-".join(t for t in "".join(erlaubt).split("-") if t)
     jahr = zeitraum[-4:] if zeitraum[-4:].isdigit() else ""
     return f"Abrechnung_{sauber(objekt_name)}_{jahr}_{sauber(partei)}.pdf"

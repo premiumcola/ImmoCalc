@@ -1,8 +1,7 @@
 """N165 — die Quartalsabrechnung der E-Tankstelle als PDF, ohne Fremdbibliothek.
 
-Vorbild ist :mod:`abrechnung_pdf` (die Betriebskostenabrechnung): ein PDF ist
-eine Folge nummerierter Objekte plus Querverweistabelle, für eine Seite reichen
-Katalog, Seitenbaum, Seite, Inhaltsstrom und zwei der 14 Standardschriften.
+Das PDF-Gerüst und die exakte Helvetica-Breitenrechnung stehen in
+:mod:`pdfkern`, gemeinsam mit der Betriebskostenabrechnung.
 
 Anders als dort steht hier auch **Vektorgrafik** im Inhaltsstrom — das Diagramm
 der geladenen Energie je Monat, gestapelt aus Netz, PV und Akku. In PDF sind
@@ -12,9 +11,6 @@ Der Inhalt ist bewusst auf **den einen Nutzer** zugeschnitten: seine Anschrift,
 sein Quartal, seine kWh je Monat mit der Aufteilung Netz/PV/Akku, der Satz je
 kWh mit Herkunft und der Rechnungsbetrag. Keine Objektfinanzen, keine anderen
 Nutzer, keine Mieter-Nebenkosten.
-
-Umlaute laufen wie im Vorbild über WinAnsiEncoding (cp1252) — Gedankenstrich und
-typografische Anführungszeichen gibt es nur dort.
 """
 from __future__ import annotations
 
@@ -22,8 +18,12 @@ from datetime import date
 
 from .eauto import (BENZIN_KWH_PRO_LITER, benzin_aequivalent, gefahrene_km,
                     preis_je_100km)
+from .pdfkern import SEITE_B, SEITE_H, UMLAUTE  # noqa: F401  (SEITE_B: Layout)
+from .pdfkern import breite as _breite
+from .pdfkern import escape as _escape
+from .pdfkern import pdf as _pdf
+from .pdfkern import sauber
 
-SEITE_B, SEITE_H = 595.28, 841.89        # A4 in Punkt
 RAND_L = 56.0
 RAND_R = SEITE_B - 56.0
 
@@ -39,12 +39,6 @@ SOFT = (0.42, 0.47, 0.49)               # gedeckter Grauton für Beiwerk
 PAPER = (0.910, 0.925, 0.925)            # --paper #E8ECEC
 TEAL_L = (0.847, 0.918, 0.898)           # heller Teal-Grund für die Betragskarte
 LINIE = (0.839, 0.863, 0.867)            # dünne Trennlinie #D6DCDD
-
-
-def _escape(text: str) -> bytes:
-    """Klammern und Rückstriche sind in PDF-Zeichenketten Steuerzeichen."""
-    roh = (text or "").replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
-    return roh.encode("cp1252", "replace")
 
 
 def _eur(betrag: float | None) -> str:
@@ -92,8 +86,8 @@ class Blatt:
     def rechts(self, rechts_x: float, oben: float, s: str, groesse: float = 10.5,
                fett: bool = False, farbe: tuple = INK) -> None:
         """Rechtsbündiger Text — der Betrag endet an `rechts_x`."""
-        breite = _textbreite(s, groesse, fett)
-        self.text(rechts_x - breite, oben, s, groesse, fett, farbe)
+        self.text(rechts_x - _breite(s, groesse, fett), oben, s, groesse, fett,
+                  farbe)
 
     def rechteck(self, x: float, oben: float, breite: float, hoehe: float,
                  farbe: tuple) -> None:
@@ -112,47 +106,6 @@ class Blatt:
 
     def strom(self) -> bytes:
         return b"\n".join(self.teile)
-
-
-def _textbreite(s: str, groesse: float, fett: bool) -> float:
-    """Grobe Breitenschätzung für Helvetica — Ziffern und Grossbuchstaben
-    breiter, schmale Zeichen schmaler. Reicht für rechtsbündige Beträge."""
-    schmal = sum(1 for c in s if c in "il.,:;'|! ")
-    breit = sum(1 for c in s if c in "mwMW")
-    normal = len(s) - schmal - breit
-    faktor = 0.52 if fett else 0.5
-    return groesse * (normal * faktor + schmal * 0.28 + breit * 0.82)
-
-
-def _pdf(strom: bytes, titel: str) -> bytes:
-    objekte = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f] "
-        b"/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>"
-        % (SEITE_B, SEITE_H),
-        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(strom), strom),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
-        b"/Encoding /WinAnsiEncoding >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
-        b"/Encoding /WinAnsiEncoding >>",
-        b"<< /Title (%s) /Producer (ImmoCalc) >>" % _escape(titel),
-    ]
-    ausgabe = bytearray(b"%PDF-1.4\n")
-    ausgabe += bytes([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])
-    stellen = []
-    for nummer, koerper in enumerate(objekte, start=1):
-        stellen.append(len(ausgabe))
-        ausgabe += b"%d 0 obj\n" % nummer + koerper + b"\nendobj\n"
-    xref = len(ausgabe)
-    ausgabe += b"xref\n0 %d\n" % (len(objekte) + 1)
-    ausgabe += b"0000000000 65535 f \n"
-    for stelle in stellen:
-        ausgabe += b"%010d 00000 n \n" % stelle
-    ausgabe += (b"trailer\n<< /Size %d /Root 1 0 R /Info %d 0 R >>\n"
-                b"startxref\n%d\n%%%%EOF\n"
-                % (len(objekte) + 1, len(objekte), xref))
-    return bytes(ausgabe)
 
 
 def _diagramm(blatt: Blatt, oben: float, monate: list[dict],
@@ -195,7 +148,7 @@ def _diagramm(blatt: Blatt, oben: float, monate: list[dict],
                 unten -= hh
         if gesamt_h <= 0:                  # Monat ohne Ladung: nur ein Strich
             blatt.linie(x, grund, x + bw, LINIE, 0.6)
-        blatt.text(mitte - _textbreite(m.get("kurz", ""), 8, False) / 2,
+        blatt.text(mitte - _breite(m.get("kurz", ""), 8, False) / 2,
                    grund + 12, m.get("kurz", ""), 8, False, SOFT)
     return oben + hoehe + 6
 
@@ -207,7 +160,7 @@ def _legende(blatt: Blatt, oben: float, dreiteilig: bool) -> float:
     for name, farbe in posten:
         blatt.rechteck(x, oben - 7, 9, 9, farbe)
         blatt.text(x + 14, oben, name, 9, False, SOFT)
-        x += 14 + _textbreite(name, 9, False) + 22
+        x += 14 + _breite(name, 9, False) + 22
     return oben + 8
 
 
@@ -503,15 +456,6 @@ def _umbrechen(text: str, breite: int) -> list[str]:
     return zeilen
 
 
-UMLAUTE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
-                         "Ä": "Ae", "Ö": "Oe", "Ü": "Ue"})
-
-
 def tank_pdf_dateiname(objekt_name: str, label: str, name: str) -> str:
     """Anhangsname ohne Sonderzeichen — Mailprogramme verstümmeln sie sonst."""
-    def sauber(text: str) -> str:
-        umgeschrieben = (text or "").translate(UMLAUTE)
-        erlaubt = [c if (c.isascii() and c.isalnum()) or c == "_" else "-"
-                   for c in umgeschrieben]
-        return "-".join(t for t in "".join(erlaubt).split("-") if t)
     return f"E-Tankstelle_{sauber(objekt_name)}_{sauber(label)}_{sauber(name)}.pdf"
