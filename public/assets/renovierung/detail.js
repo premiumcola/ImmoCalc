@@ -52,16 +52,10 @@ function budgetHtml(stand) {
     </div>`;
 }
 
-function gewerkListeHtml(gewerke, farben) {
-  if (!gewerke.length) return '';
-  return `<ul class="gwliste">${gewerke.map(g => `<li>
-      <i style="background:${farben.get(g.gewerk)}"></i>
-      <span class="gn">${esc(g.gewerk)}</span>
-      <span class="gp">${g.anteil_pct.toLocaleString('de-DE',
-        { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %</span>
-      <b>${eurVoll(g.summe)}</b>
-    </li>`).join('')}</ul>`;
-}
+/* N284 — die Gewerk-Legende ist entfallen. Anteil und Summe stehen jetzt
+   rechts an ihrer Spur im Zeitstrahl (`charts.zeitstrahl`), wo sie zu genau
+   der Zeile gehoeren, die sie meinen. Als eigener Block ueber dem Zeitstrahl
+   sagten sie dasselbe wie der Ring daneben — dieselbe Angabe zweimal. */
 
 const leerfeldHtml = `<div class="leerfeld">
     <div class="big">Noch keine Rechnung</div>
@@ -70,7 +64,7 @@ const leerfeldHtml = `<div class="leerfeld">
     <button class="btn" type="button" data-posten-neu>Rechnung hinzufügen</button>
   </div>`;
 
-function kopfHtml(d, farben) {
+function kopfHtml(d) {
   const anzahl = d.posten.length;
   const meta = [zeitraumText(d.von, d.bis), einheitenText(d.einheiten)]
     .filter(Boolean).join(' · ');
@@ -101,7 +95,6 @@ function kopfHtml(d, farben) {
         ${budgetHtml(d.budget_stand)}
         <div class="ringfeld">${ring}</div>
       </div>
-      ${gewerkListeHtml(d.gewerke, farben)}
     </div>`;
 }
 
@@ -164,9 +157,13 @@ export function zeitstrahlZeichnen(feld, d) {
   // ergibt sich aus der Zahl der Spuren und wird im Diagramm gerechnet; eine
   // vorgegebene Hoehe waere hier falsch.
   const farben = gewerkFarben(d.gewerke);
+  // N284 — Anteil und Summe wandern an die Spur. Sie standen als eigener
+  // Legendenblock über dem Zeitstrahl und sagten dasselbe wie der Ring
+  // daneben; an der Zeile gehören sie zu dem, was sie meinen.
   const spuren = d.gewerke
     .filter(g => g.summe > 0)
-    .map(g => ({ name: g.gewerk, farbe: farben.get(g.gewerk) }));
+    .map(g => ({ name: g.gewerk, farbe: farben.get(g.gewerk),
+                 anteil: g.anteil_pct, summe: g.summe }));
   feld.innerHTML = zeitstrahl(
     d.posten.map(p => ({ datum: p.datum, wert: p.betrag,
                          // Ohne Gewerk laeuft der Posten in der „Sonstiges"-
@@ -181,7 +178,7 @@ export function zeitstrahlZeichnen(feld, d) {
 export function detailHtml(d) {
   const farben = gewerkFarben(d.gewerke);
   const mitZeitstrahl = d.posten.some(p => p.datum && p.betrag > 0);
-  return `${kopfHtml(d, farben)}
+  return `${kopfHtml(d)}
     ${mitZeitstrahl ? `<div class="karte">
       <h3>Rechnungen im Verlauf</h3>
       <div id="zeitstrahl"></div>

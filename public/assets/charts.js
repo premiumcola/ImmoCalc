@@ -728,18 +728,34 @@ function spurenStrahl(punkte, { breite, von, bis, spuren }) {
     return Math.sqrt(a / Math.PI);
   };
 
-  // Beschriftungsspalte: waechst mit dem laengsten Namen, gedeckelt auf 38 %
+  // Beschriftungsspalte: waechst mit dem laengsten Namen, gedeckelt auf 32 %
   // — darunter bliebe fuer die Zeitachse zu wenig uebrig.
   const zeichenBreite = 6;
   const maxZeichen = Math.max(4, Math.floor(
-    Math.min(breite * 0.38, 132) / zeichenBreite));
+    Math.min(breite * 0.32, 132) / zeichenBreite));
   const kuerze = t => (t || '').length > maxZeichen
     ? (t || '').slice(0, maxZeichen - 1) + '…' : (t || '');
-  const labelB = Math.min(breite * 0.38,
+  const labelB = Math.min(breite * 0.32,
     Math.max(...belegt.map(s => kuerze(s.name).length)) * zeichenBreite + 10);
 
+  // N284 — Anteil und Summe stehen RECHTS an ihrer Spur, nicht mehr als
+  // eigener Legendenblock darueber. Dort standen sie neben dem Ring „bisschen
+  // random rum" (Nutzer) und sagten dasselbe zweimal; hier gehoeren sie zu
+  // genau der Zeile, die sie meinen. Auf schmalen Schirmen faellt der Anteil
+  // weg — den traegt der Ring darueber ohnehin.
+  const mitWerten = belegt.some(s => s.summe != null);
+  const mitAnteil = mitWerten && breite >= 430;
+  const geldText = s => (s.summe == null ? '' : euroKurz(s.summe));
+  const anteilText = s => (s.anteil == null ? ''
+    : `${s.anteil.toLocaleString('de-DE', { minimumFractionDigits: 1,
+        maximumFractionDigits: 1 })} %`);
+  const geldB = mitWerten
+    ? Math.max(...belegt.map(s => geldText(s).length)) * 6.6 + 6 : 0;
+  const anteilB = mitAnteil
+    ? Math.max(...belegt.map(s => anteilText(s).length)) * 6.2 + 12 : 0;
+
   const padL = labelB + 10 + maxR;
-  const padR = maxR + 8;
+  const padR = maxR + 8 + geldB + anteilB;
   const padOben = 10;
   const spurH = 30;
   const nutzB = breite - padL - padR;
@@ -758,6 +774,12 @@ function spurenStrahl(punkte, { breite, von, bis, spuren }) {
                ><title>${datumVoll(datumMs(p.datum))} · ${p.firma || ''}${
                p.firma ? ' · ' : ''}${s.name} · ${euroKurz(p.wert)}</title></circle>`
     ).join('');
+    const werte = mitWerten
+      ? `${mitAnteil ? `<text x="${runden(breite - geldB - 8)}"
+             y="${runden(y + 3.5)}" class="sp" text-anchor="end"
+             >${anteilText(s)}</text>` : ''}
+         <text x="${runden(breite - 4)}" y="${runden(y + 3.5)}" class="sw"
+               text-anchor="end">${geldText(s)}</text>` : '';
     return `<g>
         <line x1="${runden(padL - maxR)}" y1="${runden(y)}"
               x2="${runden(breite - padR)}" y2="${runden(y)}"
@@ -766,7 +788,7 @@ function spurenStrahl(punkte, { breite, von, bis, spuren }) {
               rx="2.5" fill="${s.farbe}"/>
         <text x="${runden(labelB - 12)}" y="${runden(y + 3.5)}" class="sl"
               text-anchor="end">${kuerze(s.name)}</text>
-        ${kreise}
+        ${kreise}${werte}
       </g>`;
   }).join('');
 
@@ -790,6 +812,8 @@ function spurenStrahl(punkte, { breite, von, bis, spuren }) {
   return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img">
       <style>
         .sl{font:500 10.5px var(--body);fill:var(--ink)}
+        .sp{font:500 10px var(--mono);fill:var(--soft)}
+        .sw{font:600 11px var(--mono);fill:var(--ink)}
         .zt{font:500 10px var(--mono);fill:var(--soft)}
       </style>
       ${zeilen}
