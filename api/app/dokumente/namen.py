@@ -26,6 +26,13 @@ from ..cloudkern import ARTKUERZEL, ZIELORDNER
 
 DOKUMENTARTEN = list(ZIELORDNER.keys())
 
+# Die eine Dokumentart, die an mehreren Stellen ausdrücklich gemeint ist: der
+# Lageplan hängt an einer Einheit (CCCXXVI), wird beim Geradedrehen ohne
+# Seitenlage-Erkennung behandelt und ist vom Duplikat-Bündeln ausgenommen —
+# mehrere Fotos desselben Plans sind dort gewollt. Als Konstante, damit sich
+# der Vergleich nicht als loser Text durch den Code zieht.
+LAGEPLAN = "Lageplan"
+
 
 def _saubere_datei(text_: str) -> str:
     """Ein Stück Dateiname: keine Pfadtrenner, keine Trennzeichen am Rand.

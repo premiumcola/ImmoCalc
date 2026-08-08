@@ -26,8 +26,7 @@ from sqlmodel import Session, select
 from .. import (belegposten, dokumentlinks, feldzuordnung, kiauslese, kicache,
                 kidb, ocr, pdftext, upload)
 from ..belegposten import BelegFehler
-from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
-                           ohne_betrag, ohne_datum)
+from ..bezeichnung import betrag_aus_namen, datum_aus_namen, objekt_titel
 from ..cloudkern import ZIELORDNER, _lies, struktur_fuer, verbindung
 from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
@@ -45,38 +44,25 @@ from ..wachdienst import sperre
 from ..wachdienst import zustand as wachdienst_zustand
 
 # --------------------------------------------------------------------------
-# Re-Exports aus dem `app.dokumente`-Paket (N216)
+# Re-Exports aus dem `app.dokumente`-Paket (N216/N288)
 #
-# Die reinen Textbausteine (Namensbildung, KI-Wertparser, Datumsrechnung,
-# Strom-Auslese-Formatter, Anzeigehelfer) wohnen in eigenen Modulen. Sie
-# werden hier gezogen und am Router-Namensraum bereitgestellt — so bleibt
-# jeder bestehende `from app.routers.dokumente import …`-Zugriff (aus anderen
-# Routern und Tests) unverändert lesbar. Zirkelfrei: die Bausteine kennen den
-# Router nicht.
+# Die Bausteine wohnen in eigenen Modulen — Namensbildung, KI-Wertparser,
+# Datumsrechnung, Strom-Auslese-Formatter, Anzeigehelfer (N216), dazu die
+# Ablage, der Cloud-Abgleich, die Grabsteine, die Entwurfs-Baupläne, die
+# Duplikat-Mechanik und das Pfad-Heilen (N288). Sie werden hier gezogen und am
+# Router-Namensraum bereitgestellt — so bleibt jeder bestehende
+# `from app.routers.dokumente import …`-Zugriff (aus anderen Routern und
+# Tests) unverändert lesbar. Zirkelfrei: die Bausteine kennen den Router nicht.
+#
+# Ein Name, der hier steht, aber im Router selbst nicht mehr vorkommt, ist
+# deshalb kein toter Import, sondern genau dieser Zweck: der Namensraum bleibt
+# vollständig, damit ein Umzug niemandes Aufruf bricht.
+#
+# Was hier NICHT hinwandert: alles, was sich den Nextcloud-Client selbst holt
+# (`verbindung`). Die Tests reichen ihn über
+# `monkeypatch.setattr(dok, "verbindung", …)` am Router-Modul durch — eine
+# Funktion in einem Nebenmodul schlüge diesen Namen dort nicht mehr nach.
 # --------------------------------------------------------------------------
-from ..dokumente.namen import (DOKUMENTARTEN, _NICHTSSAGEND, _adr_norm,
-                               _art_im_namen, _bezeichnung, _dateiname_kopfzeile,
-                               _dateistamm, _einziger, _elternordner, _elternteil,
-                               _endung, _ist_sidecar, _kern, _norm, _ohne_dopplung,
-                               _ordner_aus_pfad, _ordner_titel, _sagt_nichts,
-                               _saubere_datei, _sidecar_pfad, dateiname)
-from ..dokumente.ki_werte import _ki_datum, _ki_text, _ki_zahl
-from ..dokumente.datum import _aus_datum, _jahr_mit_fallback, _zum_datum
-from ..dokumente.strom_hilfen import (_strom_hinweis, _strom_in_felder,
-                                      _zeitraum_text)
-from ..dokumente.darstellung import (VERMISST, _anh_zeige, _beleg_anbieter,
-                                     _beleg_karte, _feld_wert,
-                                     _ist_kostenfrei, _kurz, _vorschlag, _zeige)
-from ..dokumente.eintraege import (_UMKLASS_ZIEL, _bewahrt, _eintrag_kern,
-                                   _eintrag_wo)
-from ..dokumente.entwuerfe import (_ENTWURF_BAUER, _ZIEL_BAUER,
-                                   _entwurf_erwerb, _entwurf_kredit,
-                                   _entwurf_miete, _entwurf_nebenkosten,
-                                   _entwurf_notarvertrag, _entwurf_steuer,
-                                   _entwurf_versicherung, _schon_vorlaeufig,
-                                   _zeitraum_fuer_beleg)
-from ..dokumente.dedup import (DUPLIKAT_ORDNER, _dedup_rang, _duplikat_rang,
-                               _duplikat_ziel, _keeper_erbt_luecken)
 from ..dokumente.abgleich import (ABGLEICH_TIEFE, _abgleiche_objekt, _baum,
                                   _kennzeichen_nachtragen, _mehrdeutig,
                                   _nachweislich_geloescht, _umzugsart,
@@ -85,10 +71,46 @@ from ..dokumente.ablage import (_ablageordner, _beleg_umziehen, _freier_name,
                                 _ordner_sichern, _projektordner,
                                 _sidecar_mitnehmen, _ziel_im_objekt,
                                 _zielordner)
+from ..dokumente.darstellung import (VERMISST, _anh_zeige, _beleg_anbieter,
+                                     _beleg_karte, _feld_wert,
+                                     _ist_kostenfrei, _kurz, _vorschlag, _zeige)
+from ..dokumente.datum import _aus_datum, _jahr_mit_fallback, _zum_datum
+from ..dokumente.dedup import (DUPLIKAT_ORDNER, _dedup_rang, _duplikat_rang,
+                               _duplikat_ziel, _keeper_erbt_luecken)
+from ..dokumente.duplikate import (_NichtByteGleich, _VERWEIS_TITEL,
+                                   _byte_gleiche_geschwister, _dedup_nach_scan,
+                                   _duplikat_gruppen, _duplikat_weg,
+                                   _kopie_zeigen, _verknuepfungen)
+from ..dokumente.eintraege import (_UMKLASS_ZIEL, _bewahrt, _eintrag_kern,
+                                   _eintrag_wo)
+from ..dokumente.entwuerfe import (_ENTWURF_BAUER, _ZIEL_BAUER,
+                                   _entwurf_erwerb, _entwurf_kredit,
+                                   _entwurf_miete, _entwurf_nebenkosten,
+                                   _entwurf_notarvertrag, _entwurf_steuer,
+                                   _entwurf_versicherung, _schon_vorlaeufig,
+                                   _zeitraum_fuer_beleg)
 from ..dokumente.grabstein import (GRABSTEIN, _eintraege_auf,
                                    _grabstein_setzen, _ist_grabstein,
                                    _ohne_grabsteine,
                                    _verwaisten_eintrag_freigeben)
+from ..dokumente.ki_beleg import (_ki_am_beleg_festhalten, _ki_aus_db,
+                                  _pruefsumme_nachtragen, _rechnungssumme)
+from ..dokumente.ki_werte import _ki_datum, _ki_text, _ki_zahl
+from ..dokumente.namen import (DOKUMENTARTEN, LAGEPLAN, _NICHTSSAGEND, _adr_norm,
+                               _art_im_namen, _bezeichnung, _dateiname_kopfzeile,
+                               _dateistamm, _einziger, _elternordner, _elternteil,
+                               _endung, _ist_sidecar, _kern, _norm, _ohne_dopplung,
+                               _ordner_aus_pfad, _ordner_titel, _sagt_nichts,
+                               _saubere_datei, _sidecar_pfad, dateiname)
+from ..dokumente.pfade import (_datei_holen, _dateien_im_objekt,
+                               _pfad_belegt_von, _pfad_heilen)
+from ..dokumente.strom_hilfen import (_strom_hinweis, _strom_in_felder,
+                                      _zeitraum_text)
+from ..dokumente.warten import (_entwuerfe_des_belegs,
+                                _leere_zeitraeume_raeumen, _zurueck_ins_warten)
+from ..dokumente.zuordnung import (_AN_TYP_MODELLE, _INFO_RUBRIK,
+                                   _ZUORDNUNG_MODELLE, _eintrag_holen,
+                                   _gehoert_zum_objekt)
 # N297 — `dokumente/immocalc_steckbrief.py` ist entfallen: der `.immocalc`-
 # Steckbrief wird nicht mehr geschrieben, damit blieb das Modul ohne Aufrufer.
 from ..dokumente.filter import _dokument_passt
@@ -525,54 +547,6 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
 # App-seitige Zuordnung zurückgenommen, nichts in der Nextcloud angefasst.
 # --------------------------------------------------------------------------
 
-def _entwuerfe_des_belegs(session: Session, dokument_id: int) -> list:
-    """Alle noch vorläufigen (orange) Datensätze, die aus diesem Beleg entstanden.
-
-    Nutzt dieselbe Entwurfs-Registry wie `entwurf_verwerfen` (`_ENTWURF_MODELLE`
-    in `objekte.py`) — eine Wahrheit, welche Modelle Entwürfe sind."""
-    from .objekte import _ENTWURF_MODELLE           # zirkelfrei zur Laufzeit
-    treffer: list = []
-    for modell in _ENTWURF_MODELLE.values():
-        treffer += session.exec(select(modell).where(
-            modell.quelle_dokument_id == dokument_id,
-            modell.vorlaeufig == True)).all()          # noqa: E712
-    return treffer
-
-
-def _zurueck_ins_warten(session: Session, d: Dokument) -> set[int]:
-    """Nimmt einen Beleg aus allen NK-Bindungen und stellt ihn auf „neu".
-
-    Gibt die berührten Zeitraum-IDs zurück, damit der Aufrufer danach leer
-    gewordene Zeiträume aufräumen kann. Löscht ausschließlich vorläufige
-    Entwürfe — ein bestätigter Datensatz bleibt unangetastet."""
-    beruehrt: set[int] = set()
-    if d.zeitraum_id:
-        beruehrt.add(d.zeitraum_id)
-    if d.position_id:
-        p = belegposten.loese(session, d)
-        if p:
-            beruehrt.add(p.zeitraum_id)
-    for e in _entwuerfe_des_belegs(session, d.id):
-        if isinstance(e, Kostenposition):
-            beruehrt.add(e.zeitraum_id)
-        session.delete(e)
-    d.zeitraum_id = None
-    d.status = "neu"
-    session.add(d)
-    return beruehrt
-
-
-def _leere_zeitraeume_raeumen(session: Session, zeitraum_ids: set[int]) -> int:
-    """Räumt die berührten, jetzt leeren Zeiträume weg — in einem einzigen
-    Commit statt einem pro Zeitraum."""
-    from .objekte import _zeitraum_leer_entfernen    # zirkelfrei zur Laufzeit
-    entfernt = sum(1 for z in zeitraum_ids
-                   if _zeitraum_leer_entfernen(session, z, commit=False))
-    if entfernt:
-        session.commit()
-    return entfernt
-
-
 @router.post("/warte-archiv")
 def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                  status: str = "", suche: str = "", zeitraum: int | None = None,
@@ -684,133 +658,6 @@ def je_objekt(slug: str, session: Session = Depends(get_session)) -> list[dict]:
 # ein Datensatz (Kostenposition, Miete, Versicherung, Kredit, Notarvertrag) —
 # oder wartet er noch? Nur das Wartende muss der Nutzer anfassen.
 # --------------------------------------------------------------------------
-
-# Modelle, die per `quelle_dokument_id` auf einen Beleg zeigen, samt der
-# Rubrik, unter der sie in der Objektansicht stehen.
-_ZUORDNUNG_MODELLE = (
-    (Kostenposition, "Nebenkosten"), (Miete, "mieten"),
-    (Versicherung, "versicherungen"), (Kredit, "kredite"),
-    (Notarvertrag, "notarvertraege"), (Bewohner, "mieten"),
-    (Zahlung, "zahlungen"),
-)
-
-# CCCX/CCCXI — an welchen bestehenden Eintrag sich ein Beleg hängen lässt:
-# Kurzname (`an_typ`) → Modell und Rubrik der Objektansicht.
-_AN_TYP_MODELLE = {
-    "notarvertrag": (Notarvertrag, "notarvertraege"),
-    "zahlung": (Zahlung, "zahlungen"),
-    "kredit": (Kredit, "kredite"),
-    "versicherung": (Versicherung, "versicherungen"),
-    "miete": (Miete, "mieten"),
-    "kostenposition": (Kostenposition, "Nebenkosten"),
-}
-
-# Rubrik eines Info-Belegs im Dokumentenbaum. „objekt" ist der Beleg, der zur
-# Immobilie als Ganzes gehört und an keinem einzelnen Eintrag hängt.
-_INFO_RUBRIK = {typ: rubrik for typ, (_m, rubrik) in _AN_TYP_MODELLE.items()}
-_INFO_RUBRIK["objekt"] = "objekt"
-
-
-def _dateien_im_objekt(client, o: Objekt) -> dict[str, str]:
-    """Wo welche Datei der Immobilie wirklich liegt: Dateiname → Cloud-Pfad.
-
-    Angesehen werden der Hauptordner und eine Ebene darunter — tiefer legt die
-    App nichts ab. Der erste Fund gewinnt. Rein lesend."""
-    wo: dict[str, str] = {}
-    wurzel = (o.nc_ordner or "").strip("/")
-    if not wurzel:
-        return wo
-    ebenen = [wurzel] + [f"{wurzel}/{e.name}" for e in client.liste(wurzel)
-                         if e.ordner]
-    for ordner in ebenen:
-        try:
-            for e in client.liste(ordner):
-                if not e.ordner:
-                    wo.setdefault(e.name, f"/{ordner}/{e.name}")
-        except NextcloudFehler:
-            continue
-    return wo
-
-
-def _pfad_belegt_von(session: Session, pfad: str,
-                     ausser_id: Optional[int]) -> Optional[int]:
-    """Die Id eines ANDEREN Dokuments, das diesen Pfad schon hält — sonst None.
-
-    `dokument.pfad` ist eindeutig (`migrate.eindeutigkeit_sichern`): ein Pfad,
-    ein Eintrag. Zeigen nach einer Berichtigung zwei Einträge auf dieselbe
-    Datei — etwa ein Alteintrag unter dem alten Dateinamen und der neue —,
-    scheitert der Commit. Deshalb wird vorher gefragt, nicht hinterher."""
-    treffer = session.exec(select(Dokument).where(
-        Dokument.pfad == pfad, Dokument.id != ausser_id)).first()
-    return treffer.id if treffer else None
-
-
-def _pfad_heilen(session: Session, client, d: Dokument) -> str:
-    """Sucht eine vermisste Datei unter ihrem Namen im Objektordner (CCCVII).
-
-    Dieselbe Suche wie in `pfade_reparieren`, nur für einen einzelnen Beleg —
-    damit die Vorschau sich selbst heilt, statt „Datei nicht gefunden" zu
-    melden, obwohl die Datei nur einen Ordner tiefer liegt. Zurück kommt der
-    gefundene Pfad (leer, wenn sie nirgends liegt).
-
-    Der gespeicherte Pfad wird nur dann berichtigt, wenn ihn kein anderes
-    Dokument hält; sonst bleibt die Datenbank unberührt und der Aufrufer liest
-    trotzdem aus dem gefundenen Pfad. Verschoben oder gelöscht wird nichts."""
-    o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
-    if not o or not o.nc_ordner:
-        return ""
-    try:
-        wo = _dateien_im_objekt(client, o)
-    except NextcloudFehler as fehler:
-        log.info("Pfad nicht heilbar (%s): %s", d.dateiname, fehler)
-        return ""
-    richtig = wo.get(d.dateiname) or ""
-    if not richtig or richtig == d.pfad:
-        return richtig
-    belegt = _pfad_belegt_von(session, richtig, d.id)
-    if belegt:
-        # Ein anderer Eintrag hält diesen Pfad schon. Die Vorschau bekommt den
-        # gefundenen Pfad trotzdem — nur gespeichert wird nichts.
-        log.info("Pfad %s schon von Dokument #%s belegt — nur gelesen",
-                 richtig, belegt)
-        return richtig
-    alt = d.pfad
-    d.pfad = richtig
-    kidb.pfad_nachziehen(session, d)   # N299
-    if d.status == VERMISST:
-        d.status = "zugeordnet"
-    session.add(d)
-    try:
-        session.commit()
-    except IntegrityError:
-        # Nebenläufig dazwischengekommen: lieber alles lassen, wie es war.
-        session.rollback()
-        log.info("Pfad nicht gespeichert (Konflikt): %s → %s", alt, richtig)
-        return richtig
-    log.info("Pfad geheilt: %s → %s", alt, richtig)
-    return richtig
-
-
-def _datei_holen(session: Session, client, d: Dokument) -> tuple[bytes, str]:
-    """Die Datei zu einem Beleg — selbstheilend (CCCVII).
-
-    Zeigt der gespeicherte Pfad ins Leere (die Datei wurde in der Nextcloud in
-    einen Unterordner gezogen), wird sie einmalig im Objektordner gesucht, der
-    Pfad — wo möglich — berichtigt und die Datei dann normal geliefert. Erst
-    wenn sie wirklich nirgends liegt, kommt der bisherige Fehler."""
-    try:
-        return client.hole(d.pfad)
-    except NextcloudFehler as fehler:
-        if "nicht gefunden" not in str(fehler).lower():
-            raise HTTPException(400, str(fehler)) from fehler
-        richtig = _pfad_heilen(session, client, d)
-        if not richtig:
-            raise HTTPException(400, str(fehler)) from fehler
-    try:
-        return client.hole(richtig)
-    except NextcloudFehler as fehler:
-        raise HTTPException(400, str(fehler)) from fehler
-
 
 @router.post("/objekt/{slug}/pfade-reparieren")
 def pfade_reparieren(slug: str, vorschau: bool = False,
@@ -1887,8 +1734,6 @@ def vorhandenen_zuordnen(data: VorhandenerBeleg,
 # dass die Ablagelogik doppelt geschrieben werden muss.
 # --------------------------------------------------------------------------
 
-LAGEPLAN = "Lageplan"
-
 lageplan_router = APIRouter(prefix="/einheiten", tags=["lageplan"])
 
 
@@ -2389,36 +2234,6 @@ def position_loesen(dokument_id: int,
 # neu und nie überschrieben.
 # --------------------------------------------------------------------------
 
-def _gehoert_zum_objekt(session: Session, eintrag, o: Objekt) -> bool:
-    """Hängt dieser Eintrag an derselben Immobilie? Eine Kostenposition hängt
-    nur mittelbar daran — über ihren Zeitraum."""
-    if isinstance(eintrag, Kostenposition):
-        z = session.get(Zeitraum, eintrag.zeitraum_id)
-        return bool(z and z.objekt_id == o.id)
-    return getattr(eintrag, "objekt_id", None) == o.id
-
-
-def _eintrag_holen(session: Session, an_typ: str, an_id: Optional[int],
-                   o: Objekt):
-    """Der bestehende Eintrag, an den der Beleg gehängt werden soll (CCCXI).
-
-    Gibt Eintrag und Rubrik zurück. Ein unbekannter Typ, eine fehlende Id oder
-    ein Eintrag einer anderen Immobilie werden sauber gemeldet, statt still
-    etwas Falsches zu verknüpfen."""
-    paar = _AN_TYP_MODELLE.get(an_typ)
-    if not paar:
-        raise HTTPException(400, f"Unbekannter Eintragstyp „{an_typ}“")
-    if not an_id:
-        raise HTTPException(400, "Zu diesem Eintragstyp fehlt die Id.")
-    modell, rubrik = paar
-    eintrag = session.get(modell, an_id)
-    if not eintrag:
-        raise HTTPException(404, "Der gewählte Eintrag wurde nicht gefunden.")
-    if not _gehoert_zum_objekt(session, eintrag, o):
-        raise HTTPException(400, "Der Eintrag gehört zu einer anderen Immobilie.")
-    return eintrag, rubrik
-
-
 class ZuordnenIn(BaseModel):
     """Wohin ein Beleg gehört — alles freiwillig (CCCIX/CCCX/CCCXI).
 
@@ -2559,119 +2374,6 @@ def loese_zuordnung(dokument_id: int,
     log.info("Zuordnung von Dokument %s gelöst: %s", dokument_id,
              ", ".join(geloest) or "nichts")
     return {"ok": True, "geloest": geloest}
-
-
-class _NichtByteGleich(Exception):
-    """Die beiden Belege sind NICHT byte-identisch — es darf nichts weichen."""
-
-
-def _duplikat_weg(session: Session, client, weg: Dokument,
-                  behalten: Dokument) -> list[str]:
-    """N16b — entfernt `weg` NUR, wenn er byte-gleich zu `behalten` ist.
-
-    Die Byte-Gleichheit wird durch Herunterladen und SHA1-Vergleich beider
-    Dateien bewiesen — nie wird eine einzigartige Datei gelöscht (der Grundsatz
-    „nie Daten verlieren" bleibt gewahrt, es geht nur eine nachweislich
-    identische Zweitkopie, während `behalten` erhalten bleibt). Löst eine
-    Verbuchung (die erhaltene Kopie trägt die Kosten weiter), entfernt Datei,
-    `.immocalc`-Sidecar und den DB-Eintrag. Committet NICHT — das überlässt der
-    Helfer dem Aufrufer, damit er es in seine eigene Transaktion einbetten kann.
-
-    Wirft `NextcloudFehler`, wenn eine Datei nicht ladbar ist, und
-    `_NichtByteGleich`, wenn die Inhalte sich unterscheiden — in beiden Fällen
-    ist noch nichts geändert (nichts gelöscht). Gibt die entfernten Cloud-Pfade
-    zurück."""
-    import hashlib
-    b_weg, _ = client.hole(weg.pfad)
-    b_behalten, _ = client.hole(behalten.pfad)
-    if hashlib.sha1(b_weg).hexdigest() != hashlib.sha1(b_behalten).hexdigest():
-        raise _NichtByteGleich(weg.pfad)
-    # N300 — ZUERST jeden Verweis auf die erhaltene Kopie ziehen. Vorher fiel
-    # der Eintrag ersatzlos, und alles, was an ihm hing (Renovierungsrechnung,
-    # Versicherung, Kredit, Notarvertrag, Belegdaten …) zeigte danach auf eine
-    # tote Nummer. Das ist derselbe Weg wie in `/zusammenfuehren`.
-    dokumentlinks.haenge_um(session, weg.id, behalten.id)
-    # Verbuchung lösen (die erhaltene Kopie trägt die Kosten weiter), dann Datei
-    # und Sidecar entfernen — nur unterhalb des Home-Ordners (loesche-Riegel).
-    belegposten.loese(session, weg)
-    geloescht: list[str] = []
-    for pfad in (weg.pfad, _sidecar_pfad(weg.pfad)):
-        try:
-            client.loesche(pfad)
-            geloescht.append(pfad)
-        except NextcloudFehler as fehler:
-            log.info("Duplikat-Datei nicht löschbar (%s): %s", pfad, fehler)
-    session.delete(weg)
-    return geloescht
-
-
-def _byte_gleiche_geschwister(session: Session, client, d: Dokument,
-                              inhalt: bytes) -> list[Dokument]:
-    """Andere Belege desselben Objekts, die byte-gleich zu `d` sind (CD).
-
-    Rein über den Inhalt, kein Namensvergleich: der SHA1 des frisch abgelegten
-    Inhalts wird gegen den jeder anderen Datei gehalten. Nach Grösse vorgefiltert
-    — was anders gross ist, kann nie byte-gleich sein und wird gar nicht erst
-    geladen. Sidecars und Belege ohne abgelegte Datei bleiben aussen vor. Ein
-    nicht ladbarer Beleg wird übersprungen, nie als gleich behandelt."""
-    import hashlib
-    ziel_sha1 = hashlib.sha1(inhalt).hexdigest()
-    gleiche: list[Dokument] = []
-    andere = session.exec(select(Dokument).where(
-        Dokument.objekt_id == d.objekt_id, Dokument.id != d.id)).all()
-    for k in andere:
-        if _ist_sidecar(k.dateiname) or not (k.pfad or "").startswith("/"):
-            continue
-        if k.groesse and d.groesse and k.groesse != d.groesse:
-            continue
-        try:
-            roh, _ = client.hole(k.pfad)
-        except NextcloudFehler as fehler:
-            log.info("Dedup: %s nicht ladbar (%s)", k.pfad, fehler)
-            continue
-        if hashlib.sha1(roh).hexdigest() == ziel_sha1:
-            gleiche.append(k)
-    return gleiche
-
-
-def _dedup_nach_scan(session: Session, client, d: Dokument,
-                     inhalt: bytes) -> tuple[Dokument, int]:
-    """Best-effort: entfernt byte-gleiche Zweitkopien des frisch abgelegten
-    Belegs `d` im selben Objekt (CD). Gibt `(keeper, anzahl_entfernt)` zurück.
-
-    Von allen byte-gleichen Belegen (der neue `d` und seine Geschwister) bleibt
-    der beste stehen (`_dedup_rang`), die übrigen weichen über `_duplikat_weg`
-    (Byte-Gleichheit erneut bewiesen, Sidecar + DB-Eintrag + Verbuchung sauber
-    behandelt). Ist die ALTE Kopie besser, weicht der gerade angelegte `d`, und
-    zurück kommt der erhaltene Beleg. Gelöscht wird nur, solange der Keeper
-    bleibt — nie die einzige/letzte Kopie."""
-    gleiche = _byte_gleiche_geschwister(session, client, d, inhalt)
-    if not gleiche:
-        return d, 0
-    kandidaten = sorted([d, *gleiche], key=_dedup_rang)
-    keeper = kandidaten[0]
-    # N54 — der Keeper erbt fehlende Angaben von den weichenden Kopien, den
-    # frischen `d` zuerst. Ohne das ging die gerade bewusst gesetzte Zuordnung
-    # verloren, wenn die ältere byte-gleiche Kopie als Keeper bestehen blieb:
-    # der Nutzer zog den Beleg in einen Zeitraum, der Keeper hatte aber keinen —
-    # und das Verbuchen scheiterte an „fehlt der Abrechnungszeitraum". Additiv:
-    # nur Lücken werden gefüllt, nie ein vorhandener Wert überschrieben. Vor dem
-    # Entfernen, solange die Verlierer-Objekte noch gültig sind.
-    geerbt = _keeper_erbt_luecken(
-        keeper, [k for k in ([d, *kandidaten[1:]]) if k is not keeper])
-    entfernt = 0
-    for verlierer in kandidaten[1:]:
-        try:
-            _duplikat_weg(session, client, verlierer, keeper)
-            entfernt += 1
-        except (NextcloudFehler, _NichtByteGleich) as fehler:
-            # Nicht (mehr) byte-gleich oder nicht ladbar: nichts entfernen.
-            log.warning("Dedup: %s nicht entfernt (%s)", verlierer.pfad, fehler)
-    if entfernt or geerbt:
-        session.add(keeper)
-        session.commit()
-        session.refresh(keeper)
-    return keeper, entfernt
 
 
 class DuplikatEntfernenIn(BaseModel):
@@ -3173,57 +2875,6 @@ def vorschau(dokument_id: int,
     raise HTTPException(415, "Für diese Datei gibt es keine Bildvorschau")
 
 
-def _pruefsumme_nachtragen(session: Session, d: Dokument, sha1: str) -> None:
-    """N296 — die Prüfsumme am Beleg festhalten, sobald sie ohnehin errechnet
-    ist. Der Abgleich trägt sie im 2-Minuten-Takt nach (N290), aber wer einen
-    Beleg ansieht, hat die Bytes gerade in der Hand — dann kostet es nichts."""
-    if not sha1 or d.sha1 == sha1:
-        return
-    d.sha1 = sha1
-    session.add(d)
-    try:
-        session.commit()
-    except Exception as fehler:                            # noqa: BLE001
-        session.rollback()
-        log.info("Prüfsumme an Beleg %s nicht gespeichert: %s", d.id, fehler)
-
-
-def _ki_am_beleg_festhalten(session: Session, d: Dokument, ergebnis: dict) -> bool:
-    """Hält die frische KI-Auslese am Beleg fest — nur, wo die KI wirklich etwas
-    geliefert hat (CCLXXIII/CCCLXVII).
-
-    Die (jetzt mehrsätzige) Zusammenfassung steht als `ki_einordnung`, das
-    Raster als `ki_felder`/`ki_immobilie`/`ki_einheit`. So sieht der Nutzer die
-    Einschätzung später wieder, ohne den Beleg erneut lesen zu lassen. Ein
-    leeres Feld überschreibt nie einen vorhandenen Wert; nur was sich wirklich
-    ändert, wird geschrieben. Gibt zurück, ob etwas geändert wurde."""
-    geaendert = False
-    einordnung = (ergebnis.get("einordnung") or "").strip()
-    if einordnung and einordnung != (d.ki_einordnung or ""):
-        d.ki_einordnung = einordnung
-        geaendert = True
-    # Das Raster nur nachziehen, wenn die KI-Auslese wirklich lief (`ki`) — die
-    # reine Heuristik liefert keine Felder und soll ein vorhandenes Raster nicht
-    # leeren.
-    if ergebnis.get("ki"):
-        felder = ergebnis.get("felder")
-        if isinstance(felder, dict) and felder != (d.ki_felder or {}):
-            d.ki_felder = felder
-            geaendert = True
-        immobilie = (ergebnis.get("immobilie") or "").strip()
-        if immobilie and immobilie != (d.ki_immobilie or ""):
-            d.ki_immobilie = immobilie
-            geaendert = True
-        einheit = (ergebnis.get("einheit") or "").strip()
-        if einheit and einheit != (d.ki_einheit or ""):
-            d.ki_einheit = einheit
-            geaendert = True
-    if geaendert:
-        session.add(d)
-        session.commit()
-    return geaendert
-
-
 def _hole_beleg_bytes(session: Session, dokument_id: int) -> tuple[Dokument, bytes]:
     """Der Beleg und seine Bytes aus der Cloud — die gemeinsame Vorstufe von
     Erkennen und Neu-Analysieren."""
@@ -3238,55 +2889,6 @@ def _hole_beleg_bytes(session: Session, dokument_id: int) -> tuple[Dokument, byt
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
     return d, rohdaten
-
-
-def _rechnungssumme(session: Session, d: Dokument) -> float | None:
-    """N103 — die Summe der ganzen Rechnung, wenn ein Beleg auf mehrere
-    Positionen aufgeteilt ist.
-
-    Ein Wasser-Bescheid trägt drei Gebühren (Frisch-, Schmutz-, Niederschlags-
-    wasser). Verbucht wird der Beleg auf der Frischwasser-Position, sein
-    `betrag` ist deshalb nur ein Drittel der Rechnung — im Beleg-Fenster wirkt
-    das wie ein Lesefehler. Hier kommt die Summe der zusammengehörigen
-    Positionen desselben Zeitraums dazu. `None`, wenn es nichts zu summieren
-    gibt (dann zeigt die Oberfläche nur den Betrag)."""
-    if not d.zeitraum_id or not (d.kostenart or "").strip():
-        return None
-    geschwister = ("Wasser", "Abwasser", "Niederschlagswasser")
-    if kostenart_normalisieren(d.kostenart) not in geschwister:
-        return None
-    summe = sum(p.betrag or 0.0 for p in session.exec(
-        select(Kostenposition).where(
-            Kostenposition.zeitraum_id == d.zeitraum_id)).all()
-        if kostenart_normalisieren(p.kostenart) in geschwister)
-    summe = round(summe, 2)
-    return summe if summe > 0 and summe != round(d.betrag or 0.0, 2) else None
-
-
-def _ki_aus_db(d: Dokument, session: Session | None = None) -> dict | None:
-    """N98 — die schon gespeicherte KI-Auslese eines Belegs, wenn sie taugt.
-
-    Ein KI-Aufruf kostet Geld und Zeit; das Ergebnis steht bereits am Beleg
-    (`ki_einordnung`/`ki_felder`/`ki_immobilie`, dazu Betrag und Belegdatum).
-    Wer denselben Beleg erneut ansieht, soll die gespeicherte Einschätzung
-    bekommen statt eines neuen Aufrufs — neu gelesen wird nur ausdrücklich über
-    `/neu-analysieren`. `None`, solange noch nichts gespeichert ist."""
-    if not (d.ki_einordnung or d.ki_felder):
-        return None
-    return {
-        "betrag": d.betrag, "datum": d.belegdatum.isoformat() if d.belegdatum else None,
-        "jahr": d.jahr, "kategorie": d.kategorie, "kostenart": d.kostenart,
-        # Eine eigene „Bezeichnung" gibt es am Dokument nicht — sie steckt im
-        # Dateinamen (ohne Datums- und Betragsteil, siehe `bezeichnung.py`).
-        "sache": ohne_betrag(ohne_datum(d.dateiname or "")).strip(" _-"),
-        "zusammenfassung": d.ki_einordnung,
-        "einordnung": d.ki_einordnung, "immobilie": d.ki_immobilie,
-        "einheit": getattr(d, "ki_einheit", "") or "",
-        "felder": d.ki_felder or {}, "ki": True, "aus_db": True,
-        # N103 — bei aufgeteilten Rechnungen (Wasser: drei Gebühren) die
-        # Summe der ganzen Rechnung mitgeben, nicht nur den Buchungsanteil.
-        "rechnungssumme": _rechnungssumme(session, d) if session else None,
-    }
 
 
 @router.get("/{dokument_id}/erkennen")
@@ -3836,51 +3438,6 @@ def lageplaene_einsortieren(trocken: bool = True,
 # ein zweites Mal (keine Endlosverschiebung).
 # --------------------------------------------------------------------------
 
-def _duplikat_gruppen(session: Session, client, o: Objekt
-                      ) -> tuple[list[tuple[str, Dokument, list[Dokument]]],
-                                 list[dict]]:
-    """Bildet die Duplikatgruppen einer Immobilie über einen SHA1 des Inhalts.
-
-    Gibt `(gruppen, fehler)` zurück. `gruppen`: je echtem Duplikat ein Tupel
-    `(sha1, behalten, [verschieben…])`, wobei `verschieben` nie leer und
-    `behalten` die beste Kopie ist. `fehler`: nicht ladbare Belege, die
-    übersprungen (nicht abgebrochen) wurden.
-
-    Ausgenommen sind Sidecars, Lagepläne (mehrere Fotos desselben Plans sind
-    gewollt) und Belege, die bereits im Sammelordner liegen (Idempotenz)."""
-    import hashlib
-    ziel = _duplikat_ziel(o).strip("/")
-    kandidaten = [
-        d for d in session.exec(
-            select(Dokument).where(Dokument.objekt_id == o.id)).all()
-        if (d.pfad or "").startswith("/")
-        and not _ist_sidecar(d.dateiname)
-        and d.kategorie != LAGEPLAN
-        and _elternordner(d.pfad) != ziel]
-
-    nach_sha1: dict[str, list[Dokument]] = {}
-    fehler: list[dict] = []
-    for d in kandidaten:
-        try:
-            rohdaten, _typ = client.hole(d.pfad)
-        except NextcloudFehler as f:
-            # Ein nicht ladbarer Beleg hält den Lauf nicht an — er wird
-            # übersprungen, nie als Duplikat behandelt (byte-genau geht nicht).
-            log.info("Duplikat-Prüfung übersprungen (%s): %s", d.pfad, f)
-            fehler.append({"id": d.id, "name": d.dateiname, "grund": str(f)})
-            continue
-        sha1 = hashlib.sha1(rohdaten).hexdigest()
-        nach_sha1.setdefault(sha1, []).append(d)
-
-    gruppen: list[tuple[str, Dokument, list[Dokument]]] = []
-    for sha1, docs in nach_sha1.items():
-        if len(docs) < 2:
-            continue                                   # keine Kopie = kein Duplikat
-        docs.sort(key=_duplikat_rang)
-        gruppen.append((sha1, docs[0], docs[1:]))
-    return gruppen, fehler
-
-
 @router.post("/objekte/{slug}/duplikate-buendeln")
 def duplikate_buendeln(slug: str, trocken: bool = True,
                        session: Session = Depends(get_session)) -> dict:
@@ -4095,47 +3652,6 @@ def immocalc_entfernen(bestaetigt: bool = False,
 # Hier steht das Gegenteil: erst wandert jeder Verweis auf den Beleg, der
 # bleibt, dann fällt der andere.
 # --------------------------------------------------------------------------
-
-_VERWEIS_TITEL = {
-    "kostenposition.quelle_dokument_id": "Kostenposition",
-    "miete.quelle_dokument_id": "Mietverhältnis",
-    "versicherung.quelle_dokument_id": "Versicherung",
-    "kredit.quelle_dokument_id": "Kredit",
-    "notarvertrag.quelle_dokument_id": "Notarvertrag",
-    "bewohner.quelle_dokument_id": "Bewohner",
-    "zahlung.quelle_dokument_id": "Zahlung",
-    "renovierungsposten.quelle_dokument_id": "Renovierungsrechnung",
-    "stromjahr.screenshot_dokument_id": "Stromjahr (Screenshot)",
-    "belegdaten.dokument_id": "Belegdaten",
-    # N313 — kam mit dem Kontaktbuch dazu und fehlte hier; im Duplikat-
-    # Assistenten stand dem Nutzer sonst der rohe Tabellenname.
-    "kundennummer.quelle_dokument_id": "Kundennummer",
-}
-
-
-def _verknuepfungen(session: Session, dokument_id: int) -> list[dict]:
-    """Woran dieser Beleg hängt — in Klartext für die Oberfläche.
-
-    Der Nutzer entscheidet anhand dieser Liste, welche Kopie bleibt: eine ohne
-    jeden Verweis ist der unverfänglichste Kandidat zum Wegwerfen."""
-    return [{"typ": schluessel,
-             "titel": _VERWEIS_TITEL.get(schluessel, schluessel),
-             "anzahl": anzahl}
-            for schluessel, anzahl in
-            sorted(dokumentlinks.zaehle(session, dokument_id).items())]
-
-
-def _kopie_zeigen(session: Session, d: Dokument, objekte: dict) -> dict:
-    o = objekte.get(d.objekt_id)
-    return {
-        "id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
-        "objekt": o.slug if o else "", "objekt_name": objekt_titel(o) if o else "",
-        "kategorie": d.kategorie, "kostenart": d.kostenart,
-        "betrag": d.betrag, "jahr": d.jahr, "status": d.status,
-        "belegdatum": d.belegdatum.isoformat() if d.belegdatum else None,
-        "verknuepfungen": _verknuepfungen(session, d.id),
-    }
-
 
 @router.get("/duplikate")
 def duplikate(session: Session = Depends(get_session)) -> dict:

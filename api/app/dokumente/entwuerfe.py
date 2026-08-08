@@ -44,7 +44,8 @@ def _zeitraum_fuer_beleg(session: Session, o: Objekt, d: Dokument):
     Turnus-Regel des Objekts angelegt (`_zeitraum_grenzen`/`_zeitraum_jahr` aus
     `objekte`, damit Anlegen und Erkennen deckungsgleich bleiben). `None`, wenn
     sich weder Tag noch Jahr bestimmen lassen."""
-    from .objekte import _zeitraum_grenzen, _zeitraum_jahr    # zirkelfrei zur Laufzeit
+    from ..routers.objekte import (_zeitraum_grenzen,         # zirkelfrei zur
+                                   _zeitraum_jahr)            # Laufzeit
     belegdatum = d.belegdatum or _ki_datum((d.ki_felder or {}).get("datum"))
     bestehende = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
