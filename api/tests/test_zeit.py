@@ -99,3 +99,49 @@ def test_die_alten_namen_sind_dieselbe_funktion():
 
     assert monate_im_jahr is jahresanteil_monate
     assert weg._monate is zahlmonate
+
+
+# --------------------------------------------------------------------------
+# N312 — die Vorauszahlung zählt Zahlmonate, nicht Tagesanteile
+# --------------------------------------------------------------------------
+
+def test_vorauszahlung_rechnet_mit_zahlmonaten():
+    """Der Fund aus der Rechenlogik-Prüfung, an echten Zahlen nachgerechnet.
+
+    `vorauszahlung_je_partei` vervielfacht einen MONATSbetrag. Sie rechnete mit
+    `jahresanteil_monate` (Tagesanteil) statt `zahlmonate` — ein Mieter mit
+    280 €/Monat vom 01.01. bis 28.02. überweist 560,00 €, angerechnet bekam er
+    **543,12 €**. Die 16,88 € gingen unbemerkt in Guthaben bzw. Nachzahlung.
+
+    Der Verteilungsschlüssel (Wohndauer, Personenmonate) bleibt bewusst beim
+    Tagesanteil — deshalb prüft dieser Test beide Wege getrennt."""
+    from app.verteilung import Bezug, _monate, _zahlmonate
+
+    b = Bezug(partei="Alicia & Roman", ab=date(2026, 1, 1), bis=date(2026, 2, 28))
+    start, ende = date(2026, 1, 1), date(2026, 12, 31)
+
+    # Die Vorauszahlung: zwei volle Kalendermonate sind zwei Zahlungen.
+    assert _zahlmonate(b, start, ende) == 2.0
+    assert round(280 * _zahlmonate(b, start, ende), 2) == 560.00
+
+    # Der Verteilungsschlüssel bleibt taggenau — 59 von 365 Tagen.
+    assert _monate(b, start, ende) < 2.0
+    assert round(280 * _monate(b, start, ende), 2) == 543.12
+
+
+def test_einzelner_februar_kostet_die_volle_monatszahlung():
+    from app.verteilung import Bezug, _zahlmonate
+
+    b = Bezug(partei="X", ab=date(2025, 2, 1), bis=date(2025, 2, 28))
+    monate = _zahlmonate(b, date(2025, 1, 1), date(2025, 12, 31))
+    assert monate == 1.0
+    assert round(244 * monate, 2) == 244.00        # nicht 224,61
+
+
+def test_unterbrochenes_mietverhaeltnis_zaehlt_beide_stuecke():
+    """Wie `_monate` verkraftet auch die Zahlvariante mehrere Spannen."""
+    from app.verteilung import Bezug, _zahlmonate
+
+    b = Bezug(partei="X", zeiten=[(date(2025, 1, 1), date(2025, 3, 31)),
+                                  (date(2025, 7, 1), date(2025, 9, 30))])
+    assert _zahlmonate(b, date(2025, 1, 1), date(2025, 12, 31)) == 6.0

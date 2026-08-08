@@ -23,6 +23,8 @@ from datetime import date, timedelta
 from sqlmodel import Session, select
 
 from .cashflow import monate_im_jahr
+# N312 — die zweite Monatsregel: Zahlmonate für Vorauszahlungen.
+from .zeit import zahlmonate
 from .models import Einheit, Kostenposition, Miete, Partei, Zeitraum
 from .turnus import jahresbetrag
 
@@ -239,6 +241,26 @@ def _monate(b: Bezug, start: date, ende: date) -> float:
     return round(summe, 4)
 
 
+def _zahlmonate(b: Bezug, start: date, ende: date) -> float:
+    """N312 — wie viele MONATSZAHLUNGEN in den Zeitraum fallen.
+
+    Der Zwilling zu `_monate`, und der Unterschied ist der aus `zeit.py`:
+    `_monate` misst den Anteil am Jahr (für Verteilungsschlüssel), diese
+    Funktion zählt Zahlungen (für Vorauszahlungen). Ein voller Kalendermonat
+    ist hier exakt 1,0 — wer im Februar wohnt, überweist seine 280 €, nicht
+    280 × 28/365 × 12.
+
+    Wie `_monate` verkraftet sie mehrere Stücke: ein Mietverhältnis kann
+    unterbrochen sein."""
+    summe = 0.0
+    for a, z in b.zeiten or [(b.ab or start, b.bis or ende)]:
+        von, bis = max(a, start), min(z, ende)
+        if bis < von:
+            continue
+        summe += zahlmonate(von, bis)
+    return round(summe, 4)
+
+
 def _zeitraum_monate(start: date, ende: date) -> float:
     """Länge des Abrechnungszeitraums in Monaten, taggenau — die Bezugsgröße,
     an der die Wohndauer gemessen wird."""
@@ -363,8 +385,16 @@ def vorauszahlung_je_partei(session: Session, z: Zeitraum) -> dict[str, float]:
         monatlich = jahresbetrag(m.nebenkosten_vz, m.turnus) / 12
         if monatlich <= 0:
             continue
-        monate = _monate(Bezug(partei=partei, ab=m.ab_datum, bis=m.bis_datum),
-                         z.start, z.ende)
+        # N312 — hier wird ein MONATSbetrag vervielfacht, also zählen
+        # Zahlmonate, nicht Tagesanteile. Genau die Unterscheidung aus
+        # `zeit.py` ([N291]), die `weg.py` befolgt und die hier verletzt war:
+        # ein Mieter mit 280 €/Monat vom 01.01. bis 28.02. überweist 560,00 €,
+        # angerechnet bekam er 543,12 € — 16,88 € zu wenig, direkt im Saldo.
+        # Für den VERTEILUNGSSCHLÜSSEL (Wohndauer, Personenmonate) bleibt es
+        # beim Tagesanteil; deshalb wird `_monate` hier nicht geändert, sondern
+        # nur diese eine Stelle auf die richtige Frage umgestellt.
+        monate = _zahlmonate(Bezug(partei=partei, ab=m.ab_datum,
+                                   bis=m.bis_datum), z.start, z.ende)
         ergebnis[partei] = ergebnis.get(partei, 0.0) + monatlich * monate
     return {k: round(v, 2) for k, v in ergebnis.items() if round(v, 2)}
 
