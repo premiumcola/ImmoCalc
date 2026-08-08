@@ -446,11 +446,17 @@ export async function formular(einst) {
   // N263 — der Weg übers Foto steht VOR den Feldern: er erspart im Regelfall
   // das Ausfüllen, und danach steht dieselbe Maske gefüllt da. Wer lieber
   // tippt, scrollt einfach daran vorbei — der bisherige Weg bleibt unberührt.
+  // N269 — mehrseitige Verträge (Notarvertrag, Kredit …) brauchen mehr als
+  // ein Foto. Das Kamerafenster erlaubt das längst über sein eigenes „+",
+  // nur stand das nirgends — der Nutzer schloss nach der ersten Seite ab und
+  // vermisste danach den Rest des Vertrags.
   const scanHtml = scan
     ? `<button type="button" class="scan-vorschlag" data-eintrag-scan="${esc(scan)}">
          ${KAMERA_SVG}
          <span class="sv-t">Abfotografieren statt tippen</span>
-         <span class="sv-u">Die Angaben werden erkannt und hier eingetragen.</span>
+         <span class="sv-u">Mehrere Seiten? Im Kamerafenster unten „+" für die
+           nächste antippen, bevor „Seiten übernehmen" kommt. Die Angaben
+           werden danach erkannt und hier eingetragen.</span>
        </button>` : '';
   form.innerHTML = (hinweis ? `<p class="dlgnote">${esc(hinweis)}</p>` : '')
     + scanHtml + html.join('') + extra +

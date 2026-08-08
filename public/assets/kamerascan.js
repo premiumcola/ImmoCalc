@@ -63,13 +63,26 @@ function stilSicherstellen() {
   stilEingefuegt = true;
   const stil = document.createElement('style');
   stil.textContent = `
-.kscan-overlay{position:fixed;inset:0;z-index:9000;background:rgba(15,20,22,.94);
-  display:flex;flex-direction:column;height:100dvh;font-family:var(--body,sans-serif);
-  color:#fff;
+/* N269 — ein natives <dialog> statt eines blossen <div>: geOEffnet ueber
+   showModal() steht der Scanner in der Top-Layer-Reihenfolge des Browsers,
+   NICHT im normalen z-index-Baum. Aus einem bereits offenen Eintrags-Dialog
+   heraus (Notarvertrag, Versicherung, …) blieb der Scanner sonst HINTER
+   dessen eigenem showModal()-Dialog haengen, egal wie hoch der z-index war —
+   ein <dialog> gewinnt gegen jeden gewoehnlichen z-index, das war hier das
+   Kernproblem. Der Reset unten nimmt dem <dialog> seine Standardgrenzen
+   (Rand, Zentrierung, Groessenbegrenzung) wieder weg, die eigene ::backdrop
+   bleibt durchsichtig — die Verdunklung uebernimmt weiter der Hintergrund
+   der Flaeche selbst. */
+dialog.kscan-overlay{position:fixed;inset:0;z-index:9000;
+  background:rgba(15,20,22,.94);
+  display:flex;flex-direction:column;height:100dvh;width:100vw;
+  max-width:none;max-height:none;margin:0;padding:0;border:none;
+  font-family:var(--body,sans-serif);color:#fff;
   /* CCCLXXXVIII — beim langsamen Ziehen einer Ecke fing iOS sonst an, Text im
      Hintergrund zu markieren (Kopieren/Nachschlagen-Menü). Im ganzen Scanner
      ist nichts zu markieren, also Auswahl und Langdruck-Menü komplett aus. */
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+dialog.kscan-overlay::backdrop{background:transparent}
 .kscan-leer{max-width:340px;margin:auto;padding:24px;text-align:center;
   font:500 14px var(--body,sans-serif);line-height:1.6;color:#fff}
 .kscan-leer b{font-weight:700}
@@ -867,7 +880,8 @@ export function kamerascanStarten(dateien, optionen = {}) {
     let aktiv = 0;
     let abgeschlossen = false;
 
-    const overlay = document.createElement('div');
+    // N269 — ein <dialog>, kein <div>: siehe die Erklärung beim CSS oben.
+    const overlay = document.createElement('dialog');
     overlay.className = 'kscan-overlay';
     overlay.innerHTML = `
       <div class="kscan-kopf">
@@ -884,6 +898,11 @@ export function kamerascanStarten(dateien, optionen = {}) {
         </div>
       </div>`;
     document.body.appendChild(overlay);
+    overlay.showModal();
+    // Escape (native 'cancel' vor 'close') läuft über denselben Abbruch wie
+    // der ×-Knopf — sonst schlösse der Browser den Dialog allein, ohne
+    // `fertigMit(null)` je aufzurufen, und die Promise bliebe für immer offen.
+    overlay.addEventListener('cancel', e => { e.preventDefault(); abbrechen(); });
     const vormalsUeberlauf = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
@@ -906,6 +925,10 @@ export function kamerascanStarten(dateien, optionen = {}) {
         URL.revokeObjectURL(s.thumbUrl);
         s.bitmap.close?.();
       }
+      // Erst schliessen (verlässt die Top-Layer-Reihenfolge sauber und feuert
+      // 'close'), dann erst entfernen — sonst bliebe ein offener Dialog-Slot,
+      // sollte je ein zweiter Scanner vor diesem hier geöffnet werden.
+      try { overlay.close(); } catch { /* schon zu */ }
       overlay.remove();
     }
 
@@ -1310,10 +1333,9 @@ export function kamerascanStarten(dateien, optionen = {}) {
       dateiEingabe.value = '';
       if (liste.length) dateienHinzufuegen(liste);
     });
-    document.addEventListener('keydown', function escHandler(ev) {
-      if (ev.key === 'Escape') { abbrechen(); }
-      if (abgeschlossen) document.removeEventListener('keydown', escHandler);
-    });
+    // N269 — Escape läuft jetzt über das native 'cancel' des <dialog> (oben);
+    // ein eigener Tastatur-Horcher wäre seitdem eine zweite, überflüssige
+    // Instanz derselben Sache.
 
     dateienHinzufuegen(bilder);
   });

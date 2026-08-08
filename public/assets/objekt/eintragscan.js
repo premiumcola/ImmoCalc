@@ -16,7 +16,7 @@
  * `offen` — erst wenn der Eintrag steht und seine id hat, wandert die Datei in
  * die Cloud. Bricht der Nutzer im Formular ab, wurde nichts abgelegt.
  */
-import { melde } from '../immo.js';
+import { melde, esc } from '../immo.js';
 import { belegVorbereiten, belegAblegen } from '../belegscan.js';
 import { analyseDecke } from '../belegbestaetigung.js';
 import { cfgFuer, felderFuer } from '../objekt-felder.js?v=2';
@@ -59,7 +59,52 @@ let offen = null;
 export const scanWartet = () => Boolean(offen);
 
 /** Vergisst den vorbereiteten Scan (Formular abgebrochen oder verworfen). */
-export function scanVerwerfen() { offen = null; }
+export function scanVerwerfen() { offen = null; vorschauAufraeumen(); }
+
+/* N269 — solange eine Aufnahme läuft (Kamera offen, Zuschnitt, KI-Auslese),
+ * blockt jeder weitere Tastendruck. Ohne diesen Riegel öffnete ein zweiter,
+ * ungeduldiger Tipp auf den Scan-Knopf einen ZWEITEN, unabhängigen Zuschnitt
+ * gleichzeitig — zwei Kamera-Sitzungen, zwei Fotos, keines davon zusammen als
+ * ein mehrseitiges Dokument. Genau das hatte der Nutzer gemeldet: drei Ebenen
+ * übereinander (die Eingabemaske plus zwei einzelne Seiten-Zuschnitte statt
+ * eines gemeinsamen mit „+" für die zweite Seite).
+ */
+let inBearbeitung = false;
+
+/* Die Vorschau der zuletzt aufgenommenen Seiten — Object-URLs, die beim
+ * nächsten Scan oder Verwerfen wieder freigegeben werden. */
+let vorschauUrls = [];
+function vorschauAufraeumen() {
+  vorschauUrls.forEach(u => URL.revokeObjectURL(u));
+  vorschauUrls = [];
+}
+
+/**
+ * N269 — der Beleg verschwand nach der Aufnahme sang- und klanglos aus dem
+ * Blick: die Maske ging gefüllt auf, aber ohne jede sichtbare Spur des Fotos.
+ * Diese kleine Vorschau zeigt genau, was gleich mit abgelegt wird, und macht
+ * mit „Erneut aufnehmen" einen kompletten Neuversuch möglich — mehrseitig
+ * hinzufügen läuft weiterhin über das „+" im Kamerafenster selbst
+ * (`kamerascanStarten`), das erlaubt beliebig viele Seiten in EINER Sitzung.
+ */
+function scanVorschauHtml(bereich, blaetter, seiten) {
+  vorschauAufraeumen();
+  const anzahl = seiten || (blaetter || []).length || 0;
+  if (!anzahl) return '';
+  const bilder = (blaetter || []).map(b => {
+    const url = URL.createObjectURL(b);
+    vorschauUrls.push(url);
+    return `<img class="sv-blatt" src="${url}" alt="">`;
+  }).join('');
+  return `<div class="sv-vorschau">
+      ${bilder ? `<div class="sv-blaetter">${bilder}</div>` : ''}
+      <div class="sv-vzeile">
+        <span class="sv-vanzahl">${anzahl} Seite${anzahl === 1 ? '' : 'n'} aufgenommen</span>
+        <button type="button" class="sv-vneu" data-eintrag-scan="${esc(bereich)}"
+          >Erneut aufnehmen</button>
+      </div>
+    </div>`;
+}
 
 /**
  * Hängt den vorbereiteten Scan an den frisch angelegten Eintrag.
@@ -137,48 +182,59 @@ function dateienWaehlen() {
  * hat, überschreibt kein Automatismus.
  */
 export async function eintragScannen(bereich, werte = {}, extra = '') {
-  const cfg = cfgFuer(bereich);
-  const dateien = await dateienWaehlen();
-  if (!dateien) return;
-
-  let deckeWeg = null;
-  let vorbereitet = null;
+  // N269 — ein zweiter Tipp während Kamera/Zuschnitt/Auslese laufen wird
+  // stillschweigend ignoriert statt eine zweite, unabhängige Sitzung zu
+  // starten (siehe die Erklärung bei `inBearbeitung` oben).
+  if (inBearbeitung) return;
+  inBearbeitung = true;
   try {
-    vorbereitet = await belegVorbereiten(dateien, {
-      objekt: slug,
-      kategorie: KATEGORIE[bereich] || 'Sonstiges',
+    const cfg = cfgFuer(bereich);
+    const dateien = await dateienWaehlen();
+    if (!dateien) return;
+
+    let deckeWeg = null;
+    let vorbereitet = null;
+    try {
+      vorbereitet = await belegVorbereiten(dateien, {
+        objekt: slug,
+        kategorie: KATEGORIE[bereich] || 'Sonstiges',
+        bereich,
+        titel: `${cfg.einzahl} abfotografieren`,
+      }, () => { deckeWeg = analyseDecke(`${cfg.einzahl} wird gelesen …`); });
+    } catch (fehler) {
+      melde(String(fehler.message || 'Der Scan hat nicht geklappt.'), 'neg');
+      return;
+    } finally {
+      // Die Decke geht IMMER weg — auch wenn das Auslesen scheitert. Eine
+      // hängende Vollbild-Sperre wäre schlimmer als gar keine.
+      if (deckeWeg) { try { deckeWeg(); } catch { /* egal */ } }
+    }
+    if (!vorbereitet) return;                      // Zuschnitt abgebrochen
+
+    const ki = vorbereitet.ki || {};
+    // Der Kontext gewinnt: `werte` steht hinten und überschreibt die Auslese.
+    const gefuellt = { ...(ki.formwerte || {}), ...werte };
+    const erkannt = Object.keys(ki.formwerte || {}).length;
+
+    // Der Scan wartet jetzt auf den gespeicherten Eintrag (siehe `scanAnhaengen`).
+    offen = { ...vorbereitet, name: ki.formname || null };
+    const vorschau = scanVorschauHtml(bereich, vorbereitet.aufnahme.blaetter,
+                                     vorbereitet.aufnahme.seiten);
+
+    await formular({
+      titel: `${cfg.einzahl} aus Scan`,
+      felder: felderFuer(bereich, gefuellt),
       bereich,
-      titel: `${cfg.einzahl} abfotografieren`,
-    }, () => { deckeWeg = analyseDecke(`${cfg.einzahl} wird gelesen …`); });
-  } catch (fehler) {
-    melde(String(fehler.message || 'Der Scan hat nicht geklappt.'), 'neg');
-    return;
+      werte: gefuellt,
+      absicht: 'eintrag',
+      hinweis: erkannt
+        ? `${erkannt} ${erkannt === 1 ? 'Angabe' : 'Angaben'} erkannt — bitte `
+          + 'prüfen und ergänzen. Die Datei wird beim Speichern mit abgelegt.'
+        : 'Aus dem Foto liess sich nichts Sicheres lesen — bitte von Hand '
+          + 'ausfüllen. Die Datei wird beim Speichern mit abgelegt.',
+      extra: vorschau + extra,
+    });
   } finally {
-    // Die Decke geht IMMER weg — auch wenn das Auslesen scheitert. Eine
-    // hängende Vollbild-Sperre wäre schlimmer als gar keine.
-    if (deckeWeg) { try { deckeWeg(); } catch { /* egal */ } }
+    inBearbeitung = false;
   }
-  if (!vorbereitet) return;                      // Zuschnitt abgebrochen
-
-  const ki = vorbereitet.ki || {};
-  // Der Kontext gewinnt: `werte` steht hinten und überschreibt die Auslese.
-  const gefuellt = { ...(ki.formwerte || {}), ...werte };
-  const erkannt = Object.keys(ki.formwerte || {}).length;
-
-  // Der Scan wartet jetzt auf den gespeicherten Eintrag (siehe `scanAnhaengen`).
-  offen = { ...vorbereitet, name: ki.formname || null };
-
-  await formular({
-    titel: `${cfg.einzahl} aus Scan`,
-    felder: felderFuer(bereich, gefuellt),
-    bereich,
-    werte: gefuellt,
-    absicht: 'eintrag',
-    hinweis: erkannt
-      ? `${erkannt} ${erkannt === 1 ? 'Angabe' : 'Angaben'} erkannt — bitte `
-        + 'prüfen und ergänzen. Die Datei wird beim Speichern mit abgelegt.'
-      : 'Aus dem Foto liess sich nichts Sicheres lesen — bitte von Hand '
-        + 'ausfüllen. Die Datei wird beim Speichern mit abgelegt.',
-    extra,
-  });
 }
