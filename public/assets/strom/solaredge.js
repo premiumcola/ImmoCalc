@@ -11,7 +11,7 @@
    stufige Kette (lesen → pruefen → uebernehmen). */
 import { esc, melde } from '../immo.js';
 import { S, inhalt } from './state.js';
-import { kwh } from './helpers.js';
+import { kwh, feldZahl } from './helpers.js';
 import { angestossen } from './jahre.js';
 
 /* Feld · Bezeichnung · Herkunft im Bild · Menge · Anteil. Aus derselben
@@ -40,9 +40,7 @@ const seProzent = p => p == null ? ''
 
 /* Der aktuelle Stand eines Feldes — das, wogegen der erkannte Wert steht. */
 function seJetzt(feld) {
-  const el = inhalt.querySelector(`input[data-feld="${feld}"]`);
-  const v = parseFloat(el ? el.value : '');
-  return Number.isFinite(v) ? v : 0;
+  return feldZahl(inhalt.querySelector(`input[data-feld="${feld}"]`));
 }
 
 function seZeile(feld, name, herkunft, wert, anteil) {

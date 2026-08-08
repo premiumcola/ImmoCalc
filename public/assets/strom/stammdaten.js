@@ -9,7 +9,7 @@
    Vorrang-Regel wie zuvor inline in strom.html. */
 import { api, eur, melde } from '../immo.js';
 import { S, inhalt } from './state.js';
-import { datumDe, tag } from './helpers.js';
+import { datumDe, tag, feldZahl } from './helpers.js';
 import { feldHtml, datumHtml } from './felder.js';
 import { pvAnteileJson } from './eigentuemer.js';
 import { rechnen } from './jahre.js';
@@ -37,9 +37,10 @@ export const F_VORLAUF = [
    damit ein Tippfehler im Zahlenfeld nicht nebenbei das Datum loescht. */
 export function stammAusForm() {
   const werte = {};
+  // N288 — gelesen ueber `feldZahl` (helpers.js), das die deutsche Regel aus
+  // immo.js benutzt, statt sie hier ein zweites Mal zu schreiben.
   inhalt.querySelectorAll('input[data-stamm]').forEach(el => {
-    const v = parseFloat(el.value);
-    werte[el.dataset.stamm] = Number.isFinite(v) ? v : 0;
+    werte[el.dataset.stamm] = feldZahl(el);
   });
   const d = inhalt.querySelector('[data-stammdatum]');
   if (d && d.value) werte.inbetriebnahme = d.value;
@@ -108,9 +109,7 @@ function vorlaufPruefen(gesendet, antwort) {
 
 function vorlaufWerte() {
   return F_VORLAUF.map(([name]) => {
-    const el = inhalt.querySelector(`input[data-stamm="${name}"]`);
-    const v = parseFloat(el ? el.value : '');
-    return Number.isFinite(v) ? v : 0;
+    return feldZahl(inhalt.querySelector(`input[data-stamm="${name}"]`));
   });
 }
 

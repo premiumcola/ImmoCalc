@@ -15,7 +15,7 @@
 
    Umzug ohne Verhaltensaenderung: dieselben API-Aufrufe und dieselbe
    Zeichenlogik wie zuvor inline in strom.html. */
-import { api, esc, eur, frage, melde, promille } from '../immo.js';
+import { api, esc, eur, frage, melde, promille, zahlAus } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { S, inhalt } from './state.js';
 import { runde3 } from './helpers.js';
@@ -167,9 +167,12 @@ function pvVorschlagSetzen(name) {
 function pvZuordnen() {
   const name = S.pvNeuWahl?.wert();
   const feld = document.getElementById('paWert');
-  const v = parseFloat(String(feld?.value || '').replace(',', '.'));
+  // N288 — `zahlAus` statt eigener Fassung: das Feld ist ein Textfeld, in dem
+  // „833,333" wie „1.250" stehen kann. Das frueher hier stehende
+  // `replace(',', '.')` machte aus „1.250" die Zahl 1,25.
+  const v = zahlAus(feld);
   if (!name) return melde('Bitte eine Person wählen', 'neg');
-  if (!Number.isFinite(v) || v <= 0) return melde('Bitte einen Anteil in ‰ angeben', 'neg');
+  if (v == null || v <= 0) return melde('Bitte einen Anteil in ‰ angeben', 'neg');
   // Bewusst ungerundet: die Anzeige rundet auf eine Nachkommastelle,
   // gespeichert wird, was dasteht — sonst wuerde 833,3333 bei jedem Oeffnen
   // kuerzer.

@@ -8,7 +8,7 @@
    Funktionen wie zuvor inline in strom.html. */
 import { api, esc, eur, melde } from '../immo.js';
 import { S, inhalt } from './state.js';
-import { kwh, ct, prozent } from './helpers.js';
+import { kwh, ct, prozent, feldZahl } from './helpers.js';
 import { verlaufZeigen } from './verlauf.js';
 
 export const F_JAHR_VERBRAUCH = [
@@ -23,12 +23,14 @@ export const F_JAHR_ERZEUGUNG = [
   ['verguetung_eur', 'Vergütung', '€', 0.01],
 ];
 
-/* Werte der JAHRESfelder als Objekt (leeres Feld = 0). */
+/* Werte der JAHRESfelder als Objekt (leeres Feld = 0).
+
+   N288 — gelesen wird ueber `feldZahl` (helpers.js), das die deutsche Regel
+   aus immo.js benutzt, statt sie hier ein zweites Mal zu schreiben. */
 export function werteAusForm() {
   const werte = {};
   inhalt.querySelectorAll('input[data-feld]').forEach(el => {
-    const v = parseFloat(el.value);
-    werte[el.dataset.feld] = Number.isFinite(v) ? v : 0;
+    werte[el.dataset.feld] = feldZahl(el);
   });
   return werte;
 }

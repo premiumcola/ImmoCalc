@@ -9,7 +9,7 @@
 
    Verhaltensgleich zum bisherigen Inline-Skript in tankstelle.html — nur der
    Ort aendert sich. */
-import { esc, melde } from '../immo.js';
+import { esc, melde, zahlAus } from '../immo.js';
 
 export const S = {
   /* Die aktuell gewaehlte Immobilie. */
@@ -50,6 +50,10 @@ export const S = {
   addOffen: false,
   /* Die Person-Auswahl fuer neue Ladungen (auswahlfeld-Handle). */
   buchungsWahl: null,
+  /* N288 — die zuletzt gezeichneten Ladungen des Jahres. Die Rueckfrage vor
+     dem Loeschen nennt damit Datum, Menge und Person, statt nur „Wirklich
+     loeschen?" zu fragen — ohne dafuer ein zweites Mal zu laden. */
+  ladungen: [],
 };
 
 /* ---- Farben ---------------------------------------------------------
@@ -72,6 +76,29 @@ export const TAB_PRO_SEITE = 5;      /* ~5 Zeilen je Seite (N188) — lieber
                                         mehr Seiten als eine lange Tabelle */
 export const MIN_PRO_MONAT = 16.5;   /* schmalster Monat in der Grafik */
 export const LABEL_BREITE = 26;      /* Platzbedarf eines Monatskuerzels */
+
+/* ---- Zahlen lesen ---------------------------------------------------
+   N288 — eine Zahl aus einem Eingabefeld, leeres Feld = `vorgabe`.
+
+   Die deutsche Lese-Regel steht an EINER Stelle: `zahlAus` in immo.js (Komma
+   trennt Dezimalen, Punkte in Dreiergruppen sind Tausenderpunkte). Sie gilt
+   fuer alles, was der Nutzer als Text tippt — frueher stand hier und in
+   ladungen.js je ein `parseFloat(…replace(',', '.'))`, das aus getippten
+   „1.250" die Zahl 1,25 machte.
+
+   Ein `<input type="number">` ist der eine Fall, in dem sie NICHT gilt: sein
+   `value` kommt vom Browser bereits normiert heraus (Punkt als Dezimal-
+   trenner, nie Tausenderpunkte). Deshalb hier nur die Weiche; nachgebaut
+   wird die Regel nirgends. */
+export function feldZahl(el, vorgabe = 0) {
+  if (!el) return vorgabe;
+  if (el.type === 'number') {
+    const v = Number(el.value);
+    return el.value === '' || !Number.isFinite(v) ? vorgabe : v;
+  }
+  const v = zahlAus(el);
+  return v == null ? vorgabe : v;
+}
 
 /* ---- Zahlenformatter ------------------------------------------------ */
 export const kwh = (n, stellen = 2) => (n ?? 0).toLocaleString('de-DE',

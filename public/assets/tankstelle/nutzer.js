@@ -6,7 +6,7 @@
    `eautoErmitteln` zieht den Durchschnittsverbrauch des eingegebenen
    E-Auto-Modells einmalig ueber die KI (defensive Fahrweise, N170) und schreibt
    ihn ins Verbrauchsfeld — klappt es nicht, kommt ein ehrlicher Hinweis. */
-import { S, zahl, zeigeFehler } from './state.js';
+import { S, zahl, zeigeFehler, feldZahl } from './state.js';
 import { api, esc, melde, frage } from '../immo.js';
 import { abrechnungZeigen } from './abrechnung.js';
 
@@ -124,7 +124,9 @@ export async function nutzerSpeichern(id) {
   }
   // Der Verbrauch von Hand: nur ein positiver Wert wird gesetzt, 0/leer laesst
   // den gespeicherten (KI-ermittelten) Wert stehen.
-  const verb = parseFloat(String(holen('verbrauch_kwh_100km')).replace(',', '.'));
+  // N288 — `feldZahl` (state.js) statt eigener Fassung; die deutsche Regel
+  // steht in `zahlAus` (immo.js) und wird hier nicht nachgebaut.
+  const verb = feldZahl(document.getElementById(`e-verbrauch_kwh_100km-${id}`), 0);
   if (verb > 0) koerper.verbrauch_kwh_100km = verb;
   if (!koerper.name) { melde('Bitte einen Namen angeben', 'neg'); return; }
   try {

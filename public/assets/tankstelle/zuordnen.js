@@ -104,6 +104,8 @@ export async function ladungenZeigen() {
      Zuordnung: wer, wann, wie viel. */
   // Solange nur eine Person angelegt ist, gibt es nichts zu entscheiden —
   // jede Ladung geht auf sie. Sobald es zwei sind, wird zugeordnet.
+  // N288 — gemerkt fuer die Rueckfrage vor dem Loeschen (ladungen.js).
+  S.ladungen = d.ladungen || [];
   const einer = S.nutzerListe.length === 1 ? S.nutzerListe[0] : null;
   const mehr = S.nutzerListe.length > 1;
   const ausg = new Set(S.einst.ausschluss || []);
