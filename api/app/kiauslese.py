@@ -23,10 +23,7 @@ funktioniert dann wie bisher, nur ohne KI-Vorschlag.
 """
 from __future__ import annotations
 
-import base64
-import json
 import logging
-import os
 import re
 from datetime import date
 
@@ -47,14 +44,14 @@ log = logging.getLogger("immocalc")
 # (parallele Arbeit an N270) — sobald die Datei da ist, greift der Import
 # oben und dieses Modul (und alles, was es transitiv lädt) bricht nicht am
 # fehlenden Import weg.
-from . import erwerb                                     # noqa: E402
+from . import erwerb, kiclient                           # noqa: E402
 from .renovierung import GEWERKE                         # noqa: E402
 
-# Der günstige, schnelle Endpunkt. Über ANTHROPIC_MODEL austauschbar, aber der
-# Vorgabewert bleibt bewusst das kleinste Modell — wenige Tokens je Beleg.
-STANDARD_MODELL = "claude-haiku-4-5-20251001"
-API_URL = "https://api.anthropic.com/v1/messages"
-API_VERSION = "2023-06-01"
+# N288-B2 — Endpunkt, Kopfzeilen, Zeitlimit und Fehlerbehandlung stehen ein
+# einziges Mal in `kiclient.py`. Hier bleiben nur die Namen, unter denen sie im
+# Haus bekannt sind (`routers/ki.py` zeigt das Vorgabemodell in den
+# Einstellungen an).
+STANDARD_MODELL = kiclient.STANDARD_MODELL
 
 # Mehr Text kostet mehr Tokens, ohne dass der Briefkopf (mit dem Datum) besser
 # würde — er steht ohnehin oben. 6000 Zeichen decken die erste Seite ab.
@@ -288,37 +285,12 @@ def verfuegbar(schluessel: str = "") -> bool:
     Mit einem ausdrücklich übergebenen Schlüssel (aus den Einstellungen) ODER
     einem gesetzten `ANTHROPIC_API_KEY`. Ohne beides bleibt das Feature stumm,
     damit kein Beleginhalt ungewollt das Haus verlässt."""
-    return bool((schluessel or os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+    return bool(_schluessel(schluessel))
 
 
-def _schluessel(schluessel: str = "") -> str:
-    """Der zu nutzende Schlüssel — der übergebene hat Vorrang vor der Env."""
-    return (schluessel or os.environ.get("ANTHROPIC_API_KEY") or "").strip()
-
-
-def _modell(modell: str = "") -> str:
-    """Das zu nutzende Modell — ein übergebenes hat Vorrang, dann die Env, dann
-    der Vorgabewert (das kleinste, günstigste Modell)."""
-    return (modell or os.environ.get("ANTHROPIC_MODEL") or "").strip() or STANDARD_MODELL
-
-
-def _json_block(text: str) -> dict | None:
-    """Der erste JSON-Block aus der Modellantwort.
-
-    Das Modell hält sich meist an „NUR JSON", aber ein umschließender Satz oder
-    ein Markdown-Zaun (```json) darf die Auslese nicht scheitern lassen: gesucht
-    wird die erste geschweifte Klammer bis zur passenden schließenden."""
-    if not text:
-        return None
-    anfang = text.find("{")
-    ende = text.rfind("}")
-    if anfang < 0 or ende <= anfang:
-        return None
-    try:
-        wert = json.loads(text[anfang:ende + 1])
-    except (ValueError, TypeError):
-        return None
-    return wert if isinstance(wert, dict) else None
+# Die Schlüsselwahl (übergebener vor Env) gehört zum Aufruf und lebt deshalb
+# in `kiclient`; hier steht sie unter dem gewohnten Namen.
+_schluessel = kiclient.api_schluessel
 
 
 def _datum(wert) -> str | None:
@@ -617,38 +589,13 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
 
     gekuerzt = inhalt[:MAX_ZEICHEN]
     nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
-    rumpf = {
-        "model": _modell(modell),
-        "max_tokens": MAX_TOKENS,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": nutzer}],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": API_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        antwort = httpx.post(API_URL, headers=kopf, json=rumpf, timeout=ZEITLIMIT)
-    except Exception as fehler:                            # noqa: BLE001
-        # Netzwerk, Timeout, DNS — nie nach außen werfen.
-        log.info("KI-Auslese nicht erreichbar: %s", type(fehler).__name__)
+    antwort = kiclient.frage_modell(
+        nutzer, schluessel=schluessel, modell=modell, system=SYSTEM_PROMPT,
+        max_tokens=MAX_TOKENS, zeitlimit=ZEITLIMIT, etikett="KI-Auslese",
+        http=httpx)
+    if not antwort.ok:
         return None
-    if antwort.status_code != 200:
-        # Kein Beleginhalt, nur der Statuscode — der Body könnte Text zitieren.
-        log.info("KI-Auslese meldete HTTP %s", antwort.status_code)
-        return None
-
-    try:
-        daten = antwort.json()
-        bloecke = daten.get("content") or []
-        roh = "".join(b.get("text", "") for b in bloecke
-                      if isinstance(b, dict) and b.get("type") == "text")
-    except Exception:                                      # noqa: BLE001
-        return None
-
-    block = _json_block(roh)
+    block = antwort.block
     if block is None:
         log.info("KI-Auslese lieferte kein verwertbares JSON")
         return None
@@ -807,36 +754,13 @@ def lies_wasser(text: str, dateiname: str = "", schluessel: str = "",
 
     gekuerzt = inhalt[:MAX_ZEICHEN]
     nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
-    rumpf = {
-        "model": _modell(modell),
-        "max_tokens": WASSER_TOKENS,
-        "system": WASSER_SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": nutzer}],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": API_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        antwort = httpx.post(API_URL, headers=kopf, json=rumpf, timeout=ZEITLIMIT)
-    except Exception as fehler:                            # noqa: BLE001
-        log.info("KI-Wasserauslese nicht erreichbar: %s", type(fehler).__name__)
+    antwort = kiclient.frage_modell(
+        nutzer, schluessel=schluessel, modell=modell,
+        system=WASSER_SYSTEM_PROMPT, max_tokens=WASSER_TOKENS,
+        zeitlimit=ZEITLIMIT, etikett="KI-Wasserauslese", http=httpx)
+    if not antwort.ok:
         return None
-    if antwort.status_code != 200:
-        log.info("KI-Wasserauslese meldete HTTP %s", antwort.status_code)
-        return None
-
-    try:
-        daten = antwort.json()
-        bloecke = daten.get("content") or []
-        roh = "".join(b.get("text", "") for b in bloecke
-                      if isinstance(b, dict) and b.get("type") == "text")
-    except Exception:                                      # noqa: BLE001
-        return None
-
-    block = _json_block(roh)
+    block = antwort.block
     if block is None:
         log.info("KI-Wasserauslese lieferte kein verwertbares JSON")
         return None
@@ -988,40 +912,16 @@ def lies_strom(text: str, dateiname: str = "", schluessel: str = "",
 
     gekuerzt = inhalt[:MAX_ZEICHEN]
     nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
-    rumpf = {
-        "model": _modell(modell),
-        "max_tokens": STROM_TOKENS,
-        "system": STROM_SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": nutzer}],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": API_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        antwort = httpx.post(API_URL, headers=kopf, json=rumpf, timeout=ZEITLIMIT)
-    except Exception as fehler:                            # noqa: BLE001
-        log.info("KI-Stromauslese nicht erreichbar: %s", type(fehler).__name__)
+    antwort = kiclient.frage_modell(
+        nutzer, schluessel=schluessel, modell=modell,
+        system=STROM_SYSTEM_PROMPT, max_tokens=STROM_TOKENS,
+        zeitlimit=ZEITLIMIT, etikett="KI-Stromauslese", http=httpx)
+    if not antwort.ok:
         return None
-    if antwort.status_code != 200:
-        log.info("KI-Stromauslese meldete HTTP %s", antwort.status_code)
-        return None
-
-    try:
-        daten = antwort.json()
-        bloecke = daten.get("content") or []
-        roh = "".join(b.get("text", "") for b in bloecke
-                      if isinstance(b, dict) and b.get("type") == "text")
-    except Exception:                                      # noqa: BLE001
-        return None
-
-    block = _json_block(roh)
-    if block is None:
+    if antwort.block is None:
         log.info("KI-Stromauslese lieferte kein verwertbares JSON")
         return None
-    return _strom_ergebnis(block)
+    return _strom_ergebnis(antwort.block)
 
 
 def _strom_ergebnis(block: dict) -> dict | None:
@@ -1217,41 +1117,18 @@ def lies_weg_abrechnung(text: str, dateiname: str = "", schluessel: str = "",
 
     gekuerzt = inhalt[:WEG_MAX_ZEICHEN]
     nutzer = gekuerzt if not dateiname else f"Dateiname: {dateiname}\n\n{gekuerzt}"
-    rumpf = {
-        "model": _modell(modell),
-        "max_tokens": WEG_TOKENS,
-        "system": WEG_SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": nutzer}],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": API_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
-                             timeout=ZEITLIMIT * 4)
-    except Exception as fehler:                            # noqa: BLE001
-        log.info("KI-WEG-Auslese nicht erreichbar: %s", type(fehler).__name__)
+    # Drei Seiten Abrechnung und 3000 Tokens Antwort brauchen mehr Luft als ein
+    # einzelner Beleg — deshalb das vierfache Zeitlimit.
+    antwort = kiclient.frage_modell(
+        nutzer, schluessel=schluessel, modell=modell,
+        system=WEG_SYSTEM_PROMPT, max_tokens=WEG_TOKENS,
+        zeitlimit=ZEITLIMIT * 4, etikett="KI-WEG-Auslese", http=httpx)
+    if not antwort.ok:
         return None
-    if antwort.status_code != 200:
-        log.info("KI-WEG-Auslese meldete HTTP %s", antwort.status_code)
-        return None
-
-    try:
-        daten = antwort.json()
-        bloecke = daten.get("content") or []
-        roh = "".join(b.get("text", "") for b in bloecke
-                      if isinstance(b, dict) and b.get("type") == "text")
-    except Exception:                                      # noqa: BLE001
-        return None
-
-    block = _json_block(roh)
-    if block is None:
+    if antwort.block is None:
         log.info("KI-WEG-Auslese lieferte kein verwertbares JSON")
         return None
-    return weg_ergebnis(block)
+    return weg_ergebnis(antwort.block)
 
 
 def weg_ergebnis(block: dict) -> dict | None:
@@ -1334,45 +1211,14 @@ def orientierung(png_bytes: bytes, schluessel: str = "") -> int:
     if not schluessel:
         return 0
 
-    try:
-        b64 = base64.b64encode(png_bytes).decode("ascii")
-    except Exception:                                      # noqa: BLE001
+    antwort = kiclient.frage_modell(
+        ORIENT_PROMPT, schluessel=schluessel, bild=png_bytes,
+        media_type="image/png", max_tokens=ORIENT_TOKENS,
+        zeitlimit=ORIENT_ZEITLIMIT, etikett="KI-Orientierung", http=httpx)
+    if not antwort.ok:
         return 0
-    rumpf = {
-        "model": _modell(),
-        "max_tokens": ORIENT_TOKENS,
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {
-                    "type": "base64", "media_type": "image/png", "data": b64}},
-                {"type": "text", "text": ORIENT_PROMPT},
-            ],
-        }],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": API_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
-                             timeout=ORIENT_ZEITLIMIT)
-    except Exception as fehler:                            # noqa: BLE001
-        log.info("KI-Orientierung nicht erreichbar: %s", type(fehler).__name__)
-        return 0
-    if antwort.status_code != 200:
-        log.info("KI-Orientierung meldete HTTP %s", antwort.status_code)
-        return 0
-    try:
-        daten = antwort.json()
-        bloecke = daten.get("content") or []
-        roh = "".join(b.get("text", "") for b in bloecke
-                      if isinstance(b, dict) and b.get("type") == "text")
-    except Exception:                                      # noqa: BLE001
-        return 0
-    return _winkel(roh)
+    # Die Antwort ist eine blosse Zahl, kein JSON — hier zählt der Text.
+    return _winkel(antwort.text)
 
 
 # --------------------------------------------------------------------------
@@ -1445,47 +1291,14 @@ def lies_solaredge(bild: bytes, media_type: str = "image/png",
         log.info("KI-SolarEdge: Bildformat wird nicht gelesen")
         return {}
 
-    try:
-        b64 = base64.b64encode(bild).decode("ascii")
-    except Exception:                                      # noqa: BLE001
-        return {}
-    rumpf = {
-        "model": _modell(modell),
-        "max_tokens": SOLAREDGE_TOKENS,
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {
-                    "type": "base64", "media_type": media_type, "data": b64}},
-                {"type": "text", "text": SOLAREDGE_PROMPT},
-            ],
-        }],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": API_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
-                             timeout=SOLAREDGE_ZEITLIMIT)
-    except Exception as fehler:                            # noqa: BLE001
-        log.info("KI-SolarEdge nicht erreichbar: %s", type(fehler).__name__)
-        return {}
-    if antwort.status_code != 200:
-        log.info("KI-SolarEdge meldete HTTP %s", antwort.status_code)
+    antwort = kiclient.frage_modell(
+        SOLAREDGE_PROMPT, schluessel=schluessel, modell=modell, bild=bild,
+        media_type=media_type, max_tokens=SOLAREDGE_TOKENS,
+        zeitlimit=SOLAREDGE_ZEITLIMIT, etikett="KI-SolarEdge", http=httpx)
+    if not antwort.ok:
         return {}
 
-    try:
-        daten = antwort.json()
-        bloecke = daten.get("content") or []
-        roh = "".join(b.get("text", "") for b in bloecke
-                      if isinstance(b, dict) and b.get("type") == "text")
-    except Exception:                                      # noqa: BLE001
-        return {}
-
-    block = _json_block(roh)
+    block = antwort.block
     if block is None:
         log.info("KI-SolarEdge lieferte kein verwertbares JSON")
         return {}
@@ -1511,37 +1324,20 @@ def pruefe(schluessel: str = "", modell: str = "") -> dict:
 
     Der Beleginhalt spielt hier keine Rolle: gesendet wird nur „ping", damit
     keine echten Daten für den bloßen Erreichbarkeitstest das Haus verlassen."""
-    if httpx is None:
-        return {"erreichbar": False, "fehler": "httpx fehlt"}
-    schluessel = _schluessel(schluessel)
-    if not schluessel:
-        return {"erreichbar": False, "fehler": "kein Key"}
-    rumpf = {
-        "model": _modell(modell),
-        "max_tokens": PRUEF_TOKENS,
-        "messages": [{"role": "user", "content": "ping"}],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": API_VERSION,
-        "content-type": "application/json",
-    }
-    try:
-        antwort = httpx.post(API_URL, headers=kopf, json=rumpf,
-                             timeout=PRUEF_ZEITLIMIT)
-    except Exception as fehler:                            # noqa: BLE001
-        return {"erreichbar": False, "fehler": type(fehler).__name__}
-    if antwort.status_code == 200:
+    antwort = kiclient.frage_modell(
+        "ping", schluessel=schluessel, modell=modell, max_tokens=PRUEF_TOKENS,
+        zeitlimit=PRUEF_ZEITLIMIT, etikett="KI-Prüfung", http=httpx)
+    # Erreichbar heißt: die Gegenseite hat mit 200 geantwortet. Ob der Body
+    # lesbar war, ist für den Ping gleichgültig — gefragt war nur der Weg.
+    if antwort.status == 200:
         return {"erreichbar": True, "fehler": ""}
-    if antwort.status_code == 401:
+    if antwort.status == 401:
         return {"erreichbar": False, "fehler": "Schlüssel abgelehnt (401)"}
-    # Anthropics eigene Fehlermeldung durchreichen — „HTTP 400" allein sagt
-    # nichts; „model: … not found" schon. Enthält nie den Beleginhalt.
-    grund = ""
-    try:
-        grund = ((antwort.json().get("error") or {}).get("message") or "").strip()
-    except Exception:                                      # noqa: BLE001
-        grund = ""
-    return {"erreichbar": False,
-            "fehler": f"HTTP {antwort.status_code}: {grund}" if grund
-                      else f"HTTP {antwort.status_code}"}
+    if antwort.status:
+        # Anthropics eigene Meldung durchreichen — „HTTP 400" allein sagt
+        # nichts; „model: … not found" schon. Enthält nie den Beleginhalt.
+        return {"erreichbar": False,
+                "fehler": f"HTTP {antwort.status}: {antwort.grund}"
+                          if antwort.grund else f"HTTP {antwort.status}"}
+    # Gar nicht bis zu einer Antwort gekommen: kein httpx, kein Key, Netz.
+    return {"erreichbar": False, "fehler": antwort.fehler}

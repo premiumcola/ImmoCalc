@@ -13,7 +13,8 @@ Zwei Ebenen, streng getrennt:
 * **Ein einziger Netz-Aufruf** (`verbrauch_ermitteln`): die KI nennt zum
   eingegebenen Modell den realistischen Durchschnittsverbrauch bei defensiver
   Fahrweise. Er läuft über denselben Anthropic-Endpunkt und denselben
-  Schlüssel-Vorrang wie `kiauslese` und wirft — wie dort — bei jedem Fehler
+  Schlüssel-Vorrang wie `kiauslese` (beide über `kiclient`) und wirft — wie
+  dort — bei jedem Fehler
   **nie** eine Exception nach außen: kein Schlüssel, kein Netz, unplausible
   Antwort → ``(None, Hinweis)``. Der Handeintrag ist der Rückfallweg.
 
@@ -35,7 +36,7 @@ try:                                                     # pragma: no cover
 except ImportError:                                      # pragma: no cover
     httpx = None
 
-from . import kiauslese
+from . import kiclient
 
 log = logging.getLogger("immocalc")
 
@@ -262,41 +263,19 @@ def _ki_verbrauch(modell: str, system: str, pruefer, leer_hinweis: str,
         return None, leer_hinweis
     if httpx is None:
         return None, fehl_hinweis
-    schluessel = kiauslese._schluessel(schluessel)
-    if not schluessel:
+    if not kiclient.api_schluessel(schluessel):
         return None, fehl_hinweis
 
-    rumpf = {
-        "model": kiauslese._modell(ki_modell),
-        "max_tokens": MAX_TOKENS,
-        "system": system,
-        "messages": [{"role": "user", "content": name}],
-    }
-    kopf = {
-        "x-api-key": schluessel,
-        "anthropic-version": kiauslese.API_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        antwort = httpx.post(kiauslese.API_URL, headers=kopf, json=rumpf,
-                             timeout=ZEITLIMIT)
-    except Exception as fehler:                            # noqa: BLE001
-        log.info("KI-Verbrauch nicht erreichbar: %s", type(fehler).__name__)
-        return None, fehl_hinweis
-    if antwort.status_code != 200:
-        log.info("KI-Verbrauch meldete HTTP %s", antwort.status_code)
+    # N288-B2 — der HTTP-Rumpf steht ein einziges Mal in `kiclient`; hier bleibt
+    # nur, was fachlich ist: Prompt, Plausibilitätsgrenze, Rückfall-Hinweis.
+    antwort = kiclient.frage_modell(
+        name, schluessel=schluessel, modell=ki_modell, system=system,
+        max_tokens=MAX_TOKENS, zeitlimit=ZEITLIMIT, etikett="KI-Verbrauch",
+        http=httpx)
+    if not antwort.ok:
         return None, fehl_hinweis
 
-    try:
-        daten = antwort.json()
-        bloecke = daten.get("content") or []
-        roh = "".join(b.get("text", "") for b in bloecke
-                      if isinstance(b, dict) and b.get("type") == "text")
-    except Exception:                                      # noqa: BLE001
-        return None, fehl_hinweis
-
-    wert = _erste_zahl(roh)
+    wert = _erste_zahl(antwort.text)
     if not pruefer(wert):
         # Eine 0 (Modell unbekannt) oder ein Ausreißer außerhalb der Grenze:
         # nicht speichern, sondern ehrlich zurückmelden.
