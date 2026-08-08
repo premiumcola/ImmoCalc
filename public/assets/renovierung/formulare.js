@@ -136,10 +136,12 @@ export function renovierungDialog(vorhanden, einheiten) {
              placeholder="z. B. Bad und Elektrik 1. OG"
              value="${esc(r.name || '')}"></div>
     <div class="feldpaar">
-      <div class="field"><label for="rvon">Beginn</label>
-        <input class="inp" id="rvon" type="date" value="${esc(r.von || '')}"></div>
-      <div class="field"><label for="rbis">Ende</label>
-        <input class="inp" id="rbis" type="date" value="${esc(r.bis || '')}"></div>
+      <div class="field"><label>Beginn</label>
+        <input type="hidden" id="rvon" value="${esc(r.von || '')}">
+        <div data-vonwahl data-label="Beginn"></div></div>
+      <div class="field"><label>Ende</label>
+        <input type="hidden" id="rbis" value="${esc(r.bis || '')}">
+        <div data-biswahl data-label="Ende"></div></div>
     </div>
     <div class="field"><label for="rbudget">Budget (€, freiwillig)</label>
       <input class="inp" id="rbudget" type="number" step="0.01" inputmode="decimal"
@@ -156,10 +158,27 @@ export function renovierungDialog(vorhanden, einheiten) {
       </div></div>`;
 
   let gewaehlte = () => [];
+  const chooser = [];
   return formularDialog({
     titel: neu ? 'Neue Renovierung' : 'Renovierung bearbeiten',
     felder,
-    fuellen(form) {
+    fuellen(form, dlg) {
+      // N277 — Beginn und Ende liefen hier noch über `type="date"`: den Kalender
+      // dazu zeichnet das Betriebssystem und legt ihn auf iOS über die ganze
+      // Maske. Der Rechnungsdialog hatte das mit N278 schon abgelegt, dieser
+      // nicht. Jetzt dieselbe `datumwahl` wie dort — samt `zerstoere()`, sonst
+      // bleiben Popover-Lauscher am Dokument hängen, wenn der Dialog zugeht.
+      for (const [platz, feld, label] of [['[data-vonwahl]', '#rvon', 'Beginn'],
+                                          ['[data-biswahl]', '#rbis', 'Ende']]) {
+        const versteckt = form.querySelector(feld);
+        chooser.push(datumwahl(form.querySelector(platz), {
+          wert: versteckt.value, label,
+          aenderung: neuWert => { versteckt.value = neuWert; },
+        }));
+      }
+      dlg.addEventListener('close', () => {
+        for (const c of chooser) { try { c.zerstoere(); } catch { /* schon weg */ } }
+      }, { once: true });
       gewaehlte = einheitenVerdrahten(form);
       const fertigKnopf = form.querySelector('[data-fertig]');
       fertigKnopf.addEventListener('click', () => {

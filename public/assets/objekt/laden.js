@@ -142,14 +142,28 @@ export async function laden() {
                        fokusFlaeche ? flaecheText(fokusFlaeche) : '',
                        fokusWert.mieter].filter(Boolean).join(' · ') || 'Einheit';
   } else if (istGrundstueck()) {
-    // CCCXXXVI — der Objektname allein sagt beim Grundstück wenig. Die Unterzeile
-    // trägt deshalb die Flurnummer: Ort · Gemarkung · Flur · Nutzungsart · Fläche.
-    // Einzeilig gekürzt (siehe #sub im <style>), damit nichts umbricht.
+    // N277 — der abgeleitete API-Titel trägt beim Grundstück fünf Angaben in
+    // einer Zeile („Eckental · Grundstück · Ackerland · Eckenhaid Flst. 619")
+    // und war auf dem iPhone 454 px breit in einem 302 px breiten Kasten; die
+    // Unterzeile wiederholte davon vier (CCCXXXVI: Ort · Gemarkung · Flur ·
+    // Nutzungsart · Fläche) und lief mit 490 px noch weiter über. Beides ist
+    // dieselbe Ursache: dieselbe Angabe zweimal. Jetzt wird verteilt statt
+    // wiederholt — oben die LAGE (was das Grundstück ist), unten die
+    // BESCHREIBUNG (wie es beschaffen ist). Die Objektart trägt das Logo
+    // daneben und die Rubrik „Stammdaten" darunter.
+    const lage = [objekt.name, objekt.flurstueck].map(t => (t || '').trim())
+      .filter(Boolean)
+      .filter((t, i, alle) => !alle.slice(0, i)
+        .some(a => a.toLowerCase().includes(t.toLowerCase())));
+    if (lage.length) titel.textContent = lage.join(' ');
+    // Was schon oben steht, kommt unten nicht noch einmal — die Gemarkung
+    // heißt beim Bestandsobjekt genauso wie der Name.
+    const kopf = titel.textContent.toLowerCase();
+    const neu = t => Boolean(t) && !kopf.includes(String(t).toLowerCase());
     const flaeche = objekt.grundstueck_flaeche
       ? `${Number(objekt.grundstueck_flaeche).toLocaleString('de-DE')} m²` : '';
-    sub.textContent = [ortText,
-                       objekt.gemarkung && `Gemarkung ${objekt.gemarkung}`,
-                       objekt.flurstueck && `Flur ${objekt.flurstueck}`,
+    sub.textContent = [neu(ortText) && ortText,
+                       neu(objekt.gemarkung) && `Gemarkung ${objekt.gemarkung}`,
                        objekt.grundstueck_nutzungsart, flaeche]
       .filter(Boolean).join(' · ') || 'Grundstück';
   } else {

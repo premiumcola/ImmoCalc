@@ -246,10 +246,16 @@ const CARET_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" '
 // Merkt sich, ob die Objektgruppe eingeklappt ist (nur Desktop-Belang).
 const GRUPPE_ZU = 'immocalc-objekte-zu';
 
-// objekt.html und zeitraum.html stehen selbst nicht in der Leiste — sie
-// sind Detailansichten der Objektliste und zaehlen fuer die Markierung als
-// "Objekte".
-const NAV_ALIAS = { 'objekt.html': 'index.html', 'zeitraum.html': 'index.html' };
+// objekt.html, zeitraum.html und renovierung.html stehen selbst nicht in der
+// Leiste — sie sind Detailansichten der Objektliste und zaehlen fuer die
+// Markierung als "Objekte". N277: renovierung.html fehlte hier und setzte
+// `aria-current` nach `installNav()` von Hand nach; die Markierung gehoert an
+// diese eine Stelle, sonst muss sie jede neue Detailseite neu erfinden.
+const NAV_ALIAS = {
+  'objekt.html': 'index.html',
+  'zeitraum.html': 'index.html',
+  'renovierung.html': 'index.html',
+};
 
 /** Haengt die Navigationsleiste anstelle von `[data-nav]` ins Dokument. */
 export function installNav() {

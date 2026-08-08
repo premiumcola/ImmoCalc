@@ -224,11 +224,10 @@ import { listeHtml } from './assets/renovierung/liste.js';
 import { detailHtml, zeitstrahlZeichnen } from './assets/renovierung/detail.js';
 import { renovierungDialog, postenDialog } from './assets/renovierung/formulare.js';
 
-installNav();
 // Wie objekt.html und zeitraum.html ist auch diese Seite eine Detailansicht
-// der Objektliste — in der Leiste bleibt deshalb „Objekte" markiert.
-document.querySelector('nav.nav a.gruppenkopf')
-        ?.setAttribute('aria-current', 'page');
+// der Objektliste — in der Leiste bleibt deshalb „Objekte" markiert. Das
+// erledigt seit N277 der `NAV_ALIAS` in immo.js, nicht mehr diese Seite.
+installNav();
 
 const anfrage = new URLSearchParams(location.search);
 const slug = anfrage.get('o') || '';
