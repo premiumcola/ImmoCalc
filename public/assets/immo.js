@@ -224,7 +224,7 @@ export function installNav() {
   const link = (label, href, icon, extra = '', klasse = '') =>
     `<a${klasse ? ` class="${klasse}"` : ''} href="${href}"${
       href === aktiv ? ' aria-current="page"' : ''
-    }><span class="ni">${icon}</span>${label}${extra}</a>`;
+    }><span class="ni">${icon}</span><span class="nl">${label}</span>${extra}</a>`;
 
   let html = `<a class="brand" href="index.html">ImmoCalc</a>`;
   let kindAktiv = false;
@@ -307,7 +307,7 @@ function navAufraeumen() {
     mehr.type = 'button';
     mehr.className = 'mehr';
     mehr.setAttribute('aria-haspopup', 'dialog');
-    mehr.innerHTML = '<span class="ni">⋯</span>Mehr';
+    mehr.innerHTML = '<span class="ni">⋯</span><span class="nl">Mehr</span>';
     mehr.addEventListener('click', () => mehrOeffnen(eintraege.slice(SICHTBAR)));
     nav.appendChild(mehr);
   }

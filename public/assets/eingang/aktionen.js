@@ -7,7 +7,7 @@
    „Uebernehmen" und „Entfernen" wohnen ebenfalls hier — sie sind die letzte
    Meile eines gewaehlten Belegs. */
 
-import { S, els, melde } from './state.js';
+import { S, els, belegmeldung } from './state.js';
 import { api, esc } from '../immo.js';
 import { filterFuellen } from './filter.js';
 import { zeichne, stand } from './liste.js';
@@ -70,9 +70,8 @@ export async function fussnoteZeigen() {
     // Dateien ausserhalb der App umbenannt oder verschoben wurden. Für den
     // Nutzer ist genau das die Frage „wie lange dauert es, bis es passt?".
     if (w.abgleich_takt_minuten) {
-      teile.push(`Umbenannt oder verschoben? Wird alle `
-        + `${w.abgleich_takt_minuten} min nachgezogen`
-        + (w.nachgezogen_gesamt ? ` · ${w.nachgezogen_gesamt} bisher` : ''));
+      teile.push(`Umzüge alle ${w.abgleich_takt_minuten} min nachgezogen`
+        + (w.nachgezogen_gesamt ? ` (${w.nachgezogen_gesamt})` : ''));
     }
     warnung = Boolean(w.letzter_fehler);
   } catch { /* ohne API keine Fussnote */ }
@@ -146,12 +145,12 @@ els.bOk.addEventListener('click', async () => {
       x => x.id !== d.id && (x.status === 'neu' || x.vermisst));
     S.gewaehlt = naechster ? naechster.id : null;
     await laden();
-    melde((antwort.verschoben ? '✓ ' : '✓ unverändert · ') + antwort.pfad
+    belegmeldung((antwort.verschoben ? '✓ ' : '✓ unverändert · ') + antwort.pfad
           + (naechster ? ' · weiter mit dem nächsten' : ''), 'gut');
   } catch (fehler) {
     els.bOk.disabled = false;
     els.bOk.textContent = vorher;
-    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    belegmeldung('⚠ ' + String(fehler.message || fehler), 'schlecht');
   }
 });
 
@@ -171,7 +170,7 @@ els.bWeg.addEventListener('click', async () => {
     els.bWeg.dataset.sicher = 'ja';
     els.bWeg.textContent = 'Wirklich?';
     els.bWeg.classList.add('frage');
-    melde('Der Eintrag verschwindet aus der App — '
+    belegmeldung('Der Eintrag verschwindet aus der App — '
           + 'die Datei bleibt in der Nextcloud.');
     clearTimeout(S.sicherUhr);
     S.sicherUhr = setTimeout(sicherZuruecksetzen, 4000);
@@ -184,7 +183,7 @@ els.bWeg.addEventListener('click', async () => {
     S.gewaehlt = null;
     await laden();
   } catch (fehler) {
-    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    belegmeldung('⚠ ' + String(fehler.message || fehler), 'schlecht');
   } finally {
     els.bWeg.disabled = false;
   }

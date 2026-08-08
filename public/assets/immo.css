@@ -212,7 +212,30 @@ button.chip:hover{filter:brightness(.96)}
   letter-spacing:.01em;
   /* Sechs Eintraege teilen sich 390 px — lange Beschriftungen duerfen die
      Leiste nicht auseinanderdruecken. Lieber kuerzen als umbrechen. */
+  overflow:hidden; white-space:nowrap;
+}
+/* N293 — die Beschriftung steht in einem eigenen `<span>`, sonst greift
+   `text-overflow` gar nicht: ein nackter Textknoten in einem Flex-Container
+   ist ein anonymes Flex-Kind, und `align-items:center` liess „Nebenkosten"
+   (74 px in einem 71 px breiten Knopf) auf dem iPhone 13 beidseitig hart
+   abschneiden — links fehlte das N. Mit eigenem Kasten wird sauber gekuerzt. */
+.nav a .nl, .nav .mehr .nl{
+  display:block; max-width:100%;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+/* Das Kuerzen ist die Notbremse, nicht der Normalfall: auf dem iPhone soll
+   „Nebenkosten" ganz dastehen. Fuenf Eintraege teilen sich die Breite, und es
+   fehlten genau drei Pixel — die holt engeres Innenmass an Leiste und Eintrag.
+   NACH der Grundregel, sonst gewinnt bei gleicher Spezifitaet die spaetere. */
+@media(max-width:430px){
+  .nav{gap:3px; padding-left:5px; padding-right:5px}
+  .nav a, .nav .mehr{padding-left:1px; padding-right:1px; letter-spacing:0}
+}
+/* Auf dem iPhone 13 (390) reicht das noch nicht ganz — ein halber Schriftgrad
+   weniger schliesst die Luecke, ohne dass die Leiste kleiner WIRKT: das Icon
+   darueber traegt die Erkennbarkeit, die Beschriftung bestaetigt sie nur. */
+@media(max-width:400px){
+  .nav a, .nav .mehr{font-size:10px}
 }
 .nav a .ni{font:400 23px var(--mono); line-height:1}
 /* Der Aufklapp-Chevron ist ein reiner Desktop-Belang: in der unteren
@@ -226,7 +249,7 @@ button.chip:hover{filter:brightness(.96)}
   display:none; flex:1; min-width:0; flex-direction:column; align-items:center;
   gap:4px; padding:8px 2px; min-height:44px; border:none; background:none;
   color:var(--soft); border-radius:12px; font:600 10.5px var(--disp);
-  cursor:pointer; letter-spacing:.01em;
+  cursor:pointer; letter-spacing:.01em; overflow:hidden; white-space:nowrap;
 }
 .nav .mehr.an{display:flex}
 .nav .mehr .ni{font:400 23px var(--mono); line-height:1}
