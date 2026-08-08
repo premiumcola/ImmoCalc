@@ -217,7 +217,7 @@
    einzelne mit Budgetstand, Gewerk-Donut, Zeitstrahl und Rechnungen.
    Gewechselt wird über echte Navigation — so trägt der Zurück-Knopf des
    Browsers dieselbe Bedeutung wie der in der Kopfzeile. */
-import { esc, melde, installNav, frage, schiebeFrage, api, belegAnsehen }
+import { esc, melde, installNav, frage, schiebeFrage, api, belegAnsehen, leerHtml }
   from './assets/immo.js';
 import * as Daten from './assets/renovierung/daten.js';
 import { listeHtml } from './assets/renovierung/liste.js';
@@ -250,9 +250,12 @@ let einheiten = [];
 let aktuell = null;          // die geladene Renovierung (nur in der Detailsicht)
 let beobachter = null;       // ResizeObserver des Zeitstrahls
 
+// N295 — gemeinsamer Baustein: der Zusatztext erscheint nur, wenn er etwas
+// anderes sagt als die Überschrift, und es gibt immer einen Weg heraus.
 function fehlerZeigen(gross, text) {
-  inhalt.innerHTML = `<div class="empty"><div class="big">${esc(gross)}</div>
-    <p>${esc(text)}</p></div>`;
+  inhalt.innerHTML = leerHtml(gross, text, slug
+    ? { text: 'Zur Immobilie', href: `objekt.html?o=${encodeURIComponent(slug)}` }
+    : undefined);
 }
 
 if (!slug) {

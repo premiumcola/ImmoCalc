@@ -16,7 +16,7 @@
    Standard) den passenden Detailblock. */
 
 import { api, eur, eurKurz, esc, melde, frage, belegAnsehen, baueDialog,
-         installNav } from '../immo.js';
+         installNav, leerHtml } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { sankey } from '../charts.js';
 import { kostenIcon } from '../kostenicons.js';
@@ -1340,15 +1340,27 @@ async function abschliessen(knopf) {
 
 /* ---------- Laden ------------------------------------------------------ */
 
+/* N295 — leerer Zustand mit Weg heraus. Die Kopfzeile stand sonst dauerhaft
+   auf „wird geladen …", obwohl längst feststeht, dass nichts mehr kommt. */
+function leerZeigen(gross) {
+  inhalt.innerHTML = leerHtml(gross, '',
+    { text: 'Zu den Abrechnungen', href: 'nebenkosten.html' });
+  const sub = document.getElementById('sub');
+  if (sub) sub.textContent = '';
+}
+
 export async function laden() {
   if (!zid) {
-    inhalt.innerHTML = '<div class="empty"><div class="big">Kein Zeitraum gewählt</div></div>';
+    // N295 — eine Sackgasse ohne Ausweg war das vorher: weisse Karte, ein
+    // Satz, und der Rest der Seite leer. Der gemeinsame Baustein bringt den
+    // Weg zurück mit.
+    leerZeigen('Kein Zeitraum gewählt');
     return;
   }
   try {
     state.setDaten(await api(`/zeitraeume/${zid}`));
   } catch {
-    inhalt.innerHTML = `<div class="empty"><div class="big">Zeitraum nicht gefunden</div></div>`;
+    leerZeigen('Zeitraum nicht gefunden');
     return;
   }
   try {

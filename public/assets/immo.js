@@ -163,6 +163,38 @@ export function heuteIso() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/**
+ * N295 — der leere Zustand einer Seite: eine Aussage, ein Weg heraus.
+ *
+ * Es gab ihn ein Dutzend Mal einzeln gebaut, und mehrere Fassungen endeten in
+ * einer Sackgasse: eine weisse Karte mit „… nicht gefunden", darunter eine
+ * Bildschirmhöhe leere Fläche und kein Knopf (roter Faden 4 und 7). Manche
+ * wiederholten die Meldung zusätzlich in der Kopfzeile (roter Faden 3), weil
+ * der Server denselben Satz zurückgibt, der schon als Überschrift dasteht.
+ *
+ * `dazu` erscheint deshalb NUR, wenn es etwas anderes sagt als `gross` — und
+ * „anders" heisst hier nicht bloss „nicht wortgleich": „Nicht gefunden" über
+ * „Renovierung nicht gefunden" ist dieselbe Auskunft zweimal. Steckt eines im
+ * anderen, gewinnt der genauere Satz und wird zur Überschrift.
+ *
+ * `weg` ist der Ausweg — Vorgabe ist die Objektübersicht; `null` unterdrückt
+ * ihn für die Fälle, in denen es wirklich nirgendwohin geht.
+ */
+export function leerHtml(gross, dazu = '',
+                         weg = { text: 'Zur Übersicht', href: 'index.html' }) {
+  const a = String(gross || '').trim();
+  const b = String(dazu || '').trim();
+  const ak = a.toLowerCase(), bk = b.toLowerCase();
+  const deckungsgleich = Boolean(b) && (ak.includes(bk) || bk.includes(ak));
+  const titel = deckungsgleich && b.length > a.length ? b : a;
+  const rest = !b || deckungsgleich ? '' : b;
+  return `<div class="empty">
+      <div class="big">${esc(titel)}</div>
+      ${rest ? `<p>${esc(rest)}</p>` : ''}
+      ${weg ? `<a class="btn" href="${esc(weg.href)}">${esc(weg.text)}</a>` : ''}
+    </div>`;
+}
+
 /** Fristklasse fuer die Ampel-Chips: rot ab 30, gelb ab 90 Tagen. */
 export const fristKlasse = tage =>
   tage == null ? '' : tage < 0 ? 'neg' : tage <= 30 ? 'neg' : tage <= 90 ? 'amber' : 'pos';

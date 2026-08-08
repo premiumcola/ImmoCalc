@@ -9,7 +9,8 @@
    Auf der Einheitenebene:
      Chart → Einheit-Stamm → Mieten → Abrechnungszeiträume. */
 
-import { esc, melde, api, logoSvg, installHilfe, fristKlasse, fristText, eur } from '../immo.js';
+import { esc, melde, api, logoSvg, installHilfe, fristKlasse, fristText, eur,
+         leerHtml } from '../immo.js';
 import { kostenIcon } from '../kostenicons.js';
 import { flaecheText, proJahr } from '../objekt-format.js?v=2';
 import { BEREICHE, ERWERB_KATEGORIE } from '../objekt-felder.js?v=2';
@@ -40,25 +41,12 @@ const anfrage = new URLSearchParams(location.search);
    Abrechnung ein zweites Mal zu pflegen und liefen mit der Zeit auseinander. */
 const fokusWunsch = anfrage.get('e');
 
-/* N295 — der leere Zustand dieser Seite: eine Aussage, nicht zwei, und immer
-   ein Weg heraus.
-
-   Bisher stand die Überschrift „Objekt nicht gefunden" und darunter noch
-   einmal derselbe Satz — der Server antwortet auf 404 wortgleich. Zwei Zeilen,
-   eine Auskunft (roter Faden 3), und keine Möglichkeit weiterzukommen ausser
-   dem Zurück-Pfeil (roter Faden 7). Der Zusatztext erscheint jetzt nur, wenn
-   er wirklich etwas Neues sagt. */
+/* N295 — leerer Zustand über den gemeinsamen Baustein aus `immo.js`. Die
+   Kopfzeile stand bis dahin dauerhaft auf „wird geladen …", obwohl längst
+   feststeht, dass nichts mehr kommt; sie bleibt jetzt leer, statt die Meldung
+   der Karte zu wiederholen — sie trägt sonst die Adresse des Objekts. */
 function leerZeigen(inhalt, gross, dazu = '') {
-  const anders = dazu && dazu.trim().toLowerCase() !== gross.toLowerCase();
-  inhalt.innerHTML = `<div class="empty">
-      <div class="big">${esc(gross)}</div>
-      ${anders ? `<p>${esc(dazu)}</p>` : ''}
-      <a class="btn" href="index.html">Zur Übersicht</a>
-    </div>`;
-  // Die Kopfzeile stand sonst dauerhaft auf „wird geladen …", obwohl längst
-  // feststeht, dass nichts mehr kommt. Sie bleibt jetzt LEER statt die
-  // Meldung der Karte zu wiederholen — die Zeile trägt sonst die Adresse des
-  // Objekts, und die gibt es hier nun einmal nicht.
+  inhalt.innerHTML = leerHtml(gross, dazu);
   const sub = document.getElementById('sub');
   if (sub) sub.textContent = '';
 }
