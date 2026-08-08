@@ -8,7 +8,7 @@ Import aus HTML über `./assets/settings/…`.
 
 | Datei              | Zustaendig                                                   |
 |--------------------|--------------------------------------------------------------|
-| `state.js`         | Geteilte Helfer (`melde`, `meldungWeg`, `vHole`, `vHoleGeteilt`, `vGeteiltReset`, `vKurz`, `vModell`, `ortszeit`, `belegText`); Konstanten `VZEITGRENZE`, `VSTRICH`, `VSYMBOLE` |
+| `state.js`         | Geteilte Helfer (`feldmeldung`, `meldungWeg`, `vHole`, `vHoleGeteilt`, `vGeteiltReset`, `vKurz`, `vModell`, `ortszeit`, `belegText`); Konstanten `VZEITGRENZE`, `VSTRICH`, `VSYMBOLE` |
 | `verknuepfungen.js`| N133 Live-Kacheln: `verknuepfungenInit` — baut die Kachelreihe, verdrahtet „Erneut prüfen", steuert Klicks (Kachel→Zeile scrollen, Wallbox einrichten) |
 | `version.js`       | `versionZeigen` — Kopfzeile „ImmoCalc · <sha> · <zeit>" + die letzten fünf Änderungen aus `version.json` (Fallback `/health`) |
 | `nextcloud.js`     | Nextcloud-Verbindung + Home-Ordner-Wähler: `nextcloudInit`, `zustandLaden` |
@@ -26,7 +26,7 @@ Import aus HTML über `./assets/settings/…`.
 `state.js` hat keinen mutierten Objekt-Zustand — die Einstellungen-Seite
 teilt zwischen den Modulen keinen. Was gebraucht wird, sind Helfer:
 
-- **Meldungen im Dialog**: `melde(feld, text, gut?)`, `meldungWeg(feld)`.
+- **Meldungen im Dialog**: `feldmeldung(feld, text, gut?)`, `meldungWeg(feld)`.
 - **Statusabruf für Kacheln**: `vHole(pfad, frist?)` mit knapper Frist, nie
   werfend — gibt `{da:false}` / `{fehler:'…'}` / `{da:true, daten:…}`.
 - **Geteilter Cache** für Kacheln, die am selben Endpunkt hängen (KI +

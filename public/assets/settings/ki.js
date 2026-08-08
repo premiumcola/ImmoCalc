@@ -5,7 +5,7 @@
    Klartext angezeigt — nur „gespeichert" oder leer. Verhaltensgleich zum
    bisherigen Inline-Skript in settings.html. */
 import { api, frage } from '../immo.js';
-import { melde, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg } from './state.js';
 
 let kiDlg, kiStatus, kiIkon, kiMeldung, kiKey, kiModell, kiEntfernen;
 let kiZustand = { eingerichtet: false };
@@ -69,7 +69,7 @@ export function kiInit() {
     e.preventDefault();
     const knopf = document.getElementById('kiSpeichern');
     const key = kiKey.value.trim();
-    if (!key) return melde(kiMeldung, 'Bitte einen Schlüssel eingeben.');
+    if (!key) return feldmeldung(kiMeldung, 'Bitte einen Schlüssel eingeben.');
     knopf.disabled = true;
     knopf.textContent = 'Speichere und prüfe …';
     meldungWeg(kiMeldung);
@@ -77,14 +77,14 @@ export function kiInit() {
       const a = await api('/ki/schluessel', {
         method: 'POST', body: { key, modell: kiModell.value.trim() },
       });
-      melde(kiMeldung, a.erreichbar
+      feldmeldung(kiMeldung, a.erreichbar
         ? 'Gespeichert. Das KI-Tool ist online und erreichbar.'
         : `Gespeichert, aber nicht erreichbar${a.fehler ? ` — ${a.fehler}` : ''}.`,
         !!a.erreichbar);
       kiKey.value = '';
       await kiZustandLaden();
     } catch (fehler) {
-      melde(kiMeldung, String(fehler.message || fehler).replace(/^\d+\s*/, '')
+      feldmeldung(kiMeldung, String(fehler.message || fehler).replace(/^\d+\s*/, '')
         || 'Speichern fehlgeschlagen');
     } finally {
       knopf.disabled = false;
@@ -100,10 +100,10 @@ export function kiInit() {
     meldungWeg(kiMeldung);
     try {
       await api('/ki/schluessel', { method: 'DELETE' });
-      melde(kiMeldung, 'Schlüssel entfernt.', true);
+      feldmeldung(kiMeldung, 'Schlüssel entfernt.', true);
       await kiZustandLaden();
     } catch (fehler) {
-      melde(kiMeldung, String(fehler.message || fehler));
+      feldmeldung(kiMeldung, String(fehler.message || fehler));
     }
   });
 }

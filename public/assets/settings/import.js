@@ -4,7 +4,7 @@
    neues Objekt an — das steht im Dialog, damit niemand ein Zusammenführen
    erwartet. Verhaltensgleich zum bisherigen Inline-Skript in settings.html. */
 import { api } from '../immo.js';
-import { melde, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg } from './state.js';
 
 const KEINE_DATEI = 'Noch keine Datei gewählt';
 
@@ -34,18 +34,18 @@ export function importInit() {
     const datei = importDatei.files?.[0];
     meldungWeg(importMeldung);
     zumObjekt.style.display = 'none';
-    if (!datei) return melde(importMeldung, 'Bitte eine Sicherungsdatei wählen.');
+    if (!datei) return feldmeldung(importMeldung, 'Bitte eine Sicherungsdatei wählen.');
 
     knopf.disabled = true;
     knopf.textContent = 'Lese ein …';
     try {
       const daten = JSON.parse(await datei.text());
       const neu = await api('/objekte/import', { method: 'POST', body: daten });
-      melde(importMeldung, `„${neu.name}“ wurde als neue Immobilie angelegt.`, true);
+      feldmeldung(importMeldung, `„${neu.name}“ wurde als neue Immobilie angelegt.`, true);
       zumObjekt.href = `objekt.html?o=${encodeURIComponent(neu.slug)}`;
       zumObjekt.style.display = 'block';
     } catch (fehler) {
-      melde(importMeldung, fehler instanceof SyntaxError
+      feldmeldung(importMeldung, fehler instanceof SyntaxError
         ? 'Das ist keine lesbare JSON-Datei.'
         : String(fehler.message || fehler));
     } finally {

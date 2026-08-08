@@ -4,7 +4,7 @@
    und nebenlaeufig; eine tote Verbindung haelt die anderen nicht auf.
 
    Der ganze Block war frueher inline in settings.html — Verhalten unveraendert. */
-import { api, esc } from '../immo.js';
+import { api, esc, baueDialog, frage, melde } from '../immo.js';
 import { VSYMBOLE, vHole, vHoleGeteilt, vGeteiltReset,
          vKurz, vModell } from './state.js';
 
@@ -17,6 +17,40 @@ async function vNextcloud() {
   return { stand: 'gut', text: `${a.daten.benutzer} · ${vKurz(a.daten.url)}` };
 }
 
+/* N288 — die Adresse im Design der App abfragen. Frueher stand hier ein
+   nacktes `prompt()`: der graue Systemkasten des Browsers, der mit der Seite
+   nichts zu tun hat und sich auf dem Telefon nicht bedienen laesst wie der
+   Rest. Liefert den getippten Text oder `null` beim Abbrechen. */
+function adresseFragen(jetzt) {
+  return new Promise(fertig => {
+    const dlg = baueDialog(`
+      <div class="dt">openWB-Wallbox</div>
+      <form novalidate>
+        <div class="field">
+          <label for="wbUrl">Adresse im Heimnetz</label>
+          <input class="inp" id="wbUrl" maxlength="120" autocomplete="off"
+                 placeholder="192.168.178.61" value="${esc(jetzt)}">
+        </div>
+        <p class="hinweis">
+          Hostname oder IP genügt — Schema und Pfad ergänzt der Server selbst.
+          Leer lassen entfernt die Verbindung.</p>
+        <button class="btn" type="submit">Übernehmen</button>
+        <button class="btn leise" type="button" data-nein
+                style="margin-top:8px">Abbrechen</button>
+      </form>`);
+    const form = dlg.querySelector('form');
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      fertig(form.querySelector('#wbUrl').value.trim());
+      dlg.close();
+    });
+    form.querySelector('[data-nein]')
+        .addEventListener('click', () => { fertig(null); dlg.close(); });
+    dlg.addEventListener('cancel', () => fertig(null));
+    setTimeout(() => form.querySelector('#wbUrl')?.focus(), 30);
+  });
+}
+
 /* N138 — die Adresse der Wallbox im Heimnetz. Nur Hostname oder IP (der Server
    ergaenzt Schema und Pfad selbst). Leer eingeben loest die Verbindung wieder. */
 async function wallboxEinrichten() {
@@ -25,15 +59,23 @@ async function wallboxEinrichten() {
     const a = await vHole('/openwb/status');
     jetzt = a.daten?.url || '';
   } catch { /* noch nicht eingerichtet */ }
-  const eingabe = prompt(
-    'Adresse der openWB im Heimnetz (Hostname oder IP, z. B. 192.168.178.61).\n'
-    + 'Leer lassen entfernt die Verbindung.', jetzt);
+  const eingabe = await adresseFragen(jetzt);
   if (eingabe === null) return;
+  // Leeres Feld bei bestehender Verbindung heisst: Verbindung entfernen. Das
+  // ist ein Loeschen — also nachfragen, und dabei sagen, was verschwindet.
+  if (!eingabe && jetzt) {
+    const ok = await frage('Verbindung zur Wallbox entfernen',
+      `Die openWB unter „${jetzt}" wird nicht mehr abgefragt. `
+      + 'Bereits gespeicherte Ladungen bleiben erhalten.',
+      { knopf: 'Entfernen', gefahr: true });
+    if (!ok) return;
+  }
   try {
-    await api('/openwb/adresse', { method: 'POST', body: { url: eingabe.trim() } });
+    await api('/openwb/adresse', { method: 'POST', body: { url: eingabe } });
     vAlleLaden();
   } catch (fehler) {
-    alert('Konnte nicht gespeichert werden: ' + (fehler.message || fehler));
+    melde('Konnte nicht gespeichert werden: '
+      + (fehler.message || fehler), 'neg');
   }
 }
 

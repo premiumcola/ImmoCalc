@@ -7,7 +7,7 @@
    nur eine Ebene tiefer: es wandern Belege, keine Ordner. Verhaltensgleich
    zum bisherigen Inline-Skript in settings.html. */
 import { api, esc, frage } from '../immo.js';
-import { belegText, melde, meldungWeg } from './state.js';
+import { belegText, feldmeldung, meldungWeg } from './state.js';
 
 let einsortierenDlg, einsortierenMeldung, einsortierenPlan,
     einsortierenStart, einsortierenStatus;
@@ -139,7 +139,7 @@ export function einsortierenInit() {
       const a = await api('/nextcloud/unterordner-umzug', { method: 'POST' });
       einsortierenStart.style.display = 'none';
       einsortierenErgebnis(a, namen);
-      melde(einsortierenMeldung, a.fehler.length
+      feldmeldung(einsortierenMeldung, a.fehler.length
         ? `${a.anzahl} von ${a.anzahl + a.fehler.length} Belegen einsortiert — `
           + `${a.fehler.length} blieben liegen.`
         : `${belegText(a.anzahl)} einsortiert.`,
@@ -148,7 +148,7 @@ export function einsortierenInit() {
     } catch (fehler) {
       einsortierenStart.disabled = false;
       einsortierenStart.textContent = 'Belege einsortieren';
-      melde(einsortierenMeldung, String(fehler.message || fehler));
+      feldmeldung(einsortierenMeldung, String(fehler.message || fehler));
     }
   });
 }

@@ -6,7 +6,7 @@
    Verhaltensgleich zum bisherigen Inline-Skript in settings.html. */
 import { api } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
-import { melde, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg } from './state.js';
 
 let mailDlg, mailStatus, mailMeldung, serverZeile;
 let anbieterListe = [];
@@ -84,10 +84,10 @@ export function mailInit() {
           absender_name: document.getElementById('mailName').value.trim(),
         },
       });
-      melde(mailMeldung, 'Postfach verbunden. Jetzt eine Testmail schicken.', true);
+      feldmeldung(mailMeldung, 'Postfach verbunden. Jetzt eine Testmail schicken.', true);
       await mailZustand();
     } catch (fehler) {
-      melde(mailMeldung, String(fehler.message || fehler));
+      feldmeldung(mailMeldung, String(fehler.message || fehler));
     } finally {
       knopf.disabled = false;
       knopf.textContent = 'Verbinden und prüfen';
@@ -96,15 +96,15 @@ export function mailInit() {
 
   document.getElementById('mailTest').addEventListener('click', async () => {
     const an = document.getElementById('mailTestAn').value.trim();
-    if (!an) return melde(mailMeldung, 'Bitte eine Empfängeradresse angeben');
+    if (!an) return feldmeldung(mailMeldung, 'Bitte eine Empfängeradresse angeben');
     const knopf = document.getElementById('mailTest');
     knopf.disabled = true;
     knopf.textContent = 'Sende …';
     try {
       await api('/mail/test', { method: 'POST', body: { an } });
-      melde(mailMeldung, `Testmail an ${an} verschickt.`, true);
+      feldmeldung(mailMeldung, `Testmail an ${an} verschickt.`, true);
     } catch (fehler) {
-      melde(mailMeldung, String(fehler.message || fehler));
+      feldmeldung(mailMeldung, String(fehler.message || fehler));
     } finally {
       knopf.disabled = false;
       knopf.textContent = 'Testmail senden';

@@ -5,7 +5,7 @@
    Speichern zieht die Zeile „Benennung nachziehen" mit — daher der Import
    aus `umzug.js`. Verhaltensgleich zum bisherigen Inline-Skript. */
 import { api, esc } from '../immo.js';
-import { melde, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg } from './state.js';
 import { umzugLaden } from './umzug.js';
 
 let vorlageDlg, vorlageFeld, vorlageMeldung;
@@ -48,9 +48,9 @@ export function vorlageInit() {
         method: 'POST', body: { vorlage: vorlageFeld.value },
       });
       if (antwort.hinweise?.length) {
-        melde(vorlageMeldung, antwort.hinweise.join(' '), false);
+        feldmeldung(vorlageMeldung, antwort.hinweise.join(' '), false);
       } else {
-        melde(vorlageMeldung, antwort.umzug_noetig
+        feldmeldung(vorlageMeldung, antwort.umzug_noetig
           ? `Übernommen. ${antwort.umzug_noetig} bereits angelegte Ordner `
             + `${antwort.umzug_noetig === 1 ? 'heißt' : 'heißen'} noch wie zuvor `
             + '— „Benennung nachziehen" holt sie nach.'
@@ -59,7 +59,7 @@ export function vorlageInit() {
       await vorlageLaden();
       await umzugLaden();
     } catch (fehler) {
-      melde(vorlageMeldung, String(fehler.message || fehler));
+      feldmeldung(vorlageMeldung, String(fehler.message || fehler));
     }
   });
 

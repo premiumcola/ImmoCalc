@@ -5,7 +5,7 @@
    nicht alles flach nebeneinander liegt. Verhaltensgleich zum bisherigen
    Inline-Skript in settings.html. */
 import { api, esc } from '../immo.js';
-import { melde, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg } from './state.js';
 
 let unterordnerDlg, unterordnerMeldung, unterordnerFelder;
 let unterordnerStand = { jahr: new Date().getFullYear(), einheit: '' };
@@ -88,13 +88,13 @@ export function unterordnerInit() {
       const antwort = await api('/nextcloud/unterordner',
                                 { method: 'POST', body: { vorlagen } });
       unterordnerZeigen(antwort);
-      melde(unterordnerMeldung, antwort.hinweise?.length
+      feldmeldung(unterordnerMeldung, antwort.hinweise?.length
         ? antwort.hinweise.join(' ')
         : 'Übernommen. Bereits abgelegte Belege bleiben liegen — die neue '
           + 'Ordnung gilt für alles, was ab jetzt hereinkommt.',
         !antwort.hinweise?.length);
     } catch (fehler) {
-      melde(unterordnerMeldung, String(fehler.message || fehler));
+      feldmeldung(unterordnerMeldung, String(fehler.message || fehler));
     }
   });
 }

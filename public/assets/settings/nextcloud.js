@@ -5,7 +5,7 @@
    nichts, nur der Home-Pfad in der Konfiguration wird gesetzt. Verhaltensgleich
    zum bisherigen Inline-Skript in settings.html. */
 import { api, esc } from '../immo.js';
-import { melde, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg } from './state.js';
 
 let ncDlg, ordnerDlg;
 let ncStatus, ncHome, ncMeldung, ordnerMeldung, pfadleiste, ordnerliste;
@@ -57,7 +57,7 @@ async function ordnerZeigen(pfad = '') {
       '<div class="leer">Keine Unterordner — dieser Ordner ist wählbar</div>');
   } catch (fehler) {
     ordnerliste.innerHTML = '<div class="leer">Ordner nicht lesbar</div>';
-    melde(ordnerMeldung, String(fehler.message || fehler));
+    feldmeldung(ordnerMeldung, String(fehler.message || fehler));
   }
 }
 
@@ -105,11 +105,11 @@ export function nextcloudInit() {
           tls_pruefen: false,
         },
       });
-      melde(ncMeldung, 'Verbindung steht. Jetzt den Home-Ordner wählen.', true);
+      feldmeldung(ncMeldung, 'Verbindung steht. Jetzt den Home-Ordner wählen.', true);
       await zustandLaden();
       setTimeout(() => { ncDlg.close(); oeffneOrdnerwahl(); }, 900);
     } catch (fehler) {
-      melde(ncMeldung, String(fehler.message || fehler).replace(/^\d+\s*/, '')
+      feldmeldung(ncMeldung, String(fehler.message || fehler).replace(/^\d+\s*/, '')
         || 'Verbindung fehlgeschlagen');
     } finally {
       knopf.disabled = false;
@@ -132,7 +132,7 @@ export function nextcloudInit() {
       ncHome.textContent = antwort.home;
       ordnerDlg.close();
     } catch (fehler) {
-      melde(ordnerMeldung, String(fehler.message || fehler));
+      feldmeldung(ordnerMeldung, String(fehler.message || fehler));
     }
   });
 }

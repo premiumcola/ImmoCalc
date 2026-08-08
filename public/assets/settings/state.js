@@ -2,7 +2,7 @@
 
    Die Fach-Module (verknuepfungen, nextcloud, ki, mail, vorlage, unterordner,
    umzug, einsortieren, import, version, rechenlogik) teilen sich hier ihre
-   gemeinsamen Helfer: die Meldungen an Ort und Stelle (`melde`/`meldungWeg`),
+   gemeinsamen Helfer: die Meldungen an Ort und Stelle (`feldmeldung`/`meldungWeg`),
    den knapp befristeten Statusabruf fuer die Live-Kacheln (`vHole`,
    `vHoleGeteilt`, `vGeteiltReset`) und die kleinen Formatierer (`vKurz`,
    `vModell`, `ortszeit`, `belegText`). Alles verhaltensgleich zum bisherigen
@@ -86,8 +86,8 @@ export const ortszeit = (iso) => iso
   : null;
 
 /* Meldungen im Dialog — an, weg, gut/schlecht. Verhaltensgleich zum bisherigen
-   `melde`/`meldungWeg` in settings.html. */
-export function melde(feld, text, gut = false) {
+   `feldmeldung`/`meldungWeg` in settings.html. */
+export function feldmeldung(feld, text, gut = false) {
   feld.textContent = text;
   feld.className = 'meldung an ' + (gut ? 'gut' : 'schlecht');
 }

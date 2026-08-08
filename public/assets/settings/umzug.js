@@ -5,7 +5,7 @@
    ausdrückliche Rückfrage, dann das Ergebnis — samt dem, was misslang.
    Verhaltensgleich zum bisherigen Inline-Skript in settings.html. */
 import { api, esc, frage } from '../immo.js';
-import { belegText, melde, meldungWeg } from './state.js';
+import { belegText, feldmeldung, meldungWeg } from './state.js';
 
 let umzugDlg, umzugMeldung, umzugPlan, umzugStart, umzugStatus;
 let trockenlauf = null;
@@ -63,7 +63,7 @@ function planZeigen() {
   umzugStart.style.display = trockenlauf.schritte.length ? 'block' : 'none';
   umzugStart.disabled = false;
   umzugStart.textContent = 'Ordner nachziehen';
-  if (trockenlauf.hinweise?.length) melde(umzugMeldung, trockenlauf.hinweise.join(' '));
+  if (trockenlauf.hinweise?.length) feldmeldung(umzugMeldung, trockenlauf.hinweise.join(' '));
 }
 
 /** Trockenlauf holen und die Zeile beschriften. `grund` bleibt gesetzt, wenn
@@ -158,7 +158,7 @@ export function umzugInit() {
       const a = await api('/nextcloud/umzug', { method: 'POST' });
       umzugStart.style.display = 'none';
       ergebnisZeigen(a, namen);
-      melde(umzugMeldung, a.fehler.length
+      feldmeldung(umzugMeldung, a.fehler.length
         ? `${a.anzahl} von ${a.anzahl + a.fehler.length} Ordnern nachgezogen — `
           + `${a.fehler.length} blieben stehen.`
         : `${a.anzahl} Ordner nachgezogen · ${belegText(a.dokumente)} umgehängt.`,
@@ -169,7 +169,7 @@ export function umzugInit() {
     } catch (fehler) {
       umzugStart.disabled = false;
       umzugStart.textContent = 'Ordner nachziehen';
-      melde(umzugMeldung, String(fehler.message || fehler));
+      feldmeldung(umzugMeldung, String(fehler.message || fehler));
     }
   });
 }

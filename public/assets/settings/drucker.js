@@ -8,7 +8,7 @@
    Der Prüfknopf öffnet nur eine TCP-Verbindung und schliesst sie wieder — er
    druckt nichts. Papier und Toner gehören dem Nutzer. */
 import { api, esc, frage } from '../immo.js';
-import { melde, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg } from './state.js';
 
 const VORGABE_PORT = 9100;
 /* Dieselbe Form, die der Server erlaubt (`drucker.py::pruefe_ziel`): nur was
@@ -140,7 +140,7 @@ export function druckerInit() {
         await sichern(drucker.filter(x => x.name !== name)
           .map(({ name: n, ip, port, standort }) => ({ name: n, ip, port, standort })));
       } catch (fehler) {
-        melde(meldungEl, String(fehler.message || fehler));
+        feldmeldung(meldungEl, String(fehler.message || fehler));
       }
       return;
     }
@@ -158,7 +158,7 @@ export function druckerInit() {
         erreichbar.set(name, !!antwort.erreichbar);
       } catch (fehler) {
         erreichbar.set(name, false);
-        melde(meldungEl, String(fehler.message || fehler));
+        feldmeldung(meldungEl, String(fehler.message || fehler));
       } finally {
         zeichne();
       }
@@ -175,19 +175,19 @@ export function druckerInit() {
       port: Number(document.getElementById('drkPort').value) || VORGABE_PORT,
       standort: document.getElementById('drkOrt').value.trim(),
     };
-    if (!eintrag.name) return melde(formMeldungEl, 'Bitte einen Namen angeben');
+    if (!eintrag.name) return feldmeldung(formMeldungEl, 'Bitte einen Namen angeben');
     if (!ADRESSE.test(eintrag.ip)) {
-      return melde(formMeldungEl, 'Das ist keine gültige IP-Adresse — etwa '
+      return feldmeldung(formMeldungEl, 'Das ist keine gültige IP-Adresse — etwa '
         + '192.168.178.20');
     }
     if (eintrag.port < 1 || eintrag.port > 65535) {
-      return melde(formMeldungEl, 'Der Port muss zwischen 1 und 65535 liegen');
+      return feldmeldung(formMeldungEl, 'Der Port muss zwischen 1 und 65535 liegen');
     }
     /* Zwei Geräte mit demselben Namen liessen sich später nicht mehr
        auseinanderhalten — der Name ist der Schlüssel für Prüfen und Drucken. */
     const doppelt = drucker.some(d => d.name === eintrag.name
                                    && d.name !== bearbeitet);
-    if (doppelt) return melde(formMeldungEl, 'Diesen Namen gibt es schon');
+    if (doppelt) return feldmeldung(formMeldungEl, 'Diesen Namen gibt es schon');
 
     const neu = bearbeitet
       ? drucker.map(d => (d.name === bearbeitet ? eintrag : d))
@@ -201,7 +201,7 @@ export function druckerInit() {
         ({ name, ip, port, standort })));
       formDlg.close();
     } catch (fehler) {
-      melde(formMeldungEl, String(fehler.message || fehler));
+      feldmeldung(formMeldungEl, String(fehler.message || fehler));
     } finally {
       knopf.disabled = false;
       knopf.textContent = 'Übernehmen';
