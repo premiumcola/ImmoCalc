@@ -26,15 +26,22 @@
 
   /* Ort · Strasse · Einheit — drei Ebenen in der Kachel. Alle drei Zeilen
      display:block, weil margin an einem <span> sonst wirkungslos bleibt. */
+  /* N272 — `break-word` statt `anywhere`. Der Unterschied ist genau der
+     gemeldete Fehler: `anywhere` zaehlt beim Berechnen der Mindestbreite
+     jeden einzelnen Buchstaben als moegliche Trennstelle, der Kasten darf
+     also beliebig schmal werden — und dann bricht auch „Hauptstr. 6a" mitten
+     im Wort zu „Haupts/tr. 6a", obwohl an der Leerstelle Platz gewesen waere.
+     `break-word` haelt als Mindestbreite das laengste Wort und trennt erst,
+     wenn ein Wort wirklich allein nicht in die Zeile passt. */
   .tile .ortszeile{
     display:block; font:600 10px var(--mono); letter-spacing:.11em;
     text-transform:uppercase; color:var(--soft); margin:0 0 4px; line-height:1.3;
-    overflow-wrap:anywhere;
+    overflow-wrap:break-word;
   }
-  .tile .name{overflow-wrap:anywhere}
+  .tile .name{overflow-wrap:break-word}
   .tile .einheit{
     display:block; font:400 12px var(--body); color:var(--soft);
-    margin-top:4px; line-height:1.35; overflow-wrap:anywhere;
+    margin-top:4px; line-height:1.35; overflow-wrap:break-word;
   }
   /* Flurnummer des Grundstücks — gesetzt wie ein Label (mono), gedeckt */
   .tile .einheit.flur{font:600 11.5px var(--mono); letter-spacing:.02em;
@@ -95,6 +102,23 @@
   .mitbubbles > .tile .ico{width:76px; height:76px; border-radius:18px}
   @media(min-width:680px){
     .mitbubbles > .tile .ico{width:84px; height:84px; border-radius:20px}
+  }
+  /* N272 — die Hausnummer sprang auf dem iPhone in die naechste Zeile
+     („Tauchersreuther Str." / „5"). Ursache war `.tile.hat-cf .txt{padding-
+     right:96px}` weiter oben: der Platz fuer die Cashflow-Pille wurde dem
+     GANZEN Textblock abgezogen, obwohl die Pille nur neben der ERSTEN Zeile
+     sitzt. Von 256 px blieben so 160 — zu wenig fuer den Strassennamen.
+     Jetzt haelt nur die erste Zeile den Platz frei; der Name bekommt die
+     volle Breite. `:first-child` statt `.ortszeile`, damit es auch dort
+     stimmt, wo gar keine Ortszeile steht — dann ist der Name selbst die
+     erste Zeile und braucht den Abstand.
+     Der Block steht NACH den Basisregeln — eine Media-Query hat keine
+     hoehere Spezifitaet, sie muss sie im Quelltext ueberholen. */
+  .mitbubbles > .tile.hat-cf .txt{padding-right:0}
+  .mitbubbles > .tile.hat-cf .txt > :first-child{padding-right:96px}
+  @media(max-width:439px){
+    .mitbubbles > .tile{gap:10px; padding:14px}
+    .mitbubbles > .tile .ico{width:56px; height:56px; border-radius:14px}
   }
 
   /* CCCXLIX — Cashflow-Indikator oben rechts in der Kachel. Schlicht: ein
