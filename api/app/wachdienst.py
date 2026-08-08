@@ -131,32 +131,6 @@ def _abgleich_lauf() -> dict:
         sperre.release()
 
 
-def _einsortieren_lauf() -> dict:
-    """N310 — Belege in ihren Jahresordner ziehen, ohne dass jemand einen Knopf
-    drückt.
-
-    Das war bis eben eine Karte in den Einstellungen („75 Belege liegen noch
-    flach"). Der Nutzer will dort nichts mehr bedienen: „es sollte ja alles im
-    Background laufen, ich will da nix einstellen". Es ist auch keine
-    Einstellung, sondern eine Aufräumaktion — und eine, die seit [N285] nur
-    noch die Nebenkosten und die Lagepläne betrifft.
-
-    Verschoben wird kollisionssicher und nie überschreibend (derselbe Weg wie
-    beim Knopf). Ein Beleg ohne Jahr bleibt liegen."""
-    from .routers.cloud import unterordner_umzug_ausfuehren  # spät, Zirkel
-
-    if not sperre.acquire(blocking=False):
-        return {"verschoben": 0}
-    try:
-        with Session(engine) as session:
-            return unterordner_umzug_ausfuehren(session=session)
-    except Exception as fehler:                       # noqa: BLE001
-        log.info("Einsortier-Lauf übersprungen: %s", fehler)
-        return {"verschoben": 0}
-    finally:
-        sperre.release()
-
-
 def _kontakte_lauf() -> dict:
     """N309 — das Kontaktbuch aus dem Bestand nachführen.
 
@@ -274,12 +248,16 @@ async def schleife() -> None:
             if summen.get("nachgetragen"):
                 log.info("Prüfsummen nachgetragen: %d (noch offen: %d)",
                          summen["nachgetragen"], summen.get("noch_offen", 0))
-            # N310: Belege in ihren Jahresordner ziehen — war eine Karte in den
-            # Einstellungen, ist aber eine Aufräumaktion und keine Einstellung.
-            einsortiert = await asyncio.to_thread(_einsortieren_lauf)
-            if einsortiert.get("verschoben"):
-                log.info("In Jahresordner einsortiert: %s",
-                         einsortiert["verschoben"])
+            # N310 — das Einsortieren in Jahresordner läuft hier BEWUSST NICHT
+            # mit. Es war eine Karte in den Einstellungen und ist dort zu Recht
+            # verschwunden, aber der Wächtertest
+            # `test_der_wachdienst_zieht_nie_selbst_um` hält eine ältere,
+            # gute Entscheidung fest: „echte Unterlagen wandern nicht nebenbei
+            # alle 15 Minuten". Dateien im Ordner des Nutzers zu bewegen ist
+            # schwer umkehrbar; das gehört nicht in einen stillen Takt.
+            #
+            # Der Rückstand wurde einmalig aufgeräumt, und NEUE Belege landen
+            # seit [N285] ohnehin gleich richtig — es entsteht also kein neuer.
             # N309: das Kontaktbuch nachführen — neue Belege bringen ihre Firma
             # und ihre Kundennummer von selbst mit.
             kontakte_stand = await asyncio.to_thread(_kontakte_lauf)
