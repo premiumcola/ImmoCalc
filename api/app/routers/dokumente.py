@@ -11,6 +11,7 @@ Alles Weitere ist Korrektur und läuft über einen einzigen Endpunkt: `PATCH`
 mit. `DELETE` entfernt nur den Eintrag; die Datei in der Nextcloud bleibt
 liegen, gelöscht wird dort grundsätzlich nichts.
 """
+import hashlib
 import json
 import logging
 from datetime import date
@@ -339,6 +340,8 @@ def _aufnehmen(session: Session, o: Objekt, eintrag) -> Dokument | None:
         return None
     d = Dokument(pfad=eintrag.pfad, dateiname=eintrag.name,
                  groesse=eintrag.groesse, objekt_id=o.id, status="neu",
+                 nc_fileid=getattr(eintrag, "fileid", "") or "",
+                 sha1=getattr(eintrag, "sha1", "") or "",
                  erkannt_am=date.today())
     session.add(d)
     try:
@@ -514,19 +517,69 @@ def _baum(client, wurzel: str,
     return gefunden, gelesen
 
 
-def _wiedergefunden(d: Dokument, frei: dict, vergeben: set[str]) -> tuple[str, str]:
+def _kennzeichen_nachtragen(d: Dokument, eintrag) -> bool:
+    """N290 — Dateinummer und Prüfsumme am Eintrag festhalten. `True`, wenn
+    sich etwas geändert hat.
+
+    Streng additiv: ein bereits gesetztes Kennzeichen wird überschrieben, wenn
+    die Cloud ein anderes meldet (der Nutzer hat die Datei ersetzt), aber ein
+    LEERER Wert aus der Cloud löscht nie einen vorhandenen — nicht jede
+    Nextcloud-Installation liefert für jede Datei eine Prüfsumme, und ein
+    einzelner Lauf ohne Angabe darf das Kennzeichen nicht wegräumen."""
+    geaendert = False
+    for feld, wert in (("nc_fileid", getattr(eintrag, "fileid", "")),
+                       ("sha1", getattr(eintrag, "sha1", ""))):
+        wert = (wert or "").strip()
+        if wert and getattr(d, feld, "") != wert:
+            setattr(d, feld, wert)
+            geaendert = True
+    return geaendert
+
+
+def _umzugsart(alt: str, neu: str) -> str:
+    """N290 — „verschoben" oder „umbenannt"? Der Ordner entscheidet.
+
+    Hat sich beides geändert, wiegt der Ordnerwechsel schwerer; der neue Name
+    steht ohnehin in derselben Meldung."""
+    return "umbenannt" if _elternteil(alt) == _elternteil(neu) else "verschoben"
+
+
+def _wiedergefunden(d: Dokument, dateien: dict, vergeben: set[str]) -> tuple[str, str]:
     """Wohin die Datei gewandert ist: (Pfad, Art) oder ("", "").
 
-    Zuerst nach dem Namen — verschieben ist der häufigere Fall und der
-    sicherere Schluss. Danach nach Ordner und Grösse: dieselbe Datei, im
+    N290 — zuerst nach Nextclouds Dateinummer, dann nach der Prüfsumme: das
+    sind die beiden Kennzeichen, die ein Umbenennen UND Verschieben im
+    Explorer zugleich überstehen. Erst danach die alten Wege über Namen und
+    Grösse, die je für sich nur EINE der beiden Änderungen verkraften.
+
+    Danach nach dem Namen — verschieben allein ist der häufigere Fall und der
+    sicherere Schluss. Zuletzt nach Ordner und Grösse: dieselbe Datei, im
     selben Ordner, nur anders benannt."""
     if _ist_grabstein(d.pfad):
         # N242 — dieser Eintrag hat seinen Namen abgegeben, weil der Nutzer die
         # Datei gelöscht hat. Eine gleichnamige Datei anderswo ist nicht „seine"
         # zurückgekehrte Datei — er bleibt vermisst.
         return "", ""
+
+    # Die Dateinummer ist eindeutig: mehr als ein Treffer kann es nicht geben,
+    # und ein Treffer ist ein Beweis, keine Vermutung.
+    if d.nc_fileid:
+        for pfad, e in dateien.items():
+            if e.fileid == d.nc_fileid and pfad not in vergeben:
+                return pfad, _umzugsart(d.pfad, pfad)
+    # Die Prüfsumme deckt den Fall ab, dass die Datei neu hochgeladen wurde
+    # (dann ist die Nummer eine andere). Byte-Gleichheit heisst hier aber nicht
+    # zwingend „dieselbe Datei": zwei Kopien desselben Belegs sind ebenfalls
+    # byte-gleich. Deshalb nur bei GENAU einem Kandidaten — sonst liesse sich
+    # nicht entscheiden, welcher gemeint ist.
+    if d.sha1:
+        treffer = _einziger([p for p, e in dateien.items()
+                             if e.sha1 and e.sha1 == d.sha1 and p not in vergeben])
+        if treffer:
+            return treffer, _umzugsart(d.pfad, treffer)
+
     name = d.dateiname.lower()
-    gleicher_name = [p for p, e in frei.items()
+    gleicher_name = [p for p, e in dateien.items()
                      if e.name.lower() == name and p not in vergeben]
     treffer = _einziger(gleicher_name)
     if treffer:
@@ -534,7 +587,7 @@ def _wiedergefunden(d: Dokument, frei: dict, vergeben: set[str]) -> tuple[str, s
 
     if d.groesse:
         ordner = _elternteil(d.pfad)
-        gleiche_datei = [p for p, e in frei.items()
+        gleiche_datei = [p for p, e in dateien.items()
                          if e.groesse == d.groesse and _elternteil(p) == ordner
                          and p not in vergeben]
         treffer = _einziger(gleiche_datei)
@@ -586,7 +639,7 @@ def _nachweislich_geloescht(d: Dokument, gelesen: set[str], frei: dict,
 
 def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
                       dateien: dict, gelesen: set[str], vergeben: set[str],
-                      trocken: bool) -> dict:
+                      trocken: bool, client=None) -> dict:
     """Zieht die Einträge einer Immobilie an den Stand der Cloud nach."""
     ergebnis: dict[str, list] = {"verschoben": [], "umbenannt": [],
                                  "vermisst": [], "wiederda": [],
@@ -596,10 +649,19 @@ def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
     # Erst alle, die noch an ihrem Platz liegen — sie belegen ihre Datei,
     # bevor die Suche nach den Umgezogenen beginnt.
     offen: list[Dokument] = []
+    nachgetragen = 0
     for d in eigene:
         if _norm(d.pfad) in dateien:
             vergeben.add(_norm(d.pfad))
             unveraendert += 1
+            # N290 — solange die Datei noch an ihrem Platz liegt, ist sie
+            # zweifelsfrei identifiziert: genau jetzt werden Dateinummer und
+            # Prüfsumme nachgetragen. Ohne dieses Nachtragen hülfe die
+            # Wiedererkennung nur Dateien, die nach der Umstellung dazukamen —
+            # der ganze Bestand bliebe auf Name und Grösse angewiesen.
+            if not trocken and _kennzeichen_nachtragen(d, dateien[_norm(d.pfad)]):
+                nachgetragen += 1
+                session.add(d)
             if d.status == VERMISST:
                 # Die Datei ist zurück — der Eintrag darf sie wieder führen.
                 ergebnis["wiederda"].append(_kurz(d, o))
@@ -636,13 +698,26 @@ def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
         ergebnis[art].append(eintrag)
         if trocken:
             continue
+        # N290 — der Steckbrief zieht mit. Benennt der Nutzer das PDF im
+        # Explorer um, bliebe „alt.immocalc" sonst als Waise liegen — und
+        # `verwaiste_immocalc_aufraeumen` LÖSCHT Waisen. Die KI-Auslese eines
+        # Belegs ginge damit ausgerechnet beim Aufräumen verloren. Best-effort:
+        # klappt der Cloud-Zugriff nicht, bleibt die Verknüpfung trotzdem
+        # richtig — die Sidecar ist Beiwerk, der Eintrag nicht.
+        if client is not None:
+            try:
+                _sidecar_mitnehmen(client, d.pfad, ziel)
+            except Exception as fehler:                   # noqa: BLE001
+                log.info("Steckbrief zu %s nicht mitgezogen: %s", d.pfad, fehler)
         d.pfad = ziel
         d.dateiname = dateien[ziel].name
+        _kennzeichen_nachtragen(d, dateien[ziel])
         if d.status == VERMISST:
             d.status = "zugeordnet" if d.kategorie else "neu"
         session.add(d)
 
     ergebnis["unveraendert"] = unveraendert
+    ergebnis["kennzeichen_nachgetragen"] = nachgetragen
     return ergebnis
 
 
@@ -653,6 +728,7 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
     zusammen: dict[str, list] = {"verschoben": [], "umbenannt": [],
                                  "vermisst": [], "wiederda": [], "entfernt": []}
     unveraendert = geprueft = ohne_eintrag = neu = automatisch = 0
+    nachgetragen = 0                    # N290 — Kennzeichen frisch festgehalten
     hinweise: list[str] = []
     # Über alle Immobilien hinweg: eine Datei gehört immer nur einem Eintrag.
     vergeben = {_norm(d.pfad) for d in session.exec(select(Dokument)).all()}
@@ -678,10 +754,11 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
         vergeben -= {_norm(d.pfad) for d in eigene}
 
         teil = _abgleiche_objekt(session, o, eigene, dateien, gelesen,
-                                 vergeben, trocken)
+                                 vergeben, trocken, client)
         for schluessel in zusammen:
             zusammen[schluessel] += teil[schluessel]
         unveraendert += teil["unveraendert"]
+        nachgetragen += teil["kennzeichen_nachgetragen"]
 
         if not trocken:
             try:
@@ -721,6 +798,10 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
         # liegt — der gewachsene Bestand in den Unterordnern gehört dem
         # Nutzer und wird nicht ungefragt in die Ablage gezogen.
         "ohne_eintrag": ohne_eintrag,
+        # N290 — wie viele Einträge in diesem Lauf ihre Dateinummer/Prüfsumme
+        # bekommen haben. Fällt die Zahl auf 0, ist der Bestand durchgezogen
+        # und übersteht ab dann Umbenennen und Verschieben zugleich.
+        "kennzeichen_nachgetragen": nachgetragen,
         "hinweise": hinweise,
     }
 
@@ -1919,6 +2000,10 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
 
     d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
                  groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
+                 # N290 — die Prüfsumme steht hier ohne jeden Zusatzaufwand
+                 # fest: die Bytes liegen vor. Die Dateinummer trägt der
+                 # nächste Abgleich nach, sie kennt nur die Cloud.
+                 sha1=hashlib.sha1(inhalt).hexdigest(),
                  kostenart=kostenart_normalisieren(kostenart),
                  betrag=betrag if betrag and betrag > 0 else None,
                  jahr=jahr, belegdatum=_zum_datum(datum),

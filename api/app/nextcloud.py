@@ -23,7 +23,7 @@ OC = "{http://owncloud.org/ns}"
 PROPFIND_RUMPF = """<?xml version="1.0"?>
 <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop>
   <d:resourcetype/><d:getcontentlength/><d:getlastmodified/>
-  <oc:checksums/>
+  <oc:checksums/><oc:fileid/>
 </d:prop></d:propfind>"""
 
 
@@ -49,6 +49,12 @@ class Eintrag:
     # Byte-exakte Prüfsumme aus der Cloud (CCCLXXXVI) — leer, wenn Nextcloud für
     # diese Datei keine liefert. Additiv, damit kein bestehender Aufrufer bricht.
     sha1: str = ""
+    # N290 — Nextclouds eigene Dateinummer. Sie bleibt beim Umbenennen UND beim
+    # Verschieben dieselbe und ist damit der einzige Bezug, der beides zugleich
+    # übersteht. Anders als die Prüfsumme liefert Nextcloud sie für JEDE Datei;
+    # die Prüfsumme fehlt bei allem, was über die Weboberfläche hochgeladen
+    # wurde. Beide zusammen ergeben eine belastbare Wiedererkennung.
+    fileid: str = ""
 
 
 class NextcloudFehler(RuntimeError):
@@ -180,6 +186,8 @@ class Nextcloud:
                 ordner=ist_ordner,
                 groesse=int(groesse) if groesse and groesse.isdigit() else 0,
                 sha1=sha1,
+                fileid=(props.findtext(f"{OC}fileid") or "").strip()
+                if props is not None else "",
             ))
 
         eintraege.sort(key=lambda e: (not e.ordner, e.name.lower()))

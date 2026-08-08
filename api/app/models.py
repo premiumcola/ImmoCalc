@@ -813,6 +813,19 @@ class Dokument(SQLModel, table=True):
     pfad: str = Field(index=True, unique=True)  # WebDAV-Pfad ab Benutzer-Root
     dateiname: str
     groesse: int = 0
+    # N290 — die zwei Kennzeichen, mit denen eine Datei wiedererkannt wird,
+    # wenn der Nutzer sie im Windows-Explorer umbenennt UND verschiebt. Der
+    # Pfad taugt dafür nicht: er ist genau das, was sich ändert.
+    #
+    # `nc_fileid` ist Nextclouds eigene Dateinummer — sie bleibt bei Umbenennen
+    # und Verschieben dieselbe und liegt bei jedem PROPFIND kostenlos bei.
+    # `sha1` ist die byte-exakte Prüfsumme; sie überlebt zusätzlich das
+    # Neu-Hochladen derselben Datei (dann ändert sich die Nummer), fehlt aber
+    # bei allem, was über die Weboberfläche kam. Zusammen decken sie beide
+    # Fälle ab. Beide leer = alter Bestand; dann greift wie bisher die Suche
+    # über Name und Größe.
+    nc_fileid: str = Field(default="", index=True)
+    sha1: str = Field(default="", index=True)
     objekt_id: Optional[int] = Field(default=None, foreign_key="objekt.id", index=True)
     zeitraum_id: Optional[int] = Field(default=None, foreign_key="zeitraum.id")
     kategorie: str = ""                    # Dokumentart: Nebenkosten, Steuer, …

@@ -32,13 +32,20 @@ async def lifespan(app: FastAPI):
     pflicht_kostenarten_sichern(engine)
     log.info("ImmoCalc API bereit")
 
-    wache = asyncio.create_task(wachdienst.schleife())
+    # Zwei Takte: der ruhige für Texterkennung, Aufräumen und Autoversand, und
+    # der schnelle nur für den Abgleich (N290) — er ist rein lesend und stellt
+    # die Verknüpfung wieder her, sobald der Nutzer in der Cloud umbenennt oder
+    # verschiebt.
+    wachen = [asyncio.create_task(wachdienst.schleife()),
+              asyncio.create_task(wachdienst.abgleich_schleife())]
     try:
         yield
     finally:
-        wache.cancel()
-        with suppress(asyncio.CancelledError):
-            await wache
+        for wache in wachen:
+            wache.cancel()
+        for wache in wachen:
+            with suppress(asyncio.CancelledError):
+                await wache
 
 
 app = FastAPI(title="ImmoCalc API", version="0.2.0", lifespan=lifespan)

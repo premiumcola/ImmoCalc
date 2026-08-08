@@ -19,6 +19,16 @@ log = logging.getLogger("immocalc")
 
 TAKT_SEKUNDEN = 15 * 60
 
+# N290 — der Abgleich läuft in einem EIGENEN, schnellen Takt.
+#
+# Der Nutzer sortiert und benennt seine Dateien im Windows-Explorer um und
+# will sie danach „relativ in Echtzeit" wieder verknüpft sehen, nicht erst
+# nach einer Viertelstunde. Der Abgleich ist dafür der richtige Lauf: er
+# liest nur (PROPFIND je Ordner) und schreibt nichts in die Cloud. Die teuren
+# Läufe — Texterkennung, Autoversand, Aufräumen — bleiben beim ruhigen
+# 15-Minuten-Takt; sie kosten Rechenzeit und haben keine Eile.
+ABGLEICH_TAKT_SEKUNDEN = 2 * 60
+
 # Nur eine Eingangsprüfung zur Zeit. Der Wachdienst läuft in einem eigenen
 # Thread, während der Nutzer „Ordner prüfen" drücken kann — ohne diese Sperre
 # sehen beide Sitzungen dieselbe Datei als neu und legen sie doppelt an.
@@ -36,15 +46,23 @@ _zustand: dict[str, object] = {
     "immocalc_aufgeraeumt_gesamt": 0,
     # N248: wie viele extern gelöschte Belege aus der Ablage genommen wurden.
     "entfernt_gesamt": 0,
+    # N290: wie oft eine Verknüpfung einer im Explorer bewegten Datei gefolgt ist.
+    "nachgezogen_gesamt": 0,
+    "letzter_abgleich": None,
     "laeuft": False,
 }
 
 
 def zustand() -> dict:
     letzter = _zustand["letzter_lauf"]
+    abgleich = _zustand["letzter_abgleich"]
     return {
         "aktiv": bool(_zustand["laeuft"]),
         "takt_minuten": TAKT_SEKUNDEN // 60,
+        # N290 — der Abgleich hat seinen eigenen, schnellen Takt.
+        "abgleich_takt_minuten": ABGLEICH_TAKT_SEKUNDEN // 60,
+        "letzter_abgleich": abgleich.isoformat() if abgleich else None,
+        "nachgezogen_gesamt": _zustand["nachgezogen_gesamt"],
         "letzter_lauf": letzter.isoformat() if letzter else None,
         "letzter_fehler": _zustand["letzter_fehler"],
         "gefunden_gesamt": _zustand["gefunden_gesamt"],
@@ -129,6 +147,39 @@ def _immocalc_lauf() -> dict:
         sperre.release()
 
 
+async def abgleich_schleife() -> None:
+    """N290 — der schnelle Takt: nur der Abgleich, alle zwei Minuten.
+
+    Er stellt die Verknüpfung wieder her, nachdem der Nutzer im Explorer
+    umbenannt oder verschoben hat, und nimmt extern gelöschte Belege aus der
+    Ablage (N248). Rein lesend gegenüber der Cloud, deshalb darf er oft laufen.
+
+    Der Wächter darf nie sterben: jeder Fehler wird vermerkt, nicht geworfen.
+    Läuft gerade ein anderer Lauf, tritt er zurück — dafür ist die Sperre da,
+    und in zwei Minuten ist er wieder da."""
+    while True:
+        await asyncio.sleep(ABGLEICH_TAKT_SEKUNDEN)
+        try:
+            ergebnis = await asyncio.to_thread(_abgleich_lauf)
+            entfernt = len(ergebnis.get("entfernt", []))
+            if entfernt:
+                _zustand["entfernt_gesamt"] = \
+                    int(_zustand["entfernt_gesamt"]) + entfernt
+                log.info("Extern gelöschte Belege entfernt: %d", entfernt)
+            bewegt = len(ergebnis.get("verschoben", [])) \
+                + len(ergebnis.get("umbenannt", []))
+            if bewegt:
+                _zustand["nachgezogen_gesamt"] = \
+                    int(_zustand["nachgezogen_gesamt"]) + bewegt
+                log.info("Verknüpfung nachgezogen: %d Beleg(e)", bewegt)
+            _zustand["letzter_abgleich"] = datetime.now()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:                    # Wächter darf nie sterben
+            _zustand["letzter_fehler"] = str(e)
+            log.warning("Abgleich fehlgeschlagen: %s", e)
+
+
 async def schleife() -> None:
     """Läuft neben der API und prüft den Eingang in festem Takt."""
     _zustand["laeuft"] = True
@@ -151,14 +202,6 @@ async def schleife() -> None:
                 _zustand["ocr_ergaenzt_gesamt"] = \
                     int(_zustand["ocr_ergaenzt_gesamt"]) + ergaenzt
                 log.info("Textschicht ergänzt: %d Beleg(e)", ergaenzt)
-            # N248: den Stand der Cloud nachziehen — extern gelöschte Belege
-            # verschwinden dadurch von selbst aus der Ablage.
-            abgeglichen = await asyncio.to_thread(_abgleich_lauf)
-            entfernt = len(abgeglichen.get("entfernt", []))
-            if entfernt:
-                _zustand["entfernt_gesamt"] = \
-                    int(_zustand["entfernt_gesamt"]) + entfernt
-                log.info("Extern gelöschte Belege entfernt: %d", entfernt)
             # N30: verwaiste `.immocalc`-Steckbriefe im selben Takt aufräumen.
             aufgeraeumt = await asyncio.to_thread(_immocalc_lauf)
             weg = int(aufgeraeumt.get("geloescht", 0))

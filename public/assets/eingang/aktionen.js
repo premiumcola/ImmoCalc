@@ -66,6 +66,14 @@ export async function fussnoteZeigen() {
       : wann
       ? `Ordner geprüft alle ${w.takt_minuten} min · zuletzt ${wann} Uhr`
       : `Ordner werden alle ${w.takt_minuten} min geprüft`);
+    // N290 — der zweite, schnelle Takt: er zieht die Verknüpfung nach, wenn
+    // Dateien ausserhalb der App umbenannt oder verschoben wurden. Für den
+    // Nutzer ist genau das die Frage „wie lange dauert es, bis es passt?".
+    if (w.abgleich_takt_minuten) {
+      teile.push(`Umbenannt oder verschoben? Wird alle `
+        + `${w.abgleich_takt_minuten} min nachgezogen`
+        + (w.nachgezogen_gesamt ? ` · ${w.nachgezogen_gesamt} bisher` : ''));
+    }
     warnung = Boolean(w.letzter_fehler);
   } catch { /* ohne API keine Fussnote */ }
   try {
