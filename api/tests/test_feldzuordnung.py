@@ -102,8 +102,12 @@ def test_namensvorschlag_nennt_art_und_nummer():
 def test_zuordnung_nennt_nur_felder_die_es_im_modell_gibt():
     """Wächter: die Zuordnung schreibt in Modellfelder. Wird eines umbenannt,
     fiele die Vorbefüllung stumm aus — dieser Test macht daraus einen Fehler."""
+    # N276 — „erwerbskosten" ist eine Pseudo-Rubrik: sie hat keinen eigenen
+    # Endpunkt, sondern schreibt Zahlungen mit fester Kategorie (siehe
+    # RUBRIK_ENDPUNKT in objekt-felder.js). Deshalb steht hier dasselbe Modell.
     modelle = {"notarvertraege": Notarvertrag, "versicherungen": Versicherung,
                "kredite": Kredit, "mieten": Miete, "zahlungen": Zahlung,
+               "erwerbskosten": Zahlung,
                "renovierungsposten": Renovierungsposten}
     for bereich, zuordnung in feldzuordnung.ZUORDNUNG.items():
         modell = modelle[bereich]

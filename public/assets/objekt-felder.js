@@ -265,8 +265,42 @@ const PACHT = {
    Makler …). Technisch eine Zahlung mit fester Kategorie „Erwerbsnebenkosten"
    und Turnus „einmalig" — deshalb ein eigenes Kürzel, keine /Jahr-Angabe. Die
    Rubrik teilt sich den Zahlungs-Endpunkt (siehe RUBRIK_ENDPUNKT). */
-const ERWERB_ARTEN = ['Notar', 'Grunderwerbsteuer', 'Grundbuch / Grundschuld',
-                      'Makler', 'Gutachter', 'Sonstiges'];
+/* N276 — die Liste stand auf sechs Werten und traf die echten Belege nicht.
+   Aus sieben Rechnungen des Nutzers (Unterschöllenbach) ergab sich vor allem
+   EINE fachliche Trennung, die vorher fehlte:
+
+     Notar, KV 21100/21101  → Kaufvertrag, Bauträgervertrag, Auflassung
+     Notar, KV 21200        → Grundschuldbestellung
+     Grundbuchamt KV 14110/14150 → Eigentumsumschreibung, Auflassungsvormerkung
+     Grundbuchamt KV 14121  → Grundpfandrecht
+
+   Die linke Spalte gehört zum ERWERB und wandert in die Anschaffungskosten
+   (wird also abgeschrieben), die rechte zur FINANZIERUNG und ist sofort
+   abzugsfähige Werbungskosten. Beides unter „Notar" bzw. „Grundbuch /
+   Grundschuld" zusammenzufassen macht die AfA falsch — deshalb getrennte
+   Arten statt einer Sammelbezeichnung.
+
+   Vermessung und Katasterfortführung fehlten ganz (Amt für Digitalisierung,
+   Breitband und Vermessung; KatFortGebG). Der Rest ergänzt, was beim Erwerb
+   regelmäßig anfällt. Reihenfolge: erst der Kaufvorgang, dann die Ämter,
+   dann das Umfeld — der Nutzer sucht in dieser Reihenfolge. */
+const ERWERB_ARTEN = [
+  'Notar',
+  'Notar – Grundschuldbestellung',
+  'Grunderwerbsteuer',
+  'Grundbuchamt – Eigentumsumschreibung',
+  'Grundbuchamt – Auflassungsvormerkung',
+  'Grundbuchamt – Grundpfandrecht',
+  'Katasterfortführung',
+  'Vermessung / Gebäudeeinmessung',
+  'Makler / Courtage',
+  'Gutachter / Wertermittlung',
+  'Bodengutachten / Baugrund',
+  'Erschließungskosten',
+  'Baugenehmigung / Behördengebühren',
+  'Finanzierungsnebenkosten',
+  'Sonstiges',
+];
 const ERWERB = {
   titel: 'Einmalige Erwerbsnebenkosten', einzahl: 'Erwerbsnebenkosten',
   ikon: 'Erwerbsnebenkosten',

@@ -80,6 +80,16 @@ ZUORDNUNG: dict[str, dict[str, tuple[str, ...]]] = {
         "betrag": ("jahresbetrag", "betrag"),
         "turnus": ("turnus",),
     },
+    # N276 — die Maske der einmaligen Erwerbsnebenkosten. `art` kommt aus
+    # `erwerbsart`, das `kiauslese` schon gegen die feste Liste geprüft hat —
+    # hier steht bewusst KEIN Rückfall auf `kostenart`/`dokumenttyp`: die
+    # lieferten Freitext („Kostenrechnung"), und der passt in keine Auswahl.
+    "erwerbskosten": {
+        "art": ("erwerbsart",),
+        "jahr": ("jahr", "abrechnungsjahr"),
+        "betrag": ("betrag",),
+        "notiz": ("notiz",),
+    },
     # N270 — die Renovierungsposten-Maske: eine Rechnung eines Handwerkers,
     # bereits einem Gewerk zugeordnet (`kiauslese._gewerk`, gegen die feste
     # Liste geprüft — hier wird nur noch durchgereicht, nicht erneut geprüft).

@@ -47,14 +47,8 @@ log = logging.getLogger("immocalc")
 # (parallele Arbeit an N270) — sobald die Datei da ist, greift der Import
 # oben und dieses Modul (und alles, was es transitiv lädt) bricht nicht am
 # fehlenden Import weg.
-try:
-    from .renovierung import GEWERKE
-except ImportError:  # pragma: no cover — nur während N270 in Arbeit
-    GEWERKE = (
-        "Rohbau", "Dach", "Fassade & Dämmung", "Fenster & Türen", "Elektro",
-        "Sanitär", "Heizung", "Trockenbau", "Estrich & Böden", "Fliesen",
-        "Maler", "Küche", "Außenanlagen", "Planung & Gebühren", "Sonstiges",
-    )
+from . import erwerb                                     # noqa: E402
+from .renovierung import GEWERKE                         # noqa: E402
 
 # Der günstige, schnelle Endpunkt. Über ANTHROPIC_MODEL austauschbar, aber der
 # Vorgabewert bleibt bewusst das kleinste Modell — wenige Tokens je Beleg.
@@ -217,6 +211,35 @@ SYSTEM_PROMPT = (
     "z. B. \"Meier → Schmidt\").\n"
     "GRUNDBUCH/GRUNDSCHULD: gemarkung, flurstueck, grundbuch_blatt, glaeubiger, "
     "grundschuld_betrag, rang.\n"
+    # N276 — die Rechnungen rund um den Erwerb. Sie sehen sich sehr ähnlich
+    # (alle amtlich, alle „Kostenrechnung"), meinen aber steuerlich
+    # Gegensätzliches. Die KV-Nummer steht auf jeder GNotKG-Rechnung und ist
+    # der eindeutigste Anhaltspunkt, den es hier gibt.
+    "ERWERBSNEBENKOSTEN (einmalige Kosten rund um den Kauf): erwerbsart — "
+    "EXAKT einer dieser Werte: \"Notar\", \"Notar – Grundschuldbestellung\", "
+    "\"Grunderwerbsteuer\", \"Grundbuchamt – Eigentumsumschreibung\", "
+    "\"Grundbuchamt – Auflassungsvormerkung\", \"Grundbuchamt – Grundpfandrecht\", "
+    "\"Katasterfortführung\", \"Vermessung / Gebäudeeinmessung\", "
+    "\"Makler / Courtage\", \"Gutachter / Wertermittlung\", "
+    "\"Bodengutachten / Baugrund\", \"Erschließungskosten\", "
+    "\"Baugenehmigung / Behördengebühren\", \"Finanzierungsnebenkosten\", "
+    "\"Sonstiges\". "
+    "ZUORDNUNG — die KV-Nummer der Kostenrechnung ist das sicherste Merkmal: "
+    "KV 21100/21101 (Beurkundungsverfahren Kauf-/Bauträgervertrag, Auflassung) "
+    "→ \"Notar\"; KV 21200 (Beurkundung Grundschuldbestellung) → "
+    "\"Notar – Grundschuldbestellung\"; KV 14110 (Eigentumsumschreibung) → "
+    "\"Grundbuchamt – Eigentumsumschreibung\"; KV 14150/14152 (Auflassungs"
+    "vormerkung, deren Löschung) → \"Grundbuchamt – Auflassungsvormerkung\"; "
+    "KV 14121 (Grundpfandrecht) → \"Grundbuchamt – Grundpfandrecht\". "
+    "Hilfsweise der ABSENDER: Landesjustizkasse / Amtsgericht Grundbuchsache → "
+    "Grundbuchamt; Finanzamt mit \"Bescheid über Grunderwerbsteuer\" → "
+    "\"Grunderwerbsteuer\"; Amt für Digitalisierung, Breitband und Vermessung "
+    "(Gebäudeeinmessung, VermKatG) → \"Vermessung / Gebäudeeinmessung\"; "
+    "Katasterfortführungsgebühr (KatFortGebG) → \"Katasterfortführung\". "
+    "Trägt eine Rechnung MEHRERE Positionen (eine Landesjustizkasse-Rechnung "
+    "nennt oft Vormerkung UND Grundpfandrecht), nimm die Art der betragsmäßig "
+    "größten Position. Ist es keine Erwerbsnebenkosten-Rechnung, lass "
+    "erwerbsart weg — rate nicht \"Sonstiges\".\n"
     "WEG: verwalter, hausgeld_monatlich, ruecklage_zufuehrung.\n"
     "NEBENKOSTEN-RECHNUNG: kostenart, betrag, zeitraum, s35a (true bei "
     "haushaltsnaher Dienstleistung: Schornsteinfeger, Wartung, Hausmeister, "
@@ -645,6 +668,16 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         "einheit": _adresse(block.get("einheit")),
         "felder": _felder(block.get("felder")),
     }
+    # N276 — die Erwerbsart gegen die feste Liste halten. Eine erfundene Art
+    # („Vermessungsgebühr") sähe im Formular aus wie eine erkannte und würde
+    # ungeprüft übernommen; dann stünde ein Wert im Feld, den die Auswahl gar
+    # nicht kennt. Passt sie nicht, fliegt sie raus — lieber ein leeres Feld,
+    # das der Nutzer füllt, als ein falsch gefülltes.
+    art = erwerb.erwerbsart(ergebnis["felder"].get("erwerbsart"))
+    if art:
+        ergebnis["felder"]["erwerbsart"] = art
+    else:
+        ergebnis["felder"].pop("erwerbsart", None)
     # Dezent loggen — OHNE Datum, Betrag oder Namen (Datenschutz). Nur, dass
     # eine Antwort kam und ob ein Datum darin stand.
     log.info("KI-Auslese gelesen (Datum %s)",
