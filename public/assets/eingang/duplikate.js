@@ -52,7 +52,10 @@ function chipsHtml(k) {
   const chips = [];
   const objekt = k.objekt_name || k.objekt;
   if (objekt) chips.push(`<span class="chip">${esc(objekt)}</span>`);
-  const sache = [k.kategorie, k.kostenart].filter(Boolean).join(' · ');
+  // Jede Information genau einmal: bei „Nebenkosten" heisst oft auch die
+  // Kostenart so, und dann stand „Nebenkosten · Nebenkosten" auf der Karte.
+  const sache = [...new Set([k.kategorie, k.kostenart].filter(Boolean))]
+    .join(' · ');
   if (sache) chips.push(`<span class="chip">${esc(sache)}</span>`);
   if (k.betrag != null) chips.push(`<span class="chip geld">${esc(eur(k.betrag))}</span>`);
   const wann = k.belegdatum ? tagText(k.belegdatum) : (k.jahr ? String(k.jahr) : '');
