@@ -62,6 +62,21 @@
     .hh:has(.metatxt) .seakt{margin-left:auto}
   }
 
+  /* N278 — „Rechnung abfotografieren" über den Feldern. Gleiche Gestalt wie
+     in objekt.html, damit der Knopf überall derselbe ist; er gehört (wie die
+     Karten-Regeln oben) später einmal nach immo.css. */
+  .scan-vorschlag{display:grid; grid-template-columns:auto 1fr;
+    column-gap:12px; row-gap:2px; align-items:center; width:100%;
+    border:1.5px solid #BBD4E5; background:#E8F1F7; color:#255676;
+    border-radius:14px; padding:12px 14px; cursor:pointer; text-align:left;
+    font-family:var(--body); margin:0 0 18px; min-height:44px}
+  .scan-vorschlag:hover{background:#D8E8F2}
+  .scan-vorschlag:disabled{opacity:.6; cursor:default}
+  .scan-vorschlag .sv-i{width:22px; height:22px; grid-row:1 / span 2}
+  .scan-vorschlag .sv-t{font:600 13.5px var(--disp); letter-spacing:-.01em}
+  .scan-vorschlag .sv-u{font:400 11.5px var(--body); color:#4A7391;
+    line-height:1.4}
+
   /* Diagramme — max-width, sonst skalieren viewBox-SVGs samt Schrift ins
      Riesenhafte. Der Zeitstrahl misst seine Breite selbst (siehe unten). */
   .chart{width:100%; height:auto; display:block; overflow:visible}
@@ -331,7 +346,7 @@ inhalt.addEventListener('click', async e => {
   }
 
   if (e.target.closest('[data-posten-neu]') && aktuell) {
-    const werte = await postenDialog(null, gewerke, aktuell.von || '');
+    const werte = await postenDialog(null, gewerke, aktuell.von || '', slug);
     if (!werte) return;
     try {
       await Daten.postenAnlegen(aktuell.id, werte);

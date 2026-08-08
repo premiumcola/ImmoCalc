@@ -5,7 +5,24 @@
    Beide bauen auf `baueDialog()` aus immo.js auf und benutzen die vorhandenen
    Formularklassen `.field` / `.inp` / `.btn` — kein eigenes Formularsystem. */
 
-import { baueDialog, esc } from '../immo.js';
+import { baueDialog, esc, melde } from '../immo.js';
+import { auswahlfeld } from '../auswahl.js';
+import { datumwahl } from '../datumwahl.js';
+import { belegVorbereiten, belegAblegen } from '../belegscan.js';
+import { analyseDecke } from '../belegbestaetigung.js';
+
+/* N278 — dieselbe Kamera-/Dateiweiche wie auf den Kostenart-Karten: am Telefon
+   direkt die Kamera, am Rechner die Dateiauswahl. */
+const KEINE_KAMERA = !(navigator.mediaDevices || window.matchMedia?.(
+  '(pointer:coarse)').matches);
+
+const KAMERA_SVG = `<svg class="sv-i" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.1-1.8A1 1 0 0 1 8.7 4.7h6.6
+           a1 1 0 0 1 .9.5L17.3 7h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1
+           19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
+  <circle cx="12" cy="13" r="3.4"/></svg>`;
 
 /** Zahl aus einem Eingabefeld: leer bleibt `null`, Komma zaehlt als Komma. */
 function zahl(el) {
@@ -32,16 +49,31 @@ function formularDialog({ titel, felder, fuellen = () => {}, lesen }) {
     fuellen(form, dlg);
     form.querySelector('[data-abbruch]')
         .addEventListener('click', () => { fertig(null); dlg.close(); });
-    form.addEventListener('submit', e => {
+    form.addEventListener('submit', async e => {
       e.preventDefault();
-      const werte = lesen(form, dlg);
+      // `lesen` darf warten (der Rechnungsdialog legt beim Speichern erst die
+      // fotografierte Datei ab). Solange sperrt der Knopf, sonst löst ein
+      // zweiter Tipp denselben Vorgang ein zweites Mal aus.
+      const knopf = form.querySelector('button[type=submit]');
+      knopf.disabled = true;
+      let werte = null;
+      try {
+        werte = await lesen(form, dlg);
+      } finally {
+        knopf.disabled = false;
+      }
       if (werte === null) return;
       fertig(werte);
       dlg.close();
     });
     dlg.addEventListener('cancel', () => fertig(null));
     // Der Name ist das erste Feld — direkt hineinspringen spart einen Tipp.
-    setTimeout(() => form.querySelector('.inp')?.focus(), 30);
+    // N278 — NICHT, wenn oben ein Foto-Knopf steht: auf dem Telefon risse der
+    // Fokus sofort die Tastatur hoch und legte sie über die halbe Maske,
+    // obwohl der erste Griff dort meist die Kamera ist.
+    if (!form.querySelector('[data-posten-scan]')) {
+      setTimeout(() => form.querySelector('.inp')?.focus(), 30);
+    }
   });
 }
 
@@ -166,43 +198,179 @@ export function renovierungDialog(vorhanden, einheiten) {
  * @param {string[]}    gewerke    Gewerke-Liste aus der API
  * @param {string}      vorgabeDatum  Startdatum der Renovierung als Vorschlag
  */
-export function postenDialog(vorhanden, gewerke, vorgabeDatum = '') {
+export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
+                             objekt = '') {
   const p = vorhanden || {};
   const neu = !vorhanden;
-  const auswahl = gewerke.map(g =>
-    `<option value="${esc(g)}"${p.gewerk === g ? ' selected' : ''}>${esc(g)}</option>`).join('');
-  const felder = `
+  // N278 — der Weg übers Foto steht VOR den Feldern, wie in jeder anderen
+  // Eingabemaske: er erspart im Regelfall das Abtippen, und danach steht
+  // dieselbe Maske gefüllt da. Nur beim Anlegen — eine bestehende Rechnung
+  // wird korrigiert, nicht neu fotografiert.
+  const scanHtml = (neu && objekt) ? `
+    <button type="button" class="scan-vorschlag" data-posten-scan>
+      ${KAMERA_SVG}
+      <span class="sv-t">${KEINE_KAMERA
+        ? 'Rechnung als Datei wählen' : 'Rechnung abfotografieren'}</span>
+      <span class="sv-u">Datum, Betrag, Firma und Gewerk werden erkannt und
+        hier eingetragen. Mehrere Seiten? Im Kamerafenster unten „+".</span>
+    </button>` : '';
+  const felder = `${scanHtml}
     <div class="feldpaar">
-      <div class="field"><label for="pdatum">Datum</label>
-        <input class="inp" id="pdatum" type="date"
-               value="${esc(p.datum || (neu ? vorgabeDatum : ''))}"></div>
+      <div class="field"><label>Datum</label>
+        <input type="hidden" id="pdatum"
+               value="${esc(p.datum || (neu ? vorgabeDatum : ''))}">
+        <div data-datumwahl data-label="Datum"></div></div>
       <div class="field"><label for="pbetrag">Betrag (€)</label>
-        <input class="inp" id="pbetrag" type="number" step="0.01" inputmode="decimal"
+        <input class="inp" id="pbetrag" type="text" inputmode="decimal"
                placeholder="0,00"
                value="${p.betrag == null ? '' : esc(p.betrag)}"></div>
     </div>
     <div class="field"><label for="pfirma">Firma</label>
       <input class="inp" id="pfirma" type="text" placeholder="z. B. Elektro Meier"
              value="${esc(p.firma || '')}"></div>
-    <div class="field"><label for="pgewerk">Gewerk</label>
-      <select class="inp" id="pgewerk"><option value="">— ohne Gewerk —</option>
-        ${auswahl}</select></div>
+    <div class="field"><label>Gewerk</label>
+      <input type="hidden" id="pgewerk" value="${esc(p.gewerk || '')}">
+      <div data-gewerkwahl data-label="Gewerk"></div></div>
     <div class="field"><label for="pnotiz">Notiz</label>
       <input class="inp" id="pnotiz" type="text" value="${esc(p.notiz || '')}"></div>
     <p class="feldnote">Ein Beleg ohne Kosten ist erlaubt — Betrag einfach
        leer lassen.</p>`;
 
+  // Der vorbereitete, noch NICHT abgelegte Scan. Er wartet auf „Speichern" —
+  // bricht der Nutzer ab, wurde nichts in die Cloud geschrieben.
+  let offen = null;
+  const chooser = [];
+
   return formularDialog({
     titel: neu ? 'Rechnung hinzufügen' : 'Rechnung bearbeiten',
     felder,
-    lesen(form) {
-      return {
+    fuellen(form, dlg) {
+      const datumFeld = form.querySelector('#pdatum');
+      const gewerkFeld = form.querySelector('#pgewerk');
+      // N278 — die eigenen Chooser statt `type="date"` und `<select>`: das
+      // native Datumsfeld legt auf iOS einen Systemkalender ÜBER die ganze
+      // Maske, und die aufgeklappte Select-Liste zeichnet ebenfalls das
+      // Betriebssystem. Genau deshalb gibt es `datumwahl.js`/`auswahl.js`
+      // (siehe objekt/formular.js) — sie fehlten hier schlicht.
+      chooser.push(datumwahl(form.querySelector('[data-datumwahl]'), {
+        wert: datumFeld.value, label: 'Datum',
+        aenderung: neuWert => { datumFeld.value = neuWert; },
+      }));
+      chooser.push(auswahlfeld(form.querySelector('[data-gewerkwahl]'), {
+        optionen: [{ wert: '', text: '— ohne Gewerk —' },
+                   ...gewerke.map(g => ({ wert: g, text: g }))],
+        wert: gewerkFeld.value, label: 'Gewerk',
+        aenderung: neuWert => { gewerkFeld.value = neuWert; },
+      }));
+      dlg.addEventListener('close', () => {
+        for (const c of chooser) { try { c.zerstoere(); } catch { /* schon weg */ } }
+      }, { once: true });
+
+      form.querySelector('[data-posten-scan]')?.addEventListener('click', async e => {
+        const knopf = e.currentTarget;
+        if (knopf.disabled) return;
+        knopf.disabled = true;
+        const paket = await rechnungScannen(objekt);
+        knopf.disabled = false;
+        if (!paket) return;
+        offen = paket.vorbereitet;
+        const w = paket.werte;
+        if (w.datum) { datumFeld.value = w.datum; chooser[0].setze?.(w.datum); }
+        if (w.betrag != null) {
+          form.querySelector('#pbetrag').value =
+            String(w.betrag).replace('.', ',');
+        }
+        if (w.firma) form.querySelector('#pfirma').value = w.firma;
+        if (w.gewerk) { gewerkFeld.value = w.gewerk; chooser[1].setze?.(w.gewerk); }
+        if (w.notiz && !form.querySelector('#pnotiz').value) {
+          form.querySelector('#pnotiz').value = w.notiz;
+        }
+        const anzahl = Object.keys(w).length;
+        melde(anzahl
+          ? `${anzahl} ${anzahl === 1 ? 'Angabe' : 'Angaben'} erkannt — bitte prüfen`
+          : 'Aus dem Foto liess sich nichts Sicheres lesen', anzahl ? 'pos' : '');
+      });
+    },
+    async lesen(form) {
+      const werte = {
         datum: form.querySelector('#pdatum').value || null,
         betrag: zahl(form.querySelector('#pbetrag')) ?? 0,
         firma: form.querySelector('#pfirma').value.trim(),
         gewerk: form.querySelector('#pgewerk').value,
         notiz: form.querySelector('#pnotiz').value.trim(),
       };
+      // Erst jetzt wandert die Datei in die Cloud — und wenn das scheitert,
+      // steht die Rechnung trotzdem. Der Beleg ist Beiwerk, die Zahl nicht.
+      if (offen) {
+        try {
+          const abgelegt = await belegAblegen(offen);
+          werte.quelle_dokument_id = abgelegt?.id ?? null;
+        } catch (fehler) {
+          melde(`Rechnung gespeichert — die Datei konnte aber nicht abgelegt `
+            + `werden: ${fehler.message || fehler}`, 'neg');
+        }
+        offen = null;
+      }
+      return werte;
     },
+  });
+}
+
+/**
+ * N278 — fotografieren, zuschneiden, auslesen. Gibt `{vorbereitet, werte}`
+ * zurück oder `null`, wenn abgebrochen wurde bzw. nichts zu holen war.
+ *
+ * Übersetzt wird auf dem Server: `bereich=renovierungsposten` liefert die
+ * Auslese schon auf die Feldnamen dieser Maske gemünzt (`feldzuordnung.py`).
+ * Hier wird nichts geraten.
+ */
+async function rechnungScannen(objekt) {
+  const dateien = await dateienWaehlen();
+  if (!dateien) return null;
+  let deckeWeg = null;
+  let vorbereitet = null;
+  try {
+    vorbereitet = await belegVorbereiten(dateien, {
+      objekt, kategorie: 'Renovierung', bereich: 'renovierungsposten',
+      titel: 'Rechnung abfotografieren',
+    }, () => { deckeWeg = analyseDecke('Rechnung wird gelesen …'); });
+  } catch (fehler) {
+    melde(String(fehler.message || 'Der Scan hat nicht geklappt.'), 'neg');
+    return null;
+  } finally {
+    // Die Decke geht IMMER weg — auch wenn das Auslesen scheitert.
+    if (deckeWeg) { try { deckeWeg(); } catch { /* egal */ } }
+  }
+  if (!vorbereitet) return null;                 // Zuschnitt abgebrochen
+  return { vorbereitet, werte: vorbereitet.ki?.formwerte || {} };
+}
+
+/** Kamera bzw. Dateiauswahl öffnen und auf die Wahl warten. Das `click()` ist
+    der Punkt: ein Dateifeld öffnet sich nicht von selbst, nur weil es im DOM
+    steht (N263). Es muss im selben Durchlauf wie die Berührung fallen. */
+function dateienWaehlen() {
+  return new Promise(fertig => {
+    const feld = document.createElement('input');
+    feld.type = 'file';
+    feld.accept = 'image/*,application/pdf';
+    feld.multiple = true;
+    if (!KEINE_KAMERA) feld.capture = 'environment';
+    feld.hidden = true;
+    document.body.appendChild(feld);
+    let erledigt = false;
+    const abschliessen = dateien => {
+      if (erledigt) return;
+      erledigt = true;
+      feld.remove();
+      fertig(dateien);
+    };
+    feld.addEventListener('change', () => {
+      const dateien = Array.from(feld.files || []);
+      abschliessen(dateien.length ? dateien : null);
+    }, { once: true });
+    feld.click();
+    window.addEventListener('focus', () => {
+      setTimeout(() => { if (!feld.files?.length) abschliessen(null); }, 2000);
+    }, { once: true });
   });
 }
