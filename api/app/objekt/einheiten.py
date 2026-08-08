@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .. import einheitname
 from ..db import get_session
 from ..deps import objekt_holen
 from ..felder import bereinige
@@ -264,17 +265,34 @@ def einheit_aendern(eid: int, data: dict,
     session.add(e)
 
     umbenannt = 0
+    nachgezogen: dict[str, int] = {}
     if e.bezeichnung != alt:
         for m in session.exec(select(Miete).where(Miete.objekt_id == e.objekt_id,
                                                   Miete.einheit == alt)).all():
             m.einheit = e.bezeichnung
             session.add(m)
             umbenannt += 1
+        # N314 — und überall sonst, wo der Name als TEXT steht: an den Anteilen,
+        # an Kostenpositionen (`nur_einheit`, `vorab_einheit`), am
+        # Heizverteiler, am Strom-Jahr, an der WEG-Vorauszahlung.
+        #
+        # Bis hierher wurde nur `Miete` nachgezogen (Fund XCII). Der Rest blieb
+        # auf dem alten Namen — und `verteilung.nur_einheit_gewichte` gibt bei
+        # fehlender Übereinstimmung **stumm `{}`** zurück. Eine Position „nur
+        # für Wohnung 2" über 300 € wurde danach auf NIEMANDEN verteilt; die
+        # Engine-Invariante „Summe der Anteile == Gesamtkosten" war für sie
+        # gebrochen, ohne einen einzigen Hinweis. Und der Schaden entstand
+        # sofort, weil `positionen_neu_ableiten` gleich darunter läuft.
+        nachgezogen = einheitname.benenne_um(session, alt, e.bezeichnung)
     session.commit()
     # N5 — geänderte Fläche/Bezeichnung/nk_abrechnung verschiebt die abgeleiteten
     # Gewichte offener Zeiträume; neu berechnen (Handeingaben bleiben).
     positionen_neu_ableiten(session, e.objekt_id)
-    return {"ok": True, "bezeichnung": e.bezeichnung, "mieten_umbenannt": umbenannt}
+    return {"ok": True, "bezeichnung": e.bezeichnung,
+            "mieten_umbenannt": umbenannt,
+            # N314 — was sonst noch mitwanderte; die Oberfläche kann es
+            # zeigen, statt den Nutzer raten zu lassen.
+            "nachgezogen": nachgezogen}
 
 
 @router.delete("/einheiten/{eid}")

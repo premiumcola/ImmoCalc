@@ -107,6 +107,38 @@ def haenge_um(session: Session, von_id: int, auf_id: int) -> int:
     return umgehaengt
 
 
+def loese(session: Session, dokument_id: int) -> int:
+    """N314 — jeden Verweis auf diesen Beleg lösen. Gibt die Anzahl zurück.
+
+    Für das Entfernen eines Belegs OHNE Nachfolger. `haenge_um` braucht ein
+    Ziel; hier gibt es keins, also bleibt nur das Nullsetzen — und das ist
+    zwingend, nicht kosmetisch:
+
+    SQLite läuft in diesem Projekt ohne `PRAGMA foreign_keys` und **vergibt
+    eine frei gewordene id neu**. Ein stehen gelassener Verweis zeigt deshalb
+    nicht ins Leere, sondern nach kurzer Zeit auf einen **fremden** Beleg — der
+    nächste Scan erbt die Nummer und erscheint als „Quelle" einer Versicherung,
+    die er nie gesehen hat. Gemessen und reproduziert.
+
+    Committet NICHT — der Aufrufer löscht gerade und schliesst selbst ab."""
+    geloest = 0
+    for v in register():
+        try:
+            ergebnis = session.exec(text(  # noqa: S608 — Namen aus den Metadaten
+                f'UPDATE "{v.tabelle}" SET "{v.spalte}" = NULL '
+                f'WHERE "{v.spalte}" = :id'
+            ).bindparams(id=dokument_id))
+        except Exception as fehler:                        # noqa: BLE001
+            log.info("Verweise in %s nicht gelöst: %s", v, fehler)
+            continue
+        anzahl = getattr(ergebnis, "rowcount", 0) or 0
+        if anzahl:
+            log.info("N314: %d Verweis(e) in %s auf Beleg %d gelöst",
+                     anzahl, v, dokument_id)
+            geloest += anzahl
+    return geloest
+
+
 def ohne_verweise(session: Session, dokument_id: int) -> bool:
     """Hängt an diesem Beleg wirklich nichts mehr? Die Probe nach dem Umhängen."""
     return not zaehle(session, dokument_id)

@@ -2720,10 +2720,21 @@ def entfernen(dokument_id: int,
     # um seinen Anteil. Sonst bliebe dort ein Betrag stehen, zu dem es keinen
     # Beleg mehr gibt.
     belegposten.loese(session, d)
+    # N314 — und JEDEN anderen Verweis lösen. Bis hierher blieben alle zehn
+    # stehen: Versicherung, Kredit, Notarvertrag, Renovierungsrechnung,
+    # Belegdaten … Weil SQLite hier ohne `PRAGMA foreign_keys` läuft und eine
+    # frei gewordene id neu vergibt, zeigte so ein Verweis nach kurzer Zeit
+    # nicht ins Leere, sondern auf einen FREMDEN Beleg — der nächste Scan erbt
+    # die Nummer und stand dann als „Quelle" einer Versicherung da, die er nie
+    # gesehen hat. `_duplikat_weg` und `/zusammenfuehren` machen es längst
+    # richtig; der einfache Löschknopf war die Lücke.
+    geloest = dokumentlinks.loese(session, dokument_id)
     session.delete(d)
     session.commit()
-    log.info("Dokumenteintrag entfernt: %s (Datei bleibt)", pfad)
+    log.info("Dokumenteintrag entfernt: %s (Datei bleibt, %d Verweise gelöst)",
+             pfad, geloest)
     return {"ok": True, "pfad": pfad, "datei_bleibt": True,
+            "verweise_geloest": geloest,
             "hinweis": "Der Eintrag ist weg, die Datei liegt weiter in der "
                        "Nextcloud."}
 

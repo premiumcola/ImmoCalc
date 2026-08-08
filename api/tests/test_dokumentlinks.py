@@ -391,3 +391,48 @@ def test_verschieben_meldet_saubere_fehler_statt_500():
 def test_ablageziele_meldet_unbekannten_beleg():
     with TestClient(app) as c:
         assert c.get("/api/dokumente/999999/ablageziele").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# N314 — Löschen lässt keinen Verweis stehen
+# --------------------------------------------------------------------------
+
+def test_beleg_entfernen_loest_jeden_verweis():
+    """Der gefährlichste Fund der Fehlersuche.
+
+    SQLite läuft hier ohne `PRAGMA foreign_keys` und vergibt eine frei
+    gewordene id NEU. Ein stehen gelassener Verweis zeigt deshalb nicht ins
+    Leere, sondern nach kurzer Zeit auf einen FREMDEN Beleg — der nächste Scan
+    erbt die Nummer und steht als „Quelle" einer Versicherung da, die er nie
+    gesehen hat."""
+    with TestClient(app) as c:
+        _slug, alt, _neu = _welt(c, "Loeschweg 20")
+        with Session(engine) as s:
+            assert len(dokumentlinks.zaehle(s, alt)) == 5
+
+        antwort = c.delete(f"/api/dokumente/{alt}")
+        assert antwort.status_code == 200
+        assert antwort.json()["verweise_geloest"] == 5
+
+        with Session(engine) as s:
+            assert s.get(Dokument, alt) is None
+            # Und niemand zeigt mehr auf die tote Nummer.
+            assert dokumentlinks.zaehle(s, alt) == {}
+
+
+def test_nach_dem_entfernen_zeigt_kein_verweis_mehr_ins_leere():
+    """Dieselbe Aussage über ALLE Fremdschlüssel, unabhängig von Zahlen."""
+    from sqlmodel import text
+
+    with TestClient(app) as c:
+        _slug, alt, _neu = _welt(c, "Leerweg 21")
+        c.delete(f"/api/dokumente/{alt}")
+        with Session(engine) as s:
+            tot = []
+            for v in dokumentlinks.register():
+                for (wert,) in s.exec(text(  # noqa: S608
+                        f'SELECT "{v.spalte}" FROM "{v.tabelle}" '
+                        f'WHERE "{v.spalte}" IS NOT NULL')).all():
+                    if s.get(Dokument, wert) is None:
+                        tot.append(f"{v} -> {wert}")
+            assert not tot, "Verweise ins Leere: " + ", ".join(tot)
