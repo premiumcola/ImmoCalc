@@ -19,9 +19,9 @@ const ZEICHNUNGEN = {
            <path ${P} d="M3.6 10.1h16.8M3.6 13.9h16.8"/>
            <path ${P} d="M12 6.2v3.9M8 10.1v3.8M16 10.1v3.8M12 13.9v3.9"/>`,
 
-  /* Dach — nur die Dachfläche über der Traufe, keine Wände: sonst stünde
-     hier ein Haus. Eine Ziegelreihe und der Schornstein machen aus dem
-     Dreieck ein Dach und keinen Berg. */
+  /* Dach — die Dachfläche über der Traufe, zwei kurze Wandstummel darunter.
+     Der Überstand und der Schornstein machen aus dem Dreieck ein Dach und
+     keinen Berg; ganze Wände machten daraus ein Haus. */
   dach: `<path ${P} d="M3.8 15.2 12 6.2l8.2 9"/>
          <path ${P} d="M2.2 15.2h19.6"/>
          <path ${P} d="M4.8 15.2v3.6M19.2 15.2v3.6"/>
@@ -79,8 +79,8 @@ const ZEICHNUNGEN = {
           <path ${P} d="M15.6 6.5h3.2a1.4 1.4 0 0 1 1.4 1.4v2.3a1.4 1.4 0 0 1-1.4 1.4h-6.6a1.4 1.4 0 0 0-1.4 1.4v.6"/>
           <rect ${P} x="9.1" y="13.6" width="3.6" height="6.4" rx="1.4"/>`,
 
-  /* Küche — Topf mit Griffen auf der Flamme… ohne Flamme: der Topf allein
-     ist bei 20 px die klarere Silhouette. */
+  /* Küche — Topf mit zwei Griffen und aufsteigendem Dampf; ein Herd mit
+     Kochfeld wäre bei 20 px nur ein Kasten mit vier Punkten. */
   kueche: `<path ${P} d="M4.6 10.4h14.8v4.9a4.1 4.1 0 0 1-4.1 4.1H8.7a4.1 4.1 0 0 1-4.1-4.1v-4.9Z"/>
            <path ${P} d="M19.4 11.8h1.2a1.3 1.3 0 0 1 0 2.6h-1.2M4.6 11.8H3.4a1.3 1.3 0 0 0 0 2.6h1.2"/>
            <path ${P} d="M9.6 7.6c0-1.2 1.2-1.2 1.2-2.4M14 7.6c0-1.2 1.2-1.2 1.2-2.4"/>`,
