@@ -572,6 +572,12 @@ def text_aus_beleg(rohdaten: bytes) -> str:
     aus_office = officetext.text_aus_office(rohdaten)
     if aus_office.strip():
         return aus_office
+    # N306 — fünfte Stufe: Dateien, die einfach schon Text SIND (`.txt`,
+    # `.csv`, `.eml`, `.svg`). Sie fielen bis zuletzt bis in die Bilderkennung
+    # durch und galten dort als „kein Text".
+    aus_klartext = officetext.text_aus_klartext(rohdaten)
+    if aus_klartext.strip():
+        return aus_klartext
     return text_aus_bild(rohdaten)
 
 

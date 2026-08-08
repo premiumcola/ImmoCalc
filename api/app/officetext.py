@@ -119,6 +119,36 @@ def _praesentation(archiv: zipfile.ZipFile) -> str:
     return "\n".join(stuecke)
 
 
+def text_aus_klartext(rohdaten: bytes) -> str:
+    """N306 — Dateien, die einfach schon Text SIND: `.txt`, `.csv`, `.eml`, `.svg`.
+
+    Sie fielen bis zuletzt durch jede Stufe und galten als „kein Text", obwohl
+    man sie nur zu dekodieren braucht. Erkannt wird nicht an der Endung — die
+    kennt `text_aus_beleg` gar nicht —, sondern am Inhalt: lässt sich der Rumpf
+    als UTF-8 oder Latin-1 lesen und besteht er ganz überwiegend aus druckbaren
+    Zeichen, ist es Text.
+
+    Bei `.svg` (XML) bleiben die Marken stehen; das ist unschön, aber es macht
+    den Zweck der Datei erkennbar, und darum geht es hier."""
+    if not rohdaten or rohdaten[:4] == _ZIP_MARKE or rohdaten[:5] == b"%PDF-":
+        return ""
+    for kodierung in ("utf-8", "cp1252", "latin-1"):
+        try:
+            text = rohdaten.decode(kodierung)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        # Ein Binärformat dekodiert unter Latin-1 zwar immer, besteht dann aber
+        # zum guten Teil aus Steuerzeichen. Genau daran wird es erkannt.
+        if not text:
+            return ""
+        wirr = sum(1 for z in text[:4000]
+                   if not z.isprintable() and z not in "\r\n\t")
+        if wirr / max(1, len(text[:4000])) > 0.05:
+            return ""
+        return _sauber(text)
+    return ""
+
+
 def text_aus_office(rohdaten: bytes) -> str:
     """Der Text einer Office-Datei — leer, wenn es keine ist oder nichts drin.
 

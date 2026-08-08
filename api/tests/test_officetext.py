@@ -108,3 +108,47 @@ def test_die_kette_nimmt_office_mit():
 def test_pdf_bleibt_dem_pdf_weg_treu():
     """Die neue Stufe darf sich nie vor die bestehenden drängen."""
     assert ocr.text_aus_beleg(b"%PDF-1.4\nkein echtes PDF") is not None
+
+
+# --------------------------------------------------------------------------
+# N306 — Dateien, die schon Text sind
+# --------------------------------------------------------------------------
+
+def test_klartext_wird_gelesen():
+    from app.officetext import text_aus_klartext
+    assert "Wasser;250,98" in text_aus_klartext(
+        "Kostenart;Betrag\nWasser;250,98\n".encode())
+    assert "Betreff: Abrechnung" in text_aus_klartext(
+        b"From: amt@example.de\nBetreff: Abrechnung 2025\n")
+
+
+def test_umlaute_ueberleben_beide_kodierungen():
+    from app.officetext import text_aus_klartext
+    assert "Müllgebühren" in text_aus_klartext("Müllgebühren\n".encode("utf-8"))
+    assert "Müllgebühren" in text_aus_klartext("Müllgebühren\n".encode("cp1252"))
+
+
+def test_svg_wird_lesbar_wenn_auch_mit_marken():
+    from app.officetext import text_aus_klartext
+    text = text_aus_klartext(
+        b'<svg xmlns="http://www.w3.org/2000/svg"><text>Lageplan Nord</text></svg>')
+    assert "Lageplan Nord" in text
+
+
+def test_binaeres_wird_nicht_als_text_ausgegeben():
+    """Latin-1 dekodiert jedes Byte — erkannt wird an den Steuerzeichen."""
+    from app.officetext import text_aus_klartext
+    assert text_aus_klartext(bytes(range(256)) * 20) == ""
+    assert text_aus_klartext(b"\x89PNG\r\n\x1a\n" + bytes(range(200))) == ""
+
+
+def test_pdf_und_office_gehen_ihren_eigenen_weg():
+    """Die Klartext-Stufe darf sich nie vor die spezialisierten drängen."""
+    from app.officetext import text_aus_klartext
+    assert text_aus_klartext(b"%PDF-1.4 irgendwas") == ""
+    assert text_aus_klartext(_docx(["Brief"])) == ""
+
+
+def test_die_kette_nimmt_klartext_mit():
+    assert "Schornsteinfeger" in ocr.text_aus_beleg(
+        "Rechnung Schornsteinfeger 2025\n".encode())
