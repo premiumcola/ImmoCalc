@@ -4002,6 +4002,64 @@ def _sidecar_mitnehmen(client, alt_pfad: str, neu_pfad: str) -> bool:
         return False
 
 
+def _im_ordner_umbenennen(session: Session, d: Dokument,
+                          neu_name: str) -> tuple[str, str]:
+    """Benennt Datei UND Eintrag um — im selben Ordner. `(pfad, name)` zurück.
+
+    Die Reihenfolge ist der ganze Punkt: **zuerst die Cloud, dann die
+    Datenbank.** Ginge es andersherum, führte die Datenbank nach einem Ausfall
+    einen Namen, den es in der Cloud nicht gibt — der Beleg wäre verloren, ohne
+    dass es jemand merkt.
+
+    * Cloud-MOVE gescheitert → nichts umbenannt, nichts geschrieben; die
+      angefangene Sitzung wird zurückgerollt (`_freier_name` kann einen
+      Grabstein gesetzt haben) und der Aufrufer bekommt Klartext (502).
+      Derselbe Weg fängt den Schreibrecht-Riegel aus `nextcloud.py`
+      (`AussenhalbHome` ist ein `NextcloudFehler`) — ein Ziel ausserhalb des
+      Home-Ordners führt zu einer Meldung, nicht zu einem halben Zustand.
+    * DB-Commit gescheitert (Pfad vergeben) → die Datei wird zurückgeschoben,
+      damit beide Stände zusammenbleiben.
+    * Nie überschreiben: `_freier_name` fragt die Cloud live und weicht auf
+      „…-2" aus, wenn der Zielname belegt ist.
+    """
+    alt_pfad = d.pfad
+    alt_name = d.dateiname
+    ordner = _elternordner(alt_pfad)
+    client = verbindung(session)
+    try:
+        frei = _freier_name(session, client, ordner, neu_name)
+        ziel = f"/{ordner}/{frei}" if ordner else f"/{frei}"
+        client.verschiebe(alt_pfad, ziel.lstrip("/"))
+    except NextcloudFehler as fehler:
+        session.rollback()
+        log.warning("Umbenennen fehlgeschlagen (%s → %s): %s",
+                    alt_pfad, neu_name, fehler)
+        raise HTTPException(
+            502, "Der Beleg konnte in der Cloud nicht umbenannt werden — er "
+                 f"heisst weiterhin „{alt_name}“. Grund: {fehler}") from fehler
+
+    d.pfad = ziel
+    d.dateiname = frei
+    session.add(d)
+    try:
+        session.commit()
+    except IntegrityError as e:
+        # Der Zielpfad ist inzwischen in der Datenbank vergeben. Die Datei liegt
+        # zwar schon am neuen Platz — sie zurückzuschieben hält die beiden
+        # Stände zusammen.
+        session.rollback()
+        try:
+            client.verschiebe(ziel.lstrip("/"), alt_pfad.lstrip("/"))
+        except Exception as zurueck:                       # noqa: BLE001
+            log.warning("Rückverschieben nach Konflikt gescheitert (%s): %s",
+                        ziel, zurueck)
+        raise _pfad_konflikt(session, ziel) from e
+
+    # Den Steckbrief mitnehmen — kein harter Fehler, wenn das scheitert.
+    _sidecar_mitnehmen(client, alt_pfad, ziel)
+    return ziel, frei
+
+
 @router.post("/{dokument_id}/umbenennen")
 def umbenennen(dokument_id: int,
                session: Session = Depends(get_session)) -> dict:
@@ -4048,44 +4106,91 @@ def umbenennen(dokument_id: int,
         return {"ok": True, "alt": alt_name, "neu": alt_name,
                 "pfad": alt_pfad, "geaendert": False}
 
-    ordner = _elternordner(alt_pfad)
-    client = verbindung(session)
-    frei = _freier_name(session, client, ordner, neu_name)
-    ziel = f"/{ordner}/{frei}" if ordner else f"/{frei}"
-
-    try:
-        client.verschiebe(alt_pfad, ziel.lstrip("/"))
-    except NextcloudFehler as fehler:
-        # MOVE gescheitert: Datei und Datenbank unberührt, sauberer Hinweis.
-        log.warning("Umbenennen fehlgeschlagen (%s → %s): %s",
-                    alt_pfad, ziel, fehler)
-        raise HTTPException(
-            502, "Der Beleg konnte in der Cloud nicht umbenannt werden — er "
-                 "bleibt unverändert.") from fehler
-
-    d.pfad = ziel
-    d.dateiname = frei
-    session.add(d)
-    try:
-        session.commit()
-    except IntegrityError as e:
-        # Der Zielpfad ist inzwischen in der Datenbank vergeben. Die Datei liegt
-        # zwar schon am neuen Platz — sie zurückzuschieben hält die beiden
-        # Stände zusammen.
-        session.rollback()
-        try:
-            client.verschiebe(ziel.lstrip("/"), alt_pfad.lstrip("/"))
-        except Exception as zurueck:                       # noqa: BLE001
-            log.warning("Rückverschieben nach Konflikt gescheitert (%s): %s",
-                        ziel, zurueck)
-        raise _pfad_konflikt(session, ziel) from e
-
-    # Den Steckbrief mitnehmen — kein harter Fehler, wenn das scheitert.
-    _sidecar_mitnehmen(client, alt_pfad, ziel)
+    ziel, frei = _im_ordner_umbenennen(session, d, neu_name)
 
     log.info("Umbenannt: %s → %s", alt_name, frei)
-    return {"ok": True, "alt": alt_name, "neu": frei, "pfad": d.pfad,
+    return {"ok": True, "alt": alt_name, "neu": frei, "pfad": ziel,
             "geaendert": True}
+
+
+# --------------------------------------------------------------------------
+# N261: den Namen eines schon abgelegten Belegs nachträglich korrigieren
+#
+# Bis hierher liess sich ein Beleg nur auf den *errechneten* Standardnamen
+# umbenennen (`POST …/umbenennen`) — was der Nutzer selbst schreiben wollte,
+# hatte keinen Weg. Sein Versuch landete in der Betrags-Korrektur und stand
+# danach als „_348_" im Dateinamen statt im Betrag.
+#
+# Beide Wege benutzen ab hier denselben Unterbau (`_im_ordner_umbenennen`) und
+# dieselbe Namensregel (`dateiname`, die auch `/scannen` und
+# `/namensvorschlag` benutzen). Eine Wahrheit, drei Aufrufer.
+# --------------------------------------------------------------------------
+
+class NameIn(BaseModel):
+    """Nur der Sach-Teil des Namens — Datum und Betrag setzt `dateiname`."""
+    beschreibung: str
+
+
+@router.patch("/{dokument_id}/name")
+def name_aendern(dokument_id: int, data: NameIn,
+                 session: Session = Depends(get_session)) -> dict:
+    """N261 — Beleg nachträglich umbenennen, IM SELBEN ORDNER.
+
+    Übergeben wird nur die Sache („Kaminkehrer Musterfirma"), nicht der ganze
+    Dateiname: Datum vorn und Betrag hinten setzt `dateiname` selbst, aus den
+    am Beleg gespeicherten Feldern. Deshalb kann der Name auch dann nicht
+    auseinanderlaufen, wenn der Nutzer versehentlich einen Betrag mit
+    hineinschreibt — er fällt aus der Sache heraus und steht danach genau
+    einmal an seinem festen Platz.
+
+    Der Ordner bleibt, wo er ist. Umgehängt (andere Immobilie, andere Art,
+    anderes Jahr) wird über `PATCH /api/dokumente/{id}` — hier geht es allein
+    um den Namen.
+
+    Antwort: `{dateiname, pfad, geaendert}`."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if _ist_grabstein(d.pfad):
+        # N242 — die Datei wurde in der Nextcloud gelöscht, der Eintrag lebt
+        # nur noch als Grabstein weiter. Ein MOVE griffe ins Leere.
+        raise HTTPException(409, "Diese Datei liegt nicht mehr in der Nextcloud "
+                                 "— sie wurde dort gelöscht und lässt sich "
+                                 "nicht umbenennen.")
+    if not d.pfad.startswith("/"):
+        raise HTTPException(409, "Dieses Dokument liegt noch nicht in der "
+                                 "Cloud — es lässt sich nicht umbenennen.")
+
+    endung = _endung(d.dateiname)
+    sache = (data.beschreibung or "").strip()
+    # Die Endung gehört nicht in die Sache. Nur die WIRKLICHE Endung dieser
+    # Datei wird abgeschnitten — nicht am letzten Punkt getrennt, sonst
+    # verstümmelte „Rechnung Fa. Müller" zu „Rechnung Fa".
+    if endung and sache.lower().endswith(endung.lower()):
+        sache = sache[:-len(endung)].strip()
+    if not sache:
+        raise HTTPException(400, "Bitte einen Namen für den Beleg angeben.")
+
+    # Jahr/Monat aus dem Belegdatum, mit Rückfall auf das gespeicherte Jahr und
+    # den bisherigen Namen — dieselbe Staffelung wie in `umbenennen`.
+    jahr, monat = datum_aus_namen(d.dateiname)
+    if d.belegdatum:
+        jahr, monat = d.belegdatum.year, d.belegdatum.month
+    elif d.jahr:
+        jahr = d.jahr
+    # Der Betrag steht am Beleg — und ersatzweise im bisherigen Namen; so geht
+    # er beim Umbenennen nicht verloren.
+    betrag = d.betrag or betrag_aus_namen(d.dateiname)
+    neu_name = dateiname(jahr, d.kategorie or "", sache, endung, monat,
+                         betrag, d.kostenart or "")
+
+    # Idempotent: heisst die Datei schon so, wird die Cloud nicht angefasst.
+    if neu_name == d.dateiname:
+        return {"dateiname": d.dateiname, "pfad": d.pfad, "geaendert": False}
+
+    ziel, frei = _im_ordner_umbenennen(session, d, neu_name)
+    log.info("Beleg %s auf Wunsch umbenannt: %s", dokument_id, frei)
+    return {"dateiname": frei, "pfad": ziel, "geaendert": True}
 
 
 # --------------------------------------------------------------------------

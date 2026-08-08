@@ -396,12 +396,19 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
          <button class="bnb" data-zurueck title="Nächster Beleg"
            aria-label="Nächster Beleg">›</button>
        </span>` : '';
+  // N261 — der Name lässt sich hier korrigieren. Der Knopf sitzt EINMAL in
+  // diesem Fenster und erscheint dadurch überall, wo ein Beleg geöffnet wird.
+  // Nur bei echten Belegen: Vorlagen (`/api/dokumentvorlagen/…`) kennen den
+  // Endpunkt nicht, dort wäre der Knopf ein Versprechen ins Leere.
+  const belegId = dokumentId ?? dokumentIdAus(url);
+  const umbenennbar = Boolean(belegId) && /\/api\/dokumente\//.test(String(url));
   const dlg = baueDialog(
     `<div class="beleg-kopf">
-       <span class="bt">${sicher(titel)}${pfad
-         ? `<span class="bpfad" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
-             sicher(pfad)}</bdi></span>` : ''}</span>
+       <span class="bt">${belegKopf(titel, pfad)}</span>
        ${blaettern}
+       ${umbenennbar
+         ? `<button class="bx" data-um title="Namen ändern"
+              aria-label="Namen ändern">✎</button>` : ''}
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
      <div class="beleg-ki" hidden></div>
@@ -418,6 +425,27 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
   const adressen = belegSeitenLaden(basis, flaeche, titel, url);
 
   dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
+
+  // N261 — Umbenennen ohne das Fenster zu verlassen: nach dem Speichern stehen
+  // neuer Name und neuer Pfad sofort im Kopf, die Seite wird nicht neu geladen.
+  dlg.querySelector('[data-um]')?.addEventListener('click', async () => {
+    const gewuenscht = await namenErfragen(titel);
+    if (gewuenscht === null) return;
+    try {
+      const erg = await api(`/dokumente/${belegId}/name`,
+                            { method: 'PATCH', body: { beschreibung: gewuenscht } });
+      titel = erg.dateiname || titel;
+      pfad = erg.pfad || pfad;
+      dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
+      // Beim Weiterblättern soll der Nachbar-Eintrag den neuen Namen tragen.
+      if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
+      melde(erg.geaendert === false
+        ? 'Der Name war schon so — nichts geändert'
+        : `Umbenannt in „${titel}“`, 'pos');
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+    }
+  });
 
   // Blättern: dasselbe Fenster für den Nachbarn neu aufbauen. Die Reihe wandert
   // mit, sodass man beliebig weiterblättern kann; am Rand wird umgebrochen.
@@ -436,6 +464,73 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
     });
   }
   return dlg;
+}
+
+/* ---- N261: den Namen eines abgelegten Belegs korrigieren ----------------
+   Vorher gab es dafür keinen Weg. Der Versuch, einen Namen zu ändern, landete
+   in der Betrags-Korrektur und stand danach als „_348_" im Dateinamen statt
+   im Betrag. Jetzt: ein Stift im Beleg-Kopf, eine Zeile, fertig. */
+
+/** Kopfzeile des Beleg-Fensters: Name und darunter der Ablageort.
+    Steht einmal hier, weil das Umbenennen sie neu setzt. */
+const belegKopf = (titel, pfad) => `${sicher(titel)}${pfad
+  ? `<span class="bpfad" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
+      sicher(pfad)}</bdi></span>` : ''}`;
+
+/**
+ * Fragt nach dem neuen Namen. Liefert den Text — oder `null` bei Abbruch.
+ *
+ * Vorbelegt mit dem heutigen Namen ohne Endung: der Nutzer korrigiert, was er
+ * sieht. Datum und Betrag setzt der Server an ihren festen Platz (dieselbe
+ * Regel wie beim Scannen), deshalb macht auch ein mitgetippter Betrag den
+ * Namen nicht kaputt.
+ */
+function namenErfragen(aktuellerName) {
+  const stamm = String(aktuellerName ?? '').replace(/\.[A-Za-z0-9]{1,5}$/, '');
+  return new Promise(erfuellen => {
+    const dlg = baueDialog(
+      `<div class="dt">Beleg umbenennen</div>
+       <div class="sb-name">
+         <label for="umName">Name</label>
+         <input id="umName" type="text" value="${esc(stamm)}"
+                placeholder="Bezeichnung des Belegs" spellcheck="false"
+                autocapitalize="off" autocomplete="off">
+         <p class="sb-hinweis">Datum und Betrag setzt ImmoCalc selbst — hier
+           steht die Sache. Die Datei bleibt in ihrem Ordner.</p>
+       </div>
+       <div class="sb-fuss" style="margin-top:14px">
+         <button type="button" class="sb-weiter" data-ok>Umbenennen</button>
+       </div>`);
+    dlg.classList.add('scanbest-dlg');
+
+    let entschieden = false;
+    const schliessen = (wert) => {
+      if (entschieden) return;
+      entschieden = true;
+      dlg.close();
+      erfuellen(wert);
+    };
+    const feld = dlg.querySelector('#umName');
+    const speichern = () => {
+      const neu = (feld.value || '').trim();
+      // Ein leeres Feld ist kein Abbruch, sondern ein Versehen: die Maske
+      // bleibt stehen und sagt, was fehlt.
+      if (!neu) {
+        melde('Bitte einen Namen für den Beleg angeben', 'neg');
+        feld.focus();
+        return;
+      }
+      // Unverändert: gar nicht erst zum Server — es gäbe nichts zu tun.
+      schliessen(neu === stamm ? null : neu);
+    };
+    dlg.querySelector('[data-ok]').addEventListener('click', speichern);
+    feld.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); speichern(); }
+    });
+    dlg.addEventListener('close', () => schliessen(null));
+    feld.focus();
+    feld.select();
+  });
 }
 
 /* ---- KI-Auslese im Beleg-Fenster (N102) ----
