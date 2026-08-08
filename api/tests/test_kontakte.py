@@ -263,3 +263,75 @@ def test_kontakt_loeschen_nimmt_seine_nummern_mit():
             assert s.get(Kontakt, k["id"]) is None
             assert not s.exec(select(Kundennummer).where(
                 Kundennummer.kontakt_id == k["id"])).all()
+
+
+# --------------------------------------------------------------------------
+# Zusammenführen — OCR-Lesefehler werden zu eigenen Firmen
+# --------------------------------------------------------------------------
+
+def test_zusammenfuehren_nimmt_nummern_und_leere_felder_mit():
+    """Der echte Fall: aus „WWK" las die Texterkennung „WVWK" — zwei Einträge
+    mit derselben Police."""
+    with TestClient(app) as c:
+        with Session(engine) as s:
+            a = Kontakt(schluessel="wwk", firma="WWK Versicherung AG",
+                        art="Versicherung", telefon="089 5114-0",
+                        handgepflegt=["telefon"])
+            b = Kontakt(schluessel="wvwk", firma="WVWK Versicherung AG",
+                        art="Versicherung", email="info@wwk.de",
+                        adresse="München", handgepflegt=[])
+            s.add(a); s.add(b); s.commit(); s.refresh(a); s.refresh(b)
+            s.add(Kundennummer(kontakt_id=b.id, nummer="53139472", art="Police"))
+            s.commit()
+            aid, bid = a.id, b.id
+
+        antwort = c.post(f"/api/kontakte/{aid}/zusammenfuehren",
+                         json={"weg_ids": [bid]})
+        assert antwort.status_code == 200, antwort.text
+        d = antwort.json()
+        assert d["zusammengefuehrt"] == 1
+        assert d["nummern_uebernommen"] == 1
+        # Leeres wurde gefüllt …
+        assert d["email"] == "info@wwk.de"
+        assert d["adresse"] == "München"
+        # … Gepflegtes blieb.
+        assert d["telefon"] == "089 5114-0"
+        assert any(n["nummer"] == "53139472" for n in d["nummern"])
+        with Session(engine) as s:
+            assert s.get(Kontakt, bid) is None
+
+
+def test_doppelte_nummern_werden_nicht_verdoppelt():
+    with TestClient(app) as c:
+        with Session(engine) as s:
+            a = Kontakt(schluessel="d-a", firma="A", handgepflegt=[])
+            b = Kontakt(schluessel="d-b", firma="B", handgepflegt=[])
+            s.add(a); s.add(b); s.commit(); s.refresh(a); s.refresh(b)
+            s.add(Kundennummer(kontakt_id=a.id, nummer="4711", art="Kundennummer"))
+            s.add(Kundennummer(kontakt_id=b.id, nummer="4711", art="Kundennummer"))
+            s.commit()
+            aid, bid = a.id, b.id
+        d = c.post(f"/api/kontakte/{aid}/zusammenfuehren",
+                   json={"weg_ids": [bid]}).json()
+        assert d["nummern_uebernommen"] == 0
+        assert len([n for n in d["nummern"] if n["nummer"] == "4711"]) == 1
+
+
+def test_zusammenfuehren_meldet_saubere_fehler():
+    with TestClient(app) as c:
+        with Session(engine) as s:
+            a = Kontakt(schluessel="f-a", firma="A", handgepflegt=[])
+            s.add(a); s.commit(); s.refresh(a)
+            aid = a.id
+        assert c.post("/api/kontakte/999999/zusammenfuehren",
+                      json={"weg_ids": [aid]}).status_code == 404
+        assert c.post(f"/api/kontakte/{aid}/zusammenfuehren",
+                      json={"weg_ids": [999999]}).status_code == 404
+        # Kein zweiter Kontakt angegeben
+        assert c.post(f"/api/kontakte/{aid}/zusammenfuehren",
+                      json={"weg_ids": []}).status_code == 400
+        assert c.post(f"/api/kontakte/{aid}/zusammenfuehren",
+                      json={"weg_ids": [aid]}).status_code == 400
+        # Und nach all dem steht A noch da.
+        with Session(engine) as s:
+            assert s.get(Kontakt, aid) is not None

@@ -183,3 +183,70 @@ def kontakt_loeschen(kontakt_id: int,
     session.commit()
     log.info("N309: Kontakt %d gelöscht", kontakt_id)
     return {"ok": True}
+
+
+class ZusammenIn(BaseModel):
+    weg_ids: list[int] = []
+
+
+@router.post("/{behalten_id}/zusammenfuehren")
+def zusammenfuehren(behalten_id: int, data: ZusammenIn,
+                    session: Session = Depends(get_session)) -> dict:
+    """Führt Firmen zusammen, die dieselbe sind — ohne etwas zu verlieren.
+
+    Die Ernte liest Firmennamen so, wie die Texterkennung sie hergibt. Ein
+    Lesefehler wird damit zu einer eigenen Firma: aus „WWK" wurde „WVWK", aus
+    „H. Liebel" ein zweites „N. Liebel" — beide mit derselben Police bzw.
+    demselben Gewerk. Der Schlüsselvergleich fängt Schreibweisen ab
+    (Rechtsform, Bindestriche), aber keine verlesenen Buchstaben.
+
+    Reihenfolge wie beim Zusammenführen von Belegen ([N300]): erst wandert
+    alles auf den Bleibenden, dann fällt der andere.
+
+    * **Kundennummern** wandern mit; Doppel werden übersprungen, nicht
+      verdoppelt.
+    * **Leere Felder** des Bleibenden werden aus dem Weichenden gefüllt — was
+      dort schon steht, bleibt. Von Hand Gepflegtes gewinnt immer.
+    * Gelöscht wird nur der zusammengeführte Eintrag, nie ein Beleg."""
+    behalten = session.get(Kontakt, behalten_id)
+    if behalten is None:
+        raise HTTPException(404, "Der Kontakt, der bleiben soll, existiert nicht.")
+    weg_ids = [i for i in dict.fromkeys(data.weg_ids) if i != behalten_id]
+    if not weg_ids:
+        raise HTTPException(400, "Es ist kein zweiter Kontakt angegeben.")
+
+    uebernommen = 0
+    geschuetzt = set(behalten.handgepflegt or [])
+    for i in weg_ids:
+        weg = session.get(Kontakt, i)
+        if weg is None:
+            raise HTTPException(404, f"Kontakt {i} existiert nicht.")
+        # Erst die Angaben: nur in leere Felder, nie über Gepflegtes.
+        logik.zusammenfuehren(behalten, {
+            f: getattr(weg, f) for f in
+            ("art", "gewerk", "telefon", "email", "web", "adresse", "notiz")})
+        # Dann die Nummern.
+        for n in session.exec(select(Kundennummer).where(
+                Kundennummer.kontakt_id == i)).all():
+            doppelt = any(
+                (v.nummer or "").strip().lower() == (n.nummer or "").strip().lower()
+                and v.objekt_id == n.objekt_id
+                for v in session.exec(select(Kundennummer).where(
+                    Kundennummer.kontakt_id == behalten_id)).all())
+            if doppelt:
+                session.delete(n)
+                continue
+            n.kontakt_id = behalten_id
+            session.add(n)
+            uebernommen += 1
+        session.delete(weg)
+    # Was aus dem Weichenden kam, gilt als geerntet und bleibt für die nächste
+    # Ernte offen — nur wirklich von Hand Gepflegtes ist geschützt.
+    behalten.handgepflegt = sorted(geschuetzt)
+    session.add(behalten)
+    session.commit()
+    log.info("N309: Kontakte %s auf %d zusammengeführt, %d Nummern übernommen",
+             weg_ids, behalten_id, uebernommen)
+    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    return {**logik.zeige(session, behalten, objekte),
+            "zusammengefuehrt": len(weg_ids), "nummern_uebernommen": uebernommen}
