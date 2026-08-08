@@ -18,6 +18,9 @@ from sqlmodel import Session, select
 
 from .. import ablesung, belegposten, kostenarten, verteilung, wasser
 from ..db import get_session
+from ..einheitenzuordnung import (karte as einheiten_karte, parse_einheiten,
+                                  warnungen as zuordnungs_warnungen, zuordne,
+                                  zuordne_zaehler)
 from ..deps import objekt_holen
 from ..models import (Ablesung, Einheit, Kostenposition, Miete, Objekt, Partei,
                       Zaehler, Zeitraum)
@@ -43,15 +46,6 @@ def _kostenblock(kostenart: str) -> str:
         return "Strom"
     return "Sonstige"
 
-
-def _parse_einheiten(z: Zaehler) -> list[str]:
-    """CD — die Einheiten dieses Zählers als Liste. Aus dem komma-separierten
-    Feld `einheiten` (getrimmt, Leere raus); ist es leer, fällt es auf den
-    Einzelwert `einheit_bezug` zurück (leer → leere Liste)."""
-    liste = [t.strip() for t in (z.einheiten or "").split(",") if t.strip()]
-    if liste:
-        return liste
-    return [z.einheit_bezug] if z.einheit_bezug else []
 
 # CCCLXXX — der Anfangsstand („Erststand" vor der ersten Abrechnung) ist eine
 # ganz normale Ablesung, nur mit dieser Notiz markiert und ohne Zeitraum-Tag.
@@ -162,6 +156,20 @@ def _zaehler(session: Session, zid: int) -> Zaehler:
     if not z:
         raise HTTPException(404, "Zähler nicht gefunden")
     return z
+
+
+def _stammbezug(session: Session,
+                z: Zeitraum) -> tuple[list[Einheit], list[verteilung.Bezug]]:
+    """Einheiten und Bezüge eines Zeitraums — die Grundlage jeder Zuordnung
+    „Label → Einheit" (`einheitenzuordnung.karte`)."""
+    einheiten = list(session.exec(
+        select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
+    mieten = list(session.exec(
+        select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
+    parteien = list(session.exec(
+        select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
+    return einheiten, verteilung.bezuege(einheiten, mieten, parteien,
+                                         z.start, z.ende)
 
 
 # --------------------------------------------------------------------------
@@ -325,7 +333,7 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
             "id": zae.id, "name": zae.name, "messeinheit": zae.messeinheit,
             "kostenart": zae.kostenart, "einheit_bezug": zae.einheit_bezug,
             # CD — Mehrfachzuordnung + Kostenblock (bestehende Felder unverändert).
-            "einheiten": _parse_einheiten(zae),
+            "einheiten": parse_einheiten(zae),
             "kostenblock": _kostenblock(zae.kostenart),
             "typ": zae.typ, "hauptzaehler_id": zae.hauptzaehler_id,
             # N120 — `art` unterscheidet die Zeilen der Strom-Maske (Gesamt,
@@ -435,7 +443,13 @@ def uebernehmen(zid: int, data: UebernahmeIn,
     Partei aus den Zählern gebildet (Untermesser/Rest, gruppiert nach
     `einheit_bezug`); bei jedem anderen Schlüssel werden sie aus den Stammdaten
     abgeleitet. Der Betrag (aus dem Beleg) bleibt unberührt — nur die Verteilung
-    wird gesetzt. Eine bestehende Position wird aktualisiert, sonst angelegt."""
+    wird gesetzt. Eine bestehende Position wird aktualisiert, sonst angelegt.
+
+    N288-B4 — die Schlüssel dieser Gewichte sind PARTEI-Namen (`engine.Position.
+    anteile`), nicht Einheiten-Bezeichnungen; deshalb wird hier nicht auf die
+    Einheit normalisiert. Gemeldet wird trotzdem, genau wie in der Wasser- und
+    der Strom-Kette: `unzugeordnet`/`warnungen` nennen jeden Zähler, dessen
+    Verbrauch in dieser Verteilung nicht ankommt."""
     z = session.get(Zeitraum, zid)
     if not z:
         raise HTTPException(404, "Zeitraum nicht gefunden")
@@ -450,6 +464,7 @@ def uebernehmen(zid: int, data: UebernahmeIn,
 
     # Gewichte je Partei aus dem Verbrauch — nur bei Verbrauchsschlüssel.
     anteile = None
+    unzugeordnet: list[str] = []
     if data.schluessel == "verbrauch":
         zeitraeume = session.exec(
             select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
@@ -459,13 +474,28 @@ def uebernehmen(zid: int, data: UebernahmeIn,
         # bei der Übernahme in die erste Abrechnung mit (CCCLXXX).
         zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
         verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
+        karte = einheiten_karte(*_stammbezug(session, z))
         anteile = {}
         for zae in zaehler:
-            # Der Gesamtzähler (ohne einheit_bezug) ist die Kontrollsumme, keine
-            # Partei — nur die zugeordneten Unter-/Rest-Zähler tragen Gewicht.
-            if zae.einheit_bezug and verb.get(zae.id):
-                anteile[zae.einheit_bezug] = round(
-                    anteile.get(zae.einheit_bezug, 0.0) + verb[zae.id], 4)
+            menge = verb.get(zae.id)
+            if not menge:
+                continue
+            # Der Gesamtzähler (weder `einheiten` noch `einheit_bezug`) ist die
+            # Kontrollsumme, keine Partei — er trägt hier nie Gewicht.
+            ziele = parse_einheiten(zae)
+            if not ziele:
+                continue
+            # N288-B4 — zwei Wege, auf denen ein Verbrauch bisher lautlos
+            # verschwand: ein Zähler, der sein Ziel NUR über die Mehrfach-
+            # zuordnung `einheiten` trägt (leeres `einheit_bezug`), und ein
+            # Ziel-Label, das im Objekt weder Einheit noch Partei ist. Beides
+            # wird jetzt genannt statt geschluckt.
+            if not zae.einheit_bezug or not zuordne(ziele, karte).ziele:
+                unzugeordnet.append(zae.name)
+                if not zae.einheit_bezug:
+                    continue
+            anteile[zae.einheit_bezug] = round(
+                anteile.get(zae.einheit_bezug, 0.0) + menge, 4)
 
     # Nur eine BESTEHENDE Position wird konfiguriert. Keine leere Hülle anlegen
     # (CCLVI: keine 0-€-Position ohne Beleg) — der Betrag kommt aus dem Beleg,
@@ -483,7 +513,11 @@ def uebernehmen(zid: int, data: UebernahmeIn,
     session.refresh(pos)
     return {"ok": True, "kostenart": data.kostenart, "angewandt": True,
             "schluessel": pos.schluessel, "anteile": pos.anteile,
-            "position_id": pos.id}
+            "position_id": pos.id,
+            # N288-B4 — die Zähler, deren Verbrauch hier nicht ankommt. Leer =
+            # alles verteilt; sonst steht in `warnungen`, was zu tun ist.
+            "unzugeordnet": unzugeordnet,
+            "warnungen": zuordnungs_warnungen(unzugeordnet)}
 
 
 def _zeige(session: Session, z: Zaehler) -> dict:
@@ -494,7 +528,7 @@ def _zeige(session: Session, z: Zaehler) -> dict:
     anfang = next((a for a in abls if (a.notiz or "") == ANFANGSSTAND), None) \
         or next((a for a in abls if a.zeitraum_id is None), None)
     return {"id": z.id, "name": z.name, "kostenart": z.kostenart,
-            "einheit_bezug": z.einheit_bezug, "einheiten": _parse_einheiten(z),
+            "einheit_bezug": z.einheit_bezug, "einheiten": parse_einheiten(z),
             "kostenblock": _kostenblock(z.kostenart),
             "art": z.art, "messeinheit": z.messeinheit,
             "typ": z.typ, "hauptzaehler_id": z.hauptzaehler_id,
@@ -539,76 +573,9 @@ def _wasser_art(zae: Zaehler) -> str:
 _KOMPONENTEN_ART = {"wasser": "Wasser", "schmutz": "Abwasser",
                     "niederschlag": "Niederschlagswasser"}
 
-# N101/6 — Alt-Label der früheren Wohngemeinschaft. Es steht für keine Einheit
-# mehr, sondern für den gemeinsam genutzten Haupthaus-Teil.
-_ALT_WG = "wg"
-
-
-def _label_schluessel(name: str) -> str:
-    """Vergleichsform eines Einheiten-/Partei-Labels: Leerraum vereinheitlicht,
-    Groß-/Kleinschreibung egal. Nur zum Nachschlagen — ausgegeben wird immer die
-    echte, unveränderte Bezeichnung der Einheit."""
-    return " ".join((name or "").split()).casefold()
-
-
-def _einheiten_karte(einheiten: list[Einheit],
-                     bezuege: list[verteilung.Bezug]) -> dict[str, str]:
-    """Abbildung „Label → echte Einheiten-Bezeichnung".
-
-    Zwei Quellen, in dieser Reihenfolge: die Bezeichnung einer Einheit zeigt auf
-    sich selbst; ein Partei-Name zeigt auf die Einheit, in der diese Partei im
-    Zeitraum wohnt (`verteilung.bezuege`). So landen Alt-Labels wie
-    „Roman & Alicia" in der Spalte ihrer Einheit statt als eigene Spalte.
-    """
-    karte = {_label_schluessel(e.bezeichnung): e.bezeichnung for e in einheiten}
-    karte.pop("", None)
-    for b in bezuege:
-        partei = _label_schluessel(b.partei)
-        ziel = karte.get(_label_schluessel(b.einheit))
-        if partei and ziel and partei not in karte:
-            karte[partei] = ziel
-    return karte
-
-
-def _echte_einheiten(namen: list[str], karte: dict[str, str],
-                     haupthaus: list[str],
-                     unbekannt: dict[str, None] | None = None) -> list[str]:
-    """Normalisiert eine Liste von Ziel-Labels auf echte Objekt-Einheiten.
-
-    Exakter Treffer → die Einheit selbst; Partei-Label → ihre Einheit; das
-    überholte „WG" → die Haupthaus-Einheiten (die ohne eigenen Kaltwasser-
-    Unterzähler). Alles andere wird weggelassen — eine Phantom-Spalte wäre
-    schlimmer als eine fehlende Zuordnung — und in `unbekannt` vermerkt.
-    Reihenfolge bleibt erhalten, Dopplungen fallen weg.
-
-    Hat das Objekt gar keine Einheiten hinterlegt, gibt es nichts zu
-    normalisieren — dann bleiben die Namen unangetastet (sonst verlöre eine
-    reine Partei-Abrechnung ihre Spalten und die Kontrollsumme).
-    """
-    if not karte:
-        return [n for i, n in enumerate(namen) if n and n not in namen[:i]]
-    # N111 - hat der Nutzer am Zaehler eine ECHTE Einheit gewaehlt, gilt nur die.
-    # Alte Sammel-Labels wie „WG" werden dann NICHT zusaetzlich auf beide
-    # Haupthaus-Wohnungen aufgeloest: der Zaehler „Waschmaschine 1.OG" trug noch
-    # `["WG", "Wohung EG"]` und landete dadurch zur Haelfte in der falschen
-    # Wohnung (1,86 m3, obwohl der Zaehler ihr gar nicht zugeordnet ist).
-    hat_echte = any(karte.get(_label_schluessel(n)) for n in namen)
-    out: list[str] = []
-    for name in namen:
-        s = _label_schluessel(name)
-        treffer = karte.get(s)
-        if treffer:
-            ziele = [treffer]
-        elif s == _ALT_WG and haupthaus and not hat_echte:
-            ziele = list(haupthaus)
-        else:
-            ziele = []
-            if unbekannt is not None and name:
-                unbekannt.setdefault(name, None)
-        for ziel in ziele:
-            if ziel not in out:
-                out.append(ziel)
-    return out
+# N288-B4 — die Abbildung „Label → echte Einheit" steht jetzt in
+# `app/einheitenzuordnung.py`: EINE Fassung für Wasser, Strom und Übernahme,
+# und sie gibt das Unzugeordnete immer mit zurück, statt es zu verschlucken.
 
 
 @router.get("/zeitraeume/{zid}/wasser")
@@ -670,23 +637,25 @@ def wasser_detail(zid: int, schluessel: str = "personen",
     # noch Partei-/Altlabels („Roman & Alicia", „WG", „Büro"); sie werden hier
     # einmal zentral auf die echten Objekt-Einheiten abgebildet, bevor irgend
     # etwas gerechnet wird. Dafür müssen Einheiten und Bezüge früh stehen.
-    einheiten = list(session.exec(
-        select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
-    mieten = list(session.exec(
-        select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
-    parteien = list(session.exec(
-        select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
-    bez = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
-    karte = _einheiten_karte(einheiten, bez)
-    unbekannt: dict[str, None] = {}
+    einheiten, bez = _stammbezug(session, z)
+    karte = einheiten_karte(einheiten, bez)
+    unbekannt: list[str] = []
+
+    def _merken(namen: list[str]) -> None:
+        """Unzugeordnetes sammeln — je Label einmal, Reihenfolge erhalten."""
+        for name in namen:
+            if name not in unbekannt:
+                unbekannt.append(name)
 
     # CD — Einheiten mit eigenem Kaltwasser-Vollzähler; sie fallen aus dem
     # Haupthaus-Rest heraus. Ohne „WG"-Auflösung, denn die braucht das Ergebnis.
+    # Nur eine Vorauswahl: dieselben Zähler laufen unten durch `_ziele`, dort
+    # wird Unzugeordnetes gemeldet — hier bliebe es sonst doppelt stehen.
     kalt_einheiten: set[str] = set()
     for zae in zaehler:
         if (_wasser_art(zae) == "Kaltwasser" and zae.typ == "gemessen"
                 and zae.hauptzaehler_id):
-            kalt_einheiten.update(_echte_einheiten(_parse_einheiten(zae), karte, []))
+            kalt_einheiten.update(zuordne_zaehler(zae, karte).ziele)
     haupthaus = [e.bezeichnung for e in einheiten
                  if e.nk_abrechnung and e.bezeichnung not in kalt_einheiten]
 
@@ -694,7 +663,9 @@ def wasser_detail(zid: int, schluessel: str = "personen",
         """Ziel-Einheiten eines Zählers, auf echte Einheiten normalisiert."""
         if zae is None:
             return []
-        return _echte_einheiten(_parse_einheiten(zae), karte, haupthaus, unbekannt)
+        treffer = zuordne_zaehler(zae, karte, haupthaus)
+        _merken(treffer.unbekannt)
+        return treffer.ziele
 
     # Unterzähler → Zaehlerposten. Verbrauchsscharf einer Einheit zugeordnet,
     # oder (CD) über mehrere Einheiten aufgeteilt (Person·Mietdauer).
@@ -760,9 +731,9 @@ def wasser_detail(zid: int, schluessel: str = "personen",
     for partei, gew in verteilung.gewichte(schl, bez, z.start, z.ende).items():
         # Auch hier zählt die echte Einheit — ein Bezug auf ein Altlabel darf
         # keine eigene Rest-Spalte aufmachen.
-        ziel = _echte_einheiten([partei_einheit.get(partei, "")], karte,
-                                haupthaus, unbekannt)
-        einheit = ziel[0] if ziel else ""
+        treffer = zuordne([partei_einheit.get(partei, "")], karte, haupthaus)
+        _merken(treffer.unbekannt)
+        einheit = treffer.ziele[0] if treffer.ziele else ""
         erlaubt = einheit not in kalt_einheiten and (not rest_wahl
                                                      or einheit in rest_wahl)
         if einheit and erlaubt:
@@ -795,8 +766,7 @@ def wasser_detail(zid: int, schluessel: str = "personen",
 
     # N101/6 — was sich keiner Einheit zuordnen ließ, wird nicht stillschweigend
     # verschluckt: es erzeugt keine Spalte, aber einen sichtbaren Hinweis.
-    warnungen = [f"„{name}“ gehört zu keiner Einheit dieses Objekts — die"
-                 " Zuordnung bitte am Zähler nachtragen." for name in unbekannt]
+    warnungen = zuordnungs_warnungen(unbekannt)
     # Was die Verrechnung selbst bemängelt (Unterzähler über dem Hauptzähler,
     # Gartenwasser größer als der Rest, Rest ohne Ziel-Einheit), gehört ebenso
     # in die Ansicht — sonst bleibt es in der Engine stehen.

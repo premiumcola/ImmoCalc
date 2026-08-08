@@ -33,13 +33,15 @@ from sqlmodel import Session, select
 from .. import ablesung as ablesung_modul
 from .. import strombloecke, verteilung
 from ..db import get_session
+from ..einheitenzuordnung import (karte as einheiten_karte,
+                                  warnungen as zuordnungs_warnungen, zuordne,
+                                  zuordne_zaehler)
 from ..models import (Ablesung, Dokument, Einheit, Kostenposition, Miete,
                       Objekt, Partei, Stromjahr, Zaehler, Zeitraum)
 from .objekte import zeitraum_label_jahr
 from .openwb import ladungen as openwb_ladungen
 from .tankstelle import erfasste_ladungen
-from .zaehler import (_echte_einheiten, _einheiten_karte, _eauto_zaehler,
-                      _kostenblock, _mit_vorlauf, _parse_einheiten)
+from .zaehler import _eauto_zaehler, _kostenblock, _mit_vorlauf
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["stromkette"])
@@ -101,11 +103,17 @@ def _gesamtzaehler(kwh_zaehler: list[Zaehler]) -> Zaehler | None:
 
 def _gewichte(session: Session, z: Zeitraum) -> tuple[dict[str, str],
                                                       list[str],
-                                                      dict[str, float]]:
-    """Einheiten-Karte, Haupthaus-Einheiten und die Person·Mietdauer-Gewichte.
+                                                      dict[str, float],
+                                                      list[str]]:
+    """Einheiten-Karte, Haupthaus-Einheiten, die Person·Mietdauer-Gewichte —
+    und die Labels, die sich keiner Einheit zuordnen ließen.
 
     Dieselbe Grundlage wie beim Wasser (CD): ein Zähler, der mehreren Einheiten
-    gehört, teilt seine Menge nach diesen Gewichten."""
+    gehört, teilt seine Menge nach diesen Gewichten.
+
+    N288-B4 — eine Partei, deren Einheit sich nicht auflösen lässt, verlor hier
+    ihr Gewicht lautlos: ihr Anteil fiel den übrigen zu, ohne dass es jemand
+    sah. Das Unzugeordnete kommt jetzt mit heraus und wird gemeldet."""
     einheiten = list(session.exec(
         select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
     mieten = list(session.exec(
@@ -113,48 +121,63 @@ def _gewichte(session: Session, z: Zeitraum) -> tuple[dict[str, str],
     parteien = list(session.exec(
         select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
     bez = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
-    karte = _einheiten_karte(einheiten, bez)
+    karte = einheiten_karte(einheiten, bez)
     haupthaus = [e.bezeichnung for e in einheiten if e.nk_abrechnung]
 
     partei_einheit = {b.partei: b.einheit for b in bez}
     gewichte: dict[str, float] = {}
+    unbekannt: list[str] = []
     for partei, gew in verteilung.gewichte("personen", bez, z.start,
                                            z.ende).items():
-        ziel = _echte_einheiten([partei_einheit.get(partei, "")], karte,
-                                haupthaus)
-        if ziel:
-            gewichte[ziel[0]] = round(gewichte.get(ziel[0], 0.0) + gew, 4)
-    return karte, haupthaus, gewichte
+        treffer = zuordne([partei_einheit.get(partei, "")], karte, haupthaus)
+        for name in treffer.unbekannt:
+            if name not in unbekannt:
+                unbekannt.append(name)
+        if treffer.ziele:
+            ziel = treffer.ziele[0]
+            gewichte[ziel] = round(gewichte.get(ziel, 0.0) + gew, 4)
+    return karte, haupthaus, gewichte, unbekannt
 
 
 def _je_einheit(kwh_zaehler: list[Zaehler], verb: dict[int, float | None],
                 gesamt_id: int | None, karte: dict[str, str],
                 haupthaus: list[str],
                 gewichte: dict[str, float]) -> tuple[dict[str, float],
-                                                     list[dict]]:
-    """Der kWh-Verbrauch je Einheit — plus die Zähler ohne Zuordnung.
+                                                     list[dict], list[str]]:
+    """Der kWh-Verbrauch je Einheit — plus die Zähler ohne Zuordnung und die
+    einzelnen Labels, die zu keiner Einheit passen.
 
     Der Gesamtzähler zählt nicht mit (er ist die Summe der übrigen). Ein Zähler
     mit mehreren Einheiten teilt seine Menge nach Person·Mietdauer, ersatzweise
-    zu gleichen Teilen — dieselbe Regel wie beim Wasser."""
+    zu gleichen Teilen — dieselbe Regel wie beim Wasser.
+
+    N288-B4 — trug ein Zähler mehrere Ziele und war nur EINES davon unbekannt,
+    blieb das bisher unsichtbar: die Menge ging vollständig an die übrigen
+    Einheiten. Erst wenn ALLE Ziele fehlten, kam der Zähler in `ohne`. Jetzt
+    wird beides genannt — die Wasser-Kette macht es seit N101/6 so."""
     verbrauch: dict[str, float] = {}
     ohne: list[dict] = []
+    unbekannt: list[str] = []
     for zae in kwh_zaehler:
         menge = verb.get(zae.id)
         if zae.id == gesamt_id or menge is None or menge <= 0:
             continue
-        ziele = _echte_einheiten(_parse_einheiten(zae), karte, haupthaus)
-        if not ziele:
+        treffer = zuordne_zaehler(zae, karte, haupthaus)
+        if not treffer.ziele:
+            # Gar kein Ziel: der Zähler selbst ist der Fund (mit seiner Menge).
             ohne.append({"zaehler": zae.name, "kwh": round(menge, 3)})
             continue
-        teil = {name: max(0.0, gewichte.get(name, 0.0)) for name in ziele}
+        for name in treffer.unbekannt:
+            if name not in unbekannt:
+                unbekannt.append(name)
+        teil = {name: max(0.0, gewichte.get(name, 0.0)) for name in treffer.ziele}
         if sum(teil.values()) <= 0:
-            teil = {name: 1.0 for name in ziele}
+            teil = {name: 1.0 for name in treffer.ziele}
         summe = sum(teil.values())
         for name, gew in teil.items():
             verbrauch[name] = round(verbrauch.get(name, 0.0)
                                     + menge * gew / summe, 3)
-    return verbrauch, ohne
+    return verbrauch, ohne, unbekannt
 
 
 # --------------------------------------------------------------------------
@@ -728,9 +751,10 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     eauto_kwh = round(eauto["netz_kwh"] + eauto["pv_kwh"] + eauto["akku_kwh"], 3)
 
     # ---- Schritt 3: der Rest nach Zählerwerten ---------------------------
-    karte, haupthaus, gewichte = _gewichte(session, z)
-    verbrauch, ohne = _je_einheit(kwh_zaehler, verb, gesamt_z.id if gesamt_z
-                                  else None, karte, haupthaus, gewichte)
+    karte, haupthaus, gewichte, unbekannt = _gewichte(session, z)
+    verbrauch, ohne, unbekannt_z = _je_einheit(
+        kwh_zaehler, verb, gesamt_z.id if gesamt_z else None, karte, haupthaus,
+        gewichte)
     # Ein zuordnungsloser Zähler in der Größenordnung der Ladungen IST die
     # Ladestation — sie steht in Schritt 2 und braucht keine Einheit. Er zählt
     # deshalb weder als offener Fund noch als fehlende Zuordnung.
@@ -739,8 +763,11 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
                         if abs(o["kwh"] - eauto_kwh) <= grenze), None) \
         if eauto_kwh > 0 else None
     offen = [o for o in ohne if o is not ladezaehler]
-    warnungen += [f"„{o['zaehler']}“ gehört zu keiner Einheit dieses Objekts — "
-                  "die Zuordnung bitte am Zähler nachtragen." for o in offen]
+    # N288-B4 — derselbe Hinweis wie in der Wasser-Kette, aus derselben Quelle:
+    # der Zähler ohne jedes Ziel, das einzelne unbekannte Label an einem sonst
+    # zugeordneten Zähler, und die Partei, deren Einheit sich nicht auflöst.
+    warnungen += zuordnungs_warnungen([o["zaehler"] for o in offen]
+                                      + unbekannt_z + unbekannt)
 
     e = _verteile(
         bloecke, verbrauch, eauto_einheit=eauto_einheit if eauto_kwh > 0 else "",
