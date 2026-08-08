@@ -108,7 +108,7 @@ dialog.kscan-overlay::backdrop{background:transparent}
    entfernen" hinter der Streifenleiste haengen. Der Mittelteil scrollt zwar,
    aber ein Knopf, den man erst suchen muss, ist so gut wie keiner. 36 px
    weniger Bildhoehe kosten nichts — der Zuschnitt bleibt gross genug. */
-.kscan-bild{display:block;max-width:100%;max-height:calc(100dvh - 392px);
+.kscan-bild{display:block;max-width:100%;max-height:calc(100dvh - 322px);
   width:auto;height:auto;border-radius:10px;background:#000}
 .kscan-umriss{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 /* Alles ausserhalb des Vierecks abdunkeln — die Kanten treten hervor, das
@@ -133,8 +133,11 @@ dialog.kscan-overlay::backdrop{background:transparent}
   border-radius:50%;background:#0B1012;pointer-events:none;display:none;z-index:2;
   box-shadow:0 0 0 2px rgba(255,255,255,.9),0 8px 22px rgba(0,0,0,.6)}
 .kscan-lupe.kscan-sichtbar{display:block}
-.kscan-hinweis{flex:none;max-width:440px;text-align:center;font:500 12px var(--mono,monospace);
-  color:rgba(255,255,255,.68);line-height:1.55;padding:0 8px}
+/* N282 — einzeilig halten: der Hinweis darf dem Zuschnitt keine Hoehe mehr
+   nehmen. Passt eine Warnung doch nicht in eine Zeile, bricht sie um — dort
+   ist die Aussage wichtiger als der Platz. */
+.kscan-hinweis{flex:none;max-width:440px;text-align:center;font:500 11.5px var(--mono,monospace);
+  color:rgba(255,255,255,.62);line-height:1.35;padding:0 8px}
 .kscan-hinweis.kscan-warn{color:#F2C879}
 .kscan-leer{text-align:center;color:rgba(255,255,255,.75);font:500 13.5px var(--body,sans-serif);
   padding:30px 20px;line-height:1.6}
@@ -165,10 +168,13 @@ dialog.kscan-overlay::backdrop{background:transparent}
 .kscan-plus:hover{background:rgba(255,255,255,.14)}
 .kscan-plus small{font:600 8.5px var(--mono,monospace);letter-spacing:.04em;
   opacity:.8}
-.kscan-werkzeuge{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
-.kscan-reset,.kscan-entfernen{background:none;border:none;color:rgba(255,255,255,.65);
-  font:500 11.5px var(--mono,monospace);text-decoration:underline;cursor:pointer;
-  padding:8px 12px;min-height:44px;min-width:44px}
+/* N282 — eine Zeile statt drei: Drehen, Ecken zuruecksetzen und Seite
+   entfernen stehen als Symbole nebeneinander. Der Text lebt im title- bzw.
+   aria-label-Attribut; die gewonnene Hoehe geht an den Zuschnitt. */
+.kscan-werkzeuge{display:flex;align-items:center;justify-content:center;gap:10px}
+.kscan-reset{color:rgba(255,255,255,.78)}
+.kscan-entfernen{color:#F2A98D}
+.kscan-entfernen:hover{background:rgba(242,169,141,.18)}
 .kscan-entfernen{color:#F2A98D}
 /* CCCLXXXVIII — Drehen links/rechts, falls das Foto quer aufgenommen wurde. */
 .kscan-dreh{background:rgba(255,255,255,.12);border:none;border-radius:11px;
@@ -186,7 +192,7 @@ dialog.kscan-overlay::backdrop{background:transparent}
 .kscan-primaer[disabled]{opacity:.5;cursor:default}
 @media (min-width:900px){
   .kscan-mitte{padding:14px 20px}
-  .kscan-bild{max-height:calc(100dvh - 400px)}
+  .kscan-bild{max-height:calc(100dvh - 330px)}
 }
 `;
   document.head.appendChild(stil);
@@ -1116,15 +1122,17 @@ export function kamerascanStarten(dateien, optionen = {}) {
         });
         const g = guardsVon(s);
         overlay.classList.toggle('kscan-warnt', g.flaecheZuKlein || g.schief);
+        // N282 — kurz halten. Der Erklaertext lief zweizeilig und nahm dem
+        // Zuschnitt Hoehe weg; im Normalfall sagen die Griffe ohnehin selbst,
+        // dass man sie ziehen kann. Nur die WARNUNGEN bleiben ausformuliert —
+        // dort muss der Nutzer wissen, was zu tun ist.
         let hinweis;
         if (g.flaecheZuKlein) {
-          hinweis = 'Foto bitte näher aufnehmen für bessere Qualität '
-            + `(nur ${Math.round(g.flaecheAnteil * 100)}% der Aufnahme erkannt).`;
+          hinweis = `Näher heran — nur ${Math.round(g.flaecheAnteil * 100)} % erkannt.`;
         } else if (g.schief) {
-          hinweis = 'Die erkannten Ecken wirken schief oder ungleich — bitte auf die '
-            + 'vier echten Blattecken ziehen.';
+          hinweis = 'Ecken wirken schief — auf die Blattecken ziehen.';
         } else {
-          hinweis = 'Ecken stimmen? Zum Anpassen an einem Punkt ziehen.';
+          hinweis = 'Ecken zum Anpassen ziehen';
         }
         hinweisEl.textContent = hinweis;
         hinweisEl.classList.toggle('kscan-warn', g.flaecheZuKlein || g.schief);
@@ -1266,9 +1274,21 @@ export function kamerascanStarten(dateien, optionen = {}) {
       drehR.innerHTML = drehIcon('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>');
       drehR.addEventListener('click', () => dreheSeite(false));
       werkzeuge.appendChild(drehR);
+      // N282 — Symbol statt Beschriftung. „Ecken zurücksetzen" und „Seite
+      // entfernen" belegten zwei eigene Zeilen; auf dem iPhone ging dadurch
+      // dem Zuschnitt — der eigentlichen Arbeitsfläche — spürbar Höhe
+      // verloren. Jetzt steht alles in EINER Zeile, der Text lebt im `title`.
       const reset = document.createElement('button');
-      reset.className = 'kscan-reset';
-      reset.textContent = 'Ecken zurücksetzen';
+      reset.className = 'kscan-dreh kscan-reset';
+      reset.setAttribute('aria-label', 'Ecken zurücksetzen');
+      reset.title = 'Ecken zurücksetzen';
+      // Vier Ecken plus Mittelpunkt — das Bild der zurückspringenden Ecken.
+      reset.innerHTML = drehIcon(
+        '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8"/>'
+        + '<path d="M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8"/>'
+        + '<path d="M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16"/>'
+        + '<path d="M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/>'
+        + '<circle cx="12" cy="12" r="2.2"/>');
       reset.addEventListener('click', () => {
         s.ecken = s.eckenErkannt.map(e => ({ ...e }));
         positionieren();
@@ -1279,8 +1299,14 @@ export function kamerascanStarten(dateien, optionen = {}) {
       // Eigener, ordentlich großer Knopf statt eines winzigen Kreuzes auf dem
       // Vorschaubildchen — ein Touch-Ziel unter 44px wäre dort unvermeidlich.
       const entfernen = document.createElement('button');
-      entfernen.className = 'kscan-entfernen';
-      entfernen.textContent = 'Seite entfernen';
+      entfernen.className = 'kscan-dreh kscan-entfernen';
+      entfernen.setAttribute('aria-label', 'Seite entfernen');
+      entfernen.title = 'Seite entfernen';
+      entfernen.innerHTML = drehIcon(
+        '<path d="M4 6.5h16"/><path d="M9.5 6.5V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4'
+        + 'a1.3 1.3 0 0 1 1.3 1.3v1.7"/>'
+        + '<path d="M6.4 6.5l.9 12.3A1.8 1.8 0 0 0 9.1 20.5h5.8a1.8 1.8 0 0 0 '
+        + '1.8-1.7l.9-12.3"/><path d="M10.5 10.5v6M13.5 10.5v6"/>');
       entfernen.addEventListener('click', () => {
         URL.revokeObjectURL(s.thumbUrl);
         s.bitmap.close?.();
