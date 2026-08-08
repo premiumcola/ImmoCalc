@@ -4,13 +4,13 @@
    - Miet-/Pachterhöhung planen (eigenes Formular mit Kappungsgrenze)
    - Kappungsgrenzen-Wächter (§ 558 Abs. 3 BGB) */
 
-import { esc, eur, api, melde } from '../immo.js';
+import { esc, eur, api, melde, zahlAus } from '../immo.js';
 import { cfgFuer } from '../objekt-felder.js?v=2';
 import { ersterNaechsterMonat, tagDanach } from '../objekt-format.js?v=2';
 import { slug, istGrundstueck } from '../objekt-state.js?v=2';
 import { einheiten, fokus } from './state.js';
 import { hergeleiteteKaltmiete } from './helpers.js';
-import { formular, zahlAus } from './formular.js';
+import { formular } from './formular.js';
 import { bewohnerBlock } from './bewohner.js';
 
 /* CCCXXXIII — hat die Einheit €/m²-Ansätze, ergibt sich daraus eine Kaltmiete.

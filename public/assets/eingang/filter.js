@@ -6,7 +6,7 @@
    sie den Filterzustand betreffen. Bei jeder Aenderung laeuft `laden()`. */
 
 import { S, els, ALLE } from './state.js';
-import { esc, api, frage, melde as melden } from '../immo.js';
+import { esc, api, frage, melde } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { jahresliste, kurzObjekt } from './helpers.js';
 import { laden } from './aktionen.js';
@@ -109,10 +109,10 @@ els.warteArchiv.addEventListener('click', async () => {
   try {
     const r = await api('/dokumente/warte-archiv?' + frageStr.toString(),
                         { method: 'POST' });
-    melden(`${r.belege} zurück ins Warten`
+    melde(`${r.belege} zurück ins Warten`
       + (r.zeitraeume_entfernt ? ` · ${r.zeitraeume_entfernt} leere Zeiträume weg` : ''));
     await laden();
-  } catch (e) { melden(e.message || 'Fehlgeschlagen', 'warn'); }
+  } catch (e) { melde(e.message || 'Fehlgeschlagen', 'neg'); }
 });
 
 /* ---- Suche: tippen filtert, ohne bei jedem Zeichen zu fragen ------------ */

@@ -2,7 +2,7 @@
    Funktionen — sie lesen Zustand aus `state.js` per Live-Bindung, verändern
    ihn aber nicht. */
 
-import { esc, eur } from '../immo.js';
+import { esc, eur, heuteIso } from '../immo.js';
 import { flaecheText } from '../objekt-format.js?v=2';
 import { bereicheDaten, einheiten, daten, MIET_PALETTE } from './state.js';
 import { istGrundstueck } from '../objekt-state.js?v=2';
@@ -18,11 +18,9 @@ export const isoTag = iso =>
   iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : '';
 
 // Heute als ISO-Tag (lokal) — für laufende Mietdauer und den Vermietet-Status.
-export const heuteIso = () => {
-  const h = new Date();
-  return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${
-    String(h.getDate()).padStart(2, '0')}`;
-};
+// N288 — die Rechnung steht einmal in `immo.js`; hier wird sie nur unter dem
+// gewohnten Namen weitergereicht, damit die bisherigen Importe stehen bleiben.
+export { heuteIso };
 
 export function tagPlus(iso, d) {
   const t = new Date(`${iso}T00:00:00Z`);

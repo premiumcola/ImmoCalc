@@ -14,7 +14,7 @@
    Nutzer sieht direkt die Maske mit dem vorgeschlagenen Dateinamen. Korrigieren
    lassen sich Immobilie und Art danach jederzeit an der Karte in der Liste. */
 
-import { S, els, jetzt, melde } from './state.js';
+import { S, els, jetzt, belegmeldung } from './state.js';
 import { auswahlfeld } from '../auswahl.js';
 import { api } from '../immo.js';
 import { lesbareGroesse } from '../scan.js';
@@ -139,12 +139,12 @@ els.erneutFeld.addEventListener('change', async e => {
       bereich: bereichFuer(kategorie),
       titel: d ? titelVon(d) : 'Beleg',
     }, () => { deckeWeg = analyseDecke('Die neue Aufnahme wird gelesen …'); });
-    if (!vorbereitet) { melde('Abgebrochen'); return; }
+    if (!vorbereitet) { belegmeldung('Abgebrochen'); return; }
 
     const entscheidung = await belegBestaetigen(vorbereitet, deckeWeg);
-    if (!entscheidung) { melde('Abgebrochen'); return; }
+    if (!entscheidung) { belegmeldung('Abgebrochen'); return; }
 
-    melde('Neue Aufnahme wird abgelegt …');
+    belegmeldung('Neue Aufnahme wird abgelegt …');
     const paket = new FormData();
     paket.append('datei', vorbereitet.aufnahme.datei, vorbereitet.aufnahme.name);
     const antwort = await fetch(`/api/dokumente/${id}/neu`,
@@ -175,9 +175,9 @@ els.erneutFeld.addEventListener('change', async e => {
     }
 
     await laden();
-    melde(`✓ ${name}`, 'gut');
+    belegmeldung(`✓ ${name}`, 'gut');
   } catch (fehler) {
-    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    belegmeldung('⚠ ' + String(fehler.message || fehler), 'schlecht');
   } finally {
     if (deckeWeg) { try { deckeWeg(); } catch { /* schon zu */ } }
   }

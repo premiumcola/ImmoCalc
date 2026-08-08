@@ -4,7 +4,8 @@
    der Erfassungs-Dialog (`anfangsstaendeDialog`). Der Anfangsstand hängt an
    KEINEM Zeitraum — er ist der Stand vor der ersten Abrechnung. */
 
-import { api, esc } from '../immo.js';
+import { api, esc, zahlAus, heuteIso } from '../immo.js';
+import { datumwahl } from '../datumwahl.js';
 import { kostenIcon } from '../kostenicons.js';
 import { datum } from '../objekt-format.js?v=2';
 import { HAKEN_ICON } from '../objekt-baum.js?v=2';
@@ -75,6 +76,13 @@ export function erststandAuffrischen() {
   if (neu) alt.replaceWith(neu);
 }
 
+/* N288 — der Zählerstand steht als Text im Feld, nicht als `type="number"`:
+   ein Gaszähler zeigt „12.345", und in einem Zahlenfeld ist der Punkt je nach
+   Browser mal Tausender-, mal Dezimaltrenner. Geschrieben wird deutsch
+   („12.345,678"), gelesen wird mit `zahlAus` — dieselbe Regel wie überall. */
+const standText = n => n == null
+  ? '' : Number(n).toLocaleString('de-DE', { maximumFractionDigits: 3 });
+
 const azZahl = (n, einheit) =>
   `${(n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 3 })}`
   + (einheit ? ` ${einheit}` : '');
@@ -111,10 +119,38 @@ export async function anfangsstaendeDialog() {
   // Der Anfangsstand gehört vor die erste Abrechnung: frühester Periodenbeginn.
   const starts = ((daten && daten.zeitraeume) || [])
     .map(z => z.start).filter(Boolean).sort();
-  const vorgabeDatum = starts[0] || new Date().toISOString().slice(0, 10);
+  // N288 — `toISOString()` rechnet nach UTC: wer nachts um eins einen Zähler
+  // erfasst, bekäme als Vorgabe den Vortag. `heuteIso()` rechnet lokal.
+  const vorgabeDatum = starts[0] || heuteIso();
 
   const inArbeit = new Set();   // Zähler, deren vorhandener Stand ersetzt wird
   let meldung = null;           // { text, art } — im Dialog, nie als Toast
+
+  /* Die Datumsfelder im eigenen Design. `male()` baut den Dialog jedes Mal neu,
+     deshalb werden die alten Chooser vorher gelöst — sonst häufen sich mit
+     jedem Neuzeichnen tote Lauscher an (dasselbe Muster wie in
+     `renovierung/formulare.js` und `objekt/formular.js`). */
+  let datumChooser = [];
+  const datumwahlLoesen = () => {
+    for (const d of datumChooser) {
+      try { d.zerstoere(); } catch { /* schon weg */ }
+    }
+    datumChooser = [];
+  };
+  const datumwahlBauen = () => {
+    datumwahlLoesen();
+    for (const halter of dlg.querySelectorAll('[data-az-datumwahl]')) {
+      const zid = halter.dataset.azDatumwahl;
+      const feld = dlg.querySelector(`input[data-az-datum="${zid}"]`);
+      if (!feld) continue;
+      datumChooser.push(datumwahl(halter, {
+        wert: feld.value,
+        label: `Datum des Anfangsstands für ${halter.dataset.name || 'den Zähler'}`,
+        aenderung: neu => { feld.value = neu; },
+      }));
+    }
+  };
+  dlg.addEventListener('close', datumwahlLoesen);
 
   const zeileHtml = z => {
     const anf = z.anfangsstand;
@@ -151,15 +187,19 @@ export async function anfangsstaendeDialog() {
         ${hinweis}
         <div class="az-felder">
           <div class="az-f"><label for="azs${z.id}">Stand</label>
-            <input id="azs${z.id}" type="number" step="0.001" inputmode="decimal"
-              value="${anf ? anf.stand : ''}"
+            <input id="azs${z.id}" type="text" inputmode="decimal"
+              value="${esc(standText(anf ? anf.stand : null))}"
               data-az-stand="${z.id}" aria-label="Anfangsstand ${esc(z.name)}">
             ${z.messeinheit ? `<span class="az-eh">${esc(z.messeinheit)}</span>` : ''}
           </div>
-          <div class="az-f dat"><label for="azd${z.id}">am</label>
-            <input id="azd${z.id}" type="date" value="${esc(anf ? anf.datum : vorgabeDatum)}"
-              data-az-datum="${z.id}" aria-label="Datum des Anfangsstands">
-          </div>
+          <!-- N288 — kein natives Datumsfeld: auf dem iPhone legt es einen
+               Systemkalender ÜBER die ganze Maske. Der echte (ISO-)Wert steht
+               im versteckten Feld, den Kalender baut datumwahl.js. -->
+          <div class="az-dat" style="flex:1 1 175px;min-width:0"
+               data-az-datumwahl="${z.id}"
+               data-name="${esc(z.name)}"></div>
+          <input type="hidden" value="${esc(anf ? anf.datum : vorgabeDatum)}"
+                 data-az-datum="${z.id}">
           <div class="az-knoepfe">
             ${ersetzen ? `<button class="az-ab" data-az-ab="${z.id}">Abbrechen</button>` : ''}
             <button class="az-sp" data-az-save="${z.id}">${ersetzen ? 'Ersetzen' : 'Speichern'}</button>
@@ -224,6 +264,7 @@ export async function anfangsstaendeDialog() {
       </div>`;
     const neu = dlg.querySelector('.az-body');
     if (neu) neu.scrollTop = scroll;
+    datumwahlBauen();
   };
 
   async function speichern(id) {
@@ -232,9 +273,8 @@ export async function anfangsstaendeDialog() {
     if (!zeile) return;
     const standEl = zeile.querySelector('[data-az-stand]');
     const datumEl = zeile.querySelector('[data-az-datum]');
-    const roh = String(standEl.value ?? '').trim().replace(',', '.');
-    const stand = Number(roh);
-    if (roh === '' || !Number.isFinite(stand)) {
+    const stand = zahlAus(standEl);
+    if (stand == null) {
       meldung = { text: 'Bitte einen Zählerstand eintragen.', art: 'fehler' };
       return male();
     }

@@ -45,6 +45,8 @@ function verlaufBlock(s) {
         <span class="jq">${j.eingetragen ? 'eingetragen' : 'gerechnet'}</span>
         ${j.eingetragen ? `<button type="button" class="weg"
             data-stand-weg="${(s.staende.find(x => x.jahr === j.jahr) || {}).id}"
+            data-jahr="${j.jahr}" data-betrag="${esc(eur(j.restschuld))}"
+            data-was="${bauspar ? 'Sparstand' : 'Restschuld'}"
             aria-label="Stand entfernen">×</button>`
           : '<span class="weg" aria-hidden="true"></span>'}
       </div>

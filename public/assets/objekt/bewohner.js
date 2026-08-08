@@ -6,7 +6,7 @@
    Speichern der Bewohner separat gegen `/mieten/{id}/bewohner` bzw.
    `/bewohner/{id}`. */
 
-import { esc, api } from '../immo.js';
+import { esc, api, zahlAus } from '../immo.js';
 import { bewohnerWeg, setBewohnerWeg } from './state.js';
 
 /* ---- Bewohner ----------------------------------------------------------- */
@@ -60,6 +60,16 @@ export async function bewohnerSpeichern(form, miete_id) {
   }
 }
 
+/* ---- Flächenfelder ------------------------------------------------------
+   N288 — Flächen stehen als Text im Feld, nicht als `type="number"`: ein
+   Zahlenfeld deutet den Punkt je nach Browser mal als Tausender-, mal als
+   Dezimaltrenner. Geschrieben wird deutsch („1.250,5"), gelesen wird mit
+   `zahlAus` aus `immo.js` — dieselbe Regel wie überall. Vorher stand hier
+   `Number(text.replace(',', '.'))`: aus getippten „1.250" wurden 1,25 m². */
+const flaecheWert = n => (n == null || n === '')
+  ? '' : Number(n).toLocaleString('de-DE', { maximumFractionDigits: 2 });
+const flaecheAus = el => zahlAus(el) ?? 0;
+
 /* ---- Gemeinschaftsflächen (anteilig) ------------------------------------ */
 
 /* CCCXXVII — Gemeinschaftsflächen einer Einheit: eine mitgenutzte Fläche und
@@ -71,8 +81,8 @@ export function gemeinZeile(g = {}) {
     <button type="button" class="weg" data-gf-weg aria-label="Fläche entfernen">×</button>
     <input class="nm" name="gf_bezeichnung" type="text" placeholder="z. B. Treppenhaus"
            value="${esc(g.bezeichnung || '')}">
-    <input name="gf_flaeche" type="number" step="0.01" inputmode="decimal"
-           placeholder="m²" value="${g.flaeche ?? ''}">
+    <input name="gf_flaeche" type="text" inputmode="decimal"
+           placeholder="m²" value="${esc(flaecheWert(g.flaeche))}">
     <input name="gf_personen" type="number" step="1" inputmode="numeric"
            placeholder="Nutzer" value="${g.personen ?? ''}">
   </div>`;
@@ -94,7 +104,7 @@ export function gemeinBlock(liste) {
 export function gemeinAusFormular(form) {
   return [...form.querySelectorAll('.gfzeile')].map(z => ({
     bezeichnung: z.querySelector('[name=gf_bezeichnung]').value.trim(),
-    flaeche: Number(z.querySelector('[name=gf_flaeche]').value.replace(',', '.')) || 0,
+    flaeche: flaecheAus(z.querySelector('[name=gf_flaeche]')),
     personen: Number(z.querySelector('[name=gf_personen]').value) || 0,
   })).filter(g => g.flaeche > 0);
 }
@@ -110,8 +120,8 @@ export function nutzZeile(n = {}) {
     <button type="button" class="weg" data-nf-weg aria-label="Fläche entfernen">×</button>
     <input class="nm" name="nf_bezeichnung" type="text" placeholder="z. B. Bad"
            value="${esc(n.bezeichnung || '')}">
-    <input name="nf_flaeche" type="number" step="0.01" inputmode="decimal"
-           placeholder="m²" value="${n.flaeche ?? ''}">
+    <input name="nf_flaeche" type="text" inputmode="decimal"
+           placeholder="m²" value="${esc(flaecheWert(n.flaeche))}">
   </div>`;
 }
 
@@ -129,6 +139,6 @@ export function nutzBlock(liste) {
 export function nutzAusFormular(form) {
   return [...form.querySelectorAll('.nfzeile')].map(z => ({
     bezeichnung: z.querySelector('[name=nf_bezeichnung]').value.trim(),
-    flaeche: Number(z.querySelector('[name=nf_flaeche]').value.replace(',', '.')) || 0,
+    flaeche: flaecheAus(z.querySelector('[name=nf_flaeche]')),
   })).filter(n => n.flaeche > 0);
 }

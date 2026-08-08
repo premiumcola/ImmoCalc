@@ -3,7 +3,17 @@
    die Zeitraum-Endpunkte (PATCH /zeitraeume, /teilen, /belege-abgleichen). */
 
 import { api, esc } from '../immo.js';
+import { datumwahl } from '../datumwahl.js';
 import { slug } from '../objekt-state.js?v=2';
+
+/* N288 — kein natives `<input type="date">`: auf dem iPhone legt der Browser
+   dafür einen Systemkalender ÜBER die ganze Maske, und dieser Dialog besteht
+   fast nur aus Datumsfeldern. Der echte (ISO-)Wert steht wie überall im
+   versteckten Feld, den Kalender baut `datumwahl.js`. */
+const datumFeld = (schluessel, label, wert = '') =>
+  `<input type="hidden" data-${esc(schluessel)} value="${esc(wert)}">
+   <div style="flex:1 1 110px;min-width:0" data-datumwahl="${esc(schluessel)}"
+        data-label="${esc(label)}"></div>`;
 
 export async function zeitraumWerkzeug(laden) {
   const dlg = document.createElement('dialog');
@@ -19,11 +29,11 @@ export async function zeitraumWerkzeug(laden) {
           <span class="zw-typ">${esc(z.typ)}</span>
           ${offen ? '' : '<span class="zw-zu">abgeschlossen</span>'}</div>
         ${offen ? `<div class="zw-felder">
-          <input type="date" data-zw-start value="${esc(z.start || '')}" aria-label="Start">
-          <input type="date" data-zw-ende value="${esc(z.ende || '')}" aria-label="Ende">
+          ${datumFeld('zw-start', `Start ${z.label}`, z.start || '')}
+          ${datumFeld('zw-ende', `Ende ${z.label}`, z.ende || '')}
           <button class="zw-b" data-zw-save="${z.id}">Speichern</button></div>
         <div class="zw-teil"><label>teilen ab</label>
-          <input type="date" data-zw-teildatum aria-label="Teilungsdatum">
+          ${datumFeld('zw-teildatum', `Teilungsdatum ${z.label}`)}
           <button class="zw-b teil" data-zw-teilen="${z.id}">Teilen</button></div>`
         : ''}
       </div>`;
@@ -56,8 +66,8 @@ export async function zeitraumWerkzeug(laden) {
         <div class="zw-rechts">
           <div class="zw-neu"><span class="zd-l">Neuer Zeitraum</span>
             <div class="zw-felder">
-              <input type="date" data-zw-neu-start aria-label="Start neuer Zeitraum">
-              <input type="date" data-zw-neu-ende aria-label="Ende neuer Zeitraum">
+              ${datumFeld('zw-neu-start', 'Start neuer Zeitraum')}
+              ${datumFeld('zw-neu-ende', 'Ende neuer Zeitraum')}
               <button class="zw-b" data-zw-neu>Anlegen</button></div></div>
           <div class="zw-abgl">
             <button class="zd-ok" data-zw-abgleich>Belege nach Datum neu zuordnen</button></div>
@@ -65,7 +75,34 @@ export async function zeitraumWerkzeug(laden) {
         </div>
       </div>
       <div class="zd-fuss"><button class="zd-ab" data-nein>Schließen</button></div>`;
+    datumwahlBauen();
   }
+
+  /* Die Datumsfelder im eigenen Design. `rendern()` baut den Dialog jedes Mal
+     neu — deshalb werden die alten Chooser zuerst gelöst, sonst häufen sich
+     tote Lauscher an (Muster aus `renovierung/formulare.js`). Das versteckte
+     Feld steht unmittelbar vor seinem Halter, siehe `datumFeld`. */
+  let chooser = [];
+  const datumwahlLoesen = () => {
+    for (const c of chooser) {
+      try { c.zerstoere(); } catch { /* schon weg */ }
+    }
+    chooser = [];
+  };
+  const datumwahlBauen = () => {
+    datumwahlLoesen();
+    for (const halter of dlg.querySelectorAll('[data-datumwahl]')) {
+      const feld = halter.previousElementSibling;
+      if (!feld || feld.tagName !== 'INPUT') continue;
+      chooser.push(datumwahl(halter, {
+        wert: feld.value, label: halter.dataset.label,
+        aenderung: neu => { feld.value = neu; },
+      }));
+      // Das engere Mass dieses Dialogs steht als Regel `.zw-felder
+      // .datumwahl-knopf` in objekt.html — nicht hier als `style=`.
+    }
+  };
+  dlg.addEventListener('close', datumwahlLoesen);
 
   const erg = () => dlg.querySelector('#zwErg');
   const fehlerText = f => String(f?.message || f || 'Das ging nicht.');

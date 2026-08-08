@@ -5,8 +5,9 @@
    Spalte wohnt hier — sie haengt am gleichen Layout wie die Liste. */
 
 import { S, els, ALLE, ANLEGEN } from './state.js';
-import { esc } from '../immo.js';
+import { esc, zahlAus } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
+import { datumwahl } from '../datumwahl.js';
 import { lesbareGroesse } from '../scan.js';
 import { befund, belegDatumText, betragText, titelVon, jahresliste,
          fertig, dok } from './helpers.js';
@@ -74,10 +75,19 @@ export function felder(d, b) {
       <div class="fach breit" data-fach="kostenart">
         <span class="fl">Kostenposition</span>
         <div data-feld="kostenart"></div></div>
-      <div class="fach" data-fach="belegdatum">
+      <!-- Über die volle Breite: der Kalender hängt sich auf schmalen Geräten
+           an die RECHTE Kante seines Feldes (immo.css, < 440 px). In der
+           linken Rasterspalte ragte er dadurch zur Hälfte aus dem Bildschirm.
+           Über die ganze Zeile fällt die rechte Kante mit der Kartenkante
+           zusammen, und der Kalender steht vollständig im Bild. -->
+      <div class="fach breit" data-fach="belegdatum">
         <span class="fl" id="fl${d.id}d">Datum</span>
-        <input data-feld="belegdatum" type="date" aria-labelledby="fl${d.id}d"
-               value="${esc(b.belegdatum)}">
+        <!-- N288 — kein natives Datumsfeld: auf dem iPhone legt es einen
+             Systemkalender ÜBER die ganze Maske, mitten im Erfassen. Der
+             echte (ISO-)Wert steht im versteckten Feld, den Kalender baut
+             datumwahl.js — wie in den Nachbarfächern das Auswahlfeld. -->
+        <input data-feld="belegdatum" type="hidden" value="${esc(b.belegdatum)}">
+        <div data-datumwahl="belegdatum"></div>
       </div>
       <div class="fach" data-fach="jahr"${b.belegdatum ? ' hidden' : ''}>
         <span class="fl">Jahr</span><div data-feld="jahr"></div></div>
@@ -101,6 +111,17 @@ export function erfassungBeleben(karteEl, d, b) {
     karteEl.querySelector(`[data-feld="${feld}"]`),
     { optionen, wert, label, aenderung: aenderung || (() => planZeichnen()) });
   const eingabe = feld => karteEl.querySelector(`input[data-feld="${feld}"]`);
+  // Der Kalender im eigenen Design. Er schreibt in dasselbe versteckte Feld,
+  // das `S.erfassung.datumFeld` schon immer war, und feuert dessen 'change' —
+  // so bleiben Jahresfach und Zeitraum-Vorschlag unverändert verdrahtet.
+  const datumFeld = eingabe('belegdatum');
+  const datumChooser = datumwahl(karteEl.querySelector('[data-datumwahl]'), {
+    wert: datumFeld.value, label: 'Belegdatum',
+    aenderung: neu => {
+      datumFeld.value = neu;
+      datumFeld.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+  });
   S.erfassung = {
     id: d.id,
     karte: karteEl,
@@ -126,7 +147,11 @@ export function erfassungBeleben(karteEl, d, b) {
     jahr: bau('jahr', 'Jahr', [{ wert: '', text: 'ohne Jahr' },
       ...jahresliste().map(j => ({ wert: String(j), text: String(j) }))],
       b.jahr ? String(b.jahr) : ''),
-    datumFeld: eingabe('belegdatum'),
+    datumFeld,
+    // Wer das Datum von aussen setzt (die Texterkennung), muss auch die
+    // Anzeige des Kalenders mitnehmen — sonst stünde der Wert im Feld, aber
+    // „tt.mm.jjjj" auf dem Knopf.
+    datumSetzen: iso => { datumFeld.value = iso || ''; datumChooser.setze(iso || ''); },
     betragFeld: eingabe('betrag'),
     textFeld: eingabe('beschreibung'),
   };
@@ -152,9 +177,8 @@ export function jahresfachZeigen() {
 /** Was der Nutzer gerade eingestellt hat — die Grundlage fuer Vorschau und PATCH. */
 export function stand() {
   if (!S.erfassung) return null;
-  const zahlText = (S.erfassung.betragFeld.value || '').trim()
-    .replace(/[€\s]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
-  const betrag = zahlText ? Number(zahlText) : null;
+  // N288 — die deutsche Leseregel steht einmal in `immo.js`, nicht hier nochmal.
+  const betrag = zahlAus(S.erfassung.betragFeld);
   const datum = (S.erfassung.datumFeld.value || '').trim();
   return {
     objekt: S.erfassung.objekt.wert(),
@@ -194,6 +218,10 @@ export function feldstandZeigen(s) {
     if (!fach) continue;
     fach.classList.toggle('gefuellt', Boolean(wert));
     fach.classList.toggle('vorschlag', S.erfassung.vorgeschlagen.has(name));
+    // Das Datumsfach traegt seit N288 den eigenen Kalender-Knopf statt eines
+    // <input>; die gruene Kennzeichnung greift dort ueber denselben Weg.
+    const kalender = fach.querySelector('.datumwahl-knopf');
+    if (kalender) kalender.style.borderColor = wert ? 'var(--teal)' : '';
   }
 }
 

@@ -125,8 +125,14 @@ export const S = {
 /* ---- Die Beleg-Meldung ---------------------------------------------------
    Kurze Rueckmeldung am Fuss des Pruefblatts — kein globaler Toast, sondern
    an der gerade offenen Karte. Bewusst hier: sie ist der einzige direkte
-   DOM-Zugriff, den mehrere Module teilen. */
-export const melde = (text, art) => {
+   DOM-Zugriff, den mehrere Module teilen.
+
+   N288 — sie hiess frueher `melde` und trug damit den Namen der projektweiten
+   Toast-Funktion aus `immo.js`, bei voellig anderer Bedeutung der zweiten
+   Angabe (dort 'pos'/'neg', hier 'gut'/'schlecht'). Wer aus Gewohnheit
+   `melde('Gespeichert', 'pos')` schrieb, bekam eine stumm falsch eingefaerbte
+   Zeile. Der eigene Name macht den Unterschied sichtbar. */
+export const belegmeldung = (text, art) => {
   els.bMeldung.textContent = text;
   els.bMeldung.className = 'bmeldung ' + (art || '');
 };

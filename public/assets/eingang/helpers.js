@@ -5,7 +5,7 @@
    Vergleiche, KI-Label-Zuordnung, kleine Bausteine fuers Prueferblatt. */
 
 import { S, jetzt, MONATE } from './state.js';
-import { eur } from '../immo.js';
+import { eur, zahlAus as deutscheZahl } from '../immo.js';
 
 /* ---- Die Liste der Jahre fuer die Auswahlfelder ------------------------- */
 export const jahresliste = () => {
@@ -142,6 +142,17 @@ export const BRAUCHT_POSITION = new Set(['Nebenkosten']);
 export const fertig = d => d.status === 'zugeordnet' && !d.vermisst
   && (!BRAUCHT_POSITION.has(d.kategorie) || Boolean(d.position_id));
 
+/** N288 — die Belege in genau der Reihenfolge, in der die Liste sie zeigt:
+    nur PDFs (CCCLXXXIII), offene zuerst, Erledigtes darunter. Das grosse
+    Beleg-Fenster blaettert damit durch dieselbe Reihe, die auf dem Schirm
+    steht — sonst spraenge das „›" in eine andere Ordnung als die Karten. */
+export function sichtbareDokumente() {
+  const pdfs = (S.daten.dokumente || [])
+    .filter(d => /\.pdf$/i.test(d.dateiname || ''));
+  return [...pdfs.filter(d => !fertig(d)), ...pdfs.filter(fertig)]
+    .map(d => ({ id: d.id, dateiname: d.dateiname, pfad: d.pfad || '' }));
+}
+
 /* ---- KI-Labels und Wertformatierung ------------------------------------- */
 export const KI_LABELS = {
   mieter: 'Mieter', vermieter: 'Vermieter', kaltmiete: 'Kaltmiete',
@@ -197,11 +208,12 @@ export function kiWert(schluessel, wert) {
   return String(wert);
 }
 
-/** Eine Zahl aus einem KI-Feld — Zahl oder deutscher Betragstext („1.234,56 €"). */
+/** Eine Zahl aus einem KI-Feld — Zahl oder deutscher Betragstext („1.234,56 €").
+    N288 — die deutsche Leseregel selbst steht in `immo.js`; hier bleibt nur die
+    zusaetzliche Eigenschaft dieser Fassung: ein Betrag muss positiv sein, sonst
+    gilt er als „nichts erkannt". */
 export function zahlAus(x) {
   if (typeof x === 'number') return Number.isFinite(x) && x > 0 ? x : null;
-  const t = String(x || '').replace(/[€\s]/g, '')
-    .replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
-  const n = t ? Number(t) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const n = deutscheZahl(x);
+  return n != null && n > 0 ? n : null;
 }

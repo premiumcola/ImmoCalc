@@ -6,7 +6,7 @@
    „…anlegen"-Option loest ueber `zeitraumAnlegenUndWaehlen` das POST zum
    Anlegen eines Vorschlags aus. */
 
-import { S, els, ANLEGEN, melde } from './state.js';
+import { S, els, ANLEGEN, belegmeldung } from './state.js';
 import { api } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { belegTag, dmy, isoTag, passenderZeitraum, umfasst,
@@ -120,7 +120,7 @@ export async function zeitraumAnlegenUndWaehlen(vorschlag) {
       ...zs.map(z => ({ wert: String(z.id),
         text: z.label + (z.id === neu.id ? ' · Vorschlag' : '') }))];
     if (S.zeitraumFeld) S.zeitraumFeld.fuelle(optionen, String(neu.id));
-    melde(`✓ Abrechnungszeitraum ${neu.label} angelegt`, 'gut');
+    belegmeldung(`✓ Abrechnungszeitraum ${neu.label} angelegt`, 'gut');
     planZeichnen();
   } catch (fehler) {
     // Auswahl zuruecknehmen, damit kein Sentinel im Stand haengen bleibt.

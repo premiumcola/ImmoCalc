@@ -18,7 +18,8 @@ gemeinsame Basis). Nichts landet in zwei Modulen doppelt.
 
 - `state.js` — mutable State + Setter + Katalogkonstanten.
 - `helpers.js` — kleine Ableitungen: Datums-/Dauerformate (isoTag, dauerText,
-  tagPlus, heuteIso), Flächenrechnung (effektiveFlaeche, qmMiete,
+  tagPlus; `heuteIso` kommt aus `immo.js` und wird hier nur weitergereicht),
+  Flächenrechnung (effektiveFlaeche, qmMiete,
   hergeleiteteKaltmiete), laufendeMiete, mietzeitBeginn, flaechenSummen,
   wohnflaecheCells, flaecheWarnung, kennzahlenHtml, nachpflegeHtml,
   scanJahr, zuEinheit, mietFarbe.
@@ -45,7 +46,7 @@ gemeinsame Basis). Nichts landet in zwei Modulen doppelt.
 - `eintrag-detail.js` — Eintrags-Detailansicht (CCCXIII, Daten links / Beleg
   rechts, Miet-Checkliste), Bearbeiten-Formular öffnen.
 - `formular.js` — Formular-Fabrik (`formular`, `feldHtml`, `feldLabel`,
-  `feldEinheit`, `zahlAus`, `ausFormular`), Auswahlfelder verdrahten,
+  `feldEinheit`, `ausFormular`), Auswahlfelder verdrahten,
   Formatierungen (Eingabe: Tausenderpunkte/IBAN/Steuernummer), Zinskopplung.
 - `bewohner.js` — Zusatzblöcke fürs Mietformular: Bewohner, Gemein- und
   Zusatz-Nutzflächen; Speichern der Bewohner.

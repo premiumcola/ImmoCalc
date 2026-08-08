@@ -10,7 +10,7 @@
    450,50 €". Der Server rechnet sie, damit Vorschau und Ergebnis nicht
    auseinanderlaufen. */
 
-import { S, els, melde } from './state.js';
+import { S, els, belegmeldung } from './state.js';
 import { api, esc } from '../immo.js';
 import { betragText, dok } from './helpers.js';
 import { stand } from './liste.js';
@@ -119,12 +119,12 @@ els.bPos.addEventListener('click', async () => {
   els.bPos.textContent = 'Wird übernommen …';
   try {
     const ergebnis = await api(`/dokumente/${d.id}/position`, { method: 'POST' });
-    melde(`✓ ${ergebnis.kostenart} · ${betragText(ergebnis.betrag)}`
+    belegmeldung(`✓ ${ergebnis.kostenart} · ${betragText(ergebnis.betrag)}`
           + (ergebnis.belege.length > 1
             ? ` aus ${ergebnis.belege.length} Belegen` : ''), 'gut');
     await laden();
   } catch (fehler) {
-    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    belegmeldung('⚠ ' + String(fehler.message || fehler), 'schlecht');
     posZeigen(d);
   }
 });
@@ -135,11 +135,11 @@ els.bPosLos.addEventListener('click', async () => {
   els.bPosLos.disabled = true;
   try {
     const ergebnis = await api(`/dokumente/${d.id}/position`, { method: 'DELETE' });
-    melde(`Aus „${ergebnis.kostenart}“ herausgerechnet · jetzt `
+    belegmeldung(`Aus „${ergebnis.kostenart}“ herausgerechnet · jetzt `
           + betragText(ergebnis.betrag));
     await laden();
   } catch (fehler) {
-    melde('⚠ ' + String(fehler.message || fehler), 'schlecht');
+    belegmeldung('⚠ ' + String(fehler.message || fehler), 'schlecht');
   } finally {
     els.bPosLos.disabled = false;
   }

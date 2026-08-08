@@ -28,7 +28,7 @@ export function planLabel(p) {
 export function lageplanKarte(p, e) {
   const label = planLabel(p);
   return `<div class="lp-karte" data-lp-karte="${p.id}">
-      <button class="lp-vorschau klick" data-lageplan="${p.id}"
+      <button class="lp-vorschau klick" data-lageplan="${p.id}" data-e="${e.id}"
         data-name="${esc(p.dateiname || label)}" data-pfad="${esc(p.pfad || '')}"
         aria-label="Lageplan „${esc(label)}“ ansehen">
         <img data-lp-bild="${p.id}" alt="">
@@ -242,7 +242,16 @@ export async function lageplanEntfernen(einheitId, planId, laden) {
 }
 
 /* Einen hinterlegten Lageplan als Bild-Vorschau öffnen (dieselbe Ansicht wie
-   ein Beleg, über den Dokument-Inhalt). */
-export function lageplanAnsehen(planId, dateiname = 'Lageplan', pfad = '') {
-  belegAnsehen(`/api/dokumente/${planId}/inhalt`, dateiname, pfad);
+   ein Beleg, über den Dokument-Inhalt).
+
+   N288 — `plaene` sind die übrigen Pläne derselben Einheit. Sie liegen als
+   Kacheln nebeneinander (1.OG, DG …); mit den Geschwistern blättert das
+   Fenster von einem zum nächsten, statt für jeden Stock einmal zu schliessen. */
+export function lageplanAnsehen(planId, dateiname = 'Lageplan', pfad = '',
+                                plaene = null) {
+  belegAnsehen(`/api/dokumente/${planId}/inhalt`, dateiname, pfad, planId,
+    Array.isArray(plaene)
+      ? plaene.map(p => ({ id: p.id, dateiname: p.dateiname || planLabel(p),
+                           pfad: p.pfad || '' }))
+      : null);
 }

@@ -4,7 +4,7 @@
 
 import { S, els } from './state.js';
 import { esc, belegAnsehen } from '../immo.js';
-import { dok } from './helpers.js';
+import { dok, sichtbareDokumente } from './helpers.js';
 
 export function vorschauLeeren() {
   if (S.vorschauAdresse) {
@@ -67,8 +67,14 @@ export async function vorschauLaden(d) {
 
 export const grossAnsehen = () => {
   const d = S.gewaehlt !== null ? dok(S.gewaehlt) : null;
+  if (!d || !d.abgelegt) return;
   // N99 — Ablageort mitgeben, damit die Datei in der Cloud auffindbar ist.
-  if (d && d.abgelegt) belegAnsehen(`/api/dokumente/${d.id}/inhalt`, d.dateiname, d.pfad || '');
+  // N288 — dazu die ganze sichtbare Liste: hier stehen zwanzig Belege
+  // untereinander, und wer den fünften ansieht, will meistens gleich den
+  // sechsten. Mit den Geschwistern blättert das Beleg-Fenster selbst weiter,
+  // statt jedes Mal zurück in die Liste zu zwingen.
+  belegAnsehen(`/api/dokumente/${d.id}/inhalt`, d.dateiname, d.pfad || '',
+               d.id, sichtbareDokumente());
 };
 
 els.bSchau.addEventListener('click', grossAnsehen);

@@ -140,7 +140,7 @@ export function vorschlagEinsetzen(d) {
     merke('betrag');
   }
   if (w.datum && !S.erfassung.datumFeld.value) {
-    S.erfassung.datumFeld.value = w.datum;
+    S.erfassung.datumSetzen(w.datum);
     jahresfachZeigen();
     merke('belegdatum');
   }

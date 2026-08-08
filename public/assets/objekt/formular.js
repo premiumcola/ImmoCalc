@@ -7,7 +7,7 @@
    Speicher-Knopf. Feld-Formatierung (Tausenderpunkte, IBAN, Steuernummer) und
    Auswahlfelder werden hier verdrahtet und beim Schließen wieder gelöst. */
 
-import { esc, api, installHilfe, belegSeitenLaden } from '../immo.js';
+import { esc, api, installHilfe, belegSeitenLaden, zahlAus } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { datumwahl } from '../datumwahl.js';
 import { felderFuer, uebernahmeAnbieten } from '../objekt-felder.js?v=2';
@@ -152,15 +152,11 @@ async function feldHtml(f, bereich, wert) {
       <div data-datumwahl="${esc(f.k)}" data-label="${esc(f.l)}"></div>
       ${f.note ? `<span class="feldnote" id="n_${f.k}">${esc(f.note)}</span>` : ''}</div>`;
   }
-  if (f.typ === 'ja_nein') {
-    const ja = wert === undefined ? true : Boolean(wert);
-    return `<div class="field"><label for="${id}">${esc(f.l)}</label>
-      <select class="inp" id="${id}" name="${f.k}">
-        <option value="ja" ${ja ? 'selected' : ''}>ja</option>
-        <option value="nein" ${ja ? '' : 'selected'}>nein</option>
-      </select></div>`;
-  }
-  if (f.typ === 'schalter') {
+  // N288 — `ja_nein` war der letzte native `<select>` im Formular: drei Zeilen
+  // unter dem Kommentar, der genau das verbietet. Zwei Optionen brauchen ohnehin
+  // keine aufklappende Liste — es ist derselbe Schalter wie bei `schalter`, und
+  // `ausFormular` liest beide seit jeher gleich.
+  if (f.typ === 'schalter' || f.typ === 'ja_nein') {
     // CXCIII — ein gedeckter Ja/Nein-Schalter im Stil der Seite, kein natives
     // Kästchen. Er borgt sich die Blasen-Verdrahtung (data-wahl/-wahlfeld): der
     // echte Wert steht im versteckten Feld, `ausFormular` liest ihn als bool.
@@ -358,20 +354,24 @@ function zinsKopplung(form) {
   ausSatz();
 }
 
-/* Was wirklich im Feld steht — auch wenn es "1.250.000" anzeigt.
-   `data-wert` hat Vorrang: dort legt die Formatierung den rohen Wert ab. */
-export function zahlAus(el) {
-  const roh = el.dataset.wert != null && el.dataset.wert !== ''
-    ? el.dataset.wert : el.value;
-  const text = String(roh ?? '').replace(/[^\d,.-]/g, '');
-  if (text === '') return null;
-  const komma = text.lastIndexOf(',');
-  const sauber = komma >= 0
-    ? `${text.slice(0, komma).replace(/\./g, '')}.${text.slice(komma + 1).replace(/\D/g, '')}`
-    // Ein einzelner Punkt mit ein bis zwei Stellen dahinter ist ein
-    // Dezimalpunkt (so kommt der Wert aus der API), sonst Tausendertrennung.
-    : (/^-?\d+\.\d{1,2}$/.test(text) ? text : text.replace(/\./g, ''));
-  const zahl = Number(sauber);
+/* N288 — die deutsche Zahlenregel stand hier ein zweites Mal (in einer eigenen
+   Ausbaustufe: „12.345" galt als Tausender, „1.2345" ebenfalls). Jetzt kommt
+   sie aus `immo.js`, wo sie einmal steht und geprüft ist — `data-wert` hat dort
+   wie hier Vorrang. Wer sie brauchte, importiert sie direkt von dort.
+
+   Sie gilt aber NICHT für jedes Feld: ein `<input type="number">` gibt seinen
+   Wert bereits normalisiert heraus — Punkt ist dort immer der Dezimaltrenner,
+   Tausenderpunkte kommen nicht vor. Wer „8,205" tippt, hat `.value === "8.205"`,
+   und die deutsche Regel läse daraus 8205. Felder mit Einheit sind hier ohnehin
+   Textfelder (siehe die Begründung bei `feldHtml`); nur die schmucklosen
+   Zahlenfelder (Jahr, Personen, Stellplätze) sind echte Zahlenfelder — und für
+   die ist `Number()` das Richtige. Die Weiche steht einmal hier, die Regel
+   selbst nirgends doppelt. */
+function feldZahl(el) {
+  if (el.type !== 'number') return zahlAus(el);
+  const roh = String(el.value ?? '').trim();
+  if (roh === '') return null;
+  const zahl = Number(roh);
   return Number.isFinite(zahl) ? zahl : null;
 }
 
@@ -388,7 +388,7 @@ export function ausFormular(form, felder) {
     }
     // Leeren heisst hier wirklich leeren — sonst liesse sich ein einmal
     // gesetztes Enddatum nie wieder entfernen.
-    if (f.typ === 'number') { werte[f.k] = zahlAus(el); continue; }
+    if (f.typ === 'number') { werte[f.k] = feldZahl(el); continue; }
     if (el.value === '') { werte[f.k] = f.typ === 'date' ? null : ''; continue; }
     werte[f.k] = el.value;
   }

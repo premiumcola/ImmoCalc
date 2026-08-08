@@ -161,6 +161,24 @@ export function initHandlers() {
     const standWeg = e.target.closest('[data-stand-weg]');
     if (standWeg) {
       const kid = document.getElementById('dlgForm').dataset.id;
+      // N288 — ein eingetragener Jahresstand verschwand hier auf einen Klick,
+      // ohne jede Rückfrage. Er ist der Messpunkt, von dem aus die App alle
+      // Jahre dazwischen fortschreibt: fällt er weg, ändert sich der ganze
+      // Verlauf. Die Rückfrage nennt Jahr und Betrag — „Wirklich löschen?"
+      // allein sagt nicht, welcher der Stände gemeint ist.
+      const was = standWeg.dataset.was || 'Stand';
+      const jahr = standWeg.dataset.jahr || '';
+      // Bewusst `data-betrag`, nicht `data-wert`: das Attribut ist im Projekt
+      // seit N294 für den rohen Feldwert von `eingabe.js` reserviert.
+      const wert = standWeg.dataset.betrag || '';
+      const ja = await frage(
+        [was, jahr, 'löschen?'].filter(Boolean).join(' '),
+        `Der eingetragene Stand zum 31.12.${jahr}`
+        + `${wert ? ` — ${was} ${wert} —` : ''} wird entfernt. Dieses Jahr `
+        + 'wird danach wieder gerechnet statt gemessen; der Verlauf '
+        + 'verschiebt sich.',
+        { knopf: 'Löschen', gefahr: true });
+      if (!ja) return;
       try {
         await api(`/kreditstaende/${standWeg.dataset.standWeg}`, { method: 'DELETE' });
       } catch (fehler) {
@@ -589,7 +607,10 @@ export function initHandlers() {
     const lageplan = e.target.closest('[data-lageplan]');
     if (lageplan) {
       e.stopPropagation();
-      lageplanAnsehen(lageplan.dataset.lageplan, lageplan.dataset.name, lageplan.dataset.pfad);
+      const zuEinheit = ObjState.einheiten.find(x =>
+        String(x.id) === lageplan.dataset.e);
+      lageplanAnsehen(lageplan.dataset.lageplan, lageplan.dataset.name,
+                      lageplan.dataset.pfad, zuEinheit?.lageplaene || null);
       return;
     }
 
