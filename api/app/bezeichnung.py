@@ -280,23 +280,34 @@ UNTERORDNER_PLATZHALTER = ("jahr", "einheit", "art")
 
 # Vorgabe je Dokumentart. Die Schlüssel sind dieselben wie in `ZIELORDNER`
 # (`routers/dokumente.py`) — ein Test wacht darüber, dass keine Art fehlt.
+#
+# N285 — Jahresordner nur noch bei den Nebenkosten.
+#
+# Der Grund ist schlicht die Menge: nur dort fallen je Abrechnungszeitraum so
+# viele Belege an, dass ein Jahresordner die Übersicht rettet. Überall sonst
+# liegen ein paar Dokumente je Art, und der Ordner kostete mehr Klicks als er
+# einbrachte — das Jahr steht ohnehin vorn im Dateinamen („2026_Bauträger…").
+# Der Nutzer hat das nach dem Digitalisieren seiner Erwerbsunterlagen genau so
+# gemeldet.
+#
+# Rein additiv: geändert wird nur, wohin NEUE Belege wandern. Was schon in
+# einem Jahresordner liegt, bleibt dort und wird weiter gefunden
+# (`unterordner_finden`); verschoben oder gelöscht wird nichts. Wer den
+# Jahresordner für eine Art doch will, trägt in den Einstellungen eine eigene
+# Vorlage ein — die hat Vorrang (`cloudkern.unterordner_vorlagen`).
 STANDARD_UNTERORDNER = {
     "Nebenkosten": "{jahr}",
-    # Kurz und einheitlich: der Hauptordner heisst schon „…Steuer…", der
-    # Unterordner braucht das Wort nicht zu wiederholen — nur das Jahr. Alte
-    # „Steuer_JJJJ"-Ordner werden weiter gefunden (unterordner_finden).
-    "Steuer": "{jahr}",
-    # CCCII — notariell beurkundete Verträge liegen bei Kauf/Eigentum.
-    "Notarvertrag": "{jahr}",
-    "Kredit": "{jahr}",
-    "Versicherung": "{jahr}",
-    "Mietvertrag": "{jahr}",
-    "Korrespondenz": "{jahr}",
-    "Hausverwaltung": "{jahr}",
+    "Steuer": "",
+    "Notarvertrag": "",
+    "Kredit": "",
+    "Versicherung": "",
+    "Mietvertrag": "",
+    "Korrespondenz": "",
+    "Hausverwaltung": "",
     # N9/N24 — ein Lageplan hat kein Belegjahr; er liegt unter 10_Fotos_Lage
     # in einem festen Sammelordner „00_Lagepläne" (kein Jahres-Unterordner).
     "Lageplan": "00_Lagepläne",
-    "Sonstiges": "{jahr}",
+    "Sonstiges": "",
 }
 
 

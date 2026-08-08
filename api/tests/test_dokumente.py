@@ -670,12 +670,12 @@ def test_scan_ordnet_zu_was_eindeutig_ist(monkeypatch):
 
         # CXXII: die Art steckt im Zielordner, nicht noch einmal im Namen —
         # vorher hiess die Datei „2024_Steuer_Grundsteuerbescheid.pdf".
-        # CXCI: darunter der Jahresordner. Beim Finanzamt heisst er
-        # „Steuer_JJJJ" — dieser Ordner wird gepackt und weitergereicht, „2024"
-        # allein sagte beim Empfänger nichts.
+        # N285: KEIN Jahresordner mehr ausserhalb der Nebenkosten — nur dort
+        # fallen je Zeitraum genug Belege an, dass er sich lohnt; das Jahr
+        # steht ohnehin vorn im Dateinamen.
         ziel = "2024_Steuer-Grundsteuerbescheid.pdf"
         assert wolke.verschoben[0][1] == \
-            f"Home/Immobilien/Automatikweg 1/70_Steuer_Finanzamt/2024/{ziel}"
+            f"Home/Immobilien/Automatikweg 1/70_Steuer_Finanzamt/{ziel}"
 
         docs = c.get("/api/dokumente", params={"objekt": slug}).json()["dokumente"]
         nach_status = {d["status"]: d for d in docs}
@@ -801,7 +801,10 @@ def test_unterordner_vorlagen_sind_einstellbar():
         nach_art = {a["art"]: a for a in stand["arten"]}
         assert nach_art["Nebenkosten"]["vorlage"] == "{jahr}"
         assert nach_art["Nebenkosten"]["beispiel"] == str(stand["jahr"])
-        assert nach_art["Steuer"]["beispiel"] == str(stand['jahr'])
+        # N285 — ausserhalb der Nebenkosten gibt es keinen Jahresordner mehr:
+        # leere Vorlage heisst „flach ablegen", das Jahr steht im Dateinamen.
+        assert nach_art["Steuer"]["vorlage"] == ""
+        assert nach_art["Steuer"]["beispiel"] == ""
 
         antwort = c.post("/api/nextcloud/unterordner",
                          json={"vorlagen": {"Nebenkosten": "NK-{jahr}"}})
@@ -809,7 +812,7 @@ def test_unterordner_vorlagen_sind_einstellbar():
         nach_art = {a["art"]: a for a in antwort.json()["arten"]}
         assert nach_art["Nebenkosten"]["beispiel"] == f"NK-{stand['jahr']}"
         # Die anderen Arten bleiben, wie sie waren
-        assert nach_art["Steuer"]["vorlage"] == "{jahr}"
+        assert nach_art["Steuer"]["vorlage"] == ""
 
         # Unbekannte Platzhalter und unbekannte Arten werden abgewiesen
         assert c.post("/api/nextcloud/unterordner",
@@ -1058,7 +1061,7 @@ def test_verwaister_eintrag_gibt_seinen_namen_frei(monkeypatch):
         slug = _mit_cloud(c, "Belegtweg 4", ordner)
         objekt_id = _objekt_id(slug)
         # Eintrag auf dem Zielpfad — in der Cloud gibt es die Datei nicht mehr
-        ziel = ("/Home/Immobilien/Belegtweg 4/70_Steuer_Finanzamt/2024/"
+        ziel = ("/Home/Immobilien/Belegtweg 4/70_Steuer_Finanzamt/"
                 "2024_Steuer-Grundsteuerbescheid.pdf")
         with Session(engine) as s:
             s.add(Dokument(pfad=ziel, dateiname="2024_Steuer-Grundsteuerbescheid.pdf",
@@ -1104,7 +1107,7 @@ def test_vorhandene_datei_bekommt_weiter_einen_zweiten_namen(monkeypatch):
         ordner = "Home/Immobilien/Belegtweg 5"
         slug = _mit_cloud(c, "Belegtweg 5", ordner)
         objekt_id = _objekt_id(slug)
-        ziel = ("/Home/Immobilien/Belegtweg 5/70_Steuer_Finanzamt/2024/"
+        ziel = ("/Home/Immobilien/Belegtweg 5/70_Steuer_Finanzamt/"
                 "2024_Steuer-Grundsteuerbescheid.pdf")
         with Session(engine) as s:
             s.add(Dokument(pfad=ziel, dateiname="2024_Steuer-Grundsteuerbescheid.pdf",

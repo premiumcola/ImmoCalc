@@ -638,7 +638,14 @@ def test_unterordner_folgt_der_vorlage():
     # sagt die Sache schon, ein „NK-" davor wäre dieselbe Doppelnennung, die
     # für Dateinamen in CXXII abgeschafft wurde.
     assert STANDARD_UNTERORDNER["Nebenkosten"] == "{jahr}"
-    assert STANDARD_UNTERORDNER["Steuer"] == "{jahr}"
+    # N285 — und NUR dort. Nur bei den Nebenkosten fallen je Zeitraum so viele
+    # Belege an, dass ein Jahresordner die Übersicht rettet; überall sonst
+    # kostet er mehr Klicks als er einbringt, das Jahr steht ohnehin vorn im
+    # Dateinamen. Ausnahme bleibt der Lageplan mit seinem festen Sammelordner.
+    andere = {art: v for art, v in STANDARD_UNTERORDNER.items()
+              if art not in ("Nebenkosten", "Lageplan")}
+    assert set(andere.values()) == {""}, andere
+    assert STANDARD_UNTERORDNER["Lageplan"] == "00_Lagepläne"
 
 
 def test_unterordner_vorlage_pruefen():
