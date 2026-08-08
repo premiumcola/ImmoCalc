@@ -30,10 +30,32 @@ body{
      verdeckt der Fuß den letzten Inhalt (env ist 0 ohne sichere Zone). */
   padding-bottom:calc(96px + env(safe-area-inset-bottom));
 }
+/* ---- N271: ab Tablet ist die App ein RAHMEN, kein langes Dokument ----
+   Bis hierher scrollte die ganze Seite: `.app` wuchs mit dem Inhalt, und die
+   Navigation hing als `position:absolute` am unteren Rand DIESER Karte — also
+   irgendwo weit unten im Dokument statt am Bildschirmrand. Auf dem iPad
+   (744 px hoch im Hochformat, mitten im 480–999-Band) verschwand sie deshalb
+   beim Scrollen, und das Ganze wirkte wie eine hochgezogene Handy-App, die man
+   als Bild verschiebt.
+
+   Jetzt bekommt die Karte eine feste Rahmenhoehe, `.scroll` scrollt in sich
+   selbst und die Leiste steht als gewoehnliches Flex-Kind unten fest — dasselbe
+   Prinzip, das der Desktop ab 1000 px laengst benutzt (dort als Grid mit
+   Seitenspalte). Nebeneffekt, der hier erwuenscht ist: weil der Seitenkoerper
+   nicht mehr scrollt, blendet Safari seine Werkzeugleiste nicht mehr ein und
+   aus, und der Rahmen bleibt ruhig stehen. */
 @media(min-width:480px){
+  html,body{height:100dvh; overflow:hidden; overscroll-behavior:none}
   body{padding:24px 0}
-  .app{min-height:calc(100dvh - 48px); border-radius:22px; overflow:hidden;
-       box-shadow:0 24px 60px -30px rgba(22,38,44,.35)}
+  .app{
+    height:calc(100dvh - 48px); min-height:0; padding-bottom:0;
+    border-radius:22px; overflow:hidden;
+    box-shadow:0 24px 60px -30px rgba(22,38,44,.35);
+  }
+  /* `min-height:0` ist der Punkt, an dem es sonst scheitert: ein Flex-Kind
+     weigert sich per Vorgabe, kleiner als sein Inhalt zu werden — ohne diese
+     Zeile waechst `.scroll` ueber den Rahmen hinaus und scrollt gar nicht. */
+  .scroll{overflow-y:auto; -webkit-overflow-scrolling:touch; min-height:0}
 }
 
 /* ---- Kopfzeile ---- */
@@ -167,8 +189,11 @@ button.chip:hover{filter:brightness(.96)}
   display:flex; gap:5px; padding:8px 8px calc(8px + env(safe-area-inset-bottom));
   box-shadow:0 -1px 0 rgba(22,38,44,.07);
 }
+/* N271 — `static` statt `absolute`: die Leiste ist jetzt das letzte Flex-Kind
+   der Karte und sitzt damit von selbst unten fest. `absolute` band sie an den
+   unteren Rand des mitwachsenden Inhalts — sie scrollte weg. */
 @media(min-width:480px){
-  .nav{position:absolute; border-radius:0 0 22px 22px}
+  .nav{position:static; flex:none; border-radius:0 0 22px 22px}
 }
 .nav a{
   flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;
