@@ -320,3 +320,74 @@ def test_ohne_auslese_listet_nur_belege_ohne_einschaetzung():
 def test_text_endpunkt_meldet_unbekannten_beleg_sauber():
     with TestClient(app) as c:
         assert c.get("/api/dokumente/999999/text").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# N286 — Ablageordner von Hand ändern
+# --------------------------------------------------------------------------
+
+def test_ziel_bleibt_im_objektordner():
+    """Der eigentliche Riegel: ein Beleg dieser Immobilie hat ausserhalb ihres
+    Ordners nichts verloren, auch nicht auf ausdrücklichen Wunsch. Sonst liesse
+    er sich in den Ordner einer FREMDEN Immobilie schieben, und deren Abgleich
+    nähme ihn beim nächsten Lauf als eigenen Beleg auf."""
+    from fastapi import HTTPException
+
+    from app.routers.dokumente import _ziel_im_objekt
+
+    class _O:
+        nc_ordner = "/Immobilien/(Ort) Weg 5"
+
+    o = _O()
+    # Absolut, innerhalb → bleibt
+    assert _ziel_im_objekt(o, "/Immobilien/(Ort) Weg 5/60_Nebenkosten") \
+        == "Immobilien/(Ort) Weg 5/60_Nebenkosten"
+    # Relativ → wird unter dem Objektordner verstanden
+    assert _ziel_im_objekt(o, "60_Nebenkosten/2025") \
+        == "Immobilien/(Ort) Weg 5/60_Nebenkosten/2025"
+    # Fremder Objektordner → landet UNTER dem eigenen, nie daneben
+    fremd = _ziel_im_objekt(o, "/Immobilien/(Anderswo) Gasse 1/60_Nebenkosten")
+    assert fremd.startswith("Immobilien/(Ort) Weg 5/")
+    # Ausbruchsversuch
+    for boese in ("../../etc", "/Immobilien/../../root"):
+        try:
+            ergebnis = _ziel_im_objekt(o, boese)
+        except HTTPException:
+            continue
+        assert ergebnis.startswith("Immobilien/(Ort) Weg 5")
+
+
+def test_ohne_cloud_ordner_wird_nicht_verschoben():
+    from fastapi import HTTPException
+
+    from app.routers.dokumente import _ziel_im_objekt
+
+    class _O:
+        nc_ordner = ""
+
+    try:
+        _ziel_im_objekt(_O(), "60_Nebenkosten")
+    except HTTPException as fehler:
+        assert fehler.status_code == 400
+    else:
+        raise AssertionError("Ohne Cloud-Ordner darf nichts verschoben werden")
+
+
+def test_verschieben_meldet_saubere_fehler_statt_500():
+    with TestClient(app) as c:
+        assert c.post("/api/dokumente/999999/verschieben",
+                      json={"ordner": "x"}).status_code == 404
+        _slug, alt, _neu = _welt(c, "Umzugsweg 12")
+        # Ohne Ziel: klare Ansage statt Absturz
+        assert c.post(f"/api/dokumente/{alt}/verschieben",
+                      json={}).status_code == 400
+        # Unbekannte Dokumentart
+        antwort = c.post(f"/api/dokumente/{alt}/verschieben",
+                         json={"kategorie": "Gibtsnicht"})
+        assert antwort.status_code == 400
+        assert "Dokumentart" in antwort.json()["detail"]
+
+
+def test_ablageziele_meldet_unbekannten_beleg():
+    with TestClient(app) as c:
+        assert c.get("/api/dokumente/999999/ablageziele").status_code == 404

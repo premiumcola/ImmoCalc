@@ -29,7 +29,7 @@ from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
                            ohne_betrag, ohne_datum, unterordner_finden)
 from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
-                        unterordner_fuer, verbindung)
+                        struktur_fuer, unterordner_fuer, verbindung)
 from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
@@ -5136,3 +5136,139 @@ def pruefsummen_nachtragen_endpunkt(
         session: Session = Depends(get_session)) -> dict:
     """Rechnet Prüfsummen für den Bestand nach — gedeckelt und wiederholbar."""
     return pruefsummen_nachtragen(session, grenze)
+
+
+# --------------------------------------------------------------------------
+# N286 — den Ablageordner eines Belegs von Hand ändern.
+#
+# Nutzer: „lass mich den Ordner auch einfach manuell ändern, falls es falsch
+# ist und zieh dann natürlich die Verlinkung und Dings nach."
+#
+# Der Unterbau steht seit N261: `_beleg_umziehen` ändert **erst die Cloud, dann
+# die Datenbank** und rollt zurück, wenn der zweite Schritt kippt. Hier kommt
+# nur die Wahl des Ziels dazu — und der Riegel, dass sie den Objektordner nicht
+# verlässt.
+# --------------------------------------------------------------------------
+
+def _ziel_im_objekt(o: Objekt, ordner: str) -> str:
+    """Ein frei gewählter Ordner, auf den Objektordner eingesperrt.
+
+    Zusätzlich zum Home-Riegel in `nextcloud._pruefe_schreibrecht`: ein Beleg
+    dieser Immobilie hat ausserhalb ihres Ordners nichts verloren, auch nicht
+    auf ausdrücklichen Wunsch. Sonst liesse sich über diesen Weg ein Beleg in
+    den Ordner einer FREMDEN Immobilie schieben, und der Abgleich dort würde
+    ihn beim nächsten Lauf als deren Beleg aufnehmen."""
+    wurzel = (o.nc_ordner or "").strip("/")
+    ziel = (ordner or "").strip("/")
+    if not wurzel:
+        raise HTTPException(400, "Für diese Immobilie ist kein Cloud-Ordner "
+                                 "hinterlegt.")
+    if ".." in ziel.split("/"):
+        raise HTTPException(400, "Unzulässiger Pfad.")
+    if not ziel:
+        return wurzel
+    if ziel == wurzel or ziel.startswith(wurzel + "/"):
+        return ziel
+    # Eine relative Angabe („60_Nebenkosten/2025") wird unter dem Objektordner
+    # verstanden — das ist die Form, in der die Oberfläche sie anbietet.
+    return f"{wurzel}/{ziel}"
+
+
+@router.get("/{dokument_id}/ablageziele")
+def ablageziele(dokument_id: int,
+                session: Session = Depends(get_session)) -> dict:
+    """Wohin dieser Beleg wandern könnte — je Dokumentart ein Vorschlag.
+
+    Rein lesend. `aktuell` markiert den Ordner, in dem er gerade liegt; die
+    Oberfläche kann ihn damit vorwählen und muss nicht raten."""
+    d = session.get(Dokument, dokument_id)
+    if d is None:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
+    if o is None:
+        raise HTTPException(400, "Zum Beleg gehört keine Immobilie.")
+    _cloud_pflicht(o)
+    jetzt = _elternordner(d.pfad)
+    moeglich = []
+    for art in struktur_fuer(o):
+        ordner = f"{o.nc_ordner.strip('/')}/{art}"
+        moeglich.append({"ordner": ordner, "name": art,
+                         "aktuell": ordner == jetzt})
+    # Der Jahresordner der Nebenkosten ist der einzige, den die App selbst
+    # anlegt (N285) — er gehört mit angeboten, sonst müsste der Nutzer ihn
+    # tippen.
+    if d.jahr:
+        nk = f"{o.nc_ordner.strip('/')}/{ZIELORDNER['Nebenkosten']}/{d.jahr}"
+        moeglich.append({"ordner": nk, "name": f"Nebenkosten · {d.jahr}",
+                         "aktuell": nk == jetzt})
+    return {"id": d.id, "dateiname": d.dateiname, "pfad": d.pfad,
+            "aktueller_ordner": jetzt, "objekt": o.slug,
+            "wurzel": o.nc_ordner.strip("/"), "ziele": moeglich}
+
+
+class VerschiebenIn(BaseModel):
+    # Entweder ein fertiger Ordner (aus `ablageziele`) …
+    ordner: str = ""
+    # … oder eine Dokumentart, aus der er abgeleitet wird.
+    kategorie: str = ""
+    jahr: int | None = None
+
+
+@router.post("/{dokument_id}/verschieben")
+def verschieben(dokument_id: int, data: VerschiebenIn,
+                session: Session = Depends(get_session)) -> dict:
+    """Schiebt einen Beleg in einen anderen Ordner — Datei und Eintrag zusammen.
+
+    Erst die Cloud, dann die Datenbank; kippt der zweite Schritt, wandert die
+    Datei zurück (`_beleg_umziehen`). Der Dateiname bleibt, nur der Ort ändert
+    sich — und weicht auf „…-2" aus, falls dort schon etwas gleich heisst. Nie
+    überschreiben, nie löschen.
+
+    Die Verknüpfungen ziehen von selbst nach: sie hängen an `dokument.id`, nicht
+    am Pfad (N300). Nachgezogen werden muss nur die Pfadkopie in der
+    Wissensdatenbank — das erledigt `_beleg_umziehen` über `kidb` (N299)."""
+    d = session.get(Dokument, dokument_id)
+    if d is None:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if not (d.pfad or "").startswith("/"):
+        raise HTTPException(400, "Zu diesem Eintrag liegt keine Datei in der "
+                                 "Cloud.")
+    # Erst die Anfrage prüfen, dann die Infrastruktur: das kostet nichts, sagt
+    # dem Nutzer das Genauere („kein Ziel angegeben" statt „keine Cloud") und
+    # baut keine Verbindung auf, die ohnehin nichts zu tun bekäme.
+    if not data.ordner and not data.kategorie:
+        raise HTTPException(400, "Es ist kein Ziel angegeben.")
+    if data.kategorie and data.kategorie not in ZIELORDNER:
+        raise HTTPException(400, f"Unbekannte Dokumentart „{data.kategorie}“.")
+
+    o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
+    if o is None:
+        raise HTTPException(400, "Zum Beleg gehört keine Immobilie.")
+    _cloud_pflicht(o)
+
+    client = verbindung(session)
+    if data.ordner:
+        ziel = _ziel_im_objekt(o, data.ordner)
+    else:
+        _sach, ziel = _ablageordner(session, o, data.kategorie,
+                                    data.jahr if data.jahr else d.jahr, client)
+
+    alt = d.pfad
+    try:
+        client.ordner_anlegen(ziel)
+        neu_name = _beleg_umziehen(session, client, d, ziel, d.dateiname)
+    except NextcloudFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+
+    if neu_name is None:
+        return {"verschoben": False, "pfad": d.pfad,
+                "hinweis": "Der Beleg liegt bereits dort."}
+    # Die Dokumentart mitziehen, wenn der Nutzer über sie gewählt hat — sonst
+    # stünde im Beleg weiter die alte Art, während die Datei woanders liegt.
+    if data.kategorie and d.kategorie != data.kategorie:
+        d.kategorie = data.kategorie
+        session.add(d)
+        session.commit()
+    log.info("N286: Beleg %s von %s nach %s verschoben", d.id, alt, d.pfad)
+    return {"verschoben": True, "von": alt, "pfad": d.pfad,
+            "dateiname": d.dateiname, "kategorie": d.kategorie}
