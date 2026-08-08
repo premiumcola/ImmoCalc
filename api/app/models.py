@@ -1110,3 +1110,36 @@ class Tankladung(SQLModel, table=True):
     # den Anschluss und standen als „nicht angelegt" da. Additiv, Default None —
     # ohne Angabe gilt weiterhin der Name.
     tanknutzer_id: Optional[int] = None
+
+
+class Renovierung(SQLModel, table=True):
+    """N270 — eine Renovierung/Sanierung an einem Objekt: Zeitraum, Budget mit
+    laufendem Restbudget, und (in `Renovierungsposten`) die Rechnungen dazu.
+
+    Ganz neue Tabelle, alle Felder ausser `objekt_id`/`name` mit Default:
+    `create_all` legt sie an, kein bestehender Datensatz aendert sich."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    objekt_id: int = Field(foreign_key="objekt.id", index=True)
+    name: str
+    von: Optional[date] = None
+    bis: Optional[date] = None
+    budget: Optional[float] = None
+    # Bezeichnungen der betroffenen Einheiten, mit "|" getrennt. Leer = ganzes
+    # Objekt. "|" statt Komma, weil eine Einheitsbezeichnung ein Komma
+    # enthalten darf ("EG, links"), ein "|" aber praktisch nie.
+    einheiten: str = ""
+    notiz: str = ""
+    abgeschlossen: bool = False
+
+
+class Renovierungsposten(SQLModel, table=True):
+    """N270 — eine Rechnung/Position innerhalb einer Renovierung, einem Gewerk
+    zugeordnet (fuer die spaetere Donut-Verteilung im Frontend)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    renovierung_id: int = Field(foreign_key="renovierung.id", index=True)
+    datum: Optional[date] = None
+    betrag: float = 0.0
+    firma: str = ""
+    gewerk: str = ""
+    notiz: str = ""
+    quelle_dokument_id: Optional[int] = Field(default=None, foreign_key="dokument.id")

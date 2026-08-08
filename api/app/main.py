@@ -13,9 +13,9 @@ from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, dokumentvorlagen,
-                      heizoel, ki, kidb, mail, objekte, openwb, solaredge,
-                      stammdaten, strom, stromkette, tankstelle, versand,
-                      waerme, zaehler)
+                      heizoel, ki, kidb, mail, objekte, openwb, renovierung,
+                      solaredge, stammdaten, strom, stromkette, tankstelle,
+                      versand, waerme, zaehler)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -91,6 +91,8 @@ app.include_router(openwb.router)
 app.include_router(tankstelle.router)
 # N142 — /zeitraeume/{zid}/stromkette (Netz·PV·Akku → E-Tankstelle → Einheiten).
 app.include_router(stromkette.router)
+# N270 — /objekte/{slug}/renovierungen ebenfalls VOR dem Stammdaten-Fänger.
+app.include_router(renovierung.router)
 app.include_router(stammdaten.router)
 app.include_router(auswertung.router)
 app.include_router(cloud.router)

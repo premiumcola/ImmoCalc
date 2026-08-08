@@ -39,6 +39,23 @@ except ImportError:                                      # pragma: no cover
 
 log = logging.getLogger("immocalc")
 
+# N270 — die kanonische Gewerke-Liste (Elektro, Sanitär, Maler …) lebt in
+# `renovierung.py`, damit es sie nur EIN Mal gibt (dort baut sie zusätzlich
+# das Kreisdiagramm je Gewerk auf). Hier wird sie nur importiert und beim
+# Auslesen gegen ein von der KI genanntes Gewerk geprüft. Der Fallback fängt
+# ausschließlich den Übergang ab, in dem `renovierung.py` noch nicht existiert
+# (parallele Arbeit an N270) — sobald die Datei da ist, greift der Import
+# oben und dieses Modul (und alles, was es transitiv lädt) bricht nicht am
+# fehlenden Import weg.
+try:
+    from .renovierung import GEWERKE
+except ImportError:  # pragma: no cover — nur während N270 in Arbeit
+    GEWERKE = (
+        "Rohbau", "Dach", "Fassade & Dämmung", "Fenster & Türen", "Elektro",
+        "Sanitär", "Heizung", "Trockenbau", "Estrich & Böden", "Fliesen",
+        "Maler", "Küche", "Außenanlagen", "Planung & Gebühren", "Sonstiges",
+    )
+
 # Der günstige, schnelle Endpunkt. Über ANTHROPIC_MODEL austauschbar, aber der
 # Vorgabewert bleibt bewusst das kleinste Modell — wenige Tokens je Beleg.
 STANDARD_MODELL = "claude-haiku-4-5-20251001"
@@ -67,7 +84,7 @@ SYSTEM_PROMPT = (
     '"teilbetrag":<Zahl|null>,"teilzahlungen":<Zahl|null>,"ist_kosten":true|false,'
     '"kosten_relevant":true|false,"nebenkosten":true|false,'
     '"zeitraum_hinweis":"…","abrechnungsjahr":<Jahr|null>,'
-    '"kostenart":"…","felder":{…},'
+    '"kostenart":"…","gewerk":"…","felder":{…},'
     '"zusammenfassung":"…"}\n'
     "dokumenttyp = kurze Bezeichnung der Belegart (Mietvertrag, Versicherung, "
     "Kredit, Grundsteuerbescheid, Kaufvertrag, Grundbuch, WEG-Abrechnung, "
@@ -155,6 +172,24 @@ SYSTEM_PROMPT = (
     "2026 rechnet 2025 ab → 2025). Kein Abrechnungsbeleg → null. "
     "kostenart = worum es GENAU geht, kurz (z. B. Heizöl, Grundsteuer, Wasser, "
     "Gebäudeversicherung, Schornsteinfeger, Müll, Darlehen). "
+    # N270 — für die Renovierungsposten braucht die Kreisdiagramm-Auswertung
+    # das Gewerk. Lieber gar keins als ein erfundenes: die Antwort wird
+    # serverseitig gegen die feste Liste geprüft (siehe `_gewerk`).
+    "gewerk = NUR bei einer Handwerker-/Bauleistung: das Gewerk, zu dem die "
+    "Leistung gehört, EXAKT EINER dieser Werte: \"Rohbau\", \"Dach\", "
+    "\"Fassade & Dämmung\", \"Fenster & Türen\", \"Elektro\", \"Sanitär\", "
+    "\"Heizung\", \"Trockenbau\", \"Estrich & Böden\", \"Fliesen\", \"Maler\", "
+    "\"Küche\", \"Außenanlagen\", \"Planung & Gebühren\", \"Sonstiges\". "
+    "Zuordnungshilfen: Elektroinstallation/Zählerschrank/Steckdosen/"
+    "Lichtschalter → Elektro; Bad/WC/Leitungen/Sanitärobjekte/Armaturen → "
+    "Sanitär; Heizkörper/Wärmepumpe/Therme/Kessel → Heizung; Parkett/Laminat/"
+    "Estrich/Bodenbelag → \"Estrich & Böden\"; Tapezieren/Streichen/Spachteln/"
+    "Lackieren → Maler; Architekt/Statiker/Baugenehmigung/Bauantrag/"
+    "Bauleitung → \"Planung & Gebühren\"; Gerüst/Dämmung/Putz/Wärmedämm-"
+    "verbundsystem → \"Fassade & Dämmung\". Passt eine Handwerkerleistung zu "
+    "keinem der übrigen Werte, gewerk = \"Sonstiges\". Ist es GAR KEINE Bau-/"
+    "Handwerkerleistung (Versicherung, Kredit, Nebenkosten …), gewerk ganz "
+    "WEGLASSEN — nicht \"Sonstiges\" raten. "
     "zusammenfassung = 2 bis 4 vollständige deutsche Sätze: was für ein Dokument "
     "das ist (Art, Absender), ob echte Kosten entstanden sind, ob es in die "
     "Nebenkostenabrechnung gehört, und für welchen Abrechnungszeitraum.\n"
@@ -409,6 +444,25 @@ def _jahr(wert) -> int | None:
     return j if 1990 <= j <= date.today().year + 1 else None
 
 
+# N270 — tolerant vergleichen: Groß-/Kleinschreibung und Leerzeichen dürfen
+# das Modell nicht daran hindern, ein an sich richtiges Gewerk zu treffen.
+_GEWERKE_NORMALISIERT = {g.strip().casefold(): g for g in GEWERKE}
+
+
+def _gewerk(wert) -> str | None:
+    """Ein vom Modell genanntes Gewerk — nur, wenn es EXAKT einem der
+    kanonischen Werte entspricht (tolerant bei Groß-/Kleinschreibung und
+    Leerzeichen), sonst `None`.
+
+    Ein erfundenes Gewerk ("Fensterputzen") würde im Kreisdiagramm eine
+    eigene Tortenscheibe erzeugen, die es in der festen Liste nicht gibt und
+    die der Nutzer nirgends nachträglich zuordnen könnte — deshalb wird hier
+    verworfen statt geraten."""
+    if not isinstance(wert, str):
+        return None
+    return _GEWERKE_NORMALISIERT.get(" ".join(wert.split()).casefold())
+
+
 def _text(wert) -> str:
     """Ein Klartextfeld (kostenart/kategorie) — knapp und ohne Zeilenumbrüche."""
     if not isinstance(wert, str):
@@ -562,6 +616,10 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         "teilbetrag": teilbetrag,
         "teilzahlungen": teilzahlungen,
         "kostenart": _text(block.get("kostenart")),
+        # N270 — nur ein Wert aus der festen Gewerke-Liste kommt durch; alles
+        # andere (erfunden, uneindeutig, Tippfehler) wird zu None statt einer
+        # neuen, nicht existierenden Tortenscheibe im Kreisdiagramm.
+        "gewerk": _gewerk(block.get("gewerk")),
         "kategorie": _text(block.get("kategorie")),
         "ist_kosten": bool(block.get("ist_kosten", True)),
         # CCCLXVII: die inhaltliche Einschätzung — sind Kosten entstanden, NK?,

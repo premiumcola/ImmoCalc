@@ -737,6 +737,12 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
         ergebnis["einordnung"] = zusammenfassung          # KI-Klartext (CCLXXIII)
     if ki.get("absender"):
         ergebnis["absender"] = ki["absender"].strip()     # Absender durchreichen
+    # N270 — das erkannte Gewerk durchreichen. `kiauslese._gewerk` hat es schon
+    # gegen die feste Liste geprüft; hier steht bewusst keine zweite Prüfung,
+    # sonst gäbe es die Regel zweimal. Ohne diese Zeile käme die Renovierungs-
+    # Maske ohne Gewerk zurück, obwohl die Auslese es gelesen hat.
+    if ki.get("gewerk"):
+        ergebnis["gewerk"] = ki["gewerk"]
     # CCLXXIV: das Raster durchreichen — Liegenschaft (nicht Postanschrift),
     # Einheit, Dokumenttyp und die typspezifischen Felder. Nur übernehmen, was
     # die KI wirklich geliefert hat; leere Werte überschreiben nichts.

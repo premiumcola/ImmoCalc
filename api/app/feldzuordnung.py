@@ -80,6 +80,18 @@ ZUORDNUNG: dict[str, dict[str, tuple[str, ...]]] = {
         "betrag": ("jahresbetrag", "betrag"),
         "turnus": ("turnus",),
     },
+    # N270 — die Renovierungsposten-Maske: eine Rechnung eines Handwerkers,
+    # bereits einem Gewerk zugeordnet (`kiauslese._gewerk`, gegen die feste
+    # Liste geprüft — hier wird nur noch durchgereicht, nicht erneut geprüft).
+    "renovierungsposten": {
+        "datum": ("datum",),
+        "betrag": ("betrag",),
+        "firma": ("firma", "absender"),
+        "gewerk": ("gewerk",),
+        # Erst eine eigens genannte Notiz, sonst die knappe Kostenart, sonst
+        # notfalls die lange Zusammenfassung — lieber ein Fließtext als leer.
+        "notiz": ("notiz", "kostenart", "zusammenfassung"),
+    },
 }
 
 # Welcher Typ welchen Wert braucht. Ohne das käme ein Datum als „11.06.2026"
@@ -205,6 +217,13 @@ def namensvorschlag(bereich: str, werte: dict) -> str:
     Urkundenrollennummer trägt oft die Jahreszahl (`123/2024`), und der Filter
     hielte sie für ein Datum und schnitte sie weg. `dateiname()` räumt eine
     doppelte Jahresangabe später ohnehin auf."""
+    if bereich == "renovierungsposten":
+        # N270 — eigenes Muster statt Art+Nummer: „Renovierung Elektro Muster
+        # GmbH". Datum und Betrag hängt `dateiname()` selbst an, die stünden
+        # sonst doppelt.
+        return " ".join(stueck for stueck in
+                        ("Renovierung", werte.get("gewerk"), werte.get("firma"))
+                        if stueck).strip()
     stuecke: list[str] = []
     einzahl = {"notarvertraege": "Notarvertrag", "versicherungen": "Versicherung",
                "kredite": "Vertrag", "mieten": "Mietvertrag",

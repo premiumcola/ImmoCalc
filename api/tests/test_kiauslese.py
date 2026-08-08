@@ -461,3 +461,91 @@ def test_beleg_ohne_teilzahlungen_bleibt_unveraendert(monkeypatch):
                         .replace('"teilzahlungen":4,', ''), monkeypatch)
     assert ergebnis["betrag"] == 348.0
     assert ergebnis["teilbetrag"] is None
+
+
+# --------------------------------------------------------------------------
+# N270 — das Gewerk einer Renovierungsrechnung
+#
+# Die Kreisdiagramm-Auswertung je Gewerk (Elektro, Sanitär, Maler …) braucht
+# eine feste, kanonische Liste. Ein vom Modell erfundener Wert wäre eine
+# Tortenscheibe, die es dort gar nicht gibt — deshalb wird serverseitig
+# geprüft, nicht nur durchgereicht.
+# --------------------------------------------------------------------------
+ELEKTRIKER_RECHNUNG = (
+    '{"dokumenttyp":"Rechnung","kategorie":"Sonstiges",'
+    '"absender":"Elektro Mustermann GmbH","kostenart":"Zählerschrank erneuert",'
+    '"gewerk":"Elektro","datum":"2026-03-04","betrag":1450.0,'
+    '"ist_kosten":true,"kosten_relevant":true,"nebenkosten":false,'
+    '"zusammenfassung":"Elektrorechnung fuer die Erneuerung des Zaehlerschranks."}'
+)
+
+
+def test_elektriker_rechnung_wird_als_elektro_gelesen(monkeypatch):
+    ergebnis = _auslese(ELEKTRIKER_RECHNUNG, monkeypatch)
+    assert ergebnis["gewerk"] == "Elektro"
+
+
+def test_erfundenes_gewerk_wird_verworfen(monkeypatch):
+    """„Fensterputzen" steht nicht in der festen Liste — das Feld bleibt leer,
+    statt eine eigene, nicht existierende Tortenscheibe zu erzeugen."""
+    erfunden = ELEKTRIKER_RECHNUNG.replace('"gewerk":"Elektro"',
+                                           '"gewerk":"Fensterputzen"')
+    ergebnis = _auslese(erfunden, monkeypatch)
+    assert ergebnis["gewerk"] is None
+
+
+def test_gewerk_wird_gross_klein_und_leerzeichen_tolerant_erkannt():
+    assert kiauslese._gewerk("elektro ") == "Elektro"
+    assert kiauslese._gewerk("  FASSADE & DÄMMUNG") == "Fassade & Dämmung"
+    assert kiauslese._gewerk("Estrich  &   Böden") == "Estrich & Böden"
+
+
+def test_beleg_ohne_gewerk_angabe_bleibt_none(monkeypatch):
+    """Additiv: ein gewöhnlicher Beleg (Grundsteuer) kennt kein Gewerk und
+    bricht daran nicht — bestehende Belege ändern sich nicht."""
+    ergebnis = _auslese(GRUNDSTEUER, monkeypatch)
+    assert ergebnis["gewerk"] is None
+
+
+# --------------------------------------------------------------------------
+# N270 — das Gewerk muss die GANZE Kette ueberleben
+#
+# Zwischen `kiauslese` (liest das Gewerk) und `feldzuordnung` (setzt es in die
+# Maske) liegt `ocr.erkenne` als Nadeloehr: was dort nicht durchgereicht wird,
+# kommt am Formular nie an. Genau diese Luecke gab es — beide Enden waren
+# richtig, die Mitte reichte `gewerk` nicht weiter. Der Test haelt die Kette
+# als Ganzes fest, nicht ihre Einzelteile.
+# --------------------------------------------------------------------------
+
+def _leeres_ergebnis() -> dict:
+    return {"sache": "", "kategorie": "", "betrag": None, "datum": None,
+            "jahr": None, "monat": None, "ist_kosten": True}
+
+
+def _mit_auslese(monkeypatch, auslese):
+    """`_ki_ergaenzen` ruft die Auslese selbst auf und aendert `ergebnis` an
+    Ort und Stelle. Statt eines Netzaufrufs wird hier die fertige Auslese
+    untergeschoben — geprueft wird die Weitergabe, nicht das Modell."""
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *_a, **_k: True)
+    monkeypatch.setattr(kiauslese, "lies_beleg", lambda *_a, **_k: auslese)
+    ergebnis = _leeres_ergebnis()
+    ocr._ki_ergaenzen(ergebnis, "Rechnungstext", "rechnung.pdf", ki_key="test")
+    return ergebnis
+
+
+def test_gewerk_ueberlebt_ocr_bis_in_die_formularwerte(monkeypatch):
+    from app import feldzuordnung
+    ergebnis = _mit_auslese(monkeypatch, {
+        "gewerk": "Elektro", "absender": "Muster Elektro GmbH",
+        "betrag": 2450.0, "datum": "2025-03-14"})
+    assert ergebnis["gewerk"] == "Elektro"
+    werte = feldzuordnung.werte_fuer("renovierungsposten", ergebnis)
+    assert werte["gewerk"] == "Elektro"
+    assert werte["firma"] == "Muster Elektro GmbH"
+
+
+def test_ohne_gewerk_bleibt_das_feld_weg(monkeypatch):
+    """Additiv: ein Beleg ohne Gewerk darf kein leeres Feld erzeugen — ein ""
+    saehe in der Maske aus wie eine Angabe."""
+    ergebnis = _mit_auslese(monkeypatch, {"absender": "Muster GmbH"})
+    assert "gewerk" not in ergebnis

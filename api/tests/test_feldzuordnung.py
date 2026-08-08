@@ -18,7 +18,7 @@ os.environ.setdefault("DB_PATH", os.path.join(tempfile.mkdtemp(), "fz.db"))
 
 from app import feldzuordnung                                    # noqa: E402
 from app.models import (Kredit, Miete, Notarvertrag,             # noqa: E402
-                        Versicherung, Zahlung)
+                        Renovierungsposten, Versicherung, Zahlung)
 
 
 def test_notarvertrag_raster_wird_zu_formularwerten():
@@ -103,8 +103,48 @@ def test_zuordnung_nennt_nur_felder_die_es_im_modell_gibt():
     """Wächter: die Zuordnung schreibt in Modellfelder. Wird eines umbenannt,
     fiele die Vorbefüllung stumm aus — dieser Test macht daraus einen Fehler."""
     modelle = {"notarvertraege": Notarvertrag, "versicherungen": Versicherung,
-               "kredite": Kredit, "mieten": Miete, "zahlungen": Zahlung}
+               "kredite": Kredit, "mieten": Miete, "zahlungen": Zahlung,
+               "renovierungsposten": Renovierungsposten}
     for bereich, zuordnung in feldzuordnung.ZUORDNUNG.items():
         modell = modelle[bereich]
         for feld in zuordnung:
             assert feld in modell.model_fields, f"{bereich}.{feld} fehlt im Modell"
+
+
+# --------------------------------------------------------------------------
+# N270 — die Renovierungsposten-Maske: Datum, Betrag, Firma, Gewerk, Notiz
+# einer Rechnung, die eine KI-Auslese bereits einem Gewerk zugeordnet hat.
+# --------------------------------------------------------------------------
+def test_renovierungsposten_raster_wird_zu_formularwerten():
+    ergebnis = {
+        "datum": "2026-03-04",
+        "betrag": 1450.0,
+        "absender": "Elektro Mustermann GmbH",
+        "gewerk": "Elektro",
+        "kostenart": "Zählerschrank erneuert",
+    }
+    werte = feldzuordnung.werte_fuer("renovierungsposten", ergebnis)
+    assert werte["datum"] == "2026-03-04"
+    assert werte["betrag"] == 1450.0
+    assert werte["firma"] == "Elektro Mustermann GmbH"
+    assert werte["gewerk"] == "Elektro"
+    assert werte["notiz"] == "Zählerschrank erneuert"
+
+
+def test_renovierungsposten_ohne_gewerk_bleibt_leer():
+    """Ein Beleg, den die KI nicht als Handwerkerleistung erkannt hat (oder
+    dessen Gewerk verworfen wurde), lässt das Feld leer statt es zu raten."""
+    werte = feldzuordnung.werte_fuer("renovierungsposten", {
+        "datum": "2026-03-04", "betrag": 99.0, "absender": "Irgendwer",
+        "gewerk": None})
+    assert "gewerk" not in werte
+    assert werte["betrag"] == 99.0
+
+
+def test_renovierungsposten_namensvorschlag_kombiniert_gewerk_und_firma():
+    name = feldzuordnung.namensvorschlag(
+        "renovierungsposten",
+        {"gewerk": "Elektro", "firma": "Muster GmbH"})
+    assert name == "Renovierung Elektro Muster GmbH"
+    # Ohne Gewerk oder Firma bleibt trotzdem ein sinnvoller Name übrig.
+    assert feldzuordnung.namensvorschlag("renovierungsposten", {}) == "Renovierung"
