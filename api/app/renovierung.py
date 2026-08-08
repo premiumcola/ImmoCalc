@@ -4,7 +4,10 @@ Logik hier — testbar ohne HTTP/DB.
 """
 from __future__ import annotations
 
+import re
 from typing import Iterable, Sequence
+
+from .bezeichnung import _sauber
 
 # Einzige Wahrheit fuer die Gewerke-Liste; das Frontend holt sie ueber die API
 # (`GET /api/renovierungen/gewerke`) und hardcodet sie nicht.
@@ -17,6 +20,29 @@ GEWERKE: list[str] = [
 # Posten ohne (oder mit unbekanntem) Gewerk zaehlen unter "Sonstiges", statt
 # aus der Verteilung zu fallen.
 _SONSTIGES = "Sonstiges"
+
+
+def projektordner(name: str, von: object = None) -> str:
+    """Der Ordnername eines Bauvorhabens: „2025.01_Generalsanierung".
+
+    Jahr und Monat des Starts stehen vorn, damit die Vorhaben im Dateibrowser
+    von selbst chronologisch stehen — dieselbe Haltung wie beim Dateinamen
+    (CXXII), wo das Datum ebenfalls führt. Ohne Startdatum bleibt der blosse
+    Name; ein Ordner „ohne-Datum_…" hülfe beim Wiederfinden niemandem.
+
+    Der Ordner ist immer genau EINE Ebene: Schrägstriche und die übrigen in
+    WebDAV verbotenen Zeichen fallen heraus, sonst legte ein Vorhaben namens
+    „Bad / Küche" ungefragt einen Baum an.
+
+    `von` darf ein `date` (aus der Datenbank) oder ein ISO-Text (aus dem
+    Formular) sein — beide Wege führen zur selben Antwort."""
+    sauber = re.sub(r"[\\/:*?\"<>|]", " ", _sauber(name))
+    sauber = _sauber(sauber).strip(" .")
+    if not sauber:
+        return ""
+    stamm = (von.isoformat() if hasattr(von, "isoformat") else str(von or ""))
+    stamm = stamm[:7].replace("-", ".")                # „2025-01-15" -> „2025.01"
+    return f"{stamm}_{sauber}" if len(stamm) == 7 else sauber
 
 
 def gewerk_summen(posten: Iterable[object]) -> list[dict]:

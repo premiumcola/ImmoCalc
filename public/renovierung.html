@@ -38,6 +38,12 @@
   .hh > h2.sec{margin:0; min-width:0}
   .scroll > .hh:first-child{margin-top:2px}
   .karte > .hh{margin:0 0 14px; align-items:flex-start}
+  /* N289 — der Weg zum Beheben statt eines Dauerbanners (roter Faden 7):
+     liegt alles richtig, ist die Zeile leer und nimmt keinen Platz weg. */
+  .ablagezeile:empty{display:none}
+  .ablagezeile{margin:0 0 10px}
+  .ablagezeile .chip{white-space:normal; text-align:left; line-height:1.35;
+                     min-height:34px; padding:7px 12px}
   .secsum{display:inline-block; margin-left:8px; font:600 12px var(--mono);
           color:var(--soft); letter-spacing:0}
   .plus{flex:none; border:none; background:var(--teal-l); color:var(--teal-d);
@@ -289,6 +295,22 @@ async function detailZeigen() {
   titel.textContent = aktuell.name;
   inhalt.innerHTML = detailHtml(aktuell);
   zeitstrahlAnhaengen();
+  ablageHinweisZeigen();
+}
+
+/* N289 — Belege, die noch ausserhalb des Projektordners liegen (weil sie vor
+   dieser Änderung gescannt wurden), bekommen einen Weg zum Beheben statt eines
+   Dauerhinweises: liegt alles richtig, steht hier nichts. Bewusst leise —
+   scheitert die Cloud-Abfrage, bleibt die Seite wie sie ist. */
+async function ablageHinweisZeigen() {
+  const platz = inhalt.querySelector('[data-ablage-hinweis]');
+  if (!platz || !aktuell) return;
+  let plan = null;
+  try { plan = await Daten.ablagePruefen(aktuell.id); } catch { return; }
+  if (!plan?.anzahl) return;
+  platz.innerHTML = `<button class="chip amber" type="button" data-ablage-los
+      title="${esc(plan.ziel || '')}">${plan.anzahl} ${
+      plan.anzahl === 1 ? 'Beleg liegt' : 'Belege liegen'} woanders — einsortieren</button>`;
 }
 
 async function neuLaden() {
@@ -338,8 +360,27 @@ inhalt.addEventListener('click', async e => {
     return;
   }
 
+  const einsortieren = e.target.closest('[data-ablage-los]');
+  if (einsortieren && aktuell) {
+    einsortieren.disabled = true;
+    try {
+      const ergebnis = await Daten.ablageEinsortieren(aktuell.id);
+      const anzahl = ergebnis.verschoben?.length || 0;
+      melde(anzahl
+        ? `${anzahl} ${anzahl === 1 ? 'Beleg' : 'Belege'} in „${
+            ergebnis.ziel.split('/').pop()}" verschoben`
+        : 'Es lag schon alles richtig', 'pos');
+      await neuLaden();
+    } catch (fehler) {
+      einsortieren.disabled = false;
+      melde(String(fehler.message || fehler), 'neg');
+    }
+    return;
+  }
+
   if (e.target.closest('[data-posten-neu]') && aktuell) {
-    const werte = await postenDialog(null, gewerke, aktuell.von || '', slug);
+    const werte = await postenDialog(null, gewerke, aktuell.von || '', slug,
+                                     aktuell.id);
     if (!werte) return;
     try {
       await Daten.postenAnlegen(aktuell.id, werte);

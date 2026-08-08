@@ -23,6 +23,15 @@ export async function objektHolen(slug) {
   return (alle || []).find(o => o.slug === slug) || null;
 }
 
+/* N289 — welche Belege dieser Renovierung noch ausserhalb ihres Projekt-
+   ordners liegen (Trockenlauf), und das Einsortieren selbst. */
+export const ablagePruefen = rid =>
+  api(`/dokumente/renovierungen/${rid}/einsortieren`, { method: 'POST' });
+
+export const ablageEinsortieren = rid =>
+  api(`/dokumente/renovierungen/${rid}/einsortieren?trocken=false`,
+      { method: 'POST' });
+
 /* ---- Schreiben ---------------------------------------------------------- */
 
 export const renovierungAnlegen = (slug, werte) =>

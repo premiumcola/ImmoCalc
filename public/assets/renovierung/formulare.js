@@ -212,7 +212,7 @@ export function renovierungDialog(vorhanden, einheiten) {
 const inDerZukunft = iso => Boolean(iso) && iso > heuteIso();
 
 export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
-                             objekt = '') {
+                             objekt = '', renovierungId = null) {
   const p = vorhanden || {};
   const neu = !vorhanden;
   // N278 — der Weg übers Foto steht VOR den Feldern, wie in jeder anderen
@@ -282,7 +282,7 @@ export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
         const knopf = e.currentTarget;
         if (knopf.disabled) return;
         knopf.disabled = true;
-        const paket = await rechnungScannen(objekt);
+        const paket = await rechnungScannen(objekt, renovierungId);
         knopf.disabled = false;
         if (!paket) return;
         offen = paket.vorbereitet;
@@ -356,7 +356,7 @@ export function postenDialog(vorhanden, gewerke, vorgabeDatum = '',
  * Auslese schon auf die Feldnamen dieser Maske gemünzt (`feldzuordnung.py`).
  * Hier wird nichts geraten.
  */
-async function rechnungScannen(objekt) {
+async function rechnungScannen(objekt, renovierungId = null) {
   const dateien = await dateienWaehlen();
   if (!dateien) return null;
   let deckeWeg = null;
@@ -364,6 +364,9 @@ async function rechnungScannen(objekt) {
   try {
     vorbereitet = await belegVorbereiten(dateien, {
       objekt, kategorie: 'Renovierung', bereich: 'renovierungsposten',
+      // N289 — der Projektordner des Bauvorhabens; ohne ihn lag die Rechnung
+      // vorher unter „99_Sonstiges".
+      renovierungId,
       titel: 'Rechnung abfotografieren',
     }, () => { deckeWeg = analyseDecke('Rechnung wird gelesen …'); });
   } catch (fehler) {

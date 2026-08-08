@@ -142,6 +142,7 @@ function postenHtml(d, farben) {
       <button class="plus" type="button" data-posten-neu
               aria-label="Rechnung hinzufügen" title="Rechnung hinzufügen">＋</button>
     </div>
+    <div class="ablagezeile" data-ablage-hinweis></div>
     <div class="pliste">${d.posten.map(p => postenZeileHtml(p, farben)).join('')}</div>`;
 }
 

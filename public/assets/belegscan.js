@@ -143,6 +143,11 @@ function paketBauen(datei, name, ziel, jahrHinweis, ki = null) {
     paket.append('an_typ', ziel.anTyp);
     paket.append('an_id', String(ziel.anId));
   }
+  // N289 — gehört der Beleg zu einem Bauvorhaben, legt der Server ihn in
+  // dessen Projektordner („50_Bauphase_Projekte/2025.01_Generalsanierung").
+  if (ziel.renovierungId) {
+    paket.append('renovierung_id', String(ziel.renovierungId));
+  }
   // N255 — die schon geholte Auslese mitgeben, damit sie am frischen Beleg
   // festgehalten wird. `/erkennen` lief auf den nackten Bytes, da gab es den
   // Datensatz noch nicht; ohne diesen Weg bliebe die Dokumentenerkennung für

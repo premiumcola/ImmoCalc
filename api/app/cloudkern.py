@@ -93,6 +93,12 @@ ZIELORDNER = {
     "Hausverwaltung": "80_Hausverwaltung",
     # N9 — Lagepläne gehören zu Fotos & Lage, nicht in „Sonstiges".
     "Lageplan": "10_Fotos_Lage",
+    # N289 — Handwerkerrechnungen eines Bauvorhabens gehören zur Bauphase.
+    # Ohne diesen Eintrag fiel die Kategorie „Renovierung" auf den Vorgabewert
+    # „99_Sonstiges" zurück: die Rechnungen einer Generalsanierung lagen
+    # zwischen allem anderen. Der Projektordner darunter kommt aus der
+    # Renovierung selbst (`renovierung.projektordner`).
+    "Renovierung": "50_Bauphase_Projekte",
     "Sonstiges": "99_Sonstiges",
 }
 
@@ -111,6 +117,10 @@ ARTKUERZEL = {
     "Hausverwaltung": "HV",
     # N9 — kein Kürzel für Lagepläne: der Name trägt „Lageplan …" schon selbst.
     "Lageplan": "",
+    # N289 — kein Kürzel: `feldzuordnung` baut den Namen einer Handwerker-
+    # rechnung bereits sprechend („Renovierung Elektro Firma"), und der
+    # Projektordner sagt ohnehin, zu welchem Vorhaben sie gehört.
+    "Renovierung": "",
     "Sonstiges": "",
 }
 

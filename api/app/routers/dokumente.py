@@ -35,7 +35,9 @@ from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
 from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel, Kostenart,
                       Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
-                      Versicherung, Zahlung, Zeitraum)
+                      Renovierung, Renovierungsposten, Versicherung, Zahlung,
+                      Zeitraum)
+from ..renovierung import projektordner
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
 from ..wachdienst import sperre
@@ -223,9 +225,29 @@ def _zielordner(o: Objekt, kategorie: str) -> str:
     return f"{o.nc_ordner.strip('/')}/{unterordner}"
 
 
+def _projektordner(session: Session, renovierung_id: int | None) -> str:
+    """N289 — der Ordnername des Bauvorhabens, zu dem eine Rechnung gehört.
+
+    Leer heisst: keine Renovierung gemeint (oder sie gibt es nicht mehr) — dann
+    bleibt alles wie bisher. Eine unbekannte Nummer ist bewusst kein Fehler:
+    der Beleg soll abgelegt werden, notfalls eine Ebene höher."""
+    if not renovierung_id:
+        return ""
+    r = session.get(Renovierung, renovierung_id)
+    if r is None:
+        log.info("Renovierung %s nicht gefunden — Beleg ohne Projektordner",
+                 renovierung_id)
+        return ""
+    return projektordner(r.name, r.von)
+
+
 def _ablageordner(session: Session, o: Objekt, kategorie: str,
-                  jahr: int | None, client) -> tuple[str, str]:
+                  jahr: int | None, client, unterordner: str = "") -> tuple[str, str]:
     """(Sachordner, Ablageordner) — CXCI: in NK liegt nichts mehr flach.
+
+    `unterordner` schlägt die Vorlage: N289 gibt die Renovierungsmaske den
+    Projektordner („2025.01_Generalsanierung") direkt mit, weil er sich aus
+    Jahr und Einheit nicht bilden lässt.
 
     Der Ablageordner ist der Sachordner selbst, solange die Vorlage nichts
     hergibt (leere Vorlage, Beleg ohne Jahr). Sonst der Jahresordner darin —
@@ -236,9 +258,14 @@ def _ablageordner(session: Session, o: Objekt, kategorie: str,
     angelegt), wird der Name aus der Vorlage genommen — das ist kein Fehler,
     nur eine Auskunft, die es noch nicht gibt."""
     sach = _zielordner(o, kategorie)
-    ziel = unterordner_fuer(session, o, kategorie, jahr)
+    ziel = unterordner or unterordner_fuer(session, o, kategorie, jahr)
     if not ziel:
         return sach, sach
+    if unterordner:
+        # Ein Projektordner trägt seinen Namen selbst; die Jahres-Erkennung von
+        # `unterordner_finden` würde hier „2025.01_Generalsanierung" mit einem
+        # blossen „2025" verwechseln und die Rechnung dorthin sortieren.
+        return sach, f"{sach}/{unterordner}"
     try:
         vorhandene = [e.name for e in client.liste(sach) if e.ordner]
     except NextcloudFehler as fehler:
@@ -1801,6 +1828,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   an_typ: str = Form(""),
                   an_id: int | None = Form(None),
                   ki_json: str = Form(""),
+                  renovierung_id: int | None = Form(None),
                   datei: UploadFile = File(...),
                   session: Session = Depends(get_session)) -> dict:
     """Nimmt ein abfotografiertes Dokument entgegen, benennt es nach Schema
@@ -1839,6 +1867,12 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     suchen. Ohne die beiden Felder bleibt alles wie bisher; jeder bestehende
     Aufrufer läuft unverändert weiter.
 
+    `renovierung_id` ist freiwillig (N289): ist sie gesetzt, landet die
+    Rechnung im Projektordner ihres Bauvorhabens
+    („50_Bauphase_Projekte/2025.01_Generalsanierung") statt flach im
+    Sachordner. Eine unbekannte Nummer legt den Beleg eine Ebene höher ab,
+    statt den Scan scheitern zu lassen.
+
     Geprüft wird das Ziel **vor** der Ablage: ein unbekannter Typ oder ein
     Eintrag einer fremden Immobilie soll nicht erst eine Datei in der Cloud
     und einen halben Eintrag in der Datenbank hinterlassen."""
@@ -1875,7 +1909,8 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                      monat, betrag, kostenart)
     client = verbindung(session)
     try:
-        sach, ziel_ordner = _ablageordner(session, o, kategorie, jahr, client)
+        sach, ziel_ordner = _ablageordner(session, o, kategorie, jahr, client,
+                                          _projektordner(session, renovierung_id))
         _ordner_sichern(client, sach, ziel_ordner)
         name = _freier_name(session, client, ziel_ordner, name)
         client.lege_ab(f"{ziel_ordner}/{name}", inhalt)
@@ -4445,3 +4480,63 @@ def duplikate_buendeln(slug: str, trocken: bool = True,
     log.info("Duplikate gebündelt für %s: %d verschoben, %d Gruppen, %d Fehler",
              o.slug, gebuendelt, len(gruppen), len(fehler))
     return {"gebündelt": gebuendelt, "gruppen": len(gruppen), "fehler": fehler}
+
+
+# --------------------------------------------------------------------------
+# N289 — Bestandsrechnungen eines Bauvorhabens nachträglich einsortieren.
+#
+# Neue Scans landen von selbst im Projektordner. Was der Nutzer vorher schon
+# fotografiert hat, liegt aber noch unter „99_Sonstiges" — und soll nicht dort
+# bleiben, nur weil es zu früh gescannt wurde. Derselbe Zuschnitt wie bei den
+# Lageplänen (N24): idempotent, kollisionssicher, standardmäßig trocken.
+# --------------------------------------------------------------------------
+
+@router.post("/renovierungen/{rid}/einsortieren")
+def renovierung_einsortieren(rid: int, trocken: bool = True,
+                             session: Session = Depends(get_session)) -> dict:
+    """Zieht die Belege der Renovierung `rid` in ihren Projektordner.
+
+    Betroffen sind genau die Belege, die an einem Posten dieser Renovierung
+    hängen (`quelle_dokument_id`) — nichts wird geraten. Verschoben werden nur
+    die, die noch woanders liegen; alles andere bleibt unberührt."""
+    r = session.get(Renovierung, rid)
+    if r is None:
+        raise HTTPException(404, "Renovierung nicht gefunden")
+    ordner = projektordner(r.name, r.von)
+    if not ordner:
+        raise HTTPException(400, "Die Renovierung hat keinen brauchbaren Namen.")
+    o = session.get(Objekt, r.objekt_id)
+    if o is None or not (o.nc_ordner or "").strip():
+        raise HTTPException(400, "Für diese Immobilie ist kein Cloud-Ordner "
+                                 "hinterlegt.")
+
+    ids = [p.quelle_dokument_id for p in session.exec(
+        select(Renovierungsposten).where(Renovierungsposten.renovierung_id == rid)
+    ).all() if p.quelle_dokument_id]
+    belege = [d for d in (session.get(Dokument, i) for i in dict.fromkeys(ids))
+              if d is not None and (d.pfad or "").startswith("/")]
+
+    sach = _zielordner(o, "Renovierung")
+    ablage = f"{sach}/{ordner}"
+    plan = [d for d in belege if _elternordner(d.pfad) != ablage.strip("/")]
+    if trocken:
+        return {"trocken": True, "ziel": ablage, "anzahl": len(plan),
+                "plan": [{"id": d.id, "name": d.dateiname, "von": d.pfad}
+                         for d in plan]}
+
+    client = verbindung(session)
+    verschoben: list[dict] = []
+    fehler: list[dict] = []
+    for d in plan:
+        try:
+            _ordner_sichern(client, sach, ablage)
+            _beleg_umziehen(session, client, d, ablage, d.dateiname)
+        except Exception as e:                                # noqa: BLE001
+            session.rollback()
+            log.warning("Renovierungsbeleg nicht einsortiert (%s): %s", d.pfad, e)
+            fehler.append({"id": d.id, "name": d.dateiname, "grund": str(e)})
+            continue
+        verschoben.append({"id": d.id, "ziel": d.pfad})
+    log.info("Renovierung %d: %d Belege einsortiert, %d Fehler",
+             rid, len(verschoben), len(fehler))
+    return {"ziel": ablage, "verschoben": verschoben, "fehler": fehler}
