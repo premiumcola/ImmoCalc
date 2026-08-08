@@ -131,6 +131,24 @@ def _abgleich_lauf() -> dict:
         sperre.release()
 
 
+def _pruefsummen_lauf() -> dict:
+    """N303 — ein Häppchen Prüfsummen nachrechnen. Teilt sich die Sperre mit
+    den anderen Läufen; prüft der Nutzer gerade selbst, tritt der Wächter
+    zurück und holt es im nächsten Takt nach."""
+    from .routers.dokumente import pruefsummen_nachtragen  # spät, wegen Zirkel
+
+    if not sperre.acquire(blocking=False):
+        return {"nachgetragen": 0}
+    try:
+        with Session(engine) as session:
+            return pruefsummen_nachtragen(session)
+    except Exception as fehler:                       # noqa: BLE001
+        log.info("Prüfsummen-Lauf übersprungen: %s", fehler)
+        return {"nachgetragen": 0}
+    finally:
+        sperre.release()
+
+
 def _immocalc_lauf() -> dict:
     """N30 — verwaiste `.immocalc`-Steckbriefe aufräumen: löscht der Nutzer ein
     PDF/Bild von Hand in der Cloud, bleibt die Sidecar als Waise liegen. Teilt
@@ -202,6 +220,17 @@ async def schleife() -> None:
                 _zustand["ocr_ergaenzt_gesamt"] = \
                     int(_zustand["ocr_ergaenzt_gesamt"]) + ergaenzt
                 log.info("Textschicht ergänzt: %d Beleg(e)", ergaenzt)
+            # N303: Prüfsummen für den Bestand nachrechnen — ein Häppchen je
+            # Takt. Nextcloud liefert die Prüfsumme nur für Dateien, die ein
+            # Client mit entsprechender Kopfzeile hochgeladen hat; ohne dieses
+            # Nachrechnen bliebe der grösste Teil der Ablage ohne Kennzeichen,
+            # und damit ohne Duplikatserkennung und ohne Auslese-Speicher.
+            # Kostet je Beleg einen Download, gehört deshalb in den RUHIGEN
+            # Takt und nicht in den zweiminütigen Abgleich.
+            summen = await asyncio.to_thread(_pruefsummen_lauf)
+            if summen.get("nachgetragen"):
+                log.info("Prüfsummen nachgetragen: %d (noch offen: %d)",
+                         summen["nachgetragen"], summen.get("noch_offen", 0))
             # N30: verwaiste `.immocalc`-Steckbriefe im selben Takt aufräumen.
             aufgeraeumt = await asyncio.to_thread(_immocalc_lauf)
             weg = int(aufgeraeumt.get("geloescht", 0))

@@ -5068,3 +5068,71 @@ def ohne_auslese(session: Session = Depends(get_session)) -> dict:
                       "groesse": d.groesse})
     offen.sort(key=lambda x: (x["objekt"], x["dateiname"]))
     return {"anzahl": len(offen), "belege": offen}
+
+
+# --------------------------------------------------------------------------
+# N303 — Prüfsummen für den Bestand nachrechnen.
+#
+# Der Abgleich übernimmt die Prüfsumme aus der Cloud (N290), aber Nextcloud
+# liefert sie nur für Dateien, die ein Client MIT Prüfsummen-Kopfzeile
+# hochgeladen hat. Gemessen: 47 von 692. Für die übrigen 93 % gäbe es damit
+# keine Duplikatserkennung und keinen Auslese-Zwischenspeicher.
+#
+# Also einmal selbst rechnen: Datei holen, SHA1 bilden, am Beleg festhalten.
+# Das kostet je Beleg einen Download, deshalb gedeckelt und wiederholbar —
+# der Wachdienst holt in seinem ruhigen Takt ein Häppchen nach, bis nichts
+# mehr offen ist. Rein lesend gegenüber der Cloud.
+# --------------------------------------------------------------------------
+
+def pruefsummen_nachtragen(session: Session, grenze: int = 40) -> dict:
+    """Rechnet für bis zu `grenze` Belege ohne Prüfsumme den SHA1 aus.
+
+    Ein Beleg, dessen Datei sich nicht holen lässt, wird übersprungen und
+    gezählt — nie wird geraten und nie etwas geschrieben, das nicht aus den
+    Bytes stammt."""
+    offen = [d for d in session.exec(select(Dokument)).all()
+             if not (d.sha1 or "").strip()
+             and (d.pfad or "").startswith("/")
+             and not _ist_grabstein(d.pfad)
+             and not _ist_sidecar(d.dateiname or "")]
+    gesamt_offen = len(offen)
+    if not offen:
+        return {"nachgetragen": 0, "uebersprungen": 0, "noch_offen": 0}
+    try:
+        client = verbindung(session)
+    except Exception as fehler:                            # noqa: BLE001
+        log.info("Prüfsummen nicht nachtragbar: %s", fehler)
+        return {"nachgetragen": 0, "uebersprungen": gesamt_offen,
+                "noch_offen": gesamt_offen}
+
+    nachgetragen = uebersprungen = 0
+    for d in offen[:max(1, grenze)]:
+        try:
+            rohdaten, _typ = client.hole(d.pfad)
+        except Exception as fehler:                        # noqa: BLE001
+            log.info("Prüfsumme für %s nicht gebildet: %s", d.pfad, fehler)
+            uebersprungen += 1
+            continue
+        d.sha1 = kicache.pruefsumme(rohdaten)
+        d.groesse = d.groesse or len(rohdaten)
+        session.add(d)
+        nachgetragen += 1
+    try:
+        session.commit()
+    except Exception as fehler:                            # noqa: BLE001
+        session.rollback()
+        log.warning("Prüfsummen nicht gespeichert: %s", fehler)
+        return {"nachgetragen": 0, "uebersprungen": gesamt_offen,
+                "noch_offen": gesamt_offen}
+    log.info("N303: %d Prüfsummen nachgetragen, %d übersprungen, %d offen",
+             nachgetragen, uebersprungen, gesamt_offen - nachgetragen)
+    return {"nachgetragen": nachgetragen, "uebersprungen": uebersprungen,
+            "noch_offen": gesamt_offen - nachgetragen}
+
+
+@router.post("/pruefsummen-nachtragen")
+def pruefsummen_nachtragen_endpunkt(
+        grenze: int = Query(40, ge=1, le=500),
+        session: Session = Depends(get_session)) -> dict:
+    """Rechnet Prüfsummen für den Bestand nach — gedeckelt und wiederholbar."""
+    return pruefsummen_nachtragen(session, grenze)
