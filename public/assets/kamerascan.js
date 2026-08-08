@@ -104,7 +104,11 @@ dialog.kscan-overlay::backdrop{background:transparent}
 .kscan-mitte>:last-child{margin-bottom:auto}
 .kscan-bildwrap{position:relative;max-width:100%;max-height:100%;line-height:0;
   touch-action:none;user-select:none;flex:none}
-.kscan-bild{display:block;max-width:100%;max-height:calc(100dvh - 356px);
+/* N281 — die Abzuege standen zu hoch: auf einem 844-px-iPhone blieb „Seite
+   entfernen" hinter der Streifenleiste haengen. Der Mittelteil scrollt zwar,
+   aber ein Knopf, den man erst suchen muss, ist so gut wie keiner. 36 px
+   weniger Bildhoehe kosten nichts — der Zuschnitt bleibt gross genug. */
+.kscan-bild{display:block;max-width:100%;max-height:calc(100dvh - 392px);
   width:auto;height:auto;border-radius:10px;background:#000}
 .kscan-umriss{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 /* Alles ausserhalb des Vierecks abdunkeln — die Kanten treten hervor, das
@@ -136,8 +140,15 @@ dialog.kscan-overlay::backdrop{background:transparent}
   padding:30px 20px;line-height:1.6}
 .kscan-fuss{flex:none;padding:10px 12px;padding-bottom:max(12px,env(safe-area-inset-bottom));
   background:rgba(0,0,0,.28)}
+/* N281 — das „+" steht NEBEN der Streifenleiste, nicht darin. Vorher war es
+   das letzte Kind des scrollenden Streifens: ab der fuenften, sechsten Seite
+   rutschte es aus dem Bild, und man musste nach jeder Aufnahme erst nach
+   rechts wischen, um die naechste anzufangen. Jetzt scrollen nur die
+   Vorschaubilder, der Knopf bleibt stehen — egal ob drei oder dreissig
+   Seiten. */
+.kscan-thumbzeile{display:flex;align-items:flex-start;gap:8px}
 .kscan-thumbs{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;
-  scrollbar-width:none}
+  scrollbar-width:none;flex:1;min-width:0;scroll-behavior:smooth}
 .kscan-thumbs::-webkit-scrollbar{display:none}
 .kscan-thumb{position:relative;flex:none;width:52px;height:70px;border-radius:9px;
   overflow:hidden;border:2px solid transparent;background:#222;cursor:pointer;padding:0}
@@ -146,8 +157,14 @@ dialog.kscan-overlay::backdrop{background:transparent}
 .kscan-thumb.kscan-thumbwarn::before{content:'!';position:absolute;top:2px;left:3px;
   width:15px;height:15px;border-radius:50%;background:var(--amber,#916212);color:#fff;
   font:700 10px var(--mono,monospace);display:flex;align-items:center;justify-content:center}
-.kscan-plus{flex:none;width:52px;height:70px;border-radius:9px;border:2px dashed rgba(255,255,255,.4);
-  background:none;color:#fff;font:400 22px var(--body,sans-serif);cursor:pointer}
+.kscan-plus{flex:none;width:52px;height:70px;border-radius:9px;
+  border:2px dashed rgba(255,255,255,.45);background:rgba(255,255,255,.06);
+  color:#fff;font:400 22px var(--body,sans-serif);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:1px;margin-top:2px}
+.kscan-plus:hover{background:rgba(255,255,255,.14)}
+.kscan-plus small{font:600 8.5px var(--mono,monospace);letter-spacing:.04em;
+  opacity:.8}
 .kscan-werkzeuge{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
 .kscan-reset,.kscan-entfernen{background:none;border:none;color:rgba(255,255,255,.65);
   font:500 11.5px var(--mono,monospace);text-decoration:underline;cursor:pointer;
@@ -169,7 +186,7 @@ dialog.kscan-overlay::backdrop{background:transparent}
 .kscan-primaer[disabled]{opacity:.5;cursor:default}
 @media (min-width:900px){
   .kscan-mitte{padding:14px 20px}
-  .kscan-bild{max-height:calc(100dvh - 372px)}
+  .kscan-bild{max-height:calc(100dvh - 400px)}
 }
 `;
   document.head.appendChild(stil);
@@ -891,7 +908,11 @@ export function kamerascanStarten(dateien, optionen = {}) {
       </div>
       <div class="kscan-mitte" data-kscan="mitte"></div>
       <div class="kscan-fuss">
-        <div class="kscan-thumbs" data-kscan="thumbs"></div>
+        <div class="kscan-thumbzeile">
+          <div class="kscan-thumbs" data-kscan="thumbs"></div>
+          <button class="kscan-plus" data-kscan="plus" type="button"
+                  aria-label="Weitere Seite aufnehmen">+<small>SEITE</small></button>
+        </div>
         <div class="kscan-aktionen">
           <button class="kscan-ab" data-kscan="abbrechen">Abbrechen</button>
           <button class="kscan-primaer" data-kscan="primaer" disabled>Seiten übernehmen</button>
@@ -918,6 +939,9 @@ export function kamerascanStarten(dateien, optionen = {}) {
     dateiEingabe.multiple = true;
     dateiEingabe.hidden = true;
     overlay.appendChild(dateiEingabe);
+    // N281 — einmal verdrahtet statt bei jedem Neuzeichnen des Streifens.
+    overlay.querySelector('[data-kscan="plus"]')
+           .addEventListener('click', () => dateiEingabe.click());
 
     function aufraeumen() {
       document.body.style.overflow = vormalsUeberlauf;
@@ -1011,12 +1035,14 @@ export function kamerascanStarten(dateien, optionen = {}) {
         knopf.addEventListener('click', () => { aktiv = i; zeichneAktuelleSeite(); thumbsZeichnen(); });
         thumbs.appendChild(knopf);
       });
-      const plus = document.createElement('button');
-      plus.className = 'kscan-plus';
-      plus.setAttribute('aria-label', 'Weitere Seite fotografieren');
-      plus.textContent = '+';
-      plus.addEventListener('click', () => dateiEingabe.click());
-      thumbs.appendChild(plus);
+      // N281 — das „+" steht fest neben dem Streifen (siehe Markup oben) und
+      // wird nicht mehr mitgezeichnet. Stattdessen wandert der Streifen zur
+      // gerade gewaehlten Seite: nach einer neuen Aufnahme ist das die letzte,
+      // die sonst ausserhalb des Bildes laege.
+      const aktivEl = thumbs.children[aktiv];
+      if (aktivEl) {
+        aktivEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
       primaer.disabled = !seiten.length;
       primaer.textContent = seiten.length
         ? `${seiten.length} Seite${seiten.length > 1 ? 'n' : ''} als PDF übernehmen` : 'Seiten übernehmen';
