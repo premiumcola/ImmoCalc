@@ -147,13 +147,14 @@ function zeile(t) {
          title="Herkunft ansehen" aria-label="Herkunft ansehen">i</button>` : '';
   // N264 — je Drucker ein Knopf, rechts oben in der Titelzeile. Nur an
   // gefuellten Zeilen: eine Vorlage, die es nicht gibt, kann man nicht drucken.
+  // N275 — beschriftet wird mit dem Standort aus den Einstellungen.
   const druckKnoepfe = (v && drucker.length)
     ? `<span class="vk-druck">${drucker.map(d => `
         <button type="button" class="vk-dr" data-drucken="${v.id}"
           data-drucker="${esc(d.name)}"
-          title="Auf ${esc(d.ort || d.name)} drucken (s/w, einseitig)"
-          aria-label="Auf ${esc(d.ort || d.name)} drucken">
-          ${DRUCKER_ICON}<span class="vk-dr-t">${esc(d.ort || d.name)}</span>
+          title="An ${esc(d.standort || d.name)} schicken"
+          aria-label="An ${esc(d.standort || d.name)} schicken">
+          ${DRUCKER_ICON}<span class="vk-dr-t">${esc(d.standort || d.name)}</span>
         </button>`).join('')}</span>`
     : '';
   const kopf = `<div class="vk-kopf">

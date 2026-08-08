@@ -18,21 +18,24 @@ zum Ausdrucken taugt eine abfotografierte Seite nicht.
 * `GET    /api/dokumentvorlagen/{id}/inhalt`  — die Datei zur Ansicht
 * `DELETE /api/dokumentvorlagen/{id}`         — nur den Datenbankeintrag
 """
+import json
 import logging
 import os
 from datetime import date
 
 from fastapi import (APIRouter, Depends, File, HTTPException, Query,
                      Response, UploadFile)
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from .. import drucker as druckdienst
 from .. import ocr
-from ..cloudkern import verbindung
+from ..cloudkern import _lies, verbindung
 from ..db import get_session
 from ..dokumente.namen import _dateiname_kopfzeile, _endung, _saubere_datei
 from ..models import Dokumentvorlage
 from ..nextcloud import NextcloudFehler
+from .cloud import _schreib
 
 log = logging.getLogger("immocalc")
 drucker_router = APIRouter(prefix="/api/drucker", tags=["drucker"])
@@ -279,48 +282,138 @@ def vorschau(vorlage_id: int, seite: int = Query(0, ge=0),
 
 
 # --------------------------------------------------------------------------
-# N264 — Vorlage direkt auf einen Drucker im Haus
+# N264/N275 — Vorlage direkt auf einen Drucker im Haus
 #
 # Eine Vorlage ist ein leeres Formular; man will sie in der Hand haben, nicht
 # auf dem Schirm. Deshalb je Drucker ein Knopf statt Herunterladen-Öffnen-
-# Drucken. Gedruckt wird schwarz-weiss und einseitig: es sind Formulare zum
-# Ausfüllen, Farbe kostet nur Toner.
+# Drucken.
 #
-# Die Adresse des Druckdienstes kommt aus der Umgebung — sie gehört zur
-# Installation, nicht in den Code. Ohne sie bleibt die Liste leer und die
-# Oberfläche zeigt gar keine Druckknöpfe, statt welche anzubieten, die nicht
-# funktionieren.
+# N275 — der Nutzer pflegt seine Drucker mit IP und Port selbst in den
+# Einstellungen; geschickt wird direkt dorthin (Port 9100). Der Weg über einen
+# CUPS-Dienst bleibt als Rückfall, solange kein Drucker eingetragen ist.
+# Ist beides nicht da, bleibt die Liste leer — die Oberfläche zeigt dann gar
+# keine Druckknöpfe, statt welche anzubieten, die ins Leere laufen.
+#
+# Gespeichert wird als JSON in EINER Einstellungszeile, wie schon bei den
+# Unterordner-Vorlagen: ein Schlüssel je Drucker und Feld wäre ein Dutzend
+# Zeilen für eine Liste. Keine neue Tabelle.
 # --------------------------------------------------------------------------
+
+S_DRUCKER = "drucker_liste"
+
+
+class DruckerIn(BaseModel):
+    name: str
+    ip: str
+    port: int = druckdienst.RAW_PORT
+    standort: str = ""
+
 
 def _druckdienst() -> str:
     return os.environ.get("DRUCKDIENST", "").strip()
 
 
+def _konfiguriert(session: Session) -> list[dict]:
+    """Die eingetragenen Drucker. Unlesbar Gespeichertes wird gemeldet und
+    übergangen, nie zum Fehler — eine kaputte Zeile darf keine Seite kippen."""
+    roh = _lies(session, S_DRUCKER)
+    if not roh:
+        return []
+    try:
+        geladen = json.loads(roh)
+    except ValueError as fehler:
+        log.warning("Druckerliste unlesbar: %s", fehler)
+        return []
+    if not isinstance(geladen, list):
+        return []
+    return [d for d in geladen if isinstance(d, dict) and d.get("name")]
+
+
+def _drucker_mit_namen(session: Session, name: str) -> dict:
+    for d in _konfiguriert(session):
+        if d.get("name") == name:
+            return d
+    raise HTTPException(404, f"Kein Drucker namens {name} eingetragen")
+
+
 @drucker_router.get("")
-def drucker_liste() -> dict:
-    """Die Drucker des Hauses: `[{name, ort}]`. Leer, wenn kein Druckdienst
-    eingerichtet oder erreichbar ist — dann blendet die Oberfläche die Knöpfe
-    einfach aus."""
+def drucker_liste(session: Session = Depends(get_session)) -> dict:
+    """Die Drucker des Hauses: `[{name, ip, port, standort}]`.
+
+    Zuerst die eingetragenen; nur wenn gar keiner gepflegt ist, kommen die
+    Warteschlangen eines CUPS-Dienstes (ohne IP — dort geht es über den
+    Dienst). Leer heisst: keine Druckknöpfe.
+
+    `quelle` sagt, welcher der beiden Fälle vorliegt: die Einstellungsseite
+    darf nur eigene Einträge zum Bearbeiten anbieten — eine CUPS-Warteschlange
+    gehört ihr nicht."""
+    eigene = _konfiguriert(session)
+    if eigene:
+        return {"drucker": eigene, "dienst": "", "quelle": "eigene"}
     dienst = _druckdienst()
     if not dienst:
-        return {"drucker": [], "dienst": ""}
-    return {"drucker": druckdienst.drucker_liste(dienst), "dienst": dienst}
+        return {"drucker": [], "dienst": "", "quelle": "eigene"}
+    return {"drucker": [{"name": d["name"], "ip": "", "port": 0,
+                         "standort": d.get("ort", "")}
+                        for d in druckdienst.drucker_liste(dienst)],
+            "dienst": dienst, "quelle": "cups"}
+
+
+@drucker_router.put("")
+def drucker_speichern(liste: list[DruckerIn],
+                      session: Session = Depends(get_session)) -> dict:
+    """Die ganze Liste auf einmal — Anlegen, Ändern und Entfernen sind
+    derselbe Vorgang. Geprüft wird VOR dem Speichern: eine Adresse, aus der
+    keine TCP-Verbindung werden kann, kommt gar nicht erst in die Ablage."""
+    sauber: list[dict] = []
+    for d in liste:
+        name = (d.name or "").replace("/", " ").strip()
+        if not name:
+            raise HTTPException(400, "Jeder Drucker braucht einen Namen")
+        grund = druckdienst.pruefe_ziel(d.ip, d.port)
+        if grund:
+            raise HTTPException(400, f"{name}: {grund}")
+        sauber.append({"name": name, "ip": d.ip.strip(), "port": int(d.port),
+                       "standort": (d.standort or "").strip()})
+    _schreib(session, S_DRUCKER, json.dumps(sauber, ensure_ascii=False))
+    session.commit()
+    log.info("Druckerliste gespeichert: %d Gerät(e)", len(sauber))
+    return {"drucker": sauber}
+
+
+@drucker_router.post("/{name}/pruefen")
+def drucker_pruefen(name: str, session: Session = Depends(get_session)) -> dict:
+    """Nur ein TCP-Handschlag auf IP:Port — es wird nichts gedruckt.
+    Papier und Toner gehören dem Nutzer."""
+    d = _drucker_mit_namen(session, name)
+    return {"erreichbar": druckdienst.erreichbar(d.get("ip", ""),
+                                                 int(d.get("port") or 0))}
 
 
 @router.post("/{vorlage_id}/drucken")
 def vorlage_drucken(vorlage_id: int, drucker: str,
                     session: Session = Depends(get_session)) -> dict:
     """Schickt die Vorlage an einen Drucker. Rein lesend, was die Ablage
-    angeht — die Datei wird geholt und weitergereicht, nichts verändert."""
-    dienst = _druckdienst()
-    if not dienst:
-        raise HTTPException(503, "Es ist kein Druckdienst eingerichtet")
+    angeht — die Datei wird geholt und weitergereicht, nichts verändert.
+
+    N275 — ist der Drucker eingetragen, gehen die Bytes direkt an IP:Port.
+    Die Meldung sagt bewusst „geschickt", nicht „gedruckt": über Port 9100
+    gibt es keine Rückmeldung, ob das Gerät ein PDF versteht."""
+    eigene = _konfiguriert(session)
+    if not eigene and not _druckdienst():
+        raise HTTPException(503, "Es ist kein Drucker eingerichtet")
     v, rohdaten, _typ = _vorlage_bytes(session, vorlage_id)
-    geklappt, meldung = druckdienst.drucken(
-        dienst, drucker, rohdaten, titel=v.name or v.dateiname)
+    titel = v.name or v.dateiname
+    if eigene:
+        ziel = _drucker_mit_namen(session, drucker)
+        geklappt, meldung = druckdienst.roh_drucken(
+            ziel.get("ip", ""), int(ziel.get("port") or 0), rohdaten, titel)
+    else:
+        geklappt, meldung = druckdienst.drucken(
+            _druckdienst(), drucker, rohdaten, titel=titel)
     if not geklappt:
         raise HTTPException(502, meldung)
-    log.info("Vorlage %s gedruckt auf %s", vorlage_id, drucker)
+    log.info("Vorlage %s an %s geschickt", vorlage_id, drucker)
     return {"ok": True, "meldung": meldung, "drucker": drucker}
 
 

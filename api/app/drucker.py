@@ -1,4 +1,22 @@
-"""N264 — Drucken über CUPS, ohne zusätzliche Abhängigkeit.
+"""N264/N275 — Drucken: direkt an den Drucker (Port 9100), CUPS als Rückfall.
+
+N275 — der Weg über CUPS (IPP, Port 631) legt die Aufträge sauber in die
+Warteschlange und bringt sie **nicht** zu den Geräten; selbst die Testseite von
+CUPS bleibt hängen. Bewiesen funktioniert dagegen der direkte Weg: rohe Bytes
+auf **Port 9100** (RAW/JetDirect) kamen als Ausdruck heraus. Deshalb pflegt der
+Nutzer seine Drucker jetzt in den Einstellungen mit IP und Port, und wir
+sprechen sie unmittelbar an — ohne Zwischenstation.
+
+**Ehrlich bleiben:** über Port 9100 nimmt der Drucker die Bytes so, wie sie
+kommen — es gibt keine Rückmeldung, ob er sie versteht. Ob ein PDF direkt
+gedruckt wird, hängt allein am Gerät („PDF Direct Print"): der Konica kann das
+sehr wahrscheinlich, ein kleiner HP LaserJet (nur PCL/hostbasiert) vermutlich
+nicht — dann kommt entweder nichts oder eine Seite Zeichensalat. Konvertiert
+wird hier bewusst nichts (das hiesse eine Bibliothek ins Image holen). Die
+Meldung sagt deshalb „an den Drucker geschickt" und nie „gedruckt".
+
+Der CUPS-Teil unten bleibt als Rückfall stehen, solange kein Drucker
+konfiguriert ist.
 
 IPP ist ein Binärformat über HTTP. Statt `cups-client` ins Image zu holen
 (neues Systempaket, neuer Deploy-Grund) werden die beiden gebrauchten
@@ -25,6 +43,7 @@ from __future__ import annotations
 
 import logging
 import re
+import socket
 import struct
 
 try:                                              # pragma: no cover
@@ -35,6 +54,77 @@ except Exception:                                 # pragma: no cover
 log = logging.getLogger("immocalc")
 
 ZEITLIMIT = 20.0
+
+# --------------------------------------------------------------------------
+# N275 — der direkte Weg: rohe Bytes auf Port 9100
+# --------------------------------------------------------------------------
+
+RAW_PORT = 9100                                   # RAW/JetDirect, die Vorgabe
+ZEITLIMIT_TCP = 4.0                               # kurz: der Drucker steht im
+                                                  # eigenen Netz oder gar nicht
+
+# Die Adresse kommt aus den Einstellungen und wandert in eine TCP-Verbindung.
+# Erlaubt ist nur, was eine IPv4 oder ein Hostname sein kann — kein Pfad, kein
+# Semikolon, kein Leerzeichen. So kann aus der Eingabe nichts anderes werden.
+_ADRESSE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.\-]{0,60}[A-Za-z0-9])?$")
+
+
+def pruefe_ziel(ip: str, port: int) -> str:
+    """Prüft Adresse und Port. Leerer String heisst „in Ordnung", sonst der
+    Klartext-Grund — der Aufrufer reicht ihn unverändert an die Oberfläche."""
+    if not _ADRESSE.match((ip or "").strip()):
+        return "Keine gültige IP-Adresse"
+    try:
+        nummer = int(port)
+    except (TypeError, ValueError):
+        return "Kein gültiger Port"
+    if not 1 <= nummer <= 65535:
+        return "Port muss zwischen 1 und 65535 liegen"
+    return ""
+
+
+def erreichbar(ip: str, port: int = RAW_PORT) -> bool:
+    """Nur ein TCP-Handschlag: Verbindung auf, Verbindung zu. Druckt nichts —
+    Papier und Toner gehören dem Nutzer."""
+    if pruefe_ziel(ip, port):
+        return False
+    try:
+        with socket.create_connection((ip.strip(), int(port)), ZEITLIMIT_TCP):
+            return True
+    except OSError as fehler:                     # noqa: BLE001
+        log.info("Drucker %s:%s nicht erreichbar (%s)", ip, port,
+                 type(fehler).__name__)
+        return False
+
+
+def roh_drucken(ip: str, port: int, daten: bytes,
+                titel: str = "ImmoCalc") -> tuple[bool, str]:
+    """Schiebt die Bytes unverändert auf Port 9100. `(geklappt, Meldung)`.
+
+    Jeder Fehler ergibt `(False, Klartext)` statt einer Ausnahme — Drucken ist
+    Beiwerk und darf nie eine Seite mitreissen. `True` heisst ausschliesslich:
+    die Daten sind beim Gerät angekommen. Ob es sie versteht, sagt uns niemand
+    (siehe Modul-Kopf)."""
+    grund = pruefe_ziel(ip, port)
+    if grund:
+        return False, grund
+    if not daten:
+        return False, "Nichts zu drucken"
+    try:
+        with socket.create_connection((ip.strip(), int(port)),
+                                      ZEITLIMIT_TCP) as verbindung:
+            verbindung.settimeout(ZEITLIMIT)
+            verbindung.sendall(daten)
+    except OSError as fehler:                     # noqa: BLE001
+        log.info("Druckdaten für %s:%s nicht losgeworden: %s", ip, port,
+                 type(fehler).__name__)
+        return False, f"Der Drucker unter {ip}:{port} antwortet nicht"
+    log.info("%d Byte an %s:%s geschickt (%s)", len(daten), ip, port, titel)
+    return True, "An den Drucker geschickt"
+
+# --------------------------------------------------------------------------
+# N264 — CUPS/IPP: der Rückfall, solange kein Drucker konfiguriert ist
+# --------------------------------------------------------------------------
 
 # IPP-Kennungen, nur die hier gebrauchten.
 _OP_DRUCKEN = 0x0002                              # Print-Job

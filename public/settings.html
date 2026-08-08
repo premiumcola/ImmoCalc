@@ -110,6 +110,40 @@
               color:var(--teal-d);word-break:break-all;line-height:1.5}
   .uovorschau.flach{color:var(--soft)}
 
+  /* N275 — Drucker: je Gerät eine Karte. Name und Adresse stehen über den
+     Knöpfen statt daneben — auf 390 px blieben sonst neben drei Touch-Zielen
+     nur Wortfetzen übrig. Der Punkt links zeigt das Ergebnis der letzten
+     Erreichbarkeitsprüfung, sonst bleibt er neutral. */
+  .drk{background:var(--sheet);border-radius:12px;padding:12px 13px;
+       margin-bottom:8px}
+  .drk-kopf{display:flex;align-items:center;gap:9px}
+  .drk-punkt{flex:none;width:9px;height:9px;border-radius:50%;background:#CFD8D8}
+  .drk-punkt.gut{background:var(--pos)}
+  .drk-punkt.schlecht{background:var(--neg)}
+  .drk-n{flex:1;min-width:0;font:600 13.5px var(--disp);letter-spacing:-.01em;
+         overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* display:block, sonst greift der Abstand am inline-Element nicht */
+  /* break-word statt break-all: sonst reisst der Umbruch mitten durch die
+     IP-Adresse („· 1 / 92.168.178.14"). */
+  .drk-o{display:block;margin:5px 0 10px 18px;font:500 11.5px var(--mono);
+         color:var(--soft);line-height:1.5;overflow-wrap:break-word}
+  .drk-akt{display:flex;gap:7px}
+  .drk-pruef{flex:1;min-width:0;min-height:44px;border:none;border-radius:11px;
+             background:#F1F4F4;color:var(--soft);cursor:pointer;
+             font:600 12px var(--body);padding:0 10px}
+  .drk-pruef:hover{background:#E4EAEA;color:var(--ink)}
+  .drk-pruef.gut{background:var(--pos-bg);color:var(--pos)}
+  .drk-pruef.schlecht{background:var(--neg-bg);color:var(--neg)}
+  .drk-pruef:disabled{opacity:.6;cursor:default}
+  .drk-b{flex:none;width:44px;height:44px;border:none;border-radius:11px;
+         background:#F1F4F4;color:var(--soft);cursor:pointer;
+         font:400 17px var(--body);line-height:1;
+         display:flex;align-items:center;justify-content:center}
+  .drk-b:hover{background:#E4EAEA;color:var(--ink)}
+  /* Der Port ist dreistellig bis fünfstellig — er braucht keine halbe Zeile. */
+  #druckerFormDlg .zeile2 .feld-port{flex:0 0 96px}
+  #druckerDlg .dbody{max-height:min(76dvh,760px);overflow:auto}
+
   /* KI-Auslese: rote Statuskachel für „eingerichtet, aber nicht erreichbar".
      .aktiv (grün) und .warte (gelb) kommen aus immo.css; für Rot fehlt dort
      eine Variante — sie steht deshalb hier. */
@@ -313,6 +347,16 @@
       <span class="txt">
         <span class="t">Postfach für Abrechnungen</span>
         <span class="d" id="mailStatus">wird geprüft …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+
+    <h2 class="sec">Drucker</h2>
+    <button class="row" id="druckerRow">
+      <span class="ic" id="druckerIkon">⎙</span>
+      <span class="txt">
+        <span class="t">Drucker im Haus</span>
+        <span class="d" id="druckerStatus">wird geladen …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -717,6 +761,59 @@
   </div>
 </dialog>
 
+<dialog id="druckerDlg">
+  <div class="dh">
+    <h2>Drucker im Haus</h2>
+    <button class="close" id="druckerNeu" title="Drucker hinzufügen"
+            aria-label="Drucker hinzufügen">＋</button>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <div class="meldung" id="druckerMeldung"></div>
+    <div id="druckerListe"></div>
+  </div>
+</dialog>
+
+<dialog id="druckerFormDlg">
+  <div class="dh">
+    <h2 id="druckerFormTitel">Drucker anlegen</h2>
+    <button class="close" data-schliessen aria-label="Schließen">×</button>
+  </div>
+  <div class="dbody">
+    <p class="hinweis">
+      IP und Port stehen im Netzwerkmenü des Geräts. Gedruckt wird direkt
+      dorthin (Port <b>9100</b>) — ob dein Gerät ein PDF unverändert annimmt,
+      hängt am Modell.
+    </p>
+    <div class="meldung" id="druckerFormMeldung"></div>
+    <form id="druckerForm">
+      <div class="field">
+        <label for="drkName">Name</label>
+        <input class="inp" id="drkName" maxlength="60" required
+               placeholder="Konica C200" autocomplete="off">
+      </div>
+      <div class="zeile2">
+        <div class="field">
+          <label for="drkIp">IP-Adresse</label>
+          <input class="inp" id="drkIp" maxlength="60" required
+                 placeholder="192.168.178.20" autocomplete="off">
+        </div>
+        <div class="field feld-port">
+          <label for="drkPort">Port</label>
+          <input class="inp" id="drkPort" type="number" min="1" max="65535"
+                 value="9100" autocomplete="off">
+        </div>
+      </div>
+      <div class="field">
+        <label for="drkOrt">Standort</label>
+        <input class="inp" id="drkOrt" maxlength="60" placeholder="Büro EG"
+               autocomplete="off">
+      </div>
+      <button class="btn" type="submit" id="drkSpeichern">Übernehmen</button>
+    </form>
+  </div>
+</dialog>
+
 <script type="module">
 /* N216 (C) — die frühere Inline-Fachlogik liegt jetzt als Module unter
    ./assets/settings/. Verhaltensgleich; hier bleibt die Verdrahtung:
@@ -731,6 +828,7 @@ import { vorlageInit, vorlageLaden } from './assets/settings/vorlage.js';
 import { unterordnerInit, unterordnerLaden } from './assets/settings/unterordner.js';
 import { umzugInit, umzugLaden } from './assets/settings/umzug.js';
 import { einsortierenInit, einsortierenLaden } from './assets/settings/einsortieren.js';
+import { druckerInit, druckerLaden } from './assets/settings/drucker.js';
 import { importInit } from './assets/settings/import.js';
 import { rechenlogikInit } from './assets/settings/rechenlogik.js';
 
@@ -743,6 +841,7 @@ vorlageInit();
 unterordnerInit();
 umzugInit();
 einsortierenInit();
+druckerInit();
 importInit();
 rechenlogikInit();
 
@@ -781,6 +880,7 @@ await vorlageLaden();
 await unterordnerLaden();
 await umzugLaden();
 await einsortierenLaden();
+await druckerLaden();
 </script>
 </body>
 </html>

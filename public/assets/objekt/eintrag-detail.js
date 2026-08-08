@@ -195,8 +195,8 @@ export async function eintragDetail(bereich, id, laden) {
                title="Leere Vorlage ansehen/herunterladen">Vorlage</button>` : ''}
              ${vorlage ? drucker.map(dr => `<button class="dd-vdruck"
                data-vorlage-drucken="${vorlage.id}" data-drucker="${esc(dr.name)}"
-               title="Vorlage auf ${esc(dr.ort || dr.name)} drucken (s/w, einseitig)"
-               aria-label="Vorlage auf ${esc(dr.ort || dr.name)} drucken"
+               title="Vorlage an ${esc(dr.standort || dr.name)} schicken"
+               aria-label="Vorlage an ${esc(dr.standort || dr.name)} schicken"
                >${DRUCKER_ICON}</button>`).join('') : ''}
              <button class="dd-cadd" data-scan data-wort="${esc(voll)}"
                aria-label="${esc(kurz)} aufnehmen">${KAMERA_ICON}<span>aufnehmen</span></button>
