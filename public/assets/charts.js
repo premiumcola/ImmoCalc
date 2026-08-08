@@ -449,3 +449,234 @@ export function legende(eintraege) {
 
 const leer = text =>
   `<div class="chartleer">${text}</div>`;
+
+const euroKurz = v => `${Math.round(v).toLocaleString('de-DE')} €`;
+
+/** Schriftgroesse, die einen Text in eine gegebene Breite quetscht — gleiches
+ *  Prinzip wie die Spaltenrechnung in `balken()`, nur umgekehrt: dort steht
+ *  die Breite fest und der Text wird gekuerzt, hier steht der Text fest
+ *  (eine Summe soll nicht abgeschnitten werden) und die Schrift schrumpft. */
+const passendeSchrift = (text, verfuegbar, { max = 22, min = 9, breiteJeZeichen = 0.58 } = {}) =>
+  !text ? 0 : Math.max(min, Math.min(max, verfuegbar / (text.length * breiteJeZeichen)));
+
+/** Donut/Ring — z. B. Kostenanteile je Gewerk.
+ *
+ *  Ring aus stroke-dasharray auf konzentrischen <circle>-Elementen statt aus
+ *  <path>-Kreisboegen: bei einem einzigen Segment (Anteil 100 %) haben Start-
+ *  und Endpunkt eines Bogens denselben Punkt, der Bogen hat also keine
+ *  wohldefinierte Richtung mehr und kollabiert je nach Renderer zu einem
+ *  0°-Schlitz — der klassische Arc-Fehler. Ein Kreis, dessen Dash-Laenge dem
+ *  Umfang entspricht, hat dieses Problem nicht: er malt immer einmal
+ *  komplett herum, unabhaengig vom Anteil.
+ *
+ *  `teile`: [{ name, wert, farbe? }], bereits absteigend sortiert erwartet
+ *  (bestimmt nur die Zeichenreihenfolge/Farbzuordnung, nicht die Berechnung). */
+export function donut(teile, { groesse = 220, dicke = 34, mitte = '',
+                               mitteSub = '', format = euroKurz } = {}) {
+  const eintraege = (teile || []).filter(t => t.wert > 0);
+  if (!eintraege.length) return leer('Keine Werte für diesen Zeitraum');
+
+  const gesamt = eintraege.reduce((s, t) => s + t.wert, 0);
+  const mittelpunkt = groesse / 2;
+  const radius = (groesse - dicke) / 2;
+  const umfang = 2 * Math.PI * radius;
+
+  let bisher = 0;
+  const ring = eintraege.map((t, i) => {
+    const laenge = (t.wert / gesamt) * umfang;
+    // Luecke nie exakt 0 — sonst rundet mancher Renderer den Dash/Gap-
+    // Uebergang am Segmentende sichtbar an (feiner Spalt im Ring).
+    const luecke = Math.max(umfang - laenge, 0.001);
+    const versatz = -bisher;
+    bisher += laenge;
+    return `<circle cx="${mittelpunkt}" cy="${mittelpunkt}" r="${runden(radius)}"
+              fill="none" stroke="${t.farbe || farbe(i)}" stroke-width="${dicke}"
+              stroke-dasharray="${runden(laenge)} ${runden(luecke)}"
+              stroke-dashoffset="${runden(versatz)}"
+              ><title>${t.name}: ${format(t.wert)}</title></circle>`;
+  }).join('');
+
+  // Lochdurchmesser = groesse - 2×dicke. Beide Mitte-Zeilen muessen mit Luft
+  // zum Ring hineinpassen — die Schrift schrumpft dafuer statt zu ueberlaufen.
+  const lochDurchmesser = groesse - dicke * 2;
+  const verfuegbar = Math.max(0, lochDurchmesser * 0.82);
+  const schriftMitte = passendeSchrift(mitte, verfuegbar, { max: 22, min: 10, breiteJeZeichen: 0.6 });
+  const schriftSub = passendeSchrift(mitteSub, verfuegbar, { max: 12, min: 8, breiteJeZeichen: 0.56 });
+
+  let mitteHtml = '';
+  if (mitte && mitteSub) {
+    mitteHtml = `
+      <text x="${mittelpunkt}" y="${mittelpunkt - schriftMitte * 0.32}" class="dm"
+            style="font-size:${runden(schriftMitte)}px">${mitte}</text>
+      <text x="${mittelpunkt}" y="${mittelpunkt + schriftSub + 2}" class="ds"
+            style="font-size:${runden(schriftSub)}px">${mitteSub}</text>`;
+  } else if (mitte) {
+    mitteHtml = `<text x="${mittelpunkt}" y="${mittelpunkt}" class="dm"
+                   style="font-size:${runden(schriftMitte)}px">${mitte}</text>`;
+  } else if (mitteSub) {
+    mitteHtml = `<text x="${mittelpunkt}" y="${mittelpunkt}" class="ds"
+                   style="font-size:${runden(schriftSub)}px">${mitteSub}</text>`;
+  }
+
+  // Der Ring bekommt eine Hoechstbreite. Die uebrigen Diagramme duerfen mit
+  // der Spalte wachsen — bei einem Balken bringt Breite Ablesbarkeit. Ein
+  // Donut gewinnt dadurch nichts: auf dem iPad fuellte er sonst 560 px Hoehe
+  // fuer eine einzige Zahl in der Mitte.
+  return `<svg viewBox="0 0 ${groesse} ${groesse}" class="chart chart-donut"
+      role="img" style="max-width:${groesse}px;display:block;margin:0 auto">
+      <style>
+        .dm{font:700 16px var(--disp);fill:var(--ink);text-anchor:middle;dominant-baseline:middle}
+        .ds{font:500 11px var(--body);fill:var(--soft);text-anchor:middle;dominant-baseline:middle}
+      </style>
+      <g transform="rotate(-90 ${mittelpunkt} ${mittelpunkt})">${ring}</g>
+      ${mitteHtml}
+    </svg>`;
+}
+
+const MONATSKURZ = ['Jan', 'Feb', 'Mrz', 'Apr', 'Mai', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const pad2 = n => String(n).padStart(2, '0');
+const datumMs = s => { const [j, m, t] = s.split('-').map(Number); return Date.UTC(j, m - 1, t); };
+const datumVoll = ms => { const d = new Date(ms);
+  return `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`; };
+
+/** Zeitstrahl — Rechnungen einer Renovierung ueber die Zeit, Punktflaeche
+ *  proportional zum Betrag. Bewusst Flaeche statt Radius: waechst der Radius
+ *  linear mit dem Betrag, wirkt ein doppelt so teurer Posten viermal so
+ *  gross (Flaeche waechst quadratisch mit dem Radius) — optisch eine Luege
+ *  ueber die Groessenordnung. Bei Flaechen-Proportionalitaet stimmt der
+ *  visuelle Eindruck mit dem Zahlenverhaeltnis ueberein.
+ *
+ *  `punkte`: [{ datum: 'YYYY-MM-DD', wert, name, firma }, …]
+ *  `von`/`bis`: 'YYYY-MM-DD', Zeitraum der Renovierung — fehlen sie, wird er
+ *  aus den Punkten abgeleitet. */
+export function zeitstrahl(punkte, { breite = 380, hoehe = 190,
+                                     von = '', bis = '' } = {}) {
+  const eintraege = (punkte || []).filter(p => p.datum && p.wert > 0);
+  if (!eintraege.length) return leer('Keine Rechnungen für diesen Zeitraum');
+
+  const zeiten = eintraege.map(p => datumMs(p.datum));
+  const vonMs = von ? datumMs(von) : Math.min(...zeiten);
+  const bisMs = bis ? datumMs(bis) : Math.max(...zeiten);
+  const spanne = Math.max(0, bisMs - vonMs);
+
+  const minR = 4, maxR = 13;
+  const werte = eintraege.map(p => p.wert);
+  const wertMin = Math.min(...werte), wertMax = Math.max(...werte);
+  const flaeche = v => wertMax === wertMin ? (Math.PI * minR * minR + Math.PI * maxR * maxR) / 2
+    : Math.PI * minR * minR + (v - wertMin) / (wertMax - wertMin)
+      * (Math.PI * maxR * maxR - Math.PI * minR * minR);
+  const radiusVon = v => Math.sqrt(flaeche(v) / Math.PI);
+
+  const padL = maxR + 8, padR = maxR + 8;
+  const padOben = 26, achsenY = hoehe - 24, tickY = hoehe - 8;
+  const nutzB = breite - padL - padR;
+  const centerY = (padOben + (achsenY - 16)) / 2;
+  const x = ms => spanne === 0 ? padL + nutzB / 2 : padL + ((ms - vonMs) / spanne) * nutzB;
+
+  // Nahe beieinanderliegende Punkte (bis hin zu „alle am selben Tag") faechern
+  // sich senkrecht um die Mittellinie auf, statt sich deckungsgleich zu
+  // ueberlagern — sortiert nach Zeit, dann nach x-Naehe gruppiert.
+  const roh = eintraege.map((p, i) => ({ p, i, ms: zeiten[i], cx: x(zeiten[i]), r: radiusVon(p.wert) }))
+    .sort((a, b) => a.cx - b.cx || a.ms - b.ms);
+  // Verglichen wird mit dem ANFANG der Gruppe, nicht mit ihrem letzten Punkt.
+  // Andernfalls haengt sich jeder Punkt an seinen knapp benachbarten Vorgaenger
+  // und die ganze Reihe wird zu EINER Kette: bei 40 Rechnungen auf 338 px
+  // liegen die Punkte rund 8 px auseinander, also unter der Schwelle — sie
+  // landeten alle in einer Gruppe und wanderten als Diagonale nach unten aus
+  // dem Diagramm heraus, statt der Zeitachse zu folgen.
+  const naehe = Math.max(minR * 2, 9);
+  const gruppen = [];
+  for (const punkt of roh) {
+    const letzte = gruppen[gruppen.length - 1];
+    if (letzte && punkt.cx - letzte[0].cx < naehe) letzte.push(punkt);
+    else gruppen.push([punkt]);
+  }
+  // Die Faecherung bleibt im Diagramm: passt eine Gruppe mit dem Wunschabstand
+  // nicht mehr zwischen Oberkante und Achse, ruecken ihre Punkte enger
+  // zusammen, statt oben und unten hinauszulaufen.
+  const halbeHoehe = Math.max(0, (achsenY - 16 - padOben) / 2 - maxR);
+  for (const gruppe of gruppen) {
+    const spannweite = gruppe.length - 1;
+    const abstand = spannweite === 0 ? 0
+      : Math.min(15, (halbeHoehe * 2) / spannweite);
+    gruppe.forEach((punkt, k) => {
+      punkt.cy = centerY + (k - spannweite / 2) * abstand;
+    });
+  }
+
+  const punkteHtml = roh.map(({ p, cx, cy, r }) =>
+    `<circle cx="${runden(cx)}" cy="${runden(cy)}" r="${runden(r)}"
+             fill="${farbe(0)}" fill-opacity=".82" stroke="var(--sheet)" stroke-width="1.4"
+             ><title>${datumVoll(datumMs(p.datum))} · ${p.firma || ''}${p.firma && p.name ? ' · ' : ''}${
+             p.name || ''} · ${euroKurz(p.wert)}</title></circle>`).join('');
+
+  // Beschriftung: abwechselnd oben/unten, aber nur wenn zur letzten
+  // Beschriftung auf DERSELBEN Seite genug Abstand ist — sonst lieber
+  // auslassen als Buchstabensalat uebereinander zu schreiben. Innerhalb
+  // einer gefaecherten Gruppe (siehe oben) traegt zusaetzlich nur der
+  // groesste Posten ein Label: sonst kreuzen sich die Zeilen der uebrigen
+  // Gruppenmitglieder, weil deren Fluchtpunkt (cy) senkrecht versetzt ist,
+  // ihr Label-Text aber trotzdem auf gleicher Zeile mit dem Nachbarpunkt
+  // landen kann.
+  const beschriftbar = new Set(
+    gruppen.map(g => g.reduce((a, b) => a.p.wert >= b.p.wert ? a : b)));
+  // Gemessen wird die RECHTE KANTE der zuletzt gesetzten Beschriftung, nicht
+  // ihr Mittelpunkt: ein fester Mindestabstand reichte nicht, weil die Namen
+  // verschieden breit sind — „Fenster & T…" ist doppelt so breit wie
+  // „Elektro", und so schrieben sich „Sonstiges" und „Fliesen" ineinander.
+  // 5 Einheiten je Zeichen bei 9.5 px var(--body), grosszuegig gerechnet.
+  const zeichenBreite = 5;
+  const textLuft = 7;
+  const letzteRechts = { oben: -Infinity, unten: -Infinity };
+  let seitenZaehler = 0;
+  const beschriftungHtml = roh.filter(pt => beschriftbar.has(pt)).map(({ p, cx, cy, r }) => {
+    // Bei einer gefaecherten Gruppe zeigt das Label vom Zentrum weg, in die
+    // Richtung, in die der Punkt ohnehin schon versetzt ist — sonst zeigt es
+    // haeufig genau auf einen benachbarten, ebenfalls versetzten Punkt.
+    // Nur bei exakt zentrierten Punkten (kein Versatz) wechselt es reihum.
+    const seite = cy < centerY - 0.5 ? 'oben' : cy > centerY + 0.5 ? 'unten'
+      : (seitenZaehler++ % 2 === 0 ? 'oben' : 'unten');
+    const name = (p.name || '').length > 12 ? p.name.slice(0, 11) + '…' : (p.name || '');
+    if (!name) return '';
+    const anker = cx < padL + 24 ? 'start' : cx > breite - padR - 24 ? 'end' : 'middle';
+    const textB = name.length * zeichenBreite;
+    const links = anker === 'start' ? cx : anker === 'end' ? cx - textB : cx - textB / 2;
+    // Ueberlappt die Beschriftung ihre linke Nachbarin, wird sie ausgelassen —
+    // eine fehlende Beschriftung ist lesbar, zwei uebereinander sind es nicht.
+    if (links - letzteRechts[seite] < textLuft) return '';
+    letzteRechts[seite] = links + textB;
+    const ly = seite === 'oben' ? cy - r - 6 : cy + r + 13;
+    return `<text x="${runden(cx)}" y="${runden(ly)}" class="zl" text-anchor="${anker}">${name}</text>`;
+  }).join('');
+
+  // Anzahl und Format der Datumsmarken richten sich nach der verfuegbaren
+  // Breite bzw. der Zeitspanne — auf dem iPhone 3 grobe Marken, auf dem
+  // Desktop 5–6 feinere; unter drei Monaten reicht Tag.Monat, ueber einem
+  // Jahr reicht Monat + Jahr (sonst waeren die Marken laenger als ihr Abstand).
+  const tageSpanne = spanne / 86400000;
+  const format = tageSpanne > 365
+    ? ms => { const d = new Date(ms); return `${MONATSKURZ[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`; }
+    : tageSpanne < 90
+    ? ms => { const d = new Date(ms); return `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.`; }
+    : ms => { const d = new Date(ms); return `${pad2(d.getUTCDate())}. ${MONATSKURZ[d.getUTCMonth()]}`; };
+  const anzahl = spanne === 0 ? 1 : breite < 420 ? 3 : breite < 900 ? 5 : 6;
+  const marken = Array.from({ length: anzahl }, (_, i) => {
+    const ms = anzahl === 1 ? vonMs : vonMs + (i / (anzahl - 1)) * spanne;
+    const mx = x(ms);
+    // Erste/letzte Marke duerfen nicht ueber den Rand hinausragen: start/end
+    // statt middle, sonst haengt die Haelfte des Textes ins Leere.
+    const anker = anzahl === 1 ? 'middle' : i === 0 ? 'start' : i === anzahl - 1 ? 'end' : 'middle';
+    return `<text x="${runden(mx)}" y="${tickY}" class="ax" text-anchor="${anker}">${format(ms)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${breite} ${hoehe}" class="chart" role="img">
+      <style>
+        .ax{font:500 10px var(--mono);fill:var(--soft)}
+        .zl{font:500 9.5px var(--body);fill:var(--soft)}
+      </style>
+      <line x1="${padL}" y1="${achsenY}" x2="${breite - padR}" y2="${achsenY}"
+            stroke="#D6DCDD" stroke-width="1"/>
+      ${punkteHtml}${beschriftungHtml}${marken}
+    </svg>`;
+}
