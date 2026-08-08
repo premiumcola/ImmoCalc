@@ -19,6 +19,7 @@ from ..cloudkern import (ARTKUERZEL, STRUKTUR, S_HOME, S_TLS, S_UNTERORDNER,
                         S_URL, S_BENUTZER, S_PASSWORT, ZIELORDNER, _lies,
                         einheit_von, struktur_fuer, unterordner_fuer,
                         unterordner_vorlagen, verbindung)
+from .. import upload
 from ..db import get_session
 from ..models import Dokument, Einstellung, Objekt
 from ..nextcloud import Nextcloud, NextcloudFehler
@@ -458,9 +459,10 @@ async def objekt_spiegeln(slug: str, subpfad: str = Form(...),
     teile = _saubere_teile(subpfad)
     if not teile:
         raise HTTPException(400, "Kein gültiger Zielpfad")
-    inhalt = await datei.read()
-    if not inhalt:
-        raise HTTPException(400, "Leere Datei")
+    # N292 — Leere und Grösse prüft `upload.lies` für alle Endpunkte gleich.
+    # Dieser Weg legt bewusst UNVERÄNDERT ab (eigenes Archiv des Nutzers),
+    # deshalb keine Einschränkung der Dateiart — nur die Grösse.
+    inhalt = await upload.lies(datei)
     client = verbindung(session)
     pfad = _pfad(objekt.nc_ordner).strip("/")
     try:

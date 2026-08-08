@@ -33,6 +33,7 @@ from .. import ocr
 from ..cloudkern import _lies, verbindung
 from ..db import get_session
 from ..dokumente.namen import _dateiname_kopfzeile, _endung, _saubere_datei
+from .. import upload
 from ..models import Dokumentvorlage
 from ..nextcloud import NextcloudFehler
 from .cloud import _schreib
@@ -177,7 +178,9 @@ async def hochladen(name: str, verwendungszweck: str = "Vermietung",
     _pruefe_dateiart(datei.filename or "")
     client = verbindung(session)
     ordner = _ordner_sichern(client, verwendungszweck)
-    inhalt = await datei.read()
+    # N292 — die Dateiart prüft `_pruefe_dateiart` schon oben; hier kommt
+    # das Grössenlimit dazu, das dieser Endpunkt bisher gar nicht hatte.
+    inhalt = await upload.lies(datei, was="Die Vorlage")
     dateiname = _saubere_datei(datei.filename or f"{name}.pdf")
     frei = _freier_name(client, ordner, dateiname)
     try:

@@ -37,6 +37,7 @@ from ..nextcloud import NextcloudFehler
 from .dokumente import (_ablageordner, _endung, _freier_name, _ordner_sichern,
                         dateiname)
 from .ki import ki_key, ki_modell
+from .. import upload
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/solaredge", tags=["solaredge"])
@@ -59,12 +60,11 @@ async def lesen(datei: UploadFile = File(...),
     Verbrauchszeile stand — nur sie wird für die Kostenblöcke gebraucht.
 
     Nichts wird gespeichert."""
-    rohdaten = await datei.read()
-    if not rohdaten:
-        raise HTTPException(400, "Leere Datei")
-    if len(rohdaten) > MAX_BYTES:
-        raise HTTPException(400, "Das Bild ist zu groß (mehr als 5 MB) — bitte "
-                                 "einen Screenshot statt eines Fotos hochladen.")
+    # N292 — Leere, Grösse und Dateiart prüft `upload.lies` für alle
+    # Endpunkte gleich; die Bildart selbst prüft `solaredge.medientyp`
+    # gleich darunter am Inhalt, nicht am Namen.
+    rohdaten = await upload.lies(datei, max_bytes=MAX_BYTES,
+                                 was="Das Bild")
     typ = solaredge.medientyp(rohdaten, datei.content_type or "")
     if not typ:
         raise HTTPException(400, "Das ist kein Bild (PNG, JPEG, GIF oder WEBP).")
@@ -137,12 +137,11 @@ async def screenshot_ablegen(slug: str, jahr: int,
     Rückgabe `{"abgelegt": True, "dokument_id", "pfad", "dateiname"}` bei
     Erfolg. Ohne eingerichtete Cloud `{"abgelegt": False, "grund": …}` — die
     Werte selbst sind davon unberührt (eigener Strom-PUT)."""
-    rohdaten = await datei.read()
-    if not rohdaten:
-        raise HTTPException(400, "Leere Datei")
-    if len(rohdaten) > MAX_BYTES:
-        raise HTTPException(400, "Das Bild ist zu groß (mehr als 5 MB) — bitte "
-                                 "einen Screenshot statt eines Fotos hochladen.")
+    # N292 — Leere, Grösse und Dateiart prüft `upload.lies` für alle
+    # Endpunkte gleich; die Bildart selbst prüft `solaredge.medientyp`
+    # gleich darunter am Inhalt, nicht am Namen.
+    rohdaten = await upload.lies(datei, max_bytes=MAX_BYTES,
+                                 was="Das Bild")
     typ = solaredge.medientyp(rohdaten, datei.content_type or "")
     if not typ:
         raise HTTPException(400, "Das ist kein Bild (PNG, JPEG, GIF oder WEBP).")

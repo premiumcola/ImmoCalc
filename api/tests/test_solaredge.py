@@ -369,11 +369,22 @@ class _Upload:
 
     def __init__(self, inhalt: bytes, content_type: str = "image/png"):
         self._inhalt = inhalt
+        self._gelesen = 0
         self.content_type = content_type
         self.filename = "solaredge.png"
 
-    async def read(self) -> bytes:
-        return self._inhalt
+    async def read(self, groesse: int = -1) -> bytes:
+        """N292 — mit Grössenangabe, wie Starlettes `UploadFile.read`.
+
+        Vorher nahm dieser Doppelgänger gar kein Argument. Er bildete damit
+        die echte Schnittstelle nicht ab, und der Riegel `upload.lies`, der in
+        Häppchen liest, wäre hier über einen `TypeError` gestolpert statt über
+        einen echten Fehler."""
+        if groesse is None or groesse < 0:
+            groesse = len(self._inhalt) - self._gelesen
+        happen = self._inhalt[self._gelesen:self._gelesen + groesse]
+        self._gelesen += len(happen)
+        return happen
 
 
 def _lesen(datei, monkeypatch):

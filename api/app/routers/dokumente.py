@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import belegposten, feldzuordnung, kiauslese, ocr, pdftext
+from .. import belegposten, feldzuordnung, kiauslese, ocr, pdftext, upload
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
                            ohne_betrag, ohne_datum, unterordner_finden)
@@ -1613,9 +1613,10 @@ async def erkennen(datei: UploadFile = File(...),
     — die Auslese schon auf die Feldnamen dieser Eingabemaske übersetzt, damit
     das Formular vorausgefüllt aufgeht. Ebenfalls additiv: ohne den Hinweis
     fehlt `formwerte` und für bestehende Aufrufer ändert sich nichts."""
-    rohdaten = await datei.read()
-    if not rohdaten:
-        raise HTTPException(400, "Leere Datei")
+    # N292 — Grösse und Dateiart prüft `upload.lies`, für alle Endpunkte
+    # gleich. Vorher las diese Stelle jede Datei ungeprüft und in voller
+    # Länge in den Speicher.
+    rohdaten = await upload.lies(datei, was="Der Beleg")
     # Der Dateiname als zusätzlicher Kontext für die KI-Auslese (CCLXVIII):
     # „2025-10-oel-2729,91€.pdf" nennt Datum und Betrag schon mit.
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), datei.filename or "",
@@ -1968,9 +1969,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     ziel_eintrag = (_eintrag_holen(session, an_typ, an_id, o)[0]
                     if an_typ else None)
 
-    inhalt = await datei.read()
-    if not inhalt:
-        raise HTTPException(400, "Leere Datei")
+    inhalt = await upload.lies(datei, was="Der Beleg")
 
     erkannt_jahr, erkannt_monat = _aus_datum(datum)
     jahr = jahr or erkannt_jahr
@@ -2288,9 +2287,7 @@ async def lageplan_hochladen(einheit_id: int,
         raise HTTPException(404, "Zur Einheit gehört keine Immobilie")
     _cloud_pflicht(o)
 
-    inhalt = await datei.read()
-    if not inhalt:
-        raise HTTPException(400, "Leere Datei")
+    inhalt = await upload.lies(datei, was="Der Beleg")
 
     # Die Endung der hochgeladenen Datei erhalten — ein Foto darf nicht als
     # „.pdf" abgelegt werden. Ohne Endung bleibt es beim PDF.
@@ -3657,9 +3654,7 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
         raise HTTPException(400, "Dem Dokument fehlt die Immobilie")
     _cloud_pflicht(o)
 
-    inhalt = await datei.read()
-    if not inhalt:
-        raise HTTPException(400, "Leere Datei")
+    inhalt = await upload.lies(datei, was="Der Beleg")
 
     alt = d.pfad
     kategorie = d.kategorie or "Sonstiges"

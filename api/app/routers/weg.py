@@ -24,6 +24,7 @@ from ..db import get_session
 from ..models import WegVorauszahlung, Zeitraum
 from ..verteilung import UnbekannterSchluessel
 from .ki import ki_key, ki_modell
+from .. import upload
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["weg"])
@@ -87,11 +88,9 @@ async def weg_lesen(zid: int, datei: UploadFile = File(...),
     (keine KI eingerichtet, kein Text im PDF, unbrauchbare Antwort), ist das
     kein Fehler: `gelesen` bleibt leer und der Hinweis sagt, was zu tun ist."""
     _zeitraum(session, zid)
-    rohdaten = await datei.read()
-    if not rohdaten:
-        raise HTTPException(400, "Leere Datei")
-    if len(rohdaten) > MAX_BYTES:
-        raise HTTPException(400, "Die Datei ist zu groß (mehr als 20 MB).")
+    # N292 — Leere und Grösse prüft `upload.lies` für alle Endpunkte gleich.
+    rohdaten = await upload.lies(datei, max_bytes=MAX_BYTES,
+                                 was="Die WEG-Abrechnung")
 
     schluessel = ki_key(session)
     if not kiauslese.verfuegbar(schluessel):
