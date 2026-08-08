@@ -27,9 +27,8 @@ from .. import (belegposten, dokumentlinks, feldzuordnung, kiauslese, kicache,
                 kidb, ocr, pdftext, upload)
 from ..belegposten import BelegFehler
 from ..bezeichnung import (betrag_aus_namen, datum_aus_namen, objekt_titel,
-                           ohne_betrag, ohne_datum, unterordner_finden)
-from ..cloudkern import (ARTKUERZEL, STRUKTUR, ZIELORDNER, _lies,
-                        struktur_fuer, unterordner_fuer, verbindung)
+                           ohne_betrag, ohne_datum)
+from ..cloudkern import ZIELORDNER, _lies, struktur_fuer, verbindung
 from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
@@ -72,6 +71,18 @@ from ..dokumente.eintraege import (_UMKLASS_ZIEL, _bewahrt, _eintrag_kern,
                                    _eintrag_wo)
 from ..dokumente.dedup import (DUPLIKAT_ORDNER, _dedup_rang, _duplikat_rang,
                                _duplikat_ziel, _keeper_erbt_luecken)
+from ..dokumente.abgleich import (ABGLEICH_TIEFE, _abgleiche_objekt, _baum,
+                                  _kennzeichen_nachtragen, _mehrdeutig,
+                                  _nachweislich_geloescht, _umzugsart,
+                                  _wiedergefunden)
+from ..dokumente.ablage import (_ablageordner, _beleg_umziehen, _freier_name,
+                                _ordner_sichern, _projektordner,
+                                _sidecar_mitnehmen, _ziel_im_objekt,
+                                _zielordner)
+from ..dokumente.grabstein import (GRABSTEIN, _eintraege_auf,
+                                   _grabstein_setzen, _ist_grabstein,
+                                   _ohne_grabsteine,
+                                   _verwaisten_eintrag_freigeben)
 # N297 — `dokumente/immocalc_steckbrief.py` ist entfallen: der `.immocalc`-
 # Steckbrief wird nicht mehr geschrieben, damit blieb das Modul ohne Aufrufer.
 from ..dokumente.filter import _dokument_passt
@@ -95,197 +106,6 @@ def _ki_modell(session: Session) -> str:
 # --------------------------------------------------------------------------
 # Ablegen in der Cloud — eine Stelle für Zuordnen, Korrigieren und Automatik
 # --------------------------------------------------------------------------
-
-def _eintraege_auf(session: Session, pfad: str) -> list[Dokument]:
-    """Welche Einträge zeigen auf diesen Pfad? (Mit und ohne führenden „/" —
-    beide Schreibweisen kommen im Bestand vor.)
-
-    Der Unique-Index verhindert ein Doppel später ohnehin — nur läge die Datei
-    dann bereits am neuen Platz und die Datenbank am alten. Also vorher
-    fragen."""
-    ohne = pfad.strip("/")
-    return list(session.exec(
-        select(Dokument).where(Dokument.pfad.in_((f"/{ohne}", ohne)))).all())
-
-
-# N242 — Vorsatz eines freigegebenen (extern gelöschten) Eintrags. Bewusst
-# ohne führenden „/": alles, was „liegt in der Cloud" an diesem Zeichen
-# erkennt, behandelt einen Grabstein dadurch von selbst richtig.
-GRABSTEIN = "entfernt:"
-
-
-def _ist_grabstein(pfad: str) -> bool:
-    """Hat dieser Eintrag seinen Pfad nach N242 abgegeben?"""
-    return (pfad or "").startswith(GRABSTEIN)
-
-
-def _ohne_grabsteine(dokumente) -> list[Dokument]:
-    """Nur Einträge, die noch eine Datei meinen — Grabsteine fliegen raus.
-
-    N248/N253 — ein Grabstein (N242) ist kein Beleg mehr, sondern nur noch die
-    Hülle eines gelöschten: er lebt allein deshalb weiter, damit Betrag,
-    KI-Auslese und die Verweise aus Kostenposition/Mietstand nicht ins Leere
-    zeigen. In einer Liste hat er nichts verloren — beim Nutzer sah es sonst
-    aus wie ein Doppel, weil neben dem Grabstein der neue Beleg steht, der
-    seinen freigewordenen Namen übernommen hat.
-
-    Bewusst NICHT gefiltert wird der blosse Status `vermisst` mit echtem Pfad:
-    der ist umkehrbar (die Datei kann zurückkommen) und wird im Eingang mit
-    Abzeichen angezeigt, damit der Nutzer etwas tun kann."""
-    return [d for d in dokumente if not _ist_grabstein(d.pfad)]
-
-
-def _grabstein_setzen(session: Session, d: Dokument) -> None:
-    """Legt den Pfad eines Eintrags als Grabstein beiseite (N242/N248).
-
-    Der Eintrag wird **nicht** gelöscht — er behält KI-Auslese, Betrag und alle
-    Verweise (Kostenposition, Mietstand, Belegdaten). Er gilt als `vermisst`,
-    nur sein Pfad wandert nach `entfernt:…`, damit der Unique-Index den Namen
-    wieder hergibt und die Oberfläche ihn nicht länger als vorhandene Datei
-    führt. Der Vorsatz beginnt bewusst NICHT mit „/": jede Stelle, die „liegt
-    in der Cloud" an genau diesem Zeichen erkennt (`darstellung._zeige`,
-    Vorschau, Umbenennen), behandelt ihn dadurch von selbst richtig.
-
-    Gemeinsame Mechanik zweier Wege: `_verwaisten_eintrag_freigeben` (N242,
-    beim Ablegen eines gleichnamigen Belegs) und `_abgleiche_objekt` (N248,
-    beim Abgleich mit der Cloud)."""
-    grabstein = f"{GRABSTEIN}{d.pfad}"
-    # Derselbe Pfad kann über die Jahre mehrfach verwaisen — jeder
-    # Grabstein braucht seinen eigenen Platz im Unique-Index.
-    n = 2
-    while session.exec(select(Dokument)
-                       .where(Dokument.pfad == grabstein)).first():
-        grabstein = f"{GRABSTEIN}{d.pfad}#{n}"
-        n += 1
-    log.info("Eintrag freigegeben (Datei extern gelöscht): %s", d.pfad)
-    d.pfad = grabstein
-    d.status = VERMISST
-    session.add(d)
-
-
-def _verwaisten_eintrag_freigeben(session: Session, pfad: str) -> bool:
-    """N242 — gibt den Namen einer ausserhalb der App gelöschten Datei frei.
-
-    Wird nur gerufen, nachdem die Cloud diesen Pfad soeben live als **frei**
-    gemeldet hat. Ein Eintrag, der trotzdem noch dorthin zeigt, ist damit
-    nachweislich verwaist: der Nutzer hat die Datei direkt in der Nextcloud
-    gelöscht. Bis N242 blockierte so ein Eintrag „seinen" Namen für immer und
-    der nächste Beleg wich auf „…-2" aus, obwohl der Platz längst frei war.
-
-    Gelöscht wird der Eintrag **nicht** — er behält KI-Auslese, Betrag und alle
-    Verweise (Kostenposition, Mietstand, Belegdaten). Er gilt als `vermisst`
-    und legt nur seinen Pfad als Grabstein (`entfernt:…`) beiseite, damit der
-    Unique-Index den Namen wieder hergibt. Der Grabstein beginnt bewusst NICHT
-    mit „/": jede Stelle, die „liegt in der Cloud" an genau diesem Zeichen
-    erkennt (`darstellung._zeige`, Vorschau, Umbenennen), behandelt ihn dadurch
-    von selbst richtig, ohne eigene Sonderregel.
-
-    Der bewusst gewählte Preis (Nutzerentscheidung zu N242): kommt die Datei
-    später unter genau diesem Pfad zurück, erkennt der Abgleich sie nicht mehr
-    als „wiederda" (`_abgleiche_objekt` vergleicht auf `d.pfad`) — sie kommt
-    als neuer Eintrag herein."""
-    verwaist = _eintraege_auf(session, pfad)
-    if not verwaist:
-        return False
-    for d in verwaist:
-        _grabstein_setzen(session, d)
-    # Der neue Eintrag bekommt gleich denselben Pfad — der Grabstein muss vor
-    # ihm in der Datenbank stehen, sonst schlägt der Unique-Index zu.
-    session.flush()
-    return True
-
-
-def _freier_name(session: Session, client, ordner: str, name: str) -> str:
-    """Haengt -2, -3 an, falls der Name schon vergeben ist — nie ueberschreiben.
-
-    Gefragt wird die Cloud, live per WebDAV. Nur eine Datei, die dort WIRKLICH
-    noch liegt, führt zu einem zweiten Namen.
-
-    N242: meldet die Cloud den Platz als frei, zeigt aber noch ein Eintrag
-    dorthin, hat der Nutzer die Datei ausserhalb der App gelöscht — dann gibt
-    `_verwaisten_eintrag_freigeben` den Namen wieder frei, statt auf „-2"
-    auszuweichen. Ohne dieses Aufräumen verschöbe die Automatik die Datei und
-    scheiterte danach am Unique-Index des alten Eintrags."""
-    stamm, punkt, endung = name.rpartition(".")
-    stamm = stamm or name
-    endung = f".{endung}" if punkt else ""
-    kandidat, n = name, 2
-    while client.existiert(f"{ordner}/{kandidat}"):
-        kandidat = f"{stamm}-{n}{endung}"
-        n += 1
-        if n > 50:
-            # Notausgang: hier ist nichts nachweislich frei — nichts freigeben.
-            return kandidat
-    _verwaisten_eintrag_freigeben(session, f"{ordner}/{kandidat}")
-    return kandidat
-
-
-def _zielordner(o: Objekt, kategorie: str) -> str:
-    """Der Sachordner der Immobilie — „…/60_Nebenkosten"."""
-    unterordner = ZIELORDNER.get(kategorie, "99_Sonstiges")
-    if unterordner not in STRUKTUR:
-        raise HTTPException(400, f"Unbekannter Zielordner '{unterordner}'")
-    return f"{o.nc_ordner.strip('/')}/{unterordner}"
-
-
-def _projektordner(session: Session, renovierung_id: int | None) -> str:
-    """N289 — der Ordnername des Bauvorhabens, zu dem eine Rechnung gehört.
-
-    Leer heisst: keine Renovierung gemeint (oder sie gibt es nicht mehr) — dann
-    bleibt alles wie bisher. Eine unbekannte Nummer ist bewusst kein Fehler:
-    der Beleg soll abgelegt werden, notfalls eine Ebene höher."""
-    if not renovierung_id:
-        return ""
-    r = session.get(Renovierung, renovierung_id)
-    if r is None:
-        log.info("Renovierung %s nicht gefunden — Beleg ohne Projektordner",
-                 renovierung_id)
-        return ""
-    return projektordner(r.name, r.von)
-
-
-def _ablageordner(session: Session, o: Objekt, kategorie: str,
-                  jahr: int | None, client, unterordner: str = "") -> tuple[str, str]:
-    """(Sachordner, Ablageordner) — CXCI: in NK liegt nichts mehr flach.
-
-    `unterordner` schlägt die Vorlage: N289 gibt die Renovierungsmaske den
-    Projektordner („2025.01_Generalsanierung") direkt mit, weil er sich aus
-    Jahr und Einheit nicht bilden lässt.
-
-    Der Ablageordner ist der Sachordner selbst, solange die Vorlage nichts
-    hergibt (leere Vorlage, Beleg ohne Jahr). Sonst der Jahresordner darin —
-    und zwar **der vorhandene**, wenn es ihn schon gibt: liegt „2025" da,
-    wandert der Beleg dorthin und nicht in ein zweites „2025_Nebenkosten".
-
-    Lässt sich der Sachordner nicht auflisten (er ist meist noch gar nicht
-    angelegt), wird der Name aus der Vorlage genommen — das ist kein Fehler,
-    nur eine Auskunft, die es noch nicht gibt."""
-    sach = _zielordner(o, kategorie)
-    ziel = unterordner or unterordner_fuer(session, o, kategorie, jahr)
-    if not ziel:
-        return sach, sach
-    if unterordner:
-        # Ein Projektordner trägt seinen Namen selbst; die Jahres-Erkennung von
-        # `unterordner_finden` würde hier „2025.01_Generalsanierung" mit einem
-        # blossen „2025" verwechseln und die Rechnung dorthin sortieren.
-        return sach, f"{sach}/{unterordner}"
-    try:
-        vorhandene = [e.name for e in client.liste(sach) if e.ordner]
-    except NextcloudFehler as fehler:
-        log.info("Unterordner von %s nicht gelesen: %s", sach, fehler)
-        vorhandene = []
-    treffer = unterordner_finden(vorhandene, jahr, ziel,
-                                 (kategorie, ARTKUERZEL.get(kategorie, "")))
-    return sach, f"{sach}/{treffer or ziel}"
-
-
-def _ordner_sichern(client, sach: str, ordner: str) -> None:
-    """Legt Sach- und Ablageordner an. MKCOL verträgt 405 (existiert schon),
-    und der tiefere Ordner braucht seinen Eltern vorher."""
-    client.ordner_anlegen(sach)
-    if ordner != sach:
-        client.ordner_anlegen(ordner)
-
 
 def _einsortieren(session: Session, d: Dokument, o: Objekt, kategorie: str,
                   name: str, client=None, jahr: int | None = None) -> tuple[str, str]:
@@ -469,260 +289,6 @@ def _scanne(session: Session) -> dict:
 # Grabstein beiseite (`_grabstein_setzen`). Der Wachdienst stösst den Abgleich
 # im 15-Minuten-Takt selbst an.
 # --------------------------------------------------------------------------
-
-# Wie tief unter dem Objektordner gesucht wird. ImmoCalc legt eine Ebene an;
-# der Nutzer schachtelt darunter selbst weiter ("60_Nebenkosten/2025/").
-ABGLEICH_TIEFE = 4
-
-
-def _baum(client, wurzel: str,
-          tiefe: int = ABGLEICH_TIEFE) -> tuple[dict, set[str]]:
-    """Alle Dateien unterhalb eines Ordners, nach Pfad. Rein lesend.
-
-    Gibt zwei Dinge zurück: die gefundenen Dateien **und** die Menge der
-    Ordner, die sich wirklich lesen liessen (`gelesen`).
-
-    Ein *Unterordner*, der sich nicht lesen lässt, hält den Abgleich nicht an;
-    er wird protokolliert, der Rest wird trotzdem geprüft. Der Objektordner
-    selbst dagegen schon: käme dort eine leere Liste zurück, weil die Cloud
-    gerade nicht antwortet, gälten mit einem Schlag alle Belege als vermisst.
-    Deshalb reicht sein Fehler nach oben durch.
-
-    N248 — genau deshalb ist `gelesen` nötig: „Datei nicht in der Liste" heisst
-    nur dann „gelöscht", wenn ihr Ordner auch tatsächlich gelesen wurde. Bei
-    einem übersprungenen Unterordner fehlen SEINE Dateien selbstverständlich —
-    ohne diese Unterscheidung würden sie beim Aufräumen fälschlich als vom
-    Nutzer gelöscht gelten."""
-    gefunden: dict = {}
-    gelesen: set[str] = set()
-    besucht: set[str] = set()
-    offen = [(_norm(wurzel), 0)]
-    while offen:
-        ordner, ebene = offen.pop()
-        if ordner in besucht:
-            continue
-        besucht.add(ordner)
-        try:
-            eintraege = client.liste(ordner)
-        except NextcloudFehler as fehler:
-            if ebene == 0:
-                raise
-            log.warning("Ordner %s nicht lesbar: %s", ordner, fehler)
-            continue
-        gelesen.add(ordner)
-        for e in eintraege:
-            if e.ordner:
-                if ebene < tiefe:
-                    offen.append((_norm(e.pfad), ebene + 1))
-            else:
-                gefunden[_norm(e.pfad)] = e
-    return gefunden, gelesen
-
-
-def _kennzeichen_nachtragen(d: Dokument, eintrag) -> bool:
-    """N290 — Dateinummer und Prüfsumme am Eintrag festhalten. `True`, wenn
-    sich etwas geändert hat.
-
-    Streng additiv: ein bereits gesetztes Kennzeichen wird überschrieben, wenn
-    die Cloud ein anderes meldet (der Nutzer hat die Datei ersetzt), aber ein
-    LEERER Wert aus der Cloud löscht nie einen vorhandenen — nicht jede
-    Nextcloud-Installation liefert für jede Datei eine Prüfsumme, und ein
-    einzelner Lauf ohne Angabe darf das Kennzeichen nicht wegräumen."""
-    geaendert = False
-    for feld, wert in (("nc_fileid", getattr(eintrag, "fileid", "")),
-                       ("sha1", getattr(eintrag, "sha1", ""))):
-        wert = (wert or "").strip()
-        if wert and getattr(d, feld, "") != wert:
-            setattr(d, feld, wert)
-            geaendert = True
-    return geaendert
-
-
-def _umzugsart(alt: str, neu: str) -> str:
-    """N290 — „verschoben" oder „umbenannt"? Der Ordner entscheidet.
-
-    Hat sich beides geändert, wiegt der Ordnerwechsel schwerer; der neue Name
-    steht ohnehin in derselben Meldung."""
-    return "umbenannt" if _elternteil(alt) == _elternteil(neu) else "verschoben"
-
-
-def _wiedergefunden(d: Dokument, dateien: dict, vergeben: set[str]) -> tuple[str, str]:
-    """Wohin die Datei gewandert ist: (Pfad, Art) oder ("", "").
-
-    N290 — zuerst nach Nextclouds Dateinummer, dann nach der Prüfsumme: das
-    sind die beiden Kennzeichen, die ein Umbenennen UND Verschieben im
-    Explorer zugleich überstehen. Erst danach die alten Wege über Namen und
-    Grösse, die je für sich nur EINE der beiden Änderungen verkraften.
-
-    Danach nach dem Namen — verschieben allein ist der häufigere Fall und der
-    sicherere Schluss. Zuletzt nach Ordner und Grösse: dieselbe Datei, im
-    selben Ordner, nur anders benannt."""
-    if _ist_grabstein(d.pfad):
-        # N242 — dieser Eintrag hat seinen Namen abgegeben, weil der Nutzer die
-        # Datei gelöscht hat. Eine gleichnamige Datei anderswo ist nicht „seine"
-        # zurückgekehrte Datei — er bleibt vermisst.
-        return "", ""
-
-    # Die Dateinummer ist eindeutig: mehr als ein Treffer kann es nicht geben,
-    # und ein Treffer ist ein Beweis, keine Vermutung.
-    if d.nc_fileid:
-        for pfad, e in dateien.items():
-            if e.fileid == d.nc_fileid and pfad not in vergeben:
-                return pfad, _umzugsart(d.pfad, pfad)
-    # Die Prüfsumme deckt den Fall ab, dass die Datei neu hochgeladen wurde
-    # (dann ist die Nummer eine andere). Byte-Gleichheit heisst hier aber nicht
-    # zwingend „dieselbe Datei": zwei Kopien desselben Belegs sind ebenfalls
-    # byte-gleich. Deshalb nur bei GENAU einem Kandidaten — sonst liesse sich
-    # nicht entscheiden, welcher gemeint ist.
-    if d.sha1:
-        treffer = _einziger([p for p, e in dateien.items()
-                             if e.sha1 and e.sha1 == d.sha1 and p not in vergeben])
-        if treffer:
-            return treffer, _umzugsart(d.pfad, treffer)
-
-    name = d.dateiname.lower()
-    gleicher_name = [p for p, e in dateien.items()
-                     if e.name.lower() == name and p not in vergeben]
-    treffer = _einziger(gleicher_name)
-    if treffer:
-        return treffer, "verschoben"
-
-    if d.groesse:
-        ordner = _elternteil(d.pfad)
-        gleiche_datei = [p for p, e in dateien.items()
-                         if e.groesse == d.groesse and _elternteil(p) == ordner
-                         and p not in vergeben]
-        treffer = _einziger(gleiche_datei)
-        if treffer:
-            return treffer, "umbenannt"
-    return "", ""
-
-
-def _mehrdeutig(d: Dokument, frei: dict, vergeben: set[str]) -> bool:
-    """Gibt es mehrere Dateien, die diese hier sein KÖNNTEN?
-
-    `_wiedergefunden` hängt bewusst nicht um, wenn zwei gleich grosse Dateien
-    im selben Ordner liegen — es liesse sich nicht entscheiden, welche die
-    umbenannte ist. Genau dann ist die Datei aber sehr wahrscheinlich noch da,
-    nur anders benannt, und darf nicht als gelöscht aufgeräumt werden."""
-    if not d.groesse:
-        return False
-    ordner = _elternteil(d.pfad)
-    passende = [p for p, e in frei.items()
-                if e.groesse == d.groesse and _elternteil(p) == ordner
-                and p not in vergeben]
-    return len(passende) > 1
-
-
-def _nachweislich_geloescht(d: Dokument, gelesen: set[str], frei: dict,
-                            vergeben: set[str]) -> bool:
-    """N248 — ist diese Datei BEWEISBAR aus der Cloud verschwunden?
-
-    Der Nutzer war hier ausdrücklich: automatisch aufräumen ja, aber niemals
-    auf Verdacht. „Nicht in der Dateiliste" allein genügt deshalb nicht — es
-    muss feststehen, dass der Ordner, in dem sie lag, auch WIRKLICH gelesen
-    wurde. Genau daran unterscheiden sich die beiden Fälle:
-
-    * Ordner gelesen, Datei nicht darin  -> der Nutzer hat sie gelöscht.
-    * Ordner nicht lesbar (Verbindung, Zeitüberschreitung, Rechte)
-      -> gar keine Aussage; der Eintrag bleibt unangetastet.
-
-    Ein Objektordner, der sich nicht lesen liess, kommt hier nie an: sein
-    Fehler bricht `_baum` ab und `_abgleiche` überspringt die ganze Immobilie.
-    Diese Prüfung deckt die Ebene darunter ab — den Unterordner, den `_baum`
-    protokolliert und überspringt.
-
-    Dazu die zweite Bremse: liegen mehrere gleich grosse Kandidaten im Ordner,
-    wurde die Datei vermutlich nur umbenannt (`_mehrdeutig`). Dann bleibt es
-    beim reversiblen `vermisst`."""
-    return (_elternteil(d.pfad) in gelesen
-            and not _mehrdeutig(d, frei, vergeben))
-
-
-def _abgleiche_objekt(session: Session, o: Objekt, eigene: list[Dokument],
-                      dateien: dict, gelesen: set[str], vergeben: set[str],
-                      trocken: bool, client=None) -> dict:
-    """Zieht die Einträge einer Immobilie an den Stand der Cloud nach."""
-    ergebnis: dict[str, list] = {"verschoben": [], "umbenannt": [],
-                                 "vermisst": [], "wiederda": [],
-                                 "entfernt": []}
-    unveraendert = 0
-
-    # Erst alle, die noch an ihrem Platz liegen — sie belegen ihre Datei,
-    # bevor die Suche nach den Umgezogenen beginnt.
-    offen: list[Dokument] = []
-    nachgetragen = 0
-    for d in eigene:
-        if _norm(d.pfad) in dateien:
-            vergeben.add(_norm(d.pfad))
-            unveraendert += 1
-            # N290 — solange die Datei noch an ihrem Platz liegt, ist sie
-            # zweifelsfrei identifiziert: genau jetzt werden Dateinummer und
-            # Prüfsumme nachgetragen. Ohne dieses Nachtragen hülfe die
-            # Wiedererkennung nur Dateien, die nach der Umstellung dazukamen —
-            # der ganze Bestand bliebe auf Name und Grösse angewiesen.
-            if not trocken and _kennzeichen_nachtragen(d, dateien[_norm(d.pfad)]):
-                nachgetragen += 1
-                session.add(d)
-            if d.status == VERMISST:
-                # Die Datei ist zurück — der Eintrag darf sie wieder führen.
-                ergebnis["wiederda"].append(_kurz(d, o))
-                if not trocken:
-                    d.status = "zugeordnet" if d.kategorie else "neu"
-                    session.add(d)
-        else:
-            offen.append(d)
-
-    for d in offen:
-        ziel, art = _wiedergefunden(d, dateien, vergeben)
-        if not ziel:
-            eintrag = _kurz(d, o)
-            # N248 — steht fest, dass die Datei gelöscht wurde, nimmt der
-            # Eintrag seinen Pfad zurück und verschwindet aus der Oberfläche.
-            # Steht es NICHT fest (Ordner war nicht lesbar), bleibt es beim
-            # blossen Vermerk „vermisst" — reversibel und ohne Datenverlust.
-            if _ist_grabstein(d.pfad):
-                continue                       # längst freigegeben, nichts zu tun
-            if _nachweislich_geloescht(d, gelesen, dateien, vergeben):
-                ergebnis["entfernt"].append(eintrag)
-                if not trocken:
-                    _grabstein_setzen(session, d)
-                continue
-            ergebnis["vermisst"].append(eintrag)
-            if not trocken and d.status != VERMISST:
-                d.status = VERMISST
-                session.add(d)
-            continue
-        vergeben.add(ziel)
-        eintrag = _kurz(d, o)
-        eintrag.update({"von": d.pfad, "nach": ziel,
-                        "neuer_name": dateien[ziel].name})
-        ergebnis[art].append(eintrag)
-        if trocken:
-            continue
-        # N290 — der Steckbrief zieht mit. Benennt der Nutzer das PDF im
-        # Explorer um, bliebe „alt.immocalc" sonst als Waise liegen — und
-        # `verwaiste_immocalc_aufraeumen` LÖSCHT Waisen. Die KI-Auslese eines
-        # Belegs ginge damit ausgerechnet beim Aufräumen verloren. Best-effort:
-        # klappt der Cloud-Zugriff nicht, bleibt die Verknüpfung trotzdem
-        # richtig — die Sidecar ist Beiwerk, der Eintrag nicht.
-        if client is not None:
-            try:
-                _sidecar_mitnehmen(client, d.pfad, ziel)
-            except Exception as fehler:                   # noqa: BLE001
-                log.info("Steckbrief zu %s nicht mitgezogen: %s", d.pfad, fehler)
-        d.pfad = ziel
-        d.dateiname = dateien[ziel].name
-        kidb.pfad_nachziehen(session, d)   # N299
-        _kennzeichen_nachtragen(d, dateien[ziel])
-        if d.status == VERMISST:
-            d.status = "zugeordnet" if d.kategorie else "neu"
-        session.add(d)
-
-    ergebnis["unveraendert"] = unveraendert
-    ergebnis["kennzeichen_nachgetragen"] = nachgetragen
-    return ergebnis
-
 
 def _abgleiche(session: Session, trocken: bool) -> dict:
     """Ein vollständiger Durchgang über alle verknüpften Objektordner."""
@@ -4219,28 +3785,6 @@ def durchsuchbar(dokument_id: int,
 # Benennung bleibt erhalten).
 # --------------------------------------------------------------------------
 
-def _sidecar_mitnehmen(client, alt_pfad: str, neu_pfad: str) -> bool:
-    """Benennt die `.immocalc`-Sidecar-Datei mit um, wenn es sie gibt.
-
-    Liegt neben dem alten Beleg ein `<altname>.immocalc`, wird er per MOVE zum
-    `<neuname>.immocalc` — Steckbrief und Beleg bleiben zusammen. Kein harter
-    Fehler, wenn das scheitert (oder gar kein Sidecar existiert): der Beleg ist
-    schon umbenannt, der Steckbrief ist Beiwerk."""
-    alt_sc = _sidecar_pfad(alt_pfad)
-    neu_sc = _sidecar_pfad(neu_pfad)
-    if alt_sc == neu_sc:
-        return False
-    try:
-        if not client.existiert(alt_sc):
-            return False
-        client.verschiebe(alt_sc, neu_sc)
-        return True
-    except Exception as fehler:                            # noqa: BLE001
-        log.info("Sidecar nicht mitverschoben (%s → %s): %s",
-                 alt_sc, neu_sc, fehler)
-        return False
-
-
 def _im_ordner_umbenennen(session: Session, d: Dokument,
                           neu_name: str) -> tuple[str, str]:
     """Benennt Datei UND Eintrag um — im selben Ordner. `(pfad, name)` zurück.
@@ -4438,44 +3982,6 @@ def name_aendern(dokument_id: int, data: NameIn,
 # Lagepläne in ihren Sammelordner. Beide idempotent, kollisionssicher,
 # rein additiv (nie überschreiben, nie löschen) und standardmäßig „trocken".
 # --------------------------------------------------------------------------
-
-def _beleg_umziehen(session: Session, client, d: Dokument, ziel_ordner: str,
-                    neu_name: str) -> str | None:
-    """Verschiebt Beleg `d` (Datei + `.immocalc`-Sidecar + DB-Eintrag) nach
-    `ziel_ordner/neu_name`. Kollisionssicher (`_freier_name`), nie überschreiben,
-    nie löschen. Gibt den tatsächlichen neuen Namen zurück — oder None, wenn der
-    Beleg schon richtig liegt und heißt.
-
-    Scheitert der Cloud-MOVE, wird die Ausnahme durchgereicht (Datei und
-    Datenbank bleiben unberührt). Kippt der DB-Commit (Pfad vergeben), wird die
-    Datei zurückgeschoben, damit Cloud und Datenbank zusammenbleiben."""
-    alt_pfad = d.pfad
-    alt_ordner = _elternordner(alt_pfad)
-    ziel_ordner = (ziel_ordner or "").strip("/")
-    if alt_ordner == ziel_ordner and d.dateiname == neu_name:
-        return None
-    frei = _freier_name(session, client, ziel_ordner, neu_name)
-    ziel = f"/{ziel_ordner}/{frei}" if ziel_ordner else f"/{frei}"
-    if ziel == alt_pfad:
-        return None
-    client.verschiebe(alt_pfad, ziel.lstrip("/"))
-    d.pfad = ziel
-    d.dateiname = frei
-    kidb.pfad_nachziehen(session, d)   # N299
-    session.add(d)
-    try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
-        try:
-            client.verschiebe(ziel.lstrip("/"), alt_pfad.lstrip("/"))
-        except Exception as zurueck:                          # noqa: BLE001
-            log.warning("Rückverschieben nach Konflikt gescheitert (%s): %s",
-                        ziel, zurueck)
-        raise
-    _sidecar_mitnehmen(client, alt_pfad, ziel)
-    return frei
-
 
 @router.post("/praefix-entfernen")
 def praefix_entfernen(trocken: bool = True,
@@ -4860,6 +4366,9 @@ _VERWEIS_TITEL = {
     "renovierungsposten.quelle_dokument_id": "Renovierungsrechnung",
     "stromjahr.screenshot_dokument_id": "Stromjahr (Screenshot)",
     "belegdaten.dokument_id": "Belegdaten",
+    # N313 — kam mit dem Kontaktbuch dazu und fehlte hier; im Duplikat-
+    # Assistenten stand dem Nutzer sonst der rohe Tabellenname.
+    "kundennummer.quelle_dokument_id": "Kundennummer",
 }
 
 
@@ -5149,30 +4658,6 @@ def pruefsummen_nachtragen_endpunkt(
 # nur die Wahl des Ziels dazu — und der Riegel, dass sie den Objektordner nicht
 # verlässt.
 # --------------------------------------------------------------------------
-
-def _ziel_im_objekt(o: Objekt, ordner: str) -> str:
-    """Ein frei gewählter Ordner, auf den Objektordner eingesperrt.
-
-    Zusätzlich zum Home-Riegel in `nextcloud._pruefe_schreibrecht`: ein Beleg
-    dieser Immobilie hat ausserhalb ihres Ordners nichts verloren, auch nicht
-    auf ausdrücklichen Wunsch. Sonst liesse sich über diesen Weg ein Beleg in
-    den Ordner einer FREMDEN Immobilie schieben, und der Abgleich dort würde
-    ihn beim nächsten Lauf als deren Beleg aufnehmen."""
-    wurzel = (o.nc_ordner or "").strip("/")
-    ziel = (ordner or "").strip("/")
-    if not wurzel:
-        raise HTTPException(400, "Für diese Immobilie ist kein Cloud-Ordner "
-                                 "hinterlegt.")
-    if ".." in ziel.split("/"):
-        raise HTTPException(400, "Unzulässiger Pfad.")
-    if not ziel:
-        return wurzel
-    if ziel == wurzel or ziel.startswith(wurzel + "/"):
-        return ziel
-    # Eine relative Angabe („60_Nebenkosten/2025") wird unter dem Objektordner
-    # verstanden — das ist die Form, in der die Oberfläche sie anbietet.
-    return f"{wurzel}/{ziel}"
-
 
 @router.get("/{dokument_id}/ablageziele")
 def ablageziele(dokument_id: int,

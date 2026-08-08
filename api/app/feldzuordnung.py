@@ -30,6 +30,8 @@ gegeneinander.
 """
 from __future__ import annotations
 
+from . import zahlen
+
 import re
 from datetime import date
 
@@ -219,15 +221,14 @@ _FUEHRENDE_ZAHL = re.compile(r"[-+]?\d[\d.,]*")
 
 
 def _reine_zahl(text: str) -> float | None:
-    """Eine Zahl in deutscher oder englischer Schreibweise — sonst `None`.
+    """Eine Zahl in deutscher Schreibweise — die gemeinsame Regel aus `zahlen`.
 
-    Deutsches Format: Punkt trennt Tausender, Komma die Nachkommastellen."""
-    if "," in text:
-        text = text.replace(".", "").replace(",", ".")
-    try:
-        return float(text)
-    except ValueError:
-        return None
+    N313 — hier stand eine eigene Fassung, die OHNE Komma jeden Punkt als
+    Dezimaltrenner nahm. „250.000 €" wurde damit zu **250,00 €**, während
+    derselbe Beleg über `ki_werte._ki_zahl` als **250.000,00 €** in den
+    Datensatz ging: Faktor 1000 im selben Feld. Jetzt gilt überall dieselbe
+    Regel."""
+    return zahlen.deutsch(text)
 
 
 def _als_zahl(wert) -> float | None:

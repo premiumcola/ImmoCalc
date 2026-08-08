@@ -224,6 +224,11 @@ export const NAV = [
   // PV-Seite: eigene Nutzer, eigener Verlauf, eigene Abrechnung.
   ['E-Tankstelle', 'tankstelle.html', '⏻'],
   ['Eigentümer', 'eigentuemer.html', '☗'],
+  // N309f — das Kontaktbuch: Handwerker, Versicherer, Banken und Versorger
+  // samt Kundennummern. Steht neben „Eigentümer", weil beides Menschen und
+  // Firmen rund um die Immobilien sind. Auf dem Telefon wandert es von selbst
+  // hinter „Mehr" (Index ≥ SICHTBAR) — die vier täglichen Wege bleiben stehen.
+  ['Kontakte', 'kontakte.html', '☏'],
   // N246 — das Belegarchiv (N84, die interne Wissens-Datenbank der KI-
   // ausgelesenen Belege) hat KEINEN Menuepunkt mehr: es laeuft im Hintergrund
   // mit und wird selten geoeffnet. Der Einstieg steht in den Einstellungen

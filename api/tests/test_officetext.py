@@ -182,3 +182,84 @@ def test_leerer_und_normaler_text_bleiben_unberuehrt():
     from app.pdftext import _nur_xfa_platzhalter
     assert not _nur_xfa_platzhalter("")
     assert not _nur_xfa_platzhalter("Stadtwerke Eckental, Wasserabrechnung 2025")
+
+
+# --------------------------------------------------------------------------
+# N313 — die deutsche Zahlenregel gilt überall gleich
+# --------------------------------------------------------------------------
+
+_ZAHLFAELLE = [
+    ("250.000", 250000.0),      # Kaufpreis ohne Nachkommastellen
+    ("250.000,00", 250000.0),
+    ("1.250", 1250.0),          # der teuerste Fall im Projekt
+    ("1.234,56", 1234.56),
+    ("1.234.567", 1234567.0),
+    ("2.416 kWh", 2416.0),      # der Fund aus N287
+    ("12.5", 12.5),             # so kommen Werte aus der API zurück
+    ("96.809,49 €", 96809.49),
+    ("-1.250,50", -1250.5),
+]
+
+
+def test_die_zahlenregel_liest_deutsch():
+    from app.zahlen import deutsch
+    for text, erwartet in _ZAHLFAELLE:
+        assert deutsch(text) == erwartet, text
+
+
+def test_unbrauchbares_ergibt_none_statt_null():
+    """Eine 0 wäre gelogen — sie sähe aus wie eine Angabe."""
+    from app.zahlen import deutsch
+    for text in ("", "   ", "—", "kein Betrag", None, "-", "."):
+        assert deutsch(text) is None, repr(text)
+
+
+def test_wahrheitswerte_sind_keine_zahlen():
+    """`bool` ist in Python eine Zahl — als Betrag wäre `True` ein Fehler."""
+    from app.zahlen import deutsch
+    assert deutsch(True) is None
+    assert deutsch(False) is None
+
+
+def test_formular_und_datensatz_lesen_gleich():
+    """Der eigentliche Fund: dieselbe Zahl ging über zwei Fassungen mit
+    verschiedenen Regeln — das Formular zeigte 250,00 €, der daraus erzeugte
+    Datensatz trug 250.000,00 €."""
+    from app.dokumente.ki_werte import _ki_zahl
+    from app.feldzuordnung import _als_zahl
+
+    for text, erwartet in _ZAHLFAELLE:
+        a, b = _als_zahl(text), _ki_zahl(text)
+        assert a is not None and b is not None, text
+        assert abs(a - b) < 0.005, f"{text}: Formular {a} ≠ Datensatz {b}"
+        assert abs(round(b, 2) - round(erwartet, 2)) < 0.005, text
+
+
+def test_der_eigenstrom_rabatt_gibt_es_nur_einmal():
+    """Wird er geändert, müssen Mieterabrechnung UND Fahrerrechnung folgen —
+    beides sind versendete Dokumente."""
+    from app.routers import stromkette
+    from app.tanken import satz
+
+    assert stromkette.EIGEN_RABATT is satz.EIGEN_RABATT
+    assert stromkette.eigen_satz is satz.eigen_satz
+    assert satz.eigen_satz(0.40) == round(0.40 * 0.9, 5)
+
+
+def test_die_kataloge_bleiben_deckungsgleich():
+    """N313 — `ARTKUERZEL` fehlte genau ein Schlüssel (`Notarvertrag`), weil es
+    im Gegensatz zum Schwesterpaar keinen Wächter dafür gab."""
+    from app.cloudkern import ARTKUERZEL, ZIELORDNER
+
+    assert set(ARTKUERZEL) == set(ZIELORDNER), \
+        f"fehlt: {sorted(set(ZIELORDNER) - set(ARTKUERZEL))}"
+
+
+def test_jeder_dokumentverweis_hat_einen_klartext_titel():
+    """Sonst steht im Duplikat-Assistenten der rohe Tabellenname."""
+    from app import dokumentlinks
+    from app.routers.dokumente import _VERWEIS_TITEL
+
+    ohne = [str(v) for v in dokumentlinks.register()
+            if str(v) not in _VERWEIS_TITEL]
+    assert not ohne, f"ohne Klartext-Titel: {ohne}"

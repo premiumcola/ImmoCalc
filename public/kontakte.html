@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Kontaktbuch · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* ==================================================================
+     N309f — Kontaktbuch. Nur, was immo.css nicht hat.
+
+     Die Bausteine `.hh` + `.plus`, `.feldpaar`, `.feldnote` und `.leerfeld`
+     stehen wortgleich auch in renovierung.html — sie gehören später einmal
+     nach immo.css; die darf hier nicht angefasst werden.
+     ================================================================== */
+
+  /* Abschnittskopf: Titel links, „＋" oben rechts (roter Faden 8). */
+  .hh{display:flex; align-items:center; justify-content:space-between;
+      gap:10px; margin:22px 0 10px}
+  .hh > h2.sec{margin:0; min-width:0; font-size:15px}
+  .plus{flex:none; border:none; background:var(--teal-l); color:var(--teal-d);
+        width:44px; height:44px; border-radius:13px; cursor:pointer;
+        font:600 21px var(--body); line-height:1; display:inline-flex;
+        align-items:center; justify-content:center}
+  .plus:hover{background:var(--teal); color:#fff}
+  .feldpaar{display:grid; gap:0 12px}
+  .feldpaar > .field{min-width:0}
+  .feldpaar .inp{min-width:0}
+  @media(min-width:460px){ .feldpaar{grid-template-columns:1fr 1fr} }
+  .feldnote{font:400 12px var(--body); color:var(--soft); margin:6px 0 0;
+            line-height:1.45}
+  .leerfeld{text-align:center; padding:22px 4px 4px}
+  .leerfeld .big{font:700 16px var(--disp); letter-spacing:-.015em;
+                 margin-bottom:6px}
+  .leerfeld p{font:400 13px var(--body); color:var(--soft); margin:0 auto 16px;
+              line-height:1.5; max-width:34em}
+
+  /* ---- Kopfzeile: „nachtragen" statt eines zweiten Menüpunkts ---------- */
+  .barakt{flex:none; border:none; background:var(--teal-l); color:var(--teal-d);
+          width:44px; height:44px; border-radius:13px; cursor:pointer;
+          display:inline-flex; align-items:center; justify-content:center}
+  .barakt:hover{background:var(--teal); color:#fff}
+  .barakt:disabled{opacity:.5; cursor:default}
+
+  /* ---- Umschalter der beiden Sichten ----------------------------------- */
+  .umschalter{display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px;
+              background:#DCE3E2; border-radius:15px; margin-bottom:14px;
+              /* Zwei Ziele brauchen keine 1200 px — sonst steht ein Schalter
+                 quer über den halben Schirm. */
+              max-width:460px}
+  .umschalter button{min-height:44px; border:none; border-radius:11px;
+              background:none; cursor:pointer; color:var(--soft);
+              font:600 13px var(--disp); letter-spacing:-.01em;
+              display:inline-flex; align-items:center; justify-content:center;
+              gap:7px}
+  .umschalter button svg{width:17px; height:17px; flex:none}
+  .umschalter button[aria-selected=true]{background:var(--sheet);
+              color:var(--teal-d); box-shadow:0 1px 3px rgba(22,38,44,.14)}
+
+  /* ---- Filter: ein dichtes Raster statt endloser Pillenreihen ---------- */
+  .filter{display:grid; gap:8px; grid-template-columns:repeat(3,1fr)}
+  .filter .suchbox{grid-column:1 / -1; position:relative}
+  .filter .suchbox .lupe{position:absolute; left:15px; top:50%; width:16px;
+              height:16px; margin-top:-8px; color:var(--soft);
+              pointer-events:none}
+  .filter .inp{border-radius:999px; min-height:44px; padding-left:40px}
+  /* Das native „✕" von type=search zeichnet der Browser in Systemblau und
+     stellt es neben die eigene Lupe — die Filter räumt der Chip darunter weg. */
+  .filter .inp::-webkit-search-cancel-button{display:none}
+  .filter .auswahl-knopf{font-size:13px; padding:10px 14px; gap:6px}
+  /* Auf dem iPhone teilen sich drei Wahlfelder 366 px — eine Spur enger,
+     damit „Handwerker" ganz dasteht statt als „Handwe…". */
+  @media(max-width:479px){
+    .filter .auswahl-knopf{font-size:12.5px; padding:10px 11px; gap:2px}
+  }
+  /* Die Renovierungssicht hat nur zwei Wahlfelder — sie dürfen breit sein. */
+  .filter.zwei{grid-template-columns:1fr}
+  .filter.zwei .auswahl-knopf{font-size:14px}
+  @media(min-width:680px){ .filter.zwei{grid-template-columns:1fr 1fr} }
+  /* Erst ab der Seitenleiste (1000 px) steht alles in EINER Zeile — auf dem
+     iPad blieb vom Suchfeld sonst „Firma oder Numr" übrig. */
+  @media(min-width:1000px){
+    .filter{grid-template-columns:1.5fr 1fr 1fr 1fr}
+    .filter .suchbox{grid-column:auto}
+  }
+
+  /* Hinweiszeile: was fehlt und wie man es findet — beides anklickbar,
+     kein Dauerbanner (roter Faden 7). Ist nichts offen, bleibt sie leer. */
+  .hinweis{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 6px}
+  .hinweis:empty{display:none}
+  /* `button.chip` zieht sich in immo.css mit margin-block:-10px in die Zeile
+     zurück — hier steht der Chip allein und klebte dadurch an der nächsten
+     Gruppenüberschrift. */
+  .hinweis button.chip{font-size:11px; padding-inline:13px; margin-block:0}
+  /* Eingeschaltet: derselbe sanfte Ton mit Ring — ein brauner Vollton wäre
+     der lauteste Fleck der Seite. */
+  .hinweis button.chip[aria-pressed=true]{box-shadow:inset 0 0 0 1.5px var(--amber-li)}
+
+  /* ---- Firmenkarten ---------------------------------------------------- */
+  /* align-items:start — sonst zieht die Zeile jede Karte auf die Höhe ihrer
+     höchsten Nachbarin, und neben einer Karte mit Kundennummern steht eine
+     halbe leere Fläche (roter Faden 4). */
+  .kraster{display:grid; gap:10px; align-items:start}
+  /* Zwei feste Spalten statt auto-fill: bei drei Spalten ist eine Karte so
+     schmal, dass jeder Kontaktchip eine eigene Zeile braucht — dieselbe
+     Firma wird dadurch höher statt kompakter. */
+  @media(min-width:680px){ .kraster{grid-template-columns:1fr 1fr} }
+  .kkarte{background:var(--sheet); border-radius:16px; padding:10px 12px 13px;
+          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .kkopf{display:flex; align-items:center; gap:12px; width:100%; min-height:44px;
+         border:none; background:none; padding:2px 0; cursor:pointer;
+         text-align:left; font-family:var(--body); color:var(--ink);
+         border-radius:12px}
+  .kkopf:hover .kname{color:var(--teal-d)}
+  .kkopf:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+  .kikon{flex:none; width:42px; height:42px; border-radius:13px;
+         background:var(--teal-l); color:var(--teal-d); display:inline-flex;
+         align-items:center; justify-content:center}
+  .kikon .mono{font:600 14px var(--mono); letter-spacing:.02em}
+  .ktext{flex:1; min-width:0}
+  /* display:block — als <span> wirkt margin sonst nicht (klebender Text). */
+  .kname{display:block; font:600 14.5px var(--disp); letter-spacing:-.01em;
+         line-height:1.3; overflow-wrap:anywhere}
+  .kgw{display:block; font:600 9.5px var(--mono); letter-spacing:.08em;
+       text-transform:uppercase; color:var(--soft); margin-top:4px}
+  .kpfeil{flex:none; color:#A9B6B4; font:400 20px var(--body); line-height:1}
+  .kwege{display:flex; flex-wrap:wrap; gap:6px; margin-top:11px}
+  .weg{display:inline-flex; align-items:center; gap:7px; max-width:100%;
+       min-height:44px; padding:8px 14px; border:none; border-radius:999px;
+       font:500 12px var(--body); cursor:pointer; text-decoration:none}
+  .weg .wi{flex:none}
+  .weg span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .weg.an{background:var(--teal-l); color:var(--teal-d)}
+  .weg.an:hover{background:var(--teal); color:#fff}
+  .weg.fehlt{background:transparent; color:var(--soft);
+             box-shadow:inset 0 0 0 1.5px var(--line)}
+  .weg.fehlt:hover{color:var(--teal-d); box-shadow:inset 0 0 0 1.5px var(--teal)}
+  /* Tiefe über Farbabstufung statt einer Trennlinie. */
+  .knrn{margin-top:11px; background:#F2F6F5; border-radius:13px;
+        padding:10px 12px; display:grid; gap:10px}
+  .knr{min-width:0}
+  .knrkopf{display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+           min-width:0}
+  .knrwerte{display:flex; flex-wrap:wrap; gap:3px 14px; margin-top:4px}
+  .knr b{font:600 12.5px var(--mono); overflow-wrap:anywhere}
+  .knr i{font:600 9.5px var(--mono); letter-spacing:.07em; font-style:normal;
+         text-transform:uppercase; color:var(--soft)}
+  .knr em{font:500 10.5px var(--body); font-style:normal; color:var(--teal-d);
+          background:var(--teal-l); border-radius:999px; padding:2px 9px;
+          min-width:0; overflow:hidden; text-overflow:ellipsis;
+          white-space:nowrap}
+
+  /* ---- Sicht „Nach Renovierung" ---------------------------------------- */
+  .rkopf{background:var(--sheet); border-radius:16px; padding:15px 16px;
+         box-shadow:0 1px 2px rgba(22,38,44,.05); display:flex; gap:12px;
+         align-items:center; flex-wrap:wrap; margin-bottom:12px}
+  .rzahl{flex:1; min-width:0}
+  /* nowrap: „10.000,19 €" darf das Eurozeichen nicht in eine zweite Zeile
+     schicken. Auf dem iPhone dafür eine Nummer kleiner. */
+  .rv{display:block; font:700 27px var(--disp); letter-spacing:-.03em;
+      line-height:1.05; white-space:nowrap}
+  @media(max-width:439px){ .rv{font-size:23px} }
+  .rl{display:block; font:500 11px var(--mono); color:var(--soft);
+      margin-top:7px; line-height:1.5}
+  /* Die Zahlengruppen brechen nur ZWISCHEN einander um; der Trenner klebt
+     hinten am Wort, damit keine Zeile mit „·" beginnt. */
+  .rl span{white-space:nowrap}
+  .rl span:not(:last-child)::after{content:' ·'}
+  /* Auf dem iPhone bekommt die Zahlenspalte die ganze Zeile — daneben blieben
+     für „8 Firmen · 5 Gewerke · 11 Rechnungen" 160 px. */
+  @media(max-width:479px){ .rkopf .rzahl{flex:1 1 100%} }
+  .rlink{flex:none; display:inline-flex; align-items:center; min-height:44px;
+         padding:0 15px; border-radius:999px; background:var(--teal-l);
+         color:var(--teal-d); font:600 12px var(--body); text-decoration:none;
+         white-space:nowrap}
+  .rlink:hover{background:var(--teal); color:#fff}
+
+  .gwraster{display:grid; gap:10px; align-items:start}
+  @media(min-width:680px){
+    .gwraster{grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+  }
+  .gwkarte{background:var(--sheet); border-radius:16px; padding:14px 13px 9px;
+           box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .gwkopf{display:flex; align-items:center; gap:10px}
+  .gwikon{flex:none; width:36px; height:36px; border-radius:11px;
+          background:var(--teal-l); color:var(--teal-d); display:inline-flex;
+          align-items:center; justify-content:center}
+  .gwname{flex:1; min-width:0; font:600 14px var(--disp); letter-spacing:-.01em;
+          overflow-wrap:anywhere}
+  .gwsumme{flex:none; font:700 13.5px var(--mono); letter-spacing:-.01em}
+  .gwbalken{height:8px; border-radius:999px; background:#E5EBEA;
+            overflow:hidden; margin:11px 0 3px}
+  .gwbalken span{display:block; height:100%; border-radius:999px;
+                 background:var(--teal)}
+  .fliste{list-style:none; margin:0; padding:0}
+  .firma{display:grid; grid-template-columns:1fr auto; gap:5px 10px; width:100%;
+         min-height:44px; align-items:center; border:none; background:none;
+         padding:8px 6px; margin:0; border-radius:11px; cursor:pointer;
+         text-align:left; font-family:var(--body); color:var(--ink)}
+  .firma:hover{background:#F2F6F5}
+  .firma:focus-visible{outline:2px solid var(--teal); outline-offset:-2px}
+  .fname{grid-area:1 / 1; min-width:0; font:500 13px var(--body);
+         overflow-wrap:anywhere}
+  .fwert{grid-area:1 / 2; text-align:right; font:600 12.5px var(--mono);
+         white-space:nowrap}
+  .fwert i{display:block; font:500 9.5px var(--mono); font-style:normal;
+           color:var(--soft); margin-top:3px}
+  .fwert i.ohne{display:inline; font-size:11px; color:var(--soft)}
+  .fbalken{grid-area:2 / 1 / 3 / 3; height:5px; border-radius:999px;
+           background:#EDF1F0; overflow:hidden}
+  .fbalken span{display:block; height:100%; border-radius:999px;
+                background:rgba(15,110,92,.42)}
+
+  /* ---- Kontaktblatt (Dialog) ------------------------------------------- */
+  dialog.immo-dlg .blattkopf{display:flex; align-items:center; gap:12px;
+                             margin-bottom:18px; padding-right:38px}
+  dialog.immo-dlg .blattkopf .dt{margin:0; padding-right:0; min-width:0;
+                                 overflow-wrap:anywhere}
+  .kikon.gross{width:48px; height:48px; border-radius:15px}
+  .kikon.gross .mono{font-size:16px}
+  .blatt .field{margin-bottom:11px}
+  .blatt .field label{display:flex; align-items:center; gap:0}
+  .hand{margin-left:7px; font:600 9px var(--mono); letter-spacing:.08em;
+        text-transform:uppercase; font-style:normal; color:var(--teal-d);
+        background:var(--teal-l); border-radius:999px; padding:3px 8px}
+  .nrform{background:var(--sheet); border-radius:14px; padding:13px 13px 5px;
+          margin-bottom:11px}
+  .nrform .btn{margin-bottom:8px}
+  .nrliste{list-style:none; margin:0; padding:0; display:grid; gap:7px}
+  .nrliste li{display:flex; align-items:center; gap:6px;
+              background:var(--sheet); border-radius:13px;
+              padding:4px 4px 4px 13px; min-width:0}
+  .nrtext{flex:1; min-width:0; padding:6px 0}
+  .nrwert{display:block; font:600 12.5px var(--mono); overflow-wrap:anywhere}
+  .nrmeta{display:block; margin-top:3px; line-height:1.4}
+  .nrmeta i{font:600 9.5px var(--mono); letter-spacing:.07em; font-style:normal;
+            text-transform:uppercase; color:var(--soft)}
+  .nrmeta em{font:500 11px var(--body); font-style:normal; color:var(--teal-d)}
+  .nrmeta em::before{content:' · '; color:var(--soft)}
+  .nrliste .del{margin-left:auto; flex:none; border:none; background:none;
+                color:var(--soft); font:400 20px var(--body); width:44px;
+                height:44px; cursor:pointer; border-radius:12px; line-height:1}
+  .nrliste .del:hover{background:var(--neg-bg); color:var(--neg)}
+  .blatt > .btn{margin-top:10px}
+  .blatt [data-nrliste]{margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <div class="barwrap">
+      <h1>Kontaktbuch</h1>
+      <div class="sub" id="sub">wird geladen …</div>
+    </div>
+    <button class="barakt" id="ernten" type="button"
+            title="Firmen und Nummern aus dem Bestand nachtragen"
+            aria-label="Firmen und Nummern aus dem Bestand nachtragen">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none"
+           stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+           stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 11a8 8 0 1 0-.7 4.4"/><path d="M20 5.5V11h-5.5"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="scroll">
+    <div class="umschalter" role="tablist" id="umschalter">
+      <button type="button" role="tab" data-sicht="firmen" aria-selected="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true"><circle cx="12" cy="8.4" r="3.6"/>
+          <path d="M5.2 19.4a6.8 6.8 0 0 1 13.6 0"/></svg>Firmen</button>
+      <button type="button" role="tab" data-sicht="reno" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true"><path d="M4 20h16"/>
+          <path d="M6.5 20V9.5L12 5l5.5 4.5V20"/><path d="M10 20v-5h4v5"/></svg>
+        Nach Renovierung</button>
+    </div>
+    <div id="steuer"></div>
+    <div class="hinweis" id="hinweis"></div>
+    <div id="inhalt"></div>
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+/* N309f — das Kontaktbuch. Zwei Sichten teilen sich eine Seite:
+   „Firmen" zeigt die Kontakte nach Art gruppiert, „Nach Renovierung"
+   beantwortet die Frage, welche Firma dort in welchem Gewerk gearbeitet hat.
+   Gezeichnet wird in den Modulen unter assets/kontakte/. */
+import { esc, installNav, melde, leerHtml, frage } from './assets/immo.js';
+import { auswahlfeld } from './assets/auswahl.js';
+import * as Daten from './assets/kontakte/daten.js';
+import { S } from './assets/kontakte/daten.js';
+import { firmenHtml } from './assets/kontakte/firmen.js';
+import { renoSichtHtml } from './assets/kontakte/renovierungen.js';
+import { kontaktBlatt } from './assets/kontakte/blatt.js';
+
+installNav();
+
+const steuer = document.getElementById('steuer');
+const hinweis = document.getElementById('hinweis');
+const inhalt = document.getElementById('inhalt');
+const sub = document.getElementById('sub');
+
+let gesamt = 0;          // Firmen ohne jeden Filter — Bezugsgröße der Kopfzeile
+let tippuhr = 0;
+
+const LUPE = `<svg class="lupe" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+    aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"/>
+    <path d="m15.6 15.6 4 4"/></svg>`;
+
+/* ---- Kopfzeile ---------------------------------------------------------- */
+function kopfFrisch() {
+  const sichtbar = Daten.sichtbareKontakte().length;
+  const nummern = Daten.nummernAnzahl();
+  const firmen = sichtbar === gesamt
+    ? `${gesamt} ${gesamt === 1 ? 'Firma' : 'Firmen'}`
+    : `${sichtbar} von ${gesamt} Firmen`;
+  // „0 Kundennummern" ist keine Auskunft, sondern Füllung — im gefilterten
+  // Ausschnitt steht die Zahl nur, wenn es welche gibt.
+  sub.textContent = nummern
+    ? `${firmen} · ${nummern} ${
+        nummern === 1 ? 'Kundennummer' : 'Kundennummern'}`
+    : firmen;
+}
+
+/* ---- Sicht „Firmen" ----------------------------------------------------- */
+function filterBauen() {
+  steuer.innerHTML = `<div class="filter">
+      <div class="suchbox">${LUPE}
+        <input class="inp" id="suche" type="search" autocomplete="off"
+               placeholder="Firma oder Nummer suchen"
+               aria-label="Firma oder Nummer suchen"
+               value="${esc(S.filter.suche)}"></div>
+      <div data-f-objekt></div><div data-f-art></div><div data-f-gewerk></div>
+    </div>`;
+
+  const feld = (platz, alleText, schluessel, werte) => auswahlfeld(
+    steuer.querySelector(platz), {
+      optionen: [{ wert: '', text: alleText }, ...werte],
+      wert: S.filter[schluessel], label: alleText,
+      aenderung: wert => { S.filter[schluessel] = wert; firmenLaden(); },
+    });
+
+  feld('[data-f-objekt]', 'Immobilie', 'objekt',
+       S.objekte.map(o => ({ wert: o.slug, text: o.titel || o.name })));
+  feld('[data-f-art]', 'Art', 'art',
+       (S.daten?.arten || []).map(a => ({ wert: a, text: a })));
+  feld('[data-f-gewerk]', 'Gewerk', 'gewerk',
+       (S.daten?.gewerke || []).map(g => ({ wert: g, text: g })));
+
+  steuer.querySelector('#suche').addEventListener('input', e => {
+    clearTimeout(tippuhr);
+    S.filter.suche = e.target.value.trim();
+    tippuhr = setTimeout(firmenLaden, 250);
+  });
+}
+
+/* Was fehlt, steht als anklickbarer Chip da — nicht als Banner. Der zweite
+   Chip räumt die Filter wieder weg und erscheint nur, wenn welche gesetzt
+   sind. Ist beides erledigt, ist die Zeile leer und nimmt keinen Platz. */
+function hinweisFrisch() {
+  const luecken = (S.daten?.kontakte || []).filter(k => k.fehlt?.length).length;
+  const chips = [];
+  if (luecken) {
+    chips.push(`<button class="chip amber" type="button" data-luecken
+        aria-pressed="${S.filter.nurLuecken}">${luecken} ohne Telefon
+        oder Mail${S.filter.nurLuecken ? ' — alle zeigen' : ' — anzeigen'}</button>`);
+  }
+  if (Daten.gefiltert()) {
+    chips.push('<button class="chip" type="button" data-reset>Filter '
+      + 'zurücksetzen</button>');
+  }
+  hinweis.innerHTML = chips.join('');
+}
+
+function firmenZeichnen() {
+  const liste = Daten.sichtbareKontakte();
+  inhalt.innerHTML = liste.length
+    ? firmenHtml(liste)
+    : leerHtml('Keine Firma gefunden',
+        'Mit anderen Filtern suchen — oder mit „↻" oben rechts aus Rechnungen, '
+        + 'Verträgen und Belegen nachtragen lassen.', null);
+  hinweisFrisch();
+  kopfFrisch();
+}
+
+async function firmenLaden() {
+  try {
+    S.daten = await Daten.kontakteHolen(S.filter);
+    firmenZeichnen();
+  } catch (fehler) {
+    inhalt.innerHTML = leerHtml('Keine Verbindung',
+      String(fehler.message || fehler), null);
+  }
+}
+
+/* ---- Sicht „Nach Renovierung" ------------------------------------------- */
+function renoSteuerBauen() {
+  const objekte = S.objekte.filter(o => S.renovierungen.has(o.slug));
+  if (!objekte.length) {
+    steuer.innerHTML = '';
+    hinweis.innerHTML = '';
+    inhalt.innerHTML = leerHtml('Noch keine Renovierung angelegt',
+      'Sobald ein Bauvorhaben mit Rechnungen erfasst ist, steht hier, welche '
+      + 'Firma in welchem Gewerk gearbeitet hat.',
+      { text: 'Zu den Immobilien', href: 'index.html' });
+    return;
+  }
+  if (!S.renoObjekt || !S.renovierungen.has(S.renoObjekt)) {
+    S.renoObjekt = objekte[0].slug;
+    S.renoId = '';
+  }
+  steuer.innerHTML = `<div class="filter zwei">
+      <div data-f-robjekt></div><div data-f-reno></div></div>`;
+
+  auswahlfeld(steuer.querySelector('[data-f-robjekt]'), {
+    optionen: objekte.map(o => ({ wert: o.slug, text: o.titel || o.name })),
+    wert: S.renoObjekt, label: 'Immobilie',
+    aenderung: wert => {
+      S.renoObjekt = wert;
+      S.renoId = '';
+      renoSteuerBauen();
+      renoLaden();
+    },
+  });
+
+  const liste = S.renovierungen.get(S.renoObjekt) || [];
+  if (!S.renoId || !liste.some(r => String(r.id) === String(S.renoId))) {
+    S.renoId = String(liste[0]?.id || '');
+  }
+  auswahlfeld(steuer.querySelector('[data-f-reno]'), {
+    optionen: liste.map(r => ({ wert: String(r.id), text: r.name })),
+    wert: S.renoId, label: 'Renovierung',
+    aenderung: wert => { S.renoId = wert; renoLaden(); },
+  });
+}
+
+async function renoLaden() {
+  if (!S.renoId) return;
+  hinweis.innerHTML = '';
+  try {
+    S.renoSicht = await Daten.gewerkeSichtHolen(S.renoId);
+    const reno = (S.renovierungen.get(S.renoObjekt) || [])
+      .find(r => String(r.id) === String(S.renoId));
+    // Die Kopfzeile bleibt, wie sie ist: Name und Immobilie der Renovierung
+    // stehen direkt darunter in den Wahlfeldern — zweimal wäre einmal zuviel.
+    inhalt.innerHTML = renoSichtHtml(reno, S.renoSicht, S.renoObjekt);
+  } catch (fehler) {
+    inhalt.innerHTML = leerHtml('Nicht gefunden',
+      String(fehler.message || fehler), null);
+  }
+}
+
+/* ---- Umschalten --------------------------------------------------------- */
+async function sichtSetzen(neu) {
+  S.sicht = neu;
+  for (const knopf of document.querySelectorAll('#umschalter [data-sicht]')) {
+    knopf.setAttribute('aria-selected', String(knopf.dataset.sicht === neu));
+  }
+  inhalt.innerHTML = '';
+  if (neu === 'firmen') {
+    filterBauen();
+    await firmenLaden();
+    return;
+  }
+  if (!S.renovierungen.size) await Daten.renovierungenAllerObjekte();
+  renoSteuerBauen();
+  await renoLaden();
+}
+
+document.getElementById('umschalter').addEventListener('click', e => {
+  const knopf = e.target.closest('[data-sicht]');
+  if (knopf && knopf.dataset.sicht !== S.sicht) sichtSetzen(knopf.dataset.sicht);
+});
+
+/* ---- Kontaktblatt öffnen ------------------------------------------------ */
+async function blattOeffnen(id, fokusFeld = '') {
+  let kontakt = (S.daten?.kontakte || []).find(k => String(k.id) === String(id));
+  if (!kontakt || S.sicht === 'reno') {
+    try { kontakt = await Daten.kontaktHolen(id); }
+    catch (fehler) { melde(String(fehler.message || fehler), 'neg'); return; }
+  }
+  const geaendert = await kontaktBlatt(kontakt, {
+    arten: S.daten?.arten || [], gewerke: S.daten?.gewerke || [],
+    objekte: S.objekte,
+  }, fokusFeld);
+  if (!geaendert) return;
+  if (S.sicht === 'firmen') await firmenLaden();
+  else await renoLaden();
+}
+
+document.getElementById('inhalt').addEventListener('click', e => {
+  // Ein Chip mit tel:/mailto: bleibt ein Link — er darf das Blatt nicht öffnen.
+  if (e.target.closest('[data-halt]')) return;
+  const ziel = e.target.closest('[data-kontakt]');
+  if (ziel) blattOeffnen(ziel.dataset.kontakt, ziel.dataset.feld || '');
+});
+
+hinweis.addEventListener('click', e => {
+  if (e.target.closest('[data-luecken]')) {
+    S.filter.nurLuecken = !S.filter.nurLuecken;
+    firmenZeichnen();
+    return;
+  }
+  if (e.target.closest('[data-reset]')) {
+    Object.assign(S.filter,
+      { objekt: '', art: '', gewerk: '', suche: '', nurLuecken: false });
+    filterBauen();
+    firmenLaden();
+  }
+});
+
+/* ---- Nachtragen aus dem Bestand ----------------------------------------- */
+document.getElementById('ernten').addEventListener('click', async e => {
+  const knopf = e.currentTarget;
+  const ok = await frage('Aus dem Bestand nachtragen',
+    'Rechnungen, Versicherungen, Kredite und ausgelesene Belege werden nach '
+    + 'Firmen und Kundennummern durchsucht. Vorhandene Angaben bleiben stehen — '
+    + 'von Hand gepflegte Felder werden nie überschrieben.',
+    { knopf: 'Nachtragen' });
+  if (!ok) return;
+  knopf.disabled = true;
+  try {
+    const ergebnis = await Daten.ernten();
+    melde(ergebnis.neu || ergebnis.nummern
+      ? `${ergebnis.neu} neue ${ergebnis.neu === 1 ? 'Firma' : 'Firmen'} · `
+        + `${ergebnis.nummern} neue ${
+          ergebnis.nummern === 1 ? 'Kundennummer' : 'Kundennummern'}`
+      : 'Es war schon alles erfasst', 'pos');
+    gesamt = ergebnis.gesamt ?? gesamt;
+    if (S.sicht === 'firmen') await firmenLaden();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+  } finally {
+    knopf.disabled = false;
+  }
+});
+
+/* ---- Start -------------------------------------------------------------- */
+try {
+  const [objekte, daten] = await Promise.all([
+    Daten.objekteHolen().catch(() => []),
+    Daten.kontakteHolen(S.filter),
+  ]);
+  S.objekte = objekte || [];
+  S.daten = daten;
+  gesamt = daten.anzahl ?? daten.kontakte.length;
+  filterBauen();
+  firmenZeichnen();
+} catch (fehler) {
+  sub.textContent = 'API nicht erreichbar';
+  inhalt.innerHTML = leerHtml('Keine Verbindung',
+    String(fehler.message || fehler), null);
+}
+</script>
+</body>
+</html>

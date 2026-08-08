@@ -11,41 +11,20 @@ ganzen abweisen.
 """
 from __future__ import annotations
 
+from .. import zahlen
+
 import re
 from datetime import date
 from typing import Optional
 
 
 def _ki_zahl(wert) -> Optional[float]:
-    """Ein Rasterwert als Zahl — deutsches Komma und Tausenderpunkt inklusive.
+    """Ein Rasterwert als Zahl — die gemeinsame Regel aus `zahlen` (N313).
 
-    Das Modell soll Punkt-Dezimalzahlen liefern, aber ein „1.234,56 €" aus dem
-    Beleg darf nicht scheitern. `None`, wenn nichts Brauchbares dasteht."""
-    if isinstance(wert, bool):        # bool ist in Python eine Zahl — hier nicht
-        return None
-    if isinstance(wert, (int, float)):
-        return round(float(wert), 2)
-    if not isinstance(wert, str):
-        return None
-    roh = re.sub(r"[^\d,.-]", "", wert)
-    if not roh or roh in ("-", ".", ","):
-        return None
-    if "," in roh:
-        # Deutsches Format: Punkt ist Tausendertrenner, Komma das Dezimalzeichen.
-        roh = roh.replace(".", "").replace(",", ".")
-    elif roh.count(".") > 1:
-        # Nur Punkte, mehrere davon → alle sind Tausendertrenner (1.234.567).
-        roh = roh.replace(".", "")
-    else:
-        # Genau ein Punkt: eine dreistellige Endgruppe ist ein Tausendertrenner
-        # (1.234 → 1234), zwei Stellen sind Nachkommastellen (12.50 → 12,50).
-        ganz, _, rest = roh.rpartition(".")
-        if ganz and len(rest) == 3:
-            roh = ganz + rest
-    try:
-        return round(float(roh), 2)
-    except ValueError:
-        return None
+    Eigen bleibt nur die Rundung: ein Rasterwert geht in ein Geldfeld, und dort
+    sind zwei Nachkommastellen die Wahrheit."""
+    zahl = zahlen.deutsch(wert)
+    return None if zahl is None else round(zahl, 2)
 
 
 def _ki_datum(wert) -> date | None:

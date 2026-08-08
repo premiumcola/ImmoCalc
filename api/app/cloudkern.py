@@ -120,6 +120,10 @@ ARTKUERZEL = {
     "Mietvertrag": "Miete",
     "Korrespondenz": "Post",
     "Hausverwaltung": "HV",
+    # N313 — „Notarvertrag" fehlte hier kommentarlos und fiel damit still auf
+    # "" zurück, während die drei bewusst leeren Kürzel eine Begründung tragen.
+    # Ein Kaufvertrag heisst so, das gehört in den Dateinamen.
+    "Notarvertrag": "Notar",
     # N9 — kein Kürzel für Lagepläne: der Name trägt „Lageplan …" schon selbst.
     "Lageplan": "",
     # N283d — „Erwerb" macht im Dateinamen sofort klar, worum es geht; ohne

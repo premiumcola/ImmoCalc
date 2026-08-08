@@ -348,7 +348,12 @@ def _netz_betrag(session: Session, zid: int,
 # des Betreibers, gilt je Abrechnungszeitraum und fuer PV wie Akku gleichermassen.
 # Bezugsgroesse ist der Durchschnittspreis des Netzbezugs INKLUSIVE Grundgebuehr
 # (Betrag je Menge) — nicht der reine Arbeitspreis.
-EIGEN_RABATT = 0.10
+# N313 — der Rabatt stand hier ein zweites Mal, samt Formel. Wird er
+# einmal geändert, rechnen Mieterabrechnung und Fahrerrechnung
+# verschieden — und beides sind versendete Dokumente. Jetzt gilt die
+# eine Fassung aus `tanken.satz`, die `routers/tankstelle.py` schon
+# benutzt.
+from ..tanken.satz import EIGEN_RABATT, eigen_satz  # noqa: E402
 
 
 def _eigen_betraege(session: Session, sj: Stromjahr, pv_kwh: float,
@@ -409,7 +414,7 @@ def _eigen_betraege(session: Session, sj: Stromjahr, pv_kwh: float,
     # Durchschnittspreis des Netzbezugs. Damit steht hier ein Betrag statt einer
     # Luecke, und zwar derselbe, den auch die E-Tankstelle abrechnet.
     if netz_preis and netz_preis > 0:
-        satz = round(netz_preis * (1 - EIGEN_RABATT), 5)
+        satz = eigen_satz(netz_preis)
         text = (f"{_ct(satz)} ct/kWh — 10 % unter dem Netzpreis "
                 f"({_ct(netz_preis)} ct/kWh, inkl. Grundgebühr)")
         return (round(pv_kwh * satz, 2), round(akku_kwh * satz, 2),
@@ -637,7 +642,7 @@ def _verteile(bloecke: strombloecke.Bloecke, verbrauch: dict[str, float],
 
     # Der geeichte Satz für Netz, 10 % darunter für den eigenen Strom — dieselbe
     # Regel wie in tankstelle.eigen_satz, damit die Zahlen zusammenpassen.
-    eigen_geeicht = round(netz_preis_geeicht * (1.0 - EIGEN_RABATT), 5)
+    eigen_geeicht = eigen_satz(netz_preis_geeicht)
     preis = {"netz": netz_preis_geeicht, "pv": eigen_geeicht, "akku": eigen_geeicht}
     eauto_kosten = {name: round(vorab[name] * preis[name], 2) for name in vorab}
     eauto_betrag = round(sum(eauto_kosten.values()), 2)
