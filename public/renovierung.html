@@ -217,7 +217,7 @@
    einzelne mit Budgetstand, Gewerk-Donut, Zeitstrahl und Rechnungen.
    Gewechselt wird über echte Navigation — so trägt der Zurück-Knopf des
    Browsers dieselbe Bedeutung wie der in der Kopfzeile. */
-import { esc, melde, installNav, frage, schiebeFrage, api, belegAnsehen, leerHtml }
+import { esc, melde, installNav, frage, schiebeFrage, belegAnsehen, leerHtml }
   from './assets/immo.js';
 import * as Daten from './assets/renovierung/daten.js';
 import { listeHtml } from './assets/renovierung/liste.js';
@@ -391,16 +391,18 @@ inhalt.addEventListener('click', async e => {
     return;
   }
 
-  // N279 — den gescannten Beleg ansehen. Über dasselbe Fenster wie überall
-  // sonst (`belegAnsehen`): es zeigt Name und Ablagepfad, blättert die Seiten
-  // und trägt den Umbenennen-Stift aus N261.
+  // N279/N326 — den gescannten Beleg ansehen. Über dasselbe Fenster wie
+  // überall sonst (`belegAnsehen`): es zeigt Name und Ablagepfad, blättert
+  // die Seiten und trägt den Umbenennen-Stift aus N261. Name/Pfad kommen aus
+  // der schon geladenen Posten-Liste (`beleg_dateiname`/`beleg_pfad`) — ein
+  // eigener Abruf zeigte vorher auf eine Route, die es nie gab, und der
+  // stillen Fehlschlag liess nur den Platzhalter „Beleg" übrig.
   const beleg = e.target.closest('[data-posten-beleg]');
-  if (beleg) {
+  if (beleg && aktuell) {
     const id = beleg.dataset.postenBeleg;
-    let dok = null;
-    try { dok = await api(`/dokumente/${id}`); } catch { /* Name/Pfad optional */ }
+    const p = aktuell.posten.find(x => String(x.quelle_dokument_id) === id);
     belegAnsehen(`/api/dokumente/${id}/inhalt`,
-                 dok?.dateiname || 'Beleg', dok?.pfad || '');
+                 p?.beleg_dateiname || 'Beleg', p?.beleg_pfad || '');
     return;
   }
 

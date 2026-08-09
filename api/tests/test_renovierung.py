@@ -162,6 +162,44 @@ def test_anlegen_lesen_aendern_loeschen_mit_posten():
         assert c.get(f"/api/objekte/{slug}/renovierungen").json() == []
 
 
+def test_posten_traegt_dateiname_und_pfad_seines_belegs():
+    """N326 — das Frontend holte Name/Pfad des Belegs über eine Route, die es
+    nie gab (`GET /api/dokumente/{id}`); der stille Fehlschlag liess nur den
+    Platzhalter „Beleg" übrig. Jetzt stehen sie direkt am Posten."""
+    from sqlmodel import Session, select
+
+    from app.db import engine
+    from app.models import Dokument, Objekt
+
+    with TestClient(app) as c:
+        slug = _objekt(c)
+        rid = c.post(f"/api/objekte/{slug}/renovierungen",
+                     json={"name": "Bad EG"}).json()["id"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            d = Dokument(pfad=f"/{slug}/60_Nebenkosten/Rechnung.pdf",
+                        dateiname="Rechnung.pdf", objekt_id=o.id)
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            did = d.id
+
+        posten = c.post(f"/api/renovierungen/{rid}/posten",
+                        json={"betrag": 100.0, "firma": "Sanitär Meier",
+                              "quelle_dokument_id": did}).json()
+        assert posten["beleg_dateiname"] == "Rechnung.pdf"
+        assert posten["beleg_pfad"] == f"/{slug}/60_Nebenkosten/Rechnung.pdf"
+
+        detail = c.get(f"/api/renovierungen/{rid}").json()
+        assert detail["posten"][0]["beleg_dateiname"] == "Rechnung.pdf"
+
+        # Ohne Beleg bleibt es leer statt eines Fehlers.
+        ohne_beleg = c.post(f"/api/renovierungen/{rid}/posten",
+                            json={"betrag": 50.0, "firma": "X"}).json()
+        assert ohne_beleg["beleg_dateiname"] == ""
+        assert ohne_beleg["beleg_pfad"] == ""
+
+
 def test_renovierungen_liste_landet_nicht_im_stammdaten_faenger():
     """Genau die Falle aus CLAUDE.md: ohne die Reihenfolge in main.py würde
     stammdaten.py mit 'Unbekannter Bereich' antworten statt mit der Liste."""

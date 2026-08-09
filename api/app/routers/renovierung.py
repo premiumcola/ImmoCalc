@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 from .. import renovierung as logik
 from ..db import get_session
 from ..deps import objekt_holen
-from ..models import Objekt, Renovierung, Renovierungsposten
+from ..models import Dokument, Objekt, Renovierung, Renovierungsposten
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["renovierung"])
@@ -96,13 +96,21 @@ def _zeige_uebersicht(r: Renovierung, posten: list[Renovierungsposten]) -> dict:
     }
 
 
-def _zeige_posten(p: Renovierungsposten) -> dict:
+def _zeige_posten(session: Session, p: Renovierungsposten) -> dict:
+    # N326 — das Frontend brauchte Dateiname/Pfad des Belegs, um ihn beim
+    # Ansehen richtig zu benennen, holte sie aber über eine Route, die es gar
+    # nicht gibt (`GET /api/dokumente/{id}`) — der Fehlschlag verschwand
+    # lautlos, übrig blieb der Platzhaltertitel „Beleg". Jetzt gleich mit.
+    dok = session.get(Dokument, p.quelle_dokument_id) if p.quelle_dokument_id else None
     return {"id": p.id, "renovierung_id": p.renovierung_id, "datum": p.datum,
             "betrag": p.betrag, "firma": p.firma, "gewerk": p.gewerk,
-            "notiz": p.notiz, "quelle_dokument_id": p.quelle_dokument_id}
+            "notiz": p.notiz, "quelle_dokument_id": p.quelle_dokument_id,
+            "beleg_dateiname": dok.dateiname if dok else "",
+            "beleg_pfad": dok.pfad if dok else ""}
 
 
-def _zeige_detail(r: Renovierung, posten: list[Renovierungsposten]) -> dict:
+def _zeige_detail(session: Session, r: Renovierung,
+                  posten: list[Renovierungsposten]) -> dict:
     # Ohne Datum ans Ende — bei Rechnungen ohne erfasstes Datum soll der
     # Zeitstrahl im Frontend nicht mit `None` an den Anfang rutschen.
     sortiert = sorted(posten, key=lambda p: (p.datum is None, p.datum))
@@ -110,7 +118,7 @@ def _zeige_detail(r: Renovierung, posten: list[Renovierungsposten]) -> dict:
         "id": r.id, "name": r.name, "von": r.von, "bis": r.bis,
         "budget": r.budget, "einheiten": logik.einheiten_liste(r.einheiten),
         "notiz": r.notiz, "abgeschlossen": r.abgeschlossen,
-        "posten": [_zeige_posten(p) for p in sortiert],
+        "posten": [_zeige_posten(session, p) for p in sortiert],
         "gewerke": logik.gewerk_summen(posten),
         "summe": _summe(posten),
         "budget_stand": logik.budget_stand(r.budget, _summe(posten)),
@@ -151,7 +159,7 @@ def anlegen(eingabe: RenovierungEingabe, o: Objekt = Depends(objekt_holen),
 @router.get("/renovierungen/{rid}")
 def detail(rid: int, session: Session = Depends(get_session)) -> dict:
     r = _renovierung_holen(rid, session)
-    return _zeige_detail(r, _posten_der_renovierung(session, rid))
+    return _zeige_detail(session, r, _posten_der_renovierung(session, rid))
 
 
 @router.patch("/renovierungen/{rid}")
@@ -166,7 +174,7 @@ def aendern(rid: int, aenderung: RenovierungAenderung,
     session.add(r)
     session.commit()
     session.refresh(r)
-    return _zeige_detail(r, _posten_der_renovierung(session, rid))
+    return _zeige_detail(session, r, _posten_der_renovierung(session, rid))
 
 
 @router.delete("/renovierungen/{rid}")
@@ -193,7 +201,7 @@ def posten_anlegen(rid: int, eingabe: PostenEingabe,
     session.add(p)
     session.commit()
     session.refresh(p)
-    return _zeige_posten(p)
+    return _zeige_posten(session, p)
 
 
 @router.patch("/renovierungen/posten/{pid}")
@@ -205,7 +213,7 @@ def posten_aendern(pid: int, aenderung: PostenAenderung,
     session.add(p)
     session.commit()
     session.refresh(p)
-    return _zeige_posten(p)
+    return _zeige_posten(session, p)
 
 
 @router.delete("/renovierungen/posten/{pid}")
