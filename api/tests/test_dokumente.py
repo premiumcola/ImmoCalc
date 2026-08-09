@@ -173,6 +173,10 @@ def test_filter_nach_objekt_kategorie_jahr_status_und_suche():
         assert "Versicherung" in gesamt["kategorien"]
         assert any(o["slug"] == a and o["anzahl"] == 2 for o in gesamt["objekte"])
         assert gesamt["offen"] >= 1
+        # N322 — die Filter-Chips im Eingang brauchen das Kürzel; eine zweite,
+        # separat gepflegte Objektliste (anders als /api/objekte) hätte es
+        # leicht vergessen können.
+        assert all("kuerzel" in o for o in gesamt["objekte"])
 
         # Offenes steht oben
         assert gesamt["dokumente"][0]["status"] == "neu"

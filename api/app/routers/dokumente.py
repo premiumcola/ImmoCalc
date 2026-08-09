@@ -530,6 +530,7 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
         "kostenarten": kostenarten,
         "jahre": jahre,
         "objekte": [{"slug": o.slug, "name": o.name, "titel": objekt_titel(o),
+                     "kuerzel": o.kuerzel,
                      "anzahl": je_objekt.get(o.id, 0),
                      "cloud": bool(o.nc_ordner)}
                     for o in objekte.values()],
