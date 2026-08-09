@@ -977,10 +977,10 @@ def test_bestandsdatenbank_bekommt_die_eindeutigkeit_beim_start():
     from app.migrate import migriere
 
     motor = _bestands_datenbank(["/a/eins.pdf", "/a/zwei.pdf"])
-    assert "ux_dokument_pfad" not in _indexnamen(motor)
+    assert "ix_dokument_pfad" not in _indexnamen(motor)
 
     migriere(motor)
-    assert "ux_dokument_pfad" in _indexnamen(motor)
+    assert "ix_dokument_pfad" in _indexnamen(motor)
 
     import pytest
     from sqlalchemy.exc import IntegrityError
@@ -1000,7 +1000,7 @@ def test_doppelte_pfade_werden_gemeldet_statt_verschwiegen(caplog):
     with caplog.at_level(logging.WARNING, logger="immocalc"):
         migriere(motor)
 
-    assert "ux_dokument_pfad" not in _indexnamen(motor)
+    assert "ix_dokument_pfad" not in _indexnamen(motor)
     assert "/a/doppelt.pdf" in caplog.text
     # und beide Zeilen liegen unangetastet weiter da
     from sqlalchemy import text
@@ -1030,7 +1030,7 @@ def test_index_wird_nach_fehlschlag_erneut_versucht():
         with Session(motor) as s:
             _eindeutigkeit_sichern(s)
         assert modul._index_geprueft is True
-        assert "ux_dokument_pfad" in _indexnamen(motor)
+        assert "ix_dokument_pfad" in _indexnamen(motor)
     finally:
         modul._index_geprueft = False
 

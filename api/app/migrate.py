@@ -122,30 +122,52 @@ def _neutral_fuer(spalte) -> str | None:
     return None
 
 
-# Eindeutigkeiten, die `create_all` nur an einer *neuen* Tabelle anlegt. An
-# einer gewachsenen Datenbank fehlen sie sonst für immer — der Index kommt
-# additiv hinzu, keine Spalte ändert sich, gelöscht wird nichts.
-EINDEUTIG: list[tuple[str, str, str]] = [
-    # Tabelle, Spalte, Indexname
-    ("dokument", "pfad", "ux_dokument_pfad"),
-]
+# N314(i) — vorher standen hier zwei von Hand gepflegte Listen mit
+# zusammen zwei Einträgen. Das Datenmodell verlangt an 45 Spalten
+# `index=True`/`unique=True` — `create_all` legt die nur an einer NEUEN
+# Tabelle an; eine per ALTER ergänzte Spalte (`Dokument.sha1`, `nc_fileid`, …)
+# bekam ihren Index sonst nie. Jetzt aus dem Datenmodell selbst abgeleitet,
+# wie schon bei `dokumentlinks.register()`/`einheitname.register()` — eine
+# von Hand gepflegte Liste hängt sonst zuverlässig hinterher.
+def _register() -> list[tuple[str, str, str, bool]]:
+    """Tabelle, Spalte, Indexname, eindeutig — für jede Spalte mit
+    `index=True` oder `unique=True`. Der Name folgt SQLAlchemys eigener
+    Konvention (`ix_<tabelle>_<spalte>`), damit `CREATE ... IF NOT EXISTS`
+    auf einer frisch angelegten Tabelle exakt den schon vorhandenen Index
+    trifft, statt einen zweiten, gleichbedeutenden danebenzusetzen."""
+    eintraege: list[tuple[str, str, str, bool]] = []
+    for tabelle in SQLModel.metadata.tables.values():
+        for spalte in tabelle.columns:
+            if spalte.primary_key or not (spalte.index or spalte.unique):
+                continue
+            eintraege.append((tabelle.name, spalte.name,
+                             f"ix_{tabelle.name}_{spalte.name}",
+                             bool(spalte.unique)))
+    return eintraege
 
 
-# Suchindizes, die `create_all` ebenfalls nur an einer *neuen* Tabelle anlegt.
-# Eine per ALTER ergänzte Spalte bekommt ihren Index sonst nie —
-# `Dokument.position_id` wird an jeder Position der Zeitraumseite abgefragt
-# (CLXXXIII). Rein additiv: angelegt wird nur, was fehlt, entfernt wird nichts.
-INDEXE: list[tuple[str, str, str]] = [
-    # Tabelle, Spalte, Indexname
-    ("dokument", "position_id", "ix_dokument_position_id"),
-]
+def _vorhandene_indizes(conn) -> set[str]:
+    return {r[0] for r in conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type = 'index'")).all()}
 
 
 def indizes_sichern(conn, tabellen: set[str] | None = None) -> list[str]:
-    """Legt die Suchindizes aus `INDEXE` an. Gibt die gesetzten zurück."""
+    """Legt alle nicht-eindeutigen Suchindizes des Datenmodells an, die noch
+    fehlen. `eindeutigkeit_sichern` regelt die `unique=True`-Spalten
+    gesondert, weil dort vorher auf Dopplungen geprüft werden muss.
+
+    Ohne `tabellen` wird selbst nachgesehen, was es überhaupt gibt — ein
+    Aufrufer, der nur EINE Tabelle im Blick hat (`_eindeutigkeit_sichern` in
+    `routers/dokumente.py` kennt nur „dokument"), soll nicht an einer der
+    anderen 40+ registrierten Tabellen scheitern, die bei ihm noch fehlt."""
+    if tabellen is None:
+        tabellen = set(inspect(conn).get_table_names())
+    vorhanden = _vorhandene_indizes(conn)
     gesetzt: list[str] = []
-    for tabelle, spalte, name in INDEXE:
-        if tabellen is not None and tabelle not in tabellen:
+    for tabelle, spalte, name, eindeutig in _register():
+        if eindeutig or name in vorhanden:
+            continue
+        if tabelle not in tabellen:
             continue
         conn.execute(text(f'CREATE INDEX IF NOT EXISTS "{name}" '
                           f'ON "{tabelle}" ("{spalte}")'))
@@ -162,15 +184,23 @@ def _doppel(conn, tabelle: str, spalte: str) -> list[tuple[str, int]]:
 
 
 def eindeutigkeit_sichern(conn, tabellen: set[str] | None = None) -> list[str]:
-    """Legt die Unique-Indizes aus `EINDEUTIG` an. Gibt die gesetzten zurück.
+    """Legt die Unique-Indizes des Datenmodells (`unique=True`) an, die noch
+    fehlen. Gibt die gesetzten zurück.
 
     Findet sich ein Wert doppelt, scheitert das Anlegen — dann wird der
     Doppel-Wert protokolliert, statt still nichts zu tun. Entfernt wird
     nichts: welcher der beiden Einträge weg soll, entscheidet der Nutzer.
+
+    Ohne `tabellen` wird selbst nachgesehen, was es gibt (siehe `indizes_sichern`).
     """
+    if tabellen is None:
+        tabellen = set(inspect(conn).get_table_names())
+    vorhanden = _vorhandene_indizes(conn)
     gesetzt: list[str] = []
-    for tabelle, spalte, name in EINDEUTIG:
-        if tabellen is not None and tabelle not in tabellen:
+    for tabelle, spalte, name, eindeutig in _register():
+        if not eindeutig or name in vorhanden:
+            continue
+        if tabelle not in tabellen:
             continue
         doppel = _doppel(conn, tabelle, spalte)
         if doppel:
