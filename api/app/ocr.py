@@ -23,6 +23,7 @@ import tempfile
 from datetime import date
 
 from . import officetext, pdftext
+from .kostenarten import _fold
 
 # Weicher Import: die KI-Auslese (CCLXVIII) ist optional. Fehlt das Modul oder
 # httpx, bleibt alles wie zuvor bei der Heuristik — genau wie ohne API-Key.
@@ -612,10 +613,18 @@ def _warum_nichts(rohdaten: bytes) -> str:
 def regel_kompakt(text: str) -> str:
     """Text auf das Nötigste bringen: klein, ohne Umlaute und ohne Leer-/
     Sonderzeichen. So trifft „N-ERGIE Netz" auch den zerrupften Scan
-    „N - E R G I E   N e t z"."""
-    t = (text or "").lower().replace("ä", "a").replace("ö", "o").replace(
-        "ü", "u").replace("ß", "ss")
-    return re.sub(r"[^a-z0-9]", "", t)
+    „N - E R G I E   N e t z".
+
+    N316(c) — faltete früher ä→a/ö→o/ü→u (den Vokal fallen lassen) statt wie
+    überall sonst im Projekt ä→ae/ö→oe/ü→ue (`kostenarten._fold`). Eine
+    getippte Regel „Gebaeudeversicherung" wurde dadurch zu
+    „gebaudeversicherung" verglichen — der reale Beleg „Gebäudeversicherung"
+    faltet über dieselbe Funktion aber auch zu „gebaudeversicherung"… nur
+    bricht das „äu" (ein Diphthong) beim Wegfallen des Vokals uneindeutig:
+    „gebaeude" (mit e) und „gebaude" (ohne e) sind zwei verschiedene
+    Zeichenketten. Jetzt dieselbe Faltung wie überall — eine Regel schreibt
+    man einmal, wie gewohnt, und sie trifft."""
+    return re.sub(r"[^a-z0-9]", "", _fold(text))
 
 
 def regel_richtung(text: str, regeln) -> tuple[str, str, bool] | None:
@@ -645,14 +654,18 @@ def regel_richtung(text: str, regeln) -> tuple[str, str, bool] | None:
 # ankündigung nennt sehr wohl 174,00 € und ist trotzdem nicht der Bescheid.
 # Bewusst NUR die Nebenarten — „Grundsteuerbescheid", „Jahresabrechnung",
 # „Rechnung", „Gebührenbescheid" bleiben beim generischen Kostenart-Namen.
+#
+# N316(c) — nach der Umstellung auf ä→ae/ö→oe/ü→ue (wie überall im Projekt)
+# mussten die betroffenen Einträge hier mitgezogen werden: `regel_kompakt`
+# faltete vorher ä→a/ü→u, also stand hier "ankundigung"/"bestatigung".
 _NEBENDOKUMENT = (
-    "abbuchungsvorankundigung", "abbuchungsankundigung",
-    "lastschriftankundigung", "lastschriftvorankundigung", "lastschriftmandat",
-    "zahlungsankundigung", "zahlungserinnerung", "zahlungsmitteilung",
-    "vorankundigung", "ankundigung",
+    "abbuchungsvorankuendigung", "abbuchungsankuendigung",
+    "lastschriftankuendigung", "lastschriftvorankuendigung", "lastschriftmandat",
+    "zahlungsankuendigung", "zahlungserinnerung", "zahlungsmitteilung",
+    "vorankuendigung", "ankuendigung",
     "vorauszahlung", "abschlag", "abschlagsplan", "abschlagsrechnung",
     "mahnung", "sepamandat", "sepalastschriftmandat",
-    "mitteilung", "information", "informationsschreiben", "bestatigung",
+    "mitteilung", "information", "informationsschreiben", "bestaetigung",
 )
 
 

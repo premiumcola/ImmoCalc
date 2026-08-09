@@ -40,6 +40,18 @@ def test_kein_treffer_bleibt_none():
     assert ocr.regel_richtung("Stadtwerke Wasserrechnung", regeln) is None
 
 
+def test_ae_geschriebene_regel_trifft_den_echten_umlaut():
+    """N316(c) — `regel_kompakt` faltete ä→a (Vokal weg) statt ä→ae wie überall
+    sonst im Projekt. Eine wie gewohnt „ae"-geschriebene Regel „Gebaeude-
+    versicherung" traf den echten Beleg „Gebäudeversicherung" deshalb nie:
+    „gebaeude" (mit e) und das damalige „gebaude" (ohne e) sind verschiedene
+    Zeichenketten."""
+    regeln = [Erkennungsregel(muster="Gebaeudeversicherung", kategorie="Nebenkosten",
+                              kostenart="Gebäudeversicherung")]
+    treffer = ocr.regel_richtung("Rechnung über Ihre Gebäudeversicherung 2026", regeln)
+    assert treffer == ("Nebenkosten", "Gebäudeversicherung", True)
+
+
 def test_crud_und_liste():
     with TestClient(app) as c:
         angelegt = c.post("/api/dokumente/erkennungsregeln", json={
