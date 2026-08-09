@@ -1329,6 +1329,33 @@ def test_zuordnung_ladung_ausschliessen_in_der_abrechnung(client):
     assert d["offen_kwh"] == 20.0         # sie steht als offen da
 
 
+def test_zuordnung_ausschluss_greift_auch_bei_einem_einzigen_nutzer(client):
+    """N315(d): bei genau einem Nutzer greift die Automatik aus N165, die
+    `posten_als_buchungen` an der Zuordnung über den Namen vorbei nutzt — dabei
+    griff der Ladungs-Ausschluss (N165/2) bisher nie, weil dieser Zweig
+    `zuordnung_lesen`/`ausschluss` gar nicht befragte. Eine ausgeschlossene
+    Ladung floss trotzdem in Menge und Betrag ein."""
+    slug = _neues_objekt(client, "Einzelausschlusshaus")
+    _stromkosten(slug, 2025, betrag=1600.0)          # 0,32 €/kWh
+    _nutzer(client, slug, "Alicia", "alicia@example.invalid")
+    _ladung(client, slug, 2025, name="Unbekannt", kwh=30.0, datum="2025-07-10")
+    l2 = _ladung(client, slug, 2025, name="Unbekannt", kwh=20.0,
+                 datum="2025-08-20")
+
+    r = client.put(f"/api/tankstelle/{slug}/zuordnung",
+                   json={"ausschluss": [l2["id"]]})
+    assert r.status_code == 200, r.text
+
+    d = client.get(f"/api/tankstelle/{slug}/abrechnung",
+                   params={"jahr": 2025, "quartal": 3}).json()
+    assert d["automatisch"] is True
+    alicia = d["nutzer"][0]
+    assert alicia["kwh"] == 30.0          # die ausgeschlossene Ladung fehlt
+    assert alicia["betrag"] == 9.6        # 30 * 0,32 €, nicht 50 * 0,32 €
+    assert d["geladen_kwh"] == 50.0       # geladen wurde trotzdem alles
+    assert d["offen_kwh"] == 20.0         # sie steht als offen da
+
+
 def test_zuordnung_lehnt_kaputten_zeitraum_und_fremden_nutzer_ab(client):
     slug = _neues_objekt(client, "Regelpruefhaus")
     a = _nutzer(client, slug, "Alicia", "alicia@example.invalid")

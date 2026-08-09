@@ -16,7 +16,8 @@ from ..models import Objekt
 from .einstellungen import zuordnung_lesen
 from .nutzer import nutzer_lesen, schluessel
 from .perioden import abrechnungs_label, aktive_monate
-from .posten import _posten_holen, buchungen, posten_als_buchungen
+from .posten import (_posten_holen, buchungen, erfasste_ladungen,
+                     posten_als_buchungen)
 from .satz import EIGEN_RABATT, satz_ableiten
 from .typen import Buchung
 from .verlauf import verlauf, verlauf_summe
@@ -109,25 +110,40 @@ def _abrechnung(session: Session, o: Objekt, slug: str, jahr: int,
     label = abrechnungs_label(jahr, quartale, aus)
     liste = nutzer_lesen(session, o)
     posten_roh, quelle, _ = _posten_holen(session, o, von, bis)
+    # Die Ladungs-Id je Posten, soweit vorhanden — nur die erfassten Ladungen
+    # kennen eine `Tankladung`-Id, über die sich einzelne ausschliessen lassen
+    # (N165/2); die Wallbox kennt keine. Gleiche Quelle, gleicher Zeitraum, kein
+    # weiterer Filter dazwischen — die Reihenfolge deckt sich 1:1 mit `posten_roh`.
+    ladung_ids: list[int | None] = (
+        [l.id for l in erfasste_ladungen(session, o.id, von, bis)]
+        if quelle == "erfasst" else [None] * len(posten_roh))
+    roh_mit_id = list(zip(posten_roh, ladung_ids))
     # Ein aus dem Quartal abgewählter Monat fällt aus Menge und Betrag heraus
     # (N169) — nicht nur aus der Anzeige. Darum hier an der Quelle filtern.
-    posten = [p for p in posten_roh
-              if p.tag is None or p.tag.month in aktiv]
+    posten = [p for p, _ in roh_mit_id if p.tag is None or p.tag.month in aktiv]
     zeilen_verlauf = [z for z in verlauf(posten, von, bis) if z["monat"] in aktiv]
     summe = verlauf_summe(zeilen_verlauf) if posten else {}
     satz = satz_ableiten(session, o.id, von, bis,
                          summe.get("extern_kwh"), summe.get("eigen_kwh"))
-    # N165 — mit genau einem Nutzer gehören ihm automatisch alle Ladungen des
-    # Zeitraums (aus den geladenen Mengen, nicht nur aus den namentlich
-    # erfassten Sätzen). Bei mehreren bleibt es bei der Zuordnung über den Namen.
-    auto_buch, automatisch = posten_als_buchungen(posten, liste)
+    # N165/2 — Zeitraum-Regeln und Ausschluss gelten unabhängig von der
+    # Nutzerzahl: eine falsch erfasste Ladung muss auch bei genau einem
+    # Nutzer ausschliessbar bleiben (N315(d) — sonst griff der Ausschluss bei
+    # einem einzigen Nutzer nie, weil die Automatik unten ihn nie befragte).
+    regeln, ausschluss = zuordnung_lesen(session, o.slug, liste)
+    # N165 — mit genau einem Nutzer gehören ihm automatisch alle (nicht
+    # ausgeschlossenen) Ladungen des Zeitraums (aus den geladenen Mengen, nicht
+    # nur aus den namentlich erfassten Sätzen). Bei mehreren bleibt es bei der
+    # Zuordnung über den Namen.
+    posten_zuordenbar = [p for p, lid in roh_mit_id
+                         if (p.tag is None or p.tag.month in aktiv)
+                         and lid not in ausschluss]
+    auto_buch, automatisch = posten_als_buchungen(posten_zuordenbar, liste)
     if automatisch:
         quelle_buch = auto_buch
     else:
         # Mehrere Nutzer: Zuordnung über den Zeitraum, wenn Regeln hinterlegt
         # sind; sonst wie bisher über den Namen. Ausgeschlossene Ladungen fallen
         # in beiden Fällen heraus (N165/2), abgewählte Monate ebenso (N169).
-        regeln, ausschluss = zuordnung_lesen(session, o.slug, liste)
         quelle_buch = buchungen(session, o.id, von, bis, liste, regeln,
                                 ausschluss, aktiv)
     zeilen = abrechne(quelle_buch, liste, satz.misch)
