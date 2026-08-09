@@ -26,6 +26,7 @@ from sqlmodel import Session, select
 from ..bezeichnung import ohne_betrag, ohne_datum
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from ..models import Dokument, Kostenposition
+from .namen import _dateistamm
 
 log = logging.getLogger("immocalc")
 
@@ -118,8 +119,11 @@ def _ki_aus_db(d: Dokument, session: Session | None = None) -> dict | None:
         "betrag": d.betrag, "datum": d.belegdatum.isoformat() if d.belegdatum else None,
         "jahr": d.jahr, "kategorie": d.kategorie, "kostenart": d.kostenart,
         # Eine eigene „Bezeichnung" gibt es am Dokument nicht — sie steckt im
-        # Dateinamen (ohne Datums- und Betragsteil, siehe `bezeichnung.py`).
-        "sache": ohne_betrag(ohne_datum(d.dateiname or "")).strip(" _-"),
+        # Dateinamen (ohne Endung, Datums- und Betragsteil, siehe
+        # `bezeichnung.py`). N326 — die Endung fehlte hier: „Sache" zeigte
+        # zuletzt einen rohen Namensrest samt „.pdf" statt einer sauberen
+        # Bezeichnung.
+        "sache": ohne_betrag(ohne_datum(_dateistamm(d.dateiname or ""))).strip(" _-"),
         "zusammenfassung": d.ki_einordnung,
         "einordnung": d.ki_einordnung, "immobilie": d.ki_immobilie,
         "einheit": getattr(d, "ki_einheit", "") or "",
