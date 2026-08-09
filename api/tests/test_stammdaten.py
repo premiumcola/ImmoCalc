@@ -292,6 +292,54 @@ def test_einheit_zeigt_ihren_heutigen_mieter():
         assert zeilen["OG"]["vermietet"] is False and zeilen["OG"]["mieter"] == ""
 
 
+def test_objektmiete_ohne_einheit_gilt_an_beiden_stellen_als_vermietet():
+    """N316a — `Miete.einheit` leer heisst „ganzes Objekt" (siehe Kommentar am
+    Modell). Die Startseitenübersicht (`GET /objekte`) und die
+    Einheiten-Detailliste (`GET /objekte/{slug}/einheiten`) müssen sich dabei
+    einig sein: früher zeigte die Übersicht dann ALLE Einheiten als vermietet,
+    das Detail KEINE einzige — derselbe Sachverhalt, zwei Antworten."""
+    with TestClient(app) as c:
+        neu = c.post("/api/objekte", json={
+            "name": "Ganzhausweg 4", "einheiten": [
+                {"bezeichnung": "EG"}, {"bezeichnung": "OG"}]}).json()
+        slug = neu["slug"]
+        # Eine Miete fürs ganze Haus — keine Einheit genannt.
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Generalmieter GmbH", "kaltmiete": 1000.0,
+            "ab_datum": "2020-01-01"})
+
+        uebersicht = next(o for o in c.get("/api/objekte").json()
+                          if o["slug"] == slug)
+        detail = {e["bezeichnung"]: e for e in
+                  c.get(f"/api/objekte/{slug}/einheiten").json()}
+
+        assert [e["vermietet"] for e in uebersicht["einheiten_liste"]] == [True, True]
+        assert detail["EG"]["vermietet"] is True
+        assert detail["OG"]["vermietet"] is True
+
+
+def test_monatsmiete_zaehlt_stellplatz_an_beiden_stellen():
+    """N316a — dieselbe Einheit darf auf der Startseite (`miete_monat`) und im
+    Detail (`kaltmiete`) nicht unterschiedliche Beträge nennen. Stellplatz und
+    Sonstiges zählen an beiden Stellen mit."""
+    with TestClient(app) as c:
+        neu = c.post("/api/objekte", json={
+            "name": "Stellplatzweg 6",
+            "einheiten": [{"bezeichnung": "EG", "flaeche": 50}]}).json()
+        slug = neu["slug"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Herr Nord", "einheit": "EG", "kaltmiete": 600.0,
+            "stellplatz": 50.0, "sonstige": 20.0, "ab_datum": "2020-01-01"})
+
+        uebersicht = next(o for o in c.get("/api/objekte").json()
+                          if o["slug"] == slug)
+        detail = c.get(f"/api/objekte/{slug}/einheiten").json()[0]
+
+        miete_monat = uebersicht["einheiten_liste"][0]["miete_monat"]
+        assert miete_monat == 670.0
+        assert detail["kaltmiete"] == miete_monat
+
+
 def test_umbenennen_zieht_die_mietverhaeltnisse_mit():
     """Fund XCII in Zeitlupe: hiesse die Einheit nach dem Umbenennen anders als
     in der Miete, fiele die Partei stumm aus der Kostenverteilung."""

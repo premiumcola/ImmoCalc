@@ -19,9 +19,9 @@ from ..deps import objekt_holen
 from ..dokumente.zuordnung import loese_info_referenzen
 from ..felder import bereinige
 from ..models import Dokument, Einheit, Miete, Objekt, ist_grundstueck
-from ..turnus import jahresbetrag
 from ..verteilung import positionen_neu_ableiten
-from .stammdaten import _laeuft, _zuordnung
+from .stammdaten import (_ganzes_objekt_vermietet, _laeuft, _laufende,
+                         _monatsbetrag, _zuordnung)
 
 router = APIRouter(tags=["objekte"])
 
@@ -58,11 +58,19 @@ def _einheit(session: Session, eid: int) -> Einheit:
 
 
 def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
-                   heute: date, lageplaene: Optional[dict] = None) -> dict:
+                   heute: date, lageplaene: Optional[dict] = None,
+                   ganzes_objekt: bool = False) -> dict:
     """Eine Einheit mit dem, was heute darin wohnt.
 
     `vermietet` ist die eine Auskunft, die man auf einen Blick braucht — sie
     entscheidet, ob die Blase in der Oberfläche als „frei" erscheint.
+
+    `ganzes_objekt` kommt vom Aufrufer vorgerechnet (`_ganzes_objekt_vermietet`,
+    einmal für alle Einheiten des Objekts statt je Zeile neu): läuft eine Miete
+    ohne Einheitsangabe, meint sie das ganze Objekt und JEDE Einheit gilt als
+    vermietet — unabhängig davon, ob `_zuordnung` diese Miete `e` zuordnet
+    (N316a; vorher zeigte die Startseite hier alle Einheiten als vermietet,
+    das Detail keine einzige).
 
     `lageplaene` ist die vorab gebündelte Zuordnung Einheit-ID → Lagepläne
     (CCCXXVI); ohne sie bleibt die Liste leer, damit die Zeile auch ohne diese
@@ -79,13 +87,13 @@ def _einheit_zeile(e: Einheit, mieten: list[Miete], einheiten: list[Einheit],
         # Flächenbeitrag.
         "nutzflaechen": _nutzflaechen_liste(e),
         "nutz_flaeche": e.nutz_flaeche(),
-        "vermietet": bool(laufend),
+        "vermietet": ganzes_objekt or bool(laufend),
         "mieter": ", ".join(sorted({m.partei for m in laufend if m.partei})),
-        # CCCLXXVIII b — auf den Monatsbetrag normalisieren (Turnus heraus-
-        # rechnen); die Einheit zeigt „… €/M" und leitet daraus €/m² ab, sonst
-        # verdreifachte eine vierteljährliche Miete den Quadratmeterpreis.
-        "kaltmiete": round(sum(jahresbetrag(m.kaltmiete, m.turnus) / 12
-                               for m in laufend), 2),
+        # CCCLXXVIII b / N316a — auf den Monatsbetrag normalisieren (Turnus
+        # herausrechnen) UND Stellplatz/Sonstiges mitzählen, dieselbe Summe wie
+        # die „Monatsmiete" der Startseiten-Blase (`stammdaten._monatsbetrag`);
+        # sonst nennt dieselbe Einheit hier und dort verschiedene Beträge.
+        "kaltmiete": round(sum(_monatsbetrag(m) for m in laufend), 2),
         "mietverhaeltnisse": len(eigene),
         # CCCXXVI — die hinterlegten Lagepläne dieser Einheit als
         # [{id, dateiname}]. Defensiv (leer, wenn keine); die Vorschau läuft
@@ -182,7 +190,9 @@ def einheiten_liste(slug: str,
     heute = date.today()
     lageplaene = _lageplaene_je_einheit(
         session, [e.id for e in einheiten if e.id is not None])
-    return [_einheit_zeile(e, mieten, einheiten, heute, lageplaene)
+    # N316a — einmal fürs Objekt, nicht je Einheit neu geprüft.
+    ganzes_objekt = _ganzes_objekt_vermietet(_laufende(mieten, heute))
+    return [_einheit_zeile(e, mieten, einheiten, heute, lageplaene, ganzes_objekt)
             for e in einheiten]
 
 

@@ -102,27 +102,54 @@ def _zuordnung(m: Miete, einheiten: list[Einheit]) -> str:
     return einheiten[0].bezeichnung if len(einheiten) == 1 else ""
 
 
-def _miete_je_einheit(mieten: list[Miete], einheiten: list[Einheit],
-                      heute: date) -> dict[str, float]:
-    """Was jede Einheit heute im Monat einbringt — aus den bereits geladenen
-    Mietzeilen, ohne weitere Abfrage.
+def _laufende(mieten: list[Miete], heute: date) -> list[Miete]:
+    """Die heute laufenden Mietverhältnisse aus einer Mietliste — dieselbe
+    Filterung, die die Objektübersicht und die Einheiten-Detailliste beide
+    brauchen (N316a: geteilt, statt an beiden Stellen einzeln nachgebaut)."""
+    return [m for m in mieten if _laeuft(m, heute)]
+
+
+def _ganzes_objekt_vermietet(laufend: list[Miete]) -> bool:
+    """Läuft eine Miete ohne Einheitsangabe? `Miete.einheit` ist dann leer und
+    meint das GANZE Objekt (siehe `models.Miete.einheit`) — dann gilt jede
+    Einheit als vermietet, unabhängig davon, wem `_zuordnung` die Miete
+    zuordnet (die eine solche Miete bei mehreren Einheiten bewusst KEINER
+    einzelnen zuordnet, um sie nicht mehrfach als Monatsmiete auszuweisen —
+    siehe `_miete_je_einheit`).
+
+    N316a: Startseite und Einheiten-Detail bauten dieselbe Frage früher
+    unabhängig und gegensätzlich nach — hier einmal, geteilt genutzt von
+    `objekte()` und `einheiten._einheit_zeile`."""
+    return any(not m.einheit.strip() for m in laufend)
+
+
+def _monatsbetrag(m: Miete) -> float:
+    """Was EIN Mietverhältnis heute im Monat einbringt: Kaltmiete, Stellplatz
+    und Sonstiges zusammen, auf den Monat umgerechnet.
 
     Beträge stehen *je Turnus* (`models.Miete`): eine vierteljährlich gezahlte
     Pacht ist nicht das Monatsergebnis. Ohne die Umrechnung über
     `jahresbetrag` stünde in der Blase das Dreifache.
 
+    N316a: dieselbe Summe wie die „Monatsmiete" der Startseiten-Blase — die
+    Einheiten-Detailliste zeigte hier früher nur die reine Kaltmiete ohne
+    Stellplatz/Sonstiges, ein zweiter, stiller Widerspruch neben `vermietet`."""
+    return jahresbetrag(m.kaltmiete + m.stellplatz + m.sonstige, m.turnus) / 12
+
+
+def _miete_je_einheit(mieten: list[Miete], einheiten: list[Einheit],
+                      heute: date) -> dict[str, float]:
+    """Was jede Einheit heute im Monat einbringt — aus den bereits geladenen
+    Mietzeilen, ohne weitere Abfrage.
+
     Eine Miete, die keiner Einheit zuzuordnen ist (Objektmiete bei mehreren
     Einheiten), bleibt draußen — sie mehrfach voll auszuweisen wäre falsch."""
     je_einheit: dict[str, float] = {}
-    for m in mieten:
-        if not _laeuft(m, heute):
-            continue
+    for m in _laufende(mieten, heute):
         ziel = _zuordnung(m, einheiten)
         if not ziel:
             continue
-        monat = jahresbetrag(m.kaltmiete + m.stellplatz + m.sonstige,
-                             m.turnus) / 12
-        je_einheit[ziel] = je_einheit.get(ziel, 0.0) + monat
+        je_einheit[ziel] = je_einheit.get(ziel, 0.0) + _monatsbetrag(m)
     return je_einheit
 
 
@@ -217,10 +244,11 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
         # `_einheit_zeile`/`_miete_je_einheit`: Einzug berücksichtigen und ein
         # befristetes, aber laufendes Mietverhältnis als vermietet zählen (nicht
         # jedes gesetzte `bis_datum` als beendet).
-        laufend = [m for m in mieten[o.id] if _laeuft(m, heute)]
-        # Eine Miete ohne Einheitsangabe meint das ganze Objekt — dann gilt
-        # jede Einheit als vermietet, sonst keine einzige.
-        ganzes_objekt = any(not m.einheit.strip() for m in laufend)
+        laufend = _laufende(mieten[o.id], heute)
+        # N316a — geteilt mit `einheiten._einheit_zeile`: eine Miete ohne
+        # Einheitsangabe meint das ganze Objekt, dann gilt jede Einheit als
+        # vermietet, sonst keine einzige.
+        ganzes_objekt = _ganzes_objekt_vermietet(laufend)
         belegt = {m.einheit.strip() for m in laufend if m.einheit.strip()}
         je_einheit = _miete_je_einheit(mieten[o.id], einheiten[o.id], heute)
         out.append({
