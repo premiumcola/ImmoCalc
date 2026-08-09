@@ -107,6 +107,11 @@ els.warteArchiv.addEventListener('click', async () => {
   const frageStr = new URLSearchParams();
   for (const [k, v] of Object.entries(S.filter)) if (v) frageStr.set(k, v);
   frageStr.set('vorschau', 'false');   // Vorgabe ist jetzt Vorschau (N314h)
+  // N323 — der Knopf blieb waehrend der Anfrage klickbar, ein zweiter Tipp
+  // haette dieselben Belege doppelt zurueckgestellt.
+  const beschriftung = els.warteArchiv.textContent;
+  els.warteArchiv.disabled = true;
+  els.warteArchiv.textContent = 'Stelle zurück …';
   try {
     const r = await api('/dokumente/warte-archiv?' + frageStr.toString(),
                         { method: 'POST' });
@@ -114,6 +119,10 @@ els.warteArchiv.addEventListener('click', async () => {
       + (r.zeitraeume_entfernt ? ` · ${r.zeitraeume_entfernt} leere Zeiträume weg` : ''));
     await laden();
   } catch (e) { melde(e.message || 'Fehlgeschlagen', 'neg'); }
+  finally {
+    els.warteArchiv.disabled = false;
+    els.warteArchiv.textContent = beschriftung;
+  }
 });
 
 /* ---- Suche: tippen filtert, ohne bei jedem Zeichen zu fragen ------------ */

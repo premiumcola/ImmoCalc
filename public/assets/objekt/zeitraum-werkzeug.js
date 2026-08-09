@@ -173,7 +173,10 @@ export async function zeitraumWerkzeug(laden) {
     } catch (f) { zeigeErg(fehlerText(f)); }
   }
 
-  async function abgleichAnwenden() {
+  // N323 — der Knopf blieb waehrend des Verschiebens klickbar, ein zweiter
+  // Tipp haette dieselben Belege doppelt bewegt.
+  async function abgleichAnwenden(knopf) {
+    if (knopf) { knopf.disabled = true; knopf.textContent = 'Verschiebe …'; }
     try {
       const v = await api(`/objekte/${encodeURIComponent(slug)}/zeitraeume/`
                           + 'belege-abgleichen?vorschau=false', { method: 'POST' });
@@ -190,7 +193,8 @@ export async function zeitraumWerkzeug(laden) {
     if (teil) return teilen(teil.dataset.zwTeilen, teil.closest('.zw-row'));
     if (e.target.closest('[data-zw-neu]')) return neuAnlegen();
     if (e.target.closest('[data-zw-abgleich]')) return abgleichVorschau();
-    if (e.target.closest('[data-zw-anwenden]')) return abgleichAnwenden();
+    const anwenden = e.target.closest('[data-zw-anwenden]');
+    if (anwenden) return abgleichAnwenden(anwenden);
   });
 
   await rendern();
