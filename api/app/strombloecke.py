@@ -161,7 +161,14 @@ def verteile(bloecke: Bloecke, verbrauch: dict[str, float],
 
     # ---- Schritt 2: der Rest nach Verbrauch, alle Blöcke gleichermaßen -----
     summe = sum(v for v in offen.values() if v and v > 0)
-    rest_betrag = round(sum(rest[name] * b.preis for name, b in paare), 2)
+    # `rest[name] * b.preis` verliert den Betrag, sobald ein Block ganz ohne
+    # Menge dasteht (`kwh == 0`): dort gibt es keinen Durchschnittspreis,
+    # `Block.preis` fällt auf 0 zurück. Das Auto kann aus einem solchen Block
+    # nichts vorab entnehmen (das würde die Plausibilitätsprüfung oben schon
+    # melden), also bleibt sein gesamter Betrag für die anteilige Verteilung
+    # übrig — er darf nicht mit dem Preis auf 0 fallen.
+    rest_betrag = round(sum(
+        b.betrag if not b.kwh else rest[name] * b.preis for name, b in paare), 2)
     if summe > 0:
         anteile = engine.verteile_nach_wert(
             rest_betrag, {n: v for n, v in offen.items() if v and v > 0})

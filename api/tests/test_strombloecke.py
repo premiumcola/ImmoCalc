@@ -141,6 +141,20 @@ def test_strom_ohne_zuordnung_warnt_statt_zu_verschwinden():
     assert e.warnungen and "keine Einheit" in e.warnungen[0]
 
 
+def test_block_ohne_kwh_verliert_seinen_betrag_nicht():
+    """N315(f) — ein Block ohne Menge hat keinen Durchschnittspreis
+    (``preis`` fällt auf 0 zurück), das Auto kann daraus nichts vorab
+    entnehmen. Der volle Betrag muss trotzdem in die anteilige Verteilung
+    einfließen statt lautlos zu verschwinden — hier 201,36 €."""
+    b = _drei(Block(kwh=1000.0, betrag=400.00), Block(kwh=1000.0, betrag=200.00),
+              Block(kwh=0.0, betrag=201.36))
+    e = verteile(b, {"EG": 1000.0, "OG": 1000.0})
+    gesamt = round(400.00 + 200.00 + 201.36, 2)
+    assert not e.warnungen
+    assert e.gesamt == gesamt
+    assert round(sum(e.kosten.values()), 2) == gesamt
+
+
 def test_eigenverbrauchsquote_zaehlt_pv_und_akku():
     b = _drei(Block(kwh=2416.0, betrag=862.51), Block(kwh=3000.045, betrag=990.0),
               Block(kwh=1618.0, betrag=533.9))
