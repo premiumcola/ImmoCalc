@@ -16,8 +16,9 @@ from sqlmodel import Session, select
 from ..belegposten import (BelegFehler, loese as beleg_loese,
                            verbuche as beleg_verbuche)
 from ..db import get_session
-from ..models import (Dokument, Kostenart, Kostenposition, Objekt,
-                      Vorauszahlung, Zeitraum)
+from ..models import (Ablesung, Dokument, Kostenart, Kostenposition, Objekt,
+                      Versandprotokoll, Vorauszahlung, WegVorauszahlung,
+                      Zeitraum)
 from ..verteilung import positionen_neu_ableiten
 
 router = APIRouter(tags=["objekte"])
@@ -167,8 +168,12 @@ def zeitraum_anlegen(slug: str, data: ZeitraumIn,
 
 
 def _verknuepfungen(session: Session, zid: int) -> dict[str, int]:
-    """Was an einem Zeitraum hängt: Kostenpositionen, Belege, Vorauszahlungen.
-    Sind alle drei null, ist der Zeitraum leer und darf verschwinden."""
+    """Was an einem Zeitraum hängt. Ist alles null, ist der Zeitraum leer und
+    darf verschwinden.
+
+    N314(e) — Ablesung, Versandprotokoll und WegVorauszahlung fehlten hier:
+    ein Zeitraum mit bereits abgelesenen Zählern oder einer verschickten
+    Abrechnung galt als leer und wurde mit aufgeräumt."""
     return {
         "positionen": len(session.exec(select(Kostenposition)
                           .where(Kostenposition.zeitraum_id == zid)).all()),
@@ -176,6 +181,12 @@ def _verknuepfungen(session: Session, zid: int) -> dict[str, int]:
                           .where(Dokument.zeitraum_id == zid)).all()),
         "vorauszahlungen": len(session.exec(select(Vorauszahlung)
                           .where(Vorauszahlung.zeitraum_id == zid)).all()),
+        "ablesungen": len(session.exec(select(Ablesung)
+                          .where(Ablesung.zeitraum_id == zid)).all()),
+        "versandprotokolle": len(session.exec(select(Versandprotokoll)
+                          .where(Versandprotokoll.zeitraum_id == zid)).all()),
+        "weg_vorauszahlungen": len(session.exec(select(WegVorauszahlung)
+                          .where(WegVorauszahlung.zeitraum_id == zid)).all()),
     }
 
 
@@ -201,22 +212,32 @@ def _zeitraum_leer_entfernen(session: Session, zid: int,
 
 
 @router.post("/zeitraeume/aufraeumen")
-def zeitraeume_aufraeumen(session: Session = Depends(get_session)) -> dict:
+def zeitraeume_aufraeumen(vorschau: bool = True,
+                          session: Session = Depends(get_session)) -> dict:
     """Räumt alle leeren Abrechnungszeiträume weg — objektübergreifend.
 
     Nach einer Bestandsrücknahme (alle Belege wieder herausgenommen) bleiben
     Zeiträume ohne jeden Inhalt zurück. Statt sie einzeln zu löschen, wischt
     dieser Aufruf sie in einem Zug. Angefasst wird nur, was komplett leer ist —
-    ein Zeitraum mit Position, Beleg oder Vorauszahlung bleibt."""
-    entfernt = 0
-    for z in session.exec(select(Zeitraum)).all():
-        if not any(_verknuepfungen(session, z.id).values()):
+    ein Zeitraum mit Position, Beleg, Vorauszahlung, Ablesung, Versand-
+    protokoll oder WEG-Vorauszahlung bleibt.
+
+    N314(e) — als einziger objektübergreifender Massenlöscher lief das hier
+    bislang sofort. `?vorschau=true` (Vorgabe, wie beim Nachbarn
+    `belege-abgleichen`) ändert nichts, sondern meldet nur, was verschwinden
+    würde; erst `?vorschau=false` löscht wirklich."""
+    betroffen = [z.id for z in session.exec(select(Zeitraum)).all()
+                if not any(_verknuepfungen(session, z.id).values())]
+    if vorschau:
+        return {"entfernt": 0, "vorschau": True, "wuerde_entfernen": betroffen}
+    for zid in betroffen:
+        z = session.get(Zeitraum, zid)
+        if z:
             session.delete(z)
-            entfernt += 1
-    if entfernt:
+    if betroffen:
         session.commit()
-    logging.info("Leere Zeiträume aufgeräumt: %d entfernt", entfernt)
-    return {"entfernt": entfernt}
+    logging.info("Leere Zeiträume aufgeräumt: %d entfernt", len(betroffen))
+    return {"entfernt": len(betroffen), "vorschau": False}
 
 
 def _zeitraum(session: Session, zid: int) -> Zeitraum:
