@@ -15,10 +15,10 @@ from ..bezeichnung import (PLATZHALTER, STANDARD_UNTERORDNER, STANDARD_VORLAGE,
                            gleicher_ordner, lagebezeichnung, nach_vorlage,
                            ordnerpfad, pfadteile, unterordner_finden,
                            unterordner_name, unterordner_pruefen, vorlage_pruefen)
-from ..cloudkern import (ARTKUERZEL, STRUKTUR, S_HOME, S_TLS, S_UNTERORDNER,
-                        S_URL, S_BENUTZER, S_PASSWORT, ZIELORDNER, _lies,
-                        einheit_von, struktur_fuer, unterordner_fuer,
-                        unterordner_vorlagen, verbindung)
+from ..cloudkern import (ARTKUERZEL, SACHORDNER_KATEGORIE, STRUKTUR, S_HOME,
+                        S_TLS, S_UNTERORDNER, S_URL, S_BENUTZER, S_PASSWORT,
+                        ZIELORDNER, _lies, einheit_von, struktur_fuer,
+                        unterordner_fuer, unterordner_vorlagen, verbindung)
 from .. import upload
 from ..db import get_session
 from ..models import Dokument, Einstellung, Objekt
@@ -841,11 +841,6 @@ def umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
 # mit, je Datei einzeln festgeschrieben.
 # --------------------------------------------------------------------------
 
-def _sachordner_kategorie() -> dict[str, str]:
-    """Sachordner-Name → Dokumentart. Umkehrung von `ZIELORDNER`."""
-    return {ordner: art for art, ordner in ZIELORDNER.items()}
-
-
 def _flache_belege(session: Session, objekt: Objekt,
                    nach_ordner: dict[str, str]) -> list[tuple[Dokument, str]]:
     """Belege, die genau eine Ebene tief in einem bekannten Sachordner liegen.
@@ -906,7 +901,12 @@ def unterordner_umzug_plan(session: Session, client=None) -> dict:
     if not home:
         raise HTTPException(400, "Kein Home-Ordner gewählt")
 
-    nach_ordner = _sachordner_kategorie()
+    # N316(e) — Umkehrung von ZIELORDNER kam früher aus einem blinden
+    # `{ordner: art for art, ordner in ZIELORDNER.items()}`, das bei mehreren
+    # Kategorien im selben Ordner (40_Kauf_Eigentum_Finanzierung) von der
+    # zufälligen Dict-Reihenfolge abhing. Jetzt die eine, bewusst entschiedene
+    # Quelle aus cloudkern.py.
+    nach_ordner = SACHORDNER_KATEGORIE
     schritte: list[dict] = []
     ohne_jahr: list[dict] = []
     for o in session.exec(select(Objekt)).all():

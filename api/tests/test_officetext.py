@@ -255,6 +255,28 @@ def test_die_kataloge_bleiben_deckungsgleich():
         f"fehlt: {sorted(set(ZIELORDNER) - set(ARTKUERZEL))}"
 
 
+def test_kauf_finanzierungs_ordner_hat_eine_kategorie():
+    """N316e — `_HAUPT_KATEGORIE` (routers/cloud.py) und die frühere
+    `_sachordner_kategorie` widersprachen sich für
+    "40_Kauf_Eigentum_Finanzierung": "Kredit" gegen "Erwerbsnebenkosten".
+    `SACHORDNER_KATEGORIE` ist jetzt die einzige Quelle der Wahrheit."""
+    from app.cloudkern import SACHORDNER_KATEGORIE
+
+    assert SACHORDNER_KATEGORIE["40_Kauf_Eigentum_Finanzierung"] == "Kredit"
+
+
+def test_sachordner_kategorie_ist_eindeutig_fuer_jeden_ordner():
+    """Die Rückrichtung von `ZIELORDNER` darf nicht von der zufälligen
+    Reihenfolge der dict-Keys abhängen. Jeder Ordner aus `ZIELORDNER` bekommt
+    genau eine Kategorie, und ein zweiter Aufbau liefert dasselbe Ergebnis."""
+    from app.cloudkern import SACHORDNER_KATEGORIE, ZIELORDNER, \
+        _baue_sachordner_kategorie
+
+    assert set(SACHORDNER_KATEGORIE) == set(ZIELORDNER.values())
+    assert SACHORDNER_KATEGORIE == _baue_sachordner_kategorie(), \
+        "die Umkehrung muss bei jedem Aufbau gleich ausfallen"
+
+
 def test_jeder_dokumentverweis_hat_einen_klartext_titel():
     """Sonst steht im Duplikat-Assistenten der rohe Tabellenname."""
     from app import dokumentlinks

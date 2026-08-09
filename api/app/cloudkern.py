@@ -107,6 +107,60 @@ ZIELORDNER = {
     "Sonstiges": "99_Sonstiges",
 }
 
+# --------------------------------------------------------------------------
+# N316e — die Rückrichtung (Ordner → Kategorie) war zweimal von Hand gepflegt
+# (`_HAUPT_KATEGORIE` und `_sachordner_kategorie` in routers/cloud.py) und
+# widersprach sich für "40_Kauf_Eigentum_Finanzierung": die eine Stelle sagte
+# "Kredit", die andere (ein blindes `{ordner: art for art, ordner in
+# ZIELORDNER.items()}`) landete zufällig bei "Erwerbsnebenkosten" — je
+# nachdem, welche Kategorie zuletzt in ZIELORDNER auf denselben Ordner zeigt.
+# ZIELORDNER ist absichtlich viele-zu-eins (mehrere Kategorien teilen sich
+# einen Ordner), die Umkehrung braucht deshalb eine bewusste Entscheidung
+# statt eines impliziten Dict-Rücklaufs.
+#
+# Für "40_Kauf_Eigentum_Finanzierung" gilt "Kredit": das ist die Kategorie,
+# mit der dieser Ordner in der allerersten Fassung dieser Datei entstand
+# (der Ordnername trägt "Finanzierung" nicht zufällig). "Notarvertrag"
+# (CCCII) und "Erwerbsnebenkosten" (N283d) kamen später dazu und teilen sich
+# den Ordner mit dem Kauf/Finanzierungs-Vorgang, verdrängen ihn aber nicht
+# als dessen Leitkategorie.
+_MEHRDEUTIGE_ORDNER_KATEGORIE = {
+    "40_Kauf_Eigentum_Finanzierung": "Kredit",
+}
+
+
+def _baue_sachordner_kategorie() -> dict[str, str]:
+    """Ordner → Kategorie, deterministisch aus `ZIELORDNER` abgeleitet.
+
+    Ein Ordner mit genau einer Kategorie ist eindeutig. Ein Ordner mit
+    mehreren (aktuell nur der Kauf/Finanzierungs-Ordner) braucht einen
+    Eintrag in `_MEHRDEUTIGE_ORDNER_KATEGORIE` — fehlt er, ist das eine Lücke
+    im Katalog und wird laut gemeldet statt still nach Einfügereihenfolge
+    zu raten."""
+    kategorien_je_ordner: dict[str, list[str]] = {}
+    for kategorie, ordner in ZIELORDNER.items():
+        kategorien_je_ordner.setdefault(ordner, []).append(kategorie)
+
+    ergebnis: dict[str, str] = {}
+    for ordner, kategorien in kategorien_je_ordner.items():
+        if len(kategorien) == 1:
+            ergebnis[ordner] = kategorien[0]
+            continue
+        gewaehlt = _MEHRDEUTIGE_ORDNER_KATEGORIE.get(ordner)
+        if gewaehlt is None or gewaehlt not in kategorien:
+            raise RuntimeError(
+                f'Ordner „{ordner}" hat mehrere Kategorien {kategorien} '
+                "ohne eindeutige Entscheidung in "
+                "_MEHRDEUTIGE_ORDNER_KATEGORIE.")
+        ergebnis[ordner] = gewaehlt
+    return ergebnis
+
+
+# Sachordner-Name → Dokumentart — die einzige Quelle der Wahrheit für die
+# Rückrichtung. Beim Import einmal berechnet, damit eine Lücke im Katalog
+# sofort auffällt statt erst beim ersten Aufruf einer der Nutzerinnen.
+SACHORDNER_KATEGORIE = _baue_sachordner_kategorie()
+
 # Kurzform der Art für den Dateinamen. Der Ordner sagt zwar schon, worum es
 # geht — aber ein Name wandert aus dem Ordner heraus: in eine Suche, in einen
 # Mailanhang, auf den Schreibtisch. „2026-02_Rechnung_104,15€.pdf" sagt dort
