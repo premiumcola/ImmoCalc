@@ -27,11 +27,11 @@ body{
   width:100%; max-width:440px; min-height:100dvh; background:var(--paper);
   position:relative; display:flex; flex-direction:column;
   /* Platz für die schwebende Navi (N327) UND den Home-Indikator
-     (Notch-iPhones), sonst verdeckt der Fuß den letzten Inhalt (env ist 0
-     ohne sichere Zone). Die Leiste selbst hat nur noch einen festen 10px-
-     Abstand nach unten (N327-b, gleich wie links/rechts) — die sichere Zone
-     kommt deshalb hier dazu statt in der Leistenposition. */
-  padding-bottom:calc(82px + env(safe-area-inset-bottom));
+     (Notch-iPhones). Deckungsgleich mit `.nav`s eigener `bottom`-Formel
+     (`max(14px, safe-area+6px)`, aus der Referenz in
+     `docs/mobile-dock-spec.md`) plus der Pillenhöhe (8+54+8=70px) plus
+     etwas Luft — sonst verdeckt der Fuß den letzten Inhalt. */
+  padding-bottom:calc(80px + max(14px, env(safe-area-inset-bottom) + 6px));
 }
 /* ---- N271: ab Tablet ist die App ein RAHMEN, kein langes Dokument ----
    Bis hierher scrollte die ganze Seite: `.app` wuchs mit dem Inhalt, und die
@@ -281,9 +281,16 @@ button.chip:hover{filter:brightness(.96)}
      — iOS liefert dafür keine API (auch kein `env()`-Wert) —, „dynamisch
      anpassen" geht deshalb nicht wörtlich. Der Weg, den auch native Apps
      gehen: genug Abstand zur Kante, damit die eigene Rundung klar als eigene
-     Form erkennbar ist statt mit der Geräte-Kante zu konkurrieren. */
-  position:fixed; left:14px; right:14px; bottom:14px;
-  z-index:30; background:var(--sheet); border-radius:26px;
+     Form erkennbar ist statt mit der Geräte-Kante zu konkurrieren.
+     Der Nutzer brachte danach eine konkrete Referenz aus einem anderen
+     Projekt mit (`docs/mobile-dock-spec.md`) — von dort übernommen: die
+     `max()`-Formel für den unteren Abstand (klein UND sicher zugleich, statt
+     fest 14px, die auf sehr grossen Notch-Geräten wieder zu knapp am
+     Home-Indikator läge) und das Frosted-Glass-Rezept (hell statt dunkel,
+     die App bleibt bei ihrer Farbsprache). */
+  position:fixed; left:14px; right:14px;
+  bottom:max(14px, calc(env(safe-area-inset-bottom) + 6px));
+  z-index:30; border-radius:26px;
   display:flex; gap:5px; padding:8px 8px;
   /* N327-b — Nutzer: der Schatten soll auch links/rechts/unten im Rand-
      abstand um die Pille sichtbar sein, nicht nur direkt darunter — aber
@@ -293,9 +300,33 @@ button.chip:hover{filter:brightness(.96)}
      gross ist wie ihr Weichzeichner — dann bleibt ihr oberer Rand exakt an
      der Pillen-Oberkante oder knapp darunter, nie darüber. Insgesamt auch
      kräftiger (Nutzer: „more shadow"). Reines Schwarz statt `--ink`, das auf
-     manchen Bildschirmen grünlich kippte. */
+     manchen Bildschirmen grünlich kippte. Bewusst NICHT die nach oben
+     gerichteten Schatten-Ebenen aus der Referenz übernommen — die
+     widersprechen der eigenen "kein Schatten nach oben"-Vorgabe. */
   box-shadow:0 10px 18px -8px rgba(0,0,0,.32), 0 2px 8px -4px rgba(0,0,0,.16),
               0 30px 28px 0 rgba(0,0,0,.34);
+  /* Frosted Glass statt Vollton-Weiss: Technik aus der Referenz (Blur-Rezept
+     `blur(22px) saturate(1.05)`), aber mit den hellen Tönen dieser App statt
+     deren dunklem Glas. Fallback (kein `backdrop-filter`-Support): Vollton
+     `--sheet`, unverändert wie zuvor. */
+  background:var(--sheet);
+}
+@supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){
+  .nav{
+    background:rgba(255,255,255,.8);
+    -webkit-backdrop-filter:blur(22px) saturate(1.05);
+    backdrop-filter:blur(22px) saturate(1.05);
+  }
+}
+/* N327-b — der iOS-Stolperstein aus der Referenz: `html`/`body` haben weiter
+   unten `overflow-x:hidden`; ohne dieses Trio rendert WebKit
+   `backdrop-filter` auf einer fixierten Fläche darüber oft nur als Vollton
+   ohne jede Unschärfe, weil es aus einem leeren/beschnittenen Puffer liest.
+   Zwingt die Pille auf eine eigene Compositing-Ebene mit echtem Zugriff auf
+   den Viewport-Inhalt dahinter. */
+.nav{
+  isolation:isolate; will-change:backdrop-filter, transform;
+  transform:translateZ(0);
 }
 /* N271 — `static` statt `absolute`: die Leiste ist jetzt das letzte Flex-Kind
    der Karte und sitzt damit von selbst unten fest. `absolute` band sie an den
@@ -305,7 +336,9 @@ button.chip:hover{filter:brightness(.96)}
 }
 .nav a{
   flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;
-  gap:4px; padding:8px 2px; min-height:44px; text-decoration:none;
+  /* N327-b — Referenz empfiehlt 54px Touch-Ziel-Höhe (über dem 44px-Minimum
+     der App) für die Dock-Buttons; hier übernommen. */
+  gap:4px; padding:8px 2px; min-height:54px; text-decoration:none;
   color:var(--soft);
   /* N327-b — Nutzer: die aktive Markierung soll denselben Rundungs-Radius
      tragen wie die Pille selbst. Konzentrisch zur 26px-Aussenrundung bei
