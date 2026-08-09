@@ -35,7 +35,11 @@ const INFOS = {
   eigentuemer: { titel: 'PV-Eigentümer', text:
     'Die PV-Anlage ist ein eigenes Investment: sie kann anderen gehören als das '
     + 'Haus. Zugeordnet wird aus den vorhandenen Eigentümern, die Anteile werden '
-    + 'in Tausendsteln (‰) vergeben. Ohne Zuordnung gilt die Vorgabe 5/6 + 1/6.' },
+    + 'in Tausendsteln (‰) vergeben. Ohne Zuordnung gilt die Vorgabe 5/6 + 1/6.\n\n'
+    + 'Darunter die Jahresabrechnung: was die Anlage GENAU in diesem Jahr zur '
+    + 'Amortisation beigetragen hat, nach denselben ‰ verteilt — nicht der '
+    + 'kumulierte Stand von oben in der Kurve. Ein Klick verschickt sie als '
+    + 'Mail; ein bereits verschicktes Jahr lässt sich nicht doppelt senden.' },
 };
 
 const modul = infoModul(INFOS);

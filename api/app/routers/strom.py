@@ -32,14 +32,17 @@ from sqlmodel import Session, select
 from .. import strom
 from ..db import get_session
 from ..deps import objekt_holen
+from ..mailversand import MailFehler
 from ..models import Eigentuemer, Objekt, Stromjahr, Tankladung
+from .mail import zugang
 # ------------------------------------------------------------------
 # Re-Exports der bewegten PV-Fachlogik (N216) — halten Alt-Aufrufer und
 # Test-Monkeypatches lauffähig, ohne dass sich Signaturen ändern.
 # ------------------------------------------------------------------
 from ..pv.amortisation import (_PROGNOSE_MAX_JAHRE, _anlage,  # noqa: F401
                                _prognose, verlauf_daten)
-from ..pv.eigentuemer import eigentuemer_daten
+from ..pv import versand as pv_versand
+from ..pv.eigentuemer import eigentuemer_daten, jahres_verteilung
 from ..pv.ertrag import (_HERKUNFT_EIGEN, _KAT_LABEL,  # noqa: F401
                          _QUELLEN_LEER, _abrechnungsjahre, _ertraege_je_jahr,
                          _kat_beitrag, _kat_eur, _kategorie_kwh, _kategorien,
@@ -316,3 +319,69 @@ def pv_eigentuemer(slug: str, session: Session = Depends(get_session),
     """N112 — die Personen zur Auswahl für die PV-Anteile (siehe
     :func:`app.pv.eigentuemer.eigentuemer_daten`)."""
     return eigentuemer_daten(session, o)
+
+
+# ==========================================================================
+# N308 — die jährliche PV-Eigentümer-Abrechnung (statt eines nur kumulierten
+# Standes) und ihr Versand, nach demselben Muster wie die E-Tankstelle
+# (Rückfrage vor dem Senden, Versendet-Marker gegen Dopplung — hier ohne PDF,
+# da es sich um ein Informationsschreiben unter Mit-Eigentümern handelt, nicht
+# um eine Rechnung).
+# ==========================================================================
+
+@router.get("/objekte/{slug}/pv/jahresabrechnung")
+def pv_jahresabrechnung(slug: str, jahr: int = Query(default=0),
+                        session: Session = Depends(get_session),
+                        o: Objekt = Depends(objekt_holen)) -> dict:
+    """Was die Anlage in EINEM Jahr abgetragen hat, verteilt auf die
+    Eigentümer nach ihren PV-‰ (siehe :func:`app.pv.eigentuemer.jahres_verteilung`),
+    dazu je Eigentümer, ob er die Abrechnung für dieses Jahr schon erhalten hat."""
+    d = jahres_verteilung(session, o, jahr or date.today().year)
+    versendet = pv_versand.versendet_marker(session, slug, d["jahr"])
+    for e in d["eigentuemer"]:
+        e["versendet"] = e["name"] in versendet
+    return d
+
+
+class PvVersandIn(BaseModel):
+    jahr: int
+    name: str
+    an: str = ""                  # abweichende Adresse, sonst die hinterlegte
+
+
+@router.post("/objekte/{slug}/pv/jahresabrechnung/versand")
+def pv_jahresabrechnung_versenden(slug: str, data: PvVersandIn,
+                                  session: Session = Depends(get_session),
+                                  o: Objekt = Depends(objekt_holen)) -> dict:
+    """Die Jahresabrechnung EINES PV-Eigentümers per Mail schicken — über das
+    Postfach des Nutzers, wie bei der E-Tankstelle. Kein Versand ohne Betrag,
+    ohne Adresse oder für ein bereits verschicktes Jahr."""
+    d = jahres_verteilung(session, o, data.jahr)
+    eintrag = next((e for e in d["eigentuemer"] if e["name"] == data.name), None)
+    if eintrag is None:
+        raise HTTPException(400, d["hinweis"] or
+                            f"„{data.name}“ hält für {data.jahr} keinen "
+                            "PV-Anteil.")
+    adresse = (data.an or eintrag["email"] or "").strip()
+    if not adresse:
+        raise HTTPException(400, f"Für {eintrag['name']} ist keine "
+                                 "E-Mail-Adresse hinterlegt.")
+    if not (eintrag["betrag"] and eintrag["betrag"] > 0):
+        raise HTTPException(400, f"Für {data.jahr} ist kein Ertrag zu "
+                                 "verteilen.")
+    if pv_versand.ist_versendet(session, slug, data.jahr, data.name):
+        raise HTTPException(400, f"{eintrag['name']} hat die Abrechnung "
+                                 f"{data.jahr} bereits erhalten — kein "
+                                 "erneuter Versand.")
+    betreff = f"PV-Anlage {o.name} — Jahresabrechnung {data.jahr}"
+    text = pv_versand.abrechnungstext(o.name, data.jahr, eintrag, d["ertrag"])
+    try:
+        zugang(session).sende(adresse, betreff, text)
+    except MailFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+    pv_versand.versendet_merken(session, slug, data.jahr, data.name)
+    session.commit()
+    log.info("PV-Eigentümer %s: Jahresabrechnung %d an %s versendet",
+             slug, data.jahr, adresse)
+    return {"ok": True, "an": adresse, "betrag": eintrag["betrag"],
+            "jahr": data.jahr}

@@ -19,6 +19,7 @@ Import aus HTML über `./assets/strom/…`.
 | `verlauf.js`       | N127 Verlauf: KPIs, Kurve (Inline-SVG), Legende, Tabelle    |
 | `kringel.js`       | N200 Ringdiagramm `kWh je Kategorie` + Prozent-Aufteilung   |
 | `eigentuemer.js`   | N204 PV-Eigentuemer-Karte, ‰-Zuordnung, „＋"-Formular       |
+| `jahresabrechnung.js` | N308 jaehrliche PV-Eigentuemer-Abrechnung + Versand      |
 
 ## `state.js`-Vertrag
 
@@ -80,6 +81,7 @@ Jedes Modul installiert seine eigenen Delegations-Handler beim Import:
   auf `dragenter`/`dragover`/`dragleave`/`drop`
 - `eigentuemer.js` hoert am `inhalt` auf `click`
   (`[data-pv-weg]`, `[data-pv-add]`)
+- `jahresabrechnung.js` hoert am `inhalt` auf `click` (`[data-pj-send]`)
 
 Die `input`-Handler fuer die Felder werden weiterhin in `laden()`
 angebunden, weil sie nach jedem Skelett-Rebuild neu verkabelt werden

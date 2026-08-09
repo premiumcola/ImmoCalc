@@ -925,6 +925,145 @@ def test_pv_eigentuemer_bietet_die_vorhandenen_personen_an(client):
     assert d["anteile_summe"] == 1000.0 and d["hinweise"] == []
 
 
+# --------------------------------------------------------------------------
+# N308 — die jährliche PV-Eigentümer-Abrechnung (statt eines kumulierten
+# Standes) und ihr Versand.
+# --------------------------------------------------------------------------
+
+def _jahresabrechnung_objekt(c, roland_mail: str = "roland@example.invalid",
+                             marvin_mail: str = "marvin@example.invalid") -> str:
+    """Ein PV-Objekt mit zwei Eigentümern (700 ‰ / 300 ‰) und zwei Jahren mit
+    unterschiedlicher Einspeisevergütung — verschieden genug, um kumuliert von
+    „nur dieses Jahr" zu unterscheiden."""
+    slug = _pv_objekt(c, "PV-Jahresabrechnung")
+    c.post("/api/eigentuemer", json={"name": "Roland", "email": roland_mail})
+    c.post("/api/eigentuemer", json={"name": "Marvin", "email": marvin_mail})
+    c.put(f"/api/objekte/{slug}/pv/stammdaten",
+         json={"anteile": '{"Roland": 700, "Marvin": 300}'})
+    z24 = _zeitraum_id(c, slug, 2024)
+    _position(c, z24, _EINSPEISUNG, 500.0)
+    z25 = _zeitraum_id(c, slug, 2025)
+    _position(c, z25, _EINSPEISUNG, 300.0)
+    return slug
+
+
+def test_jahresabrechnung_verteilt_nur_das_eine_jahr(client):
+    """Der Kern von N308: die Abrechnung eines Jahres verteilt den Ertrag
+    GENAU dieses Jahres — nicht den kumulierten Stand über alle Jahre."""
+    slug = _jahresabrechnung_objekt(client)
+
+    a = client.get(f"/api/objekte/{slug}/pv/jahresabrechnung",
+                   params={"jahr": 2024}).json()
+    assert a["ertrag"] == 500.0
+    assert a["kumuliert_bis_jahr"] == 500.0
+    eigentuemer = {e["name"]: e for e in a["eigentuemer"]}
+    assert eigentuemer["Roland"]["betrag"] == 350.0      # 500 × 700 ‰
+    assert eigentuemer["Marvin"]["betrag"] == 150.0      # 500 × 300 ‰
+    assert round(sum(e["betrag"] for e in a["eigentuemer"]), 2) == 500.0
+    # 2024 ist zugleich das erste Jahr — Jahresbetrag und kumulierter Anteil
+    # fallen hier zusammen.
+    assert eigentuemer["Roland"]["kumuliert_anteil"] == 350.0
+    assert eigentuemer["Marvin"]["kumuliert_anteil"] == 150.0
+
+    b = client.get(f"/api/objekte/{slug}/pv/jahresabrechnung",
+                   params={"jahr": 2025}).json()
+    assert b["ertrag"] == 300.0                # NICHT 800 (kumuliert)
+    assert b["kumuliert_bis_jahr"] == 800.0
+    eigentuemer_b = {e["name"]: e for e in b["eigentuemer"]}
+    assert eigentuemer_b["Roland"]["betrag"] == 210.0    # 300 × 700 ‰
+    assert eigentuemer_b["Marvin"]["betrag"] == 90.0     # 300 × 300 ‰
+    # Der kumulierte Anteil zieht die Vorjahre mit — 800 × 700 ‰ = 560.
+    assert eigentuemer_b["Roland"]["kumuliert_anteil"] == 560.0
+    assert eigentuemer_b["Marvin"]["kumuliert_anteil"] == 240.0
+
+
+def test_jahresabrechnung_ohne_zeitraum_zeigt_hinweis_statt_erfundener_zahl(client):
+    """Ein Jahr ohne Abrechnungszeitraum bekommt keinen Betrag, sondern eine
+    Erklärung — nie eine stille 0,00-€-Abrechnung."""
+    slug = _jahresabrechnung_objekt(client)
+    d = client.get(f"/api/objekte/{slug}/pv/jahresabrechnung",
+                   params={"jahr": 1999}).json()
+    assert d["ertrag"] is None
+    assert d["eigentuemer"] == []
+    assert "1999" in d["hinweis"]
+
+
+class _Postfach:
+    def __init__(self):
+        self.gesendet = []
+
+    def sende(self, an, betreff, text, anhang=None):
+        self.gesendet.append((an, betreff, text, anhang))
+
+
+def test_jahresabrechnung_versand_geht_an_die_hinterlegte_adresse(client,
+                                                                   monkeypatch):
+    from app.routers import strom as rs
+    slug = _jahresabrechnung_objekt(client)
+    postfach = _Postfach()
+    monkeypatch.setattr(rs, "zugang", lambda session: postfach)
+
+    antwort = client.post(f"/api/objekte/{slug}/pv/jahresabrechnung/versand",
+                          json={"jahr": 2024, "name": "Roland"})
+    assert antwort.status_code == 200, antwort.text
+    assert antwort.json()["an"] == "roland@example.invalid"
+    assert antwort.json()["betrag"] == 350.0
+    assert len(postfach.gesendet) == 1
+    an, betreff, text, anhang = postfach.gesendet[0]
+    assert an == "roland@example.invalid"
+    assert "2024" in betreff
+    assert "350,00 €" in text
+    assert anhang is None                      # Informationsschreiben, kein PDF
+
+    # Der ✓-Haken erscheint jetzt im Abruf …
+    d = client.get(f"/api/objekte/{slug}/pv/jahresabrechnung",
+                   params={"jahr": 2024}).json()
+    roland = next(e for e in d["eigentuemer"] if e["name"] == "Roland")
+    assert roland["versendet"] is True
+    marvin = next(e for e in d["eigentuemer"] if e["name"] == "Marvin")
+    assert marvin["versendet"] is False
+
+    # … und ein zweiter Versand für dasselbe Jahr wird abgelehnt.
+    zweiter = client.post(f"/api/objekte/{slug}/pv/jahresabrechnung/versand",
+                          json={"jahr": 2024, "name": "Roland"})
+    assert zweiter.status_code == 400
+    assert "bereits erhalten" in zweiter.json()["detail"]
+    assert len(postfach.gesendet) == 1          # kein zweiter Versand ausgelöst
+
+    # Ein anderes Jahr ist davon unberührt.
+    dritter = client.post(f"/api/objekte/{slug}/pv/jahresabrechnung/versand",
+                          json={"jahr": 2025, "name": "Roland"})
+    assert dritter.status_code == 200
+    assert len(postfach.gesendet) == 2
+
+
+def test_jahresabrechnung_versand_ohne_adresse_wird_abgelehnt(client,
+                                                               monkeypatch):
+    from app.routers import strom as rs
+    slug = _jahresabrechnung_objekt(client, roland_mail="", marvin_mail="")
+    postfach = _Postfach()
+    monkeypatch.setattr(rs, "zugang", lambda session: postfach)
+
+    antwort = client.post(f"/api/objekte/{slug}/pv/jahresabrechnung/versand",
+                          json={"jahr": 2024, "name": "Roland"})
+    assert antwort.status_code == 400
+    assert "E-Mail" in antwort.json()["detail"]
+    assert postfach.gesendet == []
+
+
+def test_jahresabrechnung_versand_fuer_unbekanntes_jahr_wird_abgelehnt(client,
+                                                                       monkeypatch):
+    from app.routers import strom as rs
+    slug = _jahresabrechnung_objekt(client)
+    postfach = _Postfach()
+    monkeypatch.setattr(rs, "zugang", lambda session: postfach)
+
+    antwort = client.post(f"/api/objekte/{slug}/pv/jahresabrechnung/versand",
+                          json={"jahr": 1999, "name": "Roland"})
+    assert antwort.status_code == 400
+    assert postfach.gesendet == []
+
+
 def test_teil_put_setzt_die_uebrigen_felder_nicht_auf_null(client):
     """N150 — der PUT nahm frueher immer den ganzen Satz: wer nur einen Teil der
     Maske schickte, setzte alle uebrigen Felder still auf 0. Das hat real Daten
