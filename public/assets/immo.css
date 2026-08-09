@@ -26,12 +26,13 @@ body{
 .app{
   width:100%; max-width:440px; min-height:100dvh; background:var(--paper);
   position:relative; display:flex; flex-direction:column;
-  /* Platz für die schwebende Navi (N327) UND den Home-Indikator
-     (Notch-iPhones). Deckungsgleich mit `.nav`s eigener `bottom`-Formel
-     (`max(14px, safe-area+6px)`, aus der Referenz in
-     `docs/mobile-dock-spec.md`) plus der Pillenhöhe (8+54+8=70px) plus
-     etwas Luft — sonst verdeckt der Fuß den letzten Inhalt. */
-  padding-bottom:calc(80px + max(14px, env(safe-area-inset-bottom) + 6px));
+  /* Platz für die schwebende Navi UND den Home-Indikator (Notch-iPhones) —
+     zwei getrennte Dinge: `.nav`s eigener `bottom`-Abstand ist jetzt fest
+     14px (gleich wie links/rechts, siehe dort), die sichere Zone für
+     scrollenden INHALT kommt separat hier dazu, sonst verschwindet der
+     letzte Text unter Pille UND Home-Indikator. Pillenhöhe (8+54+8=70px) +
+     14px Rand + etwas Luft + die sichere Zone. */
+  padding-bottom:calc(92px + env(safe-area-inset-bottom));
 }
 /* ---- N271: ab Tablet ist die App ein RAHMEN, kein langes Dokument ----
    Bis hierher scrollte die ganze Seite: `.app` wuchs mit dem Inhalt, und die
@@ -278,61 +279,38 @@ button.chip:hover{filter:brightness(.96)}
   /* N327-b — Nutzer-Feedback: die Pillen-Rundung passt nicht zur echten
      Display-Rundung des iPhones (die Kante sass zu nah dran, der Bruch fiel
      auf). Web-Seiten können die physische Bildschirmrundung nicht auslesen
-     — iOS liefert dafür keine API (auch kein `env()`-Wert) —, „dynamisch
-     anpassen" geht deshalb nicht wörtlich. Der Weg, den auch native Apps
-     gehen: genug Abstand zur Kante, damit die eigene Rundung klar als eigene
-     Form erkennbar ist statt mit der Geräte-Kante zu konkurrieren.
-     Der Nutzer brachte danach eine konkrete Referenz aus einem anderen
-     Projekt mit (`docs/mobile-dock-spec.md`) — von dort übernommen: die
-     `max()`-Formel für den unteren Abstand (klein UND sicher zugleich, statt
-     fest 14px, die auf sehr grossen Notch-Geräten wieder zu knapp am
-     Home-Indikator läge) und das Frosted-Glass-Rezept (hell statt dunkel,
-     die App bleibt bei ihrer Farbsprache). */
-  /* N327-b — Nutzer-Fund: `max(14px, calc(env(...) + 6px))` liess auf dem
-     echten iPhone den unteren Abstand ganz wegfallen (verschachteltes
-     `calc()` in `max()` scheint dort nicht zu greifen) — die Pille sass
-     ohne jeden Rand am unteren Bildschirmrand, während links/rechts die
-     14px sichtbar blieben. `max()` bildet selbst schon einen
-     Rechenkontext; das äussere `calc()` war ohnehin nur Zierrat. */
-  position:fixed; left:14px; right:14px;
-  bottom:max(14px, env(safe-area-inset-bottom) + 6px);
+     — iOS liefert dafür keine API —, „dynamisch anpassen" geht deshalb
+     nicht wörtlich. Der Weg, den auch native Apps gehen: genug Abstand zur
+     Kante, damit die eigene Rundung klar als eigene Form erkennbar ist.
+     N327-b, zweiter Anlauf beim Abstand: eine `max(14px, safe-area+6px)`-
+     Formel sollte auf Notch-Geräten zusätzlich sichern, sass am Ende aber
+     auf dem echten iPhone weiterhin ungleich/„unverändert gross" — der
+     Nutzer will ausdrücklich denselben Wert wie links/rechts, keine
+     Sonderrechnung für die sichere Zone. Jetzt schlicht derselbe feste
+     14px-Wert auf allen drei Seiten; die sichere Zone bekommt weiterhin
+     `.app`s `padding-bottom`, nicht die Leistenposition selbst. */
+  position:fixed; left:14px; right:14px; bottom:14px;
   z-index:30; border-radius:26px;
   display:flex; gap:5px; padding:8px 8px;
-  /* N327-b — die vorherige omnidirektionale Ebene (`0 30px 28px 0`, ohne
-     Versatz nach den Seiten) folgte der RECHTECKIGEN Pillenform und wurde
-     genau dort sichtbar, wo der runde Dokumente-Knopf oben herausragt — als
-     hell/dunkler "Rechteck-Rand" hinter dem Kreis ("die verdammten
-     Schatten-Kanten"). Jetzt nur zwei klar nach UNTEN versetzte Ebenen mit
-     spürbarem negativem Spread (Schattenquelle deutlich kleiner als die
-     Pille selbst) — dadurch bleibt der Schatten sauber unter der Pille,
-     ohne an ihren oberen Ecken/um den Kreis herum sichtbar zu werden. */
+  /* Die vorherige omnidirektionale Schatten-Ebene (`0 30px 28px 0`, ohne
+     Versatz) folgte der RECHTECKIGEN Pillenform und wurde genau dort
+     sichtbar, wo der runde Dokumente-Knopf oben herausragt — als Rechteck-
+     Rand hinter dem Kreis. Jetzt nur zwei klar nach UNTEN versetzte Ebenen
+     mit negativem Spread, damit der Schatten sauber unter der Pille bleibt. */
   box-shadow:0 4px 10px -3px rgba(0,0,0,.28), 0 16px 28px -12px rgba(0,0,0,.4);
-  /* Frosted Glass statt Vollton-Weiss: Technik aus der Referenz (Blur-Rezept
-     `blur(22px) saturate(1.05)`), aber mit den hellen Tönen dieser App statt
-     deren dunklem Glas. Fallback (kein `backdrop-filter`-Support): Vollton
-     `--sheet`, unverändert wie zuvor. */
-  background:var(--sheet);
-}
-@supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){
-  .nav{
-    /* N327-b — Nutzer: „so stark, dass man den Text nicht mehr lesen kann"
-       — 22px (die Referenzwert der Vorlage) blieb zu schwach/lesbar. Der
-       Blur wirkt ausschliesslich innerhalb der Pillen-Fläche selbst (links,
-       rechts, unten im 14px-Rand mit drin) — nie darüber, weil
-       `backdrop-filter` nur den Bereich hinter dem eigenen Element erfasst,
-       niemals das, was ausserhalb seiner Box liegt. */
-    background:rgba(255,255,255,.72);
-    -webkit-backdrop-filter:blur(46px) saturate(1.1);
-    backdrop-filter:blur(46px) saturate(1.1);
-  }
-}
-/* N327-b — der iOS-Stolperstein aus der Referenz: `html`/`body` haben weiter
-   unten `overflow-x:hidden`; ohne dieses Trio rendert WebKit
-   `backdrop-filter` auf einer fixierten Fläche darüber oft nur als Vollton
-   ohne jede Unschärfe, weil es aus einem leeren/beschnittenen Puffer liest.
-   Zwingt die Pille auf eine eigene Compositing-Ebene mit echtem Zugriff auf
-   den Viewport-Inhalt dahinter. */
-.nav{
+  /* Frosted Glass — Nutzer: „es gibt kein Blur" auf dem echten Gerät. Jetzt
+     OHNE `@supports`-Gate (die Bedingungsprüfung selbst war ein möglicher,
+     unnötiger Ausfallpunkt — praktisch jeder relevante mobile Browser kann
+     das ohnehin; ohne Unterstützung bleibt schlicht die undurchsichtige
+     `rgba(255,255,255,.72)` stehen, kein Fallback-Sonderfall nötig) UND mit
+     `isolation`/`will-change`/`transform:translateZ(0)` DIREKT auf demselben
+     Element (nicht in einer zusätzlichen, später stehenden Regel) — der aus
+     der Referenz übernommene iOS-Kompositions-Trick, ohne den WebKit
+     `backdrop-filter` auf einer `position:fixed`-Fläche manchmal gar nicht
+     oder nur als Vollton rendert. */
+  background:rgba(255,255,255,.72);
+  -webkit-backdrop-filter:blur(46px) saturate(1.1);
+  backdrop-filter:blur(46px) saturate(1.1);
   isolation:isolate; will-change:backdrop-filter, transform;
   transform:translateZ(0);
 }
