@@ -18,6 +18,16 @@
    zentral, `!important`, damit es auch die Klassen-Regeln schlägt. */
 [hidden]{display:none !important}
 html,body{margin:0;padding:0}
+/* Nutzer: „Wenn ich die Seite super weit runterziehe, geht der Titel voll
+   runter und irgendwann verschwinden alle Einträge im Menü." — das iOS-
+   Gummiband-Overscroll auf `body` selbst: unterhalb 480px (Handy) scrollt
+   die ganze Seite als EIN Dokument (kein Rahmen wie ab Tablet, siehe unten),
+   und ohne diese Zeile lässt sich `body` beliebig über den oberen Rand
+   hinausziehen — dabei rutscht die `sticky`-Kopfzeile mit, und bei starkem
+   Zug gerät die `fixed`-Navi (mit ihrem eigenen `backdrop-filter`-Compositing-
+   Layer) sichtbar aus dem Tritt. Global statt nur ab 480px, damit das Handy
+   dieselbe Ruhe bekommt wie der Tablet/Desktop-Rahmen weiter unten. */
+html,body{overscroll-behavior-y:none}
 body{
   background:var(--paper); color:var(--ink); font-family:var(--body);
   -webkit-font-smoothing:antialiased; line-height:1.45;
@@ -49,7 +59,7 @@ body{
    nicht mehr scrollt, blendet Safari seine Werkzeugleiste nicht mehr ein und
    aus, und der Rahmen bleibt ruhig stehen. */
 @media(min-width:480px){
-  html,body{height:100dvh; overflow:hidden; overscroll-behavior:none}
+  html,body{height:100dvh; overflow:hidden}
   body{padding:24px 0}
   .app{
     height:calc(100dvh - 48px); min-height:0; padding-bottom:0;
