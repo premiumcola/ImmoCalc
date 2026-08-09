@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Suche · ImmoCalc</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* ==========================================================================
+     N328 — die neue, eigenständige Suchseite. Anfangs leer, füllt sich live
+     beim Tippen. Ergebnisse nach Art getrennt (Objekte/Einheiten als Bubbles,
+     Kontakte als Bubbles, Dokumente als Zeilen) — jede Art in einer eigenen,
+     gedeckten Farbklasse, damit man auf einen Blick sieht, was wo herkommt
+     (Vorbild: Spotify trennt Playlists/Interpreten optisch genauso).
+     Nur das erste Stück von N328: sucht über Objekte, Einheiten, Kontakte/
+     Gewerke (`/api/kontakte`) und Dokumente (`/api/dokumente?suche=`, seit
+     N328(ii) inklusive OCR-Volltext). ========================================================================== */
+
+  .suchfeld-zeile{padding:14px 16px 10px}
+  .suchfeld{
+    position:relative; display:flex; align-items:center;
+  }
+  .suchfeld svg{
+    position:absolute; left:14px; width:18px; height:18px; color:var(--soft);
+    pointer-events:none;
+  }
+  .suchfeld input{
+    width:100%; border:1.5px solid var(--line); border-radius:14px;
+    background:var(--sheet); padding:13px 14px 13px 42px;
+    font:500 15.5px var(--body); color:var(--ink);
+  }
+  .suchfeld input:focus{outline:none; border-color:var(--teal)}
+  .suchfeld .loeschen{
+    position:absolute; right:6px; border:none; background:none; color:var(--soft);
+    width:32px; height:32px; border-radius:999px; cursor:pointer; display:none;
+    font-size:18px; line-height:1;
+  }
+  .suchfeld.gefuellt .loeschen{display:block}
+  .suchfeld .loeschen:hover{background:#F1F4F4; color:var(--ink)}
+
+  /* Dynamische Filter-Bubbles: erscheinen erst, wenn es je Art Treffer gibt. */
+  .kategorien{
+    display:flex; gap:7px; padding:0 16px 12px; overflow-x:auto;
+    scrollbar-width:none;
+  }
+  .kategorien::-webkit-scrollbar{display:none}
+  .kat-chip{
+    flex:none; display:flex; align-items:center; gap:6px; border:1.5px solid var(--line);
+    background:var(--sheet); color:var(--soft); border-radius:999px;
+    padding:7px 13px; font:600 12.5px var(--disp); cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .kat-chip .p{width:7px; height:7px; border-radius:999px; flex:none}
+  .kat-chip[aria-pressed=true]{border-color:transparent; color:#fff}
+  .kat-chip.objekte .p{background:var(--teal)}
+  .kat-chip.objekte[aria-pressed=true]{background:var(--teal)}
+  .kat-chip.einheiten .p{background:#3B6FA6}
+  .kat-chip.einheiten[aria-pressed=true]{background:#3B6FA6}
+  .kat-chip.kontakte .p{background:var(--amber)}
+  .kat-chip.kontakte[aria-pressed=true]{background:var(--amber)}
+  .kat-chip.dokumente .p{background:var(--soft)}
+  .kat-chip.dokumente[aria-pressed=true]{background:var(--soft)}
+
+  .ergebnisse{padding:0 16px 28px; display:flex; flex-direction:column; gap:22px}
+  .egruppe .eg-kopf{
+    display:flex; align-items:center; gap:8px; margin-bottom:10px;
+    font:700 11px var(--mono); letter-spacing:.07em; text-transform:uppercase;
+  }
+  .egruppe .eg-kopf .p{width:8px; height:8px; border-radius:999px}
+  .egruppe.objekte .eg-kopf .p{background:var(--teal)} .egruppe.objekte .eg-kopf{color:var(--teal-d)}
+  .egruppe.einheiten .eg-kopf .p{background:#3B6FA6} .egruppe.einheiten .eg-kopf{color:#3B6FA6}
+  .egruppe.kontakte .eg-kopf .p{background:var(--amber)} .egruppe.kontakte .eg-kopf{color:var(--amber)}
+  .egruppe.dokumente .eg-kopf .p{background:var(--soft)} .egruppe.dokumente .eg-kopf{color:var(--soft)}
+
+  /* Bubbles: Objekte, Einheiten, Kontakte */
+  .bubbles{display:flex; flex-wrap:wrap; gap:8px}
+  .bubble{
+    display:flex; flex-direction:column; gap:1px; text-decoration:none;
+    border-radius:14px; padding:10px 14px; min-width:120px;
+    background:var(--sheet); border:1.5px solid var(--line);
+  }
+  .bubble .bt{font:600 13.5px var(--disp); color:var(--ink); letter-spacing:-.01em}
+  .bubble .bs{font:500 11px var(--mono); color:var(--soft)}
+  .bubble:hover{border-color:var(--teal)}
+  .egruppe.objekte .bubble{background:var(--teal-l); border-color:transparent}
+  .egruppe.einheiten .bubble{background:#EAF1F8; border-color:transparent}
+  .egruppe.kontakte .bubble{background:var(--amber-bg); border-color:transparent}
+
+  /* Dokumente: Zeilen, kein Bubble — „Dokumente als Dokumente". */
+  .dzeilen{display:flex; flex-direction:column; gap:8px}
+  .dzeile{
+    display:flex; align-items:center; gap:12px; padding:11px 13px;
+    border-radius:13px; background:var(--sheet); border:1.5px solid var(--line);
+    text-align:left; width:100%; cursor:pointer; font:inherit; color:inherit;
+  }
+  .dzeile .di{
+    flex:none; width:36px; height:36px; border-radius:10px; background:#EEF2F1;
+    display:flex; align-items:center; justify-content:center; color:var(--soft);
+  }
+  .dzeile .di svg{width:17px; height:17px}
+  .dzeile .dt{min-width:0; flex:1}
+  .dzeile .dn{font:600 13.5px var(--body); color:var(--ink); overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap}
+  .dzeile .do{font:500 11.5px var(--mono); color:var(--soft); overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap}
+  .dzeile:hover{border-color:var(--teal)}
+  /* Fundstelle nur im erkannten Text (nicht Dateiname/KI) — macht sichtbar,
+     WARUM ein Dokument getroffen hat, wenn man den Grund sonst nicht sähe. */
+  .dzeile .dtreffer{
+    font:500 11.5px var(--mono); color:var(--teal-d); background:var(--teal-l);
+    border-radius:7px; padding:2px 7px; flex:none;
+  }
+
+  .leer-vorher, .leer-nichts{
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    gap:10px; padding:15vh 24px 0; color:var(--soft);
+  }
+  .leer-vorher svg, .leer-nichts svg{width:40px; height:40px; opacity:.5}
+  .leer-vorher .lt, .leer-nichts .lt{font:600 15px var(--disp); color:var(--ink)}
+  .leer-vorher .ls, .leer-nichts .ls{font:500 13px var(--body); max-width:280px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <button class="back" id="back" aria-label="Zurück" title="Zurück"></button>
+    <div class="barwrap">
+      <h1>Suche</h1>
+      <div class="sub" id="sub">Objekte · Einheiten · Kontakte · Dokumente</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <div class="suchfeld-zeile">
+      <div class="suchfeld" id="suchfeld">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5"/><path d="M19 19l-4-4"/>
+        </svg>
+        <input id="q" type="search" autocomplete="off" autocorrect="off"
+               autocapitalize="off" spellcheck="false"
+               placeholder="Objekt, Einheit, Firma, Dokument …">
+        <button class="loeschen" id="loeschen" type="button" aria-label="Suche leeren">✕</button>
+      </div>
+    </div>
+    <div class="kategorien" id="kategorien" hidden></div>
+    <div id="inhalt"></div>
+  </div>
+
+  <div data-nav></div>
+</div>
+
+<script type="module">
+import { api, esc, installNav, belegAnsehen } from './assets/immo.js';
+
+const felder = { q: document.getElementById('q'), inhalt: document.getElementById('inhalt'),
+  kategorien: document.getElementById('kategorien'), suchfeld: document.getElementById('suchfeld'),
+  loeschen: document.getElementById('loeschen') };
+
+document.getElementById('back').addEventListener('click', () => {
+  if (history.length > 1) history.back(); else location.href = 'index.html';
+});
+
+installNav();
+
+// Fold wie im Backend (kostenarten._fold): Umlaute aufgelöst, klein — damit
+// „strasse“ „Straße“ trifft und Gross-/Kleinschreibung nichts ausmacht.
+const fold = s => String(s ?? '').toLowerCase()
+  .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+
+let objekte = [];
+let kontakte = [];
+let ladefehler = false;
+try {
+  [objekte, kontakte] = await Promise.all([
+    api('/objekte'), api('/kontakte').then(r => r.kontakte || []),
+  ]);
+} catch {
+  ladefehler = true;
+}
+
+let aktivesFilter = null;   // null = alle Arten; sonst 'objekte'|'einheiten'|'kontakte'|'dokumente'
+let tippuhr = null;
+let laufendeSuche = 0;      // verwirft veraltete Dokumente-Antworten (Suche überholt Suche)
+
+const leerZustand = (titel, satz) => `<div class="leer-vorher">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5"/><path d="M19 19l-4-4"/>
+    </svg>
+    <div class="lt">${esc(titel)}</div><div class="ls">${esc(satz)}</div>
+  </div>`;
+
+function objekteTreffer(begriff) {
+  const b = fold(begriff);
+  return objekte.filter(o =>
+    [o.name, o.ort, o.titel, o.strasse, o.kuerzel].some(f => fold(f).includes(b)));
+}
+function einheitenTreffer(begriff) {
+  const b = fold(begriff);
+  const treffer = [];
+  for (const o of objekte) {
+    for (const e of o.einheiten_liste || []) {
+      if (fold(e.bezeichnung).includes(b)) treffer.push({ ...e, objekt: o });
+    }
+  }
+  return treffer;
+}
+function kontakteTreffer(begriff) {
+  const b = fold(begriff);
+  return kontakte.filter(k =>
+    [k.firma, k.gewerk, k.art].some(f => fold(f).includes(b)));
+}
+
+function objektBubble(o) {
+  return `<a class="bubble" href="objekt.html?o=${encodeURIComponent(o.slug)}">
+      <span class="bt">${esc(o.name)}</span>
+      <span class="bs">${esc(o.ort)}</span>
+    </a>`;
+}
+function einheitBubble(e) {
+  return `<a class="bubble" href="objekt.html?o=${encodeURIComponent(e.objekt.slug)}">
+      <span class="bt">${esc(e.bezeichnung)}</span>
+      <span class="bs">${esc(e.objekt.name)}</span>
+    </a>`;
+}
+function kontaktBubble(k) {
+  return `<a class="bubble" href="kontakte.html">
+      <span class="bt">${esc(k.firma)}</span>
+      <span class="bs">${esc(k.gewerk || k.art || '')}</span>
+    </a>`;
+}
+// Woran ein Dokument getroffen hat, macht den Treffer nachvollziehbar: steht
+// der Begriff nicht im Dateinamen, kommt er aus dem erkannten Volltext.
+function dokZeile(d, begriff) {
+  const b = fold(begriff);
+  const imNamen = fold(d.dateiname).includes(b);
+  return `<button type="button" class="dzeile" data-dok="${d.id}"
+            data-titel="${esc(d.dateiname)}" data-pfad="${esc(d.pfad || '')}">
+      <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6.5 4h7l4 4v12h-11z"/><path d="M13.5 4v4h4"/></svg></span>
+      <span class="dt">
+        <div class="dn">${esc(d.dateiname)}</div>
+        <div class="do">${esc(d.objekt_name || '')}</div>
+      </span>
+      ${imNamen ? '' : '<span class="dtreffer">Treffer im Text</span>'}
+    </button>`;
+}
+
+function gruppe(art, label, html) {
+  return `<div class="egruppe ${art}">
+      <div class="eg-kopf"><span class="p"></span>${esc(label)}</div>
+      ${html}
+    </div>`;
+}
+
+async function suchen() {
+  const begriff = felder.q.value.trim();
+  felder.suchfeld.classList.toggle('gefuellt', begriff.length > 0);
+  const lauf = ++laufendeSuche;
+
+  if (!begriff) {
+    felder.kategorien.hidden = true;
+    felder.kategorien.innerHTML = '';
+    aktivesFilter = null;
+    felder.inhalt.innerHTML = leerZustand('Wonach suchst du?',
+      'Objekt, Einheit, Firma oder ein Wort aus einem Dokument eingeben — '
+      + 'auch aus erkanntem Belegtext, nicht nur dem Dateinamen.');
+    return;
+  }
+
+  const oTreffer = objekteTreffer(begriff);
+  const eTreffer = einheitenTreffer(begriff);
+  const kTreffer = kontakteTreffer(begriff);
+  let dTreffer = [];
+  try {
+    const r = await api('/dokumente?suche=' + encodeURIComponent(begriff));
+    if (lauf !== laufendeSuche) return;   // eine neuere Eingabe ist schon unterwegs
+    dTreffer = r.dokumente || [];
+  } catch {
+    if (lauf !== laufendeSuche) return;
+  }
+
+  const arten = [
+    ['objekte', 'Objekte', oTreffer.length],
+    ['einheiten', 'Einheiten', eTreffer.length],
+    ['kontakte', 'Kontakte', kTreffer.length],
+    ['dokumente', 'Dokumente', dTreffer.length],
+  ].filter(([, , n]) => n > 0);
+
+  if (aktivesFilter && !arten.some(([art]) => art === aktivesFilter)) aktivesFilter = null;
+
+  felder.kategorien.hidden = arten.length === 0;
+  felder.kategorien.innerHTML = arten.map(([art, label, n]) => `
+    <button type="button" class="kat-chip ${art}" data-kat="${art}"
+            aria-pressed="${aktivesFilter === art}">
+      <span class="p"></span>${esc(label)} (${n})
+    </button>`).join('');
+
+  if (!arten.length) {
+    felder.inhalt.innerHTML = leerZustand('Nichts gefunden',
+      `Kein Treffer für „${begriff}“ — auch nicht im erkannten Text der Dokumente.`);
+    return;
+  }
+
+  const zeigt = art => !aktivesFilter || aktivesFilter === art;
+  let html = '';
+  if (zeigt('objekte') && oTreffer.length)
+    html += gruppe('objekte', 'Objekte', `<div class="bubbles">${oTreffer.map(objektBubble).join('')}</div>`);
+  if (zeigt('einheiten') && eTreffer.length)
+    html += gruppe('einheiten', 'Einheiten', `<div class="bubbles">${eTreffer.map(einheitBubble).join('')}</div>`);
+  if (zeigt('kontakte') && kTreffer.length)
+    html += gruppe('kontakte', 'Kontakte', `<div class="bubbles">${kTreffer.map(kontaktBubble).join('')}</div>`);
+  if (zeigt('dokumente') && dTreffer.length)
+    html += gruppe('dokumente', 'Dokumente',
+      `<div class="dzeilen">${dTreffer.map(d => dokZeile(d, begriff)).join('')}</div>`);
+  felder.inhalt.innerHTML = html;
+}
+
+felder.q.addEventListener('input', () => {
+  clearTimeout(tippuhr);
+  tippuhr = setTimeout(suchen, 220);
+});
+felder.loeschen.addEventListener('click', () => {
+  felder.q.value = '';
+  felder.q.focus();
+  suchen();
+});
+felder.kategorien.addEventListener('click', e => {
+  const chip = e.target.closest('[data-kat]');
+  if (!chip) return;
+  aktivesFilter = aktivesFilter === chip.dataset.kat ? null : chip.dataset.kat;
+  suchen();
+});
+felder.inhalt.addEventListener('click', e => {
+  const zeile = e.target.closest('[data-dok]');
+  if (!zeile) return;
+  belegAnsehen(`/api/dokumente/${zeile.dataset.dok}/inhalt`,
+    zeile.dataset.titel, zeile.dataset.pfad, Number(zeile.dataset.dok));
+});
+
+if (ladefehler) {
+  felder.inhalt.innerHTML = leerZustand('Suche gerade nicht verfügbar',
+    'Objekte und Kontakte konnten nicht geladen werden — Dokumente lassen sich trotzdem finden.');
+} else {
+  suchen();
+}
+felder.q.focus();
+</script>
+</body>
+</html>

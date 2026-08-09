@@ -17,16 +17,19 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/immo.css">
 <style>
-  .barlogo{width:34px;height:34px;border-radius:9px;flex:none;
+  /* N327-b — von 34px auf 28px verkleinert: die vier 44px-Kopfzeilen-Symbole
+     liessen kurze Titel wie "Musterstraße 5" abschneiden; das Klickfeld
+     bleibt bei 44px (groesseres negatives Inset gleicht die 6px aus). */
+  .barlogo{width:28px;height:28px;border-radius:8px;flex:none;
            border:none;background:none;padding:0;cursor:pointer;display:block;
            position:relative}
   /* Rundung aufs SVG statt per overflow:hidden — so schneidet das Logo das
      unsichtbare 44x44-Klickfeld (::after) nicht weg (CCCLIII). */
-  .barlogo svg{border-radius:9px}
+  .barlogo svg{border-radius:8px}
   .barlogo:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  /* Unsichtbares 44x44-Klickfeld ums 34px-Logo — Aussehen gleich, Tippflaeche
-     waechst auf Fingergroesse. */
-  .barlogo::after{content:"";position:absolute;inset:-5px}
+  /* Unsichtbares 44x44-Klickfeld ums 28px-Logo — Aussehen gleich, Tippflaeche
+     bleibt Fingergroesse. */
+  .barlogo::after{content:"";position:absolute;inset:-8px}
   /* CCCXXXVI — Kopf-Titel und -Unterzeile bleiben einzeilig: beim Grundstück
      trägt die Unterzeile Ort · Gemarkung · Flur · Nutzungsart · Fläche und würde
      sonst umbrechen. Zu lang wird abgeschnitten (…). */

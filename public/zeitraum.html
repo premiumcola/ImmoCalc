@@ -40,8 +40,11 @@
      einzeilig — die Frist bleibt als knapper Chip oben rechts. */
   @media(max-width:560px){
     .frist-chip .flabel{display:none}
-    .frist-chip{font-size:10px;padding:4px 9px;gap:5px}
-    #titel{font-size:15.5px;padding-right:98px}
+    .frist-chip{font-size:9px;padding:3px 6px;gap:3px}
+    /* N327-b — die Kopfzeile hat jetzt vier eigene 44px-Symbole (Suche,
+       Einstellungen, Kontakte, „…") statt zwei kleineren — deutlich weniger
+       Restbreite fuer den Titel als vorher (Touch-Ziel-Regel geht vor). */
+    #titel{font-size:13px;padding-right:48px}
   }
   .frist-chip.pos{background:var(--pos-bg);color:var(--pos)} .frist-chip.pos .d{background:var(--pos)}
   .frist-chip.amber{background:var(--amber-bg);color:var(--amber)} .frist-chip.amber .d{background:var(--amber)}

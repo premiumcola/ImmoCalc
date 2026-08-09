@@ -28,9 +28,10 @@ body{
   position:relative; display:flex; flex-direction:column;
   /* Platz für die schwebende Navi (N327) UND den Home-Indikator
      (Notch-iPhones), sonst verdeckt der Fuß den letzten Inhalt (env ist 0
-     ohne sichere Zone). Etwas mehr als die reine Leistenhöhe: die Pille
-     schwebt jetzt mit Abstand über dem unteren Rand statt an ihm zu kleben. */
-  padding-bottom:calc(108px + env(safe-area-inset-bottom));
+     ohne sichere Zone). Die Leiste selbst hat nur noch einen festen 10px-
+     Abstand nach unten (N327-b, gleich wie links/rechts) — die sichere Zone
+     kommt deshalb hier dazu statt in der Leistenposition. */
+  padding-bottom:calc(82px + env(safe-area-inset-bottom));
 }
 /* ---- N271: ab Tablet ist die App ein RAHMEN, kein langes Dokument ----
    Bis hierher scrollte die ganze Seite: `.app` wuchs mit dem Inhalt, und die
@@ -81,9 +82,13 @@ body{
   position:sticky; top:0; z-index:20; background:var(--sheet);
   border-bottom:1px solid rgba(22,38,44,.07);
   /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
-     füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet. */
-  padding:calc(12px + env(safe-area-inset-top)) 12px 11px;
-  display:flex; align-items:center; gap:10px; min-height:52px;
+     füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet.
+     N327-b — Nutzer-Feedback: zu viel Luft ÜBER dem Titel, obendrauf reserviert
+     das iPhone die Statuszeile schon selbst — das feste Zusatzpolster oben ist
+     jetzt kleiner (war 12px). Die Knopfreihe braucht ihre 44px trotzdem: die
+     Buttons sitzen einfach dichter am Titel statt zusätzlich tiefer. */
+  padding:calc(6px + env(safe-area-inset-top)) 12px 8px;
+  display:flex; align-items:center; gap:8px; min-height:44px;
 }
 .bar h1{
   font:600 17px var(--disp); margin:0; letter-spacing:-.015em;
@@ -100,23 +105,43 @@ body{
 }
 .back::before{content:"‹  "}
 
-/* ---- N327: Kopfzeilen-Aktionsgruppe (installKopfAktionen in immo.js) ----
-   Suche (globale Suche über alles) und „…" (klappt Einstellungen/Kontakte
-   auf) — von JS an JEDE `.bar` angehängt, damit keine der ~19 Seiten einzeln
-   angefasst werden muss. Steht hinter `.barwrap` (flex:1) und rutscht damit
-   von selbst ganz nach rechts, auch wenn eine Seite noch ein eigenes
+/* ---- N327-b: Kopfzeilen-Aktionsgruppe (installKopfAktionen in immo.js) ----
+   „…" (weitere Bereiche), Einstellungen, Kontakte und Suche — gleichrangige
+   eigene Symbole, von JS an JEDE `.bar` angehängt, damit keine der ~19 Seiten
+   einzeln angefasst werden muss. Steht hinter `.barwrap` (flex:1) und rutscht
+   damit von selbst ganz nach rechts, auch wenn eine Seite noch ein eigenes
    `.barakt` mitbringt (z. B. Kontakte „nachtragen"). */
-.kopfakt{display:flex; align-items:center; gap:2px; flex:none}
-.kopfakt button{
+/* N327-b — jetzt vier eigene Ziele statt zwei ("…", Einstellungen, Kontakte,
+   Suche). Ein Zwischenstand hatte sie auf 33px verkleinert, um dem Titel
+   Platz zu machen — das unterschreitet die App-eigene 44px-Touch-Ziel-Regel
+   (Nutzer-Nachfrage „Are those buttons big enough?"); zurück auf 44px, dafür
+   trägt lange Titel jetzt öfter die Ellipse statt die Buttons zu verkleinern. */
+.kopfakt{display:flex; align-items:center; gap:0; flex:none}
+.kopfakt button, .kopfakt a{
   display:flex; align-items:center; justify-content:center;
-  width:38px; height:38px; border:none; border-radius:999px; background:none;
-  color:var(--soft); cursor:pointer; -webkit-tap-highlight-color:transparent;
+  width:44px; height:44px; border:none; border-radius:999px; background:none;
+  color:var(--soft); cursor:pointer; text-decoration:none;
+  -webkit-tap-highlight-color:transparent;
 }
-.kopfakt button svg{width:19px; height:19px}
-.kopfakt button:hover{background:#F1F4F4; color:var(--ink)}
-.kopfakt button:active{background:#E7ECEC}
-.kopfakt button:focus-visible{outline:2px solid var(--teal); outline-offset:-2px}
-.kopfakt button[aria-current=page]{color:var(--teal-d); background:var(--teal-l)}
+.kopfakt button svg, .kopfakt a svg{width:18px; height:18px}
+.kopfakt button:hover, .kopfakt a:hover{background:#F1F4F4; color:var(--ink)}
+.kopfakt button:active, .kopfakt a:active{background:#E7ECEC}
+.kopfakt button:focus-visible, .kopfakt a:focus-visible{
+  outline:2px solid var(--teal); outline-offset:-2px;
+}
+.kopfakt button[aria-current=page], .kopfakt a[aria-current=page]{
+  color:var(--teal-d); background:var(--teal-l);
+}
+/* Die Suche ist die haeufigste Aktion hier — Nutzer-Wunsch: „prominenter,
+   fetter, in Farbe, flächiger" statt eines gleichrangigen Liniensymbols wie
+   Einstellungen/Kontakte. Gefüllter Teal-Kreis statt Linien-Icon; die Fläche
+   traegt die Prominenz, nicht eine groessere Ausmasse. */
+.kopfakt .ka-suche{
+  background:var(--teal); color:#fff; margin-left:3px;
+  box-shadow:0 3px 10px -4px rgba(15,110,92,.6);
+}
+.kopfakt .ka-suche:hover{background:var(--teal-d); color:#fff}
+.kopfakt .ka-suche:active{background:var(--teal-d)}
 
 /* App-Symbol in der Kopfzeile (CCXVII) — stand wortgleich in mehreren
    Seiten, jetzt einmal hier. Nicht jede Seite verlinkt es: auf index.html
@@ -237,12 +262,27 @@ button.chip:hover{filter:brightness(.96)}
 /* ---- untere Navigation ----
    N327 — schwebende, ringsum abgerundete Pille (Vorbild: Nextcloud-App-
    Screenshot des Nutzers, „wie beim iPhone 15 Pro Max"), statt kantig am
-   Rand anliegend. `.app`s `padding-bottom` weiter oben gibt ihr Luft nach
-   unten; `-webkit-tap-highlight-color` nimmt den dunklen Kasten weg, den
+   Rand anliegend. N327-b — Nutzer-Korrektur: der Abstand nach unten war durch
+   das zusätzliche Aufaddieren von `env(safe-area-inset-bottom)` viel größer
+   als links/rechts (auf einem Notch-iPhone bis zu 44px gegen 10px) — jetzt
+   ringsum derselbe feste Abstand; die sichere Zone bekommt stattdessen
+   `.app`s `padding-bottom` (Inhalt, nicht die Leiste selbst), damit Text
+   nicht unter der Leiste UND dem Home-Indikator verschwindet. Der Radius war
+   mit 26px größer als jeder andere Rundungsradius der App (Kacheln 16px,
+   Rahmen 22px) und passte deshalb nicht zusammen (Nutzer-Feedback) — jetzt
+   dieselben 22px wie der äußere App-Rahmen.
+   `-webkit-tap-highlight-color` nimmt den dunklen Kasten weg, den
    Chromium/Safari beim Antippen sonst über den runden Knopf legen. */
 .nav{
-  position:fixed; left:10px; right:10px; bottom:calc(10px + env(safe-area-inset-bottom));
-  z-index:30; background:var(--sheet); border-radius:26px;
+  /* N327-b — Nutzer-Feedback: die Pillen-Rundung passt nicht zur echten
+     Display-Rundung des iPhones (die Kante sass zu nah dran, der Bruch fiel
+     auf). Web-Seiten können die physische Bildschirmrundung nicht auslesen
+     — iOS liefert dafür keine API (auch kein `env()`-Wert) —, „dynamisch
+     anpassen" geht deshalb nicht wörtlich. Der Weg, den auch native Apps
+     gehen: genug Abstand zur Kante, damit die eigene Rundung klar als eigene
+     Form erkennbar ist statt mit der Geräte-Kante zu konkurrieren. */
+  position:fixed; left:14px; right:14px; bottom:14px;
+  z-index:30; background:var(--sheet); border-radius:22px;
   display:flex; gap:5px; padding:8px 8px;
   box-shadow:0 18px 40px -16px rgba(22,38,44,.4), 0 2px 10px -4px rgba(22,38,44,.14);
 }
@@ -266,23 +306,23 @@ button.chip:hover{filter:brightness(.96)}
    ist ein anonymes Flex-Kind, und `align-items:center` liess „Nebenkosten"
    (74 px in einem 71 px breiten Knopf) auf dem iPhone 13 beidseitig hart
    abschneiden — links fehlte das N. Mit eigenem Kasten wird sauber gekuerzt. */
-.nav a .nl, .nav .mehr .nl{
+.nav a .nl{
   display:block; max-width:100%;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 /* Das Kuerzen ist die Notbremse, nicht der Normalfall: auf dem iPhone soll
-   „Nebenkosten" ganz dastehen. Fuenf Eintraege teilen sich die Breite, und es
-   fehlten genau drei Pixel — die holt engeres Innenmass an Leiste und Eintrag.
-   NACH der Grundregel, sonst gewinnt bei gleicher Spezifitaet die spaetere. */
+   „Nebenkosten" ganz dastehen — die vier flachen Eintraege teilen sich die
+   Breite, der runde Dokumente-Knopf in der Mitte zaehlt separat (fixe
+   Breite, kein flex:1, siehe unten). */
 @media(max-width:430px){
   .nav{gap:3px; padding-left:5px; padding-right:5px}
-  .nav a, .nav .mehr{padding-left:1px; padding-right:1px; letter-spacing:0}
+  .nav a{padding-left:1px; padding-right:1px; letter-spacing:0}
 }
 /* Auf dem iPhone 13 (390) reicht das noch nicht ganz — ein halber Schriftgrad
    weniger schliesst die Luecke, ohne dass die Leiste kleiner WIRKT: das Icon
    darueber traegt die Erkennbarkeit, die Beschriftung bestaetigt sie nur. */
 @media(max-width:400px){
-  .nav a, .nav .mehr{font-size:10px}
+  .nav a{font-size:10px}
 }
 /* N325 — die Icons sind jetzt Inline-SVG (`immo.js`, `MENU_SPRITES`) statt
    Unicode-Zeichen; `.ni` gibt ihnen ein festes Quadrat statt einer
@@ -308,35 +348,41 @@ button.chip:hover{filter:brightness(.96)}
    Handy-Leiste stehen alle Ziele ohnehin flach nebeneinander. */
 .nav .kappe{display:none}
 
-/* N327 — unten fünf feste Ziele, „Dokumente" mittig als rundes, erhöhtes
-   Symbol (Vorbild: erst ein Banking-App-Screenshot, dann ein Nextcloud-
-   Screenshot des Nutzers). Nur per CSS `order` umsortiert — die DOM-
-   Reihenfolge und damit die Desktop-Seitenleiste bleiben unangetastet. Gilt
-   bis zur Seitenleiste (999px); darüber zeigt `.nav` ohnehin alle Ziele
-   gestapelt.
-   Der Kreis ist gewachsen (58→70px), aber NUR nach unten in die Pille hinein
-   — derselbe `margin-top` wie vorher, sonst würde er oben stärker
-   überlappen, als der Nutzer wollte („oben nicht noch mehr"). Auf der
-   Dokumente-Seite selbst wechselt das Symbol von Dokument auf „+": man ist
-   schon dort, ein zweiter Tipp auf „Dokumente" wäre sinnlos — er löst
-   stattdessen „Beleg abfotografieren" aus (`immo.js`, `installNav`). */
+/* N327-b — unten links Objekte/Nebenkosten, rechts PV Anlagen/Wertent-
+   wicklung, Dokumente bleibt der runde, erhöhte Knopf in der Mitte
+   (`NAV_UNTEN_FEST` in immo.js) — kein „Mehr" mehr dort, alles andere zeigt
+   die Kopfzeilen-„…". Reines CSS: jeder `.nav a` ist auf dem Handy verborgen,
+   nur die fünf festen Hrefs werden wieder eingeblendet und sortiert — die
+   DOM-Reihenfolge und damit die Desktop-Seitenleiste bleiben unangetastet.
+   `.gruppenkopf` statt `a[href="index.html"]` fuer Objekte: `.brand`
+   (Desktop-Wortmarke) verlinkt ebenfalls auf `index.html` und darf hier nicht
+   mitgetroffen werden.
+   Der Dokumente-Kreis wächst nur nach unten in die Pille hinein — derselbe
+   `margin-top` wie beim ersten Wurf, sonst würde er oben stärker
+   überlappen, als der Nutzer wollte („oben nicht noch mehr"). Radius/Schatten
+   folgen jetzt derselben 22px-Familie wie die Pille selbst. */
 @media(max-width:999px){
-  .nav a[href="index.html"]{order:1}
-  .nav a[href="vermietungen.html"]{order:2}
-  .nav a[href="eingang.html"]{order:3}
-  .nav a[href="nebenkosten.html"]{order:4}
-  .nav .mehr{order:5}
+  .nav a{display:none}
+  .nav a.gruppenkopf[href="index.html"]{display:flex; order:1}
+  .nav a[href="nebenkosten.html"]{display:flex; order:2}
+  .nav a[href="eingang.html"]{display:flex; order:3}
+  .nav a[href="strom.html"]{display:flex; order:4}
+  .nav a[href="wertentwicklung.html"]{display:flex; order:5}
 
   .nav a[href="eingang.html"]{
-    flex:none; width:70px; padding:0; gap:0; margin-top:-22px;
+    flex:none; width:66px; padding:0; gap:0; margin-top:-20px;
   }
   .nav a[href="eingang.html"] .ni{
-    width:70px; height:70px; border-radius:999px; background:var(--teal);
-    color:#fff; box-shadow:0 14px 28px -10px rgba(15,110,92,.55),
+    /* N327-b — Nutzer-Feedback „Edges are not nice": ein Kreis-Knopf muss
+       999px bleiben, nicht die 22px-Kartenfamilie erben (das ergab eine
+       eckige „Squircle" statt eines runden Knopfs — die 22px galten nur der
+       PILLE, nicht diesem Kreis). */
+    width:66px; height:66px; border-radius:999px; background:var(--teal);
+    color:#fff; box-shadow:0 12px 26px -10px rgba(15,110,92,.55),
                             0 0 0 5px var(--sheet);
   }
-  .nav a[href="eingang.html"] .ni-doc svg{width:32px; height:32px}
-  .nav a[href="eingang.html"] .ni-plus svg{width:28px; height:28px}
+  .nav a[href="eingang.html"] .ni-doc svg{width:30px; height:30px}
+  .nav a[href="eingang.html"] .ni-plus svg{width:26px; height:26px}
   .nav a[href="eingang.html"] .nl{display:none}
   .nav a[href="eingang.html"]:hover .ni{background:var(--teal-d)}
   .nav a[href="eingang.html"][aria-current=page]{background:none}
@@ -344,22 +390,6 @@ button.chip:hover{filter:brightness(.96)}
   .nav a[href="eingang.html"][aria-current=page] .ni-doc{display:none}
   .nav a[href="eingang.html"][aria-current=page] .ni-plus{display:flex}
 }
-
-/* „Mehr" sieht aus wie die übrigen Einträge — es ist einer. Eingehängt wird
-   es von immo.js (navAufraeumen), damit die Leiste nur an einer Stelle
-   gepflegt werden muss. */
-.nav .mehr{
-  display:none; flex:1; min-width:0; flex-direction:column; align-items:center;
-  gap:4px; padding:8px 2px; min-height:44px; border:none; background:none;
-  color:var(--soft); border-radius:12px; font:600 10.5px var(--disp);
-  cursor:pointer; letter-spacing:.01em; overflow:hidden; white-space:nowrap;
-  -webkit-tap-highlight-color:transparent;
-}
-.nav .mehr.an{display:flex}
-.nav .mehr .ni{width:27px; height:27px; display:flex; align-items:center; justify-content:center}
-.nav .mehr .ni svg{width:100%; height:100%}
-.nav .mehr.hier{color:var(--teal-d); background:var(--teal-l)}
-.nav a.weg{display:none}
 
 /* Die Liste im „Mehr"-Blatt */
 .mehrliste{display:flex; flex-direction:column; gap:6px; margin-bottom:16px}

@@ -226,8 +226,8 @@ const MENU_SPRITES = `
 <symbol id="mi-lexikon" viewBox="0 0 24 24"><path d="M12 6.5c-1.4-1.2-3.4-1.7-5.5-1.5v12.5c2.1-.2 4.1.3 5.5 1.5 1.4-1.2 3.4-1.7 5.5-1.5V5c-2.1-.2-4.1.3-5.5 1.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 6.5v12.5" stroke="currentColor" stroke-width="1.7"/></symbol>
 <symbol id="mi-einstellungen" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.3v2.5M12 19.2v2.5M21.7 12h-2.5M4.8 12H2.3M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1 5.3 5.3" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></symbol>
 <symbol id="mi-mehr" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18" cy="12" r="1.7" fill="currentColor"/></symbol>
-<symbol id="mi-scan-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></symbol>
-<symbol id="mi-suche" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19 19l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>`;
+<symbol id="mi-suche" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19 19l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="mi-scan-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></symbol>`;
 
 /** Haengt die Menue-Symbole einmalig ins Dokument (analog `installLogos`). */
 function installMenuIcons() {
@@ -245,11 +245,13 @@ function installMenuIcons() {
 const navIcon = id =>
   `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${id}"/></svg>`;
 
-// N327 — die Dokumente-Kachel in der unteren Leiste ist der runde, erhöhte
-// Knopf in der Mitte. Steht man schon auf `eingang.html`, waere ein Klick auf
-// „Dokumente" sinnlos (dieselbe Seite) — das Symbol wechselt dann auf ein
-// eigens gestaltetes „+" und der Klick loest „Beleg abfotografieren" aus
-// (siehe `installNav`). Zwei Icons uebereinander, CSS blendet je nach
+// N327-b — die Dokumente-Kachel in der unteren Leiste ist wieder der runde,
+// erhöhte Knopf in der Mitte (Nutzer-Korrektur: „Dokument-Icon in der Mitte
+// fehlt" — die reine Vier-Link-Fassung hatte ihn faelschlich ganz entfernt).
+// Steht man schon auf `eingang.html`, waere ein Klick auf „Dokumente"
+// sinnlos (dieselbe Seite) — das Symbol wechselt dann auf ein eigens
+// gestaltetes „+" und der Klick loest „Beleg abfotografieren" aus (siehe
+// `installNav`). Zwei Icons uebereinander, CSS blendet je nach
 // `aria-current` das passende ein.
 const dokumenteIcon = `<span class="ni-doc">${navIcon('mi-dokumente')}</span>`
   + `<span class="ni-plus">${navIcon('mi-scan-plus')}</span>`;
@@ -261,7 +263,9 @@ export const NAV = [
     ['Vermietung', 'vermietungen.html', navIcon('mi-vermietung')],
     ['Nebenkosten', 'nebenkosten.html', navIcon('mi-nebenkosten')],
     ['Dokumente', 'eingang.html', dokumenteIcon],
-    ['Wertentwicklung', 'wertentwicklung.html', navIcon('mi-wert')],
+    // N327-b — Nutzer: „Shorten to Wert" — „Wertentwicklung" lief in der
+    // unteren Leiste zu „Wertentwickl…" zusammen.
+    ['Wert', 'wertentwicklung.html', navIcon('mi-wert')],
     // N83/N87 — Strom/PV-Subsystem je Objekt/Jahr, samt Amortisation des
     // PV-Investments (die Amortisation ist Inhalt der PV-Seite, kein Menuepunkt).
     ['PV Anlagen', 'strom.html', navIcon('mi-pv')],
@@ -278,19 +282,37 @@ export const NAV = [
   // Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …), objektübergreifend.
   ['Vorlagen', 'vorlagenarchiv.html', navIcon('mi-vorlagen')],
   ['Lexikon', 'lexikon.html', navIcon('mi-lexikon')],
-  // N327 — „Kontakte" und „Einstellungen" wandern hierher NICHT mehr als
-  // eigene Zeile: sie stehen jetzt an jeder Kopfzeile bereit (`installKopfAktionen`),
-  // damit derselbe Weg nicht doppelt existiert (roter Faden „jede Information
-  // genau einmal"). `KOPF_ZIELE` unten haelt die beiden fest.
+  // N327-b — „Kontakte" und „Einstellungen" stehen hier NICHT mehr als eigene
+  // Zeile: sie sind jetzt eigene Symbole an jeder Kopfzeile, gleichrangig
+  // neben der Suche (`KOPF_EIGEN` unten), statt hinter einem Sammel-Knopf zu
+  // verschwinden — derselbe Weg soll nicht doppelt existieren.
 ];
 
-// N327 — Ziele der Kopfzeilen-„…": dieselben Symbole wie zuvor in `NAV`,
-// jetzt aus der Handy-/Desktop-Leiste heraus und stattdessen an jeder Seite
-// oben rechts erreichbar.
-const KOPF_ZIELE = [
+// N327-b — Einstellungen und Kontakte: eigene Symbole in der Kopfzeile, genau
+// wie die Suche (nicht mehr hinter „…" versteckt, siehe Nutzer-Feedback).
+const KOPF_EIGEN = [
   ['Einstellungen', 'settings.html', navIcon('mi-einstellungen')],
   ['Kontakte', 'kontakte.html', navIcon('mi-kontakte')],
 ];
+
+// N327-b — die unteren festen Ziele: links Objekte/Nebenkosten, rechts PV
+// Anlagen/Wertentwicklung (Nutzer-Auswahl: „die wichtigsten"), Dokumente
+// bleibt der runde, erhöhte Knopf in der Mitte. Alles andere aus `NAV`
+// (Vermietung, E-Tankstelle, Eigentümer, Vorlagen, Lexikon) wandert in die
+// Kopfzeilen-„…" (`kopfMehrOeffnen`) — kein unteres „Mehr" mehr.
+const NAV_UNTEN_FEST = ['index.html', 'nebenkosten.html', 'eingang.html',
+                        'strom.html', 'wertentwicklung.html'];
+
+// Alle NAV-Ziele flach (Gruppenkopf + Kinder in einer Liste) — Grundlage für
+// die Kopfzeilen-„…", die alles zeigt, was nicht unten fest steht.
+function navFlach() {
+  const flach = [];
+  for (const [label, href, icon, kinder] of NAV) {
+    flach.push([label, href, icon]);
+    if (kinder) flach.push(...kinder);
+  }
+  return flach;
+}
 
 // Kleiner Chevron im flachen Stil der App — dreht sich beim Einklappen.
 const CARET_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" '
@@ -329,8 +351,8 @@ export function installNav() {
   let kindAktiv = false;
   for (const [label, href, icon, kinder] of NAV) {
     if (kinder) {
-      // Alle Ziele bleiben flache <a> in der Leiste (die Handy-Logik in
-      // navAufraeumen zaehlt sie einzeln); die Staffelung ist reine Optik.
+      // Alle Ziele bleiben flache <a> in der Leiste (`navFlach` zaehlt sie
+      // fuer die Kopfzeilen-„…" einzeln auf); die Staffelung ist reine Optik.
       kindAktiv = kinder.some(([, khref]) => khref === aktiv);
       const caret = `<span class="kappe" role="button" tabindex="0"`
         + ` aria-label="Objektmenü ein- oder ausklappen" aria-expanded="true">`
@@ -348,7 +370,6 @@ export function installNav() {
   nav.innerHTML = html;
   platz.replaceWith(nav);
   gruppeVerdrahten(nav, kindAktiv);
-  navAufraeumen();
   dokumenteKnopfVerdrahten(nav, aktiv);
   installKopfAktionen(aktiv);
 }
@@ -397,115 +418,54 @@ function gruppeVerdrahten(nav, kindAktiv) {
   });
 }
 
-/* ---- Navigation auf dem Handy ------------------------------------------
-   Sechs Einträge nebeneinander sind auf einem iPhone zu eng: die
-   Beschriftungen schrumpfen auf 8,5 px und die Ziele werden schmaler als der
-   Daumen. Auf schmalen Schirmen bleiben deshalb die vier täglichen Wege
-   stehen, der Rest wandert hinter „Mehr" — ein Fingertipp mehr für zwei
-   Seiten, die man selten braucht.
+/* N327-b — Kopfzeilen-Aktionsgruppe: Einstellungen, Kontakte, „…" (der Rest)
+   und Suche — gleichrangig, keine hinter einem Sammel-Knopf versteckt (ausser
+   dem bewusst gesammelten Rest). Haengt sich an JEDE `.bar` — eine Stelle
+   statt ~19 Seiten einzeln anzufassen. Steht keine `.bar` auf der Seite
+   (sollte nicht vorkommen), passiert nichts.
 
-   Das passiert hier und nicht in den Seiten, damit die Leiste an einer
-   einzigen Stelle gepflegt wird. */
-
-const SICHTBAR = 4;                    // so viele Einträge bleiben stehen
-// N137 - bis 999 px ist die Leiste waagerecht; ab 1000 px wird sie zur
-// Seitenleiste (immo.css). Die Grenze muss dieselbe sein: stand sie bei 700 px,
-// quetschten sich zwischen 701 und 999 px alle Eintraege nebeneinander und die
-// Beschriftungen wurden abgeschnitten ("ermietunge", "Jebenkoste").
-const ENG = window.matchMedia('(max-width: 999px)');
-
-function navAufraeumen() {
-  const nav = document.querySelector('nav.nav');
-  if (!nav) return;
-  const eintraege = [...nav.querySelectorAll('a:not(.brand)')];
-  if (eintraege.length <= SICHTBAR + 1) return;   // nichts zu verstecken
-
-  let mehr = nav.querySelector('.mehr');
-  if (!mehr) {
-    mehr = document.createElement('button');
-    mehr.type = 'button';
-    mehr.className = 'mehr';
-    mehr.setAttribute('aria-haspopup', 'dialog');
-    mehr.innerHTML = `<span class="ni">${navIcon('mi-mehr')}</span><span class="nl">Mehr</span>`;
-    mehr.addEventListener('click', () => mehrOeffnen(eintraege.slice(SICHTBAR)));
-    nav.appendChild(mehr);
-  }
-
-  const versteckt = eintraege.slice(SICHTBAR);
-  for (const [i, a] of eintraege.entries()) {
-    a.classList.toggle('weg', ENG.matches && i >= SICHTBAR);
-  }
-  mehr.classList.toggle('an', ENG.matches);
-  // Steckt die aktuelle Seite hinter „Mehr", muss man das sehen
-  mehr.classList.toggle('hier',
-    versteckt.some(a => a.getAttribute('aria-current') === 'page'));
-}
-
-function mehrOeffnen(eintraege) {
-  // Nur das × oben schließt (von baueDialog nachgerüstet) — kein zweiter
-  // „Schließen"-Knopf unten. Tippen neben das Menü schließt ebenfalls.
-  const dlg = baueDialog(`
-    <div class="dt">Mehr</div>
-    <div class="mehrliste">${eintraege.map(a => `
-      <a href="${a.getAttribute('href')}"
-         ${a.getAttribute('aria-current') ? 'aria-current="page"' : ''}>
-        <span class="ni">${a.querySelector('.ni')?.innerHTML ?? ''}</span>
-        ${a.lastChild?.textContent?.trim() ?? ''}
-      </a>`).join('')}</div>`);
-  dlg.classList.add('mehr-dlg');
-  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
-}
-
-/* N327 — Kopfzeilen-Aktionsgruppe: Suche + „…" (Einstellungen/Kontakte).
-   Haengt sich an JEDE `.bar` — eine Stelle statt ~19 Seiten einzeln
-   anzufassen. Steht keine `.bar` auf der Seite (sollte nicht vorkommen),
-   passiert nichts. */
+   Die untere Leiste zeigt auf dem Handy nur noch die vier festen Ziele aus
+   `NAV_UNTEN_FEST` (reines CSS, siehe immo.css) — kein JS-„Mehr" mehr dort.
+   Alles andere (Vermietung, Dokumente, E-Tankstelle, Eigentümer, Vorlagen,
+   Lexikon) zeigt die Kopfzeilen-„…". */
 function installKopfAktionen(aktiv) {
   const bar = document.querySelector('.bar');
   if (!bar || bar.querySelector('.kopfakt')) return;
+  const rest = navFlach().filter(([, href]) => !NAV_UNTEN_FEST.includes(href));
   const gruppe = document.createElement('div');
   gruppe.className = 'kopfakt';
   gruppe.innerHTML = `
     <button type="button" class="ka-mehr" aria-haspopup="dialog"
-            aria-label="Einstellungen und Kontakte"
-            title="Einstellungen und Kontakte"
-            ${KOPF_ZIELE.some(([, href]) => href === aktiv) ? 'aria-current="page"' : ''}
+            aria-label="Weitere Bereiche" title="Weitere Bereiche"
+            ${rest.some(([, href]) => href === aktiv) ? 'aria-current="page"' : ''}
       >${navIcon('mi-mehr')}</button>
+    ${KOPF_EIGEN.map(([label, href, icon]) => `
+      <a class="ka-ziel" href="${href}" aria-label="${label}" title="${label}"
+         ${href === aktiv ? 'aria-current="page"' : ''}>${icon}</a>`).join('')}
     <button type="button" class="ka-suche" aria-label="Suchen"
             title="Suchen">${navIcon('mi-suche')}</button>`;
   bar.appendChild(gruppe);
   installMenuIcons();
-  gruppe.querySelector('.ka-mehr').addEventListener('click', () => kopfMehrOeffnen(aktiv));
-  // N328 — die App-weite, kategorisierte Suche ist ein eigener, groesserer
-  // Umbau (Objekte/Gewerke/Dokumente inkl. OCR-Fundstellen, Spotify-artige
-  // Gruppen) und laut Nutzer bewusst NACH den uebrigen offenen Bugfixes dran.
-  // Bis dahin fuehrt der Suchknopf zur (jetzt KI-fähigen, N328a) Dokumente-
-  // Suche — echt nutzbar heute, ohne der spaeteren globalen Suche vorzugreifen.
+  gruppe.querySelector('.ka-mehr').addEventListener('click', () => kopfMehrOeffnen(rest, aktiv));
+  // N328 — die neue Suchseite lebt fuer sich (leer bis zur ersten Eingabe,
+  // live Ergebnisse, nach Objekte/Einheiten/Dokumente unterschieden) statt in
+  // der ohnehin schon vollen Dokumente-Ansicht mitzulaufen.
   gruppe.querySelector('.ka-suche').addEventListener('click', () => {
-    if (aktiv === 'eingang.html') document.getElementById('suche')?.focus();
-    else location.href = 'eingang.html?fokus=suche';
+    location.href = 'suche.html';
   });
 }
 
-/** Das "…"-Blatt der Kopfzeile: Einstellungen und Kontakte, je ein Icon. */
-function kopfMehrOeffnen(aktiv) {
+/** Das "…"-Blatt der Kopfzeile: alles aus `NAV`, das nicht unten fest steht. */
+function kopfMehrOeffnen(rest, aktiv) {
   const dlg = baueDialog(`
-    <div class="dt">Mehr</div>
-    <div class="mehrliste">${KOPF_ZIELE.map(([label, href, icon]) => `
+    <div class="dt">Weitere Bereiche</div>
+    <div class="mehrliste">${rest.map(([label, href, icon]) => `
       <a href="${href}" ${href === aktiv ? 'aria-current="page"' : ''}>
         <span class="ni">${icon}</span>${label}
       </a>`).join('')}</div>`);
   dlg.classList.add('mehr-dlg');
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 }
-
-// Auch bei Drehung und beim Wechsel auf ein breiteres Fenster nachziehen
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', navAufraeumen);
-} else {
-  navAufraeumen();
-}
-ENG.addEventListener('change', navAufraeumen);
 
 /* ---- Meldungen und Rückfragen im Design der App -------------------------
    `alert` und `confirm` zeichnet der Browser: graue Systemkästen, die mit der

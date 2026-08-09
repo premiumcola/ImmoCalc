@@ -39,10 +39,11 @@ for (const geraet of GERAETE) {
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
     pruefe(ueberlauf <= 1, `${geraet.name}/${seite}: ${ueberlauf}px waagerechter Überlauf`);
 
-    // Navigation muss auf jeder Breite erreichbar sein. N327 — Einstellungen
-    // und Kontakte haben keine eigene `.nav a` mehr, ihr aktiver Zustand
-    // steht stattdessen an der Kopfzeilen-„…" (`installKopfAktionen`).
+    // Navigation muss auf jeder Breite erreichbar sein. N327-b — Einstellungen
+    // und Kontakte haben keine eigene `.nav a` mehr, sondern ein eigenes
+    // Kopfzeilen-Symbol (`.kopfakt a`); alles andere zeigt die „…" aktiv an.
     const aktiv = await page.$('.nav a[aria-current=page]')
+      || await page.$('.kopfakt a[aria-current=page]')
       || await page.$('.kopfakt .ka-mehr[aria-current=page]');
     pruefe(aktiv !== null, `${geraet.name}/${seite}: keine aktive Navigation`);
 

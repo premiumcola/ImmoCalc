@@ -1,9 +1,11 @@
 // Die Navigationsleiste auf schmalen Schirmen.
 //
-// Sieben Einträge nebeneinander sind auf einem iPhone zu eng — die
-// Beschriftungen schrumpfen und die Ziele werden schmaler als ein Daumen.
-// Geprüft wird: auf dem Handy stehen vier Einträge plus „Mehr", der Rest ist
-// über das Blatt erreichbar; auf dem Desktop sind alle sieben sichtbar.
+// N327-b: unten stehen auf dem Handy fünf feste Ziele (Objekte, Nebenkosten,
+// Dokumente als runder Knopf in der Mitte, PV Anlagen, Wertentwicklung), kein
+// „Mehr" mehr dort. Alles andere (Vermietung, E-Tankstelle, Eigentümer,
+// Vorlagen, Lexikon) hängt an der Kopfzeilen-„…"; Einstellungen und Kontakte
+// sind eigene Kopfzeilen-Symbole. Auf dem Desktop stehen weiterhin alle Ziele
+// in der Seitenleiste.
 import { chromium } from 'playwright';
 import { mkdirSync } from 'fs';
 
@@ -14,7 +16,7 @@ const browser = await chromium.launch();
 let fails = 0;
 const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text); } };
 
-/* ---- iPhone: vier Einträge plus „Mehr" ---- */
+/* ---- iPhone: genau vier feste Ziele, kein „Mehr" ---- */
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 },
                                          deviceScaleFactor: 2 });
@@ -27,14 +29,17 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
   await page.waitForTimeout(300);
 
   const sichtbar = await page.$$eval('nav.nav a:not(.brand)',
-    as => as.filter(a => a.offsetParent !== null).length);
-  pruefe(sichtbar === 4, `${sichtbar} Einträge sichtbar statt 4`);
+    as => as.filter(a => a.offsetParent !== null).map(a => a.getAttribute('href')));
+  const erwartet = ['index.html', 'nebenkosten.html', 'eingang.html',
+                    'strom.html', 'wertentwicklung.html'];
+  pruefe(erwartet.every(h => sichtbar.includes(h)) && sichtbar.length === 5,
+    `untere Leiste zeigt ${JSON.stringify(sichtbar)} statt der fünf festen Ziele`);
 
   const mehr = await page.$('nav.nav .mehr');
-  pruefe(mehr !== null && await mehr.isVisible(), '„Mehr" fehlt auf dem Handy');
+  pruefe(mehr === null, '„Mehr" gibt es unten nicht mehr — sollte verschwunden sein');
 
   // Jedes Ziel muss mit dem Daumen treffbar sein
-  for (const el of await page.$$('nav.nav a:not(.brand), nav.nav .mehr')) {
+  for (const el of await page.$$('nav.nav a:not(.brand)')) {
     if (!await el.isVisible()) continue;
     const kasten = await el.boundingBox();
     if (kasten.width < 56 || kasten.height < 44) {
@@ -44,34 +49,37 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
   }
   await page.screenshot({ path: 'tests/screenshots/nav-iphone.png' });
 
-  // Das Blatt muss die übrigen Wege anbieten
-  await page.click('nav.nav .mehr');
+  // Die Kopfzeilen-„…" muss die übrigen Wege anbieten
+  await page.click('.kopfakt .ka-mehr');
   await page.waitForSelector('dialog.immo-dlg[open] .mehrliste', { timeout: 4000 })
-    .catch(() => pruefe(false, '„Mehr" öffnet kein Blatt'));
+    .catch(() => pruefe(false, 'Kopfzeilen-„…" öffnet kein Blatt'));
   const ziele = await page.$$eval('.mehrliste a',
     as => as.map(a => a.getAttribute('href')));
-  // N327 — Einstellungen/Kontakte stehen nicht mehr in diesem Blatt, sondern
-  // an jeder Kopfzeile hinter `.ka-mehr` (installKopfAktionen).
-  pruefe(ziele.includes('eigentuemer.html'),
-    'im Blatt fehlen Einträge: ' + ziele.join(', '));
+  pruefe(ziele.includes('eigentuemer.html') && ziele.includes('vermietungen.html')
+    && !ziele.includes('eingang.html') && !ziele.includes('settings.html')
+    && !ziele.includes('kontakte.html'),
+    'Kopfzeilen-„…" zeigt die falschen Einträge: ' + ziele.join(', '));
   await page.screenshot({ path: 'tests/screenshots/nav-mehr.png' });
 
   pruefe(fehler.length === 0, 'JS-Fehler: ' + fehler.slice(0, 2).join(' | '));
   await ctx.close();
 }
 
-/* ---- Handy, auf einer Seite hinter der Kopfzeilen-„…" ----
-   N327 — Einstellungen/Kontakte stehen nicht mehr im NAV-Array und damit
-   auch nicht mehr hinter der unteren „Mehr"; sie haengen jetzt an jeder
-   Kopfzeile (`.kopfakt .ka-mehr`), die dafuer selbst `aria-current` traegt. */
+/* ---- Handy: Einstellungen/Kontakte sind eigene Kopfzeilen-Symbole ----
+   N327-b — nicht mehr hinter „…" versteckt (Nutzer-Feedback): stehen sie
+   selbst als eigenes `.ka-ziel`, muss GENAU dieses Symbol `aria-current`
+   tragen, wenn man auf der jeweiligen Seite steht — nicht die „…". */
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
   await page.goto(base + '/settings.html', { waitUntil: 'networkidle' });
   await page.waitForTimeout(300);
-  const markiert = await page.$eval('.kopfakt .ka-mehr',
+  const markiert = await page.$eval('.kopfakt a[href="settings.html"]',
     el => el.getAttribute('aria-current') === 'page').catch(() => false);
-  pruefe(markiert, 'Kopfzeilen-„…" zeigt nicht, dass die aktuelle Seite dahinter liegt');
+  pruefe(markiert, 'Einstellungen-Symbol in der Kopfzeile zeigt nicht „hier"');
+  const mehrMarkiert = await page.$eval('.kopfakt .ka-mehr',
+    el => el.getAttribute('aria-current') === 'page').catch(() => false);
+  pruefe(!mehrMarkiert, 'die „…" markiert sich faelschlich mit, obwohl Einstellungen ihr eigenes Symbol hat');
   await ctx.close();
 }
 
@@ -92,9 +100,8 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
   pruefe(sichtbar === gesamt,
          `Desktop zeigt nur ${sichtbar} von ${gesamt} Einträgen`);
   pruefe(gesamt >= 7, `nur ${gesamt} Einträge — die Leiste ist geschrumpft`);
-  const mehrDa = await page.$eval('nav.nav .mehr', el => el.offsetParent !== null)
-    .catch(() => false);
-  pruefe(!mehrDa, 'auf dem Desktop steht „Mehr" im Weg');
+  const mehrDa = await page.$('nav.nav .mehr');
+  pruefe(mehrDa === null, 'auf dem Desktop gibt es kein unteres „Mehr" mehr — sollte fehlen');
   await ctx.close();
 }
 
