@@ -176,7 +176,12 @@ def uebernehmen(session: Session, z: Zeitraum, gelesen: dict,
 
     vorhanden = session.exec(select(Kostenposition).where(
         Kostenposition.zeitraum_id == z.id)).all()
-    weg_alt = {p.kostenart: p for p in vorhanden if p.wertquelle == QUELLE}
+    # N315(a) — nach Kostenart ALLEIN reicht nicht: zwei Wohnungen derselben
+    # WEG haben oft beide eine Zeile "Hausmeister". Ohne die Einheit im
+    # Schlüssel überschrieb die zweite Übernahme die Zeile der ersten, statt
+    # eine eigene anzulegen — die erste Wohnung verlor ihre Kosten ersatzlos.
+    weg_alt = {p.kostenart: p for p in vorhanden
+              if p.wertquelle == QUELLE and (p.nur_einheit or "") == einheit}
     fremd = {p.kostenart for p in vorhanden if p.wertquelle != QUELLE}
 
     uebersprungen: list[str] = []

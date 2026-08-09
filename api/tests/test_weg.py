@@ -256,6 +256,48 @@ def test_entfallene_weg_zeile_verschwindet_beim_zweiten_lauf():
 
 
 # --------------------------------------------------------------------------
+# N315(a) — zwei Einheiten derselben WEG im selben Zeitraum
+# --------------------------------------------------------------------------
+
+def _zweite_einheit(oid: int, bezeichnung: str) -> None:
+    with Session(db.engine) as s:
+        vorhanden = s.exec(select(Einheit).where(
+            Einheit.objekt_id == oid, Einheit.bezeichnung == bezeichnung)).first()
+        if not vorhanden:
+            s.add(Einheit(objekt_id=oid, bezeichnung=bezeichnung, flaeche=60.0))
+            s.commit()
+
+
+def test_zweite_einheit_ueberschreibt_nicht_die_zeilen_der_ersten():
+    """Beide Wohnungen einer WEG haben eine Zeile "Hausmeister". Vor dem Fix
+    schlüsselte `weg_alt` nur nach Kostenart — die zweite Übernahme fand die
+    Zeile der ersten Wohnung wieder und schrieb ihren Betrag und ihre
+    `nur_einheit` einfach um, statt eine eigene Zeile anzulegen. Die erste
+    Wohnung verlor ihre 396,00 € ersatzlos."""
+    zid = _zeitraum(2038)
+    oid = _objekt_id()
+    _zweite_einheit(oid, "Wohnung 6b")
+
+    _uebernehmen(zid)                                  # Wohnung 6a, Regelbeleg
+
+    beleg_b = _beleg()
+    for p in beleg_b["positionen"]:
+        if p["bezeichnung"] == "Hausmeister":
+            p["ihre_kosten"] = 308.87
+    with Session(db.engine) as s:
+        z = s.get(Zeitraum, zid)
+        stand_b = weg.uebernehmen(s, z, beleg_b, einheit="Wohnung 6b")
+
+    hausmeister = [p for p in stand_b["positionen"]
+                  if p["kostenart"] == "Hausmeister"]
+    assert len(hausmeister) == 2
+    a = next(p for p in hausmeister if p["nur_einheit"] == EINHEIT)
+    b = next(p for p in hausmeister if p["nur_einheit"] == "Wohnung 6b")
+    assert a["betrag"] == 396.00                        # Wohnung 6a unangetastet
+    assert b["betrag"] == 308.87
+
+
+# --------------------------------------------------------------------------
 # 3) Vorauszahlung und Saldo
 # --------------------------------------------------------------------------
 def test_saldo_ist_die_nachzahlung_des_belegs():
