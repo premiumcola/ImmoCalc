@@ -298,19 +298,15 @@ button.chip:hover{filter:brightness(.96)}
   bottom:max(14px, env(safe-area-inset-bottom) + 6px);
   z-index:30; border-radius:26px;
   display:flex; gap:5px; padding:8px 8px;
-  /* N327-b — Nutzer: der Schatten soll auch links/rechts/unten im Rand-
-     abstand um die Pille sichtbar sein, nicht nur direkt darunter — aber
-     NICHT nach oben in den Inhalt hinein ("no shadow to the top"). Ein
-     `0 0 …`-Schatten (kein Versatz) streut zwangsläufig auch nach oben; die
-     grosse Ebene braucht deshalb einen Versatz nach unten, der mindestens so
-     gross ist wie ihr Weichzeichner — dann bleibt ihr oberer Rand exakt an
-     der Pillen-Oberkante oder knapp darunter, nie darüber. Insgesamt auch
-     kräftiger (Nutzer: „more shadow"). Reines Schwarz statt `--ink`, das auf
-     manchen Bildschirmen grünlich kippte. Bewusst NICHT die nach oben
-     gerichteten Schatten-Ebenen aus der Referenz übernommen — die
-     widersprechen der eigenen "kein Schatten nach oben"-Vorgabe. */
-  box-shadow:0 10px 18px -8px rgba(0,0,0,.32), 0 2px 8px -4px rgba(0,0,0,.16),
-              0 30px 28px 0 rgba(0,0,0,.34);
+  /* N327-b — die vorherige omnidirektionale Ebene (`0 30px 28px 0`, ohne
+     Versatz nach den Seiten) folgte der RECHTECKIGEN Pillenform und wurde
+     genau dort sichtbar, wo der runde Dokumente-Knopf oben herausragt — als
+     hell/dunkler "Rechteck-Rand" hinter dem Kreis ("die verdammten
+     Schatten-Kanten"). Jetzt nur zwei klar nach UNTEN versetzte Ebenen mit
+     spürbarem negativem Spread (Schattenquelle deutlich kleiner als die
+     Pille selbst) — dadurch bleibt der Schatten sauber unter der Pille,
+     ohne an ihren oberen Ecken/um den Kreis herum sichtbar zu werden. */
+  box-shadow:0 4px 10px -3px rgba(0,0,0,.28), 0 16px 28px -12px rgba(0,0,0,.4);
   /* Frosted Glass statt Vollton-Weiss: Technik aus der Referenz (Blur-Rezept
      `blur(22px) saturate(1.05)`), aber mit den hellen Tönen dieser App statt
      deren dunklem Glas. Fallback (kein `backdrop-filter`-Support): Vollton
