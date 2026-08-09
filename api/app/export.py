@@ -16,13 +16,16 @@ import logging
 from datetime import date, datetime
 from typing import Type
 
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, SQLModel, or_, select
 
-from .models import (Anteil, Belegdaten, Bewohner, Dokument, Eigentuemer,
-                     Einheit, Heizoellieferung, Heizverteiler, Kostenart,
-                     Kostenposition, Kredit, Kreditstand, Miete, Objekt,
-                     Partei, Stromjahr, Versicherung, Vorauszahlung, Zahlung,
-                     Zeitraum, PVAnlage, Tankladung, Tanknutzer)
+from .models import (Ablesung, Anteil, Belegdaten, Bewohner, Dokument,
+                     Eigentuemer, Einheit, Grundschuld, GrundschuldKredit,
+                     Heizoellieferung, Heizverteiler, Kontakt, Kostenart,
+                     Kostenposition, Kredit, Kreditstand, Kundennummer, Miete,
+                     Notarvertrag, Objekt, Partei, Renovierung,
+                     Renovierungsposten, Stromjahr, Versicherung,
+                     Vorauszahlung, Zahlung, Zaehler, Zeitraum, PVAnlage,
+                     Tankladung, Tanknutzer)
 
 log = logging.getLogger("immocalc")
 
@@ -49,6 +52,18 @@ ANHAENGSEL: dict[str, Type[SQLModel]] = {
     "tanknutzer": Tanknutzer,
     "tankladungen": Tankladung,
     "pv_anlagen": PVAnlage,
+    # N314(c) — acht objektgebundene Tabellen fehlten hier: weder gesichert
+    # noch beim Löschen entfernt. Die Sätze blieben als Waisen stehen, und
+    # SQLite vergibt frei gewordene rowids neu — ein neu angelegtes Objekt
+    # konnte so fremde Notarverträge oder Zähler "erben".
+    "notarvertraege": Notarvertrag,
+    "renovierungen": Renovierung,
+    "zaehler": Zaehler,
+    "grundschulden": Grundschuld,
+    # Kundennummer ist an ein Objekt *und* einen Kontakt gebunden. Der Kontakt
+    # selbst gehört mehreren Objekten gemeinsam und wird beim Löschen eines
+    # einzelnen Objekts nicht angetastet.
+    "kundennummern": Kundennummer,
 }
 
 # Was nicht am Objekt hängt, sondern an einem seiner Sätze: die Jahresstände am
@@ -60,6 +75,9 @@ ANHAENGSEL: dict[str, Type[SQLModel]] = {
 KINDER: dict[str, tuple[Type[SQLModel], str, str]] = {
     "kreditstaende": (Kreditstand, "kredit_id", "kredite"),
     "bewohner": (Bewohner, "miete_id", "mieten"),
+    # N314(c)
+    "renovierungsposten": (Renovierungsposten, "renovierung_id", "renovierungen"),
+    "ablesungen": (Ablesung, "zaehler_id", "zaehler"),
 }
 
 
@@ -111,6 +129,26 @@ def exportiere(session: Session, objekt: Objekt) -> dict:
     for zeile in daten["anteile"]:
         eigner = session.get(Eigentuemer, zeile.get("eigentuemer_id"))
         zeile["eigentuemer_name"] = eigner.name if eigner else ""
+
+    # Dieselbe Regel für die Kundennummer: der Kontakt gehört mehreren Objekten
+    # und wird nicht mitgesichert. Sein Schlüssel reicht, um ihn beim Import
+    # wiederzufinden — die id kann bis dahin längst einem anderen gehören.
+    for zeile in daten["kundennummern"]:
+        kontakt = session.get(Kontakt, zeile.get("kontakt_id"))
+        zeile["kontakt_schluessel"] = kontakt.schluessel if kontakt else ""
+
+    # Grundschuld-Kredit ist eine m:n-Verknüpfung ohne eigene id und ohne
+    # objekt_id — und kann auf einen Kredit an einem ANDEREN Objekt zeigen
+    # (eine Grundschuld auf Haus A sichert das Darlehen für Haus B kommt im
+    # Bestand vor). Deshalb über beide Fremdschlüssel gesucht, nicht per
+    # ANHAENGSEL/KINDER, die nur eine Elternspalte kennen.
+    grundschuld_ids = [z["id"] for z in daten["grundschulden"]]
+    kredit_ids = [z["id"] for z in daten["kredite"]]
+    gks = session.exec(select(GrundschuldKredit).where(or_(
+        GrundschuldKredit.grundschuld_id.in_(grundschuld_ids),
+        GrundschuldKredit.kredit_id.in_(kredit_ids)))).all()
+    daten["grundschuldkredite"] = [
+        {"grundschuld_id": g.grundschuld_id, "kredit_id": g.kredit_id} for g in gks]
 
     zeitraeume = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == objekt.id)).all()
@@ -174,6 +212,20 @@ def loesche(session: Session, objekt: Objekt) -> dict:
             session.delete(kind)
         entfernt[name] = len(kinder)
 
+    # Grundschuld-Kredit hat zwei Elternspalten (siehe exportiere) — hier
+    # anhand beider geloest, auch wenn die Gegenseite an einem anderen Objekt
+    # haengt, dessen Kredit gerade mit geloescht wird.
+    grundschuld_ids = [g.id for g in session.exec(
+        select(Grundschuld).where(Grundschuld.objekt_id == objekt.id)).all()]
+    kredit_ids = [k.id for k in session.exec(
+        select(Kredit).where(Kredit.objekt_id == objekt.id)).all()]
+    gks = session.exec(select(GrundschuldKredit).where(or_(
+        GrundschuldKredit.grundschuld_id.in_(grundschuld_ids),
+        GrundschuldKredit.kredit_id.in_(kredit_ids)))).all()
+    for gk in gks:
+        session.delete(gk)
+    entfernt["grundschuldkredite"] = len(gks)
+
     for name, modell in ANHAENGSEL.items():
         treffer = session.exec(
             select(modell).where(modell.objekt_id == objekt.id)).all()
@@ -209,6 +261,23 @@ def _passender_eigner(session: Session, anteil: dict) -> Eigentuemer | None:
     return session.get(Eigentuemer, anteil.get("eigentuemer_id"))
 
 
+def _live_oder_neu(session: Session, modell: Type[SQLModel], alte_id,
+                   neue_ids: dict[int, int]):
+    """Die neue id, falls dieser Satz Teil DIESER Wiederherstellung war —
+    sonst die alte id, falls sie noch unverändert existiert.
+
+    Für Grundschuld-Kredit: eine Grundschuld auf Objekt A kann einen Kredit an
+    Objekt B sichern. Wird nur A gelöscht und wiederhergestellt, blieb Kredit
+    B die ganze Zeit unangetastet stehen — seine alte id ist weiterhin
+    korrekt und darf nicht durch "keine Verknüpfung" ersetzt werden."""
+    if alte_id is None:
+        return None
+    neu = neue_ids.get(alte_id)
+    if neu is not None:
+        return neu
+    return alte_id if session.get(modell, alte_id) else None
+
+
 def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
     """Legt aus einer Sicherung wieder ein Objekt an — immer als neuer Datensatz.
 
@@ -223,50 +292,8 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
     session.commit()
     session.refresh(objekt)
 
-    # alte Satz-id -> neue, damit Jahresstände und Bewohner ihren Kredit bzw.
-    # ihr Mietverhältnis wiederfinden
-    eltern_ids: dict[str, dict[int, int]] = {
-        eltern: {} for _, _, eltern in KINDER.values()}
-
-    for name, modell in ANHAENGSEL.items():
-        for zeile in daten.get(name) or []:
-            eintrag = dict(zeile)
-            alte_id = eintrag.pop("id", None)
-            eintrag["objekt_id"] = objekt.id
-            if name == "anteile":
-                eigner = _passender_eigner(session, eintrag)
-                # Eigentümer werden getrennt gepflegt und beim Löschen eines
-                # Objekts nicht mitgelöscht. Passt keiner, bleibt der Anteil
-                # weg — lieber keine Beteiligung als die falsche.
-                if eigner is None:
-                    log.info("Anteil ohne passenden Eigentümer übersprungen: %s",
-                             eintrag.get("eigentuemer_name") or "ohne Namen")
-                    continue
-                eintrag["eigentuemer_id"] = eigner.id
-                eintrag.pop("eigentuemer_name", None)
-            neu = modell.model_validate(eintrag)
-            session.add(neu)
-            if name in eltern_ids:
-                session.commit()
-                session.refresh(neu)
-                if alte_id is not None:
-                    eltern_ids[name][alte_id] = neu.id
-
-    # Alte Sicherungen kennen diese Schlüssel noch nicht — dann bleibt es
-    # schlicht bei nichts, und die Wiederherstellung läuft wie zuvor durch.
-    for name, (modell, schluessel, eltern) in KINDER.items():
-        for zeile in daten.get(name) or []:
-            kind = dict(zeile)
-            kind.pop("id", None)
-            neuer_elternteil = eltern_ids[eltern].get(kind.get(schluessel))
-            if neuer_elternteil is None:
-                log.info("%s ohne passenden Satz übersprungen: %s=%s",
-                         name, schluessel, kind.get(schluessel))
-                continue
-            kind[schluessel] = neuer_elternteil
-            session.add(modell.model_validate(kind))
-
-    # alte Zeitraum-id -> neue, damit die Dokumente ihren Zeitraum wiederfinden
+    # alte Zeitraum-id -> neue. Zuerst angelegt, weil Ablesungen (unten, als
+    # KINDER der Zähler) ihren Zeitraum darüber wiederfinden.
     zeitraeume: dict[int, int] = {}
     # dasselbe für die Kostenpositionen (CLXXXIII): ein Beleg zeigt über die id
     # auf seine Position. Bliebe die alte Nummer stehen, zeigte er nach dem
@@ -297,6 +324,97 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
             roh_v.pop("id", None)
             roh_v["zeitraum_id"] = zeitraum.id
             session.add(Vorauszahlung.model_validate(roh_v))
+
+    # alte Satz-id -> neue, damit Jahresstände und Bewohner ihren Kredit bzw.
+    # ihr Mietverhältnis wiederfinden. "grundschulden" hängt an keinem KINDER,
+    # wird aber für die Grundschuld-Kredit-Verknüpfung unten gebraucht.
+    eltern_ids: dict[str, dict[int, int]] = {
+        eltern: {} for _, _, eltern in KINDER.values()}
+    eltern_ids.setdefault("grundschulden", {})
+
+    for name, modell in ANHAENGSEL.items():
+        for zeile in daten.get(name) or []:
+            eintrag = dict(zeile)
+            alte_id = eintrag.pop("id", None)
+            eintrag["objekt_id"] = objekt.id
+            if name == "anteile":
+                eigner = _passender_eigner(session, eintrag)
+                # Eigentümer werden getrennt gepflegt und beim Löschen eines
+                # Objekts nicht mitgelöscht. Passt keiner, bleibt der Anteil
+                # weg — lieber keine Beteiligung als die falsche.
+                if eigner is None:
+                    log.info("Anteil ohne passenden Eigentümer übersprungen: %s",
+                             eintrag.get("eigentuemer_name") or "ohne Namen")
+                    continue
+                eintrag["eigentuemer_id"] = eigner.id
+                eintrag.pop("eigentuemer_name", None)
+            if name == "kundennummern":
+                # Derselbe Grundsatz wie beim Eigentümer: der Kontakt ist
+                # geteilt, seine id kann inzwischen jemand anderem gehören.
+                schluessel = eintrag.pop("kontakt_schluessel", "")
+                kontakt = session.exec(select(Kontakt).where(
+                    Kontakt.schluessel == schluessel)).first() if schluessel else None
+                eintrag["kontakt_id"] = kontakt.id if kontakt else None
+            if name == "zaehler":
+                # Der Hauptzähler wird erst unten, nach dieser Schleife,
+                # verknüpft — die neue id des eigenen Hauptzählers steht
+                # innerhalb dieser Schleife noch nicht immer schon fest.
+                eintrag["hauptzaehler_id"] = None
+            neu = modell.model_validate(eintrag)
+            session.add(neu)
+            if name in eltern_ids:
+                session.commit()
+                session.refresh(neu)
+                if alte_id is not None:
+                    eltern_ids[name][alte_id] = neu.id
+
+    # Rest-Zähler zeigen auf ihren eigenen Hauptzähler (dieselbe Tabelle) —
+    # erst jetzt sind alle neuen ids bekannt. Lässt sich der alte Hauptzähler
+    # nicht wiederfinden, bleibt der Verweis leer statt auf einen inzwischen
+    # fremden Zähler zu zeigen (rowid-Wiederverwendung, wie bei N314a).
+    for alt in daten.get("zaehler") or []:
+        if alt.get("hauptzaehler_id") is None:
+            continue
+        neue_id = eltern_ids["zaehler"].get(alt.get("id"))
+        neuer_haupt = eltern_ids["zaehler"].get(alt["hauptzaehler_id"])
+        if neue_id is None or neuer_haupt is None:
+            continue
+        zaehler_neu = session.get(Zaehler, neue_id)
+        zaehler_neu.hauptzaehler_id = neuer_haupt
+        session.add(zaehler_neu)
+
+    # Grundschuld-Kredit: beide Seiten müssen aus diesem Import stammen. Eine
+    # Verknüpfung zu einem Kredit an einem anderen, nicht wiederhergestellten
+    # Objekt lässt sich nicht auf eine gültige neue id abbilden — lieber die
+    # Verknüpfung weglassen als eine falsche Sicherheit vortäuschen.
+    for gk in daten.get("grundschuldkredite") or []:
+        neue_grundschuld = _live_oder_neu(
+            session, Grundschuld, gk.get("grundschuld_id"), eltern_ids["grundschulden"])
+        neuer_kredit = _live_oder_neu(
+            session, Kredit, gk.get("kredit_id"), eltern_ids["kredite"])
+        if neue_grundschuld is None or neuer_kredit is None:
+            log.info("Grundschuld-Kredit-Verknüpfung übersprungen: %s", gk)
+            continue
+        session.add(GrundschuldKredit(grundschuld_id=neue_grundschuld,
+                                      kredit_id=neuer_kredit))
+
+    # Alte Sicherungen kennen diese Schlüssel noch nicht — dann bleibt es
+    # schlicht bei nichts, und die Wiederherstellung läuft wie zuvor durch.
+    for name, (modell, schluessel, eltern) in KINDER.items():
+        for zeile in daten.get(name) or []:
+            kind = dict(zeile)
+            kind.pop("id", None)
+            neuer_elternteil = eltern_ids[eltern].get(kind.get(schluessel))
+            if neuer_elternteil is None:
+                log.info("%s ohne passenden Satz übersprungen: %s=%s",
+                         name, schluessel, kind.get(schluessel))
+                continue
+            kind[schluessel] = neuer_elternteil
+            if "zeitraum_id" in kind:
+                # Ablesungen können an einen Zeitraum gebunden sein — auf die
+                # neue id abbilden, sonst wieder ein Verweis ins Leere.
+                kind["zeitraum_id"] = zeitraeume.get(kind.get("zeitraum_id"))
+            session.add(modell.model_validate(kind))
 
     # Die Dateien liegen weiterhin in der Nextcloud — nur die Zuordnung
     # Beleg↔Kostenart↔Zeitraum steckt in der Datenbank. Ohne sie fände ein

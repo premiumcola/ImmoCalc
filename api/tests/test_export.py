@@ -167,6 +167,163 @@ def test_sicherung_bringt_staende_und_bewohner_zurueck():
         assert [b["email"] for b in miete["bewohner"]] == ["anna@example.org"]
 
 
+# --------------------------------------------------------------------------
+# N314(c) — acht objektgebundene Tabellen fehlten in Sicherung und Löschung:
+# Notarvertrag, Renovierung(-sposten), Zähler(-ablesung), Grundschuld(-kredit),
+# Kundennummer.
+# --------------------------------------------------------------------------
+
+def _mit_allen_acht(c, name):
+    """Ein Objekt mit je einem Satz aus jeder der acht fehlenden Tabellen,
+    inklusive der beiden Selbstbezüge (Rest-Zähler, Ablesung mit Zeitraum)."""
+    slug = _anlegen(c, name)
+    zid_zr = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+
+    c.post(f"/api/objekte/{slug}/notarvertraege",
+          json={"art": "Kaufvertrag", "notar": "Dr. Muster", "betrag": 5000.0})
+
+    rid = c.post(f"/api/objekte/{slug}/renovierungen",
+                json={"name": "Bad", "budget": 10000.0}).json()["id"]
+    c.post(f"/api/renovierungen/{rid}/posten",
+          json={"betrag": 500.0, "firma": "Handwerk GmbH", "gewerk": "Sanitär"})
+
+    haupt = c.post(f"/api/objekte/{slug}/zaehler",
+                   json={"name": "Hauptzähler"}).json()["id"]
+    rest = c.post(f"/api/objekte/{slug}/zaehler",
+                  json={"name": "Rest", "typ": "rest",
+                        "hauptzaehler_id": haupt}).json()["id"]
+    c.post(f"/api/zaehler/{haupt}/ablesungen",
+          json={"datum": "2025-01-01", "stand": 100.0, "zeitraum_id": zid_zr})
+
+    # Eigener Firmenname je Aufruf — sonst dedupliziert die Ernte gegen den
+    # Kontakt eines anderen Tests in derselben Datenbank.
+    bank = f"Testbank {name}"
+    kid = c.post(f"/api/objekte/{slug}/kredite",
+                json={"bezeichnung": "Darlehen", "bank": bank,
+                      "darlehensnummer": "K-9000"}).json()["id"]
+    gid = c.post(f"/api/objekte/{slug}/grundschulden",
+                json={"betrag": 200000.0, "glaeubiger": bank,
+                      "kredit_ids": [kid]}).json()["id"]
+
+    assert c.post("/api/kontakte/ernten").status_code == 200
+    kontakt = next(k for k in c.get("/api/kontakte").json()["kontakte"]
+                  if k["firma"] == bank)
+
+    return slug, {"rid": rid, "haupt": haupt, "rest": rest, "kid": kid,
+                 "gid": gid, "kontakt_id": kontakt["id"]}
+
+
+def test_export_enthaelt_die_acht_bisher_fehlenden_tabellen():
+    with TestClient(app) as c:
+        slug, ids = _mit_allen_acht(c, "Achtweg 11")
+        daten = c.get(f"/api/objekte/{slug}/export").json()
+
+        assert len(daten["notarvertraege"]) == 1
+        assert len(daten["renovierungen"]) == 1
+        assert len(daten["renovierungsposten"]) == 1
+        assert len(daten["zaehler"]) == 2
+        assert len(daten["ablesungen"]) == 1
+        assert len(daten["grundschulden"]) == 1
+        assert len(daten["grundschuldkredite"]) == 1
+        assert len(daten["kundennummern"]) == 1
+        assert daten["kundennummern"][0]["kontakt_schluessel"]
+
+
+def test_loeschen_hinterlaesst_bei_den_acht_tabellen_keine_waisen():
+    from sqlmodel import Session, select
+
+    from app.db import engine
+    from app.models import (Ablesung, Grundschuld, GrundschuldKredit, Kontakt,
+                            Kundennummer, Renovierung, Renovierungsposten,
+                            Zaehler)
+
+    with TestClient(app) as c:
+        slug, ids = _mit_allen_acht(c, "Waisenweg 12")
+        assert c.delete(f"/api/objekte/{slug}").status_code == 200
+
+        with Session(engine) as s:
+            assert s.get(Renovierung, ids["rid"]) is None
+            assert s.exec(select(Renovierungsposten)
+                         .where(Renovierungsposten.renovierung_id == ids["rid"])
+                         ).all() == []
+            assert s.get(Zaehler, ids["haupt"]) is None
+            assert s.get(Zaehler, ids["rest"]) is None
+            assert s.exec(select(Ablesung)
+                         .where(Ablesung.zaehler_id == ids["haupt"])).all() == []
+            assert s.get(Grundschuld, ids["gid"]) is None
+            assert s.exec(select(GrundschuldKredit)
+                         .where(GrundschuldKredit.grundschuld_id == ids["gid"])
+                         ).all() == []
+            assert s.exec(select(Kundennummer)
+                         .where(Kundennummer.kontakt_id == ids["kontakt_id"])
+                         ).all() == []
+            # Der Kontakt selbst gehört mehreren Objekten und bleibt bestehen.
+            assert s.get(Kontakt, ids["kontakt_id"]) is not None
+
+
+def test_wiederherstellung_verknuepft_die_acht_tabellen_neu():
+    with TestClient(app) as c:
+        slug, ids = _mit_allen_acht(c, "Wiederweg 13")
+        daten = c.get(f"/api/objekte/{slug}/export").json()
+        assert c.delete(f"/api/objekte/{slug}").status_code == 200
+
+        zurueck = c.post("/api/objekte/import", json=daten)
+        assert zurueck.status_code == 201
+        neu = zurueck.json()["slug"]
+
+        notarvertraege = c.get(f"/api/objekte/{neu}/notarvertraege").json()
+        assert notarvertraege[0]["betrag"] == 5000.0
+
+        renovierungen = c.get(f"/api/objekte/{neu}/renovierungen").json()
+        assert len(renovierungen) == 1
+        detail = c.get(f"/api/renovierungen/{renovierungen[0]['id']}").json()
+        assert len(detail["posten"]) == 1
+        assert detail["posten"][0]["firma"] == "Handwerk GmbH"
+
+        zaehler = c.get(f"/api/objekte/{neu}/zaehler").json()
+        haupt_neu = next(z for z in zaehler if z["name"] == "Hauptzähler")
+        rest_neu = next(z for z in zaehler if z["name"] == "Rest")
+        # Der Rest-Zähler zeigt wieder auf den (neu vergebenen) Hauptzähler.
+        assert rest_neu["hauptzaehler_id"] == haupt_neu["id"]
+        ablesungen = c.get(f"/api/zaehler/{haupt_neu['id']}/ablesungen").json()
+        assert ablesungen[0]["stand"] == 100.0
+        assert ablesungen[0]["zeitraum_id"] is not None
+
+        grundschulden = c.get(f"/api/objekte/{neu}/grundschulden").json()
+        kredite = c.get(f"/api/objekte/{neu}/kredite").json()
+        assert grundschulden[0]["kredit_ids"] == [kredite[0]["id"]]
+
+
+def test_grundschuld_kredit_ueberlebt_wenn_nur_die_grundschuld_geloescht_wird():
+    """Die Grundschuld auf Haus A kann einen Kredit an Haus B sichern (siehe
+    `models.Grundschuld`). Wird nur Haus A gelöscht und wiederhergestellt,
+    bleibt Haus B samt Kredit die ganze Zeit unangetastet — die Verknüpfung
+    muss trotzdem zurückkommen, nicht nur, wenn beide Seiten mitgelöscht
+    wurden."""
+    with TestClient(app) as c:
+        haus_a = _anlegen(c, "Haus A 14")
+        haus_b = _anlegen(c, "Haus B 15")
+        kid_b = c.post(f"/api/objekte/{haus_b}/kredite",
+                      json={"bezeichnung": "Darlehen B"}).json()["id"]
+        gid_a = c.post(f"/api/objekte/{haus_a}/grundschulden",
+                      json={"betrag": 100000.0,
+                            "kredit_ids": [kid_b]}).json()["id"]
+
+        daten = c.get(f"/api/objekte/{haus_a}/export").json()
+        assert daten["grundschuldkredite"] == [
+            {"grundschuld_id": gid_a, "kredit_id": kid_b}]
+
+        assert c.delete(f"/api/objekte/{haus_a}").status_code == 200
+        # Haus B und sein Kredit bleiben unberührt.
+        assert c.get(f"/api/objekte/{haus_b}/kredite").json()[0]["id"] == kid_b
+
+        zurueck = c.post("/api/objekte/import", json=daten)
+        assert zurueck.status_code == 201
+        neu_a = zurueck.json()["slug"]
+        grundschulden = c.get(f"/api/objekte/{neu_a}/grundschulden").json()
+        assert grundschulden[0]["kredit_ids"] == [kid_b]
+
+
 def test_alte_sicherung_ohne_die_neuen_schluessel_laesst_sich_einlesen():
     """Rückwärtsverträglich: eine Datei von früher kennt weder `kreditstaende`
     noch `bewohner` — sie muss sich trotzdem einlesen lassen."""
