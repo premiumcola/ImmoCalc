@@ -314,6 +314,28 @@ button.chip:hover{filter:brightness(.96)}
   isolation:isolate; will-change:backdrop-filter, transform;
   transform:translateZ(0);
 }
+/* N327-b — Nutzer: „Ich will die Inhalte der Seite links, rechts und unter
+   der Menüleiste nicht sehen — die sollen geblurrt sein." Die Pille selbst
+   deckt nur ihre eigene Fläche; der 14px-Rand ringsum (und der Streifen
+   darunter bis zur echten Kante) blieb bisher scharf, weil dort kein
+   Element mit `backdrop-filter` liegt. Ein `::before` — mit `position:
+   absolute`, relativ zur Pille dank deren `transform` (siehe oben) — deckt
+   diesen ganzen Streifen zusätzlich ab: über negative Versätze reicht es
+   bis an alle drei Bildschirmkanten UND ein Stück über die Pillen-Oberkante
+   hinaus (deckt den Bereich, in dem der runde Dokumente-Knopf herausragt).
+   Nur auf dem Handy nötig (Desktop/Tablet hat die Leiste kantig als
+   Seitenspalte/Fußleiste, siehe die Breakpoints weiter unten). */
+@media(max-width:999px){
+  .nav::before{
+    content:"";
+    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-34px;
+    z-index:-1;
+    background:rgba(255,255,255,.5);
+    -webkit-backdrop-filter:blur(40px) saturate(1.05);
+    backdrop-filter:blur(40px) saturate(1.05);
+    pointer-events:none;
+  }
+}
 /* N271 — `static` statt `absolute`: die Leiste ist jetzt das letzte Flex-Kind
    der Karte und sitzt damit von selbst unten fest. `absolute` band sie an den
    unteren Rand des mitwachsenden Inhalts — sie scrollte weg. */
@@ -415,18 +437,17 @@ button.chip:hover{filter:brightness(.96)}
        der Pille absetzen, wirkte am echten Gerät aber wie ein hart
        abgeschnittener heller Rand/Halo ("Kanten am grünen Schatten") — raus,
        nur noch der weiche Schlagschatten traegt die Abhebung. */
-    /* N327-b — der Schatten brauchte mehrere Anläufe: erst fehlte er
-       links/rechts ("edge left and right"), die Zwischenlösung mit einer
-       zweiten, kaum verwischten Ebene zeigte dafür selbst einen sichtbaren
-       Rand ("feste Kante rum von sehr transparentem grünem Schatten"). CSS-
-       Weichzeichnung hat einen harten Abbruch bei ~2×Blur+Spread — je näher
-       Blur und Spread beieinander liegen, desto eher sieht man diese Kante.
-       Jetzt eine einzelne, sehr grosszügig verwischte, kaum sichtbare
-       Ebene (viel Blur, wenig Deckkraft, kein Spread) ringsum plus eine
-       engere für die Bodenhaftung direkt unterm Knopf. */
+    /* N327-b — der Schatten brauchte mehrere Anläufe (fehlte links/rechts,
+       dann zeigte er selbst eine Kante). Nutzer zuletzt: „soll komplett
+       ohne Kante enden." Eine einzelne CSS-Weichzeichnung bricht immer bei
+       ~2×Blur+Spread hart ab; drei ineinander geschachtelte, jeweils
+       grösser und schwächer werdende Ebenen nähern sich stattdessen einem
+       echten, stufenlosen Verlauf an (dieselbe Idee wie mehrere
+       Verlaufsstopps bei einem Farbverlauf). */
     width:66px; height:66px; border-radius:999px; background:var(--teal);
-    color:#fff; box-shadow:0 8px 18px -6px rgba(15,110,92,.4),
-                            0 0 34px 0 rgba(15,110,92,.16);
+    color:#fff; box-shadow:0 4px 8px -2px rgba(15,110,92,.35),
+                            0 12px 24px -8px rgba(15,110,92,.22),
+                            0 26px 46px -16px rgba(15,110,92,.12);
   }
   .nav a[href="eingang.html"] .ni-doc svg{width:30px; height:30px}
   .nav a[href="eingang.html"] .ni-plus svg{width:26px; height:26px}
