@@ -286,14 +286,16 @@ button.chip:hover{filter:brightness(.96)}
   z-index:30; background:var(--sheet); border-radius:26px;
   display:flex; gap:5px; padding:8px 8px;
   /* N327-b — Nutzer: der Schatten soll auch links/rechts/unten im Rand-
-     abstand um die Pille sichtbar sein, nicht nur direkt darunter — eine
-     dritte, kaum versetzte, weit gestreute Ebene füllt genau diesen 14px-
-     Rand ringsum mit einem sanften Halbschatten. Nutzer-Feedback nannte den
-     Farbton dabei „grünlich" — `--ink` (#16262C) hat einen leichten
-     Blaustich, der auf manchen Bildschirmen so kippt; jetzt reines
-     Schwarz statt der Ink-Farbe, damit der Schatten neutral grau bleibt. */
-  box-shadow:0 18px 40px -16px rgba(0,0,0,.4), 0 2px 10px -4px rgba(0,0,0,.14),
-              0 0 24px 3px rgba(0,0,0,.32);
+     abstand um die Pille sichtbar sein, nicht nur direkt darunter — aber
+     NICHT nach oben in den Inhalt hinein ("no shadow to the top"). Ein
+     `0 0 …`-Schatten (kein Versatz) streut zwangsläufig auch nach oben; die
+     grosse Ebene braucht deshalb einen Versatz nach unten, der mindestens so
+     gross ist wie ihr Weichzeichner — dann bleibt ihr oberer Rand exakt an
+     der Pillen-Oberkante oder knapp darunter, nie darüber. Insgesamt auch
+     kräftiger (Nutzer: „more shadow"). Reines Schwarz statt `--ink`, das auf
+     manchen Bildschirmen grünlich kippte. */
+  box-shadow:0 10px 18px -8px rgba(0,0,0,.32), 0 2px 8px -4px rgba(0,0,0,.16),
+              0 30px 28px 0 rgba(0,0,0,.34);
 }
 /* N271 — `static` statt `absolute`: die Leiste ist jetzt das letzte Flex-Kind
    der Karte und sitzt damit von selbst unten fest. `absolute` band sie an den
