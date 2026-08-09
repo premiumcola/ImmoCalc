@@ -1,11 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#17836E"/>
-  <rect x="142" y="158" width="212" height="30" rx="8" fill="#08453A"/>
-  <polygon points="112,258 248,148 384,258" fill="#08453A"/>
-  <rect x="148" y="258" width="200" height="150" fill="#FFFFFF"/>
-  <rect x="224" y="328" width="48" height="80" fill="#08453A"/>
-  <rect x="176" y="292" width="42" height="42" fill="#F4B740"/>
-  <rect x="278" y="292" width="42" height="42" fill="#F4B740"/>
-  <circle cx="382" cy="336" r="34" fill="#B7E9C6"/>
-  <rect x="376" y="362" width="12" height="46" fill="#08453A"/>
+  <!-- N318 — Variante C „Modern-Linie": das alte Dach lag dunkel auf
+       aehnlich dunklem Grund, dazu ragte ein Balken (die "unklare Linie")
+       nur zur Haelfte unterm Dach hervor. Jetzt heller Grund, reine Kontur
+       plus ein Vollton-Punkt als Tuer. -->
+  <rect width="512" height="512" rx="112" fill="#EEF1F0"/>
+  <path d="M128 248 256 138 384 248" fill="none" stroke="#16262C"
+        stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M152 232 V 392 H 360 V 232" fill="none" stroke="#16262C"
+        stroke-width="20" stroke-linejoin="round"/>
+  <circle cx="256" cy="304" r="34" fill="#0F6E5C"/>
 </svg>
