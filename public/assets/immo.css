@@ -325,12 +325,12 @@ button.chip:hover{filter:brightness(.96)}
      sichtbar, wo der runde Dokumente-Knopf oben herausragt — als Rechteck-
      Rand hinter dem Kreis. Jetzt nur zwei klar nach UNTEN versetzte Ebenen
      mit negativem Spread, damit der Schatten sauber unter der Pille bleibt. */
-  box-shadow:0 4px 10px -3px rgba(0,0,0,.28), 0 16px 28px -12px rgba(0,0,0,.4);
+  box-shadow:0 4px 10px -3px rgba(0,0,0,.32), 0 16px 28px -12px rgba(0,0,0,.4);
   /* Frosted Glass — Nutzer: „es gibt kein Blur" auf dem echten Gerät. Jetzt
      OHNE `@supports`-Gate (die Bedingungsprüfung selbst war ein möglicher,
      unnötiger Ausfallpunkt — praktisch jeder relevante mobile Browser kann
      das ohnehin; ohne Unterstützung bleibt schlicht die undurchsichtige
-     `rgba(255,255,255,.72)` stehen, kein Fallback-Sonderfall nötig) UND mit
+     Tönung stehen, kein Fallback-Sonderfall nötig) UND mit
      `isolation`/`transform:translateZ(0)` DIREKT auf demselben Element
      (nicht in einer zusätzlichen, später stehenden Regel) — der aus der
      Referenz übernommene iOS-Kompositions-Trick, ohne den WebKit
@@ -345,8 +345,13 @@ button.chip:hover{filter:brightness(.96)}
      GPU-Ebene, die WebKit unter Scroll-Stress offenbar fehlerhaft neu
      zusammensetzt. `transform:translateZ(0)` allein erzwingt die nötige
      Kompositions-Ebene bereits dauerhaft — `will-change` komplett entfernt
-     statt nur eingeschränkt. */
-  background:rgba(255,255,255,.72);
+     statt nur eingeschränkt.
+     Nutzer-Fund: reines Weiß (rgba(255,255,255,…)) verschwand vor weißen
+     Karten (z. B. dem Sankey-Diagramm) fast komplett — „Menü sehr hell und
+     von der Seite schwer unterscheidbar". Jetzt die App-eigene Papierfarbe
+     (`--paper`, etwas dunkler als reines Weiß) als Tönung statt Weiß —
+     hebt sich von weißen UND von hellgrauen Karten klar ab. */
+  background:rgba(214,220,221,.85);
   -webkit-backdrop-filter:blur(46px) saturate(1.1);
   backdrop-filter:blur(46px) saturate(1.1);
   isolation:isolate;
@@ -371,13 +376,16 @@ button.chip:hover{filter:brightness(.96)}
    auf Wunsch „Blur darker". `mask-image` maskiert `backdrop-filter` in
    Safari genauso wie `background` — kein zusätzlicher Trick nötig. Nur auf
    dem Handy nötig (Desktop/Tablet hat die Leiste kantig als Seitenspalte/
-   Fußleiste, siehe die Breakpoints weiter unten). */
+   Fußleiste, siehe die Breakpoints weiter unten).
+   Dieselbe Papierfarbe wie `.nav` selbst (siehe dort — Fund „Menü vor
+   weißen Karten schwer unterscheidbar"), damit Pille und Rand-Fläche
+   optisch ein Stück sind, nicht zwei unterschiedlich getönte Flächen. */
 @media(max-width:999px){
   .nav::before{
     content:"";
     position:absolute; left:-14px; right:-14px; bottom:-14px; top:-110px;
     z-index:-1;
-    background:rgba(255,255,255,.78);
+    background:rgba(214,220,221,.85);
     -webkit-backdrop-filter:blur(44px) saturate(1.1);
     backdrop-filter:blur(44px) saturate(1.1);
     -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 57%, #000 100%);
