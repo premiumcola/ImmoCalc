@@ -17,6 +17,14 @@ Links steht der ERWERB — das wandert in die Anschaffungskosten und wird
 abgeschrieben. Rechts steht die FINANZIERUNG — das sind sofort abzugsfähige
 Werbungskosten. Beides in einen Topf zu werfen macht die AfA falsch, und genau
 das tat die alte Sammelbezeichnung „Grundbuch / Grundschuld".
+
+Additiv, nicht umbenannt: „Grundbuch / Grundschuld", „Makler" und „Gutachter"
+waren die alten Sammelbezeichnungen vor dieser Aufteilung. Sie stehen weiter
+am Ende der Liste, obwohl die KI sie nicht mehr vorschlägt (SYSTEM_PROMPT in
+kiauslese.py kennt nur noch die feineren Arten) — ein Bestandsobjekt, das
+schon damit getaggt ist, braucht weiterhin einen Treffer, sonst fällt die
+Oberfläche (auswahl.js ohne Treffer auf den ersten Listeneintrag) auf „Notar"
+zurück und zeigt eine falsche Art an.
 """
 from __future__ import annotations
 
@@ -35,6 +43,10 @@ ERWERBSARTEN: list[str] = [
     "Erschließungskosten",
     "Baugenehmigung / Behördengebühren",
     "Finanzierungsnebenkosten",
+    # Bestandswerte vor N276 — additiv erhalten (siehe Docstring oben).
+    "Grundbuch / Grundschuld",
+    "Makler",
+    "Gutachter",
     "Sonstiges",
 ]
 

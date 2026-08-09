@@ -18,10 +18,31 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app import erwerb, feldzuordnung  # noqa: E402
+from app import erwerb, feldzuordnung, kiauslese  # noqa: E402
 
 FELDER_JS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), "public", "assets", "objekt-felder.js")
+
+
+class _FakeAntwort:
+    status_code = 200
+
+    def __init__(self, text):
+        self._text = text
+
+    def json(self):
+        return {"content": [{"type": "text", "text": self._text}]}
+
+
+class _FakeHttpx:
+    """Stellt die Modellantwort — kein echter Netzaufruf (wie in
+    test_kiauslese.py)."""
+
+    def __init__(self, text):
+        self._text = text
+
+    def post(self, *_a, **_k):
+        return _FakeAntwort(self._text)
 
 
 def test_die_liste_gibt_es_nur_einmal():
@@ -69,6 +90,17 @@ def test_erfundene_art_wird_verworfen():
     assert erwerb.erwerbsart(None) is None
 
 
+def test_alte_sammelbezeichnungen_bleiben_gueltig():
+    """Additiv, nicht umbenannt: ein Objekt, das schon vor N276 mit einer der
+    drei alten Sammelbezeichnungen getaggt wurde, muss weiterhin einen Treffer
+    in `ERWERB_ARTEN`/`ERWERBSARTEN` finden. Sonst faellt auswahl.js (siehe
+    `zeichne()` in auswahl.js — ohne Treffer zeigt es den ERSTEN Listeneintrag)
+    auf "Notar" zurueck, obwohl am Objekt "Makler" oder "Gutachter" steht."""
+    for alt in ("Grundbuch / Grundschuld", "Makler", "Gutachter"):
+        assert alt in erwerb.ERWERBSARTEN
+        assert erwerb.erwerbsart(alt) == alt
+
+
 def test_maske_wird_aus_der_auslese_gefuellt():
     ergebnis = {"felder": {"erwerbsart": "Grundbuchamt – Grundpfandrecht"},
                 "betrag": 887.50, "datum": "2017-05-24", "jahr": 2017}
@@ -87,3 +119,129 @@ def test_ohne_erwerbsart_bleibt_die_art_leer():
          "betrag": 379.19})
     assert "art" not in werte
     assert werte["betrag"] == 379.19
+
+
+# --------------------------------------------------------------------------
+# Der eigentliche Fachpunkt end-to-end: die KV-Nummer der GNotKG-Rechnung
+# entscheidet, nicht der Absender „Notar" allein. Modelliert nach den zwei
+# echten Notarrechnungen desselben Tages (siehe Modul-Docstring); der
+# Netzaufruf ist gestellt (`_FakeHttpx`), geprueft wird die Kette
+# Prompt-Anweisung -> Modellantwort -> `erwerb.erwerbsart`-Kanonisierung.
+# --------------------------------------------------------------------------
+KV_21100_BAUTRAEGERVERTRAG = """
+Notare Dr. Schwanecke und Christian Braun
+Kostenrechnung gemäß GNotKG
+
+URNr. S 848/17 vom 13.04.2017 — Bauträgervertrag
+Geschäftswert: 280.000,00 EUR
+
+KV 21100 Beurkundungsverfahren (Satz 2,0)              1.560,00 EUR
+KV 22200 Betreuungsgebühr                                120,00 EUR
+KV 32011 Dokumentenpauschale (210 Seiten)                  52,50 EUR
+Auslagenpauschale                                          20,00 EUR
+zzgl. 19% USt.                                             76,53 EUR
+-----------------------------------------------------------------
+Rechnungsbetrag                                        1.829,03 EUR
+"""
+
+KV_21200_GRUNDSCHULD = """
+Notare Dr. Schwanecke und Christian Braun
+Kostenrechnung gemäß GNotKG
+
+URNr. S 849/17 vom 13.04.2017 — Grundschuldbestellung
+Geschäftswert: 240.000,00 EUR
+
+KV 21200 Beurkundungsverfahren                           540,00 EUR
+Auslagenpauschale                                         20,00 EUR
+zzgl. 19% USt.                                             87,00 EUR
+-----------------------------------------------------------------
+Rechnungsbetrag                                          647,00 EUR
+"""
+
+KV_14110_EIGENTUMSUMSCHREIBUNG = """
+Landesjustizkasse Bamberg
+Kostenrechnung in der Grundbuchsache
+
+KV 14110 Eigentumsumschreibung                           620,00 EUR
+KatFortGebG Katasterfortführungsgebühr                    45,00 EUR
+KV 14152 Löschung Auflassungsvormerkung                  120,50 EUR
+-----------------------------------------------------------------
+Rechnungsbetrag                                          785,50 EUR
+"""
+
+KV_14121_GRUNDPFANDRECHT = """
+Landesjustizkasse Bamberg
+Kostenrechnung in der Grundbuchsache
+
+KV 14150 Auflassungsvormerkung                           140,00 EUR
+KV 14121 Grundpfandrecht                                 700,50 EUR
+KV 17000 Grundbuchausdruck                                47,00 EUR
+-----------------------------------------------------------------
+Rechnungsbetrag                                          887,50 EUR
+"""
+
+
+def _modellantwort(erwerbsart: str, betrag: float) -> str:
+    """Was das Modell laut SYSTEM_PROMPT fuer eine dieser Rechnungen liefern
+    soll — hier gestellt statt ueber einen echten Netzaufruf."""
+    return (
+        '{"dokumenttyp":"Kostenrechnung","kategorie":"Erwerbsnebenkosten",'
+        '"betrag":%s,"ist_kosten":true,"kosten_relevant":true,'
+        '"felder":{"erwerbsart":"%s"}}' % (betrag, erwerbsart)
+    )
+
+
+def _lies(monkeypatch, text, erwerbsart_laut_modell, betrag):
+    monkeypatch.setattr(
+        kiauslese, "httpx",
+        _FakeHttpx(_modellantwort(erwerbsart_laut_modell, betrag)))
+    return kiauslese.lies_beleg(text, "kostenrechnung.pdf",
+                                schluessel="test-key")
+
+
+def test_kv_21100_wird_notar_nicht_grundschuldbestellung(monkeypatch):
+    """Der Bautraegervertrag/Kaufvertrag (KV 21100) ist ERWERB — die
+    Anschaffungskosten, nicht die Finanzierung."""
+    ergebnis = _lies(monkeypatch, KV_21100_BAUTRAEGERVERTRAG, "Notar", 1829.03)
+    assert ergebnis["felder"]["erwerbsart"] == "Notar"
+
+
+def test_kv_21200_wird_grundschuldbestellung_nicht_notar(monkeypatch):
+    """Dieselben Notare, derselbe Tag, aber KV 21200 — die
+    Grundschuldbestellung ist FINANZIERUNG, keine Anschaffungskosten. Die
+    fachlich wichtige Verwechslung, die N276 ausloeste."""
+    ergebnis = _lies(monkeypatch, KV_21200_GRUNDSCHULD,
+                      "Notar – Grundschuldbestellung", 647.00)
+    assert ergebnis["felder"]["erwerbsart"] == "Notar – Grundschuldbestellung"
+    assert ergebnis["felder"]["erwerbsart"] != "Notar"
+
+
+def test_kv_14110_wird_eigentumsumschreibung(monkeypatch):
+    ergebnis = _lies(monkeypatch, KV_14110_EIGENTUMSUMSCHREIBUNG,
+                      "Grundbuchamt – Eigentumsumschreibung", 785.50)
+    assert ergebnis["felder"]["erwerbsart"] == \
+        "Grundbuchamt – Eigentumsumschreibung"
+
+
+def test_kv_14121_wird_grundpfandrecht_nicht_umschreibung(monkeypatch):
+    """Dieselbe Landesjustizkasse, aber KV 14121 (Grundpfandrecht) ist
+    FINANZIERUNG — die andere Haelfte derselben Verwechslungsgefahr wie beim
+    Notar, diesmal beim Grundbuchamt."""
+    ergebnis = _lies(monkeypatch, KV_14121_GRUNDPFANDRECHT,
+                      "Grundbuchamt – Grundpfandrecht", 887.50)
+    assert ergebnis["felder"]["erwerbsart"] == "Grundbuchamt – Grundpfandrecht"
+    assert ergebnis["felder"]["erwerbsart"] != \
+        "Grundbuchamt – Eigentumsumschreibung"
+
+
+def test_prompt_nennt_die_kv_nummern_beider_trennungen():
+    """Der Prompt ist hier die eigentliche Fachlogik (wie beim Strom- und
+    WEG-Prompt) — ohne die ausdrueckliche KV-Zuordnung griffe das Modell bei
+    "Notar" immer zur selben Art, egal welche Rechnung."""
+    p = kiauslese.SYSTEM_PROMPT
+    assert "21100" in p and "21200" in p
+    assert "14110" in p and "14121" in p
+    assert "Notar – Grundschuldbestellung" in p
+    assert "Grundbuchamt – Grundpfandrecht" in p
+    assert "Landesjustizkasse" in p
+    assert "Amt für Digitalisierung" in p

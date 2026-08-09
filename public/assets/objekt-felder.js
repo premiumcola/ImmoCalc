@@ -283,7 +283,16 @@ const PACHT = {
    Vermessung und Katasterfortführung fehlten ganz (Amt für Digitalisierung,
    Breitband und Vermessung; KatFortGebG). Der Rest ergänzt, was beim Erwerb
    regelmäßig anfällt. Reihenfolge: erst der Kaufvorgang, dann die Ämter,
-   dann das Umfeld — der Nutzer sucht in dieser Reihenfolge. */
+   dann das Umfeld — der Nutzer sucht in dieser Reihenfolge.
+
+   Additiv, nicht umbenannt: die drei alten Sammelbezeichnungen „Grundbuch /
+   Grundschuld", „Makler" und „Gutachter" fielen bei der Aufteilung fachlich
+   weg, stehen aber weiter am Ende der Liste — Bestandsobjekte, die schon
+   damit getaggt sind, brauchen einen Treffer in `werte`, sonst zeigt
+   auswahl.js (das ohne Treffer auf den ERSTEN Listeneintrag zurückfällt,
+   siehe `zeichne()`) an ihrer Stelle fälschlich „Notar" an. Die KI schlägt
+   sie nicht mehr vor (siehe kiauslese.SYSTEM_PROMPT) — neu erfasste Belege
+   bekommen die feineren Arten. */
 const ERWERB_ARTEN = [
   'Notar',
   'Notar – Grundschuldbestellung',
@@ -299,6 +308,10 @@ const ERWERB_ARTEN = [
   'Erschließungskosten',
   'Baugenehmigung / Behördengebühren',
   'Finanzierungsnebenkosten',
+  // Bestandswerte vor N276 — additiv erhalten (siehe Kommentar oben).
+  'Grundbuch / Grundschuld',
+  'Makler',
+  'Gutachter',
   'Sonstiges',
 ];
 const ERWERB = {
