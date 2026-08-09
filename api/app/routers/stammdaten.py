@@ -19,6 +19,7 @@ from sqlmodel import Session, SQLModel, select
 
 from ..db import get_session
 from ..deps import objekt_holen
+from ..dokumente.zuordnung import _AN_TYP_MODELLE, loese_info_referenzen
 from ..felder import bereinige
 from ..kappungsgrenze import pruefe
 from ..models import (Bewohner, Kredit, Kreditstand, Miete, Notarvertrag, Objekt,
@@ -36,6 +37,11 @@ ENTITAETEN: dict[str, Type[SQLModel]] = {
     "zahlungen": Zahlung,
     "notarvertraege": Notarvertrag,
 }
+
+# N314(d) — derselbe Eintrag über den Kurznamen, unter dem ein Info-Beleg an
+# ihn hängen kann (`dokumente/zuordnung._AN_TYP_MODELLE`). Aus dem Modell
+# abgeleitet statt ein zweites Mal von Hand aufgeschrieben.
+_AN_TYP_VON_MODELL = {modell: typ for typ, (modell, _r) in _AN_TYP_MODELLE.items()}
 
 
 # Segmente, die unter /objekte/{slug}/… naheliegen, hier aber nichts zu suchen
@@ -273,6 +279,12 @@ def loeschen(bereich: str, eintrag_id: int,
     if not eintrag:
         raise HTTPException(404, "Eintrag nicht gefunden")
     _anhaengsel_loeschen(session, bereich, eintrag_id)
+    # N314(d) — ein Info-Beleg an diesem Eintrag zeigte sonst unbemerkt auf
+    # den nächsten Kredit/Miete/Versicherung/Notarvertrag/Zahlung, der die
+    # (von SQLite wiederverwendete) id erbt.
+    an_typ = _AN_TYP_VON_MODELL.get(modell)
+    if an_typ:
+        loese_info_referenzen(session, an_typ, eintrag_id)
     # N5 — vor dem Löschen merken; danach die abgeleiteten Positionen neu
     # berechnen (ein entferntes Mietverhältnis gibt Leerstand zurück).
     ist_miete = isinstance(eintrag, Miete)

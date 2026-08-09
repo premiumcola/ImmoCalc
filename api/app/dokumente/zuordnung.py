@@ -20,10 +20,11 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from ..models import (Bewohner, Kostenposition, Kredit, Miete, Notarvertrag,
-                      Objekt, Versicherung, Zahlung, Zeitraum)
+from ..models import (Bewohner, Dokument, Einheit, Kostenposition, Kredit,
+                      Miete, Notarvertrag, Objekt, Versicherung, Zahlung,
+                      Zeitraum)
 
 
 # Modelle, die per `quelle_dokument_id` auf einen Beleg zeigen, samt der
@@ -50,6 +51,31 @@ _AN_TYP_MODELLE = {
 # Immobilie als Ganzes gehört und an keinem einzelnen Eintrag hängt.
 _INFO_RUBRIK = {typ: rubrik for typ, (_m, rubrik) in _AN_TYP_MODELLE.items()}
 _INFO_RUBRIK["objekt"] = "objekt"
+
+# N314(d) — dieselben Kurznamen wie `_AN_TYP_MODELLE`, dazu „einheit": der
+# Lageplan hängt genauso über `info_zu_typ`/`info_zu_id` an einer Einheit
+# (CCCXX), ohne über den allgemeinen „Beleg an Eintrag hängen"-Weg zu laufen.
+_INFO_ZU_MODELLE = {typ: modell for typ, (modell, _r) in _AN_TYP_MODELLE.items()}
+_INFO_ZU_MODELLE["einheit"] = Einheit
+
+
+def loese_info_referenzen(session: Session, typ: str, eintrag_id: int) -> int:
+    """Löst jeden Info-Beleg von einem gelöschten Eintrag (`info_zu_typ`/
+    `info_zu_id`).
+
+    Der Verweis ist weich — keine Fremdschlüssel-Spalte, also auch keine
+    Löschprüfung durch die Datenbank. SQLite vergibt eine frei gewordene id
+    neu: ohne diese Lösung zeigte der Lageplan der gelöschten Einheit
+    unbemerkt auf die nächste, die dieselbe id erbt — ebenso ein Info-Beleg an
+    einem gelöschten Kredit/einer Miete/einer Versicherung/einem Notarvertrag/
+    einer Zahlung/einer Kostenposition."""
+    geloest = 0
+    for d in session.exec(select(Dokument).where(
+            Dokument.info_zu_typ == typ, Dokument.info_zu_id == eintrag_id)).all():
+        d.info_zu_typ, d.info_zu_id = "", None
+        session.add(d)
+        geloest += 1
+    return geloest
 
 
 def _gehoert_zum_objekt(session: Session, eintrag, o: Objekt) -> bool:

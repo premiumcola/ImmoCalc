@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from ..belegposten import anlegen as position_bauen
 from ..db import get_session
+from ..dokumente.zuordnung import loese_info_referenzen
 from ..models import Dokument, Kostenart, Kostenposition, Vorauszahlung, Zeitraum
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, stammdaten,
@@ -262,6 +263,9 @@ def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict
         d.position_id = None
         session.add(d)
         geloest += 1
+    # N314(d) — ein Info-Beleg (nicht die Hauptrechnung) hängt über
+    # `info_zu_typ`/`info_zu_id`, nicht über `position_id`.
+    loese_info_referenzen(session, "kostenposition", pid)
     session.delete(p)
     session.commit()
     # War das die letzte Position und hängt sonst nichts mehr am Zeitraum,

@@ -273,3 +273,40 @@ def test_umbenennen_braucht_einen_namen(monkeypatch):
 
         assert c.patch(f"/api/einheiten/{eid}/lageplan/{doc}",
                        json={"name": "   "}).status_code == 400
+
+
+# --------------------------------------------------------------------------
+# N314(d) — die Einheit selbst löschen löst den Lageplan, statt ihn stehen
+# zu lassen (sonst zeigt die nächste Einheit mit derselben, wiederverwendeten
+# id unbemerkt auf den Grundriss der gelöschten).
+# --------------------------------------------------------------------------
+
+def test_einheit_loeschen_loest_ihren_lageplan():
+    with TestClient(app) as c:
+        slug, oid = _objekt_mit_cloud(c, "Planweg 9", "Home/Immobilien/Planweg 9")
+        eid = _einheit(oid)
+        doc, pfad = _lege_lageplan_an(oid, eid)
+
+        antwort = c.delete(f"/api/einheiten/{eid}")
+        assert antwort.status_code == 200
+
+        # Der Datenbankeintrag des Lageplans bleibt (die Datei liegt weiter in
+        # der Cloud) — aber der Verweis auf die gelöschte Einheit ist weg.
+        d = _stand(doc)
+        assert d is not None
+        assert d.info_zu_typ == ""
+        assert d.info_zu_id is None
+        assert d.pfad == pfad
+
+
+def test_neue_einheit_erbt_nicht_den_lageplan_der_geloeschten():
+    """Reproduziert den gemeldeten Fall: SQLite vergibt eine frei gewordene
+    id neu — ohne die Lösung zeigte die neue Einheit den Grundriss der alten."""
+    with TestClient(app) as c:
+        slug, oid = _objekt_mit_cloud(c, "Planweg 10", "Home/Immobilien/Planweg 10")
+        eid = _einheit(oid, "Alte Wohnung")
+        doc, _ = _lege_lageplan_an(oid, eid)
+        assert c.delete(f"/api/einheiten/{eid}").status_code == 200
+
+        neu = _einheit(oid, "Neue Wohnung")
+        assert c.get(f"/api/einheiten/{neu}/lageplaene").json() == []

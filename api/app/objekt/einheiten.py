@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from .. import einheitname
 from ..db import get_session
 from ..deps import objekt_holen
+from ..dokumente.zuordnung import loese_info_referenzen
 from ..felder import bereinige
 from ..models import Dokument, Einheit, Miete, Objekt, ist_grundstueck
 from ..turnus import jahresbetrag
@@ -318,6 +319,9 @@ def einheit_loeschen(eid: int, session: Session = Depends(get_session)) -> dict:
                  + ". Entferne " + ("es" if eins else "sie")
                  + " zuerst — sonst gehört die Miete zu keiner Einheit mehr.")
     bezeichnung = e.bezeichnung
+    # N314(d) — sonst zeigt der Lageplan dieser Einheit unbemerkt auf die
+    # nächste, die dieselbe (von SQLite wiederverwendete) id erbt.
+    loese_info_referenzen(session, "einheit", eid)
     session.delete(e)
     session.commit()
     return {"ok": True, "bezeichnung": bezeichnung}
