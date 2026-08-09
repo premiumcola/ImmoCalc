@@ -39,9 +39,12 @@ for (const geraet of GERAETE) {
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
     pruefe(ueberlauf <= 1, `${geraet.name}/${seite}: ${ueberlauf}px waagerechter Überlauf`);
 
-    // Navigation muss auf jeder Breite erreichbar sein
-    pruefe(await page.$('.nav a[aria-current=page]') !== null,
-      `${geraet.name}/${seite}: keine aktive Navigation`);
+    // Navigation muss auf jeder Breite erreichbar sein. N327 — Einstellungen
+    // und Kontakte haben keine eigene `.nav a` mehr, ihr aktiver Zustand
+    // steht stattdessen an der Kopfzeilen-„…" (`installKopfAktionen`).
+    const aktiv = await page.$('.nav a[aria-current=page]')
+      || await page.$('.kopfakt .ka-mehr[aria-current=page]');
+    pruefe(aktiv !== null, `${geraet.name}/${seite}: keine aktive Navigation`);
 
     // Touch-Ziele mindestens 44px hoch
     if (geraet.touch) {

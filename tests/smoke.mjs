@@ -53,8 +53,10 @@ function report(name, { status, ctype, errors, downloads }, miss, expectType = '
 }
 
 // 1) index — Einstieg in die App
+// N327 — Einstellungen steht nicht mehr als eigene Nav-Zeile, sondern hinter
+// dem "…"-Knopf der Kopfzeile (`.ka-mehr`, `installKopfAktionen`).
 { const r = await open('/index.html');
-  const miss = await must(r.page, ['a[href="onboarding.html"]', '.nav a[href="settings.html"]']);
+  const miss = await must(r.page, ['a[href="onboarding.html"]', '.kopfakt .ka-mehr']);
   await r.page.screenshot({ path: 'tests/screenshots/index.png', fullPage: true });
   report('index.html', r, miss); await r.page.close(); }
 

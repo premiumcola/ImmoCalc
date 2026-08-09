@@ -225,7 +225,9 @@ const MENU_SPRITES = `
 <symbol id="mi-vorlagen" viewBox="0 0 24 24"><path d="M7 8h8l3 3v9H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4.5 5h11l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 14.5h4M10.5 17.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
 <symbol id="mi-lexikon" viewBox="0 0 24 24"><path d="M12 6.5c-1.4-1.2-3.4-1.7-5.5-1.5v12.5c2.1-.2 4.1.3 5.5 1.5 1.4-1.2 3.4-1.7 5.5-1.5V5c-2.1-.2-4.1.3-5.5 1.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 6.5v12.5" stroke="currentColor" stroke-width="1.7"/></symbol>
 <symbol id="mi-einstellungen" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.3v2.5M12 19.2v2.5M21.7 12h-2.5M4.8 12H2.3M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1 5.3 5.3" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></symbol>
-<symbol id="mi-mehr" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18" cy="12" r="1.7" fill="currentColor"/></symbol>`;
+<symbol id="mi-mehr" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18" cy="12" r="1.7" fill="currentColor"/></symbol>
+<symbol id="mi-scan-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></symbol>
+<symbol id="mi-suche" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19 19l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>`;
 
 /** Haengt die Menue-Symbole einmalig ins Dokument (analog `installLogos`). */
 function installMenuIcons() {
@@ -243,13 +245,22 @@ function installMenuIcons() {
 const navIcon = id =>
   `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${id}"/></svg>`;
 
+// N327 — die Dokumente-Kachel in der unteren Leiste ist der runde, erhöhte
+// Knopf in der Mitte. Steht man schon auf `eingang.html`, waere ein Klick auf
+// „Dokumente" sinnlos (dieselbe Seite) — das Symbol wechselt dann auf ein
+// eigens gestaltetes „+" und der Klick loest „Beleg abfotografieren" aus
+// (siehe `installNav`). Zwei Icons uebereinander, CSS blendet je nach
+// `aria-current` das passende ein.
+const dokumenteIcon = `<span class="ni-doc">${navIcon('mi-dokumente')}</span>`
+  + `<span class="ni-plus">${navIcon('mi-scan-plus')}</span>`;
+
 export const NAV = [
   ['Objekte', 'index.html', navIcon('mi-objekte'), [
     // N23 — Vermietungsstatistik: Miete + Nebenkosten, Durchschnitte,
     // Mieterhöhungen über die eigenen Objekte und Einheiten.
     ['Vermietung', 'vermietungen.html', navIcon('mi-vermietung')],
     ['Nebenkosten', 'nebenkosten.html', navIcon('mi-nebenkosten')],
-    ['Dokumente', 'eingang.html', navIcon('mi-dokumente')],
+    ['Dokumente', 'eingang.html', dokumenteIcon],
     ['Wertentwicklung', 'wertentwicklung.html', navIcon('mi-wert')],
     // N83/N87 — Strom/PV-Subsystem je Objekt/Jahr, samt Amortisation des
     // PV-Investments (die Amortisation ist Inhalt der PV-Seite, kein Menuepunkt).
@@ -259,11 +270,6 @@ export const NAV = [
   // PV-Seite: eigene Nutzer, eigener Verlauf, eigene Abrechnung.
   ['E-Tankstelle', 'tankstelle.html', navIcon('mi-tankstelle')],
   ['Eigentümer', 'eigentuemer.html', navIcon('mi-eigentuemer')],
-  // N309f — das Kontaktbuch: Handwerker, Versicherer, Banken und Versorger
-  // samt Kundennummern. Steht neben „Eigentümer", weil beides Menschen und
-  // Firmen rund um die Immobilien sind. Auf dem Telefon wandert es von selbst
-  // hinter „Mehr" (Index ≥ SICHTBAR) — die vier täglichen Wege bleiben stehen.
-  ['Kontakte', 'kontakte.html', navIcon('mi-kontakte')],
   // N246 — das Belegarchiv (N84, die interne Wissens-Datenbank der KI-
   // ausgelesenen Belege) hat KEINEN Menuepunkt mehr: es laeuft im Hintergrund
   // mit und wird selten geoeffnet. Der Einstieg steht in den Einstellungen
@@ -271,11 +277,19 @@ export const NAV = [
   // N240 — leere Formulare zum Ausfüllen (Übergabeprotokoll, Selbstauskunft,
   // Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …), objektübergreifend.
   ['Vorlagen', 'vorlagenarchiv.html', navIcon('mi-vorlagen')],
-  // CCXL — das Immobilien-Lexikon. Steht bewusst vor „Einstellungen", damit die
-  // Einstellungen der letzte Eintrag bleiben; auf dem Handy wandert es dadurch
-  // von selbst hinter „Mehr" (Index ≥ SICHTBAR).
   ['Lexikon', 'lexikon.html', navIcon('mi-lexikon')],
+  // N327 — „Kontakte" und „Einstellungen" wandern hierher NICHT mehr als
+  // eigene Zeile: sie stehen jetzt an jeder Kopfzeile bereit (`installKopfAktionen`),
+  // damit derselbe Weg nicht doppelt existiert (roter Faden „jede Information
+  // genau einmal"). `KOPF_ZIELE` unten haelt die beiden fest.
+];
+
+// N327 — Ziele der Kopfzeilen-„…": dieselben Symbole wie zuvor in `NAV`,
+// jetzt aus der Handy-/Desktop-Leiste heraus und stattdessen an jeder Seite
+// oben rechts erreichbar.
+const KOPF_ZIELE = [
   ['Einstellungen', 'settings.html', navIcon('mi-einstellungen')],
+  ['Kontakte', 'kontakte.html', navIcon('mi-kontakte')],
 ];
 
 // Kleiner Chevron im flachen Stil der App — dreht sich beim Einklappen.
@@ -335,6 +349,25 @@ export function installNav() {
   platz.replaceWith(nav);
   gruppeVerdrahten(nav, kindAktiv);
   navAufraeumen();
+  dokumenteKnopfVerdrahten(nav, aktiv);
+  installKopfAktionen(aktiv);
+}
+
+/* N327 — steht man schon auf `eingang.html`, macht ein Klick auf den runden
+   Dokumente-Knopf (dort jetzt ein „+", siehe CSS) nichts Sinnvolles mehr: die
+   Seite ist ja schon offen. Er loest stattdessen denselben Weg aus wie der
+   Kamera-Knopf oben auf der Seite selbst — ohne den erst suchen zu muessen. */
+function dokumenteKnopfVerdrahten(nav, aktiv) {
+  if (aktiv !== 'eingang.html') return;
+  const knopf = nav.querySelector('a[href="eingang.html"]');
+  if (!knopf) return;
+  knopf.setAttribute('aria-label', 'Beleg abfotografieren');
+  knopf.addEventListener('click', e => {
+    const kamera = document.getElementById('kamera');
+    if (!kamera) return;
+    e.preventDefault();
+    kamera.click();
+  });
 }
 
 /* Klappt die Objektgruppe auf dem Desktop auf/zu. Standard: aufgeklappt, damit
@@ -418,6 +451,49 @@ function mehrOeffnen(eintraege) {
          ${a.getAttribute('aria-current') ? 'aria-current="page"' : ''}>
         <span class="ni">${a.querySelector('.ni')?.innerHTML ?? ''}</span>
         ${a.lastChild?.textContent?.trim() ?? ''}
+      </a>`).join('')}</div>`);
+  dlg.classList.add('mehr-dlg');
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+}
+
+/* N327 — Kopfzeilen-Aktionsgruppe: Suche + „…" (Einstellungen/Kontakte).
+   Haengt sich an JEDE `.bar` — eine Stelle statt ~19 Seiten einzeln
+   anzufassen. Steht keine `.bar` auf der Seite (sollte nicht vorkommen),
+   passiert nichts. */
+function installKopfAktionen(aktiv) {
+  const bar = document.querySelector('.bar');
+  if (!bar || bar.querySelector('.kopfakt')) return;
+  const gruppe = document.createElement('div');
+  gruppe.className = 'kopfakt';
+  gruppe.innerHTML = `
+    <button type="button" class="ka-mehr" aria-haspopup="dialog"
+            aria-label="Einstellungen und Kontakte"
+            title="Einstellungen und Kontakte"
+            ${KOPF_ZIELE.some(([, href]) => href === aktiv) ? 'aria-current="page"' : ''}
+      >${navIcon('mi-mehr')}</button>
+    <button type="button" class="ka-suche" aria-label="Suchen"
+            title="Suchen">${navIcon('mi-suche')}</button>`;
+  bar.appendChild(gruppe);
+  installMenuIcons();
+  gruppe.querySelector('.ka-mehr').addEventListener('click', () => kopfMehrOeffnen(aktiv));
+  // N328 — die App-weite, kategorisierte Suche ist ein eigener, groesserer
+  // Umbau (Objekte/Gewerke/Dokumente inkl. OCR-Fundstellen, Spotify-artige
+  // Gruppen) und laut Nutzer bewusst NACH den uebrigen offenen Bugfixes dran.
+  // Bis dahin fuehrt der Suchknopf zur (jetzt KI-fähigen, N328a) Dokumente-
+  // Suche — echt nutzbar heute, ohne der spaeteren globalen Suche vorzugreifen.
+  gruppe.querySelector('.ka-suche').addEventListener('click', () => {
+    if (aktiv === 'eingang.html') document.getElementById('suche')?.focus();
+    else location.href = 'eingang.html?fokus=suche';
+  });
+}
+
+/** Das "…"-Blatt der Kopfzeile: Einstellungen und Kontakte, je ein Icon. */
+function kopfMehrOeffnen(aktiv) {
+  const dlg = baueDialog(`
+    <div class="dt">Mehr</div>
+    <div class="mehrliste">${KOPF_ZIELE.map(([label, href, icon]) => `
+      <a href="${href}" ${href === aktiv ? 'aria-current="page"' : ''}>
+        <span class="ni">${icon}</span>${label}
       </a>`).join('')}</div>`);
   dlg.classList.add('mehr-dlg');
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });

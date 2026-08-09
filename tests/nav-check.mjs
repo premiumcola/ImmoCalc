@@ -50,7 +50,9 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
     .catch(() => pruefe(false, '„Mehr" öffnet kein Blatt'));
   const ziele = await page.$$eval('.mehrliste a',
     as => as.map(a => a.getAttribute('href')));
-  pruefe(ziele.includes('eigentuemer.html') && ziele.includes('settings.html'),
+  // N327 — Einstellungen/Kontakte stehen nicht mehr in diesem Blatt, sondern
+  // an jeder Kopfzeile hinter `.ka-mehr` (installKopfAktionen).
+  pruefe(ziele.includes('eigentuemer.html'),
     'im Blatt fehlen Einträge: ' + ziele.join(', '));
   await page.screenshot({ path: 'tests/screenshots/nav-mehr.png' });
 
@@ -58,15 +60,18 @@ const pruefe = (ok, text) => { if (!ok) { fails++; console.log('   ⚠ ' + text)
   await ctx.close();
 }
 
-/* ---- Handy, aber auf einer versteckten Seite: „Mehr" muss das zeigen ---- */
+/* ---- Handy, auf einer Seite hinter der Kopfzeilen-„…" ----
+   N327 — Einstellungen/Kontakte stehen nicht mehr im NAV-Array und damit
+   auch nicht mehr hinter der unteren „Mehr"; sie haengen jetzt an jeder
+   Kopfzeile (`.kopfakt .ka-mehr`), die dafuer selbst `aria-current` traegt. */
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
   await page.goto(base + '/settings.html', { waitUntil: 'networkidle' });
   await page.waitForTimeout(300);
-  const markiert = await page.$eval('nav.nav .mehr',
-    el => el.classList.contains('hier')).catch(() => false);
-  pruefe(markiert, '„Mehr" zeigt nicht, dass die aktuelle Seite dahinter liegt');
+  const markiert = await page.$eval('.kopfakt .ka-mehr',
+    el => el.getAttribute('aria-current') === 'page').catch(() => false);
+  pruefe(markiert, 'Kopfzeilen-„…" zeigt nicht, dass die aktuelle Seite dahinter liegt');
   await ctx.close();
 }
 

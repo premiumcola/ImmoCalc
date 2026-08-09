@@ -26,9 +26,11 @@ body{
 .app{
   width:100%; max-width:440px; min-height:100dvh; background:var(--paper);
   position:relative; display:flex; flex-direction:column;
-  /* Platz für die fixe Navi UND den Home-Indikator (Notch-iPhones), sonst
-     verdeckt der Fuß den letzten Inhalt (env ist 0 ohne sichere Zone). */
-  padding-bottom:calc(96px + env(safe-area-inset-bottom));
+  /* Platz für die schwebende Navi (N327) UND den Home-Indikator
+     (Notch-iPhones), sonst verdeckt der Fuß den letzten Inhalt (env ist 0
+     ohne sichere Zone). Etwas mehr als die reine Leistenhöhe: die Pille
+     schwebt jetzt mit Abstand über dem unteren Rand statt an ihm zu kleben. */
+  padding-bottom:calc(108px + env(safe-area-inset-bottom));
 }
 /* ---- N271: ab Tablet ist die App ein RAHMEN, kein langes Dokument ----
    Bis hierher scrollte die ganze Seite: `.app` wuchs mit dem Inhalt, und die
@@ -68,22 +70,53 @@ body{
   .scroll::-webkit-scrollbar-thumb:hover{background:#A9B4B4; background-clip:padding-box}
 }
 
-/* ---- Kopfzeile ---- */
+/* ---- Kopfzeile ----
+   N327 — der Titel „verschwamm" mit dem Hintergrund (Nutzer-Feedback zum
+   ersten Nav-Screenshot): eine hauchdünne Trennlinie setzt die Leiste jetzt
+   sichtbar vom scrollenden Inhalt ab. Gleichzeitig kompakter (weniger
+   Innenabstand, Titel eine Stufe kleiner) — Platz für die neue
+   Kopfzeilen-Aktionsgruppe rechts (Suche, „…"), und Titel/Untertitel brechen
+   nie um (roter Faden „Kopfzeilen einzeilig"). */
 .bar{
   position:sticky; top:0; z-index:20; background:var(--sheet);
+  border-bottom:1px solid rgba(22,38,44,.07);
   /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
      füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet. */
-  padding:calc(15px + env(safe-area-inset-top)) 12px 14px;
-  display:flex; align-items:center; gap:12px; min-height:58px;
+  padding:calc(12px + env(safe-area-inset-top)) 12px 11px;
+  display:flex; align-items:center; gap:10px; min-height:52px;
 }
-.bar h1{font:600 18px var(--disp); margin:0; letter-spacing:-.015em; flex:1}
-.bar .sub{font:500 11.5px var(--mono); color:var(--soft); margin-top:3px}
+.bar h1{
+  font:600 17px var(--disp); margin:0; letter-spacing:-.015em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.bar .sub{
+  font:500 11.5px var(--mono); color:var(--soft); margin-top:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
 .bar .barwrap{flex:1; min-width:0}
 .back{
   border:none; background:none; font:600 15px var(--body); color:var(--teal);
   cursor:pointer; padding:8px 6px; margin:-8px -6px; min-height:44px;
 }
 .back::before{content:"‹  "}
+
+/* ---- N327: Kopfzeilen-Aktionsgruppe (installKopfAktionen in immo.js) ----
+   Suche (globale Suche über alles) und „…" (klappt Einstellungen/Kontakte
+   auf) — von JS an JEDE `.bar` angehängt, damit keine der ~19 Seiten einzeln
+   angefasst werden muss. Steht hinter `.barwrap` (flex:1) und rutscht damit
+   von selbst ganz nach rechts, auch wenn eine Seite noch ein eigenes
+   `.barakt` mitbringt (z. B. Kontakte „nachtragen"). */
+.kopfakt{display:flex; align-items:center; gap:2px; flex:none}
+.kopfakt button{
+  display:flex; align-items:center; justify-content:center;
+  width:38px; height:38px; border:none; border-radius:999px; background:none;
+  color:var(--soft); cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+.kopfakt button svg{width:19px; height:19px}
+.kopfakt button:hover{background:#F1F4F4; color:var(--ink)}
+.kopfakt button:active{background:#E7ECEC}
+.kopfakt button:focus-visible{outline:2px solid var(--teal); outline-offset:-2px}
+.kopfakt button[aria-current=page]{color:var(--teal-d); background:var(--teal-l)}
 
 /* App-Symbol in der Kopfzeile (CCXVII) — stand wortgleich in mehreren
    Seiten, jetzt einmal hier. Nicht jede Seite verlinkt es: auf index.html
@@ -201,11 +234,17 @@ button.chip:hover{filter:brightness(.96)}
   margin-top:16px; padding:13px 22px; text-decoration:none;
 }
 
-/* ---- untere Navigation ---- */
+/* ---- untere Navigation ----
+   N327 — schwebende, ringsum abgerundete Pille (Vorbild: Nextcloud-App-
+   Screenshot des Nutzers, „wie beim iPhone 15 Pro Max"), statt kantig am
+   Rand anliegend. `.app`s `padding-bottom` weiter oben gibt ihr Luft nach
+   unten; `-webkit-tap-highlight-color` nimmt den dunklen Kasten weg, den
+   Chromium/Safari beim Antippen sonst über den runden Knopf legen. */
 .nav{
-  position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--sheet);
-  display:flex; gap:5px; padding:8px 8px calc(8px + env(safe-area-inset-bottom));
-  box-shadow:0 -1px 0 rgba(22,38,44,.07);
+  position:fixed; left:10px; right:10px; bottom:calc(10px + env(safe-area-inset-bottom));
+  z-index:30; background:var(--sheet); border-radius:26px;
+  display:flex; gap:5px; padding:8px 8px;
+  box-shadow:0 18px 40px -16px rgba(22,38,44,.4), 0 2px 10px -4px rgba(22,38,44,.14);
 }
 /* N271 — `static` statt `absolute`: die Leiste ist jetzt das letzte Flex-Kind
    der Karte und sitzt damit von selbst unten fest. `absolute` band sie an den
@@ -217,7 +256,7 @@ button.chip:hover{filter:brightness(.96)}
   flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;
   gap:4px; padding:8px 2px; min-height:44px; text-decoration:none;
   color:var(--soft); border-radius:12px; font:600 10.5px var(--disp);
-  letter-spacing:.01em;
+  letter-spacing:.01em; -webkit-tap-highlight-color:transparent;
   /* Sechs Eintraege teilen sich 390 px — lange Beschriftungen duerfen die
      Leiste nicht auseinanderdruecken. Lieber kuerzen als umbrechen. */
   overflow:hidden; white-space:nowrap;
@@ -247,21 +286,64 @@ button.chip:hover{filter:brightness(.96)}
 }
 /* N325 — die Icons sind jetzt Inline-SVG (`immo.js`, `MENU_SPRITES`) statt
    Unicode-Zeichen; `.ni` gibt ihnen ein festes Quadrat statt einer
-   Schriftgröße. Der aktive Zustand bekommt zusätzlich zur Farb-/Flächen-
-   änderung einen kleinen grünen Punkt darunter, der sanft einblendet. */
-.nav a .ni{position:relative; width:23px; height:23px; display:flex;
+   Schriftgröße. N327 — der zuerst gezeigte Aktiv-Punkt unterm Icon sass
+   „komisch dazwischen" (Nutzer-Feedback) und ist wieder raus; die Fläche
+   (`--teal-l`-Hintergrund + Textfarbe) trägt den aktiven Zustand allein.
+   Icons auf Wunsch etwas größer (war 23px). */
+.nav a .ni{width:27px; height:27px; display:flex;
            align-items:center; justify-content:center}
 .nav a .ni svg{width:100%; height:100%}
-.nav a[aria-current=page] .ni::after{
-  content:""; position:absolute; left:50%; bottom:-6px; translate:-50% 0;
-  width:4px; height:4px; border-radius:999px; background:var(--teal);
-  animation:ni-klecks .4s ease-out;
+/* Das „+" der Dokumente-Kachel ersetzt das Dokument-Symbol nur im runden
+   Handy-Knopf (< 1000px, siehe unten). Als Grundregel — nicht nur in der
+   Media-Query — sonst stuenden auf dem Desktop (wo dieselben zwei Spans
+   ohne Medienschranke im Markup stehen) Dokument- und Plus-Symbol als zwei
+   Flex-Kinder nebeneinander in der Seitenleiste. */
+.nav a[href="eingang.html"] .ni-doc,
+.nav a[href="eingang.html"] .ni-plus{
+  width:100%; height:100%; align-items:center; justify-content:center;
 }
-@keyframes ni-klecks{ from{transform:scale(0); opacity:0} to{transform:scale(1); opacity:1} }
-@media (prefers-reduced-motion:reduce){ .nav a[aria-current=page] .ni::after{animation:none} }
+.nav a[href="eingang.html"] .ni-doc{display:flex}
+.nav a[href="eingang.html"] .ni-plus{display:none}
 /* Der Aufklapp-Chevron ist ein reiner Desktop-Belang: in der unteren
    Handy-Leiste stehen alle Ziele ohnehin flach nebeneinander. */
 .nav .kappe{display:none}
+
+/* N327 — unten fünf feste Ziele, „Dokumente" mittig als rundes, erhöhtes
+   Symbol (Vorbild: erst ein Banking-App-Screenshot, dann ein Nextcloud-
+   Screenshot des Nutzers). Nur per CSS `order` umsortiert — die DOM-
+   Reihenfolge und damit die Desktop-Seitenleiste bleiben unangetastet. Gilt
+   bis zur Seitenleiste (999px); darüber zeigt `.nav` ohnehin alle Ziele
+   gestapelt.
+   Der Kreis ist gewachsen (58→70px), aber NUR nach unten in die Pille hinein
+   — derselbe `margin-top` wie vorher, sonst würde er oben stärker
+   überlappen, als der Nutzer wollte („oben nicht noch mehr"). Auf der
+   Dokumente-Seite selbst wechselt das Symbol von Dokument auf „+": man ist
+   schon dort, ein zweiter Tipp auf „Dokumente" wäre sinnlos — er löst
+   stattdessen „Beleg abfotografieren" aus (`immo.js`, `installNav`). */
+@media(max-width:999px){
+  .nav a[href="index.html"]{order:1}
+  .nav a[href="vermietungen.html"]{order:2}
+  .nav a[href="eingang.html"]{order:3}
+  .nav a[href="nebenkosten.html"]{order:4}
+  .nav .mehr{order:5}
+
+  .nav a[href="eingang.html"]{
+    flex:none; width:70px; padding:0; gap:0; margin-top:-22px;
+  }
+  .nav a[href="eingang.html"] .ni{
+    width:70px; height:70px; border-radius:999px; background:var(--teal);
+    color:#fff; box-shadow:0 14px 28px -10px rgba(15,110,92,.55),
+                            0 0 0 5px var(--sheet);
+  }
+  .nav a[href="eingang.html"] .ni-doc svg{width:32px; height:32px}
+  .nav a[href="eingang.html"] .ni-plus svg{width:28px; height:28px}
+  .nav a[href="eingang.html"] .nl{display:none}
+  .nav a[href="eingang.html"]:hover .ni{background:var(--teal-d)}
+  .nav a[href="eingang.html"][aria-current=page]{background:none}
+  .nav a[href="eingang.html"][aria-current=page] .ni{background:var(--teal-d)}
+  .nav a[href="eingang.html"][aria-current=page] .ni-doc{display:none}
+  .nav a[href="eingang.html"][aria-current=page] .ni-plus{display:flex}
+}
 
 /* „Mehr" sieht aus wie die übrigen Einträge — es ist einer. Eingehängt wird
    es von immo.js (navAufraeumen), damit die Leiste nur an einer Stelle
@@ -271,9 +353,10 @@ button.chip:hover{filter:brightness(.96)}
   gap:4px; padding:8px 2px; min-height:44px; border:none; background:none;
   color:var(--soft); border-radius:12px; font:600 10.5px var(--disp);
   cursor:pointer; letter-spacing:.01em; overflow:hidden; white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
 }
 .nav .mehr.an{display:flex}
-.nav .mehr .ni{width:23px; height:23px; display:flex; align-items:center; justify-content:center}
+.nav .mehr .ni{width:27px; height:27px; display:flex; align-items:center; justify-content:center}
 .nav .mehr .ni svg{width:100%; height:100%}
 .nav .mehr.hier{color:var(--teal-d); background:var(--teal-l)}
 .nav a.weg{display:none}
@@ -793,10 +876,6 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
     padding:12px 14px; font-size:13.5px; letter-spacing:-.005em;
   }
   .nav a .ni{width:19px; height:19px}
-  /* Die Seitenleiste zeigt „aktiv" schon über die Fläche (heller Hintergrund
-     + Teal-Text) — der kleine Klecks ist ein Handy-Kniff für die reine
-     Icon-Reihe unten und würde hier nur mitten in der Zeile hängen. */
-  .nav a[aria-current=page] .ni::after{display:none}
   .nav a:hover{background:rgba(255,255,255,.55); color:var(--ink)}
   .nav a[aria-current=page]{background:var(--sheet); color:var(--teal-d)}
 

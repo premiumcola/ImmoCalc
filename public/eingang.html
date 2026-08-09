@@ -722,6 +722,11 @@ installNav();
 nkKontextInit();
 await laden();
 await fussnoteZeigen();
+// N327 — der Suchknopf in der Kopfzeile springt von anderen Seiten hierher;
+// `?fokus=suche` holt danach den Fokus (und die Tastatur) direkt ins Feld.
+if (new URLSearchParams(location.search).get('fokus') === 'suche') {
+  document.getElementById('suche')?.focus();
+}
 </script>
 </body>
 </html>
