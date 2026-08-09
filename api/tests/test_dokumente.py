@@ -201,6 +201,27 @@ def test_suche_findet_auch_ki_erkannten_text_nicht_nur_den_dateinamen():
         assert namen == {"Rechnung_2024.pdf", "Vertrag_2024.pdf"}
 
 
+def test_suche_findet_ein_wort_das_nur_im_erkannten_text_steht():
+    """N328(ii) — der Nutzer will ALLES OCR-Erkannte durchsuchbar haben, nicht
+    nur die kurze KI-Zusammenfassung: ein Wort, das mitten im Beleg steht
+    (weder im Dateinamen noch in einem ki_*-Feld), muss trotzdem gefunden
+    werden."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Volltextweg 1"}).json()["slug"]
+        objekt_id = _objekt_id(slug)
+        _lege_dokument_an(
+            objekt_id, "Rechnung_2024.pdf",
+            erkannter_text=("Sehr geehrter Kunde, Ihr Zählerstand betrug am "
+                            "Stichtag 4711 kWh. Der Vertragspartner ist die "
+                            "Musterwerke Nordhausen GmbH."))
+        _lege_dokument_an(objekt_id, "Sonstiges_2024.pdf")
+
+        treffer = c.get("/api/dokumente",
+                        params={"suche": "nordhausen"}).json()
+        namen = {d["dateiname"] for d in treffer["dokumente"]}
+        assert namen == {"Rechnung_2024.pdf"}
+
+
 def test_unbekanntes_objekt_im_filter_ist_404():
     with TestClient(app) as c:
         assert c.get("/api/dokumente",
@@ -886,6 +907,129 @@ def test_erkennen_aus_der_ablage_braucht_ein_dokument():
     Eintrag gibt es nichts zu lesen — und keinen Zugriff auf die Cloud."""
     with TestClient(app) as c:
         assert c.get("/api/dokumente/999999/erkennen").status_code == 404
+
+
+class _EinDokument:
+    """Nextcloud-Ersatz: liefert immer denselben Belegtinhalt (`.hole`)."""
+
+    def __init__(self, rohdaten: bytes, typ: str = "application/pdf"):
+        self.rohdaten = rohdaten
+        self.typ = typ
+        self.aufrufe = 0
+
+    def hole(self, pfad):
+        self.aufrufe += 1
+        return self.rohdaten, self.typ
+
+
+def test_erkennen_aus_der_ablage_traegt_den_vollen_text_nach(monkeypatch):
+    """N328(ii) — beim Erkennen eines Cloud-Belegs wird nicht nur die kurze
+    KI-Einordnung, sondern gleich der volle erkannte Text festgehalten, damit
+    die Suche ihn ab sofort findet."""
+    import app.routers.dokumente as modul
+
+    roh = mini_pdf(["Stadtwerke Musterstadt", "Rechnungsdatum 14.03.2025",
+                    "Gesamtbetrag 1.071,00"])
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Textweg 1"}).json()["slug"]
+        doc = _beleg(_objekt_id(slug), "/Home/Immobilien/Textweg 1/beleg.pdf")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _EinDokument(roh))
+
+        antwort = c.get(f"/api/dokumente/{doc}/erkennen")
+        assert antwort.status_code == 200
+
+        with Session(engine) as s:
+            gespeichert = s.get(Dokument, doc)
+            assert "Musterstadt" in gespeichert.erkannter_text
+            assert "1.071,00" in gespeichert.erkannter_text
+
+
+# --------------------------------------------------------------------------
+# N328(ii) — Volltext nachtragen für Bestandsbelege ohne die Spalte
+# --------------------------------------------------------------------------
+
+def test_text_nachtragen_ist_idempotent(monkeypatch):
+    """Ein zweiter Aufruf für denselben Beleg fragt die Cloud gar nicht erst
+    — sonst würde ein Nachtrag über 667 Belege bei jeder Wiederholung erneut
+    OCR laufen lassen."""
+    import app.routers.dokumente as modul
+
+    roh = mini_pdf(["Gesamtbetrag 42,00"])
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Nachtragweg 1"}).json()["slug"]
+        doc = _beleg(_objekt_id(slug), "/Home/Immobilien/Nachtragweg 1/beleg.pdf")
+        wolke = _EinDokument(roh)
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        erster = c.post(f"/api/dokumente/{doc}/text-nachtragen")
+        assert erster.status_code == 200
+        daten = erster.json()
+        assert daten["neu"] is True
+        assert daten["zeichen"] > 0
+        assert wolke.aufrufe == 1
+
+        zweiter = c.post(f"/api/dokumente/{doc}/text-nachtragen").json()
+        assert zweiter["neu"] is False
+        assert zweiter["zeichen"] == daten["zeichen"]
+        assert wolke.aufrufe == 1          # kein zweiter Cloud-Zugriff
+
+        with Session(engine) as s:
+            assert "42,00" in s.get(Dokument, doc).erkannter_text
+
+
+def test_text_nachtragen_uebersteht_einen_nicht_lesbaren_beleg(monkeypatch):
+    """Ein Beleg, dessen Datei nicht mehr aus der Cloud zu holen ist (gelöscht,
+    verschoben, Rechtefehler), darf die Anfrage nicht scheitern lassen — ein
+    leeres Feld ist besser als ein Serverfehler mitten in einer Schleife über
+    Hunderte Belege."""
+    import app.routers.dokumente as modul
+    from app.nextcloud import NextcloudFehler
+
+    class _Kaputt:
+        def hole(self, pfad):
+            raise NextcloudFehler("404 Datei nicht gefunden")
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Kaputtweg 1"}).json()["slug"]
+        doc = _beleg(_objekt_id(slug), "/Home/Immobilien/Kaputtweg 1/weg.pdf")
+        monkeypatch.setattr(modul, "verbindung", lambda session: _Kaputt())
+
+        antwort = c.post(f"/api/dokumente/{doc}/text-nachtragen")
+        assert antwort.status_code == 200
+        daten = antwort.json()
+        assert daten["neu"] is False
+        assert daten["zeichen"] == 0
+
+        with Session(engine) as s:
+            assert (s.get(Dokument, doc).erkannter_text or "") == ""
+
+
+def test_text_nachtragen_ohne_erkennbaren_text_bleibt_leer_aber_ok(monkeypatch):
+    """Ein Format, aus dem sich kein Text ziehen lässt (weder PDF noch
+    Klartext noch ein lesbares Bild), liefert `zeichen: 0` statt eines
+    Fehlers."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Leerweg 1"}).json()["slug"]
+        doc = _beleg(_objekt_id(slug), "/Home/Immobilien/Leerweg 1/leer.bin")
+        # Binärmüll: kein PDF-Kopf, kein gültiges UTF-8/Latin-1-Klartext, kein
+        # von Tesseract lesbares Bild — bleibt auf jeder Stufe ohne Text.
+        unsinn = bytes(range(256)) * 4
+        monkeypatch.setattr(
+            modul, "verbindung",
+            lambda session: _EinDokument(unsinn, "application/octet-stream"))
+
+        antwort = c.post(f"/api/dokumente/{doc}/text-nachtragen")
+        assert antwort.status_code == 200
+        daten = antwort.json()
+        assert daten["neu"] is False
+        assert daten["zeichen"] == 0
+
+
+def test_text_nachtragen_unbekanntes_dokument_ist_404():
+    with TestClient(app) as c:
+        assert c.post("/api/dokumente/999999/text-nachtragen").status_code == 404
 
 
 def test_unbekanntes_dokument_ist_404():

@@ -889,6 +889,17 @@ class Dokument(SQLModel, table=True):
     # die Spalten für den Bestand an, ein Beleg ohne Info bleibt unverändert.
     info_zu_typ: str = ""
     info_zu_id: Optional[int] = None
+    # N328(ii) — der volle erkannte Text eines Belegs (PDF-Textschicht oder
+    # OCR), damit die Suche nicht nur den Dateinamen und die kurze KI-
+    # Zusammenfassung findet, sondern JEDES Wort, das irgendwo im Beleg
+    # steht — der eigentliche Vorteil digitaler Ablage. Wird beim Erkennen
+    # eines Belegs (frischer Scan, `/erkennen`, `/neu-analysieren`) einmalig
+    # aus derselben Texterkennung (`ocr.text_aus_beleg`) mitgeschrieben, die
+    # ohnehin für Betrag/Datum/KI läuft — kein zweiter OCR-Lauf. Additiv mit
+    # Default: migrate.py legt die Spalte für den Bestand an; die ~667
+    # vorhandenen Belege bekommen ihren Text über
+    # `POST /dokumente/{id}/text-nachtragen` nachgetragen.
+    erkannter_text: str = ""
 
 
 class Heizoellieferung(SQLModel, table=True):

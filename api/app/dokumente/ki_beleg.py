@@ -46,7 +46,8 @@ def _pruefsumme_nachtragen(session: Session, d: Dokument, sha1: str) -> None:
         log.info("Prüfsumme an Beleg %s nicht gespeichert: %s", d.id, fehler)
 
 
-def _ki_am_beleg_festhalten(session: Session, d: Dokument, ergebnis: dict) -> bool:
+def _ki_am_beleg_festhalten(session: Session, d: Dokument, ergebnis: dict,
+                            text: str = "") -> bool:
     """Hält die frische KI-Auslese am Beleg fest — nur, wo die KI wirklich etwas
     geliefert hat (CCLXXIII/CCCLXVII).
 
@@ -54,8 +55,18 @@ def _ki_am_beleg_festhalten(session: Session, d: Dokument, ergebnis: dict) -> bo
     Raster als `ki_felder`/`ki_immobilie`/`ki_einheit`. So sieht der Nutzer die
     Einschätzung später wieder, ohne den Beleg erneut lesen zu lassen. Ein
     leeres Feld überschreibt nie einen vorhandenen Wert; nur was sich wirklich
-    ändert, wird geschrieben. Gibt zurück, ob etwas geändert wurde."""
+    ändert, wird geschrieben. Gibt zurück, ob etwas geändert wurde.
+
+    `text`: der volle erkannte Text (N328(ii)), separat vom KI-Raster — er
+    fließt bewusst NICHT in `ergebnis`/den Zwischenspeicher (der bleibt schlank
+    und geht so in JSON-Antworten), sondern direkt in `Dokument.erkannter_text`,
+    einmalig: ein schon gefüllter Text wird nie durch einen späteren, evtl.
+    schlechteren Lauf ersetzt."""
     geaendert = False
+    text = (text or "").strip()
+    if text and not (d.erkannter_text or "").strip():
+        d.erkannter_text = text
+        geaendert = True
     einordnung = (ergebnis.get("einordnung") or "").strip()
     if einordnung and einordnung != (d.ki_einordnung or ""):
         d.ki_einordnung = einordnung

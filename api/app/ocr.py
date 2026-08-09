@@ -793,11 +793,16 @@ def _ki_ergaenzen(ergebnis: dict, text: str, dateiname: str = "",
 
 
 def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "",
-            ki_key: str = "", ki_modell: str = "") -> dict:
+            ki_key: str = "", ki_modell: str = "",
+            text: str | None = None) -> dict:
     """Vorschlag aus einem Beleg: Betrag, Datum, Jahr, Art und Sache.
 
     Gleich, ob PDF oder Foto — der Text kommt aus `text_aus_beleg`, die
     Auswertung ist dieselbe. Vorgeschlagen wird nur, gesetzt nie.
+
+    `text`: optional schon anderswo erkannter Text (N328(ii)) — spart den
+    zweiten OCR-Lauf, wenn der Aufrufer ihn ohnehin gleich am Beleg
+    festhalten will. Ohne Angabe wird wie bisher selbst gelesen.
 
     Reihenfolge der Quellen, von grob nach fein:
       1. Die Heuristik (Wortlisten, Datums-/Betragsmuster) — immer.
@@ -807,7 +812,8 @@ def erkenne(rohdaten: bytes, regeln=None, dateiname: str = "",
       3. Die Erkennungsregeln des Nutzers — sie geben die Richtung vor: trifft
          ein Muster, gilt dessen Kategorie. Ein Nicht-Kostenbeleg (Ablesung,
          Mandat …) verliert dabei seinen Betrag, damit keine Position entsteht."""
-    text = text_aus_beleg(rohdaten)
+    if text is None:
+        text = text_aus_beleg(rohdaten)
     if not text.strip():
         return {**_ohne_befund(), "hinweis": _warum_nichts(rohdaten)}
     gefunden = datum_aus_text(text)

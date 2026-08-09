@@ -996,17 +996,22 @@ def _regeln(session: Session) -> list[Erkennungsregel]:
 # --------------------------------------------------------------------------
 
 def _strom_ergaenzen(session: Session, rohdaten: bytes, ergebnis: dict,
-                     dateiname: str = "", kostenart: str = "") -> None:
+                     dateiname: str = "", kostenart: str = "",
+                     text: str | None = None) -> None:
     """Ergänzt einen Strombeleg um Menge und Bruttobetrag (N162).
 
     Rein additiv: ohne Strom-Kontext, ohne eingerichtete KI oder bei jedem
-    Fehler bleibt `ergebnis` unverändert — es kostet dann auch keinen Aufruf."""
+    Fehler bleibt `ergebnis` unverändert — es kostet dann auch keinen Aufruf.
+
+    `text`: optional schon anderswo erkannter Text (N328(ii)) — erspart den
+    zweiten OCR-Lauf, wenn der Aufrufer ihn schon hat."""
     ki_key = _ki_key(session)
     if not kiauslese.verfuegbar(ki_key):
         return
     if not kiauslese.ist_strom_kontext(_strom_hinweis(kostenart, ergebnis)):
         return
-    text = ocr.text_aus_beleg(rohdaten)
+    if text is None:
+        text = ocr.text_aus_beleg(rohdaten)
     if not (text or "").strip():
         return
     strom = kiauslese.lies_strom(text, dateiname, schluessel=ki_key,
@@ -1491,6 +1496,18 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
 
+    # N328(ii) — den Volltext gleich mit ablegen: die Bytes liegen ohnehin vor
+    # (dieselben, die gerade in die Cloud geschrieben wurden), damit ist jeder
+    # frische Scan von Anfang an über seinen ganzen Inhalt durchsuchbar, nicht
+    # nur über Dateiname und die kurze KI-Zusammenfassung. Scheitert die
+    # Texterkennung an einem einzelnen Beleg, bleibt das Feld leer statt den
+    # Scan zu gefährden — er ist an dieser Stelle längst erfolgreich abgelegt.
+    try:
+        erkannter_text = ocr.text_aus_beleg(inhalt)
+    except Exception as fehler:                       # noqa: BLE001
+        erkannter_text = ""
+        log.warning("Text nicht erkannt für frischen Scan %s: %s", name, fehler)
+
     d = Dokument(pfad=f"/{ziel_ordner}/{name}", dateiname=name,
                  groesse=len(inhalt), objekt_id=o.id, kategorie=kategorie,
                  # N290 — die Prüfsumme steht hier ohne jeden Zusatzaufwand
@@ -1501,7 +1518,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                  betrag=betrag if betrag and betrag > 0 else None,
                  jahr=jahr, belegdatum=_zum_datum(datum),
                  zeitraum_id=zeitraum_id, status="zugeordnet",
-                 erkannt_am=date.today())
+                 erkannt_am=date.today(), erkannter_text=erkannter_text)
     session.add(d)
     try:
         session.commit()
@@ -2940,9 +2957,14 @@ def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
     # denselben Inhalt — und der ist schon einmal bezahlt gelesen worden.
     sha1 = kicache.pruefsumme(rohdaten)
     _pruefsumme_nachtragen(session, d, sha1)
+    # N328(ii) — den Volltext nur lesen, wenn er diesem Beleg noch fehlt: sonst
+    # kostete jeder Aufruf (auch ein Zwischenspeicher-Treffer) einen OCR-Lauf,
+    # den die Suche gar nicht mehr braucht.
+    text_neu = ("" if (d.erkannter_text or "").strip()
+               else ocr.text_aus_beleg(rohdaten))
     gemerkt = kicache.hole(session, sha1)
     if gemerkt is not None:
-        _ki_am_beleg_festhalten(session, d, gemerkt)
+        _ki_am_beleg_festhalten(session, d, gemerkt, text=text_neu)
         # Hier gibt es keine Kostenart und keine Maske — der Beleg wird
         # angesehen, nicht in ein Formular übersetzt. Die Zusätze bleiben
         # trotzdem am Kontext ausgerichtet, damit dieselbe Regel gilt.
@@ -2953,13 +2975,15 @@ def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
     # muster (CCXLIX) anwenden, damit Nutzerregeln beim Cloud-Beleg genauso
     # greifen wie beim Foto-Upload.
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
-                           ki_key=_ki_key(session), ki_modell=_ki_modell(session))
+                           ki_key=_ki_key(session), ki_modell=_ki_modell(session),
+                           text=text_neu or None)
     kern = dict(ergebnis)          # N296 — vor jeder Anreicherung, siehe /erkennen
     # N162 — Strombeleg: Menge und Bruttobetrag der Lieferung nachziehen, bevor
     # das Raster am Beleg festgehalten wird. Sonst bliebe dort die Nachzahlung
     # stehen und belegte später das Betragsfeld falsch vor.
-    _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "")
-    _ki_am_beleg_festhalten(session, d, ergebnis)
+    _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "",
+                     text=text_neu or None)
+    _ki_am_beleg_festhalten(session, d, ergebnis, text=text_neu)
     kicache.merke(session, sha1, {
         **kern, **({"strom": ergebnis["strom"]} if "strom" in ergebnis else {}),
     }, _ki_modell(session))
@@ -2981,11 +3005,17 @@ def neu_analysieren(dokument_id: int,
     d, rohdaten = _hole_beleg_bytes(session, dokument_id)
     ki_key = _ki_key(session)
     eingerichtet = kiauslese.verfuegbar(ki_key)
+    # N328(ii) — einmal lesen, für Erkennung, Strom-Ergänzung und (falls noch
+    # leer) `erkannter_text` gemeinsam nutzen statt dreimal OCR zu laufen.
+    text_neu = ("" if (d.erkannter_text or "").strip()
+               else ocr.text_aus_beleg(rohdaten))
     ergebnis = ocr.erkenne(rohdaten, _regeln(session), d.dateiname,
-                           ki_key=ki_key, ki_modell=_ki_modell(session))
+                           ki_key=ki_key, ki_modell=_ki_modell(session),
+                           text=text_neu or None)
     kern = dict(ergebnis)          # N296 — vor jeder Anreicherung
-    _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "")   # N162
-    _ki_am_beleg_festhalten(session, d, ergebnis)
+    _strom_ergaenzen(session, rohdaten, ergebnis, d.dateiname or "",
+                     text=text_neu or None)   # N162
+    _ki_am_beleg_festhalten(session, d, ergebnis, text=text_neu)
     # N296 — „neu analysieren" ist der ausdrückliche Wunsch nach einer frischen
     # Lesung: der Zwischenspeicher wird hier bewusst NICHT gefragt, sondern
     # überschrieben. Sonst bliebe der Nutzer für immer an der ersten, mit einem
@@ -3831,6 +3861,52 @@ def beleg_text(dokument_id: int, max_zeichen: int = Query(20000, ge=200, le=2000
         "gekuerzt": gekuerzt,
         "text": text_roh[:max_zeichen],
     }
+
+
+@router.post("/{dokument_id}/text-nachtragen")
+def text_nachtragen(dokument_id: int,
+                    session: Session = Depends(get_session)) -> dict:
+    """N328(ii) — trägt `Dokument.erkannter_text` für einen Bestandsbeleg nach,
+    der die Spalte noch nicht gefüllt hat (~667 Belege vor dieser Änderung).
+
+    Idempotent: ist das Feld schon befüllt, passiert nichts und die Cloud wird
+    gar nicht erst angefragt — ein zweiter/hundertster Aufruf für denselben
+    Beleg kostet nichts. Rein lesend an der Nextcloud (`client.hole`, nie
+    MKCOL/PUT/MOVE — derselbe Riegel wie überall sonst, hier greift er von
+    selbst, weil nichts geschrieben wird).
+
+    Ein einzelner unlesbarer oder unerkennbarer Beleg (fremdes Format, Datei
+    in der Cloud fehlt, Tesseract stolpert) bricht die Anfrage NICHT ab —
+    „ein leeres Feld ist besser als ein falscher Fehler": sie kommt mit
+    `zeichen: 0` zurück, der Aufrufer schleift einfach zum nächsten Beleg
+    weiter, ohne seine eigene Schleife abzusichern."""
+    d = session.get(Dokument, dokument_id)
+    if not d:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    if (d.erkannter_text or "").strip():
+        return {"id": d.id, "zeichen": len(d.erkannter_text), "neu": False}
+    if not (d.pfad or "").startswith("/"):
+        return {"id": d.id, "zeichen": 0, "neu": False,
+                "hinweis": "Kein Cloud-Pfad hinterlegt"}
+    client = verbindung(session)
+    try:
+        rohdaten, _typ = client.hole(d.pfad)
+    except NextcloudFehler as e:
+        log.info("Text-Nachtrag %s: Beleg nicht lesbar (%s)", dokument_id, e)
+        return {"id": d.id, "zeichen": 0, "neu": False, "hinweis": str(e)}
+    try:
+        text = ocr.text_aus_beleg(rohdaten) or ""
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Text-Nachtrag %s: Erkennung fehlgeschlagen: %s",
+                   dokument_id, fehler)
+        text = ""
+    _pruefsumme_nachtragen(session, d, kicache.pruefsumme(rohdaten))
+    if not text.strip():
+        return {"id": d.id, "zeichen": 0, "neu": False}
+    d.erkannter_text = text
+    session.add(d)
+    session.commit()
+    return {"id": d.id, "zeichen": len(text), "neu": True}
 
 
 @router.get("/ohne-auslese")

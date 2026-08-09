@@ -29,11 +29,15 @@ def _ki_werte(wert) -> list[str]:
 
 
 def _heuhaufen(d) -> str:
-    """Alles, worüber ein Beleg gefunden werden kann: Dateiname, Kostenart
-    und die KI-Auslese (Einordnung, Immobilie, Einheit, alle Felderwerte) —
-    gefaltet wie überall sonst im Projekt. Vorher zählte nur der Dateiname;
-    ein Suchbegriff, der nur im erkannten Text stand, fand nichts (N328)."""
-    teile = [d.dateiname, d.kostenart, d.ki_einordnung, d.ki_immobilie, d.ki_einheit]
+    """Alles, worüber ein Beleg gefunden werden kann: Dateiname, Kostenart,
+    die KI-Auslese (Einordnung, Immobilie, Einheit, alle Felderwerte) und der
+    volle erkannte Text — gefaltet wie überall sonst im Projekt. Vorher zählte
+    nur der Dateiname; ein Suchbegriff, der nur im erkannten Text stand, fand
+    nichts (N328). Die kurze KI-Zusammenfassung deckte das noch nicht ab —
+    ein Wort, das nur mitten im Beleg steht, blieb weiter unauffindbar
+    (N328(ii))."""
+    teile = [d.dateiname, d.kostenart, d.ki_einordnung, d.ki_immobilie,
+             d.ki_einheit, getattr(d, "erkannter_text", "")]
     teile.extend(_ki_werte(d.ki_felder or {}))
     return _fold(" ".join(t for t in teile if t))
 
