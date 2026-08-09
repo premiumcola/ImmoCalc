@@ -29,7 +29,7 @@ import { abschnitt } from './miete.js';
 import { erststandHtml } from './anfangsstaende.js';
 import { eigentuemerHtml } from './eigentuemer.js';
 import { grundschuldenHtml } from './grundschulden.js';
-import { cloudZeigen } from './cloud.js';
+import { cloudZeigen, WOLKE_LADE_SVG } from './cloud.js';
 // N270 — die Rubrik „Renovierungen" liegt bei ihrer eigenen Seite, nicht hier.
 import { renovierungenHtml } from '../renovierung/objektkarte.js';
 import { baustellenBannerHtml } from '../renovierung/baustelle.js';
@@ -330,8 +330,8 @@ export async function laden() {
     <div class="sekopf ablage-kopf"><span class="seikon">${kostenIcon('Dokument')}</span><h2 class="sec">Dokumentenablage</h2></div>
     <div class="ablage-pfad" id="ablagePfad"></div>
     <div id="cloudbereich"><div class="cloudbox"><div class="zeile">
-      <span class="sym offen">…</span>
-      <span class="txt"><span class="t">wird geprüft …</span></span>
+      <span class="sym laedt">${WOLKE_LADE_SVG}</span>
+      <span class="txt"><span class="t">Dokumentenablage wird geladen …</span></span>
     </div></div></div>`;
   const gefahrBlock = `
     <div class="gefahr-block">

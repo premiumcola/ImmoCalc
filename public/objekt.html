@@ -795,6 +795,16 @@
                  align-items:center;justify-content:center;font:600 16px var(--mono)}
   .cloudbox .sym.offen{background:var(--amber-bg);color:var(--amber)}
   .cloudbox .sym.fertig{background:var(--pos-bg);color:var(--pos)}
+  /* N321 — Ladezustand der Ablage im Stil der KI-Erkennung (dasselbe ruhige
+     Atmen statt eines drehenden Kreisels), Fehlerzustand im Nextcloud-
+     Wolkensymbol statt der kargen Zeile mit blossem Hexagon-Zeichen. */
+  .cloudbox .sym.laedt{background:var(--teal-l);color:var(--teal-d)}
+  .cloudbox .sym.laedt svg{animation:ldn-atmen 2.6s ease-in-out infinite}
+  .cloudbox .sym.laedt svg .wlk-funke{animation:ldn-funke 2.6s ease-in-out infinite}
+  .cloudbox .sym.fehler{background:var(--amber-bg);color:var(--amber)}
+  @media (prefers-reduced-motion:reduce){
+    .cloudbox .sym.laedt svg,.cloudbox .sym.laedt svg .wlk-funke{animation:none}
+  }
   .cloudbox .txt{flex:1;min-width:0}
   .cloudbox .t{display:block;font:600 14px var(--disp);letter-spacing:-.01em}
   .cloudbox .d{display:block;font:400 12px var(--body);color:var(--soft);margin-top:3px;

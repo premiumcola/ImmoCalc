@@ -7,6 +7,27 @@ import { api, esc } from '../immo.js';
 import { slug } from '../objekt-state.js?v=2';
 import { baumZeigen } from '../objekt-baum.js?v=2';
 
+/* N321 — dieselbe Wolken-Silhouette für beide Zustände: ladend (mit ruhig
+   pulsierendem Punkt, animiert per `.sym.laedt` in objekt.html) und
+   gescheitert (mit Ausrufezeichen statt Punkt) — im Stil einer Nextcloud-
+   Dateiablage, nicht im generischen Sechseck-„⬡" von vorher. */
+export const WOLKE_LADE_SVG = `<svg viewBox="0 0 24 24" width="22" height="22"
+  fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M7.5 17.5a4 4 0 0 1-.5-7.96A5 5 0 0 1 16.4 8.2 4.4 4.4 0 0 1
+           17.5 17.5H7.5Z"/>
+  <circle class="wlk-funke" cx="12" cy="13" r="1.1" fill="currentColor" stroke="none"/>
+</svg>`;
+
+export const WOLKE_FEHLER_SVG = `<svg viewBox="0 0 24 24" width="22" height="22"
+  fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M7.5 17.5a4 4 0 0 1-.5-7.96A5 5 0 0 1 16.4 8.2 4.4 4.4 0 0 1
+           17.5 17.5H7.5Z"/>
+  <path d="M12 10.8v3" stroke-width="1.9"/>
+  <circle cx="12" cy="15.3" r="0.9" fill="currentColor" stroke="none"/>
+</svg>`;
+
 /* Die Ordnerstruktur lässt sich jederzeit nachträglich anlegen — auch wenn
    das Objekt längst existiert und Nextcloud erst später verbunden wurde. */
 export async function cloudZeigen() {
@@ -19,9 +40,9 @@ export async function cloudZeigen() {
     // Frueher verschwand der ganze Block hier kommentarlos — dann sah es aus,
     // als gaebe es die Dokumentenablage gar nicht.
     ziel.innerHTML = `<div class="cloudbox"><div class="zeile">
-        <span class="sym offen">⬡</span>
+        <span class="sym fehler">${WOLKE_FEHLER_SVG}</span>
         <span class="txt">
-          <span class="t">Status der Ablage nicht abrufbar</span>
+          <span class="t">Ablage gerade nicht erreichbar</span>
           <span class="d">${esc(String(fehler.message || fehler))}</span>
         </span></div>
         <div class="tat nebensache"><button data-cloud="status">Nochmal prüfen</button></div>
