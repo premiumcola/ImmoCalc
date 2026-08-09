@@ -3054,7 +3054,11 @@ def geradedrehen(dokument_id: int, grad: int = Query(0),
         return {"ok": True, "gedreht": [], "geaendert": False}
 
     try:
-        client.lege_ab(d.pfad, neu)
+        # N314(f) — nie per nacktem PUT überschreiben (CLAUDE.md: Cloud-Dateien
+        # gehören dem Nutzer). `_ocr_ersetzen` sichert das Original zuerst per
+        # MOVE weg und legt es bei einem Fehlschlag sofort zurück — dasselbe
+        # Muster wie bei der Textschicht-Nachpflege.
+        _ocr_ersetzen(client, d.pfad, neu)
     except NextcloudFehler as fehler:
         # Cloud-Schreiben gescheitert: Original und Datenbank unberührt, ein
         # sauberer Hinweis statt einer durchschlagenden Exception.

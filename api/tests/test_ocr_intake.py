@@ -223,3 +223,65 @@ def test_stapelgrenze_bremst_einen_grossen_rueckstau(monkeypatch):
 
     assert ergebnis["ergaenzt"] == 1
     assert ergebnis["geprueft"] == 1          # der zweite wurde gar nicht erst geholt
+
+
+# --------------------------------------------------------------------------
+# N314(f) — geradedrehen ersetzt per MOVE, nicht per nacktem Überschreiben
+# --------------------------------------------------------------------------
+
+def test_geradedrehen_ersetzt_per_move_und_sichert_das_original(monkeypatch):
+    """Vor dem Fix schrieb `geradedrehen` mit einem nackten `client.lege_ab`
+    direkt auf den bestehenden Pfad — ein Fehlschlag mittendrin hätte die
+    Nutzerdatei ersatzlos zerstört. Jetzt läuft es über dieselbe
+    Sicherungs-per-MOVE wie die Textschicht-Nachpflege."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    pfad = "/Objekt/60_Nebenkosten/2025/Schief.pdf"
+    wolke = _WolkeMitInhalt({pfad.strip("/"): b"schiefe Original-Bytes"})
+    monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+    monkeypatch.setattr(modul.ocr, "pdf_drehen", lambda roh, grad: b"gerade Bytes")
+
+    with Session(engine) as s:
+        d = _dokument(s, pfad, "Schief.pdf")
+        did = d.id
+
+    with TestClient(app) as c:
+        antwort = c.post(f"/api/dokumente/{did}/geradedrehen?grad=90")
+    assert antwort.status_code == 200, antwort.text
+    assert antwort.json()["geaendert"] is True
+
+    assert wolke.angelegt == ["Objekt/60_Nebenkosten/2025/.ocr-original"]
+    assert wolke.verschoben == [
+        (pfad, "Objekt/60_Nebenkosten/2025/.ocr-original/Schief.pdf")]
+    assert wolke.abgelegt == [pfad]
+    assert wolke.inhalte[pfad.strip("/")] == b"gerade Bytes"
+    assert wolke.inhalte["Objekt/60_Nebenkosten/2025/.ocr-original/Schief.pdf"] \
+        == b"schiefe Original-Bytes"
+
+
+def test_geradedrehen_stellt_das_original_zurueck_wenn_das_ablegen_scheitert(
+        monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    pfad = "/Objekt/60_Nebenkosten/Schief-2.pdf"
+    wolke = _WolkeMitInhalt({pfad.strip("/"): b"altes Original"},
+                            scheitert_bei={pfad.strip("/")})
+    monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+    monkeypatch.setattr(modul.ocr, "pdf_drehen", lambda roh, grad: b"neu")
+
+    with Session(engine) as s:
+        d = _dokument(s, pfad, "Schief-2.pdf")
+        did = d.id
+
+    with TestClient(app) as c:
+        antwort = c.post(f"/api/dokumente/{did}/geradedrehen?grad=90")
+    assert antwort.status_code == 502
+
+    assert len(wolke.verschoben) == 2               # hin und wieder zurück
+    assert wolke.inhalte[pfad.strip("/")] == b"altes Original"
+    with Session(engine) as s:
+        assert s.get(Dokument, did).groesse != len(b"neu")
