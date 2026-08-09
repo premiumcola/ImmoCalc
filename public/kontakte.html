@@ -87,6 +87,13 @@
   /* Die Renovierungssicht hat nur zwei Wahlfelder — sie dürfen breit sein. */
   .filter.zwei{grid-template-columns:1fr}
   .filter.zwei .auswahl-knopf{font-size:14px}
+  /* N320 — steht an derselben Stelle wie .auswahl-knopf, wenn es bei genau
+     einer Renovierung nichts auszuwählen gibt: gleiche Form, aber ohne
+     Pfeil/Klickverhalten, damit nichts vorgaukelt, hier liesse sich wählen. */
+  .auswahl-fest{display:flex; align-items:center; width:100%; min-height:44px;
+      border:1.5px solid var(--line); border-radius:999px; background:#F2F6F5;
+      padding:11px 16px; font:500 14px var(--body); color:var(--ink);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   @media(min-width:680px){ .filter.zwei{grid-template-columns:1fr 1fr} }
   /* Erst ab der Seitenleiste (1000 px) steht alles in EINER Zeile — auf dem
      iPad blieb vom Suchfeld sonst „Firma oder Numr" übrig. */
@@ -94,6 +101,14 @@
     .filter{grid-template-columns:1.5fr 1fr 1fr 1fr}
     .filter .suchbox{grid-column:auto}
   }
+
+  /* N320 — der Abstand zum Inhalt darunter hing bislang allein an
+     `.hinweis`. Bleibt sie leer (Sicht „Nach Renovierung" leert sie gezielt),
+     kollabiert sie auf 0 (`:empty{display:none}`) und nimmt ihren margin
+     gleich mit — die Auswahlfelder klebten dann direkt an der Summenkarte.
+     Der Abstand gehört an den Behälter selbst, nicht an einen Inhalt, der
+     manchmal fehlt. */
+  #steuer{margin-bottom:12px}
 
   /* Hinweiszeile: was fehlt und wie man es findet — beides anklickbar,
      kein Dauerbanner (roter Faden 7). Ist nichts offen, bleibt sie leer. */
@@ -444,11 +459,20 @@ function renoSteuerBauen() {
   if (!S.renoId || !liste.some(r => String(r.id) === String(S.renoId))) {
     S.renoId = String(liste[0]?.id || '');
   }
-  auswahlfeld(steuer.querySelector('[data-f-reno]'), {
-    optionen: liste.map(r => ({ wert: String(r.id), text: r.name })),
-    wert: S.renoId, label: 'Renovierung',
-    aenderung: wert => { S.renoId = wert; renoLaden(); },
-  });
+  const renoZiel = steuer.querySelector('[data-f-reno]');
+  if (liste.length <= 1) {
+    // N320 — bei genau einer Renovierung gibt es nichts auszuwählen: ein
+    // aufklappbares Feld mit einer einzigen, längst gewählten Zeile verdeckte
+    // beim Antippen nur die Summenkarte darunter, ohne eine Wahl zu bieten.
+    renoZiel.innerHTML = liste.length
+      ? `<div class="auswahl-fest">${esc(liste[0].name)}</div>` : '';
+  } else {
+    auswahlfeld(renoZiel, {
+      optionen: liste.map(r => ({ wert: String(r.id), text: r.name })),
+      wert: S.renoId, label: 'Renovierung',
+      aenderung: wert => { S.renoId = wert; renoLaden(); },
+    });
+  }
 }
 
 async function renoLaden() {
