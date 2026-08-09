@@ -321,21 +321,29 @@ button.chip:hover{filter:brightness(.96)}
    Element mit `backdrop-filter` liegt. Ein `::before` — mit `position:
    absolute`, relativ zur Pille dank deren `transform` (siehe oben) — deckt
    diesen Streifen zusätzlich ab: über negative Versätze reicht es bis an
-   alle drei Bildschirmkanten (links/rechts/unten). `top:0` bewusst — NICHT
-   über die Pillen-Oberkante hinaus vergrössern (Fund: eine frühere Version
-   mit `top:-34px` liess den Blur „deutlich zu hoch" bis in Karteninhalt
-   weit über der Leiste hineinreichen). Der runde Dokumente-Knopf braucht
-   diese Abdeckung nicht extra — er ist blickdicht und hat seinen eigenen
-   Schatten. Nur auf dem Handy nötig (Desktop/Tablet hat die Leiste kantig
-   als Seitenspalte/Fußleiste, siehe die Breakpoints weiter unten). */
+   alle drei Bildschirmkanten (links/rechts/unten).
+   Nutzer danach: „soll flüssig auslaufen, ohne Kante — das Auslaufen kann
+   auch höher als das Menü sein." Eine flache Box mit fester Höhe hat immer
+   eine harte Kante, egal wie hoch sie reicht (das war der eigentliche Fehler
+   der Vorversion, nicht die 34px an sich). Lösung: die Box reicht bewusst
+   weit über die Pille hinaus (`top:-110px`), aber `mask-image` blendet
+   Hintergrund UND `backdrop-filter` gemeinsam weich ein — oben komplett
+   durchsichtig/scharf, ab ~57 % (rechnerisch genau auf Höhe der
+   Pillen-Oberkante) voll deckend. Dunklerer, kräftigerer Ton (.78 statt .5)
+   auf Wunsch „Blur darker". `mask-image` maskiert `backdrop-filter` in
+   Safari genauso wie `background` — kein zusätzlicher Trick nötig. Nur auf
+   dem Handy nötig (Desktop/Tablet hat die Leiste kantig als Seitenspalte/
+   Fußleiste, siehe die Breakpoints weiter unten). */
 @media(max-width:999px){
   .nav::before{
     content:"";
-    position:absolute; left:-14px; right:-14px; bottom:-14px; top:0;
+    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-110px;
     z-index:-1;
-    background:rgba(255,255,255,.5);
-    -webkit-backdrop-filter:blur(40px) saturate(1.05);
-    backdrop-filter:blur(40px) saturate(1.05);
+    background:rgba(255,255,255,.78);
+    -webkit-backdrop-filter:blur(44px) saturate(1.1);
+    backdrop-filter:blur(44px) saturate(1.1);
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 57%, #000 100%);
+    mask-image:linear-gradient(to bottom, transparent 0%, #000 57%, #000 100%);
     pointer-events:none;
   }
 }
