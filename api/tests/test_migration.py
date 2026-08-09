@@ -72,9 +72,54 @@ def test_migration_ist_wiederholbar(alte_db):
     assert migriere(engine) == []  # zweiter Lauf findet nichts mehr
 
 
+# Schema, wie es vor der Erweiterung um Kontaktdaten/Zusatzflächen aussah —
+# `objekt`/`einheit`/`miete` existierten schon, aber ohne die seither
+# ergänzten Spalten (aktiv/strasse/kaufpreis/nc_ordner, terrasse/stellplaetze/
+# nutzungsart, email/kaution*/vorgaenger_id/personen/...). Genau der reale
+# Fall: eine gewachsene Datenbank mit echten Nutzerdaten, kein frisches Schema.
+ALTES_SCHEMA_VOLL = """
+CREATE TABLE objekt (
+    id INTEGER NOT NULL PRIMARY KEY,
+    slug VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    ort VARCHAR NOT NULL,
+    typ VARCHAR NOT NULL,
+    nutzung VARCHAR NOT NULL,
+    turnus VARCHAR NOT NULL,
+    start_monat INTEGER NOT NULL
+);
+CREATE TABLE einheit (
+    id INTEGER NOT NULL PRIMARY KEY,
+    objekt_id INTEGER NOT NULL,
+    bezeichnung VARCHAR NOT NULL,
+    flaeche FLOAT
+);
+CREATE TABLE miete (
+    id INTEGER NOT NULL PRIMARY KEY,
+    objekt_id INTEGER NOT NULL,
+    einheit VARCHAR NOT NULL,
+    partei VARCHAR NOT NULL,
+    kaltmiete FLOAT NOT NULL,
+    turnus VARCHAR NOT NULL,
+    ab_datum DATE NOT NULL,
+    bis_datum DATE
+);
+INSERT INTO objekt (id, slug, name, ort, typ, nutzung, turnus, start_monat)
+VALUES (1, 'meine-immo', 'Musterstr. 5', 'Musterstadt', 'lg-mfhA', 'Wohnen', 'kalender', 1);
+INSERT INTO einheit (id, objekt_id, bezeichnung, flaeche)
+VALUES (1, 1, '1. OG', 78.0);
+INSERT INTO miete (id, objekt_id, einheit, partei, kaltmiete, turnus, ab_datum, bis_datum)
+VALUES (1, 1, '1. OG', 'Familie Muster', 845.0, 'monatlich', '2025-04-01', NULL);
+"""
+
+
 def test_eingegebene_daten_ueberleben_ein_update(tmp_path):
-    """Der Fall aus der Praxis: Immobilie ist erfasst, dann wird das Schema
-    erweitert. Nichts darf verlorengehen oder überschrieben werden."""
+    """Der Fall aus der Praxis: Immobilie ist auf einem ALTEN Schema erfasst
+    (objekt/einheit/miete existieren bereits, aber ohne die seither
+    ergänzten Spalten), dann wird die App aktualisiert — genau die Reihen-
+    folge aus `main.py` (`create_all` dann `migriere`). Nichts darf
+    verlorengehen oder überschrieben werden, und die neuen Spalten müssen
+    mit dem richtigen Vorgabewert nachgezogen sein."""
     import app.models  # noqa: F401
     from sqlmodel import Session, SQLModel, select
 
@@ -83,9 +128,83 @@ def test_eingegebene_daten_ueberleben_ein_update(tmp_path):
 
     pfad = tmp_path / "bestand.db"
     engine = create_engine(f"sqlite:///{pfad}")
+
+    # --- Bestand auf altem Schema: Nutzer hat seine Immobilie eingetragen ---
+    with engine.begin() as conn:
+        for anweisung in filter(str.strip, ALTES_SCHEMA_VOLL.split(";")):
+            conn.execute(text(anweisung))
+
+    vorher = inspect(engine)
+    assert "aktiv" not in {s["name"] for s in vorher.get_columns("objekt")}
+    assert "terrasse" not in {s["name"] for s in vorher.get_columns("einheit")}
+    assert "email" not in {s["name"] for s in vorher.get_columns("miete")}
+
+    # --- Update: genau die main.py-Reihenfolge — create_all, dann migriere ---
+    SQLModel.metadata.create_all(engine)
+    geaendert = migriere(engine)
+    seed(engine)
+
+    # Die drei bereits vorhandenen Tabellen wurden per ALTER erweitert, nicht
+    # stillschweigend übersprungen — sonst wäre dieser Test ein No-op.
+    for erwartet in ("objekt.aktiv", "einheit.terrasse", "miete.email"):
+        assert erwartet in geaendert, f"{erwartet} wurde nicht ergänzt"
+
+    with Session(engine) as s:
+        objekte = s.exec(select(Objekt)).all()
+        # Der Seed darf keine Demo-Objekte danebenlegen
+        assert [o.slug for o in objekte] == ["meine-immo"]
+        o = objekte[0]
+        # --- Bestandsdaten unverändert ---
+        assert o.name == "Musterstr. 5"
+        assert o.ort == "Musterstadt"
+        assert o.turnus == "kalender"
+        # --- neue Spalten mit dem korrekten Vorgabewert nachgezogen ---
+        assert o.aktiv is True
+        assert o.strasse == ""
+        assert o.plz == ""
+        assert o.flaeche is None            # optional, bleibt leer
+        assert o.kaufpreis is None          # optional, bleibt leer
+        assert o.nc_ordner == ""
+        assert o.modell == "standard"       # kein Laufer-Sonderfall
+
+        miete = s.exec(select(Miete)).one()
+        # --- Bestandsdaten unverändert ---
+        assert miete.kaltmiete == 845.0
+        assert miete.partei == "Familie Muster"
+        assert miete.ab_datum == date(2025, 4, 1)
+        # --- neue Spalten mit dem korrekten Vorgabewert nachgezogen ---
+        assert miete.email == ""
+        assert miete.personen == 1
+        assert miete.kaution_objektkonto is False
+        assert miete.kaution_eingang is None      # optional, bleibt leer
+        assert miete.vorgaenger_id is None        # optional, bleibt leer
+
+        einheit = s.exec(select(Einheit)).one()
+        # --- Bestandsdaten unverändert ---
+        assert einheit.flaeche == 78.0
+        assert einheit.bezeichnung == "1. OG"
+        # --- neue Spalten mit dem korrekten Vorgabewert nachgezogen ---
+        assert einheit.nutzungsart == "Wohnen"
+        assert einheit.terrasse is None           # optional, bleibt leer
+        assert einheit.stellplaetze == 0
+        assert einheit.nk_abrechnung is True
+        assert einheit.gemeinflaechen == "[]"
+
+
+def test_seed_verdoppelt_objekte_nicht_nach_migration(tmp_path):
+    """Ergänzend zum Fall oben: auch wenn die Datenbank schon im vollen
+    Schema vorliegt (z. B. weil sie erst kürzlich angelegt wurde), darf
+    `migriere` + `seed` keine Demo-Objekte neben den echten Bestand legen."""
+    import app.models  # noqa: F401
+    from sqlmodel import Session, SQLModel, select
+
+    from app.models import Einheit, Miete, Objekt
+    from app.seed import seed
+
+    pfad = tmp_path / "bestand_aktuell.db"
+    engine = create_engine(f"sqlite:///{pfad}")
     SQLModel.metadata.create_all(engine)
 
-    # --- Nutzer trägt seine Immobilie ein ---
     with Session(engine) as s:
         o = Objekt(slug="meine-immo", name="Laufer Str. 5", ort="Eschenau",
                    kaufpreis=310000.0)
@@ -98,13 +217,11 @@ def test_eingegebene_daten_ueberleben_ein_update(tmp_path):
                     ab_datum=date(2025, 4, 1)))
         s.commit()
 
-    # --- Update: Schema angleichen und Seed erneut ausführen ---
     migriere(engine)
     seed(engine)
 
     with Session(engine) as s:
         objekte = s.exec(select(Objekt)).all()
-        # Der Seed darf keine Demo-Objekte danebenlegen
         assert [o.slug for o in objekte] == ["meine-immo"]
         o = objekte[0]
         assert o.name == "Laufer Str. 5"
@@ -117,7 +234,6 @@ def test_eingegebene_daten_ueberleben_ein_update(tmp_path):
 
         einheit = s.exec(select(Einheit)).one()
         assert einheit.flaeche == 78.0
-        # neue Felder sind da und leer — nicht befüllt, nicht störend
         assert einheit.terrasse is None
         assert einheit.stellplaetze == 0
 

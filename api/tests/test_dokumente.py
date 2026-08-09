@@ -182,6 +182,25 @@ def test_filter_nach_objekt_kategorie_jahr_status_und_suche():
         assert gesamt["dokumente"][0]["status"] == "neu"
 
 
+def test_suche_findet_auch_ki_erkannten_text_nicht_nur_den_dateinamen():
+    """N328 — Nutzerfrage: „Ich will, wenn ich Liebel eingebe, alles von Liebel
+    finden, auch wenn nicht im Dateinamen." Vorher zaehlte fuer `suche` nur
+    `dateiname`; die KI-Auslese (Einordnung, Felder, Immobilie/Einheit) blieb
+    unberuecksichtigt."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Suchweg 9"}).json()["slug"]
+        objekt_id = _objekt_id(slug)
+        _lege_dokument_an(objekt_id, "Rechnung_2024.pdf",
+                          ki_einordnung="Handwerkerrechnung von Fa. Liebel, Heizung")
+        _lege_dokument_an(objekt_id, "Vertrag_2024.pdf",
+                          ki_felder={"mieter": "Herr Liebel"})
+        _lege_dokument_an(objekt_id, "Sonstiges_2024.pdf")
+
+        treffer = c.get("/api/dokumente", params={"suche": "liebel"}).json()
+        namen = {d["dateiname"] for d in treffer["dokumente"]}
+        assert namen == {"Rechnung_2024.pdf", "Vertrag_2024.pdf"}
+
+
 def test_unbekanntes_objekt_im_filter_ist_404():
     with TestClient(app) as c:
         assert c.get("/api/dokumente",
