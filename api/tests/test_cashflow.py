@@ -28,6 +28,42 @@ def test_verteilung_ohne_flaeche_zu_gleichen_teilen():
     assert verteile(500.0, einheiten) == [250.0, 250.0]
 
 
+def test_verteilung_nach_flaeche_ohne_centverlust():
+    """N315(g) — Größte-Reste-Verfahren: drei gleich grosse Einheiten dürfen
+    in Summe nicht 99,99 € statt 100,00 € ergeben."""
+    einheiten = [
+        EinheitZahlen("A", "Wohnen", 50.0, None, None),
+        EinheitZahlen("B", "Wohnen", 50.0, None, None),
+        EinheitZahlen("C", "Wohnen", 50.0, None, None),
+    ]
+    anteile = verteile(100.0, einheiten)
+    assert sum(round(a, 2) for a in anteile) == 100.0
+    assert round(sum(anteile), 2) == 100.0
+
+
+def test_verteilung_ohne_flaeche_ohne_centverlust():
+    """Derselbe Rundungsfehler tritt auch im „zu gleichen Teilen"-Zweig auf,
+    wenn keine Einheit eine Fläche trägt."""
+    einheiten = [
+        EinheitZahlen("A", "Wohnen", None, None, None),
+        EinheitZahlen("B", "Wohnen", None, None, None),
+        EinheitZahlen("C", "Wohnen", None, None, None),
+    ]
+    anteile = verteile(100.0, einheiten)
+    assert sum(round(a, 2) for a in anteile) == 100.0
+
+
+def test_verteilung_meldet_flaeche_ohne_angabe_als_none():
+    """N316(b) — `gesamtflaeche` liefert None, keine gelogene 0.0, wenn keine
+    Fläche bekannt ist (wie `verteilung._gesamtflaeche`)."""
+    ohne_angabe = EinheitZahlen("A", "Wohnen", None, None, None)
+    assert ohne_angabe.gesamtflaeche is None
+    assert ohne_angabe.miete_pro_qm is None
+
+    mit_angabe = EinheitZahlen("B", "Wohnen", 60.0, None, None)
+    assert mit_angabe.gesamtflaeche == 60.0
+
+
 def _objekt_mit_einheiten(c) -> str:
     slug = c.post("/api/objekte", json={
         "name": "Flusshaus 1", "turnus": "kalender",

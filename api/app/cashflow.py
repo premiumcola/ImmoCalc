@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .engine import verteile_nach_wert
 from .zeit import jahresanteil_monate
 
 
@@ -57,11 +58,20 @@ class EinheitZahlen:
         return round(self.kaltmiete / self.gesamtflaeche, 2)
 
     @property
-    def gesamtflaeche(self) -> float:
+    def gesamtflaeche(self) -> float | None:
         """Terrasse zählt zu ihrem eingestellten Anteil (N227,
         `terrasse_anteil_pct`), Nebenfläche weiter zur Hälfte, erfasste
         Gemeinschaftsflächen anteilig nach Nutzerzahl (CCCXXVII), zusätzliche
-        Nutzflächen voll (CCCXXIX)."""
+        Nutzflächen voll (CCCXXIX).
+
+        N316(b) — None, wenn gar keine Fläche bekannt ist, genau wie
+        `verteilung._gesamtflaeche`: eine 0.0 wäre gelogen und liesse die
+        Einheit unbemerkt mit Gewicht 0 an der Verteilung nach Fläche
+        teilnehmen."""
+        if (self.flaeche is None and self.terrasse is None
+                and self.nebenflaeche is None and self.gemein == 0
+                and self.nutz == 0):
+            return None
         return round((self.flaeche or 0) + (self.terrasse or 0)
                      * self.terrasse_anteil_pct / 100
                      + (self.nebenflaeche or 0) * 0.5 + self.gemein
@@ -73,15 +83,28 @@ def verteile(betrag: float, einheiten: list[EinheitZahlen]) -> list[float]:
 
     N227 — dieselbe massgebliche Fläche wie die Nebenkosten-Verteilung
     (`verteilung._gesamtflaeche`), nicht nur die reine Wohnfläche: sonst
-    verteilte der Cashflow anders als die echte Abrechnung."""
+    verteilte der Cashflow anders als die echte Abrechnung.
+
+    N315(g)/N316(b) — die eigentliche Aufteilung übernimmt
+    `engine.verteile_nach_wert`, statt sie hier ein zweites Mal (und ohne
+    Größte-Reste-Verfahren) nachzubauen: sonst ergaben z. B. drei gleich
+    grosse Einheiten bei 100 € in Summe 99,99 € statt 100,00 €. Ist keine
+    Fläche bekannt (Gewichtssumme 0), bleibt es bei „zu gleichen Teilen" —
+    bewusst *nicht* das Verhalten der Engine für diesen Fall (dort: alles 0,
+    weil eine Gewichtssumme 0 bei einer Nebenkosten-Position ein
+    Datenproblem ist, das nicht stillschweigend geglättet werden soll). Im
+    Cashflow dagegen muss ein Kostenblock immer vollständig auf die
+    Einheiten fallen, deshalb bekommt die Engine hier gleiche Gewichte
+    vorgesetzt statt der (fehlenden) Flächen — und liefert trotzdem
+    cent-genau."""
     if not einheiten:
         return []
-    flaechen = [e.gesamtflaeche for e in einheiten]
+    flaechen = [e.gesamtflaeche or 0.0 for e in einheiten]
     summe = sum(flaechen)
-    if summe <= 0:
-        gleich = betrag / len(einheiten)
-        return [gleich] * len(einheiten)
-    return [betrag * f / summe for f in flaechen]
+    gewichte = flaechen if summe > 0 else [1.0] * len(einheiten)
+    anteile = {str(i): g for i, g in enumerate(gewichte)}
+    verteilt = verteile_nach_wert(betrag, anteile)
+    return [verteilt[str(i)] for i in range(len(einheiten))]
 
 
 def cashflow(einheiten: list[EinheitZahlen], bloecke: dict[str, float]) -> dict:
