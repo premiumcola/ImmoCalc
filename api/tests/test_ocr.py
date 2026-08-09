@@ -390,6 +390,57 @@ def test_gesperrter_satz_wird_wieder_zu_einem_betrag():
 
 
 # --------------------------------------------------------------------------
+# N305: ein XFA-Formular (Adobe LiveCycle) legt seinen echten Inhalt in einem
+# dynamischen XML-Datenstrom ab, den `pdftext` nicht liest. Im Textlayer
+# steht stattdessen immer dieselbe feste Notausschrift für Viewer ohne
+# XFA-Unterstützung — formal Text, aber nie ein Beleginhalt.
+#
+# Die Erkennung selbst (`pdftext._nur_xfa_platzhalter`) ist bereits mit
+# eigenen Tests in `test_officetext.py` abgedeckt (Commit a711fc8). Was dort
+# fehlte: der Nachweis, dass ein echtes PDF mit dieser Textschicht durch die
+# GANZE Kette `text_aus_beleg` läuft und wirklich im Rasterweg landet, statt
+# den Platzhalter als Beleginhalt zurückzugeben. Das prüft der Test hier.
+# --------------------------------------------------------------------------
+
+XFA_PLATZHALTER = (
+    "Please wait...\n"
+    "If this message is not eventually replaced by the proper contents "
+    "of the document, your PDF viewer may not be able to display this "
+    "type of document.\n"
+    "You can upgrade to the latest version of Adobe Reader for Windows, "
+    "Mac, or Linux by visiting http://www.adobe.com/go/reader_download.\n"
+    "For more assistance with Adobe Reader visit "
+    "http://www.adobe.com/go/acrreader."
+)
+
+
+def test_xfa_pdf_gibt_den_platzhalter_nicht_als_text_her():
+    """`pdftext.text_aus_pdf` verwirft die Notausschrift schon selbst —
+    daher ist die Textschicht hier leer, nicht der Platzhalter."""
+    roh = mini_pdf(XFA_PLATZHALTER.splitlines())
+    assert pdftext.text_aus_pdf(roh).strip() == ""
+
+
+def test_xfa_pdf_nimmt_den_rasterweg(monkeypatch):
+    """Verdrahtung: ein XFA-Formular liefert im Textlayer nur „Please wait…“
+    — das muss denselben Rasterweg nehmen wie ein Scan ohne Textschicht,
+    statt den Platzhalter als Beleginhalt durchzureichen. Der Rasterweg
+    selbst (Rendern + Tesseract) ist bereits anderswo geprüft; hier zählt
+    nur, dass er genommen wird."""
+    roh = mini_pdf(XFA_PLATZHALTER.splitlines())
+
+    gerufen = []
+    monkeypatch.setattr(
+        ocr, "_text_aus_scan",
+        lambda *a, **k: gerufen.append(1) or "Gesamtbetrag 555,00")
+
+    text = ocr.text_aus_beleg(roh)
+    assert gerufen                            # Rasterweg wurde genommen
+    assert "Please wait" not in text
+    assert text == "Gesamtbetrag 555,00"
+
+
+# --------------------------------------------------------------------------
 # Der echte Beleg. Er liegt im Bestand des Nutzers, nicht im Repo — ohne ihn
 # wird übersprungen, damit die Testreihe auch ohne die privaten Daten läuft.
 # --------------------------------------------------------------------------

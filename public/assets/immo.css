@@ -285,7 +285,12 @@ button.chip:hover{filter:brightness(.96)}
   position:fixed; left:14px; right:14px; bottom:14px;
   z-index:30; background:var(--sheet); border-radius:26px;
   display:flex; gap:5px; padding:8px 8px;
-  box-shadow:0 18px 40px -16px rgba(22,38,44,.4), 0 2px 10px -4px rgba(22,38,44,.14);
+  /* N327-b — Nutzer: der Schatten soll auch links/rechts/unten im Rand-
+     abstand um die Pille sichtbar sein, nicht nur direkt darunter — eine
+     dritte, kaum versetzte, weit gestreute Ebene füllt genau diesen 14px-
+     Rand ringsum mit einem sanften Halbschatten. */
+  box-shadow:0 18px 40px -16px rgba(22,38,44,.4), 0 2px 10px -4px rgba(22,38,44,.14),
+              0 0 22px 2px rgba(22,38,44,.16);
 }
 /* N271 — `static` statt `absolute`: die Leiste ist jetzt das letzte Flex-Kind
    der Karte und sitzt damit von selbst unten fest. `absolute` band sie an den
@@ -296,7 +301,11 @@ button.chip:hover{filter:brightness(.96)}
 .nav a{
   flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;
   gap:4px; padding:8px 2px; min-height:44px; text-decoration:none;
-  color:var(--soft); border-radius:12px; font:600 10.5px var(--disp);
+  color:var(--soft);
+  /* N327-b — Nutzer: die aktive Markierung soll denselben Rundungs-Radius
+     tragen wie die Pille selbst. Konzentrisch zur 26px-Aussenrundung bei
+     8px Pillen-Innenabstand ergibt 18px (26−8) für dieses innere Element. */
+  border-radius:18px; font:600 10.5px var(--disp);
   letter-spacing:.01em; -webkit-tap-highlight-color:transparent;
   /* Sechs Eintraege teilen sich 390 px — lange Beschriftungen duerfen die
      Leiste nicht auseinanderdruecken. Lieber kuerzen als umbrechen. */
@@ -382,8 +391,18 @@ button.chip:hover{filter:brightness(.96)}
        der Pille absetzen, wirkte am echten Gerät aber wie ein hart
        abgeschnittener heller Rand/Halo ("Kanten am grünen Schatten") — raus,
        nur noch der weiche Schlagschatten traegt die Abhebung. */
+    /* N327-b — der Schatten brauchte mehrere Anläufe: erst fehlte er
+       links/rechts ("edge left and right"), die Zwischenlösung mit einer
+       zweiten, kaum verwischten Ebene zeigte dafür selbst einen sichtbaren
+       Rand ("feste Kante rum von sehr transparentem grünem Schatten"). CSS-
+       Weichzeichnung hat einen harten Abbruch bei ~2×Blur+Spread — je näher
+       Blur und Spread beieinander liegen, desto eher sieht man diese Kante.
+       Jetzt eine einzelne, sehr grosszügig verwischte, kaum sichtbare
+       Ebene (viel Blur, wenig Deckkraft, kein Spread) ringsum plus eine
+       engere für die Bodenhaftung direkt unterm Knopf. */
     width:66px; height:66px; border-radius:999px; background:var(--teal);
-    color:#fff; box-shadow:0 12px 26px -10px rgba(15,110,92,.55);
+    color:#fff; box-shadow:0 8px 18px -6px rgba(15,110,92,.4),
+                            0 0 34px 0 rgba(15,110,92,.16);
   }
   .nav a[href="eingang.html"] .ni-doc svg{width:30px; height:30px}
   .nav a[href="eingang.html"] .ni-plus svg{width:26px; height:26px}

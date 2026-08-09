@@ -149,7 +149,8 @@
           <circle cx="10.5" cy="10.5" r="6.5"/><path d="M19 19l-4-4"/>
         </svg>
         <input id="q" type="search" autocomplete="off" autocorrect="off"
-               autocapitalize="off" spellcheck="false"
+               autocapitalize="off" spellcheck="false" autofocus
+               enterkeyhint="search"
                placeholder="Objekt, Einheit, Firma, Dokument …">
         <button class="loeschen" id="loeschen" type="button" aria-label="Suche leeren">✕</button>
       </div>
@@ -173,6 +174,19 @@ document.getElementById('back').addEventListener('click', () => {
 });
 
 installNav();
+
+// N327-b — Feld sofort fokussieren, VOR dem Warten auf Objekte/Kontakte:
+// mobile Browser zeigen die Tastatur nur zuverlässig, wenn der Fokus so nah
+// wie möglich am Laden der Seite passiert, nicht erst nach einem await.
+// `autofocus` im Markup deckt den Rest ab, wo das reicht.
+felder.q.focus();
+
+// Enter blendet die Tastatur aus, statt nur (wirkungslos) etwas abzuschicken
+// — es gibt kein <form>, das reagieren könnte. Die Ergebnisse stehen ja
+// schon live, bevor man fertig getippt hat.
+felder.q.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); felder.q.blur(); }
+});
 
 // Fold wie im Backend (kostenarten._fold): Umlaute aufgelöst, klein — damit
 // „strasse“ „Straße“ trifft und Gross-/Kleinschreibung nichts ausmacht.
