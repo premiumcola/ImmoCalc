@@ -245,7 +245,20 @@ button.chip:hover{filter:brightness(.96)}
 @media(max-width:400px){
   .nav a, .nav .mehr{font-size:10px}
 }
-.nav a .ni{font:400 23px var(--mono); line-height:1}
+/* N325 — die Icons sind jetzt Inline-SVG (`immo.js`, `MENU_SPRITES`) statt
+   Unicode-Zeichen; `.ni` gibt ihnen ein festes Quadrat statt einer
+   Schriftgröße. Der aktive Zustand bekommt zusätzlich zur Farb-/Flächen-
+   änderung einen kleinen grünen Punkt darunter, der sanft einblendet. */
+.nav a .ni{position:relative; width:23px; height:23px; display:flex;
+           align-items:center; justify-content:center}
+.nav a .ni svg{width:100%; height:100%}
+.nav a[aria-current=page] .ni::after{
+  content:""; position:absolute; left:50%; bottom:-6px; translate:-50% 0;
+  width:4px; height:4px; border-radius:999px; background:var(--teal);
+  animation:ni-klecks .4s ease-out;
+}
+@keyframes ni-klecks{ from{transform:scale(0); opacity:0} to{transform:scale(1); opacity:1} }
+@media (prefers-reduced-motion:reduce){ .nav a[aria-current=page] .ni::after{animation:none} }
 /* Der Aufklapp-Chevron ist ein reiner Desktop-Belang: in der unteren
    Handy-Leiste stehen alle Ziele ohnehin flach nebeneinander. */
 .nav .kappe{display:none}
@@ -260,7 +273,8 @@ button.chip:hover{filter:brightness(.96)}
   cursor:pointer; letter-spacing:.01em; overflow:hidden; white-space:nowrap;
 }
 .nav .mehr.an{display:flex}
-.nav .mehr .ni{font:400 23px var(--mono); line-height:1}
+.nav .mehr .ni{width:23px; height:23px; display:flex; align-items:center; justify-content:center}
+.nav .mehr .ni svg{width:100%; height:100%}
 .nav .mehr.hier{color:var(--teal-d); background:var(--teal-l)}
 .nav a.weg{display:none}
 
@@ -271,7 +285,9 @@ button.chip:hover{filter:brightness(.96)}
   border-radius:13px; background:var(--sheet); color:var(--ink);
   text-decoration:none; font:600 15px var(--disp); letter-spacing:-.01em;
 }
-.mehrliste a .ni{font:400 19px var(--mono); color:var(--soft); line-height:1}
+.mehrliste a .ni{width:19px; height:19px; display:flex; align-items:center;
+                 justify-content:center; color:var(--soft); flex:none}
+.mehrliste a .ni svg{width:100%; height:100%}
 .mehrliste a[aria-current=page]{background:var(--teal-l); color:var(--teal-d)}
 .mehrliste a[aria-current=page] .ni{color:var(--teal-d)}
 .mehrliste a:hover{background:#F1F4F4}
@@ -776,7 +792,11 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
     flex:none; flex-direction:row; justify-content:flex-start; gap:12px;
     padding:12px 14px; font-size:13.5px; letter-spacing:-.005em;
   }
-  .nav a .ni{font-size:17px}
+  .nav a .ni{width:19px; height:19px}
+  /* Die Seitenleiste zeigt „aktiv" schon über die Fläche (heller Hintergrund
+     + Teal-Text) — der kleine Klecks ist ein Handy-Kniff für die reine
+     Icon-Reihe unten und würde hier nur mitten in der Zeile hängen. */
+  .nav a[aria-current=page] .ni::after{display:none}
   .nav a:hover{background:rgba(255,255,255,.55); color:var(--ink)}
   .nav a[aria-current=page]{background:var(--sheet); color:var(--teal-d)}
 

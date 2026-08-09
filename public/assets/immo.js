@@ -208,39 +208,74 @@ export const fristKlasse = tage =>
 // eingerueckte Untergruppe unter „Objekte" (auf dem Desktop aufklappbar), der
 // Rest bleibt oberste Ebene. Ein Eintrag mit viertem Feld (Kinder) ist ein
 // Gruppenkopf; er ist selbst ein Link auf die Objektliste.
+// N325 — bislang schlichte Unicode-Zeichen (▤ ▦ ≡ ▣ …), unterschiedliche
+// Strichstärken, teils kryptisch (☗ für „Eigentümer"). Jetzt ein
+// durchgehender Satz einstrichiger Liniensymbole (24×24, Strichstärke 1.7–1.9)
+// im flachen Stil der App, wie schon `kostenicons.js`/`gewerkicons.js`.
+const MENU_SPRITES = `
+<symbol id="mi-objekte" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9h12v-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 19v-5h4v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+<symbol id="mi-vermietung" viewBox="0 0 24 24"><rect x="4" y="10" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="6" width="6" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+<symbol id="mi-nebenkosten" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="mi-dokumente" viewBox="0 0 24 24"><path d="M6.5 4h7l4 4v12h-11z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 4v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+<symbol id="mi-wert" viewBox="0 0 24 24"><path d="M4 16 9.5 10 13 13.5 20 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14.5 6h5.5v5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="mi-pv" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v2.6M12 18.4V21M4.4 12H7M17 12h2.6M6.3 6.3l1.8 1.8M15.9 15.9l1.8 1.8M17.7 6.3l-1.8 1.8M8.1 15.9l-1.8 1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="mi-tankstelle" viewBox="0 0 24 24"><rect x="5" y="4" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14 9h2a2 2 0 0 1 2 2v4a1.6 1.6 0 0 0 3.2 0V8.5L19 6.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 8h3M9.5 12 8 15h3l-1.5 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="mi-eigentuemer" viewBox="0 0 24 24"><path d="M12 3.5 19 6.5v5.5c0 4.2-3 7-7 8.5-4-1.5-7-4.3-7-8.5V6.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="mi-kontakte" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.3 16.5c.7-1.6 2-2.4 3.7-2.4s3 .8 3.7 2.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="mi-vorlagen" viewBox="0 0 24 24"><path d="M7 8h8l3 3v9H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4.5 5h11l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 14.5h4M10.5 17.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+<symbol id="mi-lexikon" viewBox="0 0 24 24"><path d="M12 6.5c-1.4-1.2-3.4-1.7-5.5-1.5v12.5c2.1-.2 4.1.3 5.5 1.5 1.4-1.2 3.4-1.7 5.5-1.5V5c-2.1-.2-4.1.3-5.5 1.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 6.5v12.5" stroke="currentColor" stroke-width="1.7"/></symbol>
+<symbol id="mi-einstellungen" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.3v2.5M12 19.2v2.5M21.7 12h-2.5M4.8 12H2.3M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1 5.3 5.3" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></symbol>
+<symbol id="mi-mehr" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18" cy="12" r="1.7" fill="currentColor"/></symbol>`;
+
+/** Haengt die Menue-Symbole einmalig ins Dokument (analog `installLogos`). */
+function installMenuIcons() {
+  if (document.getElementById('menu-sprites')) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.id = 'menu-sprites';
+  svg.setAttribute('width', '0');
+  svg.setAttribute('height', '0');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.style.position = 'absolute';
+  svg.innerHTML = `<defs>${MENU_SPRITES}</defs>`;
+  document.body.prepend(svg);
+}
+
+const navIcon = id =>
+  `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${id}"/></svg>`;
+
 export const NAV = [
-  ['Objekte', 'index.html', '▤', [
+  ['Objekte', 'index.html', navIcon('mi-objekte'), [
     // N23 — Vermietungsstatistik: Miete + Nebenkosten, Durchschnitte,
     // Mieterhöhungen über die eigenen Objekte und Einheiten.
-    ['Vermietung', 'vermietungen.html', '▦'],
-    ['Nebenkosten', 'nebenkosten.html', '≡'],
-    ['Dokumente', 'eingang.html', '▣'],
-    ['Wertentwicklung', 'wertentwicklung.html', '◔'],
+    ['Vermietung', 'vermietungen.html', navIcon('mi-vermietung')],
+    ['Nebenkosten', 'nebenkosten.html', navIcon('mi-nebenkosten')],
+    ['Dokumente', 'eingang.html', navIcon('mi-dokumente')],
+    ['Wertentwicklung', 'wertentwicklung.html', navIcon('mi-wert')],
     // N83/N87 — Strom/PV-Subsystem je Objekt/Jahr, samt Amortisation des
     // PV-Investments (die Amortisation ist Inhalt der PV-Seite, kein Menuepunkt).
-    ['PV Anlagen', 'strom.html', '⚡'],
+    ['PV Anlagen', 'strom.html', navIcon('mi-pv')],
   ]],
   // N132 — die E-Tankstelle ist ein eigener Bereich, keine Karte auf der
   // PV-Seite: eigene Nutzer, eigener Verlauf, eigene Abrechnung.
-  ['E-Tankstelle', 'tankstelle.html', '⏻'],
-  ['Eigentümer', 'eigentuemer.html', '☗'],
+  ['E-Tankstelle', 'tankstelle.html', navIcon('mi-tankstelle')],
+  ['Eigentümer', 'eigentuemer.html', navIcon('mi-eigentuemer')],
   // N309f — das Kontaktbuch: Handwerker, Versicherer, Banken und Versorger
   // samt Kundennummern. Steht neben „Eigentümer", weil beides Menschen und
   // Firmen rund um die Immobilien sind. Auf dem Telefon wandert es von selbst
   // hinter „Mehr" (Index ≥ SICHTBAR) — die vier täglichen Wege bleiben stehen.
-  ['Kontakte', 'kontakte.html', '☏'],
+  ['Kontakte', 'kontakte.html', navIcon('mi-kontakte')],
   // N246 — das Belegarchiv (N84, die interne Wissens-Datenbank der KI-
   // ausgelesenen Belege) hat KEINEN Menuepunkt mehr: es laeuft im Hintergrund
   // mit und wird selten geoeffnet. Der Einstieg steht in den Einstellungen
   // unter „Dokumente"; die Seite bleibt unter `belegarchiv.html` erreichbar.
   // N240 — leere Formulare zum Ausfüllen (Übergabeprotokoll, Selbstauskunft,
   // Rauchwarnmelder-Abnahme, Wohnungsgeberbestätigung …), objektübergreifend.
-  ['Vorlagen', 'vorlagenarchiv.html', '▧'],
+  ['Vorlagen', 'vorlagenarchiv.html', navIcon('mi-vorlagen')],
   // CCXL — das Immobilien-Lexikon. Steht bewusst vor „Einstellungen", damit die
   // Einstellungen der letzte Eintrag bleiben; auf dem Handy wandert es dadurch
   // von selbst hinter „Mehr" (Index ≥ SICHTBAR).
-  ['Lexikon', 'lexikon.html', '?'],
-  ['Einstellungen', 'settings.html', '⚙'],
+  ['Lexikon', 'lexikon.html', navIcon('mi-lexikon')],
+  ['Einstellungen', 'settings.html', navIcon('mi-einstellungen')],
 ];
 
 // Kleiner Chevron im flachen Stil der App — dreht sich beim Einklappen.
@@ -293,6 +328,7 @@ export function installNav() {
     }
   }
 
+  installMenuIcons();
   const nav = document.createElement('nav');
   nav.className = 'nav';
   nav.innerHTML = html;
@@ -357,7 +393,7 @@ function navAufraeumen() {
     mehr.type = 'button';
     mehr.className = 'mehr';
     mehr.setAttribute('aria-haspopup', 'dialog');
-    mehr.innerHTML = '<span class="ni">⋯</span><span class="nl">Mehr</span>';
+    mehr.innerHTML = `<span class="ni">${navIcon('mi-mehr')}</span><span class="nl">Mehr</span>`;
     mehr.addEventListener('click', () => mehrOeffnen(eintraege.slice(SICHTBAR)));
     nav.appendChild(mehr);
   }
@@ -380,7 +416,7 @@ function mehrOeffnen(eintraege) {
     <div class="mehrliste">${eintraege.map(a => `
       <a href="${a.getAttribute('href')}"
          ${a.getAttribute('aria-current') ? 'aria-current="page"' : ''}>
-        <span class="ni">${a.querySelector('.ni')?.textContent ?? ''}</span>
+        <span class="ni">${a.querySelector('.ni')?.innerHTML ?? ''}</span>
         ${a.lastChild?.textContent?.trim() ?? ''}
       </a>`).join('')}</div>`);
   dlg.classList.add('mehr-dlg');
