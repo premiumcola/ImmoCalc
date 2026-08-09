@@ -456,6 +456,23 @@ def monate_seit_jahresende(jahr: int, stichtag: date) -> int:
     return (stichtag.year - jahr) * 12 + (stichtag.month - 12)
 
 
+def _monatsschritt(wert: float, rate: float, satz: float | None) -> tuple[float, float]:
+    """Ein Monat Annuität: Zinsanteil und die daraus folgende neue Restschuld.
+
+    Der gemeinsame Kern von `stand_fortschreiben` und `_jahreszins_kalk`
+    (N316f) — beide simulierten dieselbe Monatsrechnung unabhängig
+    voneinander, ein Risiko, dass sie einmal auseinanderlaufen, sobald die
+    Rate den Zins nicht mehr deckt. Jetzt rechnet nur noch diese eine Stelle;
+    beide Aufrufer teilen sich das Ergebnis.
+
+    Deckt die Rate den Zins nicht, bleibt die Restschuld unverändert (`neu ==
+    wert`) — lieber der letzte bekannte Wert als eine erfundene Kurve."""
+    zins = wert * monatszinssatz(satz)
+    tilgung = rate - zins
+    neu = max(wert - tilgung, 0.0) if tilgung > 0 else wert
+    return neu, zins
+
+
 def stand_fortschreiben(rest: float, rate_monat: float, zinssatz: float | None,
                         monate: int) -> float:
     """Restschuld um `monate` Monate fortschreiben (negativ: zurückrechnen).
@@ -474,10 +491,10 @@ def stand_fortschreiben(rest: float, rate_monat: float, zinssatz: float | None,
         return round(wert, 2)
     for _ in range(abs(monate)):
         if monate > 0:
-            tilgung = rate - wert * zins_monat
-            if tilgung <= 0:
+            neu, _ = _monatsschritt(wert, rate, zinssatz)
+            if neu == wert:
                 break               # Rate deckt nicht einmal die Zinsen
-            wert = max(wert - tilgung, 0.0)
+            wert = neu
             if wert <= 0:
                 break
         else:
@@ -538,7 +555,11 @@ def _jahreszins_kalk(kredit, basis_jahr: int, wert_start: float,
                      rate: float) -> float:
     """Kalkulierte Sollzinsen eines Jahres: die Summe der zwölf monatlichen
     Zinsanteile beim Fortschreiben (mit Zinswechsel). Das Gegenstück zum
-    echten Ist-Wert vom Kontoauszug (CCXXXI)."""
+    echten Ist-Wert vom Kontoauszug (CCXXXI).
+
+    Dieselbe Monatsrechnung wie `stand_fortschreiben` — über `_monatsschritt`
+    (N316f), damit die hier mitgerechnete Restschuld nie von der in `verlauf`
+    gezeigten abweicht."""
     fest = kredit.zinssatz
     variabel = getattr(kredit, "zinssatz_variabel", None)
     m_wechsel = (monate_seit_jahresende(basis_jahr, kredit.zinsbindung_bis)
@@ -548,12 +569,11 @@ def _jahreszins_kalk(kredit, basis_jahr: int, wert_start: float,
     zinsen = 0.0
     for i in range(12):
         satz = variabel if (m_wechsel is not None and i >= m_wechsel) else fest
-        zins = wert * monatszinssatz(satz)
-        zinsen += zins
         if r > 0 and wert > 0:
-            tilgung = r - zins
-            if tilgung > 0:
-                wert = max(wert - tilgung, 0.0)
+            wert, zins = _monatsschritt(wert, r, satz)
+        else:
+            zins = wert * monatszinssatz(satz)
+        zinsen += zins
     return round(zinsen, 2)
 
 
@@ -715,7 +735,11 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
     # Eigenkapital, mindert aber die Beleihung nicht.
     eigen = round(wert - restschuld + guthaben, 2) if wert is not None else None
     quote = round(restschuld / wert * 100, 1) if wert else None
-    gehalten = sum(int(a.tausendstel or 0) for a in (anteile or [])) or None
+    # N315h — massgeblich ist `promille` (Fliesskomma), `tausendstel` (int) nur
+    # als aelterer Rundungswert. `int(a.tausendstel)` kappte 833,3 auf 833 und
+    # verfehlte den Eigenkapitalanteil um 90 € je 300.000 € Objektwert (`_pm`,
+    # wie `besitz.promille_von`, nimmt `promille` und faellt sonst zurueck).
+    gehalten = sum(_pm(a) for a in (anteile or [])) or None
 
     # CCIX — Rücklagenkonto: der Stand ist zurückgelegtes Eigentümergeld, die
     # monatliche Rücklage ein laufender Betrag. Bewusst NICHT ins Eigenkapital

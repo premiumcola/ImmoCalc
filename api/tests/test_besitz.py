@@ -167,6 +167,25 @@ def test_vermoegen_rechnet_wert_minus_restschuld():
         assert zeile["tilgung_jahr"] == 8000.0
 
 
+def test_eigenkapital_anteilig_nutzt_promille_nicht_das_gekappte_tausendstel():
+    """N315h: `objekt_vermoegen` bildete die gehaltenen Tausendstel über
+    `int(a.tausendstel)` statt über das massgebliche `promille` — 833,3 ‰ von
+    300.000 € Eigenkapital wurden dadurch zu 249.900 € (mit `int(833.3) ==
+    833`) statt korrekt 249.990 €. Über die echte Anteile-API gesetzt landet
+    `promille=833.3` exakt, `tausendstel` nur gerundet auf 833."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Bruchweg 9", verkehrswert=300000.0)
+        e = c.post("/api/eigentuemer", json={"name": "Katja"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": e, "promille": 833.3})
+
+        zeile = next(z for z in c.get("/api/vermoegen").json()["objekte"]
+                     if z["slug"] == slug)
+        assert zeile["tausendstel"] == 833.3
+        assert zeile["eigenkapital"] == 300000.0
+        assert zeile["eigenkapital_anteilig"] == 249990.0
+
+
 def test_vermoegen_ohne_angaben_faellt_nicht_um():
     with TestClient(app) as c:
         slug = _objekt(c, "Leerweg 6")
@@ -747,6 +766,54 @@ def test_rueckwaerts_ist_die_umkehrung_der_fortschreibung():
     ende = stand_fortschreiben(250000.0, 1200.0, 2.5, 18)
     zurueck = stand_fortschreiben(ende, 1200.0, 2.5, -18)
     assert abs(zurueck - 250000.0) < 0.5
+
+
+def test_zinskalkulation_und_restschuld_bleiben_synchron_bei_negativer_tilgung():
+    """N316f: `stand_fortschreiben` (Restschuld für `verlauf`) und
+    `_jahreszins_kalk` (Sollzinsen für dieselbe Zeile) simulierten dieselbe
+    Monatsrechnung an zwei unabhängigen Stellen — sobald die Rate den Zins
+    nicht mehr deckt (negative Tilgung), durfte keine der beiden Stellen eine
+    andere Restschuld unterstellen als die andere. Beide laufen jetzt über
+    denselben `_monatsschritt`.
+
+    Mit fest 12 % p. a. und einer Rate von 500 €/Monat auf 100.000 € deckt die
+    Rate die 1.000 €/Monat Zins nicht — die Restschuld bleibt das ganze Jahr
+    stehen, und die kalkulierten Jahreszinsen müssen exakt zu dieser
+    eingefrorenen Restschuld passen (12 × 1.000 € = 12.000 €), nicht zu einer
+    Kurve, die weiterrechnet."""
+    from types import SimpleNamespace
+
+    from app.vermoegen import _jahreszins_kalk, stand_fortschreiben
+
+    rest, rate, zinssatz = 100000.0, 500.0, 12.0
+    kredit = SimpleNamespace(zinssatz=zinssatz, zinssatz_variabel=None,
+                             zinsbindung_bis=None)
+
+    restschuld = stand_fortschreiben(rest, rate, zinssatz, 12)
+    zinsen_kalk = _jahreszins_kalk(kredit, 2020, rest, rate)
+
+    assert restschuld == 100000.0             # Rate deckt nicht mal den Zins
+    assert zinsen_kalk == 12000.0             # 12 × 1.000 € auf denselben Stand
+
+    # Auch mit einem Zinswechsel mitten in der eingefrorenen Phase (fest 12 %,
+    # ab Monat 5 variabel 3 % — deckt die Rate wieder) müssen beide Stellen
+    # exakt denselben Verlauf unterstellen.
+    kredit_wechsel = SimpleNamespace(zinssatz=12.0, zinssatz_variabel=3.0,
+                                     zinsbindung_bis=date(2020, 5, 31))
+    from app.vermoegen import _fortschreiben_darlehen
+    restschuld_wechsel = _fortschreiben_darlehen(kredit_wechsel, 2019, rest, rate, 12)
+    zinsen_wechsel = _jahreszins_kalk(kredit_wechsel, 2019, rest, rate)
+    # Handgerechnet nachvollzogen statt gegen sich selbst geprüft: 5 Monate
+    # fest eingefroren bei 100.000 € (500 € Rate < 1.000 € Zins), danach 7
+    # Monate zu 3 % mit Tilgung.
+    erwartet_rest = stand_fortschreiben(
+        stand_fortschreiben(rest, rate, 12.0, 5), rate, 3.0, 7)
+    assert restschuld_wechsel == erwartet_rest == 98236.82
+    # Von Hand nachgerechnet: 5 Monate eingefroren (5.000 € Zins auf
+    # 100.000 €), danach 7 Monate zu 3 % mit sinkender Restschuld — macht
+    # 6.736,82 € Jahreszins. Stimmt das nicht mit `restschuld_wechsel`
+    # überein, sind die beiden Stellen wieder auseinandergelaufen.
+    assert zinsen_wechsel == 6736.82
 
 
 def test_zinssatz_und_monatszins_rechnen_ineinander():
