@@ -32,6 +32,7 @@ import { grundschuldenHtml } from './grundschulden.js';
 import { cloudZeigen } from './cloud.js';
 // N270 — die Rubrik „Renovierungen" liegt bei ihrer eigenen Seite, nicht hier.
 import { renovierungenHtml } from '../renovierung/objektkarte.js';
+import { baustellenBannerHtml } from '../renovierung/baustelle.js';
 import { listeHolen as renovierungenHolen } from '../renovierung/daten.js';
 import { lageplanVorschauAufraeumen, lageplanVorschauFuellen } from './lageplan.js';
 
@@ -344,6 +345,9 @@ export async function laden() {
   // N270 — steht in beiden Bauformen direkt bei den einmaligen
   // Erwerbsnebenkosten: beides ist Geld, das einmalig ins Objekt fliesst.
   const renovierungenBlock = renovierungenHtml(slug, renovierungenRoh);
+  // N317 — ganz oben, auffälliger als die ruhige Rubrik: solange eine
+  // Renovierung läuft, wird hier am meisten gescannt.
+  const baustelleBanner = baustellenBannerHtml(slug, renovierungenRoh);
 
   if (istGrundstueck()) {
     // CCCXXXVI — das Grundstück in drei logischen Blöcken, von grob nach fein:
@@ -354,6 +358,7 @@ export async function laden() {
     //   C) Nutzung & Pacht — die Pacht und die kleine Ertragsrechnung.
     // Eigentümer und Ablage folgen den drei Blöcken.
     inhalt.innerHTML = `
+      ${baustelleBanner}
       ${nachpflegeHtml(det.nachpflege)}
       ${kennzahlenHtml(vermoegen, jahresmiete, restschuld, guthaben)}
       ${grundStammHtml(objekt)}
@@ -384,6 +389,7 @@ export async function laden() {
   const gesamtFlaeche = einheiten.reduce((s, e) => s + effektiveFlaeche(e), 0);
 
   inhalt.innerHTML = `
+    ${baustelleBanner}
     ${mietDiagrammHtml(bereiche.mieten, gesamtFlaeche, objektSummenHtml())}
     ${einheitenHtml()}
     ${zeitraumBlock}
