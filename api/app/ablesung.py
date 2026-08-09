@@ -47,7 +47,15 @@ def verbrauchsreihe(ablesungen: list, zeitraeume: list) -> dict:
             out[z.id] = None
             continue
         if randwert is None:                       # Startablesung
-            randwert, randdatum = a.stand, z.ende
+            # N315(j) - der Anker fuer die naechste Periode muss das TATSAECH-
+            # LICHE Ablesedatum sein, nicht z.ende: die Startablesung ist ein
+            # roher Zaehlerstand, nicht auf den Soll-Stichtag interpoliert. Mit
+            # z.ende als Anker zaehlte die Folgeperiode einen Tag zu wenig
+            # Ist-Tage, sobald die Ablesung nicht exakt auf die Periodengrenze
+            # fiel (z.B. Periodenende 30.09., Ablesung am 01.10.) - das ergab
+            # einen systematischen 364/365-Streckfaktor statt 1,0 und damit
+            # rund -0,27 % Fehler im interpolierten Verbrauch.
+            randwert, randdatum = a.stand, a.datum
             out[z.id] = {"verbrauch": 0.0, "randwert": randwert,
                          "datum": a.datum, "stand": a.stand, "start": True}
             continue

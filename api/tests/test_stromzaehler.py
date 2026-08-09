@@ -66,16 +66,15 @@ def test_haus_ist_gesamt_minus_anbau_eauto_scheune():
     assert verb[10] == 10800.0                       # Gesamt, direkt
     assert verb[12] == 1373.86                       # E-Auto, direkt
 
-    # Die gemessenen Zaehler weichen um den Faktor 364/365 von der Excel ab:
-    # die Vorperiode endet am 30.09., die neue beginnt am 01.10.; die Engine
-    # schreibt den Randwert auf das Periodenende fort und rechnet die Stand-
-    # differenz damit ueber 365 Tage, verteilt sie aber auf eine Periode von
-    # 364 Tagen (`engine.tage` ist eine reine Differenz). Die Excel nimmt
-    # stattdessen K8 - I8 ohne Streckung. Bewusst NICHT hier geradegezogen:
-    # dieselbe Interpolation traegt Wasser und Heizoel samt der Musterstrasse-
-    # Referenz. Die Konvention gehoert in die Rechenkonzept-Durchsicht (N90).
-    assert abs(verb[11] - 4762.068965517241 * 364 / 365) < 1e-6   # Anbau
-    assert abs(verb[13] - 46.026315789473756 * 364 / 365) < 1e-6  # Scheune
+    # N315(j) - vormals wichen die gemessenen Zaehler um den Faktor 364/365
+    # von der Excel ab: die Startablesung (Anbau/Scheune je am 01.10.) wurde
+    # mit dem Periodenende (30.09. der Vorperiode) statt ihrem tatsaechlichen
+    # Ablesedatum als Anker fortgeschrieben, wodurch der Folgeperiode ein
+    # Ist-Tag fehlte. Seit der Korrektur in `ablesung.py` sind Ist- und
+    # Soll-Tage gleich (beide 364), es wird nicht gestreckt — wie in der
+    # Excel (K8 - I8 ohne Streckung).
+    assert abs(verb[11] - 4762.068965517241) < 1e-6   # Anbau
+    assert abs(verb[13] - 46.026315789473756) < 1e-6  # Scheune
 
     # Die Kernformel der Excel gilt unabhaengig davon exakt:
     # Haus = Gesamt - Anbau - E-Auto - Scheune.
