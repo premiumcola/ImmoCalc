@@ -320,15 +320,18 @@ button.chip:hover{filter:brightness(.96)}
    darunter bis zur echten Kante) blieb bisher scharf, weil dort kein
    Element mit `backdrop-filter` liegt. Ein `::before` — mit `position:
    absolute`, relativ zur Pille dank deren `transform` (siehe oben) — deckt
-   diesen ganzen Streifen zusätzlich ab: über negative Versätze reicht es
-   bis an alle drei Bildschirmkanten UND ein Stück über die Pillen-Oberkante
-   hinaus (deckt den Bereich, in dem der runde Dokumente-Knopf herausragt).
-   Nur auf dem Handy nötig (Desktop/Tablet hat die Leiste kantig als
-   Seitenspalte/Fußleiste, siehe die Breakpoints weiter unten). */
+   diesen Streifen zusätzlich ab: über negative Versätze reicht es bis an
+   alle drei Bildschirmkanten (links/rechts/unten). `top:0` bewusst — NICHT
+   über die Pillen-Oberkante hinaus vergrössern (Fund: eine frühere Version
+   mit `top:-34px` liess den Blur „deutlich zu hoch" bis in Karteninhalt
+   weit über der Leiste hineinreichen). Der runde Dokumente-Knopf braucht
+   diese Abdeckung nicht extra — er ist blickdicht und hat seinen eigenen
+   Schatten. Nur auf dem Handy nötig (Desktop/Tablet hat die Leiste kantig
+   als Seitenspalte/Fußleiste, siehe die Breakpoints weiter unten). */
 @media(max-width:999px){
   .nav::before{
     content:"";
-    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-34px;
+    position:absolute; left:-14px; right:-14px; bottom:-14px; top:0;
     z-index:-1;
     background:rgba(255,255,255,.5);
     -webkit-backdrop-filter:blur(40px) saturate(1.05);
