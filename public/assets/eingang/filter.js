@@ -40,7 +40,7 @@ function objektButtons() {
     const an = S.filter.objekt === o.slug;
     knoepfe.push(`<button class="imbtn${an ? ' an' : ''}" type="button"
       data-slug="${esc(o.slug)}" title="${esc(o.name)}" aria-label="${esc(o.name)}"
-      aria-pressed="${an}">${esc(kurzObjekt(o.name))}</button>`);
+      aria-pressed="${an}">${esc(o.kuerzel || kurzObjekt(o.name))}</button>`);
   }
   els.fObjektBtns.innerHTML = knoepfe.join('');
 }

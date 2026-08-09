@@ -21,6 +21,10 @@ class Objekt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     slug: str = Field(index=True, unique=True)
     name: str
+    # N322 — vom Nutzer gepflegtes Kurzzeichen für Filter-Chips im Eingang
+    # (z. B. „TAU5"). Leer = weiterhin automatisch aus dem Namen abgeleitet
+    # (`kurzObjekt` im Frontend); additiv, kein Zwang zu einem Format.
+    kuerzel: str = ""
     ort: str = ""
     typ: str = "lg-mfhA"          # Logo-/Gebäudetyp
     # CCCXXXIV — freie Objektart für Anzeige/Übersicht (z. B. „Mehrfamilienhaus",

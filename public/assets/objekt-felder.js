@@ -361,6 +361,12 @@ const istEinheitswert = (o) => o?.verkehrswert_modus === VERKEHRSWERT_EINHEIT;
 /* Stammdaten des Objekts: dieselbe Feldbeschreibung für Anzeige und Formular. */
 const STAMMFELDER = [
   { k: 'name', l: 'Name', typ: 'text', pflicht: true },
+  // N322 — für die Filter-Chips im Eingang (dort bislang immer automatisch
+  // aus dem Namen gekürzt, z. B. „(Eschenau) Tauchersreuther Str. 5" → „tau
+  // 5" — bei mehreren ähnlichen Adressen nicht immer eindeutig genug).
+  { k: 'kuerzel', l: 'Kürzel', typ: 'text',
+    note: 'Für die Filter-Chips im Dokumenten-Eingang, z. B. „TAU5". Leer = '
+        + 'wird weiterhin automatisch aus dem Namen abgekürzt.' },
   // CCCXXX — die Objektart bestimmt, wie das Haus gedacht ist. Weit oben, weil
   // sie den Charakter des Objekts festlegt.
   { k: 'objektart', l: 'Objektart', typ: 'auswahl', ohneLeer: true,

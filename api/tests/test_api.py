@@ -45,6 +45,22 @@ def test_objektliste_nennt_die_einheiten():
             assert feld in haus
 
 
+def test_kuerzel_ist_leer_bis_es_gepflegt_wird():
+    """N322 — ohne Pflege bleibt das Kürzel leer (Frontend kürzt dann selbst
+    aus dem Namen); gesetzt wird es über dieselbe PATCH-Route wie jedes
+    andere Stammdatenfeld und erscheint in der Objektliste."""
+    with TestClient(app) as c:
+        objekte = {o["slug"]: o for o in c.get("/api/objekte").json()}
+        assert objekte["obj-a"]["kuerzel"] == ""
+
+        antwort = c.patch("/api/objekte/obj-a", json={"kuerzel": "TAU5"})
+        assert antwort.status_code == 200
+
+        objekte = {o["slug"]: o for o in c.get("/api/objekte").json()}
+        assert objekte["obj-a"]["kuerzel"] == "TAU5"
+        assert c.get("/api/objekte/obj-a").json()["objekt"]["kuerzel"] == "TAU5"
+
+
 def test_leerstand_ist_an_der_einheit_erkennbar():
     """Eine Einheit ohne laufendes Mietverhältnis gilt als nicht vermietet."""
     with TestClient(app) as c:

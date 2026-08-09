@@ -225,6 +225,7 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
         je_einheit = _miete_je_einheit(mieten[o.id], einheiten[o.id], heute)
         out.append({
             "id": o.id, "slug": o.slug, "name": o.name, "ort": o.ort,
+            "kuerzel": o.kuerzel,
             "anzeigename": anzeigename(o.name, o.ort, o.strasse, o.plz),
             # N70 — kanonischer Immobilientitel für die Anzeige, überall gleich.
             "titel": objekt_titel(o),
@@ -376,7 +377,7 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
     o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
-    erlaubt = {"name", "ort", "strasse", "plz", "typ", "nutzung", "turnus",
+    erlaubt = {"name", "kuerzel", "ort", "strasse", "plz", "typ", "nutzung", "turnus",
                "start_monat", "flaeche", "kaufpreis", "kaufdatum", "verkehrswert",
                "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber",
                # CCCXXXIV / CCCXXX — Objektart (Anzeige) und Baujahr/Baudatum
