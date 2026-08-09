@@ -18,16 +18,16 @@
    zentral, `!important`, damit es auch die Klassen-Regeln schlägt. */
 [hidden]{display:none !important}
 html,body{margin:0;padding:0}
-/* Nutzer: „Wenn ich die Seite super weit runterziehe, geht der Titel voll
-   runter und irgendwann verschwinden alle Einträge im Menü." — das iOS-
-   Gummiband-Overscroll auf `body` selbst: unterhalb 480px (Handy) scrollt
-   die ganze Seite als EIN Dokument (kein Rahmen wie ab Tablet, siehe unten),
-   und ohne diese Zeile lässt sich `body` beliebig über den oberen Rand
-   hinausziehen — dabei rutscht die `sticky`-Kopfzeile mit, und bei starkem
-   Zug gerät die `fixed`-Navi (mit ihrem eigenen `backdrop-filter`-Compositing-
-   Layer) sichtbar aus dem Tritt. Global statt nur ab 480px, damit das Handy
-   dieselbe Ruhe bekommt wie der Tablet/Desktop-Rahmen weiter unten. */
-html,body{overscroll-behavior-y:none}
+/* Nutzer: „Dass das Über-/Unterrollen fehlt, fühlt sich falsch an — die
+   Seite darf das, nur Header und Menüleiste nicht." Das Gummiband-Overscroll
+   von `body` selbst bleibt also erlaubt (siehe `.app{padding-top}` unten,
+   nicht hier). Der eigentliche Fehler lag nicht am Bounce, sondern daran,
+   dass die Kopfzeile `position:sticky` war: Safaris „stuck"-Zustand bezieht
+   sich auf den normalen Scrollbereich — beim Überziehen über den oberen
+   Rand hinaus (negativer Scroll-Offset) fällt die Bedingung kurz weg, die
+   Leiste rutscht auf ihre statische Flussposition zurück und wandert mit
+   dem Dokument nach unten. `position:fixed` kennt diesen Zustand nicht, ist
+   also immer am Viewport verankert, ganz gleich wie weit gezogen wird. */
 body{
   background:var(--paper); color:var(--ink); font-family:var(--body);
   -webkit-font-smoothing:antialiased; line-height:1.45;
@@ -43,6 +43,12 @@ body{
      letzte Text unter Pille UND Home-Indikator. Pillenhöhe (8+54+8=70px) +
      14px Rand + etwas Luft + die sichere Zone. */
   padding-bottom:calc(92px + env(safe-area-inset-bottom));
+}
+@media(max-width:479px){
+  /* Reserviert den Platz, den `.bar` durch `position:fixed` (siehe dort)
+     aus dem Fluss herausnimmt — sonst verschwindet der Seitenanfang
+     darunter. 59px = gemessene Höhe der Leiste ohne sichere Zone oben. */
+  .app{padding-top:calc(59px + env(safe-area-inset-top))}
 }
 /* ---- N271: ab Tablet ist die App ein RAHMEN, kein langes Dokument ----
    Bis hierher scrollte die ganze Seite: `.app` wuchs mit dem Inhalt, und die
@@ -89,8 +95,20 @@ body{
    Innenabstand, Titel eine Stufe kleiner) — Platz für die neue
    Kopfzeilen-Aktionsgruppe rechts (Suche, „…"), und Titel/Untertitel brechen
    nie um (roter Faden „Kopfzeilen einzeilig"). */
+@media(max-width:479px){
+  /* N327-b — `fixed` statt `sticky` NUR auf dem Handy: siehe die Begründung
+     ganz oben bei `html,body` (Gummiband-Overscroll lässt `sticky` kurz auf
+     die statische Position zurückfallen, `fixed` kennt diesen Zustand
+     nicht). Ab 480px ist `.bar` ohnehin ein gewöhnliches Flex-Geschwister
+     von `.scroll` außerhalb dessen Scrollbereich (siehe N271-Kommentar
+     oben) und bleibt allein dadurch stehen — dort würde `fixed` nur den
+     abgerundeten Kartenrahmen sprengen, deshalb strikt hier drin gehalten,
+     NICHT als unbedingte Basisregel (sonst gewinnt sie per Quellreihenfolge
+     gegen jeden früheren `@media`-Override). */
+  .bar{position:fixed; top:0; left:0; right:0}
+}
 .bar{
-  position:sticky; top:0; z-index:20; background:var(--sheet);
+  z-index:20; background:var(--sheet);
   border-bottom:1px solid rgba(22,38,44,.07);
   /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
      füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet.
