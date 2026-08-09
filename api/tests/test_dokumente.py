@@ -2601,3 +2601,86 @@ def test_scan_ohne_ki_json_laeuft_unveraendert(monkeypatch):
                 "beschreibung": f"Beleg {len(wert)}", "ki_json": wert},
                 files={"datei": ("s.pdf", b"%PDF-1.4 t", "application/pdf")})
             assert antwort.status_code == 201
+
+
+def test_manueller_betrag_macht_aus_info_beleg_eine_kostenposition(monkeypatch):
+    """N267 — der gemeldete Fall: eine Grundsteuer-Abbuchungsvorankündigung, die
+    die KI als "reine Informations- und Ankündigungsmitteilung ohne
+    Kostenangabe" liest (kein `betrag` in der Auslese), obwohl auf dem Beleg
+    zweimal "Summe Abbuchungsbetrag: 87,00 €" steht. Die Bestätigungsmaske
+    (`belegbestaetigung.js::geldBlock`) lässt den Nutzer das Feld trotzdem
+    öffnen und den Betrag eintragen — `belegAblegen()` reicht ihn dann als
+    eigenes `betrag`-Feld an `/scannen` durch, unabhängig davon, was die KI
+    gefunden hat. Das muss eine echte Kostenposition ergeben, keinen
+    Info-Beleg."""
+    import json as _json
+
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Tauchersreuther Str. 7"
+        slug = _mit_cloud(c, "Tauchersreuther Str. 7", ordner)
+        monkeypatch.setattr(modul, "verbindung",
+                            lambda session: _Wolke([], ordner))
+
+        # Die KI-Auslese trägt bewusst KEINEN `betrag` — genau die gemeldete
+        # Fehlklassifikation. Der Nutzer widerspricht in der Maske.
+        ki = {"ki": True,
+              "einordnung": "reine Informations- und Ankündigungsmitteilung "
+                             "ohne Kostenangabe",
+              "kosten_relevant": False,
+              "felder": {"faelligkeit_1": "15.08.2026",
+                         "faelligkeit_2": "15.11.2026"},
+              "immobilie": "Tauchersreuther Str. 7", "einheit": ""}
+        antwort = c.post("/api/dokumente/scannen", data={
+            "objekt": slug, "kategorie": "Nebenkosten", "jahr": 2026,
+            "kostenart": "Grundsteuer",
+            "beschreibung": "Abbuchungsvorankündigung",
+            # Der manuell eingetragene Betrag aus der Maske — schlägt die
+            # Erkennung, die hier keinen fand.
+            "betrag": "87.00",
+            "ki_json": _json.dumps(ki)},
+            files={"datei": ("scan.pdf", b"%PDF-1.4 t", "application/pdf")})
+        assert antwort.status_code == 201
+
+        with Session(engine) as s:
+            d = s.get(Dokument, antwort.json()["id"])
+            assert d.betrag == 87.0
+            # Der Betrag steht auch sichtbar im Dateinamen (CXXIII).
+            assert "87,00" in d.dateiname
+            # Die Auslese bleibt zur Nachvollziehbarkeit erhalten — der
+            # Widerspruch des Nutzers überschreibt sie nicht.
+            assert d.ki_einordnung == ki["einordnung"]
+
+
+def test_ohne_betrag_bleibt_es_ein_info_beleg(monkeypatch):
+    """Gegenprobe zu N267: lässt der Nutzer das Betragsfeld leer — weil der
+    Beleg wirklich nichts kostet —, muss weiterhin ein Info-Beleg entstehen
+    (kein `betrag`, keine Kostenposition). Der neue Weg, einen Betrag zu
+    setzen, darf den bestehenden Info-Beleg-Weg nicht anfassen."""
+    import json as _json
+
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        ordner = "Home/Immobilien/Merkweg 4"
+        slug = _mit_cloud(c, "Merkweg 4", ordner)
+        monkeypatch.setattr(modul, "verbindung",
+                            lambda session: _Wolke([], ordner))
+
+        ki = {"ki": True,
+              "einordnung": "reine Informations- und Ankündigungsmitteilung "
+                             "ohne Kostenangabe",
+              "kosten_relevant": False}
+        antwort = c.post("/api/dokumente/scannen", data={
+            "objekt": slug, "kategorie": "Nebenkosten", "jahr": 2026,
+            "kostenart": "Grundsteuer",
+            "beschreibung": "Abbuchungsvorankündigung",
+            "ki_json": _json.dumps(ki)},
+            files={"datei": ("scan.pdf", b"%PDF-1.4 t", "application/pdf")})
+        assert antwort.status_code == 201
+
+        with Session(engine) as s:
+            d = s.get(Dokument, antwort.json()["id"])
+            assert d.betrag is None
+            assert "€" not in d.dateiname

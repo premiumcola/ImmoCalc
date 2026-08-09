@@ -12,6 +12,11 @@
  */
 import { baueDialog, kiAusleseHtml, esc } from './immo.js';
 import { auswahlfeld } from './auswahl.js';
+// N267 — DAS eine Betragsfeld der App (Tausenderpunkte, Komma, das Zeichen im
+// Feld) statt einer zweiten, eigenen Parser-Logik hier. `geldEingabe`, damit
+// der Name nicht mit der lokalen Variable `geldFeld` (dem Element selbst)
+// kollidiert.
+import { geldFeld as geldEingabe } from './eingabe.js';
 
 /* N254 — die Wartezeit zwischen Zuschnitt und dieser Maske.
  *
@@ -69,17 +74,13 @@ export function analyseDecke(text = 'Der Beleg wird gelesen …') {
     deshalb exportiert statt ein zweites Mal geschrieben. */
 export const ohneEndung = name => String(name || '').replace(/\.[^.\s]+$/, '');
 
-/* N267 — deutscher Betrag aus einem Textfeld. Auf dem Telefon tippt niemand
-   einen Punkt: „1.234,56", „87,00", „87" müssen alle ankommen. `null`, wenn
-   nichts Brauchbares drinsteht — dann bleibt der Beleg ohne Kostenposition. */
-function betragLesen(text) {
-  const roh = String(text || '').replace(/[^\d,.-]/g, '').trim();
-  if (!roh) return null;
-  // Der LETZTE Trenner ist das Komma; alles davor sind Tausenderpunkte.
-  const stelle = Math.max(roh.lastIndexOf(','), roh.lastIndexOf('.'));
-  const zahl = stelle < 0
-    ? Number(roh)
-    : Number(roh.slice(0, stelle).replace(/[.,]/g, '') + '.' + roh.slice(stelle + 1));
+/* N267 — der Betrag aus dem canonical Feld (`eingabe.js::geldFeld`). Dessen
+   `.value` liefert schon den rohen, deutschsprachig-getippt aber
+   punktgetrennten Wert („87.00", „1234.5") — hier bleibt nur noch runden und
+   auf „nichts Brauchbares" prüfen. `null`, wenn das Feld leer ist oder nur
+   Unsinn drinsteht — dann bleibt der Beleg ohne Kostenposition. */
+function betragVon(el) {
+  const zahl = Number(el?.value);
   return Number.isFinite(zahl) && zahl > 0 ? Math.round(zahl * 100) / 100 : null;
 }
 
@@ -111,10 +112,9 @@ function geldBlock(ki) {
     <div class="sb-name sb-geld"${betrag ? '' : ' data-zu'}>
       <label for="sbBetrag">Kostenposition</label>
       <div class="sb-eur"${betrag ? '' : ' hidden'}>
-        <input id="sbBetrag" type="text" inputmode="decimal"
-               value="${betrag ? esc(betragZeigen(betrag)) : ''}"
+        <input id="sbBetrag" type="text"
+               value="${betrag ? esc(betrag.toFixed(2)) : ''}"
                placeholder="0,00" spellcheck="false" autocomplete="off">
-        <span class="sb-waehrung">€</span>
       </div>
       ${herleitung
         ? `<p class="sb-herleitung"><span class="sb-rechnung">${esc(herleitung)}</span>
@@ -361,6 +361,11 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
     };
     const feld = dlg.querySelector('#sbName');
     const geldFeld = dlg.querySelector('#sbBetrag');
+    // N267 — DAS eine Betragsfeld der App: Tausenderpunkte, Komma statt Punkt,
+    // das €-Zeichen im Feld. Bindet auch, während `.sb-eur` noch `hidden`
+    // steht — das Element ist im DOM, nur unsichtbar; die Formatierung greift
+    // dann sofort, sobald „Betrag eintragen" es aufmacht.
+    const geldGriff = geldFeld ? geldEingabe(geldFeld) : null;
 
     /* N283(b) — die eingehängten Felder. Sie stehen im Fenster, nicht davor:
        eine Zielwahl als eigener Dialog fragt dasselbe eine Ebene früher und
@@ -375,7 +380,7 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
       if (!felder.some(f => f.imNamen)) return;
       if ((feld?.value || '') !== letzterVorschlag) return;   // selbst getippt
       const neu = await namenHolen(
-        { ...zielJetzt(), betrag: betragLesen(geldFeld?.value) || ziel.betrag },
+        { ...zielJetzt(), betrag: betragVon(geldFeld) || ziel.betrag },
         aufnahme, jahrHinweis);
       if (!neu || !feld || feld.value !== letzterVorschlag) return;
       feld.value = neu;
@@ -422,7 +427,7 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
         // die Erkennung einen Betrag vorgeschlagen hatte und der Nutzer ihn
         // wieder herausgelöscht hat. Der Aufrufer soll beides unterscheiden
         // können, deshalb steht der Schlüssel immer da.
-        betrag: betragLesen(geldFeld?.value),
+        betrag: betragVon(geldFeld),
         // N283(b) — die Werte der eingehängten Felder. Ohne Steckplatz bleibt
         // das Objekt leer; kein Aufrufer muss etwas daran ändern.
         zusatz,
@@ -437,6 +442,7 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
     dlg.addEventListener('click', e => { if (e.target === dlg) schliessen(null); });
     dlg.addEventListener('close', () => {
       adressen.forEach(adr => URL.revokeObjectURL(adr));
+      try { geldGriff?.zerstoere(); } catch { /* Dialog geht ohnehin weg */ }
       schliessen(null);
     });
   });
