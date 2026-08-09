@@ -136,7 +136,13 @@ def erfasste_posten(session: Session, objekt_id: int, von: date,
         if l.jahr not in verhaeltnisse:
             verhaeltnisse[l.jahr] = _jahresverhaeltnis(session, objekt_id, l.jahr)
         anteil = verhaeltnisse[l.jahr]
-        if anteil and l.kwh:
+        # N315(e) — `l.kwh` als Wahrheitswert prüfte auf „ungleich 0", nicht
+        # auf „bekannt": eine Ladung mit genau 0 kWh (z. B. ein Ladevorgang
+        # ohne Energiefluss) fiel dadurch auf den Zweig ohne Netz/eigen-
+        # Aufteilung — und ein einziger solcher Posten kippte `aufteilung`
+        # für den ganzen Monat auf falsch, worauf die Abrechnung auf den
+        # vollen Netzpreis zurückfiel, obwohl das Verhältnis bekannt war.
+        if anteil:
             extern, eigen = anteil
             quote = extern / (extern + eigen)
             posten.append(Posten(tag=tag, kwh=l.kwh,

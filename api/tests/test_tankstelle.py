@@ -569,6 +569,26 @@ def test_verlauf_aus_erfassten_ladungen_mit_jahresverhaeltnis(client):
     assert "Aufteilung" in d["hinweis"]
 
 
+def test_ladung_mit_null_kwh_kippt_die_aufteilung_nicht(client):
+    """N315(e) — `if anteil and l.kwh:` prüfte den Wahrheitswert von `kwh`
+    statt seine Bekanntheit. Eine echte Ladung mit genau 0 kWh (Stecker dran,
+    kein Ladestrom geflossen) bekam dadurch keine Netz/eigen-Aufteilung, und
+    dieser einzelne Posten kippte den ganzen Monat auf „unbekannt" — die
+    Abrechnung fiel auf den vollen Netzpreis zurück, obwohl das Jahres-
+    verhältnis längst bekannt war."""
+    slug = _neues_objekt(client, "Nullhaus")
+    _jahresaufteilung(slug, 2025, extern=60.0, eigen=40.0)
+    _nutzer(client, slug, "Marvin", "marvin@example.invalid")
+    _ladung(client, slug, 2025, name="Marvin", kwh=100.0, datum="2025-03-05")
+    _ladung(client, slug, 2025, name="Marvin", kwh=0.0, datum="2025-03-20")
+
+    d = client.get(f"/api/tankstelle/{slug}/verlauf", params={"jahr": 2025}).json()
+    maerz = next(m for m in d["monate"] if m["monat"] == 3)
+    assert maerz["extern_prozent"] == 60.0      # weiterhin bekannt, nicht None
+    assert d["summe"]["extern_prozent"] == 60.0
+    assert d["summe"]["extern_kwh"] == 60.0     # 60 % von 100 kWh
+
+
 def test_verlauf_ueber_freien_zeitraum_geht_ueber_die_jahresgrenze(client):
     slug = _neues_objekt(client, "Grenzhaus")
     _ladung(client, slug, 2024, name="Marvin", kwh=20.0, datum="2024-11-02")
