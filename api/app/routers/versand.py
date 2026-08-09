@@ -116,6 +116,9 @@ def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
         "ohne_mail": [r["partei"] for r in zeilen
                       if not r["versandbereit"] and not r["leerstand"]],
         "leerstand": [r["partei"] for r in zeilen if r["leerstand"]],
+        # N314(g) — `_ergebnis` berechnet das schon; ohne diese Zeile blieb es
+        # im Endpunkt stecken und das Frontend musste `/abrechnung` extra holen.
+        "vorauszahlungen_ohne_partei": res.get("vorauszahlungen_ohne_partei", []),
     }
 
 

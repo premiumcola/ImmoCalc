@@ -667,6 +667,34 @@ function empfaengerHtml(p) {
     ausdrucken und mit der Post schicken.</div>`;
 }
 
+/**
+ * N314(g) — eine Vorauszahlung, deren Partei zu keinem Bezug dieses Zeitraums
+ * passt (Tippfehler, ausgezogener Mieter unter altem Namen). Sie steckt in
+ * `gesamt.abschlaege`, taucht aber in keiner Partei-Zeile auf — ohne diesen
+ * Hinweis unsichtbar. Der Betrag ist nicht Teil der API-Antwort und wird
+ * daher aus der Differenz Gesamt-Abschläge ./. Summe der bekannten
+ * Vorauszahlungen abgeleitet (bei genau einem unbekannten Namen exakt sein
+ * Betrag).
+ */
+function vorauszahlungOhnePartei(a) {
+  const namen = a.vorauszahlungen_ohne_partei;
+  if (!namen?.length) return '';
+  const bekannt = Object.values(a.parteien || {})
+    .reduce((s, w) => s + (w.vorauszahlungen || 0), 0);
+  const betrag = (a.gesamt?.abschlaege || 0) - bekannt;
+  const satz = namen.length === 1
+    ? `Der Name passt zu keiner Partei dieses Zeitraums.`
+    : `Diese Namen passen zu keiner Partei dieses Zeitraums.`;
+  return `<div class="karte">
+      <h3>Vorauszahlung ohne Partei</h3>
+      <div class="weg-warn"><span class="ww-z">${eur(betrag)}</span>
+        <span><b>${esc(namen.join(', '))}</b> — ${satz} Sie fließen in die
+        Gesamtsumme ein, aber in keine Partei-Zeile. Name in den
+        Mieterstammdaten prüfen und richtigstellen.</span>
+      </div>
+    </div>`;
+}
+
 async function ergebnisHtml() {
   const [rechnung, versand] = await Promise.allSettled([
     api(`/zeitraeume/${zid}/abrechnung`),
@@ -702,6 +730,7 @@ async function ergebnisHtml() {
       <div class="summe gesamt"><span>Saldo</span>
         <b class="${(g.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(g.saldo)}</b></div>
     </div>${zeilen}
+    ${vorauszahlungOhnePartei(a)}
     ${a.offen?.length ? `<div class="karte"><h3>Noch offen</h3>
       ${a.ohne_betrag?.length ? `<div class="summe">
         <span>Ohne Betrag</span><b>${a.ohne_betrag.map(esc).join(', ')}</b></div>` : ''}
@@ -1298,7 +1327,7 @@ async function wiederOeffnen(knopf) {
   }
 }
 
-function versandWahl(plan) {
+function versandWahl(plan, rechnung) {
   const zeile = (p, marke, klasse, unter) => `
     <div class="vz">
       <span class="vn">${esc(p.partei)}
@@ -1324,12 +1353,29 @@ function versandWahl(plan) {
     : 'Es gibt keine Mietpartei zu beliefern — der Zeitraum lässt sich '
       + 'trotzdem abschließen.';
 
+  // N314(g) — dieselbe Vorauszahlung-ohne-Partei-Lücke, hier noch vor dem
+  // Versand: gerade jetzt lohnt der Hinweis am meisten, bevor die Abrechnung
+  // verschickt wird, ohne dass diese Zahlung irgendwo ankommt.
+  const namen = rechnung?.vorauszahlungen_ohne_partei;
+  let ungeklaert = '';
+  if (namen?.length) {
+    const bekannt = Object.values(rechnung.parteien || {})
+      .reduce((s, w) => s + (w.vorauszahlungen || 0), 0);
+    const betrag = (rechnung.gesamt?.abschlaege || 0) - bekannt;
+    ungeklaert = `<div class="weg-warn"><span class="ww-z">${eur(betrag)}</span>
+        <span><b>${esc(namen.join(', '))}</b> — passt zu keiner Partei
+        dieses Zeitraums und wird so an niemanden zugeordnet. Name in den
+        Mieterstammdaten prüfen, bevor verschickt wird.</span>
+      </div>`;
+  }
+
   return new Promise(fertig => {
     const dlg = document.createElement('dialog');
     dlg.className = 'immo-dlg vdlg';
     dlg.innerHTML = `
       <div class="dt">Abrechnung abschließen</div>
       <p>${esc(plan.zeitraum)} · ${esc(satz)}</p>
+      ${ungeklaert}
       <div class="vliste">${liste}</div>
       ${bereit.length ? `<button class="btn"
         data-wahl="senden">Abschließen und verschicken</button>` : ''}
@@ -1353,9 +1399,12 @@ async function abschliessen(knopf) {
   knopf.disabled = true;
   knopf.textContent = 'Prüfe Empfänger …';
 
-  let plan;
+  let plan, rechnung;
   try {
     plan = await api(`/zeitraeume/${zid}/versand`);
+    // N314(g) — `vorauszahlungen_ohne_partei` steckt nur in `/abrechnung`,
+    // nicht in `/versand`; separat geholt, damit der Hinweis auch hier steht.
+    rechnung = await api(`/zeitraeume/${zid}/abrechnung`).catch(() => null);
   } catch (fehler) {
     knopf.disabled = false;
     knopf.textContent = 'Abrechnungen erstellen und versenden';
@@ -1363,7 +1412,7 @@ async function abschliessen(knopf) {
     return;
   }
 
-  const weg = await versandWahl(plan);
+  const weg = await versandWahl(plan, rechnung);
 
   if (!weg) {
     knopf.disabled = false;
@@ -1491,7 +1540,10 @@ export async function laden() {
       ? await api(`/zeitraeume/${zid}/stromkette`).catch(() => null) : null);
   state.setChipMap(baueChipMap());
   const jahrLabel = state.daten.jahr || Number((state.daten.ende || '').slice(0, 4)) || '';
-  titel.textContent = `Abrechnungszeitraum ${jahrLabel}`.trim();
+  // N327 — "Abrechnungszeitraum" lief mit dem neuen Kopfzeilen-Fristchip und
+  // den Kopfzeilen-Aktionen (Suche/„…") auf dem iPhone auf "Abrechnungszeitra…"
+  // zusammen; der Zeitraum selbst steht ohnehin schon im Untertitel darunter.
+  titel.textContent = `Zeitraum ${jahrLabel}`.trim();
   sub.textContent = `${state.daten.label} · ${state.daten.objekt_name}`;
   fristChipSetzen();
   await zeichnen();
