@@ -288,8 +288,14 @@ button.chip:hover{filter:brightness(.96)}
      fest 14px, die auf sehr grossen Notch-Geräten wieder zu knapp am
      Home-Indikator läge) und das Frosted-Glass-Rezept (hell statt dunkel,
      die App bleibt bei ihrer Farbsprache). */
+  /* N327-b — Nutzer-Fund: `max(14px, calc(env(...) + 6px))` liess auf dem
+     echten iPhone den unteren Abstand ganz wegfallen (verschachteltes
+     `calc()` in `max()` scheint dort nicht zu greifen) — die Pille sass
+     ohne jeden Rand am unteren Bildschirmrand, während links/rechts die
+     14px sichtbar blieben. `max()` bildet selbst schon einen
+     Rechenkontext; das äussere `calc()` war ohnehin nur Zierrat. */
   position:fixed; left:14px; right:14px;
-  bottom:max(14px, calc(env(safe-area-inset-bottom) + 6px));
+  bottom:max(14px, env(safe-area-inset-bottom) + 6px);
   z-index:30; border-radius:26px;
   display:flex; gap:5px; padding:8px 8px;
   /* N327-b — Nutzer: der Schatten soll auch links/rechts/unten im Rand-
@@ -313,9 +319,15 @@ button.chip:hover{filter:brightness(.96)}
 }
 @supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){
   .nav{
-    background:rgba(255,255,255,.8);
-    -webkit-backdrop-filter:blur(22px) saturate(1.05);
-    backdrop-filter:blur(22px) saturate(1.05);
+    /* N327-b — Nutzer: „so stark, dass man den Text nicht mehr lesen kann"
+       — 22px (die Referenzwert der Vorlage) blieb zu schwach/lesbar. Der
+       Blur wirkt ausschliesslich innerhalb der Pillen-Fläche selbst (links,
+       rechts, unten im 14px-Rand mit drin) — nie darüber, weil
+       `backdrop-filter` nur den Bereich hinter dem eigenen Element erfasst,
+       niemals das, was ausserhalb seiner Box liegt. */
+    background:rgba(255,255,255,.72);
+    -webkit-backdrop-filter:blur(46px) saturate(1.1);
+    backdrop-filter:blur(46px) saturate(1.1);
   }
 }
 /* N327-b — der iOS-Stolperstein aus der Referenz: `html`/`body` haben weiter
@@ -791,14 +803,14 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
 /* N267: die Kostenposition — ein Feld, zwei Zustände. Erkannte Beträge stehen
    drin; ohne Erkennung ist das Feld zu und nur der Knopf „Betrag eintragen"
    steht da. So meckert kein leeres Pflichtfeld jeden Info-Beleg an, und der
-   Nutzer kann trotzdem widersprechen. Das €-Zeichen sitzt IM Feld statt als
-   eigene Zeile daneben — sonst wäre die Maske auf dem Telefon eine Zeile
-   länger für ein einzelnes Zeichen. */
-.scanbest-dlg .sb-eur{position:relative; display:flex; align-items:center}
-.scanbest-dlg .sb-eur input{padding-right:38px; text-align:right;
-  font:600 16px var(--mono)}
-.scanbest-dlg .sb-waehrung{position:absolute; right:13px; pointer-events:none;
-  font:600 14px var(--mono); color:var(--soft)}
+   Nutzer kann trotzdem widersprechen. Gebunden ist das Feld über das
+   canonical `eingabe.js::geldFeld` (Tausenderpunkte, Komma, das €-Zeichen IM
+   Feld) — hier nur die Betonung obendrauf, etwas größer als ein normales
+   Textfeld, denn hier hängt die Entscheidung Info-Beleg/Kostenposition dran. */
+.scanbest-dlg .sb-eur{display:flex; align-items:center}
+.scanbest-dlg .sb-eur input{text-align:right; font:600 16px var(--mono)}
+.scanbest-dlg .sb-eur .eingabe-einheit{font:600 14px var(--mono);
+  color:var(--soft)}
 .scanbest-dlg .sb-doch{align-self:flex-start; min-height:44px; padding:0 16px;
   border:1.5px solid var(--teal); border-radius:12px; background:transparent;
   color:var(--teal); cursor:pointer; font:600 13px var(--body)}
