@@ -23,9 +23,11 @@ from datetime import date, timedelta
 from sqlmodel import Session, select
 
 from .cashflow import monate_im_jahr
+from .engine import Position
 # N312 — die zweite Monatsregel: Zahlmonate für Vorauszahlungen.
 from .zeit import zahlmonate
-from .models import Einheit, Kostenposition, Miete, Partei, Vorauszahlung, Zeitraum
+from .models import (Einheit, Kostenart, Kostenposition, Miete, Partei,
+                     Vorauszahlung, Zeitraum)
 from .turnus import jahresbetrag
 
 # Was jeder Schlüssel bedeutet und ob er sich aus den Stammdaten ergibt.
@@ -411,6 +413,66 @@ def vorauszahlung_je_partei(session: Session, z: Zeitraum) -> dict[str, float]:
                                    bis=m.bis_datum), z.start, z.ende)
         ergebnis[partei] = ergebnis.get(partei, 0.0) + monatlich * monate
     return {k: round(v, 2) for k, v in ergebnis.items() if round(v, 2)}
+
+
+def _engine_positionen(session: Session, z: Zeitraum,
+                       p: Kostenposition) -> list[Position]:
+    """CCCLIX — eine Kostenposition in die zu rechnenden Engine-Positionen
+    übersetzen. Trägt sie einen Vorab-Anteil direkt auf eine Einheit, entstehen
+    zwei: der Vorab-Betrag zu 100 % auf diese Einheit (mit eigenem §35a) und der
+    Rest (Betrag − Vorab) nach dem gewählten Schlüssel. Ohne Vorab bleibt es die
+    eine Position wie bisher."""
+    vorab = round(p.vorab_betrag or 0, 2)
+    if vorab > 0 and (p.vorab_einheit or "").strip():
+        aus = [Position(p.kostenart, vorab, "individuell",
+                        ableiten_einheit(session, z, p.vorab_einheit), p.vorab_s35)]
+        rest = round((p.betrag or 0) - vorab, 2)
+        if rest > 0.005:
+            aus.append(Position(p.kostenart, rest, p.schluessel, p.anteile or {}, p.s35))
+        return aus
+    return [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)]
+
+
+def positionen_fuer_abrechnung(
+        session: Session, z: Zeitraum
+        ) -> tuple[list[Position], dict[str, float], list[Kostenposition],
+                  list[Vorauszahlung]]:
+    """N274/N314(g) — die EINE Stelle, die aus den Rohdaten eines Zeitraums
+    macht, was die Engine rechnen soll. Vorher gab es das zweimal: einmal
+    hier (`objekt/abrechnung.py`s Vorschau-Endpunkt) und einmal — einfacher,
+    ohne N125/CCCLIX/CCCLXIV — in `routers/versand.py` für den ECHTEN
+    Versand. Der Versand-Pfad kannte weder die Vorauszahlung-aus-der-Miete-
+    Ableitung noch den Vorab-Anteil-Split noch den §-N125-Filter für nicht
+    umlagefähige Kostenarten — eine Partei ohne eigenen `Vorauszahlung`-
+    Datensatz hätte 0,00 € Vorauszahlung angerechnet bekommen, obwohl die
+    Vorschau (`GET .../abrechnung`) längst den korrekten, aus der Miete
+    abgeleiteten Betrag zeigte. Gefunden beim Bau des Mieter-Onepagers
+    (N274) an echten Daten (Laufer Str. 5, Zeitraum 15): alle fünf Parteien
+    hätten beim Versand fälschlich 0,00 € Vorauszahlung und damit eine zu
+    hohe Nachzahlung gesehen.
+
+    Gibt zurück: die Engine-Positionen (nach N125-Filter und CCCLIX-Split),
+    die Vorauszahlung je Partei (Miete-Ableitung, von echten Datensätzen
+    überschrieben), die umlagefähigen Kostenpositionen (für
+    `fehlende_angaben`) und die rohen `Vorauszahlung`-Datensätze (für
+    `unbekannte_vorauszahlungen`)."""
+    pos = session.exec(
+        select(Kostenposition).where(Kostenposition.zeitraum_id == z.id)).all()
+    vzs = session.exec(
+        select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == z.id)).all()
+    # N125 — nicht umlagefähige Kostenarten (z. B. Einspeisevergütung) gehören
+    # dem Eigentümer, nicht dem Mieter.
+    nicht_umlegen = {k.name.strip().lower() for k in session.exec(
+        select(Kostenart).where(Kostenart.objekt_id == z.objekt_id)).all()
+        if not k.umlagefaehig}
+    umlegbar = [p for p in pos if p.kostenart.strip().lower() not in nicht_umlegen]
+    positionen = [ep for p in umlegbar if p.status == "erledigt"
+                  for ep in _engine_positionen(session, z, p)]
+    # CCCLXIV — Vorauszahlungen aus der Miete ableiten (monatliche NK ×
+    # belegte Monate); separat erfasste Vorauszahlungs-Datensätze haben Vorrang.
+    vorausz = {**vorauszahlung_je_partei(session, z),
+              **{v.partei: v.betrag for v in vzs}}
+    return positionen, vorausz, umlegbar, vzs
 
 
 def ableiten(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float]:

@@ -9,11 +9,12 @@ from sqlmodel import Session, select
 from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..cloudkern import _lies
 from ..db import get_session
-from ..engine import Position, abrechnung
+from ..engine import abrechnung
 from ..mailversand import MailFehler
-from ..models import (Anteil, Bewohner, Eigentuemer, Kostenposition, Miete,
-                      Objekt, Versandprotokoll, Vorauszahlung, Zeitraum)
-from ..verteilung import (_laufend, fehlende_angaben, leerstaende, stammdaten,
+from ..models import (Anteil, Bewohner, Eigentuemer, Miete, Objekt,
+                      Versandprotokoll, Zeitraum)
+from ..verteilung import (_laufend, fehlende_angaben, leerstaende,
+                         positionen_fuer_abrechnung, stammdaten,
                          unbekannte_vorauszahlungen)
 from .mail import S_NAME, zugang
 
@@ -22,16 +23,19 @@ router = APIRouter(prefix="/api/zeitraeume", tags=["versand"])
 
 
 def _ergebnis(session: Session, z: Zeitraum) -> dict:
-    pos = session.exec(
-        select(Kostenposition).where(Kostenposition.zeitraum_id == z.id)).all()
-    vzs = session.exec(
-        select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == z.id)).all()
-    positionen = [Position(p.kostenart, p.betrag, p.schluessel, p.anteile or {}, p.s35)
-                  for p in pos if p.status == "erledigt"]
-    res = abrechnung(positionen, {v.partei: v.betrag for v in vzs})
+    # N274 — lief bis hierhin komplett am Vorschau-Endpunkt vorbei: kein
+    # N125-Filter, kein CCCLIX-Vorab-Split, und vor allem keine CCCLXIV-
+    # Vorauszahlung-aus-der-Miete. Eine Partei ohne eigenen `Vorauszahlung`-
+    # Datensatz bekam beim ECHTEN Versand 0,00 € Vorauszahlung angerechnet,
+    # während dieselbe Partei in der Vorschau (`GET .../abrechnung`) den
+    # korrekten, aus der Miete abgeleiteten Betrag sah — live an Laufer
+    # Str. 5 gefunden (alle fünf Parteien betroffen). Jetzt dieselbe Stelle
+    # wie die Vorschau: `verteilung.positionen_fuer_abrechnung`.
+    positionen, vorausz, umlegbar, vzs = positionen_fuer_abrechnung(session, z)
+    res = abrechnung(positionen, vorausz)
     # `abrechnung` selbst kennt keine offenen Posten — ohne diese Ergänzung
     # las der Abschluss `res["offen"]` und bekam immer eine leere Liste.
-    res.update(fehlende_angaben(list(pos)))
+    res.update(fehlende_angaben(list(umlegbar)))
     # N314(g) — eine Vorauszahlung ohne passende Partei fliesst in
     # `gesamt.abschlaege` ein, ohne in einer Partei-Zeile aufzutauchen.
     res["vorauszahlungen_ohne_partei"] = unbekannte_vorauszahlungen(session, z, vzs)
