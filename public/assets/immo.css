@@ -331,15 +331,25 @@ button.chip:hover{filter:brightness(.96)}
      unnötiger Ausfallpunkt — praktisch jeder relevante mobile Browser kann
      das ohnehin; ohne Unterstützung bleibt schlicht die undurchsichtige
      `rgba(255,255,255,.72)` stehen, kein Fallback-Sonderfall nötig) UND mit
-     `isolation`/`will-change`/`transform:translateZ(0)` DIREKT auf demselben
-     Element (nicht in einer zusätzlichen, später stehenden Regel) — der aus
-     der Referenz übernommene iOS-Kompositions-Trick, ohne den WebKit
+     `isolation`/`transform:translateZ(0)` DIREKT auf demselben Element
+     (nicht in einer zusätzlichen, später stehenden Regel) — der aus der
+     Referenz übernommene iOS-Kompositions-Trick, ohne den WebKit
      `backdrop-filter` auf einer `position:fixed`-Fläche manchmal gar nicht
-     oder nur als Vollton rendert. */
+     oder nur als Vollton rendert.
+     Nutzer-Fund: beim starken Überziehen (Bounce) blendete sich der
+     GESAMTE Leisteninhalt (Icons/Text) kurz aus, nur die Pillenfläche
+     blieb. Ursache vermutlich `will-change:backdrop-filter, transform` —
+     ein Hinweis für Eigenschaften, die sich noch ÄNDERN werden. Hier sind
+     beide aber dauerhaft fest gesetzt (kein Übergang, keine Animation),
+     `will-change` bringt also keinen Vorteil, nur eine zusätzliche
+     GPU-Ebene, die WebKit unter Scroll-Stress offenbar fehlerhaft neu
+     zusammensetzt. `transform:translateZ(0)` allein erzwingt die nötige
+     Kompositions-Ebene bereits dauerhaft — `will-change` komplett entfernt
+     statt nur eingeschränkt. */
   background:rgba(255,255,255,.72);
   -webkit-backdrop-filter:blur(46px) saturate(1.1);
   backdrop-filter:blur(46px) saturate(1.1);
-  isolation:isolate; will-change:backdrop-filter, transform;
+  isolation:isolate;
   transform:translateZ(0);
 }
 /* N327-b — Nutzer: „Ich will die Inhalte der Seite links, rechts und unter
