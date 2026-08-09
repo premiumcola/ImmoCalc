@@ -642,6 +642,9 @@ def test_schluessel_vorschau_zeigt_gewichte_und_fehlzuordnung():
 
 
 def test_vorauszahlung_auf_unbekannten_namen_wird_aufgedeckt():
+    """N314(g) — dieselbe Prüfsumme ausserdem an der Abrechnung selbst, nicht
+    nur in der separaten Schlüssel-Vorschau: 99 € landeten bisher unbemerkt
+    nur in `gesamt.abschlaege`, ohne in einer Partei-Zeile aufzutauchen."""
     with TestClient(app) as c:
         _, zid = _objekt_mit_zwei_wohnungen(c)
         with Session(db_engine) as s:
@@ -650,6 +653,11 @@ def test_vorauszahlung_auf_unbekannten_namen_wird_aufgedeckt():
             s.commit()
         v = c.get(f"/api/zeitraeume/{zid}/schluessel").json()
         assert v["unbekannte_vorauszahlungen"] == ["Frau Gamma"]
+
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        assert a["vorauszahlungen_ohne_partei"] == ["Frau Gamma"]
+        assert "Frau Gamma" not in a["parteien"]
+        assert a["gesamt"]["abschlaege"] >= 99.0
 
 
 def test_schluesselwechsel_leitet_die_gewichte_neu_ab():

@@ -14,7 +14,8 @@ from ..belegposten import anlegen as position_bauen
 from ..db import get_session
 from ..models import Dokument, Kostenart, Kostenposition, Vorauszahlung, Zeitraum
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
-                          ableiten_einheit, stammdaten, vorschau)
+                          ableiten_einheit, stammdaten,
+                          unbekannte_vorauszahlungen, vorschau)
 from .zeitraeume import _zeitraum, _zeitraum_leer_entfernen
 
 router = APIRouter(tags=["objekte"])
@@ -38,7 +39,6 @@ def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> di
     Verteilung gar nicht kennt — die Engine rechnet dann an ihr vorbei."""
     z = _zeitraum(session, zid)
     bezuege = stammdaten(session, z)
-    parteien = sorted({b.partei for b in bezuege})
     vzs = session.exec(
         select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
     return {
@@ -47,8 +47,7 @@ def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> di
                       "flaeche": b.flaeche, "personen": b.personen}
                      for b in bezuege],
         "schluessel": vorschau(bezuege, z.start, z.ende),
-        "unbekannte_vorauszahlungen": sorted(
-            {v.partei for v in vzs} - set(parteien)),
+        "unbekannte_vorauszahlungen": unbekannte_vorauszahlungen(session, z, vzs),
     }
 
 

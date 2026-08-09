@@ -25,7 +25,7 @@ from sqlmodel import Session, select
 from .cashflow import monate_im_jahr
 # N312 — die zweite Monatsregel: Zahlmonate für Vorauszahlungen.
 from .zeit import zahlmonate
-from .models import Einheit, Kostenposition, Miete, Partei, Zeitraum
+from .models import Einheit, Kostenposition, Miete, Partei, Vorauszahlung, Zeitraum
 from .turnus import jahresbetrag
 
 # Was jeder Schlüssel bedeutet und ob er sich aus den Stammdaten ergibt.
@@ -367,6 +367,20 @@ def stammdaten(session: Session, z: Zeitraum) -> list[Bezug]:
     parteien = list(session.exec(
         select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
     return bezuege(einheiten, mieten, parteien, z.start, z.ende)
+
+
+def unbekannte_vorauszahlungen(session: Session, z: Zeitraum,
+                               vzs: list[Vorauszahlung]) -> list[str]:
+    """N314(g) — Vorauszahlungen, deren Partei zu KEINEM Bezug dieses Zeitraums
+    gehört (Tippfehler im Namen, ausgezogener Mieter unter altem Namen).
+
+    Die Engine kennt nur, was Kosten trägt (`kosten_je`) — eine solche
+    Vorauszahlung fliesst zwar in `gesamt.abschlaege`/`saldo` ein, taucht aber
+    in keiner Partei-Zeile auf und wäre sonst nur über die separate
+    Schlüssel-Vorschau (`schluessel_vorschau`) sichtbar. Bislang schon dort
+    berechnet, hier für Abrechnung und Versand wiederverwendet."""
+    bekannt = {b.partei for b in stammdaten(session, z)}
+    return sorted({v.partei for v in vzs} - bekannt)
 
 
 def vorauszahlung_je_partei(session: Session, z: Zeitraum) -> dict[str, float]:

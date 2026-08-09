@@ -12,7 +12,8 @@ from ..engine import Position, abrechnung
 from ..mailversand import MailFehler
 from ..models import (Bewohner, Kostenposition, Miete, Objekt,
                       Versandprotokoll, Vorauszahlung, Zeitraum)
-from ..verteilung import _laufend, fehlende_angaben, leerstaende, stammdaten
+from ..verteilung import (_laufend, fehlende_angaben, leerstaende, stammdaten,
+                         unbekannte_vorauszahlungen)
 from .mail import zugang
 
 log = logging.getLogger("immocalc")
@@ -30,6 +31,9 @@ def _ergebnis(session: Session, z: Zeitraum) -> dict:
     # `abrechnung` selbst kennt keine offenen Posten — ohne diese Ergänzung
     # las der Abschluss `res["offen"]` und bekam immer eine leere Liste.
     res.update(fehlende_angaben(list(pos)))
+    # N314(g) — eine Vorauszahlung ohne passende Partei fliesst in
+    # `gesamt.abschlaege` ein, ohne in einer Partei-Zeile aufzutauchen.
+    res["vorauszahlungen_ohne_partei"] = unbekannte_vorauszahlungen(session, z, vzs)
     return res
 
 
