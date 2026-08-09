@@ -550,12 +550,14 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
 @router.post("/warte-archiv")
 def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                  status: str = "", suche: str = "", zeitraum: int | None = None,
-                 kostenart: str = "", vorschau: bool = False,
+                 kostenart: str = "", vorschau: bool = True,
                  session: Session = Depends(get_session)) -> dict:
     """Schickt alle aktuell gefilterten Belege gesammelt zurück ins Warten.
 
     Dieselben Filter wie die Liste — was der Nutzer sieht, wird verschoben.
-    `vorschau=1` zählt nur, ohne etwas zu ändern. Sidecars bleiben außen vor."""
+    `?vorschau=true` (Vorgabe, N314h) zählt nur, ohne etwas zu ändern; die
+    Oberfläche fragt vorher selbst nach und ruft explizit `vorschau=false`.
+    Sidecars bleiben außen vor."""
     nach_slug = {o.slug: o for o in session.exec(select(Objekt)).all()}
     if objekt and objekt not in nach_slug:
         raise HTTPException(404, "Objekt nicht gefunden")
@@ -579,12 +581,13 @@ def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
 
 
 @router.post("/nk-vor-jahr-entfernen")
-def nk_vor_jahr_entfernen(grenze_jahr: int = 2025, vorschau: bool = False,
+def nk_vor_jahr_entfernen(grenze_jahr: int = 2025, vorschau: bool = True,
                           session: Session = Depends(get_session)) -> dict:
     """Nimmt automatisch (orange) aus Belegen angelegte NK-Eintragungen zu
     Abrechnungszeiträumen VOR `grenze_jahr` wieder heraus, Belege zurück ins
     Warten. Bestätigte/geseedete Positionen bleiben unberührt (nur
-    `vorlaeufig=True` wird gelöscht). `vorschau=1` zählt nur."""
+    `vorlaeufig=True` wird gelöscht). `?vorschau=true` (Vorgabe, N314h)
+    zählt nur."""
     vor = {z.id for z in session.exec(select(Zeitraum)).all()
            if z.start and z.start.year < grenze_jahr}
     drafts = [p for p in session.exec(select(Kostenposition).where(

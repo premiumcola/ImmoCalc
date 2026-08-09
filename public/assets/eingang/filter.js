@@ -106,6 +106,7 @@ els.warteArchiv.addEventListener('click', async () => {
   if (!ok) return;
   const frageStr = new URLSearchParams();
   for (const [k, v] of Object.entries(S.filter)) if (v) frageStr.set(k, v);
+  frageStr.set('vorschau', 'false');   // Vorgabe ist jetzt Vorschau (N314h)
   try {
     const r = await api('/dokumente/warte-archiv?' + frageStr.toString(),
                         { method: 'POST' });
