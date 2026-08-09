@@ -393,6 +393,164 @@ def test_ablageziele_meldet_unbekannten_beleg():
         assert c.get("/api/dokumente/999999/ablageziele").status_code == 404
 
 
+class _WolkeVerschieben:
+    """Nextcloud-Ersatz: merkt sich Anlegen/Verschieben, `belegt` simuliert
+    Namen, die am Ziel schon liegen (für den Kollisionstest)."""
+
+    def __init__(self, belegt=None):
+        self.belegt = set(belegt or [])
+        self.angelegt = []
+        self.verschoben = []
+
+    def ordner_anlegen(self, pfad):
+        self.angelegt.append(pfad)
+        return True
+
+    def existiert(self, pfad):
+        return pfad.strip("/") in self.belegt
+
+    def verschiebe(self, von, nach):
+        self.verschoben.append((von, nach))
+
+
+class _WolkeKaputt(_WolkeVerschieben):
+    """MOVE scheitert immer — simuliert eine nicht erreichbare Cloud."""
+
+    def verschiebe(self, von, nach):
+        from app.nextcloud import NextcloudFehler
+        raise NextcloudFehler("503 Nextcloud nicht erreichbar")
+
+
+def test_verschieben_bewegt_datei_und_zieht_links_nach(monkeypatch):
+    """Erfolgreicher Umzug: Pfad UND Dateiname wandern in der Datenbank mit,
+    die Wissensdatenbank-Kopie (`Belegdaten.pfad`) zieht nach (N299) — und ein
+    Verweis über `dokument.id` (hier: eine Versicherung) bleibt gültig, weil
+    er nie auf den Pfad zeigte, sondern auf die id."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Zielweg 4"}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            o.nc_ordner = "/Immobilien/Zielweg 4"
+            s.add(o)
+            alt_pfad = "/Immobilien/Zielweg 4/01_Allgemein_Hauskonto/alt.pdf"
+            d = Dokument(pfad=alt_pfad, dateiname="alt.pdf", objekt_id=o.id,
+                        kategorie="Versicherung")
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            doc_id = d.id
+            s.add(Versicherung(objekt_id=o.id, art="Gebäude", beitrag=100.0,
+                               quelle_dokument_id=doc_id))
+            s.add(Belegdaten(dokument_id=doc_id, pfad=alt_pfad,
+                             dateiname="alt.pdf"))
+            s.commit()
+
+        wolke = _WolkeVerschieben()
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        antwort = c.post(f"/api/dokumente/{doc_id}/verschieben",
+                         json={"ordner": "70_Steuer_Finanzamt"})
+        assert antwort.status_code == 200, antwort.text
+        daten = antwort.json()
+        assert daten["verschoben"] is True
+        neu_pfad = "/Immobilien/Zielweg 4/70_Steuer_Finanzamt/alt.pdf"
+        assert daten["pfad"] == neu_pfad
+        assert daten["von"] == alt_pfad
+
+        with Session(engine) as s:
+            db_doc = s.get(Dokument, doc_id)
+            assert db_doc.pfad == neu_pfad
+            assert db_doc.dateiname == "alt.pdf"
+            # Verweis über die id bleibt gültig, ohne dass hier etwas zu tun war
+            db_v = s.exec(select(Versicherung).where(
+                Versicherung.quelle_dokument_id == doc_id)).first()
+            assert db_v is not None
+            # Wissensdatenbank-Kopie zieht nach (N299)
+            db_bd = s.exec(select(Belegdaten).where(
+                Belegdaten.dokument_id == doc_id)).first()
+            assert db_bd.pfad == neu_pfad
+            assert db_bd.dateiname == "alt.pdf"
+
+        assert len(wolke.verschoben) == 1
+        von, nach = wolke.verschoben[0]
+        assert von.lstrip("/") == alt_pfad.lstrip("/")
+        assert nach.lstrip("/") == neu_pfad.lstrip("/")
+
+
+def test_verschieben_weicht_bei_namenskollision_aus(monkeypatch):
+    """Liegt am Ziel schon eine Datei mit demselben Namen, wird nie
+    überschrieben — `_freier_name` weicht auf „…-2" aus, live gegen die
+    Cloud geprüft."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Zielweg 5"}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            o.nc_ordner = "/Immobilien/Zielweg 5"
+            s.add(o)
+            d = Dokument(pfad="/Immobilien/Zielweg 5/01_Allgemein_Hauskonto/alt.pdf",
+                        dateiname="alt.pdf", objekt_id=o.id)
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            doc_id = d.id
+
+        # Am Ziel liegt schon eine „alt.pdf" — die echte Cloud meldet sie belegt.
+        wolke = _WolkeVerschieben(
+            belegt={"Immobilien/Zielweg 5/70_Steuer_Finanzamt/alt.pdf"})
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        antwort = c.post(f"/api/dokumente/{doc_id}/verschieben",
+                         json={"ordner": "70_Steuer_Finanzamt"})
+        assert antwort.status_code == 200, antwort.text
+        daten = antwort.json()
+        assert daten["dateiname"] == "alt-2.pdf"
+        assert daten["pfad"] == \
+            "/Immobilien/Zielweg 5/70_Steuer_Finanzamt/alt-2.pdf"
+
+        # Nie überschrieben: das MOVE zielt auf „-2", nicht auf den belegten Namen
+        _von, nach = wolke.verschoben[0]
+        assert nach.endswith("alt-2.pdf")
+
+        with Session(engine) as s:
+            assert s.get(Dokument, doc_id).dateiname == "alt-2.pdf"
+
+
+def test_verschieben_bei_cloud_fehler_bleibt_alles_unveraendert(monkeypatch):
+    """Scheitert der Cloud-MOVE (Nextcloud nicht erreichbar), bleibt die
+    Datenbank unangetastet — kein halber Zustand, sondern ein klarer Fehler."""
+    import app.routers.dokumente as modul
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Zielweg 6"}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            o.nc_ordner = "/Immobilien/Zielweg 6"
+            s.add(o)
+            alt_pfad = "/Immobilien/Zielweg 6/01_Allgemein_Hauskonto/alt.pdf"
+            d = Dokument(pfad=alt_pfad, dateiname="alt.pdf", objekt_id=o.id)
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            doc_id = d.id
+
+        wolke = _WolkeKaputt()
+        monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
+
+        antwort = c.post(f"/api/dokumente/{doc_id}/verschieben",
+                         json={"ordner": "70_Steuer_Finanzamt"})
+        assert antwort.status_code == 400
+        assert "nicht erreichbar" in antwort.json()["detail"]
+
+        with Session(engine) as s:
+            db_doc = s.get(Dokument, doc_id)
+            assert db_doc.pfad == alt_pfad
+            assert db_doc.dateiname == "alt.pdf"
+
+
 # --------------------------------------------------------------------------
 # N314 — Löschen lässt keinen Verweis stehen
 # --------------------------------------------------------------------------

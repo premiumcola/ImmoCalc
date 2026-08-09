@@ -6,6 +6,9 @@
 // Symbolen. Importiert statt kopiert — zwei Fassungen desselben Logos wuerden
 // frueher oder later auseinanderlaufen.
 import { GRUNDSTUECK_LOGO, GRUNDSTUECK_SPRITE } from './kostenicons.js';
+// N286 — der Ordner-Umzugs-Dialog im Beleg-Fenster braucht dasselbe
+// Auswahlfeld wie der Rest der App statt eines nativen <select>.
+import { auswahlfeld } from './auswahl.js';
 
 // N18 — Datumsfelder: den Kalender öffnet der Klick aufs SYMBOL rechts (die
 // klickbare, transparente Picker-Indicator-Fläche aus immo.css). Der Textteil
@@ -551,6 +554,16 @@ export function baueDialog(inhalt) {
    pfad}]`. Steht mehr als einer darin, erscheinen ← und → im Kopf und man
    blättert, ohne jedes Mal in die Liste zurückzumüssen. Freiwillig — alle
    bisherigen Aufrufer übergeben nichts und sehen keinen Unterschied. */
+// N286 — flaches Ordner-Symbol im selben Stil wie die übrigen Inline-SVGs der
+// App (keine Icon-Bibliothek, `currentColor` folgt dem Hover wie beim
+// Umbenennen-Knopf daneben).
+const ORDNER_ICON = `<svg viewBox="0 0 24 24" width="19" height="19"
+  style="vertical-align:-4px" aria-hidden="true">
+  <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l1.6 1.8h8.8A1.5 1.5 0 0 1 21 8.3v9.2a1.5
+    1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"
+    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+</svg>`;
+
 export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
                              geschwister = null) {
   // Die GANZE Seite als serverseitig gerendertes Bild, breitenfüllend statt
@@ -589,7 +602,9 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
        ${blaettern}
        ${umbenennbar
          ? `<button class="bx" data-um title="Namen ändern"
-              aria-label="Namen ändern">✎</button>` : ''}
+              aria-label="Namen ändern">✎</button>
+            <button class="bx" data-ordner title="Ordner ändern"
+              aria-label="Ordner ändern">${ORDNER_ICON}</button>` : ''}
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
      <div class="beleg-ki" hidden></div>
@@ -623,6 +638,37 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
       melde(erg.geaendert === false
         ? 'Der Name war schon so — nichts geändert'
         : `Umbenannt in „${titel}“`, 'pos');
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+    }
+  });
+
+  // N286 — Ablageordner von Hand ändern: erst die möglichen Ziele holen, dann
+  // wählen lassen, dann verschieben. Cloud zuerst, Datenbank danach
+  // (`_beleg_umziehen`) — kippt die Cloud, bleibt hier bewusst nichts sichtbar
+  // geändert, der Nutzer bekommt nur die Fehlermeldung.
+  dlg.querySelector('[data-ordner]')?.addEventListener('click', async () => {
+    let ziele;
+    try {
+      ziele = await api(`/dokumente/${belegId}/ablageziele`);
+    } catch (fehler) {
+      melde(String(fehler.message || fehler), 'neg');
+      return;
+    }
+    const gewaehlt = await ordnerWaehlen(ziele);
+    if (gewaehlt === null) return;
+    try {
+      const erg = await api(`/dokumente/${belegId}/verschieben`,
+                            { method: 'POST', body: { ordner: gewaehlt } });
+      if (erg.verschoben === false) {
+        melde(erg.hinweis || 'Der Beleg liegt bereits dort.');
+        return;
+      }
+      titel = erg.dateiname || titel;
+      pfad = erg.pfad || pfad;
+      dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
+      if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
+      melde(`In „${erg.pfad}“ verschoben`, 'pos');
     } catch (fehler) {
       melde(String(fehler.message || fehler), 'neg');
     }
@@ -711,6 +757,58 @@ function namenErfragen(aktuellerName) {
     dlg.addEventListener('close', () => schliessen(null));
     feld.focus();
     feld.select();
+  });
+}
+
+/* ---- N286: Ablageordner eines Belegs von Hand ändern --------------------
+   Die Ziele kommen aus `GET …/ablageziele` — derselben Kategorie-Struktur,
+   die auch beim automatischen Ablegen benutzt wird (`cloudkern.ZIELORDNER`).
+   Ausgewählt wird über das App-eigene Auswahlfeld, kein natives <select>. */
+
+/**
+ * Zeigt die möglichen Ablageordner als Auswahlfeld und liefert den gewählten
+ * Ordner zurück — oder `null` bei Abbruch bzw. wenn der Nutzer den Ordner
+ * bestätigt, in dem der Beleg schon liegt (dann gäbe es nichts zu tun).
+ */
+function ordnerWaehlen(daten) {
+  const ziele = daten?.ziele || [];
+  if (!ziele.length) {
+    melde('Für diese Immobilie sind keine Ablageordner bekannt.', 'neg');
+    return Promise.resolve(null);
+  }
+  const aktuell = ziele.find(z => z.aktuell)?.ordner ?? ziele[0].ordner;
+  return new Promise(erfuellen => {
+    const dlg = baueDialog(
+      `<div class="dt">Ablageordner ändern</div>
+       <div class="sb-name">
+         <label>Ordner</label>
+         <div id="umOrdner"></div>
+         <p class="sb-hinweis">Die Datei wandert in der Nextcloud mit —
+           nichts wird überschrieben, nichts gelöscht.</p>
+       </div>
+       <div class="sb-fuss" style="margin-top:14px">
+         <button type="button" class="sb-weiter" data-ok>Verschieben</button>
+       </div>`);
+    dlg.classList.add('scanbest-dlg');
+
+    let entschieden = false;
+    const schliessen = (wert) => {
+      if (entschieden) return;
+      entschieden = true;
+      dlg.close();
+      erfuellen(wert);
+    };
+    const feld = auswahlfeld(dlg.querySelector('#umOrdner'), {
+      optionen: ziele.map(z => ({ wert: z.ordner, text: z.name })),
+      wert: aktuell,
+      label: 'Ablageordner',
+    });
+    dlg.querySelector('[data-ok]').addEventListener('click', () => {
+      const gewuenscht = feld.wert();
+      // Derselbe Ordner wie jetzt: kein Aufruf, der nichts zu tun hätte.
+      schliessen(gewuenscht === aktuell ? null : gewuenscht);
+    });
+    dlg.addEventListener('close', () => schliessen(null));
   });
 }
 
