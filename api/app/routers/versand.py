@@ -7,14 +7,15 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
+from ..cloudkern import _lies
 from ..db import get_session
 from ..engine import Position, abrechnung
 from ..mailversand import MailFehler
-from ..models import (Bewohner, Kostenposition, Miete, Objekt,
-                      Versandprotokoll, Vorauszahlung, Zeitraum)
+from ..models import (Anteil, Bewohner, Eigentuemer, Kostenposition, Miete,
+                      Objekt, Versandprotokoll, Vorauszahlung, Zeitraum)
 from ..verteilung import (_laufend, fehlende_angaben, leerstaende, stammdaten,
                          unbekannte_vorauszahlungen)
-from .mail import zugang
+from .mail import S_NAME, zugang
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/zeitraeume", tags=["versand"])
@@ -122,6 +123,36 @@ def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
     }
 
 
+def _objekt_adresse(o: Objekt) -> str:
+    """Postanschrift für den Kopf der Abrechnung — die Straße, wenn gepflegt,
+    sonst der freie Objektname (der auch nur ein Kürzel sein kann, z. B.
+    'TAU5'). Onepager (N274) will hier eine echte Anschrift sehen."""
+    if o.strasse:
+        ort = " ".join(x for x in [o.plz, o.ort] if x)
+        return ", ".join(x for x in [o.strasse, ort] if x)
+    return o.name
+
+
+def _absender_name(session: Session, objekt_id: int) -> str:
+    """Der Name unten auf der Abrechnung — bevorzugt der im Mailversand
+    hinterlegte Absendername, sonst der Eigentümer mit dem größten Anteil.
+
+    Die Vorschau (`abrechnung_als_pdf`) läuft auch ohne verbundenes Postfach;
+    ohne diesen Rückfall bliebe die Unterschriftszeile dort leer, obwohl der
+    Eigentümer längst gepflegt ist."""
+    name = _lies(session, S_NAME)
+    if name:
+        return name
+    anteile = session.exec(
+        select(Anteil).where(Anteil.objekt_id == objekt_id)).all()
+    if not anteile:
+        return ""
+    haupt = max(anteile, key=lambda a: a.promille
+               if a.promille is not None else a.tausendstel)
+    eigentuemer = session.get(Eigentuemer, haupt.eigentuemer_id)
+    return eigentuemer.name if eigentuemer else ""
+
+
 def _einzelposten(res: dict, partei: str) -> list[dict]:
     """Anteil dieser Partei je Kostenart — der Nachweis in der Anlage."""
     zeilen = []
@@ -147,8 +178,12 @@ def abrechnung_als_pdf(zid: int, partei: str,
     if werte is None:
         raise HTTPException(404, f"Keine Abrechnung für '{partei}'")
     zeitraum_text = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
+    kontakt = _empfaenger(session, z.objekt_id, z.start, z.ende).get(partei, {})
     inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
-                            _einzelposten(res, partei))
+                            _einzelposten(res, partei),
+                            absender=_absender_name(session, o.id),
+                            anschrift=_objekt_adresse(o),
+                            einheit=kontakt.get("einheit", ""))
     return Response(content=inhalt, media_type="application/pdf", headers={
         "Content-Disposition":
             f'inline; filename="{pdf_dateiname(o.name, zeitraum_text, partei)}"'})
@@ -245,7 +280,10 @@ def abschliessen(zid: int, data: AbschlussIn,
             if data.pdf_anhaengen:
                 inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
                                         _einzelposten(res, partei),
-                                        absender=z_mail.absender_name)
+                                        absender=z_mail.absender_name,
+                                        anschrift=_objekt_adresse(o),
+                                        einheit=kontakte.get(partei, {})
+                                                .get("einheit", ""))
                 anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
                           inhalt, "pdf")
             for adresse in adressen:

@@ -225,6 +225,95 @@ def test_teilversand_liefert_die_zweite_adresse_nach(monkeypatch):
             "Lea darf nicht doppelt, Jan muss nachgeliefert werden"
 
 
+# ------------------------------------------------------------------ N274 Onepager
+def test_abrechnung_als_pdf_enthaelt_anschrift_und_einheit():
+    """Die Vorschau (`GET .../abrechnung.pdf`) soll die Straße des Objekts und
+    die Einheit des Mietverhältnisses zeigen — nicht nur den Objektnamen."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Laufer Str. 5", "strasse": "Laufer Str. 5",
+            "plz": "91096", "ort": "Eschenau", "kostenarten": ["Wasser"],
+        }).json()["slug"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Einhorn", "kaltmiete": 500.0,
+            "einheit": "Wohnung 1. Obergeschoss",
+            "email": "einhorn@example.org", "ab_datum": "2024-01-01"})
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        with Session(db_engine) as s:
+            s.add(Kostenposition(zeitraum_id=zid, kostenart="Wasser",
+                                 betrag=600.0, schluessel="flaeche",
+                                 status="erledigt", anteile={"Einhorn": 1}))
+            s.add(Vorauszahlung(zeitraum_id=zid, partei="Einhorn", betrag=400.0))
+            s.commit()
+
+        antwort = c.get(f"/api/zeitraeume/{zid}/abrechnung.pdf",
+                        params={"partei": "Einhorn"})
+        assert antwort.status_code == 200
+        daten = antwort.content
+        assert "Laufer Str. 5, 91096 Eschenau".encode("cp1252") in daten
+        assert "Wohnung 1. Obergeschoss".encode("cp1252") in daten
+
+
+def test_abrechnung_als_pdf_zeigt_eigentuemer_ohne_postfach():
+    """Ohne verbundenes Postfach (`_lies(S_NAME)` liefert nichts) trägt die
+    Unterschriftszeile trotzdem einen Namen — den Haupteigentümer."""
+    with TestClient(app) as c:
+        eid = c.post("/api/eigentuemer",
+                     json={"name": "Roman Heidenreich"}).json()["id"]
+        slug = c.post("/api/objekte", json={
+            "name": "Eigentuemerweg 4", "ort": "Prüfstadt",
+            "kostenarten": ["Wasser"]}).json()["slug"]
+        c.post(f"/api/objekte/{slug}/anteile",
+              json={"eigentuemer_id": eid, "tausendstel": 1000})
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Stephani", "kaltmiete": 500.0,
+            "email": "stephani@example.org", "ab_datum": "2024-01-01"})
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        with Session(db_engine) as s:
+            s.add(Kostenposition(zeitraum_id=zid, kostenart="Wasser",
+                                 betrag=300.0, schluessel="flaeche",
+                                 status="erledigt", anteile={"Stephani": 1}))
+            s.add(Vorauszahlung(zeitraum_id=zid, partei="Stephani", betrag=300.0))
+            s.commit()
+
+        antwort = c.get(f"/api/zeitraeume/{zid}/abrechnung.pdf",
+                        params={"partei": "Stephani"})
+        assert antwort.status_code == 200
+        assert "Roman Heidenreich".encode("cp1252") in antwort.content
+
+
+def test_versendetes_pdf_traegt_ebenfalls_anschrift_und_einheit(postfach):
+    """Dieselbe Anreicherung gilt für den Anhang beim echten Versand, nicht
+    nur für die Vorschau — sonst unterscheiden sich Vorschau und Mail."""
+    anhaenge = []
+    postfach.sende = (lambda an, betreff, text, anhang=None:
+                      anhaenge.append(anhang))
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Versandanhang 7", "strasse": "Musterstr. 9",
+            "plz": "12345", "ort": "Beispielstadt",
+            "kostenarten": ["Wasser"]}).json()["slug"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Musterfrau", "kaltmiete": 500.0, "einheit": "Erdgeschoss",
+            "email": "musterfrau@example.org", "ab_datum": "2024-01-01"})
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        with Session(db_engine) as s:
+            s.add(Kostenposition(zeitraum_id=zid, kostenart="Wasser",
+                                 betrag=300.0, schluessel="flaeche",
+                                 status="erledigt", anteile={"Musterfrau": 1}))
+            s.add(Vorauszahlung(zeitraum_id=zid, partei="Musterfrau",
+                                betrag=300.0))
+            s.commit()
+
+        antwort = c.post(f"/api/zeitraeume/{zid}/abschliessen",
+                         json={"versenden": True, "offene_uebergehen": True})
+        assert antwort.status_code == 200, antwort.text
+        assert len(anhaenge) == 1
+        _name, inhalt, _typ = anhaenge[0]
+        assert "Musterstr. 9, 12345 Beispielstadt".encode("cp1252") in inhalt
+        assert "Erdgeschoss".encode("cp1252") in inhalt
+
+
 def test_erneut_stellt_korrigierte_abrechnung_neu_zu(postfach):
     """CCXII: nach einer Korrektur muss `erneut=True` die Abrechnung wieder an
     alle zustellen — das alte Versandprotokoll darf nicht blockieren."""
