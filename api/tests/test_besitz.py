@@ -469,6 +469,32 @@ def test_verkehrswert_je_einheit_gewichtet_die_zurechnung():
         assert za["objekte"][0]["fraktion"] == 0.75
 
 
+def test_teilweise_gepflegter_verkehrswert_mischt_nicht_euro_mit_quadratmetern():
+    """N315(b) — trägt nur EINE Einheit einen Verkehrswert, fiel die andere auf
+    ihre Fläche zurück: ein sechsstelliger Eurobetrag gegen eine zweistellige
+    Quadratmeterzahl ergab 399.800,10 € gegen 199,90 € statt je 200.000 €.
+    Zwei gleich große Wohnungen ohne durchgängigen Verkehrswert müssen sich
+    den Objektwert je zur Hälfte teilen."""
+    with TestClient(app) as c:
+        slug = _objekt(c, "Wertgewicht 46b", verkehrswert=400000.0)
+        _einheit(c, slug, "Eins", flaeche=60.0, verkehrswert=300000.0)
+        _einheit(c, slug, "Zwei", flaeche=60.0)  # kein Verkehrswert gepflegt
+        a = c.post("/api/eigentuemer", json={"name": "Eins-Eigner"}).json()["id"]
+        b = c.post("/api/eigentuemer", json={"name": "Zwei-Eigner"}).json()["id"]
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": a, "promille": 1000, "einheit": "Eins"})
+        c.post(f"/api/objekte/{slug}/anteile",
+               json={"eigentuemer_id": b, "promille": 1000, "einheit": "Zwei"})
+
+        ueber = c.get("/api/eigentuemer/uebersicht").json()["eigentuemer"]
+        za = next(z for z in ueber if z["id"] == a)
+        zb = next(z for z in ueber if z["id"] == b)
+        # Gleich grosse Wohnungen -> gleicher Anteil, nicht 300k:60 zu 60:60.
+        assert za["objekte"][0]["wert"] == 200000.0
+        assert zb["objekte"][0]["wert"] == 200000.0
+        assert za["objekte"][0]["fraktion"] == 0.5
+
+
 def test_verkehrswert_je_einheit_ist_pflegbar():
     with TestClient(app) as c:
         slug = _objekt(c, "Pflege 47")

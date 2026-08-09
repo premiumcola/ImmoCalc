@@ -160,16 +160,31 @@ def _pm(anteil) -> float:
     return float(roh or 0)
 
 
-def _einheit_gewicht(einheit) -> float:
-    """Womit eine Einheit in die Wertzurechnung eingeht: ihr Verkehrswert
-    (CLXXXVI), ersatzweise ihre massgebliche Fläche — dieselbe wie bei der
-    Nebenkosten-Verteilung (N227: Terrasse zählt mit ihrem eingestellten
-    Anteil) —, sonst zu gleichen Teilen (1)."""
-    if einheit.verkehrswert:
-        return float(einheit.verkehrswert)
-    flaeche = _gesamtflaeche(einheit)
-    if flaeche:
-        return flaeche
+def _gewichtsbasis(einheiten: list) -> str:
+    """Eine gemeinsame Grösse für ALLE Einheiten eines Objekts — nie Euro
+    gegen Quadratmeter mischen (N315b).
+
+    Vorher wählte jede Einheit ihre Basis für sich: eine mit gepflegtem
+    Verkehrswert ging mit Euro ein, ihre Nachbarin ohne Verkehrswert fiel auf
+    ihre Fläche zurück — zwei Wohnungen mit demselben wahren Wert erschienen
+    dann als 399.800,10 € gegen 199,90 €, weil ein sechsstelliger Eurobetrag
+    gegen eine zweistellige Quadratmeterzahl gewichtet wurde. Verkehrswert
+    zählt deshalb nur, wenn ihn WIRKLICH jede Einheit trägt; sonst Fläche für
+    alle; sonst zu gleichen Teilen."""
+    if einheiten and all(e.verkehrswert for e in einheiten):
+        return "verkehrswert"
+    if einheiten and all(_gesamtflaeche(e) for e in einheiten):
+        return "flaeche"
+    return "gleich"
+
+
+def _einheit_gewicht(einheit, basis: str) -> float:
+    """Womit eine Einheit in die Wertzurechnung eingeht — nach der für das
+    ganze Objekt einheitlich gewählten Basis (`_gewichtsbasis`)."""
+    if basis == "verkehrswert":
+        return float(einheit.verkehrswert or 0) or 1.0
+    if basis == "flaeche":
+        return _gesamtflaeche(einheit) or 1.0
     return 1.0
 
 
@@ -215,9 +230,10 @@ def eigentuemer_fraktion(objekt, einheiten: list | None,
         if b:
             je_einheit.setdefault(b, []).append(a)
 
-    gesamtgewicht = sum(_einheit_gewicht(e) for e in einheiten) or 1.0
+    basis = _gewichtsbasis(einheiten)
+    gesamtgewicht = sum(_einheit_gewicht(e, basis) for e in einheiten) or 1.0
     for e in einheiten:
-        anteil_gewicht = _einheit_gewicht(e) / gesamtgewicht
+        anteil_gewicht = _einheit_gewicht(e, basis) / gesamtgewicht
         zeilen = je_einheit.get(e.bezeichnung.strip()) or objekt_anteile
         for a in zeilen:
             add(a.eigentuemer_id, anteil_gewicht * _pm(a) / 1000)
