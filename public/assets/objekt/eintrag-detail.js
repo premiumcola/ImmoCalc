@@ -440,8 +440,23 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
     const b = e.target.closest('[data-doc]');
     if (b) { zeigeDoc(b.dataset.doc, b.dataset.name, b.dataset.pfad); return; }
     if (e.target.closest('[data-bearbeiten]')) {
+      // N333 — der Rückweg. Das Formular lebt in einem einzigen, global
+      // wiederverwendeten <dialog id="dlg">; die Detailansicht dagegen wird je
+      // Aufruf frisch gebaut. Wer bisher „Bearbeiten" antippte, war nach dem
+      // Speichern ODER Abbrechen ganz aus dem Beleg heraus — den Vorgänger
+      // merkte sich niemand. Für die PDF-Großansicht gibt es denselben Griff
+      // schon (`grossAnsehen` oben), hier fehlte er nur.
+      const zurueck = aktuellerBeleg?.id || null;
       dlg.close();
-      oeffneEintragFormular(bereich, eintrag, aktuellerBeleg);
+      await oeffneEintragFormular(bereich, eintrag, aktuellerBeleg);
+      const formDlg = document.getElementById('dlg');
+      if (!formDlg?.open) return;
+      formDlg.addEventListener('close', () => setTimeout(() => {
+        // Hat der Weg von hier in ein weiteres Fenster geführt (Kamera,
+        // Rückfrage), gehört die Bühne dem — dann bleibt alles stehen.
+        if (document.querySelector('dialog[open]')) return;
+        eintragDetail(bereich, id, laden, zurueck);
+      }, 0), { once: true });
       return;
     }
     if (e.target.closest('[data-umklass]')) {
