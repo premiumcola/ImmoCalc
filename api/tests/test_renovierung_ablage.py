@@ -2,7 +2,8 @@
 
 Vorher fiel die Kategorie „Renovierung" durch `ZIELORDNER.get(…, "99_Sonstiges")`
 und alle Handwerkerrechnungen landeten zwischen allem anderen unter Sonstiges.
-Jetzt: „50_Bauphase_Projekte/2025.01_Generalsanierung".
+Jetzt: „50_Renovierung_Instandsetzung/2025.01_Generalsanierung" — der Ordner
+heisst seit N332 so, vorher „50_Bauphase_Projekte".
 """
 import os
 import sys
@@ -64,8 +65,10 @@ def test_projektordner_ohne_namen_ist_leer():
 # Die Zuordnung
 # --------------------------------------------------------------------------
 
-def test_renovierung_zielt_auf_die_bauphase_nicht_auf_sonstiges():
-    assert ZIELORDNER["Renovierung"] == "50_Bauphase_Projekte"
+def test_renovierung_zielt_auf_die_instandsetzung_nicht_auf_sonstiges():
+    """N332 — der Zielordner heisst jetzt „50_Renovierung_Instandsetzung";
+    „50_Bauphase_Projekte" ist nur noch Altbestand."""
+    assert ZIELORDNER["Renovierung"] == "50_Renovierung_Instandsetzung"
     assert ZIELORDNER["Renovierung"] in STRUKTUR
     assert ARTKUERZEL["Renovierung"] == ""          # Name ist schon sprechend
     # Kein Jahresordner: der Projektordner tritt an seine Stelle (N285).
@@ -88,7 +91,7 @@ def test_projektordner_schlaegt_die_vorlage():
 
     sach, ziel = _ablageordner(None, _Objekt(), "Renovierung", 2025, _Client(),
                                "2025.01_Generalsanierung")
-    assert sach == "Immobilien/Testweg 1/50_Bauphase_Projekte"
+    assert sach == "Immobilien/Testweg 1/50_Renovierung_Instandsetzung"
     assert ziel == sach + "/2025.01_Generalsanierung"
 
 

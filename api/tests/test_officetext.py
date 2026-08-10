@@ -259,20 +259,32 @@ def test_kauf_finanzierungs_ordner_hat_eine_kategorie():
     """N316e — `_HAUPT_KATEGORIE` (routers/cloud.py) und die frühere
     `_sachordner_kategorie` widersprachen sich für
     "40_Kauf_Eigentum_Finanzierung": "Kredit" gegen "Erwerbsnebenkosten".
-    `SACHORDNER_KATEGORIE` ist jetzt die einzige Quelle der Wahrheit."""
+    `SACHORDNER_KATEGORIE` ist jetzt die einzige Quelle der Wahrheit.
+
+    N332 — derselbe Ordner heisst inzwischen "11_Kauf_Bau_Finanzierung" (die
+    Bauphase gehört dazu). Er trägt weiterhin vier Kategorien (Kredit,
+    Notarvertrag, Erwerbsnebenkosten, Grundschuld) und braucht deshalb
+    weiterhin die ausdrückliche Entscheidung."""
     from app.cloudkern import SACHORDNER_KATEGORIE
 
-    assert SACHORDNER_KATEGORIE["40_Kauf_Eigentum_Finanzierung"] == "Kredit"
+    assert SACHORDNER_KATEGORIE["11_Kauf_Bau_Finanzierung"] == "Kredit"
 
 
 def test_sachordner_kategorie_ist_eindeutig_fuer_jeden_ordner():
     """Die Rückrichtung von `ZIELORDNER` darf nicht von der zufälligen
     Reihenfolge der dict-Keys abhängen. Jeder Ordner aus `ZIELORDNER` bekommt
-    genau eine Kategorie, und ein zweiter Aufbau liefert dasselbe Ergebnis."""
-    from app.cloudkern import SACHORDNER_KATEGORIE, ZIELORDNER, \
-        _baue_sachordner_kategorie
+    genau eine Kategorie, und ein zweiter Aufbau liefert dasselbe Ergebnis.
 
-    assert set(SACHORDNER_KATEGORIE) == set(ZIELORDNER.values())
+    N332 — dazu kommen die abgelösten Ordner (`_ALTBESTAND_KATEGORIE`): solange
+    noch Belege darin liegen, brauchen auch sie eine eindeutige Kategorie. Der
+    leere Ordnername („oberste Ebene") ist dagegen kein Sachordner und taucht
+    in der Umkehrung nicht auf."""
+    from app.cloudkern import (SACHORDNER_KATEGORIE, ZIELORDNER,
+                               _ALTBESTAND_KATEGORIE,
+                               _baue_sachordner_kategorie)
+
+    erwartet = (set(ZIELORDNER.values()) | set(_ALTBESTAND_KATEGORIE)) - {""}
+    assert set(SACHORDNER_KATEGORIE) == erwartet
     assert SACHORDNER_KATEGORIE == _baue_sachordner_kategorie(), \
         "die Umkehrung muss bei jedem Aufbau gleich ausfallen"
 

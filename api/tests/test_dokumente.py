@@ -99,8 +99,17 @@ def test_datum_und_betrag_werden_aus_dem_alten_namen_gelesen():
 
 
 def test_jeder_zielordner_existiert_in_der_struktur():
-    """Sonst würde eine Zuordnung ins Leere sortieren."""
-    for ordner in ZIELORDNER.values():
+    """Sonst würde eine Zuordnung ins Leere sortieren.
+
+    N332 — mit einer Ausnahme: der leere Ordnername ist ein gewolltes Ziel und
+    bedeutet „oberste Ebene der Immobilie". Dort landet, was sich nicht sicher
+    zuordnen lässt, seit es keinen Auffangordner mehr gibt."""
+    for kategorie, ordner in ZIELORDNER.items():
+        if ordner == "":
+            assert kategorie == "Sonstiges", (
+                f"Nur Sonstiges darf auf die oberste Ebene zeigen, "
+                f"nicht {kategorie}")
+            continue
         assert ordner in STRUKTUR, f"{ordner} fehlt in der Ordnerstruktur"
 
 
@@ -321,13 +330,14 @@ def test_umbenennen_ueber_die_bezeichnung(monkeypatch):
         # CXCI — bewusste Änderung der Ablage: der Beleg liegt nicht mehr flach
         # im Sachordner, sondern im Jahresordner darin. Vorher erwartete dieser
         # Test „60_Nebenkosten/2025_NK-Heizung-Ablesung.pdf".
+        # N332: der Nebenkostenordner heisst jetzt „32_Nebenkosten".
         assert wolke.verschoben[-1][1] == \
-            f"Home/Immobilien/Namensweg 2/60_Nebenkosten/2025/{neu}"
+            f"Home/Immobilien/Namensweg 2/32_Nebenkosten/2025/{neu}"
         # Angelegt wird beides: erst der Sachordner, dann der Jahresordner —
         # MKCOL kennt keine Elternordner.
         assert wolke.angelegt[-2:] == [
-            "Home/Immobilien/Namensweg 2/60_Nebenkosten",
-            "Home/Immobilien/Namensweg 2/60_Nebenkosten/2025"]
+            "Home/Immobilien/Namensweg 2/32_Nebenkosten",
+            "Home/Immobilien/Namensweg 2/32_Nebenkosten/2025"]
 
 
 def test_betrag_wandert_in_den_namen_und_bleibt_dort(monkeypatch):
@@ -752,8 +762,8 @@ def test_beleg_landet_im_jahresordner(monkeypatch):
 
         assert c.post("/api/dokumente/scan").json()["automatisch"] == 1
         assert wolke.verschoben[-1][1] == \
-            f"{ordner}/60_Nebenkosten/2025/2025_NK-Stromabrechnung.pdf"
-        assert f"{ordner}/60_Nebenkosten/2025" in wolke.angelegt
+            f"{ordner}/32_Nebenkosten/2025/2025_NK-Stromabrechnung.pdf"
+        assert f"{ordner}/32_Nebenkosten/2025" in wolke.angelegt
 
 
 def test_beleg_ohne_jahr_bleibt_im_sachordner(monkeypatch):
@@ -774,7 +784,7 @@ def test_beleg_ohne_jahr_bleibt_im_sachordner(monkeypatch):
         c.patch(f"/api/dokumente/{doc}", json={"beschreibung": "Ablesung"})
         # N44 — bleibt im Sachordner, aber ohne „ohne-Jahr_"-Vorsatz im Namen.
         assert wolke.verschoben[-1][1] == \
-            f"{ordner}/60_Nebenkosten/NK-Ablesung.pdf"
+            f"{ordner}/32_Nebenkosten/NK-Ablesung.pdf"
 
 
 def test_vorhandener_jahresordner_wird_benutzt(monkeypatch):
@@ -789,15 +799,15 @@ def test_vorhandener_jahresordner_wird_benutzt(monkeypatch):
         ordner = "Home/Immobilien/Bestandsweg 3"
         _mit_cloud(c, "Bestandsweg 3", ordner)
         wolke = _Wolke(["Stromabrechnung-2025.pdf"], ordner, {
-            f"{ordner}/60_Nebenkosten": ["NK-2025-1OG", "Ablesungsergebnisse",
+            f"{ordner}/32_Nebenkosten": ["NK-2025-1OG", "Ablesungsergebnisse",
                                          "_sonstige"]})
         monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
 
         assert c.post("/api/dokumente/scan").json()["automatisch"] == 1
         assert wolke.verschoben[-1][1] == \
-            f"{ordner}/60_Nebenkosten/NK-2025-1OG/2025_NK-Stromabrechnung.pdf"
+            f"{ordner}/32_Nebenkosten/NK-2025-1OG/2025_NK-Stromabrechnung.pdf"
         # kein zweiter Ordner „2025" daneben
-        assert f"{ordner}/60_Nebenkosten/2025" not in wolke.angelegt
+        assert f"{ordner}/32_Nebenkosten/2025" not in wolke.angelegt
 
 
 def test_archivordner_nimmt_ein_altes_jahr_auf(monkeypatch):
@@ -809,12 +819,12 @@ def test_archivordner_nimmt_ein_altes_jahr_auf(monkeypatch):
         ordner = "Home/Immobilien/Archivweg 4"
         _mit_cloud(c, "Archivweg 4", ordner)
         wolke = _Wolke(["Wasserrechnung-2019.pdf"], ordner, {
-            f"{ordner}/60_Nebenkosten": ["2000-2021", "2022", "2023"]})
+            f"{ordner}/32_Nebenkosten": ["2000-2021", "2022", "2023"]})
         monkeypatch.setattr(modul, "verbindung", lambda session: wolke)
 
         assert c.post("/api/dokumente/scan").json()["automatisch"] == 1
         assert wolke.verschoben[-1][1] == \
-            f"{ordner}/60_Nebenkosten/2000-2021/2019_NK-Wasserrechnung.pdf"
+            f"{ordner}/32_Nebenkosten/2000-2021/2019_NK-Wasserrechnung.pdf"
 
 
 def test_scan_legt_die_aufnahme_im_jahresordner_ab(monkeypatch):
@@ -833,9 +843,9 @@ def test_scan_legt_die_aufnahme_im_jahresordner_ab(monkeypatch):
             files={"datei": ("scan.pdf", b"%PDF-1.4 test", "application/pdf")})
         assert antwort.status_code == 201
         assert antwort.json()["pfad"] == \
-            f"/{ordner}/60_Nebenkosten/2026/2026_NK-Kaminkehrer.pdf"
+            f"/{ordner}/32_Nebenkosten/2026/2026_NK-Kaminkehrer.pdf"
         assert wolke.abgelegt == \
-            [f"{ordner}/60_Nebenkosten/2026/2026_NK-Kaminkehrer.pdf"]
+            [f"{ordner}/32_Nebenkosten/2026/2026_NK-Kaminkehrer.pdf"]
 
 
 def test_unterordner_vorlagen_sind_einstellbar():
@@ -1553,15 +1563,15 @@ def test_abgleich_nimmt_neue_dateien_gleich_mit(monkeypatch):
         ordner = "Home/Immobilien/Abgleichweg 5"
         slug = _mit_cloud(c, "Abgleichweg 5", ordner)
         baum = _Baum({ordner: [("Wasserrechnung 2025.pdf", 900)],
-                      f"{ordner}/60_Nebenkosten": []})
+                      f"{ordner}/32_Nebenkosten": []})
         monkeypatch.setattr(modul, "verbindung", lambda session: baum)
 
         ergebnis = c.post("/api/dokumente/abgleich").json()
         assert ergebnis["neu"] == 1
         assert ergebnis["automatisch"] == 1
-        # CXCI: auch der Abgleich sortiert in den Jahresordner
+        # CXCI: auch der Abgleich sortiert in den Jahresordner (N332: 32_)
         assert baum.verschoben[-1][1] == \
-            f"{ordner}/60_Nebenkosten/2025/2025_NK-Wasserrechnung.pdf"
+            f"{ordner}/32_Nebenkosten/2025/2025_NK-Wasserrechnung.pdf"
 
 
 def test_abgleich_ueberspringt_unlesbare_ordner(monkeypatch):
@@ -2438,8 +2448,11 @@ def test_lageplan_wird_abgelegt_und_gelistet(monkeypatch):
         assert body["einheit_id"] == eid
         # Ein Foto darf nicht als „.pdf" landen — die Endung bleibt.
         assert body["pfad"].endswith(".jpg")
-        # N9 — Fotos-/Lage-Ordner statt 99_Sonstiges, Name ohne „ohne-Jahr_".
-        assert f"{ordner}/10_Fotos_Lage" in wolke.abgelegt[-1]
+        # N9 — Fotos-/Lageplan-Ordner statt eines Auffangordners, Name ohne
+        # „ohne-Jahr_". Bewusst der volle Ordnername: „10_Fotos_Lage" wäre auch
+        # ein Präfix von „10_Fotos_Lageplaene" und liesse den Test bestehen,
+        # ohne noch etwas zu prüfen (N332).
+        assert f"{ordner}/10_Fotos_Lageplaene/" in wolke.abgelegt[-1]
         assert "ohne-Jahr" not in body["dateiname"]
         assert body["dateiname"] == "Lageplan-Wohnung-1.jpg"
 

@@ -64,8 +64,15 @@ def _freier_name(session: Session, client, ordner: str, name: str) -> str:
 
 
 def _zielordner(o: Objekt, kategorie: str) -> str:
-    """Der Sachordner der Immobilie — „…/60_Nebenkosten"."""
-    unterordner = ZIELORDNER.get(kategorie, "99_Sonstiges")
+    """Der Sachordner der Immobilie — „…/32_Nebenkosten".
+
+    N332 — leer ist ein gültiges Ziel: die oberste Ebene der Immobilie. Dort
+    landet, was sich nicht sicher zuordnen lässt (Kategorie „Sonstiges" oder
+    eine, die der Katalog nicht kennt) — sichtbar statt in einem Auffangordner
+    versteckt."""
+    unterordner = ZIELORDNER.get(kategorie, "")
+    if not unterordner:
+        return o.nc_ordner.strip("/")
     if unterordner not in STRUKTUR:
         raise HTTPException(400, f"Unbekannter Zielordner '{unterordner}'")
     return f"{o.nc_ordner.strip('/')}/{unterordner}"

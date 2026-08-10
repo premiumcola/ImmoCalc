@@ -28,40 +28,49 @@ log = logging.getLogger("immocalc")
 # alle Typen gleich (damit ZIELORDNER weiter greift) — nur die Auswahl ändert
 # sich. Abgeleitet aus den Vorgabeordnern des Nutzers.
 
-STRUKTUR_GRUNDSTUECK = [                # CCXCVIII — schlank: Pacht + Grundsteuer
-    "10_Fotos_Lage",
-    "30_Kommunikation",
-    "40_Kauf_Eigentum_Finanzierung",   # Kaufvertrag, Notar, Grundbuch
-    "50_Pacht_und_Paechter",           # Pachtverträge, Pächter
-    "60_Nebenkosten",                  # Grundsteuer als jährliche NK
+# N332 — nach dem Lebenslauf einer Immobilie geordnet, Themen in 10er-Blöcken,
+# und bewusst schlank auf der obersten Ebene. Drei Entscheidungen des Nutzers
+# stecken darin:
+#   * die Bauphase gehört zu Kauf & Finanzierung — sie steht ganz am Anfang und
+#     ist kein laufender Unterhalt (das ist „50_Renovierung_Instandsetzung");
+#   * es gibt KEINEN Auffangordner mehr. Was sich nicht sicher zuordnen lässt,
+#     liegt offen auf der obersten Ebene der Immobilie: im Explorer sofort
+#     sichtbar und von Hand einsortierbar, statt in „99_Sonstiges" zu
+#     verschwinden (siehe ZIELORDNER unten);
+#   * Mieterhöhungen, Eigentümerversammlungen und Hausverwaltung waren je ein
+#     eigener Hauptordner für Fälle, die nur bei einer von fünf Immobilien
+#     vorkamen — sie sind jetzt Unterordner bzw. zusammengelegt.
+# Die Ordnernamen bleiben bewusst ohne Umlaute (wie „Mietvertraege" zuvor);
+# lesbar wird es über HAUPTORDNER_LESBAR, nicht über den Dateinamen selbst.
+
+STRUKTUR_GRUNDSTUECK = [                # schlank: Pacht + Grundsteuer
+    "10_Fotos_Lageplaene",
+    "11_Kauf_Bau_Finanzierung",        # Kaufvertrag, Notar, Grundbuch
+    "20_Kommunikation",
+    "30_Vermietung_Verpachtung",       # Pachtverträge, Pächter
+    "32_Nebenkosten",                  # Grundsteuer als jährliche NK
     "70_Steuer_Finanzamt",
 ]
 
 STRUKTUR_WEG = [
-    "01_Allgemein_Hauskonto",
-    "10_Fotos_Lage",
-    "20_Mietvertraege_Vermietung",
-    "40_Kauf_Eigentum_Finanzierung",
-    "50_Bauphase_Projekte",
-    "51_Mieterhoehungen",
-    "60_Nebenkosten",
+    "10_Fotos_Lageplaene",
+    "11_Kauf_Bau_Finanzierung",
+    "20_Kommunikation",
+    "30_Vermietung_Verpachtung",
+    "31_WEG_Verwaltung",               # nur WEG: Versammlungen + Verwalter
+    "32_Nebenkosten",
+    "50_Renovierung_Instandsetzung",
     "70_Steuer_Finanzamt",
-    "55_Eigentuemerversammlungen",     # nur WEG
-    "80_Hausverwaltung",               # nur WEG
-    "99_Sonstiges",
 ]
 
 STRUKTUR_MFH = [                       # selbstverwaltet (eigene NK-Verteilung)
-    "01_Allgemein_Hauskonto",
-    "10_Fotos_Lage",
-    "20_Mietvertraege_Vermietung",
-    "30_Kommunikation",
-    "40_Kauf_Eigentum_Finanzierung",
-    "50_Bauphase_Projekte",            # Umbau/Renovierung, Garten, Hof
-    "60_Nebenkosten",
+    "10_Fotos_Lageplaene",
+    "11_Kauf_Bau_Finanzierung",
+    "20_Kommunikation",
+    "30_Vermietung_Verpachtung",
+    "32_Nebenkosten",
+    "50_Renovierung_Instandsetzung",
     "70_Steuer_Finanzamt",
-    "98_Archiv",
-    "99_Sonstiges",
 ]
 
 
@@ -75,9 +84,45 @@ def struktur_fuer(objekt) -> list[str]:
     return STRUKTUR_MFH
 
 
+# N332 — die Hauptordner der bisherigen Fassung. Sie werden NICHT mehr angelegt
+# (sie stehen in keiner der drei Vorlagen oben), gelten aber weiter als
+# Hauptordner: solange noch ein Beleg in einem davon liegt, soll er im Baum
+# richtig einsortiert und lesbar beschriftet erscheinen statt als fremder
+# Sachordner. Nach dem Umzug bleiben sie leer stehen — gelöscht wird in der
+# Cloud grundsätzlich nichts.
+STRUKTUR_ALTBESTAND = [
+    "00_Fotos_Lageplan",
+    "01_Allgemein_Hauskonto",
+    "10_Fotos_Lage",
+    "10_Fotos_Lageplan",
+    "10_Fotos_Lagepläne",
+    "10_Kauf_Finanzierung",
+    "11_Bauphase",
+    "20_Mietvertraege_Vermietung",
+    "20_Vermietung_Mietverträge",
+    "30_Kommunikation",
+    "30_Mietvertraege_Vermietung",
+    "31_Mieterhoehungen",
+    "40_Eigentuemerversammlungen",
+    "40_Kauf_Eigentum_Finanzierung",
+    "41_Hausverwaltung",
+    "50_Bauphase_Projekte",
+    "50_Instandsetzung_Renovierung",
+    "50_Pacht_und_Paechter",
+    "50_Renovierung, Instandhaltung",
+    "51_Mieterhoehungen",
+    "55_Eigentuemerversammlungen",
+    "60_Nebenkosten",
+    "80_Garten",
+    "80_Hausverwaltung",
+    "98_Archiv",
+    "99_Sonstiges",
+]
+
 # Obermenge aller möglichen Hauptordner — für die Prüfung „ist das ein
 # Hauptordner (und kein Sachordner darunter)?" und als neutraler Bezug.
-STRUKTUR = sorted(set(STRUKTUR_GRUNDSTUECK + STRUKTUR_WEG + STRUKTUR_MFH))
+STRUKTUR = sorted(set(STRUKTUR_GRUNDSTUECK + STRUKTUR_WEG + STRUKTUR_MFH
+                      + STRUKTUR_ALTBESTAND))
 
 # N331g — Nutzer-Fund: die „Ordner verschieben"-Auswahl (routers/dokumente.py
 # ::ablageziele) zeigte den rohen Ordnercode („40_Kauf_Eigentum_Finanzierung")
@@ -88,17 +133,39 @@ STRUKTUR = sorted(set(STRUKTUR_GRUNDSTUECK + STRUKTUR_WEG + STRUKTUR_MFH))
 # ist klein und fest (`STRUKTUR` oben), ein Rateversuch (Regex, ae→ä) träfe
 # nicht jeden Fall zuverlässig.
 HAUPTORDNER_LESBAR = {
+    # N332 — der geltende Standard
+    "10_Fotos_Lageplaene": "Fotos & Lagepläne",
+    "11_Kauf_Bau_Finanzierung": "Kauf, Bau & Finanzierung",
+    "20_Kommunikation": "Kommunikation",
+    "30_Vermietung_Verpachtung": "Vermietung & Verpachtung",
+    "31_WEG_Verwaltung": "WEG-Verwaltung",
+    "32_Nebenkosten": "Nebenkosten",
+    "50_Renovierung_Instandsetzung": "Renovierung & Instandsetzung",
+    "70_Steuer_Finanzamt": "Steuer & Finanzamt",
+    # Altbestand — bleibt lesbar, solange noch etwas darin liegt
+    "00_Fotos_Lageplan": "Fotos & Lageplan",
     "01_Allgemein_Hauskonto": "Allgemein & Hauskonto",
     "10_Fotos_Lage": "Fotos & Lage",
+    "10_Fotos_Lageplan": "Fotos & Lageplan",
+    "10_Fotos_Lagepläne": "Fotos & Lagepläne",
+    "10_Kauf_Finanzierung": "Kauf & Finanzierung",
+    "11_Bauphase": "Bauphase",
     "20_Mietvertraege_Vermietung": "Mietverträge & Vermietung",
+    "20_Vermietung_Mietverträge": "Vermietung & Mietverträge",
     "30_Kommunikation": "Kommunikation",
+    "30_Mietvertraege_Vermietung": "Mietverträge & Vermietung",
+    "31_Mieterhoehungen": "Mieterhöhungen",
+    "40_Eigentuemerversammlungen": "Eigentümerversammlungen",
     "40_Kauf_Eigentum_Finanzierung": "Kauf, Eigentum & Finanzierung",
+    "41_Hausverwaltung": "Hausverwaltung",
     "50_Bauphase_Projekte": "Bauphase & Projekte",
+    "50_Instandsetzung_Renovierung": "Instandsetzung & Renovierung",
     "50_Pacht_und_Paechter": "Pacht & Pächter",
+    "50_Renovierung, Instandhaltung": "Renovierung & Instandhaltung",
     "51_Mieterhoehungen": "Mieterhöhungen",
     "55_Eigentuemerversammlungen": "Eigentümerversammlungen",
     "60_Nebenkosten": "Nebenkosten",
-    "70_Steuer_Finanzamt": "Steuer & Finanzamt",
+    "80_Garten": "Garten",
     "80_Hausverwaltung": "Hausverwaltung",
     "98_Archiv": "Archiv",
     "99_Sonstiges": "Sonstiges",
@@ -120,33 +187,41 @@ def hauptordner_lesbar(art: str) -> str:
 # Wohin eine Kategorie einsortiert wird. Alles Abrechnungsrelevante landet
 # unter Nebenkosten, der Rest bei seinem Thema.
 ZIELORDNER = {
-    "Nebenkosten": "60_Nebenkosten",
+    "Nebenkosten": "32_Nebenkosten",
     "Steuer": "70_Steuer_Finanzamt",
     # CCCII — notariell beurkundete Verträge (Kauf, Auflassung, Grundschuld­
     # bestellung) sind eine eigene Art: aus ihnen entsteht ein Notarvertrag.
-    "Notarvertrag": "40_Kauf_Eigentum_Finanzierung",
-    "Kredit": "40_Kauf_Eigentum_Finanzierung",
-    "Versicherung": "01_Allgemein_Hauskonto",
-    "Mietvertrag": "20_Mietvertraege_Vermietung",
-    "Korrespondenz": "30_Kommunikation",
-    "Hausverwaltung": "80_Hausverwaltung",
+    "Notarvertrag": "11_Kauf_Bau_Finanzierung",
+    "Kredit": "11_Kauf_Bau_Finanzierung",
+    # N332 — „01_Allgemein_Hauskonto" gibt es nicht mehr. Die Gebäude- und
+    # Haftpflichtversicherung ist die klassische umlagefähige Betriebskosten-
+    # position; ihre Policen und Rechnungen liegen deshalb bei den Nebenkosten.
+    "Versicherung": "32_Nebenkosten",
+    "Mietvertrag": "30_Vermietung_Verpachtung",
+    "Korrespondenz": "20_Kommunikation",
+    "Hausverwaltung": "31_WEG_Verwaltung",
     # N9 — Lagepläne gehören zu Fotos & Lage, nicht in „Sonstiges".
-    "Lageplan": "10_Fotos_Lage",
+    "Lageplan": "10_Fotos_Lageplaene",
     # N283d — die einmaligen Erwerbsnebenkosten (Notarrechnung, Grunderwerb-
     # steuer, Grundbuchamt, Makler) sind KEINE laufende Steuersache. Sie landeten
     # mangels eigener Art unter „70_Steuer_Finanzamt", gehören aber zum Erwerb
     # selbst — dort liegt auch der Kaufvertrag, auf den sie sich beziehen.
-    "Erwerbsnebenkosten": "40_Kauf_Eigentum_Finanzierung",
+    "Erwerbsnebenkosten": "11_Kauf_Bau_Finanzierung",
     # N331c — die Eintragungsbekanntmachung einer Grundschuld gehört zu
     # denselben Kauf-/Finanzierungsunterlagen wie Notarvertrag und Kredit.
-    "Grundschuld": "40_Kauf_Eigentum_Finanzierung",
+    "Grundschuld": "11_Kauf_Bau_Finanzierung",
     # N289 — Handwerkerrechnungen eines Bauvorhabens gehören zur Bauphase.
     # Ohne diesen Eintrag fiel die Kategorie „Renovierung" auf den Vorgabewert
     # „99_Sonstiges" zurück: die Rechnungen einer Generalsanierung lagen
     # zwischen allem anderen. Der Projektordner darunter kommt aus der
     # Renovierung selbst (`renovierung.projektordner`).
-    "Renovierung": "50_Bauphase_Projekte",
-    "Sonstiges": "99_Sonstiges",
+    "Renovierung": "50_Renovierung_Instandsetzung",
+    # N332 — kein Auffangordner mehr: „Sonstiges" heisst jetzt „oberste Ebene
+    # der Immobilie". Ein Beleg, den die Erkennung nicht sicher einordnen kann,
+    # liegt damit offen zwischen den Ordnern — im Explorer sofort als
+    # unsortiert erkennbar und mit einem Zug an seinen Platz zu ziehen. Vorher
+    # verschwand er in „99_Sonstiges" und fiel nie wieder auf.
+    "Sonstiges": "",
 }
 
 # --------------------------------------------------------------------------
@@ -166,8 +241,42 @@ ZIELORDNER = {
 # (CCCII) und "Erwerbsnebenkosten" (N283d) kamen später dazu und teilen sich
 # den Ordner mit dem Kauf/Finanzierungs-Vorgang, verdrängen ihn aber nicht
 # als dessen Leitkategorie.
-_MEHRDEUTIGE_ORDNER_KATEGORIE = {
+# N332 — Ordner → Kategorie für den Altbestand (siehe STRUKTUR_ALTBESTAND).
+# „98_Archiv" und „99_Sonstiges" stehen bewusst NICHT darin: ihre Kategorie
+# zeigt inzwischen auf die oberste Ebene, ein automatisches Einsortieren von
+# dort wäre eine Bewegung ohne Ziel. Was darin liegt, wird beim Umzug von Hand
+# verteilt und danach nicht mehr angefasst.
+_ALTBESTAND_KATEGORIE = {
+    "00_Fotos_Lageplan": "Lageplan",
+    "01_Allgemein_Hauskonto": "Versicherung",
+    "10_Fotos_Lage": "Lageplan",
+    "10_Fotos_Lageplan": "Lageplan",
+    "10_Fotos_Lagepläne": "Lageplan",
+    "10_Kauf_Finanzierung": "Kredit",
+    "11_Bauphase": "Renovierung",
+    "20_Mietvertraege_Vermietung": "Mietvertrag",
+    "20_Vermietung_Mietverträge": "Mietvertrag",
+    "30_Kommunikation": "Korrespondenz",
+    "30_Mietvertraege_Vermietung": "Mietvertrag",
+    "31_Mieterhoehungen": "Mietvertrag",
+    "40_Eigentuemerversammlungen": "Hausverwaltung",
     "40_Kauf_Eigentum_Finanzierung": "Kredit",
+    "41_Hausverwaltung": "Hausverwaltung",
+    "50_Bauphase_Projekte": "Renovierung",
+    "50_Instandsetzung_Renovierung": "Renovierung",
+    "50_Pacht_und_Paechter": "Mietvertrag",
+    "50_Renovierung, Instandhaltung": "Renovierung",
+    "51_Mieterhoehungen": "Mietvertrag",
+    "55_Eigentuemerversammlungen": "Hausverwaltung",
+    "60_Nebenkosten": "Nebenkosten",
+}
+
+_MEHRDEUTIGE_ORDNER_KATEGORIE = {
+    "40_Kauf_Eigentum_Finanzierung": "Kredit",   # Altbestand
+    "11_Kauf_Bau_Finanzierung": "Kredit",        # N332 — dessen Nachfolger
+    # N332 — Versicherungen teilen sich den Nebenkosten-Ordner, sind aber nicht
+    # dessen Leitkategorie: was dort landet, ist im Zweifel eine NK-Sache.
+    "32_Nebenkosten": "Nebenkosten",
 }
 
 
@@ -181,6 +290,8 @@ def _baue_sachordner_kategorie() -> dict[str, str]:
     zu raten."""
     kategorien_je_ordner: dict[str, list[str]] = {}
     for kategorie, ordner in ZIELORDNER.items():
+        if not ordner:      # N332 — „oberste Ebene" ist kein Sachordner
+            continue
         kategorien_je_ordner.setdefault(ordner, []).append(kategorie)
 
     ergebnis: dict[str, str] = {}
@@ -195,6 +306,12 @@ def _baue_sachordner_kategorie() -> dict[str, str]:
                 "ohne eindeutige Entscheidung in "
                 "_MEHRDEUTIGE_ORDNER_KATEGORIE.")
         ergebnis[ordner] = gewaehlt
+    # N332 — die abgelösten Ordner behalten ihre Kategorie. Sonst gälte ein
+    # Beleg, der noch in „60_Nebenkosten" liegt, plötzlich als beliebiger
+    # Fremdordner: er würde beim Einsortieren in Jahresordner übersehen und im
+    # Baum falsch einsortiert. Die neuen Namen haben Vorrang.
+    for ordner, kategorie in _ALTBESTAND_KATEGORIE.items():
+        ergebnis.setdefault(ordner, kategorie)
     return ergebnis
 
 

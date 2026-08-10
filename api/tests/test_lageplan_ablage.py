@@ -17,7 +17,8 @@ from app.routers.dokumente import _saubere_datei  # noqa: E402
 
 
 def test_lageplan_landet_im_fotos_lage_ordner():
-    assert ZIELORDNER["Lageplan"] == "10_Fotos_Lage"
+    """N332 — der Sammelordner heisst jetzt „10_Fotos_Lageplaene"."""
+    assert ZIELORDNER["Lageplan"] == "10_Fotos_Lageplaene"
     assert ZIELORDNER["Lageplan"] in STRUKTUR       # Ordner existiert überall
     assert ARTKUERZEL["Lageplan"] == ""             # kein Kürzel im Namen
 

@@ -395,8 +395,10 @@ def test_ablageziele_meldet_unbekannten_beleg():
 
 def test_ablageziele_zeigt_lesbare_namen_statt_rohe_ordnercodes():
     """N331g — Nutzer-Fund: die „Ordner verschieben"-Liste zeigte den rohen
-    Ordnercode ("40_Kauf_Eigentum_Finanzierung") unverändert als Beschriftung.
-    Jetzt Klartext, ohne laufende Nummer und mit Umlauten."""
+    Ordnercode unverändert als Beschriftung. Jetzt Klartext, ohne laufende
+    Nummer und mit Umlauten. Die geprüften Ordner tragen seit N332 ihre neuen
+    Namen (früher „40_Kauf_Eigentum_Finanzierung" und
+    „20_Mietvertraege_Vermietung")."""
     with TestClient(app) as c:
         slug = c.post("/api/objekte", json={"name": "Lesbarweg 9"}).json()["slug"]
         with Session(engine) as s:
@@ -415,10 +417,10 @@ def test_ablageziele_zeigt_lesbare_namen_statt_rohe_ordnercodes():
         assert antwort.status_code == 200
         namen = {z["ordner"].rsplit("/", 1)[-1]: z["name"]
                 for z in antwort.json()["ziele"]}
-        assert namen["40_Kauf_Eigentum_Finanzierung"] == "Kauf, Eigentum & Finanzierung"
-        assert namen["20_Mietvertraege_Vermietung"] == "Mietverträge & Vermietung"
-        assert "_" not in namen["40_Kauf_Eigentum_Finanzierung"]
-        assert not namen["40_Kauf_Eigentum_Finanzierung"][0].isdigit()
+        assert namen["11_Kauf_Bau_Finanzierung"] == "Kauf, Bau & Finanzierung"
+        assert namen["30_Vermietung_Verpachtung"] == "Vermietung & Verpachtung"
+        assert "_" not in namen["11_Kauf_Bau_Finanzierung"]
+        assert not namen["11_Kauf_Bau_Finanzierung"][0].isdigit()
 
 
 class _WolkeVerschieben:

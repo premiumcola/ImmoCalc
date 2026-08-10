@@ -1004,3 +1004,173 @@ def unterordner_umzug_ausfuehren(session: Session = Depends(get_session)) -> dic
     return {"verschoben": erledigt, "anzahl": len(erledigt),
             "dokumente": len(erledigt), "fehler": fehler,
             "ohne_jahr": len(plan["ohne_jahr"])}
+
+
+# --------------------------------------------------------------------------
+# N332 — Umstellung der Hauptordner auf die neue Gliederung
+#
+# Die Ordner folgen jetzt dem Lebenslauf einer Immobilie (siehe cloudkern.py).
+# Der Bestand muss einmalig nachziehen: umbenennen, wo der Zielname frei ist —
+# zusammenlegen, wo es ihn schon gibt — auflösen, wo es den Ordner gar nicht
+# mehr geben soll.
+#
+# Gelöscht wird nichts. Ein zusammengelegter oder aufgelöster Ordner bleibt als
+# leere Hülle stehen; welche das sind, sagt der Bericht am Ende, damit der
+# Nutzer sie im Explorer selbst wegwerfen kann.
+# --------------------------------------------------------------------------
+
+# Alter Hauptordner -> neuer. Leer heisst: auflösen, der Inhalt geht auf die
+# oberste Ebene der Immobilie. Bewusst eine ausdrückliche Tabelle: die Namen
+# sind über die Jahre von Hand gewachsen (mit und ohne Umlaut, mit Komma, in
+# zwei Nummernkreisen) — geraten würde hier zwangsläufig schiefgehen.
+STRUKTUR_UMZUG: dict[str, str] = {
+    "00_Fotos_Lageplan": "10_Fotos_Lageplaene",
+    "10_Fotos_Lage": "10_Fotos_Lageplaene",
+    "10_Fotos_Lageplan": "10_Fotos_Lageplaene",
+    "10_Fotos_Lagepläne": "10_Fotos_Lageplaene",
+    "10_Kauf_Finanzierung": "11_Kauf_Bau_Finanzierung",
+    "11_Bauphase": "11_Kauf_Bau_Finanzierung",
+    "40_Kauf_Eigentum_Finanzierung": "11_Kauf_Bau_Finanzierung",
+    "50_Bauphase_Projekte": "11_Kauf_Bau_Finanzierung",
+    "30_Kommunikation": "20_Kommunikation",
+    "20_Mietvertraege_Vermietung": "30_Vermietung_Verpachtung",
+    "20_Vermietung_Mietverträge": "30_Vermietung_Verpachtung",
+    "30_Mietvertraege_Vermietung": "30_Vermietung_Verpachtung",
+    "50_Pacht_und_Paechter": "30_Vermietung_Verpachtung",
+    "31_Mieterhoehungen": "30_Vermietung_Verpachtung/Mieterhoehungen",
+    "51_Mieterhoehungen": "30_Vermietung_Verpachtung/Mieterhoehungen",
+    "40_Eigentuemerversammlungen": "31_WEG_Verwaltung",
+    "41_Hausverwaltung": "31_WEG_Verwaltung",
+    "55_Eigentuemerversammlungen": "31_WEG_Verwaltung",
+    "80_Hausverwaltung": "31_WEG_Verwaltung",
+    "60_Nebenkosten": "32_Nebenkosten",
+    "50_Instandsetzung_Renovierung": "50_Renovierung_Instandsetzung",
+    "50_Renovierung, Instandhaltung": "50_Renovierung_Instandsetzung",
+    "01_Allgemein_Hauskonto": "",
+    "98_Archiv": "",
+    "99_Sonstiges": "",
+}
+
+
+def _leer_in_der_cloud(client: Nextcloud, pfad: str) -> bool:
+    """Steht in diesem Ordner (und allem darunter) wirklich nichts mehr?
+
+    Ein Ordner, der nur leere Ordner enthält, gilt als leer — genau das bleibt
+    nach einem Zusammenlegen übrig. Antwortet die Cloud nicht, lautet die
+    Antwort „nicht leer": lieber einen Ordner zu wenig zum Wegwerfen vorschlagen
+    als einen zu viel."""
+    try:
+        kinder = client.liste(pfad)
+    except Exception:                                  # noqa: BLE001
+        return False
+    for kind in kinder:
+        if not kind.ordner:
+            return False
+        if not _leer_in_der_cloud(client, _pfad(kind.pfad)):
+            return False
+    return True
+
+
+def struktur_umzug_plan(session: Session, client: Nextcloud) -> dict:
+    """Trockenlauf: welcher Hauptordner je Immobilie wohin zieht.
+
+    Liest nur. Was in der Cloud gar nicht liegt, taucht nicht auf — die Tabelle
+    oben nennt alle je vergebenen Namen, eine einzelne Immobilie hatte immer
+    nur einen Teil davon."""
+    schritte: list[dict] = []
+    for o in session.exec(select(Objekt)).all():
+        if not o.nc_ordner:
+            continue
+        wurzel = _pfad(o.nc_ordner)
+        try:
+            vorhanden = [k.name for k in client.liste(wurzel) if k.ordner]
+        except Exception as fehler:                    # noqa: BLE001
+            log.warning("Ordner von %s nicht lesbar: %s", o.slug, fehler)
+            continue
+        zuege = [{"von": name, "nach": STRUKTUR_UMZUG[name],
+                  "art": "aufloesen" if not STRUKTUR_UMZUG[name] else "umzug"}
+                 for name in sorted(vorhanden) if name in STRUKTUR_UMZUG]
+        if zuege:
+            schritte.append({"objekt": o.slug, "name": o.name,
+                             "wurzel": wurzel, "zuege": zuege})
+    return {"schritte": schritte, "anzahl": len(schritte),
+            "ordner": sum(len(s["zuege"]) for s in schritte)}
+
+
+@router.get("/struktur-umzug")
+def struktur_umzug_pruefen(session: Session = Depends(get_session)) -> dict:
+    """Trockenlauf — zeigt alt → neu je Hauptordner. Ändert nichts."""
+    if not _lies(session, S_HOME):
+        return {"moeglich": False, "grund": "Noch keine Nextcloud verbunden",
+                "schritte": [], "anzahl": 0, "ordner": 0}
+    return {"moeglich": True, "grund": "",
+            **struktur_umzug_plan(session, verbindung(session))}
+
+
+@router.post("/struktur-umzug")
+def struktur_umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
+    """Zieht die Hauptordner auf die neue Gliederung um.
+
+    Ordner für Ordner, jeder einzeln festgeschrieben — stolpert der dritte,
+    bleiben die ersten beiden umgezogen (sie liegen ja schon dort). Drei Fälle:
+
+    * der Zielname ist frei -> ein einziger MOVE, der ganze Ordner wandert;
+    * den Zielordner gibt es schon -> Kind für Kind hinein (`_entschachtele`),
+      was dort schon gleich heisst, bleibt liegen und wird gemeldet;
+    * kein Zielname -> derselbe Weg, aber auf die oberste Ebene der Immobilie.
+
+    `Dokument.pfad` zieht in allen drei Fällen mit; gelöscht wird nichts."""
+    client = verbindung(session)
+    plan = struktur_umzug_plan(session, client)
+    erledigt: list[dict] = []
+    fehler: list[dict] = []
+    geblieben: list[dict] = []
+
+    for schritt in plan["schritte"]:
+        wurzel = schritt["wurzel"]
+        for zug in schritt["zuege"]:
+            von = f"{wurzel}/{zug['von']}"
+            nach = f"{wurzel}/{zug['nach']}" if zug["nach"] else wurzel
+            try:
+                if zug["nach"] and not client.existiert(nach):
+                    # Ein verschachteltes Ziel („…/Mieterhoehungen") braucht
+                    # seinen Elternordner, bevor der MOVE greifen kann.
+                    eltern = nach.rsplit("/", 1)[0]
+                    if eltern != wurzel and not client.existiert(eltern):
+                        client.ordner_anlegen(eltern)
+                    _ziel, bewegt = _verschiebe_ordner(session, client, von, nach)
+                    session.commit()
+                    art = "umbenannt"
+                    offen: list[str] = []
+                else:
+                    _ziel, bewegt, offen = _entschachtele(
+                        session, client, von, nach)
+                    session.commit()
+                    art = "zusammengelegt" if zug["nach"] else "aufgeloest"
+            except Exception as f:                     # noqa: BLE001
+                session.rollback()
+                log.warning("Strukturumzug übersprungen für %s: %s", von, f)
+                fehler.append({"objekt": schritt["objekt"], "von": von,
+                               "nach": nach, "fehler": str(f)})
+                continue
+            log.info("Strukturumzug: %s -> %s (%s)", von, nach, art)
+            erledigt.append({"objekt": schritt["objekt"], "von": von,
+                             "nach": nach, "art": art,
+                             "dokumente": len(bewegt)})
+            if offen:
+                geblieben.append({"objekt": schritt["objekt"], "von": von,
+                                  "namen": offen})
+
+    # Was jetzt leer herumsteht — die Liste zum Aufräumen im Explorer. Die App
+    # löscht in der Cloud grundsätzlich nichts, auch keine leeren Hüllen.
+    leer: list[dict] = []
+    for schritt in plan["schritte"]:
+        wurzel = schritt["wurzel"]
+        for zug in schritt["zuege"]:
+            pfad = f"{wurzel}/{zug['von']}"
+            if client.existiert(pfad) and _leer_in_der_cloud(client, pfad):
+                leer.append({"objekt": schritt["objekt"], "pfad": pfad,
+                             "name": zug["von"]})
+
+    return {"verschoben": erledigt, "anzahl": len(erledigt),
+            "fehler": fehler, "geblieben": geblieben, "leer": leer}

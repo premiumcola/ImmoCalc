@@ -518,7 +518,7 @@ def test_ablage_setzt_screenshot_dokument_id(monkeypatch):
         # Genau einmal abgelegt, im Jahresordner unter 60_Nebenkosten.
         assert len(wolke.abgelegt) == 1
         pfad, typ = wolke.abgelegt[0]
-        assert "60_Nebenkosten/2025" in pfad
+        assert "32_Nebenkosten/2025" in pfad
         assert pfad.endswith(".png")
         assert typ == "image/png"
 

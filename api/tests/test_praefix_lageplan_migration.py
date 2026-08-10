@@ -3,7 +3,7 @@
 Zwei Endpunkte, beide idempotent und standardmäßig „trocken":
 * `POST /praefix-entfernen` — streicht das führende „ohne-Jahr_" aus Namen.
 * `POST /lageplaene-einsortieren` — zieht Lagepläne in ihren Sammelordner
-  „10_Fotos_Lage/00_Lagepläne".
+  „10_Fotos_Lageplaene/00_Lagepläne" (seit N332; vorher „10_Fotos_Lage").
 
 Nie überschreiben, nie löschen; die Datei wird per MOVE umgehängt und der
 DB-Eintrag zieht mit.
@@ -152,9 +152,9 @@ def test_lageplaene_einsortieren_zieht_in_sammelordner(monkeypatch):
         assert len(r["verschoben"]) == 1 and r["fehler"] == []
         with Session(engine) as s:
             d = s.get(Dokument, did)
-            assert d.pfad == "/Obj/10_Fotos_Lage/00_Lagepläne/Lageplan-EG.pdf"
+            assert d.pfad == "/Obj/10_Fotos_Lageplaene/00_Lagepläne/Lageplan-EG.pdf"
         # Der Sammelordner wurde angelegt (MKCOL, 405-sicher).
-        assert "Obj/10_Fotos_Lage/00_Lagepläne" in fake.ordner
+        assert "Obj/10_Fotos_Lageplaene/00_Lagepläne" in fake.ordner
 
         # Idempotent: liegt er schon richtig, passiert nichts mehr.
         r2 = c.post("/api/dokumente/lageplaene-einsortieren?trocken=false").json()

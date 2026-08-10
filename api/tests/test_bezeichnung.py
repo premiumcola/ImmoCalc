@@ -758,8 +758,10 @@ def _flach_beleg(slug: str, pfad: str, jahr=2024,
 
 def test_flache_datei_landet_im_jahresordner(monkeypatch):
     """CXCII: ein Beleg, der flach im Sachordner liegt, zieht in seinen
-    Jahresordner — die Datei wandert, ihr Eintrag zieht mit."""
-    sach = f"{NEU}/60_Nebenkosten"
+    Jahresordner — die Datei wandert, ihr Eintrag zieht mit.
+
+    Der Sachordner heisst seit N332 „32_Nebenkosten" (vorher „60_Nebenkosten")."""
+    sach = f"{NEU}/32_Nebenkosten"
     flach = f"{sach}/2024_NK-Wasser.pdf"
     with TestClient(app) as c:
         _cloud_bereit()
@@ -787,7 +789,7 @@ def test_flache_datei_landet_im_jahresordner(monkeypatch):
 def test_vorhandener_jahresordner_wird_wiederverwendet(monkeypatch):
     """Liegt „2025" schon da, wandert der Beleg dorthin — nicht in ein zweites
     Jahresordner daneben."""
-    sach = f"{NEU}/60_Nebenkosten"
+    sach = f"{NEU}/32_Nebenkosten"                   # N332
     vorhanden = f"{sach}/2025"
     flach = f"{sach}/2025_NK-Strom.pdf"
     with TestClient(app) as c:
@@ -833,7 +835,7 @@ def test_selbst_angelegter_ordner_und_datei_ohne_eintrag_bleiben(monkeypatch):
 
     Ein selbst angelegter Unterordner, eine Datei ohne Eintrag und ein Beleg,
     der schon im Jahresordner liegt, bleiben unangetastet."""
-    sach = f"{NEU}/60_Nebenkosten"
+    sach = f"{NEU}/32_Nebenkosten"                   # N332
     eigen = f"{sach}/Ablesungsergebnisse"           # selbst angelegt
     eigen_datei = f"{eigen}/Zaehlerstand.pdf"        # ohne Eintrag
     schon_drin = f"{sach}/2023/2023_NK-Muell.pdf"    # liegt schon richtig
