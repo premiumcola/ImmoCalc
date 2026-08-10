@@ -1,0 +1,276 @@
+"""N340 — der Rechenweg einer Heizkostenabrechnung, nachgebaut und nachprüfbar.
+
+Für die Laufer Str. 5 rechnet bisher ein Messdienst (Delta-t Wenzel) die
+Heizkosten ab. Damit ImmoCalc das übernehmen kann, muss sein Rechenweg erst
+Zahl für Zahl reproduziert werden — an mehreren echten Jahren, bis nichts mehr
+abweicht. Genau dafür ist dieses Modul da: **eine reine Funktion**, die aus den
+Eingaben eines Jahres dieselbe Aufstellung erzeugt, die auf der Abrechnung
+steht, und sie den tatsächlichen Beträgen gegenüberstellt.
+
+Der Weg, abgelesen an der Abrechnung 01.10.2018 – 30.09.2019 (Objekt 103536-002):
+
+  1. **Brennstoff** — Anfangsbestand + Anlieferungen − Restbestand ergibt die
+     verbrauchten Liter und ihren Wert (4.446,000 l / 3.328,15 €). Mal Heizwert
+     (10 kWh/l) sind das 44.460 kWh.
+  2. **Warmwasser-Abzug (§9 HeizkostenV)** — aus dem gemessenen Warmwasser-
+     volumen (30,110 m³) die Wärmemenge Qtw = 2,5 · V · (t − 10) = 3.764 kWh,
+     daraus Btw = Qtw / Heizwert = 376,4 l. Sein Anteil an den Gesamtlitern ist
+     der Warmwasseranteil: 8,47 % — der Rest (91,53 %) ist Heizung.
+  3. **Kostenblöcke** — Brennstoff, „Nebenkosten Heizung" (Betriebsstrom,
+     Verbrauchserfassung, Kaminkehrer, Wartung) und „Zusatzkosten Heizung"
+     (Miete der Zähler). Jeder wird in diesem Verhältnis geteilt; die
+     Zusatzkosten ausdrücklich NICHT — sie gehören ganz zur Heizung.
+  4. **Heizung: fest und verbrauchsabhängig** — 30 % Festkosten auf die
+     Wohnfläche, 70 % nach Verbrauch. Die Verbrauchskosten teilen sich noch
+     einmal auf zwei Erfassungsarten: H1 sind die Heizkostenverteiler an den
+     Heizkörpern, H2 ist der Wärmezähler des Anbaus.
+  5. **Warmwasser** — der Warmwasseranteil aller Blöcke, verteilt nach m³.
+  6. **Je Nutzer** — Verbrauch (H1 oder H2) + Festkosten (m² × Preis, bei
+     unterjährigem Wechsel zeitanteilig) + Warmwasser.
+
+Offen ist genau eine Größe: **wie sich die Verbrauchskosten auf H1 und H2
+aufteilen.** Delta-t gab H2 im Jahr 2019 35,4 % davon, obwohl der Wärmezähler
+nur 22,7 % der Gesamtenergie misst. Deshalb ist `h2_anteil` hier ein Eingabe-
+wert und kein berechneter: der Nutzer dreht daran, bis die Abweichung über
+mehrere Jahre verschwindet — dann ist der Schlüssel gefunden.
+
+Bewusst ohne Datenbank und ohne eigene Tabelle: das ist ein Werkzeug auf Zeit.
+Steht der Rechenweg, wandert er in die Engine und dieses Modul fällt weg.
+"""
+from __future__ import annotations
+
+from .engine import verteile_nach_wert
+from .waerme import oel_kwh, warmwasser_kwh
+
+# Der gesetzliche Regelfall der HeizkostenV: 30 % Grundkosten nach Fläche,
+# 70 % nach erfasstem Verbrauch. Delta-t rechnet genau so.
+FEST_ANTEIL = 0.30
+
+
+def _zahl(wert, vorgabe: float = 0.0) -> float:
+    try:
+        return float(wert)
+    except (TypeError, ValueError):
+        return vorgabe
+
+
+def brennstoff(eingabe: dict) -> dict:
+    """Verbrauchte Liter und ihr Wert — entweder direkt oder aus den Beständen.
+
+    Die Abrechnung führt Anfangsbestand, Anlieferungen und Restbestand
+    getrennt auf; wer nur die Summe kennt, gibt sie direkt an. Beides ergibt
+    dieselben zwei Zahlen."""
+    if eingabe.get("liter") is not None:
+        return {"liter": round(_zahl(eingabe.get("liter")), 3),
+                "eur": round(_zahl(eingabe.get("eur")), 2),
+                "aus_bestaenden": False}
+    zugang = [{"liter": _zahl(p.get("liter")), "eur": _zahl(p.get("eur"))}
+              for p in (eingabe.get("bestaende") or [])]
+    rest_l = _zahl((eingabe.get("rest") or {}).get("liter"))
+    rest_e = _zahl((eingabe.get("rest") or {}).get("eur"))
+    return {"liter": round(sum(p["liter"] for p in zugang) - rest_l, 3),
+            "eur": round(sum(p["eur"] for p in zugang) - rest_e, 2),
+            "aus_bestaenden": True}
+
+
+def _bloecke_teilen(bloecke: list[dict], heiz_anteil: float) -> list[dict]:
+    """Jeden Kostenblock in Heizungs- und Warmwasseranteil zerlegen.
+
+    `nur_heizung` bleibt ungeteilt — die Miete für Heizkostenverteiler und
+    Wärmezähler hat mit dem Warmwasser nichts zu tun."""
+    geteilt = []
+    for b in bloecke:
+        betrag = round(_zahl(b.get("betrag")), 2)
+        if b.get("nur_heizung"):
+            heiz, ww = betrag, 0.0
+        else:
+            heiz = round(betrag * heiz_anteil, 2)
+            ww = round(betrag - heiz, 2)
+        geteilt.append({"name": b.get("name") or "Kosten", "betrag": betrag,
+                        "heizung": heiz, "warmwasser": ww,
+                        "nur_heizung": bool(b.get("nur_heizung"))})
+    return geteilt
+
+
+def _verteile_wie_deltat(betrag: float, gewichte: dict[str, float]) -> dict:
+    """Einen Kostentopf so aufteilen, wie es auf der Delta-t-Abrechnung steht.
+
+    Jede Zeile kaufmännisch gerundet, und der Rest, der dabei zur Summe fehlt
+    (oder zu viel ist), geht **an die größte Zeile**. Nachgewiesen an genau
+    einer Stelle der Abrechnung 2018/19: acht Heizkostenverteiler-Zeilen
+    treffen alle auf den Cent, nur die größte steht mit 568,44 € statt der
+    gerechneten 568,42 € da — und exakt diese 2 Cent fehlen der Summe der
+    gerundeten Zeilen zu den ausgewiesenen 1.747,30 €.
+
+    Das ist bewusst NICHT das Größte-Reste-Verfahren der Engine
+    (`verteile_nach_wert`), das den Rest an die größte abgeschnittene
+    Nachkommastelle gibt — damit wanderten dieselben Cent auf zwei andere
+    Zeilen. Beide Verfahren halten die Summe exakt ein; sie legen den Rest nur
+    woanders hin. Welches Delta-t wirklich verwendet, muss ein zweites
+    Abrechnungsjahr bestätigen — bis dahin ist das hier eine begründete
+    Annahme, keine gesicherte Regel (umschaltbar über `rundung: "engine"`).
+    """
+    summe = sum(gewichte.values())
+    if summe <= 0:
+        return {k: 0.0 for k in gewichte}
+    ziel = round(betrag, 2)
+    zeilen = {k: round(betrag * v / summe, 2) for k, v in gewichte.items()}
+    rest = round(ziel - sum(zeilen.values()), 2)
+    if rest:
+        groesste = max(gewichte, key=lambda k: gewichte[k])
+        zeilen[groesste] = round(zeilen[groesste] + rest, 2)
+    return zeilen
+
+
+def rechne(eingabe: dict) -> dict:
+    """Die vollständige Aufstellung eines Abrechnungsjahres.
+
+    `eingabe` (alles optional, sinnvolle Vorgaben):
+      * `heizwert`      — kWh je Liter (Vorgabe 10,0)
+      * `liter`/`eur` ODER `bestaende`/`rest` — der Brennstoff (s. `brennstoff`)
+      * `ww_m3`, `ww_temp` — Warmwasservolumen und -temperatur (§9)
+      * `ww_kwh`        — statt dessen die Wärmemenge direkt, wenn bekannt
+      * `bloecke`       — weitere Kostenblöcke [{name, betrag, nur_heizung}]
+      * `fest_anteil`   — Grundkostenanteil (Vorgabe 0,30)
+      * `h2_anteil`     — Anteil des Wärmezählers an den VERBRAUCHSkosten
+                          (0…1). Ohne Angabe nach gemessener Energie.
+      * `nutzer`        — [{name, flaeche, zeitanteil, ehkv, kwh, ww_m3}]
+      * `soll`          — {name: Euro} die tatsächlichen Beträge von Delta-t
+
+    Rückgabe: `brennstoff`, `energie`, `anteile`, `bloecke`, `heizung`,
+    `warmwasser`, `preise`, `nutzer` (je Zeile mit Teilbeträgen, Summe und —
+    wo ein Soll vorliegt — `soll` und `abweichung`) und `abgleich`.
+    """
+    heizwert = _zahl(eingabe.get("heizwert"), 10.0) or 10.0
+    stoff = brennstoff(eingabe)
+    gesamt_kwh = oel_kwh(stoff["liter"], heizwert)
+
+    # Warmwasser: gemessene Wärmemenge oder aus dem Volumen nach §9.
+    ww_kwh = (_zahl(eingabe.get("ww_kwh")) if eingabe.get("ww_kwh") is not None
+              else warmwasser_kwh(_zahl(eingabe.get("ww_m3")),
+                                  _zahl(eingabe.get("ww_temp"), 60.0)))
+    ww_liter = round(ww_kwh / heizwert, 3) if heizwert else 0.0
+    ww_anteil = (min(1.0, ww_liter / stoff["liter"]) if stoff["liter"] > 0
+                 else 0.0)
+    heiz_anteil = round(1.0 - ww_anteil, 6)
+
+    bloecke = _bloecke_teilen(
+        [{"name": "Brennstoffkosten", "betrag": stoff["eur"]}]
+        + list(eingabe.get("bloecke") or []), heiz_anteil)
+    heiz_gesamt = round(sum(b["heizung"] for b in bloecke), 2)
+    ww_gesamt = round(sum(b["warmwasser"] for b in bloecke), 2)
+
+    fest_anteil = _zahl(eingabe.get("fest_anteil"), FEST_ANTEIL)
+    fest_eur = round(heiz_gesamt * fest_anteil, 2)
+    verbrauch_eur = round(heiz_gesamt - fest_eur, 2)
+
+    nutzer = list(eingabe.get("nutzer") or [])
+    summe_ehkv = round(sum(_zahl(n.get("ehkv")) for n in nutzer), 3)
+    summe_kwh = round(sum(_zahl(n.get("kwh")) for n in nutzer), 3)
+    summe_ww = round(sum(_zahl(n.get("ww_m3")) for n in nutzer), 3)
+    # Fläche zeitanteilig — ein unterjähriger Wechsel teilt dieselbe Wohnung
+    # unter zwei Nutzern auf (Delta-t schreibt das als „× 360,0/1000,0").
+    summe_flaeche = round(
+        sum(_zahl(n.get("flaeche")) * _zahl(n.get("zeitanteil"), 1.0)
+            for n in nutzer), 3)
+
+    # Der gesuchte Schlüssel. Ohne Vorgabe nach gemessener Energie — das ist
+    # die naheliegende Annahme, aber nachweislich NICHT die von Delta-t.
+    if eingabe.get("h2_anteil") is not None:
+        h2_anteil = max(0.0, min(1.0, _zahl(eingabe.get("h2_anteil"))))
+    else:
+        h2_anteil = (summe_kwh / gesamt_kwh) if gesamt_kwh > 0 else 0.0
+    verbrauch_h2 = round(verbrauch_eur * h2_anteil, 2)
+    verbrauch_h1 = round(verbrauch_eur - verbrauch_h2, 2)
+
+    teile = lambda betrag, menge: round(betrag / menge, 6) if menge > 0 else 0.0
+    preise = {
+        "fest_je_m2": teile(fest_eur, summe_flaeche),
+        "h1_je_einheit": teile(verbrauch_h1, summe_ehkv),
+        "h2_je_kwh": teile(verbrauch_h2, summe_kwh),
+        "ww_je_m3": teile(ww_gesamt, summe_ww),
+    }
+
+    schluessel = [n.get("name") or f"Nutzer {i + 1}" for i, n in enumerate(nutzer)]
+    rundung = eingabe.get("rundung") or "deltat"
+
+    def topf(betrag: float, feld: str, mit_zeit: bool = False) -> dict:
+        gewichte = {}
+        for name, n in zip(schluessel, nutzer):
+            wert = _zahl(n.get(feld))
+            if mit_zeit:
+                wert *= _zahl(n.get("zeitanteil"), 1.0)
+            gewichte[name] = gewichte.get(name, 0.0) + wert
+        if rundung == "engine":
+            return verteile_nach_wert(betrag, gewichte)
+        return _verteile_wie_deltat(betrag, gewichte)
+
+    t_h1 = topf(verbrauch_h1, "ehkv")
+    t_h2 = topf(verbrauch_h2, "kwh")
+    t_fest = topf(fest_eur, "flaeche", mit_zeit=True)
+    t_ww = topf(ww_gesamt, "ww_m3")
+
+    soll = eingabe.get("soll") or {}
+    zeilen = []
+    for name, n in zip(schluessel, nutzer):
+        p_h1, p_h2 = t_h1.get(name, 0.0), t_h2.get(name, 0.0)
+        p_fest, p_ww = t_fest.get(name, 0.0), t_ww.get(name, 0.0)
+        zeile = {"name": name, "verbrauch_h1": p_h1, "verbrauch_h2": p_h2,
+                 "festkosten": p_fest, "warmwasser": p_ww,
+                 "heizkosten": round(p_h1 + p_h2 + p_fest, 2),
+                 "summe": round(p_h1 + p_h2 + p_fest + p_ww, 2)}
+        if name in soll:
+            zeile["soll"] = round(_zahl(soll[name]), 2)
+            zeile["abweichung"] = round(zeile["heizkosten"] - zeile["soll"], 2)
+        zeilen.append(zeile)
+
+    verglichen = [z for z in zeilen if "abweichung" in z]
+    return {
+        "brennstoff": stoff,
+        "energie": {"gesamt_kwh": gesamt_kwh, "ww_kwh": round(ww_kwh, 3),
+                    "ww_liter": ww_liter, "heizwert": heizwert},
+        "anteile": {"warmwasser": round(ww_anteil, 6),
+                    "heizung": heiz_anteil,
+                    "fest": fest_anteil,
+                    "h2_von_verbrauch": round(h2_anteil, 6)},
+        "bloecke": bloecke,
+        "heizung": {"gesamt": heiz_gesamt, "fest": fest_eur,
+                    "verbrauch": verbrauch_eur,
+                    "verbrauch_h1": verbrauch_h1, "verbrauch_h2": verbrauch_h2},
+        "warmwasser": {"gesamt": ww_gesamt},
+        "mengen": {"flaeche": summe_flaeche, "ehkv": summe_ehkv,
+                   "kwh": summe_kwh, "ww_m3": summe_ww},
+        "preise": preise,
+        "nutzer": zeilen,
+        "abgleich": {
+            "verglichen": len(verglichen),
+            "groesste_abweichung": (max((abs(z["abweichung"]) for z in verglichen),
+                                        default=0.0)),
+            "summe_abweichung": round(sum(z["abweichung"] for z in verglichen), 2),
+            "summe_ist": round(sum(z["heizkosten"] for z in zeilen), 2),
+            "summe_soll": round(sum(z["soll"] for z in verglichen), 2),
+        },
+    }
+
+
+def h2_anteil_aus_soll(eingabe: dict) -> float | None:
+    """Welcher H2-Anteil träfe die vorgegebenen Soll-Beträge am besten?
+
+    Der Nutzer sucht genau diese Zahl. Statt sie von Hand zu suchen, wird sie
+    hier eingegabelt: 0 bis 1 in feinen Schritten, das Minimum der Summe der
+    Abweichungsquadrate gewinnt. Ohne Soll-Werte gibt es nichts zu treffen."""
+    if not (eingabe.get("soll") or {}):
+        return None
+    bester, bestwert = None, None
+    for schritt in range(0, 1001):
+        anteil = schritt / 1000
+        erg = rechne({**eingabe, "h2_anteil": anteil})
+        abw = sum(z["abweichung"] ** 2 for z in erg["nutzer"]
+                  if "abweichung" in z)
+        if bestwert is None or abw < bestwert:
+            bester, bestwert = anteil, abw
+    return bester
+
+
+__all__ = ["rechne", "brennstoff", "h2_anteil_aus_soll", "FEST_ANTEIL",
+           "verteile_nach_wert"]
