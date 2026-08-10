@@ -212,6 +212,8 @@ _VERWEIS_TITEL = {
     # N313 — kam mit dem Kontaktbuch dazu und fehlte hier; im Duplikat-
     # Assistenten stand dem Nutzer sonst der rohe Tabellenname.
     "kundennummer.quelle_dokument_id": "Kundennummer",
+    # N331c — der Scan-Weg für Grundschulden.
+    "grundschuld.quelle_dokument_id": "Grundschuld",
 }
 
 

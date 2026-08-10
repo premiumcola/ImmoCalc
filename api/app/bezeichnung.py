@@ -310,6 +310,10 @@ STANDARD_UNTERORDNER = {
     # N283d — kein Jahresordner: die Erwerbsnebenkosten fallen einmalig rund um
     # den Kauf an, ein Jahr davon zu trennen hülfe beim Wiederfinden nicht.
     "Erwerbsnebenkosten": "",
+    # N331c — dieselbe Begründung wie bei Erwerbsnebenkosten: eine Grundschuld
+    # entsteht einmalig, kein Jahresbezug, den ein Unterordner sinnvoll fassen
+    # könnte.
+    "Grundschuld": "",
     # N289 — der Unterordner einer Renovierungsrechnung ist kein Jahres-, sondern
     # ein Projektordner („2025.01_Generalsanierung"). Er lässt sich aus Jahr und
     # Einheit nicht bilden, sondern kommt aus der Renovierung selbst und wird

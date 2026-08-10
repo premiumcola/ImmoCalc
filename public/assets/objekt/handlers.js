@@ -274,8 +274,11 @@ export function initHandlers() {
         if (id) {
           await api(`/grundschulden/${id}`, { method: 'PATCH', body });
         } else {
-          await api(`/objekte/${encodeURIComponent(slug)}/grundschulden`,
-                    { method: 'POST', body });
+          const neu = await api(`/objekte/${encodeURIComponent(slug)}/grundschulden`,
+                                { method: 'POST', body });
+          // N331c — wie beim generischen Weg (Zeile ~319): erst jetzt hat die
+          // Grundschuld eine id, an die der vorbereitete Scan sich hängen kann.
+          if (scanWartet()) await scanAnhaengen('grundschulden', neu.id);
         }
       } else {
         // Nicht `cfgFuer(bereich).felder`: bei den Verträgen entscheidet die
@@ -699,7 +702,12 @@ export function initHandlers() {
 
     // CCXXIX — Grundschulden hängen nicht an BEREICHE (eigene Endpunkte), daher
     // eigene data-Attribute statt data-add/-edit/-del.
-    if (e.target.closest('[data-gs-neu]')) return grundschuldFormular(null);
+    if (e.target.closest('[data-gs-neu]')) {
+      // N331c — wie beim generischen `data-add`-Weg: ein alter Scan darf nicht
+      // an einer später von Hand angelegten Grundschuld hängenbleiben.
+      scanVerwerfen();
+      return grundschuldFormular(null);
+    }
 
     const gsEdit = e.target.closest('[data-gs-edit]');
     if (gsEdit) {

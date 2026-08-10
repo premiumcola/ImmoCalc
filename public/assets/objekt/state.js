@@ -91,8 +91,11 @@ export const ENTWURF_TYP = {
 // Rubrik (Frontend) → Eintragstyp (Backend `an_typ`), inkl. Nebenkosten. Die
 // Detailansicht (CCCXIII) holt darüber die Belege eines Eintrags.
 // Erwerbsnebenkosten sind Zahlungen — dieselbe Typkennung wie „zahlungen".
+// N331c — Grundschulden sind keine BEREICHE-Rubrik (eigene Endpunkte, siehe
+// GRUNDSCHULDFELDER unten) und kennen deshalb kein `vorlaeufig` — direkt
+// hier gesetzt statt über `ENTWURF_TYP`.
 export const AN_TYP = { ...ENTWURF_TYP, nebenkosten: 'kostenposition',
-                        erwerbskosten: 'zahlung' };
+                        erwerbskosten: 'zahlung', grundschulden: 'grundschuld' };
 /* CCCLXVII — welche Dokumentart ein direkt am Eintrag abfotografierter Beleg
    bekommt. Sie entscheidet über Ablageordner und Dateinamen (`ZIELORDNER`,
    `ARTKUERZEL` im Backend); die Rubrik allein sagt das nicht. Was hier fehlt,
@@ -107,6 +110,10 @@ export const SCAN_KATEGORIE = {
   // 'Steuer' — jeder Erwerbsnebenkosten-Scan landete trotz des Backend-Fixes
   // weiter unter 70_Steuer_Finanzamt statt beim Kauf.
   erwerbskosten: 'Erwerbsnebenkosten',
+  // N331c — der KI-Scan für Grundschulden (Eintragungsbekanntmachung des
+  // Grundbuchamts) landet bei denselben Kauf-/Finanzierungsunterlagen wie
+  // Notarvertrag und Kredit.
+  grundschulden: 'Grundschuld',
 };
 /* Wie der Beleg an dieser Stelle heisst. „Mietvertrag abfotografieren" sagt
    mehr als „Beleg abfotografieren", wo es nur einen geben kann. */
@@ -183,7 +190,14 @@ export const ZEITRAUMFELDER = [
 export const GRUNDSCHULDFELDER = [
   { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01', geld: true,
     voll: true, pflicht: true },
-  { k: 'rang', l: 'Rang', typ: 'number', schritt: '1', lex: 'rang' },
+  // N331c — Nutzer: „Die Eingabe buggt eine Zeile drunter rum" — `rang` war
+  // das einzige Zahlenfeld dieser Maske ohne `geld`/`einheit` und entging
+  // damit dem in `formular.js` dokumentierten Umweg über `type="text"`
+  // (ein natives `type="number"` setzt seine Pfeilchen genau dort hin, wo
+  // sonst der Cursor steht). Ausserdem ist ein Rang oft gar keine reine
+  // Zahl: „vor Abt. II/1", „nach Abt. III/1" — echte Werte aus der
+  // Grundbuch-Praxis, die ein Zahlenfeld ohnehin nie hätte fassen können.
+  { k: 'rang', l: 'Rang', typ: 'text', lex: 'rang' },
   { k: 'grundbuch_blatt', l: 'Grundbuchblatt', typ: 'text', lex: 'grundbuch' },
   { k: 'glaeubiger', l: 'Gläubiger', typ: 'text' },
   { k: 'brief', l: 'Briefgrundschuld', typ: 'schalter', vorgabe: false,

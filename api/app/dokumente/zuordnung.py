@@ -22,9 +22,9 @@ from typing import Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ..models import (Bewohner, Dokument, Einheit, Kostenposition, Kredit,
-                      Miete, Notarvertrag, Objekt, Versicherung, Zahlung,
-                      Zeitraum)
+from ..models import (Bewohner, Dokument, Einheit, Grundschuld, Kostenposition,
+                      Kredit, Miete, Notarvertrag, Objekt, Versicherung,
+                      Zahlung, Zeitraum)
 
 
 # Modelle, die per `quelle_dokument_id` auf einen Beleg zeigen, samt der
@@ -33,7 +33,7 @@ _ZUORDNUNG_MODELLE = (
     (Kostenposition, "Nebenkosten"), (Miete, "mieten"),
     (Versicherung, "versicherungen"), (Kredit, "kredite"),
     (Notarvertrag, "notarvertraege"), (Bewohner, "mieten"),
-    (Zahlung, "zahlungen"),
+    (Zahlung, "zahlungen"), (Grundschuld, "grundschulden"),
 )
 
 # CCCX/CCCXI — an welchen bestehenden Eintrag sich ein Beleg hängen lässt:
@@ -45,6 +45,9 @@ _AN_TYP_MODELLE = {
     "versicherung": (Versicherung, "versicherungen"),
     "miete": (Miete, "mieten"),
     "kostenposition": (Kostenposition, "Nebenkosten"),
+    # N331c — der Scan-Weg für Grundschulden (Eintragungsbekanntmachung des
+    # Grundbuchamts): Rang, Grundbuchblatt, Gläubiger, Betrag.
+    "grundschuld": (Grundschuld, "grundschulden"),
 }
 
 # Rubrik eines Info-Belegs im Dokumentenbaum. „objekt" ist der Beleg, der zur

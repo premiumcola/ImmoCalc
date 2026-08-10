@@ -654,6 +654,10 @@ class Grundschuld(SQLModel, table=True):
     glaeubiger: str = ""          # begünstigte Bank
     brief: bool = False           # Brief- (True) oder Buchgrundschuld (False)
     notiz: str = ""
+    # N331c — additiv: der Scan-Weg (wie bei Notarvertrag/Kredit/Zahlung) legt
+    # den Beleg ab und muss ihn am Eintrag festhalten können.
+    quelle_dokument_id: Optional[int] = Field(
+        default=None, foreign_key="dokument.id")
 
 
 class GrundschuldKredit(SQLModel, table=True):

@@ -37,7 +37,8 @@ import { formular } from './formular.js';
    dort lohnt der Scan-Weg — anderswo käme eine leere Maske heraus, und der
    Knopf verspräche etwas, das er nicht hält. */
 export const SCANBAR = new Set(['notarvertraege', 'versicherungen', 'kredite',
-                                'mieten', 'zahlungen', 'erwerbskosten']);
+                                'mieten', 'zahlungen', 'erwerbskosten',
+                                'grundschulden']);
 
 /* Der vorbereitete, noch NICHT abgelegte Scan. Er wartet, bis der Eintrag
    gespeichert ist — vorher gibt es keine id, an die er gehören könnte.

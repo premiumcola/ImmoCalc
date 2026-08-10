@@ -61,8 +61,13 @@ export async function grundschuldFormular(g = null) {
       + 'Grundschuld sichert einen oder mehrere Kredite ab — auch an einem '
       + 'anderen Objekt.',
     felder: GRUNDSCHULDFELDER, werte: g || {}, absicht: 'grundschuld',
+    bereich: 'grundschulden',
     extra: grundschuldKreditBlock(kreditListe, g ? (g.kredit_ids || []) : []),
     knopf: g ? 'Speichern' : 'Anlegen',
+    // N331c — der Scan-Knopf (KI liest Rang/Grundbuchblatt/Gläubiger/Betrag
+    // aus der Eintragungsbekanntmachung des Grundbuchamts) nur beim Anlegen —
+    // beim Bearbeiten ist der Beleg meist schon abgelegt.
+    scan: g ? null : 'grundschulden',
   });
 }
 

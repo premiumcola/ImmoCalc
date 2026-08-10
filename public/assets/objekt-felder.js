@@ -1,6 +1,7 @@
 import { eur, eurVoll } from './immo.js';
 import { kuerzel, datum, prozent, kontaktText, istBausparer, kreditStandText } from './objekt-format.js?v=2';
 import { istGrundstueck, objekt, objektEigentuemer, alleEigentuemer } from './objekt-state.js?v=2';
+import { GRUNDSCHULDFELDER } from './objekt/state.js';
 
 /* ---- CXLIX: Darlehen oder Bausparvertrag --------------------------------
    Beide hängen an derselben Immobilie und kosten dieselbe Rate im Monat —
@@ -332,6 +333,10 @@ const ERWERB = {
   detail: e => [e.jahr, e.notiz].filter(Boolean).join(' · '),
   wert: e => eurVoll(e.betrag || 0),
 };
+// N331c — wie ERWERB oben: Grundschulden haben keinen BEREICHE-Eintrag (eigene
+// Liste/Endpunkte, siehe grundschulden.js), brauchen aber `einzahl`/`felder`
+// für den generischen Scan-Weg (eintragscan.js: `cfgFuer`/`felderFuer`).
+const GRUNDSCHULD = { einzahl: 'Grundschuld', felder: GRUNDSCHULDFELDER };
 
 // Rubriken, die keinen eigenen Endpunkt haben, sondern auf einem anderen
 // aufsetzen (Erwerbsnebenkosten sind Zahlungen einer festen Kategorie).
@@ -357,6 +362,7 @@ const RENOVIERUNG_RUBRIK = {
     „Steuer & Zahlungen" heisst dort schlicht „Finanzamt" (CCCIV). */
 const cfgFuer = (bereich) => {
   if (bereich === 'erwerbskosten') return ERWERB;
+  if (bereich === 'grundschulden') return GRUNDSCHULD;
   if (!istGrundstueck()) return BEREICHE[bereich];
   if (bereich === 'mieten') return { ...BEREICHE.mieten, ...PACHT };
   if (bereich === 'zahlungen') {

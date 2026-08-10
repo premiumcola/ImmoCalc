@@ -98,6 +98,9 @@ ZIELORDNER = {
     # mangels eigener Art unter „70_Steuer_Finanzamt", gehören aber zum Erwerb
     # selbst — dort liegt auch der Kaufvertrag, auf den sie sich beziehen.
     "Erwerbsnebenkosten": "40_Kauf_Eigentum_Finanzierung",
+    # N331c — die Eintragungsbekanntmachung einer Grundschuld gehört zu
+    # denselben Kauf-/Finanzierungsunterlagen wie Notarvertrag und Kredit.
+    "Grundschuld": "40_Kauf_Eigentum_Finanzierung",
     # N289 — Handwerkerrechnungen eines Bauvorhabens gehören zur Bauphase.
     # Ohne diesen Eintrag fiel die Kategorie „Renovierung" auf den Vorgabewert
     # „99_Sonstiges" zurück: die Rechnungen einer Generalsanierung lagen
@@ -184,6 +187,11 @@ ARTKUERZEL = {
     # Kürzel hiesse eine Notarrechnung nur „2017-11_Notar…" und wäre von der
     # laufenden Notarkorrespondenz nicht zu unterscheiden.
     "Erwerbsnebenkosten": "Erwerb",
+    # N331c — „Grundschuld" statt eines leeren Kürzels: `feldzuordnung` hat für
+    # `grundschulden` keinen eigenen Namensvorschlag (weder `art` noch
+    # `bezeichnung`/`partei`/`kostenart` sind dort belegt), der Dateiname
+    # bliebe sonst nur Datum und Betrag ohne jeden Hinweis, worum es geht.
+    "Grundschuld": "Grundschuld",
     # N289 — kein Kürzel: `feldzuordnung` baut den Namen einer Handwerker-
     # rechnung bereits sprechend („Renovierung Elektro Firma"), und der
     # Projektordner sagt ohnehin, zu welchem Vorhaben sie gehört.

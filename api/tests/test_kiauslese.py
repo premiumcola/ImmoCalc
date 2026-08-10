@@ -421,6 +421,39 @@ def test_erkennen_erwerbskosten_nennt_beide_positionen_im_dateinamen(monkeypatch
     assert body["formwerte"]["art"] == "Grundbuchamt – Grundpfandrecht"
 
 
+def _grundbuch_eintragung_erkennung(*_a, **_k):
+    """Was `ocr.erkenne` bei einer echten Eintragungsbekanntmachung nach § 55
+    GBO zurückgäbe (N331c) — Grundschuld auf Unterschöllenbach Blatt 300."""
+    return {
+        "moeglich": True, "betrag": None, "datum": "2017-05-17",
+        "jahr": 2017, "monat": 5, "kategorie": "Grundschuld",
+        "sache": "Eintragungsbekanntmachung", "ist_kosten": False, "zeichen": 300,
+        "kosten_relevant": False, "nebenkosten": False,
+        "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": "",
+        "absender": "Amtsgericht Erlangen Grundbuchamt",
+        "dokumenttyp": "Eintragungsbekanntmachung",
+        "felder": {"grundbuch_blatt": "Unterschöllenbach Blatt 300",
+                   "glaeubiger": "Stadt- und Kreissparkasse Erlangen",
+                   "grundschuld_betrag": 240000.0,
+                   "rang": "nach Abt.III/1"},
+    }
+
+
+def test_erkennen_grundschulden_liest_rang_blatt_glaeubiger_betrag(monkeypatch):
+    """N331c — der KI-Scan für die Eintragungsbekanntmachung des Grundbuchamts
+    füllt dieselben Felder wie die Maske „Grundschuld hinzufügen": Betrag,
+    Rang, Grundbuchblatt, Gläubiger. `rang` ist hier bewusst kein reiner
+    Zahlenwert („nach Abt.III/1") — echte Grundbuch-Praxis."""
+    monkeypatch.setattr(ocr, "erkenne", _grundbuch_eintragung_erkennung)
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *_a, **_k: False)
+    body = _post_bereich("grundschulden").json()
+    werte = body["formwerte"]
+    assert werte["betrag"] == 240000.0
+    assert werte["rang"] == "nach Abt.III/1"
+    assert werte["grundbuch_blatt"] == "Unterschöllenbach Blatt 300"
+    assert werte["glaeubiger"] == "Stadt- und Kreissparkasse Erlangen"
+
+
 def test_erkennen_ohne_bereich_bleibt_wie_zuvor(monkeypatch):
     """Additiv: bestehende Aufrufer schicken keinen Bereich und bekommen die
     Antwort unverändert — kein `formwerte`, das sie nicht erwarten."""
