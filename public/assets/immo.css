@@ -795,6 +795,20 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
 .beleg-kopf .bnb:hover{background:var(--teal-l); color:var(--teal-d)}
 .beleg-kopf .bnz{font:600 11px var(--mono); color:var(--soft); padding:0 3px;
   white-space:nowrap}
+/* N334f — die Handgriffe am Beleg als eigene Reihe unter der Kopfzeile,
+   statt als 44px-Symbolkacheln zwischen Titel und Kreuz. Dort waren sie auf
+   dem Telefon kaum zu treffen und nicht zu deuten. Dieselbe Form wie in der
+   Eintrags-Detailansicht (`.dd-vwerkzeug`), damit ein Beleg überall gleich
+   bedient wird. */
+.werkzeugreihe{display:flex; gap:8px; flex-wrap:wrap; flex:none}
+.werkzeugknopf{display:inline-flex; align-items:center; gap:7px; min-height:44px;
+  padding:0 13px; border:none; border-radius:12px; background:var(--paper);
+  color:var(--teal-d); font:600 12.5px var(--disp); letter-spacing:-.01em;
+  cursor:pointer; -webkit-tap-highlight-color:transparent}
+.werkzeugknopf svg{flex:none}
+.werkzeugknopf:hover{background:var(--teal-l)}
+.werkzeugknopf.an{background:var(--teal-l)}
+
 .beleg-blatt{flex:1; width:100%; border:none; border-radius:12px;
              background:var(--paper); min-height:0}
 /* Die Bildvorschau: ganze erste Seite, breitenfüllend, bei Bedarf scrollt die

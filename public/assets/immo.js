@@ -609,6 +609,63 @@ export const ORDNER_ICON = `<svg viewBox="0 0 24 24" width="19" height="19"
  * neuen Stand zurück (oder `null`, wenn abgebrochen oder gescheitert). Der
  * Aufrufer schreibt damit seine Kopfzeile fort — mehr braucht es nicht.
  */
+/* N334 — die Werkzeugsymbole am Beleg, im flachen Stil der übrigen Sprites.
+   Hier zuhause, weil beide Ansichten sie brauchen: das Beleg-Fenster und die
+   Eintrags-Detailansicht. */
+export const STIFT_ICON = `<svg viewBox="0 0 24 24" width="17" height="17"
+  fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+
+export const FUNKE_ICON = `<svg viewBox="0 0 24 24" width="17" height="17"
+  fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>
+  <path d="M12 8.5 13.4 11 16 12l-2.6 1-1.4 2.5L10.6 13 8 12l2.6-1Z"/></svg>`;
+
+/**
+ * Die Werkzeugreihe zu einem Beleg — Umbenennen, Verschieben, KI-Auslese.
+ * Eine Quelle für beide Ansichten, damit ein Beleg überall gleich zu bedienen
+ * ist. `verdrahteWerkzeuge` hängt das Verhalten daran; `beiAenderung` bekommt
+ * den neuen Stand (Name, Pfad), um die Kopfzeile fortzuschreiben.
+ */
+export function werkzeugreiheHtml() {
+  return `<div class="werkzeugreihe">
+      <button type="button" class="werkzeugknopf" data-um
+        >${STIFT_ICON}<span>Umbenennen</span></button>
+      <button type="button" class="werkzeugknopf" data-ordner
+        >${ORDNER_ICON}<span>Verschieben</span></button>
+      <button type="button" class="werkzeugknopf" data-kiauf aria-expanded="false"
+        >${FUNKE_ICON}<span>KI-Auslese</span></button>
+    </div>`;
+}
+
+export function verdrahteWerkzeuge(wurzel, belegId, holeTitel, beiAenderung) {
+  wurzel.querySelector('[data-um]')?.addEventListener('click', async () => {
+    const erg = await belegUmbenennen(belegId(), holeTitel());
+    if (erg) beiAenderung(erg);
+  });
+  wurzel.querySelector('[data-ordner]')?.addEventListener('click', async () => {
+    const erg = await belegVerschieben(belegId());
+    if (erg) beiAenderung(erg);
+  });
+  // Die Auslese ist Hintergrundwissen, kein Grund, den Beleg zu öffnen —
+  // eingeklappt, und erst beim ersten Aufklappen geholt.
+  wurzel.querySelector('[data-kiauf]')?.addEventListener('click', e => {
+    const knopf = e.currentTarget;
+    const kasten = wurzel.querySelector('.beleg-ki');
+    if (!kasten) return;
+    const auf = kasten.hidden;
+    kasten.hidden = !auf;
+    knopf.setAttribute('aria-expanded', auf ? 'true' : 'false');
+    knopf.classList.toggle('an', auf);
+    if (auf && !kasten.dataset.geladen) {
+      kasten.dataset.geladen = '1';
+      kiAusleseZeigen(belegId(), kasten);
+    }
+  });
+}
+
 export async function belegUmbenennen(belegId, titel = 'Beleg') {
   const gewuenscht = await namenErfragen(titel);
   if (gewuenscht === null) return null;
@@ -682,17 +739,17 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
   // Endpunkt nicht, dort wäre der Knopf ein Versprechen ins Leere.
   const belegId = dokumentId ?? dokumentIdAus(url);
   const umbenennbar = Boolean(belegId) && /\/api\/dokumente\//.test(String(url));
+  // N334f — Kopfzeile schlank (Name, Blättern, Schliessen), die Handgriffe als
+  // eigene Reihe mit lesbarer Beschriftung darunter. Vorher standen ✎ und
+  // Ordnersymbol als blosse Kacheln zwischen Titel und Kreuz: auf dem Telefon
+  // gedrängt und nicht zu deuten.
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${belegKopf(titel, pfad)}</span>
        ${blaettern}
-       ${umbenennbar
-         ? `<button class="bx" data-um title="Namen ändern"
-              aria-label="Namen ändern">✎</button>
-            <button class="bx" data-ordner title="Ordner ändern"
-              aria-label="Ordner ändern">${ORDNER_ICON}</button>` : ''}
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
+     ${umbenennbar ? werkzeugreiheHtml() : ''}
      <div class="beleg-ki" hidden></div>
      <div class="beleg-flaeche"><div class="beleg-blatt lade">Beleg wird geholt …</div></div>`);
   dlg.classList.add('beleg-dlg');
@@ -700,19 +757,10 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
   // Tippen neben die Fläche schliesst ebenfalls.
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
-  // N102 — was zu diesem Beleg schon ausgelesen wurde, steht über der Vorschau.
-  kiAusleseZeigen(dokumentId ?? dokumentIdAus(url), dlg.querySelector('.beleg-ki'));
-
-  const flaeche = dlg.querySelector('.beleg-flaeche');
-  const adressen = belegSeitenLaden(basis, flaeche, titel, url);
-
-  dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
-
-  // N261 — Umbenennen ohne das Fenster zu verlassen: nach dem Speichern stehen
-  // neuer Name und neuer Pfad sofort im Kopf, die Seite wird nicht neu geladen.
-  dlg.querySelector('[data-um]')?.addEventListener('click', async () => {
-    const erg = await belegUmbenennen(belegId, titel);
-    if (!erg) return;
+  // N102/N334f — was zu diesem Beleg ausgelesen wurde, steht über der
+  // Vorschau, aber eingeklappt: es füllte sonst die halbe Höhe, bevor der
+  // Beleg selbst überhaupt zu sehen war. Der Knopf holt es.
+  verdrahteWerkzeuge(dlg, () => belegId, () => titel, erg => {
     titel = erg.dateiname || titel;
     pfad = erg.pfad || pfad;
     dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
@@ -720,18 +768,14 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
     if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
   });
 
-  // N286 — Ablageordner von Hand ändern: erst die möglichen Ziele holen, dann
-  // wählen lassen, dann verschieben. Cloud zuerst, Datenbank danach
-  // (`_beleg_umziehen`) — kippt die Cloud, bleibt hier bewusst nichts sichtbar
-  // geändert, der Nutzer bekommt nur die Fehlermeldung.
-  dlg.querySelector('[data-ordner]')?.addEventListener('click', async () => {
-    const erg = await belegVerschieben(belegId);
-    if (!erg) return;
-    titel = erg.dateiname || titel;
-    pfad = erg.pfad || pfad;
-    dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
-    if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
-  });
+  const flaeche = dlg.querySelector('.beleg-flaeche');
+  const adressen = belegSeitenLaden(basis, flaeche, titel, url);
+
+  dlg.addEventListener('close', () => adressen.forEach(adr => URL.revokeObjectURL(adr)));
+
+  // N261 (umbenennen) und N286 (Ablageordner ändern) hängen jetzt beide an
+  // `verdrahteWerkzeuge` weiter oben — dieselbe Reihe, dieselben Funktionen
+  // wie in der Eintrags-Detailansicht.
 
   // Blättern: dasselbe Fenster für den Nachbarn neu aufbauen. Die Reihe wandert
   // mit, sodass man beliebig weiterblättern kann; am Rand wird umgebrochen.

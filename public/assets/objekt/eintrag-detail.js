@@ -8,7 +8,7 @@
 
 import { esc, api, installHilfe, melde, wahl, belegSeitenLaden, belegAnsehen,
          fokusAufDenDialog, belegUmbenennen, belegVerschieben, kiAusleseZeigen,
-         ORDNER_ICON } from '../immo.js';
+         werkzeugreiheHtml } from '../immo.js';
 import { kostenIcon } from '../kostenicons.js';
 import { cfgFuer, felderFuer, endpunktBereich,
          RUBRIK_FESTWERTE } from '../objekt-felder.js?v=2';
@@ -20,18 +20,6 @@ import { analyseDecke, belegBestaetigen } from '../belegbestaetigung.js';
 import { AN_TYP, RUBRIKFARBE, SCAN_KATEGORIE, SCAN_TYPEN, SCAN_WORT,
          UMKLASS_ZIELE, KAMERA_ICON, kannUmklassifizieren } from './state.js';
 import { scanJahr } from './helpers.js';
-
-/* N334 — Werkzeuge am Beleg, im flachen Stil der uebrigen Symbole. */
-const STIFT_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-  stroke-linejoin="round" aria-hidden="true">
-  <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
-
-const FUNKE_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-  stroke-linejoin="round" aria-hidden="true">
-  <path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>
-  <path d="M12 8.5 13.4 11 16 12l-2.6 1-1.4 2.5L10.6 13 8 12l2.6-1Z"/></svg>`;
 
 /* N264 — Drucker-Sprite im flachen Stil der uebrigen Symbole. */
 const DRUCKER_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
@@ -307,12 +295,7 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
         <div class="dd-vn">${esc(name || 'Beleg')}</div>${pfad
         ? `<div class="dd-vp" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
             esc(pfad)}</bdi></div>` : ''}
-        <div class="dd-vwerkzeug">
-          <button type="button" class="dd-vw" data-um>${STIFT_ICON}<span>Umbenennen</span></button>
-          <button type="button" class="dd-vw" data-ordner>${ORDNER_ICON}<span>Verschieben</span></button>
-          <button type="button" class="dd-vw" data-ki aria-expanded="false"
-            >${FUNKE_ICON}<span>KI-Auslese</span></button>
-        </div>
+        ${werkzeugreiheHtml()}
         <div class="dd-vki beleg-ki" hidden></div>`;
       vorschauKopf.hidden = false;
     }
@@ -503,7 +486,7 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
     // Die Auslese klappt auf und wieder zu — sie ist Hintergrundwissen, nicht
     // das, weswegen man die Ansicht öffnet. Geladen wird sie erst beim ersten
     // Aufklappen, danach bleibt sie stehen.
-    const kiKnopf = e.target.closest('[data-ki]');
+    const kiKnopf = e.target.closest('[data-kiauf]');
     if (kiKnopf && aktuellerBeleg) {
       const kasten = dlg.querySelector('.dd-vki');
       const auf = kasten.hidden;

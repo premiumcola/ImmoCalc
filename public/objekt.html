@@ -492,14 +492,9 @@
   .dd-form{display:block}
   .dd-formknoepfe{display:flex;gap:8px;margin-top:14px}
   .dd-formknoepfe .btn{flex:1;margin-top:0}
-  .dd-vwerkzeug{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
-  .dd-vw{display:inline-flex;align-items:center;gap:7px;min-height:44px;
-    padding:0 13px;border:none;border-radius:12px;background:var(--paper);
-    color:var(--teal-d);font:600 12.5px var(--disp);letter-spacing:-.01em;
-    cursor:pointer;-webkit-tap-highlight-color:transparent}
-  .dd-vw svg{flex:none}
-  .dd-vw:hover{background:var(--line)}
-  .dd-vw.an{background:var(--teal-l);color:var(--teal-d)}
+  /* Form und Verhalten der Reihe stehen einmal in immo.css
+     (`.werkzeugreihe`/`.werkzeugknopf`) — hier nur der Abstand nach oben. */
+  .dd-vorschau-kopf .werkzeugreihe{margin-top:9px}
   /* Die Auslese ist Hintergrundwissen — eingeklappt, kleiner gesetzt, und mit
      gedeckelter Höhe, damit sie dem Beleg nie den Platz nimmt. Sie trägt
      zusätzlich `.beleg-ki`, damit Kopfzeile, Satz und Chips genau so aussehen
