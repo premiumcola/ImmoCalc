@@ -10,7 +10,8 @@ import { esc, api, installHilfe, melde, wahl, belegSeitenLaden, belegAnsehen,
          fokusAufDenDialog, belegUmbenennen, belegVerschieben, kiAusleseZeigen,
          ORDNER_ICON } from '../immo.js';
 import { kostenIcon } from '../kostenicons.js';
-import { cfgFuer, felderFuer, endpunktBereich } from '../objekt-felder.js?v=2';
+import { cfgFuer, felderFuer, endpunktBereich,
+         RUBRIK_FESTWERTE } from '../objekt-felder.js?v=2';
 import { feldWertText } from '../objekt-format.js?v=2';
 import { HAKEN_ICON, BELEG_ICON } from '../objekt-baum.js?v=2';
 import { slug } from '../objekt-state.js?v=2';
@@ -39,7 +40,8 @@ const DRUCKER_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none
   <path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/>
   <path d="M6 14h12v7H6z"/></svg>`;
 
-import { formular, feldLabel } from './formular.js';
+import { formular, feldLabel, feldHtml, ausFormular, formateSetzen,
+         auswahlSetzen, datumwahlSetzen } from './formular.js';
 import { mietExtra } from './miete-extras.js';
 import { kreditExtra } from './kredit-extras.js';
 
@@ -402,8 +404,80 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
     return eintragDetail(bereich, id, laden, ergebnis?.id || null);
   });
 
+  /* ------------------------------------------------------------------
+     N334e — Bearbeiten an Ort und Stelle.
+
+     Bisher führte „Bearbeiten" in ein zweites Fenster: dieselben Werte, nur
+     woanders und in einem anderen Rahmen — der Beleg, wegen dem man die
+     Ansicht überhaupt geöffnet hat, war dabei weg. Jetzt werden die
+     angezeigten Zeilen selbst zu Feldern; „Fertig" speichert und legt sie
+     wieder still. Es sind buchstäblich dieselben Felder wie im Formular
+     (`feldHtml`, `ausFormular` aus formular.js) — kein zweiter Satz, der
+     auseinanderlaufen könnte.
+
+     Nicht für Mietverhältnis und Kredit: dort hängen Zusatzblöcke am Formular
+     (Bewohner, Kreditstände, Zinskopplung), die eigene Speicherwege haben.
+     Die behalten das grosse Formular — mit dem Rückweg aus N333.
+  ------------------------------------------------------------------ */
+  const inlineMoeglich = !['mieten', 'kredite'].includes(bereich);
+  const datenKasten = dlg.querySelector('.dd-daten');
+  let inlineAktiv = false;
+
+  const inlineAus = (frisch = null) => {
+    inlineAktiv = false;
+    const stand = frisch || eintrag;
+    datenKasten.innerHTML = felder.map(f =>
+      `<div class="dd-zeile"><span class="dd-l">${feldLabel(f)}</span>
+       <span class="dd-v">${esc(feldWertText(f, stand[f.k]))}</span></div>`).join('');
+    dlg.querySelector('.dd-aktionen').hidden = false;
+    installHilfe(datenKasten);
+  };
+
+  const inlineAn = async () => {
+    if (inlineAktiv) return;
+    inlineAktiv = true;
+    dlg.querySelector('.dd-aktionen').hidden = true;
+    const stuecke = await Promise.all(
+      felder.map(f => feldHtml(f, bereich, eintrag[f.k])));
+    datenKasten.innerHTML = `<form class="dd-form" data-inline>
+        ${stuecke.join('')}
+        <div class="dd-formknoepfe">
+          <button class="btn" value="ok">Fertig</button>
+          <button class="btn leise" type="button" data-inline-ab>Abbrechen</button>
+        </div>
+      </form>`;
+    const form = datenKasten.querySelector('form');
+    formateSetzen(form, felder);
+    auswahlSetzen(form);
+    datumwahlSetzen(form);
+    installHilfe(form);
+    form.querySelector('input,select,textarea')?.focus({ preventScroll: true });
+  };
+
+  datenKasten.addEventListener('submit', async e => {
+    e.preventDefault();
+    const form = e.target;
+    const knopf = form.querySelector('button[value="ok"]');
+    if (knopf) { knopf.disabled = true; knopf.textContent = 'Wird gespeichert …'; }
+    const werte = { ...ausFormular(form, felder),
+                    ...(RUBRIK_FESTWERTE[bereich] || {}) };
+    try {
+      await api(`/stammdaten/${endpunktBereich(bereich)}/${id}`,
+                { method: 'PATCH', body: werte });
+    } catch (fehler) {
+      if (knopf) { knopf.disabled = false; knopf.textContent = 'Fertig'; }
+      return melde(String(fehler.message || 'Konnte nicht gespeichert werden.'), 'neg');
+    }
+    Object.assign(eintrag, werte);
+    inlineAus(eintrag);
+    // Die Liste dahinter trägt denselben Wert — sie zieht mit, ohne dass
+    // diese Ansicht dafür zugehen müsste.
+    laden();
+  });
+
   dlg.addEventListener('click', async e => {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
+    if (e.target.closest('[data-inline-ab]')) { inlineAus(); return; }
     // N334 — Umbenennen, Verschieben und die Auslese laufen HIER, ohne ein
     // zweites Fenster. Nur das Blättern zum Nachbarbeleg blieb dem gemeinsamen
     // Beleg-Fenster vorbehalten (`grossAnsehen`, s. u.) — dafür gibt es in
@@ -499,12 +573,16 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
     const b = e.target.closest('[data-doc]');
     if (b) { zeigeDoc(b.dataset.doc, b.dataset.name, b.dataset.pfad); return; }
     if (e.target.closest('[data-bearbeiten]')) {
-      // N333 — der Rückweg. Das Formular lebt in einem einzigen, global
-      // wiederverwendeten <dialog id="dlg">; die Detailansicht dagegen wird je
-      // Aufruf frisch gebaut. Wer bisher „Bearbeiten" antippte, war nach dem
-      // Speichern ODER Abbrechen ganz aus dem Beleg heraus — den Vorgänger
-      // merkte sich niemand. Für die PDF-Großansicht gibt es denselben Griff
-      // schon (`grossAnsehen` oben), hier fehlte er nur.
+      // N334e — der Regelfall: die angezeigten Werte werden an Ort und Stelle
+      // bedienbar. Kein Fensterwechsel, der Beleg bleibt daneben stehen.
+      if (inlineMoeglich) { await inlineAn(); return; }
+      // N333 — der Rückweg für die Rubriken, die weiterhin das grosse
+      // Formular brauchen (Mietverhältnis mit Bewohnern, Kredit mit Ständen
+      // und Zinskopplung — dort hängen Zusatzblöcke am Formular, die sich
+      // nicht sinnvoll in die schmale Spalte falten lassen). Das Formular lebt
+      // in einem einzigen, global wiederverwendeten <dialog id="dlg">; wer
+      // bisher „Bearbeiten" antippte, war nach dem Speichern ODER Abbrechen
+      // ganz aus dem Beleg heraus — den Vorgänger merkte sich niemand.
       const zurueck = aktuellerBeleg?.id || null;
       dlg.close();
       await oeffneEintragFormular(bereich, eintrag, aktuellerBeleg);

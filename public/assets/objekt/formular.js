@@ -48,7 +48,7 @@ export const feldEinheit = f => (f.geld ? '€' : f.einheit) || '';
 export const feldLabel = f => `${esc(f.l)}${
   f.lex ? ` <span data-hilfe="${esc(f.lex)}"></span>` : ''}`;
 
-async function feldHtml(f, bereich, wert) {
+export async function feldHtml(f, bereich, wert) {
   const id = `f_${f.k}`;
   if (f.typ === 'auswahl') {
     // Kein natives <select>: die aufgeklappte Liste zeichnete sonst das
@@ -199,7 +199,7 @@ export function formateLoesen() {
   formate = [];
 }
 
-function formateSetzen(form, felder) {
+export function formateSetzen(form, felder) {
   formateLoesen();
   if (!eingabe) return;
   for (const f of felder) {
@@ -228,7 +228,7 @@ export function auswahlLoesen() {
   auswahlen = [];
 }
 
-function auswahlSetzen(form) {
+export function auswahlSetzen(form) {
   auswahlLoesen();
   for (const halter of form.querySelectorAll('[data-auswahl]')) {
     const feld = form.elements[halter.dataset.auswahl];
@@ -264,7 +264,7 @@ export function datumwahlLoesen() {
   datumfelder = [];
 }
 
-function datumwahlSetzen(form) {
+export function datumwahlSetzen(form) {
   datumwahlLoesen();
   for (const halter of form.querySelectorAll('[data-datumwahl]')) {
     const feld = form.elements[halter.dataset.datumwahl];

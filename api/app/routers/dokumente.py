@@ -34,10 +34,10 @@ from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
-from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel, Kostenart,
-                      Kostenposition, Kredit, Miete, Notarvertrag, Objekt,
-                      Renovierung, Renovierungsposten, Versicherung, Zahlung,
-                      Zeitraum)
+from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel, Grundschuld,
+                      Kostenart, Kostenposition, Kredit, Miete, Notarvertrag,
+                      Objekt, Renovierung, Renovierungsposten, Versicherung,
+                      Zahlung, Zeitraum)
 from ..renovierung import projektordner
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
@@ -753,9 +753,16 @@ def baum(slug: str, session: Session = Depends(get_session)) -> dict:
     # aus welchem Beleg (Datensatz → Quell-Beleg), um die Hierarchie zu bauen.
     haengt_an: dict[int, str] = {}
     quelle_von: dict[tuple[str, int], int] = {}   # (typ, id) → Quell-Beleg-Id
+    # N334g — diese Tabelle MUSS jedes Modell aus `_ZUORDNUNG_MODELLE` kennen.
+    # Als N331c die Grundschuld dort ergänzte, fehlte sie hier: der Zugriff
+    # `typname[modell]` warf einen KeyError, und zwar unabhängig von den Daten
+    # (die Schleife läuft über alle Modelle). Der ganze Dokumentenbaum
+    # antwortete danach mit 500. `test_baum_kennt_jedes_zuordnungsmodell`
+    # hält das jetzt fest.
     typname = {Notarvertrag: "notarvertrag", Zahlung: "zahlung", Kredit: "kredit",
                Versicherung: "versicherung", Miete: "miete",
-               Kostenposition: "kostenposition", Bewohner: "bewohner"}
+               Kostenposition: "kostenposition", Bewohner: "bewohner",
+               Grundschuld: "grundschuld"}
     for modell, rubrik in _ZUORDNUNG_MODELLE:
         for e in session.exec(select(modell).where(
                 modell.quelle_dokument_id.is_not(None))).all():

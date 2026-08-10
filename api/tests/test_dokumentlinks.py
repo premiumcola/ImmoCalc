@@ -624,3 +624,55 @@ def test_nach_dem_entfernen_zeigt_kein_verweis_mehr_ins_leere():
                     if s.get(Dokument, wert) is None:
                         tot.append(f"{v} -> {wert}")
             assert not tot, "Verweise ins Leere: " + ", ".join(tot)
+
+
+def test_baum_kennt_jedes_zuordnungsmodell():
+    """N334g — Wächter für einen echten Ausfall.
+
+    `baum()` schlägt jedes Modell aus `_ZUORDNUNG_MODELLE` in einer eigenen
+    Tabelle (`typname`) nach. Als N331c die Grundschuld in die Registratur
+    aufnahm, ohne diese Tabelle mitzupflegen, warf der Zugriff einen KeyError —
+    und zwar unabhängig von den Daten, weil die Schleife über alle Modelle
+    läuft. Der komplette Dokumentenbaum antwortete mit 500, in jeder Immobilie.
+    Kein Test bemerkte es, weil keiner den Baum aufrief.
+
+    Deshalb hier die Kopplung selbst geprüft, nicht ein Beispielfall."""
+    import inspect
+
+    from app.dokumente.zuordnung import _ZUORDNUNG_MODELLE
+    from app.routers import dokumente as modul
+
+    quelle = inspect.getsource(modul.baum)
+    anfang = quelle.index("typname = {")
+    tabelle = quelle[anfang:quelle.index("}", anfang)]
+    for modell, _rubrik in _ZUORDNUNG_MODELLE:
+        assert f"{modell.__name__}:" in tabelle, (
+            f"{modell.__name__} steht in _ZUORDNUNG_MODELLE, aber nicht in "
+            "der typname-Tabelle von baum() — der Baum würde mit 500 antworten")
+
+
+def test_baum_antwortet_auch_mit_grundschuld():
+    """Derselbe Fall am laufenden Endpunkt: ein Objekt mit einer Grundschuld,
+    die auf einen Beleg zeigt. Vor dem Fix reichte allein die Existenz des
+    Modells für den Ausfall."""
+    from app.models import Grundschuld
+
+    with Session(engine) as s:
+        o = Objekt(name="Baumhaus", slug="baumhaus", nc_ordner="/Home/Baumhaus")
+        s.add(o)
+        s.commit()
+        s.refresh(o)
+        d = Dokument(objekt_id=o.id, dateiname="2020_Grundschuld.pdf",
+                     pfad="/Home/Baumhaus/11_Kauf_Bau_Finanzierung/2020_Grundschuld.pdf",
+                     jahr=2020, status="zugeordnet")
+        s.add(d)
+        s.commit()
+        s.refresh(d)
+        s.add(Grundschuld(objekt_id=o.id, betrag=240000.0,
+                          quelle_dokument_id=d.id))
+        s.commit()
+
+    with TestClient(app) as c:
+        antwort = c.get("/api/dokumente/objekt/baumhaus/baum")
+    assert antwort.status_code == 200, antwort.text
+    assert antwort.json()["gesamt"] == 1
