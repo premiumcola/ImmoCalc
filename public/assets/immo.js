@@ -379,7 +379,34 @@ export function installNav() {
   platz.replaceWith(nav);
   gruppeVerdrahten(nav, kindAktiv);
   dokumenteKnopfVerdrahten(nav, aktiv);
+  sofortMarkieren(nav);
   installKopfAktionen(aktiv);
+}
+
+/* N339 — der Eintrag leuchtet auf, sobald man ihn antippt, nicht erst wenn
+   die neue Seite fertig ist.
+
+   Die Leiste besteht aus gewöhnlichen Links, und `aria-current="page"` setzt
+   jede Seite beim Rendern für sich selbst. Zwischen Tippen und fertigem
+   Seitenaufbau stand deshalb weiter der ALTE Eintrag hell — der Nutzer sah
+   erst nichts, dann sprang die Markierung. Hier wandert sie sofort mit; die
+   Zielseite setzt sie danach ohnehin genauso.
+
+   Bewusst in der Bubble-Phase: der Dokumente-Knopf (siehe
+   `dokumenteKnopfVerdrahten`) fängt seinen Klick vorher ab und öffnet die
+   Kamera, statt zu navigieren — dann darf auch nichts umspringen. */
+function sofortMarkieren(nav) {
+  nav.addEventListener('click', e => {
+    if (e.defaultPrevented || e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // neuer Tab
+    if (e.target.closest('.kappe')) return;                         // nur Aufklappen
+    const ziel = e.target.closest('a[href]');
+    if (!ziel || ziel.classList.contains('brand')) return;
+    for (const a of nav.querySelectorAll('a[aria-current]')) {
+      a.removeAttribute('aria-current');
+    }
+    ziel.setAttribute('aria-current', 'page');
+  });
 }
 
 /* N327 — steht man schon auf `eingang.html`, macht ein Klick auf den runden
