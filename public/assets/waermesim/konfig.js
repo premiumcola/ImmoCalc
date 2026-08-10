@@ -36,7 +36,8 @@ function karte(g) {
         <input class="wz-name" data-name="${g.nr}" value="${esc(name)}"
                placeholder="Heizkörper benennen — z. B. Wohnzimmer links">
         <span class="wz-meta">${ARTNAME[g.art]} · ${esc(RAUMNAME[g.raum] || g.raum)}
-          · früher ${esc(g.war)}</span>
+          · früher ${esc(g.war)}${g.belegt
+            ? ` · Faktor belegt (${esc(g.belegt)})` : ''}</span>
       </span>
       ${g.art === 'hkv'
         ? `<span class="wz-faktor"><label>Faktor</label>

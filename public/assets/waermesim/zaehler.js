@@ -18,29 +18,39 @@ const SPEICHER = 'immocalc.waermesim.zaehler.v1';
    1,938). Wo die Abrechnung ihn nicht preisgibt, steht `null` — dann muss er
    von Hand nach. */
 export const GERAETE = [
-  // Heizkostenverteiler (Delta-t-Art „2SONT") — messen Einheiten (VE).
-  { nr: '5057', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL' },
-  { nr: '5058', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL' },
-  { nr: '5059', art: 'hkv', raum: 'Z', faktor: 1.938, war: 'EGL' },
-  { nr: '5065', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR' },
-  { nr: '5066', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR' },
-  { nr: '5067', art: 'hkv', raum: 'K', faktor: 2.407, war: '1GL' },
-  { nr: '5068', art: 'hkv', raum: 'W', faktor: 0.875, war: '1GL' },
-  { nr: '5069', art: 'hkv', raum: '—', faktor: 0.875, war: '1GL' },
-  { nr: '5070', art: 'hkv', raum: 'Z', faktor: null, war: '1GR' },
-  { nr: '5071', art: 'hkv', raum: 'Z', faktor: null, war: '1GR' },
-  { nr: '5072', art: 'hkv', raum: 'Z', faktor: null, war: '1GR' },
-  { nr: '5074', art: 'hkv', raum: 'Z', faktor: null, war: 'DG' },
-  { nr: '5075', art: 'hkv', raum: 'S', faktor: null, war: 'DG' },
-  { nr: '5061', art: 'hkv', raum: 'WK', faktor: null, war: 'EG1G' },
-  { nr: '5062', art: 'hkv', raum: 'B', faktor: null, war: 'EG1G' },
-  { nr: '5064', art: 'hkv', raum: 'K', faktor: null, war: 'EG1G' },
-  { nr: '5073', art: 'hkv', raum: 'B/1G', faktor: null, war: 'EG1G' },
-  // Wärmemengenzähler (Art „WMZ") — messen kWh. Es gibt genau zwei, beide
-  // am Anbau; jede andere Einheit hat nur Heizkostenverteiler. Ein Faktor
-  // wäre hier sinnlos: der Zähler misst die Energie unmittelbar.
-  { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau' },
-  { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau' },
+  /* Heizkostenverteiler (Delta-t-Art „2SONT") — messen Einheiten (VE).
+
+     `faktor` ist aus den Abrechnungen gezogen, nicht geschätzt. `belegt` sagt,
+     wie gut: „mehrfach" heisst, derselbe Wert steht in mindestens zwei
+     Abrechnungsjahren (2018/19 gegen 2020/21, 2022/23, 2023/24 geprüft);
+     „2019" heisst, nur die älteste Abrechnung führt ihn auf, weil die neueren
+     nur die Seiten ihres jeweiligen Nutzers enthalten. */
+  { nr: '5057', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL', belegt: 'mehrfach' },
+  { nr: '5058', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL', belegt: 'mehrfach' },
+  { nr: '5059', art: 'hkv', raum: 'Z', faktor: 1.938, war: 'EGL', belegt: 'mehrfach' },
+  { nr: '5065', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR', belegt: 'mehrfach' },
+  { nr: '5066', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR', belegt: 'mehrfach' },
+  { nr: '5067', art: 'hkv', raum: 'K', faktor: 2.407, war: '1GL', belegt: 'mehrfach' },
+  { nr: '5068', art: 'hkv', raum: 'W', faktor: 0.875, war: '1GL', belegt: 'mehrfach' },
+  { nr: '5069', art: 'hkv', raum: '—', faktor: 0.875, war: '1GL', belegt: 'mehrfach' },
+  { nr: '5070', art: 'hkv', raum: 'Z', faktor: 1.193, war: '1GR', belegt: '2019' },
+  { nr: '5071', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR', belegt: '2019' },
+  { nr: '5072', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR', belegt: '2019' },
+  /* Diese sechs gab es 2018/19 noch nicht; in den neueren Abrechnungen liegen
+     nur die Seiten des jeweiligen Empfängers bei, und dort tauchen sie nicht
+     auf. Ihr Faktor steht auf der Ablesequittung bzw. der Einzelabrechnung
+     der Nutzer 0005/0006/0007 hinter dem Ablesewert. */
+  { nr: '5074', art: 'hkv', raum: 'Z', faktor: null, war: 'DG', belegt: '' },
+  { nr: '5075', art: 'hkv', raum: 'S', faktor: null, war: 'DG', belegt: '' },
+  { nr: '5061', art: 'hkv', raum: 'WK', faktor: null, war: 'EG1G', belegt: '' },
+  { nr: '5062', art: 'hkv', raum: 'B', faktor: null, war: 'EG1G', belegt: '' },
+  { nr: '5064', art: 'hkv', raum: 'K', faktor: null, war: 'EG1G', belegt: '' },
+  { nr: '5073', art: 'hkv', raum: 'B/1G', faktor: null, war: 'EG1G', belegt: '' },
+  /* Wärmemengenzähler (Art „WMZ") — messen kWh. Es gibt genau zwei, beide
+     am Anbau; jede andere Einheit hat nur Heizkostenverteiler. Ein Faktor
+     wäre hier sinnlos: der Zähler misst die Energie unmittelbar. */
+  { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau', belegt: '' },
+  { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau', belegt: '' },
 ];
 
 /* Die Lanes: die Einheiten der Immobilie plus ein allgemeiner Bereich für
