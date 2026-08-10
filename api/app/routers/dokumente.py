@@ -1613,7 +1613,12 @@ def namensvorschlag(kategorie: str = Form("Sonstiges"),
     jahr = jahr or erkannt_jahr
     jahr = _jahr_mit_fallback(jahr, dateiname_roh or "", datei_jahr)
     endung = _endung(dateiname_roh or "") or ".pdf"
-    name = dateiname(jahr, kategorie or "Sonstiges", beschreibung or "Scan",
+    # N331c — Nutzer-Fund: „Erwerb-Scan" statt „Erwerb" im Dateinamen. Der
+    # Platzhalter „Scan" hier war überflüssig UND falsch — `dateiname()` hat
+    # längst einen eigenen, saubereren Rückfall (`mitte or "Beleg"`, siehe
+    # dort), der ohne diesen künstlichen Zwischenwert einfach beim Kürzel
+    # allein bliebe (z. B. „Erwerb" statt „Erwerb-Scan").
+    name = dateiname(jahr, kategorie or "Sonstiges", beschreibung,
                      endung, monat or erkannt_monat, betrag, kostenart)
     return {"name": name}
 

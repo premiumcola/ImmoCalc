@@ -2550,6 +2550,21 @@ def test_namensvorschlag_ohne_bezeichnung_nimmt_die_kostenart():
         assert antwort.json()["name"] == "2025_NK-Wasser.pdf"
 
 
+def test_namensvorschlag_ohne_erkennung_schreibt_kein_scan_ins_wort():
+    """N331c — Nutzer-Fund: „2019-06_Erwerb-Scan_379,19€.pdf" statt schlicht
+    „2019-06_Erwerb_379,19€.pdf". Ohne Bezeichnung UND ohne Kostenart (der
+    reale Aufruf einer Erwerbsnebenkosten-Bestätigung ohne erkannte Art) darf
+    der Name nicht das Füllwort „Scan" tragen — nur Kürzel, Datum, Betrag."""
+    with TestClient(app) as c:
+        antwort = c.post("/api/dokumente/namensvorschlag", data={
+            "kategorie": "Erwerbsnebenkosten", "jahr": 2019, "monat": 6,
+            "betrag": 379.19, "dateiname_roh": "scan.pdf"})
+        assert antwort.status_code == 200
+        name = antwort.json()["name"]
+        assert "Scan" not in name
+        assert name == "2019-06_Erwerb_379,19€.pdf"
+
+
 def test_scan_haelt_die_ki_auslese_am_beleg_fest(monkeypatch):
     """N255 — die Oberfläche hat vor dem Ablegen schon gelesen; das Ergebnis
     muss am frischen Beleg landen.
