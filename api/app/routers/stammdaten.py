@@ -10,6 +10,7 @@ deshalb eigene Pfade:
   * Bewohner eines Mietverhältnisses — /api/mieten/{id}/bewohner
   * Kappungsgrenze einer geplanten Erhöhung — /api/mieten/{id}/kappungsgrenze
 """
+import re
 from datetime import date
 from typing import Type
 
@@ -22,8 +23,9 @@ from ..deps import objekt_holen
 from ..dokumente.zuordnung import _AN_TYP_MODELLE, loese_info_referenzen
 from ..felder import bereinige
 from ..kappungsgrenze import pruefe
-from ..models import (Bewohner, Kredit, Kreditstand, Miete, Notarvertrag, Objekt,
-                      Versicherung, Zahlung, ist_bausparer)
+from ..models import (Bewohner, Dokument, Kredit, Kreditstand, Miete,
+                      Notarvertrag, Objekt, Versicherung, Zahlung,
+                      ist_bausparer)
 from ..turnus import VORGABE, auswahl_fuer
 from ..vermoegen import kreditstand, verlauf
 from ..verteilung import positionen_neu_ableiten
@@ -109,6 +111,32 @@ def _miet_zeile(session: Session, m: Miete, heute: date) -> dict:
             "beendet": bool(m.bis_datum and m.bis_datum < heute)}
 
 
+_DATUM_IM_NAMEN = re.compile(r"^(\d{4})-(\d{2})")
+
+
+def _zahlung_zeile(session: Session, z: Zahlung) -> dict:
+    """Eine Zahlung — mit dem Datum ihres Belegs, wo eines abzuleiten ist.
+
+    N338 — `Zahlung.datum` ist neu; alles, was vor dieser Erweiterung erfasst
+    wurde, trägt nur ein Jahr. Der Monat steht aber längst im Namen des
+    Belegs, den ImmoCalc selbst vergeben hat („2019-06_Erwerb-…"). Er wird
+    hier gelesen, nicht geschrieben: der Datensatz bleibt unangetastet, die
+    Ansicht kann trotzdem sofort nach Monaten sortieren. Trägt der Eintrag
+    ein eigenes Datum, hat das immer Vorrang."""
+    zeile = z.model_dump()
+    if z.datum or not z.quelle_dokument_id:
+        return zeile
+    dok = session.get(Dokument, z.quelle_dokument_id)
+    treffer = _DATUM_IM_NAMEN.match(dok.dateiname or "") if dok else None
+    if not treffer:
+        return zeile
+    jahr, monat = int(treffer.group(1)), int(treffer.group(2))
+    if 1 <= monat <= 12:
+        zeile["datum"] = f"{jahr:04d}-{monat:02d}-01"
+        zeile["datum_aus_beleg"] = True
+    return zeile
+
+
 # response_model=None: der Typ steht erst zur Laufzeit fest. Ohne das wuerde
 # FastAPI gegen die Basisklasse SQLModel serialisieren und alle Felder schlucken.
 @router.get("/objekte/{slug}/{bereich}", response_model=None)
@@ -122,6 +150,8 @@ def liste(slug: str, bereich: str,
     if bereich == "mieten":
         heute = date.today()
         return [_miet_zeile(session, m, heute) for m in zeilen]
+    if bereich == "zahlungen":
+        return [_zahlung_zeile(session, z) for z in zeilen]
     return zeilen
 
 

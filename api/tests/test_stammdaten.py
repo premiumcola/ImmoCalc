@@ -534,3 +534,71 @@ def test_miete_qm_ansaetze_werden_gespeichert_und_zurueckgeliefert():
         assert e["miete_qm_wohn"] == 13.0
         assert e["miete_qm_neben"] == 4.0        # unverändert
         assert e["miete_qm_gemein"] == 2.0
+
+
+def test_zahlung_erbt_den_monat_aus_dem_belegnamen():
+    """N338 — `Zahlung.datum` ist neu; der Bestand trägt nur ein Jahr. Der
+    Monat steht aber im Namen des Belegs, den ImmoCalc selbst vergeben hat.
+    Er wird gelesen, nicht geschrieben — der Datensatz bleibt unberührt."""
+    from sqlmodel import Session, select
+
+    from app.db import engine
+    from app.models import Dokument, Objekt
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Zeitachse",
+                                            "ort": "Eschenau"}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            d = Dokument(objekt_id=o.id, dateiname="2019-06_Erwerb-Notar.pdf",
+                         pfad=f"/x/{slug}/2019-06_Erwerb-Notar.pdf", jahr=2019)
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            dok_id = d.id
+
+        ohne = c.post(f"/api/objekte/{slug}/zahlungen",
+                      json={"jahr": 2019, "art": "Notar", "betrag": 100.0}).json()
+        mit = c.post(f"/api/objekte/{slug}/zahlungen",
+                     json={"jahr": 2019, "art": "Auflassung", "betrag": 50.0,
+                           "quelle_dokument_id": dok_id}).json()
+
+        zeilen = {z["art"]: z for z in c.get(f"/api/objekte/{slug}/zahlungen").json()}
+        assert zeilen["Auflassung"]["datum"] == "2019-06-01"
+        assert zeilen["Auflassung"]["datum_aus_beleg"] is True
+        # Ohne Beleg bleibt es beim blossen Jahr — nichts wird erfunden.
+        assert zeilen["Notar"]["datum"] is None
+
+        # Und in der Datenbank steht weiterhin nichts: nur gelesen.
+        with Session(engine) as s:
+            from app.models import Zahlung
+            assert s.get(Zahlung, mit["id"]).datum is None
+            assert s.get(Zahlung, ohne["id"]).datum is None
+
+
+def test_eigenes_datum_schlaegt_den_belegnamen():
+    """Ein gepflegtes Datum ist eine Aussage des Nutzers — der abgeleitete
+    Monat darf sie nie überschreiben."""
+    from sqlmodel import Session, select
+
+    from app.db import engine
+    from app.models import Dokument, Objekt
+
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Vorrang",
+                                            "ort": "Eschenau"}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            d = Dokument(objekt_id=o.id, dateiname="2019-06_Erwerb-Notar.pdf",
+                         pfad=f"/y/{slug}/2019-06_Erwerb-Notar.pdf", jahr=2019)
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            dok_id = d.id
+
+        c.post(f"/api/objekte/{slug}/zahlungen",
+               json={"jahr": 2019, "art": "Notar", "betrag": 100.0,
+                     "datum": "2019-11-04", "quelle_dokument_id": dok_id})
+        zeile = c.get(f"/api/objekte/{slug}/zahlungen").json()[0]
+        assert zeile["datum"] == "2019-11-04"
+        assert "datum_aus_beleg" not in zeile
