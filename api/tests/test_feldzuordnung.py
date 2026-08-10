@@ -101,6 +101,24 @@ def test_namensvorschlag_nennt_art_und_nummer():
         "notarvertraege", {"art": "Notarvertrag"}) == "Notarvertrag"
 
 
+def test_namensvorschlag_nennt_beide_positionen_bei_einer_sammelrechnung():
+    """N331b — eine Landesjustizkasse-Sammelrechnung nennt zwei Positionen;
+    die Summe allein ist kein eigener Wert. `teile` schlägt die blosse Art."""
+    name = feldzuordnung.namensvorschlag(
+        "erwerbskosten",
+        {"art": "Grundbuchamt – Grundpfandrecht", "betrag": 887.50,
+         "teile": "Auflassungsvormerkung und Grundpfandrecht"})
+    assert name == "Auflassungsvormerkung und Grundpfandrecht"
+
+
+def test_namensvorschlag_faellt_ohne_teile_auf_die_art_zurueck():
+    """Nur eine erkennbare Position: die normale Art-basierte Benennung
+    bleibt unverändert — `teile` ist eine Ergänzung, kein Ersatz."""
+    name = feldzuordnung.namensvorschlag(
+        "erwerbskosten", {"art": "Notar", "betrag": 500.0})
+    assert name == "Notar"
+
+
 def test_zuordnung_nennt_nur_felder_die_es_im_modell_gibt():
     """Wächter: die Zuordnung schreibt in Modellfelder. Wird eines umbenannt,
     fiele die Vorbefüllung stumm aus — dieser Test macht daraus einen Fehler."""

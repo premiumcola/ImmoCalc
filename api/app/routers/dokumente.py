@@ -1071,8 +1071,16 @@ def _mit_formwerten(ergebnis: dict, bereich: str) -> dict:
     formwerte = feldzuordnung.werte_fuer(bereich, ergebnis)
     if not formwerte:
         return ergebnis
+    # N331b — der Dateiname darf mehr wissen als die Eingabemaske: eine
+    # Erwerbsnebenkosten-Sammelrechnung nennt zwei Positionen, aber `Zahlung`
+    # hat kein Feld dafür. Deshalb NICHT über `formwerte` (das geht roh in
+    # den Speicher-Aufruf) — nur lose für den Namensvorschlag beigemischt.
+    namenswerte = formwerte
+    teile = ergebnis.get("felder", {}).get("erwerb_teile")
+    if bereich == "erwerbskosten" and teile:
+        namenswerte = {**formwerte, "teile": teile}
     return {**ergebnis, "formwerte": formwerte,
-            "formname": feldzuordnung.namensvorschlag(bereich, formwerte)}
+            "formname": feldzuordnung.namensvorschlag(bereich, namenswerte)}
 
 
 @router.post("/erkennen")

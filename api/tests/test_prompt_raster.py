@@ -128,7 +128,7 @@ def test_der_parser_findet_die_raster():
     assert "mietende" in raster["MIETVERTRAG"]
     assert "s35a" in raster["NEBENKOSTEN-RECHNUNG"]
     # Alles hinter dem Gedankenstrich ist Fließtext, nicht Feld.
-    assert raster["ERWERBSNEBENKOSTEN"] == ("erwerbsart",)
+    assert raster["ERWERBSNEBENKOSTEN"] == ("erwerbsart", "erwerb_teile")
     # „keine felder, ist_kosten=false" ist keine Feldliste.
     assert raster["INFO-BELEG"] == ()
     # Und nirgends ein eingesammeltes deutsches Wort.

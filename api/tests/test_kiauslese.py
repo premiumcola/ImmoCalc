@@ -393,6 +393,34 @@ def test_erkennen_uebersetzt_auf_die_felder_der_maske(monkeypatch):
     assert body["formname"] == "Notarvertrag Kaufvertrag URNr 123/2024"
 
 
+def _landesjustizkasse_erkennung(*_a, **_k):
+    """Was `ocr.erkenne` bei der echten Landesjustizkasse-Sammelrechnung
+    zurückgäbe (N331b) — Auflassungsvormerkung UND Grundpfandrecht."""
+    return {
+        "moeglich": True, "betrag": 887.50, "datum": "2017-05-24",
+        "jahr": 2017, "monat": 5, "kategorie": "Erwerbsnebenkosten",
+        "sache": "Kostenrechnung", "ist_kosten": True, "zeichen": 400,
+        "kosten_relevant": True, "nebenkosten": False,
+        "zeitraum_hinweis": "", "zusammenfassung": "", "einordnung": "",
+        "absender": "Landesjustizkasse Bamberg", "dokumenttyp": "Kostenrechnung",
+        "felder": {"erwerbsart": "Grundbuchamt – Grundpfandrecht",
+                   "betrag": 887.50, "jahr": 2017,
+                   "erwerb_teile": "Grundpfandrecht und Auflassungsvormerkung"},
+    }
+
+
+def test_erkennen_erwerbskosten_nennt_beide_positionen_im_dateinamen(monkeypatch):
+    """N331b Ende zu Ende: `formname` nennt beide Positionen, aber `formwerte"
+    (das geht roh in den Speicher-Aufruf) bleibt frei von `teile" — `Zahlung`
+    hat dafür kein Feld."""
+    monkeypatch.setattr(ocr, "erkenne", _landesjustizkasse_erkennung)
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *_a, **_k: False)
+    body = _post_bereich("erwerbskosten").json()
+    assert body["formname"] == "Grundpfandrecht und Auflassungsvormerkung"
+    assert "teile" not in body["formwerte"]
+    assert body["formwerte"]["art"] == "Grundbuchamt – Grundpfandrecht"
+
+
 def test_erkennen_ohne_bereich_bleibt_wie_zuvor(monkeypatch):
     """Additiv: bestehende Aufrufer schicken keinen Bereich und bekommen die
     Antwort unverändert — kein `formwerte`, das sie nicht erwarten."""

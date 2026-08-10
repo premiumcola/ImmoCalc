@@ -100,7 +100,13 @@ export const AN_TYP = { ...ENTWURF_TYP, nebenkosten: 'kostenposition',
 export const SCAN_KATEGORIE = {
   mieten: 'Mietvertrag', versicherungen: 'Versicherung', kredite: 'Kredit',
   notarvertraege: 'Notarvertrag', nebenkosten: 'Nebenkosten',
-  zahlungen: 'Steuer', erwerbskosten: 'Steuer',
+  zahlungen: 'Steuer',
+  // N331b — Fund: stand hier fälschlich auch 'Steuer'. Das Backend kennt
+  // `ZIELORDNER["Erwerbsnebenkosten"] = "40_Kauf_Eigentum_Finanzierung"`
+  // schon seit N283d, aber ohne diesen Wert schickte das Frontend weiterhin
+  // 'Steuer' — jeder Erwerbsnebenkosten-Scan landete trotz des Backend-Fixes
+  // weiter unter 70_Steuer_Finanzamt statt beim Kauf.
+  erwerbskosten: 'Erwerbsnebenkosten',
 };
 /* Wie der Beleg an dieser Stelle heisst. „Mietvertrag abfotografieren" sagt
    mehr als „Beleg abfotografieren", wo es nur einen geben kann. */

@@ -234,6 +234,47 @@ def test_kv_14121_wird_grundpfandrecht_nicht_umschreibung(monkeypatch):
         "Grundbuchamt – Eigentumsumschreibung"
 
 
+def test_mehrere_positionen_liefern_einen_dateinamens_zusatz(monkeypatch):
+    """N331b — der Nutzer-Fund am echten Beleg: die Kategorie der grössten
+    Einzelposition sagt „Grundbuchamt – Grundpfandrecht", aber der Dateiname
+    soll BEIDE grossen Positionen nennen, nicht nur die Kategorie — „die
+    Summe ist ja kein wirklicher Wert, das sind zwei einzelne Sachen"."""
+    antwort = (
+        '{"dokumenttyp":"Kostenrechnung","kategorie":"Erwerbsnebenkosten",'
+        '"betrag":887.50,"ist_kosten":true,"kosten_relevant":true,'
+        '"felder":{"erwerbsart":"Grundbuchamt – Grundpfandrecht"},'
+        '"erwerb_teile":[{"bezeichnung":"Auflassungsvormerkung","betrag":292.50},'
+        '{"bezeichnung":"Grundpfandrecht","betrag":535.00},'
+        '{"bezeichnung":"Sondernutzungsrechte","betrag":50.00}]}'
+    )
+    monkeypatch.setattr(kiauslese, "httpx", _FakeHttpx(antwort))
+    ergebnis = kiauslese.lies_beleg("text", "kostenrechnung.pdf",
+                                    schluessel="test-key")
+    # Nur die zwei betragsmässig grössten — Sondernutzungsrechte (50,00) fällt
+    # raus, absteigend nach Betrag sortiert (nicht in Modell-Reihenfolge).
+    assert ergebnis["felder"]["erwerb_teile"] == \
+        "Grundpfandrecht und Auflassungsvormerkung"
+
+
+def test_eine_einzelne_position_liefert_keinen_dateinamens_zusatz(monkeypatch):
+    """Nur EINE Position: der Zusatz bleibt weg — die Art allein reicht schon,
+    ein „Notar und" ohne zweiten Teil wäre unsinnig."""
+    ergebnis = _lies(monkeypatch, KV_21100_BAUTRAEGERVERTRAG, "Notar", 1829.03)
+    assert "erwerb_teile" not in ergebnis["felder"]
+
+
+def test_erwerb_teile_text_verwirft_unvollstaendige_eintraege():
+    """Ein Eintrag ohne Bezeichnung oder ohne Betrag zählt nicht mit — sonst
+    entstünde ein Dateiname mit einer halben, sinnlosen Angabe."""
+    assert kiauslese._erwerb_teile_text([
+        {"bezeichnung": "Grundpfandrecht", "betrag": 535.0},
+        {"bezeichnung": "", "betrag": 292.50},
+        {"betrag": 50.0},
+    ]) == ""                                       # nur EIN brauchbarer Eintrag
+    assert kiauslese._erwerb_teile_text("kein array") == ""
+    assert kiauslese._erwerb_teile_text([]) == ""
+
+
 def test_prompt_nennt_die_kv_nummern_beider_trennungen():
     """Der Prompt ist hier die eigentliche Fachlogik (wie beim Strom- und
     WEG-Prompt) — ohne die ausdrueckliche KV-Zuordnung griffe das Modell bei

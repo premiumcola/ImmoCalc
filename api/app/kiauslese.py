@@ -249,7 +249,8 @@ SYSTEM_PROMPT = (
     # (alle amtlich, alle „Kostenrechnung"), meinen aber steuerlich
     # Gegensätzliches. Die KV-Nummer steht auf jeder GNotKG-Rechnung und ist
     # der eindeutigste Anhaltspunkt, den es hier gibt.
-    "ERWERBSNEBENKOSTEN (einmalige Kosten rund um den Kauf): erwerbsart — "
+    "ERWERBSNEBENKOSTEN (einmalige Kosten rund um den Kauf): erwerbsart, "
+    "erwerb_teile — "
     "EXAKT einer dieser Werte: \"Notar\", \"Notar – Grundschuldbestellung\", "
     "\"Grunderwerbsteuer\", \"Grundbuchamt – Eigentumsumschreibung\", "
     "\"Grundbuchamt – Auflassungsvormerkung\", \"Grundbuchamt – Grundpfandrecht\", "
@@ -274,6 +275,12 @@ SYSTEM_PROMPT = (
     "nennt oft Vormerkung UND Grundpfandrecht), nimm die Art der betragsmäßig "
     "größten Position. Ist es keine Erwerbsnebenkosten-Rechnung, lass "
     "erwerbsart weg — rate nicht \"Sonstiges\".\n"
+    "erwerb_teile — NUR bei mehreren benannten Positionen auf einer "
+    "Sammelrechnung (siehe oben): ein Array der zwei betragsmäßig größten, "
+    "je {\"bezeichnung\":\"…\",\"betrag\":<Zahl>}, absteigend nach Betrag. "
+    "bezeichnung ist das kurze Stichwort (\"Auflassungsvormerkung\", "
+    "\"Grundpfandrecht\"), nicht der volle Kostenrechnungstext. Bei nur einer "
+    "Position: weglassen — die Summe IST dann schon die eine Position.\n"
     "WEG: verwalter, hausgeld_monatlich, ruecklage_zufuehrung.\n"
     # N280-D — die Renovierungsposten-Maske (N270) hatte kein eigenes Raster:
     # die ausführende Firma kam nur über den allgemeinen `absender` durch, und
@@ -527,6 +534,29 @@ def _adresse(wert) -> str:
     return " ".join(wert.strip().split())[:120]
 
 
+def _erwerb_teile_text(wert) -> str:
+    """„Auflassungsvormerkung und Grundpfandrecht" — die zwei benanntesten
+    Positionen einer Erwerbsnebenkosten-Sammelrechnung (N331b), serverseitig
+    geprüft statt dem Modell blind geglaubt: nur Einträge mit Bezeichnung UND
+    Betrag zählen, absteigend nach Betrag, und ohne mindestens zwei brauchbare
+    Positionen gibt es keinen Zusatztext — dann bleibt die normale, auf der
+    einzelnen `erwerbsart` beruhende Benennung die bessere Wahl."""
+    if not isinstance(wert, list):
+        return ""
+    teile = []
+    for roh in wert[:5]:
+        if not isinstance(roh, dict):
+            continue
+        name = _text(roh.get("bezeichnung"))
+        betrag = _betrag(roh.get("betrag"))
+        if name and betrag is not None:
+            teile.append((betrag, name))
+    if len(teile) < 2:
+        return ""
+    teile.sort(key=lambda t: t[0], reverse=True)
+    return " und ".join(name for _betr, name in teile[:2])
+
+
 def _langtext(wert) -> str:
     """Ein mehrsätziges Feld (Zusammenfassung, Zeitraum-Hinweis) — CCCLXVII.
 
@@ -693,6 +723,18 @@ def lies_beleg(text: str, dateiname: str = "", schluessel: str = "",
         ergebnis["felder"]["erwerbsart"] = art
     else:
         ergebnis["felder"].pop("erwerbsart", None)
+    # N331b — Nutzer-Fund: eine Landesjustizkasse-Sammelrechnung (Auflassungs-
+    # vormerkung 292,50 € + Grundpfandrecht 535,00 €) hiess im Dateinamen nur
+    # nach der Kategorie der grössten Einzelposition — die andere, fast
+    # gleich grosse Position verschwand spurlos. „Die Summe ist ja kein
+    # wirklicher Wert — das sind zwei einzelne Sachen." `erwerb_teile`
+    # bekommt hier serverseitig geprüft und in einen Klartext gefasst;
+    # `feldzuordnung.namensvorschlag` bevorzugt ihn vor der blossen Art, wenn
+    # er da ist. Weniger als zwei brauchbare Teile: kein Zusatztext, die
+    # normale Art-basierte Benennung bleibt.
+    teile_text = _erwerb_teile_text(block.get("erwerb_teile"))
+    if teile_text:
+        ergebnis["felder"]["erwerb_teile"] = teile_text
     # Dezent loggen — OHNE Datum, Betrag oder Namen (Datenschutz). Nur, dass
     # eine Antwort kam und ob ein Datum darin stand.
     log.info("KI-Auslese gelesen (Datum %s)",

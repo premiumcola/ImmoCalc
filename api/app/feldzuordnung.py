@@ -353,6 +353,16 @@ def namensvorschlag(bereich: str, werte: dict) -> str:
         return " ".join(stueck for stueck in
                         ("Renovierung", werte.get("gewerk"), werte.get("firma"))
                         if stueck).strip()
+    if bereich == "erwerbskosten" and werte.get("teile"):
+        # N331b — eine Sammelrechnung mit mehreren benannten Positionen (z. B.
+        # Landesjustizkasse: Auflassungsvormerkung UND Grundpfandrecht) heisst
+        # nach beiden, nicht nur nach der Kategorie der grössten — die Summe
+        # ist dort kein eigener Wert, sondern nur zweier verschiedener Kosten
+        # Addition. „teile" kommt bewusst NICHT über `ZUORDNUNG`/`werte_fuer`
+        # (der Aufrufer mischt es lose bei) — `Zahlung` hat kein Feld dafür,
+        # und `ZUORDNUNG` darf nur auf echte Modellfelder zeigen (siehe
+        # `test_zuordnung_nennt_nur_felder_die_es_im_modell_gibt`).
+        return werte["teile"]
     stuecke: list[str] = []
     # N280-D — „nebenkosten" und „stammdaten" stehen bewusst NICHT hier: eine
     # Wasserrechnung heisst „Wasser", nicht „Nebenkosten Wasser", und ein
