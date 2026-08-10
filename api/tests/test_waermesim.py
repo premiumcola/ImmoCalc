@@ -150,18 +150,45 @@ def test_warmwasser_geht_an_die_zwei_bezieher():
     assert round(sum(z["warmwasser"] for z in erg["nutzer"]), 2) == 330.18
 
 
-def test_gemessene_energie_ist_nicht_der_schluessel_von_delta_t():
-    """Der Kern der offenen Frage, als Test festgehalten.
+def test_der_schluessel_h2_ist_der_anteil_an_der_heizenergie():
+    """N340b — die gesuchte Größe, an vier echten Jahren nachgewiesen.
 
-    Ohne Vorgabe verteilt das Modul nach gemessener Energie: der Wärmezähler
-    misst 10.092 von 44.460 kWh, also 22,7 %. Delta-t gibt H2 aber 35,4 % der
-    Verbrauchskosten. Genau diese Lücke soll die Simulation über mehrere Jahre
-    schließen — wäre sie hier zufällig zu, gäbe es nichts zu suchen."""
-    ohne = rechne({**EINGABE, "h2_anteil": None})
-    assert round(ohne["anteile"]["h2_von_verbrauch"] * 100, 1) == 22.7
-    assert round(H2_ANTEIL * 100, 1) == 35.4
-    # Und die Abweichung wird dadurch deutlich sichtbar, nicht etwa klein.
-    assert ohne["abgleich"]["groesste_abweichung"] > 100
+    Der Wärmezähler des Anbaus bekommt seinen Anteil an der **Heizenergie**,
+    also an der Ölenergie NACH Abzug des Warmwassers — und zwar als Anteil an
+    den GESAMTEN Heizkosten. Deshalb ergeben H01 und H02 auf der Abrechnung
+    zusammen die 70 % Verbrauchskosten.
+
+        H02-Prozent = kWh Wärmezähler / (Liter × Heizwert × Heizungsanteil)
+
+    Zuvor lag die Vermutung auf „Anteil an der Rohenergie" — die trifft nicht
+    (2018/19 wären das 22,7 % statt der ausgewiesenen 24,80 %).
+    """
+    # (Bezeichnung, Liter, Warmwasser-m³, kWh Wärmezähler, ausgewiesenes H02-%)
+    jahre = [
+        ("2018/19", 4446.0, 30.110, 10092.0, 24.80),
+        ("2020/21", 4049.0, 28.140, 11102.0, 30.03),
+        ("2022/23", 3128.7, 18.470,  7162.0, 24.71),
+    ]
+    for name, liter, ww_m3, kwh, ist_prozent in jahre:
+        erg = rechne({"liter": liter, "eur": 0.0, "ww_m3": ww_m3,
+                      "nutzer": [{"name": "Anbau", "kwh": kwh}]})
+        gerechnet = round(erg["anteile"]["h2_von_gesamt"] * 100, 2)
+        assert abs(gerechnet - ist_prozent) <= 0.02, (
+            f"{name}: gerechnet {gerechnet} % gegen {ist_prozent} % "
+            "auf der Abrechnung")
+
+
+def test_ein_jahr_weicht_ab_und_das_bleibt_sichtbar():
+    """2023/24 passt als einziges nicht: 23,34 % gerechnet gegen 23,23 % auf
+    der Abrechnung. 0,11 Prozentpunkte — zu wenig für einen Zufall, zu viel
+    für eine Rundung. Der Fall steht hier fest, damit er nicht untergeht: er
+    ist der Grund, warum `h2_anteil` überschreibbar bleibt und die Simulation
+    die Abweichung anzeigt, statt sie zu glätten."""
+    erg = rechne({"liter": 3257.0, "eur": 0.0, "ww_m3": 9.800,
+                  "nutzer": [{"name": "Anbau", "kwh": 7316.0}]})
+    gerechnet = round(erg["anteile"]["h2_von_gesamt"] * 100, 2)
+    assert gerechnet == 23.34
+    assert abs(gerechnet - 23.23) > 0.05          # die offene Abweichung
 
 
 def test_der_beste_h2_anteil_laesst_sich_aus_den_sollwerten_finden():

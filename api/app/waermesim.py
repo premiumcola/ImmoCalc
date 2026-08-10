@@ -28,11 +28,13 @@ Der Weg, abgelesen an der Abrechnung 01.10.2018 – 30.09.2019 (Objekt 103536-00
   6. **Je Nutzer** — Verbrauch (H1 oder H2) + Festkosten (m² × Preis, bei
      unterjährigem Wechsel zeitanteilig) + Warmwasser.
 
-Offen ist genau eine Größe: **wie sich die Verbrauchskosten auf H1 und H2
-aufteilen.** Delta-t gab H2 im Jahr 2019 35,4 % davon, obwohl der Wärmezähler
-nur 22,7 % der Gesamtenergie misst. Deshalb ist `h2_anteil` hier ein Eingabe-
-wert und kein berechneter: der Nutzer dreht daran, bis die Abweichung über
-mehrere Jahre verschwindet — dann ist der Schlüssel gefunden.
+Die lange offene Größe — **wie sich die Verbrauchskosten auf H1 und H2
+aufteilen** — ist inzwischen gefunden (N340b): der Wärmezähler bekommt seinen
+Anteil an der HEIZenergie, also an der Ölenergie nach Abzug des Warmwassers,
+und zwar als Anteil an den gesamten Heizkosten. An drei von vier echten
+Abrechnungen stimmt das auf die zweite Nachkommastelle; 2023/24 weicht um
+0,11 Prozentpunkte ab. Deshalb bleibt `h2_anteil` überschreibbar und die
+Simulation zeigt die Abweichung, statt sie zu glätten.
 
 Bewusst ohne Datenbank und ohne eigene Tabelle: das ist ein Werkzeug auf Zeit.
 Steht der Rechenweg, wandert er in die Engine und dieses Modul fällt weg.
@@ -133,7 +135,8 @@ def rechne(eingabe: dict) -> dict:
       * `bloecke`       — weitere Kostenblöcke [{name, betrag, nur_heizung}]
       * `fest_anteil`   — Grundkostenanteil (Vorgabe 0,30)
       * `h2_anteil`     — Anteil des Wärmezählers an den VERBRAUCHSkosten
-                          (0…1). Ohne Angabe nach gemessener Energie.
+                          (0…1). Ohne Angabe aus der Heizenergie abgeleitet
+                          (siehe unten) — das ist der Regelfall.
       * `nutzer`        — [{name, flaeche, zeitanteil, ehkv, kwh, ww_m3}]
       * `soll`          — {name: Euro} die tatsächlichen Beträge von Delta-t
 
@@ -174,12 +177,26 @@ def rechne(eingabe: dict) -> dict:
         sum(_zahl(n.get("flaeche")) * _zahl(n.get("zeitanteil"), 1.0)
             for n in nutzer), 3)
 
-    # Der gesuchte Schlüssel. Ohne Vorgabe nach gemessener Energie — das ist
-    # die naheliegende Annahme, aber nachweislich NICHT die von Delta-t.
+    # N340b — der gesuchte Schlüssel, gefunden: der Wärmezähler bekommt seinen
+    # Anteil an der **Heizenergie**, also an der Ölenergie NACH Abzug des
+    # Warmwassers — nicht an der Rohenergie. Und zwar als Anteil an den
+    # GESAMTEN Heizkosten (die 30 % Grundkosten eingeschlossen), weshalb auf
+    # der Abrechnung H01 und H02 zusammen 70 % ergeben.
+    #
+    #   H02-Prozent = kWh Wärmezähler / (Ölenergie × Heizungsanteil)
+    #
+    # An vier echten Abrechnungen geprüft: 2018/19 24,80 % (Abrechnung 24,80),
+    # 2020/21 30,03 % (30,03), 2022/23 24,72 % (24,71) — und 2023/24 23,34 %
+    # gegen ausgewiesene 23,23 %. Drei Jahre auf die zweite Nachkommastelle,
+    # das vierte um 0,11 Prozentpunkte daneben; woran das liegt, muss die
+    # Simulation zeigen. Deshalb bleibt `h2_anteil` überschreibbar.
+    heiz_kwh = round(gesamt_kwh * heiz_anteil, 3)
     if eingabe.get("h2_anteil") is not None:
         h2_anteil = max(0.0, min(1.0, _zahl(eingabe.get("h2_anteil"))))
     else:
-        h2_anteil = (summe_kwh / gesamt_kwh) if gesamt_kwh > 0 else 0.0
+        von_gesamt = (summe_kwh / heiz_kwh) if heiz_kwh > 0 else 0.0
+        rest = 1.0 - fest_anteil
+        h2_anteil = min(1.0, von_gesamt / rest) if rest > 0 else 0.0
     verbrauch_h2 = round(verbrauch_eur * h2_anteil, 2)
     verbrauch_h1 = round(verbrauch_eur - verbrauch_h2, 2)
 
@@ -228,11 +245,16 @@ def rechne(eingabe: dict) -> dict:
     return {
         "brennstoff": stoff,
         "energie": {"gesamt_kwh": gesamt_kwh, "ww_kwh": round(ww_kwh, 3),
-                    "ww_liter": ww_liter, "heizwert": heizwert},
+                    "ww_liter": ww_liter, "heizwert": heizwert,
+                    "heiz_kwh": heiz_kwh},
         "anteile": {"warmwasser": round(ww_anteil, 6),
                     "heizung": heiz_anteil,
                     "fest": fest_anteil,
-                    "h2_von_verbrauch": round(h2_anteil, 6)},
+                    "h2_von_verbrauch": round(h2_anteil, 6),
+                    # So steht es auf der Abrechnung: H01 und H02 als Anteile
+                    # an den gesamten Heizkosten, zusammen die 70 %.
+                    "h2_von_gesamt": round(h2_anteil * (1 - fest_anteil), 6),
+                    "h1_von_gesamt": round((1 - h2_anteil) * (1 - fest_anteil), 6)},
         "bloecke": bloecke,
         "heizung": {"gesamt": heiz_gesamt, "fest": fest_eur,
                     "verbrauch": verbrauch_eur,
