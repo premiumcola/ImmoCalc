@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wärme-Simulation · ImmoCalc</title>
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* N340f — Werkzeug auf Zeit: eine Seite, ein Modul, danach spurlos weg.
+     Deshalb steht der Stil hier und nicht in immo.css. */
+  .wz-kopf{margin:0 0 16px}
+  .wz-kopf h2{font:700 19px var(--disp);letter-spacing:-.02em;margin:0 0 6px}
+  .wz-kopf p{font:400 13.5px var(--body);color:var(--soft);margin:0 0 4px;line-height:1.5}
+  .wz-kopf b{color:var(--amber)}
+  .wz-hinweis{font-size:12.5px !important;color:var(--teal-d) !important}
+
+  .wz-frei,.wz-lane{background:var(--sheet);border-radius:16px;padding:14px 14px 10px;
+    margin-bottom:12px;box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  .wz-frei{background:var(--paper);border:1.5px dashed var(--line)}
+  .wz-lane.bereit{outline:2px dashed var(--teal);outline-offset:2px}
+  .wz-frei h3,.wz-lane h3{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+    font:700 15px var(--disp);letter-spacing:-.01em;margin:0 0 10px}
+  .wz-frei h3 span,.wz-lane h3 span{font:500 11.5px var(--mono);color:var(--soft)}
+  .wz-lane h3 .wz-zahl{margin-left:auto}
+  .wz-leer{font:400 13px var(--body);color:var(--soft);margin:2px 0 6px}
+
+  .wz-liste{display:flex;flex-direction:column;gap:8px;min-height:44px}
+  .wz-karte{display:flex;align-items:center;gap:10px;background:var(--paper);
+    border-radius:12px;padding:9px 11px;cursor:grab;
+    -webkit-tap-highlight-color:transparent}
+  .wz-lane .wz-karte{background:var(--paper)}
+  .wz-karte.auf{outline:2px solid var(--teal);outline-offset:1px;
+    background:var(--teal-l)}
+  .wz-karte.mahnt{box-shadow:inset 3px 0 0 var(--amber)}
+  /* Der Griff: gross genug zum Treffen (44 px), damit das Namensfeld daneben
+     ungestört getippt werden kann. */
+  .wz-nr{flex:none;min-width:56px;min-height:44px;border:none;border-radius:10px;
+    background:var(--sheet);color:var(--teal-d);font:700 13px var(--mono);
+    cursor:grab;-webkit-tap-highlight-color:transparent}
+  .wz-karte.auf .wz-nr{background:var(--teal);color:#fff}
+  .wz-mitte{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .wz-name{width:100%;box-sizing:border-box;border:1px solid var(--line);
+    border-radius:9px;background:var(--sheet);padding:9px 10px;min-height:40px;
+    font:500 16px var(--body);color:var(--ink)}
+  .wz-name:focus{outline:none;border-color:var(--teal);
+    box-shadow:0 0 0 3px rgba(15,110,92,.12)}
+  .wz-meta{font:500 10.5px var(--mono);color:var(--soft)}
+  .wz-faktor{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+  .wz-faktor label{font:600 9.5px var(--mono);letter-spacing:.07em;
+    text-transform:uppercase;color:var(--soft)}
+  .wz-faktor input{width:74px;box-sizing:border-box;border:1px solid var(--line);
+    border-radius:9px;background:var(--sheet);padding:8px;min-height:40px;
+    text-align:right;font:600 16px var(--mono);color:var(--ink)}
+  .wz-faktor.kwh{font:600 11px var(--mono);color:var(--soft);align-self:center}
+  @media (min-width:760px){
+    .wz-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="titel">
+      <h1>Wärme-Simulation</h1>
+      <p class="sub">Laufer Str. 5 · Zähler konfigurieren</p>
+    </div>
+  </header>
+  <div class="scroll"><div class="wrap" id="inhalt"></div></div>
+  <div data-nav></div>
+</div>
+<script type="module">
+  import { installNav } from './assets/immo.js';
+  import { start } from './assets/waermesim/konfig.js';
+  installNav();
+  start();
+</script>
+</body>
+</html>
