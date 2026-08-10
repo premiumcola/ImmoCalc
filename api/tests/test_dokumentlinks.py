@@ -393,6 +393,34 @@ def test_ablageziele_meldet_unbekannten_beleg():
         assert c.get("/api/dokumente/999999/ablageziele").status_code == 404
 
 
+def test_ablageziele_zeigt_lesbare_namen_statt_rohe_ordnercodes():
+    """N331g — Nutzer-Fund: die „Ordner verschieben"-Liste zeigte den rohen
+    Ordnercode ("40_Kauf_Eigentum_Finanzierung") unverändert als Beschriftung.
+    Jetzt Klartext, ohne laufende Nummer und mit Umlauten."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={"name": "Lesbarweg 9"}).json()["slug"]
+        with Session(engine) as s:
+            o = s.exec(select(Objekt).where(Objekt.slug == slug)).first()
+            o.nc_ordner = "/Immobilien/Lesbarweg 9"
+            s.add(o)
+            pfad = "/Immobilien/Lesbarweg 9/70_Steuer_Finanzamt/beleg.pdf"
+            d = Dokument(pfad=pfad, dateiname="beleg.pdf", objekt_id=o.id,
+                        kategorie="Steuer")
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            doc_id = d.id
+
+        antwort = c.get(f"/api/dokumente/{doc_id}/ablageziele")
+        assert antwort.status_code == 200
+        namen = {z["ordner"].rsplit("/", 1)[-1]: z["name"]
+                for z in antwort.json()["ziele"]}
+        assert namen["40_Kauf_Eigentum_Finanzierung"] == "Kauf, Eigentum & Finanzierung"
+        assert namen["20_Mietvertraege_Vermietung"] == "Mietverträge & Vermietung"
+        assert "_" not in namen["40_Kauf_Eigentum_Finanzierung"]
+        assert not namen["40_Kauf_Eigentum_Finanzierung"][0].isdigit()
+
+
 class _WolkeVerschieben:
     """Nextcloud-Ersatz: merkt sich Anlegen/Verschieben, `belegt` simuliert
     Namen, die am Ziel schon liegen (für den Kollisionstest)."""

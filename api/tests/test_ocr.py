@@ -337,7 +337,8 @@ def test_bild_pdf_nimmt_den_rasterweg(monkeypatch):
     ergebnis = erkenne(roh)
     assert ergebnis["betrag"] == 555.00
     # Was Tesseract bekam, waren echte Rasterbilder — kein durchgereichtes PDF.
-    assert gelesen and all(bild.startswith(b"P6") for bild in gelesen)
+    # PPM über pdftext, PNG über den geradegerichteten Weg (PyMuPDF/OSD).
+    assert gelesen and all(bild.startswith((b"P6", b"\x89PNG")) for bild in gelesen)
 
 
 def test_tesseract_liest_den_gerasterten_scan():

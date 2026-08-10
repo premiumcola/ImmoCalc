@@ -27,7 +27,8 @@ from .. import (belegposten, dokumentlinks, feldzuordnung, kiauslese, kicache,
                 kidb, ocr, pdftext, upload)
 from ..belegposten import BelegFehler
 from ..bezeichnung import betrag_aus_namen, datum_aus_namen, objekt_titel
-from ..cloudkern import ZIELORDNER, _lies, struktur_fuer, verbindung
+from ..cloudkern import (ZIELORDNER, _lies, hauptordner_lesbar, struktur_fuer,
+                        verbindung)
 from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
@@ -4042,7 +4043,7 @@ def ablageziele(dokument_id: int,
     moeglich = []
     for art in struktur_fuer(o):
         ordner = f"{o.nc_ordner.strip('/')}/{art}"
-        moeglich.append({"ordner": ordner, "name": art,
+        moeglich.append({"ordner": ordner, "name": hauptordner_lesbar(art),
                          "aktuell": ordner == jetzt})
     # Der Jahresordner der Nebenkosten ist der einzige, den die App selbst
     # anlegt (N285) — er gehört mit angeboten, sonst müsste der Nutzer ihn

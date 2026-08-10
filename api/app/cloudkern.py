@@ -7,6 +7,7 @@ oder `dokumente` — sonst wäre der Zirkel nur verschoben, nicht aufgelöst.
 """
 import json
 import logging
+import re
 
 from fastapi import HTTPException
 from sqlmodel import Session
@@ -77,6 +78,44 @@ def struktur_fuer(objekt) -> list[str]:
 # Obermenge aller möglichen Hauptordner — für die Prüfung „ist das ein
 # Hauptordner (und kein Sachordner darunter)?" und als neutraler Bezug.
 STRUKTUR = sorted(set(STRUKTUR_GRUNDSTUECK + STRUKTUR_WEG + STRUKTUR_MFH))
+
+# N331g — Nutzer-Fund: die „Ordner verschieben"-Auswahl (routers/dokumente.py
+# ::ablageziele) zeigte den rohen Ordnercode („40_Kauf_Eigentum_Finanzierung")
+# unverändert als Beschriftung — kein Umlaut, keine Satzzeichen, keine
+# Auftrennung von der laufenden Nummer. Die Auswahl selbst ist längst das
+# eigene, gestaltete Listenfeld (auswahl.js), nur die Beschriftung sah aus wie
+# ein technischer Rohwert. Von Hand statt per Regel: die Menge der Ordnernamen
+# ist klein und fest (`STRUKTUR` oben), ein Rateversuch (Regex, ae→ä) träfe
+# nicht jeden Fall zuverlässig.
+HAUPTORDNER_LESBAR = {
+    "01_Allgemein_Hauskonto": "Allgemein & Hauskonto",
+    "10_Fotos_Lage": "Fotos & Lage",
+    "20_Mietvertraege_Vermietung": "Mietverträge & Vermietung",
+    "30_Kommunikation": "Kommunikation",
+    "40_Kauf_Eigentum_Finanzierung": "Kauf, Eigentum & Finanzierung",
+    "50_Bauphase_Projekte": "Bauphase & Projekte",
+    "50_Pacht_und_Paechter": "Pacht & Pächter",
+    "51_Mieterhoehungen": "Mieterhöhungen",
+    "55_Eigentuemerversammlungen": "Eigentümerversammlungen",
+    "60_Nebenkosten": "Nebenkosten",
+    "70_Steuer_Finanzamt": "Steuer & Finanzamt",
+    "80_Hausverwaltung": "Hausverwaltung",
+    "98_Archiv": "Archiv",
+    "99_Sonstiges": "Sonstiges",
+}
+
+
+def hauptordner_lesbar(art: str) -> str:
+    """Der Hauptordnercode in Klartext für die Oberfläche.
+
+    Kommt ein neuer Ordnercode dazu, ohne dass diese Tabelle mitgepflegt
+    wird, bleibt es nicht stumm bei einer leeren Beschriftung — die
+    laufende Nummer fällt weg und Unterstriche werden zu Leerzeichen; kein
+    hübsches Ergebnis, aber ein lesbares."""
+    if art in HAUPTORDNER_LESBAR:
+        return HAUPTORDNER_LESBAR[art]
+    ohne_nummer = re.sub(r"^\d+_", "", art)
+    return ohne_nummer.replace("_", " ") or art
 
 # Wohin eine Kategorie einsortiert wird. Alles Abrechnungsrelevante landet
 # unter Nebenkosten, der Rest bei seinem Thema.
