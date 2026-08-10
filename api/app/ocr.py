@@ -582,6 +582,18 @@ def text_aus_beleg(rohdaten: bytes) -> str:
     return text_aus_bild(rohdaten)
 
 
+def seiten_als_png(rohdaten: bytes, max_seiten: int = 6) -> list[bytes]:
+    """Die Seiten eines PDF als PNG, für einen Vision-Aufruf ans Modell.
+
+    Anders als `text_aus_beleg` (die Textschicht, so weit sie trägt) ist das
+    hier für Belege, deren Textschicht bei einer dichten Tabelle nicht zu
+    trauen ist (N330-WEG) — das Modell bekommt zusätzlich das echte Bild jeder
+    Seite. Kein PDF, keine Rasterbibliothek oder eine unlesbare Datei geben
+    still eine leere Liste zurück, nie einen Fehler; der Aufrufer fällt dann
+    auf reinen Text zurück."""
+    return pdftext.seiten_als_png(rohdaten, max_seiten=max_seiten)
+
+
 def _ohne_befund() -> dict:
     """Dieselben Schlüssel wie im Erfolgsfall — die Oberfläche soll nicht zwei
     Antwortformen kennen müssen."""

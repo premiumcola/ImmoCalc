@@ -130,6 +130,23 @@ def test_bild_geht_als_base64_mit_seinem_typ_voran():
     assert inhalt[1] == {"type": "text", "text": "Wie herum?"}
 
 
+def test_bild_als_liste_geht_als_mehrere_bildbloecke_vor_den_text():
+    """N330-WEG: eine mehrseitige Abrechnung schickt ein Bild je Seite — alle
+    vor dem Text, in der übergebenen Reihenfolge, nicht nur das erste."""
+    http = _Http()
+    kiclient.frage_modell("Was steht in der Tabelle?", schluessel="k",
+                          bild=[b"Seite-1", b"Seite-2", b"Seite-3"],
+                          media_type="image/png", http=http)
+
+    inhalt = http.aufrufe[0]["rumpf"]["messages"][0]["content"]
+    assert len(inhalt) == 4                     # 3 Bilder + 1 Textblock
+    assert [b["type"] for b in inhalt] == ["image", "image", "image", "text"]
+    import base64
+    assert [base64.b64decode(b["source"]["data"]) for b in inhalt[:3]] == [
+        b"Seite-1", b"Seite-2", b"Seite-3"]
+    assert inhalt[3] == {"type": "text", "text": "Was steht in der Tabelle?"}
+
+
 def test_modell_und_schluessel_haben_vorrang_vor_der_umgebung(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "aus-der-env")
     monkeypatch.setenv("ANTHROPIC_MODEL", "env-modell")

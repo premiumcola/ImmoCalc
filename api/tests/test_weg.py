@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, select  # noqa: E402
 
-from app import db, kiauslese, weg  # noqa: E402
+from app import db, kiauslese, ocr, weg  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (Einheit, Kostenposition, Miete, Objekt,  # noqa: E402
                         WegVorauszahlung, Zeitraum)
@@ -439,3 +439,30 @@ def test_lesen_ohne_ki_meldet_ruhig_statt_zu_scheitern(monkeypatch):
     assert r.status_code == 200
     assert r.json()["gelesen"] is None
     assert "von Hand" in r.json()["hinweis"]
+
+
+def test_lesen_gibt_die_gerasterten_seitenbilder_an_die_auslese_weiter(monkeypatch):
+    """N330 — die Verdrahtung Ende zu Ende: der Router rastert den Beleg zu
+    PNG-Seiten und reicht sie an `lies_weg_abrechnung` weiter, statt sich
+    allein auf den (bei dieser Tabelle unzuverlässigen) PDF-Text zu
+    verlassen."""
+    zid = _zeitraum(2044)
+    monkeypatch.setattr(kiauslese, "verfuegbar", lambda *_a, **_k: True)
+    monkeypatch.setattr(ocr, "text_aus_beleg", lambda *_a, **_k: "etwas Text")
+    monkeypatch.setattr(ocr, "seiten_als_png",
+                        lambda *_a, **_k: [b"seite-1-png", b"seite-2-png"])
+
+    gerufen = {}
+
+    def gestellt(text, dateiname="", schluessel="", modell="", bilder=None):
+        gerufen["bilder"] = bilder
+        return {"positionen": [], "heizkosten": 1.0, "warmwasserkosten": 1.0}
+
+    monkeypatch.setattr(kiauslese, "lies_weg_abrechnung", gestellt)
+
+    with TestClient(app) as c:
+        r = c.post(f"/api/zeitraeume/{zid}/weg/lesen",
+                   files={"datei": ("abrechnung.pdf", b"%PDF-1.4 test",
+                                    "application/pdf")})
+    assert r.status_code == 200
+    assert gerufen["bilder"] == [b"seite-1-png", b"seite-2-png"]

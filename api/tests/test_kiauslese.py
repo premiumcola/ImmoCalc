@@ -667,6 +667,40 @@ def test_weg_ohne_key_ist_stumm(monkeypatch):
     assert kiauslese.lies_weg_abrechnung("text") is None
 
 
+def test_weg_gibt_die_seitenbilder_unveraendert_an_frage_modell_weiter(monkeypatch):
+    """N330 — der aus dem PDF gewonnene Text verliert bei manchen Belegen in
+    der Betriebskostentabelle Trennzeichen und einzelne Ziffern; die vom
+    Router gerasterten Seitenbilder müssen deshalb tatsächlich als `bild` bei
+    `frage_modell` ankommen, sonst bringt die Rasterung nichts."""
+    gerufen = {}
+
+    def gestellt(*_args, **kwargs):
+        gerufen.update(kwargs)
+        return kiauslese.kiclient.Antwort(status=200, block=json.loads(WEG_ANTWORT))
+
+    monkeypatch.setattr(kiauslese.kiclient, "frage_modell", gestellt)
+    bilder = [b"seite-1-png", b"seite-2-png"]
+    ki = kiauslese.lies_weg_abrechnung("OCR-Text", schluessel="test-key",
+                                       bilder=bilder)
+    assert ki is not None
+    assert gerufen["bild"] == bilder
+
+
+def test_weg_ohne_bilder_schickt_kein_leeres_bild_mit(monkeypatch):
+    """Ohne Rasterung (kein pypdfium2, kein PDF) bleibt `bild` `None` statt
+    einer leeren Liste — für `frage_modell` wäre eine leere Liste ein
+    Bild-Aufruf ohne Bild, nicht „kein Bild dabei"."""
+    gerufen = {}
+
+    def gestellt(*_args, **kwargs):
+        gerufen.update(kwargs)
+        return kiauslese.kiclient.Antwort(status=200, block=json.loads(WEG_ANTWORT))
+
+    monkeypatch.setattr(kiauslese.kiclient, "frage_modell", gestellt)
+    kiauslese.lies_weg_abrechnung("OCR-Text", schluessel="test-key", bilder=[])
+    assert gerufen["bild"] is None
+
+
 def test_weg_prompt_nennt_die_teure_verwechslung():
     """Ohne die ausdrückliche Ansage greift das Modell zur Gesamtkostenspalte —
     der Prompt ist hier die eigentliche Fachlogik."""
@@ -675,6 +709,16 @@ def test_weg_prompt_nennt_die_teure_verwechslung():
     assert "103,24" in p and "788,80" in p          # das Beispiel steht drin
     assert "Nicht umlagefähig" in p and "umlagefaehig = " in p
     assert "kleineren" in p                          # die Notbremse bei Zweifel
+
+
+def test_weg_prompt_verweist_bei_der_tabelle_aufs_bild():
+    """N330 — der Fund am echten Delta-t-Beleg: der PDF-Text verliert in
+    dieser Tabelle Gleichheitszeichen und einzelne Ziffern (aus „99,000" wird
+    „00066"). Der Prompt muss das Modell ausdrücklich aufs mitgeschickte Bild
+    verweisen, sonst vertraut es weiter dem beschädigten Text."""
+    p = kiauslese.WEG_SYSTEM_PROMPT
+    assert "Bild" in p
+    assert "00066" in p                              # der real beobachtete Fund
 
 
 # --------------------------------------------------------------------------

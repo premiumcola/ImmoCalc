@@ -29,6 +29,8 @@ from __future__ import annotations
 import io
 import logging
 import re
+import struct
+import zlib
 from typing import Any
 
 log = logging.getLogger("immocalc")
@@ -197,10 +199,15 @@ def _als_ppm(bitmap: Any) -> bytes:
     Rand dicht beieinander (`stride == breite*3`) — der Puffer wandert dann in
     einem Stück in die Datei.
     """
+    return _als_rgb(bitmap, kopf=b"P6\n%d %d\n255\n" % (bitmap.width, bitmap.height))
+
+
+def _als_rgb(bitmap: Any, kopf: bytes = b"") -> bytes:
+    """Dicht gepacktes RGB einer gerenderten Seite, mit optionalem Dateikopf —
+    die gemeinsame Grundlage für PPM (Tesseract) und PNG (Vision-Aufruf)."""
     breite, hoehe, stride = bitmap.width, bitmap.height, bitmap.stride
     kanaele = len(bitmap.mode)          # "RGB" -> 3, "RGBA" -> 4
     puffer = bytes(bitmap.buffer)
-    kopf = b"P6\n%d %d\n255\n" % (breite, hoehe)
     if kanaele == 3 and stride == breite * 3:
         return kopf + puffer
     # Der seltene Fall: eine Zeile trägt Randbytes oder einen Alphakanal. Dann
@@ -217,15 +224,38 @@ def _als_ppm(bitmap: Any) -> bytes:
     return kopf + bytes(zeilen)
 
 
-def seiten_als_bilder(rohdaten: bytes, max_seiten: int = MAX_SEITEN) -> list[bytes]:
-    """Jede Seite eines PDF als Rasterbild — der Weg für einen reinen Scan.
+def _png_chunk(typ: bytes, daten: bytes) -> bytes:
+    return (struct.pack(">I", len(daten)) + typ + daten +
+            struct.pack(">I", zlib.crc32(typ + daten)))
 
-    Ein eingescanntes Blatt trägt keinen Text, nur ein Bild. Damit Tesseract
-    es überhaupt sieht, muss die Seite erst zu Pixeln werden; genau das fehlte
-    bisher (CLXXIX), denn Tesseract liest PDFs nicht, nur Bilder.
+
+def _als_png(bitmap: Any) -> bytes:
+    """Eine gerenderte Seite als PNG — von Hand statt über Pillow (N330-WEG).
+
+    Tesseract liest PPM, aber die Vision-API des Modells kennt nur PNG/JPEG/
+    GIF/WEBP. Eine PNG-Datei ohne Zeilenfilter (Typ 0 vor jeder Zeile) ist
+    nur Signatur, ein IHDR-Kopf, zlib-komprimierte Rohpixel als IDAT und ein
+    leeres IEND — mit CRC32-Prüfsummen, die `zlib` schon mitbringt. Dafür
+    lohnt sich keine neue Abhängigkeit."""
+    breite, hoehe = bitmap.width, bitmap.height
+    rgb = _als_rgb(bitmap)
+    zeilenlaenge = breite * 3
+    roh = bytearray()
+    for y in range(hoehe):
+        roh += b"\x00"                  # Filter-Typ 0 (keiner) vor jeder Zeile
+        roh += rgb[y * zeilenlaenge:(y + 1) * zeilenlaenge]
+    ihdr = struct.pack(">IIBBBBB", breite, hoehe, 8, 2, 0, 0, 0)  # Truecolor RGB
+    idat = zlib.compress(bytes(roh), 6)
+    return (b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr) +
+            _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b""))
+
+
+def _seiten_rastern(rohdaten: bytes, max_seiten: int, kodierer) -> list[bytes]:
+    """Jede Seite eines PDF gerastert und mit `kodierer` kodiert — gemeinsame
+    Grundlage für `seiten_als_bilder` (PPM) und `seiten_als_png` (PNG).
 
     Leer heisst: kein PDF, keine Rasterbibliothek, oder die Datei liess sich
-    nicht öffnen. Ein Fehler wird daraus nie — ein unlesbarer Scan soll das
+    nicht öffnen. Ein Fehler wird daraus nie — ein unlesbarer Beleg soll das
     Hochladen so wenig verhindern wie ein unlesbares Text-PDF."""
     if not kann_rastern() or not ist_pdf(rohdaten):
         return []
@@ -240,7 +270,7 @@ def seiten_als_bilder(rohdaten: bytes, max_seiten: int = MAX_SEITEN) -> list[byt
             try:
                 bitmap = doc[nr].render(scale=RASTER_SKALIERUNG,
                                         draw_annots=False, rev_byteorder=True)
-                bilder.append(_als_ppm(bitmap))
+                bilder.append(kodierer(bitmap))
             except Exception as fehler:                    # noqa: BLE001
                 log.warning("Seite nicht zu rastern: %s", fehler)
     finally:
@@ -249,3 +279,21 @@ def seiten_als_bilder(rohdaten: bytes, max_seiten: int = MAX_SEITEN) -> list[byt
         except Exception:                                  # noqa: BLE001
             pass
     return bilder
+
+
+def seiten_als_bilder(rohdaten: bytes, max_seiten: int = MAX_SEITEN) -> list[bytes]:
+    """Jede Seite eines PDF als PPM-Rasterbild — der Weg für einen reinen Scan.
+
+    Ein eingescanntes Blatt trägt keinen Text, nur ein Bild. Damit Tesseract
+    es überhaupt sieht, muss die Seite erst zu Pixeln werden; genau das fehlte
+    bisher (CLXXIX), denn Tesseract liest PDFs nicht, nur Bilder."""
+    return _seiten_rastern(rohdaten, max_seiten, _als_ppm)
+
+
+def seiten_als_png(rohdaten: bytes, max_seiten: int = MAX_SEITEN) -> list[bytes]:
+    """Jede Seite eines PDF als PNG — für einen Vision-Aufruf ans Modell, wenn
+    die eingebettete Textschicht einer Tabelle nicht zu trauen ist (N330-WEG:
+    Trennzeichen fehlen, Zahlen einer Zeile landen auf zwei Textzeilen,
+    einzelne Ziffernfolgen kommen verstümmelt an). Das Modell liest die
+    Tabelle dann vom Bild, nicht nur vom brüchigen Text."""
+    return _seiten_rastern(rohdaten, max_seiten, _als_png)

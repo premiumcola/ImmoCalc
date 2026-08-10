@@ -156,7 +156,8 @@ def _versuch(http, kopf: dict, rumpf: dict, zeitlimit: float,
 
 def frage_modell(inhalt: str = "", *, schluessel: str = "", modell: str = "",
                  system: str = "", max_tokens: int = 256,
-                 bild: bytes | None = None, media_type: str = "image/png",
+                 bild: bytes | list[bytes] | None = None,
+                 media_type: str = "image/png",
                  zeitlimit: float = ZEITLIMIT, versuche: int = VERSUCHE,
                  etikett: str = "KI", http=None) -> Antwort:
     """Ein Aufruf beim Modell — der einzige im Haus.
@@ -164,7 +165,9 @@ def frage_modell(inhalt: str = "", *, schluessel: str = "", modell: str = "",
     `inhalt` ist der Nutzertext (bei einem Bild-Aufruf die Frage zum Bild),
     `system` der Systemprompt (leer = keiner). Ist `bild` gesetzt, geht es als
     base64 mit `media_type` voran, der Text dahinter — genau wie bisher in
-    `orientierung` und `lies_solaredge`.
+    `orientierung` und `lies_solaredge`. `bild` darf auch eine Liste sein (N330
+    -WEG: mehrseitige Abrechnung, eine Bildkachel je Seite, alle vor dem Text,
+    in Reihenfolge).
 
     `etikett` ist der Name im Log („KI-Auslese", „KI-Wasserauslese" …), damit
     die Meldungen wortgleich bleiben. `http` ist das HTTP-Modul: die Fassaden
@@ -181,15 +184,17 @@ def frage_modell(inhalt: str = "", *, schluessel: str = "", modell: str = "",
         return Antwort(fehler="kein Key")
 
     if bild is not None:
+        bilder = bild if isinstance(bild, list) else [bild]
         try:
-            b64 = base64.b64encode(bild).decode("ascii")
+            nachricht = [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": media_type,
+                    "data": base64.b64encode(b).decode("ascii")}}
+                for b in bilder
+            ]
         except Exception:                                  # noqa: BLE001
             return Antwort(fehler="Bild unlesbar")
-        nachricht = [
-            {"type": "image", "source": {
-                "type": "base64", "media_type": media_type, "data": b64}},
-            {"type": "text", "text": inhalt},
-        ]
+        nachricht.append({"type": "text", "text": inhalt})
     else:
         nachricht = inhalt
 

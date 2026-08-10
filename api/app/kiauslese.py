@@ -1042,6 +1042,13 @@ WEG_SYSTEM_PROMPT = (
     "103,24 — NICHT die 788,80. Das ist der häufigste Lesefehler und macht die "
     "Abrechnung um den Faktor der Einheitenzahl falsch. Wenn du unsicher bist, "
     "nimm IMMER den kleineren der beiden Beträge einer Zeile.\n"
+    "Liegt dir zu jeder Seite auch ein Bild vor: verlass dich bei dieser "
+    "Tabelle auf das Bild, nicht auf den mitgeschickten Text — der aus dem "
+    "PDF gewonnene Text verliert bei manchen Belegen genau in dieser Tabelle "
+    "das Gleichheitszeichen, reisst eine Zeile mitten durch oder vertauscht "
+    "Ziffern (z. B. wird aus \"99,000\" ein sinnloses \"00066\"). Das Bild "
+    "zeigt die echten Zeichen, der Text ist nur eine Krücke für Kopfdaten wie "
+    "Firma, Nutzer-Nr. oder Zeitraum, die zuverlässig extrahiert werden.\n"
     "gesamtkosten = die Spalte GANZ LINKS (Kosten der ganzen Liegenschaft), im "
     "Beispiel 788,80.\n"
     "schluessel = der Verteilungsmaßstab hinter dem Doppelpunkt (\"Wasser "
@@ -1132,8 +1139,17 @@ def _weg_pruefung(ergebnis: dict) -> str:
 
 
 def lies_weg_abrechnung(text: str, dateiname: str = "", schluessel: str = "",
-                        modell: str = "") -> dict | None:
+                        modell: str = "",
+                        bilder: list[bytes] | None = None) -> dict | None:
     """Liest eine fertige WEG-Einzelabrechnung (N273).
+
+    `bilder` sind die Seiten des Belegs als PNG (`pdftext.seiten_als_png`,
+    vom Router gerastert) — N330: der aus dem PDF gewonnene Text verliert bei
+    manchen Belegen ausgerechnet in der dichten Betriebskostentabelle
+    Trennzeichen und einzelne Ziffern; mit dem Bild daneben liest das Modell
+    die echten Zeichen, statt sich auf eine beschädigte Textschicht zu
+    verlassen. Ohne Bilder (Rasterung nicht möglich/kein `pypdfium2`) läuft
+    die Erkennung wie zuvor rein textbasiert weiter.
 
     Gibt bei Erfolg Kopfdaten, die Positionstabelle (jede Zeile mit
     `umlagefaehig`) und die Beträge des Deckblatts zurück; passt die Summe der
@@ -1158,7 +1174,7 @@ def lies_weg_abrechnung(text: str, dateiname: str = "", schluessel: str = "",
     # einzelner Beleg — deshalb das vierfache Zeitlimit.
     antwort = kiclient.frage_modell(
         nutzer, schluessel=schluessel, modell=modell,
-        system=WEG_SYSTEM_PROMPT, max_tokens=WEG_TOKENS,
+        system=WEG_SYSTEM_PROMPT, max_tokens=WEG_TOKENS, bild=bilder or None,
         zeitlimit=ZEITLIMIT * 4, etikett="KI-WEG-Auslese", http=httpx)
     if not antwort.ok:
         return None

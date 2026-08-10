@@ -108,9 +108,17 @@ async def weg_lesen(zid: int, datei: UploadFile = File(...),
         return {"gelesen": None,
                 "hinweis": "Aus dieser Datei ließ sich kein Text lesen. " + VON_HAND}
 
+    # N330 — die Betriebskostentabelle verliert beim Text-Auszug aus dem PDF
+    # bei manchen Belegen Trennzeichen und einzelne Ziffern; das Seitenbild
+    # daneben lässt das Modell die echten Zeichen lesen statt zu raten. Kein
+    # PDF oder keine Rasterbibliothek geben still eine leere Liste zurück —
+    # dann läuft die Erkennung wie zuvor rein textbasiert weiter.
+    bilder = ocr.seiten_als_png(rohdaten)
+
     gelesen = kiauslese.lies_weg_abrechnung(text, datei.filename or "",
                                             schluessel=schluessel,
-                                            modell=ki_modell(session))
+                                            modell=ki_modell(session),
+                                            bilder=bilder)
     if not gelesen:
         return {"gelesen": None,
                 "hinweis": "Die Abrechnung konnte nicht gelesen werden. " + VON_HAND}

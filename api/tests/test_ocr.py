@@ -259,6 +259,48 @@ def test_scan_pdf_wird_zu_einem_bild_der_erwarteten_groesse():
     assert breite > 200 and hoehe > 120       # gegenüber den Punkten skaliert
 
 
+def _png_masse(daten: bytes) -> tuple[int, int]:
+    """Breite und Höhe aus dem IHDR-Chunk — der erste nach der Signatur."""
+    assert daten[:8] == b"\x89PNG\r\n\x1a\n", "keine PNG-Signatur"
+    assert daten[12:16] == b"IHDR"
+    breite = int.from_bytes(daten[16:20], "big")
+    hoehe = int.from_bytes(daten[20:24], "big")
+    return breite, hoehe
+
+
+def test_seiten_als_png_liefert_eine_gueltige_png_datei():
+    """Der handgeschriebene PNG-Kodierer (N330-WEG, keine Pillow-Abhängigkeit
+    nur für die Vision-Auslese): Signatur, IHDR-Maße wie beim PPM-Weg, und die
+    Pixel selbst müssen sich per zlib entpacken lassen — sonst wäre es nur
+    eine leere Hülle, die zufällig wie PNG aussieht."""
+    if not pdftext.kann_rastern():
+        pytest.skip("pypdfium2 ist hier nicht installiert")
+    import zlib
+
+    roh = bild_pdf(200, 120)
+    pngs = pdftext.seiten_als_png(roh)
+    assert len(pngs) == 1
+    png = pngs[0]
+
+    breite, hoehe = _png_masse(png)
+    assert (breite, hoehe) == _ppm_groesse(pdftext.seiten_als_bilder(roh)[0])
+
+    # IDAT-Chunk(e) einsammeln und entpacken — je Zeile ein Filter-Byte (0)
+    # plus breite*3 Rohpixel (Truecolor RGB, 8 Bit, kein Interlace).
+    pos = 8
+    idat = b""
+    while pos < len(png):
+        laenge = int.from_bytes(png[pos:pos + 4], "big")
+        typ = png[pos + 4:pos + 8]
+        if typ == b"IDAT":
+            idat += png[pos + 8:pos + 8 + laenge]
+        pos += 12 + laenge
+    roh_pixel = zlib.decompress(idat)
+    zeilenlaenge = 1 + breite * 3
+    assert len(roh_pixel) == hoehe * zeilenlaenge
+    assert all(roh_pixel[y * zeilenlaenge] == 0 for y in range(hoehe))
+
+
 def test_text_pdf_geht_nicht_ueber_die_rasterung(monkeypatch):
     """Verdrahtung: ein Text-PDF wird über `pdftext` gelesen — es wird nie
     gerastert. Gerufen würde die Rasterung nur, wenn kein Text da ist."""
