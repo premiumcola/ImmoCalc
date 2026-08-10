@@ -319,14 +319,21 @@ const ERWERB = {
   titel: 'Einmalige Erwerbsnebenkosten', einzahl: 'Erwerbsnebenkosten',
   ikon: 'Erwerbsnebenkosten',
   felder: [
-    // ohneLeer + Vorgabe: eine Erwerbsnebenkosten-Art gibt es immer — sonst
-    // liesse sich (ohne Auswahl) ein Posten ohne Art speichern (auswahl.js
-    // meldet den Wert erst bei Nutzer-Auswahl zurück).
-    { k: 'art', l: 'Art', typ: 'auswahl', werte: ERWERB_ARTEN, ohneLeer: true,
-      vorgabe: ERWERB_ARTEN[0], pflicht: true, lex: 'kaufnebenkosten' },
+    // N331d — Nutzer-Fund: „Notar" stand hier schon VOR dem Scan/Abtippen —
+    // sah aus wie eine Entscheidung, war aber nur der erzwungene erste
+    // Listeneintrag (`ohneLeer` liess gar keine leere Wahl zu). Genau dieses
+    // Aussehen einer Entscheidung war vermutlich auch der Grund, warum eine
+    // KI-Erkennung ohne echten Treffer bei „Notar" landete, statt sichtbar
+    // leer zu bleiben (siehe N331b: Landesjustizkasse-Beleg). Jetzt echt leer
+    // („nicht gewählt"), Pflicht wird eigens geprüft (`handlers.js`
+    // Submit-Handler) statt über `ohneLeer` erzwungen.
+    { k: 'art', l: 'Art', typ: 'auswahl', werte: ERWERB_ARTEN,
+      pflicht: true, lex: 'kaufnebenkosten' },
     { k: 'betrag', l: 'Betrag', typ: 'number', schritt: '0.01', geld: true,
       voll: true, pflicht: true },
-    { k: 'jahr', l: 'Jahr', typ: 'number', vorgabe: new Date().getFullYear() },
+    // N331d — kein Jahres-Vorgabewert mehr: vor dem Scannen sah „2026" aus
+    // wie eine erkannte Angabe, war aber nur das aktuelle Jahr.
+    { k: 'jahr', l: 'Jahr', typ: 'number' },
     { k: 'notiz', l: 'Notiz', typ: 'text' },
   ],
   name: e => e.art || 'Erwerbsnebenkosten',

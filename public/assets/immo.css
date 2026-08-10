@@ -591,6 +591,14 @@ input[type=date].inp::-webkit-calendar-picker-indicator{
 .auswahl-pfeil{flex:none; color:var(--soft); transition:transform .15s}
 .auswahl-knopf[aria-expanded=true]{border-color:var(--teal)}
 .auswahl-knopf[aria-expanded=true] .auswahl-pfeil{transform:rotate(180deg)}
+/* N331d — ein leer gelassenes Pflicht-Auswahlfeld: `melde()` (der übliche
+   Fehlerweg) rendert einen Toast im normalen Dokument, ein offener
+   `<dialog>` liegt aber in der Top-Layer-Ebene des Browsers und deckt ihn
+   unsichtbar ab — kein Zoomen/kein z-index holt ihn davor. Direkt am Feld
+   ist der einzige Weg, der bei offenem Dialog wirklich sichtbar bleibt. */
+.auswahl.pflicht-fehlt .auswahl-knopf{
+  border-color:var(--neg); box-shadow:0 0 0 3px rgba(178,66,41,.14);
+}
 
 .auswahl-liste{
   position:absolute; z-index:40; top:calc(100% + 6px); left:0; right:0;

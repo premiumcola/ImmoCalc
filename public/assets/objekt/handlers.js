@@ -85,6 +85,15 @@ export function initHandlers() {
   dlgForm.addEventListener('click', async e => {
     if (e.target.closest('[data-abbruch]')) return dlg.close('abbruch');
 
+    // N331d — die rote Umrandung eines Pflicht-Auswahlfelds (siehe
+    // Submit-Handler) verschwindet, sobald der Nutzer es antippt — sie soll
+    // nur auf den letzten fehlgeschlagenen Speicherversuch zeigen, nicht
+    // stehen bleiben, während er die Wahl gerade trifft.
+    const auswahlKnopf = e.target.closest('.auswahl-knopf');
+    if (auswahlKnopf) {
+      auswahlKnopf.closest('.auswahl')?.classList.remove('pflicht-fehlt');
+    }
+
     // N263 — „Abfotografieren statt tippen" aus der Eingabemaske heraus.
     // Der Zweig sass zuerst am `inhalt`-Handler; der Knopf steht aber im
     // <dialog>, und der ist ein GESCHWISTER von #inhalt (objekt.html: 993
@@ -217,6 +226,29 @@ export function initHandlers() {
     e.preventDefault();
     const form = e.target;
     const { absicht, bereich, id } = form.dataset;
+    // N331d — ein Pflicht-Auswahlfeld (`typ:'auswahl', pflicht:true`) hatte
+    // keine echte Prüfung: das versteckte Feld dahinter ist `type="hidden"`,
+    // und `required` gilt dafür laut HTML-Spezifikation gar nicht — die
+    // native Formularvalidierung griff hier nie. Ohne diese Prüfung würde
+    // ein leer gelassenes Pflichtfeld (siehe `felderFuer`/ERWERB unten)
+    // klaglos durchgehen, statt „konsistent rot" zu signalisieren.
+    //
+    // Bewusst NICHT über `melde()`: der Toast rendert im normalen Dokument,
+    // ein offener `<dialog>` liegt aber in der Top-Layer-Ebene des Browsers
+    // und deckt ihn unsichtbar ab (kein z-index holt ihn davor) — der Nutzer
+    // sähe gar keine Rückmeldung. Die rote Umrandung direkt am Feld bleibt
+    // die einzige Stelle, die bei offenem Dialog wirklich sichtbar ist.
+    for (const el of form.querySelectorAll('.auswahl.pflicht-fehlt')) {
+      el.classList.remove('pflicht-fehlt');
+    }
+    const fehlt = dialogFelder.find(f => f.typ === 'auswahl' && f.pflicht
+      && !(form.elements[f.k]?.value));
+    if (fehlt) {
+      const feld = form.querySelector(`[data-auswahl="${fehlt.k}"]`);
+      feld?.classList.add('pflicht-fehlt');
+      feld?.querySelector('.auswahl-knopf')?.focus();
+      return;
+    }
     const knopf = form.querySelector('button[value="ok"]');
     const beschriftung = knopf ? knopf.textContent : '';
     if (knopf) { knopf.disabled = true; knopf.textContent = 'Wird gespeichert …'; }
