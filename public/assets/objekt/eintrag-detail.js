@@ -299,13 +299,15 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
     adressListen.push(belegSeitenLaden(`/api/dokumente/${docId}`, flaeche,
       name || 'Beleg', `/api/dokumente/${docId}/inhalt`));
   };
-  // CCCLXXXIX — das PDF wird NICHT mehr automatisch geladen; es erscheint erst,
-  // wenn man ein Dokument antippt (zeigeDoc). Das hielt die Ansicht ruhig, statt
-  // gleich das ganze Blatt einzublenden.
-  // N280 — es sei denn, es ist gerade eines dazugekommen: dann steht genau das
-  // da, mit Namen und Ablageort.
-  const zeigeStart = zeigeDocId
-    ? alle.find(d => String(d.id) === String(zeigeDocId)) : null;
+  // N331e — CCCLXXXIX liess das PDF bewusst erst nach einem Antippen laden
+  // ("Ansicht ruhig halten"); Nutzer-Fund: in ~90-95 % der Fälle gibt es
+  // ohnehin nur den einen (richtigen) Beleg — der Antipp-Zwang war für die
+  // meisten Aufrufe nur ein unnötiger Extra-Klick. Jetzt lädt automatisch:
+  // der eben angehängte Beleg (N280, falls gerade einer dazukam), sonst der
+  // erste der Liste. Umwählen bleibt jederzeit möglich (Klick auf einen
+  // anderen Beleg in der Liste, siehe `.dd-beleg`-Handler unten).
+  const zeigeStart = (zeigeDocId
+    ? alle.find(d => String(d.id) === String(zeigeDocId)) : null) || alle[0] || null;
   if (zeigeStart) zeigeDoc(zeigeStart.id, zeigeStart.dateiname, zeigeStart.pfad);
 
   /* N280 — das gemeinsame Beleg-Fenster. Es liegt als eigener `showModal`-
