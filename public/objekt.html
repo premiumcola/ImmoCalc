@@ -512,6 +512,16 @@
   .dd-body.zoom .dd-rechts{flex:1;min-height:0;padding:12px 14px 14px}
   .dd-body.zoom .dd-rechts .beleg-flaeche{cursor:zoom-out;padding:8px}
   .dd-body.zoom .dd-rechts .beleg-bild{width:100%}
+  /* N336 — auf dem Telefon stapelt sich alles, und dann darf die Vorschau
+     KEINE eigene Höhe haben: `min-height:340px` plus innerer Scroll presste
+     eine DIN-A4-Seite in einen flachen Streifen, in dem vom Blatt fast nichts
+     zu erkennen war. Stattdessen wächst sie mit der Seite (Bild `width:100%`,
+     `height:auto` → echtes Seitenverhältnis), und gescrollt wird das ganze
+     Blatt — genau ein Scrollbereich statt zwei ineinander. */
+  @media (max-width:759px){
+    .dd-rechts{flex:none;min-height:0}
+    .dd-rechts .beleg-flaeche{flex:none;overflow:visible;min-height:0}
+  }
   @media (min-width:760px){
     .dd-body{flex-direction:row}
     .dd-links{width:340px;overflow:auto;border-right:1px solid var(--line)}
