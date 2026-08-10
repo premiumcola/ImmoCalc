@@ -227,13 +227,41 @@ def rechne(eingabe: dict) -> dict:
     t_fest = topf(fest_eur, "flaeche", mit_zeit=True)
     t_ww = topf(ww_gesamt, "ww_m3")
 
+    # N340c — dieselbe Verteilung noch einmal in LITERN. Der Nutzer will für
+    # seine eigene Abrechnung nicht Euro-Töpfe umlegen, sondern schlicht die
+    # verbrauchten Liter Öl auf die abgelesenen Werte verteilen. Die Menge
+    # folgt denselben Gewichten wie das Geld — Liter und Euro bleiben so
+    # zueinander stimmig, egal welche Kostenblöcke sonst mitlaufen.
+    def menge(gesamt: float, feld: str, mit_zeit: bool = False) -> dict:
+        gewichte = {}
+        for name, n in zip(schluessel, nutzer):
+            wert = _zahl(n.get(feld))
+            if mit_zeit:
+                wert *= _zahl(n.get("zeitanteil"), 1.0)
+            gewichte[name] = gewichte.get(name, 0.0) + wert
+        summe = sum(gewichte.values())
+        if summe <= 0:
+            return {k: 0.0 for k in gewichte}
+        return {k: round(gesamt * v / summe, 3) for k, v in gewichte.items()}
+
+    liter_heiz = round(stoff["liter"] * heiz_anteil, 3)
+    l_fest = menge(liter_heiz * fest_anteil, "flaeche", mit_zeit=True)
+    l_h1 = menge(liter_heiz * (1 - fest_anteil) * (1 - h2_anteil), "ehkv")
+    l_h2 = menge(liter_heiz * (1 - fest_anteil) * h2_anteil, "kwh")
+    l_ww = menge(ww_liter, "ww_m3")
+
     soll = eingabe.get("soll") or {}
     zeilen = []
     for name, n in zip(schluessel, nutzer):
         p_h1, p_h2 = t_h1.get(name, 0.0), t_h2.get(name, 0.0)
         p_fest, p_ww = t_fest.get(name, 0.0), t_ww.get(name, 0.0)
+        liter_heizung = round(l_fest.get(name, 0.0) + l_h1.get(name, 0.0)
+                              + l_h2.get(name, 0.0), 3)
         zeile = {"name": name, "verbrauch_h1": p_h1, "verbrauch_h2": p_h2,
                  "festkosten": p_fest, "warmwasser": p_ww,
+                 "liter": liter_heizung,
+                 "liter_warmwasser": l_ww.get(name, 0.0),
+                 "kwh": round(liter_heizung * heizwert, 1),
                  "heizkosten": round(p_h1 + p_h2 + p_fest, 2),
                  "summe": round(p_h1 + p_h2 + p_fest + p_ww, 2)}
         if name in soll:
@@ -275,6 +303,36 @@ def rechne(eingabe: dict) -> dict:
     }
 
 
+def nur_oel(eingabe: dict, fest_anteil: float = 0.0,
+            warmwasser_abziehen: bool = True) -> dict:
+    """N340c — nur das Öl verteilen, sonst nichts.
+
+    Der Messdienst legt jede Menge mit um: Betriebsstrom, Kaminkehrer,
+    Wartung, Abrechnungsgebühren, Miete der Zähler. Für die eigene Abrechnung
+    will der Nutzer genau das nicht — nur die verbrauchten Liter Öl, verteilt
+    über die abgelesenen Werte an Heizkörpern und Wärmezähler.
+
+    Deshalb hier: alle Kostenblöcke fallen weg, es bleibt der Brennstoff.
+
+    * `fest_anteil=0.0` (Vorgabe) heisst **rein nach Verbrauch** — wer nicht
+      heizt, zahlt nichts. Wer den gesetzlichen Regelfall will, gibt 0,30 an;
+      dann gehen 30 % nach Fläche wie bei Delta-t.
+    * `warmwasser_abziehen=True` nimmt die Warmwasser-Wärmemenge nach §9
+      vorweg heraus (sie hat mit den Heizkörpern nichts zu tun). Mit `False`
+      wandert alles Öl in die Heizung — sinnvoll, wenn das Warmwasser separat
+      abgerechnet wird oder es keines gibt.
+
+    Der Rest ist derselbe Rechenweg wie sonst, also auch dieselbe Prüfung: die
+    Summe der Zeilen ergibt exakt die eingesetzten Liter und Euro.
+    """
+    ohne = {k: v for k, v in eingabe.items()
+            if k not in ("bloecke", "fest_anteil", "soll")}
+    if not warmwasser_abziehen:
+        ohne["ww_m3"] = 0.0
+        ohne["ww_kwh"] = 0.0
+    return rechne({**ohne, "bloecke": [], "fest_anteil": fest_anteil})
+
+
 def h2_anteil_aus_soll(eingabe: dict) -> float | None:
     """Welcher H2-Anteil träfe die vorgegebenen Soll-Beträge am besten?
 
@@ -294,5 +352,5 @@ def h2_anteil_aus_soll(eingabe: dict) -> float | None:
     return bester
 
 
-__all__ = ["rechne", "brennstoff", "h2_anteil_aus_soll", "FEST_ANTEIL",
-           "verteile_nach_wert"]
+__all__ = ["rechne", "brennstoff", "nur_oel", "h2_anteil_aus_soll",
+           "FEST_ANTEIL", "verteile_nach_wert"]

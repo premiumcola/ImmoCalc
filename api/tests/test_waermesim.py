@@ -226,3 +226,56 @@ def test_der_rundungsrest_ist_eine_annahme_kein_gesetz():
     # Aber nur die Delta-t-Regel trifft jede einzelne Zeile.
     assert wie_deltat["abgleich"]["groesste_abweichung"] == 0.0
     assert 0 < wie_engine["abgleich"]["groesste_abweichung"] <= 0.02
+
+
+def test_nur_oel_verteilt_genau_die_verbrauchten_liter():
+    """N340c — die Variante des Nutzers: keine Nebenkosten, keine Zusatz-
+    kosten, kein Strom. Nur die 4.446 l Öl über die abgelesenen Werte.
+
+    Rein nach Verbrauch (Vorgabe): wer nichts abgelesen hat, zahlt nichts."""
+    from app.waermesim import nur_oel
+
+    erg = nur_oel({"liter": 4446.0, "eur": 3328.15, "ww_m3": 30.110,
+                   "nutzer": NUTZER})
+    # Keine fremden Kosten mehr im Topf — nur der Brennstoff.
+    assert [b["name"] for b in erg["bloecke"]] == ["Brennstoffkosten"]
+    # Und keine Grundkosten: alles hängt am Verbrauch.
+    assert erg["heizung"]["fest"] == 0.0
+    assert erg["heizung"]["verbrauch"] == erg["heizung"]["gesamt"]
+    # Die Liter gehen restlos an die Nutzer — Heizung plus Warmwasser.
+    verteilt = sum(z["liter"] + z["liter_warmwasser"] for z in erg["nutzer"])
+    assert abs(verteilt - 4446.0) < 0.01
+    # Ebenso das Geld.
+    assert abs(sum(z["summe"] for z in erg["nutzer"]) - 3328.15) < 0.02
+    # Wer weder Heizkörper noch Zähler abgelesen hat, trägt nichts.
+    ohne = nur_oel({"liter": 1000.0, "eur": 900.0,
+                    "nutzer": [{"name": "A", "ehkv": 100.0, "flaeche": 50.0},
+                               {"name": "B", "ehkv": 0.0, "flaeche": 50.0}]})
+    zeilen = {z["name"]: z for z in ohne["nutzer"]}
+    assert zeilen["B"]["summe"] == 0.0
+    assert zeilen["A"]["liter"] == 1000.0
+
+
+def test_nur_oel_mit_gesetzlichem_grundanteil():
+    """Wer den Regelfall will, gibt 30 % an — dann geht dieser Teil nach
+    Fläche, der Rest weiter nach Verbrauch. Die Liter bleiben vollständig."""
+    from app.waermesim import nur_oel
+
+    erg = nur_oel({"liter": 1000.0, "eur": 900.0,
+                   "nutzer": [{"name": "A", "ehkv": 100.0, "flaeche": 50.0},
+                              {"name": "B", "ehkv": 0.0, "flaeche": 50.0}]},
+                  fest_anteil=0.30, warmwasser_abziehen=False)
+    zeilen = {z["name"]: z for z in erg["nutzer"]}
+    assert zeilen["B"]["liter"] == 150.0          # nur der halbe Grundanteil
+    assert zeilen["A"]["liter"] == 850.0          # Grundanteil + ganzer Verbrauch
+    assert round(sum(z["liter"] for z in erg["nutzer"]), 3) == 1000.0
+
+
+def test_liter_und_euro_bleiben_zueinander_stimmig():
+    """Die Litermenge folgt denselben Gewichten wie das Geld — sonst stünde in
+    der Ansicht ein Anteil in Litern neben einem anderen in Euro."""
+    erg = rechne(EINGABE)
+    heiz_liter = sum(z["liter"] for z in erg["nutzer"])
+    assert abs(heiz_liter - 4446.0 * erg["anteile"]["heizung"]) < 0.01
+    fuer_ww = sum(z["liter_warmwasser"] for z in erg["nutzer"])
+    assert abs(fuer_ww - erg["energie"]["ww_liter"]) < 0.01
