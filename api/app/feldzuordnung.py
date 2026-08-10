@@ -102,6 +102,10 @@ ZUORDNUNG: dict[str, dict[str, tuple[str, ...]]] = {
     "erwerbskosten": {
         "art": ("erwerbsart",),
         "jahr": ("jahr", "abrechnungsjahr"),
+        # N338 — das Belegdatum, damit die Erwerbsnebenkosten eines Kaufs in
+        # ihrer echten Reihenfolge stehen können. Die Erkennung liefert es
+        # ohnehin; bisher fiel es hier unter den Tisch.
+        "datum": ("datum", "rechnungsdatum", "belegdatum"),
         "betrag": ("betrag",),
         # N280-D — „notiz" fragt der Prompt nirgends ab; allein damit blieb das
         # Feld strukturell immer leer. Die knappe Kostenart („Beurkundung

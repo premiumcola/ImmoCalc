@@ -683,7 +683,10 @@
      die sichtbare Umrechnung auf die Periodengrenze. Die Paar-Zeile ist so hoch
      wie ein Eingabefeld, damit Anfang und Ende auf einer Linie sitzen. */
   .zu-paar{display:flex;align-items:center;gap:8px;min-height:44px}
-  .zu-feld input[type=date]{width:134px;min-height:44px;font:500 11.5px var(--body)}
+  /* N337 — 16px, sonst zoomt iOS beim Antippen in die Seite hinein und kommt
+     nicht zurück (dieselbe Regel wie CCCLI in immo.css; eine klassen-genauere
+     Angabe schlägt sie sonst wieder). */
+  .zu-feld input[type=date]{width:150px;min-height:44px;font:500 16px var(--body)}
   .zu-dat,.zu-uebernommen{font:500 10.5px var(--body);color:var(--soft);
     white-space:nowrap}
   .zu-rechnung{display:flex;flex-direction:column;gap:3px;margin-top:8px;

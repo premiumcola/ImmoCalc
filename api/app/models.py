@@ -726,6 +726,13 @@ class Zahlung(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     objekt_id: int = Field(foreign_key="objekt.id", index=True)
     jahr: int = Field(index=True)
+    # N338 — das genaue Datum des Belegs, wo es bekannt ist. Bisher gab es nur
+    # das Jahr; die einmaligen Erwerbsnebenkosten eines Kaufs fallen aber
+    # innerhalb weniger Monate an (Notar, Auflassung, Grunderwerbsteuer,
+    # Eigentumsumschreibung) — ohne Monat lässt sich ihre Reihenfolge nicht
+    # zeigen. Optional und ohne Vorgabe: der Bestand rechnet unverändert
+    # weiter, sortiert wird auf das Jahr zurückgefallen.
+    datum: Optional[date] = None
     art: str                       # 'Grundsteuer' | 'Einkommensteuer' | 'Instandhaltung' | ...
     kategorie: str = "Steuer"      # 'Steuer' | 'Kredit' | 'Instandhaltung' | 'Sonstiges'
     betrag: float = 0.0

@@ -488,6 +488,31 @@
      Verweise aussah. Volle Grösse (44 px hoch), gleiche Form wie die
      Aktionsknöpfe links, und sie tun ihre Arbeit hier statt in einem
      zweiten Fenster. */
+  /* N338 — senkrechte Zeitachse der Erwerbsnebenkosten: links Datum und Punkt
+     auf einer durchgehenden Linie, rechts die gewohnte Zeile. Oben das
+     Älteste, unten das Neueste — der Ablauf einer Kaufabwicklung. */
+  .erwtl{display:flex;flex-direction:column}
+  .erwtl-z{display:grid;grid-template-columns:20px 62px 1fr;align-items:center;
+    column-gap:8px;position:relative}
+  .erwtl-marke{grid-column:1;justify-self:center;align-self:stretch;
+    display:flex;align-items:center;justify-content:center;position:relative}
+  /* Die Linie läuft durch alle Zeilen; am ersten und letzten Punkt hört sie
+     auf, statt ins Leere zu zeigen. */
+  .erwtl-marke::before{content:"";position:absolute;top:0;bottom:0;width:2px;
+    background:var(--line)}
+  .erwtl-z:first-child .erwtl-marke::before{top:50%}
+  .erwtl-z:last-child .erwtl-marke::before{bottom:50%}
+  .erwtl-punkt{position:relative;width:9px;height:9px;border-radius:50%;
+    background:var(--teal);box-shadow:0 0 0 3px var(--sheet)}
+  .erwtl-datum{grid-column:2;font:600 11px var(--mono);color:var(--soft);
+    white-space:nowrap;letter-spacing:-.02em}
+  .erwtl-inhalt{grid-column:3;min-width:0}
+  .erwtl-inhalt .eintrag{padding-left:0}
+  @media (max-width:420px){
+    .erwtl-z{grid-template-columns:18px 54px 1fr;column-gap:6px}
+    .erwtl-datum{font-size:10.5px}
+  }
+
   /* N334e — dieselben Felder wie im Formular, nur eben hier in der Spalte. */
   .dd-form{display:block}
   .dd-formknoepfe{display:flex;gap:8px;margin-top:14px}

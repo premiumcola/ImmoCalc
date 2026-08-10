@@ -76,6 +76,20 @@ export function mietTimelineHtml(mo, mini = false) {
     </div>`;
 }
 
+/* N338 — der Zeitpunkt einer Erwerbsnebenkosten-Zeile, so kurz wie möglich:
+   „Jun 2019" mit Belegdatum, sonst das blosse Jahr. Der Monat ist das, was
+   den Ablauf eines Kaufs überhaupt sichtbar macht — vier Positionen desselben
+   Jahres sagen ohne ihn nichts über ihre Reihenfolge. */
+const MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
+export function erwerbZeitpunkt(e) {
+  const roh = String(e?.datum || '');
+  const teile = roh.match(/^(\d{4})-(\d{2})/);
+  if (!teile) return String(e?.jahr || '—');
+  return `${MONATE[Number(teile[2]) - 1] || ''} ${teile[1]}`.trim();
+}
+
 /* ---- Listenzeilen ------------------------------------------------------- */
 
 /* Die schlichte Listenzeile — der gemeinsame Kern von normaler und
@@ -197,6 +211,26 @@ export function abschnitt(bereich, eintraege, { imFokus = false, kopf = '',
         ? entwurfZeile(cfg, bereich, e, imFokus)
         : eintragZeile(cfg, bereich, e, imFokus)).join('');
     }
+  } else if (bereich === 'erwerbskosten') {
+    // N338 — die einmaligen Erwerbsnebenkosten eines Kaufs sind kein Sammel-
+    // surium, sondern ein Ablauf: Notar beurkundet, Auflassung wird vorge-
+    // merkt, Grunderwerbsteuer kommt, das Grundbuchamt schreibt um. Deshalb
+    // hier eine senkrechte Zeitachse statt einer Liste in Eingabereihenfolge —
+    // oben das Älteste, unten das Neueste, mit dem Datum an jedem Punkt.
+    // Ohne Belegdatum (Bestand vor N338) trägt die Zeile ihr Jahr; sie steht
+    // dann ans Jahresende sortiert, damit datierte Belege desselben Jahres
+    // davor kommen.
+    const schluessel = e => e.datum || `${e.jahr || 0}-12-31`;
+    const sortiert = [...eintraege]
+      .sort((a, b) => schluessel(a).localeCompare(schluessel(b)));
+    zeilen = `<div class="erwtl">${sortiert.map(e => `
+      <div class="erwtl-z">
+        <span class="erwtl-marke"><i class="erwtl-punkt"></i></span>
+        <span class="erwtl-datum">${esc(erwerbZeitpunkt(e))}</span>
+        <div class="erwtl-inhalt">${istEntwurf(e)
+          ? entwurfZeile(cfg, bereich, e, imFokus)
+          : eintragZeile(cfg, bereich, e, imFokus)}</div>
+      </div>`).join('')}</div>`;
   } else if (bereich === 'zahlungen') {
     // Nach Art gruppieren; nur was mehrfach vorkommt, wird gestaffelt.
     const gruppen = new Map();
