@@ -72,8 +72,9 @@ router = APIRouter(prefix="/api", tags=["strom"])
 def stammdaten_lesen(slug: str, session: Session = Depends(get_session),
                      o: Objekt = Depends(objekt_holen)) -> dict:
     """N139 — die Stammdaten der PV-Anlage lesen (jahresunabhängig)."""
-    return _zeige_stammdaten(_stammdaten(session, o.id),
-                             _erster_abrechnungsstart(session, o.id))
+    anlage = _stammdaten(session, o.id)
+    return _zeige_stammdaten(
+        anlage, _erster_abrechnungsstart(session, o.id, anlage.inbetriebnahme))
 
 
 @router.put("/objekte/{slug}/pv/stammdaten")
@@ -88,7 +89,8 @@ def stammdaten_speichern(slug: str, data: StammdatenIn,
     session.add(anlage)
     session.commit()
     session.refresh(anlage)
-    return _zeige_stammdaten(anlage, _erster_abrechnungsstart(session, o.id))
+    return _zeige_stammdaten(
+        anlage, _erster_abrechnungsstart(session, o.id, anlage.inbetriebnahme))
 
 
 # ==========================================================================

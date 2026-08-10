@@ -78,12 +78,19 @@ def _vorlauf(a: PVAnlage) -> tuple[float, dict[str, float] | None]:
     return round(a.vorlauf_ertrag_eur or 0.0, 2), None
 
 
-def _erster_abrechnungsstart(session: Session, objekt_id: int) -> date | None:
+def _erster_abrechnungsstart(session: Session, objekt_id: int,
+                             inbetriebnahme: date | None = None) -> date | None:
     """Der Beginn des ersten Abrechnungszeitraums — die Grenze, bis zu der der
-    Vorlauf zählt. Kommt aus den Daten; kein Datum steht im Code."""
-    return session.exec(select(Zeitraum.start)
-                        .where(Zeitraum.objekt_id == objekt_id)
-                        .order_by(Zeitraum.start)).first()
+    Vorlauf zählt. Kommt aus den Daten; kein Datum steht im Code.
+
+    N335 — gemeint ist der erste Zeitraum, der die ANLAGE erfasst, nicht der
+    erste des Hauses. Die Immobilie rechnet seit 2018 ab, die Anlage steht erst
+    seit Mitte 2023: ohne diese Grenze sagte die Maske „von der Inbetriebnahme
+    am 30.06.2023 bis zum 01.10.2018" — ein Zeitraum, der rückwärts läuft."""
+    frage = select(Zeitraum.start).where(Zeitraum.objekt_id == objekt_id)
+    if inbetriebnahme:
+        frage = frage.where(Zeitraum.start >= inbetriebnahme)
+    return session.exec(frage.order_by(Zeitraum.start)).first()
 
 
 def _anteile_dict(roh: str | None) -> dict[str, float]:

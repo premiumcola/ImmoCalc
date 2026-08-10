@@ -191,11 +191,21 @@ function verlaufLegende(v) {
   // Der Vorlaufbalken steht in denselben Farben da wie die Abrechnungsjahre
   // — ohne einen Satz dazu waere nicht zu sehen, dass er aus der Zeit
   // davor kommt.
-  const note = (v.vorlauf || 0) > 0 && v.vorlauf_jahr != null
-    ? `<p class="legendennote">Der Balken ${v.vorlauf_jahr} ist der Vorlauf
-       (${eur(v.vorlauf)}): die Zeit vor der ersten Abrechnung${
+  // N335 — der Vorlauf verteilt sich auf die Jahre zwischen Inbetriebnahme und
+  // der ersten Abrechnung, anteilig nach Laufzeit. Der Satz nennt deshalb
+  // alle betroffenen Jahre, nicht mehr nur eines.
+  const vorlaufJahre = (v.jahre || []).filter(j => (j.vorlauf || 0) > 0)
+                                      .map(j => j.jahr);
+  const jahrText = vorlaufJahre.length > 1
+    ? `Die Balken ${vorlaufJahre.slice(0, -1).join(', ')} und ${
+        vorlaufJahre[vorlaufJahre.length - 1]} sind`
+    : `Der Balken ${vorlaufJahre[0] ?? v.vorlauf_jahr} ist`;
+  const note = (v.vorlauf || 0) > 0 && vorlaufJahre.length
+    ? `<p class="legendennote">${jahrText} der Vorlauf
+       (${eur(v.vorlauf)}): die Zeit zwischen Inbetriebnahme und erster
+       Abrechnung, nach Laufzeit auf diese Jahre verteilt${
         v.vorlauf_aufgeschluesselt
-          ? ', nach denselben Quellen aufgeteilt wie die Jahre danach'
+          ? ' und nach denselben Quellen aufgeteilt wie die Jahre danach'
           : ' — die Herkunft ist dort nicht aufgeschlüsselt'}.</p>` : '';
   return `<div class="legende">${eintraege.map(([, attr, text]) =>
     `<span><i ${attr}></i>${text}</span>`).join('')}</div>${note}`;
@@ -210,11 +220,13 @@ function verlaufTabelle(v) {
   // er nicht aufgeschluesselt ist — statt eine Spalte wieder einzufuehren.
   const kopf = ['Jahr', 'PV-Strom', 'Einspeisung', 'E-Tanken',
                 'Summe', 'kumuliert', 'noch offen'];
-  const roherVorlauf = z => z.jahr === v.vorlauf_jahr && (z.vorlauf || 0) > 0
-    && !z.vorlauf_teile;
+  // N335 — der Vorlauf steht nicht mehr nur im ersten Jahr: er verteilt sich
+  // auf die Jahre zwischen Inbetriebnahme und erster Abrechnung. Deshalb hier
+  // je Zeile an ihrem eigenen Vorlauf entschieden, nicht am Jahr.
+  const roherVorlauf = z => (z.vorlauf || 0) > 0 && !z.vorlauf_teile;
   const zelle = (z, feld) => {
     let wert = z[feld] || 0;
-    if (z.jahr === v.vorlauf_jahr) {
+    if ((z.vorlauf || 0) > 0) {
       if (z.vorlauf_teile) wert += z.vorlauf_teile[feld] || 0;
       else if (feld === 'pv_strom') wert += z.vorlauf || 0;
     }
@@ -228,7 +240,7 @@ function verlaufTabelle(v) {
   };
   const summe = feld => v.jahre.reduce((s, z) => s + zelle(z, feld), 0);
   const zeilen = v.jahre.map(z => `<tr>
-      <td>${z.jahr}${z.jahr === v.vorlauf_jahr
+      <td>${z.jahr}${(z.vorlauf || 0) > 0
         ? '<span class="vorab">vor der Abrechnung</span>' : ''}</td>
       <td class="leise">${geld(z, 'pv_strom')}</td>
       <td class="leise">${geld(z, 'einspeisung')}</td>
