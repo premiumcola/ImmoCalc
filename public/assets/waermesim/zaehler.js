@@ -18,39 +18,58 @@ const SPEICHER = 'immocalc.waermesim.zaehler.v1';
    1,938). Wo die Abrechnung ihn nicht preisgibt, steht `null` — dann muss er
    von Hand nach. */
 export const GERAETE = [
-  /* Heizkostenverteiler (Delta-t-Art „2SONT") — messen Einheiten (VE).
+  /* Heizkostenverteiler (Art „2SONT") — messen Einheiten (VE), und
+     Wärmemengenzähler (Art „WMZ") — messen kWh.
 
-     `faktor` ist aus den Abrechnungen gezogen, nicht geschätzt. `belegt` sagt,
-     wie gut: „mehrfach" heisst, derselbe Wert steht in mindestens zwei
-     Abrechnungsjahren (2018/19 gegen 2020/21, 2022/23, 2023/24 geprüft);
-     „2019" heisst, nur die älteste Abrechnung führt ihn auf, weil die neueren
-     nur die Seiten ihres jeweiligen Nutzers enthalten. */
-  { nr: '5057', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL', belegt: 'mehrfach' },
-  { nr: '5058', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL', belegt: 'mehrfach' },
-  { nr: '5059', art: 'hkv', raum: 'Z', faktor: 1.938, war: 'EGL', belegt: 'mehrfach' },
-  { nr: '5065', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR', belegt: 'mehrfach' },
-  { nr: '5066', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR', belegt: 'mehrfach' },
-  { nr: '5067', art: 'hkv', raum: 'K', faktor: 2.407, war: '1GL', belegt: 'mehrfach' },
-  { nr: '5068', art: 'hkv', raum: 'W', faktor: 0.875, war: '1GL', belegt: 'mehrfach' },
-  { nr: '5069', art: 'hkv', raum: '—', faktor: 0.875, war: '1GL', belegt: 'mehrfach' },
-  { nr: '5070', art: 'hkv', raum: 'Z', faktor: 1.193, war: '1GR', belegt: '2019' },
-  { nr: '5071', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR', belegt: '2019' },
-  { nr: '5072', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR', belegt: '2019' },
-  /* Diese sechs gab es 2018/19 noch nicht; in den neueren Abrechnungen liegen
-     nur die Seiten des jeweiligen Empfängers bei, und dort tauchen sie nicht
-     auf. Ihr Faktor steht auf der Ablesequittung bzw. der Einzelabrechnung
-     der Nutzer 0005/0006/0007 hinter dem Ablesewert. */
-  { nr: '5074', art: 'hkv', raum: 'Z', faktor: null, war: 'DG', belegt: '' },
-  { nr: '5075', art: 'hkv', raum: 'S', faktor: null, war: 'DG', belegt: '' },
-  { nr: '5061', art: 'hkv', raum: 'WK', faktor: null, war: 'EG1G', belegt: '' },
-  { nr: '5062', art: 'hkv', raum: 'B', faktor: null, war: 'EG1G', belegt: '' },
-  { nr: '5064', art: 'hkv', raum: 'K', faktor: null, war: 'EG1G', belegt: '' },
-  { nr: '5073', art: 'hkv', raum: 'B/1G', faktor: null, war: 'EG1G', belegt: '' },
-  /* Wärmemengenzähler (Art „WMZ") — messen kWh. Es gibt genau zwei, beide
-     am Anbau; jede andere Einheit hat nur Heizkostenverteiler. Ein Faktor
-     wäre hier sinnlos: der Zähler misst die Energie unmittelbar. */
-  { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau', belegt: '' },
-  { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau', belegt: '' },
+     `faktor` steht in den Ableseformularen von Delta-t (2018, 2020, 2022,
+     2023) und ist dort **in allen vier identisch** — er gehört zum Gerät
+     (Bauart und Grösse des Heizkörpers), nicht zum Jahr.
+
+     `staende` ist der abgelesene Verbrauch der jeweiligen Abrechnungsperiode,
+     soweit die Abrechnungen ihn preisgeben. Lücken sind echt und bleiben
+     Lücken: die neueren PDFs enthalten nur die Seiten ihres Empfängers. Der
+     Verlauf steht am Kärtchen, damit ein fehlender Wert einzuschätzen ist —
+     wer 2019 bis 2023 zwischen 400 und 900 lag, hatte 2024 kaum 20. */
+  { nr: '5057', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL', belegt: 'mehrfach',
+    staende: {2019: 622, 2021: 407, 2023: 715, 2024: 614} },
+  { nr: '5058', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL', belegt: 'mehrfach',
+    staende: {2019: 4, 2021: 223, 2023: 0, 2024: 125} },
+  { nr: '5059', art: 'hkv', raum: 'Z', faktor: 1.938, war: 'EGL', belegt: 'mehrfach',
+    staende: {2019: 603, 2021: 920, 2023: 767, 2024: 879} },
+  { nr: '5061', art: 'hkv', raum: 'WK', faktor: 2.223, war: 'EG1G', belegt: 'mehrfach',
+    staende: {} },
+  { nr: '5062', art: 'hkv', raum: 'B', faktor: 0.928, war: 'EG1G', belegt: 'mehrfach',
+    staende: {} },
+  { nr: '5063', art: 'hkv', raum: 'Flur', faktor: 1.259, war: '—', belegt: 'mehrfach',
+    staende: {} },
+  { nr: '5064', art: 'hkv', raum: 'K', faktor: 0.667, war: 'EG1G', belegt: 'mehrfach',
+    staende: {} },
+  { nr: '5065', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR', belegt: 'mehrfach',
+    staende: {2019: 764, 2021: 415, 2023: 408, 2024: 564} },
+  { nr: '5066', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR', belegt: 'mehrfach',
+    staende: {2019: 964, 2021: 379, 2023: 276, 2024: 224} },
+  { nr: '5067', art: 'hkv', raum: 'K', faktor: 2.407, war: '1GL', belegt: 'mehrfach',
+    staende: {2019: 143, 2021: 215, 2024: 16} },
+  { nr: '5068', art: 'hkv', raum: 'W', faktor: 0.875, war: '1GL', belegt: 'mehrfach',
+    staende: {2019: 376, 2021: 132, 2024: 1} },
+  { nr: '5069', art: 'hkv', raum: '—', faktor: 0.875, war: '1GL', belegt: 'mehrfach',
+    staende: {2019: 9, 2021: 273, 2024: 255} },
+  { nr: '5070', art: 'hkv', raum: 'Z', faktor: 1.193, war: '1GR', belegt: 'mehrfach',
+    staende: {2019: 2} },
+  { nr: '5071', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR', belegt: 'mehrfach',
+    staende: {2019: 463} },
+  { nr: '5072', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR', belegt: 'mehrfach',
+    staende: {2019: 454} },
+  { nr: '5073', art: 'hkv', raum: 'B/1G', faktor: 1.317, war: 'EG1G', belegt: 'mehrfach',
+    staende: {} },
+  { nr: '5074', art: 'hkv', raum: 'Z', faktor: 2.47, war: 'DG', belegt: 'mehrfach',
+    staende: {} },
+  { nr: '5075', art: 'hkv', raum: 'S', faktor: 1.976, war: 'DG', belegt: 'mehrfach',
+    staende: {} },
+  { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau',
+    belegt: '', staende: { 2024: 8210 } },
+  { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau',
+    belegt: '', staende: { 2024: 8996 } },
 ];
 
 /* Die Lanes: die Einheiten der Immobilie plus ein allgemeiner Bereich für

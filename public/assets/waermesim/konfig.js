@@ -24,6 +24,30 @@ function lanes() {
           { id: ALLGEMEIN, titel: 'Allgemein', zusatz: 'Flure, Küche & Bäder' }];
 }
 
+/* N340h — der Verlauf am Kärtchen. Fehlt einmal ein Ablesewert, ist die
+   Frage sofort „was hatte der Heizkörper sonst?" — deshalb stehen die Jahre
+   direkt dort, mit einem kleinen Balken je Wert. Ein Jahr ohne Zahl bleibt
+   sichtbar leer, statt stillschweigend zu fehlen: abgebaute Heizkörper und
+   Lücken in den Unterlagen sollen auffallen. */
+const JAHRE = [2019, 2020, 2021, 2022, 2023, 2024];
+
+function verlaufHtml(g) {
+  const s = g.staende || {};
+  const werte = JAHRE.map(j => s[j]).filter(w => w !== undefined);
+  if (!werte.length) return '';
+  const hoch = Math.max(...werte, 1);
+  return `<span class="wz-verlauf" role="img"
+      aria-label="Verlauf ${JAHRE.map(j => `${j}: ${s[j] ?? 'kein Wert'}`).join(', ')}">
+    ${JAHRE.map(j => {
+      const w = s[j];
+      const h = w === undefined ? 0 : Math.max(2, Math.round(w / hoch * 22));
+      return `<span class="wz-vj${w === undefined ? ' leer' : ''}">
+          <i style="height:${h}px"></i><b>${w === undefined ? '·' : w}</b>
+          <em>'${String(j).slice(2)}</em></span>`;
+    }).join('')}
+  </span>`;
+}
+
 function karte(g) {
   const name = stand.namen[g.nr] || '';
   const faktor = faktorVon(stand, g);
@@ -38,6 +62,7 @@ function karte(g) {
         <span class="wz-meta">${ARTNAME[g.art]} · ${esc(RAUMNAME[g.raum] || g.raum)}
           · früher ${esc(g.war)}${g.belegt
             ? ` · Faktor belegt (${esc(g.belegt)})` : ''}</span>
+        ${verlaufHtml(g)}
       </span>
       ${g.art === 'hkv'
         ? `<span class="wz-faktor"><label>Faktor</label>
