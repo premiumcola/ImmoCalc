@@ -7,7 +7,8 @@
    Speicher-Knopf. Feld-Formatierung (Tausenderpunkte, IBAN, Steuernummer) und
    Auswahlfelder werden hier verdrahtet und beim Schließen wieder gelöst. */
 
-import { esc, api, installHilfe, belegSeitenLaden, zahlAus } from '../immo.js';
+import { esc, api, installHilfe, belegSeitenLaden, zahlAus,
+         fokusAufDenDialog } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { datumwahl } from '../datumwahl.js';
 import { felderFuer, uebernahmeAnbieten } from '../objekt-felder.js?v=2';
@@ -487,6 +488,6 @@ export async function formular(einst) {
   installHilfe(form);
   // Ein zweiter showModal-Aufruf auf einem offenen Dialog wirft — der Wechsel
   // von der Miete zur Erhöhung tauscht nur den Inhalt aus.
-  if (!dlg.open) dlg.showModal();
+  if (!dlg.open) { dlg.showModal(); fokusAufDenDialog(dlg); }
   form.scrollTop = 0;
 }

@@ -479,18 +479,30 @@
      N280 - und zugleich der Weg ins gemeinsame Beleg-Fenster (umbenennen,
      Auslese, blaettern): die ganze Kopfzeile ist der Knopf. */
   .dd-vorschau-kopf{flex:none;padding:0 0 8px;min-width:0}
-  .dd-vgross{display:block;width:100%;min-width:0;overflow:hidden;text-align:left;
-    border:none;background:none;font-family:var(--body);cursor:pointer;
-    padding:6px 2px;border-radius:10px}
-  .dd-vgross:hover{background:var(--paper)}
   .dd-vorschau-kopf .dd-vn{display:block;font:600 13px var(--body);color:var(--ink);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dd-vorschau-kopf .dd-vp{display:block;font:500 10.5px var(--mono);color:var(--soft);
     margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     direction:rtl;text-align:left}
-  .dd-vlupe{display:block;margin-top:5px;font:600 11px var(--disp);
-    letter-spacing:-.01em;color:var(--teal-d)}
-  .dd-vlupe::before{content:"⤢";margin-right:5px}
+  /* N334 — drei echte Knöpfe statt einer Textzeile, die wie drei winzige
+     Verweise aussah. Volle Grösse (44 px hoch), gleiche Form wie die
+     Aktionsknöpfe links, und sie tun ihre Arbeit hier statt in einem
+     zweiten Fenster. */
+  .dd-vwerkzeug{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  .dd-vw{display:inline-flex;align-items:center;gap:7px;min-height:44px;
+    padding:0 13px;border:none;border-radius:12px;background:var(--paper);
+    color:var(--teal-d);font:600 12.5px var(--disp);letter-spacing:-.01em;
+    cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .dd-vw svg{flex:none}
+  .dd-vw:hover{background:var(--line)}
+  .dd-vw.an{background:var(--teal-l);color:var(--teal-d)}
+  /* Die Auslese ist Hintergrundwissen — eingeklappt, kleiner gesetzt, und mit
+     gedeckelter Höhe, damit sie dem Beleg nie den Platz nimmt. Sie trägt
+     zusätzlich `.beleg-ki`, damit Kopfzeile, Satz und Chips genau so aussehen
+     wie im Beleg-Fenster; hier wird nur enger und kleiner gestellt. */
+  .dd-vki{margin-top:9px;max-height:30dvh}
+  .dd-vki.beleg-ki .ki-satz{font-size:12.5px;line-height:1.5}
+  .dd-vki.beleg-ki .ki-chip .kw{font-size:12px}
   .dd-rechts .beleg-flaeche.klickbar{cursor:zoom-in}
   /* N333 — Antippen zoomt den Beleg IN dieser Ansicht auf: die Felder treten
      zur Seite, die Vorschau nimmt das ganze Blatt ein und scrollt durch alle

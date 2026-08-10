@@ -721,6 +721,13 @@ dialog{overscroll-behavior:contain}
 dialog::backdrop{background:rgba(22,38,44,.55); backdrop-filter:blur(2.5px)}
 
 /* ---- Rückfrage im Design der App (immo.js: frage, schiebeFrage) ---- */
+/* N334 — der Dialog nimmt beim Öffnen selbst den Fokus (siehe
+   `fokusAufDenDialog`), damit kein einzelner Knopf mit einem Fokusring
+   dasteht. Der Rahmen um das ganze Fenster wäre dann aber genauso störend:
+   er zeigt keine Auswahl an, sondern nur, wo der Fokus geparkt ist.
+   Betrifft ausschliesslich diesen Fall — `tabindex="-1"` setzen wir nur dort. */
+dialog[tabindex="-1"]:focus{outline:none}
+
 dialog.immo-dlg{
   border:none; border-radius:20px; padding:22px; max-width:400px;
   width:calc(100% - 32px); background:var(--paper); color:var(--ink);

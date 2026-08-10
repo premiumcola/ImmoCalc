@@ -492,6 +492,16 @@ export function melde(text, art = '') {
     feld.setAttribute('aria-live', 'polite');
     document.body.appendChild(feld);
   }
+  // N334 — die Meldung gehört dorthin, wo der Nutzer gerade ist. Ein modaler
+  // <dialog> liegt in der obersten Ebene des Browsers und deckt alles im
+  // normalen Dokument zu, egal welcher z-index dransteht: eine an <body>
+  // hängende Meldung war während eines offenen Dialogs schlicht unsichtbar.
+  // Betraf jede Rückmeldung aus einem Fenster heraus — „Umbenannt in …",
+  // „In … verschoben", jede Fehlermeldung. Deshalb wandert das Feld in den
+  // zuletzt geöffneten Dialog und danach wieder zurück.
+  const dialoge = document.querySelectorAll('dialog[open]');
+  const ziel = dialoge.length ? dialoge[dialoge.length - 1] : document.body;
+  if (feld.parentElement !== ziel) ziel.appendChild(feld);
   feld.className = `melder an ${art}`;
   feld.textContent = text;
   clearTimeout(feld._zeit);
@@ -535,6 +545,24 @@ if (typeof document !== 'undefined') {
   }
 }
 
+/**
+ * N334 — ein Dialog öffnet ohne leuchtenden Rahmen auf irgendeinem Knopf.
+ *
+ * `showModal()` gibt den Fokus an das erste bedienbare Element im Dialog. Das
+ * ist oft das kleine „?" neben der ersten Beschriftung — und weil der Fokus
+ * per Tastatur gesetzt gilt, malt der Browser seinen grünen Fokusring darum.
+ * Der Nutzer sieht einen dauerhaft leuchtenden Ring, der erst beim ersten Tipp
+ * irgendwohin verschwindet, und liest ihn als Zustand („ist das ausgewählt?").
+ *
+ * Der Fokus gehört stattdessen auf den Dialog selbst: die Tastaturbedienung
+ * (Tab, Escape) bleibt vollständig erhalten, nur der Ring startet nirgends.
+ */
+export function fokusAufDenDialog(dlg) {
+  if (!dlg) return;
+  if (!dlg.hasAttribute('tabindex')) dlg.tabIndex = -1;
+  try { dlg.focus({ preventScroll: true }); } catch { /* egal */ }
+}
+
 export function baueDialog(inhalt) {
   const dlg = document.createElement('dialog');
   dlg.className = 'immo-dlg';
@@ -543,6 +571,7 @@ export function baueDialog(inhalt) {
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   dlg.showModal();
+  fokusAufDenDialog(dlg);
   return dlg;
 }
 
@@ -562,12 +591,64 @@ export function baueDialog(inhalt) {
 // N286 — flaches Ordner-Symbol im selben Stil wie die übrigen Inline-SVGs der
 // App (keine Icon-Bibliothek, `currentColor` folgt dem Hover wie beim
 // Umbenennen-Knopf daneben).
-const ORDNER_ICON = `<svg viewBox="0 0 24 24" width="19" height="19"
+export const ORDNER_ICON = `<svg viewBox="0 0 24 24" width="19" height="19"
   style="vertical-align:-4px" aria-hidden="true">
   <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l1.6 1.8h8.8A1.5 1.5 0 0 1 21 8.3v9.2a1.5
     1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"
     fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
 </svg>`;
+
+/**
+ * N334 — Umbenennen und Verschieben, ohne dass dafür ein eigenes Fenster
+ * offen sein muss.
+ *
+ * Beide Wege steckten bisher fest im Beleg-Fenster (`belegAnsehen`). Wer den
+ * Namen korrigieren wollte, musste dafür erst eine zweite Ansicht öffnen — für
+ * zwei Handgriffe, die überall dort hingehören, wo ein Beleg zu sehen ist.
+ * Jetzt sind es zwei Funktionen: sie fragen, führen aus, melden und geben den
+ * neuen Stand zurück (oder `null`, wenn abgebrochen oder gescheitert). Der
+ * Aufrufer schreibt damit seine Kopfzeile fort — mehr braucht es nicht.
+ */
+export async function belegUmbenennen(belegId, titel = 'Beleg') {
+  const gewuenscht = await namenErfragen(titel);
+  if (gewuenscht === null) return null;
+  try {
+    const erg = await api(`/dokumente/${belegId}/name`,
+                          { method: 'PATCH', body: { beschreibung: gewuenscht } });
+    melde(erg.geaendert === false
+      ? 'Der Name war schon so — nichts geändert'
+      : `Umbenannt in „${erg.dateiname || titel}“`, 'pos');
+    return erg;
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    return null;
+  }
+}
+
+export async function belegVerschieben(belegId) {
+  let ziele;
+  try {
+    ziele = await api(`/dokumente/${belegId}/ablageziele`);
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    return null;
+  }
+  const gewaehlt = await ordnerWaehlen(ziele);
+  if (gewaehlt === null) return null;
+  try {
+    const erg = await api(`/dokumente/${belegId}/verschieben`,
+                          { method: 'POST', body: { ordner: gewaehlt } });
+    if (erg.verschoben === false) {
+      melde(erg.hinweis || 'Der Beleg liegt bereits dort.');
+      return null;
+    }
+    melde(`In „${erg.pfad}“ verschoben`, 'pos');
+    return erg;
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    return null;
+  }
+}
 
 export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
                              geschwister = null) {
@@ -630,22 +711,13 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
   // N261 — Umbenennen ohne das Fenster zu verlassen: nach dem Speichern stehen
   // neuer Name und neuer Pfad sofort im Kopf, die Seite wird nicht neu geladen.
   dlg.querySelector('[data-um]')?.addEventListener('click', async () => {
-    const gewuenscht = await namenErfragen(titel);
-    if (gewuenscht === null) return;
-    try {
-      const erg = await api(`/dokumente/${belegId}/name`,
-                            { method: 'PATCH', body: { beschreibung: gewuenscht } });
-      titel = erg.dateiname || titel;
-      pfad = erg.pfad || pfad;
-      dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
-      // Beim Weiterblättern soll der Nachbar-Eintrag den neuen Namen tragen.
-      if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
-      melde(erg.geaendert === false
-        ? 'Der Name war schon so — nichts geändert'
-        : `Umbenannt in „${titel}“`, 'pos');
-    } catch (fehler) {
-      melde(String(fehler.message || fehler), 'neg');
-    }
+    const erg = await belegUmbenennen(belegId, titel);
+    if (!erg) return;
+    titel = erg.dateiname || titel;
+    pfad = erg.pfad || pfad;
+    dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
+    // Beim Weiterblättern soll der Nachbar-Eintrag den neuen Namen tragen.
+    if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
   });
 
   // N286 — Ablageordner von Hand ändern: erst die möglichen Ziele holen, dann
@@ -653,30 +725,12 @@ export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
   // (`_beleg_umziehen`) — kippt die Cloud, bleibt hier bewusst nichts sichtbar
   // geändert, der Nutzer bekommt nur die Fehlermeldung.
   dlg.querySelector('[data-ordner]')?.addEventListener('click', async () => {
-    let ziele;
-    try {
-      ziele = await api(`/dokumente/${belegId}/ablageziele`);
-    } catch (fehler) {
-      melde(String(fehler.message || fehler), 'neg');
-      return;
-    }
-    const gewaehlt = await ordnerWaehlen(ziele);
-    if (gewaehlt === null) return;
-    try {
-      const erg = await api(`/dokumente/${belegId}/verschieben`,
-                            { method: 'POST', body: { ordner: gewaehlt } });
-      if (erg.verschoben === false) {
-        melde(erg.hinweis || 'Der Beleg liegt bereits dort.');
-        return;
-      }
-      titel = erg.dateiname || titel;
-      pfad = erg.pfad || pfad;
-      dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
-      if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
-      melde(`In „${erg.pfad}“ verschoben`, 'pos');
-    } catch (fehler) {
-      melde(String(fehler.message || fehler), 'neg');
-    }
+    const erg = await belegVerschieben(belegId);
+    if (!erg) return;
+    titel = erg.dateiname || titel;
+    pfad = erg.pfad || pfad;
+    dlg.querySelector('.bt').innerHTML = belegKopf(titel, pfad);
+    if (reihe && platz >= 0) Object.assign(reihe[platz], { dateiname: titel, pfad });
   });
 
   // Blättern: dasselbe Fenster für den Nachbarn neu aufbauen. Die Reihe wandert
@@ -906,7 +960,7 @@ export function kiAusleseHtml(w) {
  * Fehler (404, kein Schlüssel, altes Backend): die Vorschau darf nie brechen,
  * dann bleibt der Kasten schlicht weg.
  */
-function kiAusleseZeigen(id, kasten) {
+export function kiAusleseZeigen(id, kasten) {
   if (!id || !kasten) return;
   fetch(`/api/dokumente/${id}/erkennen`)
     .then(a => (a.ok ? a.json() : Promise.reject(new Error('erkennen'))))

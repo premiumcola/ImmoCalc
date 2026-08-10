@@ -6,7 +6,9 @@
    PDF. Ein Beleg antippen tauscht die Vorschau, „Bearbeiten" führt ins
    bewährte Formular. Auf dem Telefon stapelt sich alles. */
 
-import { esc, api, installHilfe, melde, wahl, belegSeitenLaden, belegAnsehen } from '../immo.js';
+import { esc, api, installHilfe, melde, wahl, belegSeitenLaden, belegAnsehen,
+         fokusAufDenDialog, belegUmbenennen, belegVerschieben, kiAusleseZeigen,
+         ORDNER_ICON } from '../immo.js';
 import { kostenIcon } from '../kostenicons.js';
 import { cfgFuer, felderFuer, endpunktBereich } from '../objekt-felder.js?v=2';
 import { feldWertText } from '../objekt-format.js?v=2';
@@ -17,6 +19,18 @@ import { analyseDecke, belegBestaetigen } from '../belegbestaetigung.js';
 import { AN_TYP, RUBRIKFARBE, SCAN_KATEGORIE, SCAN_TYPEN, SCAN_WORT,
          UMKLASS_ZIELE, KAMERA_ICON, kannUmklassifizieren } from './state.js';
 import { scanJahr } from './helpers.js';
+
+/* N334 — Werkzeuge am Beleg, im flachen Stil der uebrigen Symbole. */
+const STIFT_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+
+const FUNKE_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>
+  <path d="M12 8.5 13.4 11 16 12l-2.6 1-1.4 2.5L10.6 13 8 12l2.6-1Z"/></svg>`;
 
 /* N264 — Drucker-Sprite im flachen Stil der uebrigen Symbole. */
 const DRUCKER_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
@@ -280,19 +294,24 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
     dlg.querySelectorAll('.dd-beleg').forEach(b =>
       b.classList.toggle('an', b.dataset.doc === String(docId)));
     if (vorschauKopf) {
-      // N280 — Name und Ablageort stehen wie bisher hier, aber sie sind jetzt
-      // der Griff zum GEMEINSAMEN Beleg-Fenster (`belegAnsehen`). Diese Ansicht
-      // baute Kopfzeile und Seitenanzeige selbst nach — und schnitt sich damit
-      // vom Umbenennen-Stift (N261), von der Auslese-Anzeige und vom Blättern
-      // ab. Die eingebettete Vorschau neben den Daten bleibt (sie ist der
-      // Grund, warum es diese Ansicht gibt); alles Weitere holt sie sich dort,
-      // wo es einmal steht.
-      vorschauKopf.innerHTML = `<button type="button" class="dd-vgross" data-gross>
-          <span class="dd-vn">${esc(name || 'Beleg')}</span>${pfad
-          ? `<span class="dd-vp" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
-              esc(pfad)}</bdi></span>` : ''}
-          <span class="dd-vlupe">Umbenennen · verschieben · Auslese</span>
-        </button>`;
+      // N334 — die Handgriffe am Beleg stehen HIER, nicht in einem zweiten
+      // Fenster. Vorher trug diese Zeile den Text „Umbenennen · verschieben ·
+      // Auslese" — das las sich wie drei winzige Verweise, war aber ein
+      // einziger Knopf, der bloss eine weitere Ansicht öffnete. Jetzt: Name
+      // und Ablageort als ruhige Beschriftung, darunter drei echte Knöpfe mit
+      // voller Grösse. Die Auslese klappt an Ort und Stelle auf, statt die
+      // halbe Vorschau zu verdrängen.
+      vorschauKopf.innerHTML = `
+        <div class="dd-vn">${esc(name || 'Beleg')}</div>${pfad
+        ? `<div class="dd-vp" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
+            esc(pfad)}</bdi></div>` : ''}
+        <div class="dd-vwerkzeug">
+          <button type="button" class="dd-vw" data-um>${STIFT_ICON}<span>Umbenennen</span></button>
+          <button type="button" class="dd-vw" data-ordner>${ORDNER_ICON}<span>Verschieben</span></button>
+          <button type="button" class="dd-vw" data-ki aria-expanded="false"
+            >${FUNKE_ICON}<span>KI-Auslese</span></button>
+        </div>
+        <div class="dd-vki beleg-ki" hidden></div>`;
       vorschauKopf.hidden = false;
     }
     flaeche.classList.add('klickbar');
@@ -385,8 +404,44 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
 
   dlg.addEventListener('click', async e => {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
-    // N280 — die Kopfzeile führt ins gemeinsame Beleg-Fenster: dort stehen
-    // Umbenennen, Verschieben, Auslese und das Blättern zum Nachbarbeleg.
+    // N334 — Umbenennen, Verschieben und die Auslese laufen HIER, ohne ein
+    // zweites Fenster. Nur das Blättern zum Nachbarbeleg blieb dem gemeinsamen
+    // Beleg-Fenster vorbehalten (`grossAnsehen`, s. u.) — dafür gibt es in
+    // dieser Ansicht die Belegliste links.
+    if (e.target.closest('[data-um]') && aktuellerBeleg) {
+      const erg = await belegUmbenennen(aktuellerBeleg.id, aktuellerBeleg.dateiname);
+      if (erg) {
+        aktuellerBeleg.dateiname = erg.dateiname || aktuellerBeleg.dateiname;
+        dlg.querySelector('.dd-vn').textContent = aktuellerBeleg.dateiname;
+        const pfadEl = dlg.querySelector('.dd-vp bdi');
+        if (pfadEl && erg.pfad) pfadEl.textContent = erg.pfad;
+        const eintragEl = dlg.querySelector(`.dd-beleg[data-doc="${aktuellerBeleg.id}"] .dd-bn`);
+        if (eintragEl) eintragEl.textContent = aktuellerBeleg.dateiname;
+      }
+      return;
+    }
+    if (e.target.closest('[data-ordner]') && aktuellerBeleg) {
+      const erg = await belegVerschieben(aktuellerBeleg.id);
+      const pfadEl = dlg.querySelector('.dd-vp bdi');
+      if (erg && pfadEl && erg.pfad) pfadEl.textContent = erg.pfad;
+      return;
+    }
+    // Die Auslese klappt auf und wieder zu — sie ist Hintergrundwissen, nicht
+    // das, weswegen man die Ansicht öffnet. Geladen wird sie erst beim ersten
+    // Aufklappen, danach bleibt sie stehen.
+    const kiKnopf = e.target.closest('[data-ki]');
+    if (kiKnopf && aktuellerBeleg) {
+      const kasten = dlg.querySelector('.dd-vki');
+      const auf = kasten.hidden;
+      kasten.hidden = !auf;
+      kiKnopf.setAttribute('aria-expanded', auf ? 'true' : 'false');
+      kiKnopf.classList.toggle('an', auf);
+      if (auf && !kasten.dataset.geladen) {
+        kasten.dataset.geladen = '1';
+        kiAusleseZeigen(aktuellerBeleg.id, kasten);
+      }
+      return;
+    }
     if (e.target.closest('[data-gross]')) { grossAnsehen(); return; }
     // N333 — die Vorschau selbst antippen zoomt dagegen HIER auf: die Felder
     // treten zur Seite, der Beleg füllt das Blatt und scrollt durch. Nochmal
@@ -482,4 +537,5 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
     }
   });
   dlg.showModal();
+  fokusAufDenDialog(dlg);
 }
