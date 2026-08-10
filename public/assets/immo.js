@@ -198,9 +198,14 @@ export function leerHtml(gross, dazu = '',
     </div>`;
 }
 
-/** Fristklasse fuer die Ampel-Chips: rot ab 30, gelb ab 90 Tagen. */
+/** Fristklasse fuer die Chips — nur zwei Stufen statt drei (N330): eine
+ *  dritte, eigene "rot"-Stufe fuer ueberfaellige Fristen teilte sich die
+ *  Farbe mit dem Cashflow-Minus (Verlust) an anderer Stelle, obwohl beides
+ *  nichts miteinander zu tun hat. "Braucht Aufmerksamkeit" (nah/ueberfaellig)
+ *  und "entspannt" (weit weg) reichen als Unterscheidung — passend zur
+ *  gleichen Zweiteilung wie bei den Wohnungs-/Belege-Chips. */
 export const fristKlasse = tage =>
-  tage == null ? '' : tage < 0 ? 'neg' : tage <= 30 ? 'neg' : tage <= 90 ? 'amber' : 'pos';
+  tage == null ? '' : tage <= 90 ? 'amber' : 'pos';
 
 /* ---- Navigation (CCXVI) -------------------------------------------------
    Die Leiste stand wortgleich in acht Seiten. Jetzt liegt sie einmal hier:
