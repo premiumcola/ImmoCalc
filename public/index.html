@@ -341,7 +341,12 @@ function hierarchie(o) {
 function chips(frist_tage, offen) {
   const teile = [];
   const frist = fristText(frist_tage);
-  if (frist) teile.push(`<span class="chip ${fristKlasse(frist_tage)}">${frist}</span>`);
+  /* N330 — Nutzer: „NK Frist grün will ich gar nicht sehen auf oberster
+     Ebene." Eine weit entfernte, entspannte Frist ist auf der Objektkarte
+     keine Information, die Aufmerksamkeit verdient — nur zeigen, wenn sie
+     tatsächlich in die Amber-Stufe (braucht Aufmerksamkeit) fällt. */
+  if (frist && fristKlasse(frist_tage) === 'amber')
+    teile.push(`<span class="chip amber">${frist}</span>`);
   if (offen > 0)
     teile.push(`<span class="chip amber">${offen} Beleg${offen > 1 ? 'e' : ''} offen</span>`);
   if (!teile.length) teile.push('<span class="chip pos">alles erledigt</span>');
