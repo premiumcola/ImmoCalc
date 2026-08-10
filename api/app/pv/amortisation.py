@@ -12,7 +12,7 @@ from sqlmodel import Session
 from .. import strom
 from ..models import Objekt, PVAnlage
 from .ertrag import (_ertraege_je_jahr, _kategorie_kwh, _kategorien,
-                     _QUELLEN_LEER, _vorlauf_jahr)
+                     _QUELLEN_LEER, _vorlauf_jahr, vorlauf_verteilung)
 from .stammdaten import _anteile_tupel, _stammdaten, _vorlauf
 from .tanken_bridge import _tanken_je_jahr
 
@@ -98,15 +98,40 @@ def verlauf_daten(session: Session, o: Objekt) -> dict:
     # und vermischte sich dort mit dessen echten Erträgen — beim Nutzer stand
     # der Vorsprung aus 2023/24 im ersten Abrechnungsjahr 2025. In Summe und
     # Amortisation zählt er unverändert voll mit, er sitzt nur richtig.
-    vorlauf_jahr = _vorlauf_jahr(session, o.id, quellen) if vorlauf else None
-    if vorlauf_jahr is not None:
-        quellen.setdefault(vorlauf_jahr, dict(_QUELLEN_LEER))
-    spanne = range(min(quellen), max(quellen) + 1) if quellen else range(0)
+    # N335 — und er verteilt sich über die Zeit, in der die Anlage lief, bevor
+    # eine Abrechnung sie erfasste: anteilig nach Monaten (siehe
+    # `vorlauf_verteilung`). Vorher lag alles als Klumpen im Jahr vor der ersten
+    # *Objekt*-Abrechnung — beim Nutzer 2018, fünf Jahre bevor es die Anlage
+    # überhaupt gab, mit sieben leeren Zeilen davor.
+    anlage = _stammdaten(session, o.id)
+    fallback = _vorlauf_jahr(session, o.id, quellen)
+    verteilung = (vorlauf_verteilung(anlage.inbetriebnahme, quellen, fallback)
+                  if vorlauf else {})
+    for jahr in verteilung:
+        quellen.setdefault(jahr, dict(_QUELLEN_LEER))
+    # Vor der Inbetriebnahme gab es die Anlage nicht — dort gehört auch keine
+    # Zeile hin, auch wenn das Objekt schon länger abrechnet.
+    ab = anlage.inbetriebnahme.year if anlage.inbetriebnahme else None
+    jahre_roh = [j for j in quellen if ab is None or j >= ab]
+    spanne = (range(min(jahre_roh), max(jahre_roh) + 1) if jahre_roh else range(0))
     roh = [{"jahr": j, **quellen.get(j, _QUELLEN_LEER)} for j in spanne]
+    # Rundungsreste sammeln sich beim letzten Anteil, damit die Summe der
+    # Zeilen exakt dem gepflegten Vorlauf entspricht.
+    verteilt = 0.0
+    letztes_vorlaufjahr = max(verteilung) if verteilung else None
     for z in roh:
-        eigenes = z["jahr"] == vorlauf_jahr
-        z["vorlauf"] = round(vorlauf, 2) if eigenes else 0.0
-        z["vorlauf_teile"] = vorlauf_teile if eigenes else None
+        anteil = verteilung.get(z["jahr"], 0.0)
+        if not anteil:
+            z["vorlauf"], z["vorlauf_teile"] = 0.0, None
+            continue
+        betrag = (round(vorlauf - verteilt, 2) if z["jahr"] == letztes_vorlaufjahr
+                  else round(vorlauf * anteil, 2))
+        verteilt = round(verteilt + betrag, 2)
+        z["vorlauf"] = betrag
+        z["vorlauf_teile"] = ({k: round(v * anteil, 2)
+                               for k, v in vorlauf_teile.items()}
+                              if vorlauf_teile else None)
+    vorlauf_jahr = min(verteilung) if verteilung else None
 
     a = strom.amortisation(
         [{"jahr": z["jahr"],

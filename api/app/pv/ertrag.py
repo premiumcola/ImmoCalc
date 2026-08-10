@@ -200,3 +200,58 @@ def _vorlauf_jahr(session: Session, objekt_id: int,
     gibt es gar nichts, gibt es auch keine Zeile."""
     jahre = _abrechnungsjahre(session, objekt_id) or list(quellen)
     return min(jahre) - 1 if jahre else None
+
+
+def erstes_ertragsjahr(quellen: dict[int, dict]) -> int | None:
+    """Das erste Jahr, in dem die Anlage wirklich etwas eingebracht hat.
+
+    Nicht dasselbe wie das erste Abrechnungsjahr: die Immobilie rechnet seit
+    Jahren ab, die Anlage steht erst seit 2023. Genau daran hing der Fund N335 —
+    der Vorlauf landete im Jahr vor der ersten *Objekt*-Abrechnung (2018),
+    Jahre bevor es die Anlage gab."""
+    mit = [j for j, w in sorted(quellen.items())
+           if round(w.get("pv_strom", 0.0) + w.get("einspeisung", 0.0)
+                    + w.get("tanken", 0.0), 2) > 0]
+    return mit[0] if mit else None
+
+
+def vorlauf_verteilung(inbetriebnahme, quellen: dict[int, dict],
+                       fallback_jahr: int | None) -> dict[int, float]:
+    """N335 — auf welche Jahre sich der Vorlauf verteilt, und mit welchem Anteil.
+
+    Der Vorlauf ist, was die Anlage abgetragen hat, BEVOR die erste
+    Abrechnung sie erfasste. Er gehört damit genau in die Zeit zwischen
+    Inbetriebnahme und dem ersten Ertragsjahr — und dort anteilig nach der
+    Laufzeit, nicht als Klumpen auf ein einzelnes Jahr.
+
+    Beim Nutzer: Inbetriebnahme 30.06.2023, erste vollständige Abrechnung 2025.
+    2023 lief die Anlage ein halbes Jahr, 2024 ganz — Gewichte 0,5 und 1,0,
+    also **ein Drittel auf 2023 und zwei Drittel auf 2024**. Genau so hat er es
+    beschrieben; die Zahlen fallen aus dem Datum, sie stehen nirgends fest.
+
+    Ohne Inbetriebnahmedatum bleibt es beim bisherigen Verhalten: alles auf
+    `fallback_jahr` (das Jahr vor der ersten Abrechnung, N153b).
+    """
+    if inbetriebnahme is None:
+        return {fallback_jahr: 1.0} if fallback_jahr is not None else {}
+    bis = erstes_ertragsjahr(quellen)
+    letztes = (bis - 1) if bis else inbetriebnahme.year
+    if letztes < inbetriebnahme.year:
+        # Die Anlage trug schon im ersten Ertragsjahr bei — dann gibt es keine
+        # Zeit davor, und der Vorlauf steht im Jahr der Inbetriebnahme.
+        letztes = inbetriebnahme.year
+    gewichte: dict[int, float] = {}
+    for jahr in range(inbetriebnahme.year, letztes + 1):
+        # Anteil des Jahres, in dem die Anlage lief. Der Monat der
+        # Inbetriebnahme zählt mit, wenn sie in seiner ersten Hälfte ans Netz
+        # ging — sonst nicht. Auf den Tag genau zu rechnen wäre Scheingenauig-
+        # keit: der Vorlauf ist selbst eine Schätzung des Nutzers.
+        monate = 12
+        if jahr == inbetriebnahme.year:
+            monate = 12 - inbetriebnahme.month + (1 if inbetriebnahme.day <= 15 else 0)
+        if monate > 0:
+            gewichte[jahr] = monate / 12
+    summe = sum(gewichte.values())
+    if not summe:
+        return {inbetriebnahme.year: 1.0}
+    return {j: g / summe for j, g in gewichte.items()}
