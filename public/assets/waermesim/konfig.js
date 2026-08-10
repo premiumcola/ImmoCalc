@@ -91,7 +91,7 @@ function zeichne() {
       <div class="wz-liste">${frei.map(karte).join('') ||
         '<p class="wz-leer">Alle Zähler liegen auf einer Einheit.</p>'}</div>
     </div>
-    ${lanes().map(l => {
+    <div class="wz-lanes">${lanes().map(l => {
       const drin = GERAETE.filter(g => stand.zuordnung[g.nr] === l.id);
       const hkv = drin.filter(g => g.art === 'hkv').length;
       const wmz = drin.filter(g => g.art === 'wmz').length;
@@ -102,7 +102,7 @@ function zeichne() {
             drin.length ? '' : 'leer'}</span></h3>
         <div class="wz-liste">${drin.map(karte).join('')}</div>
       </div>`;
-    }).join('')}`;
+    }).join('')}</div>`;
 }
 
 function ablegen(nr, lane) {

@@ -48,7 +48,8 @@
   /* Der Jahresverlauf: ein Balken je Jahr, darunter Wert und Kurzjahr.
      Fehlende Jahre bleiben als blasse Spalte stehen — eine Lücke soll man
      sehen, nicht übersehen. */
-  .wz-verlauf{display:flex;gap:5px;align-items:flex-end;margin-top:6px}
+  .wz-verlauf{display:flex;gap:4px;align-items:flex-end;margin-top:5px;
+    max-width:210px}
   .wz-vj{display:flex;flex-direction:column;align-items:center;gap:1px;flex:1;
     min-width:0}
   .wz-vj i{display:block;width:100%;max-width:26px;border-radius:3px 3px 0 0;
@@ -64,8 +65,29 @@
     border-radius:9px;background:var(--sheet);padding:8px;min-height:40px;
     text-align:right;font:600 16px var(--mono);color:var(--ink)}
   .wz-faktor.kwh{font:600 11px var(--mono);color:var(--soft);align-self:center}
-  @media (min-width:760px){
-    .wz-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+  /* N340i — am Rechner wird gearbeitet, nicht getippt: die Seite nutzt die
+     ganze Breite, die Lanes stehen nebeneinander statt untereinander, und die
+     Kärtchen werden schmaler statt länger. So sieht man alle Einheiten und den
+     Vorrat gleichzeitig — beim Zuordnen ist genau das der Punkt. */
+  @media (min-width:900px){
+    .scroll .wrap{max-width:1500px}
+    .wz-kopf{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+    .wz-kopf h2{margin:0}
+    .wz-kopf p{margin:0;flex:1;min-width:280px}
+    /* Vorrat links, Einheiten rechts daneben — der Weg des Kärtchens ist damit
+       kurz und in einem Blickfeld. */
+    #inhalt{display:grid;grid-template-columns:minmax(420px,460px) 1fr;
+      gap:16px;align-items:start}
+    .wz-kopf{grid-column:1/-1}
+    .wz-frei{position:sticky;top:8px;max-height:calc(100dvh - 120px);
+      overflow:auto;margin-bottom:0}
+    .wz-lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+      gap:12px;align-content:start}
+    .wz-lane{margin-bottom:0}
+    .wz-liste{gap:7px}
+  }
+  @media (min-width:1600px){
+    #inhalt{grid-template-columns:minmax(460px,520px) 1fr}
   }
 </style>
 </head>
