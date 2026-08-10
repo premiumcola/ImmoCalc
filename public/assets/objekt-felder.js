@@ -337,7 +337,12 @@ const ERWERB = {
     { k: 'notiz', l: 'Notiz', typ: 'text' },
   ],
   name: e => e.art || 'Erwerbsnebenkosten',
-  detail: e => [e.jahr, e.notiz].filter(Boolean).join(' · '),
+  // N338 — das Jahr steht seit der Zeitachse links am Punkt; hier noch einmal
+  // wäre dieselbe Angabe zweimal. Nur ohne ableitbaren Zeitpunkt (weder
+  // Belegdatum noch Beleg mit datiertem Namen) springt es ein, damit die Zeile
+  // nicht ganz ohne zeitliche Einordnung dasteht.
+  detail: e => (e.datum ? e.notiz
+                        : [e.jahr, e.notiz].filter(Boolean).join(' · ')),
   wert: e => eurVoll(e.betrag || 0),
 };
 // N331c — wie ERWERB oben: Grundschulden haben keinen BEREICHE-Eintrag (eigene

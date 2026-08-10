@@ -892,7 +892,12 @@ function ordnerWaehlen(daten) {
        <div class="sb-fuss" style="margin-top:14px">
          <button type="button" class="sb-weiter" data-ok>Verschieben</button>
        </div>`);
-    dlg.classList.add('scanbest-dlg');
+    // N337 — `ordner-dlg` hebt die Beschneidung auf: ein <dialog> hat von
+    // Haus aus `overflow:auto`, und die aufgeklappte Liste ist ein absolut
+    // positioniertes Element darin. Sie wurde deshalb an der Fensterkante
+    // abgeschnitten — von neun Ordnern waren drei zu sehen, egal wie viel
+    // Platz darunter frei war.
+    dlg.classList.add('scanbest-dlg', 'ordner-dlg');
 
     let entschieden = false;
     const schliessen = (wert) => {
