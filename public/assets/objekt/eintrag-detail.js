@@ -291,7 +291,7 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
           <span class="dd-vn">${esc(name || 'Beleg')}</span>${pfad
           ? `<span class="dd-vp" title="Ablageort in der Nextcloud"><bdi dir="ltr">${
               esc(pfad)}</bdi></span>` : ''}
-          <span class="dd-vlupe">Groß ansehen · umbenennen</span>
+          <span class="dd-vlupe">Umbenennen · verschieben · Auslese</span>
         </button>`;
       vorschauKopf.hidden = false;
     }
@@ -385,11 +385,15 @@ export async function eintragDetail(bereich, id, laden, zeigeDocId = null) {
 
   dlg.addEventListener('click', async e => {
     if (e.target === dlg || e.target.closest('[data-zu]')) { dlg.close(); return; }
-    // N280 — Kopfzeile ODER die Vorschau selbst antippen führt ins gemeinsame
-    // Beleg-Fenster: dort stehen Name, Ablageort, Auslese und der Stift.
-    if (e.target.closest('[data-gross]')
-        || (aktuellerBeleg && e.target.closest('.dd-rechts .beleg-flaeche'))) {
-      grossAnsehen();
+    // N280 — die Kopfzeile führt ins gemeinsame Beleg-Fenster: dort stehen
+    // Umbenennen, Verschieben, Auslese und das Blättern zum Nachbarbeleg.
+    if (e.target.closest('[data-gross]')) { grossAnsehen(); return; }
+    // N333 — die Vorschau selbst antippen zoomt dagegen HIER auf: die Felder
+    // treten zur Seite, der Beleg füllt das Blatt und scrollt durch. Nochmal
+    // antippen holt die Felder zurück. Kein drittes Fenster mehr für den
+    // häufigsten Wunsch („einmal genauer hinsehen").
+    if (aktuellerBeleg && e.target.closest('.dd-rechts .beleg-flaeche')) {
+      dlg.querySelector('.dd-body')?.classList.toggle('zoom');
       return;
     }
     const scanBtn = e.target.closest('[data-scan]');

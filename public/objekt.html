@@ -492,10 +492,20 @@
     letter-spacing:-.01em;color:var(--teal-d)}
   .dd-vlupe::before{content:"⤢";margin-right:5px}
   .dd-rechts .beleg-flaeche.klickbar{cursor:zoom-in}
+  /* N333 — Antippen zoomt den Beleg IN dieser Ansicht auf: die Felder treten
+     zur Seite, die Vorschau nimmt das ganze Blatt ein und scrollt durch alle
+     Seiten. Vorher öffnete derselbe Tipp ein drittes, eigenes Fenster — der
+     Nutzer sprang für einen genaueren Blick aus seiner Ansicht heraus. */
+  .dd-body.zoom{overflow:hidden}
+  .dd-body.zoom .dd-links{display:none}
+  .dd-body.zoom .dd-rechts{flex:1;min-height:0;padding:12px 14px 14px}
+  .dd-body.zoom .dd-rechts .beleg-flaeche{cursor:zoom-out;padding:8px}
+  .dd-body.zoom .dd-rechts .beleg-bild{width:100%}
   @media (min-width:760px){
     .dd-body{flex-direction:row}
     .dd-links{width:340px;overflow:auto;border-right:1px solid var(--line)}
     .dd-rechts{padding:18px}
+    .dd-body.zoom .dd-rechts{padding:18px}
   }
 
   /* CCCIV — Rubrik-Symbol in der Überschrift, in der Farbe der Rubrik */
