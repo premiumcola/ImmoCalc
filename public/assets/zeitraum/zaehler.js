@@ -171,17 +171,15 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
           _isoKurz(datum)}">${note}</span></div></div>`;
 
   // N120 — Jahreswert: ein Feld, kein Datum.
+  // N341 — kompakt: ohne eigene Label-Zeile und ohne „kein Zählerstand"-Text,
+  // damit Name, Nummer, Stift und Eingabe in EINE Zeile passen. Auf dem
+  // iPhone kostete jede Karte sonst über 100 px Höhe, bei 24 Zählern eine
+  // endlose Liste.
   const jahresFeld = bearbeitbar
-    ? `<div class="zu-feld"><label>Jahreswert</label>
-        <div class="zu-paar">
-          <input type="text" inputmode="decimal" data-strom-jahr="${z.id}"
-            value="${endStand}" placeholder="${eh}"
-            aria-label="Jahresverbrauch ${esc(z.name)} in ${eh}">
-          <span class="zu-dat">kein Zählerstand</span>
-        </div></div>`
-    : `<div class="zu-feld"><label>Jahreswert</label>
-        <div class="zu-paar"><span class="zu-anf">${endStand
-          ? `${endStand}&nbsp;${eh}` : '—'}</span></div></div>`;
+    ? `<input class="zu-jahr" type="text" inputmode="decimal" data-strom-jahr="${z.id}"
+        value="${endStand}" placeholder="${eh}"
+        aria-label="Jahresverbrauch ${esc(z.name)} in ${eh}">`
+    : `<span class="zu-anf">${endStand ? `${endStand}&nbsp;${eh}` : '—'}</span>`;
 
   const startFeld = (rest || direkt) ? ''
     : (ausVorperiode
@@ -203,17 +201,19 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
     || (z.verbrauch != null ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—');
   return `<div class="zu-zeile${fertig && !verbText ? ' fertig' : ''}${
       minus ? ' minus' : ''}${rest ? ' rest' : ''}${
+      direkt ? ' knapp' : ''}${
       verbText ? ' unplausibel' : ''}" data-zid="${z.id}">
     <div class="zu-haupt">
       ${minus ? '<span class="zu-op" aria-hidden="true">−</span>' : ''}
-      <span class="zu-name">${esc(label || state.zLabels.get(z.id) || z.name)}${
+      <span class="zu-name"><span class="zu-nametxt">${
+        esc(label || state.zLabels.get(z.id) || z.name)}</span>${
         z.zaehlernummer ? `<span class="zu-nr">Nr. ${esc(z.zaehlernummer)}</span>` : ''}${
         bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
           title="Zähler umbenennen" aria-label="Zähler „${esc(z.name)}“ umbenennen"
           >${STIFT_ICON}</button>` : ''}</span>
       ${startFeld}${endFeld}
-      <span class="zu-verb">${rest ? '<small>berechnet</small> '
-        : (eauto ? '<small>gezogen</small> ' : '')}${verb}</span>
+      ${direkt ? '' : `<span class="zu-verb">${rest ? '<small>berechnet</small> '
+        : (eauto ? '<small>gezogen</small> ' : '')}${verb}</span>`}
     </div>
     ${rechnung}${datumKnopf}
     ${eauto ? eautoInfoHtml()

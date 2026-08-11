@@ -225,6 +225,27 @@ export async function zaehlerKonfig() {
     return BEREICHE.map(b => [b, nach.get(b) || []]).filter(([, l]) => l.length);
   }
 
+  /* N341 — innerhalb einer Kategorie noch einmal nach Einheit gruppieren:
+     der Nutzer will sehen, welche Zähler auf welcher Wohnung liegen, statt
+     die Zuordnung in jeder Karte einzeln nachzulesen. Tippt er den Chip in
+     einer Karte um, wandert sie sichtbar unter die andere Einheit. */
+  function nachEinheit(eintraege) {
+    const nach = new Map();
+    for (const [z, i] of eintraege) {
+      const k = z.einheit_bezug || '';
+      if (!nach.has(k)) nach.set(k, []);
+      nach.get(k).push([z, i]);
+    }
+    // Echte Einheiten in der Reihenfolge des Objekts, „Allgemein" zuletzt.
+    const sortiert = [...nach.keys()].sort((a, b) => {
+      if (a === '') return 1;
+      if (b === '') return -1;
+      const ord = alleEinheiten();
+      return (ord.indexOf(a) + 1 || 99) - (ord.indexOf(b) + 1 || 99);
+    });
+    return sortiert.map(k => [k || 'Allgemein', nach.get(k)]);
+  }
+
   function render() {
     // N231 — jedes `render()` ersetzt das komplette innerHTML; ohne das hier
     // sprang die lange Liste bei jeder Änderung (Verrechnung, Zähler
@@ -234,7 +255,10 @@ export async function zaehlerKonfig() {
     const liste = meters.length
       ? gruppiert().map(([name, eintraege]) => `
           <div class="zk-chip">${esc(name)}<span>${eintraege.length}</span></div>
-          <div class="zk-liste">${eintraege.map(([z, i]) => karte(z, i)).join('')}</div>`).join('')
+          ${nachEinheit(eintraege).map(([eh, liste]) => `
+            <div class="zk-ehkopf">${esc(eh)}<span>${liste.length}</span></div>
+            <div class="zk-liste eingerueckt">${
+              liste.map(([z, i]) => karte(z, i)).join('')}</div>`).join('')}`).join('')
       : `<div class="zk-leer">Noch keine Zähler für diese Immobilie. Lege den
           ersten an — Gesamtzähler, Unterzähler je Einheit und, wenn nötig, einen
           berechneten Rest.</div>`;

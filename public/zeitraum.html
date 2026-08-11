@@ -197,6 +197,18 @@
   .zk-feld.voll{grid-column:1 / -1}
   /* N340z — die Einheiten-Zuordnung als antippbare Chips statt Dropdown,
      dieselbe Optik wie `.zu-eh` in der Ablese-Eingabe. */
+  /* N341 — Einheiten-Zwischenüberschrift im Konfigurator; die Zähler stehen
+     sichtbar eingerückt darunter. */
+  .zk-ehkopf{display:flex;align-items:center;gap:7px;margin:10px 0 5px 2px;
+    font:700 11.5px var(--disp);color:var(--ink)}
+  .zk-ehkopf span{font:600 9.5px var(--mono);color:var(--soft)}
+  .zk-liste.eingerueckt{margin-left:6px;padding-left:8px;
+    border-left:2px solid var(--line)}
+  /* Eingerückt bleibt weniger Breite — die Werkzeuge treten zurück, damit
+     der Zählername lesbar bleibt (er ist das, wonach man sucht). */
+  .zk-liste.eingerueckt .zk-ic{width:32px;height:32px;min-width:32px}
+  .zk-liste.eingerueckt .zk-karte{padding:9px 9px 4px}
+  .zk-liste.eingerueckt .zk-kopf{gap:5px}
   .zk-ehchips{display:flex;flex-wrap:wrap;gap:6px}
   .zk-eh{min-height:38px;padding:6px 13px;border-radius:999px;
     border:1.5px solid var(--line);background:var(--sheet);color:var(--soft);
@@ -712,7 +724,23 @@
      der Ablese-Eingabe, nicht im Zähler-Konfigurator — da geht es um die
      Einheit, nicht um den Wert. */
   .zu-verlauf{display:flex;gap:4px;align-items:flex-end;margin-top:8px;
-    padding-top:7px;border-top:1px dashed var(--line);max-width:230px}
+    padding-top:7px;border-top:1px dashed var(--line);width:100%}
+  /* N341 — Jahreswert-Zähler: alles in EINE Zeile (Name · Nr. · Stift ·
+     Eingabe), darunter nur der Verlauf. Auf dem iPhone sparte das je Karte
+     über die Hälfte der Höhe — bei 24 Zählern der Unterschied zwischen
+     scrollbar und endlos. */
+  .zu-zeile.knapp{padding:7px 10px;margin-bottom:5px}
+  .zu-zeile.knapp .zu-haupt{flex-wrap:nowrap;align-items:center;gap:8px}
+  /* Nur der NAME schrumpft; Nummer und Stift bleiben immer vollständig
+     sichtbar (sonst frisst ein langer Name den Stift weg). */
+  .zu-zeile.knapp .zu-name{font:600 12px var(--body);min-width:0;
+    display:flex;align-items:center;gap:4px;white-space:nowrap}
+  .zu-zeile.knapp .zu-nametxt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .zu-zeile.knapp .zu-nr,.zu-zeile.knapp .zu-um{flex:none}
+  .zu-jahr{flex:none;width:96px;box-sizing:border-box;border:1.5px solid var(--line);
+    border-radius:9px;padding:8px 9px;font:600 12px var(--mono);min-height:40px;
+    background:var(--sheet);color:var(--ink);text-align:right}
+  .zu-jahr:focus{outline:none;border-color:var(--teal)}
   .zu-vj{display:flex;flex-direction:column;align-items:center;gap:1px;flex:1;
     min-width:0}
   .zu-vj i{display:block;width:100%;max-width:26px;border-radius:3px 3px 0 0;
