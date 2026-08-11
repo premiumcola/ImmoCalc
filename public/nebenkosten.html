@@ -231,16 +231,25 @@ function kpiFeld(label, wert, klasse = '') {
    Solange nichts umgelegt ist, gibt es keine dritte Zahl: „Guthaben in Höhe
    aller Vorauszahlungen“ wäre ein falscher Schluss aus einem Jahr, dessen
    Belege noch gar nicht da sind. */
-function kopfHtml(daten, jahr) {
+// N340s — der Wärmemengenzähler-Simulator ersetzt (probeweise) die Delta-t-
+// Rechnung für die Laufer Str. 5. Nur dort verlinkt, nicht eingebettet: die
+// volle Simulationsansicht braucht in der Nebenkostenabrechnung niemand, nur
+// der Weg dorthin.
+const SIMULATOR_OBJEKTE = { 'eschenau-laufer-str-5': 'waermesim.html' };
+
+function kopfHtml(daten, jahr, objekt) {
   const vz = daten.gesamt.vorauszahlungen || 0;
   // mieter.summe ist die Summe des Jahres, ungefiltert — anders als
   // gesamt.ausgaben, das dem Kostenart-Filter folgt. Die drei Zahlen hier
   // gehören zum Abrechnungsjahr und dürfen sich mit den Schaltern darunter
   // nicht verändern (siehe Begründung am Filter).
   const umlage = daten.mieter.summe || 0;
+  const simLink = SIMULATOR_OBJEKTE[objekt];
   const grenze = `<p class="grenze">Kredit, Steuer und Versicherung trägt der
     Eigentümer — sie stehen unter
-    <a href="wertentwicklung.html">Wert &amp; Cashflow</a>.</p>`;
+    <a href="wertentwicklung.html">Wert &amp; Cashflow</a>.${simLink
+      ? ` Heizkosten-Simulator (Delta-t-Nachbau) unter
+          <a href="${simLink}">Wärme-Simulation</a>.` : ''}</p>`;
 
   if (!umlage) {
     return `<p class="grenze">Für ${jahr} ist noch nichts umgelegt${
@@ -455,7 +464,7 @@ async function zeichnen() {
     for (const k of fluss.knoten) k.name = gefiltertName[k.name] || k.name;
   }
 
-  kopf.innerHTML = kopfHtml(daten, jahr);
+  kopf.innerHTML = kopfHtml(daten, jahr, objekt);
   inhalt.innerHTML = `
     <div class="karte">
       <h3>Umlagefähige Kosten ${jahr}${merker}</h3>
