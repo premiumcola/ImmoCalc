@@ -9,7 +9,7 @@
 
 import { api, esc, eur } from '../immo.js';
 import { ALLGEMEIN, GERAETE, faktorVon, lade as ladeZaehlerstand } from './zaehler.js';
-import { JAHRE_ABSTEIGEND, JAHRESDATEN } from './jahre.js';
+import { JAHRE_ABSTEIGEND, JAHRESDATEN, QUELLEN } from './jahre.js';
 
 let stand = null;   // der Zähler-/Zuordnungsstand (dieselbe Quelle wie konfig.js)
 let gewaehltesJahr = JAHRE_ABSTEIGEND[0];
@@ -76,6 +76,33 @@ function vorjahrVon(jahr) {
   return kleinere.length ? kleinere[0] : null;
 }
 
+/* N340o/N340r — Nachweis: der Link auf die echte(n) Delta-t-PDF(s), aus
+   denen die Zahlen dieses Jahres stammen. Ohne diesen Link bliebe die
+   Simulationsbasis eine Behauptung; mit ihm lässt sich jede Zahl gegen das
+   Original halten. */
+function quellenHtml(jahr) {
+  const quellen = QUELLEN[jahr];
+  if (!quellen || !quellen.length) return '';
+  return `<p class="wsim-quelle">Quelle: ${quellen.map(q =>
+    `<a href="/api/dokumente/${q.id}/inhalt" target="_blank" rel="noopener">${esc(q.label)}</a>`
+  ).join(' · ')}</p>`;
+}
+
+function alleQuellenHtml() {
+  const jahre = Object.keys(QUELLEN).map(Number).sort((a, b) => b - a);
+  return `<details class="wsim-alleq">
+      <summary>Alle Delta-t-Gesamtabrechnungen in der Ablage (${
+        jahre.reduce((n, j) => n + QUELLEN[j].length, 0)} Dokumente, ${jahre.length} Zeiträume)</summary>
+      <ul>${jahre.map(j => `<li><b>${j}</b> — ${
+          QUELLEN[j].map(q => `<a href="/api/dokumente/${q.id}/inhalt"
+            target="_blank" rel="noopener">${esc(q.label)}</a>`).join(' · ')}
+          ${JAHRESDATEN[j] ? '' : ' <span class="wsim-nochoffen">(Zahlen noch nicht erfasst)</span>'}</li>`).join('')}
+        <li class="wsim-luecke">2019/20 und 2021/22 — keine vollständige
+          Gesamtabrechnung in der Ablage gefunden.</li>
+      </ul>
+    </details>`;
+}
+
 function jahrWaehlerHtml() {
   return `<div class="wsim-jahre">${JAHRE_ABSTEIGEND.map(j =>
     `<button type="button" class="wsim-jahrknopf${j === gewaehltesJahr ? ' an' : ''}"
@@ -132,6 +159,7 @@ async function zeichneSimulation() {
 
   wurzel.innerHTML = `
     ${sollHtml}
+    ${quellenHtml(gewaehltesJahr)}
     <div class="wsim-tabelle">
       <div class="wsim-kopf">
         <span></span><span>${vjJahr ? `${vjJahr - 1}/${String(vjJahr).slice(2)}` : 'Vorjahr'}</span>
@@ -235,7 +263,8 @@ export async function simulationEinbauen(aktuellerStand) {
     <p class="wsim-hinweis">Rechnet dieselbe Aufstellung wie Delta-t, aus den
       Zählerständen oben. ${jahrWaehlerHtml()}</p>
     <div id="wsim-inhalt"></div>
-    <div id="wsim-ww"></div>`;
+    <div id="wsim-ww"></div>
+    ${alleQuellenHtml()}`;
   seite.appendChild(block);
   block.querySelector('.wsim-jahre').addEventListener('click', e => {
     const knopf = e.target.closest('[data-jahr]');

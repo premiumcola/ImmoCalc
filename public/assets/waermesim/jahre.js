@@ -82,3 +82,25 @@ export const JAHRESDATEN = {
 };
 
 export const JAHRE_ABSTEIGEND = Object.keys(JAHRESDATEN).map(Number).sort((a, b) => b - a);
+
+/* N340o/N340r — die echten Delta-t-Gesamtabrechnungen aus der Nextcloud, neu
+   einsortiert und umbenannt (waren teils unter „Gebäudehaftpflicht" oder
+   „Korrespondenz" falsch abgelegt). Jahr = Ende der Abrechnungsperiode, wie
+   überall sonst hier. Reine Belege — keiner davon liefert eigene Zahlen, die
+   stehen in `JAHRESDATEN`; hier steht nur, WO man sie nachlesen kann.
+   2020 und 2022 fehlen: keine vollständige Gesamtabrechnung in der Ablage. */
+export const QUELLEN = {
+  2014: [{ id: 142, label: 'Gesamtabrechnung 01.10.–31.12.2014 (Rumpf)' }],
+  2015: [{ id: 149, label: 'Gesamtabrechnung 2015 (Kalenderjahr)' }],
+  2016: [{ id: 164, label: 'Gesamtabrechnung 01.01.–30.09.2016 (Rumpf)' }],
+  2017: [{ id: 182, label: 'Gesamtabrechnung 2016/17' }],
+  2018: [{ id: 194, label: 'Gesamtabrechnung 2017/18' }],
+  2019: [
+    { id: 209, label: 'Gesamtabrechnung 2018/19 (Original)' },
+    { id: 210, label: 'Gesamtabrechnung 2018/19 (Update 1)' },
+    { id: 211, label: 'Gesamtabrechnung 2018/19 (Update 2 — massgeblich)' },
+  ],
+  2021: [{ id: 226, label: 'Gesamtabrechnung 2020/21' }],
+  2023: [{ id: 249, label: 'Gesamtabrechnung 2022/23' }],
+  2024: [{ id: 256, label: 'Gesamtabrechnung 2023/24' }],
+};

@@ -29,8 +29,13 @@ function lanes() {
    Frage sofort „was hatte der Heizkörper sonst?" — deshalb stehen die Jahre
    direkt dort, mit einem kleinen Balken je Wert. Ein Jahr ohne Zahl bleibt
    sichtbar leer, statt stillschweigend zu fehlen: abgebaute Heizkörper und
-   Lücken in den Unterlagen sollen auffallen. */
-const JAHRE = [2019, 2020, 2021, 2022, 2023, 2024];
+   Lücken in den Unterlagen sollen auffallen.
+
+   N340s — bewusst nur die letzten fünf Jahre, nicht die ganze Historie: es
+   geht um die Einschätzung, ob ein aktueller Wert hoch oder niedrig ist —
+   dafür reicht der jüngste Verlauf, mehr Jahre wären nur Rauschen am
+   Kärtchen. */
+const JAHRE = [2020, 2021, 2022, 2023, 2024];
 
 function verlaufHtml(g) {
   const s = g.staende || {};
