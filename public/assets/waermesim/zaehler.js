@@ -75,25 +75,28 @@ export const GERAETE = [
     belegt: 'mehrfach', staende: {2021: 87, 2022: 183, 2023: 18, 2024: 31} },
   { nr: '5075', art: 'hkv', raum: 'S', faktor: 1.976, war: 'DG',
     belegt: 'mehrfach', staende: {2021: 97, 2022: 401, 2023: 449, 2024: 753} },
-  /* N340k — der Zähler-Werdegang steht auf den Formularen schwarz auf weiss:
-     beide Wärmemengenzähler wurden im Herbst 2021 bei 0 neu installiert
-     (Stand ALT 0.000 auf dem Formular „2021/22"); am 30.09.2023 stand 3706
-     auf 8210 kWh und 3705 auf 8996 kWh — exakt derselbe Wert steht auch als
-     Stand ALT auf der Abrechnung 2023/24. `staende` sind deshalb
-     Saison-Verbräuche (NEU−ALT): 2022 = 0→4581 / 0→5463,
-     2023 = 4581→8210 / 5463→8996. Vorher stand hier fälschlich „8210" als
-     Wert FÜR 2024 — das war der Stand am Saisonende 2023, nicht der Verbrauch
-     von 2023/24. Für 2023/24 ist nur die addierte Menge beider Zähler bekannt
-     (7.316 kWh laut Abrechnung, „Verbrauch H02"), keine Aufteilung je Gerät —
-     deshalb bleibt 2024 hier offen statt geraten. */
-  // N340p — Nutzer bestätigt: der Anbau hat AUSSCHLIESSLICH Fußbodenheizung,
-  // zwei Heizkreise. Kein Heizkörper, keine Verdunstungsröhrchen dort — die
-  // zwei WMZ sind deshalb die einzige und vollständige Wärmemessung des
-  // Anbaus, nicht eine Ergänzung zu Heizkörperzählern.
-  { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau',
-    belegt: '', staende: { 2022: 4581, 2023: 3629 } },
-  { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau',
-    belegt: '', staende: { 2022: 5463, 2023: 3533 } },
+  /* N340q — „Anbau" war nie ein einziger Raum. Der Nutzer stellt richtig:
+     einer der zwei Wärmemengenzähler misst die Fußbodenheizung des STUDIOS
+     (1.OG, „oben"), der andere die des BÜROS (EG, „unten") — zwei getrennte
+     Einheiten, die Delta-t nur unter einem gemeinsamen Nutzer 0008 abrechnete.
+     Welcher welcher ist, steht direkt in den Rohdaten: 3705 trägt in JEDEM
+     gelesenen Dokument den Raum „T/DG" (Teil Dachgeschoss — das Studio liegt
+     unterm Dach), 3706 den Raum „HZ" (ohne Stockwerksangabe — das Büro im
+     Erdgeschoss). Kein Rätselraten, das Kürzel war schon immer eindeutig.
+
+     `staende` sind Saison-Verbräuche (NEU−ALT). Beide Zähler starteten im
+     Herbst 2021 bei 0. 2023/24 war bisher nur als Summe bekannt (7.316 kWh);
+     jetzt beide Einzelwerte gefunden — 2.895 + 4.421 = 7.316, passt exakt. */
+  { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau (Büro)',
+    belegt: 'mehrfach', staende: { 2022: 4581, 2023: 3629, 2024: 2895 } },
+  { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau (Studio)',
+    belegt: 'mehrfach', staende: { 2022: 5463, 2023: 3533, 2024: 4421 } },
+  /* N340q — der Warmwasserzähler des Anbaus gehört zum Bad des Studios,
+     nicht zum Büro (das Büro hat laut Nutzer nur Kaltwasser). Bisher stand er
+     nur als Fussnote in der Warmwasser-Übersicht, nicht als echtes,
+     zuordenbares Gerät — jetzt gleichrangig mit den Heizkreisen. */
+  { nr: '6363', art: 'wwz', raum: 'B/DG', faktor: null, war: 'Anbau (Studio)',
+    belegt: 'mehrfach', staende: { 2022: 15.54, 2023: 11.35 } },
 ];
 
 /* Die Lanes: die Einheiten der Immobilie plus ein allgemeiner Bereich für
@@ -112,22 +115,26 @@ export const ALLGEMEIN = 'allgemein';
    Schlafzimmer Anderle (5070-72), Bad 1.OG (5073).
    Waschküche (alle Mieter) → Allgemein (5061).
 
-   NICHT auf dem Zettel und darum unzugeordnet gelassen: 5074/5075 (Raum
-   „DG", der Zettel schreibt nur „DG (von 1.OG)" — ob das dieselbe Einheit
-   Wohnug 1.OG meint oder das separate Studio 1.OG, war nicht eindeutig zu
-   entscheiden, also lieber offen als geraten); 3706/3705 (Anbau — bestätigt
-   N340p: der Anbau hat ausschliesslich Fußbodenheizung mit zwei Heizkreisen,
-   diese beiden WMZ sind seine vollständige Wärmemessung; welche der vier
-   Einheiten der Anbau ist, bleibt aber offen); Büro EG kommt auf dem Zettel
-   gar nicht vor. Wer diese Erstbelegung schon verändert hat (eigener Stand
-   im Browser), bekommt sie nicht überschrieben — sie greift nur beim
-   allerersten Öffnen der Seite. */
+   N340q — der „Anbau" ist keine eigene Einheit, sondern zwei: die
+   Fußbodenheizung des Studios (1.OG, Zähler 3705 „T/DG") → Studio 1.OG (9);
+   die Fußbodenheizung des Büros (EG, Zähler 3706 „HZ") → Büro EG (10); der
+   Warmwasserzähler 6363 gehört zum Bad des Studios, nicht zum Büro (das
+   Büro hat nur Kaltwasser) → ebenfalls Studio 1.OG (9).
+
+   NICHT auf dem Zettel und darum weiter unzugeordnet gelassen: 5074/5075
+   (Raum „DG", der Zettel schreibt nur „DG (von 1.OG)" — ob das dieselbe
+   Einheit Wohnug 1.OG meint oder das separate Studio 1.OG, war nicht
+   eindeutig zu entscheiden, also lieber offen als geraten). Wer diese
+   Erstbelegung schon verändert hat (eigener Stand im Browser), bekommt sie
+   nicht überschrieben — sie greift nur beim allerersten Öffnen der Seite. */
 const ERSTBELEGUNG_EINHEIT = {
   '5057': '8', '5058': '8', '5059': '8', '5065': '8', '5066': '8',
   '5064': '8', '5062': '8',
   '5067': '7', '5068': '7', '5069': '7', '5070': '7', '5071': '7',
   '5072': '7', '5073': '7',
   '5061': ALLGEMEIN,
+  '3705': '9', '6363': '9',   // Studio 1.OG — Fußbodenheizung + Warmwasser
+  '3706': '10',               // Büro EG — Fußbodenheizung
 };
 
 const ERSTBELEGUNG_NAME = {
@@ -143,10 +150,10 @@ const ERSTBELEGUNG_NAME = {
   '5073': 'Bad 1.OG',
   '5074': 'Dachgeschoss (DG, von 1.OG)', '5075': 'Dachgeschoss (DG, von 1.OG)',
   '5061': 'Waschküche (alle Mieter)',
-  // N340p — der Anbau hat nur Fußbodenheizung, zwei Kreise. Kein Heizkörper
-  // dort — diese zwei WMZ messen den ganzen Anbau, nicht nur einen Teil.
-  '3706': 'Fußbodenheizung Anbau — Kreis 1',
-  '3705': 'Fußbodenheizung Anbau — Kreis 2',
+  // N340q — je ein Kreis, je eine Einheit — nicht „Kreis 1/2" desselben Raums.
+  '3705': 'Fußbodenheizung Studio (T/DG)',
+  '3706': 'Fußbodenheizung Büro (HZ)',
+  '6363': 'Warmwasserzähler Bad Studio',
 };
 
 export function leererStand(einheiten) {
