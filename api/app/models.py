@@ -424,12 +424,22 @@ class Zaehler(SQLModel, table=True):
     einheiten: str = ""
     art: str = ""                     # N47: 'Kaltwasser'|'Warmwasser'|'Waschmaschine'|
                                       # 'Gartenwasser'|'Heizung' — Zeile in der Detailübersicht
-    messeinheit: str = "m³"           # 'm³' | 'kWh' | 'Liter'
-    typ: str = "gemessen"             # 'gemessen' | 'rest' (Gesamt minus Unterzähler)
+    messeinheit: str = "m³"           # 'm³' | 'kWh' | 'Liter' | 'Einheiten'
+    typ: str = "gemessen"             # 'gemessen' | 'rest' (Gesamt minus Unterzähler) |
+                                      # 'direkt' (fertiger Jahreswert, keine Interpolation)
     hauptzaehler_id: Optional[int] = Field(default=None, foreign_key="zaehler.id")
     reihenfolge: int = 0              # Reihenfolge in der Eingabemaske
     aktiv: bool = True
     notiz: str = ""
+    # N340t — der Bewertungsfaktor eines Heizkörperverteilers (Verdunstungs-
+    # röhrchen): sein Ablesewert allein ist nicht mit dem eines anderen
+    # Heizkörpers vergleichbar, erst ×Faktor ergibt vergleichbare Einheiten.
+    # Additiv, `None` = kein HKV oder Faktor noch offen.
+    bewertungsfaktor: Optional[float] = None
+    # N340u — die Nummer, wie sie auf dem Zähler/Gerät selbst steht (Delta-t-
+    # Nummer o.ä.) — getrennt vom sprechenden `name`, damit beides je für sich
+    # gepflegt werden kann. Additiv, leer = keine bekannt.
+    zaehlernummer: str = ""
 
 
 class Ablesung(SQLModel, table=True):

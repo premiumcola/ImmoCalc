@@ -131,6 +131,8 @@ class ZaehlerIn(BaseModel):
     reihenfolge: int = 0
     aktiv: bool = True
     notiz: str = ""
+    bewertungsfaktor: float | None = None
+    zaehlernummer: str = ""
 
 
 class AblesungIn(BaseModel):
@@ -199,7 +201,8 @@ def anlegen(slug: str, data: ZaehlerIn, session: Session = Depends(get_session),
 def aendern(zid: int, data: dict, session: Session = Depends(get_session)) -> dict:
     z = _zaehler(session, zid)
     for feld in ("name", "kostenart", "einheit_bezug", "art", "messeinheit", "typ",
-                 "hauptzaehler_id", "reihenfolge", "aktiv", "notiz"):
+                 "hauptzaehler_id", "reihenfolge", "aktiv", "notiz", "bewertungsfaktor",
+                 "zaehlernummer"):
         if feld in data:
             setattr(z, feld, data[feld])
     # CD — Mehrfachzuordnung: `einheiten` kommt als Liste und wird komma-gejoint
@@ -533,6 +536,7 @@ def _zeige(session: Session, z: Zaehler) -> dict:
             "art": z.art, "messeinheit": z.messeinheit,
             "typ": z.typ, "hauptzaehler_id": z.hauptzaehler_id,
             "reihenfolge": z.reihenfolge, "aktiv": z.aktiv, "notiz": z.notiz,
+            "bewertungsfaktor": z.bewertungsfaktor, "zaehlernummer": z.zaehlernummer,
             "ablesungen": len(abls),
             "anfangsstand": None if not anfang else {
                 "stand": anfang.stand, "datum": anfang.datum.isoformat()}}
