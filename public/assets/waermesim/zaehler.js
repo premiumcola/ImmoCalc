@@ -86,6 +86,10 @@ export const GERAETE = [
      von 2023/24. Für 2023/24 ist nur die addierte Menge beider Zähler bekannt
      (7.316 kWh laut Abrechnung, „Verbrauch H02"), keine Aufteilung je Gerät —
      deshalb bleibt 2024 hier offen statt geraten. */
+  // N340p — Nutzer bestätigt: der Anbau hat AUSSCHLIESSLICH Fußbodenheizung,
+  // zwei Heizkreise. Kein Heizkörper, keine Verdunstungsröhrchen dort — die
+  // zwei WMZ sind deshalb die einzige und vollständige Wärmemessung des
+  // Anbaus, nicht eine Ergänzung zu Heizkörperzählern.
   { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau',
     belegt: '', staende: { 2022: 4581, 2023: 3629 } },
   { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau',
@@ -111,11 +115,13 @@ export const ALLGEMEIN = 'allgemein';
    NICHT auf dem Zettel und darum unzugeordnet gelassen: 5074/5075 (Raum
    „DG", der Zettel schreibt nur „DG (von 1.OG)" — ob das dieselbe Einheit
    Wohnug 1.OG meint oder das separate Studio 1.OG, war nicht eindeutig zu
-   entscheiden, also lieber offen als geraten); 3706/3705 (Anbau, keine der
-   vier Einheiten passt ohne Weiteres); Büro EG kommt auf dem Zettel gar
-   nicht vor. Wer diese Erstbelegung schon verändert hat (eigener Stand im
-   Browser), bekommt sie nicht überschrieben — sie greift nur beim allerersten
-   Öffnen der Seite. */
+   entscheiden, also lieber offen als geraten); 3706/3705 (Anbau — bestätigt
+   N340p: der Anbau hat ausschliesslich Fußbodenheizung mit zwei Heizkreisen,
+   diese beiden WMZ sind seine vollständige Wärmemessung; welche der vier
+   Einheiten der Anbau ist, bleibt aber offen); Büro EG kommt auf dem Zettel
+   gar nicht vor. Wer diese Erstbelegung schon verändert hat (eigener Stand
+   im Browser), bekommt sie nicht überschrieben — sie greift nur beim
+   allerersten Öffnen der Seite. */
 const ERSTBELEGUNG_EINHEIT = {
   '5057': '8', '5058': '8', '5059': '8', '5065': '8', '5066': '8',
   '5064': '8', '5062': '8',
@@ -137,6 +143,10 @@ const ERSTBELEGUNG_NAME = {
   '5073': 'Bad 1.OG',
   '5074': 'Dachgeschoss (DG, von 1.OG)', '5075': 'Dachgeschoss (DG, von 1.OG)',
   '5061': 'Waschküche (alle Mieter)',
+  // N340p — der Anbau hat nur Fußbodenheizung, zwei Kreise. Kein Heizkörper
+  // dort — diese zwei WMZ messen den ganzen Anbau, nicht nur einen Teil.
+  '3706': 'Fußbodenheizung Anbau — Kreis 1',
+  '3705': 'Fußbodenheizung Anbau — Kreis 2',
 };
 
 export function leererStand(einheiten) {
