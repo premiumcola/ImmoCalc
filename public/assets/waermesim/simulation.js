@@ -246,6 +246,14 @@ async function zeichneWarmwasser() {
 
 export function jahrWechseln(jahr) {
   gewaehltesJahr = jahr;
+  // N340y — die Jahresknöpfe leben in `simulationEinbauen()` ausserhalb von
+  // `#wsim-inhalt` und werden nur EINMAL gebaut; `zeichneSimulation()`
+  // ersetzt allein `#wsim-inhalt`, die aktive Markierung oben blieb dadurch
+  // am zuerst gewählten Jahr hängen, obwohl die Tabelle unten schon
+  // umgesprungen war.
+  document.querySelectorAll('.wsim-jahrknopf').forEach(b => {
+    b.classList.toggle('an', Number(b.dataset.jahr) === jahr);
+  });
   zeichneSimulation();
 }
 
