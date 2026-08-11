@@ -207,6 +207,7 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
     <div class="zu-haupt">
       ${minus ? '<span class="zu-op" aria-hidden="true">−</span>' : ''}
       <span class="zu-name">${esc(label || state.zLabels.get(z.id) || z.name)}${
+        z.zaehlernummer ? `<span class="zu-nr">Nr. ${esc(z.zaehlernummer)}</span>` : ''}${
         bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
           title="Zähler umbenennen" aria-label="Zähler „${esc(z.name)}“ umbenennen"
           >${STIFT_ICON}</button>` : ''}</span>
@@ -217,7 +218,27 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
     ${rechnung}${datumKnopf}
     ${eauto ? eautoInfoHtml()
       : ((keinChooser || istHauptzaehler(z)) ? '' : einheitChooserHtml(z))}${extra}
+    ${verlaufHtml(z)}
   </div>`;
+}
+
+/* N340y — der Verlauf am Kärtchen, wie im Wärme-Simulator: letzter Stand je
+   Jahr, damit man beim Eingeben einordnen kann, ob der aktuelle Wert hoch
+   oder niedrig ist. Nur die letzten fünf Jahre — mehr wäre nur Rauschen
+   (dieselbe Grenze wie im Simulator). Gehört bewusst NUR hierhin, in die
+   Ablese-Eingabe — im Zähler-Konfigurator (Zuordnung/Benennung) lenkt er nur
+   ab, da geht es nicht um den Wert, sondern um die Einheit. */
+function verlaufHtml(z) {
+  const eintraege = Object.entries(z.verlauf || {}).map(([j, w]) => [Number(j), w])
+    .sort((a, b) => a[0] - b[0]).slice(-5);
+  if (!eintraege.length) return '';
+  const hoch = Math.max(...eintraege.map(([, w]) => w), 1);
+  return `<span class="zu-verlauf" role="img"
+      aria-label="Verlauf ${eintraege.map(([j, w]) => `${j}: ${w}`).join(', ')}">
+    ${eintraege.map(([j, w]) => `<span class="zu-vj">
+        <i style="height:${Math.max(2, Math.round(w / hoch * 22))}px"></i><b>${zahl(w)}</b>
+        <em>'${String(j).slice(2)}</em></span>`).join('')}
+  </span>`;
 }
 
 /* Die Kaltwasser-Struktur (Hauptzähler + Unterzähler + Rest). */

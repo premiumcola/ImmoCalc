@@ -182,6 +182,15 @@
   .zk-ic[disabled]{opacity:.35;cursor:default}
   .zk-ic.gefahr:hover{background:var(--neg-bg);color:var(--neg)}
   .zk-ic svg{width:16px;height:16px;display:block}
+  /* N340x — Zähler nach Art gruppiert (Wasser/Strom/Heizöl/Warmwasser/
+     Heizkörper & Wärmemenge), statt 39 Karten in einer einzigen Liste. Der
+     Chip ist reine Gliederung, kein Knopf — nicht antippbar. */
+  .zk-chip{display:inline-flex;align-items:center;gap:6px;
+    font:700 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;
+    color:var(--teal-d);background:var(--teal-l);border-radius:999px;
+    padding:6px 12px;margin:16px 0 8px}
+  .zk-chip:first-child{margin-top:2px}
+  .zk-chip span{font:600 10px var(--mono);color:var(--teal-d);opacity:.7}
   .zk-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   @media(max-width:400px){ .zk-grid{grid-template-columns:1fr} }
   .zk-feld{display:flex;flex-direction:column;gap:5px;min-width:0;margin-bottom:9px}
@@ -688,6 +697,21 @@
   .zu-um:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
   .zu-name{flex:1;min-width:110px;align-self:center;font:600 12.5px var(--body);
     color:var(--ink);overflow-wrap:anywhere}
+  /* N340y — Zählernummer neben dem Namen, überall lesbar wo ein Zähler
+     auftaucht (dieselbe Chip-Optik wie im Zähler-Konfigurator, `.zk-nr`). */
+  .zu-nr{display:inline-block;margin-left:7px;font:600 9.5px var(--mono);
+    color:var(--soft);vertical-align:middle}
+  /* N340y — der Verlauf, wie im Wärme-Simulator (`.wz-verlauf`): nur hier in
+     der Ablese-Eingabe, nicht im Zähler-Konfigurator — da geht es um die
+     Einheit, nicht um den Wert. */
+  .zu-verlauf{display:flex;gap:4px;align-items:flex-end;margin-top:8px;
+    padding-top:7px;border-top:1px dashed var(--line);max-width:230px}
+  .zu-vj{display:flex;flex-direction:column;align-items:center;gap:1px;flex:1;
+    min-width:0}
+  .zu-vj i{display:block;width:100%;max-width:26px;border-radius:3px 3px 0 0;
+    background:var(--teal);opacity:.75}
+  .zu-vj b{font:600 9.5px var(--mono);color:var(--ink);line-height:1}
+  .zu-vj em{font:500 9px var(--mono);color:var(--soft);font-style:normal}
   .zu-sub{display:block;font:400 10.5px var(--body);color:var(--soft);margin-top:1px}
   .zu-feld{flex:none;display:flex;flex-direction:column;gap:4px}
   .zu-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;

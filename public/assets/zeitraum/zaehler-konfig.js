@@ -183,6 +183,32 @@ export async function zaehlerKonfig() {
     </div>`;
   }
 
+  // N340x — bei 39 Zählern lag alles in einer einzigen, langen Liste; die
+  // Nutzer-Bitte war, sie nach Art zu trennen (Öl, Warmwassermenge,
+  // Heizkörper/Wärmemenge — und die schon vorhandenen Wasser/Strom-Blöcke
+  // dazu), jede Gruppe als eigener „Chip"-Abschnitt mit ihren Zählern
+  // darunter. Reine Anzeige-Gruppierung — `reihenfolge` und die flache
+  // `meters`-Liste bleiben unverändert, nur wie sie dargestellt werden ändert
+  // sich.
+  const BEREICHE = ['Wasser', 'Strom', 'Heizöl', 'Warmwasser',
+                    'Heizkörper & Wärmemenge', 'Sonstige'];
+
+  function bereich(z) {
+    const ka = (z.kostenart || '').toLowerCase();
+    if (ka.includes('heizöl') || ka.includes('heizoel')) return 'Heizöl';
+    if (ka.includes('warmwasser')) return 'Warmwasser';
+    if (ka.includes('heizung')) return 'Heizkörper & Wärmemenge';
+    if (ka.includes('wasser')) return 'Wasser';
+    if (ka.includes('strom')) return 'Strom';
+    return 'Sonstige';
+  }
+
+  function gruppiert() {
+    const nach = new Map(BEREICHE.map(b => [b, []]));
+    meters.forEach((z, i) => nach.get(bereich(z))?.push([z, i]) || nach.set(bereich(z), [[z, i]]));
+    return BEREICHE.map(b => [b, nach.get(b) || []]).filter(([, l]) => l.length);
+  }
+
   function render() {
     // N231 — jedes `render()` ersetzt das komplette innerHTML; ohne das hier
     // sprang die lange Liste bei jeder Änderung (Verrechnung, Zähler
@@ -190,7 +216,9 @@ export async function zaehlerKonfig() {
     const vorherigerBody = dlg.querySelector('.zk-body');
     const scrollY = vorherigerBody?.scrollTop || 0;
     const liste = meters.length
-      ? meters.map((z, i) => karte(z, i)).join('')
+      ? gruppiert().map(([name, eintraege]) => `
+          <div class="zk-chip">${esc(name)}<span>${eintraege.length}</span></div>
+          <div class="zk-liste">${eintraege.map(([z, i]) => karte(z, i)).join('')}</div>`).join('')
       : `<div class="zk-leer">Noch keine Zähler für diese Immobilie. Lege den
           ersten an — Gesamtzähler, Unterzähler je Einheit und, wenn nötig, einen
           berechneten Rest.</div>`;
@@ -209,7 +237,7 @@ export async function zaehlerKonfig() {
             <span class="zk-fz">${meters.filter(vollstaendig).length} von
               ${meters.length} eingerichtet</span>
           </div>` : ''}
-        <div class="zk-liste">${liste}</div>
+        ${liste}
         <button class="zk-add" data-zk-add>＋ Zähler hinzufügen</button>
       </div>
       <div class="aw-fuss">

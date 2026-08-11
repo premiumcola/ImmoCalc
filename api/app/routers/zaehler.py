@@ -355,6 +355,7 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
                 "stand": erfasst.stand},
             "verbrauch": None if verb.get(zae.id) is None
             else round(verb[zae.id], 3),
+            "zaehlernummer": zae.zaehlernummer, "verlauf": _verlauf(abls),
         })
     return {
         "zeitraum": {"id": z.id, "start": z.start.isoformat(),
@@ -523,6 +524,20 @@ def uebernehmen(zid: int, data: UebernahmeIn,
             "warnungen": zuordnungs_warnungen(unzugeordnet)}
 
 
+def _verlauf(abls: list[Ablesung]) -> dict[int, float]:
+    """N340y — der Verlauf am Kärtchen (wie im Wärme-Simulator): letzter Stand
+    je Kalenderjahr des Ablesedatums, unabhängig davon, ob die Ablesung einem
+    echten Zeitraum zugeordnet ist. So zeigt sich sowohl historisch
+    nachgetragener Verlauf als auch der laufende Jahreswert eines
+    `typ='direkt'`-Zählers, ohne eigene Abfrage in der Oberfläche."""
+    verlauf: dict[int, float] = {}
+    for a in abls:
+        if (a.notiz or "") == ANFANGSSTAND:
+            continue
+        verlauf[a.datum.year] = a.stand
+    return verlauf
+
+
 def _zeige(session: Session, z: Zaehler) -> dict:
     abls = session.exec(select(Ablesung).where(Ablesung.zaehler_id == z.id)
                         .order_by(Ablesung.datum)).all()
@@ -537,7 +552,7 @@ def _zeige(session: Session, z: Zaehler) -> dict:
             "typ": z.typ, "hauptzaehler_id": z.hauptzaehler_id,
             "reihenfolge": z.reihenfolge, "aktiv": z.aktiv, "notiz": z.notiz,
             "bewertungsfaktor": z.bewertungsfaktor, "zaehlernummer": z.zaehlernummer,
-            "ablesungen": len(abls),
+            "ablesungen": len(abls), "verlauf": _verlauf(abls),
             "anfangsstand": None if not anfang else {
                 "stand": anfang.stand, "datum": anfang.datum.isoformat()}}
 
