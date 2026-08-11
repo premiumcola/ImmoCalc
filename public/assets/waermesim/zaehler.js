@@ -96,11 +96,54 @@ export const GERAETE = [
    alles, was keiner Wohnung allein gehört (Flure, Küche/Bäder der WG). */
 export const ALLGEMEIN = 'allgemein';
 
+/* N340l — die Erstbelegung, vom Nutzer handschriftlich zugeordnet (Zettel
+   „Zähler: Nick 2 Schlafzimmer / Vicky Wohnzimmer / …", zwei Fotos). Feste
+   Einheit-Ids der Laufer Str. 5 (Wohnug 1.OG=7, Wohung EG=8, Studio 1.OG=9,
+   Büro EG=10) statt Namensvergleich — der Bestand trägt Tippfehler
+   („Wohnug", „Wohung"), auf die sich kein Textabgleich verlassen kann.
+
+   EG (Erdgeschoss) → Wohung EG (8): Nick — 2 Schlafzimmer (5057-59),
+   Vicky — Wohnzimmer (5065/66), Vicky/Nick (5064), Robert — Bad (5062).
+   1.OG → Wohnug 1.OG (7): Küche/Wohnzimmer (5067-69),
+   Schlafzimmer Anderle (5070-72), Bad 1.OG (5073).
+   Waschküche (alle Mieter) → Allgemein (5061).
+
+   NICHT auf dem Zettel und darum unzugeordnet gelassen: 5074/5075 (Raum
+   „DG", der Zettel schreibt nur „DG (von 1.OG)" — ob das dieselbe Einheit
+   Wohnug 1.OG meint oder das separate Studio 1.OG, war nicht eindeutig zu
+   entscheiden, also lieber offen als geraten); 3706/3705 (Anbau, keine der
+   vier Einheiten passt ohne Weiteres); Büro EG kommt auf dem Zettel gar
+   nicht vor. Wer diese Erstbelegung schon verändert hat (eigener Stand im
+   Browser), bekommt sie nicht überschrieben — sie greift nur beim allerersten
+   Öffnen der Seite. */
+const ERSTBELEGUNG_EINHEIT = {
+  '5057': '8', '5058': '8', '5059': '8', '5065': '8', '5066': '8',
+  '5064': '8', '5062': '8',
+  '5067': '7', '5068': '7', '5069': '7', '5070': '7', '5071': '7',
+  '5072': '7', '5073': '7',
+  '5061': ALLGEMEIN,
+};
+
+const ERSTBELEGUNG_NAME = {
+  '5057': 'Nick — Schlafzimmer', '5058': 'Nick — Schlafzimmer',
+  '5059': 'Nick — Schlafzimmer',
+  '5065': 'Vicky — Wohnzimmer', '5066': 'Vicky — Wohnzimmer',
+  '5064': 'Vicky/Nick',
+  '5062': 'Robert — Bad',
+  '5067': 'Küche/Wohnzimmer', '5068': 'Küche/Wohnzimmer',
+  '5069': 'Küche/Wohnzimmer',
+  '5070': 'Schlafzimmer Anderle', '5071': 'Schlafzimmer Anderle',
+  '5072': 'Schlafzimmer Anderle',
+  '5073': 'Bad 1.OG',
+  '5074': 'Dachgeschoss (DG, von 1.OG)', '5075': 'Dachgeschoss (DG, von 1.OG)',
+  '5061': 'Waschküche (alle Mieter)',
+};
+
 export function leererStand(einheiten) {
   return {
-    namen: {},            // Zähler-Nr -> selbst vergebener Name
-    faktoren: {},         // Zähler-Nr -> abweichender Faktor
-    zuordnung: {},        // Zähler-Nr -> Einheit-Id oder ALLGEMEIN oder ''
+    namen: { ...ERSTBELEGUNG_NAME },      // Zähler-Nr -> selbst vergebener Name
+    faktoren: {},                         // Zähler-Nr -> abweichender Faktor
+    zuordnung: { ...ERSTBELEGUNG_EINHEIT }, // Zähler-Nr -> Einheit-Id/ALLGEMEIN/''
     einheiten: einheiten.map(e => ({ id: String(e.id), name: e.bezeichnung || '',
                                      flaeche: e.flaeche || 0 })),
   };
