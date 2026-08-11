@@ -16,7 +16,7 @@ from .routers import (auswertung, besitz, cloud, dokumente, dokumentvorlagen,
                       heizoel, ki, kidb, kontakte, mail, objekte, openwb,
                       renovierung,
                       solaredge, stammdaten, strom, stromkette, tankstelle,
-                      versand, waerme, weg, zaehler)
+                      versand, waerme, waermesim, weg, zaehler)
 from .seed import seed
 
 log = logging.getLogger("immocalc")
@@ -115,6 +115,7 @@ app.include_router(mail.router)
 app.include_router(versand.router)
 # Eigener Prefix /api/ki — Reihenfolge unkritisch.
 app.include_router(ki.router)
+app.include_router(waermesim.router)
 
 
 def _build_zeilen() -> list[str]:

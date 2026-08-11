@@ -8,6 +8,7 @@
 import { api, esc, melde } from '../immo.js';
 import { ALLGEMEIN, GERAETE, faktorVon, fortschritt, lade, sichere }
   from './zaehler.js';
+import { simulationAktualisieren, simulationEinbauen } from './simulation.js';
 
 const SLUG = 'eschenau-laufer-str-5';
 let stand = null;
@@ -110,6 +111,7 @@ function ablegen(nr, lane) {
   aufgenommen = null;
   sichere(stand);
   zeichne();
+  simulationAktualisieren(stand);
 }
 
 function verdrahte() {
@@ -139,6 +141,12 @@ function verdrahte() {
     if (e.target.dataset.name) stand.namen[nr] = e.target.value;
     else stand.faktoren[nr] = e.target.value.replace(',', '.');
     sichere(stand);
+  });
+  // Ein geänderter Faktor wirkt sich auf die Rechnung aus — aber erst nach
+  // dem Feld verlassen, nicht bei jedem Tastendruck (sonst rechnet die
+  // Simulation bei jeder Ziffer neu und die Eingabe stockt).
+  wurzel.addEventListener('change', e => {
+    if (e.target.dataset.faktor) simulationAktualisieren(stand);
   });
 
   wurzel.addEventListener('dragstart', e => {
@@ -170,4 +178,5 @@ export async function start() {
   stand = lade(einheiten.filter(e => !/garage/i.test(e.bezeichnung || '')));
   zeichne();
   verdrahte();
+  await simulationEinbauen(stand);
 }
