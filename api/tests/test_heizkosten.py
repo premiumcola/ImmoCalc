@@ -133,6 +133,39 @@ def test_partei_name_und_einheiten_name_landen_in_derselben_zeile():
         assert nutzer[0]["ww_m3"] == 5.0
 
 
+def test_altes_partei_label_mit_gesetztem_einheiten_feld_zaehlt_richtig():
+    """N341 — Bestandszähler tragen im `einheit_bezug` oft ein Alt-Label, das
+    zu keiner Einheit und keiner Partei mehr passt („Roman & Alicia"), haben
+    aber die echte Einheit im Mehrfachfeld `einheiten` stehen. Dann gilt
+    `einheiten` — genau wie bei Wasser und Strom (`parse_einheiten`).
+
+    Der Test hält fest, dass dieser Zähler NICHT in einer eigenen
+    Phantom-Zeile landet und NICHT als unzugeordnet gemeldet wird. (Vorher
+    las `heizkosten.py` allein `einheit_bezug` — das war der Grund, warum an
+    echten Daten herumkorrigiert wurde, statt den Code zu reparieren.)"""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+        zaehler_id = _zaehler_direkt(c, slug, zid, name="HKV mit Alt-Label",
+                                     einheit_bezug="Irgendein Altlabel",
+                                     wert=100, bewertungsfaktor=1.0)
+        # Die echte Einheit steht im Mehrfachfeld — wie im Bestand.
+        assert c.patch(f"/api/zaehler/{zaehler_id}",
+                       json={"einheiten": ["Whg A"]}).status_code == 200
+
+        from app import db
+        from app.heizkosten import nutzer_aus_zaehlern
+        from sqlmodel import Session
+        from app.models import Zeitraum
+        with Session(db.engine) as s:
+            z = s.get(Zeitraum, zid)
+            nutzer, unzugeordnet = nutzer_aus_zaehlern(s, z)
+
+        assert unzugeordnet == []
+        assert [n["name"] for n in nutzer] == ["Whg A"]
+        assert nutzer[0]["ehkv"] == 100.0
+        assert nutzer[0]["flaeche"] == 50.0
+
+
 def test_wmz_und_wwz_gehen_in_kwh_bzw_ww_m3_nicht_in_ehkv():
     with TestClient(app) as c:
         slug, zid = _objekt(c)

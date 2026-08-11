@@ -21,7 +21,7 @@ from sqlmodel import Session, select
 from . import verteilung, waermesim
 from .ablesung import verbrauch_je_zaehler
 from .einheitenzuordnung import karte as einheiten_karte
-from .einheitenzuordnung import schluessel
+from .einheitenzuordnung import parse_einheiten, schluessel
 from .models import Ablesung, Einheit, Miete, Partei, Zaehler, Zeitraum
 from .routers.zaehler import _mit_vorlauf
 
@@ -85,10 +85,18 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
         menge = verbrauch.get(zae.id)
         if not menge:
             continue
-        roh = zae.einheit_bezug
-        if not roh:
+        # N341-Fix — dieselbe Quelle wie Wasser/Strom/Übernahme:
+        # `parse_einheiten` nimmt zuerst die Mehrfachzuordnung `einheiten`
+        # (dort steht die echte Einheit) und fällt nur ersatzweise auf das
+        # Alt-Label `einheit_bezug` zurück. Vorher las dieses Modul allein
+        # `einheit_bezug` — dadurch landete ein Zähler mit korrekt gesetztem
+        # `einheiten`, aber altem Partei-Label („Roman & Alicia") in einer
+        # eigenen Phantom-Zeile. Der Fehler lag hier, nicht in den Daten.
+        ziele = parse_einheiten(zae)
+        if not ziele:
             unzugeordnet.append(zae.name)
             continue
+        roh = ziele[0]
         bezug = bezug_karte.get(schluessel(roh), roh)
         lane = lanes.setdefault(bezug, {"name": bezug,
                                         "flaeche": flaeche.get(bezug, 0),
