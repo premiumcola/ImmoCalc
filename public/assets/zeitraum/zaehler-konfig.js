@@ -61,10 +61,25 @@ export async function zaehlerKonfig() {
 
   // N231 — „fertig eingerichtet" heißt: Messeinheit und Kostenart sind gesetzt,
   // und (falls nötig) ein Anfangsstand liegt vor. Ein Rest-Zähler braucht
-  // keinen eigenen Anfangsstand — sein Stand ergibt sich rechnerisch.
+  // keinen eigenen Anfangsstand — sein Stand ergibt sich rechnerisch, und ein
+  // „direkt"-Zähler (N340u — Wärmemengenzähler: immer ein fertiger Jahreswert
+  // pro Turnus, kein kumulierter Stand) bekommt seinen Wert erst beim Ablesen
+  // des jeweiligen Zeitraums, nicht hier.
   function vollstaendig(z) {
     if (!z.messeinheit || !z.kostenart) return false;
-    return z.typ === 'rest' || !!z.anfangsstand;
+    return z.typ === 'rest' || z.typ === 'direkt' || !!z.anfangsstand;
+  }
+
+  // N340u — bei 39 Zählern ist die volle Karte für jeden zu viel auf einmal;
+  // offen bleibt nur, was der Nutzer selbst antippt. Übersteht ein `render()`
+  // (Verrechnung ändern, Zähler hinzufügen), weil es ausserhalb davon lebt.
+  const offen = new Set();
+
+  // N340u — Bewertungsfaktor ergibt nur bei Heizkostenverteilern (Verdunstungs-
+  // röhrchen: Messeinheit „Einheiten") einen Sinn — ein Wärmemengenzähler
+  // misst kWh direkt, ein Wasserzähler m³, keiner von beiden braucht ihn.
+  function istHkv(z) {
+    return z.messeinheit === 'Einheiten';
   }
 
   function karte(z, i) {
@@ -79,10 +94,13 @@ export async function zaehlerKonfig() {
       + kostenarten.map(k => opt(k, k, k === z.kostenart)).join('')
       + (z.kostenart && !kostenarten.includes(z.kostenart)
          ? opt(z.kostenart, z.kostenart, true) : '');
-    const modus = rest ? 'rest' : (z.hauptzaehler_id ? 'unter' : 'frei');
+    const modus = rest ? 'rest' : z.typ === 'direkt' ? 'direkt' : (z.hauptzaehler_id ? 'unter' : 'frei');
     const verrSel = opt('frei', 'Eigenständig / Gesamt', modus === 'frei')
       + opt('unter', 'Unterzähler von …', modus === 'unter')
-      + opt('rest', 'Rest von …', modus === 'rest');
+      + opt('rest', 'Rest von …', modus === 'rest')
+      // N340u — Wärmemengenzähler u.ä.: kein Stand zum Interpolieren, jeder
+      // Zeitraum bekommt beim Ablesen direkt seinen fertigen Jahreswert.
+      + opt('direkt', 'Jahreswert direkt (kein Zählerstand)', modus === 'direkt');
     // N231 — nur Zähler derselben Messeinheit lassen sich gegeneinander
     // verrechnen (Rest = Hauptzähler − Unterzähler ergibt zwischen kWh und m³
     // keinen Sinn).
@@ -100,7 +118,10 @@ export async function zaehlerKonfig() {
                      : ' − (noch keine Unterzähler)'}</div>`;
     }
     const anf = z.anfangsstand;
-    const anfBlock = rest ? '' : `<div class="zk-anfang">
+    const anfBlock = rest ? '' : modus === 'direkt'
+      ? `<div class="zk-rest">Kein Anfangsstand nötig — der Jahreswert wird
+          beim Ablesen des jeweiligen Zeitraums eingetragen, nicht hier.</div>`
+      : `<div class="zk-anfang">
         <div class="zk-feld"><label>Anfangsstand</label>
           <input type="number" step="0.001" inputmode="decimal" placeholder="—"
             value="${anf ? anf.stand : ''}" data-zk-anf-stand="${z.id}"
@@ -111,13 +132,21 @@ export async function zaehlerKonfig() {
       </div>`;
 
     const fertig = vollstaendig(z);
-    return `<div class="zk-karte" data-zid="${z.id}">
-      <div class="zk-kopf">
+    const aufgeklappt = offen.has(z.id);
+    // N340u — die Kopfzeile bleibt immer sichtbar (Name, Nummer, Status); der
+    // Rest klappt erst auf Antippen auf. Bei 39 Zählern ist die volle Karte
+    // für jeden zu viel auf einmal.
+    return `<div class="zk-karte${aufgeklappt ? '' : ' zu'}" data-zid="${z.id}">
+      <div class="zk-kopf" data-zk-toggle="${z.id}">
         <span class="zk-status ${fertig ? 'ok' : 'warn'}"
           title="${fertig ? 'Vollständig eingerichtet' : 'Noch nicht vollständig eingerichtet'}"
           aria-hidden="true">${fertig ? '✓' : '!'}</span>
-        <input class="zk-name" value="${esc(z.name)}" data-zk-f="name" data-zid="${z.id}"
-          aria-label="Zählername">
+        <span class="zk-kopftxt">
+          <input class="zk-name" value="${esc(z.name)}" data-zk-f="name" data-zid="${z.id}"
+            aria-label="Zählername">
+          ${z.zaehlernummer ? `<span class="zk-nr">Nr. ${esc(z.zaehlernummer)}</span>` : ''}
+        </span>
+        <span class="zk-chevron" aria-hidden="true">${aufgeklappt ? '▾' : '▸'}</span>
         <div class="zk-tools">
           <button class="zk-ic" data-zk-up="${z.id}" ${i === 0 ? 'disabled' : ''}
             aria-label="nach oben">↑</button>
@@ -127,20 +156,28 @@ export async function zaehlerKonfig() {
             aria-label="Zähler entfernen">${MUELL_ICON}</button>
         </div>
       </div>
+      ${aufgeklappt ? `
       <div class="zk-grid">
+        <div class="zk-feld"><label>Zählernummer</label>
+          <input value="${esc(z.zaehlernummer || '')}" data-zk-f="zaehlernummer"
+            data-zid="${z.id}" placeholder="z. B. 5057" aria-label="Zählernummer"></div>
         <div class="zk-feld"><label>Einheit</label>
           <select data-zk-f="messeinheit" data-zid="${z.id}">${messSel}</select></div>
         <div class="zk-feld"><label>Bezug</label>
           <select data-zk-f="einheit_bezug" data-zid="${z.id}">${bezugSel}</select></div>
         <div class="zk-feld"><label>Kostenart</label>
           <select data-zk-f="kostenart" data-zid="${z.id}">${kaSel}</select></div>
+        ${istHkv(z) ? `<div class="zk-feld"><label>Bewertungsfaktor</label>
+          <input type="number" step="0.001" inputmode="decimal" placeholder="—"
+            value="${z.bewertungsfaktor ?? ''}" data-zk-f="bewertungsfaktor"
+            data-zid="${z.id}" aria-label="Bewertungsfaktor"></div>` : ''}
         <div class="zk-feld"><label>Verrechnung</label>
           <select data-zk-verr="${z.id}">${verrSel}</select></div>
-        ${modus !== 'frei' ? `<div class="zk-feld voll"><label>Hauptzähler</label>
+        ${modus !== 'frei' && modus !== 'direkt' ? `<div class="zk-feld voll"><label>Hauptzähler</label>
           <select data-zk-f="hauptzaehler_id" data-zid="${z.id}">${hauptSel}</select></div>` : ''}
       </div>
       ${restInfo}
-      ${anfBlock}
+      ${anfBlock}` : ''}
     </div>`;
   }
 
@@ -186,6 +223,7 @@ export async function zaehlerKonfig() {
       const id = f.dataset.zid;
       let wert = f.value;
       if (f.dataset.zkF === 'hauptzaehler_id') wert = wert ? Number(wert) : null;
+      else if (f.dataset.zkF === 'bewertungsfaktor') wert = feldZahl(f);
       const z = meters.find(m => String(m.id) === String(id));
       if (z) z[f.dataset.zkF] = wert;
       try { await api(`/zaehler/${id}`, { method: 'PATCH', body: { [f.dataset.zkF]: wert } }); }
@@ -206,8 +244,8 @@ export async function zaehlerKonfig() {
     const gleiche = meters.filter(m => m.id !== id && m.messeinheit === z?.messeinheit);
     const haupt = (z?.hauptzaehler_id && gleiche.some(m => m.id === z.hauptzaehler_id))
       ? z.hauptzaehler_id : (gleiche[0]?.id || null);
-    const body = modus === 'frei'
-      ? { typ: 'gemessen', hauptzaehler_id: null }
+    const body = modus === 'frei' || modus === 'direkt'
+      ? { typ: modus === 'direkt' ? 'direkt' : 'gemessen', hauptzaehler_id: null }
       : { typ: modus === 'rest' ? 'rest' : 'gemessen', hauptzaehler_id: haupt };
     try { await api(`/zaehler/${id}`, { method: 'PATCH', body }); await neuLadenIntern(); }
     catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
@@ -256,6 +294,17 @@ export async function zaehlerKonfig() {
     if (bewegung) return verschieben(
       Number(bewegung.dataset.zkUp || bewegung.dataset.zkDown),
       bewegung.dataset.zkUp ? -1 : 1);
+    // N340u — Kopfzeile antippen klappt die Karte auf/zu. Kommt nach den
+    // spezifischeren Zielen oben, sonst schlucken deren Buttons nie das
+    // Toggle (sie liegen alle INNERHALB der Kopfzeile). Der Name bleibt
+    // tippbar, ohne die Karte gleich wieder zuzuklappen.
+    if (e.target.matches('input')) return;
+    const toggle = e.target.closest('[data-zk-toggle]');
+    if (toggle) {
+      const id = Number(toggle.dataset.zkToggle);
+      offen.has(id) ? offen.delete(id) : offen.add(id);
+      render();
+    }
   });
 
   async function verschieben(id, richtung) {

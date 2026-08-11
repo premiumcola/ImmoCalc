@@ -150,11 +150,20 @@
     margin:2px 0 12px}
   .zk-karte{background:var(--paper);border-radius:14px;padding:12px 12px 4px;
     margin-bottom:11px}
-  .zk-kopf{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-  .zk-name{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;
+  /* N340u — zugeklappt: nur die Kopfzeile, kein unterer Innenabstand, sonst
+     bliebe unter jeder der 39 Karten unnötige Luft stehen. */
+  .zk-karte.zu{padding-bottom:0}
+  .zk-karte.zu .zk-kopf{margin-bottom:0}
+  .zk-kopf{display:flex;align-items:center;gap:8px;margin-bottom:10px;
+    cursor:pointer;border-radius:10px}
+  .zk-kopftxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .zk-name{width:100%;min-width:0;border:1.5px solid var(--line);border-radius:10px;
     padding:10px 11px;font:700 14px var(--disp);background:var(--sheet);
     color:var(--ink);min-height:44px}
   .zk-name:focus{outline:none;border-color:var(--teal)}
+  .zk-nr{font:600 10.5px var(--mono);color:var(--soft);padding:0 2px}
+  .zk-chevron{flex:none;width:20px;text-align:center;color:var(--soft);
+    font:600 13px var(--body)}
   .zk-tools{display:flex;gap:4px;flex:none}
   .zk-ic{width:38px;height:38px;min-width:38px;border:none;border-radius:9px;
     background:var(--sheet);color:var(--soft);cursor:pointer;display:flex;

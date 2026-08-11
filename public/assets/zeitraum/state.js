@@ -211,4 +211,4 @@ export const SK_BLOECKE = [['netz', 'Netz', 'zugekauft'], ['pv', 'PV direkt', 'v
   ['akku', 'Akku', 'aus dem Speicher']];
 export const SK_FARBE = { netz: 'var(--amber)', pv: 'var(--teal)', akku: 'var(--pos)' };
 
-export const MESSEINHEITEN = ['m³', 'kWh', 'Liter'];
+export const MESSEINHEITEN = ['m³', 'kWh', 'Liter', 'Einheiten'];
