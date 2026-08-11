@@ -11,7 +11,7 @@ import { api, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { MESSEINHEITEN } from './state.js';
 import { GEAR_ICON, MUELL_ICON } from './icons.js';
-import { zahl, feldZahl } from './helpers.js';
+import { zahl, feldZahl, alleEinheiten } from './helpers.js';
 
 /* CCCLXXX — der Zahnrad-Knopf über der Checkliste. */
 export function ablesenKnopfHtml() {
@@ -44,7 +44,6 @@ export async function zaehlerKonfig() {
 
   const startISO = fruehesterStartISO(objektDaten) || state.daten.start;
   const kostenarten = [...new Set((state.daten.checkliste || []).map(k => k.kostenart))];
-  const bezuege = [...new Set((state.schluessel?.parteien || []).map(p => p.partei))];
 
   const dlg = document.createElement('dialog');
   // N340v — eigene Klasse, damit die Weite NUR diese Maske betrifft (39
@@ -84,14 +83,32 @@ export async function zaehlerKonfig() {
     return z.messeinheit === 'Einheiten';
   }
 
+  // N340z — die Zuordnung „welcher Zähler gehört zu welcher Einheit" ist der
+  // Kern dieser Maske; ein Dropdown mit Partei-Namen sagte nicht auf Anhieb,
+  // welche Einheit gemeint ist. Antippbare Chips mit den echten Einheiten
+  // der Immobilie, wie schon in der Ablese-Eingabe (`einheitChooserHtml`) —
+  // dieselbe Optik (`.zu-eh`), nur einfach-wählbar: `einheit_bezug` ist ein
+  // Einzelwert, ein Zähler zählt für die Verteilung auf genau eine Einheit
+  // (oder „Allgemein"). Ein alter, nicht mehr passender Wert (z. B. „WG")
+  // bleibt als eigener, aktiver Chip sichtbar statt lautlos zu verschwinden.
+  function bezugChips(z) {
+    const einheiten = alleEinheiten();
+    const bekannt = new Set(einheiten);
+    const alt = z.einheit_bezug && !bekannt.has(z.einheit_bezug) ? [z.einheit_bezug] : [];
+    const chips = [{ wert: '', text: 'Allgemein' },
+                   ...einheiten.map(e => ({ wert: e, text: e })),
+                   ...alt.map(e => ({ wert: e, text: e }))];
+    return `<div class="zk-ehchips">${chips.map(c => `
+        <button type="button" class="zk-eh${
+          c.wert === (z.einheit_bezug || '') ? ' an' : ''}"
+          data-zk-bezug="${z.id}" data-wert="${esc(c.wert)}">${esc(c.text)}</button>`).join('')}
+      </div>`;
+  }
+
   function karte(z, i) {
     const rest = z.typ === 'rest';
     const messSel = MESSEINHEITEN.map(m => opt(m, m, m === z.messeinheit)).join('')
       + (MESSEINHEITEN.includes(z.messeinheit) ? '' : opt(z.messeinheit, z.messeinheit, true));
-    const bezugSel = opt('', 'Haus / Gesamt', !z.einheit_bezug)
-      + bezuege.map(b => opt(b, b, b === z.einheit_bezug)).join('')
-      + (z.einheit_bezug && !bezuege.includes(z.einheit_bezug)
-         ? opt(z.einheit_bezug, z.einheit_bezug, true) : '');
     const kaSel = opt('', '— keine —', !z.kostenart)
       + kostenarten.map(k => opt(k, k, k === z.kostenart)).join('')
       + (z.kostenart && !kostenarten.includes(z.kostenart)
@@ -163,10 +180,9 @@ export async function zaehlerKonfig() {
         <div class="zk-feld"><label>Zählernummer</label>
           <input value="${esc(z.zaehlernummer || '')}" data-zk-f="zaehlernummer"
             data-zid="${z.id}" placeholder="z. B. 5057" aria-label="Zählernummer"></div>
+        <div class="zk-feld voll"><label>Zählt auf</label>${bezugChips(z)}</div>
         <div class="zk-feld"><label>Einheit</label>
           <select data-zk-f="messeinheit" data-zid="${z.id}">${messSel}</select></div>
-        <div class="zk-feld"><label>Bezug</label>
-          <select data-zk-f="einheit_bezug" data-zid="${z.id}">${bezugSel}</select></div>
         <div class="zk-feld"><label>Kostenart</label>
           <select data-zk-f="kostenart" data-zid="${z.id}">${kaSel}</select></div>
         ${istHkv(z) ? `<div class="zk-feld"><label>Bewertungsfaktor</label>
@@ -267,6 +283,14 @@ export async function zaehlerKonfig() {
       Number(anf.dataset.zkAnfStand || anf.dataset.zkAnfDatum));
   });
 
+  async function bezugSetzen(id, wert) {
+    const z = meters.find(m => m.id === id);
+    if (z) z.einheit_bezug = wert;
+    render();
+    try { await api(`/zaehler/${id}`, { method: 'PATCH', body: { einheit_bezug: wert } }); }
+    catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
+  }
+
   async function verrechnungSetzen(id, modus) {
     const z = meters.find(m => m.id === id);
     // N231 — nur ein Zähler derselben Messeinheit taugt als Hauptzähler; ein
@@ -324,6 +348,8 @@ export async function zaehlerKonfig() {
     if (bewegung) return verschieben(
       Number(bewegung.dataset.zkUp || bewegung.dataset.zkDown),
       bewegung.dataset.zkUp ? -1 : 1);
+    const bezug = e.target.closest('[data-zk-bezug]');
+    if (bezug) return bezugSetzen(Number(bezug.dataset.zkBezug), bezug.dataset.wert);
     // N340u — Kopfzeile antippen klappt die Karte auf/zu. Kommt nach den
     // spezifischeren Zielen oben, sonst schlucken deren Buttons nie das
     // Toggle (sie liegen alle INNERHALB der Kopfzeile). Der Name bleibt
