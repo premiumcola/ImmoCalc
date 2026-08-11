@@ -132,6 +132,16 @@
 
   /* Zähler-Konfig-Maske (nutzt den Rahmen der Ablese-Maske: .ablese-dlg). */
   .zk-body{max-height:min(74dvh,620px);overflow:auto}
+  /* N340v — am PC ist Breite reichlich vorhanden; die 440px-Vorgabe der
+     Ablese-Maske liess bei 39 Zählern jedes Feld eng nebeneinander stehen.
+     Nur diese Maske wird breiter (`.zk-dlg`), der Ablese-Wizard bleibt schmal
+     wie er war — der ist für eine Ablesung nach der anderen gedacht. */
+  @media(min-width:900px){
+    dialog.ablese-dlg.zk-dlg{max-width:760px}
+    .zk-dlg .zk-grid{grid-template-columns:repeat(3,1fr)}
+    .zk-dlg .zk-feld.voll{grid-column:1 / -1}
+    .zk-dlg .zk-body{max-height:min(78dvh,720px)}
+  }
   /* N231 — Fortschritt wie im Anfangszählerstände-Dialog (`.az-fort`): auf
      einen Blick, wie viele Zähler schon vollständig eingerichtet sind. */
   .zk-fort{display:flex;align-items:center;gap:10px;margin:2px 0 14px}

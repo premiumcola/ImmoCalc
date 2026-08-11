@@ -47,7 +47,9 @@ export async function zaehlerKonfig() {
   const bezuege = [...new Set((state.schluessel?.parteien || []).map(p => p.partei))];
 
   const dlg = document.createElement('dialog');
-  dlg.className = 'ablese-dlg';
+  // N340v — eigene Klasse, damit die Weite NUR diese Maske betrifft (39
+  // Zähler mit Grid brauchen am PC mehr Platz), nicht den Ablese-Wizard.
+  dlg.className = 'ablese-dlg zk-dlg';
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => { dlg.remove(); neuLaden(); });
 
