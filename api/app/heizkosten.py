@@ -18,9 +18,11 @@ from __future__ import annotations
 
 from sqlmodel import Session, select
 
-from . import waermesim
+from . import verteilung, waermesim
 from .ablesung import verbrauch_je_zaehler
-from .models import Ablesung, Einheit, Zaehler, Zeitraum
+from .einheitenzuordnung import karte as einheiten_karte
+from .einheitenzuordnung import schluessel
+from .models import Ablesung, Einheit, Miete, Partei, Zaehler, Zeitraum
 from .routers.zaehler import _mit_vorlauf
 
 # N340t — nur diese Kostenarten zählen zur Heizkosten-Verteilung; alles
@@ -38,16 +40,35 @@ def _zaehler_mit_ablesungen(session: Session, objekt_id: int
             for z in zaehler]
 
 
+def _bezugs_karte(session: Session, z: Zeitraum) -> tuple[list[Einheit], dict[str, str]]:
+    """Label → echte Einheit, dieselbe Abbildung wie Wasser/Strom/Übernahme
+    (`einheitenzuordnung.karte`). Ein Zähler-`einheit_bezug` kann eine echte
+    Einheit sein (zeigt auf sich selbst), ein Partei-Name („Roman & Alicia",
+    zeigt auf deren Einheit im Zeitraum) oder etwas, das keins von beidem ist
+    (z. B. das Alt-Label „WG") — dann bleibt der rohe Bezug stehen."""
+    einheiten = list(session.exec(
+        select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
+    mieten = list(session.exec(
+        select(Miete).where(Miete.objekt_id == z.objekt_id)).all())
+    parteien = list(session.exec(
+        select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
+    bezuege = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
+    return einheiten, einheiten_karte(einheiten, bezuege)
+
+
 def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list[str]]:
     """Baut die `nutzer`-Liste für `waermesim.rechne()`: eine Zeile je echter
     Einheit, plus eine Sammelzeile „WG" für gemeinsam genutzte Zähler (wie die
     Lane „Allgemein" im Simulator, und dieselbe Konvention wie die
-    bestehenden Wasser-/Strom-Zähler dieses Objekts).
+    bestehenden Wasser-/Strom-Zähler dieses Objekts). Zwei Zähler, die
+    dieselbe Einheit auf verschiedene Art benennen (Einheiten-Bezeichnung vs.
+    Partei-Name), landen dadurch in DERSELBEN Zeile statt in zwei — sonst
+    hätte „Studio 1.OG" (neuer WMZ) und „Roman & Alicia" (bestehender
+    Warmwasserzähler) zwei nie zusammengeführte Spalten ergeben.
 
     Gibt zusätzlich zurück, welche Zähler keinen Einheiten-Bezug tragen —
     nichts wird stillschweigend verschluckt (N288-B4-Prinzip)."""
-    einheiten = list(session.exec(
-        select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
+    einheiten, bezug_karte = _bezugs_karte(session, z)
     flaeche = {e.bezeichnung: (e.flaeche or 0) for e in einheiten}
 
     zma = _zaehler_mit_ablesungen(session, z.objekt_id)
@@ -64,10 +85,11 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
         menge = verbrauch.get(zae.id)
         if not menge:
             continue
-        bezug = zae.einheit_bezug
-        if not bezug:
+        roh = zae.einheit_bezug
+        if not roh:
             unzugeordnet.append(zae.name)
             continue
+        bezug = bezug_karte.get(schluessel(roh), roh)
         lane = lanes.setdefault(bezug, {"name": bezug,
                                         "flaeche": flaeche.get(bezug, 0),
                                         "ehkv": 0.0, "kwh": 0.0, "ww_m3": 0.0})

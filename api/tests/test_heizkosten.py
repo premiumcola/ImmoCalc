@@ -99,6 +99,40 @@ def test_zaehler_ohne_bezug_wird_gemeldet_nicht_verschluckt():
         assert unzugeordnet == ["Waschküche"]
 
 
+def test_partei_name_und_einheiten_name_landen_in_derselben_zeile():
+    """Ein Zähler kann seinen Bezug als Einheiten-Bezeichnung tragen
+    („Whg A", neue Konvention) oder als Partei-Name („A", ältere Zähler wie
+    die bestehenden Warmwasserzähler dieses Objekts) — beide meinen dieselbe
+    Wohnung und müssen in EINER Nutzer-Zeile landen, nicht in zweien."""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+        _zaehler_direkt(c, slug, zid, name="HKV (Einheiten-Name)",
+                        einheit_bezug="Whg A", wert=100, bewertungsfaktor=1.0)
+        _zaehler_direkt(c, slug, zid, name="Warmwasser (Partei-Name)",
+                        einheit_bezug="A", wert=5.0, messeinheit="m³",
+                        kostenart="Warmwasser")
+
+        from app import db
+        from app.heizkosten import nutzer_aus_zaehlern
+        from sqlmodel import Session
+        from app.models import Miete, Zeitraum
+        with Session(db.engine) as s:
+            z = s.get(Zeitraum, zid)
+            # N340w-Fund: `bezuege()` findet einen Partei-Namen nur über ein
+            # echtes Mietverhältnis — ohne das gilt die Einheit als leerstehend
+            # und "A" bliebe unresolved. Genau das übersah der erste Test.
+            s.add(Miete(objekt_id=z.objekt_id, einheit="Whg A", partei="A",
+                        personen=1, ab_datum=z.start))
+            s.commit()
+            nutzer, unzugeordnet = nutzer_aus_zaehlern(s, z)
+
+        assert unzugeordnet == []
+        assert len(nutzer) == 1
+        assert nutzer[0]["name"] == "Whg A"
+        assert nutzer[0]["ehkv"] == 100.0
+        assert nutzer[0]["ww_m3"] == 5.0
+
+
 def test_wmz_und_wwz_gehen_in_kwh_bzw_ww_m3_nicht_in_ehkv():
     with TestClient(app) as c:
         slug, zid = _objekt(c)
