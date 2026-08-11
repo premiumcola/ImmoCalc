@@ -24,53 +24,72 @@ export const GERAETE = [
      2023) und ist dort in allen vier identisch — er gehört zum Gerät (Bauart
      und Grösse des Heizkörpers), nicht zum Jahr.
 
-     `staende` ist der abgelesene Verbrauch der Abrechnungsperiode, aus den
-     vollständigen Abrechnungen 2018/19, 2020/21, 2022/23 und 2023/24 (jede
-     enthält alle neun Nutzer, nicht nur den Empfänger). Fehlt ein Jahr, gab
-     es das Gerät damals nicht oder es war schon abgebaut — die Lücke bleibt
-     als leere Spalte stehen, damit sie auffällt. */
+     `staende` ist der abgelesene Verbrauch der Abrechnungsperiode. Für 2019,
+     2021, 2023 und 2024 aus den vollständigen Abrechnungen (jede enthält alle
+     neun Nutzer). Für 2022 (Saison 2021/22) aus dem handgeschriebenen
+     Ableseformular „2022.Ableseergebnisse" — sehr klar leserlich, ein
+     einziger Wert je Zähler, keine zweite Quelle zum Gegenprüfen. Fehlt ein
+     Jahr, gab es das Gerät damals nicht oder es war schon abgebaut.
+
+     N340k — bewusst NICHT übernommen: das Formular „2023.09-Ableseergebnisse"
+     (Saison 2022/23) zeigt bei 5057/5058/5059 exakt dieselben Werte wie das
+     Vorjahresformular (432/295/971) — für jährlich neu gesetzte
+     Verdunstungsröhrchen an drei verschiedenen Zählern praktisch
+     ausgeschlossen, eher ein Durchdrücker von der Rückseite des Scans. Für
+     2023 gilt weiter die Abrechnung, nicht dieses Formular. */
   { nr: '5057', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL',
-    belegt: 'mehrfach', staende: {2019: 622, 2021: 407, 2023: 715, 2024: 614} },
+    belegt: 'mehrfach', staende: {2019: 622, 2021: 407, 2022: 432, 2023: 715, 2024: 614} },
   { nr: '5058', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGL',
-    belegt: 'mehrfach', staende: {2019: 4, 2021: 223, 2023: 0, 2024: 125} },
+    belegt: 'mehrfach', staende: {2019: 4, 2021: 223, 2022: 295, 2023: 0, 2024: 125} },
   { nr: '5059', art: 'hkv', raum: 'Z', faktor: 1.938, war: 'EGL',
-    belegt: 'mehrfach', staende: {2019: 603, 2021: 920, 2023: 767, 2024: 879} },
+    belegt: 'mehrfach', staende: {2019: 603, 2021: 920, 2022: 971, 2023: 767, 2024: 879} },
   { nr: '5060', art: 'hkv', raum: '—', faktor: null, war: '—',
-    belegt: '', staende: {2021: 0} },
+    belegt: '', staende: {2021: 0, 2022: 0} },
   { nr: '5061', art: 'hkv', raum: 'WK', faktor: 2.223, war: 'EG1G',
-    belegt: 'mehrfach', staende: {2021: 161, 2023: 0, 2024: 0} },
+    belegt: 'mehrfach', staende: {2021: 161, 2022: 93, 2023: 0, 2024: 0} },
   { nr: '5062', art: 'hkv', raum: 'B', faktor: 0.928, war: 'EG1G',
-    belegt: 'mehrfach', staende: {2021: 600, 2023: 0, 2024: 0} },
+    belegt: 'mehrfach', staende: {2021: 600, 2022: 5, 2023: 0, 2024: 0} },
   { nr: '5063', art: 'hkv', raum: 'Flur', faktor: 1.259, war: '—',
     belegt: 'mehrfach', staende: {2021: 0} },
   { nr: '5064', art: 'hkv', raum: 'K', faktor: 0.667, war: 'EG1G',
-    belegt: 'mehrfach', staende: {2021: 1652, 2023: 837, 2024: 1168} },
+    belegt: 'mehrfach', staende: {2021: 1652, 2022: 1164, 2023: 837, 2024: 1168} },
   { nr: '5065', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR',
-    belegt: 'mehrfach', staende: {2019: 764, 2021: 415, 2023: 408, 2024: 564} },
+    belegt: 'mehrfach', staende: {2019: 764, 2021: 415, 2022: 551, 2023: 408, 2024: 564} },
   { nr: '5066', art: 'hkv', raum: 'Z', faktor: 1.108, war: 'EGR',
-    belegt: 'mehrfach', staende: {2019: 964, 2021: 379, 2023: 276, 2024: 224} },
+    belegt: 'mehrfach', staende: {2019: 964, 2021: 379, 2022: 558, 2023: 276, 2024: 224} },
   { nr: '5067', art: 'hkv', raum: 'K', faktor: 2.407, war: '1GL',
-    belegt: 'mehrfach', staende: {2019: 143, 2021: 215, 2023: 24, 2024: 16} },
+    belegt: 'mehrfach', staende: {2019: 143, 2021: 215, 2022: 174, 2023: 24, 2024: 16} },
   { nr: '5068', art: 'hkv', raum: 'W', faktor: 0.875, war: '1GL',
-    belegt: 'mehrfach', staende: {2019: 376, 2021: 132, 2023: 0, 2024: 1} },
+    belegt: 'mehrfach', staende: {2019: 376, 2021: 132, 2022: 82, 2023: 0, 2024: 1} },
   { nr: '5069', art: 'hkv', raum: '—', faktor: 0.875, war: '1GL',
-    belegt: 'mehrfach', staende: {2019: 9, 2021: 273, 2023: 190, 2024: 255} },
+    belegt: 'mehrfach', staende: {2019: 9, 2021: 273, 2022: 121, 2023: 190, 2024: 255} },
   { nr: '5070', art: 'hkv', raum: 'Z', faktor: 1.193, war: '1GR',
-    belegt: 'mehrfach', staende: {2019: 2, 2021: 0, 2023: 0, 2024: 0} },
+    belegt: 'mehrfach', staende: {2019: 2, 2021: 0, 2022: 0, 2023: 0, 2024: 0} },
   { nr: '5071', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR',
-    belegt: 'mehrfach', staende: {2019: 463, 2021: 448, 2023: 275, 2024: 131} },
+    belegt: 'mehrfach', staende: {2019: 463, 2021: 448, 2022: 312, 2023: 275, 2024: 131} },
   { nr: '5072', art: 'hkv', raum: 'Z', faktor: 0.875, war: '1GR',
-    belegt: 'mehrfach', staende: {2019: 454, 2021: 504, 2023: 286, 2024: 236} },
+    belegt: 'mehrfach', staende: {2019: 454, 2021: 504, 2022: 332, 2023: 286, 2024: 236} },
   { nr: '5073', art: 'hkv', raum: 'B/1G', faktor: 1.317, war: 'EG1G',
-    belegt: 'mehrfach', staende: {2021: 1562, 2023: 710, 2024: 613} },
+    belegt: 'mehrfach', staende: {2021: 1562, 2022: 816, 2023: 710, 2024: 613} },
   { nr: '5074', art: 'hkv', raum: 'Z', faktor: 2.47, war: 'DG',
-    belegt: 'mehrfach', staende: {2021: 87, 2023: 18, 2024: 31} },
+    belegt: 'mehrfach', staende: {2021: 87, 2022: 183, 2023: 18, 2024: 31} },
   { nr: '5075', art: 'hkv', raum: 'S', faktor: 1.976, war: 'DG',
-    belegt: 'mehrfach', staende: {2021: 97, 2023: 449, 2024: 753} },
+    belegt: 'mehrfach', staende: {2021: 97, 2022: 401, 2023: 449, 2024: 753} },
+  /* N340k — der Zähler-Werdegang steht auf den Formularen schwarz auf weiss:
+     beide Wärmemengenzähler wurden im Herbst 2021 bei 0 neu installiert
+     (Stand ALT 0.000 auf dem Formular „2021/22"); am 30.09.2023 stand 3706
+     auf 8210 kWh und 3705 auf 8996 kWh — exakt derselbe Wert steht auch als
+     Stand ALT auf der Abrechnung 2023/24. `staende` sind deshalb
+     Saison-Verbräuche (NEU−ALT): 2022 = 0→4581 / 0→5463,
+     2023 = 4581→8210 / 5463→8996. Vorher stand hier fälschlich „8210" als
+     Wert FÜR 2024 — das war der Stand am Saisonende 2023, nicht der Verbrauch
+     von 2023/24. Für 2023/24 ist nur die addierte Menge beider Zähler bekannt
+     (7.316 kWh laut Abrechnung, „Verbrauch H02"), keine Aufteilung je Gerät —
+     deshalb bleibt 2024 hier offen statt geraten. */
   { nr: '3706', art: 'wmz', raum: 'HZ', faktor: null, war: 'Anbau',
-    belegt: '', staende: { 2024: 8210 } },
+    belegt: '', staende: { 2022: 4581, 2023: 3629 } },
   { nr: '3705', art: 'wmz', raum: 'T/DG', faktor: null, war: 'Anbau',
-    belegt: '', staende: { 2024: 8996 } },
+    belegt: '', staende: { 2022: 5463, 2023: 3533 } },
 ];
 
 /* Die Lanes: die Einheiten der Immobilie plus ein allgemeiner Bereich für

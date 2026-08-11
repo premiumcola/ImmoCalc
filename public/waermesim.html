@@ -25,13 +25,21 @@
   .wz-leer{font:400 13px var(--body);color:var(--soft);margin:2px 0 6px}
 
   .wz-liste{display:flex;flex-direction:column;gap:8px;min-height:44px}
-  .wz-karte{display:flex;align-items:center;gap:10px;background:var(--paper);
-    border-radius:12px;padding:9px 11px;cursor:grab;
+  /* N340j — vorher hingen die Kärtchen randlos auf der Fläche, kaum vom
+     Hintergrund zu unterscheiden. Jetzt eigenes Blatt: heller als der Grund,
+     echte Kante, sichtbarer Schatten — jedes Gerät ein klar umrissenes Ding. */
+  .wz-karte{display:flex;align-items:center;gap:10px;background:var(--sheet);
+    border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+    cursor:grab;box-shadow:0 1px 3px rgba(22,38,44,.07);
     -webkit-tap-highlight-color:transparent}
+  .wz-frei .wz-karte{background:var(--sheet)}
   .wz-lane .wz-karte{background:var(--paper)}
+  .wz-karte:hover{border-color:#C3CDCE;box-shadow:0 2px 6px rgba(22,38,44,.1)}
   .wz-karte.auf{outline:2px solid var(--teal);outline-offset:1px;
-    background:var(--teal-l)}
-  .wz-karte.mahnt{box-shadow:inset 3px 0 0 var(--amber)}
+    border-color:var(--teal);background:var(--teal-l);
+    box-shadow:0 3px 10px rgba(15,110,92,.18)}
+  .wz-karte.mahnt{border-left:3px solid var(--amber);
+    box-shadow:0 1px 3px rgba(145,98,18,.14)}
   /* Der Griff: gross genug zum Treffen (44 px), damit das Namensfeld daneben
      ungestört getippt werden kann. */
   .wz-nr{flex:none;min-width:56px;min-height:44px;border:none;border-radius:10px;
@@ -40,7 +48,7 @@
   .wz-karte.auf .wz-nr{background:var(--teal);color:#fff}
   .wz-mitte{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
   .wz-name{width:100%;box-sizing:border-box;border:1px solid var(--line);
-    border-radius:9px;background:var(--sheet);padding:9px 10px;min-height:40px;
+    border-radius:9px;background:var(--paper);padding:9px 10px;min-height:40px;
     font:500 16px var(--body);color:var(--ink)}
   .wz-name:focus{outline:none;border-color:var(--teal);
     box-shadow:0 0 0 3px rgba(15,110,92,.12)}
@@ -62,7 +70,7 @@
   .wz-faktor label{font:600 9.5px var(--mono);letter-spacing:.07em;
     text-transform:uppercase;color:var(--soft)}
   .wz-faktor input{width:74px;box-sizing:border-box;border:1px solid var(--line);
-    border-radius:9px;background:var(--sheet);padding:8px;min-height:40px;
+    border-radius:9px;background:var(--paper);padding:8px;min-height:40px;
     text-align:right;font:600 16px var(--mono);color:var(--ink)}
   .wz-faktor.kwh{font:600 11px var(--mono);color:var(--soft);align-self:center}
   /* N340i — am Rechner wird gearbeitet, nicht getippt: die Seite nutzt die
