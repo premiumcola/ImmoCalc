@@ -32,7 +32,7 @@ export const JAHRESDATEN = {
       { datum: '2020-10-01', liter: 3483.0, eur: 2097.04 },
       { liter: 3000.0, eur: 2027.76 },
     ],
-    rest: { datum: '2021-09-30', liter: -2434.0, eur: -1645.19 },
+    rest: { datum: '2021-09-30', liter: 2434.0, eur: 1645.19 },
     ww_m3: 28.140,
     bloecke: [
       { name: 'Nebenkosten Heizung', betrag: 398.15 },
@@ -47,7 +47,7 @@ export const JAHRESDATEN = {
       { datum: '2022-10-01', liter: 2646.0, eur: 2549.00 },
       { datum: '2023-02-16', liter: 1000.0, eur: 1060.29 },
     ],
-    rest: { datum: '2023-09-30', liter: -518.0, eur: -549.23 },
+    rest: { datum: '2023-09-30', liter: 518.0, eur: 549.23 },
     ww_m3: 18.470,
     bloecke: [
       { name: 'Nebenkosten Heizung', betrag: 353.75 },
@@ -63,7 +63,7 @@ export const JAHRESDATEN = {
       { datum: '2023-10-01', liter: 518.0, eur: 511.06 },
       { liter: 3000.0, eur: 3235.50 },
     ],
-    rest: { datum: '2024-09-30', liter: -261.0, eur: -281.50 },
+    rest: { datum: '2024-09-30', liter: 261.0, eur: 281.50 },
     ww_m3: 9.800,
     bloecke: [
       { name: 'Nebenkosten Heizung', betrag: 519.78 },
@@ -71,6 +71,7 @@ export const JAHRESDATEN = {
       { name: 'Zusatzkosten Warmwasser', betrag: 26.18, nur_heizung: false },
     ],
     fest_anteil: 0.30,
+    soll_gesamt: { heizkosten: 4130.32, warmwasser: 176.06 },
     // N340k — für 2023/24 ist nur die addierte WMZ-Menge beider Anbau-Zähler
     // bekannt (7.316 kWh), keine Aufteilung je Gerät. Ohne diesen Wert wäre
     // der H2-Anteil hier nicht ableitbar; ihn zu raten wäre schlimmer als ihn

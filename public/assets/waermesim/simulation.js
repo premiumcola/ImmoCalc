@@ -142,6 +142,80 @@ async function zeichneSimulation() {
     </div>`;
 }
 
+/* N340n — Warmwasser: Verhältnis zu den Heizkosten über alle bekannten
+   Jahre, dazu die Warmwasser-Zähler, die bisher gefunden wurden — damit sich
+   auf einen Blick prüfen lässt, ob vor Ort noch einer fehlt. Reine
+   Bestandsaufnahme, keine eigene Rechnung: die Zahlen kommen unverändert aus
+   `JAHRESDATEN` (Delta-t) und aus den Gerätestammdaten (`zaehler.js`). */
+function warmwasserZaehlerHtml() {
+  const ww = GERAETE.filter(g => g.art === 'wmz' || /^(WWZ|BZL)$/.test(g.war || ''));
+  // Die zwei Boilerzulauf-/Warmwasserzähler-Nummern, die in den Ablese-
+  // formularen auftauchten, ohne dass sie als eigenes Gerät in GERAETE
+  // stehen (sie messen die ganze Liegenschaft, nicht eine Einheit — für die
+  // Heizkörper-Zuordnung oben irrelevant, für die Vollständigkeit hier schon).
+  const liegenschaft = [
+    { nr: '8716 → 7592', bez: 'Boilerzulauf Liegenschaft (Nummer wechselte)' },
+    { nr: '3274 → 6363', bez: 'Warmwasserzähler Anbau (Nummer wechselte)' },
+  ];
+  return `<ul class="wsim-wwliste">
+      ${liegenschaft.map(z => `<li><b>${esc(z.nr)}</b> — ${esc(z.bez)}</li>`).join('')}
+    </ul>
+    <p class="wsim-wwhinweis">Nur diese zwei Warmwasser-/Boilerzulaufzähler
+      sind bisher belegt — beide auf Liegenschaftsebene, keiner je Einheit.
+      Die Heizkörperzähler oben liefern kein Warmwasser. Wenn vor Ort weitere
+      Warmwasserzähler an einzelnen Wohnungen hängen, stehen sie noch nicht
+      in dieser Liste.</p>`;
+}
+
+async function zeichneWarmwasser() {
+  const wurzel = document.getElementById('wsim-ww');
+  if (!wurzel) return;
+  wurzel.innerHTML = `<p class="wsim-lade">Wird gerechnet …</p>`;
+
+  // Zwei Blickwinkel je Jahr: der Kosten-Anteil laut Delta-t (direkt von der
+  // Abrechnung) UND der Energie-Anteil nach §9 HeizkostenV (aus Liter/m³
+  // gerechnet, unabhängig von den Zählern). Weichen beide stark voneinander
+  // ab, ist das ein Hinweis auf eine falsche Eingabe — genau die Prüfung, die
+  // der Nutzer sucht.
+  const zeilen = (await Promise.all(JAHRE_ABSTEIGEND.map(async jahr => {
+    const jd = JAHRESDATEN[jahr];
+    if (!jd?.soll_gesamt) return null;
+    const { heizkosten, warmwasser } = jd.soll_gesamt;
+    const gesamt = heizkosten + warmwasser;
+    const kostenAnteil = gesamt > 0 ? (warmwasser / gesamt) * 100 : 0;
+    const erg = await rechneJahr(jahr);
+    const energieAnteil = erg ? erg.anteile.warmwasser * 100 : null;
+    return { jahr, warmwasser, heizkosten, kostenAnteil, energieAnteil,
+             wwKwh: erg?.energie.ww_kwh, heizKwh: erg?.energie.heiz_kwh };
+  }))).filter(Boolean);
+
+  const hoechster = Math.max(...zeilen.map(z => z.kostenAnteil), 1);
+  wurzel.innerHTML = `
+    <h3 class="wsim-wwtitel">Warmwasser im Verhältnis zu den Heizkosten</h3>
+    <p class="wsim-hinweis">Zwei unabhängige Rechnungen nebeneinander: der
+      Kosten-Anteil steht direkt so auf der Delta-t-Abrechnung, der
+      Energie-Anteil ergibt sich aus Litern Öl und m³ Warmwasser (§9
+      HeizkostenV) — ohne die Zähler zu kennen. Laufen beide weit
+      auseinander, lohnt ein zweiter Blick auf die Eingabe.</p>
+    <div class="wsim-wwbalken">
+      ${zeilen.map(z => `
+        <div class="wsim-wwzeile">
+          <span class="wsim-wwjahr">${z.jahr - 1}/${String(z.jahr).slice(2)}</span>
+          <span class="wsim-wwspur"><span class="wsim-wwfuellung"
+            style="width:${Math.max(4, z.kostenAnteil / hoechster * 100)}%"></span></span>
+          <span class="wsim-wwproz">${z.kostenAnteil.toFixed(1).replace('.', ',')} %
+            <span class="wsim-wwenergie">${z.energieAnteil != null
+              ? `(Energie ${z.energieAnteil.toFixed(1).replace('.', ',')} %)` : ''}</span></span>
+          <span class="wsim-wwbetrag">${eur(z.warmwasser)} WW / ${eur(z.heizkosten)} Heiz.
+            ${z.wwKwh != null
+              ? `<br>${Math.round(z.wwKwh).toLocaleString('de-DE')} kWh WW /
+                 ${Math.round(z.heizKwh).toLocaleString('de-DE')} kWh Heiz.` : ''}</span>
+        </div>`).join('')}
+    </div>
+    <h3 class="wsim-wwtitel">Gefundene Warmwasser-Zähler</h3>
+    ${warmwasserZaehlerHtml()}`;
+}
+
 export function jahrWechseln(jahr) {
   gewaehltesJahr = jahr;
   zeichneSimulation();
@@ -149,7 +223,10 @@ export function jahrWechseln(jahr) {
 
 export async function simulationEinbauen(aktuellerStand) {
   stand = aktuellerStand;
-  const seite = document.getElementById('inhalt');
+  // N340n — ausserhalb von #inhalt: dort steht die fixierte Vorratsspalte
+  // („Noch nicht zugeordnet"), und ein gemeinsames Grid liess deren
+  // Sticky-Panel die Tabelle hier überlappen.
+  const seite = document.getElementById('wsim-wrap');
   if (!seite || document.getElementById('wsim-block')) return;
   const block = document.createElement('div');
   block.id = 'wsim-block';
@@ -157,13 +234,15 @@ export async function simulationEinbauen(aktuellerStand) {
     <h2 class="wsim-titel">Simulation — Heizkosten je Einheit</h2>
     <p class="wsim-hinweis">Rechnet dieselbe Aufstellung wie Delta-t, aus den
       Zählerständen oben. ${jahrWaehlerHtml()}</p>
-    <div id="wsim-inhalt"></div>`;
+    <div id="wsim-inhalt"></div>
+    <div id="wsim-ww"></div>`;
   seite.appendChild(block);
   block.querySelector('.wsim-jahre').addEventListener('click', e => {
     const knopf = e.target.closest('[data-jahr]');
     if (knopf) jahrWechseln(Number(knopf.dataset.jahr));
   });
   await zeichneSimulation();
+  await zeichneWarmwasser();
 }
 
 export function simulationAktualisieren(aktuellerStand) {
