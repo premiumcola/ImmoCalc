@@ -13,8 +13,8 @@ from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, besitz, cloud, dokumente, dokumentvorlagen,
-                      heizoel, ki, kidb, kontakte, mail, objekte, openwb,
-                      renovierung,
+                      heizkosten, heizoel, ki, kidb, kontakte, mail, objekte,
+                      openwb, renovierung,
                       solaredge, stammdaten, strom, stromkette, tankstelle,
                       versand, waerme, waermesim, weg, zaehler)
 from .seed import seed
@@ -74,6 +74,7 @@ app.include_router(objekte.router)
 # zweisegmentigen Pfade mehr (siehe stammdaten.py:_altpfad).
 app.include_router(besitz.router)
 app.include_router(zaehler.router)  # /objekte/{slug}/zaehler VOR dem Stammdaten-Fänger
+app.include_router(heizkosten.router)
 # /objekte/{slug}/heizoel ebenfalls VOR dem Stammdaten-Fänger (N79).
 app.include_router(heizoel.router)
 # /objekte/{slug}/heizverteiler|waerme|heizung ebenfalls VOR dem Fänger (N80/N81).
