@@ -16,6 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/immo.css">
+<link rel="stylesheet" href="assets/zaehler-konfig.css">
 <style>
   /* N36a — der „Zurück"-Knopf trägt nur noch den Pfeil (Wort per aria-label
      für Screenreader). Kompakt, ohne die zwei Leerzeichen hinter dem Pfeil,
@@ -71,17 +72,12 @@
     padding:13px;min-height:48px;font:600 14px var(--disp);cursor:pointer;margin-bottom:14px}
   .ablesebtn:hover{background:#DCEDE7}
   .ablesebtn .si{font:400 18px var(--mono);line-height:1}
-  .ablese-dlg{border:none;border-radius:18px;padding:0;max-width:440px;width:calc(100vw - 28px);
-    background:var(--sheet);color:var(--ink);box-shadow:0 18px 50px rgba(22,38,44,.25)}
-  .ablese-dlg::backdrop{background:rgba(22,38,44,.45)}
-  .aw-kopf{display:flex;align-items:center;gap:10px;padding:16px 18px 10px}
-  .aw-kopf .t{font:700 15px var(--disp);flex:1;min-width:0}
-  .aw-x{border:none;background:var(--paper);width:32px;height:32px;border-radius:50%;
-    font-size:18px;color:var(--ink);cursor:pointer;flex:none;line-height:1}
+  /* N350 — Dialog-Rahmen (.ablese-dlg/.aw-kopf/.aw-x/.aw-body/.aw-fuss/
+     .aw-weiter) und die ganze Zähler-Konfig-Maske (.zk-*) leben in
+     assets/zaehler-konfig.css — der Dialog läuft auch auf objekt.html. */
   .aw-bahn{height:6px;background:#E4EAEA;margin:0 18px;border-radius:99px;overflow:hidden}
   .aw-bahn i{display:block;height:100%;background:var(--teal);border-radius:99px;transition:width .2s}
   .aw-schritt{font:600 11px var(--mono);color:var(--soft);padding:9px 18px 0}
-  .aw-body{padding:4px 18px 14px}
   .aw-name{font:700 20px var(--disp);letter-spacing:-.01em;margin:4px 0 9px;line-height:1.15}
   .aw-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
   .aw-chips .c{font:600 11.5px var(--body);background:var(--paper);color:var(--soft);
@@ -95,13 +91,8 @@
   .aw-feld input:focus{outline:none;border-color:var(--teal)}
   .aw-verb{font:600 12.5px var(--body);color:var(--teal-d);background:var(--teal-l);
     border-radius:11px;padding:10px 13px;margin-top:2px;line-height:1.45}
-  .aw-fuss{display:flex;gap:10px;padding:12px 18px 18px}
-  .aw-fuss button{flex:1;border-radius:12px;padding:13px;min-height:48px;
-    font:600 14px var(--disp);cursor:pointer;border:none}
   .aw-zurueck{background:var(--paper);color:var(--ink)}
   .aw-zurueck[disabled]{opacity:.4;cursor:default}
-  .aw-weiter{background:var(--teal);color:#fff}
-  .aw-weiter[disabled]{opacity:.5;cursor:default}
   .aw-block{background:var(--paper);border-radius:13px;padding:12px 13px;margin-bottom:11px}
   .aw-bk{font:700 14px var(--disp);margin-bottom:8px}
   .aw-zeile{display:flex;justify-content:space-between;gap:10px;
@@ -115,136 +106,6 @@
     font:600 14px var(--body);background:var(--sheet);color:var(--ink);min-height:46px}
   .aw-select:focus{outline:none;border-color:var(--teal)}
 
-  /* CCCLXXX — „Ablesewerte eingeben" und der Zahnrad-Knopf zum Konfigurieren
-     stehen nebeneinander in einer Leiste. */
-  .ablese-leiste{display:flex;gap:8px;margin-bottom:14px}
-  .ablese-leiste .ablesebtn{flex:1;margin-bottom:0}
-  /* N211 — nur noch der Konfig-Knopf, dezent rechts (kein prominenter Balken). */
-  .ablese-leiste.nur-konfig{justify-content:flex-end;margin-bottom:12px}
-  .zk-gear{flex:none;width:48px;min-height:48px;display:flex;align-items:center;
-    justify-content:center;border:1.5px solid #BFD9D1;background:var(--teal-l);
-    color:var(--teal-d);border-radius:13px;cursor:pointer}
-  .zk-gear.breit{width:auto;gap:7px;padding:0 16px;min-height:44px;
-    font:600 12.5px var(--disp)}
-  .zk-gear.breit span{white-space:nowrap}
-  .zk-gear:hover{background:#DCEDE7}
-  .zk-gear svg{width:22px;height:22px;display:block}
-
-  /* Zähler-Konfig-Maske (nutzt den Rahmen der Ablese-Maske: .ablese-dlg). */
-  .zk-body{max-height:min(74dvh,620px);overflow:auto}
-  /* N340v — am PC ist Breite reichlich vorhanden; die 440px-Vorgabe der
-     Ablese-Maske liess bei 39 Zählern jedes Feld eng nebeneinander stehen.
-     Nur diese Maske wird breiter (`.zk-dlg`), der Ablese-Wizard bleibt schmal
-     wie er war — der ist für eine Ablesung nach der anderen gedacht. */
-  @media(min-width:900px){
-    dialog.ablese-dlg.zk-dlg{max-width:760px}
-    .zk-dlg .zk-grid{grid-template-columns:repeat(3,1fr)}
-    .zk-dlg .zk-feld.voll{grid-column:1 / -1}
-    .zk-dlg .zk-body{max-height:min(78dvh,720px)}
-  }
-  /* N231 — Fortschritt wie im Anfangszählerstände-Dialog (`.az-fort`): auf
-     einen Blick, wie viele Zähler schon vollständig eingerichtet sind. */
-  .zk-fort{display:flex;align-items:center;gap:10px;margin:2px 0 14px}
-  .zk-balken{flex:1;height:6px;background:#E4EAEA;border-radius:99px;overflow:hidden}
-  .zk-balken i{display:block;height:100%;background:var(--teal);border-radius:99px;
-    transition:width .2s}
-  .zk-fz{font:600 11px var(--mono);color:var(--soft);white-space:nowrap}
-  /* Status je Karte: fertig (Messeinheit + Kostenart + Anfangsstand/Rest) vs.
-     fehlt noch etwas — derselbe Haken/Punkt wie in der Checkliste, nur als
-     kleiner Kreis statt Text-Zeichen. */
-  .zk-status{width:24px;height:24px;border-radius:50%;flex:none;display:flex;
-    align-items:center;justify-content:center;font:700 12px var(--mono)}
-  .zk-status.ok{background:var(--pos);color:#fff}
-  .zk-status.warn{background:var(--amber-bg);color:var(--amber)}
-  .zk-intro{font:500 12.5px var(--body);color:var(--soft);line-height:1.5;
-    margin:2px 0 12px}
-  .zk-karte{background:var(--paper);border-radius:14px;padding:12px 12px 4px;
-    margin-bottom:11px}
-  /* N340u — zugeklappt: nur die Kopfzeile, kein unterer Innenabstand, sonst
-     bliebe unter jeder der 39 Karten unnötige Luft stehen. */
-  .zk-karte.zu{padding-bottom:0}
-  .zk-karte.zu .zk-kopf{margin-bottom:0}
-  .zk-kopf{display:flex;align-items:center;gap:8px;margin-bottom:10px;
-    cursor:pointer;border-radius:10px}
-  .zk-kopftxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-  /* N346 — das Verrechnungszeichen ist zugeklappt die Hauptinformation:
-     fettes Badge, weiss auf dunkel — Σ Gesamt · − Unterzähler · = Rest ·
-     + eigenständig. Der Erledigt-Haken tritt daneben klein zurück. */
-  .zk-vz{flex:none;width:28px;height:28px;border-radius:9px;display:flex;
-    align-items:center;justify-content:center;font:800 15px var(--mono);
-    color:#fff;background:var(--ink)}
-  /* `color` je Variante ausdrücklich weiss: die .vz-*-Regeln der
-     Ablese-Eingabe (gleiche Spezifität, später im Stylesheet) färben sonst
-     die Ziffer in der Badge-Farbe — unsichtbar auf gleichem Grund. */
-  .zk-vz.vz-summe{background:var(--ink);font-size:16px;color:#fff}
-  .zk-vz.vz-minus{background:var(--neg);color:#fff}
-  .zk-vz.vz-gleich{background:var(--teal-d);color:#fff}
-  .zk-vz.vz-plus{background:#728287;color:#fff}
-  .zk-karte.zu .zk-status{width:15px;height:15px;font:700 8px var(--mono)}
-  .zk-name{width:100%;min-width:0;border:1.5px solid var(--line);border-radius:10px;
-    padding:10px 11px;font:700 14px var(--disp);background:var(--sheet);
-    color:var(--ink);min-height:44px}
-  .zk-name:focus{outline:none;border-color:var(--teal)}
-  .zk-nr{font:600 10.5px var(--mono);color:var(--soft);padding:0 2px}
-  .zk-chevron{flex:none;width:20px;text-align:center;color:var(--soft);
-    font:600 13px var(--body)}
-  .zk-tools{display:flex;gap:4px;flex:none}
-  .zk-ic{width:38px;height:38px;min-width:38px;border:none;border-radius:9px;
-    background:var(--sheet);color:var(--soft);cursor:pointer;display:flex;
-    align-items:center;justify-content:center;font:600 15px var(--body);line-height:1}
-  .zk-ic:hover{background:#E1E8E6;color:var(--ink)}
-  .zk-ic[disabled]{opacity:.35;cursor:default}
-  .zk-ic.gefahr:hover{background:var(--neg-bg);color:var(--neg)}
-  .zk-ic svg{width:16px;height:16px;display:block}
-  /* N340x — Zähler nach Art gruppiert (Wasser/Strom/Heizöl/Warmwasser/
-     Heizkörper & Wärmemenge), statt 39 Karten in einer einzigen Liste. Der
-     Chip ist reine Gliederung, kein Knopf — nicht antippbar. */
-  .zk-chip{display:inline-flex;align-items:center;gap:6px;
-    font:700 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;
-    color:var(--teal-d);background:var(--teal-l);border-radius:999px;
-    padding:6px 12px;margin:16px 0 8px}
-  .zk-chip:first-child{margin-top:2px}
-  .zk-chip span{font:600 10px var(--mono);color:var(--teal-d);opacity:.7}
-  .zk-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  @media(max-width:400px){ .zk-grid{grid-template-columns:1fr} }
-  .zk-feld{display:flex;flex-direction:column;gap:5px;min-width:0;margin-bottom:9px}
-  .zk-feld.voll{grid-column:1 / -1}
-  /* N340z — die Einheiten-Zuordnung als antippbare Chips statt Dropdown,
-     dieselbe Optik wie `.zu-eh` in der Ablese-Eingabe. */
-  /* N341 — Einheiten-Zwischenüberschrift im Konfigurator; die Zähler stehen
-     sichtbar eingerückt darunter. */
-  .zk-ehkopf{display:flex;align-items:center;gap:7px;margin:10px 0 5px 2px;
-    font:700 11.5px var(--disp);color:var(--ink)}
-  .zk-ehkopf span{font:600 9.5px var(--mono);color:var(--soft)}
-  .zk-liste.eingerueckt{margin-left:6px;padding-left:8px;
-    border-left:2px solid var(--line)}
-  /* Eingerückt bleibt weniger Breite — die Werkzeuge treten zurück, damit
-     der Zählername lesbar bleibt (er ist das, wonach man sucht). */
-  .zk-liste.eingerueckt .zk-ic{width:32px;height:32px;min-width:32px}
-  .zk-liste.eingerueckt .zk-karte{padding:9px 9px 4px}
-  .zk-liste.eingerueckt .zk-kopf{gap:5px}
-  .zk-ehchips{display:flex;flex-wrap:wrap;gap:6px}
-  .zk-eh{min-height:38px;padding:6px 13px;border-radius:999px;
-    border:1.5px solid var(--line);background:var(--sheet);color:var(--soft);
-    font:600 12.5px var(--body);cursor:pointer;-webkit-tap-highlight-color:transparent}
-  .zk-eh.an{border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)}
-  .zk-feld label{font:600 9.5px var(--mono);text-transform:uppercase;
-    letter-spacing:.05em;color:var(--soft)}
-  .zk-feld select,.zk-feld input{border:1.5px solid var(--line);border-radius:10px;
-    padding:9px 10px;font:600 13px var(--body);background:var(--sheet);
-    color:var(--ink);min-height:44px;width:100%}
-  .zk-feld select:focus,.zk-feld input:focus{outline:none;border-color:var(--teal)}
-  .zk-anfang{display:flex;gap:8px;align-items:flex-end}
-  .zk-anfang .zk-feld{flex:1;margin-bottom:9px}
-  .zk-rest{font:500 11.5px var(--body);color:var(--teal-d);background:var(--teal-l);
-    border-radius:9px;padding:8px 10px;margin:0 0 9px;line-height:1.45}
-  .zk-add{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
-    border:1.5px dashed var(--line);background:transparent;color:var(--teal-d);
-    border-radius:13px;padding:12px;font:600 13px var(--disp);cursor:pointer;
-    min-height:48px;margin-top:2px}
-  .zk-add:hover{border-color:var(--teal);background:var(--teal-l)}
-  .zk-leer{font:500 12.5px var(--body);color:var(--soft);line-height:1.5;
-    padding:6px 2px 14px}
 
   .pruef{background:var(--sheet);border-radius:14px;margin-bottom:10px;overflow:hidden;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -801,8 +662,7 @@
      schreibweise. Jede hier definierte Eingabe braucht die Ausnahme deshalb
      selbst — sonst zoomt iOS z. B. beim Umbenennen eines Zählers hinein. */
   @media (pointer:coarse){
-    .zu-name-inp,.zu-jahr,.zu-feld input,.kopf-betrag,.anteil-mini,
-    .zk-name,.zk-feld input,.zk-feld select{font-size:16px}
+    .zu-name-inp,.zu-jahr,.zu-feld input,.kopf-betrag,.anteil-mini{font-size:16px}
   }
   .zu-dat,.zu-uebernommen{font:500 10.5px var(--body);color:var(--soft);
     white-space:nowrap}

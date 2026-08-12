@@ -261,13 +261,23 @@ export async function laden() {
   // N141 — der Dialog braucht das Ziel auch später noch (Weg in die
   // Zähler-Konfig, Auffrischen der Rubrik nach dem Speichern).
   setErststandZiel(erststandZielId);
+  // N350 — die Zähler-Konfiguration als eigene Zeile UNTER den Zeiträumen
+  // („Zähler konfigurieren"), nicht als vierter Knopf in der Kopfzeile — dort
+  // quetschte er die Überschrift zusammen.
+  const zaehlerZeile = fokusWert ? '' : `
+    <button class="eintrag klick" data-zaehler-konfig="1" style="cursor:pointer">
+      <span class="et">
+        <span class="en">Zähler konfigurieren</span>
+        <span class="ed">Benennen, Einheiten zuordnen, Verrechnung festlegen</span>
+      </span>
+      <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
+    </button>`;
   const zeitraumBlock = istGrundstueck() ? '' : `
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
       ${fokusWert ? '' : `<span class="sekopf-akt">
-        <button data-zaehler-konfig="1">Zähler</button>
         <button data-zeitraum-werkzeug="1">Umstellen</button>
         <button data-zeitraum-neu="1">Anlegen</button></span>`}</div>
-    <div class="liste">${zr}</div>
+    <div class="liste">${zr}${zaehlerZeile}</div>
     ${fokusWert ? `<div class="fussnote">Abgerechnet wird immer das ganze Haus;
       im Zeitraum steht, was davon auf diese Einheit entfällt.</div>` : ''}
     ${erststandHtml(erststandZielId)}`;
