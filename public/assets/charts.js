@@ -169,10 +169,14 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
   const spaltenX = s => spalten.length === 1 ? 0
     : (s / (spalten.length - 1)) * (breite - knotenBreite);
 
-  // Auf schmalen Schirmen wird das SVG stark verkleinert — dort brauchen
-  // Rand und Schrift im viewBox mehr Mass, damit die Beschriftung lesbar bleibt.
+  // Auf schmalen Schirmen wird das SVG stark verkleinert — dort braucht die
+  // Schrift im viewBox mehr Mass, damit die Beschriftung lesbar bleibt.
+  // N344 — der Seitenrand dagegen ist fast weg: alle Beschriftungen stehen
+  // INNERHALB der Knotenspalten (links `x+8` nach rechts, rechts `x-8` nach
+  // links verankert); die alten 66/96 Einheiten je Seite waren tote Fläche,
+  // die das ganze Diagramm nur kleiner zeichnete.
   const schmal = breite < 400;
-  const rand = schmal ? 66 : 96;
+  const rand = schmal ? 8 : 12;
   const schrift = schmal ? 13 : 11;
 
   // Überschuss und Fehlbetrag sind keine Kostenart, sondern das Ergebnis —
