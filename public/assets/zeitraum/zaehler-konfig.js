@@ -86,22 +86,23 @@ export async function zaehlerKonfig() {
   // N340z — die Zuordnung „welcher Zähler gehört zu welcher Einheit" ist der
   // Kern dieser Maske; ein Dropdown mit Partei-Namen sagte nicht auf Anhieb,
   // welche Einheit gemeint ist. Antippbare Chips mit den echten Einheiten
-  // der Immobilie, wie schon in der Ablese-Eingabe (`einheitChooserHtml`) —
-  // dieselbe Optik (`.zu-eh`), nur einfach-wählbar: `einheit_bezug` ist ein
-  // Einzelwert, ein Zähler zählt für die Verteilung auf genau eine Einheit
-  // (oder „Allgemein"). Ein alter, nicht mehr passender Wert (z. B. „WG")
-  // bleibt als eigener, aktiver Chip sichtbar statt lautlos zu verschwinden.
+  // der Immobilie, wie in der Ablese-Eingabe (`einheitChooserHtml`) — und
+  // genau wie dort MEHRFACH wählbar (N343): gespeichert wird die Liste
+  // `einheiten` (dieselbe, die Wasser-/Strom-/Heizkosten-Verteilung lesen),
+  // `einheit_bezug` bleibt als Altwert unangetastet. Mehrere gewählte
+  // Einheiten heißen: der Wert des Zählers verteilt sich auf genau diese
+  // (Anzeige-Gruppe „Gemeinschaftlich"); keine gewählte heißt „Allgemein".
+  function gewaehlteEinheiten(z) {
+    if (Array.isArray(z.einheiten) && z.einheiten.length) return z.einheiten;
+    return z.einheit_bezug ? [z.einheit_bezug] : [];
+  }
+
   function bezugChips(z) {
-    const einheiten = alleEinheiten();
-    const bekannt = new Set(einheiten);
-    const alt = z.einheit_bezug && !bekannt.has(z.einheit_bezug) ? [z.einheit_bezug] : [];
-    const chips = [{ wert: '', text: 'Allgemein' },
-                   ...einheiten.map(e => ({ wert: e, text: e })),
-                   ...alt.map(e => ({ wert: e, text: e }))];
-    return `<div class="zk-ehchips">${chips.map(c => `
-        <button type="button" class="zk-eh${
-          c.wert === (z.einheit_bezug || '') ? ' an' : ''}"
-          data-zk-bezug="${z.id}" data-wert="${esc(c.wert)}">${esc(c.text)}</button>`).join('')}
+    const gewaehlt = new Set(gewaehlteEinheiten(z));
+    return `<div class="zk-ehchips">${alleEinheiten().map(e => `
+        <button type="button" class="zk-eh${gewaehlt.has(e) ? ' an' : ''}"
+          data-zk-eh-toggle="${z.id}" data-einheit="${esc(e)}"
+          aria-pressed="${gewaehlt.has(e)}">${esc(e)}</button>`).join('')}
       </div>`;
   }
 
@@ -180,7 +181,8 @@ export async function zaehlerKonfig() {
         <div class="zk-feld"><label>Zählernummer</label>
           <input value="${esc(z.zaehlernummer || '')}" data-zk-f="zaehlernummer"
             data-zid="${z.id}" placeholder="z. B. 5057" aria-label="Zählernummer"></div>
-        <div class="zk-feld voll"><label>Zählt auf</label>${bezugChips(z)}</div>
+        ${bereich(z) === 'Heizkörper & Wärmemenge'
+          ? `<div class="zk-feld voll"><label>Zählt auf</label>${bezugChips(z)}</div>` : ''}
         <div class="zk-feld"><label>Einheit</label>
           <select data-zk-f="messeinheit" data-zid="${z.id}">${messSel}</select></div>
         <div class="zk-feld"><label>Kostenart</label>
@@ -223,25 +225,42 @@ export async function zaehlerKonfig() {
     return BEREICHE.map(b => [b, nach.get(b) || []]).filter(([, l]) => l.length);
   }
 
-  /* N341 — innerhalb einer Kategorie noch einmal nach Einheit gruppieren:
-     der Nutzer will sehen, welche Zähler auf welcher Wohnung liegen, statt
-     die Zuordnung in jeder Karte einzeln nachzulesen. Tippt er den Chip in
-     einer Karte um, wandert sie sichtbar unter die andere Einheit. */
+  /* N341/N343 — NUR die Heizkörper & Wärmemenge werden nach Einheit
+     gruppiert (der Nutzer: „weil's so viele sind, um die Übersicht zu
+     behalten"). Mehrere gewählte Einheiten -> „Gemeinschaftlich", keine ->
+     „Allgemein". Tippt er den Chip in einer Karte um, wandert sie sichtbar
+     unter die andere Überschrift. */
   function nachEinheit(eintraege) {
     const nach = new Map();
     for (const [z, i] of eintraege) {
-      const k = z.einheit_bezug || '';
+      const e = gewaehlteEinheiten(z);
+      const k = e.length > 1 ? 'Gemeinschaftlich' : (e[0] || 'Allgemein');
       if (!nach.has(k)) nach.set(k, []);
       nach.get(k).push([z, i]);
     }
-    // Echte Einheiten in der Reihenfolge des Objekts, „Allgemein" zuletzt.
-    const sortiert = [...nach.keys()].sort((a, b) => {
-      if (a === '') return 1;
-      if (b === '') return -1;
-      const ord = alleEinheiten();
-      return (ord.indexOf(a) + 1 || 99) - (ord.indexOf(b) + 1 || 99);
-    });
-    return sortiert.map(k => [k || 'Allgemein', nach.get(k)]);
+    // Echte Einheiten in der Reihenfolge des Objekts, Sammelgruppen zuletzt.
+    const ord = [...alleEinheiten(), 'Gemeinschaftlich', 'Allgemein'];
+    const sortiert = [...nach.keys()].sort((a, b) =>
+      (ord.indexOf(a) + 1 || 99) - (ord.indexOf(b) + 1 || 99));
+    return sortiert.map(k => [k, nach.get(k)]);
+  }
+
+  /* N343 — Wasser/Strom & Co. zeigen ihre VERRECHNUNGSSTRUKTUR, wie die
+     Zählerstände-Panels es schon immer tun: Hauptzähler zuerst, seine
+     Unterzähler und der Rest sichtbar eingerückt darunter. Keine
+     Einheiten-Gruppierung — die braucht dort niemand, die Struktur selbst
+     ist die Information (Haupt − Unterzähler = Rest). */
+  function strukturiert(eintraege) {
+    const drin = new Set(eintraege.map(([z]) => z.id));
+    const kinderVon = id => eintraege.filter(([z]) => z.hauptzaehler_id === id);
+    const wurzeln = eintraege.filter(([z]) =>
+      !z.hauptzaehler_id || !drin.has(z.hauptzaehler_id));
+    const bloecke = [];
+    for (const [z, i] of wurzeln) {
+      const kinder = kinderVon(z.id);
+      bloecke.push({ zeile: [z, i], kinder });
+    }
+    return bloecke;
   }
 
   function render() {
@@ -251,12 +270,22 @@ export async function zaehlerKonfig() {
     const vorherigerBody = dlg.querySelector('.zk-body');
     const scrollY = vorherigerBody?.scrollTop || 0;
     const liste = meters.length
-      ? gruppiert().map(([name, eintraege]) => `
-          <div class="zk-chip">${esc(name)}<span>${eintraege.length}</span></div>
-          ${nachEinheit(eintraege).map(([eh, liste]) => `
-            <div class="zk-ehkopf">${esc(eh)}<span>${liste.length}</span></div>
-            <div class="zk-liste eingerueckt">${
-              liste.map(([z, i]) => karte(z, i)).join('')}</div>`).join('')}`).join('')
+      ? gruppiert().map(([name, eintraege]) => {
+          const kopfChip = `<div class="zk-chip">${esc(name)}<span>${eintraege.length}</span></div>`;
+          // N343 — Einheiten-Gruppierung NUR bei den Heizkörpern (viele,
+          // gleichartige Geräte); alle anderen Bereiche zeigen ihre
+          // Verrechnungsstruktur: Haupt, darunter eingerückt Unter/Rest.
+          if (name === 'Heizkörper & Wärmemenge') {
+            return kopfChip + nachEinheit(eintraege).map(([eh, teil]) => `
+              <div class="zk-ehkopf">${esc(eh)}<span>${teil.length}</span></div>
+              <div class="zk-liste eingerueckt">${
+                teil.map(([z, i]) => karte(z, i)).join('')}</div>`).join('');
+          }
+          return kopfChip + strukturiert(eintraege).map(({ zeile, kinder }) =>
+            `<div class="zk-liste">${karte(zeile[0], zeile[1])}</div>`
+            + (kinder.length ? `<div class="zk-liste eingerueckt">${
+                kinder.map(([z, i]) => karte(z, i)).join('')}</div>` : '')).join('');
+        }).join('')
       : `<div class="zk-leer">Noch keine Zähler für diese Immobilie. Lege den
           ersten an — Gesamtzähler, Unterzähler je Einheit und, wenn nötig, einen
           berechneten Rest.</div>`;
@@ -305,11 +334,17 @@ export async function zaehlerKonfig() {
       Number(anf.dataset.zkAnfStand || anf.dataset.zkAnfDatum));
   });
 
-  async function bezugSetzen(id, wert) {
+  // N343 — Mehrfach-Auswahl: toggelt eine Einheit in der Liste `einheiten`
+  // (dieselbe, die Wasser/Strom/Heizkosten-Verteilung lesen). `einheit_bezug`
+  // bleibt als Altwert unangetastet.
+  async function einheitToggle(id, einheit) {
     const z = meters.find(m => m.id === id);
-    if (z) z.einheit_bezug = wert;
+    if (!z) return;
+    const jetzt = new Set(gewaehlteEinheiten(z));
+    jetzt.has(einheit) ? jetzt.delete(einheit) : jetzt.add(einheit);
+    z.einheiten = [...jetzt];
     render();
-    try { await api(`/zaehler/${id}`, { method: 'PATCH', body: { einheit_bezug: wert } }); }
+    try { await api(`/zaehler/${id}`, { method: 'PATCH', body: { einheiten: z.einheiten } }); }
     catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
   }
 
@@ -370,8 +405,9 @@ export async function zaehlerKonfig() {
     if (bewegung) return verschieben(
       Number(bewegung.dataset.zkUp || bewegung.dataset.zkDown),
       bewegung.dataset.zkUp ? -1 : 1);
-    const bezug = e.target.closest('[data-zk-bezug]');
-    if (bezug) return bezugSetzen(Number(bezug.dataset.zkBezug), bezug.dataset.wert);
+    const ehToggle = e.target.closest('[data-zk-eh-toggle]');
+    if (ehToggle) return einheitToggle(
+      Number(ehToggle.dataset.zkEhToggle), ehToggle.dataset.einheit);
     // N340u — Kopfzeile antippen klappt die Karte auf/zu. Kommt nach den
     // spezifischeren Zielen oben, sonst schlucken deren Buttons nie das
     // Toggle (sie liegen alle INNERHALB der Kopfzeile). Der Name bleibt

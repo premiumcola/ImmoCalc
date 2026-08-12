@@ -765,6 +765,15 @@
      nicht zurück (dieselbe Regel wie CCCLI in immo.css; eine klassen-genauere
      Angabe schlägt sie sonst wieder). */
   .zu-feld input[type=date]{width:150px;min-height:44px;font:500 16px var(--body)}
+  /* N343 — dieselbe iOS-Zoom-Regel für ALLE klassen-spezifischen Eingaben
+     dieser Seite: die CCCLI-Grundregel in immo.css (`input{font-size:16px}`
+     bei grobem Zeiger) verliert gegen jede Klassen-Angabe mit `font:`-Kurz-
+     schreibweise. Jede hier definierte Eingabe braucht die Ausnahme deshalb
+     selbst — sonst zoomt iOS z. B. beim Umbenennen eines Zählers hinein. */
+  @media (pointer:coarse){
+    .zu-name-inp,.zu-jahr,.zu-feld input,.kopf-betrag,.anteil-mini,
+    .zk-name,.zk-feld input,.zk-feld select{font-size:16px}
+  }
   .zu-dat,.zu-uebernommen{font:500 10.5px var(--body);color:var(--soft);
     white-space:nowrap}
   .zu-rechnung{display:flex;flex-direction:column;gap:3px;margin-top:8px;

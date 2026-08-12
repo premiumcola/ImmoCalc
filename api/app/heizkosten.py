@@ -96,21 +96,30 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
         if not ziele:
             unzugeordnet.append(zae.name)
             continue
-        roh = ziele[0]
-        bezug = bezug_karte.get(schluessel(roh), roh)
-        lane = lanes.setdefault(bezug, {"name": bezug,
-                                        "flaeche": flaeche.get(bezug, 0),
-                                        "ehkv": 0.0, "kwh": 0.0, "ww_m3": 0.0})
-        # N340u — Wärmemengenzähler (kWh) und Warmwasserzähler (m³) sind an
-        # der Kostenart/Messeinheit erkennbar; alles andere ist ein
-        # Heizkörperverteiler und braucht seinen Bewertungsfaktor, sonst sind
-        # seine Rohwerte gegen einen anderen HKV nicht vergleichbar.
-        if zae.kostenart == "Warmwasser":
-            lane["ww_m3"] += menge
-        elif zae.messeinheit == "kWh":
-            lane["kwh"] += menge
-        else:
-            lane["ehkv"] += menge * (zae.bewertungsfaktor or 0.0)
+        # N343 — MEHRERE gewählte Einheiten (der gemeinschaftliche
+        # Waschküchen-Heizkörper): der Wert verteilt sich zu gleichen Teilen
+        # auf genau die im Konfigurator gewählten Einheiten — nicht auf eine
+        # davon, nicht auf alle des Hauses.
+        aufgeloest: list[str] = []
+        for roh in ziele:
+            bezug = bezug_karte.get(schluessel(roh), roh)
+            if bezug not in aufgeloest:
+                aufgeloest.append(bezug)
+        anteil = menge / len(aufgeloest)
+        for bezug in aufgeloest:
+            lane = lanes.setdefault(bezug, {"name": bezug,
+                                            "flaeche": flaeche.get(bezug, 0),
+                                            "ehkv": 0.0, "kwh": 0.0, "ww_m3": 0.0})
+            # N340u — Wärmemengenzähler (kWh) und Warmwasserzähler (m³) sind
+            # an der Kostenart/Messeinheit erkennbar; alles andere ist ein
+            # Heizkörperverteiler und braucht seinen Bewertungsfaktor, sonst
+            # sind seine Rohwerte gegen einen anderen HKV nicht vergleichbar.
+            if zae.kostenart == "Warmwasser":
+                lane["ww_m3"] += anteil
+            elif zae.messeinheit == "kWh":
+                lane["kwh"] += anteil
+            else:
+                lane["ehkv"] += anteil * (zae.bewertungsfaktor or 0.0)
     return list(lanes.values()), unzugeordnet
 
 

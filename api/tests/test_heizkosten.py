@@ -166,6 +166,34 @@ def test_altes_partei_label_mit_gesetztem_einheiten_feld_zaehlt_richtig():
         assert nutzer[0]["flaeche"] == 50.0
 
 
+def test_gemeinschaftlicher_zaehler_teilt_sich_auf_die_gewaehlten_einheiten():
+    """N343 — ein Heizkörper, der auf MEHRERE Einheiten zählt (Waschküche):
+    sein Wert verteilt sich zu gleichen Teilen auf genau diese Einheiten —
+    nicht auf eine davon, nicht auf alle des Hauses."""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+        zaehler_id = _zaehler_direkt(c, slug, zid, name="Waschküche",
+                                     einheit_bezug="", wert=100,
+                                     bewertungsfaktor=2.0)
+        assert c.patch(f"/api/zaehler/{zaehler_id}",
+                       json={"einheiten": ["Whg A", "Whg B"]}).status_code == 200
+
+        from app import db
+        from app.heizkosten import nutzer_aus_zaehlern
+        from sqlmodel import Session
+        from app.models import Zeitraum
+        with Session(db.engine) as s:
+            z = s.get(Zeitraum, zid)
+            nutzer, unzugeordnet = nutzer_aus_zaehlern(s, z)
+
+        assert unzugeordnet == []
+        nach_name = {n["name"]: n for n in nutzer}
+        assert set(nach_name) == {"Whg A", "Whg B"}
+        # 100 Einheiten × Faktor 2,0 = 200, je zur Hälfte: 100 pro Wohnung.
+        assert nach_name["Whg A"]["ehkv"] == 100.0
+        assert nach_name["Whg B"]["ehkv"] == 100.0
+
+
 def test_wmz_und_wwz_gehen_in_kwh_bzw_ww_m3_nicht_in_ehkv():
     with TestClient(app) as c:
         slug, zid = _objekt(c)

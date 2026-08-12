@@ -13,6 +13,10 @@ import { simulationAktualisieren, simulationEinbauen } from './simulation.js';
 const SLUG = 'eschenau-laufer-str-5';
 let stand = null;
 let aufgenommen = null;       // welches Kärtchen gerade „in der Hand" liegt
+// N343 — Zähler-Nummer -> id des ECHTEN Zaehler-Datensatzes. Der Name lebt
+// zentral in der Datenbank (eine Wahrheit); der Simulator zeigt ihn nur an
+// und schreibt Änderungen dorthin zurück statt in eine eigene Kopie.
+let echteIds = {};
 
 const ARTNAME = { hkv: 'Heizkörperzähler', wmz: 'Wärmemengenzähler' };
 const RAUMNAME = { Z: 'Zimmer', K: 'Küche', W: 'Wohnen', B: 'Bad', S: 'Sonstige',
@@ -150,8 +154,19 @@ function verdrahte() {
   // Ein geänderter Faktor wirkt sich auf die Rechnung aus — aber erst nach
   // dem Feld verlassen, nicht bei jedem Tastendruck (sonst rechnet die
   // Simulation bei jeder Ziffer neu und die Eingabe stockt).
-  wurzel.addEventListener('change', e => {
+  // N343 — ein geänderter NAME wandert zusätzlich in den echten
+  // Zähler-Datensatz (falls es einen gibt): eine Wahrheit, egal ob hier, im
+  // Konfigurator oder in der Ablese-Eingabe umbenannt wird.
+  wurzel.addEventListener('change', async e => {
     if (e.target.dataset.faktor) simulationAktualisieren(stand);
+    const nr = e.target.dataset.name;
+    if (nr && echteIds[nr]) {
+      const name = e.target.value.trim();
+      if (!name) return;
+      try {
+        await api(`/zaehler/${echteIds[nr]}`, { method: 'PATCH', body: { name } });
+      } catch { melde('Name nicht zentral gespeichert', 'neg'); }
+    }
   });
 
   wurzel.addEventListener('dragstart', e => {
@@ -173,14 +188,26 @@ function verdrahte() {
 
 export async function start() {
   let einheiten = [];
+  let echteZaehler = [];
   try {
-    einheiten = (await api(`/objekte/${SLUG}`)).einheiten || [];
+    const [objekt, zaehler] = await Promise.all([
+      api(`/objekte/${SLUG}`), api(`/objekte/${SLUG}/zaehler`)]);
+    einheiten = objekt.einheiten || [];
+    echteZaehler = zaehler || [];
   } catch {
     melde('Die Einheiten konnten nicht geladen werden.', 'neg');
   }
   // Die Garage heizt nicht — sie als Lane anzubieten hiesse, einen Fehler
   // einzuladen.
   stand = lade(einheiten.filter(e => !/garage/i.test(e.bezeichnung || '')));
+  // N343 — der Name lebt zentral am echten Zähler (per Nummer verknüpft);
+  // die lokale Kopie im Browser ist nur noch Rückfall für Geräte, die (noch)
+  // keinen echten Datensatz haben.
+  for (const z of echteZaehler) {
+    if (!z.zaehlernummer) continue;
+    echteIds[z.zaehlernummer] = z.id;
+    if (z.name) stand.namen[z.zaehlernummer] = z.name;
+  }
   zeichne();
   verdrahte();
   await simulationEinbauen(stand);
