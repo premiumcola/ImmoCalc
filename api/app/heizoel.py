@@ -73,7 +73,17 @@ def verbrauch_bewerten(lieferungen: list, verbrauch_liter: float) -> dict:
 
     Randfälle: kein Bestand → alles 0. Verbrauch ≤ 0 → Kosten 0, Rest = Gesamt.
     Verbrauch > Bestand → alles verbraucht, Rest 0, `warnung` gesetzt."""
-    geordnet = sorted(lieferungen, key=_sortierschluessel)
+    alle = sorted(lieferungen, key=_sortierschluessel)
+    # N368 — eine Lieferung ohne Litermenge zählt gar nicht mit. Vorher steckte
+    # ihr Wert in `gesamt_wert`, die FIFO-Schleife übersprang sie aber (`liter
+    # <= 0: continue`) — ihr Betrag konnte also nie im Restwert landen und
+    # wanderte über `verbrauch_kosten = gesamt_wert − rest_wert` vollständig in
+    # die Verbrauchskosten. Eine erfasste Rechnung, deren Litermenge noch fehlt
+    # (der Normalfall beim Eintragen), belastete die Periode damit voll.
+    geordnet = [l for l in alle if float(_feld(l, "liter", 0) or 0) > 0]
+    ohne_liter = [l for l in alle
+                  if float(_feld(l, "liter", 0) or 0) <= 0
+                  and abs(float(_feld(l, "wert", 0) or 0)) > 0.005]
     gesamt_liter = round(sum(float(_feld(l, "liter", 0) or 0) for l in geordnet), 6)
     gesamt_wert = round(sum(float(_feld(l, "wert", 0) or 0) for l in geordnet), 6)
 
@@ -82,10 +92,19 @@ def verbrauch_bewerten(lieferungen: list, verbrauch_liter: float) -> dict:
     verbraucht = min(angefragt, gesamt_liter)
 
     ergebnis: dict = {}
+    warnungen: list[str] = []
     if angefragt > gesamt_liter + 1e-9:
         fehlmenge = round(angefragt - gesamt_liter, 3)
-        ergebnis["warnung"] = (
-            f"Verbrauch übersteigt Bestand um {fehlmenge:g} L")
+        warnungen.append(f"Verbrauch übersteigt Bestand um {fehlmenge:g} L")
+    if ohne_liter:
+        # Bedienbar statt stumm: der Nutzer sieht, welcher Betrag noch nicht
+        # zählt und warum — die Litermenge fehlt einfach noch.
+        summe = round(sum(float(_feld(l, "wert", 0) or 0) for l in ohne_liter), 2)
+        warnungen.append(
+            f"{len(ohne_liter)} Lieferung(en) über {summe:.2f} € ohne "
+            f"Litermenge — sie zählen erst mit, wenn die Menge nachgetragen ist")
+    if warnungen:
+        ergebnis["warnung"] = " · ".join(warnungen)
 
     # FIFO: vom ältesten Öl an abziehen. Der Restwert ergibt sich aus den
     # Litern, die in den Lieferungen liegen bleiben — je zu ihrem eigenen Preis.

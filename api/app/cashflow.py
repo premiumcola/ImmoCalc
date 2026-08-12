@@ -99,9 +99,16 @@ def verteile(betrag: float, einheiten: list[EinheitZahlen]) -> list[float]:
     cent-genau."""
     if not einheiten:
         return []
-    flaechen = [e.gesamtflaeche or 0.0 for e in einheiten]
-    summe = sum(flaechen)
-    gewichte = flaechen if summe > 0 else [1.0] * len(einheiten)
+    # N368 — der Rückfall greift, sobald AUCH NUR EINE Fläche fehlt, nicht erst
+    # wenn alle fehlen. `gesamtflaeche` gibt bewusst `None` zurück, wenn die
+    # Angabe noch nicht gepflegt ist; ein `or 0.0` machte daraus ein Gewicht
+    # von null, und bei gemischtem Pflegestand (EG 60 m², OG noch ohne Angabe)
+    # trug das EG sämtliche Objektkosten und das OG gar keine. Der Saldo beider
+    # Einheiten war damit falsch — ohne dass irgendwo etwas fehlte.
+    roh = [e.gesamtflaeche for e in einheiten]
+    vollstaendig = all(f is not None and f > 0 for f in roh)
+    flaechen = [f or 0.0 for f in roh]
+    gewichte = flaechen if vollstaendig else [1.0] * len(einheiten)
     anteile = {str(i): g for i, g in enumerate(gewichte)}
     verteilt = verteile_nach_wert(betrag, anteile)
     return [verteilt[str(i)] for i in range(len(einheiten))]

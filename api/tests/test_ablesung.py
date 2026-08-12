@@ -95,3 +95,32 @@ def test_anfangsstand_bleibt_anker_auch_ohne_vorlaufperiode():
 
     reihe = ablesung.verbrauchsreihe(ablesungen, [z])
     assert abs(reihe[z.id]["verbrauch"] - 300.0) < 1e-9
+
+
+def test_folgeperioden_verlieren_keinen_tag(monkeypatch):
+    """N368 — derselbe Off-by-one, eine Periode weiter.
+
+    N315(j) hat den Anker der START-Periode auf das echte Ablesedatum gesetzt.
+    Für jede FOLGE-Periode blieb er aber auf `z.ende` — dem letzten Tag der
+    Vorperiode statt dem ersten der neuen. `engine.tage` misst exklusiv, also
+    war die Ist-Spanne systematisch einen Tag länger als die Soll-Spanne:
+    Faktor 364/365 in jeder Periode ab der zweiten.
+
+    Drei lückenlose Jahre mit exakt 1000 Einheiten Verbrauch je Jahr. Jede
+    Periode muss 1000 zeigen, und die Summe muss die echte Zählerdifferenz
+    treffen — vorher waren es 997,26 ab der zweiten und 3997,26 gesamt.
+    """
+    p1 = _z(1, date(2023, 10, 1), date(2024, 9, 30))
+    p2 = _z(2, date(2024, 10, 1), date(2025, 9, 30))
+    p3 = _z(3, date(2025, 10, 1), date(2026, 9, 30))
+    ablesungen = [_a(date(2023, 10, 1), 0.0),
+                  _a(date(2024, 9, 30), 1000.0),
+                  _a(date(2025, 9, 30), 2000.0),
+                  _a(date(2026, 9, 30), 3000.0)]
+
+    reihe = ablesung.verbrauchsreihe(ablesungen, [p1, p2, p3])
+    for z in (p2, p3):
+        assert abs(reihe[z.id]["verbrauch"] - 1000.0) < 1e-6, (
+            f"Periode {z.id}: {reihe[z.id]['verbrauch']}")
+    gesamt = sum(reihe[z.id]["verbrauch"] for z in (p1, p2, p3))
+    assert abs(gesamt - 3000.0) < 1e-6, gesamt

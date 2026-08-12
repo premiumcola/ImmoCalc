@@ -9,7 +9,7 @@ Periodenende). Der interpolierte Stand zum Soll-Stichtag (`Zeitraum.ende`) wird
 als Randwert in die nächste Periode fortgeschrieben; der Verbrauch einer Periode
 ist die Differenz der beiden Randwerte — linear auf Tagesbasis hochgerechnet.
 """
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from . import engine
@@ -94,7 +94,16 @@ def verbrauchsreihe(ablesungen: list, zeitraeume: list) -> dict:
         tage_soll = engine.tage(z.start, z.ende)
         verb = engine.interpoliere_verbrauch(randwert, a.stand, tage_ist, tage_soll)
         randwert = randwert + verb
-        randdatum = z.ende
+        # N368 — der Anker für die NÄCHSTE Periode ist deren erster Tag, nicht
+        # der letzte dieser. `engine.tage` misst exklusiv: `tage_soll` einer
+        # lückenlos anschließenden Periode zählt von ihrem `start`, der Anker
+        # zählte aber schon ab dem Vortag. Die Ist-Spanne war damit systematisch
+        # einen Tag länger als die Soll-Spanne — Faktor 364/365, also −0,27 % in
+        # JEDER Folgeperiode. Das ist derselbe Fehler, den N315(j) für die
+        # Startperiode behoben hat; dort war er nur sichtbar, weil kein Test die
+        # zweite Periode prüfte. Bei 3.431 L Heizöl fehlten so gut 9 Liter, und
+        # die Summe aller Perioden ging nie auf die echte Zählerdifferenz auf.
+        randdatum = z.ende + timedelta(days=1)
         out[z.id] = {"verbrauch": verb, "randwert": randwert,
                      "datum": a.datum, "stand": a.stand, "start": False}
     return out

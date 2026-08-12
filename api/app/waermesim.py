@@ -208,7 +208,14 @@ def rechne(eingabe: dict) -> dict:
         "ww_je_m3": teile(ww_gesamt, summe_ww),
     }
 
-    schluessel = [n.get("name") or f"Nutzer {i + 1}" for i, n in enumerate(nutzer)]
+    # N368 — der Schlüssel trägt den Index, der Name bleibt zur Anzeige. Zwei
+    # Zeilen gleichen Namens (zwei gleich benannte Einheiten, ein zweites
+    # „Allgemein") wurden vorher in EINEN Topf gebündelt, danach aber
+    # positionsweise wieder ausgelesen — beide bekamen den zusammengelegten
+    # Betrag, und die Summe der Zeilen überschritt die eingesetzten Liter und
+    # Euro. `vermoegen.pv_zurechnung` schlüsselt aus demselben Grund nach Index.
+    namen = [n.get("name") or f"Nutzer {i + 1}" for i, n in enumerate(nutzer)]
+    schluessel = [f"{i}:{name}" for i, name in enumerate(namen)]
     rundung = eingabe.get("rundung") or "deltat"
 
     def topf(betrag: float, feld: str, mit_zeit: bool = False) -> dict:
@@ -252,15 +259,15 @@ def rechne(eingabe: dict) -> dict:
 
     soll = eingabe.get("soll") or {}
     zeilen = []
-    for name, n in zip(schluessel, nutzer):
-        p_h1, p_h2 = t_h1.get(name, 0.0), t_h2.get(name, 0.0)
-        p_fest, p_ww = t_fest.get(name, 0.0), t_ww.get(name, 0.0)
-        liter_heizung = round(l_fest.get(name, 0.0) + l_h1.get(name, 0.0)
-                              + l_h2.get(name, 0.0), 3)
+    for schl, name, n in zip(schluessel, namen, nutzer):
+        p_h1, p_h2 = t_h1.get(schl, 0.0), t_h2.get(schl, 0.0)
+        p_fest, p_ww = t_fest.get(schl, 0.0), t_ww.get(schl, 0.0)
+        liter_heizung = round(l_fest.get(schl, 0.0) + l_h1.get(schl, 0.0)
+                              + l_h2.get(schl, 0.0), 3)
         zeile = {"name": name, "verbrauch_h1": p_h1, "verbrauch_h2": p_h2,
                  "festkosten": p_fest, "warmwasser": p_ww,
                  "liter": liter_heizung,
-                 "liter_warmwasser": l_ww.get(name, 0.0),
+                 "liter_warmwasser": l_ww.get(schl, 0.0),
                  "kwh": round(liter_heizung * heizwert, 1),
                  "heizkosten": round(p_h1 + p_h2 + p_fest, 2),
                  "summe": round(p_h1 + p_h2 + p_fest + p_ww, 2)}
