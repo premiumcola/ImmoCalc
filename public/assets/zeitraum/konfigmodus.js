@@ -44,6 +44,7 @@ export function konfigAnsichtHtml(zListe, zBlock) {
   const rows = arten.map(a => ({
     kostenart: a.name, kostenart_id: a.id,
     optional: !!a.optional, sichtbar: a.aktiv !== false, fest: false,
+    s35: !!a.s35,
   }));
   // Waisen ohne Katalog-Eintrag: sichtbar, aber nicht konfigurierbar.
   const waise = (state.daten.checkliste || [])
@@ -115,6 +116,11 @@ export function konfigZeileHtml(k) {
             data-konf-opt="${k.kostenart_id}" data-optional="1"
             ${an ? '' : 'disabled'}>Optional</button>
         </div>
+        <button type="button" class="konf-s35${k.s35 ? ' an' : ''}"
+          data-konf-s35="${k.kostenart_id}" data-s35="${k.s35 ? '0' : '1'}"
+          title="Haushaltsnahe Dienstleistung/Handwerkerleistung nach § 35a EStG —
+wird in der Mieterabrechnung separat ausgewiesen (Steuererklärung)"
+          aria-pressed="${k.s35}">§ 35a</button>
       </div>
     </div></div>`;
 }
@@ -145,6 +151,22 @@ export async function konfSichtSetzen(cb) {
   }
   const a = (state.konfigArten || []).find(x => x.id === id);
   if (a) a.aktiv = an;
+  return neuZeichnen();
+}
+
+/* N351 — § 35a (haushaltsnah/Handwerker) an der Kostenart setzen; das
+   Backend zieht den Vermerk in alle bestehenden Positionen dieser Art nach. */
+export async function konfS35Setzen(btn) {
+  const id = Number(btn.dataset.konfS35);
+  const s35 = btn.dataset.s35 === '1';
+  try {
+    await api(`/kostenarten/${id}`, { method: 'PATCH', body: { s35 } });
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    return;
+  }
+  const a = (state.konfigArten || []).find(x => x.id === id);
+  if (a) a.s35 = s35;
   return neuZeichnen();
 }
 

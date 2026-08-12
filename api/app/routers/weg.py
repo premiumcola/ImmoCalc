@@ -134,6 +134,10 @@ class WegPositionIn(BaseModel):
     ihre_kosten: Optional[float] = None
     schluessel: str = ""
     umlagefaehig: bool = True
+    # N351 — haushaltsnahe Dienstleistung/Handwerkerleistung nach § 35a EStG;
+    # `s35a` ist die Schreibweise der KI-Auslese, `s35` die des Datenmodells.
+    s35: bool = False
+    s35a: bool = False
 
 
 class WegBelegIn(BaseModel):

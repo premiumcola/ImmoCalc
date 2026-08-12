@@ -1072,7 +1072,8 @@ WEG_SYSTEM_PROMPT = (
     '{"firma":"…","liegenschaft":"…","nutzer_nr":"…",'
     '"von":"YYYY-MM-DD|null","bis":"YYYY-MM-DD|null","datum":"YYYY-MM-DD|null",'
     '"positionen":[{"bezeichnung":"…","gesamtkosten":<Zahl|null>,'
-    '"ihre_kosten":<Zahl|null>,"schluessel":"…","umlagefaehig":true}],'
+    '"ihre_kosten":<Zahl|null>,"schluessel":"…","umlagefaehig":true,'
+    '"s35a":false}],'
     '"heizkosten":<Zahl|null>,"warmwasserkosten":<Zahl|null>,'
     '"betriebskosten":<Zahl|null>,"rechnungsbetrag":<Zahl|null>,'
     '"vorauszahlung":<Zahl|null>,"nachzahlung":<Zahl|null>}\n'
@@ -1100,6 +1101,12 @@ WEG_SYSTEM_PROMPT = (
     "unterhalb der Überschrift \"Nicht umlagefähig\" (Anschaffungen, "
     "Reparatur, Schädlingsbekämpfung, Instandhaltung), dann umlagefaehig = "
     "false. Lass solche Positionen NICHT weg — gib sie mit false zurück.\n"
+    "s35a = true, wenn die Position eine haushaltsnahe Dienstleistung oder "
+    "Handwerkerleistung nach § 35a EStG ist (Hausmeister, Treppenhaus-/"
+    "Gebäudereinigung, Gartenpflege, Winterdienst, Schornsteinfeger, Wartung, "
+    "Aufzug). Viele Abrechnungen markieren diese Zeilen selbst (Sternchen, "
+    "eigener § 35a-Block) — dann übernimm genau diese Markierung. Versicherung, "
+    "Grundsteuer, Wasser/Abwasser, Müll und Strom sind s35a = false.\n"
     "heizkosten und warmwasserkosten stehen auf dem Deckblatt bzw. auf der "
     "Heiz- und Warmwasserkostenabrechnung. Sie sind EIGENE Positionen und "
     "gehören NICHT in die Liste \"positionen\".\n"

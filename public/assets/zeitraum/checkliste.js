@@ -81,6 +81,7 @@ import {
 } from './weg.js';
 import {
   konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
+  konfS35Setzen,
 } from './konfigmodus.js';
 // N349 — die Zähler-Konfiguration lebt jetzt auf der Immobilien-Seite
 // (objekt.html, Knopf „Zähler" über den Abrechnungszeiträumen).
@@ -1667,6 +1668,8 @@ export function initHandlers() {
     if (e.target.closest('[data-pos-konfig]')) return konfigModusUmschalten();
     const kOpt = e.target.closest('[data-konf-opt]');
     if (kOpt) return konfOptSetzen(kOpt);
+    const kS35 = e.target.closest('[data-konf-s35]');
+    if (kS35) return konfS35Setzen(kS35);
 
     const zt = e.target.closest('[data-zu-toggle]');
     if (zt) {

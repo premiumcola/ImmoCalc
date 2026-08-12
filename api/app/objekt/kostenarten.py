@@ -111,6 +111,16 @@ def kostenart_aendern(kid: int, data: dict,
                 Dokument.kostenart == alt)).all():
             d.kostenart = k.name
             session.add(d)
+    # N351 — § 35a zieht in die BESTEHENDEN Positionen nach, wie der Name:
+    # der Vermerk soll in der laufenden Abrechnung sofort gelten, nicht erst
+    # bei der nächsten neu angelegten Position (die erbt ihn ohnehin,
+    # `belegposten.anlegen`).
+    if "s35" in felder:
+        for p in _positionen_mit_art(session, k.objekt_id, k.name):
+            if p.s35 != k.s35:
+                p.s35 = k.s35
+                session.add(p)
+                nachgezogen += 1
     session.commit()
     return {"ok": True, "name": k.name, "umlagefaehig": k.umlagefaehig,
-            "positionen_nachgezogen": nachgezogen}
+            "s35": k.s35, "positionen_nachgezogen": nachgezogen}

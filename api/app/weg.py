@@ -98,13 +98,18 @@ def umlagefaehige(gelesen: dict) -> list[dict]:
         betrag = _geld(p.get("ihre_kosten"))
         if not name or not betrag:
             continue
+        # N351 — § 35a wandert vom Beleg mit (KI-Feld `s35a`, Hand-Feld `s35`):
+        # die WEG-Einzelabrechnung weist haushaltsnahe Dienstleistungen selbst
+        # aus, und der Mieter braucht sie für seine Steuererklärung. Ging hier
+        # bisher verloren.
         zeilen.append({"kostenart": name, "betrag": betrag,
-                       "schluessel_text": str(p.get("schluessel") or "")})
+                       "schluessel_text": str(p.get("schluessel") or ""),
+                       "s35": bool(p.get("s35") or p.get("s35a"))})
     for name, feld in ((HEIZKOSTEN, "heizkosten"), (WARMWASSER, "warmwasserkosten")):
         betrag = _geld((gelesen or {}).get(feld))
         if betrag:
             zeilen.append({"kostenart": name, "betrag": betrag,
-                           "schluessel_text": ""})
+                           "schluessel_text": "", "s35": False})
     return zeilen
 
 
@@ -199,12 +204,14 @@ def uebernehmen(session: Session, z: Zeitraum, gelesen: dict,
             alt.betrag = zeile["betrag"]
             alt.anteile = anteile
             alt.nur_einheit = einheit
+            alt.s35 = zeile["s35"]
             alt.status = "erledigt" if zeile["betrag"] else "offen"
             session.add(alt)
             continue
         p = position_bauen(session, z, name, betrag=zeile["betrag"],
                            schluessel="individuell" if einheit else VORGABE,
-                           wertquelle=QUELLE, anteile=anteile)
+                           wertquelle=QUELLE, anteile=anteile,
+                           s35=zeile["s35"])
         p.nur_einheit = einheit
         # Die Gewichte kommen aus dem Beleg bzw. der genannten Einheit und
         # dürfen sich nicht bei jeder Stammdatenänderung neu ableiten.
@@ -320,6 +327,10 @@ def stand(session: Session, z: Zeitraum) -> dict:
     uebernommen_summe = round(sum(p.betrag or 0.0 for p in positionen), 2)
     direkt_summe = round(sum(p.betrag or 0.0 for p in direkt), 2)
     umlagefaehig_summe = round(uebernommen_summe + direkt_summe, 2)
+    # N351 — der § 35a-Anteil separat: der Mieter braucht ihn für die
+    # Steuererklärung, und die WEG-Einzelabrechnung weist ihn selbst aus.
+    s35_summe = round(sum(p.betrag or 0.0 for p in positionen + direkt
+                          if p.s35 or p.vorab_s35), 2)
     nicht = nicht_umlagefaehige(z.weg_beleg or {})
     vz = vorauszahlung(session, z)
     beleg = z.weg_beleg or {}
@@ -327,12 +338,14 @@ def stand(session: Session, z: Zeitraum) -> dict:
         "umlagefaehig_summe": umlagefaehig_summe,
         "uebernommen_summe": uebernommen_summe,
         "direkt_summe": direkt_summe,
+        "s35_summe": s35_summe,
         "nicht_umlagefaehig_summe": round(sum(p["betrag"] for p in nicht), 2),
         "vorauszahlung_summe": vz,
         "saldo": round(vz - umlagefaehig_summe, 2),
         "positionen": [{"id": p.id, "kostenart": p.kostenart,
                         "betrag": _geld(p.betrag), "wertquelle": p.wertquelle,
-                        "nur_einheit": p.nur_einheit, "status": p.status}
+                        "nur_einheit": p.nur_einheit, "status": p.status,
+                        "s35": bool(p.s35)}
                        for p in positionen],
         "direkt": [{"id": p.id, "kostenart": p.kostenart,
                     "einheit": p.nur_einheit

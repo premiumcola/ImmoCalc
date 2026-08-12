@@ -100,7 +100,9 @@ function balkenListe(zeilen, klasse = '') {
   const max = Math.max(0.01, ...zeilen.map(z => Math.abs(z.betrag || 0)));
   return `<div class="weg-liste ${klasse}">${zeilen.map(z => `
       <div class="weg-zeile">
-        <span class="wz-n">${esc(z.kostenart)}</span>
+        <span class="wz-n">${esc(z.kostenart)}${z.s35
+          ? ' <span class="wz-s35" title="Haushaltsnahe Dienstleistung nach § 35a EStG — für die Steuererklärung des Mieters">§ 35a</span>'
+          : ''}</span>
         <span class="wz-bahn"><i style="width:${
           Math.max(3, Math.round(Math.abs(z.betrag || 0) / max * 100))}%"></i></span>
         <span class="wz-v">${geld(z.betrag)}</span>
@@ -198,6 +200,8 @@ function saldoHtml(stand) {
   return `<div class="weg-saldo ${nach ? 'neg' : 'pos'}">
       <div class="wsz"><span>Umlagefähig auf den Mieter</span>
         <span>${geld(stand.umlagefaehig_summe)}</span></div>
+      ${stand.s35_summe ? `<div class="wsz s35"><span>davon haushaltsnah
+        nach § 35a EStG</span><span>${geld(stand.s35_summe)}</span></div>` : ''}
       <div class="wsz"><span>Vorausgezahlt</span>
         <span>${geld(stand.vorauszahlung_summe)}</span></div>
       <div class="wsz gross"><span>${nach ? 'Nachzahlung' : 'Guthaben'}</span>

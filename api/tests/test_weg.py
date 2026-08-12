@@ -466,3 +466,46 @@ def test_lesen_gibt_die_gerasterten_seitenbilder_an_die_auslese_weiter(monkeypat
                                     "application/pdf")})
     assert r.status_code == 200
     assert gerufen["bilder"] == [b"seite-1-png", b"seite-2-png"]
+
+
+# --------------------------------------------------------------------------
+# N351 — § 35a wandert vom Beleg bis in den Stand
+# --------------------------------------------------------------------------
+def test_s35a_wandert_vom_beleg_in_position_und_stand():
+    """Eine als haushaltsnah markierte Zeile (KI-Feld `s35a`) wird zur
+    Kostenposition MIT § 35a-Vermerk; der Stand weist die Summe separat aus
+    und kennzeichnet die Zeile — der Mieter braucht das für die
+    Steuererklärung."""
+    zid = _zeitraum(2045)
+    beleg = _beleg()
+    for p in beleg["positionen"]:
+        if p["bezeichnung"] in ("Hausmeister", "Prüfung Rauchwarnmelder"):
+            p["s35a"] = True
+    _uebernehmen(zid, beleg)
+
+    nach_name = {p.kostenart: p for p in _positionen(zid)}
+    assert nach_name["Hausmeister"].s35 is True
+    assert nach_name["Prüfung Rauchwarnmelder"].s35 is True
+    assert nach_name["Versicherungen"].s35 is False
+
+    stand = _stand(zid)
+    assert stand["s35_summe"] == round(396.00 + 4.17, 2)
+    flags = {p["kostenart"]: p["s35"] for p in stand["positionen"]}
+    assert flags["Hausmeister"] is True
+    assert flags["Versicherungen"] is False
+
+
+def test_s35a_wird_beim_zweiten_lauf_fortgeschrieben():
+    """Idempotenz auch für den Vermerk: nimmt der korrigierte Beleg das
+    Kennzeichen zurück, verschwindet es an der bestehenden Position — die
+    Zeile wird fortgeschrieben, nicht verdoppelt."""
+    zid = _zeitraum(2046)
+    beleg = _beleg()
+    beleg["positionen"][5]["s35a"] = True          # Hausmeister
+    _uebernehmen(zid, beleg)
+    assert _stand(zid)["s35_summe"] > 0
+
+    _uebernehmen(zid, _beleg())                    # ohne Kennzeichen
+    stand = _stand(zid)
+    assert stand["s35_summe"] == 0
+    assert len(_positionen(zid)) == len(UMLAGEFAEHIG) + 2   # + Heiz/WW, nichts doppelt
