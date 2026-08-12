@@ -807,14 +807,40 @@
   th.zt-jahr,td.zt-jahr{text-align:right;font:500 11px var(--mono);
     color:var(--soft);white-space:nowrap;width:52px}
   @media (pointer:coarse){ .zt-inp{font-size:16px} }
-  /* Schmal: Name kürzer, Eingabe kompakter — so passen mehr Jahresspalten
-     ins Bild, bevor die Tabelle (in ihrem eigenen Container) scrollt. */
-  @media(max-width:560px){
-    .zt-name{min-width:0;max-width:112px;font-size:11.5px;line-height:1.25}
-    .zt-tab td,.zt-tab th{padding:5px 4px}
-    .zt-eingabe{width:84px}
-    .zt-inp{width:80px;padding:6px}
-    th.zt-jahr,td.zt-jahr{width:auto;font-size:10.5px}
+  /* Schmal: Name kürzer, Eingabe kompakter — und die ältesten Jahre weichen
+     ganz (N365). Fünf Jahre plus Eingabe zwängen die Tabelle sonst in einen
+     Seitwärts-Scroll, bei dem ausgerechnet die Eingabe aus dem Bild wandert;
+     drei Vorjahre reichen, um den neuen Wert einzuordnen. */
+  @media(max-width:700px){
+    .zt-alt{display:none}
+    /* Feste Spaltenanteile statt Pixelmaße: mit `auto` streckt eine lange
+       Zählernummer („1365 3706") oder ein vierstelliger Verbrauch die Tabelle
+       über den Container, und ausgerechnet die Eingabe rutscht raus. Fixed
+       hält die Breiten, langer Text bricht um. Die Anteile ergeben zusammen
+       100 %, weil hier immer genau drei Jahresspalten stehen. */
+    .zt-tab{table-layout:fixed}
+    .zt-nr{width:10%;font-size:9.5px;white-space:normal;overflow-wrap:break-word}
+    .zt-name{width:34%;min-width:0;max-width:none;font-size:11.5px;
+      line-height:1.25;overflow-wrap:break-word}
+    th.zt-jahr,td.zt-jahr{width:12%}
+    .zt-tab td,.zt-tab th{padding:5px 3px}
+    .zt-eingabe{width:20%}
+    /* Der Kopf darf umbrechen, sonst zwingt „Verbrauch 2025" die Spalte
+       breiter als das Eingabefeld darunter. */
+    th.zt-eingabe,td.zt-eingabe{padding-left:6px}
+    th.zt-eingabe{white-space:normal;line-height:1.3}
+    .zt-inp{width:100%;padding:6px 5px}
+    th.zt-jahr,td.zt-jahr{font-size:10.5px}
+  }
+  /* Am Handy bleibt nur ein Jahrespaar — sonst zerhackt der Umbruch die
+     Zählernamen und vierstellige Verbräuche passen nicht in ihre Spalte. */
+  @media(max-width:480px){
+    .zt-alt2{display:none}
+    .zt-nr{width:9%}
+    .zt-name{width:40%;font-size:11px}
+    .zt-name .zu-um{min-width:18px;min-height:18px;margin-left:1px}
+    th.zt-jahr,td.zt-jahr{width:14%}
+    .zt-eingabe{width:23%}
   }
   /* ---- N363: die dunkle Zähler-Zone, Ebene für Ebene ------------------- */
   /* Kopfzeile des Panels (Ebene 1). */
@@ -851,6 +877,8 @@
   .zu-panel .ho-neu select:focus{
     background:#fff;color:var(--ink);border-color:var(--teal);
     color-scheme:light;outline:none}
+  .zu-panel input::placeholder{color:var(--zu-matt);opacity:.85}
+  .zu-panel input:focus::placeholder{color:var(--soft);opacity:1}
   /* Einheiten-Chips auf dunklem Grund. */
   .zu-panel .zu-ehtag{background:rgba(255,255,255,.14);color:var(--zu-hell)}
   .zu-panel .zu-eh{background:transparent;border-color:rgba(255,255,255,.24);
@@ -913,20 +941,18 @@
   .zu-panel .ho-st,.zu-panel .ho-anfw{color:var(--zu-hell)}
   .zu-panel .ho-warn{background:rgba(230,180,92,.18);color:#F0C878}
   /* N364 — der Abschluss-Haken schließt den Öl-Block ab, also sitzt er als
-     eigene Zeile am Fuß und wird grün, sobald er gesetzt ist. */
+     eigene Zeile am Fuß und wird grün, sobald er gesetzt ist. Er steht auf der
+     hellen Positionskarte, nicht im versenkten Zählerbereich. */
   .ho-fertig{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
-    margin-top:12px;padding:11px 13px;border-radius:12px;cursor:pointer;
-    background:rgba(255,255,255,.07);
-    box-shadow:inset 3px 0 0 rgba(255,255,255,.22);
+    margin-top:12px;padding:12px 14px;border-radius:12px;cursor:pointer;
+    background:var(--paper);box-shadow:inset 3px 0 0 var(--line);
     transition:background .18s,box-shadow .18s}
   .ho-fertig input{width:20px;height:20px;flex:none;accent-color:var(--pos);
     cursor:pointer}
-  .ho-ft{flex:1 1 200px;min-width:0;font:600 12px var(--body);
-    color:var(--zu-hell)}
-  .ho-fw{font:600 12px var(--mono);color:var(--zu-matt);white-space:nowrap}
-  .ho-fertig.an{background:rgba(110,214,166,.16);
-    box-shadow:inset 3px 0 0 #6ED6A6}
-  .ho-fertig.an .ho-fw{color:#9EE2C6}
+  .ho-ft{flex:1 1 200px;min-width:0;font:600 12px var(--body);color:var(--ink)}
+  .ho-fw{font:600 12px var(--mono);color:var(--soft);white-space:nowrap}
+  .ho-fertig.an{background:var(--pos-bg);box-shadow:inset 3px 0 0 var(--pos)}
+  .ho-fertig.an .ho-ft,.ho-fertig.an .ho-fw{color:var(--pos)}
   /* N360 — EIN Design für alle Zähler: auch die abgezogenen (`minus`, Wasser-
      und Strom-Unterzähler) sind vollwertige Karten. Vorher machte sie eine
      Sonderregel durchsichtig und schattenlos — auf dem jetzt dunkleren Panel

@@ -408,9 +408,15 @@ function jahreswertTabellenHtml(teil) {
       .filter(v => typeof v === 'number');
     const min = Math.min(...alle), max = Math.max(...alle);
     const skalieren = alle.length > 1 && max > min;
-    const zelle = v => v == null
-      ? '<td class="zt-jahr">·</td>'
-      : `<td class="zt-jahr"${skalieren
+    // Fünf Jahresspalten plus Eingabe passen nur auf breiten Geräten. Statt
+    // die Tabelle in einen Seitwärts-Scroll zu zwingen, bei dem ausgerechnet
+    // die Eingabe verschwindet, weichen die ältesten Jahre gestaffelt per CSS:
+    // `zt-alt` ab Tablet abwärts (dann drei), `zt-alt2` am Handy (dann zwei).
+    const alt = i => (i < jahre.length - 3 ? ' zt-alt'
+      : i === jahre.length - 3 ? ' zt-alt2' : '');
+    const zelle = (v, i) => v == null
+      ? `<td class="zt-jahr${alt(i)}">·</td>`
+      : `<td class="zt-jahr${alt(i)}"${skalieren
           ? ` style="color:${hitzeFarbe((v - min) / (max - min))}"` : ''
         }>${zahl(v)}</td>`;
     const zeilen = liste.map(z => {
@@ -426,7 +432,7 @@ function jahreswertTabellenHtml(teil) {
         <td class="zt-name">${esc(state.zLabels.get(z.id) || z.name)}${
           bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
             title="Zähler umbenennen">${STIFT_ICON}</button>` : ''}</td>
-        ${jahre.map(j => zelle((z.verlauf || {})[j])).join('')}
+        ${jahre.map((j, i) => zelle((z.verlauf || {})[j], i)).join('')}
         <td class="zt-eingabe">${feld}</td>
       </tr>`;
     }).join('');
@@ -439,7 +445,8 @@ function jahreswertTabellenHtml(teil) {
       </button>
       <div class="zt-inhalt"><table class="zt-tab">
         <thead><tr><th>Nr.</th><th>Zähler</th>
-          ${jahre.map(j => `<th class="zt-jahr">'${String(j).slice(2)}</th>`).join('')}
+          ${jahre.map((j, i) => `<th class="zt-jahr${alt(i)}">'${
+            String(j).slice(2)}</th>`).join('')}
           <th class="zt-eingabe">Verbrauch ${esc(jetzt)}</th>
         </tr></thead>
         <tbody>${zeilen}</tbody>
