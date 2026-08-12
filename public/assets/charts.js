@@ -200,8 +200,15 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
   // winzigen Posten die untersten Beschriftungen ineinander und aus dem Bild.
   const MIN_MARKER = 6;
   const MIN_ABSTAND = schmal ? 33 : 29;
+  // N348 — Winzposten (< 4 % der Spalte) bekommen KEIN Inline-Label mehr:
+  // jedes zweizeilige Label kostet 33 Einheiten Mindesthöhe, und bei sechs
+  // Kleinposten wuchs das Diagramm auf dem iPhone weit über den Schirm. Sie
+  // behalten ihren Marker (mit Tooltip) und stehen unten in einer Legende.
+  const beschriftet = i => gewicht(i) / gesamt >= 0.04;
   const markHoehe = i => Math.max(MIN_MARKER, gewicht(i) * skala);
-  const abstand = i => Math.max(markHoehe(i) + luecke, MIN_ABSTAND);
+  const abstand = i => beschriftet(i)
+    ? Math.max(markHoehe(i) + luecke, MIN_ABSTAND)
+    : markHoehe(i) + 5;
   const bandPad = i => Math.max(0, (markHoehe(i) - gewicht(i) * skala) / 2);
 
   // Tatsaechliche Spaltenhoehe = Summe der Knotenabstaende. Die viewBox waechst
@@ -310,6 +317,12 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     const tx = rechts ? l.x - 8 : l.x + knotenBreite + 8;
     const anker = rechts ? 'end' : 'start';
     const ly = l.mitte;
+    // N348 — Winzposten: nur Marker + Tooltip, das Label steht in der Legende.
+    if (!beschriftet(i)) {
+      return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
+                    rx="3" fill="${rechts ? grauFuer(i) : knotenFarbe(i)}"><title>${
+          knoten[i].name}: ${format(gewicht(i))}</title></rect>`;
+    }
     return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
                   rx="3" fill="${rechts ? grauFuer(i) : knotenFarbe(i)}"/>
       <text x="${tx}" y="${ly - 3}" class="kn" text-anchor="${anker}">${
@@ -318,6 +331,14 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
         format(gewicht(i))}</text>`;
   }).join('');
 
+  // N348 — die Winzposten als Legende unter dem Bild: Farbtupfer, Name, Wert.
+  const legende = [...lage.keys()].filter(i => !beschriftet(i))
+    .sort((a, b) => gewicht(b) - gewicht(a))
+    .map(i => `<span class="sankey-lg"><i style="background:${
+        lage.get(i).spalte === spalten[spalten.length - 1] ? grauFuer(i)
+          : knotenFarbe(i)}"></i>${knoten[i].name} <b>${format(gewicht(i))}</b></span>`)
+    .join('');
+
   // oben Platz fuer die Beschriftung der Mittelspalte
   return `<svg viewBox="${-rand} ${-obenPlatz} ${breite + rand * 2} ${hoehe + obenPlatz + 14}"
                class="chart sankey" role="img">
@@ -325,7 +346,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
         .kn{font:600 ${schrift}px var(--disp);fill:var(--ink)}
         .kw{font:500 ${schmal ? 12 : 10}px var(--mono);fill:var(--soft)}
       </style>${baender}${kaesten}
-    </svg>`;
+    </svg>${legende ? `<div class="sankey-legende">${legende}</div>` : ''}`;
 }
 
 /** Miete-Diagramm: gestapelte Säulen (Kaltmiete + Nebenkosten-Vorauszahlung)
