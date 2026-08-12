@@ -173,12 +173,14 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
         <div class="zu-paar"><span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span>
           <span class="zu-dat">${_isoKurz(datum)}</span></div></div>`;
 
-  // N345 — nur Anzeige (Anfang aus der Vorperiode): eine schmale Zeile statt
-  // eines vollen Feld-Blocks — der Anfang ist keine Eingabe, er braucht
-  // keine Feldhöhe. Spart je Karte rund 50 px auf dem iPhone.
-  const nurAnzeige = (kind, wert, datum, note) => `<span class="zu-anfchip"
-      title="Endstand der Vorperiode, abgelesen am ${_isoKurz(datum)}">${kind}
-      <b>${wert ? `${wert}&nbsp;${eh}` : '—'}</b> · ${note}</span>`;
+  // N345/N359 — der Anfang aus der Vorperiode ist keine Eingabe, gehört aber
+  // als erster Summand sichtbar in die Rechenzeile: gleiche Feldform wie
+  // „Ende", nur fest (kein Eingabefeld) und mit der Herkunft darunter.
+  const nurAnzeige = (kind, wert, datum, note) => `<div class="zu-feld">
+      <label>${kind}</label>
+      <div class="zu-fest" title="Endstand der Vorperiode, abgelesen am ${
+        _isoKurz(datum)}"><b>${wert ? `${wert}&nbsp;${eh}` : '—'}</b>
+        <small>${note}</small></div></div>`;
 
   // N120 — Jahreswert: ein Feld, kein Datum.
   // N341 — kompakt: ohne eigene Label-Zeile und ohne „kein Zählerstand"-Text,
@@ -218,7 +220,7 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
       minus ? ' minus' : ''}${rest ? ' rest' : ''}${
       direkt ? ' knapp' : ''}${
       verbText ? ' unplausibel' : ''}" data-zid="${z.id}">
-    <div class="zu-haupt">
+    <div class="zu-kopfzeile">
       <span class="zu-name"><span class="zu-op vz-${
         rest ? 'gleich' : zeichen === '−' ? 'minus' : 'plus'}"
         aria-hidden="true">${zeichen}</span><span class="zu-nametxt">${
@@ -227,14 +229,17 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
         bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
           title="Zähler umbenennen" aria-label="Zähler „${esc(z.name)}“ umbenennen"
           >${STIFT_ICON}</button>` : ''}</span>
+      ${eauto ? eautoInfoHtml()
+        : ((keinChooser || istHauptzaehler(z)) ? nurEinheitenHtml(z)
+                                               : einheitChooserHtml(z))}
+    </div>
+    <div class="zu-haupt">
       ${startFeld}${endFeld}
-      ${direkt ? '' : `<span class="zu-verb">${rest ? '<small>berechnet</small> '
+      ${direkt ? '' : `<span class="zu-verb"><span class="zu-gleich"
+        aria-hidden="true">=</span>${rest ? '<small>berechnet</small> '
         : (eauto ? '<small>gezogen</small> ' : '')}${verb}</span>`}
     </div>
-    ${rechnung}${datumKnopf}
-    ${eauto ? eautoInfoHtml()
-      : ((keinChooser || istHauptzaehler(z)) ? nurEinheitenHtml(z)
-                                             : einheitChooserHtml(z))}${extra}
+    ${rechnung}${datumKnopf}${extra}
     ${verlaufHtml(z)}
   </div>`;
 }

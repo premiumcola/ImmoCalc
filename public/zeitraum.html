@@ -562,10 +562,10 @@
      ein etwas dunklerer Grund als die Karte, ein kräftigerer Rahmen und ein
      leichter seitlicher Einzug — so kapselt es die Zähler klar ein, ohne
      wie eine zweite, gleichrangige Karte zu wirken. */
-  .zu-panel{background:#E2E8E8;border-radius:0 0 14px 14px;
-    margin:0 10px 14px;border:1.5px solid #CBD5D5;border-top:none;
-    box-shadow:inset 0 7px 9px -7px rgba(22,38,44,.28),
-               inset 0 -1px 0 rgba(255,255,255,.5);overflow:hidden}
+  .zu-panel{background:#D3DCDC;border-radius:0 0 14px 14px;
+    margin:0 10px 14px;border:1.5px solid #B6C4C4;border-top:none;
+    box-shadow:inset 0 10px 12px -8px rgba(22,38,44,.42),
+               inset 0 -1px 0 rgba(255,255,255,.45);overflow:hidden}
   /* Die Karte darüber gibt ihren unteren Rand und Abstand ab, damit beide
      als ein Block zusammenhängen — sie deckt das Panel oben ab. */
   .pruef:has(+ .zu-panel){margin-bottom:0;border-radius:14px 14px 0 0;
@@ -664,11 +664,34 @@
   .zu-feld input[type=text]{width:96px;min-height:40px;text-align:right}
   .zu-feld input:focus{outline:none;border-color:var(--teal)}
   .zu-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
-  /* N345 — der Anfang aus der Vorperiode als schmale Text-Zeile statt eines
-     vollen Feld-Blocks: keine Eingabe, keine Feldhöhe. */
-  .zu-anfchip{flex:1 1 100%;font:500 10.5px var(--body);color:var(--soft);
-    line-height:1.4}
-  .zu-anfchip b{font:600 11px var(--mono);color:var(--ink)}
+  /* N359 — die Zeile bildet den Rechenweg ab: Anfang → Ende → = Verbrauch.
+     Der Anfang ist fest (keine Eingabe), sieht dem Ende-Feld aber ähnlich
+     genug, um als erster Summand gelesen zu werden. */
+  .zu-fest{display:flex;flex-direction:column;justify-content:center;
+    min-height:40px;padding:4px 9px;border:1.5px dashed var(--line);
+    border-radius:9px;background:transparent}
+  .zu-fest b{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
+  .zu-fest small{font:500 9.5px var(--body);color:var(--soft)}
+  .zu-gleich{font:700 13px var(--mono);color:var(--soft);margin-right:5px}
+  /* Kopfzeile: Name links, Zuordnung rechts oben. */
+  .zu-kopfzeile{display:flex;align-items:flex-start;gap:6px 10px;flex-wrap:wrap;
+    justify-content:space-between;margin-bottom:7px}
+  .zu-kopfzeile .zu-name{flex:1 1 auto;min-width:0}
+  .zu-kopfzeile .zu-ehfest,.zu-kopfzeile .zu-ehwahl{margin-top:0;padding-top:0;
+    border-top:none;flex:0 1 auto;justify-content:flex-end;min-width:0}
+  /* Schmal: Anfang und Ende teilen sich die Zeile, damit die Rechnung nicht
+     zu einer hohen Treppe wird. */
+  @media(max-width:560px){
+    .zu-haupt{gap:6px 8px}
+    /* Der Anfang ist kurz und darf schmal bleiben; das Ende braucht Stand
+       UND Datum nebeneinander und bekommt deshalb die volle Zeile. */
+    .zu-haupt .zu-feld{flex:0 0 auto;min-width:0}
+    .zu-haupt .zu-feld:has(input[type=date]){flex:1 1 100%}
+    .zu-feld:has(input[type=date]) .zu-paar{display:flex;gap:8px}
+    .zu-feld:has(input[type=date]) input[type=text]{flex:0 0 92px;width:92px}
+    .zu-feld input[type=date]{flex:1 1 auto;width:auto;min-width:0}
+    .zu-verb{flex:1 1 100%;text-align:right}
+  }
   /* N88 — Stand und Ablesedatum stehen wieder je Zähler nebeneinander; darunter
      die sichtbare Umrechnung auf die Periodengrenze. Die Paar-Zeile ist so hoch
      wie ein Eingabefeld, damit Anfang und Ende auf einer Linie sitzen. */
@@ -733,11 +756,18 @@
   .zu-eq .zu-et b{font-weight:600;color:var(--ink)}
   .zu-eq .zu-et a{color:var(--teal-d);font-weight:600}
   .zu-eq.fehlt .zu-et{color:var(--amber)}
+  /* Die abgezogenen Unterzähler bleiben als Gruppe eingerückt — die Linie
+     zeigt die Zugehörigkeit, die Karten selbst sehen aus wie alle anderen. */
   .zu-kalt-abzug{margin:2px 0 6px 10px;padding-left:11px;
-    border-left:2px solid var(--line)}
-  .zu-zeile.minus{background:transparent;box-shadow:none;padding:6px 9px;margin-bottom:2px}
-  .zu-zeile.rest{background:var(--teal-l);box-shadow:inset 3px 0 0 var(--teal);
-    margin-top:6px}
+    border-left:2px solid #B6C4C4}
+  /* N360 — EIN Design für alle Zähler: auch die abgezogenen (`minus`, Wasser-
+     und Strom-Unterzähler) sind vollwertige Karten. Vorher machte sie eine
+     Sonderregel durchsichtig und schattenlos — auf dem jetzt dunkleren Panel
+     verschwanden sie halb im Hintergrund. Unterschieden wird nur noch über
+     das Vorzeichen (+/−/=) und den farbigen Streifen links, nicht über die
+     Sichtbarkeit der Karte. */
+  .zu-zeile.minus{box-shadow:inset 3px 0 0 var(--neg), 0 1px 2px rgba(22,38,44,.05)}
+  .zu-zeile.rest{box-shadow:inset 3px 0 0 var(--teal), 0 1px 2px rgba(22,38,44,.05)}
   .zu-zeile.rest .zu-name{color:var(--teal-d)}
   .zu-zeile.rest .zu-verb{color:var(--teal-d)}
   /* N120 — bis 900 px (also auch auf dem iPad) bekommt jedes Feld seine eigene
