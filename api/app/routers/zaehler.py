@@ -331,6 +331,16 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
             vorwert = reihe.get(_VORLAUF_ID)
         else:
             vorwert = None
+        # N353 — hat die Vorperiode für DIESEN Zähler keinen Wert (er wurde
+        # damals noch nicht geführt, N352), ist der Anfangsstand vor dem
+        # Periodenbeginn der Vorwert. Ohne das blieb das Feld „Anfang" leer,
+        # obwohl der Verbrauch längst daraus gerechnet wird.
+        if vorwert is None:
+            frueher = [a for a in abls
+                       if a.zeitraum_id is None and a.datum <= z.start]
+            if frueher:
+                anker = max(frueher, key=lambda a: a.datum)
+                vorwert = {"randwert": anker.stand, "datum": anker.datum}
         erfasst = next((a for a in abls if a.zeitraum_id == zid), None)
         zeilen.append({
             "id": zae.id, "name": zae.name, "messeinheit": zae.messeinheit,

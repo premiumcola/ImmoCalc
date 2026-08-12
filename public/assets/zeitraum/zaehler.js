@@ -432,17 +432,42 @@ export async function anfangstandSpeichern(input) {
 }
 
 /* N88 — ein von Hand geändertes Ablesedatum vormerken (oder direkt speichern). */
+/* N353 — ein `<input type=date>` feuert `change` schon, sobald die halb
+   getippte Jahreszahl ein gültiges Datum ergibt: aus „30.09.2___" wird
+   zwischendurch der 30.09.0002. Sofort zu speichern riss den Fokus aus dem
+   Feld und schrieb einen Stand auf ein Jahr, das der Nutzer nie gemeint hat
+   (beobachtet: ein Balken auf '26 und −0,005 m³ Verbrauch). Deshalb wird ein
+   offensichtlich unfertiges Jahr nicht gespeichert — und ein plausibles erst
+   nach kurzer Ruhe, damit das Tippen nicht mitten im Jahr abbricht. */
+const DATUM_WARTEN = new WeakMap();
+
+function jahrPlausibel(wert) {
+  const jahr = Number(String(wert || '').slice(0, 4));
+  return Number.isFinite(jahr) && jahr >= 1990 && jahr <= 2100;
+}
+
 export function datumGeaendert(el) {
   el.classList.add('geaendert');
   const zeile = zeilenBox(el);
   const ende = el.matches('[data-enddatum]');
   const standEl = zeile?.querySelector(ende ? '[data-endstand]' : '[data-anfangstand]');
-  if (el.value && standEl && standAusFeld(standEl) != null
-      && !Number.isNaN(standAusFeld(standEl))) {
-    return ende ? endstandSpeichern(standEl) : anfangstandSpeichern(standEl);
-  }
   const knopf = zeile?.querySelector('[data-datum-uebernehmen]');
-  if (knopf) knopf.hidden = false;
+
+  clearTimeout(DATUM_WARTEN.get(el));
+  // Unfertige Jahreszahl (0002, 20, 202…): nichts speichern, nichts anbieten —
+  // der Nutzer tippt noch.
+  if (el.value && !jahrPlausibel(el.value)) return;
+
+  const speichern = () => {
+    if (el.value && standEl && standAusFeld(standEl) != null
+        && !Number.isNaN(standAusFeld(standEl))) {
+      return ende ? endstandSpeichern(standEl) : anfangstandSpeichern(standEl);
+    }
+    if (knopf) knopf.hidden = false;
+  };
+  // Der Kalender-Picker setzt den Wert in einem Rutsch — dort darf es sofort
+  // gehen; getippt wird er zeichenweise, deshalb die kurze Ruhe.
+  DATUM_WARTEN.set(el, setTimeout(speichern, 700));
 }
 
 /* N88 — das geänderte Datum zusammen mit dem Stand dieser Zeile speichern. */

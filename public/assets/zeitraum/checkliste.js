@@ -1600,6 +1600,13 @@ export function initHandlers() {
 
   // Gewichts-focusout speichert die Verteilung.
   inhalt.addEventListener('focusout', e => {
+    // N353 — Datumsfeld verlassen: jetzt sofort speichern, ohne die kurze
+    // Tipp-Ruhe abzuwarten (die gibt es nur, damit `change` beim Tippen der
+    // Jahreszahl nicht zwischendurch feuert).
+    if (e.target.matches?.('[data-anfangdatum],[data-enddatum]')) {
+      datumGeaendert(e.target, true);
+      return;
+    }
     const feld = e.target.closest?.('[data-gewicht]');
     if (!feld) return;
     const vt = feld.closest('.vt');
