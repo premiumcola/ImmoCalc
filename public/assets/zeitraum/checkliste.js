@@ -1684,6 +1684,18 @@ export function initHandlers() {
     const kS35 = e.target.closest('[data-konf-s35]');
     if (kS35) return konfS35Setzen(kS35);
 
+    // N361 — Einheiten-Gruppe in der Jahreswert-Tabelle auf/zu.
+    const ztE = e.target.closest('[data-zt-einheit]');
+    if (ztE) {
+      const name = ztE.dataset.ztEinheit;
+      const gruppe = ztE.closest('.zt-gruppe');
+      const jetztAuf = !gruppe.classList.contains('offen');
+      if (jetztAuf) state.zaehlerEinheitZu.delete(name);
+      else state.zaehlerEinheitZu.add(name);
+      gruppe.classList.toggle('offen', jetztAuf);
+      ztE.setAttribute('aria-expanded', String(jetztAuf));
+      return;
+    }
     const zt = e.target.closest('[data-zu-toggle]');
     if (zt) {
       const panel = zt.closest('.zu-panel');

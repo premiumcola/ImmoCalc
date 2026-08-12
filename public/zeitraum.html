@@ -562,9 +562,11 @@
      ein etwas dunklerer Grund als die Karte, ein kräftigerer Rahmen und ein
      leichter seitlicher Einzug — so kapselt es die Zähler klar ein, ohne
      wie eine zweite, gleichrangige Karte zu wirken. */
-  .zu-panel{background:#D3DCDC;border-radius:0 0 14px 14px;
-    margin:0 10px 14px;border:1.5px solid #B6C4C4;border-top:none;
-    box-shadow:inset 0 10px 12px -8px rgba(22,38,44,.42),
+  /* N362 — der eingebrannte Grund bleibt dunkel, aber NEUTRAL grau statt
+     grünstichig: das Grün gehört den fertigen Zählern, nicht dem Untergrund. */
+  .zu-panel{background:#D9DBDC;border-radius:0 0 14px 14px;
+    margin:0 10px 14px;border:1.5px solid #BEC2C4;border-top:none;
+    box-shadow:inset 0 10px 12px -8px rgba(28,32,36,.40),
                inset 0 -1px 0 rgba(255,255,255,.45);overflow:hidden}
   /* Die Karte darüber gibt ihren unteren Rand und Abstand ab, damit beide
      als ein Block zusammenhängen — sie deckt das Panel oben ab. */
@@ -598,7 +600,11 @@
   .zu-zeile{padding:9px 11px;margin-bottom:8px;background:var(--sheet);
     border:1px solid var(--line);border-radius:12px;
     box-shadow:inset 3px 0 0 transparent, 0 1px 2px rgba(22,38,44,.05)}
-  .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos), 0 1px 2px rgba(22,38,44,.05)}
+  /* N362 — fertig = sichtbar grün: zarter grüner Grund und grüne Kante,
+     damit man auf einen Blick sieht, was schon eingetragen ist. */
+  .zu-zeile.fertig{background:var(--pos-bg);border-color:#BBDCC6;
+    box-shadow:inset 3px 0 0 var(--pos), 0 1px 2px rgba(22,38,44,.05)}
+  .zu-zeile.fertig .zu-verb{color:var(--pos)}
   .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:6px 10px}
   /* N345 — die Verrechnungsweise als Zeichen vor jedem Zähler: + eigenständig,
      − wird abgezogen, = errechneter Rest. Ohne Aufklappen sichtbar. */
@@ -760,6 +766,46 @@
      zeigt die Zugehörigkeit, die Karten selbst sehen aus wie alle anderen. */
   .zu-kalt-abzug{margin:2px 0 6px 10px;padding-left:11px;
     border-left:2px solid #B6C4C4}
+  /* N361 — Jahreswert-Zähler tabellarisch, je Einheit ein aufklappbarer
+     Block. Bei 19 Heizkörpern ist die Kartenform Ballast: hier zählt die
+     Zeile, nicht die Grafik. */
+  .zt-gruppe{background:var(--sheet);border:1px solid var(--line);
+    border-radius:12px;margin-bottom:8px;overflow:hidden}
+  .zt-kopf{width:100%;display:flex;align-items:center;gap:9px;
+    padding:11px 12px;background:none;border:none;cursor:pointer;
+    text-align:left;min-height:46px;-webkit-tap-highlight-color:transparent}
+  .zt-kt{flex:1;min-width:0;font:700 13px var(--disp);color:var(--ink)}
+  .zt-kz{flex:none;font:500 10.5px var(--mono);color:var(--soft)}
+  .zt-gruppe .zu-chev{transition:transform .18s}
+  .zt-gruppe.offen .zu-chev{transform:rotate(180deg)}
+  .zt-inhalt{display:none;padding:0 10px 10px}
+  .zt-gruppe.offen .zt-inhalt{display:block;overflow-x:auto}
+  .zt-tab{width:100%;border-collapse:collapse;font:500 12px var(--body)}
+  .zt-tab th{font:600 9px var(--mono);letter-spacing:.05em;text-transform:uppercase;
+    color:var(--soft);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+  .zt-tab td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .zt-tab tr:last-child td{border-bottom:none}
+  .zt-nr{font:600 10.5px var(--mono);color:var(--soft);white-space:nowrap}
+  .zt-name{font:600 12px var(--body);color:var(--ink);min-width:120px}
+  .zt-name .zu-um{margin-left:3px;min-width:22px;min-height:22px;padding:2px}
+  .zt-eingabe{width:96px}
+  .zt-inp{width:92px;box-sizing:border-box;border:1.5px solid var(--line);
+    border-radius:8px;padding:6px 8px;font:600 12px var(--mono);
+    background:var(--sheet);color:var(--ink);min-height:36px;text-align:right}
+  .zt-inp:focus{outline:none;border-color:var(--teal)}
+  .zt-fest{font:600 12px var(--mono);color:var(--ink)}
+  th.zt-jahr,td.zt-jahr{text-align:right;font:500 11px var(--mono);
+    color:var(--soft);white-space:nowrap;width:52px}
+  @media (pointer:coarse){ .zt-inp{font-size:16px} }
+  /* Schmal: Name kürzer, Eingabe kompakter — so passen mehr Jahresspalten
+     ins Bild, bevor die Tabelle (in ihrem eigenen Container) scrollt. */
+  @media(max-width:560px){
+    .zt-name{min-width:0;max-width:112px;font-size:11.5px;line-height:1.25}
+    .zt-tab td,.zt-tab th{padding:5px 4px}
+    .zt-eingabe{width:84px}
+    .zt-inp{width:80px;padding:6px}
+    th.zt-jahr,td.zt-jahr{width:auto;font-size:10.5px}
+  }
   /* N360 — EIN Design für alle Zähler: auch die abgezogenen (`minus`, Wasser-
      und Strom-Unterzähler) sind vollwertige Karten. Vorher machte sie eine
      Sonderregel durchsichtig und schattenlos — auf dem jetzt dunkleren Panel

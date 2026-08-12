@@ -370,6 +370,66 @@ function verrechnungsSatz(teil) {
   return saetze.length ? `<p class="zu-erkl">${saetze.join(' ')}</p>` : '';
 }
 
+/* N361 — Jahreswert-Zähler tabellarisch, gruppiert nach Einheit.
+
+   Bei 19 Heizkörpern ist die Kartenform Ballast: jede Karte wiederholt
+   Zuordnung und Balkengrafik, obwohl je Zeile nur EIN Wert einzutragen ist.
+   Hier steht die Einheit als aufklappbarer Kopf, darunter je Zähler eine
+   Zeile: Nummer · Name · Eingabe · die Vorjahre als schlichte Zahlen. */
+function jahreswertTabellenHtml(teil) {
+  const bearbeitbar = state.daten.status === 'in Arbeit';
+  const gruppen = new Map();
+  for (const z of teil) {
+    const ein = zaehlerEinheiten(z).filter(Boolean);
+    const k = ein.length > 1 ? 'Gemeinschaftlich' : (ein[0] || 'Ohne Einheit');
+    if (!gruppen.has(k)) gruppen.set(k, []);
+    gruppen.get(k).push(z);
+  }
+  const ord = [...alleEinheiten(), 'Gemeinschaftlich', 'Ohne Einheit'];
+  const sortiert = [...gruppen.keys()].sort((a, b) =>
+    (ord.indexOf(a) + 1 || 99) - (ord.indexOf(b) + 1 || 99));
+
+  // Die Jahre, die überhaupt vorkommen — eine Spalte je Jahr, höchstens fünf.
+  const jahre = [...new Set(teil.flatMap(z => Object.keys(z.verlauf || {})))]
+    .map(Number).sort((a, b) => a - b).slice(-5);
+
+  return sortiert.map(name => {
+    const liste = gruppen.get(name);
+    const auf = !state.zaehlerEinheitZu.has(name);
+    const zeilen = liste.map(z => {
+      const eh = esc(z.messeinheit || '');
+      const wert = z.ablesung ? zahl(z.ablesung.stand) : '';
+      const feld = bearbeitbar
+        ? `<input class="zt-inp" type="text" inputmode="decimal"
+             data-strom-jahr="${z.id}" value="${wert}" placeholder="${eh}"
+             aria-label="Jahresverbrauch ${esc(z.name)} in ${eh}">`
+        : `<span class="zt-fest">${wert || '—'}</span>`;
+      return `<tr>
+        <td class="zt-nr">${esc(z.zaehlernummer || '–')}</td>
+        <td class="zt-name">${esc(state.zLabels.get(z.id) || z.name)}${
+          bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
+            title="Zähler umbenennen">${STIFT_ICON}</button>` : ''}</td>
+        <td class="zt-eingabe">${feld}</td>
+        ${jahre.map(j => `<td class="zt-jahr">${
+          (z.verlauf || {})[j] != null ? zahl(z.verlauf[j]) : '·'}</td>`).join('')}
+      </tr>`;
+    }).join('');
+    return `<div class="zt-gruppe${auf ? ' offen' : ''}">
+      <button type="button" class="zt-kopf" data-zt-einheit="${esc(name)}"
+        aria-expanded="${auf}">
+        <span class="zt-kt">${esc(name)}</span>
+        <span class="zt-kz">${liste.length} Zähler</span>
+        <span class="zu-chev">${CHEV_ICON}</span>
+      </button>
+      <div class="zt-inhalt"><table class="zt-tab">
+        <thead><tr><th>Nr.</th><th>Zähler</th><th>Wert</th>
+          ${jahre.map(j => `<th class="zt-jahr">'${String(j).slice(2)}</th>`).join('')}
+        </tr></thead>
+        <tbody>${zeilen}</tbody>
+      </table></div></div>`;
+  }).join('');
+}
+
 /* N67/N342 — Zählerstände-Panel EINER Kategorie als Einklapper. Bei
    `block==='Heizung'` optional weiter nach `unter` (Heizöl/Warmwasser/
    Heizkörper & Wärmemenge, siehe `heizBereich`) einschränken — sonst lag
@@ -382,8 +442,14 @@ export function zaehlerPanelHtml(block, zaehler, blockVon, unter = null) {
   const stromLeer = block === 'Strom' && state.daten.status === 'in Arbeit';
   if (!teil.length && !stromLeer) return '';
   const basisOhneChooser = block === 'Heizung';
+  // N361 — viele gleichartige Jahreswert-Zähler (die 19 Heizkörper) als
+  // TABELLE je Einheit statt als 19 Karten: eine Zeile je Zähler, Nummer und
+  // Vorjahre als schlichte Zahlen. Karten bleiben, wo es wenige sind oder wo
+  // Anfang/Ende/Datum gebraucht werden.
+  const alleDirekt = teil.length > 3 && teil.every(z => z.typ === 'direkt');
   const inner = block === 'Wasser' ? wasserBlockHtml(teil)
     : block === 'Strom' ? stromBlockHtml(teil)
+    : alleDirekt ? jahreswertTabellenHtml(teil)
     : teil.map(z => meterZeileHtml(z, {
         rest: z.typ === 'rest',
         keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');

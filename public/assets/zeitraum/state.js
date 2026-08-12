@@ -86,6 +86,9 @@ export function setStromketteDaten(v) { stromketteDaten = v; }
 
 /* N60/N67 — Auf-/Zu-Zustand der Zählerstände-Panels (Block-Namen). */
 export const zaehlerOffen = new Set();
+/* N361 — welche Einheiten-Gruppe in der Jahreswert-Tabelle ZU ist
+   (Vorgabe: alle offen, damit man der Reihe nach eintragen kann). */
+export const zaehlerEinheitZu = new Set();
 
 /* N68 — generische Anzeigenamen je Zähler-id. */
 export let zLabels = new Map();
