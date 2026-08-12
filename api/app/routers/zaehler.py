@@ -133,6 +133,11 @@ class ZaehlerIn(BaseModel):
     notiz: str = ""
     bewertungsfaktor: float | None = None
     zaehlernummer: str = ""
+    # N367 — die Mehrfachzuordnung ließ sich bisher nur per PATCH setzen: ein
+    # frisch angelegter Zähler stand deshalb immer erst einmal ohne Ziel da,
+    # und blieb es, wenn der Nachtrag ausfiel. Als Liste entgegengenommen,
+    # gespeichert wird komma-gejoint wie im PATCH.
+    einheiten: list[str] = []
 
 
 class AblesungIn(BaseModel):
@@ -190,7 +195,10 @@ def liste(slug: str, session: Session = Depends(get_session),
 @router.post("/objekte/{slug}/zaehler", status_code=201)
 def anlegen(slug: str, data: ZaehlerIn, session: Session = Depends(get_session),
             o: Objekt = Depends(objekt_holen)) -> dict:
-    z = Zaehler(objekt_id=o.id, **data.model_dump())
+    felder = data.model_dump()
+    liste = felder.pop("einheiten", None) or []
+    z = Zaehler(objekt_id=o.id, **felder)
+    z.einheiten = ",".join(str(x).strip() for x in liste if str(x).strip())
     session.add(z)
     session.commit()
     session.refresh(z)
@@ -492,8 +500,9 @@ def uebernehmen(zid: int, data: UebernahmeIn,
         # bei der Übernahme in die erste Abrechnung mit (CCCLXXX).
         zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
         verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
-        karte = einheiten_karte(*_stammbezug(session, z))
-        anteile = {}
+        einheiten_, bezuege_ = _stammbezug(session, z)
+        karte = einheiten_karte(einheiten_, bezuege_)
+        je_einheit: dict[str, float] = {}
         for zae in zaehler:
             menge = verb.get(zae.id)
             if not menge:
@@ -503,17 +512,26 @@ def uebernehmen(zid: int, data: UebernahmeIn,
             ziele = parse_einheiten(zae)
             if not ziele:
                 continue
-            # N288-B4 — zwei Wege, auf denen ein Verbrauch bisher lautlos
-            # verschwand: ein Zähler, der sein Ziel NUR über die Mehrfach-
-            # zuordnung `einheiten` trägt (leeres `einheit_bezug`), und ein
-            # Ziel-Label, das im Objekt weder Einheit noch Partei ist. Beides
-            # wird jetzt genannt statt geschluckt.
-            if not zae.einheit_bezug or not zuordne(ziele, karte).ziele:
+            # N367 — verbucht wird auf ALLE Ziele des Zählers, nicht nur auf
+            # `einheit_bezug`. Ein Zähler, der über die Mehrfachzuordnung
+            # `einheiten` auf zwei Wohnungen zeigt, ging vorher komplett auf
+            # eine — und einer, der sein Ziel NUR dort trägt (leeres
+            # `einheit_bezug`, so entstehen neu angelegte Zähler), fiel ganz
+            # heraus. Geteilt wird zu gleichen Teilen, wie in `heizkosten.py`.
+            aufgeloest = zuordne(ziele, karte).ziele
+            if not aufgeloest:
                 unzugeordnet.append(zae.name)
-                if not zae.einheit_bezug:
-                    continue
-            anteile[zae.einheit_bezug] = round(
-                anteile.get(zae.einheit_bezug, 0.0) + menge, 4)
+                continue
+            teil = menge / len(aufgeloest)
+            for bezug in aufgeloest:
+                je_einheit[bezug] = round(je_einheit.get(bezug, 0.0) + teil, 4)
+
+        # N367 — von Einheiten- auf Partei-Namen. `engine.Position.anteile` ist
+        # nach Partei geschlüsselt; eine Einheiten-Bezeichnung als Schlüssel
+        # verteilte an eine Partei, die es nicht gibt.
+        anteile, ohne_partei = verteilung.auf_parteien(
+            je_einheit, bezuege_, z.start, z.ende)
+        unzugeordnet.extend(ohne_partei)
 
     # Nur eine BESTEHENDE Position wird konfiguriert. Keine leere Hülle anlegen
     # (CCLVI: keine 0-€-Position ohne Beleg) — der Betrag kommt aus dem Beleg,
@@ -522,6 +540,17 @@ def uebernehmen(zid: int, data: UebernahmeIn,
     if not pos:
         return {"ok": True, "kostenart": data.kostenart, "angewandt": False,
                 "grund": "Noch keine Position — erst den Beleg/Betrag erfassen."}
+    # N367 — ein leeres Ergebnis darf die bestehende Verteilung NICHT
+    # überschreiben. `verteile_nach_wert` liefert bei Gewichtssumme 0 ein leeres
+    # dict; die ganze Position fiele damit aus der Abrechnung — quittiert mit
+    # „angewandt". Lieber nichts tun und sagen, warum.
+    if anteile is not None and not anteile:
+        return {"ok": True, "kostenart": data.kostenart, "angewandt": False,
+                "grund": "Kein Zähler dieser Kostenart ist einer Partei "
+                         "zugeordnet — die Zuordnung steht in „Zähler "
+                         "konfigurieren“.",
+                "unzugeordnet": unzugeordnet,
+                "warnungen": zuordnungs_warnungen(unzugeordnet)}
     pos.schluessel = data.schluessel
     pos.wertquelle = "Zähler"
     pos.anteile = (anteile if anteile is not None

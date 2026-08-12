@@ -6,9 +6,11 @@ Gewichtung."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
-from .. import belegposten, heizkosten
+from sqlmodel import select
+
+from .. import belegposten, heizkosten, verteilung
 from ..db import get_session
-from ..models import Zeitraum
+from ..models import Einheit, Miete, Partei, Zeitraum
 
 router = APIRouter(prefix="/api/zeitraeume", tags=["heizkosten"])
 
@@ -18,6 +20,19 @@ def _zeitraum(session: Session, zid: int) -> Zeitraum:
     if not z:
         raise HTTPException(404, "Zeitraum nicht gefunden")
     return z
+
+
+def _bezuege(session: Session, z: Zeitraum) -> list[verteilung.Bezug]:
+    """Wer in diesem Zeitraum abzurechnen ist — für die Übersetzung von
+    Einheiten- auf Partei-Namen (N367)."""
+    return verteilung.bezuege(
+        list(session.exec(select(Einheit).where(
+            Einheit.objekt_id == z.objekt_id)).all()),
+        list(session.exec(select(Miete).where(
+            Miete.objekt_id == z.objekt_id)).all()),
+        list(session.exec(select(Partei).where(
+            Partei.objekt_id == z.objekt_id)).all()),
+        z.start, z.ende)
 
 
 @router.post("/{zid}/heizkosten/rechnen")
@@ -42,12 +57,24 @@ def uebernehmen(zid: int, eingabe: dict, session: Session = Depends(get_session)
     if not pos:
         return {"ok": True, "angewandt": False,
                 "grund": "Noch keine Heizungs-Position — erst den Beleg/Betrag erfassen."}
+    # N367 — `heizkosten.nutzer_aus_zaehlern` schlüsselt nach EINHEIT, die
+    # Abrechnung nach PARTEI. Ohne die Übersetzung bekamen Phantom-Parteien
+    # die Heizkosten und die echten Mieter nichts.
+    je_einheit = {n["name"]: n["heizkosten"] for n in erg["nutzer"]}
+    anteile, ohne_partei = verteilung.auf_parteien(
+        je_einheit, _bezuege(session, z), z.start, z.ende)
+    unzugeordnet = list(erg.get("unzugeordnet", [])) + ohne_partei
+    if not anteile:
+        return {"ok": True, "angewandt": False,
+                "grund": "Kein Wärmezähler ist einer Partei zugeordnet — die "
+                         "Zuordnung steht in „Zähler konfigurieren“.",
+                "unzugeordnet": unzugeordnet}
     pos.schluessel = "heizkosten"
     pos.wertquelle = "Zähler"
-    pos.anteile = {n["name"]: n["heizkosten"] for n in erg["nutzer"]}
+    pos.anteile = anteile
     session.add(pos)
     session.commit()
     session.refresh(pos)
     return {"ok": True, "angewandt": True, "anteile": pos.anteile,
-            "position_id": pos.id, "unzugeordnet": erg.get("unzugeordnet", []),
+            "position_id": pos.id, "unzugeordnet": unzugeordnet,
             "abgleich": erg.get("abgleich")}

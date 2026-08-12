@@ -281,6 +281,57 @@ def _zeitanteil(b: Bezug, start: date, ende: date) -> float:
     return _monate(b, start, ende) / gesamt
 
 
+def auf_parteien(mengen: dict[str, float], bezuege_: list[Bezug],
+                 start: date, ende: date) -> tuple[dict[str, float], list[str]]:
+    """Mengen je EINHEIT in Gewichte je PARTEI übersetzen (N367).
+
+    `engine.Position.anteile` ist von Partei-Name auf Gewicht geschlüsselt —
+    `gewichte()` schreibt konsequent `out[b.partei]`. Wer Zählerverbräuche
+    übernimmt, hat aber Einheiten-Bezeichnungen in der Hand („Wohnug 1.OG"),
+    und die decken sich bei einem echten Objekt fast nie mit den Mieternamen.
+    Wurde die Einheit ungeprüft als Schlüssel geschrieben, verteilte die
+    Abrechnung ihren Anteil an eine Partei, die es nicht gibt: der Mieter
+    bekam nichts, sein Saldo war um den vollen Betrag falsch — ohne Warnung.
+
+    Wechselt der Mieter mitten im Zeitraum, tragen beide Parteien nach
+    Wohndauer (`_zeitanteil`), wie überall sonst auch. Ein Leerstands-Bezug
+    trägt legitim die Einheiten-Bezeichnung als `partei` und bleibt damit von
+    selbst richtig.
+
+    Zurück kommt zusätzlich, welche Labels sich keiner Partei zuordnen ließen —
+    ihr Verbrauch fiele sonst lautlos aus der Abrechnung.
+    """
+    je_einheit: dict[str, list[Bezug]] = {}
+    for b in bezuege_:
+        if b.einheit:
+            je_einheit.setdefault(b.einheit, []).append(b)
+    bekannte_parteien = {b.partei for b in bezuege_}
+
+    out: dict[str, float] = {}
+    offen: list[str] = []
+    for label, menge in mengen.items():
+        if not menge:
+            continue
+        # Steht dort schon ein Partei-Name, bleibt er stehen — manche Zähler
+        # sind historisch auf die Partei statt auf die Einheit gepflegt.
+        if label in bekannte_parteien:
+            out[label] = round(out.get(label, 0.0) + menge, 4)
+            continue
+        treffer = je_einheit.get(label) or []
+        if not treffer:
+            offen.append(label)
+            continue
+        anteile = [max(0.0, _zeitanteil(b, start, ende)) for b in treffer]
+        summe = sum(anteile)
+        if summe <= 0:                      # keine Wohndauer: gleiche Teile
+            anteile = [1.0] * len(treffer)
+            summe = float(len(treffer))
+        for b, teil in zip(treffer, anteile):
+            out[b.partei] = round(
+                out.get(b.partei, 0.0) + menge * teil / summe, 4)
+    return out, offen
+
+
 def _gewicht(schluessel: str, b: Bezug, start: date, ende: date) -> float | None:
     """Gewicht einer Partei — None heißt: nimmt an diesem Schlüssel nicht teil.
 

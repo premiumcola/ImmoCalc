@@ -263,13 +263,43 @@ def test_rest_zaehler_ist_gesamt_minus_unterzaehler(client):
     assert verb[rest] == 50.0
 
 
+def _haus_mit_mietern(c) -> tuple[str, int, dict]:
+    """Zwei Einheiten, zwei Mieter — Einheiten- und Mieternamen verschieden.
+
+    Genau so sieht ein echtes Objekt aus (N367): „Wohnug 1.OG" heißt die
+    Einheit, „Nicklas" der Mieter. Ein Testobjekt, in dem beide gleich heißen,
+    kann den Unterschied zwischen Einheiten- und Partei-Schlüssel gar nicht
+    zeigen — genau daran ist der Fehler jahrelang vorbeigelaufen."""
+    antwort = c.post("/api/objekte", json={
+        "name": "Mieterhaus", "ort": "Teststadt", "turnus": "kalender",
+        "start_monat": 1, "kostenarten": ["Wasser"],
+        "einheiten": [{"bezeichnung": "EG", "flaeche": 70.0},
+                      {"bezeichnung": "OG", "flaeche": 70.0}],
+    })
+    assert antwort.status_code == 201
+    slug = antwort.json()["slug"]
+    zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+    maske = c.get(f"/api/zeitraeume/{zid}/ablesung").json()
+    for einheit, partei in (("EG", "Frau Vogel"), ("OG", "Herr Nicklas")):
+        assert c.post(f"/api/objekte/{slug}/mieten", json={
+            "einheit": einheit, "partei": partei, "kaltmiete": 700.0,
+            "ab_datum": maske["zeitraum"]["start"]}).status_code in (200, 201)
+    return slug, zid, maske
+
+
 def test_uebernehmen_bildet_gewichte_je_partei(client):
-    """Die Übernahme in die Abrechnung nutzt dieselbe (Vorlauf-)Interpolation:
-    die Zähler-Verbräuche werden zu Partei-Gewichten der bestehenden Position."""
-    slug, zid, maske = _neues_objekt(client)
+    """Die Gewichte laufen auf PARTEI-Namen, nicht auf Einheiten-Bezeichnungen.
+
+    `engine.Position.anteile` ist nach Partei geschlüsselt (`verteilung.
+    gewichte` schreibt `out[b.partei]`). Stand dort eine Einheiten-
+    Bezeichnung, verteilte die Abrechnung an eine Partei, die es nicht gibt:
+    der Mieter bekam nichts und sein Saldo war um den vollen Betrag falsch."""
+    slug, zid, maske = _haus_mit_mietern(client)
     start, ende = maske["zeitraum"]["start"], maske["zeitraum"]["ende"]
-    u1 = _anlegen(client, slug, name="Büro", kostenart="Wasser", einheit_bezug="Büro")
-    u2 = _anlegen(client, slug, name="WG", kostenart="Wasser", einheit_bezug="WG")
+    u1 = _anlegen(client, slug, name="Wasser EG", kostenart="Wasser",
+                  einheit_bezug="EG")
+    u2 = _anlegen(client, slug, name="Wasser OG", kostenart="Wasser",
+                  einheit_bezug="OG")
     for zae, endstand in [(u1, 40.0), (u2, 60.0)]:
         client.post(f"/api/zaehler/{zae}/ablesungen",
                     json={"stand": 0.0, "datum": start, "notiz": "Anfangsstand"})
@@ -281,4 +311,58 @@ def test_uebernehmen_bildet_gewichte_je_partei(client):
     r = client.post(f"/api/zeitraeume/{zid}/ablesung/uebernehmen",
                     json={"kostenart": "Wasser", "schluessel": "verbrauch"}).json()
     assert r["angewandt"] is True
-    assert r["anteile"] == {"Büro": 40.0, "WG": 60.0}
+    assert r["anteile"] == {"Frau Vogel": 40.0, "Herr Nicklas": 60.0}
+
+    # Und das Geld kommt auch wirklich bei den beiden an — das ist der Punkt:
+    # ein Einheiten-Schlüssel erzeugte hier eine Partei, die es nicht gibt.
+    abrechnung = client.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+    assert set(abrechnung["parteien"]) == {"Frau Vogel", "Herr Nicklas"}
+    # 300 € nach Verbrauch 40:60 — beide tragen echtes Geld, keiner 0 €.
+    lasten = {name: eintrag["kosten"]
+              for name, eintrag in abrechnung["parteien"].items()}
+    assert all(betrag > 0 for betrag in lasten.values()), lasten
+    assert round(sum(lasten.values()), 2) == 300.0, lasten
+
+
+def test_uebernehmen_teilt_mehrfachzuordnung_und_schreibt_nichts_ins_leere(client):
+    """Zwei Fälle, die vorher lautlos Geld verloren (N367).
+
+    (a) Ein Zähler, der über `einheiten` auf zwei Wohnungen zeigt, ging
+        komplett auf `einheit_bezug` — die zweite Einheit trug nichts.
+    (b) Lässt sich gar nichts zuordnen, wurde ein LEERES `anteile` geschrieben.
+        `verteile_nach_wert` liefert bei Gewichtssumme 0 ein leeres dict: die
+        ganze Position fiel aus der Abrechnung — quittiert mit „angewandt"."""
+    slug, zid, maske = _haus_mit_mietern(client)
+    start, ende = maske["zeitraum"]["start"], maske["zeitraum"]["ende"]
+    geteilt = _anlegen(client, slug, name="Waschküche", kostenart="Wasser",
+                       einheiten=["EG", "OG"])
+    client.post(f"/api/zaehler/{geteilt}/ablesungen",
+                json={"stand": 0.0, "datum": start, "notiz": "Anfangsstand"})
+    client.post(f"/api/zaehler/{geteilt}/ablesungen",
+                json={"stand": 50.0, "datum": ende, "zeitraum_id": zid})
+    client.post(f"/api/zeitraeume/{zid}/positionen",
+                json={"kostenart": "Wasser", "betrag": 300.0})
+    r = client.post(f"/api/zeitraeume/{zid}/ablesung/uebernehmen",
+                    json={"kostenart": "Wasser", "schluessel": "verbrauch"}).json()
+    assert r["angewandt"] is True
+    assert r["anteile"] == {"Frau Vogel": 25.0, "Herr Nicklas": 25.0}
+
+    # (b) Ein Zähler, dessen Ziel es im Objekt nicht gibt.
+    slug2, zid2, maske2 = _haus_mit_mietern(client)
+    s2, e2 = maske2["zeitraum"]["start"], maske2["zeitraum"]["ende"]
+    fremd = _anlegen(client, slug2, name="Phantom", kostenart="Wasser",
+                     einheit_bezug="Gibtsnicht")
+    client.post(f"/api/zaehler/{fremd}/ablesungen",
+                json={"stand": 0.0, "datum": s2, "notiz": "Anfangsstand"})
+    client.post(f"/api/zaehler/{fremd}/ablesungen",
+                json={"stand": 10.0, "datum": e2, "zeitraum_id": zid2})
+    client.post(f"/api/zeitraeume/{zid2}/positionen",
+                json={"kostenart": "Wasser", "betrag": 300.0})
+    r2 = client.post(f"/api/zeitraeume/{zid2}/ablesung/uebernehmen",
+                     json={"kostenart": "Wasser", "schluessel": "verbrauch"}).json()
+    assert r2["angewandt"] is False, "Eine leere Verteilung darf nicht greifen"
+    assert r2["unzugeordnet"] == ["Phantom"]
+    # Die Position behält ihre bisherige (abgeleitete) Verteilung.
+    zeile = next(k for k in client.get(f"/api/zeitraeume/{zid2}").json()["checkliste"]
+                 if k["kostenart"] == "Wasser")
+    assert zeile["anteile"], "Die bestehende Verteilung wurde überschrieben"

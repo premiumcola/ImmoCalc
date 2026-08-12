@@ -203,11 +203,16 @@ def test_strom_meldet_die_partei_ohne_auflösbare_einheit(monkeypatch):
 # 4) Übernahme in die Kostenposition — hat geschluckt
 # --------------------------------------------------------------------------
 
-def test_uebernehmen_meldet_den_zaehler_der_kein_gewicht_traegt():
-    """Ein Zähler, der sein Ziel NUR über die Mehrfachzuordnung `einheiten`
-    trägt, fiel hier ganz heraus: sein Verbrauch fehlte in der Verteilung.
-    Die Gewichte bleiben Partei-Gewichte (engine.Position.anteile) — gemeldet
-    wird der Fund trotzdem."""
+def test_uebernehmen_traegt_die_mehrfachzuordnung_mit():
+    """Ein Zähler, der sein Ziel NUR über `einheiten` trägt, zählt jetzt mit.
+
+    Vorher fiel er ganz heraus: verbucht wurde allein auf `einheit_bezug`, und
+    das ist bei einem neu angelegten Zähler leer — sein Verbrauch fehlte in der
+    Verteilung, gemeldet wurde er nur als „unzugeordnet" (N367). Gemeldet
+    bleibt, was sich wirklich nicht auflösen lässt.
+
+    Die Schlüssel sind PARTEI-Namen: „OG" ist die Einheit, „OG-Mieter" die
+    Partei, und nur unter der findet die Abrechnung das Geld wieder."""
     with Session(db.engine) as s:
         oid, zid = _objekt(s, "zuordnung-uebernahme")
         s.add(Kostenposition(zeitraum_id=zid, kostenart="Wasser", betrag=300.0))
@@ -225,12 +230,14 @@ def test_uebernehmen_meldet_den_zaehler_der_kein_gewicht_traegt():
         r = uebernehmen(zid, UebernahmeIn(kostenart="Wasser",
                                           schluessel="verbrauch"), s)
         assert r["angewandt"] is True
-        # Der Zähler ohne `einheit_bezug` trägt kein Gewicht — das steht jetzt da.
-        assert "OG Kaltwasser" in r["unzugeordnet"]
-        assert "OG" not in r["anteile"]
-        # Ein Label, das im Objekt nichts trifft, ebenfalls.
-        assert "Speicher" in r["unzugeordnet"]
-        assert _genannt(r["warnungen"], "OG Kaltwasser"), r["warnungen"]
+        # Der Zähler mit reiner Listen-Zuordnung trägt jetzt sein Gewicht …
+        assert r["anteile"]["OG-Mieter"] == 60.0
+        assert "OG Kaltwasser" not in r["unzugeordnet"]
+        # … und die Schlüssel sind Partei-, nicht Einheiten-Namen.
+        assert "OG" not in r["anteile"] and "EG" not in r["anteile"]
+        # Ein Label, das im Objekt nichts trifft, wird weiter genannt.
+        assert r["unzugeordnet"] == ["Speicher"]
+        assert _genannt(r["warnungen"], "Speicher"), r["warnungen"]
         # Der sauber zugeordnete Zähler bleibt unauffällig.
         assert "EG Kaltwasser" not in r["unzugeordnet"]
         assert r["anteile"]["EG-Mieter"] == 40.0
