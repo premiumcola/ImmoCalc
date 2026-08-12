@@ -3,23 +3,15 @@
    Bezug / Kostenart einstellen, Verrechnung setzen (Rest = Hauptzähler −
    Unterzähler), Anfangsstand vor der ersten Abrechnung erfassen.
 
-   Zusätzlich: der ablesungWizard (CCXCIII), der von N211 zwar aus der UI
-   ausgekoppelt wurde, aber weiter existiert. Er wird derzeit nicht mehr
-   aufgerufen — der Öffnungsknopf ist raus, siehe `ablesenKnopfHtml`. */
+   N349 — geöffnet wird der Dialog von der Immobilien-Seite (objekt.html,
+   Knopf „Zähler" über den Abrechnungszeiträumen): die Konfiguration gehört
+   zur Immobilie, nicht zu einem einzelnen Abrechnungsjahr. */
 
 import { api, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { MESSEINHEITEN } from './state.js';
-import { GEAR_ICON, MUELL_ICON } from './icons.js';
+import { MUELL_ICON } from './icons.js';
 import { zahl, feldZahl, alleEinheiten, zaehlerBlockBasis, heizBereich } from './helpers.js';
-
-/* CCCLXXX — der Zahnrad-Knopf über der Checkliste. */
-export function ablesenKnopfHtml() {
-  return `<div class="ablese-leiste nur-konfig">
-    <button class="zk-gear breit" id="zaehlerKonfig" type="button"
-      aria-label="Zähler konfigurieren">${GEAR_ICON}<span>Zähler konfigurieren</span></button>
-  </div>`;
-}
 
 /* Frühester Periodenbeginn (ISO). */
 function fruehesterStartISO(objektDaten) {
@@ -30,20 +22,39 @@ function fruehesterStartISO(objektDaten) {
 }
 
 async function neuLaden() {
+  // N349 — der Dialog läuft jetzt auch auf objekt.html (Immobilien-Ebene);
+  // dort gibt es keine Checkliste zum Auffrischen.
+  if (!state.zid) return;
   const { laden } = await import('./checkliste.js');
   await laden();
 }
 
-export async function zaehlerKonfig() {
-  const slug = state.daten.objekt;
+/* N349 — auf Immobilien-Ebene aufrufbar: `slugArg` übergeben (objekt.html),
+   ohne Argument gilt der Zeitraum-Kontext wie bisher. Alles, was sonst aus
+   dem Checklisten-State kam (Einheiten, Kostenarten, Titel), wird dann
+   selbst geholt. */
+export async function zaehlerKonfig(slugArg) {
+  const slug = slugArg || state.daten?.objekt;
   let meters, objektDaten;
   try {
     [meters, objektDaten] = await Promise.all([
       api(`/objekte/${slug}/zaehler`), api(`/objekte/${slug}`)]);
   } catch (fehler) { melde(fehler.message || 'Zähler nicht ladbar', 'neg'); return; }
 
-  const startISO = fruehesterStartISO(objektDaten) || state.daten.start;
-  const kostenarten = [...new Set((state.daten.checkliste || []).map(k => k.kostenart))];
+  if (!(state.objektEinheiten || []).length) {
+    state.setObjektEinheiten((objektDaten.einheiten || [])
+      .filter(e => e.nk_abrechnung !== false)
+      .map(e => e.bezeichnung || '').filter(Boolean));
+  }
+  const titel = state.daten?.objekt_name || objektDaten.objekt?.name || slug;
+  const startISO = fruehesterStartISO(objektDaten) || state.daten?.start;
+  let kostenarten = [...new Set((state.daten?.checkliste || []).map(k => k.kostenart))];
+  if (!kostenarten.length) {
+    try {
+      kostenarten = (await api(`/objekte/${slug}/kostenarten`))
+        .filter(k => k.aktiv !== false).map(k => k.name);
+    } catch { /* Auswahl bleibt leer — Freitext-Fallback greift */ }
+  }
 
   const dlg = document.createElement('dialog');
   // N340v — eigene Klasse, damit die Weite NUR diese Maske betrifft (39
@@ -304,7 +315,7 @@ export async function zaehlerKonfig() {
           berechneten Rest.</div>`;
     dlg.innerHTML = `
       <div class="aw-kopf">
-        <span class="t">Zähler · ${esc(state.daten.objekt_name)}</span>
+        <span class="t">Zähler · ${esc(titel)}</span>
         <button class="aw-x" data-zk-schliessen aria-label="Schließen">×</button>
       </div>
       <div class="aw-body zk-body">

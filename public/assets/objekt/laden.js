@@ -264,6 +264,7 @@ export async function laden() {
   const zeitraumBlock = istGrundstueck() ? '' : `
     <div class="sekopf"><h2 class="sec">Abrechnungszeiträume</h2>
       ${fokusWert ? '' : `<span class="sekopf-akt">
+        <button data-zaehler-konfig="1">Zähler</button>
         <button data-zeitraum-werkzeug="1">Umstellen</button>
         <button data-zeitraum-neu="1">Anlegen</button></span>`}</div>
     <div class="liste">${zr}</div>

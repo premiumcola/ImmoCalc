@@ -82,7 +82,8 @@ import {
 import {
   konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
 } from './konfigmodus.js';
-import { zaehlerKonfig, ablesenKnopfHtml } from './zaehler-konfig.js';
+// N349 — die Zähler-Konfiguration lebt jetzt auf der Immobilien-Seite
+// (objekt.html, Knopf „Zähler" über den Abrechnungszeiträumen).
 
 const { inhalt, zid, titel, sub, KEINE_KAMERA } = state;
 
@@ -1052,7 +1053,7 @@ export async function zeichnen() {
     }).join('');
 
     rumpf = wegSchalterHtml() + wegDirektHtml() + flussKarte + sortWahl +
-      zeilen + ablesenKnopfHtml() + abschlussHtml() + zeitraumFussHtml();
+      zeilen + abschlussHtml() + zeitraumFussHtml();
   } else if (state.ansicht === 'ergebnis') {
     rumpf = '<div class="karte"><h3>Wird gerechnet …</h3></div>';
   } else {
@@ -1835,11 +1836,6 @@ export function initHandlers() {
       location.href = 'eingang.html?' + p.toString();
       return;
     }
-  });
-
-  // Zahnrad-Konfig-Knopf
-  inhalt.addEventListener('click', e => {
-    if (e.target.closest('#zaehlerKonfig')) zaehlerKonfig();
   });
 
   // Scan-Feld: nach Aufnahme Beleg direkt an der Position ablegen.
