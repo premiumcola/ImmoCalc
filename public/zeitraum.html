@@ -557,12 +557,19 @@
      N355 — das Panel gehört sichtbar zu der Kostenposition darüber: es sitzt
      bündig darunter (kein Abstand, oben eckig, gleiche Breite) statt frei zu
      schweben, und trägt einen Rahmen, damit es nicht mehr untergeht. */
-  .zu-panel{background:var(--paper);border-radius:0 0 14px 14px;
-    margin:0 0 12px;border:1px solid var(--line);border-top:none;
-    box-shadow:0 1px 2px rgba(22,38,44,.05);overflow:hidden}
+  /* N357 — versenkt statt aufgesetzt: das Panel liegt sichtbar HINTER der
+     Kostenkarte. Dafür ein Innenschatten oben (die Karte wirft ihn hinein),
+     ein etwas dunklerer Grund als die Karte, ein kräftigerer Rahmen und ein
+     leichter seitlicher Einzug — so kapselt es die Zähler klar ein, ohne
+     wie eine zweite, gleichrangige Karte zu wirken. */
+  .zu-panel{background:#E2E8E8;border-radius:0 0 14px 14px;
+    margin:0 10px 14px;border:1.5px solid #CBD5D5;border-top:none;
+    box-shadow:inset 0 7px 9px -7px rgba(22,38,44,.28),
+               inset 0 -1px 0 rgba(255,255,255,.5);overflow:hidden}
   /* Die Karte darüber gibt ihren unteren Rand und Abstand ab, damit beide
-     als ein Block zusammenhängen. */
-  .pruef:has(+ .zu-panel){margin-bottom:0;border-radius:14px 14px 0 0}
+     als ein Block zusammenhängen — sie deckt das Panel oben ab. */
+  .pruef:has(+ .zu-panel){margin-bottom:0;border-radius:14px 14px 0 0;
+    position:relative;z-index:1}
   .zu-sum{width:100%;display:flex;align-items:center;gap:10px;padding:14px 15px;
     background:none;border:none;cursor:pointer;text-align:left;min-height:52px}
   .zu-ikon{flex:none;display:flex;width:19px;height:19px;color:var(--teal)}
