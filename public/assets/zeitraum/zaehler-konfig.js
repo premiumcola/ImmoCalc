@@ -153,11 +153,20 @@ export async function zaehlerKonfig() {
 
     const fertig = vollstaendig(z);
     const aufgeklappt = offen.has(z.id);
+    // N345 — die Verrechnungsweise als Zeichen direkt in der Kopfzeile, ohne
+    // Aufklappen sichtbar: „−" Unterzähler (wird abgezogen), „=" errechneter
+    // Rest, „+" eigenständig. Die Hoch/Runter-Pfeile sind dafür raus — die
+    // Reihenfolge ergibt sich aus der Verrechnungsstruktur von selbst, und
+    // der Platz gehört dem Zählernamen.
+    const zeichen = z.typ === 'rest' ? '='
+      : z.hauptzaehler_id ? '−' : '+';
     // N340u — die Kopfzeile bleibt immer sichtbar (Name, Nummer, Status); der
     // Rest klappt erst auf Antippen auf. Bei 39 Zählern ist die volle Karte
     // für jeden zu viel auf einmal.
     return `<div class="zk-karte${aufgeklappt ? '' : ' zu'}" data-zid="${z.id}">
       <div class="zk-kopf" data-zk-toggle="${z.id}">
+        <span class="zk-vz vz-${z.typ === 'rest' ? 'gleich'
+          : zeichen === '−' ? 'minus' : 'plus'}" aria-hidden="true">${zeichen}</span>
         <span class="zk-status ${fertig ? 'ok' : 'warn'}"
           title="${fertig ? 'Vollständig eingerichtet' : 'Noch nicht vollständig eingerichtet'}"
           aria-hidden="true">${fertig ? '✓' : '!'}</span>
@@ -421,6 +430,8 @@ export async function zaehlerKonfig() {
     }
   });
 
+  // N345 — Hin- und Herschieben gibt es nur HIER im Konfigurator; die
+  // Ablese-Eingabe zeigt die fertige Reihenfolge ohne Schiebeknöpfe.
   async function verschieben(id, richtung) {
     const i = meters.findIndex(m => m.id === id);
     const j = i + richtung;

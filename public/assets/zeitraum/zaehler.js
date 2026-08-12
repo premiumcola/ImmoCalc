@@ -163,12 +163,12 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
         <div class="zu-paar"><span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span>
           <span class="zu-dat">${_isoKurz(datum)}</span></div></div>`;
 
-  const nurAnzeige = (kind, wert, datum, note) => `<div class="zu-feld">
-      <label>${kind}</label>
-      <div class="zu-paar">
-        <span class="zu-anf">${wert ? `${wert}&nbsp;${eh}` : '—'}</span>
-        <span class="zu-uebernommen" title="Endstand der Vorperiode, abgelesen am ${
-          _isoKurz(datum)}">${note}</span></div></div>`;
+  // N345 — nur Anzeige (Anfang aus der Vorperiode): eine schmale Zeile statt
+  // eines vollen Feld-Blocks — der Anfang ist keine Eingabe, er braucht
+  // keine Feldhöhe. Spart je Karte rund 50 px auf dem iPhone.
+  const nurAnzeige = (kind, wert, datum, note) => `<span class="zu-anfchip"
+      title="Endstand der Vorperiode, abgelesen am ${_isoKurz(datum)}">${kind}
+      <b>${wert ? `${wert}&nbsp;${eh}` : '—'}</b> · ${note}</span>`;
 
   // N120 — Jahreswert: ein Feld, kein Datum.
   // N341 — kompakt: ohne eigene Label-Zeile und ohne „kein Zählerstand"-Text,
@@ -199,13 +199,19 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
 
   const verb = verbText
     || (z.verbrauch != null ? `${zahl(z.verbrauch)}&nbsp;${eh}` : '—');
+  // N345 — die Verrechnungsweise steht als Zeichen VOR jedem Zähler, ohne
+  // dass man etwas aufklappen muss: „−" = wird vom Hauptzähler abgezogen,
+  // „=" = errechneter Rest, „+" = zählt eigenständig. Dieselbe Sprache wie
+  // im Zähler-Konfigurator.
+  const zeichen = rest ? '=' : (minus || z.hauptzaehler_id) ? '−' : '+';
   return `<div class="zu-zeile${fertig && !verbText ? ' fertig' : ''}${
       minus ? ' minus' : ''}${rest ? ' rest' : ''}${
       direkt ? ' knapp' : ''}${
       verbText ? ' unplausibel' : ''}" data-zid="${z.id}">
     <div class="zu-haupt">
-      ${minus ? '<span class="zu-op" aria-hidden="true">−</span>' : ''}
-      <span class="zu-name"><span class="zu-nametxt">${
+      <span class="zu-name"><span class="zu-op vz-${
+        rest ? 'gleich' : zeichen === '−' ? 'minus' : 'plus'}"
+        aria-hidden="true">${zeichen}</span><span class="zu-nametxt">${
         esc(label || state.zLabels.get(z.id) || z.name)}</span>${
         z.zaehlernummer ? `<span class="zu-nr">Nr. ${esc(z.zaehlernummer)}</span>` : ''}${
         bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"

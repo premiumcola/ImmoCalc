@@ -167,6 +167,8 @@
   .zk-kopf{display:flex;align-items:center;gap:8px;margin-bottom:10px;
     cursor:pointer;border-radius:10px}
   .zk-kopftxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  /* N345 — Verrechnungszeichen in der Kopfzeile, ohne Aufklappen sichtbar. */
+  .zk-vz{flex:none;width:14px;text-align:center;font:700 15px var(--mono)}
   .zk-name{width:100%;min-width:0;border:1.5px solid var(--line);border-radius:10px;
     padding:10px 11px;font:700 14px var(--disp);background:var(--sheet);
     color:var(--ink);min-height:44px}
@@ -700,11 +702,15 @@
   .zu-at{font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;
     color:var(--soft);margin-bottom:6px}
   .zu-kein{font:400 11.5px var(--body);color:var(--soft);padding:4px 2px 6px}
-  .zu-zeile{padding:9px 11px;margin-bottom:7px;background:var(--paper);
+  .zu-zeile{padding:7px 10px;margin-bottom:5px;background:var(--paper);
     border-radius:11px;box-shadow:inset 3px 0 0 transparent}
   .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos)}
-  .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:9px 12px}
-  .zu-op{flex:none;align-self:center;font:700 16px var(--mono);color:var(--neg)}
+  .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:6px 10px}
+  /* N345 — die Verrechnungsweise als Zeichen vor jedem Zähler: + eigenständig,
+     − wird abgezogen, = errechneter Rest. Ohne Aufklappen sichtbar. */
+  .zu-op{display:inline-block;font:700 15px var(--mono);width:16px;
+    text-align:left;vertical-align:middle}
+  .vz-plus{color:var(--soft)} .vz-minus{color:var(--neg)} .vz-gleich{color:var(--teal-d)}
   .zu-name-inp{width:100%;min-width:120px;box-sizing:border-box;
     border:1.5px solid var(--teal);border-radius:8px;padding:6px 8px;
     font:600 13px var(--disp);color:var(--ink);background:var(--sheet)}
@@ -723,8 +729,8 @@
   /* N340y — der Verlauf, wie im Wärme-Simulator (`.wz-verlauf`): nur hier in
      der Ablese-Eingabe, nicht im Zähler-Konfigurator — da geht es um die
      Einheit, nicht um den Wert. */
-  .zu-verlauf{display:flex;gap:4px;align-items:flex-end;margin-top:8px;
-    padding-top:7px;border-top:1px dashed var(--line);width:100%}
+  .zu-verlauf{display:flex;gap:4px;align-items:flex-end;margin-top:5px;
+    padding-top:4px;border-top:1px dashed var(--line);width:100%}
   /* N341 — Jahreswert-Zähler: alles in EINE Zeile (Name · Nr. · Stift ·
      Eingabe), darunter nur der Verlauf. Auf dem iPhone sparte das je Karte
      über die Hälfte der Höhe — bei 24 Zählern der Unterschied zwischen
@@ -748,23 +754,28 @@
   .zu-vj b{font:600 9.5px var(--mono);color:var(--ink);line-height:1}
   .zu-vj em{font:500 9px var(--mono);color:var(--soft);font-style:normal}
   .zu-sub{display:block;font:400 10.5px var(--body);color:var(--soft);margin-top:1px}
-  .zu-feld{flex:none;display:flex;flex-direction:column;gap:4px}
+  .zu-feld{flex:none;display:flex;flex-direction:column;gap:2px}
   .zu-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
     text-transform:uppercase;color:var(--soft)}
   .zu-feld input{box-sizing:border-box;border:1.5px solid var(--line);
-    border-radius:9px;padding:9px 10px;font:600 12px var(--mono);
+    border-radius:9px;padding:7px 9px;font:600 12px var(--mono);
     background:var(--sheet);color:var(--ink)}
-  .zu-feld input[type=text]{width:100px;min-height:44px;text-align:right}
+  .zu-feld input[type=text]{width:96px;min-height:40px;text-align:right}
   .zu-feld input:focus{outline:none;border-color:var(--teal)}
   .zu-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
+  /* N345 — der Anfang aus der Vorperiode als schmale Text-Zeile statt eines
+     vollen Feld-Blocks: keine Eingabe, keine Feldhöhe. */
+  .zu-anfchip{flex:1 1 100%;font:500 10.5px var(--body);color:var(--soft);
+    line-height:1.4}
+  .zu-anfchip b{font:600 11px var(--mono);color:var(--ink)}
   /* N88 — Stand und Ablesedatum stehen wieder je Zähler nebeneinander; darunter
      die sichtbare Umrechnung auf die Periodengrenze. Die Paar-Zeile ist so hoch
      wie ein Eingabefeld, damit Anfang und Ende auf einer Linie sitzen. */
-  .zu-paar{display:flex;align-items:center;gap:8px;min-height:44px}
+  .zu-paar{display:flex;align-items:center;gap:8px;min-height:40px}
   /* N337 — 16px, sonst zoomt iOS beim Antippen in die Seite hinein und kommt
      nicht zurück (dieselbe Regel wie CCCLI in immo.css; eine klassen-genauere
      Angabe schlägt sie sonst wieder). */
-  .zu-feld input[type=date]{width:150px;min-height:44px;font:500 16px var(--body)}
+  .zu-feld input[type=date]{width:132px;min-height:40px;font:500 16px var(--body)}
   /* N343 — dieselbe iOS-Zoom-Regel für ALLE klassen-spezifischen Eingaben
      dieser Seite: die CCCLI-Grundregel in immo.css (`input{font-size:16px}`
      bei grobem Zeiger) verliert gegen jede Klassen-Angabe mit `font:`-Kurz-
@@ -776,8 +787,8 @@
   }
   .zu-dat,.zu-uebernommen{font:500 10.5px var(--body);color:var(--soft);
     white-space:nowrap}
-  .zu-rechnung{display:flex;flex-direction:column;gap:3px;margin-top:8px;
-    padding-top:7px;border-top:1px dashed var(--line)}
+  .zu-rechnung{display:flex;flex-direction:column;gap:2px;margin-top:5px;
+    padding-top:4px;border-top:1px dashed var(--line)}
   .zu-rz{font:400 10.5px var(--body);color:var(--soft);line-height:1.5;
     overflow-wrap:anywhere}
   .zu-rz b{font:600 8.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;
@@ -790,12 +801,12 @@
     font:700 12.5px var(--mono);color:var(--soft);white-space:nowrap}
   .zu-verb small{font:600 8.5px var(--mono);color:var(--soft);text-transform:uppercase}
   .zu-zeile.fertig .zu-verb{color:var(--pos)}
-  .zu-ehwahl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:9px;
-    padding-top:9px;border-top:1px dashed var(--line)}
+  .zu-ehwahl{display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;margin-top:5px;
+    padding-top:5px;border-top:1px dashed var(--line)}
   .zu-ehl{flex:none;font:600 8.5px var(--mono);letter-spacing:.05em;
     text-transform:uppercase;color:var(--soft)}
-  .zu-ehchips{display:flex;flex-wrap:wrap;gap:6px}
-  .zu-eh{min-height:40px;padding:6px 13px;border-radius:999px;
+  .zu-ehchips{display:flex;flex-wrap:wrap;gap:5px}
+  .zu-eh{min-height:36px;padding:5px 11px;border-radius:999px;
     border:1.5px solid var(--line);background:var(--sheet);color:var(--soft);
     font:600 11.5px var(--body);cursor:pointer}
   .zu-eh.an{border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)}
