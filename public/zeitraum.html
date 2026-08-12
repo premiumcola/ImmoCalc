@@ -550,7 +550,11 @@
      drei Dinge zusammen: die Einrückung, die Linie an der linken Kante und das
      Zähler-Icon im Kopf. Auf schmalen Schirmen fällt die Einrückung kleiner aus
      (Eingabefelder brauchen die Breite) — Linie und Icon tragen sie dort. */
-  .zu-panel{background:var(--sheet);border-radius:14px;margin:2px 0 12px 22px;
+  /* N354 — das ganze Panel trägt EINE Farbe (Papier); die Zähler-Karten
+     darin sind hell (`--sheet`) und heben sich dadurch ab. Vorher hatte nur
+     der Inhalt Papier und der Kopf blieb weiss — die Naht dazwischen sah aus,
+     als wäre die Box aufgerissen. */
+  .zu-panel{background:var(--paper);border-radius:14px;margin:2px 0 12px 22px;
     box-shadow:0 1px 2px rgba(22,38,44,.05),inset 3px 0 0 var(--teal-l);
     overflow:hidden}
   .zu-sum{width:100%;display:flex;align-items:center;gap:10px;padding:14px 15px;
@@ -562,9 +566,7 @@
   .zu-chev{flex:none;display:flex;color:var(--soft);transition:transform .18s}
   .zu-chev svg{width:18px;height:18px}
   .zu-panel.offen .zu-chev{transform:rotate(180deg)}
-  /* N352 — der Panel-Inhalt bekommt den ruhigen Papiergrund, damit die
-     Karten (jetzt `--sheet`) sich davon abheben. */
-  .zu-inhalt{display:none;padding:10px 12px 12px;background:var(--paper)}
+  .zu-inhalt{display:none;padding:2px 12px 12px}
   .zu-panel.offen .zu-inhalt{display:block}
   @media(max-width:520px){ .zu-panel{margin-left:10px} .zu-sum{padding:13px 12px}
     .zu-inhalt{padding:9px 10px 10px} }
@@ -661,7 +663,12 @@
   /* N337 — 16px, sonst zoomt iOS beim Antippen in die Seite hinein und kommt
      nicht zurück (dieselbe Regel wie CCCLI in immo.css; eine klassen-genauere
      Angabe schlägt sie sonst wieder). */
-  .zu-feld input[type=date]{width:132px;min-height:40px;font:500 16px var(--body)}
+  /* N354 — eine Schrift für alle Zahlen der Zeile (Stand, Datum, Verbrauch):
+     Mono, gleiche Größe. Und breit genug, dass die Jahreszahl neben dem
+     Kalender-Symbol vollständig stehen bleibt — bei 132 px schnitt „2025"
+     ab. 16px bleibt Pflicht, sonst zoomt iOS beim Antippen hinein. */
+  .zu-feld input[type=date]{width:158px;min-height:40px;
+    font:500 16px var(--mono);padding-right:4px}
   /* N343 — dieselbe iOS-Zoom-Regel für ALLE klassen-spezifischen Eingaben
      dieser Seite: die CCCLI-Grundregel in immo.css (`input{font-size:16px}`
      bei grobem Zeiger) verliert gegen jede Klassen-Angabe mit `font:`-Kurz-

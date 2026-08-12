@@ -205,8 +205,7 @@ export async function zaehlerKonfig(slugArg) {
         <div class="zk-feld"><label>Zählernummer</label>
           <input value="${esc(z.zaehlernummer || '')}" data-zk-f="zaehlernummer"
             data-zid="${z.id}" placeholder="z. B. 5057" aria-label="Zählernummer"></div>
-        ${bereich(z) === 'Heizkörper & Wärmemenge'
-          ? `<div class="zk-feld voll"><label>Zählt auf</label>${bezugChips(z)}</div>` : ''}
+        <div class="zk-feld voll"><label>Zählt auf</label>${bezugChips(z)}</div>
         <div class="zk-feld"><label>Einheit</label>
           <select data-zk-f="messeinheit" data-zid="${z.id}">${messSel}</select></div>
         <div class="zk-feld"><label>Kostenart</label>
