@@ -17,6 +17,16 @@ import {
 } from './helpers.js';
 import { stromBlockHtml } from './strom.js';
 
+/* N356 — wo die Zuordnung hier NICHT geändert wird (Heizung: das geschieht
+   unter „Zähler konfigurieren"), soll sie wenigstens sichtbar sein: auf
+   welche Einheit der Zähler zählt, so wie er konfiguriert ist. */
+export function nurEinheitenHtml(z) {
+  const ein = zaehlerEinheiten(z).filter(Boolean);
+  if (!ein.length) return '';
+  return `<div class="zu-ehfest"><span class="zu-ehl">Zählt auf</span>
+    ${ein.map(e => `<span class="zu-ehtag">${esc(e)}</span>`).join('')}</div>`;
+}
+
 /* N58 — kompakter Mehrfach-Auswähler aller Einheiten für einen Zähler. */
 export function einheitChooserHtml(z) {
   const alle = alleEinheiten();
@@ -223,7 +233,8 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
     </div>
     ${rechnung}${datumKnopf}
     ${eauto ? eautoInfoHtml()
-      : ((keinChooser || istHauptzaehler(z)) ? '' : einheitChooserHtml(z))}${extra}
+      : ((keinChooser || istHauptzaehler(z)) ? nurEinheitenHtml(z)
+                                             : einheitChooserHtml(z))}${extra}
     ${verlaufHtml(z)}
   </div>`;
 }

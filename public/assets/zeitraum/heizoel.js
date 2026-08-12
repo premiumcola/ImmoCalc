@@ -96,7 +96,12 @@ function wwJeEinheit(wasserDetail) {
   }
   if (Object.keys(karte).length) return karte;
   for (const z of (state.ablesungMaske?.zaehler || [])) {
-    if (wasserArt(z) !== 'Warmwasser' || !z.hauptzaehler_id) continue;
+    // N356 — auch ein EIGENSTÄNDIGER Warmwasserzähler zählt hier mit: die
+    // Bedingung „nur Unterzähler" liess die Verteilung leer, sobald die
+    // Zähler auf „Eigenständig / Gesamt" stehen (so ist die Laufer Str. 5
+    // konfiguriert: Boiler auf die zwei WG-Wohnungen, Studio mit eigenem).
+    // Entscheidend ist allein, dass er einer Einheit zugeordnet ist.
+    if (wasserArt(z) !== 'Warmwasser') continue;
     const v = z.verbrauch || 0;
     if (!v) continue;
     const ein = zaehlerEinheiten(z).filter(e => alleEinheiten().includes(e));
@@ -153,8 +158,24 @@ export async function fuelleHeizoelInline(el) {
       verteilung = await api(`/objekte/${slug}/heizung/verteilung?kosten=${split.heizung_kosten}`)
         .catch(() => null);
     }
+    // N356 — die Verteilung der Heizkosten auf die Einheiten aus den ECHTEN
+    // Zählern (`heizkosten.py`, N340w): Heizkörperzähler mit ihrem
+    // Bewertungsfaktor, Wärmemengenzähler mit ihren kWh, Grundkosten nach
+    // Fläche. Die alte `heizung/verteilung` liest die separate
+    // `Heizverteiler`-Tabelle, die hier leer ist — deshalb blieb die Ansicht
+    // ohne Tabelle. Übergeben wird der schon warmwasserbereinigte Betrag,
+    // deshalb `ww_kwh: 0` (sonst zöge die Rechnung ein zweites Mal ab).
+    let heizVerteilung = null;
+    if (split && split.heizung_kosten > 0 && bew?.verbrauch_liter) {
+      const literHeiz = bew.verbrauch_liter * (1 - (split.ww_anteil || 0));
+      heizVerteilung = await api(`/zeitraeume/${state.zid}/heizkosten/rechnen`, {
+        method: 'POST',
+        body: { liter: literHeiz, eur: split.heizung_kosten, ww_kwh: 0,
+                fest_anteil: 0.30 },
+      }).catch(() => null);
+    }
     el.innerHTML = heizoelInhalt(best, bew, hkv, wwVol, split, verteilung,
-                                 el.dataset.heizModus || 'oel');
+                                 el.dataset.heizModus || 'oel', heizVerteilung);
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Heizöl nicht ladbar: ${
       esc(String(fehler.message || fehler))}</div>`;
@@ -162,7 +183,29 @@ export async function fuelleHeizoelInline(el) {
 }
 
 /* Der Öl-Manager als HTML. */
-function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') {
+/* N356 — eine Verteilungstabelle im Wasser-Stil (`.wd-tab`): Kopfzeile mit
+   den Einheiten, je Zeile eine Herkunft (Menge klein, Betrag darunter),
+   Summenzeile. Damit sehen Wasser, Warmwasser und Heizung gleich aus. */
+function verteilTabelle(titel, spalten, zeilen, summe) {
+  if (!spalten.length) return '';
+  const zelle = w => w == null
+    ? '<td class="wd-leerz">–</td>'
+    : `<td><span class="wd-m3">${w.menge ?? ''}</span>
+        <span class="wd-eur">${eur(w.eur || 0)}</span></td>`;
+  return `<div class="wd-tabelle"><table class="wd-tab">
+      <thead><tr><th class="wd-rowh">${esc(titel)}</th>${
+        spalten.map(e => `<th>${esc(e)}</th>`).join('')}</tr></thead>
+      <tbody>${zeilen.map(z => `<tr><td class="wd-rowh">${esc(z.name)}${
+          z.herkunft ? `<small>${esc(z.herkunft)}</small>` : ''}</td>${
+          spalten.map(e => zelle(z.werte[e])).join('')}</tr>`).join('')}
+        <tr class="wd-summe"><td class="wd-rowh">Summe</td>${
+          spalten.map(e => `<td><span class="wd-m3">${
+            eur(summe[e] || 0)}</span></td>`).join('')}</tr>
+      </tbody></table></div>`;
+}
+
+function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
+                       heizVerteilung = null) {
   const bearbeitbar = state.daten.status === 'in Arbeit';
   const liefer = (best?.lieferungen || []);
   const kopf = bew && bew.verbrauch_liter != null
@@ -258,21 +301,12 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
     // N118 — Verteilung der Warmwasser-Kosten auf die Einheiten.
     const wv = wwVerteilung(split?.ww_kosten || 0, state.wasserDetailCache);
     const sp = Object.keys(wv.mengen);
-    const wwTab = sp.length ? `<div class="ho-sekt">
-        <div class="ho-st">Verteilung auf die Einheiten
-          <span class="ho-sh">nach Warmwasser-Zähler</span></div>
-        <div class="wd-scroll"><table class="wd-tab"><thead><tr>
-          <th>Warmwasser</th>${sp.map(e => `<th>${esc(e)}</th>`).join('')}</tr></thead>
-          <tbody>
-            <tr><td class="wd-rowh">Menge<small>nach Zähler</small></td>
-              ${sp.map(e => `<td>${zahl(wv.mengen[e])} m³</td>`).join('')}</tr>
-            <tr><td class="wd-rowh">Kosten<small>anteilig</small></td>
-              ${sp.map(e => `<td><b>${eur(wv.anteile[e] || 0)}</b></td>`).join('')}</tr>
-          </tbody>
-          <tfoot><tr><td class="wd-rowh">Summe</td>
-            <td colspan="${sp.length}">${zahl(wv.summe)} m³ · <b>${
-              eur(split?.ww_kosten || 0)}</b></td></tr></tfoot>
-        </table></div></div>` : '';
+    // N356 — dieselbe Tabellenform wie beim Wasser.
+    const wwTab = verteilTabelle('Warmwasser', sp, [{
+      name: 'Warmwasser', herkunft: 'nach Zähler',
+      werte: Object.fromEntries(sp.map(e => [e, {
+        menge: `${zahl(wv.mengen[e])} m³`, eur: wv.anteile[e] || 0 }])),
+    }], Object.fromEntries(sp.map(e => [e, wv.anteile[e] || 0])));
     return `<div class="ho-box">${splitHtml
       || '<div class="ho-warn">Noch keine Öl-Kosten erfasst — erst Lieferungen und den Zähler-Endstand bei „Heizöl & Lieferungen" eintragen.</div>'}${wwTab}</div>`;
   }
@@ -280,7 +314,47 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel') 
     const kopfW = split ? `<div class="ho-kpi"><div class="ho-kbox teal">
         <span class="ho-kl">Heizungs-Kosten (nach Warmwasser-Abzug)</span>
         <span class="ho-kv">${eur(split.heizung_kosten)}</span></div></div>` : '';
-    return `<div class="ho-box">${kopfW}${hkvHtml}</div>`;
+    // N356 — Verteilung auf die Einheiten aus den echten Zählern, in
+    // derselben Tabellenform wie beim Wasser: Wärme nach Zählern (Heizkörper
+    // mit Faktor + Wärmemengenzähler), Grundkosten nach Fläche.
+    const nutzer = (heizVerteilung?.nutzer || []).filter(n => n.summe || n.heizkosten);
+    const sp = nutzer.map(n => n.name);
+    const wert = (n, betrag, menge) => [n.name, { menge, eur: betrag }];
+    const waerme = n => (n.verbrauch_h1 || 0) + (n.verbrauch_h2 || 0);
+    // Steht noch kein Ablesewert, ist der Verbrauchsanteil nicht verteilbar —
+    // eine 0,00-€-Zeile würde das verschleiern.
+    const hatVerbrauch = nutzer.some(n => waerme(n) > 0.005);
+    const zeilen = [];
+    if (hatVerbrauch) {
+      zeilen.push({ name: 'Wärme', herkunft: 'nach Zählern',
+        werte: Object.fromEntries(nutzer.map(n => wert(n, waerme(n),
+          n.kwh ? `${zahl(n.kwh)} kWh` : ''))) });
+    }
+    zeilen.push({ name: 'Grundkosten', herkunft: 'nach Fläche',
+      werte: Object.fromEntries(nutzer.map(n => wert(n, n.festkosten || 0, ''))) });
+    const heizTab = verteilTabelle('Heizung', sp, zeilen,
+      Object.fromEntries(nutzer.map(n => [n.name, n.heizkosten || 0])));
+    const verteilt = nutzer.reduce((s, n) => s + (n.heizkosten || 0), 0);
+    const rest = (split?.heizung_kosten || 0) - verteilt;
+    const hinweise = [];
+    if (!hatVerbrauch && (split?.heizung_kosten || 0) > 0) {
+      hinweise.push(`Für diesen Zeitraum ist noch kein Heizkörper- oder
+        Wärmemengenzähler abgelesen — verteilt sind bisher nur die
+        Grundkosten nach Fläche. Die restlichen <b>${eur(Math.max(0, rest))}</b>
+        (Verbrauchsanteil) folgen, sobald die Zählerstände unter
+        „Zählerstände · Heizkörper &amp; Wärmemenge" eingetragen sind.`);
+    }
+    for (const name of (heizVerteilung?.unzugeordnet || [])) {
+      hinweise.push(`<b>${esc(name)}</b> ist keiner Einheit zugeordnet und
+        zählt deshalb nicht mit — die Zuordnung steht in „Zähler konfigurieren".`);
+    }
+    const hinweis = hinweise.map(t => `<div class="ho-warn">▲ ${t}</div>`).join('');
+    // N356 — der alte „Heizungswärme · Heizkostenverteiler"-Block (eigene
+    // `Heizverteiler`-Tabelle mit HKV-Nr./Raum/Faktor-Formular) ist raus: die
+    // Heizkörper sind echte Zähler und werden unter „Zähler konfigurieren"
+    // gepflegt, ihre Stände unter „Zählerstände". Zwei Wege für dieselbe
+    // Sache waren genau die Verwirrung, die die leere Tabelle erzeugt hat.
+    return `<div class="ho-box">${kopfW}${heizTab}${hinweis}</div>`;
   }
   return `<div class="ho-box">${kopf}
     ${zeilen ? `<div class="ho-liste">${zeilen}</div>${bestZeile}` : ''}

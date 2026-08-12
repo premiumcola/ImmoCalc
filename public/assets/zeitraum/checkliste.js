@@ -612,7 +612,12 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
     koerper = `${stromKetteHtml(k)}${zu}${ablage}`;
   }
 
-  const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel && !heizoelSammel)
+  // N356 — die Heizwärme bekommt KEIN Betragsfeld: ihr Wert entsteht aus den
+  // Öl-Litern (FIFO) abzüglich des Warmwasseranteils und steht darüber. Ein
+  // Eingabefeld daneben lud dazu ein, ihn von Hand zu überschreiben — zwei
+  // Wahrheiten für dieselbe Zahl.
+  const betragEl = (auf && k.position_id && bearbeitbar && !wasserSammel
+                    && !heizoelSammel && !istHeizwaermePos(k))
     ? `<span class="kopf-betrag-box"><input class="kopf-betrag" type="number" step="0.01"
          inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
