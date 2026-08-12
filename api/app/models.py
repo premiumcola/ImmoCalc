@@ -377,6 +377,14 @@ class Kostenposition(SQLModel, table=True):
     vorlaeufig: bool = False
     quelle_dokument_id: Optional[int] = Field(
         default=None, foreign_key="dokument.id")
+    # N364 — „die Erfassung ist vollständig", vom Nutzer selbst gesetzt.
+    # Gedacht für Positionen, deren Betrag nicht aus einem Beleg kommt, sondern
+    # laufend zusammenwächst (Heizöl: Lieferungen + Zähler-Endstand). Dort kann
+    # keine Regel entscheiden, wann Schluss ist — nur er weiß es.
+    # Bewusst getrennt von `status`: `status='erledigt'` heißt „dieser Betrag
+    # wird umgelegt", und die Öl-Sammelposition legt nichts um (ihr Geld
+    # erreicht die Einheiten über Heizung/Warmwasser). Additiv, Default False.
+    bestaetigt: bool = False
 
 
 class Vorauszahlung(SQLModel, table=True):

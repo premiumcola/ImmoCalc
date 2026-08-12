@@ -562,12 +562,19 @@
      ein etwas dunklerer Grund als die Karte, ein kräftigerer Rahmen und ein
      leichter seitlicher Einzug — so kapselt es die Zähler klar ein, ohne
      wie eine zweite, gleichrangige Karte zu wirken. */
-  /* N362 — der eingebrannte Grund bleibt dunkel, aber NEUTRAL grau statt
-     grünstichig: das Grün gehört den fertigen Zählern, nicht dem Untergrund. */
-  .zu-panel{background:#D9DBDC;border-radius:0 0 14px 14px;
-    margin:0 10px 14px;border:1.5px solid #BEC2C4;border-top:none;
-    box-shadow:inset 0 10px 12px -8px rgba(28,32,36,.40),
-               inset 0 -1px 0 rgba(255,255,255,.45);overflow:hidden}
+  /* N363 — der Zählerbereich ist eine dunkle, versunkene Zone: je tiefer
+     geschachtelt, desto dunkler. Ebene 1 ist das Panel, Ebene 2 die
+     Zählerkarte darin, Ebene 3 die abgezogenen Unterzähler. Der Text wird
+     dabei hell — nie grauer Text auf grauem Grund. */
+  /* Drei Tiefen: je weiter ein Element nach innen sitzt, desto dunkler. Die
+     oberste Stufe bleibt bewusst gedämpft statt schwarz — zugeklappt steht sie
+     direkt neben der weißen Karte, und ein zu harter Sprung liest sich als
+     Bruch statt als Vertiefung. Alle drei tragen helle Schrift. */
+  .zu-panel{--zu-1:#4E6068; --zu-2:#43555C; --zu-3:#394A51;
+    --zu-hell:#F1F5F5; --zu-matt:#BCCCD0; --zu-linie:rgba(255,255,255,.15);
+    background:var(--zu-1);border-radius:0 0 14px 14px;
+    margin:0 10px 14px;border:none;
+    box-shadow:inset 0 10px 14px -10px rgba(0,0,0,.38);overflow:hidden}
   /* Die Karte darüber gibt ihren unteren Rand und Abstand ab, damit beide
      als ein Block zusammenhängen — sie deckt das Panel oben ab. */
   .pruef:has(+ .zu-panel){margin-bottom:0;border-radius:14px 14px 0 0;
@@ -600,11 +607,11 @@
   .zu-zeile{padding:9px 11px;margin-bottom:8px;background:var(--sheet);
     border:1px solid var(--line);border-radius:12px;
     box-shadow:inset 3px 0 0 transparent, 0 1px 2px rgba(22,38,44,.05)}
-  /* N362 — fertig = sichtbar grün: zarter grüner Grund und grüne Kante,
-     damit man auf einen Blick sieht, was schon eingetragen ist. */
-  .zu-zeile.fertig{background:var(--pos-bg);border-color:#BBDCC6;
-    box-shadow:inset 3px 0 0 var(--pos), 0 1px 2px rgba(22,38,44,.05)}
-  .zu-zeile.fertig .zu-verb{color:var(--pos)}
+  /* N363 — kein grüner Kartengrund mehr: die Zählerkarte ist Ebene 2 der
+     dunklen Zone. Fertig zeigt sich allein am grünen Streifen links und am
+     hellgrünen Ergebniswert. */
+  .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos)}
+  .zu-zeile.fertig .zu-verb{color:#7BD3A0}
   .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:6px 10px}
   /* N345 — die Verrechnungsweise als Zeichen vor jedem Zähler: + eigenständig,
      − wird abgezogen, = errechneter Rest. Ohne Aufklappen sichtbar. */
@@ -788,7 +795,10 @@
   .zt-nr{font:600 10.5px var(--mono);color:var(--soft);white-space:nowrap}
   .zt-name{font:600 12px var(--body);color:var(--ink);min-width:120px}
   .zt-name .zu-um{margin-left:3px;min-width:22px;min-height:22px;padding:2px}
-  .zt-eingabe{width:96px}
+  /* N365 — die Eingabe steht als jüngstes Jahr rechts am Ende des Zeitstrahls
+     und ist die einzige Spalte, die man anfasst: eigene Trennlinie davor. */
+  .zt-eingabe{width:96px;text-align:right}
+  th.zt-eingabe,td.zt-eingabe{border-left:1px solid var(--line);padding-left:10px}
   .zt-inp{width:92px;box-sizing:border-box;border:1.5px solid var(--line);
     border-radius:8px;padding:6px 8px;font:600 12px var(--mono);
     background:var(--sheet);color:var(--ink);min-height:36px;text-align:right}
@@ -806,6 +816,117 @@
     .zt-inp{width:80px;padding:6px}
     th.zt-jahr,td.zt-jahr{width:auto;font-size:10.5px}
   }
+  /* ---- N363: die dunkle Zähler-Zone, Ebene für Ebene ------------------- */
+  /* Kopfzeile des Panels (Ebene 1). */
+  .zu-panel .zu-st{color:var(--zu-hell)}
+  .zu-panel .zu-meta{color:var(--zu-matt)}
+  .zu-panel .zu-ikon,.zu-panel .zu-chev{color:var(--zu-matt)}
+  .zu-panel .zu-erkl{color:var(--zu-matt)}
+  .zu-panel .zu-erkl b{color:var(--zu-hell)}
+  /* Zählerkarte (Ebene 2) — dunkler als das Panel. */
+  .zu-panel .zu-zeile{background:var(--zu-2);border:none;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .zu-panel .zu-nametxt,.zu-panel .zu-name{color:var(--zu-hell)}
+  .zu-panel .zu-nr,.zu-panel .zu-feld label,.zu-panel .zu-dat,
+  .zu-panel .zu-uebernommen,.zu-panel .zu-ehl,.zu-panel .zu-rz,
+  .zu-panel .zu-fest small,.zu-panel .zu-kein{color:var(--zu-matt)}
+  .zu-panel .zu-um{color:var(--zu-matt)}
+  .zu-panel .zu-um:hover{color:#fff;background:rgba(255,255,255,.12)}
+  .zu-panel .zu-verb{color:var(--zu-hell)}
+  .zu-panel .zu-anf,.zu-panel .zu-fest b{color:var(--zu-hell)}
+  .zu-panel .zu-fest{border-color:rgba(255,255,255,.28)}
+  .zu-panel .zu-gleich{color:var(--zu-matt)}
+  .zu-panel .zu-rechnung,.zu-panel .zu-verlauf,.zu-panel .zu-ehfest,
+  .zu-panel .zu-ehwahl{border-color:var(--zu-linie)}
+  .zu-panel .zu-rz strong{color:#fff}
+  .zu-panel .zu-rz b{color:var(--zu-matt)}
+  /* Eingabefelder: im Dunkeln gedämpft, damit zwanzig davon keine weiße Wand
+     ergeben — beim Tippen hellen sie auf und holen den Fokus zu sich. */
+  .zu-panel .zu-feld input,.zu-panel .zu-jahr,.zu-panel .zt-inp,
+  .zu-panel .ho-neu input,.zu-panel .ho-neu select{
+    background:rgba(255,255,255,.09);color:var(--zu-hell);
+    border:1px solid rgba(255,255,255,.20);color-scheme:dark}
+  .zu-panel .zu-feld input:focus,.zu-panel .zu-jahr:focus,
+  .zu-panel .zt-inp:focus,.zu-panel .ho-neu input:focus,
+  .zu-panel .ho-neu select:focus{
+    background:#fff;color:var(--ink);border-color:var(--teal);
+    color-scheme:light;outline:none}
+  /* Einheiten-Chips auf dunklem Grund. */
+  .zu-panel .zu-ehtag{background:rgba(255,255,255,.14);color:var(--zu-hell)}
+  .zu-panel .zu-eh{background:transparent;border-color:rgba(255,255,255,.24);
+    color:var(--zu-matt)}
+  .zu-panel .zu-eh.an{background:var(--teal);border-color:var(--teal);color:#fff}
+  /* Verlaufsbalken: helle Zahlen, teal Balken. */
+  .zu-panel .zu-vj b{color:var(--zu-hell)}
+  .zu-panel .zu-vj em{color:var(--zu-matt)}
+  .zu-panel .zu-vj i{background:#5FBF9A;opacity:.9}
+  /* Abgezogene Unterzähler (Ebene 3) — am tiefsten, also am dunkelsten. */
+  .zu-panel .zu-kalt-abzug{border-left-color:var(--zu-linie)}
+  .zu-panel .zu-kalt-abzug .zu-zeile{background:var(--zu-3)}
+  /* Jahreswert-Tabelle (Ebene 2/3). */
+  .zu-panel .zt-gruppe{background:var(--zu-2);border:none}
+  .zu-panel .zt-kt{color:var(--zu-hell)}
+  .zu-panel .zt-kz{color:var(--zu-matt)}
+  .zu-panel .zt-inhalt{background:var(--zu-3)}
+  .zu-panel .zt-tab th{color:var(--zu-matt);border-bottom-color:var(--zu-linie)}
+  .zu-panel .zt-tab td{border-bottom-color:var(--zu-linie)}
+  .zu-panel .zt-name{color:var(--zu-hell)}
+  .zu-panel .zt-nr,.zu-panel td.zt-jahr{color:var(--zu-matt)}
+  .zu-panel th.zt-eingabe,.zu-panel td.zt-eingabe{
+    border-left-color:var(--zu-linie)}
+  .zu-panel th.zt-eingabe{color:var(--zu-hell)}
+  .zu-panel .zt-fest{color:var(--zu-hell)}
+  /* Rest-Zeile bleibt als Ergebnis erkennbar, aber ohne hellen Kasten. */
+  .zu-panel .zu-zeile.rest{background:var(--zu-2);
+    box-shadow:inset 3px 0 0 var(--teal)}
+  .zu-panel .zu-zeile.rest .zu-name,.zu-panel .zu-zeile.rest .zu-verb{
+    color:#8FD9BC}
+  .zu-panel .zu-zeile.minus{box-shadow:inset 3px 0 0 #D4735A}
+  .zu-panel .vz-plus{color:var(--zu-matt)}
+  .zu-panel .vz-minus{color:#E08A70}
+  .zu-panel .vz-gleich{color:#8FD9BC}
+  /* Nachzügler: alles, was seine Farbe aus der hellen Grundlage erbt. */
+  .zu-panel .zu-at,.zu-panel small{color:var(--zu-matt)}
+  .zu-panel b,.zu-panel strong{color:var(--zu-hell)}
+  .zu-panel .zu-weg{color:#E08A70}
+  .zu-panel .zu-eauto{border-top-color:var(--zu-linie)}
+  .zu-panel .zu-eq .zu-et{color:var(--zu-matt)}
+  .zu-panel .zu-eq .zu-et b{color:var(--zu-hell)}
+  .zu-panel .zu-eq .zu-et a{color:#8FD9BC}
+  .zu-panel .zu-eq.fehlt .zu-et{color:#E6B45C}
+  /* Heizöl & Anlieferungen liegen mit im versenkten Bereich — also dieselbe
+     Stufung: Kacheln/Zeilen eine Ebene tiefer, Text hell. */
+  .zu-panel .ho-kbox{background:var(--zu-2)}
+  .zu-panel .ho-kbox.teal{background:#1F5A4C}
+  .zu-panel .ho-kbox.teal .ho-kv{color:#9EE2C6}
+  .zu-panel .ho-kl{color:var(--zu-matt)}
+  .zu-panel .ho-kv{color:var(--zu-hell)}
+  .zu-panel .ho-zeile{background:var(--zu-2);border-color:transparent}
+  .zu-panel .ho-dt,.zu-panel .ho-lit,.zu-panel .ho-wert{color:var(--zu-hell)}
+  .zu-panel .ho-pl,.zu-panel .ho-sh{color:var(--zu-matt)}
+  .zu-panel .ho-anf{background:rgba(255,255,255,.14);color:#9EE2C6}
+  .zu-panel .ho-x{background:rgba(255,255,255,.12);color:var(--zu-matt)}
+  .zu-panel .ho-x:hover{background:rgba(255,255,255,.22);color:#fff}
+  .zu-panel .ho-summe{color:var(--zu-matt)}
+  .zu-panel .ho-summe b{color:var(--zu-hell)}
+  .zu-panel .ho-sekt{border-top-color:var(--zu-linie)}
+  .zu-panel .ho-st,.zu-panel .ho-anfw{color:var(--zu-hell)}
+  .zu-panel .ho-warn{background:rgba(230,180,92,.18);color:#F0C878}
+  /* N364 — der Abschluss-Haken schließt den Öl-Block ab, also sitzt er als
+     eigene Zeile am Fuß und wird grün, sobald er gesetzt ist. */
+  .ho-fertig{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
+    margin-top:12px;padding:11px 13px;border-radius:12px;cursor:pointer;
+    background:rgba(255,255,255,.07);
+    box-shadow:inset 3px 0 0 rgba(255,255,255,.22);
+    transition:background .18s,box-shadow .18s}
+  .ho-fertig input{width:20px;height:20px;flex:none;accent-color:var(--pos);
+    cursor:pointer}
+  .ho-ft{flex:1 1 200px;min-width:0;font:600 12px var(--body);
+    color:var(--zu-hell)}
+  .ho-fw{font:600 12px var(--mono);color:var(--zu-matt);white-space:nowrap}
+  .ho-fertig.an{background:rgba(110,214,166,.16);
+    box-shadow:inset 3px 0 0 #6ED6A6}
+  .ho-fertig.an .ho-fw{color:#9EE2C6}
   /* N360 — EIN Design für alle Zähler: auch die abgezogenen (`minus`, Wasser-
      und Strom-Unterzähler) sind vollwertige Karten. Vorher machte sie eine
      Sonderregel durchsichtig und schattenlos — auf dem jetzt dunkleren Panel

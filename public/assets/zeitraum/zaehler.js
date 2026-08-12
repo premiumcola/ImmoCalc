@@ -390,28 +390,44 @@ function jahreswertTabellenHtml(teil) {
     (ord.indexOf(a) + 1 || 99) - (ord.indexOf(b) + 1 || 99));
 
   // Die Jahre, die überhaupt vorkommen — eine Spalte je Jahr, höchstens fünf.
+  // N365: aufsteigend, und die Eingabe steht als jüngstes Jahr GANZ RECHTS —
+  // die Zeile liest sich damit als Zeitstrahl von links nach rechts.
   const jahre = [...new Set(teil.flatMap(z => Object.keys(z.verlauf || {})))]
     .map(Number).sort((a, b) => a - b).slice(-5);
+  const jetzt = String(state.daten.ende || '').slice(0, 4)
+    || String(state.daten.start || '').slice(0, 4);
 
   return sortiert.map(name => {
     const liste = gruppen.get(name);
     const auf = !state.zaehlerEinheitZu.has(name);
+    // N365 — die Zahlen einer Einheit bekommen einen Blau-zu-Rot-Verlauf:
+    // wenig Verbrauch blau, viel rot. Der Bezug ist die Gruppe, nicht die
+    // ganze Tabelle — ein Bad und ein Wohnzimmer sind nicht vergleichbar,
+    // die Heizkörper EINER Wohnung untereinander schon.
+    const alle = liste.flatMap(z => Object.values(z.verlauf || {}))
+      .filter(v => typeof v === 'number');
+    const min = Math.min(...alle), max = Math.max(...alle);
+    const skalieren = alle.length > 1 && max > min;
+    const zelle = v => v == null
+      ? '<td class="zt-jahr">·</td>'
+      : `<td class="zt-jahr"${skalieren
+          ? ` style="color:${hitzeFarbe((v - min) / (max - min))}"` : ''
+        }>${zahl(v)}</td>`;
     const zeilen = liste.map(z => {
       const eh = esc(z.messeinheit || '');
       const wert = z.ablesung ? zahl(z.ablesung.stand) : '';
       const feld = bearbeitbar
         ? `<input class="zt-inp" type="text" inputmode="decimal"
              data-strom-jahr="${z.id}" value="${wert}" placeholder="${eh}"
-             aria-label="Jahresverbrauch ${esc(z.name)} in ${eh}">`
+             aria-label="Verbrauch ${jetzt} ${esc(z.name)} in ${eh}">`
         : `<span class="zt-fest">${wert || '—'}</span>`;
       return `<tr>
         <td class="zt-nr">${esc(z.zaehlernummer || '–')}</td>
         <td class="zt-name">${esc(state.zLabels.get(z.id) || z.name)}${
           bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
             title="Zähler umbenennen">${STIFT_ICON}</button>` : ''}</td>
+        ${jahre.map(j => zelle((z.verlauf || {})[j])).join('')}
         <td class="zt-eingabe">${feld}</td>
-        ${jahre.map(j => `<td class="zt-jahr">${
-          (z.verlauf || {})[j] != null ? zahl(z.verlauf[j]) : '·'}</td>`).join('')}
       </tr>`;
     }).join('');
     return `<div class="zt-gruppe${auf ? ' offen' : ''}">
@@ -422,12 +438,25 @@ function jahreswertTabellenHtml(teil) {
         <span class="zu-chev">${CHEV_ICON}</span>
       </button>
       <div class="zt-inhalt"><table class="zt-tab">
-        <thead><tr><th>Nr.</th><th>Zähler</th><th>Wert</th>
+        <thead><tr><th>Nr.</th><th>Zähler</th>
           ${jahre.map(j => `<th class="zt-jahr">'${String(j).slice(2)}</th>`).join('')}
+          <th class="zt-eingabe">Verbrauch ${esc(jetzt)}</th>
         </tr></thead>
         <tbody>${zeilen}</tbody>
       </table></div></div>`;
   }).join('');
+}
+
+/* N365 — divergierende Skala blau → sand → rot. Über einen hellen Mittelpunkt
+   statt direkt, weil Blau und Rot gemischt ein mattes Rosa ergeben; so bleibt
+   jeder Schritt unterscheidbar. Alle drei Stützstellen sind hell genug für
+   den dunklen Tabellengrund. */
+const HITZE = [[127, 178, 229], [232, 217, 168], [240, 132, 106]];
+function hitzeFarbe(t) {
+  const x = Math.max(0, Math.min(1, t)) * 2;
+  const i = x < 1 ? 0 : 1;
+  const f = x - i, a = HITZE[i], b = HITZE[i + 1];
+  return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(',')})`;
 }
 
 /* N67/N342 — Zählerstände-Panel EINER Kategorie als Einklapper. Bei

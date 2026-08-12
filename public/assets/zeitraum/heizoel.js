@@ -176,7 +176,8 @@ export async function fuelleHeizoelInline(el) {
     }
     el.innerHTML = heizoelInhalt(best, bew, hkv, wwVol, split, verteilung,
                                  el.dataset.heizModus || 'oel', heizVerteilung,
-                                 el.dataset.pid, el.dataset.schluessel);
+                                 el.dataset.pid, el.dataset.schluessel,
+                                 el.dataset.art || '');
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Heizöl nicht ladbar: ${
       esc(String(fehler.message || fehler))}</div>`;
@@ -220,7 +221,8 @@ function schluesselWahlHtml(pid, jetzt, label) {
 }
 
 function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
-                       heizVerteilung = null, pid = '', schluessel = '') {
+                       heizVerteilung = null, pid = '', schluessel = '',
+                       art = '') {
   const bearbeitbar = state.daten.status === 'in Arbeit';
   const liefer = (best?.lieferungen || []);
   const kopf = bew && bew.verbrauch_liter != null
@@ -376,5 +378,32 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
   }
   return `<div class="ho-box">${kopf}
     ${zeilen ? `<div class="ho-liste">${zeilen}</div>${bestZeile}` : ''}
-    ${form}</div>`;
+    ${form}${abschlussHtml(pid, art, bew, bearbeitbar)}</div>`;
+}
+
+/* N364 — der Abschluss-Haken für „Heizöl & Lieferungen". Öl ist der eine
+   Posten, den keine Regel automatisch für fertig erklären kann: es gibt keinen
+   Beleg, der die Periode abschließt, und der Verbrauch stimmt erst, wenn alle
+   Lieferungen und der Zähler-Endstand drin sind. Das weiß nur der Nutzer —
+   also bestätigt er es hier, und die Position wird grün.
+
+   Der Haken bestätigt die ERFASSUNG, er legt kein Geld um: das Öl-Geld
+   erreicht die Einheiten über die Positionen „Heizkörper Wärmemenge" und
+   „Warmwassererzeugung" (§9-Split). Die Sammelposition trägt deshalb bewusst
+   `betrag: 0` — stünde hier der volle Öl-Betrag, käme er ein zweites Mal auf
+   die Mieter. Angezeigt wird trotzdem der echte Betrag, den
+   `positionsBetrag()` aus der FIFO-Bewertung holt. */
+function abschlussHtml(pid, art, bew, bearbeitbar) {
+  if (!bearbeitbar || !(pid || art)) return '';
+  const kosten = bew?.verbrauch_kosten || 0;
+  const liter = bew?.verbrauch_liter || 0;
+  if (kosten <= 0.005) return '';
+  const pos = pid && (state.daten?.checkliste || [])
+    .find(k => String(k.position_id) === String(pid));
+  const an = !!pos?.bestaetigt;
+  return `<label class="ho-fertig${an ? ' an' : ''}">
+    <input type="checkbox" data-heizoel-fertig data-pid="${esc(String(pid || ''))}"
+      data-art="${esc(art)}"${an ? ' checked' : ''}>
+    <span class="ho-ft">Alle Lieferungen und der Zählerstand sind eingetragen</span>
+    <span class="ho-fw">${zahl(liter)} L · ${eur(kosten)}</span></label>`;
 }

@@ -572,6 +572,7 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
           >${ANH_ICON} ${heizModus === 'oel' ? 'Öl-Rechnung' : 'Beleg'} anhängen</button>` : '';
     koerper = `<div class="ho-inline" data-heizoel-inline="${zid}"
         data-heiz-modus="${heizModus}" data-pid="${k.position_id || ''}"
+        data-art="${esc(k.kostenart)}"
         data-schluessel="${esc(k.schluessel || '')}">
         <div class="wd-lade">Wird geladen …</div></div>
       <div class="zk">Belege</div>${belegeKastenHtml(k, anbau)}`;
@@ -1775,6 +1776,30 @@ export function initHandlers() {
     if (hoAdd) return heizoelHinzufuegen(hoAdd);
     const hoWeg = e.target.closest('[data-heizoel-weg]');
     if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg, hoWeg.dataset.was);
+    // N364 — Abschluss-Haken für Heizöl: der Nutzer bestätigt, dass alle
+    // Lieferungen und der Zähler-Endstand drin sind. Für Öl gibt es keinen
+    // Beleg, der die Periode abschließt — nur er weiß, wann die Erfassung
+    // vollständig ist. Beim ersten Haken existiert die Sammelposition oft noch
+    // gar nicht, dann wird sie angelegt (mit Betrag 0, siehe `abschlussHtml`).
+    const hoFertig = e.target.closest('[data-heizoel-fertig]');
+    if (hoFertig) {
+      const an = hoFertig.checked;
+      try {
+        let pid = hoFertig.dataset.pid;
+        if (!pid) {
+          const neu = await api(`/zeitraeume/${state.zid}/positionen`, {
+            method: 'POST', body: { kostenart: hoFertig.dataset.art, betrag: 0 } });
+          pid = neu.id;
+        }
+        await api(`/positionen/${pid}`, { method: 'PATCH',
+          body: { bestaetigt: an } });
+        await laden();
+      } catch (fehler) {
+        hoFertig.checked = !an;
+        melde(String(fehler.message || fehler), 'neg');
+      }
+      return;
+    }
     // N358 — Verteilerschlüssel für Heizwärme/Warmwasser direkt in ihrer
     // Ansicht (dieselbe Wirkung wie der Wähler in der Aufteilung, den diese
     // beiden Karten nicht zeigen, weil ihr Rumpf die Öl-Ansicht ist).

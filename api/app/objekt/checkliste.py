@@ -140,6 +140,8 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "position_id": p.id if p else None,
             # CCLXXVIII: eine vorläufige (orange) Position wartet auf Bestätigung.
             "vorlaeufig": bool(p and p.vorlaeufig),
+            # N364 — vom Nutzer bestätigte Vollständigkeit (Heizöl).
+            "bestaetigt": bool(p and p.bestaetigt),
             "quelle_dokument_id": p.quelle_dokument_id if p else None,
             "beleg_monat": k.beleg_monat,
             # CCCLXIII — Anbieter/Gewerk der Kostenart (z. B. WWK, Zweckverband),
@@ -176,6 +178,7 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             "position_id": p.id,
             # CCLXXVIII: eine vorläufige (orange) Position wartet auf Bestätigung.
             "vorlaeufig": bool(p.vorlaeufig),
+            "bestaetigt": bool(p.bestaetigt),
             "quelle_dokument_id": p.quelle_dokument_id,
             "beleg_monat": None,
             # Waisen-Positionen (aus einem Beleg, ohne Katalog-Eintrag) tragen

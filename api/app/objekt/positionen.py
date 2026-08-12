@@ -150,6 +150,9 @@ class PositionIn(BaseModel):
     vorab_einheit: Optional[str] = None
     vorab_s35: Optional[bool] = None
     vorab_netto: Optional[float] = None   # CCCLX — eingegebener Netto (Anzeige)
+    # N364 — „die Erfassung ist vollständig" (Heizöl: alle Lieferungen und der
+    # Zähler-Endstand sind drin). Unabhängig vom Betrag, siehe models.py.
+    bestaetigt: Optional[bool] = None
 
 
 @router.patch("/positionen/{pid}")
@@ -211,7 +214,8 @@ def position_aendern(pid: int, data: PositionIn,
     for feld in ("status", "schluessel", "nur_einheit", "wertquelle", "s35",
                  "menge", "menge_einheit", "herkunft",
                  "arbeitspreis", "grundpreis_monat",
-                 "vorab_betrag", "vorab_einheit", "vorab_s35", "vorab_netto"):
+                 "vorab_betrag", "vorab_einheit", "vorab_s35", "vorab_netto",
+                 "bestaetigt"):
         wert = getattr(data, feld)
         if wert is not None:
             setattr(p, feld, wert)

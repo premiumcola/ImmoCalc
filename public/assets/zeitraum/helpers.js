@@ -493,7 +493,13 @@ export function positionsBetrag(k) {
      `warmwasserBetragSichern`) — bis das passiert ist, zeigt `k.erledigt`
      ehrlich „noch nicht wirklich umgelegt" statt eines nur angezeigten Werts. */
 export function effektivErledigt(k) {
-  if (istHeizwaermePos(k) || istHeizoelSammel(k)) {
+  // N364 — Heizöl & Lieferungen hakt der Nutzer selbst ab. Kein Beleg schließt
+  // diese Periode ab: der Verbrauch stimmt erst, wenn alle Lieferungen UND der
+  // Zähler-Endstand drin sind, und das weiß nur er. `bestaetigt` (nicht
+  // `erledigt`) ist die Wahrheit, weil die Sammelposition kein Geld umlegt —
+  // ihr Öl fließt über Heizung/Warmwasser auf die Einheiten.
+  if (istHeizoelSammel(k)) return !!k.bestaetigt;
+  if (istHeizwaermePos(k)) {
     return positionsBetrag(k) > 0.005 && heizwaermeVerteilt();
   }
   if (istStromKettePos(k) || istWarmwasserPos(k)) {
