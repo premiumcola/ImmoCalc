@@ -720,9 +720,16 @@
   .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:6px 10px}
   /* N345 — die Verrechnungsweise als Zeichen vor jedem Zähler: + eigenständig,
      − wird abgezogen, = errechneter Rest. Ohne Aufklappen sichtbar. */
-  .zu-op{display:inline-block;font:700 15px var(--mono);width:16px;
-    text-align:left;vertical-align:middle}
+  /* N347 — in der Eingabemaske bewusst SANFT (der Fokus liegt dort auf der
+     Eingabe, nicht auf der Struktur); die kräftigen Badges gehören dem
+     Konfigurator (`.zk-vz`). */
+  .zu-op{display:inline-block;font:700 13px var(--mono);width:14px;
+    text-align:left;vertical-align:middle;opacity:.6}
   .vz-plus{color:var(--soft)} .vz-minus{color:var(--neg)} .vz-gleich{color:var(--teal-d)}
+  /* N347 — die Verrechnung in einem Satz über den Zählern des Blocks. */
+  .zu-erkl{font:400 11.5px var(--body);color:var(--soft);line-height:1.5;
+    margin:0 0 7px;padding:0 2px}
+  .zu-erkl b{font:600 11.5px var(--body);color:var(--ink)}
   .zu-name-inp{width:100%;min-width:120px;box-sizing:border-box;
     border:1.5px solid var(--teal);border-radius:8px;padding:6px 8px;
     font:600 13px var(--disp);color:var(--ink);background:var(--sheet)}

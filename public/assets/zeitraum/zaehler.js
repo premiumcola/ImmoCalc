@@ -318,6 +318,42 @@ export function wasserBlockHtml(liste) {
   return teile.join('');
 }
 
+/* N347 — die Verrechnung des Blocks in ein, zwei Sätzen, dynamisch aus der
+   tatsächlichen Struktur — kein gepflegter Text, der veralten könnte. */
+function verrechnungsSatz(teil) {
+  const haupt = teil.filter(z => teil.some(m => m.hauptzaehler_id === z.id));
+  const rest = teil.filter(z => z.typ === 'rest');
+  const unter = teil.filter(z => z.hauptzaehler_id && z.typ !== 'rest');
+  const solo = teil.filter(z => !z.hauptzaehler_id && z.typ !== 'rest'
+    && !haupt.includes(z));
+  const garten = teil.filter(z => wasserArt(z) === 'Gartenwasser');
+  const saetze = [];
+  const unterTxt = unter.length === 1
+    ? 'wird der Unterzähler (−)' : `werden die ${unter.length} Unterzähler (−)`;
+  if (haupt.length && rest.length) {
+    saetze.push(`Vom Gesamtzähler <b>${esc(haupt[0].name)}</b> ${unterTxt}
+      abgezogen; <b>${esc(rest[0].name)}</b> (=) ist der errechnete Rest für
+      alle ohne eigenen Zähler.`);
+  } else if (haupt.length) {
+    saetze.push(`Vom Gesamtzähler <b>${esc(haupt[0].name)}</b> ${unterTxt}
+      abgezogen.`);
+  }
+  if (garten.length) {
+    saetze.push(`<b>${esc(garten[0].name)}</b> wird vorab herausgenommen
+      (kein Abwasser).`);
+  }
+  const eigen = solo.length - garten.length;
+  if (solo.length && !haupt.length) {
+    saetze.push(`Jeder Zähler zählt eigenständig (+) auf die Einheiten,
+      denen er zugeordnet ist.`);
+  } else if (eigen === 1) {
+    saetze.push(`Einer zählt eigenständig (+).`);
+  } else if (eigen > 1) {
+    saetze.push(`${eigen} weitere zählen eigenständig (+).`);
+  }
+  return saetze.length ? `<p class="zu-erkl">${saetze.join(' ')}</p>` : '';
+}
+
 /* N67/N342 — Zählerstände-Panel EINER Kategorie als Einklapper. Bei
    `block==='Heizung'` optional weiter nach `unter` (Heizöl/Warmwasser/
    Heizkörper & Wärmemenge, siehe `heizBereich`) einschränken — sonst lag
@@ -347,7 +383,7 @@ export function zaehlerPanelHtml(block, zaehler, blockVon, unter = null) {
         : 'noch keine'}</span>
       <span class="zu-chev">${CHEV_ICON}</span>
     </button>
-    <div class="zu-inhalt">${inner}</div>
+    <div class="zu-inhalt">${verrechnungsSatz(teil)}${inner}</div>
   </div>`;
 }
 
