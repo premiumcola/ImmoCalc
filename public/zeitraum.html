@@ -562,10 +562,12 @@
   .zu-chev{flex:none;display:flex;color:var(--soft);transition:transform .18s}
   .zu-chev svg{width:18px;height:18px}
   .zu-panel.offen .zu-chev{transform:rotate(180deg)}
-  .zu-inhalt{display:none;padding:0 15px 12px}
+  /* N352 — der Panel-Inhalt bekommt den ruhigen Papiergrund, damit die
+     Karten (jetzt `--sheet`) sich davon abheben. */
+  .zu-inhalt{display:none;padding:10px 12px 12px;background:var(--paper)}
   .zu-panel.offen .zu-inhalt{display:block}
   @media(max-width:520px){ .zu-panel{margin-left:10px} .zu-sum{padding:13px 12px}
-    .zu-inhalt{padding:0 12px 12px} }
+    .zu-inhalt{padding:9px 10px 10px} }
   .zu-block{margin-top:14px}
   .zu-bt{display:flex;align-items:center;gap:8px;font:700 12.5px var(--disp);
     color:var(--ink);margin-bottom:8px}
@@ -575,9 +577,13 @@
   .zu-at{font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;
     color:var(--soft);margin-bottom:6px}
   .zu-kein{font:400 11.5px var(--body);color:var(--soft);padding:4px 2px 6px}
-  .zu-zeile{padding:7px 10px;margin-bottom:5px;background:var(--paper);
-    border-radius:11px;box-shadow:inset 3px 0 0 transparent}
-  .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos)}
+  /* N352 — jede Zähler-Karte als eigenes Element erkennbar: eigener Grund,
+     Rahmen und ein leiser Schatten. Vorher lag Karte auf Karte in derselben
+     Farbe — bei zwanzig Zählern war nicht mehr zu sehen, wo eine aufhört. */
+  .zu-zeile{padding:9px 11px;margin-bottom:8px;background:var(--sheet);
+    border:1px solid var(--line);border-radius:12px;
+    box-shadow:inset 3px 0 0 transparent, 0 1px 2px rgba(22,38,44,.05)}
+  .zu-zeile.fertig{box-shadow:inset 3px 0 0 var(--pos), 0 1px 2px rgba(22,38,44,.05)}
   .zu-haupt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:6px 10px}
   /* N345 — die Verrechnungsweise als Zeichen vor jedem Zähler: + eigenständig,
      − wird abgezogen, = errechneter Rest. Ohne Aufklappen sichtbar. */

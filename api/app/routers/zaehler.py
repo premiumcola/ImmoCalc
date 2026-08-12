@@ -355,7 +355,11 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
                 "stand": erfasst.stand},
             "verbrauch": None if verb.get(zae.id) is None
             else round(verb[zae.id], 3),
-            "zaehlernummer": zae.zaehlernummer, "verlauf": _verlauf(abls),
+            "zaehlernummer": zae.zaehlernummer,
+            # N352 — im Verlauf steht der VERBRAUCH des Jahres, nicht der
+            # Zählerstand: bei einem kumulierenden Zähler sagt der Stand nichts
+            # darüber, ob ein Jahr viel oder wenig war (er wächst immer).
+            "verlauf": _verlauf_verbrauch(zae, abls, reihe, zeitraeume),
         })
     return {
         "zeitraum": {"id": z.id, "start": z.start.isoformat(),
@@ -522,6 +526,27 @@ def uebernehmen(zid: int, data: UebernahmeIn,
             # alles verteilt; sonst steht in `warnungen`, was zu tun ist.
             "unzugeordnet": unzugeordnet,
             "warnungen": zuordnungs_warnungen(unzugeordnet)}
+
+
+def _verlauf_verbrauch(zae: Zaehler, abls: list[Ablesung], reihe: dict,
+                       zeitraeume: list[Zeitraum]) -> dict[int, float]:
+    """N352 — der Jahresverlauf als VERBRAUCH je Abrechnungsjahr.
+
+    Ein kumulierender Zähler zeigt im Stand nur, dass er weiterläuft; ob ein
+    Jahr viel oder wenig war, sagt allein die Differenz. Die steht schon in
+    `verbrauchsreihe` — hier wird sie nur nach Jahr (Ende der Periode)
+    umgeschlüsselt. Ein `typ='direkt'`-Zähler trägt seinen Jahreswert
+    ohnehin direkt in der Ablesung; für ihn bleibt es beim Ablesewert.
+    """
+    if zae.typ == "direkt":
+        return _verlauf(abls)
+    nach_jahr: dict[int, float] = {}
+    for z in sorted(zeitraeume, key=lambda x: x.ende):
+        eintrag = reihe.get(z.id)
+        if not eintrag or eintrag.get("start"):
+            continue
+        nach_jahr[z.ende.year] = round(eintrag["verbrauch"], 3)
+    return nach_jahr
 
 
 def _verlauf(abls: list[Ablesung]) -> dict[int, float]:

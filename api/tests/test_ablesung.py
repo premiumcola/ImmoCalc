@@ -55,3 +55,43 @@ def test_musterstrasse_referenz_unveraendert():
 
     reihe = ablesung.verbrauchsreihe(ablesungen, [z0, z1])
     assert abs(reihe[z1.id]["verbrauch"] - 142.577) < 0.01
+
+
+# --------------------------------------------------------------------------
+# N352 — Altperioden ohne eigene Ablesung dürfen keinen fremden Stand greifen
+# --------------------------------------------------------------------------
+def test_altperiode_greift_nicht_den_anfangsstand_einer_spaeteren():
+    """Der echte Fund an der Laufer Str. 5 (Zähler „Liter Öl Heizung"):
+
+    Das Objekt hat Altzeiträume 2018/19 und 2022/23, für die dieser Zähler nie
+    abgelesen wurde — er wird erst seit 1.10.2024 geführt. Vorher griff sich
+    2018/19 den Anfangsstand vom 1.10.2024 als „seine" Ablesung und 2022/23
+    schob den Randwert-Anker auf den 30.9.2023; die eigentliche Periode
+    2024/25 rechnete ihre 3.431 Liter danach über 731 statt 364 Ist-Tage —
+    angezeigt wurden 1.708,46 statt 3.431 Liter, also fast genau die Hälfte.
+    """
+    alt1 = _z(18, date(2018, 10, 1), date(2019, 9, 30))
+    alt2 = _z(19, date(2022, 10, 1), date(2023, 9, 30))
+    lauf = _z(15, date(2024, 10, 1), date(2025, 9, 30))
+    ablesungen = [_a(date(2024, 10, 1), 19696.0),            # Anfangsstand
+                  _a(date(2025, 9, 30), 23127.0, zid=15)]    # abgelesen
+
+    reihe = ablesung.verbrauchsreihe(ablesungen, [alt1, alt2, lauf])
+
+    # Die Altperioden kennen diesen Zähler nicht — kein erfundener Verbrauch.
+    assert reihe[alt1.id] is None
+    assert reihe[alt2.id] is None
+    # Und die laufende Periode rechnet die volle Differenz, nicht die halbe.
+    assert abs(reihe[lauf.id]["verbrauch"] - 3431.0) < 1e-9
+
+
+def test_anfangsstand_bleibt_anker_auch_ohne_vorlaufperiode():
+    """Derselbe Mechanismus ohne Altperioden: liegt ein ungetaggter Stand VOR
+    dem Beginn der ersten Periode, ist er deren Randwert — die Periode ist
+    dann keine blosse Startablesung mit Verbrauch 0."""
+    z = _z(1, date(2024, 10, 1), date(2025, 9, 30))
+    ablesungen = [_a(date(2024, 10, 1), 100.0),
+                  _a(date(2025, 9, 30), 400.0, zid=1)]
+
+    reihe = ablesung.verbrauchsreihe(ablesungen, [z])
+    assert abs(reihe[z.id]["verbrauch"] - 300.0) < 1e-9

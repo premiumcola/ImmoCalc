@@ -15,10 +15,19 @@ from typing import Optional
 from . import engine
 
 
-def _ablesung_fuer(ablesungen: list, z) -> Optional[object]:
+def _ablesung_fuer(ablesungen: list, z, alle_zeitraeume: list = ()) -> Optional[object]:
     """Die Ablesung, die diesen Zeitraum abschließt: bevorzugt die ausdrücklich
     diesem Zeitraum zugeordnete (`zeitraum_id`), sonst die mit dem zum
-    Periodenende nächstgelegenen Datum."""
+    Periodenende nächstgelegenen Datum.
+
+    N352 — eine ungetaggte Ablesung gilt aber NUR, wenn ihr kein anderer
+    Zeitraum näher liegt. Ohne diese Schranke griff sich eine Altperiode, für
+    die nie abgelesen wurde, den Stand einer ganz anderen Periode: bei der
+    Laufer Str. 5 nahm der Zeitraum 2018/19 den Anfangsstand vom 1.10.2024 als
+    „seine" Ablesung, 2022/23 schrieb den Randwert-Anker auf den 30.9.2023
+    fort — und die eigentliche Periode 2024/25 rechnete ihre 3.431 Liter
+    danach über 731 statt 364 Ist-Tage, also auf 1.708 Liter halbiert.
+    """
     getaggt = [a for a in ablesungen if getattr(a, "zeitraum_id", None) == z.id]
     if getaggt:
         # N109 - bei mehreren Ablesungen desselben Zeitraums zaehlt die, die der
@@ -28,9 +37,18 @@ def _ablesung_fuer(ablesungen: list, z) -> Optional[object]:
         # Interpolation auf den alten, laengeren Zeitraum (28,1 m3 wurden so zu
         # 17,758 m3).
         return min(getaggt, key=lambda a: abs(engine.tage(z.ende, a.datum)))
-    if not ablesungen:
+    frei = [a for a in ablesungen if getattr(a, "zeitraum_id", None) is None]
+    if not frei:
         return None
-    return min(ablesungen, key=lambda a: abs(engine.tage(z.ende, a.datum)))
+    kandidat = min(frei, key=lambda a: abs(engine.tage(z.ende, a.datum)))
+    # Liegt ein anderer Zeitraum näher an dieser Ablesung, gehört sie dorthin.
+    eigener = abs(engine.tage(z.ende, kandidat.datum))
+    for andere in alle_zeitraeume:
+        if getattr(andere, "id", None) == getattr(z, "id", None):
+            continue
+        if abs(engine.tage(andere.ende, kandidat.datum)) < eigener:
+            return None
+    return kandidat
 
 
 def verbrauchsreihe(ablesungen: list, zeitraeume: list) -> dict:
@@ -42,23 +60,36 @@ def verbrauchsreihe(ablesungen: list, zeitraeume: list) -> dict:
     randdatum: Optional[date] = None
     out: dict = {}
     for z in geordnet:
-        a = _ablesung_fuer(ablesungen, z)
+        a = _ablesung_fuer(ablesungen, z, geordnet)
         if a is None:
             out[z.id] = None
             continue
-        if randwert is None:                       # Startablesung
-            # N315(j) - der Anker fuer die naechste Periode muss das TATSAECH-
-            # LICHE Ablesedatum sein, nicht z.ende: die Startablesung ist ein
-            # roher Zaehlerstand, nicht auf den Soll-Stichtag interpoliert. Mit
-            # z.ende als Anker zaehlte die Folgeperiode einen Tag zu wenig
-            # Ist-Tage, sobald die Ablesung nicht exakt auf die Periodengrenze
-            # fiel (z.B. Periodenende 30.09., Ablesung am 01.10.) - das ergab
-            # einen systematischen 364/365-Streckfaktor statt 1,0 und damit
-            # rund -0,27 % Fehler im interpolierten Verbrauch.
-            randwert, randdatum = a.stand, a.datum
-            out[z.id] = {"verbrauch": 0.0, "randwert": randwert,
-                         "datum": a.datum, "stand": a.stand, "start": True}
-            continue
+        if randwert is None:
+            # N352 — bevor diese Periode zur blossen Startablesung wird: gibt
+            # es einen FRÜHEREN Stand, der zu keiner Periode gehört (der
+            # Anfangsstand vor der ersten Abrechnung), ist er der Randwert und
+            # diese Periode rechnet ihren echten Verbrauch. Ohne das verlor ein
+            # Zähler, dessen Erfassung nach dem ersten Objekt-Zeitraum beginnt,
+            # sein erstes Jahr — die Vorlauf-Periode (`_mit_vorlauf`) greift
+            # nur, wenn der Anfangsstand vor der ALLERERSTEN Periode liegt.
+            frueher = [v for v in ablesungen
+                       if v is not a and v.datum <= z.start
+                       and getattr(v, "zeitraum_id", None) is None]
+            if not frueher:
+                # N315(j) - der Anker fuer die naechste Periode muss das TATSAECH-
+                # LICHE Ablesedatum sein, nicht z.ende: die Startablesung ist ein
+                # roher Zaehlerstand, nicht auf den Soll-Stichtag interpoliert. Mit
+                # z.ende als Anker zaehlte die Folgeperiode einen Tag zu wenig
+                # Ist-Tage, sobald die Ablesung nicht exakt auf die Periodengrenze
+                # fiel (z.B. Periodenende 30.09., Ablesung am 01.10.) - das ergab
+                # einen systematischen 364/365-Streckfaktor statt 1,0 und damit
+                # rund -0,27 % Fehler im interpolierten Verbrauch.
+                randwert, randdatum = a.stand, a.datum
+                out[z.id] = {"verbrauch": 0.0, "randwert": randwert,
+                             "datum": a.datum, "stand": a.stand, "start": True}
+                continue
+            anker = max(frueher, key=lambda v: v.datum)
+            randwert, randdatum = anker.stand, anker.datum
         tage_ist = engine.tage(randdatum, a.datum)
         tage_soll = engine.tage(z.start, z.ende)
         verb = engine.interpoliere_verbrauch(randwert, a.stand, tage_ist, tage_soll)
