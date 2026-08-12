@@ -119,6 +119,18 @@ def _neutral_fuer(spalte) -> str | None:
         return "0"
     if any(t in typ for t in ("VARCHAR", "TEXT", "STRING")):
         return "''"
+    # N366 — Datum und Zeitstempel fehlten hier. Eine nachträglich ergänzte
+    # Pflicht-Datumsspalte bekäme sonst NULL, und der Lesecode rechnet mit
+    # einem `date` (`z.start:%d.%m.%Y`, `v.bis_datum + timedelta(...)`) — das
+    # bricht mit 500 auf einer bestehenden Datenbank. Der Wert ist bewusst
+    # erkennbar alt, damit eine ungepflegte Zeile auffällt statt „heute" zu
+    # behaupten.
+    if "DATETIME" in typ or "TIMESTAMP" in typ:
+        return "'1970-01-01 00:00:00'"
+    if "DATE" in typ:
+        return "'1970-01-01'"
+    if "BOOL" in typ:
+        return "0"
     return None
 
 

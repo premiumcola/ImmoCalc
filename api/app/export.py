@@ -24,8 +24,8 @@ from .models import (Ablesung, Anteil, Belegdaten, Bewohner, Dokument,
                      Kostenposition, Kredit, Kreditstand, Kundennummer, Miete,
                      Notarvertrag, Objekt, Partei, Renovierung,
                      Renovierungsposten, Stromjahr, Versicherung,
-                     Vorauszahlung, Zahlung, Zaehler, Zeitraum, PVAnlage,
-                     Tankladung, Tanknutzer)
+                     Versandprotokoll, Vorauszahlung, WegVorauszahlung, Zahlung,
+                     Zaehler, Zeitraum, PVAnlage, Tankladung, Tanknutzer)
 
 log = logging.getLogger("immocalc")
 
@@ -65,6 +65,30 @@ ANHAENGSEL: dict[str, Type[SQLModel]] = {
     # einzelnen Objekts nicht angetastet.
     "kundennummern": Kundennummer,
 }
+
+# N366 — was am ZEITRAUM hängt. `Kostenposition` steht bewusst nicht hier: sie
+# braucht eine id-Abbildung (ein Beleg zeigt auf sie) und wird darum einzeln
+# behandelt. Diese drei nicht — sie werden nur angelegt und entfernt.
+# `WegVorauszahlung` und `Versandprotokoll` fehlten vorher ganz: sie wurden
+# weder gesichert noch beim Löschen entfernt. Die Folgen waren real —
+# ein stehen gebliebenes Versandprotokoll ließ SQLite nach der
+# rowid-Wiederverwendung glauben, eine Partei sei schon beliefert, und sie
+# bekam ihre Abrechnung nie; die WEG-Monatsbeträge waren nach
+# Löschen+Wiederherstellen ersatzlos weg und die Nachforderung um den vollen
+# Jahresbetrag zu hoch.
+ZEITRAUM_KINDER: dict[str, Type[SQLModel]] = {
+    "vorauszahlungen": Vorauszahlung,
+    "wegvorauszahlungen": WegVorauszahlung,
+    "versandprotokolle": Versandprotokoll,
+}
+
+# N366 — jedes Feld, das auf ein Dokument zeigt. Beim Import wird es über die
+# Abbildung alte→neue Dokument-id aufgelöst; lässt es sich nicht auflösen,
+# wird es geleert statt auf einen inzwischen fremden Beleg zu zeigen. Ohne das
+# zeigte der „Beleg"-Knopf am eigenen Eintrag auf den Mietvertrag eines
+# anderen Objekts, das die frei gewordene rowid geerbt hatte.
+DOKUMENT_VERWEISE = ("quelle_dokument_id", "dokument_id",
+                     "screenshot_dokument_id")
 
 # Was nicht am Objekt hängt, sondern an einem seiner Sätze: die Jahresstände am
 # Kredit, die Bewohner am Mietverhältnis. Ohne sie wäre die Sicherung
@@ -156,15 +180,17 @@ def exportiere(session: Session, objekt: Objekt) -> dict:
     for z in zeitraeume:
         positionen = session.exec(
             select(Kostenposition).where(Kostenposition.zeitraum_id == z.id)).all()
-        vzs = session.exec(
-            select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == z.id)).all()
-        daten["zeitraeume"].append({
+        eintrag = {
             **{k: _rein(v) for k, v in z.model_dump().items()},
             "positionen": [{k: _rein(v) for k, v in p.model_dump().items()}
                            for p in positionen],
-            "vorauszahlungen": [{k: _rein(v) for k, v in v_.model_dump().items()}
-                                for v_ in vzs],
-        })
+        }
+        for name, modell in ZEITRAUM_KINDER.items():
+            eintrag[name] = [
+                {k: _rein(v) for k, v in kind.model_dump().items()}
+                for kind in session.exec(
+                    select(modell).where(modell.zeitraum_id == z.id)).all()]
+        daten["zeitraeume"].append(eintrag)
 
     daten["dokumente"] = [{k: _rein(v) for k, v in d.model_dump().items()}
                           for d in session.exec(
@@ -192,7 +218,7 @@ def loesche(session: Session, objekt: Objekt) -> dict:
     zeitraeume = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == objekt.id)).all()
     for z in zeitraeume:
-        for modell in (Kostenposition, Vorauszahlung):
+        for modell in (Kostenposition, *ZEITRAUM_KINDER.values()):
             for eintrag in session.exec(
                     select(modell).where(modell.zeitraum_id == z.id)).all():
                 session.delete(eintrag)
@@ -278,6 +304,18 @@ def _live_oder_neu(session: Session, modell: Type[SQLModel], alte_id,
     return alte_id if session.get(modell, alte_id) else None
 
 
+def _dokumente_umhaengen(eintrag: dict, karte: dict[int, int]) -> None:
+    """Jeden Beleg-Verweis auf die neue id abbilden — oder leeren (N366).
+
+    Die alte Nummer stehen zu lassen ist die gefährlichere Wahl: SQLite vergibt
+    frei gewordene rowids neu, der Verweis zeigte dann auf den Beleg eines
+    fremden Objekts, und die Oberfläche öffnet ihn wortlos. Kein Verweis ist
+    ehrlicher als ein falscher."""
+    for feld in DOKUMENT_VERWEISE:
+        if eintrag.get(feld) is not None:
+            eintrag[feld] = karte.get(eintrag[feld])
+
+
 def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
     """Legt aus einer Sicherung wieder ein Objekt an — immer als neuer Datensatz.
 
@@ -299,9 +337,9 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
     # auf seine Position. Bliebe die alte Nummer stehen, zeigte er nach dem
     # Wiederherstellen auf eine fremde Zeile — SQLite vergibt Nummern neu.
     positionen: dict[int, int] = {}
+    eigene = ("id", "positionen", *ZEITRAUM_KINDER)
     for z in daten.get("zeitraeume") or []:
-        roh_z = {k: v for k, v in z.items()
-                 if k not in ("id", "positionen", "vorauszahlungen")}
+        roh_z = {k: v for k, v in z.items() if k not in eigene}
         roh_z["objekt_id"] = objekt.id
         zeitraum = Zeitraum.model_validate(roh_z)
         session.add(zeitraum)
@@ -313,17 +351,57 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
             roh_p = dict(p)
             alte_id = roh_p.pop("id", None)
             roh_p["zeitraum_id"] = zeitraum.id
+            # Der Beleg, aus dem die Position entstand, wird erst weiter unten
+            # angelegt — der Verweis kommt danach (siehe `nachtrag_dokumente`).
+            roh_p["quelle_dokument_id"] = None
             position = Kostenposition.model_validate(roh_p)
             session.add(position)
             if alte_id is not None:
                 session.commit()
                 session.refresh(position)
                 positionen[alte_id] = position.id
-        for v in z.get("vorauszahlungen") or []:
-            roh_v = dict(v)
-            roh_v.pop("id", None)
-            roh_v["zeitraum_id"] = zeitraum.id
-            session.add(Vorauszahlung.model_validate(roh_v))
+        for name, modell in ZEITRAUM_KINDER.items():
+            for kind in z.get(name) or []:
+                roh_k = dict(kind)
+                roh_k.pop("id", None)
+                roh_k["zeitraum_id"] = zeitraum.id
+                session.add(modell.model_validate(roh_k))
+
+    # N366 — die Dokumente VOR allem, was auf sie zeigt. Sie brauchen selbst
+    # nur Zeitraum und Position, die schon stehen; danach lässt sich jeder
+    # Beleg-Verweis auf seine neue id abbilden statt auf die alte Nummer, die
+    # inzwischen einem fremden Objekt gehören kann.
+    dokumente: dict[int, int] = {}
+    for d in daten.get("dokumente") or []:
+        roh_d = dict(d)
+        alte_id = roh_d.pop("id", None)
+        roh_d["objekt_id"] = objekt.id
+        roh_d["zeitraum_id"] = zeitraeume.get(roh_d.get("zeitraum_id"))
+        roh_d["position_id"] = positionen.get(roh_d.get("position_id"))
+        vorhanden = session.exec(select(Dokument).where(
+            Dokument.pfad == roh_d.get("pfad"))).first()
+        if vorhanden:                      # steht schon in der Datenbank
+            if alte_id is not None:
+                dokumente[alte_id] = vorhanden.id
+            continue
+        neu_d = Dokument.model_validate(roh_d)
+        session.add(neu_d)
+        if alte_id is not None:
+            session.commit()
+            session.refresh(neu_d)
+            dokumente[alte_id] = neu_d.id
+
+    # Die Positionen wurden ohne ihren Beleg angelegt — jetzt nachtragen.
+    for z in daten.get("zeitraeume") or []:
+        for p in z.get("positionen") or []:
+            neue_id = positionen.get(p.get("id"))
+            quelle = dokumente.get(p.get("quelle_dokument_id"))
+            if neue_id is None or quelle is None:
+                continue
+            pos = session.get(Kostenposition, neue_id)
+            if pos is not None:
+                pos.quelle_dokument_id = quelle
+                session.add(pos)
 
     # alte Satz-id -> neue, damit Jahresstände und Bewohner ihren Kredit bzw.
     # ihr Mietverhältnis wiederfinden. "grundschulden" hängt an keinem KINDER,
@@ -337,6 +415,12 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
             eintrag = dict(zeile)
             alte_id = eintrag.pop("id", None)
             eintrag["objekt_id"] = objekt.id
+            _dokumente_umhaengen(eintrag, dokumente)
+            if name == "mieten":
+                # Die Mieterhöhungskette zeigt auf eine andere Miete derselben
+                # Tabelle — verknüpft wird sie unten, wenn alle neuen ids
+                # feststehen (dasselbe Muster wie beim Hauptzähler).
+                eintrag["vorgaenger_id"] = None
             if name == "anteile":
                 eigner = _passender_eigner(session, eintrag)
                 # Eigentümer werden getrennt gepflegt und beim Löschen eines
@@ -383,6 +467,22 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
         zaehler_neu.hauptzaehler_id = neuer_haupt
         session.add(zaehler_neu)
 
+    # N366 — dieselbe Selbst-Referenz bei der Mieterhöhungskette. Ohne das
+    # zeigte `vorgaenger_id` auf eine fremde Miete: die Belegkette und der
+    # Kautions-Backfill (`migrate.miete_kaution_vorgaenger_uebernehmen`) zogen
+    # dann die Daten eines fremden Mieters an den eigenen Mietstand.
+    for alt in daten.get("mieten") or []:
+        if alt.get("vorgaenger_id") is None:
+            continue
+        neue_id = eltern_ids["mieten"].get(alt.get("id"))
+        neuer_vor = eltern_ids["mieten"].get(alt["vorgaenger_id"])
+        if neue_id is None or neuer_vor is None:
+            continue
+        miete_neu = session.get(Miete, neue_id)
+        if miete_neu is not None:
+            miete_neu.vorgaenger_id = neuer_vor
+            session.add(miete_neu)
+
     # Grundschuld-Kredit: beide Seiten müssen aus diesem Import stammen. Eine
     # Verknüpfung zu einem Kredit an einem anderen, nicht wiederhergestellten
     # Objekt lässt sich nicht auf eine gültige neue id abbilden — lieber die
@@ -410,26 +510,12 @@ def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
                          name, schluessel, kind.get(schluessel))
                 continue
             kind[schluessel] = neuer_elternteil
+            _dokumente_umhaengen(kind, dokumente)
             if "zeitraum_id" in kind:
                 # Ablesungen können an einen Zeitraum gebunden sein — auf die
                 # neue id abbilden, sonst wieder ein Verweis ins Leere.
                 kind["zeitraum_id"] = zeitraeume.get(kind.get("zeitraum_id"))
             session.add(modell.model_validate(kind))
-
-    # Die Dateien liegen weiterhin in der Nextcloud — nur die Zuordnung
-    # Beleg↔Kostenart↔Zeitraum steckt in der Datenbank. Ohne sie fände ein
-    # späterer Scan die Belege nicht wieder: der sieht nur lose Dateien im
-    # Hauptordner, einsortierte liegen längst in den Unterordnern.
-    for d in daten.get("dokumente") or []:
-        roh_d = dict(d)
-        roh_d.pop("id", None)
-        roh_d["objekt_id"] = objekt.id
-        roh_d["zeitraum_id"] = zeitraeume.get(roh_d.get("zeitraum_id"))
-        roh_d["position_id"] = positionen.get(roh_d.get("position_id"))
-        if session.exec(select(Dokument).where(
-                Dokument.pfad == roh_d.get("pfad"))).first():
-            continue                       # steht schon in der Datenbank
-        session.add(Dokument.model_validate(roh_d))
 
     session.commit()
     log.info("Objekt aus Sicherung angelegt: %s", objekt.slug)

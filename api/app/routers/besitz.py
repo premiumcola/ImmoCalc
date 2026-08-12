@@ -10,7 +10,8 @@ from ..db import get_session
 from ..deps import objekt_holen
 from ..models import (Anteil, Einheit, Eigentuemer, Grundschuld,
                       GrundschuldKredit, Kredit, Kreditstand, Miete,
-                      Objekt, PVAnlage, ist_grundstueck)
+                      Objekt, PVAnlage, Tankladung, Tanknutzer,
+                      ist_grundstueck)
 from ..turnus import jahresbetrag
 from ..vermoegen import (attributionswert, eigentuemer_fraktion, gesamt,
                          kreditstand, objekt_vermoegen, pv_zurechnung)
@@ -160,6 +161,17 @@ def loeschen(eid: int, session: Session = Depends(get_session)) -> dict:
         raise HTTPException(404, "Eigentümer nicht gefunden")
     for a in session.exec(select(Anteil).where(Anteil.eigentuemer_id == eid)).all():
         session.delete(a)
+    # N366 — Ladungen und Tanknutzer zeigen ebenfalls auf diese Person. Der
+    # Verweis wird gelöst, die Zeilen bleiben: SQLite vergibt die frei
+    # gewordene Nummer neu, und die Ladungen liefen sonst plötzlich auf den
+    # nächsten angelegten Eigentümer — samt seiner Bankdaten auf der
+    # Ladeabrechnung. `_person` fällt ohne Verweis sauber auf den in der
+    # Ladung gespeicherten Namen zurück.
+    for modell in (Tanknutzer, Tankladung):
+        for zeile in session.exec(
+                select(modell).where(modell.person_id == eid)).all():
+            zeile.person_id = None
+            session.add(zeile)
     session.delete(e)
     session.commit()
     return {"ok": True}
