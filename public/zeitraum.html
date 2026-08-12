@@ -167,8 +167,20 @@
   .zk-kopf{display:flex;align-items:center;gap:8px;margin-bottom:10px;
     cursor:pointer;border-radius:10px}
   .zk-kopftxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-  /* N345 — Verrechnungszeichen in der Kopfzeile, ohne Aufklappen sichtbar. */
-  .zk-vz{flex:none;width:14px;text-align:center;font:700 15px var(--mono)}
+  /* N346 — das Verrechnungszeichen ist zugeklappt die Hauptinformation:
+     fettes Badge, weiss auf dunkel — Σ Gesamt · − Unterzähler · = Rest ·
+     + eigenständig. Der Erledigt-Haken tritt daneben klein zurück. */
+  .zk-vz{flex:none;width:28px;height:28px;border-radius:9px;display:flex;
+    align-items:center;justify-content:center;font:800 15px var(--mono);
+    color:#fff;background:var(--ink)}
+  /* `color` je Variante ausdrücklich weiss: die .vz-*-Regeln der
+     Ablese-Eingabe (gleiche Spezifität, später im Stylesheet) färben sonst
+     die Ziffer in der Badge-Farbe — unsichtbar auf gleichem Grund. */
+  .zk-vz.vz-summe{background:var(--ink);font-size:16px;color:#fff}
+  .zk-vz.vz-minus{background:var(--neg);color:#fff}
+  .zk-vz.vz-gleich{background:var(--teal-d);color:#fff}
+  .zk-vz.vz-plus{background:#728287;color:#fff}
+  .zk-karte.zu .zk-status{width:15px;height:15px;font:700 8px var(--mono)}
   .zk-name{width:100%;min-width:0;border:1.5px solid var(--line);border-radius:10px;
     padding:10px 11px;font:700 14px var(--disp);background:var(--sheet);
     color:var(--ink);min-height:44px}

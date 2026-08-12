@@ -153,20 +153,24 @@ export async function zaehlerKonfig() {
 
     const fertig = vollstaendig(z);
     const aufgeklappt = offen.has(z.id);
-    // N345 — die Verrechnungsweise als Zeichen direkt in der Kopfzeile, ohne
-    // Aufklappen sichtbar: „−" Unterzähler (wird abgezogen), „=" errechneter
-    // Rest, „+" eigenständig. Die Hoch/Runter-Pfeile sind dafür raus — die
-    // Reihenfolge ergibt sich aus der Verrechnungsstruktur von selbst, und
-    // der Platz gehört dem Zählernamen.
-    const zeichen = z.typ === 'rest' ? '='
+    // N346 — zugeklappt gehört die Kopfzeile der VERRECHNUNGSWEISE, nicht dem
+    // Erledigt-Haken: ein fettes Zeichen-Badge vorn (weiss auf dunkel) sagt
+    // auf einen Blick, wie der Zähler rechnet — „Σ" Gesamtzähler (andere
+    // ziehen sich von ihm ab), „−" Unterzähler, „=" errechneter Rest, „+"
+    // eigenständig. Der Status schrumpft zum kleinen Punkt; Pfeile und
+    // Löschen erscheinen erst beim Aufklappen (Details, kein Dauerinventar).
+    const istSumme = meters.some(m => m.hauptzaehler_id === z.id);
+    const zeichen = z.typ === 'rest' ? '=' : istSumme ? 'Σ'
       : z.hauptzaehler_id ? '−' : '+';
-    // N340u — die Kopfzeile bleibt immer sichtbar (Name, Nummer, Status); der
-    // Rest klappt erst auf Antippen auf. Bei 39 Zählern ist die volle Karte
-    // für jeden zu viel auf einmal.
+    const vzKlasse = z.typ === 'rest' ? 'gleich' : istSumme ? 'summe'
+      : zeichen === '−' ? 'minus' : 'plus';
     return `<div class="zk-karte${aufgeklappt ? '' : ' zu'}" data-zid="${z.id}">
       <div class="zk-kopf" data-zk-toggle="${z.id}">
-        <span class="zk-vz vz-${z.typ === 'rest' ? 'gleich'
-          : zeichen === '−' ? 'minus' : 'plus'}" aria-hidden="true">${zeichen}</span>
+        <span class="zk-vz vz-${vzKlasse}" title="${
+          zeichen === 'Σ' ? 'Gesamtzähler — Unterzähler werden abgezogen'
+          : zeichen === '−' ? 'Unterzähler — wird vom Gesamtzähler abgezogen'
+          : zeichen === '=' ? 'Errechneter Rest (Gesamt − Unterzähler)'
+          : 'Zählt eigenständig'}">${zeichen}</span>
         <span class="zk-status ${fertig ? 'ok' : 'warn'}"
           title="${fertig ? 'Vollständig eingerichtet' : 'Noch nicht vollständig eingerichtet'}"
           aria-hidden="true">${fertig ? '✓' : '!'}</span>
@@ -176,14 +180,14 @@ export async function zaehlerKonfig() {
           ${z.zaehlernummer ? `<span class="zk-nr">Nr. ${esc(z.zaehlernummer)}</span>` : ''}
         </span>
         <span class="zk-chevron" aria-hidden="true">${aufgeklappt ? '▾' : '▸'}</span>
-        <div class="zk-tools">
+        ${aufgeklappt ? `<div class="zk-tools">
           <button class="zk-ic" data-zk-up="${z.id}" ${i === 0 ? 'disabled' : ''}
             aria-label="nach oben">↑</button>
           <button class="zk-ic" data-zk-down="${z.id}"
             ${i === meters.length - 1 ? 'disabled' : ''} aria-label="nach unten">↓</button>
           <button class="zk-ic gefahr" data-zk-del="${z.id}"
             aria-label="Zähler entfernen">${MUELL_ICON}</button>
-        </div>
+        </div>` : ''}
       </div>
       ${aufgeklappt ? `
       <div class="zk-grid">
