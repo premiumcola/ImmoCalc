@@ -13,7 +13,7 @@ import { ZAEHLER_ICON, CHEV_ICON, STIFT_ICON } from './icons.js';
 import { wasserArt } from './modell.js';
 import {
   zahl, _isoKurz, chipZahl, chipEinheit, baueChipMap,
-  zaehlerEinheiten, alleEinheiten, standAusFeld, zeilenBox,
+  zaehlerEinheiten, alleEinheiten, standAusFeld, zeilenBox, heizBereich,
 } from './helpers.js';
 import { stromBlockHtml } from './strom.js';
 
@@ -312,9 +312,14 @@ export function wasserBlockHtml(liste) {
   return teile.join('');
 }
 
-/* N67 — Zählerstände-Panel EINER Kategorie als Einklapper. */
-export function zaehlerPanelHtml(block, zaehler, blockVon) {
-  const teil = zaehler.filter(z => blockVon.get(z.id) === block);
+/* N67/N342 — Zählerstände-Panel EINER Kategorie als Einklapper. Bei
+   `block==='Heizung'` optional weiter nach `unter` (Heizöl/Warmwasser/
+   Heizkörper & Wärmemenge, siehe `heizBereich`) einschränken — sonst lag
+   der Heizöl-Zähler in derselben Liste wie 21 Heizkörperzähler und ein
+   Warmwassermengenzähler, alle unter „Heizöl & Lieferungen" eingehängt. */
+export function zaehlerPanelHtml(block, zaehler, blockVon, unter = null) {
+  const teil = zaehler.filter(z => blockVon.get(z.id) === block
+    && (!unter || heizBereich(z) === unter));
   // N120 — Strom-Bereich zeigt sich auch ohne Zähler (Leerzustand + Anlegen).
   const stromLeer = block === 'Strom' && state.daten.status === 'in Arbeit';
   if (!teil.length && !stromLeer) return '';
@@ -324,12 +329,13 @@ export function zaehlerPanelHtml(block, zaehler, blockVon) {
     : teil.map(z => meterZeileHtml(z, {
         rest: z.typ === 'rest',
         keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');
-  const offen = state.zaehlerOffen.has(block);
+  const schluessel = unter ? `${block}:${unter}` : block;
+  const offen = state.zaehlerOffen.has(schluessel);
   const abweichend = teil.filter(z => interpolationsHinweise(z, '').length).length;
-  return `<div class="zu-panel${offen ? ' offen' : ''}" data-zu-block="${esc(block)}">
+  return `<div class="zu-panel${offen ? ' offen' : ''}" data-zu-block="${esc(schluessel)}">
     <button type="button" class="zu-sum" data-zu-toggle aria-expanded="${offen}">
       <span class="zu-ikon">${ZAEHLER_ICON}</span>
-      <span class="zu-st">Zählerstände</span>
+      <span class="zu-st">Zählerstände${unter ? ` · ${esc(unter)}` : ''}</span>
       <span class="zu-meta">${teil.length
         ? `${teil.length} Zähler${abweichend ? ` · ${abweichend} umgerechnet` : ''}`
         : 'noch keine'}</span>

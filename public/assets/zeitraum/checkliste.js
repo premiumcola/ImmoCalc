@@ -1006,17 +1006,48 @@ export async function zeichnen() {
       : istWarmwasserPos(k) ? 1 : istHeizwaermePos(k) ? 2
       : normUml(k.kostenart).includes('wartung') ? 4 : 3;
     bereiche[1].sort((a, b) => heizRang(a.k) - heizRang(b.k));
+    // N342 — im Heizungs-Kapitel je EIGENES Panel für Heizöl, Warmwasser und
+    // Heizkörper & Wärmemenge, jedes unter seiner passenden Position
+    // eingehängt — vorher lagen alle 24 Zähler in einem einzigen Panel unter
+    // „Heizöl & Lieferungen", auch die 21 Heizkörperzähler und der
+    // Warmwassermengenzähler.
     const zeilen = bereiche.map((liste, bi) => {
+      if (bi === 1) {
+        const panels = {
+          oel: zaehlerPanelHtml('Heizung', zListe, zBlock, 'Heizöl'),
+          ww: zaehlerPanelHtml('Heizung', zListe, zBlock, 'Warmwasser'),
+          heiz: zaehlerPanelHtml('Heizung', zListe, zBlock, 'Heizkörper & Wärmemenge'),
+        };
+        const angehaengt = { oel: false, ww: false, heiz: false };
+        if (!liste.length && !Object.values(panels).some(Boolean)) return '';
+        const kopfKat = `<div class="kat-kopf"><span class="kat-ikon">${
+            kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
+            esc(BEREICHE[bi].titel)}</span></div>`;
+        // Je Panel-Art nur bei der ERSTEN passenden Position einhängen — gibt
+        // es (unüblich) zwei Heizöl-Positionen, würde das Panel sonst doppelt
+        // erscheinen.
+        const zeilenHtml = liste.map(({ k, i }) => {
+          let panel = '';
+          if (istHeizoelSammel(k) && panels.oel && !angehaengt.oel) {
+            panel = panels.oel; angehaengt.oel = true;
+          } else if (istWarmwasserPos(k) && panels.ww && !angehaengt.ww) {
+            panel = panels.ww; angehaengt.ww = true;
+          } else if (istHeizwaermePos(k) && panels.heiz && !angehaengt.heiz) {
+            panel = panels.heiz; angehaengt.heiz = true;
+          }
+          return zeileHtml(k, i) + panel;
+        }).join('');
+        // Kein passender Kartentyp gefunden (z. B. Wartung ohne eigene
+        // Öl-/WW-/Heiz-Position) — nichts stillschweigend verlieren, ans Ende.
+        const uebrig = ['oel', 'ww', 'heiz']
+          .filter(k => panels[k] && !angehaengt[k]).map(k => panels[k]).join('');
+        return kopfKat + zeilenHtml + uebrig;
+      }
       const wz = bi < 3 ? zaehlerPanelHtml(BEREICH_IKON[bi], zListe, zBlock) : '';
       if (!liste.length && !wz) return '';
       const kopfKat = `<div class="kat-kopf"><span class="kat-ikon">${
           kostenIcon(BEREICH_IKON[bi])}</span><span class="kat-t">${
           esc(BEREICHE[bi].titel)}</span></div>`;
-      // N199 — im Heizungs-Kapitel unter „Heizöl & Lieferungen" das Panel einbetten.
-      if (bi === 1 && wz && liste.some(({ k }) => istHeizoelSammel(k))) {
-        return kopfKat + liste.map(({ k, i }) =>
-          zeileHtml(k, i) + (istHeizoelSammel(k) ? wz : '')).join('');
-      }
       return kopfKat + liste.map(({ k, i }) => zeileHtml(k, i)).join('') + wz;
     }).join('');
 

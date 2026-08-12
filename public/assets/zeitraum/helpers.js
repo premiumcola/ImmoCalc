@@ -162,6 +162,19 @@ export function zaehlerBloecke(zaehler) {
   return map;
 }
 
+/* N342 — innerhalb des Heizungs-Kostenblocks noch einmal nach Art: Heizöl
+   (der Liter-Zähler bleibt bei der Öl-Rechnung), Warmwasser (Warmwasser-
+   mengenzähler) und Heizkörper & Wärmemenge (Heizkostenverteiler +
+   Wärmemengenzähler) — dieselbe Einteilung wie im Zähler-Konfigurator
+   (`zaehler-konfig.js`), hier geteilt, damit beide Stellen nicht
+   auseinanderlaufen. */
+export function heizBereich(z) {
+  const ka = normUml(z.kostenart || '');
+  if (ka.includes('heizoel') || ka.includes('oel')) return 'Heizöl';
+  if (ka.includes('warmwasser')) return 'Warmwasser';
+  return 'Heizkörper & Wärmemenge';
+}
+
 /* N68 — generische Anzeigenamen je Zähler-id. */
 export function generischeLabels(zaehler) {
   const map = new Map();

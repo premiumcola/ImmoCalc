@@ -11,7 +11,7 @@ import { api, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { MESSEINHEITEN } from './state.js';
 import { GEAR_ICON, MUELL_ICON } from './icons.js';
-import { zahl, feldZahl, alleEinheiten } from './helpers.js';
+import { zahl, feldZahl, alleEinheiten, zaehlerBlockBasis, heizBereich } from './helpers.js';
 
 /* CCCLXXX — der Zahnrad-Knopf über der Checkliste. */
 export function ablesenKnopfHtml() {
@@ -209,14 +209,12 @@ export async function zaehlerKonfig() {
   const BEREICHE = ['Wasser', 'Strom', 'Heizöl', 'Warmwasser',
                     'Heizkörper & Wärmemenge', 'Sonstige'];
 
+  // N342 — dieselbe Einteilung wie die Zählerstände-Panels der Checkliste
+  // (`heizBereich` in helpers.js), damit Konfigurator und Ablese-Eingabe
+  // nicht auseinanderlaufen.
   function bereich(z) {
-    const ka = (z.kostenart || '').toLowerCase();
-    if (ka.includes('heizöl') || ka.includes('heizoel')) return 'Heizöl';
-    if (ka.includes('warmwasser')) return 'Warmwasser';
-    if (ka.includes('heizung')) return 'Heizkörper & Wärmemenge';
-    if (ka.includes('wasser')) return 'Wasser';
-    if (ka.includes('strom')) return 'Strom';
-    return 'Sonstige';
+    const block = zaehlerBlockBasis(z);
+    return block === 'Heizung' ? heizBereich(z) : (block || 'Sonstige');
   }
 
   function gruppiert() {
