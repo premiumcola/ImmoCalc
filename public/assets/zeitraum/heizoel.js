@@ -175,7 +175,8 @@ export async function fuelleHeizoelInline(el) {
       }).catch(() => null);
     }
     el.innerHTML = heizoelInhalt(best, bew, hkv, wwVol, split, verteilung,
-                                 el.dataset.heizModus || 'oel', heizVerteilung);
+                                 el.dataset.heizModus || 'oel', heizVerteilung,
+                                 el.dataset.pid, el.dataset.schluessel);
   } catch (fehler) {
     el.innerHTML = `<div class="wd-lade">Heizöl nicht ladbar: ${
       esc(String(fehler.message || fehler))}</div>`;
@@ -204,8 +205,22 @@ function verteilTabelle(titel, spalten, zeilen, summe) {
       </tbody></table></div>`;
 }
 
+/* N358 — Verteilerschlüssel wählen wie beim Wasser (`wd-schl`): der Rest,
+   der nicht über Zähler läuft, geht nach Fläche, Personen oder Einheiten.
+   Bei der Heizung sind das die Grundkosten (30 % nach HeizkostenV), beim
+   Warmwasser der Anteil ohne eigenen Zähler. */
+function schluesselWahlHtml(pid, jetzt, label) {
+  if (!pid) return '';
+  const knopf = (wert, text) => `<button type="button" class="wd-sb${
+    (jetzt || 'flaeche') === wert ? ' an' : ''}"
+    data-heiz-schluessel="${wert}" data-pid="${pid}">${text}</button>`;
+  return `<div class="wd-schl"><span class="wd-schl-l">${esc(label)}</span>
+    ${knopf('flaeche', 'Fläche')}${knopf('personen', 'Personen')}
+    ${knopf('einheiten', 'Einheiten')}</div>`;
+}
+
 function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
-                       heizVerteilung = null) {
+                       heizVerteilung = null, pid = '', schluessel = '') {
   const bearbeitbar = state.daten.status === 'in Arbeit';
   const liefer = (best?.lieferungen || []);
   const kopf = bew && bew.verbrauch_liter != null
@@ -308,7 +323,8 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
         menge: `${zahl(wv.mengen[e])} m³`, eur: wv.anteile[e] || 0 }])),
     }], Object.fromEntries(sp.map(e => [e, wv.anteile[e] || 0])));
     return `<div class="ho-box">${splitHtml
-      || '<div class="ho-warn">Noch keine Öl-Kosten erfasst — erst Lieferungen und den Zähler-Endstand bei „Heizöl & Lieferungen" eintragen.</div>'}${wwTab}</div>`;
+      || '<div class="ho-warn">Noch keine Öl-Kosten erfasst — erst Lieferungen und den Zähler-Endstand bei „Heizöl & Lieferungen" eintragen.</div>'}${
+      schluesselWahlHtml(pid, schluessel, 'Ohne eigenen Zähler verteilen nach')}${wwTab}</div>`;
   }
   if (modus === 'waerme') {
     const kopfW = split ? `<div class="ho-kpi"><div class="ho-kbox teal">
@@ -354,7 +370,9 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
     // Heizkörper sind echte Zähler und werden unter „Zähler konfigurieren"
     // gepflegt, ihre Stände unter „Zählerstände". Zwei Wege für dieselbe
     // Sache waren genau die Verwirrung, die die leere Tabelle erzeugt hat.
-    return `<div class="ho-box">${kopfW}${heizTab}${hinweis}</div>`;
+    return `<div class="ho-box">${kopfW}${
+      schluesselWahlHtml(pid, schluessel, 'Grundkosten verteilen nach')}${
+      heizTab}${hinweis}</div>`;
   }
   return `<div class="ho-box">${kopf}
     ${zeilen ? `<div class="ho-liste">${zeilen}</div>${bestZeile}` : ''}

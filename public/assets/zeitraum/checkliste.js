@@ -571,7 +571,8 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
       ? `<button class="anh-anbau" data-anhaengen="${esc(k.kostenart)}"
           >${ANH_ICON} ${heizModus === 'oel' ? 'Öl-Rechnung' : 'Beleg'} anhängen</button>` : '';
     koerper = `<div class="ho-inline" data-heizoel-inline="${zid}"
-        data-heiz-modus="${heizModus}">
+        data-heiz-modus="${heizModus}" data-pid="${k.position_id || ''}"
+        data-schluessel="${esc(k.schluessel || '')}">
         <div class="wd-lade">Wird geladen …</div></div>
       <div class="zk">Belege</div>${belegeKastenHtml(k, anbau)}`;
   } else if (auf && k.position_id) {
@@ -1762,6 +1763,18 @@ export function initHandlers() {
     if (hoAdd) return heizoelHinzufuegen(hoAdd);
     const hoWeg = e.target.closest('[data-heizoel-weg]');
     if (hoWeg) return heizoelEntfernen(hoWeg.dataset.heizoelWeg, hoWeg.dataset.was);
+    // N358 — Verteilerschlüssel für Heizwärme/Warmwasser direkt in ihrer
+    // Ansicht (dieselbe Wirkung wie der Wähler in der Aufteilung, den diese
+    // beiden Karten nicht zeigen, weil ihr Rumpf die Öl-Ansicht ist).
+    const hsch = e.target.closest('[data-heiz-schluessel]');
+    if (hsch) {
+      try {
+        await api(`/positionen/${hsch.dataset.pid}`, { method: 'PATCH',
+          body: { schluessel: hsch.dataset.heizSchluessel, nur_einheit: '' } });
+        await laden();
+      } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
+      return;
+    }
     const wsch = e.target.closest('[data-wasser-schluessel]');
     if (wsch) {
       state.setWasserSchluessel(wsch.dataset.wasserSchluessel);
