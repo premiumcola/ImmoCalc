@@ -553,10 +553,16 @@
   /* N354 — das ganze Panel trägt EINE Farbe (Papier); die Zähler-Karten
      darin sind hell (`--sheet`) und heben sich dadurch ab. Vorher hatte nur
      der Inhalt Papier und der Kopf blieb weiss — die Naht dazwischen sah aus,
-     als wäre die Box aufgerissen. */
-  .zu-panel{background:var(--paper);border-radius:14px;margin:2px 0 12px 22px;
-    box-shadow:0 1px 2px rgba(22,38,44,.05),inset 3px 0 0 var(--teal-l);
-    overflow:hidden}
+     als wäre die Box aufgerissen.
+     N355 — das Panel gehört sichtbar zu der Kostenposition darüber: es sitzt
+     bündig darunter (kein Abstand, oben eckig, gleiche Breite) statt frei zu
+     schweben, und trägt einen Rahmen, damit es nicht mehr untergeht. */
+  .zu-panel{background:var(--paper);border-radius:0 0 14px 14px;
+    margin:0 0 12px;border:1px solid var(--line);border-top:none;
+    box-shadow:0 1px 2px rgba(22,38,44,.05);overflow:hidden}
+  /* Die Karte darüber gibt ihren unteren Rand und Abstand ab, damit beide
+     als ein Block zusammenhängen. */
+  .pruef:has(+ .zu-panel){margin-bottom:0;border-radius:14px 14px 0 0}
   .zu-sum{width:100%;display:flex;align-items:center;gap:10px;padding:14px 15px;
     background:none;border:none;cursor:pointer;text-align:left;min-height:52px}
   .zu-ikon{flex:none;display:flex;width:19px;height:19px;color:var(--teal)}
@@ -568,7 +574,7 @@
   .zu-panel.offen .zu-chev{transform:rotate(180deg)}
   .zu-inhalt{display:none;padding:2px 12px 12px}
   .zu-panel.offen .zu-inhalt{display:block}
-  @media(max-width:520px){ .zu-panel{margin-left:10px} .zu-sum{padding:13px 12px}
+  @media(max-width:520px){ .zu-sum{padding:13px 12px}
     .zu-inhalt{padding:9px 10px 10px} }
   .zu-block{margin-top:14px}
   .zu-bt{display:flex;align-items:center;gap:8px;font:700 12.5px var(--disp);
