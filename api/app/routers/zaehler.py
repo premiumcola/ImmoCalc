@@ -228,9 +228,20 @@ def loeschen(zid: int, session: Session = Depends(get_session)) -> dict:
     z = _zaehler(session, zid)
     for a in session.exec(select(Ablesung).where(Ablesung.zaehler_id == zid)).all():
         session.delete(a)
+    # N376 — Unterzähler zeigen auf diesen als ihren Hauptzähler. Blieb der
+    # Verweis stehen, war er eine Sackgasse: `_ist_wasser_haupt` und
+    # `stromkette._gesamtzaehler` verzweigen genau darüber und meldeten
+    # „Gesamtverbrauch nicht verfügbar", obwohl alle Stände da waren. Der
+    # Verweis wird gelöst, die Zähler selbst bleiben — sie tragen ihre eigenen
+    # Ablesungen und sollen nicht mit dem Hauptzähler verschwinden.
+    verwaist = session.exec(select(Zaehler).where(
+        Zaehler.hauptzaehler_id == zid)).all()
+    for unter in verwaist:
+        unter.hauptzaehler_id = None
+        session.add(unter)
     session.delete(z)
     session.commit()
-    return {"ok": True}
+    return {"ok": True, "geloest": [u.name for u in verwaist]}
 
 
 # --------------------------------------------------------------------------

@@ -72,7 +72,10 @@ def test_zaehler_crud_additiv(client):
             z["reihenfolge"], z["notiz"]) == ("kWh", "WG", "Heizöl", 3, "Keller")
 
     # löschen
-    assert client.delete(f"/api/zaehler/{zid}").json() == {"ok": True}
+    # N376 — die Antwort nennt zusätzlich, welche Unterzähler ihren Verweis
+    # auf diesen Hauptzähler verloren haben; hier ist es keiner.
+    weg = client.delete(f"/api/zaehler/{zid}").json()
+    assert weg["ok"] is True and weg["geloest"] == []
     assert client.get(f"/api/objekte/{slug}/zaehler").json() == []
 
 
@@ -366,3 +369,28 @@ def test_uebernehmen_teilt_mehrfachzuordnung_und_schreibt_nichts_ins_leere(clien
     zeile = next(k for k in client.get(f"/api/zeitraeume/{zid2}").json()["checkliste"]
                  if k["kostenart"] == "Wasser")
     assert zeile["anteile"], "Die bestehende Verteilung wurde überschrieben"
+
+
+def test_hauptzaehler_loeschen_laesst_keine_sackgasse(client):
+    """N376 — ein gelöschter Hauptzähler darf keine toten Verweise hinterlassen.
+
+    `_ist_wasser_haupt` und `stromkette._gesamtzaehler` verzweigen über
+    `hauptzaehler_id`. Blieb dort die Nummer eines gelöschten Zählers stehen,
+    meldete die Kette „Gesamtverbrauch nicht verfügbar", obwohl alle Stände
+    erfasst waren — und der Unterzähler war über die Oberfläche nicht mehr
+    aus seiner Zuordnung zu lösen.
+    """
+    slug, zid, _maske = _neues_objekt(client)
+    haupt = _anlegen(client, slug, name="Hauptwasser", kostenart="Wasser",
+                     typ="gemessen")
+    unter = _anlegen(client, slug, name="Unterzähler EG", kostenart="Wasser",
+                     typ="gemessen", hauptzaehler_id=haupt)
+
+    weg = client.delete(f"/api/zaehler/{haupt}")
+    assert weg.status_code == 200, weg.text
+    assert weg.json()["geloest"] == ["Unterzähler EG"]
+
+    # Der Unterzähler lebt weiter — nur ohne Verweis ins Leere.
+    liste = client.get(f"/api/objekte/{slug}/zaehler").json()
+    ueberlebt = next(z for z in liste if z["id"] == unter)
+    assert ueberlebt["hauptzaehler_id"] is None

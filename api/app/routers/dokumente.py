@@ -2386,11 +2386,19 @@ def zuordnen(dokument_id: int, data: Optional[ZuordnenIn] = None,
     try:
         angelegt = bauer(session, d, o, d.ki_felder or {})
         session.commit()
+    except HTTPException:
+        # N376 — eine HTTPException ist bereits eine beantwortete Frage: der
+        # Entwurfs-Bauer sagt mit 404/409 genau, was fehlt oder kollidiert.
+        # Sie in eine generische 400 („konnte nicht angelegt werden") zu
+        # verwandeln nahm dem Nutzer den einzigen Hinweis, den er hatte.
+        session.rollback()
+        raise
     except Exception as fehler:                       # noqa: BLE001
         session.rollback()
         log.warning("Zuordnen von Dokument %s gescheitert: %s", dokument_id, fehler)
         raise HTTPException(
-            400, "Der vorläufige Datensatz konnte nicht angelegt werden.") from fehler
+            400, f"Der vorläufige Datensatz konnte nicht angelegt werden: "
+                 f"{fehler}") from fehler
     log.info("Dokument %s zugeordnet: %s", dokument_id,
              ", ".join(f"{e['typ']}#{e['id']}" for e in angelegt) or "nichts")
     return {"ok": True, "angelegt": angelegt}
@@ -2659,8 +2667,14 @@ def immocalc(dokument_id: int, body: ImmoCalcIn,
     session.commit()
     session.refresh(d)
     o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
+    # N376 — `sidecar_pfad` gibt es hier gar nicht (der Steckbrief wurde
+    # abgeschafft, siehe oben). Der Ausdruck stand nur deshalb ohne Folgen da,
+    # weil `sidecar_ok` fest False ist und Python den anderen Zweig nie
+    # auswertet — ein NameError in Wartestellung, der beim ersten Wiederbeleben
+    # des Merkmals zugeschlagen hätte. Die beiden Felder bleiben in der Antwort,
+    # damit ältere Aufrufer nicht über ein fehlendes Feld stolpern.
     return {"ok": True, "gespeichert": True, "sidecar": sidecar_ok,
-            "sidecar_pfad": sidecar_pfad if sidecar_ok else "",
+            "sidecar_pfad": "",
             "objekt": o.slug if o else None}
 
 
