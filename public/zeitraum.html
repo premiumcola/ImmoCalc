@@ -804,6 +804,12 @@
     background:var(--sheet);color:var(--ink);min-height:36px;text-align:right}
   .zt-inp:focus{outline:none;border-color:var(--teal)}
   .zt-fest{font:600 12px var(--mono);color:var(--ink)}
+  /* N384 — der Anfangsstand-Hinweis vor dem Endstand-Feld eines echten
+     Zählers (typ='gemessen'): eine Zeile, klein, mit Ellipse statt Umbruch —
+     die Spalte ist knapp, der volle Wert steht im `title`. */
+  .zt-ab{display:block;font:600 8.5px var(--mono);color:var(--soft);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    margin-bottom:2px;text-align:right}
   th.zt-jahr,td.zt-jahr{text-align:right;font:500 11px var(--mono);
     color:var(--soft);white-space:nowrap;width:52px}
   @media (pointer:coarse){ .zt-inp{font-size:16px} }
@@ -900,6 +906,7 @@
   .zu-panel .zt-tab td{border-bottom-color:var(--zu-linie)}
   .zu-panel .zt-name{color:var(--zu-hell)}
   .zu-panel .zt-nr,.zu-panel td.zt-jahr{color:var(--zu-matt)}
+  .zu-panel .zt-ab{color:var(--zu-matt)}
   .zu-panel th.zt-eingabe,.zu-panel td.zt-eingabe{
     border-left-color:var(--zu-linie)}
   .zu-panel th.zt-eingabe{color:var(--zu-hell)}

@@ -9,6 +9,7 @@ berechneten Rest-Zähler (Hauptzähler minus Unterzähler) einrichten.
 import os
 import sys
 import tempfile
+from datetime import date
 
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test_zaehler_konfig.db")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -394,3 +395,37 @@ def test_hauptzaehler_loeschen_laesst_keine_sackgasse(client):
     liste = client.get(f"/api/objekte/{slug}/zaehler").json()
     ueberlebt = next(z for z in liste if z["id"] == unter)
     assert ueberlebt["hauptzaehler_id"] is None
+
+
+# --------------------------------------------------------------------------
+# N384 — die reine "Anfang"-Anzeige darf historische Delta-t-Werte nicht als
+# echten Zählerstand ausgeben, selbst wenn die eigentliche Rechnung (N381)
+# sie schon zurecht ignoriert.
+# --------------------------------------------------------------------------
+
+def test_maske_vorwert_ignoriert_historische_werte(client):
+    """`routers/zaehler.maske()` hat einen eigenen, zweiten `frueher`-Fallback
+    fürs „Anfang"-Feld (N353), unabhängig von `verbrauchsreihe`. Ohne den
+    Ausschluss zeigte er einem Zähler ohne echten Anfangsstand trotzdem einen
+    „Anfang" an — den alten Delta-t-Verbrauchswert, fälschlich als Stand
+    gelesen. Die Rechnung selbst bleibt korrekt leer (`verbrauch` ist None);
+    hier geht es um den irreführenden Anzeigetext."""
+    slug, zid, maske0 = _neues_objekt(client)
+    z = _anlegen(client, slug, name="WMZ", kostenart="Heizung",
+                 messeinheit="kWh", typ="gemessen")
+    from sqlmodel import Session
+    from app.db import engine
+    from app.models import Ablesung
+    with Session(engine) as s:
+        s.add(Ablesung(zaehler_id=z, datum=date(2022, 9, 30), stand=5463.0,
+                       notiz="Delta-t-Historie (Saison endet 30.09.2022), "
+                             "nachgetragen aus der geprueften Gesamtabrechnung "
+                             "— nicht an einen Abrechnungszeitraum gebunden, "
+                             "dient nur dem Verlauf."))
+        s.commit()
+
+    zeile = next(r for r in client.get(f"/api/zeitraeume/{zid}/ablesung")
+                .json()["zaehler"] if r["id"] == z)
+    assert zeile["vorwert"] is None, (
+        f"zeigt einen historischen Verbrauchswert als Anfangsstand: {zeile['vorwert']}")
+    assert zeile["verbrauch"] is None

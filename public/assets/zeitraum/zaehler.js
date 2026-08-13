@@ -393,13 +393,22 @@ function jahreswertTabellenHtml(teil) {
   const sortiert = [...gruppen.keys()].sort((a, b) =>
     (ord.indexOf(a) + 1 || 99) - (ord.indexOf(b) + 1 || 99));
 
+  const jetzt = String(state.daten.ende || '').slice(0, 4)
+    || String(state.daten.start || '').slice(0, 4);
   // Die Jahre, die überhaupt vorkommen — eine Spalte je Jahr, höchstens fünf.
   // N365: aufsteigend, und die Eingabe steht als jüngstes Jahr GANZ RECHTS —
   // die Zeile liest sich damit als Zeitstrahl von links nach rechts.
+  //
+  // N384 — das LAUFENDE Jahr fliegt aus den Verlaufsspalten heraus. Sobald
+  // ein Zähler seinen 2025er-Wert gespeichert hatte, trug `verlauf` schon
+  // einen 2025-Eintrag, und die Spalte tauchte ZUSÄTZLICH zur Eingabe rechts
+  // auf — derselbe Wert zweimal in einer Zeile (roter Faden: „jede
+  // Information genau einmal"). Bei einem echten Zähler (`typ='gemessen'`)
+  // fiel das besonders auf: dort stand der Verbrauch als Verlaufszahl NEBEN
+  // dem eingetragenen Absolutstand, obwohl beides zum selben Jahr gehört.
   const jahre = [...new Set(teil.flatMap(z => Object.keys(z.verlauf || {})))]
-    .map(Number).sort((a, b) => a - b).slice(-5);
-  const jetzt = String(state.daten.ende || '').slice(0, 4)
-    || String(state.daten.start || '').slice(0, 4);
+    .map(Number).filter(j => String(j) !== jetzt)
+    .sort((a, b) => a - b).slice(-5);
 
   return sortiert.map(name => {
     const liste = gruppen.get(name);
@@ -426,18 +435,40 @@ function jahreswertTabellenHtml(teil) {
     const zeilen = liste.map(z => {
       const eh = esc(z.messeinheit || '');
       const wert = z.ablesung ? zahl(z.ablesung.stand) : '';
-      const feld = bearbeitbar
-        ? `<input class="zt-inp" type="text" inputmode="decimal"
-             data-strom-jahr="${z.id}" value="${wert}" placeholder="${eh}"
-             aria-label="Verbrauch ${jetzt} ${esc(z.name)} in ${eh}">`
-        : `<span class="zt-fest">${wert || '—'}</span>`;
+      let feld;
+      if (!bearbeitbar) {
+        feld = `<span class="zt-fest">${wert || '—'}</span>`;
+      } else if (z.typ === 'rest') {
+        // Errechnet (Hauptzähler − Unterzähler) — keine eigene Eingabe.
+        feld = `<span class="zt-fest">${wert || '—'}</span>`;
+      } else if (z.typ === 'gemessen') {
+        // N384 — ein echter Zählerstand statt eines fertigen Jahreswerts:
+        // eingetragen wird der ABSOLUTE Stand zum Abrechnungsstichtag (kein
+        // eigenes Datumsfeld — `endstandSpeichern` nimmt ohne eins von
+        // selbst das Periodenende, genau der Tag, an dem ohnehin abgelesen
+        // wird). Den Anfangsstand der Periode holt sich die App selbst aus
+        // der Vorperiode (`z.vorwert`, vom Server berechnet) — er steht nur
+        // als Hinweis davor, der Verbrauch erscheint nach dem Speichern in
+        // der Jahresspalte, wie bei jedem anderen Zähler auch. Der
+        // eingetragene Absolutwert bleibt unverändert im Feld stehen.
+        const anfang = z.vorwert ? `${zahl(z.vorwert.stand)} ${eh}` : '';
+        feld = `${anfang ? `<span class="zt-ab" title="Anfangsstand der `
+          + `Periode, aus der Vorperiode übernommen">ab ${esc(anfang)}</span>` : ''}
+          <input class="zt-inp" type="text" inputmode="decimal"
+            data-endstand="${z.id}" value="${wert}" placeholder="Stand"
+            aria-label="Zählerstand zum Abrechnungsstichtag ${esc(z.name)} in ${eh}">`;
+      } else {
+        feld = `<input class="zt-inp" type="text" inputmode="decimal"
+          data-strom-jahr="${z.id}" value="${wert}" placeholder="${eh}"
+          aria-label="Verbrauch ${jetzt} ${esc(z.name)} in ${eh}">`;
+      }
       return `<tr>
         <td class="zt-nr">${esc(z.zaehlernummer || '–')}</td>
         <td class="zt-name">${esc(state.zLabels.get(z.id) || z.name)}${
           bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
             title="Zähler umbenennen">${STIFT_ICON}</button>` : ''}</td>
         ${jahre.map((j, i) => zelle((z.verlauf || {})[j], i)).join('')}
-        <td class="zt-eingabe">${feld}</td>
+        <td class="zt-eingabe${z.typ === 'gemessen' ? ' zt-stand' : ''}">${feld}</td>
       </tr>`;
     }).join('');
     return `<div class="zt-gruppe${auf ? ' offen' : ''}">
@@ -484,30 +515,23 @@ export function zaehlerPanelHtml(block, zaehler, blockVon, unter = null) {
   const basisOhneChooser = block === 'Heizung';
   // N361 — viele gleichartige Jahreswert-Zähler (die 19 Heizkörper) als
   // TABELLE je Einheit statt als 19 Karten: eine Zeile je Zähler, Nummer und
-  // Vorjahre als schlichte Zahlen. Karten bleiben, wo es wenige sind oder wo
-  // Anfang/Ende/Datum gebraucht werden.
+  // Vorjahre als schlichte Zahlen. Karten bleiben, wo es wenige sind.
   //
-  // N382 — Tabelle und Karten schließen sich nicht mehr gegenseitig aus. Vorher
-  // kippte die GANZE Gruppe auf Karten zurück, sobald auch nur EIN Zähler nicht
-  // `direkt` war — genau der Fall, wenn ein Wärmemengenzähler von „fertiger
-  // Jahreswert" auf „echter Zählerstand" umgestellt wird (N380/N381): die
-  // kompakte Tabelle der übrigen 21 direkten Zähler verschwand ersatzlos, ohne
-  // dass sich an IHNEN etwas geändert hätte. Jetzt bekommen die direkten Zähler
-  // weiter ihre Tabelle, die umgestellten (`gemessen`) ihre eigene Karte
-  // darunter — die brauchen ohnehin Anfang/Ende/Datum statt eines einzelnen
-  // Jahreswerts, dafür ist die Karte gebaut.
-  const direkt = teil.filter(z => z.typ === 'direkt');
-  const rest = teil.filter(z => z.typ !== 'direkt');
-  const tabelle = direkt.length > 3;
+  // N384 — die Tabelle trägt jetzt auch `typ='gemessen'`-Zähler mit, nicht nur
+  // `direkt`: sie bekommen dieselbe Zeile, nur mit einem Endstand- statt einem
+  // Direktverbrauch-Feld (siehe `jahreswertTabellenHtml`). Ohne das kippte die
+  // GANZE Gruppe auf einzelne Karten zurück, sobald ein einziger Wärmemengen-
+  // zähler von „fertiger Jahreswert" auf „echter Zählerstand" umgestellt
+  // wurde (N380/N381) — die kompakte Tabelle der übrigen 21 Zähler verschwand
+  // ersatzlos, ohne dass sich an IHNEN etwas geändert hätte.
+  const tabelle = teil.length > 3
+    && teil.every(z => ['direkt', 'gemessen', 'rest'].includes(z.typ));
   const inner = block === 'Wasser' ? wasserBlockHtml(teil)
     : block === 'Strom' ? stromBlockHtml(teil)
-    : tabelle
-      ? jahreswertTabellenHtml(direkt) + rest.map(z => meterZeileHtml(z, {
-          rest: z.typ === 'rest',
-          keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('')
-      : teil.map(z => meterZeileHtml(z, {
-          rest: z.typ === 'rest',
-          keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');
+    : tabelle ? jahreswertTabellenHtml(teil)
+    : teil.map(z => meterZeileHtml(z, {
+        rest: z.typ === 'rest',
+        keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');
   const schluessel = unter ? `${block}:${unter}` : block;
   const offen = state.zaehlerOffen.has(schluessel);
   const abweichend = teil.filter(z => interpolationsHinweise(z, '').length).length;

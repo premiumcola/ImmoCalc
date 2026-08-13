@@ -353,8 +353,17 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
         # Periodenbeginn der Vorwert. Ohne das blieb das Feld „Anfang" leer,
         # obwohl der Verbrauch längst daraus gerechnet wird.
         if vorwert is None:
+            # N384 — dieselbe Absicherung wie in `ablesung._ablesung_fuer`/
+            # `verbrauchsreihe` (N381): ein historisch markierter Wert (z. B.
+            # aus einer Delta-t-Gesamtabrechnung importiert) ist ein
+            # Jahresverbrauch, kein Zählerstand. Ohne den Ausschluss zeigte
+            # diese rein informative „Anfang"-Anzeige ihn trotzdem an — die
+            # eigentliche Rechnung blieb zwar korrekt leer (dort greift der
+            # Ausschluss schon), aber der Hinweis behauptete einen
+            # Anfangsstand, den es in Wirklichkeit noch nicht gibt.
             frueher = [a for a in abls
-                       if a.zeitraum_id is None and a.datum <= z.start]
+                       if a.zeitraum_id is None and a.datum <= z.start
+                       and not ablesung._ist_historisch(a)]
             if frueher:
                 anker = max(frueher, key=lambda a: a.datum)
                 vorwert = {"randwert": anker.stand, "datum": anker.datum}
