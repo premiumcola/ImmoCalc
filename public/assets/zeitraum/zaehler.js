@@ -102,7 +102,11 @@ export function eautoInfoHtml() {
 /* N156 — umbenennen an Ort und Stelle in der Zeile. */
 export function zaehlerUmbenennen(zid) {
   const feld = document.querySelector(`[data-zaehler-umbenennen="${zid}"]`);
-  const halter = feld?.closest('.zu-name');
+  // N379 — in der Jahreswert-Tabelle (N361) sitzt der Stift in einer
+  // `<td class="zt-name">`, nicht im `<span class="zu-name">` der Kartenzeile.
+  // Der Klick suchte nur nach Letzterem, fand nichts und kehrte still zurück —
+  // der Stift wirkte komplett tot, ohne Fehler in der Konsole.
+  const halter = feld?.closest('.zu-name, .zt-name');
   if (!halter || halter.querySelector('.zu-name-inp')) return;   // schon offen
   const z = (state.ablesungMaske?.zaehler || []).find(x => String(x.id) === String(zid));
   const alt = z?.name || halter.textContent.trim();
