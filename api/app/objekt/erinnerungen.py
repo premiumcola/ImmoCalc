@@ -31,6 +31,11 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
         # Bestandsgrundstücke haben noch einen Zeitraum aus früheren Anlagen.
         if not o.aktiv or ist_grundstueck(o):
             continue
+        # Was in irgendeinem offenen Zeitraum schon erledigt ist, gilt als
+        # vorhanden: die Beleg-Erinnerung kennt keinen Zeitraum, sie fragt nur
+        # „ist die Jahresabrechnung dieser Kostenart da?".
+        vorhanden: set[str] = set()
+        in_arbeit = False
         for z in session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all():
             if z.status != "in Arbeit":
                 continue
@@ -41,22 +46,30 @@ def erinnerungen(session: Session = Depends(get_session)) -> dict:
             # keine Beleg-Erinnerung. Sie sind auch in der Liste ausgeblendet.
             if not positionen:
                 continue
+            in_arbeit = True
             label = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
             hinweis = frist_erinnerung(label, frist_tage(z),
                                        zeitraum_beendet=z.ende <= heute)
             if in_sicht(hinweis):
                 offen.append({"objekt": o.slug, "name": o.name, **hinweis})
+            vorhanden |= {p.kostenart for p in positionen
+                          if p.status == "erledigt"}
 
-            vorhanden = {p.kostenart for p in positionen
-                         if p.status == "erledigt"}
-            for k in session.exec(
-                    select(Kostenart).where(Kostenart.objekt_id == o.id)).all():
-                if not k.aktiv:
-                    continue
-                hinweis = beleg_erinnerung(k.name, k.beleg_monat, k.erinnerung_tage,
-                                           k.name in vorhanden, heute)
-                if in_sicht(hinweis):
-                    offen.append({"objekt": o.slug, "name": o.name, **hinweis})
+        # Beleg-Erinnerungen hängen an der Kostenart, nicht am Zeitraum — der
+        # Text nennt weder Zeitraum noch Jahr. Standen sie in der Zeitraum-
+        # Schleife, erschien bei zwei offenen Zeiträumen (der Regelfall im
+        # Januar: Vorjahr noch offen, laufendes Jahr schon angelegt) jeder
+        # Hinweis wortgleich doppelt. Deshalb einmal je Objekt.
+        if not in_arbeit:
+            continue
+        for k in session.exec(
+                select(Kostenart).where(Kostenart.objekt_id == o.id)).all():
+            if not k.aktiv:
+                continue
+            hinweis = beleg_erinnerung(k.name, k.beleg_monat, k.erinnerung_tage,
+                                       k.name in vorhanden, heute)
+            if in_sicht(hinweis):
+                offen.append({"objekt": o.slug, "name": o.name, **hinweis})
 
     offen.sort(key=lambda e: (not e["faellig"], e["tage"]))
     return {"heute": heute.isoformat(),

@@ -170,6 +170,13 @@ def aendern(rid: int, aenderung: RenovierungAenderung,
     if "einheiten" in daten:
         daten["einheiten"] = logik.einheiten_text(daten["einheiten"])
     for feld, wert in daten.items():
+        # N370 — ein ausdrücklich mitgeschicktes `null` traf hier auf eine
+        # NOT-NULL-Spalte (`name`, `abgeschlossen`) und ergab einen
+        # IntegrityError, also HTTP 500 statt einer verständlichen Antwort.
+        # `exclude_unset` lässt es durch: „nicht gesetzt" und „ausdrücklich
+        # null" sind zwei verschiedene Dinge. Wie in `kontakte.py` übersprungen.
+        if wert is None and feld in ("name", "abgeschlossen"):
+            continue
         setattr(r, feld, wert)
     session.add(r)
     session.commit()
@@ -209,6 +216,9 @@ def posten_aendern(pid: int, aenderung: PostenAenderung,
                    session: Session = Depends(get_session)) -> dict:
     p = _posten_holen(pid, session)
     for feld, wert in aenderung.model_dump(exclude_unset=True).items():
+        # N370 — dasselbe hier: `betrag` ist im Modell nicht optional.
+        if wert is None and feld == "betrag":
+            continue
         setattr(p, feld, wert)
     session.add(p)
     session.commit()

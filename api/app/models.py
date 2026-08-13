@@ -271,8 +271,15 @@ class Kostenart(SQLModel, table=True):
     # Verhalten (alles Pflicht), damit der Bestand unverändert weiterrechnet.
     optional: bool = False
     turnus_start_monat: int = 1        # 1 = Januar; eigener Zeitraum der Kostenart
-    beleg_monat: Optional[int] = None  # Monat, in dem die Abrechnung vorliegt
-    erinnerung_tage: int = 7           # so viele Tage danach erinnern
+    # Beide Felder rechnen in `erinnerungen.termin_im_jahr` ein Datum aus:
+    # `date(jahr, beleg_monat, 1) + timedelta(days=erinnerung_tage)`. Ohne
+    # Grenzen nimmt `PATCH /api/kostenarten/{id}` auch einen 13. Monat oder
+    # 10**9 Tage an — das wirft dort ValueError bzw. OverflowError, und weil
+    # `/api/erinnerungen` ALLE Objekte in einer Schleife durchgeht, fällt die
+    # ganze Erinnerungsliste mit HTTP 500 aus. Deshalb hier der Riegel gegen
+    # neue krumme Werte (den Bestand fängt `termin_im_jahr` selbst ab).
+    beleg_monat: Optional[int] = Field(default=None, ge=1, le=12)
+    erinnerung_tage: int = Field(default=7, ge=0, le=365)
     lieferant: str = ""
     kundennummer: str = ""
 

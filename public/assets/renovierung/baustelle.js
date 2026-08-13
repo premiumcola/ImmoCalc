@@ -3,7 +3,7 @@
    dann wird am häufigsten gescannt (Rechnungen der laufenden Baustelle) —
    deshalb der Alarmton, nicht die sonst übliche Zurückhaltung. */
 
-import { esc } from '../immo.js';
+import { esc, heuteIso } from '../immo.js';
 import { zeitraumText, einheitenText } from './daten.js';
 
 const WARNDREIECK = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"
@@ -23,7 +23,10 @@ function laeuft(r, heute) {
 
 /** Das Banner für objekt.html — leer, wenn keine Renovierung gerade läuft. */
 export function baustellenBannerHtml(slug, liste) {
-  const heute = new Date().toISOString().slice(0, 10);
+  // N287 — `heuteIso` statt `toISOString()`: letzteres rechnet nach UTC und
+  // liefert in der Sommerzeit ab 22 Uhr den Vortag. Eine Baustelle, die heute
+  // beginnt, wäre am Abend ihres ersten Tages noch nicht „aktiv".
+  const heute = heuteIso();
   const aktiv = (Array.isArray(liste) ? liste : []).filter(r => laeuft(r, heute));
   if (!aktiv.length) return '';
 

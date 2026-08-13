@@ -22,6 +22,7 @@ from .pdfkern import breite as _breite
 from .pdfkern import escape as _escape
 from .pdfkern import pdf as _pdf
 from .pdfkern import sauber
+from .zahlen import geschrieben
 
 log = logging.getLogger("immocalc")
 
@@ -141,11 +142,7 @@ class Blatt:
 def _zahl(betrag: float | None, vorzeichen: bool = False) -> str:
     """Deutsche Schreibweise. Die Währung steht einmal im Kopf der Spalte,
     nicht an jeder der fünfzehn Zeilen (roter Faden: jede Information einmal)."""
-    wert = betrag or 0.0
-    text = f"{abs(wert):,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
-    if wert < 0:
-        return "-" + text
-    return ("+" + text) if vorzeichen else text
+    return geschrieben(betrag, vorzeichen=vorzeichen)
 
 
 _DATUM = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")

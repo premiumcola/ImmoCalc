@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 
 from .. import strom
 from ..models import PVAnlage, Stromjahr, Zeitraum
+from ..vermoegen import PROMILLE_TOLERANZ, VOLLE_PROMILLE
 
 log = logging.getLogger("immocalc")
 
@@ -30,9 +31,13 @@ _STAMM_AUS_JAHR: dict[str, str] = {
     "anteile": "pv_anteile",
 }
 
-_VOLLE_PROMILLE = 1000.0
-# Rundungsluft: 833,3 + 166,7 = 1000,0 soll als „geht auf" gelten.
-_PROMILLE_TOLERANZ = 0.5
+# N370 — aus `vermoegen`, statt einer dritten eigenen Antwort. Die hier
+# gepflegte Toleranz war auf 0,5 ‰ gewachsen, also das Fünffache der beiden
+# anderen: dieselbe Anteilsliste galt je nach Ansicht als vollständig oder
+# nicht. Rundungsluft bleibt, sie ist nur überall gleich groß (833,3 + 166,7
+# = 1000,0 geht weiterhin auf).
+_VOLLE_PROMILLE = VOLLE_PROMILLE
+_PROMILLE_TOLERANZ = PROMILLE_TOLERANZ
 
 # Quelle im Verlauf → Feld an der Anlage. Dieselben drei Namen wie in
 # `_QUELLEN_LEER`, damit Vorlauf und Jahre dieselbe Sprache sprechen.

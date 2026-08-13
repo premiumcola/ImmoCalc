@@ -271,7 +271,7 @@
 </div>
 
 <script type="module">
-import { melde, frage, eur } from './assets/immo.js';
+import { melde, frage, eur, heuteIso } from './assets/immo.js';
 import { installGrundstueckLogo } from './assets/kostenicons.js';
 
 /* Das Grundstück bringt sein Logo selbst mit — die Haus-Symbole stehen
@@ -731,7 +731,10 @@ async function grundstueckSpeichern(d){
       body:JSON.stringify({
         partei:d.paechter.trim(), kaltmiete:nz(d.pachtzins)??0,
         turnus:d.pachtTurnus,
-        ab_datum:d.pachtAb||new Date().toISOString().slice(0,10)})});
+        // N287 — `heuteIso` statt `toISOString()`: letzteres liefert UTC und
+        // damit in der Sommerzeit ab 22 Uhr den Vortag. Ein abends angelegtes
+        // Pachtverhältnis begänne sonst rückwirkend einen Tag zu früh.
+        ab_datum:d.pachtAb||heuteIso()})});
     if(!antwort.ok) throw new Error(antwort.status);
   }catch{
     melde('Das Pachtverhältnis konnte nicht gespeichert werden.', 'neg');

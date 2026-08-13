@@ -266,8 +266,17 @@ PV_WERTQUELLE = "Anschaffungswert"
 # Promille. Sie greift nur, solange am Objekt keine Anteile gepflegt sind — und
 # ihre Bezeichnungen sind keine Personennamen, also bleibt sie unzugeordnet.
 PV_VORGABE_ANTEILE: dict[str, float] = {"5/6": 833.3, "1/6": 166.7}
-_PV_VOLL = 1000.0
-_PV_TOLERANZ = 0.1
+# N370 — die eine Antwort auf „wann gilt ein Objekt als voll vergeben".
+# Vorher stand das Paar dreimal im Baum (`routers/besitz.py`, hier,
+# `pv/stammdaten.py`) — und war schon auseinandergelaufen: die PV-Fassung
+# ließ 0,5 ‰ Abweichung durchgehen, also das Fünffache. Eine Nachkommastelle
+# genügt: 333,3 dreimal ergibt 999,9 und soll als vollständig gelten; auf mehr
+# Genauigkeit zu bestehen ließe sich bei Dritteln nie erfüllen.
+VOLLE_PROMILLE = 1000.0
+PROMILLE_TOLERANZ = 0.1
+
+_PV_VOLL = VOLLE_PROMILLE
+_PV_TOLERANZ = PROMILLE_TOLERANZ
 
 
 def pv_anteile_gepflegt(roh: str | None) -> dict[str, float]:

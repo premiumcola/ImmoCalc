@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from .zahlen import geschrieben
 
 # Die allgemeine Grenze des § 558 Abs. 3 Satz 1 BGB.
 ALLGEMEIN = 20.0
@@ -249,8 +250,8 @@ def pruefe(objekt, staende: list, neue_kaltmiete: float | None,
 
 
 def _geld(betrag: float) -> str:
-    """Ein Betrag, wie er in einem deutschen Satz steht: 1.234,50 €."""
-    return f"{betrag:,.2f} €".replace(",", "#").replace(".", ",").replace("#", ".")
+    """Ein Betrag, wie er in einem deutschen Satz steht: 1.234,50 € (N373)."""
+    return geschrieben(betrag, einheit="€")
 
 
 def _zuwachs(wert: float) -> str:

@@ -52,9 +52,6 @@ export function installLogos() {
 export const logoSvg = (id, cls = '') =>
   `<svg class="${cls}" viewBox="0 0 96 96"><use href="#${id}"/></svg>`;
 
-/** Bezeichnung eines Gebaeudetyps, mit Rueckfall auf Strich. */
-export const logoLabel = id => (LOGOS.find(l => l[0] === id) || [, '—'])[1];
-
 /* ---- API ---- */
 export async function api(pfad, optionen = {}) {
   const antwort = await fetch('/api' + pfad, {

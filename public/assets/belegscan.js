@@ -253,14 +253,3 @@ export async function belegAblegen(vorbereitet, beschreibung = null,
   return { id: ergebnis.id, dateiname: ergebnis.dateiname,
            seiten: aufnahme.seiten, groesse: aufnahme.datei.size };
 }
-
-/**
- * Der bisherige Ein-Schritt-Weg: vorbereiten und sofort ablegen, ohne
- * Zwischenfrage. Bleibt für alle Aufrufer, die keine Bestätigungsmaske wollen —
- * ihr Verhalten ändert sich dadurch kein Stück.
- */
-export async function belegScannen(dateien, ziel = {}) {
-  const vorbereitet = await belegVorbereiten(dateien, ziel);
-  if (!vorbereitet) return null;                    // Zuschnitt abgebrochen
-  return belegAblegen(vorbereitet);
-}

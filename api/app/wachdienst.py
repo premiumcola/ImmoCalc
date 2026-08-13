@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from collections.abc import Callable
 from datetime import datetime
 
 from sqlmodel import Session
@@ -182,6 +183,120 @@ def _immocalc_lauf() -> dict:
         sperre.release()
 
 
+# ---------------------------------------------------------------------------
+# Die Schritte eines Taktes — jeder für sich, keiner vom anderen abhängig.
+#
+# Sie standen einmal alle hintereinander in EINEM ``try`` in `schleife`. Das war
+# der Fehler: `einmal_scannen` reicht jede Ausnahme ausser HTTPException 409
+# weiter, und `_scanne` fragt in seiner ersten Zeile die Cloud-Verbindung ab.
+# Ist die Nextcloud nicht eingerichtet oder gerade nicht erreichbar, wirft sie
+# HTTPException(400) — und damit war der ganze Takt zu Ende, bevor er begonnen
+# hatte. Texterkennung, Prüfsummen, Kontaktbuch und vor allem der Autoversand
+# der E-Tankstellen-Abrechnung liefen dann nie, obwohl keiner von ihnen die
+# Cloud überhaupt braucht. Ein gescheiterter Schritt darf die folgenden nicht
+# mitreissen; deshalb hat hier jeder sein eigenes ``try``.
+# ---------------------------------------------------------------------------
+
+
+def _scan_schritt() -> None:
+    """Eingang prüfen und den Stand fortschreiben."""
+    neu = einmal_scannen()
+    _zustand["letzter_lauf"] = datetime.now()
+    _zustand["letzter_fehler"] = None
+    if neu:
+        _zustand["gefunden_gesamt"] = int(_zustand["gefunden_gesamt"]) + neu
+        log.info("Eingang: %d neue Datei(en)", neu)
+
+
+def _ocr_schritt() -> None:
+    """CCXXVII: liegen gebliebene Scans nachpflegen. RapidOCR kostet Sekunden
+    je Beleg — das darf den Nutzer beim Hochladen nie warten lassen, deshalb
+    hier statt im Upload."""
+    ergaenzt = int(_ocr_lauf().get("ergaenzt", 0))
+    if ergaenzt:
+        _zustand["ocr_ergaenzt_gesamt"] = \
+            int(_zustand["ocr_ergaenzt_gesamt"]) + ergaenzt
+        log.info("Textschicht ergänzt: %d Beleg(e)", ergaenzt)
+
+
+def _pruefsummen_schritt() -> None:
+    """N303: Prüfsummen für den Bestand nachrechnen — ein Häppchen je Takt.
+    Nextcloud liefert die Prüfsumme nur für Dateien, die ein Client mit
+    entsprechender Kopfzeile hochgeladen hat; ohne dieses Nachrechnen bliebe der
+    grösste Teil der Ablage ohne Kennzeichen, und damit ohne Duplikatserkennung
+    und ohne Auslese-Speicher. Kostet je Beleg einen Download, gehört deshalb in
+    den RUHIGEN Takt und nicht in den zweiminütigen Abgleich."""
+    summen = _pruefsummen_lauf()
+    if summen.get("nachgetragen"):
+        log.info("Prüfsummen nachgetragen: %d (noch offen: %d)",
+                 summen["nachgetragen"], summen.get("noch_offen", 0))
+
+
+def _kontakte_schritt() -> None:
+    """N309: das Kontaktbuch nachführen — neue Belege bringen ihre Firma und
+    ihre Kundennummer von selbst mit."""
+    stand = _kontakte_lauf()
+    if stand.get("neu") or stand.get("nummern"):
+        log.info("Kontaktbuch: %d neue Firmen, %d neue Nummern",
+                 stand.get("neu", 0), stand.get("nummern", 0))
+
+
+def _immocalc_schritt() -> None:
+    """N30: verwaiste `.immocalc`-Steckbriefe aufräumen."""
+    weg = int(_immocalc_lauf().get("geloescht", 0))
+    if weg:
+        _zustand["immocalc_aufgeraeumt_gesamt"] = \
+            int(_zustand["immocalc_aufgeraeumt_gesamt"]) + weg
+        log.info("Verwaiste .immocalc entfernt: %d", weg)
+
+
+def _autoversand_schritt() -> None:
+    """N165 — einen Tag nach Quartalsende die E-Tankstellen-Abrechnungen der
+    Objekte mit eingeschaltetem Autoversand verschicken. Prüft selbst auf
+    Fälligkeit und doppelten Versand; läuft ins Leere, wo nichts ansteht.
+
+    Braucht die Cloud nicht — genau deshalb steht er hinter seinem eigenen
+    Riegel und nicht mehr hinter der Eingangsprüfung."""
+    from .routers import tankstelle          # spät, wegen Zirkelbezug
+
+    tankstelle.autoversand_lauf()
+
+
+# N310 — das Einsortieren in Jahresordner läuft hier BEWUSST NICHT mit. Es war
+# eine Karte in den Einstellungen und ist dort zu Recht verschwunden, aber der
+# Wächtertest `test_der_wachdienst_zieht_nie_selbst_um` hält eine ältere, gute
+# Entscheidung fest: „echte Unterlagen wandern nicht nebenbei alle 15 Minuten".
+# Dateien im Ordner des Nutzers zu bewegen ist schwer umkehrbar; das gehört
+# nicht in einen stillen Takt. Der Rückstand wurde einmalig aufgeräumt, und NEUE
+# Belege landen seit [N285] ohnehin gleich richtig — es entsteht also kein neuer.
+def _schritte() -> list[tuple[str, Callable[[], None]]]:
+    """Die Reihenfolge eines Taktes. Als Liste, damit `takt` jeden Schritt
+    gleich behandeln kann — und damit keiner beim Anbau vergessen wird."""
+    return [
+        ("Eingangsprüfung", _scan_schritt),
+        ("Textschicht", _ocr_schritt),
+        ("Prüfsummen", _pruefsummen_schritt),
+        ("Kontaktbuch", _kontakte_schritt),
+        ("Verwaiste .immocalc", _immocalc_schritt),
+        ("Autoversand", _autoversand_schritt),
+    ]
+
+
+async def takt() -> None:
+    """Ein voller Durchgang: jeder Schritt gekapselt, keiner reisst die
+    folgenden mit. Blockierendes WebDAV läuft im Threadpool, damit die API
+    antwortbereit bleibt."""
+    for name, schritt in _schritte():
+        try:
+            await asyncio.to_thread(schritt)
+        except asyncio.CancelledError:
+            raise
+        except Exception as fehler:           # noqa: BLE001 - Wächter darf nie sterben
+            _zustand["letzter_fehler"] = f"{name}: {fehler}"
+            _zustand["letzter_lauf"] = datetime.now()
+            log.warning("Wachdienst — %s fehlgeschlagen: %s", name, fehler)
+
+
 async def abgleich_schleife() -> None:
     """N290 — der schnelle Takt: nur der Abgleich, alle zwei Minuten.
 
@@ -216,72 +331,12 @@ async def abgleich_schleife() -> None:
 
 
 async def schleife() -> None:
-    """Läuft neben der API und prüft den Eingang in festem Takt."""
+    """Läuft neben der API und arbeitet in festem Takt die Schritte ab."""
     _zustand["laeuft"] = True
-    while True:
-        await asyncio.sleep(TAKT_SEKUNDEN)
-        try:
-            # blockierendes WebDAV im Threadpool, damit die API antwortbereit bleibt
-            neu = await asyncio.to_thread(einmal_scannen)
-            _zustand["letzter_lauf"] = datetime.now()
-            _zustand["letzter_fehler"] = None
-            if neu:
-                _zustand["gefunden_gesamt"] = int(_zustand["gefunden_gesamt"]) + neu
-                log.info("Eingang: %d neue Datei(en)", neu)
-            # CCXXVII: im selben Takt liegen gebliebene Scans nachpflegen.
-            # RapidOCR kostet Sekunden je Beleg — das darf den Nutzer beim
-            # Hochladen nie warten lassen, deshalb hier statt im Upload.
-            ocr_ergebnis = await asyncio.to_thread(_ocr_lauf)
-            ergaenzt = int(ocr_ergebnis.get("ergaenzt", 0))
-            if ergaenzt:
-                _zustand["ocr_ergaenzt_gesamt"] = \
-                    int(_zustand["ocr_ergaenzt_gesamt"]) + ergaenzt
-                log.info("Textschicht ergänzt: %d Beleg(e)", ergaenzt)
-            # N303: Prüfsummen für den Bestand nachrechnen — ein Häppchen je
-            # Takt. Nextcloud liefert die Prüfsumme nur für Dateien, die ein
-            # Client mit entsprechender Kopfzeile hochgeladen hat; ohne dieses
-            # Nachrechnen bliebe der grösste Teil der Ablage ohne Kennzeichen,
-            # und damit ohne Duplikatserkennung und ohne Auslese-Speicher.
-            # Kostet je Beleg einen Download, gehört deshalb in den RUHIGEN
-            # Takt und nicht in den zweiminütigen Abgleich.
-            summen = await asyncio.to_thread(_pruefsummen_lauf)
-            if summen.get("nachgetragen"):
-                log.info("Prüfsummen nachgetragen: %d (noch offen: %d)",
-                         summen["nachgetragen"], summen.get("noch_offen", 0))
-            # N310 — das Einsortieren in Jahresordner läuft hier BEWUSST NICHT
-            # mit. Es war eine Karte in den Einstellungen und ist dort zu Recht
-            # verschwunden, aber der Wächtertest
-            # `test_der_wachdienst_zieht_nie_selbst_um` hält eine ältere,
-            # gute Entscheidung fest: „echte Unterlagen wandern nicht nebenbei
-            # alle 15 Minuten". Dateien im Ordner des Nutzers zu bewegen ist
-            # schwer umkehrbar; das gehört nicht in einen stillen Takt.
-            #
-            # Der Rückstand wurde einmalig aufgeräumt, und NEUE Belege landen
-            # seit [N285] ohnehin gleich richtig — es entsteht also kein neuer.
-            # N309: das Kontaktbuch nachführen — neue Belege bringen ihre Firma
-            # und ihre Kundennummer von selbst mit.
-            kontakte_stand = await asyncio.to_thread(_kontakte_lauf)
-            if kontakte_stand.get("neu") or kontakte_stand.get("nummern"):
-                log.info("Kontaktbuch: %d neue Firmen, %d neue Nummern",
-                         kontakte_stand.get("neu", 0),
-                         kontakte_stand.get("nummern", 0))
-            # N30: verwaiste `.immocalc`-Steckbriefe im selben Takt aufräumen.
-            aufgeraeumt = await asyncio.to_thread(_immocalc_lauf)
-            weg = int(aufgeraeumt.get("geloescht", 0))
-            if weg:
-                _zustand["immocalc_aufgeraeumt_gesamt"] = \
-                    int(_zustand["immocalc_aufgeraeumt_gesamt"]) + weg
-                log.info("Verwaiste .immocalc entfernt: %d", weg)
-            # N165 — einen Tag nach Quartalsende die E-Tankstellen-Abrechnungen
-            # der Objekte mit eingeschaltetem Autoversand verschicken. Prueft
-            # selbst auf Faelligkeit und doppelten Versand; laeuft ins Leere,
-            # wo nichts ansteht.
-            from .routers.tankstelle import autoversand_lauf
-            await asyncio.to_thread(autoversand_lauf)
-        except asyncio.CancelledError:
-            _zustand["laeuft"] = False
-            raise
-        except Exception as e:                    # Wächter darf nie sterben
-            _zustand["letzter_fehler"] = str(e)
-            _zustand["letzter_lauf"] = datetime.now()
-            log.warning("Eingangsprüfung fehlgeschlagen: %s", e)
+    try:
+        while True:
+            await asyncio.sleep(TAKT_SEKUNDEN)
+            await takt()
+    except asyncio.CancelledError:
+        _zustand["laeuft"] = False
+        raise

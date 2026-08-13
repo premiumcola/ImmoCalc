@@ -42,6 +42,7 @@ from .objekte import zeitraum_label_jahr
 from .openwb import ladungen as openwb_ladungen
 from .tankstelle import erfasste_ladungen
 from .zaehler import _eauto_zaehler, _kostenblock, _mit_vorlauf
+from ..zahlen import geschrieben
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["stromkette"])
@@ -62,7 +63,7 @@ H_EXTERN, H_EIGEN = "extern", "eigen"
 def _zahl(wert: float) -> str:
     """Eine Zahl deutsch geschrieben — die Quellenangaben in den Antworten
     werden gelesen, nicht weitergerechnet."""
-    return f"{wert:,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+    return geschrieben(wert)
 
 
 def _ct(preis: float) -> str:

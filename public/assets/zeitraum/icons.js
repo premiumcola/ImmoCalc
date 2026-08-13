@@ -49,20 +49,6 @@ export const STIFT_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true" width="13
   <path d="M11.2 1.8a1.4 1.4 0 0 1 2 2l-.8.8-2-2 .8-.8Z" fill="currentColor"/>
   <path d="M9.7 3.3l2 2-6.3 6.3-2.6.6.6-2.6 6.3-6.3Z" fill="currentColor"/>
 </svg>`;
-
-/* CCCLXXXVII — Zahnrad; der viewBox bekommt Rand, damit die äußeren
-   Zähne nicht von der Strichbreite beschnitten werden. */
-export const GEAR_ICON = `<svg viewBox="-2 -2 28 28" fill="none" stroke="currentColor"
-  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2
-  2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0
-  0 1-4 0v-.09A1.65 1.65 0 0 0 8.6 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1
-  1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0
-  1 0-4h.09A1.65 1.65 0 0 0 3.6 8.6a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1
-  2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1
-  4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83
-  2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.2.63.77 1.06 1.43 1.09H22a2 2 0 0 1 0
-  4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>`;
 export const MUELL_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"/></svg>`;

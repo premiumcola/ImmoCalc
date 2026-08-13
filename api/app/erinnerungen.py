@@ -24,8 +24,28 @@ def in_sicht(hinweis: dict | None) -> bool:
 
 
 def termin_im_jahr(monat: int, tage_danach: int, jahr: int) -> date:
-    """Erinnerungstermin: Monatsanfang plus Karenzzeit."""
-    return date(jahr, monat, 1) + timedelta(days=tage_danach)
+    """Erinnerungstermin: Monatsanfang plus Karenzzeit.
+
+    Die Grenzen sind kein Zierrat. `beleg_monat` und `erinnerung_tage` kommen
+    aus dem Bestand und wurden lange ungeprüft gespeichert: ein Monat 13 wirft
+    hier `ValueError: month must be in 1..12`, eine Karenz von 10**9 Tagen
+    einen `OverflowError` in `timedelta`. `/api/erinnerungen` geht ALLE Objekte
+    in einer Schleife durch — ein einziger krummer Altwert riss damit die
+    komplette Erinnerungsliste mit HTTP 500 herunter, auch für alle gesunden
+    Kostenarten. Ein leicht verschobener Termin ist das kleinere Übel als keine
+    Liste; neue Werte hält das Modell (`Kostenart`) ohnehin im Rahmen.
+    """
+    try:
+        monat = int(monat)
+    except (TypeError, ValueError):
+        monat = 1
+    try:
+        tage = int(tage_danach)
+    except (TypeError, ValueError):
+        tage = 0
+    monat = min(12, max(1, monat))
+    tage = min(HORIZONT_TAGE, max(0, tage))
+    return date(jahr, monat, 1) + timedelta(days=tage)
 
 
 def beleg_erinnerung(kostenart_name: str, beleg_monat: int | None,

@@ -67,3 +67,44 @@ def deutsch(wert) -> float | None:
         return vorzeichen * float(roh)
     except ValueError:
         return None
+
+
+def geschrieben(wert: float | None, stellen: int = 2, *,
+                vorzeichen: bool = False, einheit: str = "") -> str:
+    """Die Gegenrichtung: eine Zahl in deutscher Schreibweise, „1.234,56".
+
+    N373 — es gab sechs Fassungen davon im Backend (`tanken.satz.deutsch`,
+    `pv.versand._geld`, `kappungsgrenze._geld`, `abrechnung_pdf._zahl`,
+    `tankabrechnung_pdf._eur`/`._zahl`, `routers.stromkette._zahl`), in zwei
+    verschiedenen Techniken geschrieben — mal `str.maketrans(",.", ".,")`, mal
+    eine Kette aus drei `replace` über ein Hilfszeichen. Verhaltensgleich, aber
+    sechsfach zu pflegen; wer die Nachkommastellen ändern wollte, musste sie
+    alle finden.
+
+    Beide Techniken sind nötig, weil Python Komma und Punkt genau andersherum
+    setzt: nacheinander ersetzen würde die eigene Arbeit wieder einsammeln.
+    `translate` tauscht sie in einem Durchgang.
+
+    `vorzeichen=True` schreibt auch das Plus aus (für Salden, wo „+ 120,00"
+    und „- 120,00" nebeneinanderstehen); `einheit` hängt eine Einheit an.
+    Steht `None` da, ist das kein Nullwert, sondern eine fehlende Angabe —
+    dafür gibt es `fehlt`.
+    """
+    zahl = float(wert or 0.0)
+    text = f"{abs(zahl):,.{stellen}f}".translate(str.maketrans(",.", ".,"))
+    if zahl < 0:
+        text = "-" + text
+    elif vorzeichen:
+        text = "+" + text
+    return f"{text} {einheit}" if einheit else text
+
+
+def fehlt(wert, stellen: int = 2, *, platzhalter: str = "-",
+          einheit: str = "") -> str:
+    """Wie `geschrieben`, aber `None` bleibt sichtbar leer statt „0,00".
+
+    Eine fehlende Angabe als Null zu schreiben ist die Sorte stiller Fehler,
+    die in einer Abrechnung nicht auffällt — und dann falsch ist."""
+    if wert is None:
+        return platzhalter
+    return geschrieben(wert, stellen, einheit=einheit)

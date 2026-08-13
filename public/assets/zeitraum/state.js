@@ -10,7 +10,7 @@
 
    Reine Konstanten (BEREICHE, KOSTENART_ALIAS, STROM_ROLLEN, SORTIERUNG,
    HAKEN, ABGELEITET, NUR_EINHEIT_WAHL, WEG_ART, SK_BLOECKE, SK_FARBE,
-   MESSEINHEITEN, KOSTENBLOCK_ORDER, WASSER_GRUPPE, KEINE_KAMERA) stehen
+   MESSEINHEITEN, KOSTENBLOCK_ORDER, KEINE_KAMERA) stehen
    ebenfalls hier, damit jedes Modul dieselben Bezugswerte hat. */
 
 /* ---------- DOM-Anker (aus zeitraum.html) --------------------------------- */
@@ -180,10 +180,6 @@ export const KOSTENART_ALIAS = { 'Müll': 'Abfallwirtschaft',
 // N213 — die Aliasse für Heiz-/Strom-Zeilen erklären Laufer-spezifische Stufen.
 export const LAUFER_ALIAS_KEYS = new Set(['Heizkosten', 'Warmwasser',
                                           'Heizung', 'Strom']);
-
-/* Anzeige-Titel je Wasser-Art in der Zählerübersicht. */
-export const WASSER_GRUPPE = { Kaltwasser: 'Kaltwasser', Warmwasser: 'Warmwasser',
-  Waschmaschine: 'Waschmaschinen', Gartenwasser: 'Gartenwasser' };
 
 export const KOSTENBLOCK_ORDER = ['Wasser', 'Heizung', 'Strom', 'Sonstige'];
 

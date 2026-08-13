@@ -13,16 +13,15 @@ from ..models import (Anteil, Einheit, Eigentuemer, Grundschuld,
                       Objekt, PVAnlage, Tankladung, Tanknutzer,
                       ist_grundstueck)
 from ..turnus import jahresbetrag
-from ..vermoegen import (attributionswert, eigentuemer_fraktion, gesamt,
-                         kreditstand, objekt_vermoegen, pv_zurechnung)
+from ..vermoegen import (PROMILLE_TOLERANZ, VOLLE_PROMILLE, attributionswert,
+                         eigentuemer_fraktion, gesamt, kreditstand,
+                         objekt_vermoegen, pv_zurechnung)
 
 router = APIRouter(prefix="/api", tags=["besitz"])
 
-VOLL = 1000.0        # ein ganzes Objekt in Promille
-# Eine Nachkommastelle genuegt: 333,3 dreimal ergibt 999,9 und soll als
-# vollstaendig gelten. Auf mehr Genauigkeit zu bestehen liesse sich bei
-# Dritteln nie erfuellen.
-TOLERANZ = 0.1
+# N370 — beide aus `vermoegen`, damit „voll vergeben" überall dasselbe heißt.
+VOLL = VOLLE_PROMILLE          # ein ganzes Objekt in Promille
+TOLERANZ = PROMILLE_TOLERANZ
 
 
 def promille_von(a: Anteil) -> float:
@@ -145,9 +144,20 @@ def aendern(eid: int, data: dict, session: Session = Depends(get_session)) -> di
         raise HTTPException(404, "Eigentümer nicht gefunden")
     if "bild" in data:
         _bild_pruefen(data.get("bild") or "")
-    for k, v in data.items():
-        if k not in ("id",) and hasattr(e, k):
-            setattr(e, k, v)
+    # N370 — `hasattr` war die einzige Prüfung: ein `{"telefon": 123}` landete
+    # als Zahl in einer Text-Spalte, ein ausdrückliches `null` in einer
+    # Pflichtspalte brach mit 500. Jetzt entscheidet das Eingabemodell, welche
+    # Felder es gibt und welchen Typ sie haben — dasselbe wie beim Anlegen.
+    erlaubt = set(EigentuemerIn.model_fields)
+    unbekannt = [k for k in data if k not in erlaubt and k != "id"]
+    if unbekannt:
+        raise HTTPException(400, f"Unbekannte Felder: {', '.join(sorted(unbekannt))}")
+    geprueft = EigentuemerIn.model_validate(
+        {**{k: getattr(e, k) for k in erlaubt if hasattr(e, k)},
+         **{k: v for k, v in data.items() if k in erlaubt and v is not None}})
+    for feld in erlaubt:
+        if feld in data and data[feld] is not None:
+            setattr(e, feld, getattr(geprueft, feld))
     session.add(e)
     session.commit()
     return {"ok": True}
@@ -724,12 +734,16 @@ def grundschuld_aendern(gid: int, data: GrundschuldIn,
         raise HTTPException(404, "Grundschuld nicht gefunden")
     if data.betrag is not None and data.betrag < 0:
         raise HTTPException(400, "Der Betrag einer Grundschuld ist nie negativ")
-    g.betrag = data.betrag
-    g.rang = data.rang
-    g.grundbuch_blatt = data.grundbuch_blatt
-    g.glaeubiger = data.glaeubiger
-    g.brief = data.brief
-    g.notiz = data.notiz
+    # N370 — PATCH ändert, was mitkommt; alles andere bleibt stehen. Vorher
+    # wurde jedes Feld bedingungslos kopiert, und weil `GrundschuldIn` für
+    # jedes einen Default hat, war ein `PATCH {"betrag": 120000}` in Wahrheit
+    # ein PUT: Rang, Grundbuchblatt, Gläubiger und Notiz standen danach leer,
+    # `brief` auf False. Die Oberfläche schickt zufällig alle Felder mit —
+    # jeder andere Aufrufer verlor die gepflegten Grundbuchdaten stillschweigend.
+    for feld in ("betrag", "rang", "grundbuch_blatt", "glaeubiger",
+                 "brief", "notiz"):
+        if feld in data.model_fields_set:
+            setattr(g, feld, getattr(data, feld))
     session.add(g)
     if data.kredit_ids is not None:
         _setze_kredite(session, gid, data.kredit_ids)

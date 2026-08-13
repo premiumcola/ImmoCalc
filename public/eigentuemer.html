@@ -399,8 +399,12 @@
       <details class="detail">
         <summary>Genau in ‰ angeben</summary>
         <div class="field" style="margin-top:8px;margin-bottom:0">
-          <input class="inp" id="zPromille" type="number" inputmode="decimal"
-                 step="0.1" min="0.1" placeholder="z. B. 250">
+          <!-- Bewusst kein type=number: die deutsche Zifferntastatur liefert
+               ein Komma, und ein Zahlenfeld verwirft es samt Eingabe. „333,3"
+               landete so als leeres Feld — sowohl beim Tippen als auch, wenn
+               der ⅓-Knopf den Wert hineinschrieb. Gelesen wird über `zahlAus`. -->
+          <input class="inp" id="zPromille" type="text" inputmode="decimal"
+                 autocomplete="off" maxlength="9" placeholder="z. B. 250">
           <p class="mini" id="zMax"></p>
         </div>
       </details>
@@ -444,7 +448,8 @@
 </dialog>
 
 <script type="module">
-import { api, esc, frage, melde, eurKurz, eurVoll, promille, installNav } from './assets/immo.js';
+import { api, esc, frage, melde, eurKurz, eurVoll, promille, zahlAus,
+         installNav } from './assets/immo.js';
 installNav();
 
 const liste = document.getElementById('liste');
@@ -1101,7 +1106,6 @@ function oeffneZuweisen(slug) {
   zPromille.value = '';
   zGewaehlt.textContent = 'Noch nichts gewählt';
   zRestW.textContent = promille(Math.max(0, zFreiWert));
-  zPromille.max = String(zFreiWert);
   zMax.textContent = `Höchstens ${promille(Math.max(0, zFreiWert))} — das ist der Rest.`;
 
   // Object-level Zuweisung passt nur, wenn hier überhaupt noch Platz ist und
@@ -1141,8 +1145,10 @@ zSchnell.addEventListener('click', e => {
 
 zPromille.addEventListener('input', () => {
   zFehlerWeg();
-  const v = Number(zPromille.value.replace(',', '.'));
-  zSetze(Number.isFinite(v) ? v : 0, true);
+  // `zahlAus` versteht die deutsche Schreibweise („333,3") ebenso wie den
+  // Tausenderpunkt; das frühere `replace(',', '.')` scheiterte schon daran,
+  // dass ein Zahlenfeld das Komma gar nicht erst durchliess.
+  zSetze(zahlAus(zPromille) ?? 0, true);
 });
 
 standFeld.addEventListener('click', e => {

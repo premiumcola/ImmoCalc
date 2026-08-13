@@ -23,6 +23,7 @@ from .pdfkern import breite as _breite
 from .pdfkern import escape as _escape
 from .pdfkern import pdf as _pdf
 from .pdfkern import sauber
+from .zahlen import fehlt, geschrieben
 
 RAND_L = 56.0
 RAND_R = SEITE_B - 56.0
@@ -42,14 +43,11 @@ LINIE = (0.839, 0.863, 0.867)            # dünne Trennlinie #D6DCDD
 
 
 def _eur(betrag: float | None) -> str:
-    text = f"{betrag or 0:,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
-    return text + " EUR"
+    return geschrieben(betrag, einheit="EUR")
 
 
 def _zahl(wert: float | None, stellen: int = 2) -> str:
-    if wert is None:
-        return "-"
-    return f"{wert:,.{stellen}f}".replace(",", "#").replace(".", ",").replace("#", ".")
+    return fehlt(wert, stellen)
 
 
 def _kwh(wert: float | None, stellen: int = 2) -> str:

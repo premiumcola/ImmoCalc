@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 
 from ..cloudkern import _lies
 from ..models import Einstellung
+from ..zahlen import geschrieben
 
 S_VERSENDET = "pv_versendet"
 
@@ -68,10 +69,9 @@ def versendet_marker(session: Session, slug: str, jahr: int = 0) -> set[str]:
 
 
 def _geld(wert: float) -> str:
-    """Deutsche Schreibweise „1.234,56 €" — dieselbe Formel wie
-    `tanken.satz.deutsch`, hier dupliziert, damit `app.pv` unabhängig vom
-    Tankstellen-Paket bleibt."""
-    return f"{wert:,.2f}".translate(str.maketrans(",.", ".,")) + " €"
+    """Deutsche Schreibweise „1.234,56 €" (N373 — aus `zahlen`, nicht mehr
+    dupliziert; `app.pv` bleibt trotzdem unabhängig vom Tankstellen-Paket)."""
+    return geschrieben(wert, einheit="€")
 
 
 def abrechnungstext(objekt_name: str, jahr: int, eintrag: dict,

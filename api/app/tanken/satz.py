@@ -12,6 +12,7 @@ from datetime import date
 from sqlmodel import Session, select
 
 from ..models import Zeitraum
+from ..zahlen import geschrieben
 
 log = logging.getLogger("immocalc")
 
@@ -64,10 +65,11 @@ def mischsatz(netz_preis: float, eigen_preis: float, extern_kwh: float | None,
 def deutsch(wert: float, stellen: int = 2) -> str:
     """Eine Zahl in deutscher Schreibweise: „1.234,56".
 
-    Python setzt Komma und Punkt genau andersherum; `translate` tauscht
-    beide in einem Durchgang — nacheinander ersetzen würde die eigene
-    Arbeit wieder einsammeln."""
-    return f"{wert:,.{stellen}f}".translate(str.maketrans(",.", ".,"))
+    N373 — die Formel steht jetzt einmal in `zahlen.geschrieben`; der Name
+    hier bleibt für die Aufrufer im Tankstellen-Paket. Achtung: `zahlen.deutsch`
+    ist die GEGENrichtung (Text → Zahl) — gleicher Name, umgekehrte Aufgabe.
+    Deshalb wird hier ausdrücklich `geschrieben` importiert."""
+    return geschrieben(wert, stellen)
 
 
 def _ueberlappung(a_von: date, a_bis: date, b_von: date, b_bis: date) -> int:

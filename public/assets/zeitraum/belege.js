@@ -242,13 +242,6 @@ export async function erkennen(bild, kostenart = '') {
   }
 }
 
-export function erkennungHatWert(vorschlag) {
-  if (!vorschlag) return false;
-  const w = vorschlag.wasser;
-  if (w && (w.wasser > 0 || w.schmutz > 0 || w.niederschlag > 0)) return true;
-  return vorschlag.betrag > 0;
-}
-
 async function positionBetragSchreiben(zeile, kostenart, betrag) {
   if (!(betrag > 0)) return;
   if (zeile?.position_id) {
