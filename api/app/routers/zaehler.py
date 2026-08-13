@@ -581,10 +581,21 @@ def _verlauf_verbrauch(zae: Zaehler, abls: list[Ablesung], reihe: dict,
     `verbrauchsreihe` — hier wird sie nur nach Jahr (Ende der Periode)
     umgeschlüsselt. Ein `typ='direkt'`-Zähler trägt seinen Jahreswert
     ohnehin direkt in der Ablesung; für ihn bleibt es beim Ablesewert.
+
+    N381 — historisch markierte Ablesungen (`ablesung.HISTORISCH_PRAEFIX`,
+    z. B. aus einer Delta-t-Gesamtabrechnung übernommen) fließen NICHT in die
+    Interpolation ein — sie sind Verbräuche, keine Stände, und würden als
+    vermeintliche Stände sinkende/negative Werte ergeben (siehe dortiger
+    Kommentar). Sie bleiben aber im Verlauf sichtbar: erst mit den
+    historischen Jahren vorbelegt, dann von den echten, aus Zählerständen
+    gerechneten Jahren überschrieben, sobald es sie gibt. So verschwindet bei
+    der Umstellung eines Zählers von `direkt` auf `gemessen` keine bereits
+    bekannte Jahreszahl.
     """
     if zae.typ == "direkt":
         return _verlauf(abls)
-    nach_jahr: dict[int, float] = {}
+    nach_jahr: dict[int, float] = {
+        a.datum.year: a.stand for a in abls if ablesung._ist_historisch(a)}
     for z in sorted(zeitraeume, key=lambda x: x.ende):
         eintrag = reihe.get(z.id)
         if not eintrag or eintrag.get("start"):

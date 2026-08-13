@@ -486,13 +486,28 @@ export function zaehlerPanelHtml(block, zaehler, blockVon, unter = null) {
   // TABELLE je Einheit statt als 19 Karten: eine Zeile je Zähler, Nummer und
   // Vorjahre als schlichte Zahlen. Karten bleiben, wo es wenige sind oder wo
   // Anfang/Ende/Datum gebraucht werden.
-  const alleDirekt = teil.length > 3 && teil.every(z => z.typ === 'direkt');
+  //
+  // N382 — Tabelle und Karten schließen sich nicht mehr gegenseitig aus. Vorher
+  // kippte die GANZE Gruppe auf Karten zurück, sobald auch nur EIN Zähler nicht
+  // `direkt` war — genau der Fall, wenn ein Wärmemengenzähler von „fertiger
+  // Jahreswert" auf „echter Zählerstand" umgestellt wird (N380/N381): die
+  // kompakte Tabelle der übrigen 21 direkten Zähler verschwand ersatzlos, ohne
+  // dass sich an IHNEN etwas geändert hätte. Jetzt bekommen die direkten Zähler
+  // weiter ihre Tabelle, die umgestellten (`gemessen`) ihre eigene Karte
+  // darunter — die brauchen ohnehin Anfang/Ende/Datum statt eines einzelnen
+  // Jahreswerts, dafür ist die Karte gebaut.
+  const direkt = teil.filter(z => z.typ === 'direkt');
+  const rest = teil.filter(z => z.typ !== 'direkt');
+  const tabelle = direkt.length > 3;
   const inner = block === 'Wasser' ? wasserBlockHtml(teil)
     : block === 'Strom' ? stromBlockHtml(teil)
-    : alleDirekt ? jahreswertTabellenHtml(teil)
-    : teil.map(z => meterZeileHtml(z, {
-        rest: z.typ === 'rest',
-        keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');
+    : tabelle
+      ? jahreswertTabellenHtml(direkt) + rest.map(z => meterZeileHtml(z, {
+          rest: z.typ === 'rest',
+          keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('')
+      : teil.map(z => meterZeileHtml(z, {
+          rest: z.typ === 'rest',
+          keinChooser: basisOhneChooser && !z.hauptzaehler_id })).join('');
   const schluessel = unter ? `${block}:${unter}` : block;
   const offen = state.zaehlerOffen.has(schluessel);
   const abweichend = teil.filter(z => interpolationsHinweise(z, '').length).length;

@@ -18,8 +18,8 @@ def _z(id, start, ende):
     return SimpleNamespace(id=id, start=start, ende=ende)
 
 
-def _a(datum, stand, zid=None):
-    return SimpleNamespace(datum=datum, stand=stand, zeitraum_id=zid)
+def _a(datum, stand, zid=None, notiz=""):
+    return SimpleNamespace(datum=datum, stand=stand, zeitraum_id=zid, notiz=notiz)
 
 
 def test_ist_tage_zaehlen_kein_tag_zu_wenig_bei_lueckenlosen_perioden():
@@ -124,3 +124,56 @@ def test_folgeperioden_verlieren_keinen_tag(monkeypatch):
             f"Periode {z.id}: {reihe[z.id]['verbrauch']}")
     gesamt = sum(reihe[z.id]["verbrauch"] for z in (p1, p2, p3))
     assert abs(gesamt - 3000.0) < 1e-6, gesamt
+
+
+def test_historische_delta_t_werte_werden_nie_als_zaehlerstand_gelesen():
+    """N381 — der Fund an echten Daten (Laufer Str. 5, Wärmemengenzähler).
+
+    Wird ein Zähler von `typ='direkt'` (fertiger Jahresverbrauch) auf
+    `typ='gemessen'` (echte, kumulierte Stände) umgestellt, bleiben seine
+    alten, aus einer fremden Abrechnung importierten Ablesungen als
+    `HISTORISCH_PRAEFIX`-markierte Zeilen stehen — sie sind VERBRÄUCHE, keine
+    Stände. Ohne die Absicherung griff `_ablesung_fuer` sie als vermeintliche
+    Stände auf: 5.463 kWh (30.09.2022) → 3.533 kWh (30.09.2023) ergäbe
+    rechnerisch −1.930 kWh Verbrauch für ein historisches Jahr — unmöglich,
+    und noch gefährlicher: die anschließende, LAUFENDE Periode würde einen
+    plausibel aussehenden, aber komplett falschen Wert erben (~+888 kWh statt
+    des echten, noch unbekannten aktuellen Verbrauchs).
+
+    Ohne die Markierung liest sich dieser exakte Datensatz (siehe unten) zu
+    genau diesen Zahlen — mit ihr bleiben alle drei Perioden `None`, weil
+    keine echte Ablesung vorliegt."""
+    histor = "Delta-t-Historie (Saison endet 30.09.2022), nachgetragen"
+    p1 = _z(18, date(2018, 10, 1), date(2019, 9, 30))
+    p2 = _z(19, date(2022, 10, 1), date(2023, 9, 30))
+    p3 = _z(15, date(2024, 10, 1), date(2025, 9, 30))
+    ablesungen = [
+        _a(date(2022, 9, 30), 5463.0, notiz=histor),
+        _a(date(2023, 9, 30), 3533.0, notiz=histor),
+        _a(date(2024, 9, 30), 4421.0, notiz=histor),
+    ]
+
+    reihe = ablesung.verbrauchsreihe(ablesungen, [p1, p2, p3])
+    assert reihe[p1.id] is None
+    assert reihe[p2.id] is None, (
+        "eine historische Verbrauchszahl wurde als Zählerstand gelesen "
+        f"(ergäbe {reihe[p2.id]})")
+    assert reihe[p3.id] is None, (
+        "die laufende Periode erbte einen aus Verbrauchszahlen "
+        f"gerechneten Scheinwert ({reihe[p3.id]})")
+
+
+def test_historische_werte_stoeren_eine_echte_folgeperiode_nicht():
+    """Sobald ein echter Anfangsstand UND eine echte Folgeablesung existieren,
+    rechnet die Periode korrekt — die historischen Zeilen bleiben außen vor,
+    auch wenn sie näher an der Periodengrenze liegen als der echte Stand."""
+    histor = "Delta-t-Historie (Saison endet 30.09.2024), nachgetragen"
+    p = _z(15, date(2024, 10, 1), date(2025, 9, 30))
+    ablesungen = [
+        _a(date(2024, 9, 30), 4421.0, notiz=histor),   # historisch, ignoriert
+        _a(date(2024, 10, 1), 500.0),                  # echter Anfangsstand
+        _a(date(2025, 9, 30), 800.0),                  # echte Ablesung
+    ]
+    reihe = ablesung.verbrauchsreihe(ablesungen, [p])
+    assert reihe[p.id] is not None
+    assert abs(reihe[p.id]["verbrauch"] - 300.0) < 1e-6

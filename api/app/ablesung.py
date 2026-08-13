@@ -14,6 +14,32 @@ from typing import Optional
 
 from . import engine
 
+# N381 — eine rein informative Altangabe. Wird gesetzt, wenn ein Zähler von
+# einem Jahreswert (fertiger Verbrauch, `typ='direkt'`) auf echte Zählerstände
+# (`typ='gemessen'`) umgestellt wird und seine Historie aus einer fremden
+# Abrechnung (z. B. dem Delta-t-Messdienst) stammt: dort sind die Altwerte
+# JAHRESVERBRÄUCHE, keine Gerätestände. Ein Wärmemengenzähler etwa lieferte
+# über Jahre nur den fertigen Verbrauch je Saison; sein realer, kumulierter
+# Zählerstand ist davon unabhängig und wurde nie erfasst.
+#
+# Ohne diese Markierung griff sich `_ablesung_fuer` die ALTEN Verbrauchszahlen
+# als vermeintliche Stände heraus (sie liegen oft zufällig nahe an echten
+# Periodengrenzen) und differenzierte sie wie echte Ablesungen — das ergab
+# sinkende, teils negative "Verbrauchswerte" für vergangene Perioden UND einen
+# falschen, nur zufällig plausibel aussehenden Wert für die laufende Periode.
+# Verifiziert an echten Daten (Laufer Str. 5, Wärmemengenzähler Studio/Büro):
+# Verbrauch 2022/23 wäre mit −1.930 kWh (Studio) bzw. −952 kWh (Büro)
+# berechnet worden, 2024/25 mit einem unauffällig falschen Wert.
+#
+# Die Werte selbst bleiben erhalten und weiter sichtbar (`_verlauf_verbrauch`
+# in `routers/zaehler.py` zeigt sie jahrweise) — nur die Interpolation lässt
+# sie links liegen.
+HISTORISCH_PRAEFIX = "Delta-t-Historie"
+
+
+def _ist_historisch(a) -> bool:
+    return (getattr(a, "notiz", "") or "").startswith(HISTORISCH_PRAEFIX)
+
 
 def _ablesung_fuer(ablesungen: list, z, alle_zeitraeume: list = ()) -> Optional[object]:
     """Die Ablesung, die diesen Zeitraum abschließt: bevorzugt die ausdrücklich
@@ -37,7 +63,8 @@ def _ablesung_fuer(ablesungen: list, z, alle_zeitraeume: list = ()) -> Optional[
         # Interpolation auf den alten, laengeren Zeitraum (28,1 m3 wurden so zu
         # 17,758 m3).
         return min(getaggt, key=lambda a: abs(engine.tage(z.ende, a.datum)))
-    frei = [a for a in ablesungen if getattr(a, "zeitraum_id", None) is None]
+    frei = [a for a in ablesungen
+            if getattr(a, "zeitraum_id", None) is None and not _ist_historisch(a)]
     if not frei:
         return None
     kandidat = min(frei, key=lambda a: abs(engine.tage(z.ende, a.datum)))
@@ -74,7 +101,8 @@ def verbrauchsreihe(ablesungen: list, zeitraeume: list) -> dict:
             # nur, wenn der Anfangsstand vor der ALLERERSTEN Periode liegt.
             frueher = [v for v in ablesungen
                        if v is not a and v.datum <= z.start
-                       and getattr(v, "zeitraum_id", None) is None]
+                       and getattr(v, "zeitraum_id", None) is None
+                       and not _ist_historisch(v)]
             if not frueher:
                 # N315(j) - der Anker fuer die naechste Periode muss das TATSAECH-
                 # LICHE Ablesedatum sein, nicht z.ende: die Startablesung ist ein
