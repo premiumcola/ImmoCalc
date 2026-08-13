@@ -27,16 +27,42 @@ def _aus_datum(datum: str) -> tuple[int | None, int | None]:
     return jahr, (monat if monat and 1 <= monat <= 12 else None)
 
 
+#: Das früheste Jahr, das ein Beleg tragen kann. Davor gab es die Objekte
+#: nicht — eine ältere Jahreszahl ist immer ein Lesefehler.
+BELEG_JAHR_AB = 1990
+#: Wie weit ein Belegdatum in die Zukunft reichen darf. Ein Jahr: ein Bescheid
+#: darf das Folgejahr datieren (Vorauszahlung, Vertragsbeginn), mehr nicht.
+BELEG_JAHR_VORLAUF = 1
+
+
+def belegjahr_plausibel(jahr: int) -> bool:
+    """Kann dieses Jahr auf einem Beleg stehen? (1990 … heute+1)
+
+    Die EINE Grenze für Belegdaten — `_zum_datum` hier und `kiauslese._datum`
+    prüfen mit ihr, genauso wie `kiauslese._jahr` das Abrechnungsjahr. Vorher
+    prüfte nur das Jahr: ein Modellwert „9999-01-15" wanderte ungebremst nach
+    `Dokument.belegdatum`, während `Dokument.jahr` auf derselben Zeile still
+    korrigiert wurde — ein in sich widersprüchlicher Datensatz, und das
+    Belegdatum steuert die Zeitraum-Zuordnung.
+
+    Bewusst enger als `bezeichnung._jahr_plausibel` (heute+10): dort geht es
+    um eine Jahreszahl IM DATEINAMEN, die auch eine Zinsbindung bis 2035
+    meinen kann. Hier steht ein Ausstellungsdatum zur Debatte."""
+    return BELEG_JAHR_AB <= jahr <= date.today().year + BELEG_JAHR_VORLAUF
+
+
 def _zum_datum(datum: str) -> date | None:
-    """Ein vollständiges ISO-Datum, sonst nichts (CLXXII).
+    """Ein vollständiges, plausibles ISO-Datum, sonst nichts (CLXXII).
 
     Ein halbes Datum („2025-11") ist kein Belegdatum: den Tag zu erfinden
     hiesse, den Beleg in einen Zeitraum zu schieben, in den er vielleicht gar
-    nicht gehört."""
+    nicht gehört. Ein unplausibles Jahr („9999-01-15") ist es genauso wenig —
+    es wäre kein Datum, sondern ein Lesefehler mit Kalenderform."""
     try:
-        return date.fromisoformat((datum or "").strip())
+        gelesen = date.fromisoformat((datum or "").strip())
     except ValueError:
         return None
+    return gelesen if belegjahr_plausibel(gelesen.year) else None
 
 
 def _jahr_mit_fallback(jahr: int | None, name: str,

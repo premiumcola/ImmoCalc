@@ -317,12 +317,17 @@ def _ist_freier_betrag(zeile: str, treffer: "re.Match[str]") -> bool:
     return True
 
 
-def _plausibler_betrag(wert: float, ganzteil: str) -> bool:
+def plausibler_betrag(wert: float, ganzteil: str) -> bool:
     """Ist die Zahl als Geldbetrag plausibel?
 
     Positiv, und der Ganzteil ist keine lange trennerlose Ziffernkette: eine
     Seriennummer wie „6138521,20" wäre als echter Betrag mit Tausenderpunkt
-    geschrieben („6.138.521,20"), nie nackt."""
+    geschrieben („6.138.521,20"), nie nackt.
+
+    Öffentlich, weil es diese Prüfung nur EINMAL geben soll: der KI-Pfad
+    (`kiauslese._betrag`) hatte gegen missgelesene Geräte-/Seriennummern nur
+    die Bitte im Systemprompt — eine Bitte ist kein Riegel. Er ruft jetzt
+    dieselbe Funktion, statt eine zweite, leicht abweichende zu bekommen."""
     if not wert or wert <= 0:
         return False
     nackte_ziffern = re.sub(r"\D", "", ganzteil)
@@ -355,7 +360,7 @@ def _betraege_der_zeile(zeile: str) -> list[float]:
             if not _ist_freier_betrag(zeile, m):
                 continue
             wert = _zu_zahl(m.group(1), m.group(2))
-            if _plausibler_betrag(wert, m.group(1)):
+            if plausibler_betrag(wert, m.group(1)):
                 # CCCXCIII — ein Rechnungs-/Bescheidbetrag ist nie negativ. Ein
                 # führendes Minus (Gutschrift-/Saldozeile, „− 61,40") ergäbe sonst
                 # einen unsinnigen Negativbetrag; der Betrag ist die Höhe, positiv.
@@ -998,8 +1003,24 @@ def _seiten_drehung(png: bytes, ki_key: str = "") -> int:
     return _osd_drehung(png)
 
 
+class Drehbericht(list):
+    """Die gedrehten Seiten — und wie viele Seiten der Deckel ungeprüft ließ.
+
+    Bewusst ein Listen-Nachfahre und kein drittes Tupelfeld: der Endpunkt
+    entpackt das Ergebnis als `neu, gedreht = pdf_geradedrehen(…)` und reicht
+    `gedreht` unverändert in seine JSON-Antwort. So trägt dasselbe Ergebnis die
+    Zusatzangabe mit, ohne dass ein bestehender Aufrufer etwas ändern muss —
+    und ohne dass ein Deckel-Treffer verschwiegen wird."""
+
+    def __init__(self, seiten=(), ungeprueft: int = 0) -> None:
+        super().__init__(seiten)
+        #: Seiten jenseits von `pdftext.MAX_SEITEN`, die gar nicht erst
+        #: angesehen wurden. 0 heißt: das ganze Dokument wurde geprüft.
+        self.ungeprueft = int(ungeprueft)
+
+
 def pdf_geradedrehen(pdf_bytes: bytes,
-                     ki_key: str = "") -> "tuple[bytes | None, list[dict]]":
+                     ki_key: str = "") -> "tuple[bytes | None, Drehbericht]":
     """Dreht jede Seite eines PDF dauerhaft in die aufrechte Lage.
 
     Je Seite wird zuerst die KI-Orientierung versucht (wenn ein Schlüssel
@@ -1007,22 +1028,36 @@ def pdf_geradedrehen(pdf_bytes: bytes,
     Denselben Key-Vorrang wie sonst: übergebener `ki_key` (aus den
     Einstellungen) vor `ANTHROPIC_API_KEY`; ohne beides bleibt es bei OSD.
 
+    Angesehen werden höchstens `pdftext.MAX_SEITEN` Seiten — derselbe Deckel,
+    den `_gerade_seiten_bilder` und `durchsuchbar_machen` schon ziehen. Er
+    fehlte hier als einziger: je Seite fällt ein Pixmap an und dazu ein
+    `tesseract --psm 0` (15 s Zeitlimit) oder ein KI-Aufruf, und ein PDF mit
+    dreistelliger Seitenzahl hielt den Endpunkt dadurch unbegrenzt lange fest.
+    Dass gedeckelt wurde, steht als `ungeprueft` am Ergebnis (:class:`Drehbericht`)
+    — stillschweigend die halbe Datei zu überspringen wäre schlimmer als
+    langsam zu sein.
+
     Datensicher: geändert wird ausschließlich die /Rotate-Angabe jeder Seite
     (`set_rotation`), die Pixel bleiben unangetastet — kein Neu-Rendern des
-    Inhalts. Gibt `(neue_bytes, [{seite, grad}, …])` zurück.
+    Inhalts. Gibt `(neue_bytes, Drehbericht([{seite, grad}, …]))` zurück.
 
-    `(None, [])` heißt „nichts zu tun": PyMuPDF fehlt, das PDF ließ sich nicht
-    öffnen, oder keine Seite lag schief. Nie eine Exception nach außen —
-    scheitert etwas, bleibt das Original unberührt."""
+    `(None, leerer Bericht)` heißt „nichts zu tun": PyMuPDF fehlt, das PDF ließ
+    sich nicht öffnen, oder keine Seite lag schief. Nie eine Exception nach
+    außen — scheitert etwas, bleibt das Original unberührt."""
     # Ohne KI-Schlüssel braucht es Tesseract-OSD; mit Schlüssel genügt PyMuPDF,
     # weil das Vision-Modell die Orientierung liefert.
     ki_da = kiauslese is not None and kiauslese.verfuegbar(ki_key)
     if fitz is None or not pdf_bytes or (not ki_da and not verfuegbar()):
-        return None, []
+        return None, Drehbericht()
     gedreht: list[dict] = []
+    ungeprueft = 0
     try:
         with fitz.open(stream=pdf_bytes, filetype="pdf") as d:
-            for i in range(d.page_count):
+            ungeprueft = max(0, d.page_count - pdftext.MAX_SEITEN)
+            if ungeprueft:
+                log.warning("Geradedrehen: nur die ersten %d von %d Seiten "
+                            "geprüft", pdftext.MAX_SEITEN, d.page_count)
+            for i in range(min(d.page_count, pdftext.MAX_SEITEN)):
                 seite = d[i]
                 pix = seite.get_pixmap(matrix=fitz.Matrix(_OSD_RENDER_ZOOM,
                                                           _OSD_RENDER_ZOOM))
@@ -1031,12 +1066,12 @@ def pdf_geradedrehen(pdf_bytes: bytes,
                     seite.set_rotation((seite.rotation + grad) % 360)
                     gedreht.append({"seite": i, "grad": grad})
             if not gedreht:
-                return None, []
+                return None, Drehbericht((), ungeprueft)
             neu = d.tobytes(garbage=3, deflate=True)
-        return neu, gedreht
+        return neu, Drehbericht(gedreht, ungeprueft)
     except Exception as fehler:                          # noqa: BLE001
         log.warning("PDF-Geradedrehen fehlgeschlagen: %s", fehler)
-        return None, []
+        return None, Drehbericht((), ungeprueft)
 
 
 def pdf_drehen(pdf_bytes: bytes, grad: int) -> "bytes | None":

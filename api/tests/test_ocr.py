@@ -100,15 +100,39 @@ def test_zweistelliges_jahr_wird_ergaenzt():
     assert datum_aus_text("Beleg vom 05.06.24") == date(2024, 6, 5)
 
 
-def test_erkenne_liefert_ohne_tesseract_eine_klare_antwort():
-    """Fehlt das Programm, ist das kein Fehler — nur kein Vorschlag."""
-    ergebnis = erkenne(b"kein echtes bild")
+def test_erkenne_liefert_ohne_tesseract_eine_klare_antwort(monkeypatch):
+    """Fehlt das Programm, ist das kein Fehler — nur kein Vorschlag.
+
+    Der Test prüfte das lange nicht wirklich: er übergab `b"kein echtes bild"`
+    — reinen ASCII-Text, den `officetext.text_aus_klartext` seit N306
+    erfolgreich liest, bevor die Bilderkennung überhaupt drankommt. `moeglich`
+    war damit immer wahr und der einzige Assert-Zweig toter Code; er wäre auch
+    grün geblieben, wenn die Degradation kaputt gewesen wäre.
+
+    Jetzt beides echt: ein Rumpf ohne lesbaren Text UND ein Server, auf dem
+    weder `tesseract` noch die PDF-Textschicht zur Verfügung steht."""
+    echtes_which = ocr.shutil.which
+    monkeypatch.setattr(ocr.shutil, "which",
+                        lambda name, *a, **k: None if name == "tesseract"
+                        else echtes_which(name, *a, **k))
+    monkeypatch.setattr(pdftext, "verfuegbar", lambda: False)
+    assert ocr.verfuegbar() is False              # der Riegel greift wirklich
+
+    ergebnis = erkenne(bytes(range(256)) * 20)
     # Dieselben Schlüssel in beiden Fällen — die Oberfläche liest immer gleich
     assert set(ergebnis) >= {"moeglich", "betrag", "datum", "jahr", "monat",
                              "kategorie", "sache"}
-    if not ergebnis["moeglich"]:
-        assert ergebnis["betrag"] is None
-        assert "eingerichtet" in ergebnis["hinweis"]
+    assert ergebnis["moeglich"] is False
+    assert ergebnis["betrag"] is None and ergebnis["datum"] is None
+    assert "eingerichtet" in ergebnis["hinweis"]
+
+
+def test_ohne_tesseract_bleibt_die_bilderkennung_stumm(monkeypatch):
+    """Die Projektregel „ohne tesseract einfach stumm" an ihrer Wurzel: kein
+    Fehler, kein Aufruf, ein leerer String."""
+    monkeypatch.setattr(ocr, "verfuegbar", lambda: False)
+    assert ocr.text_aus_bild(b"\xff\xd8\xff irgendein JPEG") == ""
+    assert ocr._osd_drehung(b"\x89PNG\r\n\x1a\n") == 0
 
 
 # --------------------------------------------------------------------------

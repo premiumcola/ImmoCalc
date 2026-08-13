@@ -47,6 +47,11 @@ log = logging.getLogger("immocalc")
 from . import erwerb, kiclient                           # noqa: E402
 from .zahlen import deutsch as zahlen_deutsch  # noqa: E402
 from .renovierung import GEWERKE                         # noqa: E402
+# Die Plausibilitätsgrenze für Belegdaten steht bei den Datumsbausteinen, damit
+# `_datum`/`_jahr` hier und `dokumente.datum._zum_datum` dort dieselbe Regel
+# lesen statt zwei leicht verschiedene zu pflegen (das Modul ist rein und zieht
+# nichts nach — weder Datenbank noch Cloud).
+from .dokumente.datum import belegjahr_plausibel          # noqa: E402
 
 # N288-B2 — Endpunkt, Kopfzeilen, Zeitlimit und Fehlerbehandlung stehen ein
 # einziges Mal in `kiclient.py`. Hier bleiben nur die Namen, unter denen sie im
@@ -325,15 +330,23 @@ _schluessel = kiclient.api_schluessel
 
 
 def _datum(wert) -> str | None:
-    """Ein gültiges ISO-Datum oder None. Alles andere (Zeitraum, Unfug) fliegt
-    raus — lieber kein Datum als ein falsches."""
+    """Ein gültiges, plausibles ISO-Datum oder None. Alles andere (Zeitraum,
+    Unfug) fliegt raus — lieber kein Datum als ein falsches.
+
+    Die ISO-Form allein genügt nicht: „9999-01-15" ist ein gültiges Datum und
+    trotzdem kein Belegdatum. Es wanderte über `ocr._ki_ergaenzen` nach
+    `Dokument.belegdatum` — auf derselben Zeile, auf der `Dokument.jahr` über
+    `_jahr` still zurechtgerückt wird. Herausgekommen wäre ein Datensatz, der
+    sich selbst widerspricht, und das Belegdatum steuert die Zuordnung des
+    Belegs zum Abrechnungszeitraum. Es gilt dieselbe Grenze wie beim Jahr."""
     if not wert or not isinstance(wert, str):
         return None
     roh = wert.strip()[:10]
     try:
-        return date.fromisoformat(roh).isoformat()
+        gelesen = date.fromisoformat(roh)
     except ValueError:
         return None
+    return gelesen.isoformat() if belegjahr_plausibel(gelesen.year) else None
 
 
 def _hochrechnung(betrag: float | None, teilbetrag: float | None,
@@ -363,24 +376,60 @@ def _hochrechnung(betrag: float | None, teilbetrag: float | None,
     return teilbetrag, stueck, round(teilbetrag * stueck, 2)
 
 
+def _ist_geldbetrag(wert: float, ganzteil: str) -> bool:
+    """Taugt die gelesene Zahl als Geldbetrag? — die Prüfung des heuristischen
+    Pfades, hier ebenso angewandt.
+
+    Der KI-Pfad hatte dagegen nur die Bitte im Systemprompt („Zahlen aus
+    Geräte-Kennungen, Serien-/Zählernummern … sind KEIN Betrag"). Eine Bitte
+    ist kein Riegel: was das Modell doch als Betrag zurückgibt, landete ungeprüft
+    in `Dokument.betrag` und von dort in einer Kostenposition. Geprüft wird mit
+    `ocr.plausibler_betrag` — es soll genau EINE solche Regel geben.
+
+    Der Import steht bewusst in der Funktion: `ocr` lädt seinerseits dieses
+    Modul (weicher Import der KI-Auslese), und ein Zirkelbezug beim Laden würde
+    dort still im `except` landen und die ganze KI-Auslese abschalten."""
+    from . import ocr
+    return ocr.plausibler_betrag(wert, ganzteil)
+
+
+# Der Ganzteil einer deutsch oder englisch geschriebenen Zahl endet vor den
+# zwei Nachkommastellen. Ob DORT ein Tausendertrenner steht, unterscheidet den
+# echten Betrag „6.138.521,20" von der Seriennummer „6138521,20".
+_NACHKOMMA = re.compile(r"[.,]\d{2}$")
+
+
 def _betrag(wert) -> float | None:
     """Ein Betrag als Zahl. Das Modell soll schon einen Punkt liefern; kommt
-    doch ein deutsches Komma oder ein Währungszeichen, wird es aufgeräumt."""
+    doch ein deutsches Komma oder ein Währungszeichen, wird es aufgeräumt.
+
+    Was nicht als Geldbetrag durchgeht (null/negativ nach Betragsbildung, oder
+    eine lange trennerlose Ziffernkette = Serien-/Gerätenummer), gibt `None`:
+    lieber ein leeres Betragsfeld, das der Nutzer füllt, als eine Gerätenummer
+    als Kostenposition."""
     if isinstance(wert, bool):        # bool ist eine Zahl in Python — hier nicht
         return None
     # CCCXCIII — ein Betrag ist die Höhe der Forderung, immer positiv.
     if isinstance(wert, (int, float)):
-        return round(abs(float(wert)), 2)
+        zahl = round(abs(float(wert)), 2)
+        # Eine blanke JSON-Zahl bringt keine Schreibweise mit — geprüft wird
+        # ihr Ganzteil, so wie er ohne Trenner dasteht.
+        return zahl if _ist_geldbetrag(zahl, str(int(zahl))) else None
     if isinstance(wert, str):
-        roh = re.sub(r"[^\d,.-]", "", wert).replace(",", ".")
+        bereinigt = re.sub(r"[^\d,.-]", "", wert)
+        roh = bereinigt.replace(",", ".")
         # Mehrere Punkte (Tausendertrenner) → nur der letzte zählt als Dezimal
         if roh.count(".") > 1:
             ganz, _, rest = roh.rpartition(".")
             roh = ganz.replace(".", "") + "." + rest
         try:
-            return round(abs(float(roh)), 2)
+            zahl = round(abs(float(roh)), 2)
         except ValueError:
             return None
+        # Der Ganzteil MIT seinen ursprünglichen Trennern — nur so ist zu sehen,
+        # ob die Zahl gegliedert geschrieben war.
+        ganzteil = _NACHKOMMA.sub("", bereinigt) or bereinigt
+        return zahl if _ist_geldbetrag(zahl, ganzteil) else None
     return None
 
 
@@ -481,14 +530,17 @@ def _kwh(wert) -> float | None:
 
 def _jahr(wert) -> int | None:
     """Ein plausibles Abrechnungsjahr als int (1990..heute+1) — N14. Alles andere
-    (Unfug, weit daneben) fliegt raus; lieber kein Jahr als ein falsches."""
+    (Unfug, weit daneben) fliegt raus; lieber kein Jahr als ein falsches.
+
+    Die Grenze selbst steht in `dokumente.datum.belegjahr_plausibel` — dieselbe,
+    an der sich seither auch `_datum` misst."""
     if isinstance(wert, bool):
         return None
     try:
         j = int(str(wert).strip()[:4])
     except (ValueError, TypeError):
         return None
-    return j if 1990 <= j <= date.today().year + 1 else None
+    return j if belegjahr_plausibel(j) else None
 
 
 # N270 — tolerant vergleichen: Groß-/Kleinschreibung und Leerzeichen dürfen
