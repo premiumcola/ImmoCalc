@@ -302,7 +302,14 @@ function zeileHtml(k, i) {
   const aufgeklappt = state.offen.has(i);
 
   const infos = [
-    k.zustand === 'offen' ? 'Betrag fehlt' : null,
+    // N397 — bei Heizöl (`k.bestaetigt`), Heizkörper-Wärme (`heizwaermeVerteilt`)
+    // und Strom/Warmwasser kann die Position „erledigt" sein, obwohl ihr
+    // eigenes `Kostenposition.betrag` nie geschrieben wird (das Geld fließt
+    // absichtlich in andere Positionen, siehe `effektivErledigt`) — `k.zustand`
+    // bleibt dann für immer „offen". Ohne die `!erl`-Wache (dieselbe, die
+    // `heizWarn`/`umlageWarn` zwei Zeilen weiter unten schon hatten) stand
+    // „Betrag fehlt" neben einem grünen Haken und einem sichtbaren Betrag.
+    !erl && k.zustand === 'offen' ? 'Betrag fehlt' : null,
     k.ohne_verteilung ? 'Verteilung fehlt' : null,
     istWasserSammel(k)
       ? 'Fasst Frisch-, Schmutz- & Niederschlagswasser zusammen' : null,
