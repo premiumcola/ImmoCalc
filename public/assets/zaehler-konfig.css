@@ -84,6 +84,27 @@
 .zk-ic[disabled]{opacity:.35;cursor:default}
 .zk-ic.gefahr:hover{background:var(--neg-bg);color:var(--neg)}
 .zk-ic svg{width:16px;height:16px;display:block}
+/* N388 — der GANZE Dialog dunkel, nicht nur die Kategorie-Panels: vorher
+   wirkten sie wie dunkle Inseln in einem hellen Rahmen (Kopf, Intro,
+   Fortschritt, Fuß blieben weiß). Die Farbtiefen-Tokens sitzen jetzt am
+   Dialog selbst (`.zk-dlg`), damit sie im ganzen Dialog verfügbar sind —
+   der Ablese-Wizard (`.ablese-dlg` ohne `.zk-dlg`) bleibt davon unberührt
+   und damit hell, wie er andernorts gebraucht wird. */
+dialog.ablese-dlg.zk-dlg{
+  --zk-1:#4E6068; --zk-2:#43555C; --zk-3:#394A51;
+  --zk-hell:#F1F5F5; --zk-matt:#BCCCD0; --zk-linie:rgba(255,255,255,.15);
+  background:var(--zk-2);color:var(--zk-hell)}
+dialog.ablese-dlg.zk-dlg .aw-kopf .t{color:var(--zk-hell)}
+dialog.ablese-dlg.zk-dlg .aw-x{background:rgba(255,255,255,.12);color:var(--zk-hell)}
+dialog.ablese-dlg.zk-dlg .aw-x:hover{background:rgba(255,255,255,.2)}
+dialog.ablese-dlg.zk-dlg .zk-intro{color:var(--zk-matt)}
+dialog.ablese-dlg.zk-dlg .zk-balken{background:rgba(255,255,255,.14)}
+dialog.ablese-dlg.zk-dlg .zk-fz{color:var(--zk-matt)}
+dialog.ablese-dlg.zk-dlg .zk-add{border-color:rgba(255,255,255,.28);color:#8FD9BC}
+dialog.ablese-dlg.zk-dlg .zk-add:hover{border-color:var(--teal);
+  background:rgba(255,255,255,.08)}
+dialog.ablese-dlg.zk-dlg .zk-leer{color:var(--zk-matt)}
+
 /* N383 — jede Kategorie (Wasser, Strom, Heizöl, …) ein eigener Einklapper,
    dunkel und nach unten versunken — dasselbe Design wie die Zählerstände-
    Panels der Abrechnung (`.zu-panel` in zeitraum.html, N363): je weiter
@@ -94,8 +115,6 @@
    bei über 30 Zählern in sechs Kategorien blieb die Liste unlesbar lang,
    ohne dass sich etwas auf einen Blick ausblenden liess. */
 .zk-bereich{
-  --zk-1:#4E6068; --zk-2:#43555C; --zk-3:#394A51;
-  --zk-hell:#F1F5F5; --zk-matt:#BCCCD0; --zk-linie:rgba(255,255,255,.15);
   background:var(--zk-1);border-radius:14px;margin:12px 0;overflow:hidden;
   box-shadow:inset 0 10px 14px -10px rgba(0,0,0,.38)}
 .zk-bereich:first-child{margin-top:2px}
@@ -115,7 +134,7 @@
    analog `.zu-panel .zu-zeile`. Eingabefelder gedämpft, beim Fokus hell —
    dieselbe Regel wie bei den Zählerständen, damit viele Felder auf einmal
    nicht als weisse Wand wirken. */
-.zk-bereich .zk-karte{background:var(--zk-2);
+.zk-bereich .zk-karte{background:var(--zk-3);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
 .zk-bereich .zk-ehkopf{color:var(--zk-hell)}
 .zk-bereich .zk-ehkopf span{color:var(--zk-matt)}
