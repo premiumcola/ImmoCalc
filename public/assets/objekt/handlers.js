@@ -541,14 +541,6 @@ export function initHandlers() {
       return;
     }
 
-    // N349 — die Zähler-Konfiguration gehört zur Immobilie, nicht zu einem
-    // einzelnen Abrechnungsjahr: derselbe Dialog wie bisher, nur von hier
-    // aufgerufen (lazy geladen — die Zeitraum-Module braucht sonst niemand).
-    if (e.target.closest('[data-zaehler-konfig]')) {
-      const { zaehlerKonfig } = await import('../zeitraum/zaehler-konfig.js');
-      return zaehlerKonfig(slug);
-    }
-
     if (e.target.closest('[data-zeitraum-werkzeug]')) {
       return zeitraumWerkzeug(laden);
     }

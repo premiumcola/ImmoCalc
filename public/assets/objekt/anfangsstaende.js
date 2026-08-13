@@ -1,19 +1,27 @@
-/* N216/N390 — Anfangszählerstände: die Übersichtskarte unter den
-   Abrechnungszeiträumen (`erststandHtml`). Der Anfangsstand hängt an KEINEM
-   Zeitraum — er ist der Stand vor der ersten Abrechnung.
+/* N216/N390/N394 — die Zähler-Übersichtskarte unter den Abrechnungszeit-
+   räumen (`erststandHtml`). Der Anfangsstand hängt an KEINEM Zeitraum — er
+   ist der Stand vor der ersten Abrechnung.
 
    N390 — der eigene Erfassungs-Dialog ist entfallen: `zeitraum/zaehler-
    konfig.js` konnte Anfangsstände schon immer mit erfassen (Name,
    Messeinheit, Bezug, Kostenart, Verrechnung UND Anfangsstand — alles am
-   selben Zähler), zwei Dialoge fragten dieselben Felder doppelt ab. Die
-   Karte hier öffnet jetzt jenen Dialog mit `{ fokus: 'anfangsstand' }` —
-   dieselbe Abfrage, dieselbe Anzeige, nur mit vorab aufgeklappten
-   Kategorien, in denen noch etwas fehlt (siehe handlers.js). */
+   selben Zähler).
+
+   N394 — „Zähler konfigurieren" (eigene Zeile in der Zeitraum-Liste) und
+   diese Karte öffneten seit N390 exakt denselben Dialog über zwei getrennte
+   Zugänge — eine Dopplung im Zugang, nicht nur im Text. Jetzt EINE Karte,
+   die je nach Stand der Anfangsstände unterschiedlich formuliert ist, aber
+   den Zähler-Konfigurator immer vollständig erreichbar hält (auch wenn kein
+   Zähler einen Anfangsstand braucht — dann bliebe sonst kein Weg mehr
+   hinein). `laden.js` fügt keine eigene „Zähler konfigurieren"-Zeile mehr
+   in die Zeitraum-Liste ein. */
 
 import { esc } from '../immo.js';
 import { HAKEN_ICON } from '../objekt-baum.js?v=2';
 import { istGrundstueck } from '../objekt-state.js?v=2';
 import { GAUGE_ICON, zaehlerListe, erststandZiel } from './state.js';
+
+const KONFIG_HINWEIS = 'Benennen, Einheiten zuordnen, Verrechnung festlegen.';
 
 export function erststandHtml(zielId) {
   if (istGrundstueck()) return '';
@@ -25,49 +33,57 @@ export function erststandHtml(zielId) {
   const mess = (zaehlerListe || []).filter(
     z => z.aktiv !== false && !OHNE_ANFANG.has(z.typ));
   const ohne = mess.filter(z => !z.anfangsstand);
-  // Zähler vorhanden, aber keiner misst (nur Rest/inaktiv) — kein Anfangsstand nötig.
-  if (zaehlerListe.length && mess.length === 0) return '';
 
-  // Alles hinterlegt — ruhige Bestätigung. N141: trotzdem anklickbar, damit die
-  // Übersicht (und ein Ändern) erreichbar bleibt, statt in einer Sackgasse zu
-  // enden. Kein Pfeil, kein Drängen — nur ein leiser Weg hinein.
-  if (mess.length && !ohne.length) {
+  if (!zaehlerListe.length) {
+    const zielAttr = zielId != null ? ` data-z="${esc(String(zielId))}"` : '';
+    return `<button class="erststand offen" data-erststand="1"${zielAttr}>
+        <span class="es-ik">${GAUGE_ICON}</span>
+        <span class="es-tx">
+          <span class="es-t">Zähler konfigurieren</span>
+          <span class="es-d">Noch keine Zähler angelegt — ${esc(KONFIG_HINWEIS
+            .toLowerCase())} und den Anfangsstand vor der ersten Abrechnung
+            eintragen.</span>
+        </span>
+        <span class="es-arr" aria-hidden="true">›</span>
+      </button>`;
+  }
+
+  // Nichts fehlt (auch wenn KEIN Zähler einen Anfangsstand braucht — dann
+  // ist `mess.length === 0`, ebenso „nichts offen"). Ruhige Bestätigung,
+  // trotzdem anklickbar: der Konfigurator bleibt so für Umbenennen/
+  // Verrechnung erreichbar, statt in einer Sackgasse zu enden.
+  if (!ohne.length) {
+    const anfangSatz = mess.length
+      ? `${mess.length === 1 ? 'Für den Zähler ist' : `Für alle ${mess.length} Zähler ist`}
+         ein Anfangsstand vor der ersten Abrechnung erfasst. ` : '';
     return `<button class="erststand fertig" data-erststand="1">
         <span class="es-ik ok">${HAKEN_ICON}</span>
         <span class="es-tx">
-          <span class="es-t">Anfangszählerstände hinterlegt</span>
-          <span class="es-d">${mess.length === 1
-            ? 'Für den Zähler ist ein Erststand'
-            : `Für alle ${mess.length} Zähler ist ein Erststand`} vor der ersten
-            Abrechnung erfasst — Übersicht ansehen.</span>
+          <span class="es-t">Zähler eingerichtet</span>
+          <span class="es-d">${anfangSatz}${esc(KONFIG_HINWEIS)}</span>
         </span></button>`;
   }
 
-  const text = !zaehlerListe.length
-    ? 'Noch keine Zähler angelegt — für verbrauchsabhängige Kosten die Zähler '
-      + 'und ihren Anfangsstand vor der ersten Abrechnung einrichten.'
-    : ohne.length === mess.length
-      ? (mess.length === 1
-          ? 'Dem Zähler fehlt noch der Anfangsstand vor der ersten Abrechnung.'
-          : `Allen ${mess.length} Zählern fehlt noch der Anfangsstand vor der `
-            + 'ersten Abrechnung.')
-      : `${ohne.length} von ${mess.length} Zählern `
-        + `${ohne.length === 1 ? 'hat' : 'haben'} noch keinen Anfangsstand.`;
-
-  const zielAttr = zielId != null ? ` data-z="${esc(String(zielId))}"` : '';
-  return `<button class="erststand offen" data-erststand="1"${zielAttr}>
+  const text = ohne.length === mess.length
+    ? (mess.length === 1
+        ? 'Dem Zähler fehlt noch der Anfangsstand vor der ersten Abrechnung.'
+        : `Allen ${mess.length} Zählern fehlt noch der Anfangsstand vor der `
+          + 'ersten Abrechnung.')
+    : `${ohne.length} von ${mess.length} Zählern `
+      + `${ohne.length === 1 ? 'hat' : 'haben'} noch keinen Anfangsstand.`;
+  return `<button class="erststand offen" data-erststand="1">
       <span class="es-ik">${GAUGE_ICON}</span>
       <span class="es-tx">
-        <span class="es-t">Anfangszählerstand erfassen</span>
-        <span class="es-d">${esc(text)}</span>
+        <span class="es-t">Zähler einrichten</span>
+        <span class="es-d">${esc(text)} ${esc(KONFIG_HINWEIS)}</span>
       </span>
       <span class="es-arr" aria-hidden="true">›</span>
     </button>`;
 }
 
-/* Die Anfangsstand-Rubrik an Ort und Stelle neu zeichnen: nach dem Speichern
-   soll der Zähler oben stimmen, ohne die ganze Seite neu zu laden. Wird nach
-   dem Schließen des Zähler-Konfigurators aufgerufen (siehe zaehler-konfig.js). */
+/* Die Zähler-Rubrik an Ort und Stelle neu zeichnen: nach dem Schließen des
+   Zähler-Konfigurators soll die Karte oben stimmen, ohne die ganze Seite neu
+   zu laden (siehe zaehler-konfig.js). */
 export function erststandAuffrischen() {
   const alt = document.querySelector('.erststand');
   if (!alt) return;
