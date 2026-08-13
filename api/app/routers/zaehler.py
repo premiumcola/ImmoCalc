@@ -313,6 +313,23 @@ def anfangsstand_setzen(zid: int, data: AnfangsstandIn,
     return _zeige(session, z)
 
 
+@router.delete("/zaehler/{zid}/anfangsstand")
+def anfangsstand_entfernen(zid: int, session: Session = Depends(get_session)) -> dict:
+    """N390 — einen versehentlich eingetragenen Anfangsstand wieder entfernen.
+    Löscht ausschließlich die als `ANFANGSSTAND` markierte Ablesung, keine
+    andere (echte Zeitraum-Ablesungen bleiben unberührt) — engster mögliche
+    Radius für die einzige Löschung außerhalb des dedizierten Zähler-Löschwegs.
+    404, wenn keiner gesetzt ist. Gibt den aktualisierten Zähler zurück."""
+    z = _zaehler(session, zid)
+    a = session.exec(select(Ablesung).where(
+        Ablesung.zaehler_id == zid, Ablesung.notiz == ANFANGSSTAND)).first()
+    if not a:
+        raise HTTPException(404, "Kein Anfangsstand gesetzt.")
+    session.delete(a)
+    session.commit()
+    return _zeige(session, z)
+
+
 # --------------------------------------------------------------------------
 # Eingabemaske je Abrechnungszeitraum — die Zähler in Reihenfolge mit Vorwert
 # und (falls erfasst) interpoliertem Verbrauch.

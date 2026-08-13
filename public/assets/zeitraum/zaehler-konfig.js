@@ -5,13 +5,22 @@
 
    N349 — geöffnet wird der Dialog von der Immobilien-Seite (objekt.html,
    Knopf „Zähler" über den Abrechnungszeiträumen): die Konfiguration gehört
-   zur Immobilie, nicht zu einem einzelnen Abrechnungsjahr. */
+   zur Immobilie, nicht zu einem einzelnen Abrechnungsjahr.
+
+   N390 — dieser EINE Dialog deckt jetzt auch die Anfangszählerstände ab
+   (er konnte das schon immer, siehe `anfBlock`/`anfangsstandSpeichern`
+   unten); der einst separate Dialog in `objekt/anfangsstaende.js` fragte
+   dieselben Zähler über einen zweiten Weg ab und zeigte dieselben Felder ein
+   zweites Mal — echte Dopplung, nicht nur ähnliches Aussehen. Die Übersichts-
+   karte auf der Objektseite öffnet jetzt diesen Dialog mit
+   `{ fokus: 'anfangsstand' }`: dieselbe Abfrage, dieselbe Anzeige, nur mit
+   vorab aufgeklappten Kategorien, in denen noch etwas fehlt. */
 
 import { api, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
 import { MESSEINHEITEN } from './state.js';
 import { MUELL_ICON } from './icons.js';
-import { zahl, feldZahl, alleEinheiten, zaehlerBlockBasis, heizBereich } from './helpers.js';
+import { zahl, feldZahl, alleEinheiten, BEREICHE, bereich } from './helpers.js';
 
 /* Frühester Periodenbeginn (ISO). */
 function fruehesterStartISO(objektDaten) {
@@ -21,19 +30,13 @@ function fruehesterStartISO(objektDaten) {
   return daten2[0] || null;
 }
 
-async function neuLaden() {
-  // N349 — der Dialog läuft jetzt auch auf objekt.html (Immobilien-Ebene);
-  // dort gibt es keine Checkliste zum Auffrischen.
-  if (!state.zid) return;
-  const { laden } = await import('./checkliste.js');
-  await laden();
-}
-
-/* N349 — auf Immobilien-Ebene aufrufbar: `slugArg` übergeben (objekt.html),
-   ohne Argument gilt der Zeitraum-Kontext wie bisher. Alles, was sonst aus
-   dem Checklisten-State kam (Einheiten, Kostenarten, Titel), wird dann
-   selbst geholt. */
-export async function zaehlerKonfig(slugArg) {
+/* N349/N390 — auf Immobilien-Ebene aufrufbar: `slugArg` übergeben
+   (objekt.html), ohne Argument gilt der Zeitraum-Kontext wie bisher. Alles,
+   was sonst aus dem Checklisten-State kam (Einheiten, Kostenarten, Titel),
+   wird dann selbst geholt. `opts.fokus === 'anfangsstand'` klappt beim
+   Öffnen die Kategorien vor, in denen ein Anfangsstand fehlt — für den Weg
+   über die Anfangszählerstände-Karte der Objektseite. */
+export async function zaehlerKonfig(slugArg, opts = {}) {
   const slug = slugArg || state.daten?.objekt;
   let meters, objektDaten;
   try {
@@ -61,7 +64,27 @@ export async function zaehlerKonfig(slugArg) {
   // Zähler mit Grid brauchen am PC mehr Platz), nicht den Ablese-Wizard.
   dlg.className = 'ablese-dlg zk-dlg';
   document.body.appendChild(dlg);
-  dlg.addEventListener('close', () => { dlg.remove(); neuLaden(); });
+  dlg.addEventListener('close', async () => {
+    dlg.remove();
+    // N349 — der Dialog läuft auch auf objekt.html (Immobilien-Ebene); dort
+    // gibt es keine Checkliste zum Auffrischen, sondern die eigenen
+    // Übersichtskarten der Objektseite (Zähler konfigurieren,
+    // Anfangszählerstände) — sie spiegeln denselben Bestand und brauchen
+    // nach dem Schließen einen Abgleich, mit dem hier schon geladenen
+    // `meters` (kein zweiter Abruf nötig).
+    if (state.zid) {
+      const { laden } = await import('./checkliste.js');
+      return laden();
+    }
+    if (!slugArg) return;
+    try {
+      const [{ setZaehlerListe }, { erststandAuffrischen }] = await Promise.all([
+        import('../objekt/state.js'), import('../objekt/anfangsstaende.js'),
+      ]);
+      setZaehlerListe(meters);
+      erststandAuffrischen();
+    } catch { /* Übersichtskarte bleibt beim alten Stand, kein Absturz */ }
+  });
 
   async function neuLadenIntern() {
     try { meters = await api(`/objekte/${slug}/zaehler`); } catch { /* Ansicht bleibt */ }
@@ -85,13 +108,26 @@ export async function zaehlerKonfig(slugArg) {
   // N340u — bei 39 Zählern ist die volle Karte für jeden zu viel auf einmal;
   // offen bleibt nur, was der Nutzer selbst antippt. Übersteht ein `render()`
   // (Verrechnung ändern, Zähler hinzufügen), weil es ausserhalb davon lebt.
-  const offen = new Set();
+  // N390 — beim Aufruf von der Anfangszählerstände-Karte auch die betroffenen
+  // KARTEN selbst vorab auf, nicht nur ihre Kategorie — sonst stünde das
+  // fehlende Feld hinter einem zusätzlichen Klick, den der alte eigene
+  // Dialog nicht brauchte.
+  const offen = new Set(opts.fokus === 'anfangsstand'
+    ? meters.filter(z => z.typ !== 'rest' && z.typ !== 'direkt' && !z.anfangsstand)
+        .map(z => z.id)
+    : []);
 
   // N383 — dieselbe Idee eine Ebene höher: die Kategorien selbst (Wasser,
   // Strom, Heizöl, Warmwasser, Heizkörper & Wärmemenge, Sonstige) klappen
   // einzeln auf, beim Öffnen des Dialogs ALLE zu — bei über 30 Zählern in
   // sechs Kategorien war die Liste sonst auf einen Blick unlesbar lang.
-  const bereicheOffen = new Set();
+  // N390 — außer der Aufruf kommt von der Anfangszählerstände-Karte: dann
+  // klappen genau die Kategorien vorab auf, in denen ein Zähler noch keinen
+  // Anfangsstand hat — der Nutzer kam explizit deswegen her.
+  const bereicheOffen = new Set(opts.fokus === 'anfangsstand'
+    ? meters.filter(z => z.typ !== 'rest' && z.typ !== 'direkt' && !z.anfangsstand)
+        .map(z => bereich(z))
+    : []);
 
   // N340u — Bewertungsfaktor ergibt nur bei Heizkostenverteilern (Verdunstungs-
   // röhrchen: Messeinheit „Einheiten") einen Sinn — ein Wärmemengenzähler
@@ -166,6 +202,8 @@ export async function zaehlerKonfig(slugArg) {
         <div class="zk-feld"><label>am</label>
           <input type="date" value="${anf ? anf.datum : startISO}"
             data-zk-anf-datum="${z.id}" aria-label="Datum Anfangsstand"></div>
+        ${anf ? `<button type="button" class="zk-ic gefahr" data-zk-anf-loeschen="${z.id}"
+            title="Anfangsstand entfernen" aria-label="Anfangsstand entfernen">✕</button>` : ''}
       </div>`;
 
     const fertig = vollstaendig(z);
@@ -237,17 +275,9 @@ export async function zaehlerKonfig(slugArg) {
   // darunter. Reine Anzeige-Gruppierung — `reihenfolge` und die flache
   // `meters`-Liste bleiben unverändert, nur wie sie dargestellt werden ändert
   // sich.
-  const BEREICHE = ['Wasser', 'Strom', 'Heizöl', 'Warmwasser',
-                    'Heizkörper & Wärmemenge', 'Sonstige'];
-
-  // N342 — dieselbe Einteilung wie die Zählerstände-Panels der Checkliste
-  // (`heizBereich` in helpers.js), damit Konfigurator und Ablese-Eingabe
-  // nicht auseinanderlaufen.
-  function bereich(z) {
-    const block = zaehlerBlockBasis(z);
-    return block === 'Heizung' ? heizBereich(z) : (block || 'Sonstige');
-  }
-
+  // N342/N387 — dieselbe Einteilung wie die Zählerstände-Panels der
+  // Checkliste UND die Anfangszählerstände (`helpers.js::bereich`), damit
+  // Konfigurator, Ablese-Eingabe und Erststand-Dialog nicht auseinanderlaufen.
   function gruppiert() {
     const nach = new Map(BEREICHE.map(b => [b, []]));
     meters.forEach((z, i) => nach.get(bereich(z))?.push([z, i]) || nach.set(bereich(z), [[z, i]]));
@@ -423,8 +453,26 @@ export async function zaehlerKonfig(slugArg) {
     } catch (fehler) { melde(fehler.message || 'Speichern fehlgeschlagen', 'neg'); }
   }
 
+  // N390 — ein versehentlich eingetragener Anfangsstand ließ sich bisher nur
+  // ÜBERSCHREIBEN, nie entfernen. Mit Rückfrage, weil das Feld danach wieder
+  // als „fehlt" zählt.
+  async function anfangsstandEntfernen(id) {
+    const z = meters.find(m => m.id === id);
+    const ja = await frage(`Anfangsstand von „${z?.name || 'Zähler'}" entfernen?`,
+      'Der Zähler gilt danach wieder als offen, bis ein neuer Anfangsstand '
+      + 'eingetragen wird.', { knopf: 'Entfernen', gefahr: true });
+    if (!ja) return;
+    try {
+      await api(`/zaehler/${id}/anfangsstand`, { method: 'DELETE' });
+      if (z) z.anfangsstand = null;
+      render();
+    } catch (fehler) { melde(fehler.message || 'Entfernen fehlgeschlagen', 'neg'); }
+  }
+
   dlg.addEventListener('click', async e => {
     if (e.target.closest('[data-zk-schliessen]')) { dlg.close(); return; }
+    const anfLoeschen = e.target.closest('[data-zk-anf-loeschen]');
+    if (anfLoeschen) return anfangsstandEntfernen(Number(anfLoeschen.dataset.zkAnfLoeschen));
     if (e.target.closest('[data-zk-add]')) {
       try {
         await api(`/objekte/${slug}/zaehler`, { method: 'POST',

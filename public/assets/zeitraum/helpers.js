@@ -175,6 +175,18 @@ export function heizBereich(z) {
   return 'Heizkörper & Wärmemenge';
 }
 
+/* N387 — dieselbe Kategorie-Einteilung wie der Zähler-Konfigurator
+   (`zaehler-konfig.js`, N342) UND die Anfangszählerstände (`anfangsstaende.js`)
+   nutzen jetzt exakt diese eine Stelle statt je eine eigene Fassung zu
+   pflegen — sonst zeigt ein Zähler in dem einen Dialog „Heizöl" und im
+   anderen „Sonstige". */
+export const BEREICHE = ['Wasser', 'Strom', 'Heizöl', 'Warmwasser',
+                          'Heizkörper & Wärmemenge', 'Sonstige'];
+export function bereich(z) {
+  const block = zaehlerBlockBasis(z);
+  return block === 'Heizung' ? heizBereich(z) : (block || 'Sonstige');
+}
+
 /* N68 — generische Anzeigenamen je Zähler-id. */
 export function generischeLabels(zaehler) {
   const map = new Map();

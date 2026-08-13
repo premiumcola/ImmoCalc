@@ -26,7 +26,6 @@ import { ZEITRAUMFELDER, GRUNDSCHULDFELDER,
          pushBewohnerWeg, setDialogUmbau } from './state.js';
 import { laden } from './laden.js';
 import { formular, formateLoesen, auswahlLoesen, datumwahlLoesen, ausFormular } from './formular.js';
-import { anfangsstaendeDialog } from './anfangsstaende.js';
 import { eintragDetail, oeffneEintragFormular } from './eintrag-detail.js';
 import { zuordnenDialog } from './zuordnen.js';
 import { anteilFormular } from './eigentuemer.js';
@@ -499,13 +498,19 @@ export function initHandlers() {
       return;
     }
 
-    // N141 — die Anfangszählerstand-Rubrik öffnet die Übersicht: alle Zähler des
-    // Objekts mit ihrem Erststand, die fehlenden oben, erfasst wird gleich dort.
-    // Nur wenn es überhaupt noch keine Zähler gibt, führt der Weg weiterhin in
-    // die Zähler-Konfig des Zeitraums — angelegt werden Zähler dort (CCCLXXX (a)).
+    // N141/N390 — die Anfangszählerstand-Rubrik öffnet denselben Zähler-
+    // Konfigurator wie „Zähler konfigurieren" (der konnte Anfangsstände
+    // schon immer mit erfassen) — nur mit vorab aufgeklappten Kategorien, in
+    // denen noch etwas fehlt. Zwei Dialoge für dieselben Felder wären
+    // Dopplung gewesen. Nur wenn es überhaupt noch keine Zähler gibt, führt
+    // der Weg weiterhin in die Zähler-Konfig des Zeitraums — angelegt werden
+    // Zähler dort (CCCLXXX (a)).
     const erststand = e.target.closest('[data-erststand]');
     if (erststand) {
-      if (ObjState.zaehlerListe.length) return anfangsstaendeDialog();
+      if (ObjState.zaehlerListe.length) {
+        const { zaehlerKonfig } = await import('../zeitraum/zaehler-konfig.js');
+        return zaehlerKonfig(slug, { fokus: 'anfangsstand' });
+      }
       if (erststand.dataset.z) {
         location.href = `zeitraum.html?z=${encodeURIComponent(erststand.dataset.z)}`;
       } else {

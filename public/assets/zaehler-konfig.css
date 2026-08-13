@@ -121,6 +121,11 @@ dialog.ablese-dlg.zk-dlg .zk-leer{color:var(--zk-matt)}
 .zk-bereich-kopf{display:flex;align-items:center;gap:9px;width:100%;
   border:none;background:transparent;padding:13px 14px;cursor:pointer;
   text-align:left;min-height:48px;-webkit-tap-highlight-color:transparent}
+/* N387 — der Anfangszählerstände-Dialog zeigt zusätzlich die Kostenart-Ikone
+   vor dem Kategorienamen (dort schon vor der Umstellung vorhanden); der
+   Zähler-Konfigurator selbst nutzt sie nicht, die Regel schadet ihm nicht. */
+.zk-bereich-kopf .zi{flex:none;display:inline-flex;color:var(--zk-matt)}
+.zk-bereich-kopf .zi svg{width:16px;height:16px;display:block}
 .zk-bereich-chev{flex:none;width:14px;color:var(--zk-matt);
   font:600 12px var(--body);transition:transform .15s ease}
 .zk-bereich.offen .zk-bereich-chev{transform:rotate(90deg)}

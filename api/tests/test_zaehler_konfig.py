@@ -192,6 +192,35 @@ def test_anfangsstand_endpoint_anlegen_und_aktualisieren(client):
     assert zeile["vorwert"] == {"stand": 1010.0, "datum": start}
 
 
+def test_anfangsstand_entfernen(client):
+    """N390 — DELETE /zaehler/{id}/anfangsstand löscht nur die als
+    ANFANGSSTAND markierte Ablesung, eine echte Zeitraum-Ablesung bleibt
+    unberührt; ohne gesetzten Anfangsstand gibt es 404."""
+    slug, zid, maske = _neues_objekt(client)
+    start, ende = maske["zeitraum"]["start"], maske["zeitraum"]["ende"]
+    z = _anlegen(client, slug, name="Kaltwasser", kostenart="Wasser",
+                 einheit_bezug="Büro")
+
+    r = client.delete(f"/api/zaehler/{z}/anfangsstand")
+    assert r.status_code == 404
+
+    client.post(f"/api/zaehler/{z}/anfangsstand",
+                json={"stand": 1000.0, "datum": start})
+    client.post(f"/api/zaehler/{z}/ablesungen",
+                json={"stand": 1210.0, "datum": ende, "zeitraum_id": zid})
+
+    r2 = client.delete(f"/api/zaehler/{z}/anfangsstand")
+    assert r2.status_code == 200
+    assert r2.json()["anfangsstand"] is None
+
+    abls = client.get(f"/api/zaehler/{z}/ablesungen").json()
+    assert len(abls) == 1
+    assert abls[0]["stand"] == 1210.0
+
+    r3 = client.delete(f"/api/zaehler/{z}/anfangsstand")
+    assert r3.status_code == 404
+
+
 def test_ablesung_output_einheiten_und_kostenblock(client):
     """CD — die Ablesungs-Maske führt je Zähler `einheiten` (Mehrfachzuordnung,
     geparst) und `kostenblock` (aus der Kostenart abgeleitet)."""
