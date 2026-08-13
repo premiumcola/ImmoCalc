@@ -193,7 +193,17 @@
      weicher Verlauf von links plus ein schmaler Akzent an der Kante. */
   .pruef.gefuellt{background:linear-gradient(100deg,var(--pos-bg) 0%,var(--sheet) 58%);
          box-shadow:inset 3px 0 0 var(--pos),0 1px 3px rgba(22,38,44,.07)}
-  .pruef.gefuellt .wert{color:var(--pos)}
+  /* N399 — die Zahl selbst trägt nicht mehr automatisch die grüne „erledigt"-
+     Farbe der Zeile (die bleibt am Rand/Verlauf sichtbar, siehe oben): ein
+     tatsächlich an die Mieter weiterverrechneter Betrag bekommt dieselbe
+     Farbe wie die „Umgelegt"-Kachel oben in der Kopfzeile (`.deckung .dv.neg`,
+     aktuell fest Rot — keine Ampel, ein reiner Wiedererkennungswert). Ein
+     reiner Zwischenwert (Heizöl, siehe `istHeizoelSammel`: sein Betrag wird
+     komplett auf Warmwasser + Heizkörper-Wärme verteilt, nie selbst
+     umgelegt) bleibt neutral — Grün oder Rot hätte hier „das ist Geld, das
+     bei einem Mieter ankommt" behauptet, was für diese Zeile nicht stimmt. */
+  .wert.umgelegt{color:var(--neg)}
+  .wert.neutral{color:var(--ink)}
   /* CCLXXVIII — vorläufige (orange) Position aus einem Beleg: dieselbe Sprache
      wie die grüne „gefüllt"-Zeile, nur in Amber. Der Nutzer sieht auf einen
      Blick, dass hier noch eine Entscheidung aussteht — dezent, nicht grell.

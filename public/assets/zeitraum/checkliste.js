@@ -631,7 +631,14 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
          inputmode="decimal" placeholder="Betrag" value="${k.betrag ?? ''}"
          data-betrag="${k.position_id}" data-wert="${k.betrag ?? ''}"
          aria-label="Betrag für ${esc(k.kostenart)}"><span class="kbe">€</span></span>`
-    : ((erl || heizWaermeBerechnet) ? `<span class="wert">${wert}</span>` : '');
+    : ((erl || heizWaermeBerechnet)
+        // N399 — Heizöl ist ein reiner Zwischenwert (sein Betrag geht
+        // vollständig in Warmwasser + Heizkörper-Wärme auf, nie direkt an
+        // einen Mieter) und bleibt deshalb neutral; alles andere, das hier
+        // sichtbar ist, wird tatsächlich weiterverrechnet und trägt die
+        // Farbe der „Umgelegt"-Kachel oben.
+        ? `<span class="wert ${heizoelSammel ? 'neutral' : 'umgelegt'}">${wert}</span>`
+        : '');
   const quickScan = (!erl && !aufgeklappt && !heizWaermeBerechnet)
     ? (KEINE_KAMERA
       ? `<button class="scanmini" data-scan="${esc(k.kostenart)}"
