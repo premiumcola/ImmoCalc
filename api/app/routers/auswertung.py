@@ -40,6 +40,27 @@ MIETER_KNOTEN = {"Einnahmen": "Vorauszahlungen", "Überschuss": "Guthaben",
                  "Fehlbetrag": "Nachzahlung"}
 
 
+def _objekt_pflicht(session: Session, slug: str) -> Objekt:
+    """Das Objekt zum Slug — ein unbekannter Slug ist ein Fehler.
+
+    Ohne diese Prüfung antworteten drei der vier Endpunkte mit 200 und lauter
+    Nullen: ein veralteter Slug (Objekt umbenannt oder gelöscht) las sich dann
+    als „dieses Objekt hat 0 € Einnahmen und 0 € Kosten" statt als Hinweis, dass
+    es das Objekt nicht mehr gibt. Nur `/cashflow` meldete ehrlich 404 — jetzt
+    alle vier gleich."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    return o
+
+
+def _objekte_waehlen(session: Session, slug: str | None) -> list[Objekt]:
+    """Die Objekte, über die ausgewertet wird — eines oder alle."""
+    if slug:
+        return [_objekt_pflicht(session, slug)]
+    return list(session.exec(select(Objekt)).all())
+
+
 def _sichtname(sicht: str | None) -> str:
     """Angeforderte Sicht auf einen bekannten Namen bringen.
 
@@ -322,9 +343,7 @@ def auswertung(jahr: int = Query(default=None),
     Sichten vollständig mit — so lässt sich die Trennung zeigen, ohne ein
     zweites Mal zu fragen."""
     jahr = jahr or date.today().year
-    objekte = session.exec(select(Objekt)).all()
-    if objekt:
-        objekte = [o for o in objekte if o.slug == objekt]
+    objekte = _objekte_waehlen(session, objekt)
 
     zeilen: list[dict] = []
     kostenbloecke: dict[str, float] = {}
@@ -389,9 +408,7 @@ def cashflow_endpoint(objekt: str = Query(...), jahr: int = Query(default=None),
     des Eigentümers; die umlagefähigen Nebenkosten bleiben draußen, sie zahlt
     der Mieter."""
     jahr = jahr or date.today().year
-    o = session.exec(select(Objekt).where(Objekt.slug == objekt)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+    o = _objekt_pflicht(session, objekt)
 
     einheiten = _einheiten_zahlen(session, o, jahr)
     bloecke = _gefiltert(_bloecke(session, o, jahr, sicht), kategorien)
@@ -418,9 +435,7 @@ def sankey_endpoint(jahr: int = Query(default=None), objekt: str = Query(default
     was der Mieter im Jahr gezahlt hat, gegen das, was auf ihn umgelegt wird."""
     jahr = jahr or date.today().year
     mietersicht = sicht == "mieter"
-    objekte = session.exec(select(Objekt)).all()
-    if objekt:
-        objekte = [o for o in objekte if o.slug == objekt]
+    objekte = _objekte_waehlen(session, objekt)
 
     quellen: list[dict] = []
     bloecke_gesamt: dict[str, float] = {}
@@ -460,9 +475,7 @@ def mietverlauf(objekt: str = Query(default=None),
     Jede Reihe sagt selbst, wie ihr Entgelt heisst; die Kurve kann Miet- und
     Pachtobjekte nebeneinander zeigen, ohne dass eines von beiden falsch
     beschriftet wäre."""
-    objekte = session.exec(select(Objekt)).all()
-    if objekt:
-        objekte = [o for o in objekte if o.slug == objekt]
+    objekte = _objekte_waehlen(session, objekt)
 
     heute = date.today().year
     jahre = list(range(heute - 7, heute + 1))

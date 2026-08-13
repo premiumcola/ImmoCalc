@@ -16,11 +16,23 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from ..db import get_session
+from ..dokumente.zuordnung import loese_info_referenzen
 from ..models import (Bewohner, Kostenposition, Kredit, Miete, Notarvertrag,
                       Versicherung, Zahlung)
+# Der reguläre Löschweg steht in `routers/stammdaten.py`; Verwerfen ist
+# dasselbe Löschen, nur über einen anderen Knopf. Deshalb dieselben Helfer
+# statt einer zweiten, auseinanderlaufenden Kopie.
+from ..routers.stammdaten import (ENTITAETEN, _AN_TYP_VON_MODELL,
+                                  _anhaengsel_loeschen)
+from ..verteilung import positionen_neu_ableiten
 
 log = logging.getLogger("immocalc")
 router = APIRouter(tags=["objekte"])
+
+# Modell -> Bereichsname, unter dem `stammdaten.py` denselben Datensatz führt
+# (`mieten`, `kredite`, …). Aus der dortigen Registry abgeleitet, nicht ein
+# zweites Mal von Hand aufgeschrieben.
+_BEREICH_VON_MODELL = {modell: bereich for bereich, modell in ENTITAETEN.items()}
 
 _ENTWURF_MODELLE = {
     "kostenposition": Kostenposition,
@@ -55,6 +67,13 @@ def entwurf_bestaetigen(typ: str, eintrag_id: int,
     eintrag.vorlaeufig = False
     session.add(eintrag)
     session.commit()
+    # N5 — ein bestätigter Miet-Entwurf ist ein reguläres Mietverhältnis: die
+    # Verteilung filtert `vorlaeufig` nicht. Die gespeicherten Gewichte offener
+    # Zeiträume kennen den neuen Mieter aber noch nicht — er trüge 0 % und die
+    # übrigen Parteien absorbierten seinen Anteil. Also dieselbe Neuableitung
+    # wie beim regulären Anlegen (`stammdaten.anlegen`).
+    if isinstance(eintrag, Miete) and eintrag.objekt_id is not None:
+        positionen_neu_ableiten(session, eintrag.objekt_id)
     log.info("Entwurf bestätigt: %s#%s", typ, eintrag_id)
     return {"ok": True, "typ": typ.lower(), "id": eintrag_id, "vorlaeufig": False}
 
@@ -71,8 +90,25 @@ def entwurf_verwerfen(typ: str, eintrag_id: int,
         raise HTTPException(409, "Dieser Datensatz ist bereits bestätigt und "
                                  "wird nicht gelöscht.")
     quelle = eintrag.quelle_dokument_id
+    # Verwerfen ist Löschen — und muss deshalb genauso vollständig aufräumen wie
+    # `stammdaten.loeschen`. Ohne diese drei Schritte blieben Kinder (Bewohner
+    # einer Miete, Jahresstände eines Kredits) und Info-Belege als Waisen
+    # stehen: N314(d), denn SQLite vergibt die id neu und der Waise taucht beim
+    # nächsten Datensatz mit fremden Zahlen wieder auf.
+    bereich = _BEREICH_VON_MODELL.get(type(eintrag))
+    if bereich:
+        _anhaengsel_loeschen(session, bereich, eintrag_id)
+    an_typ = _AN_TYP_VON_MODELL.get(type(eintrag))
+    if an_typ:
+        loese_info_referenzen(session, an_typ, eintrag_id)
+    # N5 — vor dem Löschen merken; ein entferntes Mietverhältnis gibt Leerstand
+    # zurück, die abgeleiteten Gewichte offener Zeiträume gehören neu gerechnet.
+    ist_miete = isinstance(eintrag, Miete)
+    objekt_id = getattr(eintrag, "objekt_id", None)
     session.delete(eintrag)
     session.commit()
+    if ist_miete and objekt_id is not None:
+        positionen_neu_ableiten(session, objekt_id)
     log.info("Entwurf verworfen: %s#%s (Beleg %s zurück im Prüfmodus)",
              typ, eintrag_id, quelle)
     return {"ok": True, "typ": typ.lower(), "id": eintrag_id, "verworfen": True,

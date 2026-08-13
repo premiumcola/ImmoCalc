@@ -1734,6 +1734,12 @@ def vorhandenen_zuordnen(data: VorhandenerBeleg,
             vorhanden.kostenart = kostenart_normalisieren(data.kostenart)
         if vorhanden.betrag is None and data.betrag and data.betrag > 0:
             vorhanden.betrag = data.betrag
+        # N14 — auch das Abrechnungsjahr additiv nachtragen: ohne es fiel der
+        # Eintrag aus dem Jahresfilter und der Jahres-Facette, und der
+        # Beleg-Abgleich meldete ihn als Grenzfall „kein_datum", statt ihn in
+        # seinen Zeitraum zu schieben. Ein bereits gepflegtes Jahr bleibt.
+        if vorhanden.jahr is None and data.jahr:
+            vorhanden.jahr = data.jahr
         session.add(vorhanden)
         session.commit()
         session.refresh(vorhanden)
@@ -1742,6 +1748,10 @@ def vorhandenen_zuordnen(data: VorhandenerBeleg,
 
     d = Dokument(pfad=pfad, dateiname=name, groesse=0, objekt_id=o.id,
                  kategorie=data.kategorie, zeitraum_id=zeitraum_id,
+                 # N14 — das mitgeschickte Abrechnungsjahr wurde bislang
+                 # verworfen; der Eintrag entstand ohne Jahr und war damit im
+                 # Jahresfilter unsichtbar.
+                 jahr=data.jahr,
                  kostenart=kostenart_normalisieren(data.kostenart),
                  betrag=data.betrag if data.betrag and data.betrag > 0 else None,
                  status="zugeordnet", erkannt_am=date.today())

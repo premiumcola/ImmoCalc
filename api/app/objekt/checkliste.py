@@ -61,7 +61,16 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
     _bez = bezuege(list(einheiten), list(mieten), list(parteien), z.start, z.ende)
     detail_map = anteil_details(_bez, z.start, z.ende)
 
-    nach_art = {p.kostenart: p for p in positionen}
+    # N315a — je Kostenart eine LISTE, nicht eine Position. Eine WEG-Übernahme
+    # legt für zwei Einheiten derselben WEG bewusst zwei Positionen gleicher
+    # Kostenart an; sie unterscheiden sich nur in `nur_einheit`. Ein Dict nach
+    # Kostenart behielt davon nur die letzte: die erste Zeile war in der
+    # Checkliste unsichtbar, ihr Betrag fehlte in der Zeitraum-Summe (die
+    # Abrechnung rechnete ihn mit — 100 € Differenz) und über die Oberfläche war
+    # sie nicht mehr erreichbar.
+    nach_art: dict[str, list[Kostenposition]] = {}
+    for p in positionen:
+        nach_art.setdefault(p.kostenart, []).append(p)
     # CLXXXIII: der Rückweg. Welche Belege in eine Position eingerechnet sind,
     # steht an ihnen selbst (`Dokument.position_id`) — nicht am Dateinamen und
     # nicht an der Kostenart, die sich umbenennen liesse.
@@ -112,54 +121,64 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
         }
 
     checkliste = []
+    # Welche Positionen schon eine eigene Zeile haben — id-genau, nicht nach
+    # Name: bei zwei Positionen gleicher Kostenart übersprang die Waisen-Schleife
+    # sonst auch die, die oben gar nicht ausgegeben wurde.
+    gezeigt: set[int] = set()
     for k in arten:
         if not k.aktiv:
             continue
-        p = nach_art.get(k.name)
-        erledigt = bool(p and p.status == "erledigt")
-        checkliste.append({
-            "kostenart": k.name, "s35": k.s35 or (p.s35 if p else False),
-            "erledigt": erledigt,
-            "betrag": p.betrag if p else None,
-            "schluessel": p.schluessel if p else None,
-            "nur_einheit": p.nur_einheit if p else "",
-            "wertquelle": p.wertquelle if p else None,
-            # N122 — dieselben Felder wie im Waisen-Zweig weiter unten. Fehlten
-            # sie hier, blieb die Strom-Maske jeder Kostenart leer, die im
-            # Katalog der Immobilie steht: PATCH speicherte, die Anzeige zeigte
-            # nichts.
-            "menge": p.menge if p else None,
-            "menge_einheit": p.menge_einheit if p else None,
-            "herkunft": p.herkunft if p else None,
-            "arbeitspreis": p.arbeitspreis if p else None,
-            "grundpreis_monat": p.grundpreis_monat if p else None,
-            "preis_je_menge": (round(p.betrag / p.menge, 4)
-                               if p and p.menge else None),
-            **_verteilung(p),
-            **_zusammensetzung(p),
-            "position_id": p.id if p else None,
-            # CCLXXVIII: eine vorläufige (orange) Position wartet auf Bestätigung.
-            "vorlaeufig": bool(p and p.vorlaeufig),
-            # N364 — vom Nutzer bestätigte Vollständigkeit (Heizöl).
-            "bestaetigt": bool(p and p.bestaetigt),
-            "quelle_dokument_id": p.quelle_dokument_id if p else None,
-            "beleg_monat": k.beleg_monat,
-            # CCCLXIII — Anbieter/Gewerk der Kostenart (z. B. WWK, Zweckverband),
-            # für den Tag in der Zeitraum-Zeile. Feld `lieferant` gibt es schon.
-            # Die Kostenart-ID, damit sich der Anbieter dort setzen lässt.
-            "anbieter": k.lieferant or "", "kostenart_id": k.id,
-            # N189 — Pflicht/optional der Kostenart: steuert im Frontend das rote
-            # Pflicht-Signal. Optionale Positionen ohne Betrag mahnen nicht.
-            "optional": bool(k.optional),
-            "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
-        })
+        # Ohne Position bleibt genau eine Zeile („fehlt"), mit mehreren gibt es
+        # je Position eine — sonst verschwände die zweite WEG-Zeile.
+        for p in (nach_art.get(k.name) or [None]):
+            if p is not None:
+                gezeigt.add(p.id)
+            erledigt = bool(p and p.status == "erledigt")
+            checkliste.append({
+                "kostenart": k.name, "s35": k.s35 or (p.s35 if p else False),
+                "erledigt": erledigt,
+                "betrag": p.betrag if p else None,
+                "schluessel": p.schluessel if p else None,
+                "nur_einheit": p.nur_einheit if p else "",
+                "wertquelle": p.wertquelle if p else None,
+                # N122 — dieselben Felder wie im Waisen-Zweig weiter unten.
+                # Fehlten sie hier, blieb die Strom-Maske jeder Kostenart leer,
+                # die im Katalog der Immobilie steht: PATCH speicherte, die
+                # Anzeige zeigte nichts.
+                "menge": p.menge if p else None,
+                "menge_einheit": p.menge_einheit if p else None,
+                "herkunft": p.herkunft if p else None,
+                "arbeitspreis": p.arbeitspreis if p else None,
+                "grundpreis_monat": p.grundpreis_monat if p else None,
+                "preis_je_menge": (round(p.betrag / p.menge, 4)
+                                   if p and p.menge else None),
+                **_verteilung(p),
+                **_zusammensetzung(p),
+                "position_id": p.id if p else None,
+                # CCLXXVIII: eine vorläufige (orange) Position wartet auf
+                # Bestätigung.
+                "vorlaeufig": bool(p and p.vorlaeufig),
+                # N364 — vom Nutzer bestätigte Vollständigkeit (Heizöl).
+                "bestaetigt": bool(p and p.bestaetigt),
+                "quelle_dokument_id": p.quelle_dokument_id if p else None,
+                "beleg_monat": k.beleg_monat,
+                # CCCLXIII — Anbieter/Gewerk der Kostenart (z. B. WWK,
+                # Zweckverband), für den Tag in der Zeitraum-Zeile. Feld
+                # `lieferant` gibt es schon. Die Kostenart-ID, damit sich der
+                # Anbieter dort setzen lässt.
+                "anbieter": k.lieferant or "", "kostenart_id": k.id,
+                # N189 — Pflicht/optional der Kostenart: steuert im Frontend das
+                # rote Pflicht-Signal. Optionale Positionen ohne Betrag mahnen
+                # nicht.
+                "optional": bool(k.optional),
+                "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
+            })
     # Positionen zu Kostenarten, die nicht im Katalog stehen, gehen sonst verloren.
     # CCCXCVI — ausgeblendete (inaktive) Kostenarten bleiben aber ausgeblendet,
     # auch wenn sie schon eine Position tragen (sonst käme die Zeile als Waise zurück).
     inaktiv = {k.name for k in arten if not k.aktiv}
-    sichtbar = {k["kostenart"] for k in checkliste}
     for p in positionen:
-        if p.kostenart in sichtbar or p.kostenart in inaktiv:
+        if p.id in gezeigt or p.kostenart in inaktiv:
             continue
         checkliste.append({
             "kostenart": p.kostenart, "s35": p.s35,

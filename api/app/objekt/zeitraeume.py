@@ -26,6 +26,13 @@ router = APIRouter(tags=["objekte"])
 
 @router.get("/zeitraeume/{zid}/positionen")
 def positionen(zid: int, session: Session = Depends(get_session)) -> list[Kostenposition]:
+    """Die Kostenpositionen eines Zeitraums.
+
+    Ein unbekannter Zeitraum ist ein 404 wie bei allen Nachbarn hier: eine leere
+    Liste liest sich sonst als „dieser Zeitraum hat keine Positionen", obwohl es
+    ihn gar nicht gibt — etwa wenn die Oberfläche noch eine id hält, die das
+    Aufräumen leerer Zeiträume längst entfernt hat."""
+    _zeitraum(session, zid)
     return session.exec(
         select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
 
