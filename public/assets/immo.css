@@ -725,6 +725,29 @@ dialog{overscroll-behavior:contain}
    ist, wo die Eingabe hingeht. */
 dialog::backdrop{background:rgba(22,38,44,.55); backdrop-filter:blur(2.5px)}
 
+/* ---- Seiten-Dialog: Kopfzeile, Schließer, Rumpf (N374) ----------------
+   Diese vier Regeln standen zeichengleich in eigentuemer.html, settings.html
+   und eingang.html — jede Änderung am Dialog-Kopf musste in drei Dateien
+   nachgezogen werden.
+
+   Bewusst NUR die klassenbasierten Regeln: das `dialog`-Element selbst und
+   sein `::backdrop` bleiben in den Seiten, weil sie dort gezielt von der
+   globalen Vorgabe abweichen (hellerer Hintergrund, randloses Blatt) und eine
+   Regel ohne Klasse hier JEDEN Dialog der App träfe — auch die Rückfrage aus
+   `immo.js` und den Beleg-Dialog von objekt.html.
+
+   Nicht zu verwechseln mit `dialog.immo-dlg` weiter unten: das ist die
+   Rückfrage (ein Blatt mit Innenabstand). Hier geht es um den Kopf des
+   FORMULAR-Dialogs der Seiten. */
+.dh{display:flex;align-items:center;gap:12px;padding:18px 18px 6px}
+.dh h2{flex:1;font:700 17px var(--disp);letter-spacing:-.02em;margin:0}
+/* 44px: Mindestgröße für Touch-Ziele. */
+.close{border:none;background:#F1F4F4;color:var(--soft);border-radius:12px;
+       width:44px;height:44px;font:400 20px var(--body);cursor:pointer;flex:none;
+       display:flex;align-items:center;justify-content:center;line-height:1}
+.close:hover{background:#E4EAEA;color:var(--ink)}
+.dbody{padding:8px 18px 18px}
+
 /* ---- Rückfrage im Design der App (immo.js: frage, schiebeFrage) ---- */
 /* N334 — der Dialog nimmt beim Öffnen selbst den Fokus (siehe
    `fokusAufDenDialog`), damit kein einzelner Knopf mit einem Fokusring

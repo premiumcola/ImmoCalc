@@ -21,7 +21,7 @@ from ..db import get_session
 from ..einheitenzuordnung import (karte as einheiten_karte, parse_einheiten,
                                   warnungen as zuordnungs_warnungen, zuordne,
                                   zuordne_zaehler)
-from ..deps import objekt_holen
+from ..deps import objekt_holen, zeitraum_holen
 from ..models import (Ablesung, Einheit, Kostenposition, Miete, Objekt, Partei,
                       Zaehler, Zeitraum)
 from .openwb import ladungen as openwb_ladungen
@@ -309,9 +309,7 @@ def anfangsstand_setzen(zid: int, data: AnfangsstandIn,
 
 @router.get("/zeitraeume/{zid}/ablesung")
 def maske(zid: int, session: Session = Depends(get_session)) -> dict:
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    z = zeitraum_holen(zid, session)
     zeitraeume = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
     vorher = max((p for p in zeitraeume if p.ende < z.ende),
@@ -404,9 +402,7 @@ def eauto_ziehen(zid: int, session: Session = Depends(get_session)) -> dict:
     Antwortet die Wallbox nicht, bleibt der zuletzt gezogene Stand **stehen**
     und der Grund steht in `hinweis`. Eine 0 wäre hier eine Falschaussage.
     Ein abgeschlossener Zeitraum wird nie mehr überschrieben."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    z = zeitraum_holen(zid, session)
     objekt = session.get(Objekt, z.objekt_id)
     antwort: dict = {
         "zeitraum_id": z.id, "von": z.start.isoformat(), "bis": z.ende.isoformat(),
@@ -476,9 +472,7 @@ def uebernehmen(zid: int, data: UebernahmeIn,
     Einheit normalisiert. Gemeldet wird trotzdem, genau wie in der Wasser- und
     der Strom-Kette: `unzugeordnet`/`warnungen` nennen jeden Zähler, dessen
     Verbrauch in dieser Verteilung nicht ankommt."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    z = zeitraum_holen(zid, session)
     if data.schluessel not in verteilung.SCHLUESSEL:
         raise HTTPException(400, f"Unbekannter Schlüssel „{data.schluessel}“")
 
@@ -670,9 +664,7 @@ def wasser_detail(zid: int, schluessel: str = "personen",
     Nicht bereit (`bereit=False`), solange der Hauptzähler-Verbrauch oder die
     Wasserbeträge fehlen — dann nennt `hinweis`, was noch gebraucht wird.
     """
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    z = zeitraum_holen(zid, session)
 
     # Verbrauch je Zähler-Id für diesen Zeitraum — wie in der Ablesungs-Maske,
     # inkl. synthetischer Vorlauf-Periode für einen Anfangsstand (CCCLXXX).
@@ -885,9 +877,7 @@ def rechnungsmenge_setzen(zid: int, data: dict,
     Sie ersetzt den Zaehlerwert NICHT: der Stand bleibt am Zaehler stehen. Hier
     steht nur, was der Versorger tatsaechlich berechnet hat; die Differenz wird
     als Abweichung ausgewiesen."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    z = zeitraum_holen(zid, session)
     wert = data.get("rechnung_m3")
     z.wasser_rechnung_m3 = float(wert) if wert not in (None, "") else 0.0
     session.add(z)

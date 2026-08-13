@@ -43,6 +43,7 @@ from .openwb import ladungen as openwb_ladungen
 from .tankstelle import erfasste_ladungen
 from .zaehler import _eauto_zaehler, _kostenblock, _mit_vorlauf
 from ..zahlen import geschrieben
+from ..deps import zeitraum_holen
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["stromkette"])
@@ -678,9 +679,7 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
 
     Jeder Schritt wird einzeln ausgewiesen, damit die Oberfläche die Kette
     zeigen kann: was hineingeht und was herauskommt."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    z = zeitraum_holen(zid, session)
     objekt = session.get(Objekt, z.objekt_id)
     jahr = zeitraum_label_jahr(z.start, z.ende)
     sj = _stromjahr(session, z.objekt_id, jahr)
@@ -862,9 +861,7 @@ def strom_rechnungsmenge_setzen(zid: int, data: dict,
 
     Additiv und zurücknehmbar: 0 (oder leer) setzt sie wieder zurück, dann gilt
     wieder der Verteilungssatz."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    z = zeitraum_holen(zid, session)
     wert = data.get("rechnung_kwh")
     z.strom_rechnung_kwh = float(wert) if wert not in (None, "") else 0.0
     session.add(z)

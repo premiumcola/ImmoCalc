@@ -11,15 +11,10 @@ from sqlmodel import select
 from .. import belegposten, heizkosten, verteilung
 from ..db import get_session
 from ..models import Einheit, Miete, Partei, Zeitraum
+from ..deps import zeitraum_holen
 
 router = APIRouter(prefix="/api/zeitraeume", tags=["heizkosten"])
 
-
-def _zeitraum(session: Session, zid: int) -> Zeitraum:
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
-    return z
 
 
 def _bezuege(session: Session, z: Zeitraum) -> list[verteilung.Bezug]:
@@ -41,7 +36,7 @@ def rechnen(zid: int, eingabe: dict, session: Session = Depends(get_session)) ->
     Rechenweg — aus echten Zähler-Ablesungen und Bewertungsfaktoren. `eingabe`
     liefert nur, was am Zähler nicht steht (Brennstoff, Kostenblöcke,
     Warmwasservolumen, wie in `waermesim.rechne`). Schreibt nichts."""
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     return heizkosten.rechne_fuer_zeitraum(session, z, eingabe or {})
 
 
@@ -51,7 +46,7 @@ def uebernehmen(zid: int, eingabe: dict, session: Session = Depends(get_session)
     bestehende Heizungs-Kostenposition ein. Nur eine BESTEHENDE Position wird
     konfiguriert (CCLVI: keine 0-€-Position ohne Beleg) — wie bei
     `zaehler.uebernehmen`."""
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     erg = heizkosten.rechne_fuer_zeitraum(session, z, eingabe or {})
     pos = belegposten.finde(session, zid, "Heizung")
     if not pos:

@@ -25,6 +25,7 @@ from ..models import WegVorauszahlung, Zeitraum
 from ..verteilung import UnbekannterSchluessel
 from .ki import ki_key, ki_modell
 from .. import upload
+from ..deps import zeitraum_holen
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["weg"])
@@ -35,12 +36,6 @@ MAX_BYTES = 20 * 1024 * 1024
 VON_HAND = ("Bitte die Positionen von Hand eintragen — die Datei bleibt "
             "unverändert.")
 
-
-def _zeitraum(session: Session, zid: int) -> Zeitraum:
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
-    return z
 
 
 # --------------------------------------------------------------------------
@@ -55,7 +50,7 @@ def weg_stand(zid: int, session: Session = Depends(get_session)) -> dict:
     Hinweise `uebersprungen`/`entfernt` der letzten Übernahme (N283 e) — sie
     stehen hier und nicht nur in der Antwort auf `/uebernehmen`, damit sie ein
     Neuladen überleben."""
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     return {"aktiv": bool(z.weg_modus), "stand": weg.stand(session, z),
             "vorauszahlungen": weg.abschnitte(session, z)}
 
@@ -72,7 +67,7 @@ def weg_schalten(zid: int, data: SchalterIn,
     Beim Ausschalten bleiben die übernommenen Positionen zunächst stehen — sie
     zu löschen wäre ein stiller Datenverlust. Wer sie loswerden will, nimmt sie
     einzeln zurück; der Schalter allein ändert nur die Ansicht."""
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     z.weg_modus = data.aktiv
     session.add(z)
     session.commit()
@@ -93,7 +88,7 @@ async def weg_lesen(zid: int, datei: UploadFile = File(...),
     Rückgabe `{"gelesen": {...}|null, "hinweis": "…"}`. Fällt die Erkennung aus
     (keine KI eingerichtet, kein Text im PDF, unbrauchbare Antwort), ist das
     kein Fehler: `gelesen` bleibt leer und der Hinweis sagt, was zu tun ist."""
-    _zeitraum(session, zid)
+    zeitraum_holen(zid, session)
     # N292 — Leere und Grösse prüft `upload.lies` für alle Endpunkte gleich.
     rohdaten = await upload.lies(datei, max_bytes=MAX_BYTES,
                                  was="Die WEG-Abrechnung")
@@ -171,7 +166,7 @@ def weg_uebernehmen(zid: int, data: WegBelegIn,
     aufbewahrten Beleg und kommen unter `stand.nicht_umlagefaehig` zurück.
     Ein zweiter Aufruf schreibt dieselben Zeilen fort statt sie zu verdoppeln;
     von Hand gepflegte Positionen bleiben unangetastet."""
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     gelesen = data.model_dump()
     einheit = (gelesen.pop("einheit", "") or "").strip()
     try:
@@ -196,7 +191,7 @@ class VorauszahlungIn(BaseModel):
 def vorauszahlung_anlegen(zid: int, data: VorauszahlungIn,
                           session: Session = Depends(get_session)) -> dict:
     """Ein weiterer Abschnitt — z. B. „ab Juli 235 € statt 220 €"."""
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     v = weg.vorauszahlung_setzen(session, z, data.einheit, data.von, data.bis,
                                  data.betrag_monat)
     return {"id": v.id, "vorauszahlungen": weg.abschnitte(session, z),
@@ -206,7 +201,7 @@ def vorauszahlung_anlegen(zid: int, data: VorauszahlungIn,
 @router.patch("/zeitraeume/{zid}/weg/vorauszahlung/{vid}")
 def vorauszahlung_aendern(zid: int, vid: int, data: VorauszahlungIn,
                           session: Session = Depends(get_session)) -> dict:
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     v = session.get(WegVorauszahlung, vid)
     if not v or v.zeitraum_id != zid:
         raise HTTPException(404, "Vorauszahlung nicht gefunden")
@@ -220,7 +215,7 @@ def vorauszahlung_aendern(zid: int, vid: int, data: VorauszahlungIn,
 def vorauszahlung_loeschen(zid: int, vid: int,
                            session: Session = Depends(get_session)) -> dict:
     """Entfernt einen Abschnitt — eine bewusste Nutzeraktion."""
-    z = _zeitraum(session, zid)
+    z = zeitraum_holen(zid, session)
     v = session.get(WegVorauszahlung, vid)
     if not v or v.zeitraum_id != zid:
         raise HTTPException(404, "Vorauszahlung nicht gefunden")
