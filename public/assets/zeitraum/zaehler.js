@@ -178,13 +178,15 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
           <span class="zu-dat">${_isoKurz(datum)}</span></div></div>`;
 
   // N345/N359 — der Anfang aus der Vorperiode ist keine Eingabe, gehört aber
-  // als erster Summand sichtbar in die Rechenzeile: gleiche Feldform wie
-  // „Ende", nur fest (kein Eingabefeld) und mit der Herkunft darunter.
-  const nurAnzeige = (kind, wert, datum, note) => `<div class="zu-feld">
-      <label>${kind}</label>
-      <div class="zu-fest" title="Endstand der Vorperiode, abgelesen am ${
-        _isoKurz(datum)}"><b>${wert ? `${wert}&nbsp;${eh}` : '—'}</b>
-        <small>${note}</small></div></div>`;
+  // als erster Summand sichtbar in die Rechenzeile.
+  // N391 — vorher eine eigene, gleich große Box wie „Ende" (Label + fester
+  // Rahmen) — bei jedem Zähler doppelt so bulkig wie nötig, obwohl der Wert
+  // nie bearbeitbar ist. Jetzt ein knapper Hinweis-Chip, dieselbe Sprache wie
+  // „ab X kWh" in der Jahreswert-Tabelle (`.zt-ab`) — Wert und Herkunft in
+  // einer Zeile, kein eigener Kasten.
+  const nurAnzeige = (wert, datum, note) => `<span class="zu-ab"
+      title="${esc(note)}, abgelesen am ${esc(_isoKurz(datum))}">ab ${
+      wert ? `${wert} ${eh}` : '—'}</span>`;
 
   // N120 — Jahreswert: ein Feld, kein Datum.
   // N341 — kompakt: ohne eigene Label-Zeile und ohne „kein Zählerstand"-Text,
@@ -199,7 +201,7 @@ export function meterZeileHtml(z, { rest = false, minus = false, label = null,
 
   const startFeld = (rest || direkt) ? ''
     : (ausVorperiode
-      ? nurAnzeige('Anfang', startStand, anfangDatum, 'aus Vorperiode')
+      ? nurAnzeige(startStand, anfangDatum, 'Anfangsstand aus der Vorperiode')
       : feld('Anfang', startStand, 'data-anfangstand', 'data-anfangdatum', anfangDatum));
   const endFeld = (rest || eauto) ? ''
     : (direkt ? jahresFeld
@@ -544,8 +546,10 @@ export function zaehlerPanelHtml(block, zaehler, blockVon, unter = null) {
   // zähler von „fertiger Jahreswert" auf „echter Zählerstand" umgestellt
   // wurde (N380/N381) — die kompakte Tabelle der übrigen 21 Zähler verschwand
   // ersatzlos, ohne dass sich an IHNEN etwas geändert hätte.
-  const tabelle = teil.length > 3
-    && teil.every(z => ['direkt', 'gemessen', 'rest'].includes(z.typ));
+  // N391 — die Mindestanzahl von vier ist entfallen: die kompakte Tabelle
+  // soll überall gelten, wo sie passt (Warmwasser, Heizöl-Lieferungen), auch
+  // bei nur einem oder zwei Zählern — nicht nur bei den 19 Heizkörpern.
+  const tabelle = teil.every(z => ['direkt', 'gemessen', 'rest'].includes(z.typ));
   const inner = block === 'Wasser' ? wasserBlockHtml(teil)
     : block === 'Strom' ? stromBlockHtml(teil)
     : tabelle ? jahreswertTabellenHtml(teil)

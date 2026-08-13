@@ -667,7 +667,6 @@
     background:var(--teal);opacity:.75}
   .zu-vj b{font:600 9.5px var(--mono);color:var(--ink);line-height:1}
   .zu-vj em{font:500 9px var(--mono);color:var(--soft);font-style:normal}
-  .zu-sub{display:block;font:400 10.5px var(--body);color:var(--soft);margin-top:1px}
   .zu-feld{flex:none;display:flex;flex-direction:column;gap:2px}
   .zu-feld label{font:600 8.5px var(--mono);letter-spacing:.05em;
     text-transform:uppercase;color:var(--soft)}
@@ -677,14 +676,11 @@
   .zu-feld input[type=text]{width:96px;min-height:40px;text-align:right}
   .zu-feld input:focus{outline:none;border-color:var(--teal)}
   .zu-anf{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
-  /* N359 — die Zeile bildet den Rechenweg ab: Anfang → Ende → = Verbrauch.
-     Der Anfang ist fest (keine Eingabe), sieht dem Ende-Feld aber ähnlich
-     genug, um als erster Summand gelesen zu werden. */
-  .zu-fest{display:flex;flex-direction:column;justify-content:center;
-    min-height:40px;padding:4px 9px;border:1.5px dashed var(--line);
-    border-radius:9px;background:transparent}
-  .zu-fest b{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
-  .zu-fest small{font:500 9.5px var(--body);color:var(--soft)}
+  /* N391 — der Anfang aus der Vorperiode als knapper Chip statt einer
+     eigenen Box (ersetzt `.zu-fest`): „ab X m³" vor dem Ende-Feld, dieselbe
+     Sprache wie `.zt-ab` in der Jahreswert-Tabelle. */
+  .zu-ab{flex:none;align-self:center;font:600 11px var(--mono);
+    color:var(--soft);white-space:nowrap;padding:2px}
   .zu-gleich{font:700 13px var(--mono);color:var(--soft);margin-right:5px}
   /* Kopfzeile: Name links, Zuordnung rechts oben. */
   .zu-kopfzeile{display:flex;align-items:flex-start;gap:6px 10px;flex-wrap:wrap;
@@ -883,12 +879,11 @@
   .zu-panel .zu-nametxt,.zu-panel .zu-name{color:var(--zu-hell)}
   .zu-panel .zu-nr,.zu-panel .zu-feld label,.zu-panel .zu-dat,
   .zu-panel .zu-uebernommen,.zu-panel .zu-ehl,.zu-panel .zu-rz,
-  .zu-panel .zu-fest small,.zu-panel .zu-kein{color:var(--zu-matt)}
+  .zu-panel .zu-ab,.zu-panel .zu-kein{color:var(--zu-matt)}
   .zu-panel .zu-um{color:var(--zu-matt)}
   .zu-panel .zu-um:hover{color:#fff;background:rgba(255,255,255,.12)}
   .zu-panel .zu-verb{color:var(--zu-hell)}
-  .zu-panel .zu-anf,.zu-panel .zu-fest b{color:var(--zu-hell)}
-  .zu-panel .zu-fest{border-color:rgba(255,255,255,.28)}
+  .zu-panel .zu-anf{color:var(--zu-hell)}
   .zu-panel .zu-gleich{color:var(--zu-matt)}
   .zu-panel .zu-rechnung,.zu-panel .zu-verlauf,.zu-panel .zu-ehfest,
   .zu-panel .zu-ehwahl{border-color:var(--zu-linie)}
