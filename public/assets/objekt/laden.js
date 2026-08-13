@@ -213,14 +213,31 @@ export async function laden() {
       }
       stand = `<span class="ed" style="margin-top:3px;font-family:var(--mono);font-size:11px">${teile.join(' · ')}</span>`;
     }
-    return `<button class="eintrag klick" data-zeitraum="${z.id}"
-                    style="cursor:pointer${alt ? ';opacity:.66' : ''}">
-        <span class="et">
+    const kopf = `<span class="et">
           <span class="en">${z.jahr ? `Abrechnungszeitraum ${z.jahr}` : esc(z.label)}</span>
           <span class="ed">${z.jahr ? `${esc(z.label)} · ${esc(z.typ)}` : esc(z.typ)}</span>
-          ${stand}</span>${chip}
-        <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
-      </button>`;
+          ${stand}</span>${chip}`;
+    // N393 — nur bei den verborgenen Zeiträumen (Belege, aber keine
+    // Positionen) gibt es die Entfernen-Option: genau dort landet ein
+    // Zeitraum, der beim Nachtragen alter Unterlagen versehentlich aus einem
+    // Dokumentdatum entstanden ist. Sichtbare, bearbeitete Zeiträume bleiben
+    // ohne Löschweg — „Kein Löschen" gilt weiter für den Regelfall.
+    if (!alt) {
+      return `<button class="eintrag klick" data-zeitraum="${z.id}" style="cursor:pointer">
+          ${kopf}
+          <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
+        </button>`;
+    }
+    return `<div class="eintrag klick" data-zeitraum="${z.id}"
+                style="cursor:pointer;opacity:.66">
+        ${kopf}
+        <span class="ewwrap">
+          <span class="ew" style="color:var(--soft);font-family:var(--body)">›</span>
+          <button class="del" data-zeitraum-entfernen="${z.id}"
+            data-zeitraum-titel="${esc(z.jahr ? `Abrechnungszeitraum ${z.jahr}` : z.label)}"
+            aria-label="Zeitraum entfernen">×</button>
+        </span>
+      </div>`;
   };
   const aufklapper = verborgen.length
     ? `<button class="eintrag klick" data-alte-zeitraeume="1"

@@ -254,6 +254,40 @@ def _zeitraum(session: Session, zid: int) -> Zeitraum:
     return z
 
 
+@router.delete("/zeitraeume/{zid}")
+def zeitraum_entfernen(zid: int, session: Session = Depends(get_session)) -> dict:
+    """N393 — einen Zeitraum bewusst entfernen, auch wenn ihm bereits Belege
+    zugeordnet sind (etwa einer, der beim Nachtragen alter Delta-t-Unterlagen
+    versehentlich entstand). Der automatische Wegräumer
+    (`_zeitraum_leer_entfernen`) deckt nur den leeren Fall ab — diese Route
+    ist der bewusste, vom Nutzer ausgelöste Weg für den Rest.
+
+    Belege werden NICHT gelöscht, nur die Zuordnung gelöst — sie bleiben ohne
+    Zeitraum erhalten, dasselbe Prinzip wie beim Auflösen eines gelöschten
+    Zählers (N376). Kostenpositionen, Vorauszahlungen, Ablesungen und WEG-
+    Vorauszahlungen gehören untrennbar zum Zeitraum (sie ergeben ohne ihn
+    keinen Sinn) und werden mitgelöscht. Ein bereits VERSENDETES
+    Versandprotokoll blockiert (409) — eine schon verschickte Abrechnung ist
+    ein reales, den Mietern kommuniziertes Ereignis, kein Aufräumfall."""
+    z = _zeitraum(session, zid)
+    verk = _verknuepfungen(session, zid)
+    if verk["versandprotokolle"]:
+        raise HTTPException(409, "Für diesen Zeitraum wurde bereits eine "
+            "Abrechnung versendet — er kann nicht entfernt werden.")
+    for d in session.exec(select(Dokument).where(Dokument.zeitraum_id == zid)).all():
+        d.zeitraum_id = None
+        session.add(d)
+    for modell in (Kostenposition, Vorauszahlung, Ablesung, WegVorauszahlung):
+        for row in session.exec(select(modell).where(modell.zeitraum_id == zid)).all():
+            session.delete(row)
+    session.delete(z)
+    session.commit()
+    logging.info("Zeitraum %s entfernt (%d Belege gelöst, %d Positionen entfernt)",
+                zid, verk["belege"], verk["positionen"])
+    return {"entfernt": True, "belege_geloest": verk["belege"],
+            "positionen_entfernt": verk["positionen"]}
+
+
 # --------------------------------------------------------------------------
 # N35 — Zeiträume umstellen: Grenzen verschieben, teilen, Belege neu zuordnen.
 # Werkzeug über der Zeitraumliste; z. B. Wirtschaftsjahr (Okt–Sep) auf volle

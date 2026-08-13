@@ -333,7 +333,11 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
         raise HTTPException(404, "Objekt nicht gefunden")
     einheiten = session.exec(select(Einheit).where(Einheit.objekt_id == o.id)).all()
     parteien = session.exec(select(Partei).where(Partei.objekt_id == o.id)).all()
-    zeitraeume = session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
+    # N393 — neuester Zeitraum zuerst: ohne Sortierung kam die Reihenfolge von
+    # SQLite (roher Anlage-/Rowid-Zeitpunkt), was bei nachträglich erfassten
+    # alten Jahren zu einer Liste ohne erkennbare Ordnung führte.
+    zeitraeume = session.exec(select(Zeitraum).where(Zeitraum.objekt_id == o.id)
+                              .order_by(Zeitraum.start.desc())).all()
     mieten = session.exec(select(Miete).where(Miete.objekt_id == o.id)).all()
     offen = hinweise(o, einheiten, mieten)
     # Wie viele Kostenpositionen und wie viele zugeordnete Belege hängen an jedem

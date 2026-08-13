@@ -446,6 +446,27 @@ export function initHandlers() {
       return laden();
     }
 
+    // N393 — Zeitraum entfernen, auch mit zugeordneten Belegen: nur an den
+    // verborgenen (Belege, keine Positionen) angeboten, siehe laden.js.
+    const zeitraumWeg = e.target.closest('[data-zeitraum-entfernen]');
+    if (zeitraumWeg) {
+      e.stopPropagation();
+      const titel = zeitraumWeg.dataset.zeitraumTitel || 'Zeitraum';
+      const ja = await frage(`„${titel}“ entfernen?`,
+        'Zugeordnete Belege bleiben erhalten, nur die Zuordnung zu diesem '
+        + 'Zeitraum wird gelöst — sie stehen danach wieder unter „nicht '
+        + 'zugeordnet". Kostenpositionen, Vorauszahlungen und Ablesungen '
+        + 'dieses Zeitraums werden gelöscht.',
+        { knopf: 'Entfernen', gefahr: true });
+      if (!ja) return;
+      try {
+        await api(`/zeitraeume/${zeitraumWeg.dataset.zeitraumEntfernen}`, { method: 'DELETE' });
+      } catch (fehler) {
+        return melde(String(fehler.message || 'Konnte nicht entfernt werden.'), 'neg');
+      }
+      return laden();
+    }
+
     const einheitEdit = e.target.closest('[data-einheit-edit]');
     if (einheitEdit) {
       const eintrag = ObjState.einheiten.find(x =>

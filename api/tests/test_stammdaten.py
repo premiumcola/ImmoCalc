@@ -420,6 +420,23 @@ def test_grundstueck_kann_keine_weg_sein():
         assert "Grundstück" in antwort.json()["detail"]
 
 
+def test_zeitraeume_neuester_zuerst():
+    """N393 — die Liste in GET /api/objekte/{slug} steht neuester Zeitraum
+    zuerst, unabhängig von der Anlage-Reihenfolge (Nutzer trägt oft ältere
+    Jahre nachträglich ein)."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Sortier-Test 1", "turnus": "kalender", "start_monat": 1,
+        }).json()["slug"]
+        # Absichtlich unsortiert anlegen: 2025 (Default), dann 2023, dann 2026.
+        c.post(f"/api/objekte/{slug}/zeitraeume", json={"jahr": 2023})
+        c.post(f"/api/objekte/{slug}/zeitraeume", json={"jahr": 2026})
+
+        jahre = [z["jahr"] for z in c.get(f"/api/objekte/{slug}").json()["zeitraeume"]]
+        assert jahre == sorted(jahre, reverse=True)
+        assert jahre[0] == 2026 and jahre[-1] == 2023
+
+
 def test_zeitraum_meldet_die_weg_ebene():
     with TestClient(app) as c:
         slug = c.post("/api/objekte", json={
