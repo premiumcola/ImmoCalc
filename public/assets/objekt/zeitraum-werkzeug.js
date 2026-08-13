@@ -2,7 +2,7 @@
    neuen Zeitraum anlegen und Belege nach Datum neu zuordnen. Reine GUI über
    die Zeitraum-Endpunkte (PATCH /zeitraeume, /teilen, /belege-abgleichen). */
 
-import { api, esc } from '../immo.js';
+import { api, esc, melde } from '../immo.js';
 import { datumwahl } from '../datumwahl.js';
 import { slug } from '../objekt-state.js?v=2';
 
@@ -197,6 +197,16 @@ export async function zeitraumWerkzeug(laden) {
     if (anwenden) return abgleichAnwenden(anwenden);
   });
 
-  await rendern();
+  // N369 — `rendern()` holt Daten und wirft bei jedem Non-2xx. Stand der Wurf
+  // vor `showModal()` und fing ihn niemand ab, tat der Klick auf „Umstellen"
+  // sichtbar gar nichts: kein Dialog, keine Meldung, nur eine unbehandelte
+  // Promise. Jetzt öffnet der Dialog immer — und sagt, was schiefging.
+  try {
+    await rendern();
+  } catch (fehler) {
+    melde(String(fehler.message || fehler), 'neg');
+    dlg.remove();
+    return;
+  }
   dlg.showModal();
 }

@@ -1,6 +1,14 @@
 /* Diagramme als reines SVG — bewusst ohne Bibliothek, passend zur
    Design-Sprache. Alle Funktionen liefern einen SVG-String zurueck. */
 
+import { esc } from './escape.js';
+
+/* N369 — bis hierher hatte diese Datei KEIN Escaping: Objekt-, Einheiten-,
+   Gewerke- und Firmennamen (teils aus der Beleg-Erkennung) gingen roh in SVG
+   und HTML. Sieben Seiten hingen daran. Jede Namens-Interpolation läuft
+   jetzt durch `esc`; Zahlen und selbst gebaute Klassennamen nicht — die
+   stammen aus dem Code, nicht aus den Daten. */
+
 const PALETTE = ['#0F6E5C', '#916212', '#2E7D4F', '#B24229', '#5C6B70', '#7A9E94'];
 export const farbe = i => PALETTE[i % PALETTE.length];
 
@@ -42,11 +50,11 @@ export function balken(daten, { hoehe = 30, luecke = 10, breite = 380,
     const y = i * (hoehe + luecke);
     const w = Math.max(3, (d.wert / max) * bahn);
     return `
-      <text x="0" y="${y + hoehe / 2 + 4}" class="lbl">${kurz(d.name)}<title>${
-        d.name}</title></text>
+      <text x="0" y="${y + hoehe / 2 + 4}" class="lbl">${esc(kurz(d.name))}<title>${
+        esc(d.name)}</title></text>
       <rect x="${spalte}" y="${y}" width="${w}" height="${hoehe}"
             rx="7" fill="${d.farbe || farbe(i)}"/>
-      <text x="${spalte + w + 8}" y="${y + hoehe / 2 + 4}" class="val">${d.text}</text>`;
+      <text x="${spalte + w + 8}" y="${y + hoehe / 2 + 4}" class="val">${esc(d.text)}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${breite} ${h}" class="chart" role="img">
@@ -93,9 +101,9 @@ export function saeulen(gruppen, { breite = 380, hoehe = 170 } = {}) {
     const ha = (g.a / max) * nutz, hb = (g.b / max) * nutz;
     const [z1, z2] = labels[i];
     const beschriftung = z2
-      ? `<text x="${mitte}" y="${hoehe - 21}" class="ax">${z1}<title>${g.name}</title></text>
-         <text x="${mitte}" y="${hoehe - 8}" class="ax">${z2}</text>`
-      : `<text x="${mitte}" y="${hoehe - 16}" class="ax">${z1}<title>${g.name}</title></text>`;
+      ? `<text x="${mitte}" y="${hoehe - 21}" class="ax">${esc(z1)}<title>${esc(g.name)}</title></text>
+         <text x="${mitte}" y="${hoehe - 8}" class="ax">${esc(z2)}</text>`
+      : `<text x="${mitte}" y="${hoehe - 16}" class="ax">${esc(z1)}<title>${esc(g.name)}</title></text>`;
     return `
       <rect x="${mitte - bw - 3}" y="${padOben + nutz - ha}" width="${bw}" height="${ha}"
             rx="5" fill="#2E7D4F"/>
@@ -255,7 +263,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     const bandFarbe = nachRechts ? '#8A989D'
       : knotenFarbe(lage.get(f.von).spalte === spalten[0] ? f.von : f.nach);
     return `<path d="${d}" fill="${bandFarbe}" fill-opacity="${nachRechts ? '.26' : '.3'}"><title>${
-      knoten[f.von].name} → ${knoten[f.nach].name}: ${format(f.wert)}</title></path>`;
+      esc(knoten[f.von].name)} → ${esc(knoten[f.nach].name)}: ${format(f.wert)}</title></path>`;
   }).join('');
 
   // Ist eine Mittelspalte mit einem einzigen Knoten besetzt — der Regelfall:
@@ -306,7 +314,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
       return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
                     rx="3" fill="${ROLLENFARBE[knoten[i].rolle] || '#16262C'}"/>
         <text x="${l.x + knotenBreite / 2}" y="${ly}" class="kn"
-              text-anchor="middle">${knoten[i].name}</text>
+              text-anchor="middle">${esc(knoten[i].name)}</text>
         <text x="${l.x + knotenBreite / 2}" y="${ly + 11}" class="kw"
               text-anchor="middle">${format(gewicht(i))}</text>`;
     }
@@ -326,7 +334,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     return `<rect x="${l.x}" y="${l.y}" width="${knotenBreite}" height="${l.h}"
                   rx="3" fill="${rechts ? grauFuer(i) : knotenFarbe(i)}"/>
       <text x="${tx}" y="${ly - 3}" class="kn" text-anchor="${anker}">${
-        kuerze(knoten[i].name, rechts)}<title>${knoten[i].name}</title></text>
+        esc(kuerze(knoten[i].name, rechts))}<title>${esc(knoten[i].name)}</title></text>
       <text x="${tx}" y="${ly + 10}" class="kw" text-anchor="${anker}">${
         format(gewicht(i))}</text>`;
   }).join('');
@@ -336,7 +344,7 @@ export function sankey(knoten, fluss, { breite = 560, zeilenhoehe = 30,
     .sort((a, b) => gewicht(b) - gewicht(a))
     .map(i => `<span class="sankey-lg"><i style="background:${
         lage.get(i).spalte === spalten[spalten.length - 1] ? grauFuer(i)
-          : knotenFarbe(i)}"></i>${knoten[i].name} <b>${format(gewicht(i))}</b></span>`)
+          : knotenFarbe(i)}"></i>${esc(knoten[i].name)} <b>${format(gewicht(i))}</b></span>`)
     .join('');
 
   // oben Platz fuer die Beschriftung der Mittelspalte
@@ -416,7 +424,7 @@ export function mietChart(punkte, { breite = 380, hoehe = 205,
     if (nH > 0.5)
       s += `<rect x="${x}" y="${runden(baseY - mH - gap - nH)}" width="${runden(bw)}"
               height="${runden(nH)}" rx="3" fill="#916212"/>`;
-    return `<g><title>${p.label}: ${format(p.miete || 0)} Miete + ${
+    return `<g><title>${esc(p.label)}: ${format(p.miete || 0)} Miete + ${
       format(p.nk || 0)} NK${p.qm != null && p.qm > 0
         ? ` · ${fmtQm(p.qm)} €/m²` : ''}</title>${s || `<rect x="${x}" y="${
         runden(baseY - 2)}" width="${runden(bw)}" height="2" rx="1" fill="#D6DCDD"/>`}</g>`;
@@ -468,12 +476,12 @@ export function mietChart(punkte, { breite = 380, hoehe = 205,
 
 export function legende(eintraege) {
   return `<div class="legende">` + eintraege.map((e, i) =>
-    `<span class="le"><i style="background:${e.farbe || farbe(i)}"></i>${e.name}</span>`
+    `<span class="le"><i style="background:${e.farbe || farbe(i)}"></i>${esc(e.name)}</span>`
   ).join('') + `</div>`;
 }
 
 const leer = text =>
-  `<div class="chartleer">${text}</div>`;
+  `<div class="chartleer">${esc(text)}</div>`;
 
 const euroKurz = v => `${Math.round(v).toLocaleString('de-DE')} €`;
 
@@ -518,7 +526,7 @@ export function donut(teile, { groesse = 220, dicke = 34, mitte = '',
               fill="none" stroke="${t.farbe || farbe(i)}" stroke-width="${dicke}"
               stroke-dasharray="${runden(laenge)} ${runden(luecke)}"
               stroke-dashoffset="${runden(versatz)}"
-              ><title>${t.name}: ${format(t.wert)}</title></circle>`;
+              ><title>${esc(t.name)}: ${format(t.wert)}</title></circle>`;
   }).join('');
 
   // Lochdurchmesser = groesse - 2×dicke. Beide Mitte-Zeilen muessen mit Luft
@@ -640,7 +648,7 @@ export function zeitstrahl(punkte, { breite = 380, hoehe = 190,
   const punkteHtml = roh.map(({ p, cx, cy, r }) =>
     `<circle cx="${runden(cx)}" cy="${runden(cy)}" r="${runden(r)}"
              fill="${farbe(0)}" fill-opacity=".82" stroke="var(--sheet)" stroke-width="1.4"
-             ><title>${datumVoll(datumMs(p.datum))} · ${p.firma || ''}${p.firma && p.name ? ' · ' : ''}${
+             ><title>${datumVoll(datumMs(p.datum))} · ${esc(p.firma || '')}${p.firma && p.name ? ' · ' : ''}${
              p.name || ''} · ${euroKurz(p.wert)}</title></circle>`).join('');
 
   // Beschriftung: abwechselnd oben/unten, aber nur wenn zur letzten
@@ -679,7 +687,7 @@ export function zeitstrahl(punkte, { breite = 380, hoehe = 190,
     if (links - letzteRechts[seite] < textLuft) return '';
     letzteRechts[seite] = links + textB;
     const ly = seite === 'oben' ? cy - r - 6 : cy + r + 13;
-    return `<text x="${runden(cx)}" y="${runden(ly)}" class="zl" text-anchor="${anker}">${name}</text>`;
+    return `<text x="${runden(cx)}" y="${runden(ly)}" class="zl" text-anchor="${anker}">${esc(name)}</text>`;
   }).join('');
 
   // Anzahl und Format der Datumsmarken richten sich nach der verfuegbaren
@@ -796,8 +804,8 @@ function spurenStrahl(punkte, { breite, von, bis, spuren }) {
       `<circle cx="${runden(x(datumMs(p.datum)))}" cy="${runden(y)}"
                r="${runden(radiusVon(p.wert))}" fill="${s.farbe}"
                fill-opacity=".85" stroke="var(--sheet)" stroke-width="1.4"
-               ><title>${datumVoll(datumMs(p.datum))} · ${p.firma || ''}${
-               p.firma ? ' · ' : ''}${s.name} · ${euroKurz(p.wert)}</title></circle>`
+               ><title>${datumVoll(datumMs(p.datum))} · ${esc(p.firma || '')}${
+               p.firma ? ' · ' : ''}${esc(s.name)} · ${euroKurz(p.wert)}</title></circle>`
     ).join('');
     const werte = mitWerten
       ? `${mitAnteil ? `<text x="${runden(breite - geldB - 8)}"
@@ -812,7 +820,7 @@ function spurenStrahl(punkte, { breite, von, bis, spuren }) {
         <rect x="${runden(labelB - 4)}" y="${runden(y - 4)}" width="8" height="8"
               rx="2.5" fill="${s.farbe}"/>
         <text x="${runden(labelB - 12)}" y="${runden(y + 3.5)}" class="sl"
-              text-anchor="end">${kuerze(s.name)}</text>
+              text-anchor="end">${esc(kuerze(s.name))}</text>
         ${kreise}${werte}
       </g>`;
   }).join('');

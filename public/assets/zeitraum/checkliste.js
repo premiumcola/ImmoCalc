@@ -24,6 +24,7 @@ import { lesbareGroesse } from '../scan.js';
 import { belegVorbereiten } from '../belegscan.js';
 
 import * as state from './state.js';
+import { neuerLauf, einmal } from './holen.js';
 import {
   BEREICHE, BEREICH_IKON, SORTIERUNG, HAKEN, ABGELEITET,
   NUR_EINHEIT_WAHL, WEG_ART,
@@ -60,7 +61,6 @@ import {
 } from './wasser.js';
 import {
   fuelleHeizoelInline, heizoelHinzufuegen, heizoelEntfernen,
-  hkvHinzufuegen, hkvEntfernen,
 } from './heizoel.js';
 import {
   stromMengeSpeichern, stromHerkunftSetzen, stromJahreswertSpeichern,
@@ -706,7 +706,7 @@ function vorauszahlungOhnePartei(a) {
 
 async function ergebnisHtml() {
   const [rechnung, versand] = await Promise.allSettled([
-    api(`/zeitraeume/${zid}/abrechnung`),
+    einmal(`/zeitraeume/${zid}/abrechnung`),
     api(`/zeitraeume/${zid}/versand`),
   ]);
   if (rechnung.status !== 'fulfilled') {
@@ -883,7 +883,7 @@ async function warmwasserBetragSichern() {
    ablegen — ohne den Rest der Seite neu zu laden. */
 async function deckungLaden() {
   try {
-    const ab = await api(`/zeitraeume/${zid}/abrechnung`);
+    const ab = await einmal(`/zeitraeume/${zid}/abrechnung`);
     state.setDeckungAbschlaege(ab?.gesamt?.abschlaege ?? null);
     state.setDeckungUmgelegt(ab?.gesamt?.auslagen ?? null);
   } catch {
@@ -1444,7 +1444,7 @@ async function abschliessen(knopf) {
     plan = await api(`/zeitraeume/${zid}/versand`);
     // N314(g) — `vorauszahlungen_ohne_partei` steckt nur in `/abrechnung`,
     // nicht in `/versand`; separat geholt, damit der Hinweis auch hier steht.
-    rechnung = await api(`/zeitraeume/${zid}/abrechnung`).catch(() => null);
+    rechnung = await einmal(`/zeitraeume/${zid}/abrechnung`).catch(() => null);
   } catch (fehler) {
     knopf.disabled = false;
     knopf.textContent = 'Abrechnungen erstellen und versenden';
@@ -1490,6 +1490,10 @@ function leerZeigen(gross) {
 }
 
 export async function laden() {
+  // N369 — jeder Ladevorgang startet mit frischem Anfrage-Bündel: innerhalb
+  // eines Laufs wird dieselbe URL nur einmal geholt, über Läufe hinweg nie
+  // wiederverwendet.
+  neuerLauf();
   if (!zid) {
     // N295 — eine Sackgasse ohne Ausweg war das vorher: weisse Karte, ein
     // Satz, und der Rest der Seite leer. Der gemeinsame Baustein bringt den
@@ -1529,7 +1533,7 @@ export async function laden() {
   const { istLaufer } = await import('./modell.js');
   if (istLaufer()) {
     try {
-      const b = await api(`/objekte/${encodeURIComponent(state.daten.objekt)}`
+      const b = await einmal(`/objekte/${encodeURIComponent(state.daten.objekt)}`
         + `/heizoel/bewertung?zeitraum_id=${zid}`);
       state.setHeizoelKosten(b?.verbrauch_kosten || 0);
       const zl = state.ablesungMaske?.zaehler || [];
@@ -1537,7 +1541,7 @@ export async function laden() {
       const vol = wwH?.verbrauch != null ? wwH.verbrauch
         : zl.filter(z => wasserArt(z) === 'Warmwasser' && z.hauptzaehler_id)
             .reduce((su, z) => su + (z.verbrauch || 0), 0);
-      const sp = state.heizoelKosten > 0 ? await api(
+      const sp = state.heizoelKosten > 0 ? await einmal(
         `/objekte/${encodeURIComponent(state.daten.objekt)}/waerme/split`
         + `?oel_kosten=${state.heizoelKosten}&oel_liter=${b?.verbrauch_liter || 0}`
         + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
@@ -1549,7 +1553,7 @@ export async function laden() {
   state.setHeizverteiler([]);
   if (istLaufer()) {
     try {
-      const hv = await api(`/objekte/${encodeURIComponent(state.daten.objekt)}/heizverteiler`);
+      const hv = await einmal(`/objekte/${encodeURIComponent(state.daten.objekt)}/heizverteiler`);
       state.setHeizverteiler(hv?.heizverteiler || []);
     } catch { state.setHeizverteiler([]); }
   }
@@ -1837,10 +1841,6 @@ export function initHandlers() {
     if (stWeg) return stromZaehlerEntfernen(stWeg);
     const gAdd = e.target.closest('[data-garten-anlegen]');
     if (gAdd) return gartenAnlegen(gAdd);
-    const hkvAdd = e.target.closest('[data-hkv-add]');
-    if (hkvAdd) return hkvHinzufuegen(hkvAdd);
-    const hkvWeg = e.target.closest('[data-hkv-weg]');
-    if (hkvWeg) return hkvEntfernen(hkvWeg.dataset.hkvWeg, hkvWeg.dataset.was);
     const umb = e.target.closest('[data-zaehler-umbenennen]');
     if (umb) { e.preventDefault(); e.stopPropagation();
       return zaehlerUmbenennen(umb.dataset.zaehlerUmbenennen); }

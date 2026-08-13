@@ -8,6 +8,7 @@
 
 import { api, eur, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
+import { einmal } from './holen.js';
 import { normUml, istWasserSammel } from './modell.js';
 import { m3, feldZahl } from './helpers.js';
 
@@ -88,7 +89,9 @@ export async function wasserRechnungsmengeSpeichern(feld) {
 
 export async function fuelleWasserInline(el) {
   try {
-    const d = await api(`/zeitraeume/${el.dataset.wasserInline}/wasser`
+    // N369 — gebündelt: das Öl-Panel braucht dieselbe Auskunft und startete
+    // sie im selben Tick ein zweites Mal.
+    const d = await einmal(`/zeitraeume/${el.dataset.wasserInline}/wasser`
       + `?schluessel=${state.wasserSchluessel}`);
     state.setWasserDetailCache(d);
     el.innerHTML = wasserDetailInhalt(d);

@@ -8,9 +8,7 @@
  * wählt, Escape schließt, ein Klick daneben schließt. Ohne Bibliothek.
  */
 
-const esc = s => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;');
+import { esc } from './escape.js';   // N369 — eine Fassung fürs ganze Frontend
 
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
   'August', 'September', 'Oktober', 'November', 'Dezember'];

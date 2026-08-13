@@ -9,9 +9,7 @@
  * Ohne Bibliothek, ohne Build-Schritt.
  */
 
-const esc = s => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;');
+import { esc } from './escape.js';   // N369 — eine Fassung fürs ganze Frontend
 
 let laufendeNummer = 0;
 

@@ -52,11 +52,11 @@ async function ordnerZeigen(pfad = '') {
   try {
     const daten = await api('/nextcloud/ordner?pfad=' + encodeURIComponent(pfad));
     const hoch = daten.hoch !== null && pfad
-      ? `<button data-pfad="${daten.hoch}"><span class="sym">↰</span>eine Ebene höher</button>`
+      ? `<button data-pfad="${esc(daten.hoch)}"><span class="sym">↰</span>eine Ebene höher</button>`
       : '';
     const eintraege = daten.ordner.map(o =>
-      `<button data-pfad="${o.pfad.replace(/^\//, '')}">
-         <span class="sym">▸</span>${o.name}</button>`).join('');
+      `<button data-pfad="${esc(o.pfad.replace(/^\//, ''))}">
+         <span class="sym">▸</span>${esc(o.name)}</button>`).join('');
     ordnerliste.innerHTML = hoch + (eintraege ||
       '<div class="leer">Keine Unterordner — dieser Ordner ist wählbar</div>');
   } catch (fehler) {

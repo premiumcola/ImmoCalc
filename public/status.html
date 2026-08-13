@@ -49,7 +49,7 @@
   <a class="back" href="index.html">‹ zurück</a>
 </div>
 <script type="module">
-import { eur } from './assets/immo.js';
+import { eur, esc } from './assets/immo.js';
 async function api(p){const r=await fetch('/api'+p);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}
 
 async function run(){
@@ -70,13 +70,13 @@ async function run(){
             <span class="chip">Auslagen ${eur(g.auslagen)}</span>
             <span class="chip">Abschläge ${eur(g.abschlaege)}</span>${offen}
           </div>
-          <div class="bal"><span class="l">Saldo gesamt (${z.label})</span>
+          <div class="bal"><span class="l">Saldo gesamt (${esc(z.label)})</span>
             <span class="v ${pos?'pos':'neg'}">${pos?'+ ':'− '}${eur(Math.abs(g.saldo))}</span></div>`;
       }
       const frist=o.frist_tage!=null?`<span class="chip ${o.frist_tage<=90?'amber':''}">Frist in ${o.frist_tage} T</span>`:'';
       const offenChip=o.offene_positionen?`<span class="chip neg">${o.offene_positionen} Belege offen</span>`:'';
       c.insertAdjacentHTML('beforeend',
-        `<div class="card"><div class="t">${o.name}</div><div class="a">${o.ort}</div>
+        `<div class="card"><div class="t">${esc(o.name)}</div><div class="a">${esc(o.ort)}</div>
           <div class="chips">${frist}${offenChip}</div>${balHtml}</div>`);
     }
     if(!objekte.length) c.innerHTML='<div class="note">Keine Objekte in der DB.</div>';

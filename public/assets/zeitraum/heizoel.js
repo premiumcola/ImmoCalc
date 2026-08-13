@@ -6,6 +6,7 @@
 
 import { api, eur, esc, frage, melde } from '../immo.js';
 import * as state from './state.js';
+import { einmal, einmalPost } from './holen.js';
 import { wasserArt } from './modell.js';
 import {
   zahl, _isoKurz, alleEinheiten, zaehlerEinheiten, feldZahl,
@@ -42,45 +43,6 @@ export async function heizoelEntfernen(id, beschreibung = '') {
   try {
     await api(`/heizoel/${id}`, { method: 'DELETE' });
     melde('Lieferung entfernt', 'pos');
-    const { zeichnen } = await import('./checkliste.js');
-    await zeichnen();
-  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
-}
-
-/* N81 — einen Heizkörper (HKV) erfassen. */
-export async function hkvHinzufuegen(btn) {
-  const box = btn.closest('.ho-neu');
-  const q = s => box?.querySelector(s);
-  const faktor = feldZahl(q('[data-hkv-faktor]'));
-  const stand = feldZahl(q('[data-hkv-stand]'));
-  if (!(faktor > 0)) { melde('Faktor angeben', 'neg'); return; }
-  try {
-    await api(`/objekte/${encodeURIComponent(state.daten.objekt)}/heizverteiler`, {
-      method: 'POST',
-      body: {
-        einheit: q('[data-hkv-einheit]')?.value || '',
-        nummer: q('[data-hkv-nummer]')?.value || '',
-        raum: q('[data-hkv-raum]')?.value || '',
-        faktor, einheiten_stand: Number.isFinite(stand) ? stand : 0,
-      },
-    });
-    melde('Heizkörper erfasst', 'pos');
-    const { zeichnen } = await import('./checkliste.js');
-    await zeichnen();
-  } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
-}
-
-/* N288 — auch der Heizkörper verschwindet erst nach einer Rückfrage, die
-   Nummer, Raum und Faktor nennt: die Zeilen sehen einander sehr ähnlich. */
-export async function hkvEntfernen(id, beschreibung = '') {
-  const ok = await frage('Heizkörper löschen?',
-    `${beschreibung ? `${beschreibung} — ` : ''}Der Heizkostenverteiler fällt `
-    + 'aus der Verteilung der Heizungswärme heraus.',
-    { knopf: 'Löschen', gefahr: true });
-  if (!ok) return;
-  try {
-    await api(`/heizverteiler/${id}`, { method: 'DELETE' });
-    melde('Heizkörper entfernt', 'pos');
     const { zeichnen } = await import('./checkliste.js');
     await zeichnen();
   } catch (fehler) { melde(String(fehler.message || fehler), 'neg'); }
@@ -132,10 +94,13 @@ function wwVerteilung(kosten, wasserDetail) {
 export async function fuelleHeizoelInline(el) {
   const slug = encodeURIComponent(state.daten.objekt);
   try {
-    const [best, bew, hkv] = await Promise.all([
-      api(`/objekte/${slug}/heizoel`),
-      api(`/objekte/${slug}/heizoel/bewertung?zeitraum_id=${state.zid}`).catch(() => null),
-      api(`/objekte/${slug}/heizverteiler`).catch(() => ({ heizverteiler: [] })),
+    // N369 — dieselben drei Auskünfte holt `checkliste.laden()` bereits. Ohne
+    // Bündelung waren es bei drei offenen Öl-Panels vier identische GETs je
+    // Zeichnung.
+    const [best, bew] = await Promise.all([
+      einmal(`/objekte/${slug}/heizoel`),
+      einmal(`/objekte/${slug}/heizoel/bewertung?zeitraum_id=${state.zid}`)
+        .catch(() => null),
     ]);
     // N80 — Warmwassermenge (m³) für den §9-Split.
     const zl = state.ablesungMaske?.zaehler || [];
@@ -145,18 +110,18 @@ export async function fuelleHeizoelInline(el) {
           .reduce((s, z) => s + (z.verbrauch || 0), 0);
     let split = null;
     if (bew && bew.verbrauch_kosten > 0) {
-      split = await api(`/objekte/${slug}/waerme/split?oel_kosten=${bew.verbrauch_kosten}`
+      split = await einmal(
+        `/objekte/${slug}/waerme/split?oel_kosten=${bew.verbrauch_kosten}`
         + `&oel_liter=${bew.verbrauch_liter}&ww_volumen_m3=${wwVol}`).catch(() => null);
     }
     // N118 — Warmwasser-Modus braucht die Wasser-Detailmengen.
+    // N369 — `einmal()` statt Wert-Cache: der Guard `!wasserDetailCache` griff
+    // nicht, weil `wasser.js` und dieses Modul im selben Tick starteten und
+    // keiner awaited wurde — beide holten. Das gemerkte Promise deckt auch die
+    // Zeit ab, in der die erste Anfrage noch läuft.
     if ((el.dataset.heizModus || 'oel') === 'warmwasser' && !state.wasserDetailCache) {
-      state.setWasserDetailCache(await api(`/zeitraeume/${state.zid}/wasser`
+      state.setWasserDetailCache(await einmal(`/zeitraeume/${state.zid}/wasser`
         + `?schluessel=${state.wasserSchluessel}`).catch(() => null));
-    }
-    let verteilung = null;
-    if (split && split.heizung_kosten > 0) {
-      verteilung = await api(`/objekte/${slug}/heizung/verteilung?kosten=${split.heizung_kosten}`)
-        .catch(() => null);
     }
     // N356 — die Verteilung der Heizkosten auf die Einheiten aus den ECHTEN
     // Zählern (`heizkosten.py`, N340w): Heizkörperzähler mit ihrem
@@ -168,13 +133,12 @@ export async function fuelleHeizoelInline(el) {
     let heizVerteilung = null;
     if (split && split.heizung_kosten > 0 && bew?.verbrauch_liter) {
       const literHeiz = bew.verbrauch_liter * (1 - (split.ww_anteil || 0));
-      heizVerteilung = await api(`/zeitraeume/${state.zid}/heizkosten/rechnen`, {
-        method: 'POST',
-        body: { liter: literHeiz, eur: split.heizung_kosten, ww_kwh: 0,
-                fest_anteil: 0.30 },
-      }).catch(() => null);
+      heizVerteilung = await einmalPost(
+        `/zeitraeume/${state.zid}/heizkosten/rechnen`,
+        { liter: literHeiz, eur: split.heizung_kosten, ww_kwh: 0,
+          fest_anteil: 0.30 }).catch(() => null);
     }
-    el.innerHTML = heizoelInhalt(best, bew, hkv, wwVol, split, verteilung,
+    el.innerHTML = heizoelInhalt(best, bew, wwVol, split,
                                  el.dataset.heizModus || 'oel', heizVerteilung,
                                  el.dataset.pid, el.dataset.schluessel,
                                  el.dataset.art || '');
@@ -220,7 +184,7 @@ function schluesselWahlHtml(pid, jetzt, label) {
     ${knopf('einheiten', 'Einheiten')}</div>`;
 }
 
-function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
+function heizoelInhalt(best, bew, wwVol, split, modus = 'oel',
                        heizVerteilung = null, pid = '', schluessel = '',
                        art = '') {
   const bearbeitbar = state.daten.status === 'in Arbeit';
@@ -282,37 +246,11 @@ function heizoelInhalt(best, bew, hkv, wwVol, split, verteilung, modus = 'oel',
           <span class="ho-kv">${eur(split.heizung_kosten)}</span></div>
       </div>${split.warnung ? `<div class="ho-warn">▲ ${esc(split.warnung)}</div>` : ''}
     </div>` : '';
-  // N81 — HKV → Heizungs-Anteil je Einheit.
-  const hkvListe = (hkv?.heizverteiler || []);
-  const vt = verteilung || {};
-  const hkvZeilen = hkvListe.length ? hkvListe.map(h => `
-    <div class="ho-zeile">
-      <span class="ho-dt">${esc(h.nummer || '—')}${h.raum ? ` · ${esc(h.raum)}` : ''}
-        ${h.einheit ? `<span class="ho-anf">${esc(h.einheit)}</span>` : ''}</span>
-      <span class="ho-lit">Faktor ${zahl(h.faktor)}</span>
-      <span class="ho-wert">${zahl(h.einheiten_stand)} Einh.</span>
-      ${bearbeitbar ? `<button class="ho-x" data-hkv-weg="${h.id}"
-        data-was="${esc(`${h.nummer || 'ohne Nummer'}${h.raum ? ` · ${h.raum}` : ''}${
-          h.einheit ? ` · ${h.einheit}` : ''} · Faktor ${zahl(h.faktor)}`)}"
-        aria-label="HKV entfernen">×</button>` : ''}
-    </div>`).join('') : '';
-  const vtZeilen = Object.keys(vt).length ? `<div class="ho-summe">Heizung je Einheit: ${
-    Object.entries(vt).map(([e, w]) => `${esc(e)} <b>${eur(w)}</b>`).join(' · ')}</div>` : '';
-  const einOpt = alleEinheiten().map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
-  const hkvForm = bearbeitbar ? `
-    <div class="ho-neu">
-      <select data-hkv-einheit aria-label="Einheit"><option value="">Einheit …</option>${einOpt}</select>
-      <input type="text" data-hkv-nummer placeholder="HKV-Nr." aria-label="Nummer">
-      <input type="text" data-hkv-raum placeholder="Raum" aria-label="Raum">
-      <input type="number" step="0.001" data-hkv-faktor placeholder="Faktor" aria-label="Faktor">
-      <input type="number" step="0.1" data-hkv-stand placeholder="Einheiten" aria-label="Abgelesene Einheiten">
-      <button class="btn" data-hkv-add>Heizkörper hinzufügen</button>
-    </div>` : '';
-  const hkvHtml = `<div class="ho-sekt">
-      <div class="ho-st">Heizungswärme · Heizkostenverteiler</div>
-      ${hkvZeilen ? `<div class="ho-liste">${hkvZeilen}</div>${vtZeilen}`
-        : '<div class="ho-warn">Noch keine Heizkörper erfasst — je Heizkörper Nummer, Raum, Faktor und die abgelesenen Einheiten anlegen.</div>'}
-      ${hkvForm}</div>`;
+  // N369 — der HKV-Block ist ersatzlos raus. N356 hat die Heizkörper auf
+  // echte `Zaehler` umgestellt und die Anzeige auf `heizkosten/rechnen`; das
+  // hier gebaute `hkvHtml` wurde seither von keinem Zweig mehr ausgegeben,
+  // holte aber weiter `heizung/verteilung` (sechsmal je Seitenaufbau) aus der
+  // leeren Legacy-Tabelle. Mit ihm gehen `hkvHinzufuegen`/`hkvEntfernen`.
   // N91 — je Stufe nur ihren Teil zeigen.
   if (modus === 'warmwasser') {
     // N118 — Verteilung der Warmwasser-Kosten auf die Einheiten.

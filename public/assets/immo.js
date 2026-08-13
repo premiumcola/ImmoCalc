@@ -5,6 +5,7 @@
 // Das Grundstueck kam spaeter dazu und liegt bei den uebrigen Grundstuecks-
 // Symbolen. Importiert statt kopiert — zwei Fassungen desselben Logos wuerden
 // frueher oder later auseinanderlaufen.
+import { esc } from './escape.js';
 import { GRUNDSTUECK_LOGO, GRUNDSTUECK_SPRITE } from './kostenicons.js';
 // N286 — der Ordner-Umzugs-Dialog im Beleg-Fenster braucht dasselbe
 // Auswahlfeld wie der Rest der App statt eines nativen <select>.
@@ -97,8 +98,10 @@ export const eurVoll = n =>
 export const promille = n => (n ?? 0).toLocaleString('de-DE',
   { maximumFractionDigits: 1, useGrouping: false }) + ' ‰';
 
-export const esc = s => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// N369 — die eine Fassung liegt in `escape.js`; hier nur weitergereicht,
+// damit die rund vierzig Module, die sie aus `immo.js` holen, so bleiben.
+// Import statt reinem Re-Export: `immo.js` benutzt sie auch selbst.
+export { esc };
 
 /**
  * N287 — eine deutsche Zahleneingabe zu einer Zahl. `null`, wenn nichts
@@ -1107,8 +1110,11 @@ export function belegSeitenLaden(basis, flaeche, titel = 'Beleg', tabUrl = '') {
   return adressen;
 }
 
-const sicher = s => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// N369 — war eine zweite, unvollständige Kopie von `esc`: sie ließ `"` stehen,
+// wurde aber in doppelt quotierte Attribute geschrieben (`href="…"`,
+// `data-wahl="…"`, `aria-label="…"`). Ein Dokumentname mit Anführungszeichen
+// brach damit aus dem Attribut aus. Jetzt derselbe Aufruf wie überall.
+const sicher = esc;
 
 /**
  * Rückfrage mit mehreren Wegen. `optionen` ist [{wert, text, gefahr, leise}];
