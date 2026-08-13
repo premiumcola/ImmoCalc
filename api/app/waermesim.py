@@ -48,6 +48,14 @@ from .waerme import HEIZWERT_OEL, oel_kwh, warmwasser_kwh
 # 70 % nach erfasstem Verbrauch. Delta-t rechnet genau so.
 FEST_ANTEIL = 0.30
 
+# N395 — wonach die Grundkosten (der `fest_anteil`) auf die Nutzer verteilt
+# werden. „flaeche" ist der gesetzliche Regelfall und bleibt die Vorgabe;
+# „personen" und „einheiten" sind zulässige Alternativen nach § 7 HeizkostenV,
+# die der Nutzer über die Oberfläche wählen kann. Das Feld muss in jeder
+# `nutzer`-Zeile stehen — bei den echten Zählern trägt `heizkosten.
+# nutzer_aus_zaehlern` es ein, im freien Wärmesimulator die Eingabe selbst.
+FEST_SCHLUESSEL = ("flaeche", "personen", "einheiten")
+
 
 def _zahl(wert, vorgabe: float = 0.0) -> float:
     try:
@@ -134,6 +142,9 @@ def rechne(eingabe: dict) -> dict:
       * `ww_kwh`        — statt dessen die Wärmemenge direkt, wenn bekannt
       * `bloecke`       — weitere Kostenblöcke [{name, betrag, nur_heizung}]
       * `fest_anteil`   — Grundkostenanteil (Vorgabe 0,30)
+      * `fest_schluessel` — wonach die Grundkosten verteilt werden: "flaeche"
+                          (Vorgabe, gesetzlicher Regelfall), "personen" oder
+                          "einheiten" (§7 HeizkostenV)
       * `h2_anteil`     — Anteil des Wärmezählers an den VERBRAUCHSkosten
                           (0…1). Ohne Angabe aus der Heizenergie abgeleitet
                           (siehe unten) — das ist der Regelfall.
@@ -167,6 +178,14 @@ def rechne(eingabe: dict) -> dict:
     fest_anteil = _zahl(eingabe.get("fest_anteil"), FEST_ANTEIL)
     fest_eur = round(heiz_gesamt * fest_anteil, 2)
     verbrauch_eur = round(heiz_gesamt - fest_eur, 2)
+    # N395 — der Umschalter „Grundkosten verteilen nach" (Fläche/Personen/
+    # Einheiten) griff bisher ins Leere: die Verteilung war unten hart auf
+    # das Feld "flaeche" codiert. Unbekannte Werte fallen auf den
+    # gesetzlichen Regelfall zurück, statt eine Ausnahme zu werfen — eine
+    # falsche Kleinschreibung soll die Rechnung nicht abbrechen.
+    fest_schluessel = eingabe.get("fest_schluessel") or "flaeche"
+    if fest_schluessel not in FEST_SCHLUESSEL:
+        fest_schluessel = "flaeche"
 
     nutzer = list(eingabe.get("nutzer") or [])
     summe_ehkv = round(sum(_zahl(n.get("ehkv")) for n in nutzer), 3)
@@ -232,7 +251,7 @@ def rechne(eingabe: dict) -> dict:
 
     t_h1 = topf(verbrauch_h1, "ehkv")
     t_h2 = topf(verbrauch_h2, "kwh")
-    t_fest = topf(fest_eur, "flaeche", mit_zeit=True)
+    t_fest = topf(fest_eur, fest_schluessel, mit_zeit=True)
     t_ww = topf(ww_gesamt, "ww_m3")
 
     # N340c — dieselbe Verteilung noch einmal in LITERN. Der Nutzer will für
@@ -253,7 +272,7 @@ def rechne(eingabe: dict) -> dict:
         return {k: round(gesamt * v / summe, 3) for k, v in gewichte.items()}
 
     liter_heiz = round(stoff["liter"] * heiz_anteil, 3)
-    l_fest = menge(liter_heiz * fest_anteil, "flaeche", mit_zeit=True)
+    l_fest = menge(liter_heiz * fest_anteil, fest_schluessel, mit_zeit=True)
     l_h1 = menge(liter_heiz * (1 - fest_anteil) * (1 - h2_anteil), "ehkv")
     l_h2 = menge(liter_heiz * (1 - fest_anteil) * h2_anteil, "kwh")
     l_ww = menge(ww_liter, "ww_m3")
@@ -286,6 +305,7 @@ def rechne(eingabe: dict) -> dict:
         "anteile": {"warmwasser": round(ww_anteil, 6),
                     "heizung": heiz_anteil,
                     "fest": fest_anteil,
+                    "fest_schluessel": fest_schluessel,
                     "h2_von_verbrauch": round(h2_anteil, 6),
                     # So steht es auf der Abrechnung: H01 und H02 als Anteile
                     # an den gesamten Heizkosten, zusammen die 70 %.

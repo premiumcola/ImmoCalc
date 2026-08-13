@@ -136,7 +136,7 @@ export async function fuelleHeizoelInline(el) {
       heizVerteilung = await einmalPost(
         `/zeitraeume/${state.zid}/heizkosten/rechnen`,
         { liter: literHeiz, eur: split.heizung_kosten, ww_kwh: 0,
-          fest_anteil: 0.30 }).catch(() => null);
+          fest_anteil: 0.30, fest_schluessel: state.heizFestSchluessel }).catch(() => null);
     }
     el.innerHTML = heizoelInhalt(best, bew, wwVol, split,
                                  el.dataset.heizModus || 'oel', heizVerteilung,
@@ -170,15 +170,23 @@ function verteilTabelle(titel, spalten, zeilen, summe) {
       </tbody></table></div>`;
 }
 
-/* N358 — Verteilerschlüssel wählen wie beim Wasser (`wd-schl`): der Rest,
-   der nicht über Zähler läuft, geht nach Fläche, Personen oder Einheiten.
-   Bei der Heizung sind das die Grundkosten (30 % nach HeizkostenV), beim
-   Warmwasser der Anteil ohne eigenen Zähler. */
-function schluesselWahlHtml(pid, jetzt, label) {
+/* N358/N395 — Verteilerschlüssel wählen wie beim Wasser (`wd-schl`): der
+   Rest, der nicht über Zähler läuft, geht nach Fläche, Personen oder
+   Einheiten. Zwei GRUNDVERSCHIEDENE Verwendungen teilen sich diese Optik:
+   beim Warmwasser (`ziel="position"`) ist es `Kostenposition.schluessel`,
+   den der generische Verteilungsmotor liest; bei der Heizung
+   (`ziel="grundkosten"`) ist es `waermesim.rechne`s `fest_schluessel` —
+   ein reiner Session-Wert (`state.heizFestSchluessel`), weil die Heizkosten
+   nicht über die Kostenposition, sondern live aus den Zählern gerechnet
+   werden. Der Klick-Handler (`checkliste.js`) unterscheidet über `ziel`,
+   welchen der beiden Wege er nimmt — vorher liefen beide auf denselben
+   PATCH, der bei der Heizung nichts bewirkte. */
+function schluesselWahlHtml(pid, jetzt, label, ziel) {
   if (!pid) return '';
   const knopf = (wert, text) => `<button type="button" class="wd-sb${
     (jetzt || 'flaeche') === wert ? ' an' : ''}"
-    data-heiz-schluessel="${wert}" data-pid="${pid}">${text}</button>`;
+    data-heiz-schluessel="${wert}" data-heiz-ziel="${ziel}"
+    data-pid="${pid}">${text}</button>`;
   return `<div class="wd-schl"><span class="wd-schl-l">${esc(label)}</span>
     ${knopf('flaeche', 'Fläche')}${knopf('personen', 'Personen')}
     ${knopf('einheiten', 'Einheiten')}</div>`;
@@ -264,7 +272,7 @@ function heizoelInhalt(best, bew, wwVol, split, modus = 'oel',
     }], Object.fromEntries(sp.map(e => [e, wv.anteile[e] || 0])));
     return `<div class="ho-box">${splitHtml
       || '<div class="ho-warn">Noch keine Öl-Kosten erfasst — erst Lieferungen und den Zähler-Endstand bei „Heizöl & Lieferungen" eintragen.</div>'}${
-      schluesselWahlHtml(pid, schluessel, 'Ohne eigenen Zähler verteilen nach')}${wwTab}</div>`;
+      schluesselWahlHtml(pid, schluessel, 'Ohne eigenen Zähler verteilen nach', 'position')}${wwTab}</div>`;
   }
   if (modus === 'waerme') {
     const kopfW = split ? `<div class="ho-kpi"><div class="ho-kbox teal">
@@ -286,12 +294,37 @@ function heizoelInhalt(best, bew, wwVol, split, modus = 'oel',
         werte: Object.fromEntries(nutzer.map(n => wert(n, waerme(n),
           n.kwh ? `${zahl(n.kwh)} kWh` : ''))) });
     }
-    zeilen.push({ name: 'Grundkosten', herkunft: 'nach Fläche',
+    // N395 — die Herkunft zeigt jetzt den TATSÄCHLICH gewählten Schlüssel,
+    // vorher stand hier immer „nach Fläche", auch wenn Personen oder
+    // Einheiten gewählt war — der Text hätte sonst gelogen, sobald der
+    // (jetzt endlich wirksame) Umschalter etwas anderes als Fläche wählt.
+    const festHerkunft = { flaeche: 'nach Fläche', personen: 'nach Personen',
+      einheiten: 'nach Einheiten' }[state.heizFestSchluessel] || 'nach Fläche';
+    zeilen.push({ name: 'Grundkosten', herkunft: festHerkunft,
       werte: Object.fromEntries(nutzer.map(n => wert(n, n.festkosten || 0, ''))) });
     const heizTab = verteilTabelle('Heizung', sp, zeilen,
       Object.fromEntries(nutzer.map(n => [n.name, n.heizkosten || 0])));
     const verteilt = nutzer.reduce((s, n) => s + (n.heizkosten || 0), 0);
     const rest = (split?.heizung_kosten || 0) - verteilt;
+    // N395 — der Nutzer wollte die Summe aller Weiterverrechnungen sehen UND
+    // auf einen Blick wissen, ob alles verteilt wurde: die Kopf-Kachel zeigt
+    // nur die Heizungskosten VOR Verteilung, die Tabelle nur je Einheit —
+    // die Gesamtsumme über alle Einheiten stand nirgends. `rest` war schon
+    // berechnet, wurde bisher aber nur in einem Spezialfall (fehlender
+    // Verbrauch) erwähnt, nie als allgemeiner Abgleich.
+    const vollstaendig = Math.abs(rest) < 0.01;
+    // Fehlt noch der Verbrauchsanteil (kein Zähler abgelesen), erklärt der
+    // spezifische Hinweis unten schon, WAS fehlt und WARUM — die allgemeine
+    // Summenzeile hier nur für den Regelfall, sonst stünde dieselbe Lücke
+    // zweimal da (einmal generisch, einmal mit Begründung).
+    const summeCheck = (split?.heizung_kosten || 0) > 0 && hatVerbrauch
+      ? `<div class="ho-summe-check${vollstaendig ? ' ok' : ''}">
+          <span class="ho-sc-ik">${vollstaendig ? '✓' : '▲'}</span>
+          <span>${vollstaendig
+            ? `Vollständig weiterverrechnet: <b>${eur(verteilt)}</b>`
+            : `<b>${eur(verteilt)}</b> von ${eur(split.heizung_kosten)} weiterverrechnet
+               — <b>${eur(Math.abs(rest))}</b> ${rest > 0 ? 'noch offen' : 'zu viel verteilt'}`}
+          </span></div>` : '';
     const hinweise = [];
     if (!hatVerbrauch && (split?.heizung_kosten || 0) > 0) {
       hinweise.push(`Für diesen Zeitraum ist noch kein Heizkörper- oder
@@ -311,8 +344,8 @@ function heizoelInhalt(best, bew, wwVol, split, modus = 'oel',
     // gepflegt, ihre Stände unter „Zählerstände". Zwei Wege für dieselbe
     // Sache waren genau die Verwirrung, die die leere Tabelle erzeugt hat.
     return `<div class="ho-box">${kopfW}${
-      schluesselWahlHtml(pid, schluessel, 'Grundkosten verteilen nach')}${
-      heizTab}${hinweis}</div>`;
+      schluesselWahlHtml(pid, state.heizFestSchluessel, 'Grundkosten verteilen nach', 'grundkosten')}${
+      heizTab}${summeCheck}${hinweis}</div>`;
   }
   return `<div class="ho-box">${kopf}
     ${zeilen ? `<div class="ho-liste">${zeilen}</div>${bestZeile}` : ''}

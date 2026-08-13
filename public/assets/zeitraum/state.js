@@ -116,6 +116,14 @@ export function setDeckungUmgelegt(v) { deckungUmgelegt = v; }
 export let wasserSchluessel = 'personen';
 export function setWasserSchluessel(v) { wasserSchluessel = v; }
 
+// N395 — welcher Schlüssel die Heizungs-Grundkosten (die 30 %-Festkosten
+// nach HeizkostenV) verteilt. Dasselbe Muster wie `wasserSchluessel`:
+// reiner Anzeige-/Session-Zustand, nicht persistiert — der Umschalter
+// „Grundkosten verteilen nach" griff vorher gar nicht (`waermesim.rechne`
+// hatte den Schlüssel hart auf „flaeche" codiert).
+export let heizFestSchluessel = 'flaeche';
+export function setHeizFestSchluessel(v) { heizFestSchluessel = v; }
+
 /* N280 — der WEG-Stand dieses Zeitraums: `{aktiv, stand, vorauszahlungen}`
    aus `GET /zeitraeume/{id}/weg`. Ist er `aktiv`, tritt die Dateiübernahme an
    die Stelle der Belegjagd. `null`, solange nichts geladen wurde. */

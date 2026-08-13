@@ -966,6 +966,8 @@
   .zu-panel .ho-sekt{border-top-color:var(--zu-linie)}
   .zu-panel .ho-st,.zu-panel .ho-anfw{color:var(--zu-hell)}
   .zu-panel .ho-warn{background:rgba(230,180,92,.18);color:#F0C878}
+  .zu-panel .ho-summe-check{background:rgba(230,180,92,.18);color:#F0C878}
+  .zu-panel .ho-summe-check.ok{background:rgba(46,125,79,.22);color:#8FD9BC}
   /* N364 — der Abschluss-Haken schließt den Öl-Block ab, also sitzt er als
      eigene Zeile am Fuß und wird grün, sobald er gesetzt ist. Er steht auf der
      hellen Positionskarte, nicht im versenkten Zählerbereich. */
@@ -1028,6 +1030,16 @@
   .ho-kv{display:block;font:700 15px var(--disp);letter-spacing:-.02em;margin-top:5px;color:var(--ink)}
   .ho-warn{background:var(--amber-bg);color:var(--amber);border-radius:11px;
     padding:10px 12px;margin-bottom:10px;font:500 12px var(--body);line-height:1.45}
+  /* N395 — die Summe aller Weiterverrechnungen einer Kostenart, mit einem
+     Blick erkennbar ob sie vollständig ist (grün) oder eine Lücke bleibt
+     (amber) — derselbe Vollständigkeits-Gedanke wie überall sonst im roten
+     Faden (#11): ein Betrag allein genügt nicht, „erledigt" zeigt sich erst
+     am Abgleich gegen die Gesamtkosten. */
+  .ho-summe-check{display:flex;align-items:center;gap:8px;
+    background:var(--amber-bg);color:var(--amber);border-radius:11px;
+    padding:10px 12px;margin-bottom:10px;font:500 12px var(--body);line-height:1.45}
+  .ho-summe-check.ok{background:var(--pos-bg);color:var(--pos)}
+  .ho-sc-ik{flex:none;font-weight:700}
   .ho-liste{display:flex;flex-direction:column;gap:6px}
   .ho-zeile{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
     background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 12px}

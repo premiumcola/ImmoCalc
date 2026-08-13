@@ -40,12 +40,21 @@ def _zaehler_mit_ablesungen(session: Session, objekt_id: int
             for z in zaehler]
 
 
-def _bezugs_karte(session: Session, z: Zeitraum) -> tuple[list[Einheit], dict[str, str]]:
+def _bezugs_karte(session: Session, z: Zeitraum
+                  ) -> tuple[list[Einheit], dict[str, str], dict[str, int]]:
     """Label → echte Einheit, dieselbe Abbildung wie Wasser/Strom/Übernahme
     (`einheitenzuordnung.karte`). Ein Zähler-`einheit_bezug` kann eine echte
     Einheit sein (zeigt auf sich selbst), ein Partei-Name („Roman & Alicia",
     zeigt auf deren Einheit im Zeitraum) oder etwas, das keins von beidem ist
-    (z. B. das Alt-Label „WG") — dann bleibt der rohe Bezug stehen."""
+    (z. B. das Alt-Label „WG") — dann bleibt der rohe Bezug stehen.
+
+    N395 — liefert zusätzlich die Personenzahl je Einheit, für „Grundkosten
+    nach Personen" (`waermesim.rechne`). Bei mehreren Bezügen derselben
+    Einheit im Zeitraum (Mieterwechsel) gilt die zuletzt beginnende — dieselbe
+    grobe Näherung wie bei `flaeche` hier: eine statische Zahl je Einheit,
+    keine monatsgenaue Gewichtung (die kennt dieser Rechenweg auch bei der
+    Fläche nicht, `zeitanteil` bleibt in der echten Zähler-Abrechnung
+    ungenutzt — anders als im freien Wärmesimulator)."""
     einheiten = list(session.exec(
         select(Einheit).where(Einheit.objekt_id == z.objekt_id)).all())
     mieten = list(session.exec(
@@ -53,7 +62,11 @@ def _bezugs_karte(session: Session, z: Zeitraum) -> tuple[list[Einheit], dict[st
     parteien = list(session.exec(
         select(Partei).where(Partei.objekt_id == z.objekt_id)).all())
     bezuege = verteilung.bezuege(einheiten, mieten, parteien, z.start, z.ende)
-    return einheiten, einheiten_karte(einheiten, bezuege)
+    personen: dict[str, int] = {}
+    for b in sorted(bezuege, key=lambda b: b.ab or z.start):
+        if b.einheit:
+            personen[b.einheit] = b.personen or 1
+    return einheiten, einheiten_karte(einheiten, bezuege), personen
 
 
 def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list[str]]:
@@ -68,7 +81,7 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
 
     Gibt zusätzlich zurück, welche Zähler keinen Einheiten-Bezug tragen —
     nichts wird stillschweigend verschluckt (N288-B4-Prinzip)."""
-    einheiten, bezug_karte = _bezugs_karte(session, z)
+    einheiten, bezug_karte, personen_je = _bezugs_karte(session, z)
     flaeche = {e.bezeichnung: (e.flaeche or 0) for e in einheiten}
 
     zma = _zaehler_mit_ablesungen(session, z.objekt_id)
@@ -107,8 +120,13 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
                 aufgeloest.append(bezug)
         anteil = menge / len(aufgeloest)
         for bezug in aufgeloest:
+            # N395 — „einheiten" ist kein gemessener Wert, sondern IMMER 1: der
+            # Schlüssel „nach Einheiten" heisst „jede Einheit gleich viel",
+            # unabhängig von Fläche oder Personenzahl.
             lane = lanes.setdefault(bezug, {"name": bezug,
                                             "flaeche": flaeche.get(bezug, 0),
+                                            "personen": personen_je.get(bezug, 1),
+                                            "einheiten": 1.0,
                                             "ehkv": 0.0, "kwh": 0.0, "ww_m3": 0.0})
             # N340u — Wärmemengenzähler (kWh) und Warmwasserzähler (m³) sind
             # an der Kostenart/Messeinheit erkennbar; alles andere ist ein

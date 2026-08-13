@@ -81,6 +81,30 @@ def test_bewertungsfaktor_geht_in_die_ehkv_summe_ein():
         assert nach_name["Whg B"]["flaeche"] == 30.0
 
 
+def test_nutzer_zeile_traegt_personen_und_einheiten_fuer_grundkosten_schluessel():
+    """N395 — `waermesim.rechne` braucht `personen`/`einheiten` je Nutzerzeile,
+    um die Grundkosten auch nach Personen oder Einheiten statt nur nach
+    Fläche verteilen zu können. `einheiten` ist immer 1 (jede Zeile zählt
+    gleich); `personen` kommt aus der echten Partei, hier ohne eigene Angabe
+    also die Vorgabe 1."""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+        _zaehler_direkt(c, slug, zid, name="HKV A", einheit_bezug="Whg A",
+                        wert=622, bewertungsfaktor=1.108)
+
+        from app import db
+        from app.heizkosten import nutzer_aus_zaehlern
+        from sqlmodel import Session
+        from app.models import Zeitraum
+        with Session(db.engine) as s:
+            z = s.get(Zeitraum, zid)
+            nutzer, _ = nutzer_aus_zaehlern(s, z)
+
+        nach_name = {n["name"]: n for n in nutzer}
+        assert nach_name["Whg A"]["einheiten"] == 1.0
+        assert nach_name["Whg A"]["personen"] == 1
+
+
 def test_zaehler_ohne_bezug_wird_gemeldet_nicht_verschluckt():
     with TestClient(app) as c:
         slug, zid = _objekt(c)

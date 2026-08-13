@@ -115,6 +115,63 @@ def test_fest_und_verbrauchsanteil():
     assert erg["heizung"]["verbrauch_h2"] == 958.57
 
 
+def test_fest_schluessel_flaeche_ist_die_vorgabe():
+    """Ohne Angabe (und mit dem ausdrücklichen Wert) verteilen sich die
+    Grundkosten wie bisher nach Fläche — die Vorgabe bleibt der gesetzliche
+    Regelfall, keine Verhaltensänderung für bestehende Aufrufer."""
+    ohne_angabe = rechne(EINGABE)
+    mit_angabe = rechne({**EINGABE, "fest_schluessel": "flaeche"})
+    fest = {z["name"]: z["festkosten"] for z in ohne_angabe["nutzer"]}
+    fest2 = {z["name"]: z["festkosten"] for z in mit_angabe["nutzer"]}
+    assert fest == fest2
+    assert ohne_angabe["anteile"]["fest_schluessel"] == "flaeche"
+    # EGR hat weniger Fläche (20 m²) als 1GL (33 m²) — trägt entsprechend
+    # weniger Grundkosten.
+    assert fest["EGR"] < fest["1GL"]
+
+
+def test_fest_schluessel_personen_wirkt_wirklich():
+    """N395 — der eigentliche Bug: der Umschalter griff bisher gar nicht.
+    Mit `personen` verteilen sich die Grundkosten nach Kopfzahl, nicht nach
+    Quadratmetern — eine kleine, dicht bewohnte Einheit trägt jetzt mehr."""
+    nutzer = [{"name": "Klein", "flaeche": 20.0, "personen": 4},
+              {"name": "Gross", "flaeche": 80.0, "personen": 1}]
+    eingabe = {**EINGABE, "nutzer": nutzer, "soll": {}}
+    nach_flaeche = rechne({**eingabe, "fest_schluessel": "flaeche"})
+    nach_personen = rechne({**eingabe, "fest_schluessel": "personen"})
+    f = {z["name"]: z["festkosten"] for z in nach_flaeche["nutzer"]}
+    p = {z["name"]: z["festkosten"] for z in nach_personen["nutzer"]}
+    # Nach Fläche trägt „Klein" (20 m² von 100 m²) nur ein Fünftel.
+    assert f["Klein"] < f["Gross"]
+    # Nach Personen dreht sich das Verhältnis um: 4 von 5 Personen wohnen dort.
+    assert p["Klein"] > p["Gross"]
+    assert nach_personen["anteile"]["fest_schluessel"] == "personen"
+    # Beide Verteilungen treffen exakt denselben Gesamtbetrag.
+    gesamt = nach_flaeche["heizung"]["fest"]
+    assert round(sum(f.values()), 2) == gesamt
+    assert round(sum(p.values()), 2) == gesamt
+
+
+def test_fest_schluessel_einheiten_teilt_gleich():
+    """„Einheiten" heisst: jede Einheit gleich viel, unabhängig von Fläche
+    oder Personenzahl."""
+    nutzer = [{"name": "Klein", "flaeche": 20.0, "personen": 4},
+              {"name": "Gross", "flaeche": 80.0, "personen": 1}]
+    erg = rechne({**EINGABE, "nutzer": nutzer, "soll": {},
+                  "fest_schluessel": "einheiten"})
+    fest = {z["name"]: z["festkosten"] for z in erg["nutzer"]}
+    assert fest["Klein"] == fest["Gross"]
+    assert erg["anteile"]["fest_schluessel"] == "einheiten"
+
+
+def test_unbekannter_fest_schluessel_faellt_auf_flaeche_zurueck():
+    """Ein ungültiger Wert bricht die Rechnung nicht ab, sondern verhält sich
+    wie ohne Angabe — der gesetzliche Regelfall."""
+    erg = rechne({**EINGABE, "fest_schluessel": "quadratwurzel"})
+    assert erg["anteile"]["fest_schluessel"] == "flaeche"
+    assert erg["heizung"]["fest"] == 1159.66
+
+
 def test_preise_je_einheit():
     """Die drei Preise, mit denen jede Nutzerzeile gerechnet wird:
     3,777394 €/m² · 0,158784 €/EHKV-Einheit · 0,094983 €/kWh — dazu

@@ -1843,11 +1843,25 @@ export function initHandlers() {
       }
       return;
     }
-    // N358 — Verteilerschlüssel für Heizwärme/Warmwasser direkt in ihrer
-    // Ansicht (dieselbe Wirkung wie der Wähler in der Aufteilung, den diese
-    // beiden Karten nicht zeigen, weil ihr Rumpf die Öl-Ansicht ist).
+    // N358/N395 — Verteilerschlüssel für Heizwärme/Warmwasser direkt in
+    // ihrer Ansicht (dieselbe Wirkung wie der Wähler in der Aufteilung, den
+    // diese beiden Karten nicht zeigen, weil ihr Rumpf die Öl-Ansicht ist).
+    // Zwei verschiedene Ziele teilen sich dieselbe Optik (`data-heiz-ziel`):
+    // „grundkosten" (Heizung) ist ein reiner Session-Wert, den
+    // `waermesim.rechne` als `fest_schluessel` braucht — VORHER patchte
+    // dieser Zweig hier immer `Kostenposition.schluessel`, ein Feld, das die
+    // Heizkosten-Rechnung gar nicht liest: der Umschalter griff bei der
+    // Heizung ins Leere. „position" (Warmwasser ohne eigenen Zähler) bleibt
+    // beim bisherigen PATCH-Weg, der liest `Kostenposition.schluessel`
+    // tatsächlich aus.
     const hsch = e.target.closest('[data-heiz-schluessel]');
     if (hsch) {
+      if (hsch.dataset.heizZiel === 'grundkosten') {
+        state.setHeizFestSchluessel(hsch.dataset.heizSchluessel);
+        const box = hsch.closest('[data-heizoel-inline]');
+        if (box) return fuelleHeizoelInline(box);
+        return zeichnen();
+      }
       try {
         await api(`/positionen/${hsch.dataset.pid}`, { method: 'PATCH',
           body: { schluessel: hsch.dataset.heizSchluessel, nur_einheit: '' } });
