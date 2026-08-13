@@ -797,13 +797,35 @@
   .zt-name .zu-um{margin-left:3px;min-width:22px;min-height:22px;padding:2px}
   /* N365 — die Eingabe steht als jüngstes Jahr rechts am Ende des Zeitstrahls
      und ist die einzige Spalte, die man anfasst: eigene Trennlinie davor. */
-  .zt-eingabe{width:96px;text-align:right}
+  .zt-eingabe{width:78px;text-align:right}
   th.zt-eingabe,td.zt-eingabe{border-left:1px solid var(--line);padding-left:10px}
-  .zt-inp{width:92px;box-sizing:border-box;border:1.5px solid var(--line);
-    border-radius:8px;padding:6px 8px;font:600 12px var(--mono);
+  /* N389 — `ch` statt fixer Pixel: die Box soll knapp um die Ziffern liegen,
+     nicht künstlich lang wirken (`flex:1 1 auto` blähte sie vorher auf) —
+     aber am Handy braucht dieselbe Zahl bei 16px-Schrift (siehe
+     `pointer:coarse` unten, verhindert iOS-Zoom) mehr Platz als am Desktop
+     bei 12px. `ch` skaliert mit der Schriftgröße automatisch mit, ein festes
+     px-Maß hätte auf dem Handy Ziffern abgeschnitten. */
+  .zt-inp{width:7ch;box-sizing:border-box;border:1.5px solid var(--line);
+    border-radius:8px;padding:6px 6px;font:600 12px var(--mono);
     background:var(--sheet);color:var(--ink);min-height:36px;text-align:right}
   .zt-inp:focus{outline:none;border-color:var(--teal)}
   .zt-fest{font:600 12px var(--mono);color:var(--ink)}
+  /* N386 — Eingabefeld + Erfasst-Haken nebeneinander, das Feld bleibt IMMER
+     bedienbar (der Haken ersetzt es nie, er meldet nur „ist erfasst"). */
+  .zt-eingabereihe{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+  .zt-eingabereihe .zt-inp{flex:0 0 auto;min-width:0;width:7ch}
+  /* N389 — der Wärmezähler-Stand ist ein ABSOLUTER Zählerstand (5-6-stellig),
+     kein Jahresverbrauch — braucht mehr Platz als die übrigen Eingaben. */
+  .zt-eingabe.zt-stand .zt-inp{width:9ch}
+  .zt-eingabe.zt-stand{width:96px}
+  .zt-ok{flex:none;width:16px;height:16px;border-radius:50%;
+    background:var(--pos);color:#fff;display:flex;align-items:center;
+    justify-content:center;font:700 10px var(--body);line-height:1}
+  /* N386 — die Live-Vorschau (Endstand − Anfangsstand), noch vor dem
+     Speichern berechnet. Erscheint erst, sobald etwas Sinnvolles im Feld
+     steht; siehe checkliste.js input-Handler. */
+  .zt-live{display:block;font:600 10px var(--mono);color:var(--teal-d);
+    text-align:right;min-height:13px;margin-top:2px}
   /* N384 — der Anfangsstand-Hinweis vor dem Endstand-Feld eines echten
      Zählers (typ='gemessen'): eine Zeile, klein, mit Ellipse statt Umbruch —
      die Spalte ist knapp, der volle Wert steht im `title`. */
@@ -830,12 +852,12 @@
       line-height:1.25;overflow-wrap:break-word}
     th.zt-jahr,td.zt-jahr{width:12%}
     .zt-tab td,.zt-tab th{padding:5px 3px}
-    .zt-eingabe{width:20%}
+    .zt-eingabe{width:22%}
     /* Der Kopf darf umbrechen, sonst zwingt „Verbrauch 2025" die Spalte
        breiter als das Eingabefeld darunter. */
     th.zt-eingabe,td.zt-eingabe{padding-left:6px}
     th.zt-eingabe{white-space:normal;line-height:1.3}
-    .zt-inp{width:100%;padding:6px 5px}
+    .zt-inp{padding:6px 5px}
     th.zt-jahr,td.zt-jahr{font-size:10.5px}
   }
   /* Am Handy bleibt nur ein Jahrespaar — sonst zerhackt der Umbruch die
@@ -846,7 +868,7 @@
     .zt-name{width:40%;font-size:11px}
     .zt-name .zu-um{min-width:18px;min-height:18px;margin-left:1px}
     th.zt-jahr,td.zt-jahr{width:14%}
-    .zt-eingabe{width:23%}
+    .zt-eingabe{width:24%}
   }
   /* ---- N363: die dunkle Zähler-Zone, Ebene für Ebene ------------------- */
   /* Kopfzeile des Panels (Ebene 1). */
@@ -907,6 +929,8 @@
   .zu-panel .zt-name{color:var(--zu-hell)}
   .zu-panel .zt-nr,.zu-panel td.zt-jahr{color:var(--zu-matt)}
   .zu-panel .zt-ab{color:var(--zu-matt)}
+  .zu-panel .zt-live{color:#8FD9BC}
+  .zu-panel .zt-ok{box-shadow:0 0 0 1px rgba(255,255,255,.18)}
   .zu-panel th.zt-eingabe,.zu-panel td.zt-eingabe{
     border-left-color:var(--zu-linie)}
   .zu-panel th.zt-eingabe{color:var(--zu-hell)}

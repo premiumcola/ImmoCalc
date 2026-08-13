@@ -398,17 +398,8 @@ function jahreswertTabellenHtml(teil) {
   // Die Jahre, die überhaupt vorkommen — eine Spalte je Jahr, höchstens fünf.
   // N365: aufsteigend, und die Eingabe steht als jüngstes Jahr GANZ RECHTS —
   // die Zeile liest sich damit als Zeitstrahl von links nach rechts.
-  //
-  // N384 — das LAUFENDE Jahr fliegt aus den Verlaufsspalten heraus. Sobald
-  // ein Zähler seinen 2025er-Wert gespeichert hatte, trug `verlauf` schon
-  // einen 2025-Eintrag, und die Spalte tauchte ZUSÄTZLICH zur Eingabe rechts
-  // auf — derselbe Wert zweimal in einer Zeile (roter Faden: „jede
-  // Information genau einmal"). Bei einem echten Zähler (`typ='gemessen'`)
-  // fiel das besonders auf: dort stand der Verbrauch als Verlaufszahl NEBEN
-  // dem eingetragenen Absolutstand, obwohl beides zum selben Jahr gehört.
   const jahre = [...new Set(teil.flatMap(z => Object.keys(z.verlauf || {})))]
-    .map(Number).filter(j => String(j) !== jetzt)
-    .sort((a, b) => a - b).slice(-5);
+    .map(Number).sort((a, b) => a - b).slice(-5);
 
   return sortiert.map(name => {
     const liste = gruppen.get(name);
@@ -417,8 +408,16 @@ function jahreswertTabellenHtml(teil) {
     // wenig Verbrauch blau, viel rot. Der Bezug ist die Gruppe, nicht die
     // ganze Tabelle — ein Bad und ein Wohnzimmer sind nicht vergleichbar,
     // die Heizkörper EINER Wohnung untereinander schon.
-    const alle = liste.flatMap(z => Object.values(z.verlauf || {}))
-      .filter(v => typeof v === 'number');
+    // N389 — die laufende Periode steht noch nicht als abgeschlossener
+    // `verlauf`-Eintrag da (der Server kennt nur fertige Jahre). Für die
+    // aktuelle Spalte tritt `z.verbrauch` (derselbe Wert wie im Eingabefeld,
+    // sobald gespeichert) an dessen Stelle — sonst bliebe die Spalte immer
+    // leer, genau das, was der Nutzer gerade eingetragen hat, ist aber die
+    // interessanteste Zahl zum Vergleich mit den Vorjahren.
+    const aktuellerWert = z => (z.verlauf || {})[jetzt] ?? z.verbrauch;
+    const alle = liste.flatMap(z => [
+      ...Object.values(z.verlauf || {}), aktuellerWert(z),
+    ]).filter(v => typeof v === 'number');
     const min = Math.min(...alle), max = Math.max(...alle);
     const skalieren = alle.length > 1 && max > min;
     // Fünf Jahresspalten plus Eingabe passen nur auf breiten Geräten. Statt
@@ -435,6 +434,15 @@ function jahreswertTabellenHtml(teil) {
     const zeilen = liste.map(z => {
       const eh = esc(z.messeinheit || '');
       const wert = z.ablesung ? zahl(z.ablesung.stand) : '';
+      // N386 — der Haken hinter dem Feld sagt „ist erfasst", unabhängig vom
+      // Zählertyp: `z.verbrauch` ist bei JEDEM Typ (direkt/gemessen/rest)
+      // genau dann gesetzt, wenn diese Periode einen echten Wert hat — auch
+      // eine 0 zählt (kein Verbrauch ist ein erfasster, gültiger Wert, kein
+      // „leer"). Er ERSETZT das Feld nie, nur `!= null` prüfen, nicht
+      // Wahrheitswert, sonst verschwände der Haken bei 0.
+      const haken = z.verbrauch != null
+        ? `<span class="zt-ok" title="Verbrauch ${esc(jetzt)} erfasst"
+             aria-hidden="true">✓</span>` : '';
       let feld;
       if (!bearbeitbar) {
         feld = `<span class="zt-fest">${wert || '—'}</span>`;
@@ -442,32 +450,44 @@ function jahreswertTabellenHtml(teil) {
         // Errechnet (Hauptzähler − Unterzähler) — keine eigene Eingabe.
         feld = `<span class="zt-fest">${wert || '—'}</span>`;
       } else if (z.typ === 'gemessen') {
-        // N384 — ein echter Zählerstand statt eines fertigen Jahreswerts:
-        // eingetragen wird der ABSOLUTE Stand zum Abrechnungsstichtag (kein
-        // eigenes Datumsfeld — `endstandSpeichern` nimmt ohne eins von
-        // selbst das Periodenende, genau der Tag, an dem ohnehin abgelesen
-        // wird). Den Anfangsstand der Periode holt sich die App selbst aus
-        // der Vorperiode (`z.vorwert`, vom Server berechnet) — er steht nur
-        // als Hinweis davor, der Verbrauch erscheint nach dem Speichern in
-        // der Jahresspalte, wie bei jedem anderen Zähler auch. Der
-        // eingetragene Absolutwert bleibt unverändert im Feld stehen.
+        // N384/N385 — ein echter Zählerstand statt eines fertigen Jahres-
+        // werts: eingetragen wird der ABSOLUTE Stand zum Abrechnungsstichtag
+        // (kein eigenes Datumsfeld — `endstandSpeichern` nimmt ohne eins von
+        // selbst das Periodenende). Den Anfangsstand der Periode holt sich
+        // die App selbst aus der Vorperiode (`z.vorwert`) — er steht als
+        // Hinweis davor. `zt-live` rechnet den Verbrauch SOFORT beim Tippen
+        // vor (Endstand − Anfangsstand), noch vor dem Speichern — danach
+        // steht derselbe Wert zusätzlich als echte, gespeicherte Jahresspalte
+        // da (siehe `zelle` oben, dort NICHT unterdrückt, anders als bei
+        // `direkt`-Zählern). Der eingetragene Absolutwert bleibt im Feld
+        // stehen, er wird nie durch den Verbrauch ersetzt.
         const anfang = z.vorwert ? `${zahl(z.vorwert.stand)} ${eh}` : '';
         feld = `${anfang ? `<span class="zt-ab" title="Anfangsstand der `
           + `Periode, aus der Vorperiode übernommen">ab ${esc(anfang)}</span>` : ''}
-          <input class="zt-inp" type="text" inputmode="decimal"
-            data-endstand="${z.id}" value="${wert}" placeholder="Stand"
-            aria-label="Zählerstand zum Abrechnungsstichtag ${esc(z.name)} in ${eh}">`;
+          <span class="zt-eingabereihe">
+            <input class="zt-inp" type="text" inputmode="decimal"
+              data-endstand="${z.id}" data-vorwert="${z.vorwert ? z.vorwert.stand : ''}"
+              value="${wert}" placeholder="Stand"
+              aria-label="Zählerstand zum Abrechnungsstichtag ${esc(z.name)} in ${eh}">
+            ${haken}</span>
+          <span class="zt-live" data-live-fuer="${z.id}"></span>`;
       } else {
-        feld = `<input class="zt-inp" type="text" inputmode="decimal"
-          data-strom-jahr="${z.id}" value="${wert}" placeholder="${eh}"
-          aria-label="Verbrauch ${jetzt} ${esc(z.name)} in ${eh}">`;
+        feld = `<span class="zt-eingabereihe">
+          <input class="zt-inp" type="text" inputmode="decimal"
+            data-strom-jahr="${z.id}" value="${wert}" placeholder="${eh}"
+            aria-label="Verbrauch ${jetzt} ${esc(z.name)} in ${eh}">
+          ${haken}</span>`;
       }
+      // N389 — die aktuelle Jahresspalte zeigt jetzt denselben Wert wie die
+      // Eingabe daneben, eingefärbt wie jedes Vorjahr: genau der Vergleich,
+      // ob der neue Wert zu den Vorjahren passt, war der Zweck der Spalte.
       return `<tr>
         <td class="zt-nr">${esc(z.zaehlernummer || '–')}</td>
         <td class="zt-name">${esc(state.zLabels.get(z.id) || z.name)}${
           bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
             title="Zähler umbenennen">${STIFT_ICON}</button>` : ''}</td>
-        ${jahre.map((j, i) => zelle((z.verlauf || {})[j], i)).join('')}
+        ${jahre.map((j, i) => zelle(
+          String(j) === jetzt ? aktuellerWert(z) : (z.verlauf || {})[j], i)).join('')}
         <td class="zt-eingabe${z.typ === 'gemessen' ? ' zt-stand' : ''}">${feld}</td>
       </tr>`;
     }).join('');

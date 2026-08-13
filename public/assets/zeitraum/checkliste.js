@@ -1649,6 +1649,23 @@ export function initHandlers() {
 
   // Prozente beim Tippen mitrechnen.
   inhalt.addEventListener('input', e => {
+    // N386 — der Verbrauch eines echten Zählers (Endstand − Anfangsstand)
+    // erscheint SOFORT beim Tippen, noch vor dem Speichern — der Nutzer
+    // liest sonst immer exakt am Stichtag ab und will die Rechnung nicht
+    // erst nach einem Serverumlauf sehen. Nach dem Speichern übernimmt die
+    // echte, gespeicherte Jahresspalte denselben Wert (siehe
+    // `jahreswertTabellenHtml`); dieser Live-Wert ist nur die Vorschau.
+    if (e.target.matches('[data-endstand]') && e.target.closest('.zt-eingabereihe')) {
+      const eingabe = feldZahl(e.target);
+      const roh = e.target.dataset.vorwert;
+      const vorwert = roh !== '' ? Number(roh) : null;
+      const live = e.target.closest('.zt-eingabe')?.querySelector('[data-live-fuer]');
+      if (live) {
+        live.textContent = (eingabe != null && vorwert != null)
+          ? `= ${zahl(eingabe - vorwert)}` : '';
+      }
+      return;
+    }
     if (e.target.matches('[data-vorab-netto]')) {
       const netto = feldZahl(e.target) || 0;
       const ziel = e.target.closest('.vorab')?.querySelector('[data-vorab-brutto]');
