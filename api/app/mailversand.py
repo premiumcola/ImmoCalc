@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import smtplib
 import ssl
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
@@ -49,11 +51,21 @@ class Zugang:
         smtp.starttls(context=kontext)
         return smtp
 
-    def pruefe(self) -> dict:
-        """Anmeldung testen, ohne eine Mail zu senden."""
+    @contextmanager
+    def verbindung_offen(self, timeout: float = 20.0) -> Iterator[smtplib.SMTP]:
+        """Eine angemeldete Verbindung für einen ganzen Versandlauf.
+
+        `sende()` baute je Mail eine eigene Verbindung samt Login auf. Beim
+        Sammelversand eines Hauses mit zwölf Einheiten (Ehepaare zählen doppelt)
+        sind das über zwanzig Anmeldungen in Folge — GMX und Web.de werten das
+        als Missbrauch, drosseln ab, und der Lauf kippt mitten drin mit
+        SMTPAuthenticationError oder „421 too many connections". Die Hälfte der
+        Mieter hat dann ihre Abrechnung, die andere nicht. Ein Login pro Lauf
+        statt eines pro Empfänger.
+        """
         try:
-            with self._verbindung() as smtp:
-                smtp.login(self.benutzer, self.passwort)
+            smtp = self._verbindung(timeout)
+            smtp.login(self.benutzer, self.passwort)
         except smtplib.SMTPAuthenticationError as e:
             raise MailFehler(
                 "Anmeldung abgelehnt — bei GMX muss der Versand über externe "
@@ -61,24 +73,86 @@ class Zugang:
             ) from e
         except (smtplib.SMTPException, OSError) as e:
             raise MailFehler(f"Mailserver nicht erreichbar: {e}") from e
+        try:
+            yield smtp
+        finally:
+            # Ein Server, der die Verbindung vor dem QUIT kappt, darf einen
+            # sonst gelungenen Lauf nicht nachträglich zum Fehler machen.
+            try:
+                smtp.quit()
+            except (smtplib.SMTPException, OSError):
+                pass
+            finally:
+                smtp.close()
+
+    def pruefe(self) -> dict:
+        """Anmeldung testen, ohne eine Mail zu senden."""
+        with self.verbindung_offen():
+            pass
         return {"ok": True, "server": self.server, "absender": self.absender}
 
     def sende(self, an: str, betreff: str, text: str,
-              anhang: tuple[str, bytes, str] | None = None) -> None:
-        """Verschickt eine Mail; `anhang` ist (Dateiname, Inhalt, MIME-Subtyp)."""
-        nachricht = EmailMessage()
-        nachricht["From"] = formataddr((self.absender_name or "", self.absender))
-        nachricht["To"] = an
-        nachricht["Subject"] = betreff
-        nachricht.set_content(text)
-        if anhang:
-            name, inhalt, subtyp = anhang
-            nachricht.add_attachment(inhalt, maintype="application",
-                                     subtype=subtyp, filename=name)
+              anhang: tuple[str, bytes, str] | None = None,
+              smtp: smtplib.SMTP | None = None) -> None:
+        """Verschickt eine Mail; `anhang` ist (Dateiname, Inhalt, MIME-Subtyp).
+
+        `smtp` ist eine offene Verbindung aus `verbindung_offen()`. Fehlt sie,
+        öffnet `sende` wie bisher selbst eine — die Einzelaufrufer (Testmail,
+        Strom, Tankstelle) bleiben damit unverändert.
+        """
+        an = (an or "").strip()
+        if not an:
+            raise MailFehler("Keine Empfängeradresse angegeben.")
+        # Der Aufbau der Nachricht gehört mit in den Fehlerfang: eine kopierte
+        # Adresse mit Zeilenumbruch lässt `nachricht["To"] = an` mit ValueError
+        # platzen. Stand das außerhalb, war das kein MailFehler — der
+        # Sammelversand brach mit HTTP 500 ab, ohne zu sagen, wer seine Mail
+        # schon hat, und der Nutzer stand vor einem halb versendeten Zeitraum.
         try:
-            with self._verbindung() as smtp:
-                smtp.login(self.benutzer, self.passwort)
+            nachricht = EmailMessage()
+            nachricht["From"] = formataddr((self.absender_name or "",
+                                            self.absender))
+            nachricht["To"] = an
+            nachricht["Subject"] = betreff
+            nachricht.set_content(text)
+            if anhang:
+                name, inhalt, subtyp = anhang
+                nachricht.add_attachment(inhalt, maintype="application",
+                                         subtype=subtyp, filename=name)
+        except ValueError as e:
+            raise MailFehler(
+                f"Die Adresse {an!r} ist unbrauchbar (Zeilenumbruch oder "
+                f"unerlaubtes Zeichen) — bitte im Mietverhältnis "
+                f"korrigieren: {e}") from e
+        try:
+            if smtp is not None:
                 smtp.send_message(nachricht)
+            else:
+                with self.verbindung_offen() as eigene:
+                    eigene.send_message(nachricht)
         except (smtplib.SMTPException, OSError) as e:
             raise MailFehler(f"Versand fehlgeschlagen: {e}") from e
         log.info("Mail an %s versendet", an)
+
+
+@contextmanager
+def versandlauf(zugang: Zugang) -> Iterator[Callable[..., None]]:
+    """Bündelt einen Sammelversand auf einer einzigen SMTP-Verbindung.
+
+    Zurück kommt eine Funktion mit derselben Signatur wie `Zugang.sende`. Der
+    Aufrufer merkt vom Unterschied nichts, spart aber je Empfänger eine
+    Anmeldung — siehe `Zugang.verbindung_offen`.
+
+    Ein Versender ohne `verbindung_offen` (Ersatz-Postfach im Prüfstand) sendet
+    unverändert einzeln weiter; ein fehlendes Bündel darf keinen Lauf
+    verhindern.
+    """
+    offen = getattr(zugang, "verbindung_offen", None)
+    if offen is None:
+        yield zugang.sende
+        return
+    with offen() as smtp:
+        def senden(an: str, betreff: str, text: str,
+                   anhang: tuple[str, bytes, str] | None = None) -> None:
+            zugang.sende(an, betreff, text, anhang=anhang, smtp=smtp)
+        yield senden

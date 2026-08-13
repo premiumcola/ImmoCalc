@@ -321,6 +321,18 @@ class Zeitraum(SQLModel, table=True):
     weg_beleg: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
+# N373 — die beiden Zustände einer Kostenposition, einmal benannt. Als roher
+# String standen sie in über vierzig Zeilen quer durch neun Module; ein dritter
+# Zustand (oder ein Tippfehler in einem Vergleich) hätte sie alle einzeln
+# getroffen, ohne dass irgendetwas rot geworden wäre. Sie stehen hier und nicht
+# in `belegposten`, weil `verteilung` sie ebenfalls braucht und `belegposten`
+# seinerseits `verteilung` lädt — ein Import zurück wäre ein Zyklus.
+# `Kostenposition.status` bleibt ein `str`: das Datenmodell ändert sich nicht,
+# nur die Schreibweise im Code bekommt einen Namen.
+ERLEDIGT = "erledigt"
+OFFEN = "offen"
+
+
 class Kostenposition(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     zeitraum_id: int = Field(foreign_key="zeitraum.id", index=True)

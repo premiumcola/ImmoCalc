@@ -42,7 +42,7 @@ Steht der Rechenweg, wandert er in die Engine und dieses Modul fällt weg.
 from __future__ import annotations
 
 from .engine import verteile_nach_wert
-from .waerme import oel_kwh, warmwasser_kwh
+from .waerme import HEIZWERT_OEL, oel_kwh, warmwasser_kwh
 
 # Der gesetzliche Regelfall der HeizkostenV: 30 % Grundkosten nach Fläche,
 # 70 % nach erfasstem Verbrauch. Delta-t rechnet genau so.
@@ -144,7 +144,8 @@ def rechne(eingabe: dict) -> dict:
     `warmwasser`, `preise`, `nutzer` (je Zeile mit Teilbeträgen, Summe und —
     wo ein Soll vorliegt — `soll` und `abweichung`) und `abgleich`.
     """
-    heizwert = _zahl(eingabe.get("heizwert"), 10.0) or 10.0
+    # N373 — der Heizwert kommt aus `waerme`, nicht als eigene Zahl.
+    heizwert = _zahl(eingabe.get("heizwert"), HEIZWERT_OEL) or HEIZWERT_OEL
     stoff = brennstoff(eingabe)
     gesamt_kwh = oel_kwh(stoff["liter"], heizwert)
 

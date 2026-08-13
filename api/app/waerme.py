@@ -33,8 +33,14 @@ log = logging.getLogger("immocalc")
 # zusammen; 10 °C ist die angenommene Kaltwasser-Zulauftemperatur.
 _WW_FAKTOR = 2.5
 _KALTWASSER_C = 10.0
-# Heizwert Heizöl EL: rund 10 kWh je Liter.
-_HEIZWERT_OEL = 10.0
+# Heizwert Heizöl EL: rund 10 kWh je Liter. N373 — dieselbe physikalische
+# Größe stand dreimal im Baum (hier, `waermesim` als Vorgabewert,
+# `routers/waerme` als Query-Default). Öffentlich, damit die beiden anderen
+# sie holen statt sie zu wiederholen: ein korrigierter Heizwert muss überall
+# gleichzeitig gelten, sonst rechnen Simulator und echte Abrechnung
+# auseinander.
+HEIZWERT_OEL = 10.0
+_HEIZWERT_OEL = HEIZWERT_OEL
 
 
 def warmwasser_kwh(volumen_m3: float, temp_c: float = 60.0) -> float:

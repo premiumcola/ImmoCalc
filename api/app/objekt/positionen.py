@@ -13,7 +13,8 @@ from sqlmodel import Session, select
 from ..belegposten import anlegen as position_bauen
 from ..db import get_session
 from ..dokumente.zuordnung import loese_info_referenzen
-from ..models import Dokument, Kostenart, Kostenposition, Vorauszahlung, Zeitraum
+from ..models import (ERLEDIGT, OFFEN, Dokument, Kostenart,
+                      Kostenposition, Vorauszahlung, Zeitraum)
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
                           ableiten_einheit, stammdaten,
                           unbekannte_vorauszahlungen, vorschau)
@@ -202,7 +203,7 @@ def position_aendern(pid: int, data: PositionIn,
         # heisst wieder „offen" — sonst bliebe eine 0,00-€-Zeile fälschlich
         # grün stehen.
         if data.status is None:
-            p.status = "erledigt" if data.betrag > 0 else "offen"
+            p.status = ERLEDIGT if data.betrag > 0 else OFFEN
     if data.schluessel is not None and data.schluessel not in SCHLUESSEL:
         raise HTTPException(400, f"Unbekannter Verteilungsschlüssel "
                                  f"'{data.schluessel}'")

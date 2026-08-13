@@ -857,12 +857,30 @@ def test_leerstand_bekommt_keine_mail(postfach):
         c.post(f"/api/zeitraeume/{zid}/positionen", json={
             "kostenart": "Wasser", "betrag": 500.0, "schluessel": "flaeche"})
 
+        # N371 — der Abschluss hält an, solange jemand mit echtem Kostenanteil
+        # keine Abrechnung bekommen hat. Vorher schloss der Zeitraum wortlos ab
+        # und verschwand aus Fristen und Erinnerungen, obwohl der ausgezogene
+        # EG-Mieter nichts erhalten hatte.
+        blockiert = c.post(f"/api/zeitraeume/{zid}/abschliessen",
+                           json={"versenden": True, "offene_uebergehen": True})
+        assert blockiert.status_code == 409, blockiert.text
+        # Die Meldung nennt die PARTEI, nicht die Einheit — nach ihr sucht der
+        # Nutzer die Adresse, und sie sagt zugleich, wer schon beliefert ist.
+        detail = blockiert.json()["detail"]
+        assert "Mieter Alpha" in detail and "Mieter Beta" in detail, detail
+        assert postfach.gesendet == ["beta@example.org"], \
+            "nur der laufende Mieter, nicht der ausgezogene und nicht der Leerstand"
+
+        # Und der Hinweis ist keine Sackgasse: gibt es die Adresse wirklich
+        # nicht (ausgezogen ohne neue Anschrift), lässt er sich bewusst
+        # übergehen — dann steht der Abschluss.
         fertig = c.post(f"/api/zeitraeume/{zid}/abschliessen",
-                        json={"versenden": True, "offene_uebergehen": True})
+                        json={"versenden": True, "offene_uebergehen": True,
+                              "ohne_adresse_abschliessen": True})
         assert fertig.status_code == 200, fertig.text
         assert "EG" in fertig.json()["ohne_mail"]
         assert postfach.gesendet == ["beta@example.org"], \
-            "nur der laufende Mieter, nicht der ausgezogene und nicht der Leerstand"
+            "der zweite Anlauf verschickt nichts doppelt"
 
 
 # ------------------------------------------------------- Wieder öffnen (LXVI)

@@ -26,8 +26,8 @@ from .cashflow import monate_im_jahr
 from .engine import Position
 # N312 — die zweite Monatsregel: Zahlmonate für Vorauszahlungen.
 from .zeit import zahlmonate
-from .models import (Einheit, Kostenart, Kostenposition, Miete, Partei,
-                     Vorauszahlung, Zeitraum)
+from .models import (ERLEDIGT, Einheit, Kostenart, Kostenposition, Miete,
+                     Partei, Vorauszahlung, Zeitraum)
 from .turnus import jahresbetrag
 
 # Was jeder Schlüssel bedeutet und ob er sich aus den Stammdaten ergibt.
@@ -517,7 +517,7 @@ def positionen_fuer_abrechnung(
         select(Kostenart).where(Kostenart.objekt_id == z.objekt_id)).all()
         if not k.umlagefaehig}
     umlegbar = [p for p in pos if p.kostenart.strip().lower() not in nicht_umlegen]
-    positionen = [ep for p in umlegbar if p.status == "erledigt"
+    positionen = [ep for p in umlegbar if p.status == ERLEDIGT
                   for ep in _engine_positionen(session, z, p)]
     # CCCLXIV — Vorauszahlungen aus der Miete ableiten (monatliche NK ×
     # belegte Monate); separat erfasste Vorauszahlungs-Datensätze haben Vorrang.
@@ -670,9 +670,9 @@ def fehlende_angaben(positionen: list[Kostenposition]) -> dict:
     tückische: der Betrag verschwindet lautlos aus der Abrechnung, weil
     `verteile_nach_wert` ein leeres dict bekommt und nichts zurückgibt.
     """
-    ohne_betrag = [p.kostenart for p in positionen if p.status != "erledigt"]
+    ohne_betrag = [p.kostenart for p in positionen if p.status != ERLEDIGT]
     ohne_verteilung = [p.kostenart for p in positionen
-                       if p.status == "erledigt" and (p.betrag or 0) != 0
+                       if p.status == ERLEDIGT and (p.betrag or 0) != 0
                        and sum((p.anteile or {}).values()) <= 0]
     return {"ohne_betrag": ohne_betrag, "ohne_verteilung": ohne_verteilung,
             "offen": ohne_betrag + ohne_verteilung}

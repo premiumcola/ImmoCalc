@@ -1,5 +1,6 @@
 """Abrechnung abschließen: je Partei ein Ergebnis erzeugen und versenden."""
 import logging
+from contextlib import ExitStack
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -10,7 +11,7 @@ from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..cloudkern import _lies
 from ..db import get_session
 from ..engine import abrechnung
-from ..mailversand import MailFehler
+from ..mailversand import MailFehler, versandlauf
 from ..models import (Anteil, Bewohner, Eigentuemer, Miete, Objekt,
                       Versandprotokoll, Zeitraum)
 from ..verteilung import (_laufend, fehlende_angaben, leerstaende,
@@ -197,6 +198,11 @@ class AbschlussIn(BaseModel):
     versenden: bool = False
     offene_uebergehen: bool = False
     pdf_anhaengen: bool = True
+    # Manche Adressen gibt es schlicht nicht — ein Mieter ist ohne neue
+    # Anschrift ausgezogen. Dann darf der Zeitraum trotzdem zu, aber weil der
+    # Nutzer es ausdrücklich sagt, nicht weil der Versand stillschweigend
+    # nichts getan hat.
+    ohne_adresse_abschliessen: bool = False
     # Ausdrücklich nötig, um einen bereits abgeschlossenen Zeitraum erneut
     # anzufassen — sonst genügt ein zweiter Tab für einen zweiten Versand.
     erneut: bool = False
@@ -251,65 +257,94 @@ def abschliessen(zid: int, data: AbschlussIn,
                 session.delete(p)
             session.commit()
         fertig = _versendete_adressen(session, zid)
-        for partei, werte in (res.get("parteien") or {}).items():
-            # Alle Bewohner mit eigener Adresse bekommen die Abrechnung, nicht
-            # nur wer den Vertrag unterschrieben hat. Der Leerstand bekommt
-            # nichts — hinter ihm steht keine Partei, sondern der Eigentümer.
-            adressen = [a for a in kontakte.get(partei, {}).get("adressen", [])
-                        if partei not in leer]
-            if not adressen:
-                uebersprungen.append(partei)
-                continue
-            # Adressgenau: nur die noch nicht belieferten Adressen dieser Partei.
-            # Ein zweiter Anlauf nach einem Fehler in der Mitte fängt so genau
-            # dort an, wo er abbrach, statt eine Partei ganz zu überspringen.
-            adressen = [a for a in adressen if (partei, a) not in fertig]
-            if not adressen:
-                schon_da.append(partei)
-                continue
-            saldo = werte.get("saldo") or 0
-            richtung = ("Guthaben zu Ihren Gunsten" if saldo >= 0
-                        else "Nachzahlung")
-            text = (
-                f"Guten Tag {partei},\n\n"
-                f"anbei die Betriebskostenabrechnung für {o.name}, "
-                f"Zeitraum {zeitraum_text}.\n\n"
-                f"Umlagefähige Kosten: {werte.get('kosten'):.2f} EUR\n"
-                f"Geleistete Vorauszahlungen: {werte.get('vorauszahlungen'):.2f} EUR\n"
-                f"{richtung}: {abs(saldo):.2f} EUR\n\n"
-                f"Bei Rückfragen melden Sie sich gerne.\n\n"
-                f"Freundliche Grüße\n"
-            )
-            anhang = None
-            if data.pdf_anhaengen:
-                inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
-                                        _einzelposten(res, partei),
-                                        absender=z_mail.absender_name,
-                                        anschrift=_objekt_adresse(o),
-                                        einheit=kontakte.get(partei, {})
-                                                .get("einheit", ""))
-                anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
-                          inhalt, "pdf")
-            for adresse in adressen:
-                try:
-                    z_mail.sende(adresse,
-                                 f"Betriebskostenabrechnung {o.name} · {zeitraum_text}",
-                                 text, anhang=anhang)
-                except MailFehler as e:
-                    # Sofort festhalten, was bis hierher rausging — sonst steht
-                    # beim naechsten Versuch niemand in der Liste.
+        # Eine Verbindung für den ganzen Lauf: je Empfänger eine eigene
+        # Anmeldung liess GMX/Web.de nach kurzer Zeit drosseln, und der Versand
+        # kippte mitten im Haus.
+        with ExitStack() as stapel:
+            try:
+                sende = stapel.enter_context(versandlauf(z_mail))
+            except MailFehler as e:
+                # Kommt die Verbindung gar nicht erst zustande, ist noch nichts
+                # rausgegangen — das gehört in die Meldung, sonst rät der Nutzer.
+                raise HTTPException(
+                    400, f"Postfach nicht erreichbar: {e} Es wurde noch nichts "
+                         f"versendet.") from e
+            for partei, werte in (res.get("parteien") or {}).items():
+                # Alle Bewohner mit eigener Adresse bekommen die Abrechnung,
+                # nicht nur wer den Vertrag unterschrieben hat. Der Leerstand
+                # bekommt nichts — hinter ihm steht keine Partei, sondern der
+                # Eigentümer.
+                adressen = [a for a in kontakte.get(partei, {}).get("adressen", [])
+                            if partei not in leer]
+                if not adressen:
+                    uebersprungen.append(partei)
+                    continue
+                # Adressgenau: nur die noch nicht belieferten Adressen dieser
+                # Partei. Ein zweiter Anlauf nach einem Fehler in der Mitte
+                # fängt so genau dort an, wo er abbrach, statt eine Partei ganz
+                # zu überspringen.
+                adressen = [a for a in adressen if (partei, a) not in fertig]
+                if not adressen:
+                    schon_da.append(partei)
+                    continue
+                saldo = werte.get("saldo") or 0
+                richtung = ("Guthaben zu Ihren Gunsten" if saldo >= 0
+                            else "Nachzahlung")
+                text = (
+                    f"Guten Tag {partei},\n\n"
+                    f"anbei die Betriebskostenabrechnung für {o.name}, "
+                    f"Zeitraum {zeitraum_text}.\n\n"
+                    f"Umlagefähige Kosten: {werte.get('kosten'):.2f} EUR\n"
+                    f"Geleistete Vorauszahlungen: {werte.get('vorauszahlungen'):.2f} EUR\n"
+                    f"{richtung}: {abs(saldo):.2f} EUR\n\n"
+                    f"Bei Rückfragen melden Sie sich gerne.\n\n"
+                    f"Freundliche Grüße\n"
+                )
+                anhang = None
+                if data.pdf_anhaengen:
+                    inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
+                                            _einzelposten(res, partei),
+                                            absender=z_mail.absender_name,
+                                            anschrift=_objekt_adresse(o),
+                                            einheit=kontakte.get(partei, {})
+                                                    .get("einheit", ""))
+                    anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
+                              inhalt, "pdf")
+                for adresse in adressen:
+                    try:
+                        sende(adresse,
+                              f"Betriebskostenabrechnung {o.name} · {zeitraum_text}",
+                              text, anhang=anhang)
+                    except MailFehler as e:
+                        # Sofort festhalten, was bis hierher rausging — sonst
+                        # steht beim naechsten Versuch niemand in der Liste.
+                        session.commit()
+                        raise HTTPException(
+                            400, f"Versand an {partei} ({adresse}) "
+                                 f"fehlgeschlagen: {e}. Bereits verschickt: "
+                                 f"{', '.join(versendet) or 'niemand'}.") from e
+                    # Je Adresse eine Zeile: erst wenn alle Bewohner einer
+                    # Partei ihre Mail haben, gilt die Partei als versorgt.
+                    session.add(Versandprotokoll(
+                        zeitraum_id=zid, partei=partei, empfaenger=adresse,
+                        versendet_am=date.today()))
                     session.commit()
-                    raise HTTPException(
-                        400, f"Versand an {partei} ({adresse}) fehlgeschlagen: "
-                             f"{e}. Bereits verschickt: "
-                             f"{', '.join(versendet) or 'niemand'}.") from e
-                # Je Adresse eine Zeile: erst wenn alle Bewohner einer Partei
-                # ihre Mail haben, gilt die Partei als versorgt.
-                session.add(Versandprotokoll(
-                    zeitraum_id=zid, partei=partei, empfaenger=adresse,
-                    versendet_am=date.today()))
-                session.commit()
-            versendet.append(partei)
+                versendet.append(partei)
+
+    # „Abgeschlossen" heisst: jede versandbereite Partei hat ihre Abrechnung.
+    # Der Status stand früher ausserhalb jeder Bedingung — hatte keine Partei
+    # eine Mailadresse, ging keine einzige Mail raus und der Zeitraum galt
+    # trotzdem als erledigt. Er verschwand damit aus Fristen und Erinnerungen,
+    # obwohl niemand seine Abrechnung hatte. Der Leerstand zählt hier nicht:
+    # hinter ihm steht kein Empfänger, sondern der Eigentümer selbst.
+    fehlt_adresse = sorted(p for p in uebersprungen if p not in leer)
+    if data.versenden and fehlt_adresse and not data.ohne_adresse_abschliessen:
+        raise HTTPException(
+            409, f"Ohne Mailadresse und deshalb nicht versendet: "
+                 f"{', '.join(fehlt_adresse)}. Bereits verschickt: "
+                 f"{', '.join(versendet) or 'niemand'}. Adresse im "
+                 f"Mietverhältnis nachtragen und erneut versenden — oder den "
+                 f"Abschluss ausdrücklich ohne diese Partei bestätigen.")
 
     z.status = "abgeschlossen"
     session.add(z)

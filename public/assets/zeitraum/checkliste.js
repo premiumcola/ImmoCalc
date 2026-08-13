@@ -1461,19 +1461,41 @@ async function abschliessen(knopf) {
   }
 
   knopf.textContent = weg === 'senden' ? 'Verschicke …' : 'Schließe ab …';
+  const abschicken = ohneAdresse => api(`/zeitraeume/${zid}/abschliessen`, {
+    method: 'POST', body: { versenden: weg === 'senden',
+                            offene_uebergehen: uebergehen,
+                            ohne_adresse_abschliessen: ohneAdresse },
+  });
+  const zurueck = () => {
+    knopf.disabled = false;
+    knopf.textContent = 'Abrechnungen erstellen und versenden';
+  };
   try {
-    const antwort = await api(`/zeitraeume/${zid}/abschliessen`, {
-      method: 'POST', body: { versenden: weg === 'senden',
-                              offene_uebergehen: uebergehen },
-    });
+    let antwort;
+    try {
+      antwort = await abschicken(false);
+    } catch (fehler) {
+      // N371 — der Abschluss hält an, wenn eine Partei mit echtem Kostenanteil
+      // keine Adresse hat: sie bekäme ihre Abrechnung nie, und der Zeitraum
+      // verschwände trotzdem aus Fristen und Erinnerungen. Der Hinweis darf
+      // aber keine Sackgasse sein — manchmal gibt es die Adresse wirklich
+      // nicht (ausgezogen ohne neue Anschrift). Also fragen statt blockieren.
+      if (fehler.status !== 409) throw fehler;
+      zurueck();
+      const trotzdem = await frage('Ohne diese Empfänger abschließen?',
+        String(fehler.message || fehler), { knopf: 'Trotzdem abschließen' });
+      if (!trotzdem) return;
+      knopf.disabled = true;
+      knopf.textContent = 'Schließe ab …';
+      antwort = await abschicken(true);
+    }
     melde(antwort.versendet.length
       ? `${antwort.versendet.length} Abrechnung(en) verschickt an ${antwort.versendet.join(', ')}`
       : 'Zeitraum abgeschlossen — versendet wurde nichts.',
       antwort.versendet.length ? 'pos' : '');
     await laden();
   } catch (fehler) {
-    knopf.disabled = false;
-    knopf.textContent = 'Abrechnungen erstellen und versenden';
+    zurueck();
     melde(String(fehler.message || fehler), 'neg');
   }
 }

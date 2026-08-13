@@ -32,7 +32,8 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from .models import Dokument, Kostenart, Kostenposition, Zeitraum
+from .models import (ERLEDIGT, OFFEN, Dokument, Kostenart,
+                     Kostenposition, Zeitraum)
 from .verteilung import VORGABE, ableiten
 
 log = logging.getLogger("immocalc")
@@ -153,9 +154,9 @@ def anlegen(session: Session, z: Zeitraum, kostenart: str, *,
     # Betrag oder aus verknüpften Belegen. Eine 0-€-Zeile ohne Beleg ist eine
     # leere Hülle (so entstanden die „Wasser/Strom 0,00 €“-Reste); sie bleibt
     # „offen“, auch wenn der Aufrufer „erledigt“ wünscht.
-    gewuenscht = status or ("erledigt" if betrag else "offen")
-    if gewuenscht == "erledigt" and not _geld(betrag) and not _geld(beleg_summe):
-        gewuenscht = "offen"
+    gewuenscht = status or (ERLEDIGT if betrag else OFFEN)
+    if gewuenscht == ERLEDIGT and not _geld(betrag) and not _geld(beleg_summe):
+        gewuenscht = OFFEN
     p = Kostenposition(
         zeitraum_id=z.id, kostenart=kostenart, betrag=_geld(betrag),
         schluessel=schluessel, wertquelle=wertquelle, s35=s35,
@@ -258,7 +259,7 @@ def _schreibe(session: Session, p: Kostenposition, b: Buchung) -> None:
     # Nachtragen von Hand (`position_aendern`): ein Betrag heisst „erledigt",
     # keiner (mehr) heisst wieder „offen" — sonst bliebe eine 0,00-€-Zeile
     # fälschlich grün, wenn ihr letzter Beleg sich als kostenfrei herausstellt.
-    p.status = "erledigt" if b.betrag else "offen"
+    p.status = ERLEDIGT if b.betrag else OFFEN
     if p.wertquelle == "manuell":
         p.wertquelle = "Scan"
     session.add(p)
@@ -278,7 +279,7 @@ def nachrechnen(session: Session, p: Kostenposition) -> float:
     # N238 — löst sich der letzte Beleg und bleibt kein Handanteil übrig, fällt
     # der Betrag auf 0: dann wieder „offen", sonst stünde eine 0,00-€-Zeile
     # weiter fälschlich grün.
-    p.status = "erledigt" if p.betrag else "offen"
+    p.status = ERLEDIGT if p.betrag else OFFEN
     session.add(p)
     return p.betrag
 

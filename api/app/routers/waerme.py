@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from .. import waerme
+from ..waerme import HEIZWERT_OEL
 from ..db import get_session
 from ..deps import objekt_holen
 from ..models import Heizverteiler, Objekt
@@ -110,7 +111,7 @@ def loeschen(hid: int, session: Session = Depends(get_session)) -> dict:
 @router.get("/objekte/{slug}/waerme/split")
 def oel_split(slug: str, oel_kosten: float, oel_liter: float,
               ww_volumen_m3: float, temp_c: float = 60.0,
-              heizwert: float = 10.0,
+              heizwert: float = HEIZWERT_OEL,
               o: Objekt = Depends(objekt_holen)) -> dict:
     """Öl-Kosten in Warmwasser- und Heizungs-Anteil aufteilen (`split_oel`)."""
     return waerme.split_oel(oel_kosten, oel_liter, ww_volumen_m3,

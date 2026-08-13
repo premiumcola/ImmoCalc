@@ -63,7 +63,13 @@ export async function api(pfad, optionen = {}) {
     // FastAPI liefert die Ursache in `detail` — die ist fuer den Nutzer
     // deutlich hilfreicher als der blosse Statuscode.
     const grund = await antwort.json().then(k => k.detail).catch(() => null);
-    throw new Error(grund || `${antwort.status} ${pfad}`);
+    const fehler = new Error(grund || `${antwort.status} ${pfad}`);
+    // N371 — der Statuscode geht mit. Ein 409 ist keine Panne, sondern eine
+    // Rückfrage („diese Partei hat keine Adresse — trotzdem abschließen?");
+    // ohne ihn konnte der Aufrufer sie nicht von einem echten Fehler
+    // unterscheiden und musste die Meldung als Text durchreichen.
+    fehler.status = antwort.status;
+    throw fehler;
   }
   return antwort.status === 204 ? null : antwort.json();
 }

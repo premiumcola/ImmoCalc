@@ -45,6 +45,7 @@ log = logging.getLogger("immocalc")
 # oben und dieses Modul (und alles, was es transitiv lädt) bricht nicht am
 # fehlenden Import weg.
 from . import erwerb, kiclient                           # noqa: E402
+from .zahlen import deutsch as zahlen_deutsch  # noqa: E402
 from .renovierung import GEWERKE                         # noqa: E402
 
 # N288-B2 — Endpunkt, Kopfzeilen, Zeitlimit und Fehlerbehandlung stehen ein
@@ -442,25 +443,15 @@ def _zahl_de(wert) -> float | None:
     `_betrag` reicht dafür nicht: dort gilt der letzte Punkt als Dezimaltrenner,
     was bei einem Geldbetrag stimmt („1.234.56" → 1234.56), bei einer Menge ohne
     Nachkommastellen aber falsch ist — aus „2.416 kWh" würde 2,416 kWh, also ein
-    Tausendstel des Verbrauchs. Hier entscheidet die Form:
+    Tausendstel des Verbrauchs.
 
-    * Komma vorhanden → Komma ist der Dezimaltrenner, Punkte sind Tausender
-      („2.416,0" → 2416.0)
-    * nur Punkte, und sie gliedern in Dreiergruppen → Tausendertrenner
-      („2.416" → 2416.0)
-    * sonst ist der Punkt der Dezimaltrenner („12.5" → 12.5)
-    """
-    roh = re.sub(r"[^\d,.]", "", str(wert or ""))
-    if not roh:
-        return None
-    if "," in roh:
-        roh = roh.replace(".", "").replace(",", ".")
-    elif _TAUSENDER.fullmatch(roh):
-        roh = roh.replace(".", "")
-    try:
-        return float(roh)
-    except ValueError:
-        return None
+    N373 — die Regel steht seit N313 in `zahlen.deutsch`, und diese Kopie war
+    nicht nur eine: sie warf mit `[^\d,.]` das **Minuszeichen** weg, `zahlen`
+    bewahrt es. `feldzuordnung` und `dokumente.ki_werte` wurden damals schon
+    umgestellt, dieses Modul blieb übrig. Praktisch fiel es nicht auf, weil die
+    hiesigen Aufrufer Mengen und kWh lesen (nie negativ) — ein negativer Betrag
+    aus der Beleg-Erkennung wäre aber lautlos positiv geworden."""
+    return zahlen_deutsch(wert)
 
 
 def _kwh(wert) -> float | None:
