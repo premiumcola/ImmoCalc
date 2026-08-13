@@ -84,13 +84,59 @@
 .zk-ic[disabled]{opacity:.35;cursor:default}
 .zk-ic.gefahr:hover{background:var(--neg-bg);color:var(--neg)}
 .zk-ic svg{width:16px;height:16px;display:block}
-/* N340x — Zähler nach Art gruppiert; der Chip ist reine Gliederung. */
-.zk-chip{display:inline-flex;align-items:center;gap:6px;
-  font:700 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;
-  color:var(--teal-d);background:var(--teal-l);border-radius:999px;
-  padding:6px 12px;margin:16px 0 8px}
-.zk-chip:first-child{margin-top:2px}
-.zk-chip span{font:600 10px var(--mono);color:var(--teal-d);opacity:.7}
+/* N383 — jede Kategorie (Wasser, Strom, Heizöl, …) ein eigener Einklapper,
+   dunkel und nach unten versunken — dasselbe Design wie die Zählerstände-
+   Panels der Abrechnung (`.zu-panel` in zeitraum.html, N363): je weiter
+   innen ein Element sitzt, desto dunkler sein Grund. Eigene Tokens statt
+   der dortigen `--zu-*`-Variablen, weil dieser Dialog auch auf objekt.html
+   läuft, ohne das Seiten-<style> von zeitraum.html.
+   Vorher war der Kategorie-Kopf nur ein stummes Pill-Label (`.zk-chip`) —
+   bei über 30 Zählern in sechs Kategorien blieb die Liste unlesbar lang,
+   ohne dass sich etwas auf einen Blick ausblenden liess. */
+.zk-bereich{
+  --zk-1:#4E6068; --zk-2:#43555C; --zk-3:#394A51;
+  --zk-hell:#F1F5F5; --zk-matt:#BCCCD0; --zk-linie:rgba(255,255,255,.15);
+  background:var(--zk-1);border-radius:14px;margin:12px 0;overflow:hidden;
+  box-shadow:inset 0 10px 14px -10px rgba(0,0,0,.38)}
+.zk-bereich:first-child{margin-top:2px}
+.zk-bereich-kopf{display:flex;align-items:center;gap:9px;width:100%;
+  border:none;background:transparent;padding:13px 14px;cursor:pointer;
+  text-align:left;min-height:48px;-webkit-tap-highlight-color:transparent}
+.zk-bereich-chev{flex:none;width:14px;color:var(--zk-matt);
+  font:600 12px var(--body);transition:transform .15s ease}
+.zk-bereich.offen .zk-bereich-chev{transform:rotate(90deg)}
+.zk-bereich-name{flex:1;min-width:0;font:700 12px var(--mono);
+  letter-spacing:.04em;text-transform:uppercase;color:var(--zk-hell)}
+.zk-bz{font:600 10.5px var(--mono);color:var(--zk-matt);white-space:nowrap}
+.zk-bereich-inhalt{display:none;padding:0 10px 12px}
+.zk-bereich.offen .zk-bereich-inhalt{display:block}
+
+/* Karten und Felder innerhalb: eine Stufe dunkler als der Kategorie-Kopf,
+   analog `.zu-panel .zu-zeile`. Eingabefelder gedämpft, beim Fokus hell —
+   dieselbe Regel wie bei den Zählerständen, damit viele Felder auf einmal
+   nicht als weisse Wand wirken. */
+.zk-bereich .zk-karte{background:var(--zk-2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.zk-bereich .zk-ehkopf{color:var(--zk-hell)}
+.zk-bereich .zk-ehkopf span{color:var(--zk-matt)}
+.zk-bereich .zk-liste.eingerueckt{border-left-color:var(--zk-linie)}
+.zk-bereich .zk-nr,.zk-bereich .zk-chevron{color:var(--zk-matt)}
+.zk-bereich .zk-feld label{color:var(--zk-matt)}
+.zk-bereich .zk-rest{background:rgba(255,255,255,.1);color:var(--zk-hell)}
+.zk-bereich .zk-ic{background:rgba(255,255,255,.1);color:var(--zk-matt)}
+.zk-bereich .zk-ic:hover{background:rgba(255,255,255,.2);color:#fff}
+.zk-bereich .zk-ic.gefahr:hover{background:var(--neg);color:#fff}
+.zk-bereich .zk-eh{background:transparent;border-color:rgba(255,255,255,.24);
+  color:var(--zk-matt)}
+.zk-bereich .zk-eh.an{background:var(--teal);border-color:var(--teal);color:#fff}
+.zk-bereich .zk-name,.zk-bereich .zk-feld select,.zk-bereich .zk-feld input{
+  background:rgba(255,255,255,.09);color:var(--zk-hell);
+  border-color:rgba(255,255,255,.2);color-scheme:dark}
+.zk-bereich .zk-name:focus,.zk-bereich .zk-feld select:focus,
+.zk-bereich .zk-feld input:focus{
+  background:#fff;color:var(--ink);border-color:var(--teal);
+  color-scheme:light;outline:none}
+.zk-bereich .zk-feld input::placeholder{color:var(--zk-matt);opacity:.85}
 .zk-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 @media(max-width:400px){ .zk-grid{grid-template-columns:1fr} }
 .zk-feld{display:flex;flex-direction:column;gap:5px;min-width:0;margin-bottom:9px}

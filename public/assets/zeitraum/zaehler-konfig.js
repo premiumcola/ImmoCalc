@@ -87,6 +87,12 @@ export async function zaehlerKonfig(slugArg) {
   // (Verrechnung ändern, Zähler hinzufügen), weil es ausserhalb davon lebt.
   const offen = new Set();
 
+  // N383 — dieselbe Idee eine Ebene höher: die Kategorien selbst (Wasser,
+  // Strom, Heizöl, Warmwasser, Heizkörper & Wärmemenge, Sonstige) klappen
+  // einzeln auf, beim Öffnen des Dialogs ALLE zu — bei über 30 Zählern in
+  // sechs Kategorien war die Liste sonst auf einen Blick unlesbar lang.
+  const bereicheOffen = new Set();
+
   // N340u — Bewertungsfaktor ergibt nur bei Heizkostenverteilern (Verdunstungs-
   // röhrchen: Messeinheit „Einheiten") einen Sinn — ein Wärmemengenzähler
   // misst kWh direkt, ein Wasserzähler m³, keiner von beiden braucht ihn.
@@ -294,20 +300,34 @@ export async function zaehlerKonfig(slugArg) {
     const scrollY = vorherigerBody?.scrollTop || 0;
     const liste = meters.length
       ? gruppiert().map(([name, eintraege]) => {
-          const kopfChip = `<div class="zk-chip">${esc(name)}<span>${eintraege.length}</span></div>`;
           // N343 — Einheiten-Gruppierung NUR bei den Heizkörpern (viele,
           // gleichartige Geräte); alle anderen Bereiche zeigen ihre
           // Verrechnungsstruktur: Haupt, darunter eingerückt Unter/Rest.
-          if (name === 'Heizkörper & Wärmemenge') {
-            return kopfChip + nachEinheit(eintraege).map(([eh, teil]) => `
-              <div class="zk-ehkopf">${esc(eh)}<span>${teil.length}</span></div>
-              <div class="zk-liste eingerueckt">${
-                teil.map(([z, i]) => karte(z, i)).join('')}</div>`).join('');
-          }
-          return kopfChip + strukturiert(eintraege).map(({ zeile, kinder }) =>
-            `<div class="zk-liste">${karte(zeile[0], zeile[1])}</div>`
-            + (kinder.length ? `<div class="zk-liste eingerueckt">${
-                kinder.map(([z, i]) => karte(z, i)).join('')}</div>` : '')).join('');
+          const inhalt = name === 'Heizkörper & Wärmemenge'
+            ? nachEinheit(eintraege).map(([eh, teil]) => `
+                <div class="zk-ehkopf">${esc(eh)}<span>${teil.length}</span></div>
+                <div class="zk-liste eingerueckt">${
+                  teil.map(([z, i]) => karte(z, i)).join('')}</div>`).join('')
+            : strukturiert(eintraege).map(({ zeile, kinder }) =>
+                `<div class="zk-liste">${karte(zeile[0], zeile[1])}</div>`
+                + (kinder.length ? `<div class="zk-liste eingerueckt">${
+                    kinder.map(([z, i]) => karte(z, i)).join('')}</div>` : '')).join('');
+          // N383 — jede Kategorie ein eigener, dunkel versunkener Einklapper,
+          // im selben Design wie die Zählerstände-Panels der Abrechnung
+          // (`.zu-panel`, N363): je weiter innen, desto dunkler. Beim ersten
+          // Öffnen des Dialogs sind alle zu — `bereicheOffen` startet leer.
+          const auf = bereicheOffen.has(name);
+          const fertigInBereich = eintraege.filter(([z]) => vollstaendig(z)).length;
+          return `<div class="zk-bereich${auf ? ' offen' : ''}">
+              <button type="button" class="zk-bereich-kopf"
+                data-zk-bereich-toggle="${esc(name)}" aria-expanded="${auf}">
+                <span class="zk-bereich-chev" aria-hidden="true">▸</span>
+                <span class="zk-bereich-name">${esc(name)}</span>
+                <span class="zk-bz">${fertigInBereich}/${eintraege.length}
+                  Zähler${fertigInBereich === eintraege.length ? ' ✓' : ''}</span>
+              </button>
+              <div class="zk-bereich-inhalt">${inhalt}</div>
+            </div>`;
         }).join('')
       : `<div class="zk-leer">Noch keine Zähler für diese Immobilie. Lege den
           ersten an — Gesamtzähler, Unterzähler je Einheit und, wenn nötig, einen
@@ -431,6 +451,15 @@ export async function zaehlerKonfig(slugArg) {
     const ehToggle = e.target.closest('[data-zk-eh-toggle]');
     if (ehToggle) return einheitToggle(
       Number(ehToggle.dataset.zkEhToggle), ehToggle.dataset.einheit);
+    // N383 — Kategorie auf-/zuklappen. Vor dem allgemeinen Karten-Toggle
+    // unten, sonst behandelt der die Kopfzeile nie als eigenes Ziel.
+    const bereichToggle = e.target.closest('[data-zk-bereich-toggle]');
+    if (bereichToggle) {
+      const name = bereichToggle.dataset.zkBereichToggle;
+      bereicheOffen.has(name) ? bereicheOffen.delete(name) : bereicheOffen.add(name);
+      render();
+      return;
+    }
     // N340u — Kopfzeile antippen klappt die Karte auf/zu. Kommt nach den
     // spezifischeren Zielen oben, sonst schlucken deren Buttons nie das
     // Toggle (sie liegen alle INNERHALB der Kopfzeile). Der Name bleibt
