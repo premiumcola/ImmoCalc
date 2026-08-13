@@ -853,28 +853,47 @@
        hält die Breiten, langer Text bricht um. Die Anteile ergeben zusammen
        100 %, weil hier immer genau drei Jahresspalten stehen. */
     .zt-tab{table-layout:fixed}
-    .zt-nr{width:10%;font-size:9.5px;white-space:normal;overflow-wrap:break-word}
-    .zt-name{width:34%;min-width:0;max-width:none;font-size:11.5px;
+    /* N400 — die Nummer ist die schmalste Spalte: sie trägt eine kurze Zahl
+       („5067") und darf keinen Platz von Name und Eingabe nehmen. Umbrochen
+       wird NUR an Leerzeichen (`overflow-wrap:normal`): mit `break-word`
+       zerfiel „5067" in „506" + „7" und „1210 7592" in vier Zeilen — eine
+       Zählernummer ist eine Einheit, die man am Stück lesen können muss. */
+    .zt-nr{width:11%;font-size:9px;white-space:normal;
+      overflow-wrap:normal;word-break:normal}
+    .zt-name{width:29%;min-width:0;max-width:none;font-size:11.5px;
       line-height:1.25;overflow-wrap:break-word}
     th.zt-jahr,td.zt-jahr{width:12%}
     .zt-tab td,.zt-tab th{padding:5px 3px}
-    .zt-eingabe{width:22%}
+    .zt-eingabe{width:24%}
+    /* Ohne Nummernspalte fällt ihr Anteil dem Namen zu (N400). */
+    .zt-tab.ohne-nr .zt-name{width:40%}
     /* Der Kopf darf umbrechen, sonst zwingt „Verbrauch 2025" die Spalte
        breiter als das Eingabefeld darunter. */
     th.zt-eingabe,td.zt-eingabe{padding-left:6px}
     th.zt-eingabe{white-space:normal;line-height:1.3}
     .zt-inp{padding:6px 5px}
     th.zt-jahr,td.zt-jahr{font-size:10.5px}
+    /* N400 — das Eingabefeld füllt am Handy seine Zelle, statt eine feste
+       `ch`-Breite zu behaupten: bei 16px-Schrift (Pflicht gegen iOS-Zoom)
+       war das fixe Maß breiter als die Spalte, das Feld ragte über die
+       Jahresspalte davor und überlappte sie sichtbar. Flexibel kann es die
+       Zelle nie sprengen; der Haken behält seine feste Breite. */
+    .zt-eingabereihe{gap:3px}
+    .zt-eingabereihe .zt-inp,
+    .zt-eingabe.zt-stand .zt-inp{flex:1 1 auto;width:auto;min-width:0;max-width:none}
   }
   /* Am Handy bleibt nur ein Jahrespaar — sonst zerhackt der Umbruch die
-     Zählernamen und vierstellige Verbräuche passen nicht in ihre Spalte. */
+     Zählernamen und vierstellige Verbräuche passen nicht in ihre Spalte.
+     N400 — die Anteile ergeben jetzt exakt 100 % (vorher 101 %: 9+40+14+14+24,
+     genau das eine Prozent, das die Eingabespalte aus der Tabelle drückte). */
   @media(max-width:480px){
     .zt-alt2{display:none}
-    .zt-nr{width:9%}
-    .zt-name{width:40%;font-size:11px}
+    .zt-nr{width:11%}
+    .zt-name{width:29%;font-size:11px}
     .zt-name .zu-um{min-width:18px;min-height:18px;margin-left:1px}
-    th.zt-jahr,td.zt-jahr{width:14%}
-    .zt-eingabe{width:24%}
+    th.zt-jahr,td.zt-jahr{width:13%}
+    .zt-eingabe{width:34%}
+    .zt-tab.ohne-nr .zt-name{width:40%}
   }
   /* ---- N363: die dunkle Zähler-Zone, Ebene für Ebene ------------------- */
   /* Kopfzeile des Panels (Ebene 1). */

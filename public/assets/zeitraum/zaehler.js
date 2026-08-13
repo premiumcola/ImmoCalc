@@ -428,6 +428,10 @@ function jahreswertTabellenHtml(teil) {
     // `zt-alt` ab Tablet abwärts (dann drei), `zt-alt2` am Handy (dann zwei).
     const alt = i => (i < jahre.length - 3 ? ' zt-alt'
       : i === jahre.length - 3 ? ' zt-alt2' : '');
+    // N400 — die Nummernspalte entfällt ganz, wenn KEIN Zähler der Gruppe eine
+    // Nummer trägt (der Öl-Zähler ist so einer): eine Spalte voller „–" kostet
+    // auf dem iPhone Platz, den Name und Eingabe dringender brauchen.
+    const hatNummer = liste.some(z => (z.zaehlernummer || '').trim());
     const zelle = (v, i) => v == null
       ? `<td class="zt-jahr${alt(i)}">·</td>`
       : `<td class="zt-jahr${alt(i)}"${skalieren
@@ -484,7 +488,7 @@ function jahreswertTabellenHtml(teil) {
       // Eingabe daneben, eingefärbt wie jedes Vorjahr: genau der Vergleich,
       // ob der neue Wert zu den Vorjahren passt, war der Zweck der Spalte.
       return `<tr>
-        <td class="zt-nr">${esc(z.zaehlernummer || '–')}</td>
+        ${hatNummer ? `<td class="zt-nr">${esc(z.zaehlernummer || '–')}</td>` : ''}
         <td class="zt-name">${esc(state.zLabels.get(z.id) || z.name)}${
           bearbeitbar ? `<button class="zu-um" data-zaehler-umbenennen="${z.id}"
             title="Zähler umbenennen">${STIFT_ICON}</button>` : ''}</td>
@@ -500,8 +504,8 @@ function jahreswertTabellenHtml(teil) {
         <span class="zt-kz">${liste.length} Zähler</span>
         <span class="zu-chev">${CHEV_ICON}</span>
       </button>
-      <div class="zt-inhalt"><table class="zt-tab">
-        <thead><tr><th>Nr.</th><th>Zähler</th>
+      <div class="zt-inhalt"><table class="zt-tab${hatNummer ? '' : ' ohne-nr'}">
+        <thead><tr>${hatNummer ? '<th class="zt-nr">Nr.</th>' : ''}<th>Zähler</th>
           ${jahre.map((j, i) => `<th class="zt-jahr${alt(i)}">'${
             String(j).slice(2)}</th>`).join('')}
           <th class="zt-eingabe">Verbrauch ${esc(jetzt)}</th>
