@@ -67,6 +67,9 @@ class PositionNeu(BaseModel):
     status: Optional[str] = None
     s35: Optional[bool] = None
     anteile: Optional[dict[str, float]] = None
+    # N405 — eine Position lässt sich schon bei der Anlage als „fällt für
+    # diesen Zeitraum nicht an" markieren (leere Position ohne Beleg schließen).
+    entfaellt: bool = False
 
 
 @router.post("/zeitraeume/{zid}/positionen", status_code=201)
@@ -104,7 +107,8 @@ def position_anlegen(zid: int, data: PositionNeu,
         p = position_bauen(session, z, data.kostenart, betrag=data.betrag,
                            schluessel=data.schluessel,
                            wertquelle=data.wertquelle, status=data.status,
-                           s35=data.s35, anteile=anteile)
+                           s35=data.s35, anteile=anteile,
+                           entfaellt=data.entfaellt)
     except UnbekannterSchluessel as fehler:
         raise HTTPException(400, str(fehler)) from fehler
     if data.nur_einheit:
@@ -118,7 +122,7 @@ def position_anlegen(zid: int, data: PositionNeu,
     session.refresh(p)
     return {"id": p.id, "kostenart": p.kostenart, "status": p.status,
             "anteile": p.anteile, "nur_einheit": p.nur_einheit,
-            "abgeleitet": p.abgeleitet}
+            "abgeleitet": p.abgeleitet, "entfaellt": p.entfaellt}
 
 
 class PositionIn(BaseModel):
@@ -154,6 +158,9 @@ class PositionIn(BaseModel):
     # N364 — „die Erfassung ist vollständig" (Heizöl: alle Lieferungen und der
     # Zähler-Endstand sind drin). Unabhängig vom Betrag, siehe models.py.
     bestaetigt: Optional[bool] = None
+    # N405 — „fällt für diesen Zeitraum nicht an" (leere Position ohne Beleg
+    # schließen). Siehe models.py.
+    entfaellt: Optional[bool] = None
 
 
 @router.patch("/positionen/{pid}")
@@ -216,7 +223,7 @@ def position_aendern(pid: int, data: PositionIn,
                  "menge", "menge_einheit", "herkunft",
                  "arbeitspreis", "grundpreis_monat",
                  "vorab_betrag", "vorab_einheit", "vorab_s35", "vorab_netto",
-                 "bestaetigt"):
+                 "bestaetigt", "entfaellt"):
         wert = getattr(data, feld)
         if wert is not None:
             setattr(p, feld, wert)
@@ -242,7 +249,7 @@ def position_aendern(pid: int, data: PositionIn,
     return {"ok": True, "betrag": p.betrag, "status": p.status,
             "kostenart": p.kostenart,
             "schluessel": p.schluessel, "nur_einheit": p.nur_einheit,
-            "anteile": p.anteile}
+            "anteile": p.anteile, "entfaellt": p.entfaellt}
 
 
 @router.delete("/positionen/{pid}")

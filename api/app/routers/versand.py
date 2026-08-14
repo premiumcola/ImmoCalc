@@ -32,11 +32,11 @@ def _ergebnis(session: Session, z: Zeitraum) -> dict:
     # korrekten, aus der Miete abgeleiteten Betrag sah — live an Laufer
     # Str. 5 gefunden (alle fünf Parteien betroffen). Jetzt dieselbe Stelle
     # wie die Vorschau: `verteilung.positionen_fuer_abrechnung`.
-    positionen, vorausz, umlegbar, vzs = positionen_fuer_abrechnung(session, z)
+    positionen, vorausz, umlegbar, vzs, optionale = positionen_fuer_abrechnung(session, z)
     res = abrechnung(positionen, vorausz)
     # `abrechnung` selbst kennt keine offenen Posten — ohne diese Ergänzung
     # las der Abschluss `res["offen"]` und bekam immer eine leere Liste.
-    res.update(fehlende_angaben(list(umlegbar)))
+    res.update(fehlende_angaben(list(umlegbar), optionale))
     # N314(g) — eine Vorauszahlung ohne passende Partei fliesst in
     # `gesamt.abschlaege` ein, ohne in einer Partei-Zeile aufzutauchen.
     res["vorauszahlungen_ohne_partei"] = unbekannte_vorauszahlungen(session, z, vzs)

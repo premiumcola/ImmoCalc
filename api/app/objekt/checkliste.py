@@ -160,6 +160,8 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
                 "vorlaeufig": bool(p and p.vorlaeufig),
                 # N364 — vom Nutzer bestätigte Vollständigkeit (Heizöl).
                 "bestaetigt": bool(p and p.bestaetigt),
+                # N405 — vom Nutzer explizit als „fällt nicht an" geschlossen.
+                "entfaellt": bool(p and p.entfaellt),
                 "quelle_dokument_id": p.quelle_dokument_id if p else None,
                 "beleg_monat": k.beleg_monat,
                 # CCCLXIII — Anbieter/Gewerk der Kostenart (z. B. WWK,
@@ -171,7 +173,9 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
                 # rote Pflicht-Signal. Optionale Positionen ohne Betrag mahnen
                 # nicht.
                 "optional": bool(k.optional),
-                "zustand": "erledigt" if erledigt else ("offen" if p else "fehlt"),
+                "zustand": ("erledigt" if erledigt
+                           else "entfaellt" if p and p.entfaellt
+                           else "offen" if p else "fehlt"),
             })
     # Positionen zu Kostenarten, die nicht im Katalog stehen, gehen sonst verloren.
     # CCCXCVI — ausgeblendete (inaktive) Kostenarten bleiben aber ausgeblendet,
@@ -198,12 +202,14 @@ def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
             # CCLXXVIII: eine vorläufige (orange) Position wartet auf Bestätigung.
             "vorlaeufig": bool(p.vorlaeufig),
             "bestaetigt": bool(p.bestaetigt),
+            "entfaellt": bool(p.entfaellt),
             "quelle_dokument_id": p.quelle_dokument_id,
             "beleg_monat": None,
             # Waisen-Positionen (aus einem Beleg, ohne Katalog-Eintrag) tragen
             # kein Pflicht/optional-Flag — sie gelten als Pflicht (Default).
             "optional": False,
-            "zustand": "erledigt" if p.status == "erledigt" else "offen",
+            "zustand": ("erledigt" if p.status == "erledigt"
+                       else "entfaellt" if p.entfaellt else "offen"),
         })
 
     fertig = sum(1 for k in checkliste if k["erledigt"])

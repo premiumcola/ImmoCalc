@@ -404,6 +404,12 @@ class Kostenposition(SQLModel, table=True):
     # wird umgelegt", und die Öl-Sammelposition legt nichts um (ihr Geld
     # erreicht die Einheiten über Heizung/Warmwasser). Additiv, Default False.
     bestaetigt: bool = False
+    # N405 — „fällt für diesen Zeitraum nicht an", vom Nutzer je Position
+    # gesetzt (z. B. Heizungswartung ohne Rechnung dieses Jahr). Anders als
+    # `bestaetigt`: die Position bleibt sichtbar offen/grau, zählt aber nicht
+    # mehr als „ohne Betrag" und blockiert den Abschluss nicht. Additiv,
+    # Default False.
+    entfaellt: bool = False
 
 
 class Vorauszahlung(SQLModel, table=True):

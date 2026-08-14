@@ -996,3 +996,39 @@ def test_bestaetigte_sammelposition_blockiert_den_abschluss_nicht():
     erg = fehlende_angaben([offen, bestaetigt])
     assert erg["ohne_betrag"] == ["Wartung"]
     assert "Heizkosten" not in erg["offen"]
+
+
+def test_optionale_kostenart_blockiert_den_abschluss_nicht():
+    """N404 — eine `optional=True`-Kostenart (N189, z. B. Wartung Heizung)
+    mahnt in der Checkliste bewusst nicht (`k.optional`). Ohne dieselbe
+    Ausnahme in `fehlende_angaben` blockierte sie den Abschluss trotzdem —
+    live an Laufer Str. 5 gefunden: „Wartung Heizung" stand als eine von
+    „3 Positionen ohne Betrag", obwohl nur eine echt offene Position da war."""
+    from app.models import Kostenposition
+    from app.verteilung import fehlende_angaben
+
+    pflicht = Kostenposition(zeitraum_id=1, kostenart="Kaltwasserzähler",
+                             betrag=0.0, status="offen")
+    optional = Kostenposition(zeitraum_id=1, kostenart="Wartung Heizung",
+                              betrag=0.0, status="offen")
+
+    erg = fehlende_angaben([pflicht, optional],
+                           optionale_kostenarten=frozenset({"Wartung Heizung"}))
+    assert erg["ohne_betrag"] == ["Kaltwasserzähler"]
+    assert "Wartung Heizung" not in erg["offen"]
+
+
+def test_entfallene_position_blockiert_den_abschluss_nicht():
+    """N405 — eine per „Position ohne Beleg schließen" markierte Position
+    (`entfaellt`) zählt nicht mehr zu „ohne Betrag"."""
+    from app.models import Kostenposition
+    from app.verteilung import fehlende_angaben
+
+    offen = Kostenposition(zeitraum_id=1, kostenart="Kaltwasserzähler",
+                           betrag=0.0, status="offen")
+    entfallen = Kostenposition(zeitraum_id=1, kostenart="Wartung Heizung",
+                               betrag=0.0, status="offen", entfaellt=True)
+
+    erg = fehlende_angaben([offen, entfallen])
+    assert erg["ohne_betrag"] == ["Kaltwasserzähler"]
+    assert "Wartung Heizung" not in erg["offen"]

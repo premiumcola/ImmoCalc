@@ -137,7 +137,8 @@ def anlegen(session: Session, z: Zeitraum, kostenart: str, *,
             wertquelle: str = "manuell", status: Optional[str] = None,
             s35: Optional[bool] = None,
             anteile: Optional[dict[str, float]] = None,
-            beleg_summe: float = 0.0) -> Kostenposition:
+            beleg_summe: float = 0.0,
+            entfaellt: bool = False) -> Kostenposition:
     """Legt eine Kostenposition an — mit Gewichten, nicht ohne.
 
     Ohne `anteile` werden sie aus dem Schlüssel abgeleitet; ohne `s35` erbt die
@@ -160,7 +161,8 @@ def anlegen(session: Session, z: Zeitraum, kostenart: str, *,
     p = Kostenposition(
         zeitraum_id=z.id, kostenart=kostenart, betrag=_geld(betrag),
         schluessel=schluessel, wertquelle=wertquelle, s35=s35,
-        status=gewuenscht, anteile=gewichte, beleg_summe=_geld(beleg_summe))
+        status=gewuenscht, anteile=gewichte, beleg_summe=_geld(beleg_summe),
+        entfaellt=entfaellt)
     session.add(p)
     return p
 

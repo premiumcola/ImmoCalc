@@ -516,7 +516,7 @@ def _engine_positionen(session: Session, z: Zeitraum,
 def positionen_fuer_abrechnung(
         session: Session, z: Zeitraum
         ) -> tuple[list[Position], dict[str, float], list[Kostenposition],
-                  list[Vorauszahlung]]:
+                  list[Vorauszahlung], frozenset[str]]:
     """N274/N314(g) — die EINE Stelle, die aus den Rohdaten eines Zeitraums
     macht, was die Engine rechnen soll. Vorher gab es das zweimal: einmal
     hier (`objekt/abrechnung.py`s Vorschau-Endpunkt) und einmal — einfacher,
@@ -534,17 +534,19 @@ def positionen_fuer_abrechnung(
     Gibt zurück: die Engine-Positionen (nach N125-Filter und CCCLIX-Split),
     die Vorauszahlung je Partei (Miete-Ableitung, von echten Datensätzen
     überschrieben), die umlagefähigen Kostenpositionen (für
-    `fehlende_angaben`) und die rohen `Vorauszahlung`-Datensätze (für
-    `unbekannte_vorauszahlungen`)."""
+    `fehlende_angaben`), die rohen `Vorauszahlung`-Datensätze (für
+    `unbekannte_vorauszahlungen`) und die Namen der optionalen Kostenarten
+    (N404, für `fehlende_angaben` — mahnen nicht als „ohne Betrag")."""
     pos = session.exec(
         select(Kostenposition).where(Kostenposition.zeitraum_id == z.id)).all()
     vzs = session.exec(
         select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == z.id)).all()
+    arten = session.exec(
+        select(Kostenart).where(Kostenart.objekt_id == z.objekt_id)).all()
     # N125 — nicht umlagefähige Kostenarten (z. B. Einspeisevergütung) gehören
     # dem Eigentümer, nicht dem Mieter.
-    nicht_umlegen = {k.name.strip().lower() for k in session.exec(
-        select(Kostenart).where(Kostenart.objekt_id == z.objekt_id)).all()
-        if not k.umlagefaehig}
+    nicht_umlegen = {k.name.strip().lower() for k in arten if not k.umlagefaehig}
+    optionale_kostenarten = frozenset(k.name for k in arten if k.optional)
     umlegbar = [p for p in pos if p.kostenart.strip().lower() not in nicht_umlegen]
     positionen = [ep for p in umlegbar if p.status == ERLEDIGT
                   for ep in _engine_positionen(session, z, p)]
@@ -552,7 +554,7 @@ def positionen_fuer_abrechnung(
     # belegte Monate); separat erfasste Vorauszahlungs-Datensätze haben Vorrang.
     vorausz = {**vorauszahlung_je_partei(session, z),
               **{v.partei: v.betrag for v in vzs}}
-    return positionen, vorausz, umlegbar, vzs
+    return positionen, vorausz, umlegbar, vzs, optionale_kostenarten
 
 
 def ableiten(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float]:
@@ -690,7 +692,8 @@ def vorschau(bezuege_: list[Bezug], start: date, ende: date) -> list[dict]:
     return out
 
 
-def fehlende_angaben(positionen: list[Kostenposition]) -> dict:
+def fehlende_angaben(positionen: list[Kostenposition],
+                     optionale_kostenarten: frozenset[str] = frozenset()) -> dict:
     """Was einen sauberen Abschluss noch verhindert.
 
     Zwei Fälle, die beide zu einer zu kleinen Abrechnung führen:
@@ -706,8 +709,17 @@ def fehlende_angaben(positionen: list[Kostenposition]) -> dict:
     # und ihr `status` „offen" — abgehakt wird sie über `bestaetigt`. Ohne
     # diese Ausnahme stand sie für immer unter „Noch offen" und verhinderte
     # den Abschluss einer fertigen Abrechnung.
+    # N404 — eine `optional=True`-Kostenart (N189, z. B. Wartung Heizung)
+    # mahnt in der Checkliste bewusst nicht; sie muss deshalb auch hier
+    # rausfallen, sonst blockiert sie den Abschluss trotzdem.
+    # N405 — dasselbe für eine einzelne Position, die der Nutzer per
+    # „Position ohne Beleg schließen" ausdrücklich als „fällt nicht an"
+    # markiert hat (`entfaellt`).
     ohne_betrag = [p.kostenart for p in positionen
-                   if p.status != ERLEDIGT and not getattr(p, "bestaetigt", False)]
+                   if p.status != ERLEDIGT
+                   and not getattr(p, "bestaetigt", False)
+                   and not getattr(p, "entfaellt", False)
+                   and p.kostenart not in optionale_kostenarten]
     ohne_verteilung = [p.kostenart for p in positionen
                        if p.status == ERLEDIGT and (p.betrag or 0) != 0
                        and sum((p.anteile or {}).values()) <= 0]
