@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from sqlmodel import select
 
-from .. import belegposten, heizkosten, verteilung
+from .. import belegposten, heizkosten, models, verteilung
 from ..db import get_session
 from ..models import Einheit, Miete, Partei, Zeitraum
 from ..deps import zeitraum_holen
@@ -67,9 +67,18 @@ def uebernehmen(zid: int, eingabe: dict, session: Session = Depends(get_session)
     pos.schluessel = "heizkosten"
     pos.wertquelle = "Zähler"
     pos.anteile = anteile
+    # N401 — den BETRAG mitschreiben, nicht nur die Verteilung. Vorher setzte
+    # dieser Endpunkt allein `anteile`; der errechnete Heizungsbetrag blieb in
+    # der Oberfläche stehen und die Kostenposition auf 0,00 €. Die Abrechnung
+    # zählt aber `Kostenposition.betrag` — die kompletten Heizkosten fehlten
+    # dadurch in jeder Abrechnung (bei der Laufer Str. 5 3.013,19 € von
+    # 9.372,97 €, also fast ein Drittel). Beides gehört in denselben Schreib-
+    # vorgang, sonst können Betrag und Verteilung wieder auseinanderlaufen.
+    pos.betrag = erg["heizung"]["gesamt"]
+    pos.status = models.ERLEDIGT if pos.betrag > 0.005 else models.OFFEN
     session.add(pos)
     session.commit()
     session.refresh(pos)
     return {"ok": True, "angewandt": True, "anteile": pos.anteile,
-            "position_id": pos.id, "unzugeordnet": unzugeordnet,
-            "abgleich": erg.get("abgleich")}
+            "betrag": pos.betrag, "position_id": pos.id,
+            "unzugeordnet": unzugeordnet, "abgleich": erg.get("abgleich")}

@@ -476,11 +476,6 @@ export function stromKetteVerteilt() {
     && d.schritt1?.vollstaendig !== false;
 }
 
-/* N198a — HKV mindestens einer erfasst → Heizkörper-Wärmemenge verteilt. */
-export function heizwaermeVerteilt() {
-  return (state.heizverteiler || []).length > 0;
-}
-
 /* N114/N118/N190 — der WIRKSAME Betrag einer Position. */
 export function positionsBetrag(k) {
   if (istWasserSammel(k)) return wasserGesamtBetrag();
@@ -511,8 +506,16 @@ export function effektivErledigt(k) {
   // `erledigt`) ist die Wahrheit, weil die Sammelposition kein Geld umlegt —
   // ihr Öl fließt über Heizung/Warmwasser auf die Einheiten.
   if (istHeizoelSammel(k)) return !!k.bestaetigt;
+  // N401 — vorher hing das an `heizwaermeVerteilt()`, also an der ALTEN
+  // `Heizverteiler`-Tabelle. Die hat N356 abgelöst (die Heizkörper sind echte
+  // Zähler), sie ist seither dauerhaft leer — die Position konnte damit NIE
+  // mehr grün werden und mahnte ewig „Heizkosten noch nicht auf Einheiten
+  // verteilt", obwohl die Verteilung längst stand. Maßgeblich ist jetzt, ob
+  // der Betrag wirklich auf der Kostenposition steht (`k.betrag`), denn genau
+  // den zählt die Abrechnung — ein nur angezeigter, nicht geschriebener Wert
+  // (`positionsBetrag`) reichte nicht und war die Ursache des ganzen Fehlers.
   if (istHeizwaermePos(k)) {
-    return positionsBetrag(k) > 0.005 && heizwaermeVerteilt();
+    return (k.betrag || 0) > 0.005;
   }
   if (istStromKettePos(k) || istWarmwasserPos(k)) {
     return !!k.erledigt;

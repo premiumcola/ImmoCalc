@@ -287,3 +287,31 @@ def test_uebernehmen_traegt_ergebnis_in_bestehende_position_ein():
         assert set(erg["anteile"]) == {"Whg A", "Whg B"}
         # Gleich hoher Ablesewert → gleich hoher Anteil.
         assert erg["anteile"]["Whg A"] == erg["anteile"]["Whg B"]
+
+
+def test_uebernehmen_schreibt_auch_den_betrag_in_die_abrechnung():
+    """N401 — der Endpunkt setzte nur `anteile`, nicht `betrag`: die
+    Kostenposition blieb auf ihrem alten Wert (in der Praxis 0,00 €) und die
+    kompletten Heizkosten fehlten in der Abrechnung, obwohl die Oberfläche
+    sie anzeigte. Betrag UND Verteilung gehören in denselben Schreibvorgang."""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+        _zaehler_direkt(c, slug, zid, name="HKV A", einheit_bezug="Whg A",
+                        wert=1, bewertungsfaktor=1.0)
+        _zaehler_direkt(c, slug, zid, name="HKV B", einheit_bezug="Whg B",
+                        wert=1, bewertungsfaktor=1.0)
+        # Die Position startet — wie im echten Fall — mit 0,00 €.
+        c.post(f"/api/zeitraeume/{zid}/positionen",
+               json={"kostenart": "Heizung", "betrag": 0.0})
+
+        r = c.post(f"/api/zeitraeume/{zid}/heizkosten/uebernehmen",
+                   json={"liter": 300.0, "eur": 300.0, "ww_kwh": 0,
+                         "fest_anteil": 0.30})
+        assert r.status_code == 200, r.text
+        assert r.json()["betrag"] == 300.0
+
+        # Und der Betrag steht wirklich in der Abrechnung, nicht nur in der Antwort.
+        ab = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        heizung = [p for p in ab["positionen"] if p["kostenart"] == "Heizung"]
+        assert heizung and heizung[0]["kosten"] == 300.0
+        assert ab["gesamt"]["auslagen"] >= 300.0

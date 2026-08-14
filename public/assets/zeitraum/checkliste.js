@@ -44,7 +44,7 @@ import {
   sonderEinheiten, alleEinheiten, artOptionen,
   wasserGesamtBetrag, wasserHatRechnung,
   positionsBetrag, effektivErledigt, fortschrittRechnen,
-  stromKetteVerteilt, heizwaermeVerteilt,
+  stromKetteVerteilt,
   stromMengen, stromAufteilung, stromChipsHtml, stromKopfHtml,
   stromPosFeldHtml, stromKetteHtml,
   vorabAktiv, vorabBrutto, bruttoAnzeige,
@@ -302,7 +302,7 @@ function zeileHtml(k, i) {
   const aufgeklappt = state.offen.has(i);
 
   const infos = [
-    // N397 — bei Heizöl (`k.bestaetigt`), Heizkörper-Wärme (`heizwaermeVerteilt`)
+    // N397 — bei Heizöl (`k.bestaetigt`)
     // und Strom/Warmwasser kann die Position „erledigt" sein, obwohl ihr
     // eigenes `Kostenposition.betrag` nie geschrieben wird (das Geld fließt
     // absichtlich in andere Positionen, siehe `effektivErledigt`) — `k.zustand`
@@ -890,6 +890,35 @@ async function warmwasserBetragSichern() {
     }
     pos.betrag = betrag;
     pos.erledigt = true;
+  } catch { /* nächster Aufruf versucht es erneut — kein Fehlerbanner nötig */ }
+}
+
+/* N401 — dasselbe für die Heizkörper-Wärmemenge, und hier fehlte es bisher
+   ganz: Strom (`stromBetragSichern`) und Warmwasser (`warmwasserBetragSichern`)
+   schrieben ihren berechneten Betrag zurück, die Heizwärme nicht. Ihr Betrag
+   wurde nur angezeigt, die Kostenposition blieb auf 0,00 € — die gesamten
+   Heizkosten fehlten damit in jeder Abrechnung (Laufer Str. 5: 3.013,19 €).
+
+   Anders als bei den beiden Nachbarn genügt hier kein reiner Betrags-PATCH:
+   die Heizwärme wird nach ZÄHLERN verteilt, nicht nach einem der generischen
+   Schlüssel. `/heizkosten/uebernehmen` schreibt beides in einem Zug (Betrag
+   und zählerbasierte Anteile) — genau deshalb setzt der Endpunkt seit N401
+   auch `betrag` und nicht mehr nur `anteile`. */
+async function heizwaermeBetragSichern(split, bewertung) {
+  const betrag = Math.round((split?.heizung_kosten || 0) * 100) / 100;
+  if (betrag <= 0.005) return;
+  const pos = (state.daten?.checkliste || []).find(istHeizwaermePos);
+  if (!pos) return;
+  // Schon geschrieben und unverändert: nicht bei jedem Zeichnen erneut senden.
+  if (Math.abs((pos.betrag || 0) - betrag) < 0.005) return;
+  const literHeiz = (bewertung?.verbrauch_liter || 0) * (1 - (split?.ww_anteil || 0));
+  try {
+    const erg = await api(`/zeitraeume/${state.daten.id}/heizkosten/uebernehmen`, {
+      method: 'POST',
+      body: { liter: literHeiz, eur: betrag, ww_kwh: 0, fest_anteil: 0.30,
+              fest_schluessel: state.heizFestSchluessel },
+    });
+    if (erg?.angewandt) { pos.betrag = betrag; pos.erledigt = true; }
   } catch { /* nächster Aufruf versucht es erneut — kein Fehlerbanner nötig */ }
 }
 
@@ -1583,16 +1612,14 @@ export async function laden() {
         + `&ww_volumen_m3=${vol}`).catch(() => null) : null;
       state.setWwKosten(sp?.ww_kosten || 0);
       await warmwasserBetragSichern();
+      await heizwaermeBetragSichern(sp, b);
     } catch { state.setHeizoelKosten(0); state.setWwKosten(0); }
   }
-  // N213 — HKV nur im Laufer-Modell.
-  state.setHeizverteiler([]);
-  if (istLaufer()) {
-    try {
-      const hv = await einmal(`/objekte/${encodeURIComponent(state.daten.objekt)}/heizverteiler`);
-      state.setHeizverteiler(hv?.heizverteiler || []);
-    } catch { state.setHeizverteiler([]); }
-  }
+  // N401 — der Abruf der alten `Heizverteiler`-Tabelle ist entfallen: seit
+  // N356 sind die Heizkörper echte Zähler, die Tabelle bleibt leer, und ihr
+  // einziger Leser (`heizwaermeVerteilt`) ist mit dem korrigierten
+  // Erledigt-Kriterium weggefallen. Der GET lief bis hierher bei jedem
+  // Zeichnen mit und beantwortete eine Frage, die niemand mehr stellt.
   await deckungLaden();
   try {
     const o = await api(`/objekte/${state.daten.objekt}`);
