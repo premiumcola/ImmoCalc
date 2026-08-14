@@ -718,6 +718,28 @@ function vorauszahlungOhnePartei(a) {
     </div>`;
 }
 
+/* N402 — das Gegenstück: ein von Hand gesetztes Gewicht auf einem Namen, den
+ * es als Partei nicht gibt. Anders als bei der Vorauszahlung geht hier Geld
+ * an einen Empfänger, den es nicht gibt — die echte Partei bekommt dafür
+ * nichts. Der Betrag steht in der Partei-Zeile des Phantoms, deshalb ist er
+ * hier direkt ablesbar und muss nicht abgeleitet werden.
+ */
+function anteilOhnePartei(a) {
+  const treffer = a.anteile_ohne_partei;
+  if (!treffer?.length) return '';
+  const zeilen = treffer.map(t => {
+    const betrag = t.parteien.reduce(
+      (s, n) => s + (a.parteien?.[n]?.kosten || 0), 0);
+    return `<div class="weg-warn"><span class="ww-z">${eur(betrag)}</span>
+        <span><b>${esc(t.kostenart)}</b> verteilt an <b>${
+        esc(t.parteien.join(', '))}</b> — diesen Namen gibt es in diesem
+        Zeitraum als Partei nicht. Der Betrag geht damit an niemanden, und die
+        Partei, die ihn tragen müsste, bekommt ihn nicht. Die Verteilung
+        dieser Position richtigstellen.</span></div>`;
+  }).join('');
+  return `<div class="karte"><h3>Anteil ohne Partei</h3>${zeilen}</div>`;
+}
+
 async function ergebnisHtml() {
   const [rechnung, versand] = await Promise.allSettled([
     einmal(`/zeitraeume/${zid}/abrechnung`),
@@ -754,6 +776,7 @@ async function ergebnisHtml() {
         <b class="${(g.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(g.saldo)}</b></div>
     </div>${zeilen}
     ${vorauszahlungOhnePartei(a)}
+    ${anteilOhnePartei(a)}
     ${a.offen?.length ? `<div class="karte"><h3>Noch offen</h3>
       ${a.ohne_betrag?.length ? `<div class="summe">
         <span>Ohne Betrag</span><b>${a.ohne_betrag.map(esc).join(', ')}</b></div>` : ''}

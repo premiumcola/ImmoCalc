@@ -436,6 +436,35 @@ def unbekannte_vorauszahlungen(session: Session, z: Zeitraum,
     return sorted({v.partei for v in vzs} - bekannt)
 
 
+def unbekannte_anteile(session: Session, z: Zeitraum) -> list[dict]:
+    """N402 — das Gegenstück zu `unbekannte_vorauszahlungen`: von Hand gesetzte
+    `Kostenposition.anteile`, deren Schlüssel auf KEINE Partei dieses Zeitraums
+    zeigt.
+
+    Live gefunden an der Laufer Str. 5: die Müll-Position trug als Gewicht den
+    EINHEITEN-Namen „Wohnug 1.OG" statt des Partei-Namens „Alicia & Roman"
+    (Altdatenrest aus einer Zeit, in der die Einheit selbst als Partei lief).
+    Folge: die echte Partei bekam 0,00 € Müll, und ein Phantom-Empfänger, den
+    es gar nicht gibt, bekam 85,45 € zugeteilt — Geld, das nie jemand
+    bezahlt und das keine Abrechnung je erreicht.
+
+    Angetastet wird nichts: `abgeleitet=False` heißt „von Hand gesetzt" und
+    bleibt es (N5). Gemeldet wird trotzdem — ein Fund ohne Meldung ist ein
+    vergessener Fund. Automatisch ableitbare Positionen prüft dieser Weg
+    nicht: die schreibt `positionen_neu_ableiten` ohnehin bei jeder Änderung
+    frisch aus den Stammdaten."""
+    bekannt = {b.partei for b in stammdaten(session, z)}
+    treffer: list[dict] = []
+    for p in session.exec(select(Kostenposition).where(
+            Kostenposition.zeitraum_id == z.id)).all():
+        fremd = sorted(k for k, w in (p.anteile or {}).items()
+                       if k not in bekannt and (w or 0) > 0)
+        if fremd:
+            treffer.append({"kostenart": p.kostenart, "position_id": p.id,
+                            "parteien": fremd})
+    return treffer
+
+
 def vorauszahlung_je_partei(session: Session, z: Zeitraum) -> dict[str, float]:
     """CCCLXIV — NK-Vorauszahlung je Partei aus der Miete abgeleitet: die
     monatliche Vorauszahlung × die im Zeitraum belegten Monate (taggenau,

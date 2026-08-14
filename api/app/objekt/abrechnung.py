@@ -11,7 +11,7 @@ from sqlmodel import Session
 from ..db import get_session
 from ..engine import abrechnung
 from ..verteilung import (fehlende_angaben, positionen_fuer_abrechnung,
-                          unbekannte_vorauszahlungen)
+                          unbekannte_anteile, unbekannte_vorauszahlungen)
 from .zeitraeume import _zeitraum
 
 router = APIRouter(tags=["objekte"])
@@ -35,4 +35,8 @@ def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> di
     # Partei-Zeile aufzutauchen. Bislang nur in der Schlüssel-Vorschau
     # sichtbar (`GET .../schluessel`) — hier ebenso, direkt an der Abrechnung.
     res["vorauszahlungen_ohne_partei"] = unbekannte_vorauszahlungen(session, z, vzs)
+    # N402 — und das Gegenstück dazu: ein von Hand gesetzter Anteil, dessen
+    # Partei es im Zeitraum nicht gibt, verteilt echtes Geld an einen
+    # Empfänger, den keine Abrechnung je erreicht.
+    res["anteile_ohne_partei"] = unbekannte_anteile(session, z)
     return res

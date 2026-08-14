@@ -16,7 +16,7 @@ from ..models import (Anteil, Bewohner, Eigentuemer, Miete, Objekt,
                       Versandprotokoll, Zeitraum)
 from ..verteilung import (_laufend, fehlende_angaben, leerstaende,
                          positionen_fuer_abrechnung, stammdaten,
-                         unbekannte_vorauszahlungen)
+                         unbekannte_anteile, unbekannte_vorauszahlungen)
 from .mail import S_NAME, zugang
 
 log = logging.getLogger("immocalc")
@@ -40,6 +40,11 @@ def _ergebnis(session: Session, z: Zeitraum) -> dict:
     # N314(g) — eine Vorauszahlung ohne passende Partei fliesst in
     # `gesamt.abschlaege` ein, ohne in einer Partei-Zeile aufzutauchen.
     res["vorauszahlungen_ohne_partei"] = unbekannte_vorauszahlungen(session, z, vzs)
+    # N402 — das Gegenstück: ein Anteil, dessen Partei es im Zeitraum nicht
+    # gibt, verteilt echtes Geld an einen Empfänger, den keine Abrechnung je
+    # erreicht (live gefunden: Müll 85,45 € auf „Wohnug 1.OG" statt auf
+    # „Alicia & Roman").
+    res["anteile_ohne_partei"] = unbekannte_anteile(session, z)
     return res
 
 

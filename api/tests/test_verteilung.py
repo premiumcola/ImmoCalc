@@ -660,6 +660,38 @@ def test_vorauszahlung_auf_unbekannten_namen_wird_aufgedeckt():
         assert a["gesamt"]["abschlaege"] >= 99.0
 
 
+def test_anteil_auf_unbekannten_namen_wird_aufgedeckt():
+    """N402 — das Gegenstück zu N314(g): ein von Hand gesetztes Gewicht, dessen
+    Schlüssel auf keine Partei des Zeitraums zeigt, verteilt echtes Geld an
+    einen Empfänger, den keine Abrechnung je erreicht. Live gefunden an der
+    Laufer Str. 5 (Müll-Gewicht auf den EINHEITEN-Namen statt auf die Partei):
+    die echte Partei bekam 0,00 €, ein Phantom 85,45 €."""
+    with TestClient(app) as c:
+        _, zid = _objekt_mit_zwei_wohnungen(c)
+        pos = c.post(f"/api/zeitraeume/{zid}/positionen",
+                     json={"kostenart": "Müll", "betrag": 120.0}).json()
+        # Von Hand gesetzte Gewichte (abgeleitet=False) — eines davon auf einen
+        # Namen, den es als Partei nicht gibt.
+        r = c.patch(f"/api/positionen/{pos['id']}", json={
+            "anteile": {"Mieter Alpha": 1.0, "Wohnung 1": 1.0}})
+        assert r.status_code == 200, r.text
+
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        gemeldet = a["anteile_ohne_partei"]
+        assert gemeldet, "der Phantom-Anteil muss gemeldet werden"
+        assert gemeldet[0]["kostenart"] == "Müll"
+        assert gemeldet[0]["parteien"] == ["Wohnung 1"]
+
+
+def test_anteile_ohne_partei_bleibt_leer_wenn_alles_stimmt():
+    with TestClient(app) as c:
+        _, zid = _objekt_mit_zwei_wohnungen(c)
+        c.post(f"/api/zeitraeume/{zid}/positionen",
+               json={"kostenart": "Müll", "betrag": 120.0})
+        a = c.get(f"/api/zeitraeume/{zid}/abrechnung").json()
+        assert a["anteile_ohne_partei"] == []
+
+
 def test_schluesselwechsel_leitet_die_gewichte_neu_ab():
     """Alte Flächen-Gewichte unter „Personen" stehen zu lassen wäre die
     unauffälligste Art, falsch abzurechnen."""
