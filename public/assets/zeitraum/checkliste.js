@@ -287,10 +287,15 @@ function zeileHtml(k, i) {
   const umlageWarn = !erl && (istStromKettePos(k) || istWarmwasserPos(k))
     && positionsBetrag(k) > 0.005;
   const nichtUmgelegt = heizWarn || umlageWarn;
+  // N405 — „entfällt" bekommt bewusst denselben grauen Haken wie „optional",
+  // aber SICHTBAR (anders als optional-und-unberührt, das ganz ohne Haken
+  // bleibt): der Nutzer hat diese Position aktiv geschlossen, das soll man
+  // sehen — nur eben nicht grün.
   const [farbe, zeichen] = erl ? HAKEN.erledigt
     : nichtUmgelegt ? HAKEN.warnung
+    : k.entfaellt ? HAKEN.fehlt
     : (k.optional ? HAKEN.fehlt : HAKEN.offen);
-  const zeigeHaken = erl || nichtUmgelegt || !k.optional;
+  const zeigeHaken = erl || nichtUmgelegt || k.entfaellt || !k.optional;
   // N101 — die Wasser-Sammelzeile trägt die Summe ihrer drei Bestandteile.
   const oelBetrag = istHeizoelSammel(k) && !k.betrag ? state.heizoelKosten
     : (istWarmwasserPos(k) && !k.betrag ? state.wwKosten
@@ -310,6 +315,7 @@ function zeileHtml(k, i) {
     // `heizWarn`/`umlageWarn` zwei Zeilen weiter unten schon hatten) stand
     // „Betrag fehlt" neben einem grünen Haken und einem sichtbaren Betrag.
     !erl && k.zustand === 'offen' ? 'Betrag fehlt' : null,
+    k.entfaellt ? 'Fällt für diesen Zeitraum nicht an' : null,
     k.ohne_verteilung ? 'Verteilung fehlt' : null,
     istWasserSammel(k)
       ? 'Fasst Frisch-, Schmutz- & Niederschlagswasser zusammen' : null,
@@ -528,13 +534,31 @@ function anhaengerFenster(kostenart) {
   return dlg;
 }
 
+/* N405 — Knopf im aufgeklappten Kartenkörper: eine leere Position ohne Beleg
+   schließen, oder das rückgängig machen. Nur bearbeitbar UND nur solange
+   wirklich kein Betrag da ist (mit Betrag ist die Position ohnehin erledigt
+   und braucht das nicht). */
+function entfaelltKnopfHtml(k, bearbeitbar) {
+  if (!bearbeitbar) return '';
+  if (k.entfaellt) {
+    return `<div class="kartenfuss"><button class="minilink"
+        data-entfaellt-rueckgaengig="${k.position_id}" data-art="${esc(k.kostenart)}"
+        >Doch nicht — Position wieder öffnen</button></div>`;
+  }
+  if (positionsBetrag(k) > 0.005) return '';
+  return `<div class="kartenfuss"><button class="minilink"
+      data-entfaellt-setzen="${k.position_id || ''}" data-art="${esc(k.kostenart)}"
+      >Position ohne Beleg schließen</button></div>`;
+}
+
 function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken = true) {
   const erl = effektivErledigt(k);
   // N222 — dieselben vier Positionen wie in `zeileHtml`: ein berechneter Wert
   // soll sichtbar bleiben, auch solange er (noch) nicht als „erledigt" zählt.
   const heizWaermeBerechnet = (istHeizwaermePos(k) || istHeizoelSammel(k)
     || istStromKettePos(k) || istWarmwasserPos(k)) && positionsBetrag(k) > 0.005;
-  const zustandKlasse = k.vorlaeufig ? ' entwurf' : (erl ? ' gefuellt' : '');
+  const zustandKlasse = k.vorlaeufig ? ' entwurf'
+    : erl ? ' gefuellt' : (k.entfaellt ? ' entfaellt' : '');
   const bearbeitbar = state.daten.status === 'in Arbeit';
 
   const wasserSammel = istWasserSammel(k);
@@ -558,7 +582,14 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
   // ist echt" gibt und nicht zwei.
   const hatPosition = positionsBetrag(k) > 0.005 || !!heizModus
     || istStromKettePos(k);
-  const kannAuf = wasserSammel ? wasserBill : hatPosition;
+  // N405 — eine leere Position (weder Betrag noch Wasser/Heiz-Sammelblick)
+  // darf trotzdem aufklappen, wenn der Zeitraum bearbeitbar ist oder sie
+  // schon als „entfällt" markiert wurde: nur so lässt sich „Position ohne
+  // Beleg schließen" erreichen bzw. rückgängig machen. Kein Rückfall zur
+  // alten Eingabemaske (N249) — der Kartenkörper unten bleibt bei Scan-
+  // Knöpfen + dem einen neuen Knopf, kein Betragsfeld.
+  const kannAuf = wasserSammel ? wasserBill
+    : (hatPosition || bearbeitbar || k.entfaellt);
   const auf = aufgeklappt && kannAuf;
 
   let koerper = '';
@@ -610,15 +641,18 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
             placeholder="Neue Kostenart …" aria-label="Neue Kostenart"></div>` : '';
     koerper = `${kostenartFeld}${anbieterFeld}${stromPosFeldHtml(k)}
       ${stromKetteHtml(k)}${verteilungHtml(k)}${belege}${zusatzBelegeHtml(k)}
-      <div class="kartenfuss">${fuss}</div>`;
+      <div class="kartenfuss">${fuss}</div>${entfaelltKnopfHtml(k, bearbeitbar)}`;
   } else if (auf) {
     // N249 — das Feld „Betrag (optional)" samt „Anlegen" ist ersatzlos weg: der
     // Betrag entsteht aus dem Beleg, nicht aus einer zweiten Eingabemaske.
+    // N405 — EIN neuer Knopf kam trotzdem dazu: „Position ohne Beleg
+    // schließen" — keine Rückkehr zur alten Eingabemaske, nur die explizite
+    // Markierung „fällt für diesen Zeitraum nicht an".
     const zu = bearbeitbar ? '' : `<div class="zu-kein">Für diese Kostenart wurde
       in diesem Zeitraum nichts erfasst — und er ist abgeschlossen.</div>`;
     const ablage = (istStromKettePos(k) && stromKetteVerteilt())
       ? '' : belegAblageHtml(k, bearbeitbar);
-    koerper = `${stromKetteHtml(k)}${zu}${ablage}`;
+    koerper = `${stromKetteHtml(k)}${zu}${ablage}${entfaelltKnopfHtml(k, bearbeitbar)}`;
   }
 
   // N356 — die Heizwärme bekommt KEIN Betragsfeld: ihr Wert entsteht aus den
@@ -816,7 +850,11 @@ function abschlussHtml() {
         <button class="losbutton" data-abschluss="1">Abrechnungen erstellen und versenden</button>
       </div>`;
   }
-  const f = state.daten.fortschritt;
+  // N404/N405 — nicht der rohe Backend-Wert (zählt jede Zeile), sondern
+  // dieselbe Rechnung wie oben in der Kopfzeile: optionale und als
+  // „entfällt" geschlossene Positionen mahnen nicht und blockieren den
+  // Abschluss nicht.
+  const f = fortschrittRechnen();
   const rest = f.gesamt - f.fertig;
   const ohne = state.daten.checkliste.filter(k => k.ohne_verteilung)
     .map(k => k.kostenart);
@@ -1385,6 +1423,45 @@ async function positionEntfernen(knopf) {
   }
 }
 
+/* N405 — eine leere Position ohne Beleg schließen: „fällt für diesen
+   Zeitraum nicht an" (z. B. Heizungswartung ohne Rechnung dieses Jahr).
+   Ohne Position dahinter wird sie erst angelegt (Betrag 0), mit Position
+   reicht ein PATCH. Grau statt grün, blockiert den Abschluss nicht mehr
+   (siehe `verteilung.fehlende_angaben`). */
+async function positionEntfaelltSetzen(knopf) {
+  const art = knopf.dataset.art;
+  const pid = knopf.dataset.entfaelltSetzen;
+  knopf.disabled = true;
+  try {
+    if (pid) {
+      await api(`/positionen/${pid}`, { method: 'PATCH', body: { entfaellt: true } });
+    } else {
+      await api(`/zeitraeume/${zid}/positionen`, {
+        method: 'POST',
+        body: { kostenart: art, betrag: 0, status: 'offen', entfaellt: true },
+      });
+    }
+    melde(`„${art}“ fällt für diesen Zeitraum nicht an`, '');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
+async function positionEntfaelltRueckgaengig(knopf) {
+  const pid = knopf.dataset.entfaelltRueckgaengig;
+  knopf.disabled = true;
+  try {
+    await api(`/positionen/${pid}`, { method: 'PATCH', body: { entfaellt: false } });
+    melde(`„${knopf.dataset.art}“ wieder geöffnet`, '');
+    await laden();
+  } catch (fehler) {
+    knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
 async function entwurfBestaetigen(pid, knopf) {
   knopf.disabled = true;
   knopf.textContent = 'Bestätige …';
@@ -1860,6 +1937,12 @@ export function initHandlers() {
 
     const entfernen = e.target.closest('[data-entfernen]');
     if (entfernen) return positionEntfernen(entfernen);
+
+    const entfaelltSetzen = e.target.closest('[data-entfaellt-setzen]');
+    if (entfaelltSetzen) return positionEntfaelltSetzen(entfaelltSetzen);
+
+    const entfaelltZurueck = e.target.closest('[data-entfaellt-rueckgaengig]');
+    if (entfaelltZurueck) return positionEntfaelltRueckgaengig(entfaelltZurueck);
 
     const auf = e.target.closest('[data-auf]');
     if (auf) {

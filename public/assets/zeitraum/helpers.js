@@ -530,13 +530,16 @@ export function effektivErledigt(k) {
   return positionsBetrag(k) > 0.005;
 }
 
-/* N189 — Fortschritt zählt, was die Checkliste WIRKLICH zeigt. */
+/* N189/N405 — Fortschritt zählt, was die Checkliste WIRKLICH zeigt: eine
+   optionale Kostenart ohne Betrag mahnt nicht (N189), eine per „Position
+   ohne Beleg schließen" markierte Position ebenso wenig (N405) — beide
+   fallen aus `gesamt`/`fertig` raus, statt den Abschluss zu blockieren. */
 export function fortschrittRechnen() {
   let gesamt = 0, fertig = 0;
   for (const k of (state.daten?.checkliste || [])) {
     if (istImDetailPopup(k)) continue;
     const erl = effektivErledigt(k);
-    if (k.optional && !erl) continue;
+    if ((k.optional || k.entfaellt) && !erl) continue;
     gesamt++;
     if (erl) fertig++;
   }

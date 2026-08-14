@@ -215,6 +215,12 @@
   .pruef.entwurf .ikon.fertig,.pruef.entwurf .ikon.warte{
          background:var(--amber-bg);color:var(--amber)}
   .pruef.entwurf .haken{background:var(--amber-bg);color:var(--amber)}
+  /* N405 — „Position ohne Beleg schließen": ausgegraut, nicht grün. Anders
+     als offen/entwurf trägt sie keinen Akzent-Rand — sie ist bewusst aus dem
+     Rennen genommen, kein aktiver Zustand mehr. */
+  .pruef.entfaellt{background:#F4F6F5}
+  .pruef.entfaellt .name,.pruef.entfaellt .unter{color:var(--soft)}
+  .pruef.entfaellt .ikon.warte{background:#EDF1F0;color:var(--soft)}
   /* Das kleine „Entwurf aus Beleg"-Etikett unter dem Namen — eine eigene Zeile,
      so breit wie sein Text, damit es nicht am Titel klebt. */
   .entw-badge{display:block;width:fit-content;max-width:100%;margin-top:6px;
