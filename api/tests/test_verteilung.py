@@ -977,3 +977,22 @@ def test_oeffnen_eines_offenen_zeitraums_aendert_nichts():
 def test_oeffnen_unbekannter_zeitraum():
     with TestClient(app) as c:
         assert c.post("/api/zeitraeume/999999/oeffnen").status_code == 404
+
+
+def test_bestaetigte_sammelposition_blockiert_den_abschluss_nicht():
+    """N403 — „Heizöl & Lieferungen" legt selbst kein Geld um (ihr Öl fließt
+    in Warmwasser + Heizkörper-Wärme, N364): ihr `betrag` bleibt 0 und ihr
+    `status` „offen", abgehakt wird sie über `bestaetigt`. Ohne diese
+    Ausnahme stand sie für immer unter „Noch offen" und verhinderte den
+    Abschluss einer sonst fertigen Abrechnung."""
+    from app.models import Kostenposition
+    from app.verteilung import fehlende_angaben
+
+    offen = Kostenposition(zeitraum_id=1, kostenart="Wartung", betrag=0.0,
+                           status="offen")
+    bestaetigt = Kostenposition(zeitraum_id=1, kostenart="Heizkosten",
+                                betrag=0.0, status="offen", bestaetigt=True)
+
+    erg = fehlende_angaben([offen, bestaetigt])
+    assert erg["ohne_betrag"] == ["Wartung"]
+    assert "Heizkosten" not in erg["offen"]

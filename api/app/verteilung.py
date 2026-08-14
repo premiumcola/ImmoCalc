@@ -699,7 +699,15 @@ def fehlende_angaben(positionen: list[Kostenposition]) -> dict:
     tückische: der Betrag verschwindet lautlos aus der Abrechnung, weil
     `verteile_nach_wert` ein leeres dict bekommt und nichts zurückgibt.
     """
-    ohne_betrag = [p.kostenart for p in positionen if p.status != ERLEDIGT]
+    # N403 — eine vom Nutzer ausdrücklich bestätigte Position zählt NICHT als
+    # „ohne Betrag". „Heizöl & Lieferungen" ist genau so gebaut (N364): sie
+    # legt selbst kein Geld um, ihr Öl fließt vollständig in Warmwasser und
+    # Heizkörper-Wärme, und deshalb bleibt ihr eigener `betrag` dauerhaft 0
+    # und ihr `status` „offen" — abgehakt wird sie über `bestaetigt`. Ohne
+    # diese Ausnahme stand sie für immer unter „Noch offen" und verhinderte
+    # den Abschluss einer fertigen Abrechnung.
+    ohne_betrag = [p.kostenart for p in positionen
+                   if p.status != ERLEDIGT and not getattr(p, "bestaetigt", False)]
     ohne_verteilung = [p.kostenart for p in positionen
                        if p.status == ERLEDIGT and (p.betrag or 0) != 0
                        and sum((p.anteile or {}).values()) <= 0]
