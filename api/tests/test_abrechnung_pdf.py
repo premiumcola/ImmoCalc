@@ -152,6 +152,21 @@ def test_guthaben_bekommt_ein_plus():
     assert b"(-240,00)" not in daten
 
 
+def test_ergebnis_flaeche_ist_farblich_getoent_nicht_reinweiss():
+    """N407 — vorher reines Weiß (SHEET) auf dem hellgrauen Kasten, im PDF
+    kaum als eigene Karte zu erkennen. Jetzt dieselbe blasse Pos/Neg-Tönung
+    wie die Chips in der App (--pos-bg/--neg-bg)."""
+    nachzahlung = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
+                                 {"kosten": 2823.63, "vorauszahlungen": 2640.0,
+                                  "saldo": -183.63})
+    guthaben = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
+                              {"kosten": 2400.0, "vorauszahlungen": 2640.0,
+                               "saldo": 240.0})
+    assert b"1.000 1.000 1.000 rg" not in nachzahlung   # kein reines Weiss mehr
+    assert b"0.969 0.914 0.890 rg" in nachzahlung        # NEG_BG
+    assert b"0.906 0.957 0.925 rg" in guthaben           # POS_BG
+
+
 def test_monate_werden_aus_dem_zeitraum_abgeleitet():
     assert _monate_aus("01.01.2023 – 31.12.2023") == 12
     assert _monate_aus("01.07.2024 – 31.12.2024") == 6
@@ -240,12 +255,14 @@ def test_heatmap_faerbt_den_groessten_posten_am_kraeftigsten():
                             "saldo": 0.0},
                            [{"kostenart": "Groß", "betrag": 776.42},
                             {"kostenart": "Klein", "betrag": 4.17}])
-    # Grünanteil der Füllfarben (nur Flächen, nicht Text): je röter, desto
-    # kleiner. Papier liegt bei 0.925, Vollton NEG bei 0.259.
-    gruen = {float(g) for _, g, _ in re.findall(
+    # N407 — die Heatmap zielt seit hier auf TEAL statt NEG (kein Rot mehr für
+    # bloße Kostenzeilen, siehe abrechnung_pdf.py-Kopf). Rotanteil der
+    # Füllfarben: je kräftiger die Einfärbung, desto kleiner der Rotwert.
+    # Papier liegt bei 0.910, Vollton TEAL bei 0.059.
+    rot = {float(r) for r, _, _ in re.findall(
         rb"(\d\.\d{3}) (\d\.\d{3}) (\d\.\d{3}) rg\n\d", daten)}
-    assert any(g < 0.60 for g in gruen)          # der große Posten, kräftig
-    assert any(0.87 < g < 0.92 for g in gruen)   # der kleine, fast Papierton
+    assert any(r < 0.50 for r in rot)            # der große Posten, kräftig
+    assert any(0.85 < r < 0.92 for r in rot)     # der kleine, fast Papierton
 
 
 # ------------------------------------------------------------------ Kompatibel

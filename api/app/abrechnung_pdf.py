@@ -6,10 +6,20 @@ Tankabrechnung. Hier steht nur, wie diese eine Seite aussieht.
 
 Gestalt: **genau eine Seite** ("Onepager"). Die Positionsliste bekommt einen
 Heatmap-Hintergrund — je größer der Posten, desto kräftiger die Einfärbung
-Richtung `--neg #B24229`. Das ersetzt eine Zahlenkolonne durch ein Bild, das
+Richtung `--teal #0F6E5C`. Das ersetzt eine Zahlenkolonne durch ein Bild, das
 man auf einen Blick liest, und ist damit derselbe Stil für jede Abrechnungsart.
 Passt die Liste nicht, wird der Zeilenabstand gestaucht — nie umgebrochen,
 denn eine zweite Seite gibt es hier strukturell nicht (`/Count 1`).
+
+N407 — zwei Farbkorrekturen: die Heatmap färbte bisher Richtung `--neg` (Rot),
+als wäre jede größere Kostenzeile eine Warnung — dieselbe Verwechslung, die
+schon N399 bei der App selbst korrigiert hat (Rot/Grün sind Nachzahlung/
+Guthaben, keine „hoher Betrag"-Warnung). Jetzt Richtung `--teal`, dem
+neutralen Markenakzent. Und die Ergebnis-Fläche (Nachzahlung/Guthaben) war
+zwar schon gerundet, aber reinweiß auf hellgrauem Kasten — im gedruckten PDF
+kaum vom Rest zu unterscheiden. Sie trägt jetzt dieselbe blasse Pos/Neg-
+Tönung wie die Chips in der App (`--pos-bg`/`--neg-bg`), damit das Ergebnis
+als eigene Karte auffällt, nicht nur als eine Zeile mehr.
 """
 from __future__ import annotations
 
@@ -32,11 +42,12 @@ UNTEN_MIN = 40.0                         # darunter darf nichts mehr stehen
 # Farbsprache der App (CLAUDE.md) als 0..1-Tripel
 INK = (0.086, 0.149, 0.173)              # #16262C
 PAPER = (0.910, 0.925, 0.925)            # #E8ECEC
-SHEET = (1.0, 1.0, 1.0)
 TEAL = (0.059, 0.431, 0.361)             # #0F6E5C
 AMBER = (0.569, 0.384, 0.071)            # #916212
 POS = (0.180, 0.490, 0.310)              # #2E7D4F
 NEG = (0.698, 0.259, 0.161)              # #B24229
+POS_BG = (0.906, 0.957, 0.925)           # #E7F4EC
+NEG_BG = (0.969, 0.914, 0.890)           # #F7E9E3
 MATT = (0.404, 0.463, 0.482)             # INK aufgehellt, für Nebentext
 
 # Wie stark die größte Position eingefärbt wird. Darüber wird der Text auf dem
@@ -331,7 +342,7 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
             name_max = innen_breite - betrag_breite - 34
             for name, betrag, s35 in posten:
                 anteil = (abs(betrag) / groesster) if groesster else 0.0
-                farbe = _mische(PAPER, NEG,
+                farbe = _mische(PAPER, TEAL,
                                 HEAT_MIN + (HEAT_MAX - HEAT_MIN) * anteil)
                 blatt.flaeche(innen_l, ky - schritt + 1.5, innen_breite,
                               schritt - 2.5, farbe, 3)
@@ -351,12 +362,15 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
             blatt.text(innen_l + 8, ky, beschriftung, 10, fett, farbe)
             blatt.text_rechts(innen_r - 10, ky, wert, 10, fett, farbe)
 
-        # ---- Ergebnis: Doppelstrich und eine eigene, helle Fläche
+        # ---- Ergebnis: Doppelstrich und eine eigene, farblich getönte Fläche
+        # N407 — blasses Pos/Neg statt reinem Weiß: auf dem hellgrauen Kasten
+        # war eine weiße Fläche kaum als eigene Karte zu erkennen.
         ky -= 12
         blatt.strich(innen_l, innen_r, ky + 3.0, 0.8, INK)
         blatt.strich(innen_l, innen_r, ky + 0.6, 0.8, INK)
         hoehe = saldo_zone - 10
-        blatt.flaeche(innen_l, ky - hoehe, innen_breite, hoehe, SHEET, 6)
+        blatt.flaeche(innen_l, ky - hoehe, innen_breite, hoehe,
+                      POS_BG if saldo >= 0 else NEG_BG, 10)
         basis = ky - hoehe + (hoehe - 13) / 2 + 3
         blatt.text(innen_l + 10, basis, "Nachzahlung (-) / Guthaben (+)", 11.5,
                    True, INK)
