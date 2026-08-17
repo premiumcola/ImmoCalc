@@ -36,8 +36,6 @@
   .meldung.an{display:block}
   .meldung.gut{background:var(--pos-bg);color:var(--pos)}
   .meldung.schlecht{background:var(--neg-bg);color:var(--neg)}
-  .lead{font:400 12.5px var(--body);color:var(--soft);margin:-4px 0 12px;
-        line-height:1.5}
 
   /* ---- N413: Personen-Umschalter — eine Karte zeigt nur eine Person,
      darüber Chips zum Wechseln. Grosse Touch-Ziele, faellt in mehrere
@@ -146,11 +144,33 @@
   .wd-tab td.wd-bwzelle{white-space:nowrap}
   .bwbadge{display:inline-flex;align-items:center;justify-content:center;
     width:26px;height:26px;border-radius:999px;color:#fff;
-    font:700 12px var(--disp);line-height:1}
+    font:700 12px var(--disp);line-height:1;border:none;cursor:pointer;
+    padding:0;-webkit-tap-highlight-color:transparent}
+  .bwbadge:hover,.bwbadge:focus-visible{outline:2px solid var(--teal);
+    outline-offset:2px}
+  .bwbadge.bwbadge-gross{width:34px;height:34px;font-size:15px;
+    vertical-align:middle;margin-left:8px;cursor:default}
   .bwwarn{display:inline-flex;align-items:center;justify-content:center;
     width:16px;height:16px;margin-left:4px;border-radius:999px;
     background:var(--amber-bg);color:var(--amber);font:700 10px var(--body);
     vertical-align:top}
+  /* N409 — Bewertungs-Detail-Dialog: Kennzahl, Ampelpunkt, Wert (oder
+     „fehlt" statt einer stillen Lücke). */
+  .bwliste{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+  .bwzeile{display:flex;align-items:center;gap:9px;padding:8px 2px;
+    border-bottom:1px solid var(--line);font:500 13px var(--body)}
+  .bwzeile:last-child{border-bottom:none}
+  .bwpunkt{flex:none;width:10px;height:10px;border-radius:999px}
+  .bwlabel{flex:1;color:var(--ink)}
+  .bwwert{flex:none;font:600 12.5px var(--mono);color:var(--ink)}
+  .bwfehlt{color:var(--soft);font-style:italic;font-weight:500}
+  .bwpotenzial{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);
+    font:500 12.5px var(--body);color:var(--ink)}
+  .bwpotenzial b{display:block;margin-bottom:4px;font:600 11px var(--mono);
+    letter-spacing:.04em;text-transform:uppercase;color:var(--soft)}
+  .bwpotenzial div{color:var(--pos);padding:2px 0}
+  dialog.immo-dlg.bw-dlg .bwdisclaimer{margin-top:12px;font:400 11px var(--body);
+    color:var(--soft);line-height:1.5}
   /* N409 — Zinsbindungs-Countdown, Sortier-/Filterleiste, Disclaimer. */
   .zbmarke{display:inline-block;margin-top:3px;font:600 9.5px var(--mono);
     color:var(--amber);background:var(--amber-bg);border-radius:6px;
@@ -328,19 +348,10 @@
   </div>
 
   <div class="scroll">
-    <h2 class="sec">Verteilung</h2>
-    <p class="lead">
-      Je Objekt müssen 1000 ‰ verteilt sein. Eine Nachkommastelle genügt —
-      dreimal 333,3 ‰ gilt als vollständig.
-    </p>
+    <h2 class="sec" title="Je Objekt müssen 1000 ‰ verteilt sein. Eine Nachkommastelle genügt — dreimal 333,3 ‰ gilt als vollständig.">Verteilung</h2>
     <div id="stand"></div>
 
-    <h2 class="sec">Personen</h2>
-    <p class="lead">
-      Personen und Gesellschaften, denen die Immobilien gehören. Ob jemand
-      allein oder mit anderen besitzt, ergibt sich aus dem Anteil am jeweiligen
-      Objekt — zugeordnet wird er auf der Objektseite.
-    </p>
+    <h2 class="sec" title="Ob jemand allein oder mit anderen besitzt, ergibt sich aus dem Anteil am jeweiligen Objekt — zugeordnet wird er auf der Objektseite.">Personen</h2>
     <div id="liste"></div>
     <button class="row ghost" id="neu">
       <span class="ic">＋</span>
@@ -497,7 +508,7 @@
 
 <script type="module">
 import { api, esc, frage, melde, eurKurz, eurVoll, promille, zahlAus,
-         installNav } from './assets/immo.js';
+         installNav, baueDialog } from './assets/immo.js';
 installNav();
 
 const liste = document.getElementById('liste');
@@ -735,19 +746,99 @@ function betObjekt(o) {
    zu machen: eine unsichere Note soll auffallen, nicht verschwinden. */
 const NOTE_FARBE = { A: '#2E7D4F', B: '#5B8F5C', C: '#916212', D: '#C17A3E', E: '#B24229' };
 
-function bewertungZelle(slug) {
+function bewertungZelle(slug, objektname) {
   const daten = kpi.get(slug);
   const b = daten?.bewertung;
   if (!b || !b.note) {
     return `<td class="wd-bwplatz" title="Zu wenige Angaben für eine Bewertung">–</td>`;
   }
   const niedrig = b.konfidenz < 0.6;
-  const titel = `Bewertung ${b.note}${niedrig ? ' — nur wenige Angaben, Note unsicher' : ''}`;
+  const titel = `Bewertung ${b.note}${niedrig ? ' — nur wenige Angaben, Details ansehen' : ''}`;
   return `<td class="wd-bwzelle">
-      <span class="bwbadge" style="background:${NOTE_FARBE[b.note] || '#8A96A3'}"
-            role="img" aria-label="${esc(titel)}" title="${esc(titel)}">${b.note}</span>
+      <button type="button" class="bwbadge" style="background:${NOTE_FARBE[b.note] || '#8A96A3'}"
+              aria-label="${esc(titel)}" title="${esc(titel)}"
+              data-bw-detail="${esc(slug)}" data-bw-name="${esc(objektname || '')}">${b.note}</button>
       ${niedrig ? '<span class="bwwarn" aria-hidden="true">!</span>' : ''}
     </td>`;
+}
+
+/* N409 — Antwort auf „wo sind die Werte, was fehlt": die Sortierkriterien
+   (Nettorendite, DSCR, Beleihung, Cashflow, Mietreserve) stehen NICHT als
+   eigene Tabellenspalte da — ohne diesen Dialog liesse sich danach nur
+   blind sortieren, ohne die Zahl je zu sehen. Klick auf die Notenbadge zeigt
+   alle bewerteten Kennzahlen mit Wert + Ampel, und nennt fehlende Angaben
+   beim Namen statt nur ein „!" zu zeigen. */
+const KPI_LABEL = {
+  leverage_spread_pp: 'Leverage-Spread', dscr: 'DSCR',
+  ltv_pct: 'Beleihung (LTV)', netto_rendite_pct: 'Nettorendite',
+  kaufpreisfaktor: 'Kaufpreisfaktor', echtes_defizit_monat: 'Echtes Defizit / Monat',
+};
+const AMPEL_FARBE = { gruen: 'var(--pos)', gelb: 'var(--amber)', rot: 'var(--neg)' };
+const AMPEL_TEXT = { gruen: 'gut', gelb: 'mittel', rot: 'schwach' };
+
+function kpiWertText(schluessel, k) {
+  const proz = (v, nk = 2) => v == null ? null
+    : `${v.toLocaleString('de-DE', { maximumFractionDigits: nk })} %`;
+  switch (schluessel) {
+    case 'leverage_spread_pp': {
+      const v = k.finanzierung.leverage_spread_pp;
+      return v == null ? null
+        : `${v >= 0 ? '+' : ''}${v.toLocaleString('de-DE', { maximumFractionDigits: 2 })} Pp.`;
+    }
+    case 'dscr': {
+      const v = k.finanzierung.dscr;
+      if (v != null) return v.toLocaleString('de-DE', { maximumFractionDigits: 2 });
+      return k.finanzierung.dscr_anwendbar === false ? 'nicht anwendbar (schuldenfrei)' : null;
+    }
+    case 'ltv_pct': return proz(k.finanzierung.ltv_pct, 1);
+    case 'netto_rendite_pct': return proz(k.rendite.netto_rendite_pct);
+    case 'kaufpreisfaktor': {
+      const v = k.rendite.kaufpreisfaktor;
+      return v == null ? null : `${v.toLocaleString('de-DE', { maximumFractionDigits: 1 })}×`;
+    }
+    case 'echtes_defizit_monat': {
+      const v = k.cashflow.echtes_defizit_monat;
+      return v == null ? null : eurVoll(v);
+    }
+    default: return null;
+  }
+}
+
+function bewertungDetailOeffnen(slug, name) {
+  const daten = kpi.get(slug);
+  const b = daten?.bewertung, k = daten?.kennzahlen;
+  if (!b || !k) return;
+  const zeilen = Object.entries(KPI_LABEL).map(([schluessel, label]) => {
+    const farbe = b.ampeln[schluessel];
+    const wert = kpiWertText(schluessel, k);
+    return `<div class="bwzeile">
+        <span class="bwpunkt" style="background:${farbe ? AMPEL_FARBE[farbe] : 'var(--line)'}"
+              title="${farbe ? AMPEL_TEXT[farbe] : 'keine Angabe'}"></span>
+        <span class="bwlabel">${esc(label)}</span>
+        <span class="bwwert">${wert != null ? esc(wert) : '<span class="bwfehlt">fehlt</span>'}</span>
+      </div>`;
+  }).join('');
+  const pot = k.potenzial;
+  const potZeilen = [
+    pot.mietreserve_jahr ? `Mietreserve: ${eurKurz(pot.mietreserve_jahr)} / Jahr` : null,
+    pot.kappungsgrenze_spielraum_jahr > 0
+      ? `Kappungsgrenzen-Spielraum: ${eurKurz(pot.kappungsgrenze_spielraum_jahr)} / Jahr` : null,
+    pot.gfz_auslastung_pct != null && pot.gfz_auslastung_pct < 100
+      ? `GFZ-Auslastung: ${pot.gfz_auslastung_pct.toLocaleString('de-DE')} % — Baurecht nicht ausgeschöpft` : null,
+  ].filter(Boolean);
+  const fehlendeLabels = b.fehlende_kennzahlen.map(s => KPI_LABEL[s]).filter(Boolean);
+  const dlg = baueDialog(`
+    <div class="dt">${esc(name || 'Bewertung')}
+      <span class="bwbadge bwbadge-gross" style="background:${NOTE_FARBE[b.note] || '#8A96A3'}"
+        >${b.note}</span></div>
+    <p class="hinweis">Konfidenz ${Math.round(b.konfidenz * 100)} %${
+      fehlendeLabels.length ? ` — es fehlen: ${esc(fehlendeLabels.join(', '))}.` : ', alle Angaben vorhanden.'}</p>
+    <div class="bwliste">${zeilen}</div>
+    ${potZeilen.length ? `<div class="bwpotenzial"><b>Potenzial</b>
+      ${potZeilen.map(z => `<div>${esc(z)}</div>`).join('')}</div>` : ''}
+    <p class="bwdisclaimer">Entscheidungshilfe, keine Steuer- oder Anlageberatung.</p>
+  `);
+  dlg.classList.add('bw-dlg');
 }
 
 /* N409 — Zinsbindungs-Countdown: nur innerhalb von 36 Monaten sichtbar, sonst
@@ -887,7 +978,7 @@ function tabelleHtml(e) {
         ${renditeZelle(o.slug, 'gesamt')}
         <td class="wd-anteil"><span class="bw">${promille(o.promille)}</span>
           <span class="chip">${esc(o.rolle)}</span></td>
-        ${bewertungZelle(o.slug)}
+        ${bewertungZelle(o.slug, o.objektart || o.titel || o.name || 'Immobilie')}
       </tr>${pvUnter(o.slug)}`;
   };
   // N409 — sortiert (bestes Ergebnis des gewählten Kriteriums zuerst) und,
@@ -1255,6 +1346,10 @@ liste.addEventListener('click', async e => {
     const id = Number(chip.dataset.person);
     if (id !== aktivId) { aktivId = id; personZeichnen(); }
     return;
+  }
+  const bwKnopf = e.target.closest('[data-bw-detail]');
+  if (bwKnopf) {
+    return bewertungDetailOeffnen(bwKnopf.dataset.bwDetail, bwKnopf.dataset.bwName);
   }
   const bearbeiten = e.target.closest('[data-bearbeiten]');
   if (bearbeiten) {
