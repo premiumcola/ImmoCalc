@@ -1,10 +1,12 @@
-"""Kostenart-Katalog: lesen, umbenennen, umlagefähig/aktiv/optional setzen.
+"""Kostenart-Katalog: lesen, anlegen, umbenennen, umlagefähig/aktiv/optional
+setzen.
 
 Ein Namenswechsel zieht die Positionen und Belege mit, damit die Historie nicht
 ins Leere zeigt (CXC). Gelöscht wird nichts — der Katalog kennt dafür
 `aktiv=False`.
 """
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
@@ -20,6 +22,41 @@ def kostenarten(slug: str, session: Session = Depends(get_session)) -> list[Kost
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
     return session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
+
+
+class KostenartNeu(BaseModel):
+    name: str
+    umlagefaehig: bool = True
+    s35: bool = False
+    optional: bool = False
+
+
+@router.post("/objekte/{slug}/kostenarten", status_code=201)
+def kostenart_anlegen(slug: str, data: KostenartNeu,
+                      session: Session = Depends(get_session)) -> dict:
+    """N408 — bisher entstand eine neue Kostenart nur beiläufig: beim Anlegen
+    des Objekts, oder als Nebeneffekt, wenn eine bestehende Position auf
+    einen noch unbekannten Namen umgehängt wird (`kostenart_aendern`). Eine
+    Kostenart, die noch KEINE Position trägt, ließ sich am Bestandsobjekt gar
+    nicht anlegen — genau der Fall bei einer neuen, noch nie erfassten
+    Kostenart wie „Zählermiete"."""
+    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    if not o:
+        raise HTTPException(404, "Objekt nicht gefunden")
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(400, "Die Kostenart braucht einen Namen")
+    doppelt = session.exec(select(Kostenart).where(
+        Kostenart.objekt_id == o.id, Kostenart.name == name)).first()
+    if doppelt:
+        raise HTTPException(409, f"„{name}“ gibt es an dieser Immobilie schon")
+    k = Kostenart(objekt_id=o.id, name=name, umlagefaehig=data.umlagefaehig,
+                 s35=data.s35, optional=data.optional)
+    session.add(k)
+    session.commit()
+    session.refresh(k)
+    return {"id": k.id, "name": k.name, "umlagefaehig": k.umlagefaehig,
+            "s35": k.s35, "optional": k.optional}
 
 
 def _positionen_mit_art(session: Session, objekt_id: int,
