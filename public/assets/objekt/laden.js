@@ -2,10 +2,13 @@
    Renderer aus den themenreinen Modulen (stammdaten, einheiten, miete,
    diagramm, eigentuemer, cloud, grundschulden, lageplan, anfangsstaende) auf.
 
-   Reihenfolge auf der Hausebene:
-     Chart → Einheiten → Abrechnungszeiträume → Stammdaten →
-     Dokumentenablage → Eigentümer → Miete → Notarverträge → Grundschulden →
-     Erwerbsnebenkosten → Versicherungen → Kredite → Finanzamt → Hinweise.
+   Reihenfolge auf der Hausebene (N406 — Abrechnungszeiträume vor Einheiten,
+   meistgeklickt und soll nicht hinter deren Zeitstrahlen liegen;
+   Dokumentenablage ganz ans Ende, sie ist seit N216 nur noch Nebensache):
+     Chart → Abrechnungszeiträume → Einheiten → Stammdaten →
+     Eigentümer → Miete → Notarverträge → Grundschulden →
+     Erwerbsnebenkosten → Versicherungen → Kredite → Finanzamt → Hinweise →
+     Dokumentenablage.
    Auf der Einheitenebene:
      Chart → Einheit-Stamm → Mieten → Abrechnungszeiträume. */
 
@@ -404,18 +407,19 @@ export async function laden() {
   // Eigentümerübersicht, die Jahresmiete steckt jetzt im Diagramm. Die
   // §-556-Fristleiste ist oben raus (die Frist steht an den Zeiträumen), und der
   // „Angaben fehlen noch"-Hinweis rückt zu den sonstigen Hinweisen nach unten.
-  // Reihenfolge: Chart → Einheiten → Abrechnungszeiträume → Stammdaten →
-  // Dokumente/sonstige Hinweise.
+  // N406 — Reihenfolge: Chart → Abrechnungszeiträume (meistgeklickt, direkt
+  // unter dem Chart statt hinter den Einheiten-Zeitstrahlen) → Einheiten →
+  // Stammdaten → … → Dokumentenablage ganz am Ende (nur noch Nebensache,
+  // seit sich die Cloud-Ablage selbst organisiert, N216).
   const gesamtFlaeche = einheiten.reduce((s, e) => s + effektiveFlaeche(e), 0);
 
   inhalt.innerHTML = `
     ${baustelleBanner}
     ${mietDiagrammHtml(bereiche.mieten, gesamtFlaeche, objektSummenHtml())}
-    ${einheitenHtml()}
     ${zeitraumBlock}
+    ${einheitenHtml()}
     ${stammHtml(objekt)}
     ${wegHtml(objekt)}
-    ${ablageBlock}
     ${eigentuemerHtml(anteile)}
     ${mietBlock}
     ${abschnitt('notarvertraege', bereiche.notarvertraege)}
@@ -429,6 +433,7 @@ export async function laden() {
     ${abschnitt('kredite', bereiche.kredite)}
     ${abschnitt('zahlungen', finanzZahlungen)}
     ${nachpflegeHtml(det.nachpflege)}
+    ${ablageBlock}
     ${gefahrBlock}`;
 
   installHilfe(inhalt);
