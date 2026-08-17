@@ -641,6 +641,21 @@ def test_schluessel_vorschau_zeigt_gewichte_und_fehlzuordnung():
         assert v["unbekannte_vorauszahlungen"] == []
 
 
+def test_schluessel_vorschau_traegt_belegungszeiten(): # N407
+    """Die Belegungs-Übersicht im Ergebnis-Tab braucht ab/bis/leerstand/monate
+    je Bezug — dieselben Daten wie die Gewichte, nur bisher nicht mit
+    ausgeliefert."""
+    with TestClient(app) as c:
+        _, zid = _objekt_mit_zwei_wohnungen(c)
+        v = c.get(f"/api/zeitraeume/{zid}/schluessel").json()
+        alpha = next(p for p in v["parteien"] if p["partei"] == "Mieter Alpha")
+        assert alpha["einheit"] == "EG"
+        assert alpha["ab"] == f"{JAHR}-01-01"
+        assert alpha["leerstand"] is False
+        assert alpha["zugeordnet"] is True
+        assert 11.9 < alpha["monate"] <= 12.0
+
+
 def test_vorauszahlung_auf_unbekannten_namen_wird_aufgedeckt():
     """N314(g) — dieselbe Prüfsumme ausserdem an der Abrechnung selbst, nicht
     nur in der separaten Schlüssel-Vorschau: 99 € landeten bisher unbemerkt

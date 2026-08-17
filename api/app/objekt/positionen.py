@@ -15,8 +15,8 @@ from ..db import get_session
 from ..dokumente.zuordnung import loese_info_referenzen
 from ..models import (ERLEDIGT, OFFEN, Dokument, Kostenart,
                       Kostenposition, Vorauszahlung, Zeitraum)
-from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, ableiten,
-                          ableiten_einheit, stammdaten,
+from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, _monate,
+                          ableiten, ableiten_einheit, stammdaten,
                           unbekannte_vorauszahlungen, vorschau)
 from .zeitraeume import _zeitraum, _zeitraum_leer_entfernen
 
@@ -38,7 +38,14 @@ def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> di
     Vorschau vor der Festlegung: `moeglich` sagt, ob sich der Schlüssel aus den
     Stammdaten ergibt. `unbekannte_vorauszahlungen` deckt den stillen Fehler
     auf, bei dem eine Vorauszahlung auf einen Parteinamen lautet, den die
-    Verteilung gar nicht kennt — die Engine rechnet dann an ihr vorbei."""
+    Verteilung gar nicht kennt — die Engine rechnet dann an ihr vorbei.
+
+    N407 — `parteien` trägt seit hier zusätzlich `ab`/`bis`/`leerstand`/
+    `monate`: dieselben Bezüge, die auch der Schlüssel-Vorschau zugrunde
+    liegen, sind die Datenquelle für die Belegungs-Übersicht im Ergebnis-Tab
+    (welche Partei/welcher Leerstand wann in welcher Einheit) — additiv, kein
+    neuer Endpunkt nötig, das Frontend lädt `/schluessel` ohnehin bei jedem
+    Seitenaufbau."""
     z = _zeitraum(session, zid)
     bezuege = stammdaten(session, z)
     vzs = session.exec(
@@ -46,7 +53,10 @@ def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> di
     return {
         "zeitraum": zid, "vorgabe": VORGABE,
         "parteien": [{"partei": b.partei, "einheit": b.einheit,
-                      "flaeche": b.flaeche, "personen": b.personen}
+                      "flaeche": b.flaeche, "personen": b.personen,
+                      "ab": b.ab, "bis": b.bis, "leerstand": b.leerstand,
+                      "zugeordnet": b.zugeordnet,
+                      "monate": _monate(b, z.start, z.ende)}
                      for b in bezuege],
         "schluessel": vorschau(bezuege, z.start, z.ende),
         "unbekannte_vorauszahlungen": unbekannte_vorauszahlungen(session, z, vzs),
