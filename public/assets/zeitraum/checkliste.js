@@ -943,7 +943,22 @@ const GEAR_SVG = `<svg viewBox="-2 -2 28 28" fill="none" stroke="currentColor"
   2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.2.63.77 1.06 1.43 1.09H22a2 2 0 0 1 0
   4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>`;
 
+// N410 — ein Sortier-/Aufklapp-Klick baut `inhalt.innerHTML` komplett neu;
+// ohne Vorkehrung setzt der Browser `scrollTop` dabei auf 0 zurück, und die
+// Seite springt bei jedem Klick tief im Ergebnis-Tab nach oben. Beim echten
+// Wechsel der Tabs (Checkliste/Ergebnis/Belege) ist „oben anfangen" dagegen
+// richtig — deshalb nur innerhalb derselben Ansicht erhalten.
+let letzteAnsicht = null;
+
 export async function zeichnen() {
+  const selbeAnsicht = state.ansicht === letzteAnsicht;
+  const scrollVorher = selbeAnsicht ? inhalt.scrollTop : 0;
+  letzteAnsicht = state.ansicht;
+  await zeichnenRoh();
+  if (selbeAnsicht) inhalt.scrollTop = scrollVorher;
+}
+
+async function zeichnenRoh() {
   const f = fortschrittRechnen();
   const anteil = f.gesamt ? Math.round((f.fertig / f.gesamt) * 100) : 0;
   // N280 — im WEG-Modus gibt es keine Belegjagd: der Fortschrittsbalken würde

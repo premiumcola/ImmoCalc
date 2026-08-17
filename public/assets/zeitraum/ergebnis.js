@@ -243,15 +243,28 @@ function matrixHtml(a, wer) {
   const zeileMit = (label, klasse, zellenHtml) =>
     `<tr${klasse ? ` class="${klasse}"` : ''}><td class="wd-rowh">${label}</td>${zellenHtml}</tr>`;
 
-  // N410 — Heatmap: der teuerste Posten (bezogen auf die Gesamtkosten dieser
-  // Kostenart, unabhängig von der Spaltensortierung) sticht rot heraus, der
-  // günstigste bleibt neutral — auf einen Blick, welche Kostenblöcke zählen.
+  // N410 — Heatmap INNERHALB der Zeile: eine einheitliche Zeilenfarbe zeigte
+  // nur, welche Kostenart insgesamt groß ist — die Verteilung auf die
+  // Einheiten in genau dieser Zeile blieb unsichtbar (alle Zellen gleich
+  // eingefärbt). Jetzt bezieht sich die Farbe jeder Partei-Zelle auf das
+  // Maximum IHRER EIGENEN Zeile: wer bei „Heizung" am meisten trägt, sticht
+  // rot heraus, unabhängig davon, wie groß „Heizung" gegenüber „Strom" ist.
+  // Die Summe-Spalte bleibt separat nach der Gesamtkostenart eingefärbt —
+  // dort lässt sich weiterhin ablesen, welche Kostenart insgesamt am meisten
+  // ausmacht. Die Kostenart-Spalte selbst bleibt neutral (sie trägt keinen
+  // Betrag, nur den Namen).
   const maxKosten = Math.max(0.01, ...positionen.map(p => p.kosten));
   const posZeilen = positionen.map(pos => {
-    const stil = ` style="background:${heatFarbe(pos.kosten / maxKosten)}"`;
-    return `<tr><td class="wd-rowh"${stil}>${esc(pos.kostenart)}</td>${
-      parteien.map(p => `<td${stil}>${eur(pos.verteilung?.[p] || 0)}</td>`).join('')
-      }<td${stil}><b>${eur(pos.kosten)}</b></td></tr>`;
+    const zeilenMax = Math.max(0.01,
+      ...parteien.map(p => pos.verteilung?.[p] || 0));
+    return `<tr><td class="wd-rowh">${esc(pos.kostenart)}</td>${
+      parteien.map(p => {
+        const betrag = pos.verteilung?.[p] || 0;
+        return `<td style="background:${heatFarbe(betrag / zeilenMax)}"
+            >${eur(betrag)}</td>`;
+      }).join('')
+      }<td style="background:${heatFarbe(pos.kosten / maxKosten)}"
+          ><b>${eur(pos.kosten)}</b></td></tr>`;
   }).join('');
 
   const gesamtKosten = positionen.reduce((s, p) => s + (p.kosten || 0), 0);
