@@ -151,6 +151,20 @@
     width:16px;height:16px;margin-left:4px;border-radius:999px;
     background:var(--amber-bg);color:var(--amber);font:700 10px var(--body);
     vertical-align:top}
+  /* N409 — Zinsbindungs-Countdown, Sortier-/Filterleiste, Disclaimer. */
+  .zbmarke{display:inline-block;margin-top:3px;font:600 9.5px var(--mono);
+    color:var(--amber);background:var(--amber-bg);border-radius:6px;
+    padding:2px 6px}
+  .tabwerkzeug{display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px;
+    margin-bottom:10px;font:500 12px var(--body);color:var(--soft)}
+  .twsort select{margin-left:6px;border:1.5px solid var(--line);
+    border-radius:8px;padding:6px 8px;font:500 12px var(--body);
+    color:var(--ink);background:var(--sheet);min-height:34px}
+  .twfilter{display:flex;align-items:center;gap:7px;cursor:pointer;
+    min-height:44px}
+  .twfilter input{width:18px;height:18px;accent-color:var(--teal)}
+  .bwdisclaimer{margin-top:10px;font:400 11px var(--body);color:var(--soft);
+    line-height:1.5}
 
   /* ---- CLXII: Vermögen und Miete je Eigentümer ----
      Nur seine Einheiten, nicht das ganze Haus. Drei Kennzahlen, die sich auf
@@ -736,6 +750,80 @@ function bewertungZelle(slug) {
     </td>`;
 }
 
+/* N409 — Zinsbindungs-Countdown: nur innerhalb von 36 Monaten sichtbar, sonst
+   reine Ablenkung („noch 8 Jahre" ist keine dringende Information). */
+function zinsbindungMarke(slug) {
+  const bis = kpi.get(slug)?.kennzahlen?.finanzierung?.naechste_zinsbindung_bis;
+  if (!bis) return '';
+  const monate = Math.round((new Date(bis) - new Date()) / (1000 * 60 * 60 * 24 * 30.44));
+  if (monate > 36 || monate < 0) return '';
+  const text = monate === 0 ? 'Zinsbindung endet diesen Monat'
+    : `Zinsbindung endet in ${monate} ${monate === 1 ? 'Monat' : 'Monaten'}`;
+  return `<span class="zbmarke" title="${esc(text)} (${
+    new Date(bis).toLocaleDateString('de-DE')})">⏳ ${monate} Mon.</span>`;
+}
+
+/* N409 — Sortier-/Filterzustand der Objekttabelle, je Person zurückgesetzt
+   beim Personenwechsel wäre zu viel Verhalten für zu wenig Nutzen; er gilt
+   session-weit, wie die übrigen UI-Zustände dieser Seite. */
+let sortKriterium = 'note';
+let nurAufmerksamkeit = false;
+const SORT_LABEL = {
+  note: 'Bewertung', netto_rendite: 'Nettorendite', dscr: 'DSCR',
+  ltv: 'Beleihung', cashflow: 'Cashflow nach Steuer', mietreserve: 'Mietreserve',
+};
+const NOTE_RANG = { A: 5, B: 4, C: 3, D: 2, E: 1 };
+
+function sortWert(o) {
+  const d = kpi.get(o.slug);
+  const k = d?.kennzahlen, b = d?.bewertung;
+  switch (sortKriterium) {
+    case 'note': return b?.note ? NOTE_RANG[b.note] : -1;
+    case 'netto_rendite': return k?.rendite?.netto_rendite_pct ?? -Infinity;
+    case 'dscr': return k?.finanzierung?.dscr ?? -Infinity;
+    // Beleihung: niedriger ist besser — als Sortiergrösse umgedreht, damit
+    // „bestes zuerst" für jedes Kriterium einheitlich absteigend bleibt.
+    case 'ltv': return k?.finanzierung?.ltv_pct != null ? -k.finanzierung.ltv_pct : -Infinity;
+    case 'cashflow': return k?.cashflow?.cashflow_nach_steuer ?? -Infinity;
+    case 'mietreserve': return k?.potenzial?.mietreserve_jahr ?? -Infinity;
+    default: return 0;
+  }
+}
+
+function brauchtAufmerksamkeit(o) {
+  const d = kpi.get(o.slug);
+  if (!d) return false;
+  const note = d.bewertung?.note;
+  if (note === 'D' || note === 'E') return true;
+  if (d.kennzahlen?.hat_leerstand) return true;
+  const bis = d.kennzahlen?.finanzierung?.naechste_zinsbindung_bis;
+  if (bis) {
+    const monate = (new Date(bis) - new Date()) / (1000 * 60 * 60 * 24 * 30.44);
+    if (monate >= 0 && monate <= 36) return true;
+  }
+  return false;
+}
+
+/* Werkzeugleiste über der Objekttabelle: Sortierung + „Braucht Aufmerksamkeit"
+   -Filter. Eigenes kleines Steuerelement statt der Klick-auf-Spaltenkopf-
+   Sortierung aus dem Ergebnis-Tab (N410) — hier gibt es mehr Kriterien als
+   sichtbare Spalten (DSCR/Cashflow/Mietreserve stehen gar nicht als eigene
+   Spalte da), ein Dropdown passt besser. */
+function werkzeugleisteHtml() {
+  const optionen = Object.entries(SORT_LABEL).map(([wert, label]) =>
+    `<option value="${wert}" ${wert === sortKriterium ? 'selected' : ''}>${esc(label)}</option>`
+  ).join('');
+  return `<div class="tabwerkzeug">
+      <label class="twsort">Sortieren nach
+        <select id="tabSort">${optionen}</select>
+      </label>
+      <label class="twfilter">
+        <input type="checkbox" id="tabFilter" ${nurAufmerksamkeit ? 'checked' : ''}>
+        Braucht Aufmerksamkeit
+      </label>
+    </div>`;
+}
+
 /* N146/N413 — die PV-Anlage als untergeordnete Tabellenzeile unter ihrer
    Immobilie. Kein eigenes Objekt: sie hat eigene Tausendstel, ihr Wert ist
    die Anschaffung (keine Wertentwicklung), und sie zählt bewusst nicht in
@@ -792,7 +880,7 @@ function tabelleHtml(e) {
     const q = (w && w.wert > 0) ? Math.round((w.restschuld / w.wert) * 100) : null;
     const beleihung = q == null ? '–' : `<span class="tval">${q} %</span>`;
     return `<tr>
-        <td class="wd-rowh">${betObjekt(o)}</td>
+        <td class="wd-rowh">${betObjekt(o)}${zinsbindungMarke(o.slug)}</td>
         <td${wert === '–' ? ' class="wd-leerz"' : ''}>${wert}</td>
         <td${beleihung === '–' ? ' class="wd-leerz"' : ''}>${beleihung}</td>
         ${renditeZelle(o.slug, 'cagr')}
@@ -802,22 +890,37 @@ function tabelleHtml(e) {
         ${bewertungZelle(o.slug)}
       </tr>${pvUnter(o.slug)}`;
   };
+  // N409 — sortiert (bestes Ergebnis des gewählten Kriteriums zuerst) und,
+  // auf Wunsch, auf die Objekte gefiltert, die Aufmerksamkeit brauchen.
+  const objekte = e.objekte
+    .filter(o => !nurAufmerksamkeit || brauchtAufmerksamkeit(o))
+    .sort((a, b) => sortWert(b) - sortWert(a));
   // Objekte, an denen nur die Anlage gehalten wird — sie stehen in der
-  // Anteilsliste nicht, weil es dort keinen Gebäudeanteil gibt.
-  const nurAnlage = [...uv.values()]
+  // Anteilsliste nicht, weil es dort keinen Gebäudeanteil gibt. Vom Filter
+  // unberührt: eine reine PV-Beteiligung hat keine eigene KPI-Bewertung.
+  const nurAnlage = nurAufmerksamkeit ? [] : [...uv.values()]
     .filter(z => z.pv && !gezeigt.has(z.slug))
     .map(z => nurAnlageZeile(z) + pvUnter(z.slug));
-  const rows = e.objekte.map(objektZeile).concat(nurAnlage).join('');
-  if (!rows) return '<div class="leer">Noch keinem Objekt zugeordnet</div>';
-  return `<div class="wd-tabelle"><table class="wd-tab">
+  const rows = objekte.map(objektZeile).concat(nurAnlage).join('');
+  const werkzeug = werkzeugleisteHtml();
+  if (!rows) {
+    const grund = nurAufmerksamkeit
+      ? 'Kein Objekt dieser Person braucht gerade Aufmerksamkeit.'
+      : 'Noch keinem Objekt zugeordnet';
+    return `${e.objekte.length ? werkzeug : ''}<div class="leer">${grund}</div>`;
+  }
+  return `${werkzeug}<div class="wd-tabelle"><table class="wd-tab">
       <thead><tr>
         <th class="wd-rowh">Objekt</th><th>Wert</th><th>Beleihung</th>
         <th>Wertsteig. p. a.</th><th>Rendite p. a.</th><th>Anteil</th>
-        <!-- N409 — reservierte Spalte für die künftige KPI-Bewertung -->
         <th>Bewertung</th>
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div>
+    <p class="bwdisclaimer">Die Investment-Kennzahlen sind eine
+      Entscheidungshilfe, keine Steuer- oder Anlageberatung — AfA-Split und
+      Mieterhöhungs-Spielraum brauchen vor einer Entscheidung fachkundige
+      Prüfung.</p>`;
 }
 
 /* N413 — Kopf, Kennzahlen-Kacheln und Objekttabelle EINER Person, in genau
@@ -1172,6 +1275,19 @@ liste.addEventListener('click', async e => {
     await Promise.all([eignerLaden(), standLaden()]);
   } catch (fehler) {
     melde(String(fehler.message || fehler), "neg");
+  }
+});
+
+/* N409 — Sortierung/Filter der Objekttabelle: nur die aktive Karte neu
+   zeichnen, kein Neuladen der Daten. */
+liste.addEventListener('change', e => {
+  if (e.target.id === 'tabSort') {
+    sortKriterium = e.target.value;
+    return personZeichnen();
+  }
+  if (e.target.id === 'tabFilter') {
+    nurAufmerksamkeit = e.target.checked;
+    return personZeichnen();
   }
 });
 

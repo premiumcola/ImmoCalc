@@ -181,6 +181,25 @@ def test_ohne_zinsbindung_kein_restschuld_zum_bindungsende():
     assert r["finanzierung"]["restschuld_bei_zinsbindungsende_je_kredit"] == {}
 
 
+def test_naechste_zinsbindung_ist_die_fruehste_kuenftige():
+    e = _voll()
+    e.kredite = [
+        KreditEingabe(restschuld=100_000, zinssatz_pct=3.0, rate_monatlich=500,
+                     zinsbindung_bis=date(2033, 1, 1)),
+        KreditEingabe(restschuld=50_000, zinssatz_pct=3.0, rate_monatlich=300,
+                     zinsbindung_bis=date(2028, 6, 1)),
+    ]
+    r = kennzahlen(e)
+    assert r["finanzierung"]["naechste_zinsbindung_bis"] == date(2028, 6, 1)
+
+
+def test_ohne_zinsbindung_ist_naechste_zinsbindung_none():
+    e = _voll()
+    e.kredite[0].zinsbindung_bis = None
+    r = kennzahlen(e)
+    assert r["finanzierung"]["naechste_zinsbindung_bis"] is None
+
+
 def test_restschuld_zum_bindungsende_liegt_unter_der_heutigen():
     e = _voll()
     r = kennzahlen(e)

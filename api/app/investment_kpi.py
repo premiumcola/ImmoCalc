@@ -303,6 +303,12 @@ def finanzierung(e: KpiEingabe, noi: float | None, stichtag: date) -> dict:
         if rs is not None:
             restschulden_bindungsende[i] = rs
 
+    # Die nächste auslaufende Zinsbindung unter allen echten Darlehen — für
+    # die Countdown-Marke in der Eigentümer-Liste (< 36 Monate).
+    kuenftige_bindungen = [k.zinsbindung_bis for k in echte_darlehen
+                          if k.zinsbindung_bis and k.zinsbindung_bis > stichtag]
+    naechste_zinsbindung_bis = min(kuenftige_bindungen) if kuenftige_bindungen else None
+
     return {
         "restschuld_gesamt": restschuld_gesamt,
         "ltv_pct": ltv_pct,
@@ -313,6 +319,7 @@ def finanzierung(e: KpiEingabe, noi: float | None, stichtag: date) -> dict:
         "leverage_spread_pp": leverage_spread_pp,
         "tilgungsplaene_je_kredit": plaene,
         "restschuld_bei_zinsbindungsende_je_kredit": restschulden_bindungsende,
+        "naechste_zinsbindung_bis": naechste_zinsbindung_bis,
     }
 
 
