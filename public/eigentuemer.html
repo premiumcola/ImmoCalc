@@ -39,6 +39,27 @@
   .lead{font:400 12.5px var(--body);color:var(--soft);margin:-4px 0 12px;
         line-height:1.5}
 
+  /* ---- N413: Personen-Umschalter — eine Karte zeigt nur eine Person,
+     darüber Chips zum Wechseln. Grosse Touch-Ziele, faellt in mehrere
+     Zeilen statt zu ueberlaufen; auf dem iPhone bleiben so immer zwei bis
+     drei Chips pro Zeile lesbar. */
+  .pswitch{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .pchip{display:flex;align-items:center;gap:8px;min-height:44px;
+         padding:5px 14px 5px 6px;border-radius:999px;
+         border:1.5px solid var(--line);background:var(--sheet);
+         color:var(--ink);cursor:pointer;font:600 12.5px var(--body);
+         transition:border-color .12s,background .12s,color .12s;
+         -webkit-tap-highlight-color:transparent}
+  .pchip:hover{border-color:var(--teal)}
+  .pchip.aktiv{border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)}
+  .pchip .ic{width:30px;height:30px;border-radius:9px;background:var(--teal-l);
+             color:var(--teal-d);flex:none;display:flex;align-items:center;
+             justify-content:center;font:600 12.5px var(--mono)}
+  .pchip.aktiv .ic{background:var(--teal);color:#fff}
+  .pchip .ic.foto{background-color:transparent;background-size:cover;
+                  background-position:center;
+                  box-shadow:0 0 0 1px rgba(22,38,44,.07)}
+
   /* ---- Person: Kopfzeile mit Aktionen, darunter ihre Beteiligungen ----
      Bewusst eine Karte statt einer Zeile: eine Person kann an mehreren
      Objekten mit unterschiedlichen Anteilen beteiligt sein, und das gehoert
@@ -72,28 +93,53 @@
   .pkopf .d{display:block;font:400 12.5px var(--body);color:var(--soft);
             margin-top:3px;line-height:1.4;overflow-wrap:anywhere}
   .beteiligungen{border-top:1px solid var(--line);padding:4px 14px 10px}
-  .bet{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:9px 0;min-width:0}
-  .bet + .bet{border-top:1px solid #EEF1F1}
-  /* N86 — auf schmalen Screens Name/Rendite (volle Breite) über ‰ + Rolle-Chip
-     legen, damit die Renditezeile nicht unter den „Miteigentümer"-Chip läuft. */
-  @media(max-width:439px){
-    .bet .bo-wrap{flex:1 1 100%}
-    .bet .bw{margin-left:auto}
-  }
-  /* CCCXXXIV — dreigeteilte Objektbezeichnung: Objektart (fett, Display) ·
-     Einheit (dünn), darunter die Adresse klein in Mono. */
-  .bet .bo{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-  .bet .bo-art{font:600 13.5px var(--disp);letter-spacing:-.01em;
-               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .bet .bo-eh{font:400 12px var(--body);font-style:italic;
-              color:var(--soft);letter-spacing:0}
-  .bet .bo-adr{font:500 10.5px var(--mono);color:var(--soft);
-               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .bet .bw{font:600 12.5px var(--mono);color:var(--teal-d);flex:none}
-  /* Welche Einheiten dem Eigentümer an diesem Objekt gehören (CLXI). */
-  .bet .beh{display:block;font:500 10.5px var(--mono);color:var(--soft);
-            margin-top:2px;white-space:normal;overflow-wrap:anywhere}
-  .bet .leer{font:400 12.5px var(--body);color:var(--soft);padding:9px 0}
+  .leer{font:400 12.5px var(--body);color:var(--soft);padding:9px 0}
+
+  /* ---- N413: Objekte einer Person als Vergleichstabelle statt Fließtext ----
+     Gleiche Tabellensprache wie in zeitraum.html/ergebnis.js
+     (.wd-tabelle/.wd-tab/.wd-rowh/.wd-garten) — hier lokal kopiert, weil diese
+     Seite kein gemeinsames Stylesheet mit zeitraum.html hat. */
+  .wd-tabelle{overflow-x:auto;border-radius:12px;border:1px solid var(--line);
+    max-width:100%;-webkit-overflow-scrolling:touch}
+  .wd-tab{border-collapse:collapse;width:100%;min-width:0}
+  .wd-tab tr{display:table-row}
+  .wd-tab th,.wd-tab td{text-align:right;padding:9px 10px;vertical-align:top;
+    border-bottom:1px solid var(--line)}
+  .wd-tab thead th{position:sticky;top:0;background:var(--paper);
+    font:600 9.5px var(--mono);letter-spacing:.03em;color:var(--soft);
+    text-transform:uppercase;line-height:1.3;min-width:74px}
+  .wd-tab th.wd-rowh,.wd-tab td.wd-rowh{text-align:left;font:600 12px var(--body);
+    color:var(--ink);background:var(--sheet);line-height:1.3;
+    width:152px;min-width:152px;max-width:152px;white-space:normal;
+    overflow-wrap:anywhere;position:sticky;left:0;z-index:1;
+    box-shadow:1px 0 0 var(--line)}
+  .wd-tab thead th.wd-rowh{z-index:2;background:var(--paper)}
+  .wd-tab td.wd-rowh .bo-art{display:block;font:600 12.5px var(--disp);
+    letter-spacing:-.01em}
+  .wd-tab td.wd-rowh .bo-eh{font:400 11px var(--body);font-style:italic;
+    color:var(--soft)}
+  .wd-tab td.wd-rowh .bo-adr{display:block;font:500 10px var(--mono);
+    color:var(--soft);margin-top:2px}
+  .wd-tab td.wd-rowh .pvnote{display:block;font:400 9.5px var(--body);
+    color:var(--soft);margin-top:2px;line-height:1.35}
+  .wd-tab tr.wd-garten td{background:#F1F4F4}
+  .wd-tab tr.wd-garten td.wd-rowh{background:#EDF1F0}
+  .wd-tab td.wd-leerz{color:var(--soft);font:500 12px var(--body)}
+  .wd-tab td.wd-hinweis{text-align:left;color:var(--soft);font:500 12px var(--body)}
+  .wd-tab .tval{display:block;font:600 12.5px var(--mono);color:var(--ink)}
+  .wd-tab td b{font:600 12.5px var(--mono)}
+  .wd-tab td b.pos{color:var(--pos)} .wd-tab td b.neg{color:var(--neg)}
+  /* Anteil bewusst leiser als zuvor: kein gefuellter Chip mehr, kleinere
+     Schrift — das Verhältnis der Person zum Objekt ist Nebeninformation,
+     seit die Werte-Spalten den Vergleich tragen. */
+  .wd-tab .wd-anteil{white-space:nowrap}
+  .wd-tab .wd-anteil .bw{display:block;font:600 10.5px var(--mono);color:var(--soft)}
+  .wd-tab .wd-anteil .chip{display:inline-block;margin-top:3px;font-size:9px;
+    padding:3px 7px}
+  /* N409 — reservierte Spalte für die künftige KPI-Bewertung (Notenbadge,
+     farbig). Hier bewusst nur der Kopf + ein stiller Platzhalter, damit die
+     KPI-Arbeit keinen weiteren Layout-Durchgang braucht. */
+  .wd-tab td.wd-bwplatz{color:var(--soft);opacity:.45}
 
   /* ---- CLXII: Vermögen und Miete je Eigentümer ----
      Nur seine Einheiten, nicht das ganze Haus. Drei Kennzahlen, die sich auf
@@ -106,22 +152,12 @@
   .eigwert .ewv{display:block;font:700 15px var(--disp);letter-spacing:-.02em;
                 margin-top:5px;overflow-wrap:anywhere}
   .eigwert .ewv.pos{color:var(--pos)} .eigwert .ewv.neg{color:var(--neg)}
-  /* ---- N146: die PV-Anlage als untergeordnete Zeile unter ihrer Immobilie ----
-     Kein eigenes Objekt: eingerückt, ohne Trennlinie nach oben (sie gehört zur
-     Zeile darüber) und schlanker gesetzt als eine Immobilie. */
-  .bet.pv{border-top:none;margin-left:8px;padding:6px 0 9px 10px;
-          border-left:2px solid var(--teal-l);gap:6px 8px}
-  .bet.pv .bo-art{font:600 12.5px var(--disp);color:var(--teal-d)}
-  .bet.pv .bo-eh{font-style:normal}
-  .bet.pv .bw{font-size:11.5px;color:var(--soft)}
-  .bet.pv .bvz{font-size:10.5px}
-  /* Warum die Anlage im Wert steht, aber nicht in der Beleihung. */
+  /* Warum die Anlage im Wert steht, aber nicht in der Beleihung — Hinweise
+     unter der PV-Zeile in der Objekttabelle (N146/N413). */
   .pvnote{display:block;font:400 10px var(--body);color:var(--soft);
           margin-top:1px;line-height:1.4}
   .pvhinweis{display:block;font:500 10.5px var(--body);color:var(--amber);
              margin-top:4px;line-height:1.45;overflow-wrap:anywhere}
-  /* Objekt, an dem jemand nur die Anlage hält — das Gebäude gehört ihm nicht. */
-  .bet .bkein{font:500 11px var(--mono);color:var(--soft)}
   /* Ein Satz unter den Kacheln: warum „Mein Wert" und „Beleihung" nicht
      dieselbe Grundlage haben. */
   .pvsum{border-top:1px solid var(--line);background:var(--sheet);
@@ -129,13 +165,7 @@
          line-height:1.45}
   .pvsum b{color:var(--teal-d);font-weight:600}
 
-  /* CCCLXXVII — Objektwert/Beleihung je Beteiligung + Investitionsspielraum. */
-  .bo-wrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-  .bvz{font:500 11px var(--mono);color:var(--soft)}
-  /* N75 — dezente Renditezeile je Beteiligung; Zahlen grün/rot hervorgehoben. */
-  .brend{font:500 10.5px var(--mono);color:var(--soft);overflow-wrap:anywhere}
-  .brend b{font-weight:600}
-  .brend b.pos{color:var(--pos)} .brend b.neg{color:var(--neg)}
+  /* CCCLXXVII — Investitionsspielraum je Person. */
   .invest{border-top:1px solid var(--line);padding:12px 14px;background:var(--paper)}
   .invest .il{font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;
     color:var(--teal-d)}
@@ -572,18 +602,14 @@ const prozVz = n => n == null ? '—'
   : (n > 0 ? '+' : '') + n.toLocaleString('de-DE',
       { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
 
-/* Die dezente Renditezeile unter einer Beteiligung. Nichts, solange keine
-   Kennzahl vorliegt (kein Kaufpreis/Verkehrswert/Kaufdatum). */
-function renditeHtml(slug) {
+/* N413 — Wertsteigerung bzw. Gesamtrendite als eigene Tabellenzelle; das
+   „p. a." steht jetzt einmal in der Spaltenüberschrift statt je Zeile.
+   Fehlt die Kennzahl (kein Kaufpreis/Verkehrswert/Kaufdatum), bleibt „–". */
+function renditeZelle(slug, feld) {
   const r = rendite.get(slug);
-  if (!r || (r.cagr == null && r.gesamt == null)) return '';
-  // N86 — knapp: „Wertsteig." + „Rendite", das „p. a." nur einmal am Ende.
-  const teile = [];
-  if (r.cagr != null)
-    teile.push(`Wertsteig. <b class="${r.cagr >= 0 ? 'pos' : 'neg'}">${prozVz(r.cagr)}</b>`);
-  if (r.gesamt != null)
-    teile.push(`Rendite <b class="${r.gesamt >= 0 ? 'pos' : 'neg'}">${prozVz(r.gesamt)}</b>`);
-  return `<span class="brend">${teile.join(' · ')} p. a.</span>`;
+  const v = r ? r[feld] : null;
+  return v == null ? '<td class="wd-leerz">–</td>'
+    : `<td><b class="${v >= 0 ? 'pos' : 'neg'}">${prozVz(v)}</b></td>`;
 }
 
 /* Die drei Kennzahlen einer Person: nur das, was ihr zugerechnet wird. */
@@ -665,34 +691,146 @@ function betObjekt(o) {
     </span>`;
 }
 
-/* N146 — die PV-Anlage als untergeordnete Zeile unter ihrer Immobilie.
-   Kein eigenes Objekt: sie hat eigene Tausendstel, ihr Wert ist die
-   Anschaffung (keine Wertentwicklung), und sie zählt bewusst nicht in die
-   Beleihung. Genau das steht auch dran. */
+/* N146/N413 — die PV-Anlage als untergeordnete Tabellenzeile unter ihrer
+   Immobilie. Kein eigenes Objekt: sie hat eigene Tausendstel, ihr Wert ist
+   die Anschaffung (keine Wertentwicklung), und sie zählt bewusst nicht in
+   die Beleihung. Genau das steht auch dran. Muted wie `.wd-tab tr.wd-garten`
+   in zeitraum.html — dieselbe Rolle: eine Unterzeile, kein eigenes Objekt. */
 function pvZeile(pv) {
   const kwp = pv.kwp
     ? ` · ${pv.kwp.toLocaleString('de-DE', { maximumFractionDigits: 2 })} kWp` : '';
   const hinweise = (pv.hinweise || [])
     .map(h => `<span class="pvhinweis">${esc(h)}</span>`).join('');
-  return `<div class="bet pv">
-      <span class="bo-wrap">
-        <span class="bo-art">${esc(pv.titel)}<span class="bo-eh">${kwp}</span></span>
-        ${pv.wert == null ? ''
-          : `<span class="bvz">${eurVoll(pv.wert)} · ${esc(pv.wertquelle)}</span>`}
-        <span class="pvnote">zählt zum Wert der Immobilie, nicht zur Beleihung</span>
-        ${hinweise}
-      </span>
-      <span class="bw">${promille(pv.promille)}</span>
-    </div>`;
+  const wert = pv.wert == null ? '–' : `${eurVoll(pv.wert)} · ${esc(pv.wertquelle)}`;
+  return `<tr class="wd-garten">
+      <td class="wd-rowh"><span class="bo-art">${esc(pv.titel)}<span class="bo-eh">${kwp}</span></span>
+        <span class="pvnote">zählt zum Wert, nicht zur Beleihung</span>${hinweise}</td>
+      <td colspan="4" class="wd-hinweis">${wert}</td>
+      <td class="wd-anteil"><span class="bw">${promille(pv.promille)}</span></td>
+      <td class="wd-bwplatz">—</td>
+    </tr>`;
 }
 
 /* Eine Immobilie, an der jemand nur die Anlage hält — das Gebäude gehört ihm
    nicht. Ohne diese Zeile hinge sein Anteil an der Anlage im Nichts. */
 function nurAnlageZeile(z) {
-  return `<div class="bet">
-      <span class="bo-wrap">${betObjekt(z)}
-        <span class="bkein">kein Anteil am Gebäude</span></span>
+  return `<tr>
+      <td class="wd-rowh">${betObjekt(z)}</td>
+      <td colspan="5" class="wd-hinweis">kein Anteil am Gebäude</td>
+      <td class="wd-bwplatz">—</td>
+    </tr>`;
+}
+
+/* N413 — je Objekt eine Tabellenzeile statt eines gestapelten Blocks:
+   Objekt (sticky) · Wert · Beleihung · Wertsteig. · Rendite · Anteil ·
+   Bewertung (Platzhalter für N409). Fehlende Werte werden als „–" gezeigt,
+   nicht ausgelassen — sonst wirkt eine Vergleichstabelle mit Zahnlücken
+   kaputt statt unvollständig. */
+function tabelleHtml(e) {
+  // CCCLXXVII — je Objekt der auf die Person entfallende Wert (nach ‰) und
+  // die Beleihung. Kommt aus der Vermögens-Übersicht, per slug verknüpft.
+  const uv = new Map((uebersicht.get(e.id)?.objekte || []).map(o => [o.slug, o]));
+  // N146 — die Anlage folgt direkt auf die Beteiligung an ihrer Immobilie.
+  // `gezeigt` verhindert, dass sie zweimal erscheint, wenn jemand am selben
+  // Objekt mehrere Anteile hält (Objekt und einzelne Einheiten).
+  const gezeigt = new Set();
+  const pvUnter = slug => {
+    const z = uv.get(slug);
+    if (!z?.pv || gezeigt.has(slug)) return '';
+    gezeigt.add(slug);
+    return pvZeile(z.pv);
+  };
+  const objektZeile = o => {
+    const w = uv.get(o.slug);
+    const wert = (w && w.wert != null)
+      ? `<span class="tval">${eurKurz(w.wert)}</span>` : '–';
+    const q = (w && w.wert > 0) ? Math.round((w.restschuld / w.wert) * 100) : null;
+    const beleihung = q == null ? '–' : `<span class="tval">${q} %</span>`;
+    return `<tr>
+        <td class="wd-rowh">${betObjekt(o)}</td>
+        <td${wert === '–' ? ' class="wd-leerz"' : ''}>${wert}</td>
+        <td${beleihung === '–' ? ' class="wd-leerz"' : ''}>${beleihung}</td>
+        ${renditeZelle(o.slug, 'cagr')}
+        ${renditeZelle(o.slug, 'gesamt')}
+        <td class="wd-anteil"><span class="bw">${promille(o.promille)}</span>
+          <span class="chip">${esc(o.rolle)}</span></td>
+        <td class="wd-bwplatz">—</td>
+      </tr>${pvUnter(o.slug)}`;
+  };
+  // Objekte, an denen nur die Anlage gehalten wird — sie stehen in der
+  // Anteilsliste nicht, weil es dort keinen Gebäudeanteil gibt.
+  const nurAnlage = [...uv.values()]
+    .filter(z => z.pv && !gezeigt.has(z.slug))
+    .map(z => nurAnlageZeile(z) + pvUnter(z.slug));
+  const rows = e.objekte.map(objektZeile).concat(nurAnlage).join('');
+  if (!rows) return '<div class="leer">Noch keinem Objekt zugeordnet</div>';
+  return `<div class="wd-tabelle"><table class="wd-tab">
+      <thead><tr>
+        <th class="wd-rowh">Objekt</th><th>Wert</th><th>Beleihung</th>
+        <th>Wertsteig. p. a.</th><th>Rendite p. a.</th><th>Anteil</th>
+        <!-- N409 — reservierte Spalte für die künftige KPI-Bewertung -->
+        <th>Bewertung</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+/* N413 — Kopf, Kennzahlen-Kacheln und Objekttabelle EINER Person, in genau
+   dieser Reihenfolge: wer sie ist → ihre Werte gesamt → ihre Objekte im
+   Vergleich. */
+function personKarteHtml(e) {
+  const kontakt = [e.email, e.telefon].filter(Boolean).join(' · ')
+    || 'keine Kontaktdaten hinterlegt';
+  // N218 — rundes Profilfoto statt Initialen-Icon, ausschließlich hier im
+  // Kartenkopf. Ohne `e.bild` bleibt alles wie zuvor.
+  const foto = e.bild
+    ? `<span class="ic foto" style="background-image:url('${esc(e.bild)}')"></span>`
+    : `<span class="ic">☗</span>`;
+  return `<div class="person">
+      <div class="pkopf">
+        ${foto}
+        <span class="txt">
+          <span class="t">${esc(e.name)}</span>
+          <span class="d">${esc(kontakt)}</span>
+        </span>
+        <button class="close" data-bearbeiten="${e.id}"
+                aria-label="${esc(e.name)} bearbeiten">✎</button>
+        <button class="close" data-weg="${e.id}"
+                aria-label="${esc(e.name)} entfernen">×</button>
+      </div>
+      ${eigwertHtml(e.id)}
+      <div class="beteiligungen">${tabelleHtml(e)}</div>
     </div>`;
+}
+
+/* N413 — Personen-Umschalter: eine Karte je Person, nur die aktive wird
+   angezeigt. `#liste` wird bei jedem erfolgreichen Laden neu mit dem
+   Chip-Streifen + der Kartenhülle aufgebaut (wie zuvor bei den Leer-/
+   Fehlerzuständen) — ein Wechsel danach berührt nur noch die eine Karte. */
+let aktivId = null;
+
+function switcherHtml() {
+  return eigner.map(e => {
+    const foto = e.bild
+      ? `<span class="ic foto" style="background-image:url('${esc(e.bild)}')"></span>`
+      : `<span class="ic">☗</span>`;
+    return `<button type="button" class="pchip${e.id === aktivId ? ' aktiv' : ''}"
+        data-person="${e.id}" aria-pressed="${e.id === aktivId}">
+        ${foto}<span>${esc(e.name)}</span>
+      </button>`;
+  }).join('');
+}
+
+function personZeichnen() {
+  document.querySelectorAll('.pchip').forEach(chip => {
+    const aktiv = Number(chip.dataset.person) === aktivId;
+    chip.classList.toggle('aktiv', aktiv);
+    chip.setAttribute('aria-pressed', String(aktiv));
+  });
+  const pkarte = document.getElementById('pkarte');
+  if (!pkarte) return;
+  const person = eigner.find(p => p.id === aktivId);
+  pkarte.innerHTML = person ? personKarteHtml(person) : '';
 }
 
 async function eignerLaden() {
@@ -708,6 +846,7 @@ async function eignerLaden() {
     ? '1 Person' : `${eigner.length} Personen`;
 
   if (!eigner.length) {
+    aktivId = null;
     liste.innerHTML = `<div class="empty" style="margin-bottom:10px">
         <div class="big">Noch kein Eigentümer</div>
         <p>Lege die Personen an, denen die Immobilien gehören — danach lassen
@@ -716,68 +855,10 @@ async function eignerLaden() {
     return;
   }
 
-  liste.innerHTML = eigner.map(e => {
-    const kontakt = [e.email, e.telefon].filter(Boolean).join(' · ')
-      || 'keine Kontaktdaten hinterlegt';
-    // Die Beteiligungen stehen unter der Person: erst dadurch ist zu sehen,
-    // wem was gehört — eine reine Namensliste sagt nichts.
-    // CLXI — hängt der Anteil an einer Einheit, steht sie unter dem Objekt und
-    // die Rolle bezieht sich auf die Einheit („Alleineigentümer" der Wohnung);
-    // sonst gilt die Rolle fürs ganze Haus.
-    // CCCLXXVII — je Objekt der auf die Person entfallende Wert (nach ‰) und
-    // die Beleihung. Kommt aus der Vermögens-Übersicht, per slug verknüpft.
-    const uv = new Map((uebersicht.get(e.id)?.objekte || []).map(o => [o.slug, o]));
-    const objWert = o => {
-      const w = uv.get(o.slug);
-      if (!w || w.wert == null) return '';
-      const q = w.wert > 0 ? Math.round((w.restschuld / w.wert) * 100) : null;
-      return `<span class="bvz">${eurKurz(w.wert)}${
-        q == null ? '' : ` · Beleihung ${q} %`}</span>`;
-    };
-    // N146 — die Anlage folgt direkt auf die Beteiligung an ihrer Immobilie.
-    // `gezeigt` verhindert, dass sie zweimal erscheint, wenn jemand am selben
-    // Objekt mehrere Anteile hält (Objekt und einzelne Einheiten).
-    const gezeigt = new Set();
-    const pvUnter = slug => {
-      const z = uv.get(slug);
-      if (!z?.pv || gezeigt.has(slug)) return '';
-      gezeigt.add(slug);
-      return pvZeile(z.pv);
-    };
-    const zeilen = e.objekte.map(o => `<div class="bet">
-            <span class="bo-wrap">${betObjekt(o)}${objWert(o)}${renditeHtml(o.slug)}</span>
-            <span class="bw">${promille(o.promille)}</span>
-            <span class="chip ${o.rolle === 'Alleineigentümer'
-              ? 'teal' : ''}">${esc(o.rolle)}</span>
-          </div>${pvUnter(o.slug)}`);
-    // Objekte, an denen nur die Anlage gehalten wird — sie stehen in der
-    // Anteilsliste nicht, weil es dort keinen Gebäudeanteil gibt.
-    const nurAnlage = [...uv.values()]
-      .filter(z => z.pv && !gezeigt.has(z.slug))
-      .map(z => nurAnlageZeile(z) + pvUnter(z.slug));
-    const bet = zeilen.concat(nurAnlage).join('')
-      || '<div class="leer">Noch keinem Objekt zugeordnet</div>';
-    // N218 — rundes Profilfoto statt Initialen-Icon, ausschließlich hier im
-    // Kartenkopf. Ohne `e.bild` bleibt alles wie zuvor.
-    const foto = e.bild
-      ? `<span class="ic foto" style="background-image:url('${esc(e.bild)}')"></span>`
-      : `<span class="ic">☗</span>`;
-    return `<div class="person">
-        <div class="pkopf">
-          ${foto}
-          <span class="txt">
-            <span class="t">${esc(e.name)}</span>
-            <span class="d">${esc(kontakt)}</span>
-          </span>
-          <button class="close" data-bearbeiten="${e.id}"
-                  aria-label="${esc(e.name)} bearbeiten">✎</button>
-          <button class="close" data-weg="${e.id}"
-                  aria-label="${esc(e.name)} entfernen">×</button>
-        </div>
-        <div class="beteiligungen">${bet}</div>
-        ${eigwertHtml(e.id)}
-      </div>`;
-  }).join('');
+  if (!eigner.some(p => p.id === aktivId)) aktivId = eigner[0].id;
+  liste.innerHTML = '<div class="pswitch" id="pswitch"></div><div id="pkarte"></div>';
+  document.getElementById('pswitch').innerHTML = switcherHtml();
+  personZeichnen();
 }
 
 /* ---- Anlegen und Bearbeiten ---- */
@@ -1010,6 +1091,14 @@ form.addEventListener('submit', async e => {
 });
 
 liste.addEventListener('click', async e => {
+  // N413 — Personen-Umschalter: nur die Aktiv-Markierung + die Karte wechseln,
+  // kein Neuladen nötig.
+  const chip = e.target.closest('[data-person]');
+  if (chip) {
+    const id = Number(chip.dataset.person);
+    if (id !== aktivId) { aktivId = id; personZeichnen(); }
+    return;
+  }
   const bearbeiten = e.target.closest('[data-bearbeiten]');
   if (bearbeiten) {
     const id = Number(bearbeiten.dataset.bearbeiten);
