@@ -19,6 +19,7 @@ from ..objekt import (abrechnung as _abrechnung,    # noqa: E402
                       einheiten as _einheiten,      # noqa: E402
                       entwuerfe as _entwuerfe,      # noqa: E402
                       erinnerungen as _erinnerungen,  # noqa: E402
+                      investment as _investment,    # noqa: E402
                       kostenarten as _kostenarten,  # noqa: E402
                       loeschen as _loeschen,        # noqa: E402
                       positionen as _positionen,    # noqa: E402
@@ -35,16 +36,18 @@ from ..objekt.zeitraeume import (_zeitraum_grenzen,  # noqa: F401, E402
                                  _zeitraum_leer_entfernen,
                                  zeitraum_label_jahr)
 
-# Reihenfolge: `stammdaten` trägt den Fänger `POST /objekte/{slug}/{bereich}`
-# (unbekannte `bereich`e melden „Unbekannter Bereich"). N408 — seit
-# `_kostenarten` einen eigenen `POST /objekte/{slug}/kostenarten` bekommen
-# hat, MUSS es vor `stammdaten` eingehängt werden, sonst fängt der generische
-# Fänger die Anfrage zuerst ab (dasselbe Prinzip wie `besitz` vor
-# `stammdaten` in main.py). Die übrigen Sub-Router haben keine gleichartigen
-# Pfade und bleiben unkritisch; `stammdaten` folgt trotzdem so früh wie
-# möglich, weil es die Objektliste liefert und beim App-Start implizit als
-# erstes angefragt wird.
+# Reihenfolge: `stammdaten` trägt ZWEI Fänger — `GET`/`POST
+# /objekte/{slug}/{bereich}` (unbekannte `bereich`e melden „Unbekannter
+# Bereich"). N408/N409 — jeder Sub-Router mit einem eigenen, gleich
+# aufgebauten `/objekte/{slug}/<wort>`-Pfad MUSS deshalb vor `stammdaten`
+# eingehängt werden, sonst fängt der generische Fänger die Anfrage zuerst ab
+# (dasselbe Prinzip wie `besitz` vor `stammdaten` in main.py). Betrifft
+# `_kostenarten` (`.../kostenarten`) und `_investment` (`.../kpi`). Die
+# übrigen Sub-Router haben keine gleichartigen Pfade und bleiben unkritisch;
+# `stammdaten` folgt trotzdem so früh wie möglich, weil es die Objektliste
+# liefert und beim App-Start implizit als erstes angefragt wird.
 router.include_router(_kostenarten.router)
+router.include_router(_investment.router)
 router.include_router(_stammdaten.router)
 router.include_router(_loeschen.router)
 router.include_router(_einheiten.router)

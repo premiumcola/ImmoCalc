@@ -433,7 +433,13 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
                "erwerbsart", "afa_basis_uebernommen",
                "niessbrauch_aktiv", "niessbrauch_berechtigt", "niessbrauch_bis",
                # N213 — Objektmodell (`standard` | `laufer_spezial`)
-               "modell"}
+               "modell",
+               # N409 — Eingaben der Investment-KPI-Engine
+               "erwerb_grunderwerbsteuer", "erwerb_notar_grundbuch",
+               "erwerb_makler", "gebaeudeanteil_pct", "afa_satz_pct",
+               "afa_restnutzungsdauer_jahre", "kpi_baukosten_eur_qm",
+               "kpi_opportunitaetszins_pct", "kpi_nicht_umlagefaehige_kosten_jahr",
+               "mietausfallwagnis_pct"}
     felder = bereinige(Objekt, {k: v for k, v in data.items() if k in erlaubt})
     if not felder.get("name", "x"):
         raise HTTPException(400, "Der Name darf nicht leer sein")

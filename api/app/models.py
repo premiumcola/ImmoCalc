@@ -155,6 +155,35 @@ class Objekt(SQLModel, table=True):
     niessbrauch_aktiv: bool = False
     niessbrauch_berechtigt: str = ""   # wer den Nießbrauch hält (leer = keiner)
     niessbrauch_bis: Optional[date] = None
+    # ----------------------------------------------------------------------
+    # N409 — Eingaben der Investment-KPI-Engine (api/app/investment_kpi.py),
+    # die es im Modell noch nicht gab. Additiv, alle `None`/Vorgabe: ein
+    # Bestandsobjekt ohne diese Angaben rechnet einfach mit weniger
+    # Kennzahlen weiter (die Engine lässt fehlende Werte `None`, nie eine
+    # erfundene 0), nichts bricht.
+    # ----------------------------------------------------------------------
+    erwerb_grunderwerbsteuer: Optional[float] = None
+    erwerb_notar_grundbuch: Optional[float] = None
+    erwerb_makler: Optional[float] = None
+    # Gebäudeanteil am Kaufpreis in Prozent — Basis der AfA-Bemessung (der
+    # Grundstücksanteil nutzt sich nicht ab). Von Hand gesetzt, weil der
+    # tatsächliche Split ein Wertgutachten braucht; ein aus dem
+    # Bodenrichtwert grob abgeleiteter Vorschlag entsteht zur Laufzeit
+    # (`investment_kpi`), wird aber nicht gespeichert.
+    gebaeudeanteil_pct: Optional[float] = None
+    afa_satz_pct: Optional[float] = None            # 2,0 / 2,5 / 3,33 / degressiv
+    afa_restnutzungsdauer_jahre: Optional[float] = None
+    # Basis der Instandhaltungsrücklage nach Peters-Formel (1,5 × Baukosten/m²
+    # ÷ 80 Jahre), falls `ruecklage_saldo`/`ruecklage_monatlich` oben keinen
+    # eigenen Jahreswert hergeben. Additiv, unabhängig vom bestehenden
+    # Rücklagenkonto.
+    kpi_baukosten_eur_qm: Optional[float] = None
+    kpi_opportunitaetszins_pct: Optional[float] = None   # Vorgabe 4,0 in der Engine
+    # Nicht umlagefähige Betriebskosten im Jahr (Grundsteuer/Versicherung-
+    # Anteile, die beim Eigentümer bleiben) — von Hand, bis eine Ableitung aus
+    # den Kostenarten mit `umlagefaehig=False` diesen Wert ersetzt.
+    kpi_nicht_umlagefaehige_kosten_jahr: Optional[float] = None
+    mietausfallwagnis_pct: Optional[float] = None        # Vorgabe 2,0 in der Engine
 
 
 class Einheit(SQLModel, table=True):
@@ -200,6 +229,9 @@ class Einheit(SQLModel, table=True):
     miete_qm_wohn: Optional[float] = None    # €/m² Wohn-/Nutzfläche (inkl. voller Zusatz-Nutzflächen)
     miete_qm_neben: Optional[float] = None   # €/m² Nebenfläche
     miete_qm_gemein: Optional[float] = None  # €/m² anteilige Gemeinschaftsfläche
+    # N409 — Vergleichsmiete nach Mietspiegel, für die Mietreserve-Kennzahl
+    # der Investment-KPI-Engine. Additiv, None = keine Reserve berechenbar.
+    vergleichsmiete_eur_qm: Optional[float] = None
 
     def gemein_flaeche(self) -> float:
         """Der anteilige Flächenbeitrag der Gemeinschaftsflächen: Summe über
@@ -826,6 +858,9 @@ class Eigentuemer(SQLModel, table=True):
     # N218 — Profilbild als Data-URI (z. B. "data:image/jpeg;base64,...").
     # Additiv, leer = kein Bild (Initialen-Icon bleibt der Normalfall).
     bild: str = ""
+    # N409 — der Grenzsteuersatz gehört der Person, nicht dem Objekt: zwei
+    # Miteigentümer derselben Immobilie können unterschiedliche Sätze haben.
+    grenzsteuersatz_pct: Optional[float] = None
 
 
 class Anteil(SQLModel, table=True):

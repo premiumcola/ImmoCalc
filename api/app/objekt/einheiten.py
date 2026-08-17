@@ -251,7 +251,9 @@ def einheit_aendern(eid: int, data: dict,
                "nebenflaeche", "stellplaetze", "nk_abrechnung", "verkehrswert",
                "gemeinflaechen", "nutzflaechen",
                # CCCXXXIII — €/m²-Ansätze je Flächenart
-               "miete_qm_wohn", "miete_qm_neben", "miete_qm_gemein"}
+               "miete_qm_wohn", "miete_qm_neben", "miete_qm_gemein",
+               # N409 — Vergleichsmiete nach Mietspiegel (Investment-KPI-Engine)
+               "vergleichsmiete_eur_qm"}
     daten = dict(data)
     # CCCXXVII — die Gemeinschaftsflächen kommen als Liste und werden als JSON
     # gespeichert (das Modell hält eine Zeichenkette).

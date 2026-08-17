@@ -79,6 +79,9 @@ class EigentuemerIn(BaseModel):
     # N218 — Profilbild als Data-URI, vom Vanilla-Cropper auf 320×320 JPEG
     # gerendert. Leer = kein Bild (Initialen-Icon bleibt der Normalfall).
     bild: str = ""
+    # N409 — Grenzsteuersatz für die Investment-KPI-Engine (Steuererstattung/
+    # -last). Additiv, None = die Engine lässt die Steuerkennzahlen offen.
+    grenzsteuersatz_pct: float | None = None
 
 
 # N218 — grobes Größenlimit: der Cropper liefert ein 320×320-JPEG (typischerweise
