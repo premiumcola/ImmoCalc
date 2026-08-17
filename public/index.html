@@ -174,9 +174,11 @@
   .tile .pv-invest:focus-visible{outline:2px solid var(--teal); outline-offset:3px;
     border-radius:10px}
   .mitbubbles > .tile .pv-invest svg{width:52px; height:52px}
-  /* N197 — die Sonne taucht bei Hover/Fokus auf (auftauchen: einblenden +
-     hochskalieren), ihre Strahlen drehen sich sanft, und ein Strahlenbuendel
-     pulst von der Sonne aufs Modul. Reines SVG/CSS, kein JS. */
+  /* N197/N414 — die Sonne taucht bei Hover/Fokus auf (auftauchen: einblenden +
+     hochskalieren), ihre Strahlen wackeln sanft hin und her (kein perfekter
+     Kreisel mehr — sah aus wie ein Virus), und sechs Strahlen versetzt
+     nacheinander (nicht alle gleichzeitig) von verschiedenen Punkten der
+     Sonnenflaeche aufs Modul. Reines SVG/CSS, kein JS. */
   .pv-invest .pv-sonne{opacity:0; transform:scale(.4); transform-box:fill-box;
     transform-origin:center; transition:opacity .3s ease,
     transform .5s cubic-bezier(.34,1.56,.64,1)}
@@ -184,16 +186,29 @@
     opacity:1; transform:scale(1.05)}
   .pv-invest .pv-strahlen{transform-box:fill-box; transform-origin:center}
   .pv-invest:hover .pv-strahlen,.pv-invest:focus-visible .pv-strahlen{
-    animation:pv-dreh 9s linear infinite}
-  .pv-invest .pv-beam{opacity:0}
-  .pv-invest:hover .pv-beam,.pv-invest:focus-visible .pv-beam{
-    animation:pv-glanz 1.6s ease-in-out infinite}
-  @keyframes pv-dreh{to{transform:rotate(360deg)}}
+    animation:pv-wackel 6s ease-in-out infinite}
+  .pv-invest .pv-beam path{opacity:0}
+  .pv-invest:hover .pv-beam path,.pv-invest:focus-visible .pv-beam path{
+    animation:pv-glanz 2.2s ease-in-out infinite}
+  .pv-invest .pv-beam path:nth-child(2){animation-delay:.3s}
+  .pv-invest .pv-beam path:nth-child(3){animation-delay:.6s}
+  .pv-invest .pv-beam path:nth-child(4){animation-delay:.9s}
+  .pv-invest .pv-beam path:nth-child(5){animation-delay:1.2s}
+  .pv-invest .pv-beam path:nth-child(6){animation-delay:1.5s}
+  /* Unregelmaessiges Wackeln statt der frueheren vollen 360°-Drehung. */
+  @keyframes pv-wackel{
+    0%,100%{transform:rotate(0deg)}
+    22%{transform:rotate(-7deg)}
+    47%{transform:rotate(4deg)}
+    68%{transform:rotate(-4deg)}
+    85%{transform:rotate(6deg)}
+  }
   @keyframes pv-glanz{0%,100%{opacity:.12} 50%{opacity:.85}}
   @media (prefers-reduced-motion:reduce){
     .pv-invest:hover .pv-strahlen,.pv-invest:focus-visible .pv-strahlen,
-    .pv-invest:hover .pv-beam,.pv-invest:focus-visible .pv-beam{animation:none}
-    .pv-invest .pv-beam{opacity:.5}
+    .pv-invest:hover .pv-beam path,.pv-invest:focus-visible .pv-beam path{
+      animation:none}
+    .pv-invest .pv-beam path{opacity:.5}
     .pv-invest .pv-sonne{transition:opacity .2s}
   }
   @media (max-width:430px){
@@ -285,18 +300,27 @@ const PV_ICON = `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
   </g>
   <path d="M18.5 30.5l-3 11M39.5 30.5l3 11M13 41.5h32" stroke="#16262C"
     stroke-width="2.4" stroke-linecap="round"/>
-  <!-- Das Strahlenbuendel von der Sonne aufs Modul - kreuz und quer, nicht
-       parallel, aus der hoch stehenden Sonne herab (N205) -->
+  <!-- N414 - Sechs Strahlen von unterschiedlichen Punkten der Sonnenflaeche
+       (nicht nur von rechts: oben, unten, seitlich), ungleich lang, in eine
+       gemeinsame Richtung aufs Modul geneigt aber nicht stur parallel - und
+       (siehe CSS) zeitversetzt statt alle gleichzeitig. -->
   <g class="pv-beam" stroke="#F7C948" stroke-width="1.6" stroke-linecap="round">
-    <path d="M33 4 L19 21M40 5 L27 14M36 3 L40 27M43 6 L23 18M31 4 L38 24M38 2 L30 29M41 5 L18 16"/>
+    <path d="M34-6L22 24"/>
+    <path d="M44-4L36 27"/>
+    <path d="M39-2L31 22"/>
+    <path d="M49-14L42 18"/>
+    <path d="M28-14L20 10"/>
+    <path d="M41-8L28 29"/>
   </g>
-  <!-- Die grosse Sonne, hoch oben ueber der Kante, nicht ueber dem Modul (N205) -->
+  <!-- N414 - Die grosse Sonne steht hoch ueber dem Modul (Zentrum cy=-18) und
+       etwas weiter rechts (cx=40), so dass sie das Icon rechts leicht
+       ueberragt, ohne es oder den Cashflow-Chip der Kachel zu beruehren. -->
   <g class="pv-sonne">
     <g class="pv-strahlen" stroke="#F2B705" stroke-width="2.4" stroke-linecap="round">
-      <path d="M53-10h5M48.3 1.3l3.5 3.5M37 6v5M25.7 1.3l-3.5 3.5M21-10h-5M25.7-21.3l-3.5-3.5M37-26v-5M48.3-21.3l3.5-3.5"/>
+      <path d="M56-18h5M51.3-6.7l3.5 3.5M40-2v5M28.7-6.7l-3.5 3.5M24-18h-5M28.7-29.3l-3.5-3.5M40-34v-5M51.3-29.3l3.5-3.5"/>
     </g>
-    <circle cx="37" cy="-10" r="14" fill="#F7C948"/>
-    <circle cx="37" cy="-10" r="14" fill="none" stroke="#F2B705" stroke-width="1.6"/>
+    <circle cx="40" cy="-18" r="14" fill="#F7C948"/>
+    <circle cx="40" cy="-18" r="14" fill="none" stroke="#F2B705" stroke-width="1.6"/>
   </g>
 </svg>`;
 
