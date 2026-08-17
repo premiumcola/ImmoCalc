@@ -740,6 +740,32 @@ export async function belegVerschieben(belegId) {
   }
 }
 
+/**
+ * Ein frisch erzeugtes PDF ansehen (z. B. die Nebenkostenabrechnung), ohne
+ * die App zu verlassen — dieselbe Lehre wie bei `belegAnsehen` (N257/CCCXCI):
+ * ein Link mit `target="_blank"` öffnet auf dem Startbildschirm (installierte
+ * PWA) den Systembetrachter OHNE jede Leiste — kein Zurück, kein Schließen,
+ * nur der Home-Button/App-Wechsler bleibt. Live gemeldet: die Abrechnungs-
+ * PDF (`GET .../abrechnung.pdf`) hatte genau diesen Link.
+ *
+ * Anders als `belegAnsehen` gibt es hier kein serverseitiges Seiten-Rendern
+ * (das ist an hochgeladene Dokumente gebunden) — ein PDF ohne festen
+ * Seitenumfang braucht das auch nicht: ein `<iframe>` im Dialog genügt, der
+ * native Betrachter bleibt innerhalb der App-Hülle statt sie zu verlassen.
+ */
+export function pdfAnsehen(url, titel = 'PDF') {
+  const dlg = baueDialog(
+    `<div class="beleg-kopf">
+       <span class="bt">${esc(titel)}</span>
+       <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
+     </div>
+     <iframe class="pdf-rahmen" src="${esc(url)}" title="${esc(titel)}"></iframe>`);
+  dlg.classList.add('pdf-dlg');
+  dlg.querySelector('[data-zu]').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  return dlg;
+}
+
 export function belegAnsehen(url, titel = 'Beleg', pfad = '', dokumentId = null,
                              geschwister = null) {
   // Die GANZE Seite als serverseitig gerendertes Bild, breitenfüllend statt

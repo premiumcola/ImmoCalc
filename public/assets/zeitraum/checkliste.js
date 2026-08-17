@@ -15,8 +15,8 @@
    aufgeklappte Karte enthält je Modus (Wasser/Öl/Warmwasser/Wärme/Strom/
    Standard) den passenden Detailblock. */
 
-import { api, eur, eurKurz, esc, melde, frage, belegAnsehen, baueDialog,
-         installNav, leerHtml } from '../immo.js';
+import { api, eur, eurKurz, esc, melde, frage, belegAnsehen, pdfAnsehen,
+         baueDialog, installNav, leerHtml } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
 import { sankey } from '../charts.js';
 import { kostenIcon } from '../kostenicons.js';
@@ -1776,6 +1776,10 @@ export function initHandlers() {
     if (sort) { state.setSortierung(sort.dataset.sort); return zeichnen(); }
     const mxSort = e.target.closest('[data-mx-sort]');
     if (mxSort) { matrixSortSetzen(mxSort.dataset.mxSort); return zeichnen(); }
+    const pdfKnopf = e.target.closest('[data-pdf-ansehen]');
+    if (pdfKnopf) {
+      return pdfAnsehen(pdfKnopf.dataset.pdfAnsehen, pdfKnopf.dataset.pdfTitel || 'PDF');
+    }
     if (e.target.closest('[data-pos-konfig]')) return konfigModusUmschalten();
     const kOpt = e.target.closest('[data-konf-opt]');
     if (kOpt) return konfOptSetzen(kOpt);

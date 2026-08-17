@@ -285,11 +285,16 @@ function matrixHtml(a, wer) {
       const s = a.parteien?.[p]?.saldo || 0;
       return `<td><b style="color:${s >= 0 ? 'var(--pos)' : 'var(--neg)'}">${eur(s)}</b></td>`;
     }).join('') + '<td></td>');
+  // N407/Folgemeldung — kein `<a target="_blank">` mehr: auf dem
+  // Startbildschirm (installierte PWA) öffnete das den Systembetrachter ohne
+  // jede Leiste, ohne Weg zurück in die App außer dem App-Wechsler. Jetzt
+  // ein Knopf, der `pdfAnsehen()` (immo.js) im eigenen Dialog öffnet.
   const pdfZeile = zeileMit('Abrechnung', '',
-    parteien.map(p => `<td><a class="mx-pdf" target="_blank" rel="noopener"
+    parteien.map(p => `<td><button type="button" class="mx-pdf"
         title="${esc(empfaengerKurz(wer.get(p)) || 'Abrechnung als PDF ansehen')}"
-        href="/api/zeitraeume/${zid}/abrechnung.pdf?partei=${encodeURIComponent(p)}"
-        >▤ PDF</a></td>`).join('') + '<td></td>');
+        data-pdf-ansehen="/api/zeitraeume/${zid}/abrechnung.pdf?partei=${encodeURIComponent(p)}"
+        data-pdf-titel="${esc(`Abrechnung ${p}`)}"
+        >▤ PDF</button></td>`).join('') + '<td></td>');
 
   return `<div class="karte">
       <h3>Kosten je Einheit</h3>

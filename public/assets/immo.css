@@ -860,6 +860,20 @@ dialog.immo-dlg.beleg-dlg::backdrop{background:rgba(22,38,44,.62)}
   border-radius:10px; background:var(--teal); color:#fff; text-decoration:none;
   font:600 13px var(--body)}
 
+/* Ein frisch erzeugtes PDF (Nebenkostenabrechnung) im Dialog statt in einem
+   neuen Tab (`pdfAnsehen`, siehe immo.js) — ein `<iframe>` hat kein
+   Eigenmaß wie ein Bild, deshalb hier eine feste Höhe statt `.beleg-dlg`s
+   „schrumpft auf den Inhalt". */
+dialog.immo-dlg.pdf-dlg{
+  max-width:min(920px, calc(100% - 24px)); width:calc(100% - 24px);
+  height:min(92dvh, 1100px);
+  padding:calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; gap:10px; background:var(--sheet);
+}
+dialog.immo-dlg.pdf-dlg::backdrop{background:rgba(22,38,44,.62)}
+.pdf-rahmen{flex:1; width:100%; min-height:0; border:none; border-radius:12px;
+  background:var(--paper)}
+
 /* ---- N102: was zu diesem Beleg schon ausgelesen wurde ----
    Sitzt zwischen Kopf und Blatt, ruhig auf Papierton statt als Kasten mit
    Rahmen. Die Höhe ist gedeckelt, damit eine lange Einordnung dem Beleg nicht
