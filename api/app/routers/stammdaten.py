@@ -269,7 +269,14 @@ def aendern(bereich: str, eintrag_id: int, data: dict,
     felder = bereinige(modell, {k: v for k, v in data.items()
                                 if k not in ("id", "objekt_id")
                                 and hasattr(eintrag, k)})
-    geprueft = modell.model_validate({**eintrag.model_dump(), **felder})
+    # N411 — derselbe Fang wie beim Anlegen: ohne ihn wird eine verletzte
+    # Feldgrenze (z. B. `Miete.personen` mit `ge=1`) zu einem rohen 500 statt
+    # einer verständlichen 400-Antwort.
+    try:
+        geprueft = modell.model_validate({**eintrag.model_dump(), **felder})
+    except ValidationError as fehler:
+        unguelt = ", ".join(str(e["loc"][-1]) for e in fehler.errors())
+        raise HTTPException(400, f"Ungültige Angabe bei: {unguelt}") from fehler
     # Auch beim Ändern: eine Einheit umzuhängen oder ein Enddatum zu entfernen
     # kann dieselbe Doppelbelegung erzeugen wie ein neuer Eintrag.
     if isinstance(eintrag, Miete):

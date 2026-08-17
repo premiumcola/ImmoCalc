@@ -244,6 +244,31 @@ def test_enddatum_entfernen_darf_keine_doppelbelegung_erzeugen():
                        json={"kaltmiete": 820.0}).status_code == 200
 
 
+def test_personen_darf_nicht_negativ_werden():
+    """N411 — live an Laufer Str. 5 gefunden: das Feld „Personen im Haushalt"
+    hatte keine Untergrenze und liess sich über den nativen Zahlenschieber
+    unbemerkt auf -2 drehen, was den Personen-Schlüssel der Nebenkosten-
+    verteilung verzerrte. Weder beim Anlegen noch beim Ändern darf das noch
+    gelingen — beides ein sauberes 400, kein rohes 500."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Negativweg 2",
+            "einheiten": [{"bezeichnung": "EG"}]}).json()["slug"]
+
+        neu = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Mieter", "einheit": "EG", "kaltmiete": 800.0,
+            "ab_datum": "2025-01-01", "personen": -2})
+        assert neu.status_code == 400
+
+        mid = c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "Mieter", "einheit": "EG", "kaltmiete": 800.0,
+            "ab_datum": "2025-01-01", "personen": 2}).json()["id"]
+        geaendert = c.patch(f"/api/stammdaten/mieten/{mid}",
+                            json={"personen": -2})
+        assert geaendert.status_code == 400
+        assert c.get(f"/api/objekte/{slug}/mieten").json()[0]["personen"] == 2
+
+
 def test_einheiten_anlegen_aendern_und_loeschen():
     """CXLI: die Einheiten eines Hauses sind sichtbar und bearbeitbar."""
     with TestClient(app) as c:

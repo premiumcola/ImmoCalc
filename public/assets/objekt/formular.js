@@ -180,8 +180,12 @@ export async function feldHtml(f, bereich, wert) {
   // Zeichen sitzt. Die Zifferntastatur bleibt über inputmode erhalten.
   const einheit = feldEinheit(f);
   const typ = einheit ? 'text' : f.typ;
+  // N411 — `min` bremst den nativen Zahlenschieber: ohne sie liess sich
+  // „Personen im Haushalt" unbemerkt unter 0 drehen.
   const zusatz = einheit ? 'inputmode="decimal"'
-                         : (f.schritt ? `step="${f.schritt}"` : '');
+                         : [f.schritt ? `step="${f.schritt}"` : '',
+                            f.min != null ? `min="${f.min}"` : ''
+                           ].filter(Boolean).join(' ');
   return `<div class="field"><label for="${id}">${feldLabel(f)}</label>
     <input class="inp" id="${id}" name="${f.k}" type="${typ}" ${zusatz}
            value="${esc(v)}" ${f.pflicht ? 'required' : ''}>

@@ -247,7 +247,9 @@ class Partei(SQLModel, table=True):
     name: str
     einzug: Optional[date] = None
     auszug: Optional[date] = None
-    personen: int = 1
+    # N411 — dieselbe Untergrenze wie Miete.personen: ein Haushalt hat immer
+    # mindestens eine Person.
+    personen: int = Field(default=1, ge=1)
 
 
 class Kostenart(SQLModel, table=True):
@@ -564,7 +566,11 @@ class Miete(SQLModel, table=True):
     email: str = ""
     telefon: str = ""
     anschrift: str = ""
-    personen: int = 1
+    # N411 — `ge=1`: ein Haushalt hat immer mindestens eine Person. Ohne
+    # Untergrenze liess sich das Feld über den nativen Zahlenschieber (kein
+    # `min` im Formular) unbemerkt unter 0 drehen — live an Laufer Str. 5
+    # gefunden (-2), verzerrte den Personen-Schlüssel der Nebenkostenverteilung.
+    personen: int = Field(default=1, ge=1)
     kaution: Optional[float] = None
     # N224 — additiv: die Kautionsunterlagen (Dokument-Checkliste) sagen nichts
     # darüber, ob das Geld auch wirklich auf dem Konto eingegangen ist. Leer =

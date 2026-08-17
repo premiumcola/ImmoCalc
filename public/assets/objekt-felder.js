@@ -118,7 +118,7 @@ const BEREICHE = {
       // Modell bestehen — Altbestand bleibt gültig, es wird nur nicht mehr
       // hier eingegeben.
       { k: 'personen', l: 'Personen im Haushalt', typ: 'number', schritt: '1',
-        lex: 'personen-im-haushalt' },
+        min: '1', lex: 'personen-im-haushalt' },
       { k: 'kaution', l: 'Kaution', typ: 'number', schritt: '0.01', geld: true,
         lex: 'kaution' },
       // N224 — vom Dokument (Kautionsunterlagen, Checkliste) getrennt: das ist
