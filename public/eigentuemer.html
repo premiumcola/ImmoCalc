@@ -140,6 +140,17 @@
      farbig). Hier bewusst nur der Kopf + ein stiller Platzhalter, damit die
      KPI-Arbeit keinen weiteren Layout-Durchgang braucht. */
   .wd-tab td.wd-bwplatz{color:var(--soft);opacity:.45}
+  /* N409 — die Notenbadge selbst: Farbe UND Buchstabe zusammen (nie Farbe
+     allein), min. 44px Ziel wäre hier übertrieben (reine Anzeige, nicht
+     antippbar) — 26px rund reicht für einen ruhigen Tabellenwert. */
+  .wd-tab td.wd-bwzelle{white-space:nowrap}
+  .bwbadge{display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:999px;color:#fff;
+    font:700 12px var(--disp);line-height:1}
+  .bwwarn{display:inline-flex;align-items:center;justify-content:center;
+    width:16px;height:16px;margin-left:4px;border-radius:999px;
+    background:var(--amber-bg);color:var(--amber);font:700 10px var(--body);
+    vertical-align:top}
 
   /* ---- CLXII: Vermögen und Miete je Eigentümer ----
      Nur seine Einheiten, nicht das ganze Haus. Drei Kennzahlen, die sich auf
@@ -574,6 +585,18 @@ async function uebersichtLaden() {
    Beteiligung ist dieselbe wie die auf das ganze Objekt. Deshalb genügt der
    Objektwert aus /vermoegen; der Jahres-Cashflow kommt aus der Auswertung in
    Eigentümersicht. Best effort — hängt der Abruf, bleibt die Zeile schlicht. */
+/* N409 — die Investment-KPI-Bewertung je Objekt (GET /objekte/{slug}/kpi).
+   Best effort wie die Nachbarn oben: schlägt ein Objekt fehl, bleibt seine
+   Zelle einfach leer statt die ganze Seite zu blockieren. */
+let kpi = new Map();
+async function kpiLaden(slugs) {
+  const paare = await Promise.all(slugs.map(async slug => {
+    try { return [slug, await api(`/objekte/${encodeURIComponent(slug)}/kpi`)]; }
+    catch { return [slug, null]; }
+  }));
+  kpi = new Map(paare);
+}
+
 let rendite = new Map();
 async function renditeLaden() {
   try {
@@ -691,6 +714,28 @@ function betObjekt(o) {
     </span>`;
 }
 
+/* N409 — Bewertungs-Badge: die Note als großer, farbiger Buchstabe. Farbe UND
+   Buchstabe zusammen, nie Farbe allein (Farbfehlsichtigkeit, Graustufendruck)
+   — dazu ein `aria-label` für Screenreader. Niedrige Konfidenz (wenige
+   Angaben) bekommt eine eigene, sichtbare Warnmarke statt die Note leiser
+   zu machen: eine unsichere Note soll auffallen, nicht verschwinden. */
+const NOTE_FARBE = { A: '#2E7D4F', B: '#5B8F5C', C: '#916212', D: '#C17A3E', E: '#B24229' };
+
+function bewertungZelle(slug) {
+  const daten = kpi.get(slug);
+  const b = daten?.bewertung;
+  if (!b || !b.note) {
+    return `<td class="wd-bwplatz" title="Zu wenige Angaben für eine Bewertung">–</td>`;
+  }
+  const niedrig = b.konfidenz < 0.6;
+  const titel = `Bewertung ${b.note}${niedrig ? ' — nur wenige Angaben, Note unsicher' : ''}`;
+  return `<td class="wd-bwzelle">
+      <span class="bwbadge" style="background:${NOTE_FARBE[b.note] || '#8A96A3'}"
+            role="img" aria-label="${esc(titel)}" title="${esc(titel)}">${b.note}</span>
+      ${niedrig ? '<span class="bwwarn" aria-hidden="true">!</span>' : ''}
+    </td>`;
+}
+
 /* N146/N413 — die PV-Anlage als untergeordnete Tabellenzeile unter ihrer
    Immobilie. Kein eigenes Objekt: sie hat eigene Tausendstel, ihr Wert ist
    die Anschaffung (keine Wertentwicklung), und sie zählt bewusst nicht in
@@ -754,7 +799,7 @@ function tabelleHtml(e) {
         ${renditeZelle(o.slug, 'gesamt')}
         <td class="wd-anteil"><span class="bw">${promille(o.promille)}</span>
           <span class="chip">${esc(o.rolle)}</span></td>
-        <td class="wd-bwplatz">—</td>
+        ${bewertungZelle(o.slug)}
       </tr>${pvUnter(o.slug)}`;
   };
   // Objekte, an denen nur die Anlage gehalten wird — sie stehen in der
@@ -859,6 +904,15 @@ async function eignerLaden() {
   liste.innerHTML = '<div class="pswitch" id="pswitch"></div><div id="pkarte"></div>';
   document.getElementById('pswitch').innerHTML = switcherHtml();
   personZeichnen();
+
+  // N409 — die Bewertungs-Spalte zeigt zunächst „–", sobald die KPI-Antworten
+  // da sind wird die aktive Karte einmal neu gezeichnet. Kein Blocker fürs
+  // erste Rendern: Name/Werte/Anteile stehen sofort, die Note zieht nach.
+  const slugs = [...new Set(eigner.flatMap(e => (e.objekte || []).map(o => o.slug)))];
+  if (slugs.length) {
+    await kpiLaden(slugs);
+    personZeichnen();
+  }
 }
 
 /* ---- Anlegen und Bearbeiten ---- */
