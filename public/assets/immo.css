@@ -1132,6 +1132,16 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
 
   /* Kacheln duerfen auf breiten Schirmen nicht ins Riesenhafte wachsen */
   .grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+
+  /* N412 — die Kopfzeilen-„…" zeigt genau den NAV-Rest, der unterhalb von
+     1000px nicht in die feste untere Leiste passt (siehe `.nav a{display:none}`
+     bei max-width:999px in immo.css sowie `NAV_UNTEN_FEST`/`kopfMehrOeffnen`
+     in immo.js). Ab hier steht dieselbe Liste bereits vollstaendig und
+     dauerhaft in der linken Seitenleiste — der Knopf waere reine Dopplung
+     ("das ist doppelt und verwirrend"). Gleicher Bruchpunkt wie der
+     Seitenleisten-Umbau, damit nie beide oder keins von beidem sichtbar ist.
+     Der JS-Dialog bleibt unangetastet fuer Handy/Tablet. */
+  .kopfakt .ka-mehr{display:none}
 }
 
 /* ---- Einheiten-Blasen — geteilte Grundform (CCCLXXVIII c) -----------------
