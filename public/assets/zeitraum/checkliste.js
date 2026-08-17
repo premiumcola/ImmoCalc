@@ -83,6 +83,7 @@ import {
   konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
   konfS35Setzen,
 } from './konfigmodus.js';
+import { ergebnisHtml } from './ergebnis.js';
 // N349 — die Zähler-Konfiguration lebt jetzt auf der Immobilien-Seite
 // (objekt.html, Knopf „Zähler" über den Abrechnungszeiträumen).
 
@@ -711,114 +712,9 @@ function zeileInner(k, i, aufgeklappt, infos, wert, farbe, zeichen, zeigeHaken =
 }
 
 /* ---------- Ergebnis + Abschluss --------------------------------------- */
-
-function empfaengerHtml(p) {
-  if (!p) return '';
-  if (p.leerstand) {
-    return '<div class="wemgeht">Bleibt beim Eigentümer — kein Versand.</div>';
-  }
-  if (p.adressen?.length) {
-    return `<div class="wemgeht">Geht an ${p.adressen.map(esc).join(' · ')}</div>`;
-  }
-  return `<div class="wemgeht fehlt">Keine Mailadresse hinterlegt —
-    ausdrucken und mit der Post schicken.</div>`;
-}
-
-/**
- * N314(g) — eine Vorauszahlung, deren Partei zu keinem Bezug dieses Zeitraums
- * passt (Tippfehler, ausgezogener Mieter unter altem Namen). Sie steckt in
- * `gesamt.abschlaege`, taucht aber in keiner Partei-Zeile auf — ohne diesen
- * Hinweis unsichtbar. Der Betrag ist nicht Teil der API-Antwort und wird
- * daher aus der Differenz Gesamt-Abschläge ./. Summe der bekannten
- * Vorauszahlungen abgeleitet (bei genau einem unbekannten Namen exakt sein
- * Betrag).
- */
-function vorauszahlungOhnePartei(a) {
-  const namen = a.vorauszahlungen_ohne_partei;
-  if (!namen?.length) return '';
-  const bekannt = Object.values(a.parteien || {})
-    .reduce((s, w) => s + (w.vorauszahlungen || 0), 0);
-  const betrag = (a.gesamt?.abschlaege || 0) - bekannt;
-  const satz = namen.length === 1
-    ? `Der Name passt zu keiner Partei dieses Zeitraums.`
-    : `Diese Namen passen zu keiner Partei dieses Zeitraums.`;
-  return `<div class="karte">
-      <h3>Vorauszahlung ohne Partei</h3>
-      <div class="weg-warn"><span class="ww-z">${eur(betrag)}</span>
-        <span><b>${esc(namen.join(', '))}</b> — ${satz} Sie fließen in die
-        Gesamtsumme ein, aber in keine Partei-Zeile. Name in den
-        Mieterstammdaten prüfen und richtigstellen.</span>
-      </div>
-    </div>`;
-}
-
-/* N402 — das Gegenstück: ein von Hand gesetztes Gewicht auf einem Namen, den
- * es als Partei nicht gibt. Anders als bei der Vorauszahlung geht hier Geld
- * an einen Empfänger, den es nicht gibt — die echte Partei bekommt dafür
- * nichts. Der Betrag steht in der Partei-Zeile des Phantoms, deshalb ist er
- * hier direkt ablesbar und muss nicht abgeleitet werden.
- */
-function anteilOhnePartei(a) {
-  const treffer = a.anteile_ohne_partei;
-  if (!treffer?.length) return '';
-  const zeilen = treffer.map(t => {
-    const betrag = t.parteien.reduce(
-      (s, n) => s + (a.parteien?.[n]?.kosten || 0), 0);
-    return `<div class="weg-warn"><span class="ww-z">${eur(betrag)}</span>
-        <span><b>${esc(t.kostenart)}</b> verteilt an <b>${
-        esc(t.parteien.join(', '))}</b> — diesen Namen gibt es in diesem
-        Zeitraum als Partei nicht. Der Betrag geht damit an niemanden, und die
-        Partei, die ihn tragen müsste, bekommt ihn nicht. Die Verteilung
-        dieser Position richtigstellen.</span></div>`;
-  }).join('');
-  return `<div class="karte"><h3>Anteil ohne Partei</h3>${zeilen}</div>`;
-}
-
-async function ergebnisHtml() {
-  const [rechnung, versand] = await Promise.allSettled([
-    einmal(`/zeitraeume/${zid}/abrechnung`),
-    api(`/zeitraeume/${zid}/versand`),
-  ]);
-  if (rechnung.status !== 'fulfilled') {
-    return '<div class="empty"><div class="big">Ergebnis nicht verfügbar</div></div>';
-  }
-  const a = rechnung.value;
-  const wer = new Map((versand.value?.parteien || []).map(p => [p.partei, p]));
-
-  const zeilen = Object.entries(a.parteien || {}).map(([partei, w]) => `
-    <div class="karte">
-      <h3>${esc(partei)}${wer.get(partei)?.leerstand || state.leerstaende.has(partei)
-        ? '<span class="marke">Leerstand</span>' : ''}</h3>
-      ${empfaengerHtml(wer.get(partei))}
-      <div class="summe"><span>Umlagefähige Kosten</span><b>${eur(w.kosten)}</b></div>
-      <div class="summe"><span>Vorauszahlungen</span><b>${eur(w.vorauszahlungen)}</b></div>
-      ${w.s35 ? `<div class="summe"><span>davon § 35a</span><b>${eur(w.s35)}</b></div>`
-        : ''}
-      <div class="summe gesamt"><span>Saldo</span>
-        <b class="${(w.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(w.saldo)}</b></div>
-      <a class="pdflink" target="_blank" rel="noopener"
-         href="/api/zeitraeume/${zid}/abrechnung.pdf?partei=${
-           encodeURIComponent(partei)}">▤ Abrechnung als PDF ansehen</a>
-    </div>`).join('');
-
-  const g = a.gesamt || {};
-  return `<div class="karte">
-      <h3>Gesamt</h3>
-      <div class="summe"><span>Auslagen</span><b>${eur(g.auslagen)}</b></div>
-      <div class="summe"><span>Abschläge</span><b>${eur(g.abschlaege)}</b></div>
-      <div class="summe gesamt"><span>Saldo</span>
-        <b class="${(g.saldo ?? 0) >= 0 ? 'pos' : 'neg'}">${eur(g.saldo)}</b></div>
-    </div>${zeilen}
-    ${vorauszahlungOhnePartei(a)}
-    ${anteilOhnePartei(a)}
-    ${a.offen?.length ? `<div class="karte"><h3>Noch offen</h3>
-      ${a.ohne_betrag?.length ? `<div class="summe">
-        <span>Ohne Betrag</span><b>${a.ohne_betrag.map(esc).join(', ')}</b></div>` : ''}
-      ${a.ohne_verteilung?.length ? `<div class="summe">
-        <span>Ohne Verteilung</span>
-        <b class="neg">${a.ohne_verteilung.map(esc).join(', ')}</b></div>` : ''}
-      </div>` : ''}`;
-}
+/* N407 — Belegungsübersicht, Kosten×Einheiten-Matrix und die Warnkarten
+   (Vorauszahlung/Anteil ohne Partei) leben jetzt in ./ergebnis.js — dieses
+   Modul war mit den Kostenzeilen allein schon groß genug. */
 
 function abschlussHtml() {
   if (state.daten.status !== 'in Arbeit') {

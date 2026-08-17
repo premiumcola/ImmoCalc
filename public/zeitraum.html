@@ -1388,10 +1388,35 @@
   @media(max-width:560px){ .sk-bars-pfeil{transform:rotate(90deg);
     align-self:center} }
 
-  .pdflink{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
-    background:#F1F4F4;color:var(--ink);border-radius:10px;padding:9px 12px;
-    font:600 11.5px var(--body);min-height:40px;margin-top:10px}
-  .pdflink:hover{background:var(--teal-l);color:var(--teal-d)}
+  /* N407 — Belegungsübersicht: ein Zeitstrahl je Einheit, dieselbe Sprache
+     wie die Mietverhältnis-Timeline der Objekt-Seite (dort .miet-timeline in
+     objekt.html; hier dupliziert, weil zeitraum.html sein eigener,
+     unabhängiger Seitenrahmen ist). */
+  .beleg-einheit{margin-bottom:16px}
+  .beleg-einheit:last-of-type{margin-bottom:14px}
+  .be-kopf{display:flex;align-items:baseline;justify-content:space-between;
+    gap:8px;margin-bottom:6px}
+  .be-name{font:600 13px var(--disp);color:var(--ink)}
+  .be-flaeche{font:500 11.5px var(--mono);color:var(--soft)}
+  .miet-timeline{margin:2px 0}
+  .miet-timeline.mini .tl-track{height:11px;border-radius:5px}
+  .tl-track{position:relative;height:16px;background:#E3E9E9;
+    border-radius:6px;overflow:hidden}
+  .tl-seg{position:absolute;top:0;height:100%;border-radius:4px;min-width:3px}
+  .tl-seg.leer{background:repeating-linear-gradient(45deg,#C9D3D3,#C9D3D3 5px,
+    #DCE3E3 5px,#DCE3E3 10px)}
+  /* Kosten×Einheiten-Matrix: dieselbe Tabellenform wie die Wasser-
+     Detailtabelle (.wd-tabelle/.wd-tab/.wd-rowh/.wd-summe, siehe wasser.js) —
+     Kostenarten stehen fest links (sticky), Einheiten/Parteien laufen
+     nebeneinander und bleiben beim Scrollen oben sichtbar. */
+  .mx-einheit{display:block;font:600 10px var(--mono);letter-spacing:.03em;
+    text-transform:uppercase;color:var(--teal-d)}
+  .mx-partei{display:block;font:600 12px var(--body);color:var(--ink);
+    text-transform:none;letter-spacing:0;margin-top:1px}
+  .mx-partei.leer{color:var(--soft);font-style:italic}
+  .mx-pdf{display:inline-flex;align-items:center;gap:4px;text-decoration:none;
+    color:var(--teal-d);font:600 11.5px var(--body)}
+  .mx-pdf:hover{color:var(--teal)}
   .wiederauf{margin-top:12px;border:none;background:transparent;color:var(--soft);
     text-decoration:underline;text-underline-offset:3px;cursor:pointer;
     font:600 12px var(--disp);padding:10px 2px;min-height:44px}
@@ -1540,11 +1565,6 @@
          border-radius:7px;padding:4px 7px;background:#EDF1F0;color:var(--soft)}
   .marke.gut{background:var(--teal-l);color:var(--teal-d)}
   .marke.post{background:var(--amber-bg);color:var(--amber)}
-  /* An wen die Abrechnung geht — mehrere Adressen stehen alle da, sonst
-     bliebe offen, wer sie außer dem Vertragspartner noch bekommt. */
-  .wemgeht{font:400 11.5px var(--body);color:var(--soft);line-height:1.45;
-           margin:-6px 0 12px;overflow-wrap:anywhere}
-  .wemgeht.fehlt{color:var(--amber)}
   .summe{display:flex;justify-content:space-between;gap:12px;padding:9px 0;
          font:500 13.5px var(--body);border-top:1px solid var(--line)}
   .summe:first-of-type{border-top:none}
