@@ -35,14 +35,19 @@ from ..objekt.zeitraeume import (_zeitraum_grenzen,  # noqa: F401, E402
                                  _zeitraum_leer_entfernen,
                                  zeitraum_label_jahr)
 
-# Reihenfolge: gleichartige Konfliktfälle gibt es unter den Sub-Routern nicht
-# (jede Route ist auf genau einem Modul definiert). Trotzdem wird `stammdaten`
-# zuerst eingehängt, weil es die Objektliste liefert und beim App-Start
-# implizit als erstes angefragt wird.
+# Reihenfolge: `stammdaten` trägt den Fänger `POST /objekte/{slug}/{bereich}`
+# (unbekannte `bereich`e melden „Unbekannter Bereich"). N408 — seit
+# `_kostenarten` einen eigenen `POST /objekte/{slug}/kostenarten` bekommen
+# hat, MUSS es vor `stammdaten` eingehängt werden, sonst fängt der generische
+# Fänger die Anfrage zuerst ab (dasselbe Prinzip wie `besitz` vor
+# `stammdaten` in main.py). Die übrigen Sub-Router haben keine gleichartigen
+# Pfade und bleiben unkritisch; `stammdaten` folgt trotzdem so früh wie
+# möglich, weil es die Objektliste liefert und beim App-Start implizit als
+# erstes angefragt wird.
+router.include_router(_kostenarten.router)
 router.include_router(_stammdaten.router)
 router.include_router(_loeschen.router)
 router.include_router(_einheiten.router)
-router.include_router(_kostenarten.router)
 router.include_router(_zeitraeume.router)
 router.include_router(_checkliste.router)
 router.include_router(_positionen.router)
