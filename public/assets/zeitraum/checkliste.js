@@ -83,7 +83,7 @@ import {
   konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
   konfS35Setzen,
 } from './konfigmodus.js';
-import { ergebnisHtml } from './ergebnis.js';
+import { ergebnisHtml, matrixSortSetzen } from './ergebnis.js';
 // N349 — die Zähler-Konfiguration lebt jetzt auf der Immobilien-Seite
 // (objekt.html, Knopf „Zähler" über den Abrechnungszeiträumen).
 
@@ -1759,6 +1759,8 @@ export function initHandlers() {
 
     const sort = e.target.closest('[data-sort]');
     if (sort) { state.setSortierung(sort.dataset.sort); return zeichnen(); }
+    const mxSort = e.target.closest('[data-mx-sort]');
+    if (mxSort) { matrixSortSetzen(mxSort.dataset.mxSort); return zeichnen(); }
     if (e.target.closest('[data-pos-konfig]')) return konfigModusUmschalten();
     const kOpt = e.target.closest('[data-konf-opt]');
     if (kOpt) return konfOptSetzen(kOpt);

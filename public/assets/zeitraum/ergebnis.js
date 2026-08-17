@@ -20,6 +20,39 @@ const _zahl1 = n => (n ?? 0).toLocaleString('de-DE', { maximumFractionDigits: 1 
 // farbe hier gelesen sie fälschlich als Warnung. Nur neutrale Akzente.
 const FARBEN = ['#0F6E5C', '#916212', '#5B7CA6', '#8A5FA6', '#2E7DA6', '#4A8577'];
 
+// N410 — Heatmap der Kosten×Einheiten-Matrix: rot (größter Posten) über
+// orange/gelb bis neutral (kleinster) — dieselbe Idee wie die PDF-Heatmap
+// (abrechnung_pdf.py), nur eigenständig für CSS-Farben statt PDF-Ops.
+const HEAT_STOPS = [
+  { t: 0.00, c: [244, 246, 245] },
+  { t: 0.33, c: [242, 214, 130] },
+  { t: 0.66, c: [224, 150, 96] },
+  { t: 1.00, c: [196, 92, 78] },
+];
+function heatFarbe(ratio) {
+  const r = Math.max(0, Math.min(1, ratio || 0));
+  for (let i = 1; i < HEAT_STOPS.length; i++) {
+    if (r <= HEAT_STOPS[i].t) {
+      const a = HEAT_STOPS[i - 1], b = HEAT_STOPS[i];
+      const t = (r - a.t) / (b.t - a.t || 1);
+      const c = a.c.map((v, k) => Math.round(v + (b.c[k] - v) * t));
+      return `rgb(${c[0]} ${c[1]} ${c[2]})`;
+    }
+  }
+  return `rgb(${HEAT_STOPS.at(-1).c.join(' ')})`;
+}
+
+// N410 — Sortier-Zustand der Matrix, session-lokal wie `state.sortierung`.
+// Erster Klick auf eine Spalte sortiert absteigend (größter Posten zuerst —
+// „um sich einen Blick zu verschaffen"), erneuter Klick dreht um.
+let mxSort = null;   // { spalte: Partei-Name | '__summe__', richtung: 'ab' | 'auf' }
+
+export function matrixSortSetzen(spalte) {
+  mxSort = mxSort?.spalte === spalte
+    ? { spalte, richtung: mxSort.richtung === 'ab' ? 'auf' : 'ab' }
+    : { spalte, richtung: 'ab' };
+}
+
 /* Wer eine Abrechnung bekommt — Mailadresse, oder bleibt sie beim Eigentümer.
    Kompakt als Tooltip-Text am PDF-Knopf der Matrix, statt einer eigenen Zeile
    je Partei wie früher (roter Faden #3 — jede Information genau einmal). */
@@ -174,6 +207,14 @@ function matrixHtml(a, wer) {
     }
   }
   const positionen = [...jeKostenart.values()];
+  // N410 — auf Wunsch sortiert: erste Klick auf eine Spalte zeigt den
+  // größten Posten dort zuerst.
+  if (mxSort) {
+    const wert = pos => mxSort.spalte === '__summe__' ? pos.kosten
+      : (pos.verteilung?.[mxSort.spalte] || 0);
+    const dir = mxSort.richtung === 'ab' ? -1 : 1;
+    positionen.sort((x, y) => (wert(x) - wert(y)) * dir);
+  }
   const einheitVon = new Map((state.schluessel?.parteien || [])
     .map(p => [p.partei, p.einheit]));
   const parteien = [...new Map((state.schluessel?.parteien || [])
@@ -188,16 +229,30 @@ function matrixHtml(a, wer) {
        <span class="mx-partei leer">Leerstand</span>`
     : `<span class="mx-einheit">${esc(einheitVon.get(p) || '')}</span>
        <span class="mx-partei">${esc(p)}</span>`;
+  // N410 — kleiner Sortierpfeil je Spalte: neutral (⇅) solange sie nicht die
+  // aktive ist, sonst die tatsächliche Richtung.
+  const pfeil = spalte => mxSort?.spalte === spalte
+    ? `<span class="mx-pfeil aktiv">${mxSort.richtung === 'ab' ? '▼' : '▲'}</span>`
+    : '<span class="mx-pfeil">⇅</span>';
 
   const kopf = `<tr><th class="wd-rowh">Kostenart</th>${
-    parteien.map(p => `<th>${spaltenKopf(p)}</th>`).join('')}<th>Summe</th></tr>`;
+    parteien.map(p => `<th class="mx-sortbar" data-mx-sort="${esc(p)}"
+        >${spaltenKopf(p)}${pfeil(p)}</th>`).join('')
+    }<th class="mx-sortbar" data-mx-sort="__summe__">Summe${pfeil('__summe__')}</th></tr>`;
 
   const zeileMit = (label, klasse, zellenHtml) =>
     `<tr${klasse ? ` class="${klasse}"` : ''}><td class="wd-rowh">${label}</td>${zellenHtml}</tr>`;
 
-  const posZeilen = positionen.map(pos => zeileMit(esc(pos.kostenart), '',
-    parteien.map(p => `<td>${eur(pos.verteilung?.[p] || 0)}</td>`).join('')
-    + `<td><b>${eur(pos.kosten)}</b></td>`)).join('');
+  // N410 — Heatmap: der teuerste Posten (bezogen auf die Gesamtkosten dieser
+  // Kostenart, unabhängig von der Spaltensortierung) sticht rot heraus, der
+  // günstigste bleibt neutral — auf einen Blick, welche Kostenblöcke zählen.
+  const maxKosten = Math.max(0.01, ...positionen.map(p => p.kosten));
+  const posZeilen = positionen.map(pos => {
+    const stil = ` style="background:${heatFarbe(pos.kosten / maxKosten)}"`;
+    return `<tr><td class="wd-rowh"${stil}>${esc(pos.kostenart)}</td>${
+      parteien.map(p => `<td${stil}>${eur(pos.verteilung?.[p] || 0)}</td>`).join('')
+      }<td${stil}><b>${eur(pos.kosten)}</b></td></tr>`;
+  }).join('');
 
   const gesamtKosten = positionen.reduce((s, p) => s + (p.kosten || 0), 0);
   const summeZeile = zeileMit('Umlagefähige Kosten', 'wd-summe',
