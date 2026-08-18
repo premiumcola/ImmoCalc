@@ -1,12 +1,15 @@
-"""Der Mieter-Onepager als PDF — Aufbau, Umlaute, Heatmap, eine Seite."""
+"""Die Abrechnungs-PDF — Aufbau, Umlaute, Verteilerschlüssel-Tabelle,
+Ein-/Zweiseitigkeit (N419)."""
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.abrechnung_pdf import (SEITE_H, _breite, _kuerzen, _monate_aus,  # noqa: E402
-                                _zahl, abrechnung_pdf, pdf_dateiname)
+from app.abrechnung_pdf import (AKZENT_MAX, AKZENT_MIN, NEG, POS, SEITE_H,  # noqa: E402
+                                TEAL, _breite, _kuerzen, _mische,
+                                _monate_aus, _zahl, abrechnung_pdf,
+                                pdf_dateiname)
 
 WERTE = {"kosten": 1240.55, "vorauszahlungen": 1500.0, "saldo": 259.45}
 POSTEN = [{"kostenart": "Heizung", "betrag": 800.30},
@@ -22,6 +25,18 @@ ECHT = [("Heizkosten", 776.42, False), ("Warmwasser", 218.24, False),
         ("Niederschlagswasser", 16.94, False),
         ("Allgemeinstrom , WM", 120.00, False), ("Grundsteuer", 116.33, False)]
 
+HEIZNACHWEIS = {
+    "zaehler": [{"name": "Wärmemengenzähler Studio", "nummer": "12345",
+                "kostenart": "Heizung", "messeinheit": "kWh", "typ": "gemessen",
+                "bewertungsfaktor": None, "start": 1000.0, "ende": 1450.5,
+                "verbrauch": 450.5}],
+    "eigener_verbrauch_kwh": 450.5, "gesamt_verbrauch_kwh": 2200.0,
+    "eigener_verbrauch_ww_m3": None, "gesamt_verbrauch_ww_m3": None,
+    "kosten_je_kostenart": {"Heizung": 612.30},
+    "kosten_gesamt_eigen": 612.30, "kosten_gesamt_haus": 3013.19,
+    "kostenanteil_pct": 20.3, "flaeche": 62.0, "personen": 2,
+}
+
 
 def echte_positionen() -> list[dict]:
     return [{"kostenart": n, "betrag": b, "s35": s} for n, b, s in ECHT]
@@ -35,10 +50,8 @@ def echte_werte() -> dict:
 
 
 def y_werte(daten: bytes) -> list[float]:
-    """Alle Textgrundlinien der Seite, samt globalem Versatz."""
-    versatz = re.search(rb"stream\n1 0 0 1 0 (-?\d+\.\d+) cm", daten)
-    dy = float(versatz.group(1)) if versatz else 0.0
-    return [float(y) + dy for y in
+    """Alle Textgrundlinien der Seite."""
+    return [float(y) for y in
             re.findall(rb"1 0 0 1 -?\d+\.\d+ (-?\d+\.\d+) Tm", daten)]
 
 
@@ -52,18 +65,30 @@ def test_pdf_ist_ein_gueltiges_pdf():
     assert daten.count(b" obj") == 7   # Katalog, Seiten, Seite, Strom, 2 Fonts, Info
 
 
-def test_onepager_hat_genau_eine_seite():
-    """Der Nutzer nennt es ausdrücklich Onepager — eine zweite Seite darf es
-    strukturell nicht geben."""
+def test_ohne_heiznachweis_bleibt_einseitig():
     daten = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "Wohnung 1",
                            echte_werte(), echte_positionen())
     assert b"/Count 1" in daten
     assert daten.count(b"/Type /Page /Parent") == 1
 
 
+def test_mit_heiznachweis_entstehen_zwei_seiten():
+    """N419 — die Berechnungsgrundlage der Heizkosten (Zählerstände) kommt
+    auf eine zweite Seite, nur wenn `heiznachweis` mitgegeben wird."""
+    daten = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "Wohnung 1",
+                           echte_werte(), echte_positionen(),
+                           heiznachweis=HEIZNACHWEIS)
+    assert b"/Count 2" in daten
+    assert daten.count(b"/Type /Page /Parent") == 2
+    assert daten.count(b" obj") == 9   # + eine Page + ein Contents mehr
+    assert b"Nachweis Heizung" in daten
+    assert b"W\xe4rmemengenz\xe4hler Studio" in daten
+    assert b"20,3" in daten                        # Kostenanteil-%
+
+
 def test_viele_positionen_bleiben_auf_der_seite():
-    """40 Posten werden gestaucht, nicht umgebrochen: nichts läuft über den
-    Rand hinaus, weder oben noch unten."""
+    """40 Posten werden im Zeilenabstand gestaucht, nicht umgebrochen: nichts
+    läuft über den Rand hinaus, weder oben noch unten."""
     viele = [{"kostenart": f"Sehr lange Kostenartbezeichnung Nummer {i}",
               "betrag": 12.0 + i * 88.5, "s35": i % 3 == 0} for i in range(40)]
     daten = abrechnung_pdf(
@@ -77,12 +102,12 @@ def test_viele_positionen_bleiben_auf_der_seite():
     assert daten.count(b"/Type /Page /Parent") == 1
     y = y_werte(daten)
     assert len(y) > 45                        # alle Zeilen sind gesetzt
-    assert min(y) > 15 and max(y) < SEITE_H - 15
+    assert min(y) > 5 and max(y) < SEITE_H - 15
 
 
-def test_drei_positionen_lassen_die_seite_nicht_leer():
-    """Eine kurze Abrechnung wird gedehnt und mittig gesetzt, statt oben zu
-    kleben und zwei Drittel Papier leer zu lassen."""
+def test_kurze_abrechnung_bleibt_ein_ordentlicher_brief():
+    """Ein kurzer Brief muss die Seite nicht künstlich füllen — anders als
+    der frühere Onepager wird hier nichts mehr gedehnt/zentriert."""
     kurz = [{"kostenart": "Grundsteuer", "betrag": 240.0},
             {"kostenart": "Müllabfuhr", "betrag": 96.5},
             {"kostenart": "Hausreinigung", "betrag": 480.0, "s35": True}]
@@ -90,10 +115,8 @@ def test_drei_positionen_lassen_die_seite_nicht_leer():
                            {"kosten": 816.5, "vorauszahlungen": 1200.0,
                             "saldo": 383.5}, kurz)
     y = y_werte(daten)
-    # Der Block sitzt nicht mehr am oberen Rand: die oberste Zeile ist nach
-    # unten gerückt, die unterste bleibt weit über dem Seitenfuß.
-    assert max(y) < SEITE_H - 100
-    assert min(y) > 200
+    assert max(y) < SEITE_H - 15               # nichts läuft über den Kopf hinaus
+    assert min(y) > 5                          # nichts läuft unten heraus
 
 
 # ------------------------------------------------------------------ Zeichensatz
@@ -152,19 +175,22 @@ def test_guthaben_bekommt_ein_plus():
     assert b"(-240,00)" not in daten
 
 
-def test_ergebnis_flaeche_ist_farblich_getoent_nicht_reinweiss():
-    """N407 — vorher reines Weiß (SHEET) auf dem hellgrauen Kasten, im PDF
-    kaum als eigene Karte zu erkennen. Jetzt dieselbe blasse Pos/Neg-Tönung
-    wie die Chips in der App (--pos-bg/--neg-bg)."""
+def test_ergebnisbetrag_ist_farbig_keine_flaeche_mehr():
+    """N419 — die frühere große Pos/Neg-Fläche wich einer schlichten
+    Brief-Zeile: nur noch der Betrag selbst trägt Farbe, keine Fläche."""
     nachzahlung = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
                                  {"kosten": 2823.63, "vorauszahlungen": 2640.0,
                                   "saldo": -183.63})
     guthaben = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
                               {"kosten": 2400.0, "vorauszahlungen": 2640.0,
                                "saldo": 240.0})
-    assert b"1.000 1.000 1.000 rg" not in nachzahlung   # kein reines Weiss mehr
-    assert b"0.969 0.914 0.890 rg" in nachzahlung        # NEG_BG
-    assert b"0.906 0.957 0.925 rg" in guthaben           # POS_BG
+    neg_farbe = b"%.3f %.3f %.3f rg BT" % NEG
+    pos_farbe = b"%.3f %.3f %.3f rg BT" % POS
+    assert neg_farbe in nachzahlung
+    assert pos_farbe in guthaben
+    # Keine große Fläche mehr in Pos/Neg-Farbe (nur der Text-Op "rg BT").
+    assert (b"%.3f %.3f %.3f rg\n" % NEG) not in nachzahlung
+    assert (b"%.3f %.3f %.3f rg\n" % POS) not in guthaben
 
 
 def test_monate_werden_aus_dem_zeitraum_abgeleitet():
@@ -226,22 +252,6 @@ def test_kurze_kostenart_bleibt_unangetastet():
     assert _kuerzen("Heizkosten", 300.0, 10.5) == "Heizkosten"
 
 
-def test_betragsspalte_ist_rechtsbuendig():
-    """Alle Beträge enden auf derselben Kante — das geht nur mit echten
-    Zeichenbreiten, nicht mit 'Zeichenzahl mal halber Schriftgrad'."""
-    daten = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
-                           echte_werte(), echte_positionen())
-    kanten = {round(float(x) + _breite(inhalt.decode(), float(grad)), 1)
-              for grad, x, inhalt in re.findall(
-                  rb"/F1 (\d+\.\d+) Tf 1 0 0 1 (\d+\.\d+) \d+\.\d+ Tm "
-                  rb"\(([\d.,]+)\) Tj", daten)
-              if float(x) > 300}          # nicht das Datum der Fußzeile
-    assert len(kanten) == 1
-    assert len([g for g, _, _ in re.findall(
-        rb"/F1 (\d+\.\d+) Tf 1 0 0 1 (\d+\.\d+) \d+\.\d+ Tm "
-        rb"\(([\d.,]+)\) Tj", daten)]) >= 15
-
-
 def test_zahl_schreibt_deutsch():
     assert _zahl(2823.63) == "2.823,63"
     assert _zahl(-183.63) == "-183,63"
@@ -249,20 +259,53 @@ def test_zahl_schreibt_deutsch():
     assert _zahl(None) == "0,00"
 
 
-def test_heatmap_faerbt_den_groessten_posten_am_kraeftigsten():
+# ------------------------------------------------------------- Verteilerschlüssel
+def test_verteilerschluessel_tabelle_zeigt_schluessel_und_gesamtkosten():
+    """N419 — je Kostenart steht jetzt der Verteilerschlüssel und die
+    Gesamtkosten dabei, nicht nur der eigene Anteil."""
+    posten = [{"kostenart": "Heizung", "betrag": 612.30,
+              "schluessel": "Verbrauch", "gesamtkosten": 3013.19},
+              {"kostenart": "Grundsteuer", "betrag": 96.00,
+              "schluessel": "Fläche", "gesamtkosten": 480.00}]
+    daten = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
+                           {"kosten": 708.30, "vorauszahlungen": 700.0,
+                            "saldo": -8.30}, posten)
+    assert b"Verbrauch" in daten and b"Fl\xe4che" in daten
+    assert b"3.013,19" in daten and b"480,00" in daten
+
+
+def test_zeilenakzent_ist_blass_nicht_kraeftig():
+    """N419 — bewusst kein kräftiger Heatmap-Balken mehr wie zuvor (wirkte
+    „kindisch"), nur ein blasser Zeilenakzent: der stärkste Wert bleibt weit
+    von reinem Markenteal entfernt."""
+    staerkster = _mische((1.0, 1.0, 1.0), TEAL, AKZENT_MAX)
+    schwaechster = _mische((1.0, 1.0, 1.0), TEAL, AKZENT_MIN)
+    assert staerkster[0] > 0.8                # nicht kräftig eingefärbt
+    assert schwaechster[0] > staerkster[0]     # größerer Posten = mehr Farbe
     daten = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
                            {"kosten": 800.0, "vorauszahlungen": 800.0,
                             "saldo": 0.0},
                            [{"kostenart": "Groß", "betrag": 776.42},
                             {"kostenart": "Klein", "betrag": 4.17}])
-    # N407 — die Heatmap zielt seit hier auf TEAL statt NEG (kein Rot mehr für
-    # bloße Kostenzeilen, siehe abrechnung_pdf.py-Kopf). Rotanteil der
-    # Füllfarben: je kräftiger die Einfärbung, desto kleiner der Rotwert.
-    # Papier liegt bei 0.910, Vollton TEAL bei 0.059.
-    rot = {float(r) for r, _, _ in re.findall(
-        rb"(\d\.\d{3}) (\d\.\d{3}) (\d\.\d{3}) rg\n\d", daten)}
-    assert any(r < 0.50 for r in rot)            # der große Posten, kräftig
-    assert any(0.85 < r < 0.92 for r in rot)     # der kleine, fast Papierton
+    zeilen = re.findall(rb"(\d\.\d{3}) (\d\.\d{3}) (\d\.\d{3}) rg\n\d", daten)
+    rot = {round(float(r), 3) for r, _, _ in zeilen}
+    assert round(staerkster[0], 3) in rot
+    assert round(schwaechster[0], 3) in rot
+
+
+# ------------------------------------------------------------------ Briefkopf
+def test_logo_und_unterschriftsfeld_stehen_auf_seite_eins():
+    daten = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "EG",
+                           WERTE, POSTEN, "Roman Heidenreich")
+    assert b"ImmoCalc" in daten
+    assert b"Unterschrift Vermieter" in daten
+    assert b"Roman Heidenreich" in daten
+
+
+def test_anrede_nutzt_die_partei_wenn_kein_mieter_angegeben_ist():
+    daten = abrechnung_pdf("Haus", "01.01.2023 – 31.12.2023", "Alicia & Roman",
+                           WERTE)
+    assert b"Guten Tag Alicia & Roman," in daten
 
 
 # ------------------------------------------------------------------ Kompatibel

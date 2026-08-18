@@ -240,6 +240,61 @@ def test_wmz_und_wwz_gehen_in_kwh_bzw_ww_m3_nicht_in_ehkv():
         assert whg_a["ehkv"] == 0.0
 
 
+def test_nachweis_fuer_einheit_ohne_zaehler_liefert_none():
+    """N419 — der Heizkosten-Nachweis (Seite 2 der Abrechnungs-PDF) bleibt
+    leer, wenn es für dieses Objekt gar keine Heizkosten-Zähler gibt. Ohne
+    Zählerdaten hat die PDF wie gehabt nur eine Seite."""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+
+        from app import db
+        from app.heizkosten import nachweis_fuer_einheit
+        from sqlmodel import Session
+        from app.models import Zeitraum
+        with Session(db.engine) as s:
+            z = s.get(Zeitraum, zid)
+            assert nachweis_fuer_einheit(s, z, "Whg A", "A", []) is None
+            assert nachweis_fuer_einheit(s, z, "", "A", []) is None
+
+
+def test_nachweis_fuer_einheit_zeigt_nur_eigene_zaehler_und_die_summe():
+    """Datenschutz: die Zählerliste enthält NUR die Zähler der eigenen
+    Einheit; der Vergleich mit dem Haus läuft ausschließlich über die
+    Gesamtsumme aller Einheiten, nie über die Werte von Whg B."""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+        _zaehler_direkt(c, slug, zid, name="WMZ Whg A", einheit_bezug="Whg A",
+                        wert=800.0, messeinheit="kWh")
+        _zaehler_direkt(c, slug, zid, name="WMZ Whg B", einheit_bezug="Whg B",
+                        wert=200.0, messeinheit="kWh")
+
+        r = c.post(f"/api/zeitraeume/{zid}/positionen",
+                  json={"kostenart": "Heizung", "betrag": 1000.0})
+        assert r.status_code in (200, 201), r.text
+
+        from app import db
+        from app.engine import Position, abrechnung
+        from app.heizkosten import nachweis_fuer_einheit
+        from sqlmodel import Session
+        from app.models import Zeitraum
+        with Session(db.engine) as s:
+            z = s.get(Zeitraum, zid)
+            res = abrechnung([Position("Heizung", 1000.0, "verbrauch",
+                                       {"Whg A": 800.0, "Whg B": 200.0},
+                                       False)], {})
+            nachweis = nachweis_fuer_einheit(s, z, "Whg A", "Whg A",
+                                             res["positionen"])
+
+        assert nachweis is not None
+        assert [zae["name"] for zae in nachweis["zaehler"]] == ["WMZ Whg A"]
+        assert "WMZ Whg B" not in str(nachweis)         # keine fremden Werte
+        assert nachweis["eigener_verbrauch_kwh"] == 800.0
+        assert nachweis["gesamt_verbrauch_kwh"] == 1000.0   # Summe, nicht Einzelwert
+        assert nachweis["kosten_gesamt_eigen"] == 800.0
+        assert nachweis["kosten_gesamt_haus"] == 1000.0
+        assert nachweis["kostenanteil_pct"] == 80.0
+
+
 def test_rechnen_endpunkt_liefert_heizkosten_je_einheit():
     """End-to-End über die API: `heizwert`/`liter`/`eur` wie am Beleg, die
     Verbrauchs-Gewichte kommen aus den echten Zählern."""

@@ -19,7 +19,7 @@ from __future__ import annotations
 from sqlmodel import Session, select
 
 from . import verteilung, waermesim
-from .ablesung import verbrauch_je_zaehler
+from .ablesung import verbrauch_je_zaehler, verbrauchsreihe
 from .einheitenzuordnung import karte as einheiten_karte
 from .einheitenzuordnung import parse_einheiten, schluessel
 from .models import Ablesung, Einheit, Miete, Partei, Zaehler, Zeitraum
@@ -141,6 +141,92 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
     return list(lanes.values()), unzugeordnet
 
 
+def nachweis_fuer_einheit(session: Session, z: Zeitraum, einheit_bezeichnung: str,
+                          partei: str, positionen: list[dict] | None) -> dict | None:
+    """Der Heizkosten-Nachweis für EINE Einheit (Seite 2 der Abrechnungs-PDF,
+    N419): eigene Zählerstände + der eigene, bereits verteilte €-Anteil,
+    dazu die Gesamtmenge ALLER Einheiten zusammen zum Vergleich.
+
+    Bewusst NICHT enthalten: die Zählerstände oder Anteile einzelner anderer
+    Nutzer — nur die Summe über alle. `positionen` ist `res["positionen"]`
+    aus `engine.abrechnung` (trägt je Kostenart schon die fertig verteilten
+    €-Beträge); die €-Aufteilung wird hier nicht neu gerechnet, nur um die
+    Zähler-Rohdaten ergänzt. Kein Liter-Öl-Preis: der Brennstoffpreis aus dem
+    Heizkosten-Rechner (`waermesim.rechne`) wird nirgends gespeichert, nur
+    das Ergebnis — eine erfundene Zahl wäre schlimmer als keine."""
+    if not einheit_bezeichnung:
+        return None
+    nutzer, _ = nutzer_aus_zaehlern(session, z)
+    eigene = next((n for n in nutzer if n["name"] == einheit_bezeichnung), None)
+    if eigene is None:
+        return None
+
+    zma = _zaehler_mit_ablesungen(session, z.objekt_id)
+    if not zma:
+        return None
+    zeitraeume = list(session.exec(
+        select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all())
+    zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
+    verbrauch = verbrauch_je_zaehler(zma, zeitraeume_i, z.id)
+    _, bezug_karte, _ = _bezugs_karte(session, z)
+
+    zaehler_zeilen: list[dict] = []
+    for zae, ablesungen in zma:
+        ziele = parse_einheiten(zae)
+        if not ziele:
+            continue
+        aufgeloest = {bezug_karte.get(schluessel(roh), roh) for roh in ziele}
+        if einheit_bezeichnung not in aufgeloest:
+            continue
+        menge = verbrauch.get(zae.id)
+        zeile = {"name": zae.name, "nummer": zae.zaehlernummer,
+                "kostenart": zae.kostenart,
+                "messeinheit": zae.messeinheit, "typ": zae.typ,
+                "bewertungsfaktor": zae.bewertungsfaktor,
+                "start": None, "ende": None,
+                "verbrauch": round(menge / len(aufgeloest), 3)
+                            if menge is not None else None}
+        if zae.typ == "gemessen":
+            eintrag = verbrauchsreihe(ablesungen, zeitraeume_i).get(z.id)
+            if eintrag and eintrag["verbrauch"]:
+                zeile["ende"] = round(eintrag["randwert"], 2)
+                zeile["start"] = round(eintrag["randwert"] - eintrag["verbrauch"], 2)
+        zaehler_zeilen.append(zeile)
+    if not zaehler_zeilen:
+        return None
+
+    gesamt_kwh = round(sum(n["kwh"] for n in nutzer), 2)
+    gesamt_ww = round(sum(n["ww_m3"] for n in nutzer), 3)
+
+    kosten_eigen: dict[str, float] = {}
+    kosten_haus: dict[str, float] = {}
+    for eintrag in positionen or []:
+        if eintrag.get("kostenart") not in HEIZKOSTEN_ARTEN:
+            continue
+        betrag = (eintrag.get("verteilung") or {}).get(partei)
+        if betrag:
+            kosten_eigen[eintrag["kostenart"]] = round(betrag, 2)
+        kosten_haus[eintrag["kostenart"]] = round(
+            kosten_haus.get(eintrag["kostenart"], 0.0) + (eintrag.get("kosten") or 0), 2)
+    summe_eigen = round(sum(kosten_eigen.values()), 2)
+    summe_haus = round(sum(kosten_haus.values()), 2)
+
+    return {
+        "zaehler": zaehler_zeilen,
+        "eigener_verbrauch_kwh": eigene["kwh"] or None,
+        "gesamt_verbrauch_kwh": gesamt_kwh or None,
+        "eigener_verbrauch_ww_m3": eigene["ww_m3"] or None,
+        "gesamt_verbrauch_ww_m3": gesamt_ww or None,
+        "kosten_je_kostenart": kosten_eigen,
+        "kosten_gesamt_eigen": summe_eigen,
+        "kosten_gesamt_haus": summe_haus,
+        "kostenanteil_pct": (round(100 * summe_eigen / summe_haus, 1)
+                             if summe_haus else None),
+        "flaeche": eigene["flaeche"] or None,
+        "personen": eigene["personen"] or None,
+    }
+
+
 def rechne_fuer_zeitraum(session: Session, z: Zeitraum, eingabe: dict) -> dict:
     """Wie `waermesim.rechne()`, nur dass die `nutzer`-Zeile aus echten
     Zählern kommt statt aus `eingabe` — alles andere (Brennstoff, Blöcke, …)
@@ -153,4 +239,5 @@ def rechne_fuer_zeitraum(session: Session, z: Zeitraum, eingabe: dict) -> dict:
     return erg
 
 
-__all__ = ["nutzer_aus_zaehlern", "rechne_fuer_zeitraum", "HEIZKOSTEN_ARTEN"]
+__all__ = ["nutzer_aus_zaehlern", "rechne_fuer_zeitraum", "nachweis_fuer_einheit",
+          "HEIZKOSTEN_ARTEN"]

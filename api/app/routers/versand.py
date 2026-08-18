@@ -11,10 +11,11 @@ from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..cloudkern import _lies
 from ..db import get_session
 from ..engine import abrechnung
+from ..heizkosten import nachweis_fuer_einheit
 from ..mailversand import MailFehler, versandlauf
 from ..models import (Anteil, Bewohner, Eigentuemer, Miete, Objekt,
                       Versandprotokoll, Zeitraum)
-from ..verteilung import (_laufend, fehlende_angaben, leerstaende,
+from ..verteilung import (SCHLUESSEL, _laufend, fehlende_angaben, leerstaende,
                          positionen_fuer_abrechnung, stammdaten,
                          unbekannte_anteile, unbekannte_vorauszahlungen)
 from .mail import S_NAME, zugang
@@ -164,13 +165,22 @@ def _absender_name(session: Session, objekt_id: int) -> str:
 
 
 def _einzelposten(res: dict, partei: str) -> list[dict]:
-    """Anteil dieser Partei je Kostenart — der Nachweis in der Anlage."""
+    """Anteil dieser Partei je Kostenart — der Nachweis in der Anlage.
+
+    N419 — trägt jetzt zusätzlich den Verteilerschlüssel (Klartext) und die
+    Gesamtkosten der Kostenart, für die Verteilerschlüssel-Tabelle auf Seite 1
+    der Abrechnungs-PDF."""
     zeilen = []
     for eintrag in res.get("positionen") or []:
         betrag = (eintrag.get("verteilung") or {}).get(partei)
         if betrag:
-            zeilen.append({"kostenart": eintrag.get("kostenart"),
-                           "betrag": round(betrag, 2)})
+            zeilen.append({
+                "kostenart": eintrag.get("kostenart"),
+                "betrag": round(betrag, 2),
+                "gesamtkosten": eintrag.get("kosten"),
+                "schluessel": SCHLUESSEL.get(eintrag.get("schluessel"), {})
+                                        .get("titel", ""),
+            })
     zeilen.sort(key=lambda p: -p["betrag"])
     return zeilen
 
@@ -189,11 +199,14 @@ def abrechnung_als_pdf(zid: int, partei: str,
         raise HTTPException(404, f"Keine Abrechnung für '{partei}'")
     zeitraum_text = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
     kontakt = _empfaenger(session, z.objekt_id, z.start, z.ende).get(partei, {})
+    einheit = kontakt.get("einheit", "")
     inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
                             _einzelposten(res, partei),
                             absender=_absender_name(session, o.id),
                             anschrift=_objekt_adresse(o),
-                            einheit=kontakt.get("einheit", ""))
+                            einheit=einheit,
+                            heiznachweis=nachweis_fuer_einheit(
+                                session, z, einheit, partei, res.get("positionen")))
     return Response(content=inhalt, media_type="application/pdf", headers={
         "Content-Disposition":
             f'inline; filename="{pdf_dateiname(o.name, zeitraum_text, partei)}"'})
@@ -307,12 +320,15 @@ def abschliessen(zid: int, data: AbschlussIn,
                 )
                 anhang = None
                 if data.pdf_anhaengen:
+                    einheit = kontakte.get(partei, {}).get("einheit", "")
                     inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
                                             _einzelposten(res, partei),
                                             absender=z_mail.absender_name,
                                             anschrift=_objekt_adresse(o),
-                                            einheit=kontakte.get(partei, {})
-                                                    .get("einheit", ""))
+                                            einheit=einheit,
+                                            heiznachweis=nachweis_fuer_einheit(
+                                                session, z, einheit, partei,
+                                                res.get("positionen")))
                     anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
                               inhalt, "pdf")
                 for adresse in adressen:
