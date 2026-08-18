@@ -80,21 +80,34 @@ def escape(text: str) -> bytes:
     return cp1252(roh)
 
 
-def pdf(strom: bytes, titel: str) -> bytes:
-    """Der fertige Bogen: ein Inhaltsstrom, genau eine A4-Seite (`/Count 1`)."""
+def pdf_seiten(stroeme: list[bytes], titel: str) -> bytes:
+    """Der fertige Bogen: ein Inhaltsstrom je Seite, beliebig viele Seiten.
+
+    Objektnummerierung: 1 Katalog, 2 Seitenbaum, dann je Seite ein Paar
+    (Seite, Inhaltsstrom), zuletzt beide Fonts + Info. Mit genau einer Seite
+    ergibt das dieselbe Nummerierung wie die frühere feste Fassung (3=Seite,
+    4=Strom, 5/6=Fonts, 7=Info) — `pdf()` bleibt darüber byte-identisch."""
+    n = max(1, len(stroeme))
+    font1_num = 3 + 2 * n
+    font2_num = font1_num + 1
+    kids = b" ".join(b"%d 0 R" % (3 + 2 * i) for i in range(n))
+
     objekte = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f] "
-        b"/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>"
-        % (SEITE_B, SEITE_H),
-        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(strom), strom),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
-        b"/Encoding /WinAnsiEncoding >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
-        b"/Encoding /WinAnsiEncoding >>",
-        b"<< /Title (%s) /Producer (ImmoCalc) >>" % escape(titel),
+        b"<< /Type /Pages /Kids [%s] /Count %d >>" % (kids, n),
     ]
+    for strom in stroeme:
+        objekte.append(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f] "
+            b"/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >> >> /Contents %d 0 R >>"
+            % (SEITE_B, SEITE_H, font1_num, font2_num, len(objekte) + 2))
+        objekte.append(b"<< /Length %d >>\nstream\n%s\nendstream"
+                       % (len(strom), strom))
+    objekte.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+                   b"/Encoding /WinAnsiEncoding >>")
+    objekte.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
+                   b"/Encoding /WinAnsiEncoding >>")
+    objekte.append(b"<< /Title (%s) /Producer (ImmoCalc) >>" % escape(titel))
 
     ausgabe = bytearray(b"%PDF-1.4\n")
     # Zweite Zeile mit hohen Bytes: der Hinweis "diese Datei ist binaer"
@@ -112,6 +125,12 @@ def pdf(strom: bytes, titel: str) -> bytes:
     ausgabe += (b"trailer\n<< /Size %d /Root 1 0 R /Info %d 0 R >>\nstartxref\n%d\n%%%%EOF\n"
                 % (len(objekte) + 1, len(objekte), xref))
     return bytes(ausgabe)
+
+
+def pdf(strom: bytes, titel: str) -> bytes:
+    """Der Einseiter-Fall von `pdf_seiten` — die bisherige Aufrufform bleibt,
+    die Tankabrechnung braucht nie mehr als eine Seite."""
+    return pdf_seiten([strom], titel)
 
 
 # ---------------------------------------------------------------- Dateinamen
