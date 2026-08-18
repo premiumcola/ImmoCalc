@@ -123,9 +123,13 @@
   .wsim-abw{color:var(--amber);font-weight:600}
   .wsim-quelle{font:400 12px var(--mono);color:var(--soft);margin:0 0 12px;
     line-height:1.6}
-  .wsim-quelle a,.wsim-alleq a{color:var(--teal-d);text-decoration:none;
-    border-bottom:1px solid currentColor}
-  .wsim-quelle a:hover,.wsim-alleq a:hover{color:var(--teal)}
+  /* N417 — vormals `<a>`, jetzt ein Knopf (öffnet `belegAnsehen`, kein
+     `target="_blank"` mehr) — hier nur der Reset, damit er wie ein Link
+     aussieht und sich wie einer liest. */
+  .wsim-quelle-link{border:none;background:none;padding:0;margin:0;
+    font:inherit;cursor:pointer;color:var(--teal-d);text-decoration:none;
+    border-bottom:1px solid currentColor;min-height:24px}
+  .wsim-quelle-link:hover{color:var(--teal)}
   .wsim-alleq{margin-top:22px;border:1px solid var(--line);border-radius:12px;
     padding:12px 14px;background:var(--sheet)}
   .wsim-alleq summary{font:600 13px var(--body);color:var(--ink);cursor:pointer;

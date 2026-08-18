@@ -7,7 +7,7 @@
    wohin das führt — und beim Verifizieren immer den Vorjahreswert daneben
    haben, nicht nur den aktuellen. */
 
-import { api, esc, eur } from '../immo.js';
+import { api, esc, eur, belegAnsehen } from '../immo.js';
 import { ALLGEMEIN, GERAETE, faktorVon, lade as ladeZaehlerstand } from './zaehler.js';
 import { JAHRE_ABSTEIGEND, JAHRESDATEN, QUELLEN } from './jahre.js';
 
@@ -79,13 +79,21 @@ function vorjahrVon(jahr) {
 /* N340o/N340r — Nachweis: der Link auf die echte(n) Delta-t-PDF(s), aus
    denen die Zahlen dieses Jahres stammen. Ohne diesen Link bliebe die
    Simulationsbasis eine Behauptung; mit ihm lässt sich jede Zahl gegen das
-   Original halten. */
+   Original halten.
+
+   N417/N416 — vorher `<a target="_blank">`: auf dem installierten Home-
+   screen-PWA öffnete das den nackten Systembetrachter ohne Weg zurück,
+   dieselbe Sackgasse wie beim Abrechnungs-PDF. Jetzt ein Knopf, der
+   `belegAnsehen()` (immo.js) im schließbaren App-Dialog öffnet — derselbe
+   Weg wie an jeder anderen Beleg-Stelle. */
+const quelleKnopfHtml = q => `<button type="button" class="wsim-quelle-link"
+    data-quelle="${q.id}" data-titel="${esc(q.label)}">${esc(q.label)}</button>`;
+
 function quellenHtml(jahr) {
   const quellen = QUELLEN[jahr];
   if (!quellen || !quellen.length) return '';
-  return `<p class="wsim-quelle">Quelle: ${quellen.map(q =>
-    `<a href="/api/dokumente/${q.id}/inhalt" target="_blank" rel="noopener">${esc(q.label)}</a>`
-  ).join(' · ')}</p>`;
+  return `<p class="wsim-quelle">Quelle: ${quellen.map(quelleKnopfHtml)
+    .join(' · ')}</p>`;
 }
 
 function alleQuellenHtml() {
@@ -94,8 +102,7 @@ function alleQuellenHtml() {
       <summary>Alle Delta-t-Gesamtabrechnungen in der Ablage (${
         jahre.reduce((n, j) => n + QUELLEN[j].length, 0)} Dokumente, ${jahre.length} Zeiträume)</summary>
       <ul>${jahre.map(j => `<li><b>${j}</b> — ${
-          QUELLEN[j].map(q => `<a href="/api/dokumente/${q.id}/inhalt"
-            target="_blank" rel="noopener">${esc(q.label)}</a>`).join(' · ')}
+          QUELLEN[j].map(quelleKnopfHtml).join(' · ')}
           ${JAHRESDATEN[j] ? '' : ' <span class="wsim-nochoffen">(Zahlen noch nicht erfasst)</span>'}</li>`).join('')}
         <li class="wsim-luecke">2019/20 und 2021/22 — keine vollständige
           Gesamtabrechnung in der Ablage gefunden.</li>
@@ -277,6 +284,11 @@ export async function simulationEinbauen(aktuellerStand) {
   block.querySelector('.wsim-jahre').addEventListener('click', e => {
     const knopf = e.target.closest('[data-jahr]');
     if (knopf) jahrWechseln(Number(knopf.dataset.jahr));
+  });
+  block.addEventListener('click', e => {
+    const quelle = e.target.closest('[data-quelle]');
+    if (quelle) belegAnsehen(`/api/dokumente/${quelle.dataset.quelle}/inhalt`,
+                             quelle.dataset.titel);
   });
   await zeichneSimulation();
   await zeichneWarmwasser();
