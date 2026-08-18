@@ -1585,6 +1585,31 @@
 
   .karte{background:var(--sheet);border-radius:16px;padding:16px;margin-bottom:12px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
+  /* N422 — Abrechnungstabellen am Telefon randlos.
+     Auf 390 px blieben der Tabelle nach Seitenrand (2×12) und Kartenrand
+     (2×16) nur 334 px — jede Spalte mehr hieß Hin- und Herscrollen. Diese
+     Karten brechen deshalb am schmalen Schirm aus beiden Rändern aus und
+     nutzen die volle Breite; die Überschrift behält ihren Einzug, damit sie
+     mit dem übrigen Inhalt fluchtet. Ab Tablet-Breite ist Platz genug, dort
+     bleibt die Karte eine normale Karte. */
+  @media (max-width:700px){
+    /* Die Karte reicht bis an den Seitenrand (−12 px Seitenpolster), die
+       TABELLE zusätzlich bis über das Kartenpolster hinaus (−16 px). Alles
+       andere in der Karte — Überschrift, Zeitstrahl, Fußzeile — behält seinen
+       Einzug und fluchtet weiter mit dem übrigen Inhalt. */
+    .karte-breit{margin-left:-12px;margin-right:-12px;border-radius:0}
+    /* `max-width:100%` (Grundregel) deckelte die negativen Ränder auf die
+       Kartenbreite — hier ausdrücklich aufgehoben, sonst bleibt die Tabelle
+       trotz Ausbruch so schmal wie zuvor. */
+    .karte-breit .wd-tabelle{margin-left:-16px;margin-right:-16px;
+      max-width:none;border-radius:0;border-left:none;border-right:none}
+    /* Mehr Spalten ins Bild: engere Zellen und eine schmalere, weiterhin
+       stehenbleibende erste Spalte. */
+    .karte-breit .wd-tab th,.karte-breit .wd-tab td{padding:8px 7px}
+    .karte-breit .wd-tab th.wd-rowh,.karte-breit .wd-tab td.wd-rowh{
+      width:104px;min-width:104px;max-width:104px}
+    .karte-breit .wd-tab thead th{min-width:70px}
+  }
   .karte h3{font:600 13px var(--disp);margin:0 0 12px;
             display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .marke{font:600 9.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;

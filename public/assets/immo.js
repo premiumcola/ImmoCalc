@@ -745,77 +745,69 @@ export async function belegVerschieben(belegId) {
  * die App zu verlassen — dieselbe Lehre wie bei `belegAnsehen` (N257/CCCXCI):
  * ein Link mit `target="_blank"` öffnet auf dem Startbildschirm (installierte
  * PWA) den Systembetrachter OHNE jede Leiste — kein Zurück, kein Schließen,
- * nur der Home-Button/App-Wechsler bleibt. Live gemeldet: die Abrechnungs-
- * PDF (`GET .../abrechnung.pdf`) hatte genau diesen Link.
+ * nur der Home-Button/App-Wechsler bleibt.
  *
- * Anders als `belegAnsehen` gibt es hier kein serverseitiges Seiten-Rendern
- * (das ist an hochgeladene Dokumente gebunden) — ein PDF ohne festen
- * Seitenumfang braucht das auch nicht: ein `<iframe>` im Dialog genügt, der
- * native Betrachter bleibt innerhalb der App-Hülle statt sie zu verlassen.
+ * N424 — jetzt genau wie `belegAnsehen`: alle Seiten als serverseitig
+ * gerenderte Bilder UNTEREINANDER, breitenfüllend. Die Zwischenstufe mit
+ * eingebettetem `<iframe>` (N416/N421) trug den nativen PDF-Betrachter mit
+ * sich — der beschnitt die Seite seitlich, zwang zum Hin- und Herscrollen und
+ * brauchte einen eigenen Seiten-Umschalter. Ein Bild je Seite kennt keins
+ * dieser Probleme und ist obendrein dieselbe Bedienung wie bei jedem anderen
+ * Beleg in dieser App.
  *
- * N421 — der native PDF-Betrachter im iframe startete auf dem iPhone nicht
- * an die Breite angepasst (Inhalt seitlich beschnitten) und eine zweite
- * Seite (seit N419 möglich) war darin nicht offensichtlich zu finden. Zwei
- * Korrekturen: `#view=FitH` in der URL bittet den Betrachter, an die Breite
- * anzupassen; und ein expliziter Seiten-Umschalter (aus dem Antwort-Header
- * `X-Seiten`) macht eine zweite Seite sichtbar, statt auf das Blätterverhalten
- * des jeweiligen Betrachters zu vertrauen. Der PDF-Inhalt kommt als Blob
- * (ein einziges `fetch`, kein zweiter Download für den iframe).
+ * `url` ist die PDF-Adresse; die Seitenbilder liegen daneben unter
+ * `…-seite.png?...&seite=i` (0-basiert) und melden ihre Gesamtzahl im
+ * Antwort-Header `X-Seiten`.
  */
 export function pdfAnsehen(url, titel = 'PDF') {
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${esc(titel)}</span>
-       <span class="bnav" hidden></span>
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
-     <div class="pdf-rahmen lade">PDF wird geladen …</div>`);
-  dlg.classList.add('pdf-dlg');
+     <div class="beleg-flaeche"><div class="beleg-blatt lade">Abrechnung wird erzeugt …</div></div>`);
+  dlg.classList.add('beleg-dlg');
   dlg.querySelector('[data-zu]').addEventListener('click', () => dlg.close());
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
-  let blobUrl = null;
-  dlg.addEventListener('close', () => { if (blobUrl) URL.revokeObjectURL(blobUrl); });
+  const flaeche = dlg.querySelector('.beleg-flaeche');
+  const adressen = [];
+  dlg.addEventListener('close', () => adressen.forEach(a => URL.revokeObjectURL(a)));
 
-  fetch(url).then(async r => {
-    if (!r.ok) throw new Error('PDF nicht abrufbar');
-    const seiten = Number(r.headers.get('X-Seiten')) || 1;
-    blobUrl = URL.createObjectURL(await r.blob());
-    const rahmen = dlg.querySelector('.pdf-rahmen');
-    rahmen.outerHTML = `<iframe class="pdf-rahmen" title="${esc(titel)}"></iframe>`;
-    const iframe = dlg.querySelector('.pdf-rahmen');
+  // Aus „….pdf?partei=X" wird „…-seite.png?partei=X&seite=i".
+  const bildUrl = (i) => {
+    const [pfad, frage] = String(url).split('?');
+    const basis = pfad.replace(/\.pdf$/, '-seite.png');
+    return `${basis}?${frage ? frage + '&' : ''}seite=${i}`;
+  };
 
-    let seite = 1;
-    // N421-Fix — nur den Fragment-Teil der `src` zu ändern (`#page=2` statt
-    // `#page=1`) hielt der Browser für „dieselbe Ressource" und lud die neue
-    // Seite nie nach: der native PDF-Betrachter blieb sichtbar auf Seite 1
-    // stehen, obwohl die Kopfzeile schon „2/2" zeigte. `about:blank`
-    // dazwischen erzwingt, dass die neue Fragment-URL wirklich neu geladen
-    // wird — derselbe Kniff wie bei jedem eingebetteten PDF-Betrachter.
-    const zeige = n => {
-      seite = Math.min(seiten, Math.max(1, n));
-      iframe.src = 'about:blank';
-      requestAnimationFrame(() => {
-        iframe.src = `${blobUrl}#view=FitH&page=${seite}`;
-      });
-      const stand = dlg.querySelector('[data-pdf-stand]');
-      if (stand) stand.textContent = `${seite}/${seiten}`;
-    };
-    if (seiten > 1) {
-      const nav = dlg.querySelector('.bnav');
-      nav.hidden = false;
-      nav.innerHTML = `<button class="bnb" data-pdf-vor title="Vorherige Seite"
-          aria-label="Vorherige Seite">‹</button>
-        <span class="bnz" data-pdf-stand>1/${seiten}</span>
-        <button class="bnb" data-pdf-weiter title="Nächste Seite"
-          aria-label="Nächste Seite">›</button>`;
-      nav.querySelector('[data-pdf-vor]').addEventListener('click', () => zeige(seite - 1));
-      nav.querySelector('[data-pdf-weiter]').addEventListener('click', () => zeige(seite + 1));
+  const seiteLaden = (i) => fetch(bildUrl(i)).then(async r => {
+    if (!r.ok) throw new Error('seite');
+    const anzahl = Number(r.headers.get('X-Seiten')) || 1;
+    const adr = URL.createObjectURL(await r.blob());
+    adressen.push(adr);
+    const bild = document.createElement('img');
+    bild.className = 'beleg-bild';
+    bild.alt = `${titel} – Seite ${i + 1}`;
+    bild.src = adr;
+    return { bild, anzahl };
+  });
+
+  seiteLaden(0).then(({ bild, anzahl }) => {
+    flaeche.innerHTML = '';
+    flaeche.appendChild(bild);
+    // Die weiteren Seiten bekommen sofort ihren Platz, das Bild folgt.
+    for (let i = 1; i < anzahl; i++) {
+      const platz = document.createElement('img');
+      platz.className = 'beleg-bild';
+      platz.alt = `${titel} – Seite ${i + 1}`;
+      flaeche.appendChild(platz);
+      seiteLaden(i).then(({ bild: b }) => platz.replaceWith(b))
+        .catch(() => platz.remove());
     }
-    zeige(1);
   }).catch(() => {
-    const rahmen = dlg.querySelector('.pdf-rahmen');
-    if (rahmen) { rahmen.classList.remove('lade'); rahmen.textContent = 'PDF ließ sich nicht laden.'; }
+    flaeche.innerHTML = '<div class="beleg-blatt leer">Die Abrechnung ließ '
+      + 'sich nicht anzeigen.</div>';
   });
   return dlg;
 }

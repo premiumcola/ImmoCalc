@@ -22,7 +22,8 @@ from . import verteilung, waermesim
 from .ablesung import verbrauch_je_zaehler, verbrauchsreihe
 from .einheitenzuordnung import karte as einheiten_karte
 from .einheitenzuordnung import parse_einheiten, schluessel
-from .models import Ablesung, Einheit, Miete, Partei, Zaehler, Zeitraum
+from .models import Ablesung, Einheit, Miete, Objekt, Partei, Zaehler, Zeitraum
+from .routers.heizoel import bewertung as _heizoel_bewertung
 from .routers.zaehler import _mit_vorlauf
 
 # N340t — nur diese Kostenarten zählen zur Heizkosten-Verteilung; alles
@@ -211,6 +212,28 @@ def nachweis_fuer_einheit(session: Session, z: Zeitraum, einheit_bezeichnung: st
     summe_eigen = round(sum(kosten_eigen.values()), 2)
     summe_haus = round(sum(kosten_haus.values()), 2)
 
+    # N423 — Liter Öl je Nutzer: nicht aus einem angenommenen Heizwert
+    # geschätzt, sondern aus der ECHTEN FIFO-Bewertung des Objekts
+    # (`routers.heizoel.bewertung`, dieselbe Zahl wie im Öl-Bestand). Sie
+    # liefert den tatsächlichen Verbrauch (Liter) UND den tatsächlich
+    # gezahlten Ø-Einkaufspreis der Periode — der eigene Anteil ergibt sich
+    # dann exakt aus dem €-Anteil an denselben Kosten, die die Engine schon
+    # verteilt hat (`summe_eigen / verbrauch_kosten`), keine zweite Rechnung.
+    oel_liter_eigen = None
+    oel_preis_je_liter = None
+    objekt = session.get(Objekt, z.objekt_id)
+    if objekt:
+        try:
+            b = _heizoel_bewertung(objekt.slug, zeitraum_id=z.id,
+                                   session=session, o=objekt)
+        except Exception:
+            b = None
+        if b and b.get("verbrauch_liter") and b.get("verbrauch_kosten"):
+            oel_preis_je_liter = b.get("preis_schnitt")
+            if summe_eigen:
+                oel_liter_eigen = round(
+                    summe_eigen / b["verbrauch_kosten"] * b["verbrauch_liter"], 1)
+
     return {
         "zaehler": zaehler_zeilen,
         "eigener_verbrauch_kwh": eigene["kwh"] or None,
@@ -222,6 +245,8 @@ def nachweis_fuer_einheit(session: Session, z: Zeitraum, einheit_bezeichnung: st
         "kosten_gesamt_haus": summe_haus,
         "kostenanteil_pct": (round(100 * summe_eigen / summe_haus, 1)
                              if summe_haus else None),
+        "oel_liter_eigen": oel_liter_eigen,
+        "oel_preis_je_liter": oel_preis_je_liter,
         "flaeche": eigene["flaeche"] or None,
         "personen": eigene["personen"] or None,
     }

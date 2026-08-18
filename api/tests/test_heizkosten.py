@@ -295,6 +295,45 @@ def test_nachweis_fuer_einheit_zeigt_nur_eigene_zaehler_und_die_summe():
         assert nachweis["kostenanteil_pct"] == 80.0
 
 
+def test_nachweis_fuer_einheit_liest_liter_aus_der_echten_oel_bewertung():
+    """N423 — die Liter-Öl-Angabe je Nutzer kommt nicht aus einem
+    angenommenen Heizwert, sondern aus der echten FIFO-Bewertung
+    (`routers.heizoel.bewertung`): Ø-Einkaufspreis der Periode ×
+    €-Anteil an den tatsächlich verrechneten Öl-Kosten."""
+    with TestClient(app) as c:
+        slug, zid = _objekt(c)
+        _zaehler_direkt(c, slug, zid, name="WMZ Whg A", einheit_bezug="Whg A",
+                        wert=800.0, messeinheit="kWh")
+        _zaehler_direkt(c, slug, zid, name="WMZ Whg B", einheit_bezug="Whg B",
+                        wert=200.0, messeinheit="kWh")
+        _zaehler_direkt(c, slug, zid, name="Öl-Zähler", einheit_bezug="",
+                        wert=1000.0, messeinheit="Liter")
+
+        z_start = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["start"]
+        r = c.post(f"/api/objekte/{slug}/heizoel", json={
+            "datum": z_start, "liter": 1200.0, "wert": 1080.0,
+            "ist_anfangsbestand": True})
+        assert r.status_code in (200, 201), r.text
+
+        from app import db
+        from app.engine import Position, abrechnung
+        from app.heizkosten import nachweis_fuer_einheit
+        from sqlmodel import Session
+        from app.models import Zeitraum
+        with Session(db.engine) as s:
+            z = s.get(Zeitraum, zid)
+            res = abrechnung([Position("Heizung", 1000.0, "verbrauch",
+                                       {"Whg A": 800.0, "Whg B": 200.0},
+                                       False)], {})
+            nachweis = nachweis_fuer_einheit(s, z, "Whg A", "Whg A",
+                                             res["positionen"])
+
+        assert nachweis["oel_preis_je_liter"] == 0.9
+        # 1000 L Verbrauch kosten (FIFO aus 1200 L @ 0,90 €) 900,00 € — Whg A
+        # trägt 800 von 1000 € Heizungskosten, also 800/900*1000 L.
+        assert nachweis["oel_liter_eigen"] == round(800 / 900 * 1000, 1)
+
+
 def test_rechnen_endpunkt_liefert_heizkosten_je_einheit():
     """End-to-End über die API: `heizwert`/`liter`/`eur` wie am Beleg, die
     Verbrauchs-Gewichte kommen aus den echten Zählern."""

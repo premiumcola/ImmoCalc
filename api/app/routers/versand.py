@@ -7,14 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .. import ocr
 from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..cloudkern import _lies
 from ..db import get_session
 from ..engine import abrechnung
 from ..heizkosten import nachweis_fuer_einheit
 from ..mailversand import MailFehler, versandlauf
-from ..models import (Anteil, Bewohner, Eigentuemer, Miete, Objekt,
-                      Versandprotokoll, Zeitraum)
+from ..models import (Anteil, Bewohner, Eigentuemer, Kostenposition, Miete,
+                      Objekt, Versandprotokoll, Zeitraum)
 from ..verteilung import (SCHLUESSEL, _laufend, fehlende_angaben, leerstaende,
                          positionen_fuer_abrechnung, stammdaten,
                          unbekannte_anteile, unbekannte_vorauszahlungen)
@@ -185,10 +186,26 @@ def _einzelposten(res: dict, partei: str) -> list[dict]:
     return zeilen
 
 
-@router.get("/{zid}/abrechnung.pdf")
-def abrechnung_als_pdf(zid: int, partei: str,
-                       session: Session = Depends(get_session)) -> Response:
-    """Die Abrechnung einer Partei als PDF — zum Ansehen vor dem Versand."""
+def _strom_herkunft(session: Session, zid: int) -> list[dict] | None:
+    """N423 — woher der Strom des Hauses kam (Netz/eigene PV) und zu welchem
+    Preis, wenn das an den Strom-Kostenpositionen gepflegt ist (`herkunft`/
+    `menge`/`arbeitspreis`, N122) — sonst `None` statt einer erfundenen Zahl.
+    Hausweite Information, nicht der Anteil einer einzelnen Partei."""
+    treffer = session.exec(select(Kostenposition).where(
+        Kostenposition.zeitraum_id == zid, Kostenposition.herkunft != "",
+        Kostenposition.menge > 0)).all()
+    if not treffer:
+        return None
+    return [{"herkunft": p.herkunft, "menge": p.menge,
+            "menge_einheit": p.menge_einheit or "kWh",
+            "arbeitspreis": p.arbeitspreis, "betrag": p.betrag}
+           for p in treffer]
+
+
+def _abrechnung_bauen(session: Session, zid: int,
+                      partei: str) -> tuple[bytes, int, str]:
+    """Die Abrechnungs-PDF einer Partei bauen — einmal, für Vorschau (PDF),
+    Seitenbild (PNG) und Versand. Liefert (Inhalt, Seitenzahl, Dateiname)."""
     z = session.get(Zeitraum, zid)
     if not z:
         raise HTTPException(404, "Zeitraum nicht gefunden")
@@ -202,17 +219,53 @@ def abrechnung_als_pdf(zid: int, partei: str,
     einheit = kontakt.get("einheit", "")
     heiznachweis = nachweis_fuer_einheit(session, z, einheit, partei,
                                          res.get("positionen"))
+    strom = _strom_herkunft(session, zid)
     inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
                             _einzelposten(res, partei),
                             absender=_absender_name(session, o.id),
                             anschrift=_objekt_adresse(o),
-                            einheit=einheit, heiznachweis=heiznachweis)
+                            einheit=einheit, heiznachweis=heiznachweis,
+                            strom=strom)
+    seiten = 2 if (heiznachweis or strom) else 1
+    return inhalt, seiten, pdf_dateiname(o.name, zeitraum_text, partei)
+
+
+@router.get("/{zid}/abrechnung.pdf")
+def abrechnung_als_pdf(zid: int, partei: str,
+                       session: Session = Depends(get_session)) -> Response:
+    """Die Abrechnung einer Partei als PDF — zum Ansehen vor dem Versand."""
+    inhalt, seiten, name = _abrechnung_bauen(session, zid, partei)
     return Response(content=inhalt, media_type="application/pdf", headers={
-        "Content-Disposition":
-            f'inline; filename="{pdf_dateiname(o.name, zeitraum_text, partei)}"',
-        # N421 — die Vorschau (`pdfAnsehen`, immo.js) zeigt einen Seiten-
-        # Umschalter nur, wenn es wirklich mehr als eine Seite gibt.
-        "X-Seiten": "2" if heiznachweis else "1"})
+        "Content-Disposition": f'inline; filename="{name}"',
+        # N421 — die Vorschau (`pdfAnsehen`, immo.js) braucht die Seitenzahl,
+        # um alle Seiten untereinander zu stapeln.
+        "X-Seiten": str(seiten)})
+
+
+@router.get("/{zid}/abrechnung-seite.png")
+def abrechnung_seite_als_bild(zid: int, partei: str, seite: int = 0,
+                              session: Session = Depends(get_session)) -> Response:
+    """N424 — eine Seite der Abrechnung als Bild, breitenfüllend gerendert.
+
+    Derselbe Weg, den hochgeladene Belege längst gehen
+    (`dokumente.vorschau`): der eingebettete PDF-Betrachter beschnitt die
+    Seite seitlich und zwang zum Hin- und Herscrollen. Als Bild passt sich
+    die Seite an die Breite an, und das Frontend stapelt einfach alle Seiten
+    untereinander — kein Seiten-Umschalter, kein Querscrollen.
+
+    Rein lesend: die Abrechnung wird für die Anzeige neu gebaut, nichts
+    gespeichert."""
+    inhalt, seiten, _ = _abrechnung_bauen(session, zid, partei)
+    if seite >= seiten:
+        raise HTTPException(416, f"Diese Abrechnung hat nur {seiten} Seite(n)")
+    # `osd=False`: ein selbst erzeugtes PDF steht immer aufrecht — die
+    # Tesseract-Auto-Aufrichtung wäre hier nur ein Risiko (und ohne
+    # installiertes Tesseract ohnehin wirkungslos).
+    png = ocr.seite_png(inhalt, seite, osd=False)
+    if png is None:
+        raise HTTPException(415, "Diese Seite lässt sich nicht als Bild rendern")
+    return Response(content=png, media_type="image/png", headers={
+        "X-Seiten": str(seiten), "Cache-Control": "private, max-age=60"})
 
 
 class AbschlussIn(BaseModel):
@@ -331,7 +384,8 @@ def abschliessen(zid: int, data: AbschlussIn,
                                             einheit=einheit,
                                             heiznachweis=nachweis_fuer_einheit(
                                                 session, z, einheit, partei,
-                                                res.get("positionen")))
+                                                res.get("positionen")),
+                                            strom=_strom_herkunft(session, zid))
                     anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
                               inhalt, "pdf")
                 for adresse in adressen:

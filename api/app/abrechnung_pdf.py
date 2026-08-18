@@ -465,23 +465,51 @@ def _fussnoten_hoehe(posten: list[dict], anlage_hinweis: str,
 
 # ---------------------------------------------------------------- Seite 2: Heizkosten
 def _seite_zwei(kasten_titel: str, zeitraum: str, jahr: str,
-                nachweis: dict) -> Blatt:
+                nachweis: dict | None, strom: list[dict] | None) -> Blatt:
     blatt = Blatt()
     links, rechts = RAND, SEITE_B - RAND
     breite = rechts - links
     y = SEITE_H - RAND
 
-    blatt.text(links, y, kasten_titel or "Nachweis Heizkosten", 9, False, MATT)
+    blatt.text(links, y, kasten_titel or "Nachweis", 9, False, MATT)
     blatt.text_rechts(rechts, y, f"{jahr} · Seite 2", 9, False, MATT)
     y -= 20
     blatt.strich(links, rechts, y, 0.8, LINIE)
     y -= 30
 
+    if nachweis:
+        y = _heizkosten_nachweis(blatt, links, rechts, breite, y, zeitraum, nachweis)
+    if strom:
+        if nachweis:
+            y -= 16
+        y = _strom_zusammensetzung(blatt, links, rechts, breite, y, zeitraum, strom)
+
+    return blatt
+
+
+def _heizkosten_nachweis(blatt: Blatt, links: float, rechts: float,
+                         breite: float, y: float, zeitraum: str,
+                         nachweis: dict) -> float:
     blatt.text(links, y, "Nachweis Heizung & Warmwasser", 15, True, INK)
     y -= 18
     blatt.text(links, y, f"Zeitraum {zeitraum} · nur Ihre eigenen Zähler und "
                "die Gesamtsumme aller Einheiten", 9.5, False, MATT)
-    y -= 26
+    y -= 22
+
+    # N423 — der Rechenweg in zwei Sätzen: ein Wärmemengenzähler misst die
+    # Wärme direkt (kWh), ein Heizkörper-Verteiler nur einen Rohwert, der
+    # erst mit seinem Bewertungsfaktor vergleichbar wird. Danach entscheidet
+    # der eigene Anteil an allen Zählern des Hauses über den Kostenanteil.
+    rechenweg = ("So wird gerechnet: Ein Wärmemengenzähler misst die "
+                "verbrauchte Wärme direkt in kWh. Ein Heizkörper-Verteiler "
+                "zeigt nur einen Rohwert — erst der Ablesewert mal seinem "
+                "Bewertungsfaktor macht ihn mit anderen Heizkörpern "
+                "vergleichbar. Ihr Anteil an der Summe aller Zähler im Haus "
+                "bestimmt dann Ihren Anteil an den Heizölkosten.")
+    for zeile in _umbruch(rechenweg, breite, 9):
+        blatt.text(links, y, zeile, 9, False, MATT)
+        y -= 12.5
+    y -= 14
 
     # ---- Zählertabelle
     zeilen = nachweis.get("zaehler") or []
@@ -506,12 +534,24 @@ def _seite_zwei(kasten_titel: str, zeitraum: str, jahr: str,
                               _fehlt(z.get("start"), nachkomma), 9, False, MATT)
             blatt.text_rechts(links + kanten[3] - 6, y,
                               _fehlt(z.get("ende"), nachkomma), 9, False, MATT)
-            verbrauch_text = _fehlt(z.get("verbrauch"), nachkomma, einheit=einheit)
-            if not ist_ww and not ist_wmz and z.get("bewertungsfaktor") and z.get("verbrauch") is not None:
+            # Ein Heizkörper-Verteiler zählt mit seinem BEWERTETEN Wert — der
+            # steht in der Spalte. Die Rechnung dahinter („Rohwert × Faktor")
+            # als kleine Unterzeile am Namen: in der Betragsspalte lief sie
+            # sonst in die Endstand-Spalte hinein (N423, live gesehen).
+            hkv = (not ist_ww and not ist_wmz and z.get("bewertungsfaktor")
+                   and z.get("verbrauch") is not None)
+            if hkv:
                 bewertet = z["verbrauch"] * z["bewertungsfaktor"]
-                verbrauch_text = (f"{verbrauch_text} × {_zahl(z['bewertungsfaktor'])} "
-                                  f"= {_zahl(bewertet)}")
-            blatt.text_rechts(rechts - 6, y, verbrauch_text, 9, True, INK)
+                blatt.text_rechts(rechts - 6, y, _zahl(bewertet), 9, True, INK)
+                blatt.text(links + 6, y - 11,
+                          f"{geschrieben(z['verbrauch'], nachkomma)} {einheit}"
+                          f" × {_zahl(z['bewertungsfaktor'])} (Bewertungsfaktor)",
+                          8, False, MATT)
+                y -= 11
+            else:
+                blatt.text_rechts(rechts - 6, y,
+                                  _fehlt(z.get("verbrauch"), nachkomma,
+                                         einheit=einheit), 9, True, INK)
             y -= 22
         y -= 8
         blatt.strich(links, rechts, y, 0.8, LINIE)
@@ -552,15 +592,71 @@ def _seite_zwei(kasten_titel: str, zeitraum: str, jahr: str,
             blatt.text_rechts(rechts, y, f"{_zahl(betrag)} €", 9.5, False, MATT)
             y -= 14
 
-    y -= 20
+    # N423 — die Liter-Öl-Übersetzung: aus der echten FIFO-Bewertung des
+    # Objekts (`heizkosten.nachweis_fuer_einheit`), kein angenommener Wert.
+    oel_liter = nachweis.get("oel_liter_eigen")
+    if oel_liter:
+        y -= 6
+        satz = f"Das entspricht rechnerisch rund {geschrieben(oel_liter, 1)} Litern Heizöl"
+        preis = nachweis.get("oel_preis_je_liter")
+        if preis:
+            satz += f" (Ø-Einkaufspreis {geschrieben(preis, 2)} €/Liter in diesem Zeitraum)"
+        satz += "."
+        for zeile in _umbruch(satz, breite, 9.5):
+            blatt.text(links, y, zeile, 9.5, False, INK)
+            y -= 13
+
+    y -= 14
     for zeile in _umbruch("Aus Datenschutzgründen werden nur die Zählerstände "
                           "Ihrer eigenen Einheit sowie die Gesamtsumme aller "
                           "Einheiten gemeinsam ausgewiesen — keine Einzelwerte "
                           "anderer Mietparteien.", breite, 8):
         blatt.text(links, y, zeile, 8, False, MATT)
         y -= 12
+    return y
 
-    return blatt
+
+_HERKUNFT_TITEL = {"extern": "Netzbezug", "eigen": "Eigene PV-Anlage"}
+
+
+def _strom_zusammensetzung(blatt: Blatt, links: float, rechts: float,
+                           breite: float, y: float, zeitraum: str,
+                           strom: list[dict]) -> float:
+    """N423 — woher der Strom des ganzen Hauses kam, nicht der eigene Anteil:
+    dieselben Zahlen für jede Partei, deshalb kein Datenschutz-Thema wie bei
+    den Heizkosten-Zählern."""
+    blatt.text(links, y, "Zusammensetzung des Stroms", 15, True, INK)
+    y -= 18
+    blatt.text(links, y, f"Zeitraum {zeitraum} · für das gesamte Haus, nicht "
+               "nur Ihre Einheit", 9.5, False, MATT)
+    y -= 26
+
+    gesamt_kwh = sum(s.get("menge") or 0 for s in strom)
+    gesamt_eur = sum(s.get("betrag") or 0 for s in strom)
+    for s in strom:
+        menge = s.get("menge") or 0
+        titel = _HERKUNFT_TITEL.get(s.get("herkunft"), s.get("herkunft") or "Unbekannt")
+        pct = round(100 * menge / gesamt_kwh, 1) if gesamt_kwh else None
+        blatt.text(links, y, titel, 10.5, True, INK)
+        if pct is not None:
+            blatt.text_rechts(rechts, y, geschrieben(pct, 1, einheit="%"),
+                              12, True, TEAL)
+        y -= 15
+        einheit = s.get("menge_einheit") or "kWh"
+        zeile = f"{geschrieben(menge, 1, einheit=einheit)}"
+        if s.get("arbeitspreis"):
+            zeile += f" à {geschrieben(s['arbeitspreis'], 2)} ct/{einheit}"
+        if s.get("betrag"):
+            zeile += f" · {_zahl(s['betrag'])} €"
+        blatt.text(links + 10, y, zeile, 9.5, False, MATT)
+        y -= 20
+    if gesamt_eur:
+        y -= 4
+        blatt.strich(links, rechts, y + 8, 0.8, LINIE)
+        blatt.text(links, y - 8, "Gesamtkosten Strom", 10, True, INK)
+        blatt.text_rechts(rechts, y - 8, f"{_zahl(gesamt_eur)} €", 10, True, INK)
+        y -= 24
+    return y
 
 
 def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
@@ -572,15 +668,18 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
                    monatsbetrag: float | None = None,
                    anlage_hinweis: str = "", abschlag_hinweis: str = "",
                    erstellt_am: date | None = None,
-                   heiznachweis: dict | None = None) -> bytes:
+                   heiznachweis: dict | None = None,
+                   strom: list[dict] | None = None) -> bytes:
     """Die Abrechnung einer Partei: Seite 1 (Brief + Verteilerschlüssel-
-    Tabelle), optional Seite 2 (Heizkosten-Nachweis, N419).
+    Tabelle), optional Seite 2 (Heizkosten-Nachweis N419 und/oder Strom-
+    Zusammensetzung N423).
 
     Die ersten sechs Parameter sind die bestehende Aufrufform aus
     `routers/versand.py` und bleiben unverändert; alles Weitere ist optional
     und wird weggelassen, wenn es niemand mitgibt. `heiznachweis` kommt aus
-    `heizkosten.nachweis_fuer_einheit` — ohne Zählerdaten bleibt es leer und
-    das PDF hat wie gehabt nur eine Seite."""
+    `heizkosten.nachweis_fuer_einheit`, `strom` aus `versand._strom_herkunft`
+    — ohne Daten bleibt jeweils der Abschnitt weg; ohne beide bleibt es beim
+    Onepager."""
     posten = _posten(positionen)
     jahr = (jahr or _jahr_aus(zeitraum)).strip()
     monate = monate or _monate_aus(zeitraum)
@@ -591,13 +690,15 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
         kasten_titel = (partei or "").strip()
     stichtag = erstellt_am or date.today()
 
+    seite2_kommt = bool(heiznachweis or strom)
     seite1 = _seite_eins(objekt_name, zeitraum, empfaenger, werte, posten,
                          absender, adresse, kasten_titel, jahr, monate,
                          monatsbetrag, anlage_hinweis, abschlag_hinweis,
-                         stichtag, hinweis_seite_zwei=bool(heiznachweis))
+                         stichtag, hinweis_seite_zwei=seite2_kommt)
     seiten = [seite1.strom()]
-    if heiznachweis:
-        seiten.append(_seite_zwei(kasten_titel, zeitraum, jahr, heiznachweis).strom())
+    if seite2_kommt:
+        seiten.append(_seite_zwei(kasten_titel, zeitraum, jahr,
+                                  heiznachweis, strom).strom())
 
     kopf_titel = titel or (f"Betriebskostenabrechnung {jahr}" if jahr
                            else "Betriebskostenabrechnung")

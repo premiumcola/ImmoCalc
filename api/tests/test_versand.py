@@ -317,6 +317,42 @@ def test_abrechnung_als_pdf_meldet_die_seitenzahl_im_header():
         assert mit_zaehler.headers["content-type"] == "application/pdf"
 
 
+def test_abrechnung_seite_als_bild_liefert_jede_seite_einzeln():
+    """N424 — die Vorschau stapelt Seitenbilder statt einen PDF-Betrachter
+    einzubetten (der beschnitt seitlich und zwang zum Querscrollen). Jede
+    Seite ist einzeln als PNG abrufbar und meldet die Gesamtzahl mit;
+    jenseits der letzten Seite gibt es 416 statt eines leeren Bildes."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Bildseitenweg 2",
+            "einheiten": [{"bezeichnung": "Whg A", "flaeche": 50.0}],
+        }).json()["slug"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "A", "einheit": "Whg A", "email": "a@example.org",
+            "ab_datum": "2024-01-01"})
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        c.post(f"/api/zeitraeume/{zid}/positionen",
+              json={"kostenart": "Heizung", "betrag": 300.0})
+        zaehler_id = c.post(f"/api/objekte/{slug}/zaehler", json={
+            "name": "WMZ Whg A", "kostenart": "Heizung",
+            "einheit_bezug": "Whg A", "messeinheit": "kWh",
+            "typ": "direkt"}).json()["id"]
+        c.post(f"/api/zaehler/{zaehler_id}/ablesungen",
+              json={"datum": "2024-12-30", "stand": 1200.0, "zeitraum_id": zid})
+
+        for seite in (0, 1):
+            bild = c.get(f"/api/zeitraeume/{zid}/abrechnung-seite.png",
+                         params={"partei": "A", "seite": seite})
+            assert bild.status_code == 200, bild.text
+            assert bild.headers["content-type"] == "image/png"
+            assert bild.headers["x-seiten"] == "2"
+            assert bild.content.startswith(b"\x89PNG")
+
+        zu_weit = c.get(f"/api/zeitraeume/{zid}/abrechnung-seite.png",
+                        params={"partei": "A", "seite": 2})
+        assert zu_weit.status_code == 416
+
+
 def test_versendetes_pdf_traegt_ebenfalls_anschrift_und_einheit(postfach):
     """Dieselbe Anreicherung gilt für den Anhang beim echten Versand, nicht
     nur für die Vorschau — sonst unterscheiden sich Vorschau und Mail."""

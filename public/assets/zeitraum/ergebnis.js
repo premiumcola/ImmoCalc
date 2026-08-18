@@ -171,7 +171,7 @@ function belegungHtml() {
         <td>${b.flaeche != null ? `${_zahl1(b.flaeche)} m²` : '–'}</td>
       </tr>`).join('');
 
-  return `<div class="karte">
+  return `<div class="karte karte-breit">
       <h3>Belegung im Zeitraum</h3>
       ${bloecke}
       <div class="wd-tabelle"><table class="wd-tab">
@@ -296,7 +296,7 @@ function matrixHtml(a, wer) {
         data-pdf-titel="${esc(`Abrechnung ${p}`)}"
         >▤ PDF</button></td>`).join('') + '<td></td>');
 
-  return `<div class="karte">
+  return `<div class="karte karte-breit">
       <h3>Kosten je Einheit</h3>
       <div class="wd-tabelle"><table class="wd-tab mx-tab">
         <thead>${kopf}</thead>
