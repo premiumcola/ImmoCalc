@@ -42,6 +42,11 @@ export function belegAblageHtml(k, bearbeitbar) {
         >${FOTO_ICON}<span>Foto</span></button>
        <button type="button" class="ablg-knopf" data-ablage="${art}"
         >${WOLKE_ICON}<span>Aus der Ablage</span></button>`;
+  // N420 — reine Verwaltungsgebühren (Abrechnungskosten, Zählermiete) haben
+  // oft keinen Beleg, nur eine vom Vermieter festgelegte Zahl. Seit N249 hat
+  // eine leere Position kein Betragsfeld mehr, weil der Betrag aus dem Beleg
+  // entstehen sollte — das bleibt der Vorgabeweg, aber ein dritter, gleich-
+  // wertiger Weg ohne Beleg kommt dazu, statt ihn ganz auszuschließen.
   return `<div class="ablg">
       <span class="ablg-ikon">${UPLOAD_ICON}</span>
       <span class="ablg-t">${KEINE_KAMERA
@@ -50,7 +55,30 @@ export function belegAblageHtml(k, bearbeitbar) {
         ? 'Die PDF einfach auf diese Karte ziehen — daraus entstehen Betrag und Position.'
         : 'Aus dem Beleg entstehen Betrag und Position.'}</span>
       <span class="ablg-k">${knoepfe}</span>
+      <button type="button" class="ablg-manuell" data-manuell="${art}"
+        >oder Betrag ohne Beleg eintragen</button>
+      <span class="ablg-manuellfeld" hidden data-manuellfeld="${art}">
+        <input type="number" step="0.01" inputmode="decimal" placeholder="Betrag"
+          data-manuellbetrag="${art}" aria-label="Betrag für ${art} ohne Beleg">
+        <span class="ablg-eur">€</span>
+        <button type="button" class="minilink" data-manuellspeichern="${art}"
+          >Speichern</button>
+      </span>
     </div>`;
+}
+
+/* N420 — Betrag ohne Beleg: dieselbe Schreibfunktion wie ein Scan-Betrag
+   (`positionBetragSchreiben`), nur mit `wertquelle: 'manuell'` — damit
+   bleibt in der Position sichtbar, woher der Betrag stammt. */
+export async function betragManuellSpeichern(zeile, kostenart, betrag) {
+  if (!(betrag > 0)) return;
+  if (zeile?.position_id) {
+    await api(`/positionen/${zeile.position_id}`,
+      { method: 'PATCH', body: { betrag, wertquelle: 'manuell' } });
+  } else {
+    await api(`/zeitraeume/${state.zid}/positionen`,
+      { method: 'POST', body: { kostenart, betrag, wertquelle: 'manuell' } });
+  }
 }
 
 /* N96b — was mit dem Beleg geschehen soll: nur aus der Abrechnung nehmen

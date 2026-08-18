@@ -200,16 +200,19 @@ def abrechnung_als_pdf(zid: int, partei: str,
     zeitraum_text = f"{z.start:%d.%m.%Y} – {z.ende:%d.%m.%Y}"
     kontakt = _empfaenger(session, z.objekt_id, z.start, z.ende).get(partei, {})
     einheit = kontakt.get("einheit", "")
+    heiznachweis = nachweis_fuer_einheit(session, z, einheit, partei,
+                                         res.get("positionen"))
     inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
                             _einzelposten(res, partei),
                             absender=_absender_name(session, o.id),
                             anschrift=_objekt_adresse(o),
-                            einheit=einheit,
-                            heiznachweis=nachweis_fuer_einheit(
-                                session, z, einheit, partei, res.get("positionen")))
+                            einheit=einheit, heiznachweis=heiznachweis)
     return Response(content=inhalt, media_type="application/pdf", headers={
         "Content-Disposition":
-            f'inline; filename="{pdf_dateiname(o.name, zeitraum_text, partei)}"'})
+            f'inline; filename="{pdf_dateiname(o.name, zeitraum_text, partei)}"',
+        # N421 — die Vorschau (`pdfAnsehen`, immo.js) zeigt einen Seiten-
+        # Umschalter nur, wenn es wirklich mehr als eine Seite gibt.
+        "X-Seiten": "2" if heiznachweis else "1"})
 
 
 class AbschlussIn(BaseModel):

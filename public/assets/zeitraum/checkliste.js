@@ -73,7 +73,7 @@ import {
 } from './stromkette.js';
 import {
   belegAblageHtml, belegLoesen, belegAbschluss,
-  anhaengen, anhaengerEntfernen, initBelegDrop,
+  anhaengen, anhaengerEntfernen, initBelegDrop, betragManuellSpeichern,
 } from './belege.js';
 import {
   wegLaden, wegSchalterHtml, wegAnsichtHtml, wegSchalten, wegAufnehmen,
@@ -1360,6 +1360,42 @@ async function positionEntfaelltSetzen(knopf) {
   }
 }
 
+/* N420 — an der Ablage-Fläche „oder Betrag ohne Beleg eintragen": das
+   Zahlenfeld einblenden statt sofort zu speichern (leicht wieder wegtippbar,
+   kein versehentliches Anlegen). */
+function manuellFeldZeigen(knopf) {
+  const art = knopf.dataset.manuell;
+  const feld = knopf.parentElement.querySelector(
+    `[data-manuellfeld="${CSS.escape(art)}"]`);
+  if (!feld) return;
+  feld.hidden = false;
+  knopf.hidden = true;
+  feld.querySelector('input')?.focus();
+}
+
+// N420 — von zwei Stellen aufrufbar: dem „Speichern"-Knopf (Klick) und dem
+// Zahlenfeld selbst (Enter/Verlassen, `change`) — beide finden über dieselbe
+// `.ablg`-Karte zueinander, keine zwei Fassungen derselben Logik.
+async function positionManuellSpeichern(ausloeser) {
+  const container = ausloeser.closest('.ablg');
+  const eingabe = container?.querySelector('[data-manuellbetrag]');
+  const knopf = container?.querySelector('[data-manuellspeichern]');
+  const art = eingabe?.dataset.manuellbetrag;
+  if (!eingabe || !art) return;
+  const betrag = Number((eingabe.value || '').replace(',', '.'));
+  if (!(betrag > 0)) { eingabe.focus(); return; }
+  if (knopf) knopf.disabled = true;
+  try {
+    const zeile = (state.daten.checkliste || []).find(k => k.kostenart === art);
+    await betragManuellSpeichern(zeile, art, betrag);
+    melde(`„${art}“ mit ${eur(betrag)} eingetragen`, 'pos');
+    await laden();
+  } catch (fehler) {
+    if (knopf) knopf.disabled = false;
+    melde(String(fehler.message || fehler), 'neg');
+  }
+}
+
 async function positionEntfaelltRueckgaengig(knopf) {
   const pid = knopf.dataset.entfaelltRueckgaengig;
   knopf.disabled = true;
@@ -1747,6 +1783,7 @@ export function initHandlers() {
     }
     if (e.target.matches('[data-konf-sicht]')) return konfSichtSetzen(e.target);
     if (e.target.matches('[data-betrag]')) betragSpeichern(e.target);
+    if (e.target.matches('[data-manuellbetrag]')) return positionManuellSpeichern(e.target);
     if (e.target.matches('[data-anbieter]')) anbieterSpeichern(e.target);
     if (e.target.matches('[data-endstand]')) endstandSpeichern(e.target);
     if (e.target.matches('[data-anfangstand]')) anfangstandSpeichern(e.target);
@@ -1860,6 +1897,12 @@ export function initHandlers() {
 
     const entfaelltZurueck = e.target.closest('[data-entfaellt-rueckgaengig]');
     if (entfaelltZurueck) return positionEntfaelltRueckgaengig(entfaelltZurueck);
+
+    const manuellZeigen = e.target.closest('[data-manuell]');
+    if (manuellZeigen) return manuellFeldZeigen(manuellZeigen);
+
+    const manuellSpeichern = e.target.closest('[data-manuellspeichern]');
+    if (manuellSpeichern) return positionManuellSpeichern(manuellSpeichern);
 
     const auf = e.target.closest('[data-auf]');
     if (auf) {

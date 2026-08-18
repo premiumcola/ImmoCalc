@@ -752,17 +752,62 @@ export async function belegVerschieben(belegId) {
  * (das ist an hochgeladene Dokumente gebunden) — ein PDF ohne festen
  * Seitenumfang braucht das auch nicht: ein `<iframe>` im Dialog genügt, der
  * native Betrachter bleibt innerhalb der App-Hülle statt sie zu verlassen.
+ *
+ * N421 — der native PDF-Betrachter im iframe startete auf dem iPhone nicht
+ * an die Breite angepasst (Inhalt seitlich beschnitten) und eine zweite
+ * Seite (seit N419 möglich) war darin nicht offensichtlich zu finden. Zwei
+ * Korrekturen: `#view=FitH` in der URL bittet den Betrachter, an die Breite
+ * anzupassen; und ein expliziter Seiten-Umschalter (aus dem Antwort-Header
+ * `X-Seiten`) macht eine zweite Seite sichtbar, statt auf das Blätterverhalten
+ * des jeweiligen Betrachters zu vertrauen. Der PDF-Inhalt kommt als Blob
+ * (ein einziges `fetch`, kein zweiter Download für den iframe).
  */
 export function pdfAnsehen(url, titel = 'PDF') {
   const dlg = baueDialog(
     `<div class="beleg-kopf">
        <span class="bt">${esc(titel)}</span>
+       <span class="bnav" hidden></span>
        <button class="bx" data-zu title="Schließen" aria-label="Schließen">✕</button>
      </div>
-     <iframe class="pdf-rahmen" src="${esc(url)}" title="${esc(titel)}"></iframe>`);
+     <div class="pdf-rahmen lade">PDF wird geladen …</div>`);
   dlg.classList.add('pdf-dlg');
   dlg.querySelector('[data-zu]').addEventListener('click', () => dlg.close());
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+  let blobUrl = null;
+  dlg.addEventListener('close', () => { if (blobUrl) URL.revokeObjectURL(blobUrl); });
+
+  fetch(url).then(async r => {
+    if (!r.ok) throw new Error('PDF nicht abrufbar');
+    const seiten = Number(r.headers.get('X-Seiten')) || 1;
+    blobUrl = URL.createObjectURL(await r.blob());
+    const rahmen = dlg.querySelector('.pdf-rahmen');
+    rahmen.outerHTML = `<iframe class="pdf-rahmen" title="${esc(titel)}"></iframe>`;
+    const iframe = dlg.querySelector('.pdf-rahmen');
+
+    let seite = 1;
+    const zeige = n => {
+      seite = Math.min(seiten, Math.max(1, n));
+      iframe.src = `${blobUrl}#view=FitH&page=${seite}`;
+      const stand = dlg.querySelector('[data-pdf-stand]');
+      if (stand) stand.textContent = `${seite}/${seiten}`;
+    };
+    if (seiten > 1) {
+      const nav = dlg.querySelector('.bnav');
+      nav.hidden = false;
+      nav.innerHTML = `<button class="bnb" data-pdf-vor title="Vorherige Seite"
+          aria-label="Vorherige Seite">‹</button>
+        <span class="bnz" data-pdf-stand>1/${seiten}</span>
+        <button class="bnb" data-pdf-weiter title="Nächste Seite"
+          aria-label="Nächste Seite">›</button>`;
+      nav.querySelector('[data-pdf-vor]').addEventListener('click', () => zeige(seite - 1));
+      nav.querySelector('[data-pdf-weiter]').addEventListener('click', () => zeige(seite + 1));
+    }
+    zeige(1);
+  }).catch(() => {
+    const rahmen = dlg.querySelector('.pdf-rahmen');
+    if (rahmen) { rahmen.classList.remove('lade'); rahmen.textContent = 'PDF ließ sich nicht laden.'; }
+  });
   return dlg;
 }
 

@@ -282,6 +282,41 @@ def test_abrechnung_als_pdf_zeigt_eigentuemer_ohne_postfach():
         assert "Roman Heidenreich".encode("cp1252") in antwort.content
 
 
+# ------------------------------------------------------------------ N419/N421
+def test_abrechnung_als_pdf_meldet_die_seitenzahl_im_header():
+    """N421 — `pdfAnsehen()` (immo.js) braucht die Seitenzahl VOR dem Rendern,
+    um den Seiten-Umschalter nur bei mehr als einer Seite einzublenden. Ohne
+    Heizkosten-Zähler bleibt es bei einer Seite; mit ihnen kommt Seite 2
+    (Heizkosten-Nachweis, N419) dazu."""
+    with TestClient(app) as c:
+        slug = c.post("/api/objekte", json={
+            "name": "Zweiseitenweg 1",
+            "einheiten": [{"bezeichnung": "Whg A", "flaeche": 50.0}],
+        }).json()["slug"]
+        c.post(f"/api/objekte/{slug}/mieten", json={
+            "partei": "A", "einheit": "Whg A", "email": "a@example.org",
+            "ab_datum": "2024-01-01"})
+        zid = c.get(f"/api/objekte/{slug}").json()["zeitraeume"][0]["id"]
+        c.post(f"/api/zeitraeume/{zid}/positionen",
+              json={"kostenart": "Heizung", "betrag": 300.0})
+
+        ohne_zaehler = c.get(f"/api/zeitraeume/{zid}/abrechnung.pdf",
+                             params={"partei": "A"})
+        assert ohne_zaehler.headers["x-seiten"] == "1"
+
+        zaehler_id = c.post(f"/api/objekte/{slug}/zaehler", json={
+            "name": "WMZ Whg A", "kostenart": "Heizung",
+            "einheit_bezug": "Whg A", "messeinheit": "kWh",
+            "typ": "direkt"}).json()["id"]
+        c.post(f"/api/zaehler/{zaehler_id}/ablesungen",
+              json={"datum": "2024-12-30", "stand": 1200.0, "zeitraum_id": zid})
+
+        mit_zaehler = c.get(f"/api/zeitraeume/{zid}/abrechnung.pdf",
+                            params={"partei": "A"})
+        assert mit_zaehler.headers["x-seiten"] == "2"
+        assert mit_zaehler.headers["content-type"] == "application/pdf"
+
+
 def test_versendetes_pdf_traegt_ebenfalls_anschrift_und_einheit(postfach):
     """Dieselbe Anreicherung gilt für den Anhang beim echten Versand, nicht
     nur für die Vorschau — sonst unterscheiden sich Vorschau und Mail."""

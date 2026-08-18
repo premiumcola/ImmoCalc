@@ -873,6 +873,10 @@ dialog.immo-dlg.pdf-dlg{
 dialog.immo-dlg.pdf-dlg::backdrop{background:rgba(22,38,44,.62)}
 .pdf-rahmen{flex:1; width:100%; min-height:0; border:none; border-radius:12px;
   background:var(--paper)}
+/* N421 — Lade-/Fehlertext, solange der Blob noch nicht da ist (vorher stand
+   das leere iframe einfach nur als graue Fläche da). */
+.pdf-rahmen.lade{display:flex; align-items:center; justify-content:center;
+  text-align:center; padding:24px; font:400 13.5px var(--body); color:var(--soft)}
 
 /* ---- N102: was zu diesem Beleg schon ausgelesen wurde ----
    Sitzt zwischen Kopf und Blatt, ruhig auf Papierton statt als Kasten mit
