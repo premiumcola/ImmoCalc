@@ -786,9 +786,18 @@ export function pdfAnsehen(url, titel = 'PDF') {
     const iframe = dlg.querySelector('.pdf-rahmen');
 
     let seite = 1;
+    // N421-Fix — nur den Fragment-Teil der `src` zu ändern (`#page=2` statt
+    // `#page=1`) hielt der Browser für „dieselbe Ressource" und lud die neue
+    // Seite nie nach: der native PDF-Betrachter blieb sichtbar auf Seite 1
+    // stehen, obwohl die Kopfzeile schon „2/2" zeigte. `about:blank`
+    // dazwischen erzwingt, dass die neue Fragment-URL wirklich neu geladen
+    // wird — derselbe Kniff wie bei jedem eingebetteten PDF-Betrachter.
     const zeige = n => {
       seite = Math.min(seiten, Math.max(1, n));
-      iframe.src = `${blobUrl}#view=FitH&page=${seite}`;
+      iframe.src = 'about:blank';
+      requestAnimationFrame(() => {
+        iframe.src = `${blobUrl}#view=FitH&page=${seite}`;
+      });
       const stand = dlg.querySelector('[data-pdf-stand]');
       if (stand) stand.textContent = `${seite}/${seiten}`;
     };
