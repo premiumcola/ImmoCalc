@@ -268,11 +268,18 @@ function verlaufTabelle(v) {
 }
 
 function verlaufKpi(v) {
-  // Die Jahreszahl bleibt der grosze Wert; „geschaetzt, noch 25 Jahre" steht
-  // als eigene Zeile darunter — sonst sprengt der Zusatz die Kachel.
-  const zusatz = v.break_even_geschaetzt
+  // Die Jahreszahl bleibt der grosze Wert; der Zusatz („geschaetzt, noch 25
+  // Jahre") steht als eigene Zeile darunter — sonst sprengt er die Kachel.
+  // N428 — drei Stufen (`break_even_methode`) statt eines Ja/Nein: 'prognose'
+  // ist der verlaessliche Schnitt aus echten Ertragsjahren, 'grob' der
+  // Fallback aus ALLEM Bisherigen (Vorlauf eingeschlossen), wenn dafuer noch
+  // zu wenig echte Ertragsjahre da sind — ausdruecklich als grob markiert,
+  // nicht als dieselbe Sicherheit wie 'prognose' verkauft.
+  const zusatz = v.break_even_methode === 'prognose'
     ? `<span class="knote">geschätzt · noch ${v.break_even_in_jahren} Jahre</span>`
-    : `<span class="knote">${v.break_even_jahr ? 'erreicht'
+    : v.break_even_methode === 'grob'
+    ? `<span class="knote">grob geschätzt · noch ${v.break_even_in_jahren} Jahre</span>`
+    : `<span class="knote">${v.break_even_methode === 'erreicht' ? 'erreicht'
         : 'Prognose ab dem zweiten Ertragsjahr'}</span>`;
   return `
     <div class="k"><span class="kl">Anschaffung</span><span class="kv">${eur(v.anschaffung)}</span></div>

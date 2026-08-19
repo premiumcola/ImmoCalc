@@ -7,6 +7,9 @@ sanfte Prognose und die Aufteilung auf die drei Kategorien.
 """
 from __future__ import annotations
 
+import math
+from datetime import date
+
 from sqlmodel import Session
 
 from .. import strom
@@ -75,6 +78,41 @@ def _prognose(jahre: list[dict], anschaffung: float) -> dict | None:
             "break_even_jahr": reihe[-1]["jahr"], "in_jahren": len(reihe)}
 
 
+# N428 — Nutzer-Fund: bei einer echten Anlage standen für die laufenden
+# Abrechnungsjahre nur die E-Tankstelle-Beträge da (die eigentliche
+# NK-Abrechnung mit PV-Strom/Einspeisung war für sie noch nicht gepflegt) —
+# `_prognose` mittelte deshalb über einen fast leeren Schnitt und landete
+# jenseits von 60 Jahren, obwohl real schon rund 2.800 € über gut drei Jahre
+# hereingekommen waren (Vorlauf eingeschlossen). „Kannst du ja schon für eine
+# Hochrechnung hernehmen", zu Recht.
+def _grobe_prognose(kumuliert: float, anschaffung: float, offen: float,
+                    inbetriebnahme: date | None,
+                    heute: date | None = None) -> dict | None:
+    """Fallback, wenn `_prognose` nichts liefert: der grobe Schnitt aus ALLEM,
+    was bisher eingetragen ist (Vorlauf eingeschlossen), über die seit der
+    Inbetriebnahme tatsächlich verstrichene Zeit — ungenauer als `_prognose`
+    (der einmalige Vorlauf wiederholt sich nicht, geht hier aber trotzdem in
+    den Schnitt ein), aber ehrlicher als eine 60-Jahre-Fehlanzeige, wenn schon
+    reale Zahlen dastehen. Unter einem halben Jahr Laufzeit wäre auch das nur
+    geraten. `heute` ist überschreibbar (Tests) — ohne Angabe der echte Tag."""
+    if not inbetriebnahme or offen <= 0 or kumuliert <= 0:
+        return None
+    heute = heute or date.today()
+    tage = (heute - inbetriebnahme).days
+    if tage < 180:
+        return None
+    schnitt = kumuliert / (tage / 365.25)
+    if schnitt <= 0:
+        return None
+    jahre_bis = offen / schnitt
+    if jahre_bis > _PROGNOSE_MAX_JAHRE:
+        return None
+    in_jahren = math.ceil(jahre_bis)
+    return {"schnitt": round(schnitt, 2),
+            "break_even_jahr": heute.year + in_jahren,
+            "in_jahren": in_jahren}
+
+
 def verlauf_daten(session: Session, o: Objekt) -> dict:
     """N127 — wie die Erträge die Anschaffung Jahr für Jahr auffressen.
 
@@ -88,8 +126,8 @@ def verlauf_daten(session: Session, o: Objekt) -> dict:
     `None`, N153), `vorlauf_jahr`, `jahre` ([{jahr, vorlauf, vorlauf_teile,
     pv_strom, einspeisung, tanken, summe, kumuliert, offen, ueberschuss}]),
     `kumuliert`, `rest`, `amortisiert_prozent`, `break_even_jahr` (erreicht oder
-    prognostiziert), `break_even_geschaetzt`, `break_even_in_jahren`,
-    `prognose`, `eigentuemer` und `warnungen`."""
+    prognostiziert), `break_even_methode` ('erreicht'|'prognose'|'grob'|None,
+    N428), `break_even_in_jahren`, `prognose`, `eigentuemer` und `warnungen`."""
     tanken = _tanken_je_jahr(session, o)
     quellen = _ertraege_je_jahr(session, o.id, tanken)
     anschaffung, vorlauf, vorlauf_teile, anteile = _anlage(session, o.id)
@@ -145,6 +183,12 @@ def verlauf_daten(session: Session, o: Objekt) -> dict:
 
     erreicht = a["break_even_jahr"]
     prognose = None if erreicht else _prognose(jahre, a["anschaffung"])
+    # N428 — reicht der genaue Schnitt (nur echte Ertragsjahre, ohne Vorlauf)
+    # nicht für eine Prognose innerhalb von 60 Jahren, lieber der grobe Schnitt
+    # aus ALLEM Bisherigen als gar keine Zahl — siehe `_grobe_prognose`.
+    grob = (None if erreicht or prognose
+           else _grobe_prognose(a["kumuliert"], a["anschaffung"], a["rest"],
+                                anlage.inbetriebnahme))
     warnungen: list[str] = []
     if not a["anschaffung"]:
         warnungen.append("Anschaffungskosten der Anlage sind noch nicht "
@@ -157,7 +201,7 @@ def verlauf_daten(session: Session, o: Objekt) -> dict:
                          "Kostenpositionen mit Herkunft „eigen“, die "
                          "Einspeisevergütung aus einer nicht umlagefähigen "
                          "Kostenart, das E-Tanken aus den Ladungen.")
-    elif not erreicht and not prognose and a["anschaffung"]:
+    elif not erreicht and not prognose and not grob and a["anschaffung"]:
         ertragsjahre = sum(1 for z in jahre
                            if round(z["summe"] - z["vorlauf"], 2) > 0)
         warnungen.append(
@@ -180,9 +224,18 @@ def verlauf_daten(session: Session, o: Objekt) -> dict:
             "kategorien": kategorien,
             "kumuliert": a["kumuliert"], "rest": a["rest"],
             "amortisiert_prozent": a["amortisiert_prozent"],
-            "break_even_jahr": erreicht or (prognose or {}).get("break_even_jahr"),
-            "break_even_geschaetzt": prognose is not None,
-            "break_even_in_jahren": (prognose or {}).get("in_jahren"),
+            "break_even_jahr": (erreicht or (prognose or {}).get("break_even_jahr")
+                               or (grob or {}).get("break_even_jahr")),
+            # N428 — drei Stufen statt eines Ja/Nein: 'erreicht' (echter Stand),
+            # 'prognose' (Schnitt aus echten Ertragsjahren, verlässlicher) oder
+            # 'grob' (Schnitt aus allem Bisherigen inkl. Vorlauf, nur ein grober
+            # Anhalt). `None` heisst: auch die grobe Schätzung ging über
+            # `_PROGNOSE_MAX_JAHRE` hinaus, dafür steht die Warnung.
+            "break_even_methode": ('erreicht' if erreicht
+                                   else 'prognose' if prognose else 'grob' if grob
+                                   else None),
+            "break_even_in_jahren": ((prognose or {}).get("in_jahren")
+                                     or (grob or {}).get("in_jahren")),
             "prognose": prognose,
             "eigentuemer": strom.verteile_eigentuemer(a["kumuliert"], anteile),
             "warnungen": warnungen}

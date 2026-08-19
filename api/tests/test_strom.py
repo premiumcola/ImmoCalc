@@ -642,7 +642,7 @@ def test_verlauf_objekt_ohne_pv_bleibt_ruhig(client):
     assert v["anschaffung"] == 0.0
     assert v["kumuliert"] == 0.0
     assert v["break_even_jahr"] is None
-    assert v["break_even_geschaetzt"] is False
+    assert v["break_even_methode"] is None
     assert v["amortisiert_prozent"] is None
     assert any("Anschaffung" in w for w in v["warnungen"])
     assert any("Noch keine Erträge" in w for w in v["warnungen"])
@@ -660,7 +660,7 @@ def test_verlauf_break_even_erreicht(client):
 
     v = _verlauf(client, slug)
     assert v["break_even_jahr"] == 2025
-    assert v["break_even_geschaetzt"] is False
+    assert v["break_even_methode"] == 'erreicht'
     assert v["prognose"] is None            # erreicht — nichts mehr zu raten
     assert v["rest"] == 0.0
     assert v["amortisiert_prozent"] == 100.0
@@ -686,7 +686,7 @@ def test_verlauf_break_even_nicht_erreicht_wird_fortgeschrieben(client):
     assert [z["jahr"] for z in p["jahre"]] == list(range(letztes + 1,
                                                          letztes + 9))
     assert p["jahre"][-1]["offen"] == 0.0
-    assert v["break_even_geschaetzt"] is True
+    assert v["break_even_methode"] == 'prognose'
     assert v["break_even_jahr"] == p["break_even_jahr"] == letztes + 8
     assert v["break_even_in_jahren"] == 8
     assert 0 < v["amortisiert_prozent"] < 100
@@ -702,7 +702,7 @@ def test_verlauf_prognose_erst_ab_zwei_ertragsjahren(client):
     v = _verlauf(client, slug)
     assert v["prognose"] is None
     assert v["break_even_jahr"] is None
-    assert v["break_even_geschaetzt"] is False
+    assert v["break_even_methode"] is None
     assert v["break_even_in_jahren"] is None
     assert any("zweiten Abrechnungsjahr" in w for w in v["warnungen"])
 
@@ -719,6 +719,31 @@ def test_verlauf_prognose_jenseits_des_horizonts_bleibt_leer(client):
     assert v["prognose"] is None
     assert v["break_even_jahr"] is None
     assert any("noch nicht abbezahlt" in w for w in v["warnungen"])
+
+
+def test_verlauf_faellt_auf_groben_schnitt_zurueck_wenn_echte_jahre_fast_leer_sind(client):
+    """N428 — Nutzer-Fund: die laufenden Abrechnungsjahre trugen real nur ein
+    paar hundert Euro (z. B. weil die eigentliche PV-Einspeisung dort noch
+    nicht erfasst ist), `_prognose` mittelte über einen fast leeren Schnitt
+    und landete jenseits von 60 Jahren — obwohl ÜBER DIE GESAMTE LAUFZEIT
+    (Vorlauf eingeschlossen) schon reale ~2.800 € hereingekommen waren. Der
+    grobe Fallback (`break_even_methode == 'grob'`) liefert dafür eine
+    Jahreszahl statt der Fehlanzeige."""
+    slug = _pv_objekt(client, "PV-Fast-Leer")
+    client.put(f"/api/objekte/{slug}/pv/stammdaten", json={
+        "anschaffung_eur": 35800, "inbetriebnahme": "2023-06-30",
+        "vorlauf_ertrag_eur": 2355.36})
+    # Die laufenden Jahre selbst tragen nur Kleinstbeträge — genau der Fall,
+    # der `_prognose` (nur echte Ertragsjahre) über 60 Jahre treibt.
+    for jahr, betrag in ((2025, 322.49), (2026, 151.22)):
+        _position(client, _zeitraum_id(client, slug, jahr), _EINSPEISUNG, betrag)
+
+    v = _verlauf(client, slug)
+    assert v["prognose"] is None                  # der genaue Weg scheitert wie gemeldet
+    assert v["break_even_methode"] == 'grob'
+    assert v["break_even_jahr"] is not None
+    assert 0 < v["break_even_in_jahren"] < 60
+    assert not any("noch nicht abbezahlt" in w for w in v["warnungen"])
 
 
 def test_verlauf_vorlauf_steht_vor_dem_ersten_abrechnungsjahr(client):
