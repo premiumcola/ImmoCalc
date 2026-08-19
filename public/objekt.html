@@ -66,12 +66,11 @@
     .baustelle-banner{animation:none}
   }
 
-  .sekopf{display:flex;align-items:flex-start;gap:10px;margin:26px 0 12px}
-  /* N210 — Titel + Objektname als Spalte, damit der Name UNTER „Stammdaten"
-     steht und die Kopfzeile nicht mehr umbricht. */
-  .sekopf .setxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-  .sekopf h2.sec{font:700 17px var(--disp);letter-spacing:-.015em;margin:0}
-  .sekopf .seikon,.sekopf button{margin-top:1px}
+  /* N425 — .sekopf/.paar(e) sind nach immo.css gewandert: die PV-Anlage
+     braucht dieselbe Stammdaten-Optik wie das Objekt hier, „was sich als
+     seitenübergreifend erweist, wandert dann dorthin" (Kommentarkopf
+     strom.html). `.fussnote`/`.fussnote.warn` bleiben bewusst hier — dieselben
+     Klassennamen tragen in eingang.html eine ANDERE, eigene Definition. */
   /* CCXCIX — Dokumentenbaum: Filter-Chips, farbige Äste, Dokumente als Früchte */
   .bfilter-leiste{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 10px}
   .bfilter{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
@@ -453,20 +452,7 @@
     .dd-body.zoom .dd-rechts{padding:18px}
   }
 
-  /* CCCIV — Rubrik-Symbol in der Überschrift, in der Farbe der Rubrik */
-  .sekopf .seikon{flex:none;display:inline-flex;align-items:center;
-    color:var(--soft);align-self:center}
-  .sekopf .seikon svg{width:20px;height:20px}
-  /* N22 — Rubrik-Aktionen als einheitlicher teal Textlink: „Anlegen",
-     „Bearbeiten" und der „Hinzufügen"-Zugang (Button ODER Datei-Label). */
-  .sekopf button,.sekopf .seakt{border:none;background:none;color:var(--teal-d);
-    cursor:pointer;font:600 12.5px var(--disp);padding:8px 4px;margin:-8px -4px;
-    min-height:44px;display:inline-flex;align-items:center}
-  .sekopf button:hover,.sekopf .seakt:hover{color:var(--teal)}
-  .sekopf .voll-hinweis{flex:none;color:var(--soft);font:600 11px var(--mono);
-    display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-  .sekopf .voll-hinweis::before{content:"✓";color:var(--pos);font-weight:700}
-  .sekopf:first-child{margin-top:0}
+  /* .sekopf-Rest siehe immo.css (N425) */
 
   .liste{background:var(--sheet);border-radius:14px;overflow:hidden;margin-bottom:10px;
          box-shadow:0 1px 2px rgba(22,38,44,.05)}
@@ -636,49 +622,12 @@
      Datei-Feld: als Block, damit die Breite wie beim Knopf greift. */
   label.add{display:block;text-align:center}
 
-  /* Stammdaten als Paarliste — Beschriftung links, Wert rechts */
-  .paare{background:var(--sheet);border-radius:14px;padding:4px 15px;margin-bottom:10px;
-         box-shadow:0 1px 2px rgba(22,38,44,.05)}
-  .paar{display:flex;justify-content:space-between;gap:14px;padding:11px 0;
-        font:500 13.5px var(--body)}
-  .paar + .paar{border-top:1px solid var(--line)}
-  .paar .pl{color:var(--soft);flex:none}
-  .paar .pv{font-family:var(--mono);font-weight:600;text-align:right;min-width:0;
-            overflow-wrap:anywhere}
-  .paar .pv.leer{color:var(--soft);font-weight:400;font-family:var(--body)}
-  /* Gerechnete Zeilen treten zurück — sie sind Ergebnis, nicht Eingabe. */
-  .paar .pv.abgeleitet{color:var(--teal-d)}
-  /* Woher ein gerechneter Wert stammt („aus 5 Einheiten") — eine ruhige
-     zweite Zeile unter dem Wert, im Fließtext statt in Mono. */
-  .paar .pv .pq{display:block;font:400 11px var(--body);color:var(--soft);
-                font-weight:400;margin-top:3px}
+  /* .paare/.paar-Familie siehe immo.css (N425) — nur die hier objekt-eigenen
+     .fussnote-Regeln bleiben lokal (eingang.html trägt denselben Klassennamen
+     mit einer ANDEREN Definition, kein gemeinsamer Baustein). */
   /* CCLIV — weicht die manuell geführte Wohnfläche von den Einheiten ab, ein
      dezenter Hinweis in der Warnfarbe, kein Fehlerblock. */
   .fussnote.warn{color:var(--amber)}
-  /* Freitext bekommt die ganze Zeilenbreite: nebeneinander bliebe für den
-     Wortlaut aus dem Katasterauszug eine Spalte von vier Zeichen. */
-  .paar.lang{flex-direction:column;align-items:flex-start;gap:4px}
-  .paar.lang .pv{text-align:left;font-size:13px}
-  /* CCCXXX — kompakte Zweiergruppen: zwei kurze Werte teilen sich eine Zeile
-     und sparen so vertikale Höhe. Auf schmalen Geräten wieder gestapelt. */
-  .paar.duo{gap:26px;align-items:stretch}
-  .paar.duo .du{flex:1;min-width:0;display:flex;justify-content:space-between;
-                align-items:baseline;gap:10px}
-  @media(max-width:460px){
-    .paar.duo{flex-direction:column;gap:0}
-    .paar.duo .du{align-items:baseline}
-    .paar.duo .du + .du{border-top:1px solid var(--line);
-                        padding-top:11px;margin-top:11px}
-  }
-  /* CCCXXX — Konto & Rücklage und Nießbrauch als abgesetzte Blöcke: ein
-     ruhiger Mono-Titel mit einer feinen Linie, die die Zeile ausklingen lässt. */
-  .paar-trenn{display:flex;align-items:center;gap:12px;padding:16px 0 6px;
-              font:600 10.5px var(--mono);letter-spacing:.07em;
-              text-transform:uppercase;color:var(--soft)}
-  .paar-trenn::after{content:"";flex:1;height:1px;background:var(--line)}
-  /* CCCXXX/N210 — der Objektname als ruhige Zeile UNTER dem Titel. */
-  .sekopf .setxt .secsub{display:block;font:500 12.5px var(--body);color:var(--soft);
-    line-height:1.35;overflow-wrap:anywhere}
   .fussnote{font:400 12px var(--body);color:var(--soft);line-height:1.5;
             margin:-2px 2px 10px}
 

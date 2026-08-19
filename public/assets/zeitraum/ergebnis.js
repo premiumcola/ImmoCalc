@@ -224,11 +224,18 @@ function matrixHtml(a, wer) {
   if (!positionen.length || !parteien.length) return '';
 
   const istLeer = p => !!(wer.get(p)?.leerstand || state.leerstaende.has(p));
-  const spaltenKopf = p => istLeer(p)
+  // N425 — der Sortierpfeil stand als eigenes Element NACH dem (blockweise
+  // gesetzten) Parteinamen und erzwang damit immer eine eigene vierte Zeile
+  // im Spaltenkopf. Bei einem langen Namen („Delta Wohnbau GmbH", zwei
+  // Zeilen) reichte die Zeilenhöhe der Kopfzelle dann nicht mehr — der Text
+  // lief sichtbar in die erste Datenzeile hinein. Der Pfeil steht jetzt IM
+  // Parteinamen-Text selbst (letztes Wort auf der letzten Zeile statt eine
+  // eigene Zeile), das spart eine ganze Zeile Höhe.
+  const spaltenKopf = (p, pfeilHtml) => istLeer(p)
     ? `<span class="mx-einheit">${esc(einheitVon.get(p) || '')}</span>
-       <span class="mx-partei leer">Leerstand</span>`
+       <span class="mx-partei leer">Leerstand ${pfeilHtml}</span>`
     : `<span class="mx-einheit">${esc(einheitVon.get(p) || '')}</span>
-       <span class="mx-partei">${esc(p)}</span>`;
+       <span class="mx-partei">${esc(p)} ${pfeilHtml}</span>`;
   // N410 — kleiner Sortierpfeil je Spalte: neutral (⇅) solange sie nicht die
   // aktive ist, sonst die tatsächliche Richtung.
   const pfeil = spalte => mxSort?.spalte === spalte
@@ -237,8 +244,8 @@ function matrixHtml(a, wer) {
 
   const kopf = `<tr><th class="wd-rowh">Kostenart</th>${
     parteien.map(p => `<th class="mx-sortbar" data-mx-sort="${esc(p)}"
-        >${spaltenKopf(p)}${pfeil(p)}</th>`).join('')
-    }<th class="mx-sortbar" data-mx-sort="__summe__">Summe${pfeil('__summe__')}</th></tr>`;
+        >${spaltenKopf(p, pfeil(p))}</th>`).join('')
+    }<th class="mx-sortbar" data-mx-sort="__summe__">Summe ${pfeil('__summe__')}</th></tr>`;
 
   const zeileMit = (label, klasse, zellenHtml) =>
     `<tr${klasse ? ` class="${klasse}"` : ''}><td class="wd-rowh">${label}</td>${zellenHtml}</tr>`;

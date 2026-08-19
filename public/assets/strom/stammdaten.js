@@ -7,7 +7,7 @@
 
    Umzug ohne Verhaltensaenderung: dieselben Formeln, dasselbe PUT, dieselbe
    Vorrang-Regel wie zuvor inline in strom.html. */
-import { api, eur, melde } from '../immo.js';
+import { api, esc, eur, melde } from '../immo.js';
 import { S, inhalt } from './state.js';
 import { datumDe, tag, feldZahl } from './helpers.js';
 import { feldHtml, datumHtml } from './felder.js';
@@ -57,6 +57,29 @@ export function stammFuellen(s) {
   });
   const d = inhalt.querySelector('[data-stammdatum]');
   if (d) d.value = s.inbetriebnahme || '';
+}
+
+/* N425 — dieselbe Anzeigeform wie die Stammdaten jedes Objekts (.paare/.paar
+   in immo.css, ursprünglich objekt.html): Beschriftung links, Wert rechts,
+   nur lesbar. Die Eingabefelder selbst stehen im Bearbeiten-Dialog, nicht
+   mehr dauerhaft offen auf der Seite — dieselbe Trennung wie überall sonst. */
+const stammZeile = (label, wert) => `<div class="paar">
+    <span class="pl">${esc(label)}</span>
+    <span class="pv${wert ? '' : ' leer'}">${wert ? esc(wert) : 'nicht erfasst'}</span>
+  </div>`;
+
+export function stammAnsichtHtml(s) {
+  const anschaffung = s.anschaffung_eur ? eur(s.anschaffung_eur) : '';
+  const kwp = s.kwp ? `${Number(s.kwp).toLocaleString('de-DE')} kWp` : '';
+  const inbetrieb = s.inbetriebnahme ? datumDe(tag(s.inbetriebnahme)) : '';
+  return stammZeile('Anschaffung', anschaffung)
+    + stammZeile('Anlagenleistung', kwp)
+    + stammZeile('Inbetriebnahme', inbetrieb);
+}
+
+export function stammAnsichtZeigen() {
+  const ziel = document.getElementById('pvStammAnzeige');
+  if (ziel) ziel.innerHTML = stammAnsichtHtml(S.stammStand || {});
 }
 
 /* --------------------------------------------------------------------------
@@ -160,6 +183,7 @@ export function stammAngestossen() {
         { method: 'PUT', body: werte });
       if (slug !== S.objektSlug) return;
       S.stammStand = antwort;         // Server ist die Wahrheit, nicht die Maske
+      stammAnsichtZeigen();           // die Anzeige zieht sofort mit, nicht erst beim Schließen
       vorlaufPruefen(werte, antwort);
       // Anschaffung, Anteile UND der Vorlauf gehen mit ein: `rechnen` holt
       // den Verlauf neu, damit Grafik und Tabelle oben sofort mitgehen.

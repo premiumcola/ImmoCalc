@@ -1437,6 +1437,12 @@
      die Spalte deshalb einzeilig und wächst mit dem längsten Namen mit. */
   .wd-tab.mx-tab th.wd-rowh,.wd-tab.mx-tab td.wd-rowh{width:auto;
     min-width:150px;max-width:220px;white-space:nowrap;overflow-wrap:normal}
+  /* N425 — genug Höhe für Einheit + (ggf. zweizeiligen) Parteinamen, egal wie
+     lang der Name ist ("Delta Wohnbau GmbH") — plus eine deutliche, dickere
+     Trennlinie zur ersten Datenzeile, statt der dünnen 1px-Standardlinie.
+     Vorher lief ein langer Name sichtbar in die Zeile darunter hinein. */
+  .wd-tab.mx-tab thead th{min-height:52px;padding-bottom:11px;
+    border-bottom:2px solid var(--line)}
   /* N410 — Sortierbare Spaltenköpfe: eigener Zeiger, der Pfeil bleibt blass,
      bis die Spalte aktiv sortiert — dann Ink-Farbe und Richtung. */
   .mx-sortbar{cursor:pointer;user-select:none}

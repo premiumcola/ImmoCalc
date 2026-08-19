@@ -515,13 +515,14 @@
    N215 — die Fachlogik ist auf `./assets/strom/*.js` verteilt
    (siehe dort _TOPICS.md). Dieses Skript orchestriert nur noch: Skelett
    rendern, Formulare füllen, Objekt-/Jahreswechsel behandeln. */
-import { api, esc, installNav } from './assets/immo.js';
+import { api, esc, installNav, kreuzAnbringen } from './assets/immo.js';
 import { auswahlfeld } from './assets/auswahl.js';
+import { kostenIcon } from './assets/kostenicons.js';
 import { S, inhalt, sub } from './assets/strom/state.js';
 import { infoKnopf } from './assets/strom/info.js';
 import { feldHtml, datumHtml } from './assets/strom/felder.js';
 import { F_STAMM, F_VORLAUF, stammAusForm, stammFuellen, vorlaufZeigen,
-         stammAngestossen } from './assets/strom/stammdaten.js';
+         stammAngestossen, stammAnsichtZeigen } from './assets/strom/stammdaten.js';
 import { F_JAHR_VERBRAUCH, F_JAHR_ERZEUGUNG, werteAusForm, formFuellen,
          angestossen, rechnen } from './assets/strom/jahre.js';
 import { seBildZeigen } from './assets/strom/solaredge.js';
@@ -550,30 +551,46 @@ function skelett() {
       <div id="vTabelle"></div>
     </div>
 
-    <!-- N139 — die Anlage wurde einmal gekauft, nicht jedes Jahr neu.
-         Diese Angaben gelten für alle Jahre und ändern sich oben nicht mit. -->
+    <!-- N139/N425 — die Anlage wurde einmal gekauft, nicht jedes Jahr neu.
+         Diese Angaben gelten für alle Jahre und ändern sich oben nicht mit.
+         Dieselbe Anzeigeform wie die Stammdaten jedes Objekts (.sekopf/.paare,
+         immo.css): eine ruhige, lesbare Liste statt dauerhaft offener
+         Eingabefelder — bearbeitet wird über den eigenen Dialog. -->
     <div class="karte eng">
-      <div class="hh"><h3>Stammdaten der Anlage</h3></div>
+      <div class="sekopf">
+        <span class="seikon">${kostenIcon('Strom')}</span>
+        <div class="setxt"><h2 class="sec">Stammdaten der Anlage</h2></div>
+        <button type="button" data-stamm-bearbeiten>Bearbeiten</button>
+      </div>
       <p class="hint">Gelten für alle Jahre — die Jahresauswahl oben ändert
         hier nichts.</p>
-      <div class="raster">
-        ${F_STAMM.map(f => feldHtml(...f, 'stamm')).join('')}
-        ${datumHtml('inbetriebnahme', 'Inbetriebnahme')}
-      </div>
+      <div class="paare" id="pvStammAnzeige"></div>
 
       <!-- N153 — der Startbetrag der Amortisation, aufgeschlüsselt nach
-           denselben Quellen wie die Jahre danach. -->
+           denselben Quellen wie die Jahre danach. Die Aufteilung selbst
+           pflegt man im Bearbeiten-Dialog; hier steht nur das Ergebnis. -->
       <div class="vorlauf">
         <div class="vk">
           <span class="vt">Bereits abgetragen</span>
           <span class="vs" id="vorlaufSumme">—</span>
         </div>
         <p class="vz" id="vorlaufZeit"></p>
+        <p class="vf" id="vorlaufFuss"></p>
+      </div>
+
+      <dialog id="pvStammDlg" class="immo-dlg">
+        <div class="dt">Stammdaten der Anlage</div>
+        <div class="raster">
+          ${F_STAMM.map(f => feldHtml(...f, 'stamm')).join('')}
+          ${datumHtml('inbetriebnahme', 'Inbetriebnahme')}
+        </div>
+        <p class="hint">Was die Anlage vor der ersten Abrechnung eingebracht
+          hat, nach denselben Quellen wie die Jahre danach — leer lassen, wenn
+          sie vorher noch nichts eingebracht hat.</p>
         <div class="vraster">
           ${F_VORLAUF.map(f => feldHtml(...f, 'stamm')).join('')}
         </div>
-        <p class="vf" id="vorlaufFuss"></p>
-      </div>
+      </dialog>
     </div>
 
     <div class="karte">
@@ -675,6 +692,19 @@ async function laden() {
     el.addEventListener('input', angestossen));
   inhalt.querySelectorAll('input[data-stamm],input[data-stammdatum]').forEach(el =>
     el.addEventListener('input', stammAngestossen));
+  // N425 — der Bearbeiten-Dialog der Stammdaten: er entsteht dynamisch (über
+  // `inhalt.innerHTML`) NACH dem `DOMContentLoaded`-Durchlauf, der sonst jedem
+  // <dialog> sein Kreuz mitgibt (`immo.js dialogeNachruesten`) — hier deshalb
+  // von Hand. Bleibt ein Kind von `inhalt`, damit `stammAusForm`/`stammFuellen`
+  // seine Felder wie gehabt über `inhalt.querySelectorAll` finden.
+  const stammDlg = document.getElementById('pvStammDlg');
+  if (stammDlg) {
+    kreuzAnbringen(stammDlg);
+    document.querySelector('[data-stamm-bearbeiten]')
+      ?.addEventListener('click', () => stammDlg.showModal());
+    stammDlg.addEventListener('click', e => { if (e.target === stammDlg) stammDlg.close(); });
+    stammDlg.addEventListener('close', stammAnsichtZeigen);
+  }
   const link = document.getElementById('tankLink');
   if (link) link.href = `tankstelle.html?objekt=${encodeURIComponent(S.objektSlug)}`;
 
@@ -693,6 +723,7 @@ async function laden() {
   S.stammStand = stamm;
   formFuellen(werte);
   stammFuellen(stamm);
+  stammAnsichtZeigen();
   vorlaufZeigen();
   seBildZeigen();               // ein schon gelesener Beleg bleibt sichtbar
   await pvAnteileLaden();
