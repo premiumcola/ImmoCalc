@@ -21,6 +21,7 @@ from sqlmodel import Session, select
 from . import verteilung, waermesim
 from .ablesung import verbrauch_je_zaehler, verbrauchsreihe
 from .einheitenzuordnung import karte as einheiten_karte
+from .engine import verteile_nach_wert
 from .einheitenzuordnung import parse_einheiten, schluessel
 from .models import Ablesung, Einheit, Miete, Objekt, Partei, Zaehler, Zeitraum
 from .routers.heizoel import bewertung as _heizoel_bewertung
@@ -142,6 +143,69 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
     return list(lanes.values()), unzugeordnet
 
 
+def _vergleichswert(zeile: dict) -> float | None:
+    """Der Wert, mit dem ein Zähler INNERHALB seiner Art vergleichbar ist.
+
+    Ein Wärmemengenzähler misst kWh direkt. Ein Heizkörper-Verteiler zählt
+    Rohpunkte, die erst mal seinem Bewertungsfaktor mit einem anderen
+    Heizkörper vergleichbar sind — genau der Schritt, den die Abrechnung
+    „Punkte × Faktor" nennt. `None`, wenn der Wert (noch) fehlt."""
+    if zeile.get("verbrauch") is None:
+        return None
+    faktor = zeile.get("bewertungsfaktor")
+    ist_gemessen = zeile.get("messeinheit") in ("kWh", "m³")
+    if ist_gemessen or not faktor:
+        return zeile["verbrauch"]
+    return zeile["verbrauch"] * faktor
+
+
+def _zaehler_art(zeile: dict) -> str:
+    """'kwh' (Wärmemengenzähler), 'hkv' (Heizkörper-Verteiler) oder 'm3'."""
+    if zeile.get("messeinheit") == "kWh":
+        return "kwh"
+    if zeile.get("messeinheit") == "m³":
+        return "m3"
+    return "hkv"
+
+
+def _zaehler_aufschluesseln(zeilen: list[dict], kosten_eigen: dict[str, float],
+                            preis_je_liter: float | None) -> None:
+    """N429 — den Weg vom Zählwert bis zu Euro und Liter Öl je Zähler, in
+    place ergänzt (`bewertet`, `anteil_pct`, `eur`, `liter`).
+
+    Die Kosten einer Kostenart werden auf ihre Zähler verteilt, proportional
+    zum Vergleichswert — dieselbe Logik, mit der die Engine die Kosten auf die
+    Einheiten verteilt hat, nur eine Ebene feiner. Kein neuer Rechenweg: die
+    Summe über alle Zähler einer Kostenart ergibt exakt deren `kosten_eigen`.
+
+    **Nicht** aufgeschlüsselt wird, wenn eine Kostenart Zähler VERSCHIEDENER
+    Art trägt (ein Wärmemengenzähler in kWh neben Heizkörper-Punkten): die
+    beiden Maße sind nicht ineinander umrechenbar, ein gemeinsamer Anteil wäre
+    erfunden. Dann bleiben `eur`/`liter` leer und die PDF sagt es."""
+    for kostenart, betrag in (kosten_eigen or {}).items():
+        gruppe = [z for z in zeilen if z.get("kostenart") == kostenart]
+        if not gruppe or not betrag:
+            continue
+        for z in gruppe:
+            z["bewertet"] = _vergleichswert(z)
+        if len({_zaehler_art(z) for z in gruppe}) > 1:
+            continue                     # unvergleichbare Maße — nichts erfinden
+        summe = sum(z["bewertet"] or 0 for z in gruppe)
+        if summe <= 0:
+            continue
+        # Cent-genau über dieselbe Engine-Funktion wie jede andere Verteilung
+        # (Größte-Reste-Verfahren): die Summe der Zeilen ergibt EXAKT den
+        # Betrag der Kostenart. Von Hand gerundet fehlte sonst ein Cent —
+        # und genau da schaut ein Mieter hin (siehe `verteile_nach_wert`).
+        anteile = {str(i): (z["bewertet"] or 0) for i, z in enumerate(gruppe)}
+        verteilt = verteile_nach_wert(betrag, anteile)
+        for i, z in enumerate(gruppe):
+            z["anteil_pct"] = round((z["bewertet"] or 0) / summe * 100, 1)
+            z["eur"] = verteilt[str(i)]
+            if preis_je_liter:
+                z["liter"] = round(z["eur"] / preis_je_liter, 1)
+
+
 def nachweis_fuer_einheit(session: Session, z: Zeitraum, einheit_bezeichnung: str,
                           partei: str, positionen: list[dict] | None) -> dict | None:
     """Der Heizkosten-Nachweis für EINE Einheit (Seite 2 der Abrechnungs-PDF,
@@ -233,6 +297,8 @@ def nachweis_fuer_einheit(session: Session, z: Zeitraum, einheit_bezeichnung: st
             if summe_eigen:
                 oel_liter_eigen = round(
                     summe_eigen / b["verbrauch_kosten"] * b["verbrauch_liter"], 1)
+
+    _zaehler_aufschluesseln(zaehler_zeilen, kosten_eigen, oel_preis_je_liter)
 
     return {
         "zaehler": zaehler_zeilen,

@@ -334,6 +334,58 @@ def test_nachweis_fuer_einheit_liest_liter_aus_der_echten_oel_bewertung():
         assert nachweis["oel_liter_eigen"] == round(800 / 900 * 1000, 1)
 
 
+def test_zaehler_aufschluesseln_fuehrt_vom_zaehlwert_bis_zu_litern():
+    """N429 — Nutzer: „wie aus den Zählwerten der Liter-Öl-Wert für jeden
+    einzelnen Heizkörper wird, geht hier noch nicht hervor". Je Zähler
+    entstehen jetzt `bewertet` (Punkte × Faktor), `anteil_pct`, `eur` und
+    `liter` — und die €-Summe der Zeilen ergibt EXAKT den Betrag der
+    Kostenart (Größte-Reste-Verfahren aus `engine.verteile_nach_wert`)."""
+    from app.heizkosten import _zaehler_aufschluesseln
+
+    zeilen = [
+        {"name": "Bad", "kostenart": "Heizung", "messeinheit": "Einheiten",
+         "bewertungsfaktor": 1.32, "verbrauch": 385.0},
+        {"name": "Küche", "kostenart": "Heizung", "messeinheit": "Einheiten",
+         "bewertungsfaktor": 2.41, "verbrauch": 139.0},
+        {"name": "Ankleide", "kostenart": "Heizung", "messeinheit": "Einheiten",
+         "bewertungsfaktor": 1.19, "verbrauch": 0.0},
+    ]
+    _zaehler_aufschluesseln(zeilen, {"Heizung": 536.07}, preis_je_liter=0.9065)
+
+    bad, kueche, ankleide = zeilen
+    assert bad["bewertet"] == 385.0 * 1.32          # Punkte × Faktor
+    assert kueche["bewertet"] == 139.0 * 2.41
+    # Cent-genau: die Summe ist exakt der Betrag, kein verlorener Cent.
+    assert round(sum(z["eur"] for z in zeilen), 2) == 536.07
+    # Ein Heizkörper ohne Ablesewert kostet nichts.
+    assert ankleide["eur"] == 0.0 and ankleide["anteil_pct"] == 0.0
+    # Liter = Kosten ÷ Ø-Einkaufspreis.
+    assert bad["liter"] == round(bad["eur"] / 0.9065, 1)
+    assert round(bad["anteil_pct"] + kueche["anteil_pct"], 1) == 100.0
+
+
+def test_zaehler_aufschluesseln_mischt_keine_unvergleichbaren_masze():
+    """kWh und Heizkörper-Punkte lassen sich nicht ineinander umrechnen — ein
+    gemeinsamer Anteil wäre erfunden. Dann bleiben `eur`/`liter` leer, statt
+    eine Zahl zu behaupten (die PDF zeigt dort „–")."""
+    from app.heizkosten import _zaehler_aufschluesseln
+
+    zeilen = [
+        {"name": "WMZ", "kostenart": "Heizung", "messeinheit": "kWh",
+         "bewertungsfaktor": None, "verbrauch": 800.0},
+        {"name": "Heizkörper", "kostenart": "Heizung",
+         "messeinheit": "Einheiten", "bewertungsfaktor": 1.5,
+         "verbrauch": 200.0},
+    ]
+    _zaehler_aufschluesseln(zeilen, {"Heizung": 500.0}, preis_je_liter=0.9)
+
+    assert all("eur" not in z for z in zeilen)
+    assert all("liter" not in z for z in zeilen)
+    # Der bewertete Wert steht trotzdem — er ist je Zähler für sich richtig.
+    assert zeilen[0]["bewertet"] == 800.0
+    assert zeilen[1]["bewertet"] == 300.0
+
+
 def test_rechnen_endpunkt_liefert_heizkosten_je_einheit():
     """End-to-End über die API: `heizwert`/`liter`/`eur` wie am Beleg, die
     Verbrauchs-Gewichte kommen aus den echten Zählern."""

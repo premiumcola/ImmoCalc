@@ -487,6 +487,44 @@ def _seite_zwei(kasten_titel: str, zeitraum: str, jahr: str,
     return blatt
 
 
+def _rechenbeispiel(blatt: Blatt, links: float, rechts: float, breite: float,
+                    y: float, zeilen: list[dict], preis: float | None) -> float:
+    """N429 — der Weg an EINEM echten Heizkörper vorgerechnet.
+
+    „Wie aus den Zählwerten der Liter-Öl-Wert für jeden einzelnen Heizkörper
+    wird, geht hier noch nicht hervor" — genau diese Kette steht jetzt Schritt
+    für Schritt da, mit den Zahlen des größten eigenen Heizkörpers (der ist am
+    ehesten wiederzuerkennen). Fehlt eine Zutat, entfällt der Block still —
+    die Tabelle darunter trägt die Zahlen ohnehin."""
+    kandidaten = [z for z in zeilen
+                  if z.get("bewertungsfaktor") and z.get("eur") is not None
+                  and z.get("anteil_pct") and z.get("verbrauch")]
+    if not kandidaten or not preis:
+        return y
+    z = max(kandidaten, key=lambda k: k["eur"])
+    schritte = [
+        (f"{_zahl(z['verbrauch'], )} Punkte abgelesen".replace(",00", ""),
+         f"am Zähler {z['name']}"),
+        (f"× {_zahl(z['bewertungsfaktor'])} = {_zahl(z['bewertet'])} bewertete Einheiten",
+         "Bewertungsfaktor dieses Heizkörpers"),
+        (f"= {geschrieben(z['anteil_pct'], 1)} % Ihrer Heizwärme "
+         f"= {_zahl(z['eur'])} €", "Anteil an Ihren Heizkosten"),
+        (f"÷ {geschrieben(preis, 2)} €/Liter = {geschrieben(z['liter'], 1)} Liter Öl",
+         "zum Ø-Einkaufspreis dieses Zeitraums"),
+    ]
+    hoehe = 16 + len(schritte) * 22 + 8
+    blatt.flaeche(links, y - hoehe + 8, breite, hoehe, _mische(WEISS, TEAL, 0.05), 10)
+    y -= 6
+    blatt.text(links + 12, y, "Beispiel: so entsteht ein Heizkörper-Wert",
+               9.5, True, INK)
+    y -= 18
+    for satz, erklaerung in schritte:
+        blatt.text(links + 12, y, satz, 9.5, False, INK)
+        blatt.text_rechts(rechts - 12, y, erklaerung, 8, False, MATT)
+        y -= 22
+    return y - 6
+
+
 def _heizkosten_nachweis(blatt: Blatt, links: float, rechts: float,
                          breite: float, y: float, zeitraum: str,
                          nachweis: dict) -> float:
@@ -496,30 +534,46 @@ def _heizkosten_nachweis(blatt: Blatt, links: float, rechts: float,
                "die Gesamtsumme aller Einheiten", 9.5, False, MATT)
     y -= 22
 
-    # N423 — der Rechenweg in zwei Sätzen: ein Wärmemengenzähler misst die
-    # Wärme direkt (kWh), ein Heizkörper-Verteiler nur einen Rohwert, der
-    # erst mit seinem Bewertungsfaktor vergleichbar wird. Danach entscheidet
-    # der eigene Anteil an allen Zählern des Hauses über den Kostenanteil.
+    # N423/N429 — der Rechenweg: erst allgemein in zwei Sätzen, dann an
+    # EINEM echten Heizkörper vorgerechnet. Der Nutzer sah zwar die
+    # bewerteten Einheiten, aber nicht, wie daraus Euro und Liter Öl werden.
     rechenweg = ("So wird gerechnet: Ein Wärmemengenzähler misst die "
                 "verbrauchte Wärme direkt in kWh. Ein Heizkörper-Verteiler "
                 "zeigt nur einen Rohwert — erst der Ablesewert mal seinem "
                 "Bewertungsfaktor macht ihn mit anderen Heizkörpern "
                 "vergleichbar. Ihr Anteil an der Summe aller Zähler im Haus "
-                "bestimmt dann Ihren Anteil an den Heizölkosten.")
+                "bestimmt Ihren Anteil an den Heizölkosten; geteilt durch den "
+                "Einkaufspreis ergibt das die Liter Öl.")
     for zeile in _umbruch(rechenweg, breite, 9):
         blatt.text(links, y, zeile, 9, False, MATT)
         y -= 12.5
-    y -= 14
+    y -= 6
+
+    zeilen = nachweis.get("zaehler") or []
+    preis = nachweis.get("oel_preis_je_liter")
+    y = _rechenbeispiel(blatt, links, rechts, breite, y, zeilen, preis)
 
     # ---- Zählertabelle
-    zeilen = nachweis.get("zaehler") or []
     if zeilen:
-        breiten = [breite * a for a in (0.34, 0.14, 0.17, 0.17, 0.18)]
+        # N429 — Anfangs-/Endstand haben ihre eigenen Spalten verloren: bei
+        # Heizkörper-Verteilern sind sie prinzipbedingt leer (gezählt werden
+        # Punkte, kein fortlaufender Stand), und bei zehn Heizkörpern klaffte
+        # dadurch mitten in der Tabelle eine leere Fläche. Wo es echte Stände
+        # gibt (Wärmemengen-/Warmwasserzähler), stehen sie als Unterzeile am
+        # Namen — dort, wo auch die Punkte-mal-Faktor-Rechnung steht.
+        breiten = [breite * a for a in (0.40, 0.15, 0.12, 0.15, 0.18)]
         kanten = [sum(breiten[:i + 1]) for i in range(len(breiten))]
+        if preis:
+            # Der Preis, mit dem die „Liter Öl"-Spalte gerechnet ist — direkt
+            # über der Tabelle, damit die Spalte nicht aus dem Nichts kommt.
+            y -= 4
+            blatt.text_rechts(rechts, y + 15,
+                              f"Ø-Einkaufspreis {geschrieben(preis, 2)} €/Liter",
+                              8, False, MATT)
         _tabellenkopf(blatt, links, y, [
-            ("Zähler", 0, "l"), ("Nummer", kanten[0], "l"),
-            ("Anfangsstand", kanten[2], "r"), ("Endstand", kanten[3], "r"),
-            ("Verbrauch", kanten[4], "r")])
+            ("Zähler", 0, "l"), ("Bewertet", kanten[1], "r"),
+            ("Anteil", kanten[2], "r"), ("Liter Öl", kanten[3], "r"),
+            ("Kosten", kanten[4], "r")])
         y -= 22
 
         for z in zeilen:
@@ -527,32 +581,44 @@ def _heizkosten_nachweis(blatt: Blatt, links: float, rechts: float,
             ist_wmz = z.get("messeinheit") == "kWh"
             einheit = "m³" if ist_ww else ("kWh" if ist_wmz else "Punkte")
             nachkomma = 3 if ist_ww else (1 if ist_wmz else 0)
-            blatt.text(links + 6, y, z["name"], 9.5, False, INK)
-            blatt.text(links + kanten[0] + 6, y, z.get("nummer") or "–", 9,
-                      False, MATT)
-            blatt.text_rechts(links + kanten[2] - 6, y,
-                              _fehlt(z.get("start"), nachkomma), 9, False, MATT)
-            blatt.text_rechts(links + kanten[3] - 6, y,
-                              _fehlt(z.get("ende"), nachkomma), 9, False, MATT)
-            # Ein Heizkörper-Verteiler zählt mit seinem BEWERTETEN Wert — der
-            # steht in der Spalte. Die Rechnung dahinter („Rohwert × Faktor")
-            # als kleine Unterzeile am Namen: in der Betragsspalte lief sie
-            # sonst in die Endstand-Spalte hinein (N423, live gesehen).
-            hkv = (not ist_ww and not ist_wmz and z.get("bewertungsfaktor")
-                   and z.get("verbrauch") is not None)
-            if hkv:
-                bewertet = z["verbrauch"] * z["bewertungsfaktor"]
-                blatt.text_rechts(rechts - 6, y, _zahl(bewertet), 9, True, INK)
-                blatt.text(links + 6, y - 11,
-                          f"{geschrieben(z['verbrauch'], nachkomma)} {einheit}"
-                          f" × {_zahl(z['bewertungsfaktor'])} (Bewertungsfaktor)",
-                          8, False, MATT)
-                y -= 11
+            name = z["name"]
+            if z.get("nummer"):
+                name = f"{name}  ·  Nr. {z['nummer']}"
+            blatt.text(links + 6, y, _kuerzen(name, kanten[1] - 14, 9.5),
+                      9.5, False, INK)
+            # Die Herleitung des bewerteten Werts als ruhige Unterzeile: bei
+            # einem Heizkörper „Punkte × Faktor", bei einem echten Zähler der
+            # Sprung vom Anfangs- auf den Endstand.
+            faktor = z.get("bewertungsfaktor")
+            if not ist_ww and not ist_wmz and faktor and z.get("verbrauch") is not None:
+                unter = (f"{geschrieben(z['verbrauch'], nachkomma)} {einheit}"
+                        f" × {_zahl(faktor)} (Bewertungsfaktor)")
+            elif z.get("start") is not None and z.get("ende") is not None:
+                # Kein „→": WinAnsi/cp1252 kennt den Pfeil nicht, er käme als
+                # „?" heraus (dieselbe Falle, die `test_gedankenstrich…`
+                # bewacht). Ausgeschrieben ist es ohnehin verständlicher.
+                unter = (f"Anfangsstand {geschrieben(z['start'], nachkomma)} · "
+                        f"Endstand {geschrieben(z['ende'], nachkomma)} {einheit}")
             else:
-                blatt.text_rechts(rechts - 6, y,
-                                  _fehlt(z.get("verbrauch"), nachkomma,
-                                         einheit=einheit), 9, True, INK)
-            y -= 22
+                unter = ""
+            if unter:
+                blatt.text(links + 6, y - 11, unter, 8, False, MATT)
+
+            bewertet = z.get("bewertet")
+            blatt.text_rechts(links + kanten[1] - 6, y,
+                              _fehlt(bewertet, nachkomma), 9, True, INK)
+            blatt.text_rechts(links + kanten[2] - 6, y,
+                              geschrieben(z["anteil_pct"], 1, einheit="%")
+                              if z.get("anteil_pct") is not None else "–",
+                              9, False, MATT)
+            blatt.text_rechts(links + kanten[3] - 6, y,
+                              geschrieben(z["liter"], 1)
+                              if z.get("liter") is not None else "–",
+                              9, False, MATT)
+            blatt.text_rechts(rechts - 6, y,
+                              f"{_zahl(z['eur'])} €" if z.get("eur") is not None
+                              else "–", 9, True, INK)
+            y -= 22 + (11 if unter else 0)
         y -= 8
         blatt.strich(links, rechts, y, 0.8, LINIE)
         y -= 24
