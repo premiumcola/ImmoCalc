@@ -1610,9 +1610,19 @@
     .karte-breit .wd-tabelle{margin-left:-16px;margin-right:-16px;
       max-width:none;border-radius:0;border-left:none;border-right:none}
     /* Mehr Spalten ins Bild: engere Zellen und eine schmalere, weiterhin
-       stehenbleibende erste Spalte. */
+       stehenbleibende erste Spalte.
+       N430 — die schmalere erste Spalte gilt AUSDRÜCKLICH NICHT für die
+       Kosten-Matrix: die führt ihre Kostenarten einzeilig (`white-space:
+       nowrap`, N410 — „Gebäudeversicherung"/„Niederschlagswasser" sind
+       Komposita ohne Bruchstelle und rissen sonst mitten im Wort). Auf 104 px
+       gezwungen, aber weiterhin einzeilig, lief der Name aus der Zelle heraus
+       und überschrieb die erste Wertespalte (Nutzer: „die Texte vorne
+       überschneiden"). Beide Regeln hatten dieselbe Spezifität — meine stand
+       nur später und gewann. Die Matrix behält deshalb ihre eigene Breite;
+       durch den Vollbreit-Ausbruch ist dafür genug Platz da. */
     .karte-breit .wd-tab th,.karte-breit .wd-tab td{padding:8px 7px}
-    .karte-breit .wd-tab th.wd-rowh,.karte-breit .wd-tab td.wd-rowh{
+    .karte-breit .wd-tab:not(.mx-tab) th.wd-rowh,
+    .karte-breit .wd-tab:not(.mx-tab) td.wd-rowh{
       width:104px;min-width:104px;max-width:104px}
     .karte-breit .wd-tab thead th{min-width:70px}
   }
