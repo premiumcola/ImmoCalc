@@ -25,6 +25,21 @@ def test_api_end_to_end():
         assert any("Grundsteuer" in g.get("offen", []) for g in gesamt_list)
 
 
+def test_status_vertrag_der_plexdice_migration():
+    """Status-Vertrag: /healthz prüft die DB wirklich (200), /status liefert
+    app/version/last_run/last_result/next_run fürs Monitoring-Label."""
+    with TestClient(app) as c:
+        antwort = c.get("/healthz")
+        assert antwort.status_code == 200
+        assert antwort.json()["status"] == "ok"
+
+        status = c.get("/status").json()
+        assert status["app"] == "immocalc-api"
+        assert status["version"]
+        for feld in ("last_run", "last_result", "next_run"):
+            assert feld in status
+
+
 def test_objektliste_nennt_die_einheiten():
     """CXLV — die Startseite zeigt Bubbles je Einheit, also muss die Liste
     die Einheiten mitliefern. `einheiten` bleibt daneben die Anzahl."""

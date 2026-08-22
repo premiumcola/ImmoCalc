@@ -12,6 +12,29 @@ Nebenkosten-/Betriebskostenabrechnung. Monorepo im jFlow-Stil: ein Build-Context
 Frontend-Änderung ist ohne Rebuild sofort auf der Seite. Nur Änderungen an
 API-Code, Dockerfiles, nginx-Config oder Compose brauchen `./deploy.sh`.
 
+## Migration auf das plexdice-Muster (läuft)
+
+ImmoCalc ist die Referenz für eine einheitliche Deploy-Kette: ein Repo → GitHub
+Actions baut nach jedem Push (und nächtlich) beide Images → `ghcr.io` →
+Watchtower rollt sie auf dem Unraid selbstständig aus. Auf dem Server wird
+dann nicht mehr gebaut, nur noch `image:` gezogen — siehe **MIGRATION.md**.
+
+**Bis zum Umschalten** ist der unten beschriebene Ablauf (`build:`,
+`./public`-Bind-Mount) weiter die aktive, laufende Version — nichts davon
+ändert sich, bevor die neuen Images geprüft sind.
+
+**Dev-Schleife danach:** das Frontend steckt dann im Dashboard-Image
+(`services/dashboard/Dockerfile` kopiert `public/` hinein), nicht mehr im
+laufenden Arbeitsordner. Für sofort wirksame Änderungen beim Entwickeln:
+
+```
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose -f docker-compose.ghcr.yml -f docker-compose.override.yml up -d
+```
+
+`docker-compose.override.yml` ist in `.gitignore` — sie bleibt lokal und
+gelangt nie per `git pull` auf den Server.
+
 ## Was die App kann
 
 - **Objekte** — Kacheln mit Frist und offenen Belegen; auf der Objektseite

@@ -1,0 +1,65 @@
+# =============================================================================
+# ImmoCalc — Ziel-Orchestrierung (plexdice-Muster: image:, kein build:)
+#
+# NICHT die aktive Datei. Solange dieser Kommentar hier steht, ist
+# docker-compose.yml (mit build:) die live genutzte Datei — siehe MIGRATION.md
+# für den Umschalt-Ablauf. Diese Datei wird erst zu docker-compose.yml, wenn
+# die GHCR-Images bestaetigt vorhanden sind (github.com/premiumcola/ImmoCalc
+# → Actions → Build & Push → grün, dann Packages-Tab prüfen).
+#
+# Watchtower rollt neue Images selbststaendig aus (Label unten). Auf dem
+# Unraid wird hier nichts mehr gebaut — nur images:, gezogen aus ghcr.io.
+# =============================================================================
+
+x-common-labels: &common-labels
+  net.unraid.docker.shell: "/bin/sh"
+  net.unraid.docker.managed: "composeman"
+  com.centurylinklabs.watchtower.enable: "true"
+  net.premiumcola.status: "http://immocalc-api:8000/status"
+
+services:
+
+  api:
+    image: ghcr.io/premiumcola/immocalc-api:latest
+    container_name: immocalc-api
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      PUID: ${PUID:-99}
+      PGID: ${PGID:-100}
+      DB_PATH: /data/immocalc.db
+      # KI-Beleg-Auslese (CCLXVIII) — optional. Ohne Key stumm.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      # N264 — Druckdienst (CUPS) im Haus. Leer = keine Druckknoepfe.
+      DRUCKDIENST: ${DRUCKDIENST:-192.168.178.10:631}
+    labels:
+      <<: *common-labels
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/premiumcola/ImmoCalc/main/assets/icon-api-512.png"
+    volumes:
+      # Neuer Pfad (ohne "-live") — siehe MIGRATION.md fuer die Datenuebernahme.
+      # Bis zur Migration hier bewusst ueberschreibbar per .env (DATA_DIR).
+      - ${DATA_DIR:-/mnt/user/appdata/immocalc/data}:/data
+
+  dashboard:
+    image: ghcr.io/premiumcola/immocalc-dashboard:latest
+    container_name: immocalc-dashboard
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      PUID: ${PUID:-99}
+      PGID: ${PGID:-100}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_UPSTREAM: api:8000
+    labels:
+      <<: *common-labels
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/premiumcola/ImmoCalc/main/assets/icon-512.png"
+      net.unraid.docker.webui: "http://[IP]:[PORT:8091]/"
+    ports:
+      - "${DASHBOARD_PORT:-8091}:80"
+    # KEIN ./public-Mount mehr — der Inhalt steckt im Image (services/dashboard/Dockerfile).
+    # Fuer sofort wirksame Frontend-Aenderungen beim Entwickeln:
+    # docker-compose.override.yml.example → lokal kopieren, siehe README.md.
+
+volumes: {}

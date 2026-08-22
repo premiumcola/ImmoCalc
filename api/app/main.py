@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import SQLModel
 
+from sqlalchemy import text
+
 from . import wachdienst
 from .db import engine
 from .engine import NegativesGewicht
@@ -146,6 +148,41 @@ def _build_zeit() -> str:
 def health() -> dict:
     return {"status": "ok", "service": "immocalc-api",
             "version": app.version, "build": _build(), "build_zeit": _build_zeit()}
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    """Status-Vertrag der plexdice-Migration: 200 nur, wenn die Datenbank
+    tatsächlich erreichbar ist — anders als /api/health (reine Lebensmeldung),
+    das auch bei kaputter DB antwortet. Für den Docker-HEALTHCHECK gedacht."""
+    try:
+        with engine.connect() as verbindung:
+            verbindung.execute(text("SELECT 1"))
+    except Exception as fehler:
+        log.warning("Healthcheck: Datenbank nicht erreichbar: %s", fehler)
+        return JSONResponse(status_code=503, content={"status": "error"})
+    return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/status")
+def status() -> dict:
+    """Status-Vertrag der plexdice-Migration: app/version/letzter und
+    naechster Wachdienst-Lauf — fuer Monitoring/Unraid-Label, nicht fuer die
+    App selbst (die liest wachdienst.zustand() direkt)."""
+    from datetime import datetime, timedelta  # noqa: PLC0415
+
+    zustand = wachdienst.zustand()
+    letzter_lauf = zustand["letzter_lauf"]
+    naechster_lauf = None
+    if letzter_lauf:
+        naechster_lauf = (datetime.fromisoformat(letzter_lauf)
+                           + timedelta(seconds=wachdienst.TAKT_SEKUNDEN)).isoformat()
+    letztes_ergebnis = None
+    if letzter_lauf:
+        letztes_ergebnis = "error" if zustand["letzter_fehler"] else "ok"
+    return {"app": "immocalc-api", "version": _build() or app.version,
+            "last_run": letzter_lauf, "last_result": letztes_ergebnis,
+            "next_run": naechster_lauf}
 
 
 @app.get("/")

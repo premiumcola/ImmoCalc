@@ -1,0 +1,71 @@
+name: Build & Push
+
+# plexdice-Muster: baut beide Services, pusht nach GHCR. Watchtower auf dem
+# Unraid pollt GHCR und rollt neue Images selbststaendig aus — hier wird
+# nirgends auf den Server deployt.
+#
+# schedule (nightly): baut mit --pull neu, auch OHNE Code-Aenderung. Aendert
+# sich das Basis-Image (python:3.12-slim, nginx:1.27-alpine) oder ein
+# apt-Paket, entsteht ein neuer Digest -> Watchtower rollt ihn aus. Ohne
+# diesen Trigger bliebe das Basis-Image fuer immer auf dem Stand des
+# letzten Code-Pushs, selbst wenn Renovate die FROM-Zeile nie anhebt (die
+# Tags sind schon "3.12-slim" / "1.27-alpine", darunter aendert sich nur
+# das Digest der Distro-Pakete).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+
+env:
+  REGISTRY: ghcr.io
+  # GHCR verlangt kleingeschriebene Image-Namen.
+  IMAGE_OWNER: premiumcola
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [api, dashboard]
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/immocalc-${{ matrix.service }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=schedule,pattern=nightly
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          # --pull: zieht FROM-Basis-Images immer frisch, statt den lokalen
+          # Runner-Cache zu nehmen — sonst greift der nightly-Trigger ins Leere.
+          pull: true
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ steps.sha.outputs.short }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

@@ -2,6 +2,11 @@
 .env
 *.env.local
 
+# Lokale Entwicklungsschleife (Live-Mount statt Image-Inhalt) — siehe
+# docker-compose.override.yml.example. Darf NIE per git pull auf den Server
+# gelangen, sonst ueberschreibt sie dort wieder das versionierte Image.
+docker-compose.override.yml
+
 # --- Laufzeit-/Nutzerdaten: echte Mieter-/Objektdaten, DB, Belege ---
 # (liegen standardmäßig AUSSERHALB des Repos unter appdata/immocalc-live|-dev,
 #  hier zusätzlich als Sicherheitsnetz falls jemand im Repo-Baum arbeitet)

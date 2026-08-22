@@ -1,0 +1,16 @@
+# Nur fuers Entwickeln. Ersetzt im GHCR-Image (docker-compose.ghcr.yml) den
+# statischen Frontend-Inhalt wieder durch einen Live-Mount, damit Aenderungen
+# an public/ sofort wirken — ohne Rebuild/Repush.
+#
+# Einrichtung (lokal, NICHT auf dem Server):
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   docker compose -f docker-compose.ghcr.yml -f docker-compose.override.yml up -d
+#
+# docker-compose.override.yml ist bewusst in .gitignore (siehe README.md) —
+# so kann sie nie versehentlich via git pull auf den Server gelangen und dort
+# das versionierte Image wieder durch den Arbeitsordner ueberschreiben.
+
+services:
+  dashboard:
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
