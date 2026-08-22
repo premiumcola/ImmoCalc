@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- N431 — dieselbe Haus-Kontur wie icon.svg (Variante C „Modern-Linie"),
+       damit API und Dashboard als Geschwister erkennbar bleiben. Die Tür wird
+       durch ein API-Schildchen ersetzt: der API-Container hat keine echte
+       Tür (keinen veröffentlichten Port, kein UI) — das Schildchen sagt,
+       dass hier trotzdem etwas läuft, nur ohne eigenen Eingang. -->
+  <rect width="512" height="512" rx="112" fill="#EEF1F0"/>
+  <path d="M128 248 256 138 384 248" fill="none" stroke="#16262C"
+        stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M152 232 V 392 H 360 V 232" fill="none" stroke="#16262C"
+        stroke-width="20" stroke-linejoin="round"/>
+  <rect x="180" y="286" width="152" height="56" rx="14" fill="#0F6E5C"/>
+  <text x="256" y="325" font-family="'IBM Plex Mono',ui-monospace,monospace"
+        font-size="30" font-weight="700" fill="#EEF1F0"
+        text-anchor="middle" letter-spacing="2">API</text>
+</svg>

@@ -29,6 +29,14 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       # N264 — Druckdienst (CUPS) im Haus. Leer = keine Druckknoepfe.
       DRUCKDIENST: ${DRUCKDIENST:-192.168.178.10:631}
+    labels:
+      # N431 — eigenes Icon fuer die Docker-Liste: dieselbe Haus-Kontur wie
+      # das Dashboard, aber mit einem API-Schildchen statt der Tuer (der
+      # Container hat keinen veroeffentlichten Port, also keinen "Eingang").
+      # Ausgeliefert ueber den Dashboard-Container (public/ ist dort gemountet
+      # und ohnehin schon veroeffentlicht) — api selbst braucht dafuer keinen
+      # eigenen Port.
+      net.unraid.docker.icon: "http://192.168.178.10:${DASHBOARD_PORT:-8091}/icons/icon-api-512.png"
     volumes:
       - ${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}:/data
 
