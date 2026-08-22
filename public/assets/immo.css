@@ -44,11 +44,40 @@ body{
      14px Rand + etwas Luft + die sichere Zone. */
   padding-bottom:calc(92px + env(safe-area-inset-bottom));
 }
+/* N433 — auf dem Handy scrollte bisher das ganze Dokument. iOS zieht beim
+   Überziehen (Gummiband) den GESAMTEN Seiteninhalt mit — auch alles, was
+   `position:fixed` ist. Die Menüleiste rutschte dadurch beim weiten
+   Runterziehen unten aus dem Bild (Nutzer: „unten sollte nicht das Menü
+   verschwinden wenn man weit runter zieht"). `position:fixed` schützt nur
+   gegen `sticky`s Stuck-Problem (siehe oben), nicht gegen den Bounce des
+   Dokuments selbst — dagegen hilft nur, das Dokument gar nicht erst scrollen
+   zu lassen.
+   Jetzt gilt auf dem Handy dasselbe Modell wie ab 480px längst: die App ist
+   ein feststehender Rahmen, gescrollt wird INNEN in `.scroll`. Das Dokument
+   bewegt sich nie, Kopfzeile und Menüleiste können also gar nicht mehr
+   mitwandern. Das Gummiband bleibt erhalten — es passiert jetzt im inneren
+   Scrollbereich, genau dort, wo auch das Pull-to-Refresh hängt (siehe `.ptr`).
+   Damit ist die alte Vorgabe „die Seite darf überziehen, nur Kopf und Menü
+   nicht" erstmals wirklich erfüllt statt nur halb.
+   `:has(> .scroll)` grenzt das auf Seiten mit eigenem Scrollbereich ein:
+   onboarding.html hat keinen (scrollt in `.content` und bringt eigene Regeln
+   mit) und behält unverändert das alte Modell samt fixer Kopfzeile. */
 @media(max-width:479px){
+  html:has(.app > .scroll), body:has(.app > .scroll){height:100dvh; overflow:hidden}
+  .app:has(> .scroll){height:100dvh; min-height:0; padding-top:0; padding-bottom:0}
+  .app > .scroll{
+    flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    /* Das Polster für die schwebende Pille + Home-Indikator wandert von `.app`
+       hierher: gescrollt wird jetzt hier, also braucht dieser Bereich es,
+       sonst endet der letzte Text unter der Leiste. */
+    padding-bottom:calc(92px + env(safe-area-inset-bottom));
+  }
   /* Reserviert den Platz, den `.bar` durch `position:fixed` (siehe dort)
      aus dem Fluss herausnimmt — sonst verschwindet der Seitenanfang
-     darunter. 59px = gemessene Höhe der Leiste ohne sichere Zone oben. */
-  .app{padding-top:calc(59px + env(safe-area-inset-top))}
+     darunter. 59px = gemessene Höhe der Leiste ohne sichere Zone oben.
+     Nur noch für Seiten OHNE inneren Scrollbereich; im Rahmenmodell ist die
+     Kopfzeile ein gewöhnliches Flex-Kind und braucht keinen Platzhalter. */
+  .app:not(:has(> .scroll)){padding-top:calc(59px + env(safe-area-inset-top))}
 }
 /* ---- N271: ab Tablet ist die App ein RAHMEN, kein langes Dokument ----
    Bis hierher scrollte die ganze Seite: `.app` wuchs mit dem Inhalt, und die
@@ -88,6 +117,34 @@ body{
   .scroll::-webkit-scrollbar-thumb:hover{background:#A9B4B4; background-clip:padding-box}
 }
 
+/* ---- Pull-to-Refresh ----
+   N433 — Nutzer: „wenn ich weit runter ziehe sollte oben ein Reload-Icon auf
+   Basis vom ImmoCalc-Icon angezeigt werden". Der Indikator wird von
+   `ptrEinrichten()` (immo.js) vor `.scroll` eingehängt und ist selbst
+   höhenlos — er dient nur als Anker genau an der Oberkante des Scrollbereichs.
+   Das Abzeichen startet darüber (`translateY(-56px)`) und liegt mit z-index 15
+   UNTER der Kopfzeile (z-index 20): es kommt beim Ziehen sichtbar hinter der
+   Leiste hervor, wie man es von nativen Apps kennt, statt über ihr zu kleben. */
+.ptr{position:relative; height:0; z-index:15; flex:none}
+.ptr .ptr-kreis{
+  position:absolute; left:50%; top:0; margin-left:-21px;
+  width:42px; height:42px; border-radius:50%;
+  background:var(--sheet); box-shadow:0 8px 18px -8px rgba(22,38,44,.5);
+  display:flex; align-items:center; justify-content:center;
+  transform:translateY(-56px); opacity:0;
+  transition:transform .3s cubic-bezier(.2,.7,.3,1), opacity .2s;
+}
+/* Während der Finger zieht, folgt das Abzeichen dem Zug direkt — eine
+   Übergangszeit würde sich hier wie Gummi anfühlen, nicht wie Ziehen. */
+.ptr .ptr-kreis.zieht{transition:none}
+.ptr .ptr-kreis svg{width:25px; height:25px; display:block}
+.ptr.laeuft .ptr-kreis svg{animation:ptr-dreh .75s linear infinite}
+@keyframes ptr-dreh{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){
+  .ptr.laeuft .ptr-kreis svg{animation:none}
+  .ptr .ptr-kreis{transition:none}
+}
+
 /* ---- Kopfzeile ----
    N327 — der Titel „verschwamm" mit dem Hintergrund (Nutzer-Feedback zum
    ersten Nav-Screenshot): eine hauchdünne Trennlinie setzt die Leiste jetzt
@@ -104,8 +161,15 @@ body{
      oben) und bleibt allein dadurch stehen — dort würde `fixed` nur den
      abgerundeten Kartenrahmen sprengen, deshalb strikt hier drin gehalten,
      NICHT als unbedingte Basisregel (sonst gewinnt sie per Quellreihenfolge
-     gegen jeden früheren `@media`-Override). */
-  .bar{position:fixed; top:0; left:0; right:0}
+     gegen jeden früheren `@media`-Override).
+     N433 — im neuen Rahmenmodell (siehe oben) scrollt das Dokument gar nicht
+     mehr; die Kopfzeile steht dort als gewöhnliches Flex-Kind von selbst und
+     braucht `fixed` nicht. Übrig bleibt es nur für Seiten ohne eigenen
+     Scrollbereich (onboarding.html). Die Einschränkung sitzt bewusst in der
+     Auswahl statt in einer späteren Gegenregel: `.app:not(…) .bar` ist
+     spezifischer als die Basisregel `.bar` weiter unten und gewinnt damit
+     unabhängig von der Quellreihenfolge (Lehre aus N430). */
+  .app:not(:has(> .scroll)) .bar{position:fixed; top:0; left:0; right:0}
 }
 .bar{
   z-index:20; background:var(--sheet);

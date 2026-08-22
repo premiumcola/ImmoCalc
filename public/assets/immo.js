@@ -570,11 +570,106 @@ export function kreuzAnbringen(dlg) {
 function dialogeNachruesten() {
   document.querySelectorAll('dialog').forEach(kreuzAnbringen);
 }
+
+/* N433 — das Neuladen-Zeichen ist das App-Icon selbst: dieselbe Haus-Kontur
+   wie `public/icons/icon.svg` (Dach, Wände, Vollton-Punkt als Tür), umlegt von
+   einem offenen Kreisbogen mit Pfeilspitze. So ist auf den ersten Blick klar,
+   WAS neu geladen wird, statt ein beliebiges Neuladen-Symbol zu zeigen.
+   Der Bogen entsteht über `stroke-dasharray` statt über eine handgerechnete
+   Bogen-Pfadangabe — kürzer und ohne Rundungsfehler an den Enden. */
+const PTR_ICON = `<svg viewBox="0 0 24 24" width="25" height="25" aria-hidden="true">
+  <circle cx="12" cy="12" r="9.3" fill="none" stroke="#0F6E5C" stroke-width="1.7"
+          stroke-linecap="round" stroke-dasharray="43 15" transform="rotate(-58 12 12)"/>
+  <path d="M14.6 2.4 18.6 4.1 16.2 7.5 Z" fill="#0F6E5C"/>
+  <path d="M8.2 12.5 12 9.2 15.8 12.5" fill="none" stroke="#16262C"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M9.1 11.8 V16.2 H14.9 V11.8" fill="none" stroke="#16262C"
+        stroke-width="1.6" stroke-linejoin="round"/>
+  <circle cx="12" cy="14" r="1.2" fill="#0F6E5C"/>
+</svg>`;
+
+// Ab hier löst Loslassen das Neuladen aus; weiter als PTR_MAX folgt das
+// Abzeichen nicht mehr mit (der Zug läuft spürbar aus, statt hart zu stoppen).
+const PTR_SCHWELLE = 68;
+const PTR_MAX = 104;
+
+/* N433 — Zum Aktualisieren nach unten ziehen.
+   Hängt am inneren Scrollbereich, nicht am Dokument: seit dem Rahmenmodell
+   (siehe `.app:has(> .scroll)` in immo.css) scrollt `.scroll` und nicht mehr
+   die Seite. Nur dort greift die Geste auch sauber — `scrollTop === 0` ist
+   die verlässliche Bedingung „wirklich ganz oben".
+   Während des Ziehens wird das native Gummiband für DIESE Geste unterdrückt
+   (`preventDefault`, deshalb ein nicht-passiver Listener) — sonst liefen zwei
+   Bewegungen übereinander. Überall sonst bleibt es erhalten. */
+function ptrEinrichten() {
+  const scroll = document.querySelector('.app > .scroll');
+  if (!scroll || scroll.querySelector('.ptr')) return;
+
+  const anzeige = document.createElement('div');
+  anzeige.className = 'ptr';
+  anzeige.innerHTML = `<div class="ptr-kreis">${PTR_ICON}</div>`;
+  scroll.before(anzeige);
+  const kreis = anzeige.querySelector('.ptr-kreis');
+
+  let startY = 0, zieht = false, weit = 0, laeuft = false;
+
+  const zuruecksetzen = () => {
+    kreis.classList.remove('zieht');
+    kreis.style.transform = '';
+    kreis.style.opacity = '';
+  };
+
+  scroll.addEventListener('touchstart', e => {
+    if (laeuft || e.touches.length !== 1 || scroll.scrollTop > 0) return;
+    startY = e.touches[0].clientY;
+    zieht = true;
+    weit = 0;
+  }, { passive: true });
+
+  scroll.addEventListener('touchmove', e => {
+    if (!zieht || laeuft) return;
+    const delta = e.touches[0].clientY - startY;
+    // Nach oben gewischt oder doch weitergescrollt: die Geste gehört dem
+    // normalen Scrollen, nicht uns.
+    if (delta <= 0 || scroll.scrollTop > 0) {
+      zieht = false;
+      if (weit > 0) zuruecksetzen();
+      return;
+    }
+    // Halber Weg: der Zug soll Widerstand haben, nicht am Finger kleben.
+    weit = Math.min(PTR_MAX, delta * 0.5);
+    kreis.classList.add('zieht');
+    kreis.style.transform = `translateY(${weit}px) rotate(${weit * 2.6}deg)`;
+    kreis.style.opacity = String(Math.min(1, weit / 34));
+    e.preventDefault();
+  }, { passive: false });
+
+  const loslassen = () => {
+    if (!zieht || laeuft) return;
+    zieht = false;
+    if (weit < PTR_SCHWELLE) { zuruecksetzen(); return; }
+    laeuft = true;
+    kreis.classList.remove('zieht');
+    anzeige.classList.add('laeuft');
+    kreis.style.transform = `translateY(${PTR_SCHWELLE}px)`;
+    kreis.style.opacity = '1';
+    // Kurz sichtbar drehen lassen, bevor die Seite neu lädt — ohne das quittiert
+    // nichts die Geste, und der Nutzer weiss nicht, ob sie angekommen ist.
+    setTimeout(() => location.reload(), 220);
+  };
+  scroll.addEventListener('touchend', loslassen, { passive: true });
+  scroll.addEventListener('touchcancel', loslassen, { passive: true });
+}
+
+function immoNachruesten() {
+  dialogeNachruesten();
+  ptrEinrichten();
+}
 if (typeof document !== 'undefined') {
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', dialogeNachruesten);
+    document.addEventListener('DOMContentLoaded', immoNachruesten);
   } else {
-    dialogeNachruesten();
+    immoNachruesten();
   }
 }
 
