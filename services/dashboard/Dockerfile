@@ -14,5 +14,11 @@ COPY dashboard/nginx/default.conf.template /etc/nginx/templates/default.conf.tem
 # darueber gemountet wird — auf dem Server bleibt build.txt das Image-eigene.
 RUN printf '%s\n' "$GIT_SHA" > /etc/nginx/build.txt
 EXPOSE 80
+# 127.0.0.1 statt localhost, mit Absicht: Docker traegt in /etc/hosts BEIDE
+# Familien ein (127.0.0.1 und ::1). BusyBox-wget probiert ::1 zuerst, nginx
+# lauscht laut dashboard/nginx/default.conf.template aber nur auf `listen 80`
+# (IPv4) -> "Connection refused", der Container gilt dauerhaft als unhealthy,
+# obwohl er von aussen einwandfrei ausliefert. Eine feste IP umgeht die
+# Namensaufloesung und ist fuer einen Healthcheck ohnehin das Richtige.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost/healthz || exit 1
+  CMD wget -qO- http://127.0.0.1/healthz || exit 1
