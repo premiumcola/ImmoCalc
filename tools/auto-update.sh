@@ -22,6 +22,28 @@ STAND="$REPO/tools/.zuletzt-deployt"        # SHA, der zuletzt live gebracht wur
 
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$LOG"; }
 
+# N434 -- git verweigert Befehle in einem Repo, dessen Eigentuemer nicht die
+# ausfuehrende UID ist ("detected dubious ownership"). Lief der Cron als
+# root gegen ein Repo, das roman gehoert, schoss das JEDEN Tick schon bei
+# der HEAD-Ermittlung unten mit Exit 128 ab -- noch vor der ersten log()-
+# Zeile (deshalb keine Spur davon in dieser Datei, nur im Cron-Mailversand).
+# Root-Ursache statt Symptom: die Ausnahme hier selbst eintragen, idempotent
+# geprueft, damit "--add" nicht bei jedem Tick einen weiteren Duplikat-
+# Eintrag in ~/.gitconfig anhaengt.
+if ! git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$REPO"; then
+  git config --global --add safe.directory "$REPO"
+fi
+
+# Jeder unerwartete Abbruch ab hier -- auch ein kuenftiger, nicht vorher-
+# gesehener git-Fehler -- landet jetzt sauber im Log statt als rohe stderr-
+# Ausgabe im Cron-Mailversand, und der Tick gilt als "nichts zu tun"
+# (exit 0), nicht als Skript-Fehler. Der naechste Lauf in zwei Minuten
+# versucht es einfach wieder. Wirkt NICHT auf die schon bewusst abgefangenen
+# Faelle ("|| true", "|| exit 0") und nicht auf das bewusste "exit 1" in
+# deploy() -- beide sind durch das "||" selbst von der ERR-Falle ausgenommen.
+melde_abbruch() { log "FEHLER: unerwarteter Abbruch in Zeile $1 -- naechster Tick versucht es erneut"; }
+trap 'melde_abbruch $LINENO; exit 0' ERR
+
 # Schreibt public/version.json (gemountet -> ohne Rebuild sofort live): aktueller
 # Kurz-SHA, Commit-Zeitpunkt und die letzten fuenf Aenderungen. Wird bei jedem
 # NEUEN HEAD aktualisiert -- auch bei reinen Frontend-Deploys --, damit die
