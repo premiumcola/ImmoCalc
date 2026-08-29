@@ -1,11 +1,27 @@
 #!/usr/bin/env bash
-# ImmoCalc – Standard-Deploy. Idempotent: seedet .env + Config und startet den Stack.
-# Nutzung:  ./deploy.sh
+# ImmoCalc – ALTBESTAND, kein Deploy-Weg mehr.
 #
-# Frontend-Aenderungen (public/) brauchen KEIN Deploy — das Verzeichnis ist in
-# den Container gemountet und sofort wirksam. Dieses Skript ist fuer alles
-# andere: API-Code, Dockerfiles, nginx-Config, Compose.
+# Bis zum 23.08.2026 hat dieses Skript auf dem Unraid lokal gebaut und den
+# Stack gestartet. Heute laeuft es anders und ohne Zutun:
+#
+#   git push -> GitHub Actions baut -> ghcr.io -> Watchtower rollt aus (~5 min)
+#
+# Die laufende Stack-Definition liegt ausserdem gar nicht mehr hier, sondern in
+# premiumcola/devBox -> immocalc/docker-compose.yml. Wer dieses Skript trotzdem
+# ausfuehrt, laesst das ImmoCalc-Repo gegen denselben Compose-Projektnamen
+# ("immocalc") laufen und greift damit der laufenden Umgebung ins Steuer.
+# Details und Rueckweg: MIGRATION.md.
+#
+# Deshalb fragt es nach, statt einfach loszulegen. Zum bewussten Uebergehen:
+#   IMMO_DEPLOY_TROTZDEM=ja ./deploy.sh
 set -euo pipefail
+
+if [ "${IMMO_DEPLOY_TROTZDEM:-}" != "ja" ]; then
+  echo "deploy.sh ist Altbestand — ausgerollt wird ueber GHCR + Watchtower." >&2
+  echo "Siehe MIGRATION.md. Bewusst trotzdem starten:" >&2
+  echo "  IMMO_DEPLOY_TROTZDEM=ja ./deploy.sh" >&2
+  exit 1
+fi
 cd "$(dirname "$0")"
 
 # docker compose v2 oder v1 erkennen

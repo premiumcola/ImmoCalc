@@ -1,22 +1,33 @@
 # =============================================================================
-# ImmoCalc — orchestration (aufgehängt wie jFlow)
+# ImmoCalc — Stack-Definition
 #
-#   Immobilie ──> Zeitraum ──> Positionen (Scan→OCR→PDF) ──> Verteilung
-#             ──> Ergebnis je Partei ──> Abrechnungs-PDF
+# ACHTUNG, WICHTIG: Das hier ist NICHT die Datei, aus der die laufende App
+# gestartet wird. Der Server läuft seit dem 23.08.2026 aus
 #
-# EINE Umgebung. Kein DEV-Stack — public/ ist gemountet, Frontend-Änderungen
-# sind ohne Rebuild sofort wirksam. Nur API-Änderungen brauchen ./deploy.sh.
+#     premiumcola/devBox  →  immocalc/docker-compose.yml
 #
-#   dashboard  nginx-Frontend, proxyt /api/ an api
-#   api        FastAPI + SQLite (Rechen-Engine, Seed der echten Objekte)
+# Diese Datei hier ist eine ABBILDUNG davon für Entwicklung und Nachschlagen.
+# Weichen beide voneinander ab, gilt die Datei im devBox-Repo — nicht diese.
+# Wer etwas an der laufenden Umgebung ändern will, ändert sie DORT.
 #
-# UI auf Port 8091. API läuft intern (nicht published).
+# Der Weg dahin: GitHub Actions baut aus diesem Repo nach
+# ghcr.io/premiumcola/immocalc-{api,dashboard}, Watchtower auf dem Unraid
+# pollt die Registry und rollt neue Images selbstständig aus. Auf dem Server
+# wird nichts gebaut, deshalb hier `image:` und kein `build:` mehr.
+#
+# KEIN ./public-Mount mehr: das Frontend steckt im Dashboard-Image. Eine
+# Änderung an public/ ist also NICHT mehr sofort live — sie braucht den Weg
+# über CI und Watchtower. Für die Entwicklung holt
+# docker-compose.override.yml.example den Mount lokal zurück, ohne die
+# Produktion anzufassen (siehe README.md).
 # =============================================================================
+
+name: immocalc
 
 services:
 
   api:
-    build: { context: ., dockerfile: api/Dockerfile, args: { GIT_SHA: "${GIT_SHA:-local}" } }
+    image: ghcr.io/premiumcola/immocalc-api:latest
     container_name: immocalc-api
     restart: unless-stopped
     environment:
@@ -24,27 +35,39 @@ services:
       PUID: ${PUID:-99}
       PGID: ${PGID:-100}
       DB_PATH: /data/immocalc.db
-      # KI-Beleg-Auslese (CCLXVIII) — optional. Ohne Key stumm.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       # N264 — Druckdienst (CUPS) im Haus. Leer = keine Druckknoepfe.
       DRUCKDIENST: ${DRUCKDIENST:-192.168.178.10:631}
-    labels:
-      # N431 — eigenes Icon fuer die Docker-Liste: dieselbe Haus-Kontur wie
-      # das Dashboard, aber mit einem API-Schildchen statt der Tuer (der
-      # Container hat keinen veroeffentlichten Port, also keinen "Eingang").
-      # Ausgeliefert ueber den Dashboard-Container (public/ ist dort gemountet
-      # und ohnehin schon veroeffentlicht) — api selbst braucht dafuer keinen
-      # eigenen Port.
-      net.unraid.docker.icon: "http://192.168.178.10:${DASHBOARD_PORT:-8091}/icons/icon-api-512.png"
+    # ANTHROPIC_API_KEY steht bewusst NIRGENDS im Klartext im Repo. Die Datei
+    # liegt nur auf dem Server. `required:false`, damit dieselbe Datei auch auf
+    # einer Maschine ohne diesen Pfad startet (Entwicklung) statt abzubrechen.
+    # STAND: die Datei existiert, der Schlüssel darin ist LEER — die
+    # KI-Beleg-Auslese läuft deshalb aktuell ins Leere (siehe MIGRATION.md).
+    env_file:
+      - path: /mnt/user/appdata/immocalc-live/immocalc.env
+        required: false
     volumes:
+      # In Benutzung ist der ALTE Pfad (`immocalc-live`). Der Umzug nach
+      # /mnt/user/appdata/immocalc/data ist ein bewusst getrennter, noch
+      # offener Folgeschritt — siehe MIGRATION.md. Hier steht deshalb die
+      # Realität, nicht das Ziel.
       - ${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}:/data
+    labels:
+      net.unraid.docker.managed: composeman
+      net.unraid.docker.shell: /bin/sh
+      # Icon liefert der Dashboard-Container aus (public/ steckt in dessen
+      # Image und ist ohnehin veroeffentlicht) — api selbst hat keinen Port.
+      net.unraid.docker.icon: "http://192.168.178.10:${DASHBOARD_PORT:-8091}/icons/icon-api-512.png"
+      com.centurylinklabs.watchtower.enable: "true"
+      net.premiumcola.status: "http://immocalc-api:8000/status"
 
   dashboard:
-    build: { context: ., dockerfile: dashboard/Dockerfile, args: { GIT_SHA: "${GIT_SHA:-local}" } }
+    image: ghcr.io/premiumcola/immocalc-dashboard:latest
     container_name: immocalc-dashboard
     restart: unless-stopped
     depends_on: [api]
+    ports:
+      - "${DASHBOARD_PORT:-8091}:80"
     environment:
       TZ: ${TZ:-Europe/Berlin}
       PUID: ${PUID:-99}
@@ -52,12 +75,10 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       API_UPSTREAM: api:8000
     labels:
+      net.unraid.docker.managed: composeman
+      net.unraid.docker.shell: /bin/sh
       net.unraid.docker.icon: "http://192.168.178.10:${DASHBOARD_PORT:-8091}/icons/icon-512.png"
-      net.unraid.docker.webui: "http://192.168.178.10:${DASHBOARD_PORT:-8091}"
-    ports:
-      - "${DASHBOARD_PORT:-8091}:80"
-    volumes:
-      # Frontend live aus dem Repo — Änderung an public/ = sofort auf der Seite.
-      - ./public:/usr/share/nginx/html:ro
+      net.unraid.docker.webui: "http://[IP]:[PORT:8091]"
+      com.centurylinklabs.watchtower.enable: "true"
 
 volumes: {}

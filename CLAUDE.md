@@ -96,20 +96,38 @@ Nextcloud enthält die echten Unterlagen. Deshalb:
   einen freien Namen.
 - Vom Nutzer selbst angelegte Ordner bleiben unangetastet.
 
-**Kein DEV-Stack.** `public/` ist in den Container gemountet: jede
-Frontend-Änderung ist ohne Deploy sofort auf der Seite. Nur Änderungen an
-API-Code, Dockerfiles, nginx-Config oder Compose brauchen `./deploy.sh` (~30 s).
+**Kein DEV-Stack, und seit 23.08.2026 auch kein Live-Mount mehr.** Früher war
+`public/` in den Container gemountet und jede Frontend-Änderung sofort auf der
+Seite — **das gilt nicht mehr.** Das Frontend steckt jetzt im Image. Der Weg
+auf den Server ist für ALLE Änderungen derselbe:
+
+```
+git push  →  GitHub Actions baut  →  ghcr.io  →  Watchtower rollt aus (~5 min)
+```
+
+Auf dem Unraid wird nichts gebaut und nichts von Hand deployt. Das bedeutet
+konkret: **nie behaupten, eine Frontend-Änderung sei „sofort live"** — nach
+einem Push dauert es einige Minuten, und der Nutzer muss neu laden. Wer die
+Änderung sofort sehen will, nutzt lokal `docker-compose.override.yml.example`
+(holt den Mount zurück, ohne die Produktion anzufassen).
+
+`./deploy.sh` ist damit **kein Deploy-Weg mehr**, sondern ein Altbestand aus
+der Zeit lokaler Builds — nicht mehr benutzen.
 
 - UI: http://192.168.178.10:8091 · API intern, nicht published
 - Container: `immocalc-dashboard`, `immocalc-api`
 - Repo: github.com/premiumcola/ImmoCalc · Branch `main`
+- **Die laufende Stack-Definition liegt NICHT in diesem Repo**, sondern in
+  `premiumcola/devBox` → `immocalc/docker-compose.yml`. Das
+  `docker-compose.yml` hier ist eine Abbildung davon; weichen beide ab, gilt
+  die Datei im devBox-Repo. Stand und offene Punkte: `MIGRATION.md`.
 
 ## Bauen / Testen — in dieser Reihenfolge
 
 ```bash
 make t F=dokumente     # gezielt, ~10 s — WÄHREND der Arbeit
 make test              # voll, parallel, ~2 min — vor JEDEM Commit, MUSS grün sein
-./deploy.sh            # nur nötig bei API/Docker/nginx-Änderungen
+                       # (kein Deploy-Schritt mehr — Watchtower rollt aus)
 make check             # Browser gegen die laufende Instanz
 make check-app         # Prüfstand: alle Flows in drei Geräteklassen
 make test-seq          # voll, sequenziell, ~7 min — nur bei Reihenfolge-Verdacht
@@ -283,11 +301,12 @@ Er sagt nichts gern zweimal.
 - Jede sichtbare Änderung: Screenshot in iPhone/iPad/Desktop **ansehen**
   (Read-Tool), Konsole 0 Fehler, betroffene Flows durchklicken (siehe
   „Visuelle Abnahme").
-- **Deploy-Lücke aktiv nennen.** `public/` ist live gemountet (sofort);
-  API-Änderungen brauchen `./deploy.sh`. Greift ein neuer Backend-Wert live
-  noch nicht, dem Nutzer klar sagen — und vorab per Harness oder
-  Response-Injection prüfen, damit „funktioniert nicht" nie am fehlenden
-  Deploy hängt.
+- **Ausroll-Lücke aktiv nennen.** Nichts ist mehr sofort live — Frontend wie
+  Backend gehen über Push → CI → Watchtower (~5 min). Nach jeder sichtbaren
+  Änderung dem Nutzer klar sagen, dass sie erst nach diesem Lauf und einem
+  Neuladen ankommt; vorab per Harness prüfen, damit „funktioniert nicht" nie
+  am noch nicht ausgerollten Stand hängt. Nie „ist schon bei dir" sagen,
+  solange die CI nicht durch ist.
 
 ## Daten schützen
 

@@ -1,35 +1,32 @@
-# ImmoCalc — Deployment (Docker / Unraid, aufgehängt wie jFlow)
+# ImmoCalc — Deployment (Docker / Unraid, plexdice-Muster)
 
-> **Schnellstart:** `./deploy.sh` – siehe **DEPLOY.md** für die Unraid-Anleitung.
-
-Nebenkosten-/Betriebskostenabrechnung. Monorepo im jFlow-Stil: ein Build-Context
-(`.`), pro Service eine `<service>/Dockerfile`, `.env`-getrieben,
-`container_name`-Präfix `immocalc-`, Konfiguration über persistierte
-`workflow.json` (+ `workflow.local.json`).
+Nebenkosten-/Betriebskostenabrechnung. Ein Repo, zwei Images, ein Stack:
+GitHub Actions baut aus `services/<name>/Dockerfile` nach
+`ghcr.io/premiumcola/immocalc-{api,dashboard}`, **Watchtower** auf dem Unraid
+pollt die Registry und rollt neue Images selbstständig aus. Auf dem Server
+wird nichts gebaut.
 
 **Eine Umgebung** auf Port `8091` — Container `immocalc-dashboard` und
-`immocalc-api`. `public/` ist read-only in den Container gemountet: jede
-Frontend-Änderung ist ohne Rebuild sofort auf der Seite. Nur Änderungen an
-API-Code, Dockerfiles, nginx-Config oder Compose brauchen `./deploy.sh`.
+`immocalc-api`.
 
-## Migration auf das plexdice-Muster (läuft)
+> **Die laufende Stack-Definition liegt NICHT in diesem Repo**, sondern in
+> `premiumcola/devBox` → `immocalc/docker-compose.yml`. Das
+> `docker-compose.yml` hier ist eine Abbildung davon für Entwicklung und
+> Nachschlagen; weichen beide ab, gilt die Datei im devBox-Repo.
+> Stand und offene Punkte: **MIGRATION.md**.
 
-ImmoCalc ist die Referenz für eine einheitliche Deploy-Kette: ein Repo → GitHub
-Actions baut nach jedem Push (und nächtlich) beide Images → `ghcr.io` →
-Watchtower rollt sie auf dem Unraid selbstständig aus. Auf dem Server wird
-dann nicht mehr gebaut, nur noch `image:` gezogen — siehe **MIGRATION.md**.
+**Kein Live-Mount mehr.** Das Frontend steckt seit dem 23.08.2026 im
+Dashboard-Image, nicht mehr im Arbeitsordner der Devbox. Eine Änderung an
+`public/` ist damit **nicht** sofort auf der Seite: sie braucht Push → CI-Build
+→ Watchtower (pollt alle 5 Minuten). Das ist der Preis der Trennung — vorher
+servierte die Produktion Dateien direkt aus dem Entwicklungsverzeichnis.
 
-**Bis zum Umschalten** ist der unten beschriebene Ablauf (`build:`,
-`./public`-Bind-Mount) weiter die aktive, laufende Version — nichts davon
-ändert sich, bevor die neuen Images geprüft sind.
-
-**Dev-Schleife danach:** das Frontend steckt dann im Dashboard-Image
-(`services/dashboard/Dockerfile` kopiert `public/` hinein), nicht mehr im
-laufenden Arbeitsordner. Für sofort wirksame Änderungen beim Entwickeln:
+**Dev-Schleife** für sofort wirksame Frontend-Änderungen, ohne die Produktion
+anzufassen:
 
 ```
 cp docker-compose.override.yml.example docker-compose.override.yml
-docker compose -f docker-compose.ghcr.yml -f docker-compose.override.yml up -d
+docker compose up -d
 ```
 
 `docker-compose.override.yml` ist in `.gitignore` — sie bleibt lokal und

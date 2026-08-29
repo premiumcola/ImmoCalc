@@ -1,170 +1,116 @@
-# MIGRATION.md — ImmoCalc auf das plexdice-Muster
+# MIGRATION.md — ImmoCalc auf dem plexdice-Muster
 
-ImmoCalc ist die Referenz-Migration für die einheitliche Deploy-Kette:
-**ein Repo → GitHub Actions baut → `ghcr.io` → Watchtower rollt aus.**
-Auf dem Unraid wird danach nirgends mehr gebaut, nur noch `image:` gezogen.
+**Stand: umgestellt seit 23.08.2026, mit zwei bewusst offenen Punkten**
+(Datenordner-Umzug, leerer API-Schlüssel — beide unten).
 
-Diese Datei ist die Schrittliste dafür — in der Reihenfolge, in der sie
-abzuarbeiten ist. Nichts davon wurde von hier aus bereits ausgeführt: alle
-Schritte unten brauchen entweder GitHub-Zugriff oder Docker-/Boot-Zugriff auf
-dem Unraid-Host, beides hat diese Sitzung nicht.
+Die Kette läuft: ein Repo → GitHub Actions baut nach jedem Push und nächtlich
+→ `ghcr.io/premiumcola/immocalc-{api,dashboard}` → Watchtower auf dem Unraid
+pollt und rollt aus. Auf dem Server wird nichts gebaut.
 
-**Der laufende Stack (`docker-compose.yml`, `build:`) ist zu keinem Zeitpunkt
-angefasst worden** — er läuft unverändert weiter, bis Schritt 5 bewusst
-ausgeführt wird.
-
-## Was hier im Repo bereits fertig ist
-
-| Datei | Zweck |
-|---|---|
-| `services/api/Dockerfile` | wie `api/Dockerfile`, nur am neuen Pfad — Build-Context bleibt die Repo-Wurzel |
-| `services/dashboard/Dockerfile` | wie `dashboard/Dockerfile`, nur am neuen Pfad |
-| `.github/workflows/build.yml` | baut beide Images bei jedem Push auf `main`, nächtlich (03:17, mit `--pull`) und manuell; pusht nach `ghcr.io/premiumcola/immocalc-{api,dashboard}` |
-| `renovate.json` | hält `api/requirements.txt`, die `FROM`-Zeilen und Compose-Image-Tags aktuell, Dependency Dashboard an |
-| `docker-compose.ghcr.yml` | die Ziel-Compose (`image:`, Labels, neuer Datenpfad) — **noch nicht aktiv**, siehe Schritt 5 |
-| `docker-compose.override.yml.example` | Live-Mount fürs Entwickeln, lokal zu kopieren, `.gitignore`-geschützt |
-| `assets/icon-512.png` / `icon-api-512.png` | 512×512-Icons, künftig per `raw.githubusercontent`-URL statt vom Container ausgeliefert |
-| `GET /healthz` (API) | prüft die Datenbank wirklich (503 statt 200 bei Fehler) — `/api/health` bleibt unverändert als reine Lebensmeldung |
-| `GET /status` (API) | `app`, `version`, `last_run`, `last_result`, `next_run` — aus `wachdienst.zustand()` gespeist |
-
-Die alten `api/Dockerfile` und `dashboard/Dockerfile` sind bewusst noch da —
-der laufende Stack baut weiter daraus, bis Schritt 5 vollzogen ist. Danach
-können sie weg (Aufräum-Hinweis am Ende).
+Nachgewiesen am 24.08.2026: `docker inspect` zeigt beide Container auf
+`ghcr.io/premiumcola/immocalc-*:latest` mit `watchtower.enable=true`, und der
+Healthcheck-Fix `d25be32` kam **per Watchtower von selbst** auf das laufende
+System — ohne Handanlegen. Damit ist die Kette nicht nur eingerichtet, sondern
+im Betrieb bewiesen.
 
 ---
 
-## Schritt 1 — Einmalig auf GitHub einrichten
+## Wo die laufende Definition liegt — nicht hier
 
-1. **Actions erlauben:** *Settings → Actions → General → Actions permissions*
-   → „Allow all actions and reusable workflows" (meist schon Standard).
-2. **Schreibrecht für GHCR:** *Settings → Actions → General → Workflow
-   permissions* → **„Read and write permissions"** aktivieren. Ohne das darf
-   der mitgelieferte `GITHUB_TOKEN` nicht nach `ghcr.io` pushen — der erste
-   Build schlägt sonst mit einem 403 beim Push fehl.
-3. **Sichtbarkeit der Images:** ein öffentliches Repo erzeugt standardmäßig
-   öffentliche Packages — dann reicht Watchtower ohne jede Anmeldung. Sollen
-   die Images **privat** bleiben (*Package Settings* am jeweiligen Package
-   nach dem ersten Build, dort auf „Private" umstellen):
-   - Personal Access Token erzeugen: *Settings → Developer settings →
-     Personal access tokens* → Scope **`read:packages`**.
-   - Einmalig auf dem Unraid: `docker login ghcr.io -u premiumcola` (Token
-     als Passwort). Das schreibt `/root/.docker/config.json` — genau dort
-     liest Watchtower die Zugangsdaten automatisch mit.
-4. Sonst nichts weiter — der Workflow liegt schon im Repo.
+Das Umschalten geschah **über eine separate Compose-Datei im devBox-Repo**,
+nicht über eine Datei dieses Repos:
 
-## Schritt 2 — Ersten Build auslösen & prüfen
-
-- Der Push, der diese Migration einspielt, löst ihn **bereits aus**
-  (`on: push` auf `main`) — kein separater Schritt nötig.
-- GitHub → Tab **Actions** → Lauf „Build & Push" grün abwarten
-  (Matrix `api`/`dashboard`, je ca. 2–4 Min, OCR-Layer macht `api` am
-  langsamsten).
-- GitHub → Tab **Packages** (oder direkt
-  `github.com/premiumcola/ImmoCalc/pkgs/container/immocalc-api`) prüfen: Tag
-  `latest` und ein Kurz-SHA-Tag müssen dort auftauchen.
-- Rot? Fehlertext im Actions-Log lesen — am häufigsten fehlt Schritt 1.2.
-
-## Schritt 3 — Testen, BEVOR umgeschaltet wird
-
-`docker-compose.ghcr.yml` benutzt dieselben `container_name`s und denselben
-Port wie der laufende Stack — **nicht parallel starten**. Sauberer Testlauf
-unter einem anderen Projektnamen und Port, ohne den laufenden Stack zu
-berühren:
-
-```bash
-DASHBOARD_PORT=8092 docker compose -p immocalc-test -f docker-compose.ghcr.yml \
-  --env-file .env up -d
-curl -s http://localhost:8092/api/health
-curl -s http://192.168.178.10:8092/api/... # UI im Browser stichprobenartig
-docker compose -p immocalc-test -f docker-compose.ghcr.yml down
+```
+premiumcola/devBox  →  immocalc/docker-compose.yml     ← das läuft
 ```
 
-Erst wenn das sauber läuft (UI lädt, `/healthz`/`/status` antworten,
-`docker ps` zeigt beide Test-Container „healthy"), weiter zu Schritt 4/5.
+Sie wurde am 23.08. aus `docker inspect` des damals laufenden Containers
+gebaut, nicht aus diesem Repo kopiert. Die frühere `docker-compose.ghcr.yml`
+hier war ein **Entwurf, der nie live war** — sie ist deshalb gelöscht, damit
+niemand sie künftig für die Quelle der Wahrheit hält.
 
-## Schritt 4 — Datenmigration (optional, vor Schritt 5)
+Das `docker-compose.yml` in diesem Repo ist seither eine **Abbildung** der
+laufenden Datei für Entwicklung und Nachschlagen. Weichen beide voneinander
+ab, **gilt die Datei im devBox-Repo**. Wer die laufende Umgebung ändern will,
+ändert sie dort.
 
-Der neue Standardpfad ist `/mnt/user/appdata/immocalc/data` (ohne `-live`).
-**Automatisch verschoben wird hier nichts** — das entscheidet der Nutzer:
+## Offene Punkte — bewusst, nicht vergessen
 
-- **Ohne Migration:** `DATA_DIR` in `.env` weiter auf
-  `/mnt/user/appdata/immocalc-live/data` zeigen lassen — funktioniert
-  unverändert, nur der Pfad bleibt „historisch" benannt.
-- **Mit Migration** (sauberer Neuanfang): Stack kurz stoppen (SQLite verträgt
-  kein Kopieren bei laufendem Schreibzugriff), dann
-  ```bash
-  docker compose down
-  mkdir -p /mnt/user/appdata/immocalc/data
-  rsync -a /mnt/user/appdata/immocalc-live/data/ /mnt/user/appdata/immocalc/data/
-  ```
-  und danach `DATA_DIR=/mnt/user/appdata/immocalc/data` in `.env` setzen. Die
-  alten Dateien unter `immocalc-live/` bleiben als Sicherheitsnetz liegen.
+### 1. Der Datenordner ist noch der alte
 
-## Schritt 5 — Umschalten (Kernschritt)
+| | Pfad |
+|---|---|
+| **In Benutzung** | `/mnt/user/appdata/immocalc-live/data` |
+| Ziel (irgendwann) | `/mnt/user/appdata/immocalc/data` |
+
+Bewusst **nicht** mit dem Umschalten zusammengelegt: zwei riskante Schritte
+gleichzeitig hätten im Fehlerfall nicht mehr auseinanderzuhalten sein können.
+Der Umzug ist eine eigene Entscheidung und steht weiterhin aus.
+
+Wenn er kommt — SQLite verträgt kein Kopieren bei laufendem Schreibzugriff:
 
 ```bash
-docker compose down                                   # laufenden Stack stoppen
-cp docker-compose.yml docker-compose.yml.bak-vor-migration   # Rollback-Netz
-cp docker-compose.ghcr.yml docker-compose.yml
-docker compose pull
+docker compose down
+mkdir -p /mnt/user/appdata/immocalc/data
+rsync -a /mnt/user/appdata/immocalc-live/data/ /mnt/user/appdata/immocalc/data/
+# Pfad in der devBox-Compose ändern, dann:
 docker compose up -d
 ```
 
-Danach prüfen:
-- `http://192.168.178.10:8091` lädt.
-- `curl http://192.168.178.10:8091/api/health` → `{"status":"ok",...}`.
-- `docker ps` zeigt `immocalc-api` und `immocalc-dashboard` als `healthy`
-  (nicht nur „running").
+Die alten Dateien unter `immocalc-live/` bleiben als Sicherheitsnetz liegen.
+Zu ändern ist der Pfad an **zwei** Stellen: der laufenden Datei im devBox-Repo
+und der Abbildung hier.
 
-## Schritt 6 — Im Compose Manager registrieren
+### 2. Der Anthropic-Schlüssel ist leer
 
-Damit ImmoCalc als **ein** Eintrag in der Unraid-Docker-Übersicht auftaucht
-(bisher lief der Stack nur per CLI, unregistriert):
+`/mnt/user/appdata/immocalc-live/immocalc.env` existiert und wird über
+`env_file` eingebunden — der Schlüssel darin ist aber **leer**. Die
+KI-Beleg-Auslese (CCLXVIII) läuft damit aktuell ins Leere; alles andere
+funktioniert unverändert, die regelbasierte Erkennung trägt Datum und Betrag
+weiter allein.
 
-1. Plugin **„Compose Manager Plus"** installieren (Community Applications —
-   Nachfolger des mittlerweile deprecateten „Docker Compose Manager").
-2. Dort **„Add Stack" → „Indirect Path"** (weil `docker-compose.yml` außerhalb
-   des Plugin-eigenen Projekte-Ordners liegt) → auf den Repo-Ordner zeigen.
-3. Im Stack-eigenen **„Settings"-Tab** Namen („ImmoCalc") und Icon-URL setzen
-   (dieselbe `raw.githubusercontent`-URL wie in den Container-Labels).
+Zum Befüllen: Wert in diese Datei eintragen, dann `docker compose up -d`
+(Neustart des api-Containers). Die Datei liegt nur auf dem Server und wird nie
+versioniert — im Repo steht der Schlüssel an **keiner** Stelle.
 
-Danach gruppiert die Unraid-Oberfläche `immocalc-api` und `immocalc-dashboard`
-unter einem gemeinsamen „ImmoCalc"-Stack-Eintrag.
+## Was das Frontend betrifft
 
-## Rollback
+**Der `./public`-Bind-Mount ist weg.** Die Container servierten vorher direkt
+aus `/mnt/cache-ssd/appdata/devbox/home/projects/ImmoCalc/public` — die
+Produktion las also aus dem Arbeitsordner der Entwicklungsumgebung. Genau das
+sollte die Trennung beenden.
 
-- **Vor Schritt 5:** nichts zu tun — der alte Stack lief die ganze Zeit
-  unverändert weiter.
-- **Nach Schritt 5**, falls etwas klemmt:
-  ```bash
-  docker compose down
-  cp docker-compose.yml.bak-vor-migration docker-compose.yml
-  # falls Schritt 4 die Daten verschoben hat: DATA_DIR in .env zurück auf
-  # /mnt/user/appdata/immocalc-live/data setzen — sonst startet der alte
-  # Stack mit einer leeren Datenbank.
-  docker compose up -d --build
-  ```
+Folge für die tägliche Arbeit: **eine Änderung an `public/` ist nicht mehr
+sofort live.** Sie braucht Push → CI-Build → Watchtower (pollt alle 5 Minuten).
+Wer das beim Entwickeln nicht will, holt sich den Mount lokal zurück:
 
-## Vermutete Ursache: Dashboard zeigt „unhealthy"
-
-Von dieser Sitzung aus nicht am laufenden Container nachprüfbar (kein
-Docker-Zugriff). Wahrscheinlichste Erklärung: das laufende Image wurde
-gebaut, bevor die `/healthz`-Location in `dashboard/nginx/default.conf.template`
-existierte, und seitdem nie neu gebaut — der bisherige Dev-Loop änderte nur
-den Bind-Mount (`./public`), nie das Image selbst. Zur Bestätigung auf dem
-Host:
 ```bash
-docker inspect immocalc-dashboard --format '{{json .State.Health}}'
-docker exec immocalc-dashboard wget -qO- http://localhost/healthz
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up -d
 ```
-Antwortet der zweite Befehl nicht mit `ok`, ist es kein Health-Endpoint-,
-sondern ein echtes nginx-Problem — dann bitte Ausgabe mitschicken. Mit der
-neuen Pipeline erledigt sich die „stilles altes Image"-Variante von selbst:
-jeder Build ist frisch, Watchtower zieht ihn nach.
 
-## Aufräumen (erst nach ein paar Tagen stabilem Betrieb mit dem neuen Stack)
+Die Override-Datei ist in `.gitignore` und kann so nie versehentlich auf den
+Server gelangen.
 
-- `api/Dockerfile`, `dashboard/Dockerfile` (durch `services/*/Dockerfile` ersetzt)
-- `docker-compose.yml.bak-vor-migration`
-- `docker-compose.ghcr.yml` selbst kann dann entfallen — sein Inhalt ist ja
-  in `docker-compose.yml` aufgegangen
+## Aufgeräumt (25.08.2026)
+
+- `api/Dockerfile`, `dashboard/Dockerfile` — tot. Gebaut wird ausschließlich
+  `services/{api,dashboard}/Dockerfile` (siehe `.github/workflows/build.yml`).
+  Das alte `dashboard/Dockerfile` trug denselben Healthcheck-Fehler wie
+  `d25be32` ihn behoben hat, nur eben in der Datei, die niemand mehr baut —
+  zwei Wahrheiten für dasselbe Image.
+- `docker-compose.ghcr.yml` — der nie live gewesene Entwurf (siehe oben).
+- Das ImmoCalc-eigene `docker-compose.yml` mit `build:` — war bis zum 24.08.
+  noch der Notfall-Rückweg, weil der Cron `immo-auto` (alle 2 Minuten, im
+  alten Devbox-Home-Pfad) genau diese Datei erneut deployt hat, sobald sich
+  dort etwas änderte. Der Cron ist entfernt, die Datei damit wirklich verwaist
+  — sie ist jetzt die `image:`-Abbildung, kein zweiter Deploy-Weg mehr.
+
+## Wenn etwas klemmt
+
+Zurück auf einen älteren Stand geht über das Image-Tag, nicht über einen
+Rebuild: in der devBox-Compose `:latest` durch ein Kurz-SHA-Tag ersetzen (die
+CI vergibt eines je Build, siehe Packages-Tab am Repo), dann
+`docker compose up -d`. Genau dafür ist das Frontend jetzt im Image statt im
+Arbeitsordner — vorher gab es zu einem kaputten Frontend-Stand überhaupt
+keinen Rückweg.
