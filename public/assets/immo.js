@@ -619,6 +619,11 @@ const PTR_ICON = `<svg viewBox="0 0 24 24" width="25" height="25" aria-hidden="t
 // Abzeichen nicht mehr mit (der Zug läuft spürbar aus, statt hart zu stoppen).
 const PTR_SCHWELLE = 68;
 const PTR_MAX = 104;
+// N433-b — wie lange das Abzeichen nach dem Loslassen sichtbar dreht und
+// aufploppt, und wie lange danach das kontrollierte Hochfahren dauert (muss
+// zur Übergangszeit von `.scroll.ptr-heim` in immo.css passen).
+const PTR_HALT_MS = 460;
+const PTR_HEIM_MS = 320;
 
 /* N433 — Zum Aktualisieren nach unten ziehen.
    Hängt am inneren Scrollbereich, nicht am Dokument: seit dem Rahmenmodell
@@ -630,7 +635,10 @@ const PTR_MAX = 104;
    Bewegungen übereinander. Überall sonst bleibt es erhalten. */
 function ptrEinrichten() {
   const scroll = document.querySelector('.app > .scroll');
-  if (!scroll || scroll.querySelector('.ptr')) return;
+  // `.ptr` ist ein GESCHWISTER von `.scroll`, kein Kind — die alte Prüfung
+  // `scroll.querySelector` hätte es nie gefunden und bei einem zweiten Aufruf
+  // ein zweites Abzeichen eingehängt.
+  if (!scroll || scroll.parentElement.querySelector('.ptr')) return;
 
   const anzeige = document.createElement('div');
   anzeige.className = 'ptr';
@@ -640,10 +648,24 @@ function ptrEinrichten() {
 
   let startY = 0, zieht = false, weit = 0, laeuft = false;
 
+  /* Das Abzeichen sitzt mittig in der Lücke, die der mitgefahrene Inhalt oben
+     freigibt (N433-b). Ist die Lücke noch kleiner als das Abzeichen selbst,
+     ergibt das einen negativen Wert — dann lugt es gerade erst hinter der
+     Kopfzeile hervor (z-index 15 unter deren 20), wie in nativen Apps. */
+  const abzeichenSetzen = (lueck, dreh) => {
+    kreis.style.setProperty('--ptr-y', `${(lueck - 42) / 2}px`);
+    kreis.style.setProperty('--ptr-rot', `${dreh}deg`);
+  };
+
   const zuruecksetzen = () => {
     kreis.classList.remove('zieht');
-    kreis.style.transform = '';
+    anzeige.classList.remove('laeuft');
+    kreis.style.removeProperty('--ptr-y');
+    kreis.style.removeProperty('--ptr-rot');
     kreis.style.opacity = '';
+    scroll.classList.remove('ptr-zieht');
+    scroll.classList.add('ptr-heim');
+    scroll.style.transform = '';
   };
 
   scroll.addEventListener('touchstart', e => {
@@ -666,7 +688,11 @@ function ptrEinrichten() {
     // Halber Weg: der Zug soll Widerstand haben, nicht am Finger kleben.
     weit = Math.min(PTR_MAX, delta * 0.5);
     kreis.classList.add('zieht');
-    kreis.style.transform = `translateY(${weit}px) rotate(${weit * 2.6}deg)`;
+    // Der Inhalt fährt mit — er ist es, der die Lücke oben aufmacht.
+    scroll.classList.add('ptr-zieht');
+    scroll.classList.remove('ptr-heim');
+    scroll.style.transform = `translateY(${weit}px)`;
+    abzeichenSetzen(weit, weit * 2.6);
     kreis.style.opacity = String(Math.min(1, weit / 34));
     e.preventDefault();
   }, { passive: false });
@@ -676,13 +702,31 @@ function ptrEinrichten() {
     zieht = false;
     if (weit < PTR_SCHWELLE) { zuruecksetzen(); return; }
     laeuft = true;
+
+    // 1. Auf die Ruhelage einrasten: der Inhalt bleibt einen Moment unten
+    //    stehen, das Abzeichen dreht sich in der Lücke und ploppt einmal auf.
     kreis.classList.remove('zieht');
-    anzeige.classList.add('laeuft');
-    kreis.style.transform = `translateY(${PTR_SCHWELLE}px)`;
+    scroll.classList.remove('ptr-zieht');
+    scroll.classList.add('ptr-heim');
+    scroll.style.transform = `translateY(${PTR_SCHWELLE}px)`;
+    abzeichenSetzen(PTR_SCHWELLE, 0);
     kreis.style.opacity = '1';
-    // Kurz sichtbar drehen lassen, bevor die Seite neu lädt — ohne das quittiert
-    // nichts die Geste, und der Nutzer weiss nicht, ob sie angekommen ist.
-    setTimeout(() => location.reload(), 220);
+    anzeige.classList.add('laeuft');
+
+    // 2. Danach kontrolliert wieder hochfahren — erst dann neu laden, sonst
+    //    reisst der Sprung die Bewegung mittendrin ab.
+    setTimeout(() => {
+      // Die Aufploppen-Animation muss weg, bevor der Rückweg beginnt: eine
+      // laufende (bzw. mit `both` stehengebliebene) Animation gewinnt gegen
+      // die Übergangszeit derselben Eigenschaft — das Abzeichen würde sonst
+      // nach oben springen statt zu gleiten.
+      anzeige.classList.remove('laeuft');
+      void kreis.offsetHeight;                 // Stilstand erzwingen
+      kreis.style.setProperty('--ptr-y', '-56px');
+      kreis.style.opacity = '0';
+      scroll.style.transform = '';
+      setTimeout(() => location.reload(), PTR_HEIM_MS);
+    }, PTR_HALT_MS);
   };
   scroll.addEventListener('touchend', loslassen, { passive: true });
   scroll.addEventListener('touchcancel', loslassen, { passive: true });

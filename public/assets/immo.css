@@ -131,7 +131,11 @@ body{
   width:42px; height:42px; border-radius:50%;
   background:var(--sheet); box-shadow:0 8px 18px -8px rgba(22,38,44,.5);
   display:flex; align-items:center; justify-content:center;
-  transform:translateY(-56px); opacity:0;
+  /* Ort und Drehung kommen als Variablen aus `ptrEinrichten()` — so kann die
+     Aufploppen-Animation unten denselben Ort weiterverwenden, ohne dass sich
+     Inline-`transform` und Keyframes gegenseitig überschreiben. */
+  --ptr-y:-56px; --ptr-rot:0deg;
+  transform:translateY(var(--ptr-y)) rotate(var(--ptr-rot)); opacity:0;
   transition:transform .3s cubic-bezier(.2,.7,.3,1), opacity .2s;
 }
 /* Während der Finger zieht, folgt das Abzeichen dem Zug direkt — eine
@@ -140,9 +144,32 @@ body{
 .ptr .ptr-kreis svg{width:25px; height:25px; display:block}
 .ptr.laeuft .ptr-kreis svg{animation:ptr-dreh .75s linear infinite}
 @keyframes ptr-dreh{to{transform:rotate(360deg)}}
+
+/* N433-b — Nutzer: „lass die Seite beim Neuladen runterziehen, also
+   runterbewegen, und dann taucht oben zwischen Kopfzeile und Inhalt das
+   Ladelogo auf. Dann dreht sich das und pufft auf und poppt, dann geht's
+   wieder hoch, bisschen kontrollierter."
+
+   Vorher bewegte sich NUR das Abzeichen — es landete deshalb mitten auf der
+   ersten Karte statt in einer Lücke (Screenshot des Nutzers). Jetzt fährt der
+   Inhalt mit nach unten; die Lücke, die dabei oben entsteht, ist der Platz
+   des Abzeichens. Kein `will-change`: auf dem iPhone hat genau das schon
+   einmal Inhalte während schwerer Scroll-Repaints ausgeblendet (N327-b). */
+.app > .scroll.ptr-zieht{transition:none}
+.app > .scroll.ptr-heim{transition:transform .34s cubic-bezier(.2,.8,.3,1)}
+/* Einmal aufploppen, während sich das Zeichen dreht. Die Keyframes tragen
+   `--ptr-y` mit, damit das Abzeichen dabei an seinem Platz bleibt. */
+.ptr.laeuft .ptr-kreis{animation:ptr-puff .42s cubic-bezier(.3,1.4,.5,1) both}
+@keyframes ptr-puff{
+  0%{transform:translateY(var(--ptr-y)) scale(.72)}
+  50%{transform:translateY(var(--ptr-y)) scale(1.16)}
+  100%{transform:translateY(var(--ptr-y)) scale(1)}
+}
 @media(prefers-reduced-motion:reduce){
   .ptr.laeuft .ptr-kreis svg{animation:none}
+  .ptr.laeuft .ptr-kreis{animation:none}
   .ptr .ptr-kreis{transition:none}
+  .app > .scroll.ptr-heim{transition:none}
 }
 
 /* ---- Kopfzeile ----
@@ -1236,6 +1263,11 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
   .bar{grid-area:bar; padding:22px 28px 20px}
   .bar h1{font-size:21px}
   .scroll{grid-area:scroll; padding:24px 28px 40px; overflow-y:auto}
+  /* N433-b — der (höhenlose) Pull-to-Refresh-Anker ist im Flex-Modell ein
+     Geschwister von `.scroll`; im Grid hier hätte er ohne Platzierung eine
+     eigene, implizite Zeile aufgemacht. Er gehört an die Oberkante des
+     Inhaltsbereichs — dieselbe Fläche wie `.scroll`, nur oben angeschlagen. */
+  .ptr{grid-area:scroll; align-self:start}
 
   .nav{
     grid-area:nav; position:static; flex-direction:column; align-items:stretch;
