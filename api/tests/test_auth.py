@@ -153,3 +153,23 @@ def test_familien_liste_liefert_nie_den_passwort_hash():
         for f in c.get("/api/auth/familien").json():
             assert "passwort_hash" not in f
             assert "passwort_salz" not in f
+
+
+
+def test_cookie_secure_flag_folgt_der_umgebung(monkeypatch):
+    """N436 — im VPN läuft die App über einfaches HTTP: mit `secure` käme das
+    Cookie dort nie an, und niemand könnte sich anmelden. Der Schalter
+    existiert für den Tag, an dem TLS davorsteht — er muss dann aber auch
+    wirklich wirken, sonst ist er eine Zusicherung auf dem Papier."""
+    _ohne_override()
+    monkeypatch.delenv("COOKIE_SECURE", raising=False)
+    with TestClient(app) as c:
+        antwort = c.post("/api/auth/registrieren",
+                         json={"name": "OhneTLS", "passwort": "sehrsicher123"})
+        assert "Secure" not in antwort.headers["set-cookie"]
+
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    with TestClient(app) as c:
+        antwort = c.post("/api/auth/registrieren",
+                         json={"name": "MitTLS", "passwort": "sehrsicher123"})
+        assert "Secure" in antwort.headers["set-cookie"]

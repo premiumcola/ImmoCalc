@@ -13,10 +13,24 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 from datetime import datetime, timedelta
 
 SITZUNG_COOKIE = "immocalc_sitzung"
+
+
+def cookie_sicher() -> bool:
+    """Ob das Sitzungs-Cookie nur über HTTPS mitgeschickt werden darf.
+
+    Vorgabe `false`: die App läuft im Heimnetz/VPN über einfaches HTTP —
+    mit `secure=True` käme das Cookie dort nie an, und niemand könnte sich
+    mehr anmelden. Sobald TLS davor steht, `COOKIE_SECURE=true` setzen; dann
+    verlässt der Sitzungs-Token den Browser nicht mehr unverschlüsselt.
+    Bewusst bei jedem Aufruf gelesen statt einmal beim Import, damit ein
+    Test (und ein Neustart mit geänderter Umgebung) sofort greift."""
+    return os.environ.get("COOKIE_SECURE", "").strip().lower() in {
+        "1", "true", "yes", "ja"}
 SITZUNG_GUELTIGKEIT = timedelta(days=30)
 MAX_FEHLVERSUCHE = 8
 SPERRDAUER = timedelta(minutes=5)

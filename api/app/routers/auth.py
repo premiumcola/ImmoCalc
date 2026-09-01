@@ -13,8 +13,8 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..auth import (MAX_FEHLVERSUCHE, SITZUNG_COOKIE, SPERRDAUER,
-                    neuer_sitzungstoken, passwort_hashen, passwort_pruefen,
-                    token_hashen)
+                    cookie_sicher, neuer_sitzungstoken, passwort_hashen,
+                    passwort_pruefen, token_hashen)
 from ..db import get_session
 from ..deps import aktuelle_familie
 from ..models import Familie, Sitzung
@@ -49,8 +49,9 @@ def _sitzung_setzen(response: Response, familie_id: int, session: Session) -> No
                         laeuft_ab=laeuft_ab))
     session.commit()
     response.set_cookie(SITZUNG_COOKIE, token, httponly=True, samesite="lax",
-                        secure=False, max_age=int((laeuft_ab - datetime.utcnow())
-                                                  .total_seconds()))
+                        secure=cookie_sicher(),
+                        max_age=int((laeuft_ab - datetime.utcnow())
+                                    .total_seconds()))
 
 
 @router.get("/familien")
