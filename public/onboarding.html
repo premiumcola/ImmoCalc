@@ -271,8 +271,12 @@
 </div>
 
 <script type="module">
-import { melde, frage, eur, heuteIso } from './assets/immo.js';
+import { melde, frage, eur, heuteIso, sitzungPruefen } from './assets/immo.js';
 import { installGrundstueckLogo } from './assets/kostenicons.js';
+
+// N436 — kein [data-nav]/installNav() auf dieser eigenstaendigen Seite,
+// darum der Sitzungs-Check hier direkt.
+sitzungPruefen();
 
 /* Das Grundstück bringt sein Logo selbst mit — die Haus-Symbole stehen
    weiter oben fest im Dokument. */

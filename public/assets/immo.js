@@ -53,12 +53,21 @@ export const logoSvg = (id, cls = '') =>
   `<svg class="${cls}" viewBox="0 0 96 96"><use href="#${id}"/></svg>`;
 
 /* ---- API ---- */
+// N436 — die eine Stelle, durch die praktisch jeder Seitenaufruf laeuft: ein
+// 401 heisst „keine gueltige Sitzung" und leitet auf den Anmeldescreen um,
+// statt dass jede Seite das einzeln abfangen muss. Auf der Anmeldeseite
+// SELBST nie umleiten — dort ist ein 401 ein falsches Passwort, kein Grund
+// zur Umleitung (sonst eine Schleife).
 export async function api(pfad, optionen = {}) {
   const antwort = await fetch('/api' + pfad, {
     headers: { 'Content-Type': 'application/json' },
     ...optionen,
     body: optionen.body ? JSON.stringify(optionen.body) : undefined,
   });
+  if (antwort.status === 401 && !location.pathname.endsWith('anmeldung.html')) {
+    location.href = 'anmeldung.html';
+    return new Promise(() => {}); // die Seite wechselt ohnehin gleich
+  }
   if (!antwort.ok) {
     // FastAPI liefert die Ursache in `detail` — die ist fuer den Nutzer
     // deutlich hilfreicher als der blosse Statuscode.
@@ -348,7 +357,25 @@ const NAV_ALIAS = {
 };
 
 /** Haengt die Navigationsleiste anstelle von `[data-nav]` ins Dokument. */
+/**
+ * N436 — Sitzungs-Check, BEVOR eine Seite ihren Inhalt laedt. `api()` faengt
+ * jeden 401 ab, sobald ein Aufruf tatsaechlich laeuft — das kommt aber erst
+ * NACH dem ersten Request; ohne diesen Vorab-Check blitzt kurz die leere
+ * bzw. „wird geladen"-Seite auf, bevor die Umleitung greift. Bewusst nicht
+ * awaited von `installNav()` aus: die Navigation soll sofort stehen, die
+ * Umleitung (falls noetig) holt sich das Ergebnis nach.
+ */
+export async function sitzungPruefen() {
+  if (location.pathname.endsWith('anmeldung.html')) return;
+  try {
+    await api('/auth/ich');
+  } catch (fehler) {
+    if (fehler.status === 401) location.href = 'anmeldung.html';
+  }
+}
+
 export function installNav() {
+  sitzungPruefen();
   const platz = document.querySelector('[data-nav]');
   if (!platz) return;
   const datei = location.pathname.split('/').pop() || 'index.html';

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Anmelden</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F6E5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ImmoCalc">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/immo.css">
+<style>
+  /* N436 — eigenstaendige Seite ohne Menueleiste: das dafuer reservierte
+     Polster aus immo.css (.app{padding-bottom}) wird hier nicht gebraucht. */
+  .app{padding-bottom:0}
+
+  .content{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    display:flex; flex-direction:column;
+    padding:calc(28px + env(safe-area-inset-top)) 20px 20px;}
+
+  .hero{text-align:center; padding:8px 8px 28px}
+  .hero .mark{width:76px; height:76px; border-radius:20px; display:block;
+    margin:0 auto 16px; box-shadow:0 14px 30px -16px rgba(22,38,44,.4)}
+  .hero h1{font:700 24px var(--disp); letter-spacing:-.02em; margin:0 0 6px}
+  .hero p{font:400 14px var(--body); color:var(--soft); margin:0; line-height:1.5}
+
+  .liste{flex:1}
+  .sec{font:600 11px var(--mono); letter-spacing:.1em; text-transform:uppercase;
+    color:var(--soft); margin:0 0 10px; display:block}
+
+  .fusszeile{text-align:center; padding:20px 8px calc(14px + env(safe-area-inset-bottom));
+    font:500 11px var(--mono); letter-spacing:.03em; color:var(--soft); opacity:.75}
+  .fusszeile .herz{color:var(--neg)}
+
+  /* Anmelde-/Anlegen-Dialog: eigenes schmales Formular im Dialograhmen aus immo.css. */
+  .dlg-form .field:last-of-type{margin-bottom:18px}
+  .dlg-fehler{font:500 12.5px var(--body); color:var(--neg); margin:-6px 0 14px; display:none}
+  .dlg-fehler.zeigen{display:block}
+
+  @media(min-width:480px){.content{padding-top:40px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="content">
+    <div class="hero">
+      <img src="icons/icon.svg" alt="" class="mark">
+      <h1>ImmoCalc</h1>
+      <p id="unterzeile">Melde dich mit deiner Familie an.</p>
+    </div>
+
+    <div class="liste">
+      <span class="sec">Familien</span>
+      <div id="familien">
+        <div class="row" style="cursor:default">
+          <span class="txt"><span class="t">Familien werden geladen …</span></span>
+        </div>
+      </div>
+      <a class="row ghost" href="#" id="neu-anlegen">
+        <span class="ic">＋</span>
+        <span class="txt">
+          <span class="t">Neue Familie anlegen</span>
+          <span class="d">Eigene Immobilien, eigener Zugang</span>
+        </span>
+        <span class="arr">›</span>
+      </a>
+    </div>
+
+    <div class="fusszeile">vibecoded with <span class="herz">♥</span> · 2026</div>
+  </div>
+</div>
+
+<script type="module">
+import { api, baueDialog, melde, esc } from './assets/immo.js';
+
+const FAMILIEN_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true"><path d="M8 12.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/>
+  <path d="M2.6 19c.6-3 2.8-5 5.4-5s4.8 2 5.4 5"/>
+  <path d="M15.2 7.4a2.8 2.8 0 1 1 3 4.6"/><path d="M15.6 14.2c2.2.4 3.9 2.1 4.4 4.6"/>
+  </svg>`;
+
+// Schon angemeldet? Dann gar nicht erst den Anmeldescreen zeigen.
+api('/auth/ich').then(() => { location.href = 'index.html'; }).catch(() => {});
+
+async function familienLaden() {
+  const ziel = document.getElementById('familien');
+  let familien = [];
+  try {
+    familien = await api('/auth/familien');
+  } catch {
+    ziel.innerHTML = `<div class="row" style="cursor:default">
+      <span class="txt"><span class="t">Familien lassen sich gerade nicht laden</span>
+      <span class="d">Bitte kurz erneut versuchen</span></span></div>`;
+    return;
+  }
+  if (!familien.length) {
+    ziel.innerHTML = `<div class="row" style="cursor:default">
+      <span class="txt"><span class="t">Noch keine Familie angelegt</span>
+      <span class="d">Lege unten die erste an</span></span></div>`;
+    return;
+  }
+  ziel.innerHTML = familien.map(f => `
+    <button type="button" class="row" data-id="${f.id}" data-hat-passwort="${f.hat_passwort}">
+      <span class="ic">${f.logo_pfad ? `<img src="${esc(f.logo_pfad)}" alt=""
+        style="width:100%;height:100%;object-fit:cover;border-radius:11px">` : FAMILIEN_ICON}</span>
+      <span class="txt">
+        <span class="t">${esc(f.name)}</span>
+        <span class="d">${f.hat_passwort ? 'Anmelden' : 'Erstanmeldung — Passwort festlegen'}</span>
+      </span>
+      <span class="arr">›</span>
+    </button>`).join('');
+  ziel.querySelectorAll('.row[data-id]').forEach(row => {
+    row.addEventListener('click', () => passwortDialog(
+      Number(row.dataset.id), row.querySelector('.t').textContent,
+      row.dataset.hatPasswort === 'true'));
+  });
+}
+
+function passwortDialog(familieId, name, hatPasswort) {
+  const dlg = baueDialog(`
+    <div class="dt">${hatPasswort ? 'Anmelden bei' : 'Passwort festlegen für'} ${esc(name)}</div>
+    <form class="dlg-form">
+      <div class="dlg-fehler" id="pw-fehler"></div>
+      <div class="field">
+        <label for="pw-feld">Passwort</label>
+        <input class="inp" type="password" id="pw-feld" autocomplete="current-password"
+          minlength="8" required autofocus>
+      </div>
+      <button type="submit" class="btn">${hatPasswort ? 'Anmelden' : 'Passwort setzen und anmelden'}</button>
+    </form>`);
+  const form = dlg.querySelector('form');
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const passwort = dlg.querySelector('#pw-feld').value;
+    const fehlerfeld = dlg.querySelector('#pw-fehler');
+    fehlerfeld.classList.remove('zeigen');
+    try {
+      const pfad = hatPasswort ? '/auth/login' : '/auth/passwort-festlegen';
+      await api(pfad, { method: 'POST', body: { familie_id: familieId, passwort } });
+      location.href = 'index.html';
+    } catch (fehler) {
+      fehlerfeld.textContent = fehler.message || 'Anmeldung fehlgeschlagen';
+      fehlerfeld.classList.add('zeigen');
+    }
+  });
+}
+
+document.getElementById('neu-anlegen').addEventListener('click', e => {
+  e.preventDefault();
+  const dlg = baueDialog(`
+    <div class="dt">Neue Familie anlegen</div>
+    <form class="dlg-form">
+      <div class="dlg-fehler" id="neu-fehler"></div>
+      <div class="field">
+        <label for="neu-name">Name der Familie</label>
+        <input class="inp" type="text" id="neu-name" autocomplete="off" required autofocus>
+      </div>
+      <div class="field">
+        <label for="neu-pw">Passwort (mind. 8 Zeichen)</label>
+        <input class="inp" type="password" id="neu-pw" autocomplete="new-password"
+          minlength="8" required>
+      </div>
+      <button type="submit" class="btn">Familie anlegen</button>
+    </form>`);
+  dlg.querySelector('form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const name = dlg.querySelector('#neu-name').value.trim();
+    const passwort = dlg.querySelector('#neu-pw').value;
+    const fehlerfeld = dlg.querySelector('#neu-fehler');
+    fehlerfeld.classList.remove('zeigen');
+    try {
+      await api('/auth/registrieren', { method: 'POST', body: { name, passwort } });
+      location.href = 'index.html';
+    } catch (fehler) {
+      fehlerfeld.textContent = fehler.message || 'Anlegen fehlgeschlagen';
+      fehlerfeld.classList.add('zeigen');
+    }
+  });
+});
+
+familienLaden();
+</script>
+</body>
+</html>

@@ -342,6 +342,23 @@
       <span class="arr">›</span>
     </a>
 
+    <h2 class="sec">Familie</h2>
+    <div class="row" style="cursor:default">
+      <span class="ic">👪</span>
+      <span class="txt">
+        <span class="t" id="familieName">wird geladen …</span>
+        <span class="d">Angemeldet</span>
+      </span>
+    </div>
+    <button class="row" id="abmeldenRow">
+      <span class="ic">⇥</span>
+      <span class="txt">
+        <span class="t">Abmelden</span>
+        <span class="d">Zurück zum Anmeldescreen</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+
     <h2 class="sec">System</h2>
     <div class="row" style="cursor:default">
       <span class="ic">ⓘ</span>
@@ -745,7 +762,7 @@
 /* N216 (C) — die frühere Inline-Fachlogik liegt jetzt als Module unter
    ./assets/settings/. Verhaltensgleich; hier bleibt die Verdrahtung:
    Init-Aufrufe, der zentrale Schließen-Handler und die initiale Ladesequenz. */
-import { installNav } from './assets/immo.js';
+import { api, installNav } from './assets/immo.js';
 import { verknuepfungenInit } from './assets/settings/verknuepfungen.js';
 import { versionZeigen } from './assets/settings/version.js';
 import { nextcloudInit, zustandLaden } from './assets/settings/nextcloud.js';
@@ -785,6 +802,15 @@ fetch('/api/kidb').then(a => a.ok ? a.json() : null).then(d => {
 
 /* Version + Release-Notes gleich laden — läuft parallel zu allem übrigen. */
 versionZeigen();
+
+/* N436 — welche Familie angemeldet ist, plus die Abmeldung selbst. */
+api('/auth/ich').then(f => {
+  document.getElementById('familieName').textContent = f.name;
+}).catch(() => {});
+document.getElementById('abmeldenRow').addEventListener('click', async () => {
+  await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  location.href = 'anmeldung.html';
+});
 
 /* Initiale Ladesequenz — verhaltensgleich zum bisherigen Skript. Die
    Reihenfolge macht funktional keinen Unterschied (jedes Laden ist
