@@ -1,7 +1,7 @@
 """Datenmodell (SQLModel/SQLite) — abgeleitet aus dem ER-Diagramm."""
 from __future__ import annotations
 import json as _json
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field
@@ -17,9 +17,47 @@ def ist_grundstueck(objekt) -> bool:
     return getattr(objekt, "typ", "") == GRUNDSTUECK
 
 
+class Familie(SQLModel, table=True):
+    """N436 — eine Familie/ein Haushalt als Mandant. Alle Objekte, Kontakte,
+    Eigentümer usw. gehören genau einer Familie; die Anmeldung ist
+    familienweit (ein gemeinsames Passwort), nicht personenbezogen.
+
+    `passwort_hash` ist `None` für die per Migration angelegte Bestandsfamilie
+    ("Erstanmeldung offen" — die Migration darf kein Passwort erfinden), bei
+    einer über die Oberfläche neu angelegten Familie ist es sofort gesetzt."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    logo_pfad: Optional[str] = None            # Data-URL, Größe serverseitig gedeckelt
+    passwort_hash: Optional[str] = None
+    passwort_salz: Optional[str] = None
+    fehlversuche: int = 0
+    gesperrt_bis: Optional[datetime] = None
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Sitzung(SQLModel, table=True):
+    """N436 — eine angemeldete Sitzung. Gespeichert wird nur der HASH des
+    Tokens (wie ein Passwort) — ein Datenbank-Dump gibt keine gültige Sitzung
+    preis, nur das Cookie selbst tut das."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    familie_id: int = Field(foreign_key="familie.id", index=True)
+    token_hash: str = Field(index=True, unique=True)
+    erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+    laeuft_ab: datetime
+
+
 class Objekt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    slug: str = Field(index=True, unique=True)
+    # N436 — vorher global eindeutig; zwei Familien dürfen jetzt denselben
+    # Slug haben (z. B. beide eine "Hauptstraße 5"). Eindeutigkeit wird
+    # stattdessen je Familie in der Anwendungslogik geprüft (Slug-Vergabe),
+    # der reine Suchindex bleibt. Migration löscht den alten globalen
+    # Unique-Index explizit (migrate.py `familie_migration`).
+    slug: str = Field(index=True)
+    # N436 — additiv, per Migration auf die Bestandsfamilie zurückgesetzt.
+    # Optional, weil eine frisch erstellte Datenbank vor dem ersten
+    # Migrationslauf kurzzeitig ohne Zuordnung existiert.
+    familie_id: Optional[int] = Field(default=None, foreign_key="familie.id", index=True)
     name: str
     # N322 — vom Nutzer gepflegtes Kurzzeichen für Filter-Chips im Eingang
     # (z. B. „TAU5"). Leer = weiterhin automatisch aus dem Namen abgeleitet
@@ -765,6 +803,8 @@ class Erkennungsregel(SQLModel, table=True):
     damit auch die zerrupften Scans („N - E R G I E") treffen. Die zuerst
     passende aktive Regel (nach `rang`, dann Länge des Musters) gewinnt."""
     id: Optional[int] = Field(default=None, primary_key=True)
+    # N436 — Erkennungsregeln sind je Familie eigene, gelernte Muster.
+    familie_id: Optional[int] = Field(default=None, foreign_key="familie.id", index=True)
     muster: str                          # Textstück, das auf dem Beleg steht
     kategorie: str = "Nebenkosten"       # Zielkategorie
     kostenart: str = ""                  # Ziel-Kostenart (leer = keine)
@@ -844,6 +884,9 @@ class Eigentuemer(SQLModel, table=True):
     """Person oder Gesellschaft, der Immobilien ganz oder teilweise gehören.
     Steht für sich — dieselbe Person kann an mehreren Objekten beteiligt sein."""
     id: Optional[int] = Field(default=None, primary_key=True)
+    # N436 — kein Objekt-Pfad (dieselbe Person gehört ggf. mehreren Objekten),
+    # deshalb eigene familie_id statt transitiver Prüfung über Anteil→Objekt.
+    familie_id: Optional[int] = Field(default=None, foreign_key="familie.id", index=True)
     name: str
     # Historisch: die Rolle hing an der Person. Ob jemand Allein- oder
     # Miteigentuemer ist, entscheidet sich aber je Immobilie — die Rolle sitzt
@@ -1163,9 +1206,16 @@ class Kontakt(SQLModel, table=True):
     Ganz neue Tabelle, alle Felder mit Default: `create_all` legt sie an, kein
     bestehender Datensatz ändert sich."""
     id: Optional[int] = Field(default=None, primary_key=True)
+    # N436 — kein Objekt-Pfad (dieselbe Firma arbeitet für mehrere Objekte),
+    # deshalb eigene familie_id. `schluessel` war vorher global eindeutig;
+    # zwei Familien dürfen jetzt denselben Anbieter (z. B. "Stadtwerke")
+    # unabhängig voneinander anlegen — Eindeutigkeit gilt nur noch je Familie
+    # (Anwendungslogik), der alte globale Unique-Index wird per Migration
+    # gelöscht (siehe `familie_migration`).
+    familie_id: Optional[int] = Field(default=None, foreign_key="familie.id", index=True)
     # Kleingeschrieben und entrümpelt — daran wird wiedererkannt, damit
     # „Elektro Müller GmbH" und „Elektro Müller  gmbh" nicht zweimal entstehen.
-    schluessel: str = Field(index=True, unique=True)
+    schluessel: str = Field(index=True)
     firma: str = ""
     art: str = ""                      # Handwerker | Versicherung | Versorger …
     gewerk: str = ""                   # Schwerpunkt, siehe renovierung.GEWERKE
@@ -1283,6 +1333,8 @@ class Dokumentvorlage(SQLModel, table=True):
     Ganz neue Tabelle, alle Felder mit Default: `create_all` legt sie an, kein
     bestehender Datensatz ändert sich."""
     id: Optional[int] = Field(default=None, primary_key=True)
+    # N436 — kein Objekt-Pfad (Vorlagen sind objektübergreifend), eigene familie_id.
+    familie_id: Optional[int] = Field(default=None, foreign_key="familie.id", index=True)
     name: str = ""                    # Anzeigename, z. B. "Übergabeprotokoll"
     verwendungszweck: str = "Vermietung"
     typ: str = ""                     # Deckt sich mit SCAN_TYPEN-Schlüsseln

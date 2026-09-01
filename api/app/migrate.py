@@ -417,6 +417,89 @@ def miete_kaution_vorgaenger_uebernehmen(engine: Engine) -> int:
     return aktualisiert
 
 
+# N436 — die Bestandsfamilie. Die Migration darf kein Passwort erfinden
+# (`passwort_hash` bleibt None); die Familie wird erst über den
+# "Passwort festlegen"-Erstanmeldungs-Flow nutzbar (routers/auth.py).
+BESTANDSFAMILIE_NAME: str = "Heidenreich"
+
+# Tabellen, die vor N436 keine familie_id kannten und aus dem Bestand heraus
+# auf die Bestandsfamilie zurückgesetzt werden. Objekt zuerst: die anderen
+# vier haben keinen Objekt-Pfad und brauchen ihre eigene Spalte, aber alle
+# fünf folgen demselben Backfill-Muster (nur wo NULL, nie überschreiben).
+_FAMILIE_BACKFILL_TABELLEN: tuple[str, ...] = (
+    "objekt", "eigentuemer", "kontakt", "erkennungsregel", "dokumentvorlage")
+
+# Diese Spalten trugen vor N436 einen globalen `unique=True`-Index; jetzt gilt
+# Eindeutigkeit nur noch je Familie (Anwendungslogik bei der Slug-/Schlüssel-
+# Vergabe), der alte, weiterhin als UNIQUE angelegte Index muss deshalb explizit
+# weg — `eindeutigkeit_sichern` legt nur an, was fehlt, und löscht nie etwas,
+# das schon unter demselben Namen existiert (auch wenn es strenger ist, als
+# das Modell heute verlangt).
+_ALTE_GLOBALE_UNIQUE_INDIZES: tuple[tuple[str, str, str], ...] = (
+    ("objekt", "slug", "ix_objekt_slug"),
+    ("kontakt", "schluessel", "ix_kontakt_schluessel"),
+)
+
+
+def familie_migration(engine: Engine) -> list[str]:
+    """N436 — Mandantentrennung nachziehen: Bestandsfamilie anlegen, jede
+    Zeile ohne `familie_id` ihr zuordnen, alte globale Unique-Indizes durch
+    (weiterhin vorhandene, aber nicht mehr eindeutige) Suchindizes ersetzen.
+
+    Läuft NACH der generellen Spalten-Ergänzung (die `familie_id`-Spalten
+    selbst legt `migriere()`s Diff-Schleife bereits an) und ist idempotent:
+    eine Zeile mit gesetzter `familie_id` wird nie angefasst, ein bereits
+    ersetzter Index wird nicht zweimal ersetzt."""
+    from .models import Familie
+
+    geaendert: list[str] = []
+    inspector = inspect(engine)
+    vorhandene_tabellen = set(inspector.get_table_names())
+
+    with Session(engine) as session:
+        familie = session.exec(
+            select(Familie).where(Familie.name == BESTANDSFAMILIE_NAME)).first()
+        neu_angelegt = familie is None
+        if neu_angelegt:
+            familie = Familie(name=BESTANDSFAMILIE_NAME)
+            session.add(familie)
+            session.commit()
+            session.refresh(familie)
+            geaendert.append(f"familie[neu]={BESTANDSFAMILIE_NAME}")
+
+        with engine.begin() as conn:
+            for tabelle in _FAMILIE_BACKFILL_TABELLEN:
+                if tabelle not in vorhandene_tabellen:
+                    continue
+                spalten = {s["name"] for s in inspector.get_columns(tabelle)}
+                if "familie_id" not in spalten:
+                    continue  # Spalte kommt erst mit dem naechsten Start
+                ergebnis = conn.execute(text(
+                    f'UPDATE "{tabelle}" SET familie_id = :fid '
+                    f'WHERE familie_id IS NULL'), {"fid": familie.id})
+                if ergebnis.rowcount:
+                    geaendert.append(f"{tabelle}.familie_id[{ergebnis.rowcount} gesetzt]")
+
+            vorhanden_indizes = _vorhandene_indizes(conn)
+            for tabelle, spalte, name in _ALTE_GLOBALE_UNIQUE_INDIZES:
+                if tabelle not in vorhandene_tabellen or name not in vorhanden_indizes:
+                    continue
+                # Nur den ALTEN UNIQUE-Index ersetzen — ein bereits nicht-eindeutiger
+                # Index unter demselben Namen (frisches Schema) bleibt unangetastet.
+                info = conn.execute(text(f'PRAGMA index_info("{name}")')).all()
+                unique_info = conn.execute(text(
+                    f'PRAGMA index_list("{tabelle}")')).all()
+                ist_unique = any(r[1] == name and r[2] for r in unique_info)
+                if not ist_unique or not info:
+                    continue
+                conn.execute(text(f'DROP INDEX "{name}"'))
+                conn.execute(text(
+                    f'CREATE INDEX "{name}" ON "{tabelle}" ("{spalte}")'))
+                geaendert.append(f"{tabelle}.{spalte}[Unique-Index -> Suchindex]")
+
+    return geaendert
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -451,6 +534,16 @@ def migriere(engine: Engine) -> list[str]:
             # Ein fehlender Index darf den Start nicht verhindern — die Sperre
             # im Code greift weiter, der Betrieb geht ohne ihn.
             log.warning("Eindeutigkeit nicht gesetzt: %s", fehler)
+
+    # N436 — Mandantentrennung: Bestandsfamilie anlegen, familie_id auf jeder
+    # noch nicht zugeordneten Zeile nachziehen, alte globale Unique-Indizes
+    # ersetzen. Muss vor `pflicht_kostenarten_sichern` laufen? Nein — beide
+    # sind unabhängig; hier zuerst, weil andere Backfills künftig auf eine
+    # gesetzte familie_id angewiesen sein könnten.
+    try:
+        geaendert += familie_migration(engine)
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Familien-Zuordnung nicht ergänzt: %s", fehler)
 
     # Nach den Spalten, in eigener Session: die Pflicht-Kostenarten je Objekt
     # nachziehen (CCCLXII). Betrifft Bestandsobjekte, die schon in der Datenbank
