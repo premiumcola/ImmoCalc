@@ -276,7 +276,8 @@ def test_drucken_geht_an_ip_und_port_des_eingetragenen_geraets(monkeypatch):
 
     monkeypatch.setenv("DRUCKDIENST", "beispiel:631")
     monkeypatch.setattr(modul, "_vorlage_bytes",
-                        lambda s, vid: (_vorlage(), b"%PDF-1.4", "application/pdf"))
+                        lambda s, vid, familie: (
+                            _vorlage(), b"%PDF-1.4", "application/pdf"))
     monkeypatch.setattr(modul.druckdienst, "roh_drucken",
                         lambda ip, port, daten, titel="": (
                             gerufen.update(ip=ip, port=port, daten=daten),

@@ -29,7 +29,7 @@ from ..belegposten import BelegFehler
 from ..bezeichnung import betrag_aus_namen, datum_aus_namen, objekt_titel
 from ..cloudkern import (ZIELORDNER, _lies, hauptordner_lesbar, struktur_fuer,
                         verbindung)
-from ..deps import aktuelle_familie, objekt_holen
+from ..deps import aktuelle_familie, dokument_holen, objekt_holen, zeitraum_holen
 from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
@@ -1927,16 +1927,19 @@ def lageplaene_liste(einheit_id: int,
     return lageplaene_der_einheit(session, einheit_id)
 
 
-def _lageplan_holen(session: Session, einheit_id: int,
-                    dokument_id: int) -> Dokument:
+def _lageplan_holen(session: Session, einheit_id: int, dokument_id: int,
+                    familie: Familie) -> Dokument:
     """Der Lageplan-Datensatz einer Einheit — oder 404 (CCCLXXXI).
 
     Trifft nur einen echten Lageplan (`kategorie="Lageplan"`), der auch wirklich
     an genau dieser Einheit hängt. So kann ein Aufruf über die falsche Einheit —
-    oder auf einen fremden Beleg — nichts anrichten."""
+    oder auf einen fremden Beleg — nichts anrichten.
+
+    N436 — der Dokument-Zugriff läuft über `dokument_holen`, das zusätzlich
+    prüft, dass der Beleg zu einem Objekt der angemeldeten Familie gehört."""
     _einheit_holen(session, einheit_id)
-    d = session.get(Dokument, dokument_id)
-    if (not d or d.kategorie != LAGEPLAN or d.info_zu_typ != "einheit"
+    d = dokument_holen(dokument_id, session, familie)
+    if (d.kategorie != LAGEPLAN or d.info_zu_typ != "einheit"
             or d.info_zu_id != einheit_id):
         raise HTTPException(404, "Lageplan nicht gefunden")
     return d
@@ -1950,7 +1953,8 @@ class LageplanNameIn(BaseModel):
 @lageplan_router.patch("/{einheit_id}/lageplan/{dokument_id}")
 def lageplan_umbenennen(einheit_id: int, dokument_id: int,
                         data: LageplanNameIn,
-                        session: Session = Depends(get_session)) -> dict:
+                        session: Session = Depends(get_session),
+                        familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Gibt einem Lageplan einen Anzeigenamen (CCCLXXXI).
 
     Bewusst nur der Name am Datensatz: die Datei in der Nextcloud wird NICHT
@@ -1959,7 +1963,7 @@ def lageplan_umbenennen(einheit_id: int, dokument_id: int,
     und der Abgleich findet sie dort per Pfad wieder und lässt den Anzeigenamen
     stehen. Die Endung bleibt erhalten, damit Vorschau und Download den Dateityp
     weiter erkennen."""
-    d = _lageplan_holen(session, einheit_id, dokument_id)
+    d = _lageplan_holen(session, einheit_id, dokument_id, familie)
     name = (data.name or "").strip()
     if not name:
         raise HTTPException(400, "Bitte einen Namen angeben")
@@ -1977,13 +1981,14 @@ def lageplan_umbenennen(einheit_id: int, dokument_id: int,
 
 @lageplan_router.delete("/{einheit_id}/lageplan/{dokument_id}")
 def lageplan_entfernen(einheit_id: int, dokument_id: int,
-                       session: Session = Depends(get_session)) -> dict:
+                       session: Session = Depends(get_session),
+                       familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Nimmt einen Lageplan aus der App (CCCLXXXI).
 
     Entfernt ausschließlich den Datensatz. Die Datei in der Nextcloud bleibt
     unangetastet — dort wird grundsätzlich nichts gelöscht. Der Aufruf fasst die
     Cloud gar nicht erst an (kein Client, kein DELETE, kein MOVE)."""
-    d = _lageplan_holen(session, einheit_id, dokument_id)
+    d = _lageplan_holen(session, einheit_id, dokument_id, familie)
     pfad = d.pfad
     session.delete(d)
     session.commit()
@@ -2031,17 +2036,22 @@ class AenderungIn(BaseModel):
 
 @router.patch("/{dokument_id}")
 def aendern(dokument_id: int, data: AenderungIn,
-            session: Session = Depends(get_session)) -> dict:
+            session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Ordnet zu oder korrigiert: andere Immobilie, andere Art, andere
     Kostenposition, anderes Belegdatum, anderer Name — die Datei wandert in der
-    Nextcloud mit."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    Nextcloud mit.
+
+    N436 — `d` kommt über `dokument_holen` (404 bei fremdem Beleg); ein
+    Umhängen per `data.objekt` ist zusätzlich auf die Objekte der angemeldeten
+    Familie eingegrenzt, sonst liesse sich ein Beleg auf ein fremdes Objekt
+    umhängen."""
+    d = dokument_holen(dokument_id, session, familie)
     gesetzt = data.model_fields_set
 
     if data.objekt:
-        o = session.exec(select(Objekt).where(Objekt.slug == data.objekt)).first()
+        o = session.exec(select(Objekt).where(
+            Objekt.slug == data.objekt, Objekt.familie_id == familie.id)).first()
         if not o:
             raise HTTPException(404, "Objekt nicht gefunden")
     else:
@@ -2202,11 +2212,10 @@ def aendern(dokument_id: int, data: AenderungIn,
 # `POST` führt sie aus.
 # --------------------------------------------------------------------------
 
-def _beleg(session: Session, dokument_id: int) -> Dokument:
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
-    return d
+def _beleg(session: Session, dokument_id: int, familie: Familie) -> Dokument:
+    """N436 — dünner Wrapper um `dokument_holen`: 404 auch bei einem Beleg
+    einer fremden Familie."""
+    return dokument_holen(dokument_id, session, familie)
 
 
 def _an_anbieter_position_angleichen(session: Session, d: Dokument) -> None:
@@ -2268,13 +2277,14 @@ def _an_anbieter_position_angleichen(session: Session, d: Dokument) -> None:
 
 @router.get("/{dokument_id}/position")
 def position_vorschau(dokument_id: int,
-                      session: Session = Depends(get_session)) -> dict:
+                      session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Was aus diesem Beleg würde. Ändert nichts.
 
     Fehlt eine der drei Angaben (Kostenposition, Zeitraum, Betrag), steht hier
     `moeglich: false` samt Grund — die Oberfläche sagt dann, was noch fehlt,
     statt einen Knopf anzubieten, der scheitert."""
-    d = _beleg(session, dokument_id)
+    d = _beleg(session, dokument_id, familie)
     # N37 — dieselbe Anbieter-Ausrichtung wie beim Übernehmen, damit die
     # Vorschau zeigt, wo der Beleg wirklich landet. Der GET committet nicht;
     # die Angleichung bleibt in dieser Anfrage und wird nicht gespeichert.
@@ -2289,13 +2299,14 @@ def position_vorschau(dokument_id: int,
 
 @router.post("/{dokument_id}/position", status_code=201)
 def position_uebernehmen(dokument_id: int,
-                         session: Session = Depends(get_session)) -> dict:
+                         session: Session = Depends(get_session),
+                         familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Rechnet den Beleg in seine Kostenposition ein — und legt sie an, wenn es
     sie noch nicht gibt.
 
     Zweimal geklickt bleibt es bei derselben Summe: gerechnet wird aus allen
     verknüpften Belegen, nie durch Draufrechnen."""
-    d = _beleg(session, dokument_id)
+    d = _beleg(session, dokument_id, familie)
     # N37 — vor dem Verbuchen den Beleg über seinen Anbieter auf die vorhandene
     # spezifische Position ausrichten, statt eine zweite generische zu erzeugen.
     _an_anbieter_position_angleichen(session, d)
@@ -2311,13 +2322,14 @@ def position_uebernehmen(dokument_id: int,
 
 @router.delete("/{dokument_id}/position")
 def position_loesen(dokument_id: int,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Nimmt den Beleg wieder aus seiner Kostenposition heraus.
 
     Die Position bleibt stehen — ihr Betrag schrumpft um das, was dieser Beleg
     beigesteuert hat. Am Beleg selbst ändert sich nichts, die Datei bleibt, wo
     sie liegt."""
-    d = _beleg(session, dokument_id)
+    d = _beleg(session, dokument_id, familie)
     if not d.position_id:
         raise HTTPException(409, "Dieser Beleg ist in keine Kostenposition "
                                  "eingerechnet.")
@@ -2355,7 +2367,8 @@ class ZuordnenIn(BaseModel):
 
 @router.post("/{dokument_id}/zuordnen")
 def zuordnen(dokument_id: int, data: Optional[ZuordnenIn] = None,
-             session: Session = Depends(get_session)) -> dict:
+             session: Session = Depends(get_session),
+             familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt aus dem Beleg einen vorläufigen (orange) Datensatz an (CCLXXVIII).
 
     Aus der Kategorie ergibt sich, was entsteht: Nebenkosten → Kostenposition,
@@ -2375,9 +2388,7 @@ def zuordnen(dokument_id: int, data: Optional[ZuordnenIn] = None,
 
     Datensicher: nichts wird überschrieben, nur Neues additiv angelegt. Fehlt
     das Objekt, wird das ehrlich gemeldet statt in einen 500 zu laufen."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
     if not o:
         return {"ok": False, "angelegt": [],
@@ -2458,16 +2469,15 @@ def zuordnen(dokument_id: int, data: Optional[ZuordnenIn] = None,
 
 @router.post("/{dokument_id}/loese-zuordnung")
 def loese_zuordnung(dokument_id: int,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Nimmt die Zuordnung eines Belegs zurück (CCCXXI — Umhängen).
 
     Löst die Info-Verknüpfung (`info_zu_*`) und löscht die aus diesem Beleg
     entstandenen VORLÄUFIGEN (orange) Datensätze wieder. Ein bereits bestätigter
     Datensatz bleibt unangetastet — er ist gewollter Bestand; dann wird nur die
     Info-Verknüpfung gelöst. Danach lässt sich der Beleg neu zuordnen."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     geloest = []
     # Info-Verknüpfung lösen.
     if d.info_zu_typ:
@@ -2500,7 +2510,8 @@ class DuplikatEntfernenIn(BaseModel):
 
 @router.post("/{dokument_id}/duplikat-entfernen")
 def duplikat_entfernen(dokument_id: int, data: DuplikatEntfernenIn,
-                       session: Session = Depends(get_session)) -> dict:
+                       session: Session = Depends(get_session),
+                       familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N16b — ein Dokument NUR entfernen, wenn es byte-gleich zu einem anderen
     ist, das ERHALTEN bleibt (`behalten_id`).
 
@@ -2508,11 +2519,13 @@ def duplikat_entfernen(dokument_id: int, data: DuplikatEntfernenIn,
     Dateien bewiesen — nie wird eine einzigartige Datei gelöscht (der Grundsatz
     „nie Daten verlieren" bleibt gewahrt, es geht nur eine identische Kopie).
     Entfernt Datei, `.immocalc`-Sidecar und den DB-Eintrag; eine Verbuchung wird
-    vorher gelöst (die erhaltene Kopie trägt die Kosten weiter)."""
-    weg = session.get(Dokument, dokument_id)
-    behalten = session.get(Dokument, data.behalten_id)
-    if not weg or not behalten:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    vorher gelöst (die erhaltene Kopie trägt die Kosten weiter).
+
+    N436 — beide Belege (`dokument_id` UND `behalten_id`) kommen über
+    `dokument_holen`: ein Duplikat liesse sich sonst auch über einen Beleg
+    einer fremden Familie „entfernen"."""
+    weg = dokument_holen(dokument_id, session, familie)
+    behalten = dokument_holen(data.behalten_id, session, familie)
     if weg.id == behalten.id:
         raise HTTPException(400, "Beide Angaben zeigen auf dasselbe Dokument.")
     o = session.get(Objekt, weg.objekt_id) if weg.objekt_id else None
@@ -2674,13 +2687,10 @@ def immocalc(dokument_id: int, body: ImmoCalcIn,
     Cloud-Datei wird nicht verschoben. Scheitert das Sidecar-Schreiben, wird
     trotzdem gespeichert und `sidecar: false` gemeldet — nie eine Exception.
 
-    N436 — `familie` wird nur für den Fuzzy-Abgleich in
-    `_objekt_aus_immobilie` gebraucht (Objekt einer fremden Familie darf hier
-    nicht zugeordnet werden). Die Besitzprüfung des Dokuments selbst
-    (`dokument_id`) ist ein eigenes, separates Vorhaben."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    N436 — `familie` sichert zweierlei ab: `dokument_holen` prüft den Beleg
+    selbst (404 bei einem fremden Dokument), und derselbe Wert grenzt den
+    Fuzzy-Abgleich in `_objekt_aus_immobilie` auf die eigenen Objekte ein."""
+    d = dokument_holen(dokument_id, session, familie)
     gesetzt = body.model_fields_set
 
     # Das Raster am Dokument festhalten (additiv, leere Werte überschreiben nie).
@@ -2762,16 +2772,19 @@ class AnhaengerIn(BaseModel):
 
 @router.get("/anhaenger/{zeitraum_id}")
 def anhaenger_liste(zeitraum_id: int,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Die kostenfreien Themen-Anhänger eines Zeitraums, nach Kostenart
     gruppiert — und die Belege, die sich noch anhängen ließen.
 
     Angehängt ist, was auf diesen Zeitraum zeigt, ohne in eine Kostenposition
     eingerechnet zu sein (`position_id` leer), mit einer Kostenart als Thema.
-    Kandidaten sind die übrigen kostenfreien Belege derselben Immobilie."""
-    z = session.get(Zeitraum, zeitraum_id)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    Kandidaten sind die übrigen kostenfreien Belege derselben Immobilie.
+
+    N436 — der Zeitraum kommt über `zeitraum_holen` (404 bei fremdem
+    Zeitraum); ohne das liesse sich über eine geratene `zeitraum_id` der
+    Anhänger-Bestand einer fremden Familie einsehen."""
+    z = zeitraum_holen(zeitraum_id, session, familie)
     alle = session.exec(
         select(Dokument).where(Dokument.status != VERMISST)).all()
 
@@ -2796,13 +2809,14 @@ def anhaenger_liste(zeitraum_id: int,
 
 @router.post("/{dokument_id}/anhaenger")
 def anhaenger_setzen(dokument_id: int, data: AnhaengerIn,
-                     session: Session = Depends(get_session)) -> dict:
+                     session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Hängt einen kostenfreien Beleg an ein Kostenart-Thema.
 
     Setzt nur `zeitraum_id` und `kostenart` am Beleg — es entsteht keine
     Kostenposition, `position_id` bleibt leer, kein Betrag wird verrechnet. Die
     Datei in der Cloud bleibt unangetastet, wo sie liegt."""
-    d = _beleg(session, dokument_id)
+    d = _beleg(session, dokument_id, familie)
     if d.position_id:
         raise HTTPException(409, "Dieser Beleg ist in eine Kostenposition "
                                  "eingerechnet — er trägt einen Kostenanteil "
@@ -2823,13 +2837,14 @@ def anhaenger_setzen(dokument_id: int, data: AnhaengerIn,
 
 @router.delete("/{dokument_id}/anhaenger")
 def anhaenger_loesen(dokument_id: int,
-                     session: Session = Depends(get_session)) -> dict:
+                     session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Löst einen Themen-Anhänger wieder vom Zeitraum.
 
     Nimmt nur die Zeitraum-Zuordnung zurück (`zeitraum_id` leer); die
     Klassifizierung (Art, Kostenart) und die Datei bleiben unangetastet. Eine
     Kostenposition war nie im Spiel, `position_id` bleibt unberührt leer."""
-    d = _beleg(session, dokument_id)
+    d = _beleg(session, dokument_id, familie)
     d.zeitraum_id = None
     session.add(d)
     session.commit()
@@ -2839,12 +2854,11 @@ def anhaenger_loesen(dokument_id: int,
 
 @router.delete("/{dokument_id}")
 def entfernen(dokument_id: int,
-              session: Session = Depends(get_session)) -> dict:
+              session: Session = Depends(get_session),
+              familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Nimmt das Dokument aus der App. Die Datei in der Nextcloud bleibt —
     dort wird grundsätzlich nichts gelöscht."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     pfad = d.pfad
     # War der Beleg in eine Kostenposition eingerechnet, schrumpft deren Summe
     # um seinen Anteil. Sonst bliebe dort ein Betrag stehen, zu dem es keinen
@@ -2871,14 +2885,13 @@ def entfernen(dokument_id: int,
 
 @router.post("/{dokument_id}/neu")
 async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
-                         session: Session = Depends(get_session)) -> dict:
+                         session: Session = Depends(get_session),
+                         familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Ersetzt den Beleg durch eine neue Aufnahme.
 
     Die alte Datei bleibt liegen — überschrieben oder gelöscht wird in der
     Nextcloud nichts. Der Eintrag zeigt danach auf die neue Aufnahme."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
     if not o:
         raise HTTPException(400, "Dem Dokument fehlt die Immobilie")
@@ -2923,14 +2936,13 @@ async def neu_einscannen(dokument_id: int, datei: UploadFile = File(...),
 
 
 @router.get("/{dokument_id}/inhalt")
-def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Response:
+def inhalt(dokument_id: int, session: Session = Depends(get_session),
+          familie: Familie = Depends(aktuelle_familie)) -> Response:
     """Liefert die Datei aus der Nextcloud zur Ansicht im Browser.
 
     `inline` statt `attachment`: PDFs und Bilder sollen sich öffnen, nicht
     herunterladen. Rein lesend — an der Datei ändert sich nichts."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     client = verbindung(session)
@@ -2947,7 +2959,8 @@ def inhalt(dokument_id: int, session: Session = Depends(get_session)) -> Respons
 
 @router.get("/{dokument_id}/seiten")
 def seiten(dokument_id: int,
-           session: Session = Depends(get_session)) -> dict:
+           session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Wie viele Bildseiten die Vorschau dieses Belegs hat (CCLIX).
 
     Ein PDF hat so viele Seiten, wie es Blätter trägt; ein Bild (jpg/png) ist
@@ -2956,9 +2969,7 @@ def seiten(dokument_id: int,
     `?seite=`-Anfragen es an `/vorschau` stellen kann.
 
     Rein lesend — die Datei wird nur geholt, nichts geändert."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     client = verbindung(session)
@@ -2976,7 +2987,8 @@ def seiten(dokument_id: int,
 @router.get("/{dokument_id}/vorschau")
 def vorschau(dokument_id: int,
              seite: int = Query(0, ge=0),
-             session: Session = Depends(get_session)) -> Response:
+             session: Session = Depends(get_session),
+             familie: Familie = Depends(aktuelle_familie)) -> Response:
     """Eine Vorschau, die die GANZE Seite zeigt statt eines Ausschnitts:
     PDF → die Seite `seite` als Bild gerendert, ein Bild → direkt. So passt
     sich die Vorschau in der Seite an die Breite an, ohne dass ein Viewer
@@ -2986,9 +2998,7 @@ def vorschau(dokument_id: int,
     `?seite=` (Default 0) wählt bei mehrseitigen PDFs die Seite (CCLIX). Ohne
     den Parameter verhält sich der Endpunkt exakt wie zuvor: die erste Seite.
     Eine Seite jenseits des Endes meldet 416 statt eines leeren Bildes."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     client = verbindung(session)
@@ -3016,12 +3026,13 @@ def vorschau(dokument_id: int,
     raise HTTPException(415, "Für diese Datei gibt es keine Bildvorschau")
 
 
-def _hole_beleg_bytes(session: Session, dokument_id: int) -> tuple[Dokument, bytes]:
+def _hole_beleg_bytes(session: Session, dokument_id: int,
+                      familie: Familie) -> tuple[Dokument, bytes]:
     """Der Beleg und seine Bytes aus der Cloud — die gemeinsame Vorstufe von
-    Erkennen und Neu-Analysieren."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    Erkennen und Neu-Analysieren.
+
+    N436 — `dokument_holen` grenzt auf die angemeldete Familie ein."""
+    d = dokument_holen(dokument_id, session, familie)
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     client = verbindung(session)
@@ -3034,7 +3045,8 @@ def _hole_beleg_bytes(session: Session, dokument_id: int) -> tuple[Dokument, byt
 
 @router.get("/{dokument_id}/erkennen")
 def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
-                        session: Session = Depends(get_session)) -> dict:
+                        session: Session = Depends(get_session),
+                        familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Liest Betrag, Datum und Art aus einem Beleg, der schon in der Cloud liegt.
 
     `_vorschlag` kennt nur den Dateinamen. Heisst die Rechnung schlicht
@@ -3056,10 +3068,10 @@ def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
     # im Eingang immer wieder angesehen, und jeder Aufruf hier kostete bisher
     # einen KI-Call. `?neu=true` (bzw. `/neu-analysieren`) liest bewusst neu.
     if not neu:
-        gespeichert = _ki_aus_db(session.get(Dokument, dokument_id) or Dokument(), session)
+        gespeichert = _ki_aus_db(dokument_holen(dokument_id, session, familie), session)
         if gespeichert:
             return gespeichert
-    d, rohdaten = _hole_beleg_bytes(session, dokument_id)
+    d, rohdaten = _hole_beleg_bytes(session, dokument_id, familie)
     # N296 — zweite Stufe vor der KI: dieselbe Datei kann als NEUER Eintrag
     # hereinkommen (zweiter Scan, Duplikat im anderen Objektordner, nach einem
     # Grabstein neu aufgenommen). Sie hat dann eine andere Nummer, aber
@@ -3101,7 +3113,8 @@ def erkennen_aus_ablage(dokument_id: int, neu: bool = False,
 
 @router.post("/{dokument_id}/neu-analysieren")
 def neu_analysieren(dokument_id: int,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Führt die KI-Analyse für einen abgelegten Beleg erneut aus (CCCLXVII).
 
     Der Nutzer stößt es an, nachdem er den API-Schlüssel hinterlegt hat oder
@@ -3111,7 +3124,7 @@ def neu_analysieren(dokument_id: int,
     KI-Einschätzung kam. Es stürzt nichts ab, es entstehen keine Daten von
     selbst. Rein lesend an der Cloud-Datei; festgehalten werden nur die frischen
     KI-Angaben am Beleg."""
-    d, rohdaten = _hole_beleg_bytes(session, dokument_id)
+    d, rohdaten = _hole_beleg_bytes(session, dokument_id, familie)
     ki_key = _ki_key(session)
     eingerichtet = kiauslese.verfuegbar(ki_key)
     # N328(ii) — einmal lesen, für Erkennung, Strom-Ergänzung und (falls noch
@@ -3149,7 +3162,8 @@ def neu_analysieren(dokument_id: int,
 
 @router.post("/{dokument_id}/geradedrehen")
 def geradedrehen(dokument_id: int, grad: int = Query(0),
-                 session: Session = Depends(get_session)) -> dict:
+                 session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Dreht ein gedreht abgelegtes PDF dauerhaft in die aufrechte Lage.
 
     Manche eingescannten oder abfotografierten Seiten liegen um 90/180/270°
@@ -3168,9 +3182,7 @@ def geradedrehen(dokument_id: int, grad: int = Query(0),
 
     Antwort: `{"ok": true, "gedreht": [{seite, grad}, …], "geaendert": <bool>}`.
     """
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     if not d.dateiname.lower().endswith(".pdf"):
@@ -3220,7 +3232,8 @@ def geradedrehen(dokument_id: int, grad: int = Query(0),
 
 @router.post("/{dokument_id}/durchsuchbar")
 def durchsuchbar(dokument_id: int,
-                 session: Session = Depends(get_session)) -> dict:
+                 session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt einem einzelnen Beleg seine unsichtbare Textschicht unter.
 
     Denselben Weg geht der Wachdienst über `nachtraeglich_ocren`, nur eben für
@@ -3235,9 +3248,7 @@ def durchsuchbar(dokument_id: int,
 
     Nichts zu tun ist kein Fehler: fehlt das Werkzeug, oder trägt der Beleg
     schon Text, lautet die Antwort `ok: true, ergaenzt: false` samt Grund."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der Cloud")
     if not d.dateiname.lower().endswith(".pdf"):
@@ -3347,7 +3358,8 @@ def _im_ordner_umbenennen(session: Session, d: Dokument,
 
 @router.post("/{dokument_id}/umbenennen")
 def umbenennen(dokument_id: int,
-               session: Session = Depends(get_session)) -> dict:
+               session: Session = Depends(get_session),
+               familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Benennt den Beleg auf den Standardnamen um — IM SELBEN ORDNER.
 
     Der Name wird aus den am Dokument gespeicherten Feldern gebaut: Kategorie
@@ -3365,9 +3377,7 @@ def umbenennen(dokument_id: int,
 
     Antwort: `{"ok": true, "alt": …, "neu": …, "pfad": …, "geaendert": <bool>}`.
     """
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if not d.pfad.startswith("/"):
         raise HTTPException(409, "Dieses Dokument liegt noch nicht in der "
                                  "Cloud — es lässt sich nicht umbenennen.")
@@ -3418,7 +3428,8 @@ class NameIn(BaseModel):
 
 @router.patch("/{dokument_id}/name")
 def name_aendern(dokument_id: int, data: NameIn,
-                 session: Session = Depends(get_session)) -> dict:
+                 session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N261 — Beleg nachträglich umbenennen, IM SELBEN ORDNER.
 
     Übergeben wird nur die Sache („Kaminkehrer Musterfirma"), nicht der ganze
@@ -3433,9 +3444,7 @@ def name_aendern(dokument_id: int, data: NameIn,
     um den Namen.
 
     Antwort: `{dateiname, pfad, geaendert}`."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if _ist_grabstein(d.pfad):
         # N242 — die Datei wurde in der Nextcloud gelöscht, der Eintrag lebt
         # nur noch als Grabstein weiter. Ein MOVE griffe ins Leere.
@@ -3749,8 +3758,10 @@ def immocalc_entfernen(bestaetigt: bool = False,
 
     gefunden: list[str] = []
     hinweise: list[str] = []
-    for o in session.exec(
-            select(Objekt).where(Objekt.familie_id == familie.id)).all():
+    eigene_objekte = session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()
+    eigene_objekt_ids = {o.id for o in eigene_objekte}
+    for o in eigene_objekte:
         wurzel = (o.nc_ordner or "").strip()
         if not wurzel:
             continue
@@ -3789,8 +3800,14 @@ def immocalc_entfernen(bestaetigt: bool = False,
 
     # Auch die Einträge, die für eine Sidecar angelegt wurden, verschwinden —
     # sie zeigen jetzt ins Leere. Nur diese, nichts anderes.
+    #
+    # N436 — auf die Objekte der angemeldeten Familie eingegrenzt: ohne das
+    # löschte dieser Lauf Sidecar-Einträge JEDER Familie mit, sobald irgendeine
+    # Familie ihn einmal bestätigt aufrief.
     eintraege_weg = 0
-    for d in list(session.exec(select(Dokument)).all()):
+    for d in list(session.exec(select(Dokument).where(
+            Dokument.objekt_id.in_(eigene_objekt_ids))).all()
+            if eigene_objekt_ids else []):
         if _ist_sidecar(d.dateiname or ""):
             session.delete(d)
             eintraege_weg += 1
@@ -3869,7 +3886,8 @@ class ZusammenfuehrenIn(BaseModel):
 
 @router.post("/{behalten_id}/zusammenfuehren")
 def zusammenfuehren(behalten_id: int, data: ZusammenfuehrenIn,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Führt Duplikate auf `behalten_id` zusammen — **ohne Verknüpfungen zu
     verlieren**.
 
@@ -3882,10 +3900,12 @@ def zusammenfuehren(behalten_id: int, data: ZusammenfuehrenIn,
     beiden bricht der Aufruf ab, statt zu raten.
 
     Die Datei in der Cloud wird nur entfernt, wenn `datei_loeschen` gesetzt ist
-    — und auch dann erst, nachdem die Datenbank sauber ist."""
-    behalten = session.get(Dokument, behalten_id)
-    if behalten is None:
-        raise HTTPException(404, "Der Beleg, der bleiben soll, existiert nicht.")
+    — und auch dann erst, nachdem die Datenbank sauber ist.
+
+    N436 — sowohl `behalten_id` als auch jede `weg_ids`-Nummer kommen über
+    `dokument_holen`: ohne das liesse sich ein Beleg einer fremden Familie
+    zusammenführen oder als „weg" verschwinden lassen."""
+    behalten = dokument_holen(behalten_id, session, familie)
     weg_ids = [i for i in dict.fromkeys(data.weg_ids) if i != behalten_id]
     if not weg_ids:
         raise HTTPException(400, "Es ist kein zweiter Beleg angegeben.")
@@ -3896,9 +3916,7 @@ def zusammenfuehren(behalten_id: int, data: ZusammenfuehrenIn,
 
     wegzu: list[Dokument] = []
     for i in weg_ids:
-        d = session.get(Dokument, i)
-        if d is None:
-            raise HTTPException(404, f"Beleg {i} existiert nicht.")
+        d = dokument_holen(i, session, familie)
         if (d.sha1 or "") != behalten.sha1:
             raise HTTPException(400, (
                 f'„{d.dateiname}“ hat eine andere Prüfsumme als der Beleg, '
@@ -3954,7 +3972,8 @@ def zusammenfuehren(behalten_id: int, data: ZusammenfuehrenIn,
 
 @router.get("/{dokument_id}/text")
 def beleg_text(dokument_id: int, max_zeichen: int = Query(20000, ge=200, le=200000),
-               session: Session = Depends(get_session)) -> dict:
+               session: Session = Depends(get_session),
+               familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N302 — der reine Text eines Belegs. Rein lesend, ohne KI, ohne Kosten.
 
     Gebraucht, damit die Auslese der Belege OHNE gespeicherte Einschätzung
@@ -3966,7 +3985,7 @@ def beleg_text(dokument_id: int, max_zeichen: int = Query(20000, ge=200, le=2000
     nur die Texterkennung (`/durchsuchbar`), und das sagt der Aufrufer selbst.
     Der Rumpf wird bewusst gekürzt: ein 40-seitiger Vertrag soll nicht in einer
     einzigen Antwort landen."""
-    d, rohdaten = _hole_beleg_bytes(session, dokument_id)
+    d, rohdaten = _hole_beleg_bytes(session, dokument_id, familie)
     # Die Prüfsumme kostet hier nichts mehr — die Bytes liegen vor (N290/N296).
     _pruefsumme_nachtragen(session, d, kicache.pruefsumme(rohdaten))
     text_roh = ocr.text_aus_beleg(rohdaten) or ""
@@ -3986,7 +4005,8 @@ def beleg_text(dokument_id: int, max_zeichen: int = Query(20000, ge=200, le=2000
 
 @router.post("/{dokument_id}/text-nachtragen")
 def text_nachtragen(dokument_id: int,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N328(ii) — trägt `Dokument.erkannter_text` für einen Bestandsbeleg nach,
     der die Spalte noch nicht gefüllt hat (~667 Belege vor dieser Änderung).
 
@@ -4001,9 +4021,7 @@ def text_nachtragen(dokument_id: int,
     „ein leeres Feld ist besser als ein falscher Fehler": sie kommt mit
     `zeichen: 0` zurück, der Aufrufer schleift einfach zum nächsten Beleg
     weiter, ohne seine eigene Schleife abzusichern."""
-    d = session.get(Dokument, dokument_id)
-    if not d:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if (d.erkannter_text or "").strip():
         return {"id": d.id, "zeichen": len(d.erkannter_text), "neu": False}
     if not (d.pfad or "").startswith("/"):
@@ -4141,14 +4159,13 @@ def pruefsummen_nachtragen_endpunkt(
 
 @router.get("/{dokument_id}/ablageziele")
 def ablageziele(dokument_id: int,
-                session: Session = Depends(get_session)) -> dict:
+                session: Session = Depends(get_session),
+                familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Wohin dieser Beleg wandern könnte — je Dokumentart ein Vorschlag.
 
     Rein lesend. `aktuell` markiert den Ordner, in dem er gerade liegt; die
     Oberfläche kann ihn damit vorwählen und muss nicht raten."""
-    d = session.get(Dokument, dokument_id)
-    if d is None:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     o = session.get(Objekt, d.objekt_id) if d.objekt_id else None
     if o is None:
         raise HTTPException(400, "Zum Beleg gehört keine Immobilie.")
@@ -4181,7 +4198,8 @@ class VerschiebenIn(BaseModel):
 
 @router.post("/{dokument_id}/verschieben")
 def verschieben(dokument_id: int, data: VerschiebenIn,
-                session: Session = Depends(get_session)) -> dict:
+                session: Session = Depends(get_session),
+                familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Schiebt einen Beleg in einen anderen Ordner — Datei und Eintrag zusammen.
 
     Erst die Cloud, dann die Datenbank; kippt der zweite Schritt, wandert die
@@ -4192,9 +4210,7 @@ def verschieben(dokument_id: int, data: VerschiebenIn,
     Die Verknüpfungen ziehen von selbst nach: sie hängen an `dokument.id`, nicht
     am Pfad (N300). Nachgezogen werden muss nur die Pfadkopie in der
     Wissensdatenbank — das erledigt `_beleg_umziehen` über `kidb` (N299)."""
-    d = session.get(Dokument, dokument_id)
-    if d is None:
-        raise HTTPException(404, "Dokument nicht gefunden")
+    d = dokument_holen(dokument_id, session, familie)
     if not (d.pfad or "").startswith("/"):
         raise HTTPException(400, "Zu diesem Eintrag liegt keine Datei in der "
                                  "Cloud.")

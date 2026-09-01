@@ -17,8 +17,9 @@ from sqlmodel import Session, select
 
 from .. import ablesung, heizoel
 from ..db import get_session
-from ..deps import objekt_holen
-from ..models import Ablesung, Heizoellieferung, Objekt, Zaehler, Zeitraum
+from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
+from ..models import (Ablesung, Familie, Heizoellieferung, Objekt, Zaehler,
+                      Zeitraum)
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["heizoel"])
@@ -32,10 +33,14 @@ class LieferungIn(BaseModel):
     notiz: str = ""
 
 
-def _lieferung(session: Session, lid: int) -> Heizoellieferung:
+def _lieferung(session: Session, lid: int, familie: Familie) -> Heizoellieferung:
     l = session.get(Heizoellieferung, lid)
     if not l:
         raise HTTPException(404, "Heizöl-Lieferung nicht gefunden")
+    # N436 — roher ID-Zugriff ohne Slug: ohne diese Prüfung könnte jede
+    # angemeldete Familie die Öl-Lieferung jeder anderen per erratener ID
+    # ändern oder löschen.
+    pruefe_familienbesitz(session, l, familie)
     return l
 
 
@@ -80,9 +85,10 @@ def anlegen(slug: str, data: LieferungIn, session: Session = Depends(get_session
 
 
 @router.patch("/heizoel/{lid}")
-def aendern(lid: int, data: dict, session: Session = Depends(get_session)) -> dict:
+def aendern(lid: int, data: dict, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Eine Lieferung ändern — z. B. eine Fehleingabe korrigieren."""
-    l = _lieferung(session, lid)
+    l = _lieferung(session, lid, familie)
     for feld in ("datum", "liter", "wert", "ist_anfangsbestand", "notiz"):
         if feld in data:
             wert = data[feld]
@@ -96,11 +102,12 @@ def aendern(lid: int, data: dict, session: Session = Depends(get_session)) -> di
 
 
 @router.delete("/heizoel/{lid}")
-def loeschen(lid: int, session: Session = Depends(get_session)) -> dict:
+def loeschen(lid: int, session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Eine Lieferung entfernen — bewusste Nutzeraktion an genau diesem
     Zusatz-Datensatz (kein Objekt, keine NK), nötig zur Korrektur einer
     Fehleingabe."""
-    l = _lieferung(session, lid)
+    l = _lieferung(session, lid, familie)
     session.delete(l)
     session.commit()
     return {"ok": True}

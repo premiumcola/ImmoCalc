@@ -31,9 +31,9 @@ from sqlmodel import Session, select
 
 from .. import strom
 from ..db import get_session
-from ..deps import objekt_holen
+from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
 from ..mailversand import MailFehler
-from ..models import Eigentuemer, Objekt, Stromjahr, Tankladung
+from ..models import Eigentuemer, Familie, Objekt, Stromjahr, Tankladung
 from .mail import zugang
 # ------------------------------------------------------------------
 # Re-Exports der bewegten PV-Fachlogik (N216) — halten Alt-Aufrufer und
@@ -305,11 +305,16 @@ def ladung_anlegen(slug: str, jahr: int, data: LadungIn,
 
 
 @router.delete("/tankladungen/{lid}")
-def ladung_loeschen(lid: int, session: Session = Depends(get_session)) -> dict:
+def ladung_loeschen(lid: int, session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Eine Ladung entfernen — bewusste Korrektur einer Fehleingabe."""
     l = session.get(Tankladung, lid)
     if not l:
         raise HTTPException(404, "Ladung nicht gefunden")
+    # N436 — roher ID-Zugriff ohne Slug: ohne diese Prüfung könnte jede
+    # angemeldete Familie die Tankladung jeder anderen per erratener ID
+    # löschen.
+    pruefe_familienbesitz(session, l, familie)
     session.delete(l)
     session.commit()
     return {"ok": True}

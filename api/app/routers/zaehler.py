@@ -21,9 +21,10 @@ from ..db import get_session
 from ..einheitenzuordnung import (karte as einheiten_karte, parse_einheiten,
                                   warnungen as zuordnungs_warnungen, zuordne,
                                   zuordne_zaehler)
-from ..deps import objekt_holen, zeitraum_holen
-from ..models import (Ablesung, Einheit, Kostenposition, Miete, Objekt, Partei,
-                      Zaehler, Zeitraum)
+from ..deps import (aktuelle_familie, objekt_holen, pruefe_familienbesitz,
+                    zeitraum_holen)
+from ..models import (Ablesung, Einheit, Familie, Kostenposition, Miete,
+                      Objekt, Partei, Zaehler, Zeitraum)
 from .openwb import ladungen as openwb_ladungen
 from .tankstelle import nutzer_lesen
 
@@ -158,10 +159,12 @@ class UebernahmeIn(BaseModel):
     schluessel: str = "verbrauch"
 
 
-def _zaehler(session: Session, zid: int) -> Zaehler:
+def _zaehler(session: Session, zid: int, familie: Familie) -> Zaehler:
     z = session.get(Zaehler, zid)
     if not z:
         raise HTTPException(404, "Zähler nicht gefunden")
+    # N436 — der Zähler trägt `objekt_id` direkt.
+    pruefe_familienbesitz(session, z, familie)
     return z
 
 
@@ -206,8 +209,9 @@ def anlegen(slug: str, data: ZaehlerIn, session: Session = Depends(get_session),
 
 
 @router.patch("/zaehler/{zid}")
-def aendern(zid: int, data: dict, session: Session = Depends(get_session)) -> dict:
-    z = _zaehler(session, zid)
+def aendern(zid: int, data: dict, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
+    z = _zaehler(session, zid, familie)
     for feld in ("name", "kostenart", "einheit_bezug", "art", "messeinheit", "typ",
                  "hauptzaehler_id", "reihenfolge", "aktiv", "notiz", "bewertungsfaktor",
                  "zaehlernummer"):
@@ -224,8 +228,9 @@ def aendern(zid: int, data: dict, session: Session = Depends(get_session)) -> di
 
 
 @router.delete("/zaehler/{zid}")
-def loeschen(zid: int, session: Session = Depends(get_session)) -> dict:
-    z = _zaehler(session, zid)
+def loeschen(zid: int, session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
+    z = _zaehler(session, zid, familie)
     for a in session.exec(select(Ablesung).where(Ablesung.zaehler_id == zid)).all():
         session.delete(a)
     # N376 — Unterzähler zeigen auf diesen als ihren Hauptzähler. Blieb der
@@ -249,8 +254,9 @@ def loeschen(zid: int, session: Session = Depends(get_session)) -> dict:
 # --------------------------------------------------------------------------
 
 @router.get("/zaehler/{zid}/ablesungen")
-def ablesungen(zid: int, session: Session = Depends(get_session)) -> list[dict]:
-    _zaehler(session, zid)
+def ablesungen(zid: int, session: Session = Depends(get_session),
+              familie: Familie = Depends(aktuelle_familie)) -> list[dict]:
+    _zaehler(session, zid, familie)
     reihe = session.exec(select(Ablesung).where(Ablesung.zaehler_id == zid)
                          .order_by(Ablesung.datum)).all()
     return [{"id": a.id, "datum": a.datum.isoformat(), "stand": a.stand,
@@ -259,8 +265,9 @@ def ablesungen(zid: int, session: Session = Depends(get_session)) -> list[dict]:
 
 @router.post("/zaehler/{zid}/ablesungen", status_code=201)
 def ablesung_speichern(zid: int, data: AblesungIn,
-                       session: Session = Depends(get_session)) -> dict:
-    _zaehler(session, zid)
+                       session: Session = Depends(get_session),
+                       familie: Familie = Depends(aktuelle_familie)) -> dict:
+    _zaehler(session, zid, familie)
     # Idempotent je Zeitraum: eine bestehende Ablesung dieses Zeitraums wird
     # aktualisiert statt verdoppelt — so darf man im Wizard vor- und zurück.
     vorhanden = None
@@ -286,7 +293,8 @@ def ablesung_speichern(zid: int, data: AblesungIn,
 
 @router.post("/zaehler/{zid}/anfangsstand")
 def anfangsstand_setzen(zid: int, data: AnfangsstandIn,
-                        session: Session = Depends(get_session)) -> dict:
+                        session: Session = Depends(get_session),
+                        familie: Familie = Depends(aktuelle_familie)) -> dict:
     """CD — den Anfangsstand (den `vorwert` der ersten Abrechnung) direkt in der
     Maske editierbar machen. Idempotent: existiert schon eine Anfangs-Ablesung
     (per Notiz markiert, sonst die früheste untaggte), wird deren Stand/Datum
@@ -295,7 +303,7 @@ def anfangsstand_setzen(zid: int, data: AnfangsstandIn,
     so behandelt die Interpolation ihn wie jeden anderen Stand (CCCLXXX).
 
     Gibt den aktualisierten Zähler-Stand zurück (wie `_zeige`)."""
-    z = _zaehler(session, zid)
+    z = _zaehler(session, zid, familie)
     abls = session.exec(select(Ablesung).where(Ablesung.zaehler_id == zid)
                         .order_by(Ablesung.datum)).all()
     vorhanden = next((a for a in abls if (a.notiz or "") == ANFANGSSTAND), None) \
@@ -314,13 +322,14 @@ def anfangsstand_setzen(zid: int, data: AnfangsstandIn,
 
 
 @router.delete("/zaehler/{zid}/anfangsstand")
-def anfangsstand_entfernen(zid: int, session: Session = Depends(get_session)) -> dict:
+def anfangsstand_entfernen(zid: int, session: Session = Depends(get_session),
+                           familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N390 — einen versehentlich eingetragenen Anfangsstand wieder entfernen.
     Löscht ausschließlich die als `ANFANGSSTAND` markierte Ablesung, keine
     andere (echte Zeitraum-Ablesungen bleiben unberührt) — engster mögliche
     Radius für die einzige Löschung außerhalb des dedizierten Zähler-Löschwegs.
     404, wenn keiner gesetzt ist. Gibt den aktualisierten Zähler zurück."""
-    z = _zaehler(session, zid)
+    z = _zaehler(session, zid, familie)
     a = session.exec(select(Ablesung).where(
         Ablesung.zaehler_id == zid, Ablesung.notiz == ANFANGSSTAND)).first()
     if not a:
@@ -428,7 +437,8 @@ def maske(session: Session = Depends(get_session),
 
 @router.post("/zeitraeume/{zid}/eauto")
 def eauto_ziehen(session: Session = Depends(get_session),
-                 z: Zeitraum = Depends(zeitraum_holen)) -> dict:
+                 z: Zeitraum = Depends(zeitraum_holen),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N157 — den Jahreswert der E-Tankstelle aus dem Ladeprotokoll ziehen.
 
     Der Wert wird **als Ablesung dieses Zählers** abgelegt. Damit gibt es genau
@@ -487,7 +497,8 @@ def eauto_ziehen(session: Session = Depends(get_session),
     if erfasst is None or abs((erfasst.stand or 0.0) - kwh) > 0.0005 \
             or erfasst.datum != z.ende:
         ablesung_speichern(zae.id, AblesungIn(
-            datum=z.ende, stand=kwh, zeitraum_id=z.id, notiz=EAUTO_NOTIZ), session)
+            datum=z.ende, stand=kwh, zeitraum_id=z.id, notiz=EAUTO_NOTIZ),
+            session, familie)
         antwort["gespeichert"] = True
         log.info("E-Tankstelle: %s kWh am Zähler %s eingetragen", kwh, zae.id)
     antwort["stand"] = kwh

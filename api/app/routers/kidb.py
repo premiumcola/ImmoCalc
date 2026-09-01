@@ -26,7 +26,7 @@ from sqlmodel import Session, select
 
 from .. import kidb
 from ..db import get_session
-from ..deps import aktuelle_familie
+from ..deps import aktuelle_familie, pruefe_familienbesitz
 from ..models import Belegdaten, Dokument, Familie, Objekt
 
 log = logging.getLogger("immocalc")
@@ -66,10 +66,17 @@ def _zeige(e: Belegdaten, objekte: dict[int, Objekt] | None = None) -> dict:
     }
 
 
-def _eintrag(session: Session, eintrag_id: int) -> Belegdaten:
+def _eintrag(session: Session, eintrag_id: int, familie: Familie) -> Belegdaten:
     e = session.get(Belegdaten, eintrag_id)
     if not e:
         raise HTTPException(404, "Belegdaten-Eintrag nicht gefunden")
+    # N436 — roher ID-Zugriff ohne Slug. `Belegdaten` hängt an einem
+    # `Dokument` (`dokument_id`); der Bezug zur Familie läuft über dessen
+    # Objekt. Ein Eintrag ohne (mehr gültige) Verknüpfung gilt konservativ
+    # als nicht gefunden statt geraten zu werden.
+    dok = session.get(Dokument, e.dokument_id) if e.dokument_id else None
+    pruefe_familienbesitz(session, e, familie,
+                         objekt_id=getattr(dok, "objekt_id", None))
     return e
 
 
@@ -200,19 +207,21 @@ def liste(objekt: str = "", jahr: int | None = None, q: str = "",
 
 
 @router.get("/{eintrag_id}")
-def einer(eintrag_id: int, session: Session = Depends(get_session)) -> dict:
+def einer(eintrag_id: int, session: Session = Depends(get_session),
+         familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Ein Eintrag inkl. `pfad` — dem Link auf die Datei in der Cloud."""
     objekte = {x.id: x for x in session.exec(select(Objekt)).all()}
-    return _zeige(_eintrag(session, eintrag_id), objekte)
+    return _zeige(_eintrag(session, eintrag_id, familie), objekte)
 
 
 @router.delete("/{eintrag_id}")
-def loeschen(eintrag_id: int, session: Session = Depends(get_session)) -> dict:
+def loeschen(eintrag_id: int, session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Einen Eintrag entfernen — nur den Datenbankeintrag.
 
     Die Datei in der Cloud gehört dem Nutzer und bleibt unangetastet; der
     Eintrag ist abgeleitet und lässt sich jederzeit neu übernehmen."""
-    e = _eintrag(session, eintrag_id)
+    e = _eintrag(session, eintrag_id, familie)
     session.delete(e)
     session.commit()
     log.info("Belegdaten-Eintrag %d entfernt (Datei bleibt)", eintrag_id)

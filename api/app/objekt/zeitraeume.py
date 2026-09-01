@@ -16,26 +16,27 @@ from sqlmodel import Session, select
 from ..belegposten import (BelegFehler, loese as beleg_loese,
                            verbuche as beleg_verbuche)
 from ..db import get_session
-from ..deps import objekt_holen
-from ..models import (Ablesung, Dokument, Kostenart, Kostenposition, Objekt,
-                      Versandprotokoll, Vorauszahlung, WegVorauszahlung,
-                      Zeitraum)
+from ..deps import aktuelle_familie, objekt_holen, zeitraum_holen
+from ..models import (Ablesung, Dokument, Familie, Kostenart, Kostenposition,
+                      Objekt, Versandprotokoll, Vorauszahlung,
+                      WegVorauszahlung, Zeitraum)
 from ..verteilung import positionen_neu_ableiten
 
 router = APIRouter(tags=["objekte"])
 
 
 @router.get("/zeitraeume/{zid}/positionen")
-def positionen(zid: int, session: Session = Depends(get_session)) -> list[Kostenposition]:
+def positionen(session: Session = Depends(get_session),
+               z: Zeitraum = Depends(zeitraum_holen)) -> list[Kostenposition]:
     """Die Kostenpositionen eines Zeitraums.
 
-    Ein unbekannter Zeitraum ist ein 404 wie bei allen Nachbarn hier: eine leere
-    Liste liest sich sonst als „dieser Zeitraum hat keine Positionen", obwohl es
-    ihn gar nicht gibt — etwa wenn die Oberfläche noch eine id hält, die das
-    Aufräumen leerer Zeiträume längst entfernt hat."""
-    _zeitraum(session, zid)
+    Ein unbekannter (oder fremder) Zeitraum ist ein 404 wie bei allen
+    Nachbarn hier: eine leere Liste liest sich sonst als „dieser Zeitraum hat
+    keine Positionen", obwohl es ihn gar nicht gibt — etwa wenn die
+    Oberfläche noch eine id hält, die das Aufräumen leerer Zeiträume längst
+    entfernt hat."""
     return session.exec(
-        select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()
+        select(Kostenposition).where(Kostenposition.zeitraum_id == z.id)).all()
 
 
 def zeitraum_label_jahr(start: date, ende: date) -> int:
@@ -240,15 +241,16 @@ def zeitraeume_aufraeumen(vorschau: bool = True,
     return {"entfernt": len(betroffen), "vorschau": False}
 
 
-def _zeitraum(session: Session, zid: int) -> Zeitraum:
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
-    return z
+def _zeitraum(session: Session, zid: int, familie: Familie) -> Zeitraum:
+    """N436 — dünner Adapter auf `deps.zeitraum_holen`: hält den Namen, an
+    den `objekt/positionen.py` schon gewöhnt ist, holt die Familien-Prüfung
+    aber von dort statt sie ein zweites Mal zu schreiben."""
+    return zeitraum_holen(zid, session, familie)
 
 
 @router.delete("/zeitraeume/{zid}")
-def zeitraum_entfernen(zid: int, session: Session = Depends(get_session)) -> dict:
+def zeitraum_entfernen(session: Session = Depends(get_session),
+                       z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """N393 — einen Zeitraum bewusst entfernen, auch wenn ihm bereits Belege
     zugeordnet sind (etwa einer, der beim Nachtragen alter Delta-t-Unterlagen
     versehentlich entstand). Der automatische Wegräumer
@@ -262,7 +264,7 @@ def zeitraum_entfernen(zid: int, session: Session = Depends(get_session)) -> dic
     keinen Sinn) und werden mitgelöscht. Ein bereits VERSENDETES
     Versandprotokoll blockiert (409) — eine schon verschickte Abrechnung ist
     ein reales, den Mietern kommuniziertes Ereignis, kein Aufräumfall."""
-    z = _zeitraum(session, zid)
+    zid = z.id
     verk = _verknuepfungen(session, zid)
     if verk["versandprotokolle"]:
         raise HTTPException(409, "Für diesen Zeitraum wurde bereits eine "
@@ -299,8 +301,9 @@ class ZeitraumPatch(BaseModel):
 
 
 @router.patch("/zeitraeume/{zid}")
-def zeitraum_grenzen_aendern(zid: int, data: ZeitraumPatch,
-                             session: Session = Depends(get_session)) -> dict:
+def zeitraum_grenzen_aendern(data: ZeitraumPatch,
+                             session: Session = Depends(get_session),
+                             z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Verschiebt/erweitert die Grenzen eines Abrechnungszeitraums (N35).
 
     Für die Turnus-Umstellung (Wirtschaftsjahr → Kalenderjahr): einen Zeitraum
@@ -309,7 +312,6 @@ def zeitraum_grenzen_aendern(zid: int, data: ZeitraumPatch,
     abgeleiteten Gewichte offener Zeiträume werden neu berechnet, weil sich mit
     den Grenzen die Mietermonate ändern (N5). Ein abgeschlossener Zeitraum bleibt
     gesperrt — er ist ein fertiges Dokument."""
-    z = _zeitraum(session, zid)
     if z.status == "abgeschlossen":
         raise HTTPException(409, "Ein abgeschlossener Zeitraum lässt sich nicht "
                                  "mehr verschieben.")
@@ -318,7 +320,7 @@ def zeitraum_grenzen_aendern(zid: int, data: ZeitraumPatch,
     if ende <= start:
         raise HTTPException(400, "Das Ende muss nach dem Start liegen")
     andere = session.exec(select(Zeitraum).where(
-        Zeitraum.objekt_id == z.objekt_id, Zeitraum.id != zid)).all()
+        Zeitraum.objekt_id == z.objekt_id, Zeitraum.id != z.id)).all()
     if any(a.start == start and a.ende == ende for a in andere):
         raise HTTPException(409, "Diesen Zeitraum gibt es bereits")
     z.start, z.ende = start, ende
@@ -338,14 +340,13 @@ class TeilenIn(BaseModel):
 
 
 @router.post("/zeitraeume/{zid}/teilen", status_code=201)
-def zeitraum_teilen(zid: int, data: TeilenIn,
-                    session: Session = Depends(get_session)) -> dict:
+def zeitraum_teilen(data: TeilenIn, session: Session = Depends(get_session),
+                    z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Teilt einen Zeitraum am `datum` in [start, datum-1] und [datum, ende].
 
     Der alte Zeitraum wird verkürzt, ein zweiter für den Rest angelegt. Belege
     werden hier NICHT verschoben — danach `belege-abgleichen` ordnet sie nach
     Datum den beiden Hälften zu. Additiv, nichts geht verloren."""
-    z = _zeitraum(session, zid)
     if z.status == "abgeschlossen":
         raise HTTPException(409, "Ein abgeschlossener Zeitraum lässt sich nicht "
                                  "teilen.")

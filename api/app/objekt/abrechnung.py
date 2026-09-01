@@ -9,17 +9,21 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from ..db import get_session
+from ..deps import zeitraum_holen
 from ..engine import abrechnung
+from ..models import Zeitraum
 from ..verteilung import (fehlende_angaben, positionen_fuer_abrechnung,
                           unbekannte_anteile, unbekannte_vorauszahlungen)
-from .zeitraeume import _zeitraum
 
 router = APIRouter(tags=["objekte"])
 
 
 @router.get("/zeitraeume/{zid}/abrechnung")
-def abrechnung_endpoint(zid: int, session: Session = Depends(get_session)) -> dict:
-    z = _zeitraum(session, zid)
+def abrechnung_endpoint(session: Session = Depends(get_session),
+                        z: Zeitraum = Depends(zeitraum_holen)) -> dict:
+    # N436 — vormals `_zeitraum(session, zid)` ohne jede Besitzprüfung: roher
+    # ID-Zugriff auf die Abrechnungs-Vorschau einer FREMDEN Familie. Über
+    # `deps.zeitraum_holen` jetzt dieselbe Eingrenzung wie überall sonst.
     # N274 — die Positions-/Vorauszahlungs-Aufbereitung (N125-Filter,
     # CCCLIX-Vorab-Split, CCCLXIV-Vorauszahlung-aus-Miete) steht seither in
     # `verteilung.positionen_fuer_abrechnung` — dieselbe Stelle, die auch

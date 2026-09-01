@@ -11,6 +11,7 @@ from .. import ocr
 from ..abrechnung_pdf import abrechnung_pdf, pdf_dateiname
 from ..cloudkern import _lies
 from ..db import get_session
+from ..deps import zeitraum_holen
 from ..engine import abrechnung
 from ..heizkosten import nachweis_fuer_einheit
 from ..mailversand import MailFehler, versandlauf
@@ -92,11 +93,9 @@ def _empfaenger(session: Session, objekt_id: int,
 
 
 @router.get("/{zid}/versand")
-def uebersicht(zid: int, session: Session = Depends(get_session)) -> dict:
+def uebersicht(session: Session = Depends(get_session),
+               z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Wer bekommt was — und wem fehlt die Mailadresse?"""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
     res = _ergebnis(session, z)
     kontakte = _empfaenger(session, z.objekt_id, z.start, z.ende)
 
@@ -202,13 +201,10 @@ def _strom_herkunft(session: Session, zid: int) -> list[dict] | None:
            for p in treffer]
 
 
-def _abrechnung_bauen(session: Session, zid: int,
+def _abrechnung_bauen(session: Session, z: Zeitraum,
                       partei: str) -> tuple[bytes, int, str]:
     """Die Abrechnungs-PDF einer Partei bauen — einmal, für Vorschau (PDF),
     Seitenbild (PNG) und Versand. Liefert (Inhalt, Seitenzahl, Dateiname)."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
     o = session.get(Objekt, z.objekt_id)
     res = _ergebnis(session, z)
     werte = (res.get("parteien") or {}).get(partei)
@@ -219,7 +215,7 @@ def _abrechnung_bauen(session: Session, zid: int,
     einheit = kontakt.get("einheit", "")
     heiznachweis = nachweis_fuer_einheit(session, z, einheit, partei,
                                          res.get("positionen"))
-    strom = _strom_herkunft(session, zid)
+    strom = _strom_herkunft(session, z.id)
     inhalt = abrechnung_pdf(o.name, zeitraum_text, partei, werte,
                             _einzelposten(res, partei),
                             absender=_absender_name(session, o.id),
@@ -231,10 +227,10 @@ def _abrechnung_bauen(session: Session, zid: int,
 
 
 @router.get("/{zid}/abrechnung.pdf")
-def abrechnung_als_pdf(zid: int, partei: str,
-                       session: Session = Depends(get_session)) -> Response:
+def abrechnung_als_pdf(partei: str, session: Session = Depends(get_session),
+                       z: Zeitraum = Depends(zeitraum_holen)) -> Response:
     """Die Abrechnung einer Partei als PDF — zum Ansehen vor dem Versand."""
-    inhalt, seiten, name = _abrechnung_bauen(session, zid, partei)
+    inhalt, seiten, name = _abrechnung_bauen(session, z, partei)
     return Response(content=inhalt, media_type="application/pdf", headers={
         "Content-Disposition": f'inline; filename="{name}"',
         # N421 — die Vorschau (`pdfAnsehen`, immo.js) braucht die Seitenzahl,
@@ -243,8 +239,9 @@ def abrechnung_als_pdf(zid: int, partei: str,
 
 
 @router.get("/{zid}/abrechnung-seite.png")
-def abrechnung_seite_als_bild(zid: int, partei: str, seite: int = 0,
-                              session: Session = Depends(get_session)) -> Response:
+def abrechnung_seite_als_bild(partei: str, seite: int = 0,
+                              session: Session = Depends(get_session),
+                              z: Zeitraum = Depends(zeitraum_holen)) -> Response:
     """N424 — eine Seite der Abrechnung als Bild, breitenfüllend gerendert.
 
     Derselbe Weg, den hochgeladene Belege längst gehen
@@ -255,7 +252,7 @@ def abrechnung_seite_als_bild(zid: int, partei: str, seite: int = 0,
 
     Rein lesend: die Abrechnung wird für die Anzeige neu gebaut, nichts
     gespeichert."""
-    inhalt, seiten, _ = _abrechnung_bauen(session, zid, partei)
+    inhalt, seiten, _ = _abrechnung_bauen(session, z, partei)
     if seite >= seiten:
         raise HTTPException(416, f"Diese Abrechnung hat nur {seiten} Seite(n)")
     # `osd=False`: ein selbst erzeugtes PDF steht immer aufrecht — die
@@ -295,15 +292,13 @@ def _versendete_adressen(session: Session, zid: int) -> set[tuple[str, str]]:
 
 
 @router.post("/{zid}/abschliessen")
-def abschliessen(zid: int, data: AbschlussIn,
-                 session: Session = Depends(get_session)) -> dict:
+def abschliessen(data: AbschlussIn, session: Session = Depends(get_session),
+                 z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Schließt den Zeitraum ab und verschickt die Abrechnungen.
 
     Offene Positionen blockieren, solange sie nicht ausdrücklich übergangen
     werden — sonst ginge eine unvollständige Abrechnung an die Mieter."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    zid = z.id
     if z.status != "in Arbeit" and not data.erneut:
         raise HTTPException(409, "Dieser Zeitraum ist bereits abgeschlossen. "
                                  "Ein erneuter Versand muss ausdrücklich "
@@ -434,7 +429,8 @@ def abschliessen(zid: int, data: AbschlussIn,
 
 
 @router.post("/{zid}/oeffnen")
-def oeffnen(zid: int, session: Session = Depends(get_session)) -> dict:
+def oeffnen(session: Session = Depends(get_session),
+           z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Öffnet einen abgeschlossenen Zeitraum wieder.
 
     Ein Abschluss passiert schnell — ein Beleg kommt nach, ein Betrag war
@@ -448,9 +444,7 @@ def oeffnen(zid: int, session: Session = Depends(get_session)) -> dict:
     Abschluss jeder Mieter die Mail ein zweites Mal — auch die, bei denen sich
     gar nichts geändert hat. Wer nach einer Korrektur bewusst erneut
     verschicken will, tut das gezielt über den Abschluss mit `erneut`."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    zid = z.id
     beliefert = lambda: sorted({p for p, _ in _versendete_adressen(session, zid)})
     if z.status == "in Arbeit":
         return {"ok": True, "status": z.status, "geaendert": False,

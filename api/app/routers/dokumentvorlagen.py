@@ -32,9 +32,10 @@ from .. import drucker as druckdienst
 from .. import ocr
 from ..cloudkern import _lies, verbindung
 from ..db import get_session
+from ..deps import aktuelle_familie
 from ..dokumente.namen import _dateiname_kopfzeile, _endung, _saubere_datei
 from .. import upload
-from ..models import Dokumentvorlage
+from ..models import Dokumentvorlage, Familie
 from ..nextcloud import NextcloudFehler
 from .cloud import _schreib
 
@@ -87,9 +88,11 @@ def _zeige(v: Dokumentvorlage) -> dict:
     }
 
 
-def _eintrag(session: Session, vorlage_id: int) -> Dokumentvorlage:
+def _eintrag(session: Session, vorlage_id: int, familie: Familie) -> Dokumentvorlage:
     v = session.get(Dokumentvorlage, vorlage_id)
-    if not v:
+    # N436 — roher ID-Zugriff ohne Slug. `Dokumentvorlage` trägt seine eigene
+    # `familie_id` (Vorlagen sind objektübergreifend) — direkter Vergleich.
+    if not v or v.familie_id != familie.id:
         raise HTTPException(404, "Vorlage nicht gefunden")
     return v
 
@@ -167,7 +170,8 @@ def _pruefe_dateiart(dateiname: str) -> None:
 async def hochladen(name: str, verwendungszweck: str = "Vermietung",
                     typ: str = "", quelle_url: str = "", hinweis: str = "",
                     datei: UploadFile = File(...),
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt eine eigene Vorlage ab — der einzige Weg, wie eine Vorlage in das
     Archiv kommt (N247: kein Download aus dem Netz mehr).
 
@@ -189,16 +193,19 @@ async def hochladen(name: str, verwendungszweck: str = "Vermietung",
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
     if typ:
+        # N436 — nur die eigene Vorlage weicht; sonst könnte das Hochladen
+        # einer Vorlage den Katalog-Eintrag einer ANDEREN Familie löschen.
         for alt in session.exec(select(Dokumentvorlage).where(
                 Dokumentvorlage.verwendungszweck == verwendungszweck,
-                Dokumentvorlage.typ == typ)).all():
+                Dokumentvorlage.typ == typ,
+                Dokumentvorlage.familie_id == familie.id)).all():
             log.info("Vorlage ersetzt: %s weicht %s (Datei bleibt)",
                      alt.pfad, frei)
             session.delete(alt)
     v = Dokumentvorlage(name=name, verwendungszweck=verwendungszweck, typ=typ,
                         pfad=f"/{ordner}/{frei}", dateiname=frei,
                         quelle_url=quelle_url, hinweis=hinweis,
-                        erstellt_am=date.today())
+                        erstellt_am=date.today(), familie_id=familie.id)
     session.add(v)
     session.commit()
     session.refresh(v)
@@ -207,10 +214,11 @@ async def hochladen(name: str, verwendungszweck: str = "Vermietung",
 
 
 @router.get("/{vorlage_id}/inhalt")
-def inhalt(vorlage_id: int, session: Session = Depends(get_session)):
+def inhalt(vorlage_id: int, session: Session = Depends(get_session),
+          familie: Familie = Depends(aktuelle_familie)):
     """Liefert die Vorlagendatei zur Ansicht — `inline`, rein lesend."""
     from fastapi import Response
-    v = _eintrag(session, vorlage_id)
+    v = _eintrag(session, vorlage_id, familie)
     if not v.pfad.startswith("/"):
         raise HTTPException(409, "Diese Vorlage liegt noch nicht in der Cloud")
     client = verbindung(session)
@@ -226,9 +234,10 @@ def inhalt(vorlage_id: int, session: Session = Depends(get_session)):
     })
 
 
-def _vorlage_bytes(session: Session, vorlage_id: int) -> tuple[Dokumentvorlage, bytes, str]:
+def _vorlage_bytes(session: Session, vorlage_id: int,
+                   familie: Familie) -> tuple[Dokumentvorlage, bytes, str]:
     """Die Vorlage samt Datei — gemeinsame Vorstufe von Seitenzahl und Vorschau."""
-    v = _eintrag(session, vorlage_id)
+    v = _eintrag(session, vorlage_id, familie)
     if not v.pfad.startswith("/"):
         raise HTTPException(409, "Diese Vorlage liegt noch nicht in der Cloud")
     client = verbindung(session)
@@ -244,10 +253,11 @@ def _vorlage_bytes(session: Session, vorlage_id: int) -> tuple[Dokumentvorlage, 
 # Bild; fehlten sie, fiel er auf „Im neuen Tab öffnen" zurück — die Vorlage
 # lag korrekt in der Cloud, sah aber aus wie kaputt.
 @router.get("/{vorlage_id}/seiten")
-def seiten(vorlage_id: int, session: Session = Depends(get_session)) -> dict:
+def seiten(vorlage_id: int, session: Session = Depends(get_session),
+          familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Wie viele Bildseiten die Vorschau dieser Vorlage hat. 0 heisst: nicht
     als Bild darstellbar (z. B. docx) — dann bleibt der neue Tab der Weg."""
-    v, rohdaten, typ = _vorlage_bytes(session, vorlage_id)
+    v, rohdaten, typ = _vorlage_bytes(session, vorlage_id, familie)
     name = (v.dateiname or "").lower()
     if name.endswith(".pdf") or typ == "application/pdf":
         return {"seiten": ocr.seiten_anzahl(rohdaten)}
@@ -259,11 +269,12 @@ def seiten(vorlage_id: int, session: Session = Depends(get_session)) -> dict:
 
 @router.get("/{vorlage_id}/vorschau")
 def vorschau(vorlage_id: int, seite: int = Query(0, ge=0),
-             session: Session = Depends(get_session)) -> Response:
+             session: Session = Depends(get_session),
+             familie: Familie = Depends(aktuelle_familie)) -> Response:
     """Seite `seite` als Bild. 416, wenn es die Seite nicht gibt; 415, wenn
     sich die Datei gar nicht rendern lässt — beides beantwortet die Oberfläche
     mit dem Hinweis statt mit einem leeren Rahmen."""
-    v, rohdaten, typ = _vorlage_bytes(session, vorlage_id)
+    v, rohdaten, typ = _vorlage_bytes(session, vorlage_id, familie)
     name = (v.dateiname or "").lower()
     if name.endswith(".pdf") or typ == "application/pdf":
         anzahl = ocr.seiten_anzahl(rohdaten)
@@ -395,7 +406,8 @@ def drucker_pruefen(name: str, session: Session = Depends(get_session)) -> dict:
 
 @router.post("/{vorlage_id}/drucken")
 def vorlage_drucken(vorlage_id: int, drucker: str,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Schickt die Vorlage an einen Drucker. Rein lesend, was die Ablage
     angeht — die Datei wird geholt und weitergereicht, nichts verändert.
 
@@ -405,7 +417,7 @@ def vorlage_drucken(vorlage_id: int, drucker: str,
     eigene = _konfiguriert(session)
     if not eigene and not _druckdienst():
         raise HTTPException(503, "Es ist kein Drucker eingerichtet")
-    v, rohdaten, _typ = _vorlage_bytes(session, vorlage_id)
+    v, rohdaten, _typ = _vorlage_bytes(session, vorlage_id, familie)
     titel = v.name or v.dateiname
     if eigene:
         ziel = _drucker_mit_namen(session, drucker)
@@ -421,10 +433,11 @@ def vorlage_drucken(vorlage_id: int, drucker: str,
 
 
 @router.delete("/{vorlage_id}")
-def loeschen(vorlage_id: int, session: Session = Depends(get_session)) -> dict:
+def loeschen(vorlage_id: int, session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Entfernt nur den Datenbankeintrag — die Datei bleibt in der Cloud und
     lässt sich jederzeit neu verlinken oder von Hand aufräumen."""
-    v = _eintrag(session, vorlage_id)
+    v = _eintrag(session, vorlage_id, familie)
     session.delete(v)
     session.commit()
     log.info("Dokumentvorlage-Eintrag %d entfernt (Datei bleibt)", vorlage_id)

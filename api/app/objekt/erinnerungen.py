@@ -11,21 +11,24 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from ..db import get_session
+from ..deps import aktuelle_familie
 from ..erinnerungen import beleg_erinnerung, frist_erinnerung, in_sicht
 from ..frist import frist_tage
-from ..models import (Kostenart, Kostenposition, Objekt, Zeitraum,
+from ..models import (Familie, Kostenart, Kostenposition, Objekt, Zeitraum,
                       ist_grundstueck)
 
 router = APIRouter(tags=["objekte"])
 
 
 @router.get("/erinnerungen")
-def erinnerungen(session: Session = Depends(get_session)) -> dict:
+def erinnerungen(session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Was ansteht: Abrechnungsfristen und erwartete Jahresabrechnungen.
-    Grundlage für Benachrichtigungen."""
+    Grundlage für Benachrichtigungen — nur für die Objekte dieser Familie."""
     heute = date.today()
     offen = []
-    for o in session.exec(select(Objekt)).all():
+    for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all():
         # Ein Grundstück rechnet mit niemandem ab — weder eine Frist nach
         # § 556 BGB noch ein erwarteter Versorgerbeleg ergibt dort einen Sinn.
         # Bestandsgrundstücke haben noch einen Zeitraum aus früheren Anlagen.

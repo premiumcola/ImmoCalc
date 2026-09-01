@@ -10,9 +10,9 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..deps import objekt_holen
+from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
 from ..felder import bereinige
-from ..models import Dokument, Kostenart, Kostenposition, Objekt, Zeitraum
+from ..models import Dokument, Familie, Kostenart, Kostenposition, Objekt, Zeitraum
 
 router = APIRouter(tags=["objekte"])
 
@@ -73,7 +73,8 @@ def _positionen_mit_art(session: Session, objekt_id: int,
 
 @router.patch("/kostenarten/{kid}")
 def kostenart_aendern(kid: int, data: dict,
-                      session: Session = Depends(get_session)) -> dict:
+                      session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Ändert eine Kostenart — und zieht einen neuen Namen in den Positionen
     nach.
 
@@ -94,6 +95,9 @@ def kostenart_aendern(kid: int, data: dict,
     k = session.get(Kostenart, kid)
     if not k:
         raise HTTPException(404, "Kostenart nicht gefunden")
+    # N436 — roher ID-Zugriff ohne Slug: ohne diese Prüfung könnte jede
+    # angemeldete Familie die Kostenart jeder anderen per erratener ID ändern.
+    pruefe_familienbesitz(session, k, familie)
     erlaubt = {"name", "aktiv", "optional", "umlagefaehig", "s35", "beleg_monat",
                "erinnerung_tage", "lieferant", "kundennummer", "turnus",
                "schluessel", "notiz"}

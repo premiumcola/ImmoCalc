@@ -18,8 +18,8 @@ from sqlmodel import Session, select
 from .. import waerme
 from ..waerme import HEIZWERT_OEL
 from ..db import get_session
-from ..deps import objekt_holen
-from ..models import Heizverteiler, Objekt
+from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
+from ..models import Familie, Heizverteiler, Objekt
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["waerme"])
@@ -34,10 +34,14 @@ class HkvIn(BaseModel):
     notiz: str = ""
 
 
-def _hkv(session: Session, hid: int) -> Heizverteiler:
+def _hkv(session: Session, hid: int, familie: Familie) -> Heizverteiler:
     h = session.get(Heizverteiler, hid)
     if not h:
         raise HTTPException(404, "Heizkostenverteiler nicht gefunden")
+    # N436 — roher ID-Zugriff ohne Slug: ohne diese Prüfung könnte jede
+    # angemeldete Familie den HKV jeder anderen per erratener ID ändern
+    # oder löschen.
+    pruefe_familienbesitz(session, h, familie)
     return h
 
 
@@ -81,10 +85,11 @@ def anlegen(slug: str, data: HkvIn, session: Session = Depends(get_session),
 
 
 @router.patch("/heizverteiler/{hid}")
-def aendern(hid: int, data: dict, session: Session = Depends(get_session)) -> dict:
+def aendern(hid: int, data: dict, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Einen HKV ändern — z. B. die jährliche Ablesung eintragen oder eine
     Fehleingabe korrigieren."""
-    h = _hkv(session, hid)
+    h = _hkv(session, hid, familie)
     for feld in ("einheit", "nummer", "raum", "faktor", "einheiten_stand", "notiz"):
         if feld in data:
             setattr(h, feld, data[feld])
@@ -95,10 +100,11 @@ def aendern(hid: int, data: dict, session: Session = Depends(get_session)) -> di
 
 
 @router.delete("/heizverteiler/{hid}")
-def loeschen(hid: int, session: Session = Depends(get_session)) -> dict:
+def loeschen(hid: int, session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Einen HKV entfernen — bewusste Korrektur an genau diesem
     Zusatz-Datensatz (kein Objekt, keine NK)."""
-    h = _hkv(session, hid)
+    h = _hkv(session, hid, familie)
     session.delete(h)
     session.commit()
     return {"ok": True}

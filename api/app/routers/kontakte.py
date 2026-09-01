@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 
 from .. import kontakte as logik
 from ..db import get_session
-from ..deps import aktuelle_familie
+from ..deps import aktuelle_familie, pruefe_familienbesitz
 from ..models import Familie, Kontakt, Kundennummer, Objekt
 
 log = logging.getLogger("immocalc")
@@ -37,6 +37,30 @@ class NummerIn(BaseModel):
     nummer: str = ""
     art: str = "Kundennummer"
     objekt: str = ""
+
+
+def _kontakt_holen(session: Session, kontakt_id: int, familie: Familie) -> Kontakt:
+    """N436 — `Kontakt` trägt seine eigene `familie_id` (keine Immobilie
+    dazwischen, dieselbe Firma arbeitet für mehrere Objekte) — direkter
+    Vergleich statt Umweg über `pruefe_familienbesitz`."""
+    k = session.get(Kontakt, kontakt_id)
+    if k is None or k.familie_id != familie.id:
+        raise HTTPException(404, "Kontakt nicht gefunden")
+    return k
+
+
+def _pruefe_nummer_besitz(session: Session, n: Kundennummer, familie: Familie) -> None:
+    """Eine Kundennummer hängt an einem Objekt ODER (nur) an einem Kontakt —
+    beide Felder sind optional. Vorrang hat der Objekt-Bezug, sonst zählt die
+    Familie des verlinkten Kontakts."""
+    if n.objekt_id is not None:
+        pruefe_familienbesitz(session, n, familie)
+        return
+    if n.kontakt_id is not None:
+        k = session.get(Kontakt, n.kontakt_id)
+        if k is not None and k.familie_id == familie.id:
+            return
+    raise HTTPException(404, "Nummer nicht gefunden")
 
 
 @router.post("/ernten")
@@ -101,25 +125,23 @@ def liste(objekt: str = "", art: str = "", gewerk: str = "", suche: str = "",
 
 
 @router.get("/{kontakt_id}")
-def einzeln(kontakt_id: int, session: Session = Depends(get_session)) -> dict:
-    k = session.get(Kontakt, kontakt_id)
-    if k is None:
-        raise HTTPException(404, "Kontakt nicht gefunden")
+def einzeln(kontakt_id: int, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
+    k = _kontakt_holen(session, kontakt_id, familie)
     objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
     return logik.zeige(session, k, objekte)
 
 
 @router.patch("/{kontakt_id}")
 def aendern(kontakt_id: int, data: KontaktIn,
-            session: Session = Depends(get_session)) -> dict:
+            session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Pflegt einen Kontakt von Hand.
 
     Jedes hier gesetzte Feld wird in `handgepflegt` vermerkt und von der Ernte
     danach **nie wieder überschrieben** — sonst ersetzte der nächste Lauf die
     korrigierte Telefonnummer wieder durch die schlechtere aus dem Beleg."""
-    k = session.get(Kontakt, kontakt_id)
-    if k is None:
-        raise HTTPException(404, "Kontakt nicht gefunden")
+    k = _kontakt_holen(session, kontakt_id, familie)
     geschuetzt = set(k.handgepflegt or [])
     for feld, wert in data.model_dump(exclude_unset=True).items():
         if wert is None:
@@ -138,9 +160,7 @@ def aendern(kontakt_id: int, data: KontaktIn,
 def nummer_anlegen(kontakt_id: int, data: NummerIn,
                    session: Session = Depends(get_session),
                    familie: Familie = Depends(aktuelle_familie)) -> dict:
-    k = session.get(Kontakt, kontakt_id)
-    if k is None:
-        raise HTTPException(404, "Kontakt nicht gefunden")
+    k = _kontakt_holen(session, kontakt_id, familie)
     if not data.nummer.strip():
         raise HTTPException(400, "Bitte eine Nummer eintragen.")
     objekt_id = None
@@ -162,11 +182,13 @@ def nummer_anlegen(kontakt_id: int, data: NummerIn,
 
 @router.delete("/nummer/{nummer_id}")
 def nummer_loeschen(nummer_id: int,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Eine falsch erkannte Nummer entfernen — bewusste Nutzeraktion."""
     n = session.get(Kundennummer, nummer_id)
     if n is None:
         raise HTTPException(404, "Nummer nicht gefunden")
+    _pruefe_nummer_besitz(session, n, familie)
     session.delete(n)
     session.commit()
     return {"ok": True}
@@ -174,15 +196,14 @@ def nummer_loeschen(nummer_id: int,
 
 @router.delete("/{kontakt_id}")
 def kontakt_loeschen(kontakt_id: int,
-                     session: Session = Depends(get_session)) -> dict:
+                     session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Entfernt einen Kontakt samt seiner Nummern.
 
     Bewusste Nutzeraktion. Die Belege bleiben unangetastet — beim nächsten
     Ernten käme die Firma wieder herein, wenn sie dort noch steht; das ist
     gewollt und keine Überraschung."""
-    k = session.get(Kontakt, kontakt_id)
-    if k is None:
-        raise HTTPException(404, "Kontakt nicht gefunden")
+    k = _kontakt_holen(session, kontakt_id, familie)
     for n in session.exec(select(Kundennummer).where(
             Kundennummer.kontakt_id == kontakt_id)).all():
         session.delete(n)
@@ -198,7 +219,8 @@ class ZusammenIn(BaseModel):
 
 @router.post("/{behalten_id}/zusammenfuehren")
 def zusammenfuehren(behalten_id: int, data: ZusammenIn,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Führt Firmen zusammen, die dieselbe sind — ohne etwas zu verlieren.
 
     Die Ernte liest Firmennamen so, wie die Texterkennung sie hergibt. Ein
@@ -216,7 +238,7 @@ def zusammenfuehren(behalten_id: int, data: ZusammenIn,
       dort schon steht, bleibt. Von Hand Gepflegtes gewinnt immer.
     * Gelöscht wird nur der zusammengeführte Eintrag, nie ein Beleg."""
     behalten = session.get(Kontakt, behalten_id)
-    if behalten is None:
+    if behalten is None or behalten.familie_id != familie.id:
         raise HTTPException(404, "Der Kontakt, der bleiben soll, existiert nicht.")
     weg_ids = [i for i in dict.fromkeys(data.weg_ids) if i != behalten_id]
     if not weg_ids:
@@ -226,7 +248,9 @@ def zusammenfuehren(behalten_id: int, data: ZusammenIn,
     geschuetzt = set(behalten.handgepflegt or [])
     for i in weg_ids:
         weg = session.get(Kontakt, i)
-        if weg is None:
+        # N436 — ein Kontakt einer anderen Familie ist genauso „existiert
+        # nicht" wie eine unbekannte ID: nicht unterscheidbar machen.
+        if weg is None or weg.familie_id != familie.id:
             raise HTTPException(404, f"Kontakt {i} existiert nicht.")
         # Erst die Angaben: nur in leere Felder, nie über Gepflegtes.
         logik.zusammenfuehren(behalten, {

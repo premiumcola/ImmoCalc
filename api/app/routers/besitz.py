@@ -7,8 +7,8 @@ from sqlmodel import Session, select
 
 from ..bezeichnung import objekt_titel
 from ..db import get_session
-from ..deps import objekt_holen
-from ..models import (Anteil, Einheit, Eigentuemer, Grundschuld,
+from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
+from ..models import (Anteil, Einheit, Eigentuemer, Familie, Grundschuld,
                       GrundschuldKredit, Kredit, Kreditstand, Miete,
                       Objekt, PVAnlage, Tankladung, Tanknutzer,
                       ist_grundstueck)
@@ -95,13 +95,27 @@ def _bild_pruefen(bild: str) -> None:
         raise HTTPException(400, "Profilbild ist zu groß")
 
 
+def _eigentuemer_holen(session: Session, eid: int, familie: Familie) -> Eigentuemer:
+    """N436 — Eigentuemer hat keinen Objekt-Pfad (dieselbe Person kann
+    mehreren Objekten gehören), sondern eine eigene `familie_id`: direkter
+    Vergleich statt `pruefe_familienbesitz` (das einen `objekt_id`-Hop
+    voraussetzt). 404 statt 403 — wie überall in diesem Modul."""
+    e = session.get(Eigentuemer, eid)
+    if not e or e.familie_id != familie.id:
+        raise HTTPException(404, "Eigentümer nicht gefunden")
+    return e
+
+
 @router.get("/eigentuemer", response_model=None)
-def liste(session: Session = Depends(get_session)) -> list:
+def liste(session: Session = Depends(get_session),
+         familie: Familie = Depends(aktuelle_familie)) -> list:
     """Alle Eigentümer mit ihren Beteiligungen — die Liste in den Einstellungen."""
-    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    objekte = {o.id: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()}
     anteile = session.exec(select(Anteil)).all()
     out = []
-    for e in session.exec(select(Eigentuemer)).all():
+    for e in session.exec(select(Eigentuemer)
+                          .where(Eigentuemer.familie_id == familie.id)).all():
         meine = [a for a in anteile if a.eigentuemer_id == e.id]
         out.append({
             **e.model_dump(),
@@ -131,9 +145,11 @@ def liste(session: Session = Depends(get_session)) -> list:
 
 
 @router.post("/eigentuemer", status_code=201)
-def anlegen(data: EigentuemerIn, session: Session = Depends(get_session)) -> dict:
+def anlegen(data: EigentuemerIn, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
     _bild_pruefen(data.bild)
     e = Eigentuemer.model_validate(data.model_dump())
+    e.familie_id = familie.id
     session.add(e)
     session.commit()
     session.refresh(e)
@@ -141,10 +157,9 @@ def anlegen(data: EigentuemerIn, session: Session = Depends(get_session)) -> dic
 
 
 @router.patch("/eigentuemer/{eid}")
-def aendern(eid: int, data: dict, session: Session = Depends(get_session)) -> dict:
-    e = session.get(Eigentuemer, eid)
-    if not e:
-        raise HTTPException(404, "Eigentümer nicht gefunden")
+def aendern(eid: int, data: dict, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
+    e = _eigentuemer_holen(session, eid, familie)
     if "bild" in data:
         _bild_pruefen(data.get("bild") or "")
     # N370 — `hasattr` war die einzige Prüfung: ein `{"telefon": 123}` landete
@@ -167,11 +182,10 @@ def aendern(eid: int, data: dict, session: Session = Depends(get_session)) -> di
 
 
 @router.delete("/eigentuemer/{eid}")
-def loeschen(eid: int, session: Session = Depends(get_session)) -> dict:
+def loeschen(eid: int, session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Entfernt den Eigentümer und seine Beteiligungen. Objekte bleiben."""
-    e = session.get(Eigentuemer, eid)
-    if not e:
-        raise HTTPException(404, "Eigentümer nicht gefunden")
+    e = _eigentuemer_holen(session, eid, familie)
     for a in session.exec(select(Anteil).where(Anteil.eigentuemer_id == eid)).all():
         session.delete(a)
     # N366 — Ladungen und Tanknutzer zeigen ebenfalls auf diese Person. Der
@@ -293,8 +307,10 @@ def anteile(slug: str, session: Session = Depends(get_session),
 
 
 @router.get("/anteile/stand", response_model=None)
-def anteilsstand(session: Session = Depends(get_session)) -> list:
-    """Verteilungsstand aller aktiven Objekte — fuer die Eigentuemerseite.
+def anteilsstand(session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> list:
+    """Verteilungsstand aller aktiven Objekte dieser Familie — fuer die
+    Eigentuemerseite.
 
     Bewusst auch Objekte ohne jede Beteiligung: gerade die fehlen sonst
     unbemerkt in der Uebersicht."""
@@ -303,7 +319,8 @@ def anteilsstand(session: Session = Depends(get_session)) -> list:
     for e in session.exec(select(Einheit)).all():
         alle_einheiten.setdefault(e.objekt_id, []).append(e)
     out = []
-    for o in session.exec(select(Objekt)).all():
+    for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all():
         if not o.aktiv:
             continue
         zeilen = [a for a in alle if a.objekt_id == o.id]
@@ -317,15 +334,18 @@ def anteilsstand(session: Session = Depends(get_session)) -> list:
 @router.post("/objekte/{slug}/anteile", status_code=201)
 def anteil_setzen(slug: str, data: AnteilIn,
                   session: Session = Depends(get_session),
-                  o: Objekt = Depends(objekt_holen)) -> dict:
+                  o: Objekt = Depends(objekt_holen),
+                  familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt eine Beteiligung an oder ändert eine bestehende desselben Eigners.
 
     Bewusst kein zweiter Eintrag pro Person *und Einheit*: sonst stünde dieselbe
     Beteiligung doppelt in der Liste und die Tausendstel gingen nicht mehr auf.
     Dieselbe Person kann aber sehr wohl am ganzen Objekt *und* an einer Einheit
     beteiligt sein — das sind zwei verschiedene Zuordnungen (CLXI)."""
-    if not session.get(Eigentuemer, data.eigentuemer_id):
-        raise HTTPException(404, "Eigentümer nicht gefunden")
+    # N436 — `eigentuemer_id` ist eine rohe, vom Aufrufer gewählte ID: ohne
+    # diese Prüfung könnte eine Familie ihr eigenes Objekt mit dem Eigentümer
+    # einer FREMDEN Familie verknüpfen.
+    _eigentuemer_holen(session, data.eigentuemer_id, familie)
     wert = runde(data.promille if data.promille is not None else data.tausendstel)
     if not 0 < wert <= VOLL:
         raise HTTPException(400, "Anteile müssen zwischen 0,1 und 1000 ‰ liegen")
@@ -383,18 +403,21 @@ def anteil_setzen(slug: str, data: AnteilIn,
 
 
 @router.delete("/anteile/{aid}")
-def anteil_loeschen(aid: int, session: Session = Depends(get_session)) -> dict:
+def anteil_loeschen(aid: int, session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     a = session.get(Anteil, aid)
     if not a:
         raise HTTPException(404, "Anteil nicht gefunden")
+    pruefe_familienbesitz(session, a, familie)
     session.delete(a)
     session.commit()
     return {"ok": True}
 
 
 @router.get("/vermoegen")
-def uebersicht(session: Session = Depends(get_session)) -> dict:
-    """Wert, Restschuld und Eigenkapital je Objekt und in Summe.
+def uebersicht(session: Session = Depends(get_session),
+               familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """Wert, Restschuld und Eigenkapital je Objekt dieser Familie und in Summe.
 
     Die Jahresstände werden in einem Zug geladen und je Kredit zugeordnet —
     nicht je Kredit einzeln nachgeschlagen. Ohne sie nannte diese Übersicht
@@ -410,7 +433,9 @@ def uebersicht(session: Session = Depends(get_session)) -> dict:
                          [k for k in kredite if k.objekt_id == o.id],
                          [a for a in anteile_alle if a.objekt_id == o.id],
                          staende=staende)
-        for o in session.exec(select(Objekt)).all() if o.aktiv
+        for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all()
+        if o.aktiv
     ]
     zeilen.sort(key=lambda z: -(z["wert"] or 0))
     return {"objekte": zeilen, "gesamt": gesamt(zeilen)}
@@ -585,15 +610,19 @@ def _pv_anhaengen(o: Objekt, out: dict[int, dict], anlage: PVAnlage | None,
 
 
 @router.get("/eigentuemer/uebersicht", response_model=None)
-def eigentuemer_uebersicht(session: Session = Depends(get_session)) -> dict:
-    """Vermögen und Miete je Eigentümer — auf seine Einheiten eingeschränkt.
+def eigentuemer_uebersicht(session: Session = Depends(get_session),
+                           familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """Vermögen und Miete je Eigentümer dieser Familie — auf seine Einheiten
+    eingeschränkt.
 
     Für die Eigentümerseite: jede Person mit dem, was ihr tatsächlich zugerechnet
     wird, nicht mit den Zahlen des ganzen Hauses. Die Gesamtsicht (`/vermoegen`)
     bleibt davon unberührt."""
     heute = date.today()
-    eigner = {e.id: e for e in session.exec(select(Eigentuemer)).all()}
-    objekte = {o.id: o for o in session.exec(select(Objekt)).all() if o.aktiv}
+    eigner = {e.id: e for e in session.exec(
+        select(Eigentuemer).where(Eigentuemer.familie_id == familie.id)).all()}
+    objekte = {o.id: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all() if o.aktiv}
     anteile_alle = session.exec(select(Anteil)).all()
     kredite = session.exec(select(Kredit)).all()
     mieten_alle = session.exec(select(Miete)).all()
@@ -677,30 +706,42 @@ def _grundschuld_dict(session: Session, g: Grundschuld) -> dict:
     return {**g.model_dump(), "kredit_ids": kredit_ids}
 
 
-def _setze_kredite(session: Session, gid: int, kredit_ids: list[int]) -> None:
+def _setze_kredite(session: Session, gid: int, kredit_ids: list[int],
+                   familie: Familie) -> None:
     """Die gesicherten Kredite neu verknüpfen: alte Zuordnung weg, gewünschte
-    anlegen. Unbekannte oder doppelte IDs werden still übergangen."""
+    anlegen. Unbekannte, doppelte oder einer ANDEREN Familie gehörende IDs
+    werden still übergangen.
+
+    N436 — eine Grundschuld darf einen Kredit an einem ANDEREN Objekt sichern
+    (Cross-Collateral, CCXXIX), aber dieses Objekt muss derselben Familie
+    gehören wie die Grundschuld selbst."""
     for v in session.exec(select(GrundschuldKredit).where(
             GrundschuldKredit.grundschuld_id == gid)).all():
         session.delete(v)
     gesehen: set[int] = set()
     for kid in kredit_ids:
-        if kid in gesehen or not session.get(Kredit, kid):
+        if kid in gesehen:
+            continue
+        k = session.get(Kredit, kid)
+        objekt = session.get(Objekt, k.objekt_id) if k else None
+        if not k or not objekt or objekt.familie_id != familie.id:
             continue
         gesehen.add(kid)
         session.add(GrundschuldKredit(grundschuld_id=gid, kredit_id=kid))
 
 
 @router.get("/grundschulden/kredit-auswahl", response_model=None)
-def grundschuld_kredit_auswahl(session: Session = Depends(get_session)) -> list:
-    """Alle Kredite über alle Objekte — die Auswahl, welche eine Grundschuld
-    sichert. Eine Grundschuld kann einen Kredit an einem anderen Objekt decken,
-    darum objektübergreifend."""
-    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
-    reihe = session.exec(select(Kredit)).all()
+def grundschuld_kredit_auswahl(session: Session = Depends(get_session),
+                               familie: Familie = Depends(aktuelle_familie)) -> list:
+    """Alle Kredite über alle Objekte DIESER Familie — die Auswahl, welche eine
+    Grundschuld sichert. Eine Grundschuld kann einen Kredit an einem anderen
+    Objekt decken, darum objektübergreifend (aber familienscharf, N436)."""
+    objekte = {o.id: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()}
+    reihe = [k for k in session.exec(select(Kredit)).all()
+             if k.objekt_id in objekte]
     return [{"id": k.id, "bezeichnung": k.bezeichnung, "bank": k.bank,
-             "objekt": (objekte.get(k.objekt_id).name
-                        if objekte.get(k.objekt_id) else "")}
+             "objekt": objekte[k.objekt_id].name}
             for k in reihe]
 
 
@@ -715,7 +756,8 @@ def grundschulden(slug: str, session: Session = Depends(get_session),
 @router.post("/objekte/{slug}/grundschulden", status_code=201)
 def grundschuld_anlegen(slug: str, data: GrundschuldIn,
                         session: Session = Depends(get_session),
-                        o: Objekt = Depends(objekt_holen)) -> dict:
+                        o: Objekt = Depends(objekt_holen),
+                        familie: Familie = Depends(aktuelle_familie)) -> dict:
     if data.betrag is not None and data.betrag < 0:
         raise HTTPException(400, "Der Betrag einer Grundschuld ist nie negativ")
     g = Grundschuld(objekt_id=o.id, betrag=data.betrag, rang=data.rang,
@@ -724,17 +766,19 @@ def grundschuld_anlegen(slug: str, data: GrundschuldIn,
     session.add(g)
     session.commit()
     session.refresh(g)
-    _setze_kredite(session, g.id, data.kredit_ids or [])
+    _setze_kredite(session, g.id, data.kredit_ids or [], familie)
     session.commit()
     return _grundschuld_dict(session, g)
 
 
 @router.patch("/grundschulden/{gid}")
 def grundschuld_aendern(gid: int, data: GrundschuldIn,
-                        session: Session = Depends(get_session)) -> dict:
+                        session: Session = Depends(get_session),
+                        familie: Familie = Depends(aktuelle_familie)) -> dict:
     g = session.get(Grundschuld, gid)
     if not g:
         raise HTTPException(404, "Grundschuld nicht gefunden")
+    pruefe_familienbesitz(session, g, familie)
     if data.betrag is not None and data.betrag < 0:
         raise HTTPException(400, "Der Betrag einer Grundschuld ist nie negativ")
     # N370 — PATCH ändert, was mitkommt; alles andere bleibt stehen. Vorher
@@ -749,7 +793,7 @@ def grundschuld_aendern(gid: int, data: GrundschuldIn,
             setattr(g, feld, getattr(data, feld))
     session.add(g)
     if data.kredit_ids is not None:
-        _setze_kredite(session, gid, data.kredit_ids)
+        _setze_kredite(session, gid, data.kredit_ids, familie)
     session.commit()
     session.refresh(g)
     return _grundschuld_dict(session, g)
@@ -757,10 +801,12 @@ def grundschuld_aendern(gid: int, data: GrundschuldIn,
 
 @router.delete("/grundschulden/{gid}")
 def grundschuld_loeschen(gid: int,
-                         session: Session = Depends(get_session)) -> dict:
+                         session: Session = Depends(get_session),
+                         familie: Familie = Depends(aktuelle_familie)) -> dict:
     g = session.get(Grundschuld, gid)
     if not g:
         raise HTTPException(404, "Grundschuld nicht gefunden")
+    pruefe_familienbesitz(session, g, familie)
     for v in session.exec(select(GrundschuldKredit).where(
             GrundschuldKredit.grundschuld_id == gid)).all():
         session.delete(v)

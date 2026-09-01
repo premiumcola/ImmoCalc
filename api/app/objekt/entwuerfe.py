@@ -16,9 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from ..db import get_session
+from ..deps import aktuelle_familie, pruefe_familienbesitz
 from ..dokumente.zuordnung import loese_info_referenzen
-from ..models import (Bewohner, Kostenposition, Kredit, Miete, Notarvertrag,
-                      Versicherung, Zahlung)
+from ..models import (Bewohner, Familie, Kostenposition, Kredit, Miete,
+                      Notarvertrag, Versicherung, Zahlung, Zeitraum)
 # Der reguläre Löschweg steht in `routers/stammdaten.py`; Verwerfen ist
 # dasselbe Löschen, nur über einen anderen Knopf. Deshalb dieselben Helfer
 # statt einer zweiten, auseinanderlaufenden Kopie.
@@ -45,7 +46,20 @@ _ENTWURF_MODELLE = {
 }
 
 
-def _entwurf(session: Session, typ: str, eintrag_id: int):
+def _entwurf_objekt_id(session: Session, eintrag) -> int | None:
+    """Der Objekt-Bezug eines Entwurfs — direkt, oder über einen Zwischenschritt
+    (Kostenposition→Zeitraum, Bewohner→Miete), je nachdem, was das Modell
+    selbst trägt."""
+    if isinstance(eintrag, Kostenposition):
+        z = session.get(Zeitraum, eintrag.zeitraum_id)
+        return getattr(z, "objekt_id", None)
+    if isinstance(eintrag, Bewohner):
+        m = session.get(Miete, eintrag.miete_id)
+        return getattr(m, "objekt_id", None)
+    return getattr(eintrag, "objekt_id", None)
+
+
+def _entwurf(session: Session, typ: str, eintrag_id: int, familie: Familie):
     """Der vorläufige Datensatz — mit sauberem 404 statt eines Fehlerkaskade."""
     modell = _ENTWURF_MODELLE.get((typ or "").strip().lower())
     if modell is None:
@@ -53,17 +67,23 @@ def _entwurf(session: Session, typ: str, eintrag_id: int):
     eintrag = session.get(modell, eintrag_id)
     if not eintrag:
         raise HTTPException(404, "Entwurf nicht gefunden")
+    # N436 — roher ID-Zugriff über einen dynamisch gewählten Typnamen, ohne
+    # je einen Slug zu sehen — dasselbe Muster wie der generische Endpunkt in
+    # `routers/stammdaten.py`.
+    pruefe_familienbesitz(session, eintrag, familie,
+                         objekt_id=_entwurf_objekt_id(session, eintrag))
     return eintrag
 
 
 @router.post("/entwuerfe/{typ}/{eintrag_id}/bestaetigen")
 def entwurf_bestaetigen(typ: str, eintrag_id: int,
-                        session: Session = Depends(get_session)) -> dict:
+                        session: Session = Depends(get_session),
+                        familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Macht aus einem vorläufigen (orange) Datensatz einen regulären.
 
     Setzt nur `vorlaeufig=False` — alle übrigen Werte bleiben, wie der Beleg sie
     ergab. Ein bereits bestätigter Datensatz bleibt einfach bestätigt."""
-    eintrag = _entwurf(session, typ, eintrag_id)
+    eintrag = _entwurf(session, typ, eintrag_id, familie)
     eintrag.vorlaeufig = False
     session.add(eintrag)
     session.commit()
@@ -80,12 +100,13 @@ def entwurf_bestaetigen(typ: str, eintrag_id: int,
 
 @router.post("/entwuerfe/{typ}/{eintrag_id}/verwerfen")
 def entwurf_verwerfen(typ: str, eintrag_id: int,
-                      session: Session = Depends(get_session)) -> dict:
+                      session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Löscht einen vorläufigen (orange) Datensatz — nur, wenn er vorläufig ist.
 
     Ein bestätigter Datensatz wird nie gelöscht (409). Das Quell-Dokument bleibt
     bestehen und geht damit „zurück in den Prüfmodus"."""
-    eintrag = _entwurf(session, typ, eintrag_id)
+    eintrag = _entwurf(session, typ, eintrag_id, familie)
     if not eintrag.vorlaeufig:
         raise HTTPException(409, "Dieser Datensatz ist bereits bestätigt und "
                                  "wird nicht gelöscht.")

@@ -14,11 +14,12 @@ os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test_ocr_intake.db")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest  # noqa: E402
-from sqlmodel import Session  # noqa: E402
+from sqlmodel import Session, select  # noqa: E402
 
 from app import ocr  # noqa: E402
 from app.db import engine  # noqa: E402
-from app.models import Dokument  # noqa: E402
+from app.migrate import BESTANDSFAMILIE_NAME  # noqa: E402
+from app.models import Dokument, Familie, Objekt  # noqa: E402
 from app.nextcloud import NextcloudFehler  # noqa: E402
 import app.routers.dokumente as modul  # noqa: E402
 from test_ocr import bild_pdf, mini_pdf  # noqa: E402
@@ -110,8 +111,27 @@ class _WolkeMitInhalt:
         self.inhalte[pfad.strip("/")] = inhalt
 
 
+def _objekt_id(session: Session) -> int:
+    """N436 — `geradedrehen` (und die anderen `/{dokument_id}`-Endpunkte)
+    grenzen jetzt über `dokument_holen` auf die Familie des Objekts ein, zu
+    dem ein Beleg gehört; ein Beleg ganz ohne Objekt gilt seitdem als nicht
+    gefunden (siehe `deps.dokument_holen`). Ein Objekt genügt für die ganze
+    Datei — beim ersten Aufruf angelegt, danach wiederverwendet."""
+    o = session.exec(select(Objekt).where(Objekt.slug == "ocr-intake-haus")).first()
+    if not o:
+        familie = session.exec(
+            select(Familie).where(Familie.name == BESTANDSFAMILIE_NAME)).first()
+        o = Objekt(slug="ocr-intake-haus", name="OCR-Test-Objekt",
+                  familie_id=familie.id if familie else None)
+        session.add(o)
+        session.commit()
+        session.refresh(o)
+    return o.id
+
+
 def _dokument(session: Session, pfad: str, dateiname: str) -> Dokument:
-    d = Dokument(pfad=pfad, dateiname=dateiname, status="zugeordnet")
+    d = Dokument(pfad=pfad, dateiname=dateiname, status="zugeordnet",
+                 objekt_id=_objekt_id(session))
     session.add(d)
     session.commit()
     session.refresh(d)

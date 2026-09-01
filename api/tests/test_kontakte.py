@@ -27,8 +27,18 @@ from sqlmodel import Session, select  # noqa: E402
 from app import kontakte as logik  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import (Dokument, Kontakt, Kundennummer, Objekt,  # noqa: E402
-                        Renovierung, Renovierungsposten, Versicherung)
+from app.migrate import BESTANDSFAMILIE_NAME  # noqa: E402
+from app.models import (Dokument, Familie, Kontakt, Kundennummer,  # noqa: E402
+                        Objekt, Renovierung, Renovierungsposten, Versicherung)
+
+
+def _familie_id(s: Session) -> int | None:
+    """N436 — Kontakte hängen an einer Familie statt an einem Objekt; ohne
+    diese id wären direkt in der DB angelegte Test-Kontakte für die
+    HTTP-Endpunkte unsichtbar (Besitzprüfung, `conftest._test_familie`
+    nutzt dieselbe Bestandsfamilie)."""
+    f = s.exec(select(Familie).where(Familie.name == BESTANDSFAMILIE_NAME)).first()
+    return f.id if f else None
 
 
 # --------------------------------------------------------------------------
@@ -83,7 +93,8 @@ def test_pflege_merkt_sich_das_feld():
     with TestClient(app) as c:
         with Session(engine) as s:
             k = Kontakt(schluessel="pflege", firma="Pflege GmbH",
-                        erfasst_am=date.today(), handgepflegt=[])
+                        erfasst_am=date.today(), handgepflegt=[],
+                        familie_id=_familie_id(s))
             s.add(k); s.commit(); s.refresh(k)
             kid = k.id
         antwort = c.patch(f"/api/kontakte/{kid}",
@@ -274,12 +285,13 @@ def test_zusammenfuehren_nimmt_nummern_und_leere_felder_mit():
     mit derselben Police."""
     with TestClient(app) as c:
         with Session(engine) as s:
+            fid = _familie_id(s)
             a = Kontakt(schluessel="wwk", firma="WWK Versicherung AG",
                         art="Versicherung", telefon="089 5114-0",
-                        handgepflegt=["telefon"])
+                        handgepflegt=["telefon"], familie_id=fid)
             b = Kontakt(schluessel="wvwk", firma="WVWK Versicherung AG",
                         art="Versicherung", email="info@wwk.de",
-                        adresse="München", handgepflegt=[])
+                        adresse="München", handgepflegt=[], familie_id=fid)
             s.add(a); s.add(b); s.commit(); s.refresh(a); s.refresh(b)
             s.add(Kundennummer(kontakt_id=b.id, nummer="53139472", art="Police"))
             s.commit()
@@ -304,8 +316,9 @@ def test_zusammenfuehren_nimmt_nummern_und_leere_felder_mit():
 def test_doppelte_nummern_werden_nicht_verdoppelt():
     with TestClient(app) as c:
         with Session(engine) as s:
-            a = Kontakt(schluessel="d-a", firma="A", handgepflegt=[])
-            b = Kontakt(schluessel="d-b", firma="B", handgepflegt=[])
+            fid = _familie_id(s)
+            a = Kontakt(schluessel="d-a", firma="A", handgepflegt=[], familie_id=fid)
+            b = Kontakt(schluessel="d-b", firma="B", handgepflegt=[], familie_id=fid)
             s.add(a); s.add(b); s.commit(); s.refresh(a); s.refresh(b)
             s.add(Kundennummer(kontakt_id=a.id, nummer="4711", art="Kundennummer"))
             s.add(Kundennummer(kontakt_id=b.id, nummer="4711", art="Kundennummer"))
@@ -320,7 +333,8 @@ def test_doppelte_nummern_werden_nicht_verdoppelt():
 def test_zusammenfuehren_meldet_saubere_fehler():
     with TestClient(app) as c:
         with Session(engine) as s:
-            a = Kontakt(schluessel="f-a", firma="A", handgepflegt=[])
+            a = Kontakt(schluessel="f-a", firma="A", handgepflegt=[],
+                       familie_id=_familie_id(s))
             s.add(a); s.commit(); s.refresh(a)
             aid = a.id
         assert c.post("/api/kontakte/999999/zusammenfuehren",

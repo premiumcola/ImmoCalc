@@ -12,8 +12,9 @@ from sqlmodel import Session, select
 
 from ..belegposten import anlegen as position_bauen
 from ..db import get_session
+from ..deps import aktuelle_familie, pruefe_familienbesitz
 from ..dokumente.zuordnung import loese_info_referenzen
-from ..models import (ERLEDIGT, OFFEN, Dokument, Kostenart,
+from ..models import (ERLEDIGT, OFFEN, Dokument, Familie, Kostenart,
                       Kostenposition, Vorauszahlung, Zeitraum)
 from ..verteilung import (SCHLUESSEL, VORGABE, UnbekannterSchluessel, _monate,
                           ableiten, ableiten_einheit, stammdaten,
@@ -31,7 +32,8 @@ def _gewichte(session: Session, z: Zeitraum, schluessel: str) -> dict[str, float
 
 
 @router.get("/zeitraeume/{zid}/schluessel")
-def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> dict:
+def schluessel_vorschau(zid: int, session: Session = Depends(get_session),
+                        familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Welche Verteilungsschlüssel für dieses Objekt taugen — und welche
     Gewichte dabei herauskämen.
 
@@ -46,7 +48,7 @@ def schluessel_vorschau(zid: int, session: Session = Depends(get_session)) -> di
     (welche Partei/welcher Leerstand wann in welcher Einheit) — additiv, kein
     neuer Endpunkt nötig, das Frontend lädt `/schluessel` ohnehin bei jedem
     Seitenaufbau."""
-    z = _zeitraum(session, zid)
+    z = _zeitraum(session, zid, familie)
     bezuege = stammdaten(session, z)
     vzs = session.exec(
         select(Vorauszahlung).where(Vorauszahlung.zeitraum_id == zid)).all()
@@ -84,7 +86,8 @@ class PositionNeu(BaseModel):
 
 @router.post("/zeitraeume/{zid}/positionen", status_code=201)
 def position_anlegen(zid: int, data: PositionNeu,
-                     session: Session = Depends(get_session)) -> dict:
+                     session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt eine Kostenposition an — mit Gewichten, nicht ohne.
 
     Bisher entstanden Positionen nur beiläufig (Beleg-Scan) und blieben ohne
@@ -97,7 +100,7 @@ def position_anlegen(zid: int, data: PositionNeu,
     (`POST /api/dokumente/{id}/position`): dort addiert sich der Betrag in die
     vorhandene Position hinein, und es bleibt nachvollziehbar, aus welchen
     Belegen die Summe entstand."""
-    z = _zeitraum(session, zid)
+    z = _zeitraum(session, zid, familie)
     if not data.kostenart.strip():
         raise HTTPException(400, "Die Kostenart darf nicht leer sein")
     vorhanden = session.exec(select(Kostenposition).where(
@@ -175,7 +178,8 @@ class PositionIn(BaseModel):
 
 @router.patch("/positionen/{pid}")
 def position_aendern(pid: int, data: PositionIn,
-                     session: Session = Depends(get_session)) -> dict:
+                     session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Betrag nachtragen oder Zustand ändern — das Nachbearbeiten aus der App.
 
     Wird nur der Schlüssel umgestellt, werden die Gewichte neu abgeleitet:
@@ -184,6 +188,11 @@ def position_aendern(pid: int, data: PositionIn,
     p = session.get(Kostenposition, pid)
     if not p:
         raise HTTPException(404, "Position nicht gefunden")
+    # N436 — roher ID-Zugriff ohne Slug: eine Kostenposition trägt kein
+    # eigenes objekt_id-Feld, der Bezug läuft über ihren Zeitraum.
+    zr = session.get(Zeitraum, p.zeitraum_id)
+    pruefe_familienbesitz(session, p, familie,
+                         objekt_id=getattr(zr, "objekt_id", None))
     # CCCLXII — die Position auf eine andere Kostenart setzen. Nur diese eine
     # Position wandert (kein globales Umbenennen — das macht kostenart_aendern).
     if data.kostenart is not None:
@@ -191,7 +200,7 @@ def position_aendern(pid: int, data: PositionIn,
         if not neu:
             raise HTTPException(400, "Die Kostenart braucht einen Namen")
         if neu != p.kostenart:
-            z = _zeitraum(session, p.zeitraum_id)
+            z = _zeitraum(session, p.zeitraum_id, familie)
             # In einem Zeitraum bleibt eine Position je Kostenart die Regel
             # (CLXXXII) — sonst kollidieren zwei Zeilen auf denselben Namen.
             kollision = session.exec(select(Kostenposition).where(
@@ -248,7 +257,7 @@ def position_aendern(pid: int, data: PositionIn,
         if data.abgeleitet is None:
             p.abgeleitet = False
     elif neue_einheit or umgestellt:
-        z = _zeitraum(session, p.zeitraum_id)
+        z = _zeitraum(session, p.zeitraum_id, familie)
         # Solange eine Einheit genannt ist, trägt sie zu 100 %; sonst zählt
         # wieder der Schlüssel über alle Parteien. Serverseitig abgeleitet.
         p.anteile = (ableiten_einheit(session, z, p.nur_einheit)
@@ -263,7 +272,8 @@ def position_aendern(pid: int, data: PositionIn,
 
 
 @router.delete("/positionen/{pid}")
-def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict:
+def position_loeschen(pid: int, session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Entfernt eine Kostenposition — eine bewusste Nutzeraktion.
 
     Die Kostenart bleibt im Katalog des Objekts stehen; die Zeile taucht in der
@@ -277,6 +287,9 @@ def position_loeschen(pid: int, session: Session = Depends(get_session)) -> dict
     p = session.get(Kostenposition, pid)
     if not p:
         raise HTTPException(404, "Position nicht gefunden")
+    zr = session.get(Zeitraum, p.zeitraum_id)
+    pruefe_familienbesitz(session, p, familie,
+                         objekt_id=getattr(zr, "objekt_id", None))
     kostenart = p.kostenart
     zid = p.zeitraum_id
     geloest = 0

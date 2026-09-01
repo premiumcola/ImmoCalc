@@ -15,10 +15,10 @@ from sqlmodel import Session, select
 
 from .. import einheitname
 from ..db import get_session
-from ..deps import objekt_holen
+from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
 from ..dokumente.zuordnung import loese_info_referenzen
 from ..felder import bereinige
-from ..models import Dokument, Einheit, Miete, Objekt, ist_grundstueck
+from ..models import Dokument, Einheit, Familie, Miete, Objekt, ist_grundstueck
 from ..verteilung import positionen_neu_ableiten
 from .stammdaten import (_ganzes_objekt_vermietet, _laeuft, _laufende,
                          _monatsbetrag, _zuordnung)
@@ -50,10 +50,14 @@ class EinheitNeu(BaseModel):
     miete_qm_gemein: Optional[float] = None
 
 
-def _einheit(session: Session, eid: int) -> Einheit:
+def _einheit(session: Session, eid: int, familie: Familie) -> Einheit:
     e = session.get(Einheit, eid)
     if not e:
         raise HTTPException(404, "Einheit nicht gefunden")
+    # N436 — roher ID-Zugriff ohne Slug: ohne diese Prüfung könnte jede
+    # angemeldete Familie die Einheit jeder anderen per erratener ID ändern
+    # oder löschen.
+    pruefe_familienbesitz(session, e, familie)
     return e
 
 
@@ -239,14 +243,15 @@ def einheit_anlegen(slug: str, data: EinheitNeu,
 
 @router.patch("/einheiten/{eid}")
 def einheit_aendern(eid: int, data: dict,
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Ändert eine Einheit — und zieht eine neue Bezeichnung in den
     Mietverhältnissen nach.
 
     Ohne das Nachziehen zeigte `Miete.einheit` nach dem Umbenennen auf eine
     Einheit, die es nicht mehr gibt: die Partei bekäme keine Kosten mehr und
     ihre Vorauszahlung voll erstattet, ohne dass es irgendwo auffiele."""
-    e = _einheit(session, eid)
+    e = _einheit(session, eid, familie)
     erlaubt = {"bezeichnung", "nutzungsart", "flaeche", "terrasse",
                "nebenflaeche", "stellplaetze", "nk_abrechnung", "verkehrswert",
                "gemeinflaechen", "nutzflaechen",
@@ -309,12 +314,13 @@ def einheit_aendern(eid: int, data: dict,
 
 
 @router.delete("/einheiten/{eid}")
-def einheit_loeschen(eid: int, session: Session = Depends(get_session)) -> dict:
+def einheit_loeschen(eid: int, session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Entfernt eine Einheit — aber nur, solange nichts daran hängt.
 
     Ein Mietverhältnis ohne Einheit ist genau der stille Fehler aus XCII.
     Deshalb wird hier lieber abgewiesen und gesagt, wer im Weg steht."""
-    e = _einheit(session, eid)
+    e = _einheit(session, eid, familie)
     einheiten = list(session.exec(
         select(Einheit).where(Einheit.objekt_id == e.objekt_id)).all())
     mieten = [m for m in session.exec(
