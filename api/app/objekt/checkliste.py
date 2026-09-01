@@ -7,11 +7,12 @@ zeitraum-lokal — keine Engine-Aufrufe, nur Zusammenfassen.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from ..belegposten import belege_je_position, handanteil, kurz
 from ..db import get_session
+from ..deps import zeitraum_holen
 from ..dokumente.darstellung import VERMISST
 from ..frist import frist_tage
 from ..models import (Bewohner, Dokument, Einheit, Kostenart, Kostenposition,
@@ -23,14 +24,20 @@ router = APIRouter(tags=["objekte"])
 
 
 @router.get("/zeitraeume/{zid}")
-def zeitraum(zid: int, session: Session = Depends(get_session)) -> dict:
+def zeitraum(zid: int, session: Session = Depends(get_session),
+             z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Checkliste eines Abrechnungszeitraums: was liegt vor, was fehlt.
 
     Jede aktive Kostenart des Objekts ist eine Zeile. Ohne Position gilt sie
-    als offen — so sieht man auch, was noch gar nicht erfasst wurde."""
-    z = session.get(Zeitraum, zid)
-    if not z:
-        raise HTTPException(404, "Zeitraum nicht gefunden")
+    als offen — so sieht man auch, was noch gar nicht erfasst wurde.
+
+    N436 — der Zeitraum kommt über `zeitraum_holen` und ist damit an die
+    angemeldete Familie gebunden. Vorher stand hier ein rohes
+    `session.get(Zeitraum, zid)`: diese Datei wurde beim Roh-ID-Durchgang
+    (Häppchen 6) übersehen, weil sie als einzige Zeitraum-Ansicht nicht in
+    `objekt/zeitraeume.py` liegt — `test_mandantentrennung.py` hat es
+    gefunden. Die Antwort nennt Slug und Namen des Objekts, war also ein
+    echter Leseweg in fremde Bestände."""
     o = session.get(Objekt, z.objekt_id)
 
     positionen = session.exec(

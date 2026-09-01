@@ -50,7 +50,16 @@
 </div>
 <script type="module">
 import { eur, esc } from './assets/immo.js';
-async function api(p){const r=await fetch('/api'+p);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}
+// N436 — eigene, schlanke api()-Fassung (diese Diagnoseseite hängt bewusst
+// nicht am Seitengerüst). Ohne Sitzung antwortet jeder Fachpfad mit 401 —
+// dann gehört der Nutzer auf den Anmeldescreen und nicht in die Meldung
+// „API nicht erreichbar", die hier sonst fälschlich stünde.
+async function api(p){
+  const r=await fetch('/api'+p);
+  if(r.status===401){location.href='anmeldung.html';return new Promise(()=>{});}
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json();
+}
 
 async function run(){
   const st=document.getElementById('status'),stx=document.getElementById('statustext'),c=document.getElementById('content');
@@ -82,7 +91,7 @@ async function run(){
     if(!objekte.length) c.innerHTML='<div class="note">Keine Objekte in der DB.</div>';
   }catch(e){
     st.querySelector('.dot').className='dot err'; stx.textContent='API nicht erreichbar';
-    c.innerHTML='<div class="note">Kein <code>/api</code> erreichbar. Diese Seite braucht den laufenden Stack (nginx proxyt <code>/api</code> an <code>immocalc-api</code>). Beim reinen <code>http.server</code>-Test gibt es kein Backend — nutze <code>./deploy.sh</code>.</div>';
+    c.innerHTML='<div class="note">Kein <code>/api</code> erreichbar. Diese Seite braucht den laufenden Stack (nginx proxyt <code>/api</code> an <code>immocalc-api</code>). Ohne Backend hilft lokal <code>python3 tests/harness.py</code> — API und <code>public/</code> unter einer Herkunft.</div>';
   }
 }
 run();
