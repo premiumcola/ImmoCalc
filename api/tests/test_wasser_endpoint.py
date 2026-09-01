@@ -98,7 +98,7 @@ def _aufbau(slug: str = "laufer-str-5"):
 def test_wasser_endpoint_kostensplit_2024():
     zid = _aufbau()
     with Session(db.engine) as s:
-        res = wasser_detail(zid, session=s)
+        res = wasser_detail(session=s, z=s.get(Zeitraum, zid))
 
     assert res["bereit"] is True, res
     # Gesamtkosten und Preis je m³ wie in der Excel.
@@ -171,7 +171,7 @@ def _aufbau_mehrfach():
 def test_wasser_endpoint_mehrfach_einheiten_split():
     zid = _aufbau_mehrfach()
     with Session(db.engine) as s:
-        res = wasser_detail(zid, session=s)
+        res = wasser_detail(session=s, z=s.get(Zeitraum, zid))
 
     assert res["bereit"] is True, res
     assert res["kosten"]["gesamt"] == 120.0
@@ -244,7 +244,7 @@ def _aufbau_altlabels():
 def test_wasser_endpoint_altlabel_wird_zur_einheit():
     zid = _aufbau_altlabels()
     with Session(db.engine) as s:
-        res = wasser_detail(zid, session=s)
+        res = wasser_detail(session=s, z=s.get(Zeitraum, zid))
 
     assert res["bereit"] is True, res
     namen = {e["name"] for e in res["einheiten"]}
@@ -302,7 +302,7 @@ def _aufbau_wg():
 def test_wasser_endpoint_wg_geht_aufs_haupthaus():
     zid = _aufbau_wg()
     with Session(db.engine) as s:
-        res = wasser_detail(zid, session=s)
+        res = wasser_detail(session=s, z=s.get(Zeitraum, zid))
 
     assert res["bereit"] is True, res
     namen = {e["name"] for e in res["einheiten"]}
@@ -326,7 +326,7 @@ def test_wasser_endpoint_nicht_bereit_ohne_betraege():
         s.add(z)
         s.commit()
         s.refresh(z)
-        res = wasser_detail(z.id, session=s)
+        res = wasser_detail(session=s, z=z)
     assert res["bereit"] is False
     assert "fehlt" in res["hinweis"].lower()
 
@@ -336,14 +336,14 @@ def test_rechnungsmenge_bleibt_stehen_und_weist_die_abweichung_aus():
     bleibt daneben stehen und die Differenz wird benannt."""
     zid = _aufbau("laufer-str-5-rechnungsmenge")
     with Session(db.engine) as s:
-        vorher = wasser_detail(zid, session=s)
+        vorher = wasser_detail(session=s, z=s.get(Zeitraum, zid))
     abgelesen = vorher["abgelesen_m3"]
     assert abgelesen and abgelesen > 0
 
     gesetzt = round(abgelesen - 10.0, 3)
     with Session(db.engine) as s:
-        rechnungsmenge_setzen(zid, {"rechnung_m3": gesetzt}, session=s)
-        d = wasser_detail(zid, session=s)
+        rechnungsmenge_setzen({"rechnung_m3": gesetzt}, session=s, z=s.get(Zeitraum, zid))
+        d = wasser_detail(session=s, z=s.get(Zeitraum, zid))
 
     assert d["rechnung_m3"] == gesetzt
     assert d["abgelesen_m3"] == abgelesen        # der Zaehler bleibt unangetastet
@@ -352,8 +352,8 @@ def test_rechnungsmenge_bleibt_stehen_und_weist_die_abweichung_aus():
 
     # Leeren loest die Angabe wieder auf.
     with Session(db.engine) as s:
-        rechnungsmenge_setzen(zid, {"rechnung_m3": None}, session=s)
-        zurueck = wasser_detail(zid, session=s)
+        rechnungsmenge_setzen({"rechnung_m3": None}, session=s, z=s.get(Zeitraum, zid))
+        zurueck = wasser_detail(session=s, z=s.get(Zeitraum, zid))
     assert zurueck["rechnung_m3"] is None
     assert abs(zurueck["gesamt_m3"] - abgelesen) < 0.01
 
@@ -370,13 +370,13 @@ def test_wasser_leeren_force_nullt_betraege_und_menge_zaehler_bleiben():
     aber die ZAEHLER und ihre Ablesungen unangetastet."""
     zid = _aufbau("leeren-force")
     with Session(db.engine) as s:
-        rechnungsmenge_setzen(zid, {"rechnung_m3": 130.0}, session=s)
-        assert wasser_detail(zid, session=s)["bereit"] is True
+        rechnungsmenge_setzen({"rechnung_m3": 130.0}, session=s, z=s.get(Zeitraum, zid))
+        assert wasser_detail(session=s, z=s.get(Zeitraum, zid))["bereit"] is True
         zaehler_vorher = len(s.exec(select(Zaehler)).all())
         ablesungen_vorher = len(s.exec(select(Ablesung)).all())
 
     with Session(db.engine) as s:
-        res = wasser_leeren(zid, force=True, session=s)
+        res = wasser_leeren(force=True, session=s, z=s.get(Zeitraum, zid))
     assert res["geleert"] is True
     assert res["positionen"] == 3
 
@@ -391,7 +391,7 @@ def test_wasser_leeren_force_nullt_betraege_und_menge_zaehler_bleiben():
         assert len(s.exec(select(Zaehler)).all()) == zaehler_vorher
         assert len(s.exec(select(Ablesung)).all()) == ablesungen_vorher
         # Ohne Beträge ist die Detailübersicht nicht mehr „bereit" → klappt leer ein.
-        assert wasser_detail(zid, session=s)["bereit"] is False
+        assert wasser_detail(session=s, z=s.get(Zeitraum, zid))["bereit"] is False
 
 
 def test_wasser_leeren_ohne_force_raeumt_ab_wenn_kein_beleg_mehr_haengt():
@@ -400,7 +400,7 @@ def test_wasser_leeren_ohne_force_raeumt_ab_wenn_kein_beleg_mehr_haengt():
     Beleg-Entfernen)."""
     zid = _aufbau("leeren-auto")
     with Session(db.engine) as s:
-        res = wasser_leeren(zid, force=False, session=s)
+        res = wasser_leeren(force=False, session=s, z=s.get(Zeitraum, zid))
     assert res["geleert"] is True
     with Session(db.engine) as s:
         assert all(p.betrag == 0.0 for p in _wasser_positionen_der(s, zid))
@@ -417,7 +417,7 @@ def test_wasser_leeren_ohne_force_haelt_position_wenn_noch_ein_beleg_haengt():
                        zeitraum_id=zid, kostenart="Wasser", betrag=298.05,
                        position_id=wasserpos.id))
         s.commit()
-        res = wasser_leeren(zid, force=False, session=s)
+        res = wasser_leeren(force=False, session=s, z=s.get(Zeitraum, zid))
     assert res["geleert"] is False
     with Session(db.engine) as s:
         betraege = {p.kostenart: p.betrag for p in _wasser_positionen_der(s, zid)}

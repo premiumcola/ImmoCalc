@@ -42,7 +42,8 @@ VON_HAND = ("Bitte die Positionen von Hand eintragen — die Datei bleibt "
 # Stand und Schalter
 # --------------------------------------------------------------------------
 @router.get("/zeitraeume/{zid}/weg")
-def weg_stand(zid: int, session: Session = Depends(get_session)) -> dict:
+def weg_stand(session: Session = Depends(get_session),
+             z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Der WEG-Stand: Schalter, Summen, Positionen, Vorauszahlungsabschnitte.
 
     `stand` trägt neben den übernommenen Zeilen auch `direkt` (die von Hand
@@ -50,7 +51,6 @@ def weg_stand(zid: int, session: Session = Depends(get_session)) -> dict:
     Hinweise `uebersprungen`/`entfernt` der letzten Übernahme (N283 e) — sie
     stehen hier und nicht nur in der Antwort auf `/uebernehmen`, damit sie ein
     Neuladen überleben."""
-    z = zeitraum_holen(zid, session)
     return {"aktiv": bool(z.weg_modus), "stand": weg.stand(session, z),
             "vorauszahlungen": weg.abschnitte(session, z)}
 
@@ -60,19 +60,18 @@ class SchalterIn(BaseModel):
 
 
 @router.patch("/zeitraeume/{zid}/weg")
-def weg_schalten(zid: int, data: SchalterIn,
-                 session: Session = Depends(get_session)) -> dict:
+def weg_schalten(data: SchalterIn, session: Session = Depends(get_session),
+                 z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Schaltet den WEG-Modus für diesen Zeitraum ein oder aus.
 
     Beim Ausschalten bleiben die übernommenen Positionen zunächst stehen — sie
     zu löschen wäre ein stiller Datenverlust. Wer sie loswerden will, nimmt sie
     einzeln zurück; der Schalter allein ändert nur die Ansicht."""
-    z = zeitraum_holen(zid, session)
     z.weg_modus = data.aktiv
     session.add(z)
     session.commit()
     session.refresh(z)
-    log.info("WEG-Modus für Zeitraum %s: %s", zid, "an" if data.aktiv else "aus")
+    log.info("WEG-Modus für Zeitraum %s: %s", z.id, "an" if data.aktiv else "aus")
     return {"aktiv": bool(z.weg_modus), "stand": weg.stand(session, z),
             "vorauszahlungen": weg.abschnitte(session, z)}
 
@@ -81,14 +80,15 @@ def weg_schalten(zid: int, data: SchalterIn,
 # Schritt 1 — lesen. Speichert nichts.
 # --------------------------------------------------------------------------
 @router.post("/zeitraeume/{zid}/weg/lesen")
-async def weg_lesen(zid: int, datei: UploadFile = File(...),
-                    session: Session = Depends(get_session)) -> dict:
+async def weg_lesen(datei: UploadFile = File(...),
+                    session: Session = Depends(get_session),
+                    _z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Liest eine WEG-Einzelabrechnung — und legt nichts an.
 
     Rückgabe `{"gelesen": {...}|null, "hinweis": "…"}`. Fällt die Erkennung aus
     (keine KI eingerichtet, kein Text im PDF, unbrauchbare Antwort), ist das
-    kein Fehler: `gelesen` bleibt leer und der Hinweis sagt, was zu tun ist."""
-    zeitraum_holen(zid, session)
+    kein Fehler: `gelesen` bleibt leer und der Hinweis sagt, was zu tun ist.
+    `_z` wird nicht gebraucht — die Dependency dient nur der Besitzprüfung."""
     # N292 — Leere und Grösse prüft `upload.lies` für alle Endpunkte gleich.
     rohdaten = await upload.lies(datei, max_bytes=MAX_BYTES,
                                  was="Die WEG-Abrechnung")
@@ -158,15 +158,14 @@ class WegBelegIn(BaseModel):
 
 
 @router.post("/zeitraeume/{zid}/weg/uebernehmen")
-def weg_uebernehmen(zid: int, data: WegBelegIn,
-                    session: Session = Depends(get_session)) -> dict:
+def weg_uebernehmen(data: WegBelegIn, session: Session = Depends(get_session),
+                    z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Legt aus dem bestätigten Beleg die Kostenpositionen an.
 
     Nicht umlagefähige Positionen entstehen dabei **nie** — sie bleiben im
     aufbewahrten Beleg und kommen unter `stand.nicht_umlagefaehig` zurück.
     Ein zweiter Aufruf schreibt dieselben Zeilen fort statt sie zu verdoppeln;
     von Hand gepflegte Positionen bleiben unangetastet."""
-    z = zeitraum_holen(zid, session)
     gelesen = data.model_dump()
     einheit = (gelesen.pop("einheit", "") or "").strip()
     try:
@@ -188,10 +187,9 @@ class VorauszahlungIn(BaseModel):
 
 
 @router.post("/zeitraeume/{zid}/weg/vorauszahlung", status_code=201)
-def vorauszahlung_anlegen(zid: int, data: VorauszahlungIn,
-                          session: Session = Depends(get_session)) -> dict:
+def vorauszahlung_anlegen(data: VorauszahlungIn, session: Session = Depends(get_session),
+                          z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Ein weiterer Abschnitt — z. B. „ab Juli 235 € statt 220 €"."""
-    z = zeitraum_holen(zid, session)
     v = weg.vorauszahlung_setzen(session, z, data.einheit, data.von, data.bis,
                                  data.betrag_monat)
     return {"id": v.id, "vorauszahlungen": weg.abschnitte(session, z),
@@ -199,11 +197,11 @@ def vorauszahlung_anlegen(zid: int, data: VorauszahlungIn,
 
 
 @router.patch("/zeitraeume/{zid}/weg/vorauszahlung/{vid}")
-def vorauszahlung_aendern(zid: int, vid: int, data: VorauszahlungIn,
-                          session: Session = Depends(get_session)) -> dict:
-    z = zeitraum_holen(zid, session)
+def vorauszahlung_aendern(vid: int, data: VorauszahlungIn,
+                          session: Session = Depends(get_session),
+                          z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     v = session.get(WegVorauszahlung, vid)
-    if not v or v.zeitraum_id != zid:
+    if not v or v.zeitraum_id != z.id:
         raise HTTPException(404, "Vorauszahlung nicht gefunden")
     weg.vorauszahlung_setzen(session, z, data.einheit, data.von, data.bis,
                              data.betrag_monat, vid=vid)
@@ -212,12 +210,11 @@ def vorauszahlung_aendern(zid: int, vid: int, data: VorauszahlungIn,
 
 
 @router.delete("/zeitraeume/{zid}/weg/vorauszahlung/{vid}")
-def vorauszahlung_loeschen(zid: int, vid: int,
-                           session: Session = Depends(get_session)) -> dict:
+def vorauszahlung_loeschen(vid: int, session: Session = Depends(get_session),
+                           z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Entfernt einen Abschnitt — eine bewusste Nutzeraktion."""
-    z = zeitraum_holen(zid, session)
     v = session.get(WegVorauszahlung, vid)
-    if not v or v.zeitraum_id != zid:
+    if not v or v.zeitraum_id != z.id:
         raise HTTPException(404, "Vorauszahlung nicht gefunden")
     session.delete(v)
     session.commit()

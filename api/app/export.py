@@ -316,16 +316,24 @@ def _dokumente_umhaengen(eintrag: dict, karte: dict[int, int]) -> None:
             eintrag[feld] = karte.get(eintrag[feld])
 
 
-def importiere(session: Session, daten: dict, freier_slug) -> Objekt:
+def importiere(session: Session, daten: dict, freier_slug, familie_id: int) -> Objekt:
     """Legt aus einer Sicherung wieder ein Objekt an — immer als neuer Datensatz.
 
     `freier_slug(session, name)` liefert einen noch unbenutzten Slug; so bleibt
-    ein gleichnamiges Objekt, das noch existiert, unangetastet."""
+    ein gleichnamiges Objekt, das noch existiert, unangetastet.
+
+    N436 — `familie_id` gehört immer der WIEDERHERSTELLENDEN Familie, nie
+    einem Wert aus der Sicherungsdatei selbst: eine alte Sicherung könnte aus
+    einer anderen Datenbank/Familie stammen, deren `familie_id` hier keine
+    Bedeutung hat (und im schlimmsten Fall zufällig eine FREMDE Familie
+    dieser Installation träfe)."""
     roh = dict(daten.get("objekt") or {})
     roh.pop("id", None)
+    roh.pop("familie_id", None)
     roh["name"] = roh.get("name") or "Wiederhergestellt"
     roh["slug"] = freier_slug(session, roh["name"])
     objekt = Objekt.model_validate(roh)
+    objekt.familie_id = familie_id
     session.add(objekt)
     session.commit()
     session.refresh(objekt)

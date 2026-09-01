@@ -14,10 +14,11 @@ from sqlmodel import Session, select
 
 from ..bezeichnung import anzeigename, objekt_titel
 from ..db import get_session
+from ..deps import aktuelle_familie, objekt_holen
 from ..export import als_datei, dateiname, exportiere, importiere
 from ..felder import bereinige
 from ..frist import frist_tage
-from ..models import (GRUNDSTUECK, Dokument, Einheit, Kostenart,
+from ..models import (GRUNDSTUECK, Dokument, Einheit, Familie, Kostenart,
                       Kostenposition, Miete, Objekt, Partei, PVAnlage,
                       Stromjahr, Vorauszahlung, Zeitraum, ist_grundstueck)
 from ..nachpflege import hinweise, zusammenfassung
@@ -44,10 +45,14 @@ def _slugify(name: str) -> str:
     return "-".join(t for t in s.split("-") if t) or "objekt"
 
 
-def _freier_slug(session: Session, name: str) -> str:
+def _freier_slug(session: Session, name: str, familie_id: int) -> str:
+    """N436 — Eindeutigkeit gilt nur noch je Familie (`Objekt.slug` ist nicht
+    mehr global eindeutig, siehe migrate.py). Zwei Familien dürfen dieselbe
+    Adresse ohne Suffix führen."""
     basis = _slugify(name)
     slug, n = basis, 2
-    while session.exec(select(Objekt).where(Objekt.slug == slug)).first():
+    while session.exec(select(Objekt).where(
+            Objekt.slug == slug, Objekt.familie_id == familie_id)).first():
         slug = f"{basis}-{n}"
         n += 1
     return slug
@@ -172,13 +177,19 @@ def _miete_felder(e: Einheit, je_einheit: dict[str, float]) -> dict:
 
 
 @router.get("/objekte")
-def objekte(session: Session = Depends(get_session)) -> list[dict]:
+def objekte(session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> list[dict]:
     """Die Objektliste der Startseite — mit den Einheiten je Objekt.
 
     Geholt wird in wenigen Abfragen für alle Objekte zusammen und danach in
     Python zugeordnet: je Objekt einzeln nachzuladen ergäbe bei zwanzig
-    Immobilien hundert Abfragen für eine einzige Seite."""
-    alle = session.exec(select(Objekt)).all()
+    Immobilien hundert Abfragen für eine einzige Seite.
+
+    N436 — nur die Objekte der angemeldeten Familie, sonst die zentrale
+    Datenlücke: die Startseite zeigte bisher jeder Familie den kompletten
+    Bestand aller Familien."""
+    alle = session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()
     ids = [o.id for o in alle if o.id is not None]
     if not ids:
         return []
@@ -289,12 +300,14 @@ def objekte(session: Session = Depends(get_session)) -> list[dict]:
 
 
 @router.post("/objekte", status_code=201)
-def objekt_anlegen(data: ObjektIn, session: Session = Depends(get_session)) -> dict:
+def objekt_anlegen(data: ObjektIn, session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> dict:
     # Ein Grundstück hat keine Mieter und keine WEG-Nebenkostenverteilung —
     # die WEG-Ebene ergäbe dort keinen Sinn und bleibt aus.
     weg = data.weg and data.typ != GRUNDSTUECK
     o = Objekt(
-        slug=_freier_slug(session, data.name), name=data.name, ort=data.ort,
+        slug=_freier_slug(session, data.name, familie.id), name=data.name,
+        ort=data.ort, familie_id=familie.id,
         strasse=data.strasse, plz=data.plz, typ=data.typ, nutzung=data.nutzung,
         turnus=data.turnus, start_monat=data.start_monat, flaeche=data.flaeche,
         kaufpreis=data.kaufpreis, verkehrswert=data.verkehrswert, weg=weg,
@@ -327,10 +340,8 @@ def objekt_anlegen(data: ObjektIn, session: Session = Depends(get_session)) -> d
 
 
 @router.get("/objekte/{slug}")
-def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+def objekt(session: Session = Depends(get_session),
+          o: Objekt = Depends(objekt_holen)) -> dict:
     einheiten = session.exec(select(Einheit).where(Einheit.objekt_id == o.id)).all()
     parteien = session.exec(select(Partei).where(Partei.objekt_id == o.id)).all()
     # N393 — neuester Zeitraum zuerst: ohne Sortierung kam die Reihenfolge von
@@ -405,10 +416,8 @@ def objekt(slug: str, session: Session = Depends(get_session)) -> dict:
 
 
 @router.patch("/objekte/{slug}")
-def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session)) -> dict:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+def objekt_aendern(data: dict, session: Session = Depends(get_session),
+                   o: Objekt = Depends(objekt_holen)) -> dict:
     erlaubt = {"name", "kuerzel", "ort", "strasse", "plz", "typ", "nutzung", "turnus",
                "start_monat", "flaeche", "kaufpreis", "kaufdatum", "verkehrswert",
                "aktiv", "nc_ordner", "bank", "iban", "kontoinhaber",
@@ -490,11 +499,9 @@ def objekt_aendern(slug: str, data: dict, session: Session = Depends(get_session
 
 
 @router.get("/objekte/{slug}/export")
-def objekt_export(slug: str, session: Session = Depends(get_session)) -> Response:
+def objekt_export(session: Session = Depends(get_session),
+                  o: Objekt = Depends(objekt_holen)) -> Response:
     """Vollständige Sicherung als JSON-Datei zum Herunterladen."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
     daten = exportiere(session, o)
     return Response(
         content=als_datei(daten), media_type="application/json",
@@ -503,9 +510,11 @@ def objekt_export(slug: str, session: Session = Depends(get_session)) -> Respons
 
 
 @router.post("/objekte/import", status_code=201)
-def objekt_import(daten: dict, session: Session = Depends(get_session)) -> dict:
+def objekt_import(daten: dict, session: Session = Depends(get_session),
+                  familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt aus einer Sicherung wieder ein Objekt an — immer als neuer Eintrag."""
     if not isinstance(daten.get("objekt"), dict):
         raise HTTPException(400, "Keine ImmoCalc-Sicherung: 'objekt' fehlt")
-    o = importiere(session, daten, _freier_slug)
+    o = importiere(session, daten,
+                   lambda s, n: _freier_slug(s, n, familie.id), familie.id)
     return {"slug": o.slug, "id": o.id, "name": o.name}

@@ -111,7 +111,7 @@ def _kette(zid: int, monkeypatch=None, wallbox: dict | None = None) -> dict:
         monkeypatch.setattr(modul, "openwb_ladungen",
                             lambda **kw: antwort)
     with Session(db.engine) as s:
-        return modul.stromkette(zid, s)
+        return modul.stromkette(session=s, z=s.get(Zeitraum, zid))
 
 
 # --------------------------------------------------------------------------
@@ -385,11 +385,18 @@ def test_ohne_zaehler_sagt_die_kette_was_fehlt(monkeypatch):
 
 
 def test_unbekannter_zeitraum_ergibt_404():
+    """N436 — die Besitzprüfung sitzt jetzt in `deps.zeitraum_holen`, nicht mehr
+    in `stromkette()` selbst; die testet direkt den eigentlichen Mechanismus."""
     import pytest
     from fastapi import HTTPException
+
+    from app.deps import zeitraum_holen
+    from app.models import Familie
+
     with Session(db.engine) as s:
+        familie = s.exec(select(Familie)).first()
         with pytest.raises(HTTPException) as fehler:
-            modul.stromkette(999999, s)
+            zeitraum_holen(999999, s, familie)
     assert fehler.value.status_code == 404
 
 

@@ -78,7 +78,7 @@ def _objekt_mit_zwei_belegen(slug: str) -> int:
 def _kette(zid: int, monkeypatch) -> dict:
     monkeypatch.setattr(modul, "openwb_ladungen", lambda **kw: WALLBOX)
     with Session(db.engine) as s:
-        return modul.stromkette(zid, s)
+        return modul.stromkette(session=s, z=s.get(Zeitraum, zid))
 
 
 def test_netz_belege_kommen_als_karten_mit(monkeypatch):
@@ -135,7 +135,7 @@ def test_geeichte_menge_am_zeitraum_loest_den_hinweis(monkeypatch):
     assert any("geeichte Rechnungsmenge" in w for w in d["warnungen"])
 
     with Session(db.engine) as s:
-        modul.strom_rechnungsmenge_setzen(zid, {"rechnung_kwh": 4021.0}, s)
+        modul.strom_rechnungsmenge_setzen({"rechnung_kwh": 4021.0}, session=s, z=s.get(Zeitraum, zid))
 
     d = _kette(zid, monkeypatch)
     s1 = d["schritt1"]
@@ -151,8 +151,8 @@ def test_geeichte_menge_zuruecksetzbar(monkeypatch):
     zurück, nichts stürzt ab."""
     zid = _objekt_mit_zwei_belegen("sk-geeicht-zurueck")
     with Session(db.engine) as s:
-        modul.strom_rechnungsmenge_setzen(zid, {"rechnung_kwh": 4021.0}, s)
-        r = modul.strom_rechnungsmenge_setzen(zid, {"rechnung_kwh": ""}, s)
+        modul.strom_rechnungsmenge_setzen({"rechnung_kwh": 4021.0}, session=s, z=s.get(Zeitraum, zid))
+        r = modul.strom_rechnungsmenge_setzen({"rechnung_kwh": ""}, session=s, z=s.get(Zeitraum, zid))
     assert r == {"ok": True, "rechnung_kwh": 0.0}
 
     d = _kette(zid, monkeypatch)

@@ -410,12 +410,12 @@ def _stromjahr(session: Session, objekt_id: int, jahr: int) -> Stromjahr:
 
 
 @router.get("/zeitraeume/{zid}/stromkette")
-def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
+def stromkette(session: Session = Depends(get_session),
+              z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Die drei Schritte der Stromverrechnung für einen Abrechnungszeitraum.
 
     Jeder Schritt wird einzeln ausgewiesen, damit die Oberfläche die Kette
     zeigen kann: was hineingeht und was herauskommt."""
-    z = zeitraum_holen(zid, session)
     objekt = session.get(Objekt, z.objekt_id)
     jahr = zeitraum_label_jahr(z.start, z.ende)
     sj = _stromjahr(session, z.objekt_id, jahr)
@@ -445,9 +445,9 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
     bloecke, hinweise = strombloecke.bloecke_aus_solaredge(
         gesamt_kwh, netz_p, pv_p, akku_p)
     warnungen += hinweise
-    positionen = _strompositionen(session, zid)
+    positionen = _strompositionen(session, z.id)
     netz_betrag, quelle_betrag, hinweise, h_netz = _netz_betrag(
-        session, zid, positionen)
+        session, z.id, positionen)
     warnungen += hinweise
     (pv_betrag, akku_betrag, quelle_eigen,
      hinweise, h_pv, h_akku) = _eigen_betraege(
@@ -555,7 +555,7 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
             "quelle_betrag": quelle_betrag, "quelle_eigen": quelle_eigen,
             # N192 — die Belege hinter dem Netzbetrag, damit der Hinweis sie
             # ansehen und einen doppelten herausnehmen lassen kann.
-            "netz_belege": _netz_belege(session, zid, positionen),
+            "netz_belege": _netz_belege(session, z.id, positionen),
         },
         "schritt2": {
             "eauto_kwh": eauto_kwh, "gemessen_kwh": eauto["gemessen_kwh"],
@@ -586,8 +586,8 @@ def stromkette(zid: int, session: Session = Depends(get_session)) -> dict:
 
 
 @router.put("/zeitraeume/{zid}/strom/rechnungsmenge")
-def strom_rechnungsmenge_setzen(zid: int, data: dict,
-                                session: Session = Depends(get_session)) -> dict:
+def strom_rechnungsmenge_setzen(data: dict, session: Session = Depends(get_session),
+                                z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """N192 — die geeichte Rechnungsmenge des Netzbezugs festhalten (kWh).
 
     Der Nutzer trägt sie direkt aus dem Stromketten-Hinweis ein; danach rechnet
@@ -597,7 +597,6 @@ def strom_rechnungsmenge_setzen(zid: int, data: dict,
 
     Additiv und zurücknehmbar: 0 (oder leer) setzt sie wieder zurück, dann gilt
     wieder der Verteilungssatz."""
-    z = zeitraum_holen(zid, session)
     wert = data.get("rechnung_kwh")
     z.strom_rechnung_kwh = float(wert) if wert not in (None, "") else 0.0
     session.add(z)

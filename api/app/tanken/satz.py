@@ -103,7 +103,7 @@ def _stromkette_holen(session: Session, zid: int) -> dict:
     nicht" verharmlosen würde. Zur Aufrufzeit sind beide Module fertig
     geladen, und der Kreis löst sich auf."""
     from ..routers.stromkette import stromkette
-    return stromkette(zid, session)
+    return stromkette(session=session, z=session.get(Zeitraum, zid))
 
 
 def satz_ableiten(session: Session, objekt_id: int, von: date, bis: date,

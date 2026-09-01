@@ -336,8 +336,8 @@ def anfangsstand_entfernen(zid: int, session: Session = Depends(get_session)) ->
 # --------------------------------------------------------------------------
 
 @router.get("/zeitraeume/{zid}/ablesung")
-def maske(zid: int, session: Session = Depends(get_session)) -> dict:
-    z = zeitraum_holen(zid, session)
+def maske(session: Session = Depends(get_session),
+         z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     zeitraeume = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
     vorher = max((p for p in zeitraeume if p.ende < z.ende),
@@ -351,7 +351,7 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
     # synthetische Vorlauf-Periode Teil derselben Interpolation (`verbrauchsreihe`).
     zeitraeume_i, vorlauf = _mit_vorlauf(zeitraeume, zma)
     erste_start = min((p.start for p in zeitraeume), default=None)
-    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
+    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, z.id)
 
     zeilen = []
     for zae, abls in zma:
@@ -384,7 +384,7 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
             if frueher:
                 anker = max(frueher, key=lambda a: a.datum)
                 vorwert = {"randwert": anker.stand, "datum": anker.datum}
-        erfasst = next((a for a in abls if a.zeitraum_id == zid), None)
+        erfasst = next((a for a in abls if a.zeitraum_id == z.id), None)
         zeilen.append({
             "id": zae.id, "name": zae.name, "messeinheit": zae.messeinheit,
             "kostenart": zae.kostenart, "einheit_bezug": zae.einheit_bezug,
@@ -427,7 +427,8 @@ def maske(zid: int, session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/zeitraeume/{zid}/eauto")
-def eauto_ziehen(zid: int, session: Session = Depends(get_session)) -> dict:
+def eauto_ziehen(session: Session = Depends(get_session),
+                 z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """N157 — den Jahreswert der E-Tankstelle aus dem Ladeprotokoll ziehen.
 
     Der Wert wird **als Ablesung dieses Zählers** abgelegt. Damit gibt es genau
@@ -439,7 +440,6 @@ def eauto_ziehen(zid: int, session: Session = Depends(get_session)) -> dict:
     Antwortet die Wallbox nicht, bleibt der zuletzt gezogene Stand **stehen**
     und der Grund steht in `hinweis`. Eine 0 wäre hier eine Falschaussage.
     Ein abgeschlossener Zeitraum wird nie mehr überschrieben."""
-    z = zeitraum_holen(zid, session)
     objekt = session.get(Objekt, z.objekt_id)
     antwort: dict = {
         "zeitraum_id": z.id, "von": z.start.isoformat(), "bis": z.ende.isoformat(),
@@ -460,7 +460,7 @@ def eauto_ziehen(zid: int, session: Session = Depends(get_session)) -> dict:
         session.add(zae)
         session.commit()
     erfasst = session.exec(select(Ablesung).where(
-        Ablesung.zaehler_id == zae.id, Ablesung.zeitraum_id == zid)).first()
+        Ablesung.zaehler_id == zae.id, Ablesung.zeitraum_id == z.id)).first()
     antwort.update({"zaehler_id": zae.id, "name": zae.name,
                     "stand": erfasst.stand if erfasst else None})
 
@@ -487,7 +487,7 @@ def eauto_ziehen(zid: int, session: Session = Depends(get_session)) -> dict:
     if erfasst is None or abs((erfasst.stand or 0.0) - kwh) > 0.0005 \
             or erfasst.datum != z.ende:
         ablesung_speichern(zae.id, AblesungIn(
-            datum=z.ende, stand=kwh, zeitraum_id=zid, notiz=EAUTO_NOTIZ), session)
+            datum=z.ende, stand=kwh, zeitraum_id=z.id, notiz=EAUTO_NOTIZ), session)
         antwort["gespeichert"] = True
         log.info("E-Tankstelle: %s kWh am Zähler %s eingetragen", kwh, zae.id)
     antwort["stand"] = kwh
@@ -495,8 +495,8 @@ def eauto_ziehen(zid: int, session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/zeitraeume/{zid}/ablesung/uebernehmen")
-def uebernehmen(zid: int, data: UebernahmeIn,
-                session: Session = Depends(get_session)) -> dict:
+def uebernehmen(data: UebernahmeIn, session: Session = Depends(get_session),
+                z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Trägt den interpolierten Verbrauch einer Kostenart als Verteilung in die
     NK-Kostenposition ein. Bei `schluessel='verbrauch'` werden die Gewichte je
     Partei aus den Zählern gebildet (Untermesser/Rest, gruppiert nach
@@ -509,7 +509,6 @@ def uebernehmen(zid: int, data: UebernahmeIn,
     Einheit normalisiert. Gemeldet wird trotzdem, genau wie in der Wasser- und
     der Strom-Kette: `unzugeordnet`/`warnungen` nennen jeden Zähler, dessen
     Verbrauch in dieser Verteilung nicht ankommt."""
-    z = zeitraum_holen(zid, session)
     if data.schluessel not in verteilung.SCHLUESSEL:
         raise HTTPException(400, f"Unbekannter Schlüssel „{data.schluessel}“")
 
@@ -530,7 +529,7 @@ def uebernehmen(zid: int, data: UebernahmeIn,
         # Gleiche Vorlauf-Periode wie in der Maske: der Anfangsstand zählt so auch
         # bei der Übernahme in die erste Abrechnung mit (CCCLXXX).
         zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
-        verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
+        verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, z.id)
         einheiten_, bezuege_ = _stammbezug(session, z)
         karte = einheiten_karte(einheiten_, bezuege_)
         je_einheit: dict[str, float] = {}
@@ -567,7 +566,7 @@ def uebernehmen(zid: int, data: UebernahmeIn,
     # Nur eine BESTEHENDE Position wird konfiguriert. Keine leere Hülle anlegen
     # (CCLVI: keine 0-€-Position ohne Beleg) — der Betrag kommt aus dem Beleg,
     # die Position entsteht dort; hier wird nur die Verteilung gesetzt.
-    pos = belegposten.finde(session, zid, data.kostenart)
+    pos = belegposten.finde(session, z.id, data.kostenart)
     if not pos:
         return {"ok": True, "kostenart": data.kostenart, "angewandt": False,
                 "grund": "Noch keine Position — erst den Beleg/Betrag erfassen."}
@@ -704,16 +703,15 @@ _KOMPONENTEN_ART = {"wasser": "Wasser", "schmutz": "Abwasser",
 
 
 @router.get("/zeitraeume/{zid}/wasser")
-def wasser_detail(zid: int, schluessel: str = "personen",
+def wasser_detail(schluessel: str = "personen",
                   rechnung_m3: float | None = None,
-                  session: Session = Depends(get_session)) -> dict:
+                  session: Session = Depends(get_session),
+                  z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Wasser-Verrechnung dieses Zeitraums, aufgeschlüsselt je Einheit.
 
     Nicht bereit (`bereit=False`), solange der Hauptzähler-Verbrauch oder die
     Wasserbeträge fehlen — dann nennt `hinweis`, was noch gebraucht wird.
     """
-    z = zeitraum_holen(zid, session)
-
     # Verbrauch je Zähler-Id für diesen Zeitraum — wie in der Ablesungs-Maske,
     # inkl. synthetischer Vorlauf-Periode für einen Anfangsstand (CCCLXXX).
     zaehler = session.exec(
@@ -724,7 +722,7 @@ def wasser_detail(zid: int, schluessel: str = "personen",
     zeitraeume = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == z.objekt_id)).all()
     zeitraeume_i, _ = _mit_vorlauf(zeitraeume, zma)
-    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, zid)
+    verb = ablesung.verbrauch_je_zaehler(zma, zeitraeume_i, z.id)
 
     # Gesamtverbrauch = Wasser-Hauptzähler: gemessen, ohne eigenen Haupt und
     # Wasser-bezogen. Robuster als nur `art=='Kaltwasser'` — der reale „Gesamt
@@ -819,7 +817,7 @@ def wasser_detail(zid: int, schluessel: str = "personen",
 
     # Kostenbestandteile aus den Kostenpositionen des Zeitraums (fehlende = 0).
     betrag_je_art = {p.kostenart: (p.betrag or 0.0) for p in session.exec(
-        select(Kostenposition).where(Kostenposition.zeitraum_id == zid)).all()}
+        select(Kostenposition).where(Kostenposition.zeitraum_id == z.id)).all()}
     komponenten = {schluessel: round(betrag_je_art.get(kostenart, 0.0), 2)
                    for schluessel, kostenart in _KOMPONENTEN_ART.items()}
 
@@ -918,14 +916,13 @@ def wasser_detail(zid: int, schluessel: str = "personen",
 
 
 @router.put("/zeitraeume/{zid}/wasser/rechnungsmenge")
-def rechnungsmenge_setzen(zid: int, data: dict,
-                          session: Session = Depends(get_session)) -> dict:
+def rechnungsmenge_setzen(data: dict, session: Session = Depends(get_session),
+                          z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """N116b — die abgerechnete Wassermenge des Bescheids festhalten.
 
     Sie ersetzt den Zaehlerwert NICHT: der Stand bleibt am Zaehler stehen. Hier
     steht nur, was der Versorger tatsaechlich berechnet hat; die Differenz wird
     als Abweichung ausgewiesen."""
-    z = zeitraum_holen(zid, session)
     wert = data.get("rechnung_m3")
     z.wasser_rechnung_m3 = float(wert) if wert not in (None, "") else 0.0
     session.add(z)
@@ -952,8 +949,8 @@ def _wasser_positionen(session: Session, zid: int) -> list[Kostenposition]:
 
 
 @router.post("/zeitraeume/{zid}/wasser/leeren")
-def wasser_leeren(zid: int, force: bool = False,
-                  session: Session = Depends(get_session)) -> dict:
+def wasser_leeren(force: bool = False, session: Session = Depends(get_session),
+                  z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """N185 — leert die Wasser-Sammelposition, damit ein neuer Bescheid sauber
     einliest: die drei Bestandteile (Frisch-/Schmutz-/Niederschlagswasser)
     werden auf 0 gesetzt und auf `status='offen'` gestellt, noch haengende
@@ -969,7 +966,7 @@ def wasser_leeren(zid: int, force: bool = False,
     Position ab, ein bloss entfernter Zwischenbeleg (weitere bleiben) aber
     nicht. Mit `force=true` (manueller „Position leeren"-Knopf) wird immer
     geleert."""
-    positionen = _wasser_positionen(session, zid)
+    positionen = _wasser_positionen(session, z.id)
     if not positionen:
         return {"geleert": False, "grund": "keine Wasser-Positionen"}
 
@@ -993,10 +990,8 @@ def wasser_leeren(zid: int, force: bool = False,
         p.status = "offen"
         session.add(p)
 
-    z = session.get(Zeitraum, zid)
-    if z is not None:
-        z.wasser_rechnung_m3 = 0.0
-        session.add(z)
+    z.wasser_rechnung_m3 = 0.0
+    session.add(z)
 
     session.commit()
     return {"geleert": True, "positionen": len(positionen)}

@@ -9,7 +9,8 @@ Markierung in den Einstellungen.
 """
 from datetime import date
 from sqlmodel import Session, select
-from .models import (Objekt, Einheit, Partei, Kostenart, Zeitraum,
+from .migrate import BESTANDSFAMILIE_NAME
+from .models import (Objekt, Einheit, Familie, Partei, Kostenart, Zeitraum,
                      Kostenposition, Vorauszahlung, Dokument, Miete, Kredit,
                      Versicherung, Zahlung, Einstellung)
 
@@ -34,8 +35,17 @@ def seed(engine):
         if _schon_gelaufen(s):
             return
 
+        # N436 — familie_migration() legt "Heidenreich" schon in migriere()
+        # an (das läuft laut main.py VOR dem Seed), hier also nur nachsehen,
+        # nicht anlegen. Ohne familie_id wären die Demo-Objekte für jede
+        # Familie unsichtbar (objekt_holen/objekte() filtern danach).
+        familie = s.exec(select(Familie).where(
+            Familie.name == BESTANDSFAMILIE_NAME)).first()
+        familie_id = familie.id if familie else None
+
         # ---------------- Objekt 1: Musterstraße 5 ----------------
         laufer = Objekt(slug="obj-a", name="Musterstraße 5", ort="Mixed-Use · 7 Einheiten",
+                        familie_id=familie_id,
                         typ="lg-mfhB", nutzung="Gemischt", turnus="individuell", start_monat=10)
         s.add(laufer); s.commit(); s.refresh(laufer)
         for b, art, fl in [("1. OG", "Wohnen", 78), ("2. OG", "WG", 85),
@@ -123,7 +133,7 @@ def seed(engine):
                           kategorie="Instandhaltung", betrag=1250.0))
 
         # ---------------- Objekt 2: Beispielweg 6a ----------------
-        einh = Objekt(slug="obj-b", name="Beispielweg 6a",
+        einh = Objekt(slug="obj-b", name="Beispielweg 6a", familie_id=familie_id,
                       ort="Musterstadt · 1 Wohnung", typ="lg-wohnung", nutzung="Wohnen",
                       turnus="kalender", start_monat=1)
         s.add(einh); s.commit(); s.refresh(einh)

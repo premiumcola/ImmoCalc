@@ -36,21 +36,55 @@ def aktuelle_familie(request: Request,
     return familie
 
 
-def objekt_holen(slug: str, session: Session = Depends(get_session)) -> Objekt:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+def objekt_holen(slug: str, session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> Objekt:
+    """N436 — jetzt IMMER zusätzlich auf die angemeldete Familie eingegrenzt.
+    Das behebt die Mandantentrennung für jeden Router, der diese Dependency
+    schon nutzt, in einem einzigen Edit — und macht zugleich einen fremden
+    Slug ununterscheidbar von einem nicht existierenden (404 in beiden
+    Fällen), statt einer Familie zu verraten, dass ein Slug bei einer ANDEREN
+    Familie existiert."""
+    o = session.exec(select(Objekt).where(
+        Objekt.slug == slug, Objekt.familie_id == familie.id)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
     return o
 
 
-def zeitraum_holen(zid: int, session: Session = Depends(get_session)) -> Zeitraum:
-    """Der Zeitraum zu einer id — oder 404.
+def _gehoert_zur_familie(session: Session, objekt_id: int | None,
+                         familie: Familie) -> bool:
+    if objekt_id is None:
+        return False
+    objekt = session.get(Objekt, objekt_id)
+    return bool(objekt and objekt.familie_id == familie.id)
 
-    Als Dependency verwendbar (`z: Zeitraum = Depends(zeitraum_holen)`) und
-    ebenso als schlichter Aufruf `zeitraum_holen(zid, session)`, weil viele
+
+def pruefe_familienbesitz(session: Session, zeile, familie: Familie,
+                          objekt_id: int | None = None) -> None:
+    """N436 — die generische Besitzprüfung für Endpunkte, die eine Zeile per
+    roher numerischer ID holen (`session.get(Modell, id)`), ohne über
+    `objekt_holen`/den Slug zu laufen. `zeile` muss ein `objekt_id`-Feld
+    tragen (direkt oder per `objekt_id=` übergeben, z. B. wenn erst über
+    einen Zwischenschritt wie Zeitraum/Kredit/Miete aufgelöst werden muss).
+    404 statt 403 — ein fremder Datensatz soll sich nicht von einem nicht
+    existierenden unterscheiden lassen."""
+    oid = objekt_id if objekt_id is not None else getattr(zeile, "objekt_id", None)
+    if not _gehoert_zur_familie(session, oid, familie):
+        raise HTTPException(404, "Nicht gefunden")
+
+
+def zeitraum_holen(zid: int, session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> Zeitraum:
+    """Der Zeitraum zu einer id — oder 404, auch wenn er einer anderen
+    Familie gehört (N436).
+
+    Als Dependency verwendbar (`z: Zeitraum = Depends(zeitraum_holen)` — dann
+    lösen sich `zid`, `session` UND `familie` automatisch aus dem
+    Anfrage-Kontext auf, auch wenn nur `zid` im Pfad steht) und ebenso als
+    schlichter Aufruf `zeitraum_holen(zid, session, familie)`, weil viele
     Stellen ihn mitten in einer Funktion brauchen."""
     z = session.get(Zeitraum, zid)
-    if not z:
+    if not z or not _gehoert_zur_familie(session, z.objekt_id, familie):
         raise HTTPException(404, "Zeitraum nicht gefunden")
     return z
 
@@ -61,7 +95,9 @@ def objekt_zum_zeitraum(z: Zeitraum, session: Session) -> Objekt:
     N374 — mehrere Stellen machten `session.get(Objekt, z.objekt_id)` und
     griffen sofort auf `o.name` zu. Über den regulären Löschweg ist das nicht
     erreichbar (die Zeiträume gehen mit), aber eine fehlende Absicherung bleibt
-    eine: ein verwaister Zeitraum ergäbe einen 500er ohne erkennbare Ursache."""
+    eine: ein verwaister Zeitraum ergäbe einen 500er ohne erkennbare Ursache.
+    Keine eigene familie-Prüfung hier: wer schon einen geprüften `Zeitraum`
+    (über `zeitraum_holen`) hat, hat die Zugehörigkeit bereits nachgewiesen."""
     o = session.get(Objekt, z.objekt_id)
     if not o:
         raise HTTPException(404, "Objekt zu diesem Zeitraum nicht gefunden")

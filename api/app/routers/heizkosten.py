@@ -31,24 +31,24 @@ def _bezuege(session: Session, z: Zeitraum) -> list[verteilung.Bezug]:
 
 
 @router.post("/{zid}/heizkosten/rechnen")
-def rechnen(zid: int, eingabe: dict, session: Session = Depends(get_session)) -> dict:
+def rechnen(eingabe: dict, session: Session = Depends(get_session),
+           z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Rechnet die Heizkosten-Verteilung dieses Zeitraums nach dem Delta-t-
     Rechenweg — aus echten Zähler-Ablesungen und Bewertungsfaktoren. `eingabe`
     liefert nur, was am Zähler nicht steht (Brennstoff, Kostenblöcke,
     Warmwasservolumen, wie in `waermesim.rechne`). Schreibt nichts."""
-    z = zeitraum_holen(zid, session)
     return heizkosten.rechne_fuer_zeitraum(session, z, eingabe or {})
 
 
 @router.post("/{zid}/heizkosten/uebernehmen")
-def uebernehmen(zid: int, eingabe: dict, session: Session = Depends(get_session)) -> dict:
+def uebernehmen(eingabe: dict, session: Session = Depends(get_session),
+               z: Zeitraum = Depends(zeitraum_holen)) -> dict:
     """Wie `rechnen`, trägt das Ergebnis aber als Verteilung in die
     bestehende Heizungs-Kostenposition ein. Nur eine BESTEHENDE Position wird
     konfiguriert (CCLVI: keine 0-€-Position ohne Beleg) — wie bei
     `zaehler.uebernehmen`."""
-    z = zeitraum_holen(zid, session)
     erg = heizkosten.rechne_fuer_zeitraum(session, z, eingabe or {})
-    pos = belegposten.finde(session, zid, "Heizung")
+    pos = belegposten.finde(session, z.id, "Heizung")
     if not pos:
         return {"ok": True, "angewandt": False,
                 "grund": "Noch keine Heizungs-Position — erst den Beleg/Betrag erfassen."}

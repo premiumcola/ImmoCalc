@@ -123,7 +123,7 @@ def test_wasser_meldet_den_unbekannten_zaehler():
         _staende(s, haupt, zid, 100.0)
         _staende(s, fremd, zid, 10.0)
 
-        d = wasser_detail(zid, session=s)
+        d = wasser_detail(session=s, z=s.get(Zeitraum, zid))
         assert d["bereit"] is True
         assert _genannt(d["warnungen"], FREMD), d["warnungen"]
 
@@ -134,7 +134,7 @@ def test_wasser_meldet_den_unbekannten_zaehler():
 
 def _kette(s: Session, zid: int, monkeypatch) -> dict:
     monkeypatch.setattr(strommodul, "openwb_ladungen", lambda **kw: dict(WALLBOX))
-    return strommodul.stromkette(zid, s)
+    return strommodul.stromkette(session=s, z=s.get(Zeitraum, zid))
 
 
 def _stromobjekt(s: Session, slug: str) -> tuple[int, int]:
@@ -227,8 +227,8 @@ def test_uebernehmen_traegt_die_mehrfachzuordnung_mit():
         _staende(s, nur_liste, zid, 60.0)
         _staende(s, fremd, zid, 5.0)
 
-        r = uebernehmen(zid, UebernahmeIn(kostenart="Wasser",
-                                          schluessel="verbrauch"), s)
+        r = uebernehmen(UebernahmeIn(kostenart="Wasser", schluessel="verbrauch"),
+                       s, z=s.get(Zeitraum, zid))
         assert r["angewandt"] is True
         # Der Zähler mit reiner Listen-Zuordnung trägt jetzt sein Gewicht …
         assert r["anteile"]["OG-Mieter"] == 60.0
