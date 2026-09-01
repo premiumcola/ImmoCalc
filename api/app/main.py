@@ -14,9 +14,9 @@ from . import wachdienst
 from .db import engine
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
-from .routers import (auswertung, besitz, cloud, dokumente, dokumentvorlagen,
-                      heizkosten, heizoel, ki, kidb, kontakte, mail, objekte,
-                      openwb, renovierung,
+from .routers import (auswertung, auth, besitz, cloud, dokumente,
+                      dokumentvorlagen, heizkosten, heizoel, ki, kidb,
+                      kontakte, mail, objekte, openwb, renovierung,
                       solaredge, stammdaten, strom, stromkette, tankstelle,
                       versand, waerme, waermesim, weg, zaehler)
 from .seed import seed
@@ -68,6 +68,10 @@ async def negatives_gewicht(request: Request, fehler: NegativesGewicht):
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
                    allow_headers=["*"])
 
+# N436 — eigener Prefix /api/auth, unabhaengig von jedem Objekt-Faenger;
+# Reihenfolge relativ zu den anderen Routern unkritisch, steht ganz oben,
+# weil sie das Login selbst betrifft.
+app.include_router(auth.router)
 app.include_router(objekte.router)
 # besitz vor stammdaten: dort faengt /objekte/{slug}/{bereich} sonst
 # /objekte/{slug}/anteile ab und meldet einen unbekannten Bereich.
