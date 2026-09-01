@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from .auth import SITZUNG_COOKIE, token_hashen
 from .db import get_session
-from .models import Familie, Objekt, Sitzung, Zeitraum
+from .models import Dokument, Familie, Objekt, Sitzung, Zeitraum
 
 
 def aktuelle_familie(request: Request,
@@ -87,6 +87,18 @@ def zeitraum_holen(zid: int, session: Session = Depends(get_session),
     if not z or not _gehoert_zur_familie(session, z.objekt_id, familie):
         raise HTTPException(404, "Zeitraum nicht gefunden")
     return z
+
+
+def dokument_holen(dokument_id: int, session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> Dokument:
+    """Das Dokument zu einer id — oder 404, auch wenn es einer anderen
+    Familie gehört (N436). Gleiches Muster wie `zeitraum_holen`: als
+    Dependency (`d: Dokument = Depends(dokument_holen)`) und als schlichter
+    Aufruf `dokument_holen(dokument_id, session, familie)` verwendbar."""
+    d = session.get(Dokument, dokument_id)
+    if not d or not _gehoert_zur_familie(session, d.objekt_id, familie):
+        raise HTTPException(404, "Dokument nicht gefunden")
+    return d
 
 
 def objekt_zum_zeitraum(z: Zeitraum, session: Session) -> Objekt:

@@ -19,11 +19,11 @@ from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, SQLModel, select
 
 from ..db import get_session
-from ..deps import objekt_holen
+from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
 from ..dokumente.zuordnung import _AN_TYP_MODELLE, loese_info_referenzen
 from ..felder import bereinige
 from ..kappungsgrenze import pruefe
-from ..models import (Bewohner, Dokument, Kredit, Kreditstand, Miete,
+from ..models import (Bewohner, Dokument, Familie, Kredit, Kreditstand, Miete,
                       Notarvertrag, Objekt, Versicherung, Zahlung,
                       ist_bausparer)
 from ..turnus import VORGABE, auswahl_fuer
@@ -261,11 +261,18 @@ def _pruefe_mietstand(session: Session, objekt_id: int, neu: Miete,
 
 @router.patch("/stammdaten/{bereich}/{eintrag_id}")
 def aendern(bereich: str, eintrag_id: int, data: dict,
-            session: Session = Depends(get_session)) -> dict:
+            session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     modell = _modell(bereich)
     eintrag = session.get(modell, eintrag_id)
     if not eintrag:
         raise HTTPException(404, "Eintrag nicht gefunden")
+    # N436 — höchstes Einzelrisiko der Migration: dieser Endpunkt holt seine
+    # Zeile per roher ID über einen dynamisch gewählten Tabellennamen, ohne
+    # je einen Slug zu sehen. Ohne diese Prüfung könnte jede angemeldete
+    # Familie jede Miete/jeden Kredit/jede Versicherung/jeden Notarvertrag/
+    # jede Zahlung JEDER anderen Familie per erratener id ändern.
+    pruefe_familienbesitz(session, eintrag, familie)
     felder = bereinige(modell, {k: v for k, v in data.items()
                                 if k not in ("id", "objekt_id")
                                 and hasattr(eintrag, k)})
@@ -310,11 +317,13 @@ def _anhaengsel_loeschen(session: Session, bereich: str, eintrag_id: int) -> Non
 
 @router.delete("/stammdaten/{bereich}/{eintrag_id}")
 def loeschen(bereich: str, eintrag_id: int,
-             session: Session = Depends(get_session)) -> dict:
+             session: Session = Depends(get_session),
+             familie: Familie = Depends(aktuelle_familie)) -> dict:
     modell = _modell(bereich)
     eintrag = session.get(modell, eintrag_id)
     if not eintrag:
         raise HTTPException(404, "Eintrag nicht gefunden")
+    pruefe_familienbesitz(session, eintrag, familie)
     _anhaengsel_loeschen(session, bereich, eintrag_id)
     # N314(d) — ein Info-Beleg an diesem Eintrag zeigte sonst unbemerkt auf
     # den nächsten Kredit/Miete/Versicherung/Notarvertrag/Zahlung, der die
@@ -351,10 +360,11 @@ class StandIn(BaseModel):
         return self.restschuld if self.restschuld is not None else self.sparstand
 
 
-def _kredit(session: Session, kid: int) -> Kredit:
+def _kredit(session: Session, kid: int, familie: Familie) -> Kredit:
     k = session.get(Kredit, kid)
     if not k:
         raise HTTPException(404, "Kredit nicht gefunden")
+    pruefe_familienbesitz(session, k, familie)
     return k
 
 
@@ -365,12 +375,13 @@ def _staende(session: Session, kid: int) -> list[Kreditstand]:
 
 
 @router.get("/kredite/{kid}/staende", response_model=None)
-def staende(kid: int, session: Session = Depends(get_session)) -> dict:
+def staende(kid: int, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Eingetragene Jahresstände, die Restschuld von heute und der Verlauf.
 
     Der Verlauf zeigt für jedes Jahr, ob der Wert eingetragen oder aus Rate
     und Zinssatz fortgeschrieben ist."""
-    k = _kredit(session, kid)
+    k = _kredit(session, kid, familie)
     reihe = _staende(session, kid)
     return {"kredit_id": kid, "bezeichnung": k.bezeichnung,
             "art": k.art, "bausparsumme": k.bausparsumme,
@@ -380,13 +391,13 @@ def staende(kid: int, session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/kredite/{kid}/staende", status_code=201)
-def stand_setzen(kid: int, data: StandIn,
-                 session: Session = Depends(get_session)) -> dict:
+def stand_setzen(kid: int, data: StandIn, session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Trägt den Stand zum 31.12. eines Jahres ein — Restschuld oder Sparstand.
 
     Ein Stand je Jahr: ein zweiter Eintrag für dasselbe Jahr korrigiert den
     vorhandenen, statt sich danebenzustellen."""
-    k = _kredit(session, kid)
+    k = _kredit(session, kid, familie)
     bausparer = ist_bausparer(k)
     if not 1900 <= data.jahr <= date.today().year + 50:
         raise HTTPException(400, "Das Jahr liegt ausserhalb des Möglichen")
@@ -420,10 +431,16 @@ def stand_setzen(kid: int, data: StandIn,
 
 
 @router.delete("/kreditstaende/{sid}")
-def stand_loeschen(sid: int, session: Session = Depends(get_session)) -> dict:
+def stand_loeschen(sid: int, session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> dict:
     eintrag = session.get(Kreditstand, sid)
     if not eintrag:
         raise HTTPException(404, "Jahresstand nicht gefunden")
+    # Kreditstand hat kein eigenes objekt_id-Feld — der Bezug läuft über den
+    # Kredit, den er beziffert.
+    kredit = session.get(Kredit, eintrag.kredit_id)
+    pruefe_familienbesitz(session, kredit, familie,
+                         objekt_id=getattr(kredit, "objekt_id", None))
     session.delete(eintrag)
     session.commit()
     return {"ok": True}
@@ -443,10 +460,11 @@ class BewohnerIn(BaseModel):
     notiz: str = ""
 
 
-def _miete(session: Session, mid: int) -> Miete:
+def _miete(session: Session, mid: int, familie: Familie) -> Miete:
     m = session.get(Miete, mid)
     if not m:
         raise HTTPException(404, "Mietverhältnis nicht gefunden")
+    pruefe_familienbesitz(session, m, familie)
     return m
 
 
@@ -456,7 +474,8 @@ def _miete(session: Session, mid: int) -> Miete:
 
 @router.get("/mieten/{mid}/kappungsgrenze", response_model=None)
 def kappungsgrenze(mid: int, neu: float | None = None, ab: date | None = None,
-                   session: Session = Depends(get_session)) -> dict:
+                   session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Wie viel Luft eine geplante Erhöhung noch hat.
 
     Die Historie sind die Mietstände derselben Partei in derselben Einheit —
@@ -466,7 +485,7 @@ def kappungsgrenze(mid: int, neu: float | None = None, ab: date | None = None,
     Ohne `neu` beschreibt die Antwort nur den Rahmen: welche Grenze gilt,
     worauf sie sich stützt und bis zu welchem Betrag sie reicht.
     """
-    m = _miete(session, mid)
+    m = _miete(session, mid, familie)
     o = session.get(Objekt, m.objekt_id)
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
@@ -480,17 +499,18 @@ def kappungsgrenze(mid: int, neu: float | None = None, ab: date | None = None,
 
 
 @router.get("/mieten/{mid}/bewohner", response_model=None)
-def bewohner_liste(mid: int, session: Session = Depends(get_session)) -> list:
+def bewohner_liste(mid: int, session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> list:
     """Alle Bewohner eines Mietverhältnisses mit ihren eigenen Kontakten."""
-    _miete(session, mid)
+    _miete(session, mid, familie)
     return list(session.exec(select(Bewohner)
                              .where(Bewohner.miete_id == mid)).all())
 
 
 @router.post("/mieten/{mid}/bewohner", status_code=201)
-def bewohner_anlegen(mid: int, data: BewohnerIn,
-                     session: Session = Depends(get_session)) -> dict:
-    _miete(session, mid)
+def bewohner_anlegen(mid: int, data: BewohnerIn, session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
+    _miete(session, mid, familie)
     if not (data.name or data.email or data.telefon or data.anschrift).strip():
         raise HTTPException(400, "Ein Bewohner braucht Name, Mail, Nummer oder Anschrift")
     eintrag = Bewohner.model_validate({**data.model_dump(), "miete_id": mid})
@@ -500,12 +520,20 @@ def bewohner_anlegen(mid: int, data: BewohnerIn,
     return {"id": eintrag.id}
 
 
+def _bewohner_objekt_id(session: Session, bewohner: Bewohner) -> int | None:
+    """Bewohner -> Miete -> Objekt: zwei Zwischenschritte bis zur familie_id."""
+    miete = session.get(Miete, bewohner.miete_id)
+    return getattr(miete, "objekt_id", None)
+
+
 @router.patch("/bewohner/{bid}")
-def bewohner_aendern(bid: int, data: dict,
-                     session: Session = Depends(get_session)) -> dict:
+def bewohner_aendern(bid: int, data: dict, session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     eintrag = session.get(Bewohner, bid)
     if not eintrag:
         raise HTTPException(404, "Bewohner nicht gefunden")
+    pruefe_familienbesitz(session, eintrag, familie,
+                         objekt_id=_bewohner_objekt_id(session, eintrag))
     felder = bereinige(Bewohner, {k: v for k, v in data.items()
                                   if k not in ("id", "miete_id")
                                   and hasattr(eintrag, k)})
@@ -518,10 +546,13 @@ def bewohner_aendern(bid: int, data: dict,
 
 
 @router.delete("/bewohner/{bid}")
-def bewohner_loeschen(bid: int, session: Session = Depends(get_session)) -> dict:
+def bewohner_loeschen(bid: int, session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     eintrag = session.get(Bewohner, bid)
     if not eintrag:
         raise HTTPException(404, "Bewohner nicht gefunden")
+    pruefe_familienbesitz(session, eintrag, familie,
+                         objekt_id=_bewohner_objekt_id(session, eintrag))
     session.delete(eintrag)
     session.commit()
     return {"ok": True}
@@ -540,14 +571,14 @@ def _altpfad(bereich: str) -> None:
     offen hat — die Oberflaeche ruft nur noch /api/stammdaten/… auf.
     """
     @router.patch(f"/{bereich}/{{eintrag_id}}", include_in_schema=False)
-    def alt_aendern(eintrag_id: int, data: dict,
-                    session: Session = Depends(get_session)) -> dict:
-        return aendern(bereich, eintrag_id, data, session)
+    def alt_aendern(eintrag_id: int, data: dict, session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
+        return aendern(bereich, eintrag_id, data, session, familie)
 
     @router.delete(f"/{bereich}/{{eintrag_id}}", include_in_schema=False)
-    def alt_loeschen(eintrag_id: int,
-                     session: Session = Depends(get_session)) -> dict:
-        return loeschen(bereich, eintrag_id, session)
+    def alt_loeschen(eintrag_id: int, session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
+        return loeschen(bereich, eintrag_id, session, familie)
 
 
 for _bereich in ENTITAETEN:
