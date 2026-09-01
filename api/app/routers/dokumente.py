@@ -23,8 +23,8 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import (belegposten, dokumentlinks, feldzuordnung, kiauslese, kicache,
-                kidb, ocr, pdftext, upload)
+from .. import (belegposten, dokumentlinks, familienraum, feldzuordnung,
+                kiauslese, kicache, kidb, ocr, pdftext, upload)
 from ..belegposten import BelegFehler
 from ..bezeichnung import betrag_aus_namen, datum_aus_namen, objekt_titel
 from ..cloudkern import (ZIELORDNER, _lies, hauptordner_lesbar, struktur_fuer,
@@ -268,7 +268,41 @@ def scan(session: Session = Depends(get_session),
         sperre.release()
 
 
+def _je_familie(session: Session, lauf) -> list[dict]:
+    """N436 (Häppchen 8) — ruft `lauf(familie_id)` für jede Familie einzeln
+    auf, mit passend gesetztem `familienraum`-Kontext.
+
+    Die Cloud-Hintergrundläufe (`_scanne`, `_abgleiche`, `nachtraeglich_ocren`,
+    `verwaiste_immocalc_aufraeumen`, `pruefsummen_nachtragen`) lösten ihren
+    Nextcloud-Client bisher EINMAL für den ganzen Lauf auf — richtig, solange
+    alle Familien dieselbe Verbindung teilten. Seit N436 (Häppchen 7) hat
+    jede Familie ihre eigene, und `verbindung()` liest sie über den aktuellen
+    `familienraum`-Kontext; ohne ihn griff der Wachdienst auf den „kein
+    Kontext"-Namensraum zu und fand für KEINE Familie mehr eine Verbindung.
+
+    Eine Familie ohne eingerichtete Nextcloud (`HTTPException(400)` aus
+    `verbindung()`) wird übersprungen statt den ganzen Lauf abzubrechen —
+    dasselbe Prinzip, das `wachdienst.takt()` schon zwischen den Schritten
+    anwendet, hier je Familie innerhalb eines Schritts. Das Zusammenführen
+    der Teilergebnisse bleibt beim Aufrufer, weil die Form von Lauf zu Lauf
+    unterschiedlich ist (mal Zahlen zum Summieren, mal Listen zum Verketten)."""
+    ergebnisse = []
+    for f in session.exec(select(Familie)).all():
+        familienraum.setzen(f.id)
+        try:
+            ergebnisse.append(lauf(f.id))
+        except HTTPException as fehler:
+            if fehler.status_code != 400:
+                raise
+    return ergebnisse
+
+
 def _scanne(session: Session, familie_id: int | None = None) -> dict:
+    if familie_id is None:
+        teile = _je_familie(session, lambda fid: _scanne(session, fid))
+        return {"neu": sum(t["neu"] for t in teile),
+                "automatisch": sum(t["automatisch"] for t in teile),
+                "offen": sum(t["offen"] for t in teile)}
     _eindeutigkeit_sichern(session)
     client = verbindung(session)
     neu = automatisch = 0
@@ -340,6 +374,24 @@ def _abgleiche(session: Session, trocken: bool,
     Takt vorbehalten (`wachdienst._abgleich_lauf`, ohne Sitzung); die
     HTTP-Endpunkte `abgleich`/`abgleich_plan` geben immer die angemeldete
     Familie mit."""
+    if familie_id is None:
+        teile = _je_familie(session, lambda fid: _abgleiche(session, trocken, fid))
+        return {
+            "trockenlauf": trocken,
+            "geprueft": sum(t["geprueft"] for t in teile),
+            "unveraendert": sum(t["unveraendert"] for t in teile),
+            "verschoben": [x for t in teile for x in t["verschoben"]],
+            "umbenannt": [x for t in teile for x in t["umbenannt"]],
+            "vermisst": [x for t in teile for x in t["vermisst"]],
+            "wiederda": [x for t in teile for x in t["wiederda"]],
+            "entfernt": [x for t in teile for x in t["entfernt"]],
+            "neu": sum(t["neu"] for t in teile),
+            "automatisch": sum(t["automatisch"] for t in teile),
+            "offen": sum(t["offen"] for t in teile),
+            "ohne_eintrag": sum(t["ohne_eintrag"] for t in teile),
+            "kennzeichen_nachgetragen": sum(t["kennzeichen_nachgetragen"] for t in teile),
+            "hinweise": [x for t in teile for x in t["hinweise"]],
+        }
     _eindeutigkeit_sichern(session)
     client = verbindung(session)
     zusammen: dict[str, list] = {"verschoben": [], "umbenannt": [],
@@ -1336,18 +1388,26 @@ OCR_STAPEL = 5
 OCR_SICHERUNGSORDNER = ".ocr-original"
 
 
-def _ocr_kandidaten(session: Session) -> list[Dokument]:
+def _ocr_kandidaten(session: Session, familie_id: int | None = None) -> list[Dokument]:
     """PDFs, die noch keine Textschicht haben könnten.
 
     Vermisste Einträge fallen weg — ihre Datei ist ja nicht mehr da (CXXVII).
     Alles andere wird angesehen; ob wirklich OCR nötig ist, entscheidet erst
-    `ocr.durchsuchbar_machen` anhand des eingebetteten Texts."""
-    return list(session.exec(
-        select(Dokument)
-        .where(Dokument.status != VERMISST)
-        .where(Dokument.dateiname.ilike("%.pdf"))
-        .order_by(Dokument.id)
-        .limit(OCR_PRUEF_GRENZE)))
+    `ocr.durchsuchbar_machen` anhand des eingebetteten Texts.
+
+    N436 — `familie_id` grenzt über `Objekt` ein (`Dokument` selbst trägt
+    keine eigene Familienspalte, siehe deps.py); `None` lässt wie bisher
+    jedes Dokument zu (Vorgabe für den expliziten `client=`-Testpfad)."""
+    frage = (select(Dokument)
+            .where(Dokument.status != VERMISST)
+            .where(Dokument.dateiname.ilike("%.pdf")))
+    if familie_id is not None:
+        objekt_ids = [o.id for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie_id)).all()]
+        if not objekt_ids:
+            return []
+        frage = frage.where(Dokument.objekt_id.in_(objekt_ids))
+    return list(session.exec(frage.order_by(Dokument.id).limit(OCR_PRUEF_GRENZE)))
 
 
 def _ocr_ersetzen(client, pfad: str, neu: bytes) -> None:
@@ -1371,19 +1431,31 @@ def _ocr_ersetzen(client, pfad: str, neu: bytes) -> None:
         raise
 
 
-def nachtraeglich_ocren(session: Session, client=None) -> dict:
+def nachtraeglich_ocren(session: Session, client=None,
+                        familie_id: int | None = None) -> dict:
     """Ein Nachpflege-Lauf: legt liegen gebliebenen Scans ihre Textschicht
     unter. Vom Wachdienst gerufen, nie vom Upload selbst.
 
     Rein additiv gegenüber dem normalen Betrieb: ein Beleg, der schon Text
     trägt — ob von Anfang an oder aus einem früheren Lauf —, wird nie
     zweimal angefasst. Fehlen die Bibliotheken (rapidocr-onnxruntime,
-    PyMuPDF), meldet der erste Blick das sofort, und es passiert nichts."""
+    PyMuPDF), meldet der erste Blick das sofort, und es passiert nichts.
+
+    N436 — ohne `client` UND ohne `familie_id` (der Wachdienst-Aufruf) läuft
+    über jede Familie einzeln, mit ihrer eigenen Nextcloud-Verbindung. Wer
+    (wie die Tests) einen `client` direkt mitgibt, bekommt weiterhin genau
+    den einen Lauf ohne Familienschleife."""
     ergebnis = {"geprueft": 0, "ergaenzt": 0, "uebersprungen": 0}
     if not ocr.durchsuchbar_verfuegbar():
         return ergebnis
+    if familie_id is None and client is None:
+        for teil in _je_familie(
+                session, lambda fid: nachtraeglich_ocren(session, familie_id=fid)):
+            for schluessel in ergebnis:
+                ergebnis[schluessel] += teil[schluessel]
+        return ergebnis
     client = client or verbindung(session)
-    for d in _ocr_kandidaten(session):
+    for d in _ocr_kandidaten(session, familie_id):
         if ergebnis["ergaenzt"] >= OCR_STAPEL:
             break
         try:
@@ -2609,7 +2681,8 @@ class ImmoCalcIn(BaseModel):
 _IMMOCALC_MAX_TIEFE = 5
 
 
-def verwaiste_immocalc_aufraeumen(session: Session) -> dict:
+def verwaiste_immocalc_aufraeumen(session: Session,
+                                  familie_id: int | None = None) -> dict:
     """N30 — verwaiste `.immocalc`-Steckbriefe aufräumen.
 
     Löscht der Nutzer ein PDF/Bild von Hand in der Nextcloud, bleibt die
@@ -2621,13 +2694,21 @@ def verwaiste_immocalc_aufraeumen(session: Session) -> dict:
 
     Gibt `{"geloescht": n, "geprueft": m}` zurück. Bei jedem Cloud-Fehler wird
     der betroffene Ordner/das Objekt übersprungen, nie eine Exception geworfen.
-    """
+
+    N436 — `familie_id=None` (der Wachdienst-Aufruf) läuft über jede Familie
+    einzeln, mit ihrer eigenen Nextcloud-Verbindung."""
+    if familie_id is None:
+        teile = _je_familie(
+            session, lambda fid: verwaiste_immocalc_aufraeumen(session, fid))
+        return {"geloescht": sum(t["geloescht"] for t in teile),
+                "geprueft": sum(t["geprueft"] for t in teile)}
     try:
         client = verbindung(session)
     except Exception:                                    # noqa: BLE001
         return {"geloescht": 0, "geprueft": 0}
     objekte = session.exec(
-        select(Objekt).where(Objekt.nc_ordner.is_not(None))).all()
+        select(Objekt).where(Objekt.nc_ordner.is_not(None),
+                             Objekt.familie_id == familie_id)).all()
     geloescht = 0
     geprueft = 0
     for o in objekte:
@@ -4103,13 +4184,28 @@ def ohne_auslese(session: Session = Depends(get_session),
 # mehr offen ist. Rein lesend gegenüber der Cloud.
 # --------------------------------------------------------------------------
 
-def pruefsummen_nachtragen(session: Session, grenze: int = 40) -> dict:
+def pruefsummen_nachtragen(session: Session, grenze: int = 40,
+                           familie_id: int | None = None) -> dict:
     """Rechnet für bis zu `grenze` Belege ohne Prüfsumme den SHA1 aus.
 
     Ein Beleg, dessen Datei sich nicht holen lässt, wird übersprungen und
     gezählt — nie wird geraten und nie etwas geschrieben, das nicht aus den
-    Bytes stammt."""
-    offen = [d for d in session.exec(select(Dokument)).all()
+    Bytes stammt.
+
+    N436 — `familie_id=None` (der Wachdienst-Aufruf) läuft über jede Familie
+    einzeln, mit ihrer eigenen Nextcloud-Verbindung; der HTTP-Endpunkt grenzt
+    immer auf die angemeldete Familie ein."""
+    if familie_id is None:
+        teile = _je_familie(
+            session, lambda fid: pruefsummen_nachtragen(session, grenze, fid))
+        return {"nachgetragen": sum(t["nachgetragen"] for t in teile),
+                "uebersprungen": sum(t["uebersprungen"] for t in teile),
+                "noch_offen": sum(t["noch_offen"] for t in teile)}
+    objekt_ids = [o.id for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie_id)).all()]
+    kandidaten = session.exec(select(Dokument).where(
+        Dokument.objekt_id.in_(objekt_ids))).all() if objekt_ids else []
+    offen = [d for d in kandidaten
              if not (d.sha1 or "").strip()
              and (d.pfad or "").startswith("/")
              and not _ist_grabstein(d.pfad)
@@ -4152,9 +4248,13 @@ def pruefsummen_nachtragen(session: Session, grenze: int = 40) -> dict:
 @router.post("/pruefsummen-nachtragen")
 def pruefsummen_nachtragen_endpunkt(
         grenze: int = Query(40, ge=1, le=500),
-        session: Session = Depends(get_session)) -> dict:
-    """Rechnet Prüfsummen für den Bestand nach — gedeckelt und wiederholbar."""
-    return pruefsummen_nachtragen(session, grenze)
+        session: Session = Depends(get_session),
+        familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """Rechnet Prüfsummen für den Bestand nach — gedeckelt und wiederholbar.
+
+    N436 — bisher ohne jede Familiengrenze: jede angemeldete Familie hätte
+    Prüfsummen für JEDEN Beleg jeder anderen Familie mit auslösen können."""
+    return pruefsummen_nachtragen(session, grenze, familie.id)
 
 
 # --------------------------------------------------------------------------
