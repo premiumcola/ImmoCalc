@@ -17,6 +17,7 @@ from datetime import date
 
 from sqlmodel import Session, select
 
+from .. import familienraum
 from ..cloudkern import _lies
 from ..models import Einstellung
 from ..zahlen import geschrieben
@@ -34,6 +35,8 @@ def ist_versendet(session: Session, slug: str, jahr: int, name: str) -> bool:
 
 
 def _setze(session: Session, schluessel: str, wert: str) -> None:
+    """N436 — derselbe Namensraum wie `cloudkern._lies`."""
+    schluessel = familienraum.schluessel(schluessel)
     e = session.get(Einstellung, schluessel)
     if e is None:
         e = Einstellung(schluessel=schluessel, wert=wert)
@@ -51,7 +54,8 @@ def versendet_merken(session: Session, slug: str, jahr: int, name: str) -> None:
 def versendet_marker(session: Session, slug: str, jahr: int = 0) -> set[str]:
     """Welche Eigentümer-Namen für das genannte Jahr (0 = alle) bereits ihre
     Abrechnung erhalten haben — die Grundlage des ✓-Hakens in der Oberfläche."""
-    prefix = f"{S_VERSENDET}:{slug}:"
+    # N436 — Rohabfrage statt _lies: der Namensraum muss hier von Hand rein.
+    prefix = f"{familienraum.schluessel(S_VERSENDET)}:{slug}:"
     namen: set[str] = set()
     for e in session.exec(select(Einstellung).where(
             Einstellung.schluessel.like(prefix + "%"))).all():

@@ -144,11 +144,17 @@ from sqlmodel import Session, select  # noqa: E402
 import app.routers.cloud as cloud_modul  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Dokument, Einstellung, Objekt  # noqa: E402
+from app.migrate import BESTANDSFAMILIE_NAME  # noqa: E402
+from app.models import Dokument, Einstellung, Familie, Objekt  # noqa: E402
 from app.nextcloud import NextcloudFehler  # noqa: E402
 
 HOME = "/[010]_Immobilien"
 NEU = f"{HOME}/(Eschenau) Laufer Str. 5"
+
+
+def _familie_id(s: Session) -> int | None:
+    f = s.exec(select(Familie).where(Familie.name == BESTANDSFAMILIE_NAME)).first()
+    return f.id if f else None
 
 
 def _norm(pfad: str) -> str:
@@ -204,12 +210,15 @@ class _Wolke:
 
 
 def _einstellung(schluessel: str, wert: str) -> None:
+    # N436 — Cloud-Einstellungen liegen jetzt unter dem Namensraum der
+    # Familie (`familienraum.schluessel`); die Testfamilie ist "Heidenreich".
     with Session(engine) as s:
-        eintrag = s.get(Einstellung, schluessel)
+        voll = f"{_familie_id(s)}:{schluessel}"
+        eintrag = s.get(Einstellung, voll)
         if eintrag:
             eintrag.wert = wert
         else:
-            eintrag = Einstellung(schluessel=schluessel, wert=wert)
+            eintrag = Einstellung(schluessel=voll, wert=wert)
         s.add(eintrag)
         s.commit()
 

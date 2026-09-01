@@ -162,10 +162,16 @@ def test_pdf_kommt_bis_zur_cloud_und_scheitert_erst_dort():
 
 def _druckerliste_leeren():
     """Die Drucker liegen als JSON in EINER Einstellungszeile — zwischen zwei
-    Tests wird sie geleert, damit sich die Faelle nicht gegenseitig sehen."""
+    Tests wird sie geleert, damit sich die Faelle nicht gegenseitig sehen.
+
+    N436 — die Zeile liegt jetzt unter dem Namensraum der Familie
+    (`familienraum.schluessel`); ohne das Präfix träfe dies die falsche
+    (nie geschriebene) Zeile, und der reale Bestand einer Familie würde
+    zwischen den Tests nie geleert."""
     from app.routers.dokumentvorlagen import S_DRUCKER
     with Session(engine) as session:
-        eintrag = session.get(Einstellung, S_DRUCKER)
+        voll = f"{_familie_id(session)}:{S_DRUCKER}"
+        eintrag = session.get(Einstellung, voll)
         if eintrag:
             eintrag.wert = ""
             session.add(eintrag)
@@ -250,7 +256,8 @@ def test_kaputte_druckerzeile_kippt_die_liste_nicht():
     Einstellung darf keine Seite mitreissen."""
     from app.routers.dokumentvorlagen import S_DRUCKER
     with Session(engine) as session:
-        session.merge(Einstellung(schluessel=S_DRUCKER, wert="{kein json"))
+        voll = f"{_familie_id(session)}:{S_DRUCKER}"
+        session.merge(Einstellung(schluessel=voll, wert="{kein json"))
         session.commit()
     with TestClient(app) as c:
         antwort = c.get("/api/drucker")

@@ -20,6 +20,7 @@ from ..cloudkern import (ARTKUERZEL, SACHORDNER_KATEGORIE, STRUKTUR, S_HOME,
                         ZIELORDNER, _lies, einheit_von, struktur_fuer,
                         unterordner_fuer, unterordner_vorlagen, verbindung)
 from .. import upload
+from .. import familienraum
 from ..db import get_session
 from ..deps import aktuelle_familie, objekt_holen
 from ..models import Dokument, Einstellung, Familie, Objekt
@@ -62,6 +63,8 @@ def zielordner_fuer(session: Session, objekt: Objekt, home: str) -> str:
 
 
 def _schreib(session: Session, schluessel: str, wert: str) -> None:
+    """N436 — siehe `cloudkern._lies`: derselbe Namensraum, dieselbe Regel."""
+    schluessel = familienraum.schluessel(schluessel)
     eintrag = session.get(Einstellung, schluessel)
     if eintrag:
         eintrag.wert = wert

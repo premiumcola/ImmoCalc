@@ -79,8 +79,17 @@ def eigene_datenbank(request):
     for modul, name in gebunden:
         setattr(modul, name, neu)
 
-    def _override(session=Depends(get_session)):
-        return _test_familie(session)
+    async def _override(session=Depends(get_session)):
+        from app import familienraum
+        f = _test_familie(session)
+        # N436 — der echte deps.aktuelle_familie setzt das automatisch; der
+        # Override hier muss es nachbilden, sonst laesen Cloud-/Mail-/KI-
+        # Einstellungen in Tests unter dem "kein Kontext"-Namensraum statt
+        # unter der Testfamilie. Bewusst `async def` wie das Original — eine
+        # SYNCHRONE Dependency setzt eine ContextVar nur in einer Kopie des
+        # Kontexts, die den Endpunkt nie erreicht (siehe deps.aktuelle_familie).
+        familienraum.setzen(f.id)
+        return f
 
     app.dependency_overrides[aktuelle_familie] = _override
     yield

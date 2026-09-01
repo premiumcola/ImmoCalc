@@ -500,6 +500,49 @@ def familie_migration(engine: Engine) -> list[str]:
     return geaendert
 
 
+# N436 — eigener Marker statt ein Muster im Schlüssel selbst zu erraten: ein
+# bereits zusammengesetzter Marker wie "pv_versendet:slug:2026:Name" ließe
+# sich sonst kaum sicher von einem schon umbenannten "3:pv_versendet:…"
+# unterscheiden.
+EINSTELLUNG_NAMENSRAUM_MARKE = "einstellung_namensraum_migriert"
+
+
+def einstellung_namensraum_migration(engine: Engine) -> int:
+    """N436 — Nextcloud-/Mail-/KI-/Wallbox-Zugang und alle objektbezogenen
+    Versand-Marker (PV, E-Tankstelle) lagen bisher als BLANKE Schlüssel in
+    `Einstellung` — instanzweit, nicht je Familie. Benennt jede bestehende
+    Zeile (außer dem Seed-Marker) einmalig auf
+    "<bestandsfamilie_id>:<alter_schlüssel>" um; ab dann greifen
+    `familienraum.schluessel()` und alle darauf aufbauenden Lese-/
+    Schreibfunktionen (`cloudkern._lies`, `routers.cloud._schreib`, …)
+    automatisch auf den richtigen Namensraum zu — hier ändert sich nichts an
+    einer einzigen anderen Code-Stelle.
+
+    Läuft bewusst NACH `tankstelle_zukunftsmarker_bereinigen`: die bereinigt
+    noch die alten, blanken Marker-Schlüssel; würde diese Umbenennung davor
+    laufen, liefe die Bereinigung ins Leere."""
+    from .models import Einstellung, Familie
+    from .seed import MARKE as SEED_MARKE            # spät, wegen Zirkelbezug
+
+    with Session(engine) as session:
+        if session.get(Einstellung, EINSTELLUNG_NAMENSRAUM_MARKE):
+            return 0
+        familie = session.exec(select(Familie).where(
+            Familie.name == BESTANDSFAMILIE_NAME)).first()
+        if not familie:
+            return 0          # familie_migration lief vor diesem Schritt
+        umbenannt = 0
+        for zeile in session.exec(select(Einstellung)).all():
+            if zeile.schluessel in (SEED_MARKE, EINSTELLUNG_NAMENSRAUM_MARKE):
+                continue
+            zeile.schluessel = f"{familie.id}:{zeile.schluessel}"
+            session.add(zeile)
+            umbenannt += 1
+        session.add(Einstellung(schluessel=EINSTELLUNG_NAMENSRAUM_MARKE, wert="1"))
+        session.commit()
+        return umbenannt
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -568,6 +611,16 @@ def migriere(engine: Engine) -> list[str]:
             geaendert.append(f"tankstelle_versendet[{n} geleert]")
     except Exception as fehler:                       # noqa: BLE001
         log.warning("Zukunfts-Marker nicht bereinigt: %s", fehler)
+
+    # N436 — Nextcloud/Mail/KI/Wallbox-Zugang und alle Versand-Marker in den
+    # Namensraum der Bestandsfamilie umbenennen (siehe familienraum.py).
+    # Bewusst NACH der Zukunfts-Marker-Bereinigung oben (siehe dort).
+    try:
+        n = einstellung_namensraum_migration(engine)
+        if n:
+            geaendert.append(f"einstellung.schluessel[{n} umbenannt]")
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Einstellung-Namensraum nicht migriert: %s", fehler)
 
     # N235 — Vorgänger-Verknüpfung für Alt-Mieterhöhungen (vor N228) ergänzen.
     try:

@@ -9,6 +9,7 @@ from datetime import date
 
 from sqlmodel import Session, select
 
+from .. import familienraum
 from ..cloudkern import _lies
 from ..models import Einstellung
 from .einstellungen import _setze
@@ -77,7 +78,8 @@ def abgerechnet_marker(session: Session, slug: str,
     Monatsmarker das Quartal, in dem der Monat liegt) und `monat` (``None`` bei
     einem Quartalsmarker) — so kann die Oberfläche Monate weiterhin zu ihrem
     Quartal zusammenrollen."""
-    prefix = f"{S_VERSENDET}:{slug}:"
+    # N436 — Rohabfrage statt _lies: der Namensraum muss hier von Hand rein.
+    prefix = f"{familienraum.schluessel(S_VERSENDET)}:{slug}:"
     ergebnis: list[dict] = []
     for e in session.exec(select(Einstellung).where(
             Einstellung.schluessel.like(prefix + "%"))).all():

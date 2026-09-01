@@ -62,6 +62,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from .. import eauto
+from .. import familienraum
 from ..db import get_session
 from ..deps import objekt_holen
 from ..mailversand import MailFehler
@@ -678,7 +679,8 @@ def abgerechnet_setzen(slug: str, data: AbgerechnetIn,
                 if data.abgerechnet:
                     _setze(session, key, date.today().isoformat())
                 else:
-                    vorhanden = session.get(Einstellung, key)
+                    # N436 — Rohzugriff statt _setze/_lies: Namensraum von Hand.
+                    vorhanden = session.get(Einstellung, familienraum.schluessel(key))
                     if vorhanden is not None:
                         session.delete(vorhanden)
         anzahl, was = len(quartale), "Periode(n)"
@@ -754,6 +756,13 @@ def versand_faellig_pruefen(session: Session,
     jahr, quartal = fq
     geprueft = versendet = 0
     for o in session.exec(_select(Objekt)).all():
+        # N436 — der Wachdienst hat keinen Anfragekontext; ohne diesen Namens-
+        # raum läse/schriebe autoversand_aktiv/_autoversand_objekt unter dem
+        # "kein Kontext"-Schlüssel statt unter der Familie dieses Objekts
+        # (siehe familienraum.py). Vorgriff auf die Häppchen-8-Umstellung des
+        # Wachdienstes auf eine echte Pro-Familie-Schleife — hier reicht die
+        # gezielte Zeile, weil bereits über jedes Objekt einzeln geloopt wird.
+        familienraum.setzen(o.familie_id)
         if not autoversand_aktiv(session, o.slug):
             continue
         geprueft += 1

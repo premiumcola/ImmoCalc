@@ -13,6 +13,7 @@ import logging
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from .. import familienraum
 from ..cloudkern import _lies
 from ..models import Einstellung, Objekt, Tanknutzer
 
@@ -81,7 +82,10 @@ def _migriere_json_nutzer(session: Session, o: Objekt) -> None:
                                    email=e["email"], notiz=e["notiz"]))
         log.info("E-Tankstelle %s: alte Nutzerliste in die Tabelle übernommen",
                  o.slug)
-    session.add(Einstellung(schluessel=_migriert_schluessel(o.slug), wert="1"))
+    # N436 — Rohschreiben statt _setze/_schreib: Namensraum von Hand.
+    session.add(Einstellung(
+        schluessel=familienraum.schluessel(_migriert_schluessel(o.slug)),
+        wert="1"))
     session.commit()
 
 

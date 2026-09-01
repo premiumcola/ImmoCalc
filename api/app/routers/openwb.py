@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from .. import openwb
+from .. import familienraum
 from ..cloudkern import _lies
 from ..db import get_session
 from ..models import Einstellung
@@ -43,7 +44,9 @@ class AdresseIn(BaseModel):
 
 
 def _schreib(session: Session, schluessel: str, wert: str) -> None:
-    """Eine Einstellung setzen — additiv, ohne andere Schlüssel zu berühren."""
+    """Eine Einstellung setzen — additiv, ohne andere Schlüssel zu berühren.
+    N436 — derselbe Namensraum wie `cloudkern._lies`."""
+    schluessel = familienraum.schluessel(schluessel)
     eintrag = session.get(Einstellung, schluessel)
     if eintrag:
         eintrag.wert = wert

@@ -14,8 +14,14 @@ from sqlmodel import Session, select
 import app.routers.cloud as cloud_modul
 from app.db import engine
 from app.main import app
-from app.models import Dokument, Einstellung, Objekt
+from app.migrate import BESTANDSFAMILIE_NAME
+from app.models import Dokument, Einstellung, Familie, Objekt
 from app.nextcloud import NextcloudFehler
+
+
+def _familie_id(s: Session) -> int | None:
+    f = s.exec(select(Familie).where(Familie.name == BESTANDSFAMILIE_NAME)).first()
+    return f.id if f else None
 
 HOME = "/[010]_Immobilien"
 
@@ -62,12 +68,15 @@ class _Wolke:
 
 
 def _einstellung(schluessel: str, wert: str) -> None:
+    # N436 — Cloud-Einstellungen liegen jetzt unter dem Namensraum der
+    # Familie (`familienraum.schluessel`); die Testfamilie ist "Heidenreich".
     with Session(engine) as s:
-        e = s.get(Einstellung, schluessel)
+        voll = f"{_familie_id(s)}:{schluessel}"
+        e = s.get(Einstellung, voll)
         if e:
             e.wert = wert
         else:
-            e = Einstellung(schluessel=schluessel, wert=wert)
+            e = Einstellung(schluessel=voll, wert=wert)
         s.add(e)
         s.commit()
 

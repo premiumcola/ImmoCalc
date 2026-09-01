@@ -43,9 +43,15 @@ from sqlmodel import Session, select  # noqa: E402
 
 from app import db as db_modul  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import (Einstellung, Kostenposition, Objekt,  # noqa: E402
+from app.migrate import BESTANDSFAMILIE_NAME  # noqa: E402
+from app.models import (Einstellung, Familie, Kostenposition, Objekt,  # noqa: E402
                         Stromjahr, Tankladung, Tanknutzer, Zeitraum)
 from app.routers import tankstelle as t  # noqa: E402
+
+
+def _familie_id(s: Session) -> int | None:
+    f = s.exec(select(Familie).where(Familie.name == BESTANDSFAMILIE_NAME)).first()
+    return f.id if f else None
 
 
 # --------------------------------------------------------------------------
@@ -1011,8 +1017,10 @@ def test_alte_json_nutzerliste_wird_uebernommen(client):
     import json as _json
     slug = _neues_objekt(client, "Altbestandhaus")
     with Session(db_modul.engine) as session:
+        # N436 — Einstellung liegt jetzt unter dem Namensraum der Familie.
+        alter_schluessel = f"{_familie_id(session)}:tankstelle_nutzer:{slug}"
         session.add(Einstellung(
-            schluessel=f"tankstelle_nutzer:{slug}",
+            schluessel=alter_schluessel,
             wert=_json.dumps([{"id": 1, "name": "Alicia",
                                "email": "alicia@example.invalid",
                                "notiz": "Bestand"}])))
@@ -1028,7 +1036,7 @@ def test_alte_json_nutzerliste_wird_uebernommen(client):
             Tanknutzer.objekt_id == o.id)).all()
         assert [tn.name for tn in tabelle] == ["Alicia"]
         # Der alte Schlüssel bleibt unangetastet stehen.
-        alt = session.get(Einstellung, f"tankstelle_nutzer:{slug}")
+        alt = session.get(Einstellung, alter_schluessel)
         assert alt is not None and "Alicia" in alt.wert
 
     # Genau einmal: ein danach gelöschter Nutzer taucht nicht wieder auf.

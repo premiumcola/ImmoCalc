@@ -12,6 +12,7 @@ import re
 from fastapi import HTTPException
 from sqlmodel import Session
 
+from . import familienraum
 from .bezeichnung import STANDARD_UNTERORDNER, hierarchie, unterordner_name
 from .models import Einstellung, Objekt
 from .nextcloud import Nextcloud
@@ -364,7 +365,12 @@ S_UNTERORDNER = "nc_unterordner_vorlagen"
 
 
 def _lies(session: Session, schluessel: str, vorgabe: str = "") -> str:
-    eintrag = session.get(Einstellung, schluessel)
+    """N436 — jede Einstellung liegt unter dem Namensraum der Familie im
+    aktuellen Kontext (`familienraum.setzen`, von `deps.aktuelle_familie` je
+    Anfrage automatisch gesetzt). Gilt für JEDEN Schlüssel, der hier
+    ankommt — auch einen bereits zusammengesetzten wie
+    `pv_versendet:<slug>:<jahr>:<name>`."""
+    eintrag = session.get(Einstellung, familienraum.schluessel(schluessel))
     return eintrag.wert if eintrag else vorgabe
 
 

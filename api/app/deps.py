@@ -13,16 +13,27 @@ from datetime import datetime
 from fastapi import Depends, HTTPException, Request
 from sqlmodel import Session, select
 
+from . import familienraum
 from .auth import SITZUNG_COOKIE, token_hashen
 from .db import get_session
 from .models import Dokument, Familie, Objekt, Sitzung, Zeitraum
 
 
-def aktuelle_familie(request: Request,
-                     session: Session = Depends(get_session)) -> Familie:
+async def aktuelle_familie(request: Request,
+                           session: Session = Depends(get_session)) -> Familie:
     """N436 — liest das Sitzungs-Cookie, löst es über den (gehashten) Token
     auf eine Familie auf. 401 ohne gültige Sitzung — der Frontend-Gate in
-    `immo.js` fängt das ab und leitet auf die Anmeldung um."""
+    `immo.js` fängt das ab und leitet auf die Anmeldung um.
+
+    Bewusst `async def`, obwohl der Rumpf rein synchron ist (SQLite über
+    SQLModel): FastAPI führt eine SYNCHRONE Dependency in einem eigenen
+    Thread-Pool-Aufruf aus — `familienraum.setzen()` (eine `ContextVar`)
+    würde dort nur eine Kopie des Kontexts ändern, die beim Rücksprung
+    verworfen wird und den Endpunkt nie erreicht (per Testskript geprüft,
+    siehe N436-Notiz in AUFGABEN.md). Als `async def` läuft die Funktion
+    direkt im Event-Loop desselben Requests — genau dort, wo auch der
+    Endpunkt (und jede sync-Dependency, die sich per Thread-Pool-Aufruf ihre
+    eigene Kopie erst DANACH zieht) den gesetzten Wert wiederfindet."""
     token = request.cookies.get(SITZUNG_COOKIE)
     if not token:
         raise HTTPException(401, "Nicht angemeldet")
@@ -33,6 +44,10 @@ def aktuelle_familie(request: Request,
     familie = session.get(Familie, sitzung.familie_id)
     if not familie:
         raise HTTPException(401, "Nicht angemeldet")
+    # N436 — Nextcloud/Mail/KI/Wallbox-Einstellungen hängen am Namensraum
+    # dieser Familie (siehe familienraum.py); für den Rest der Anfrage
+    # gesetzt, ohne dass jede Zwischenfunktion familie_id durchreichen muss.
+    familienraum.setzen(familie.id)
     return familie
 
 

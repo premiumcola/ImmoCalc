@@ -9,7 +9,7 @@ Markierung in den Einstellungen.
 """
 from datetime import date
 from sqlmodel import Session, select
-from .migrate import BESTANDSFAMILIE_NAME
+from .migrate import BESTANDSFAMILIE_NAME, EINSTELLUNG_NAMENSRAUM_MARKE
 from .models import (Objekt, Einheit, Familie, Partei, Kostenart, Zeitraum,
                      Kostenposition, Vorauszahlung, Dokument, Miete, Kredit,
                      Versicherung, Zahlung, Einstellung)
@@ -22,8 +22,14 @@ def _schon_gelaufen(s: Session) -> bool:
         return True
     # Bestandsdatenbanken kennen die Markierung noch nicht. Steht dort schon
     # irgendetwas vom Nutzer, gilt der Seed als erledigt und wird vermerkt.
+    # N436 — der eigene Migrations-Marker `EINSTELLUNG_NAMENSRAUM_MARKE`
+    # zählt dabei NICHT: `migriere()` schreibt ihn auf JEDER Datenbank, auch
+    # einer völlig frischen, damit die Umbenennung nicht bei jedem Neustart
+    # erneut läuft — ohne diesen Ausschluss hätte die bloße Migration den
+    # Seed auf jeder neuen Datenbank für immer verhindert.
     benutzt = bool(s.exec(select(Objekt)).first()
-                   or s.exec(select(Einstellung)).first())
+                   or s.exec(select(Einstellung).where(
+                       Einstellung.schluessel != EINSTELLUNG_NAMENSRAUM_MARKE)).first())
     if benutzt:
         s.add(Einstellung(schluessel=MARKE, wert="bestand"))
         s.commit()

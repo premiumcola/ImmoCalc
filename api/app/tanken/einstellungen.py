@@ -10,6 +10,7 @@ from datetime import date
 
 from sqlmodel import Session
 
+from .. import familienraum
 from ..cloudkern import _lies
 from ..models import Einstellung
 
@@ -24,7 +25,9 @@ S_ZUORDNUNG = "tankstelle_zuordnung"
 
 
 def _setze(session: Session, schluessel: str, wert: str) -> None:
-    """Eine Einstellung setzen (anlegen oder überschreiben) — ohne commit."""
+    """Eine Einstellung setzen (anlegen oder überschreiben) — ohne commit.
+    N436 — derselbe Namensraum wie `cloudkern._lies`."""
+    schluessel = familienraum.schluessel(schluessel)
     e = session.get(Einstellung, schluessel)
     if e is None:
         e = Einstellung(schluessel=schluessel, wert=wert)

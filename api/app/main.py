@@ -3,7 +3,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import SQLModel
@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from . import wachdienst
 from .db import engine
+from .deps import aktuelle_familie
 from .engine import NegativesGewicht
 from .migrate import migriere, pflicht_kostenarten_sichern
 from .routers import (auswertung, auth, besitz, cloud, dokumente,
@@ -70,59 +71,75 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
 
 # N436 — eigener Prefix /api/auth, unabhaengig von jedem Objekt-Faenger;
 # Reihenfolge relativ zu den anderen Routern unkritisch, steht ganz oben,
-# weil sie das Login selbst betrifft.
+# weil sie das Login selbst betrifft. Bewusst OHNE `_ANMELDUNG_NOETIG` — genau
+# hier liegen die Endpunkte, die ohne Sitzung erreichbar sein müssen
+# (Familienliste, Registrierung, Login).
 app.include_router(auth.router)
-app.include_router(objekte.router)
+
+# N436 — jeder andere Router braucht eine gültige Sitzung. Einzeln an
+# `objekt_holen`/`zeitraum_holen`/`dokument_holen` zu hängen wäre an den
+# reinen Einstellungs-Endpunkten (mail, ki, openwb, …) durchgerutscht — die
+# haben keinen Objekt-/Zeitraum-Bezug und blieben dadurch sowohl ohne
+# Anmeldeprüfung ALS AUCH ohne gesetzten `familienraum`-Namensraum (der
+# Schlüssel landete unter dem "?:"-Präfix statt unter der echten Familie).
+# Ein einziger Ort statt ~30 einzelne Endpunkt-Signaturen: `dependencies=`
+# hier gilt nachweislich auch für Sub-Router, die ein Router VOR diesem
+# `include_router`-Aufruf schon in sich aufgenommen hat (per Testskript
+# geprüft — genau das Muster von `objekte.router`, der seine ~11 Unterrouter
+# aus `api/app/objekt/` bereits beim Modul-Import einhängt).
+_ANMELDUNG_NOETIG = [Depends(aktuelle_familie)]
+
+app.include_router(objekte.router, dependencies=_ANMELDUNG_NOETIG)
 # besitz vor stammdaten: dort faengt /objekte/{slug}/{bereich} sonst
 # /objekte/{slug}/anteile ab und meldet einen unbekannten Bereich.
 # Der zweite Fänger (frueher /{bereich}/{eintrag_id} direkt unter /api) ist
 # entschaerft: er liegt jetzt unter /api/stammdaten/… und verschluckt keine
 # zweisegmentigen Pfade mehr (siehe stammdaten.py:_altpfad).
-app.include_router(besitz.router)
-app.include_router(zaehler.router)  # /objekte/{slug}/zaehler VOR dem Stammdaten-Fänger
-app.include_router(heizkosten.router)
+app.include_router(besitz.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(zaehler.router, dependencies=_ANMELDUNG_NOETIG)  # /objekte/{slug}/zaehler VOR dem Stammdaten-Fänger
+app.include_router(heizkosten.router, dependencies=_ANMELDUNG_NOETIG)
 # /objekte/{slug}/heizoel ebenfalls VOR dem Stammdaten-Fänger (N79).
-app.include_router(heizoel.router)
+app.include_router(heizoel.router, dependencies=_ANMELDUNG_NOETIG)
 # /objekte/{slug}/heizverteiler|waerme|heizung ebenfalls VOR dem Fänger (N80/N81).
-app.include_router(waerme.router)
+app.include_router(waerme.router, dependencies=_ANMELDUNG_NOETIG)
 # /objekte/{slug}/strom ebenfalls VOR dem Stammdaten-Fänger (N83).
-app.include_router(strom.router)
+app.include_router(strom.router, dependencies=_ANMELDUNG_NOETIG)
 # N84 — eigener Prefix /api/kidb (Belegdaten-Wissensdatenbank), trotzdem vor
 # dem Stammdaten-Fänger eingehängt.
-app.include_router(kidb.router)
+app.include_router(kidb.router, dependencies=_ANMELDUNG_NOETIG)
 # N240 — eigener Prefix /api/dokumentvorlagen (Vorlagenarchiv, objekt-
 # übergreifend), ebenfalls vor dem Stammdaten-Fänger eingehängt.
-app.include_router(dokumentvorlagen.router)
+app.include_router(dokumentvorlagen.router, dependencies=_ANMELDUNG_NOETIG)
 # N264 — Drucker des Hauses (eigener Prefix /api/drucker).
-app.include_router(dokumentvorlagen.drucker_router)
+app.include_router(dokumentvorlagen.drucker_router, dependencies=_ANMELDUNG_NOETIG)
 # N126 — eigener Prefix /api/solaredge (Screenshot lesen, rein lesend),
 # ebenfalls vor dem Stammdaten-Fänger eingehängt.
-app.include_router(solaredge.router)
+app.include_router(solaredge.router, dependencies=_ANMELDUNG_NOETIG)
 # N130 — eigener Prefix /api/openwb (Ladeprotokoll der Wallbox, rein lesend),
 # ebenfalls vor dem Stammdaten-Fänger eingehängt.
-app.include_router(openwb.router)
+app.include_router(openwb.router, dependencies=_ANMELDUNG_NOETIG)
 # N132 — eigener Prefix /api/tankstelle (E-Tankstelle: Nutzer, Verlauf,
 # Abrechnung, Versand), ebenfalls vor dem Stammdaten-Fänger eingehängt.
-app.include_router(tankstelle.router)
+app.include_router(tankstelle.router, dependencies=_ANMELDUNG_NOETIG)
 # N142 — /zeitraeume/{zid}/stromkette (Netz·PV·Akku → E-Tankstelle → Einheiten).
-app.include_router(stromkette.router)
+app.include_router(stromkette.router, dependencies=_ANMELDUNG_NOETIG)
 # N270 — /objekte/{slug}/renovierungen ebenfalls VOR dem Stammdaten-Fänger.
-app.include_router(renovierung.router)
+app.include_router(renovierung.router, dependencies=_ANMELDUNG_NOETIG)
 # N309 — das Kontaktbuch. Eigener Prefix `/api/kontakte`, kollidiert mit
 # keinem Fänger; die Reihenfolge INNERHALB des Routers ist dort erklärt.
-app.include_router(kontakte.router)
+app.include_router(kontakte.router, dependencies=_ANMELDUNG_NOETIG)
 # N273 — /zeitraeume/{zid}/weg (WEG-Modus). Früh eingehängt, damit kein anderer
 # Router ein zweisegmentiges /zeitraeume/{zid}/… vorher abfängt.
-app.include_router(weg.router)
-app.include_router(stammdaten.router)
-app.include_router(auswertung.router)
-app.include_router(cloud.router)
-app.include_router(dokumente.router)
-app.include_router(mail.router)
-app.include_router(versand.router)
+app.include_router(weg.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(stammdaten.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(auswertung.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(cloud.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(dokumente.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(mail.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(versand.router, dependencies=_ANMELDUNG_NOETIG)
 # Eigener Prefix /api/ki — Reihenfolge unkritisch.
-app.include_router(ki.router)
-app.include_router(waermesim.router)
+app.include_router(ki.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(waermesim.router, dependencies=_ANMELDUNG_NOETIG)
 
 
 def _build_zeilen() -> list[str]:
