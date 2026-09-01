@@ -16,15 +16,14 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select
 
-from fastapi import HTTPException
-
 from ..cashflow import EinheitZahlen, cashflow, monate_im_jahr, sankey
 from ..turnus import jahresbetrag
 from ..vermoegen import kapitaldienst_jahr
 from ..db import get_session
+from ..deps import aktuelle_familie, objekt_holen
 from ..bezeichnung import objekt_titel
-from ..models import (Einheit, Kostenart, Kostenposition, Kredit, Miete, Objekt,
-                      Versicherung, Zahlung, Zeitraum, ist_grundstueck)
+from ..models import (Einheit, Familie, Kostenart, Kostenposition, Kredit, Miete,
+                      Objekt, Versicherung, Zahlung, Zeitraum, ist_grundstueck)
 
 router = APIRouter(prefix="/api/auswertung", tags=["auswertung"])
 
@@ -40,25 +39,17 @@ MIETER_KNOTEN = {"Einnahmen": "Vorauszahlungen", "Überschuss": "Guthaben",
                  "Fehlbetrag": "Nachzahlung"}
 
 
-def _objekt_pflicht(session: Session, slug: str) -> Objekt:
-    """Das Objekt zum Slug — ein unbekannter Slug ist ein Fehler.
+def _objekte_waehlen(session: Session, slug: str | None,
+                     familie: Familie) -> list[Objekt]:
+    """Die Objekte, über die ausgewertet wird — eines oder alle.
 
-    Ohne diese Prüfung antworteten drei der vier Endpunkte mit 200 und lauter
-    Nullen: ein veralteter Slug (Objekt umbenannt oder gelöscht) las sich dann
-    als „dieses Objekt hat 0 € Einnahmen und 0 € Kosten" statt als Hinweis, dass
-    es das Objekt nicht mehr gibt. Nur `/cashflow` meldete ehrlich 404 — jetzt
-    alle vier gleich."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
-    return o
-
-
-def _objekte_waehlen(session: Session, slug: str | None) -> list[Objekt]:
-    """Die Objekte, über die ausgewertet wird — eines oder alle."""
+    N436 — beide Zweige gelten nur für die angemeldete Familie: ein
+    einzelnes Objekt über `objekt_holen` (404 bei fremdem/unbekanntem Slug,
+    wie überall sonst), „alle" nur die eigenen statt aller Familien."""
     if slug:
-        return [_objekt_pflicht(session, slug)]
-    return list(session.exec(select(Objekt)).all())
+        return [objekt_holen(slug, session, familie)]
+    return list(session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all())
 
 
 def _sichtname(sicht: str | None) -> str:
@@ -334,7 +325,8 @@ def auswertung(jahr: int = Query(default=None),
                objekt: str = Query(default=None),
                kategorien: str = Query(default=None),
                sicht: str = Query(default=None),
-               session: Session = Depends(get_session)) -> dict:
+               session: Session = Depends(get_session),
+               familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Einnahmen gegen Ausgaben je Objekt.
 
     `sicht` schneidet die Kostenblöcke zu: 'mieter' zeigt nur die umlage-
@@ -343,7 +335,7 @@ def auswertung(jahr: int = Query(default=None),
     Sichten vollständig mit — so lässt sich die Trennung zeigen, ohne ein
     zweites Mal zu fragen."""
     jahr = jahr or date.today().year
-    objekte = _objekte_waehlen(session, objekt)
+    objekte = _objekte_waehlen(session, objekt, familie)
 
     zeilen: list[dict] = []
     kostenbloecke: dict[str, float] = {}
@@ -401,14 +393,19 @@ def auswertung(jahr: int = Query(default=None),
 def cashflow_endpoint(objekt: str = Query(...), jahr: int = Query(default=None),
                       kategorien: str = Query(default=None),
                       sicht: str = Query(default=None),
-                      session: Session = Depends(get_session)) -> dict:
+                      session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Einnahmen, Kosten und €/m² je Einheit — plus Fluss fürs Sankey.
 
     Mit `sicht=eigentuemer` trägt jede Einheit nur ihren Anteil an den Kosten
     des Eigentümers; die umlagefähigen Nebenkosten bleiben draußen, sie zahlt
     der Mieter."""
     jahr = jahr or date.today().year
-    o = _objekt_pflicht(session, objekt)
+    # `objekt` steht hier als Query-Parameter, nicht als `{slug}` im Pfad —
+    # `objekt_holen` bleibt trotzdem der eine Nachschlageweg (N436), nur als
+    # schlichter Aufruf statt als FastAPI-Dependency (die einen Pfad-/Query-
+    # Parameter namens `slug` erwarten würde).
+    o = objekt_holen(objekt, session, familie)
 
     einheiten = _einheiten_zahlen(session, o, jahr)
     bloecke = _gefiltert(_bloecke(session, o, jahr, sicht), kategorien)
@@ -428,14 +425,15 @@ def cashflow_endpoint(objekt: str = Query(...), jahr: int = Query(default=None),
 def sankey_endpoint(jahr: int = Query(default=None), objekt: str = Query(default=None),
                     kategorien: str = Query(default=None),
                     sicht: str = Query(default=None),
-                    session: Session = Depends(get_session)) -> dict:
+                    session: Session = Depends(get_session),
+                    familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Kostenfluss über alle Objekte — folgt denselben Filtern wie die Auswertung.
 
     In der Mietersicht fließen nicht die Mieten, sondern die Vorauszahlungen:
     was der Mieter im Jahr gezahlt hat, gegen das, was auf ihn umgelegt wird."""
     jahr = jahr or date.today().year
     mietersicht = sicht == "mieter"
-    objekte = _objekte_waehlen(session, objekt)
+    objekte = _objekte_waehlen(session, objekt, familie)
 
     quellen: list[dict] = []
     bloecke_gesamt: dict[str, float] = {}
@@ -469,13 +467,14 @@ def sankey_endpoint(jahr: int = Query(default=None), objekt: str = Query(default
 
 @router.get("/mietverlauf")
 def mietverlauf(objekt: str = Query(default=None),
-                session: Session = Depends(get_session)) -> dict:
+                session: Session = Depends(get_session),
+                familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Kaltmiete — beim Grundstück die Pacht — je Jahr für die Verlaufskurve.
 
     Jede Reihe sagt selbst, wie ihr Entgelt heisst; die Kurve kann Miet- und
     Pachtobjekte nebeneinander zeigen, ohne dass eines von beiden falsch
     beschriftet wäre."""
-    objekte = _objekte_waehlen(session, objekt)
+    objekte = _objekte_waehlen(session, objekt, familie)
 
     heute = date.today().year
     jahre = list(range(heute - 7, heute + 1))

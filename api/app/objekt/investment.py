@@ -9,10 +9,11 @@ Datenbank.
 """
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from ..db import get_session
+from ..deps import objekt_holen
 from ..investment_kpi import KpiEingabe, KreditEingabe, kennzahlen
 from ..investment_rating import bewertung
 from ..models import (Anteil, Eigentuemer, Einheit, Kredit, Miete, Objekt,
@@ -22,13 +23,6 @@ from ..verteilung import _gesamtflaeche
 from .stammdaten import _laufende
 
 router = APIRouter(tags=["objekte"])
-
-
-def _objekt(session: Session, slug: str) -> Objekt:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
-    return o
 
 
 def _hauptgrenzsteuersatz(session: Session, objekt_id: int) -> float | None:
@@ -121,12 +115,12 @@ def kpi_eingabe_fuer(session: Session, o: Objekt,
 
 
 @router.get("/objekte/{slug}/kpi")
-def objekt_kpi(slug: str, session: Session = Depends(get_session)) -> dict:
+def objekt_kpi(session: Session = Depends(get_session),
+               o: Objekt = Depends(objekt_holen)) -> dict:
     """Investment-Kennzahlen + Bewertung eines Objekts, aus den echten
     Stammdaten zusammengestellt (N409). Pflichtangaben zur Abrechnung
     braucht dieser Endpunkt keine — er zeigt einfach, was aus dem
     vorhandenen Bestand berechenbar ist, und lässt den Rest `None`."""
-    o = _objekt(session, slug)
     eingabe = kpi_eingabe_fuer(session, o)
     k = kennzahlen(eingabe)
     return {"kennzahlen": k, "bewertung": bewertung(k)}

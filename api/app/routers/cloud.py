@@ -21,7 +21,8 @@ from ..cloudkern import (ARTKUERZEL, SACHORDNER_KATEGORIE, STRUKTUR, S_HOME,
                         unterordner_fuer, unterordner_vorlagen, verbindung)
 from .. import upload
 from ..db import get_session
-from ..models import Dokument, Einstellung, Objekt
+from ..deps import aktuelle_familie, objekt_holen
+from ..models import Dokument, Einstellung, Familie, Objekt
 from ..nextcloud import Nextcloud, NextcloudFehler
 from .dokumente import _einsortieren
 
@@ -136,7 +137,8 @@ class HomeIn(BaseModel):
 
 
 @router.post("/home")
-def home_speichern(data: HomeIn, session: Session = Depends(get_session)) -> dict:
+def home_speichern(data: HomeIn, session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt den Ordner fest, unter dem alle Immobilien angelegt werden."""
     client = verbindung(session)
     try:
@@ -146,7 +148,8 @@ def home_speichern(data: HomeIn, session: Session = Depends(get_session)) -> dic
     # Der Ordner einer Immobilie ist kein Heimatordner: darunter entstünde er
     # gleich noch einmal, und alle anderen Immobilien lägen in seinem Inneren.
     gewaehlt = _pfad(data.pfad)
-    for o in session.exec(select(Objekt)).all():
+    for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all():
         if o.nc_ordner and _pfad(o.nc_ordner) == gewaehlt:
             raise HTTPException(
                 400, f"'{gewaehlt}' ist der Ordner von {o.name}. Bitte den "
@@ -161,10 +164,12 @@ class VorlageIn(BaseModel):
 
 
 @router.get("/vorlage")
-def vorlage_lesen(session: Session = Depends(get_session)) -> dict:
+def vorlage_lesen(session: Session = Depends(get_session),
+                  familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Aktuelle Namensvorlage mit Beispielen aus den echten Objekten."""
     vorlage = _lies(session, S_VORLAGE) or STANDARD_VORLAGE
-    objekte = session.exec(select(Objekt)).all()[:4]
+    objekte = session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()[:4]
     return {
         "vorlage": vorlage,
         "standard": STANDARD_VORLAGE,
@@ -180,7 +185,8 @@ def vorlage_lesen(session: Session = Depends(get_session)) -> dict:
 
 @router.post("/vorlage")
 def vorlage_speichern(data: VorlageIn,
-                      session: Session = Depends(get_session)) -> dict:
+                      session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Speichert die Vorlage.
 
     Bereits angelegte Ordner bleiben zunächst, wie sie sind — verschoben wird
@@ -192,7 +198,7 @@ def vorlage_speichern(data: VorlageIn,
     _schreib(session, S_VORLAGE, data.vorlage.strip())
     session.commit()
     try:
-        offen = umzug_plan(session, mit_cloud=False)["anzahl"]
+        offen = umzug_plan(session, familie, mit_cloud=False)["anzahl"]
     except HTTPException:
         offen = 0                      # ohne Home-Ordner gibt es nichts zu ziehen
     return {"vorlage": data.vorlage.strip(), "hinweise": hinweise,
@@ -211,14 +217,15 @@ class UnterordnerIn(BaseModel):
     vorlagen: dict[str, str]
 
 
-def _unterordner_antwort(session: Session) -> dict:
+def _unterordner_antwort(session: Session, familie: Familie) -> dict:
     """Vorlagen, Platzhalter und ein Beispiel je Art — wie bei /vorlage.
 
     Das Beispiel rechnet mit dem laufenden Jahr und der Einheit der ersten
     Immobilie, die eine hat: so sieht der Nutzer den Ordnernamen, der heute
     entstünde, statt einer Vorlage mit geschweiften Klammern."""
     vorlagen = unterordner_vorlagen(session)
-    objekte = session.exec(select(Objekt)).all()
+    objekte = session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()
     einheit = next((e for e in (einheit_von(o) for o in objekte) if e), "")
     jahr = date.today().year
     return {
@@ -238,14 +245,16 @@ def _unterordner_antwort(session: Session) -> dict:
 
 
 @router.get("/unterordner")
-def unterordner_lesen(session: Session = Depends(get_session)) -> dict:
+def unterordner_lesen(session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Die Unterordner-Vorlagen je Dokumentart samt Beispiel für dieses Jahr."""
-    return _unterordner_antwort(session)
+    return _unterordner_antwort(session, familie)
 
 
 @router.post("/unterordner")
 def unterordner_speichern(data: UnterordnerIn,
-                          session: Session = Depends(get_session)) -> dict:
+                          session: Session = Depends(get_session),
+                          familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Speichert die Vorlagen.
 
     Bereits abgelegte Belege bleiben liegen, wo sie liegen — verschoben wird
@@ -265,15 +274,13 @@ def unterordner_speichern(data: UnterordnerIn,
     _schreib(session, S_UNTERORDNER, json.dumps(gespeichert, ensure_ascii=False))
     session.commit()
     log.info("Unterordner-Vorlagen gespeichert: %s", gespeichert)
-    return {"hinweise": hinweise, **_unterordner_antwort(session)}
+    return {"hinweise": hinweise, **_unterordner_antwort(session, familie)}
 
 
 @router.get("/objekte/{slug}/status")
-def objekt_status(slug: str, session: Session = Depends(get_session)) -> dict:
+def objekt_status(session: Session = Depends(get_session),
+                  objekt: Objekt = Depends(objekt_holen)) -> dict:
     """Ist dieses Objekt schon mit einem Ordner verknüpft? Was fehlt noch?"""
-    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not objekt:
-        raise HTTPException(404, "Objekt nicht gefunden")
     home = _lies(session, S_HOME)
     verbunden = bool(_lies(session, S_URL) and _lies(session, S_PASSWORT))
     return {
@@ -289,14 +296,12 @@ def objekt_status(slug: str, session: Session = Depends(get_session)) -> dict:
 
 
 @router.get("/objekte/{slug}/ordner")
-def objekt_ordner(slug: str, session: Session = Depends(get_session)) -> dict:
+def objekt_ordner(session: Session = Depends(get_session),
+                  objekt: Objekt = Depends(objekt_holen)) -> dict:
     """Was wirklich im Objektordner liegt.
 
     Selbst angelegte Ordner werden ausgewiesen und bleiben unangetastet —
     ImmoCalc legt nur an, was in STRUKTUR steht, und ändert nichts daran."""
-    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not objekt:
-        raise HTTPException(404, "Objekt nicht gefunden")
     if not objekt.nc_ordner:
         return {"verknuepft": False, "ordner": [], "eigene": [], "fehlend": []}
 
@@ -318,15 +323,13 @@ def objekt_ordner(slug: str, session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/objekte/{slug}/struktur")
-def struktur_anlegen(slug: str, session: Session = Depends(get_session)) -> dict:
+def struktur_anlegen(session: Session = Depends(get_session),
+                     objekt: Objekt = Depends(objekt_holen)) -> dict:
     """Legt Objektordner samt Unterstruktur unter dem Home-Ordner an.
     Bestehende Ordner und Dateien bleiben unberührt."""
     home = _lies(session, S_HOME)
     if not home:
         raise HTTPException(400, "Kein Home-Ordner gewählt")
-    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not objekt:
-        raise HTTPException(404, "Objekt nicht gefunden")
 
     # Sprechender Ordnername statt "Wohnung 1.OG" — sonst kollidieren
     # gleichnamige Einheiten verschiedener Adressen. Ist der Home-Ordner selbst
@@ -399,8 +402,9 @@ def _freies_ziel(client, ordner: str, name: str) -> str:
 
 
 @router.post("/objekte/{slug}/leeren")
-def objekt_leeren(slug: str, bestaetigt: bool = False,
-                  session: Session = Depends(get_session)) -> dict:
+def objekt_leeren(bestaetigt: bool = False,
+                  session: Session = Depends(get_session),
+                  objekt: Objekt = Depends(objekt_holen)) -> dict:
     """Löscht ALLE Inhalte des Objektordners (Dateien und Unterordner) — für
     einen sauberen Neuaufbau. Der Objektordner selbst bleibt. Nur unterhalb des
     Home-Ordners (Schreibschutz).
@@ -414,9 +418,6 @@ def objekt_leeren(slug: str, bestaetigt: bool = False,
     vorher Byte-Gleichheit nach. Hier fiel bisher alles, ohne Beweis und ohne
     Rückfrage.
     """
-    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not objekt:
-        raise HTTPException(404, "Objekt nicht gefunden")
     if not objekt.nc_ordner:
         return {"geloescht": 0, "wuerde_loeschen": []}
     client = verbindung(session)
@@ -439,21 +440,19 @@ def objekt_leeren(slug: str, bestaetigt: bool = False,
             geloescht += 1
     except NextcloudFehler as e:
         raise HTTPException(400, str(e)) from e
-    log.warning("Objektordner geleert: %s (%s Einträge)", slug, geloescht)
+    log.warning("Objektordner geleert: %s (%s Einträge)", objekt.slug, geloescht)
     return {"ordner": objekt.nc_ordner, "geloescht": geloescht,
             "wuerde_loeschen": []}
 
 
 @router.post("/objekte/{slug}/spiegeln", status_code=201)
-async def objekt_spiegeln(slug: str, subpfad: str = Form(...),
+async def objekt_spiegeln(subpfad: str = Form(...),
                           datei: UploadFile = File(...),
-                          session: Session = Depends(get_session)) -> dict:
+                          session: Session = Depends(get_session),
+                          objekt: Objekt = Depends(objekt_holen)) -> dict:
     """Legt eine Datei UNVERÄNDERT unter `subpfad` im Objektordner ab — die
     Ordnerkette wird angelegt, der Dateiname bleibt. Für die 1:1-Übertragung
     des eigenen Archivs, ohne Umbenennung oder Umsortierung."""
-    objekt = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not objekt:
-        raise HTTPException(404, "Objekt nicht gefunden")
     if not objekt.nc_ordner:
         raise HTTPException(400, "Objekt ist mit keinem Cloud-Ordner verknüpft")
     teile = _saubere_teile(subpfad)
@@ -570,7 +569,7 @@ def _verwaiste_ordner(session: Session, home: str, benutzt: set[str]) -> list[st
             and _pfad(e.pfad) not in benutzt]
 
 
-def umzug_plan(session: Session, mit_cloud: bool = True) -> dict:
+def umzug_plan(session: Session, familie: Familie, mit_cloud: bool = True) -> dict:
     """Trockenlauf: was das aktuelle Schema an den Ordnern ändern würde.
 
     Rein rechnend — die Cloud wird nur für die verwaisten Ordner gelesen, und
@@ -582,7 +581,8 @@ def umzug_plan(session: Session, mit_cloud: bool = True) -> dict:
 
     schritte, unveraendert, ohne_ordner = [], [], []
     benutzt: set[str] = set()
-    for o in session.exec(select(Objekt)).all():
+    for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all():
         if not o.nc_ordner:
             ohne_ordner.append({"objekt": o.slug, "name": o.name})
             continue
@@ -759,7 +759,8 @@ def ordner_nachziehen(session: Session, objekt: Objekt,
 
 
 @router.get("/umzug")
-def umzug_pruefen(session: Session = Depends(get_session)) -> dict:
+def umzug_pruefen(session: Session = Depends(get_session),
+                  familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Trockenlauf — zeigt alt → neu, je Ordner und je Beleg. Ändert nichts.
 
     Ohne verbundene Cloud gibt es schlicht nichts nachzuziehen — das ist eine
@@ -773,25 +774,27 @@ def umzug_pruefen(session: Session = Depends(get_session)) -> dict:
                 "grund": "Noch keine Nextcloud verbunden",
                 "schritte": [], "anzahl": 0, "unveraendert": [],
                 "ohne_ordner": [], "verwaist": [], "hinweise": []}
-    return {"moeglich": True, "grund": "", **umzug_plan(session)}
+    return {"moeglich": True, "grund": "", **umzug_plan(session, familie)}
 
 
 @router.post("/umzug")
-def umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
+def umzug_ausfuehren(session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Zieht die Ordner aller Immobilien auf das aktuelle Schema nach.
 
     Ein misslungener Ordner hält den Rest nicht auf: er wird gemeldet, seine
     Immobilie bleibt verknüpft wie bisher, und kein Beleg wechselt dabei
     seinen Pfad."""
-    plan = umzug_plan(session)
+    plan = umzug_plan(session, familie)
     client = verbindung(session)
     erledigt: list[dict] = []
     fehler: list[dict] = []
     bewegt = 0
 
     for schritt in plan["schritte"]:
-        objekt = session.exec(
-            select(Objekt).where(Objekt.slug == schritt["objekt"])).first()
+        objekt = session.exec(select(Objekt).where(
+            Objekt.slug == schritt["objekt"],
+            Objekt.familie_id == familie.id)).first()
         if not objekt:
             continue
         von, nach = schritt["von"], schritt["nach"]
@@ -891,7 +894,8 @@ def _ziel_unterordner(session: Session, objekt: Objekt, kategorie: str,
     return sach, f"{sach}/{treffer or ziel}"
 
 
-def unterordner_umzug_plan(session: Session, client=None) -> dict:
+def unterordner_umzug_plan(session: Session, familie: Familie,
+                           client=None) -> dict:
     """Trockenlauf: welche flach abgelegten Belege in einen Jahresordner ziehen.
 
     Rein rechnend bis auf das Lesen vorhandener Unterordner — und das scheitert
@@ -909,7 +913,8 @@ def unterordner_umzug_plan(session: Session, client=None) -> dict:
     nach_ordner = SACHORDNER_KATEGORIE
     schritte: list[dict] = []
     ohne_jahr: list[dict] = []
-    for o in session.exec(select(Objekt)).all():
+    for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all():
         if not o.nc_ordner:
             continue
         dokumente: list[dict] = []
@@ -943,7 +948,8 @@ def unterordner_umzug_plan(session: Session, client=None) -> dict:
 
 
 @router.get("/unterordner-umzug")
-def unterordner_umzug_pruefen(session: Session = Depends(get_session)) -> dict:
+def unterordner_umzug_pruefen(session: Session = Depends(get_session),
+                              familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Trockenlauf — zeigt alt → neu je Beleg. Ändert nichts.
 
     Ohne verbundene Cloud gibt es nichts einzusortieren: das ist eine Auskunft,
@@ -956,11 +962,12 @@ def unterordner_umzug_pruefen(session: Session = Depends(get_session)) -> dict:
     except HTTPException:
         client = None
     return {"moeglich": True, "grund": "",
-            **unterordner_umzug_plan(session, client)}
+            **unterordner_umzug_plan(session, familie, client)}
 
 
 @router.post("/unterordner-umzug")
-def unterordner_umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
+def unterordner_umzug_ausfuehren(session: Session = Depends(get_session),
+                                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Zieht die flach abgelegten Belege in ihre Jahresordner.
 
     Jede Datei einzeln: MKCOL für den Jahresordner (405 = existiert, ok), MOVE
@@ -968,13 +975,14 @@ def unterordner_umzug_ausfuehren(session: Session = Depends(get_session)) -> dic
     festschreiben. Eine misslungene Datei hält den Rest nicht auf — sie wird
     gemeldet, ihr Eintrag bleibt unverändert."""
     client = verbindung(session)
-    plan = unterordner_umzug_plan(session, client)
+    plan = unterordner_umzug_plan(session, familie, client)
     erledigt: list[dict] = []
     fehler: list[dict] = []
 
     for schritt in plan["schritte"]:
-        objekt = session.exec(
-            select(Objekt).where(Objekt.slug == schritt["objekt"])).first()
+        objekt = session.exec(select(Objekt).where(
+            Objekt.slug == schritt["objekt"],
+            Objekt.familie_id == familie.id)).first()
         if not objekt:
             continue
         for dok in schritt["dokumente"]:
@@ -1071,14 +1079,16 @@ def _leer_in_der_cloud(client: Nextcloud, pfad: str) -> bool:
     return True
 
 
-def struktur_umzug_plan(session: Session, client: Nextcloud) -> dict:
+def struktur_umzug_plan(session: Session, familie: Familie,
+                        client: Nextcloud) -> dict:
     """Trockenlauf: welcher Hauptordner je Immobilie wohin zieht.
 
     Liest nur. Was in der Cloud gar nicht liegt, taucht nicht auf — die Tabelle
     oben nennt alle je vergebenen Namen, eine einzelne Immobilie hatte immer
     nur einen Teil davon."""
     schritte: list[dict] = []
-    for o in session.exec(select(Objekt)).all():
+    for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all():
         if not o.nc_ordner:
             continue
         wurzel = _pfad(o.nc_ordner)
@@ -1098,17 +1108,19 @@ def struktur_umzug_plan(session: Session, client: Nextcloud) -> dict:
 
 
 @router.get("/struktur-umzug")
-def struktur_umzug_pruefen(session: Session = Depends(get_session)) -> dict:
+def struktur_umzug_pruefen(session: Session = Depends(get_session),
+                           familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Trockenlauf — zeigt alt → neu je Hauptordner. Ändert nichts."""
     if not _lies(session, S_HOME):
         return {"moeglich": False, "grund": "Noch keine Nextcloud verbunden",
                 "schritte": [], "anzahl": 0, "ordner": 0}
     return {"moeglich": True, "grund": "",
-            **struktur_umzug_plan(session, verbindung(session))}
+            **struktur_umzug_plan(session, familie, verbindung(session))}
 
 
 @router.post("/struktur-umzug")
-def struktur_umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
+def struktur_umzug_ausfuehren(session: Session = Depends(get_session),
+                              familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Zieht die Hauptordner auf die neue Gliederung um.
 
     Ordner für Ordner, jeder einzeln festgeschrieben — stolpert der dritte,
@@ -1121,7 +1133,7 @@ def struktur_umzug_ausfuehren(session: Session = Depends(get_session)) -> dict:
 
     `Dokument.pfad` zieht in allen drei Fällen mit; gelöscht wird nichts."""
     client = verbindung(session)
-    plan = struktur_umzug_plan(session, client)
+    plan = struktur_umzug_plan(session, familie, client)
     erledigt: list[dict] = []
     fehler: list[dict] = []
     geblieben: list[dict] = []

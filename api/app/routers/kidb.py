@@ -26,7 +26,8 @@ from sqlmodel import Session, select
 
 from .. import kidb
 from ..db import get_session
-from ..models import Belegdaten, Dokument, Objekt
+from ..deps import aktuelle_familie
+from ..models import Belegdaten, Dokument, Familie, Objekt
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/kidb", tags=["kidb"])
@@ -72,11 +73,15 @@ def _eintrag(session: Session, eintrag_id: int) -> Belegdaten:
     return e
 
 
-def _objekt(session: Session, slug: str) -> Objekt | None:
-    """Das Objekt zum Slug — leerer Slug heisst „alle Objekte"."""
+def _objekt(session: Session, slug: str, familie: Familie) -> Objekt | None:
+    """Das Objekt zum Slug — leerer Slug heisst „alle Objekte".
+
+    N436 — die Suche bleibt auf die angemeldete Familie eingegrenzt; ein
+    fremder Slug ist genauso ein 404 wie ein unbekannter."""
     if not slug:
         return None
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+    o = session.exec(select(Objekt).where(
+        Objekt.slug == slug, Objekt.familie_id == familie.id)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
     return o
@@ -94,7 +99,8 @@ def _beleg_jahr(d: Dokument) -> int | None:
 @router.post("/uebernehmen")
 def uebernehmen(objekt: str = "", jahre: int = 3,
                 kategorie: str = STANDARD_KATEGORIE,
-                session: Session = Depends(get_session)) -> dict:
+                session: Session = Depends(get_session),
+                familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Die Belege eines Objekts in die Wissens-Datenbank übernehmen.
 
     Geht die Dokumente der gewählten Kategorie aus den letzten `jahre` Jahren
@@ -108,7 +114,7 @@ def uebernehmen(objekt: str = "", jahre: int = 3,
     Eintrag (Jahr, Kostenart, Betrag, Pfad — `quelle` „regel") und werden
     zusätzlich in `ohne_ki` gemeldet, damit man sieht, wo noch nichts steht.
     """
-    o = _objekt(session, objekt)
+    o = _objekt(session, objekt, familie)
     grenze = date.today().year - max(jahre, 1) + 1
 
     frage = select(Dokument)
@@ -160,17 +166,24 @@ def uebernehmen(objekt: str = "", jahre: int = 3,
 
 @router.get("")
 def liste(objekt: str = "", jahr: int | None = None, q: str = "",
-          session: Session = Depends(get_session)) -> dict:
+          session: Session = Depends(get_session),
+          familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Die Wissens-Datenbank, gefiltert und durchsucht.
 
     `q` läuft über Zusammenfassung, Anbieter, Kostenart, Dateiname und alle
     Werte des KI-Rasters — gross-/kleinschreib- und umlauttolerant."""
-    o = _objekt(session, objekt)
-    objekte = {x.id: x for x in session.exec(select(Objekt)).all()}
+    o = _objekt(session, objekt, familie)
+    eigene = session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()
+    objekte = {x.id: x for x in eigene}
 
     frage = select(Belegdaten)
     if o:
         frage = frage.where(Belegdaten.objekt_id == o.id)
+    else:
+        # N436 — ohne Objektfilter zeigte diese Sicht bislang die
+        # Belegdaten ALLER Familien; eingegrenzt auf die eigenen Objekte.
+        frage = frage.where(Belegdaten.objekt_id.in_(list(objekte.keys())))
     if jahr is not None:
         frage = frage.where(Belegdaten.jahr == jahr)
     alle = session.exec(frage).all()

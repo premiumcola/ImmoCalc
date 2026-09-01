@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from ..belegposten import (BelegFehler, loese as beleg_loese,
                            verbuche as beleg_verbuche)
 from ..db import get_session
+from ..deps import objekt_holen
 from ..models import (Ablesung, Dokument, Kostenart, Kostenposition, Objekt,
                       Versandprotokoll, Vorauszahlung, WegVorauszahlung,
                       Zeitraum)
@@ -86,8 +87,8 @@ def _zeitraum_jahr(objekt: Objekt, datum: date) -> int:
 
 
 @router.get("/objekte/{slug}/zeitraum-fuer")
-def zeitraum_fuer(slug: str, datum: date,
-                  session: Session = Depends(get_session)) -> dict:
+def zeitraum_fuer(datum: date, session: Session = Depends(get_session),
+                  o: Objekt = Depends(objekt_holen)) -> dict:
     """Welcher Abrechnungszeitraum zu einem Beleg-Datum passt.
 
     Der Dokumenteneingang fragt hier für den erkannten Beleg-Tag: gibt es
@@ -97,10 +98,6 @@ def zeitraum_fuer(slug: str, datum: date,
     sie als „…anlegen" an und legt sie über `POST /zeitraeume` an, bevor der
     Beleg dort eingruppiert wird. Anlegen und Erkennen nutzen dieselbe
     Grenzen-Regel (`_zeitraum_grenzen`), damit beides deckungsgleich ist."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
-
     bestehende = session.exec(
         select(Zeitraum).where(Zeitraum.objekt_id == o.id)).all()
     treffer = next((z for z in bestehende if z.start <= datum <= z.ende), None)
@@ -126,17 +123,13 @@ class ZeitraumIn(BaseModel):
 
 
 @router.post("/objekte/{slug}/zeitraeume", status_code=201)
-def zeitraum_anlegen(slug: str, data: ZeitraumIn,
-                     session: Session = Depends(get_session)) -> dict:
+def zeitraum_anlegen(data: ZeitraumIn, session: Session = Depends(get_session),
+                     o: Objekt = Depends(objekt_holen)) -> dict:
     """Legt einen weiteren Abrechnungszeitraum an — typisch ein Vorjahr.
 
     Die Kostenarten stehen am Objekt, nicht am Zeitraum; die Checkliste des
     neuen Zeitraums ist damit sofort vollständig. Übernommen werden zusätzlich
     die Vorauszahlungen des Vorgängers, denn die ändern sich selten."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
-
     if data.start and data.ende:
         start, ende = data.start, data.ende
     else:
@@ -373,8 +366,8 @@ def zeitraum_teilen(zid: int, data: TeilenIn,
 
 
 @router.post("/objekte/{slug}/zeitraeume/belege-abgleichen")
-def belege_abgleichen(slug: str, vorschau: bool = True,
-                      session: Session = Depends(get_session)) -> dict:
+def belege_abgleichen(vorschau: bool = True, session: Session = Depends(get_session),
+                      o: Objekt = Depends(objekt_holen)) -> dict:
     """Ordnet die Belege eines Objekts ihren Zeiträumen übers ABRECHNUNGSJAHR
     neu zu (N35/N50).
 
@@ -390,9 +383,6 @@ def belege_abgleichen(slug: str, vorschau: bool = True,
     würde: welche Belege wohin wandern und welche **Grenzfälle** Handarbeit
     brauchen — `kein_datum` (weder Jahr noch Datum am Beleg) oder `kein_zeitraum`
     (kein passendes Jahr/Fenster). Abgeschlossene Zeiträume bleiben unberührt."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
     perioden = sorted(session.exec(select(Zeitraum).where(
         Zeitraum.objekt_id == o.id)).all(), key=lambda z: z.start)
     gesperrt = {z.id for z in perioden if z.status == "abgeschlossen"}
@@ -465,6 +455,6 @@ def belege_abgleichen(slug: str, vorschau: bool = True,
     positionen_neu_ableiten(session, o.id)
     session.commit()
     logging.info("Belege abgeglichen für %s: %d verschoben, %d Grenzfälle, "
-                 "%d Fehler", slug, verschoben, len(grenzfaelle), len(fehler))
+                 "%d Fehler", o.slug, verschoben, len(grenzfaelle), len(fehler))
     return {"vorschau": False, "verschoben": verschoben,
             "grenzfaelle": grenzfaelle, "fehler": fehler}

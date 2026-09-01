@@ -77,13 +77,17 @@ def einmal_scannen() -> int:
     """Ein Durchlauf. Gibt die Zahl neu aufgenommener Dateien zurück.
 
     Prüft der Nutzer gerade selbst, tritt der Wachdienst zurück: das ist kein
-    Fehler, sondern genau die Aufgabe der Sperre."""
+    Fehler, sondern genau die Aufgabe der Sperre.
+
+    N436 — `familie=None`: der Wachdienst läuft ohne Sitzung und deckt
+    absichtlich ALLE Familien ab (nur der interaktive Aufruf über HTTP
+    grenzt über `aktuelle_familie` auf eine einzelne ein)."""
     from fastapi import HTTPException                # noqa: PLC0415
     from .routers.dokumente import scan              # spät, wegen Zirkelbezug
 
     with Session(engine) as session:
         try:
-            ergebnis = scan(session=session)
+            ergebnis = scan(session=session, familie=None)
         except HTTPException as fehler:
             if fehler.status_code == 409:
                 log.info("Eingangsprüfung übersprungen: %s", fehler.detail)
@@ -120,7 +124,12 @@ def _abgleich_lauf() -> dict:
     was BEWEISBAR fehlt — der Ordner muss gelesen worden sein. Antwortet die
     Cloud nicht, überspringt `_abgleiche` die Immobilie und rührt keinen
     Eintrag an. Teilt sich die Sperre mit den anderen Läufen; prüft der Nutzer
-    gerade selbst, tritt der Wachdienst zurück."""
+    gerade selbst, tritt der Wachdienst zurück.
+
+    N436 — ohne `familie_id` (Vorgabe `None`): der Wachdienst läuft ohne
+    Sitzung und deckt absichtlich ALLE Familien ab; die interaktiven
+    Endpunkte `abgleich`/`abgleich_plan` grenzen über `aktuelle_familie` auf
+    die angemeldete Familie ein."""
     from .routers.dokumente import _abgleiche      # spät, wegen Zirkelbezug
 
     if not sperre.acquire(blocking=False):

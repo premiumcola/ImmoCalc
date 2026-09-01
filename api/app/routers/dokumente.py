@@ -29,15 +29,16 @@ from ..belegposten import BelegFehler
 from ..bezeichnung import betrag_aus_namen, datum_aus_namen, objekt_titel
 from ..cloudkern import (ZIELORDNER, _lies, hauptordner_lesbar, struktur_fuer,
                         verbindung)
+from ..deps import aktuelle_familie, objekt_holen
 from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
 from ..db import get_session
 from ..migrate import eindeutigkeit_sichern
-from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel, Grundschuld,
-                      Kostenart, Kostenposition, Kredit, Miete, Notarvertrag,
-                      Objekt, Renovierung, Renovierungsposten, Versicherung,
-                      Zahlung, Zeitraum)
+from ..models import (Bewohner, Dokument, Einheit, Erkennungsregel, Familie,
+                      Grundschuld, Kostenart, Kostenposition, Kredit, Miete,
+                      Notarvertrag, Objekt, Renovierung, Renovierungsposten,
+                      Versicherung, Zahlung, Zeitraum)
 from ..renovierung import projektordner
 from ..verteilung import UnbekannterSchluessel
 from ..nextcloud import NextcloudFehler
@@ -244,26 +245,36 @@ def _automatisch(session: Session, d: Dokument, o: Objekt, client) -> bool:
 
 
 @router.post("/scan")
-def scan(session: Session = Depends(get_session)) -> dict:
+def scan(session: Session = Depends(get_session),
+         familie: Familie | None = Depends(aktuelle_familie)) -> dict:
     """Liest die Objektordner in der Nextcloud und nimmt neue Dateien auf.
 
     Läuft nie zweimal gleichzeitig: der Wachdienst und dieser Handlauf teilen
     sich eine Sperre. Wer zu spät kommt, wartet nicht — er bekommt Bescheid,
-    denn der andere Lauf liest ohnehin gerade dieselben Ordner."""
+    denn der andere Lauf liest ohnehin gerade dieselben Ordner.
+
+    N436 — nur die Objektordner der angemeldeten Familie. `familie=None`
+    ist dem internen Wachdienst-Aufruf vorbehalten (`wachdienst.
+    einmal_scannen`, ohne Sitzung): er läuft absichtlich über ALLE Familien —
+    über HTTP liefert `aktuelle_familie` immer eine echte Familie oder einen
+    401, `None` ist von aussen nie erreichbar."""
     if not sperre.acquire(blocking=False):
         raise HTTPException(409, "Der Eingang wird gerade geprüft — "
                                  "einen Moment, dann noch einmal versuchen.")
     try:
-        return _scanne(session)
+        return _scanne(session, familie.id if familie else None)
     finally:
         sperre.release()
 
 
-def _scanne(session: Session) -> dict:
+def _scanne(session: Session, familie_id: int | None = None) -> dict:
     _eindeutigkeit_sichern(session)
     client = verbindung(session)
     neu = automatisch = 0
-    for o in session.exec(select(Objekt)).all():
+    frage = select(Objekt)
+    if familie_id is not None:
+        frage = frage.where(Objekt.familie_id == familie_id)
+    for o in session.exec(frage).all():
         if not o.nc_ordner:
             continue
         try:
@@ -319,8 +330,15 @@ def _scanne(session: Session) -> dict:
 # im 15-Minuten-Takt selbst an.
 # --------------------------------------------------------------------------
 
-def _abgleiche(session: Session, trocken: bool) -> dict:
-    """Ein vollständiger Durchgang über alle verknüpften Objektordner."""
+def _abgleiche(session: Session, trocken: bool,
+              familie_id: int | None = None) -> dict:
+    """Ein vollständiger Durchgang über alle verknüpften Objektordner.
+
+    N436 — `familie_id` grenzt auf die Objekte einer Familie ein. `None`
+    (Vorgabe) läuft über ALLE Familien und bleibt dem internen Wachdienst-
+    Takt vorbehalten (`wachdienst._abgleich_lauf`, ohne Sitzung); die
+    HTTP-Endpunkte `abgleich`/`abgleich_plan` geben immer die angemeldete
+    Familie mit."""
     _eindeutigkeit_sichern(session)
     client = verbindung(session)
     zusammen: dict[str, list] = {"verschoben": [], "umbenannt": [],
@@ -331,7 +349,10 @@ def _abgleiche(session: Session, trocken: bool) -> dict:
     # Über alle Immobilien hinweg: eine Datei gehört immer nur einem Eintrag.
     vergeben = {_norm(d.pfad) for d in session.exec(select(Dokument)).all()}
 
-    for o in session.exec(select(Objekt)).all():
+    frage = select(Objekt)
+    if familie_id is not None:
+        frage = frage.where(Objekt.familie_id == familie_id)
+    for o in session.exec(frage).all():
         if not o.nc_ordner:
             continue
         try:
@@ -431,7 +452,8 @@ def _neue_aufnehmen(session: Session, o: Objekt, dateien: dict, client,
 
 
 @router.get("/abgleich")
-def abgleich_plan(session: Session = Depends(get_session)) -> dict:
+def abgleich_plan(session: Session = Depends(get_session),
+                  familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Trockenlauf: was ein vollständiges Neueinlesen ändern würde.
 
     Ändert nichts — weder in der Cloud noch in der Datenbank."""
@@ -439,13 +461,14 @@ def abgleich_plan(session: Session = Depends(get_session)) -> dict:
         raise HTTPException(409, "Der Eingang wird gerade geprüft — "
                                  "einen Moment, dann noch einmal versuchen.")
     try:
-        return _abgleiche(session, trocken=True)
+        return _abgleiche(session, trocken=True, familie_id=familie.id)
     finally:
         sperre.release()
 
 
 @router.post("/abgleich")
-def abgleich(session: Session = Depends(get_session)) -> dict:
+def abgleich(session: Session = Depends(get_session),
+            familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Liest die Objektordner vollständig neu ein (CXXVII).
 
     Neue Dateien kommen herein, umgezogene Einträge ziehen mit, und was der
@@ -457,7 +480,7 @@ def abgleich(session: Session = Depends(get_session)) -> dict:
         raise HTTPException(409, "Der Eingang wird gerade geprüft — "
                                  "einen Moment, dann noch einmal versuchen.")
     try:
-        ergebnis = _abgleiche(session, trocken=False)
+        ergebnis = _abgleiche(session, trocken=False, familie_id=familie.id)
     finally:
         sperre.release()
     log.info("Abgleich: %d geprüft, %d entfernt, %d vermisst, %d umgehängt, "
@@ -477,14 +500,20 @@ def abgleich(session: Session = Depends(get_session)) -> dict:
 def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
           status: str = "", suche: str = "", zeitraum: int | None = None,
           kostenart: str = "",
-          session: Session = Depends(get_session)) -> dict:
+          session: Session = Depends(get_session),
+          familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Alle Dokumente, gefiltert. Die Auswahlwerte kommen mit — die Oberfläche
-    baut ihre Filter aus dem, was wirklich da ist."""
-    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    baut ihre Filter aus dem, was wirklich da ist.
+
+    N436 — nur die Objekte und Dokumente der angemeldeten Familie, sonst
+    zeigte der Eingang jeder Familie den Bestand aller anderen mit."""
+    objekte = {o.id: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()}
     nach_slug = {o.slug: o for o in objekte.values()}
     # N253 — Grabsteine gelöschter Belege gehören in keine Liste; auch die
     # Facetten-Zahlen unten sollen sie nicht mitzählen.
-    alle = _ohne_grabsteine(session.exec(select(Dokument)).all())
+    alle = _ohne_grabsteine(session.exec(select(Dokument).where(
+        Dokument.objekt_id.in_(list(objekte.keys())))).all()) if objekte else []
 
     if objekt and objekt not in nach_slug:
         raise HTTPException(404, "Objekt nicht gefunden")
@@ -553,20 +582,29 @@ def liste(objekt: str = "", kategorie: str = "", jahr: int | None = None,
 def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
                  status: str = "", suche: str = "", zeitraum: int | None = None,
                  kostenart: str = "", vorschau: bool = True,
-                 session: Session = Depends(get_session)) -> dict:
+                 session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Schickt alle aktuell gefilterten Belege gesammelt zurück ins Warten.
 
     Dieselben Filter wie die Liste — was der Nutzer sieht, wird verschoben.
     `?vorschau=true` (Vorgabe, N314h) zählt nur, ohne etwas zu ändern; die
     Oberfläche fragt vorher selbst nach und ruft explizit `vorschau=false`.
-    Sidecars bleiben außen vor."""
-    nach_slug = {o.slug: o for o in session.exec(select(Objekt)).all()}
+    Sidecars bleiben außen vor.
+
+    N436 — nur Objekte/Belege der angemeldeten Familie, sonst liesse sich mit
+    leeren Filtern der komplette Bestand aller Familien zurück ins Warten
+    schicken."""
+    nach_slug = {o.slug: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()}
     if objekt and objekt not in nach_slug:
         raise HTTPException(404, "Objekt nicht gefunden")
     ziel_id = nach_slug[objekt].id if objekt else None
     begriff = suche.strip().lower()
 
-    treffer = [d for d in session.exec(select(Dokument)).all()
+    eigene_ids = [o.id for o in nach_slug.values()]
+    treffer = [d for d in (session.exec(select(Dokument).where(
+                   Dokument.objekt_id.in_(eigene_ids))).all()
+                   if eigene_ids else [])
                if _dokument_passt(d, ziel_id=ziel_id, kategorie=kategorie,
                                    kostenart=kostenart, jahr=jahr, status=status,
                                    zeitraum=zeitraum, begriff=begriff)]
@@ -648,11 +686,13 @@ def kostenarten_normalisieren(vorschau: bool = False,
 
 
 @router.get("/objekt/{slug}")
-def je_objekt(slug: str, session: Session = Depends(get_session)) -> list[dict]:
+def je_objekt(slug: str, session: Session = Depends(get_session),
+              familie: Familie = Depends(aktuelle_familie)) -> list[dict]:
     """Die zugeordneten Dokumente einer Immobilie — dieselbe Auswahl wie
     `?objekt=…&status=zugeordnet`, nur als schlichte Liste für Aufrufer, die
     keine Filterwerte brauchen."""
-    return liste(objekt=slug, status="zugeordnet", session=session)["dokumente"]
+    return liste(objekt=slug, status="zugeordnet", session=session,
+                familie=familie)["dokumente"]
 
 
 # --------------------------------------------------------------------------
@@ -665,8 +705,9 @@ def je_objekt(slug: str, session: Session = Depends(get_session)) -> list[dict]:
 # --------------------------------------------------------------------------
 
 @router.post("/objekt/{slug}/pfade-reparieren")
-def pfade_reparieren(slug: str, vorschau: bool = False,
-                     session: Session = Depends(get_session)) -> dict:
+def pfade_reparieren(vorschau: bool = False,
+                     session: Session = Depends(get_session),
+                     o: Objekt = Depends(objekt_holen)) -> dict:
     """Zieht veraltete Dateipfade nach (CCCVII).
 
     Wandert eine Datei in der Nextcloud in einen Unterordner (von Hand oder
@@ -678,10 +719,10 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
     Ein Pfad, ein Eintrag: hält bereits ein anderes Dokument den berichtigten
     Pfad (zwei Einträge zu derselben Datei), wird dieser Eintrag übersprungen
     und in `uebersprungen` mitgezählt — statt den Commit an der Eindeutigkeit
-    scheitern zu lassen."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+    scheitern zu lassen.
+
+    N436 — `o` kommt über `objekt_holen`, das den Slug zusätzlich auf die
+    angemeldete Familie eingrenzt (404 bei fremdem Objekt)."""
     if not o.nc_ordner:
         raise HTTPException(400, "Für dieses Objekt ist kein Ordner verknüpft.")
     client = verbindung(session)
@@ -728,27 +769,26 @@ def pfade_reparieren(slug: str, vorschau: bool = False,
             # ist besser als ein 500er. Die Datei bleibt unangetastet.
             session.rollback()
             log.warning("Pfade reparieren (%s): Konflikt beim Speichern: %s",
-                        slug, fehler)
+                        o.slug, fehler)
             proben.append("Nicht gespeichert: ein Zielpfad ist doppelt belegt.")
             return {"vorschau": vorschau, "geprueft": geprueft, "berichtigt": 0,
                     "uebersprungen": uebersprungen + berichtigt,
                     "proben": proben}
     log.info("Pfade repariert (%s): %d von %d, %d übersprungen",
-             slug, berichtigt, geprueft, uebersprungen)
+             o.slug, berichtigt, geprueft, uebersprungen)
     return {"vorschau": vorschau, "geprueft": geprueft,
             "berichtigt": berichtigt, "uebersprungen": uebersprungen,
             "proben": proben}
 
 
 @router.get("/objekt/{slug}/baum")
-def baum(slug: str, session: Session = Depends(get_session)) -> dict:
+def baum(session: Session = Depends(get_session),
+         o: Objekt = Depends(objekt_holen)) -> dict:
     """Dokumentenbaum nach dem ECHTEN Ordner (CCCXVI): jeder Ast ist ein
     Nextcloud-Unterordner, so wie er in Windows steht. Untergeordnete Info-
-    Belege stehen eingerückt unter ihrer Hauptdatei (CCCXVII)."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+    Belege stehen eingerückt unter ihrer Hauptdatei (CCCXVII).
 
+    N436 — `o` kommt über `objekt_holen`, familiengrenzend."""
     # Woran hängt ein Beleg? (Beleg-Id → Rubrik) und: welcher Datensatz stammt
     # aus welchem Beleg (Datensatz → Quell-Beleg), um die Hierarchie zu bauen.
     haengt_an: dict[int, str] = {}
@@ -831,8 +871,9 @@ def _miete_kette(session: Session, eid: int) -> list[int]:
 
 
 @router.get("/objekt/{slug}/eintrag/{typ}/{eid}/belege")
-def belege_zum_eintrag(slug: str, typ: str, eid: int,
-                       session: Session = Depends(get_session)) -> dict:
+def belege_zum_eintrag(typ: str, eid: int,
+                       session: Session = Depends(get_session),
+                       o: Objekt = Depends(objekt_holen)) -> dict:
     """Die Belege eines einzelnen Eintrags für die Detailansicht (CCCXIII).
 
     `haupt` ist der Beleg, aus dem der Eintrag entstand (`quelle_dokument_id`).
@@ -842,10 +883,9 @@ def belege_zum_eintrag(slug: str, typ: str, eid: int,
     N228 — bei einem Mietverhältnis (`typ == "miete"`) zählen zusätzlich die
     Belege aller Vorgänger-Mietstände (Mieterhöhungen derselben Partei) als
     hinterlegt, und die Reihenfolge wird chronologisch (Einzug → Auszug) statt
-    „neueste zuerst" — anders als bei den übrigen Eintragstypen."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+    „neueste zuerst" — anders als bei den übrigen Eintragstypen.
+
+    N436 — `o` kommt über `objekt_holen`, familiengrenzend."""
     paar = _AN_TYP_MODELLE.get(typ)
     if not paar:
         raise HTTPException(404, f"Unbekannter Eintragstyp: {typ}")
@@ -1368,15 +1408,20 @@ def nachtraeglich_ocren(session: Session, client=None) -> dict:
 # Abfotografieren
 # --------------------------------------------------------------------------
 
-def _eindeutiges_objekt(session: Session, slug: str) -> Objekt:
+def _eindeutiges_objekt(session: Session, slug: str, familie_id: int) -> Objekt:
     """Die gemeinte Immobilie. Ohne Angabe nur dann, wenn es genau eine gibt —
-    raten wäre hier keine Hilfe, sondern eine falsche Ablage."""
+    raten wäre hier keine Hilfe, sondern eine falsche Ablage.
+
+    N436 — beides, die Suche per Slug UND die „genau eine"-Regel, gilt nur
+    innerhalb der angemeldeten Familie."""
     if slug:
-        o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+        o = session.exec(select(Objekt).where(
+            Objekt.slug == slug, Objekt.familie_id == familie_id)).first()
         if not o:
             raise HTTPException(404, "Objekt nicht gefunden")
         return o
-    alle = session.exec(select(Objekt)).all()
+    alle = session.exec(select(Objekt).where(
+        Objekt.familie_id == familie_id)).all()
     if len(alle) != 1:
         raise HTTPException(400, "Bitte die Immobilie angeben")
     return alle[0]
@@ -1427,7 +1472,8 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
                   ki_json: str = Form(""),
                   renovierung_id: int | None = Form(None),
                   datei: UploadFile = File(...),
-                  session: Session = Depends(get_session)) -> dict:
+                  session: Session = Depends(get_session),
+                  familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Nimmt ein abfotografiertes Dokument entgegen, benennt es nach Schema
     und legt es direkt im richtigen Unterordner der Immobilie ab.
 
@@ -1473,7 +1519,7 @@ async def scannen(objekt: str = Form(""), kategorie: str = Form("Sonstiges"),
     Geprüft wird das Ziel **vor** der Ablage: ein unbekannter Typ oder ein
     Eintrag einer fremden Immobilie soll nicht erst eine Datei in der Cloud
     und einen halben Eintrag in der Datenbank hinterlassen."""
-    o = _eindeutiges_objekt(session, objekt)
+    o = _eindeutiges_objekt(session, objekt, familie.id)
     _cloud_pflicht(o)
     zeitraum_id = _pruefe_zeitraum(session, zeitraum_id)
     # „objekt" (und ein leer übergebenes null) meint: an keinem einzelnen
@@ -1643,8 +1689,12 @@ def namensvorschlag(kategorie: str = Form("Sonstiges"),
 # Datenbank-Arbeit. Idempotent: derselbe Pfad ergibt denselben Eintrag.
 # --------------------------------------------------------------------------
 
-def _objekt_nach_slug(session: Session, slug: str) -> Objekt:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
+def _objekt_nach_slug(session: Session, slug: str, familie_id: int) -> Objekt:
+    """N436 — der Slug gilt nur innerhalb der angemeldeten Familie; ein
+    fremdes Objekt ist von einem nicht existierenden nicht zu unterscheiden
+    (404 in beiden Fällen)."""
+    o = session.exec(select(Objekt).where(
+        Objekt.slug == slug, Objekt.familie_id == familie_id)).first()
     if not o:
         raise HTTPException(404, "Objekt nicht gefunden")
     return o
@@ -1667,14 +1717,15 @@ class DuplikatPruefung(BaseModel):
 
 @router.post("/duplikat-pruefen")
 def duplikat_pruefen(data: DuplikatPruefung,
-                     session: Session = Depends(get_session)) -> dict:
+                     session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Liegt eine byte-gleiche Datei (SHA1) schon in der Cloud? (CCCLXXXVI)
 
     Sucht im gesamten Objektbaum. `im_ziel_ordner` sagt, ob der Fund im
     erwarteten NK-Jahr-Ordner liegt oder anderswo im Baum; `schon_erfasst`, ob
     es zu ihm bereits einen Dokument-Eintrag gibt. Rein lesend — nichts wird
     angelegt. Ohne verknüpften Cloud-Ordner ein ehrlicher 409."""
-    o = _objekt_nach_slug(session, data.objekt)
+    o = _objekt_nach_slug(session, data.objekt, familie.id)
     _cloud_pflicht(o)
     client = verbindung(session)
     # Wo ein NK-Beleg dieses Jahres landen würde — daran misst sich, ob der
@@ -1710,14 +1761,15 @@ class VorhandenerBeleg(BaseModel):
 
 @router.post("/vorhandenen-zuordnen")
 def vorhandenen_zuordnen(data: VorhandenerBeleg,
-                         session: Session = Depends(get_session)) -> dict:
+                         session: Session = Depends(get_session),
+                         familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Legt für eine schon in der Cloud liegende Datei einen Dokument-Eintrag
     an — ohne erneuten Upload (CCCLXXXVI). Kein PUT/MOVE, reine Datenbank.
 
     Idempotent: gibt es zu diesem Pfad bereits einen Eintrag, wird er nicht
     verdoppelt. Fehlende Bezüge (Objekt, Kategorie, Zeitraum) werden dann nur
     additiv ergänzt — nichts Bestehendes überschrieben."""
-    o = _objekt_nach_slug(session, data.objekt)
+    o = _objekt_nach_slug(session, data.objekt, familie.id)
     zeitraum_id = _pruefe_zeitraum(session, data.zeitraum_id)
     pfad = _norm(data.pfad)
     name = pfad.rstrip("/").split("/")[-1]
@@ -2592,28 +2644,40 @@ def verwaiste_immocalc_aufraeumen(session: Session) -> dict:
     return {"geloescht": geloescht, "geprueft": geprueft}
 
 
-def _objekt_aus_immobilie(session: Session, immobilie: str) -> Objekt | None:
+def _objekt_aus_immobilie(session: Session, immobilie: str,
+                          familie_id: int) -> Objekt | None:
     """Sucht das Objekt, dessen Straße in der erkannten Liegenschaft steckt.
 
     Bewusst einfach: normalisierter Teilstring-Abgleich der `Objekt.strasse`.
-    Kein eindeutiger Treffer → None (dann bleibt die Zuordnung offen)."""
+    Kein eindeutiger Treffer → None (dann bleibt die Zuordnung offen).
+
+    N436 — der Kandidatenkreis ist auf die Objekte der angemeldeten Familie
+    eingegrenzt; ohne das hätte der Fuzzy-Abgleich einen Beleg an ein Objekt
+    einer FREMDEN Familie hängen können."""
     ziel = _adr_norm(immobilie)
     if not ziel:
         return None
-    treffer = [o for o in session.exec(select(Objekt)).all()
+    treffer = [o for o in session.exec(
+                   select(Objekt).where(Objekt.familie_id == familie_id)).all()
                if o.strasse and _adr_norm(o.strasse) in ziel]
     return treffer[0] if len(treffer) == 1 else None
 
 
 @router.post("/{dokument_id}/immocalc")
 def immocalc(dokument_id: int, body: ImmoCalcIn,
-             session: Session = Depends(get_session)) -> dict:
+             session: Session = Depends(get_session),
+             familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Hält das KI-Raster am Beleg fest und legt einen `.immocalc`-Steckbrief
     neben das PDF (CCLXXIV).
 
     Additiv: gesetzte Werte gewinnen, leere lassen den Bestand unberührt. Die
     Cloud-Datei wird nicht verschoben. Scheitert das Sidecar-Schreiben, wird
-    trotzdem gespeichert und `sidecar: false` gemeldet — nie eine Exception."""
+    trotzdem gespeichert und `sidecar: false` gemeldet — nie eine Exception.
+
+    N436 — `familie` wird nur für den Fuzzy-Abgleich in
+    `_objekt_aus_immobilie` gebraucht (Objekt einer fremden Familie darf hier
+    nicht zugeordnet werden). Die Besitzprüfung des Dokuments selbst
+    (`dokument_id`) ist ein eigenes, separates Vorhaben."""
     d = session.get(Dokument, dokument_id)
     if not d:
         raise HTTPException(404, "Dokument nicht gefunden")
@@ -2644,7 +2708,7 @@ def immocalc(dokument_id: int, body: ImmoCalcIn,
 
     # Immobilie → Objekt zuordnen, wenn der Beleg noch keins hat.
     if not d.objekt_id and body.immobilie:
-        o = _objekt_aus_immobilie(session, body.immobilie)
+        o = _objekt_aus_immobilie(session, body.immobilie, familie.id)
         if o:
             d.objekt_id = o.id
 
@@ -3533,8 +3597,9 @@ def lageplaene_einsortieren(trocken: bool = True,
 # --------------------------------------------------------------------------
 
 @router.post("/objekte/{slug}/duplikate-buendeln")
-def duplikate_buendeln(slug: str, trocken: bool = True,
-                       session: Session = Depends(get_session)) -> dict:
+def duplikate_buendeln(trocken: bool = True,
+                       session: Session = Depends(get_session),
+                       o: Objekt = Depends(objekt_holen)) -> dict:
     """Verschiebt byte-gleiche Duplikat-Belege in den Ordner „99_Duplikate".
 
     Inhaltsbasiert, unabhängig vom Dateinamen: jede Datei wird geladen und per
@@ -3549,10 +3614,9 @@ def duplikate_buendeln(slug: str, trocken: bool = True,
     führt aus und liefert `{gebündelt, gruppen, fehler}`.
 
     Idempotent: Belege, die schon in „99_Duplikate" liegen, werden nicht erneut
-    betrachtet — ein zweiter Lauf verschiebt nichts mehr."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+    betrachtet — ein zweiter Lauf verschiebt nichts mehr.
+
+    N436 — `o` kommt über `objekt_holen`, familiengrenzend."""
     _cloud_pflicht(o)
     client = verbindung(session)
     gruppen, fehler = _duplikat_gruppen(session, client, o)
@@ -3667,12 +3731,15 @@ def renovierung_einsortieren(rid: int, trocken: bool = True,
 
 @router.post("/immocalc-entfernen")
 def immocalc_entfernen(bestaetigt: bool = False,
-                       session: Session = Depends(get_session)) -> dict:
+                       session: Session = Depends(get_session),
+                       familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Nimmt alle `.immocalc`-Steckbriefe aus den Objektordnern.
 
     Ohne `bestaetigt` wird nur gezählt und aufgelistet (Trockenlauf). Ein
     Ordner, der sich nicht lesen lässt, hält den Lauf nicht an — er wird
-    gemeldet und übersprungen; nie wird auf Verdacht gelöscht."""
+    gemeldet und übersprungen; nie wird auf Verdacht gelöscht.
+
+    N436 — nur die Objektordner der angemeldeten Familie."""
     try:
         client = verbindung(session)
     except HTTPException:
@@ -3682,7 +3749,8 @@ def immocalc_entfernen(bestaetigt: bool = False,
 
     gefunden: list[str] = []
     hinweise: list[str] = []
-    for o in session.exec(select(Objekt)).all():
+    for o in session.exec(
+            select(Objekt).where(Objekt.familie_id == familie.id)).all():
         wurzel = (o.nc_ordner or "").strip()
         if not wurzel:
             continue
@@ -3748,7 +3816,8 @@ def immocalc_entfernen(bestaetigt: bool = False,
 # --------------------------------------------------------------------------
 
 @router.get("/duplikate")
-def duplikate(session: Session = Depends(get_session)) -> dict:
+def duplikate(session: Session = Depends(get_session),
+             familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Alle Belege, die sich eine Prüfsumme teilen — nach Gruppen.
 
     Grundlage ist `sha1` (N290). Belege ohne Prüfsumme bleiben aussen vor: der
@@ -3756,15 +3825,22 @@ def duplikate(session: Session = Depends(get_session)) -> dict:
     Name oder Grösse wäre hier genau falsch — es geht ums Löschen.
 
     Grabsteine (extern gelöschte Belege) zählen nicht mit; sie haben keine
-    Datei mehr, die doppelt liegen könnte."""
-    alle = [d for d in session.exec(select(Dokument)).all()
+    Datei mehr, die doppelt liegen könnte.
+
+    N436 — nur Objekte/Belege der angemeldeten Familie, sonst zeigte die
+    Duplikat-Übersicht auch den Bestand fremder Familien."""
+    objekte = {o.id: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()}
+    eigene = (session.exec(select(Dokument).where(
+        Dokument.objekt_id.in_(list(objekte.keys())))).all()
+        if objekte else [])
+    alle = [d for d in eigene
             if (d.sha1 or "").strip() and not _ist_grabstein(d.pfad)
             and not _ist_sidecar(d.dateiname or "")]
     nach_sha1: dict[str, list[Dokument]] = {}
     for d in alle:
         nach_sha1.setdefault(d.sha1, []).append(d)
 
-    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
     gruppen = []
     for sha1, kopien in nach_sha1.items():
         if len(kopien) < 2:
@@ -3781,7 +3857,7 @@ def duplikate(session: Session = Depends(get_session)) -> dict:
     # Die dicksten Gruppen zuerst — dort ist am meisten aufzuräumen.
     gruppen.sort(key=lambda g: (-g["anzahl"], g["kopien"][0]["dateiname"]))
     return {"gruppen": gruppen, "belege_mit_pruefsumme": len(alle),
-            "belege_gesamt": len(session.exec(select(Dokument)).all())}
+            "belege_gesamt": len(eigene)}
 
 
 class ZusammenfuehrenIn(BaseModel):
@@ -3955,14 +4031,21 @@ def text_nachtragen(dokument_id: int,
 
 
 @router.get("/ohne-auslese")
-def ohne_auslese(session: Session = Depends(get_session)) -> dict:
+def ohne_auslese(session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N302 — welche Belege noch gar keine KI-Einschätzung tragen.
 
     Die Arbeitsliste für das Nachtragen. Grabsteine und Steckbriefe bleiben
-    aussen vor; sie haben keine Datei mehr bzw. sind keine Belege."""
-    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    aussen vor; sie haben keine Datei mehr bzw. sind keine Belege.
+
+    N436 — nur Objekte/Belege der angemeldeten Familie."""
+    objekte = {o.id: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()}
+    eigene = (session.exec(select(Dokument).where(
+        Dokument.objekt_id.in_(list(objekte.keys())))).all()
+        if objekte else [])
     offen = []
-    for d in session.exec(select(Dokument)).all():
+    for d in eigene:
         if _ist_grabstein(d.pfad) or _ist_sidecar(d.dateiname or ""):
             continue
         if (d.ki_einordnung or "").strip() or d.ki_felder:

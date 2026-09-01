@@ -13,7 +13,8 @@ from sqlmodel import Session, select
 
 from .. import kontakte as logik
 from ..db import get_session
-from ..models import Kontakt, Kundennummer, Objekt
+from ..deps import aktuelle_familie
+from ..models import Familie, Kontakt, Kundennummer, Objekt
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/kontakte", tags=["kontakte"])
@@ -135,7 +136,8 @@ def aendern(kontakt_id: int, data: KontaktIn,
 
 @router.post("/{kontakt_id}/nummer", status_code=201)
 def nummer_anlegen(kontakt_id: int, data: NummerIn,
-                   session: Session = Depends(get_session)) -> dict:
+                   session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> dict:
     k = session.get(Kontakt, kontakt_id)
     if k is None:
         raise HTTPException(404, "Kontakt nicht gefunden")
@@ -143,7 +145,12 @@ def nummer_anlegen(kontakt_id: int, data: NummerIn,
         raise HTTPException(400, "Bitte eine Nummer eintragen.")
     objekt_id = None
     if data.objekt:
-        o = session.exec(select(Objekt).where(Objekt.slug == data.objekt)).first()
+        # N436 — der Slug kommt aus dem Body, nicht aus dem Pfad; dieselbe
+        # Familien-Eingrenzung wie überall sonst (`objekt_holen`), nur ohne
+        # dessen FastAPI-Dependency-Form, die einen Pfad-/Query-Parameter
+        # namens `slug` erwarten würde.
+        o = session.exec(select(Objekt).where(
+            Objekt.slug == data.objekt, Objekt.familie_id == familie.id)).first()
         if o is None:
             raise HTTPException(404, "Objekt nicht gefunden")
         objekt_id = o.id

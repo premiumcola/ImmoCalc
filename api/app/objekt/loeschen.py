@@ -6,10 +6,11 @@ Dateien in der Cloud gehören dem Nutzer und bleiben unangetastet.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends
+from sqlmodel import Session
 
 from ..db import get_session
+from ..deps import objekt_holen
 from ..export import als_datei, dateiname, exportiere, loesche
 from ..models import Objekt
 
@@ -48,14 +49,12 @@ def _sicherung_in_die_cloud(session: Session, objekt: Objekt,
 
 
 @router.delete("/objekte/{slug}")
-def objekt_loeschen(slug: str, session: Session = Depends(get_session)) -> dict:
+def objekt_loeschen(session: Session = Depends(get_session),
+                    o: Objekt = Depends(objekt_holen)) -> dict:
     """Löscht eine Immobilie samt allem, was in der Datenbank daran hängt.
 
     Vorher wird eine JSON-Sicherung in die Nextcloud geschrieben. Die dort
     liegenden Unterlagen bleiben unberührt — sie gehören dem Nutzer."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
     daten = exportiere(session, o)
     sicherung = _sicherung_in_die_cloud(session, o, daten)
     name, ordner = o.name, o.nc_ordner

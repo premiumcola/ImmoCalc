@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import get_session
+from ..deps import objekt_holen
 from ..felder import bereinige
 from ..models import Dokument, Kostenart, Kostenposition, Objekt, Zeitraum
 
@@ -17,10 +18,8 @@ router = APIRouter(tags=["objekte"])
 
 
 @router.get("/objekte/{slug}/kostenarten")
-def kostenarten(slug: str, session: Session = Depends(get_session)) -> list[Kostenart]:
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
+def kostenarten(session: Session = Depends(get_session),
+                o: Objekt = Depends(objekt_holen)) -> list[Kostenart]:
     return session.exec(select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
 
 
@@ -32,17 +31,15 @@ class KostenartNeu(BaseModel):
 
 
 @router.post("/objekte/{slug}/kostenarten", status_code=201)
-def kostenart_anlegen(slug: str, data: KostenartNeu,
-                      session: Session = Depends(get_session)) -> dict:
+def kostenart_anlegen(data: KostenartNeu,
+                      session: Session = Depends(get_session),
+                      o: Objekt = Depends(objekt_holen)) -> dict:
     """N408 — bisher entstand eine neue Kostenart nur beiläufig: beim Anlegen
     des Objekts, oder als Nebeneffekt, wenn eine bestehende Position auf
     einen noch unbekannten Namen umgehängt wird (`kostenart_aendern`). Eine
     Kostenart, die noch KEINE Position trägt, ließ sich am Bestandsobjekt gar
     nicht anlegen — genau der Fall bei einer neuen, noch nie erfassten
     Kostenart wie „Zählermiete"."""
-    o = session.exec(select(Objekt).where(Objekt.slug == slug)).first()
-    if not o:
-        raise HTTPException(404, "Objekt nicht gefunden")
     name = data.name.strip()
     if not name:
         raise HTTPException(400, "Die Kostenart braucht einen Namen")

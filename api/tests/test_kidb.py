@@ -25,7 +25,8 @@ from sqlmodel import Session, select  # noqa: E402
 from app import kidb  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Belegdaten, Dokument, Objekt  # noqa: E402
+from app.migrate import BESTANDSFAMILIE_NAME  # noqa: E402
+from app.models import Belegdaten, Dokument, Familie, Objekt  # noqa: E402
 
 
 def _beleg(**abweichung) -> SimpleNamespace:
@@ -251,8 +252,14 @@ def bestand(client) -> Objekt:
         s.commit()
         o = s.exec(select(Objekt).where(Objekt.slug == "kidb-haus")).first()
         if not o:
+            # N436 — direkt angelegt statt über die API: braucht die
+            # `familie_id` der Test-Familie selbst, sonst findet die jetzt
+            # familien-eingegrenzte Suche (`objekt_holen`/`kidb._objekt`)
+            # dieses Objekt nie (siehe `conftest._test_familie`).
+            familie = s.exec(select(Familie).where(
+                Familie.name == BESTANDSFAMILIE_NAME)).first()
             o = Objekt(slug="kidb-haus", name="Tauchersreuther Str. 5",
-                       ort="Eschenau")
+                       ort="Eschenau", familie_id=familie.id if familie else None)
             s.add(o)
             s.commit()
             s.refresh(o)
