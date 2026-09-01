@@ -17,43 +17,67 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/immo.css">
 <style>
-  /* N436 — eigenstaendige Seite ohne Menueleiste: das dafuer reservierte
-     Polster aus immo.css (.app{padding-bottom}) wird hier nicht gebraucht. */
-  .app{padding-bottom:0}
+  /* N436 — eigener Rahmen `.gate` statt `.app`: `.app` schaltet ab 1000px auf
+     das Grid-Layout der Hauptnavigation um (`grid-template-areas:"nav bar"
+     "nav scroll"`) — ohne die dortigen `.nav`/`.bar`/`.scroll`-Kinder landet
+     der Inhalt in der 236px-Nav-Spalte, der Rest der 1180px-Box bleibt leer.
+     Genau das sorgte für den fast leeren, "seichten" Anblick auf dem Desktop:
+     kein Rahmen, keine erkennbare Karte, nur sehr helle Fläche. `.gate`
+     bleibt bewusst schmal und mittig — ein Anmeldescreen ist kein App-Schirm. */
+  body{
+    background:radial-gradient(ellipse 900px 460px at 50% -8%,
+      var(--teal-l) 0%, var(--paper) 60%);
+  }
+  .gate{
+    width:100%; max-width:440px; min-height:100dvh; background:var(--sheet);
+    position:relative; display:flex; flex-direction:column; padding-bottom:0;
+  }
+  @media(min-width:480px){
+    body{padding:24px 0}
+    .gate{
+      min-height:calc(100dvh - 48px); border:1px solid var(--line);
+      border-radius:22px; overflow:hidden;
+      box-shadow:0 24px 60px -30px rgba(22,38,44,.35);
+    }
+  }
 
   .content{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
     display:flex; flex-direction:column;
-    padding:calc(28px + env(safe-area-inset-top)) 20px 20px;}
+    padding:calc(32px + env(safe-area-inset-top)) 22px 20px;}
 
-  .hero{text-align:center; padding:8px 8px 28px}
-  .hero .mark{width:76px; height:76px; border-radius:20px; display:block;
-    margin:0 auto 16px; box-shadow:0 14px 30px -16px rgba(22,38,44,.4)}
-  .hero h1{font:700 24px var(--disp); letter-spacing:-.02em; margin:0 0 6px}
-  .hero p{font:400 14px var(--body); color:var(--soft); margin:0; line-height:1.5}
+  .hero{text-align:center; padding:4px 8px 30px}
+  .hero .markwrap{width:80px; height:80px; border-radius:22px; margin:0 auto 18px;
+    background:var(--teal-l); display:flex; align-items:center; justify-content:center;
+    box-shadow:0 16px 32px -16px rgba(15,110,92,.45)}
+  .hero .mark{width:52px; height:52px; display:block}
+  .hero .eyebrow{display:block; font:600 11px var(--mono); letter-spacing:.14em;
+    text-transform:uppercase; color:var(--teal-d); margin:0 0 10px}
+  .hero h1{font:700 23px var(--disp); letter-spacing:-.02em; color:var(--ink);
+    margin:0 0 10px; line-height:1.3}
+  .hero p{font:500 14px var(--body); color:var(--teal-d); margin:0; line-height:1.5}
 
   .liste{flex:1}
   .sec{font:600 11px var(--mono); letter-spacing:.1em; text-transform:uppercase;
     color:var(--soft); margin:0 0 10px; display:block}
 
   .fusszeile{text-align:center; padding:20px 8px calc(14px + env(safe-area-inset-bottom));
-    font:500 11px var(--mono); letter-spacing:.03em; color:var(--soft); opacity:.75}
+    font:500 11px var(--mono); letter-spacing:.03em; color:var(--soft)}
   .fusszeile .herz{color:var(--neg)}
 
   /* Anmelde-/Anlegen-Dialog: eigenes schmales Formular im Dialograhmen aus immo.css. */
   .dlg-form .field:last-of-type{margin-bottom:18px}
   .dlg-fehler{font:500 12.5px var(--body); color:var(--neg); margin:-6px 0 14px; display:none}
   .dlg-fehler.zeigen{display:block}
-
-  @media(min-width:480px){.content{padding-top:40px}}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="gate">
   <div class="content">
     <div class="hero">
-      <img src="icons/icon.svg" alt="" class="mark">
-      <h1>ImmoCalc</h1>
-      <p id="unterzeile">Melde dich mit deiner Familie an.</p>
+      <span class="markwrap"><img src="icons/icon.svg" alt="" class="mark"></span>
+      <span class="eyebrow">ImmoCalc</span>
+      <h1>Melde dich im Familienbereich an!</h1>
+      <p>Nebenkosten, Wertentwicklung, Dokumentenmanagement – smart, digital &amp; automatisiert!</p>
     </div>
 
     <div class="liste">
