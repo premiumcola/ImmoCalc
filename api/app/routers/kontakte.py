@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from .. import kontakte as logik
 from ..db import get_session
 from ..deps import aktuelle_familie, pruefe_familienbesitz
-from ..models import Familie, Kontakt, Kundennummer, Objekt
+from ..models import Familie, Kontakt, Kundennummer, Objekt, Renovierung
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api/kontakte", tags=["kontakte"])
@@ -64,36 +64,45 @@ def _pruefe_nummer_besitz(session: Session, n: Kundennummer, familie: Familie) -
 
 
 @router.post("/ernten")
-def ernten(session: Session = Depends(get_session)) -> dict:
+def ernten(session: Session = Depends(get_session),
+          familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Sammelt Firmen und Nummern aus dem Bestand ein — wiederholbar.
 
     „Sammle alle Infos aus allen Belegen ein!" Rein ergänzend: nichts wird
-    gelöscht, und von Hand Gepflegtes bleibt unangetastet."""
-    return logik.ernte(session)
+    gelöscht, und von Hand Gepflegtes bleibt unangetastet. N436 — nur aus
+    den eigenen Objekten der angemeldeten Familie."""
+    return logik.ernte(session, familie.id)
 
 
 @router.get("/gewerke/{renovierung_id}")
-def gewerke(renovierung_id: int,
-            session: Session = Depends(get_session)) -> dict:
+def gewerke(renovierung_id: int, session: Session = Depends(get_session),
+           familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Wer hat in welchem Gewerk gearbeitet — je Renovierung.
 
     Genau die Frage des Nutzers: „welche Handwerker in welchen Gewerken tätig
     waren"."""
+    renovierung = session.get(Renovierung, renovierung_id)
+    pruefe_familienbesitz(session, renovierung, familie)
     return {"renovierung_id": renovierung_id,
             "gewerke": logik.gewerke_der_renovierung(session, renovierung_id)}
 
 
 @router.get("")
 def liste(objekt: str = "", art: str = "", gewerk: str = "", suche: str = "",
-          session: Session = Depends(get_session)) -> dict:
+          session: Session = Depends(get_session),
+          familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Das Kontaktbuch, gefiltert.
 
     `objekt` zeigt nur Firmen, zu denen es für diese Immobilie eine
     Kundennummer gibt — das ist die „immobilienzugehörige" Sicht, die der
-    Nutzer verlangt hat."""
-    objekte = {o.id: o for o in session.exec(select(Objekt)).all()}
+    Nutzer verlangt hat.
+
+    N436 — nur das eigene Kontaktbuch der angemeldeten Familie."""
+    objekte = {o.id: o for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all()}
     nach_slug = {o.slug: o for o in objekte.values()}
-    alle = session.exec(select(Kontakt)).all()
+    alle = session.exec(
+        select(Kontakt).where(Kontakt.familie_id == familie.id)).all()
 
     if objekt:
         o = nach_slug.get(objekt)

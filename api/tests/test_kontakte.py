@@ -221,9 +221,12 @@ def test_gewerke_je_renovierung():
         assert nach_name["Dach"]["firmen"][0]["kontakt_id"] is not None
 
 
-def test_unbekannte_renovierung_ergibt_leere_liste_statt_500():
+def test_unbekannte_renovierung_ergibt_404_statt_500():
+    """N436 — vormals eine leere Liste (nicht unterscheidbar von „gibt's,
+    aber ohne Gewerke"); eine geratene ID gehört keiner Familie, also 404
+    wie überall sonst, statt kein Crash zu sein UND unklar zu bleiben."""
     with TestClient(app) as c:
-        assert c.get("/api/kontakte/gewerke/999999").json()["gewerke"] == []
+        assert c.get("/api/kontakte/gewerke/999999").status_code == 404
 
 
 # --------------------------------------------------------------------------

@@ -17,12 +17,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session  # noqa: E402
 
+from sqlmodel import select  # noqa: E402
+
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Dokumentvorlage, Einstellung  # noqa: E402
+from app.migrate import BESTANDSFAMILIE_NAME  # noqa: E402
+from app.models import Dokumentvorlage, Einstellung, Familie  # noqa: E402
 
 
-def _vorlage(**abweichung) -> Dokumentvorlage:
+def _familie_id(session: Session) -> int:
+    """N436 — `liste()` filtert jetzt nach `familie_id`; Fixtures, die direkt
+    in der DB anlegen (statt über die API), müssen sie selbst setzen —
+    dasselbe Muster wie in test_kidb.py/test_kontakte.py."""
+    return session.exec(select(Familie)
+                        .where(Familie.name == BESTANDSFAMILIE_NAME)).first().id
+
+
+def _vorlage(session: Session | None = None, **abweichung) -> Dokumentvorlage:
     daten = dict(name="Übergabeprotokoll", verwendungszweck="Vermietung",
                 typ="Übergabeprotokoll Einzug",
                 pfad="/[010]_Immobilien/00_Vorlagen/Vermietung/"
@@ -30,6 +41,8 @@ def _vorlage(**abweichung) -> Dokumentvorlage:
                 dateiname="Uebergabeprotokoll.pdf",
                 quelle_url="https://example.org/uebergabeprotokoll.pdf",
                 erstellt_am=date.today())
+    if session is not None:
+        daten["familie_id"] = _familie_id(session)
     daten.update(abweichung)
     return Dokumentvorlage(**daten)
 
@@ -59,8 +72,9 @@ def test_liste_nennt_den_typen_katalog_auch_ohne_bestand():
 
 def test_liste_filtert_nach_verwendungszweck_und_typ():
     with TestClient(app) as c, Session(engine) as session:
-        session.add(_vorlage())
-        session.add(_vorlage(name="Selbstauskunft", typ="Mieterselbstauskunft",
+        session.add(_vorlage(session))
+        session.add(_vorlage(session, name="Selbstauskunft",
+                             typ="Mieterselbstauskunft",
                              pfad="/Vorlagen/Vermietung/Selbstauskunft.pdf",
                              dateiname="Selbstauskunft.pdf"))
         session.commit()
@@ -84,7 +98,7 @@ def test_liste_filtert_nach_verwendungszweck_und_typ():
 
 def test_loeschen_entfernt_nur_den_datenbankeintrag():
     with TestClient(app) as c, Session(engine) as session:
-        v = _vorlage()
+        v = _vorlage(session)
         session.add(v)
         session.commit()
         session.refresh(v)

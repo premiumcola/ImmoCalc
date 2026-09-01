@@ -131,13 +131,17 @@ def _freier_name(client, ordner: str, name: str) -> str:
 
 @router.get("")
 def liste(verwendungszweck: str = "", typ: str = "",
-         session: Session = Depends(get_session)) -> dict:
+         session: Session = Depends(get_session),
+         familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Die Vorlagen, optional nach Verwendungszweck/Typ gefiltert.
 
     Dazu der `typen`-Katalog (N247): welche Vorlagen es überhaupt geben
     sollte. Die Oberfläche zeigt dadurch für JEDE Art eine Zeile — auch für
-    die noch leeren — und braucht die Liste nicht selbst zu kennen."""
-    frage = select(Dokumentvorlage)
+    die noch leeren — und braucht die Liste nicht selbst zu kennen.
+
+    N436 — nur das eigene Vorlagenarchiv der angemeldeten Familie."""
+    frage = select(Dokumentvorlage).where(
+        Dokumentvorlage.familie_id == familie.id)
     katalog = TYPEN_KATALOG
     if verwendungszweck:
         frage = frage.where(Dokumentvorlage.verwendungszweck == verwendungszweck)

@@ -29,7 +29,8 @@ from ..belegposten import BelegFehler
 from ..bezeichnung import betrag_aus_namen, datum_aus_namen, objekt_titel
 from ..cloudkern import (ZIELORDNER, _lies, hauptordner_lesbar, struktur_fuer,
                         verbindung)
-from ..deps import aktuelle_familie, dokument_holen, objekt_holen, zeitraum_holen
+from ..deps import (aktuelle_familie, dokument_holen, objekt_holen,
+                    pruefe_familienbesitz, zeitraum_holen)
 from ..kostenarten import _fold as _fold_kostenart
 from ..kostenarten import normalisieren as kostenart_normalisieren
 from .ki import S_KI_KEY, S_KI_MODELL
@@ -622,14 +623,22 @@ def warte_archiv(objekt: str = "", kategorie: str = "", jahr: int | None = None,
 
 @router.post("/nk-vor-jahr-entfernen")
 def nk_vor_jahr_entfernen(grenze_jahr: int = 2025, vorschau: bool = True,
-                          session: Session = Depends(get_session)) -> dict:
+                          session: Session = Depends(get_session),
+                          familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Nimmt automatisch (orange) aus Belegen angelegte NK-Eintragungen zu
     Abrechnungszeiträumen VOR `grenze_jahr` wieder heraus, Belege zurück ins
     Warten. Bestätigte/geseedete Positionen bleiben unberührt (nur
     `vorlaeufig=True` wird gelöscht). `?vorschau=true` (Vorgabe, N314h)
-    zählt nur."""
+    zählt nur.
+
+    N436 — wirkte bisher global über alle Familien; ein Aufräumwerkzeug
+    greift jetzt nur auf die eigenen Zeiträume/Belege zu, wie jede andere
+    Aktion auch."""
+    eigene_objekt_ids = set(session.exec(select(Objekt.id).where(
+        Objekt.familie_id == familie.id)).all())
     vor = {z.id for z in session.exec(select(Zeitraum)).all()
-           if z.start and z.start.year < grenze_jahr}
+           if z.start and z.start.year < grenze_jahr
+           and z.objekt_id in eigene_objekt_ids}
     drafts = [p for p in session.exec(select(Kostenposition).where(
                   Kostenposition.vorlaeufig == True)).all()   # noqa: E712
               if p.zeitraum_id in vor and p.quelle_dokument_id]
@@ -929,7 +938,8 @@ class UmklassifizierenIn(BaseModel):
 
 @router.post("/eintrag/{typ}/{eid}/umklassifizieren")
 def umklassifizieren(typ: str, eid: int, data: UmklassifizierenIn,
-                     session: Session = Depends(get_session)) -> dict:
+                     session: Session = Depends(get_session),
+                     familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Überführt einen Eintrag in eine andere Rubrik (CCCXXIV).
 
     Beispiel: der „Notarvertrag Kaufvertrag" ist eigentlich die Notargebühren-
@@ -946,7 +956,7 @@ def umklassifizieren(typ: str, eid: int, data: UmklassifizierenIn,
     if not eintrag:
         raise HTTPException(404, "Eintrag nicht gefunden")
     o = session.get(Objekt, getattr(eintrag, "objekt_id", None))
-    if not o:
+    if not o or o.familie_id != familie.id:
         raise HTTPException(404, "Objekt nicht gefunden")
 
     ziel = (data.ziel or "").strip().lower()
@@ -3670,7 +3680,8 @@ def duplikate_buendeln(trocken: bool = True,
 
 @router.post("/renovierungen/{rid}/einsortieren")
 def renovierung_einsortieren(rid: int, trocken: bool = True,
-                             session: Session = Depends(get_session)) -> dict:
+                             session: Session = Depends(get_session),
+                             familie: Familie = Depends(aktuelle_familie)) -> dict:
     """Zieht die Belege der Renovierung `rid` in ihren Projektordner.
 
     Betroffen sind genau die Belege, die an einem Posten dieser Renovierung
@@ -3679,6 +3690,7 @@ def renovierung_einsortieren(rid: int, trocken: bool = True,
     r = session.get(Renovierung, rid)
     if r is None:
         raise HTTPException(404, "Renovierung nicht gefunden")
+    pruefe_familienbesitz(session, r, familie)
     ordner = projektordner(r.name, r.von)
     if not ordner:
         raise HTTPException(400, "Die Renovierung hat keinen brauchbaren Namen.")

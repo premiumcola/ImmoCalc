@@ -113,15 +113,23 @@ def zusammenfuehren(kontakt: Kontakt, neu: dict) -> bool:
     return geaendert
 
 
-def hole_oder_lege_an(session: Session, firma: str, **felder) -> Kontakt | None:
-    """Den Kontakt zu dieser Firma — angelegt, falls es ihn noch nicht gibt."""
+def hole_oder_lege_an(session: Session, firma: str, familie_id: int,
+                      **felder) -> Kontakt | None:
+    """Den Kontakt zu dieser Firma — angelegt, falls es ihn noch nicht gibt.
+
+    N436 — `schluessel` ist seit der Mandantentrennung nicht mehr global
+    eindeutig (zwei Familien dürfen denselben Anbieter unabhängig anlegen).
+    Ohne den `familie_id`-Filter hier hätte die Ernte einer Familie in den
+    Kontakt einer ANDEREN Familie hineingeschrieben, sobald beide denselben
+    Schlüssel tragen (z. B. „Stadtwerke")."""
     s = schluessel(firma)
     if not s:
         return None
-    kontakt = session.exec(
-        select(Kontakt).where(Kontakt.schluessel == s)).first()
+    kontakt = session.exec(select(Kontakt).where(
+        Kontakt.schluessel == s, Kontakt.familie_id == familie_id)).first()
     if kontakt is None:
         kontakt = Kontakt(schluessel=s, firma=(firma or "").strip(),
+                          familie_id=familie_id,
                           erfasst_am=date.today(), handgepflegt=[])
         session.add(kontakt)
         session.flush()
@@ -167,15 +175,26 @@ _NUMMERNFELDER = {
 }
 
 
-def _aus_renovierungen(session: Session) -> tuple[int, int]:
+def _eigene_objekt_ids(session: Session, familie_id: int) -> list[int]:
+    return list(session.exec(
+        select(Objekt.id).where(Objekt.familie_id == familie_id)).all())
+
+
+def _aus_renovierungen(session: Session, familie_id: int,
+                       objekt_ids: list[int]) -> tuple[int, int]:
     """Handwerker samt Gewerk — die einzige Quelle, die beides zusammen kennt."""
     neu = nummern = 0
-    for p in session.exec(select(Renovierungsposten)).all():
+    eigene_renovierungen = set(session.exec(select(Renovierung.id).where(
+        Renovierung.objekt_id.in_(objekt_ids))).all())
+    for p in session.exec(select(Renovierungsposten).where(
+            Renovierungsposten.renovierung_id.in_(eigene_renovierungen))).all():
         if _leer(p.firma):
             continue
         vorher = session.exec(select(Kontakt).where(
-            Kontakt.schluessel == schluessel(p.firma))).first() is None
-        k = hole_oder_lege_an(session, p.firma, gewerk=(p.gewerk or "").strip(),
+            Kontakt.schluessel == schluessel(p.firma),
+            Kontakt.familie_id == familie_id)).first() is None
+        k = hole_oder_lege_an(session, p.firma, familie_id,
+                              gewerk=(p.gewerk or "").strip(),
                               art=art_raten(p.firma, p.gewerk, ""),
                               quelle="renovierung")
         if k is not None and vorher:
@@ -183,15 +202,18 @@ def _aus_renovierungen(session: Session) -> tuple[int, int]:
     return neu, nummern
 
 
-def _aus_versicherungen(session: Session) -> tuple[int, int]:
+def _aus_versicherungen(session: Session, familie_id: int,
+                        objekt_ids: list[int]) -> tuple[int, int]:
     neu = nummern = 0
-    for v in session.exec(select(Versicherung)).all():
+    for v in session.exec(select(Versicherung).where(
+            Versicherung.objekt_id.in_(objekt_ids))).all():
         if _leer(getattr(v, "anbieter", "")):
             continue
         vorher = session.exec(select(Kontakt).where(
-            Kontakt.schluessel == schluessel(v.anbieter))).first() is None
-        k = hole_oder_lege_an(session, v.anbieter, art="Versicherung",
-                              quelle="versicherung")
+            Kontakt.schluessel == schluessel(v.anbieter),
+            Kontakt.familie_id == familie_id)).first() is None
+        k = hole_oder_lege_an(session, v.anbieter, familie_id,
+                              art="Versicherung", quelle="versicherung")
         if k is None:
             continue
         if vorher:
@@ -204,14 +226,18 @@ def _aus_versicherungen(session: Session) -> tuple[int, int]:
     return neu, nummern
 
 
-def _aus_krediten(session: Session) -> tuple[int, int]:
+def _aus_krediten(session: Session, familie_id: int,
+                  objekt_ids: list[int]) -> tuple[int, int]:
     neu = nummern = 0
-    for kr in session.exec(select(Kredit)).all():
+    for kr in session.exec(select(Kredit).where(
+            Kredit.objekt_id.in_(objekt_ids))).all():
         if _leer(getattr(kr, "bank", "")):
             continue
         vorher = session.exec(select(Kontakt).where(
-            Kontakt.schluessel == schluessel(kr.bank))).first() is None
-        k = hole_oder_lege_an(session, kr.bank, art="Bank", quelle="kredit")
+            Kontakt.schluessel == schluessel(kr.bank),
+            Kontakt.familie_id == familie_id)).first() is None
+        k = hole_oder_lege_an(session, kr.bank, familie_id,
+                              art="Bank", quelle="kredit")
         if k is None:
             continue
         if vorher:
@@ -229,17 +255,20 @@ def _felder_von(quelle) -> dict:
     return felder if isinstance(felder, dict) else {}
 
 
-def _aus_belegen(session: Session) -> tuple[int, int]:
+def _aus_belegen(session: Session, familie_id: int,
+                 objekt_ids: list[int]) -> tuple[int, int]:
     """Der grösste Fang: was die KI aus 692 Belegen gelesen hat.
 
     Der Absender steht als `anbieter` im Raster, die Nummern unter wechselnden
     Namen (`police_nr`, `darlehensnummer`, seit N309 auch `kundennummer`)."""
     neu = nummern = 0
     quellen: list[tuple[object, int | None, int | None]] = [
-        (d, d.objekt_id, d.id) for d in session.exec(select(Dokument)).all()
+        (d, d.objekt_id, d.id) for d in session.exec(
+            select(Dokument).where(Dokument.objekt_id.in_(objekt_ids))).all()
     ] + [
         (b, b.objekt_id, b.dokument_id)
-        for b in session.exec(select(Belegdaten)).all()
+        for b in session.exec(
+            select(Belegdaten).where(Belegdaten.objekt_id.in_(objekt_ids))).all()
     ]
     for quelle, objekt_id, dokument_id in quellen:
         felder = _felder_von(quelle)
@@ -248,8 +277,9 @@ def _aus_belegen(session: Session) -> tuple[int, int]:
         if _leer(firma):
             continue
         vorher = session.exec(select(Kontakt).where(
-            Kontakt.schluessel == schluessel(firma))).first() is None
-        k = hole_oder_lege_an(session, firma,
+            Kontakt.schluessel == schluessel(firma),
+            Kontakt.familie_id == familie_id)).first() is None
+        k = hole_oder_lege_an(session, firma, familie_id,
                               art=art_raten(firma, "", ""), quelle="beleg")
         if k is None:
             continue
@@ -263,16 +293,33 @@ def _aus_belegen(session: Session) -> tuple[int, int]:
     return neu, nummern
 
 
-def ernte(session: Session) -> dict:
+def ernte(session: Session, familie_id: int | None) -> dict:
     """Alle Quellen einmal durchgehen. Wiederholbar, rein ergänzend.
 
     Nichts wird gelöscht und nichts überschrieben — ein zweiter Lauf ändert nur
-    dort etwas, wo seit dem letzten Mal Neues dazugekommen ist."""
+    dort etwas, wo seit dem letzten Mal Neues dazugekommen ist.
+
+    N436 — nur die Quellen der eigenen Familie werden durchsucht, und jeder
+    neu angelegte Kontakt gehört ihr. `familie_id=None`: der Wachdienst läuft
+    ohne Sitzung und deckt bewusst ALLE Familien nacheinander ab — die
+    interaktive Route grenzt über `aktuelle_familie` auf eine einzelne ein."""
+    if familie_id is None:
+        from .models import Familie                    # spät, Zirkelbezug
+        gesamt_neu = gesamt_nummern = gesamt_kontakte = 0
+        for f in session.exec(select(Familie)).all():
+            teil = ernte(session, f.id)
+            gesamt_neu += teil["neu"]
+            gesamt_nummern += teil["nummern"]
+            gesamt_kontakte += teil["gesamt"]
+        return {"neu": gesamt_neu, "nummern": gesamt_nummern,
+                "gesamt": gesamt_kontakte}
+
+    objekt_ids = _eigene_objekt_ids(session, familie_id)
     neu = nummern = 0
     for schritt in (_aus_renovierungen, _aus_versicherungen, _aus_krediten,
                     _aus_belegen):
         try:
-            n, m = schritt(session)
+            n, m = schritt(session, familie_id, objekt_ids)
         except Exception as fehler:                        # noqa: BLE001
             session.rollback()
             log.warning("Kontakt-Ernte (%s) übersprungen: %s",
@@ -281,7 +328,8 @@ def ernte(session: Session) -> dict:
         neu += n
         nummern += m
     session.commit()
-    gesamt = len(session.exec(select(Kontakt)).all())
+    gesamt = len(session.exec(
+        select(Kontakt).where(Kontakt.familie_id == familie_id)).all())
     log.info("N309: %d neue Kontakte, %d neue Nummern, %d gesamt",
              neu, nummern, gesamt)
     return {"neu": neu, "nummern": nummern, "gesamt": gesamt}

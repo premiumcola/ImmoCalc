@@ -152,7 +152,7 @@ def _kontakte_lauf() -> dict:
 
     try:
         with Session(engine) as session:
-            return kontakte.ernte(session)
+            return kontakte.ernte(session, None)
     except Exception as fehler:                       # noqa: BLE001
         log.info("Kontakt-Ernte übersprungen: %s", fehler)
         return {"neu": 0, "nummern": 0}
