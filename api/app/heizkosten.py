@@ -98,7 +98,14 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
     unzugeordnet: list[str] = []
     for zae, _ in zma:
         menge = verbrauch.get(zae.id)
-        if not menge:
+        # N453 — `if not menge` liess auch die 0 fallen. Ein Ablesewert von 0
+        # ist aber eine MESSUNG („niemand hat geheizt"), keine fehlende
+        # Angabe: die Wohnung muss trotzdem ihre verbrauchsunabhängigen
+        # Grundkosten nach § 7 HeizkostenV tragen. Vorher fiel sie ganz aus
+        # der Nutzerliste, ihre Fläche fehlte in der Grundkostenverteilung,
+        # und die Nachbarn trugen ihren Anteil mit — ungemeldet.
+        # `None` (gar keine Ablesung) wird weiterhin übersprungen.
+        if menge is None:
             continue
         # N341-Fix — dieselbe Quelle wie Wasser/Strom/Übernahme:
         # `parse_einheiten` nimmt zuerst die Mehrfachzuordnung `einheiten`
@@ -139,7 +146,16 @@ def nutzer_aus_zaehlern(session: Session, z: Zeitraum) -> tuple[list[dict], list
             elif zae.messeinheit == "kWh":
                 lane["kwh"] += anteil
             else:
-                lane["ehkv"] += anteil * (zae.bewertungsfaktor or 0.0)
+                # N453 — fehlender Faktor gilt als 1,0, NICHT als 0. Mit 0
+                # bekam ein frisch angelegter Heizkörperverteiler (der Faktor
+                # ist `Optional` und wird beim Anlegen nicht erzwungen) das
+                # Gewicht 0: die Wohnung zahlte nichts, die ganze Heizung
+                # landete beim Nachbarn. `_vergleichswert` weiter unten las
+                # denselben fehlenden Faktor immer schon als „roher Wert
+                # zählt" — der PDF-Nachweis wies dem Mieter also Kosten aus,
+                # die ihm die Abrechnung nie berechnet hat. Zwei Stellen,
+                # eine Auslegung.
+                lane["ehkv"] += anteil * (zae.bewertungsfaktor or 1.0)
     return list(lanes.values()), unzugeordnet
 
 
