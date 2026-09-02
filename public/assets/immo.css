@@ -200,29 +200,21 @@ body{
 }
 .bar{
   z-index:20;
-  /* N447 — Nutzer: „blende die Titelleiste nach oben sanft aus … keine Kante,
-     Überblendung von Hellgrau zu Schwarz". Vorher endete die weisse Leiste
-     hart an der hellgrauen Statuszeile. Jetzt läuft der Hintergrund von
-     Schwarz an der Blattkante weich ins Weiss der Leiste — der Farbwechsel
-     liegt genau in der sicheren Zone, also über dem Titel, nicht darin.
-     Dazu gehört `apple-mobile-web-app-status-bar-style: black-translucent`
-     in den Seiten: sonst stünde die schwarze Uhrzeit auf schwarzem Grund. */
-  /* Rückfall zuerst: sollte iOS die Verlaufszeile verschlucken (bekannter
-     WebKit-Fallstrick mit env() in calc, siehe N327-b), bleibt die Leiste
-     wenigstens weiss statt durchsichtig. */
+  /* N447 — Nutzer: „der Schatten soll nach OBEN schwarz werden, und alles ab
+     einem Drittel nach oben dann 100% schwarz — die iOS-Notch soll komplett
+     im Dunklen liegen." Vorher lief der Verlauf zu früh ins Helle, die Notch
+     lag nur halb im Dunkeln, und unter der Leiste stand eine Kante.
+     Jetzt: die gesamte sichere Zone (Notch/Dynamic Island) ist VOLL schwarz,
+     erst darunter läuft es auf kurzer Strecke ins Weiss der Leiste aus. Die
+     Stützstellen hängen an `env(safe-area-inset-top)` selbst — an Prozenten
+     der Leistenhöhe verschöbe sich der Übergang mit jeder Titelgrösse.
+     Rückfall zuerst: verschluckt iOS die Verlaufszeile (bekannter Fallstrick
+     mit env() in calc, N327-b), bleibt die Leiste weiss statt durchsichtig. */
   background:var(--sheet);
-  /* Weicher, langer Verlauf statt harter Kante: oben dunkel (damit die
-     Statuszeile/Dynamic Island sich hell absetzt), dann über die ganze
-     sichere Zone sanft ins Weiss der Leiste auslaufend — nur angedeutet,
-     kein Balken. Die Stützstellen hängen an der sicheren Zone selbst,
-     nicht an Prozenten der Leistenhöhe: sonst verschöbe sich der Übergang
-     mit jeder Titelhöhe. */
   background:linear-gradient(180deg,
-             #0E1A1E 0,
-             rgba(14,26,30,.66) calc(env(safe-area-inset-top) * .42),
-             rgba(14,26,30,.16) calc(env(safe-area-inset-top) * .78),
-             var(--sheet) calc(10px + env(safe-area-inset-top)));
-  border-bottom:1px solid rgba(22,38,44,.07);
+             #000 0,
+             #000 env(safe-area-inset-top),
+             var(--sheet) calc(env(safe-area-inset-top) + 16px));
   /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
      füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet.
      N327-b — Nutzer-Feedback: zu viel Luft ÜBER dem Titel, obendrauf reserviert
