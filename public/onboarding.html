@@ -304,7 +304,15 @@ const STEPS_GRUNDSTUECK=[
   {id:'grund',lb:'Grundstück',h:'Fläche & Bescheid',p:'Katasterauszug und Grundsteuerbescheid — alles optional, jederzeit nachtragbar.'},
   {id:'pacht',lb:'Pacht',h:'Verpachtung',p:'Wer bewirtschaftet die Fläche, und was zahlt er dafür?'}];
 
-const defaultKosten=()=>[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Grundsteuer',1],['Gebäudeversicherung',1],['Hausmeister',1],['Allgemeinstrom',1],['Rauchwarnmelder',1],['Kaminkehrer',0],['Kaltwasserzähler',0],['Aufzug',0],['Gartenpflege',0],['Straßenreinigung / Winterdienst',0],['Bankspesen',0],['Hauskonto',0],['Internet / Kabel',0],['Schornsteinfeger',0],['Wartung Heizung',0]];
+/* N439 — die Liste ist an einer echten WEG-Abrechnung (Immoware24) geprüft
+   worden, die der Nutzer als Foto geschickt hat. Ergänzt wurden genau die
+   Positionen, die dort standen und hier fehlten: Gebäudehaftpflicht
+   („Versicherung: Haus- und Grundbesitzer-Haftpflicht" — gehört neben die
+   Gebäudeversicherung und ist deshalb voreingestellt), Wartung
+   Enthärtungsanlage und Mattenservice (beides objektabhängig, deshalb
+   abwählbar voreingestellt). Zusätzlich Zählermiete und Abrechnungskosten,
+   die auf der eigenen Abrechnung des Nutzers stehen und ebenfalls fehlten. */
+const defaultKosten=()=>[['Heizkosten',1],['Warmwasser',1],['Wasser',1],['Abwasser',1],['Niederschlagswasser',1],['Müll',1],['Grundsteuer',1],['Gebäudeversicherung',1],['Gebäudehaftpflicht',1],['Hausmeister',1],['Allgemeinstrom',1],['Rauchwarnmelder',1],['Kaminkehrer',0],['Kaltwasserzähler',0],['Zählermiete',0],['Abrechnungskosten',0],['Aufzug',0],['Wartung Enthärtungsanlage',0],['Mattenservice',0],['Gartenpflege',0],['Straßenreinigung / Winterdienst',0],['Bankspesen',0],['Hauskonto',0],['Internet / Kabel',0],['Schornsteinfeger',0],['Wartung Heizung',0]];
 
 const blank=()=>({strasse:'',plz:'',ort:'',flaeche:'',typ:'lg-mfhA',nutzung:'Wohnen',turnus:'kalender',startMonat:1,kosten:defaultKosten(),einheiten:[],eigenerName:'',nameSelbst:false,weg:false,
   /* Grundstück */
