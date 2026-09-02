@@ -26,9 +26,12 @@ from .cashflow import monate_im_jahr
 from .engine import Position
 # N312 — die zweite Monatsregel: Zahlmonate für Vorauszahlungen.
 from .zeit import zahlmonate
+import logging
 from .models import (ERLEDIGT, Einheit, Kostenart, Kostenposition, Miete,
                      Partei, Vorauszahlung, Zeitraum)
 from .turnus import jahresbetrag
+
+log = logging.getLogger("immocalc")
 
 # Was jeder Schlüssel bedeutet und ob er sich aus den Stammdaten ergibt.
 # `einheit` ist die Maßeinheit des Gewichts — ohne sie steht in der Oberfläche
@@ -512,11 +515,30 @@ def _engine_positionen(session: Session, z: Zeitraum,
     zwei: der Vorab-Betrag zu 100 % auf diese Einheit (mit eigenem §35a) und der
     Rest (Betrag − Vorab) nach dem gewählten Schlüssel. Ohne Vorab bleibt es die
     eine Position wie bisher."""
-    vorab = round(p.vorab_betrag or 0, 2)
+    gesamt = round(p.betrag or 0, 2)
+    # N457 — der Vorab kann die Position nicht übersteigen. Vorher wurde er
+    # ungedeckelt abgerechnet und der negative Rest still verworfen: eine
+    # 300-€-Position mit 500 € Vorab landete mit 500 € in der Abrechnung.
+    vorab = min(round(p.vorab_betrag or 0, 2), gesamt)
     if vorab > 0 and (p.vorab_einheit or "").strip():
-        aus = [Position(p.kostenart, vorab, "individuell",
-                        ableiten_einheit(session, z, p.vorab_einheit), p.vorab_s35)]
-        rest = round((p.betrag or 0) - vorab, 2)
+        gewichte = ableiten_einheit(session, z, p.vorab_einheit)
+        # N457 — zeigt der Vorab ins Leere (Tippfehler in der Einheit, Einheit
+        # von der NK-Abrechnung ausgenommen oder unbelegt), liefert
+        # `ableiten_einheit` ein leeres Gewicht — und `verteile_nach_wert`
+        # gibt dafür `{}` zurück. Der Betrag verschwand damit spurlos aus der
+        # Abrechnung, ohne dass irgendwo etwas gemeldet wurde. Dann lieber
+        # gar nicht vorab abschneiden: die ganze Position geht nach ihrem
+        # regulären Schlüssel raus, das Geld bleibt in der Rechnung.
+        if not gewichte:
+            log.warning(
+                "Vorab-Anteil von %.2f € zeigt auf die Einheit „%s“, die im "
+                "Zeitraum %s keinen Bezug hat — die Position wird komplett "
+                "nach ihrem Schlüssel verteilt.", vorab, p.vorab_einheit, z.id)
+            return [Position(p.kostenart, p.betrag, p.schluessel,
+                             p.anteile or {}, p.s35)]
+        aus = [Position(p.kostenart, vorab, "individuell", gewichte,
+                        p.vorab_s35)]
+        rest = round(gesamt - vorab, 2)
         if rest > 0.005:
             aus.append(Position(p.kostenart, rest, p.schluessel, p.anteile or {}, p.s35))
         return aus
