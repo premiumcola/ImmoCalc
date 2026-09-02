@@ -7,7 +7,10 @@ sowie die Abrechnung je Partei inkl. §35a-Summe und Gesamtübersicht.
 """
 from __future__ import annotations
 from dataclasses import dataclass
+import logging
 from datetime import date
+
+log = logging.getLogger("immocalc")
 
 
 def interpoliere_verbrauch(stand_vorjahr: float, stand_ist: float,
@@ -16,8 +19,16 @@ def interpoliere_verbrauch(stand_vorjahr: float, stand_ist: float,
     Bsp. Musterstraße Gesamtwasser 2024: (781 - 634.1256) über 376 Tage,
     gebraucht über 365 -> 142.577."""
     ist_diff = stand_ist - stand_vorjahr
-    if tage_ist == 0:
-        return 0.0
+    # N459 — ohne messbare Ist-Spanne lässt sich nicht hochrechnen. Dann gilt
+    # die gemessene Differenz unverändert. Vorher gab `tage_ist == 0` eine
+    # 0 zurück und liess den Verbrauch der ganzen Periode still verschwinden;
+    # ein NEGATIVES `tage_ist` (Ablesung einem später beginnenden Zeitraum
+    # zugeordnet) drehte die Rechnung sogar um: (250−100) × 364/−16 = −3412,5.
+    if tage_ist <= 0:
+        log.warning("Interpolation ohne brauchbare Ist-Spanne (%s Tage) — "
+                    "gemessene Differenz %.4f gilt unverändert",
+                    tage_ist, ist_diff)
+        return ist_diff
     return ist_diff * (tage_soll / tage_ist)
 
 
@@ -30,18 +41,6 @@ def rest_verbrauch(gesamt: float, gemessene: list[float]) -> float:
 def tage(von: date, bis: date) -> int:
     return (bis - von).days
 
-
-def zeitanteil(nutzung_von: date, nutzung_bis: date,
-               zeitraum_von: date, zeitraum_bis: date) -> float:
-    """Faktor 0..1 für taggenaue Kürzung, wenn die Nutzung den Zeitraum nicht
-    voll abdeckt (Mieterwechsel, Rumpfzeitraum)."""
-    span = tage(zeitraum_von, zeitraum_bis)
-    if span <= 0:
-        return 0.0
-    start = max(nutzung_von, zeitraum_von)
-    ende = min(nutzung_bis, zeitraum_bis)
-    genutzt = max(0, tage(start, ende))
-    return min(1.0, genutzt / span)
 
 
 class NegativesGewicht(ValueError):

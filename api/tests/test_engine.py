@@ -46,3 +46,29 @@ def test_s35_summe_wird_ausgewiesen():
     ]
     res = abrechnung(pos, {"Wohnung": 0.0})
     assert res["parteien"]["Wohnung"]["s35"] == 722.43
+
+
+# N459 — Randfälle der Interpolation. Gefunden bei der Prüfung in der Nacht
+# auf den 03.09.2026: `tage_ist = 0` liess den Verbrauch der ganzen Periode
+# still verschwinden, `tage_ist < 0` (Ablesung einem später beginnenden
+# Zeitraum zugeordnet) lieferte einen sinnlosen negativen Wert.
+def test_interpolation_ohne_messbare_spanne_verliert_nichts():
+    """Zwei Ablesungen am selben Tag: hochrechnen geht nicht — dann gilt die
+    gemessene Differenz, statt sie auf 0 fallen zu lassen."""
+    assert interpoliere_verbrauch(100, 250, tage_ist=0, tage_soll=365) == 150.0
+
+
+def test_interpolation_bei_negativer_spanne_rechnet_nicht_ins_absurde():
+    """Eine negative Ist-Spanne ist eine Fehlzuordnung, kein Messwert.
+
+    Vorher: (250−100) × 364/−16 = −3412,5 — eine Zahl, die es nicht gibt."""
+    ergebnis = interpoliere_verbrauch(100, 250, tage_ist=-16, tage_soll=364)
+    assert ergebnis == 150.0, ergebnis
+
+
+def test_interpolation_im_normalfall_unveraendert():
+    """Gegenprobe: der dokumentierte Referenzfall bleibt unberührt.
+
+    Toleranz wie im Referenztest oben — 142,577 ist der abgeschnittene, nicht
+    der gerundete Wert (tatsächlich 142,5775…)."""
+    assert abs(interpoliere_verbrauch(634.1256, 781, 376, 365) - 142.577) < 0.01
