@@ -200,21 +200,7 @@ body{
 }
 .bar{
   z-index:20;
-  /* N447 — Nutzer: „der Schatten soll nach OBEN schwarz werden, und alles ab
-     einem Drittel nach oben dann 100% schwarz — die iOS-Notch soll komplett
-     im Dunklen liegen." Vorher lief der Verlauf zu früh ins Helle, die Notch
-     lag nur halb im Dunkeln, und unter der Leiste stand eine Kante.
-     Jetzt: die gesamte sichere Zone (Notch/Dynamic Island) ist VOLL schwarz,
-     erst darunter läuft es auf kurzer Strecke ins Weiss der Leiste aus. Die
-     Stützstellen hängen an `env(safe-area-inset-top)` selbst — an Prozenten
-     der Leistenhöhe verschöbe sich der Übergang mit jeder Titelgrösse.
-     Rückfall zuerst: verschluckt iOS die Verlaufszeile (bekannter Fallstrick
-     mit env() in calc, N327-b), bleibt die Leiste weiss statt durchsichtig. */
   background:var(--sheet);
-  background:linear-gradient(180deg,
-             #000 0,
-             #000 env(safe-area-inset-top),
-             var(--sheet) calc(env(safe-area-inset-top) + 16px));
   /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
      füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet.
      N327-b — Nutzer-Feedback: zu viel Luft ÜBER dem Titel, obendrauf reserviert
@@ -1389,3 +1375,44 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
   font:500 11px var(--body);color:var(--soft);white-space:nowrap}
 .sankey-lg i{width:10px;height:10px;border-radius:3px;flex:none}
 .sankey-lg b{font:600 11px var(--mono);color:var(--ink)}
+
+/* ---- N449: weiches Nebelband über Statusleiste/Dynamic Island ----
+   Vorgabe des Nutzers, hier bewusst wörtlich umgesetzt. Der Inhalt soll
+   nicht in einer harten Linie unter der Notch enden, sondern nach oben
+   ausblenden.
+
+   * Höhe = sichere Zone + 24px AUSLAUF. Der Auslauf ist der eigentliche
+     Trick: ohne genug Platz UNTERHALB der Statuszeile hat der Verlauf
+     nichts, worüber er ausblenden könnte, und das Auge liest weiter eine
+     Kante. Ein früherer Versuch mit 6px Auslauf sah trotz Verlauf hart aus.
+   * Das Ausblenden ist eine MASKE, kein Hintergrundverlauf: oben 55% voll
+     deckend (die Notch liegt damit vollständig im Band), die unteren 45%
+     laufen aus. Auf einem iPhone 15 Pro sind das ~40px Auslauf ohne Streifen.
+   * `-webkit-`-Fassungen stehen VOR den ungeprefixten — iOS Safari nimmt
+     sonst die falsche.
+   * `pointer-events:none`: das Band ist reine Optik, Tipser nahe der
+     Statuszeile müssen weiter durchkommen.
+
+   Der nicht offensichtliche Teil ist die Kompositionsschicht: liegt
+   irgendwo `overflow-x:hidden` auf html/body, bricht iOS Safari das
+   Backdrop-Sampling für fixierte Nachfahren ab — der Blur rendert dann
+   LEER und man sieht nur die flache Füllung. `isolation`, `will-change`
+   und `translateZ(0)` erzwingen die eigene Schicht und beheben das.
+   (`will-change` ist hier unbedenklich, anders als in N327-b: das Band
+   hat keine Kindelemente, die ausblenden könnten.) */
+@media(max-width:768px){
+  body::before{
+    content:""; position:fixed; top:0; left:0; right:0;
+    height:calc(env(safe-area-inset-top, 0px) + 24px);
+    background:rgba(31,31,35,.55);
+    -webkit-backdrop-filter:blur(22px) saturate(1.05);
+    backdrop-filter:blur(22px) saturate(1.05);
+    -webkit-mask-image:linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    mask-image:linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    pointer-events:none;
+    z-index:91;
+    isolation:isolate;
+    will-change:backdrop-filter, transform;
+    transform:translateZ(0);
+  }
+}
