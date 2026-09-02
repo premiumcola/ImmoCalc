@@ -312,13 +312,23 @@ def auf_parteien(mengen: dict[str, float], bezuege_: list[Bezug],
     for label, menge in mengen.items():
         if not menge:
             continue
-        # Steht dort schon ein Partei-Name, bleibt er stehen — manche Zähler
-        # sind historisch auf die Partei statt auf die Einheit gepflegt.
-        if label in bekannte_parteien:
-            out[label] = round(out.get(label, 0.0) + menge, 4)
-            continue
+        # N456 — die EINHEIT zuerst auflösen, die Partei-Abkürzung nur als
+        # Rückfall. Umgekehrt griff die Abkürzung auch dann, wenn das Label
+        # eine Einheit ist: ein Leerstands-Bezug trägt als Partei genau die
+        # Bezeichnung der Einheit (siehe `bezuege`), also stand der Einheiten-
+        # name in `bekannte_parteien`. Sobald eine Wohnung auch nur einen Tag
+        # leer stand, bekam der Leerstand damit den GANZEN Jahresverbrauch
+        # ihres Zählers — der Mieter zahlte nichts, der Eigentümer alles,
+        # ungemeldet. Steht das Label für eine Einheit, ist die zeitanteilige
+        # Aufteilung unten immer die richtige Antwort; sie deckt den Fall
+        # „durchgehend vermietet" mit ab (ein Bezug, voller Anteil).
         treffer = je_einheit.get(label) or []
         if not treffer:
+            # Zähler, die historisch auf die Partei statt auf die Einheit
+            # gepflegt sind, bleiben direkt zugeordnet.
+            if label in bekannte_parteien:
+                out[label] = round(out.get(label, 0.0) + menge, 4)
+                continue
             offen.append(label)
             continue
         anteile = [max(0.0, _zeitanteil(b, start, ende)) for b in treffer]
