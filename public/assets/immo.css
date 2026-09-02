@@ -1381,14 +1381,13 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
      oben eine saubere Flaeche, nicht die Abgrenzung nach unten. Alle uebrigen
      Schatten bleiben, wie sie waren: der vorherige globale `box-shadow:none`
      war zu grob und hat Karten, Menuepille und Fokus-Ringe mit ausgeknipst.
-   * Die pinke Fuellung ist weiterhin der Testton — eine Zeile, wieder weg.
    * Der Streifen UEBER der Leiste (sichere Zone/Statuszeile) kommt nicht von
      `.bar`, sondern vom Blatt dahinter: Nutzer — „faerbe den Bereich ueber
      dem Pinken sehr dunkelgrau, fast schwarz". Deshalb sitzt die Farbe an
      `html` und nicht an `.app` — nur so deckt sie auch das, was oberhalb des
      App-Rahmens durchscheint. Ab 480px ist der Rahmen eine zentrierte Karte
      auf hellem Grund; dort bleibt es deshalb beim Papierton. */
-.bar{background:#FF3B9A; box-shadow:none}
+.bar{box-shadow:none}
 @media(max-width:479px){
   html{background:#0E1113}
 }
