@@ -40,6 +40,17 @@ AUSWAHL = {
                   "einmalig"],
 }
 
+# N461 — Wortformen, die kein Anfang des kanonischen Namens sind und sich
+# deshalb nicht über den Wortanfang auflösen lassen.
+_WORTFORMEN = {
+    "mtl": "monatlich", "promonat": "monatlich", "jemonat": "monatlich",
+    "quartal": "vierteljaehrlich", "quartalsweise": "vierteljaehrlich",
+    "proquartal": "vierteljaehrlich", "14jaehrlich": "vierteljaehrlich",
+    "halbjahr": "halbjaehrlich", "halbjaehrig": "halbjaehrlich",
+    "pa": "jaehrlich", "projahr": "jaehrlich", "jaehrig": "jaehrlich",
+    "einmal": "einmalig", "einmalzahlung": "einmalig",
+}
+
 VORGABE = {
     "mieten": "monatlich",
     "versicherungen": "jaehrlich",
@@ -58,10 +69,29 @@ def _schluessel(turnus: str | None) -> str:
     **125,00 € statt 500,00 €**, ein Faktor 4 mitten in der Auswertung.
 
     Gefaltet wird wie überall im Projekt (ä→ae), zusätzlich fallen Punkte und
-    Bindestriche heraus — „viertelj." und „viertel-jährlich" meinen dasselbe."""
+    Bindestriche heraus — „viertelj." und „viertel-jährlich" meinen dasselbe.
+
+    N461 — genau das stimmte vorher NICHT: nach dem Falten wurde exakt
+    nachgeschlagen, „monatl" stand aber nirgends und fiel auf den Vorgabewert
+    1 zurück. `jahresbetrag(125, "monatl.")` ergab 125 € statt 1.500 € —
+    Faktor 12. Erreichbar über die KI-Auslese, die den Turnus als Freitext
+    aus dem Beleg übernimmt. Jetzt werden zusätzlich gängige Wortformen
+    aufgelöst und Abkürzungen über den Wortanfang erkannt."""
     from .kostenarten import _fold                   # noqa: PLC0415 — Zirkel
 
-    return _fold(turnus or "").replace(".", "").replace("-", "").strip()
+    roh = _fold(turnus or "").replace(".", "").replace("-", "").replace(" ", "")
+    if not roh or roh in TURNUS:
+        return roh
+    if roh in _WORTFORMEN:
+        return _WORTFORMEN[roh]
+    # Abkürzung: „monatl", „viertelj", „halbjaehrl" sind eindeutige Anfänge
+    # ihres kanonischen Namens. Mindestens vier Zeichen, damit „j" nicht
+    # alles trifft, und nur bei genau EINEM Treffer.
+    if len(roh) >= 4:
+        treffer = [k for k in TURNUS if k.startswith(roh)]
+        if len(treffer) == 1:
+            return treffer[0]
+    return roh
 
 
 def faktor(turnus: str | None) -> int:
