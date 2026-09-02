@@ -449,7 +449,7 @@ button.chip:hover{filter:brightness(.96)}
      von der Seite schwer unterscheidbar". Jetzt die App-eigene Papierfarbe
      (`--paper`, etwas dunkler als reines Weiß) als Tönung statt Weiß —
      hebt sich von weißen UND von hellgrauen Karten klar ab. */
-  background:rgba(214,220,221,.85);
+  background:rgba(197,205,206,.9);
   -webkit-backdrop-filter:blur(46px) saturate(1.1);
   backdrop-filter:blur(46px) saturate(1.1);
   isolation:isolate;
@@ -483,7 +483,7 @@ button.chip:hover{filter:brightness(.96)}
     content:"";
     position:absolute; left:-14px; right:-14px; bottom:-14px; top:-110px;
     z-index:-1;
-    background:rgba(214,220,221,.85);
+    background:rgba(197,205,206,.9);
     -webkit-backdrop-filter:blur(44px) saturate(1.1);
     backdrop-filter:blur(44px) saturate(1.1);
     -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 57%, #000 100%);
@@ -1376,9 +1376,19 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
 .sankey-lg i{width:10px;height:10px;border-radius:3px;flex:none}
 .sankey-lg b{font:600 11px var(--mono);color:var(--ink)}
 
-/* ---- N450: TEST auf Wunsch des Nutzers („Kopfleiste mal pink zum Test und
-   Schatten alle raus"). Bewusst EIN Block am Dateiende statt zwanzig
-   Einzelregeln — so lässt sich der Test in einem Rutsch wieder entfernen,
-   ohne dass irgendwo ein Rest hängenbleibt. */
-.bar{background:#FF3B9A}
-*, *::before, *::after{box-shadow:none !important}
+/* ---- N450/N451: Kopfbereich ----
+   * Der Schatten/die Kante UNTER der Kopfleiste ist raus — der Nutzer wollte
+     oben eine saubere Flaeche, nicht die Abgrenzung nach unten. Alle uebrigen
+     Schatten bleiben, wie sie waren: der vorherige globale `box-shadow:none`
+     war zu grob und hat Karten, Menuepille und Fokus-Ringe mit ausgeknipst.
+   * Die pinke Fuellung ist weiterhin der Testton — eine Zeile, wieder weg.
+   * Der Streifen UEBER der Leiste (sichere Zone/Statuszeile) kommt nicht von
+     `.bar`, sondern vom Blatt dahinter: Nutzer — „faerbe den Bereich ueber
+     dem Pinken sehr dunkelgrau, fast schwarz". Deshalb sitzt die Farbe an
+     `html` und nicht an `.app` — nur so deckt sie auch das, was oberhalb des
+     App-Rahmens durchscheint. Ab 480px ist der Rahmen eine zentrierte Karte
+     auf hellem Grund; dort bleibt es deshalb beim Papierton. */
+.bar{background:#FF3B9A; box-shadow:none}
+@media(max-width:479px){
+  html{background:#0E1113}
+}
