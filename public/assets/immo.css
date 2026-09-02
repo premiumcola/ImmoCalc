@@ -207,8 +207,21 @@ body{
      liegt genau in der sicheren Zone, also über dem Titel, nicht darin.
      Dazu gehört `apple-mobile-web-app-status-bar-style: black-translucent`
      in den Seiten: sonst stünde die schwarze Uhrzeit auf schwarzem Grund. */
-  background:linear-gradient(180deg, #000 0,
-             var(--sheet) calc(4px + env(safe-area-inset-top)));
+  /* Rückfall zuerst: sollte iOS die Verlaufszeile verschlucken (bekannter
+     WebKit-Fallstrick mit env() in calc, siehe N327-b), bleibt die Leiste
+     wenigstens weiss statt durchsichtig. */
+  background:var(--sheet);
+  /* Weicher, langer Verlauf statt harter Kante: oben dunkel (damit die
+     Statuszeile/Dynamic Island sich hell absetzt), dann über die ganze
+     sichere Zone sanft ins Weiss der Leiste auslaufend — nur angedeutet,
+     kein Balken. Die Stützstellen hängen an der sicheren Zone selbst,
+     nicht an Prozenten der Leistenhöhe: sonst verschöbe sich der Übergang
+     mit jeder Titelhöhe. */
+  background:linear-gradient(180deg,
+             #0E1A1E 0,
+             rgba(14,26,30,.66) calc(env(safe-area-inset-top) * .42),
+             rgba(14,26,30,.16) calc(env(safe-area-inset-top) * .78),
+             var(--sheet) calc(10px + env(safe-area-inset-top)));
   border-bottom:1px solid rgba(22,38,44,.07);
   /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
      füllt die sichere Zone oben, damit der Titel nicht darunter verschwindet.
