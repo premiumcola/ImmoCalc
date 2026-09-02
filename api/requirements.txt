@@ -22,3 +22,9 @@ pypdfium2==5.12.1
 # bisher ohne Textschicht (kein Fehler).
 pymupdf==1.28.0
 rapidocr-onnxruntime==1.4.4
+# N440 — die hinterlegte Unterschrift auf der Abrechnung: das PNG wird in
+# Farbkanaele und Alphamaske zerlegt, damit es freigestellt ins PDF kommt
+# (app/pdfbild.py). Pillow war vorher schon im Image, aber nur als Beifang
+# von rapidocr-onnxruntime — und das ist optional. Eine Kernfunktion darf
+# nicht an einer optionalen Abhaengigkeit haengen.
+Pillow==12.3.0

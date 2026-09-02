@@ -361,6 +361,20 @@
       </span>
       <span class="arr">›</span>
     </button>
+
+    <!-- N440 — die Unterschrift gehört dem Vermieter, nicht einem Objekt:
+         dieselbe steht unter jeder Abrechnung jeder Immobilie. -->
+    <h2 class="sec" title="Wird auf jede Abrechnung über die Unterschriftslinie gelegt.">Unterschrift</h2>
+    <button class="row" id="sigRow">
+      <span class="ic" id="sigIc">✒</span>
+      <span class="txt">
+        <span class="t" id="sigTitel">Unterschrift hinterlegen</span>
+        <span class="d" id="sigInfo">wird geladen …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+    <div id="sigVorschau" hidden></div>
+    <input type="file" id="sigDatei" accept="image/png,image/*" hidden>
   </div>
 
   <div data-nav></div>
@@ -510,6 +524,83 @@
 import { api, esc, frage, melde, eurKurz, eurVoll, promille, zahlAus,
          installNav, baueDialog } from './assets/immo.js';
 installNav();
+
+/* ---- N440: hinterlegte Unterschrift ------------------------------------
+   Sie wird auf jede Abrechnung über die Unterschriftslinie gelegt. Am
+   besten ein PNG mit durchsichtigem Hintergrund — sonst liegt ein weisser
+   Kasten auf dem Brief. Die Prüfung, ob die Datei überhaupt ein lesbares
+   Bild ist, macht der Server, BEVOR er sie speichert. */
+const sigRow = document.getElementById('sigRow');
+const sigTitel = document.getElementById('sigTitel');
+const sigInfo = document.getElementById('sigInfo');
+const sigIc = document.getElementById('sigIc');
+const sigVorschau = document.getElementById('sigVorschau');
+const sigDatei = document.getElementById('sigDatei');
+
+async function sigLaden() {
+  try {
+    const stand = await api('/unterschrift');
+    if (stand.vorhanden) {
+      sigTitel.textContent = 'Unterschrift hinterlegt';
+      sigInfo.textContent = 'Antippen zum Ersetzen oder Entfernen';
+      sigIc.textContent = '✓';
+      sigIc.classList.add('aktiv');
+      sigVorschau.hidden = !stand.vorschau;
+      sigVorschau.innerHTML = stand.vorschau
+        ? `<img src="${stand.vorschau}" alt="Hinterlegte Unterschrift"
+             style="max-width:100%;max-height:96px;display:block;margin:0 0 10px;
+                    padding:10px 14px;background:var(--sheet);border-radius:14px">`
+        : '';
+    } else {
+      sigTitel.textContent = 'Unterschrift hinterlegen';
+      sigInfo.textContent = 'PNG mit durchsichtigem Hintergrund';
+      sigIc.textContent = '✒';
+      sigIc.classList.remove('aktiv');
+      sigVorschau.hidden = true;
+      sigVorschau.innerHTML = '';
+    }
+  } catch {
+    sigInfo.textContent = 'Stand nicht abrufbar';
+  }
+}
+
+sigRow.addEventListener('click', async () => {
+  const stand = await api('/unterschrift').catch(() => ({ vorhanden: false }));
+  if (!stand.vorhanden) { sigDatei.click(); return; }
+  const dlg = baueDialog(`
+    <div class="dt">Unterschrift</div>
+    <p>Sie liegt auf jeder Abrechnung über der Unterschriftslinie.</p>
+    <button type="button" class="btn" id="sigNeu">Andere Datei wählen</button>
+    <button type="button" class="btn gefahr" id="sigWeg">Unterschrift entfernen</button>`);
+  dlg.querySelector('#sigNeu').addEventListener('click', () => {
+    dlg.close(); sigDatei.click();
+  });
+  dlg.querySelector('#sigWeg').addEventListener('click', async () => {
+    dlg.close();
+    try {
+      await api('/unterschrift', { method: 'DELETE' });
+      melde('Unterschrift entfernt', 'pos');
+      sigLaden();
+    } catch (f) { melde(f.message || 'Entfernen fehlgeschlagen', 'neg'); }
+  });
+});
+
+sigDatei.addEventListener('change', async () => {
+  const datei = sigDatei.files && sigDatei.files[0];
+  sigDatei.value = '';                       // dieselbe Datei erneut wählbar
+  if (!datei) return;
+  const leser = new FileReader();
+  leser.onload = async () => {
+    try {
+      await api('/unterschrift', { method: 'PUT', body: { png: leser.result } });
+      melde('Unterschrift hinterlegt', 'pos');
+      sigLaden();
+    } catch (f) { melde(f.message || 'Datei nicht verwendbar', 'neg'); }
+  };
+  leser.readAsDataURL(datei);
+});
+
+sigLaden();
 
 const liste = document.getElementById('liste');
 const standFeld = document.getElementById('stand');

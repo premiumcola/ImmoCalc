@@ -1,4 +1,7 @@
 """Eigentümer, Beteiligungen in Tausendsteln und die Vermögensübersicht."""
+import base64
+import binascii
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +9,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..bezeichnung import objekt_titel
+from ..cloudkern import _lies
 from ..db import get_session
 from ..deps import aktuelle_familie, objekt_holen, pruefe_familienbesitz
 from ..models import (Anteil, Einheit, Eigentuemer, Familie, Grundschuld,
@@ -16,6 +20,8 @@ from ..turnus import jahresbetrag
 from ..vermoegen import (PROMILLE_TOLERANZ, VOLLE_PROMILLE, attributionswert,
                          eigentuemer_fraktion, gesamt, kreditstand,
                          objekt_vermoegen, pv_zurechnung)
+
+log = logging.getLogger("immocalc")
 
 router = APIRouter(prefix="/api", tags=["besitz"])
 
@@ -813,3 +819,101 @@ def grundschuld_loeschen(gid: int,
     session.delete(g)
     session.commit()
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# N440 — hinterlegte Unterschrift für die Abrechnung
+#
+# Sie liegt im Eigentümerbereich, weil sie dem Vermieter gehört und nicht
+# einem einzelnen Objekt: dieselbe Unterschrift steht unter jeder Abrechnung
+# jeder Immobilie. Abgelegt wird sie als Einstellung und damit automatisch im
+# Namensraum der Familie (N436) — jede Familie hat ihre eigene.
+# --------------------------------------------------------------------------
+
+S_UNTERSCHRIFT = "unterschrift_png"
+
+# Ein PNG einer Unterschrift liegt bei ein paar zehn Kilobyte. 2 MB sind
+# reichlich Luft und verhindern zugleich, dass ein versehentlich gewähltes
+# Kamerafoto die Datenbankzeile sprengt.
+UNTERSCHRIFT_MAX_BYTES = 2 * 1024 * 1024
+
+
+class UnterschriftIn(BaseModel):
+    png: str        # Data-URL („data:image/png;base64,…") oder blankes Base64
+
+
+def _unterschrift_rohdaten(session: Session) -> bytes | None:
+    """Die hinterlegte Unterschrift als PNG-Bytes — oder `None`."""
+    roh = _lies(session, S_UNTERSCHRIFT)
+    if not roh:
+        return None
+    try:
+        return base64.b64decode(roh, validate=True)
+    except (ValueError, binascii.Error):
+        log.warning("Hinterlegte Unterschrift ist unlesbar — wird übergangen")
+        return None
+
+
+@router.get("/unterschrift")
+def unterschrift_stand(session: Session = Depends(get_session),
+                       familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """Ob eine Unterschrift hinterlegt ist, und wenn ja, wie sie aussieht.
+
+    Die Vorschau kommt auf Weiß gerechnet zurück: auf hellem Grund sieht
+    Transparenz ohnehin weiß aus, und so muss die Oberfläche nichts über
+    Alphakanäle wissen."""
+    roh = _unterschrift_rohdaten(session)
+    if not roh:
+        return {"vorhanden": False, "vorschau": ""}
+    try:
+        from ..pdfbild import auf_weiss_gelegt      # noqa: PLC0415
+        vorschau = base64.b64encode(auf_weiss_gelegt(roh)).decode("ascii")
+    except Exception as fehler:                     # noqa: BLE001
+        log.warning("Vorschau der Unterschrift nicht erzeugbar: %s", fehler)
+        return {"vorhanden": True, "vorschau": ""}
+    return {"vorhanden": True, "vorschau": f"data:image/png;base64,{vorschau}"}
+
+
+@router.put("/unterschrift")
+def unterschrift_speichern(daten: UnterschriftIn,
+                           session: Session = Depends(get_session),
+                           familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """Eine Unterschrift als transparentes PNG hinterlegen.
+
+    Geprüft wird, BEVOR gespeichert wird: eine Datei, die sich nicht als Bild
+    lesen lässt, würde sonst erst beim Versand einer Abrechnung auffallen —
+    und dann ginge der Brief still ohne Unterschrift raus."""
+    roh_text = (daten.png or "").strip()
+    if "," in roh_text and roh_text.lower().startswith("data:"):
+        roh_text = roh_text.split(",", 1)[1]
+    try:
+        rohdaten = base64.b64decode(roh_text, validate=True)
+    except (ValueError, binascii.Error) as fehler:
+        raise HTTPException(400, "Die Datei kam beschädigt an.") from fehler
+    if not rohdaten:
+        raise HTTPException(400, "Es kam keine Datei an.")
+    if len(rohdaten) > UNTERSCHRIFT_MAX_BYTES:
+        raise HTTPException(400, "Das Bild ist zu groß (höchstens 2 MB).")
+
+    from ..pdfbild import BildFehler, lade_png       # noqa: PLC0415
+    try:
+        geprueft = lade_png(rohdaten)
+    except BildFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+
+    from .cloud import _schreib                   # noqa: PLC0415
+    _schreib(session, S_UNTERSCHRIFT,
+             base64.b64encode(rohdaten).decode("ascii"))
+    session.commit()
+    log.info("Unterschrift hinterlegt (%d x %d)", geprueft["breite"],
+             geprueft["hoehe"])
+    return {"vorhanden": True, "transparent": bool(geprueft["alpha"])}
+
+
+@router.delete("/unterschrift", status_code=204)
+def unterschrift_entfernen(session: Session = Depends(get_session),
+                           familie: Familie = Depends(aktuelle_familie)) -> None:
+    """Die Unterschrift wieder entfernen — danach bleibt die Linie leer."""
+    from .cloud import _schreib                   # noqa: PLC0415
+    _schreib(session, S_UNTERSCHRIFT, "")
+    session.commit()

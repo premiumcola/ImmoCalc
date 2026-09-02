@@ -80,17 +80,44 @@ def escape(text: str) -> bytes:
     return cp1252(roh)
 
 
-def pdf_seiten(stroeme: list[bytes], titel: str) -> bytes:
+def pdf_seiten(stroeme: list[bytes], titel: str,
+               bilder: list[dict] | None = None) -> bytes:
     """Der fertige Bogen: ein Inhaltsstrom je Seite, beliebig viele Seiten.
 
     Objektnummerierung: 1 Katalog, 2 Seitenbaum, dann je Seite ein Paar
     (Seite, Inhaltsstrom), zuletzt beide Fonts + Info. Mit genau einer Seite
     ergibt das dieselbe Nummerierung wie die frühere feste Fassung (3=Seite,
-    4=Strom, 5/6=Fonts, 7=Info) — `pdf()` bleibt darüber byte-identisch."""
+    4=Strom, 5/6=Fonts, 7=Info) — `pdf()` bleibt darüber byte-identisch.
+
+    N440 — `bilder` sind Bildobjekte aus `pdfbild.lade_png`, je Eintrag um
+    einen `name` ergänzt (der Name, unter dem der Inhaltsstrom sie mit
+    `/Name Do` aufruft). Sie werden allen Seiten als Ressource angeboten;
+    gezeichnet wird nur, wo der Strom sie auch aufruft. Ohne Bilder bleibt
+    das Ergebnis Byte für Byte wie zuvor — die Ressourcenzeile bekommt dann
+    keinen `/XObject`-Eintrag."""
     n = max(1, len(stroeme))
+    bilder = bilder or []
     font1_num = 3 + 2 * n
     font2_num = font1_num + 1
     kids = b" ".join(b"%d 0 R" % (3 + 2 * i) for i in range(n))
+
+    # Bildobjekte hängen hinter den Fonts. Ein Bild mit Transparenz belegt
+    # ZWEI Objekte: das Bild selbst und seine Maske.
+    naechste = font2_num + 1
+    plaetze: list[tuple[dict, int, int]] = []       # (bild, bild_num, maske_num)
+    for bild in bilder:
+        bild_num = naechste
+        naechste += 1
+        maske_num = 0
+        if bild.get("alpha"):
+            maske_num = naechste
+            naechste += 1
+        plaetze.append((bild, bild_num, maske_num))
+
+    xobjekte = b" ".join(b"/%s %d 0 R" % (bild["name"].encode("ascii"), num)
+                         for bild, num, _ in plaetze)
+    ressourcen = (b"/Font << /F1 %d 0 R /F2 %d 0 R >>" % (font1_num, font2_num)
+                  + (b" /XObject << %s >>" % xobjekte if xobjekte else b""))
 
     objekte = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -99,14 +126,29 @@ def pdf_seiten(stroeme: list[bytes], titel: str) -> bytes:
     for strom in stroeme:
         objekte.append(
             b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f] "
-            b"/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >> >> /Contents %d 0 R >>"
-            % (SEITE_B, SEITE_H, font1_num, font2_num, len(objekte) + 2))
+            b"/Resources << %s >> /Contents %d 0 R >>"
+            % (SEITE_B, SEITE_H, ressourcen, len(objekte) + 2))
         objekte.append(b"<< /Length %d >>\nstream\n%s\nendstream"
                        % (len(strom), strom))
     objekte.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
                    b"/Encoding /WinAnsiEncoding >>")
     objekte.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
                    b"/Encoding /WinAnsiEncoding >>")
+    for bild, _num, maske_num in plaetze:
+        maske = b" /SMask %d 0 R" % maske_num if maske_num else b""
+        objekte.append(
+            b"<< /Type /XObject /Subtype /Image /Width %d /Height %d "
+            b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode"
+            b"%s /Length %d >>\nstream\n%s\nendstream"
+            % (bild["breite"], bild["hoehe"], maske, len(bild["daten"]),
+               bild["daten"]))
+        if maske_num:
+            objekte.append(
+                b"<< /Type /XObject /Subtype /Image /Width %d /Height %d "
+                b"/ColorSpace /DeviceGray /BitsPerComponent 8 "
+                b"/Filter /FlateDecode /Length %d >>\nstream\n%s\nendstream"
+                % (bild["breite"], bild["hoehe"], len(bild["alpha"]),
+                   bild["alpha"]))
     objekte.append(b"<< /Title (%s) /Producer (ImmoCalc) >>" % escape(titel))
 
     ausgabe = bytearray(b"%PDF-1.4\n")

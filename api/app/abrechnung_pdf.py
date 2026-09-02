@@ -197,6 +197,16 @@ class Blatt:
                   s * 0.09, INK)
         self.kreis(x + s * 0.5, y + s * 0.2, s * 0.085, TEAL)
 
+    def bild(self, name: str, x: float, y: float, breite: float,
+             hoehe: float) -> None:
+        """N440 — ein zuvor eingehängtes Bild an dieser Stelle zeichnen.
+
+        Die Matrix `b 0 0 h x y cm` skaliert das Einheitsquadrat des
+        PDF-Bildmodells auf die gewünschte Größe in Punkt; `q`/`Q` klammern
+        das ein, damit die Skalierung nicht auf alles Folgende abfärbt."""
+        self.ops.append(b"q %.2f 0 0 %.2f %.2f %.2f cm /%s Do Q"
+                        % (breite, hoehe, x, y, name.encode("ascii")))
+
     def strom(self) -> bytes:
         return b"\n".join(self.ops)
 
@@ -291,7 +301,8 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
                 kasten_titel: str, jahr: str, monate: int | None,
                 monatsbetrag: float | None, anlage_hinweis: str,
                 abschlag_hinweis: str, erstellt_am: date,
-                hinweis_seite_zwei: bool) -> Blatt:
+                hinweis_seite_zwei: bool,
+                unterschrift: dict | None = None) -> Blatt:
     blatt = Blatt()
     links, rechts = RAND, SEITE_B - RAND
     breite = rechts - links
@@ -476,11 +487,32 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
 
     # ---- Unterschriftsfeld
     sig_y = UNTEN_MIN + 34
+    # Links das Datum mit seiner Beschriftung — dieselbe Form wie rechts an
+    # der Unterschrift, damit beide Felder als Paar lesbar sind (N440).
     blatt.text(links, sig_y + 16, f"{erstellt_am:%d.%m.%Y}", 9.5, False, MATT)
-    blatt.strich(links, links + 190, sig_y, 0.8, INK)
+    blatt.text(links, sig_y - 12, "Ort, Datum", 8, False, MATT)
+
+    # N440 — die hinterlegte Unterschrift liegt ÜBER der Linie, rechts NEBEN
+    # dem Datum (nach oben kann sie nicht ausweichen, dort endet der
+    # Textbereich). Höhe fest, Breite aus dem Seitenverhältnis: eine
+    # Unterschrift wird nie verzerrt. Gezeichnet wird sie VOR der Linie,
+    # damit die Linie durchscheint statt sie zu überdecken.
+    sig_links = links + UNTERSCHRIFT_ABSTAND_DATUM
+    sig_breite = UNTERSCHRIFT_LINIE_MIN
+    if unterschrift and unterschrift.get("breite"):
+        hoehe = UNTERSCHRIFT_HOEHE
+        skala = hoehe / unterschrift["hoehe"]
+        sig_breite = max(UNTERSCHRIFT_LINIE_MIN,
+                         min(unterschrift["breite"] * skala,
+                             SEITE_B - RAND - sig_links))
+        blatt.bild(UNTERSCHRIFT_NAME, sig_links, sig_y + 3, sig_breite, hoehe)
+    # Der Strich steht nur unter der Unterschrift, nicht mehr über die ganze
+    # Breite bis unter das Datum (Nutzer: „den Unterstrich nur da wo auch die
+    # Signatur drauf ist").
+    blatt.strich(sig_links, sig_links + sig_breite, sig_y, 0.8, INK)
     unterschrift_titel = " · ".join(x for x in [
         "Unterschrift Vermieter", absender.strip()] if x)
-    blatt.text(links, sig_y - 12, unterschrift_titel, 8, False, MATT)
+    blatt.text(sig_links, sig_y - 12, unterschrift_titel, 8, False, MATT)
 
     return blatt
 
@@ -491,6 +523,19 @@ _ZEILE_LESBAR = 11.0
 # Luft zwischen Anschriftblock und Betreff. Vorher 20 pt — der Nutzer wollte
 # den Briefkopf falten können, dafür war das zu gedrängt.
 _ABSTAND_ANSCHRIFT = 46.0
+# N440 — Name der Bildressource und Höhe der eingesetzten Unterschrift.
+# 34 pt ist etwa die Höhe einer von Hand geschriebenen Unterschrift auf
+# einem Brief; die Breite folgt dem Seitenverhältnis des Bildes.
+UNTERSCHRIFT_NAME = "ImSig"
+UNTERSCHRIFT_HOEHE = 34.0
+# Platz, den das Datumsfeld links belegt, bevor die Unterschrift beginnt.
+# „02.09.2026" ist in 9,5 pt gut 52 pt breit, die Beschriftung „Ort, Datum"
+# darunter ähnlich — 110 pt lassen sichtbar Luft dazwischen, statt die
+# Unterschrift ans Datum zu schieben.
+UNTERSCHRIFT_ABSTAND_DATUM = 110.0
+# So lang ist der Unterstrich mindestens, auch ohne hinterlegtes Bild —
+# sonst bliebe zum Unterschreiben von Hand kein Platz.
+UNTERSCHRIFT_LINIE_MIN = 150.0
 # Was zwischen Falzmarke und erster Tabellenzeile steht (Betreff, Zeitraum,
 # Anrede, vier Zeilen Fließtext). Bewusst großzügig geschätzt: die Zahl
 # entscheidet nur, OB gefalzt wird, nicht wo etwas gezeichnet wird.
@@ -835,7 +880,8 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
                    anlage_hinweis: str = "", abschlag_hinweis: str = "",
                    erstellt_am: date | None = None,
                    heiznachweis: dict | None = None,
-                   strom: list[dict] | None = None) -> bytes:
+                   strom: list[dict] | None = None,
+                   unterschrift_png: bytes | None = None) -> bytes:
     """Die Abrechnung einer Partei: Seite 1 (Brief + Verteilerschlüssel-
     Tabelle), optional Seite 2 (Heizkosten-Nachweis N419 und/oder Strom-
     Zusammensetzung N423).
@@ -856,11 +902,26 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
         kasten_titel = (partei or "").strip()
     stichtag = erstellt_am or date.today()
 
+    # N440 — die hinterlegte Unterschrift. Ein unbrauchbares Bild darf die
+    # Abrechnung NIE verhindern: dann geht der Brief eben mit leerer Linie
+    # raus, wie bisher, und der Grund steht im Log.
+    unterschrift = None
+    if unterschrift_png:
+        try:
+            from .pdfbild import lade_png          # noqa: PLC0415
+            unterschrift = lade_png(unterschrift_png)
+            unterschrift["name"] = UNTERSCHRIFT_NAME
+        except Exception as fehler:                # noqa: BLE001
+            log.warning("Unterschrift nicht verwendbar, Abrechnung geht ohne "
+                        "sie raus: %s", fehler)
+            unterschrift = None
+
     seite2_kommt = bool(heiznachweis or strom)
     seite1 = _seite_eins(objekt_name, zeitraum, empfaenger, werte, posten,
                          absender, adresse, kasten_titel, jahr, monate,
                          monatsbetrag, anlage_hinweis, abschlag_hinweis,
-                         stichtag, hinweis_seite_zwei=seite2_kommt)
+                         stichtag, hinweis_seite_zwei=seite2_kommt,
+                         unterschrift=unterschrift)
     blaetter = [seite1]
     if seite2_kommt:
         blaetter.append(_seite_zwei(kasten_titel, zeitraum, jahr,
@@ -872,7 +933,8 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
 
     kopf_titel = titel or (f"Betriebskostenabrechnung {jahr}" if jahr
                            else "Betriebskostenabrechnung")
-    return _pdf_seiten(seiten, f"{kopf_titel} · {empfaenger}")
+    return _pdf_seiten(seiten, f"{kopf_titel} · {empfaenger}",
+                       bilder=[unterschrift] if unterschrift else None)
 
 
 def pdf_dateiname(objekt_name: str, zeitraum: str, partei: str) -> str:

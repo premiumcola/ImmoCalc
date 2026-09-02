@@ -13,6 +13,7 @@ from ..cloudkern import _lies
 from ..db import get_session
 from ..deps import zeitraum_holen
 from ..engine import abrechnung
+from ..kostenarten import normalisieren
 from ..heizkosten import nachweis_fuer_einheit
 from ..mailversand import MailFehler, versandlauf
 from ..models import (Anteil, Bewohner, Eigentuemer, Kostenposition, Miete,
@@ -164,6 +165,28 @@ def _absender_name(session: Session, objekt_id: int) -> str:
     return eigentuemer.name if eigentuemer else ""
 
 
+def _unterschrift(session: Session) -> bytes | None:
+    """N440 — die im Eigentümerbereich hinterlegte Unterschrift, sofern es
+    eine gibt. Fehlt sie oder ist sie unlesbar, geht die Abrechnung wie
+    bisher mit leerer Unterschriftslinie raus."""
+    from .besitz import _unterschrift_rohdaten       # noqa: PLC0415
+    try:
+        return _unterschrift_rohdaten(session)
+    except Exception as fehler:                      # noqa: BLE001
+        log.warning("Unterschrift nicht ladbar: %s", fehler)
+        return None
+
+
+def _waermeschluessel(kostenart: str | None) -> str:
+    """N441 — Heizung und Warmwasser tragen keinen der Verteilerschlüssel aus
+    `SCHLUESSEL`: sie werden nicht nach Fläche oder Personen umgelegt, sondern
+    über die gemessene Wärmemenge (Wärmemengenzähler bzw. Heizkostenverteiler,
+    Nachweis auf Seite 2 der Abrechnung). In der Tabelle stand deshalb nur ein
+    Strich. Nutzer: „schreibe Schlüssel Heizkosten – Wärmemenge"."""
+    name = normalisieren(kostenart)
+    return "Wärmemenge" if name in {"Heizung", "Heizöl"} else ""
+
+
 def _einzelposten(res: dict, partei: str) -> list[dict]:
     """Anteil dieser Partei je Kostenart — der Nachweis in der Anlage.
 
@@ -174,12 +197,14 @@ def _einzelposten(res: dict, partei: str) -> list[dict]:
     for eintrag in res.get("positionen") or []:
         betrag = (eintrag.get("verteilung") or {}).get(partei)
         if betrag:
+            kostenart = eintrag.get("kostenart")
+            schluessel = (SCHLUESSEL.get(eintrag.get("schluessel"), {})
+                                    .get("titel", ""))
             zeilen.append({
-                "kostenart": eintrag.get("kostenart"),
+                "kostenart": kostenart,
                 "betrag": round(betrag, 2),
                 "gesamtkosten": eintrag.get("kosten"),
-                "schluessel": SCHLUESSEL.get(eintrag.get("schluessel"), {})
-                                        .get("titel", ""),
+                "schluessel": schluessel or _waermeschluessel(kostenart),
             })
     zeilen.sort(key=lambda p: -p["betrag"])
     return zeilen
@@ -221,7 +246,8 @@ def _abrechnung_bauen(session: Session, z: Zeitraum,
                             absender=_absender_name(session, o.id),
                             anschrift=_objekt_adresse(o),
                             einheit=einheit, heiznachweis=heiznachweis,
-                            strom=strom)
+                            strom=strom,
+                            unterschrift_png=_unterschrift(session))
     seiten = 2 if (heiznachweis or strom) else 1
     return inhalt, seiten, pdf_dateiname(o.name, zeitraum_text, partei)
 
@@ -380,7 +406,9 @@ def abschliessen(data: AbschlussIn, session: Session = Depends(get_session),
                                             heiznachweis=nachweis_fuer_einheit(
                                                 session, z, einheit, partei,
                                                 res.get("positionen")),
-                                            strom=_strom_herkunft(session, zid))
+                                            strom=_strom_herkunft(session, zid),
+                                            unterschrift_png=_unterschrift(
+                                                session))
                     anhang = (pdf_dateiname(o.name, zeitraum_text, partei),
                               inhalt, "pdf")
                 for adresse in adressen:

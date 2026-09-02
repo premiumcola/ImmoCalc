@@ -173,3 +173,77 @@ def test_cookie_secure_flag_folgt_der_umgebung(monkeypatch):
         antwort = c.post("/api/auth/registrieren",
                          json={"name": "MitTLS", "passwort": "sehrsicher123"})
         assert "Secure" in antwort.headers["set-cookie"]
+
+
+# --------------------------------------------------------------------------
+# N442 — Passwort ändern
+# --------------------------------------------------------------------------
+
+def _familie_mit_passwort(c, name, passwort="sehrsicher123"):
+    c.post("/api/auth/registrieren", json={"name": name, "passwort": passwort})
+
+
+def test_passwort_aendern_verlangt_das_bisherige():
+    _ohne_override()
+    with TestClient(app) as c:
+        _familie_mit_passwort(c, "Wechsler")
+        antwort = c.post("/api/auth/passwort-aendern", json={
+            "alt": "falschfalsch", "neu": "ganzneuespw1",
+            "neu_wiederholung": "ganzneuespw1"})
+        assert antwort.status_code == 403
+        # Das alte gilt weiter.
+        assert c.get("/api/auth/ich").status_code == 200
+
+
+def test_passwort_aendern_verlangt_zwei_gleiche_eingaben():
+    _ohne_override()
+    with TestClient(app) as c:
+        _familie_mit_passwort(c, "Vertipper")
+        antwort = c.post("/api/auth/passwort-aendern", json={
+            "alt": "sehrsicher123", "neu": "ganzneuespw1",
+            "neu_wiederholung": "ganzneuespw2"})
+        assert antwort.status_code == 400
+        assert "gleich" in antwort.json()["detail"].lower()
+
+
+def test_passwort_aendern_verlangt_mindestlaenge():
+    _ohne_override()
+    with TestClient(app) as c:
+        _familie_mit_passwort(c, "Zukurzneu")
+        antwort = c.post("/api/auth/passwort-aendern", json={
+            "alt": "sehrsicher123", "neu": "kurz", "neu_wiederholung": "kurz"})
+        assert antwort.status_code == 400
+
+
+def test_passwort_aendern_wirkt_und_das_alte_gilt_nicht_mehr():
+    _ohne_override()
+    with TestClient(app) as c:
+        _familie_mit_passwort(c, "Erfolgreich")
+        fid = c.get("/api/auth/ich").json()["id"]
+        assert c.post("/api/auth/passwort-aendern", json={
+            "alt": "sehrsicher123", "neu": "ganzneuespw1",
+            "neu_wiederholung": "ganzneuespw1"}).status_code == 200
+        # Angemeldet bleibt man — die eigene Sitzung wird erneuert.
+        assert c.get("/api/auth/ich").status_code == 200
+
+    with TestClient(app) as frisch:
+        assert frisch.post("/api/auth/login", json={
+            "familie_id": fid, "passwort": "sehrsicher123"}).status_code == 401
+        assert frisch.post("/api/auth/login", json={
+            "familie_id": fid, "passwort": "ganzneuespw1"}).status_code == 200
+
+
+def test_passwort_aendern_wirft_fremde_sitzungen_raus():
+    """Ein anderswo mitgenommenes Cookie darf danach nicht weitergelten."""
+    _ohne_override()
+    with TestClient(app) as c, TestClient(app) as zweitgeraet:
+        _familie_mit_passwort(c, "Zweigeraete")
+        fid = c.get("/api/auth/ich").json()["id"]
+        zweitgeraet.post("/api/auth/login",
+                         json={"familie_id": fid, "passwort": "sehrsicher123"})
+        assert zweitgeraet.get("/api/auth/ich").status_code == 200
+
+        c.post("/api/auth/passwort-aendern", json={
+            "alt": "sehrsicher123", "neu": "ganzneuespw1",
+            "neu_wiederholung": "ganzneuespw1"})
+        assert zweitgeraet.get("/api/auth/ich").status_code == 401
