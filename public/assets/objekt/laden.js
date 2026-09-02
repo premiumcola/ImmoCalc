@@ -356,6 +356,24 @@ export async function laden() {
       <span class="sym laedt">${WOLKE_LADE_SVG}</span>
       <span class="txt"><span class="t">Dokumentenablage wird geladen …</span></span>
     </div></div></div>`;
+  // N446 — die Wärme-Simulation stand als globales „Werkzeug" in den
+  // Einstellungen, gehört aber an DIESE eine Immobilie: sie bildet die
+  // Delta-t-Heizkostenrechnung genau dieses Hauses nach (eigene Zähler,
+  // eigene Bewertungsfaktoren) und trug das Objekt schon im Titel. Deshalb
+  // erscheint sie nur an ihrem Objekt, ganz unten vor dem Lösch-Block.
+  // Der Slug steht hier bewusst fest — die Simulation IST gebäudespezifisch;
+  // dieselbe Konstante heisst im Backend `migrate.LAUFER_SLUG`.
+  const WAERMESIM_SLUG = 'eschenau-laufer-str-5';
+  const werkzeugeBlock = slug === WAERMESIM_SLUG ? `
+    <div class="sekopf"><span class="seikon">Δ</span><h2 class="sec">Werkzeuge</h2></div>
+    <a class="row" href="waermesim.html">
+      <span class="ic">Δ</span>
+      <span class="txt">
+        <span class="t">Wärme-Simulation</span>
+        <span class="d">Delta-t-Heizkostenrechnung dieses Hauses nachgebaut und geprüft</span>
+      </span>
+      <span class="arr">›</span>
+    </a>` : '';
   const gefahrBlock = `
     <div class="gefahr-block">
       <div class="gt">Sicherung und Löschen</div>
@@ -434,6 +452,7 @@ export async function laden() {
     ${abschnitt('zahlungen', finanzZahlungen)}
     ${nachpflegeHtml(det.nachpflege)}
     ${ablageBlock}
+    ${werkzeugeBlock}
     ${gefahrBlock}`;
 
   installHilfe(inhalt);
