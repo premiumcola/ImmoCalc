@@ -64,6 +64,12 @@ body{
    mit) und behält unverändert das alte Modell samt fixer Kopfzeile. */
 @media(max-width:479px){
   html:has(.app > .scroll), body:has(.app > .scroll){height:100dvh; overflow:hidden}
+  /* N460 — `contain`, nicht `none`: das Gummiband IM Scrollbereich bleibt
+     erhalten (ausdrücklicher Wunsch, siehe N433), nur das Weiterreichen an
+     das Dokument hört auf. Damit löst auf Android nicht zusätzlich Chromes
+     eigenes Pull-to-Refresh aus, während die eigene Geste (`ptrEinrichten`)
+     läuft — auf iOS folgenlos, dort gibt es keins. */
+  .app > .scroll{overscroll-behavior-y:contain}
   .app:has(> .scroll){height:100dvh; min-height:0; padding-top:0; padding-bottom:0}
   .app > .scroll{
     flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
@@ -207,7 +213,15 @@ body{
      das iPhone die Statuszeile schon selbst — das feste Zusatzpolster oben ist
      jetzt kleiner (war 12px). Die Knopfreihe braucht ihre 44px trotzdem: die
      Buttons sitzen einfach dichter am Titel statt zusätzlich tiefer. */
-  padding:calc(6px + env(safe-area-inset-top)) 12px 8px;
+  /* N460 — Untergrenze statt reiner Inset-Rechnung. `env(safe-area-inset-top)`
+     ist auf JEDEM Android-Gerät 0 (Chrome zeichnet nicht unter die
+     Statusleiste) und auch auf dem iPhone im normalen Safari-Tab. Übrig
+     blieben 6px oben gegen 8px unten — Titel und Untertitel klebten am
+     Rahmenrand, während dieselbe Leiste in der iPhone-App ~65px hat.
+     Bewusst `env(...) + 6px` OHNE inneres `calc()`: die verschachtelte
+     Fassung `max(14px, calc(env(...) + 6px))` verwirft iOS Safari
+     stillschweigend als ganze Deklaration (Fund aus N327-b). */
+  padding:max(14px, env(safe-area-inset-top) + 6px) 12px 8px;
   display:flex; align-items:center; gap:8px; min-height:44px;
 }
 .bar h1{
@@ -284,6 +298,7 @@ h2.sec:first-child{margin-top:0}
 /* ---- Objekt-Kacheln: quadratisch, Icon gross ---- */
 .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px}
 .tile{
+  -webkit-tap-highlight-color:transparent;   /* N460 */
   background:var(--sheet); border:none; border-radius:16px; padding:14px;
   cursor:pointer; text-align:left; font-family:var(--body); color:inherit;
   display:flex; flex-direction:column; gap:10px;
@@ -327,6 +342,10 @@ button.chip:hover{filter:brightness(.96)}
 
 /* ---- Listenzeilen (Aktionen, Einstellungen) ---- */
 .row{
+  /* N460 — Chromes Tipp-Hervorhebung ist kräftiger als Safaris und
+     respektiert den Radius nicht: auf Android blitzte beim Antippen einer
+     Zeile ein grauer Kasten auf. */
+  -webkit-tap-highlight-color:transparent;
   display:flex; gap:14px; align-items:center; width:100%; text-align:left;
   background:var(--sheet); border:none; border-radius:14px; padding:15px 16px;
   margin-bottom:10px; cursor:pointer; font-family:var(--body); color:inherit;
