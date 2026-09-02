@@ -2,7 +2,7 @@
    Pflicht/Optional je Kostenart. Die Zähler stehen als feste Pflicht-
    Zeilen unter ihrer Kategorie. */
 
-import { api, esc, frage, melde } from '../immo.js';
+import { api, esc, melde } from '../immo.js';
 import { kostenIcon } from '../kostenicons.js';
 import * as state from './state.js';
 import { BEREICHE, BEREICH_IKON } from './state.js';
@@ -121,11 +121,6 @@ export function konfigZeileHtml(k) {
           title="Haushaltsnahe Dienstleistung/Handwerkerleistung nach § 35a EStG —
 wird in der Mieterabrechnung separat ausgewiesen (Steuererklärung)"
           aria-pressed="${k.s35}">§ 35a</button>
-        ${an ? '' : `<button type="button" class="konf-weg"
-          data-konf-weg="${k.kostenart_id}"
-          data-name="${esc(kostenartAnzeige(k.kostenart))}"
-          title="Kostenart endgültig entfernen — geht nur, solange sie in keiner Position benutzt wird"
-          aria-label="Kostenart entfernen">✕</button>`}
       </div>
     </div></div>`;
 }
@@ -191,29 +186,4 @@ export async function konfOptSetzen(btn) {
   const k = (state.daten.checkliste || []).find(x => x.kostenart_id === id);
   if (k) k.optional = optional;
   return neuZeichnen();
-}
-
-
-/* N443 — eine verborgene, NIRGENDS benutzte Kostenart endgültig entfernen.
-   Der Knopf erscheint bewusst nur an verborgenen Zeilen: was man sieht und
-   benutzt, löscht man nicht nebenbei. Ob sie wirklich unbenutzt ist,
-   entscheidet der Server (409 mit Klartext, wenn Positionen daran hängen) —
-   die Oberfläche rät das nicht.
-
-   Anlass: eine `__deploy-probe__`-Kostenart aus einem Deploy-Test blieb in
-   echten Daten stehen, und es gab überhaupt keinen Weg, sie loszuwerden. */
-export async function konfKostenartEntfernen(knopf, neuLaden) {
-  const id = Number(knopf.dataset.konfWeg);
-  const name = knopf.dataset.name || 'diese Kostenart';
-  const sicher = await frage('Kostenart entfernen?',
-    `„${name}" wird endgültig aus dem Katalog genommen. Das geht nur, ` +
-    'solange sie in keiner Position benutzt wird.', 'Entfernen');
-  if (!sicher) return;
-  try {
-    await api(`/kostenarten/${id}`, { method: 'DELETE' });
-    melde(`„${name}" entfernt`, 'pos');
-    if (neuLaden) await neuLaden();
-  } catch (fehler) {
-    melde(fehler.message || 'Entfernen fehlgeschlagen', 'neg');
-  }
 }

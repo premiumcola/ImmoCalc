@@ -162,34 +162,3 @@ def kostenart_aendern(kid: int, data: dict,
     session.commit()
     return {"ok": True, "name": k.name, "umlagefaehig": k.umlagefaehig,
             "s35": k.s35, "positionen_nachgezogen": nachgezogen}
-
-
-@router.delete("/kostenarten/{kid}", status_code=204)
-def kostenart_loeschen(kid: int, session: Session = Depends(get_session),
-                       familie: Familie = Depends(aktuelle_familie)) -> None:
-    """N443 — eine UNBENUTZTE Kostenart wirklich entfernen.
-
-    Bis hierhin kannte der Katalog nur `aktiv=False` („verborgen"), und das
-    aus gutem Grund: eine Kostenart mit Positionen zu löschen nähme deren
-    Geschichte mit. Dafür fehlte aber ein Weg, versehentlich Angelegtes
-    wieder loszuwerden — es blieb für immer in der Liste stehen, nur eben
-    ausgegraut. (Aufgefallen an `__deploy-probe__`: eine Probe-Kostenart aus
-    einem Deploy-Test, die in den echten Daten des Nutzers hängenblieb.)
-
-    Der Riegel ist die Bedingung, nicht die Rückfrage: gelöscht wird nur,
-    was NIRGENDS benutzt wird — keine Kostenposition in keinem Zeitraum
-    dieses Objekts trägt den Namen. Sonst 409 mit Ansage, und die Kostenart
-    bleibt, wo sie ist."""
-    k = session.get(Kostenart, kid)
-    if not k:
-        raise HTTPException(404, "Kostenart nicht gefunden")
-    pruefe_familienbesitz(session, k, familie)
-
-    benutzt = _positionen_mit_art(session, k.objekt_id, k.name)
-    if benutzt:
-        raise HTTPException(
-            409, f"„{k.name}“ wird in {len(benutzt)} Position(en) benutzt und "
-                 "kann deshalb nicht gelöscht werden — sie lässt sich aber "
-                 "verbergen.")
-    session.delete(k)
-    session.commit()
