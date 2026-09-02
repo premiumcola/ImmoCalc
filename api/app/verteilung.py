@@ -706,7 +706,22 @@ def vorschau(bezuege_: list[Bezug], start: date, ende: date) -> list[dict]:
     out = []
     for wert, meta in SCHLUESSEL.items():
         g = gewichte(wert, bezuege_, start, ende)
-        betroffen = [name for name in fehlzuordnung if name not in g]
+        # N458 — die Frage am ERGEBNIS stellen, nicht an der Ursache: wer
+        # trotz Bezug ohne Gewicht dasteht, geht bei diesem Schlüssel leer
+        # aus. Vorher wurden nur Parteien geprüft, deren Mietverhältnis auf
+        # keine Einheit zeigt (`ohne_einheit`) — eine Einheit, die es GIBT,
+        # deren Fläche aber fehlt oder 0 ist, rutschte durch: `zugeordnet`
+        # prüft nur, ob der Name im Flächen-Verzeichnis steht, nicht ob dort
+        # ein Wert steht. Die Partei verschwand aus der Verteilung, bekam
+        # keine Kosten und ihre Vorauszahlung voll erstattet — während hier
+        # „ableitbar" stand. Bei den nicht ableitbaren Schlüsseln (Verbrauch,
+        # Prozent, Individuell) sind die Gewichte von Haus aus leer; dort
+        # bleibt es bei der alten, engeren Frage.
+        if meta["ableitbar"]:
+            betroffen = sorted({b.partei for b in bezuege_
+                                if b.partei not in g})
+        else:
+            betroffen = [name for name in fehlzuordnung if name not in g]
         summe = round(sum(g.values()), 4)
         out.append({
             "wert": wert, "titel": meta["titel"], "einheit": meta["einheit"],
