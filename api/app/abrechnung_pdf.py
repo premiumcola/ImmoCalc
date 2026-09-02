@@ -39,7 +39,20 @@ from .zahlen import geschrieben
 log = logging.getLogger("immocalc")
 
 RAND = 48.0
-UNTEN_MIN = 42.0                         # darunter darf nichts mehr stehen
+UNTEN_MIN = 42.0                         # darunter darf kein INHALT mehr stehen
+# N438 — die Seitenzahl ist die eine bewusste Ausnahme davon: sie gehört wie
+# in jedem Brief in den unteren Rand, unterhalb des Textspiegels. 26 pt sind
+# gut 9 mm über der Blattkante und liegen damit sicher im Druckbereich.
+FUSS_Y = 26.0
+
+# N438 — Untertitel der Marke im Briefkopf, dieselbe Aussage wie auf dem
+# Anmeldescreen (`public/anmeldung.html`), nur gekürzt: im Brief steht sie
+# in 7,5 pt neben einem 24-pt-Logo und darf die Zeile nicht sprengen.
+MARKE_UNTERTITEL = "Nebenkosten · Wertentwicklung · Dokumente"
+
+# Erste Falzmarke eines A4-Briefs nach DIN 5008: 105 mm ab Oberkante.
+# 1 mm = 72/25.4 pt; gerechnet ab OBEN, das PDF zählt aber von unten.
+FALZ_Y = SEITE_H - 105.0 * 72.0 / 25.4
 
 # Farbsprache der App (CLAUDE.md) als 0..1-Tripel
 INK = (0.086, 0.149, 0.173)              # #16262C
@@ -284,23 +297,23 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
     breite = rechts - links
     empfaenger = (partei or "").strip()
 
-    # ---- Briefkopf: Logo + Datum
+    # ---- Briefkopf: nur die Marke, kein Datum
+    # N438 — Nutzer: „Logo größer mit Untertitel wie die App", „kein Datum
+    # oben, Datum nur unten". Das Datum steht weiterhin über der
+    # Unterschriftslinie; oben rechts wäre es dieselbe Angabe zweimal
+    # (roter Faden: jede Information genau einmal).
     y = SEITE_H - RAND
-    blatt.logo(links, y - 15, 15)
-    blatt.text(links + 21, y - 10, "ImmoCalc", 9.5, True, INK)
-    blatt.text_rechts(rechts, y - 10, f"{erstellt_am:%d.%m.%Y}", 9, False, MATT)
-    y -= 24
+    blatt.logo(links, y - 24, 24)
+    blatt.text(links + 32, y - 10, "ImmoCalc", 14, True, INK)
+    blatt.text(links + 32, y - 21, MARKE_UNTERTITEL, 7.5, False, MATT)
+    y -= 34
     blatt.strich(links, rechts, y, 0.8, LINIE)
-    y -= 18
-
-    # ---- Absenderzeile (klein, DIN-Brief-Konvention)
-    if absender or objekt_name:
-        blatt.text(links, y, _kuerzen(
-            " · ".join(x for x in [absender, objekt_name] if x), breite, 7.5),
-            7.5, False, MATT)
     y -= 26
 
     # ---- Empfänger
+    # N438 — die Absenderzeile („Vermieter · Objekt") ist entfallen: der
+    # Nutzer will seine Anschrift nicht im Brief stehen haben. Der Name
+    # bleibt allein an der Unterschrift.
     if empfaenger:
         blatt.text(links, y, empfaenger, 11.5, True, INK)
         y -= 15
@@ -310,7 +323,35 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
     for zeile in _umbruch(adresse, breite * 0.6, 10)[:2]:
         blatt.text(links, y, zeile, 10, False, MATT)
         y -= 13
-    y -= 20
+
+    # ---- Falz: alles Weitere beginnt UNTER der ersten Falzmarke
+    # N438 — Nutzer: „mehr Abstand von Anschrift zu Tabelle, damit man den
+    # Briefkopf in einen Brief falten könnte". Nach DIN 5008 wird ein
+    # A4-Brief bei 105 mm ab Oberkante das erste Mal gefaltet; liegt dort
+    # Text, knickt es mitten hinein. Die Anschrift bleibt oben im Fenster-
+    # bereich, Betreff und Tabelle rücken unter den Falz, dazwischen steht
+    # bewusst Weißraum. Die kleine Marke am linken Rand ist die übliche
+    # Falzhilfe und zeigt, wo geknickt wird.
+    #
+    # Der Falz kostet gut 130 pt Höhe. Bei sehr vielen Kostenarten (ab etwa
+    # 30) reicht das Blatt dann nicht mehr, und die Tabelle liefe ins
+    # Unterschriftsfeld. Deshalb ist der Abstand nachgiebig: passt der Brief
+    # unter dem Falz nicht mehr mit lesbarer Zeilenhöhe, rückt er wieder
+    # hoch. Ein lesbarer Brief schlägt eine bequeme Falzhilfe.
+    blatt.strich(links - 12, links - 4, FALZ_Y, 0.6, LINIE)
+    kosten = float(werte.get("kosten") or 0)
+    vz = float(werte.get("vorauszahlungen") or 0)
+    s35_summe = float(werte.get("s35") or 0)
+    if posten:
+        rest_unter_falz = ((FALZ_Y - 22) - _KOPFHOEHE_UNTER_BETREFF
+                          - (RAND + UNTEN_MIN)
+                          - _platz_nach_tabelle(kosten, monate, s35_summe, vz,
+                                                monatsbetrag, posten,
+                                                anlage_hinweis, abschlag_hinweis))
+        falz_moeglich = rest_unter_falz / len(posten) >= _ZEILE_LESBAR
+    else:
+        falz_moeglich = True
+    y = min(y - 20, FALZ_Y - 22) if falz_moeglich else y - 20
 
     # ---- Betreff + Anrede
     titel = f"Betriebskostenabrechnung {jahr}".strip()
@@ -336,11 +377,8 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
         y -= 13.5
     y -= 14
 
-    # ---- Verteilerschlüssel-Tabelle
-    kosten = float(werte.get("kosten") or 0)
-    vz = float(werte.get("vorauszahlungen") or 0)
-    s35_summe = float(werte.get("s35") or 0)
-
+    # ---- Verteilerschlüssel-Tabelle (kosten/vz/s35_summe stehen oben, sie
+    # entscheiden schon über den Falz-Abstand)
     if posten:
         s_breite, g_breite, a_breite = 78.0, 76.0, 76.0
         name_breite = breite - s_breite - g_breite - a_breite
@@ -355,19 +393,26 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
 
         # Zeilenhöhe: großzügig, aber gedeckelt, damit die Tabelle auch bei
         # vielen Kostenarten nicht ins Unterschriftsfeld läuft.
-        fest_danach = (18 + len(_summenzeilen(kosten, monate, s35_summe, vz,
-                                              monatsbetrag)) * 15.5
-                      + 34 + _fussnoten_hoehe(posten, anlage_hinweis,
-                                              abschlag_hinweis) + 58)
+        fest_danach = _platz_nach_tabelle(kosten, monate, s35_summe, vz,
+                                          monatsbetrag, posten, anlage_hinweis,
+                                          abschlag_hinweis)
         frei = y - (RAND + UNTEN_MIN) - fest_danach
         zeile_h = min(15.0, max(8.0, frei / len(posten)))
         groesse = min(9.5, max(6.5, zeile_h * 0.62))
 
+        # N438 — Nutzer: „Tabelle ist so komplett gefärbt und unschön, vielleicht
+        # nur die ‚Ihr Anteil'-Spalte färben". Der Größenvergleich bleibt damit
+        # erhalten (die Spalte liest sich jetzt wie ein kleines Balkenbild),
+        # aber das Blatt wirkt wieder wie ein Brief und nicht wie eine
+        # eingefärbte Tabelle. Gefärbt wird nur noch die letzte Spalte.
+        anteil_links = links + name_breite + s_breite + g_breite
+        anteil_breite = rechts - anteil_links
         groesster = max((abs(p["betrag"]) for p in posten), default=0.0)
         for p in posten:
             anteil = (abs(p["betrag"]) / groesster) if groesster else 0.0
             akzent = _mische(WEISS, TEAL, AKZENT_MIN + (AKZENT_MAX - AKZENT_MIN) * anteil)
-            blatt.flaeche(links, y - zeile_h + 2, breite, zeile_h - 2, akzent, 2)
+            blatt.flaeche(anteil_links, y - zeile_h + 2, anteil_breite,
+                          zeile_h - 2, akzent, 2)
             basis = y - zeile_h + (zeile_h - groesse) / 2 + 1.5
             blatt.text(links + 6, basis,
                       _kuerzen(p["name"] + (" *" if p["s35"] else ""),
@@ -432,6 +477,41 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
     return blatt
 
 
+# Ab welcher Zeilenhöhe eine Tabellenzeile noch als lesbar gilt — darunter
+# wird lieber der Falz-Abstand geopfert als die Tabelle zusammengequetscht.
+_ZEILE_LESBAR = 11.0
+# Was zwischen Falzmarke und erster Tabellenzeile steht (Betreff, Zeitraum,
+# Anrede, vier Zeilen Fließtext). Bewusst großzügig geschätzt: die Zahl
+# entscheidet nur, OB gefalzt wird, nicht wo etwas gezeichnet wird.
+_KOPFHOEHE_UNTER_BETREFF = 130.0
+
+
+def _platz_nach_tabelle(kosten: float, monate: int | None, s35_summe: float,
+                        vz: float, monatsbetrag: float | None,
+                        posten: list[dict], anlage_hinweis: str,
+                        abschlag_hinweis: str) -> float:
+    """Höhe alles dessen, was UNTER der Tabelle noch kommt: Summenblock,
+    Ergebniszeile, Fußnoten und der Abstand zum Unterschriftsfeld.
+
+    Eine Quelle für zwei Verwender — die Zeilenhöhe der Tabelle und die
+    Entscheidung über den Falz-Abstand (N438). Zwei Kopien derselben Formel
+    wären früher oder später auseinandergelaufen."""
+    return (18 + len(_summenzeilen(kosten, monate, s35_summe, vz,
+                                   monatsbetrag)) * 15.5
+            + 34 + _fussnoten_hoehe(posten, anlage_hinweis, abschlag_hinweis)
+            + 58)
+
+
+def _seitenzahl(blatt: Blatt, nummer: int, gesamt: int) -> None:
+    """N438 — „Seitenanzahl auch immer unten rechts". Auf jeder Seite, mit
+    Gesamtzahl: bei einem Brief, der aus dem Umschlag kommt, soll man sehen,
+    ob ein Blatt fehlt. Wird erst gezeichnet, wenn feststeht, wie viele
+    Seiten es insgesamt gibt — deshalb nicht in `_seite_eins`/`_seite_zwei`,
+    sondern am Ende in `abrechnung_pdf`."""
+    blatt.text_rechts(SEITE_B - RAND, FUSS_Y,
+                      f"Seite {nummer} von {gesamt}", 8, False, MATT)
+
+
 def _summenzeilen(kosten: float, monate: int | None, s35_summe: float,
                   vz: float, monatsbetrag: float | None
                   ) -> list[tuple[str, str, bool, tuple[float, float, float]]]:
@@ -471,8 +551,10 @@ def _seite_zwei(kasten_titel: str, zeitraum: str, jahr: str,
     breite = rechts - links
     y = SEITE_H - RAND
 
+    # N438 — die Seitenzahl steht jetzt unten rechts auf JEDER Seite
+    # (`_seitenzahl`), oben bleibt nur noch die Einordnung des Blattes.
     blatt.text(links, y, kasten_titel or "Nachweis", 9, False, MATT)
-    blatt.text_rechts(rechts, y, f"{jahr} · Seite 2", 9, False, MATT)
+    blatt.text_rechts(rechts, y, jahr, 9, False, MATT)
     y -= 20
     blatt.strich(links, rechts, y, 0.8, LINIE)
     y -= 30
@@ -761,10 +843,14 @@ def abrechnung_pdf(objekt_name: str, zeitraum: str, partei: str,
                          absender, adresse, kasten_titel, jahr, monate,
                          monatsbetrag, anlage_hinweis, abschlag_hinweis,
                          stichtag, hinweis_seite_zwei=seite2_kommt)
-    seiten = [seite1.strom()]
+    blaetter = [seite1]
     if seite2_kommt:
-        seiten.append(_seite_zwei(kasten_titel, zeitraum, jahr,
-                                  heiznachweis, strom).strom())
+        blaetter.append(_seite_zwei(kasten_titel, zeitraum, jahr,
+                                    heiznachweis, strom))
+    # Erst jetzt ist die Gesamtzahl bekannt (N438).
+    for nummer, blatt in enumerate(blaetter, start=1):
+        _seitenzahl(blatt, nummer, len(blaetter))
+    seiten = [b.strom() for b in blaetter]
 
     kopf_titel = titel or (f"Betriebskostenabrechnung {jahr}" if jahr
                            else "Betriebskostenabrechnung")
