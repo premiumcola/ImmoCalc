@@ -91,3 +91,51 @@ def test_benutzte_kostenart_bleibt_stehen():
         assert "benutzt" in antwort.json()["detail"]
         # Und sie steht danach noch im Katalog.
         assert _art(c, "__belegt-N443__") is not None
+
+
+# --------------------------------------------------------------------------
+# N445 — nachgereichte Kostenarten in BESTEHENDEN Immobilien
+# --------------------------------------------------------------------------
+
+def test_nachgereichte_kostenarten_stehen_verborgen_bereit():
+    """Nutzer: „biete die neuen Kostenarten in allen vorhandenen Immobilien
+    an … als ausgeblendet, ich blende sie dann selbst ein."""
+    from app.migrate import NACHZUEGLER_KOSTENARTEN
+
+    with TestClient(app) as c:
+        arten = {a["name"]: a for a in
+                 c.get("/api/objekte/obj-a/kostenarten").json()}
+        for name in NACHZUEGLER_KOSTENARTEN:
+            assert name in arten, f"{name} fehlt am Bestandsobjekt"
+            assert arten[name]["aktiv"] is False, \
+                f"{name} darf nicht sofort sichtbar sein"
+
+
+def test_nachzuegler_fasst_eine_vorhandene_kostenart_nicht_an():
+    """Wer eine der nachgereichten Arten selbst eingeblendet hat, soll sie
+    nicht beim nächsten Start wieder verborgen vorfinden."""
+    from app.db import engine
+    from app.migrate import nachzuegler_kostenarten_sichern
+
+    with TestClient(app) as c:
+        arten = c.get("/api/objekte/obj-b/kostenarten").json()
+        matte = next(a for a in arten if a["name"] == "Mattenservice")
+        assert matte["aktiv"] is False, "kommt verborgen ins Haus"
+
+        # Der Nutzer blendet sie ein …
+        c.patch(f"/api/kostenarten/{matte['id']}", json={"aktiv": True})
+        # … und beim nächsten Start läuft der Backfill erneut.
+        assert nachzuegler_kostenarten_sichern(engine) == []
+
+        danach = [a for a in c.get("/api/objekte/obj-b/kostenarten").json()
+                  if a["name"] == "Mattenservice"]
+        assert len(danach) == 1, "kein Doppelanlegen"
+        assert danach[0]["aktiv"] is True, "die eigene Einstellung bleibt"
+
+
+def test_nachzuegler_ist_wiederholbar():
+    from app.db import engine
+    from app.migrate import nachzuegler_kostenarten_sichern
+
+    with TestClient(app):
+        assert nachzuegler_kostenarten_sichern(engine) == []

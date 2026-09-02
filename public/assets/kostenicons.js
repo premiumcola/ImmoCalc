@@ -48,6 +48,20 @@ const SYMBOLE = {
   /* Grenzstein — Flurstück, Gemarkung, Vermessung. */
   grenzstein: `<path ${P} d="M9 20V8.5l3-4.5 3 4.5V20"/>
                <path ${P} d="M9 12h6M4.5 20h15"/>`,
+  /* N445 — Enthärtungsanlage: Drucktank mit Wassertropfen. */
+  enthaertung: `<path ${P} d="M7 6.5v11a5 2.2 0 0 0 10 0v-11"/>
+                <path ${P} d="M7 6.5a5 2.2 0 0 1 10 0 5 2.2 0 0 1-10 0Z"/>
+                <path ${P} d="M12 10.8c1.3 1.5 2 2.5 2 3.4a2 2 0 0 1-4 0c0-.9.7-1.9 2-3.4Z"/>`,
+  /* N445 — Mattenservice: Fußmatte in leichter Aufsicht, mit Struktur. */
+  matte: `<path ${P} d="M4.5 8.5h15l-1.6 8H6.1l-1.6-8Z"/>
+          <path ${P} d="M8.2 8.5 7.4 16.5M12 8.5v8M15.8 8.5l.8 8"/>`,
+  /* N445 — Abrechnungskosten: Beleg mit gezacktem Abriss. */
+  rechnung: `<path ${P} d="M6 3.5h12v16l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2-2 1.2Z"/>
+             <path ${P} d="M9 8h6M9 11.5h6M9 15h3"/>`,
+  /* N445 — Haftpflicht: Schirm. Die Gebäudeversicherung behält das Schild —
+     zwei Versicherungen nebeneinander sahen sonst identisch aus. */
+  schirm: `<path ${P} d="M3.5 12.5a8.5 8.5 0 0 1 17 0Z"/>
+           <path ${P} d="M12 12.5v5.5a2.2 2.2 0 0 0 4.4 0"/>`,
 };
 
 /* Schlüsselwort -> Symbol. Erster Treffer gewinnt, deshalb stehen
@@ -61,12 +75,17 @@ const ZUORDNUNG = [
   ['warmwasser', 'heizung'], ['heizkosten', 'heizung'], ['heizöl', 'flamme'],
   ['heizung', 'heizung'], ['kaminkehrer', 'flamme'], ['kamin', 'flamme'],
   ['niederschlagswasser', 'wasser'], ['abwasser', 'wasser'],
+  // N445 — Enthärtung vor „wasser": die Anlage ist kein Wasserposten.
+  ['enthärtung', 'enthaertung'], ['enthaertung', 'enthaertung'],
   ['gartenwasser', 'garten'], ['kaltwasserzähler', 'zaehler'],
   ['wasserzähler', 'zaehler'], ['zähler', 'zaehler'], ['wasser', 'wasser'],
   ['müll', 'muell'], ['abfall', 'muell'],
   ['allgemeinstrom', 'strom'], ['strom', 'strom'],
   ['grundsteuer', 'paragraf'], ['steuer', 'paragraf'],
-  ['versicherung', 'schild'], ['haftpflicht', 'schild'],
+  // N445 — Haftpflicht VOR Versicherung: „Haftpflichtversicherung" soll den
+  // Schirm bekommen, nicht das Schild der Gebäudeversicherung.
+  ['haftpflicht', 'schirm'],
+  ['versicherung', 'schild'],
   ['hausmeister', 'werkzeug'], ['hausverwaltung', 'haus'],
   ['gartenpflege', 'garten'], ['garten', 'garten'],
   ['aufzug', 'aufzug'], ['rauchwarnmelder', 'melder'], ['rauchmelder', 'melder'],
@@ -76,6 +95,9 @@ const ZUORDNUNG = [
   // Erwerbsnebenkosten vor „nebenkosten": sonst landeten die einmaligen
   // Kaufnebenkosten (CCCXIX) beim Haus-Symbol statt beim Geld-Symbol.
   ['erwerbsnebenkosten', 'bank'], ['erwerb', 'bank'], ['kaufnebenkosten', 'bank'],
+  // N445 — vor „nebenkosten": „Abrechnungskosten" ist ein Beleg, kein Haus.
+  ['abrechnungskosten', 'rechnung'], ['mattenservice', 'matte'],
+  ['matten', 'matte'], ['fußmatte', 'matte'],
   ['korrespondenz', 'brief'], ['nebenkosten', 'haus'],
   ['mietvertrag', 'vertrag'], ['miete', 'schluessel'], ['mieter', 'person'],
   ['eigentümer', 'person'], ['zahlung', 'paragraf'],

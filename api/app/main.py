@@ -14,7 +14,8 @@ from . import wachdienst
 from .db import engine
 from .deps import aktuelle_familie
 from .engine import NegativesGewicht
-from .migrate import migriere, pflicht_kostenarten_sichern
+from .migrate import (migriere, nachzuegler_kostenarten_sichern,
+                      pflicht_kostenarten_sichern)
 from .routers import (auswertung, auth, besitz, cloud, dokumente,
                       dokumentvorlagen, heizkosten, heizoel, ki, kidb,
                       kontakte, mail, objekte, openwb, renovierung,
@@ -34,6 +35,13 @@ async def lifespan(app: FastAPI):
     # für frisch geseedete Objekte sicherstellen; für den Bestand lief der
     # Backfill schon in `migriere`. Idempotent, additiv.
     pflicht_kostenarten_sichern(engine)
+    # N445 — nachgereichte Kostenarten (N439) auch in BESTEHENDEN Immobilien
+    # anbieten, verborgen. Eigener try/except: eine fehlgeschlagene Ergänzung
+    # darf den Start nicht verhindern.
+    try:
+        nachzuegler_kostenarten_sichern(engine)
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Nachgereichte Kostenarten nicht ergänzt: %s", fehler)
     log.info("ImmoCalc API bereit")
 
     # Zwei Takte: der ruhige für Texterkennung, Aufräumen und Autoversand, und

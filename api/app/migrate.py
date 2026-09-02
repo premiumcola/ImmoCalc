@@ -71,6 +71,56 @@ def pflicht_kostenarten_sichern(engine: Engine) -> list[str]:
     return gesetzt
 
 
+# N445 — Kostenarten, die erst nachträglich in den Katalog gekommen sind
+# (N439, aus einer echten WEG-Abrechnung). Neue Immobilien bekommen sie über
+# `defaultKosten()` im Onboarding; BESTEHENDE hatten sie nicht, und es gab
+# keinen Weg, sie nachzuholen ausser sie von Hand anzulegen.
+# Gebäudehaftpflicht steht bewusst NICHT hier: sie ist längst eine
+# Pflicht-Kostenart (`PFLICHT_KOSTENARTEN`) und in jeder Immobilie sichtbar
+# vorhanden — der eigene Test hat das aufgedeckt.
+NACHZUEGLER_KOSTENARTEN: tuple[str, ...] = (
+    "Zählermiete", "Abrechnungskosten", "Wartung Enthärtungsanlage",
+    "Mattenservice",
+)
+
+
+def nachzuegler_kostenarten_sichern(engine: Engine) -> list[str]:
+    """Die nachgereichten Kostenarten in JEDER bestehenden Immobilie anbieten
+    — bewusst **verborgen** (`aktiv=False`).
+
+    Nutzer: „biete die neuen Kostenarten in allen vorhandenen Immobilien an.
+    Wenn ich auf Kostenarten konfigurieren gehe, müssen die als ausgeblendet
+    drinstehen. Ich kann die dann als Pflicht oder als optional einblenden."
+
+    Verborgen ist hier die richtige Vorgabe: sichtbar wären sie sofort offene
+    Checklistenpunkte in laufenden Abrechnungen, obwohl niemand sie bestellt
+    hat. So stehen sie bereit, ohne etwas zu behaupten.
+
+    Idempotent und rein additiv wie `pflicht_kostenarten_sichern`: eine
+    Kostenart, die es unter diesem Namen schon gibt, wird NIE angefasst —
+    auch dann nicht, wenn sie dort sichtbar ist."""
+    from .models import Kostenart, Objekt
+
+    gesetzt: list[str] = []
+    with Session(engine) as session:
+        for o in session.exec(select(Objekt)).all():
+            vorhanden = session.exec(
+                select(Kostenart).where(Kostenart.objekt_id == o.id)).all()
+            bekannt = {_fold(k.name) for k in vorhanden}
+            for name in NACHZUEGLER_KOSTENARTEN:
+                if _fold(name) in bekannt:
+                    continue
+                session.add(Kostenart(objekt_id=o.id, name=name,
+                                      umlagefaehig=True, aktiv=False))
+                bekannt.add(_fold(name))
+                gesetzt.append(f"{o.slug}:{name}")
+        session.commit()
+    if gesetzt:
+        log.info("Nachgereichte Kostenarten ergänzt (verborgen): %s",
+                 ", ".join(gesetzt))
+    return gesetzt
+
+
 def _literal(wert) -> str | None:
     if isinstance(wert, bool):
         return "1" if wert else "0"
