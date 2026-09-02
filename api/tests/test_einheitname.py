@@ -33,7 +33,12 @@ def test_das_register_findet_jede_namensspalte():
         if name == "einheit":
             continue
         for spalte in tabelle.columns:
-            if spalte.foreign_keys or spalte.name in ("einheit_id", "einheiten"):
+            # N454 — `messeinheit`/`menge_einheit` enden zwar auf „einheit",
+            # tragen aber eine MASSeinheit ('m³' | 'kWh' | 'Liter') und keinen
+            # Namen. Sie gehören nicht ins Register; siehe
+            # `test_einheitname_grenzen.py`.
+            if spalte.foreign_keys or spalte.name in (
+                    "einheit_id", "einheiten", "messeinheit", "menge_einheit"):
                 continue
             if not spalte.name.endswith("einheit"):
                 continue
@@ -107,7 +112,9 @@ def test_kein_name_bleibt_auf_dem_alten_stand():
 
 
 def test_umbenennen_auf_denselben_namen_tut_nichts():
+    """N454 — `objekt_id` ist Pflicht geworden: ohne sie schrieb das UPDATE
+    quer durch alle Objekte und Familien."""
     with Session(engine) as s:
-        assert einheitname.benenne_um(s, "X", "X") == {}
-        assert einheitname.benenne_um(s, "", "Y") == {}
-        assert einheitname.benenne_um(s, "X", "") == {}
+        assert einheitname.benenne_um(s, "X", "X", 1) == {}
+        assert einheitname.benenne_um(s, "", "Y", 1) == {}
+        assert einheitname.benenne_um(s, "X", "", 1) == {}

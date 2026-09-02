@@ -34,7 +34,11 @@ _EIGEN = "einheit"
 
 # Spalten, die zwar „einheit" heissen, aber KEINEN Namen tragen: die
 # Fremdschlüssel. Sie wandern von selbst mit, weil sie auf die Id zeigen.
-_KEIN_NAME = ("einheit_id", "einheiten")
+# N454 — dazu die Spalten, die zwar auf „einheit" enden, aber eine MASS-
+# einheit tragen ('m³' | 'kWh' | 'Liter' | 'Einheiten') statt des Namens
+# einer Wohneinheit. Ohne diesen Ausschluss hätte eine Einheit namens
+# „Liter" beim Umbenennen quer durch den Bestand Zählertypen umgeschrieben.
+_KEIN_NAME = ("einheit_id", "einheiten", "messeinheit", "menge_einheit")
 
 
 @dataclass(frozen=True)
@@ -67,11 +71,31 @@ def register() -> list[Namensfeld]:
     return sorted(gefunden, key=lambda f: (f.tabelle, f.spalte))
 
 
-def benenne_um(session: Session, alt: str, neu: str) -> dict[str, int]:
-    """Zieht den Einheitennamen überall nach. Gibt je Feld die Trefferzahl.
+def _nur_dieses_objekt(f: Namensfeld) -> str:
+    """Die WHERE-Bedingung, die den Namenswechsel auf EIN Objekt begrenzt.
 
-    Committet NICHT — der Aufrufer benennt gerade die Einheit selbst um und
-    schliesst die Transaktion ab, damit beides zusammen gilt oder gar nicht."""
+    N454 — ohne sie traf das UPDATE jede Zeile mit demselben Namen, in jedem
+    Objekt und (seit N436) in jeder Familie: „Wohnung 2" heisst in jedem Haus
+    so. Tabellen mit `objekt_id` werden direkt eingegrenzt, die am Zeitraum
+    hängenden über ihn."""
+    spalten = {s.name for s in SQLModel.metadata.tables[f.tabelle].columns}
+    if "objekt_id" in spalten:
+        return "objekt_id = :oid"
+    if "zeitraum_id" in spalten:
+        return ("zeitraum_id IN (SELECT id FROM zeitraum "
+                "WHERE objekt_id = :oid)")
+    # Bewusst hart: eine neue Namensspalte ohne Objektbezug darf NICHT
+    # stillschweigend global umgeschrieben werden.
+    raise ValueError(f"{f} lässt sich keinem Objekt zuordnen")
+
+
+def benenne_um(session: Session, alt: str, neu: str,
+               objekt_id: int) -> dict[str, int]:
+    """Zieht den Einheitennamen überall nach — NUR innerhalb `objekt_id`.
+
+    Gibt je Feld die Trefferzahl. Committet NICHT — der Aufrufer benennt
+    gerade die Einheit selbst um und schliesst die Transaktion ab, damit
+    beides zusammen gilt oder gar nicht."""
     alt = (alt or "").strip()
     neu = (neu or "").strip()
     if not alt or not neu or alt == neu:
@@ -81,8 +105,8 @@ def benenne_um(session: Session, alt: str, neu: str) -> dict[str, int]:
         try:
             ergebnis = session.exec(text(  # noqa: S608 — Namen aus den Metadaten
                 f'UPDATE "{f.tabelle}" SET "{f.spalte}" = :neu '
-                f'WHERE "{f.spalte}" = :alt'
-            ).bindparams(neu=neu, alt=alt))
+                f'WHERE "{f.spalte}" = :alt AND {_nur_dieses_objekt(f)}'
+            ).bindparams(neu=neu, alt=alt, oid=objekt_id))
         except Exception as fehler:                        # noqa: BLE001
             # Eine Tabelle, die es in dieser Datenbank noch nicht gibt, darf das
             # Umbenennen nicht anhalten — der Rest wandert trotzdem.

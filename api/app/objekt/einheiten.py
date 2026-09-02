@@ -301,7 +301,7 @@ def einheit_aendern(eid: int, data: dict,
         # Engine-Invariante „Summe der Anteile == Gesamtkosten" war für sie
         # gebrochen, ohne einen einzigen Hinweis. Und der Schaden entstand
         # sofort, weil `positionen_neu_ableiten` gleich darunter läuft.
-        nachgezogen = einheitname.benenne_um(session, alt, e.bezeichnung)
+        nachgezogen = einheitname.benenne_um(session, alt, e.bezeichnung, e.objekt_id)
     session.commit()
     # N5 — geänderte Fläche/Bezeichnung/nk_abrechnung verschiebt die abgeleiteten
     # Gewichte offener Zeiträume; neu berechnen (Handeingaben bleiben).
