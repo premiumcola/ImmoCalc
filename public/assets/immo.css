@@ -449,7 +449,7 @@ button.chip:hover{filter:brightness(.96)}
      von der Seite schwer unterscheidbar". Jetzt die App-eigene Papierfarbe
      (`--paper`, etwas dunkler als reines Weiß) als Tönung statt Weiß —
      hebt sich von weißen UND von hellgrauen Karten klar ab. */
-  background:rgba(197,205,206,.9);
+  background:rgba(176,187,189,.94);
   -webkit-backdrop-filter:blur(46px) saturate(1.1);
   backdrop-filter:blur(46px) saturate(1.1);
   isolation:isolate;
@@ -464,7 +464,12 @@ button.chip:hover{filter:brightness(.96)}
    diesen Streifen zusätzlich ab: über negative Versätze reicht es bis an
    alle drei Bildschirmkanten (links/rechts/unten).
    Nutzer danach: „soll flüssig auslaufen, ohne Kante — das Auslaufen kann
-   auch höher als das Menü sein." Eine flache Box mit fester Höhe hat immer
+   auch höher als das Menü sein." Und später, mit Markierung im Screenshot:
+   „Schatten über der Menüleiste in der Höhe begrenzen, darf nicht in den
+   markierten Bereich ragen" — der Auslauf reichte mit 110px bis weit in den
+   Inhalt (sichtbar als grauer Schleier über den Karten). Jetzt 56px; der
+   Maskenpunkt wandert mit (40 % statt 57 %), damit die volle Deckung
+   weiterhin genau auf der Oberkante der Pille liegt und nicht darüber. Eine flache Box mit fester Höhe hat immer
    eine harte Kante, egal wie hoch sie reicht (das war der eigentliche Fehler
    der Vorversion, nicht die 34px an sich). Lösung: die Box reicht bewusst
    weit über die Pille hinaus (`top:-110px`), aber `mask-image` blendet
@@ -481,13 +486,13 @@ button.chip:hover{filter:brightness(.96)}
 @media(max-width:999px){
   .nav::before{
     content:"";
-    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-110px;
+    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-56px;
     z-index:-1;
-    background:rgba(197,205,206,.9);
+    background:rgba(176,187,189,.94);
     -webkit-backdrop-filter:blur(44px) saturate(1.1);
     backdrop-filter:blur(44px) saturate(1.1);
-    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 57%, #000 100%);
-    mask-image:linear-gradient(to bottom, transparent 0%, #000 57%, #000 100%);
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 40%, #000 100%);
+    mask-image:linear-gradient(to bottom, transparent 0%, #000 40%, #000 100%);
     pointer-events:none;
   }
 }
@@ -1389,5 +1394,5 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
      auf hellem Grund; dort bleibt es deshalb beim Papierton. */
 .bar{box-shadow:none}
 @media(max-width:479px){
-  html{background:#0E1113}
+  html{background:#000}
 }
