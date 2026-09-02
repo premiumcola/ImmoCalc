@@ -351,7 +351,15 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
         falz_moeglich = rest_unter_falz / len(posten) >= _ZEILE_LESBAR
     else:
         falz_moeglich = True
-    y = min(y - 20, FALZ_Y - 22) if falz_moeglich else y - 20
+    # Immer ein deutlicher Abstand (der Wunsch „mehr Luft zwischen Anschrift
+    # und Tabelle"), und wenn der Brief kurz genug ist, sogar ganz unter den
+    # Falz. Bei einer normalen Abrechnung mit gut einem Dutzend Kostenarten
+    # geht Letzteres nicht: der volle Falz würde die Zeilen auf ~11 pt und
+    # die Schrift auf ~7 pt stauchen. Dann lieber ein luftiger Briefkopf mit
+    # lesbarer Tabelle — der Knick läuft durch den Fließtext, nicht durch die
+    # Anschrift und nicht durch die Zahlen.
+    y = min(y - _ABSTAND_ANSCHRIFT, FALZ_Y - 22) if falz_moeglich \
+        else y - _ABSTAND_ANSCHRIFT
 
     # ---- Betreff + Anrede
     titel = f"Betriebskostenabrechnung {jahr}".strip()
@@ -480,6 +488,9 @@ def _seite_eins(objekt_name: str, zeitraum: str, partei: str, werte: dict,
 # Ab welcher Zeilenhöhe eine Tabellenzeile noch als lesbar gilt — darunter
 # wird lieber der Falz-Abstand geopfert als die Tabelle zusammengequetscht.
 _ZEILE_LESBAR = 11.0
+# Luft zwischen Anschriftblock und Betreff. Vorher 20 pt — der Nutzer wollte
+# den Briefkopf falten können, dafür war das zu gedrängt.
+_ABSTAND_ANSCHRIFT = 46.0
 # Was zwischen Falzmarke und erster Tabellenzeile steht (Betreff, Zeitraum,
 # Anrede, vier Zeilen Fließtext). Bewusst großzügig geschätzt: die Zahl
 # entscheidet nur, OB gefalzt wird, nicht wo etwas gezeichnet wird.
@@ -495,11 +506,18 @@ def _platz_nach_tabelle(kosten: float, monate: int | None, s35_summe: float,
 
     Eine Quelle für zwei Verwender — die Zeilenhöhe der Tabelle und die
     Entscheidung über den Falz-Abstand (N438). Zwei Kopien derselben Formel
-    wären früher oder später auseinandergelaufen."""
-    return (18 + len(_summenzeilen(kosten, monate, s35_summe, vz,
+    wären früher oder später auseinandergelaufen.
+
+    Die Posten sind nachgerechnet, nicht geschätzt: 26 pt Abstand samt Strich
+    unter der Tabelle, je Summenzeile 15,5 pt, 44 pt für Doppelstrich und
+    Ergebniszeile, dazu die Fußnoten. Die frühere Fassung schlug pauschal
+    92 pt Reserve drauf — genug, dass der Falz-Abstand aus N438 sich bei
+    einer ganz normalen Abrechnung selbst wegrechnete, obwohl unten sichtbar
+    Platz frei blieb. 15 pt Sicherheit bleiben."""
+    return (26 + len(_summenzeilen(kosten, monate, s35_summe, vz,
                                    monatsbetrag)) * 15.5
-            + 34 + _fussnoten_hoehe(posten, anlage_hinweis, abschlag_hinweis)
-            + 58)
+            + 44 + _fussnoten_hoehe(posten, anlage_hinweis, abschlag_hinweis)
+            + 15)
 
 
 def _seitenzahl(blatt: Blatt, nummer: int, gesamt: int) -> None:
