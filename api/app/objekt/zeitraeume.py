@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 from ..belegposten import (BelegFehler, loese as beleg_loese,
                            verbuche as beleg_verbuche)
 from ..db import get_session
-from ..deps import aktuelle_familie, objekt_holen, zeitraum_holen
+from ..deps import objekt_holen, zeitraum_holen
 from ..models import (Ablesung, Dokument, Familie, Kostenart, Kostenposition,
                       Objekt, Versandprotokoll, Vorauszahlung,
                       WegVorauszahlung, Zeitraum)

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from .. import ablesung as ablesung_modul
@@ -49,8 +49,7 @@ from ..stromkette import (EAUTO_TOLERANZ, EAUTO_VORGABE, H_EIGEN,
                           H_EXTERN, KWH, _anteile, _anteile_pruefen,
                           _beleg_karte, _block, _ct, _erfasste_anteile,
                           _geeichte_menge, _gesamtmenge, _gesamtzaehler,
-                          _herkunft, _je_einheit, _mengen, _quote_setzen,
-                          _verteile, _zahl)
+                          _herkunft, _je_einheit, _verteile, _zahl)
 
 log = logging.getLogger("immocalc")
 router = APIRouter(prefix="/api", tags=["stromkette"])
