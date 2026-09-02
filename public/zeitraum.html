@@ -1701,6 +1701,15 @@
     color:var(--amber)}
   .konf-opt[data-optional="1"].an{color:var(--teal-d)}
   .konf-opt:disabled{opacity:.4;cursor:not-allowed}
+  /* N443 — Kostenart endgültig entfernen. Nur an VERBORGENEN Zeilen, und
+     bewusst zurückhaltend: kein rotes Dauersignal, die Farbe kommt erst beim
+     Berühren. Was man löschen kann, muss man nicht ständig angeboten kriegen. */
+  .konf-weg{flex:none;border:1.5px solid var(--line);background:var(--sheet);
+    color:var(--soft);border-radius:9px;width:38px;min-height:38px;
+    font:400 14px var(--body);line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-tap-highlight-color:transparent}
+  .konf-weg:hover{border-color:var(--neg);background:var(--neg-bg);color:var(--neg)}
   @media(max-width:520px){
     .konf-steuer{width:100%;margin-left:34px;justify-content:space-between}
   }

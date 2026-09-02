@@ -63,3 +63,31 @@ def test_nicht_umlagefaehig_und_optional_lassen_sich_gleich_mitgeben():
         assert neu.status_code == 201, neu.text
         art = _art(c, "Abrechnungskosten-N408")
         assert art["optional"] is True
+
+
+# N443 — versehentlich Angelegtes wieder loswerden (Anlass: eine
+# `__deploy-probe__`-Kostenart aus einem Deploy-Test blieb in echten Daten).
+def test_unbenutzte_kostenart_laesst_sich_loeschen():
+    with TestClient(app) as c:
+        neu = c.post("/api/objekte/obj-a/kostenarten",
+                     json={"name": "__probe-N443__"}).json()
+        assert c.delete(f"/api/kostenarten/{neu['id']}").status_code == 204
+        assert _art(c, "__probe-N443__") is None
+
+
+def test_benutzte_kostenart_bleibt_stehen():
+    """Sie mitzunehmen hiesse, die Geschichte ihrer Positionen mitzunehmen."""
+    with TestClient(app) as c:
+        art = c.post("/api/objekte/obj-a/kostenarten",
+                     json={"name": "__belegt-N443__"}).json()
+        zid = c.get("/api/objekte/obj-a").json()["zeitraeume"][0]["id"]
+        angelegt = c.post(f"/api/zeitraeume/{zid}/positionen",
+                          json={"kostenart": "__belegt-N443__",
+                                "kosten": 120.0, "schluessel": "flaeche"})
+        assert angelegt.status_code in (200, 201), angelegt.text
+
+        antwort = c.delete(f"/api/kostenarten/{art['id']}")
+        assert antwort.status_code == 409, antwort.text
+        assert "benutzt" in antwort.json()["detail"]
+        # Und sie steht danach noch im Katalog.
+        assert _art(c, "__belegt-N443__") is not None

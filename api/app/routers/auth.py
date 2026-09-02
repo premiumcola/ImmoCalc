@@ -6,6 +6,8 @@ Reihenfolge egal (kein zweisegmentiger Fänger hier wie bei stammdaten.py),
 aber registriert VOR `stammdaten` wie jeder andere Router auch (main.py)."""
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 from datetime import datetime
 
@@ -199,3 +201,57 @@ def passwort_aendern(daten: PasswortAendernIn, request: Request,
     _sitzung_setzen(response, familie.id, session)
     log.info("Passwort geändert für Familie %s", familie.name)
     return {"geaendert": True}
+
+
+class LogoIn(BaseModel):
+    logo: str        # Data-URL oder blankes Base64
+
+
+LOGO_MAX_BYTES = 4 * 1024 * 1024
+
+
+@router.put("/logo")
+def logo_setzen(daten: LogoIn, session: Session = Depends(get_session),
+                familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """N444 — das Familienlogo setzen.
+
+    Es erscheint in den Einstellungen und auf dem Anmeldescreen neben dem
+    Familiennamen — `Familie.logo_pfad` und die Anzeige dafür gab es seit
+    N436 bereits, nur keinen Weg, eines zu hinterlegen. Das Bild wird
+    serverseitig auf ein quadratisches PNG gebracht (mittiger Ausschnitt,
+    höchstens 256 px), damit die Kachel nicht verzerrt und die Data-URL die
+    Datenbankzeile nicht sprengt."""
+    roh_text = (daten.logo or "").strip()
+    if "," in roh_text and roh_text.lower().startswith("data:"):
+        roh_text = roh_text.split(",", 1)[1]
+    try:
+        rohdaten = base64.b64decode(roh_text, validate=True)
+    except (ValueError, binascii.Error) as fehler:
+        raise HTTPException(400, "Die Datei kam beschädigt an.") from fehler
+    if not rohdaten:
+        raise HTTPException(400, "Es kam keine Datei an.")
+    if len(rohdaten) > LOGO_MAX_BYTES:
+        raise HTTPException(400, "Das Bild ist zu groß (höchstens 4 MB).")
+
+    from ..pdfbild import BildFehler, als_logo        # noqa: PLC0415
+    try:
+        fertig = als_logo(rohdaten)
+    except BildFehler as fehler:
+        raise HTTPException(400, str(fehler)) from fehler
+
+    familie.logo_pfad = ("data:image/png;base64,"
+                         + base64.b64encode(fertig).decode("ascii"))
+    session.add(familie)
+    session.commit()
+    log.info("Familienlogo gesetzt für %s (%d Bytes)", familie.name,
+             len(fertig))
+    return _familie_oeffentlich(familie)
+
+
+@router.delete("/logo", status_code=204)
+def logo_entfernen(session: Session = Depends(get_session),
+                   familie: Familie = Depends(aktuelle_familie)) -> None:
+    """Zurück zum Standard-Symbol."""
+    familie.logo_pfad = None
+    session.add(familie)
+    session.commit()

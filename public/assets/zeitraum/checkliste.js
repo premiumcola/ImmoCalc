@@ -81,6 +81,7 @@ import {
 } from './weg.js';
 import {
   konfigModusUmschalten, konfigAnsichtHtml, konfSichtSetzen, konfOptSetzen,
+  konfKostenartEntfernen,
   konfS35Setzen,
 } from './konfigmodus.js';
 import { ergebnisHtml, matrixSortSetzen } from './ergebnis.js';
@@ -1822,6 +1823,9 @@ export function initHandlers() {
     if (kOpt) return konfOptSetzen(kOpt);
     const kS35 = e.target.closest('[data-konf-s35]');
     if (kS35) return konfS35Setzen(kS35);
+    // N443 — verborgene, nirgends benutzte Kostenart endgültig entfernen.
+    const kWeg = e.target.closest('[data-konf-weg]');
+    if (kWeg) return konfKostenartEntfernen(kWeg, laden);
 
     // N361 — Einheiten-Gruppe in der Jahreswert-Tabelle auf/zu.
     const ztE = e.target.closest('[data-zt-einheit]');

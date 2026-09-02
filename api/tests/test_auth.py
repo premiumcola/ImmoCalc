@@ -247,3 +247,82 @@ def test_passwort_aendern_wirft_fremde_sitzungen_raus():
             "alt": "sehrsicher123", "neu": "ganzneuespw1",
             "neu_wiederholung": "ganzneuespw1"})
         assert zweitgeraet.get("/api/auth/ich").status_code == 401
+
+
+# --------------------------------------------------------------------------
+# N444 — Familienlogo
+# --------------------------------------------------------------------------
+
+def _bild(breite=900, hoehe=400) -> str:
+    """Ein Querformat-Bild als Data-URL — muss quadratisch werden."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    puffer = io.BytesIO()
+    Image.new("RGBA", (breite, hoehe), (10, 120, 90, 255)).save(
+        puffer, format="PNG")
+    return ("data:image/png;base64,"
+            + base64.b64encode(puffer.getvalue()).decode("ascii"))
+
+
+def test_logo_wird_quadratisch_gespeichert_und_ausgeliefert():
+    _ohne_override()
+    with TestClient(app) as c:
+        c.post("/api/auth/registrieren",
+              json={"name": "Luther", "passwort": "sehrsicher123"})
+        assert c.get("/api/auth/ich").json()["logo_pfad"] is None
+
+        antwort = c.put("/api/auth/logo", json={"logo": _bild()})
+        assert antwort.status_code == 200, antwort.text
+        pfad = c.get("/api/auth/ich").json()["logo_pfad"]
+        assert pfad.startswith("data:image/png;base64,")
+
+        import base64
+        import io
+
+        from PIL import Image
+        bild = Image.open(io.BytesIO(base64.b64decode(pfad.split(",", 1)[1])))
+        assert bild.width == bild.height, "die Kachel ist quadratisch"
+        assert bild.width <= 256
+
+        # Der Anmeldescreen zeigt es — er liest dieselbe Liste.
+        eintrag = next(f for f in c.get("/api/auth/familien").json()
+                       if f["name"] == "Luther")
+        assert eintrag["logo_pfad"] == pfad
+
+
+def test_logo_entfernen_geht_zurueck_auf_kein_logo():
+    _ohne_override()
+    with TestClient(app) as c:
+        c.post("/api/auth/registrieren",
+              json={"name": "Ohnelogo", "passwort": "sehrsicher123"})
+        c.put("/api/auth/logo", json={"logo": _bild(300, 300)})
+        assert c.delete("/api/auth/logo").status_code == 204
+        assert c.get("/api/auth/ich").json()["logo_pfad"] is None
+
+
+def test_kaputtes_logo_wird_abgelehnt():
+    _ohne_override()
+    import base64
+    with TestClient(app) as c:
+        c.post("/api/auth/registrieren",
+              json={"name": "Kaputt", "passwort": "sehrsicher123"})
+        murks = base64.b64encode(b"kein bild").decode("ascii")
+        antwort = c.put("/api/auth/logo",
+                        json={"logo": f"data:image/png;base64,{murks}"})
+        assert antwort.status_code == 400
+        assert c.get("/api/auth/ich").json()["logo_pfad"] is None
+
+
+def test_ein_logo_gehoert_nur_der_eigenen_familie():
+    """Gegenprobe zur Mandantentrennung: B darf A kein Logo verpassen."""
+    _ohne_override()
+    with TestClient(app) as a, TestClient(app) as b:
+        a.post("/api/auth/registrieren",
+              json={"name": "LogoA", "passwort": "sehrsicher123"})
+        b.post("/api/auth/registrieren",
+              json={"name": "LogoB", "passwort": "auchsicher456"})
+        b.put("/api/auth/logo", json={"logo": _bild(300, 300)})
+        assert a.get("/api/auth/ich").json()["logo_pfad"] is None

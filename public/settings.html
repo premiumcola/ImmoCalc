@@ -343,13 +343,15 @@
     </a>
 
     <h2 class="sec">Familie</h2>
-    <div class="row" style="cursor:default">
-      <span class="ic">👪</span>
+    <button class="row" id="familieRow">
+      <span class="ic" id="familieIc">👪</span>
       <span class="txt">
         <span class="t" id="familieName">wird geladen …</span>
-        <span class="d">Angemeldet</span>
+        <span class="d" id="familieInfo">Angemeldet</span>
       </span>
-    </div>
+      <span class="arr">›</span>
+    </button>
+    <input type="file" id="logoDatei" accept="image/*" hidden>
     <button class="row" id="passwortRow">
       <span class="ic">🔑</span>
       <span class="txt">
@@ -812,9 +814,67 @@ fetch('/api/kidb').then(a => a.ok ? a.json() : null).then(d => {
 versionZeigen();
 
 /* N436 — welche Familie angemeldet ist, plus die Abmeldung selbst. */
-api('/auth/ich').then(f => {
+/* N444 — Familienname samt Logo. Das Logo erscheint auch auf dem
+   Anmeldescreen neben dem Namen; gespeichert wird es als quadratisches PNG,
+   den Zuschnitt macht der Server. */
+const familieIc = document.getElementById('familieIc');
+const logoDatei = document.getElementById('logoDatei');
+
+function familieZeigen(f) {
   document.getElementById('familieName').textContent = f.name;
-}).catch(() => {});
+  const info = document.getElementById('familieInfo');
+  if (f.logo_pfad) {
+    familieIc.innerHTML = `<img src="${f.logo_pfad}" alt=""
+      style="width:100%;height:100%;object-fit:cover;border-radius:11px">`;
+    info.textContent = 'Angemeldet · Logo antippen zum Ändern';
+  } else {
+    familieIc.textContent = '👪';
+    info.textContent = 'Angemeldet · Logo hinterlegen';
+  }
+}
+
+function familieLaden() {
+  return api('/auth/ich').then(familieZeigen).catch(() => {});
+}
+
+document.getElementById('familieRow').addEventListener('click', async () => {
+  const f = await api('/auth/ich').catch(() => null);
+  if (!f) return;
+  if (!f.logo_pfad) { logoDatei.click(); return; }
+  const dlg = baueDialog(`
+    <div class="dt">Familienlogo</div>
+    <p>Es steht in den Einstellungen und auf dem Anmeldescreen neben „${f.name}".</p>
+    <button type="button" class="btn" id="logoNeu">Anderes Bild wählen</button>
+    <button type="button" class="btn gefahr" id="logoWeg">Logo entfernen</button>`);
+  dlg.querySelector('#logoNeu').addEventListener('click', () => {
+    dlg.close(); logoDatei.click();
+  });
+  dlg.querySelector('#logoWeg').addEventListener('click', async () => {
+    dlg.close();
+    try {
+      await api('/auth/logo', { method: 'DELETE' });
+      melde('Logo entfernt', 'pos');
+      familieLaden();
+    } catch (fehler) { melde(fehler.message || 'Entfernen fehlgeschlagen', 'neg'); }
+  });
+});
+
+logoDatei.addEventListener('change', () => {
+  const datei = logoDatei.files && logoDatei.files[0];
+  logoDatei.value = '';                      // dieselbe Datei erneut wählbar
+  if (!datei) return;
+  const leser = new FileReader();
+  leser.onload = async () => {
+    try {
+      await api('/auth/logo', { method: 'PUT', body: { logo: leser.result } });
+      melde('Logo gespeichert', 'pos');
+      familieLaden();
+    } catch (fehler) { melde(fehler.message || 'Bild nicht verwendbar', 'neg'); }
+  };
+  leser.readAsDataURL(datei);
+});
+
+familieLaden();
 /* N442 — Passwort ändern: altes zur Bestätigung, neues doppelt. Die
    Gleichheit der beiden neuen Eingaben prüft schon die Oberfläche, damit man
    den Tippfehler sofort sieht; der Server prüft sie trotzdem noch einmal

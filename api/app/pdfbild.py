@@ -85,3 +85,41 @@ def auf_weiss_gelegt(rohdaten: bytes) -> bytes:
     puffer = io.BytesIO()
     grund.save(puffer, format="PNG")
     return puffer.getvalue()
+
+
+# Kantenlänge des Familienlogos. Es erscheint als 42-px-Kachel in der Liste
+# und auf dem Anmeldescreen — 256 px reichen auch auf einem scharfen Display
+# und halten die Data-URL in der Datenbankzeile klein.
+LOGO_KANTE = 256
+
+
+def als_logo(rohdaten: bytes) -> bytes:
+    """N444 — ein beliebiges Bild zu einem quadratischen PNG-Logo machen.
+
+    Quadratisch, weil die Kachel quadratisch ist: ein Querformat würde sonst
+    entweder verzerrt oder mit Rändern angezeigt. Zugeschnitten wird mittig
+    auf das größtmögliche Quadrat — der übliche Bildausschnitt, wenn niemand
+    etwas anderes sagt. Transparenz bleibt erhalten (PNG mit Alphakanal),
+    damit ein freigestelltes Wappen nicht plötzlich einen weißen Kasten
+    bekommt."""
+    from PIL import Image                            # noqa: PLC0415
+
+    try:
+        bild = Image.open(io.BytesIO(rohdaten))
+        bild.load()
+    except Exception as fehler:                      # noqa: BLE001
+        raise BildFehler("Die Datei ließ sich nicht als Bild lesen.") from fehler
+
+    bild = bild.convert("RGBA")
+    kante = min(bild.width, bild.height)
+    if kante < 2:
+        raise BildFehler("Das Bild ist zu klein.")
+    links = (bild.width - kante) // 2
+    oben = (bild.height - kante) // 2
+    bild = bild.crop((links, oben, links + kante, oben + kante))
+    if kante > LOGO_KANTE:
+        bild = bild.resize((LOGO_KANTE, LOGO_KANTE), Image.LANCZOS)
+
+    puffer = io.BytesIO()
+    bild.save(puffer, format="PNG", optimize=True)
+    return puffer.getvalue()
