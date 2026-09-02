@@ -93,16 +93,47 @@ def auf_weiss_gelegt(rohdaten: bytes) -> bytes:
 LOGO_KANTE = 256
 
 
-def als_logo(rohdaten: bytes) -> bytes:
-    """N444 — ein beliebiges Bild zu einem quadratischen PNG-Logo machen.
+def _radiale_maske(kante: int, innen: float, aussen: float):
+    """Runde Maske: innen voll deckend, nach aussen weich auf null.
 
-    Quadratisch, weil die Kachel quadratisch ist: ein Querformat würde sonst
-    entweder verzerrt oder mit Rändern angezeigt. Zugeschnitten wird mittig
-    auf das größtmögliche Quadrat — der übliche Bildausschnitt, wenn niemand
-    etwas anderes sagt. Transparenz bleibt erhalten (PNG mit Alphakanal),
-    damit ein freigestelltes Wappen nicht plötzlich einen weißen Kasten
-    bekommt."""
+    `innen`/`aussen` sind Anteile des Radius — zwischen beiden liegt die
+    weiche Rampe. Ohne diese Rampe hätte der Kreis eine harte, treppige
+    Kante; genau die soll der Nutzer nicht sehen."""
     from PIL import Image                            # noqa: PLC0415
+
+    # radial_gradient: schwarz in der Mitte, weiss nach aussen — also der
+    # Abstand vom Mittelpunkt als Graustufe.
+    abstand = Image.radial_gradient("L").resize((kante, kante), Image.BILINEAR)
+
+    # `radial_gradient` erreicht 255 erst in den ECKEN, nicht an der Kante.
+    # Für einen dem Quadrat eingeschriebenen Kreis muss deshalb auf den
+    # Kantenabstand normiert werden (1/√2), sonst begänne die weiche Kante
+    # ausserhalb des Bildes und der Rand bliebe hart deckend.
+    ECKE = 0.7071067811865476
+
+    def rampe(wert: int) -> int:
+        x = (wert / 255.0) / ECKE
+        if x <= innen:
+            return 255
+        if x >= aussen:
+            return 0
+        return int(round(255 * (1 - (x - innen) / (aussen - innen))))
+
+    return abstand.point([rampe(i) for i in range(256)])
+
+
+def als_logo(rohdaten: bytes) -> bytes:
+    """N448 — ein beliebiges Foto zu einem RUNDEN Logo mit weichem Rand.
+
+    Nutzer: „Familienlogo soll ein runder Ausschnitt eines gewählten Fotos
+    sein, Blur am Rand, Fokus auf den Mittenbereich."
+
+    Drei Schritte: mittig auf das grösstmögliche Quadrat zuschneiden (der
+    übliche Ausschnitt, wenn niemand etwas anderes sagt), dann die scharfe
+    Mitte über eine unscharfe Fassung legen — so wird der Rand weich, ohne
+    dass die Mitte an Schärfe verliert —, und zuletzt ein runder Ausschnitt
+    mit weich auslaufender Kante statt eines harten Kreises."""
+    from PIL import Image, ImageChops, ImageFilter   # noqa: PLC0415
 
     try:
         bild = Image.open(io.BytesIO(rohdaten))
@@ -117,8 +148,19 @@ def als_logo(rohdaten: bytes) -> bytes:
     links = (bild.width - kante) // 2
     oben = (bild.height - kante) // 2
     bild = bild.crop((links, oben, links + kante, oben + kante))
-    if kante > LOGO_KANTE:
+    if kante != LOGO_KANTE:
         bild = bild.resize((LOGO_KANTE, LOGO_KANTE), Image.LANCZOS)
+    kante = LOGO_KANTE
+
+    # 1) Scharfe Mitte, unscharfer Rand.
+    unscharf = bild.filter(ImageFilter.GaussianBlur(kante / 36))
+    bild = Image.composite(bild, unscharf,
+                           _radiale_maske(kante, 0.50, 0.88))
+
+    # 2) Runder Ausschnitt, weich auslaufend.
+    weich = ImageChops.multiply(bild.getchannel("A"),
+                                _radiale_maske(kante, 0.86, 1.0))
+    bild.putalpha(weich)
 
     puffer = io.BytesIO()
     bild.save(puffer, format="PNG", optimize=True)

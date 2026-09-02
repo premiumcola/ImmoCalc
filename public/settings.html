@@ -825,7 +825,7 @@ function familieZeigen(f) {
   const info = document.getElementById('familieInfo');
   if (f.logo_pfad) {
     familieIc.innerHTML = `<img src="${f.logo_pfad}" alt=""
-      style="width:100%;height:100%;object-fit:cover;border-radius:11px">`;
+      style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
     info.textContent = 'Angemeldet · Logo antippen zum Ändern';
   } else {
     familieIc.textContent = '👪';

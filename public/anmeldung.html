@@ -134,7 +134,7 @@ async function familienLaden() {
   ziel.innerHTML = familien.map(f => `
     <button type="button" class="row" data-id="${f.id}" data-hat-passwort="${f.hat_passwort}">
       <span class="ic">${f.logo_pfad ? `<img src="${esc(f.logo_pfad)}" alt=""
-        style="width:100%;height:100%;object-fit:cover;border-radius:11px">` : FAMILIEN_ICON}</span>
+        style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : FAMILIEN_ICON}</span>
       <span class="txt">
         <span class="t">${esc(f.name)}</span>
         <span class="d">${f.hat_passwort ? 'Anmelden' : 'Erstanmeldung — Passwort festlegen'}</span>
