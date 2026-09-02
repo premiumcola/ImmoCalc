@@ -116,16 +116,3 @@ def dokument_holen(dokument_id: int, session: Session = Depends(get_session),
     return d
 
 
-def objekt_zum_zeitraum(z: Zeitraum, session: Session) -> Objekt:
-    """Das Objekt eines Zeitraums — mit Prüfung.
-
-    N374 — mehrere Stellen machten `session.get(Objekt, z.objekt_id)` und
-    griffen sofort auf `o.name` zu. Über den regulären Löschweg ist das nicht
-    erreichbar (die Zeiträume gehen mit), aber eine fehlende Absicherung bleibt
-    eine: ein verwaister Zeitraum ergäbe einen 500er ohne erkennbare Ursache.
-    Keine eigene familie-Prüfung hier: wer schon einen geprüften `Zeitraum`
-    (über `zeitraum_holen`) hat, hat die Zugehörigkeit bereits nachgewiesen."""
-    o = session.get(Objekt, z.objekt_id)
-    if not o:
-        raise HTTPException(404, "Objekt zu diesem Zeitraum nicht gefunden")
-    return o

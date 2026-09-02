@@ -948,12 +948,6 @@ def seite_png(rohdaten: bytes, index: int = 0, breite: int = 1240,
         return None
 
 
-def erste_seite_png(rohdaten: bytes, breite: int = 1240) -> bytes | None:
-    """Rendert die erste Seite eines PDFs als PNG — unverändert der Sonderfall
-    `seite_png(rohdaten, 0, breite)`."""
-    return seite_png(rohdaten, 0, breite)
-
-
 def _gerade_seiten_bilder(rohdaten: bytes) -> "list[bytes] | None":
     """Alle Seiten eines PDF als aufrechte PNG-Bilder — per PyMuPDF gerendert
     und, wo OSD eine Drehung erkennt, geradegerichtet.

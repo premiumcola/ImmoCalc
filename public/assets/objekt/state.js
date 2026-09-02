@@ -33,13 +33,6 @@ export function setGrundschulden(v) { grundschulden = v; }
 export function setBereicheDaten(v) { bereicheDaten = v; }
 export function setZaehlerListe(v) { zaehlerListe = v; }
 export function setErststandZiel(v) { erststandZiel = v; }
-/* Einen Zähler nach dem Speichern eines Anfangsstands aktualisieren, ohne die
-   ganze Liste zu neu zu laden — die Rubrik oben stimmt so sofort. */
-export function updateZaehler(zid, ersatz) {
-  const i = zaehlerListe.findIndex(z => Number(z.id) === Number(zid));
-  if (i >= 0) zaehlerListe[i] = ersatz;
-}
-
 /* ---- Dialog-Zustand — geteilt zwischen formular.js und handlers.js ---- */
 
 /* Die Felder, die gerade im Dialog stehen. Beim Speichern wird genau das

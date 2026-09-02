@@ -139,6 +139,3 @@ def loese(session: Session, dokument_id: int) -> int:
     return geloest
 
 
-def ohne_verweise(session: Session, dokument_id: int) -> bool:
-    """Hängt an diesem Beleg wirklich nichts mehr? Die Probe nach dem Umhängen."""
-    return not zaehle(session, dokument_id)

@@ -99,8 +99,6 @@ export let heizoelKosten = 0;
 export function setHeizoelKosten(v) { heizoelKosten = v; }
 export let wwKosten = 0;
 export function setWwKosten(v) { wwKosten = v; }
-export let heizverteiler = [];
-export function setHeizverteiler(v) { heizverteiler = v; }
 
 /* N118 — Cache der Wasser-Verteilung (Warmwasser-Split greift darauf zu). */
 export let wasserDetailCache = null;

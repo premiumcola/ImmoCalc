@@ -31,10 +31,6 @@ def setzen(familie_id: int | None) -> None:
     _KONTEXT.set(familie_id)
 
 
-def aktuelle_id() -> int | None:
-    return _KONTEXT.get()
-
-
 def schluessel(basis: str) -> str:
     """Der tatsächliche Datenbank-Schlüssel: `<familie_id>:<basis>`.
 
