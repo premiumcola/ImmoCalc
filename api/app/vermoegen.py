@@ -738,8 +738,19 @@ def objekt_vermoegen(objekt, kredite: list, anteile: list | None = None,
     # nicht dazu: sie verlässt zwar das Konto, wird aber zu eigenem Vermögen.
     annuitaet = kapitaldienst_jahr(kredite)
     sparrate = sparrate_jahr(kredite)
-    zinsen = round(sum(lage["restschuld"] * float(k.zinssatz or 0) / 100
-                       for k, lage in darlehen), 2)
+    # N455 — die Jahreszinsen über dieselbe Monatsrechnung wie `verlauf`
+    # (`_jahreszins_kalk`), nicht über „Restschuld × fester Zinssatz". Der
+    # feste Satz gilt nur bis zum Ende der Zinsbindung; danach läuft der
+    # Kredit mit `zinssatz_variabel` weiter — die Restschuld daneben wird
+    # längst so fortgeschrieben. Vorher standen dieselben Zinsen in der App
+    # zweimal verschieden da (Kennzahl gegen Verlauf), und die falsche ist
+    # die, die in die Anlage V wandert: 200.000 € zu 1 % fest / 6 % variabel
+    # ergaben 2.000 € statt rund 12.000 €.
+    # `stichtag` ist optional — dieselbe Vorgabe wie in `kreditstand`/`verlauf`.
+    basis_jahr = (stichtag or date.today()).year - 1
+    zinsen = round(sum(
+        _jahreszins_kalk(k, basis_jahr, lage["restschuld"], monatsrate(k))
+        for k, lage in darlehen), 2)
     # Das Guthaben liegt neben der Immobilie, nicht in ihr: es erhöht das
     # Eigenkapital, mindert aber die Beleihung nicht.
     eigen = round(wert - restschuld + guthaben, 2) if wert is not None else None

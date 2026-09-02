@@ -163,8 +163,15 @@ def test_vermoegen_rechnet_wert_minus_restschuld():
         assert zeile["eigenkapital"] == 300000.0
         assert zeile["beleihung"] == 40.0
         assert zeile["annuitaet_jahr"] == 12000.0
-        assert zeile["zinslast_jahr"] == 4000.0
-        assert zeile["tilgung_jahr"] == 8000.0
+        # N455 — die Zinslast ist jetzt die Summe der zwölf Monatszinsen auf
+        # die SINKENDE Restschuld (dieselbe Rechnung wie im Verlauf), nicht
+        # mehr „Restschuld × Zinssatz". Bei 200.000 € zu 2 % und 1.000 €
+        # Monatsrate sind das 3.926,26 € statt glatter 4.000 € — der Betrag,
+        # der tatsächlich gezahlt und in der Anlage V erklärt wird. Der
+        # eigentliche Anlass war ein grösserer Fehler derselben Formel: sie
+        # rechnete nach Ablauf der Zinsbindung weiter mit dem festen Satz.
+        assert zeile["zinslast_jahr"] == 3926.26
+        assert zeile["tilgung_jahr"] == 8073.74   # 12.000 Annuität − 3.926,26 Zins (N455)
 
 
 def test_eigenkapital_anteilig_nutzt_promille_nicht_das_gekappte_tausendstel():
@@ -1027,8 +1034,15 @@ def test_bausparguthaben_erhoeht_das_eigenkapital():
         # Kapitaldienst ist Zins und Tilgung — die Sparrate steht daneben.
         assert zeile["annuitaet_jahr"] == 12000.0
         assert zeile["sparrate_jahr"] == 3600.0
-        assert zeile["zinslast_jahr"] == 4000.0
-        assert zeile["tilgung_jahr"] == 8000.0
+        # N455 — die Zinslast ist jetzt die Summe der zwölf Monatszinsen auf
+        # die SINKENDE Restschuld (dieselbe Rechnung wie im Verlauf), nicht
+        # mehr „Restschuld × Zinssatz". Bei 200.000 € zu 2 % und 1.000 €
+        # Monatsrate sind das 3.926,26 € statt glatter 4.000 € — der Betrag,
+        # der tatsächlich gezahlt und in der Anlage V erklärt wird. Der
+        # eigentliche Anlass war ein grösserer Fehler derselben Formel: sie
+        # rechnete nach Ablauf der Zinsbindung weiter mit dem festen Satz.
+        assert zeile["zinslast_jahr"] == 3926.26
+        assert zeile["tilgung_jahr"] == 8073.74   # 12.000 Annuität − 3.926,26 Zins (N455)
 
 
 def test_bausparvertrag_nennt_was_noch_zu_sparen_ist():
