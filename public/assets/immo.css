@@ -1419,3 +1419,32 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
 @media(max-width:479px){
   html{background:#000}
 }
+
+/* ==========================================================================
+   N463 TEST — Diagnose der unteren Leiste. Jedes Element eine eigene Farbe,
+   damit der Nutzer genau benennen kann, was ihn stört. Ein Block am
+   Dateiende: in einem Schnitt wieder entfernbar.
+
+     ROT      = .nav            die Pille selbst
+     GELB     = .nav::before    der Schleier/Nebel HINTER der Pille
+     BLAU     = enge Schattenebene   (0 5px 8px -3px)
+     PINK     = weiche Schattenebene (0 20px 20px -11px)
+     GRÜN     = der schwebende Dokumente-Knopf
+     LILA     = das reservierte Polster im Scrollbereich unter dem Inhalt
+   ========================================================================== */
+@media(max-width:999px){
+  .nav{
+    background:rgba(220,40,40,.92) !important;
+    -webkit-backdrop-filter:none !important;
+    backdrop-filter:none !important;
+    box-shadow:0 5px 8px -3px rgba(30,110,255,.95),
+               0 20px 20px -11px rgba(255,59,154,.95) !important;
+  }
+  .nav::before{
+    background:rgba(240,200,20,.92) !important;
+    -webkit-backdrop-filter:none !important;
+    backdrop-filter:none !important;
+  }
+  .nav a[href="eingang.html"]{background:rgba(20,160,90,.95) !important}
+  .app > .scroll{background:rgba(150,60,220,.16) !important}
+}
