@@ -442,10 +442,11 @@ button.chip:hover{filter:brightness(.96)}
      stärker negativer Spread) UND etwas schmaler unscharf, damit der sicht-
      bare Schattensaum sauber unter/neben der Pille bleibt und nicht mehr
      darüber hinausblutet — weiterhin weich verlaufend, keine harte Kante. */
-  /* N463 TEST — die GROSSE, weiche Schattenebene ist pink eingefärbt, damit
-     sichtbar wird, wie weit sie wirklich reicht. Die enge Ebene darüber
-     bleibt schwarz. Eine Zeile, wieder weg. */
-  box-shadow:0 5px 8px -3px rgba(0,0,0,.26), 0 20px 20px -11px rgba(255,59,154,.85);
+  /* N463 TEST — beide Schattenebenen eingefärbt, damit sichtbar wird, welche
+     wie weit reicht: BLAU = die enge Ebene direkt an der Pille
+     (0 5px 8px -3px), PINK = die grosse, weiche darunter
+     (0 20px 20px -11px). Eine Zeile, wieder weg. */
+  box-shadow:0 5px 8px -3px rgba(30,110,255,.85), 0 20px 20px -11px rgba(255,59,154,.85);
   /* Frosted Glass — Nutzer: „es gibt kein Blur" auf dem echten Gerät. Jetzt
      OHNE `@supports`-Gate (die Bedingungsprüfung selbst war ein möglicher,
      unnötiger Ausfallpunkt — praktisch jeder relevante mobile Browser kann
