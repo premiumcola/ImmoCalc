@@ -10,6 +10,13 @@
   --disp:"Space Grotesk",system-ui,sans-serif;
   --body:"Inter",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
+  /* N465 — die dunkle Gehäusefarbe der App-Ränder: der Streifen hinter der
+     Statuszeile oben und die Menüleiste unten. Kein reines Schwarz, sondern
+     `--ink` weiter abgedunkelt — derselbe blaugrüne Unterton wie der Rest
+     der App, damit die Ränder zum Papier gehören und nicht danebenstehen.
+     `--chrome` ist die Leistenfläche, `--chrome-rand` der Streifen ganz
+     aussen (dunkler, damit die Leiste sich auch von IHM absetzt). */
+  --chrome:#22383F; --chrome-rand:#0B1518; --chrome-text:#DCE5E6;
 }
 *{box-sizing:border-box}
 /* Das `hidden`-Attribut bedeutet immer „weg". Ohne diese Regel überschreibt
@@ -502,19 +509,61 @@ button.chip:hover{filter:brightness(.96)}
    Dieselbe Papierfarbe wie `.nav` selbst (siehe dort — Fund „Menü vor
    weißen Karten schwer unterscheidbar"), damit Pille und Rand-Fläche
    optisch ein Stück sind, nicht zwei unterschiedlich getönte Flächen. */
-@media(max-width:999px){
+/* N465 — der eigentliche Grund für „Menüleiste, Schatten und Hintergrund sind
+   total vermatscht": die Malreihenfolge. `.nav` erzeugt über `isolation` und
+   `transform` einen eigenen Stapelkontext, und darin wird der EIGENE
+   Hintergrund des Elements zuerst gemalt — erst danach kommen Kinder mit
+   negativem `z-index`. Der helle Schleier lag also nicht HINTER der Pille,
+   sondern mit 82 % Deckkraft DARÜBER und hat sie fast vollständig
+   überstrichen. Kein negativer Wert hilft dagegen: negative Ebenen kommen
+   immer nach dem Hintergrund des Kontext-Elements.
+   Lösung: die Pillenfläche wandert selbst in eine Ebene (`::after`). Beide
+   Ebenen liegen auf `z-index:-1` und werden dann in Dokumentreihenfolge
+   gemalt — `::before` (Schleier) zuerst, `::after` (Pille) darüber. Erst
+   damit stimmt die vom Nutzer verlangte Staffelung: Inhalt · Schleier ·
+   Schatten · Leiste.
+   Ausserdem jetzt auf 479px begrenzt statt 999px: die schwebende Pille gibt
+   es nur dort. Ab 480px sitzt die Leiste fest am Kartenfuss (siehe unten) —
+   ein Schleier, der 14px über alle Kartenkanten hinausragt, war da ohnehin
+   fehl am Platz. */
+@media(max-width:479px){
   .nav::before{
     content:"";
     position:absolute; left:-14px; right:-14px; bottom:-14px; top:-10px;
     z-index:-1;
     /* N463 — HELL, bewusst NICHT im Ton der Pille: nur so entsteht die klare
        Kante zwischen Leiste und dem, was hinter ihr liegt. Vorher trugen
-       beide denselben Grauton und verschwammen zu einer Fläche. */
-    background:rgba(244,247,247,.82);
+       beide denselben Grauton und verschwammen zu einer Fläche.
+       N465 — Nutzer: „der Schatten muss nicht 100 % undurchsichtig sein,
+       siebzig Prozent oder so" — von .82 auf .70. */
+    background:rgba(244,247,247,.70);
     -webkit-backdrop-filter:blur(44px) saturate(1.1);
     backdrop-filter:blur(44px) saturate(1.1);
     -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 11%, #000 100%);
     mask-image:linear-gradient(to bottom, transparent 0%, #000 11%, #000 100%);
+    pointer-events:none;
+  }
+  /* Die Pillenfläche als eigene Ebene ÜBER dem Schleier. Der Schatten sitzt
+     mit ihr auf derselben Ebene: so liegt er über dem durchscrollenden Inhalt
+     und über dem Schleier, aber unter der Leiste — genau die Reihenfolge, die
+     der Nutzer beschrieben hat. */
+  .nav{background:none; -webkit-backdrop-filter:none; backdrop-filter:none;
+       box-shadow:none}
+  .nav::after{
+    content:"";
+    position:absolute; inset:0; border-radius:inherit; z-index:-1;
+    /* N465 — Nutzer, zum dritten Mal: „die Menüleiste setzt sich gar nicht
+       vom Hintergrund ab, mach sie dunkler — eventuell im gleichen Ton wie
+       oben die Kopfleiste." Der bisherige Grauton (134,148,152) lag mitten
+       zwischen Papier und Karten und verschwand nach unten hin komplett.
+       Jetzt dasselbe dunkle Gehäuse wie der Streifen oben, nur eine Spur
+       heller als dessen Rand — damit sich auch die Leiste vom Bildschirmrand
+       absetzt und nicht mit ihm verschmilzt. */
+    background:var(--chrome);
+    -webkit-backdrop-filter:blur(46px) saturate(1.1);
+    backdrop-filter:blur(46px) saturate(1.1);
+    box-shadow:0 5px 8px -3px rgba(0,0,0,.26),
+               0 20px 20px -11px rgba(0,0,0,.34);
     pointer-events:none;
   }
 }
@@ -550,6 +599,14 @@ button.chip:hover{filter:brightness(.96)}
 .nav a .nl{
   display:block; max-width:100%;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+/* N465 — auf der dunklen Leiste (siehe `.nav::after`) kehrt sich die
+   Beschriftung um: `--ink` läge dort bei 1,4:1 und wäre praktisch unlesbar,
+   `--chrome-text` bei 9,4:1 (nachgerechnet). Bewusst NACH der Grundregel
+   `.nav a{color:var(--ink)}` — beide sind gleich spezifisch, eine
+   Media-Query zählt dafür nicht mit, es entscheidet die Reihenfolge. */
+@media(max-width:479px){
+  .nav a{color:var(--chrome-text)}
 }
 /* Das Kuerzen ist die Notbremse, nicht der Normalfall: auf dem iPhone soll
    „Nebenkosten" ganz dastehen — die vier flachen Eintraege teilen sich die
@@ -612,6 +669,16 @@ button.chip:hover{filter:brightness(.96)}
 
   .nav a[href="eingang.html"]{
     flex:none; width:66px; padding:0; gap:0; margin-top:-20px;
+    /* N465 — DIE Ursache für „der Schatten ist immer noch abgekartet und
+       abgeschnitten". Es lag nie an den Schatten-Ebenen selbst: `.nav a`
+       trägt `overflow:hidden` (nötig, damit lange Beschriftungen gekürzt
+       statt umgebrochen werden) — und `overflow` beschneidet auch den
+       Schatten eines KINDES. Der Schein des runden Knopfes wurde also am
+       66px breiten, 18px gerundeten Kasten seines Links abgeschnitten:
+       genau die eckige Kontur, die im Screenshot zu sehen ist. Der runde
+       Knopf hat keine Beschriftung (`.nl{display:none}`, siehe unten), hier
+       gibt es also nichts zu kürzen — das Beschneiden kann weg. */
+    overflow:visible;
   }
   .nav a[href="eingang.html"] .ni{
     /* N327-b — Nutzer-Feedback „Edges are not nice": ein Kreis-Knopf muss
@@ -640,10 +707,17 @@ button.chip:hover{filter:brightness(.96)}
        damit der Knopf weiter erhaben wirkt statt zu schweben. Bewusst KEIN
        Ring mit 0 Blur (`0 0 0 Npx`): der wirkte am Gerät als harte Kante
        (Fund aus N327-b). */
+    /* N465 — der Schein war bisher dunkelgrün (`15,110,92`). Auf der jetzt
+       DUNKLEN Leiste (siehe `.nav::after`) wäre davon nichts mehr zu sehen:
+       dunkel auf dunkel leuchtet nicht. Derselbe Farbton, nur hell — so
+       strahlt der Knopf nach unten auf der dunklen Leiste und nach oben auf
+       dem hellen Schleier gleichermassen. Weiterhin zwei konzentrische
+       Ebenen ohne Versatz, damit der Schein dem Kreis nach allen Seiten
+       gleich folgt (N463), plus eine flache versetzte Ebene für die Tiefe. */
     width:66px; height:66px; border-radius:999px; background:var(--teal);
-    color:#fff; box-shadow:0 0 14px 3px rgba(15,110,92,.26),
-                            0 0 30px 8px rgba(15,110,92,.13),
-                            0 5px 12px -4px rgba(15,110,92,.30);
+    color:#fff; box-shadow:0 0 16px 4px rgba(64,206,173,.42),
+                            0 0 34px 10px rgba(64,206,173,.20),
+                            0 6px 14px -5px rgba(0,0,0,.38);
   }
   .nav a[href="eingang.html"] .ni-doc svg{width:30px; height:30px}
   .nav a[href="eingang.html"] .ni-plus svg{width:26px; height:26px}
@@ -669,6 +743,12 @@ button.chip:hover{filter:brightness(.96)}
 .mehrliste a[aria-current=page] .ni{color:var(--teal-d)}
 .mehrliste a:hover{background:#F1F4F4}
 .nav a[aria-current=page]{color:var(--teal-d); background:var(--teal-l)}
+/* N465 — auf der dunklen Leiste wäre die helle Vollfläche `--teal-l` ein
+   grell leuchtender Block. Dieselbe Aussage, nur im Ton der Leiste gedacht:
+   ein leicht aufgehellter Grund und heller Text (8,0:1 nachgerechnet). */
+@media(max-width:479px){
+  .nav a[aria-current=page]{background:rgba(126,231,199,.16); color:#8FE6C9}
+}
 
 /* ---- Formularfelder ---- */
 .field{margin-bottom:14px}
@@ -1427,27 +1507,29 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
      dem Pinken sehr dunkelgrau, fast schwarz". Deshalb sitzt die Farbe an
      `html` und nicht an `.app` — nur so deckt sie auch das, was oberhalb des
      App-Rahmens durchscheint. Ab 480px ist der Rahmen eine zentrierte Karte
-     auf hellem Grund; dort bleibt es deshalb beim Papierton. */
+     auf hellem Grund; dort bleibt es deshalb beim Papierton.
+
+   N465 — der Farbtest aus N464 hat die Annahme von N450 widerlegt: MAGENTA
+   (`html`) war nirgends zu sehen, GRÜN (`body`) füllte den ganzen Streifen
+   über der Leiste. Der Streifen kommt also von `body`, nicht von `html` —
+   im Startbildschirm-Betrieb tönt WebKit die Fläche hinter der Statuszeile
+   mit der Hintergrundfarbe des DOKUMENTS, und die liest es hier von `body`.
+   Deshalb stand die schwarze Farbe aus N450 an einem Element, das nie
+   sichtbar wird. Jetzt tragen beide denselben Ton — gleich, welches der
+   Browser abgreift.
+
+   Nutzer: „von der Titelfarbe in Schwarz überblenden, der Übergang über nur
+   zehn, fünfzehn Pixel." Die Statuszeilen-Fläche selbst kann keinen Verlauf
+   tragen (das System tönt sie aus EINER Farbe), der Verlauf sitzt deshalb in
+   den obersten 15px der Leiste und setzt genau an der Kante an — von aussen
+   liest sich das als ein durchgehender Übergang an der Grenze. Nur unter
+   480px: ab dort ist die App eine zentrierte Karte auf hellem Grund, es gibt
+   gar keinen Streifen, den man abdunkeln könnte. */
 .bar{box-shadow:none}
 @media(max-width:479px){
-  html{background:#000}
-}
-
-/* ==========================================================================
-   N464 TEST — Diagnose der OBEREN Leiste. Bewusst weit auseinanderliegende
-   Farben (nicht wie beim letzten Mal Rot auf Gelb, was zu Orange verschmolz)
-   und volle Deckkraft, damit nichts durch Überlagerung mischt.
-
-     BLAU    = .bar          die Titelleiste selbst
-     MAGENTA = html          die Fläche dahinter (der Streifen über der Leiste)
-     GRÜN    = body          das Blatt hinter der App
-     CYAN    = der Schatten UNTER der Titelleiste (testweise wieder an)
-   ========================================================================== */
-@media(max-width:999px){
+  html,body{background:var(--chrome-rand)}
   .bar{
-    background:#1E6EFF !important;
-    box-shadow:0 10px 18px -6px rgba(0,220,255,.95) !important;
+    background:linear-gradient(to bottom,
+                               var(--chrome-rand) 0, var(--sheet) 15px);
   }
-  html{background:#FF2FA0 !important}
-  body{background:#12B76A !important}
 }
