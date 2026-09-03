@@ -773,6 +773,7 @@ import { umzugInit, umzugLaden } from './assets/settings/umzug.js';
 import { druckerInit, druckerLaden } from './assets/settings/drucker.js';
 import { importInit } from './assets/settings/import.js';
 import { rechenlogikInit } from './assets/settings/rechenlogik.js';
+import { logoZuschneiden } from './assets/settings/logoZuschnitt.js';
 
 installNav();
 verknuepfungenInit();
@@ -849,19 +850,21 @@ document.getElementById('familieRow').addEventListener('click', async () => {
   });
 });
 
-logoDatei.addEventListener('change', () => {
+/* N471 — Nutzer: „das soll nicht nur fest gesetzt werden ohne eine
+   Einpassung von mir." Statt die Datei direkt hochzuladen, geht sie erst
+   durch den Zuschnitt-Dialog (Verschieben, Zoomen, Drehen); der liefert
+   bereits ein passend zugeschnittenes Quadrat oder `null` bei Abbruch. */
+logoDatei.addEventListener('change', async () => {
   const datei = logoDatei.files && logoDatei.files[0];
   logoDatei.value = '';                      // dieselbe Datei erneut wählbar
   if (!datei) return;
-  const leser = new FileReader();
-  leser.onload = async () => {
-    try {
-      await api('/auth/logo', { method: 'PUT', body: { logo: leser.result } });
-      melde('Logo gespeichert', 'pos');
-      familieLaden();
-    } catch (fehler) { melde(fehler.message || 'Bild nicht verwendbar', 'neg'); }
-  };
-  leser.readAsDataURL(datei);
+  const zugeschnitten = await logoZuschneiden(datei);
+  if (!zugeschnitten) return;                // im Dialog abgebrochen
+  try {
+    await api('/auth/logo', { method: 'PUT', body: { logo: zugeschnitten } });
+    melde('Logo gespeichert', 'pos');
+    familieLaden();
+  } catch (fehler) { melde(fehler.message || 'Bild nicht verwendbar', 'neg'); }
 });
 
 familieLaden();

@@ -1311,6 +1311,29 @@ dialog.immo-dlg.pdf-dlg::backdrop{background:rgba(22,38,44,.62)}
    Tastatur ab), damit ein weiterer Fingertipp nicht in den Bildschirm platzt,
    der gerade aufgebaut wird. Ruhig gehalten: kein rotierender Kreisel, sondern
    ein langsam atmendes Zeichen. */
+/* ---- N471: Foto-Zuschnitt fürs Familienlogo ---- */
+.logo-crop-buehne{display:flex; justify-content:center; margin-bottom:16px}
+.logo-crop-canvas{
+  width:280px; height:280px; border-radius:50%; overflow:hidden;
+  background:var(--paper); box-shadow:0 4px 16px -6px rgba(22,38,44,.4);
+  cursor:grab;
+  /* Ohne das hier übernimmt iOS/Android das Ziehen und Kneifen als
+     Seiten-Scroll bzw. Browser-Zoom, statt es dem Canvas zu überlassen. */
+  touch-action:none;
+}
+.logo-crop-canvas:active{cursor:grabbing}
+.logo-crop-werkzeuge{
+  display:flex; align-items:center; gap:14px; margin-bottom:18px;
+}
+.logo-crop-zoom{flex:1; accent-color:var(--teal)}
+.logo-crop-dreh{
+  flex:none; width:44px; height:44px; border-radius:50%;
+  border:1px solid var(--line); background:var(--sheet); color:var(--ink);
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+}
+.logo-crop-dreh:hover{background:var(--teal-l); color:var(--teal-d)}
+.logo-crop-dreh .sym{font:400 19px var(--mono)}
+
 dialog.immo-dlg.lade-dlg{
   max-width:min(340px, calc(100% - 48px)); width:calc(100% - 48px);
   padding:30px 26px; text-align:center; background:var(--sheet);
