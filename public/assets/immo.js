@@ -615,15 +615,37 @@ const PTR_ICON = `<svg viewBox="0 0 24 24" width="25" height="25" aria-hidden="t
   <circle cx="12" cy="14" r="1.2" fill="#0F6E5C"/>
 </svg>`;
 
-// Ab hier löst Loslassen das Neuladen aus; weiter als PTR_MAX folgt das
-// Abzeichen nicht mehr mit (der Zug läuft spürbar aus, statt hart zu stoppen).
+// Ab hier löst Loslassen das Neuladen aus.
 const PTR_SCHWELLE = 68;
+// N467 — PTR_MAX ist keine Wand mehr, sondern der Punkt, ab dem der Widerstand
+// stark zunimmt. Nutzer: „blockier die Länge nicht, wie weit man's runterziehen
+// kann — lass es dem User offen."
 const PTR_MAX = 104;
-// N433-b — wie lange das Abzeichen nach dem Loslassen sichtbar dreht und
-// aufploppt, und wie lange danach das kontrollierte Hochfahren dauert (muss
-// zur Übergangszeit von `.scroll.ptr-heim` in immo.css passen).
-const PTR_HALT_MS = 460;
-const PTR_HEIM_MS = 320;
+// N433-b — wie lange das Abzeichen nach dem Loslassen sichtbar aufploppt und
+// auspendelt, und wie lange danach das kontrollierte Hochfahren dauert (beide
+// müssen zu `ptr-puff` bzw. zur Übergangszeit von `.ptr-kreis` in immo.css
+// passen). N467: auf Wunsch rund doppelt so lang wie vorher (460/320).
+const PTR_HALT_MS = 900;
+const PTR_HEIM_MS = 560;
+
+/* N467 — Wegstrecke des Zugs. Bis PTR_MAX folgt das Abzeichen dem Finger zur
+   Hälfte (Widerstand, damit es nicht am Finger klebt). Darüber hinaus geht es
+   weiter — nur mit stark wachsendem Widerstand statt einer harten Wand: die
+   Potenz 0,72 dämpft unbegrenzt, aus 200px Überzug werden noch rund 40px
+   zusätzlicher Weg. So bleibt die Geste offen, ohne ins Bodenlose zu laufen. */
+const ptrWeg = (delta) => {
+  const halb = delta * 0.5;
+  return halb <= PTR_MAX ? halb : PTR_MAX + Math.pow(halb - PTR_MAX, 0.72);
+};
+
+/* N467 — „mach beim Runterziehen das Logo dynamisch größer." Von 0,62 (wo es
+   gerade hinter der Kopfzeile hervorkommt) auf 1,12 bei PTR_MAX, darüber
+   flacher weiter. Gedeckelt bei 1,5: ohne Deckel würde ein beherzter Zug das
+   Abzeichen über die halbe Seite wachsen lassen. */
+const ptrSkala = (weit) => Math.min(
+  1.5,
+  0.62 + Math.min(weit, PTR_MAX) / PTR_MAX * 0.5
+       + Math.max(0, weit - PTR_MAX) / 420);
 
 /* N433 — Zum Aktualisieren nach unten ziehen.
    Hängt am inneren Scrollbereich, nicht am Dokument: seit dem Rahmenmodell
@@ -652,9 +674,10 @@ function ptrEinrichten() {
      freigibt (N433-b). Ist die Lücke noch kleiner als das Abzeichen selbst,
      ergibt das einen negativen Wert — dann lugt es gerade erst hinter der
      Kopfzeile hervor (z-index 15 unter deren 20), wie in nativen Apps. */
-  const abzeichenSetzen = (lueck, dreh) => {
+  const abzeichenSetzen = (lueck, dreh, skala) => {
     kreis.style.setProperty('--ptr-y', `${(lueck - 42) / 2}px`);
     kreis.style.setProperty('--ptr-rot', `${dreh}deg`);
+    kreis.style.setProperty('--ptr-skala', String(skala));
   };
 
   const zuruecksetzen = () => {
@@ -662,6 +685,7 @@ function ptrEinrichten() {
     anzeige.classList.remove('laeuft');
     kreis.style.removeProperty('--ptr-y');
     kreis.style.removeProperty('--ptr-rot');
+    kreis.style.removeProperty('--ptr-skala');
     kreis.style.opacity = '';
     scroll.classList.remove('ptr-zieht');
     scroll.classList.add('ptr-heim');
@@ -685,14 +709,14 @@ function ptrEinrichten() {
       if (weit > 0) zuruecksetzen();
       return;
     }
-    // Halber Weg: der Zug soll Widerstand haben, nicht am Finger kleben.
-    weit = Math.min(PTR_MAX, delta * 0.5);
+    // Widerstand statt Kleben am Finger — und ohne harte Grenze (N467).
+    weit = ptrWeg(delta);
     kreis.classList.add('zieht');
     // Der Inhalt fährt mit — er ist es, der die Lücke oben aufmacht.
     scroll.classList.add('ptr-zieht');
     scroll.classList.remove('ptr-heim');
     scroll.style.transform = `translateY(${weit}px)`;
-    abzeichenSetzen(weit, weit * 2.6);
+    abzeichenSetzen(weit, weit * 2.6, ptrSkala(weit));
     kreis.style.opacity = String(Math.min(1, weit / 34));
     e.preventDefault();
   }, { passive: false });
@@ -704,12 +728,15 @@ function ptrEinrichten() {
     laeuft = true;
 
     // 1. Auf die Ruhelage einrasten: der Inhalt bleibt einen Moment unten
-    //    stehen, das Abzeichen dreht sich in der Lücke und ploppt einmal auf.
+    //    stehen, das Abzeichen dreht sich einmal aus, federt auf die
+    //    Ruhegröße zurück und pendelt dort aus (`ptr-puff`).
+    //    N467 — die gezogene Größe wird als Startwert übergeben, damit die
+    //    Animation dort anfängt, wo der Finger aufgehört hat: kein Sprung.
     kreis.classList.remove('zieht');
     scroll.classList.remove('ptr-zieht');
     scroll.classList.add('ptr-heim');
     scroll.style.transform = `translateY(${PTR_SCHWELLE}px)`;
-    abzeichenSetzen(PTR_SCHWELLE, 0);
+    abzeichenSetzen(PTR_SCHWELLE, 0, ptrSkala(weit));
     kreis.style.opacity = '1';
     anzeige.classList.add('laeuft');
 
@@ -723,6 +750,9 @@ function ptrEinrichten() {
       anzeige.classList.remove('laeuft');
       void kreis.offsetHeight;                 // Stilstand erzwingen
       kreis.style.setProperty('--ptr-y', '-56px');
+      // N467 — beim Hochfahren schrumpft es wieder: der Weg nach oben liest
+      // sich damit als Zurückspringen, nicht als Wegschieben.
+      kreis.style.setProperty('--ptr-skala', '.72');
       kreis.style.opacity = '0';
       scroll.style.transform = '';
       setTimeout(() => location.reload(), PTR_HEIM_MS);

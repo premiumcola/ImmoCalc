@@ -10,13 +10,17 @@
   --disp:"Space Grotesk",system-ui,sans-serif;
   --body:"Inter",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
-  /* N466 — die Fläche der unteren Menüleiste. Bewusst ein NEUTRALER Grauton
-     ohne Farbstich: der erste Anlauf (N465) hatte den blaugrünen Unterton
-     der App geerbt und stand damit als dritter Grünton neben dem Teal der
-     Aktionsknöpfe — „das beisst sich farblich viel zu stark". Und bewusst
-     mittelgrau statt fast schwarz: die Leiste soll sich vom Papier absetzen,
-     nicht dagegen knallen. Weisse Beschriftung liegt darauf bei 5,8:1. */
-  --chrome:#5E6567; --chrome-text:#FFFFFF;
+  /* N466/N467 — die Fläche der unteren Menüleiste. Bewusst ein NEUTRALER
+     Grauton ohne Farbstich: der erste Anlauf (N465) hatte den blaugrünen
+     Unterton der App geerbt und stand damit als dritter Grünton neben dem
+     Teal der Aktionsknöpfe — „das beisst sich farblich viel zu stark".
+     N467, dritter und letzter Anlauf bei der Helligkeit: `#5E6567` „sticht
+     noch zu krass raus". Jetzt ein helles Mittelgrau — 2,25:1 gegen das
+     Papier (klar als eigene Fläche erkennbar, aber ohne Knall), und dunkel
+     genug, dass `--ink` darauf mit 5,75:1 lesbar bleibt. Damit fällt auch
+     die helle Beschriftung weg: Nutzer — „wenn die Menüleiste zu hell wird,
+     ist die Schrift halt in beiden Fällen dunkel." */
+  --chrome:#99A0A2;
 }
 *{box-sizing:border-box}
 /* Das `hidden`-Attribut bedeutet immer „weg". Ohne diese Regel überschreibt
@@ -144,18 +148,31 @@ body{
   width:42px; height:42px; border-radius:50%;
   background:var(--sheet); box-shadow:0 8px 18px -8px rgba(22,38,44,.5);
   display:flex; align-items:center; justify-content:center;
-  /* Ort und Drehung kommen als Variablen aus `ptrEinrichten()` — so kann die
-     Aufploppen-Animation unten denselben Ort weiterverwenden, ohne dass sich
-     Inline-`transform` und Keyframes gegenseitig überschreiben. */
-  --ptr-y:-56px; --ptr-rot:0deg;
-  transform:translateY(var(--ptr-y)) rotate(var(--ptr-rot)); opacity:0;
-  transition:transform .3s cubic-bezier(.2,.7,.3,1), opacity .2s;
+  /* Ort, Drehung und Größe kommen als Variablen aus `ptrEinrichten()` — so
+     kann die Animation unten denselben Ort weiterverwenden, ohne dass sich
+     Inline-`transform` und Keyframes gegenseitig überschreiben.
+     N467 — `--ptr-skala` ist neu: Nutzer „macht beim Runterziehen das Logo
+     dynamisch größer". Die Größe hängt jetzt am Zug, nicht mehr an einer
+     festen Zahl. */
+  --ptr-y:-56px; --ptr-rot:0deg; --ptr-skala:1;
+  transform:translateY(var(--ptr-y)) rotate(var(--ptr-rot))
+            scale(var(--ptr-skala));
+  opacity:0;
+  /* N467 — der Rückweg nach oben darf sich federn („dann springt's wieder
+     hoch"): die Kurve schwingt über 1 hinaus. Und er dauert jetzt knapp
+     doppelt so lang wie vorher (.3s), passend zu `PTR_HEIM_MS`. */
+  transition:transform .56s cubic-bezier(.34,1.3,.44,1), opacity .3s;
 }
 /* Während der Finger zieht, folgt das Abzeichen dem Zug direkt — eine
    Übergangszeit würde sich hier wie Gummi anfühlen, nicht wie Ziehen. */
 .ptr .ptr-kreis.zieht{transition:none}
 .ptr .ptr-kreis svg{width:25px; height:25px; display:block}
-.ptr.laeuft .ptr-kreis svg{animation:ptr-dreh .75s linear infinite}
+/* N467 — EINE ausrollende Umdrehung statt endlosem Kreiseln. Der Ablauf, den
+   der Nutzer beschrieben hat, endet nicht im Warten, sondern in der
+   Wackelbewegung des Abzeichens (siehe `ptr-puff`) — ein gleichzeitig
+   durchdrehendes Symbol darin sah nur unruhig aus. Die Drehung gehört jetzt
+   zum Aufploppen und ist danach still. */
+.ptr.laeuft .ptr-kreis svg{animation:ptr-dreh .4s cubic-bezier(.3,.8,.3,1) both}
 @keyframes ptr-dreh{to{transform:rotate(360deg)}}
 
 /* N433-b — Nutzer: „lass die Seite beim Neuladen runterziehen, also
@@ -169,14 +186,33 @@ body{
    des Abzeichens. Kein `will-change`: auf dem iPhone hat genau das schon
    einmal Inhalte während schwerer Scroll-Repaints ausgeblendet (N327-b). */
 .app > .scroll.ptr-zieht{transition:none}
-.app > .scroll.ptr-heim{transition:transform .34s cubic-bezier(.2,.8,.3,1)}
-/* Einmal aufploppen, während sich das Zeichen dreht. Die Keyframes tragen
-   `--ptr-y` mit, damit das Abzeichen dabei an seinem Platz bleibt. */
-.ptr.laeuft .ptr-kreis{animation:ptr-puff .42s cubic-bezier(.3,1.4,.5,1) both}
+.app > .scroll.ptr-heim{transition:transform .5s cubic-bezier(.2,.8,.3,1)}
+/* N467 — Nutzer: „macht das Ladeelement in der Animation ein bisschen länger
+   … beim Runterziehen wird das Logo dynamisch größer, dann springt's bis auf
+   eine gewisse Größe zurück, dann wobbelt's hin und her und dann springt's
+   wieder hoch. Die Animation kann ruhig eineinhalb- bis zweifach so lang
+   sein."
+   Genau dieser Ablauf steht hier: der Anfang übernimmt mit
+   `var(--ptr-skala)` die Größe, auf die der Finger das Abzeichen gezogen hat
+   (kein Sprung beim Loslassen), federt einmal über die Ruhegröße hinaus und
+   fällt darunter zurück — das ist das „auf eine gewisse Größe zurück". Danach
+   pendelt es mit abnehmendem Ausschlag aus (±10° → ±1,5°). Das Hochfahren
+   danach macht die Übergangszeit oben.
+   Die Keyframes tragen `--ptr-y` mit, damit das Abzeichen dabei an seinem
+   Platz bleibt. Gesamtdauer 900ms statt 420ms; mit dem längeren Rückweg
+   (560ms statt 300ms) läuft der ganze Ablauf jetzt rund 1,9-mal so lang. */
+.ptr.laeuft .ptr-kreis{animation:ptr-puff .9s cubic-bezier(.4,0,.2,1) both}
 @keyframes ptr-puff{
-  0%{transform:translateY(var(--ptr-y)) scale(.72)}
-  50%{transform:translateY(var(--ptr-y)) scale(1.16)}
-  100%{transform:translateY(var(--ptr-y)) scale(1)}
+  0%  {transform:translateY(var(--ptr-y)) rotate(0deg) scale(var(--ptr-skala))}
+  12% {transform:translateY(var(--ptr-y)) rotate(0deg) scale(1.2)}
+  24% {transform:translateY(var(--ptr-y)) rotate(0deg) scale(.93)}
+  34% {transform:translateY(var(--ptr-y)) rotate(-10deg) scale(1.03)}
+  46% {transform:translateY(var(--ptr-y)) rotate(9deg) scale(1)}
+  58% {transform:translateY(var(--ptr-y)) rotate(-7deg) scale(1)}
+  70% {transform:translateY(var(--ptr-y)) rotate(5deg) scale(1)}
+  82% {transform:translateY(var(--ptr-y)) rotate(-3deg) scale(1)}
+  92% {transform:translateY(var(--ptr-y)) rotate(1.5deg) scale(1)}
+  100%{transform:translateY(var(--ptr-y)) rotate(0deg) scale(1)}
 }
 @media(prefers-reduced-motion:reduce){
   .ptr.laeuft .ptr-kreis svg{animation:none}
@@ -611,14 +647,10 @@ button.chip:hover{filter:brightness(.96)}
   display:block; max-width:100%;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-/* N465 — auf der dunklen Leiste (siehe `.nav::after`) kehrt sich die
-   Beschriftung um: `--ink` läge dort bei 1,9:1 und wäre praktisch unlesbar,
-   Weiss liegt bei 5,8:1 (nachgerechnet). Bewusst NACH der Grundregel
-   `.nav a{color:var(--ink)}` — beide sind gleich spezifisch, eine
-   Media-Query zählt dafür nicht mit, es entscheidet die Reihenfolge. */
-@media(max-width:479px){
-  .nav a{color:var(--chrome-text)}
-}
+/* N467 — die helle Sonder-Beschriftung aus N465 ist wieder raus: die Leiste
+   ist jetzt hell genug (`--chrome`, siehe oben), dass `--ink` mit 5,75:1
+   darauf liegt. Damit gilt überall dieselbe Textfarbe — eine Umkehrung
+   weniger, die man im Kopf behalten muss. */
 /* Das Kuerzen ist die Notbremse, nicht der Normalfall: auf dem iPhone soll
    „Nebenkosten" ganz dastehen — die vier flachen Eintraege teilen sich die
    Breite, der runde Dokumente-Knopf in der Mitte zaehlt separat (fixe
