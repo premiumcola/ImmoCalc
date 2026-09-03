@@ -14,13 +14,17 @@
      Grauton ohne Farbstich: der erste Anlauf (N465) hatte den blaugrünen
      Unterton der App geerbt und stand damit als dritter Grünton neben dem
      Teal der Aktionsknöpfe — „das beisst sich farblich viel zu stark".
-     N467, dritter und letzter Anlauf bei der Helligkeit: `#5E6567` „sticht
-     noch zu krass raus". Jetzt ein helles Mittelgrau — 2,25:1 gegen das
-     Papier (klar als eigene Fläche erkennbar, aber ohne Knall), und dunkel
-     genug, dass `--ink` darauf mit 5,75:1 lesbar bleibt. Damit fällt auch
-     die helle Beschriftung weg: Nutzer — „wenn die Menüleiste zu hell wird,
-     ist die Schrift halt in beiden Fällen dunkel." */
-  --chrome:#99A0A2;
+     N467, Helligkeit: `#5E6567` „sticht noch zu krass raus".
+     N468, nochmal heller und diesmal aus dem Bestand statt neu gemischt —
+     Nutzer: „nimm einen Grauton in die Richtung, wie wir's auch schon auf
+     der Homepage haben." `#A9B4B4` gibt es bereits (der Scrollbalken-Griff
+     im Überfahren, immo.css weiter unten): 1,75:1 gegen das Papier — als
+     eigene Fläche erkennbar, aber ruhig —, und `--ink` liegt darauf bei
+     7,4:1. Damit fällt auch die helle Beschriftung weg: Nutzer — „wenn die
+     Menüleiste zu hell wird, ist die Schrift halt in beiden Fällen dunkel."
+     Der helle Schleier dahinter bleibt unverändert (ausdrücklich so
+     gewünscht) — er trägt die Abgrenzung mit. */
+  --chrome:#A9B4B4;
 }
 *{box-sizing:border-box}
 /* Das `hidden`-Attribut bedeutet immer „weg". Ohne diese Regel überschreibt
@@ -750,25 +754,31 @@ button.chip:hover{filter:brightness(.96)}
        damit der Knopf weiter erhaben wirkt statt zu schweben. Bewusst KEIN
        Ring mit 0 Blur (`0 0 0 Npx`): der wirkte am Gerät als harte Kante
        (Fund aus N327-b). */
-    /* N466 — zurück auf den Ton der App (`--teal`, 15/110/92). Der helle
-       Schein aus N465 war für die fast schwarze Leiste gedacht; auf dem
-       neutralen Mittelgrau ist er nicht mehr nötig und stand als eigener
-       Grünton neben Knopf und Aktiv-Markierung („ein ganz anderer Grünton").
+    /* N468 — Nutzer: „der Scan-Knopf ist auch sehr dunkel, mach den heller —
+       nimm am besten Grüntöne, die wir schon haben." `--pos` ist das hellste
+       gesättigte Grün der Palette und steht auf der Startseite ohnehin schon
+       (die grünen Wertzuwachs-Abzeichen), `--teal` war der dunkelste Ton
+       überhaupt. Weiss darauf liegt bei 5,0:1. Beim Drücken geht es auf
+       `--teal` zurück — dunkler, aber kein neuer Ton.
+       Der Schein trägt denselben Wechsel mit; ein Schein im alten Dunkelgrün
+       hinge sonst als eigener Grünton am neuen Knopf (der Fund aus N466).
        Weiterhin zwei konzentrische Ebenen ohne Versatz, damit der Schein dem
        Kreis nach allen Seiten gleich folgt (N463), plus eine flache
        versetzte Ebene für die Tiefe. Dass er überhaupt rund ausläuft statt
        eckig abzubrechen, liegt am `overflow:visible` oben (N465). */
-    width:66px; height:66px; border-radius:999px; background:var(--teal);
-    color:#fff; box-shadow:0 0 14px 3px rgba(15,110,92,.26),
-                            0 0 30px 8px rgba(15,110,92,.13),
-                            0 5px 12px -4px rgba(15,110,92,.30);
+    width:66px; height:66px; border-radius:999px; background:var(--pos);
+    color:#fff; box-shadow:0 0 14px 3px rgba(46,125,79,.26),
+                            0 0 30px 8px rgba(46,125,79,.13),
+                            0 5px 12px -4px rgba(46,125,79,.30);
   }
   .nav a[href="eingang.html"] .ni-doc svg{width:30px; height:30px}
   .nav a[href="eingang.html"] .ni-plus svg{width:26px; height:26px}
   .nav a[href="eingang.html"] .nl{display:none}
-  .nav a[href="eingang.html"]:hover .ni{background:var(--teal-d)}
+  /* N468 — gedrückt/aktiv eine Stufe dunkler als `--pos`, aber ohne neuen
+     Ton: `--teal` ist der nächstdunklere Grünwert der Palette. */
+  .nav a[href="eingang.html"]:hover .ni{background:var(--teal)}
   .nav a[href="eingang.html"][aria-current=page]{background:none}
-  .nav a[href="eingang.html"][aria-current=page] .ni{background:var(--teal-d)}
+  .nav a[href="eingang.html"][aria-current=page] .ni{background:var(--teal)}
   .nav a[href="eingang.html"][aria-current=page] .ni-doc{display:none}
   .nav a[href="eingang.html"][aria-current=page] .ni-plus{display:flex}
 }
