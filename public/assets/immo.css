@@ -468,7 +468,7 @@ button.chip:hover{filter:brightness(.96)}
      von der Seite schwer unterscheidbar". Jetzt die App-eigene Papierfarbe
      (`--paper`, etwas dunkler als reines Weiß) als Tönung statt Weiß —
      hebt sich von weißen UND von hellgrauen Karten klar ab. */
-  background:rgba(176,187,189,.94);
+  background:rgba(150,163,166,.96);
   -webkit-backdrop-filter:blur(46px) saturate(1.1);
   backdrop-filter:blur(46px) saturate(1.1);
   isolation:isolate;
@@ -505,13 +505,13 @@ button.chip:hover{filter:brightness(.96)}
 @media(max-width:999px){
   .nav::before{
     content:"";
-    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-56px;
+    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-28px;
     z-index:-1;
-    background:rgba(176,187,189,.94);
+    background:rgba(150,163,166,.96);
     -webkit-backdrop-filter:blur(44px) saturate(1.1);
     backdrop-filter:blur(44px) saturate(1.1);
-    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 40%, #000 100%);
-    mask-image:linear-gradient(to bottom, transparent 0%, #000 40%, #000 100%);
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 25%, #000 100%);
+    mask-image:linear-gradient(to bottom, transparent 0%, #000 25%, #000 100%);
     pointer-events:none;
   }
 }
