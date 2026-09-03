@@ -1432,3 +1432,22 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
 @media(max-width:479px){
   html{background:#000}
 }
+
+/* ==========================================================================
+   N464 TEST — Diagnose der OBEREN Leiste. Bewusst weit auseinanderliegende
+   Farben (nicht wie beim letzten Mal Rot auf Gelb, was zu Orange verschmolz)
+   und volle Deckkraft, damit nichts durch Überlagerung mischt.
+
+     BLAU    = .bar          die Titelleiste selbst
+     MAGENTA = html          die Fläche dahinter (der Streifen über der Leiste)
+     GRÜN    = body          das Blatt hinter der App
+     CYAN    = der Schatten UNTER der Titelleiste (testweise wieder an)
+   ========================================================================== */
+@media(max-width:999px){
+  .bar{
+    background:#1E6EFF !important;
+    box-shadow:0 10px 18px -6px rgba(0,220,255,.95) !important;
+  }
+  html{background:#FF2FA0 !important}
+  body{background:#12B76A !important}
+}
