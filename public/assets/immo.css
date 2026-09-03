@@ -468,7 +468,7 @@ button.chip:hover{filter:brightness(.96)}
      von der Seite schwer unterscheidbar". Jetzt die App-eigene Papierfarbe
      (`--paper`, etwas dunkler als reines Weiß) als Tönung statt Weiß —
      hebt sich von weißen UND von hellgrauen Karten klar ab. */
-  background:rgba(126,140,145,.97);
+  background:rgba(134,148,152,.97);
   -webkit-backdrop-filter:blur(46px) saturate(1.1);
   backdrop-filter:blur(46px) saturate(1.1);
   isolation:isolate;
@@ -529,7 +529,10 @@ button.chip:hover{filter:brightness(.96)}
   /* N327-b — Referenz empfiehlt 54px Touch-Ziel-Höhe (über dem 44px-Minimum
      der App) für die Dock-Buttons; hier übernommen. */
   gap:4px; padding:8px 2px; min-height:54px; text-decoration:none;
-  color:var(--soft);
+  /* N463 — auf der dunkleren Pille trug `--soft` nur 1,59:1 Kontrast, die
+     Beschriftung war praktisch nicht mehr lesbar. `--ink` liegt bei 4,97:1
+     (nachgemessen) und hält damit die Schwelle für normalen Text. */
+  color:var(--ink);
   /* N327-b — Nutzer: die aktive Markierung soll denselben Rundungs-Radius
      tragen wie die Pille selbst. Konzentrisch zur 26px-Aussenrundung bei
      8px Pillen-Innenabstand ergibt 18px (26−8) für dieses innere Element. */
@@ -626,10 +629,21 @@ button.chip:hover{filter:brightness(.96)}
        grösser und schwächer werdende Ebenen nähern sich stattdessen einem
        echten, stufenlosen Verlauf an (dieselbe Idee wie mehrere
        Verlaufsstopps bei einem Farbverlauf). */
+    /* N463 — Nutzer: „der Schatten sollte die Form von dem Button haben und
+       links/rechts nicht abgeschnitten sein … kreisrund rundrum ein bisschen
+       rausstrahlen, nicht quadratisch." Die drei bisherigen Ebenen hatten
+       alle einen Versatz nach UNTEN und negativen Spread — dadurch lag
+       seitlich fast nichts und der Schein wirkte gekappt. Jetzt zwei
+       konzentrische Ebenen OHNE Versatz (Blur + kleiner positiver Spread):
+       der Schein folgt dem Kreis gleichmässig nach allen Seiten und darf die
+       Nachbarknöpfe leicht überblenden. Dazu eine flache Ebene mit Versatz,
+       damit der Knopf weiter erhaben wirkt statt zu schweben. Bewusst KEIN
+       Ring mit 0 Blur (`0 0 0 Npx`): der wirkte am Gerät als harte Kante
+       (Fund aus N327-b). */
     width:66px; height:66px; border-radius:999px; background:var(--teal);
-    color:#fff; box-shadow:0 4px 8px -2px rgba(15,110,92,.35),
-                            0 12px 24px -8px rgba(15,110,92,.22),
-                            0 26px 46px -16px rgba(15,110,92,.12);
+    color:#fff; box-shadow:0 0 14px 3px rgba(15,110,92,.26),
+                            0 0 30px 8px rgba(15,110,92,.13),
+                            0 5px 12px -4px rgba(15,110,92,.30);
   }
   .nav a[href="eingang.html"] .ni-doc svg{width:30px; height:30px}
   .nav a[href="eingang.html"] .ni-plus svg{width:26px; height:26px}
