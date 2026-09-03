@@ -160,7 +160,22 @@ class Nextcloud:
         if antwort.status_code >= 400:
             raise NextcloudFehler(f"Auflisten fehlgeschlagen ({antwort.status_code})")
 
-        wurzel_pfad = urlparse(self._wurzel).path.rstrip("/")
+        # N470 — Fund: „Nextcloud-Verbindung geht für einen neuen Nutzer
+        # nicht". Ursache war ein Kodierungs-Mismatch beim Abschneiden des
+        # Wurzel-Pfads. `self._wurzel` steckt den Benutzernamen über `quote()`
+        # kodiert in die URL (nötig, sonst bricht die Anfrage selbst bei
+        # Sonderzeichen im Namen), der `href` aus der Serverantwort wird
+        # weiter unten aber bewusst `unquote()`t. Ein Benutzername ohne
+        # Sonderzeichen kodiert auf sich selbst ab — der Unterschied blieb
+        # deshalb lange unbemerkt. Ein E-Mail-artiger Nextcloud-Login wie
+        # „t.luther@reifen-luther.de" kodiert das @ zu `%40`: das
+        # `startswith` traf nie, der GESAMTE absolute WebDAV-Pfad blieb als
+        # `pfad` jedes Ordners stehen. Beim Anklicken eines Unterordners kam
+        # dieser volle Pfad ein zweites Mal vor die Wurzel — Ergebnis ein
+        # nicht existierender, verdoppelter Pfad und „Ordner nicht gefunden".
+        # Jetzt wird auch die Wurzel entschlüsselt, damit beide Seiten des
+        # Vergleichs in derselben Schreibweise stehen.
+        wurzel_pfad = unquote(urlparse(self._wurzel).path.rstrip("/"))
         eigener = "/" + pfad.strip("/") if pfad.strip("/") else ""
         eintraege: list[Eintrag] = []
 
