@@ -442,11 +442,7 @@ button.chip:hover{filter:brightness(.96)}
      stärker negativer Spread) UND etwas schmaler unscharf, damit der sicht-
      bare Schattensaum sauber unter/neben der Pille bleibt und nicht mehr
      darüber hinausblutet — weiterhin weich verlaufend, keine harte Kante. */
-  /* N463 TEST — beide Schattenebenen eingefärbt, damit sichtbar wird, welche
-     wie weit reicht: BLAU = die enge Ebene direkt an der Pille
-     (0 5px 8px -3px), PINK = die grosse, weiche darunter
-     (0 20px 20px -11px). Eine Zeile, wieder weg. */
-  box-shadow:0 5px 8px -3px rgba(30,110,255,.85), 0 20px 20px -11px rgba(255,59,154,.85);
+  box-shadow:0 5px 8px -3px rgba(0,0,0,.26), 0 20px 20px -11px rgba(0,0,0,.34);
   /* Frosted Glass — Nutzer: „es gibt kein Blur" auf dem echten Gerät. Jetzt
      OHNE `@supports`-Gate (die Bedingungsprüfung selbst war ein möglicher,
      unnötiger Ausfallpunkt — praktisch jeder relevante mobile Browser kann
@@ -472,7 +468,7 @@ button.chip:hover{filter:brightness(.96)}
      von der Seite schwer unterscheidbar". Jetzt die App-eigene Papierfarbe
      (`--paper`, etwas dunkler als reines Weiß) als Tönung statt Weiß —
      hebt sich von weißen UND von hellgrauen Karten klar ab. */
-  background:rgba(150,163,166,.96);
+  background:rgba(126,140,145,.97);
   -webkit-backdrop-filter:blur(46px) saturate(1.1);
   backdrop-filter:blur(46px) saturate(1.1);
   isolation:isolate;
@@ -509,13 +505,16 @@ button.chip:hover{filter:brightness(.96)}
 @media(max-width:999px){
   .nav::before{
     content:"";
-    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-28px;
+    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-10px;
     z-index:-1;
-    background:rgba(150,163,166,.96);
+    /* N463 — HELL, bewusst NICHT im Ton der Pille: nur so entsteht die klare
+       Kante zwischen Leiste und dem, was hinter ihr liegt. Vorher trugen
+       beide denselben Grauton und verschwammen zu einer Fläche. */
+    background:rgba(244,247,247,.82);
     -webkit-backdrop-filter:blur(44px) saturate(1.1);
     backdrop-filter:blur(44px) saturate(1.1);
-    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 25%, #000 100%);
-    mask-image:linear-gradient(to bottom, transparent 0%, #000 25%, #000 100%);
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 11%, #000 100%);
+    mask-image:linear-gradient(to bottom, transparent 0%, #000 11%, #000 100%);
     pointer-events:none;
   }
 }
@@ -1418,33 +1417,4 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
 .bar{box-shadow:none}
 @media(max-width:479px){
   html{background:#000}
-}
-
-/* ==========================================================================
-   N463 TEST — Diagnose der unteren Leiste. Jedes Element eine eigene Farbe,
-   damit der Nutzer genau benennen kann, was ihn stört. Ein Block am
-   Dateiende: in einem Schnitt wieder entfernbar.
-
-     ROT      = .nav            die Pille selbst
-     GELB     = .nav::before    der Schleier/Nebel HINTER der Pille
-     BLAU     = enge Schattenebene   (0 5px 8px -3px)
-     PINK     = weiche Schattenebene (0 20px 20px -11px)
-     GRÜN     = der schwebende Dokumente-Knopf
-     LILA     = das reservierte Polster im Scrollbereich unter dem Inhalt
-   ========================================================================== */
-@media(max-width:999px){
-  .nav{
-    background:rgba(220,40,40,.92) !important;
-    -webkit-backdrop-filter:none !important;
-    backdrop-filter:none !important;
-    box-shadow:0 5px 8px -3px rgba(30,110,255,.95),
-               0 20px 20px -11px rgba(255,59,154,.95) !important;
-  }
-  .nav::before{
-    background:rgba(240,200,20,.92) !important;
-    -webkit-backdrop-filter:none !important;
-    backdrop-filter:none !important;
-  }
-  .nav a[href="eingang.html"]{background:rgba(20,160,90,.95) !important}
-  .app > .scroll{background:rgba(150,60,220,.16) !important}
 }
