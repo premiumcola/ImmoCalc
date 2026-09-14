@@ -122,37 +122,86 @@ def test_sperre_nach_zu_vielen_fehlversuchen():
 
 def test_passwort_festlegen_nur_solange_noch_keins_gesetzt_ist():
     """Der Erstanmeldungs-Flow der per Migration angelegten Bestandsfamilie
-    "Heidenreich" (passwort_hash=None, siehe test_familie_backfill.py)."""
+    "Heidenreich" (passwort_hash=None, siehe test_familie_backfill.py).
+    N469 #2 — seit die öffentliche Liste weg ist, läuft er über den NAMEN;
+    `/zustand` verrät nur, DASS eine Erstanmeldung offen ist, nicht für wen."""
     _ohne_override()
     with TestClient(app) as c:
-        familien = c.get("/api/auth/familien").json()
-        heidenreich = next(f for f in familien if f["name"] == "Heidenreich")
-        assert heidenreich["hat_passwort"] is False
+        assert c.get("/api/auth/zustand").json()["erstanmeldung_offen"] is True
 
         antwort = c.post("/api/auth/passwort-festlegen",
-                         json={"familie_id": heidenreich["id"], "passwort": "sehrsicher123"})
-        assert antwort.status_code == 200
+                         json={"name": "heidenreich", "passwort": "sehrsicher123"})
+        assert antwort.status_code == 200, antwort.text
+        assert c.get("/api/auth/ich").json()["name"] == "Heidenreich"
 
     with TestClient(app) as frisch:
         nochmal = frisch.post("/api/auth/passwort-festlegen",
-                              json={"familie_id": heidenreich["id"],
+                              json={"name": "Heidenreich",
                                     "passwort": "andereszeug99"})
         assert nochmal.status_code == 409
-        # Ab jetzt normaler Login mit dem gerade gesetzten Passwort.
+        assert frisch.get("/api/auth/zustand").json()["erstanmeldung_offen"] is False
+        # Ab jetzt normaler Login mit dem gerade gesetzten Passwort — per Name.
         login = frisch.post("/api/auth/login",
-                            json={"familie_id": heidenreich["id"],
-                                  "passwort": "sehrsicher123"})
+                            json={"name": "Heidenreich", "passwort": "sehrsicher123"})
         assert login.status_code == 200
 
 
-def test_familien_liste_liefert_nie_den_passwort_hash():
+def test_die_oeffentliche_familienliste_gibt_es_nicht_mehr():
+    """N469 #2 — auf einer Domain wäre `GET /familien` eine Nutzerliste zum
+    Durchprobieren gewesen. Ein unbekannter Name und ein falsches Passwort
+    müssen von aussen gleich aussehen."""
     _ohne_override()
     with TestClient(app) as c:
         c.post("/api/auth/registrieren",
-              json={"name": "Kein-Hash-Leck", "passwort": "sehrsicher123"})
-        for f in c.get("/api/auth/familien").json():
-            assert "passwort_hash" not in f
-            assert "passwort_salz" not in f
+              json={"name": "Kein-Leck", "passwort": "sehrsicher123"})
+    with TestClient(app) as gast:
+        assert gast.get("/api/auth/familien").status_code in (404, 405)
+        unbekannt = gast.post("/api/auth/login",
+                              json={"name": "Gibtsnicht", "passwort": "sehrsicher123"})
+        falsch = gast.post("/api/auth/login",
+                           json={"name": "Kein-Leck", "passwort": "falschfalschfalsch"})
+        assert unbekannt.status_code == falsch.status_code == 401
+        assert unbekannt.json()["detail"] == falsch.json()["detail"]
+
+
+def test_registrieren_verlangt_den_einladungscode_wenn_gesetzt(monkeypatch):
+    """N469 #3 — mit `EINLADUNGS_CODE` legt sich niemand ohne ihn eine
+    Familie an; ohne die Variable bleibt es offen wie im Heimnetz."""
+    _ohne_override()
+    monkeypatch.setenv("EINLADUNGS_CODE", "nur-fuer-freunde")
+    with TestClient(app) as c:
+        assert c.get("/api/auth/zustand").json()["einladung_noetig"] is True
+        ohne = c.post("/api/auth/registrieren",
+                      json={"name": "Eingeladen", "passwort": "sehrsicher123"})
+        assert ohne.status_code == 403
+        falsch = c.post("/api/auth/registrieren",
+                        json={"name": "Eingeladen", "passwort": "sehrsicher123",
+                              "einladungs_code": "geraten"})
+        assert falsch.status_code == 403
+        richtig = c.post("/api/auth/registrieren",
+                         json={"name": "Eingeladen", "passwort": "sehrsicher123",
+                               "einladungs_code": "nur-fuer-freunde"})
+        assert richtig.status_code == 201, richtig.text
+
+    monkeypatch.delenv("EINLADUNGS_CODE")
+    with TestClient(app) as c:
+        assert c.get("/api/auth/zustand").json()["einladung_noetig"] is False
+        assert c.post("/api/auth/registrieren",
+                      json={"name": "Offen", "passwort": "sehrsicher123"}
+                      ).status_code == 201
+
+
+def test_passwort_braucht_zwoelf_zeichen():
+    """N469 #7 — 8 → 12 vor dem öffentlichen Rollout."""
+    _ohne_override()
+    with TestClient(app) as c:
+        elf = c.post("/api/auth/registrieren",
+                     json={"name": "Elfzeichen", "passwort": "elfzeichen1"})
+        assert elf.status_code == 400
+        assert "12" in elf.json()["detail"]
+        zwoelf = c.post("/api/auth/registrieren",
+                        json={"name": "Elfzeichen", "passwort": "zwoelfzeich1"})
+        assert zwoelf.status_code == 201
 
 
 
@@ -287,10 +336,13 @@ def test_logo_wird_quadratisch_gespeichert_und_ausgeliefert():
         assert bild.width == bild.height, "die Kachel ist quadratisch"
         assert bild.width <= 256
 
-        # Der Anmeldescreen zeigt es — er liest dieselbe Liste.
-        eintrag = next(f for f in c.get("/api/auth/familien").json()
-                       if f["name"] == "Luther")
-        assert eintrag["logo_pfad"] == pfad
+        # Nach erneutem Anmelden kommt dasselbe Logo mit — es hängt an der
+        # Familie, nicht an der Sitzung.
+        fid = c.get("/api/auth/ich").json()["id"]
+    with TestClient(app) as frisch:
+        login = frisch.post("/api/auth/login",
+                            json={"familie_id": fid, "passwort": "sehrsicher123"})
+        assert login.json()["logo_pfad"] == pfad
 
 
 def test_logo_entfernen_geht_zurueck_auf_kein_logo():

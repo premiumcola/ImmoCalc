@@ -1,6 +1,9 @@
-"""N436 — Familien-Anmeldung. `GET /familien` ist die einzige Route hier, die
-absichtlich OHNE Anmeldung erreichbar ist (die Auswahlliste auf dem
-Anmeldescreen selbst) — nie den Passwort-Hash ausliefern.
+"""N436 — Familien-Anmeldung. Ohne Anmeldung erreichbar sind hier nur die
+Wege HINEIN (`/zustand`, `/login`, `/login/2fa`, `/registrieren`,
+`/passwort-festlegen`) — und keiner davon nennt je einen Namen, den der
+Aufrufer nicht selbst geschickt hat. N469 #2: die frühere öffentliche
+Auswahlliste `GET /familien` ist weg; auf einer Domain wäre sie eine
+Nutzerliste zum Durchprobieren gewesen.
 
 Reihenfolge egal (kein zweisegmentiger Fänger hier wie bei stammdaten.py),
 aber registriert VOR `stammdaten` wie jeder andere Router auch (main.py)."""
@@ -13,11 +16,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from .. import totp
-from ..auth import (MAX_FEHLVERSUCHE, SITZUNG_COOKIE, SPERRDAUER,
-                    cookie_sicher, neuer_sitzungstoken, neues_zweifaktorticket,
+from ..auth import (MAX_FEHLVERSUCHE, MIN_PASSWORT, SITZUNG_COOKIE, SPERRDAUER,
+                    cookie_sicher, einladungscode_noetig, einladungscode_stimmt,
+                    neuer_sitzungstoken, neues_zweifaktorticket,
                     passwort_hashen, passwort_pruefen, token_hashen)
 from ..db import get_session
 from ..deps import aktuelle_familie
@@ -31,33 +36,46 @@ class RegistrierenIn(BaseModel):
     name: str
     passwort: str
     logo_pfad: str | None = None
+    einladungs_code: str | None = None
 
 
 class PasswortFestlegenIn(BaseModel):
-    familie_id: int
+    familie_id: int | None = None
+    name: str | None = None
     passwort: str
 
 
 class LoginIn(BaseModel):
-    familie_id: int
+    """N469 #2 — der Anmeldescreen kennt keine Liste mehr, er schickt den
+    NAMEN. `familie_id` bleibt als zweiter Weg erhalten (Tests, ältere
+    Aufrufer); einer von beiden muss da sein."""
+    familie_id: int | None = None
+    name: str | None = None
     passwort: str
 
 
-def _familie_minimal(f: Familie) -> dict:
-    """Für `/familien` — die einzige UNAUTHENTIFIZIERTE Route hier. Bewusst
-    nicht `_familie_oeffentlich`: `hat_2fa` verrät einem anonymen Besucher,
-    welche Familien einen zweiten Faktor haben und welche nicht — kein
-    Geheimnis in der Klasse eines Passwort-Hashs, aber trotzdem eine
-    Information, die nur die eigene, bereits angemeldete Familie sehen soll."""
-    return {"id": f.id, "name": f.name, "logo_pfad": f.logo_pfad,
-            "hat_passwort": f.passwort_hash is not None}
-
-
 def _familie_oeffentlich(f: Familie) -> dict:
-    """Für jede Route, die bereits ein Passwort geprüft hat oder eine
-    laufende Sitzung voraussetzt (`/registrieren`, `/login`, `/login/2fa`,
-    `/ich`, `/logo`) — die eigenen Daten der handelnden Familie."""
-    return {**_familie_minimal(f), "hat_2fa": f.totp_bestaetigt}
+    """Die eigenen Daten der handelnden Familie — nur nach geprüftem Passwort
+    oder mit laufender Sitzung. `hat_2fa` gehört genau deshalb hierher und
+    in keine unangemeldete Antwort."""
+    return {"id": f.id, "name": f.name, "logo_pfad": f.logo_pfad,
+            "hat_passwort": f.passwort_hash is not None,
+            "hat_2fa": f.totp_bestaetigt}
+
+
+def _nach_name(session: Session, name: str) -> Familie | None:
+    """Gross-/Kleinschreibung egal — „heidenreich" meint „Heidenreich"."""
+    return session.exec(select(Familie).where(
+        func.lower(Familie.name) == name.strip().lower())).first()
+
+
+def _familie_finden(session: Session, familie_id: int | None,
+                    name: str | None) -> Familie | None:
+    if familie_id is not None:
+        return session.get(Familie, familie_id)
+    if name and name.strip():
+        return _nach_name(session, name)
+    return None
 
 
 def _sitzung_setzen(response: Response, familie_id: int, session: Session) -> None:
@@ -71,22 +89,29 @@ def _sitzung_setzen(response: Response, familie_id: int, session: Session) -> No
                                     .total_seconds()))
 
 
-@router.get("/familien")
-def familien_liste(session: Session = Depends(get_session)) -> list[dict]:
-    """Öffentlich — die Auswahlliste auf dem Anmeldescreen. Nie den Hash."""
-    return [_familie_minimal(f)
-           for f in session.exec(select(Familie).order_by(Familie.name)).all()]
+@router.get("/zustand")
+def zustand(session: Session = Depends(get_session)) -> dict:
+    """Öffentlich, aber ohne einen einzigen Namen: nur das, was der
+    Anmeldescreen braucht, um die richtigen Zeilen zu zeigen.
+    `erstanmeldung_offen` ist nur auf einer frischen Instanz wahr — die per
+    Migration angelegte Bestandsfamilie hat dort noch kein Passwort."""
+    offen = session.exec(select(Familie).where(
+        Familie.passwort_hash.is_(None))).first() is not None      # noqa: E711
+    return {"erstanmeldung_offen": offen,
+            "einladung_noetig": einladungscode_noetig()}
 
 
 @router.post("/registrieren", status_code=201)
 def registrieren(daten: RegistrierenIn, response: Response,
                  session: Session = Depends(get_session)) -> dict:
+    if not einladungscode_stimmt(daten.einladungs_code):
+        raise HTTPException(403, "Der Einladungscode stimmt nicht")
     name = daten.name.strip()
     if not name:
         raise HTTPException(400, "Bitte einen Namen eingeben")
-    if len(daten.passwort) < 8:
-        raise HTTPException(400, "Das Passwort braucht mindestens 8 Zeichen")
-    if session.exec(select(Familie).where(Familie.name == name)).first():
+    if len(daten.passwort) < MIN_PASSWORT:
+        raise HTTPException(400, f"Das Passwort braucht mindestens {MIN_PASSWORT} Zeichen")
+    if _nach_name(session, name):
         raise HTTPException(409, "Diesen Namen gibt es schon")
     hash_, salz = passwort_hashen(daten.passwort)
     familie = Familie(name=name, logo_pfad=daten.logo_pfad,
@@ -104,13 +129,13 @@ def passwort_festlegen(daten: PasswortFestlegenIn, response: Response,
     """Der einmalige Erstanmeldungs-Flow für eine per Migration angelegte
     Familie (`passwort_hash IS NULL`) — die Migration selbst darf kein
     Passwort erfinden. Ist schon eines gesetzt, geht es nur über `/login`."""
-    familie = session.get(Familie, daten.familie_id)
+    familie = _familie_finden(session, daten.familie_id, daten.name)
     if not familie:
         raise HTTPException(404, "Familie nicht gefunden")
     if familie.passwort_hash is not None:
         raise HTTPException(409, "Für diese Familie ist schon ein Passwort gesetzt")
-    if len(daten.passwort) < 8:
-        raise HTTPException(400, "Das Passwort braucht mindestens 8 Zeichen")
+    if len(daten.passwort) < MIN_PASSWORT:
+        raise HTTPException(400, f"Das Passwort braucht mindestens {MIN_PASSWORT} Zeichen")
     familie.passwort_hash, familie.passwort_salz = passwort_hashen(daten.passwort)
     session.add(familie)
     session.commit()
@@ -121,7 +146,7 @@ def passwort_festlegen(daten: PasswortFestlegenIn, response: Response,
 @router.post("/login")
 def login(daten: LoginIn, response: Response,
          session: Session = Depends(get_session)) -> dict:
-    familie = session.get(Familie, daten.familie_id)
+    familie = _familie_finden(session, daten.familie_id, daten.name)
     if not familie:
         raise HTTPException(401, "Familie oder Passwort falsch")
     if familie.gesperrt_bis and familie.gesperrt_bis > datetime.utcnow():
@@ -270,8 +295,8 @@ def passwort_aendern(daten: PasswortAendernIn, request: Request,
     if daten.neu != daten.neu_wiederholung:
         raise HTTPException(400, "Die beiden neuen Passwörter sind nicht "
                                  "gleich.")
-    if len(daten.neu) < 8:
-        raise HTTPException(400, "Das Passwort braucht mindestens 8 Zeichen")
+    if len(daten.neu) < MIN_PASSWORT:
+        raise HTTPException(400, f"Das Passwort braucht mindestens {MIN_PASSWORT} Zeichen")
     if daten.neu == daten.alt:
         raise HTTPException(400, "Das neue Passwort ist das bisherige.")
 

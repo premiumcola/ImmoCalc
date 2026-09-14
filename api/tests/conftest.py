@@ -35,7 +35,7 @@ def _test_familie(session=None):
     anzumelden — ohne diesen Override wären sie geschlossen rot. Nimmt
     absichtlich die von `familie_migration` ohnehin schon angelegte
     "Heidenreich"-Familie (statt eine zweite, künstliche anzulegen), damit
-    Tests, die z. B. `GET /api/auth/familien` prüfen, keine Überraschung
+    Tests, die z. B. `GET /api/auth/zustand` prüfen, keine Überraschung
     erleben. Echte Anmeldung/Sitzung/Mandantentrennung prüfen `test_auth.py`
     und `test_mandantentrennung.py` — die entfernen diesen Override gezielt
     für ihre eigene Dauer."""

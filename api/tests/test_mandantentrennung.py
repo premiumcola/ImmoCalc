@@ -176,16 +176,17 @@ def test_ohne_anmeldung_kommt_man_ueberhaupt_nicht_hinein(welt):
         for pfad in ("/api/objekte", "/api/dokumente", "/api/kontakte",
                      f"/api/objekte/{welt['werte']['slug']}"):
             assert gast.get(pfad).status_code == 401, f"{pfad} war offen"
-        # Die Auswahlliste des Anmeldescreens bleibt bewusst offen — sie
-        # nennt nur Namen, nie einen Hash (siehe routers/auth.py).
-        assert gast.get("/api/auth/familien").status_code == 200
+        # N469 #2 — auch die frühere Auswahlliste ist zu. Der einzige offene
+        # Lesezugriff ist `/zustand`, und der nennt keinen einzigen Namen.
+        assert gast.get("/api/auth/familien").status_code in (404, 405)
 
 
-def test_die_familienliste_gibt_niemals_einen_hash_heraus(welt):
-    """Sie ist der einzige unangemeldete Endpunkt und darf deshalb nichts
-    ausser Name/Logo/„hat Passwort" enthalten."""
+def test_der_offene_zustand_nennt_keine_familie(welt):
+    """Der einzige unangemeldete Lesezugriff darf nichts enthalten, was auf
+    eine konkrete Familie schliessen lässt — keine Namen, keine ids, keine
+    Hashes, kein 2FA-Status."""
     with TestClient(app) as gast:
-        for eintrag in gast.get("/api/auth/familien").json():
-            assert set(eintrag) == {"id", "name", "logo_pfad", "hat_passwort"}
-            assert "passwort" not in str(eintrag).lower().replace(
-                "hat_passwort", "")
+        antwort = gast.get("/api/auth/zustand")
+        assert antwort.status_code == 200
+        assert set(antwort.json()) == {"erstanmeldung_offen", "einladung_noetig"}
+        assert all(isinstance(w, bool) for w in antwort.json().values())

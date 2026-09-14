@@ -90,16 +90,13 @@ def test_geheimnis_erscheint_nirgends_in_familien_liste_oder_ich():
     _ohne_override()
     with TestClient(app) as c:
         fid, geheimnis, _codes = _mit_2fa(c, "Kein-Leck")
-        for antwort in (c.get("/api/auth/ich").json(),
-                       *c.get("/api/auth/familien").json()):
-            assert "totp_geheimnis" not in antwort
-            assert "totp_wiederherstellung" not in antwort
-        assert c.get("/api/auth/ich").json()["hat_2fa"] is True
-        # Die ÖFFENTLICHE, unangemeldete Liste verrät nicht einmal, WER
-        # überhaupt einen zweiten Faktor hat — bewusst minimaler als `/ich`.
-        eigene = next(f for f in c.get("/api/auth/familien").json()
-                     if f["id"] == fid)
-        assert "hat_2fa" not in eigene
+        ich = c.get("/api/auth/ich").json()
+        assert "totp_geheimnis" not in ich
+        assert "totp_wiederherstellung" not in ich
+        assert ich["hat_2fa"] is True
+        # Der einzige unangemeldete Lesezugriff verrät nicht einmal, WER
+        # überhaupt einen zweiten Faktor hat.
+        assert "hat_2fa" not in str(c.get("/api/auth/zustand").json())
 
 
 def test_neues_einrichten_laesst_ein_aktives_geheimnis_unangetastet():

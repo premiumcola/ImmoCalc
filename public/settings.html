@@ -30,6 +30,21 @@
   .meldung.schlecht{background:var(--neg-bg);color:var(--neg)}
   .pfadleiste{font:600 12px var(--mono);color:var(--teal-d);background:var(--teal-l);
               border-radius:10px;padding:10px 12px;margin-bottom:10px;word-break:break-all}
+  /* N472 — Zwei-Faktor: der Einrichtungsschlüssel und die Wiederherstellungs-
+     codes stehen in Mono, gross genug zum Abtippen, in einer eigenen Fläche. */
+  .tfa-schluessel{font:600 15px var(--mono);letter-spacing:.06em;color:var(--teal-d);
+                  background:var(--teal-l);border-radius:10px;padding:12px 14px;
+                  margin:0 0 10px;word-break:break-all;text-align:center;
+                  user-select:all;-webkit-user-select:all}
+  .tfa-codes{font:500 14px var(--mono);line-height:1.9;color:var(--ink);
+             background:var(--sheet);border-radius:10px;padding:12px 16px;
+             margin:0 0 16px;columns:2;column-gap:18px;user-select:all;
+             -webkit-user-select:all}
+  .tfa-schritte{font:400 13px var(--body);color:var(--soft);line-height:1.55;
+                margin:0 0 14px;padding-left:18px}
+  .tfa-schritte li{margin-bottom:4px}
+  .tfa-link{display:inline-block;font:600 13px var(--body);color:var(--teal);
+            margin:0 0 14px}
   .ordnerliste{background:var(--sheet);border-radius:12px;max-height:210px;
                overflow:auto;margin-bottom:12px}
   .ordnerliste button{display:flex;align-items:center;gap:10px;width:100%;border:none;
@@ -347,6 +362,14 @@
       <span class="txt">
         <span class="t">Passwort ändern</span>
         <span class="d">Gilt für alle, die sich mit dieser Familie anmelden</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+    <button class="row" id="zweiFaktorRow">
+      <span class="ic">🛡</span>
+      <span class="txt">
+        <span class="t">Zwei-Faktor-Anmeldung</span>
+        <span class="d" id="zweiFaktorInfo">wird geladen …</span>
       </span>
       <span class="arr">›</span>
     </button>
@@ -762,7 +785,8 @@
 /* N216 (C) — die frühere Inline-Fachlogik liegt jetzt als Module unter
    ./assets/settings/. Verhaltensgleich; hier bleibt die Verdrahtung:
    Init-Aufrufe, der zentrale Schließen-Handler und die initiale Ladesequenz. */
-import { api, installNav, baueDialog, melde } from './assets/immo.js';
+import { api, installNav, baueDialog, melde, esc } from './assets/immo.js';
+import { feldmeldung, meldungWeg } from './assets/settings/state.js';
 import { verknuepfungenInit } from './assets/settings/verknuepfungen.js';
 import { versionZeigen } from './assets/settings/version.js';
 import { nextcloudInit, zustandLaden } from './assets/settings/nextcloud.js';
@@ -822,11 +846,160 @@ function familieZeigen(f) {
     familieIc.textContent = '👪';
     info.textContent = 'Angemeldet · Logo hinterlegen';
   }
+  zweiFaktorZeigen(f);
 }
 
 function familieLaden() {
   return api('/auth/ich').then(familieZeigen).catch(() => {});
 }
+
+/* N472 — Zwei-Faktor-Anmeldung: einrichten, Codes erneuern, abschalten.
+   Jede dieser Änderungen verlangt das Passwort (der Server prüft es), damit
+   eine offen gelassene Sitzung den zweiten Faktor nicht auf eigene Faust
+   austauschen oder abschalten kann. Kein QR-Code: der Schlüssel wird als
+   Text gezeigt und in der App über „Einrichtungsschlüssel eingeben" erfasst
+   — das können alle gängigen Authenticator-Apps. */
+const zweiFaktorInfo = document.getElementById('zweiFaktorInfo');
+let zweiFaktorAktiv = false;
+
+function zweiFaktorZeigen(f) {
+  zweiFaktorAktiv = Boolean(f.hat_2fa);
+  zweiFaktorInfo.textContent = zweiFaktorAktiv
+    ? 'Aktiv · beim Anmelden wird ein Code aus der App verlangt'
+    : 'Aus · empfohlen, sobald die App im Internet erreichbar ist';
+}
+
+const inVierergruppen = s => s.replace(/(.{4})(?=.)/g, '$1 ');
+
+/* Ein kleiner Dialog, der nur nach dem Passwort fragt — für alle drei
+   Aktionen dieselbe Form. Löst mit dem Passwort auf, oder mit null. */
+function passwortAbfrage(titel, text, knopf) {
+  return new Promise(resolve => {
+    const dlg = baueDialog(`
+      <div class="dt">${titel}</div>
+      <p>${text}</p>
+      <form id="tfaPwForm">
+        <div class="field">
+          <label for="tfaPw">Passwort der Familie</label>
+          <input class="inp" type="password" id="tfaPw" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn${knopf.gefahr ? ' gefahr' : ''}">${knopf.text}</button>
+      </form>`);
+    let fertig = false;
+    dlg.querySelector('#tfaPwForm').addEventListener('submit', e => {
+      e.preventDefault();
+      fertig = true;
+      resolve(dlg.querySelector('#tfaPw').value);
+      dlg.close();
+    });
+    dlg.addEventListener('close', () => { if (!fertig) resolve(null); });
+  });
+}
+
+function wiederherstellungscodesZeigen(codes) {
+  const dlg = baueDialog(`
+    <div class="dt">Wiederherstellungscodes</div>
+    <p>Jeder Code gilt genau einmal — für den Fall, dass das Handy mit der
+       Authenticator-App nicht da ist. Jetzt aufschreiben oder sicher ablegen:
+       danach werden sie nie wieder angezeigt.</p>
+    <div class="tfa-codes">${codes.map(c => `<div>${esc(c)}</div>`).join('')}</div>
+    <button type="button" class="btn" id="tfaCodesOk">Ich habe sie gespeichert</button>`);
+  dlg.querySelector('#tfaCodesOk').addEventListener('click', () => dlg.close());
+}
+
+function einrichtungDialog(daten) {
+  const dlg = baueDialog(`
+    <div class="dt">Authenticator-App verbinden</div>
+    <ol class="tfa-schritte">
+      <li>In der App (Google Authenticator, Aegis, Authy …) „Konto hinzufügen"
+          → „Einrichtungsschlüssel eingeben".</li>
+      <li>Kontoname: <b>ImmoCalc</b>, Schlüssel: der Text unten, Typ: zeitbasiert.</li>
+      <li>Den ersten Code aus der App hier eintippen.</li>
+    </ol>
+    <div class="tfa-schluessel">${esc(inVierergruppen(daten.geheimnis))}</div>
+    <a class="tfa-link" href="${esc(daten.otpauth_url)}">Direkt in der App öffnen ›</a>
+    <form id="tfaCodeForm">
+      <div class="meldung" id="tfaCodeFehler"></div>
+      <div class="field">
+        <label for="tfaCode">Code aus der App</label>
+        <input class="inp" type="text" id="tfaCode" inputmode="numeric"
+          autocomplete="one-time-code" maxlength="6" required>
+      </div>
+      <button type="submit" class="btn">Bestätigen und einschalten</button>
+    </form>`);
+  const fehler = dlg.querySelector('#tfaCodeFehler');
+  dlg.querySelector('#tfaCodeForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    meldungWeg(fehler);
+    try {
+      const antwort = await api('/auth/2fa/bestaetigen', { method: 'POST',
+        body: { code: dlg.querySelector('#tfaCode').value } });
+      dlg.close();
+      melde('Zwei-Faktor-Anmeldung eingeschaltet', 'pos');
+      familieLaden();
+      wiederherstellungscodesZeigen(antwort.wiederherstellungscodes);
+    } catch (f) {
+      feldmeldung(fehler, f.message || 'Der Code stimmt nicht');
+      dlg.querySelector('#tfaCode').select();
+    }
+  });
+}
+
+document.getElementById('zweiFaktorRow').addEventListener('click', async () => {
+  if (!zweiFaktorAktiv) {
+    const passwort = await passwortAbfrage('Zwei-Faktor-Anmeldung einschalten',
+      'Zusätzlich zum Passwort wird beim Anmelden ein sechsstelliger Code aus '
+      + 'einer Authenticator-App verlangt. Zum Einrichten bitte das Passwort bestätigen.',
+      { text: 'Weiter' });
+    if (passwort === null) return;
+    try {
+      einrichtungDialog(await api('/auth/2fa/einrichten', { method: 'POST',
+        body: { passwort } }));
+    } catch (f) { melde(f.message || 'Einrichten fehlgeschlagen', 'neg'); }
+    return;
+  }
+  const dlg = baueDialog(`
+    <div class="dt">Zwei-Faktor-Anmeldung</div>
+    <p>Aktiv. Beim Anmelden wird ein Code aus der Authenticator-App verlangt —
+       oder einer der Wiederherstellungscodes.</p>
+    <button type="button" class="btn" id="tfaNeuesGeraet">Anderes Handy verbinden</button>
+    <button type="button" class="btn" id="tfaCodesNeu">Wiederherstellungscodes neu erzeugen</button>
+    <button type="button" class="btn gefahr" id="tfaAus">Zwei-Faktor abschalten</button>`);
+  dlg.querySelector('#tfaNeuesGeraet').addEventListener('click', async () => {
+    dlg.close();
+    const passwort = await passwortAbfrage('Anderes Handy verbinden',
+      'Das bisherige Gerät bleibt gültig, bis der erste Code vom neuen bestätigt ist.',
+      { text: 'Weiter' });
+    if (passwort === null) return;
+    try {
+      einrichtungDialog(await api('/auth/2fa/einrichten', { method: 'POST',
+        body: { passwort } }));
+    } catch (f) { melde(f.message || 'Einrichten fehlgeschlagen', 'neg'); }
+  });
+  dlg.querySelector('#tfaCodesNeu').addEventListener('click', async () => {
+    dlg.close();
+    const passwort = await passwortAbfrage('Wiederherstellungscodes neu erzeugen',
+      'Die bisherigen Codes gelten danach nicht mehr.', { text: 'Neue Codes erzeugen' });
+    if (passwort === null) return;
+    try {
+      const antwort = await api('/auth/2fa/wiederherstellungscodes-neu',
+        { method: 'POST', body: { passwort } });
+      wiederherstellungscodesZeigen(antwort.wiederherstellungscodes);
+    } catch (f) { melde(f.message || 'Erzeugen fehlgeschlagen', 'neg'); }
+  });
+  dlg.querySelector('#tfaAus').addEventListener('click', async () => {
+    dlg.close();
+    const passwort = await passwortAbfrage('Zwei-Faktor abschalten',
+      'Danach reicht beim Anmelden wieder das Passwort allein.',
+      { text: 'Abschalten', gefahr: true });
+    if (passwort === null) return;
+    try {
+      await api('/auth/2fa/deaktivieren', { method: 'POST', body: { passwort } });
+      melde('Zwei-Faktor-Anmeldung abgeschaltet', 'pos');
+      familieLaden();
+    } catch (f) { melde(f.message || 'Abschalten fehlgeschlagen', 'neg'); }
+  });
+});
 
 document.getElementById('familieRow').addEventListener('click', async () => {
   const f = await api('/auth/ich').catch(() => null);
@@ -876,30 +1049,33 @@ document.getElementById('passwortRow').addEventListener('click', () => {
   const dlg = baueDialog(`
     <div class="dt">Passwort ändern</div>
     <form id="pwForm">
-      <div class="meldung" id="pwFehler" hidden></div>
+      <div class="meldung" id="pwFehler"></div>
       <div class="field">
         <label for="pwAlt">Bisheriges Passwort</label>
         <input class="inp" type="password" id="pwAlt" autocomplete="current-password" required>
       </div>
       <div class="field">
-        <label for="pwNeu">Neues Passwort (mind. 8 Zeichen)</label>
-        <input class="inp" type="password" id="pwNeu" autocomplete="new-password" minlength="8" required>
+        <label for="pwNeu">Neues Passwort (mind. 12 Zeichen)</label>
+        <input class="inp" type="password" id="pwNeu" autocomplete="new-password" minlength="12" required>
       </div>
       <div class="field">
         <label for="pwNeu2">Neues Passwort wiederholen</label>
-        <input class="inp" type="password" id="pwNeu2" autocomplete="new-password" minlength="8" required>
+        <input class="inp" type="password" id="pwNeu2" autocomplete="new-password" minlength="12" required>
       </div>
       <button type="submit" class="btn">Passwort ändern</button>
     </form>`);
   const fehler = dlg.querySelector('#pwFehler');
-  const zeige = text => { fehler.textContent = text; fehler.hidden = !text; };
+  // N472-Fund: `.meldung` ist per CSS `display:none` und wird nur über die
+  // Klasse `an` sichtbar — das frühere `hidden`-Umschalten zeigte den Fehler
+  // deshalb nie an. Jetzt derselbe Helfer wie in allen anderen Dialogen.
+  const zeige = text => (text ? feldmeldung(fehler, text) : meldungWeg(fehler));
   dlg.querySelector('#pwForm').addEventListener('submit', async e => {
     e.preventDefault();
     const alt = dlg.querySelector('#pwAlt').value;
     const neu = dlg.querySelector('#pwNeu').value;
     const neu2 = dlg.querySelector('#pwNeu2').value;
     if (neu !== neu2) { zeige('Die beiden neuen Passwörter sind nicht gleich.'); return; }
-    if (neu.length < 8) { zeige('Das neue Passwort braucht mindestens 8 Zeichen.'); return; }
+    if (neu.length < 12) { zeige('Das neue Passwort braucht mindestens 12 Zeichen.'); return; }
     zeige('');
     try {
       await api('/auth/passwort-aendern', { method: 'POST',

@@ -34,6 +34,24 @@ def cookie_sicher() -> bool:
 SITZUNG_GUELTIGKEIT = timedelta(days=30)
 MAX_FEHLVERSUCHE = 8
 SPERRDAUER = timedelta(minutes=5)
+# N469 #7 — 8 → 12 vor dem öffentlichen Rollout. Bei ~96 erlaubten Versuchen
+# pro Stunde (siehe Sperre) ist Länge der einzige Hebel gegen Wörterbuch-
+# Angriffe, den die App selbst in der Hand hat.
+MIN_PASSWORT = 12
+
+
+def einladungscode_noetig() -> bool:
+    """N469 #3 — `EINLADUNGS_CODE` gesetzt heisst: niemand legt sich ohne ihn
+    eine Familie an. Leer (Vorgabe) = offen wie bisher im Heimnetz. Wie
+    `cookie_sicher()` bei jedem Aufruf gelesen."""
+    return bool(os.environ.get("EINLADUNGS_CODE", "").strip())
+
+
+def einladungscode_stimmt(eingabe: str | None) -> bool:
+    erwartet = os.environ.get("EINLADUNGS_CODE", "").strip()
+    if not erwartet:
+        return True
+    return hmac.compare_digest((eingabe or "").strip(), erwartet)
 # N472 — knapp bemessen: das Ticket überbrückt nur den Moment zwischen
 # richtigem Passwort und eingetipptem Code aus der Authenticator-App.
 ZWEI_FAKTOR_TICKET_GUELTIGKEIT = timedelta(minutes=2)

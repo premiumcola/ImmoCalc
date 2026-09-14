@@ -21,9 +21,8 @@
      das Grid-Layout der Hauptnavigation um (`grid-template-areas:"nav bar"
      "nav scroll"`) — ohne die dortigen `.nav`/`.bar`/`.scroll`-Kinder landet
      der Inhalt in der 236px-Nav-Spalte, der Rest der 1180px-Box bleibt leer.
-     Genau das sorgte für den fast leeren, "seichten" Anblick auf dem Desktop:
-     kein Rahmen, keine erkennbare Karte, nur sehr helle Fläche. `.gate`
-     bleibt bewusst schmal und mittig — ein Anmeldescreen ist kein App-Schirm. */
+     `.gate` bleibt bewusst schmal und mittig — ein Anmeldescreen ist kein
+     App-Schirm. */
   body{
     background:radial-gradient(ellipse 900px 460px at 50% -8%,
       var(--teal-l) 0%, var(--paper) 60%);
@@ -45,7 +44,7 @@
     display:flex; flex-direction:column;
     padding:calc(32px + env(safe-area-inset-top)) 22px 20px;}
 
-  .hero{text-align:center; padding:4px 8px 30px}
+  .hero{text-align:center; padding:4px 8px 26px}
   .hero .markwrap{width:80px; height:80px; border-radius:22px; margin:0 auto 18px;
     background:var(--teal-l); display:flex; align-items:center; justify-content:center;
     box-shadow:0 16px 32px -16px rgba(15,110,92,.45)}
@@ -59,15 +58,24 @@
   .liste{flex:1}
   .sec{font:600 11px var(--mono); letter-spacing:.1em; text-transform:uppercase;
     color:var(--soft); margin:0 0 10px; display:block}
+  /* N469 #2 — das Anmeldeformular steht direkt auf der Seite: es gibt keine
+     Liste mehr, aus der man wählen könnte (die wäre auf einer Domain eine
+     Nutzerliste zum Durchprobieren). Wer kommt, sieht sofort die Felder. */
+  .anmelden{margin-bottom:22px}
+  .anmelden .btn{margin-top:4px}
+  .weitere{display:flex; flex-direction:column; gap:8px}
 
   .fusszeile{text-align:center; padding:20px 8px calc(14px + env(safe-area-inset-bottom));
     font:500 11px var(--mono); letter-spacing:.03em; color:var(--soft)}
   .fusszeile .herz{color:var(--neg)}
 
-  /* Anmelde-/Anlegen-Dialog: eigenes schmales Formular im Dialograhmen aus immo.css. */
   .dlg-form .field:last-of-type{margin-bottom:18px}
   .dlg-fehler{font:500 12.5px var(--body); color:var(--neg); margin:-6px 0 14px; display:none}
   .dlg-fehler.zeigen{display:block}
+  /* N472 — das Code-Feld: gross, mittig, tabellarisch, damit sechs Ziffern
+     wie eine Zahl lesbar sind und nicht wie ein Wort. */
+  .code-feld{font:600 22px var(--mono); letter-spacing:.18em; text-align:center;
+    font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -81,20 +89,39 @@
     </div>
 
     <div class="liste">
-      <span class="sec">Familien</span>
-      <div id="familien">
-        <div class="row" style="cursor:default">
-          <span class="txt"><span class="t">Familien werden geladen …</span></span>
+      <form class="anmelden" id="login-form">
+        <span class="sec">Anmelden</span>
+        <div class="dlg-fehler" id="login-fehler"></div>
+        <div class="field">
+          <label for="login-name">Familie</label>
+          <input class="inp" type="text" id="login-name" autocomplete="username"
+            autocapitalize="off" spellcheck="false" required autofocus>
         </div>
+        <div class="field">
+          <label for="login-pw">Passwort</label>
+          <input class="inp" type="password" id="login-pw" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn" id="login-knopf">Anmelden</button>
+      </form>
+
+      <div class="weitere">
+        <a class="row ghost" href="#" id="erst-anmeldung" hidden>
+          <span class="ic">🔑</span>
+          <span class="txt">
+            <span class="t">Erstanmeldung</span>
+            <span class="d">Passwort für die vorhandene Familie festlegen</span>
+          </span>
+          <span class="arr">›</span>
+        </a>
+        <a class="row ghost" href="#" id="neu-anlegen">
+          <span class="ic">＋</span>
+          <span class="txt">
+            <span class="t">Neue Familie anlegen</span>
+            <span class="d">Eigene Immobilien, eigener Zugang</span>
+          </span>
+          <span class="arr">›</span>
+        </a>
       </div>
-      <a class="row ghost" href="#" id="neu-anlegen">
-        <span class="ic">＋</span>
-        <span class="txt">
-          <span class="t">Neue Familie anlegen</span>
-          <span class="d">Eigene Immobilien, eigener Zugang</span>
-        </span>
-        <span class="arr">›</span>
-      </a>
     </div>
 
     <div class="fusszeile">vibecoded with <span class="herz">♥</span> · 2026</div>
@@ -102,80 +129,123 @@
 </div>
 
 <script type="module">
-import { api, baueDialog, melde, esc } from './assets/immo.js';
-
-const FAMILIEN_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-  aria-hidden="true"><path d="M8 12.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/>
-  <path d="M2.6 19c.6-3 2.8-5 5.4-5s4.8 2 5.4 5"/>
-  <path d="M15.2 7.4a2.8 2.8 0 1 1 3 4.6"/><path d="M15.6 14.2c2.2.4 3.9 2.1 4.4 4.6"/>
-  </svg>`;
+import { api, baueDialog } from './assets/immo.js';
 
 // Schon angemeldet? Dann gar nicht erst den Anmeldescreen zeigen.
 api('/auth/ich').then(() => { location.href = 'index.html'; }).catch(() => {});
 
-async function familienLaden() {
-  const ziel = document.getElementById('familien');
-  let familien = [];
-  try {
-    familien = await api('/auth/familien');
-  } catch {
-    ziel.innerHTML = `<div class="row" style="cursor:default">
-      <span class="txt"><span class="t">Familien lassen sich gerade nicht laden</span>
-      <span class="d">Bitte kurz erneut versuchen</span></span></div>`;
-    return;
-  }
-  if (!familien.length) {
-    ziel.innerHTML = `<div class="row" style="cursor:default">
-      <span class="txt"><span class="t">Noch keine Familie angelegt</span>
-      <span class="d">Lege unten die erste an</span></span></div>`;
-    return;
-  }
-  ziel.innerHTML = familien.map(f => `
-    <button type="button" class="row" data-id="${f.id}" data-hat-passwort="${f.hat_passwort}">
-      <span class="ic">${f.logo_pfad ? `<img src="${esc(f.logo_pfad)}" alt=""
-        style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : FAMILIEN_ICON}</span>
-      <span class="txt">
-        <span class="t">${esc(f.name)}</span>
-        <span class="d">${f.hat_passwort ? 'Anmelden' : 'Erstanmeldung — Passwort festlegen'}</span>
-      </span>
-      <span class="arr">›</span>
-    </button>`).join('');
-  ziel.querySelectorAll('.row[data-id]').forEach(row => {
-    row.addEventListener('click', () => passwortDialog(
-      Number(row.dataset.id), row.querySelector('.t').textContent,
-      row.dataset.hatPasswort === 'true'));
-  });
-}
+let zustand = { erstanmeldung_offen: false, einladung_noetig: false };
+api('/auth/zustand').then(z => {
+  zustand = z;
+  document.getElementById('erst-anmeldung').hidden = !z.erstanmeldung_offen;
+}).catch(() => { /* die Anmeldung selbst geht auch ohne */ });
 
-function passwortDialog(familieId, name, hatPasswort) {
+const fehlerZeigen = (el, text) => {
+  el.textContent = text || '';
+  el.classList.toggle('zeigen', Boolean(text));
+};
+
+/* N472 — zweiter Schritt: `/login` hat mit `zwei_faktor_noetig` geantwortet.
+   Das Ticket lebt nur im Closure dieses Dialogs und nur zwei Minuten. Ein
+   Feld für beides — sechsstelliger Code ODER Wiederherstellungscode —, der
+   Server entscheidet, was es ist. */
+function codeDialog(ticket) {
   const dlg = baueDialog(`
-    <div class="dt">${hatPasswort ? 'Anmelden bei' : 'Passwort festlegen für'} ${esc(name)}</div>
+    <div class="dt">Code aus der Authenticator-App</div>
+    <p>Sechs Ziffern aus deiner App — oder einer deiner Wiederherstellungscodes,
+       falls das Handy gerade nicht da ist.</p>
     <form class="dlg-form">
-      <div class="dlg-fehler" id="pw-fehler"></div>
+      <div class="dlg-fehler" id="code-fehler"></div>
       <div class="field">
-        <label for="pw-feld">Passwort</label>
-        <input class="inp" type="password" id="pw-feld" autocomplete="current-password"
-          minlength="8" required autofocus>
+        <label for="code-feld">Code</label>
+        <input class="inp code-feld" type="text" id="code-feld" inputmode="numeric"
+          autocomplete="one-time-code" autocapitalize="off" spellcheck="false"
+          maxlength="12" required autofocus>
       </div>
-      <button type="submit" class="btn">${hatPasswort ? 'Anmelden' : 'Passwort setzen und anmelden'}</button>
+      <button type="submit" class="btn">Anmelden</button>
     </form>`);
-  const form = dlg.querySelector('form');
-  form.addEventListener('submit', async e => {
+  dlg.querySelector('form').addEventListener('submit', async e => {
     e.preventDefault();
-    const passwort = dlg.querySelector('#pw-feld').value;
-    const fehlerfeld = dlg.querySelector('#pw-fehler');
-    fehlerfeld.classList.remove('zeigen');
+    const fehler = dlg.querySelector('#code-fehler');
+    fehlerZeigen(fehler, '');
     try {
-      const pfad = hatPasswort ? '/auth/login' : '/auth/passwort-festlegen';
-      await api(pfad, { method: 'POST', body: { familie_id: familieId, passwort } });
+      await api('/auth/login/2fa', { method: 'POST',
+        body: { ticket, code: dlg.querySelector('#code-feld').value } });
       location.href = 'index.html';
-    } catch (fehler) {
-      fehlerfeld.textContent = fehler.message || 'Anmeldung fehlgeschlagen';
-      fehlerfeld.classList.add('zeigen');
+    } catch (f) {
+      // Ein abgelaufenes Ticket kann kein Code der Welt retten — dann zurück
+      // zum Passwort statt endlos hier zu stehen.
+      if (/abgelaufen/i.test(f.message || '')) {
+        dlg.close();
+        fehlerZeigen(document.getElementById('login-fehler'),
+          'Die zwei Minuten sind um — bitte noch einmal anmelden.');
+        return;
+      }
+      fehlerZeigen(fehler, f.message || 'Anmeldung fehlgeschlagen');
+      dlg.querySelector('#code-feld').select();
     }
   });
 }
+
+document.getElementById('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fehler = document.getElementById('login-fehler');
+  const knopf = document.getElementById('login-knopf');
+  fehlerZeigen(fehler, '');
+  knopf.disabled = true;
+  try {
+    const antwort = await api('/auth/login', { method: 'POST', body: {
+      name: document.getElementById('login-name').value,
+      passwort: document.getElementById('login-pw').value,
+    } });
+    if (antwort && antwort.zwei_faktor_noetig) {
+      codeDialog(antwort.ticket);
+      return;
+    }
+    location.href = 'index.html';
+  } catch (f) {
+    fehlerZeigen(fehler, f.message || 'Anmeldung fehlgeschlagen');
+  } finally {
+    knopf.disabled = false;
+  }
+});
+
+/* Erstanmeldung: die per Migration angelegte Bestandsfamilie hat noch kein
+   Passwort. Erscheint nur, solange `/zustand` das meldet — auf einer
+   beanspruchten Instanz gibt es diese Zeile nicht. */
+document.getElementById('erst-anmeldung').addEventListener('click', e => {
+  e.preventDefault();
+  const dlg = baueDialog(`
+    <div class="dt">Erstanmeldung</div>
+    <p>Für die vorhandene Familie ist noch kein Passwort gesetzt. Name eingeben
+       und ein Passwort festlegen — ab dann gilt es für alle, die sich damit anmelden.</p>
+    <form class="dlg-form">
+      <div class="dlg-fehler" id="erst-fehler"></div>
+      <div class="field">
+        <label for="erst-name">Familie</label>
+        <input class="inp" type="text" id="erst-name" autocomplete="username"
+          autocapitalize="off" spellcheck="false" required autofocus>
+      </div>
+      <div class="field">
+        <label for="erst-pw">Passwort (mind. 12 Zeichen)</label>
+        <input class="inp" type="password" id="erst-pw" autocomplete="new-password"
+          minlength="12" required>
+      </div>
+      <button type="submit" class="btn">Passwort setzen und anmelden</button>
+    </form>`);
+  dlg.querySelector('form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const fehler = dlg.querySelector('#erst-fehler');
+    fehlerZeigen(fehler, '');
+    try {
+      await api('/auth/passwort-festlegen', { method: 'POST', body: {
+        name: dlg.querySelector('#erst-name').value,
+        passwort: dlg.querySelector('#erst-pw').value,
+      } });
+      location.href = 'index.html';
+    } catch (f) { fehlerZeigen(fehler, f.message || 'Festlegen fehlgeschlagen'); }
+  });
+});
 
 document.getElementById('neu-anlegen').addEventListener('click', e => {
   e.preventDefault();
@@ -188,29 +258,33 @@ document.getElementById('neu-anlegen').addEventListener('click', e => {
         <input class="inp" type="text" id="neu-name" autocomplete="off" required autofocus>
       </div>
       <div class="field">
-        <label for="neu-pw">Passwort (mind. 8 Zeichen)</label>
+        <label for="neu-pw">Passwort (mind. 12 Zeichen)</label>
         <input class="inp" type="password" id="neu-pw" autocomplete="new-password"
-          minlength="8" required>
+          minlength="12" required>
       </div>
+      ${zustand.einladung_noetig ? `
+      <div class="field">
+        <label for="neu-code">Einladungscode</label>
+        <input class="inp" type="text" id="neu-code" autocomplete="off"
+          autocapitalize="off" spellcheck="false" required>
+      </div>` : ''}
       <button type="submit" class="btn">Familie anlegen</button>
     </form>`);
   dlg.querySelector('form').addEventListener('submit', async ev => {
     ev.preventDefault();
-    const name = dlg.querySelector('#neu-name').value.trim();
-    const passwort = dlg.querySelector('#neu-pw').value;
-    const fehlerfeld = dlg.querySelector('#neu-fehler');
-    fehlerfeld.classList.remove('zeigen');
+    const fehler = dlg.querySelector('#neu-fehler');
+    fehlerZeigen(fehler, '');
+    const code = dlg.querySelector('#neu-code');
     try {
-      await api('/auth/registrieren', { method: 'POST', body: { name, passwort } });
+      await api('/auth/registrieren', { method: 'POST', body: {
+        name: dlg.querySelector('#neu-name').value.trim(),
+        passwort: dlg.querySelector('#neu-pw').value,
+        einladungs_code: code ? code.value : null,
+      } });
       location.href = 'index.html';
-    } catch (fehler) {
-      fehlerfeld.textContent = fehler.message || 'Anlegen fehlgeschlagen';
-      fehlerfeld.classList.add('zeigen');
-    }
+    } catch (f) { fehlerZeigen(fehler, f.message || 'Anlegen fehlgeschlagen'); }
   });
 });
-
-familienLaden();
 </script>
 </body>
 </html>
