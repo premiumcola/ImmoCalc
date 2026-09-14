@@ -1,6 +1,7 @@
 """ImmoCalc API — FastAPI + SQLite. Seedet beim Start, rechnet über die Engine."""
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI, Request
@@ -74,8 +75,15 @@ async def negatives_gewicht(request: Request, fehler: NegativesGewicht):
     return JSONResponse(status_code=400, content={
         "detail": f"{fehler} — bitte die Zählerstände prüfen. "
                   "Ein Unterzähler weist mehr aus als der Hauptzähler."})
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
-                   allow_headers=["*"])
+# N469 #5 — vor dem öffentlichen Rollout: `CORS_ORIGINS` (kommagetrennt,
+# z. B. "https://immocalc.online") grenzt auf die echte Herkunft ein. Ohne
+# die Variable bleibt es beim bisherigen `*` — das Frontend ruft ohnehin nur
+# same-origin `/api/...` über den nginx-Proxy auf, ausnutzbar war das nie
+# (kein `allow_credentials`), aber auf einer Domain gehört es geschlossen.
+_CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",")
+                 if o.strip()] or ["*"]
+app.add_middleware(CORSMiddleware, allow_origins=_CORS_ORIGINS,
+                   allow_methods=["*"], allow_headers=["*"])
 
 # N436 — eigener Prefix /api/auth, unabhaengig von jedem Objekt-Faenger;
 # Reihenfolge relativ zu den anderen Routern unkritisch, steht ganz oben,

@@ -4,6 +4,19 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # N469 — hinter dem Cloudflare Tunnel kommt jede Anfrage vom cloudflared-
+    # Container (Docker-Netz), nicht von Cloudflares oeffentlichen Adressen.
+    # Die echte Besucher-IP steht in CF-Connecting-IP; nur Absendern aus den
+    # privaten Docker-Netzen wird dieser Header geglaubt (ein LAN-Client aus
+    # 192.168.x koennte ihn sonst faelschen). Damit tragen $remote_addr, das
+    # Zugriffslog und das X-Forwarded-For unten die Besucher-IP — die
+    # Voraussetzung fuer jede spaetere IP-Bremse in der API.
+    set_real_ip_from 172.16.0.0/12;
+    set_real_ip_from 10.0.0.0/8;
+    real_ip_header CF-Connecting-IP;
+
+    include /etc/nginx/sicherheit.inc;
+
     location = /healthz { return 200 "ok\n"; add_header Content-Type text/plain; }
 
     # Build-Kennung des Images. Liegt ausserhalb von html/, weil public/ dort
@@ -31,21 +44,18 @@ server {
     location = /manifest.webmanifest {
         default_type application/manifest+json;
         add_header Cache-Control "no-cache" always;
+        include /etc/nginx/sicherheit.inc;
     }
 
     default_type text/plain;
     charset utf-8;
     charset_types text/plain text/css application/javascript text/markdown application/json;
 
-    # /docs/ liefert .md und .mermaid aus. Ohne bekannten MIME-Typ bieten Browser
-    # (Chrome/Safari) die Datei zum Download an statt sie anzuzeigen ->
-    # Typ + "inline" explizit setzen.
-    location /docs/ {
-        types { }                       # .md/.mermaid bewusst auf default_type mappen
-        default_type "text/plain; charset=utf-8";
-        add_header Content-Disposition "inline" always;
-        try_files $uri $uri/ =404;
-    }
+    # N469 #4 — /docs/ (interne Markdown-/Mermaid-Dokumente aus public/docs/)
+    # wird nicht mehr ausgeliefert: auf einer Domain waeren das Architektur-
+    # und Rechenlogik-Notizen fuer jeden Besucher. Die Dateien bleiben im
+    # Repo, nur der Weg ueber den Browser ist zu.
+    location /docs/ { return 404; }
 
     gzip on;
     gzip_types text/plain text/css application/javascript text/markdown image/svg+xml application/json;
@@ -54,12 +64,18 @@ server {
     # no-store statt no-cache: bei no-cache revalidiert der Browser per ETag und
     # bekommt ein 304 *ohne* Content-Type zurueck -- er behaelt dann den alten,
     # ggf. falschen Typ aus dem Cache und laedt die Seite als Datei herunter.
-    location ~* \.html$ { add_header Cache-Control "no-store" always; }
+    location ~* \.html$ {
+        add_header Cache-Control "no-store" always;
+        include /etc/nginx/sicherheit.inc;
+    }
     # CCCXXXVII-Nachtrag: public/ ist live gemountet — Frontend-Aenderungen sind
     # ohne Deploy sofort wirksam. Damit der Browser aber nie einen veralteten
     # (oder waehrend eines Zwischenstands kaputt geladenen) JS-/CSS-Baustein aus
     # dem Cache haelt, werden auch die Assets nicht gespeichert. Kleine Dateien
     # im lokalen Netz -- der Verzicht auf Caching kostet praktisch nichts und
     # macht das Modul-System robust gegen gecachte Fehlstaende.
-    location ~* \.(js|mjs|css)$ { add_header Cache-Control "no-store" always; }
+    location ~* \.(js|mjs|css)$ {
+        add_header Cache-Control "no-store" always;
+        include /etc/nginx/sicherheit.inc;
+    }
 }

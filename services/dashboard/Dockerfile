@@ -10,6 +10,9 @@ ARG GIT_SHA=local
 COPY public/ /usr/share/nginx/html/
 # nginx-Image ersetzt ${API_UPSTREAM} beim Start (envsubst -> conf.d/default.conf)
 COPY dashboard/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+# N469 — Sicherheits-Header als Include (nginx vererbt add_header nicht in
+# Locations mit eigenem add_header; siehe Kommentar in der Datei).
+COPY dashboard/nginx/sicherheit.inc /etc/nginx/sicherheit.inc
 # Ausserhalb von html/, weil public/ im Entwicklungs-Override zur Laufzeit
 # darueber gemountet wird — auf dem Server bleibt build.txt das Image-eigene.
 RUN printf '%s\n' "$GIT_SHA" > /etc/nginx/build.txt
