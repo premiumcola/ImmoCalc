@@ -33,6 +33,19 @@ class Familie(SQLModel, table=True):
     fehlversuche: int = 0
     gesperrt_bis: Optional[datetime] = None
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+    # N472 — zweiter Faktor (TOTP, RFC 6238). `totp_geheimnis` ist das AKTIVE
+    # Geheimnis, das der Login-Riegel prüft — `None` heisst 2FA aus.
+    # `totp_geheimnis_ausstehend` ist getrennt davon: die Einrichtung eines
+    # NEUEN Geheimnisses (z. B. beim Gerätewechsel, während 2FA schon aktiv
+    # ist) darf das noch gültige `totp_geheimnis` nicht sofort ersetzen —
+    # sonst würde ein Scan-Fehler beim Einrichten sofort aussperren, obwohl
+    # das alte Gerät noch funktioniert hätte. Erst ein bestätigter Code aus
+    # dem AUSSTEHENDEN Geheimnis macht es zum aktiven. `totp_wiederherstellung`
+    # trägt nur GEHASHTE Einmal-Codes, wie `passwort_hash` nie den Rohwert.
+    totp_geheimnis: Optional[str] = None
+    totp_geheimnis_ausstehend: Optional[str] = None
+    totp_bestaetigt: bool = False
+    totp_wiederherstellung: list = Field(default_factory=list, sa_column=Column(JSON))
 
 
 class Sitzung(SQLModel, table=True):
@@ -43,6 +56,20 @@ class Sitzung(SQLModel, table=True):
     familie_id: int = Field(foreign_key="familie.id", index=True)
     token_hash: str = Field(index=True, unique=True)
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+    laeuft_ab: datetime
+
+
+class ZweiFaktorTicket(SQLModel, table=True):
+    """N472 — der Zwischenschritt zwischen richtigem Passwort und bestätigtem
+    zweiten Faktor. Bewusst KEINE `Sitzung`: eine `Sitzung`-Zeile ist die
+    einzige Bedingung, die `deps.aktuelle_familie` prüft — sie müsste sonst
+    bei JEDER Anfrage zusätzlich wissen, ob der zweite Faktor schon bestätigt
+    wurde. Ein eigenes, kurzlebiges Ticket lässt `deps.py` unangetastet: ohne
+    bestätigten Code entsteht schlicht nie eine `Sitzung`. Wie bei `Sitzung`
+    wird nur der Hash gespeichert, nicht das rohe Ticket."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    familie_id: int = Field(foreign_key="familie.id", index=True)
+    ticket_hash: str = Field(index=True, unique=True)
     laeuft_ab: datetime
 
 

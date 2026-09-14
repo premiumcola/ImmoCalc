@@ -34,6 +34,9 @@ def cookie_sicher() -> bool:
 SITZUNG_GUELTIGKEIT = timedelta(days=30)
 MAX_FEHLVERSUCHE = 8
 SPERRDAUER = timedelta(minutes=5)
+# N472 — knapp bemessen: das Ticket überbrückt nur den Moment zwischen
+# richtigem Passwort und eingetipptem Code aus der Authenticator-App.
+ZWEI_FAKTOR_TICKET_GUELTIGKEIT = timedelta(minutes=2)
 
 # scrypt-Parameter (RFC 7914, interaktive Anmeldung): N=2^14 kostet auf
 # gewöhnlicher Server-Hardware ca. 20-40 ms — spürbar für einen
@@ -73,3 +76,12 @@ def neuer_sitzungstoken() -> tuple[str, str, datetime]:
     nur ins Cookie — in der Datenbank landet ausschließlich sein Hash."""
     token = secrets.token_urlsafe(32)
     return token, token_hashen(token), datetime.utcnow() + SITZUNG_GUELTIGKEIT
+
+
+def neues_zweifaktorticket() -> tuple[str, str, datetime]:
+    """Gibt (rohes_ticket, ticket_hash, laeuft_ab) zurück — dieselbe Bauart
+    wie `neuer_sitzungstoken()`, nur kurzlebig. Das rohe Ticket geht in der
+    Login-Antwort an den Client, in der Datenbank landet nur sein Hash."""
+    ticket = secrets.token_urlsafe(32)
+    return (ticket, token_hashen(ticket),
+            datetime.utcnow() + ZWEI_FAKTOR_TICKET_GUELTIGKEIT)
