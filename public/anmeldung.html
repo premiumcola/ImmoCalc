@@ -121,6 +121,14 @@
           </span>
           <span class="arr">›</span>
         </a>
+        <a class="row ghost" href="#" id="wiederherstellen" hidden>
+          <span class="ic">🗄</span>
+          <span class="txt">
+            <span class="t">Backup wiederherstellen</span>
+            <span class="d">Frische Installation aus einem Schnappschuss zurückholen</span>
+          </span>
+          <span class="arr">›</span>
+        </a>
       </div>
     </div>
 
@@ -139,6 +147,86 @@ api('/auth/zustand').then(z => {
   zustand = z;
   document.getElementById('erst-anmeldung').hidden = !z.erstanmeldung_offen;
 }).catch(() => { /* die Anmeldung selbst geht auch ohne */ });
+
+/* N474 — nur auf einer FRISCHEN Installation (keine Familie hat ein
+   Passwort) bietet die Anmeldeseite an, einen Instanz-Schnappschuss
+   zurückzuholen. Danach ist die Zeile weg — eine laufende Instanz kann
+   niemand von aussen überschreiben. */
+let instanzDateien = [];
+api('/backup/instanz/zustand').then(z => {
+  instanzDateien = z.dateien || [];
+  document.getElementById('wiederherstellen').hidden = !z.moeglich;
+}).catch(() => {});
+
+const groesseText = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB`
+  : `${Math.round(b / 1024)} KB`;
+
+document.getElementById('wiederherstellen').addEventListener('click', e => {
+  e.preventDefault();
+  const dlg = baueDialog(`
+    <div class="dt">Backup wiederherstellen</div>
+    <p>Stellt die ganze Installation exakt so wieder her, wie sie zum Zeitpunkt des
+       Schnappschusses war — alle Familien, Konten, Einstellungen. Danach meldest du
+       dich wie gewohnt an.</p>
+    <form class="dlg-form" id="wh-form">
+      <div class="dlg-fehler" id="wh-fehler"></div>
+      ${instanzDateien.length ? `
+      <div class="field">
+        <label for="wh-wahl">Schnappschuss auf dem Server</label>
+        <select class="inp" id="wh-wahl">
+          ${instanzDateien.map(d => `<option value="${d.dateiname}">${d.zeitpunkt.replace('T', ' ')}
+            · ${groesseText(d.groesse)}</option>`).join('')}
+          <option value="">— stattdessen eine Datei hochladen —</option>
+        </select>
+      </div>` : ''}
+      <div class="field" id="wh-datei-feld" ${instanzDateien.length ? 'hidden' : ''}>
+        <label for="wh-datei">Archiv (.db.gz.enc)</label>
+        <input class="inp" type="file" id="wh-datei" accept=".enc">
+      </div>
+      <div class="field">
+        <label for="wh-pw">Backup-Passwort des Betreibers</label>
+        <input class="inp" type="password" id="wh-pw" autocomplete="off" required>
+      </div>
+      <button type="submit" class="btn" id="wh-knopf">Wiederherstellen</button>
+    </form>`);
+  const wahl = dlg.querySelector('#wh-wahl');
+  if (wahl) wahl.addEventListener('change', () => {
+    dlg.querySelector('#wh-datei-feld').hidden = wahl.value !== '';
+  });
+  dlg.querySelector('#wh-form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const fehler = dlg.querySelector('#wh-fehler');
+    const knopf = dlg.querySelector('#wh-knopf');
+    fehlerZeigen(fehler, '');
+    const form = new FormData();
+    form.append('passwort', dlg.querySelector('#wh-pw').value);
+    const gewaehlt = wahl ? wahl.value : '';
+    if (gewaehlt) form.append('dateiname', gewaehlt);
+    else {
+      const datei = dlg.querySelector('#wh-datei').files[0];
+      if (!datei) { fehlerZeigen(fehler, 'Bitte ein Archiv wählen.'); return; }
+      form.append('datei', datei);
+    }
+    knopf.disabled = true; knopf.textContent = 'Stellt wieder her …';
+    try {
+      const antwort = await fetch('/api/backup/instanz/wiederherstellen',
+                                  { method: 'POST', body: form });
+      if (!antwort.ok) {
+        const grund = await antwort.json().then(k => k.detail).catch(() => null);
+        throw new Error(grund || `${antwort.status}`);
+      }
+      const daten = await antwort.json();
+      dlg.close();
+      fehlerZeigen(document.getElementById('login-fehler'),
+        `Wiederhergestellt — ${daten.familien} Familie(n). Jetzt anmelden.`);
+      document.getElementById('wiederherstellen').hidden = true;
+      document.getElementById('login-name').focus();
+    } catch (f) {
+      fehlerZeigen(fehler, f.message || 'Wiederherstellen fehlgeschlagen');
+      knopf.disabled = false; knopf.textContent = 'Wiederherstellen';
+    }
+  });
+});
 
 const fehlerZeigen = (el, text) => {
   el.textContent = text || '';

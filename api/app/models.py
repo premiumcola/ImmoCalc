@@ -46,6 +46,22 @@ class Familie(SQLModel, table=True):
     totp_geheimnis_ausstehend: Optional[str] = None
     totp_bestaetigt: bool = False
     totp_wiederherstellung: list = Field(default_factory=list, sa_column=Column(JSON))
+    # N474 — Backup je Familie. `backup_schluessel` ist der aus dem Backup-
+    # Passwort abgeleitete Schlüssel (hex), NICHT das Passwort: so kann der
+    # nächtliche Lauf verschlüsseln, ohne dass das Passwort in der Datenbank
+    # liegt. `backup_salz` gehört dazu und steht ausserdem in jedem Archivkopf,
+    # damit sich ein Archiv auf einer frischen Instanz allein mit dem Passwort
+    # öffnen lässt. Das WebDAV-Passwort liegt wie das Nextcloud-Passwort im
+    # Klartext (N469 #11 gilt hier genauso).
+    backup_schluessel: Optional[str] = None
+    backup_salz: Optional[str] = None
+    backup_rhythmus: str = ""             # "" = aus | "taeglich" | "woechentlich"
+    backup_ziel: str = ""                 # "" | "nextcloud" | "webdav"
+    backup_webdav_url: str = ""
+    backup_webdav_benutzer: str = ""
+    backup_webdav_passwort: str = ""
+    backup_fingerabdruck: Optional[str] = None
+    backup_letzte_pruefung: Optional[datetime] = None
 
 
 class Sitzung(SQLModel, table=True):
@@ -57,6 +73,23 @@ class Sitzung(SQLModel, table=True):
     token_hash: str = Field(index=True, unique=True)
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
     laeuft_ab: datetime
+
+
+class Backup(SQLModel, table=True):
+    """N474 — Protokoll jeder gelungenen Sicherung: was, wann, wie gross,
+    wohin. Die Einstellungen zeigen daraus die Liste („welche Backups wann
+    gemacht wurden und wie viel dazugekommen ist") — der Vergleich zweier
+    aufeinanderfolgender `zusammenfassung`-Einträge ergibt das „dazu".
+    `familie_id` ist `None` für den Instanz-Schnappschuss des Betreibers."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    familie_id: Optional[int] = Field(default=None, foreign_key="familie.id", index=True)
+    art: str = "familie"                  # "familie" | "instanz"
+    zeitpunkt: datetime = Field(default_factory=datetime.now)
+    dateiname: str = ""
+    groesse: int = 0
+    ziel: str = ""                        # "nextcloud" | "webdav" | "ordner" | "download"
+    ausloeser: str = "nacht"              # "nacht" | "hand"
+    zusammenfassung: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class ZweiFaktorTicket(SQLModel, table=True):

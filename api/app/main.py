@@ -17,7 +17,7 @@ from .deps import aktuelle_familie
 from .engine import NegativesGewicht
 from .migrate import (migriere, nachzuegler_kostenarten_sichern,
                       pflicht_kostenarten_sichern)
-from .routers import (auswertung, auth, besitz, cloud, dokumente,
+from .routers import (auswertung, auth, backup, besitz, cloud, dokumente,
                       dokumentvorlagen, heizkosten, heizoel, ki, kidb,
                       kontakte, mail, objekte, openwb, renovierung,
                       solaredge, stammdaten, strom, stromkette, tankstelle,
@@ -91,6 +91,10 @@ app.add_middleware(CORSMiddleware, allow_origins=_CORS_ORIGINS,
 # hier liegen die Endpunkte, die ohne Sitzung erreichbar sein müssen
 # (Familienliste, Registrierung, Login).
 app.include_router(auth.router)
+# N474 — der Instanz-Weg für eine frische Installation: bewusst OHNE
+# Anmeldung (es gibt noch keine), dafür nur solange keine Familie ein
+# Passwort gesetzt hat — die Prüfung steckt in jedem der beiden Endpunkte.
+app.include_router(backup.offen)
 
 # N436 — jeder andere Router braucht eine gültige Sitzung. Einzeln an
 # `objekt_holen`/`zeitraum_holen`/`dokument_holen` zu hängen wäre an den
@@ -156,6 +160,7 @@ app.include_router(versand.router, dependencies=_ANMELDUNG_NOETIG)
 # Eigener Prefix /api/ki — Reihenfolge unkritisch.
 app.include_router(ki.router, dependencies=_ANMELDUNG_NOETIG)
 app.include_router(waermesim.router, dependencies=_ANMELDUNG_NOETIG)
+app.include_router(backup.router, dependencies=_ANMELDUNG_NOETIG)
 
 
 def _build_zeilen() -> list[str]:

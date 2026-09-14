@@ -19,7 +19,8 @@ from typing import Type
 from sqlmodel import Session, SQLModel, or_, select
 
 from .models import (Ablesung, Anteil, Belegdaten, Bewohner, Dokument,
-                     Eigentuemer, Einheit, Grundschuld, GrundschuldKredit,
+                     Dokumentvorlage, Eigentuemer, Einheit, Einstellung,
+                     Erkennungsregel, Familie, Grundschuld, GrundschuldKredit,
                      Heizoellieferung, Heizverteiler, Kontakt, Kostenart,
                      Kostenposition, Kredit, Kreditstand, Kundennummer, Miete,
                      Notarvertrag, Objekt, Partei, Renovierung,
@@ -271,20 +272,25 @@ def loesche(session: Session, objekt: Objekt) -> dict:
     return entfernt
 
 
-def _passender_eigner(session: Session, anteil: dict) -> Eigentuemer | None:
+def _passender_eigner(session: Session, anteil: dict,
+                      familie_id: int) -> Eigentuemer | None:
     """Der Eigentümer zu einem gesicherten Anteil — über den Namen, nicht die id.
 
     Die id allein genügt nicht: sie kann inzwischen einer anderen Person
-    gehören. Nur wenn Name *und* id zusammenpassen, ist es sicher dieselbe."""
+    gehören. Nur wenn Name *und* id zusammenpassen, ist es sicher dieselbe.
+
+    N474-Fund: die Suche war nicht auf die Familie eingegrenzt — ein
+    gleichnamiger Eigentümer einer ANDEREN Familie wäre zuerst getroffen
+    worden, und der Anteil hätte quer über die Mandantengrenze gezeigt."""
     name = (anteil.get("eigentuemer_name") or "").strip()
     if name:
-        treffer = session.exec(
-            select(Eigentuemer).where(Eigentuemer.name == name)).first()
-        if treffer:
-            return treffer
-        return None
-    # Alte Sicherungen ohne Namen: nur die id, und die muss belegt sein.
-    return session.get(Eigentuemer, anteil.get("eigentuemer_id"))
+        return session.exec(
+            select(Eigentuemer).where(Eigentuemer.name == name,
+                                      Eigentuemer.familie_id == familie_id)).first()
+    # Alte Sicherungen ohne Namen: nur die id, und die muss belegt sein —
+    # und zur eigenen Familie gehören.
+    eigner = session.get(Eigentuemer, anteil.get("eigentuemer_id"))
+    return eigner if eigner and eigner.familie_id == familie_id else None
 
 
 def _live_oder_neu(session: Session, modell: Type[SQLModel], alte_id,
@@ -430,7 +436,7 @@ def importiere(session: Session, daten: dict, freier_slug, familie_id: int) -> O
                 # feststehen (dasselbe Muster wie beim Hauptzähler).
                 eintrag["vorgaenger_id"] = None
             if name == "anteile":
-                eigner = _passender_eigner(session, eintrag)
+                eigner = _passender_eigner(session, eintrag, familie_id)
                 # Eigentümer werden getrennt gepflegt und beim Löschen eines
                 # Objekts nicht mitgelöscht. Passt keiner, bleibt der Anteil
                 # weg — lieber keine Beteiligung als die falsche.
@@ -444,8 +450,11 @@ def importiere(session: Session, daten: dict, freier_slug, familie_id: int) -> O
                 # Derselbe Grundsatz wie beim Eigentümer: der Kontakt ist
                 # geteilt, seine id kann inzwischen jemand anderem gehören.
                 schluessel = eintrag.pop("kontakt_schluessel", "")
+                # N474-Fund: wie beim Eigentümer auf die Familie eingegrenzt —
+                # der Kontakt-Schlüssel ist seit N436 nur je Familie eindeutig.
                 kontakt = session.exec(select(Kontakt).where(
-                    Kontakt.schluessel == schluessel)).first() if schluessel else None
+                    Kontakt.schluessel == schluessel,
+                    Kontakt.familie_id == familie_id)).first() if schluessel else None
                 eintrag["kontakt_id"] = kontakt.id if kontakt else None
             if name == "zaehler":
                 # Der Hauptzähler wird erst unten, nach dieser Schleife,
@@ -528,3 +537,112 @@ def importiere(session: Session, daten: dict, freier_slug, familie_id: int) -> O
     session.commit()
     log.info("Objekt aus Sicherung angelegt: %s", objekt.slug)
     return objekt
+
+
+# --------------------------------------------------------------------------
+# N474 — Sicherung einer ganzen FAMILIE: alle Objekte über `exportiere` plus
+# das, was an keinem Objekt hängt (Kontakte, Eigentümer, Erkennungsregeln,
+# Dokumentvorlagen, die Einstellungen im Namensraum der Familie).
+# --------------------------------------------------------------------------
+
+FAMILIEN_FORMAT = "immocalc-familie/1"
+
+# Reihenfolge = Reihenfolge beim Wiederanlegen: Eigentümer und Kontakte
+# müssen stehen, bevor `importiere` Anteile und Kundennummern danach sucht.
+FAMILIEN_TABELLEN: dict[str, Type[SQLModel]] = {
+    "eigentuemer": Eigentuemer,
+    "kontakte": Kontakt,
+    "erkennungsregeln": Erkennungsregel,
+    "dokumentvorlagen": Dokumentvorlage,
+}
+
+
+def exportiere_familie(session: Session, familie: Familie) -> dict:
+    """Alles, was dieser Familie gehört, als ein JSON-Gerüst. Belege ohne
+    Objekt (der rohe Eingang) bleiben bewusst draussen — der Wachdienst findet
+    sie beim nächsten Lauf in der Cloud ohnehin wieder."""
+    daten: dict = {
+        "format": FAMILIEN_FORMAT,
+        "erstellt": datetime.now().isoformat(timespec="seconds"),
+        "familie": {"name": familie.name, "logo_pfad": familie.logo_pfad},
+    }
+    for name, modell in FAMILIEN_TABELLEN.items():
+        daten[name] = [{k: _rein(v) for k, v in z.model_dump().items()}
+                       for z in session.exec(select(modell).where(
+                           modell.familie_id == familie.id)).all()]
+    praefix = f"{familie.id}:"
+    daten["einstellungen"] = {
+        e.schluessel[len(praefix):]: e.wert
+        for e in session.exec(select(Einstellung).where(
+            Einstellung.schluessel.like(praefix + "%"))).all()}
+    daten["objekte"] = []
+    for o in session.exec(select(Objekt).where(
+            Objekt.familie_id == familie.id).order_by(Objekt.id)).all():
+        einzeln = exportiere(session, o)
+        einzeln.pop("erstellt", None)       # sonst wäre jede Nacht „geändert"
+        daten["objekte"].append(einzeln)
+    daten["zusammenfassung"] = {
+        "objekte": len(daten["objekte"]),
+        "zeitraeume": sum(len(o["zeitraeume"]) for o in daten["objekte"]),
+        "belege": sum(len(o["dokumente"]) for o in daten["objekte"]),
+        "kontakte": len(daten["kontakte"]),
+    }
+    return daten
+
+
+def familie_ist_leer(session: Session, familie_id: int) -> bool:
+    return not any(
+        session.exec(select(modell).where(modell.familie_id == familie_id)).first()
+        for modell in (Objekt, Kontakt, Eigentuemer))
+
+
+def importiere_familie(session: Session, daten: dict, familie: Familie,
+                       freier_slug) -> dict:
+    """Spielt eine Familien-Sicherung in eine LEERE Familie ein. Nie in eine
+    volle: bestehende Eingaben werden in dieser App nirgends automatisch
+    ersetzt, und eine zweite Kopie aller Objekte wäre auch keine Hilfe."""
+    if daten.get("format") != FAMILIEN_FORMAT:
+        raise ValueError("Das ist keine Familien-Sicherung.")
+    if not familie_ist_leer(session, familie.id):
+        raise ValueError("Diese Familie hat schon Daten — eine Sicherung lässt "
+                         "sich nur in eine leere Familie einspielen.")
+
+    angelegt: dict[str, int] = {}
+    for name, modell in FAMILIEN_TABELLEN.items():
+        for zeile in daten.get(name) or []:
+            roh = dict(zeile)
+            roh.pop("id", None)
+            roh["familie_id"] = familie.id
+            session.add(modell.model_validate(roh))
+            angelegt[name] = angelegt.get(name, 0) + 1
+    session.commit()
+
+    # Einstellungen: Nextcloud-Zugang, Postfach, KI-Schlüssel, Versand-Marker
+    # (die sind an den Objekt-SLUG gebunden, nicht an die id — sie passen
+    # nach dem Import weiter). Ein vorhandener Wert (Nextcloud schon vor dem
+    # Einspielen eingerichtet) wird überschrieben — die Sicherung ist hier
+    # die Quelle.
+    for basis, wert in (daten.get("einstellungen") or {}).items():
+        schluessel = f"{familie.id}:{basis}"
+        eintrag = session.get(Einstellung, schluessel)
+        if eintrag:
+            eintrag.wert = wert
+        else:
+            eintrag = Einstellung(schluessel=schluessel, wert=wert)
+        session.add(eintrag)
+    session.commit()
+
+    slugs = []
+    for einzeln in daten.get("objekte") or []:
+        slugs.append(importiere(session, einzeln, freier_slug, familie.id).slug)
+
+    logo = (daten.get("familie") or {}).get("logo_pfad")
+    if logo and not familie.logo_pfad:
+        familie.logo_pfad = logo
+        session.add(familie)
+        session.commit()
+
+    log.info("Familien-Sicherung eingespielt für %s: %d Objekte", familie.name,
+             len(slugs))
+    return {"objekte": slugs, **angelegt,
+            "einstellungen": len(daten.get("einstellungen") or {})}

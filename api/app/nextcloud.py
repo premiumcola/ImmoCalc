@@ -103,6 +103,27 @@ class Nextcloud:
         self._timeout = timeout
         # Schreibzugriffe sind auf diesen Ordner begrenzt. Leer = nur Lesen.
         self.heimat = _normpfad(heimat) if heimat else ""
+        # N474 — `None` = Nextcloud-Schema (`/remote.php/dav/files/<user>`);
+        # sonst die DAV-Wurzel eines beliebigen WebDAV-Ziels, siehe `webdav()`.
+        self.dav_pfad: str | None = None
+
+    @classmethod
+    def webdav(cls, url: str, benutzer: str, passwort: str, heimat: str,
+               zertifikat_pruefen: bool = True) -> "Nextcloud":
+        """N474 — ein beliebiges WebDAV-Ziel (Koofr, kDrive, Hetzner Storage
+        Box, eine fremde Nextcloud): `url` ist die komplette DAV-Wurzel, z. B.
+        `https://app.koofr.net/dav/Koofr`. Derselbe Client, dieselben Riegel
+        — nur die Wurzel folgt keinem Nextcloud-Schema. Zertifikate werden
+        hier geprüft (öffentliche Anbieter haben gültige), anders als bei der
+        Nextcloud im Heimnetz mit selbstsigniertem Zertifikat."""
+        roh = url.strip()
+        if "://" not in roh:
+            roh = "https://" + roh
+        teile = urlparse(roh)
+        client = cls(f"{teile.scheme}://{teile.netloc}", benutzer, passwort,
+                     zertifikat_pruefen=zertifikat_pruefen, heimat=heimat)
+        client.dav_pfad = teile.path.rstrip("/")
+        return client
 
     def _pruefe_schreibrecht(self, pfad: str) -> None:
         """Riegel vor jedem verändernden Zugriff.
@@ -122,6 +143,8 @@ class Nextcloud:
 
     @property
     def _wurzel(self) -> str:
+        if self.dav_pfad is not None:
+            return f"{self.basis}{self.dav_pfad}"
         return f"{self.basis}/remote.php/dav/files/{quote(self.benutzer)}"
 
     def _url(self, pfad: str) -> str:

@@ -38,6 +38,12 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       # N264 — Druckdienst (CUPS) im Haus. Leer = keine Druckknoepfe.
       DRUCKDIENST: ${DRUCKDIENST:-192.168.178.10:631}
+      # N474 — Ordner fuer die naechtlichen Instanz-Schnappschuesse (Mount
+      # unten). BACKUP_PASSWORT gehoert in die env-Datei, nie hierher.
+      BACKUP_ORDNER: /backups
+      # N469 — erst setzen, wenn die Domain per TLS steht (Plan Haeppchen 5):
+      #   COOKIE_SECURE: "true"
+      #   CORS_ORIGINS: "https://immocalc.online"
     # ANTHROPIC_API_KEY steht bewusst NIRGENDS im Klartext im Repo. Die Datei
     # liegt nur auf dem Server. `required:false`, damit dieselbe Datei auch auf
     # einer Maschine ohne diesen Pfad startet (Entwicklung) statt abzubrechen.
@@ -52,6 +58,9 @@ services:
       # offener Folgeschritt — siehe MIGRATION.md. Hier steht deshalb die
       # Realität, nicht das Ziel.
       - ${DATA_DIR:-/mnt/user/appdata/immocalc-live/data}:/data
+      # N474 — Instanz-Schnappschuesse (verschluesselt); von Unraid aus
+      # zusaetzlich offsite spiegeln.
+      - ${BACKUP_DIR:-/mnt/user/backups/immocalc}:/backups
     # N472/N469 — Haertung fuer den oeffentlichen Rollout. Nur Linux-
     # Capabilities, keine Dateirechte betroffen: uvicorn laeuft auf einem
     # unprivilegierten Port und braucht fuer normale Datei-/Netz-I/O keine der

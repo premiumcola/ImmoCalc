@@ -28,3 +28,11 @@ rapidocr-onnxruntime==1.4.4
 # von rapidocr-onnxruntime — und das ist optional. Eine Kernfunktion darf
 # nicht an einer optionalen Abhaengigkeit haengen.
 Pillow==12.3.0
+# N474 — verschluesselte Backups (app/backup.py). Die eine Abhaengigkeit, die
+# sich nicht vermeiden liess: Python bringt Hashing und HMAC mit (auth.py,
+# totp.py laufen komplett mit Bordmitteln), aber keinen einzigen Cipher — und
+# einen Cipher baut man nicht selbst. AES-256-GCM aus dem Standardpaket der
+# Python-Kryptografie; Schluessel per scrypt (Standardbibliothek) aus dem
+# Backup-Passwort. Ohne diese Bibliothek gibt es keine Backups — bewusst kein
+# weicher Import, eine Sicherung, die still ausfaellt, ist schlimmer als keine.
+cryptography==50.0.1

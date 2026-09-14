@@ -278,6 +278,18 @@ def _autoversand_schritt() -> None:
 # Dateien im Ordner des Nutzers zu bewegen ist schwer umkehrbar; das gehört
 # nicht in einen stillen Takt. Der Rückstand wurde einmalig aufgeräumt, und NEUE
 # Belege landen seit [N285] ohnehin gleich richtig — es entsteht also kein neuer.
+def _backup_schritt() -> None:
+    """N474 — nächtliche Sicherungen, je Familie und für die Instanz.
+    Ausserhalb des Nachtfensters kehrt `nachtlauf` sofort zurück; innerhalb
+    prüft er je Familie einmal pro Nacht, ob sich etwas geändert hat."""
+    from . import backup                     # spät, wegen Zirkelbezug
+
+    stand = backup.nachtlauf(engine)
+    if stand["gesichert"] or stand["instanz"]:
+        log.info("Backup-Nachtlauf: %d Familie(n) gesichert, Instanz: %s",
+                 stand["gesichert"], "ja" if stand["instanz"] else "nein")
+
+
 def _schritte() -> list[tuple[str, Callable[[], None]]]:
     """Die Reihenfolge eines Taktes. Als Liste, damit `takt` jeden Schritt
     gleich behandeln kann — und damit keiner beim Anbau vergessen wird."""
@@ -288,6 +300,7 @@ def _schritte() -> list[tuple[str, Callable[[], None]]]:
         ("Kontaktbuch", _kontakte_schritt),
         ("Verwaiste .immocalc", _immocalc_schritt),
         ("Autoversand", _autoversand_schritt),
+        ("Backup", _backup_schritt),
     ]
 
 

@@ -45,6 +45,22 @@
   .tfa-schritte li{margin-bottom:4px}
   .tfa-link{display:inline-block;font:600 13px var(--body);color:var(--teal);
             margin:0 0 14px}
+  /* N474 — Backups: die Liste der Sicherungen als kompakte Zeilen, das
+     „dazu" (was seit dem letzten Mal neu ist) als grüne Marke daneben. */
+  .bk-liste{display:flex;flex-direction:column;gap:6px;margin:0 0 16px}
+  .bk-zeile{display:flex;align-items:center;gap:10px;background:var(--sheet);
+            border-radius:11px;padding:9px 12px;min-height:44px}
+  .bk-zeile .wann{font:600 12.5px var(--mono);color:var(--ink);flex:none}
+  .bk-zeile .was{font:400 12px var(--body);color:var(--soft);flex:1;min-width:0;
+                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bk-zeile .dazu{font:600 11px var(--mono);color:var(--pos);background:var(--pos-bg);
+                  border-radius:999px;padding:3px 8px;flex:none}
+  .bk-leer{font:400 13px var(--body);color:var(--soft);text-align:center;padding:14px 0}
+  .bk-knoepfe{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+  .bk-knoepfe .btn{flex:1 1 45%;margin:0}
+  .bk-instanz{font:400 12.5px var(--body);color:var(--soft);line-height:1.5;
+              background:var(--sheet);border-radius:11px;padding:10px 12px;margin:0 0 16px}
+  .bk-instanz b{color:var(--ink)}
   .ordnerliste{background:var(--sheet);border-radius:12px;max-height:210px;
                overflow:auto;margin-bottom:12px}
   .ordnerliste button{display:flex;align-items:center;gap:10px;width:100%;border:none;
@@ -381,6 +397,17 @@
       </span>
       <span class="arr">›</span>
     </button>
+
+    <h2 class="sec">Backups</h2>
+    <button class="row" id="backupRow">
+      <span class="ic">🗄</span>
+      <span class="txt">
+        <span class="t">Sicherung dieser Familie</span>
+        <span class="d" id="backupInfo">wird geladen …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
+    <input type="file" id="backupDatei" accept=".enc,application/octet-stream" hidden>
 
     <h2 class="sec">System</h2>
     <div class="row" style="cursor:default">
@@ -1090,6 +1117,271 @@ document.getElementById('abmeldenRow').addEventListener('click', async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   location.href = 'anmeldung.html';
 });
+
+/* N474 — Backups je Familie. Der Dialog erklärt zuerst, WIE gesichert wird
+   (Nutzer: „der Nutzer soll die Sicherheit haben zu wissen, wie die Backups
+   gemacht werden"), dann kommen Einstellungen, Aktionen und die Liste. */
+const backupInfo = document.getElementById('backupInfo');
+const backupDatei = document.getElementById('backupDatei');
+const KOOFR_DAV = 'https://app.koofr.net/dav/Koofr';
+const RHYTHMUS_TEXT = { '': 'Aus', taeglich: 'Täglich', woechentlich: 'Wöchentlich' };
+const ZIEL_TEXT = { '': 'kein Ziel', nextcloud: 'Nextcloud', webdav: 'WebDAV-Speicher',
+                    download: 'heruntergeladen', ordner: 'Server-Ordner' };
+
+const groesseText = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB`
+  : b >= 1024 ? `${Math.round(b / 1024)} KB` : `${b} B`;
+const wannText = iso => {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}. `
+    + `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+const dazuText = dazu => Object.entries(dazu || {})
+  .map(([k, v]) => `${v > 0 ? '+' : ''}${v} ${{ objekte: 'Obj.', zeitraeume: 'Zeitr.',
+    belege: 'Belege', kontakte: 'Kont.' }[k] || k}`).join(' · ');
+
+/* Datei-Uploads gehen nicht über `api()` (das setzt JSON) — hier mit FormData,
+   der Browser setzt den Multipart-Rahmen selbst. */
+async function apiForm(pfad, form) {
+  const antwort = await fetch('/api' + pfad, { method: 'POST', body: form });
+  if (antwort.status === 401) { location.href = 'anmeldung.html'; return new Promise(() => {}); }
+  if (!antwort.ok) {
+    const grund = await antwort.json().then(k => k.detail).catch(() => null);
+    throw new Error(grund || `${antwort.status} ${pfad}`);
+  }
+  return antwort.status === 204 ? null : antwort.json();
+}
+
+function backupZeigen(s) {
+  if (!s.hat_passwort) {
+    backupInfo.textContent = 'Noch nicht eingerichtet · antippen';
+    return;
+  }
+  const letzte = s.backups[0];
+  backupInfo.textContent = `${RHYTHMUS_TEXT[s.rhythmus]} · ${ZIEL_TEXT[s.ziel]}`
+    + (letzte ? ` · zuletzt ${wannText(letzte.zeitpunkt)}` : ' · noch keine Sicherung');
+}
+
+function backupLaden() {
+  return api('/backup/einstellungen').then(s => { backupZeigen(s); return s; })
+    .catch(() => { backupInfo.textContent = 'Stand nicht abrufbar'; return null; });
+}
+
+function listeHtml(backups) {
+  if (!backups.length) return '<div class="bk-leer">Noch keine Sicherung.</div>';
+  return `<div class="bk-liste">${backups.map(b => `
+    <div class="bk-zeile">
+      <span class="wann">${esc(wannText(b.zeitpunkt))}</span>
+      <span class="was">${esc(ZIEL_TEXT[b.ziel] || b.ziel)} · ${esc(groesseText(b.groesse))}
+        · ${b.zusammenfassung.objekte ?? 0} Obj. · ${b.zusammenfassung.belege ?? 0} Belege
+        ${b.ausloeser === 'hand' ? '· von Hand' : ''}</span>
+      ${Object.keys(b.dazu || {}).length ? `<span class="dazu">${esc(dazuText(b.dazu))}</span>` : ''}
+    </div>`).join('')}</div>`;
+}
+
+function instanzHtml(i) {
+  if (!i.eingerichtet) {
+    return `<div class="bk-instanz">Zusätzlich zur Familien-Sicherung legt der Betreiber
+      nachts einen Schnappschuss der ganzen Installation ab — <b>auf diesem Server noch
+      nicht eingerichtet</b> (BACKUP_PASSWORT fehlt).</div>`;
+  }
+  return `<div class="bk-instanz">Zusätzlich sichert der Betreiber jede Nacht die ganze
+    Installation (alle Familien, Konten, Einstellungen) verschlüsselt auf den Server:
+    <b>${i.anzahl} Stände</b>${i.letzte ? `, zuletzt <b>${esc(wannText(i.letzte.zeitpunkt))}</b>
+    (${esc(groesseText(i.letzte.groesse))})` : ''}. 30 Tage lückenlos, danach je Monat
+    ein Stand für ein Jahr.</div>`;
+}
+
+function backupDialog(s) {
+  const dlg = baueDialog(`
+    <div class="dt">Sicherung dieser Familie</div>
+    <p>Jede Nacht zwischen ${s.nacht_von} und ${s.nacht_bis} Uhr prüft ImmoCalc, ob sich seit
+       der letzten Sicherung etwas geändert hat — nur dann wird gesichert. Wer tagsüber
+       arbeitet, ist um diese Zeit fertig. Das Archiv wird <b>vor</b> dem Ablegen mit deinem
+       Backup-Passwort verschlüsselt: wer die Datei findet, kann sie ohne das Passwort
+       nicht öffnen. Es enthält alles, was dieser Familie gehört — Immobilien, Zeiträume,
+       Belegverweise, Kontakte, Einstellungen.</p>
+    <div class="meldung" id="bkMeldung"></div>
+    <form id="bkForm">
+      ${s.hat_passwort ? `
+      <div class="field">
+        <label for="bkPw">Backup-Passwort ändern (leer = beibehalten)</label>
+        <input class="inp" type="password" id="bkPw" autocomplete="new-password" minlength="12">
+      </div>` : `
+      <div class="field">
+        <label for="bkPw">Backup-Passwort (mind. 12 Zeichen — gut aufheben, ohne es ist
+          das Archiv wertlos)</label>
+        <input class="inp" type="password" id="bkPw" autocomplete="new-password" minlength="12" required>
+      </div>`}
+      <div class="field">
+        <label for="bkRhythmus">Rhythmus</label>
+        <select class="inp" id="bkRhythmus">
+          <option value="" ${!s.rhythmus ? 'selected' : ''}>Aus — nur von Hand</option>
+          <option value="taeglich" ${s.rhythmus === 'taeglich' ? 'selected' : ''}>Täglich (nachts, nur bei Änderung)</option>
+          <option value="woechentlich" ${s.rhythmus === 'woechentlich' ? 'selected' : ''}>Wöchentlich (Sonntagnacht, nur bei Änderung)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="bkZiel">Ablegen in</label>
+        <select class="inp" id="bkZiel">
+          <option value="" ${!s.ziel ? 'selected' : ''}>Kein Ziel — nur Herunterladen</option>
+          <option value="nextcloud" ${s.ziel === 'nextcloud' ? 'selected' : ''}
+            ${s.nextcloud_moeglich ? '' : 'disabled'}>Eigene Nextcloud (Home-Ordner/_Backups)</option>
+          <option value="webdav" ${s.ziel === 'webdav' ? 'selected' : ''}>WebDAV-Speicher (z. B. Koofr, 10 GB gratis)</option>
+        </select>
+      </div>
+      <div id="bkWebdav" ${s.ziel === 'webdav' ? '' : 'hidden'}>
+        <p class="hinweis">Empfehlung: <b>Koofr</b> — 10 GB kostenlos, EU-Anbieter. Konto anlegen,
+          dann unter Einstellungen → Passwort → „App-Passwort" eines erzeugen und hier
+          eintragen. Die Adresse ist schon vorausgefüllt. Andere WebDAV-Speicher (kDrive,
+          Hetzner, eine fremde Nextcloud) gehen genauso.</p>
+        <div class="field">
+          <label for="bkUrl">WebDAV-Adresse</label>
+          <input class="inp" type="url" id="bkUrl" value="${esc(s.webdav_url || KOOFR_DAV)}"
+            autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="bkBenutzer">Benutzer (bei Koofr die E-Mail)</label>
+          <input class="inp" type="text" id="bkBenutzer" value="${esc(s.webdav_benutzer)}"
+            autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="bkDavPw">App-Passwort${s.hat_webdav_passwort ? ' (leer = beibehalten)' : ''}</label>
+          <input class="inp" type="password" id="bkDavPw" autocomplete="off">
+        </div>
+      </div>
+      <div class="field">
+        <label for="bkLogin">Zum Speichern: Passwort der Familie</label>
+        <input class="inp" type="password" id="bkLogin" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn">Einstellungen speichern</button>
+    </form>
+    <h3 class="dt" style="font-size:14px;margin:18px 0 8px">Jetzt</h3>
+    <div class="bk-knoepfe">
+      <button type="button" class="btn" id="bkJetzt" ${s.hat_passwort && s.ziel ? '' : 'disabled'}>Jetzt sichern</button>
+      <a class="btn" id="bkDownload" href="/api/backup/herunterladen" download
+        ${s.hat_passwort ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.5"'}>Herunterladen</a>
+      <button type="button" class="btn" id="bkEinspielen">Aus Datei einspielen</button>
+      <button type="button" class="btn" id="bkAusSpeicher" ${s.ziel ? '' : 'disabled'}>Aus dem Speicher einspielen</button>
+    </div>
+    <h3 class="dt" style="font-size:14px;margin:0 0 8px">Bisherige Sicherungen</h3>
+    ${listeHtml(s.backups)}
+    ${instanzHtml(s.instanz)}`);
+
+  const meldung = dlg.querySelector('#bkMeldung');
+  const ziel = dlg.querySelector('#bkZiel');
+  ziel.addEventListener('change', () => {
+    dlg.querySelector('#bkWebdav').hidden = ziel.value !== 'webdav';
+  });
+
+  dlg.querySelector('#bkForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    meldungWeg(meldung);
+    const pw = dlg.querySelector('#bkPw').value;
+    const davPw = dlg.querySelector('#bkDavPw').value;
+    try {
+      const neu = await api('/backup/einstellungen', { method: 'PUT', body: {
+        login_passwort: dlg.querySelector('#bkLogin').value,
+        backup_passwort: pw || null,
+        rhythmus: dlg.querySelector('#bkRhythmus').value,
+        ziel: ziel.value,
+        webdav_url: dlg.querySelector('#bkUrl').value,
+        webdav_benutzer: dlg.querySelector('#bkBenutzer').value,
+        webdav_passwort: davPw || null,
+      } });
+      dlg.close();
+      melde('Backup-Einstellungen gespeichert', 'pos');
+      backupZeigen(neu);
+      backupDialog(neu);
+    } catch (f) { feldmeldung(meldung, f.message || 'Speichern fehlgeschlagen'); }
+  });
+
+  dlg.querySelector('#bkJetzt').addEventListener('click', async () => {
+    meldungWeg(meldung);
+    const knopf = dlg.querySelector('#bkJetzt');
+    knopf.disabled = true; knopf.textContent = 'Sichert …';
+    try {
+      const eintrag = await api('/backup/jetzt', { method: 'POST' });
+      dlg.close();
+      melde(`Gesichert: ${eintrag.dateiname} (${groesseText(eintrag.groesse)})`, 'pos');
+      backupLaden().then(neu => neu && backupDialog(neu));
+    } catch (f) {
+      feldmeldung(meldung, f.message || 'Sichern fehlgeschlagen');
+      knopf.disabled = false; knopf.textContent = 'Jetzt sichern';
+    }
+  });
+
+  dlg.querySelector('#bkEinspielen').addEventListener('click', () => {
+    dlg.close();
+    backupDatei.click();
+  });
+
+  dlg.querySelector('#bkAusSpeicher').addEventListener('click', async () => {
+    dlg.close();
+    let dateien = [];
+    try { dateien = await api('/backup/im-speicher'); }
+    catch (f) { melde(f.message || 'Speicher nicht erreichbar', 'neg'); return; }
+    if (!dateien.length) { melde('Im Speicher liegt noch keine Sicherung', 'neg'); return; }
+    einspielenDialog('Aus dem Speicher einspielen', dateien.map(d =>
+      ({ wert: d.pfad, text: `${d.dateiname} · ${groesseText(d.groesse)}` })),
+      async (pfad, passwort) => api('/backup/aus-speicher',
+        { method: 'POST', body: { pfad, passwort } }));
+  });
+}
+
+/* Einspielen — aus Datei oder aus dem Speicher — braucht nur das
+   Backup-Passwort. Geht nur in eine leere Familie, der Server prüft das. */
+function einspielenDialog(titel, auswahl, ausfuehren) {
+  const dlg = baueDialog(`
+    <div class="dt">${titel}</div>
+    <p>Nur in eine leere Familie: bestehende Immobilien werden nie überschrieben.</p>
+    <form id="bkEinForm">
+      <div class="meldung" id="bkEinMeldung"></div>
+      ${auswahl ? `
+      <div class="field">
+        <label for="bkEinWahl">Sicherung</label>
+        <select class="inp" id="bkEinWahl">
+          ${auswahl.map(a => `<option value="${esc(a.wert)}">${esc(a.text)}</option>`).join('')}
+        </select>
+      </div>` : ''}
+      <div class="field">
+        <label for="bkEinPw">Backup-Passwort dieser Sicherung</label>
+        <input class="inp" type="password" id="bkEinPw" autocomplete="off" required autofocus>
+      </div>
+      <button type="submit" class="btn">Einspielen</button>
+    </form>`);
+  const meldung = dlg.querySelector('#bkEinMeldung');
+  dlg.querySelector('#bkEinForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    meldungWeg(meldung);
+    const wahl = dlg.querySelector('#bkEinWahl');
+    try {
+      const ergebnis = await ausfuehren(wahl ? wahl.value : null,
+                                        dlg.querySelector('#bkEinPw').value);
+      dlg.close();
+      melde(`Eingespielt: ${(ergebnis.objekte || []).length} Immobilie(n)`, 'pos');
+      setTimeout(() => { location.href = 'index.html'; }, 900);
+    } catch (f) { feldmeldung(meldung, f.message || 'Einspielen fehlgeschlagen'); }
+  });
+}
+
+backupDatei.addEventListener('change', () => {
+  const datei = backupDatei.files && backupDatei.files[0];
+  backupDatei.value = '';
+  if (!datei) return;
+  einspielenDialog(`Einspielen: ${datei.name}`, null, (_wahl, passwort) => {
+    const form = new FormData();
+    form.append('passwort', passwort);
+    form.append('datei', datei);
+    return apiForm('/backup/einspielen', form);
+  });
+});
+
+document.getElementById('backupRow').addEventListener('click', async () => {
+  const s = await backupLaden();
+  if (s) backupDialog(s);
+});
+
+backupLaden();
 
 /* Initiale Ladesequenz — verhaltensgleich zum bisherigen Skript. Die
    Reihenfolge macht funktional keinen Unterschied (jedes Laden ist
