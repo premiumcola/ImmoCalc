@@ -43,7 +43,7 @@ services:
       BACKUP_ORDNER: /backups
       # N469 — erst setzen, wenn die Domain per TLS steht (Plan Haeppchen 5):
       #   COOKIE_SECURE: "true"
-      #   CORS_ORIGINS: "https://immocalc.online"
+      #   CORS_ORIGINS: "https://immocalc.cloud"
     # ANTHROPIC_API_KEY steht bewusst NIRGENDS im Klartext im Repo. Die Datei
     # liegt nur auf dem Server. `required:false`, damit dieselbe Datei auch auf
     # einer Maschine ohne diesen Pfad startet (Entwicklung) statt abzubrechen.

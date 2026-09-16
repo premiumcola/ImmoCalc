@@ -1,6 +1,6 @@
 # ImmoCalc auf der eigenen Domain — Schritt für Schritt
 
-Ziel: `https://immocalc.online` (oder welche Domain es wird), erreichbar von
+Ziel: `https://immocalc.cloud` (oder welche Domain es wird), erreichbar von
 überall, ohne einen einzigen offenen Port am Router. Alles Sichtbare für den
 Nutzer: Familie + Passwort + Code aus der Authenticator-App. Alles andere
 läuft unsichtbar bei Cloudflare.
@@ -42,7 +42,7 @@ auf dem echten Unraid-Terminal (WebGUI → Terminal, oder SSH).
 
 ## B · Domain und Cloudflare (10 Minuten, Browser)
 
-1. Domain registrieren (`immocalc.online`) — beim Registrar deiner Wahl.
+1. Domain registrieren (`immocalc.cloud`) — beim Registrar deiner Wahl.
 2. Cloudflare-Konto anlegen (kostenlos): https://dash.cloudflare.com
    → „Add a site" → Domain eintragen → Free-Plan → Cloudflare zeigt zwei
    Nameserver.
@@ -76,11 +76,11 @@ auf dem echten Unraid-Terminal (WebGUI → Terminal, oder SSH).
    Im Log: `Registered tunnel connection` — dann steht der Tunnel. Im
    Cloudflare-Dashboard springt der Connector auf „Healthy".
 6. Zurück im Dashboard, Tab **Public Hostname → Add a public hostname**:
-   - Subdomain: leer · Domain: `immocalc.online` · Path: leer
+   - Subdomain: leer · Domain: `immocalc.cloud` · Path: leer
    - Service: Type **HTTP**, URL **`dashboard:80`**
    Das ist die **einzige** Regel. Nichts anderes wird veröffentlicht — genau
    das „nur diese eine App verbinden".
-7. Test vom Handy über **Mobilfunk** (WLAN aus): `https://immocalc.online`
+7. Test vom Handy über **Mobilfunk** (WLAN aus): `https://immocalc.cloud`
    muss die Anmeldeseite zeigen.
 
 ## D · Cookie scharf schalten (2 Minuten, Terminal) — ERST JETZT
@@ -89,7 +89,7 @@ Erst wenn Teil C funktioniert. In der Compose-Datei beim Service `api` die
 beiden vorbereiteten Zeilen einkommentieren:
 ```
 COOKIE_SECURE: "true"
-CORS_ORIGINS: "https://immocalc.online"
+CORS_ORIGINS: "https://immocalc.cloud"
 ```
 dann `docker compose up -d`. Ab jetzt: **immer über die Domain anmelden**,
 auch zuhause — die alte Adresse `http://192.168.178.10:8091` funktioniert
@@ -97,7 +97,7 @@ für das Login danach nicht mehr (so entschieden: eine Adresse überall).
 
 ## E · Die unsichtbaren Schichten (10 Minuten, Browser, alles kostenlos)
 
-In der Cloudflare-Zone `immocalc.online`:
+In der Cloudflare-Zone `immocalc.cloud`:
 
 1. **Security → WAF → Custom rules → Create rule** „Nur Deutschland":
    - Field `Country` · Operator `does not equal` · Value `Germany`
@@ -114,7 +114,7 @@ scheitert am Code aus der App.
 
 ## F · Erster Login und Nutzer
 
-1. `https://immocalc.online` → Familie `Heidenreich` + Passwort → anmelden.
+1. `https://immocalc.cloud` → Familie `Heidenreich` + Passwort → anmelden.
 2. Einstellungen → **Zwei-Faktor-Anmeldung** → einrichten (Google
    Authenticator: „+" → „Einrichtungsschlüssel eingeben"). Die
    Wiederherstellungscodes aufschreiben.

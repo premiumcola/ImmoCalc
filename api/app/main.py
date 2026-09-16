@@ -76,7 +76,7 @@ async def negatives_gewicht(request: Request, fehler: NegativesGewicht):
         "detail": f"{fehler} — bitte die Zählerstände prüfen. "
                   "Ein Unterzähler weist mehr aus als der Hauptzähler."})
 # N469 #5 — vor dem öffentlichen Rollout: `CORS_ORIGINS` (kommagetrennt,
-# z. B. "https://immocalc.online") grenzt auf die echte Herkunft ein. Ohne
+# z. B. "https://immocalc.cloud") grenzt auf die echte Herkunft ein. Ohne
 # die Variable bleibt es beim bisherigen `*` — das Frontend ruft ohnehin nur
 # same-origin `/api/...` über den nginx-Proxy auf, ausnutzbar war das nie
 # (kein `allow_credentials`), aber auf einer Domain gehört es geschlossen.
