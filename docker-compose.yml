@@ -92,11 +92,12 @@ services:
       PGID: ${PGID:-100}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       API_UPSTREAM: api:8000
-    # nginx bindet Port 80 -- dafuer braucht selbst root unter Docker die
-    # Capability CAP_NET_BIND_SERVICE explizit zurueck, sonst schlaegt das
-    # Binden mit "Permission denied" fehl.
+    # nginx braucht vier Capabilities zurueck (am 16.09. auf dem Server
+    # aufgefallen: mit nur NET_BIND_SERVICE startete der Container nicht):
+    # Port 80 binden, den Benutzerwechsel der Worker auf `nginx`
+    # (SETUID/SETGID) und das Setzen der Besitzrechte im Startskript (CHOWN).
     cap_drop: [ALL]
-    cap_add: [NET_BIND_SERVICE]
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, CHOWN]
     security_opt:
       - no-new-privileges:true
     labels:
