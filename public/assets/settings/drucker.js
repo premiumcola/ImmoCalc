@@ -8,7 +8,7 @@
    Der Prüfknopf öffnet nur eine TCP-Verbindung und schliesst sie wieder — er
    druckt nichts. Papier und Toner gehören dem Nutzer. */
 import { api, esc, frage } from '../immo.js';
-import { feldmeldung, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg, diensteAuffrischen } from './state.js';
 
 const VORGABE_PORT = 9100;
 /* Dieselbe Form, die der Server erlaubt (`drucker.py::pruefe_ziel`): nur was
@@ -17,8 +17,7 @@ const VORGABE_PORT = 9100;
    Server. */
 const ADRESSE = /^[A-Za-z0-9]([A-Za-z0-9.\-]{0,60}[A-Za-z0-9])?$/;
 
-let dlg, formDlg, form, listeEl, meldungEl, formMeldungEl;
-let statusEl, ikonEl, formTitelEl;
+let dlg, formDlg, form, listeEl, meldungEl, formMeldungEl, formTitelEl;
 let drucker = [];
 /* Name des Eintrags, der gerade geändert wird — null heisst „neu anlegen". */
 let bearbeitet = null;
@@ -54,27 +53,38 @@ function zeichne() {
          Mit <b>＋</b> oben rechts einen anlegen — Name und IP genügen.</div>`;
 }
 
-/* Statuszeile und Kachelfarbe. „Grün" nur, wenn wirklich einer gepflegt ist —
-   die Warteschlangen eines Druckdienstes zählen hier nicht, die kann man auf
-   dieser Seite nicht bearbeiten. */
-export async function druckerLaden() {
+/* N479 — der Stand für die Dienst-Kachel. „Grün" nur, wenn wirklich ein Gerät
+   gepflegt ist — die Warteschlangen eines Druckdienstes zählen hier nicht, die
+   kann man auf dieser Seite nicht bearbeiten.
+
+   Ob ein Gerät gerade ANTWORTET, steht bewusst nicht drin: das wäre ein Ping
+   je Drucker bei jedem Seitenaufbau. Die Prüfung sitzt im Dialog, auf
+   Knopfdruck. */
+export async function druckerStand() {
   try {
     const daten = await api('/drucker');
-    const eigene = daten.quelle === 'eigene' ? (daten.drucker || []) : [];
-    drucker = eigene;
-    if (eigene.length) {
-      const orte = eigene.map(d => d.standort || d.name).join(', ');
-      statusEl.textContent = `${eigene.length} ${eigene.length === 1 ? 'Gerät' : 'Geräte'} · ${orte}`;
-    } else if ((daten.drucker || []).length) {
-      statusEl.textContent = 'Zurzeit über den Druckdienst';
-    } else {
-      statusEl.textContent = 'Noch keiner eingetragen';
+    drucker = daten.quelle === 'eigene' ? (daten.drucker || []) : [];
+    if (listeEl) zeichne();
+    if (drucker.length) {
+      const orte = drucker.map(d => d.standort || d.name).join(', ');
+      return { stand: 'gut',
+               text: `${drucker.length} ${drucker.length === 1 ? 'Gerät' : 'Geräte'} · ${orte}` };
     }
-    ikonEl.className = 'ic' + (eigene.length ? ' aktiv' : '');
+    if ((daten.drucker || []).length)
+      return { stand: 'warte', text: 'zurzeit über den Druckdienst' };
+    return { stand: 'aus', text: 'kein Gerät eingetragen' };
   } catch {
-    statusEl.textContent = 'Status nicht abrufbar';
+    return { stand: 'weg', text: 'Stand nicht abrufbar' };
   }
-  if (listeEl) zeichne();
+}
+
+/* Öffnet die Geräteliste. Der Stand wird dabei frisch geholt, damit der
+   Dialog nie einen veralteten Bestand zeigt. */
+export async function druckerOeffnen() {
+  meldungWeg(meldungEl);
+  zeichne();
+  dlg.showModal();
+  await druckerStand();
 }
 
 /* Anlegen, Ändern und Entfernen sind derselbe Vorgang: die vollständige
@@ -83,7 +93,7 @@ async function sichern(liste) {
   const antwort = await api('/drucker', { method: 'PUT', body: liste });
   drucker = antwort.drucker || [];
   zeichne();
-  await druckerLaden();
+  diensteAuffrischen();
 }
 
 function formOeffnen(d) {
@@ -106,14 +116,6 @@ export function druckerInit() {
   meldungEl = document.getElementById('druckerMeldung');
   formMeldungEl = document.getElementById('druckerFormMeldung');
   formTitelEl = document.getElementById('druckerFormTitel');
-  statusEl = document.getElementById('druckerStatus');
-  ikonEl = document.getElementById('druckerIkon');
-
-  document.getElementById('druckerRow').addEventListener('click', () => {
-    meldungWeg(meldungEl);
-    zeichne();
-    dlg.showModal();
-  });
 
   document.getElementById('druckerNeu').addEventListener('click',
     () => formOeffnen(null));

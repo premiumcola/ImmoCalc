@@ -81,6 +81,22 @@ def einstellungen(session: Session = Depends(get_session),
         "webdav_benutzer": familie.backup_webdav_benutzer,
         "hat_passwort": bool(familie.backup_schluessel),
         "hat_webdav_passwort": bool(familie.backup_webdav_passwort),
+        # N479 — das App-Passwort des Speichers geht an den Besitzer zurück,
+        # damit das Feld es als Punkte zeigen und das Auge es aufdecken kann.
+        # Nutzer: „leer = beibehalten ist sehr verwirrend, das ist nicht der
+        # Standard."
+        #
+        # Bewusst begrenzt: dieses eine Geheimnis reicht nur an den Ordner
+        # der ImmoCalc-Archive beim Backup-Anbieter und ist dort jederzeit
+        # widerrufbar. Wer diese Antwort lesen kann, hat eine angemeldete
+        # Sitzung — und damit über die gewöhnlichen Endpunkte längst Zugriff
+        # auf alle Mieter- und Objektdaten. Neues gewinnt er hier nicht.
+        #
+        # Das Nextcloud-App-Passwort und der KI-Schlüssel werden deshalb
+        # gerade NICHT so behandelt: das eine öffnet den ganzen Home-Ordner
+        # (mehr als ImmoCalc selbst sieht), das andere ein fremdes Konto mit
+        # Abrechnung. Die bleiben schreibend-nur.
+        "webdav_passwort": familie.backup_webdav_passwort or "",
         "nextcloud_moeglich": bool(cloudkern._lies(session, cloudkern.S_HOME)),
         "letzte_pruefung": (familie.backup_letzte_pruefung.isoformat(timespec="minutes")
                             if familie.backup_letzte_pruefung else None),

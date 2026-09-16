@@ -116,8 +116,11 @@
   /* Der Verweis auf die Eigentuemerseite. Steht genau einmal — die Trennung
      der beiden Bereiche muss erklaert werden, aber nicht dreimal. */
   .grenze{font:400 12px var(--body);color:var(--soft);line-height:1.5;
-          margin:0 0 18px;max-width:560px}
+          margin:0 0 10px;max-width:560px}
   .grenze a{color:var(--teal-d);font-weight:600}
+  /* N479 — der Knopf zur Rechenlogik. Eigene Zeile, damit er nicht am Rand
+     des Absatzes klebt; den Stil des Knopfs bringt das Modul selbst mit. */
+  .rlzeile{margin:0 0 18px}
 </style>
 </head>
 <body>
@@ -157,6 +160,11 @@ import { api, eurKurz, esc, fristKlasse, fristText, melde, installNav }
 installNav();
 import { balken, sankey } from './assets/charts.js';
 import { auswahlfeld } from './assets/auswahl.js';
+/* N479 — „Wie wird gerechnet?" gehoert hierher, nicht in die Einstellungen:
+   dort war es kein Schalter, sondern eine Erklaerung ohne Ort. */
+import { rechenlogikKnopf, rechenlogikFaenger }
+  from './assets/rechenlogik-info.js';
+rechenlogikFaenger();
 
 const kopf = document.getElementById('kopf');
 const inhalt = document.getElementById('inhalt');
@@ -249,7 +257,8 @@ function kopfHtml(daten, jahr, objekt) {
     Eigentümer — sie stehen unter
     <a href="wertentwicklung.html">Wert &amp; Cashflow</a>.${simLink
       ? ` Heizkosten-Simulator (Delta-t-Nachbau) unter
-          <a href="${simLink}">Wärme-Simulation</a>.` : ''}</p>`;
+          <a href="${simLink}">Wärme-Simulation</a>.` : ''}</p>
+    <div class="rlzeile">${rechenlogikKnopf()}</div>`;
 
   if (!umlage) {
     return `<p class="grenze">Für ${jahr} ist noch nichts umgelegt${

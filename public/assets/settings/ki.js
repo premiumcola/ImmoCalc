@@ -5,65 +5,43 @@
    Klartext angezeigt — nur „gespeichert" oder leer. Verhaltensgleich zum
    bisherigen Inline-Skript in settings.html. */
 import { api, frage } from '../immo.js';
-import { feldmeldung, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg, augenBinden, diensteAuffrischen } from './state.js';
 
-let kiDlg, kiStatus, kiIkon, kiMeldung, kiKey, kiModell, kiEntfernen;
+let kiDlg, kiMeldung, kiKey, kiModell, kiEntfernen;
 let kiZustand = { eingerichtet: false };
 
-/* Aus dem Status eine Zeile und eine Kachelfarbe machen:
-   grün = online, rot = eingerichtet aber nicht erreichbar,
-   grau = nicht eingerichtet. */
-function kiZeigen(z) {
-  kiZustand = z || { eingerichtet: false };
-  const modell = z && z.modell ? ` · ${z.modell}` : '';
-  let text, ikon;
-  if (!z || !z.eingerichtet) {
-    text = 'nicht eingerichtet';
-    ikon = '';
-  } else if (z.erreichbar === true) {
-    const quelle = z.gespeichert ? '' : (z.aus_umgebung ? ' · aus Umgebung' : '');
-    text = `online · erreichbar${quelle}${modell}`;
-    ikon = ' aktiv';
-  } else if (z.erreichbar === false) {
-    text = 'eingerichtet, aber nicht erreichbar'
-      + (z.fehler ? ` — ${z.fehler}` : '');
-    ikon = ' fehler';
-  } else {
-    text = `eingerichtet${modell}`;
-    ikon = ' warte';
-  }
-  kiStatus.textContent = text;
-  kiIkon.className = 'ic' + ikon;
-  // Ein gespeicherter Schlüssel lässt sich entfernen; ein env-Schlüssel nicht.
-  kiEntfernen.style.display = z && z.gespeichert ? 'block' : 'none';
-}
-
+/* N479 — den Stand holen und in den Dialog schreiben. Die Statuszeile auf der
+   Seite gibt es nicht mehr; was der Nutzer sieht, steht in der Dienst-Kachel
+   (siehe `vKi` in verknuepfungen.js). Hier bleibt nur, was der Dialog
+   braucht. */
 export async function kiZustandLaden() {
   try {
-    kiZeigen(await api('/ki/status'));
+    kiZustand = await api('/ki/status') || { eingerichtet: false };
   } catch {
-    kiStatus.textContent = 'Status nicht abrufbar';
-    kiIkon.className = 'ic';
+    kiZustand = { eingerichtet: false };
   }
+  // Ein gespeicherter Schlüssel lässt sich entfernen; ein env-Schlüssel nicht.
+  kiEntfernen.style.display = kiZustand.gespeichert ? 'block' : 'none';
+  // Den Schlüssel nie vorbelegen — nur das Modell, das kein Geheimnis ist.
+  kiKey.value = '';
+  kiModell.value = kiZustand.gespeichert && kiZustand.modell ? kiZustand.modell : '';
 }
 
-/* Bindet Zeile, Formular und Entfernen-Knopf. Aufruf einmal beim Laden. */
+/* Öffnet den Dialog — der Kachel-Knopf landet hier. */
+export async function kiOeffnen() {
+  meldungWeg(kiMeldung);
+  kiDlg.showModal();
+  await kiZustandLaden();
+}
+
+/* Bindet Formular und Entfernen-Knopf. Aufruf einmal beim Laden. */
 export function kiInit() {
   kiDlg = document.getElementById('kiDlg');
-  kiStatus = document.getElementById('kiStatus');
-  kiIkon = document.getElementById('kiIkon');
   kiMeldung = document.getElementById('kiMeldung');
   kiKey = document.getElementById('kiKey');
   kiModell = document.getElementById('kiModell');
   kiEntfernen = document.getElementById('kiEntfernen');
-
-  document.getElementById('kiRow').addEventListener('click', () => {
-    meldungWeg(kiMeldung);
-    // Den Schlüssel nie vorbelegen — nur das Modell, das kein Geheimnis ist.
-    kiKey.value = '';
-    kiModell.value = kiZustand.gespeichert && kiZustand.modell ? kiZustand.modell : '';
-    kiDlg.showModal();
-  });
+  augenBinden(kiDlg);
 
   document.getElementById('kiForm').addEventListener('submit', async e => {
     e.preventDefault();
@@ -83,6 +61,7 @@ export function kiInit() {
         !!a.erreichbar);
       kiKey.value = '';
       await kiZustandLaden();
+      diensteAuffrischen();
     } catch (fehler) {
       feldmeldung(kiMeldung, String(fehler.message || fehler).replace(/^\d+\s*/, '')
         || 'Speichern fehlgeschlagen');
@@ -102,6 +81,7 @@ export function kiInit() {
       await api('/ki/schluessel', { method: 'DELETE' });
       feldmeldung(kiMeldung, 'Schlüssel entfernt.', true);
       await kiZustandLaden();
+      diensteAuffrischen();
     } catch (fehler) {
       feldmeldung(kiMeldung, String(fehler.message || fehler));
     }

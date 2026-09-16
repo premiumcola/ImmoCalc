@@ -6,9 +6,9 @@
    Verhaltensgleich zum bisherigen Inline-Skript in settings.html. */
 import { api } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
-import { feldmeldung, meldungWeg } from './state.js';
+import { feldmeldung, meldungWeg, augenBinden, diensteAuffrischen } from './state.js';
 
-let mailDlg, mailStatus, mailMeldung, serverZeile;
+let mailDlg, mailMeldung, serverZeile;
 let anbieterListe = [];
 let anbieterWahl;
 
@@ -32,37 +32,34 @@ export async function mailZustand() {
     anbieterUebernehmen();
 
     if (status.verbunden) {
-      mailStatus.textContent = `${status.absender} · ${status.server}`;
       document.getElementById('mailBenutzer').value = status.benutzer;
       document.getElementById('mailName').value = status.absender_name || '';
       document.getElementById('mailTestbereich').style.display = 'block';
       document.getElementById('mailTestAn').value = status.absender;
-    } else {
-      mailStatus.textContent = 'noch nicht verbunden';
     }
-    document.getElementById('mailIkon').className =
-      'ic' + (status.verbunden ? ' aktiv' : '');
-  } catch {
-    mailStatus.textContent = 'Status nicht abrufbar';
-  }
+  } catch { /* der Dialog bleibt bedienbar, nur ohne Vorbelegung */ }
 }
 
-/* Bindet Zeile, Anbieter-Chooser, Formular und Testmail. Aufruf einmal
-   beim Laden — der Zustand wird danach über `mailZustand` nachgezogen. */
+/* Öffnet den Dialog — der Kachel-Knopf landet hier. Der Stand steht in der
+   Dienst-Kachel (siehe `vMail` in verknuepfungen.js), nicht mehr in einer
+   eigenen Zeile auf der Seite. */
+export async function mailOeffnen() {
+  meldungWeg(mailMeldung);
+  mailDlg.showModal();
+  await mailZustand();
+}
+
+/* Bindet Anbieter-Chooser, Formular und Testmail. Aufruf einmal beim Laden —
+   der Zustand wird erst geholt, wenn der Dialog aufgeht. */
 export function mailInit() {
   mailDlg = document.getElementById('mailDlg');
-  mailStatus = document.getElementById('mailStatus');
   mailMeldung = document.getElementById('mailMeldung');
   serverZeile = document.getElementById('mailServerZeile');
+  augenBinden(mailDlg);
 
   anbieterWahl = auswahlfeld(document.getElementById('mailAnbieter'), {
     label: 'Anbieter',
     aenderung: anbieterUebernehmen,
-  });
-
-  document.getElementById('mailRow').addEventListener('click', () => {
-    meldungWeg(mailMeldung);
-    mailDlg.showModal();
   });
 
   document.getElementById('mailForm').addEventListener('submit', async e => {
@@ -86,6 +83,7 @@ export function mailInit() {
       });
       feldmeldung(mailMeldung, 'Postfach verbunden. Jetzt eine Testmail schicken.', true);
       await mailZustand();
+      diensteAuffrischen();
     } catch (fehler) {
       feldmeldung(mailMeldung, String(fehler.message || fehler));
     } finally {

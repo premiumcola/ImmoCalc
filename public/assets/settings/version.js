@@ -38,7 +38,7 @@ export async function versionZeigen() {
       .then(r => (r.ok ? r.json() : null)).catch(() => null);
     if (v && v.sha) {
       const wann = ortszeit(v.zeit);
-      build.textContent = `ImmoCalc · ${v.sha}` + (wann ? ` · ${wann} Uhr` : '');
+      build.textContent = `ImmoCalc · Build ${v.sha}` + (wann ? ` · ${wann} Uhr` : '');
       zeigeNotizen(rnotes, v.notes);
       sub.textContent = 'API verbunden';
     } else {

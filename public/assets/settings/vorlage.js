@@ -1,12 +1,14 @@
-/* N216 — Ordner-Benennung (GET/POST /api/nextcloud/vorlage).
+/* N216 / N479 — Ordner-Benennung (GET/POST /api/nextcloud/vorlage).
 
    Die Vorlage bestimmt, wie ImmoCalc die Objektordner in der Nextcloud
-   benennt. Platzhalter (`{ort}`, `{strasse}`, `{name}`, `{plz}`). Nach dem
-   Speichern zieht die Zeile „Benennung nachziehen" mit — daher der Import
-   aus `umzug.js`. Verhaltensgleich zum bisherigen Inline-Skript. */
+   benennt. Platzhalter (`{ort}`, `{strasse}`, `{name}`, `{plz}`).
+
+   Seit N479 steht die Zeile dazu im Nextcloud-Dialog statt auf der
+   Einstellungsseite — sie gehört zur Cloud, nicht neben sie. Und sie steht
+   dort IMMER, nicht nur solange keine Vorlage gesetzt ist: im Dialog kostet
+   sie keinen Platz auf der Seite, und wer sie ändern will, findet sie. */
 import { api, esc } from '../immo.js';
 import { feldmeldung, meldungWeg } from './state.js';
-import { umzugLaden } from './umzug.js';
 
 let vorlageDlg, vorlageFeld, vorlageMeldung;
 
@@ -15,13 +17,9 @@ export async function vorlageLaden() {
     const v = await api('/nextcloud/vorlage');
     vorlageFeld.value = v.vorlage;
     document.getElementById('vorlageStatus').textContent =
-      v.vorlage || 'noch nicht festgelegt';
+      v.vorlage || 'Standard';
     document.getElementById('vorlageVerboten').textContent =
       `Nicht erlaubt: ${v.verboten}`;
-    // N310 — es gibt eine gute Vorgabe: die Zeile erscheint nur, wenn gar keine
-    // Vorlage da ist. Sonst bleibt sie weg — Einstellungen, die man nie anfasst,
-    // gehoeren nicht in die Liste. Der Dialog bleibt erreichbar, sobald sie da ist.
-    document.getElementById('vorlageRow').hidden = Boolean(v.vorlage);
     beispieleZeigen(v.beispiele);
   } catch {
     document.getElementById('vorlageStatus').textContent = 'Standard';
@@ -41,9 +39,15 @@ export function vorlageInit() {
   vorlageFeld = document.getElementById('vorlageFeld');
   vorlageMeldung = document.getElementById('vorlageMeldung');
 
-  document.getElementById('vorlageRow').addEventListener('click', () => {
+  const zeile = document.getElementById('vorlageRow');
+  zeile.addEventListener('click', () => {
     meldungWeg(vorlageMeldung);
+    // Die Zeile steht IM Nextcloud-Dialog — der geht zu, bevor dieser aufgeht:
+    // zwei gestapelte Modals übereinander sind auf dem Telefon nicht zu
+    // durchschauen.
+    zeile.closest('dialog')?.close();
     vorlageDlg.showModal();
+    vorlageLaden();
   });
 
   document.getElementById('vorlageSpeichern').addEventListener('click', async () => {
@@ -55,14 +59,14 @@ export function vorlageInit() {
       if (antwort.hinweise?.length) {
         feldmeldung(vorlageMeldung, antwort.hinweise.join(' '), false);
       } else {
-        feldmeldung(vorlageMeldung, antwort.umzug_noetig
-          ? `Übernommen. ${antwort.umzug_noetig} bereits angelegte Ordner `
-            + `${antwort.umzug_noetig === 1 ? 'heißt' : 'heißen'} noch wie zuvor `
-            + '— „Benennung nachziehen" holt sie nach.'
-          : 'Übernommen. Bereits angelegte Ordner bleiben unverändert.', true);
+        // N479 — „Benennung nachziehen" gibt es nicht mehr: bereits angelegte
+        // Ordner behalten ihren Namen, neue bekommen den neuen. Das steht
+        // jetzt hier, statt auf eine Zeile zu verweisen, die weg ist.
+        feldmeldung(vorlageMeldung,
+          'Übernommen. Bereits angelegte Ordner behalten ihren Namen; '
+          + 'neue Immobilien bekommen den neuen.', true);
       }
       await vorlageLaden();
-      await umzugLaden();
     } catch (fehler) {
       feldmeldung(vorlageMeldung, String(fehler.message || fehler));
     }
