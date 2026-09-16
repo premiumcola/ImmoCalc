@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from .. import totp
+from .. import qrbild, totp
 from ..auth import (MAX_FEHLVERSUCHE, MIN_PASSWORT, SITZUNG_COOKIE, SPERRDAUER,
                     cookie_sicher, einladungscode_noetig, einladungscode_stimmt,
                     neuer_sitzungstoken, neues_zweifaktorticket,
@@ -344,8 +344,16 @@ def zweifaktor_einrichten(daten: ZweiFaktorPasswortIn,
     familie.totp_geheimnis_ausstehend = geheimnis
     session.add(familie)
     session.commit()
-    return {"geheimnis": geheimnis,
-            "otpauth_url": totp.otpauth_url(geheimnis, familie.name)}
+    url = totp.otpauth_url(geheimnis, familie.name)
+    # N477 — der QR-Code zum Scannen. Selbst erzeugt (siehe `qrbild.py`),
+    # kein Fremdpaket. Schlägt das fehl, bleibt der Schlüssel zum Abtippen
+    # übrig — die Einrichtung soll nicht an der Grafik scheitern.
+    try:
+        qr = qrbild.als_svg(url)
+    except qrbild.QRFehler as fehler:                    # pragma: no cover
+        log.warning("QR-Code nicht erzeugt: %s", fehler)
+        qr = ""
+    return {"geheimnis": geheimnis, "otpauth_url": url, "qr_svg": qr}
 
 
 class ZweiFaktorCodeIn(BaseModel):

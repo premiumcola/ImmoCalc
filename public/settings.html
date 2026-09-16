@@ -36,6 +36,14 @@
                   background:var(--teal-l);border-radius:10px;padding:12px 14px;
                   margin:0 0 10px;word-break:break-all;text-align:center;
                   user-select:all;-webkit-user-select:all}
+  /* N477 — der QR-Code. Weisser Grund ist Pflicht, auch im dunklen Umfeld:
+     Scanner erwarten dunkel auf hell. */
+  .tfa-qr{display:block;width:220px;max-width:100%;margin:0 auto 14px;
+          background:#fff;border-radius:12px;padding:10px;
+          box-shadow:0 4px 14px -6px rgba(22,38,44,.35)}
+  .tfa-qr svg{display:block;width:100%;height:auto}
+  .tfa-oder{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+            color:var(--soft);text-align:center;margin:0 0 8px}
   .tfa-codes{font:500 14px var(--mono);line-height:1.9;color:var(--ink);
              background:var(--sheet);border-radius:10px;padding:12px 16px;
              margin:0 0 16px;columns:2;column-gap:18px;user-select:all;
@@ -939,10 +947,11 @@ function einrichtungDialog(daten) {
     <div class="dt">Authenticator-App verbinden</div>
     <ol class="tfa-schritte">
       <li>In der App (Google Authenticator, Aegis, Authy …) „Konto hinzufügen"
-          → „Einrichtungsschlüssel eingeben".</li>
-      <li>Kontoname: <b>ImmoCalc</b>, Schlüssel: der Text unten, Typ: zeitbasiert.</li>
+          → <b>QR-Code scannen</b> und den Code unten abfotografieren.</li>
       <li>Den ersten Code aus der App hier eintippen.</li>
     </ol>
+    ${daten.qr_svg ? `<div class="tfa-qr">${daten.qr_svg}</div>` : ''}
+    <p class="tfa-oder">Oder von Hand eingeben</p>
     <div class="tfa-schluessel">${esc(inVierergruppen(daten.geheimnis))}</div>
     <a class="tfa-link" href="${esc(daten.otpauth_url)}">Direkt in der App öffnen ›</a>
     <form id="tfaCodeForm">
