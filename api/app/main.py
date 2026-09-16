@@ -26,6 +26,24 @@ from .seed import seed
 
 log = logging.getLogger("immocalc")
 
+# N476 — ohne diese Zeilen war JEDE `log.info`-Meldung der App unsichtbar:
+# uvicorn richtet nur seine eigenen Logger ein, der Wurzel-Logger bleibt bei
+# WARNING ohne Handler, und `logging.getLogger("immocalc")` erbt genau das.
+# Verloren gingen damit ausgerechnet die Zeilen, die im Betrieb zählen —
+# „API bereit", „Passwort geändert für Familie X", „Zwei-Faktor aktiviert",
+# „Familien-Backup abgelegt", „N475 — n Zugangsdaten verschlüsselt". Am
+# 16.09.2026 auf dem Server aufgefallen, als keine davon im `docker logs`
+# stand. Beides ist nötig: `basicConfig` sorgt für einen Handler am
+# Wurzel-Logger (tut nichts, wenn schon einer da ist), `setLevel` dafür, dass
+# die Meldung überhaupt erzeugt wird — sonst entscheidet der geerbte
+# WARNING-Pegel, und der Handler bekommt sie nie zu sehen.
+_LOG_STUFE = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=_LOG_STUFE,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S")
+log.setLevel(_LOG_STUFE)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
