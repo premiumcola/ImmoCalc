@@ -5,8 +5,26 @@ Ziel: `https://immocalc.cloud` (oder welche Domain es wird), erreichbar von
 Nutzer: Familie + Passwort + Code aus der Authenticator-App. Alles andere
 läuft unsichtbar bei Cloudflare.
 
-Reihenfolge einhalten — vor allem Teil D erst nach Teil C, sonst sperrt das
-`Secure`-Cookie das Login aus, bevor TLS da ist.
+**Reihenfolge — wichtiger als die Buchstaben.** Die Teile sind alphabetisch
+benannt, abgearbeitet werden sie aber so:
+
+    A  →  F  →  C  →  D  →  E
+    ↑     ↑     ↑     ↑     ↑
+    │     │     │     │     └─ Filter (geht nur, wenn die Domain steht)
+    │     │     │     └─────── Cookie (NUR nach nachweislich laufendem Tunnel)
+    │     │     └───────────── Tunnel: ab hier ist die App im Internet
+    │     └─────────────────── 2FA + Backup — NOCH im Heimnetz, vor dem Live-Gang
+    └───────────────────────── Server vorbereiten
+
+(Teil B, Domain und Cloudflare, ist am 16.09. bereits erledigt.)
+
+Der Grund für **F vor C**: das Konto absichern, solange die App nur im
+Heimnetz hängt. Zwei-Faktor und Backup einzurichten, während die Seite schon
+öffentlich erreichbar ist, dreht die Reihenfolge genau falsch herum — und
+wenn beim Einrichten etwas hakt, merkst du es ohne Publikum.
+
+Und **D erst nach C**, sonst sperrt das `Secure`-Cookie das Login aus, bevor
+TLS überhaupt da ist.
 
 ---
 
@@ -134,7 +152,11 @@ In der Cloudflare-Zone `immocalc.cloud`:
 Damit hämmert nichts mehr bis zur Anmeldeseite durch, und was durchkommt,
 scheitert am Code aus der App.
 
-## F · Erster Login und Nutzer
+## F · Konto absichern — VOR dem Tunnel, noch im Heimnetz
+
+> Nicht am Ende, sondern direkt nach Teil A: über
+> `http://192.168.178.10:8091`, solange von aussen noch niemand drankommt.
+> Punkt 1 lautet dann `http://192.168.178.10:8091` statt der Domain.
 
 1. `https://immocalc.cloud` → Familie `Heidenreich` + Passwort → anmelden.
 2. Einstellungen → **Zwei-Faktor-Anmeldung** → einrichten (Google
