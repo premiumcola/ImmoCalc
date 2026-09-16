@@ -11,7 +11,7 @@
 import { baueDialog } from '../immo.js';
 
 /* Frist fuer die Statusabrufe der Dienst-Kacheln (N133). */
-export const VZEITGRENZE = 6000;
+const VZEITGRENZE = 6000;
 
 /* Ein Abruf mit knapper Frist. Nie werfend — der Aufrufer bekommt immer
    einen Zustand zurueck:

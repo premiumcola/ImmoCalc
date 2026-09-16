@@ -81,7 +81,11 @@ Produktion las also aus dem Arbeitsordner der Entwicklungsumgebung. Genau das
 sollte die Trennung beenden.
 
 Folge für die tägliche Arbeit: **eine Änderung an `public/` ist nicht mehr
-sofort live.** Sie braucht Push → CI-Build → Watchtower (pollt alle 5 Minuten).
+sofort live.** Sie braucht Push → CI-Build → Watchtower. Der ImmoCalc-eigene
+Ausroller pollt seit N480 alle **120 Sekunden** (`watchtower-immocalc` im
+devBox-Stack, auf den Scope `immocalc` begrenzt); der gemeinsame Watchtower
+läuft weiter auf `15 */6 * * *`, weil an dem Docker-Hub-Images hängen. Die
+Wartezeit ist damit praktisch die des CI-Baus.
 Wer das beim Entwickeln nicht will, holt sich den Mount lokal zurück:
 
 ```bash

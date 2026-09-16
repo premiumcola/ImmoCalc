@@ -17,7 +17,7 @@
 
 /* Gemeinsame Strichattribute. Steht hier statt in state.js, weil es nur die
    Zeichen betrifft. */
-export const VSTRICH = 'stroke="currentColor" stroke-width="1.7" fill="none" '
+const VSTRICH = 'stroke="currentColor" stroke-width="1.7" fill="none" '
   + 'stroke-linecap="round" stroke-linejoin="round"';
 
 const FLAECHE = 'fill="currentColor" stroke="none"';

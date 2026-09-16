@@ -122,7 +122,7 @@ function passwortBlock(s) {
     </div>`;
 }
 
-export function backupDialog(s) {
+function backupDialog(s) {
   const dlg = baueDialog(`
     <div class="dt">Sicherung dieser Familie</div>
     <p>Jede Nacht zwischen ${s.nacht_von} und ${s.nacht_bis} Uhr prüft ImmoCalc, ob sich seit

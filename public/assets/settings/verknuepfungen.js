@@ -15,7 +15,7 @@ import { vHole, vHoleGeteilt, vGeteiltReset, vKurz, vModell } from './state.js';
 import { nextcloudOeffnen } from './nextcloud.js';
 import { kiOeffnen } from './ki.js';
 import { mailOeffnen } from './mail.js';
-import { druckerOeffnen } from './drucker.js';
+import { druckerOeffnen, druckerStand } from './drucker.js';
 import { backupOeffnen, backupStand } from './backup.js';
 
 async function vNextcloud() {
@@ -126,19 +126,6 @@ async function vMail() {
   return { stand: 'gut', text: a.daten.absender || vKurz(a.daten.server) };
 }
 
-/* N479 — Drucker war bisher nur eine Zeile weiter unten. Die Kachel zeigt,
-   wie viele Geräte hinterlegt sind; ob sie gerade antworten, prüft der
-   Dialog auf Knopfdruck (ein Ping je Gerät beim Seitenaufbau wäre teuer). */
-async function vDrucker() {
-  const a = await vHole('/drucker');
-  if (a.fehler) return { stand: 'weg', text: a.fehler };
-  const liste = a.da ? (a.daten.drucker || a.daten || []) : [];
-  if (!liste.length) return { stand: 'aus', text: 'kein Gerät hinterlegt' };
-  return { stand: 'gut',
-           text: liste.length === 1 ? liste[0].name
-                                    : `${liste.length} Geräte` };
-}
-
 /* Die Kacheln stehen in der Reihenfolge, in der sie im Alltag gebraucht
    werden: erst wohin die Belege gehen, dann was sie liest, dann was sie
    verschickt und druckt, dann die Sicherung. Die zwei Energie-Kacheln
@@ -153,9 +140,12 @@ const VERKNUEPFUNGEN = [
   { id: 'mail', name: 'Mailversand', ikon: 'brief', tun: mailOeffnen,
     was: 'Verschickt Abrechnungen über dein eigenes Postfach.',
     pruefe: vMail },
+  // N479 — Drucker war bisher nur eine Zeile weiter unten. Den Stand liefert
+  // das Drucker-Modul selbst: es kennt den Unterschied zwischen eigenen
+  // Geräten und einem Druckdienst, und es hält dabei seine Liste aktuell.
   { id: 'drucker', name: 'Drucker', ikon: 'drucker', tun: druckerOeffnen,
     was: 'Druckt Abrechnungen direkt auf ein Gerät im Haus.',
-    pruefe: vDrucker },
+    pruefe: druckerStand },
   { id: 'backup', name: 'Sicherung', ikon: 'tresor', tun: backupOeffnen,
     was: 'Verschlüsselte Kopie aller Daten und Belege, jede Nacht.',
     pruefe: backupStand },

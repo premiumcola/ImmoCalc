@@ -21,7 +21,7 @@ let aktuellerPfad = '';
    die Einrichtungsschritte ein- oder ausblenden. Das Passwort wird NIE
    vorbelegt — ein App-Passwort ist einmalig sichtbar und wird neu erzeugt,
    nicht nachgelesen. */
-export async function zustandLaden() {
+async function zustandLaden() {
   try {
     ncZustand = await api('/nextcloud/status');
   } catch {

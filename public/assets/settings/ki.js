@@ -14,7 +14,7 @@ let kiZustand = { eingerichtet: false };
    Seite gibt es nicht mehr; was der Nutzer sieht, steht in der Dienst-Kachel
    (siehe `vKi` in verknuepfungen.js). Hier bleibt nur, was der Dialog
    braucht. */
-export async function kiZustandLaden() {
+async function kiZustandLaden() {
   try {
     kiZustand = await api('/ki/status') || { eingerichtet: false };
   } catch {

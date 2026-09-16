@@ -21,7 +21,7 @@ function anbieterUebernehmen() {
   document.getElementById('mailPort').value = a.port;
 }
 
-export async function mailZustand() {
+async function mailZustand() {
   try {
     const [{ anbieter }, status] = await Promise.all([
       api('/mail/anbieter'), api('/mail/status'),

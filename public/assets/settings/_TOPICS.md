@@ -1,84 +1,129 @@
 # public/assets/settings/ — Module der Einstellungen-Seite
 
 N216 (C). Aufgeteilt aus dem bisherigen Inline-`<script type="module">` in
-`public/settings.html`. Reines Refactoring — kein Verhaltensunterschied.
-Import aus HTML über `./assets/settings/…`.
+`public/settings.html`. Import aus HTML über `./assets/settings/…`.
+
+**N479 hat die Seite umgebaut.** Sie hat nur noch zwei Abschnitte: oben
+„Verbundene Dienste" als Kachel-Reihe, unten „Konto und Sicherheit". Die
+Kacheln sind nicht mehr eine Übersicht ÜBER Zeilen darunter, sondern der Weg
+selbst — eine Kachel je Dienst, ein Knopf, der direkt in dessen Dialog führt.
+Vorher gab es beides: eine Kachel, die zu einer Zeile rollte, und die Zeile,
+die den Dialog öffnete.
 
 ## Module
 
 | Datei              | Zustaendig                                                   |
 |--------------------|--------------------------------------------------------------|
-| `state.js`         | Geteilte Helfer (`feldmeldung`, `meldungWeg`, `vHole`, `vHoleGeteilt`, `vGeteiltReset`, `vKurz`, `vModell`, `ortszeit`, `belegText`); Konstanten `VZEITGRENZE`, `VSTRICH`, `VSYMBOLE` |
-| `verknuepfungen.js`| N133 Live-Kacheln: `verknuepfungenInit` — baut die Kachelreihe, verdrahtet „Erneut prüfen", steuert Klicks (Kachel→Zeile scrollen, Wallbox einrichten) |
-| `version.js`       | `versionZeigen` — Kopfzeile „ImmoCalc · <sha> · <zeit>" + die letzten fünf Änderungen aus `version.json` (Fallback `/health`) |
-| `nextcloud.js`     | Nextcloud-Verbindung + Home-Ordner-Wähler: `nextcloudInit`, `zustandLaden` |
-| `ki.js`            | KI-Beleg-Auslese (Anthropic-Schlüssel): `kiInit`, `kiZustandLaden` |
-| `mail.js`          | Postfach (SMTP) + Testmail: `mailInit`, `mailZustand` |
-| `vorlage.js`       | Ordner-Benennung (Vorlage für Objektordner): `vorlageInit`, `vorlageLaden` — löst nach Speichern `umzugLaden` aus; die Zeile erscheint nur ohne gesetzte Vorlage (N310) |
-| `umzug.js`         | Benennung nachziehen (Trockenlauf + Rückfrage + Ergebnis): `umzugInit`, `umzugLaden` |
-| `import.js`        | Sicherung einlesen (JSON → neues Objekt): `importInit` |
-| `rechenlogik.js`   | Rechenlogik-Übersicht (statischer Inhalt): `rechenlogikInit` — öffnet nur den Dialog |
+| `state.js`         | Geteilte Helfer: Meldungen (`feldmeldung`, `meldungWeg`), Statusabruf (`vHole`, `vHoleGeteilt`, `vGeteiltReset`), Formatierer (`vKurz`, `vModell`, `ortszeit`), Passwortfeld (`passwortFeld`, `augenBinden`, `passwortAbfrage`) und `diensteAuffrischen` |
+| `symbole.js`       | N479 — `VSYMBOLE`: sieben Zeichen für die Dienst-Kacheln (wolke, beleg, brief, drucker, tresor, solar, wallbox). Nur Markup; die Regungen dazu stehen als CSS in `settings.html` |
+| `verknuepfungen.js`| Die Kachel-Reihe: `verknuepfungenInit`, `vAlleLaden`. Je Dienst ein Eintrag mit `pruefe` (Stand holen) und `tun` (Dialog öffnen) |
+| `version.js`       | `versionZeigen` — Fußzeile „ImmoCalc · Build <sha> · <zeit>" + die letzten fünf Änderungen aus `version.json` (Fallback `/health`) |
+| `nextcloud.js`     | Nextcloud-Verbindung samt Home-Ordner-Wähler: `nextcloudInit`, `nextcloudOeffnen` |
+| `ki.js`            | Belegerkennung (Anthropic-Schlüssel): `kiInit`, `kiOeffnen` |
+| `mail.js`          | Postfach (SMTP) + Testmail: `mailInit`, `mailOeffnen` |
+| `drucker.js`       | Drucker im Haus: `druckerInit`, `druckerOeffnen`, `druckerStand` |
+| `backup.js`        | N474/N478/N479 — Sicherung dieser Familie: `backupInit`, `backupOeffnen`, `backupStand` |
+| `vorlage.js`       | Ordner-Benennung (Vorlage für Objektordner): `vorlageInit`, `vorlageLaden`. Die Zeile steht im Nextcloud-Dialog |
+| `logoZuschnitt.js` | N471 — `logoZuschneiden`: Verschieben, Zoomen, Drehen vor dem Hochladen |
 
-## `state.js`-Vertrag
+## Zwei Muster, die jedes Fach-Modul benutzt
 
-`state.js` hat keinen mutierten Objekt-Zustand — die Einstellungen-Seite
-teilt zwischen den Modulen keinen. Was gebraucht wird, sind Helfer:
+**`xOeffnen()` statt `xZustandLaden()` beim Seitenaufbau.** Früher holte jedes
+Modul beim Laden der Seite seinen Stand, um eine Statuszeile zu füllen. Die
+Zeilen gibt es nicht mehr — den Stand liefert die Kachel über `pruefe`. Die
+Vorbelegung der Formulare passiert erst beim Öffnen des Dialogs. Vier Abrufe
+weniger beim Seitenaufbau.
 
-- **Meldungen im Dialog**: `feldmeldung(feld, text, gut?)`, `meldungWeg(feld)`.
-- **Statusabruf für Kacheln**: `vHole(pfad, frist?)` mit knapper Frist, nie
-  werfend — gibt `{da:false}` / `{fehler:'…'}` / `{da:true, daten:…}`.
-- **Geteilter Cache** für Kacheln, die am selben Endpunkt hängen (KI +
-  SolarEdge lesen beide `/ki/status`): `vHoleGeteilt(pfad)`; das Setzen der
-  Kachel-Farbe `vGeteiltReset()` — leert den Cache beim erneuten Prüfen.
-- **Formatierer**: `vKurz(url)` (Schema/Trailing weg), `vModell(name)` (Datums-
-  Suffix weg), `ortszeit(iso)` (deutsche Kurzform), `belegText(n)` (Ein-/
-  Mehrzahl).
-- **Konstanten**: `VZEITGRENZE = 6000` (ms), `VSTRICH` (SVG-Attribute für die
-  Kachel-Symbole), `VSYMBOLE` (fünf Pfad-Sets: wolke, wallbox, solar, funke,
-  brief).
+**`diensteAuffrischen()` statt Import der Kachel-Leiste.** Wer eine Verbindung
+frisch eingerichtet hat, will sie sofort grün sehen. Das Modul schickt dafür
+ein Ereignis `dienste:aendern` ans Dokument; `settings.html` hängt daran
+`vAlleLaden`. Ein direkter Import wäre ein Ringschluss — `verknuepfungen.js`
+importiert schon jedes Fach-Modul.
 
-`vGeteilt` liegt als Modul-`let` intern — nicht exportiert, weil ES-Modul-
-Bindings für Primitive unveränderlich sind; stattdessen kapseln
-`vHoleGeteilt` und `vGeteiltReset` den Zugriff.
+## Der Stand einer Kachel
 
-Der pro-Section-Zustand (`ncZustand`, `kiZustand`, `trockenlauf`,
-`anbieterListe`) bleibt in seinem jeweiligen Modul — er wird nirgends geteilt.
+`pruefe()` liefert `{stand, text}` mit `stand` aus vier Werten:
 
-## N310 — was 2026-08 aus den Einstellungen verschwand
+- `gut` (grün) — verbunden und einsatzbereit
+- `warte` (gelb) — verbunden, aber noch nicht nutzbar: Nextcloud ohne
+  Home-Ordner, eine Sicherung, die noch nie gelaufen ist
+- `weg` (rot) — eingerichtet, antwortet aber nicht
+- `aus` (gedeckt grau) — nicht eingerichtet. **Ausdrücklich kein Fehler**,
+  deshalb ohne Signalfarbe und ohne Bewegung
 
-`unterordner.js` und `einsortieren.js` sind gelöscht: „Unterordner je Art" war
-seit N285 gegenstandslos (Jahresordner gibt es nur noch bei den Nebenkosten),
-„Belege in Jahresordner einsortieren" ist eine Aufräumaktion und läuft im
-Wachdienst. Home-Ordner und Ordner-Benennung sind Einrichtungsschritte: ihre
-Zeilen stehen nur da, solange der Wert fehlt. Das Belegarchiv ist eine Ansicht
-und hängt als Verweis im Dialog der KI-Auslese, die es füllt.
+## Die Regungen der Zeichen (N479)
+
+Jedes Zeichen bewegt sich auf seine Weise, und zwar **nur** bei `gut` und
+`weg`. Eine Kachel, die gar nicht eingerichtet ist, bleibt still — sonst
+zappelte die halbe Seite grundlos. Die Fehler-Regungen zucken einmal gegen
+Ende eines langen Zyklus; ein Dauerblinken wäre ein Warnbanner mit anderen
+Mitteln, und die sind laut Leitfaden nicht gewollt.
+
+Zwei Fallstricke, die beim Bauen aufgefallen sind:
+
+- **`transform-box:fill-box` ist Pflicht** für alles, was sich dreht. Ohne das
+  dreht ein SVG-Teil um die Ecke des 24er-Feldes, nicht um seine eigene Mitte.
+  Und die Mitte ist die Mitte der Bounding-Box: `sy-sonne` und `sy-rad` sind
+  deshalb bewusst symmetrisch um ihren Drehpunkt gezeichnet, sonst eiert es.
+- **Ein `transform`-Attribut und eine CSS-`transform` teilen sich einen
+  Platz.** Die Wolke sitzt deshalb in einer äußeren Gruppe mit dem
+  `translate`-Attribut und einer inneren, die animiert wird.
+
+## Passwortfelder — ein Muster für alle
+
+Nutzer: „leer = beibehalten ist sehr verwirrend, das ist nicht der Standard."
+Also gibt es genau ein Muster: `passwortFeld(id, label, zusatz)` baut das
+Markup, `augenBinden(wurzel)` verdrahtet die Augen. Der Knopf verhindert per
+`mousedown`-preventDefault, dass er den Fokus an sich zieht — sonst springt
+beim Aufdecken die Schreibmarke aus dem Feld.
+
+Was ein Feld zeigen kann, hängt daran, was der Server hergeben DARF:
+
+- **WebDAV-App-Passwort der Sicherung** — kommt zurück, das Auge deckt es auf.
+  Es reicht nur an den Archiv-Ordner beim Backup-Anbieter und ist dort
+  widerrufbar; wer die Antwort lesen kann, hat eine Sitzung und damit längst
+  Zugriff auf alle Daten.
+- **Backup-Passwort** — kommt grundsätzlich nicht zurück: in der Datenbank
+  liegt nur ein abgeleiteter Schlüssel. Das Feld sagt das ausdrücklich und
+  bietet „ersetzen" an, statt ein leeres Feld hinzustellen.
+- **Nextcloud-App-Passwort und KI-Schlüssel** — bleiben schreibend-nur. Das
+  eine öffnet den ganzen Home-Ordner (mehr als ImmoCalc selbst sieht), das
+  andere ein fremdes Konto mit Abrechnung.
+
+## Was aus den Einstellungen verschwunden ist
+
+**N310:** `unterordner.js` und `einsortieren.js` — „Unterordner je Art" war
+seit N285 gegenstandslos, „Belege in Jahresordner einsortieren" läuft im
+Wachdienst. Das Belegarchiv ist eine Ansicht und hängt als Verweis im Dialog
+der Belegerkennung, die es füllt.
+
+**N479:** `umzug.js` („Benennung nachziehen" — bereits angelegte Ordner
+behalten ihren Namen, das steht jetzt im Benennungs-Dialog), `import.js`
+(„JSON-Sicherung einlesen" — die Familien-Sicherung kann das vollständiger)
+und `rechenlogik.js`. Die Rechenlogik-Übersicht war nie eine Einstellung: sie
+steht als eigenständiges Modul `assets/rechenlogik-info.js` unter Nebenkosten,
+wo gerechnet wird. Der Abschnitt „System" ist zur Fußzeile geworden.
+
+Home-Ordner und Ordner-Benennung stehen seit N479 **im** Nextcloud-Dialog —
+Einrichtungsschritte der Cloud, keine eigenen Punkte der App.
 
 ## Was in settings.html bleibt
 
-Das Inline-`<script type="module">` schrumpft auf:
-
 1. Imports aus `./assets/settings/*.js`.
-2. Ein Aufruf je `*Init()` (bindet Zeilen/Formulare/Dialoge).
-3. Der gemeinsame Schließen-Handler `[data-schliessen]` — er trifft alle
-   Dialoge auf der Seite gleich.
-4. Die initiale Sequenz `await zustandLaden(); await kiZustandLaden(); …` —
-   verhaltensgleich zum bisherigen Skript (die Reihenfolge macht keinen
-   Unterschied, wird aber beibehalten, damit die Meldungen und HTTP-Calls
-   in derselben Ordnung erscheinen).
+2. Die Zeichen der Konto- und Cloud-Zeilen (`[data-zeichen]`) und das
+   Einsetzen der Passwortfelder in die statischen Dialoge (`[data-pwfeld]`).
+   **Muss vor den Init-Aufrufen laufen** — die Module holen ihre Felder per ID.
+3. Ein Aufruf je `*Init()`.
+4. Der gemeinsame Schließen-Handler `[data-schliessen]` und der Lauscher auf
+   `dienste:aendern`.
+5. Konto und Sicherheit: Familie/Logo, Zwei-Faktor, Passwort ändern, Abmelden.
 
-Der ganze CSS-Block im `<head>` bleibt unverändert stehen — er gehört zum
-Aussehen der Dialoge und Kacheln und wird nirgends importiert.
+Der CSS-Block im `<head>` gehört zum Aussehen der Dialoge, Kacheln und
+Regungen und wird nirgends importiert.
 
 ## Modul-Abhängigkeiten
 
-- `vorlage.js` importiert `umzugLaden` aus `umzug.js` — nach dem Speichern
-  einer neuen Vorlage soll die „Benennung nachziehen"-Zeile den neuen Stand
-  zeigen. Kein Zyklus.
-- Alles andere ist strikt hierarchisch: Fach-Module importieren aus
-  `state.js` (und ggf. aus `immo.js`/`auswahl.js`).
-
-## Delegation
-
-Jedes Init-Modul verdrahtet seine eigenen Handler auf seinen Zeilen und
-Dialogen. Der `[data-schliessen]`-Handler bleibt zentral in settings.html —
-er ist eine reine Cross-cutting-Convenience, keinem Modul zugehörig.
+`verknuepfungen.js` importiert die `xOeffnen`/`xStand`-Funktionen aller
+Fach-Module. Alles andere ist strikt hierarchisch: Fach-Module importieren aus
+`state.js` (und ggf. aus `immo.js`/`auswahl.js`). Kein Zyklus — dafür gibt es
+`diensteAuffrischen()` statt eines Rück-Imports.

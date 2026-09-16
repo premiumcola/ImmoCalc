@@ -102,8 +102,16 @@ Seite — **das gilt nicht mehr.** Das Frontend steckt jetzt im Image. Der Weg
 auf den Server ist für ALLE Änderungen derselbe:
 
 ```
-git push  →  GitHub Actions baut  →  ghcr.io  →  Watchtower rollt aus (~5 min)
+git push  →  GitHub Actions baut  →  ghcr.io  →  Watchtower rollt aus (120 s)
 ```
+
+Der Flaschenhals ist dabei der **CI-Bau**, nicht der Ausroller: seit N480
+fragt ein eigener, auf ImmoCalc begrenzter Watchtower (`watchtower-immocalc`
+im devBox-Stack) alle **120 Sekunden** nach einem neuen Image. Der große,
+gemeinsame Watchtower läuft weiter auf `15 */6 * * *` — an dem hängen
+Docker-Hub-Images, die das anonyme Pull-Limit reißen würden. Realistisch also
+**CI-Zeit plus höchstens zwei Minuten**; früher standen hier „~5 min", und
+tatsächlich waren es bis zu sechs Stunden.
 
 Auf dem Unraid wird nichts gebaut und nichts von Hand deployt. Das bedeutet
 konkret: **nie behaupten, eine Frontend-Änderung sei „sofort live"** — nach
@@ -302,7 +310,7 @@ Er sagt nichts gern zweimal.
   (Read-Tool), Konsole 0 Fehler, betroffene Flows durchklicken (siehe
   „Visuelle Abnahme").
 - **Ausroll-Lücke aktiv nennen.** Nichts ist mehr sofort live — Frontend wie
-  Backend gehen über Push → CI → Watchtower (~5 min). Nach jeder sichtbaren
+  Backend gehen über Push → CI → Watchtower (CI-Zeit + ≤ 120 s). Nach jeder sichtbaren
   Änderung dem Nutzer klar sagen, dass sie erst nach diesem Lauf und einem
   Neuladen ankommt; vorab per Harness prüfen, damit „funktioniert nicht" nie
   am noch nicht ausgerollten Stand hängt. Nie „ist schon bei dir" sagen,
