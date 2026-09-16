@@ -18,6 +18,8 @@ from typing import Type
 
 from sqlmodel import Session, SQLModel, or_, select
 
+from . import geheimnis
+
 from .models import (Ablesung, Anteil, Belegdaten, Bewohner, Dokument,
                      Dokumentvorlage, Eigentuemer, Einheit, Einstellung,
                      Erkennungsregel, Familie, Grundschuld, GrundschuldKredit,
@@ -571,8 +573,13 @@ def exportiere_familie(session: Session, familie: Familie) -> dict:
                        for z in session.exec(select(modell).where(
                            modell.familie_id == familie.id)).all()]
     praefix = f"{familie.id}:"
+    # N475 — entschlüsselt in die Sicherung: sie muss sich auf einer FRISCHEN
+    # Instanz mit anderem `GEHEIMNIS_SCHLUESSEL` einspielen lassen. Das
+    # Archiv als Ganzes ist ohnehin mit dem Backup-Passwort des Nutzers
+    # verschlüsselt (`backup.familie_archiv`) — der Klartext verlässt den
+    # Server also nie ungeschützt.
     daten["einstellungen"] = {
-        e.schluessel[len(praefix):]: e.wert
+        e.schluessel[len(praefix):]: geheimnis.lesen(e.wert)
         for e in session.exec(select(Einstellung).where(
             Einstellung.schluessel.like(praefix + "%"))).all()}
     daten["objekte"] = []
@@ -623,6 +630,10 @@ def importiere_familie(session: Session, daten: dict, familie: Familie,
     # Einspielen eingerichtet) wird überschrieben — die Sicherung ist hier
     # die Quelle.
     for basis, wert in (daten.get("einstellungen") or {}).items():
+        # N475 — beim Einspielen wieder verschlüsseln, mit dem Schlüssel
+        # DIESER Instanz (siehe `exportiere_familie`).
+        if basis in geheimnis.GEHEIME_SCHLUESSEL:
+            wert = geheimnis.schuetzen(wert)
         schluessel = f"{familie.id}:{basis}"
         eintrag = session.get(Einstellung, schluessel)
         if eintrag:

@@ -20,7 +20,7 @@ from ..cloudkern import (ARTKUERZEL, SACHORDNER_KATEGORIE, STRUKTUR, S_HOME,
                         ZIELORDNER, _lies, einheit_von, struktur_fuer,
                         unterordner_fuer, unterordner_vorlagen, verbindung)
 from .. import upload
-from .. import familienraum
+from .. import familienraum, geheimnis
 from ..db import get_session
 from ..deps import aktuelle_familie, objekt_holen
 from ..models import Dokument, Einstellung, Familie, Objekt
@@ -63,7 +63,13 @@ def zielordner_fuer(session: Session, objekt: Objekt, home: str) -> str:
 
 
 def _schreib(session: Session, schluessel: str, wert: str) -> None:
-    """N436 — siehe `cloudkern._lies`: derselbe Namensraum, dieselbe Regel."""
+    """N436 — siehe `cloudkern._lies`: derselbe Namensraum, dieselbe Regel.
+    N475 — und dieselbe Regel für Geheimnisse: die drei Schlüssel aus
+    `geheimnis.GEHEIME_SCHLUESSEL` werden vor dem Speichern verschlüsselt.
+    Diese Funktion ist der Schreibweg für Nextcloud UND Postfach (mail.py
+    importiert sie), deckt also zwei der drei ab."""
+    if schluessel in geheimnis.GEHEIME_SCHLUESSEL:
+        wert = geheimnis.schuetzen(wert)
     schluessel = familienraum.schluessel(schluessel)
     eintrag = session.get(Einstellung, schluessel)
     if eintrag:

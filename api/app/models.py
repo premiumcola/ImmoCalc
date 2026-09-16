@@ -6,6 +6,8 @@ from typing import Optional
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field
 
+from .geheimnis import Geheim
+
 # Ein Grundstück ist kein Haus mit weniger Feldern, sondern ein eigener Fall:
 # keine Einheiten, keine Mieter, keine Nebenkostenabrechnung. Erkannt wird es
 # am Logo-/Gebäudetyp, damit nichts Zusätzliches gepflegt werden muss.
@@ -42,8 +44,14 @@ class Familie(SQLModel, table=True):
     # das alte Gerät noch funktioniert hätte. Erst ein bestätigter Code aus
     # dem AUSSTEHENDEN Geheimnis macht es zum aktiven. `totp_wiederherstellung`
     # trägt nur GEHASHTE Einmal-Codes, wie `passwort_hash` nie den Rohwert.
-    totp_geheimnis: Optional[str] = None
-    totp_geheimnis_ausstehend: Optional[str] = None
+    # N475 — `Geheim` verschlüsselt beim Schreiben und entschlüsselt beim
+    # Lesen (siehe `geheimnis.py`); ohne gesetzten `GEHEIMNIS_SCHLUESSEL`
+    # bleibt alles wie zuvor. Wer die Datenbankdatei allein hat, kann damit
+    # keine gültigen Zwei-Faktor-Codes mehr erzeugen.
+    totp_geheimnis: Optional[str] = Field(default=None,
+                                          sa_column=Column(Geheim, nullable=True))
+    totp_geheimnis_ausstehend: Optional[str] = Field(
+        default=None, sa_column=Column(Geheim, nullable=True))
     totp_bestaetigt: bool = False
     totp_wiederherstellung: list = Field(default_factory=list, sa_column=Column(JSON))
     # N474 — Backup je Familie. `backup_schluessel` ist der aus dem Backup-
@@ -59,7 +67,10 @@ class Familie(SQLModel, table=True):
     backup_ziel: str = ""                 # "" | "nextcloud" | "webdav"
     backup_webdav_url: str = ""
     backup_webdav_benutzer: str = ""
-    backup_webdav_passwort: str = ""
+    # N475 — wie oben: das App-Passwort des Speicheranbieters ist ein
+    # Geheimnis und gehört nicht im Klartext in die Datei.
+    backup_webdav_passwort: str = Field(default="",
+                                        sa_column=Column(Geheim, nullable=True))
     backup_fingerabdruck: Optional[str] = None
     backup_letzte_pruefung: Optional[datetime] = None
 

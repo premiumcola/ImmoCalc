@@ -23,12 +23,25 @@ auf dem echten Unraid-Terminal (WebGUI → Terminal, oder SSH).
    ```
    nano /mnt/user/appdata/immocalc-live/immocalc.env
    ```
-   Drei Zeilen ergänzen — Werte selbst wählen, lang und zufällig:
+   Drei Zeilen ergänzen. Werte selbst wählen, lang und zufällig — oder auf
+   dem Unraid erzeugen lassen mit `openssl rand -base64 30`:
    ```
    BACKUP_PASSWORT=<mind. 20 Zeichen, gut aufheben — ohne es sind die Schnappschüsse wertlos>
+   GEHEIMNIS_SCHLUESSEL=<mind. 30 Zeichen, NIE mehr ändern — sonst sind alle gespeicherten Zugangsdaten unlesbar>
    EINLADUNGS_CODE=<ein Wort für die andere Familie, z. B. 16 Zeichen>
    ```
+   Danach die Datei abriegeln, damit sie nur root lesen kann:
+   ```
+   chmod 600 /mnt/user/appdata/immocalc-live/immocalc.env
+   ```
    (`COOKIE_SECURE` und `CORS_ORIGINS` kommen erst in Teil D.)
+
+   **Zu `GEHEIMNIS_SCHLUESSEL`:** damit verschlüsselt ImmoCalc die
+   gespeicherten Zugangsdaten (Nextcloud, Postfach, KI-Schlüssel, Koofr) und
+   die Zwei-Faktor-Geheimnisse in der Datenbank. Beim ersten Start nach dem
+   Setzen wandelt die App vorhandene Klartext-Werte automatisch um — im Log
+   steht dann `N475 — n Zugangsdaten verschlüsselt`. Diesen Wert zusammen mit
+   `BACKUP_PASSWORT` an einem sicheren Ort ausserhalb des Servers notieren.
 3. Den aktuellen devBox-Stand holen und den Stack neu aufsetzen — das übernimmt
    das neue Backup-Mount und die Container-Härtung (`cap_drop`):
    ```
@@ -39,6 +52,15 @@ auf dem echten Unraid-Terminal (WebGUI → Terminal, oder SSH).
    Im Log muss `ImmoCalc API bereit` stehen. Danach in der App unter
    Einstellungen → Backups prüfen: die Zeile „Zusätzlich sichert der Betreiber
    jede Nacht …" darf nicht mehr „nicht eingerichtet" sagen.
+4. **Kurz gegenprüfen, dass nichts kaputt ist** — über die LAN-Adresse
+   `http://192.168.178.10:8091` anmelden. Klappt das, ist alles heil, und du
+   kannst in Ruhe weitermachen. (Bis Teil D bleibt diese Adresse nutzbar.)
+5. Den Backup-Ordner von Unraid aus zusätzlich woanders hin spiegeln — die
+   Nextcloud läuft auf derselben Kiste und zählt nicht als Offsite. Entweder
+   über das Unraid-Plugin *Appdata Backup* (Ziel: eine externe Platte oder
+   ein Netzlaufwerk) oder per `rclone sync /mnt/user/backups/immocalc
+   <ziel>:immocalc` als nächtlicher Cron. Das ist der letzte Baustein, der
+   aus „Festplatte kaputt" eine Unannehmlichkeit statt eines Verlusts macht.
 
 ## B · Domain und Cloudflare (10 Minuten, Browser)
 

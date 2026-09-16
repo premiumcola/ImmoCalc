@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from .. import kiauslese
-from .. import familienraum
+from .. import familienraum, geheimnis
 from ..cloudkern import _lies
 from ..db import get_session
 from ..models import Einstellung
@@ -32,7 +32,10 @@ S_KI_MODELL = "ki_modell"
 
 def _schreib(session: Session, schluessel: str, wert: str) -> None:
     """Einen Einstellung-Eintrag anlegen oder überschreiben (wie in cloud.py).
-    N436 — derselbe Namensraum wie `cloudkern._lies`."""
+    N436 — derselbe Namensraum wie `cloudkern._lies`.
+    N475 — der KI-Schlüssel wird vor dem Speichern verschlüsselt."""
+    if schluessel in geheimnis.GEHEIME_SCHLUESSEL:
+        wert = geheimnis.schuetzen(wert)
     schluessel = familienraum.schluessel(schluessel)
     eintrag = session.get(Einstellung, schluessel)
     if eintrag:

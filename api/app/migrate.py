@@ -593,6 +593,61 @@ def einstellung_namensraum_migration(engine: Engine) -> int:
         return umbenannt
 
 
+def geheimnisse_schuetzen(engine: Engine) -> int:
+    """N475 — Zugangsdaten, die noch im Klartext in der Datenbank stehen,
+    nachträglich verschlüsseln. Gibt zurück, wie viele Werte umgestellt
+    wurden.
+
+    Idempotent über das Präfix: ein bereits geschützter Wert wird von
+    `geheimnis.schuetzen` unverändert zurückgegeben, ein Lauf ohne gesetzten
+    `GEHEIMNIS_SCHLUESSEL` tut gar nichts. Die `Familie`-Spalten brauchen
+    hier nur ein Lesen-und-Zurückschreiben — den Rest erledigt der
+    Spaltentyp `geheimnis.Geheim` von selbst."""
+    from . import geheimnis                            # noqa: PLC0415
+    from .models import Einstellung, Familie           # noqa: PLC0415
+
+    if not geheimnis.aktiv():
+        return 0
+    umgestellt = 0
+    with Session(engine) as session:
+        for eintrag in session.exec(select(Einstellung)).all():
+            # Der Schlüssel trägt den Familien-Namensraum davor ("3:nc_passwort").
+            basis = eintrag.schluessel.split(":", 1)[-1]
+            if basis not in geheimnis.GEHEIME_SCHLUESSEL:
+                continue
+            if geheimnis.ist_geschuetzt(eintrag.wert) or not eintrag.wert:
+                continue
+            eintrag.wert = geheimnis.schuetzen(eintrag.wert)
+            session.add(eintrag)
+            umgestellt += 1
+
+        session.commit()
+
+    # Die `Familie`-Spalten bewusst ROH über SQL: über das Modell gelesen
+    # sind sie immer Klartext (der Spaltentyp entschlüsselt ja), man könnte
+    # also gar nicht erkennen, was schon geschützt ist — und jeder Start
+    # würde alles neu schreiben.
+    spalten = ("totp_geheimnis", "totp_geheimnis_ausstehend",
+               "backup_webdav_passwort")
+    with engine.begin() as conn:
+        vorhanden = {s["name"] for s in inspect(engine).get_columns("familie")}
+        for spalte in spalten:
+            if spalte not in vorhanden:
+                continue                      # ältere Datenbank, Spalte fehlt
+            zeilen = conn.execute(text(
+                f"SELECT id, {spalte} FROM familie WHERE {spalte} IS NOT NULL "
+                f"AND {spalte} != ''")).fetchall()
+            for fid, wert in zeilen:
+                if geheimnis.ist_geschuetzt(wert):
+                    continue
+                conn.execute(text(f"UPDATE familie SET {spalte} = :w WHERE id = :i"),
+                             {"w": geheimnis.schuetzen(wert), "i": fid})
+                umgestellt += 1
+    if umgestellt:
+        log.info("N475 — %d Zugangsdaten verschlüsselt", umgestellt)
+    return umgestellt
+
+
 def migriere(engine: Engine) -> list[str]:
     """Ergänzt fehlende Spalten. Gibt die durchgeführten Änderungen zurück."""
     inspector = inspect(engine)
@@ -689,6 +744,14 @@ def migriere(engine: Engine) -> list[str]:
             geaendert.append(f"miete.kaution_objektkonto/-eingang[{n} übernommen]")
     except Exception as fehler:                       # noqa: BLE001
         log.warning("Kaution-Vorgänger-Übernahme nicht ergänzt: %s", fehler)
+
+    # N475 — Zugangsdaten, die noch im Klartext liegen, verschlüsseln.
+    try:
+        n = geheimnisse_schuetzen(engine)
+        if n:
+            geaendert.append(f"zugangsdaten[{n} verschlüsselt]")
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Zugangsdaten nicht verschlüsselt: %s", fehler)
 
     if geaendert:
         log.info("Schema ergänzt: %s", ", ".join(geaendert))

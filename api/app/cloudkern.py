@@ -12,7 +12,7 @@ import re
 from fastapi import HTTPException
 from sqlmodel import Session
 
-from . import familienraum
+from . import familienraum, geheimnis
 from .bezeichnung import STANDARD_UNTERORDNER, hierarchie, unterordner_name
 from .models import Einstellung, Objekt
 from .nextcloud import Nextcloud
@@ -371,7 +371,9 @@ def _lies(session: Session, schluessel: str, vorgabe: str = "") -> str:
     ankommt — auch einen bereits zusammengesetzten wie
     `pv_versendet:<slug>:<jahr>:<name>`."""
     eintrag = session.get(Einstellung, familienraum.schluessel(schluessel))
-    return eintrag.wert if eintrag else vorgabe
+    # N475 — `lesen` reicht alles unverändert durch, was gar nicht
+    # verschlüsselt ist; nur die drei geheimen Schlüssel tragen ein Präfix.
+    return geheimnis.lesen(eintrag.wert) if eintrag else vorgabe
 
 
 def verbindung(session: Session) -> Nextcloud:
