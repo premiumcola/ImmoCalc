@@ -232,6 +232,22 @@ def _ziel_client(session: Session, familie: Familie) -> tuple[Nextcloud, str]:
     raise HTTPException(409, "Es ist kein Ziel gewählt.")
 
 
+@router.post("/dateien-zurueckholen")
+def dateien_zurueckholen(daten: AusSpeicherIn,
+                         session: Session = Depends(get_session),
+                         familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """N478 — die gesicherten Belege zurück in die Nextcloud legen, nachdem
+    eine Familien-Sicherung eingespielt wurde. `pfad` wird hier nicht
+    gebraucht (die Pfade stehen in den Dokumenten), nur das Backup-Passwort
+    — dasselbe Feld, damit der Dialog derselbe bleibt."""
+    client, ordner = _ziel_client(session, familie)
+    quelle = cloudkern.verbindung(session)
+    if not quelle.heimat:
+        raise HTTPException(400, "In der Nextcloud ist noch kein Home-Ordner gewählt.")
+    return backup.dateien_zurueckholen(session, familie, quelle, client,
+                                       ordner, daten.passwort)
+
+
 @router.get("/im-speicher")
 def im_speicher(session: Session = Depends(get_session),
                 familie: Familie = Depends(aktuelle_familie)) -> list[dict]:

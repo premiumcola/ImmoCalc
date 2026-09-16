@@ -1147,6 +1147,10 @@ const wannText = iso => {
 const dazuText = dazu => Object.entries(dazu || {})
   .map(([k, v]) => `${v > 0 ? '+' : ''}${v} ${{ objekte: 'Obj.', zeitraeume: 'Zeitr.',
     belege: 'Belege', kontakte: 'Kont.' }[k] || k}`).join(' · ');
+/* N478 — was an DATEIEN dazukam. Steht getrennt, weil es die Größe erklärt:
+   „+12 Dateien · 8,4 MB" sagt mehr als eine gewachsene Archivzahl. */
+const dateienText = z => z && z.dateien_neu
+  ? `+${z.dateien_neu} Dateien · ${groesseText(z.dateien_bytes || 0)}` : '';
 
 /* Datei-Uploads gehen nicht über `api()` (das setzt JSON) — hier mit FormData,
    der Browser setzt den Multipart-Rahmen selbst. */
@@ -1182,6 +1186,7 @@ function listeHtml(backups) {
       <span class="wann">${esc(wannText(b.zeitpunkt))}</span>
       <span class="was">${esc(ZIEL_TEXT[b.ziel] || b.ziel)} · ${esc(groesseText(b.groesse))}
         · ${b.zusammenfassung.objekte ?? 0} Obj. · ${b.zusammenfassung.belege ?? 0} Belege
+        ${dateienText(b.zusammenfassung) ? '· ' + esc(dateienText(b.zusammenfassung)) : ''}
         ${b.ausloeser === 'hand' ? '· von Hand' : ''}</span>
       ${Object.keys(b.dazu || {}).length ? `<span class="dazu">${esc(dazuText(b.dazu))}</span>` : ''}
     </div>`).join('')}</div>`;
@@ -1208,7 +1213,9 @@ function backupDialog(s) {
        arbeitet, ist um diese Zeit fertig. Das Archiv wird <b>vor</b> dem Ablegen mit deinem
        Backup-Passwort verschlüsselt: wer die Datei findet, kann sie ohne das Passwort
        nicht öffnen. Es enthält alles, was dieser Familie gehört — Immobilien, Zeiträume,
-       Belegverweise, Kontakte, Einstellungen.</p>
+       Kontakte, Einstellungen — und <b>die Belege selbst</b>: jede Datei wandert genau
+       einmal hinüber, erkannt an ihrer Prüfsumme. Beim nächsten Mal kommen nur die neuen
+       dazu.</p>
     <div class="meldung" id="bkMeldung"></div>
     <form id="bkForm">
       ${s.hat_passwort ? `
@@ -1271,6 +1278,7 @@ function backupDialog(s) {
         ${s.hat_passwort ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.5"'}>Herunterladen</a>
       <button type="button" class="btn" id="bkEinspielen">Aus Datei einspielen</button>
       <button type="button" class="btn" id="bkAusSpeicher" ${s.ziel ? '' : 'disabled'}>Aus dem Speicher einspielen</button>
+      <button type="button" class="btn" id="bkDateienZurueck" ${s.ziel ? '' : 'disabled'}>Belege zurückholen</button>
     </div>
     <h3 class="dt" style="font-size:14px;margin:0 0 8px">Bisherige Sicherungen</h3>
     ${listeHtml(s.backups)}
@@ -1322,6 +1330,25 @@ function backupDialog(s) {
   dlg.querySelector('#bkEinspielen').addEventListener('click', () => {
     dlg.close();
     backupDatei.click();
+  });
+
+  /* N478 — nach dem Einspielen einer Sicherung stehen die Belegverweise da,
+     die Dateien aber noch nicht. Der Knopf legt sie unter denselben Pfaden
+     in der Nextcloud ab; was schon da ist, bleibt unangetastet. */
+  dlg.querySelector('#bkDateienZurueck').addEventListener('click', async () => {
+    dlg.close();
+    const passwort = await passwortAbfrage('Belege zurückholen',
+      'Holt die gesicherten Belege aus dem Speicher und legt sie wieder in der '
+      + 'Nextcloud ab — unter denselben Pfaden, damit die Verknüpfungen greifen. '
+      + 'Vorhandene Dateien werden nicht überschrieben.',
+      { text: 'Zurückholen' });
+    if (passwort === null) return;
+    try {
+      const st = await api('/backup/dateien-zurueckholen', { method: 'POST',
+        body: { pfad: '', passwort } });
+      melde(`${st.zurueck} von ${st.geprueft} Belegen zurückgeholt`
+        + (st.fehlt ? ` · ${st.fehlt} nicht im Speicher` : ''), 'pos');
+    } catch (f) { melde(f.message || 'Zurückholen fehlgeschlagen', 'neg'); }
   });
 
   dlg.querySelector('#bkAusSpeicher').addEventListener('click', async () => {

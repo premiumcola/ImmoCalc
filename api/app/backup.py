@@ -324,6 +324,143 @@ def instanz_wiederherstellen(archiv: bytes, passwort: str, db_pfad: str) -> None
 
 # ---- Nächtlicher Lauf ---------------------------------------------------------
 
+# ---- Dateien: inhaltsadressiert, inkrementell --------------------------------
+
+DATEI_ORDNER = "dateien"
+# Grösse, ab der eine einzelne Datei übersprungen wird. Ein Beleg ist ein
+# PDF oder ein Foto; was deutlich grösser ist, ist kein Beleg mehr und würde
+# nur den Speicher des Nutzers füllen.
+DATEI_MAX_BYTES = 80 * 1024 * 1024
+
+
+def _datei_ziel(ordner: str, sha1: str) -> str:
+    """`dateien/ab/abcdef….enc` — zwei Ebenen, damit kein Verzeichnis mit
+    tausenden Einträgen entsteht (manche WebDAV-Speicher werden dabei sehr
+    langsam)."""
+    return f"{ordner}/{DATEI_ORDNER}/{sha1[:2]}/{sha1}.enc"
+
+
+def _dokumente_der_familie(session, familie_id: int) -> list:
+    from sqlmodel import select                          # noqa: PLC0415
+
+    from .models import Dokument, Objekt                 # noqa: PLC0415
+
+    objekte = [o.id for o in session.exec(select(Objekt).where(
+        Objekt.familie_id == familie_id)).all()]
+    if not objekte:
+        return []
+    return list(session.exec(select(Dokument).where(
+        Dokument.objekt_id.in_(objekte))).all())
+
+
+def dateien_sichern(session, familie, quelle, ziel, ordner: str,
+                    schluessel: bytes, salz: bytes,
+                    hoechstens: int | None = None) -> dict:
+    """Überträgt die Belege der Familie in den Sicherungsspeicher.
+
+    `quelle` ist die Nextcloud des Nutzers, `ziel` der Sicherungsspeicher —
+    beides `Nextcloud`-Objekte, oft dasselbe. Jede Datei wird auf dem Server
+    verschlüsselt, bevor sie hinausgeht; der Anbieter sieht nur den
+    Prüfsummen-Namen und einen undurchsichtigen Klumpen.
+
+    Übersprungen wird, was schon im Merkzettel steht (`BackupDatei`) — das
+    ist der inkrementelle Teil: in der zweiten Nacht wandern nur die Belege
+    hinüber, die tagsüber dazugekommen sind."""
+    from .models import BackupDatei                      # noqa: PLC0415
+    from .nextcloud import NextcloudFehler               # noqa: PLC0415
+    from sqlmodel import select                          # noqa: PLC0415
+
+    bekannt = {z.sha1 for z in session.exec(select(BackupDatei).where(
+        BackupDatei.familie_id == familie.id)).all()}
+    stand = {"geprueft": 0, "neu": 0, "bytes": 0, "uebersprungen": 0,
+             "fehler": []}
+
+    for dokument in _dokumente_der_familie(session, familie.id):
+        if hoechstens is not None and stand["neu"] >= hoechstens:
+            break
+        stand["geprueft"] += 1
+        if dokument.groesse and dokument.groesse > DATEI_MAX_BYTES:
+            stand["uebersprungen"] += 1
+            continue
+        if dokument.sha1 and dokument.sha1 in bekannt:
+            continue
+        try:
+            inhalt, _typ = quelle.hole(dokument.pfad)
+        except NextcloudFehler as fehler:
+            # Ein Beleg, der in der Cloud nicht mehr liegt, hält die
+            # Sicherung nicht auf — der Rest ist wichtiger.
+            stand["fehler"].append(f"{dokument.dateiname}: {fehler}")
+            continue
+        if len(inhalt) > DATEI_MAX_BYTES:
+            stand["uebersprungen"] += 1
+            continue
+        # Die Prüfsumme selbst rechnen: nicht jede Nextcloud liefert eine,
+        # und nur der tatsächliche Inhalt darf über den Namen entscheiden.
+        sha1 = hashlib.sha1(inhalt).hexdigest()
+        if sha1 in bekannt:
+            continue
+        try:
+            ziel.ordner_anlegen(f"{ordner}/{DATEI_ORDNER}")
+            ziel.ordner_anlegen(f"{ordner}/{DATEI_ORDNER}/{sha1[:2]}")
+            ziel.lege_ab(_datei_ziel(ordner, sha1),
+                         verschluesseln(inhalt, schluessel, salz),
+                         typ="application/octet-stream")
+        except NextcloudFehler as fehler:
+            stand["fehler"].append(f"{dokument.dateiname}: {fehler}")
+            continue
+        session.add(BackupDatei(familie_id=familie.id, sha1=sha1,
+                                groesse=len(inhalt)))
+        bekannt.add(sha1)
+        stand["neu"] += 1
+        stand["bytes"] += len(inhalt)
+    session.commit()
+    if stand["neu"]:
+        log.info("Belege gesichert für %s: %d neu (%d Bytes)", familie.name,
+                 stand["neu"], stand["bytes"])
+    return stand
+
+
+def dateien_zurueckholen(session, familie, quelle, ziel, ordner: str,
+                         passwort: str) -> dict:
+    """Legt die gesicherten Belege wieder in der Nextcloud ab — unter
+    denselben Pfaden wie vorher, damit die Verknüpfungen in der Datenbank
+    ohne Zutun wieder greifen.
+
+    Vorhandene Dateien werden nicht angefasst: wer schon da ist, bleibt."""
+    from .nextcloud import NextcloudFehler               # noqa: PLC0415
+
+    stand = {"geprueft": 0, "zurueck": 0, "fehlt": 0, "fehler": []}
+    for dokument in _dokumente_der_familie(session, familie.id):
+        stand["geprueft"] += 1
+        if not dokument.sha1:
+            stand["fehlt"] += 1
+            continue
+        try:
+            if quelle.existiert(dokument.pfad):
+                continue
+            archiv, _typ = ziel.hole(_datei_ziel(ordner, dokument.sha1))
+        except NextcloudFehler:
+            stand["fehlt"] += 1
+            continue
+        try:
+            inhalt = entschluesseln(archiv, passwort)
+        except BackupFehler as fehler:
+            stand["fehler"].append(f"{dokument.dateiname}: {fehler}")
+            continue
+        try:
+            quelle.ordner_baum_anlegen(
+                "/".join(dokument.pfad.strip("/").split("/")[:-1]), [])
+            quelle.lege_ab(dokument.pfad, inhalt,
+                           typ="application/octet-stream")
+        except NextcloudFehler as fehler:
+            stand["fehler"].append(f"{dokument.dateiname}: {fehler}")
+            continue
+        stand["zurueck"] += 1
+    log.info("Belege zurückgeholt für %s: %d von %d", familie.name,
+             stand["zurueck"], stand["geprueft"])
+    return stand
+
+
 def familie_sichern(session, familie, ausloeser: str = "nacht",
                     nur_bei_aenderung: bool = True) -> dict | None:
     """Export → Fingerabdruck → Archiv → Ziel → Protokoll. Gibt den
@@ -343,14 +480,7 @@ def familie_sichern(session, familie, ausloeser: str = "nacht",
     daten = export.exportiere_familie(session, familie)
     abdruck = fingerabdruck(daten)
     familie.backup_letzte_pruefung = datetime.now()
-    if nur_bei_aenderung and abdruck == familie.backup_fingerabdruck:
-        session.add(familie)
-        session.commit()
-        return None
 
-    archiv = familie_archiv(daten, bytes.fromhex(familie.backup_schluessel),
-                            bytes.fromhex(familie.backup_salz))
-    name = dateiname_familie(familie.name)
     try:
         if familie.backup_ziel == "nextcloud":
             client = cloudkern.verbindung(session)
@@ -364,27 +494,54 @@ def familie_sichern(session, familie, ausloeser: str = "nacht",
                                       heimat="/ImmoCalc-Backups")
             ordner = "ImmoCalc-Backups"
         client.ordner_anlegen(ordner)
-        client.lege_ab(f"{ordner}/{name}", archiv, typ="application/octet-stream")
     except NextcloudFehler as fehler:
-        raise BackupFehler(f"Ablegen fehlgeschlagen: {fehler}") from fehler
+        raise BackupFehler(f"Speicher nicht erreichbar: {fehler}") from fehler
     except Exception as fehler:                          # noqa: BLE001
         # `verbindung()` wirft eine HTTPException, wenn Nextcloud nicht
         # eingerichtet ist — für den Nutzer ist das dieselbe Auskunft.
         raise BackupFehler(str(getattr(fehler, "detail", fehler))) from fehler
 
+    # N478 — die Belege zuerst, und IMMER: ohne sie wäre die Sicherung nur
+    # ein Verzeichnis von Dateien, die es nicht mehr gibt. Läuft auch, wenn
+    # sich an den Daten nichts geändert hat — das kostet nichts, solange
+    # nichts Neues da ist (nur ein Blick in den Merkzettel, kein Netz), und
+    # holt einen abgebrochenen Lauf der Vornacht nach.
+    quelle = cloudkern.verbindung(session) if familie.backup_ziel == "webdav" \
+        else client
+    dateien = dateien_sichern(session, familie, quelle, client, ordner,
+                              bytes.fromhex(familie.backup_schluessel),
+                              bytes.fromhex(familie.backup_salz))
+
+    if nur_bei_aenderung and abdruck == familie.backup_fingerabdruck \
+            and not dateien["neu"]:
+        session.add(familie)
+        session.commit()
+        return None
+
+    archiv = familie_archiv(daten, bytes.fromhex(familie.backup_schluessel),
+                            bytes.fromhex(familie.backup_salz))
+    name = dateiname_familie(familie.name)
+    try:
+        client.lege_ab(f"{ordner}/{name}", archiv, typ="application/octet-stream")
+    except NextcloudFehler as fehler:
+        raise BackupFehler(f"Ablegen fehlgeschlagen: {fehler}") from fehler
+
     familie.backup_fingerabdruck = abdruck
+    zusammenfassung = dict(daten.get("zusammenfassung") or {})
+    zusammenfassung["dateien_neu"] = dateien["neu"]
+    zusammenfassung["dateien_bytes"] = dateien["bytes"]
     eintrag = Backup(familie_id=familie.id, art="familie", dateiname=name,
                      groesse=len(archiv), ziel=familie.backup_ziel,
-                     ausloeser=ausloeser,
-                     zusammenfassung=daten.get("zusammenfassung") or {})
+                     ausloeser=ausloeser, zusammenfassung=zusammenfassung)
     session.add(familie)
     session.add(eintrag)
     session.commit()
     session.refresh(eintrag)
-    log.info("Familien-Backup abgelegt für %s (%s, %d Bytes)", familie.name,
-             familie.backup_ziel, len(archiv))
+    log.info("Familien-Backup abgelegt für %s (%s, %d Bytes, %d neue Belege)",
+             familie.name, familie.backup_ziel, len(archiv), dateien["neu"])
     return {"id": eintrag.id, "dateiname": name, "groesse": len(archiv),
-            "ziel": familie.backup_ziel, "zusammenfassung": eintrag.zusammenfassung}
+            "ziel": familie.backup_ziel, "zusammenfassung": zusammenfassung,
+            "dateien": dateien}
 
 
 def nachtlauf(engine, jetzt: datetime | None = None) -> dict:

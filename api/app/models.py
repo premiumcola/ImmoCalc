@@ -103,6 +103,27 @@ class Backup(SQLModel, table=True):
     zusammenfassung: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
+class BackupDatei(SQLModel, table=True):
+    """N478 — Merkzettel, welche Datei schon im Sicherungsspeicher liegt.
+
+    Die Dateien werden **inhaltsadressiert** abgelegt: der Name im Speicher
+    ist die SHA1-Prüfsumme des Inhalts. Daraus folgt zweierlei — dieselbe
+    Datei, die an zwei Abrechnungen hängt, wandert nur einmal hinüber, und
+    eine unveränderte Datei wird nie ein zweites Mal hochgeladen.
+
+    Ohne diesen Merkzettel müsste jede Nacht für JEDE Datei einzeln beim
+    Anbieter nachgefragt werden, ob sie schon da ist (ein PROPFIND je Beleg,
+    bei tausend Belegen tausend Anfragen). Die Tabelle ist die lokale
+    Antwort darauf. Sie kann von der Wirklichkeit abweichen, wenn jemand im
+    Speicher von Hand löscht — dafür gibt es die Vollprüfung in den
+    Einstellungen, die den Merkzettel neu aufbaut."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    familie_id: int = Field(foreign_key="familie.id", index=True)
+    sha1: str = Field(index=True)
+    groesse: int = 0
+    hochgeladen_am: datetime = Field(default_factory=datetime.now)
+
+
 class ZweiFaktorTicket(SQLModel, table=True):
     """N472 — der Zwischenschritt zwischen richtigem Passwort und bestätigtem
     zweiten Faktor. Bewusst KEINE `Sitzung`: eine `Sitzung`-Zeile ist die
