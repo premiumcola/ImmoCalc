@@ -137,7 +137,12 @@
 </div>
 
 <script type="module">
-import { api, baueDialog } from './assets/immo.js';
+import { api, baueDialog, augenNachruesten } from './assets/immo.js';
+
+/* N482 — das Passwortfeld der Anmeldung bekommt dasselbe Auge wie überall
+   sonst. Die Felder in den Dialogen (Wiederherstellen, Erstanmeldung, neue
+   Familie) erledigt `baueDialog` von selbst. */
+augenNachruesten();
 
 // Schon angemeldet? Dann gar nicht erst den Anmeldescreen zeigen.
 api('/auth/ich').then(() => { location.href = 'index.html'; }).catch(() => {});

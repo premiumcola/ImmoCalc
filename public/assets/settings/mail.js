@@ -4,9 +4,9 @@
    ergänzt Host und Port automatisch, „custom" gibt die beiden Felder frei.
    Nach dem Verbinden lässt sich eine Testmail an die eigene Adresse schicken.
    Verhaltensgleich zum bisherigen Inline-Skript in settings.html. */
-import { api } from '../immo.js';
+import { api, augenBinden } from '../immo.js';
 import { auswahlfeld } from '../auswahl.js';
-import { feldmeldung, meldungWeg, augenBinden, diensteAuffrischen } from './state.js';
+import { feldmeldung, meldungWeg, diensteAuffrischen } from './state.js';
 
 let mailDlg, mailMeldung, serverZeile;
 let anbieterListe = [];
@@ -31,6 +31,10 @@ async function mailZustand() {
                         status.anbieter);
     anbieterUebernehmen();
 
+    // N482 — auch das Passwort vorbelegen, damit das Feld Punkte zeigt statt
+    // leer dazustehen. Ausserhalb des `verbunden`-Zweigs: ein hinterlegtes
+    // Passwort bei noch nicht geprüfter Verbindung gehört genauso ins Feld.
+    document.getElementById('mailPass').value = status.passwort || '';
     if (status.verbunden) {
       document.getElementById('mailBenutzer').value = status.benutzer;
       document.getElementById('mailName').value = status.absender_name || '';

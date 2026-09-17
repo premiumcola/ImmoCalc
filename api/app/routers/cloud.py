@@ -88,14 +88,30 @@ class VerbindungIn(BaseModel):
 
 @router.get("/status")
 def status(session: Session = Depends(get_session)) -> dict:
-    """Zustand der Verbindung — ohne das Passwort preiszugeben."""
+    """Zustand der Verbindung.
+
+    N482 — das App-Passwort geht an die angemeldete Familie zurück, damit das
+    Eingabefeld es als Punkte zeigen und das Auge daneben es aufdecken kann.
+    Nutzer: „stell die überall, wenn sie eingegeben sind, als Punkte dar …
+    wenn das Auge offen ist, dann ist der Schlüssel sichtbar."
+
+    Vorher stand hier der Platzhalter „•••• gespeichert" — gut gemeint, aber
+    das Feld blieb dadurch leer und verlangte bei jeder Änderung die komplette
+    Neueingabe, ohne dass man nachsehen konnte, was hinterlegt ist.
+
+    Die Abwägung ist bewusst getroffen und vom Nutzer entschieden: wer diese
+    Antwort lesen kann, hat eine angemeldete Sitzung — und damit über die
+    gewöhnlichen Endpunkte längst Zugriff auf alle Mieter- und Objektdaten.
+    In der Datenbank bleibt das Passwort verschlüsselt (N475); `test_geheimnisse`
+    hält das weiterhin fest.
+    """
     url, benutzer = _lies(session, S_URL), _lies(session, S_BENUTZER)
     passwort = _lies(session, S_PASSWORT)
     return {
         "eingerichtet": bool(url and benutzer and passwort),
         "url": url,
         "benutzer": benutzer,
-        "passwort": "•••• gespeichert" if passwort else "",
+        "passwort": passwort or "",
         "home": _lies(session, S_HOME),
         "tls_pruefen": _lies(session, S_TLS) == "1",
         "struktur": STRUKTUR,

@@ -62,20 +62,29 @@ class SchluesselIn(BaseModel):
 
 @router.get("/status")
 def status(session: Session = Depends(get_session)) -> dict:
-    """Ist die KI eingerichtet und erreichbar? Ohne den Schlüssel preiszugeben.
+    """Ist die KI eingerichtet und erreichbar?
 
     `eingerichtet` = Schlüssel in der DB ODER `ANTHROPIC_API_KEY` gesetzt. Ist
     sie eingerichtet, wird ein winziger echter Ping gemacht (`kiauslese.pruefe`)
-    → `erreichbar` true/false. Ohne Einrichtung bleibt `erreichbar` null."""
+    → `erreichbar` true/false. Ohne Einrichtung bleibt `erreichbar` null.
+
+    N482 — der SELBST hinterlegte Schlüssel geht an die angemeldete Familie
+    zurück, damit das Feld ihn als Punkte zeigt und das Auge daneben ihn
+    aufdecken kann (Begründung ausführlich in `routers/cloud.py::status`).
+
+    Der Schlüssel aus der UMGEBUNG geht ausdrücklich NICHT mit: der gehört
+    dem Betreiber der Installation, nicht der Familie. `ki_key()` liest
+    ohnehin nur die Datenbank — die Trennung ist damit schon im Aufruf
+    angelegt und wird hier nur nicht wieder aufgeweicht."""
     key = ki_key(session)
     modell = ki_modell(session)
     eingerichtet = kiauslese.verfuegbar(key)
     aus_umgebung = bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
     antwort = {
         "eingerichtet": eingerichtet,
-        # Ein gespeicherter Schlüssel zeigt „gespeichert", sonst leer — nie der
-        # Schlüssel selbst.
         "gespeichert": bool(key),
+        # Nur der eigene, gespeicherte Schlüssel — nie der aus der Umgebung.
+        "schluessel": key or "",
         "aus_umgebung": aus_umgebung and not key,
         "modell": modell or kiauslese.STANDARD_MODELL,
         "erreichbar": None,

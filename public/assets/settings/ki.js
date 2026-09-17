@@ -1,11 +1,15 @@
 /* N216 — KI-Beleg-Auslese (GET/POST/DELETE /api/ki/…).
 
    Anthropic-Schluessel eintragen (wie die Nextcloud-Zugangsdaten) und sehen,
-   dass das KI-Tool online und erreichbar ist. Der Schluessel wird NIE im
-   Klartext angezeigt — nur „gespeichert" oder leer. Verhaltensgleich zum
-   bisherigen Inline-Skript in settings.html. */
-import { api, frage } from '../immo.js';
-import { feldmeldung, meldungWeg, augenBinden, diensteAuffrischen } from './state.js';
+   dass das KI-Tool online und erreichbar ist.
+
+   N482 — der Schluessel steht jetzt im Feld: als Punkte verdeckt, per Auge
+   aufdeckbar. Bis dahin blieb das Feld leer und zeigte nur den Platzhalter
+   „sk-ant-…" — der sah aus wie ein Inhalt, war aber keiner. Ein Schluessel
+   aus der UMGEBUNG wird weiterhin nicht gezeigt: der gehoert dem Betreiber
+   der Installation, nicht der Familie. */
+import { api, frage, augenBinden } from '../immo.js';
+import { feldmeldung, meldungWeg, diensteAuffrischen } from './state.js';
 
 let kiDlg, kiMeldung, kiKey, kiModell, kiEntfernen;
 let kiZustand = { eingerichtet: false };
@@ -22,8 +26,11 @@ async function kiZustandLaden() {
   }
   // Ein gespeicherter Schlüssel lässt sich entfernen; ein env-Schlüssel nicht.
   kiEntfernen.style.display = kiZustand.gespeichert ? 'block' : 'none';
-  // Den Schlüssel nie vorbelegen — nur das Modell, das kein Geheimnis ist.
-  kiKey.value = '';
+  // N482 — den hinterlegten Schlüssel vorbelegen: das Feld zeigt ihn als
+  // Punkte, das Auge daneben deckt ihn auf. Vorher blieb es leer und trug
+  // nur den Platzhalter „sk-ant-…" — der sah aus wie ein Inhalt, war aber
+  // keiner (Nutzer: „nicht mit diesem komischen SK").
+  kiKey.value = kiZustand.schluessel || '';
   kiModell.value = kiZustand.gespeichert && kiZustand.modell ? kiZustand.modell : '';
 }
 

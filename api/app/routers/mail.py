@@ -59,7 +59,10 @@ def status(session: Session = Depends(get_session)) -> dict:
         "benutzer": _lies(session, S_BENUTZER),
         "absender": _lies(session, S_ABSENDER),
         "absender_name": _lies(session, S_NAME),
-        "passwort": "•••• gespeichert" if passwort else "",
+        # N482 — das Postfach-Passwort geht an die angemeldete Familie zurück,
+        # damit das Feld Punkte zeigt und das Auge daneben aufdecken kann.
+        # Begründung ausführlich am Zwilling in `routers/cloud.py::status`.
+        "passwort": passwort or "",
     }
 
 

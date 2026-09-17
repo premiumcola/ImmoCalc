@@ -65,8 +65,12 @@ def test_liste_nennt_den_typen_katalog_auch_ohne_bestand():
     with TestClient(app) as c:
         daten = c.get("/api/dokumentvorlagen").json()
     assert [t["typ"] for t in daten["typen"]] == [t["typ"] for t in TYPEN_KATALOG]
-    # Der Mietvertrag ist bewusst NICHT dabei — zu individuell für eine Vorlage.
-    assert not any("Mietvertrag" == t["typ"] for t in daten["typen"])
+    # N482 — der Mietvertrag steht an erster Stelle. Bis dahin war er gar nicht
+    # dabei („zu individuell für eine Vorlage"); der Nutzer hat einen eigenen
+    # Vordruck und will ihn hier ablegen. Die Reihenfolge der Liste ist die
+    # Reihenfolge auf der Seite — deshalb wird sie hier festgehalten und nicht
+    # nur das Vorhandensein.
+    assert daten["typen"][0]["typ"] == "Mietvertrag"
     assert all(t["verwendungszweck"] == "Vermietung" for t in daten["typen"])
 
 

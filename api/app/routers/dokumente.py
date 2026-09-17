@@ -3475,17 +3475,10 @@ def umbenennen(dokument_id: int,
 
     alt_name = d.dateiname
     alt_pfad = d.pfad
-    # Jahr/Monat aus dem Belegdatum, mit Rückfall auf das gespeicherte Jahr und
-    # den Namen — genug, um den Datumsteil vorn zu setzen.
-    jahr, monat = datum_aus_namen(alt_name)
-    if d.belegdatum:
-        jahr, monat = d.belegdatum.year, d.belegdatum.month
-    elif d.jahr:
-        jahr = d.jahr
-    # Die Bezeichnung aus dem Originalnamen bewahrt die Benennung des Nutzers.
-    sache = _bezeichnung(alt_name)
-    neu_name = dateiname(jahr, d.kategorie or "", sache, _endung(alt_name),
-                         monat, d.betrag, d.kostenart or "")
+    # N483 — derselbe Rechenweg wie im Korrekturlauf `/namen-richten`; er
+    # holt Jahr/Monat aus dem Belegdatum (Rückfall auf gespeichertes Jahr und
+    # Namen) und bewahrt die Bezeichnung aus dem Originalnamen.
+    neu_name = _standardname(d)
 
     # Idempotent: heisst die Datei schon so, gibt es nichts zu tun.
     if neu_name == alt_name:
@@ -3584,9 +3577,90 @@ def name_aendern(dokument_id: int, data: NameIn,
 # rein additiv (nie überschreiben, nie löschen) und standardmäßig „trocken".
 # --------------------------------------------------------------------------
 
+def _eigene_objekt_ids(session: Session, familie: Familie) -> set[int]:
+    """Die Objekt-ids DIESER Familie — die Grenze, an der jeder Massenlauf
+    haltmachen muss (N436). Einzelzugriffe erledigt `deps.dokument_holen`;
+    ein Lauf über `select(Dokument)` hat diesen Schutz nicht von selbst."""
+    return {o.id for o in session.exec(
+        select(Objekt).where(Objekt.familie_id == familie.id)).all() if o.id}
+
+
+def _standardname(d: Dokument) -> str:
+    """Wie die Datei nach den heutigen Regeln heissen müsste.
+
+    Herausgelöst in N483, weil derselbe Rechenweg jetzt an zwei Stellen
+    gebraucht wird: beim Umbenennen eines einzelnen Belegs und beim
+    Korrekturlauf über den Bestand. Zwei Fassungen davon wären genau die Art
+    Dopplung, die auseinanderläuft."""
+    alt = d.dateiname or ""
+    jahr, monat = datum_aus_namen(alt)
+    if d.belegdatum:
+        jahr, monat = d.belegdatum.year, d.belegdatum.month
+    elif d.jahr:
+        jahr = d.jahr
+    # Die Bezeichnung aus dem Originalnamen bewahrt die Benennung des Nutzers.
+    return dateiname(jahr, d.kategorie or "", _bezeichnung(alt), _endung(alt),
+                     monat, d.betrag, d.kostenart or "")
+
+
+@router.post("/namen-richten")
+def namen_richten(trocken: bool = True,
+                  session: Session = Depends(get_session),
+                  familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """N483 — bringt bereits abgelegte Dateien auf die heutige Namensregel.
+
+    Anlass: in `30_Vermietung_Verpachtung` hiessen Mietverträge
+    `2014-09_Miete-Gebäudehaftpflicht-Jana.Meinecke.signed-bis.08.pdf` — eine
+    Kostenart aus der Nebenkostenabrechnung mitten im Namen eines Mietvertrags.
+    Die Regel dahinter ist mit N483 berichtigt (`namen.py`); dieser Lauf zieht
+    den Bestand nach, der sonst für immer falsch hiesse.
+
+    Jede betroffene Datei wird IM SELBEN Ordner umbenannt (MOVE),
+    kollisionssicher; die `.immocalc`-Sidecar wandert mit. Rein additiv: nie
+    überschreiben, nie löschen. Scheitert ein MOVE, bleiben Datei UND
+    Datenbank unberührt und der Lauf macht mit dem nächsten Beleg weiter.
+
+    `?trocken=true` (Vorgabe) zeigt nur den Plan; erst `?trocken=false` führt
+    aus. Idempotent: ein zweiter Lauf findet nichts mehr.
+    """
+    eigene = _eigene_objekt_ids(session, familie)
+    kandidaten: list[tuple[Dokument, str]] = []
+    for d in session.exec(select(Dokument)).all():
+        if d.objekt_id not in eigene or not (d.pfad or "").startswith("/"):
+            continue
+        # Sidecars wandern mit ihrem Beleg, nicht als eigener Eintrag.
+        if _ist_sidecar(d.dateiname):
+            continue
+        neu = _standardname(d)
+        if neu and neu != d.dateiname:
+            kandidaten.append((d, neu))
+
+    if trocken:
+        return {"trocken": True, "anzahl": len(kandidaten),
+                "plan": [{"id": d.id, "alt": d.dateiname, "neu": neu}
+                         for d, neu in kandidaten]}
+
+    umbenannt: list[dict] = []
+    fehler: list[dict] = []
+    for d, neu in kandidaten:
+        alt = d.dateiname
+        try:
+            _ziel, frei = _im_ordner_umbenennen(session, d, neu)
+        except Exception as e:                                # noqa: BLE001
+            session.rollback()
+            log.warning("Name nicht gerichtet (%s): %s", d.pfad, e)
+            fehler.append({"id": d.id, "name": alt, "grund": str(e)})
+            continue
+        umbenannt.append({"id": d.id, "alt": alt, "neu": frei})
+    log.info("Namen gerichtet: %d umbenannt, %d Fehler",
+             len(umbenannt), len(fehler))
+    return {"trocken": False, "umbenannt": umbenannt, "fehler": fehler}
+
+
 @router.post("/praefix-entfernen")
 def praefix_entfernen(trocken: bool = True,
-                      session: Session = Depends(get_session)) -> dict:
+                      session: Session = Depends(get_session),
+                      familie: Familie = Depends(aktuelle_familie)) -> dict:
     """N24 — entfernt das führende „ohne-Jahr_" aus Cloud-Dateinamen.
 
     Das Präfix ist ein alter Sortier-Vorsatz für Dateien ohne Jahr und hilft
@@ -3600,8 +3674,14 @@ def praefix_entfernen(trocken: bool = True,
     # `.immocalc`-Steckbriefe sind Sidecars, keine Belege — sie wandern mit ihrem
     # Beleg (`_sidecar_mitnehmen`), nicht als eigener Eintrag. Sie hier zu
     # überspringen verhindert 404-Scheinfehler (die Datei ist schon mitgezogen).
+    # N483-Fund: der Lauf lief bis hierher über ALLE Dokumente der Datenbank,
+    # nicht nur über die der angemeldeten Familie. Solange es genau eine
+    # Familie gab, fiel das nicht auf; seit die App öffentlich erreichbar ist,
+    # wäre es ein Eingriff in fremde Ablagen.
+    eigene = _eigene_objekt_ids(session, familie)
     kandidaten = [d for d in session.exec(select(Dokument)).all()
-                  if (d.pfad or "").startswith("/")
+                  if d.objekt_id in eigene
+                  and (d.pfad or "").startswith("/")
                   and (d.dateiname or "").startswith(praefix)
                   and not _ist_sidecar(d.dateiname)]
     if trocken:

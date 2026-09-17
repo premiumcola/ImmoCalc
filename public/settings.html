@@ -97,6 +97,15 @@
                       background:#F4F6F6;border-radius:7px;padding:7px 9px;
                       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .zeile2{display:flex;gap:10px} .zeile2 > *{flex:1}
+  /* N483 — Dateinamen richten: je Beleg alt über neu. Untereinander statt
+     nebeneinander — auf 390 px bliebe je Spalte nur ein Wortfetzen übrig. */
+  .nr-liste{display:flex;flex-direction:column;gap:7px;margin:0 0 14px;
+            max-height:min(46dvh,380px);overflow:auto}
+  .nr-zeile{background:var(--sheet);border-radius:11px;padding:10px 12px}
+  .nr-zeile .alt{display:block;font:500 11.5px var(--mono);color:var(--soft);
+                 text-decoration:line-through;word-break:break-all}
+  .nr-zeile .neu{display:block;font:600 11.5px var(--mono);color:var(--teal-d);
+                 margin-top:3px;word-break:break-all}
 
   /* N275 — Drucker: je Gerät eine Karte. Name und Adresse stehen über den
      Knöpfen statt daneben — auf 390 px blieben sonst neben drei Touch-Zielen
@@ -466,6 +475,16 @@
         </span>
         <span class="arr">›</span>
       </button>
+      <!-- N483 — der Korrekturlauf über die Dateinamen. Steht hier, weil er
+           Dateien in der Cloud anfasst und nirgends sonst hingehört. -->
+      <button class="row" id="namenRow">
+        <span class="ic kic" data-zeichen="etikett"></span>
+        <span class="txt">
+          <span class="t">Dateinamen prüfen</span>
+          <span class="d">Belege auf die heutige Namensregel bringen</span>
+        </span>
+        <span class="arr">›</span>
+      </button>
     </div>
   </div>
 </dialog>
@@ -664,9 +683,10 @@
    Ordner behalten ihren Namen), „JSON-Sicherung einlesen" (die Sicherung
    dieser Familie kann das vollständiger) und die Rechenlogik-Übersicht —
    die steht jetzt unter Nebenkosten, wo gerechnet wird. */
-import { api, installNav, baueDialog, melde, esc } from './assets/immo.js';
-import { feldmeldung, meldungWeg, passwortFeld, augenBinden,
-         passwortAbfrage } from './assets/settings/state.js';
+import { api, installNav, baueDialog, melde, esc, passwortFeld,
+         augenBinden } from './assets/immo.js';
+import { feldmeldung, meldungWeg, passwortAbfrage }
+  from './assets/settings/state.js';
 import { verknuepfungenInit, vAlleLaden } from './assets/settings/verknuepfungen.js';
 import { versionZeigen } from './assets/settings/version.js';
 import { nextcloudInit } from './assets/settings/nextcloud.js';
@@ -704,6 +724,10 @@ const ZEICHEN = {
                 1-1.9-1.9Z"/>`,
   stift: `<path ${STRICH} d="M15.9 4.6l3.5 3.5-9.6 9.6-4.4.9.9-4.4Z"/>
           <path ${STRICH} d="m13.9 6.6 3.5 3.5"/>`,
+  etikett: `<path ${STRICH} d="M3.9 11.3V5.4a1.5 1.5 0 0 1 1.5-1.5h5.9a1.5 1.5
+              0 0 1 1.1.45l7.3 7.3a1.5 1.5 0 0 1 0 2.1l-5.9 5.9a1.5 1.5 0 0
+              1-2.1 0l-7.3-7.3a1.5 1.5 0 0 1-.45-1.05Z"/>
+            <circle ${STRICH} cx="8.1" cy="8.1" r="1.4"/>`,
 };
 document.querySelectorAll('[data-zeichen]').forEach(feld => {
   feld.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${

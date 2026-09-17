@@ -115,6 +115,100 @@ export const promille = n => (n ?? 0).toLocaleString('de-DE',
 // Import statt reinem Re-Export: `immo.js` benutzt sie auch selbst.
 export { esc };
 
+/* ---- Passwortfeld mit Auge (N479, überarbeitet in N482) ---------------
+   Ein Muster für JEDES Passwortfeld der App — Anmeldung, Einstellungen,
+   Sicherung. Steht in `immo.js` und nicht bei den Einstellungen, weil der
+   Anmeldescreen es genauso braucht.
+
+   Nutzer zu N479: „das Auge ist sehr, sehr schmal und unschön … wenn das Auge
+   offen ist, dann ist der Schlüssel sichtbar, aber im normalen Zustand ist das
+   Auge nicht offen." Beides war vorher falsch herum: das Zeichen zeigte im
+   Ruhezustand ein OFFENES Auge (gemeint als „hier drücken zum Anzeigen") und
+   war damit genau das Gegenteil dessen, was der Zustand ist. Jetzt steht das
+   Zeichen für den ZUSTAND, nicht für die Handlung: geschlossenes Auge =
+   verdeckt, offenes Auge = sichtbar. */
+
+const A_STRICH = 'stroke="currentColor" stroke-width="1.8" fill="none" '
+  + 'stroke-linecap="round" stroke-linejoin="round"';
+
+/* Offen: ein volles, rundes Lid mit Pupille. Bewusst höher als breit gebaut
+   (Verhältnis ~0,56 statt der flachen 0,44 von vorher) — ein flaches Auge
+   wirkt bei 23 px wie ein Strich. */
+const AUGE_OFFEN = `<path ${A_STRICH} d="M3.2 12Q12 2.2 20.8 12 12 21.8 3.2 12Z"/>
+  <circle ${A_STRICH} cx="12" cy="12" r="3"/>`;
+
+/* Zu: ein wirklich geschlossenes Lid mit drei Wimpern — kein durchgestrichenes
+   offenes Auge. Der Unterschied ist auf einen Blick zu sehen, ohne dass man
+   einen dünnen Schrägstrich suchen muss. */
+const AUGE_ZU = `<path ${A_STRICH} d="M3.4 9.4Q12 17.4 20.6 9.4"/>
+  <path ${A_STRICH} d="M6.9 12.6 5.4 15M12 14v2.6M17.1 12.6 18.6 15"/>`;
+
+/**
+ * Baut ein Passwortfeld samt Beschriftung und Auge.
+ *
+ * `label` und `zusatz` sind immer eigene Literale aus dem Code (nie Eingaben
+ * des Nutzers) — deshalb wandern sie unmaskiert ins Markup.
+ */
+export function passwortFeld(id, label, zusatz = '') {
+  return `<div class="field">
+      <label for="${id}">${label}</label>
+      <div class="pwfeld">
+        <input class="inp" type="password" id="${id}" ${zusatz}>
+        <button type="button" class="pwauge" data-auge aria-pressed="false"
+                aria-label="Passwort anzeigen" title="Passwort anzeigen">
+          <svg class="zu" viewBox="0 0 24 24" aria-hidden="true">${AUGE_ZU}</svg>
+          <svg class="auf" viewBox="0 0 24 24" aria-hidden="true">${AUGE_OFFEN}</svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+/**
+ * Verdrahtet alle Augen unterhalb von `wurzel`. Mehrfach aufrufbar: einmal
+ * verdrahtete Knöpfe werden übersprungen.
+ */
+export function augenBinden(wurzel = document) {
+  wurzel.querySelectorAll('[data-auge]').forEach(knopf => {
+    if (knopf.dataset.auge === 'bereit') return;
+    knopf.dataset.auge = 'bereit';
+    // Der Knopf darf den Fokus NICHT an sich ziehen: sonst springt beim
+    // Aufdecken die Schreibmarke aus dem Feld und die Eingabe reisst ab.
+    knopf.addEventListener('mousedown', e => e.preventDefault());
+    knopf.addEventListener('click', () => {
+      const feld = knopf.parentElement.querySelector('input');
+      if (!feld) return;
+      const zeigen = feld.type === 'password';
+      feld.type = zeigen ? 'text' : 'password';
+      knopf.setAttribute('aria-pressed', String(zeigen));
+      const text = zeigen ? 'Passwort verbergen' : 'Passwort anzeigen';
+      knopf.setAttribute('aria-label', text);
+      knopf.title = text;
+    });
+  });
+}
+
+/**
+ * Rüstet ein bereits im Markup stehendes `<input type="password">` mit dem
+ * Auge nach — für die Seiten, die ihre Felder von Hand schreiben. Lässt
+ * Beschriftung und alle Attribute des Feldes unangetastet.
+ */
+export function augenNachruesten(wurzel = document) {
+  wurzel.querySelectorAll('input[type="password"]').forEach(feld => {
+    if (feld.parentElement?.classList.contains('pwfeld')) return;
+    const huelle = document.createElement('div');
+    huelle.className = 'pwfeld';
+    feld.replaceWith(huelle);
+    huelle.appendChild(feld);
+    huelle.insertAdjacentHTML('beforeend',
+      `<button type="button" class="pwauge" data-auge aria-pressed="false"
+               aria-label="Passwort anzeigen" title="Passwort anzeigen">
+         <svg class="zu" viewBox="0 0 24 24" aria-hidden="true">${AUGE_ZU}</svg>
+         <svg class="auf" viewBox="0 0 24 24" aria-hidden="true">${AUGE_OFFEN}</svg>
+       </button>`);
+  });
+  augenBinden(wurzel);
+}
+
 /**
  * N287 — eine deutsche Zahleneingabe zu einer Zahl. `null`, wenn nichts
  * Brauchbares drinsteht.
@@ -797,6 +891,11 @@ export function baueDialog(inhalt) {
   dlg.className = 'immo-dlg';
   dlg.innerHTML = inhalt;
   kreuzAnbringen(dlg);
+  // N482 — jedes Passwortfeld in jedem Dialog bekommt sein Auge, ohne dass
+  // der Aufrufer daran denken muss. Nutzer: „bitte macht es an allen Stellen
+  // so." Ein Feld, das schon in `passwortFeld()` gebaut wurde, wird dabei
+  // übersprungen und nur noch verdrahtet.
+  augenNachruesten(dlg);
   document.body.appendChild(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   dlg.showModal();

@@ -57,9 +57,21 @@ ERLAUBTE_ENDUNGEN = (".pdf", ".doc", ".docx", ".odt")
 # N247 — der Katalog: welche Vorlagen für eine Vermietung sinnvoll sind. Die
 # Typen entsprechen den Zeilen der Mietverhältnis-Checkliste (`SCAN_TYPEN` in
 # `objekt/state.js`), damit die Vorlage dort neben der passenden Zeile auftaucht.
-# Bewusst OHNE Mietvertrag — der ist zu individuell für eine Vorlage.
 # Die Liste beschreibt nur, WELCHE Zeilen es gibt; gefüllt wird von Hand.
+#
+# N482 — der Mietvertrag steht bewusst an ERSTER Stelle. Hier stand zuvor
+# „bewusst OHNE Mietvertrag — der ist zu individuell für eine Vorlage": das
+# war eine Annahme über den Nutzer, keine Eigenschaft der Sache. Er hat einen
+# eigenen Vordruck und will ihn genau hier ablegen. Dass jeder Vertrag am Ende
+# individuell ausgefüllt wird, unterscheidet ihn nicht von einem
+# Übergabeprotokoll — und die Reihenfolge der Liste ist die Reihenfolge auf
+# der Seite, deshalb nach vorn: der Mietvertrag ist das Papier, das bei einer
+# Vermietung zuerst gebraucht wird.
 TYPEN_KATALOG = [
+    {"verwendungszweck": "Vermietung", "typ": "Mietvertrag",
+     "name": "Mietvertrag",
+     "hinweis": "Der eigene Vordruck — Namen, Flächen und Beträge kommen beim "
+                "Ausfüllen dazu."},
     {"verwendungszweck": "Vermietung", "typ": "Übergabeprotokoll Einzug",
      "name": "Übergabeprotokoll (Einzug)",
      "hinweis": "Zustand und Zählerstände bei Übergabe an den Mieter."},

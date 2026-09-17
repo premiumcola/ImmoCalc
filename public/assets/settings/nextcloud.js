@@ -8,7 +8,7 @@
 
    Der Ordnerbrowser blättert per WebDAV — angefasst wird beim Wählen nichts,
    nur der Home-Pfad in der Konfiguration wird gesetzt. */
-import { api, esc } from '../immo.js';
+import { api, esc, baueDialog, melde } from '../immo.js';
 import { feldmeldung, meldungWeg, diensteAuffrischen } from './state.js';
 
 let ncDlg, ordnerDlg;
@@ -18,9 +18,8 @@ let ncZustand = { eingerichtet: false, struktur: [] };
 let aktuellerPfad = '';
 
 /* Zustand holen und in den Dialog schreiben: Adresse und Benutzer vorbelegen,
-   die Einrichtungsschritte ein- oder ausblenden. Das Passwort wird NIE
-   vorbelegt — ein App-Passwort ist einmalig sichtbar und wird neu erzeugt,
-   nicht nachgelesen. */
+   die Einrichtungsschritte ein- oder ausblenden. Seit N482 wird auch das
+   App-Passwort vorbelegt: als Punkte sichtbar, per Auge aufdeckbar. */
 async function zustandLaden() {
   try {
     ncZustand = await api('/nextcloud/status');
@@ -32,6 +31,10 @@ async function zustandLaden() {
     document.getElementById('ncUrl').value = ncZustand.url;
     document.getElementById('ncUser').value = ncZustand.benutzer;
   }
+  // N482 — das App-Passwort vorbelegen: als Punkte sichtbar, per Auge
+  // aufdeckbar. Vorher stand im Feld nur der Platzhalter
+  // „xxxxx-xxxxx-xxxxx-xxxxx-xxxxx", der wie ein Inhalt aussah.
+  document.getElementById('ncPass').value = ncZustand.passwort || '';
   ncHome.textContent = ncZustand.home || 'noch nicht gewählt';
   // Die Einrichtungsschritte gibt es erst, wenn die Verbindung steht —
   // ohne sie liesse sich kein Ordner blättern.
@@ -127,6 +130,50 @@ export function nextcloudInit() {
   ordnerliste.addEventListener('click', e => {
     const knopf = e.target.closest('[data-pfad]');
     if (knopf) ordnerZeigen(knopf.dataset.pfad);
+  });
+
+  /* N483 — Dateinamen richten. Immer erst der Trockenlauf: der Nutzer sieht,
+     was passieren würde, und entscheidet dann. Ein Lauf, der ohne Rückfrage
+     Dateien in der Cloud anfasst, wäre an dieser Stelle falsch. */
+  document.getElementById('namenRow').addEventListener('click', async () => {
+    ncDlg.close();
+    let plan;
+    try {
+      plan = await api('/dokumente/namen-richten', { method: 'POST' });
+    } catch (f) {
+      melde(f.message || 'Prüfung fehlgeschlagen', 'neg');
+      return;
+    }
+    if (!plan.anzahl) {
+      melde('Alle Belege heißen bereits nach der aktuellen Regel', 'pos');
+      return;
+    }
+    const proben = plan.plan.slice(0, 6).map(p =>
+      `<div class="nr-zeile"><span class="alt">${esc(p.alt)}</span>
+       <span class="neu">${esc(p.neu)}</span></div>`).join('');
+    const dlg = baueDialog(`
+      <div class="dt">${plan.anzahl} ${plan.anzahl === 1 ? 'Beleg' : 'Belege'}
+        ${plan.anzahl === 1 ? 'heißt' : 'heißen'} anders als heute vorgesehen</div>
+      <p>Umbenannt wird <b>im selben Ordner</b> — verschoben, gelöscht oder
+         überschrieben wird nichts. Die Belege bleiben verknüpft.</p>
+      <div class="nr-liste">${proben}</div>
+      ${plan.anzahl > 6 ? `<p class="hinweis">… und ${plan.anzahl - 6} weitere.</p>` : ''}
+      <button type="button" class="btn" id="nrLos">Namen richten</button>`);
+    dlg.querySelector('#nrLos').addEventListener('click', async e => {
+      e.target.disabled = true;
+      e.target.textContent = 'Benennt um …';
+      try {
+        const a = await api('/dokumente/namen-richten?trocken=false',
+                            { method: 'POST' });
+        dlg.close();
+        melde(`${a.umbenannt.length} umbenannt`
+          + (a.fehler.length ? ` · ${a.fehler.length} nicht möglich` : ''),
+          a.fehler.length ? 'neg' : 'pos');
+      } catch (f) {
+        dlg.close();
+        melde(f.message || 'Umbenennen fehlgeschlagen', 'neg');
+      }
+    });
   });
 
   document.getElementById('homeWaehlen').addEventListener('click', async () => {

@@ -815,28 +815,44 @@ button.chip:hover{filter:brightness(.96)}
 }
 .inp:focus{outline:none; border-color:var(--teal); box-shadow:0 0 0 3px rgba(15,110,92,.12)}
 
-/* N479 — Passwortfeld mit Auge. Nutzer: „leer = beibehalten ist sehr
-   verwirrend, das ist nicht der Standard." Deshalb genau ein Muster fuer alle
-   Passwortfelder: Punkte plus ein Auge, das sie sichtbar macht. Markup baut
-   `passwortFeld()` in assets/settings/state.js. */
+/* N479 / N482 — Passwortfeld mit Auge. Ein Muster fuer JEDES Passwortfeld der
+   App: das Feld zeigt Punkte, das Auge daneben macht sie sichtbar. Markup baut
+   `passwortFeld()` in assets/immo.js.
+
+   N482 — der Knopf war „sehr schmal und unschoen" (Nutzer). Drei Ursachen,
+   alle hier behoben: das Zeichen war mit 19 px zu klein fuer die 44er Flaeche,
+   das Auge selbst zu flach gezeichnet (siehe immo.js), und der Knopf sass ohne
+   jede Abgrenzung im Feld. Jetzt: 23 px Zeichen, eine Haarlinie als Trenner
+   und eine eigene, leicht abgesetzte Flaeche — der Knopf sieht aus wie einer. */
 .pwfeld{position:relative}
-.pwfeld .inp{padding-right:50px}
+/* Platz fuer den Knopf samt Trennlinie; sonst laeuft ein langes Geheimnis
+   darunter hindurch. */
+.pwfeld .inp{padding-right:56px}
 .pwauge{
-  position:absolute; right:3px; top:50%; transform:translateY(-50%);
-  width:44px; height:44px; border:none; background:none; cursor:pointer;
-  color:var(--soft); border-radius:11px;
+  position:absolute; right:1px; top:1px; bottom:1px;
+  width:50px; border:none; background:none; cursor:pointer;
+  color:#7D9196; border-radius:0 10px 10px 0;
   display:flex; align-items:center; justify-content:center;
   -webkit-tap-highlight-color:transparent;
+  transition:color .12s, background .12s;
+}
+/* Die Haarlinie steht INNEN als ::before statt als border-left: ein Rahmen
+   wuerde die 44-px-Tippflaeche um die Linienbreite verschieben. */
+.pwauge::before{
+  content:""; position:absolute; left:0; top:9px; bottom:9px;
+  width:1px; background:var(--line);
 }
 .pwauge:hover{color:var(--ink); background:#EEF2F2}
 .pwauge:focus-visible{outline:2px solid var(--teal); outline-offset:-2px}
-.pwauge svg{width:19px; height:19px; display:block}
-/* Aufgedeckt faerbt sich das Auge — das Zeichen allein (Auge mit Strich vs.
-   ohne) ist auf 19 px zu leise, um den Zustand zu tragen. */
-.pwauge .zu{display:none}
+.pwauge svg{width:23px; height:23px; display:block}
+/* Das Zeichen steht fuer den ZUSTAND, nicht fuer die Handlung: geschlossenes
+   Auge = verdeckt (Ruhezustand), offenes Auge = sichtbar. Vorher war es
+   umgekehrt und damit irrefuehrend. Die Farbe verstaerkt dasselbe Signal ein
+   zweites Mal, damit die Form allein es nicht tragen muss. */
+.pwauge .auf{display:none}
 .pwauge[aria-pressed="true"]{color:var(--teal)}
-.pwauge[aria-pressed="true"] .auf{display:none}
-.pwauge[aria-pressed="true"] .zu{display:block}
+.pwauge[aria-pressed="true"] .zu{display:none}
+.pwauge[aria-pressed="true"] .auf{display:block}
 /* CCCLI — iOS Safari zoomt beim Fokus in ein Feld mit computed font-size < 16px
    hinein und zoomt danach nicht zurück: die ganze Seite bleibt vergrössert,
    Menü und Layout verrutschen. Auf Touch-Geräten daher überall mindestens 16px;

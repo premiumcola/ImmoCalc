@@ -4,11 +4,14 @@
    teilen sich hier ihre gemeinsamen Helfer: die Meldungen an Ort und Stelle
    (`feldmeldung`/`meldungWeg`), den knapp befristeten Statusabruf fuer die
    Dienst-Kacheln (`vHole`, `vHoleGeteilt`, `vGeteiltReset`), die kleinen
-   Formatierer (`vKurz`, `vModell`, `ortszeit`) und — seit N479 — das
-   Passwortfeld mit Auge (`passwortFeld`, `augenBinden`, `passwortAbfrage`).
+   Formatierer (`vKurz`, `vModell`, `ortszeit`) und die Passwortabfrage
+   (`passwortAbfrage`).
 
-   Die Zeichen der Kacheln stehen seit N479 in `symbole.js`. */
-import { baueDialog } from '../immo.js';
+   Die Zeichen der Kacheln stehen seit N479 in `symbole.js`. Das Passwortfeld
+   mit Auge (`passwortFeld`, `augenBinden`) ist in N482 nach `immo.js`
+   gewandert: der Anmeldescreen braucht es genauso, und der soll dafür kein
+   Einstellungsmodul importieren müssen. */
+import { baueDialog, passwortFeld, augenBinden } from '../immo.js';
 
 /* Frist fuer die Statusabrufe der Dienst-Kacheln (N133). */
 const VZEITGRENZE = 6000;
@@ -77,66 +80,6 @@ export function feldmeldung(feld, text, gut = false) {
   feld.className = 'meldung an ' + (gut ? 'gut' : 'schlecht');
 }
 export const meldungWeg = feld => { feld.className = 'meldung'; };
-
-/* ---- Passwortfeld mit Auge (N479) ------------------------------------
-   Nutzer: „leer = beibehalten ist sehr verwirrend, das ist nicht der
-   Standard." Deshalb gibt es genau ein Muster fuer alle Passwortfelder der
-   App: Punkte plus ein Auge, das sie sichtbar macht. Wer sehen kann, was
-   im Feld steht, braucht keine Erklaerung daneben. */
-
-const A_STRICH = 'stroke="currentColor" stroke-width="1.7" fill="none" '
-  + 'stroke-linecap="round" stroke-linejoin="round"';
-
-/* Zwei symmetrische Quadratbögen als Lidbogen, dazu die Pupille. Symmetrisch
-   gesetzt, damit das Auge bei 19 px nicht schief wirkt. */
-const AUGE = `<path ${A_STRICH} d="M2.4 12Q12 3.6 21.6 12 12 20.4 2.4 12Z"/>
-  <circle ${A_STRICH} cx="12" cy="12" r="2.7"/>`;
-
-const AUGE_AUF = AUGE;
-
-/* Zugedeckt: dasselbe Auge mit einem Strich darüber. Bewusst dieselbe Form —
-   wer den Knopf zweimal drückt, soll denselben Gegenstand sehen und nicht
-   zwei verschiedene Bilder vergleichen müssen. */
-const AUGE_ZU = `${AUGE}<path ${A_STRICH} d="M4.3 4.3 19.7 19.7"/>`;
-
-/* Baut ein Passwortfeld samt Beschriftung und Auge.
-   `label` und `zusatz` sind immer eigene Literale aus dem Code (nie Eingaben
-   des Nutzers) — deshalb wandern sie unmaskiert ins Markup. */
-export function passwortFeld(id, label, zusatz = '') {
-  return `<div class="field">
-      <label for="${id}">${label}</label>
-      <div class="pwfeld">
-        <input class="inp" type="password" id="${id}" ${zusatz}>
-        <button type="button" class="pwauge" data-auge aria-pressed="false"
-                aria-label="Passwort anzeigen" title="Passwort anzeigen">
-          <svg class="auf" viewBox="0 0 24 24" aria-hidden="true">${AUGE_AUF}</svg>
-          <svg class="zu" viewBox="0 0 24 24" aria-hidden="true">${AUGE_ZU}</svg>
-        </button>
-      </div>
-    </div>`;
-}
-
-/* Verdrahtet alle Augen unterhalb von `wurzel`. Mehrfach aufrufbar: einmal
-   verdrahtete Knoepfe werden uebersprungen. */
-export function augenBinden(wurzel = document) {
-  wurzel.querySelectorAll('[data-auge]').forEach(knopf => {
-    if (knopf.dataset.auge === 'bereit') return;
-    knopf.dataset.auge = 'bereit';
-    // Der Knopf darf den Fokus NICHT an sich ziehen: sonst springt beim
-    // Aufdecken die Schreibmarke aus dem Feld und die Eingabe reisst ab.
-    knopf.addEventListener('mousedown', e => e.preventDefault());
-    knopf.addEventListener('click', () => {
-      const feld = knopf.parentElement.querySelector('input');
-      if (!feld) return;
-      const zeigen = feld.type === 'password';
-      feld.type = zeigen ? 'text' : 'password';
-      knopf.setAttribute('aria-pressed', String(zeigen));
-      const text = zeigen ? 'Passwort verbergen' : 'Passwort anzeigen';
-      knopf.setAttribute('aria-label', text);
-      knopf.title = text;
-    });
-  });
-}
 
 /* Ein kleiner Dialog, der nur nach dem Passwort der Familie fragt — fuer
    Zwei-Faktor, Backup und alles Weitere dieselbe Form. Loest mit dem

@@ -10,9 +10,10 @@
    Punkte mit einem Auge daneben; wo ein Geheimnis gar nicht zurückgelesen
    werden KANN (das Backup-Passwort ist nur als abgeleiteter Schlüssel
    gespeichert), sagt das Feld das ausdrücklich statt es zu verschweigen. */
-import { api, esc, melde, baueDialog } from '../immo.js';
-import { feldmeldung, meldungWeg, passwortFeld, augenBinden,
-         passwortAbfrage, diensteAuffrischen } from './state.js';
+import { api, esc, melde, baueDialog, passwortFeld,
+         augenBinden } from '../immo.js';
+import { feldmeldung, meldungWeg, passwortAbfrage,
+         diensteAuffrischen } from './state.js';
 
 const KOOFR_DAV = 'https://app.koofr.net/dav/Koofr';
 const RHYTHMUS_TEXT = { '': 'Aus', taeglich: 'Täglich', woechentlich: 'Wöchentlich' };

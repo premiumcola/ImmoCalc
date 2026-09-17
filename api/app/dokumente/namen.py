@@ -70,6 +70,23 @@ def _sagt_nichts(text: str) -> bool:
     return _kern(text) in _NICHTSSAGEND
 
 
+def _ohne_vorangestellte(sache: str, wort: str) -> str:
+    """Entfernt `wort` am ANFANG von `sache`, stückweise über die
+    Bindestrich-Teile — damit auch eine mehrteilige Kostenart trifft
+    („Wartung-Enthärtungsanlage").
+
+    Bleibt dabei nichts übrig, bleibt `sache` unangetastet: ein Name aus Datum
+    und Betrag allein wäre schlechter als einer mit einem überflüssigen Wort.
+    """
+    teile = [t for t in sache.split("-") if t]
+    muster = [t for t in _saubere_datei(wort).split("-") if t]
+    if not muster or len(teile) <= len(muster):
+        return sache
+    if [_kern(t) for t in teile[:len(muster)]] != [_kern(m) for m in muster]:
+        return sache
+    return "-".join(teile[len(muster):])
+
+
 def _ohne_dopplung(sache: str) -> str:
     """Aufeinanderfolgende gleiche Bausteine zusammenfassen — das Idempotenz-
     Netz: „Hausmeister-Hausmeister-Polster" → „Hausmeister-Polster". Heilt
@@ -83,6 +100,31 @@ def _ohne_dopplung(sache: str) -> str:
 
 def _endung(name: str) -> str:
     return ("." + name.rsplit(".", 1)[-1]) if "." in name else ""
+
+
+# N483 — wo die Kostenart in den Dateinamen gehört, und wo nicht.
+#
+# Nutzer, mit Screenshot aus der Cloud: „wieso steht hier in den ganzen
+# Mietverträgen überall Gebäudehaftpflicht drin. Das ist ja ein Mietvertrag,
+# das macht keinen Sinn." Die Dateien hiessen
+# `2014-09_Miete-Gebäudehaftpflicht-Jana.Meinecke.signed-bis.08.pdf`.
+#
+# Ursache war NICHT ein Rückfall auf „irgendeine Kostenart", sondern die
+# ungeprüfte Übernahme: `Dokument.kostenart` wurde gesetzt (ein Mietvertrag
+# nennt fast immer eine Haftpflichtversicherung, und `kostenarten.py::_KANON`
+# bildet „Haftpflichtversicherung" auf „Gebäudehaftpflicht" ab), beim
+# Umklassifizieren zu „Mietvertrag" aber nie geleert — und der Namensbau hat
+# sie bedingungslos eingesetzt. Danach verstärkte es sich selbst: steht die
+# Kostenart erst im Dateinamen, schlägt `eingang/kostenart.js` sie beim
+# nächsten Prüfen wieder vor.
+#
+# Die Kostenart gehört nur dorthin, wo sie DIE unterscheidende Angabe ist:
+# unter Nebenkosten liegen dreissig Belege desselben Jahres, und erst
+# „Schornsteinfeger" oder „Wasser" sagt, welcher gemeint ist. Ein Mietvertrag,
+# eine Versicherungspolice, ein Kreditvertrag tragen ihre Sache schon im
+# Namen; eine Kostenart daneben ist bestenfalls Rauschen und schlimmstenfalls
+# — wie hier — schlicht falsch.
+KOSTENART_IM_NAMEN = frozenset({"Nebenkosten"})
 
 
 def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
@@ -111,11 +153,22 @@ def dateiname(jahr: int | None, kategorie: str, beschreibung: str,
     vorn = ARTKUERZEL.get(kategorie, "")
     if vorn and _kern(sache).startswith(_kern(vorn)):
         sache = sache[len(vorn):].lstrip("-_ ") or sache
+    # N483 — ein ALTER Name trägt die Kostenart oft noch vorn, weil sie bis
+    # hierher bedingungslos eingesetzt wurde. Beim Neubauen ist der alte Name
+    # die Bezeichnung — ohne diesen Schritt bliebe „Gebäudehaftpflicht" dort
+    # für immer stehen, und kein Korrekturlauf käme je daran.
+    #
+    # Bewusst eng: entfernt wird nur ein Wort, das (a) ganz vorn steht und
+    # (b) genau der Kostenart DIESES Belegs entspricht. Nicht geraten, nichts
+    # gesucht — sonst verlöre eine selbst vergebene Bezeichnung Bestandteile.
+    if kostenart and kategorie not in KOSTENART_IM_NAMEN:
+        sache = _ohne_vorangestellte(sache, kostenart)
     # Die Kostenposition sagt genauer, worum es geht, als eine Bezeichnung wie
     # „Rechnung": aus 2026-02_Rechnung wird 2026-02_NK-Schornsteinfeger.
     # Heisst die Position wie die Art („Nebenkosten" unter Nebenkosten), sagt
     # sie nichts Neues — das Kürzel steht ohnehin schon vorn.
-    if kostenart and _kern(kostenart) != _kern(kategorie):
+    if (kategorie in KOSTENART_IM_NAMEN
+            and kostenart and _kern(kostenart) != _kern(kategorie)):
         genau = _saubere_datei(kostenart)
         if not sache or _sagt_nichts(sache):
             sache = genau
