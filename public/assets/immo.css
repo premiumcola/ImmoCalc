@@ -1143,6 +1143,27 @@ dialog.immo-dlg{
   width:calc(100% - 32px); background:var(--paper); color:var(--ink);
   box-shadow:0 30px 70px -20px rgba(22,38,44,.5);
 }
+
+/* N485 — `breit`: ein Dialog, der am PC mehr als die 400-px-Spalte bekommt.
+   Nutzer zum Backup-Dialog auf dem Desktop: „bitte mach die Ansicht am PC
+   schöner, nicht so länglich."
+
+   Die 400 px sind die richtige Breite fuer ein Telefon und bleiben dort auch
+   — die Klasse wirkt erst ab 780 px. Ein Dialog mit viel Inhalt wurde am PC
+   sonst zu einer meterlangen Roehre mit zwei Handbreit Text und daneben
+   nichts; die Breite ist da, sie wurde nur nicht genutzt.
+
+   Dazu eine Hoehenbremse: der Dialog wird nie hoeher als der Bildschirm,
+   gerollt wird IN ihm. Vorher wuchs er darueber hinaus und der Knopf unten
+   lag ausserhalb. */
+@media (min-width:780px){
+  dialog.immo-dlg.breit{
+    max-width:760px;
+    max-height:min(86dvh, 900px);
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+}
 dialog.immo-dlg::backdrop{background:rgba(22,38,44,.45)}
 /* N337 — nur für die Ordnerwahl: die aufgeklappte Liste darf über den Rand
    des Fensters hinausreichen. Sie bringt ihren eigenen Scroll mit

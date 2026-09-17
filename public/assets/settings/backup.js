@@ -124,6 +124,8 @@ function passwortBlock(s) {
 }
 
 function backupDialog(s) {
+  /* N485 — `breit` lässt den Dialog am PC über die 400-px-Spalte hinaus. Am
+     Telefon ändert die Klasse nichts; dort ist die Spalte richtig. */
   const dlg = baueDialog(`
     <div class="dt">Sicherung dieser Familie</div>
     <p>Jede Nacht zwischen ${s.nacht_von} und ${s.nacht_bis} Uhr prüft ImmoCalc, ob sich seit
@@ -134,6 +136,8 @@ function backupDialog(s) {
        Kontakte, Einstellungen — und <b>die Belege selbst</b>: jede Datei wandert genau
        einmal hinüber, erkannt an ihrer Prüfsumme. Beim nächsten Mal kommen nur die neuen
        dazu.</p>
+    <div class="bk-raster">
+    <div class="bk-spalte">
     <div class="meldung" id="bkMeldung"></div>
     <form id="bkForm">
       ${passwortBlock(s)}
@@ -176,7 +180,9 @@ function backupDialog(s) {
         'autocomplete="current-password" required')}
       <button type="submit" class="btn">Einstellungen speichern</button>
     </form>
-    <h3 class="dt" style="font-size:14px;margin:18px 0 8px">Jetzt</h3>
+    </div>
+    <div class="bk-spalte">
+    <h3 class="dt bk-ueber">Jetzt</h3>
     <div class="bk-knoepfe">
       <button type="button" class="btn" id="bkJetzt" ${s.hat_passwort && s.ziel ? '' : 'disabled'}>Jetzt sichern</button>
       <a class="btn" id="bkDownload" href="/api/backup/herunterladen" download
@@ -185,10 +191,13 @@ function backupDialog(s) {
       <button type="button" class="btn" id="bkAusSpeicher" ${s.ziel ? '' : 'disabled'}>Aus dem Speicher einspielen</button>
       <button type="button" class="btn" id="bkDateienZurueck" ${s.ziel ? '' : 'disabled'}>Belege zurückholen</button>
     </div>
-    <h3 class="dt" style="font-size:14px;margin:0 0 8px">Bisherige Sicherungen</h3>
+    <h3 class="dt bk-ueber">Bisherige Sicherungen</h3>
     ${listeHtml(s.backups)}
-    ${instanzHtml(s.instanz)}`);
+    ${instanzHtml(s.instanz)}
+    </div>
+    </div>`);
 
+  dlg.classList.add('breit');
   augenBinden(dlg);
   const meldung = dlg.querySelector('#bkMeldung');
   const ziel = dlg.querySelector('#bkZiel');

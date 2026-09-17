@@ -55,6 +55,15 @@
   .tfa-schritte li{margin-bottom:4px}
   .tfa-link{display:inline-block;font:600 13px var(--body);color:var(--teal);
             margin:0 0 14px}
+  /* N485 — am PC: QR-Bild und Schlüssel links, Anleitung und Code-Feld
+     rechts. Am Telefon untereinander, QR zuerst — dort wird gescannt, nicht
+     gelesen. */
+  .tfa-raster{display:grid;gap:2px}
+  @media (min-width:780px){
+    .tfa-raster{grid-template-columns:240px 1fr;gap:26px;align-items:start}
+    .tfa-qr{margin-top:2px}
+    .tfa-schritte{margin-top:0}
+  }
   /* N474 — Backups: die Liste der Sicherungen als kompakte Zeilen, das
      „dazu" (was seit dem letzten Mal neu ist) als grüne Marke daneben. */
   .bk-liste{display:flex;flex-direction:column;gap:6px;margin:0 0 16px}
@@ -71,6 +80,20 @@
   .bk-instanz{font:400 12.5px var(--body);color:var(--soft);line-height:1.5;
               background:var(--sheet);border-radius:11px;padding:10px 12px;margin:0 0 16px}
   .bk-instanz b{color:var(--ink)}
+  /* N485 — am PC zwei Spalten statt einer langen Röhre: links einstellen,
+     rechts handeln und nachsehen. Am Telefon bleibt es eine Spalte in genau
+     der Reihenfolge, in der man sie durchgeht. Der Umbruchpunkt ist derselbe
+     wie bei `dialog.breit` in immo.css — beides muss zusammen greifen, sonst
+     stünden zwei Spalten in einem 400er Dialog. */
+  .bk-raster{display:grid;gap:4px}
+  .bk-ueber{font-size:14px;margin:18px 0 8px}
+  @media (min-width:780px){
+    .bk-raster{grid-template-columns:1fr 1fr;gap:28px;align-items:start}
+    /* Die erste Überschrift der rechten Spalte steht sonst 18 px tiefer als
+       das erste Feld der linken — die Spalten begännen sichtbar versetzt. */
+    .bk-spalte > .bk-ueber:first-child{margin-top:0}
+    .bk-knoepfe .btn{flex:1 1 100%}
+  }
   /* N479 — „Backup-Passwort ist gesetzt". Statt eines leeren Feldes mit der
      Erklärung „leer = beibehalten" sagt die Fläche, was der Fall ist. */
   .bk-gesetzt{display:flex;gap:10px;align-items:flex-start;background:var(--pos-bg);
@@ -140,6 +163,15 @@
   /* Der Port ist dreistellig bis fünfstellig — er braucht keine halbe Zeile. */
   #druckerFormDlg .zeile2 .feld-port{flex:0 0 96px}
   #druckerDlg .dbody{max-height:min(76dvh,760px);overflow:auto}
+  /* N485 — am PC passen zwei Gerätekarten nebeneinander; untereinander war
+     die Liste bei vier Druckern länger als der Bildschirm. Auch die
+     Seiten-Dialoge (ohne `immo-dlg`) dürfen dafür über 400 px hinaus. */
+  @media (min-width:780px){
+    dialog.breit{max-width:720px}
+    #druckerListe{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    #druckerListe .drk{margin-bottom:0}
+    #druckerListe .empty{grid-column:1/-1}
+  }
 
   /* ---- Verbundene Dienste (N133, umgebaut in N479) --------------------
      Ganz oben und als EINZIGER Weg: je Dienst eine Kachel, die direkt in
@@ -618,7 +650,7 @@
   </div>
 </dialog>
 
-<dialog id="druckerDlg">
+<dialog id="druckerDlg" class="breit">
   <div class="dh">
     <h2>Drucker im Haus</h2>
     <button class="close" id="druckerNeu" title="Drucker hinzufügen"
@@ -835,15 +867,19 @@ function wiederherstellungscodesZeigen(codes) {
 function einrichtungDialog(daten) {
   const dlg = baueDialog(`
     <div class="dt">Authenticator-App verbinden</div>
-    <ol class="tfa-schritte">
-      <li>In der App (Google Authenticator, Aegis, Authy …) „Konto hinzufügen"
-          → <b>QR-Code scannen</b> und den Code unten abfotografieren.</li>
-      <li>Den ersten Code aus der App hier eintippen.</li>
-    </ol>
+    <div class="tfa-raster">
+    <div>
     ${daten.qr_svg ? `<div class="tfa-qr">${daten.qr_svg}</div>` : ''}
     <p class="tfa-oder">Oder von Hand eingeben</p>
     <div class="tfa-schluessel">${esc(inVierergruppen(daten.geheimnis))}</div>
     <a class="tfa-link" href="${esc(daten.otpauth_url)}">Direkt in der App öffnen ›</a>
+    </div>
+    <div>
+    <ol class="tfa-schritte">
+      <li>In der App (Google Authenticator, Aegis, Authy …) „Konto hinzufügen"
+          → <b>QR-Code scannen</b> und den Code daneben abfotografieren.</li>
+      <li>Den ersten Code aus der App hier eintippen.</li>
+    </ol>
     <form id="tfaCodeForm">
       <div class="meldung" id="tfaCodeFehler"></div>
       <div class="field">
@@ -852,7 +888,12 @@ function einrichtungDialog(daten) {
           autocomplete="one-time-code" maxlength="6" required>
       </div>
       <button type="submit" class="btn">Bestätigen und einschalten</button>
-    </form>`);
+    </form>
+    </div>
+    </div>`);
+  // N485 — am PC steht der Code neben dem QR-Bild statt darunter; der Dialog
+  // war sonst hoeher als der Bildschirm und der Knopf lag ausserhalb.
+  dlg.classList.add('breit');
   const fehler = dlg.querySelector('#tfaCodeFehler');
   dlg.querySelector('#tfaCodeForm').addEventListener('submit', async e => {
     e.preventDefault();
