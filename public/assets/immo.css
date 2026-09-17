@@ -24,7 +24,44 @@
      Menüleiste zu hell wird, ist die Schrift halt in beiden Fällen dunkel."
      Der helle Schleier dahinter bleibt unverändert (ausdrücklich so
      gewünscht) — er trägt die Abgrenzung mit. */
-  --chrome:#A9B4B4;
+  /* N487 — das Konzept hinter dieser Farbe, nach dem fünften Anlauf.
+     Nutzer: „die Menüleiste unten sticht massiv raus … sie muss noch mal
+     heller werden … sie soll sich sanft einfügen, aber trotzdem ganz leicht
+     abheben und nicht komplett im Hintergrund verschwinden."
+
+     Der Fehler aller vorherigen Versuche war derselbe: eine DECKENDE Farbe
+     zu suchen, die gleichzeitig auf weissen Karten und auf dem Papierton
+     funktioniert. Die gibt es nicht. Zu hell (#F4F7F7) verschwand vor
+     weissen Karten, zu dunkel (#A9B4B4, zuletzt) stand als fremder grauer
+     Block auf dem Papier. Jeder Schritt löste das eine Problem und schuf
+     das andere — fünfmal hin und her.
+
+     Die Lösung ist, die Frage zu ändern: die Leiste bekommt gar keine eigene
+     Farbe mehr, sondern eine DURCHSCHEINENDE Tönung über dem unscharfen
+     Inhalt. Damit bezieht sie sich immer auf das, was gerade dahinter liegt,
+     statt gegen beides gleichzeitig anzutreten:
+       · über einer weissen Karte tönt sie ab und wird sichtbar,
+       · über dem Papier bleibt sie fast gleich und fügt sich ein.
+     Die Abhebung trägt nicht mehr der Farbabstand, sondern die Glaskante
+     oben und der leise Schatten unten (siehe `.nav::after`).
+
+     Das ist zugleich, was der Nutzer ausdrücklich wollte: „ich will die
+     Elemente unter der Menüleiste durchlaufen sehen, aber verschwommen."
+     Mit einer deckenden Farbe war das ausgeschlossen.
+
+     Der Wert ist gerechnet, nicht geschätzt. Zielkorridor für den Abstand
+     der Leiste zum Papier: 1,25–1,45:1 — darunter verschwindet sie (der
+     erste Versuch mit #D8DFDF lag bei 1,09 und war unsichtbar, genau der
+     Fehler vom Anfang), darüber sticht sie heraus (die deckenden #A9B4B4
+     davor lagen bei 1,79). `rgba(184,192,192,.76)` ergibt:
+       · über dem Papier   #C3CACA   1,39:1 zum Grund
+       · über weissen Karten #C9CFCF 1,57:1 zum Grund
+       · `--ink` darauf     9,4:1    (vorher 7,3:1 — sogar besser lesbar)
+       · aktive Kachel      1,35:1   zur Leiste, bleibt als Fläche erkennbar
+     Also ein gutes Viertel weniger Abstand als zuletzt, ohne im Grund zu
+     verschwinden. Der Ton ist neutral gehalten (kein blaugrüner Stich, das
+     war der Einwand aus N466), die helle Sonder-Beschriftung bleibt weg. */
+  --chrome:rgba(184,192,192,.76);
 }
 *{box-sizing:border-box}
 /* Das `hidden`-Attribut bedeutet immer „weg". Ohne diese Regel überschreibt
@@ -578,18 +615,34 @@ button.chip:hover{filter:brightness(.96)}
 @media(max-width:479px){
   .nav::before{
     content:"";
-    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-10px;
+    /* N487 — DIE Ursache für „der Schatten oberhalb der Menüleiste ist sehr,
+       sehr scharf". Es lag nicht an den Schatten-Ebenen: der Schleier begann
+       `top:-10px` über der Pille, und die Maske blendete ihn über `11%`
+       davon ein — also über gut EINEN Pixel. Das ist eine Kante, kein
+       Verlauf.
+
+       Jetzt läuft er über 84px an, und die Stopps stehen in PIXELN statt in
+       Prozent: `#000` wird genau 84px unter dem Anfang erreicht — das ist
+       exakt die Oberkante der Pille, unabhängig davon, wie hoch die Leiste
+       gerade ist. Mit Prozentwerten wanderte dieser Punkt bei jeder
+       Höhenänderung mit und musste nachgerechnet werden (genau das steht
+       zweimal in der Historie darüber). Der Zwischenstopp bei 44px macht aus
+       der Geraden eine weiche Kurve.
+
+       Nutzer: „ich will die Elemente unter der Menüleiste durchlaufen sehen,
+       aber verschwommen." Deshalb trägt der Schleier denselben, bewusst
+       DURCHSCHEINENDEN Ton wie die Pille (`--chrome`, siehe dort) — Pille
+       und Randfläche sind ein Stück, und der Inhalt bleibt dahinter sichtbar,
+       nur unscharf. */
+    position:absolute; left:-14px; right:-14px; bottom:-14px; top:-84px;
     z-index:-1;
-    /* N463 — HELL, bewusst NICHT im Ton der Pille: nur so entsteht die klare
-       Kante zwischen Leiste und dem, was hinter ihr liegt. Vorher trugen
-       beide denselben Grauton und verschwammen zu einer Fläche.
-       N465 — Nutzer: „der Schatten muss nicht 100 % undurchsichtig sein,
-       siebzig Prozent oder so" — von .82 auf .70. */
-    background:rgba(244,247,247,.70);
-    -webkit-backdrop-filter:blur(44px) saturate(1.1);
-    backdrop-filter:blur(44px) saturate(1.1);
-    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 11%, #000 100%);
-    mask-image:linear-gradient(to bottom, transparent 0%, #000 11%, #000 100%);
+    background:var(--chrome);
+    -webkit-backdrop-filter:blur(30px) saturate(1.15);
+    backdrop-filter:blur(30px) saturate(1.15);
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0,
+                       rgba(0,0,0,.32) 44px, #000 84px);
+    mask-image:linear-gradient(to bottom, transparent 0,
+               rgba(0,0,0,.32) 44px, #000 84px);
     pointer-events:none;
   }
   /* Die Pillenfläche als eigene Ebene ÜBER dem Schleier. Der Schatten sitzt
@@ -611,10 +664,22 @@ button.chip:hover{filter:brightness(.96)}
        in dem Dunkelton muss raus, das soll einfach nur ein Grauton sein."
        `--chrome` ist deshalb jetzt ein neutrales Mittelgrau (siehe dort). */
     background:var(--chrome);
-    -webkit-backdrop-filter:blur(46px) saturate(1.1);
-    backdrop-filter:blur(46px) saturate(1.1);
-    box-shadow:0 5px 8px -3px rgba(0,0,0,.26),
-               0 20px 20px -11px rgba(0,0,0,.34);
+    -webkit-backdrop-filter:blur(30px) saturate(1.15);
+    backdrop-filter:blur(30px) saturate(1.15);
+    /* N487 — drei Änderungen am Schatten, alle aus demselben Grund: die
+       Leiste soll sich abheben, ohne als fremdes Element dazustehen.
+       (1) Nur noch nach UNTEN und deutlich weicher — die alten Ebenen waren
+           mit .26/.34 in reinem Schwarz so kräftig, dass die Leiste wie
+           aufgeklebt wirkte.
+       (2) Im Tintenton der App statt in reinem Schwarz. Reines Schwarz liest
+           sich auf einem grünstichigen Grau immer als Fremdkörper.
+       (3) Eine Haarlinie als Glaskante oben INNEN. Sie ist es, die eine
+           durchscheinende Fläche als Glas lesbar macht — nicht der Schatten.
+           Damit trägt die Abhebung die Kante, und der Schatten darf leise
+           sein. */
+    box-shadow:inset 0 1px 0 0 rgba(255,255,255,.55),
+               0 2px 6px -3px rgba(22,38,44,.18),
+               0 10px 24px -12px rgba(22,38,44,.30);
     pointer-events:none;
   }
 }
@@ -659,8 +724,23 @@ button.chip:hover{filter:brightness(.96)}
    „Nebenkosten" ganz dastehen — die vier flachen Eintraege teilen sich die
    Breite, der runde Dokumente-Knopf in der Mitte zaehlt separat (fixe
    Breite, kein flex:1, siehe unten). */
+/* N487 — hier lag die ungleiche Rundung, die der Nutzer im Screenshot
+   markiert hat („der Radius der Menüleiste aussen und der Elemente innen ist
+   nicht im gleichen Radius").
+
+   Konzentrisch heisst: innerer Radius = äusserer Radius − Abstand dazwischen.
+   Bei 26px Aussenrundung und 8px Innenabstand sind das 18px — und genau die
+   trägt `.nav a`. Diese Regel setzte den SEITLICHEN Abstand aber auf 5px,
+   während der senkrechte bei 8px blieb. Damit wäre der richtige Radius in
+   der einen Richtung 21px, in der anderen 18px — mit einem Wert nicht
+   erreichbar, und sichtbar wurde die Differenz genau an der ersten und
+   letzten Kachel.
+
+   Der Abstand bleibt deshalb überall bei 8px. Der Platz, der dafür fehlt,
+   kommt aus dem kleineren Zwischenraum (5px → 3px) und, ab 400px, aus dem
+   halben Schriftgrad weiter unten. */
 @media(max-width:430px){
-  .nav{gap:3px; padding-left:5px; padding-right:5px}
+  .nav{gap:3px}
   .nav a{padding-left:1px; padding-right:1px; letter-spacing:0}
 }
 /* Auf dem iPhone 13 (390) reicht das noch nicht ganz — ein halber Schriftgrad
@@ -857,8 +937,32 @@ button.chip:hover{filter:brightness(.96)}
    hinein und zoomt danach nicht zurück: die ganze Seite bleibt vergrössert,
    Menü und Layout verrutschen. Auf Touch-Geräten daher überall mindestens 16px;
    am Desktop (feiner Zeiger) bleibt das ruhigere 15px-Design unverändert. */
+/* N486 — `:not(#_)` ist kein Schreibfehler, sondern der Zweck dieser Regel.
+   Sie MUSS gewinnen, und zwar gegen jede spaetere oder spezifischere Regel.
+
+   Die vorherige Fassung (`.inp, select.inp, input, select, textarea`) hatte
+   fuer die drei Element-Selektoren die Spezifitaet (0,0,1) — schwaecher als
+   JEDE klassenbasierte Regel. `.zk-feld select` (13px), `.twsort select`
+   (12px), `.zu-rolle select` (11,5px), `.bwzeile input` (14px) und ein Dutzend
+   weitere haben sie damit still ueberboten. Der Riegel stand da und hielt
+   nichts. Genau das ist der Grund, warum CCCLI den Zoom „behoben" hat und er
+   zurueckkam: die Ausnahme in objekt.html stand sogar VOR den Regeln, die sie
+   ueberstimmen sollte — bei gleicher Spezifitaet gewinnt die spaetere.
+
+   `:not(#_)` trifft alles (eine ID `_` gibt es nirgends) und bringt die
+   Spezifitaet einer ID mit: (1,0,1). Damit kann keine Klassenregel der App
+   mehr darunter. Kein `!important`, weil das auch eine bewusst GROESSERE
+   Schrift plattmachen wuerde — hier geht es um eine Untergrenze.
+
+   Warum ueberhaupt: iOS-Safari zoomt beim Fokus in ein Feld mit computed
+   `font-size < 16px` hinein und zoomt danach NICHT zurueck. Die Seite bleibt
+   vergroessert, feste Kopf- und Fussleisten verrutschen, man kann quer
+   scrollen. Am Desktop (feiner Zeiger) bleibt das ruhigere 15px-Design.
+
+   `scratch/zoomfalle.py` findet neue Verstoesse; der Waechter dazu ist
+   `api/tests/test_kein_zoom_auf_ios.py`. */
 @media (pointer:coarse){
-  .inp, select.inp, input, select, textarea{ font-size:16px; }
+  input:not(#_), select:not(#_), textarea:not(#_){ font-size:16px; }
 }
 select.inp{
   appearance:none;

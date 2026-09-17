@@ -657,12 +657,11 @@
     dialog#dlg.mit-pdf .dlg-pdf{flex:1;padding:16px 20px;min-width:0}
   }
 
-  /* CCCLI — die dialogeigenen Felder (Bewohner, Gemeinschafts-/Nutzfläche)
-     liegen unter der .inp-Regel und müssen auf Touch ebenfalls auf 16px, sonst
-     zoomt iOS beim Fokus hinein und die Seite bleibt vergrössert. */
-  @media (pointer:coarse){
-    .bwzeile input,.gfzeile input,.nfzeile input{font-size:16px}
-  }
+  /* N486 — die CCCLI-Ausnahme für `.bwzeile/.gfzeile/.nfzeile input` stand
+     HIER, also VOR den Regeln, die sie überstimmen sollte, und hatte dieselbe
+     Spezifität — bei Gleichstand gewinnt die spätere. Sie hielt deshalb nie
+     etwas, und der iOS-Zoom kam zurück. Der Riegel in `immo.css` gewinnt
+     jetzt von sich aus (siehe dort); die Ausnahme hier ist überflüssig. */
 
   /* N333 — der Bearbeiten-Dialog trägt auf dem Telefon denselben Rahmen wie
      die Detailansicht (`detail-dlg`): eingerückt, abgerundet, 92dvh hoch.
