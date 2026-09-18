@@ -334,7 +334,27 @@ body{
      fehlende Polster nicht als Kante auf. Auf Geräten MIT sicherer Zone
      bleibt die Rechnung dieselbe, nur um 20px kleiner — dort ist die Notch-
      Grenze also der Punkt, an dem wir laut Nutzer wieder zurückgehen. */
-  padding:max(0px, env(safe-area-inset-top) - 14px) 12px 4px;
+     N490 — und genau dieser Punkt ist jetzt erreicht. Der Nutzer meldete
+     dreimal, „der Schatten überblendet den Titel". Es war kein Schatten und
+     keine Ebene darüber: am Screenshot nachgemessen ist der Titel als
+     einziges Element der Leiste UNSCHARF — der Untertitel 20px darunter ist
+     rasiermesserscharf, und im Titel erreicht kein einziger Bildpunkt einen
+     dunklen Kernwert (dunkelster Punkt 132 statt ~35), weil ein
+     Weichzeichner die Buchstaben ins Weiss verteilt.
+
+     Der Weichzeichner kommt von iOS selbst: hinter der Statusleiste legt es
+     im Startbildschirm-Betrieb (`black-translucent`) einen unscharfen
+     Schleier, damit die Uhr über jedem Inhalt lesbar bleibt. Das `- 14px`
+     oben schob den Titel exakt dort hinein.
+
+     Also zurück, wie damals vereinbart: das Polster ist wieder die volle
+     sichere Zone. Nicht mehr — der Titel sitzt damit direkt unter der
+     Statusleiste, die Leiste bleibt so flach wie möglich und ist trotzdem
+     scharf. `max(14px, …)` statt eines nackten `env()`, weil die sichere
+     Zone auf Android und im normalen Safari-Tab 0 ist (Fund aus N460);
+     bewusst OHNE inneres `calc()`, das verwirft iOS Safari stillschweigend
+     als ganze Deklaration (Fund aus N327-b). */
+  padding:max(14px, env(safe-area-inset-top)) 12px 4px;
   display:flex; align-items:center; gap:8px; min-height:44px;
 }
 .bar h1{
