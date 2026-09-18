@@ -289,6 +289,26 @@ body{
   .app:not(:has(> .scroll)) .bar{position:fixed; top:0; left:0; right:0}
 }
 .bar{
+  /* N488 — `position:relative` ist die Bedingung dafuer, dass die Zeile
+     darunter ueberhaupt etwas tut. `z-index` wirkt NUR an positionierten
+     Elementen; an einem statischen wird es stillschweigend ignoriert.
+
+     Und statisch war `.bar` auf fast jeder Seite: `position:fixed` bekommt
+     sie nur ueber `.app:not(:has(> .scroll)) .bar` — also genau dann, wenn
+     die Seite KEINEN eigenen Scrollbereich hat. index.html, objekt.html und
+     die uebrigen haben einen. Dort stand seit jeher ein `z-index:20`, das
+     nichts hielt.
+
+     Folge: jedes positionierte Geschwister malt ueber die Kopfzeile, ganz
+     gleich wie niedrig sein `z-index` ist — ein positioniertes Element mit
+     `z-index:15` liegt in der Malreihenfolge ueber dem gesamten Inhalt eines
+     unpositionierten. Betroffen ist unter anderem der Pull-to-Refresh-Anker
+     (`.ptr`, z-index 15), dessen Kommentar ausdruecklich behauptet, er liege
+     „UNTER der Kopfzeile (z-index 20)". Das stimmte nie.
+
+     Nutzer, zweimal mit Screenshot: „der Schatten ueberblendet die Schriften
+     des Titels und alles im Titel." */
+  position:relative;
   z-index:20;
   background:var(--sheet);
   /* Kopf-Inhalt unter die Statusleiste/Dynamic Island schieben; der Hintergrund
@@ -846,21 +866,87 @@ button.chip:hover{filter:brightness(.96)}
        Kreis nach allen Seiten gleich folgt (N463), plus eine flache
        versetzte Ebene für die Tiefe. Dass er überhaupt rund ausläuft statt
        eckig abzubrechen, liegt am `overflow:visible` oben (N465). */
-    width:66px; height:66px; border-radius:999px; background:var(--pos);
-    color:#fff; box-shadow:0 0 14px 3px rgba(46,125,79,.26),
-                            0 0 30px 8px rgba(46,125,79,.13),
-                            0 5px 12px -4px rgba(46,125,79,.30);
+    /* N489 — Nutzer: „der Knopf ist noch zu dominant, er sticht über die
+       ganze Seite gesehen zu stark raus … ich würde gerne ein Plus haben,
+       ein weniger auffälliges Plus für hinzufügen. Und wenn man drauf
+       drückt, kommt ein Dokument und ein Scanner läuft drüber, und dann
+       geht die Scanner-Oberfläche auf — die ist dann auch ein bisschen
+       farbiger. Davor ist es nicht so dominant."
+
+       Also zwei Zustände statt einem. In RUHE: helle Fläche aus der eigenen
+       Palette (`--teal-l`) mit dunkelgrünem Zeichen — erkennbar als der eine
+       hervorgehobene Knopf, aber kein Farbklecks mehr über der ganzen Seite.
+       Der Schein ist von drei Ebenen auf eine ruhige zurückgenommen; das
+       Erhabene trägt jetzt die Form (der Kreis ragt aus der Leiste heraus),
+       nicht die Leuchtkraft.
+
+       Beim DRÜCKEN füllt sich derselbe Kreis mit `--pos`, das Plus weicht
+       dem Dokument und ein Lichtbalken fährt darüber (siehe `.scannt`) —
+       die Farbe kommt genau dann, wenn etwas passiert. */
+    position:relative; overflow:hidden;
+    width:66px; height:66px; border-radius:999px;
+    background:var(--teal-l); color:var(--teal-d);
+    box-shadow:0 4px 12px -5px rgba(22,38,44,.30),
+               inset 0 0 0 1px rgba(15,110,92,.10);
+    transition:background .22s, color .22s, transform .16s, box-shadow .22s;
   }
   .nav a[href="eingang.html"] .ni-doc svg{width:30px; height:30px}
   .nav a[href="eingang.html"] .ni-plus svg{width:26px; height:26px}
   .nav a[href="eingang.html"] .nl{display:none}
-  /* N468 — gedrückt/aktiv eine Stufe dunkler als `--pos`, aber ohne neuen
-     Ton: `--teal` ist der nächstdunklere Grünwert der Palette. */
-  .nav a[href="eingang.html"]:hover .ni{background:var(--teal)}
+  /* N489 — in Ruhe das PLUS: der Knopf legt etwas an, er führt nicht in eine
+     Liste. Das Dokument erscheint erst während der Scan-Regung. */
+  .nav a[href="eingang.html"] .ni-doc{display:none}
+  .nav a[href="eingang.html"] .ni-plus{display:flex}
+
+  /* ---- Die Scan-Regung (N489) --------------------------------------
+     Reihenfolge: Kreis färbt sich → Plus geht, Dokument kommt → ein
+     Lichtbalken fährt einmal darüber → die Scan-Oberfläche öffnet.
+     `immo.js` setzt die Klasse, wartet die Regung ab und geht dann erst
+     weiter; ohne das wäre die Seite gewechselt, bevor man etwas sieht. */
+  .nav a[href="eingang.html"] .ni.scannt{
+    background:var(--pos); color:#fff; transform:scale(1.06);
+    box-shadow:0 0 16px 4px rgba(46,125,79,.32),
+               0 6px 14px -5px rgba(46,125,79,.34);
+  }
+  .nav a[href="eingang.html"] .ni.scannt .ni-plus{display:none}
+  .nav a[href="eingang.html"] .ni.scannt .ni-doc{
+    display:flex; animation:scan-blatt .50s ease-out;
+  }
+  /* Der Lichtbalken. `overflow:hidden` am Kreis schneidet ihn rund ab —
+     er läuft dadurch sichtbar ÜBER das Blatt, nicht daneben vorbei. */
+  .nav a[href="eingang.html"] .ni::after{
+    content:""; position:absolute; left:8px; right:8px; top:50%; height:2px;
+    border-radius:2px; background:#fff; opacity:0; pointer-events:none;
+    box-shadow:0 0 9px 2px rgba(255,255,255,.75);
+  }
+  .nav a[href="eingang.html"] .ni.scannt::after{
+    animation:scan-balken .50s cubic-bezier(.45,0,.25,1);
+  }
+  @keyframes scan-blatt{
+    0%{transform:scale(.6) rotate(-8deg); opacity:0}
+    45%{transform:scale(1.04) rotate(0deg); opacity:1}
+    100%{transform:scale(1); opacity:1}
+  }
+  @keyframes scan-balken{
+    0%{transform:translateY(-19px); opacity:0}
+    18%{opacity:1}
+    82%{opacity:1}
+    100%{transform:translateY(19px); opacity:0}
+  }
+  /* Wer Bewegung abbestellt hat, bekommt den Farbwechsel — aber ohne Lauf. */
+  @media (prefers-reduced-motion:reduce){
+    .nav a[href="eingang.html"] .ni.scannt .ni-doc,
+    .nav a[href="eingang.html"] .ni.scannt::after{animation:none}
+    .nav a[href="eingang.html"] .ni.scannt::after{opacity:0}
+  }
+
+  .nav a[href="eingang.html"]:hover .ni{background:#CFE6DC}
   .nav a[href="eingang.html"][aria-current=page]{background:none}
-  .nav a[href="eingang.html"][aria-current=page] .ni{background:var(--teal)}
-  .nav a[href="eingang.html"][aria-current=page] .ni-doc{display:none}
-  .nav a[href="eingang.html"][aria-current=page] .ni-plus{display:flex}
+  /* Auf der Dokumentenseite selbst steht der Knopf gefüllt — dort IST man,
+     das darf der Knopf zeigen. */
+  .nav a[href="eingang.html"][aria-current=page] .ni{
+    background:var(--pos); color:#fff;
+  }
 }
 
 /* Die Liste im „Mehr"-Blatt */

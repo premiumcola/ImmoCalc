@@ -540,16 +540,51 @@ function sofortMarkieren(nav) {
    Dokumente-Knopf (dort jetzt ein „+", siehe CSS) nichts Sinnvolles mehr: die
    Seite ist ja schon offen. Er loest stattdessen denselben Weg aus wie der
    Kamera-Knopf oben auf der Seite selbst — ohne den erst suchen zu muessen. */
+/* N489 — die kleine Scan-Regung, bevor es weitergeht.
+
+   Nutzer: „wenn man drauf drückt, kommt ein Dokument und ein Scanner läuft
+   drüber, und dann geht die Scanner-Oberfläche auf." Der Knopf zeigt in Ruhe
+   nur ein leises Plus; die Farbe und das Blatt kommen erst beim Drücken
+   (alles Weitere steht als `.scannt` in immo.css).
+
+   Der Weg wird dafür kurz aufgehalten: ohne das wäre die Seite gewechselt,
+   bevor überhaupt etwas zu sehen ist. 500 ms ist die Länge der Regung. */
+const SCAN_REGUNG_MS = 500;
+
+function scanRegung(knopf, dann) {
+  const kreis = knopf.querySelector('.ni');
+  // Keine Regung, wo sie nicht hingehört: in der Desktop-Seitenleiste ist der
+  // Knopf ein gewöhnlicher Listeneintrag, und wer Bewegung abbestellt hat,
+  // soll nicht warten.
+  const ruhig = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (!kreis || ruhig || window.innerWidth > 999) { dann(); return; }
+  kreis.classList.add('scannt');
+  setTimeout(() => {
+    kreis.classList.remove('scannt');
+    dann();
+  }, SCAN_REGUNG_MS);
+}
+
 function dokumenteKnopfVerdrahten(nav, aktiv) {
-  if (aktiv !== 'eingang.html') return;
   const knopf = nav.querySelector('a[href="eingang.html"]');
   if (!knopf) return;
-  knopf.setAttribute('aria-label', 'Beleg abfotografieren');
+  if (aktiv === 'eingang.html') {
+    // Auf der Dokumentenseite selbst öffnet der Knopf direkt die Kamera.
+    knopf.setAttribute('aria-label', 'Beleg abfotografieren');
+    knopf.addEventListener('click', e => {
+      const kamera = document.getElementById('kamera');
+      if (!kamera) return;
+      e.preventDefault();
+      scanRegung(knopf, () => kamera.click());
+    });
+    return;
+  }
+  // Von jeder anderen Seite aus: erst die Regung, dann hinüber.
+  knopf.setAttribute('aria-label', 'Beleg hinzufügen');
   knopf.addEventListener('click', e => {
-    const kamera = document.getElementById('kamera');
-    if (!kamera) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;  // neuer Tab
     e.preventDefault();
-    kamera.click();
+    scanRegung(knopf, () => { location.href = 'eingang.html'; });
   });
 }
 
