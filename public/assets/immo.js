@@ -1391,35 +1391,50 @@ function feldWert(name, wert) {
   return String(wert).trim();
 }
 
-/** Die anzeigbaren Angaben einer Auslese als [Beschriftung, Wert]-Paare. */
-function kiZeilen(w) {
-  const zeilen = [];
+/**
+ * Die anzeigbaren Angaben einer Auslese — je Eintrag `{art, label, wert}`.
+ *
+ * N491 — die `art` ist neu und der Grund für diese Fassung: sie ist der
+ * stabile Schlüssel, an dem die Farbe hängt. Dieselbe Angabe soll im
+ * Erklärtext, in der Liste darunter und später im Beleg selbst denselben Ton
+ * tragen — der Nutzer sieht dann auf einen Blick, WAS die Erkennung woher
+ * genommen hat. Über die Beschriftung ginge das nicht: die ist übersetzbarer
+ * Anzeigetext, kein Schlüssel.
+ */
+export function kiAngaben(w) {
+  const aus = [];
   const gesehen = new Set();
-  const dazu = (label, wert) => {
+  const dazu = (art, label, wert) => {
     const text = String(wert ?? '').trim();
     const schluessel = label.toLowerCase();
     if (!text || !label || gesehen.has(schluessel)) return;
     gesehen.add(schluessel);
-    zeilen.push([label, text]);
+    aus.push({ art, label, wert: text });
   };
-  if (typeof w.betrag === 'number') dazu('Betrag', eur(w.betrag));
+  if (typeof w.betrag === 'number') dazu('betrag', 'Betrag', eur(w.betrag));
   // N262 — steht der Betrag nicht auf dem Beleg, sondern ist aus Teilzahlungen
   // gerechnet, gehört das dazu. Ein Jahreswert, den niemand herleiten kann,
   // wäre in der Abrechnung nicht nachvollziehbar.
   if (typeof w.teilbetrag === 'number' && w.teilzahlungen > 1) {
-    dazu('Hochgerechnet', `${eur(w.teilbetrag)} × ${w.teilzahlungen}`);
+    dazu('betrag', 'Hochgerechnet', `${eur(w.teilbetrag)} × ${w.teilzahlungen}`);
   }
-  if (w.datum) dazu('Datum', datumDe(w.datum));
-  else if (w.jahr) dazu('Jahr', w.jahr);
-  dazu('Kategorie', w.kategorie);
-  dazu('Kostenart', w.kostenart);
-  dazu('Sache', w.sache);
-  dazu('Immobilie', w.immobilie);
-  dazu('Einheit', w.einheit);
+  if (w.datum) dazu('datum', 'Datum', datumDe(w.datum));
+  else if (w.jahr) dazu('datum', 'Jahr', w.jahr);
+  dazu('kategorie', 'Kategorie', w.kategorie);
+  dazu('kostenart', 'Kostenart', w.kostenart);
+  dazu('sache', 'Sache', w.sache);
+  dazu('immobilie', 'Immobilie', w.immobilie);
+  dazu('einheit', 'Einheit', w.einheit);
   const felder = (w.felder && typeof w.felder === 'object') ? w.felder : {};
   Object.entries(felder).forEach(([name, wert]) =>
-    dazu(feldLabel(name), feldWert(name, wert)));
-  return zeilen;
+    dazu('feld', feldLabel(name), feldWert(name, wert)));
+  return aus;
+}
+
+/** Dieselben Angaben als [Beschriftung, Wert]-Paare — für den Beleg-Betrachter,
+    der keine Farben trägt. */
+function kiZeilen(w) {
+  return kiAngaben(w).map(a => [a.label, a.wert]);
 }
 
 /** Der ruhige Block über der Vorschau — leer, wenn nichts gespeichert ist. */

@@ -1576,6 +1576,114 @@ dialog.immo-dlg.pdf-dlg::backdrop{background:rgba(22,38,44,.62)}
 .scanbest-dlg .sb-weiter:hover{background:var(--teal-d)}
 .scanbest-dlg .sb-weiter:disabled{opacity:.6; cursor:default}
 
+/* ---- N491: die Bestätigungsmaske nutzt den ganzen Schirm ------------
+   Nutzer: „nutzt einfach die komplette Seite statt ein Pop-up, der Platz auf
+   iOS ist echt begrenzt … und das Dokument unten sollte komplett anschaubar
+   sein, macht die Seite weiter runter scrollbar, statt im Dokument zu
+   scrollen."
+
+   Vorher war es ein schwebendes Blatt mit `max-height:92dvh`, in dem gleich
+   DREI Dinge je einen eigenen Rollbalken hatten: der Erkennungskasten (50dvh),
+   die Belegfläche und bei langen Masken das Blatt selbst. Auf 390px blieben
+   für den Beleg rund 180px — der Kasten mit dem Rollbalken, den der Nutzer im
+   Screenshot eingekringelt hat.
+
+   Jetzt: randlos über den ganzen Schirm, EIN Rollbereich (der Rumpf), Kopf und
+   Entscheidung bleiben stehen. Der Beleg bekommt damit die volle Breite und
+   seine natürliche Höhe; wer ihn ansehen will, scrollt die Maske weiter
+   runter. Ab Tablet bleibt das schwebende Blatt — dort war der Platz nie das
+   Problem. */
+@media (max-width:560px){
+  dialog.beleg-dlg.scanbest-dlg{
+    width:100vw; max-width:none; height:100dvh; max-height:none;
+    border-radius:0; margin:0; padding:0;
+    display:flex; flex-direction:column;
+  }
+  .scanbest-dlg .beleg-kopf{
+    flex:none; padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+    border-bottom:1px solid var(--line); background:var(--sheet);
+  }
+  .scanbest-dlg .sb-rumpf{
+    flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    display:flex; flex-direction:column; gap:16px; padding:16px;
+  }
+  .scanbest-dlg .sb-fuss{
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line); background:var(--sheet);
+  }
+  /* Der Erkennungskasten rollt NICHT mehr in sich — er ist Teil der Seite. */
+  .scanbest-dlg .beleg-ki{max-height:none; overflow:visible}
+  /* Ebenso die Belegfläche: natürliche Höhe, volle Breite, kein eigener Balken. */
+  .scanbest-dlg .beleg-flaeche{overflow:visible; max-height:none}
+}
+/* Auf Tablet/Desktop bleibt das Blatt schwebend; der Rumpf bekommt trotzdem
+   den Rollbereich, damit Kopf und Knopf auch dort stehen bleiben. */
+@media (min-width:561px){
+  dialog.beleg-dlg.scanbest-dlg{display:flex; flex-direction:column}
+  .scanbest-dlg .sb-rumpf{
+    flex:1; min-height:0; overflow-y:auto;
+    display:flex; flex-direction:column; gap:16px;
+  }
+}
+
+/* Überschrift über dem Beleg — ohne sie beginnt das Bild unvermittelt. */
+.scanbest-dlg .sb-belegkopf{
+  font:600 10px var(--mono); letter-spacing:.09em; text-transform:uppercase;
+  color:var(--soft);
+}
+
+/* ---- N491: die Farben der Erkennung --------------------------------
+   Nutzer: „dann kriegt man ein Gefühl dafür, was die KI überhaupt erkannt hat
+   und wie sie es zuordnet."
+
+   Sechs Töne, je einer für eine Art von Angabe (Betrag, Datum, Kategorie,
+   Sache, Immobilie, Einheit) plus ein neutraler für die freien Felder. Die
+   Zuordnung Art→Ton steht in `belegbestaetigung.js::FUNDTON`; hier nur die
+   Farben. Bewusst gedeckt und aus einer Familie: sechs Signalfarben nebenein-
+   ander in einem Absatz wären ein Jahrmarkt, nicht eine Zuordnungshilfe. */
+.scanbest-dlg .t0{--fund:#5C6B70; --fund-bg:#EDF0F0}
+.scanbest-dlg .t1{--fund:#916212; --fund-bg:#F7EEDA}   /* Betrag  — Bernstein */
+.scanbest-dlg .t2{--fund:#6D4A9C; --fund-bg:#EFE9F7}   /* Datum   — Violett  */
+.scanbest-dlg .t3{--fund:#0F6E5C; --fund-bg:#DCEBE6}   /* Kategorie — Teal   */
+.scanbest-dlg .t4{--fund:#1F6A8C; --fund-bg:#E2EEF4}   /* Sache   — Blau     */
+.scanbest-dlg .t5{--fund:#2E7D4F; --fund-bg:#DDEEE2}   /* Immobilie — Grün   */
+.scanbest-dlg .t6{--fund:#A8473A; --fund-bg:#F7E4E0}   /* Einheit — Ziegel   */
+
+/* Die Markierung im Erklärtext. Kein `background`-Block über die ganze Zeile:
+   eine zarte Unterlegung plus kräftige Schrift stört den Lesefluss nicht. */
+.scanbest-dlg .ki-satz .fund{
+  background:var(--fund-bg); color:var(--fund); font-weight:600;
+  border-radius:5px; padding:1px 3px; margin:0 -1px;
+  box-decoration-break:clone; -webkit-box-decoration-break:clone;
+}
+
+/* Die erkannten Angaben als Liste statt als Chip-Wolke: eine Zeile je Angabe,
+   Beschriftung und Wert in einer Flucht — so liest man sie untereinander ab,
+   statt sie im Umbruch zu suchen. */
+.scanbest-dlg .fundliste{display:flex; flex-direction:column; gap:2px;
+  margin-top:12px}
+.scanbest-dlg .fundzeile{
+  display:flex; align-items:baseline; gap:9px; min-height:32px;
+  padding:5px 0; border-top:1px solid rgba(22,38,44,.07);
+}
+.scanbest-dlg .fundzeile:first-child{border-top:none}
+.scanbest-dlg .fundzeile .fp{
+  flex:none; width:9px; height:9px; border-radius:50%;
+  background:var(--fund); align-self:center;
+}
+.scanbest-dlg .fundzeile .fl{
+  flex:none; width:82px; font:600 10.5px var(--mono); letter-spacing:.04em;
+  text-transform:uppercase; color:var(--soft);
+}
+.scanbest-dlg .fundzeile .fw{
+  flex:1; min-width:0; font:600 13.5px var(--body); color:var(--ink);
+  overflow-wrap:anywhere;
+}
+/* Das Zeichen der Auslese vor der Überschrift. */
+.scanbest-dlg .ki-kopf{display:flex; align-items:center; gap:7px}
+.scanbest-dlg .ki-funke{width:17px; height:17px; flex:none; color:var(--teal)}
+
 /* ---- N254: die Decke zwischen Zuschnitt und Bestätigungsmaske ----
    Sie sperrt die Seite darunter (ein `dialog` per `showModal` fängt Tippen und
    Tastatur ab), damit ein weiterer Fingertipp nicht in den Bildschirm platzt,

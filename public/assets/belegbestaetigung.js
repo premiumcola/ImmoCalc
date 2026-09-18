@@ -10,7 +10,7 @@
  * — derselben Funktion, die auch `/scannen` benutzt. Sonst stünden zwei
  * Namensregeln nebeneinander und liefen mit der Zeit auseinander.
  */
-import { baueDialog, kiAusleseHtml, esc } from './immo.js';
+import { baueDialog, kiAngaben, esc } from './immo.js';
 import { auswahlfeld } from './auswahl.js';
 // N267 — DAS eine Betragsfeld der App (Tausenderpunkte, Komma, das Zeichen im
 // Feld) statt einer zweiten, eigenen Parser-Logik hier. `geldEingabe`, damit
@@ -229,6 +229,105 @@ const istPdf = datei => (datei?.type || '') === 'application/pdf'
  *     eingehängten Felder.
  *   * `null` — abgebrochen, es wird nichts abgelegt.
  */
+/* ---- N491 — die Erkennung mit Farben ---------------------------------
+
+   Nutzer: „vielleicht könntest du die Elemente, die erkannt wurden, als
+   Kategorie bunt färben — dann hast du das Datum, dann den Betrag, und der
+   Nutzer sieht: bam, bam, bam, diese Werte hat das KI-Tool rausgenommen. Und
+   auch oben im Erklärtext die Schlagworte dann eben so färben."
+
+   Die Farbe hängt an der `art` aus `kiAngaben` (immo.js), nicht an der
+   Beschriftung: so trägt dieselbe Angabe im Text und in der Liste denselben
+   Ton — und später auch im Beleg selbst, wenn die Fundstellen dazukommen.
+
+   Sechs Töne reichen; mehr unterscheidet das Auge in einem Absatz nicht mehr.
+   Angaben ohne eigene Art (die freien `felder` der Auslese) teilen sich den
+   neutralen Ton 0. */
+const FUNDTON = {
+  betrag: 1, datum: 2, kategorie: 3, kostenart: 3,
+  sache: 4, immobilie: 5, einheit: 6, feld: 0,
+};
+
+/* Wonach im Erklärtext gesucht wird. Der ganze Wert zuerst — trifft er nicht,
+   seine Bestandteile ab vier Zeichen.
+
+   Zwei Zerlegungen, und die zweite ist nötig: an Leerzeichen allein bliebe
+   „Abfallwirtschaft-Anmeldung" ein Stück und fände im Satz nichts, obwohl
+   „Abfallwirtschaft" dort steht. Also zusätzlich am Bindestrich trennen.
+   Längstes zuerst, damit „Eckental-Eschenau" gewinnt und nicht „Eschenau"
+   allein markiert wird. */
+function nadeln(angabe) {
+  const wert = angabe.wert;
+  const saeubern = t => t.replace(/^[^\wÄÖÜäöüß]+|[^\wÄÖÜäöüß]+$/g, '');
+  const brauchbar = t => t.length >= 4 && !/^\d{1,3}$/.test(t);
+  const woerter = wert.split(/[\s,;()]+/).map(saeubern).filter(brauchbar);
+  const stuecke = wert.split(/[\s,;()/\u2013-]+/).map(saeubern).filter(brauchbar);
+  const teile = [...new Set([...woerter, ...stuecke])]
+    .sort((a, b) => b.length - a.length);
+  return [wert, ...teile];
+}
+
+/**
+ * Der Erklärtext, in dem die erkannten Angaben farbig markiert sind.
+ *
+ * Maskiert wird stückweise (`esc` je Abschnitt), nicht am fertigen HTML —
+ * sonst stünde die Markierung im Text und der Text wäre angreifbar.
+ */
+function satzMitFunden(satz, angaben) {
+  const belegt = [];
+  const treffer = [];
+  const klein = satz.toLowerCase();
+  const frei = (a, b) => !belegt.some(([x, y]) => a < y && b > x);
+  for (const angabe of angaben) {
+    for (const nadel of nadeln(angabe)) {
+      const i = klein.indexOf(nadel.toLowerCase());
+      if (i < 0) continue;
+      const ende = i + nadel.length;
+      if (!frei(i, ende)) continue;
+      belegt.push([i, ende]);
+      treffer.push({ von: i, bis: ende, art: angabe.art, label: angabe.label });
+      break;                      // je Angabe genau eine Markierung, nicht jede
+    }
+  }
+  treffer.sort((a, b) => a.von - b.von);
+  let aus = '';
+  let pos = 0;
+  for (const t of treffer) {
+    aus += esc(satz.slice(pos, t.von));
+    aus += `<mark class="fund t${FUNDTON[t.art] ?? 0}" title="${esc(t.label)}">`
+      + `${esc(satz.slice(t.von, t.bis))}</mark>`;
+    pos = t.bis;
+  }
+  return aus + esc(satz.slice(pos));
+}
+
+/* Das Zeichen der Auslese — ein Funke, wie in der Dienst-Kachel der
+   Einstellungen (N479). Kein Wort „KI": der Nutzer soll sehen, was erkannt
+   wurde, nicht die Technik dahinter (N103). */
+const FUNKE_SVG = `
+<svg class="ki-funke" viewBox="0 0 24 24" aria-hidden="true" fill="none"
+     stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+     stroke-linejoin="round">
+  <path d="M10 3.4c.9 3.6 2.1 4.8 5.7 5.7-3.6.9-4.8 2.1-5.7 5.7-.9-3.6-2.1-4.8
+           -5.7-5.7 3.6-.9 4.8-2.1 5.7-5.7Z"/>
+  <path d="M17.3 14.2c.45 1.8 1.05 2.35 2.8 2.8-1.75.45-2.35 1-2.8
+           2.8-.45-1.8-1.05-2.35-2.8-2.8 1.75-.45 2.35-1 2.8-2.8Z"/>
+</svg>`;
+
+function erkennungHtml(w, angaben) {
+  const satz = String(w.zusammenfassung || w.einordnung || '').trim();
+  if (!satz && !angaben.length) return '';
+  const liste = angaben.map(a => `
+    <div class="fundzeile t${FUNDTON[a.art] ?? 0}">
+      <span class="fp" aria-hidden="true"></span>
+      <span class="fl">${esc(a.label)}</span>
+      <span class="fw">${esc(a.wert)}</span>
+    </div>`).join('');
+  return `<div class="ki-kopf">${FUNKE_SVG}<span class="kt">Dokumentenerkennung</span></div>`
+    + (satz ? `<p class="ki-satz">${satzMitFunden(satz, angaben)}</p>` : '')
+    + (liste ? `<div class="fundliste">${liste}</div>` : '');
+}
+
 export async function belegBestaetigen(vorbereitet, deckeWeg = null,
                                        optionen = {}) {
   const { aufnahme, ziel, jahrHinweis, ki } = vorbereitet;
@@ -243,9 +342,11 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
   // eine kurze Wartezeit) und geht erst weg, wenn die Maske wirklich kommt.
   if (deckeWeg) { try { deckeWeg(); } catch { /* egal */ } }
 
-  // Dieselbe Darstellung wie im Beleg-Fenster (immo.js) — der Nutzer erkennt
-  // den Block wieder. `aus_db` bleibt weg: das hier ist frisch gelesen.
-  const kiHtml = ki ? kiAusleseHtml(ki) : '';
+  // N491 — eigene Darstellung statt der des Beleg-Fensters: hier geht es
+  // nicht ums Nachschlagen, sondern ums Prüfen. Der Erklärtext und die
+  // erkannten Angaben tragen deshalb dieselben Farben (siehe `erkennungHtml`).
+  const angaben = ki ? kiAngaben(ki) : [];
+  const kiHtml = ki ? erkennungHtml(ki, angaben) : '';
   const blaetter = aufnahme?.blaetter || [];
   // Das Feld steht IMMER da und ist immer benutzbar. Fällt der Vorschlag aus
   // (Server älter als N250 oder nicht erreichbar) oder hat die Erkennung nichts
@@ -266,45 +367,34 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
            ? `<span class="bpfad">${esc(ziel.kostenart)}</span>` : ''}</span>
        <button class="bx" data-ab title="Abbrechen" aria-label="Abbrechen">✕</button>
      </div>
-     <div class="beleg-ki"${kiHtml ? '' : ' hidden'}>${kiHtml}</div>
-     ${hinweisHtml(optionen.hinweis)}
-     ${zusatzFelderHtml(felder)}
-     ${geldBlock(ki)}
-     <div class="sb-name">
-       <label for="sbName">Dateiname</label>
-       <input id="sbName" type="text" value="${esc(startwert)}"
-              placeholder="Bezeichnung des Belegs"
-              spellcheck="false" autocapitalize="off" autocomplete="off">
-       <p class="sb-hinweis">${vorschlag
-         ? 'Wird so in der Nextcloud abgelegt. Stimmt die Erkennung, einfach ablegen.'
-         : 'Die Erkennung hat nichts Genaues gefunden — hier lässt sich der Name '
-           + 'ergänzen, damit der Beleg später wiederzufinden ist.'}</p>
+     <div class="sb-rumpf">
+       <div class="beleg-ki"${kiHtml ? '' : ' hidden'}>${kiHtml}</div>
+       ${hinweisHtml(optionen.hinweis)}
+       ${zusatzFelderHtml(felder)}
+       ${geldBlock(ki)}
+       <div class="sb-name">
+         <label for="sbName">Dateiname</label>
+         <input id="sbName" type="text" value="${esc(startwert)}"
+                placeholder="Bezeichnung des Belegs"
+                spellcheck="false" autocapitalize="off" autocomplete="off">
+         <p class="sb-hinweis">${vorschlag
+           ? 'Wird so in der Nextcloud abgelegt. Stimmt die Erkennung, einfach ablegen.'
+           : 'Die Erkennung hat nichts Genaues gefunden — hier lässt sich der Name '
+             + 'ergänzen, damit der Beleg später wiederzufinden ist.'}</p>
+       </div>
+       ${zeigeFlaeche ? `<div class="sb-belegkopf">Beleg</div>
+       <div class="beleg-flaeche" data-blaetter></div>` : ''}
      </div>
-     ${zeigeFlaeche ? '<div class="beleg-flaeche" data-blaetter></div>' : ''}
      <div class="sb-fuss">
        <button type="button" class="sb-weiter" data-ok>${
          esc(optionen.knopf || 'Ablegen')}</button>
      </div>`);
   dlg.classList.add('beleg-dlg', 'scanbest-dlg');
-  // Mit eingehängten Feldern wird das Fenster länger als der Schirm. Ohne
-  // eigenen Überlauf klemmte der Knopf unten ausserhalb — auf dem Telefon
-  // wäre die Maske dann nicht mehr abschliessbar.
-  if (felder.length || optionen.hinweis) {
-    dlg.style.overflowY = 'auto';
-    // Scrollt das Fenster, muss die Entscheidung trotzdem in Reichweite
-    // bleiben — sonst sucht man auf dem Telefon den Knopf, den man drücken soll.
-    const fuss = dlg.querySelector('.sb-fuss');
-    if (fuss) {
-      fuss.style.position = 'sticky';
-      fuss.style.bottom = '0';
-      fuss.style.background = 'var(--sheet)';
-      fuss.style.paddingTop = '8px';
-      // Der Innenrand des Fensters gehört beim Scrollen zur Fläche: ohne diese
-      // Verlängerung schöbe sich der Beleg unter dem Knopf hindurch ins Bild.
-      fuss.style.paddingBottom = 'calc(12px + env(safe-area-inset-bottom))';
-      fuss.style.marginBottom = 'calc(-12px - env(safe-area-inset-bottom))';
-    }
-  }
+  // N491 — der Sonderfall „nur bei eingehängten Feldern scrollen" ist weg.
+  // Die Maske füllt auf dem Telefon jetzt IMMER den Schirm, der Rumpf scrollt
+  // in sich, Kopf und Knopf bleiben stehen (siehe `.scanbest-dlg` in
+  // immo.css). Das war der eigentliche Wunsch: „nutzt einfach die komplette
+  // Seite statt ein Pop-up, der Platz auf iOS ist echt begrenzt."
 
   // Die Seiten als Bilder — genau das, was gleich hochgeladen wird.
   const adressen = [];
@@ -326,7 +416,10 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
       // Die Fläche gibt die Höhe vor und scrollt NICHT selbst: der Betrachter
       // im Rahmen bringt seinen eigenen Balken mit, und zwei Balken nebeneinander
       // sind einer zu viel.
-      flaeche.style.cssText = 'height:min(40dvh, 420px); min-height:170px; '
+      // N491 — deutlich höher als die bisherigen 40dvh: gescrollt wird der
+      // Rumpf der Maske, nicht mehr dieses Fenster. Der Nutzer wollte den
+      // Beleg „komplett anschaubar", ohne in einem Kasten zu scrollen.
+      flaeche.style.cssText = 'height:min(140dvh, 1400px); min-height:420px; '
         + 'overflow:hidden';
       const rahmen = document.createElement('iframe');
       rahmen.className = 'beleg-blatt';
