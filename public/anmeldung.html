@@ -67,7 +67,35 @@
 
   .fusszeile{text-align:center; padding:20px 8px calc(14px + env(safe-area-inset-bottom));
     font:500 11px var(--mono); letter-spacing:.03em; color:var(--soft)}
-  .fusszeile .herz{color:var(--neg)}
+  /* N499 — derselbe Doppelschlag wie auf der Willkommensseite und in den
+     Einstellungen: zwei Schläge kurz hintereinander, dann eine lange Pause.
+     Ein gleichmässiges Pulsieren läse sich als Ladeanzeige, nicht als Herz. */
+  .fusszeile .herz{color:var(--neg); display:inline-block;
+    transform-origin:center; animation:herzschlag 2.6s ease-in-out infinite}
+  @keyframes herzschlag{
+    0%,62%,100%{transform:scale(1)}
+    68%{transform:scale(1.34)}
+    74%{transform:scale(1.02)}
+    80%{transform:scale(1.2)}
+    88%{transform:scale(1)}
+  }
+  @media (prefers-reduced-motion:reduce){ .fusszeile .herz{animation:none} }
+/* N500 — der Claude-Invader hinter dem Namen. Zwei Stellungen im harten
+   Wechsel plus ein Hüpfer: so marschiert er, statt zu blinken. */
+.invader{display:inline-block; line-height:0; color:#C1603C;
+  vertical-align:-1px;
+  animation:iv-huepf 1s steps(1,end) infinite}
+.invader svg{width:14px; height:auto; display:block}
+.iv-a{animation:iv-eins 1s steps(1,end) infinite}
+.iv-b{animation:iv-zwei 1s steps(1,end) infinite}
+@keyframes iv-eins{0%{opacity:1} 50%,100%{opacity:0}}
+@keyframes iv-zwei{0%{opacity:0} 50%,100%{opacity:1}}
+@keyframes iv-huepf{0%{transform:translateY(0)} 50%,100%{transform:translateY(-1.5px)}}
+@media (prefers-reduced-motion:reduce){
+  .invader,.iv-a{animation:none}
+  .iv-b{animation:none; opacity:0}
+}
+
 
   .dlg-form .field:last-of-type{margin-bottom:18px}
   .dlg-fehler{font:500 12.5px var(--body); color:var(--neg); margin:-6px 0 14px; display:none}
@@ -132,7 +160,7 @@
       </div>
     </div>
 
-    <div class="fusszeile">vibecoded with <span class="herz">♥</span> with Claude</div>
+    <div class="fusszeile">vibecoded <span class="herz">♥</span> with Claude <span class="invader" aria-hidden="true"><svg viewBox="0 0 11 8" fill="currentColor" shape-rendering="crispEdges"><g class="iv-a"><rect x="2" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="2" y="2" width="7" height="1"/><rect x="1" y="3" width="2" height="1"/><rect x="4" y="3" width="3" height="1"/><rect x="8" y="3" width="2" height="1"/><rect x="0" y="4" width="11" height="1"/><rect x="0" y="5" width="1" height="1"/><rect x="2" y="5" width="7" height="1"/><rect x="10" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="10" y="6" width="1" height="1"/><rect x="3" y="7" width="2" height="1"/><rect x="6" y="7" width="2" height="1"/></g><g class="iv-b"><rect x="2" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="2" y="2" width="7" height="1"/><rect x="10" y="2" width="1" height="1"/><rect x="0" y="3" width="3" height="1"/><rect x="4" y="3" width="3" height="1"/><rect x="8" y="3" width="3" height="1"/><rect x="0" y="4" width="11" height="1"/><rect x="1" y="5" width="9" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="1" y="7" width="1" height="1"/><rect x="9" y="7" width="1" height="1"/></g></svg></span></div>
   </div>
 </div>
 

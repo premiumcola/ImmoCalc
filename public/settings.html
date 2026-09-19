@@ -371,11 +371,33 @@
   .fuss-herz{display:block;font:500 12px var(--body);color:var(--soft)}
   .fuss-herz .herz{display:inline-block;color:var(--neg);font-size:13px;
                    transform-origin:center}
-  @keyframes fuss-schlag{0%,86%,100%{transform:scale(1)}
-                         90%{transform:scale(1.28)}
-                         95%{transform:scale(1.04)}}
-  .fuss-herz .herz{animation:fuss-schlag 3.8s ease-in-out infinite}
+  /* N499 — ein Doppelschlag (zwei Ausschläge dicht hintereinander, dann eine
+     lange Pause) statt eines einzelnen Zuckens: nur so liest man es als
+     Herzschlag und nicht als blinkendes Element. Gleich wie auf der
+     Startseite. */
+  @keyframes fuss-schlag{0%,62%,100%{transform:scale(1)}
+                         68%{transform:scale(1.34)}
+                         74%{transform:scale(1.02)}
+                         80%{transform:scale(1.2)}
+                         88%{transform:scale(1)}}
+  .fuss-herz .herz{animation:fuss-schlag 2.6s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){.fuss-herz .herz{animation:none}}
+/* N500 — der Claude-Invader hinter dem Namen. Zwei Stellungen im harten
+   Wechsel plus ein Hüpfer: so marschiert er, statt zu blinken. */
+.invader{display:inline-block; line-height:0; color:#C1603C;
+  vertical-align:-1px;
+  animation:iv-huepf 1s steps(1,end) infinite}
+.invader svg{width:14px; height:auto; display:block}
+.iv-a{animation:iv-eins 1s steps(1,end) infinite}
+.iv-b{animation:iv-zwei 1s steps(1,end) infinite}
+@keyframes iv-eins{0%{opacity:1} 50%,100%{opacity:0}}
+@keyframes iv-zwei{0%{opacity:0} 50%,100%{opacity:1}}
+@keyframes iv-huepf{0%{transform:translateY(0)} 50%,100%{transform:translateY(-1.5px)}}
+@media (prefers-reduced-motion:reduce){
+  .invader,.iv-a{animation:none}
+  .iv-b{animation:none; opacity:0}
+}
+
   .fuss-build{display:block;margin-top:6px;font:500 10.5px var(--mono);
               color:#93A3A3;letter-spacing:.02em}
   /* Release-Notes: die letzten fünf Änderungen, einzeilig, dezent darunter */
@@ -452,7 +474,7 @@
     <input type="file" id="backupDatei" accept=".enc,application/octet-stream" hidden>
 
     <div class="fuss">
-      <span class="fuss-herz">vibecoded with <span class="herz">♥</span> with Claude</span>
+      <span class="fuss-herz">vibecoded <span class="herz">♥</span> with Claude <span class="invader" aria-hidden="true"><svg viewBox="0 0 11 8" fill="currentColor" shape-rendering="crispEdges"><g class="iv-a"><rect x="2" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="2" y="2" width="7" height="1"/><rect x="1" y="3" width="2" height="1"/><rect x="4" y="3" width="3" height="1"/><rect x="8" y="3" width="2" height="1"/><rect x="0" y="4" width="11" height="1"/><rect x="0" y="5" width="1" height="1"/><rect x="2" y="5" width="7" height="1"/><rect x="10" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="10" y="6" width="1" height="1"/><rect x="3" y="7" width="2" height="1"/><rect x="6" y="7" width="2" height="1"/></g><g class="iv-b"><rect x="2" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="2" y="2" width="7" height="1"/><rect x="10" y="2" width="1" height="1"/><rect x="0" y="3" width="3" height="1"/><rect x="4" y="3" width="3" height="1"/><rect x="8" y="3" width="3" height="1"/><rect x="0" y="4" width="11" height="1"/><rect x="1" y="5" width="9" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="1" y="7" width="1" height="1"/><rect x="9" y="7" width="1" height="1"/></g></svg></span></span>
       <span class="fuss-build" id="build">wird geladen …</span>
       <div class="rnotes" id="rnotes" hidden></div>
     </div>

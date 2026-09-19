@@ -58,12 +58,27 @@ body{
     radial-gradient(100% 60% at 86% 96%, #DDE7E5 0%, transparent 58%),
     var(--paper);
   min-height:100dvh; display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  padding:calc(30px + env(safe-area-inset-top)) 20px
-          calc(22px + env(safe-area-inset-bottom));
+  align-items:center;
+  padding:calc(48px + env(safe-area-inset-top)) 20px
+          calc(40px + env(safe-area-inset-bottom));
 }
-.blatt{width:100%; max-width:420px; text-align:center;
-       display:flex; flex-direction:column}
+/* N499 — ein Rahmen um den Inhalt. Nutzer: „das ist zu gedrungen, zieh einen
+   Rahmen rum wie davor." Ohne ihn klebte alles direkt auf dem Grund und hatte
+   keinen Rand, an dem das Auge zur Ruhe kommt — die Abstände sahen deshalb
+   enger aus, als sie waren. Derselbe Aufbau wie der Anmeldescreen: eine
+   helle Karte, mittig, mit grosszügigem Innenabstand. */
+.blatt{
+  /* N500 — `margin:auto` statt `justify-content:center` am Körper: zentriert
+     genauso, schneidet bei zu wenig Höhe aber nicht oben ab, sondern lässt
+     nach unten rollen. */
+  margin:auto;
+  width:100%; max-width:440px; text-align:center;
+  display:flex; flex-direction:column;
+  background:var(--sheet); border-radius:24px;
+  padding:36px 26px 26px;
+  box-shadow:0 26px 64px -34px rgba(22,38,44,.45),
+             inset 0 0 0 1px rgba(255,255,255,.85);
+}
 
 /* ---- Kopf ----
    N498 — Zeichen und Wortmarke stehen nebeneinander, nicht übereinander
@@ -72,17 +87,28 @@ body{
    bekommen sollen. */
 header{order:1}
 .kopfzeile{display:flex; align-items:center; justify-content:center; gap:12px}
+/* N499 — getönt statt weiss: seit der Rahmen selbst weiss ist, wäre ein
+   weisses Zeichenfeld darauf unsichtbar. */
 .marke{
   width:46px; height:46px; border-radius:14px; flex:none;
-  background:var(--sheet); color:var(--teal);
+  background:var(--teal-l); color:var(--teal-d);
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 7px 18px -12px rgba(22,38,44,.5);
 }
 .marke svg{width:27px; height:27px}
 h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
    margin:0; line-height:1}
-.unterzeile{font:400 13.5px var(--body); color:var(--soft); line-height:1.55;
-            margin:10px auto 0; max-width:31ch}
+/* N500 — der Leitspruch liest sich als Zitat: kursiv und in deutschen
+   Anführungszeichen. Die Zeichen kommen aus der Gestaltung, nicht aus dem
+   Text — so bleibt der Spruch selbst sauberer Klartext (auch fürs Vorlesen).
+   Sie stehen bewusst IM Textfluss und nicht absolut gesetzt: bei einem
+   mittig gesetzten Zweizeiler würden sie sonst irgendwo am Rand kleben. */
+.unterzeile{font:italic 400 14px var(--body); color:var(--soft);
+            line-height:1.6; margin:16px auto 0; max-width:30ch}
+.unterzeile:empty{display:none}
+.unterzeile::before{content:'\201E'}
+.unterzeile::after{content:'\201C'}
+.unterzeile::before,.unterzeile::after{
+  font:600 15px var(--disp); font-style:normal; color:#B8C4C5}
 
 /* ---- Die Merkmale ---------------------------------------------------
    Kein eigener Kasten, in keinem Zustand: sie stehen direkt auf dem Grund,
@@ -91,7 +117,7 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
    (`order` lässt sich nicht weich bewegen), deshalb legt sich ein kurzes
    Aufblenden darüber, damit der Sprung als Absicht gelesen wird. */
 .merkmale{
-  order:2; display:grid; gap:18px; margin:30px 0 0;
+  order:2; display:grid; gap:22px; margin:32px 0 0;
   grid-template-columns:repeat(2,1fr);
   transition:gap .3s ease, margin .3s ease;
 }
@@ -110,7 +136,7 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
         transition:font-size .3s ease, color .3s ease}
 
 /* ---- Der Zugang ---- */
-.zugang{order:3; margin-top:24px; text-align:left}
+.zugang{order:3; margin-top:28px; text-align:left}
 
 /* Zustand RUHE: nur eine schlichte Zeile, kein Kasten.
    Nutzer: „der Hinweis mit Zugang mit Einladungscode freischalten — das soll
@@ -130,10 +156,12 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
 .zugang .schmal svg{width:14px; height:14px; flex:none; opacity:.8}
 
 /* Zustand ZUGANG: die volle Karte. */
+/* N499 — Papierton statt weiss, aus demselben Grund wie beim Zeichen: die
+   Karte liegt jetzt IM weissen Rahmen und muss sich von ihm absetzen, nicht
+   von der Seite. */
 .karte{
-  background:var(--sheet); border-radius:18px; padding:20px 18px 14px;
-  box-shadow:0 14px 38px -22px rgba(22,38,44,.55),
-             inset 0 0 0 1px rgba(255,255,255,.7);
+  background:var(--paper); border-radius:16px; padding:18px 16px 12px;
+  box-shadow:inset 0 0 0 1px rgba(22,38,44,.07);
 }
 .karte .kopf{font:600 9.5px var(--mono); letter-spacing:.1em;
   text-transform:uppercase; color:var(--teal); margin:0 0 7px}
@@ -143,11 +171,11 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
   text-transform:uppercase; color:var(--soft); margin-bottom:6px}
 .karte input{
   width:100%; min-height:46px; border-radius:12px; border:1.5px solid #C9D4D4;
-  background:var(--paper); padding:11px 13px; color:var(--ink);
+  background:var(--sheet); padding:11px 13px; color:var(--ink);
   font:600 16px var(--mono); letter-spacing:.06em; text-align:center;
 }
 .karte input:focus{outline:none; border-color:var(--teal);
-  background:var(--sheet); box-shadow:0 0 0 3px rgba(15,110,92,.14)}
+  box-shadow:0 0 0 3px rgba(15,110,92,.14)}
 .karte .los{
   width:100%; min-height:48px; margin-top:10px; border:none; border-radius:12px;
   background:var(--teal); color:#fff; cursor:pointer; font:600 14px var(--body);
@@ -177,14 +205,54 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
   .blatt.wechselt .merkmale,.blatt.wechselt .zugang{animation:none}
 }
 
-.t1{--ton:#2E7D4F; --ton-bg:#D4EADC}
+/* N500 — t1 war Grün und damit der Ton des Logos: das Zeichen sah aus
+   wie ein zweites Markenzeichen statt wie ein Merkmal. Jetzt Graphit —
+   farblos, ruhig, und zu den drei anderen klar unterscheidbar. */
+.t1{--ton:#4E5C64; --ton-bg:#DCE3E6}
 .t2{--ton:#6D4A9C; --ton-bg:#E7DFF4}
 .t3{--ton:#1F6A8C; --ton-bg:#D9EAF2}
 .t4{--ton:#916212; --ton-bg:#F4E6C8}
 
-/* ---- Der Gruss, ganz unten ---- */
-.gruss{order:4; margin:18px 0 0; font:500 11.5px var(--body); color:#93A3A3}
-.gruss .herz{color:var(--neg); font-size:12.5px}
+/* ---- Der Gruss, ganz unten ----
+   N499/N500 — „vibecoded ♥ with Claude 👾": das Herz hinter „vibecoded",
+   der Invader hinter dem Namen. Beide bewegen sich, aber verschieden — sonst
+   wären es zwei gleich blinkende Punkte statt zweier Figuren.
+
+   Bewusst ein Doppelschlag (zwei Ausschläge dicht hintereinander, dann eine
+   lange Pause) statt eines gleichmässigen Pulsierens: nur so liest man es
+   als Herzschlag und nicht als blinkendes Element. */
+.gruss{order:4; margin:20px 0 0; font:500 11.5px var(--body); color:#93A3A3;
+       display:flex; align-items:center; justify-content:center; gap:5px}
+.gruss .herz{
+  color:var(--neg); font-size:12.5px; display:inline-block;
+  transform-origin:center;
+  animation:herzschlag 2.6s ease-in-out infinite;
+}
+@keyframes herzschlag{
+  0%,62%,100%{transform:scale(1)}
+  68%{transform:scale(1.34)}
+  74%{transform:scale(1.02)}
+  80%{transform:scale(1.2)}
+  88%{transform:scale(1)}
+}
+@media (prefers-reduced-motion:reduce){ .gruss .herz{animation:none} }
+
+/* N500 — der Claude-Invader hinter dem Namen. Zwei Stellungen im harten
+   Wechsel plus ein Hüpfer: so marschiert er, statt zu blinken. */
+.invader{display:inline-block; line-height:0; color:#C1603C;
+  vertical-align:-1px;
+  animation:iv-huepf 1s steps(1,end) infinite}
+.invader svg{width:14px; height:auto; display:block}
+.iv-a{animation:iv-eins 1s steps(1,end) infinite}
+.iv-b{animation:iv-zwei 1s steps(1,end) infinite}
+@keyframes iv-eins{0%{opacity:1} 50%,100%{opacity:0}}
+@keyframes iv-zwei{0%{opacity:0} 50%,100%{opacity:1}}
+@keyframes iv-huepf{0%{transform:translateY(0)} 50%,100%{transform:translateY(-1.5px)}}
+@media (prefers-reduced-motion:reduce){
+  .invader,.iv-a{animation:none}
+  .iv-b{animation:none; opacity:0}
+}
+
 </style>
 </head>
 <body>
@@ -232,7 +300,7 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
     </div>
   </div>
 
-  <p class="gruss">vibecoded with <span class="herz">♥</span> with Claude</p>
+  <p class="gruss">vibecoded <span class="herz">♥</span> with Claude <span class="invader" aria-hidden="true"><svg viewBox="0 0 11 8" fill="currentColor" shape-rendering="crispEdges"><g class="iv-a"><rect x="2" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="2" y="2" width="7" height="1"/><rect x="1" y="3" width="2" height="1"/><rect x="4" y="3" width="3" height="1"/><rect x="8" y="3" width="2" height="1"/><rect x="0" y="4" width="11" height="1"/><rect x="0" y="5" width="1" height="1"/><rect x="2" y="5" width="7" height="1"/><rect x="10" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="10" y="6" width="1" height="1"/><rect x="3" y="7" width="2" height="1"/><rect x="6" y="7" width="2" height="1"/></g><g class="iv-b"><rect x="2" y="0" width="1" height="1"/><rect x="8" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="2" y="2" width="7" height="1"/><rect x="10" y="2" width="1" height="1"/><rect x="0" y="3" width="3" height="1"/><rect x="4" y="3" width="3" height="1"/><rect x="8" y="3" width="3" height="1"/><rect x="0" y="4" width="11" height="1"/><rect x="1" y="5" width="9" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="1" y="7" width="1" height="1"/><rect x="9" y="7" width="1" height="1"/></g></svg></span></p>
 </div>
 
 <script type="module">
