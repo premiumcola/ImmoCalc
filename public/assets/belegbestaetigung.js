@@ -328,6 +328,43 @@ function erkennungHtml(w, angaben) {
     + (liste ? `<div class="fundliste">${liste}</div>` : '');
 }
 
+/**
+ * N492 — die erkannten Angaben auf dem Blatt markieren.
+ *
+ * Läuft NACHTRÄGLICH und still: die Maske steht schon, das Bild ist zu sehen,
+ * und die Kästen erscheinen, sobald sie da sind. Das war die Bedingung dafür,
+ * dass die Markierung nichts kostet — ein Vermessen VOR dem Öffnen hätte die
+ * Wartezeit verlängert, die der Nutzer gerade erst losgeworden ist (N254).
+ *
+ * Scheitert irgendetwas — kein Tesseract im Image, altes Backend, kein Netz —,
+ * passiert schlicht nichts. Die Markierung ist Beiwerk.
+ */
+async function fundstellenZeigen(blatt, angaben, huelle) {
+  if (!huelle) return;
+  try {
+    const paket = new FormData();
+    paket.append('datei', blatt, 'seite.jpg');
+    paket.append('werte', JSON.stringify(
+      angaben.map(a => ({ art: a.art, wert: a.wert }))));
+    const antwort = await fetch('/api/dokumente/fundstellen',
+                                { method: 'POST', body: paket });
+    if (!antwort.ok) return;
+    const { funde } = await antwort.json();
+    if (!funde?.length) return;
+    for (const f of funde) {
+      const kasten = document.createElement('span');
+      kasten.className = `fundkasten t${FUNDTON[f.art] ?? 0}`;
+      kasten.style.left = `${f.x * 100}%`;
+      kasten.style.top = `${f.y * 100}%`;
+      kasten.style.width = `${f.b * 100}%`;
+      kasten.style.height = `${f.h * 100}%`;
+      kasten.title = f.wert;
+      huelle.appendChild(kasten);
+    }
+    huelle.classList.add('hat-funde');
+  } catch { /* ohne Markierung ist die Maske vollständig */ }
+}
+
 export async function belegBestaetigen(vorbereitet, deckeWeg = null,
                                        optionen = {}) {
   const { aufnahme, ziel, jahrHinweis, ki } = vorbereitet;
@@ -436,12 +473,25 @@ export async function belegBestaetigen(vorbereitet, deckeWeg = null,
     blaetter.forEach((blob, i) => {
       const adr = URL.createObjectURL(blob);
       adressen.push(adr);
+      // N492 — das Bild sitzt in einer Hülle: die Fundstellen werden als
+      // Kästen DARÜBER gelegt, in Prozent der Bildgrösse. Ohne die Hülle
+      // hätten sie keinen Bezugsrahmen (ein `<img>` kann keine Kinder haben).
+      const huelle = document.createElement('div');
+      huelle.className = 'beleg-seite';
       const bild = document.createElement('img');
       bild.className = 'beleg-bild';
       bild.alt = `Seite ${i + 1}`;
       bild.src = adr;
-      flaeche.appendChild(bild);
+      huelle.appendChild(bild);
+      flaeche.appendChild(huelle);
     });
+    // Nur die erste Seite wird vermessen: die Auslese bezieht sich ohnehin
+    // auf sie (sie ist das, was zur Erkennung ging), und ein zweiter Lauf je
+    // Seite kostete Sekunden für kaum Gewinn.
+    if (blaetter[0] && angaben.length) {
+      fundstellenZeigen(blaetter[0], angaben,
+                        flaeche.querySelector('.beleg-seite'));
+    }
   }
 
   return new Promise(erfuellen => {

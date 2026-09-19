@@ -1684,6 +1684,44 @@ dialog.immo-dlg.pdf-dlg::backdrop{background:rgba(22,38,44,.62)}
 .scanbest-dlg .ki-kopf{display:flex; align-items:center; gap:7px}
 .scanbest-dlg .ki-funke{width:17px; height:17px; flex:none; color:var(--teal)}
 
+/* ---- N492: die Fundstellen auf dem Blatt ---------------------------
+   Nutzer: „dann kannst du es bunt highlighten in dem Bild, dass der Nutzer
+   sieht: okay, rot, violett, gelb, bam, bam, bam — diese Werte hat das
+   KI-Tool jetzt rausgenommen aus dem Blatt."
+
+   Die Kästen liegen in PROZENT über dem Bild, nicht in Pixeln: die Vorschau
+   skaliert das Blatt auf die Spaltenbreite, absolute Masse wären dort schon
+   beim ersten Umbruch falsch. Der Server misst deshalb relativ (0…1).
+
+   Ein Rahmen plus ein sehr zarter Farbschleier, kein deckender Block: der
+   Nutzer soll das Wort darunter noch LESEN können — markiert ist es, nicht
+   zugedeckt. */
+.scanbest-dlg .beleg-seite{position:relative; display:block}
+.scanbest-dlg .beleg-seite .beleg-bild{display:block; width:100%; height:auto}
+.scanbest-dlg .fundkasten{
+  position:absolute; pointer-events:none; border-radius:4px;
+  border:2px solid var(--fund);
+  background:color-mix(in srgb, var(--fund) 14%, transparent);
+  /* Etwas Luft um das Wort — ein Kasten exakt auf der Glyphenkante sieht aus
+     wie ein Tippfehler-Unterstrich, nicht wie eine Markierung. */
+  margin:-3px 0 0 -3px; padding:3px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.55);
+  animation:fund-auf .32s ease-out both;
+}
+/* Ältere Browser ohne `color-mix` bekommen wenigstens den Rahmen. */
+@supports not (background:color-mix(in srgb, red 10%, transparent)){
+  .scanbest-dlg .fundkasten{background:transparent}
+}
+/* Sie erscheinen nachträglich (der Server misst erst) — ohne diesen kurzen
+   Auftritt blitzen sie unvermittelt ins Bild. */
+@keyframes fund-auf{
+  from{opacity:0; transform:scale(1.06)}
+  to  {opacity:1; transform:scale(1)}
+}
+@media (prefers-reduced-motion:reduce){
+  .scanbest-dlg .fundkasten{animation:none}
+}
+
 /* ---- N254: die Decke zwischen Zuschnitt und Bestätigungsmaske ----
    Sie sperrt die Seite darunter (ein `dialog` per `showModal` fängt Tippen und
    Tastatur ab), damit ein weiterer Fingertipp nicht in den Bildschirm platzt,

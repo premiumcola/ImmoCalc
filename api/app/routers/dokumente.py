@@ -24,7 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from .. import (belegposten, dokumentlinks, familienraum, feldzuordnung,
-                kiauslese, kicache, kidb, ocr, pdftext, upload)
+                fundstellen, kiauslese, kicache, kidb, ocr, pdftext, upload)
 from ..belegposten import BelegFehler
 from ..bezeichnung import betrag_aus_namen, datum_aus_namen, objekt_titel
 from ..cloudkern import (ZIELORDNER, _lies, hauptordner_lesbar, struktur_fuer,
@@ -1191,6 +1191,36 @@ def _mit_formwerten(ergebnis: dict, bereich: str) -> dict:
         namenswerte = {**formwerte, "teile": teile}
     return {**ergebnis, "formwerte": formwerte,
             "formname": feldzuordnung.namensvorschlag(bereich, namenswerte)}
+
+
+@router.post("/fundstellen")
+async def fundstellen_suchen(datei: UploadFile = File(...),
+                             werte: str = Form("[]"),
+                             familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """N492 — wo auf dem Blatt die erkannten Angaben stehen.
+
+    Bekommt das ZUGESCHNITTENE Seitenbild (genau das, was die
+    Bestätigungsmaske anzeigt) und die Liste `[{art, wert}, …]` aus der
+    Auslese; gibt zu jeder Angabe den Kasten zurück, in dem sie auf dem Blatt
+    steht — relativ zur Bildgrösse, damit die Vorschau ihn mitskalieren kann.
+
+    Speichert nichts. Fällt Tesseract aus oder findet nichts, kommt eine leere
+    Liste zurück und die Maske bleibt ohne Markierungen — sie ist Beiwerk und
+    darf nie einen Beleg aufhalten.
+
+    Getrennt von `/erkennen`, weil es auf einem ANDEREN Bild misst: die
+    Auslese läuft aus Zeitgründen auf dem Originalfoto (parallel zum
+    Zuschnitt), die Vorschau zeigt die entzerrte Seite. Koordinaten vom
+    Original lägen daneben.
+    """
+    try:
+        liste = json.loads(werte or "[]")
+    except ValueError:
+        raise HTTPException(400, "Die Werteliste ist kein gültiges JSON.")
+    if not isinstance(liste, list):
+        raise HTTPException(400, "Die Werteliste muss eine Liste sein.")
+    rohdaten = await upload.lies(datei)
+    return {"funde": fundstellen.finde(rohdaten, liste[:20])}
 
 
 @router.post("/erkennen")
