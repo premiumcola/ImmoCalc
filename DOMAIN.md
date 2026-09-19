@@ -54,6 +54,11 @@ auf dem echten Unraid-Terminal (WebGUI → Terminal, oder SSH).
    ```
    (`COOKIE_SECURE` und `CORS_ORIGINS` kommen erst in Teil D.)
 
+   **`ADMIN_FAMILIE` brauchst du nicht** (N501): ohne die Angabe wird die
+   zuerst angelegte Familie zum Administratorkonto — das ist `Heidenreich`.
+   Gesetzt wird das beim Start einmal und danach nie wieder umgehängt, auch
+   wenn die Variable später anders lautet.
+
    **Zu `GEHEIMNIS_SCHLUESSEL`:** damit verschlüsselt ImmoCalc die
    gespeicherten Zugangsdaten (Nextcloud, Postfach, KI-Schlüssel, Koofr) und
    die Zwei-Faktor-Geheimnisse in der Datenbank. Beim ersten Start nach dem
@@ -159,15 +164,53 @@ scheitert am Code aus der App.
 > Punkt 1 lautet dann `http://192.168.178.10:8091` statt der Domain.
 
 1. `https://immocalc.cloud` → Familie `Heidenreich` + Passwort → anmelden.
+   (Das E-Mail-Feld bleibt leer, solange an deinem Zugang keine Adresse
+   hinterlegt ist — siehe Punkt 4.)
 2. Einstellungen → **Zwei-Faktor-Anmeldung** → einrichten (Google
-   Authenticator: „+" → „Einrichtungsschlüssel eingeben"). Die
-   Wiederherstellungscodes aufschreiben.
+   Authenticator: „+" → „Einrichtungsschlüssel eingeben" oder den QR-Code
+   scannen). Die Wiederherstellungscodes aufschreiben — ohne sie kommst du
+   ohne das Handy nicht mehr hinein.
 3. Einstellungen → **Backups** → Backup-Passwort setzen, Rhythmus täglich,
    Ziel WebDAV (Koofr-Konto unter https://koofr.eu anlegen, dort Einstellungen
    → Passwort → App-Passwort erzeugen) → „Jetzt sichern" einmal drücken und
    in Koofr nachsehen, dass die Datei unter `ImmoCalc-Backups/` liegt.
-4. Der anderen Familie die Domain und den `EINLADUNGS_CODE` geben — sie legt
-   sich über „Neue Familie anlegen" selbst an und richtet 2FA + Backup ein.
+4. **Neu (N501):** Einstellungen → **E-Mail-Adresse** → deine Adresse
+   eintragen. Ab diesem Moment gehört sie zur Anmeldung: Familienname +
+   E-Mail + Passwort. Sie ist später der Weg zurück, wenn das Passwort
+   einmal weg ist. Merke dir, welche Schreibweise du genommen hast — geprüft
+   wird ohne Rücksicht auf Gross-/Kleinschreibung, aber sie muss stimmen.
+5. Der anderen Familie die Domain und den `EINLADUNGS_CODE` geben — sie legt
+   sich über „Neue Familie anlegen" selbst an.
+
+   **Neu (N502):** direkt nach dem Anlegen landet sie auf der Seite
+   „Zwei-Faktor-Anmeldung einrichten" und kommt da nicht heraus, bevor sie
+   eingerichtet hat. Bis dahin kann sie **nichts anlegen und nichts ändern**
+   — Lesen geht, Schreiben nicht. Das ist so gewollt; sag ihr, dass sie eine
+   Authenticator-App bereithalten soll, bevor sie anfängt.
+
+## Was noch fehlt (Stand 19.09.2026)
+
+Online gehen kannst du jetzt. Vom Einladungssystem, das du beschrieben hast,
+sind aber erst zwei von fünf Stücken gebaut:
+
+| | |
+|---|---|
+| ✅ E-Mail am Zugang, letzter Login, Administratorkonto | N501 |
+| ✅ Zwei-Faktor-Zwang: ohne zweiten Faktor entsteht nichts | N502 |
+| ⬜ Einladungen, die **du** je Person ausstellst und die per Mail gehen | offen |
+| ⬜ Nutzerübersicht im Administratorkonto (letzte Logins, Anzahl Objekte) | offen |
+| ⬜ Passwort zurücksetzen per Mail **plus** zweitem Faktor | offen |
+
+Praktisch heisst das: **`EINLADUNGS_CODE` ist heute EIN gemeinsames Wort für
+alle**, kein Link je Person. Wer ihn hat, kann sich eine Familie anlegen.
+Für zwei Familien, die einander kennen, reicht das; ab der dritten willst du
+die echten Einladungen. Wenn du den Code weitergibst, dann einzeln und nicht
+über einen Kanal, der ihn dauerhaft aufbewahrt — und ändere ihn, sobald alle
+drin sind (in der env-Datei, dann `docker compose up -d`).
+
+Ebenso: ein vergessenes Passwort kannst du heute nur über die Datenbank
+zurücksetzen, nicht über die Oberfläche. Solange nur ihr zwei drin seid, ist
+das verkraftbar.
 
 ## Wenn etwas schiefgeht
 
@@ -175,6 +218,14 @@ scheitert am Code aus der App.
   Service muss `http://dashboard:80` sein (Container-Name im Compose-Netz).
 - **Login sagt „nicht angemeldet" in Endlosschleife:** `COOKIE_SECURE` steht
   auf true, aber du bist über `http://` unterwegs — Domain benutzen.
+- **„Familie oder Passwort falsch", obwohl beides stimmt:** an dem Zugang ist
+  eine E-Mail-Adresse hinterlegt (N501), und das Feld war leer oder enthielt
+  eine andere. Die Meldung ist mit Absicht für beide Fälle dieselbe — von
+  aussen soll niemand erkennen, welche Angabe nicht passte.
+- **Es landet alles auf „Zwei-Faktor-Anmeldung einrichten":** genau so soll
+  es sein (N502). Ohne bestätigten zweiten Faktor lässt sich nichts anlegen
+  oder ändern; der Weg hinaus führt nur durch das Einrichten — oder über
+  „Abmelden" ganz unten auf der Seite.
 - **Zurück auf Anfang:** `docker compose down`, Compose-Änderungen
   rückgängig, `docker compose up -d`. Die Datenbank fasst nichts davon an.
 - **Komplett neu aufsetzen:** leeres `/data`, Container starten, auf der
