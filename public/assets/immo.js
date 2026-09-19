@@ -186,6 +186,140 @@ export function passwortFeld(id, label, zusatz = '') {
     </div>`;
 }
 
+/* ---- N503 — sechs einzelne Ziffernfelder, 3 + 3 ----------------------
+ *
+ * Nutzer: „gruppiere die irgendwie schöner, dass es so aussieht wie üblich —
+ * drei einzelne Eingabefelder, ein bisschen Abstand, wieder drei … wenn ich
+ * alle sechs eingegeben habe, probier selber, ob es korrekt ist, und bring
+ * nur eine Meldung, wenn es nicht korrekt ist."
+ *
+ * Ein Baustein statt drei Kopien: dasselbe Feld steht im Anmeldedialog, im
+ * Einrichtungsdialog der Einstellungen und auf `zweifaktor.html`.
+ */
+const ZIFFERN_IM_CODE = 6;
+
+/**
+ * Das Markup für `anzahl` Ziffernfelder, nach der Hälfte mit einer Lücke.
+ *
+ * `inputmode="numeric"` ist der Teil, der am Telefon die ZAHLENtastatur
+ * öffnet statt der Buchstabentastatur — zusammen mit `pattern="[0-9]*"`,
+ * das ältere iOS-Fassungen zusätzlich brauchen.
+ */
+export function codeFelder(id = 'code', anzahl = ZIFFERN_IM_CODE) {
+  const feld = i => `<input class="codeziffer" type="text" id="${id}-${i}"
+      inputmode="numeric" pattern="[0-9]*" maxlength="1"
+      autocomplete="${i === 0 ? 'one-time-code' : 'off'}"
+      autocapitalize="off" autocorrect="off" spellcheck="false"
+      aria-label="Ziffer ${i + 1} von ${anzahl}">`;
+  const teile = [];
+  for (let i = 0; i < anzahl; i++) {
+    // Die Lücke sitzt genau in der Mitte — das ist die Gruppierung, die man
+    // von Bestätigungscodes kennt.
+    if (i === Math.floor(anzahl / 2)) teile.push('<span class="codeluecke"></span>');
+    teile.push(feld(i));
+  }
+  return `<div class="codefelder" data-codefelder="${id}"
+               role="group" aria-label="Sechsstelliger Code">
+      ${teile.join('')}
+    </div>`;
+}
+
+/**
+ * Verdrahtet die Felder unterhalb von `wurzel`.
+ *
+ * `beiVollstaendig(code)` läuft, sobald die letzte Ziffer steht — der Nutzer
+ * soll nicht mehr bestätigen müssen. Rückgabe ist eine kleine Steuerung für
+ * den Aufrufer: `leeren()` nach einem falschen Code, `fokus()` fürs erste
+ * Feld, `wert()` für den Fall, dass doch jemand den Knopf drückt.
+ */
+export function codeBinden(wurzel, beiVollstaendig) {
+  const kasten = wurzel.querySelector('[data-codefelder]');
+  if (!kasten) return null;
+  const felder = [...kasten.querySelectorAll('.codeziffer')];
+  const wert = () => felder.map(f => f.value).join('');
+  let zuletztGemeldet = '';
+
+  const pruefen = () => {
+    const code = wert();
+    // Nur EINMAL je vollständiger Eingabe melden: ohne diese Sperre löste
+    // schon ein Klick ins letzte Feld denselben Versuch erneut aus.
+    if (code.length === felder.length && code !== zuletztGemeldet) {
+      zuletztGemeldet = code;
+      beiVollstaendig(code);
+    }
+    if (code.length < felder.length) zuletztGemeldet = '';
+  };
+
+  /* Verteilt eine Ziffernfolge ab `start` über die Felder. Deckt drei Fälle
+     mit einer Zeile ab: normales Tippen (eine Ziffer), Einfügen aus der
+     Zwischenablage und das automatische Ausfüllen des Betriebssystems —
+     bei beiden letzteren landen alle sechs Ziffern in EINEM Feld. */
+  const verteilen = (start, ziffern) => {
+    let i = start;
+    for (const z of ziffern) {
+      if (i >= felder.length) break;
+      felder[i].value = z;
+      i++;
+    }
+    felder[Math.min(i, felder.length - 1)].focus();
+    pruefen();
+  };
+
+  felder.forEach((feld, i) => {
+    feld.addEventListener('input', () => {
+      const ziffern = feld.value.replace(/\D/g, '');
+      feld.value = '';
+      kasten.classList.remove('falsch');
+      if (ziffern) { verteilen(i, ziffern); return; }
+      // Hier hat der Browser gerade selbst eine Ziffer entfernt (Rücktaste
+      // auf einem GEFÜLLTEN Feld — die fängt der keydown-Zweig unten nicht
+      // ab, der gilt nur für leere Felder). Ohne dieses `pruefen()` bliebe
+      // die Sperre gegen doppeltes Abschicken stehen, und wer eine Ziffer
+      // korrigiert und dieselbe wieder eintippt, bekäme gar keinen Versuch
+      // mehr — stumm. Von `tests/codefelder.test.mjs` gefunden.
+      pruefen();
+    });
+    feld.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !feld.value && i > 0) {
+        // Auf einem leeren Feld löscht Rücktaste die Ziffer DAVOR und
+        // springt dorthin — sonst bliebe man am leeren Feld hängen.
+        e.preventDefault();
+        felder[i - 1].value = '';
+        felder[i - 1].focus();
+        zuletztGemeldet = '';
+      }
+      if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); felder[i - 1].focus(); }
+      if (e.key === 'ArrowRight' && i < felder.length - 1) {
+        e.preventDefault(); felder[i + 1].focus();
+      }
+    });
+    // Beim Antippen eines schon gefüllten Feldes den Inhalt markieren, damit
+    // Tippen ihn ersetzt statt danebenzuschreiben.
+    feld.addEventListener('focus', () => feld.select());
+  });
+
+  kasten.addEventListener('paste', e => {
+    const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+    const ziffern = text.replace(/\D/g, '');
+    if (!ziffern) return;
+    e.preventDefault();
+    felder.forEach(f => { f.value = ''; });
+    verteilen(0, ziffern);
+  });
+
+  return {
+    wert,
+    fokus: () => felder[0].focus(),
+    leeren: () => {
+      felder.forEach(f => { f.value = ''; });
+      zuletztGemeldet = '';
+      // Der rote Rahmen geht beim nächsten Tastendruck von selbst wieder weg.
+      kasten.classList.add('falsch');
+      felder[0].focus();
+    },
+  };
+}
+
 /**
  * Verdrahtet alle Augen unterhalb von `wurzel`. Mehrfach aufrufbar: einmal
  * verdrahtete Knöpfe werden übersprungen.

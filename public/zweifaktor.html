@@ -113,12 +113,8 @@
         </ol>
         <form id="codeForm">
           <div class="meldung" id="fehler2"></div>
-          <div class="field">
-            <label for="code">Code aus der App</label>
-            <input class="inp code-feld" type="text" id="code" inputmode="numeric"
-              autocomplete="one-time-code" maxlength="6" required>
-          </div>
-          <button type="submit" class="btn">Bestätigen und einschalten</button>
+          <div id="codePlatz"></div>
+          <button type="submit" class="btn" id="codeKnopf">Bestätigen und einschalten</button>
         </form>
       </div>
     </div>
@@ -136,15 +132,9 @@
   <a class="abmelden" href="#" id="abmelden">Abmelden</a>
 </div>
 
-<style>
-  /* Das Code-Feld wie auf dem Anmeldescreen: gross, mittig, tabellarisch —
-     sechs Ziffern sollen wie eine Zahl lesbar sein, nicht wie ein Wort. */
-  .code-feld{font:600 22px var(--mono); letter-spacing:.18em; text-align:center;
-    font-variant-numeric:tabular-nums}
-</style>
-
 <script type="module">
-import { api, melde, esc, passwortFeld, augenBinden } from './assets/immo.js';
+import { api, melde, esc, passwortFeld, augenBinden,
+         codeFelder, codeBinden } from './assets/immo.js';
 
 const inVierergruppen = s => s.replace(/(.{4})(?=.)/g, '$1 ');
 
@@ -195,7 +185,7 @@ document.getElementById('schritt1').addEventListener('submit', async e => {
       'Scanne den Code mit deiner Authenticator-App und tippe die sechs '
       + 'Ziffern ein, die sie dir anzeigt.';
     schrittZeigen(2);
-    document.getElementById('code').focus();
+    ziffern.fokus();
   } catch (f) {
     zeige(fehler1, f.message || 'Das hat nicht geklappt');
   } finally {
@@ -203,13 +193,23 @@ document.getElementById('schritt1').addEventListener('submit', async e => {
   }
 });
 
+/* N503 — die sechs Ziffernfelder werden erst hier eingesetzt: sie stehen in
+   Schritt 2, der beim Laden noch verborgen ist. Ein Fokus auf ein verborgenes
+   Feld tut nichts — deshalb wird auch erst beim Umschalten fokussiert. */
+document.getElementById('codePlatz').innerHTML = codeFelder('code');
 const fehler2 = document.getElementById('fehler2');
-document.getElementById('codeForm').addEventListener('submit', async e => {
-  e.preventDefault();
+const codeKnopf = document.getElementById('codeKnopf');
+let laeuft = false;
+
+async function bestaetigen(code) {
+  if (laeuft || !code) return;
+  laeuft = true;
+  codeKnopf.disabled = true;
+  codeKnopf.textContent = 'Schalte ein …';
   zeige(fehler2, '');
   try {
     const antwort = await api('/auth/2fa/bestaetigen', { method: 'POST',
-      body: { code: document.getElementById('code').value } });
+      body: { code } });
     document.getElementById('codes').innerHTML =
       antwort.wiederherstellungscodes.map(c => `<div>${esc(c)}</div>`).join('');
     document.getElementById('titel').textContent = 'Eingeschaltet';
@@ -219,8 +219,17 @@ document.getElementById('codeForm').addEventListener('submit', async e => {
     melde('Zwei-Faktor-Anmeldung eingeschaltet', 'pos');
   } catch (f) {
     zeige(fehler2, f.message || 'Der Code stimmt nicht');
-    document.getElementById('code').select();
+    codeKnopf.disabled = false;
+    codeKnopf.textContent = 'Bestätigen und einschalten';
+    ziffern.leeren();
+    laeuft = false;
   }
+}
+
+const ziffern = codeBinden(document, bestaetigen);
+document.getElementById('codeForm').addEventListener('submit', e => {
+  e.preventDefault();
+  bestaetigen(ziffern.wert());
 });
 
 document.getElementById('weiter').addEventListener('click', () => {

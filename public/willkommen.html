@@ -90,12 +90,14 @@ header{order:1}
 /* N499 — getönt statt weiss: seit der Rahmen selbst weiss ist, wäre ein
    weisses Zeichenfeld darauf unsichtbar. */
 .marke{
-  width:46px; height:46px; border-radius:14px; flex:none;
+  width:54px; height:54px; border-radius:16px; flex:none;
   background:var(--teal-l); color:var(--teal-d);
   display:flex; align-items:center; justify-content:center;
 }
-.marke svg{width:27px; height:27px}
-h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
+.marke svg{width:32px; height:32px}
+/* N504 — grösser. Das Zeichen daneben wächst mit, sonst rutscht die
+   Wortmarke optisch aus der Zeile. */
+h1{font:700 clamp(31px,8.5vw,40px) var(--disp); letter-spacing:-.03em;
    margin:0; line-height:1}
 /* N500 — der Leitspruch liest sich als Zitat: kursiv und in deutschen
    Anführungszeichen. Die Zeichen kommen aus der Gestaltung, nicht aus dem
@@ -116,8 +118,12 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
    über Übergänge an Grösse und Abstand — die Reihenfolge selbst springt
    (`order` lässt sich nicht weich bewegen), deshalb legt sich ein kurzes
    Aufblenden darüber, damit der Sprung als Absicht gelesen wird. */
+/* N504 — Nutzer: „zieh die Information noch ein bisschen weiter
+   auseinander — die Logos in der Mitte und unten dann ein bisschen Abstand
+   und dann die Fusszeile mit dem Anmeldeding." Die Merkmale stehen jetzt
+   mit Luft nach beiden Seiten in der Mitte, der Zugang rückt deutlich ab. */
 .merkmale{
-  order:2; display:grid; gap:22px; margin:32px 0 0;
+  order:2; display:grid; gap:26px; margin:40px 0 0;
   grid-template-columns:repeat(2,1fr);
   transition:gap .3s ease, margin .3s ease;
 }
@@ -136,7 +142,7 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
         transition:font-size .3s ease, color .3s ease}
 
 /* ---- Der Zugang ---- */
-.zugang{order:3; margin-top:28px; text-align:left}
+.zugang{order:3; margin-top:44px; text-align:left}
 
 /* Zustand RUHE: nur eine schlichte Zeile, kein Kasten.
    Nutzer: „der Hinweis mit Zugang mit Einladungscode freischalten — das soll
@@ -154,6 +160,13 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
 .zugang .schmal:focus-visible{outline:2px solid var(--teal);
   outline-offset:2px; border-radius:10px}
 .zugang .schmal svg{width:14px; height:14px; flex:none; opacity:.8}
+/* N504 — ein schlichter Briefumschlag vor der Zeile. Nutzer: „vielleicht
+   davor noch ein schlichtes hellgraues E-Mail-Logo". Bewusst grösser als der
+   Pfeil und in einem sehr zurückgenommenen Grau: er soll die Zeile
+   kennzeichnen, nicht sie anführen. */
+.zugang .schmal .brief{width:19px; height:19px; opacity:1; color:#AFBBBD;
+                       transition:color .2s}
+.zugang .schmal:hover .brief{color:var(--teal)}
 
 /* Zustand ZUGANG: die volle Karte. */
 /* N499 — Papierton statt weiss, aus demselben Grund wie beim Zeichen: die
@@ -189,9 +202,9 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
 .schon:hover{color:var(--teal-d)}
 
 /* ---- Der Wechsel: die beiden tauschen den Platz -------------------- */
-.blatt.offen .zugang{order:2; margin-top:22px}
+.blatt.offen .zugang{order:2; margin-top:24px}
 .blatt.offen .merkmale{
-  order:3; margin-top:22px; gap:6px; grid-template-columns:repeat(4,1fr);
+  order:3; margin-top:28px; gap:6px; grid-template-columns:repeat(4,1fr);
 }
 .blatt.offen .m-ic{width:30px; height:30px}
 .blatt.offen .m-wort{font-size:9px; color:var(--soft)}
@@ -221,7 +234,7 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
    Bewusst ein Doppelschlag (zwei Ausschläge dicht hintereinander, dann eine
    lange Pause) statt eines gleichmässigen Pulsierens: nur so liest man es
    als Herzschlag und nicht als blinkendes Element. */
-.gruss{order:4; margin:20px 0 0; font:500 11.5px var(--body); color:#93A3A3;
+.gruss{order:4; margin:26px 0 0; font:500 11.5px var(--body); color:#93A3A3;
        display:flex; align-items:center; justify-content:center; gap:5px}
 .gruss .herz{
   color:var(--neg); font-size:12.5px; display:inline-block;
@@ -277,6 +290,12 @@ h1{font:700 clamp(26px,7vw,32px) var(--disp); letter-spacing:-.03em;
   <div class="zugang">
     <button type="button" class="schmal" id="aufmachen"
             aria-expanded="false" aria-controls="karte">
+      <svg class="brief" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <rect x="2.8" y="5.4" width="18.4" height="13.2" rx="2.3"/>
+        <path d="m3.4 7.2 7.5 5.2a2 2 0 0 0 2.2 0l7.5-5.2"/>
+      </svg>
       Zugang mit Einladungscode freischalten
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"

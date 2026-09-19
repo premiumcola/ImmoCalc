@@ -2069,3 +2069,51 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
   .tfa-qr{margin-top:2px}
   .tfa-schritte{margin-top:0}
 }
+
+/* ---- N503 — sechs einzelne Ziffernfelder, 3 + 3 ----
+   Nutzer: „drei einzelne Eingabefelder, ein bisschen Abstand, wieder drei."
+   Die Felder teilen sich die vorhandene Breite (`flex`), statt eine feste
+   zu haben: sechs mal 44px plus Lücken passen auf einem 390er Telefon im
+   Dialog gerade NICHT mehr. */
+.codefelder{display:flex; align-items:center; justify-content:center;
+            gap:7px; margin:0 0 16px}
+.codefelder .codeluecke{flex:none; width:12px; height:2px; border-radius:1px;
+                        background:var(--line)}
+/* `:not(#_)` hebt die Spezifität auf ID-Niveau — ohne das gewänne die
+   Zoom-Sperre `input:not(#_){font-size:16px}` weiter oben (N486) und die
+   Ziffern wären am Telefon plötzlich klein. Gleiches Mittel wie dort, nur
+   andersherum. */
+.codeziffer:not(#_){
+  flex:1 1 34px; min-width:0; max-width:50px; height:54px;
+  text-align:center; border-radius:12px; border:1.5px solid var(--line);
+  background:var(--sheet); color:var(--ink);
+  font:600 24px var(--mono); font-variant-numeric:tabular-nums;
+  appearance:none; -webkit-appearance:none;
+}
+.codeziffer:not(#_):focus{
+  outline:none; border-color:var(--teal);
+  box-shadow:0 0 0 3px rgba(15,110,92,.14);
+}
+.codefelder.falsch .codeziffer:not(#_){border-color:var(--neg)}
+.codefelder.falsch{animation:codewackeln .28s ease-in-out}
+@keyframes codewackeln{
+  0%,100%{transform:translateX(0)}
+  25%{transform:translateX(-5px)}
+  75%{transform:translateX(5px)}
+}
+@media (prefers-reduced-motion:reduce){ .codefelder.falsch{animation:none} }
+
+/* ---- N503 — der Nebenweg ----
+   Ein Knopf, der wie ein Satz aussieht: für Wege, die da sein MÜSSEN, aber
+   nicht um Aufmerksamkeit werben sollen (Wiederherstellungscode, Abmelden).
+   Ein zweiter umrandeter Knopf neben der Hauptaktion macht daraus zwei
+   gleichwertige Angebote — das ist er nicht. */
+.nebenweg{
+  display:block; width:100%; min-height:44px; margin:10px 0 0; padding:8px 4px;
+  border:none; background:none; cursor:pointer;
+  font:500 12.5px var(--body); color:var(--soft); text-align:center;
+  line-height:1.4;
+}
+.nebenweg:hover{color:var(--teal-d)}
+.nebenweg:focus-visible{outline:2px solid var(--teal); outline-offset:2px;
+                        border-radius:10px}
