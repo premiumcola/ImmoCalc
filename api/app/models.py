@@ -35,6 +35,24 @@ class Familie(SQLModel, table=True):
     fehlversuche: int = 0
     gesperrt_bis: Optional[datetime] = None
     erstellt_am: datetime = Field(default_factory=datetime.utcnow)
+    # N501 — die Anmeldung trägt zusätzlich eine E-Mail-Adresse (Nutzer:
+    # „mit Familienname und E-Mail-Adresse und Passwort anmelden"). Sie kommt
+    # normalerweise aus der Einladung, die der Administrator ausgestellt hat —
+    # dann steht dort eine Adresse, die er selbst gesetzt hat, und keine
+    # selbst behauptete.
+    #
+    # Bewusst OHNE Unique-Index: `migrate.py` ergänzt Spalten per
+    # `ALTER TABLE ADD COLUMN`, und eine nachträgliche Eindeutigkeitsregel
+    # ginge dort nicht mit. Die Eindeutigkeit prüft deshalb die Anwendung
+    # (`konten.email_frei`) — und `None` bleibt erlaubt, sonst würde der
+    # Bestand beim ersten Start brechen.
+    email: Optional[str] = Field(default=None, index=True)
+    # Für die anonymisierte Nutzerübersicht des Administrators: wann war
+    # dieser Zugang zuletzt aktiv. Gesetzt genau dort, wo eine Sitzung
+    # entsteht — ein Anmeldeversuch allein zählt nicht.
+    letzter_login: Optional[datetime] = None
+    # Genau ein Zugang stellt Einladungen aus und sieht die Übersicht.
+    ist_admin: bool = False
     # N472 — zweiter Faktor (TOTP, RFC 6238). `totp_geheimnis` ist das AKTIVE
     # Geheimnis, das der Login-Riegel prüft — `None` heisst 2FA aus.
     # `totp_geheimnis_ausstehend` ist getrennt davon: die Einrichtung eines

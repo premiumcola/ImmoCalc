@@ -447,6 +447,14 @@
       <span class="arr">›</span>
     </button>
     <input type="file" id="logoDatei" accept="image/*" hidden>
+    <button class="row" id="emailRow">
+      <span class="ic kic" data-zeichen="brief"></span>
+      <span class="txt">
+        <span class="t">E-Mail-Adresse</span>
+        <span class="d" id="emailInfo">wird geladen …</span>
+      </span>
+      <span class="arr">›</span>
+    </button>
     <button class="row" id="passwortRow">
       <span class="ic kic" data-zeichen="schluessel"></span>
       <span class="txt">
@@ -778,6 +786,8 @@ const ZEICHEN = {
                 1-1.9-1.9Z"/>`,
   stift: `<path ${STRICH} d="M15.9 4.6l3.5 3.5-9.6 9.6-4.4.9.9-4.4Z"/>
           <path ${STRICH} d="m13.9 6.6 3.5 3.5"/>`,
+  brief: `<rect ${STRICH} x="3.3" y="5.7" width="17.4" height="12.6" rx="2.1"/>
+          <path ${STRICH} d="m3.9 7.4 7.2 5a1.6 1.6 0 0 0 1.8 0l7.2-5"/>`,
   etikett: `<path ${STRICH} d="M3.9 11.3V5.4a1.5 1.5 0 0 1 1.5-1.5h5.9a1.5 1.5
               0 0 1 1.1.45l7.3 7.3a1.5 1.5 0 0 1 0 2.1l-5.9 5.9a1.5 1.5 0 0
               1-2.1 0l-7.3-7.3a1.5 1.5 0 0 1-.45-1.05Z"/>
@@ -852,7 +862,20 @@ function familieZeigen(f) {
     familieIc.innerHTML = LEUTE_SVG;
     info.textContent = 'Angemeldet · Logo hinterlegen';
   }
+  emailZeigen(f);
   zweiFaktorZeigen(f);
+}
+
+/* N501 — die Adresse gehört zur Anmeldung (Familienname + E-Mail + Passwort)
+   und ist der Weg, über den ein vergessenes Passwort zurückkommt. Ohne
+   hinterlegte Adresse meldet man sich weiterhin ohne an — die Zeile sagt
+   deshalb, wofür sie da ist, statt zu mahnen. */
+const emailInfo = document.getElementById('emailInfo');
+
+function emailZeigen(f) {
+  emailInfo.textContent = f.email
+    ? `${f.email} · gehört ab jetzt zur Anmeldung`
+    : 'Noch keine hinterlegt · für Passwort-Zurücksetzen nötig';
 }
 
 function familieLaden() {
@@ -1069,6 +1092,45 @@ document.getElementById('passwortRow').addEventListener('click', () => {
       dlg.close();
       melde('Passwort geändert', 'pos');
     } catch (f) { zeige(f.message || 'Ändern fehlgeschlagen'); }
+  });
+});
+
+/* Ändern verlangt das Passwort — der Server prüft es. Eine offen gelassene
+   Sitzung soll die Adresse nicht austauschen können: über sie läuft das
+   Zurücksetzen des Passworts, sie zu ändern wäre sonst eine Übernahme. */
+document.getElementById('emailRow').addEventListener('click', async () => {
+  const jetzt = await api('/auth/ich').catch(() => ({}));
+  const dlg = baueDialog(`
+    <div class="dt">E-Mail-Adresse</div>
+    <p>Gehört zur Anmeldung und ist der Weg zurück, wenn das
+      Passwort einmal weg ist.</p>
+    <form id="emailForm">
+      <div class="meldung" id="emailFehler"></div>
+      <div class="field">
+        <label for="emailNeu">E-Mail-Adresse</label>
+        <input class="inp" type="email" id="emailNeu" inputmode="email"
+          autocomplete="email" autocapitalize="off" spellcheck="false" required>
+      </div>
+      ${passwortFeld('emailPw', 'Passwort zur Bestätigung',
+        'autocomplete="current-password" required')}
+      <button type="submit" class="btn">Speichern</button>
+    </form>`);
+  augenBinden(dlg);
+  dlg.querySelector('#emailNeu').value = jetzt.email || '';
+  const fehler = dlg.querySelector('#emailFehler');
+  const zeige = text => (text ? feldmeldung(fehler, text) : meldungWeg(fehler));
+  dlg.querySelector('#emailForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    zeige('');
+    try {
+      const f = await api('/auth/email', { method: 'POST', body: {
+        email: dlg.querySelector('#emailNeu').value,
+        passwort: dlg.querySelector('#emailPw').value,
+      } });
+      emailZeigen(f);
+      dlg.close();
+      melde('E-Mail-Adresse gespeichert', 'pos');
+    } catch (f) { zeige(f.message || 'Speichern fehlgeschlagen'); }
   });
 });
 

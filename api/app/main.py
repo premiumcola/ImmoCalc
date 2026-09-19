@@ -7,11 +7,11 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel
 
 from sqlalchemy import text
 
-from . import wachdienst
+from . import konten, wachdienst
 from .db import engine
 from .deps import aktuelle_familie
 from .engine import NegativesGewicht
@@ -61,6 +61,15 @@ async def lifespan(app: FastAPI):
         nachzuegler_kostenarten_sichern(engine)
     except Exception as fehler:                       # noqa: BLE001
         log.warning("Nachgereichte Kostenarten nicht ergänzt: %s", fehler)
+    # N501 — genau ein Administratorkonto. Idempotent und ohne Zutun des
+    # Nutzers; eigener try/except aus demselben Grund wie oben — eine
+    # Installation ohne Familie (frisch) oder mit schiefer Umgebungsvariable
+    # darf nicht am Start hindern.
+    try:
+        with Session(engine) as sitzung:
+            konten.admin_sicherstellen(sitzung)
+    except Exception as fehler:                       # noqa: BLE001
+        log.warning("Administratorkonto nicht bestimmt: %s", fehler)
     log.info("ImmoCalc API bereit")
 
     # Zwei Takte: der ruhige für Texterkennung, Aufräumen und Autoversand, und

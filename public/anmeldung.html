@@ -126,6 +126,11 @@
             autocapitalize="off" spellcheck="false" required autofocus>
         </div>
         <div class="field">
+          <label for="login-email">E-Mail</label>
+          <input class="inp" type="email" id="login-email" autocomplete="email"
+            autocapitalize="off" spellcheck="false" inputmode="email">
+        </div>
+        <div class="field">
           <label for="login-pw">Passwort</label>
           <input class="inp" type="password" id="login-pw" autocomplete="current-password" required>
         </div>
@@ -317,6 +322,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
   try {
     const antwort = await api('/auth/login', { method: 'POST', body: {
       name: document.getElementById('login-name').value,
+      email: document.getElementById('login-email').value,
       passwort: document.getElementById('login-pw').value,
     } });
     if (antwort && antwort.zwei_faktor_noetig) {

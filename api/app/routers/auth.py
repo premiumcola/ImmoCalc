@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from .. import qrbild, totp
+from .. import konten, qrbild, totp
 from ..auth import (MAX_FEHLVERSUCHE, MIN_PASSWORT, SITZUNG_COOKIE, SPERRDAUER,
                     cookie_sicher, einladungscode_noetig, einladungscode_stimmt,
                     neuer_sitzungstoken, neues_zweifaktorticket,
@@ -48,9 +48,13 @@ class PasswortFestlegenIn(BaseModel):
 class LoginIn(BaseModel):
     """N469 #2 — der Anmeldescreen kennt keine Liste mehr, er schickt den
     NAMEN. `familie_id` bleibt als zweiter Weg erhalten (Tests, ältere
-    Aufrufer); einer von beiden muss da sein."""
+    Aufrufer); einer von beiden muss da sein.
+
+    N501 — dazu die E-Mail. Sie ist Pflicht, sobald am Zugang eine hinterlegt
+    ist; ein Bestandszugang ohne Adresse meldet sich weiter ohne an."""
     familie_id: int | None = None
     name: str | None = None
+    email: str | None = None
     passwort: str
 
 
@@ -60,7 +64,11 @@ def _familie_oeffentlich(f: Familie) -> dict:
     in keine unangemeldete Antwort."""
     return {"id": f.id, "name": f.name, "logo_pfad": f.logo_pfad,
             "hat_passwort": f.passwort_hash is not None,
-            "hat_2fa": f.totp_bestaetigt}
+            "hat_2fa": f.totp_bestaetigt,
+            # N501 — die eigene Adresse darf der eigene Zugang sehen (er hat
+            # sie selbst eingegeben oder per Einladung bekommen); `ist_admin`
+            # entscheidet im Frontend, ob die Verwaltung auftaucht.
+            "email": f.email, "ist_admin": f.ist_admin}
 
 
 def _nach_name(session: Session, name: str) -> Familie | None:
@@ -78,10 +86,16 @@ def _familie_finden(session: Session, familie_id: int | None,
     return None
 
 
-def _sitzung_setzen(response: Response, familie_id: int, session: Session) -> None:
+def _sitzung_setzen(response: Response, familie: Familie, session: Session) -> None:
+    """N501 — hier, und nur hier, entsteht eine Sitzung. Deshalb steht genau
+    hier auch `letzter_login`: ein Anmeldeversuch, der am Passwort oder am
+    zweiten Faktor scheitert, soll die Übersicht des Administrators nicht
+    als Aktivität füllen."""
     token, token_hash, laeuft_ab = neuer_sitzungstoken()
-    session.add(Sitzung(familie_id=familie_id, token_hash=token_hash,
+    session.add(Sitzung(familie_id=familie.id, token_hash=token_hash,
                         laeuft_ab=laeuft_ab))
+    familie.letzter_login = datetime.utcnow()
+    session.add(familie)
     session.commit()
     response.set_cookie(SITZUNG_COOKIE, token, httponly=True, samesite="lax",
                         secure=cookie_sicher(),
@@ -119,7 +133,7 @@ def registrieren(daten: RegistrierenIn, response: Response,
     session.add(familie)
     session.commit()
     session.refresh(familie)
-    _sitzung_setzen(response, familie.id, session)
+    _sitzung_setzen(response, familie, session)
     return _familie_oeffentlich(familie)
 
 
@@ -139,7 +153,7 @@ def passwort_festlegen(daten: PasswortFestlegenIn, response: Response,
     familie.passwort_hash, familie.passwort_salz = passwort_hashen(daten.passwort)
     session.add(familie)
     session.commit()
-    _sitzung_setzen(response, familie.id, session)
+    _sitzung_setzen(response, familie, session)
     return _familie_oeffentlich(familie)
 
 
@@ -154,7 +168,16 @@ def login(daten: LoginIn, response: Response,
     if familie.passwort_hash is None:
         raise HTTPException(409, "Für diese Familie ist noch kein Passwort gesetzt")
 
-    if not passwort_pruefen(daten.passwort, familie.passwort_hash, familie.passwort_salz):
+    # N501 — Passwort IMMER prüfen, auch wenn die E-Mail schon nicht passt:
+    # sonst antwortet der Server bei falscher Adresse sofort und bei falschem
+    # Passwort erst nach dem scrypt-Lauf — der Unterschied wäre messbar und
+    # verriete, welche der beiden Angaben stimmt. Die Meldung ist ohnehin für
+    # beide Fälle dieselbe (N469 #2).
+    passwort_ok = passwort_pruefen(daten.passwort, familie.passwort_hash,
+                                   familie.passwort_salz)
+    email_ok = (familie.email is None
+                or konten.email_normalisieren(daten.email) == familie.email)
+    if not (passwort_ok and email_ok):
         familie.fehlversuche += 1
         if familie.fehlversuche >= MAX_FEHLVERSUCHE:
             familie.gesperrt_bis = datetime.utcnow() + SPERRDAUER
@@ -180,7 +203,7 @@ def login(daten: LoginIn, response: Response,
         response.status_code = 202
         return {"zwei_faktor_noetig": True, "ticket": ticket}
 
-    _sitzung_setzen(response, familie.id, session)
+    _sitzung_setzen(response, familie, session)
     return _familie_oeffentlich(familie)
 
 
@@ -240,7 +263,7 @@ def login_zweifaktor(daten: LoginZweiFaktorIn, response: Response,
     session.add(familie)
     session.delete(ticket)
     session.commit()
-    _sitzung_setzen(response, familie.id, session)
+    _sitzung_setzen(response, familie, session)
     return _familie_oeffentlich(familie)
 
 
@@ -309,7 +332,7 @@ def passwort_aendern(daten: PasswortAendernIn, request: Request,
         session.delete(alte)
     session.commit()
 
-    _sitzung_setzen(response, familie.id, session)
+    _sitzung_setzen(response, familie, session)
     log.info("Passwort geändert für Familie %s", familie.name)
     return {"geaendert": True}
 
@@ -418,6 +441,35 @@ class LogoIn(BaseModel):
 
 
 LOGO_MAX_BYTES = 4 * 1024 * 1024
+
+
+class EmailIn(BaseModel):
+    email: str
+    passwort: str
+
+
+@router.post("/email")
+def email_setzen(daten: EmailIn, session: Session = Depends(get_session),
+                 familie: Familie = Depends(aktuelle_familie)) -> dict:
+    """N501 — die eigene Adresse setzen oder ändern.
+
+    Mit Passwortbestätigung, wie das Abschalten des zweiten Faktors: wer eine
+    offene Sitzung kapert, soll die Adresse nicht stillschweigend austauschen
+    können — sie ist der Weg, über den ein Passwort zurückgesetzt wird.
+
+    Zwei Zugänge mit derselben Adresse wären beim Zurücksetzen nicht mehr
+    auseinanderzuhalten, deshalb die Prüfung auf Eindeutigkeit."""
+    _passwort_bestaetigen(familie, daten.passwort)
+    email = konten.email_normalisieren(daten.email)
+    if not konten.email_gueltig(email):
+        raise HTTPException(400, "Das sieht nicht nach einer E-Mail-Adresse aus")
+    if not konten.email_frei(session, email, ausser_id=familie.id):
+        raise HTTPException(409, "Diese Adresse ist schon einem Zugang zugeordnet")
+    familie.email = email
+    session.add(familie)
+    session.commit()
+    log.info("E-Mail gesetzt für Familie %s", familie.name)
+    return _familie_oeffentlich(familie)
 
 
 @router.put("/logo")
