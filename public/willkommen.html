@@ -13,29 +13,33 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* N495 — die öffentliche Startseite, dritte und letzte Fassung.
+/* N496 — die öffentliche Startseite. ZWEI Zustände, die den Platz tauschen.
  *
- * Die Geschichte dieser Datei in drei Sätzen, damit sie niemand rückwärts
- * geht: Zuerst standen vier grosse Blasen NEBENEINANDER (N493) — am PC liefen
- * sie quer über den halben Schirm. Dann untereinander und neutraler (N494) —
- * daraus wurden Badeperlen, weil eine Seifenblase über fast weissem Grund
- * unsichtbar ist und ich die Durchsichtigkeit mit weisser Füllung und
- * Innenschattierung NACHGEBAUT habe. Genau das macht Kugeln daraus.
+ * Nutzer: „mach die vier Elemente nach oben und kräftig, solange man keinen
+ * Einladungscode eingegeben hat … und unten drunter nur dieses kleine
+ * Einladungsfenster. Wenn man das Einladungsfenster eindrückt, dann rutschen
+ * die runter und die Anmeldung ist grösser und dominant. Also die tauschen
+ * Platz."
  *
- * Nutzer danach: „machen wir das viel unscheinbarer, kleiner, irgendwie unten
- * hin. Die Animationseffekte grossteils raus. Eher im Design wie C, ruhige
- * Scheiben. Deutlich kleiner und nicht zwangsweise rund, einfach vier
- * nebeneinander. Das heisst, die Startseite zeigt dann schon die Anmeldung
- * bzw. den Hinweis, dass man sich mit Einladung anmelden kann."
+ * Zustand RUHE (Ankunft): vier grosse Merkmale oben, zwei mal zwei; darunter
+ * nur eine schmale Zeile „Zugang nur mit Einladung".
+ * Zustand ZUGANG (angetippt): die Karte wird gross und dominant, die Merkmale
+ * rutschen darunter und werden klein.
  *
- * Also umgedreht: der ZUGANG ist der Hauptgegenstand, die Merkmale sind eine
- * leise Zeile darunter — über dem Gruss, wie in den Einstellungen. Keine
- * Bewegung mehr: sie sind eine Fussnote, kein Schauplatz.
+ * In BEIDEN Zuständen stehen die Merkmale ohne eigenen Kasten direkt auf dem
+ * Grund — nur das getönte Zeichen trägt Farbe (Wunsch des Nutzers; die hellen
+ * Kästchen davor zerschnitten die Fläche in acht Rechtecke).
+ *
+ * Die Geschichte davor, damit sie niemand rückwärts geht: erst vier grosse
+ * Blasen nebeneinander (N493, lief am PC quer über den halben Schirm), dann
+ * untereinander und neutraler (N494, daraus wurden Badeperlen). Ursache beide
+ * Male: eine Seifenblase über fast weissem Grund ist unsichtbar — es gibt
+ * nichts zu brechen —, und die mit weisser Füllung NACHGEBAUTE Durchsichtig-
+ * keit macht zwangsläufig Kugeln daraus. Seit N495 ist die Blase aufgegeben.
  *
  * Bewusst OHNE `assets/immo.css` und ohne ein einziges App-Modul: diese Seite
  * sieht jeder Fremde, sie soll nichts über die Anwendung mitliefern und nicht
- * auf eine Sitzung warten. Die Farben stehen deshalb hier noch einmal — es
- * sind dieselben Werte wie in immo.css, nur kopiert statt geladen.
+ * auf eine Sitzung warten.
  */
 :root{
   --paper:#E8ECEC; --sheet:#FFFFFF; --ink:#16262C; --soft:#5C6B70;
@@ -58,9 +62,11 @@ body{
   padding:calc(30px + env(safe-area-inset-top)) 20px
           calc(22px + env(safe-area-inset-bottom));
 }
-.blatt{width:100%; max-width:420px; text-align:center}
+.blatt{width:100%; max-width:420px; text-align:center;
+       display:flex; flex-direction:column}
 
 /* ---- Kopf ---- */
+header{order:1}
 .marke{
   width:56px; height:56px; border-radius:16px; margin:0 auto 13px;
   background:var(--sheet); color:var(--teal);
@@ -73,103 +79,150 @@ h1{font:700 clamp(27px,7vw,34px) var(--disp); letter-spacing:-.03em;
 .unterzeile{font:400 13.5px var(--body); color:var(--soft); line-height:1.55;
             margin:9px auto 0; max-width:34ch}
 
-/* ---- Der Zugang: jetzt der Hauptgegenstand der Seite ---------------- */
-.zugang{
+/* ---- Die Merkmale ---------------------------------------------------
+   Kein eigener Kasten, in keinem Zustand: sie stehen direkt auf dem Grund,
+   Farbe trägt nur das Zeichen. Der Wechsel zwischen gross und klein läuft
+   über Übergänge an Grösse und Abstand — die Reihenfolge selbst springt
+   (`order` lässt sich nicht weich bewegen), deshalb legt sich ein kurzes
+   Aufblenden darüber, damit der Sprung als Absicht gelesen wird. */
+.merkmale{
+  order:2; display:grid; gap:14px; margin:26px 0 0;
+  grid-template-columns:repeat(2,1fr);
+  transition:gap .3s ease, margin .3s ease;
+}
+.merkmal{
+  display:flex; flex-direction:column; align-items:center; gap:9px;
+  padding:6px 4px; text-align:center;
+}
+.m-ic{
+  width:56px; height:56px; border-radius:50%; flex:none;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--ton-bg); color:var(--ton);
+  transition:width .3s ease, height .3s ease, background .3s ease;
+}
+.m-ic svg{width:60%; height:60%; display:block}
+.m-wort{font:600 12px var(--body); color:var(--ink); line-height:1.35;
+        transition:font-size .3s ease, color .3s ease}
+
+/* ---- Der Zugang ---- */
+.zugang{order:3; margin-top:22px; text-align:left}
+
+/* Zustand RUHE: nur eine schmale Zeile. */
+.zugang .schmal{
+  width:100%; min-height:48px; border:1.5px solid #C9D4D4; border-radius:14px;
+  background:rgba(255,255,255,.62); color:var(--soft); cursor:pointer;
+  font:600 12.5px var(--body); display:flex; align-items:center;
+  justify-content:center; gap:8px; padding:0 16px;
+  transition:background .2s, border-color .2s, color .2s;
+}
+.zugang .schmal:hover{background:var(--sheet); border-color:var(--teal);
+  color:var(--teal-d)}
+.zugang .schmal:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.zugang .schmal svg{width:15px; height:15px; flex:none}
+
+/* Zustand ZUGANG: die volle Karte. */
+.karte{
   background:var(--sheet); border-radius:18px; padding:20px 18px 14px;
-  margin-top:22px; text-align:left;
-  box-shadow:0 12px 34px -22px rgba(22,38,44,.55),
+  box-shadow:0 14px 38px -22px rgba(22,38,44,.55),
              inset 0 0 0 1px rgba(255,255,255,.7);
 }
-.zugang .kopf{font:600 9.5px var(--mono); letter-spacing:.1em;
+.karte .kopf{font:600 9.5px var(--mono); letter-spacing:.1em;
   text-transform:uppercase; color:var(--teal); margin:0 0 7px}
-.zugang p.text{margin:0 0 14px; font:400 12.5px var(--body); color:var(--soft);
-          line-height:1.55}
-.zugang label{display:block; font:600 9.5px var(--mono); letter-spacing:.09em;
+.karte p.text{margin:0 0 14px; font:400 12.5px var(--body); color:var(--soft);
+  line-height:1.55}
+.karte label{display:block; font:600 9.5px var(--mono); letter-spacing:.09em;
   text-transform:uppercase; color:var(--soft); margin-bottom:6px}
-.zugang input{
+.karte input{
   width:100%; min-height:46px; border-radius:12px; border:1.5px solid #C9D4D4;
   background:var(--paper); padding:11px 13px; color:var(--ink);
   font:600 16px var(--mono); letter-spacing:.06em; text-align:center;
 }
-.zugang input:focus{outline:none; border-color:var(--teal);
+.karte input:focus{outline:none; border-color:var(--teal);
   background:var(--sheet); box-shadow:0 0 0 3px rgba(15,110,92,.14)}
-.zugang .los{
+.karte .los{
   width:100%; min-height:48px; margin-top:10px; border:none; border-radius:12px;
   background:var(--teal); color:#fff; cursor:pointer; font:600 14px var(--body);
 }
-.zugang .los:hover{background:var(--teal-d)}
-.zugang .los:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.karte .los:hover{background:var(--teal-d)}
+.karte .los:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .fehler{margin:9px 0 0; font:500 12px var(--body); color:var(--neg);
         min-height:1.1em}
-.schon{display:inline-block; font:500 12px var(--body);
-       color:var(--soft); text-decoration:none; padding:10px 4px;
-       min-height:44px}
+.schon{display:inline-block; font:500 12px var(--body); color:var(--soft);
+       text-decoration:none; padding:10px 4px; min-height:44px}
 .schon:hover{color:var(--teal-d)}
 
-/* ---- Die Merkmale: klein, ruhig, über dem Gruss --------------------
-   Die Form aus Fassung C: eine zarte Tönung in der Farbe des Merkmals, wie
-   die Symbolflächen in der App — nur klein. Vier nebeneinander, auf schmalem
-   Schirm zwei mal zwei. Keine Bewegung. */
-.merkmale{
-  display:grid; grid-template-columns:repeat(2,1fr); gap:8px;
-  margin-top:24px;
+/* ---- Der Wechsel: die beiden tauschen den Platz -------------------- */
+.blatt.offen .zugang{order:2; margin-top:22px}
+.blatt.offen .merkmale{
+  order:3; margin-top:22px; gap:6px; grid-template-columns:repeat(4,1fr);
 }
-@media (min-width:400px){ .merkmale{grid-template-columns:repeat(4,1fr)} }
-.merkmal{
-  display:flex; flex-direction:column; align-items:center; gap:6px;
-  padding:10px 5px; border-radius:12px; background:rgba(255,255,255,.5);
-  text-align:center;
+.blatt.offen .m-ic{width:30px; height:30px}
+.blatt.offen .m-wort{font-size:9px; color:var(--soft)}
+/* Ein kurzes Aufblenden verdeckt den Sprung der Reihenfolge. */
+@keyframes tausch{from{opacity:0; transform:translateY(8px)} to{opacity:1}}
+.blatt.wechselt .merkmale,.blatt.wechselt .zugang{
+  animation:tausch .34s ease-out both;
 }
-.m-ic{
-  width:27px; height:27px; border-radius:50%; flex:none;
-  display:flex; align-items:center; justify-content:center;
-  background:var(--ton-bg); color:var(--ton);
+@media (prefers-reduced-motion:reduce){
+  .merkmale,.m-ic,.m-wort{transition:none}
+  .blatt.wechselt .merkmale,.blatt.wechselt .zugang{animation:none}
 }
-.m-ic svg{width:16px; height:16px; display:block}
-.m-wort{font:600 9px var(--body); color:var(--soft); line-height:1.35;
-        letter-spacing:.01em}
 
-.t1{--ton:#2E7D4F; --ton-bg:#DDEEE2}
-.t2{--ton:#6D4A9C; --ton-bg:#EFE9F7}
-.t3{--ton:#1F6A8C; --ton-bg:#E2EEF4}
-.t4{--ton:#916212; --ton-bg:#F6EBD3}
+.t1{--ton:#2E7D4F; --ton-bg:#D4EADC}
+.t2{--ton:#6D4A9C; --ton-bg:#E7DFF4}
+.t3{--ton:#1F6A8C; --ton-bg:#D9EAF2}
+.t4{--ton:#916212; --ton-bg:#F4E6C8}
 
-/* ---- Der Gruss, ganz unten — derselbe wie in den Einstellungen ---- */
-.gruss{margin:16px 0 0; font:500 11.5px var(--body); color:#93A3A3}
+/* ---- Der Gruss, ganz unten ---- */
+.gruss{order:4; margin:18px 0 0; font:500 11.5px var(--body); color:#93A3A3}
 .gruss .herz{color:var(--neg); font-size:12.5px}
 </style>
 </head>
 <body>
 
-<div class="blatt">
-  <span class="marke">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3.6 10.4 12 3.6l8.4 6.8V20a1.4 1.4 0 0 1-1.4 1.4H5A1.4 1.4 0 0 1 3.6 20Z"/>
-      <path d="M9.4 21.4v-6.6h5.2v6.6"/>
-    </svg>
-  </span>
-  <h1>ImmoCalc</h1>
-  <p class="unterzeile">Nebenkostenabrechnung für echte Objekte mit echten
-    Mieterdaten.</p>
-
-  <div class="zugang">
-    <p class="kopf">Zugang nur mit Einladung</p>
-    <p class="text">Trag den Code aus deiner Einladungs-E-Mail ein — danach
-      geht es zur Einrichtung deines Zugangs.</p>
-    <label for="code">Einladungscode</label>
-    <input id="code" type="text" inputmode="text" autocomplete="off"
-           autocapitalize="characters" spellcheck="false"
-           placeholder="XXXX-XXXX-XXXX" maxlength="40">
-    <button type="button" class="los" id="los">Weiter</button>
-    <p class="fehler" id="fehler" role="status"></p>
-    <!-- N493 — ohne diesen Weg landet ein bereits eingerichteter Nutzer nach
-         jeder abgelaufenen Sitzung auf einer Seite, die einen Einladungscode
-         von ihm verlangt, den er nicht hat. Leise, aber vorhanden. -->
-    <a class="schon" href="anmeldung.html">Ich bin schon eingerichtet</a>
-  </div>
+<div class="blatt" id="blatt">
+  <header>
+    <span class="marke">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3.6 10.4 12 3.6l8.4 6.8V20a1.4 1.4 0 0 1-1.4 1.4H5A1.4 1.4 0 0 1 3.6 20Z"/>
+        <path d="M9.4 21.4v-6.6h5.2v6.6"/>
+      </svg>
+    </span>
+    <h1>ImmoCalc</h1>
+    <p class="unterzeile">Nebenkostenabrechnung für echte Objekte mit echten
+      Mieterdaten.</p>
+  </header>
 
   <div class="merkmale" id="merkmale"></div>
+
+  <div class="zugang">
+    <button type="button" class="schmal" id="aufmachen"
+            aria-expanded="false" aria-controls="karte">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <rect x="3.5" y="5.5" width="17" height="13" rx="2.2"/>
+        <path d="m4.6 6.9 7.4 5.4 7.4-5.4"/>
+      </svg>
+      Zugang nur mit Einladung</button>
+
+    <div class="karte" id="karte" hidden>
+      <p class="kopf">Zugang nur mit Einladung</p>
+      <p class="text">Trag den Code aus deiner Einladungs-E-Mail ein — danach
+        geht es zur Einrichtung deines Zugangs.</p>
+      <label for="code">Einladungscode</label>
+      <input id="code" type="text" inputmode="text" autocomplete="off"
+             autocapitalize="characters" spellcheck="false"
+             placeholder="XXXX-XXXX-XXXX" maxlength="40">
+      <button type="button" class="los" id="los">Weiter</button>
+      <p class="fehler" id="fehler" role="status"></p>
+      <!-- N493 — ohne diesen Weg landet ein bereits eingerichteter Nutzer nach
+           jeder abgelaufenen Sitzung auf einer Seite, die einen Einladungscode
+           von ihm verlangt, den er nicht hat. Leise, aber vorhanden. -->
+      <a class="schon" href="anmeldung.html">Ich bin schon eingerichtet</a>
+    </div>
+  </div>
 
   <p class="gruss">vibecoded with <span class="herz">♥</span> by Claude</p>
 </div>
@@ -207,11 +260,28 @@ document.getElementById('merkmale').innerHTML = MERKMALE.map(m => `
     <span class="m-wort">${m.wort}</span>
   </div>`).join('');
 
-/* Der Code wird hier NICHT geprüft — das tut der Server auf der Anmeldeseite.
-   Hier geht es nur darum, ihn mitzunehmen, damit niemand zweimal tippt. */
+/* Der Wechsel. Einmal hin, nicht zurück: wer den Zugang geöffnet hat, will
+   ihn benutzen — ihn wieder zuklappen zu lassen, wäre ein Knopf, der die
+   Arbeit rückgängig macht, die man gerade angefangen hat. */
+const blatt = document.getElementById('blatt');
+const karte = document.getElementById('karte');
+const aufmachen = document.getElementById('aufmachen');
 const feld = document.getElementById('code');
 const fehler = document.getElementById('fehler');
 
+aufmachen.addEventListener('click', () => {
+  aufmachen.hidden = true;
+  karte.hidden = false;
+  aufmachen.setAttribute('aria-expanded', 'true');
+  blatt.classList.add('offen', 'wechselt');
+  // Die Klasse für das Aufblenden wieder abnehmen, sonst läuft sie bei jeder
+  // späteren Änderung an diesen Elementen erneut.
+  setTimeout(() => blatt.classList.remove('wechselt'), 400);
+  setTimeout(() => feld.focus(), 80);
+});
+
+/* Der Code wird hier NICHT geprüft — das tut der Server auf der Anmeldeseite.
+   Hier geht es nur darum, ihn mitzunehmen, damit niemand zweimal tippt. */
 function weiter() {
   const code = feld.value.trim();
   if (code.length < 4) {
