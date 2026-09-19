@@ -44,7 +44,7 @@ const dateienText = z => z && z.dateien_neu
    der Browser setzt den Multipart-Rahmen selbst. */
 async function apiForm(pfad, form) {
   const antwort = await fetch('/api' + pfad, { method: 'POST', body: form });
-  if (antwort.status === 401) { location.href = 'anmeldung.html'; return new Promise(() => {}); }
+  if (antwort.status === 401) { location.href = 'willkommen.html'; return new Promise(() => {}); }
   if (!antwort.ok) {
     const grund = await antwort.json().then(k => k.detail).catch(() => null);
     throw new Error(grund || `${antwort.status} ${pfad}`);

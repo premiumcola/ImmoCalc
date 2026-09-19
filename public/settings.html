@@ -1052,7 +1052,9 @@ document.getElementById('passwortRow').addEventListener('click', () => {
 
 document.getElementById('abmeldenRow').addEventListener('click', async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
-  location.href = 'anmeldung.html';
+  // N493 — nach dem Abmelden ist man ein gewöhnlicher Besucher: zurück auf
+  // die öffentliche Startseite, nicht in ein Formular.
+  location.href = 'willkommen.html';
 });
 </script>
 </body>

@@ -64,8 +64,13 @@ export async function api(pfad, optionen = {}) {
     ...optionen,
     body: optionen.body ? JSON.stringify(optionen.body) : undefined,
   });
-  if (antwort.status === 401 && !location.pathname.endsWith('anmeldung.html')) {
-    location.href = 'anmeldung.html';
+  // N493 — 401 führt auf die öffentliche Startseite, nicht ins Formular.
+  // Weder dort noch auf der Anmeldeseite selbst darf umgeleitet werden, sonst
+  // dreht sich die Seite im Kreis.
+  const seite401 = location.pathname.split('/').pop();
+  if (antwort.status === 401
+      && seite401 !== 'anmeldung.html' && seite401 !== 'willkommen.html') {
+    location.href = 'willkommen.html';
     return new Promise(() => {}); // die Seite wechselt ohnehin gleich
   }
   if (!antwort.ok) {
@@ -460,11 +465,20 @@ const NAV_ALIAS = {
  * Umleitung (falls noetig) holt sich das Ergebnis nach.
  */
 export async function sitzungPruefen() {
-  if (location.pathname.endsWith('anmeldung.html')) return;
+  // N493 — die öffentliche Startseite und die Anmeldung prüfen selbst nichts:
+  // beide sind bewusst ohne Sitzung erreichbar.
+  const seite = location.pathname.split('/').pop();
+  if (seite === 'anmeldung.html' || seite === 'willkommen.html') return;
   try {
     await api('/auth/ich');
   } catch (fehler) {
-    if (fehler.status === 401) location.href = 'anmeldung.html';
+    // N493 — wer nicht angemeldet ist, landet auf der WILLKOMMENSSEITE, nicht
+    // mehr direkt im Anmeldeformular. Nutzer: „wenn man auf immocalc.cloud
+    // geht, sollen nur die Bubbles kommen … man kann eigentlich nichts
+    // klicken." Der Weg hinein führt über die Einladungsklappe dort; ein
+    // bereits eingerichteter Nutzer findet darin den leisen Verweis auf die
+    // Anmeldung.
+    if (fehler.status === 401) location.href = 'willkommen.html';
   }
 }
 
