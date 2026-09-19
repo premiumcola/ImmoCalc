@@ -13,13 +13,24 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* N493 — die öffentliche Startseite.
+/* N495 — die öffentliche Startseite, dritte und letzte Fassung.
  *
- * Nutzer: „wenn man auf immocalc.cloud geht, sollen nur die Bubbles kommen …
- * wirklich runde Elemente mit Schlagwörtern und großen Icons … mit rundem,
- * transparentem Luftblasen-Effekt, wie schwebende Luftblasen … die Anmelde-
- * karte kommt komplett raus … man kann eigentlich nichts klicken. Und unten
- * irgendwo: du hast einen Einladungslink, dann hier hin."
+ * Die Geschichte dieser Datei in drei Sätzen, damit sie niemand rückwärts
+ * geht: Zuerst standen vier grosse Blasen NEBENEINANDER (N493) — am PC liefen
+ * sie quer über den halben Schirm. Dann untereinander und neutraler (N494) —
+ * daraus wurden Badeperlen, weil eine Seifenblase über fast weissem Grund
+ * unsichtbar ist und ich die Durchsichtigkeit mit weisser Füllung und
+ * Innenschattierung NACHGEBAUT habe. Genau das macht Kugeln daraus.
+ *
+ * Nutzer danach: „machen wir das viel unscheinbarer, kleiner, irgendwie unten
+ * hin. Die Animationseffekte grossteils raus. Eher im Design wie C, ruhige
+ * Scheiben. Deutlich kleiner und nicht zwangsweise rund, einfach vier
+ * nebeneinander. Das heisst, die Startseite zeigt dann schon die Anmeldung
+ * bzw. den Hinweis, dass man sich mit Einladung anmelden kann."
+ *
+ * Also umgedreht: der ZUGANG ist der Hauptgegenstand, die Merkmale sind eine
+ * leise Zeile darunter — über dem Gruss, wie in den Einstellungen. Keine
+ * Bewegung mehr: sie sind eine Fussnote, kein Schauplatz.
  *
  * Bewusst OHNE `assets/immo.css` und ohne ein einziges App-Modul: diese Seite
  * sieht jeder Fremde, sie soll nichts über die Anwendung mitliefern und nicht
@@ -28,303 +39,178 @@
  */
 :root{
   --paper:#E8ECEC; --sheet:#FFFFFF; --ink:#16262C; --soft:#5C6B70;
-  --teal:#0F6E5C; --teal-l:#DCEBE6; --teal-d:#0B574A;
-  --pos:#2E7D4F; --pos-bg:#DDEEE2;
-  --violett:#6D4A9C; --violett-bg:#EFE9F7;
-  --blau:#1F6A8C;    --blau-bg:#E2EEF4;
-  --amber:#916212;   --amber-bg:#F6EBD3;
+  --line:#D6DCDD; --teal:#0F6E5C; --teal-l:#DCEBE6; --teal-d:#0B574A;
+  --neg:#B24229;
   --disp:'Space Grotesk',system-ui,sans-serif;
   --body:'Inter',system-ui,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,monospace;
 }
 *{box-sizing:border-box}
-html,body{height:100%}
 body{
   margin:0; font-family:var(--body); color:var(--ink);
-  -webkit-font-smoothing:antialiased;
-  /* Ein sehr ruhiger Verlauf statt einer flachen Fläche: er gibt den Blasen
-     überhaupt erst einen Raum, in dem sie schweben können. */
+  -webkit-font-smoothing:antialiased; line-height:1.45;
   background:
-    radial-gradient(120% 80% at 18% 8%,  #F3F7F6 0%, transparent 58%),
-    radial-gradient(110% 70% at 88% 92%, #DCE7E4 0%, transparent 60%),
+    radial-gradient(110% 70% at 20% 4%,  #F2F6F5 0%, transparent 56%),
+    radial-gradient(100% 60% at 86% 96%, #DDE7E5 0%, transparent 58%),
     var(--paper);
   min-height:100dvh; display:flex; flex-direction:column;
-  padding:calc(26px + env(safe-area-inset-top)) 20px
-          calc(26px + env(safe-area-inset-bottom));
-  overflow-x:hidden;
+  align-items:center; justify-content:center;
+  padding:calc(30px + env(safe-area-inset-top)) 20px
+          calc(22px + env(safe-area-inset-bottom));
 }
-
-/* ---- Hintergrund: ein paar sehr große, sehr leise Blasen -------------
-   Rein dekorativ und bewusst fast unsichtbar. Sie tragen die Bewegung des
-   Raums; die vier echten Blasen davor bleiben dadurch ruhig genug zum Lesen. */
-.raum{position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden}
-.raum i{
-  position:absolute; border-radius:50%; display:block;
-  background:radial-gradient(circle at 32% 28%,
-             rgba(255,255,255,.7), rgba(255,255,255,.06) 62%, transparent 72%);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.45);
-  animation:treiben var(--d,26s) ease-in-out infinite;
-  animation-delay:var(--v,0s);
-}
-.raum i:nth-child(1){width:340px; height:340px; left:-90px;  top:8%;   --d:31s}
-.raum i:nth-child(2){width:210px; height:210px; right:-60px; top:26%;  --d:24s; --v:-6s}
-.raum i:nth-child(3){width:420px; height:420px; right:-140px;bottom:-8%;--d:37s; --v:-13s}
-.raum i:nth-child(4){width:150px; height:150px; left:12%;   bottom:6%; --d:21s; --v:-4s}
-@keyframes treiben{
-  0%,100%{transform:translate(0,0) scale(1)}
-  33%    {transform:translate(14px,-22px) scale(1.04)}
-  66%    {transform:translate(-10px,16px) scale(.97)}
-}
-
-.blatt{position:relative; z-index:1; width:100%; max-width:560px;
-       margin:0 auto; flex:1; display:flex; flex-direction:column}
+.blatt{width:100%; max-width:420px; text-align:center}
 
 /* ---- Kopf ---- */
-header{text-align:center; margin-bottom:8px}
 .marke{
-  width:62px; height:62px; border-radius:18px; margin:0 auto 14px;
+  width:56px; height:56px; border-radius:16px; margin:0 auto 13px;
   background:var(--sheet); color:var(--teal);
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 10px 26px -14px rgba(22,38,44,.5);
+  box-shadow:0 8px 22px -14px rgba(22,38,44,.5);
 }
-.marke svg{width:36px; height:36px}
-h1{font:700 clamp(30px,8vw,46px) var(--disp); letter-spacing:-.035em;
-   margin:0; line-height:1.02}
-.unterzeile{font:400 14.5px var(--body); color:var(--soft); line-height:1.6;
-            max-width:46ch; margin:12px auto 0}
+.marke svg{width:32px; height:32px}
+h1{font:700 clamp(27px,7vw,34px) var(--disp); letter-spacing:-.03em;
+   margin:0; line-height:1.05}
+.unterzeile{font:400 13.5px var(--body); color:var(--soft); line-height:1.55;
+            margin:9px auto 0; max-width:34ch}
 
-/* ---- Die vier Blasen -------------------------------------------------
-   Echte Kreise (`aspect-ratio:1` + 50 % Radius), kein abgerundetes Rechteck.
-
-   N494 — zweiter Anlauf nach dem Blick des Nutzers: „die Bubbles gefallen mir
-   gar nicht. Transparenter, neutraler. Und nicht nebeneinander, sondern
-   untereinander — die gehen jetzt viel zu weit nach rechts. Weniger Farbe,
-   nicht so einen komischen Schatten. Die ganze Anordnung ist dämlich."
-
-   Drei Dinge geändert:
-   · **Untereinander statt nebeneinander.** Vorher vier Spalten über 980px —
-     am PC lief die Reihe quer über den halben Schirm und die Seite hatte
-     keine Mitte mehr. Jetzt EINE schmale Spalte, überall gleich; nur ein
-     leichter Wechselversatz nach links und rechts, damit es steigende Blasen
-     bleiben und keine Perlenkette.
-   · **Neutral statt getönt.** Der Farbverlauf in der Blase ist raus; Farbe
-     trägt nur noch das Zeichen darin. Eine Blase ist farblos, sie bricht das
-     Licht — getönt sah sie aus wie eine Murmel.
-   · **Kein Schlagschatten.** Der war der „komische Schatten": ein
-     Schlagschatten legt eine Blase auf eine Fläche, statt sie schweben zu
-     lassen. Die Abhebung trägt jetzt allein der helle Rand.
-
-   Der Satz in der Blase ist ebenfalls weg — bei dieser Grösse wurde der Kreis
-   zur Textwüste, und verlangt waren Schlagwörter mit grossen Zeichen. */
-.blasen{
-  flex:1; display:flex; flex-direction:column; align-items:center;
-  gap:clamp(10px,2.6vw,16px); justify-content:center;
-  margin:clamp(18px,4vw,30px) 0;
-}
-.blase{
-  position:relative; width:clamp(132px,38vw,164px); aspect-ratio:1;
-  border-radius:50%; flex:none;
-  display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:8px; padding:14px;
-  text-align:center; border:none; font-family:var(--body); color:inherit;
-  /* Nur Licht, keine Farbe: ein heller Punkt oben links, der nach unten
-     ausläuft. Das ist alles, was eine Seifenhaut zurückwirft. */
-  background:radial-gradient(circle at 33% 27%,
-    rgba(255,255,255,.80), rgba(255,255,255,.22) 44%,
-    rgba(255,255,255,.05) 68%, transparent 78%);
-  -webkit-backdrop-filter:blur(9px) saturate(1.05);
-  backdrop-filter:blur(9px) saturate(1.05);
-  /* Nur Ränder, kein Schlagschatten nach aussen. */
-  box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,.62),
-    inset 5px 8px 20px -11px rgba(255,255,255,.95),
-    inset -6px -9px 22px -14px rgba(22,38,44,.22);
-  animation:schweben var(--d) ease-in-out infinite;
-  animation-delay:var(--v);
-  transition:transform .3s cubic-bezier(.3,1.2,.4,1);
-  cursor:default; -webkit-tap-highlight-color:transparent;
-}
-/* Leichter Wechselversatz — steigende Blasen, keine Perlenkette. */
-.blase:nth-child(1){--d:7.5s;  --v:0s;    margin-left:-30px}
-.blase:nth-child(2){--d:9.2s;  --v:-2.4s; margin-left:26px}
-.blase:nth-child(3){--d:8.1s;  --v:-4.8s; margin-left:-18px}
-.blase:nth-child(4){--d:10.4s; --v:-1.2s; margin-left:34px}
-@keyframes schweben{
-  0%,100%{transform:translate(0,0)}
-  30%    {transform:translate(3px,-9px)}
-  62%    {transform:translate(-4px,5px)}
-}
-/* Der Glanzpunkt — das eine Detail, das eine Fläche zur Blase macht. */
-.blase::before{
-  content:""; position:absolute; left:18%; top:13%;
-  width:28%; height:20%; border-radius:50%;
-  background:rgba(255,255,255,.92); filter:blur(6px);
-  pointer-events:none;
-}
-.blase:hover,.blase:focus-visible{transform:scale(1.06) translateY(-5px)}
-.blase:focus-visible{outline:2px solid var(--teal); outline-offset:6px}
-.blase:active{transform:scale(1.02)}
-
-.b-ic{width:clamp(32px,8vw,40px); height:clamp(32px,8vw,40px);
-      color:var(--ton); flex:none; opacity:.9}
-.b-ic svg{width:100%; height:100%; display:block}
-.b-wort{font:600 clamp(11px,2.9vw,13px) var(--disp); letter-spacing:-.01em;
-        line-height:1.25; color:var(--ink); max-width:13ch}
-
-/* Nur noch das Zeichen trägt Farbe — und auch das gedämpft. */
-.t-pos{--ton:#3F7F5C}
-.t-vio{--ton:#6E5C92}
-.t-bla{--ton:#3A6F89}
-.t-amb{--ton:#8A6B31}
-
-/* ---- Die Einladung, unten und leise ---------------------------------
-   Nutzer: „auf der Homepage sollte man nirgendwo drücken können, dass man da
-   hinkommt … und dann unten irgendwo: du hast einen Einladungslink."
-   Also keine Anmeldeschaltfläche, nur diese eine Zeile. */
-footer{text-align:center; padding-top:10px}
-.eintritt{
-  border:none; background:none; cursor:pointer; color:var(--soft);
-  font:500 13px var(--body); padding:12px 16px; min-height:44px;
-  border-radius:999px; -webkit-tap-highlight-color:transparent;
-}
-.eintritt:hover{color:var(--teal-d); background:rgba(255,255,255,.6)}
-.eintritt:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
-.klappe{
-  max-width:380px; margin:10px auto 0; background:rgba(255,255,255,.82);
-  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
-  border-radius:20px; padding:18px 18px 16px;
-  box-shadow:0 18px 44px -26px rgba(22,38,44,.6),
+/* ---- Der Zugang: jetzt der Hauptgegenstand der Seite ---------------- */
+.zugang{
+  background:var(--sheet); border-radius:18px; padding:20px 18px 14px;
+  margin-top:22px; text-align:left;
+  box-shadow:0 12px 34px -22px rgba(22,38,44,.55),
              inset 0 0 0 1px rgba(255,255,255,.7);
 }
-.klappe p{margin:0 0 12px; font:400 12.5px var(--body); color:var(--soft);
-          line-height:1.5}
-.klappe label{display:block; font:600 9.5px var(--mono); letter-spacing:.09em;
-              text-transform:uppercase; color:var(--soft); margin-bottom:6px;
-              text-align:left}
-.klappe input{
+.zugang .kopf{font:600 9.5px var(--mono); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--teal); margin:0 0 7px}
+.zugang p.text{margin:0 0 14px; font:400 12.5px var(--body); color:var(--soft);
+          line-height:1.55}
+.zugang label{display:block; font:600 9.5px var(--mono); letter-spacing:.09em;
+  text-transform:uppercase; color:var(--soft); margin-bottom:6px}
+.zugang input{
   width:100%; min-height:46px; border-radius:12px; border:1.5px solid #C9D4D4;
-  background:var(--sheet); padding:11px 13px; color:var(--ink);
+  background:var(--paper); padding:11px 13px; color:var(--ink);
   font:600 16px var(--mono); letter-spacing:.06em; text-align:center;
 }
-.klappe input:focus{outline:none; border-color:var(--teal);
-                    box-shadow:0 0 0 3px rgba(15,110,92,.14)}
-.klappe .los{
+.zugang input:focus{outline:none; border-color:var(--teal);
+  background:var(--sheet); box-shadow:0 0 0 3px rgba(15,110,92,.14)}
+.zugang .los{
   width:100%; min-height:48px; margin-top:10px; border:none; border-radius:12px;
-  background:var(--teal); color:#fff; cursor:pointer;
-  font:600 14px var(--body);
+  background:var(--teal); color:#fff; cursor:pointer; font:600 14px var(--body);
 }
-.klappe .los:hover{background:var(--teal-d)}
-.schon{display:inline-block; margin-top:12px; font:500 11.5px var(--body);
-       color:var(--soft); text-decoration:none; padding:8px; min-height:44px}
+.zugang .los:hover{background:var(--teal-d)}
+.zugang .los:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.fehler{margin:9px 0 0; font:500 12px var(--body); color:var(--neg);
+        min-height:1.1em}
+.schon{display:inline-block; font:500 12px var(--body);
+       color:var(--soft); text-decoration:none; padding:10px 4px;
+       min-height:44px}
 .schon:hover{color:var(--teal-d)}
-.fehler{margin:10px 0 0; font:500 12px var(--body); color:#B24229;
-        min-height:1.2em}
 
-/* Wer Bewegung abbestellt hat, bekommt Blasen, die stehen. Sie sehen dann
-   immer noch wie Blasen aus — die Form trägt das, nicht die Bewegung. */
-@media (prefers-reduced-motion:reduce){
-  .blase,.raum i{animation:none}
-  .blase{transition:none}
+/* ---- Die Merkmale: klein, ruhig, über dem Gruss --------------------
+   Die Form aus Fassung C: eine zarte Tönung in der Farbe des Merkmals, wie
+   die Symbolflächen in der App — nur klein. Vier nebeneinander, auf schmalem
+   Schirm zwei mal zwei. Keine Bewegung. */
+.merkmale{
+  display:grid; grid-template-columns:repeat(2,1fr); gap:8px;
+  margin-top:24px;
 }
+@media (min-width:400px){ .merkmale{grid-template-columns:repeat(4,1fr)} }
+.merkmal{
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  padding:10px 5px; border-radius:12px; background:rgba(255,255,255,.5);
+  text-align:center;
+}
+.m-ic{
+  width:27px; height:27px; border-radius:50%; flex:none;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--ton-bg); color:var(--ton);
+}
+.m-ic svg{width:16px; height:16px; display:block}
+.m-wort{font:600 9px var(--body); color:var(--soft); line-height:1.35;
+        letter-spacing:.01em}
+
+.t1{--ton:#2E7D4F; --ton-bg:#DDEEE2}
+.t2{--ton:#6D4A9C; --ton-bg:#EFE9F7}
+.t3{--ton:#1F6A8C; --ton-bg:#E2EEF4}
+.t4{--ton:#916212; --ton-bg:#F6EBD3}
+
+/* ---- Der Gruss, ganz unten — derselbe wie in den Einstellungen ---- */
+.gruss{margin:16px 0 0; font:500 11.5px var(--body); color:#93A3A3}
+.gruss .herz{color:var(--neg); font-size:12.5px}
 </style>
 </head>
 <body>
 
-<div class="raum" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-
 <div class="blatt">
-  <header>
-    <span class="marke">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M3.6 10.4 12 3.6l8.4 6.8V20a1.4 1.4 0 0 1-1.4 1.4H5A1.4 1.4 0 0 1 3.6 20Z"/>
-        <path d="M9.4 21.4v-6.6h5.2v6.6"/>
-      </svg>
-    </span>
-    <h1>ImmoCalc</h1>
-    <p class="unterzeile">Nebenkostenabrechnung für echte Objekte mit echten
-      Mieterdaten. Der Zugang läuft ausschließlich über eine persönliche
-      Einladung.</p>
-  </header>
+  <span class="marke">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3.6 10.4 12 3.6l8.4 6.8V20a1.4 1.4 0 0 1-1.4 1.4H5A1.4 1.4 0 0 1 3.6 20Z"/>
+      <path d="M9.4 21.4v-6.6h5.2v6.6"/>
+    </svg>
+  </span>
+  <h1>ImmoCalc</h1>
+  <p class="unterzeile">Nebenkostenabrechnung für echte Objekte mit echten
+    Mieterdaten.</p>
 
-  <div class="blasen" id="blasen"></div>
+  <div class="zugang">
+    <p class="kopf">Zugang nur mit Einladung</p>
+    <p class="text">Trag den Code aus deiner Einladungs-E-Mail ein — danach
+      geht es zur Einrichtung deines Zugangs.</p>
+    <label for="code">Einladungscode</label>
+    <input id="code" type="text" inputmode="text" autocomplete="off"
+           autocapitalize="characters" spellcheck="false"
+           placeholder="XXXX-XXXX-XXXX" maxlength="40">
+    <button type="button" class="los" id="los">Weiter</button>
+    <p class="fehler" id="fehler" role="status"></p>
+    <!-- N493 — ohne diesen Weg landet ein bereits eingerichteter Nutzer nach
+         jeder abgelaufenen Sitzung auf einer Seite, die einen Einladungscode
+         von ihm verlangt, den er nicht hat. Leise, aber vorhanden. -->
+    <a class="schon" href="anmeldung.html">Ich bin schon eingerichtet</a>
+  </div>
 
-  <footer>
-    <button type="button" class="eintritt" id="eintritt"
-            aria-expanded="false" aria-controls="klappe">
-      Du hast eine Einladung?</button>
-    <div class="klappe" id="klappe" hidden>
-      <p>Trag den Code aus deiner Einladungs-E-Mail ein. Danach geht es zur
-         Einrichtung deines Zugangs.</p>
-      <label for="code">Einladungscode</label>
-      <input id="code" type="text" inputmode="text" autocomplete="off"
-             autocapitalize="characters" spellcheck="false"
-             placeholder="XXXX-XXXX-XXXX" maxlength="40">
-      <button type="button" class="los" id="los">Weiter</button>
-      <p class="fehler" id="fehler" role="status"></p>
-      <!-- N493 — bewusst hier drin und sehr leise, nicht auf der Seite:
-           ohne diesen Weg landet ein bereits eingerichteter Nutzer nach einer
-           abgelaufenen Sitzung auf einer Seite, die einen Einladungscode von
-           ihm verlangt, den er nicht hat. Sichtbar ist auf den ersten Blick
-           trotzdem nichts — man muss die Klappe erst öffnen. -->
-      <a class="schon" href="anmeldung.html">Ich bin schon eingerichtet</a>
-    </div>
-  </footer>
+  <div class="merkmale" id="merkmale"></div>
+
+  <p class="gruss">vibecoded with <span class="herz">♥</span> by Claude</p>
 </div>
 
 <script type="module">
-/* Die vier Merkmale. Bewusst als Daten und nicht als Markup: die Reihenfolge
-   und die Töne sollen an einer Stelle stehen, nicht über die Datei verteilt. */
-const STRICH = 'fill="none" stroke="currentColor" stroke-width="1.7" '
+/* Die vier Merkmale. Als Daten und nicht als Markup, damit Reihenfolge und
+   Töne an einer Stelle stehen. */
+const STRICH = 'fill="none" stroke="currentColor" stroke-width="1.9" '
   + 'stroke-linecap="round" stroke-linejoin="round"';
 
 const MERKMALE = [
-  { ton: 't-pos', wort: 'Verschlüsselte Sicherung',
-    satz: 'Verschlüsselt, bevor sie das Haus verlässt — auf EU-Servern.',
-    bild: `<rect x="3.5" y="4" width="17" height="16" rx="2.6"/>
-           <path d="M17.7 9.7v4.6"/><circle cx="10.6" cy="12" r="3.5"/>
-           <path d="M10.6 7.2v1.6M10.6 16.8v-1.6M5.8 12h1.6M15.4 12h-1.6"/>` },
-  { ton: 't-vio', wort: 'Intelligente Beleganalyse',
-    satz: 'Datum, Betrag und Kostenart direkt aus dem Foto.',
-    bild: `<path d="M12 5.2v14.2"/>
-           <path d="M12 6.6c-1-1.6-2.9-2-4.3-1.2S6 7.9 6.5 9.2c-1.5.5-2.3 1.9-1.8 3.3
-                    s1.8 2 1.8 2c-.7 1.3-.3 2.9 1 3.6s2.9.3 3.6-.9"/>
-           <path d="M12 6.6c1-1.6 2.9-2 4.3-1.2S18 7.9 17.5 9.2c1.5.5 2.3 1.9 1.8 3.3
-                    s-1.8 2-1.8 2c.7 1.3.3 2.9-1 3.6s-2.9.3-3.6-.9"/>` },
-  { ton: 't-bla', wort: 'Modular aufgebaut',
-    satz: 'Nebenkosten, Wert, PV — jeder Bereich für sich.',
-    bild: `<rect x="3.6" y="3.6" width="7.4" height="7.4" rx="2"/>
-           <rect x="13" y="3.6" width="7.4" height="7.4" rx="2"/>
-           <rect x="3.6" y="13" width="7.4" height="7.4" rx="2"/>
-           <path d="M16.7 13v7.4M13 16.7h7.4"/>` },
-  { ton: 't-amb', wort: 'Zwei-Faktor-Anmeldung',
-    satz: 'Passwort und ein Code aus deiner Authenticator-App.',
-    bild: `<path d="M12 3.2 19.4 6v6.1c0 4.2-3 7.2-7.4 8.6-4.4-1.4-7.4-4.4-7.4-8.6V6Z"/>
-           <path d="m8.9 12.1 2.2 2.2 4-4.3"/>` },
+  { ton: 't1', wort: 'Verschlüsselte<br>Backups', bild: `
+      <rect x="3.5" y="4" width="17" height="16" rx="2.6"/>
+      <path d="M17.7 9.7v4.6"/><circle cx="10.6" cy="12" r="3.4"/>` },
+  { ton: 't2', wort: 'Intelligente<br>Beleganalyse', bild: `
+      <path d="M12 5.2v14.2"/>
+      <path d="M12 6.6c-1-1.6-2.9-2-4.3-1.2S6 7.9 6.5 9.2c-1.5.5-2.3 1.9-1.8 3.3
+               s1.8 2 1.8 2c-.7 1.3-.3 2.9 1 3.6s2.9.3 3.6-.9"/>
+      <path d="M12 6.6c1-1.6 2.9-2 4.3-1.2S18 7.9 17.5 9.2c1.5.5 2.3 1.9 1.8 3.3
+               s-1.8 2-1.8 2c.7 1.3.3 2.9-1 3.6s-2.9.3-3.6-.9"/>` },
+  { ton: 't3', wort: 'Modular<br>aufgebaut', bild: `
+      <rect x="3.6" y="3.6" width="7.4" height="7.4" rx="2"/>
+      <rect x="13" y="3.6" width="7.4" height="7.4" rx="2"/>
+      <rect x="3.6" y="13" width="7.4" height="7.4" rx="2"/>
+      <path d="M16.7 13v7.4M13 16.7h7.4"/>` },
+  { ton: 't4', wort: 'Zwei-Faktor-<br>Anmeldung', bild: `
+      <path d="M12 3.2 19.4 6v6.1c0 4.2-3 7.2-7.4 8.6-4.4-1.4-7.4-4.4-7.4-8.6V6Z"/>
+      <path d="m8.9 12.1 2.2 2.2 4-4.3"/>` },
 ];
 
-document.getElementById('blasen').innerHTML = MERKMALE.map(m => `
-  <button type="button" class="blase ${m.ton}" title="${m.satz}"
-          aria-label="${m.wort} — ${m.satz}">
-    <span class="b-ic"><svg viewBox="0 0 24 24" aria-hidden="true" ${STRICH}
+document.getElementById('merkmale').innerHTML = MERKMALE.map(m => `
+  <div class="merkmal ${m.ton}">
+    <span class="m-ic"><svg viewBox="0 0 24 24" aria-hidden="true" ${STRICH}
       >${m.bild}</svg></span>
-    <span class="b-wort">${m.wort}</span>
-  </button>`).join('');
+    <span class="m-wort">${m.wort}</span>
+  </div>`).join('');
 
-/* Die Einladungsklappe. Der Code wird hier NICHT geprüft — das tut der Server
-   auf der Anmeldeseite. Hier geht es nur darum, ihn mitzunehmen, damit der
-   Nutzer ihn nicht zweimal tippt. */
-const eintritt = document.getElementById('eintritt');
-const klappe = document.getElementById('klappe');
+/* Der Code wird hier NICHT geprüft — das tut der Server auf der Anmeldeseite.
+   Hier geht es nur darum, ihn mitzunehmen, damit niemand zweimal tippt. */
 const feld = document.getElementById('code');
 const fehler = document.getElementById('fehler');
-
-eintritt.addEventListener('click', () => {
-  const auf = klappe.hidden;
-  klappe.hidden = !auf;
-  eintritt.setAttribute('aria-expanded', String(auf));
-  if (auf) setTimeout(() => feld.focus(), 60);
-});
 
 function weiter() {
   const code = feld.value.trim();
