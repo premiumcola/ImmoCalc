@@ -58,6 +58,14 @@ export const logoSvg = (id, cls = '') =>
 // statt dass jede Seite das einzeln abfangen muss. Auf der Anmeldeseite
 // SELBST nie umleiten — dort ist ein 401 ein falsches Passwort, kein Grund
 // zur Umleitung (sonst eine Schleife).
+/* N493/N502 — Seiten ohne Sitzung bzw. ohne zweiten Faktor. Beide Listen
+   stehen hier oben, weil `api()` und `sitzungPruefen()` sie teilen: liefe
+   eine der beiden Umleitungen auf ihrer eigenen Zielseite, drehte sich die
+   Seite im Kreis. */
+const OFFENE_SEITEN = ['anmeldung.html', 'willkommen.html'];
+const OHNE_ZWEITFAKTOR = [...OFFENE_SEITEN, 'zweifaktor.html'];
+const dieseSeite = () => location.pathname.split('/').pop() || 'index.html';
+
 export async function api(pfad, optionen = {}) {
   const antwort = await fetch('/api' + pfad, {
     headers: { 'Content-Type': 'application/json' },
@@ -67,11 +75,21 @@ export async function api(pfad, optionen = {}) {
   // N493 — 401 führt auf die öffentliche Startseite, nicht ins Formular.
   // Weder dort noch auf der Anmeldeseite selbst darf umgeleitet werden, sonst
   // dreht sich die Seite im Kreis.
-  const seite401 = location.pathname.split('/').pop();
-  if (antwort.status === 401
-      && seite401 !== 'anmeldung.html' && seite401 !== 'willkommen.html') {
+  const seite = dieseSeite();
+  if (antwort.status === 401 && !OFFENE_SEITEN.includes(seite)) {
     location.href = 'willkommen.html';
     return new Promise(() => {}); // die Seite wechselt ohnehin gleich
+  }
+  // N502 — der Zwei-Faktor-Riegel. Erkannt am Kopf, nicht am Text der
+  // Meldung: ein Textvergleich bräche beim ersten Umformulieren, und zwar
+  // still. Normalerweise kommt man hier gar nicht an (siehe
+  // `sitzungPruefen`) — das hier fängt den Fall ab, dass die Seite schon
+  // offen war.
+  if (antwort.status === 403
+      && antwort.headers.get('X-ImmoCalc-Grund') === 'zwei-faktor'
+      && !OHNE_ZWEITFAKTOR.includes(seite)) {
+    location.href = 'zweifaktor.html';
+    return new Promise(() => {});
   }
   if (!antwort.ok) {
     // FastAPI liefert die Ursache in `detail` — die ist fuer den Nutzer
@@ -467,10 +485,17 @@ const NAV_ALIAS = {
 export async function sitzungPruefen() {
   // N493 — die öffentliche Startseite und die Anmeldung prüfen selbst nichts:
   // beide sind bewusst ohne Sitzung erreichbar.
-  const seite = location.pathname.split('/').pop();
-  if (seite === 'anmeldung.html' || seite === 'willkommen.html') return;
+  const seite = dieseSeite();
+  if (OHNE_ZWEITFAKTOR.includes(seite)) return;
   try {
-    await api('/auth/ich');
+    const ich = await api('/auth/ich');
+    // N502 — ohne bestätigten zweiten Faktor geht es zuerst dorthin. Nutzer:
+    // „wenn der User sich anmeldet, muss er auch die Zwei-Faktor-
+    // Authentifizierung direkt aktivieren … lass die User am besten gar
+    // nichts anlegen, bevor nicht Zwei-Faktor-Anmeldung aktiviert ist."
+    // `replace` statt `href`: der Zurück-Knopf soll nicht in die gesperrte
+    // Seite zurückführen.
+    if (ich && ich.hat_2fa === false) location.replace('zweifaktor.html');
   } catch (fehler) {
     // N493 — wer nicht angemeldet ist, landet auf der WILLKOMMENSSEITE, nicht
     // mehr direkt im Anmeldeformular. Nutzer: „wenn man auf immocalc.cloud

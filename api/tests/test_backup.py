@@ -30,6 +30,7 @@ from app.deps import aktuelle_familie  # noqa: E402
 from app.export import exportiere_familie  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Familie  # noqa: E402
+from conftest import zweifaktor_einschalten, zweiter_faktor_einloesen
 
 PASSWORT = "sehrsicher123"
 BACKUP_PW = "backup-geheimnis-xyz"
@@ -42,6 +43,7 @@ def _ohne_override():
 def _familie_mit_objekt(c, name, objekt="Sicherungsweg 1") -> int:
     fid = c.post("/api/auth/registrieren",
                  json={"name": name, "passwort": PASSWORT}).json()["id"]
+    zweifaktor_einschalten(c, PASSWORT)        # N502
     antwort = c.post("/api/objekte", json={
         "name": objekt,
         "einheiten": [{"bezeichnung": "EG", "flaeche": 60.0, "partei": "Meier"}]})
@@ -172,6 +174,7 @@ def test_herunterladen_und_einspielen_rundreise():
 
     with TestClient(app) as b:
         b.post("/api/auth/registrieren", json={"name": "Backup-B", "passwort": PASSWORT})
+        zweifaktor_einschalten(b, PASSWORT)     # N502
         falsch = b.post("/api/backup/einspielen", data={"passwort": "nicht-das"},
                         files={"datei": ("a.enc", archiv, "application/octet-stream")})
         assert falsch.status_code == 400
@@ -196,6 +199,7 @@ def test_fremde_familie_sieht_keine_backups():
         _backup_einrichten(a)
         a.get("/api/backup/herunterladen")
         b.post("/api/auth/registrieren", json={"name": "Backup-Sicht-B", "passwort": PASSWORT})
+        zweifaktor_einschalten(b, PASSWORT)     # N502
         assert b.get("/api/backup/einstellungen").json()["backups"] == []
 
 
@@ -302,8 +306,17 @@ def test_instanz_wiederherstellung_auf_frischer_instanz():
     with TestClient(app) as frisch:
         # Die Passwörter sind zurück — und damit ist die Instanz wieder
         # beansprucht: der offene Weg ist zu.
+        #
+        # N502 — die Familie hat seit dem Zwei-Faktor-Zwang auch einen zweiten
+        # Faktor, und der ist mitgesichert worden: `/login` antwortet deshalb
+        # mit 202 und einem Ticket statt mit 200 und einer Sitzung. Genau das
+        # ist hier der stärkere Nachweis — das Passwort hat gestimmt UND der
+        # zweite Faktor hat die Wiederherstellung überlebt.
         login = frisch.post("/api/auth/login",
                             json={"name": "Instanz-Zurueck", "passwort": PASSWORT})
-        assert login.status_code == 200, login.text
+        assert login.status_code == 202, login.text
+        assert login.json()["zwei_faktor_noetig"] is True
+        zweiter_faktor_einloesen(frisch, login.json()["ticket"],
+                                 "Instanz-Zurueck")
         assert [o["name"] for o in frisch.get("/api/objekte").json()] == ["Rueckholweg 3"]
         assert frisch.get("/api/backup/instanz/zustand").json()["moeglich"] is False

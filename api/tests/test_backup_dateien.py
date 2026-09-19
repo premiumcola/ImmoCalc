@@ -32,6 +32,7 @@ from app.deps import aktuelle_familie  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import BackupDatei, Dokument, Familie, Objekt  # noqa: E402
 from app.nextcloud import Nextcloud, NextcloudFehler  # noqa: E402
+from conftest import zweifaktor_einschalten
 
 PASSWORT = "sehrsicher123"
 BACKUP_PW = "backup-geheimnis-xyz"
@@ -76,6 +77,7 @@ def _ohne_override():
 def _welt(c, name, belege: dict[str, bytes]):
     """Familie mit einem Objekt und Belegen in der Cloud."""
     c.post("/api/auth/registrieren", json={"name": name, "passwort": PASSWORT})
+    zweifaktor_einschalten(c, PASSWORT)        # N502
     fid = c.get("/api/auth/ich").json()["id"]
     slug = c.post("/api/objekte", json={"name": f"Weg {name}"}).json()["slug"]
     with Session(engine) as s:

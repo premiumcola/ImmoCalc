@@ -96,3 +96,47 @@ def eigene_datenbank(request):
     app.dependency_overrides.pop(aktuelle_familie, None)
     for modul, name in gebunden:
         setattr(modul, name, alt)
+
+
+def zweifaktor_einschalten(klient, passwort: str) -> None:
+    """N502 — seit dem Zwei-Faktor-Zwang kann eine frisch registrierte Familie
+    nichts anlegen, bevor der zweite Faktor steht. Tests, die eine ECHTE
+    Anmeldung fahren (statt des Overrides oben), gehen deshalb denselben Weg
+    wie ein echter Nutzer: einrichten, ersten Code bestätigen.
+
+    Hier und nicht in den Testdateien, damit der Ablauf an EINER Stelle steht —
+    ändert sich die Einrichtung, ist es ein Edit statt drei."""
+    import time
+
+    from app import totp
+
+    daten = klient.post("/api/auth/2fa/einrichten",
+                        json={"passwort": passwort})
+    assert daten.status_code == 200, daten.text
+    code = totp._code_fuer(daten.json()["geheimnis"], int(time.time() // 30))
+    antwort = klient.post("/api/auth/2fa/bestaetigen", json={"code": code})
+    assert antwort.status_code == 200, antwort.text
+
+
+def zweiter_faktor_einloesen(klient, ticket: str, familienname: str) -> None:
+    """N502 — der zweite Schritt einer ECHTEN Anmeldung.
+
+    `/login` antwortet bei aktivem zweiten Faktor mit 202 und einem Ticket;
+    die Sitzung entsteht erst hier. Das Geheimnis kommt aus der Datenbank —
+    ohne echte Authenticator-App gibt es in einem Test keinen anderen Weg."""
+    import time
+
+    from sqlmodel import Session, select
+
+    from app import totp
+    from app.db import engine as aktuelle_engine
+    from app.models import Familie
+
+    with Session(aktuelle_engine) as s:
+        familie = s.exec(select(Familie)
+                         .where(Familie.name == familienname)).one()
+        geheimnis = familie.totp_geheimnis
+    code = totp._code_fuer(geheimnis, int(time.time() // 30))
+    antwort = klient.post("/api/auth/login/2fa",
+                          json={"ticket": ticket, "code": code})
+    assert antwort.status_code == 200, antwort.text

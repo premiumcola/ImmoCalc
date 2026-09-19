@@ -2027,3 +2027,45 @@ dialog.immo-dlg.lade-dlg::backdrop{background:rgba(15,110,92,.30);
 @media(max-width:479px){
   html,body{background:var(--sheet)}
 }
+
+/* ---- N502 — geteilt zwischen Einstellungen und der erzwungenen
+   Zwei-Faktor-Einrichtung (`zweifaktor.html`). Lag vorher nur in
+   `settings.html`; seit es zwei Nutzer gibt, gehört es hierher. ---- */
+.meldung{border-radius:11px;padding:11px 13px;font:500 12.5px var(--body);
+         margin-bottom:12px;line-height:1.45;display:none}
+.meldung.an{display:block}
+.meldung.gut{background:var(--pos-bg);color:var(--pos)}
+.meldung.schlecht{background:var(--neg-bg);color:var(--neg)}
+
+/* N472 — Zwei-Faktor: der Einrichtungsschlüssel und die Wiederherstellungs-
+   codes stehen in Mono, gross genug zum Abtippen, in einer eigenen Fläche. */
+.tfa-schluessel{font:600 15px var(--mono);letter-spacing:.06em;color:var(--teal-d);
+                background:var(--teal-l);border-radius:10px;padding:12px 14px;
+                margin:0 0 10px;word-break:break-all;text-align:center;
+                user-select:all;-webkit-user-select:all}
+/* N477 — der QR-Code. Weisser Grund ist Pflicht, auch im dunklen Umfeld:
+   Scanner erwarten dunkel auf hell. */
+.tfa-qr{display:block;width:220px;max-width:100%;margin:0 auto 14px;
+        background:#fff;border-radius:12px;padding:10px;
+        box-shadow:0 4px 14px -6px rgba(22,38,44,.35)}
+.tfa-qr svg{display:block;width:100%;height:auto}
+.tfa-oder{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+          color:var(--soft);text-align:center;margin:0 0 8px}
+.tfa-codes{font:500 14px var(--mono);line-height:1.9;color:var(--ink);
+           background:var(--sheet);border-radius:10px;padding:12px 16px;
+           margin:0 0 16px;columns:2;column-gap:18px;user-select:all;
+           -webkit-user-select:all}
+.tfa-schritte{font:400 13px var(--body);color:var(--soft);line-height:1.55;
+              margin:0 0 14px;padding-left:18px}
+.tfa-schritte li{margin-bottom:4px}
+.tfa-link{display:inline-block;font:600 13px var(--body);color:var(--teal);
+          margin:0 0 14px}
+/* N485 — am PC: QR-Bild und Schlüssel links, Anleitung und Code-Feld
+   rechts. Am Telefon untereinander, QR zuerst — dort wird gescannt, nicht
+   gelesen. */
+.tfa-raster{display:grid;gap:2px}
+@media (min-width:780px){
+  .tfa-raster{grid-template-columns:240px 1fr;gap:26px;align-items:start}
+  .tfa-qr{margin-top:2px}
+  .tfa-schritte{margin-top:0}
+}

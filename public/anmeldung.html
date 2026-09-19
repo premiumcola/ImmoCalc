@@ -177,8 +177,14 @@ import { api, baueDialog, augenNachruesten } from './assets/immo.js';
    Familie) erledigt `baueDialog` von selbst. */
 augenNachruesten();
 
+/* N502 — wer noch keinen zweiten Faktor hat, kommt zuerst dorthin. Die
+   Antwort von `/login` bzw. `/login/2fa` sagt es bereits (`hat_2fa`), also
+   gibt es keinen Grund, erst die App zu laden und dann wegzuschieben. */
+const weiterNach = antwort =>
+  (antwort && antwort.hat_2fa === false) ? 'zweifaktor.html' : 'index.html';
+
 // Schon angemeldet? Dann gar nicht erst den Anmeldescreen zeigen.
-api('/auth/ich').then(() => { location.href = 'index.html'; }).catch(() => {});
+api('/auth/ich').then(f => { location.href = weiterNach(f); }).catch(() => {});
 
 let zustand = { erstanmeldung_offen: false, einladung_noetig: false };
 api('/auth/zustand').then(z => {
@@ -329,7 +335,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
       codeDialog(antwort.ticket);
       return;
     }
-    location.href = 'index.html';
+    location.href = weiterNach(antwort);
   } catch (f) {
     fehlerZeigen(fehler, f.message || 'Anmeldung fehlgeschlagen');
   } finally {
@@ -365,11 +371,11 @@ document.getElementById('erst-anmeldung').addEventListener('click', e => {
     const fehler = dlg.querySelector('#erst-fehler');
     fehlerZeigen(fehler, '');
     try {
-      await api('/auth/passwort-festlegen', { method: 'POST', body: {
+      const f = await api('/auth/passwort-festlegen', { method: 'POST', body: {
         name: dlg.querySelector('#erst-name').value,
         passwort: dlg.querySelector('#erst-pw').value,
       } });
-      location.href = 'index.html';
+      location.href = weiterNach(f);
     } catch (f) { fehlerZeigen(fehler, f.message || 'Festlegen fehlgeschlagen'); }
   });
 });
@@ -403,12 +409,12 @@ document.getElementById('neu-anlegen').addEventListener('click', e => {
     fehlerZeigen(fehler, '');
     const code = dlg.querySelector('#neu-code');
     try {
-      await api('/auth/registrieren', { method: 'POST', body: {
+      const f = await api('/auth/registrieren', { method: 'POST', body: {
         name: dlg.querySelector('#neu-name').value.trim(),
         passwort: dlg.querySelector('#neu-pw').value,
         einladungs_code: code ? code.value : null,
       } });
-      location.href = 'index.html';
+      location.href = weiterNach(f);
     } catch (f) { fehlerZeigen(fehler, f.message || 'Anlegen fehlgeschlagen'); }
   });
 });

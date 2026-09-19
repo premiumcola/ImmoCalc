@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.deps import aktuelle_familie  # noqa: E402
 from app.main import app  # noqa: E402
+from conftest import zweifaktor_einschalten
 
 
 # Lesende und ändernde Zugriffe auf einen fremden Datensatz. `{...}` wird aus
@@ -82,6 +83,9 @@ def welt():
             "name": "Familie A", "passwort": "sehrsicher123"}).status_code == 201
         assert b.post("/api/auth/registrieren", json={
             "name": "Familie B", "passwort": "auchsicher456"}).status_code == 201
+        # N502 — ohne zweiten Faktor legt hier niemand mehr etwas an.
+        zweifaktor_einschalten(a, "sehrsicher123")
+        zweifaktor_einschalten(b, "auchsicher456")
 
         objekt = a.post("/api/objekte", json={
             "name": "Adlerweg 1",

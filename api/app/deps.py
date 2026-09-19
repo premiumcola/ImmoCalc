@@ -18,6 +18,29 @@ from .auth import SITZUNG_COOKIE, token_hashen
 from .db import get_session
 from .models import Dokument, Familie, Objekt, Sitzung, Zeitraum
 
+# N502 — der Zwei-Faktor-Zwang. Nutzer: „bitte lass die User am besten gar
+# nichts anlegen, bevor nicht Zwei-Faktor-Anmeldung eben aktiviert ist."
+#
+# Der Riegel sitzt an dem EINEN Punkt, den jeder geschützte Endpunkt ohnehin
+# durchläuft. An ~200 einzelnen Endpunkten wäre er nicht zu halten — der
+# nächste neue Endpunkt vergisst ihn zwangsläufig, und ausgerechnet dort
+# fällt es nicht auf.
+#
+# Lesen bleibt erlaubt: wer schon Daten hat, soll sie sehen können, während
+# er den zweiten Faktor einrichtet. Angelegt oder geändert wird nichts.
+_NUR_LESEN = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Alles unterhalb von /api/auth/ betrifft den Zugang selbst — zweiten Faktor
+# einrichten und bestätigen, Passwort ändern, Adresse setzen, abmelden. Das
+# MUSS offen bleiben, sonst führte der Riegel aus sich selbst nicht heraus.
+# Keine Datenendpunkte darunter (die liegen alle unter /api/objekte,
+# /api/stammdaten, …), die Ausnahme ist also eng.
+_ZUGANG_PFAD = "/api/auth/"
+
+# Ein eigener Kopf statt eines Textvergleichs: die Oberfläche soll diesen
+# einen Fall erkennen können, ohne auf den Wortlaut der Meldung zu bauen.
+ZWEITFAKTOR_KOPF = {"X-ImmoCalc-Grund": "zwei-faktor"}
+
 
 async def aktuelle_familie(request: Request,
                            session: Session = Depends(get_session)) -> Familie:
@@ -44,6 +67,15 @@ async def aktuelle_familie(request: Request,
     familie = session.get(Familie, sitzung.familie_id)
     if not familie:
         raise HTTPException(401, "Nicht angemeldet")
+    # N502 — ohne bestätigten zweiten Faktor entsteht nichts Neues. Siehe die
+    # Begründung der drei Konstanten oben.
+    if (not familie.totp_bestaetigt
+            and request.method not in _NUR_LESEN
+            and not request.url.path.startswith(_ZUGANG_PFAD)):
+        raise HTTPException(
+            403, "Bitte zuerst die Zwei-Faktor-Anmeldung einrichten — "
+                 "danach lässt sich alles wie gewohnt anlegen und ändern.",
+            headers=ZWEITFAKTOR_KOPF)
     # N436 — Nextcloud/Mail/KI/Wallbox-Einstellungen hängen am Namensraum
     # dieser Familie (siehe familienraum.py); für den Rest der Anfrage
     # gesetzt, ohne dass jede Zwischenfunktion familie_id durchreichen muss.
